@@ -1,6 +1,6 @@
 /** Finite-interval quadrature for a validated continuous scalar integrand. No engine JIT/numerical fallback. */
 import { MathInputProblem, type MathEvaluation, type MathNode } from './mathInputContract.js';
-import { rationalOfExpression } from './exactRational.js';
+import { continuousIntegralOperation } from './continuousIntegralDomain.js';
 import { adaptiveIntegral } from './adaptiveIntegral.js';
 import { compileScalarMath, createScalarSampler } from './scalarMathTape.js';
 
@@ -9,8 +9,6 @@ export interface NumericalIntegralContext {
   readonly evaluateConstant: (expression: MathNode) => number;
   readonly shouldStop: () => 'deadline' | 'cancelled' | undefined;
 }
-const CONTINUOUS_REAL_OPERATIONS = new Set(['add', 'subtract', 'multiply', 'negate', 'square', 'absolute',
-  'sin', 'cos', 'sinh', 'cosh', 'tanh', 'arctan', 'arsinh', 'exponential', 'minimum', 'maximum']);
 
 /**
  * Positive domain grammar: do not infer continuity from a handful of finite samples.
@@ -27,14 +25,7 @@ function continuousBody(body: MathNode, variable: string, context: NumericalInte
     if (node.kind === 'symbol') return node.reference.role === 'bound' && node.reference.id === variable
       ? { kind: 'symbol', reference: { role: 'axis', name: 'X' } } : null;
     if (node.kind !== 'operation') return null;
-    if (node.operation === 'power') {
-      const exponent = node.operands[1] === undefined ? null : rationalOfExpression(node.operands[1]);
-      // Positive integral powers are defined for all real bases. 0^0 is not silently filled in.
-      if (exponent === null || exponent.denominator !== 1n || exponent.numerator < 1n || exponent.numerator > 1024n) return null;
-    } else if (node.operation === 'divide') {
-      const denominator = node.operands[1] === undefined ? null : rationalOfExpression(node.operands[1]);
-      if (denominator === null || denominator.numerator === 0n) return null;
-    } else if (!CONTINUOUS_REAL_OPERATIONS.has(node.operation)) return null;
+    if (!continuousIntegralOperation(node)) return null;
     const operands: MathNode[] = [];
     for (const operand of node.operands) {
       const mapped = visit(operand, depth + 1);

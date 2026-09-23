@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 import { installedRuntimeDependencies, verifyRuntimeDependencyInventory } from './runtimeDependencyInventory.mjs';
+import { collectScriptRuntimeNotices } from './scriptRuntimeNotices.mjs';
 
 const rootFolder = fileURLToPath(new URL('../../', import.meta.url));
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -14,7 +15,7 @@ export function collectRuntimeNotices(root = rootFolder) {
   const manifest = JSON.parse(source.toString('utf8'));
   if (manifest.format !== 'pointercad-runtime-notices/1' || !Array.isArray(manifest.packages)) throw new Error('Invalid runtime notice manifest');
   verifyRuntimeDependencyInventory(actual, manifest.packages);
-  const assets = new Map(), unresolved = [], links = [];
+  const assets = collectScriptRuntimeNotices(root), unresolved = [], links = [];
   for (const item of manifest.packages) {
     const installed = actual.find(candidate => candidate.name === item.name && candidate.version === item.version);
     const title = escape(item.name + ' ' + item.version + ' (' + item.license + ')');
@@ -45,7 +46,7 @@ export function collectRuntimeNotices(root = rootFolder) {
   assets.set('licenses/runtime/index.html', Buffer.from('<!doctype html><html lang="ja"><meta charset="utf-8">' +
     '<title>PointerCAD 利用部品の著作権・許諾表示</title><h1>利用部品の著作権・許諾表示</h1>' +
     '<p>各部品の許諾はそれぞれの原文に従います。</p><ul>' + links.join('\n') + '</ul>' +
-    '<p><a href="../index.html">数学入力と字体</a> / <a href="../exact-math/">追加計算部</a> / ' +
+    '<p><a href="../index.html">数学入力と字体</a> / <a href="../exact-math/">追加計算部</a> / <a href="../script-runtime/">自動作図の実行部</a> / ' +
     '<a href="../../fonts/LICENSES.txt">画面と図面の字体</a></p></html>', 'utf8'));
   assets.set('LICENSE', readFileSync(join(root, 'LICENSE')));
   assets.set('NOTICE', readFileSync(join(root, 'NOTICE')));

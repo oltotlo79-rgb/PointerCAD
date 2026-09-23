@@ -1,3 +1,5 @@
+import { prepareDocumentMathProblem } from './prepareDocumentMathProblem.js';
+import { unresolvedMathProblemOutput } from './unresolvedMathProblemOutput.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { mathScalarExpression, type AngleUnit, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
 import type { PartDocument } from '@pointercad/model';
@@ -39,6 +41,11 @@ export interface FunctionExpressionDialogProps extends MathDialogBase {
   readonly onApply: (value: StoredMathExpression, prepared: PartDocument, signal: AbortSignal,
     client: ReturnType<typeof createBrowserMathClient>, coefficients: MathWorkRequest['coefficients']) => Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }>;
 }
+export interface ProblemExpressionDialogProps extends MathDialogBase {
+  readonly kind: 'problem';
+  readonly initialProblem: StoredMathExpression | undefined;
+  readonly onApply: FunctionExpressionDialogProps['onApply'];
+}
 interface ReadyEditor {
   readonly controller: MathEditorController;
   readonly createField: () => StructuredMathField;
@@ -47,7 +54,7 @@ interface ReadyEditor {
 }
 
 /** Native modal ownership prevents keyboard actions from also confirming the underlying CAD workflow. */
-export function MathExpressionDialog(props: MathExpressionDialogProps | FunctionExpressionDialogProps): React.JSX.Element {
+export function MathExpressionDialog(props: MathExpressionDialogProps | FunctionExpressionDialogProps | ProblemExpressionDialogProps): React.JSX.Element {
   const owner = useRef(props).current, dialog = useRef<HTMLDialogElement>(null), id = useId();
   const [ready, setReady] = useState<ReadyEditor | null>(null), [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [attempt, setAttempt] = useState(0);
@@ -61,16 +68,16 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
     let controller: MathEditorController | undefined, applying = false;
     const isCurrent = () => !abort.signal.aborted && owner.isCurrent();
     const unsubscribe = useAppStore.subscribe(() => { if (!owner.isCurrent()) { abort.abort(); controller?.dispose(); owner.onClose(); } });
-    const initialDefinition = owner.kind === 'function' ? owner.initialFunction.definition : owner.initialValue.mathDefinition;
+    const initialDefinition = owner.kind === 'function' ? owner.initialFunction.definition : owner.kind === 'problem' ? owner.initialProblem : owner.initialValue.mathDefinition;
     const canApply = (output: MathEditorOutput) => owner.kind === 'function'
       ? output.definition !== null && output.evaluation.status === 'value' && output.evaluation.kind === 'function'
-      : mathScalarExpression(output).ok;
+      : owner.kind === 'problem' ? unresolvedMathProblemOutput(output) !== null : mathScalarExpression(output).ok;
     const apply = async (output: MathEditorOutput, prepared: PartDocument, coefficients: MathWorkRequest['coefficients']) => {
       if (!isCurrent() || applying || !canApply(output)) return;
       applying = true; setBusy(true); setProblem(null);
       try {
         const commit = () => {
-          if (owner.kind === 'function') {
+          if (owner.kind === 'function' || owner.kind === 'problem') {
             if (output.definition === null) throw new Error(t('math.invalidSource'));
             return owner.onApply(output.definition, prepared, abort.signal, client, coefficients);
           }
@@ -92,6 +99,9 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
           loadStructuredMathField(), owner.kind === 'function'
             ? prepareDocumentFunctionEditor(owner.document, owner.initialFunction, owner.functionScope,
               { client, identity: { documentId: owner.document.id, documentVersion: owner.documentVersion }, signal: abort.signal, isCurrent })
+            : owner.kind === 'problem'
+              ? prepareDocumentMathProblem(owner.document, owner.initialProblem,
+                { client, identity: { documentId: owner.document.id, documentVersion: owner.documentVersion }, signal: abort.signal, isCurrent })
             : prepareDocumentMathEditor(owner.document, owner.initialValue,
               { client, identity: { documentId: owner.document.id, documentVersion: owner.documentVersion }, signal: abort.signal, isCurrent }, owner.excludedCoefficient),
         ]);
@@ -99,7 +109,7 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
         controller = new MathEditorController({ client,
           initial: { identity: { documentId: owner.document.id, documentVersion: owner.documentVersion, editorId: id, inputRevision: 0 },
             source: input.source, notation: input.notation,
-            angleUnit: owner.kind === 'function' ? input.angleUnit : owner.initialAngleUnit ?? input.angleUnit },
+            angleUnit: owner.kind === 'function' || owner.kind === 'problem' ? input.angleUnit : owner.initialAngleUnit ?? input.angleUnit },
           requestFor: value => ({ identity: value.identity, source: value.source, notation: value.notation,
              angleUnit: value.angleUnit, coefficients: input.coefficients,
              ...(input.purpose === 'function' ? { functionScope: input.functionScope } : {}),
@@ -126,7 +136,7 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
   return <dialog ref={dialog} className="pcad-math-dialog" aria-labelledby={`${id}-title`} data-help-topic="math-input"
     onCancel={event => { event.preventDefault(); owner.onClose(); }} onKeyDown={event => event.stopPropagation()}>
     <h2 id={`${id}-title`}>{t('math.title')}</h2>
-    <p>{t(owner.kind === 'function' ? 'math.functionOutput' : 'math.valueUnit')} {owner.unitLabel}</p>
+    <p>{t(owner.kind === 'function' ? 'math.functionOutput' : owner.kind === 'problem' ? 'math.problem.hint' : 'math.valueUnit')} {owner.unitLabel}</p>
     {owner.kind === 'function' ? <p>{t('math.functionRangeHint')}</p> : null}
     {problem === null ? null : <p role="alert">{problem}</p>}
     {ready === null ? <div><p role="status">{problem === null ? t('math.loading') : t('math.loadFailed')}</p>
@@ -134,7 +144,7 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
       <button type="button" className="pcad-button" title={t('math.guide.cancel')} onClick={owner.onClose}>{t('math.cancel')}</button>
     </div> : <>
       {ready.coefficientProblem === null ? null : <p role="status">{t('math.coefficientsUnavailable')} {ready.coefficientProblem}</p>}
-      <MathEditorPanel {...ready} palette={MATH_INPUT_PALETTE} readOnly={busy} onHelp={() => useAppStore.getState().openHelpTopic('math-input')} />
+      <MathEditorPanel {...ready} acceptLabel={owner.kind === 'problem' ? t('math.problem.apply') : undefined} palette={MATH_INPUT_PALETTE} readOnly={busy} onHelp={() => useAppStore.getState().openHelpTopic('math-input')} />
     </>}
   </dialog>;
 }

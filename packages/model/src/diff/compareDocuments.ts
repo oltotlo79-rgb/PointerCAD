@@ -5,7 +5,7 @@ import { compareDefinitionValues, type DefinitionDifference, type DiffBudget } f
 export type DocumentRelationship = 'versions' | 'unrelated';
 export type DefinitionGroup = 'document' | 'sketch' | 'sketch-feature' | 'reference' | 'solid'
   | 'parameter' | 'configuration' | 'sheet-unfold' | 'named-view' | 'selection-set' | 'canvas'
-  | 'appearance' | 'note' | 'folder' | 'attachments';
+  | 'appearance' | 'note' | 'folder' | 'math-problem' | 'attachments';
 export interface DocumentDefinitionEntry {
   readonly key: string;
   readonly group: DefinitionGroup;
@@ -38,7 +38,7 @@ export class DocumentComparisonLimit extends Error {
 // 追加項目を無言で比較対象から落とさない。新しい保存欄は型検査で分類を要求する。
 const FIELDS = {
   id: 'identity', name: 'document', schemaVersion: 'format', mathParameterSerial: 'serial',
-  featureNotes: 'entries', featureFolders: 'entries', sketches: 'entries', activeSketchId: 'view',
+  unresolvedMathProblems: 'entries', featureNotes: 'entries', featureFolders: 'entries', sketches: 'entries', activeSketchId: 'view',
   references: 'entries', solids: 'entries', sheetUnfolds: 'entries', parameters: 'entries',
   namedViews: 'entries', configurations: 'entries', activeConfigurationId: 'document',
   appearance: 'document', selectionSets: 'entries', canvases: 'entries',
@@ -77,6 +77,7 @@ function entries(document: PartDocument, attachmentsDigest: string, tick: () => 
   for (const canvas of document.canvases) add('canvas', canvas.id, canvas.name, canvas);
   for (const note of document.featureNotes ?? []) add('note', featureNoteTargetKey(note.target), '', note);
   for (const folder of document.featureFolders ?? []) add('folder', folder.id, folder.name, folder);
+  for (const problem of document.unresolvedMathProblems ?? []) add('math-problem', problem.id, problem.name, problem);
   const keys = new Set(result.map(entry => entry.key));
   if (keys.size !== result.length) throw new Error('比較対象の識別子が重複しています。');
   return result;

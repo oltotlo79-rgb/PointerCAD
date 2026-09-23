@@ -11,7 +11,7 @@ import type { Parameter, ParameterAnalysis } from '../parameters/types.js';
 import { nonLengthVariables } from '../units/length.js';
 import { mapDocumentExpressions, type ReevaluationFailure } from './reevaluatePart.js';
 import type { PartDocument } from './types.js';
-import { mapDocumentFunctionExpressions } from './documentFunctions.js';
+import { mapDocumentNonScalarExpressions } from './documentFunctions.js';
 
 export interface DocumentMathContext {
   readonly client: Pick<MathWorkerClient, 'evaluate'>;
@@ -168,7 +168,7 @@ export async function evaluateDocumentMath(document: PartDocument, context: Docu
       return result?.ok ? result.value : value;
     });
     const used = new Set<string>();
-    mapDocumentFunctionExpressions(document, definition => {
+    mapDocumentNonScalarExpressions(document, definition => {
       for (const reference of collectMathCoefficients(definition.expression)) {
         if (byId.get(reference.id)?.name === reference.label) used.add(reference.label);
       }

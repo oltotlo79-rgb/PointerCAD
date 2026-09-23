@@ -107,7 +107,11 @@ export function ExpressionField({
       />
       {onMath === undefined ? null : <button type="button" className="pcad-button pcad-field__math"
         title={`${t(field.labelKey)}: ${t('math.open')}`} aria-label={`${t(field.labelKey)}: ${t('math.open')}`}
-        onKeyDown={event => event.stopPropagation()} onClick={onMath}>ƒx</button>}</span>
+        onKeyDown={event => {
+          // Keep button activation and native Tab movement out of the parent input handler.
+          // File shortcuts and other unhandled keys must reach the application.
+          if (event.key === 'Enter' || event.key === ' ' || event.key === 'Tab') event.stopPropagation();
+        }} onClick={onMath}>ƒx</button>}</span>
       <span className="pcad-field__unit">{t(fieldUnitLabelKey(field.unit, sourceUnit))}</span>
       <p
         id={messageId}

@@ -1,5 +1,13 @@
+import { besselSlope } from './besselScalar.js';
+import { airySlope } from './airyIntervals.js';
+import { zetaSample } from './zetaIntervals.js';
+import { lambertWSlope } from './lambertWIntervals.js';
+import { ellipticMidpoint } from './ellipticIntervals.js';
+import { ellipticPartialRanges } from './ellipticPartials.js';
 /** Forward differentiation of the safe scalar tape. Nonsmooth and domain-boundary points have no invented normal. */
 import { createScalarTapeEvaluation, type ScalarTape } from './scalarMathTape.js';
+import { polygammaSample } from './polygammaIntervals.js';
+import { betaFunctionRanges } from './betaFunctionIntervals.js';
 export interface ScalarDifferential {
   readonly value: number;
   readonly gradient: readonly number[] | null;
@@ -43,6 +51,8 @@ export function createScalarDifferential(tape: ScalarTape): (inputs: readonly nu
           case 'sign': derivative = x === 0 ? NaN : 0; break;
           case 'floor': case 'ceiling': derivative = Number.isInteger(x) ? NaN : 0; break;
           case 'exponential': derivative = r; break;
+          case 'gamma': derivative = r*polygammaSample(0, x); break;
+          case 'erf': case 'erfc': derivative = (item.operation === 'erf' ? 1 : -1) * 2/Math.sqrt(Math.PI)*Math.exp(-x*x); break;
           case 'natural-log': derivative = 1 / x; break;
           case 'log-two': derivative = 1 / (x * Math.LN2); break;
           case 'log-ten': derivative = 1 / (x * Math.LN10); break;
@@ -63,10 +73,29 @@ export function createScalarDifferential(tape: ScalarTape): (inputs: readonly nu
           case 'artanh': derivative = 1 / (1 - x*x); break;
         }
         combine([[item.value, derivative]]);
+      } else if(item.kind==='zeta') {
+        combine([[item.value,zetaSample(item.order+1,values[item.value])]]);
+      } else if (item.kind === 'airy') {
+        combine([[item.value, airySlope(item.family, item.prime, values[item.value])]]);
+      } else if (item.kind === 'lambertw') {
+        combine([[item.value, lambertWSlope(item.branch, values[item.value])]]);
+      } else if (item.kind === 'elliptic') {
+        const ranges=ellipticPartialRanges(item.family,item.values.map(operand=>({lower:values[operand],upper:values[operand]})),item.orders,tape.angleUnit==='degree');
+        combine(item.values.map((operand,index)=>[operand,ellipticMidpoint(ranges.first[index])]));
+      } else if (item.kind === 'bessel') {
+        combine([[item.value, besselSlope(item.family, item.order, values[item.value])]]);
+      } else if (item.kind === 'polygamma') {
+        combine([[item.value, polygammaSample(item.order+1, values[item.value])]]);
       } else if (item.kind === 'binary') {
         const a = values[item.left], b = values[item.right], r = values[index];
         let left: number, right: number;
         switch (item.operation) {
+          case 'beta': {
+            const ranges = betaFunctionRanges({ lower: a, upper: a }, { lower: b, upper: b });
+            left = ranges.da === null ? NaN : ranges.da.lower/2+ranges.da.upper/2;
+            right = ranges.db === null ? NaN : ranges.db.lower/2+ranges.db.upper/2;
+            break;
+          }
           case 'subtract': left = 1; right = -1; break;
           case 'divide': left = 1 / b; right = -r / b; break;
           case 'log-base': left = 1 / (a * Math.log(b)); right = -Math.log(a) / (b * Math.log(b)**2); break;

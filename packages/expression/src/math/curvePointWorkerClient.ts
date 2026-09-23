@@ -1,3 +1,4 @@
+import { functionPreparationProgress } from './functionPreparationProgress.js';
 import {BoundedCalculationClient,type CalculationWorkerPort} from './boundedCalculationClient.js';
 import {decodeCurvePointWorkRequest,type CurvePointWorkRequest} from './curvePointWorkRequest.js';
 import {createCurvePointWorkEnvelope,type CurvePointWorkResult} from './curvePointWorkEnvelope.js';
@@ -7,11 +8,11 @@ import {createCurvePointContinuationWorkEnvelope,decodeCurvePointContinuationWor
 
 export class CurvePointWorkerClient extends BoundedCalculationClient<CurvePointWorkRequest,CurvePointWorkResult> {
   constructor(options:{readonly createWorker:()=>CalculationWorkerPort}) {
-    super({...options,decodeRequest:decodeCurvePointWorkRequest,createEnvelope:createCurvePointWorkEnvelope,decodeReply:decodeCurvePointWorkReply});
+    super({ progress: functionPreparationProgress(),...options,decodeRequest:decodeCurvePointWorkRequest,createEnvelope:createCurvePointWorkEnvelope,decodeReply:decodeCurvePointWorkReply});
   }
 }
 export class CurvePointContinuationWorkerClient extends BoundedCalculationClient<CurvePointContinuationWorkRequest,CurvePointContinuationWorkResult> {
   constructor(options:{readonly createWorker:()=>CalculationWorkerPort}) {
-    super({...options,decodeRequest:decodeCurvePointContinuationWorkRequest,createEnvelope:createCurvePointContinuationWorkEnvelope,decodeReply:decodeCurvePointContinuationWorkReply});
+    super({ progress: functionPreparationProgress(),...options,decodeRequest:decodeCurvePointContinuationWorkRequest,createEnvelope:createCurvePointContinuationWorkEnvelope,decodeReply:decodeCurvePointContinuationWorkReply});
   }
 }

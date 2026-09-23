@@ -1,11 +1,6 @@
 /** Explicitly opening an old scalar expression in the structured editor preserves its roles and units. */
 import { MathInputProblem, MATH_INPUT_LIMITS, validateMathDecimal, type MathNode } from './mathInputContract.js';
-function coefficientText(label:string):string {
-  if(label.length<1||label.length>128||!/^[_\p{L}\p{M}\p{N}]+$/u.test(label)) {
-    throw new MathInputProblem('syntax','変換する係数名に使えない文字があります。');
-  }
-  return label.replaceAll('_',String.raw`\_`);
-}
+import { mathLatexLabel } from './mathLatexLabel.js';
 export function legacyDefinitionToLatex(expression:MathNode):string {
   let nodes=0;
   function visit(node:MathNode,depth:number):string {
@@ -19,7 +14,7 @@ export function legacyDefinitionToLatex(expression:MathNode):string {
     }else if(node.kind==='constant'&&(node.name==='pi'||node.name==='e')){
       source=node.name==='pi'?String.raw`\pi`:String.raw`\exponentialE`;
     }else if(node.kind==='symbol'&&node.reference.role==='coefficient'){
-      source=String.raw`\operatorname{coef}\left(\text{`+coefficientText(node.reference.label)+String.raw`}\right)`;
+      source=String.raw`\operatorname{coef}\left(\text{`+mathLatexLabel(node.reference.label)+String.raw`}\right)`;
     }else if(node.kind==='operation'){
       const values=node.operands.map(value=>visit(value,depth+1));
       const grouped=values.map(value=>String.raw`\left(`+value+String.raw`\right)`);

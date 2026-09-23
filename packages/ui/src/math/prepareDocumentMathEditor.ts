@@ -1,4 +1,4 @@
-import { createEmptyPartDocument, evaluateDocumentMath, expressionParameterNames, prepareDocumentMathIdentity,
+import { analyzeParameters, createEmptyPartDocument, evaluateDocumentMath, expressionParameterNames, prepareDocumentMathIdentity,
   type PartDocument, type DocumentMathContext } from '@pointercad/model';
 import type { ExpressionValue } from '@pointercad/expression';
 import type { MathWorkRequest } from '@pointercad/expression/math/client';
@@ -25,7 +25,13 @@ export async function prepareDocumentMathEnvironment(document: PartDocument,
     }
   }
   const table = { ...createEmptyPartDocument(), id: prepared.id, parameters: prepared.parameters.filter(parameter => !excluded.has(parameter.name)) };
-  const result = await evaluateDocumentMath(table, context);
+  // The model retains exact expressions only for evaluated immutable parameter
+  // snapshots. A loaded file or changed parameter array has no such proof.
+  // Filtering after lookup keeps repairable coefficients and their dependents out.
+  const known = analyzeParameters(prepared.parameters, []);
+  const reusable = known.mathCoefficients !== undefined && known.failures.length === 0 && known.circular.length === 0
+    && !context.signal?.aborted && context.isCurrent() && context.identity.documentId === prepared.id;
+  const result = reusable ? { ok: true as const, document: table, analysis: known } : await evaluateDocumentMath(table, context);
   const coefficients: MathWorkRequest['coefficients'][number][] = [];
   if (result.ok) {
     for (const parameter of result.document.parameters) {

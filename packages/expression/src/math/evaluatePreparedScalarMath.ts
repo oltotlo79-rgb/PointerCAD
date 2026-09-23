@@ -6,6 +6,7 @@ import { mathBackendEvaluation, decodeMathBackendNode } from './mathBackendResul
 import { numericalIntegral } from './numericalIntegral.js';
 import { mathScalarValue } from './mathScalarExpression.js';
 import type { MathExecutionBackend } from './mathWorkExecution.js';
+import { resolveNumericalRoots } from './numericalRoots.js';
 
 export interface PreparedScalarMathContext {
   readonly backend: MathExecutionBackend;
@@ -38,6 +39,9 @@ function containsIntegral(expression: MathNode): boolean {
 export function evaluatePreparedScalarMath(expression: MathNode, original: MathNode, context: PreparedScalarMathContext): MathEvaluation {
   const stop = context.shouldStop(); if (stop !== undefined) return { status: 'stopped', reason: stop };
   const { backend, angleUnit } = context;
+  const numerical = resolveNumericalRoots(expression, original, context);
+  if (numerical.evaluation !== undefined) return numerical.evaluation;
+  expression = numerical.expression;
   const evaluated = evaluatePreparedMath(backend.box(encodeMathInRadians(expression, backend.operationsById, angleUnit)),
     containsIntegral(expression) ? exact => {
       try { decodeMathBackendNode(exact, backend.operations); return true; }

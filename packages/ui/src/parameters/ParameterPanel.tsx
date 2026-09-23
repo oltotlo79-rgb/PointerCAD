@@ -1,3 +1,4 @@
+import { UnresolvedMathPanel } from './UnresolvedMathPanel.js';
 /**
  * パラメータ表(名前を付けた数値)のパネル(要件 FR-207・FR-201・FR-502、
  * 計画書 docs/plans/P4b-スケッチの仕上げ.md §0.a-0.15・タスク11)。
@@ -454,6 +455,7 @@ export function ParameterPanel(): React.JSX.Element {
           {t('parameterPanel.addMark')}
         </button>
       </div>
+      <UnresolvedMathPanel />
       </fieldset>
       {mathTarget === null ? null : <ParameterMathDialog target={mathTarget} onClose={() => setMathTarget(null)} />}
     </div>

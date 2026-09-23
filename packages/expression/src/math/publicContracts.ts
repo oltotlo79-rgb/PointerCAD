@@ -1,3 +1,4 @@
+export { formatMathText } from './formatMathText.js';
 /** Validated input, persistent data and reply contracts; safe to import in the editor. */
 export {decodeFunctionDirection} from './functionDirectionContract.js';
 export type {FunctionPointDirectionKind,FunctionDirectionOptions,FunctionDirectionEndpoint} from './functionDirectionContract.js';
@@ -87,3 +88,5 @@ export {
 export {
   legacyDefinitionToLatex,
 } from './legacyMathLatex.js';
+export { formatNumericalRootEndpoint } from './numericalRootResult.js';
+export { differentialEquationProblem } from './differentialEquations.js';

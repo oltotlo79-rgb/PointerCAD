@@ -70,7 +70,7 @@ export const FEATURE_HELP_BINDINGS: readonly FeatureHelpBinding[] = [
   ...chapters([904, 905], 'help-reader', 'sketch-tools', 'numeric-input'),
   ...chapters([906], 'tutorial'), ...chapters([907], 'shortcuts'),
   ...chapters([908, 909], 'display-settings'), ...chapters([911], 'radial-menu'),
-  { featureId: 'FR-1001', topicIds: [], pending: 'P13: 公開版の導入先と対応環境の説明が未作成' },
+  ...chapters([1001], 'web-version'),
   ...chapters([1002], 'local-data'),
   ...chapters([1003], 'startup-checks'),
   ...chapters([1004], 'offline-use'),

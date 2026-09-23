@@ -162,6 +162,73 @@ if (args === '--silent run validation:runtime') {
         target = self.root / 'gate-calls.log'
         return target.read_text(encoding='utf-8').splitlines() if target.exists() else []
 
+    def exercise_product_git_isolation(self, *, linked=False, failure=False):
+        # These are private repositories, including the deliberately exposed index.
+        # Run the real check.ps1 entry; an unprotected child reproduces the damage.
+        foreign = self.base / 'protected'
+        foreign.mkdir()
+        clean = {key: value for key, value in self.env.items() if not key.upper().startswith('GIT_')}
+
+        def git(where, *args):
+            return subprocess.check_output(['git', '--no-optional-locks', '-C', str(where), *args],
+                                           env=clean, stderr=subprocess.PIPE)
+
+        git(foreign, 'init', '--quiet')
+        git(foreign, 'config', 'user.name', 'Protected fixture')
+        git(foreign, 'config', 'user.email', 'protected@example.invalid')
+        (foreign / 'keep.txt').write_text('committed', encoding='utf8')
+        git(foreign, 'add', 'keep.txt')
+        git(foreign, 'commit', '--quiet', '-m', 'fixture')
+        selected = foreign
+        if linked:
+            selected = self.base / 'protected-worktree'
+            git(foreign, 'worktree', 'add', '--quiet', '-b', 'protected-branch', str(selected))
+        (selected / 'keep.txt').write_text('staged', encoding='utf8')
+        git(selected, 'add', 'keep.txt')
+        (selected / 'keep.txt').write_text('unstaged', encoding='utf8')
+        gitdir = Path(git(selected, 'rev-parse', '--absolute-git-dir').decode().strip())
+        paths = [foreign / '.git/config', gitdir / 'HEAD', gitdir / 'index', selected / 'keep.txt',
+                 self.root / '.git/config', self.root / '.git/HEAD', self.root / '.git/index']
+        before = {str(path): path.read_bytes() for path in paths}
+        self.write('apps/desktop/src/git-isolation.test.ts', '// Private command fixture\n')
+        self.write('test-bin/pnpm-fixture.mjs', '''
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+const folder = resolve('scratchpad/product-fixture');
+mkdirSync(folder, {recursive:true});
+const git = (...args) => execFileSync('git', args, {cwd:folder, stdio:'pipe'});
+git('init', '--quiet');
+writeFileSync(resolve(folder,'fixture.txt'), 'product fixture');
+git('add', 'fixture.txt');
+git('init', '--bare', '--quiet', resolve('scratchpad/product-remote.git'));
+writeFileSync(resolve('scratchpad/product-ran'), 'yes');
+process.exitCode = process.env.PCAD_PRODUCT_EXIT === '7' ? 7 : 0;
+''')
+        self.env.update(GIT_DIR=str(gitdir), GIT_INDEX_FILE=str(gitdir / 'index'),
+                        GIT_COMMON_DIR=str(foreign / '.git'), PCAD_PRODUCT_EXIT='7' if failure else '0')
+        # Do not hide the resulting status with a retry. Assert that the child ran,
+        # and compare bytes even when the gate correctly reports its failure.
+        environment = {key: value for key, value in self.env.items() if key.upper() != 'PSMODULEPATH'}
+        result = subprocess.run([self.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                                 str(self.root / 'scripts/check.ps1'), '-UnitPackage', 'desktop',
+                                 '-UnitTests', 'src/git-isolation.test.ts'], cwd=self.root, env=environment,
+                                capture_output=True, timeout=40)
+        self.assertTrue((self.root / 'scratchpad/product-ran').is_file(), repr(result.stdout + result.stderr))
+        self.assertEqual({str(path): path.read_bytes() for path in paths}, before,
+                         'A product check changed the caller or foreign Git metadata')
+        self.assertEqual(result.returncode, 7 if failure else 0, repr(result.stdout + result.stderr))
+        self.assertEqual(git(self.root / 'scratchpad/product-fixture', 'show', ':fixture.txt'), b'product fixture')
+
+    def test_product_commands_cannot_modify_a_foreign_repository(self):
+        self.exercise_product_git_isolation()
+
+    def test_product_commands_cannot_modify_a_linked_worktree(self):
+        self.exercise_product_git_isolation(linked=True)
+
+    def test_product_failure_keeps_its_exit_code_and_foreign_git_bytes(self):
+        self.exercise_product_git_isolation(linked=True, failure=True)
+
     def test_real_hooks_share_once_and_failed_send_cannot_reuse_fallback_success(self):
         output = self.full_check()
         proof = self.root / '.git/validation-receipt.json'
@@ -222,6 +289,34 @@ if (args === '--silent run validation:runtime') {
         output = self.git('push', 'origin', 'HEAD:main')
         self.assertEqual(self.calls(), checked, output)
         self.assertFalse((self.root / '.git/validation-receipt.json').exists())
+
+    def test_ci_shards_preserve_all_product_stages_and_cannot_replace_local_full_checks(self):
+        entry = [self.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(self.root / 'scripts/check.ps1')]
+        self.command(entry + ['-E2EShard', '1/3'], success=False)
+        self.assertEqual(self.calls(), [])
+        self.env['CI'] = 'true'
+        for arguments in [['-E2EShard', value] for value in ['0/3', '4/3', '1/2', '1/3 --no-deps']] + [
+            ['-E2EShard', '1/3', '-E2EOnly'], ['-E2EShard', '1/3', '-StaticOnly'],
+            ['-E2EShard', '1/3', '-ReceiptPhase', 'Push'], ['-E2EShard', '1/3', '-Level', 'Commit'],
+            ['-E2EShard', '1/3', '-E2ERepeats', '2'],
+        ]:
+            with self.subTest(arguments=arguments):
+                self.command(entry + arguments, success=False)
+                self.assertEqual(self.calls(), [], 'Invalid shards must not start package commands')
+        for shard in [1, 2, 3]:
+            before = len(self.calls())
+            self.command(entry + ['-E2EShard', f'{shard}/3'])
+            self.assertEqual([call for call in self.calls()[before:] if call.startswith('run ')],
+                             ['run typecheck', 'run lint', 'run test', 'run build', f'run test:e2e --shard={shard}/3'])
+            self.assertFalse((self.root / '.git/validation-receipt.json').exists())
+        self.write('.git/fail-step', 'run test:e2e --shard=2/3')
+        self.command(entry + ['-E2EShard', '2/3'], success=False)
+        self.assertFalse((self.root / '.git/validation-receipt.json').exists())
+        self.env['CI'] = ''
+        before = len(self.calls())
+        self.full_check()
+        self.assertEqual([call for call in self.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
 
     def test_e2e_target_diagnostic_cannot_replace_full_ci_or_hook_checks(self):
         entry = [self.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(self.root / 'scripts/check.ps1')]

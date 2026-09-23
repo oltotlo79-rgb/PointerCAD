@@ -1,4 +1,5 @@
 import type { ConsoleMessage, Page, TestInfo } from '@playwright/test';
+import { freemem, totalmem } from 'node:os';
 
 type LifecycleEvent = 'page-crashed' | 'page-closed' | 'browser-disconnected';
 
@@ -15,8 +16,11 @@ export async function withBrowserFailureDiagnostics(
   const lifecycle: { event: LifecycleEvent; stage: string; elapsedMs: number }[] = [];
   const messages: { kind: string; text: string; stage: string }[] = [];
   let failed = false;
+  const host = { platform: process.platform, totalMemoryBytes: totalmem(),
+    freeMemoryAtStartBytes: freemem(), testWorkerPid: process.pid };
   const observe = (event: LifecycleEvent): void => {
-    const entry = { event, stage, elapsedMs: performance.now() - started };
+    const entry = { event, stage, elapsedMs: performance.now() - started,
+      freeHostMemoryBytes: freemem(), testWorkerRssBytes: process.memoryUsage().rss };
     if (lifecycle.length < 10) lifecycle.push(entry);
     // Emit immediately: a dead browser cannot supply a screenshot or browser trace.
     console.error(`[ブラウザー終了診断] ${JSON.stringify({ project: info.project.name, title: info.title, ...entry })}`);
@@ -50,7 +54,8 @@ export async function withBrowserFailureDiagnostics(
     browser?.off('disconnected', onDisconnect);
     if (failed) {
       await info.attach('browser-failure-diagnostics', {
-        body: JSON.stringify({ startedAt, elapsedMs: performance.now() - started,
+        body: JSON.stringify({ startedAt, elapsedMs: performance.now() - started, host,
+          freeHostMemoryAtFailureBytes: freemem(),
           project: info.project.name, title: info.title, stage, lifecycle, messages }, null, 2),
         contentType: 'application/json',
       });

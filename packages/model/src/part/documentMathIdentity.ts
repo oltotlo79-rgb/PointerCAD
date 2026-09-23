@@ -1,7 +1,7 @@
 import { collectMathCoefficients } from '@pointercad/expression';
 import { allocateParameterMathIds } from '../parameters/parameterMathIdentity.js';
 import { mapDocumentExpressions } from './reevaluatePart.js';
-import { mapDocumentFunctionExpressions } from './documentFunctions.js';
+import { mapDocumentNonScalarExpressions } from './documentFunctions.js';
 import type { PartDocument } from './types.js';
 
 /** Prepare privately; the editor publishes this only together with its accepted mathematical expression. */
@@ -25,7 +25,7 @@ export function prepareDocumentMathIdentity(document: PartDocument): PartDocumen
   for (const configuration of document.configurations) for (const definition of Object.values(configuration.mathDefinitions ?? {})) {
     for (const reference of collectMathCoefficients(definition.expression)) reserve(reference.id);
   }
-  mapDocumentFunctionExpressions(document, definition => {
+  mapDocumentNonScalarExpressions(document, definition => {
     for (const reference of collectMathCoefficients(definition.expression)) reserve(reference.id);
     return definition;
   });

@@ -302,7 +302,7 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(self.inspect(phase='Disabled')['mode'], 'full')
         with patch.dict(os.environ, {'CI': 'true'}):
             self.assertEqual(scope.inspect(self.root, 'Push', 'Manual', '', False)['mode'], 'full')
-        for path in ['pnpm-lock.yaml', '.github/workflows/ci.yml', 'e2e/playwright.config.ts', 'scripts/unknown.py']:
+        for path in ['pnpm-lock.yaml', '.github/workflows/unknown.yml', 'e2e/playwright.config.ts', 'scripts/unknown.py']:
             self.assertEqual(scope.classify(['README.md', path])['mode'], 'full', path)
 
     def test_unit_changes_select_the_whole_package_and_gate_changes_test_the_gate(self):
@@ -312,6 +312,11 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(scope.classify(['scripts/hooks/commit-msg', 'scripts/lib/commit_message.py',
                                         'scripts/commit-message.selftest.py'])['packages'], ['desktop', 'test-utils'])
         for path in ['scripts/lib/task_workspace.py', 'scripts/task-workspace.selftest.py']:
+            self.assertEqual(scope.classify([path])['packages'], ['desktop', 'test-utils'], path)
+        for path in ['.github/workflows/ci.yml', 'scripts/lib/isolated_checkout_preflight.py',
+                     'scripts/isolated-checkout-preflight.selftest.py', 'scripts/lib/gitEnvironment.mjs',
+                     'scripts/lib/gitEnvironment.d.mts', 'scripts/vite/webBuildSources.mjs',
+                     'scripts/vite/webBuildSources.d.mts']:
             self.assertEqual(scope.classify([path])['packages'], ['desktop', 'test-utils'], path)
         self.assertEqual(scope.classify(['packages/unknown/src/new.test.ts'])['mode'], 'full')
         self.assertEqual(scope.classify(['packages/expression/vitest.config.ts'])['packages'], ['expression', 'test-utils'])

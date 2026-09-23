@@ -7,15 +7,24 @@ import {decodeMathJson} from './decodeMathJson.js';
 import {decodeStoredMath} from './decodeStoredMath.js';
 import {convertMathNotation,displayMathJson,type DisplayMathJson} from './mathNotationConversion.js';
 import {formatMathText} from './formatMathText.js';
-import {prepareMathCalculation} from './prepareMathCalculation.js';
+import {prepareMathCalculation,prepareExactMathCalculation} from './prepareMathCalculation.js';
 import {type MathBackendBox} from './numericMathBoundary.js';
 import {evaluatePreparedScalarMath} from './evaluatePreparedScalarMath.js';
 import type {EngineMathJson} from './encodeMathJson.js';
 import type {MathWorkRequest} from './mathWorkerClient.js';
 import {renameMathCoefficient} from './mathExpressionReferences.js';
 import {coefficientExpressionMap,substituteCoefficientExpressions} from './mathCoefficientExpression.js';
+import {hasInfiniteDiscreteRange} from './discreteMathDomains.js';
+import {requiresExactCalculus} from './mathExactCalculus.js';
+import {prepareFunctionVectorCalculus} from './prepareFunctionCalculus.js';
+import {resolveNumericalRoots} from './numericalRoots.js';
+import type { PreparedScalarMathContext } from './evaluatePreparedScalarMath.js';
+import type { PreparedOdeFunction } from './odeFunctionLowering.js';
+import { containsOdeProblem } from './odeFunctionLowering.js';
 
 export interface MathExecutionBackend {
+  /** Present only after this geometry request's ODEs have been solved and verified. */
+  readonly prepareOdeFunction?: (source: MathNode, context: PreparedScalarMathContext) => PreparedOdeFunction;
   /** Parse raw LaTeX only. No canonicalization, evaluation, bindings, or ambient name assignment. */
   readonly parseLatex:(source:string)=>unknown;
   readonly serializeLatex:(expression:DisplayMathJson)=>string;
@@ -76,10 +85,21 @@ export function executeMathWorkRequest(value:unknown,backend:MathExecutionBacken
         presentation = { format: MATH_INPUT_FORMAT, source: converted.source, inputNotation: target,
           angleUnit: request.angleUnit, expression: converted.expression };
       }
-      const substituted=substituteCoefficientExpressions(expression,coefficientExpressionMap(request.coefficients,request.angleUnit));
-      const prepared=prepareMathCalculation(substituted,{angleUnit:request.angleUnit,resolve:()=>null});
+      let substituted=substituteCoefficientExpressions(expression,coefficientExpressionMap(request.coefficients,request.angleUnit));
+      if(request.functionScope===undefined) {
+        const started=performance.now();
+        const numerical=resolveNumericalRoots(substituted,expression,{backend,angleUnit:request.angleUnit,
+          shouldStop:()=>performance.now()-started>=200?'deadline':undefined});
+        if(numerical.evaluation!==undefined)return reply(numerical.evaluation);
+        substituted=numerical.expression;
+      }
+      const vector = request.functionScope === undefined ? null : prepareFunctionVectorCalculus(substituted,
+        [...request.functionScope.axes, ...request.functionScope.parameters], request.angleUnit);
+      const prepare=request.functionScope!==undefined && containsOdeProblem(substituted)?prepareExactMathCalculation:prepareMathCalculation;
+      const prepared=prepare(vector?.expression ?? substituted,{angleUnit:request.angleUnit,resolve:()=>null});
       if(request.functionScope!==undefined)return reply({status:'value',kind:'function',expression});
       if(prepared.status==='unresolved')return reply({status:'unresolved',reason:'missing-condition',names:prepared.operations});
+      if(hasInfiniteDiscreteRange(prepared.expression)||requiresExactCalculus(prepared.expression))return reply({status:'unresolved',reason:'unevaluated',names:[]});
       const started=performance.now();
       return reply(evaluatePreparedScalarMath(prepared.expression,expression,{backend,angleUnit:request.angleUnit,
         shouldStop:()=>performance.now()-started>=200?'deadline':undefined}));

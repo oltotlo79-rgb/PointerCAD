@@ -3,64 +3,6 @@
   "scope": "Declared production dependencies; additional binaries and fonts have their own notices.",
   "packages": [
     {
-      "name": "@arnog/colors",
-      "version": "0.5.0",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "https://github.com/arnog/colors"
-      },
-      "status": "unresolved",
-      "notices": [],
-      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
-    },
-    {
-      "name": "@arnog/colors",
-      "version": "0.7.0",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "https://github.com/arnog/colors"
-      },
-      "status": "unresolved",
-      "notices": [],
-      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
-    },
-    {
-      "name": "@cortex-js/compute-engine",
-      "version": "0.128.6",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "https://github.com/cortex-js/compute-engine.git"
-      },
-      "status": "verified",
-      "notices": [
-        {
-          "file": "runtime-cortex-js-compute-engine-0.128.6-license.txt",
-          "installedFile": "LICENSE",
-          "sha256": "f9270498fcb583f1a8aa4664e1986910d005303ff9c5cbab432bb4d1f292f225"
-        }
-      ]
-    },
-    {
-      "name": "@cortex-js/compute-engine",
-      "version": "0.58.0",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "https://github.com/cortex-js/compute-engine.git"
-      },
-      "status": "verified",
-      "notices": [
-        {
-          "file": "runtime-cortex-js-compute-engine-0.58.0-license.txt",
-          "installedFile": "LICENSE",
-          "sha256": "f9270498fcb583f1a8aa4664e1986910d005303ff9c5cbab432bb4d1f292f225"
-        }
-      ]
-    },
-    {
       "name": "comlink",
       "version": "4.4.2",
       "license": "Apache-2.0",
@@ -74,23 +16,6 @@
           "file": "runtime-comlink-4.4.2-license.txt",
           "installedFile": "LICENSE",
           "sha256": "bcf29b4fd3ec2cb5f9d40a0866da446f6da62170d2ccedf4aeca9cf9406dd20c"
-        }
-      ]
-    },
-    {
-      "name": "complex-esm",
-      "version": "2.1.1-esm1",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "git://github.com/holgerengels/Complex.js.git"
-      },
-      "status": "verified",
-      "notices": [
-        {
-          "file": "runtime-complex-esm-2.1.1-esm1-license.txt",
-          "installedFile": "LICENSE",
-          "sha256": "5bce81708ac83821fc48be1e97d89a5c8e733632ddb375d2c7101fb60dbfe6b2"
         }
       ]
     },
@@ -172,18 +97,6 @@
           "sha256": "a5b87c9bc191e7f9c06b07bd7cbbed3ed846dfdb50e859484b2c245aa1ab2e61"
         }
       ]
-    },
-    {
-      "name": "quickjs-wasi",
-      "version": "3.6.0",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "git://github.com/vercel-labs/quickjs-wasi.git"
-      },
-      "status": "unresolved",
-      "notices": [],
-      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
     },
     {
       "name": "react",

@@ -21,7 +21,7 @@
  */
 
 import { evaluateExpression, renameVariable, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
-import { mapDocumentFunctionExpressions } from './documentFunctions.js';
+import { mapDocumentNonScalarExpressions } from './documentFunctions.js';
 import { mapFunctionDefinition } from '../functionGeometry/mapFunctionDefinition.js';
 
 import type { PlaneSpec } from '../geometry/planeSpec.js';
@@ -508,7 +508,7 @@ export function collectExpressionSources(document: PartDocument): readonly strin
     sources.push(value.source);
     return value;
   });
-  mapDocumentFunctionExpressions(document, definition => {
+  mapDocumentNonScalarExpressions(document, definition => {
     sources.push(definition.source);
     return definition;
   });
@@ -550,6 +550,7 @@ function displayNames(document: PartDocument): ReadonlyMap<string, string> {
   for (const feature of document.solids) {
     names.set(feature.id, feature.name);
   }
+  for (const problem of document.unresolvedMathProblems ?? []) names.set(problem.id, problem.name);
   return names;
 }
 
@@ -573,7 +574,7 @@ export function collectExpressionOwners(document: PartDocument): readonly Expres
       ...(value.mathDefinition === undefined ? {} : { mathDefinition: value.mathDefinition }) });
     return value;
   });
-  mapDocumentFunctionExpressions(document, (definition, ownerId) => {
+  mapDocumentNonScalarExpressions(document, (definition, ownerId) => {
     owners.push({ source: definition.source, ownerId, ownerName: names.get(ownerId) ?? ownerId, mathDefinition: definition });
     return definition;
   });

@@ -3,6 +3,12 @@ import json
 import sympy as s
 from cas_input import Decoder, CasInputProblem, fields
 from cas_result import encode_result
+from cas_taylor import taylor_result
+from cas_equation_systems import system_result
+from cas_ode import ode_result
+from cas_fourier_series import fourier_series_result
+from cas_transforms import OPERATIONS as TRANSFORMS, transform_result
+from cas_discrete import validate_discrete, prepare_infinite_values
 
 
 def unique_object(pairs):
@@ -44,14 +50,26 @@ def calculate_exact_json(payload):
         raw = json.loads(payload, object_pairs_hook=unique_object, parse_constant=invalid_constant)
         fields(raw, ('expression', 'angleUnit'))
         decoder = Decoder(raw['angleUnit'])
-        expression = decoder.node(raw['expression'])
-        # Decoder has already checked all operands and recorded domain obligations.
-        # Unknown/inexact/unevaluated results still pass through the closed encoder.
-        expression = evaluate_structure(expression)
-        result = encode_result(expression, decoder)
+        if type(raw['expression']) is dict and raw['expression'].get('operation') == 'solve-ode':
+            result = ode_result(raw['expression'], decoder)
+        elif type(raw['expression']) is dict and raw['expression'].get('operation') == 'solve-system':
+            result = system_result(raw['expression'], decoder)
+        elif type(raw['expression']) is dict and raw['expression'].get('operation') == 'fourier-series':
+            result = fourier_series_result(raw['expression'], decoder)
+        elif type(raw['expression']) is dict and raw['expression'].get('operation') in TRANSFORMS:
+            result = transform_result(raw['expression'], decoder)
+        elif type(raw['expression']) is dict and raw['expression'].get('operation') in ('taylor', 'maclaurin'):
+            result = taylor_result(raw['expression'], decoder)
+        else:
+            expression = decoder.node(raw['expression'])
+            # Decoder has already checked all operands and recorded domain obligations.
+            # Unknown/inexact/unevaluated results still pass through the closed encoder.
+            validate_discrete(decoder)
+            expression = evaluate_structure(prepare_infinite_values(expression))
+            result = encode_result(expression, decoder)
     except CasInputProblem as error:
-        result = ({'status': 'stopped', 'reason': 'budget', 'coordinateAuthorized': False}
-                  if error.code == 'budget' else {'status': 'invalid', 'reason': error.code, 'coordinateAuthorized': False})
+        status = 'stopped' if error.code == 'budget' else 'unresolved' if error.code == 'unevaluated' else 'invalid'
+        result = {'status': status, 'reason': error.code, 'coordinateAuthorized': False}
     except (RecursionError, MemoryError):
         result = {'status': 'stopped', 'reason': 'budget', 'coordinateAuthorized': False}
     except (ValueError, TypeError, KeyError, OverflowError, ZeroDivisionError):

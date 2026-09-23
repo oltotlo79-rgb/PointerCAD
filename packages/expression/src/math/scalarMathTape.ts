@@ -1,3 +1,16 @@
+import { besselKind, type BesselKind } from './besselFunctions.js';
+import { besselSample } from './besselScalar.js';
+import { airyFunction } from './airyFunctions.js';
+import { zetaOrder,zetaDerivativeOrder } from './zetaFunctions.js';
+import { zetaSample } from './zetaIntervals.js';
+import type { AiryKind } from './airyNumeric.js';
+import { airySample } from './airyIntervals.js';
+import { lambertWSample } from './lambertWIntervals.js';
+import type { EllipticKind } from './ellipticNumeric.js';
+import { ellipticMidpoint } from './ellipticIntervals.js';
+import { ellipticOperation,ellipticPartialValue } from './ellipticPartials.js';
+import { realLambertBranch } from './lambertWFunctions.js';
+import type { RealLambertBranch } from './lambertWNumeric.js';
 /** Compile a scalar geometry expression once. This VM never generates JavaScript source. */
 import { MathInputProblem, type MathNode, type MathSymbolReference } from './mathInputContract.js';
 import { engineSymbolOf } from './mathSymbolScope.js';
@@ -5,18 +18,31 @@ import { rationalOfExpression, type ExactRational } from './exactRational.js';
 import { exactDegreeTrig } from './exactDegreeTrig.js';
 import { exactDoubleInterval } from './exactDoubleInterval.js';
 import type { MathInterval } from './mathInterval.js';
+import { lowerReciprocalHyperbolic } from './hyperbolicOperations.js';
+import { lowerLegendrePolynomial } from './legendrePolynomial.js';
+import { errorFunctionSample } from './errorFunctionIntervals.js';
+import { gammaFunctionSample } from './gammaFunctionIntervals.js';
+import { betaFunctionSample } from './betaFunctionIntervals.js';
+import { polygammaSample } from './polygammaIntervals.js';
+import { MAX_POLYGAMMA_ORDER } from './polygammaCoefficients.js';
 
 export type ScalarInput = 'X' | 'Y' | 'Z' | 'T' | 'U' | 'V';
 type Unary = 'negate' | 'sqrt' | 'absolute' | 'sign' | 'floor' | 'ceiling' | 'square'
   | 'exponential' | 'natural-log' | 'log-two' | 'log-ten' | 'sin' | 'cos' | 'tan'
   | 'cot' | 'sec' | 'csc' | 'arcsin' | 'arccos' | 'arctan' | 'sinh' | 'cosh' | 'tanh'
-  | 'arsinh' | 'arcosh' | 'artanh';
-type Binary = 'subtract' | 'divide' | 'power' | 'root' | 'log-base';
+  | 'arsinh' | 'arcosh' | 'artanh' | 'erf' | 'erfc' | 'gamma';
+type Binary = 'subtract' | 'divide' | 'power' | 'root' | 'log-base' | 'beta';
 type Variadic = 'add' | 'multiply' | 'minimum' | 'maximum';
 type Instruction =
   | { readonly kind: 'constant'; readonly value: number; readonly enclosure: MathInterval | null }
   | { readonly kind: 'input'; readonly slot: number }
   | { readonly kind: 'unary'; readonly operation: Unary; readonly value: number }
+  | { readonly kind: 'polygamma'; readonly order: number; readonly value: number }
+  | { readonly kind: 'bessel'; readonly family: BesselKind; readonly order: number; readonly value: number }
+  | { readonly kind: 'airy'; readonly family: AiryKind; readonly prime: boolean; readonly value: number }
+  | { readonly kind: 'zeta'; readonly order: number; readonly value: number }
+  | { readonly kind: 'lambertw'; readonly branch: RealLambertBranch; readonly value: number }
+  | { readonly kind: 'elliptic'; readonly family: EllipticKind; readonly orders:readonly number[]; readonly values: readonly number[] }
   | { readonly kind: 'binary'; readonly operation: Binary; readonly left: number; readonly right: number;
       readonly negativeConstantRootAllowed: boolean }
   | { readonly kind: 'rational-power'; readonly base: number; readonly exponent: number;
@@ -25,8 +51,8 @@ type Instruction =
 
 const UNARY: ReadonlySet<string> = new Set<Unary>(['negate', 'sqrt', 'absolute', 'sign', 'floor', 'ceiling', 'square',
   'exponential', 'natural-log', 'log-two', 'log-ten', 'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
-  'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'arsinh', 'arcosh', 'artanh']);
-const BINARY: ReadonlySet<string> = new Set<Binary>(['subtract', 'divide', 'power', 'root', 'log-base']);
+  'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'arsinh', 'arcosh', 'artanh', 'erf', 'erfc', 'gamma']);
+const BINARY: ReadonlySet<string> = new Set<Binary>(['subtract', 'divide', 'power', 'root', 'log-base', 'beta']);
 const VARIADIC: ReadonlySet<string> = new Set<Variadic>(['add', 'multiply', 'minimum', 'maximum']);
 function unaryOf(value: string): value is Unary { return UNARY.has(value); }
 function binaryOf(value: string): value is Binary { return BINARY.has(value); }
@@ -37,6 +63,8 @@ export interface ScalarTape {
   readonly instructions: readonly Instruction[];
   readonly output: number;
   readonly angleUnit: 'degree' | 'radian';
+  /** Original domains and differentiability obligations retained after symbolic rewriting. */
+  readonly domainGuards?: readonly number[];
 }
 
 export interface ScalarCompileOptions {
@@ -45,6 +73,7 @@ export interface ScalarCompileOptions {
   /** In the math Worker: high-precision evaluation, followed by explicit finite-real conversion. */
   readonly evaluateConstant: (expression: MathNode) => number;
   readonly resolveExactSymbol?: (node: Extract<MathNode, { kind: 'symbol' }>) => ExactRational | null;
+  readonly domainGuards?: readonly MathNode[];
 }
 
 function dynamicName(reference: MathSymbolReference): ScalarInput | null {
@@ -83,11 +112,23 @@ export function compileScalarMath(expression: MathNode, options: ScalarCompileOp
   function emit(node: MathNode): number {
     const existing = emitted.get(node);
     if (existing !== undefined) return existing;
+    const polynomial = lowerLegendrePolynomial(node);
+    if (polynomial !== null) {
+      const index = emit(polynomial);
+      emitted.set(node, index);
+      return index;
+    }
+    const hyperbolic = lowerReciprocalHyperbolic(node);
+    if (hyperbolic !== null) {
+      const index = emit(hyperbolic);
+      emitted.set(node, index);
+      return index;
+    }
     let index: number;
     const constant = !depends(node), exact = constant ? rationalOfExpression(node, options.resolveExactSymbol) : null;
     // Keep elementary operations when their result is irrational. A rounded sample is not an exact enclosure.
     const retainOperation = constant && exact === null && node.kind === 'operation'
-      && (unaryOf(node.operation) || binaryOf(node.operation) || variadicOf(node.operation));
+      && (unaryOf(node.operation) || binaryOf(node.operation) || variadicOf(node.operation) || node.operation === 'polygamma' || node.operation === 'lambertw' || node.operation==='zetaderivative' || airyFunction(node.operation) !== null || besselKind(node.operation) !== null || ellipticOperation(node.operation) !== null || zetaOrder(node.operation) !== null);
     if (constant && !retainOperation) {
       const value = options.evaluateConstant(node);
       if (!Number.isFinite(value)) throw new MathInputProblem('syntax', '作図式の定数部分は有限の実数にしてください。');
@@ -106,11 +147,42 @@ export function compileScalarMath(expression: MathNode, options: ScalarCompileOp
       index = sharedInputs.get(key) ?? append({ kind: 'input', slot });
       sharedInputs.set(key, index);
     } else if (node.kind === 'operation') {
+      if(node.operation==='zetaderivative') {
+        const order=node.operands.length===2?zetaDerivativeOrder(node.operands[0]):null;
+        if(order===null)throw new MathInputProblem('budget','ゼータ関数の微分の次数を0から17までの整数で確定してください。');
+        index=append({kind:'zeta',order,value:emit(node.operands[1])});
+        emitted.set(node,index);return index;
+      }
       const operands = node.operands.map(emit);
       const exponentNode = node.operands[1];
       const exactExponent = node.operation === 'power' && exponentNode && !depends(exponentNode)
         ? rationalOfExpression(exponentNode, options.resolveExactSymbol) : null;
-      if (exactExponent && operands.length === 2 && operands[0] !== undefined && exponentNode) {
+      const bessel = besselKind(node.operation);
+      const airy = airyFunction(node.operation);
+      const elliptic = ellipticOperation(node.operation);
+      const zeta = zetaOrder(node.operation);
+      if(zeta!==null&&operands.length===1) {
+        index=append({kind:'zeta',order:zeta,value:operands[0]});
+      } else if (elliptic !== null) {
+        if(operands.length!==elliptic.orders.length)throw new MathInputProblem('domain','楕円積分の引数の数が一致しません。');
+        index = append({ kind: 'elliptic', family: elliptic.family, orders:elliptic.orders, values: operands });
+      } else if (airy !== null && operands.length === 1) {
+        index = append({ kind: 'airy', family: airy.family, prime: airy.prime, value: operands[0] });
+      } else if (node.operation === 'lambertw' && operands.length === 2) {
+        index = append({ kind: 'lambertw', branch: realLambertBranch(node.operands[0]), value: operands[1] });
+      } else if (bessel !== null && operands.length === 2) {
+        const order = rationalOfExpression(node.operands[0], options.resolveExactSymbol);
+        if (order === null || order.denominator !== 1n || order.numerator < -128n || order.numerator > 128n) {
+          throw new MathInputProblem('unsupported', 'Bessel関数の次数を-128から128までの整数で確定してください。');
+        }
+        index = append({ kind: 'bessel', family: bessel, order: Number(order.numerator), value: operands[1] });
+      } else if (node.operation === 'polygamma' && operands.length === 2) {
+        const order = rationalOfExpression(node.operands[0], options.resolveExactSymbol);
+        if (order === null || order.denominator !== 1n || order.numerator < 0n || order.numerator > BigInt(MAX_POLYGAMMA_ORDER)) {
+          throw new MathInputProblem('domain', 'Gamma関数の微分の次数は0から17までの整数で指定してください。');
+        }
+        index = append({ kind: 'polygamma', order: Number(order.numerator), value: operands[1] });
+      } else if (exactExponent && operands.length === 2 && operands[0] !== undefined && exponentNode) {
         index = append({ kind: 'rational-power', base: operands[0], exponent: options.evaluateConstant(exponentNode),
           exact: exactExponent,
           sign: exactExponent.numerator < 0n ? -1 : exactExponent.numerator === 0n ? 0 : 1,
@@ -129,8 +201,10 @@ export function compileScalarMath(expression: MathNode, options: ScalarCompileOp
     emitted.set(node, index);
     return index;
   }
+  const domainGuards = options.domainGuards?.map(emit);
   const output = emit(expression);
-  return { inputs: [...options.inputs], instructions, output, angleUnit: options.angleUnit };
+  return { inputs: [...options.inputs], instructions, output, angleUnit: options.angleUnit,
+    ...(domainGuards === undefined || domainGuards.length === 0 ? {} : { domainGuards }) };
 }
 
 function circular(operation: 'sin' | 'cos' | 'tan' | 'cot' | 'sec' | 'csc', value: number,
@@ -147,6 +221,8 @@ function circular(operation: 'sin' | 'cos' | 'tan' | 'cot' | 'sec' | 'csc', valu
 }
 function unary(operation: Unary, value: number, toRadians: number, degree: boolean): number {
   switch (operation) {
+    case 'gamma': return gammaFunctionSample(value);
+    case 'erf': case 'erfc': return errorFunctionSample(operation, value);
     case 'negate': return -value;
     case 'sqrt': return Math.sqrt(value);
     case 'square': return value * value;
@@ -173,6 +249,7 @@ function unary(operation: Unary, value: number, toRadians: number, degree: boole
 }
 function binary(operation: Binary, left: number, right: number): number {
   switch (operation) {
+    case 'beta': return betaFunctionSample(left, right);
     case 'subtract': return left - right;
     case 'divide': return left / right;
     case 'power': return left === 0 && right === 0 ? NaN : left ** right;
@@ -196,6 +273,13 @@ export function createScalarTapeEvaluation(tape: ScalarTape): {
       if (instruction.kind === 'constant') value = instruction.value;
       else if (instruction.kind === 'input') value = inputs[instruction.slot] ?? NaN;
       else if (instruction.kind === 'unary') value = unary(instruction.operation, values[instruction.value] ?? NaN, toRadians, degree);
+      else if (instruction.kind === 'polygamma') value = polygammaSample(instruction.order, values[instruction.value] ?? NaN);
+      else if (instruction.kind === 'bessel') value = besselSample(instruction.family, instruction.order, values[instruction.value] ?? NaN);
+      else if (instruction.kind === 'airy') value = airySample(instruction.family, instruction.prime, values[instruction.value] ?? NaN);
+      else if (instruction.kind === 'zeta') value = zetaSample(instruction.order, values[instruction.value] ?? NaN);
+      else if (instruction.kind === 'lambertw') value = lambertWSample(instruction.branch, values[instruction.value] ?? NaN);
+      else if (instruction.kind === 'elliptic') value = ellipticMidpoint(ellipticPartialValue(instruction.family,
+        instruction.values.map(index => ({lower:values[index]??NaN,upper:values[index]??NaN})),instruction.orders,degree));
       else if (instruction.kind === 'binary') {
         const left=values[instruction.left]??NaN;
         // A constant exponent without exact rational proof may round to an integer

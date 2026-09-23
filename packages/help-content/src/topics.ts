@@ -7,6 +7,7 @@ export interface HelpTopic {
 }
 
 export const HELP_TOPICS: readonly HelpTopic[] = [
+  { id: 'web-version', title: 'Web版をブラウザーで使う', path: 'docs/ja/web-version.md' },
   { id: 'help-reader', title: 'ヘルプを探す・説明の続きを読んで戻る', path: 'docs/ja/help-reader.md' },
   { id: 'offline-use', title: '通信なしで使う準備と更新', path: 'docs/ja/offline-use.md' },
   { id: 'local-data', title: '作図したデータの保存場所と通信', path: 'docs/ja/local-data.md' },

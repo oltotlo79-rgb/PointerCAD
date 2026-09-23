@@ -29,6 +29,8 @@ export async function mathInputFlow(page: Page, info: TestInfo, app?: ElectronAp
   await expect(dialog.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
   await expect(dialog.locator('math-field')).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(globalThis, Symbol.for('io.cortexjs.compute-engine')) === undefined)).toBe(true);
+  expect(await dialog.locator('math-field').evaluate(field => Reflect.get(field.constructor, 'computeEngine') === null)).toBe(true);
   await expect(dialog.locator('math-field')).toBeFocused();
   await expect(dialog.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => document.fonts.check('16px KaTeX_Main'))).toBe(true);

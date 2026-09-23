@@ -5,7 +5,6 @@ packages:
 # 依存のバージョンはここに1箇所だけ書く。各 package.json は "catalog:" と書いて参照する。
 # 範囲指定(^ / ~)を使わず完全固定する(docs/requirements.md §6.1)。
 catalog:
-  "@cortex-js/compute-engine": 0.128.6
   "@eslint/js": 10.0.1
   "@playwright/test": 1.62.1
   "@types/node": 22.20.1
@@ -24,7 +23,6 @@ catalog:
   mathlive: 0.110.0
   opencascade.js: 2.0.0-beta.b5ff984
   opentype.js: 2.0.0
-  quickjs-wasi: 3.6.0
   react: 19.2.8
   react-dom: 19.2.8
   three: 0.185.1
@@ -35,6 +33,10 @@ catalog:
   zustand: 5.0.15
 
 minimumReleaseAgeStrict: true
+
+# 数式の読み取り・計算はアプリと既存の計算部が担当する。入力画面の未使用の計算部を取得しない。
+overrides:
+  "mathlive@0.110.0>@cortex-js/compute-engine": "-"
 
 # pnpm 11ではallowBuildsで導入時の処理を明示する。旧onlyBuiltDependenciesは廃止済み。
 # ただし electron 44 は package.json に postinstall を持たず、バイナリは

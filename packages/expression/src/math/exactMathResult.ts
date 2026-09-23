@@ -1,16 +1,36 @@
+import { decodeEquationSystem, type EquationSystemSolutions } from './equationSystems.js';
+import { decodeOdeSolutions, type OdeSolutions } from './differentialEquations.js';
+import { decodeFourierSeries, fourierSeriesFunction, type FourierSeries } from './fourierSeries.js';
+import { decodeIntegralTransform, type IntegralTransform } from './integralTransforms.js';
 /** Exact symbolic transport. A validated expression still needs domain and numeric evaluation before use as a coordinate. */
+import { assertTaylorExpansionSource, decodeTaylorExpansion, TAYLOR_IDS, taylorFunction, type TaylorExpansion } from './taylorExpansion.js';
 import { decodeStoredMathNode, type StoredMathContext } from './decodeStoredMath.js';
 import { MATH_INPUT_LIMITS, MathInputProblem, type MathNode, type MathSymbolReference } from './mathInputContract.js';
 
-type ReportedKind = 'real' | 'complex' | 'boolean' | 'vector' | 'matrix' | 'set' | 'interval' | 'symbolic';
+import { containsSetCalculation, isInfiniteBound } from './setBounds.js';
+
+type ReportedKind = 'infinite-bound' | 'real' | 'complex' | 'boolean' | 'vector' | 'matrix' | 'set' | 'interval' | 'symbolic';
 export type ExactMathResult =
+  | { readonly status: 'value'; readonly reportedKind: 'ode-solutions'; readonly expression: MathNode;
+      readonly solutions: OdeSolutions; readonly domainConditions: readonly MathNode[]; readonly coordinateAuthorized: false }
   | { readonly status: 'value'; readonly reportedKind: ReportedKind; readonly expression: MathNode;
       readonly domainConditions: readonly MathNode[]; readonly coordinateAuthorized: false }
+  | { readonly status: 'value'; readonly reportedKind: 'equation-system'; readonly expression: MathNode;
+      readonly solutions: EquationSystemSolutions; readonly domainConditions: readonly MathNode[]; readonly coordinateAuthorized: false }
+  | { readonly status: 'value'; readonly reportedKind: 'fourier-series'; readonly expression: MathNode;
+      readonly series: FourierSeries; readonly domainConditions: readonly MathNode[]; readonly coordinateAuthorized: false }
+  | { readonly status: 'value'; readonly reportedKind: 'transform'; readonly expression: MathNode;
+      readonly transform: IntegralTransform; readonly domainConditions: readonly MathNode[]; readonly coordinateAuthorized: false }
+  | { readonly status: 'value'; readonly reportedKind: 'series'; readonly expression: MathNode;
+      readonly expansion: TaylorExpansion; readonly domainConditions: readonly MathNode[]; readonly coordinateAuthorized: false }
   | { readonly status: 'unresolved'; readonly reason: 'unevaluated'; readonly coordinateAuthorized: false }
-  | { readonly status: 'invalid'; readonly reason: 'syntax' | 'domain' | 'non-finite' | 'dimension' | 'unsupported'; readonly coordinateAuthorized: false }
+  | { readonly status: 'invalid'; readonly reason: 'syntax' | 'domain' | 'non-finite' | 'dimension' | 'unsupported' | 'divergent' | 'no-limit' | 'empty-set' | 'no-extremum'; readonly coordinateAuthorized: false }
   | { readonly status: 'stopped'; readonly reason: 'budget'; readonly coordinateAuthorized: false };
 
 const SCALARS = new Set(['add', 'multiply', 'subtract', 'divide', 'negate', 'power', 'absolute',
+  'zeta', 'zetaderivative',
+  'elliptick', 'elliptice', 'ellipticf', 'ellipticeinc', 'ellipticpi', 'ellipticpiinc',
+  'normal-cdf', 'erf', 'erfc', 'gamma', 'polygamma', 'beta', 'besselj', 'bessely', 'besseli', 'besselk', 'lambertw', 'airyai', 'airybi', 'airyaiprime', 'airybiprime',
   'exponential', 'natural-log', 'conjugate', 'real-part', 'imaginary-part', 'sin', 'cos', 'tan',
   'cot', 'sec', 'csc', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'arsinh', 'arcosh', 'artanh']);
 const RELATIONS = new Set(['equal', 'not-equal', 'less', 'less-equal', 'greater', 'greater-equal']);
@@ -130,6 +150,54 @@ export function decodeExactMathResult(value: unknown, source: MathNode,
   context: Pick<StoredMathContext, 'operationsById' | 'coefficientIds' | 'declaredIds'>): ExactMathResult {
   checkData(value);
   const raw = record(value), success = raw.status === 'value';
+  if (success && raw.kind === 'ode-solutions') {
+    const keys = ['status', 'kind', 'request', 'solutions', 'domainConditions', 'coordinateAuthorized'];
+    if (Object.keys(raw).length !== keys.length || Object.keys(raw).some(key => !keys.includes(key))
+      || raw.coordinateAuthorized !== false || !Array.isArray(raw.domainConditions) || raw.domainConditions.length !== 0
+      || JSON.stringify(raw.request) !== JSON.stringify(source)) invalid();
+    return { status: 'value', reportedKind: 'ode-solutions', expression: source,
+      solutions: decodeOdeSolutions(raw.solutions, source, item => decodeStoredMathNode(item, context)),
+      domainConditions: [], coordinateAuthorized: false };
+  }
+  if (success && raw.kind === 'equation-system') {
+    const keys = ['status', 'kind', 'request', 'solutions', 'domainConditions', 'coordinateAuthorized'];
+    if (Object.keys(raw).length !== keys.length || Object.keys(raw).some(key => !keys.includes(key))
+      || raw.coordinateAuthorized !== false || !Array.isArray(raw.domainConditions) || raw.domainConditions.length !== 0
+      || JSON.stringify(raw.request) !== JSON.stringify(source)) invalid();
+    return { status: 'value', reportedKind: 'equation-system', expression: source,
+      solutions: decodeEquationSystem(raw.solutions, source, item => decodeStoredMathNode(item, context)), domainConditions: [], coordinateAuthorized: false };
+  }
+  if (success && raw.kind === 'fourier-series') {
+    const keys = ['status', 'kind', 'request', 'series', 'domainConditions', 'coordinateAuthorized'];
+    if (Object.keys(raw).length !== keys.length || Object.keys(raw).some(key => !keys.includes(key))
+      || raw.coordinateAuthorized !== false || !Array.isArray(raw.domainConditions) || raw.domainConditions.length !== 0
+      || JSON.stringify(raw.request) !== JSON.stringify(source)) invalid();
+    fourierSeriesFunction(source);
+    return { status: 'value', reportedKind: 'fourier-series', expression: source,
+      series: decodeFourierSeries(raw.series, item => decodeStoredMathNode(item, context)), domainConditions: [], coordinateAuthorized: false };
+  }
+  if (success && raw.kind === 'transform') {
+    const keys = ['status', 'kind', 'transform', 'domainConditions', 'coordinateAuthorized'];
+    if (Object.keys(raw).length !== keys.length || Object.keys(raw).some(key => !keys.includes(key))
+      || raw.coordinateAuthorized !== false || !Array.isArray(raw.domainConditions) || raw.domainConditions.length !== 0) invalid();
+    const transform = decodeIntegralTransform(raw.transform, source, item => decodeStoredMathNode(item, context));
+    return { status: 'value', reportedKind: 'transform', expression: source, transform, domainConditions: [], coordinateAuthorized: false };
+  }
+  if (success && raw.kind === 'series') {
+    const keys = ['status', 'kind', 'expansion', 'domainConditions', 'coordinateAuthorized'];
+    if (Object.keys(raw).length !== keys.length || Object.keys(raw).some(key => !keys.includes(key))
+      || raw.coordinateAuthorized !== false || !Array.isArray(raw.domainConditions) || raw.domainConditions.length !== 0
+      || source.kind !== 'operation' || !TAYLOR_IDS.has(source.operation)) invalid();
+    taylorFunction(source);
+    const expansion = decodeTaylorExpansion(raw.expansion, item => {
+      const node = decodeStoredMathNode(item, context);
+      if (shape(node, new Map()) !== 'scalar') invalid();
+      return node;
+    });
+    assertTaylorExpansionSource(expansion, source);
+    return { status: 'value', reportedKind: 'series', expression: source, expansion,
+      domainConditions: [], coordinateAuthorized: false };
+  }
   const keys = success ? ['status', 'kind', 'expression', 'domainConditions', 'coordinateAuthorized']
     : ['status', 'reason', 'coordinateAuthorized'];
   if (Object.keys(raw).length !== keys.length || Object.keys(raw).some(key => !keys.includes(key)) || raw.coordinateAuthorized !== false) invalid();
@@ -137,18 +205,19 @@ export function decodeExactMathResult(value: unknown, source: MathNode,
     if (raw.status === 'unresolved' && raw.reason === 'unevaluated') return { status: raw.status, reason: raw.reason, coordinateAuthorized: false };
     if (raw.status === 'stopped' && raw.reason === 'budget') return { status: raw.status, reason: raw.reason, coordinateAuthorized: false };
     if (raw.status === 'invalid' && (raw.reason === 'syntax' || raw.reason === 'domain' || raw.reason === 'non-finite'
-      || raw.reason === 'dimension' || raw.reason === 'unsupported')) return { status: raw.status, reason: raw.reason, coordinateAuthorized: false };
+      || raw.reason === 'dimension' || raw.reason === 'unsupported' || raw.reason === 'divergent' || raw.reason === 'no-limit' || raw.reason === 'empty-set' || raw.reason === 'no-extremum')) return { status: raw.status, reason: raw.reason, coordinateAuthorized: false };
     return invalid();
   }
   const kind = raw.kind;
   if (kind !== 'real' && kind !== 'complex' && kind !== 'boolean' && kind !== 'vector' && kind !== 'matrix'
-    && kind !== 'set' && kind !== 'interval' && kind !== 'symbolic') return invalid();
+    && kind !== 'set' && kind !== 'interval' && kind !== 'symbolic' && kind !== 'infinite-bound') return invalid();
   if (!Array.isArray(raw.domainConditions)) return invalid();
   // Pick types do not remove extra runtime properties: explicitly close unresolved coefficient access.
   const closed = { operationsById: context.operationsById, coefficientIds: context.coefficientIds, declaredIds: context.declaredIds };
   const references = sourceReferences(source), expression = decodeStoredMathNode(raw.expression, closed);
-  const actual = shape(expression, references);
-  if (actual !== (kind === 'real' || kind === 'complex' || kind === 'symbolic' ? 'scalar' : kind)) invalid();
+  if (kind === 'infinite-bound' && (!isInfiniteBound(expression) || !containsSetCalculation(source, true))) invalid();
+  const actual = shape(expression, references, kind === 'infinite-bound');
+  if (actual !== (kind === 'real' || kind === 'complex' || kind === 'symbolic' || kind === 'infinite-bound' ? 'scalar' : kind)) invalid();
   const domainConditions = raw.domainConditions.map(value => {
     const condition = decodeStoredMathNode(value, closed);
     if (shape(condition, references) !== 'boolean') invalid();

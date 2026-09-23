@@ -682,5 +682,509 @@
     "sha256": "b7f491a16ae60a42a97fd700ab939cec694a6b75bd380f1f2f8411ec10f7e619",
     "kind": "actual-application-screenshot",
     "edited": false
+  },
+  {
+    "file": "math-limit-left-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-additional-math-browser-skpx7pxf/editor-undo-2-browser.log",
+    "testSource": "e2e/tests/mathLimitsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "04e9c981e618901ad58f007bc025f4ee9f1f8de8556e7e2e3a8173d88d5eafc5",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-infinite-range-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-additional-math-browser-skpx7pxf/editor-undo-2-browser.log",
+    "testSource": "e2e/tests/mathInfiniteRangesFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "d062ed6a45654956339b4e27b6ab09332cbcd25f45948bc19dbf0b7dd394283c",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-discrete-range-step-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-additional-math-browser-skpx7pxf/editor-undo-2-browser.log",
+    "testSource": "e2e/tests/mathDiscreteRangesFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "6407f5dad65ba09545a46bf8617b6ff70df7ae32a6d1f99c7ec27689bf4ed948",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-integral-endpoint-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-exact-integrals-4i4ntwl0/nested-browser.log",
+    "testSource": "e2e/tests/mathIntegralsFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "0f52bcdf321ea9b5b96e38f6402fef40d34ba143e90e03eacd8b6960db0da451",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-derivative-at-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-exact-derivatives-w328p8ls/browser.log",
+    "testSource": "e2e/tests/mathDerivativesFlow.ts",
+    "viewport": [
+      1440,
+      900
+    ],
+    "sha256": "4d45fa71f3e768968df672403f4c2dd9ae2478246fe0ac055165adfb0dd76dbb",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "function-derivative-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-function-derivatives-pirmz7bb/browser-capture.log",
+    "testSource": "e2e/tests/functionDerivativesFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "05389e0201985fc00a6cac8849234fa36321d794bf7ee21196fa49ace7d69df8",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "function-hyperbolic-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-hyperbolic-functions-x11p2gho/browser.log",
+    "testSource": "e2e/tests/functionHyperbolicFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "2daccf1e4928dc770d44ab9a0e2c73c1531304a0acbdd92cf1cba43d14ec7dd4",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "function-vector-calculus-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-vector-calculus-r7y1h6hf/browser.log",
+    "testSource": "e2e/tests/functionVectorCalculusFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "29d7d0493ef8ca18129a9b75dd31fc640400d23b2a76692622106e0af6aef6c5",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-vector-calculus-at-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-vector-calculus-point-ccpqgoc2/point-browser.log",
+    "testSource": "e2e/tests/mathVectorCalculusAtFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "4c8dadb783c0502287fc07057e2d56eb1da705aac2d593e5344f942a2a334a04",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-line-integrals-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-line-integrals-c5nke1xi/browser.log",
+    "testSource": "e2e/tests/mathLineIntegralsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "64f1799bebd072a96a709c070305d13ada498c11c8b9be3d6abc990eb13bcffe",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-region-integrals-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-surface-volume-integrals-8ytz7led/browser.log",
+    "testSource": "e2e/tests/mathRegionIntegralsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "347be1163caa934b1f150d88fb2a22dc863e8cca2645fc9d5c6d7d5c51c21863",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-distributions-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-probability-distributions-d5889bqn/browser.log",
+    "testSource": "e2e/tests/mathDistributionsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "d79e2671b2f3d16d3b7623f863ad7957550f0b149f3b361251020c8d26cba037",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-probability-moments-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-probability-moments-ya3aqjxo/browser.log",
+    "testSource": "e2e/tests/mathProbabilityMomentsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "919f791270c5f88ad4b30ff42ebec6cf476847a6821cd7ee919366ad93137572",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-normal-distribution-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-normal-distribution-_6jg8ifl/browser.log",
+    "testSource": "e2e/tests/mathNormalDistributionFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "113104a07d204ae81f42ca54abbe07753efbc7ffde26346237ff3455b2d2db6a",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-gamma-beta-distributions-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-gamma-beta-distributions-q8uhw6js/browser-v3.log",
+    "testSource": "e2e/tests/mathGammaBetaDistributionFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "b407846c175c46d277be399baa5d110c5eabc0df1a3ed2d1a8b32e216501030f",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-test-distributions-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-test-distributions-18u4mt64/browser.log",
+    "testSource": "e2e/tests/mathTestDistributionsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "c5570d2f20ffdaf23daaee38c2ebd17b9d4b65811d259d3b6004d59bcecc4020",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-discrete-quantiles-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-discrete-distribution-quantiles-1m9b2whw/browser.log",
+    "testSource": "e2e/tests/mathDiscreteQuantilesFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "de11bbc9290735f1b32a40d508d349d364d0f1c6f59a2fa1f10cb422d9490891",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-general-probability-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-general-probability-5myktd77/browser.log",
+    "testSource": "e2e/tests/mathGeneralProbabilityFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "55ab3f03122e156b1b96fb4fd34763a1fcbb463fdfe712c2b7a631b8cdc79576",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-sequence-value-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-sequence-calculation-_bce8opw/browser.log",
+    "testSource": "e2e/tests/mathSequenceFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "bf932a1e8817f2c9de6c36fe51e61b9f063004212653ae95b0ee99de1da08f0e",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-sequence-sum-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-sequence-composition-8w9zrbn0/browser.log",
+    "testSource": "e2e/tests/mathSequenceFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "986aff8b66df2c39cfa593d651f99ebe314ffe3246164ad1194dd0f32a1e6922",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-taylor-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-taylor-resource-bounds-13bt0hym/browser.log",
+    "testSource": "e2e/tests/mathTaylorFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "e956bf334f7de4ab058623bffcf626504c7ef32a3f3d1d7a894480104fb9c5f7",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-taylor-coefficient-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-taylor-coefficient-a86swpzh/browser.log",
+    "testSource": "e2e/tests/mathTaylorCoefficientFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "009123f55764244191925b21a222eeaf060b9fb758626d2c6d1470927f6c0fcc",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-legendre-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-special-functions-19_h7t8w/browser.log",
+    "testSource": "e2e/tests/mathLegendreFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "4502270ffe6a36f782138ad33d35961fbca6be3bc22454e3dff9d8a2c444730b",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-error-functions-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-error-functions-nq53rxu0/browser.log",
+    "testSource": "e2e/tests/mathErrorFunctionsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "eff2630baac495e1e0489554e11a17ab64351f44a4bcba9b38314476edbe820d",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-gamma-function-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-gamma-integration-jtfh4vrq/browser.log",
+    "testSource": "e2e/tests/mathGammaFunctionFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "0091bcdb2c89dac1f7788f0bcfaf84a9e7c9c496ffd6d867c4522bb1d958d80a",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-beta-function-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-beta-integration-1ghexbai/browser.log",
+    "testSource": "e2e/tests/mathBetaFunctionFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "f52eb516a92cdc1d84f03bf3765b4b72ee3ddfbb90371c2277d8e33d57694845",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-bessel-function-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-bessel-input-integration-gjplo2m8/browser.log",
+    "testSource": "e2e/tests/mathBesselFunctionFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "248a06a33bdba176077fbf669964d9e9b7375491a2ddf9080651593e21fc8f57",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-complex-elementary-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-complex-elementary-eu8pmsgq/browser.log",
+    "testSource": "e2e/tests/mathComplexElementaryFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "8523729591bf7031d816f6a802c932935268448a7f190cdbcf24e54da09a3efb",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-lambert-w-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-lambert-real-branches-9r3b3kjc/browser-2.log",
+    "testSource": "e2e/tests/mathLambertWFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "a7bafb7c3172df0f1dca4df63311205484e0f20f511ab67146eec04def75bb2b",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-airy-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-airy-functions-kecbcs58/browser.log",
+    "testSource": "e2e/tests/mathAiryFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "d28d2fcf9085c822bbb186563d5044dc6fe76a4d0dcadb947f488141aaf795a7",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-elliptic-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-elliptic-integrals-dpk0psk2/browser.log",
+    "testSource": "e2e/tests/mathEllipticFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "7230b9a4d0195091a3d5cf87cd0da02e821986d54d6d3e531e4a23081e086c81",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-zeta-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-zeta-functions-8bet21s5/browser-4.log",
+    "testSource": "e2e/tests/mathZetaFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "f514e5d026ca6f2c488948f04249f36ba165cbbe40f7a0d998032c0dad502ae1",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-complex-error-functions-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-complex-error-functions-k4te1c9s/browser-2.log",
+    "testSource": "e2e/tests/mathComplexErrorFunctionsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "d1e401898752ef661ea80b72b57dace7684e801003a3e832fe48871d316be3c2",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-discrete-fourier-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-discrete-fourier-lz8wqjm0/browser-2.log",
+    "testSource": "e2e/tests/mathDiscreteFourierFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "7ad69b98ebe312c8acb1993172412054a455d9b2fafdf94aa523e48c63b58b92",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-integral-transforms-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-integral-transforms-z29kp06c/browser-2.log",
+    "testSource": "e2e/tests/mathIntegralTransformsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "a3714d7e10a17a282e56a08ada78699cbd6d241830695fead17f125026ff78e8",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-fourier-series-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-fourier-series-89bxmg7t/browser-2.log",
+    "testSource": "e2e/tests/mathFourierSeriesFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "d2e1a0a15603cc87a63a04f07a1aeacdb1c9aa11cad17a0497bd2bce21cb0253",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-equation-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-equations-namx8q5p/browser-1.log",
+    "testSource": "e2e/tests/mathEquationFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "fc40e7d724bc676da63d850e9acb89311a6335e1d3230abe74f29f7e6e8068d6",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-equation-system-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-equation-systems-v0ku6hwa/browser-1.log",
+    "testSource": "e2e/tests/mathEquationSystemFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "f4e8eb215f3ecc870d482989601fe3b4e27dec9a4a1cb923244fe912ff743494",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-numerical-roots-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-numerical-roots-rlsnnxu6/browser-2.log",
+    "testSource": "e2e/tests/mathNumericalRootFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "e75530c969c3b4cf78a7f195dc4db3c7e86592480dc0a475d9871deb24683661",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-unresolved-problem-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-differential-equations-kdgi58ei/pdebrowser-1.log",
+    "testSource": "e2e/tests/mathUnresolvedProblemFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "3c784210a0f2cc7a1952fba1ca34bd771217fb1dfc42fd33236e219eec07f8fc",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-differential-equations-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-differential-equations-kdgi58ei/notationbrowser-1.log",
+    "testSource": "e2e/tests/mathDifferentialEquationFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "96a71cd5d07c0c40fc42fab67c2919269f8cbf3d6c2b17e4977239d4f1b8c62a",
+    "kind": "actual-application-screenshot",
+    "edited": false
+  },
+  {
+    "file": "math-set-bounds-detail.png",
+    "testRun": "scratchpad/tasks/6131650ed8c2-set-bounds-uinvlgnc/browser-1.log",
+    "testSource": "e2e/tests/mathSetBoundsFlow.ts",
+    "viewport": [
+      1440,
+      1100
+    ],
+    "sha256": "6b1e23416898f2f8513f9ec7ef3ed72df86ac170f4ed5f7209b77019f609e1ab",
+    "kind": "actual-application-screenshot",
+    "edited": false
   }
 ]

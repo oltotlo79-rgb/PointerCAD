@@ -19,7 +19,7 @@ export async function mathIntegerFlow(page: Page, info: TestInfo, app?: Electron
   await expect(dialog.locator('[role="status"]')).toContainText('丸めることはありません');
   await expect(apply).toBeDisabled();
   await dialog.locator('textarea').fill('isprime(13)');
-  await expect(dialog.locator('[role="status"]')).toHaveText(uiMessage('math', 'math.kind.boolean'));
+  await expect(dialog.locator('[role="status"]')).toHaveText(uiMessage('math', 'math.boolean.true'));
   await expect(apply).toBeDisabled();
   const original = 'which(isprime(13),5,true,0)';
   await dialog.locator('textarea').fill(original);

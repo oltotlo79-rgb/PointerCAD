@@ -11,3 +11,4 @@ export function verifyMathFontAssets(
   expectedFonts: ReadonlyMap<string, string>,
 ): void;
 export function mathNotices(): Plugin;
+export function verifyRemovedMathModules(bundle: Record<string, { type: string; modules?: Record<string, unknown> }>): void;

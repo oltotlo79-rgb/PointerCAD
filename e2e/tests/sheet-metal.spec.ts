@@ -11,6 +11,8 @@ import { tree, command, chooseSheet, volume, rectangleFace } from './sheetUiFlow
 const fileAction = (page: Page, name: string) => page.getByRole('group', { name: 'ファイル', exact: true }).getByRole('button', { name, exact: true });
 
 test('P10 板金の指定線曲げを作成・取消・再展開・保存往復し、式編集とUndoを通す', async ({ page }, testInfo) => {
+  await withBrowserFailureDiagnostics(page, testInfo, async stage => {
+  stage('起動と板金基板の作成');
   await page.setViewportSize({ width: 1440, height: 900 });
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -25,6 +27,7 @@ test('P10 板金の指定線曲げを作成・取消・再展開・保存往復�
   await base.getByRole('button', { name: '作成', exact: true }).click();
   await expect(tree(page, '板金基板1')).toBeVisible(); await tree(page, '板金基板1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000, 5);
+  stage('指定線曲げの試し表示・取消・作成');
   await command(page, 'L'); await command(page, '0,15'); await command(page, '@50,0');
   await page.locator('.pcad-popover input.pcad-field__input').first().press('Escape');
   await expect(tree(page, '線分1')).toBeVisible(); await tree(page, '線分1').click();
@@ -49,6 +52,7 @@ test('P10 板金の指定線曲げを作成・取消・再展開・保存往復�
   await expect(tree(page, '指定線で曲げる1')).toBeVisible(); await tree(page, '指定線で曲げる1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 + 10 * Math.PI, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-line-created.png') });
+  stage('板金の展開');
   await chooseSheet(page, '板金の展開');
   const unfold = page.getByRole('form', { name: '板金の展開', exact: true });
   await unfold.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 2' });
@@ -56,20 +60,24 @@ test('P10 板金の指定線曲げを作成・取消・再展開・保存往復�
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
   expect(Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(3000, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-line-flat.png') });
-  const downloaded = page.waitForEvent('download'); await fileAction(page, '保存').click();
-  const savedPath = testInfo.outputPath('sheet-line.pcad'); await (await downloaded).saveAs(savedPath);
+  stage('展開後の文書を保存');
+  const [downloaded] = await Promise.all([page.waitForEvent('download'), fileAction(page, '保存').click()]);
+  const savedPath = testInfo.outputPath('sheet-line.pcad'); await downloaded.saveAs(savedPath);
   const decoded = readPcadFile(await readFile(savedPath)); if (!decoded.ok) throw new Error(decoded.error.message);
   expect(decoded.document.solids[1]).toMatchObject({ kind: 'sheetBend', fixedSide: 'left', angle: { source: '-45*2', value: -90 } });
+  stage('保存した文書を開き直す');
   await fileAction(page, '新規').click();
   const chooser = page.waitForEvent('filechooser'); await fileAction(page, '開く').click(); await (await chooser).setFiles(savedPath);
   await expect(tree(page, '指定線で曲げる1')).toBeVisible(); await tree(page, '指定線で曲げる1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 + 10 * Math.PI, 4);
   const angle = page.locator('.pcad-panel--right .pcad-field').filter({ has: page.locator('.pcad-field__label', { hasText: /^曲げ角$/ }) }).locator('input');
+  stage('曲げ角の再編集とUndo');
   await expect(angle).toHaveValue('-45*2'); await angle.fill('-45'); await angle.press('Tab');
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 + 5 * Math.PI, 4);
   await page.locator('canvas.pcad-viewport__canvas').press('Control+z'); await expect(angle).toHaveValue('-45*2');
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 + 10 * Math.PI, 4);
   expect(errors).toEqual([]);
+  });
 });
 
 test('P10 板金基板とフランジを画面で作り、保存往復・式編集・Undoを通す', async ({ page }, testInfo) => {

@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { collectDesktopFiles } from './desktopFileInventory.mjs';
 import { desktopJson, verifyDesktopDistribution } from './desktopDistribution.mjs';
 import { prepareDesktopInstallerResources, writeDesktopUninstallFiles } from './desktopInstallerResources.mjs';
+import { desktopPackagePlan, verifyDesktopPackageArtifacts } from './desktopPackageTargets.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..'), args = argv.slice(2);
 if (args.length !== 1 || !/^[a-z0-9][a-z0-9-]*$/u.test(args[0]) || !['win32', 'linux'].includes(platform)) {
@@ -38,10 +39,11 @@ env.electron_config_cache = env.ELECTRON_CACHE;
 await mkdir(outputs); // An existing or partially built candidate is never overwritten.
 const resources = join(staged, 'packaging');
 await prepareDesktopInstallerResources(root, resources);
-const { build, createTargets, Platform } = await import('electron-builder');
+const { build, Arch, Platform } = await import('electron-builder');
 const target = platform === 'win32' ? Platform.WINDOWS : Platform.LINUX;
+const plan = desktopPackagePlan(platform, manifest.version);
 const artifacts = await build({ projectDir: app, publish: 'never',
-  targets: createTargets([target], platform === 'win32' ? 'nsis' : 'AppImage', 'x64'),
+  targets: target.createTarget(plan.map(item => item.target), Arch.x64),
   config: { extends: join(root, 'apps/desktop/electron-builder.yml'), electronVersion: manifest.electronVersion,
     directories: { app, output: outputs, buildResources: resources },
     afterPack: platform === 'win32' ? context => writeDesktopUninstallFiles(root, context.appOutDir, resources) : undefined } });
@@ -57,8 +59,8 @@ for (const path of artifacts) {
   for await (const chunk of createReadStream(path)) hash.update(chunk);
   assets.push({ name: name.split(sep).join('/'), bytes: info.size, sha256: hash.digest('hex') });
 }
-if (assets.length === 0) throw new Error('Builder produced no artifact');
+const packages = verifyDesktopPackageArtifacts(platform, manifest.version, assets);
 const receipt = { format: 'pointercad-desktop-candidate/1', version: manifest.version, sourceCommit: manifest.sourceCommit,
-  platform, arch: 'x64', signed: false, assets, application: verified, installed: false, releaseCertified: false };
+  platform, arch: 'x64', signed: false, assets, packages, application: verified, installed: false, releaseCertified: false };
 await writeFile(join(staged, 'candidate.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' });
 log(JSON.stringify(receipt));

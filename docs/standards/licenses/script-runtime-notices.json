@@ -1,0 +1,69 @@
+{
+  "format": "pointercad-script-runtime-notices/1",
+  "notices": [
+    {
+      "file": "quickjs-ng.txt",
+      "url": "https://raw.githubusercontent.com/quickjs-ng/quickjs/65641a0c1e85cc266d7613d6673a22ec834bb941/LICENSE",
+      "sha256": "96f73f9d2a16c21a36b418f06073be26e7d6d5e7c1bc99756b21a4f2c74ef171"
+    },
+    {
+      "file": "script-wasi-libc-license.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/LICENSE",
+      "sha256": "2711a8b5a5cdfef0e639f96c1aca12ae23d7d64a02d0507f1bdf14d2b27bbc3a"
+    },
+    {
+      "file": "script-wasi-libc-apache.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "file": "script-wasi-libc-apache-llvm.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/LICENSE-APACHE-LLVM",
+      "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+    },
+    {
+      "file": "script-wasi-libc-mit.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "file": "script-cloudlibc.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/libc-bottom-half/cloudlibc/LICENSE",
+      "sha256": "c8b789cf5a746611e6300a0cc7750dbf92b61912a709d04e639245f7290656d0"
+    },
+    {
+      "file": "script-musl.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/libc-top-half/musl/COPYRIGHT",
+      "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af"
+    },
+    {
+      "file": "script-musl-fts.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/fts/musl-fts/COPYING",
+      "sha256": "55af87e4017668f54467a3380e7ebbac5e672d8c763bfe95e6fc882a6fdc4046"
+    },
+    {
+      "file": "script-dlmalloc.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/dlmalloc/src/malloc.c",
+      "extraction": "First complete C comment, followed by LF",
+      "sourceSha256": "9e7ce51d813331ae87ef235f6ca2d5ce2167692e30bb51a173513e3754a67f8f",
+      "sha256": "1096a42cd80e41cd7b4fca4d51bb9d022244aed2e9d8f7d638a5b20da2d2c6e7"
+    },
+    {
+      "file": "script-emmalloc.txt",
+      "url": "https://raw.githubusercontent.com/WebAssembly/wasi-libc/2fc32bc81b9f07f8d9525edea59bfbaf760c06d6/emmalloc/emmalloc.c",
+      "extraction": "First complete C comment, followed by LF",
+      "sourceSha256": "c5b52c424c9101ba9b2d1338997e1758c9fdf369ab0450d9b72e9544fe482166",
+      "sha256": "7183e99e2e38682c7c602c86ada92c686a84eb99aea346fc8ba8a44f3b3684f6"
+    },
+    {
+      "file": "script-compiler-rt.txt",
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/4434dabb69916856b824f68a64b029c67175e532/compiler-rt/LICENSE.TXT",
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d"
+    },
+    {
+      "file": "script-emscripten-license.txt",
+      "url": "https://raw.githubusercontent.com/emscripten-core/emscripten/4.0.12/LICENSE",
+      "sha256": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86"
+    }
+  ]
+}

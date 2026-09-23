@@ -59,8 +59,11 @@ describe('定数の丸めを座標精度の証明に持ち込まない',()=>{
     expect(range.lower).toBeLessThan(-0.000051);expect(range.upper).toBeGreaterThan(-0.000052);
   });
   it('数値計算だけが成功した未証明の定数は区間を証明済みにしない',()=>{
-    const tape=compileScalarMath({kind:'operation',operation:'gamma',operands:[{kind:'number',decimal:'1.5'}]},
-      {inputs:['X'],angleUnit:'degree',evaluateConstant:()=>0.886226925452758});
+    // Gamma now has certified intervals. The closed vector norm still has only
+    // a numerical value here, so it exercises the unproved-constant boundary.
+    const tape=compileScalarMath({kind:'operation',operation:'norm',operands:[{kind:'operation',operation:'list',
+      operands:[{kind:'number',decimal:'1'},{kind:'number',decimal:'1'}]}]},
+      {inputs:['X'],angleUnit:'degree',evaluateConstant:()=>Math.SQRT2});
     expect(createScalarIntervalSampler(tape)([{lower:0,upper:0}]).continuous).toBe(false);
   });
 });

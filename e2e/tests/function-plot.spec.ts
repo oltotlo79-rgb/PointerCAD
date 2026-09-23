@@ -1,4 +1,8 @@
+import { functionOdeCurveFlow, ODE_CURVE_SCENARIO_TIMEOUT_MS } from './functionOdeCurveFlow.js';
 import { FUNCTION_DIRECTION_SCENARIOS } from './functionDirectionScenarios.js';
+import { functionDerivativesFlow } from './functionDerivativesFlow.js';
+import { functionHyperbolicFlow } from './functionHyperbolicFlow.js';
+import { functionVectorCalculusFlow } from './functionVectorCalculusFlow.js';
 import { expect, test } from '@playwright/test';
 import { functionPlotFlow } from './functionPlotFlow.js';
 import { functionSurfaceFlow } from './functionSurfaceFlow.js';
@@ -12,6 +16,30 @@ import { functionSectionScenario } from './functionSectionFlow.js';
 import {scriptFunctionDocumentFlow} from './scriptFunctionDocumentFlow.js';
 
 test.use({ viewport: { width: 1440, height: 900 } });
+
+test('ADD-23 勾配とヘッセ行列の成分を曲線と曲面に使い、保存再開・ラプラシアンへ編集・Undo・F1を通す', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await functionVectorCalculusFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-17 双曲線関数の曲線・逆関数の曲面を作成し、原式の保存再開・編集Undo・F1を通す', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await functionHyperbolicFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-22 導関数を曲線と曲面に使い、原式の保存再開・編集Undo・F1を通す', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await functionDerivativesFlow(page, info); expect(errors).toEqual([]);
+});
 
 test('ADD-FUNCTION 関数を含む文書で自動作図し、保存・Undo・再開でも原式を保持する',async({page},info)=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
@@ -105,3 +133,12 @@ for (const scenario of FUNCTION_DIRECTION_SCENARIOS) {
     await page.goto('/'); await scenario.run(page, info); expect(errors).toEqual([]);
   });
 }
+
+test('ADD-26 微分方程式の解曲線・点と法線・条件の保存再編集', async ({ page }, info) => {
+  test.setTimeout(ODE_CURVE_SCENARIO_TIMEOUT_MS);
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await functionOdeCurveFlow(page, info); expect(errors).toEqual([]);
+});

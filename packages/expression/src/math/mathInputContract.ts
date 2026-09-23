@@ -21,7 +21,7 @@ export type MathSymbolReference =
 
 export type MathValueKind =
   | 'real' | 'complex' | 'boolean' | 'vector' | 'matrix' | 'tensor'
-  | 'set' | 'interval' | 'function' | 'distribution' | 'symbolic';
+  | 'infinite-bound' | 'set' | 'interval' | 'function' | 'distribution' | 'symbolic' | 'series' | 'transform' | 'fourier-series' | 'equation-system' | 'root-intervals' | 'ode-solutions';
 
 export interface MathOperationDefinition {
   readonly id: string;
@@ -66,9 +66,21 @@ export type MathEvaluation =
       readonly approximation: { readonly absoluteError: number | null;
         /** A quadrature estimate is not a proved bound and cannot authorize a CAD coordinate. */
         readonly estimatedAbsoluteError?: number } | null }
-  | { readonly status: 'value'; readonly kind: Exclude<MathValueKind, 'real'>; readonly expression: MathNode }
+  | { readonly status: 'value'; readonly kind: Exclude<MathValueKind, 'real' | 'series' | 'transform' | 'fourier-series' | 'equation-system' | 'root-intervals' | 'ode-solutions'>; readonly expression: MathNode }
+  | { readonly status: 'value'; readonly kind: 'ode-solutions'; readonly expression: MathNode;
+      readonly solutions: import('./differentialEquations.js').OdeSolutions }
+  | { readonly status: 'value'; readonly kind: 'root-intervals'; readonly expression: MathNode;
+      readonly intervals: import('./numericalRootResult.js').NumericalRootIntervals }
+  | { readonly status: 'value'; readonly kind: 'equation-system'; readonly expression: MathNode;
+      readonly solutions: import('./equationSystems.js').EquationSystemSolutions }
+  | { readonly status: 'value'; readonly kind: 'fourier-series'; readonly expression: MathNode;
+      readonly series: import('./fourierSeries.js').FourierSeries }
+  | { readonly status: 'value'; readonly kind: 'transform'; readonly expression: MathNode;
+      readonly transform: import('./integralTransforms.js').IntegralTransform }
+  | { readonly status: 'value'; readonly kind: 'series'; readonly expression: MathNode;
+      readonly expansion: import('./taylorExpansion.js').TaylorExpansion }
   | { readonly status: 'unresolved'; readonly reason: 'unknown-symbol' | 'missing-condition' | 'unevaluated'; readonly names: readonly string[] }
-  | { readonly status: 'invalid'; readonly reason: 'syntax' | 'domain' | 'non-finite' | 'dimension' | 'unit' | 'unsupported'; readonly detail: string }
+  | { readonly status: 'invalid'; readonly reason: 'syntax' | 'domain' | 'non-finite' | 'dimension' | 'unit' | 'unsupported' | 'divergent' | 'no-limit' | 'empty-set' | 'no-extremum'; readonly detail: string }
   | { readonly status: 'multiple'; readonly candidates: readonly MathNode[]; readonly exhaustive: boolean }
   | { readonly status: 'stopped'; readonly reason: 'cancelled' | 'deadline' | 'budget' };
 

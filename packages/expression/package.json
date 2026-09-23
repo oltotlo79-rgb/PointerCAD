@@ -31,7 +31,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@cortex-js/compute-engine": "catalog:",
     "decimal.js": "catalog:"
   },
   "devDependencies": {

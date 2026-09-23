@@ -1,3 +1,4 @@
+import { readUnresolvedMathProblems } from '@pointercad/model';
 import { missingHistoryTarget } from './codecs/historyTargets.js';
 import { readFeatureFolders, serializeFeatureFolders } from './codecs/featureFolders.js';
 import { readFeatureNotes, serializeFeatureNotes } from './codecs/featureNotes.js';
@@ -101,10 +102,14 @@ export { readParameter } from './codecs/parameters.js';
 export { readAppearanceSpec } from './codecs/appearance.js';
 
 function serializePartDocument(document: PartDocument): PartDocument {
+  if (document.unresolvedMathProblems !== undefined && document.schemaVersion < 16) {
+    throw new RangeError('未解決の式を保存するには保存形式の版16が必要です。');
+  }
   if (document.mathParameterSerial !== undefined && (!Number.isSafeInteger(document.mathParameterSerial) || document.mathParameterSerial < 0)) {
     throw new RangeError('係数の参照番号が不正です。');
   }
   const serialized: PartDocument = {
+    ...(document.unresolvedMathProblems === undefined ? {} : { unresolvedMathProblems: readUnresolvedMathProblems(document.unresolvedMathProblems) }),
     ...(document.mathParameterSerial === undefined ? {} : { mathParameterSerial: document.mathParameterSerial }),
     ...(document.featureNotes === undefined ? {} : { featureNotes: serializeFeatureNotes(document.featureNotes) }),
     ...(document.featureFolders === undefined ? {} : { featureFolders: serializeFeatureFolders(document.featureFolders) }),
@@ -253,12 +258,18 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!featureNotes.ok) return featureNotes;
   const featureFolders = readFeatureFolders(Object.hasOwn(record.value, 'featureFolders') ? record.value.featureFolders : [], `${path}.featureFolders`);
   if (!featureFolders.ok) return featureFolders;
+  let unresolvedMathProblems: PartDocument['unresolvedMathProblems'];
+  if (Object.hasOwn(record.value, 'unresolvedMathProblems')) {
+    try { unresolvedMathProblems = readUnresolvedMathProblems(record.value.unresolvedMathProblems); }
+    catch { return fieldProblem(`${path}.unresolvedMathProblems`, 'type'); }
+  }
   const mathParameterSerial = record.value.mathParameterSerial;
   if (Object.hasOwn(record.value, 'mathParameterSerial') && (typeof mathParameterSerial !== 'number'
     || !Number.isSafeInteger(mathParameterSerial) || mathParameterSerial < 0)) {
     return fieldProblem(`${path}.mathParameterSerial`, 'type');
   }
   const document: PartDocument = {
+      ...(unresolvedMathProblems === undefined ? {} : { unresolvedMathProblems }),
       ...(Object.hasOwn(record.value, 'featureNotes') ? { featureNotes: featureNotes.value } : {}),
       ...(Object.hasOwn(record.value, 'featureFolders') ? { featureFolders: featureFolders.value } : {}),
       ...(typeof mathParameterSerial === 'number' ? { mathParameterSerial } : {}),

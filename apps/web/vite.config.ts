@@ -6,6 +6,7 @@ import { gzipSync } from 'node:zlib';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { webSecurityPolicy } from './build/securityPolicy.js';
+import { startupPage } from './build/startupPage.js';
 import { runtimeNotices } from '../../scripts/vite/runtimeNotices.mjs';
 import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
 import { exactMathAssets } from '../../scripts/vite/exactMathAssets.mjs';
@@ -95,6 +96,10 @@ const crossOriginIsolationHeaders = {
 function manualChunks(id: string): string | undefined {
   const path = id.replace(/\\/g, '/');
 
+  // Vite shares this helper with the editor. Keep it outside pcad-core, otherwise
+  // the bootstrap entry would statically require the very asset it must recover.
+  if (id === '\0vite/preload-helper.js') return 'bootstrap-loader';
+
   if (path.includes('/node_modules/')) {
     // 画面の土台。版が上がるまで中身が変わらないので、控えが効きやすい。
     if (/\/node_modules\/(?:react-dom|react|scheduler|zustand)\//.test(path)) {
@@ -131,7 +136,7 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react(), occtAssets(), webSecurityPolicy(), mathNotices(), runtimeNotices(), exactMathAssets(), offlineServiceWorker()],
+  plugins: [react(), occtAssets(), startupPage(), webSecurityPolicy(), mathNotices(), runtimeNotices(), exactMathAssets(), offlineServiceWorker()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },
   // 幾何カーネルの Worker は ES モジュールとして出力する。

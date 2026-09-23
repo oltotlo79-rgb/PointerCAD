@@ -1,4 +1,11 @@
+import { isInfiniteBound } from './setBounds.js';
+import { decodeNumericalRootIntervals } from './numericalRootResult.js';
+import { decodeEquationSystem } from './equationSystems.js';
+import { decodeOdeSolutions } from './differentialEquations.js';
+import { decodeFourierSeries, fourierSeriesFunction } from './fourierSeries.js';
+import { decodeIntegralTransform } from './integralTransforms.js';
 /** The renderer accepts a bounded, typed result for exactly the active request. No parsing or evaluation here. */
+import { decodeTaylorExpansion, taylorFunction } from './taylorExpansion.js';
 import { MATH_INPUT_FORMAT, MATH_INPUT_LIMITS, MathInputProblem, validateMathDecimal, hasMathControlCharacters,
   type MathEvaluation, type MathNode, type StoredMathExpression } from './mathInputContract.js';
 import { decodeStoredMathNode, decodeStoredMathStructure, type StoredMathContext } from './decodeStoredMath.js';
@@ -80,6 +87,45 @@ export function decodeMathEvaluation(value: unknown, context: NodeContext,
         return {status:'value',kind:'real',exact:raw.exact===null?null:decodeNode(raw.exact),decimal,
           coordinate:raw.coordinate,approximation};
       }
+      if ('kind' in value && value.kind === 'root-intervals') {
+        const raw = object(value, ['status', 'kind', 'expression', 'intervals']);
+        const expression = decodeNode(raw.expression);
+        return { status: 'value', kind: 'root-intervals', expression, intervals: decodeNumericalRootIntervals(raw.intervals, expression) };
+      }
+      if ('kind' in value && value.kind === 'equation-system') {
+        const raw = object(value, ['status', 'kind', 'expression', 'solutions']);
+        const expression = decodeNode(raw.expression);
+        return { status: 'value', kind: 'equation-system', expression, solutions: decodeEquationSystem(raw.solutions, expression, decodeNode) };
+      }
+      if ('kind' in value && value.kind === 'ode-solutions') {
+        const raw = object(value, ['status', 'kind', 'expression', 'solutions']);
+        const expression = decodeNode(raw.expression);
+        return { status: 'value', kind: 'ode-solutions', expression, solutions: decodeOdeSolutions(raw.solutions, expression, decodeNode) };
+      }
+      if ('kind' in value && value.kind === 'fourier-series') {
+        const raw = object(value, ['status', 'kind', 'expression', 'series']);
+        const expression = decodeNode(raw.expression);
+        fourierSeriesFunction(expression);
+        return { status: 'value', kind: 'fourier-series', expression, series: decodeFourierSeries(raw.series, decodeNode) };
+      }
+      if ('kind' in value && value.kind === 'transform') {
+        const raw = object(value, ['status', 'kind', 'expression', 'transform']);
+        const expression = decodeNode(raw.expression);
+        return { status: 'value', kind: 'transform', expression, transform: decodeIntegralTransform(raw.transform, expression, decodeNode) };
+      }
+      if ('kind' in value && value.kind === 'series') {
+        const raw = object(value, ['status', 'kind', 'expression', 'expansion']);
+        const expression = decodeNode(raw.expression);
+        if (expression.kind !== 'operation') throw new MathInputProblem('syntax', '級数の元の式がありません。');
+        taylorFunction(expression);
+        return { status: 'value', kind: 'series', expression, expansion: decodeTaylorExpansion(raw.expansion, decodeNode) };
+      }
+      if ('kind' in value && value.kind === 'infinite-bound') {
+        const raw = object(value, ['status', 'kind', 'expression']);
+        const expression = decodeNode(raw.expression);
+        if (!isInfiniteBound(expression)) throw new MathInputProblem('syntax', '無限の上限・下限の形式が不正です。');
+        return { status: 'value', kind: 'infinite-bound', expression };
+      }
       const raw=object(value,['status','kind','expression']);
       const kind=oneOf(raw.kind,['complex','boolean','vector','matrix','tensor','set','interval','function','distribution','symbolic'] as const);
       return {status:'value',kind,expression:decodeNode(raw.expression)};
@@ -92,7 +138,7 @@ export function decodeMathEvaluation(value: unknown, context: NodeContext,
     }
     case 'invalid': {
       const raw=object(value,['status','reason','detail']);
-      return {status:'invalid',reason:oneOf(raw.reason,['syntax','domain','non-finite','dimension','unit','unsupported'] as const),detail:text(raw.detail,4096)};
+      return {status:'invalid',reason:oneOf(raw.reason,['syntax','domain','non-finite','dimension','unit','unsupported','divergent','no-limit','empty-set','no-extremum'] as const),detail:text(raw.detail,4096)};
     }
     case 'multiple': {
       const raw=object(value,['status','candidates','exhaustive']);
@@ -129,6 +175,10 @@ export function decodeMathWorkReply(value: unknown, request: MathWorkRequest, co
       expression:decodeStoredMathNode(raw.expression,context)};
   }
   const evaluation=decodeMathEvaluation(raw.evaluation,context,remaining);
+  if (evaluation.status === 'value' && (evaluation.kind === 'series' || evaluation.kind === 'transform' || evaluation.kind === 'fourier-series' || evaluation.kind === 'equation-system' || evaluation.kind === 'root-intervals' || evaluation.kind === 'ode-solutions')
+    && (definition === null || !sameMathMeaning(evaluation.expression, definition.expression))) {
+    throw new MathInputProblem('syntax', '級数の元の式と現在の入力が一致しません。');
+  }
   if(request.functionScope!==undefined) {
     if(definition!==null)assertMathVariableScope(definition.expression,request.functionScope);
     if(evaluation.status==='value'&&(evaluation.kind!=='function'||definition===null

@@ -3,10 +3,12 @@ import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { normalizeExactLinearOperation } from './exactLinearOperations.js';
 import { normalizeTensorOperation } from './tensorOperations.js';
 import { rationalOfExpression } from './exactRational.js';
+import { VECTOR_CALCULUS_AT_IDS, vectorCalculusAtBounds } from './vectorCalculusAt.js';
 
 type Operation = Extract<MathNode, { kind: 'operation' }>;
 const supported = new Set(['row-reduce', 'null-space', 'column-space', 'row-space',
-  'linear-solve', 'linear-solution-space']);
+  'linear-solve', 'linear-solution-space', 'qr-q', 'qr-r', 'lu-p', 'lu-l', 'lu-u',
+  'characteristic-coefficients', 'eigenspace', 'eigenvalues', 'singular-values', 'svd-u', 'svd-s', 'svd-v']);
 
 function shape(node: MathNode): number[] {
   const result = normalizeTensorOperation({ kind: 'operation', operation: 'tensor-shape', operands: [node] });
@@ -21,7 +23,8 @@ function shape(node: MathNode): number[] {
  * bounds only; the exact engine checks the actual result before selecting a cell. */
 function resultBounds(node: Operation): readonly number[] {
   const solving = node.operation === 'linear-solve' || node.operation === 'linear-solution-space';
-  if (node.operands.length !== (solving ? 2 : 1)) throw new MathInputProblem('domain', '行列計算の引数を確認してください。');
+  const eigenspace = node.operation === 'eigenspace';
+  if (node.operands.length !== (solving || eigenspace ? 2 : 1)) throw new MathInputProblem('domain', '行列計算の引数を確認してください。');
   const dimensions = shape(node.operands[0]);
   if (dimensions.length !== 2) throw new MathInputProblem('domain', '行列には数値の成分を二次元に並べてください。');
   const [rows, columns] = dimensions;
@@ -34,7 +37,19 @@ function resultBounds(node: Operation): readonly number[] {
   if (rows > 16 || columns > 16) {
     throw new MathInputProblem('budget', '追加計算部で扱う行列は16行・16列以内で指定してください。');
   }
-  if (node.operation === 'row-reduce') return dimensions;
+  if ((eigenspace || ['characteristic-coefficients', 'eigenvalues'].includes(node.operation)) && rows !== columns) {
+    throw new MathInputProblem('domain', 'この演算には空でない正方行列を指定してください。');
+  }
+  if (eigenspace && shape({ kind: 'operation', operation: 'list', operands: [node.operands[1]] }).length !== 1) {
+    throw new MathInputProblem('domain', '固有値には数値を一つ指定してください。');
+  }
+  if (['qr-q', 'lu-p', 'lu-l', 'svd-u'].includes(node.operation)) return [rows, rows];
+  if (['qr-r', 'lu-u', 'row-reduce', 'svd-s'].includes(node.operation)) return dimensions;
+  if (node.operation === 'svd-v') return [columns, columns];
+  if (node.operation === 'singular-values') return [Math.min(rows, columns)];
+  if (node.operation === 'eigenvalues') return [rows];
+  if (node.operation === 'characteristic-coefficients') return [rows + 1];
+  if (eigenspace) return [rows, rows];
   if (node.operation === 'linear-solve') return [columns];
   if (node.operation === 'linear-solution-space') return [columns + 1, columns];
   if (node.operation === 'null-space') return [columns, columns];
@@ -46,6 +61,12 @@ export class DeferredExactLinearOperations {
   constructor(private readonly enabled: boolean) {}
 
   reduce(node: Operation): MathNode {
+    // These operations always await the exact engine's local-domain proof, even
+    // for rational input. Keeping their shape also preserves component selection.
+    if (VECTOR_CALCULUS_AT_IDS.has(node.operation)) {
+      this.bounds.set(node, vectorCalculusAtBounds(node));
+      return node;
+    }
     try { return normalizeExactLinearOperation(node); }
     catch (error) {
       if (!this.enabled || !supported.has(node.operation)

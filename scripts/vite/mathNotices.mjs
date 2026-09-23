@@ -87,6 +87,18 @@ export function verifyMathFontAssets(bundle, expectedFonts) {
   }
 }
 
+/** Inspect resolved modules, including pnpm paths and Windows separators. */
+export function verifyRemovedMathModules(bundle) {
+  for (const output of Object.values(bundle)) {
+    if (output.type !== 'chunk') continue;
+    for (const id of Object.keys(output.modules)) {
+      if (/(?:@cortex-js[+\\/]compute-engine|@arnog[+\\/]colors|quickjs-wasi|complex-esm)(?:@|[\\/])/u.test(id)) {
+        throw new Error('Removed calculation dependency entered the build: ' + id);
+      }
+    }
+  }
+}
+
 /** Shared by Web and Electron renderer builds; it adds no runtime imports. */
 export function mathNotices() {
   let distribution;
@@ -101,6 +113,7 @@ export function mathNotices() {
     },
     generateBundle(_options, bundle) {
       if (!distribution) throw new Error('Mathematics notice validation did not run');
+      verifyRemovedMathModules(bundle);
       verifyMathFontAssets(bundle, distribution.fonts);
     },
   };

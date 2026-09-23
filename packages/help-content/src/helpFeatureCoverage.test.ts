@@ -21,9 +21,10 @@ describe('要件と操作から説明の実在する章へ対応付ける', () =
     expect(coverage.entries.find(entry => entry.id === 'FR-1004')?.topicIds).toEqual(['offline-use']);
     expect(coverage.entries.find(entry => entry.id === 'FR-1002')?.topicIds).toEqual(['local-data']);
     expect(coverage.entries.find(entry => entry.id === 'FR-1003')?.topicIds).toEqual(['startup-checks']);
-    expect(coverage.pending).toEqual(['FR-1001']);
+    expect(coverage.entries.find(entry => entry.id === 'FR-1001')?.topicIds).toEqual(['web-version']);
+    expect(coverage.pending).toEqual([]);
     expect(coverage.contentCertified).toBe(false);
-    expect(() => assertDocumentedFeatureCoverage(coverage)).toThrow('Undocumented features');
+    expect(() => assertDocumentedFeatureCoverage(coverage)).not.toThrow();
   });
   it('比較表を別の機能として数えず、説明中の縦棒と行番号を保つ', () => {
     const source = table('| FR-1 | 絶対値 |x| を使う | Should |') + '\n\n| ID | 他社 | 違い |\n| FR-99 | 例 | 例 |';

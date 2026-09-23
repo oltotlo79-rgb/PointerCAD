@@ -162,7 +162,7 @@ export default tseslint.config(
       'packages/ui/src/appearance/appearancePropertyValues.ts', 'packages/ui/src/shell/propertyFieldUnits.ts',
       'packages/ui/src/sketch/numericFieldUnits.ts', 'packages/ui/src/sketch/numericInputTools.ts',
       'packages/ui/src/sketch/numericInputEvaluation.ts', 'packages/ui/src/sketch/twoPointArcInput.ts',
-      'packages/ui/src/sketch/splineInputDraft.ts',
+      'packages/ui/src/sketch/splineInputDraft.ts', 'packages/ui/src/sketch/numericInputChoices.ts',
       'packages/ui/src/solid/MeasurementSections.tsx', 'packages/ui/src/solid/measureFormatting.ts',
       'packages/ui/src/solid/SectionViewSection.tsx',
       'packages/ui/src/solid/SelectionSetSection.tsx',
@@ -340,6 +340,20 @@ export default tseslint.config(
       }, {
         selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration',
         message: '入力表示の担当へ動的読込や他の実行処理の再公開を戻さないでください（レビューR14/F11）。',
+      }],
+    },
+  },
+  {
+    files: ['packages/ui/src/sketch/numericInputChoices.ts'],
+    rules: {
+      'max-lines': ['error', { max: 550, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: 120, skipBlankLines: true, skipComments: true }],
+      'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard, {
+        selector: "ImportDeclaration[importKind!='type'][source.value!='@pointercad/model']",
+        message: '選択肢の表はmodelの定数だけを使い、入力遷移・画面・ストアの実行依存を戻さないでください（レビューF11）。',
+      }, {
+        selector: 'ImportExpression, ExportNamedDeclaration[source][exportKind!="type"], ExportAllDeclaration, NewExpression[callee.name="Worker"], FunctionDeclaration[async=true], FunctionExpression[async=true], ArrowFunctionExpression[async=true], CallExpression[callee.name="fetch"]',
+        message: '選択肢の表へ通信・Worker・非同期処理・別の実行処理の再公開を追加しないでください（レビューF11）。',
       }],
     },
   },

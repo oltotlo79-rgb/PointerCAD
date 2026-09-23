@@ -10,6 +10,7 @@ import { captureDesktopBuildSources } from '../vite/webBuildSources.mjs';
 import { collectDesktopFiles, desktopFileHash } from './desktopFileInventory.mjs';
 import { assembleDesktopDistribution, desktopJson } from './desktopDistribution.mjs';
 import { offlineAssetUrl } from '../vite/offlineProtocol.mjs';
+import { verifyCurrentManualEdition } from '../manual/currentManualEdition.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..'), args = argv.slice(2);
 if (args.length !== 4 || args.some(name => !/^[a-z0-9][a-z0-9-]*$/u.test(name)) || !['win32', 'linux'].includes(platform)) {
@@ -35,6 +36,7 @@ const electronVersion = requireDesktop('electron/package.json').version, builder
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 const notices = new Map();
 for (const name of ['LICENSE', 'NOTICE']) notices.set(name, await readFile(join(root, name)));
+await verifyCurrentManualEdition(root, groups[1]);
 const assembled = assembleDesktopDistribution(groups[0], groups[1], groups[2], notices,
   { version: packages[0].version, sourceCommit, platform, arch: 'x64', electronVersion, builderVersion });
 for (const [index, files] of groups.entries()) for (const file of files) {

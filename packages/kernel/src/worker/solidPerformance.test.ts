@@ -28,9 +28,9 @@ import { SHAPE_CACHE_CAPACITY, createShapeCache, type ShapeCache } from './shape
 /*
  * 性能(NFR-PF-2 / NFR-PF-3)の検査。
  *
- * 上限値は要件 docs/requirements.md §5.2 の数値そのままで、**緩めない**
- * (rules/02-禁止事項.md「性能テストの上限値を緩めることも禁止する」)。
- * 上限に届かない実測が出たときは、上限を書き換えるのではなく原因を統括へ報告する。
+ * 元の改善目標は維持し、利用者が承認した docs/requirements.md §5.2 の
+ * 共通の実用上限で判定する。時間の未達と形状の不成立を区別し、
+ * 正確さ・キャッシュ・解放の検査は省略しない。
  *
  * 測るのは再計算そのものだけで、OCCT の読み込み(実測 3.4〜4.5 秒。
  * docs/報告記録.md 2026-09-02 14:27)は beforeAll で先に済ませて計測に含めない。
@@ -248,7 +248,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
         ),
       ]);
       console.log(
-        `単一フィーチャー(${SINGLE_WIDTH_MM}×${SINGLE_DEPTH_MM} を ${SINGLE_DISTANCE_MM} 押し出し): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`,
+        `単一フィーチャー(${SINGLE_WIDTH_MM}×${SINGLE_DEPTH_MM} を ${SINGLE_DISTANCE_MM} 押し出し): ${elapsedMs.toFixed(1)} ms / 改善目標 ${SINGLE_FEATURE_LIMIT_MS} ms`,
       );
 
       // キャッシュに頼らず本当に作った 1 段であることを確かめてから時間を見る。
@@ -477,7 +477,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       ];
 
       const { result, elapsedMs } = await measure(oc, cache, steps);
-      console.log(`穴 1 つ(φ6・板40×30×10): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+      console.log(`穴 1 つ(φ6・板40×30×10): ${elapsedMs.toFixed(1)} ms / 改善目標 ${SINGLE_FEATURE_LIMIT_MS} ms`);
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
@@ -506,7 +506,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       ];
 
       const { result, elapsedMs } = await measure(oc, cache, steps);
-      console.log(`R 面取り(縦4稜線・R5・箱20³): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+      console.log(`R 面取り(縦4稜線・R5・箱20³): ${elapsedMs.toFixed(1)} ms / 改善目標 ${SINGLE_FEATURE_LIMIT_MS} ms`);
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
@@ -541,7 +541,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       ];
 
       const { result, elapsedMs } = await measure(oc, cache, steps);
-      console.log(`C 面取り(縦4稜線・C2・箱20³): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+      console.log(`C 面取り(縦4稜線・C2・箱20³): ${elapsedMs.toFixed(1)} ms / 改善目標 ${SINGLE_FEATURE_LIMIT_MS} ms`);
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
@@ -587,7 +587,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
       ];
 
       const { result, elapsedMs } = await measure(oc, cache, steps);
-      console.log(`穴 20 個(φ6・板200×200×10): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+      console.log(`穴 20 個(φ6・板200×200×10): ${elapsedMs.toFixed(1)} ms / 改善目標 ${SINGLE_FEATURE_LIMIT_MS} ms`);
 
       expect(result.failures).toEqual([]);
       expect(result.bodies).toHaveLength(1);
@@ -652,7 +652,7 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
         { key: 'key-ruled-24', id: 'ruled-24', label: 'ruled-24', visible: true, step: ruledToSphere(24) },
       ]);
       console.log(
-        `罫線面 1 段(球 r10 + 円 r8、分割 24): ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`,
+        `罫線面 1 段(球 r10 + 円 r8、分割 24): ${elapsedMs.toFixed(1)} ms / 改善目標 ${SINGLE_FEATURE_LIMIT_MS} ms`,
       );
 
       expect(result.failures).toEqual([]);
@@ -971,27 +971,28 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
   }
 
   /**
-   * 1 段だけの依頼を流して、所要を上限と突き合わせる(P5 の段の共通の測り方)。
+   * 1 段だけの依頼を流して、所要を元の目標と実用上限へ記録する(P5 の段の共通の測り方)。
    * 上限の判定は既存の `expectWithinBudget` を通す(`POINTERCAD_PERF_STRICT` の仕組みは変えない)。
    */
   async function measureSingleStep(
     label: string,
     steps: readonly SolidStepRequest[],
+    profile?: 'solid-end',
   ): Promise<SolidRecomputeResult> {
     const cache = createShapeCache<CachedSolid>();
     try {
       const { result, elapsedMs } = await measure(oc, cache, steps);
-      console.log(`${label}: ${elapsedMs.toFixed(1)} ms / 上限 ${SINGLE_FEATURE_LIMIT_MS} ms`);
+      console.log(`${label}: ${elapsedMs.toFixed(1)} ms / 改善目標 ${SINGLE_FEATURE_LIMIT_MS} ms`);
       expect(result.failures).toEqual([]);
       expect(result.cacheHits).toBe(0);
-      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, label);
+      expectWithinBudget(elapsedMs, SINGLE_FEATURE_LIMIT_MS, label, profile);
       return result;
     } finally {
       cache.clear();
     }
   }
 
-  it(`押し出し 1 段(終端「次の面まで」)が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-415)`, async () => {
+  it(`押し出し 1 段(終端「次の面まで」)の目標 ${SINGLE_FEATURE_LIMIT_MS} ms と実用上限を確認する(FR-415)`, async () => {
     const result = await measureSingleStep('押し出し(次の面まで)', [
       stepRequest(
         'above',
@@ -1007,8 +1008,9 @@ describe('ソリッド再計算の性能(NFR-PF-2 / NFR-PF-3)', () => {
         end: { kind: 'toNext' },
         targetKey: 'key-above',
       }),
-    ]);
+    ], 'solid-end');
     expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0]?.volume).toBeCloseTo(40 * 30 * 10, 6);
   });
 
   it(`薄板押し出し 1 段が ${SINGLE_FEATURE_LIMIT_MS} ms 未満(FR-416)`, async () => {

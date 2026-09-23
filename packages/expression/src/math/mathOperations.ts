@@ -1,8 +1,49 @@
+import { SET_BOUND_DEFINITIONS } from './setBounds.js';
+import { EQUATION_DEFINITIONS } from './equationSolutions.js';
+import { INTEGRAL_TRANSFORM_DEFINITIONS } from './integralTransforms.js';
+import { DISCRETE_FOURIER_DEFINITIONS } from './discreteFourierTransforms.js';
+import { TAYLOR_DEFINITIONS } from './taylorExpansion.js';
+import { SEQUENCE_DEFINITIONS } from './sequenceCalculations.js';
 import { LINEAR_DEFINITIONS, STATISTICS_DEFINITIONS, TENSOR_DEFINITIONS, INTEGER_DEFINITIONS } from './mathOperationMetadata.js';
+import { VECTOR_CALCULUS_DEFINITIONS } from './vectorCalculusOperations.js';
+import { VECTOR_CALCULUS_AT_DEFINITIONS } from './vectorCalculusAt.js';
+import { LINE_INTEGRAL_DEFINITIONS } from './lineIntegrals.js';
+import { REGION_INTEGRAL_DEFINITIONS } from './regionIntegrals.js';
+import { GENERAL_PROBABILITY_DEFINITIONS, DISTRIBUTION_DEFINITIONS } from './generalProbability.js';
 /** Candidate pure-operation registry. Entries need independent acceptance before product enablement. */
 import type { MathOperationDefinition } from './mathInputContract.js';
 
 const definitions: readonly [id: string, head: string, minimum: number, maximum: number, structural?: boolean][] = [
+  ...SET_BOUND_DEFINITIONS.map<[string, string, number, number]>(([id, head]) => [id, head, 1, 1]),
+  ...EQUATION_DEFINITIONS.map<[string, string, number, number]>(([id, head]) => [id, head, 2, 2]),
+  ['solution-value', 'Solution', 2, 2],
+  ['solve-ode', 'ODESolve', 2, 2], ['ode-value', 'ODEAt', 4, 4], ['partial-equations', 'PDE', 2, 2],
+  ['solve-system', 'SolveSystem', 2, 2], ['system-solution', 'SystemSolution', 3, 3],
+  ['numerical-roots', 'NumericRoots', 4, 4], ['root-interval', 'RootInterval', 2, 2],
+  ...INTEGRAL_TRANSFORM_DEFINITIONS.map<[string, string, number, number]>(([id, head]) => [id, head, 1, 1]),
+  ['transform-value', 'TransformAt', 2, 2],
+  ['fourier-series', 'FourierSeries', 4, 4],
+  ['fourier-value', 'FourierAt', 2, 2], ['fourier-cosine', 'FourierCos', 2, 2], ['fourier-sine', 'FourierSin', 2, 2],
+  ...DISCRETE_FOURIER_DEFINITIONS.map<[string, string, number, number]>(([id, head]) => [id, head, 1, 1]),
+  ['zeta', 'Zeta', 1, 1],
+  ['zetaderivative', 'ZetaDerivative', 2, 2],
+  ['elliptick', 'EllipticK', 1, 1], ['elliptice', 'EllipticE', 1, 1], ['ellipticf', 'EllipticF', 2, 2],
+  ['ellipticeinc', 'EllipticEinc', 2, 2], ['ellipticpi', 'EllipticPi', 2, 2], ['ellipticpiinc', 'EllipticPiinc', 3, 3],
+  ['airyai', 'AiryAi', 1, 1], ['airybi', 'AiryBi', 1, 1], ['airyaiprime', 'AiryAiPrime', 1, 1], ['airybiprime', 'AiryBiPrime', 1, 1],
+  ['lambertw', 'LambertW', 2, 2],
+  ['besselj', 'BesselJ', 2, 2], ['bessely', 'BesselY', 2, 2], ['besseli', 'BesselI', 2, 2], ['besselk', 'BesselK', 2, 2],
+  ['beta', 'Beta', 2, 2], ['gamma', 'Gamma', 1, 1], ['polygamma', 'Polygamma', 2, 2],
+  ['erf', 'Erf', 1, 1], ['erfc', 'Erfc', 1, 1],
+  ['legendre', 'Legendre', 2, 2],
+  ['series-coefficient', 'SeriesCoefficient', 2, 2],
+  ...TAYLOR_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
+  ...SEQUENCE_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
+  ...GENERAL_PROBABILITY_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 2, 2]),
+  ...DISTRIBUTION_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
+  ...REGION_INTEGRAL_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 4, 4]),
+  ...LINE_INTEGRAL_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 4, 4]),
+  ...VECTOR_CALCULUS_AT_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 2, 2]),
+  ...VECTOR_CALCULUS_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 2, 2]),
   ...INTEGER_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
   ...TENSOR_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
   ...LINEAR_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
@@ -42,7 +83,7 @@ const definitions: readonly [id: string, head: string, minimum: number, maximum:
   ['trace', 'Trace', 1, 1], ['rank', 'Rank', 1, 1], ['dot', 'Dot', 2, 2], ['cross', 'Cross', 2, 2],
   ['norm', 'Norm', 1, 2],
   ['sum', 'Sum', 2, 16], ['product', 'Product', 2, 16], ['integrate', 'Integrate', 2, 16],
-  ['differentiate', 'D', 2, 16], ['limit', 'Limit', 2, 3],
+  ['differentiate', 'D', 2, 16], ['differentiate-at', 'DerivativeAt', 3, 3], ['limit', 'Limit', 2, 3],
   ['for-all', 'ForAll', 2, 2], ['exists', 'Exists', 2, 2], ['lambda', 'Function', 2, 16],
   ['delimiter', 'Delimiter', 1, 1, true], ['implicit-operation', 'InvisibleOperator', 2, 256, true],
   ['coefficient-reference', 'PcadCoefficient', 1, 1, true],

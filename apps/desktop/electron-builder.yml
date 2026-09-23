@@ -19,6 +19,8 @@ win:
   target:
     - target: nsis
       arch: [x64]
+    - target: portable
+      arch: [x64]
   signExecutable: false
   signAndEditExecutable: true
   artifactName: PointerCAD-${version}-windows-${arch}-setup.${ext}
@@ -37,6 +39,11 @@ nsis:
   createDesktopShortcut: false
   createStartMenuShortcut: true
   installerLanguages: [ja_JP, en_US]
+portable:
+  artifactName: PointerCAD-${version}-windows-${arch}-portable.${ext}
+  requestExecutionLevel: user
+  # 固定版26.15.3ではtrueが$PLUGINSDIRを使う。同時起動で展開先を共有しない。
+  unpackDirName: true
 linux:
   target:
     - target: AppImage

@@ -1,10 +1,43 @@
+import setsSource from '../../../expression/src/math/exactRuntime/cas_sets.py?raw';
+import equationSystemsSource from '../../../expression/src/math/exactRuntime/cas_equation_systems.py?raw';
+import odeInputSource from '../../../expression/src/math/exactRuntime/cas_ode_input.py?raw';
+import odeSource from '../../../expression/src/math/exactRuntime/cas_ode.py?raw';
+import equationsSource from '../../../expression/src/math/exactRuntime/cas_equations.py?raw';
+import fourierSeriesSource from '../../../expression/src/math/exactRuntime/cas_fourier_series.py?raw';
+import transformsSource from '../../../expression/src/math/exactRuntime/cas_transforms.py?raw';
 /** Fixed local program and structured data; user input never becomes Python source. */
 import { EXACT_MATH_ENGINE_LIMITS, type ExactMathEnginePhase } from '@pointercad/expression/math/client';
 import type { ExactMathEngine } from '@pointercad/expression/math/worker';
+import fourierSource from '../../../expression/src/math/exactRuntime/cas_fourier.py?raw';
+import gammaSource from '../../../expression/src/math/exactRuntime/cas_gamma_functions.py?raw';
+import errorFunctionsSource from '../../../expression/src/math/exactRuntime/cas_error_functions.py?raw';
+import besselSource from '../../../expression/src/math/exactRuntime/cas_bessel_functions.py?raw';
+import airySource from '../../../expression/src/math/exactRuntime/cas_airy_functions.py?raw';
+import ellipticSource from '../../../expression/src/math/exactRuntime/cas_elliptic_functions.py?raw';
+import zetaSource from '../../../expression/src/math/exactRuntime/cas_zeta_functions.py?raw';
+import lambertSource from '../../../expression/src/math/exactRuntime/cas_lambert_functions.py?raw';
+import taylorSource from '../../../expression/src/math/exactRuntime/cas_taylor.py?raw';
 import inputSource from '../../../expression/src/math/exactRuntime/cas_input.py?raw';
 import resultSource from '../../../expression/src/math/exactRuntime/cas_result.py?raw';
 import evaluationSource from '../../../expression/src/math/exactRuntime/cas_evaluate.py?raw';
 import linearSource from '../../../expression/src/math/exactRuntime/cas_linear.py?raw';
+import decompositionSource from '../../../expression/src/math/exactRuntime/cas_decompositions.py?raw';
+import spectralSource from '../../../expression/src/math/exactRuntime/cas_spectral.py?raw';
+import discreteSource from '../../../expression/src/math/exactRuntime/cas_discrete.py?raw';
+import limitSource from '../../../expression/src/math/exactRuntime/cas_limits.py?raw';
+import integralSource from '../../../expression/src/math/exactRuntime/cas_integrals.py?raw';
+import derivativeSource from '../../../expression/src/math/exactRuntime/cas_derivatives.py?raw';
+import vectorCalculusSource from '../../../expression/src/math/exactRuntime/cas_vector_calculus.py?raw';
+import lineIntegralsSource from '../../../expression/src/math/exactRuntime/cas_line_integrals.py?raw';
+
+import boxDomainSource from '../../../expression/src/math/exactRuntime/cas_box_domain.py?raw';
+import regionIntegralsSource from '../../../expression/src/math/exactRuntime/cas_region_integrals.py?raw';
+import sequencesSource from '../../../expression/src/math/exactRuntime/cas_sequences.py?raw';
+import sequenceRangesSource from '../../../expression/src/math/exactRuntime/cas_sequence_ranges.py?raw';
+import integerSource from '../../../expression/src/math/exactRuntime/cas_integer.py?raw';
+import probabilitySource from '../../../expression/src/math/exactRuntime/cas_probability.py?raw';
+import probabilityLawsSource from '../../../expression/src/math/exactRuntime/cas_probability_laws.py?raw';
+import probabilityDomainSource from '../../../expression/src/math/exactRuntime/cas_probability_domain.py?raw';
 
 interface Runtime {
   readonly FS: {
@@ -50,8 +83,15 @@ async function initialize(notify: (phase: ExactMathEnginePhase) => void): Promis
     lockFileURL: new URL('pyodide-lock.json', base).href, packages: ['sympy'] });
   if (!isRuntime(runtime)) throw new Error('Invalid mathematics runtime');
   runtime.FS.mkdirTree('/pcad_exact');
-  for (const [name, source] of [['cas_input.py', inputSource], ['cas_result.py', resultSource],
-    ['cas_evaluate.py', evaluationSource], ['cas_linear.py', linearSource]]) {
+  for (const [name, source] of [['cas_sets.py', setsSource], ['cas_equation_systems.py', equationSystemsSource], ['cas_equations.py', equationsSource], ['cas_fourier_series.py', fourierSeriesSource], ['cas_transforms.py', transformsSource], ['cas_fourier.py', fourierSource], ['cas_error_functions.py', errorFunctionsSource], ['cas_zeta_functions.py', zetaSource], ['cas_elliptic_functions.py', ellipticSource], ['cas_airy_functions.py', airySource], ['cas_lambert_functions.py', lambertSource], ['cas_bessel_functions.py', besselSource], ['cas_gamma_functions.py', gammaSource], ['cas_taylor.py', taylorSource], ['cas_input.py', inputSource], ['cas_result.py', resultSource],
+    ['cas_ode_input.py', odeInputSource], ['cas_ode.py', odeSource],
+    ['cas_evaluate.py', evaluationSource], ['cas_linear.py', linearSource], ['cas_decompositions.py', decompositionSource],
+    ['cas_spectral.py', spectralSource], ['cas_discrete.py', discreteSource], ['cas_limits.py', limitSource],
+    ['cas_integrals.py', integralSource], ['cas_derivatives.py', derivativeSource], ['cas_vector_calculus.py', vectorCalculusSource],
+    ['cas_line_integrals.py', lineIntegralsSource], ['cas_box_domain.py', boxDomainSource],
+    ['cas_sequences.py', sequencesSource], ['cas_sequence_ranges.py', sequenceRangesSource], ['cas_integer.py', integerSource],
+    ['cas_region_integrals.py', regionIntegralsSource], ['cas_probability.py', probabilitySource],
+    ['cas_probability_laws.py', probabilityLawsSource], ['cas_probability_domain.py', probabilityDomainSource]]) {
     if (source.length > 32_768) throw new Error('The fixed mathematics module exceeds its limit');
     runtime.FS.writeFile('/pcad_exact/' + name, source);
   }
@@ -75,21 +115,28 @@ export function createLocalExactMathEngine(options: {
 }): ExactMathEngine {
   let initialization: Promise<Runtime> | null = null;
   let busy = false, uses = 0;
-  return { async evaluate(expression, angleUnit) {
+  const evaluateMany: NonNullable<ExactMathEngine['evaluateMany']> = async inputs => {
     if (busy || uses >= EXACT_MATH_ENGINE_LIMITS.requestsPerWorker) throw new Error('Mathematics Worker must be replaced');
+    if (inputs.length < 1 || inputs.length > 8) throw new Error('Invalid mathematics batch size');
     uses += 1; busy = true;
     let runtime: Runtime | null = null;
     try {
-      const payload = JSON.stringify({ expression, angleUnit });
-      if (payload.length > 1_048_576) throw new Error('Structured input exceeds its limit');
+      const payloads = inputs.map(input => JSON.stringify(input));
+      if (payloads.reduce((size, payload) => size + payload.length, 0) > 1_048_576) throw new Error('Structured input exceeds its limit');
       initialization ??= initialize(options.onPhase);
       runtime = await initialization;
       options.onPhase('calculating');
-      runtime.globals.set('_pcad_exact_payload', payload);
-      const encoded = runtime.runPython('_pcad_calculate_exact(_pcad_exact_payload)');
-      if (typeof encoded !== 'string' || encoded.length > 1_048_576) throw new Error('Invalid structured response');
-      const result: unknown = JSON.parse(encoded);
-      return result;
+      const results: unknown[] = [];
+      let outputSize = 0;
+      for (const payload of payloads) {
+        runtime.globals.set('_pcad_exact_payload', payload);
+        const encoded = runtime.runPython('_pcad_calculate_exact(_pcad_exact_payload)');
+        if (typeof encoded !== 'string') throw new Error('Invalid structured response');
+        outputSize += encoded.length;
+        if (outputSize > 1_048_576) throw new Error('Structured response exceeds its limit');
+        results.push(JSON.parse(encoded));
+      }
+      return results;
     } catch (error) {
       options.retire();
       throw error;
@@ -101,5 +148,6 @@ export function createLocalExactMathEngine(options: {
       busy = false;
       if (uses >= EXACT_MATH_ENGINE_LIMITS.requestsPerWorker) options.retire();
     }
-  } };
+  };
+  return { evaluate: async (expression, angleUnit) => (await evaluateMany([{ expression, angleUnit }]))[0], evaluateMany };
 }

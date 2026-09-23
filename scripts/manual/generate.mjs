@@ -99,6 +99,7 @@ try {
   for (const path of ['packages/ui/src/help/supplementaryHelpCoverage.ts', 'packages/ui/src/settings/settings.ts',
     'packages/ui/src/settings/numericToolDefaults.ts', 'packages/ui/src/settings/autoSaveSettings.ts',
     'packages/ui/src/settings/shortcutSettings.ts', 'packages/ui/src/sketch/numericInput.ts',
+    'packages/ui/src/sketch/numericInputChoices.ts',
     'packages/ui/src/sketch/numericDefaultSources.ts', 'packages/ui/src/sheetMetal/sheetMetalDefaultSources.ts',
     'packages/ui/src/sheetMetal/sheetFields.ts', 'packages/ui/src/drawing/drawingToolDefaults.ts',
     'packages/ui/src/file/fileContracts.ts']) await readInput(path);

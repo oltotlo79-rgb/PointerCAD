@@ -3,8 +3,30 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { readPcadFile } from '../../packages/io/src/index.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
+import { startupRecoveryFlow } from './startupRecoveryFlow.js';
 
 test.beforeEach(async({page})=>{await installStartupDiagnostics(page);});
+
+test('起動ファイルの一時的な取得失敗から一度だけ復旧し、登録した道具を保持する', async ({ page }, info) => {
+  await startupRecoveryFlow(page, info, false);
+});
+
+test('起動ファイルの取得失敗が続いても案内を残し、手動で復旧して登録した道具を使える', async ({ page }, info) => {
+  await startupRecoveryFlow(page, info, true);
+});
+
+test('起動ファイルの入口も取得できない場合は通信を使わない案内から復旧できる', async ({ page }) => {
+  let blocked = 0;
+  await page.route('**/*.js', async route => { blocked++; await route.abort('failed'); });
+  await page.goto('/');
+  const retry = page.getByRole('link', { name: '画面を読み込み直す', exact: true });
+  await expect(retry).toBeVisible();
+  expect(blocked).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: '新規', exact: true })).toHaveCount(0);
+  await page.unroute('**/*.js');
+  await retry.click();
+  await expect(page.getByRole('button', { name: '新規', exact: true })).toBeVisible();
+});
 
 test('Web 版が起動し、空のスケッチの案内が出る', async ({ page }, info) => {
   const consoleErrors: string[] = [];

@@ -2,9 +2,10 @@
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { runtimeDependencySelection } from './runtimeDependencySelection.mjs';
 
 const OWNERS = new Map([
-  ['packages/expression', '@cortex-js/compute-engine'],
+  ['packages/expression', 'decimal.js'],
   ['packages/ui', 'mathlive'],
 ]);
 
@@ -28,6 +29,7 @@ export function mathPackageFolder(root, chain) {
 
 export function installedMathDependencies(root) {
   const visited = new Map();
+  const dependencies = runtimeDependencySelection(root);
   const visit = (chain) => {
     if (chain.length > 64) throw new Error('Mathematics dependency nesting is too deep');
     const folder = mathPackageFolder(root, chain);
@@ -35,7 +37,7 @@ export function installedMathDependencies(root) {
     const key = `${metadata.name}@${metadata.version}`;
     if (visited.has(key)) return;
     visited.set(key, { name: metadata.name, version: metadata.version, license: metadata.license });
-    for (const dependency of Object.keys(metadata.dependencies ?? {})) visit([...chain, dependency]);
+    for (const dependency of dependencies(metadata)) visit([...chain, dependency]);
   };
   for (const [owner, name] of OWNERS) visit([owner, name]);
   return [...visited.values()];

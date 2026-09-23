@@ -1,8 +1,20 @@
+import { numericalRootFunction } from './numericalRootResult.js';
+import { equationSystemFunction } from './equationSystems.js';
+import { differentialEquationProblem } from './differentialEquations.js';
+import { EQUATION_IDS, equationFunction } from './equationSolutions.js';
+import { FOURIER_SERIES_ID, fourierSeriesFunction } from './fourierSeries.js';
+import { INTEGRAL_TRANSFORM_IDS, transformFunction } from './integralTransforms.js';
+import { TAYLOR_IDS, taylorFunction } from './taylorExpansion.js';
 /** Convert validated, noncanonical parser output into the application's own immutable math nodes. */
+import { SEQUENCE_IDS, sequenceFunction } from './sequenceCalculations.js';
 import { MathInputProblem, validateRawMath, type MathBinding, type MathNode,
   type MathOperationDefinition } from './mathInputContract.js';
 import { MathSymbolScope, type MathNameContext } from './mathSymbolScope.js';
 import { resolveTypedMathProduct } from './mathProductTypes.js';
+import { VECTOR_CALCULUS_AT_IDS, vectorCalculusAtBounds } from './vectorCalculusAt.js';
+import { LINE_INTEGRAL_IDS, validateLineIntegral } from './lineIntegrals.js';
+import { REGION_INTEGRAL_IDS, validateRegionIntegral } from './regionIntegrals.js';
+import { GENERAL_PROBABILITY_IDS, probabilityFunction } from './generalProbability.js';
 
 function recordOf(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -44,7 +56,7 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
   const rootScope = new MathSymbolScope(options.names);
   const scalarBoundIds = new Set<string>();
 
-  function parse(value: unknown, scope: MathSymbolScope, path: string): MathNode {
+  function parse(value: unknown, scope: MathSymbolScope, path: string, scalarFunction = false): MathNode {
     if (typeof value === 'number') return { kind: 'number', decimal: String(value) };
     if (recordOf(value) && typeof value.num === 'string') return { kind: 'number', decimal: value.num };
     const symbol = symbolOf(value);
@@ -132,6 +144,9 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
         seen.add(name);
         const bound = nested.bind(name, `${path}.${index}`);
         bindings.push({ variable: bound.variable, domain: { kind: 'unrestricted' } });
+        // Calculus and explicit real probability laws declare scalar variables. A generic lambda
+        // still permits vector arguments, so its products remain type-checked.
+        if (scalarFunction) scalarBoundIds.add(bound.variable.id);
         nested = bound.scope;
       }
       return { kind: 'binder', operation: operation.id, bindings, body: parse(items[1], nested, `${path}.1`) };
@@ -147,10 +162,77 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
       }
       return { kind: 'operation', operation: operation.id, operands: [body, ...variables] };
     }
-    if (head === 'Limit') {
-      const body = parse(items[1], scope, `${path}.1`);
+    if (LINE_INTEGRAL_IDS.has(operation.id) || REGION_INTEGRAL_IDS.has(operation.id)) {
+      const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
+        operands: items.slice(1).map((item, index) => parse(item, scope, `${path}.${index + 1}`, index < 2)) };
+      if (REGION_INTEGRAL_IDS.has(operation.id)) validateRegionIntegral(value);
+      else validateLineIntegral(value);
+      return value;
+    }
+    if (operation.id === 'solve-system') {
+      const value: MathNode = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true), parse(items[2], scope, `${path}.2`)] };
+      equationSystemFunction(value);
+      return value;
+    }
+    if (EQUATION_IDS.has(operation.id)) {
+      const value: MathNode = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true), parse(items[2], scope, `${path}.2`)] };
+      equationFunction(value);
+      return value;
+    }
+    if (operation.id === 'numerical-roots') {
+      const value: MathNode = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true), ...items.slice(2).map((item, index) => parse(item, scope, `${path}.${String(index + 2)}`))] };
+      numericalRootFunction(value);
+      return value;
+    }
+    if (operation.id === 'solve-ode' || operation.id === 'partial-equations') {
+      const value: MathNode = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, path + '.1', true), parse(items[2], scope, path + '.2')] };
+      differentialEquationProblem(value);
+      return value;
+    }
+    if (operation.id === FOURIER_SERIES_ID) {
+      const value: MathNode = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true), ...items.slice(2).map((item, index) => parse(item, scope, `${path}.${String(index + 2)}`))] };
+      fourierSeriesFunction(value);
+      return value;
+    }
+    if (INTEGRAL_TRANSFORM_IDS.has(operation.id)) {
+      const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true)] };
+      transformFunction(value);
+      return value;
+    }
+    if (TAYLOR_IDS.has(operation.id)) {
+      const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
+        operands: items.slice(1).map((item, index) => parse(item, scope, `${path}.${index + 1}`, index === 0)) };
+      taylorFunction(value);
+      return value;
+    }
+    if (SEQUENCE_IDS.has(operation.id)) {
+      const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
+        operands: items.slice(1).map((item, index) => parse(item, scope, `${path}.${index + 1}`, index === 0)) };
+      sequenceFunction(value);
+      return value;
+    }
+    if (GENERAL_PROBABILITY_IDS.has(operation.id)) {
+      const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true), parse(items[2], scope, `${path}.2`)] };
+      probabilityFunction(value);
+      return value;
+    }
+    if (VECTOR_CALCULUS_AT_IDS.has(operation.id)) {
+      const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true), parse(items[2], scope, `${path}.2`)] };
+      vectorCalculusAtBounds(value);
+      return value;
+    }
+    if (head === 'Limit' || head === 'DerivativeAt') {
+      const body = parse(items[1], scope, `${path}.1`, head === 'DerivativeAt');
       if (body.kind !== 'binder' || body.operation !== 'lambda' || body.bindings.length !== 1) {
-        throw new MathInputProblem('syntax', '極限の変数と近づける値を指定してください。');
+        throw new MathInputProblem('syntax', '計算する式の変数を1つと、値を調べる位置を指定してください。');
       }
       return { kind: 'operation', operation: operation.id,
         operands: [body, ...items.slice(2).map((value, index) => parse(value, scope, `${path}.${index + 2}`))] };

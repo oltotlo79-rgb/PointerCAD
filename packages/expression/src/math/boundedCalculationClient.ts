@@ -34,7 +34,7 @@ export interface CalculationClientOptions<Request extends CalculationRequest, Re
   readonly createWorker: () => CalculationWorkerPort;
   /** Validate the untrusted Worker envelope and value; a malformed reply never becomes a CAD coordinate. */
   readonly decodeReply: (value: unknown, request: Request) => { readonly serial: number; readonly result: Result } | null;
-  /** Optional host-owned preparation protocol. Geometry clients do not opt into this. */
+  /** Optional host-owned preparation protocol. Each client must validate eligible request kinds. */
   readonly progress?: {
     readonly maximumDurationMs: number;
     readonly createReceiver: (request: Request, serial: number, startedAt: number) => (value: unknown) => number | null;

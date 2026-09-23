@@ -16,6 +16,7 @@ export interface MathEditorPanelProps {
   readonly groups: readonly MathInsertGroup[];
   readonly palette: readonly MathPaletteItem[];
   readonly readOnly: boolean;
+  readonly acceptLabel?: string;
   readonly onHelp: () => void;
 }
 
@@ -23,9 +24,12 @@ export interface MathEditorPanelProps {
 export function MathEditorPanel(props: MathEditorPanelProps): React.JSX.Element {
   const snapshot = useSyncExternalStore(props.controller.subscribe, props.controller.getSnapshot, props.controller.getSnapshot);
   const description = mathEditorResultText(snapshot);
+  const labels = mathEditorLabels();
+  const appliedLabels = props.acceptLabel === undefined ? labels
+    : { ...labels, apply: props.acceptLabel, hints: { ...labels.hints, apply: props.acceptLabel } };
   const axes = snapshot.state.status === 'evaluated' ? mathResultAxes(snapshot.state.output.evaluation) : null;
   return <MathEditorSurface input={snapshot.state.input} controller={props.controller}
-    createField={props.createField} labels={mathEditorLabels()} groups={props.groups} palette={props.palette}
+    createField={props.createField} labels={appliedLabels} groups={props.groups} palette={props.palette}
     query={snapshot.query} onQuery={props.controller.setQuery} resultMessage={description.message}
     resultActions={axes === null ? null : <MathResultComponentPicker
       key={snapshot.state.input.identity.inputRevision} axes={axes}

@@ -1,4 +1,8 @@
+import { functionOdeCurveFlow, ODE_CURVE_SCENARIO_TIMEOUT_MS } from './functionOdeCurveFlow.js';
 import { FUNCTION_DIRECTION_SCENARIOS } from './functionDirectionScenarios.js';
+import { functionDerivativesFlow } from './functionDerivativesFlow.js';
+import { functionHyperbolicFlow } from './functionHyperbolicFlow.js';
+import { functionVectorCalculusFlow } from './functionVectorCalculusFlow.js';
 import { expect, test } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { functionPlotFlow } from './functionPlotFlow.js';
@@ -11,6 +15,30 @@ import { functionSurfacePointFlow } from './functionSurfacePointFlow.js';
 import { functionCoefficientFlow } from './functionCoefficientFlow.js';
 import { functionSectionScenario } from './functionSectionFlow.js';
 import {scriptFunctionDocumentFlow} from './scriptFunctionDocumentFlow.js';
+
+test('ADD-23 勾配とヘッセ行列の成分を実Electronで保存再開・ラプラシアンへ編集・Undo・F1まで通す', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await functionVectorCalculusFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-17 双曲線関数の曲線と逆関数の曲面を実Electronで保存再開・編集Undo・F1まで通す', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await functionHyperbolicFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-22 導関数の曲線と曲面を実Electronで保存再開・編集Undo・F1まで通す', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await functionDerivativesFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
 
 test('ADD-FUNCTION 実Electronでも関数を残した自動作図・保存・Undo・再開を通す',async({playwright},info)=>{
   const {app}=await launchDesktop(playwright,info);
@@ -114,3 +142,12 @@ for (const scenario of FUNCTION_DIRECTION_SCENARIOS) {
     } finally { await app.close(); }
   });
 }
+
+test('ADD-26 微分方程式の解曲線・点と法線・条件の保存再編集', async ({ playwright }, info) => {
+  test.setTimeout(ODE_CURVE_SCENARIO_TIMEOUT_MS);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await functionOdeCurveFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});

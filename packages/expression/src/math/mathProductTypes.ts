@@ -1,13 +1,26 @@
+import { SEQUENCE_IDS, sequenceFunction } from './sequenceCalculations.js';
 import { STATISTICS_DEFINITIONS } from './mathOperationMetadata.js';
+import { VECTOR_CALCULUS_AT_IDS, vectorCalculusAtBounds } from './vectorCalculusAt.js';
+import { LINE_INTEGRAL_IDS, validateLineIntegral } from './lineIntegrals.js';
+import { REGION_INTEGRAL_IDS, validateRegionIntegral } from './regionIntegrals.js';
+import { GENERAL_PROBABILITY_IDS, probabilityFunction } from './generalProbability.js';
 /** Resolve multiplication glyphs from declared scalar types and explicit vector shapes, never from spelling. */
 import { MATH_INPUT_LIMITS, MathInputProblem, type MathNode, type MathSymbolReference } from './mathInputContract.js';
 
 const SCALAR_STATISTICS = new Set<string>(STATISTICS_DEFINITIONS.map(([id])=>id).filter(id=>id!=='modes'));
 const SCALAR_LINEAR_RESULTS = new Set(['determinant', 'trace', 'rank', 'norm', 'dot',
+  // The expansion is not scalar, but its explicitly selected coefficient is.
+  // The exact engine still checks the whole expansion before returning a value.
+  'series-coefficient',
   'tensor-element', 'kronecker-delta', 'levi-civita',
   'integer-quotient', 'integer-remainder', 'next-prime', 'euler-totient']);
 
 const SCALAR_OPERATIONS = new Set([
+  'zeta', 'zetaderivative',
+  'elliptick', 'elliptice', 'ellipticf', 'ellipticeinc', 'ellipticpi', 'ellipticpiinc',
+  'airyai', 'airybi', 'airyaiprime', 'airybiprime', 'lambertw',
+  'besselj', 'bessely', 'besseli', 'besselk',
+  'legendre', 'erf', 'erfc', 'gamma', 'polygamma', 'beta',
   'add', 'subtract', 'negate', 'multiply', 'divide', 'power', 'sqrt', 'root', 'square',
   'absolute', 'sign', 'floor', 'ceiling', 'round', 'minimum', 'maximum', 'factorial', 'double-factorial',
   'binomial', 'gcd', 'lcm', 'modulo', 'exponential', 'natural-log', 'log-base', 'log-two', 'log-ten',
@@ -29,6 +42,35 @@ export function resolveTypedMathProduct(token: 'times' | 'dot', operands: readon
     if (node.kind === 'constant') return ['pi', 'e', 'imaginary-unit', 'infinity'].includes(node.name) ? { kind: 'scalar' } : { kind: 'unknown' };
     if (node.kind === 'symbol') return { kind: scalarReference(node.reference) ? 'scalar' : 'unknown' };
     if (node.kind === 'binder') return { kind: 'unknown' };
+    if (SEQUENCE_IDS.has(node.operation)) {
+      sequenceFunction(node);
+      return { kind: 'scalar' };
+    }
+    if (GENERAL_PROBABILITY_IDS.has(node.operation)) {
+      probabilityFunction(node);
+      return { kind: node.operation.startsWith('independent-') ? 'unknown' : 'scalar' };
+    }
+    if (LINE_INTEGRAL_IDS.has(node.operation) || REGION_INTEGRAL_IDS.has(node.operation)) {
+      if (REGION_INTEGRAL_IDS.has(node.operation)) validateRegionIntegral(node);
+      else validateLineIntegral(node);
+      return { kind: 'scalar' };
+    }
+    if (VECTOR_CALCULUS_AT_IDS.has(node.operation)) {
+      const dimensions = vectorCalculusAtBounds(node);
+      return dimensions.length === 0 ? { kind: 'scalar' } : dimensions.length === 1
+        ? { kind: 'vector', length: dimensions[0] } : { kind: 'matrix', height: dimensions[0], width: dimensions[1] };
+    }
+    if (['gradient', 'divergence', 'curl', 'laplacian', 'jacobian', 'hessian'].includes(node.operation)) {
+      const coordinates = node.operands[1];
+      if (coordinates?.kind !== 'operation' || coordinates.operation !== 'list') return { kind: 'unknown' };
+      const width = coordinates.operands.length;
+      if (node.operation === 'divergence' || node.operation === 'laplacian') return { kind: 'scalar' };
+      if (node.operation === 'gradient' || node.operation === 'curl') return { kind: 'vector', length: width };
+      if (node.operation === 'hessian') return { kind: 'matrix', height: width, width };
+      const body = node.operands[0];
+      return body.kind === 'operation' && body.operation === 'list'
+        ? { kind: 'matrix', height: body.operands.length, width } : { kind: 'unknown' };
+    }
     // The data argument is a vector, but its statistic is scalar. Invalid data is still
     // rejected by domain preparation before any surrounding multiplication is simplified.
     if (SCALAR_STATISTICS.has(node.operation) || SCALAR_LINEAR_RESULTS.has(node.operation)) return { kind: 'scalar' };

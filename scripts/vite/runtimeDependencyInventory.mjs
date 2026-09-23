@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { env } from 'node:process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { runtimeDependencySelection } from './runtimeDependencySelection.mjs';
 
 const packageName = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u;
 function within(root, folder) {
@@ -36,6 +37,7 @@ export function installedRuntimeDependencies(repository) {
   const gitDirectory = realpathSync(execFileSync('git', ['--no-optional-locks', '-C', sourceRoot, 'rev-parse',
     '--path-format=absolute', '--git-common-dir'], { env: gitEnvironment, encoding: 'utf8', windowsHide: true }).trim());
   const root = dirname(gitDirectory), visited = new Set(), packages = new Map();
+  const selectedDependencies = runtimeDependencySelection(sourceRoot);
   if (relative(root, gitDirectory) !== '.git') throw new Error('Unknown project metadata location');
   within(root, sourceRoot);
   const visit = (folder, parent, depth) => {
@@ -54,8 +56,7 @@ export function installedRuntimeDependencies(repository) {
     }
     if (visited.has(folder)) return;
     visited.add(folder);
-    const dependencies = { ...metadata.dependencies, ...metadata.optionalDependencies };
-    for (const name of Object.keys(dependencies).sort()) {
+    for (const name of selectedDependencies(metadata).sort()) {
       let target;
       try { target = dependencyFolder(root, folder, name); }
       catch (error) {

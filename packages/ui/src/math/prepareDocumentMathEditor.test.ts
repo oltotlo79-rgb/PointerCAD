@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createEmptyPartDocument, type Parameter, type PartDocument, type DocumentMathContext } from '@pointercad/model';
+import { createEmptyPartDocument, evaluateDocumentMath, prepareDocumentMathIdentity,
+  type Parameter, type PartDocument, type DocumentMathContext } from '@pointercad/model';
+import { mathScalarExpression } from '@pointercad/expression';
 import {
   createFunctionMathSource,
   createMathBackend,
@@ -12,7 +14,7 @@ import {
   decodeMathWorkReply,
 } from '@pointercad/expression/math/contracts';
 
-import { prepareDocumentMathEditor } from './prepareDocumentMathEditor.js';
+import { prepareDocumentMathEditor, prepareDocumentMathEnvironment } from './prepareDocumentMathEditor.js';
 import { prepareDocumentFunctionEditor } from './prepareDocumentFunctionEditor.js';
 import { createFunctionCurveEvaluator } from '@pointercad/expression/math/geometry';
 
@@ -30,6 +32,84 @@ function context(document: PartDocument): DocumentMathContext {
   } };
 }
 describe('数式入力を開く準備は未確定の文書へ閉じ込める', () => {
+  it.each(['Gamma・Beta分布の値', '板゠厚', 'かな゛幅'])('%sを含む文書でも入力を開き、候補を同じ値として挿入できる', async label => {
+    const document = { ...createEmptyPartDocument(), parameters: [row(label, '3')] }, before = JSON.stringify(document);
+    const prepared = await prepareDocumentMathEditor(document, row('input', label).value, context(document));
+    expect(prepared.coefficientProblem).toBeNull();
+    expect(prepared.source).toBe(`coef(${JSON.stringify(label)})`);
+    const choice = prepared.groups.find(group => group.id === 'coefficients')?.choices[0];
+    if (choice === undefined) throw new Error('係数の挿入候補がありません');
+    const request = { identity: { documentId: document.id, documentVersion: 1, editorId: 'name', inputRevision: 1 },
+      source: choice.template, notation: 'latex' as const, angleUnit: 'degree' as const, coefficients: prepared.coefficients };
+    const result = await context(document).client.evaluate(request, 1000);
+    if (result.status !== 'result') throw new Error(JSON.stringify(result));
+    expect(result.result.evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: 3 });
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
+  async function evaluatedCoefficientDocument() {
+    const empty = createEmptyPartDocument(), client = context(empty).client;
+    const completion = await client.evaluate({ identity: { documentId: empty.id, documentVersion: 1, editorId: 'seed', inputRevision: 1 },
+      source: 'sin(30)', notation: 'text', angleUnit: 'degree', coefficients: [] }, 1_000);
+    if (completion.status !== 'result') throw new Error('Expected an evaluated expression');
+    const scalar = mathScalarExpression(completion.result);
+    if (!scalar.ok) throw new Error(scalar.message);
+    const candidate = prepareDocumentMathIdentity({ ...empty, parameters: [
+      { ...row('A', scalar.value.source), value: scalar.value }, row('B', 'A*2'), row('C', '5'),
+    ] });
+    const evaluated = await evaluateDocumentMath(candidate, context(candidate));
+    if (!evaluated.ok) throw new Error(JSON.stringify(evaluated.failures));
+    return evaluated.document;
+  }
+
+  it('計算済みの同じ係数表で画面を繰り返し開く際は原式を保って再計算を省く', async () => {
+    const document = await evaluatedCoefficientDocument(), channel = context(document);
+    let requests = 0;
+    const tracked: DocumentMathContext = { ...channel, client: { evaluate: (...args) => {
+      requests += 1; return channel.client.evaluate(...args);
+    } } };
+    for (let index = 0; index < 2; index += 1) {
+      const prepared = await prepareDocumentMathEditor(document, row('input', 'A').value, tracked);
+      expect(prepared.coefficientProblem).toBeNull();
+      expect(prepared.coefficients.map(coefficient => [coefficient.label, coefficient.decimal])).toEqual([['A','0.5'], ['B','1'], ['C','5']]);
+      expect(prepared.coefficients[0].exactExpression).toMatchObject({ kind: 'operation', operation: 'sin' });
+    }
+    const repair = await prepareDocumentMathEnvironment(document, tracked, 'A');
+    expect(repair.coefficients.map(coefficient => coefficient.label)).toEqual(['C']);
+    expect(requests).toBe(0);
+  });
+
+  it('保存から作り直した係数表と角度単位を変更した係数表は再計算し、保存値を信用しない', async () => {
+    const original = await evaluatedCoefficientDocument();
+    for (const changeAngle of [false, true]) {
+      const copy = structuredClone(original);
+      const document = { ...copy, parameters: copy.parameters.map(parameter => {
+        if (parameter.name !== 'A' || parameter.value.mathDefinition === undefined) return parameter;
+        return { ...parameter, value: { ...parameter.value, value: 999, display: '999', mathDefinition: {
+          ...parameter.value.mathDefinition, angleUnit: changeAngle ? 'radian' as const : 'degree' as const,
+        } } };
+      }) };
+      const channel = context(document); let requests = 0;
+      const prepared = await prepareDocumentMathEnvironment(document, { ...channel, client: {
+        evaluate: (...args) => { requests += 1; return channel.client.evaluate(...args); },
+      } });
+      expect(requests).toBe(1); expect(prepared.coefficientProblem).toBeNull();
+      const value = Number(prepared.coefficients[0].decimal);
+      expect(value).toBeCloseTo(changeAngle ? Math.sin(30) : 0.5, 12);
+      expect(document.parameters[0].value.value).toBe(999);
+    }
+  });
+
+  it('取消済み・別文書・古い編集元では計算済みの係数も返さない', async () => {
+    const document = await evaluatedCoefficientDocument(), controller = new AbortController(); controller.abort();
+    const valid = context(document);
+    for (const channel of [{ ...valid, signal: controller.signal }, { ...valid, isCurrent: () => false },
+      { ...valid, identity: { ...valid.identity, documentId: 'another-document' } }]) {
+      const prepared = await prepareDocumentMathEnvironment(document, channel);
+      expect(prepared.coefficients).toEqual([]); expect(prepared.coefficientProblem).not.toBeNull();
+    }
+  });
+
   it('関数の確認画面へも係数の原式を渡し、1/3の小数キャッシュを拡大しない', async () => {
     const document = { ...createEmptyPartDocument(), parameters: [row('r', '1/3')] };
     const input = await prepareDocumentFunctionEditor(document, { source: 'X+(coef("r")*3-1)*10^40', notation: 'text', angleUnit: 'degree' },

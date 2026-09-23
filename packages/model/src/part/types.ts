@@ -1,3 +1,4 @@
+import type { UnresolvedMathProblem } from './unresolvedMathProblems.js';
 import type { FeatureFolder } from '../history/featureFolders.js';
 import type { FeatureNote } from '../history/featureNotes.js';
 /**
@@ -1490,6 +1491,8 @@ export interface SketchCanvas {
  * (FR-505、FR-801)。変更のたびに新しい配列を作る(不変)。
  */
 export interface PartDocument {
+  /** 版16: 解けていない式と条件。数値・形状の代用品として使用しない。 */
+  readonly unresolvedMathProblems?: readonly UnresolvedMathProblem[];
   /** 版15: 設計メモは付加情報であり、形状と履歴の順序には影響しない。 */
   readonly featureNotes?: readonly FeatureNote[];
   /** 履歴の表示上の所属。計算の並び順とは独立して保存する。 */

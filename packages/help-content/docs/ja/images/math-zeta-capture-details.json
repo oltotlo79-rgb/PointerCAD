@@ -1,0 +1,570 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "math-zeta",
+      "script": "e2e/tests/mathZetaFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-zeta-functions-8bet21s5",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-zeta-functions-8bet21s5/browser-results/math-input-ADD-18-ゼータ関数の値と微分と入力条件と保存再編集・Undo・F1を通す-functional",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "ADD-18 ゼータ関数の値と微分と入力条件と保存再編集・Undo・F1を通す",
+        "scriptSha256": "25fb4323a9d4742277ad7b9c285cb558cd0815c08ebc3cf5f55d7dcc27307e2c",
+        "fixture": {
+          "filename": "math-zeta-fixture.json",
+          "sha256": "8c09c6131a50296e51c6df4ff37e8da541cb45dd91b23b406ddf4a1d722ef486"
+        },
+        "screen": {
+          "filename": "math-zeta-screen.png",
+          "sha256": "9191be557158034033d1ab0b773a5c15456a27e821e9e46960fe7697125299f9"
+        },
+        "detail": {
+          "filename": "math-zeta-detail.png",
+          "sha256": "f514e5d026ca6f2c488948f04249f36ba165cbbe40f7a0d998032c0dad502ae1"
+        },
+        "controlDescriptions": {
+          "count": 85,
+          "controls": [
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "新規",
+              "description": "新規 (Ctrl/Cmd+N)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "開く",
+              "description": "開く (Ctrl/Cmd+O)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "保存",
+              "description": "保存 (Ctrl/Cmd+S)\nShift を押しながら押すと、名前を付けて保存します。\nこの環境では場所を選べないため、ダウンロードで保存します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ファイルのほかの操作",
+              "description": "ファイルのほかの操作: 新規・開く・保存のほかのファイル操作をまとめてあります\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "自動作図",
+              "description": "自動作図: JavaScriptで点・線・立体を作り、処理を道具として登録します\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "元に戻す",
+              "description": "元に戻す (Ctrl+Z)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "やり直す",
+              "description": "やり直す: 進める先はありません"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "モデリング",
+              "description": "モデリング"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "選択",
+              "description": "選択: 要素をクリックして選びます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "点",
+              "description": "点: 座標を入れて点を打ちます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "線分",
+              "description": "線分: 2 点を結ぶ線を引きます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "円弧",
+              "description": "円弧: 中心・半径・角度で円弧や円をかきます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "点列",
+              "description": "点列: 等間隔に点をまとめて打ちます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "面",
+              "description": "面: 囲まれたところに面を張ります"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "作図",
+              "description": "作図: 四角・多角形・長穴・円・楕円・曲線をまとめてかきます\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "編集",
+              "description": "編集: かいた線・円弧をずらす・切り取る・伸ばします\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "拘束",
+              "description": "拘束: 形を条件で決めます。道具を選んでから、条件を付ける要素を順に押してください\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "板金",
+              "description": "板金: 一定厚の基板を作り、縁を折り曲げます。\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "作る",
+              "description": "作る: 面や点を選び、数値を入れて立体を作ります\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "合わせる",
+              "description": "合わせる: 立体を 2 つ選んで組み合わせます\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "加工",
+              "description": "加工: 立体に穴・面取り・パターンなどの加工をします\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "見た目",
+              "description": "見た目: 立体の見え方を決めます(色と材質)\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "作図面: XY",
+              "description": "上から見た面(床の面)にかきます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "視点に合わせる",
+              "description": "視点に合わせる: 視点に合わせる: いま見ている向きに最も近い面へ切り替えます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "投影: 透視投影",
+              "description": "投影: 見え方を切り替えます(遠近をつける/つけない)\n透視投影: 遠近をつけて見せます(奥のものほど小さくなります)\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "4分割で見る",
+              "description": "4分割で見る"
+            },
+            {
+              "tag": "SELECT",
+              "id": "",
+              "name": "視点を選ぶ",
+              "description": "保存した視点を選びます。選んだだけでは画面は動かず、復元ボタンでその視点へ移ります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "この視点へ",
+              "description": "この視点へ"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "視点の名前",
+              "description": "保存または改名に使う視点の名前を、120文字以内で入力します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "今の視点を保存",
+              "description": "今の視点を保存"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "名前を変更",
+              "description": "名前を変更"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "削除",
+              "description": "削除"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "面のみ",
+              "description": "面のみ: 面のみ"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "面と稜線",
+              "description": "面と稜線: 面と稜線"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "稜線のみ",
+              "description": "稜線のみ: 稜線のみ"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "断面表示",
+              "description": "断面表示: 断面表示: 形を切らずに、見た目だけを平面で切って中を見ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "グリッド",
+              "description": "グリッド: グリッド: 方眼と XYZ 軸の表示を切り替えます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "続けてかく",
+              "description": "続けてかく: 直前の端から続けて次をかきます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "吸着",
+              "description": "吸着: 近くの点にぴったり合わせます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "吸着の種別",
+              "description": "吸着の種別: 端点 / 交点 / 中点 / 中心 / 方眼 / 角度 / 延長線 / 垂線 / 平行線\nクリックで一覧を開き、合わせる場所を選べます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ホーム視点",
+              "description": "ホーム視点: ホーム視点: 斜め上から見た最初の向きに戻します(Home キー)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "設定",
+              "description": "表示設定を開きます(テーマ・拡大率・自動保存の間隔)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ヘルプ (F1)",
+              "description": "ヘルプ (F1)"
+            },
+            {
+              "tag": "INPUT",
+              "id": "_r_1_",
+              "name": "名前で探す",
+              "description": "名前や所属を入力。下矢印で候補へ移動、Escで検索を解除します"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "履歴フォルダを作る",
+              "description": "履歴フォルダを作る"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "初めての作図を案内する",
+              "description": "点から穴のある板を作り、保存するまでを案内します。途中で止めても文書は残ります"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "プロパティ",
+              "description": "選択中の要素の寸法や設定を表示し、確認・編集します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "パラメータ",
+              "description": "文書の係数一覧と構成を開きます。"
+            },
+            {
+              "tag": "SELECT",
+              "id": "",
+              "name": "構成",
+              "description": "保存してある構成を選び、係数の組合せを切り替えます。形に関係する係数は再計算へ反映されます。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "構成の名前",
+              "description": "構成の新しい名前を入力します。Enterで新規作成でき、選択中の構成の改名にも使います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "追加",
+              "description": "現在の式を新しい構成として残します"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "改名",
+              "description": "選んだ構成の名前を変更します"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "削除",
+              "description": "選んだ構成を削除します。取り消しで戻せます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "1 つ上へ動かします",
+              "description": "1 つ上へ動かします"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "1 つ下へ動かします",
+              "description": "1 つ下へ動かします"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "この名前を消します",
+              "description": "この名前を消します"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "名前 ゼータの値",
+              "description": "式から参照する係数の名前を入力します。Enterまたは欄から離れる操作で確定し、参照している式の名前も合わせて更新します。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "式 ゼータの値",
+              "description": "係数の値を決める数値または式を入力します。Enterまたは欄から離れる操作で確定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "数式で入力",
+              "description": "この係数の式を、数学入力で確認・編集します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "mm",
+              "description": "この係数の単位の種類を選びます。式が表す値と、他の係数からの参照を確認してください。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "°",
+              "description": "この係数の単位の種類を選びます。式が表す値と、他の係数からの参照を確認してください。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "なし",
+              "description": "この係数の単位の種類を選びます。式が表す値と、他の係数からの参照を確認してください。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "説明 ゼータの値",
+              "description": "係数の用途などの説明を入力します。Enterまたは欄から離れる操作で確定し、形の寸法は変えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "名前を付けた数値を足します",
+              "description": "名前を付けた数値を足します"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "数式入力のヘルプ",
+              "description": "式の入力、角度の単位、計算結果の使い方を説明する章を開きます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "テキスト入力",
+              "description": "式の意味が保たれることを確認し、文字で入力する表示へ切り替えます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "構造入力",
+              "description": "式の意味が保たれることを確認し、分数などを見た形のまま入力する表示へ切り替えます。"
+            },
+            {
+              "tag": "SELECT",
+              "id": "",
+              "name": "角度の単位",
+              "description": "この式の角度を度またはラジアンで扱います。三角関数の入力と、角度を返す関数の結果に適用されます。"
+            },
+            {
+              "tag": "TEXTAREA",
+              "id": "",
+              "name": "数式zeta(2)",
+              "description": "Ctrl+Enterで確定、Escで取消。係数は名前の一覧から挿入できます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "π",
+              "description": "円周率。係数名のpiとは別の定数です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "e",
+              "description": "自然対数の底。係数名のeとは別の定数です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ⅈ",
+              "description": "虚数単位。係数iや総和の添字iとは区別します。"
+            },
+            {
+              "tag": "SELECT",
+              "id": "",
+              "name": "数学の分野",
+              "description": "挿入する関数や記号を、計算の分野で絞り込みます。入力済みの式は変えません。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "名前・記号で検索",
+              "description": "関数や記号の名前・説明から候補を探します。選ぶと式へ挿入できます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ζ ゼータ関数",
+              "description": "実数の引数でゼータ関数の値を求めます。引数1では発散します。この計算の範囲は−32〜128です。角度の単位は関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ζ⁽ⁿ⁾ ゼータ関数の微分",
+              "description": "微分の次数、実数の引数の順です。次数は0〜17の整数、引数は−32〜128で1を除きます。次数0は元の関数の値です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "取消",
+              "description": "この画面での式の変更を取り消し、元の入力を保って閉じます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "この式を使う",
+              "description": "確認した式を元の入力欄へ渡します。配列などは使用する成分を先に選びます。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "pcad-command-line-input",
+              "name": "コマンド",
+              "description": "道具の名前(線分 / LINE / L)や座標(10,20 / @40,0 / @30<90)を打って Enter。Space で入り、Esc で戻ります"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "頂点",
+              "description": "選べる種類の入切です。切ると、その種類は選べず色も出ません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "辺",
+              "description": "選べる種類の入切です。切ると、その種類は選べず色も出ません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "面",
+              "description": "選べる種類の入切です。切ると、その種類は選べず色も出ません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "立体",
+              "description": "選べる種類の入切です。切ると、その種類は選べず色も出ません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "拘束の推定",
+              "description": "線を引くときに、水平・垂直・一致・接線・平行を推定して小さな印で予告し、引き終わると拘束を付けます。Shift を押している間は止まります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "単位: mm",
+              "description": "押すと mm と inch を切り替えます"
+            }
+          ],
+          "missing": []
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 280.5,
+          "width": 720,
+          "height": 538.984375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      }
+    }
+  ]
+}

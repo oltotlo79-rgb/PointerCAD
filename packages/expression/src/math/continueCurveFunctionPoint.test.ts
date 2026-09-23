@@ -38,6 +38,28 @@ describe('保存した曲線上の点を同じ解へ追従させる',()=>{
     const before=input('1',outputs,known,'X'),after=input('2',outputs,known,'X');
     expect(continueCurveFunctionPoint(before,after,anchor(before,0),context())).toMatchObject({status:'ready',candidate:{point:[1,2,0]}});
   });
+  it('独立座標で一意に決まる点は原式の編集後も指定座標と追加条件を再確認する',()=>{
+    const known=[{axis:'X' as const,value:1}],before=input('1',['X','X^2+1','0'],known,'X');
+    const after=input('1',['X','X^2+2','0'],known,'X'),choice=anchor(before,0);
+    expect(continueCurveFunctionPoint(before,after,choice,context()))
+      .toMatchObject({status:'ready',candidate:{point:[1,3,0],location:{direct:true}}});
+    const constrained=[...known,{axis:'Y' as const,value:2}];
+    const both=input('1',['X','X^2+1','0'],constrained,'X');
+    expect(continueCurveFunctionPoint(both,input('1',['X','X^2+2','0'],constrained,'X'),anchor(both,0),context()))
+      .toEqual({status:'unresolved',reason:'branch-missing'});
+  });
+  it('独立座標の式編集でも特異点・範囲外・壊れた保存位置を成功にしない',()=>{
+    const known=[{axis:'X' as const,value:1}],before=input('1',['X','X^2+1','0'],known,'X'),choice=anchor(before,0);
+    for(const formula of ['1/(X-1)','X^2+4']) {
+      const changed=input('1',['X',formula,'0'],known,'X');
+      expect(continueCurveFunctionPoint(before,changed,choice,context()).status).toBe('unresolved');
+    }
+    const changed=input('1',['X','X^2+2','0'],known,'X');
+    expect(continueCurveFunctionPoint(before,changed,{...choice,interval:{lower:2,upper:2}},context()))
+      .toEqual({status:'unresolved',reason:'invalid-anchor'});
+    expect(continueCurveFunctionPoint(before,{...changed,outputs:changed.outputs.map(value=>({...value,angleUnit:'radian'}))},choice,context()))
+      .toEqual({status:'unresolved',reason:'formula-changed'});
+  });
   it('解が消えたときに別の点や古い保存座標を採用しない',()=>{
     const before=input('1');expect(continueCurveFunctionPoint(before,input('-1'),anchor(before,1),context()))
       .toEqual({status:'unresolved',reason:'branch-missing'});

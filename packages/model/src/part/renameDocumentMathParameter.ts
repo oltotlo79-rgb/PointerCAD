@@ -4,7 +4,7 @@ import { collectMathCoefficients, renameVariable,
 import { prepareDocumentMathIdentity } from './documentMathIdentity.js';
 import { evaluateDocumentMath, type DocumentMathContext } from './evaluateDocumentMath.js';
 import { mapDocumentExpressions } from './reevaluatePart.js';
-import { mapDocumentFunctionExpressions } from './documentFunctions.js';
+import { mapDocumentNonScalarExpressions } from './documentFunctions.js';
 import type { FunctionExpressionScope } from '../functionGeometry/readFunctionDefinition.js';
 import { synchronizeConfigurations } from './configurations.js';
 import type { PartDocument } from './types.js';
@@ -36,7 +36,7 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
     };
     document.parameters.forEach(parameter => collect(parameter.value));
     mapDocumentExpressions(document, collect);
-    mapDocumentFunctionExpressions(document, (definition, _ownerId, scope) => {
+    mapDocumentNonScalarExpressions(document, (definition, _ownerId, scope) => {
       definitions.add(definition); scopes.set(definition, scope); return definition;
     });
     for (const configuration of document.configurations) {
@@ -74,7 +74,7 @@ export async function renameDocumentMathParameter(original: PartDocument, from: 
       const next = replacements.get(definition);
       return next === undefined ? value : { ...value, source: next.source, mathDefinition: next };
     };
-    const geometry = mapDocumentFunctionExpressions(mapDocumentExpressions(document, rewrite), definition => replacements.get(definition) ?? definition);
+    const geometry = mapDocumentNonScalarExpressions(mapDocumentExpressions(document, rewrite), definition => replacements.get(definition) ?? definition);
     const parameters = document.parameters.map(parameter => ({ ...parameter,
       name: parameter.name === from ? to : parameter.name, value: rewrite(parameter.value) }));
     const configurations = document.configurations.map(configuration => {

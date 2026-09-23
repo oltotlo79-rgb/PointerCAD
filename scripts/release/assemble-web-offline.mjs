@@ -8,6 +8,7 @@ import { mkdir, lstat, readFile, writeFile } from 'node:fs/promises';
 import { collectOfflineAssetFiles, offlineAssetUrl } from '../vite/offlineAssets.mjs';
 import { assembleOfflineDistribution } from '../vite/offlineDistribution.mjs';
 import { captureWebBuildSources } from '../vite/webBuildSources.mjs';
+import { verifyCurrentManualEdition } from '../manual/currentManualEdition.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = argv.slice(2);
@@ -42,6 +43,7 @@ for (const [index, marker] of [[0, 'web-build.json'], [1, 'manifest.json']]) {
     if (hash(await readFile(cursor)) !== expected) throw new Error('Source changed: ' + name);
   }
 }
+await verifyCurrentManualEdition(root, groups[1]);
 const assembled = assembleOfflineDistribution(groups[0], groups[1], groups[2]);
 // Re-read the source outputs before making a destination; no stale HTML/PDF is silently accepted.
 for (const [index, files] of groups.entries()) for (const file of files) {

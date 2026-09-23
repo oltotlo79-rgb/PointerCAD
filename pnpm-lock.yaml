@@ -4,11 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  'mathlive@0.110.0>@cortex-js/compute-engine': '-'
+
 catalogs:
   default:
-    '@cortex-js/compute-engine':
-      specifier: 0.128.6
-      version: 0.128.6
     '@eslint/js':
       specifier: 10.0.1
       version: 10.0.1
@@ -63,9 +63,6 @@ catalogs:
     opentype.js:
       specifier: 2.0.0
       version: 2.0.0
-    quickjs-wasi:
-      specifier: 3.6.0
-      version: 3.6.0
     react:
       specifier: 19.2.8
       version: 19.2.8
@@ -200,9 +197,6 @@ importers:
 
   packages/expression:
     dependencies:
-      '@cortex-js/compute-engine':
-        specifier: 'catalog:'
-        version: 0.128.6
       decimal.js:
         specifier: 'catalog:'
         version: 10.6.0
@@ -272,9 +266,6 @@ importers:
       comlink:
         specifier: 'catalog:'
         version: 4.4.2
-      quickjs-wasi:
-        specifier: 'catalog:'
-        version: 3.6.0
     devDependencies:
       '@pointercad/test-utils':
         specifier: workspace:*
@@ -339,12 +330,6 @@ importers:
         version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
 
 packages:
-
-  '@arnog/colors@0.5.0':
-    resolution: {integrity: sha512-NB7yqrO7qvInsqJdqz6C6mDU+2oiKmbBbk3czMS0E7KkGxLRy538tEHCsB5TKqmaxxXpi6/U120TnGl8NsDePg==}
-
-  '@arnog/colors@0.7.0':
-    resolution: {integrity: sha512-FpOQbw36pIpPiUSgKx0jm2YSFNP7xJgmaOV3gBtqZG3+HRTKiIR7duQs1bTca+zc1UGoAUop/OmJjqEK9dUXCw==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -412,15 +397,6 @@ packages:
   '@babel/types@7.29.8':
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
-
-  '@cortex-js/compute-engine@0.128.6':
-    resolution: {integrity: sha512-IwzrLmdyp0A7BXJMEa8UIfaLgwNlkiwwKQ+yo31leZ4y6mR8veUK4ZhhYSpY35TxcemB8ql1eFQpsVq6L3decw==}
-    engines: {node: '>=22.3.0', npm: '>=10.5.0'}
-    hasBin: true
-
-  '@cortex-js/compute-engine@0.58.0':
-    resolution: {integrity: sha512-N0+vXjVZfKwJS7ZIGvq41mojI55m5TrdDXveAXzNjzjZ9iNiNrdEzXL2EmrcP+9GCWCwTonrEeZWAIG78f3INg==}
-    engines: {node: '>=21.7.3', npm: '>=10.5.0'}
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
@@ -1056,10 +1032,6 @@ packages:
   compare-version@0.1.2:
     resolution: {integrity: sha512-pJDh5/4wrEnXX/VWRZvruAGHkzKdr46z11OlTPN+VrATlWWhSKewNCJ1futCO5C7eJB3nPMFZA1LeYtcFboZ2A==}
     engines: {node: '>=0.10.0'}
-
-  complex-esm@2.1.1-esm1:
-    resolution: {integrity: sha512-IShBEWHILB9s7MnfyevqNGxV0A1cfcSnewL/4uPFiSxkcQL4Mm3FxJ0pXMtCXuWLjYz3lRRyk6OfkeDZcjD6nw==}
-    engines: {node: '>=16.14.2', npm: '>=8.5.0'}
 
   concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
@@ -1894,9 +1866,6 @@ packages:
     resolution: {integrity: sha512-WuyALRjWPDGtt/wzJiadO5AXY+8hZ80hVpe6MyivgraREW751X3SbhRvG3eLKOYN+8VEvqLcf3wdnt44Z4S4SA==}
     engines: {node: '>=10'}
 
-  quickjs-wasi@3.6.0:
-    resolution: {integrity: sha512-/CNzMq42B8ThzUpzjLSF8K50ntVLV3RREyT8zr4wHaP2CZSHFhPkqg3E1GULmTerehf8Bo+UguQ+4LoOMCTC6A==}
-
   react-dom@19.2.8:
     resolution: {integrity: sha512-rVprimfGBG3DR+Tq0IQG2DT5PxKth1WIGDmj5yPmlzr4YBe7uyE+Du4oVqTDXZSHGGGXRtTJEGSSePyQCMBglQ==}
     peerDependencies:
@@ -2348,10 +2317,6 @@ packages:
 
 snapshots:
 
-  '@arnog/colors@0.5.0': {}
-
-  '@arnog/colors@0.7.0': {}
-
   '@babel/code-frame@7.29.7':
     dependencies:
       '@babel/helper-validator-identifier': 7.29.7
@@ -2451,17 +2416,6 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
-
-  '@cortex-js/compute-engine@0.128.6':
-    dependencies:
-      '@arnog/colors': 0.7.0
-      complex-esm: 2.1.1-esm1
-
-  '@cortex-js/compute-engine@0.58.0':
-    dependencies:
-      '@arnog/colors': 0.5.0
-      complex-esm: 2.1.1-esm1
-      decimal.js: 10.6.0
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 
@@ -3167,8 +3121,6 @@ snapshots:
 
   compare-version@0.1.2: {}
 
-  complex-esm@2.1.1-esm1: {}
-
   concat-map@0.0.1: {}
 
   convert-source-map@2.0.0: {}
@@ -3811,9 +3763,7 @@ snapshots:
 
   math-intrinsics@1.1.0: {}
 
-  mathlive@0.110.0:
-    dependencies:
-      '@cortex-js/compute-engine': 0.58.0
+  mathlive@0.110.0: {}
 
   meshoptimizer@1.1.1: {}
 
@@ -4009,8 +3959,6 @@ snapshots:
   pvutils@1.2.0: {}
 
   quick-lru@5.1.1: {}
-
-  quickjs-wasi@3.6.0: {}
 
   react-dom@19.2.8(react@19.2.8):
     dependencies:

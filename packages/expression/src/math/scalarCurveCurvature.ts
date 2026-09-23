@@ -1,3 +1,8 @@
+import { besselRanges } from './besselScalar.js';
+import { airyRanges } from './airyIntervals.js';
+import { zetaDerivativeRanges } from './zetaIntervals.js';
+import { lambertWRanges } from './lambertWIntervals.js';
+import { ellipticPartialRanges } from './ellipticPartials.js';
 /** Interval automatic differentiation, for a proved interpolation bound on a one-variable curve. */
 import type { ScalarTape } from './scalarMathTape.js';
 import type { IntervalUnion } from './mathIntervalUnion.js';
@@ -5,6 +10,11 @@ import { createScalarIntervalEvaluation } from './scalarMathIntervals.js';
 import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, intervalSqrt, intervalSquare,
   type MathInterval, type IntervalValue } from './mathInterval.js';
 import { trigonometricInterval } from './trigonometricIntervals.js';
+import { hyperbolicRange } from './hyperbolicIntervals.js';
+import { errorFunctionDerivative } from './errorFunctionIntervals.js';
+import { gammaFunctionRanges } from './gammaFunctionIntervals.js';
+import { betaFunctionRanges } from './betaFunctionIntervals.js';
+import { polygammaRange } from './polygammaIntervals.js';
 
 type Range = MathInterval | null;
 export interface ScalarIntervalJet { readonly first: Range; readonly second: Range }
@@ -71,6 +81,16 @@ function directionalJet(tape: ScalarTape, direction: readonly number[],
       else if (item.kind === 'unary') {
         const a = derivatives[item.value], x = value(item.value);
         switch (item.operation) {
+          case 'gamma': {
+            const ranges = x === null ? null : gammaFunctionRanges(x);
+            jet = compose(a, ranges?.first ?? null, ranges?.second ?? null);
+            break;
+          }
+          case 'erf': case 'erfc': {
+            const slope = x === null ? null : errorFunctionDerivative(item.operation, x);
+            jet = compose(a, slope, negate(multiply(TWO, multiply(x, slope))));
+            break;
+          }
           case 'negate': jet = { first: negate(a.first), second: negate(a.second) }; break;
           case 'square': jet = compose(a, multiply(TWO, x), TWO); break;
           case 'sqrt': {
@@ -107,6 +127,27 @@ function directionalJet(tape: ScalarTape, direction: readonly number[],
           }
           case 'natural-log': if (x !== null && x.lower > 0) jet = compose(a, divide(ONE, x), negate(divide(ONE, square(x)))); break;
           case 'exponential': jet = compose(a, value(index), value(index)); break;
+          case 'sinh': case 'cosh':
+            jet = compose(a, x === null ? null : hyperbolicRange(item.operation === 'sinh' ? 'cosh' : 'sinh', x), value(index));
+            break;
+          case 'tanh': {
+            const output = value(index), slope = subtract(ONE, square(output));
+            jet = compose(a, slope, negate(multiply(TWO, multiply(output, slope))));
+            break;
+          }
+          case 'arsinh': case 'arcosh': {
+            if (item.operation === 'arcosh' && (x === null || x.lower <= 1)) break;
+            const denominator = item.operation === 'arsinh' ? add(ONE, square(x)) : subtract(square(x), ONE);
+            const root = denominator === null ? null : unpack(intervalSqrt(denominator));
+            jet = compose(a, divide(ONE, root), negate(divide(x, multiply(denominator, root))));
+            break;
+          }
+          case 'artanh': {
+            if (x === null || x.lower <= -1 || x.upper >= 1) break;
+            const denominator = subtract(ONE, square(x));
+            jet = compose(a, divide(ONE, denominator), divide(multiply(TWO, x), square(denominator)));
+            break;
+          }
           case 'floor': case 'ceiling': case 'sign': {
             const range = value(index);
             if (range !== null && range.lower === range.upper) jet = CONSTANT;
@@ -114,9 +155,53 @@ function directionalJet(tape: ScalarTape, direction: readonly number[],
           }
           default: break;
         }
+      } else if(item.kind==='zeta') {
+        const x=value(item.value),ranges=x===null?null:zetaDerivativeRanges(x,item.order+(secondOrder?2:1));
+        jet=compose(derivatives[item.value],ranges?.[item.order+1]??null,!secondOrder?null:ranges?.[item.order+2]??null);
+      } else if (item.kind === 'airy') {
+        const x = value(item.value), ranges = x === null ? null : airyRanges(item.family, item.prime, x);
+        jet = compose(derivatives[item.value], ranges?.first ?? null, !secondOrder ? null : ranges?.second ?? null);
+      } else if (item.kind === 'lambertw') {
+        const x = value(item.value), ranges = x === null ? null : lambertWRanges(item.branch, x);
+        jet = compose(derivatives[item.value], ranges?.first ?? null, !secondOrder ? null : ranges?.second ?? null);
+      } else if (item.kind === 'elliptic') {
+        const args=item.values.map(value);
+        if(args.every(input=>input!==null)) {
+          const ranges=ellipticPartialRanges(item.family,args,item.orders,tape.angleUnit==='degree');
+          let first:Range=ZERO,second:Range=secondOrder?ZERO:null;
+          for(let i=0;i<item.values.length;i++) {
+            const a=derivatives[item.values[i]];
+            if(!zero(a.first))first=add(first,multiply(ranges.first[i],a.first));
+            if(secondOrder) {
+              if(!zero(a.second))second=add(second,multiply(ranges.first[i],a.second));
+              for(let j=0;j<item.values.length;j++) {
+                const b=derivatives[item.values[j]];
+                if(!zero(a.first)&&!zero(b.first))second=add(second,multiply(ranges.second[i][j],multiply(a.first,b.first)));
+              }
+            }
+          }
+          jet={first,second};
+        }
+      } else if (item.kind === 'bessel') {
+        const x = value(item.value), ranges = x === null ? null : besselRanges(item.family, item.order, x);
+        jet = compose(derivatives[item.value], ranges?.first ?? null, !secondOrder ? null : ranges?.second ?? null);
+      } else if (item.kind === 'polygamma') {
+        const x = value(item.value);
+        jet = compose(derivatives[item.value], x === null ? null : polygammaRange(item.order+1, x),
+          !secondOrder || x === null ? null : polygammaRange(item.order+2, x));
       } else if (item.kind === 'binary') {
         const a = derivatives[item.left], b = derivatives[item.right];
-        if (item.operation === 'subtract') jet = { first: subtract(a.first, b.first), second: subtract(a.second, b.second) };
+        if (item.operation === 'beta') {
+          const x = value(item.left), y = value(item.right);
+          if (x !== null && y !== null) {
+            const ranges = betaFunctionRanges(x, y);
+            jet = { first: add(multiply(ranges.da, a.first), multiply(ranges.db, b.first)),
+              second: secondOrder ? add(add(multiply(ranges.daa, square(a.first)),
+                multiply(TWO, multiply(ranges.dab, multiply(a.first, b.first)))),
+                add(multiply(ranges.dbb, square(b.first)),
+                  add(multiply(ranges.da, a.second), multiply(ranges.db, b.second)))) : null };
+          }
+        } else if (item.operation === 'subtract') jet = { first: subtract(a.first, b.first), second: subtract(a.second, b.second) };
         else if (item.operation === 'divide') jet = product(a, value(item.left), reciprocal(b, value(item.right)), divide(ONE, value(item.right)));
       } else if (item.kind === 'rational-power') {
         const exponent = item.exact.numerator, magnitude = exponent < 0n ? -exponent : exponent;

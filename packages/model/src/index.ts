@@ -1145,3 +1145,5 @@ export type { FeatureFolder, FeatureFolderMember, FeatureFolderProblem, FeatureF
 
 export { compareDocuments, DocumentComparisonLimit, type DocumentRelationship, type DocumentDefinitionComparison, type DocumentDefinitionChange, type DocumentDefinitionEntry, type DefinitionGroup } from './diff/compareDocuments.js';
 export type { DefinitionDifference } from './diff/definitionValues.js';
+export { readUnresolvedMathProblems, setUnresolvedMathProblem, removeUnresolvedMathProblem,
+  UNRESOLVED_MATH_PROBLEM_LIMIT, type UnresolvedMathProblem } from './part/unresolvedMathProblems.js';

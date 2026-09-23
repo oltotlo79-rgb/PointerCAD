@@ -94,3 +94,5 @@
 .pcad-math-editor__component input { width: 5em; }
 .pcad-math-editor__component > button { justify-self: start; }
 .pcad-math-editor__component [role="alert"] { color: var(--pcad-danger-text); }
+
+.pcad-unresolved-problems p { overflow-wrap: anywhere; }

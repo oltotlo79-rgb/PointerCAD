@@ -1,3 +1,10 @@
+import { mathNumericalRootResult } from './mathNumericalRootResult.js';
+import { mathEquationSystemResult } from './mathEquationSystemResult.js';
+import { mathDifferentialEquationResult } from './mathDifferentialEquationResult.js';
+import { mathEquationResult } from './mathEquationResult.js';
+import { mathFourierSeriesResult } from './mathFourierSeriesResult.js';
+import { mathTransformResult } from './mathTransformResult.js';
+import { mathTaylorResult } from './mathTaylorResult.js';
 import { t } from '../i18n/t.js';
 import type { MathEditorSnapshot } from './MathEditorController.js';
 
@@ -25,6 +32,39 @@ export function mathEditorResultText(snapshot: MathEditorSnapshot): MathEditorRe
   if (evaluation.status === 'stopped') return result(t(`math.${evaluation.reason}`));
   if (evaluation.status === 'unresolved') return result(t('math.unresolved'), evaluation.names.join('、'));
   if (evaluation.status === 'multiple') return result(t('math.multiple'), evaluation.exhaustive ? '' : t('math.notExhaustive'));
+  const equation = mathEquationResult(evaluation, state.output.definition?.expression);
+  if (equation !== null) return result(equation.message, equation.detail);
+  if (evaluation.kind === 'root-intervals') {
+    const display = mathNumericalRootResult(evaluation);
+    return result(display.message, display.detail);
+  }
+  if (evaluation.kind === 'equation-system') {
+    const display = mathEquationSystemResult(evaluation);
+    return result(display.message, display.detail);
+  }
+  if (evaluation.kind === 'ode-solutions') {
+    const display = mathDifferentialEquationResult(evaluation);
+    return result(display.message, display.detail);
+  }
+  if (evaluation.kind === 'fourier-series') {
+    const display = mathFourierSeriesResult(evaluation);
+    return result(display.message, display.detail);
+  }
+  if (evaluation.kind === 'transform') {
+    const display = mathTransformResult(evaluation);
+    return result(display.message, display.detail);
+  }
+  if (evaluation.kind === 'series') {
+    const display = mathTaylorResult(evaluation);
+    return result(display.message, display.detail);
+  }
+  if (evaluation.kind === 'boolean' && evaluation.expression.kind === 'constant') {
+    if (evaluation.expression.name === 'true') return result(t('math.boolean.true'));
+    if (evaluation.expression.name === 'false') return result(t('math.boolean.false'));
+  }
+  if (evaluation.kind === 'infinite-bound') {
+    return result(t(evaluation.expression.kind === 'operation' ? 'math.infiniteBound.negative' : 'math.infiniteBound.positive'), t('math.infiniteBound.hint'));
+  }
   if (evaluation.kind !== 'real') return result(t(`math.kind.${evaluation.kind}`));
   const approximation = evaluation.approximation;
   const estimate = approximation?.estimatedAbsoluteError;

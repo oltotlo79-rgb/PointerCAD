@@ -1,15 +1,17 @@
 """Exact algebraic linear systems: no numeric tolerance or assumed pivot."""
 import sympy as s
 from sympy.polys.matrices import DomainMatrix
+from cas_decompositions import DECOMPOSITION_OPERATIONS, decomposition
+from cas_spectral import SPECTRAL_OPERATIONS, spectral
 
 
 LINEAR_OPERATIONS = frozenset(('row-reduce', 'null-space', 'column-space',
-                              'row-space', 'linear-solve', 'linear-solution-space'))
+                              'row-space', 'linear-solve', 'linear-solution-space', 'eigenspace')) | DECOMPOSITION_OPERATIONS | SPECTRAL_OPERATIONS
 
 
 def linear_operation(operation, args, to_matrix, problem):
     solving = operation in ('linear-solve', 'linear-solution-space')
-    if len(args) != (2 if solving else 1):
+    if len(args) != (2 if solving or operation == 'eigenspace' else 1):
         raise problem('domain', 'Invalid linear operation arguments')
     matrix = to_matrix(args[0]) if type(args[0]) is tuple else args[0]
     if not isinstance(matrix, s.MatrixBase) or not matrix.rows or not matrix.cols:
@@ -31,6 +33,19 @@ def linear_operation(operation, args, to_matrix, problem):
             raise problem('domain', 'Finite scalar matrix entries are required')
         if entry.free_symbols or entry.is_finite is not True or entry.is_algebraic is not True:
             raise problem('unsupported', 'Algebraic entries with resolved conditions are required')
+    if operation in SPECTRAL_OPERATIONS:
+        return spectral(operation, matrix, problem)
+    if operation in DECOMPOSITION_OPERATIONS:
+        return decomposition(operation, matrix, problem)
+    if operation == 'eigenspace':
+        if matrix.rows != matrix.cols:
+            raise problem('domain', 'An eigenspace requires a square matrix')
+        eigenvalue = args[1]
+        if not isinstance(eigenvalue, s.Expr) or eigenvalue.is_finite is False:
+            raise problem('domain', 'The eigenvalue must be a finite scalar')
+        if eigenvalue.free_symbols or eigenvalue.is_finite is not True or eigenvalue.is_algebraic is not True:
+            raise problem('unsupported', 'An exact algebraic eigenvalue is required')
+        return linear_operation('null-space', [matrix-eigenvalue*s.eye(matrix.rows)], to_matrix, problem)
     domain = DomainMatrix.from_Matrix(augmented, extension=True).to_field()
     if not (domain.domain.is_QQ or domain.domain.is_AlgebraicField or domain.domain.is_GaussianField):
         raise problem('unsupported', 'An exact algebraic coefficient field is required')

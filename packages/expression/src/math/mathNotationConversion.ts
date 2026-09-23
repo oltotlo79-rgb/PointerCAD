@@ -1,6 +1,19 @@
+import { numericalRootFunction } from './numericalRootResult.js';
+import { equationSystemFunction } from './equationSystems.js';
+import { differentialEquationProblem } from './differentialEquations.js';
+import { EQUATION_IDS, equationFunction } from './equationSolutions.js';
+import { FOURIER_SERIES_ID, fourierSeriesFunction } from './fourierSeries.js';
+import { INTEGRAL_TRANSFORM_IDS, transformFunction } from './integralTransforms.js';
+import { TAYLOR_IDS, taylorFunction } from './taylorExpansion.js';
 /** Changing notation is explicit and transactional: keep the original source unless the parsed meaning agrees. */
+import { SEQUENCE_IDS, sequenceFunction } from './sequenceCalculations.js';
 import {MathInputProblem,MATH_INPUT_LIMITS,validateMathSource,type MathNode,type MathOperationDefinition} from './mathInputContract.js';
 import {rationalOfExpression} from './exactRational.js';
+import {literalLimitDirection} from './mathExactCalculus.js';
+import {VECTOR_CALCULUS_AT_IDS,vectorCalculusAtBounds} from './vectorCalculusAt.js';
+import {LINE_INTEGRAL_IDS,validateLineIntegral} from './lineIntegrals.js';
+import {REGION_INTEGRAL_IDS,validateRegionIntegral} from './regionIntegrals.js';
+import {GENERAL_PROBABILITY_IDS,probabilityFunction} from './generalProbability.js';
 
 export type DisplayMathJson=string|{readonly num:string}|{readonly str:string}|readonly [string,...DisplayMathJson[]];
 const CONSTANTS:Readonly<Record<Extract<MathNode,{kind:'constant'}>['name'],string>>={pi:'Pi',e:'ExponentialE',
@@ -19,7 +32,84 @@ export function displayMathJson(source:MathNode,byId:ReadonlyMap<string,MathOper
     }
     const operation=byId.get(node.operation);
     if(!operation)throw new MathInputProblem('unsupported','演算の表示定義を確認できません。');
-    if(node.kind==='operation')return [node.operation==='multiply'?'PcadTimesToken':operation.engineHead,...node.operands.map(child=>visit(child,depth+1))];
+    if(node.kind==='operation') {
+      if (node.operation === 'solve-ode' || node.operation === 'partial-equations') {
+        const problem = differentialEquationProblem(node), names = problem.fn.bindings.map(binding => binding.variable.label);
+        const independent: DisplayMathJson = problem.independentCount === 1 ? names[0] : ['List', ...names.slice(0, problem.independentCount)];
+        return [operation.engineHead, visit(problem.equations, depth + 1), independent,
+          ['List', ...names.slice(problem.independentCount)], visit(problem.conditions, depth + 1)];
+      }
+      if(node.operation==='solve-system') {
+        const fn=equationSystemFunction(node);
+        return [operation.engineHead,visit(fn.body,depth+1),['List',...fn.bindings.map(binding=>binding.variable.label)],visit(node.operands[1],depth+1)];
+      }
+      if(EQUATION_IDS.has(node.operation)) {
+        const fn=equationFunction(node);
+        return [operation.engineHead,visit(fn.body,depth+1),fn.bindings[0].variable.label,visit(node.operands[1],depth+1)];
+      }
+      if(node.operation==='numerical-roots') {
+        const fn=numericalRootFunction(node);
+        return [operation.engineHead,visit(fn.body,depth+1),fn.bindings[0].variable.label,...node.operands.slice(1).map(item=>visit(item,depth+1))];
+      }
+      if(node.operation===FOURIER_SERIES_ID) {
+        const fn=fourierSeriesFunction(node);
+        return [operation.engineHead,visit(fn.body,depth+1),fn.bindings[0].variable.label,...node.operands.slice(1).map(item=>visit(item,depth+1))];
+      }
+      if(INTEGRAL_TRANSFORM_IDS.has(node.operation)) {
+        const fn=transformFunction(node);
+        return [operation.engineHead,visit(fn.body,depth+1),...fn.bindings.map(binding=>binding.variable.label)];
+      }
+      if(TAYLOR_IDS.has(node.operation)) {
+        const fn=taylorFunction(node);
+        return [operation.engineHead,visit(fn.body,depth+1),fn.bindings[0].variable.label,...node.operands.slice(1).map(child=>visit(child,depth+1))];
+      }
+      if(SEQUENCE_IDS.has(node.operation)) {
+        const fn=sequenceFunction(node), names=fn.bindings.map(binding=>binding.variable.label);
+        const variables:DisplayMathJson=node.operation==='recurrence-value'?['List',...names]:names[0];
+        return [operation.engineHead,visit(fn.body,depth+1),variables,...node.operands.slice(1).map(child=>visit(child,depth+1))];
+      }
+      if(GENERAL_PROBABILITY_IDS.has(node.operation)) {
+        const fn=probabilityFunction(node);
+        if(fn.body.kind!=='operation')throw new MathInputProblem('syntax','確率の式一覧を指定してください。');
+        return [operation.engineHead,...fn.body.operands.map(child=>visit(child,depth+1)),
+          ['List',...fn.bindings.map(binding=>binding.variable.label)],visit(node.operands[1],depth+1)];
+      }
+      if(REGION_INTEGRAL_IDS.has(node.operation)) {
+        validateRegionIntegral(node);
+        const [field,mapping,lower,upper]=node.operands;
+        if(field.kind!=='binder'||mapping.kind!=='binder')throw new MathInputProblem('syntax','場と座標式を指定してください。');
+        return [operation.engineHead,visit(field.body,depth+1),['List',...field.bindings.map(binding=>binding.variable.label)],
+          visit(mapping.body,depth+1),['List',...mapping.bindings.map(binding=>binding.variable.label)],
+          visit(lower,depth+1),visit(upper,depth+1)];
+      }
+      if(LINE_INTEGRAL_IDS.has(node.operation)) {
+        validateLineIntegral(node);
+        const [field,path,lower,upper]=node.operands;
+        if(field.kind!=='binder'||path.kind!=='binder')throw new MathInputProblem('syntax','場と曲線を指定してください。');
+        return [operation.engineHead,visit(field.body,depth+1),['List',...field.bindings.map(binding=>binding.variable.label)],
+          visit(path.body,depth+1),path.bindings[0].variable.label,visit(lower,depth+1),visit(upper,depth+1)];
+      }
+      if(VECTOR_CALCULUS_AT_IDS.has(node.operation)) {
+        vectorCalculusAtBounds(node);
+        const [fn,target]=node.operands;
+        if(fn.kind!=='binder')throw new MathInputProblem('syntax','微分する変数を指定してください。');
+        return [operation.engineHead,visit(fn.body,depth+1),['List',...fn.bindings.map(binding=>binding.variable.label)],visit(target,depth+1)];
+      }
+      if(node.operation==='differentiate-at') {
+        const [fn,target,order]=node.operands;
+        if(node.operands.length!==3||fn.kind!=='binder'||fn.operation!=='lambda'||fn.bindings.length!==1) {
+          throw new MathInputProblem('syntax','微分する変数、位置、回数を確認してください。');
+        }
+        return ['DerivativeAt',visit(fn.body,depth+1),fn.bindings[0].variable.label,visit(target,depth+1),visit(order,depth+1)];
+      }
+      const operands=node.operands.map(child=>visit(child,depth+1));
+      if(node.operation==='limit'&&operands.length===3) {
+        const direction=literalLimitDirection(node.operands[2]);
+        // The formatter recognizes a signed number, but silently drops Negate(1).
+        if(direction!==null)operands[2]={num:String(direction)};
+      }
+      return [node.operation==='multiply'?'PcadTimesToken':operation.engineHead,...operands];
+    }
     const body=visit(node.body,depth+1);
     if(node.operation==='for-all'||node.operation==='exists') {
       const binding=node.bindings[0];
@@ -45,6 +135,12 @@ export function sameMathMeaning(left:MathNode,right:MathNode):boolean {
   function same(a:MathNode,b:MathNode,bindings:ReadonlyMap<string,string>,depth:number):boolean {
     if(--remaining<0||depth>MATH_INPUT_LIMITS.depth)throw new MathInputProblem('budget','入力方式の比較が複雑すぎます。');
     a=explicitLogBase(a);b=explicitLogBase(b);
+    if(a.kind==='operation'&&b.kind==='operation'&&a.operation==='limit'&&b.operation==='limit'
+      &&[2,3].includes(a.operands.length)&&[2,3].includes(b.operands.length)) {
+      const x=literalLimitDirection(a.operands[2]),y=literalLimitDirection(b.operands[2]);
+      if(x!==null&&y!==null)return x===y&&same(a.operands[0],b.operands[0],bindings,depth+1)
+        &&same(a.operands[1],b.operands[1],bindings,depth+1);
+    }
     if(a.kind!==b.kind)return false;
     if(a.kind==='number'&&b.kind==='number') {
       const x=rationalOfExpression(a),y=rationalOfExpression(b);

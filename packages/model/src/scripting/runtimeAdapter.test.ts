@@ -27,9 +27,13 @@ describe('隔離VMの実バイナリによる実行境界', () => {
       try { cad.function.surface({bounds:{X:['-1','1'],Y:['-1','1']},tolerance:'0.01',formula:{kind:'implicit-surface',expression:'X^2+Y^2+Z^2-1'}}); } catch {}`);
     expect(result.ok).toBe(false);
   });
-  it('資源超過の保持を持たない配布元バイナリでは成功を返さない', async () => {
-    const unpatched = new Uint8Array(await readFile(new URL(import.meta.resolve('quickjs-wasi/quickjs.wasm'))));
-    expect(await executeScriptVm(await input('console.log(42);'), unpatched)).toMatchObject({ ok: false, error: { kind: 'worker' } });
+  it('資源超過の保持を公開しないバイナリでは成功を返さない', async () => {
+    const missingLimit = Buffer.from(wasm), name = Buffer.from('pointercad_resource_failure');
+    const at = missingLimit.indexOf(name);
+    expect(at).toBeGreaterThan(0);
+    missingLimit[at + name.length - 1] = 'E'.charCodeAt(0);
+    expect(WebAssembly.Module.exports(new WebAssembly.Module(missingLimit)).some(entry => entry.name === name.toString())).toBe(false);
+    expect(await executeScriptVm(await input('console.log(42);'), missingLimit)).toMatchObject({ ok: false, error: { kind: 'worker' } });
   });
   it('式のまま命令を返し、readの値を変更させない', async () => {
     const result = await run('console.log(cad.document.read().name); cad.solid.box({x:"厚み*2",y:"20",z:"30"});');

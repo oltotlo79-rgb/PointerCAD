@@ -38,7 +38,7 @@ export class DocumentComparisonLimit extends Error {
 // 追加項目を無言で比較対象から落とさない。新しい保存欄は型検査で分類を要求する。
 const FIELDS = {
   id: 'identity', name: 'document', schemaVersion: 'format', mathParameterSerial: 'serial',
-  unresolvedMathProblems: 'entries', featureNotes: 'entries', featureFolders: 'entries', sketches: 'entries', activeSketchId: 'view',
+  unresolvedMathProblems: 'entries', mathGeometry: 'document', featureNotes: 'entries', featureFolders: 'entries', sketches: 'entries', activeSketchId: 'view',
   references: 'entries', solids: 'entries', sheetUnfolds: 'entries', parameters: 'entries',
   namedViews: 'entries', configurations: 'entries', activeConfigurationId: 'document',
   appearance: 'document', selectionSets: 'entries', canvases: 'entries',

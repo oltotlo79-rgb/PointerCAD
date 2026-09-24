@@ -43,6 +43,9 @@ declare global {
 
 /** 検査専用の口から、いまの再計算の状態を読む。 */
 export async function readRecomputeStats(page: Page): Promise<RecomputeStats> {
+  // Navigation can finish before React installs the observation hook. Wait for
+  // that hook, never substitute an idle state or a made-up generation.
+  await page.waitForFunction(() => typeof window.pcadRecomputeStats === 'function', undefined, { timeout: 15_000 });
   return page.evaluate(() => {
     const read = window.pcadRecomputeStats;
     if (read === undefined) {

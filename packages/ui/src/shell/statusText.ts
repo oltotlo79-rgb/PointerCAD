@@ -37,6 +37,17 @@ import type { TimelineRollback } from './timelineRail.js';
 export const PROGRESS_DELAY_MS = 300;
 
 /**
+ * 形状計算部のメモリの警告を出す割合(NFR-PF-6「WASM の実質上限(〜4GB)内で動作。上限接近時に
+ * 警告する」、計画書 P12-28)。確保済みの量が上限のこの割合を**超えたら**、帯に理由と対処を出す。
+ * **この値はここ 1 か所だけに置く**(判断は `isKernelMemoryNearLimit`)。4 分の 3 にしてあるのは、
+ * 上限までの残り(約 1GB)があるうちに、保存と開き直しを済ませられるようにするため。
+ */
+export const MEMORY_WARNING_RATIO = 0.75;
+
+/** バイトを GB(1024³ バイト)へ直す物差し。帯には小数 1 桁で出す。 */
+const BYTES_PER_GB = 1024 ** 3;
+
+/**
  * 道具ごとの次の一手(FR-905、NFR-UX-7)。
  * 選択のときは道具そのものの説明より、視点の動かし方を知らせるほうが役に立つので
  * これまでの案内(`statusBar.ready`)をそのまま出す。
@@ -136,6 +147,10 @@ const GUIDE_KEYS = {
   // ことを伝える(NFR-UX-1、NFR-UX-7)。上と同じ理由(この表は網羅が要る)で、道具を
   // 足した同じタスクで案内も足す。
   measure: 'statusBar.guide.measure',
+  // GR-30 が `MathGeometryToolId` へ足した図形の測定値(Q1=A4)。段0(未選択)の案内。
+  // 選択が進んだ具体的な案内(候補件数・断りの理由)は GR-26 が同じ優先順位へ足す。
+  // 上と同じ理由(この表は網羅が要る)で、道具を足した同じタスクで案内も足す。
+  mathGeometry: 'statusBar.guide.mathGeometry',
   /*
     P5 タスク49 が `SolidToolId` へ足した Should / Could 群 16 種(FR-401、FR-409、
     FR-415〜428、FR-432)。**道具を足したら案内も同じタスクで足す**という約束どおり
@@ -313,6 +328,53 @@ export function commandLineFailureText(failure: CommandLineFailureView): string 
   }
   const listed = failure.suggestions.join(t('statusBar.track.separator'));
   return `${failure.message}${PREFIX_SEPARATOR}${t('commandLine.errorSuggestions')}${PREFIX_SEPARATOR}${listed}`;
+}
+
+/**
+ * 形状計算部のメモリの量(NFR-PF-6)。model の `PartRecomputeResult.kernelMemory` と同じ形だが、
+ * この層(画面側の一番下の純関数)は上の層の型に依存しないよう、同じ欄をここに持つ
+ * (`CommandLineFailureView` と同じ扱い)。
+ */
+export interface KernelMemoryView {
+  /** 形状計算部がいま確保しているバイト数。確保は増えるだけで、開き直すまで減らない。 */
+  readonly usedBytes: number;
+  /** 確保できる上限のバイト数(約 4GB)。 */
+  readonly limitBytes: number;
+}
+
+/**
+ * 形状計算部のメモリが上限に近いか(NFR-PF-6)。確保済みの量が上限の `MEMORY_WARNING_RATIO` を
+ * 超えたときだけ true。量がまだ届いていない・値がおかしいときは false(ふだんの画面を変えない)。
+ */
+export function isKernelMemoryNearLimit(memory: KernelMemoryView | null | undefined): boolean {
+  if (memory === null || memory === undefined) {
+    return false;
+  }
+  const { usedBytes, limitBytes } = memory;
+  if (!Number.isFinite(usedBytes) || !Number.isFinite(limitBytes) || usedBytes < 0 || limitBytes <= 0) {
+    return false;
+  }
+  return usedBytes > limitBytes * MEMORY_WARNING_RATIO;
+}
+
+/** GB を小数 1 桁の文字にする(「3.1」)。 */
+function gigabytes(bytes: number): string {
+  return (bytes / BYTES_PER_GB).toFixed(1);
+}
+
+/**
+ * 形状計算部のメモリの警告の 1 文(NFR-PF-6)。理由(上限に近いこと、使っている量と上限)と
+ * 対処(作業を保存し、画面を開き直す。確保済みの量は開き直すまで減らず、開き直すと空く)を
+ * 帯の 1 か所で伝える。上限に近くなければ null。
+ */
+export function kernelMemoryWarningText(memory: KernelMemoryView | null | undefined): string | null {
+  if (memory === null || memory === undefined || !isKernelMemoryNearLimit(memory)) {
+    return null;
+  }
+  return `${t('statusBar.memoryNearLimit')}${fill(t('statusBar.memoryNearLimitDetail'), {
+    used: gigabytes(memory.usedBytes),
+    limit: gigabytes(memory.limitBytes),
+  })}`;
 }
 
 /** ばねのその場入力の段(§2.11)。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
@@ -530,6 +592,12 @@ export interface StatusInput {
    */
   readonly inspectingPrint?: boolean;
   /**
+   * 形状計算部のメモリの量(NFR-PF-6、計画書 P12-28)。上限に近いときだけ帯に警告を出す。
+   * まだ届いていなければ null。省略できるようにしてあるのは、この欄を持たない既存の呼び出し
+   * (検査)をそのまま通すため。
+   */
+  readonly kernelMemory?: KernelMemoryView | null;
+  /**
    * 順序の入れ替えを断った理由(FR-507、FR-504。P4b タスク20)。断らなかったときは null。
    * 相手のフィーチャーの名前が入る文なので、文言キーではなく組み立て済みの文で受け取る
    * (`shapeErrorMessage` と同じ扱い。省略できるのも同じ理由)。
@@ -590,6 +658,17 @@ export interface StatusInput {
    * `activeTool === 'spring'` のときだけ)。
    */
   readonly springStep: SpringNumericInputStep | null;
+  /**
+   * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23、利用者の回答 Q11=P2、GR-26)。
+   * 「{count}件の量を測れます。…」「選ぶのは3つまでです。」のように、選択が進むにつれて
+   * 変わる 1 文。判断はストアを読む `math/mathGeometryToolGuide.ts` の純関数 1 か所にあり、
+   * この層(画面側の最下層の純関数)はそれを読み込まない。`StatusBar.tsx` が道具の有効な
+   * ときだけ組み立てた文を渡す。加工の道具の段階の案内(`machiningGuideText`)と同じ高さの
+   * 優先順位で出し、道具が「図形の測定値」でないときは渡されても使わない(ほかの道具の案内と
+   * 重ならない)。null・省略なら道具の基本案内(`GUIDE_KEYS.mathGeometry`、段0)へ後退する。
+   * 省略できるようにしてあるのは、この欄を持たない既存の呼び出し(検査)をそのまま通すため。
+   */
+  readonly mathGeometryGuide?: string | null;
   /**
    * いまの作図面の id(FR-328、FR-330、タスク14)。3D スケッチ(作図面なし)のときだけ、
    * 道具ごとの案内へ「立体の頂点を押すと点になる」という一言を添えるのに使う(NFR-UX-7)。
@@ -801,8 +880,11 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * 5.5. 整形系の道具がうまくいったときの案内(FR-323。赤くしない)。
  * 5.6. 原点を移したときの一言(FR-331。赤くしない)。
  * 6. 保存できたなどの知らせ(FR-806)。
- * 7. 案内 … 計算中の札、吸着の案内、拘束の道具の次の一手、加工の選択が進んだ具合、
- *    拘束の決まり具合(「あと N か所決まっていません」、FR-313)、道具ごとの次の一手。
+ * 6.5. 形状計算部のメモリが上限に近いことの警告(NFR-PF-6)。赤い帯で保存と開き直しを促す。
+ *    進み具合と「中止」・中止の知らせ・保存の知らせは押しのけない(中止は既存の口のまま)。
+ * 7. 案内 … 計算中の札、吸着の案内、拘束の道具の次の一手、加工の選択が進んだ具合と
+ *    図形の測定値の道具の段階の案内(同じ高さ、GR-26)、拘束の決まり具合
+ *    (「あと N か所決まっていません」、FR-313)、道具ごとの次の一手。
  *
  * 選択の種類の札(`selectionKindLabel`)は、この優先順位のどれを選んでいても常に出す
  * (`[選ぶもの]` の札は状況の1文と独立、§0.a-0.6)ので、内側の `resolveLine` には含めず
@@ -927,6 +1009,17 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     return { kind: 'computing', text: t('printCheck.running'), hint: null, progress: null };
   }
   /*
+    形状計算部のメモリが上限に近い(NFR-PF-6)。放っておくと次の計算が上限に当たって失敗する
+    おそれがあるので、保存と開き直しを促す。押した操作への返事ではないので断りの列より後ろに
+    置き、進み具合と「中止」・中止の知らせ・保存の知らせよりも後ろにする(計算は既存の中止の口で
+    止められ、保存できたことも見える)。色の外れの警告や道具の案内よりは先に出す。確保済みの量は
+    開き直すまで減らないので、開き直して計算し直した後に消える。
+  */
+  const memoryWarning = kernelMemoryWarningText(input.kernelMemory);
+  if (memoryWarning !== null) {
+    return failureLine(null, memoryWarning);
+  }
+  /*
     選び直せなかった外観の割り当て(FR-1106「選び直せなかった割り当ては警告し、既定の外観に
     戻す」、P5 §2.2.3)。形が変わって色が外れたままなので、直すまで出し続ける。
     押した操作への返事ではないので断りの列より後ろに置くが、道具の案内よりは先に出す
@@ -1000,6 +1093,17 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     input.springStep,
   );
   /*
+    図形の測定値の道具(Q11=P2、GR-26)の段階の案内も、加工の道具と同じ高さに置く
+    (選ぶにつれて具体的な案内へ進める点が同じ)。道具が違えば渡されても使わないので、
+    加工などほかの道具の案内を押しのけない。
+  */
+  const mathGeometryText =
+    input.activeTool === 'mathGeometry' &&
+    input.mathGeometryGuide !== undefined &&
+    input.mathGeometryGuide !== null
+      ? input.mathGeometryGuide
+      : null;
+  /*
     拘束(FR-313、タスク13)は 2 段に分けて出す。
     ①道具を選んでいるあいだは「次に何を押せばよいか」を最優先で出す(いま進んでいる操作)。
     ②そうでなければ、拘束の決まり具合(「あと N か所決まっていません」)を道具の案内の
@@ -1025,6 +1129,7 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
       draggingText ??
       constraintText ??
       machiningText ??
+      mathGeometryText ??
       summaryText ??
       t(guideKeyFor(input.activeTool, input.selectedBodyCount)),
     // 3D スケッチ(FR-330、タスク14)では、道具の案内に「立体の頂点を押すと、その頂点に

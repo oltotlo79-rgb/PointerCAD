@@ -52,6 +52,7 @@ const SHAPE_FIELDS: Readonly<
   schemaVersion: null,
   // 発行番号は参照の再利用防止だけに使う。式や係数値を変えない限り形は同じ。
   mathParameterSerial: null,
+  mathGeometry: (document) => document.mathGeometry,
   unresolvedMathProblems: null,
   featureNotes: null,
   featureFolders: null,

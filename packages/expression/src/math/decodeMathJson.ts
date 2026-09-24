@@ -1,3 +1,4 @@
+import { mappingFunction } from './mathMappings.js';
 import { numericalRootFunction } from './numericalRootResult.js';
 import { equationSystemFunction } from './equationSystems.js';
 import { differentialEquationProblem } from './differentialEquations.js';
@@ -12,9 +13,18 @@ import { MathInputProblem, validateRawMath, type MathBinding, type MathNode,
 import { MathSymbolScope, type MathNameContext } from './mathSymbolScope.js';
 import { resolveTypedMathProduct } from './mathProductTypes.js';
 import { VECTOR_CALCULUS_AT_IDS, vectorCalculusAtBounds } from './vectorCalculusAt.js';
+import { COORDINATE_SELECTABLE, VECTOR_COORDINATE_SYSTEMS } from './vectorCalculusOperations.js';
 import { LINE_INTEGRAL_IDS, validateLineIntegral } from './lineIntegrals.js';
 import { REGION_INTEGRAL_IDS, validateRegionIntegral } from './regionIntegrals.js';
 import { GENERAL_PROBABILITY_IDS, probabilityFunction } from './generalProbability.js';
+import { NABLA_DEFAULT_VARIABLES, NABLA_HEADS, NABLA_VARIABLES_REQUIRED,
+  rejectShortDerivativeNotation } from './differentialEquationNotation.js';
+
+/** d/dx and ∂/∂x name an existing variable; they never bind a free name (MC-19b, Q4=A). */
+function derivativeVariableReason(name: string): string {
+  return `微分する変数「${name}」には、関数作図の変数（X・Y・Z・T・U・V）か微分方程式の独立変数を指定してください。`
+    + 'd/dx・∂/∂x は新しい変数を作りません。指定した位置での微分の値は derivativeat(式,変数,位置,回数) で求めます。';
+}
 
 function recordOf(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -46,15 +56,41 @@ export interface DecodeMathOptions {
   readonly symbolNotation?:'text'|'engine';
   /** Only coefficients whose declarations guarantee a scalar value; absent IDs remain ambiguous. */
   readonly scalarCoefficientIds?: ReadonlySet<string>;
+  readonly scalarDeclaredIds?: ReadonlySet<string>;
   /** Resolve from explicit types or an actual user choice; never guess between vector operations. */
   readonly resolveProduct?: (site: { readonly path: string; readonly token: 'dot' | 'times'; readonly operands: readonly MathNode[] })
     => 'multiply' | 'dot' | 'cross' | null;
 }
 
 export function decodeMathJson(input: unknown, options: DecodeMathOptions): MathNode {
+  // y′, ẏ and dy/dx are converted inside their differential problem; any left here gets its reason.
+  rejectShortDerivativeNotation(input);
   validateRawMath(input, options.operations);
   const rootScope = new MathSymbolScope(options.names);
   const scalarBoundIds = new Set<string>();
+
+  /**
+   * cartesian, cylindrical and spherical in a selector position are the selectors 0, 1 and 2 (MC-19c).
+   * A name that already means something in the scope (a declared or bound symbol) keeps that meaning.
+   */
+  function coordinateKeyword(value: unknown, scope: MathSymbolScope): unknown {
+    const symbol = symbolOf(value), name = symbol ?? stringOf(value);
+    const selector = VECTOR_COORDINATE_SYSTEMS.findIndex(keyword => keyword === name);
+    if (selector < 0) return value;
+    if (symbol !== null) {
+      try { scope.resolve(symbol, options.symbolNotation); return value; } catch (error) {
+        if (!(error instanceof MathInputProblem)) throw error;
+      }
+    }
+    return { num: String(selector) };
+  }
+  /** The tagged point [[p1,p2,p3],cylindrical] of gradientat and the other vector operations at a point. */
+  function taggedKeyword(value: unknown, scope: MathSymbolScope): unknown {
+    const target = sequenceOf(value);
+    if (target?.[0] !== 'List' || target.length !== 3 || sequenceOf(target[1])?.[0] !== 'List') return value;
+    const selector = coordinateKeyword(target[2], scope);
+    return selector === target[2] ? value : ['List', target[1], selector];
+  }
 
   function parse(value: unknown, scope: MathSymbolScope, path: string, scalarFunction = false): MathNode {
     if (typeof value === 'number') return { kind: 'number', decimal: String(value) };
@@ -99,6 +135,7 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
       const selected = options.resolveProduct === undefined ? resolveTypedMathProduct(token, operands, reference =>
         reference.role === 'axis' || reference.role === 'parameter'
         || (reference.role === 'coefficient' && options.scalarCoefficientIds?.has(reference.id) === true)
+        || (reference.role === 'declared' && options.scalarDeclaredIds?.has(reference.id) === true)
         || (reference.role === 'bound' && scalarBoundIds.has(reference.id)))
         : options.resolveProduct({ path, token, operands });
       if (!selected || (token === 'dot' && selected === 'cross') || (token === 'times' && selected === 'dot')) {
@@ -154,7 +191,22 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
     if (head === 'Which' && (items.length - 1) % 2 !== 0) {
       throw new MathInputProblem('syntax', '場合分けの条件と値を対で指定してください。');
     }
+    if (NABLA_HEADS.has(head) && items.length === 3 && items[2] === NABLA_DEFAULT_VARIABLES) {
+      // ∇ without its list means a function plot's own X/Y/Z axes, exactly as if listed in that order.
+      const axes = (['X', 'Y', 'Z'] as const).filter(axis => options.names.axes.has(axis));
+      if (axes.length === 0) throw new MathInputProblem('syntax', NABLA_VARIABLES_REQUIRED);
+      return parse([head, items[1], ['List', ...axes]], scope, path);
+    }
     if (head === 'D') {
+      // Keep the caller-scope meaning of every existing derivative; only the failure names the rule.
+      for (const item of items.slice(2)) {
+        const name = symbolOf(item);
+        if (name === null) continue;
+        try { scope.resolve(name, options.symbolNotation); } catch (error) {
+          if (error instanceof MathInputProblem) throw new MathInputProblem(error.code, derivativeVariableReason(name));
+          throw error;
+        }
+      }
       const body = parse(items[1], scope, `${path}.1`);
       const variables = items.slice(2).map((value, index) => parse(value, scope, `${path}.${index + 2}`));
       if (variables.some(variable => variable.kind !== 'symbol')) {
@@ -167,6 +219,12 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
         operands: items.slice(1).map((item, index) => parse(item, scope, `${path}.${index + 1}`, index < 2)) };
       if (REGION_INTEGRAL_IDS.has(operation.id)) validateRegionIntegral(value);
       else validateLineIntegral(value);
+      return value;
+    }
+    if (operation.id === 'mapping') {
+      const value: MathNode = { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true), parse(items[2], scope, `${path}.2`), parse(items[3], scope, `${path}.3`)] };
+      mappingFunction(value);
       return value;
     }
     if (operation.id === 'solve-system') {
@@ -225,12 +283,21 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
     }
     if (VECTOR_CALCULUS_AT_IDS.has(operation.id)) {
       const value: Extract<MathNode, { kind: 'operation' }> = { kind: 'operation', operation: operation.id,
-        operands: [parse(items[1], scope, `${path}.1`, true), parse(items[2], scope, `${path}.2`)] };
+        operands: [parse(items[1], scope, `${path}.1`, true), parse(taggedKeyword(items[2], scope), scope, `${path}.2`)] };
       vectorCalculusAtBounds(value);
       return value;
     }
-    if (head === 'Limit' || head === 'DerivativeAt') {
-      const body = parse(items[1], scope, `${path}.1`, head === 'DerivativeAt');
+    if (operation.id === 'total-differential-at') {
+      // Like gradient-at, the Function declares the Cartesian (or tagged) coordinates of the
+      // point; every bound variable is one of those scalar coordinates, never a vector value.
+      return { kind: 'operation', operation: operation.id,
+        operands: [parse(items[1], scope, `${path}.1`, true), parse(items[2], scope, `${path}.2`), parse(items[3], scope, `${path}.3`)] };
+    }
+    if (head === 'Limit' || head === 'LimSup' || head === 'LimInf' || head === 'DerivativeAt') {
+      // Every limit variable is scalar, just like a variable in a derivative.
+      // Preserve type-directed products inside its lambda without authorizing
+      // an ambiguous product in an unrelated, unrestricted function.
+      const body = parse(items[1], scope, `${path}.1`, true);
       if (body.kind !== 'binder' || body.operation !== 'lambda' || body.bindings.length !== 1) {
         throw new MathInputProblem('syntax', '計算する式の変数を1つと、値を調べる位置を指定してください。');
       }
@@ -239,6 +306,11 @@ export function decodeMathJson(input: unknown, options: DecodeMathOptions): Math
     }
     if (operation.structural && head !== 'Open') {
       throw new MathInputProblem('syntax', `「${head}」をこの位置の値として使用できません。`);
+    }
+    if (COORDINATE_SELECTABLE.has(operation.id) && items.length === 4) {
+      // gradient(f,[r,θ,z],cylindrical): the third operand is the MC-29 selector.
+      return { kind: 'operation', operation: operation.id, operands: [items[1], items[2], coordinateKeyword(items[3], scope)]
+        .map((operand, index) => parse(operand, scope, `${path}.${String(index + 1)}`)) };
     }
     return { kind: 'operation', operation: operation.id,
       operands: items.slice(1).map((operand, index) => parse(operand, scope, `${path}.${index + 1}`)) };

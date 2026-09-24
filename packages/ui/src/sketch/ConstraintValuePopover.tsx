@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { evaluateExpression, type ExpressionError, type ExpressionValue } from '@pointercad/expression';
+import { type ExpressionError, type ExpressionValue } from '@pointercad/expression';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { evaluateFieldSource, isPendingFieldError, useFieldUnits } from '../shell/propertyFieldUnits.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { cancelConstraintPrompt, commitConstraintPrompt } from './constraintActions.js';
 import { constraintKindLabelKey, constraintValueUnit } from './constraintCommands.js';
@@ -50,7 +51,7 @@ function tooltipKeyOf(kind: SketchConstraintKind): MessageKey {
 export function ConstraintValuePopover(): React.JSX.Element | null {
   const prompt = useAppStore((state) => state.constraintPrompt);
   const viewportSize = useAppStore((state) => state.viewportSize);
-  const analysis = useAppStore((state) => state.parameterAnalysis);
+  const units = useFieldUnits();
   const [source, setSource] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +76,7 @@ export function ConstraintValuePopover(): React.JSX.Element | null {
   };
   // 空欄は既定値(いま測った値)として読む(`effectiveSource` と同じ約束、NFR-UX-4)。
   const effective = source.trim() === '' ? prompt.defaultSource : source;
-  const evaluated = evaluateExpression(effective, analysis);
+  const evaluated = evaluateFieldSource(effective, unit, false, units);
   const value: ExpressionValue | null = evaluated.ok ? evaluated.value : null;
   const error: ExpressionError | null = evaluated.ok ? null : evaluated.error;
   const position = clampAnchor(prompt.anchor, viewportSize[0], viewportSize[1]);
@@ -99,7 +100,7 @@ export function ConstraintValuePopover(): React.JSX.Element | null {
         if (event.key === 'Enter') {
           event.preventDefault();
           event.stopPropagation();
-          commitConstraintPrompt(source);
+          if (!isPendingFieldError(error)) commitConstraintPrompt(source);
           return;
         }
         if (event.key === 'Escape') {
@@ -129,7 +130,7 @@ export function ConstraintValuePopover(): React.JSX.Element | null {
           aria-disabled={value === null}
           onMouseDown={keepFocus}
           onClick={() => {
-            commitConstraintPrompt(source);
+            if (!isPendingFieldError(error)) commitConstraintPrompt(source);
           }}
         >
           {t('constraint.value.commit')}

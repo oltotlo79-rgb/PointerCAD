@@ -75,4 +75,15 @@ describe('数学定義を失わないJSON保存と入力境界', () => {
   it.each([-1, 1.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1])('不正な発行番号%jをJSONのnullへ変換して保存しない', mathParameterSerial => {
     expect(() => serializeDocument({ ...document(), mathParameterSerial })).toThrow('係数の参照番号');
   });
+  it('保存形式の版はpointercad-math/1に固定され、文書の往復後も変わらない', () => {
+    const source = document();
+    const result = parseDocument(serializeDocument(source));
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    expect(result.document.parameters[1].value.mathDefinition?.format).toBe('pointercad-math/1');
+    expect(result.document.configurations[0].mathDefinitions?.B?.format).toBe('pointercad-math/1');
+  });
+  it.each(['pointercad-math/2', 'pointercad-math'])('版番号だけが異なる%jの数学定義を短式として読み飛ばさない', format => {
+    const mathDefinition = { ...expression().mathDefinition, format };
+    expect(readExpressionItem({ ...expression(), mathDefinition }, 'point.x')).toEqual({ ok: false, problem: { path: 'point.x.mathDefinition', reason: 'type' } });
+  });
 });

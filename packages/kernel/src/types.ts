@@ -711,6 +711,22 @@ export interface SolidStepFailure {
   readonly message: string;
 }
 
+/**
+ * 形状計算部のメモリの量(NFR-PF-6「WASM の実質上限(〜4GB)内で動作。上限接近時に警告する」)。
+ *
+ * **測れるのは「確保済みの量」だけ**である。同梱の計算部(Emscripten)は使い終えた分を
+ * 内部で使い回すが、一度確保した分は手放さない(WebAssembly のメモリは縮まない)。
+ * 使用中の量(malloc の内訳)を読む口は同梱物に無いので、確保済みの量を上限と比べる。
+ * 値は増えるだけで、減るのは計算部を作り直したとき(画面を開き直したとき)だけ。
+ * Comlink 越しに渡せる数だけで書く。
+ */
+export interface KernelMemoryUsage {
+  /** いま確保しているバイト数(Emscripten の `HEAPU8.buffer.byteLength`)。 */
+  readonly wasmHeapBytes: number;
+  /** 確保できる上限のバイト数(約 4GB。`worker/kernelMemory.ts` の `OCCT_HEAP_LIMIT_BYTES`)。 */
+  readonly wasmHeapLimitBytes: number;
+}
+
 /** 履歴の再計算の結果。1 段失敗しても止めずに残りを返す(FR-504)。 */
 export interface SolidRecomputeResult {
   readonly bodies: readonly SolidBodyMesh[];
@@ -727,6 +743,12 @@ export interface SolidRecomputeResult {
    * 直せるのが P5 タスク4)で、kernel の `recomputeSolids` は必ず値を入れる。
    */
   readonly appearanceMatches?: readonly AppearanceMatch[];
+  /**
+   * この計算を終えた時点の形状計算部のメモリの量(NFR-PF-6)。**既存の欄は変えず、足すだけ。**
+   * `recomputeSolids` は計算部から読めれば、取り消された計算でも必ず入れる。読めない計算部
+   * (偽物を使う検査など)と、計算部を読み込まない `readCachedBodies` では省く。
+   */
+  readonly memory?: KernelMemoryUsage;
 }
 
 /** 計算中の進み具合。段を始める前に 1 回ずつ知らせる(NFR-PF-4)。 */

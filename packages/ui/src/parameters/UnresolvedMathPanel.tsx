@@ -31,6 +31,10 @@ export function UnresolvedMathPanel(): React.JSX.Element {
     <p>{t('math.problem.hint')}</p>
     <ul>{problems.map(problem => <li key={problem.id}>
       <strong>{problem.name}</strong><p>{problem.definition.source}</p>
+      {problem.definition.declarations?.map(declaration => <p key={declaration.id}>
+        {t('math.declaration.summary').replace(/\{(?:label|meaning|type)\}/gu, token => token === '{label}'
+          ? declaration.label : token === '{meaning}' ? declaration.meaning : t(`math.declaration.type.${declaration.type}`))}
+      </p>)}
       <p>{t('math.problem.unresolved')}</p>
       <button type="button" className="pcad-button" title={t('math.problem.edit')} onClick={() => open(problem)}>{t('math.problem.edit')}</button>
       <button type="button" className="pcad-button" title={t('math.problem.delete')} onClick={() => {

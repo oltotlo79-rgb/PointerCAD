@@ -8,16 +8,20 @@ import { fileURLToPath } from 'node:url';
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { build } from 'vite';
 import { collectOfflineAssetFiles } from '../vite/offlineAssets.mjs';
-
 import { captureWebBuildSources } from '../vite/webBuildSources.mjs';
+import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..'), args = argv.slice(2);
 if (args.length !== 1 || !/^[a-z0-9][a-z0-9-]*$/u.test(args[0])) throw new Error('Specify one new output name under dist/.');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const git = gitArgs => execFileSync('git', ['--no-optional-locks', '-c', 'safe.directory=' + root.replaceAll('\\', '/'), ...gitArgs],
+  { cwd: root, env: localGitEnvironment(), encoding: 'utf8', windowsHide: true }).trim();
 const temp = execFileSync('python', ['-B', '-X', 'utf8', join(root, 'scripts/lib/task_workspace.py'), '--temp-root'],
   { cwd: root, encoding: 'utf8' }).trim();
 env.TEMP = temp; env.TMP = temp; env.TMPDIR = temp;
-const inputs = await captureWebBuildSources(root), parent = join(root, 'dist'), destination = join(parent, args[0]);
+// Uncommitted changes are recorded, not rejected, here; releaseManifest.mjs refuses a dirty release commit.
+const inputs = await captureWebBuildSources(root), sourceCommit = git(['rev-parse', 'HEAD']), dirtySources = git(['status', '--porcelain']) !== '';
+const parent = join(root, 'dist'), destination = join(parent, args[0]);
 await mkdir(parent, { recursive: true });
 if ((await lstat(parent)).isSymbolicLink()) throw new Error('Output parent must not be a link');
 await mkdir(destination);
@@ -27,5 +31,6 @@ if (JSON.stringify(await captureWebBuildSources(root)) !== JSON.stringify(inputs
 const collected = await collectOfflineAssetFiles(root, destination), outputs = {};
 for (const file of collected.files) outputs[file.path] = hash(file.bytes);
 for (const name of collected.excluded) outputs[name] = hash(await readFile(join(destination, name)));
-await writeFile(join(destination, 'web-build.json'), JSON.stringify({ format: 'pointercad-web-build/1', inputs, outputs }), { flag: 'wx' });
-log(JSON.stringify({ destination, sources: Object.keys(inputs).length, files: Object.keys(outputs).length, releaseCertified: false }));
+await writeFile(join(destination, 'web-build.json'),
+  JSON.stringify({ format: 'pointercad-web-build/1', sourceCommit, dirtySources, inputs, outputs }), { flag: 'wx' });
+log(JSON.stringify({ destination, sources: Object.keys(inputs).length, files: Object.keys(outputs).length, dirtySources, releaseCertified: false }));

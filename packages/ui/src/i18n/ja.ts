@@ -24,6 +24,10 @@ import sheetMetal from './ja/sheetMetal.json';
 import strength from './ja/strength.json';
 import script from './ja/script.json';
 import math from './ja/math.json';
+import mathGeometry from './ja/mathGeometry.json';
+import mathPaletteBasic from './ja/mathPaletteBasic.json';
+import mathPaletteCalculus from './ja/mathPaletteCalculus.json';
+import mathPaletteSetsLogic from './ja/mathPaletteSetsLogic.json';
 import commands from './ja/commands.json';
 
 /** 機能ごとの表を 1 つに合わせたもの。鍵の型(`MessageKey`)はここから導く。 */
@@ -59,6 +63,10 @@ export const ja = {
   ...strength,
   ...script,
   ...math,
+  ...mathGeometry,
+  ...mathPaletteBasic,
+  ...mathPaletteCalculus,
+  ...mathPaletteSetsLogic,
   // 共通command登録。ショートカット一覧もこの名前を参照する。
   ...commands,
 };
@@ -66,6 +74,10 @@ export const ja = {
 /** 分けた表そのもの(重なりの検査が読む)。並びは `ja` を合わせる順と同じ。 */
 export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, string>>])[] = [
   ['math', math],
+  ['mathGeometry', mathGeometry],
+  ['mathPaletteBasic', mathPaletteBasic],
+  ['mathPaletteCalculus', mathPaletteCalculus],
+  ['mathPaletteSetsLogic', mathPaletteSetsLogic],
   ['script', script],
   ['numericInput', numericInput],
   ['propertyPanel', propertyPanel],

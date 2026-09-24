@@ -12,12 +12,23 @@ const CONSTANTS: Readonly<Record<string, string>> = {
 };
 const BINARY: Readonly<Record<string, string>> = {
   Add: '+', Subtract: '-', Multiply: '\\times ', PcadTimesToken: '\\times ', PcadDotToken: '\\cdot ',
+  PlusMinus: '\\pm ', MinusPlus: '\\mp ', CartesianProduct: '\\times ',
   TensorProduct: '\\otimes ', HadamardProduct: '\\odot ', Equal: '=', NotEqual: '\\ne ', Less: '<',
   LessEqual: '\\le ', Greater: '>', GreaterEqual: '\\ge ', Element: '\\in ', Union: '\\cup ',
+  NotElement: '\\notin ', Subset: '\\subset ', SubsetEqual: '\\subseteq ',
+  Superset: '\\supset ', SupersetEqual: '\\supseteq ', ApproxEqual: '\\approx ',
   Intersection: '\\cap ', SetMinus: '\\setminus ', And: '\\land ', Or: '\\lor ',
   Implies: '\\implies ', Equivalent: '\\iff ',
 };
+/** ∇ display of the explicit Cartesian forms; a coordinate-system argument keeps the named form (MC-29). */
+const NABLA: Readonly<Record<string, string>> = { Gradient: '', Divergence: '\\cdot ', Curl: '\\times ', Laplacian: '^{2}' };
+/** ∮ and ∯ with the same six arguments as the open integrals; the field's shape selects the operation again (MC-19d). */
+const CLOSED: Readonly<Record<string, string>> = {
+  ClosedLineIntegral: '\\oint', ClosedCirculation: '\\oint', ClosedSurfaceIntegral: '\\oiint', ClosedFluxIntegral: '\\oiint',
+};
 const wrap = (value: string): string => '\\left(' + value + '\\right)';
+const isList = (value: DisplayMathJson | undefined): boolean => value !== undefined && typeof value !== 'string'
+  && !('num' in value) && !('str' in value) && value[0] === 'List';
 export function serializeMathLatex(expression: DisplayMathJson): string {
   let remaining = MATH_INPUT_LIMITS.nodes;
   function visit(value: DisplayMathJson, depth: number): string {
@@ -35,6 +46,10 @@ export function serializeMathLatex(expression: DisplayMathJson): string {
     if (head === 'Tuple') return wrap(args.join(','));
     if (head === 'Set') return '\\left\\{' + args.join(',') + '\\right\\}';
     if (head === 'Delimiter' && args.length === 1) return wrap(a);
+    if ((head === 'PlusMinus' || head === 'MinusPlus') && args.length === 1) return BINARY[head] + wrap(a);
+    if (head === 'Dot' && args.length === 2) return '\\left\\langle ' + args.join(',') + '\\right\\rangle';
+    if (head === 'Complement' && args.length === 2) return '\\complement' + wrap(args.join(','));
+    if (Object.hasOwn(NABLA, head) && args.length === 2 && isList(operands[1])) return '\\nabla_{' + b + '}' + NABLA[head] + wrap(a);
     if (BINARY[head] && args.length === 2) return wrap(a) + BINARY[head] + wrap(b);
     if (head === 'Divide' && args.length === 2) return '\\frac{' + a + '}{' + b + '}';
     if (head === 'Power' && args.length === 2) return '{' + wrap(a) + '}^{' + b + '}';
@@ -45,12 +60,12 @@ export function serializeMathLatex(expression: DisplayMathJson): string {
     if ((head === 'Factorial' || head === 'Factorial2') && args.length === 1) return '{' + wrap(a) + '}' + (head === 'Factorial' ? '!' : '!!');
     if (head === 'Log' && args.length === 2) return '\\log_{' + b + '}' + wrap(a);
     if (head === 'Lb' || head === 'Lg') return '\\log_{' + (head === 'Lb' ? '2' : '10') + '}' + wrap(a);
-    if (head === 'Limit' && (operands.length === 2 || operands.length === 3)) {
+    if (['Limit', 'LimSup', 'LimInf'].includes(head) && (operands.length === 2 || operands.length === 3)) {
       const fn = operands[0], direction = operands[2];
       if (typeof fn !== 'string' && !('num' in fn) && !('str' in fn) && fn[0] === 'Function' && fn.length === 3) {
         const sign = direction !== undefined && typeof direction !== 'string' && 'num' in direction ? direction.num : '0';
         if (!['-1', '0', '1'].includes(sign)) throw new MathInputProblem('syntax', '極限の方向を確認してください。');
-        return '\\lim_{' + visit(fn[2], depth + 1) + '\\to ' + b + (sign === '0' ? '' : sign === '1' ? '^{+}' : '^{-}')
+        return (head === 'LimSup' ? '\\limsup_{' : head === 'LimInf' ? '\\liminf_{' : '\\lim_{') + visit(fn[2], depth + 1) + '\\to ' + b + (sign === '0' ? '' : sign === '1' ? '^{+}' : '^{-}')
           + '}{' + visit(fn[1], depth + 1) + '}';
       }
     }
@@ -64,6 +79,7 @@ export function serializeMathLatex(expression: DisplayMathJson): string {
         return (head === 'Sum' ? '\\sum_{' : '\\prod_{') + label + '=' + lo + '}^{' + hi + '}{' + a + '}';
       }
     }
+    if (Object.hasOwn(CLOSED, head) && args.length === 6) return CLOSED[head] + wrap(args.join(','));
     if (!CANDIDATE_MATH_OPERATIONS.has(head)) throw new MathInputProblem('unsupported', '表示する演算の定義を確認できません。');
     const name = head === 'PcadCoefficient' ? 'coef' : head === 'D' ? 'diff'
       : head === 'Sum' ? 'sumstep' : head === 'Product' ? 'productstep' : head.toLowerCase();

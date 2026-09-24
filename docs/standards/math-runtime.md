@@ -65,6 +65,25 @@
 
 MathLiveのpackage.jsonはCompute Engine **0.58.0**も依存として宣言する。これを0.128.6と同一の計算部と扱わない。`loadStructuredMathField`は`MathfieldElement.computeEngine = null`を設定し、計算は明示固定した別Workerへ渡す。入力欄に計算器を取り付けない。Compute Engine 0.128.6自身の直接依存は`@arnog/colors`と`complex-esm`である。ライブラリの一部機能が使えることを、全数学機能の対応済みという根拠にしない。
 
+## 数式保存形式の版（pointercad-math）の明文化（2026-09-24）
+
+`StoredMathExpression`（`packages/expression/src/math/mathInputContract.ts`）の`format`欄が持つ`pointercad-math/1`（定数`MATH_INPUT_FORMAT`）は、1つの番号で次の3つをまとめて表す版であり、schema・構文・数学規約に別々の番号を割り当てていない。
+
+1. **schema**: `StoredMathExpression`自身が持つ欄の集合（`format`・`source`・`inputNotation`・`angleUnit`・`expression`・任意の`declarations`）と、`expression`（`MathNode`）の各種類が持てる形。`decodeStoredMathStructure`（`packages/expression/src/math/decodeStoredMath.ts`）が欄の過不足を`keys()`で検査する。
+2. **構文**: 通常入力・構造入力の文字列（`source`）からこの`expression`を組み立てる際に認める記法の集合（`mathTextSyntax.ts`・`parseMathLatex.ts`）。式を再計算するとき（`mathWorkExecution.ts`・`functionMathSource.ts`が使う`decodeStoredMath`）は、保存済みの`source`を同じ構文解析へ通し直し、結果が保存済みの`expression`と一致することまで確認する。ファイルを開くだけの境界（`packages/io/src/pcad/guards.ts`の`readExpressionItem`が使う`decodeMathExpressionStorage`→`decodeStoredMathStructure`）は構文解析をせず、欄の外側にある`source`文字列と`mathDefinition.source`が一致することだけを確認する（構文そのものの一致は次の再計算時に確認される）。
+3. **数学規約**: 角度の既定・主値や分岐の選び方・定義域の扱いなど、`expression`の各演算IDが何を意味するかという取り決め。記法や欄の形を変えなくても、ある演算の意味づけ（例: 主値の枝）を変える改修は保存済みの式の意味を変えてしまうため、この規約も版に含める。
+
+3つを1つの番号にまとめているのは、読み手が保存データを解釈できるかどうかの判定を「`format`の一致確認1回」だけに単純化するためである。3つのうちどれか1つでも保存時と食い違えば、その式を安全に再解釈できない点は変わらない。
+
+版の確認はfail-closedで行う。`decodeStoredMathStructure`は`stored.format !== MATH_INPUT_FORMAT`のとき、他の欄を検査する前に例外（「数式の版または入力設定に対応していません。」）を投げて読み込みを止め、`pointercad-math`には版を1つずつ持ち上げる移行表を持たない。これは`.pcad`全体の封筒の版（`PCAD_SCHEMA_VERSION`、`packages/io/src/pcad/schema.ts`。現在17）が`SCHEMA_MIGRATIONS`で旧い文書を現在の版まで前方互換に持ち上げるのとは対照的である。両者の役割は次のように分かれる。
+
+- `PCAD_SCHEMA_VERSION`は**`mathDefinition`欄そのものが存在するかどうか**を管理する。版14で数式定義と係数IDの欄を新設し（schema.tsの版14の注記）、版13以前の文書は`SCHEMA_MIGRATIONS[13]`がこの欄を持たない旧文書のまま持ち上げる（欄が無ければ従来の短い式として読む）。
+- `format: pointercad-math/1`は**その欄が存在するときの中身**を管理する。文書全体の`schemaVersion`が最新でも、`mathDefinition.format`が現在の`MATH_INPUT_FORMAT`と一致しなければ、その式は読み込めない（移行せず拒否する）。
+
+現在製品が書き出す版は`pointercad-math/1`のみで、これまで版を上げたことは無い。将来、上記3種のいずれかを保存済みの式の意味が変わる形で改修する場合は`pointercad-math/2`のように番号を進め、旧版を移行するか拒否するかをその変更内容に応じてそのとき判断する（本節はその判断を先取りしない）。
+
+検査: `packages/io/src/pcad/mathExpressionJson.test.ts`に、保存した数式の版が`pointercad-math/1`に固定され文書の往復後も変わらないことを確認する検査と、版番号だけが異なる保存データ（`pointercad-math/2`・接尾辞を欠く`pointercad-math`）を数学定義として読み込まないことを確認する検査を追加した。
+
 ## 実行と入力の境界
 
 - `createMathBackend`の生成直後に`jit = 'off'`を設定する。画面や独自スキームのCSPへ`unsafe-eval`を追加しない。

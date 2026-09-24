@@ -30,6 +30,7 @@ describe('ヘルプと説明書の共通検索', () => {
 
   it.each([
     ['画面 回す', 'viewport'], ['数値 式', 'numeric-input'], ['構造化 数式', 'math-input'],
+    ['図形 測定値', 'math-input'],
     ['XYZ 曲線', 'function-curve'], ['XYZ 曲面', 'function-surface'], ['パラメータ', 'parameters'],
     ['点 線 円弧', 'sketch-tools'], ['交点 分割', 'sketch-intersections'], ['多角形', 'shapes'],
     ['楕円', 'ellipse'], ['スプライン', 'spline'], ['作図面', 'work-plane'],

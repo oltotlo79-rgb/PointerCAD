@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
@@ -7,6 +6,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 const examples = [
   { source: 'solve(x^2=1,x,ℝ)', kind: 'set' },
@@ -36,7 +36,7 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 function native(args: readonly string[], input?: string): string {
   const script = fileURLToPath(new URL('./exactRuntime/cas_equations_test.py', import.meta.url));
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], { input, encoding: 'utf8',
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], { input, encoding: 'utf8',
     timeout: 180_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' } });
   if (result.error !== undefined || result.status !== 0) {

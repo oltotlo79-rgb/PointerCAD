@@ -111,6 +111,8 @@ function toolbarHelpTopic(group: ToolbarCommandGroup, id: string): string {
     'edit.projectedCurve': 'project-intersect', 'edit.planeSection': 'project-intersect',
     'look.appearance': 'appearance-color', 'look.measure': 'measure', 'look.strength': 'strength',
     'look.canvas': 'canvas', 'look.printCheck': 'print-check',
+    // 図形の測定値(GR-30。Q1=A4)。コマンド・F1・設定の説明はすべて math-input の章を開く。
+    'look.mathGeometry': 'math-input',
     'assembly.placeStandardPart': 'standard-parts', 'assembly.placeSubAssembly': 'replace-subassembly',
     'assembly.replacePart': 'replace-subassembly',
   };

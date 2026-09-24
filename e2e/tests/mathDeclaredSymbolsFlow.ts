@@ -1,0 +1,73 @@
+import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
+import { savePart } from './scriptsFlow.js';
+import { reopenPart } from './reopenPart.js';
+import { waitForMathEditorText } from './mathEditorReady.js';
+import { captureManualDetail } from './captureManualDetail.js';
+
+export async function mathDeclaredSymbolsFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.getByRole('tab', { name: 'パラメータ', exact: true }).click();
+  const panel = page.getByRole('region', { name: '未解決の式', exact: true }), dialog = page.locator('.pcad-math-dialog');
+  const initial = await savePart(page, info, 'symbols-before.pcad', app);
+  await panel.getByRole('button', { name: '未解決の式を追加', exact: true }).click();
+  await waitForMathEditorText(dialog);
+  const input = dialog.locator('textarea'), apply = dialog.getByRole('button', { name: '式と条件を保存', exact: true });
+  await input.fill('a_1^2+1');
+  await expect(apply).toBeDisabled();
+  await dialog.locator('.pcad-math-declarations summary').click();
+  const add = dialog.getByRole('form', { name: '記号を定義', exact: true });
+  await add.getByLabel('記号名', { exact: true }).fill('a_1');
+  await add.getByLabel('記号の意味', { exact: true }).fill('未指定の長さ');
+  await add.getByRole('combobox', { name: '記号の種類', exact: true }).selectOption('real');
+  await add.getByRole('button', { name: '記号を定義', exact: true }).click();
+  await expect(apply).toBeEnabled();
+  await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
+  await expect(dialog.locator('math-field')).toBeFocused();
+  await dialog.getByRole('button', { name: 'テキスト入力', exact: true }).click();
+  await expect(input).toHaveValue('a_1^2+1'); await expect(apply).toBeEnabled();
+  const editing = dialog.getByRole('form', { name: '記号の定義を編集 a_1', exact: true });
+  await expect(editing.getByLabel('記号の意味', { exact: true })).toHaveValue('未指定の長さ');
+  await editing.getByRole('combobox', { name: '記号の種類', exact: true }).selectOption('set');
+  await editing.getByRole('button', { name: '定義を更新', exact: true }).click();
+  await expect(apply).toBeDisabled();
+  await expect(dialog.locator('.pcad-math-editor__result')).toContainText('種類と演算が一致しません');
+  await editing.getByRole('combobox', { name: '記号の種類', exact: true }).selectOption('real');
+  await editing.getByRole('button', { name: '定義を更新', exact: true }).click();
+  await expect(apply).toBeEnabled();
+  await captureManualDetail(page, info, { name: 'math-declared-symbols', dialog, script: new URL(import.meta.url),
+    fixture: { source: 'a_1^2+1', name: 'a_1', meaning: '未指定の長さ', type: 'real', numericValue: null } });
+  await apply.click(); await expect(dialog).toHaveCount(0);
+  await expect(panel).toContainText('未指定の長さ');
+  const saved = await savePart(page, info, 'symbols-saved.pcad', app);
+  expect(saved.unresolvedMathProblems?.[0].definition.declarations).toMatchObject([{ label: 'a_1', meaning: '未指定の長さ', type: 'real' }]);
+  expect(saved.parameters).toEqual(initial.parameters); expect(saved.sketches).toEqual(initial.sketches);
+  await reopenPart(page, info, 'symbols-saved.pcad', app);
+  await page.getByRole('tab', { name: 'パラメータ', exact: true }).click();
+  await panel.getByRole('button', { name: '式と条件を編集', exact: true }).click();
+  await waitForMathEditorText(dialog); await expect(input).toHaveValue('a_1^2+1');
+  await expect(apply).toBeEnabled();
+  await dialog.locator('.pcad-math-declarations summary').click();
+  await expect(dialog.locator('.pcad-math-declarations')).toHaveAttribute('open', '');
+  await expect(editing.getByLabel('記号の意味', { exact: true })).toHaveValue('未指定の長さ');
+  await page.keyboard.press('F1'); await expect(page.locator('.pcad-help__article')).toContainText('記号の名前と意味を保存する');
+  await page.keyboard.press('Escape');
+  await editing.getByLabel('記号の意味', { exact: true }).fill('編集した長さの説明');
+  await editing.getByRole('button', { name: '定義を更新', exact: true }).click();
+  await expect(apply).toBeEnabled(); await apply.click(); await expect(dialog).toHaveCount(0);
+  await expect(panel).toContainText('編集した長さの説明');
+  await page.locator('canvas.pcad-viewport__canvas').focus(); await page.keyboard.press('Control+z');
+  await expect(panel).toContainText('未指定の長さ');
+  const undone = await savePart(page, info, 'symbols-undone.pcad', app);
+  expect(undone.unresolvedMathProblems).toEqual(saved.unresolvedMathProblems);
+  await panel.getByRole('button', { name: '式と条件を編集', exact: true }).click();
+  await waitForMathEditorText(dialog);
+  // Evaluation adds its result below the input and recentres the dialog. Wait for
+  // the saved expression to be ready before clicking the disclosure at its position.
+  await expect(apply).toBeEnabled();
+  await dialog.locator('.pcad-math-declarations summary').click();
+  await expect(dialog.locator('.pcad-math-declarations')).toHaveAttribute('open', '');
+  await editing.getByRole('button', { name: 'この記号の定義を削除', exact: true }).click();
+  await expect(apply).toBeDisabled();
+  await dialog.getByRole('button', { name: '取消', exact: true }).click(); await expect(dialog).toHaveCount(0);
+  expect((await savePart(page, info, 'symbols-cancelled.pcad', app)).unresolvedMathProblems).toEqual(saved.unresolvedMathProblems);
+}

@@ -73,7 +73,9 @@ export async function mathInfiniteRangesFlow(page: Page, info: TestInfo, app?: E
   await expect(page.locator('.pcad-help__article')).toContainText('無限に続く和・積');
   await page.keyboard.press('Escape');
   await input.fill('sum((1/3)^k,k,0,∞)'); await expect(result).toHaveText('= 1.5', { timeout: 225_000 });
-  await apply.click(); await expect(dialog).toHaveCount(0);
+  // Applying re-evaluates the document's mathematics, including the infinite product of the Y
+  // coordinate (Firefox: 26.3 s of 27.8 s on 2026-09-23, then over the default 30 s on a rerun).
+  await apply.click(); await expect(dialog).toHaveCount(0, { timeout: 225_000 });
   await point.click();
   const properties = page.locator('.pcad-panel--right');
   await properties.getByRole('tab', { name: uiMessage('propertyPanel', 'propertyPanel.tabProperties'), exact: true }).click();
@@ -84,4 +86,16 @@ export async function mathInfiniteRangesFlow(page: Page, info: TestInfo, app?: E
   await undoMathEdit(page);
   await page.getByRole('tab', { name: 'パラメータ', exact: true }).click();
   await expect(row.locator('.pcad-field').nth(1).locator('.pcad-field__message')).toHaveText('= 2');
+  const undone = await savePart(page, info, 'infinite-ranges-undone.pcad', app);
+  expect(undone.parameters.find(parameter => parameter.name === '級数の和')?.value).toMatchObject({
+    value: 2, source, mathDefinition: { source, angleUnit: 'degree' },
+  });
+  const undonePoint = undone.sketches[0].features.find(candidate => candidate.kind === 'point');
+  if (undonePoint === undefined || undonePoint.kind !== 'point' || undonePoint.at.mode !== 'absolute') {
+    throw new Error('取り消し後の級数の点を原点からの位置として保存する必要があります。');
+  }
+  expect(undonePoint.at.x).toMatchObject({ value: 2, source: coordinate, mathDefinition: { source: coordinate } });
+  expect(undonePoint.at.y.value).toBeCloseTo(Math.PI/2, 12);
+  expect(undonePoint.at.y).toMatchObject({ source: product, mathDefinition: { source: product } });
+  console.log('[確認] Undo後の保存内容を照合: 級数の和=2（元の原式）、点のX=2（係数の参照）、点のY=π/2（無限積）');
 }

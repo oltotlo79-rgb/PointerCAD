@@ -1,6 +1,7 @@
 /** Assemble a new local candidate after Web, HTML and PDF generation. Never publish or certify it. */
 import { argv } from 'node:process';
 import { log } from 'node:console';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +9,7 @@ import { mkdir, lstat, readFile, writeFile } from 'node:fs/promises';
 import { collectOfflineAssetFiles, offlineAssetUrl } from '../vite/offlineAssets.mjs';
 import { assembleOfflineDistribution } from '../vite/offlineDistribution.mjs';
 import { captureWebBuildSources } from '../vite/webBuildSources.mjs';
+import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
 import { verifyCurrentManualEdition } from '../manual/currentManualEdition.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -24,14 +26,22 @@ for (const folder of paths.slice(0, 3)) {
   for (const name of result.excluded) files.push({ path: name, bytes: await readFile(join(folder, name)) });
   groups.push(files);
 }
-// Both the executable and the manual must come from the current implementation.
+const currentCommit = execFileSync('git', ['--no-optional-locks', '-c', 'safe.directory=' + root.replaceAll('\\', '/'),
+  'rev-parse', 'HEAD'], { cwd: root, env: localGitEnvironment(), encoding: 'utf8', windowsHide: true }).trim();
+// Both the executable and the manual must come from the current implementation and commit.
 for (const [index, marker] of [[0, 'web-build.json'], [1, 'manifest.json']]) {
   const sourceFile = groups[index].find(file => file.path === marker);
   if (sourceFile === undefined) throw new Error('Missing source inventory: ' + marker);
   const source = JSON.parse(new globalThis.TextDecoder('utf-8', { fatal: true }).decode(sourceFile.bytes));
   if (typeof source?.inputs !== 'object' || source.inputs === null || Array.isArray(source.inputs)) throw new Error('Missing source records');
-  if (index === 0 && JSON.stringify(await captureWebBuildSources(root)) !== JSON.stringify(source.inputs)) {
-    throw new Error('Web sources were changed, added or removed after generation');
+  if (index === 0) {
+    if (JSON.stringify(await captureWebBuildSources(root)) !== JSON.stringify(source.inputs)) {
+      throw new Error('Web sources were changed, added or removed after generation');
+    }
+    // A missing sourceCommit means a pre-P13-1b web-build.json; only a recorded mismatch is refused.
+    if (source.sourceCommit !== undefined && source.sourceCommit !== currentCommit) {
+      throw new Error('Web build source commit no longer matches the current commit');
+    }
   }
   for (const [name, expected] of Object.entries(source.inputs)) {
     offlineAssetUrl(name);

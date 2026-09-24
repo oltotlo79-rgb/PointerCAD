@@ -3,6 +3,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import type { PartDocument, SketchFunctionCurveFeature, FunctionSurfaceFeature, ResolvedSpline, SolidBody } from '@pointercad/model';
 import { MathExpressionDialog } from '../math/MathExpressionDialog.js';
 import { createBrowserMathClient } from '../math/createBrowserMathClient.js';
+import { waitForMathEditorGeometry } from '../math/prepareDocumentMathEditor.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import { editFunctionField, evaluateFunctionPlotDraft, functionPlotDraft, functionDraftScope, FUNCTION_AXES,
@@ -56,7 +57,14 @@ export function FunctionPlotDialog({ featureId, onClose }: {
     const current = () => isCurrent() && !abort.signal.aborted && running.current === abort;
     setBusy(true); setPreview(null); setDisplayed(false); setIssues(new Map());
     try {
-      const result = await evaluateFunctionPlotDraft(prepared, owner.documentVersion, draft, client, abort.signal, current);
+      // GR-18c: wait for the document's current math-geometry outcomes exactly as MathExpressionDialog.tsx
+      // does, so a geometry-derived coefficient (and any ordinary coefficient sharing the document) can
+      // resolve instead of the whole document looking like a syntax error. The "計算中" busy state above
+      // already covers this wait; a still-pending measurement surfaces as evaluateFunctionPlotDraft's own
+      // one-message failure (`math geometry pending`) rather than a per-field parser error.
+      const geometry = await waitForMathEditorGeometry(prepared, abort.signal, current, () => undefined);
+      if (!current()) return;
+      const result = await evaluateFunctionPlotDraft(prepared, owner.documentVersion, draft, client, abort.signal, current, geometry);
       if (!current()) return;
       if (!result.ok) { setIssues(result.fields); return; }
       const candidate = prepareFunctionPlot(result.prepared, draft.geometry, result.definition, sketch.id, feature);

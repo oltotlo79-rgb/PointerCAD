@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -10,6 +9,7 @@ import { decodeExactMathResult } from './exactMathResult.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import { coordinateFromMath, type MathNode } from './mathInputContract.js';
 import { rationalOfExpression } from './exactRational.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 let backend: MathExecutionBackend;
 const script = fileURLToPath(new URL('./exactRuntime/cas_taylor_test.py', import.meta.url));
@@ -22,7 +22,7 @@ const examples = [
   { source: 'maclaurin(sin(x),x,3)', coefficients: ['0', '1', '0', '-1/6'], convergence: 'entire', exact: false },
 ] as const;
 function native(args: readonly string[], input?: string): string {
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], { input, encoding: 'utf8',
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], { input, encoding: 'utf8',
     timeout: 90_000, maxBuffer: 2_000_000, env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' } });
   if (result.status !== 0 || result.error !== undefined) throw new Error(`${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`);
   return result.stdout;

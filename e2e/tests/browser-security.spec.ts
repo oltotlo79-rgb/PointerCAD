@@ -98,8 +98,11 @@ test('終了診断は実際のブラウザー切断を成功扱いせずに保�
     if (attachment === undefined) throw new Error('切断の診断が保存されていません');
     const text = attachment.body?.toString('utf8') ?? await readFile(attachment.path ?? '', 'utf8');
     const diagnostic: unknown = JSON.parse(text);
+    // lifecycle の各要素は browserFailureDiagnostics.ts が freeHostMemoryBytes・testWorkerRssBytes
+    // も持たせる。arrayContaining内の素のobjectは深い等価比較になり追加フィールドで不一致になるため、
+    // objectContainingで必要な3項目だけを検査し、正しい記録を追加情報を理由に拒否しない。
     expect(diagnostic).toMatchObject({ stage: '確認用のブラウザー終了', lifecycle: expect.arrayContaining([
-      { event: 'browser-disconnected', stage: '確認用のブラウザー終了', elapsedMs: expect.any(Number) },
+      expect.objectContaining({ event: 'browser-disconnected', stage: '確認用のブラウザー終了', elapsedMs: expect.any(Number) }),
     ]) });
   } finally {
     await browser.close();

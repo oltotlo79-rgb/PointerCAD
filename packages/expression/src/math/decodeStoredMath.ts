@@ -2,6 +2,7 @@
 import { MATH_INPUT_FORMAT, MATH_INPUT_LIMITS, MathInputProblem, validateMathDecimal, validateMathSource, hasMathControlCharacters,
   type MathBinding, type MathNode, type MathOperationDefinition, type MathSymbolReference,
   type StoredMathExpression } from './mathInputContract.js';
+import { decodeMathDeclarations, referencedMathDeclarations } from './mathDeclarations.js';
 
 export interface StoredMathContext {
   readonly operationsById: ReadonlyMap<string, MathOperationDefinition>;
@@ -9,6 +10,8 @@ export interface StoredMathContext {
   readonly declaredIds: ReadonlySet<string>;
   /** File decoding preserves unresolved IDs; the evaluation boundary must always supply a closed scope. */
   readonly allowUnresolvedCoefficients?: true;
+  /** File loading preserves complete local declarations; live requests must supply the same closed scope. */
+  readonly allowStoredDeclarations?: true;
   /** Parse the visible source under the same name/type choices, without canonicalizing or evaluating it. */
   readonly parseSource: (source: string, notation: 'text' | 'latex') => MathNode;
 }
@@ -47,17 +50,25 @@ export function decodeStoredMath(value: unknown, context: StoredMathContext): St
 
 /** Decode a detached transport snapshot; source equivalence must still be checked inside the Worker. */
 export function decodeStoredMathStructure(value: unknown, context: Pick<StoredMathContext,
-  'operationsById' | 'coefficientIds' | 'declaredIds' | 'allowUnresolvedCoefficients'>): StoredMathExpression {
+  'operationsById' | 'coefficientIds' | 'declaredIds' | 'allowUnresolvedCoefficients' | 'allowStoredDeclarations'>): StoredMathExpression {
   const stored = object(value);
-  keys(stored, ['format', 'source', 'inputNotation', 'angleUnit', 'expression']);
+  const hasDeclarations = Object.hasOwn(stored, 'declarations');
+  keys(stored, ['format', 'source', 'inputNotation', 'angleUnit', 'expression', ...(hasDeclarations ? ['declarations'] : [])]);
   if (stored.format !== MATH_INPUT_FORMAT || typeof stored.source !== 'string'
     || (stored.inputNotation !== 'text' && stored.inputNotation !== 'latex')
     || (stored.angleUnit !== 'degree' && stored.angleUnit !== 'radian')) {
     throw new MathInputProblem('syntax', '数式の版または入力設定に対応していません。');
   }
   validateMathSource(stored.source);
-  const expression = decodeStoredMathNode(stored.expression, context);
-  return { format: MATH_INPUT_FORMAT, source: stored.source, inputNotation: stored.inputNotation, angleUnit: stored.angleUnit, expression };
+  const declarations = hasDeclarations ? decodeMathDeclarations(stored.declarations) : undefined;
+  if (context.allowStoredDeclarations !== true && declarations?.some(value => !context.declaredIds.has(value.id))) {
+    throw new MathInputProblem('syntax', '現在の入力にない記号が保存データへ追加されています。');
+  }
+  const expression = decodeStoredMathNode(stored.expression, declarations === undefined ? context
+    : { ...context, declaredIds: new Set(declarations.map(value => value.id)) });
+  if (declarations !== undefined) referencedMathDeclarations(expression, declarations);
+  return { format: MATH_INPUT_FORMAT, source: stored.source, inputNotation: stored.inputNotation, angleUnit: stored.angleUnit, expression,
+    ...(declarations === undefined ? {} : { declarations }) };
 }
 
 export function decodeStoredMathNode(value: unknown, context: Pick<StoredMathContext,

@@ -22,12 +22,23 @@
  * | スケッチ → 立体 | 投影(`SketchProjectedCurveFeature.source`)・交差(`planeSection.targetFeatureId`)・3D スケッチの頂点参照(`PointReference` の `subShape`)・球面上の点(同 `sphereGrid`、FR-431) |
  * | スケッチ → 基準ジオメトリ | 各要素の作図面 `planeId`(任意の作業平面 FR-328)、鏡像の平面 |
  *
- * **順序の規則は 1 つだけ**: 「どのフィーチャーも、自分が指す先より後ろにいる」。
+ * **順序の規則**: 「どのフィーチャーも、自分が指す先より後ろにいる」。
  * 既存の `resolveReferences.ts`(基準ジオメトリの前方参照の禁止)と `resolvePart.ts`
  * (投影のもとはスケッチを使う立体より前)が解決のときに断っているものと同じ規約で、
- * ここでは**並べ替える前に**同じことを判定して、実行してから失敗させない(NFR-UX-5)。
+ * ここでは**並べ替える前に**新たな違反と、移動した当事者による既存違反の悪化を断る。
+ * 基準ジオメトリは立体より前の区間に固定されるので、立体の面に載る作業平面などの
+ * 既存の逆転を理由に、無関係な項目の移動まで断らない(TL-01、FR-328)。
  *
  * 例外を投げず、断りは日本語で相手の名前つきに返す(FR-504、NFR-RE-1)。
+ *
+ * **図形の測定値を使う係数の順序(GR-07)**: `reorderTimeline` / `canMoveHistoryItem` /
+ * `moveHistoryItem` は任意引数 `extraDependencies` で、この帯の依存グラフに合わせる追加の
+ * 辺を受け取れる(`mergedDependencyGraph`)。図形の測定値(計測した形)を係数経由で使う形は、
+ * 測った形より履歴の後ろでなければならない(計画書 §4(d)、Q7=O1)という別の規則を、
+ * `historyDependencies` 自体を変えずに足すためのもの。辺は `measure/mathGeometryDependencies.ts`
+ * の `mathGeometryHistoryEdges(document)` が作るが、そちらが `historyDependencies` を import
+ * しているため、ここから逆に import すると循環する。呼出し側が計算済みの辺を渡す形にして
+ * 循環を避けている。省略すれば従来どおりの判定になる。
  */
 
 import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
@@ -712,7 +723,7 @@ export function dependenciesOf(
  * 並べ替えの妥当性
  * ------------------------------------------------------------------ */
 
-/** 並びの中で最初に見つかった「指し先が自分より後ろ」。無ければ null。 */
+/** 移動で新たに生じた、または移動した当事者が悪化させた依存の逆転。 */
 interface DependencyViolation {
   /** 壊れる側(指している方)。 */
   readonly dependent: TimelineEntry;
@@ -721,14 +732,23 @@ interface DependencyViolation {
 }
 
 /**
- * 並び**全体**を検査する(1 件ずつ場当たりに判定しない)。
- * 見るのは配列の位置であって `TimelineEntry.index` ではない(並べ替えた後の仮の並びを
- * そのまま渡せるようにするため)。
+ * 前後の位置を比較し、依存先との逆転が生じた辺を探す(TL-01)。既存の逆転は、
+ * その辺の当事者を動かして隔たりを広げた場合だけ悪化とする。第三の独立項目が
+ * 間へ出入りして隔たりが変わっただけなら、その辺の順序は壊していない。
+ * 配列の位置で比較し、仮の並びに残る `TimelineEntry.index` は使わない。
  */
-function firstViolation(
+function firstNewOrWorsenedViolation(
+  before: readonly TimelineEntry[],
   order: readonly TimelineEntry[],
   graph: ReadonlyMap<string, readonly string[]>,
+  movedFeatureId: string,
 ): DependencyViolation | null {
+  const previousPosition = new Map<string, number>();
+  before.forEach((entry, index) => {
+    if (!previousPosition.has(entry.featureId)) {
+      previousPosition.set(entry.featureId, index);
+    }
+  });
   const position = new Map<string, number>();
   order.forEach((entry, index) => {
     if (!position.has(entry.featureId)) {
@@ -740,8 +760,61 @@ function firstViolation(
     for (const dependencyId of graph.get(entry.featureId) ?? []) {
       const at = position.get(dependencyId);
       if (at !== undefined && at >= index) {
-        return { dependent: entry, dependency: order[at] };
+        const previousDependent = previousPosition.get(entry.featureId);
+        const previousDependency = previousPosition.get(dependencyId);
+        if (previousDependent === undefined || previousDependency === undefined) {
+          continue;
+        }
+        const previousGap = previousDependency - previousDependent;
+        const movedEndpoint = entry.featureId === movedFeatureId || dependencyId === movedFeatureId;
+        if (previousGap < 0 || (movedEndpoint && at - index > previousGap)) {
+          return { dependent: entry, dependency: order[at] };
+        }
       }
+    }
+  }
+  return null;
+}
+
+/**
+ * 既存の逆転を挟む経路(立体 → 作業平面 → 立体)でも、新しく上流を追い越してはならない。
+ * 移動で前後関係が変わるのは移動項目と追い越した項目だけ。上流(前へ移動)または
+ * 下流(後ろへ移動)を1巡して照合し、historyDependencies の辺自体は変えない。
+ */
+function firstCrossedDependency(
+  entries: readonly TimelineEntry[],
+  from: number,
+  to: number,
+  graph: ReadonlyMap<string, readonly string[]>,
+): DependencyViolation | null {
+  let traversal = graph;
+  if (from < to) {
+    const dependents = new Map<string, string[]>();
+    for (const [id, dependencies] of graph) {
+      for (const dependency of dependencies) {
+        const users = dependents.get(dependency);
+        if (users === undefined) dependents.set(dependency, [id]);
+        else users.push(id);
+      }
+    }
+    traversal = dependents;
+  }
+  const moved = entries[from];
+  const visited = new Set<string>([moved.featureId]);
+  const queue = [moved.featureId];
+  for (let index = 0; index < queue.length; index += 1) {
+    for (const id of traversal.get(queue[index]) ?? []) {
+      if (!visited.has(id)) {
+        visited.add(id);
+        queue.push(id);
+      }
+    }
+  }
+  for (let index = Math.min(from, to); index <= Math.max(from, to); index += 1) {
+    if (index !== from && visited.has(entries[index].featureId)) {
+      return from > to
+        ? { dependent: moved, dependency: entries[index] }
+        : { dependent: entries[index], dependency: moved };
     }
   }
   return null;
@@ -763,7 +836,48 @@ interface ReorderPlan {
 /** 並べ替えの下調べ。`plan` が null なら動かす必要が無い(from === to)。 */
 type ReorderPlanOutcome = { readonly ok: true; readonly plan: ReorderPlan | null } | ReorderRefusal;
 
-function planReorder(document: PartDocument, from: number, to: number): ReorderPlanOutcome {
+/**
+ * `historyDependencies` の帯の依存グラフへ、呼出し側が持ってきた追加の辺を合わせる
+ * (GR-07。計画書 `scratchpad/claude/plans/geomref-plan.md` §4(d)、図形の測定値を使う係数の
+ * 順序規則 Q7=O1「測る形は、その値を使う形より履歴の前」)。
+ *
+ * `measure/mathGeometryDependencies.ts` の `mathGeometryHistoryEdges(document)` がこの形
+ * (featureId → 自分より前になければならない featureId の一覧)の辺を作るが、その関数は
+ * `historyDependencies`・`buildTimeline` をこのファイルから import しているため、
+ * ここから静的 import すると循環になる。そのため**呼出し側が計算済みの辺を引数で渡す**
+ * 形にし、このファイルは合わせるだけにする(`historyDependencies` 自体は変えない)。
+ * 追加の辺が無い(`undefined` または空)ときは `base` をそのまま返し、図形由来の係数が
+ * 無い文書では従来と同じグラフ・同じ結果になる(追加の解析の費用も増えない)。
+ */
+function mergedDependencyGraph(
+  base: ReadonlyMap<string, readonly string[]>,
+  extra: ReadonlyMap<string, readonly string[]> | undefined,
+): ReadonlyMap<string, readonly string[]> {
+  if (extra === undefined || extra.size === 0) {
+    return base;
+  }
+  const merged = new Map<string, readonly string[]>(base);
+  for (const [featureId, dependencyIds] of extra) {
+    if (dependencyIds.length === 0) {
+      continue;
+    }
+    const existing = merged.get(featureId);
+    merged.set(
+      featureId,
+      existing === undefined || existing.length === 0
+        ? dependencyIds
+        : dedupe([...existing, ...dependencyIds]),
+    );
+  }
+  return merged;
+}
+
+function planReorder(
+  document: PartDocument,
+  from: number,
+  to: number,
+  extraDependencies?: ReadonlyMap<string, readonly string[]>,
+): ReorderPlanOutcome {
   const entries = buildTimeline(document);
   if (!Number.isInteger(from) || from < 0 || from >= entries.length) {
     return { ok: false, reason: '動かすものが履歴の中にありません。', blockingFeatureId: '' };
@@ -781,7 +895,10 @@ function planReorder(document: PartDocument, from: number, to: number): ReorderP
   }
   // 先に依存を見るのは、断りの理由として「どのフィーチャーが困るのか」が
   // いちばん役に立つため(FR-504)。置き場の食い違いはその後に見る。
-  const violation = firstViolation(moveInArray(entries, from, to), historyDependencies(document));
+  const graph = mergedDependencyGraph(historyDependencies(document), extraDependencies);
+  const violation = firstNewOrWorsenedViolation(
+    entries, moveInArray(entries, from, to), graph, moved.featureId,
+  ) ?? firstCrossedDependency(entries, from, to, graph);
   if (violation !== null) {
     return {
       ok: false,
@@ -811,13 +928,20 @@ function planReorder(document: PartDocument, from: number, to: number): ReorderP
 /**
  * 帯の from の位置のものを to の位置へ動かす(FR-507)。
  * 依存を壊すなら理由つきで断り、文書は変えない(FR-504)。
+ *
+ * `extraDependencies`(GR-07・任意)は `historyDependencies` の辺に合わせる追加の辺
+ * (featureId → 自分より前になければならない featureId の一覧)。図形の測定値を使う係数の
+ * 順序規則(計画書 §4(d)、Q7=O1)を効かせるときは、呼出し側が
+ * `mathGeometryHistoryEdges(document)`(`measure/mathGeometryDependencies.ts`)を渡す。
+ * 省略すれば従来どおり `historyDependencies(document)` だけで判定する。
  */
 export function reorderTimeline(
   document: PartDocument,
   from: number,
   to: number,
+  extraDependencies?: ReadonlyMap<string, readonly string[]>,
 ): ReorderOutcome {
-  const outcome = planReorder(document, from, to);
+  const outcome = planReorder(document, from, to, extraDependencies);
   if (!outcome.ok) {
     return outcome;
   }
@@ -838,31 +962,39 @@ export function reorderTimeline(
 /**
  * そのフィーチャーを帯の `newIndex` へ動かせるか(ドラッグ中の予告に使う。NFR-UX-5)。
  * 文書を作らないので、ドラッグのたびに何度呼んでもよい。
+ *
+ * `extraDependencies`(GR-07・任意)は `reorderTimeline` と同じ追加の辺。図形由来の係数が
+ * 無い文書では省略でき、費用は増えない(`mathGeometryHistoryEdges` 側が空で早期に返す)。
  */
 export function canMoveHistoryItem(
   document: PartDocument,
   featureId: string,
   newIndex: number,
+  extraDependencies?: ReadonlyMap<string, readonly string[]>,
 ): MoveCheck {
   const from = timelineIndexOf(document, featureId);
   if (from === null) {
     return { ok: false, reason: '動かすものが履歴の中にありません。', blockingFeatureId: '' };
   }
-  const outcome = planReorder(document, from, newIndex);
+  const outcome = planReorder(document, from, newIndex, extraDependencies);
   return outcome.ok ? { ok: true } : outcome;
 }
 
-/** そのフィーチャーを帯の `newIndex` へ動かした新しい文書(`reorderTimeline` の id 版)。 */
+/**
+ * そのフィーチャーを帯の `newIndex` へ動かした新しい文書(`reorderTimeline` の id 版)。
+ * `extraDependencies`(GR-07・任意)は `reorderTimeline` と同じ追加の辺。
+ */
 export function moveHistoryItem(
   document: PartDocument,
   featureId: string,
   newIndex: number,
+  extraDependencies?: ReadonlyMap<string, readonly string[]>,
 ): ReorderOutcome {
   const from = timelineIndexOf(document, featureId);
   if (from === null) {
     return { ok: false, reason: '動かすものが履歴の中にありません。', blockingFeatureId: '' };
   }
-  return reorderTimeline(document, from, newIndex);
+  return reorderTimeline(document, from, newIndex, extraDependencies);
 }
 
 /* ------------------------------------------------------------------ *

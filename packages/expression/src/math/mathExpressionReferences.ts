@@ -2,6 +2,7 @@
 import { MATH_INPUT_LIMITS, MathInputProblem, hasMathControlCharacters,
   type MathNode, type MathSymbolReference, type StoredMathExpression } from './mathInputContract.js';
 import { convertMathNotation } from './mathNotationConversion.js';
+import { decodeMathDeclarations, referencedMathDeclarations } from './mathDeclarations.js';
 
 type Coefficient = Extract<MathSymbolReference, { role: 'coefficient' }>;
 
@@ -62,4 +63,21 @@ export function renameMathCoefficient(definition: StoredMathExpression, id: stri
     throw new MathInputProblem('syntax', '変更した係数名と表示される数式が一致しません。');
   }
   return { ...definition, source: converted.source, expression: converted.expression };
+}
+
+/** Rename only the declaration's stable reference; reparsing rejects capture by a local bound variable. */
+export function renameMathDeclaration(definition: StoredMathExpression, id: string, label: string, codec: {
+  readonly format: (expression: MathNode, notation: StoredMathExpression['inputNotation']) => string;
+  readonly parse: (source: string, notation: StoredMathExpression['inputNotation']) => MathNode;
+}): StoredMathExpression {
+  if (!definition.declarations?.some(value => value.id === id)) {
+    throw new MathInputProblem('syntax', '改名する記号の定義がありません。');
+  }
+  const declarations = decodeMathDeclarations(definition.declarations.map(value => value.id === id ? { ...value, label } : value));
+  const expression = mapMathSymbols(definition.expression, reference => ({ kind: 'symbol',
+    reference: reference.role === 'declared' && reference.id === id ? { ...reference, label } : reference }));
+  const converted = convertMathNotation(expression, node => codec.format(node, definition.inputNotation),
+    source => codec.parse(source, definition.inputNotation));
+  referencedMathDeclarations(converted.expression, declarations);
+  return { ...definition, declarations, source: converted.source, expression: converted.expression };
 }

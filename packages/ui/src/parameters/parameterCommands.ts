@@ -32,6 +32,7 @@ import {
   collectExpressionOwners,
   expressionParameterNames,
   hasDocumentMath,
+  mathGeometryDerivedParameters,
   prepareDocumentMathIdentity,
   nextParameterName,
   removeParameter,
@@ -48,6 +49,7 @@ import {
 } from '@pointercad/model';
 
 import { t } from '../i18n/t.js';
+import type { CurrentMathGeometry } from '../math/mathGeometryResults.js';
 
 /* ---------------------------------------------------------------------------
  * 結果の型
@@ -273,7 +275,7 @@ export function commitAddParameter(document: PartDocument, draft: Parameter): Pa
   if (issue !== null) {
     return invalidName(issue);
   }
-  if (hasName(document.parameters, draft.name)) {
+  if (hasName(document.parameters, draft.name) || document.mathGeometry?.some(definition => definition.name === draft.name)) {
     return duplicateName();
   }
   return applied({ ...document, parameters: addParameter(document.parameters, draft, document.mathParameterSerial) });
@@ -322,7 +324,7 @@ export function commitRenameParameter(
   if (issue !== null) {
     return invalidName(issue);
   }
-  if (hasName(document.parameters, to)) {
+  if (hasName(document.parameters, to) || document.mathGeometry?.some(definition => definition.name === to)) {
     return duplicateRename();
   }
   if (hasDocumentMath(document) || document.configurations.some(configuration => configuration.mathDefinitions !== undefined)) {
@@ -386,6 +388,12 @@ export interface ParameterRow {
   readonly unused: boolean;
   /** 評価できなかった理由。無ければ null。 */
   readonly failureMessage: string | null;
+  /** Present only for coefficients derived directly or transitively from measured definitions. */
+  readonly geometry?: {
+    /** Resolve IDs against the current definitions so renamed labels never linger in the panel. */
+    readonly definitionNames: readonly string[];
+    readonly pending: boolean;
+  };
 }
 
 /**
@@ -397,20 +405,34 @@ export interface ParameterRow {
 export function parameterRowsOf(
   document: PartDocument,
   analysis: ParameterAnalysis,
+  geometry?: CurrentMathGeometry,
 ): readonly ParameterRow[] {
   const failureByName = new Map(
     analysis.failures.map((failure) => [failure.name, failure.message] as const),
   );
   const circular = new Set(analysis.circular);
   const unused = new Set(analysis.unused);
-  return document.parameters.map((parameter) => ({
-    name: parameter.name,
-    source: parameter.value.source,
-    value: analysis.variables.get(parameter.name) ?? parameter.value.value,
-    unit: parameter.unit,
-    description: parameter.description,
-    circular: circular.has(parameter.name),
-    unused: unused.has(parameter.name),
-    failureMessage: failureByName.get(parameter.name) ?? null,
-  }));
+  // Before the first recomputation, analyzeParameters has no geometryDerived metadata yet.
+  const derived = analysis.geometryDerived ?? mathGeometryDerivedParameters(document.parameters);
+  const definitions = new Map(document.mathGeometry?.map(definition => [definition.id, definition.name] as const));
+  return document.parameters.map((parameter) => {
+    const ids = derived.get(parameter.name);
+    return {
+      name: parameter.name,
+      source: parameter.value.source,
+      value: analysis.variables.get(parameter.name) ?? parameter.value.value,
+      unit: parameter.unit,
+      description: parameter.description,
+      circular: circular.has(parameter.name),
+      unused: unused.has(parameter.name),
+      failureMessage: failureByName.get(parameter.name) ?? null,
+      ...(ids === undefined ? {} : { geometry: {
+        definitionNames: ids.flatMap(id => {
+          const name = definitions.get(id);
+          return name === undefined ? [] : [name];
+        }),
+        pending: geometry?.status !== 'current',
+      } }),
+    };
+  });
 }

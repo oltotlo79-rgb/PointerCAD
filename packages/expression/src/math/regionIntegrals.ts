@@ -3,6 +3,9 @@ import { MathInputProblem, type MathNode } from './mathInputContract.js';
 
 export const REGION_INTEGRAL_DEFINITIONS = [
   ['surface-integral', 'SurfaceIntegral'], ['flux-integral', 'FluxIntegral'], ['volume-integral', 'VolumeIntegral'],
+  // ∯ (MC-19d): closed surfaces, calculated only after closedIntegrals.ts proves the surface closed,
+  // and then as surface-integral or flux-integral.
+  ['closed-surface-integral', 'ClosedSurfaceIntegral'], ['closed-flux-integral', 'ClosedFluxIntegral'],
 ] as const;
 export const REGION_INTEGRAL_IDS = new Set<string>(REGION_INTEGRAL_DEFINITIONS.map(([id]) => id));
 
@@ -22,7 +25,7 @@ export function validateRegionIntegral(node: Extract<MathNode, { kind: 'operatio
   if (!list(mapping.body, 3) || !list(lower, dimension) || !list(upper, dimension)) {
     throw new MathInputProblem('domain', '座標式は3個、下限と上限は媒介変数と同じ個数で指定してください。');
   }
-  if (node.operation === 'flux-integral' ? !list(field.body, 3)
+  if (node.operation === 'flux-integral' || node.operation === 'closed-flux-integral' ? !list(field.body, 3)
     : field.body.kind === 'operation' && ['list', 'matrix', 'set', 'interval'].includes(field.body.operation)) {
     throw new MathInputProblem('domain', '流束には3成分の場を、面積と体積の積分には一つの数値になる量を指定してください。');
   }

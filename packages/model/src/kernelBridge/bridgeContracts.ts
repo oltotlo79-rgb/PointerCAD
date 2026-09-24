@@ -49,6 +49,8 @@ import type {
 
 /** model から幾何カーネルへの唯一の接点。ここ以外から kernel を呼ばない。 */
 export interface KernelBridge {
+  /** Read topology for current upstream steps without changing the displayed part. Older test bridges may omit it. */
+  readCachedBodies?(steps: readonly ResolvedSolidStep[], featureIds: readonly string[]): Promise<SolidRecomputeOutcome>;
   /** 面の一覧をカーネルへ渡し、表示用の三角形を受け取る(FR-309)。 */
   tessellateSketchFaces(faces: readonly ResolvedFace[]): Promise<SketchTessellationOutcome>;
   /**

@@ -54,6 +54,24 @@ export const PCAD_PRINT_CHANNEL = 'pcad:print';
 const PCAD_EXTENSION = PCAD_DOTTED_EXTENSION.slice(1);
 const DWG_GUIDE = 'DWGは直接読み書きできません。DXFへ変換する手順をヘルプで確認してください。';
 
+/**
+ * 「開く」が大きさを理由に断ったことを、画面側が**日本語の文面を見ずに**判別するための印
+ * (P12-26 続き。要件§1.5「Web版とデスクトップ版に機能差を作らない」)。
+ *
+ * Electron の `ipcRenderer.invoke` の拒否は独自の例外クラスや追加の属性を運ばず、文面だけが
+ * `Error invoking remote method '…': Error: <message>` の形で画面まで届く(preload は
+ * そのまま横流しする素通しの口)。そこでこの固定の印を message の先頭に混ぜて運び、
+ * `apps/desktop/src/renderer/desktopFileGateway.ts` が `message.includes(...)` だけで
+ * 見分けて Web 版(`packages/ui/src/file/readBrowserFile.ts`)と同じ i18n の鍵
+ * (`file.error.tooLarge` / `file.error.corrupted`)を選ぶ。印より後ろの日本語の文面を
+ * 変えても印そのものは変わらないので、判定は壊れない。
+ *
+ * `desktopFileGateway.ts` は本体プロセス専用の `electron` / `node:fs` を抱き込むこのファイルを
+ * import せず、同じ文字列を書き写している(直下のチャンネル名の定数と同じ理由。§36〜39 参照)。
+ */
+export const READ_TOO_LARGE_REASON_MARKER = 'PCAD_READ_TOO_LARGE:';
+export const READ_SIZE_CHANGED_REASON_MARKER = 'PCAD_READ_SIZE_CHANGED:';
+
 class InputTooLargeError extends Error {}
 
 const PCAD_FILE_FILTER = nativeFileFilter('pcad');
@@ -96,8 +114,11 @@ function withPcadExtension(filePath: string): string {
  * ファイルを読む。失敗は日本語の `Error` にして `invoke` の拒否として返す。
  * 部品ファイルにも、種類つきの読み込み(`pcad:openAny`)にも同じものを使う。
  *
- * 文面にパスを入れない。この文面は画面側まで届くため(NFR-SE-1)。画面が利用者へ出す文言は
- * `ja.json` の `file.openFailed` で、ここの文面は記録用。
+ * 文面にパスを入れない。この文面は画面側まで届くため(NFR-SE-1)。
+ * 大きさが理由の失敗(`InputTooLargeError`)には上の印を付けており、それを読み取った
+ * `desktopFileGateway.ts` が Web 版と同じ `file.error.tooLarge` / `file.error.corrupted` を
+ * 画面へ出す。それ以外の失敗で画面が利用者へ出す文言は `ja.json` の `file.openFailed` で、
+ * ここの文面は記録用。
  */
 async function readBytesFrom(filePath: string): Promise<Uint8Array> {
   if (extname(filePath).toLowerCase() === '.dwg') throw new Error(DWG_GUIDE);
@@ -106,10 +127,10 @@ async function readBytesFrom(filePath: string): Promise<Uint8Array> {
     // Script JSON may escape each source byte six times. Mirrors SCRIPT_FILE_LIMITS.bytes.
     const maximum = extname(filePath).toLowerCase() === '.pcadscript' ? 6 * 1024 * 1024 + 65536 : MAX_COMPRESSED_INPUT_BYTES;
     if (metadata.size > maximum) {
-      throw new InputTooLargeError('ファイルが大きすぎます。種類ごとの読込上限を超えています。');
+      throw new InputTooLargeError(`${READ_TOO_LARGE_REASON_MARKER} ファイルが大きすぎます。種類ごとの読込上限を超えています。`);
     }
     const contents = await fileSystem.readFile(filePath);
-    if (contents.byteLength > maximum || contents.byteLength !== metadata.size) throw new InputTooLargeError('読込中にファイルの大きさが変わりました。もう一度開いてください。');
+    if (contents.byteLength > maximum || contents.byteLength !== metadata.size) throw new InputTooLargeError(`${READ_SIZE_CHANGED_REASON_MARKER} 読込中にファイルの大きさが変わりました。もう一度開いてください。`);
     // Buffer は Node の内部で使い回す記憶を指すことがあるので、自前の記憶へ写してから渡す。
     const bytes = new Uint8Array(contents.byteLength);
     bytes.set(contents);

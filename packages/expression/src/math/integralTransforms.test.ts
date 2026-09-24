@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -8,6 +7,7 @@ import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 const examples = [
   { source: 'fourier(exp(-x^2),x,k)', kind: 'transform' },
@@ -35,7 +35,7 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 const script = fileURLToPath(new URL('./exactRuntime/cas_transforms_test.py', import.meta.url));
 function native(args: readonly string[], input?: string): string {
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], {
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {
     input, encoding: 'utf8', timeout: 120_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });

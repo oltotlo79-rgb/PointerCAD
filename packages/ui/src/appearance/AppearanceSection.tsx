@@ -1,13 +1,12 @@
-import { useState } from 'react';
-import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
+import { useId, useState } from 'react';
+import { type ExpressionResult, type ExpressionValue } from '@pointercad/expression';
 import { appearanceOf, isSameAppearanceTarget, MATERIAL_PRESETS, WOOD_SPECIES, type AppearanceSpec } from '@pointercad/model';
 import { t } from '../i18n/t.js';
-import { ExpressionField } from '../sketch/ExpressionField.js';
-import { rangeErrorFor, type NumericField } from '../sketch/numericInput.js';
+import { fieldUnitLabelKey, fieldValueText, rangeErrorFor, type NumericField } from '../sketch/numericInput.js';
 import { initialDraftVersionState, reconcileDraftVersion } from '../shell/fieldDraft.js';
-import { committedFieldSource, evaluateFieldSource, useFieldUnits } from '../shell/propertyFieldUnits.js';
+import { evaluateFieldSource, isPendingFieldError, useFieldUnits } from '../shell/propertyFieldUnits.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { appearanceOfSelection, appearanceTargetsOf, appearanceWithColor, appearanceWithNumber,
+import { appearanceExpressionRefusalFor, appearanceOfSelection, appearanceTargetsOf, appearanceWithColor, appearanceWithNumber,
   appearanceWithPattern, appearanceWithPreset, appearanceWithWoodSpecies, isSameAppearanceSpec,
   missingAppearanceIds, type AppearanceContext, type AppearanceNumberField } from './appearanceCommands.js';
 import { FACE_COLORS, PRESET_LABEL_KEYS, WOOD_LABEL_KEYS, PATTERN_LABEL_KEYS, PATTERN_KINDS,
@@ -35,6 +34,7 @@ export function AppearanceSection({
 }: {
   readonly context: AppearanceContext;
 }): React.JSX.Element | null {
+  const inputId = useId();
   const documentVersion = useAppStore((state) => state.documentVersion);
   const units = useFieldUnits();
   const [draftState, setDraftState] = useState(() =>
@@ -66,9 +66,19 @@ export function AppearanceSection({
     useAppStore.getState().assignAppearance(next);
   };
 
+  const evaluateAppearanceSource = (
+    source: string, unit: 'ratio' | 'mm', drafted: boolean, saved?: ExpressionValue,
+  ): ExpressionResult => {
+    const refusal = appearanceExpressionRefusalFor(context.document, { source,
+      ...(!drafted && saved?.mathDefinition !== undefined ? { mathDefinition: saved.mathDefinition } : {}) });
+    return refusal === null ? evaluateFieldSource(source, unit, unit === 'mm' && drafted, units)
+      : { ok: false, error: { code: 'unknownVariable', position: -1, message: t(refusal) } };
+  };
+
   const renderHexField = (): React.JSX.Element => {
     const source = draft !== null && draft.key === 'color' ? draft.source : spec.color;
-    const hasError = normalizeHexColor(source) === null;
+    const refusal = appearanceExpressionRefusalFor(context.document, { source });
+    const hasError = refusal !== null || normalizeHexColor(source) === null;
     return (
       <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'}>
         <span className="pcad-field__label" title={t('propertyPanel.appearanceColor')}>
@@ -82,10 +92,12 @@ export function AppearanceSection({
           spellCheck={false}
           value={source}
           aria-invalid={hasError}
+          aria-describedby={`${inputId}-color-message`}
           title={t('propertyPanel.appearanceColor')}
           onChange={(event) => {
             const next = event.target.value;
             setDraftState({ draft: { key: 'color', source: next }, seenVersion: documentVersion });
+            if (appearanceExpressionRefusalFor(useAppStore.getState().document, { source: next }) !== null) return;
             const normalized = normalizeHexColor(next);
             if (normalized !== null) {
               apply(appearanceWithColor(spec, normalized));
@@ -93,7 +105,9 @@ export function AppearanceSection({
           }}
         />
         <span className="pcad-field__unit" />
-        <p className="pcad-field__message" />
+        <p id={`${inputId}-color-message`} className={hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'}>
+          {refusal === null ? '' : t(refusal)}
+        </p>
       </div>
     );
   };
@@ -102,7 +116,8 @@ export function AppearanceSection({
   const renderPercentField = (field: AppearanceNumberField): React.JSX.Element => {
     const value = spec[field];
     const source = draft !== null && draft.key === field ? draft.source : value.source;
-    const evaluated = evaluateExpression(source, units);
+    const drafted = draft !== null && draft.key === field;
+    const evaluated = evaluateAppearanceSource(source, 'ratio', drafted, value);
     const numericField: NumericField = {
       key: field,
       labelKey: PERCENT_FIELD_LABEL_KEYS[field],
@@ -114,7 +129,7 @@ export function AppearanceSection({
       range: PERCENT_RANGE,
     };
     const fieldError = evaluated.ok ? rangeErrorFor(numericField, evaluated.value) : evaluated.error;
-    const hasError = fieldError !== null;
+    const hasError = fieldError !== null && !isPendingFieldError(fieldError);
     return (
       <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'} key={field}>
         <span className="pcad-field__label" title={t(PERCENT_FIELD_LABEL_KEYS[field])}>
@@ -129,10 +144,11 @@ export function AppearanceSection({
           value={source}
           aria-invalid={hasError}
           title={t(PERCENT_FIELD_LABEL_KEYS[field])}
+          aria-describedby={`${inputId}-${field}-message`}
           onChange={(event) => {
             const next = event.target.value;
             setDraftState({ draft: { key: field, source: next }, seenVersion: documentVersion });
-            const parsed = evaluateExpression(next, units);
+            const parsed = evaluateAppearanceSource(next, 'ratio', true);
             if (!parsed.ok || rangeErrorFor(numericField, parsed.value) !== null) {
               return;
             }
@@ -140,7 +156,7 @@ export function AppearanceSection({
           }}
         />
         <span className="pcad-field__unit">{PERCENT_SIGN}</span>
-        <p className={hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'}>
+        <p id={`${inputId}-${field}-message`} className={hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'}>
           {fieldError === null ? (evaluated.ok ? `= ${evaluated.value.display}` : '') : fieldError.message}
         </p>
       </div>
@@ -151,35 +167,38 @@ export function AppearanceSection({
   const renderSpacingField = (spacingValue: ExpressionValue): React.JSX.Element => {
     const drafted = draft !== null && draft.key === 'spacing';
     const source = drafted ? draft.source : spacingValue.source;
-    const evaluated = evaluateFieldSource(source, 'mm', drafted, units);
+    const evaluated = evaluateAppearanceSource(source, 'mm', drafted, spacingValue);
+    const hasError = !evaluated.ok && !isPendingFieldError(evaluated.error);
+    // Appearance refuses the reference itself; the generic ExpressionField would replace this
+    // reason with its transient "pending" status when a geometry calculation is in progress.
     return (
-      <ExpressionField
-        key="spacing"
-        lengthUnit={units.lengthUnit}
-        field={{
-          key: 'spacing',
-          labelKey: 'propertyPanel.appearanceSpacing',
-          tooltipKey: 'propertyPanel.appearanceSpacing',
-          unit: 'mm',
-          defaultSource: spacingValue.source,
-          source,
-        }}
-        result={
-          evaluated.ok
-            ? { key: 'spacing', value: evaluated.value, error: null }
-            : { key: 'spacing', value: null, error: evaluated.error }
-        }
-        focused={false}
-        onFocus={() => undefined}
-        onChange={(next) => {
-          setDraftState({ draft: { key: 'spacing', source: next }, seenVersion: documentVersion });
-          const parsed = evaluateExpression(committedFieldSource(next, 'mm', units), units);
-          if (!parsed.ok) {
-            return;
-          }
-          apply(appearanceWithPattern(spec, patternWithSpacing(spec.pattern, parsed.value)));
-        }}
-      />
+      <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'}>
+        <label className="pcad-field__label" htmlFor={`${inputId}-spacing`} title={t('propertyPanel.appearanceSpacing')}>
+          {t('propertyPanel.appearanceSpacing')}
+        </label>
+        <span className="pcad-field__expression-input"><input
+          id={`${inputId}-spacing`}
+          className="pcad-field__input"
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          spellCheck={false}
+          value={source}
+          aria-invalid={hasError}
+          aria-describedby={`${inputId}-spacing-message`}
+          title={t('propertyPanel.appearanceSpacing')}
+          onChange={(event) => {
+            const next = event.target.value;
+            setDraftState({ draft: { key: 'spacing', source: next }, seenVersion: documentVersion });
+            const parsed = evaluateAppearanceSource(next, 'mm', true);
+            if (parsed.ok) apply(appearanceWithPattern(spec, patternWithSpacing(spec.pattern, parsed.value)));
+          }}
+        /></span>
+        <span className="pcad-field__unit">{t(fieldUnitLabelKey('mm', 'mm'))}</span>
+        <p id={`${inputId}-spacing-message`} className={hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'}>
+          {evaluated.ok ? `= ${fieldValueText('mm', evaluated.value, units.lengthUnit)}` : evaluated.error.message}
+        </p>
+      </div>
     );
   };
 

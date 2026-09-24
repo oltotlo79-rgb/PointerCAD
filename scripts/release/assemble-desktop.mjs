@@ -33,7 +33,8 @@ const packages = await Promise.all(['package.json', 'apps/desktop/package.json',
 if (packages.some(value => value.version !== packages[0].version)) throw new Error('Root, desktop and Web versions differ');
 const requireDesktop = createRequire(join(root, 'apps/desktop/package.json')), requireRoot = createRequire(join(root, 'package.json'));
 const electronVersion = requireDesktop('electron/package.json').version, builderVersion = requireRoot('electron-builder/package.json').version;
-const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+const sourceCommit = execFileSync('git', ['-c', 'safe.directory=' + root.replaceAll('\\', '/'),
+  'rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 const notices = new Map();
 for (const name of ['LICENSE', 'NOTICE']) notices.set(name, await readFile(join(root, name)));
 await verifyCurrentManualEdition(root, groups[1]);

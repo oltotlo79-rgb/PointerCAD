@@ -69,3 +69,67 @@ describe('図面の読み書きを本体プロセスへ届ける（P8-64）', ()
     expect(api.savePcad).toHaveBeenCalledWith('組図.pcadd', bytes, false, 'drawing');
   });
 });
+
+describe('「開く」の大きさ関連の失敗をWeb版と同じ鍵で画面へ出す（P12-26 続き）', () => {
+  // 本体プロセス(pcadDialogs.ts)の印。文字列は同じ値を書き写している(実装ファイルの注記参照)。
+  const TOO_LARGE_MARKER = 'PCAD_READ_TOO_LARGE:';
+  const SIZE_CHANGED_MARKER = 'PCAD_READ_SIZE_CHANGED:';
+  // Electron の ipcRenderer.invoke が実際に拒否する文面の形を模す(saveFailure.test.ts と同じ流儀)。
+  const asIpcRejection = (channel: string, marker: string, text: string) =>
+    new Error(`Error invoking remote method '${channel}': Error: ${marker} ${text}`);
+
+  function apiWith(overrides: { openPcad?: () => Promise<unknown>; openFile?: () => Promise<unknown> }) {
+    return {
+      openPcad: overrides.openPcad ?? (() => Promise.resolve(null)),
+      confirmSaveTarget: () => Promise.resolve(true),
+      clearSaveTarget: () => Promise.resolve(undefined),
+      savePcad: () => Promise.resolve(null),
+      hasSaveTarget: () => Promise.resolve(false),
+      openFile: overrides.openFile ?? (() => Promise.resolve(null)),
+      saveFileAs: () => Promise.resolve(false),
+    };
+  }
+
+  it('部品を開く(openPcad)で大きすぎるとき、Web版と同じfile.error.tooLargeを投げる', async () => {
+    const api = apiWith({ openPcad: () => Promise.reject(
+      asIpcRejection('pcad:open', TOO_LARGE_MARKER, 'ファイルが大きすぎます。種類ごとの読込上限を超えています。'),
+    ) });
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    if (gateway === null) throw new Error('gateway が必要');
+    await expect(gateway.openPcad('part')).rejects.toThrow('file.error.tooLarge');
+  });
+
+  it('部品を開く(openPcad)で読込中に大きさが変わったとき、Web版と同じfile.error.corruptedを投げる', async () => {
+    const api = apiWith({ openPcad: () => Promise.reject(
+      asIpcRejection('pcad:open', SIZE_CHANGED_MARKER, '読込中にファイルの大きさが変わりました。もう一度開いてください。'),
+    ) });
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    if (gateway === null) throw new Error('gateway が必要');
+    await expect(gateway.openPcad('part')).rejects.toThrow('file.error.corrupted');
+  });
+
+  it('種類つき読込(openFile)で大きすぎるとき、Web版と同じfile.error.tooLargeを投げる', async () => {
+    const api = apiWith({ openFile: () => Promise.reject(
+      asIpcRejection('pcad:openAny', TOO_LARGE_MARKER, 'ファイルが大きすぎます。種類ごとの読込上限を超えています。'),
+    ) });
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    if (gateway?.openFile === undefined) throw new Error('typed gateway required');
+    await expect(gateway.openFile(['step'])).rejects.toThrow('file.error.tooLarge');
+  });
+
+  it('種類つき読込(openFile)で読込中に大きさが変わったとき、Web版と同じfile.error.corruptedを投げる', async () => {
+    const api = apiWith({ openFile: () => Promise.reject(
+      asIpcRejection('pcad:openAny', SIZE_CHANGED_MARKER, '読込中にファイルの大きさが変わりました。もう一度開いてください。'),
+    ) });
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    if (gateway?.openFile === undefined) throw new Error('typed gateway required');
+    await expect(gateway.openFile(['step'])).rejects.toThrow('file.error.corrupted');
+  });
+
+  it('心当たりのない失敗(印なし)は文面を変えずにそのまま伝える', async () => {
+    const api = apiWith({ openPcad: () => Promise.reject(new Error('permission denied')) });
+    const gateway = createDesktopFileGateway({ pointercadDesktop: api });
+    if (gateway === null) throw new Error('gateway が必要');
+    await expect(gateway.openPcad('part')).rejects.toThrow('permission denied');
+  });
+});

@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll,describe,expect,it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -7,12 +6,13 @@ import type { MathExecutionBackend } from './mathWorkExecution.js';
 import type { MathNode } from './mathInputContract.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 let backend:MathExecutionBackend;
 beforeAll(()=>{backend=createMathBackend();});
 const engine={evaluate(expression:MathNode,angleUnit:'degree'|'radian'):Promise<unknown>{
   const script=fileURLToPath(new URL('./exactRuntime/cas_derivatives_test.py',import.meta.url));
-  const execution=spawnSync('python',['-B','-X','utf8',script,'--batch'],{
+  const execution=spawnExactRuntime(['-B','-X','utf8',script,'--batch'],{
     input:JSON.stringify([{expression,angleUnit}]),encoding:'utf8',timeout:60_000,
     env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONNOUSERSITE:'1'},
   });
@@ -24,7 +24,7 @@ const engine={evaluate(expression:MathNode,angleUnit:'degree'|'radian'):Promise<
 describe('楕円積分の追加計算部を元の条件・微分・保存へ接続する',()=>{
   it('固定計算部の六種類・原点・独立微分・途中の極と元の境界を確認する',()=>{
     const script=fileURLToPath(new URL('./exactRuntime/cas_elliptic_functions_test.py',import.meta.url));
-    const execution=spawnSync('python',['-B','-X','utf8',script],{encoding:'utf8',timeout:170_000,
+    const execution=spawnExactRuntime(['-B','-X','utf8',script],{encoding:'utf8',timeout:170_000,
       env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONNOUSERSITE:'1'}});
     expect(execution.error,execution.stderr).toBeUndefined();expect(execution.status,execution.stderr).toBe(0);
   },180_000);

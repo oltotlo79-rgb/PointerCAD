@@ -11,9 +11,20 @@
  * 頼んだ分をすべて kernelFailed にして返す(P1 の recomputeSketch と同じ書き方)。
  *
  * 呼ぶ頻度は「文書が変わったときだけ」。ホバー・選択・視点操作では呼ばない(§2.4、NFR-PF-1)。
+ *
+ * 図形の測定値を係数の式で使う文書だけは、1〜2 を依存の深さだけ繰り返し、段ごとに測った値を
+ * 次の段の係数へ渡す(段階再計算、GR-06。`recomputePart` の注釈)。
  */
 
 import { appearanceOf } from '../appearance/documentAppearance.js';
+import { evaluateMathGeometry } from '../measure/mathGeometry.js';
+import {
+  isMathGeometryValue,
+  planMathGeometryStages,
+  unmeasuredMathGeometryOutcomes,
+  type MathGeometryStagePlan,
+} from '../measure/mathGeometryStages.js';
+import type { MathGeometryOutcome } from '../measure/mathGeometryTypes.js';
 import { recomputeFunctionCurves, type FunctionRecomputeContext } from '../functionGeometry/recomputeFunctionCurves.js';
 import { recomputeFunctionSurfaces } from '../functionGeometry/recomputeFunctionSurfaces.js';
 import { recomputeFunctionPoints } from '../functionGeometry/recomputeFunctionPoints.js';
@@ -75,6 +86,8 @@ export interface PartSketchResult {
 }
 
 export interface PartRecomputeResult {
+  /** Only quantities read from this completed generation; never stored as replacement formulae. */
+  readonly mathGeometry?: readonly import('../measure/mathGeometryTypes.js').MathGeometryOutcome[];
   /** Current-generation scalar mathematics, for the parameter view; absent until all formulas are verified. */
   readonly parameterAnalysis?: ParameterAnalysis;
   /** 実カーネルで成功し表示される板金のパネル。失敗段や消費済みボディは貸さない。 */
@@ -107,9 +120,17 @@ export interface PartRecomputeResult {
    * `recomputePart` は必ず値を入れる。
    */
   readonly appearanceMatches?: readonly AppearanceMatchEntry[];
+  /**
+   * 計算を終えた時点の形状計算部のメモリの量(NFR-PF-6)。カーネルが添えたときだけ入る。
+   * ソリッドの段まで進まなかった結果(段が無い・数式の前段で止まった・Worker が壊れた等)には
+   * 入らないので、画面は前に受け取った量を持ち続ける(量は計算部の事実で、文書の事実ではない)。
+   */
+  readonly kernelMemory?: SolidRecomputeOutcome['kernelMemory'];
 }
 
 export interface PartRecomputeOptions {
+  /** Typed geometry references. Missing targets remain unresolved, never replaced with saved coordinates. */
+  readonly mathGeometry?: readonly import('../measure/mathGeometryTypes.js').MathGeometryRequest[];
   /** Required for new mathematical definitions; absent evaluators must never use cached coordinates. */
   readonly math?: DocumentMathContext;
   readonly functions?: FunctionRecomputeContext;
@@ -548,8 +569,14 @@ function dependencySchedule(graph: ReadonlyMap<string, readonly string[]>): {
   };
 }
 
-/** 途中の形・スケッチ・診断を適用させない。generationは依頼開始時の番号だけを返す。 */
-function cancelledResult(generation: number): PartRecomputeResult {
+/**
+ * 途中の形・スケッチ・診断を適用させない。generationは依頼開始時の番号だけを返す。
+ * ソリッドの段で取り消されたときだけ、カーネルが添えたメモリの量(NFR-PF-6)を渡す。
+ */
+function cancelledResult(
+  generation: number,
+  kernelMemory?: SolidRecomputeOutcome['kernelMemory'],
+): PartRecomputeResult {
   return {
     sketches: [],
     bodies: [],
@@ -558,6 +585,7 @@ function cancelledResult(generation: number): PartRecomputeResult {
     cancelled: true,
     generation,
     appearanceMatches: [],
+    ...(kernelMemory === undefined ? {} : { kernelMemory }),
   };
 }
 
@@ -605,6 +633,22 @@ function cancelledResult(generation: number): PartRecomputeResult {
  * (`applyParameters`)。ここを通さないと、表の値を変えても押し出しの距離や穴の径が
  * 追従しない(FR-502)。**表が空なら `applyParameters` は元の文書をそのまま返す**ので、
  * パラメータを使わない部品では費用も結果も変わらない。
+ *
+ * ## 図形の測定値を使う係数(段階再計算、GR-06。計画書 §4(d)、利用者の回答 Q7=O1)
+ *
+ * 係数の式が図形の測定値(`coef("名前")`)を使うと、その係数で作る形は、測る形ができて測り
+ * 終わるまで作れない。そこで**図形由来の係数がある文書だけ**、`planMathGeometryStages` の段取りに
+ * 従って「それまでに測った値で数式を評価 → 形を作る → その段の定義を測る」を段の数(最大8)だけ
+ * 繰り返し(`measureStages`)、最後に全部の値で数式を評価して形を作り、全部の定義を測る。
+ *
+ * - 図形由来の係数が無い文書には途中の段が無く、今までと同じ 1 回だけの経路を通る
+ *   (`recomputeSolids` などの呼出し回数・順序・結果を変えない)。
+ * - 循環・順序違反・段数超過に関わる係数は、形を作る前に理由付きで止める(`DocumentMathContext.blocked`)。
+ *   古い値や以前の世代の測定値では回さない。まだ測っていない値を使う係数とその利用先は、その段では作らない。
+ * - 途中の段も同じ `partId` で `recomputeSolids` を呼ぶ(投影の巡回と同じ扱いで、表示の登録は最後の段が決める)。
+ *   隠れた上流の形は `evaluateMathGeometry` が読取専用の `readCachedBodies` で読み、表示扱いにしない。
+ * - 段ごとに取消を確かめ、取り消されたら途中の値も `onResolved` も残さない。`onResolved` は最後の段で
+ *   1 回だけ呼ぶ。途中の段の失敗の一覧と形は捨て、結果は最後の段だけから作る。
  */
 export async function recomputePart(
   document: PartDocument,
@@ -615,6 +659,145 @@ export async function recomputePart(
   if (options.shouldCancel?.()) {
     return cancelledResult(generation);
   }
+  // 図形の測定値を使う係数がある文書だけ、途中の段で測った値を最後の段の数式へ渡す(GR-06)。
+  const plan = planMathGeometryStages(document);
+  const stage = plan === null ? undefined : await measureStages(document, bridge, options, generation, plan);
+  if (stage === null) {
+    return cancelledResult(generation);
+  }
+  const build = await buildShapes(document, bridge, options, generation, stage);
+  return isShapeBuild(build) ? finishRecompute(document, bridge, options, generation, build) : build;
+}
+
+/** `buildShapes` が形を作り終えたときの中身。最後の段では `finishRecompute` が結果にまとめる。 */
+interface ShapeBuild {
+  readonly parameterAnalysis: ParameterAnalysis | undefined;
+  readonly parameterErrors: readonly PartRecomputeError[];
+  readonly resolved: ResolvedPart;
+  readonly solid: SolidCallOutcome;
+  readonly offsetErrors: readonly SketchError[];
+  readonly projectionErrors: ReadonlyMap<string, SketchError>;
+  readonly dependencyErrors: ReadonlyMap<string, PartError>;
+}
+
+/** 形を作る前に結果が決まった(取消・数式の前段の失敗)のではなく、形を作り終えたか。 */
+function isShapeBuild(value: PartRecomputeResult | ShapeBuild): value is ShapeBuild {
+  return 'resolved' in value;
+}
+
+/** 段階再計算(GR-06)の 1 段で数式の評価へ渡すもの(`DocumentMathContext` の同じ名前の欄)。 */
+interface StageMath {
+  /** この再計算でここまでに測った結果(定義ID → 結果)。無い定義を使う係数は「計算待ち」になる。 */
+  readonly geometry: ReadonlyMap<string, MathGeometryOutcome>;
+  /** 計算させない係数と理由(循環・順序違反・段数超過。`MathGeometryStagePlan.blocked`)。 */
+  readonly blocked: ReadonlyMap<string, string>;
+}
+
+/** 途中の段の数式の評価が理由を返さずに失敗したときの文(`evaluateDocumentMath` の最後の文と同じ)。 */
+const STAGE_MATH_FAILED_MESSAGE = '数式の再計算を完了できませんでした。';
+
+/**
+ * 途中の段で測るときに「正しく作れなかった形」とみなす id。最後の段の errors と同じ出どころ
+ * (スケッチの面の三角形分割の失敗は除く。測るのは点・線・立体で、スケッチの面は測らない)。
+ */
+function failedIdsOf(build: ShapeBuild): ReadonlySet<string> {
+  const ids = new Set<string>();
+  const add = (errors: Iterable<PartRecomputeError>): void => {
+    for (const error of errors) ids.add(error.featureId);
+  };
+  add(build.parameterErrors);
+  for (const entry of build.resolved.sketches) {
+    add(entry.resolved.errors);
+    add(entry.constraintErrors);
+  }
+  add(build.offsetErrors);
+  add(build.projectionErrors.values());
+  add(build.resolved.errors);
+  add(build.dependencyErrors.values());
+  if (build.solid.ok) {
+    for (const failure of build.solid.outcome.failures) ids.add(failure.featureId);
+  }
+  return ids;
+}
+
+/**
+ * 段階再計算の途中の段(GR-06、§4(d))。段 k ごとに、それまでに測った値で形を作り、段 k の定義を測る。
+ * 返すのは最後の段(全部の定義を測る段)の数式へ渡すもの。取り消されたら null(途中の値を残さない)。
+ *
+ * - 前に形を作ってから係数へ入る値が 1 つも増えていなければ、形を作り直さずに次の段の定義を測る。
+ *   数式の評価は同じ値になり、同じ形しかできないため(測る形がその値を待つなら、形の失敗として
+ *   理由付きの未解決になる)。
+ * - 途中の段の呼出しごとの失敗(形の計算部・数学の計算部)では、まだ測っていない定義を理由付きの
+ *   未解決にして最後の段へ進む(使う係数を「計算待ち」のまま終わらせない)。
+ * - 途中の段の errors・形は結果に使わず、`onResolved` も呼ばない。
+ */
+async function measureStages(
+  document: PartDocument,
+  bridge: KernelBridge,
+  options: PartRecomputeOptions,
+  generation: number,
+  plan: MathGeometryStagePlan,
+): Promise<StageMath | null> {
+  const known = new Map<string, MathGeometryOutcome>();
+  const current = (): StageMath => ({ geometry: new Map(known), blocked: plan.blocked });
+  // 数学の計算部が無ければどの段も数式を評価できない。最後の段が今までと同じ理由で断る。
+  if (options.math === undefined) {
+    return current();
+  }
+  let shapes: { readonly build: ShapeBuild; readonly bodies: readonly SolidBody[] } | undefined;
+  let valueSinceBuild = false;
+  for (const [index, definitions] of plan.stages.entries()) {
+    if (definitions.length === 0) {
+      continue;
+    }
+    /** この段から先のまだ測っていない定義を、段の失敗の理由付きで未解決にする。 */
+    const giveUp = (message: string): StageMath => {
+      const rest = plan.stages.slice(index).flat().filter((definition) => !known.has(definition.id));
+      for (const outcome of unmeasuredMathGeometryOutcomes(rest, document.id, generation, message)) {
+        known.set(outcome.id, outcome);
+      }
+      return current();
+    };
+    if (shapes === undefined || valueSinceBuild) {
+      const build = await buildShapes(document, bridge, options, generation, current());
+      if (!isShapeBuild(build)) {
+        return build.cancelled ? null : giveUp(build.errors[0]?.message ?? STAGE_MATH_FAILED_MESSAGE);
+      }
+      if (!build.solid.ok) {
+        return giveUp(build.solid.message);
+      }
+      shapes = { build, bodies: build.solid.outcome.bodies };
+      valueSinceBuild = false;
+    }
+    if (options.shouldCancel?.()) {
+      return null;
+    }
+    const outcomes = await evaluateMathGeometry(definitions, { documentId: document.id, generation,
+      resolved: shapes.build.resolved, bodies: shapes.bodies, failedIds: failedIdsOf(shapes.build), bridge,
+      shouldCancel: () => options.shouldCancel?.() ?? false });
+    if (outcomes === null || options.shouldCancel?.()) {
+      return null;
+    }
+    for (const outcome of outcomes) {
+      known.set(outcome.id, outcome);
+      valueSinceBuild ||= isMathGeometryValue(outcome);
+    }
+  }
+  return current();
+}
+
+/**
+ * 形を作るところまで(数式 → 関数作図 → 解決と立体の巡回)を 1 回行う。取消と数式の前段の失敗では、
+ * 形を作らずにその場で結果を返す。`stage` は段階再計算の 1 段で数式へ渡す測った値と計算させない係数で、
+ * 無ければ今までどおりの 1 回だけの再計算と同じ評価をする。
+ */
+async function buildShapes(
+  document: PartDocument,
+  bridge: KernelBridge,
+  options: PartRecomputeOptions,
+  generation: number,
+  stage: StageMath | undefined,
+): Promise<PartRecomputeResult | ShapeBuild> {
   let evaluated: PartDocument;
   let parameterAnalysis: ParameterAnalysis | undefined;
   let invalidInputs: ReadonlyMap<string, string> | undefined;
@@ -623,7 +806,8 @@ export async function recomputePart(
     const math = options.math;
     if (math === undefined) return { sketches: [], bodies: [], cacheHits: 0, cancelled: false, generation,
       errors: [{ featureId: document.id, code: 'invalidValue', message: '数学計算部を準備できません。数式の再計算後に作図してください。' }] };
-    const result = await evaluateDocumentMath(document, { ...math, isCurrent: () => !options.shouldCancel?.() && math.isCurrent() });
+    // 段階再計算の段では、この再計算で測った値と計算させない係数を渡す(呼出し側の値は使わない)。
+    const result = await evaluateDocumentMath(document, { ...math, ...stage, isCurrent: () => !options.shouldCancel?.() && math.isCurrent() });
     if (!result.ok) {
       if (result.cancelled) return cancelledResult(generation);
       if (result.recompute === undefined) return { sketches: [], bodies: [], cacheHits: 0, cancelled: false, generation,
@@ -695,7 +879,7 @@ export async function recomputePart(
     }
     solid = await callSolids(bridge, resolved, generation, options, appearance);
     if (options.shouldCancel?.() || (solid.ok && solid.outcome.cancelled)) {
-      return cancelledResult(generation);
+      return cancelledResult(generation, solid.ok ? solid.outcome.kernelMemory : undefined);
     }
     if (!solid.ok) {
       break;
@@ -782,7 +966,21 @@ export async function recomputePart(
     }
     break;
   }
+  return { parameterAnalysis, parameterErrors, resolved, solid, offsetErrors, projectionErrors, dependencyErrors };
+}
 
+/**
+ * 作った形から、スケッチの面・失敗の一覧・図形の測定値をまとめて結果にする。段階再計算では最後の段だけ
+ * がここへ来る。`onResolved` はここで 1 回だけ呼ぶ(取消なら呼ばない)。
+ */
+async function finishRecompute(
+  document: PartDocument,
+  bridge: KernelBridge,
+  options: PartRecomputeOptions,
+  generation: number,
+  build: ShapeBuild,
+): Promise<PartRecomputeResult> {
+  const { parameterAnalysis, parameterErrors, resolved, solid, offsetErrors, projectionErrors, dependencyErrors } = build;
   // 上流(スケッチ)から下流(ソリッド)の順に失敗を並べる。直す順序がそのまま読めるように。
   const errors: PartRecomputeError[] = [...parameterErrors];
   const sketches: PartSketchResult[] = [];
@@ -807,9 +1005,8 @@ export async function recomputePart(
   errors.push(...resolved.errors.filter((error) => !dependencyErrors.has(error.featureId)));
   errors.push(...dependencyErrors.values());
 
-  options.onResolved?.(resolved);
-
   if (!solid.ok) {
+    options.onResolved?.(resolved);
     for (const step of resolved.steps) {
       errors.push(solidKernelFailed(step.featureId, solid.message));
     }
@@ -830,7 +1027,16 @@ export async function recomputePart(
   for (const failure of solid.outcome.failures) {
     errors.push(solidKernelFailed(failure.featureId, failure.message));
   }
+  const geometryRequests = document.mathGeometry === undefined ? options.mathGeometry
+    : [...document.mathGeometry, ...(options.mathGeometry ?? [])];
+  const mathGeometry = geometryRequests === undefined ? undefined
+    : await evaluateMathGeometry(geometryRequests, { documentId: document.id, generation,
+      resolved, bodies: solid.outcome.bodies, failedIds: new Set(errors.map(error => error.featureId)), bridge,
+      shouldCancel: () => options.shouldCancel?.() ?? false });
+  if (mathGeometry === null || options.shouldCancel?.()) return cancelledResult(generation);
+  options.onResolved?.(resolved);
   return {
+    ...(mathGeometry === undefined ? {} : { mathGeometry }),
     sketches,
     bodies: solid.outcome.bodies,
     ...(resolved.sheetMetalBodies === undefined ? {} : { sheetMetalBodies: new Map(solid.outcome.bodies.flatMap((body) => {
@@ -843,5 +1049,6 @@ export async function recomputePart(
     generation,
     appearanceMatches: solid.outcome.appearanceMatches ?? [],
     ...(parameterAnalysis === undefined ? {} : { parameterAnalysis }),
+    ...(solid.outcome.kernelMemory === undefined ? {} : { kernelMemory: solid.outcome.kernelMemory }),
   };
 }

@@ -4,6 +4,7 @@ import { decodeStoredMathStructure } from './decodeStoredMath.js';
 import { decodeCoefficientExpression, type MathCoefficientValue } from './mathCoefficientExpression.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { decodeMathVariableScope, assertMathVariableScope, type MathVariableScope } from './mathVariableScope.js';
+import { decodeMathDeclarations, sameMathDeclarations, type MathDeclaration } from './mathDeclarations.js';
 
 export interface MathRequestIdentity {
   readonly documentId:string;readonly documentVersion:number;readonly editorId:string;readonly inputRevision:number;
@@ -12,6 +13,7 @@ export interface MathWorkRequest {
   readonly identity:MathRequestIdentity;readonly source:string;readonly notation:'text'|'latex';
   readonly angleUnit:'degree'|'radian';
   readonly coefficients:readonly MathCoefficientValue[];
+  readonly declarations?: readonly MathDeclaration[];
   /** Present only while editing a function definition. It never authorizes adopting a scalar coordinate. */
   readonly functionScope?: MathVariableScope;
   /** Re-evaluation verifies this definition against source before using current coefficient values. */
@@ -20,6 +22,8 @@ export interface MathWorkRequest {
   readonly presentationNotation?: 'text' | 'latex';
   /** Rewrite one coefficient label by stable ID, preserving notation. This request never produces a coordinate. */
   readonly renameCoefficient?: { readonly id: string; readonly label: string };
+  /** Rename a free symbol by stable ID; it supplies no value for that symbol. */
+  readonly renameDeclaration?: { readonly id: string; readonly label: string };
 }
 
 export interface MathWorkEnvelope {
@@ -79,7 +83,7 @@ export function decodeMathCoefficientValues(value: unknown): MathWorkRequest['co
   }));
 }
 export function decodeMathWorkRequest(value: unknown): MathWorkRequest {
-  const raw = record(value, ['identity', 'source', 'notation', 'angleUnit', 'coefficients'], ['definition', 'presentationNotation', 'renameCoefficient', 'functionScope']);
+  const raw = record(value, ['identity', 'source', 'notation', 'angleUnit', 'coefficients'], ['definition', 'presentationNotation', 'renameCoefficient', 'renameDeclaration', 'functionScope', 'declarations']);
   if (typeof raw.source !== 'string' || (raw.notation !== 'text' && raw.notation !== 'latex')
     || (raw.angleUnit !== 'degree' && raw.angleUnit !== 'radian')) throw new MathInputProblem('syntax', '数式の入力設定が不正です。');
   validateMathSource(raw.source);
@@ -87,13 +91,22 @@ export function decodeMathWorkRequest(value: unknown): MathWorkRequest {
     throw new MathInputProblem('syntax', '数式の変換先を指定してください。');
   }
   const coefficients = decodeMathCoefficientValues(raw.coefficients);
+  // Reopened formulas carry their local symbol definitions. An explicit edited list
+  // must still agree with a supplied saved AST; otherwise parse the new input first.
+  const savedDeclarations = isRecord(raw.definition) && Object.hasOwn(raw.definition, 'declarations') ? raw.definition.declarations : undefined;
+  const declarations = Object.hasOwn(raw, 'declarations') ? decodeMathDeclarations(raw.declarations)
+    : savedDeclarations === undefined ? undefined : decodeMathDeclarations(savedDeclarations);
+  const declaredIds = new Set(declarations?.map(value => value.id));
   const functionScope = Object.hasOwn(raw, 'functionScope') ? decodeMathVariableScope(raw.functionScope) : undefined;
   const ids = new Set(coefficients.map(coefficient => coefficient.id));
   let definition: StoredMathExpression | undefined;
   if (Object.hasOwn(raw, 'definition')) {
     definition = decodeStoredMathStructure(raw.definition, {
-      operationsById: CANDIDATE_MATH_BY_ID, coefficientIds: ids, declaredIds: new Set(),
+      operationsById: CANDIDATE_MATH_BY_ID, coefficientIds: ids, declaredIds,
     });
+    if (!sameMathDeclarations(definition.declarations, declarations)) {
+      throw new MathInputProblem('syntax', '保存された数式と記号の定義が一致しません。');
+    }
     if (definition.source !== raw.source || definition.inputNotation !== raw.notation || definition.angleUnit !== raw.angleUnit) {
       throw new MathInputProblem('syntax', '再計算する数式と入力設定が一致しません。');
     }
@@ -118,10 +131,23 @@ export function decodeMathWorkRequest(value: unknown): MathWorkRequest {
     }
     renameCoefficient = Object.freeze({ id, label });
   }
+  let renameDeclaration: MathWorkRequest['renameDeclaration'];
+  if (Object.hasOwn(raw, 'renameDeclaration')) {
+    const entry = record(raw.renameDeclaration, ['id', 'label']);
+    const id = name(entry.id), label = name(entry.label);
+    if (definition === undefined || raw.presentationNotation !== undefined || renameCoefficient !== undefined
+      || !declarations?.some(value => value.id === id)) {
+      throw new MathInputProblem('syntax', '改名する記号と新しい名前を確認してください。');
+    }
+    decodeMathDeclarations(declarations.map(value => value.id === id ? { ...value, label } : value));
+    renameDeclaration = Object.freeze({ id, label });
+  }
   return Object.freeze({ identity: decodeMathRequestIdentity(raw.identity), source: raw.source,
     notation: raw.notation, angleUnit: raw.angleUnit, coefficients: Object.freeze(coefficients),
+    ...(declarations === undefined ? {} : { declarations }),
     ...(functionScope === undefined ? {} : { functionScope }),
     ...(definition === undefined ? {} : { definition }),
     ...(renameCoefficient === undefined ? {} : { renameCoefficient }),
+    ...(renameDeclaration === undefined ? {} : { renameDeclaration }),
     ...(raw.presentationNotation === 'text' || raw.presentationNotation === 'latex' ? { presentationNotation: raw.presentationNotation } : {}) });
 }

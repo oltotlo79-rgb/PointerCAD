@@ -4,6 +4,7 @@ import { VECTOR_CALCULUS_AT_IDS, vectorCalculusAtBounds } from './vectorCalculus
 import { LINE_INTEGRAL_IDS, validateLineIntegral } from './lineIntegrals.js';
 import { REGION_INTEGRAL_IDS, validateRegionIntegral } from './regionIntegrals.js';
 import { GENERAL_PROBABILITY_IDS, probabilityFunction } from './generalProbability.js';
+import { EXTENDED_OPERATION_DEFINITIONS } from './mathExtendedOperations.js';
 /** Resolve multiplication glyphs from declared scalar types and explicit vector shapes, never from spelling. */
 import { MATH_INPUT_LIMITS, MathInputProblem, type MathNode, type MathSymbolReference } from './mathInputContract.js';
 
@@ -29,19 +30,39 @@ const SCALAR_OPERATIONS = new Set([
   'arccot', 'arcsec', 'arccsc', 'arcoth', 'arsech', 'arcsch', 'arctan-two', 'cis',
   'reciprocal', 'clamp', 'permutations', 'complex',
   'real-part', 'imaginary-part', 'conjugate', 'argument',
+  // Each ±/∓ candidate is a scalar; the candidates themselves are never merged.
+  'plus-minus', 'minus-plus',
 ]);
+// Results that are scalar whatever the operand shapes (a count, a differential's value).
+const SCALAR_EXTENDED_RESULTS = new Set(['cardinality', 'total-differential-at']);
+// Explicit sets. A product of two of them is their Cartesian product, never a number.
+const SET_RESULTS = new Set(['set', 'interval', 'union', 'intersection', 'set-minus', 'complement', 'cartesian-product']);
+const SET_CONSTANTS = new Set(['real-numbers', 'complex-numbers', 'integers', 'naturals', 'rationals', 'empty-set']);
+// A registered operation is typed only once its calculation exists. While pending, a structure
+// that keeps only numeric cells (a tensor, a selected component, a special function's argument)
+// must reject it rather than accept it and later discard it. A set is never such a cell.
+const PENDING_UNTYPED = new Set(EXTENDED_OPERATION_DEFINITIONS
+  .filter(value => value.status === 'pending' && value.result !== 'set').map(value => value.id));
 type Shape = { readonly kind: 'scalar' } | { readonly kind: 'vector'; readonly length: number }
-  | { readonly kind: 'matrix'; readonly height: number | null; readonly width: number } | { readonly kind: 'unknown' };
+  | { readonly kind: 'matrix'; readonly height: number | null; readonly width: number } | { readonly kind: 'set' } | { readonly kind: 'unknown' };
+/** Matrix sizes are typed only from literal positive integers; the calculation checks its own limits. */
+function literalSize(node: MathNode | undefined): number | null {
+  if (node?.kind !== 'number' || !/^[1-9][0-9]*$/u.test(node.decimal)) return null;
+  const size = Number(node.decimal);
+  return Number.isSafeInteger(size) ? size : null;
+}
 
 export function resolveTypedMathProduct(token: 'times' | 'dot', operands: readonly MathNode[],
-  scalarReference: (reference: MathSymbolReference) => boolean): 'multiply' | 'dot' | 'cross' | null {
+  scalarReference: (reference: MathSymbolReference) => boolean): 'multiply' | 'dot' | 'cross' | 'cartesian-product' | null {
   let remaining = MATH_INPUT_LIMITS.nodes;
   function shape(node: MathNode, depth: number): Shape {
     if (--remaining < 0 || depth > MATH_INPUT_LIMITS.depth) throw new MathInputProblem('budget', '積の型の確認が複雑すぎます。');
     if (node.kind === 'number') return { kind: 'scalar' };
-    if (node.kind === 'constant') return ['pi', 'e', 'imaginary-unit', 'infinity'].includes(node.name) ? { kind: 'scalar' } : { kind: 'unknown' };
+    if (node.kind === 'constant') return ['pi', 'e', 'imaginary-unit', 'infinity'].includes(node.name) ? { kind: 'scalar' }
+      : SET_CONSTANTS.has(node.name) ? { kind: 'set' } : { kind: 'unknown' };
     if (node.kind === 'symbol') return { kind: scalarReference(node.reference) ? 'scalar' : 'unknown' };
     if (node.kind === 'binder') return { kind: 'unknown' };
+    if (PENDING_UNTYPED.has(node.operation)) return { kind: 'unknown' };
     if (SEQUENCE_IDS.has(node.operation)) {
       sequenceFunction(node);
       return { kind: 'scalar' };
@@ -74,6 +95,24 @@ export function resolveTypedMathProduct(token: 'times' | 'dot', operands: readon
     // The data argument is a vector, but its statistic is scalar. Invalid data is still
     // rejected by domain preparation before any surrounding multiplication is simplified.
     if (SCALAR_STATISTICS.has(node.operation) || SCALAR_LINEAR_RESULTS.has(node.operation)) return { kind: 'scalar' };
+    if (SCALAR_EXTENDED_RESULTS.has(node.operation)) return { kind: 'scalar' };
+    if (SET_RESULTS.has(node.operation)) return { kind: 'set' };
+    if (node.operation === 'cross') {
+      const inputs = node.operands.map(child => shape(child, depth + 1));
+      return inputs.length === 2 && inputs.every(input => input.kind === 'vector' && input.length === 3)
+        ? { kind: 'vector', length: 3 } : { kind: 'unknown' };
+    }
+    if (node.operation === 'projection') {
+      // The projection of u onto v keeps the common length; other shapes stay unknown.
+      const [vector, onto] = node.operands.map(child => shape(child, depth + 1));
+      return node.operands.length === 2 && vector.kind === 'vector' && onto.kind === 'vector' && vector.length === onto.length
+        ? vector : { kind: 'unknown' };
+    }
+    if (node.operation === 'identity-matrix' || node.operation === 'zero-matrix') {
+      const sizes = node.operands.map(literalSize), [height, width = height] = sizes;
+      return sizes.length <= (node.operation === 'identity-matrix' ? 1 : 2) && height !== undefined && height !== null && width !== null
+        ? { kind: 'matrix', height, width } : { kind: 'unknown' };
+    }
     if (node.operation === 'prime-factors') return { kind: 'matrix', height: null, width: 2 };
     if (node.operation === 'tensor-contract') {
       // A valid two-axis contraction of a matrix has no remaining axes. Invalid
@@ -126,6 +165,7 @@ export function resolveTypedMathProduct(token: 'times' | 'dot', operands: readon
   if (operands.length !== 2) return null;
   const left = shape(operands[0], 0), right = shape(operands[1], 0);
   if (left.kind === 'scalar' && right.kind === 'scalar') return 'multiply';
+  if (left.kind === 'set' && right.kind === 'set') return token === 'times' ? 'cartesian-product' : null;
   if (left.kind !== 'vector' || right.kind !== 'vector' || left.length !== right.length) return null;
   if (token === 'dot') return 'dot';
   return left.length === 3 ? 'cross' : null;

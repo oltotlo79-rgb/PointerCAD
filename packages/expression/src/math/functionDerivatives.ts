@@ -51,6 +51,28 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
   const div = (a: MathNode, b: MathNode): MathNode => op('divide', a, b);
   const square = (value: MathNode): MathNode => op('square', value);
   const angle = angleUnit === 'degree' ? div({ kind: 'constant', name: 'pi' }, { kind: 'number', decimal: '180' }) : ONE;
+  function piecewise(node: Extract<MathNode, { kind: 'operation' }>, transform: (branch: MathNode) => MathNode,
+    interior: boolean): MathNode {
+    if (node.operands.length < 2 || node.operands.length % 2 !== 0) {
+      throw new MathInputProblem('syntax', '場合分けは条件と値を対で指定してください。');
+    }
+    const operands: MathNode[] = [], obligations: MathNode[] = [];
+    let guarded = false;
+    for (let index = 0; index < node.operands.length; index += 2) {
+      const condition = node.operands[index], branch = node.operands[index + 1], start = guards.length;
+      if (interior) guards.push(branch);
+      const value = transform(branch), captured = guards.splice(start);
+      guarded ||= captured.length > 0;
+      operands.push(condition, value);
+      // Use unsimplified zero products: invalid intermediates must survive, but
+      // guards in unselected branches must never invalidate the chosen branch.
+      obligations.push(condition, captured.length === 0 ? ZERO
+        : op('add', ZERO, ...captured.map(guard => op('multiply', ZERO, guard))));
+    }
+    const operation = interior || node.operation === 'which-derivative' ? 'which-derivative' : 'which';
+    if (guarded) guards.push(op(operation, ...obligations));
+    return op(operation, ...operands);
+  }
   function differentiate(expression: MathNode, variable: ScalarInput): MathNode {
     const memo = new Map<MathNode, MathNode>();
     const dependency = new Map<MathNode, boolean>();
@@ -68,6 +90,19 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
     function derivative(node: MathNode): MathNode {
       const known = memo.get(node); if (known !== undefined) return known;
       spend();
+      if (node.kind === 'operation' && (node.operation === 'which' || node.operation === 'which-derivative')) {
+        const value = piecewise(node, branch => {
+          // Derivative guards are scoped to a branch, so cached derivatives
+          // cannot carry their proof into another branch.
+          memo.clear();
+          const result = derivative(branch);
+          memo.clear();
+          return result;
+        }, true);
+        guards.push(value);
+        memo.set(node, value);
+        return value;
+      }
       if (!depends(node)) return ZERO;
       if (inputName(node) === variable) return ONE;
       const hyperbolic = lowerReciprocalHyperbolic(node);
@@ -199,6 +234,9 @@ export function expandFunctionDerivatives(source: MathNode, inputs: readonly Sca
     spend();
     if (depth > 64) throw new MathInputProblem('budget', '微分する式の入れ子が深すぎます。');
     if (node.kind !== 'operation') return node;
+    if (node.operation === 'which' || node.operation === 'which-derivative') {
+      return piecewise(node, branch => visit(branch, depth + 1), false);
+    }
     if (node.operation !== 'differentiate') {
       const result = { ...node, operands: node.operands.map(value => visit(value, depth+1)) };
       // Children have already recorded every derivative domain before a selected

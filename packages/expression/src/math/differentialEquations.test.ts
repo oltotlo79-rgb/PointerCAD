@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createMathBackend } from './createMathBackend.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
@@ -8,6 +7,7 @@ import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 const examples = [
   { source: 'odesolve([diff(y,x)=y],x,[y],[[y,0,2]])', kind: 'ode-solutions' },
@@ -33,7 +33,7 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 function native(args: readonly string[], input?: string): string {
   const script = fileURLToPath(new URL('./exactRuntime/cas_ode_test.py', import.meta.url));
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], {
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {
     input, encoding: 'utf8', timeout: 180_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });

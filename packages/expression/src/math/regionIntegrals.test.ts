@@ -1,12 +1,12 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
-import { executeExactMathWorkRequest, type ExactMathEngine } from './exactMathWorkExecution.js';
+import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 const examples = [
   { source: 'surfaceintegral(1,[x,y,z],[2*u,3*v,0],[u,v],[0,0],[1,1])', value: 6 },
@@ -52,7 +52,7 @@ function request(source: string, unit: 'degree' | 'radian' = 'degree'): MathWork
     identity: { documentId: 'region-integrals', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
 }
 function native(args: readonly string[], input?: string): string {
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], {
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {
     input, encoding: 'utf8', timeout: 90_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });
@@ -105,16 +105,15 @@ describe('有限な範囲の面積分・流束・体積積分を元の式と向�
     }
   });
   it('係数と同名の局所変数を分離し、量・写像・範囲の編集を反映する', async () => {
-    for (const [factor, scale, end, expected] of [['2', '3', '1', 9], ['4', '2', '3', 72]] as const) {
+    const engine = sharedExactEngine(batch => native(['--batch'], batch));
+    const runs = await Promise.all(([['2', '3', '1', 9], ['4', '2', '3', 72]] as const).map(async ([factor, scale, end, expected]) => {
       const input: MathWorkRequest = { ...request('surfaceintegral(coef("x")*x,[x,y,z],[coef("幅")*u,v,0],[u,v],[0,0],[coef("終点"),1])'),
         coefficients: [{ id: 'factor', label: 'x', decimal: factor }, { id: 'scale', label: '幅', decimal: scale },
           { id: 'end', label: '終点', decimal: end }] };
-      const engine: ExactMathEngine = { evaluate: expression => {
-        const values: unknown = JSON.parse(native(['--batch'], JSON.stringify([{ expression, angleUnit: input.angleUnit }])));
-        if (!Array.isArray(values) || values.length !== 1) throw new Error('実計算の返信数が一致しません。');
-        return Promise.resolve(values[0]);
-      } };
-      const result = await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined });
+      return { input, expected,
+        result: await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined }) };
+    }));
+    for (const { input, expected, result } of runs) {
       expect(result.evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: expected });
       const decoded = decodeMathWorkReply(result, input, { operationsById: backend.operationsById,
         coefficientIds: new Set(['factor', 'scale', 'end']), declaredIds: new Set() }).result;

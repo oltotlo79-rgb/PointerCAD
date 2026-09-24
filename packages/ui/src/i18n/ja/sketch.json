@@ -104,6 +104,7 @@
   "functionPlot.required": "値または式を入力してください。",
   "functionPlot.invalidRange": "各軸とも有限の最小値 < 最大値にしてください。",
   "functionPlot.invalidTolerance": "許容誤差は0より大きい長さで指定してください。",
+  "functionPlot.implicitEqualsNotSupported": "陰関数は「=」を含む式を計算できません。F=0の左辺Fだけを入力してください。例: X^2+Y^2=1ではなく、X^2+Y^2-1と入力します。",
   "functionPlot.calculating": "指定範囲の曲線を計算しています…",
   "functionPlot.preview": "形を確認",
   "functionPlot.previewLabel": "指定したXYZ範囲内の関数曲線",

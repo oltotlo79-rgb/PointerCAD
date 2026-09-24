@@ -11,7 +11,8 @@ sys.path[:0] = [str(Path(__file__).resolve().parent),
                str(ROOT / 'vendor/exact-math/runtime/mpmath-1.3.0-py3-none-any.whl')]
 import sympy as s
 from cas_evaluate import calculate_exact_json
-from cas_input import Decoder
+from cas_input import Decoder, CasInputProblem
+from cas_integrals import indefinite_integral_value
 from cas_step_ranges_test import num, sym, op
 
 INF = {'kind': 'constant', 'name': 'infinity'}
@@ -93,6 +94,88 @@ class ExactIntegrals(unittest.TestCase):
         expression['bindings'].append({'variable': sym('u')['reference'], 'domain': {
             'kind': 'range', 'lower': num(0), 'upper': sym('t'), 'step': None}})
         self.assertEqual(self.value(expression), s.Rational(1, 8))
+
+
+class IndefiniteIntegralValue(unittest.TestCase):
+    """Direct checks of indefinite_integral_value (MC-20): antiderivative plus an independent diff-back proof.
+
+    These call the function directly with plain SymPy symbols, bypassing the JSON binder pipeline above:
+    cas_input.py's 'integrate' binder currently always wraps the unrestricted-domain case as a bare
+    s.Integral(body, variable) and never calls this function, so a full request through
+    calculate_exact_json cannot reach it yet (a design decision in a file outside this task's edit
+    scope; see the MC-20 report for the exact proposed wiring). The math itself is fully exercised here.
+    """
+
+    def setUp(self):
+        self.t = s.Symbol('t', real=True)
+
+    def antiderivative(self, body):
+        return indefinite_integral_value(body, self.t, CasInputProblem)
+
+    def assert_verified(self, body, expected):
+        result = self.antiderivative(body)
+        self.assertIs(s.simplify(result - expected).is_zero, True)
+        # Re-differentiate independently of the function's own internal verification.
+        self.assertIs(s.simplify(s.diff(result, self.t) - body).is_zero, True)
+
+    def assert_rejected(self, body):
+        with self.assertRaises(CasInputProblem) as failure:
+            self.antiderivative(body)
+        self.assertEqual(failure.exception.code, 'unevaluated')
+
+    def test_polynomial(self):
+        self.assert_verified(self.t**2, self.t**3/3)
+
+    def test_polynomial_with_multiple_terms(self):
+        self.assert_verified(self.t**3 - 2*self.t, self.t**4/4 - self.t**2)
+
+    def test_sum_of_elementary_functions_is_linear(self):
+        self.assert_verified(self.t**2 + s.sin(self.t), self.t**3/3 - s.cos(self.t))
+
+    def test_sine(self):
+        self.assert_verified(s.sin(self.t), -s.cos(self.t))
+
+    def test_reciprocal_is_log(self):
+        self.assert_verified(1/self.t, s.log(self.t))
+
+    def test_rational_function_is_arctangent(self):
+        self.assert_verified(1/(self.t**2+1), s.atan(self.t))
+
+    def test_integration_by_parts(self):
+        self.assert_verified(self.t*s.exp(self.t), (self.t-1)*s.exp(self.t))
+
+    def test_log_by_parts(self):
+        self.assert_verified(s.log(self.t), self.t*s.log(self.t) - self.t)
+
+    def test_trigonometric_square_verifies_against_the_original_body(self):
+        # SymPy's closed form (t/2 + sin(t)cos(t)/2) is not a literal match for cos(t)**2;
+        # only the differentiate-back proof establishes it, exactly what this function requires.
+        result = self.antiderivative(s.cos(self.t)**2)
+        self.assertIs(s.simplify(s.diff(result, self.t) - s.cos(self.t)**2).is_zero, True)
+
+    def test_inverse_trig_from_square_root(self):
+        body = s.sqrt(1-self.t**2)
+        result = self.antiderivative(body)
+        self.assertIs(s.simplify(s.diff(result, self.t) - body).is_zero, True)
+
+    def test_nested_log(self):
+        self.assert_verified(1/(self.t*s.log(self.t)), s.log(s.log(self.t)))
+
+    def test_constant_integrand(self):
+        self.assert_verified(s.Integer(5), 5*self.t)
+
+    def test_other_free_symbols_pass_through_as_constants(self):
+        c = s.Symbol('c', real=True)
+        self.assert_verified(c*self.t, c*self.t**2/2)
+
+    def test_no_elementary_closed_form_is_rejected(self):
+        self.assert_rejected(s.sin(s.sin(self.t)))
+
+    def test_branch_dependent_piecewise_candidate_is_rejected(self):
+        self.assert_rejected(s.Abs(self.t))
+
+    def test_body_with_an_unresolved_inner_integral_is_rejected_immediately(self):
+        self.assert_rejected(s.Integral(self.t, self.t))
 
 
 if __name__ == '__main__':

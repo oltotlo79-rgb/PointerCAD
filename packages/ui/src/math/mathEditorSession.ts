@@ -1,11 +1,13 @@
 /** Editor lifecycle independent of its renderer. A result applies only to the exact input and document generation. */
-import { validateMathSource, type MathEvaluation, type StoredMathExpression } from '@pointercad/expression/math/contracts';
+import { validateMathSource, decodeMathDeclarations, sameMathDeclarations, type MathDeclaration,
+  type MathEvaluation, type StoredMathExpression } from '@pointercad/expression/math/contracts';
 import { sameMathIdentity, type MathRequestIdentity } from '@pointercad/expression/math/client';
 export interface MathEditorInput {
   readonly identity: MathRequestIdentity;
   readonly source: string;
   readonly notation: 'text' | 'latex';
   readonly angleUnit: 'degree' | 'radian';
+  readonly declarations?: readonly MathDeclaration[];
 }
 export interface MathEditorOutput {
   readonly input: MathEditorInput;
@@ -29,10 +31,12 @@ export interface MathEditorSessionOptions {
 }
 
 function sameInput(a: MathEditorInput, b: MathEditorInput): boolean {
-  return sameMathIdentity(a.identity,b.identity) && a.source === b.source && a.notation === b.notation && a.angleUnit === b.angleUnit;
+  return sameMathIdentity(a.identity,b.identity) && a.source === b.source && a.notation === b.notation && a.angleUnit === b.angleUnit
+    && sameMathDeclarations(a.declarations, b.declarations);
 }
 function copyInput(input: MathEditorInput): MathEditorInput {
-  return Object.freeze({...input,identity:Object.freeze({...input.identity})});
+  return Object.freeze({...input,identity:Object.freeze({...input.identity}),
+    ...(input.declarations === undefined ? {} : { declarations: decodeMathDeclarations(input.declarations) })});
 }
 export class MathEditorSession {
   private readonly options: MathEditorSessionOptions;
@@ -64,12 +68,15 @@ export class MathEditorSession {
   resume(): void {
     if (!this.disposed && this.active === null && this.timer === null && this.state.status === 'editing') this.schedule();
   }
-  update(source: string, notation: MathEditorInput['notation'], angleUnit: MathEditorInput['angleUnit']): void {
+  update(source: string, notation: MathEditorInput['notation'], angleUnit: MathEditorInput['angleUnit'],
+    declarations: MathEditorInput['declarations'] = this.current.declarations): void {
     if(this.disposed)return;
-    if(this.current.source===source&&this.current.notation===notation&&this.current.angleUnit===angleUnit)return;
+    if(this.current.source===source&&this.current.notation===notation&&this.current.angleUnit===angleUnit
+      &&sameMathDeclarations(this.current.declarations,declarations))return;
     if(this.current.identity.inputRevision>=Number.MAX_SAFE_INTEGER)throw new RangeError('Math editor revision exhausted');
     this.cancelWork();this.applyRevision=null;
     this.current=copyInput({...this.current,source,notation,angleUnit,
+      ...(declarations === undefined ? {} : { declarations }),
       identity:{...this.current.identity,inputRevision:this.current.identity.inputRevision+1}});
     this.publish({status:'editing',input:this.current});this.schedule();
   }
@@ -106,7 +113,8 @@ export class MathEditorSession {
       this.active=null;
       const definition=output.definition;
       if(!sameInput(output.input,input)||(definition!==null&&(definition.source!==input.source
-        ||definition.inputNotation!==input.notation||definition.angleUnit!==input.angleUnit))) {
+        ||definition.inputNotation!==input.notation||definition.angleUnit!==input.angleUnit
+        ||!sameMathDeclarations(definition.declarations,input.declarations)))) {
         this.applyRevision=null;this.publish({status:'rejected',input,reason:'worker'});return;
       }
       const canApply=definition!==null&&(output.evaluation.status==='value'||output.evaluation.status==='unresolved')

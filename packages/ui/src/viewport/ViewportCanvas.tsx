@@ -44,6 +44,8 @@ import {
 import { sphereGridSphereOf, sphereGridTargetSphere } from '../sketch/sketchCommands.js';
 import { activeAssemblyDocument, activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { currentMathGeometry } from '../math/mathGeometryResults.js';
+import type { AppState } from '../store/appState.js';
 import { displayedSheetBodies, isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
@@ -473,6 +475,23 @@ interface SphereGridSource {
   readonly selection: readonly string[];
   readonly sphereGridStep: ReturnType<typeof useAppStore.getState>['sphereGridStep'];
   readonly sphereGridAlwaysVisible: boolean;
+}
+
+/** The subscription and its unit tests share this decision (GR-20c A6). */
+export function sphereGridNeedsUpdate(next: AppState, previous: AppState): boolean {
+  return next.document !== previous.document
+    || next.resolvedSketch !== previous.resolvedSketch
+    || next.selection !== previous.selection
+    || next.sphereGridStep !== previous.sphereGridStep
+    || next.sphereGridAlwaysVisible !== previous.sphereGridAlwaysVisible
+    || next.requestedGeneration !== previous.requestedGeneration
+    || next.completedGeneration !== previous.completedGeneration
+    || next.timelineIndex !== previous.timelineIndex
+    || next.isComputing !== previous.isComputing
+    || next.recomputeCancelled !== previous.recomputeCancelled
+    || next.lastOutcome !== previous.lastOutcome
+    || next.parameterAnalysis !== previous.parameterAnalysis
+    || currentMathGeometry(next) !== currentMathGeometry(previous);
 }
 
 /**
@@ -947,17 +966,11 @@ export function ViewportCanvas(): React.JSX.Element {
       }
       /*
         球面の案内線(FR-431、タスク21)。**材料が変わったときだけ**組み立て直す。
-        中心と半径は文書と解決結果から、出すか出さないかは選択と設定から決まるので、
-        その 5 つのどれかが変わったときに作り直せばよい。中身が同じなら `setSphereGrid` が
-        線分の組み立てそのものを省く(NFR-PF-1)。
+        文書・選択・設定に加え、図形由来の係数の現在値が使えるかも通知する。
+        世代・履歴位置・計算状態だけの変更でも古い線を消し、現在値へ戻ったら描き直す。
+        中身が同じなら `setSphereGrid` が線分の組み立てそのものを省く(NFR-PF-1)。
       */
-      if (
-        next.document !== previous.document ||
-        next.resolvedSketch !== previous.resolvedSketch ||
-        next.selection !== previous.selection ||
-        next.sphereGridStep !== previous.sphereGridStep ||
-        next.sphereGridAlwaysVisible !== previous.sphereGridAlwaysVisible
-      ) {
+      if (sphereGridNeedsUpdate(next, previous)) {
         scene.setSphereGrid(sphereGridSpecOf(next));
       }
       /*

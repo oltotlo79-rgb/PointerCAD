@@ -6,7 +6,7 @@ import { ellipticPartialRanges } from './ellipticPartials.js';
 /** Interval automatic differentiation, for a proved interpolation bound on a one-variable curve. */
 import type { ScalarTape } from './scalarMathTape.js';
 import type { IntervalUnion } from './mathIntervalUnion.js';
-import { createScalarIntervalEvaluation } from './scalarMathIntervals.js';
+import { createScalarConditionIntervalSampler, createScalarIntervalEvaluation, scalarIntervalTape, withScalarIntervalTapes } from './scalarMathIntervals.js';
 import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, intervalSqrt, intervalSquare,
   type MathInterval, type IntervalValue } from './mathInterval.js';
 import { trigonometricInterval } from './trigonometricIntervals.js';
@@ -17,7 +17,10 @@ import { betaFunctionRanges } from './betaFunctionIntervals.js';
 import { polygammaRange } from './polygammaIntervals.js';
 
 type Range = MathInterval | null;
-export interface ScalarIntervalJet { readonly first: Range; readonly second: Range }
+export interface ScalarIntervalJet {
+  readonly first: Range; readonly second: Range;
+  readonly reason?: 'piecewise-boundary' | 'domain';
+}
 type Jet = ScalarIntervalJet;
 const ZERO: MathInterval = { lower: 0, upper: 0 };
 const ONE: MathInterval = { lower: 1, upper: 1 };
@@ -56,7 +59,7 @@ function reciprocalJet(a: Jet, value: Range, secondOrder: boolean): Jet {
 
 /** Read the shared value intervals synchronously, retaining the same derivative formulas for both orders. */
 function directionalJet(tape: ScalarTape, direction: readonly number[],
-  intervals: ReturnType<typeof createScalarIntervalEvaluation>, secondOrder: boolean): (result: IntervalUnion) => ScalarIntervalJet {
+  intervals: ReturnType<typeof createScalarIntervalEvaluation>, secondOrder: boolean): (result: IntervalUnion, inputs: readonly MathInterval[]) => ScalarIntervalJet {
   if (direction.length !== tape.inputs.length || direction.some(value => !Number.isFinite(value))) {
     throw new RangeError('各独立変数の有限な微分方向を指定してください。');
   }
@@ -67,8 +70,31 @@ function directionalJet(tape: ScalarTape, direction: readonly number[],
   const product = (a: Jet, aValue: Range, b: Jet, bValue: Range) => productJet(a, aValue, b, bValue, secondOrder);
   const reciprocal = (a: Jet, value: Range) => reciprocalJet(a, value, secondOrder);
   const angle = tape.angleUnit === 'degree' ? DEGREE : ONE;
-  return result => {
-    if (!result.continuous || result.ranges.length !== 1) return UNKNOWN;
+  const branches = new Map(tape.instructions.flatMap((item, index) => item.kind === 'piecewise'
+    ? [[index, item.branches.map(branch => {
+      const values = createScalarIntervalEvaluation(branch.value);
+      const derivative = directionalJet(branch.value, direction, values, secondOrder);
+      return { condition: createScalarConditionIntervalSampler(branch.condition),
+        jet: (inputs: readonly MathInterval[]) => derivative(values.evaluate(inputs), inputs) };
+    })] as const] : []));
+  const selected = new Map<number, Jet>();
+  const selectBranches = branches.size === 0 ? undefined : (inputs: readonly MathInterval[]): ScalarIntervalJet['reason'] => {
+    let branchReason: ScalarIntervalJet['reason'];
+    for (const [index, choices] of branches) {
+      let jet: Jet = { ...UNKNOWN, reason: 'domain' };
+      for (const branch of choices) {
+        const condition = branch.condition(inputs);
+        if (!condition.defined) break;
+        if (condition.boundary || condition.truth === null) { jet = { ...UNKNOWN, reason: 'piecewise-boundary' }; break; }
+        if (condition.truth) { jet = branch.jet(inputs); break; }
+      }
+      selected.set(index, jet); branchReason ??= jet.reason;
+    }
+    return branchReason;
+  };
+  return (result, inputs) => {
+    const branchReason = selectBranches?.(inputs);
+    if (!result.continuous || result.ranges.length !== 1) return branchReason === undefined ? UNKNOWN : { ...UNKNOWN, reason: branchReason };
     const value = (index: number): Range => {
       const stored = intervals.values[index];
       return stored?.continuous && stored.ranges.length === 1 ? stored.ranges[0] : null;
@@ -217,7 +243,8 @@ function directionalJet(tape: ScalarTape, direction: readonly number[],
           }
           jet = exponent < 0n ? reciprocal(resultJet, resultValue) : resultJet;
         }
-      } else {
+      } else if (item.kind === 'piecewise') jet = selected.get(index) ?? UNKNOWN;
+      else {
         if (item.operation === 'add') jet = item.values.reduce((sumJet, operand) => sum(sumJet, derivatives[operand]), CONSTANT);
         else if (item.operation === 'multiply') {
           let accumulated = CONSTANT, accumulatedValue: Range = ONE;
@@ -230,14 +257,15 @@ function directionalJet(tape: ScalarTape, direction: readonly number[],
       }
       derivatives[index] = jet;
     }
-    return derivatives[tape.output] ?? UNKNOWN;
+    const output = derivatives[tape.output] ?? UNKNOWN;
+    return branchReason !== undefined && output.first === null ? { ...output, reason: branchReason } : output;
   };
 }
 
 /** Shared directional interval derivatives. Null components do not certify regularity. */
 export function createScalarDirectionalJet(tape: ScalarTape, direction: readonly number[]): (inputs: readonly MathInterval[]) => ScalarIntervalJet {
   const intervals = createScalarIntervalEvaluation(tape), evaluate = directionalJet(tape, direction, intervals, true);
-  return inputs => evaluate(intervals.evaluate(inputs));
+  return inputs => evaluate(intervals.evaluate(inputs), inputs);
 }
 
 /** Up to three coordinate directions share one value evaluation and do not calculate unused second derivatives. */
@@ -247,7 +275,7 @@ export function createScalarFirstDerivatives(tape: ScalarTape, directions: reado
   const derivatives = directions.map(direction => directionalJet(tape, direction, intervals, false));
   return inputs => {
     const result = intervals.evaluate(inputs);
-    return derivatives.map(evaluate => evaluate(result).first);
+    return derivatives.map(evaluate => evaluate(result, inputs).first);
   };
 }
 
@@ -267,6 +295,59 @@ export function createScalarCurveCurvature(tape: ScalarTape): (lower: number, up
   if (tape.inputs.length !== 1) throw new RangeError('曲線の独立変数は1つです。');
   const evaluate = createScalarDirectionalCurvature(tape, [1]);
   return (lower, upper) => evaluate([{ lower, upper }]);
+}
+
+/** Continue just the certified interior branches, retaining all arithmetic domains. */
+function interiorTape(tape: ScalarTape, inputs: readonly MathInterval[]): ScalarTape | null {
+  const instructions: ScalarTape['instructions'][number][] = [];
+  for (const instruction of tape.instructions) {
+    if (instruction.kind !== 'piecewise') { instructions.push(instruction); continue; }
+    let value: ScalarTape | null = null;
+    for (const branch of instruction.branches) {
+      const condition = createScalarConditionIntervalSampler(branch.condition)(inputs);
+      if (!condition.defined || condition.truth === null) return null;
+      if (condition.truth) { value = interiorTape(branch.value, inputs); break; }
+    }
+    if (value === null) return null;
+    instructions.push({ ...instruction, interior: false, branches: [{ condition: { kind: 'boolean', value: true }, value }] });
+  }
+  return { ...tape, instructions };
+}
+
+/** L1 mean-value bound for projecting an excluded parameter strip onto its retained edge. */
+export function scalarBoundaryDisplacement(evaluate: () => readonly IntervalUnion[], original: readonly MathInterval[],
+  retained: readonly MathInterval[]): number | null {
+  return withScalarIntervalTapes(() => boundaryDisplacement(evaluate(), original, retained));
+}
+function boundaryDisplacement(values: readonly IntervalUnion[], original: readonly MathInterval[],
+  retained: readonly MathInterval[]): number | null {
+  let total: Range = ZERO;
+  for (const value of values) {
+    const source = scalarIntervalTape(value);
+    if (source === undefined || source.inputs.length !== original.length) return null;
+    const tape = interiorTape(source, retained);
+    if (tape === null) return null;
+    for (let axis = 0; axis < original.length; axis++) {
+      const before = original[axis], after = retained[axis];
+      if (before.lower === after.lower && before.upper === after.upper) continue;
+      const direction = original.map((_, index) => Number(index === axis));
+      const derivative = createScalarFirstDerivatives(tape, [direction]);
+      let displacement = 0;
+      for (const strip of [before.lower === after.lower ? null : { lower: before.lower, upper: after.lower },
+        before.upper === after.upper ? null : { lower: after.upper, upper: before.upper }]) {
+        if (strip === null) continue;
+        const box = original.map((input, index) => index === axis ? strip : input);
+        const first = derivative(box)[0];
+        if (first === null) return null;
+        const width = unpack(intervalSubtract({ lower: strip.upper, upper: strip.upper }, { lower: strip.lower, upper: strip.lower }));
+        const distance = multiply({ lower: 0, upper: Math.max(Math.abs(first.lower), Math.abs(first.upper)) }, width);
+        if (distance === null || !Number.isFinite(distance.upper)) return null;
+        displacement = Math.max(displacement, distance.upper);
+      }
+      total = add(total, { lower: 0, upper: displacement });
+    }
+  }
+  return total !== null && Number.isFinite(total.upper) ? total.upper : null;
 }
 
 /** L1 bounds Euclidean displacement. Directed arithmetic encloses sum(|f''|) * h² / 8. */

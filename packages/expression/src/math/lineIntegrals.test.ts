@@ -1,12 +1,12 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
-import { executeExactMathWorkRequest, type ExactMathEngine } from './exactMathWorkExecution.js';
+import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 const examples = [
   { source: 'lineintegral(1,[x,y],[3*t,4*t],t,0,1)', value: 5 },
@@ -43,7 +43,7 @@ function request(source: string, unit: 'degree' | 'radian' = 'degree'): MathWork
     identity: { documentId: 'line-integrals', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
 }
 function native(args: readonly string[], input?: string): string {
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], {
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {
     input, encoding: 'utf8', timeout: 90_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });
@@ -68,25 +68,25 @@ beforeAll(() => {
 describe('弧長による線積分と向き付きの仕事を、元の式の成立条件を保って座標へ渡す', () => {
   it('同名の座標変数と係数を区別し、経路と端点の編集を保存した原式へ反映する', async () => {
     const source = 'lineintegral(coef("x")*x,[x],[coef("経路")*t],t,0,coef("終点"))';
-    for (const [factor, path, end, expected] of [['2', '3', '1', 9], ['4', '2', '3', 72]] as const) {
+    const engine = sharedExactEngine(batch => native(['--batch'], batch));
+    const calculated = await Promise.all(([['2', '3', '1', 9], ['4', '2', '3', 72]] as const).map(async ([factor, path, end, expected]) => {
       const input: MathWorkRequest = { ...request(source), coefficients: [
         { id: 'factor-id', label: 'x', decimal: factor }, { id: 'path-id', label: '経路', decimal: path },
         { id: 'end-id', label: '終点', decimal: end },
       ] };
-      const engine: ExactMathEngine = { evaluate: expression => {
-        const values: unknown = JSON.parse(native(['--batch'], JSON.stringify([{ expression, angleUnit: input.angleUnit }])));
-        if (!Array.isArray(values) || values.length !== 1) throw new Error('実計算の返信数が一致しません。');
-        return Promise.resolve(values[0]);
-      } };
-      const raw = await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined });
+      return { input, expected,
+        raw: await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined }) };
+    }));
+    const reopened = await Promise.all(calculated.map(async ({ input, expected, raw }) => {
       const result = decodeMathWorkReply(raw, input, { operationsById: backend.operationsById,
         coefficientIds: new Set(['factor-id', 'path-id', 'end-id']), declaredIds: new Set() }).result;
       expect(result.evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: expected });
       expect(result.definition?.source).toBe(source);
       if (result.definition === null) throw new Error('保存する原式がありません。');
       const saved: unknown = JSON.parse(JSON.stringify(createMathWorkEnvelope(8, { ...input, definition: result.definition })));
-      expect((await executeExactMathWorkRequest(saved, { backend, engine, shouldStop: () => undefined })).evaluation).toEqual(result.evaluation);
-    }
+      return { result, again: await executeExactMathWorkRequest(saved, { backend, engine, shouldStop: () => undefined }) };
+    }));
+    for (const { result, again } of reopened) expect(again.evaluation).toEqual(result.evaluation);
   }, 30_000);
   it('円周・保存場・再媒介化・らせん・広義積分を独立な解析値で確認する', () => { native([]); }, 105_000);
   it.each(examples)('$sourceの通常入力と原式の保存再開', async example => {

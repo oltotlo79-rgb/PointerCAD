@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -13,6 +12,7 @@ import { createScalarIntervalSampler } from './scalarMathIntervals.js';
 import { createScalarDirectionalJet } from './scalarCurveCurvature.js';
 import { lowerLegendrePolynomial } from './legendrePolynomial.js';
 import type { MathNode } from './mathInputContract.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
@@ -111,7 +111,7 @@ describe('Legendre多項式は次数・正規化・元の引数と式を保持�
   });
   it('固定計算部の式・級数・微分へ渡しても元の次数と不成立を保持する', () => {
     const script = fileURLToPath(new URL('./exactRuntime/cas_legendre_test.py', import.meta.url));
-    const execution = spawnSync('python', ['-B', '-X', 'utf8', script], { encoding: 'utf8', timeout: 90_000,
+    const execution = spawnExactRuntime(['-B', '-X', 'utf8', script], { encoding: 'utf8', timeout: 90_000,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' } });
     expect(execution.error, execution.stderr).toBeUndefined(); expect(execution.status, execution.stderr).toBe(0);
   }, 90_000);

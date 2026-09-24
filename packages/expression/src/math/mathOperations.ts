@@ -1,3 +1,4 @@
+import { MAPPING_DEFINITIONS } from './mathMappings.js';
 import { SET_BOUND_DEFINITIONS } from './setBounds.js';
 import { EQUATION_DEFINITIONS } from './equationSolutions.js';
 import { INTEGRAL_TRANSFORM_DEFINITIONS } from './integralTransforms.js';
@@ -10,10 +11,12 @@ import { VECTOR_CALCULUS_AT_DEFINITIONS } from './vectorCalculusAt.js';
 import { LINE_INTEGRAL_DEFINITIONS } from './lineIntegrals.js';
 import { REGION_INTEGRAL_DEFINITIONS } from './regionIntegrals.js';
 import { GENERAL_PROBABILITY_DEFINITIONS, DISTRIBUTION_DEFINITIONS } from './generalProbability.js';
+import { EXTENDED_OPERATION_DEFINITIONS } from './mathExtendedOperations.js';
 /** Candidate pure-operation registry. Entries need independent acceptance before product enablement. */
 import type { MathOperationDefinition } from './mathInputContract.js';
 
 const definitions: readonly [id: string, head: string, minimum: number, maximum: number, structural?: boolean][] = [
+  ...MAPPING_DEFINITIONS.map<[string, string, number, number]>(([id, head, count]) => [id, head, count, count]),
   ...SET_BOUND_DEFINITIONS.map<[string, string, number, number]>(([id, head]) => [id, head, 1, 1]),
   ...EQUATION_DEFINITIONS.map<[string, string, number, number]>(([id, head]) => [id, head, 2, 2]),
   ['solution-value', 'Solution', 2, 2],
@@ -43,7 +46,7 @@ const definitions: readonly [id: string, head: string, minimum: number, maximum:
   ...REGION_INTEGRAL_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 4, 4]),
   ...LINE_INTEGRAL_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 4, 4]),
   ...VECTOR_CALCULUS_AT_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 2, 2]),
-  ...VECTOR_CALCULUS_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 2, 2]),
+  ...VECTOR_CALCULUS_DEFINITIONS.map<[string,string,number,number]>(([id, head]) => [id, head, 2, ['jacobian', 'hessian'].includes(id) ? 2 : 3]),
   ...INTEGER_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
   ...TENSOR_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
   ...LINEAR_DEFINITIONS.map<[string,string,number,number]>(([id, head, count]) => [id, head, count, count]),
@@ -84,10 +87,14 @@ const definitions: readonly [id: string, head: string, minimum: number, maximum:
   ['norm', 'Norm', 1, 2],
   ['sum', 'Sum', 2, 16], ['product', 'Product', 2, 16], ['integrate', 'Integrate', 2, 16],
   ['differentiate', 'D', 2, 16], ['differentiate-at', 'DerivativeAt', 3, 3], ['limit', 'Limit', 2, 3],
+  ['limit-supremum', 'LimSup', 2, 4], ['limit-infimum', 'LimInf', 2, 4],
   ['for-all', 'ForAll', 2, 2], ['exists', 'Exists', 2, 2], ['lambda', 'Function', 2, 16],
   ['delimiter', 'Delimiter', 1, 1, true], ['implicit-operation', 'InvisibleOperator', 2, 256, true],
   ['coefficient-reference', 'PcadCoefficient', 1, 1, true],
   ['dot-token', 'PcadDotToken', 2, 2, true], ['times-token', 'PcadTimesToken', 2, 2, true],
+  // Appended after the existing entries: readable and storable now, calculated only once implemented.
+  ...EXTENDED_OPERATION_DEFINITIONS.map<[string, string, number, number]>(value =>
+    [value.id, value.head, value.minimumArguments, value.maximumArguments]),
 ];
 
 export const CANDIDATE_MATH_OPERATIONS: ReadonlyMap<string, MathOperationDefinition> = new Map(

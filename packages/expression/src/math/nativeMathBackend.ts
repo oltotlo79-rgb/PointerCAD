@@ -11,9 +11,11 @@ import { testDistributionDecimal } from './testDistributionsNumeric.js';
 import { binomialQuantile } from './binomialProbability.js';
 import { poissonQuantile } from './poissonQuantile.js';
 /** Small deterministic scalar backend. Symbolic operations stay intact for SymPy. */
-import { MathInputProblem } from './mathInputContract.js';
+import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import type { EngineMathJson } from './encodeMathJson.js';
 import type { MathBackendBox } from './numericMathBoundary.js';
+import { encodeMathInRadians } from './mathAngleConvention.js';
+import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { numberJson, rationalJson, jsonRational, jsonDecimal, decimalOperation } from './nativeMathNumber.js';
 import { exactIntegerOperation, exactTrigonometry, exactPiProduct, piRatio } from './nativeMathExact.js';
 import { complexOperation, complexParts } from './nativeMathComplex.js';
@@ -33,6 +35,15 @@ const BESSEL_HEADS: ReadonlyMap<string, BesselKind> = new Map([['BesselJ','J'],[
 const TEST_DISTRIBUTION_HEADS: ReadonlyMap<string, string> = new Map([['ChiSquarePdf', 'chi-square-pdf'], ['ChiSquareCdf', 'chi-square-cdf'], ['ChiSquareQuantile', 'chi-square-quantile'], ['TPdf', 't-pdf'], ['TCdf', 't-cdf'], ['TQuantile', 't-quantile'], ['FPdf', 'f-pdf'], ['FCdf', 'f-cdf'], ['FQuantile', 'f-quantile']]);
 const GAMMA_BETA_HEADS: ReadonlyMap<string, string> = new Map([['GammaPdf', 'gamma-pdf'], ['GammaCdf', 'gamma-cdf'], ['GammaQuantile', 'gamma-quantile'], ['BetaPdf', 'beta-pdf'], ['BetaCdf', 'beta-cdf'], ['BetaQuantile', 'beta-quantile']]);
 const NORMAL_HEADS: ReadonlyMap<string, string> = new Map([['NormalPdf', 'normal-pdf'], ['NormalCdf', 'normal-cdf'], ['NormalQuantile', 'normal-quantile']]);
+/** Same allowance classes used by the numeric branches below; inspect before evaluation starts. */
+export function nativeMathDeadlineKind(head: string): 'elliptic' | 'distribution' | null {
+  if (ELLIPTIC_HEADS.has(head)) return 'elliptic';
+  if (TEST_DISTRIBUTION_HEADS.has(head) || GAMMA_BETA_HEADS.has(head) || BESSEL_HEADS.has(head)
+    || head === 'Zeta' || head === 'ZetaDerivative' || head === 'LambertW' || head === 'Beta'
+    || head === 'Gamma' || head === 'Polygamma' || head === 'Erf' || head === 'Erfc') return 'distribution';
+  return null;
+}
+
 const TRUTH = (value: boolean): EngineMathJson => value ? 'True' : 'False';
 const BINDERS = new Set(['Function', 'Integrate', 'Limit', 'D', 'ForAll', 'Exists']);
 function booleanOperation(head: string, args: readonly EngineMathJson[]): EngineMathJson | null {
@@ -241,6 +252,19 @@ export function createNativeMathBox(source: EngineMathJson, check: () => void, d
       }
       return result;
     }
+    // Even an exact pass checks the deadline before reaching a numeric special function.
+    // Discover the entire request's allowance first; the callback keeps the original start/parent.
+    if (distributionAllowance !== undefined) {
+      const pending = [input]; let remaining = 100_000;
+      while (pending.length > 0) {
+        if (--remaining < 0) throw new MathInputProblem('budget', '数式の計算範囲を超えています。');
+        const node = pending.pop();
+        if (!Array.isArray(node)) continue;
+        const kind = nativeMathDeadlineKind(node[0]);
+        if (kind !== null) distributionAllowance(kind === 'elliptic' ? 'elliptic' : undefined);
+        pending.push(...node.slice(1));
+      }
+    }
     check(); return visit(input, new Map(), 0);
   }
   return {
@@ -248,4 +272,29 @@ export function createNativeMathBox(source: EngineMathJson, check: () => void, d
     evaluate: () => createNativeMathBox(evaluate(source, false), check, distributionAllowance),
     N: () => createNativeMathBox(evaluate(source, true), check, distributionAllowance),
   };
+}
+
+/** A sentinel that decimalOperation returns instead of throwing; a value built from one is never defined. */
+function isDefiniteMathJson(json: EngineMathJson): boolean {
+  if (json === 'NaN' || json === 'ComplexInfinity') return false;
+  if (typeof json === 'string' || 'num' in json) return true;
+  return json.slice(1).every(isDefiniteMathJson);
+}
+/**
+ * Whether a candidate value a selection would otherwise silently discard is proven undefined: its own
+ * numeric evaluation raises a domain problem, or lands on a non-finite sentinel (dividing by a
+ * difference decimal arithmetic reduces to an exact zero, for instance). Anything else — finite, a free
+ * symbol, or a problem only the exact runtime resolves (including the shared check() budget running
+ * out) — is not proven bad, so the caller keeps discarding this candidate exactly as before. An
+ * identity that only cancels to zero through decimal rounding (e.g. sin(pi) from a finite-precision pi)
+ * is not detected here; callers accept that limit rather than evaluate every candidate exactly.
+ */
+export function nativeMathProvenUndefined(node: MathNode, angleUnit: 'degree' | 'radian', check: () => void): string | null {
+  try {
+    const json = createNativeMathBox(encodeMathInRadians(node, CANDIDATE_MATH_BY_ID, angleUnit), check).evaluate().N().json as EngineMathJson;
+    return isDefiniteMathJson(json) ? null : '有限の数値を求められません。';
+  } catch (error) {
+    if (!(error instanceof MathInputProblem)) throw error;
+    return error.code === 'domain' ? error.message : null;
+  }
 }

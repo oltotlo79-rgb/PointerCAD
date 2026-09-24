@@ -2,6 +2,7 @@ import { readUnresolvedMathProblems } from '@pointercad/model';
 import { missingHistoryTarget } from './codecs/historyTargets.js';
 import { readFeatureFolders, serializeFeatureFolders } from './codecs/featureFolders.js';
 import { readFeatureNotes, serializeFeatureNotes } from './codecs/featureNotes.js';
+import { readMathGeometry, serializeMathGeometry } from './codecs/mathGeometry.js';
 /**
  * 部品文書と `.pcad` の `document.json` の相互変換(計画書 docs/plans/P2-ソリッド基礎.md タスク14、要件§8)。
  *
@@ -102,6 +103,9 @@ export { readParameter } from './codecs/parameters.js';
 export { readAppearanceSpec } from './codecs/appearance.js';
 
 function serializePartDocument(document: PartDocument): PartDocument {
+  if (document.mathGeometry !== undefined && document.schemaVersion < 17) {
+    throw new RangeError('図形を測る定義を保存するには保存形式の版17が必要です。');
+  }
   if (document.unresolvedMathProblems !== undefined && document.schemaVersion < 16) {
     throw new RangeError('未解決の式を保存するには保存形式の版16が必要です。');
   }
@@ -109,6 +113,7 @@ function serializePartDocument(document: PartDocument): PartDocument {
     throw new RangeError('係数の参照番号が不正です。');
   }
   const serialized: PartDocument = {
+    ...(document.mathGeometry === undefined ? {} : { mathGeometry: serializeMathGeometry(document.mathGeometry, document.id) }),
     ...(document.unresolvedMathProblems === undefined ? {} : { unresolvedMathProblems: readUnresolvedMathProblems(document.unresolvedMathProblems) }),
     ...(document.mathParameterSerial === undefined ? {} : { mathParameterSerial: document.mathParameterSerial }),
     ...(document.featureNotes === undefined ? {} : { featureNotes: serializeFeatureNotes(document.featureNotes) }),
@@ -268,7 +273,10 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
     || !Number.isSafeInteger(mathParameterSerial) || mathParameterSerial < 0)) {
     return fieldProblem(`${path}.mathParameterSerial`, 'type');
   }
+  const mathGeometry = readMathGeometry(Object.hasOwn(record.value, 'mathGeometry') ? record.value.mathGeometry : [], id.value, `${path}.mathGeometry`);
+  if (!mathGeometry.ok) return mathGeometry;
   const document: PartDocument = {
+      ...(Object.hasOwn(record.value, 'mathGeometry') ? { mathGeometry: mathGeometry.value } : {}),
       ...(unresolvedMathProblems === undefined ? {} : { unresolvedMathProblems }),
       ...(Object.hasOwn(record.value, 'featureNotes') ? { featureNotes: featureNotes.value } : {}),
       ...(Object.hasOwn(record.value, 'featureFolders') ? { featureFolders: featureFolders.value } : {}),

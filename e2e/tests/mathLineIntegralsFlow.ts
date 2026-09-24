@@ -39,6 +39,9 @@ export async function mathLineIntegralsFlow(page: Page, info: TestInfo, app?: El
   await input.fill('circulation([2*x,2*y],[x,y],[t,t^2],t,0,1)');
   await expect(result).toHaveText('= 2', { timeout: 225_000 });
   await angle.selectOption('degree');
+  // Wait for the degree result first: typing or switching notation while it runs cancels it, and a cancelled
+  // calculation part is replaced and prepares the exact runtime again (rules/06 §10.149).
+  await expect(result).toHaveText('= 2', { timeout: 225_000 });
   const source = 'circulation([2*x,2*y],[x,y],[t,t^2],t,0,1)';
   const changedSource = 'circulation([2*x,2*y],[x,y],[t,t^2],t,0,2)';
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();

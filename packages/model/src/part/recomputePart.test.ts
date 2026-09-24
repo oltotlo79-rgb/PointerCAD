@@ -2492,3 +2492,49 @@ describe('外観の橋渡し(FR-1106、タスク4)', () => {
     expect(after).toEqual(before);
   });
 });
+
+describe('形状計算部のメモリの量を素通しする(NFR-PF-6、P12-28)', () => {
+  /** 上限(約 4GB)の 4 分の 3 を超えた量を模擬する。実物の量は kernel の検査で確かめる。 */
+  const memory = { wasmHeapBytes: 3_300_000_000, wasmHeapLimitBytes: 4_294_901_760 };
+  const reading = { usedBytes: 3_300_000_000, limitBytes: 4_294_901_760 };
+
+  it('カーネルが添えたメモリの量を model の言葉へ写し、無ければ欄を作らない', () => {
+    const base = { bodies: [], failures: [], cacheHits: 0, cancelled: false };
+    const outcome = toSolidOutcome([], { ...base, memory });
+    expect(outcome.kernelMemory).toEqual(reading);
+    expect(outcome.cacheHits).toBe(0);
+    expect(outcome.cancelled).toBe(false);
+    expect('kernelMemory' in toSolidOutcome([], base)).toBe(false);
+  });
+
+  it('計算を終えた部品の結果へメモリの量を渡す', async () => {
+    const { document } = oneExtrude();
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({ ...EMPTY_SOLID_OUTCOME, kernelMemory: reading }),
+    }));
+    expect(result.cancelled).toBe(false);
+    expect(result.kernelMemory).toEqual(reading);
+  });
+
+  it('ソリッドの段で取り消された結果にもメモリの量を渡す(形は渡さない)', async () => {
+    const { document } = oneExtrude();
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({ ...EMPTY_SOLID_OUTCOME, cancelled: true, kernelMemory: reading }),
+    }));
+    expect(result.cancelled).toBe(true);
+    expect(result.bodies).toEqual([]);
+    expect(result.kernelMemory).toEqual(reading);
+  });
+
+  it('量が添えられない・呼び出しごと失敗したときは欄を作らない(画面は前の量を持ち続ける)', async () => {
+    const { document } = oneExtrude();
+    const plain = await recomputePart(document, fakeBridge());
+    expect('kernelMemory' in plain).toBe(false);
+    const failed = await recomputePart(
+      document,
+      fakeBridge({ recomputeSolids: () => Promise.reject(new Error('通信が切れました')) }),
+    );
+    expect(failed.errors).toHaveLength(1);
+    expect('kernelMemory' in failed).toBe(false);
+  });
+});

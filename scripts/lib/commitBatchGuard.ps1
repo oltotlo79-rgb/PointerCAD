@@ -6,7 +6,11 @@ function Invoke-CommitBatchGit {
         [Parameter(Mandatory = $true)][string[]]$Arguments
     )
 
-    $lines = @(& git -C $RepositoryRoot @Arguments 2>$null)
+    $safeDirectory = @()
+    if ($Arguments -notcontains 'write-tree') {
+        $safeDirectory = @('-c', ('safe.directory=' + ([IO.Path]::GetFullPath($RepositoryRoot).Replace('\', '/'))))
+    }
+    $lines = @(& git -C $RepositoryRoot @safeDirectory @Arguments 2>$null)
     $exitCode = $LASTEXITCODE
     [PSCustomObject]@{
         Ok = ($exitCode -eq 0)

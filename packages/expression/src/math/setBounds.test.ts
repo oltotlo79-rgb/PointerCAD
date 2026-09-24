@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -9,6 +8,7 @@ import { decodeMathEvaluation, decodeMathWorkReply } from './mathWorkReply.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import type { MathNode } from './mathInputContract.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 const examples = [
   { source: 'sup(interval(open(0),open(1)))', value: 1 },
@@ -45,7 +45,7 @@ function request(source: string): MathWorkRequest {
     identity: { documentId: 'set-bounds', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
 }
 function native(args: readonly string[], input?: string): string {
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], {
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {
     input, encoding: 'utf8', timeout: 45_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });

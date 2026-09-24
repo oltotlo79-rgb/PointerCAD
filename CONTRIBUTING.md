@@ -12,6 +12,8 @@ PointerCADは正式公開前です。現在の実装と未完了の範囲は[進
 
 作業前に[規約の入口](CLAUDE.md)から全規約と、対象の[要件](docs/requirements.md)を確認してください。開発環境の用意と起動は[READMEの手順](README.md)を使います。依存の版は`pnpm-workspace.yaml`と`pnpm-lock.yaml`で固定しています。依存の追加・更新は、採用理由、許諾、容量、失敗時の動作を用意して判断を受けます。
 
+Dependabotが自動で開く更新の提案PRも例外にせず、既存のCI(型検査・lint・単体・組み立て・全画面操作の全段)がそのSHAで通るまで取り込みません。GitHub Actionsのワークフローに書く外部アクションは、検証済みのコミットSHAで固定し、コメントに版(例: `# v4`)を添えます。可変なタグ(`@v4`や`@main`)を直接参照しません。
+
 変更では、元の数式・単位・保存内容を保持し、通常の操作一回を「元に戻す」一回で戻せるようにします。遅れて終了した計算が別の文書を変更しないこと、取消や失敗で利用者の原本・復元用の控えを失わないことを確認します。表示文言は既存の日本語一覧に加え、操作説明と実画面が変わる場合はヘルプと撮影手順も更新します。
 
 一時ファイル、実行ログ、確認用コピーはこのプロジェクトの`scratchpad/`へ置きます。`.git/`を作業用フォルダーとして使いません。置き場は`python scripts/lib/task_workspace.py <作業名>`で作成できます。
@@ -32,3 +34,11 @@ PointerCADは正式公開前です。現在の実装と未完了の範囲は[進
 ## 配布物を作る
 
 [通信なしで使うWeb版](scripts/release/README.md)と[Windows・Linuxの配布手順](docs/standards/desktop-distribution.md)を参照してください。生成できた一式は確認用です。利用者の文書の保全、許諾原文、全説明書、実際の導入・起動、公開先での確認が完了するまで、正式版として公開しません。初回Windows版は決定済みの未署名配布です。
+
+## 配布CIを起動する
+
+対象commitのフルSHA(40桁16進)を確定させたら、GitHub Actionsの[配布CI](.github/workflows/release.yml)を手動起動(`workflow_dispatch`)で実行します。push・pull_request・タグ作成では自動起動しません。入力欄の`commit`は対象commitのフルSHAが必須で、ブランチ名・タグ名・短縮SHAは受け付けません。公開版のタグ(例: `v1.2.3`)を付ける場合は任意の`tag`欄に入力すると、その時点の`package.json`の`version`と一致するか確認します。
+
+配布CIは、通常CI([`ci.yml`](.github/workflows/ci.yml))の集約チェックが対象commitで成功していることを確認したうえで、Windows・LinuxのDesktop候補(Windows: NSISとポータブル版、Linux: AppImage)とWeb版(通信なし利用)候補、取扱説明書(HTML/PDF)を生成し、最後にrelease-manifestとSBOMを1つのartifactへまとめます。生成した各artifactの保持期間は14日です。署名や、GitHub Releasesへの添付・Cloudflare Pagesへのデプロイ等の実際の公開操作はこのワークフローの範囲外です。
+
+各jobが呼ぶスクリプトの並び、既知の注意点(Windows/Linux間の改行変換、署名を行わない方針、保持期間が暫定値であること等)、公開前の整合検査の手順は[配布手順の解説](scripts/release/README.md)を参照してください。

@@ -1,7 +1,17 @@
+import { followCommandCompletion } from './mathCommandCompletion.js';
+
 /** Framework-neutral MathLive adapter draft. Product setup must supply a locally configured factory. */
 export interface StructuredMathField extends HTMLElement {
   value: string;
   readOnly: boolean;
+  /** MathLive switches to 'latex' while a command typed after "\" shows its suggestions. */
+  readonly mode: 'math' | 'text' | 'latex';
+  /** Caret offset. MathLive numbers the atoms of an item's arguments before the item itself. */
+  position: number;
+  selection: { readonly ranges: readonly (readonly [number, number])[] };
+  readonly lastOffset: number;
+  /** Tree depth (0 at the top level) and LaTeX of the atom at an offset. */
+  getElementInfo(offset: number): { readonly depth?: number; readonly latex?: string } | undefined;
   mathVirtualKeyboardPolicy: 'auto' | 'manual' | 'sandboxed';
   menuItems: readonly unknown[];
   getValue(format?: 'latex'): string;
@@ -69,19 +79,25 @@ export function attachMathField(
     } else publish();
   };
   function paste(event: ClipboardEvent): void {
-    let length = 0;
-    for (const type of event.clipboardData?.types ?? []) {
-      length += event.clipboardData?.getData(type).length ?? 0;
-      if (length > options.maximumSourceLength) {
-        event.preventDefault();
-        event.stopPropagation();
-        options.onSourceLimit();
-        return;
-      }
+    const data = event.clipboardData;
+    if (data === null) return;
+    // MathLive prefers its own atoms, then LaTeX, then plain text. Its atom clipboard
+    // also carries the LaTeX source; HTML and serialized atoms are not inserted as text.
+    const source = data.getData('application/x-latex') || data.getData('text/plain');
+    if (source.length > options.maximumSourceLength) {
+      event.preventDefault();
+      event.stopPropagation();
+      options.onSourceLimit();
     }
   }
   function keydown(event: KeyboardEvent): void {
     if (event.isComposing || composing || event.keyCode === 229) return;
+    // This capture listener runs before MathLive's own key handling inside the field. While a command
+    // typed after "\" shows its suggestions, Enter accepts the suggestion and Esc closes only the list:
+    // MathLive handles both and prevents the default action, so the dialog neither confirms nor closes.
+    // Ctrl/Meta+Enter keeps confirming the expression.
+    if ((event.key === 'Enter' || event.key === 'Escape') && field.mode === 'latex'
+      && !event.ctrlKey && !event.metaKey) return;
     if (event.key === 'Enter') {
       // Plain Enter stays inside expression editing; it cannot also confirm the CAD dialog.
       event.stopPropagation();
@@ -112,6 +128,8 @@ export function attachMathField(
   field.addEventListener('compositionend', compositionEnd);
   field.addEventListener('keydown', keydown, true);
   field.addEventListener('move-out', moveOut);
+  // Keeps MathLive's command suggestions visible in a modal dialog and puts the caret into the first argument.
+  const stopCompletion = followCommandCompletion(field);
   container.append(field);
   // MathLive creates its menu controller only in connectedCallback.
   // Keep initialization atomic if a mounted-only setting fails.
@@ -140,7 +158,63 @@ export function attachMathField(
       field.removeEventListener('compositionend', compositionEnd);
       field.removeEventListener('keydown', keydown, true);
       field.removeEventListener('move-out', moveOut);
+      stopCompletion();
+      // Firefox does not fire a `blur` event when the focused element is removed from the document
+      // (Chromium does), so MathLive's own onBlur - which clears its internal, module-global
+      // "currently focused mathfield" reference - never runs for this field. The next math-field
+      // anywhere in the app to receive focus then finds that stale reference still marked focused and
+      // calls back into it, throwing inside MathLive's torn-down internals (MC-27d). Blurring here,
+      // while the field is still connected, runs MathLive's normal blur handling first so its
+      // bookkeeping stays correct regardless of the browser's removal quirk. Callers must dispose before the
+      // field leaves the document (MathEditorSurface disposes in a layout-effect cleanup): once MathLive's
+      // disconnectedCallback has run, `blur` no longer reaches its internals. `blur` is a safe no-op
+      // when the field is not focused, so this runs unconditionally; `?.` only keeps lightweight test
+      // doubles that omit the method (a production StructuredMathField always has it) working unchanged.
+      field.blur?.();
       field.remove();
     },
   };
+}
+
+/** Elements that the browser's Tab order can include. Each candidate is still checked by reachableByTab. */
+export const SEQUENTIAL_FOCUS_SELECTOR = 'a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex], [contenteditable="true"]';
+/** Node.DOCUMENT_POSITION_FOLLOWING, written as a value so this module does not need the DOM globals. */
+const DOCUMENT_POSITION_FOLLOWING = 4;
+/** The parts of the dialog that focusAdjacentControl reads. Every DOM element provides them. */
+export interface FocusScope {
+  contains(other: Node | null): boolean;
+  querySelectorAll(selectors: string): Iterable<HTMLElement>;
+}
+
+/** Tab skips disabled controls, tabindex -1, hidden controls, and everything in a closed details except its summary. */
+function reachableByTab(control: Element): boolean {
+  const tabIndex = control.getAttribute('tabindex');
+  if ((tabIndex !== null && Number.parseInt(tabIndex, 10) < 0) || control.matches(':disabled')) return false;
+  for (let details = control.closest('details'); details !== null; details = details.parentElement?.closest('details') ?? null) {
+    if (!details.open && !(control.parentElement === details && control.matches('summary'))) return false;
+  }
+  return control.checkVisibility({ visibilityProperty: true });
+}
+
+/**
+ * Moves focus from the structured field at its edge to the neighbouring control in document order,
+ * the same control that Tab or Shift+Tab reaches from the text input. Returns false and keeps focus
+ * when `from` is outside `scope` or no control exists in that direction.
+ */
+export function focusAdjacentControl(scope: FocusScope, from: Element, direction: 'forward' | 'backward'): boolean {
+  if (!scope.contains(from)) return false;
+  let target: HTMLElement | undefined;
+  for (const control of scope.querySelectorAll(SEQUENTIAL_FOCUS_SELECTOR)) {
+    if (from.contains(control) || control.contains(from) || !reachableByTab(control)) continue;
+    if ((from.compareDocumentPosition(control) & DOCUMENT_POSITION_FOLLOWING) === 0) {
+      // The last control before the field is where Shift+Tab goes.
+      if (direction === 'backward') target = control;
+    } else {
+      // The first control after the field is where Tab goes.
+      if (direction === 'forward') target = control;
+      break;
+    }
+  }
+  target?.focus();
+  return target !== undefined;
 }

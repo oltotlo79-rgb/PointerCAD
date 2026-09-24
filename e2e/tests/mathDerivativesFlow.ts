@@ -30,6 +30,11 @@ export async function mathDerivativesFlow(page: Page, info: TestInfo, app?: Elec
   }, { timeout: 225_000 }).toBeCloseTo(Math.PI / 180, 12);
   await angle.selectOption('radian'); await expect(result).toHaveText('= 1', { timeout: 225_000 });
   await angle.selectOption('degree');
+  // Wait for the degree result first: typing or switching notation while it runs cancels it, and a cancelled
+  // calculation part is replaced and prepares the exact runtime again (rules/06 §10.149).
+  await expect.poll(async () => {
+    const text = await result.innerText(); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
+  }, { timeout: 225_000 }).toBeCloseTo(Math.PI / 180, 12);
   await input.fill('derivativeat(derivativeat(x^2*y,x,2),y,3)');
   await expect(result).toHaveText('= 4', { timeout: 225_000 });
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
@@ -77,4 +82,5 @@ export async function mathDerivativesFlow(page: Page, info: TestInfo, app?: Elec
   const undone = await savePart(page, info, 'derivatives-undone.pcad', app);
   expect(undone.parameters.find(parameter => parameter.name === '微分の値')?.value).toMatchObject({ value: 6, source });
   expect(undone.sketches[0].features.find(feature => feature.kind === 'point')).toMatchObject({ at: { x: { value: 6, source: coordinate } } });
+  console.log('[確認] Undo後の保存内容を照合: 微分の値=6（元の原式）、点のX=6（係数の参照）');
 }

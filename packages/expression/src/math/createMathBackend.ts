@@ -1,6 +1,6 @@
 /** Instantiate inside the disposable calculation Worker; never attach an engine to the input field. */
-import {createNativeMathBox} from './nativeMathBackend.js';
-import {MathInputProblem} from './mathInputContract.js';
+import {createNativeMathBox,nativeMathDeadlineKind} from './nativeMathBackend.js';
+import {MathInputProblem,type MathNode} from './mathInputContract.js';
 import {CANDIDATE_MATH_OPERATIONS,CANDIDATE_MATH_BY_ID} from './mathOperations.js';
 import {createMathLatexCodec} from './mathLatexCodec.js';
 import type {MathExecutionBackend} from './mathWorkExecution.js';
@@ -13,9 +13,32 @@ export function createMathBackend():MathExecutionBackend {
   // The allowance is relative to the original request, never renewed per function.
   const distributionAllowance=(kind?:'elliptic'):void=>{if(Number.isFinite(deadline))deadline=Math.min(parentDeadline,
     Math.max(deadline,startedAt+(kind==='elliptic'?3000:1000)));};
+  // Only validated input/substitution trees enter here (bounded by MATH_INPUT_LIMITS).
+  const prepareDeadline=(expression:MathNode):void=>{
+    const pending=[expression];
+    while(pending.length>0) {
+      const node=pending.pop();if(node===undefined)break;
+      if(node.kind==='operation'||node.kind==='binder') {
+        const head=CANDIDATE_MATH_BY_ID.get(node.operation)?.engineHead;
+        const kind=head===undefined?null:nativeMathDeadlineKind(head);
+        if(kind!==null)distributionAllowance(kind==='elliptic'?'elliptic':undefined);
+      }
+      if(node.kind==='operation')pending.push(...node.operands);
+      else if(node.kind==='binder') {
+        pending.push(node.body);
+        for(const {domain} of node.bindings) {
+          if(domain.kind==='set')pending.push(domain.value);
+          else if(domain.kind==='range') {
+            pending.push(domain.lower,domain.upper);if(domain.step!==null)pending.push(domain.step);
+          }
+        }
+      }
+    }
+  };
   const codec=createMathLatexCodec();
   return {
     parseLatex:codec.parse,serializeLatex:codec.serialize,operations:CANDIDATE_MATH_OPERATIONS,operationsById:CANDIDATE_MATH_BY_ID,
+    prepareDeadline,
     box:expression=>createNativeMathBox(expression,check,distributionAllowance),
     withinDeadline:<T>(operation:()=>T extends Promise<unknown> ? never : T):T=>{
       const previous={deadline,startedAt,parentDeadline};parentDeadline=deadline;startedAt=performance.now();

@@ -13,7 +13,7 @@ export function createBrowserMathClient(createWorker: () => MathWorkerPort = cre
     decodeReply: (value, request) => decodeMathWorkReply(value, request, {
       operationsById: CANDIDATE_MATH_BY_ID,
       coefficientIds: new Set(request.coefficients.map(coefficient => coefficient.id)),
-      declaredIds: new Set<string>(),
+      declaredIds: new Set((request.declarations ?? request.definition?.declarations)?.map(value => value.id)),
     }),
   });
 }

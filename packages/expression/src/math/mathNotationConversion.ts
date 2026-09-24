@@ -1,3 +1,4 @@
+import { mappingFunction } from './mathMappings.js';
 import { numericalRootFunction } from './numericalRootResult.js';
 import { equationSystemFunction } from './equationSystems.js';
 import { differentialEquationProblem } from './differentialEquations.js';
@@ -10,7 +11,8 @@ import { SEQUENCE_IDS, sequenceFunction } from './sequenceCalculations.js';
 import {MathInputProblem,MATH_INPUT_LIMITS,validateMathSource,type MathNode,type MathOperationDefinition} from './mathInputContract.js';
 import {rationalOfExpression} from './exactRational.js';
 import {literalLimitDirection} from './mathExactCalculus.js';
-import {VECTOR_CALCULUS_AT_IDS,vectorCalculusAtBounds} from './vectorCalculusAt.js';
+import {COORDINATE_SELECTABLE_AT,VECTOR_CALCULUS_AT_IDS,taggedVectorTarget,vectorCalculusAtBounds} from './vectorCalculusAt.js';
+import {COORDINATE_SELECTABLE,coordinateSystemKeyword} from './vectorCalculusOperations.js';
 import {LINE_INTEGRAL_IDS,validateLineIntegral} from './lineIntegrals.js';
 import {REGION_INTEGRAL_IDS,validateRegionIntegral} from './regionIntegrals.js';
 import {GENERAL_PROBABILITY_IDS,probabilityFunction} from './generalProbability.js';
@@ -38,6 +40,10 @@ export function displayMathJson(source:MathNode,byId:ReadonlyMap<string,MathOper
         const independent: DisplayMathJson = problem.independentCount === 1 ? names[0] : ['List', ...names.slice(0, problem.independentCount)];
         return [operation.engineHead, visit(problem.equations, depth + 1), independent,
           ['List', ...names.slice(problem.independentCount)], visit(problem.conditions, depth + 1)];
+      }
+      if(node.operation==='mapping') {
+        const fn=mappingFunction(node);
+        return [operation.engineHead,visit(fn.body,depth+1),fn.bindings[0].variable.label,...node.operands.slice(1).map(child=>visit(child,depth+1))];
       }
       if(node.operation==='solve-system') {
         const fn=equationSystemFunction(node);
@@ -93,7 +99,11 @@ export function displayMathJson(source:MathNode,byId:ReadonlyMap<string,MathOper
         vectorCalculusAtBounds(node);
         const [fn,target]=node.operands;
         if(fn.kind!=='binder')throw new MathInputProblem('syntax','微分する変数を指定してください。');
-        return [operation.engineHead,visit(fn.body,depth+1),['List',...fn.bindings.map(binding=>binding.variable.label)],visit(target,depth+1)];
+        // A literal coordinate-system selector is shown by name, \text{cylindrical} (MC-19c).
+        const tagged=COORDINATE_SELECTABLE_AT.has(node.operation)?taggedVectorTarget(target):null;
+        const keyword=coordinateSystemKeyword(tagged?.selector);
+        const point:DisplayMathJson=tagged===null||keyword===null?visit(target,depth+1):['List',visit(tagged.point,depth+2),{str:keyword}];
+        return [operation.engineHead,visit(fn.body,depth+1),['List',...fn.bindings.map(binding=>binding.variable.label)],point];
       }
       if(node.operation==='differentiate-at') {
         const [fn,target,order]=node.operands;
@@ -102,8 +112,17 @@ export function displayMathJson(source:MathNode,byId:ReadonlyMap<string,MathOper
         }
         return ['DerivativeAt',visit(fn.body,depth+1),fn.bindings[0].variable.label,visit(target,depth+1),visit(order,depth+1)];
       }
+      if((node.operation==='limit-supremum'||node.operation==='limit-infimum')&&node.operands.length===4) {
+        const fn=node.operands[0];
+        if(fn.kind!=='binder'||fn.operation!=='lambda'||fn.bindings.length!==1) {
+          throw new MathInputProblem('syntax','上極限・下極限の変数と範囲を確認してください。');
+        }
+        return [operation.engineHead,visit(fn.body,depth+1),fn.bindings[0].variable.label,...node.operands.slice(1).map(child=>visit(child,depth+1))];
+      }
       const operands=node.operands.map(child=>visit(child,depth+1));
-      if(node.operation==='limit'&&operands.length===3) {
+      const keyword=COORDINATE_SELECTABLE.has(node.operation)&&operands.length===3?coordinateSystemKeyword(node.operands[2]):null;
+      if(keyword!==null)operands[2]={str:keyword};
+      if(['limit','limit-supremum','limit-infimum'].includes(node.operation)&&operands.length===3) {
         const direction=literalLimitDirection(node.operands[2]);
         // The formatter recognizes a signed number, but silently drops Negate(1).
         if(direction!==null)operands[2]={num:String(direction)};
@@ -135,7 +154,7 @@ export function sameMathMeaning(left:MathNode,right:MathNode):boolean {
   function same(a:MathNode,b:MathNode,bindings:ReadonlyMap<string,string>,depth:number):boolean {
     if(--remaining<0||depth>MATH_INPUT_LIMITS.depth)throw new MathInputProblem('budget','入力方式の比較が複雑すぎます。');
     a=explicitLogBase(a);b=explicitLogBase(b);
-    if(a.kind==='operation'&&b.kind==='operation'&&a.operation==='limit'&&b.operation==='limit'
+    if(a.kind==='operation'&&b.kind==='operation'&&['limit','limit-supremum','limit-infimum'].includes(a.operation)&&b.operation===a.operation
       &&[2,3].includes(a.operands.length)&&[2,3].includes(b.operands.length)) {
       const x=literalLimitDirection(a.operands[2]),y=literalLimitDirection(b.operands[2]);
       if(x!==null&&y!==null)return x===y&&same(a.operands[0],b.operands[0],bindings,depth+1)

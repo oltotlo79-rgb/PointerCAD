@@ -64,7 +64,9 @@ export function complexOperation(head: string, args: readonly EngineMathJson[], 
   }
   const rationalPower = head === 'Power' ? jsonRational(args[1]) : null;
   if (rationalPower?.denominator === 2n && rationalPower.numerator >= -31n && rationalPower.numerator <= 31n) {
-    return op('Power', op('Sqrt', first), N(rationalPower.numerator));
+    const root = op('Sqrt', first);
+    // A numerator of exactly 1 is a plain square root; Power(Sqrt(x), 1) would show a redundant ^1.
+    return rationalPower.numerator === 1n ? root : op('Power', root, N(rationalPower.numerator));
   }
   if (isComplex(first)) {
     const entire = entireComplexOperation(head, pair);

@@ -63,6 +63,11 @@ export function LookGroup({
       // 下絵(FR-332)はいつでも押せる。立体もスケッチも要らない(空の部品にも貼れる)。
       return { ready: true, reasonKey: null };
     }
+    if (id === 'mathGeometry') {
+      // 図形の測定値(GR-30)。押せる条件は「部品を開いている」だけ(何も選んでいなくてもよい)。
+      // アセンブリでは `isAssembly` の絞り込み(下の items)でそもそも一覧に出ない。
+      return { ready: true, reasonKey: null };
+    }
     if (id === 'printCheck') {
       /*
         3D プリントの点検(FR-815、タスク46)。**立体が 1 つでもあれば押せる**

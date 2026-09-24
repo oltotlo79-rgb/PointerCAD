@@ -3,7 +3,7 @@ import {expressionValueFromNumber as number,mathScalarExpression,type Expression
 import {nextFeatureId,nextFeatureName,replaceSketch,FREE_WORK_PLANE_ID,type PartDocument,type FunctionPointReference,type SketchLineFeature} from '@pointercad/model';
 import {decodePointContinuationRequest,savePointCalculationInput,type FunctionPointDirectionKind,type PointCalculationSavedInput} from '@pointercad/expression/math/contracts';
 import type {MathWorkerClient,PointCalculationWorkerClient,PointContinuationWorkerClient} from '@pointercad/expression/math/client';
-import {prepareDocumentMathEnvironment} from '../math/prepareDocumentMathEditor.js';
+import {prepareDocumentMathEnvironment,waitForMathEditorGeometry} from '../math/prepareDocumentMathEditor.js';
 import {searchFunctionPoints,type FunctionPointFields} from './functionPointDraft.js';
 import type {FunctionScalarDraft} from './functionPlotDraft.js';
 import {t} from '../i18n/t.js';
@@ -36,7 +36,12 @@ export async function evaluateFunctionDirection(document:PartDocument,documentVe
   if(found.status==='failed')throw new Error(found.message);
   if(!found.search.exhaustive||found.search.unresolved!==0)throw new Error(t('functionPoint.completeRequired'));
   const identity={documentId:document.id,documentVersion,editorId:'function-direction',inputRevision:0};
-  const environment=await prepareDocumentMathEnvironment(found.search.document,{identity,client,signal,isCurrent:current});
+  // GR-18c: the offset/length fields below can reference a coefficient the same way any dimension field
+  // does, so this needs the document's current math-geometry outcomes exactly as searchFunctionPoints's own
+  // (already-fixed) internal evaluation does.
+  const geometry=await waitForMathEditorGeometry(document,signal,current,()=>undefined);
+  if(!current())return null;
+  const environment=await prepareDocumentMathEnvironment(found.search.document,{identity,client,signal,isCurrent:current,geometry});
   if(!current())return null;
   let revision=0;
   const scalar=async(input:FunctionScalarDraft):Promise<ExpressionValue|null>=>{

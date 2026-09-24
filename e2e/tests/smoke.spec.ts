@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { readPcadFile } from '../../packages/io/src/index.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
 import { startupRecoveryFlow } from './startupRecoveryFlow.js';
+import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
 
 test.beforeEach(async({page})=>{await installStartupDiagnostics(page);});
 
@@ -131,4 +132,22 @@ test('OS標準書体と同梱日本語書体でツールバーの全操作が128
       expect(metrics.overflow).toBeLessThanOrEqual(1);
     }
   }
+});
+
+test('計算状態の読取り口が遅れて現れても実際の世代を待ち、仮の状態で操作を始めない', async ({ page }, info) => {
+  await page.goto('/');
+  await waitForStartupHealth(page, info);
+  await waitForRecompute(page);
+  const actual = await readRecomputeStats(page);
+  expect(actual.requestedGeneration).toBeGreaterThan(0);
+  // Use the real state provider. Only its availability is delayed, as during mount.
+  await page.evaluate(() => {
+    const read = window.pcadRecomputeStats;
+    if (read === undefined) throw new Error('The real observation hook is missing');
+    delete window.pcadRecomputeStats;
+    setTimeout(() => { window.pcadRecomputeStats = read; }, 250);
+  });
+  const token = await beginRecompute(page);
+  expect(token.requestedGeneration).toBe(actual.requestedGeneration);
+  expect(await readRecomputeStats(page)).toEqual(actual);
 });

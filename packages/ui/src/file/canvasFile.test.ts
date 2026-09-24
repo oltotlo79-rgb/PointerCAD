@@ -6,7 +6,8 @@
  * 欄を差し込むと他の検査へ漏れる)。
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { MAX_CANVAS_IMAGE_BYTES } from '@pointercad/model';
 
 import {
   CANVAS_IMAGE_ACCEPT,
@@ -88,6 +89,7 @@ describe('画像を選ぶ(FR-332)', () => {
     const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
     const fake = createFakePickScope({
       name: '間取り.png',
+      size: bytes.byteLength,
       arrayBuffer: (): Promise<ArrayBuffer> => Promise.resolve(toArrayBuffer(bytes)),
     });
 
@@ -117,6 +119,51 @@ describe('画像を選ぶ(FR-332)', () => {
 
   it('ファイルを選ぶ窓を出せない相手(ブラウザではない)なら断る', async () => {
     await expect(pickCanvasImage({})).rejects.toThrow();
+  });
+});
+
+describe('下絵の画像も本文取得前にサイズを確認する(R07)', () => {
+  /** 呼ばれたら分かる `arrayBuffer`。中身は使われないので固定の3バイトでよい。 */
+  function pickedFile(size: unknown, name = '間取り.png') {
+    const arrayBuffer = vi.fn((): Promise<ArrayBuffer> => Promise.resolve(toArrayBuffer(Uint8Array.of(1, 2, 3))));
+    return { file: { name, size, arrayBuffer }, arrayBuffer };
+  }
+
+  it.each([
+    MAX_CANVAS_IMAGE_BYTES + 1,
+    300 * 1024 * 1024,
+    Infinity,
+    NaN,
+    -1,
+    0.5,
+  ])('%sバイトのFileは本文取得前に断り、inputを片付ける', async (size) => {
+    const { file, arrayBuffer } = pickedFile(size);
+    const fake = createFakePickScope(file);
+    const picked = pickCanvasImage(fake.scope);
+    fake.fire('change');
+    await expect(picked).rejects.toThrow();
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(fake.log).toContain('remove');
+  });
+
+  it('上限ちょうどのFileは断らず本文を取得できる(境界値)', async () => {
+    const bytes = new Uint8Array(MAX_CANVAS_IMAGE_BYTES);
+    const arrayBuffer = vi.fn((): Promise<ArrayBuffer> => Promise.resolve(toArrayBuffer(bytes)));
+    const fake = createFakePickScope({ name: '間取り.png', size: MAX_CANVAS_IMAGE_BYTES, arrayBuffer });
+    const picked = pickCanvasImage(fake.scope);
+    fake.fire('change');
+    expect(await picked).toEqual({ fileName: '間取り.png', bytes });
+    expect(arrayBuffer).toHaveBeenCalledTimes(1);
+  });
+
+  it('宣言サイズと実際の本文の長さが食い違えば断る(虚偽サイズ)', async () => {
+    const arrayBuffer = vi.fn((): Promise<ArrayBuffer> => Promise.resolve(toArrayBuffer(Uint8Array.of(1, 2, 3))));
+    const fake = createFakePickScope({ name: '間取り.png', size: 4, arrayBuffer });
+    const picked = pickCanvasImage(fake.scope);
+    fake.fire('change');
+    await expect(picked).rejects.toThrow();
+    expect(arrayBuffer).toHaveBeenCalledTimes(1);
+    expect(fake.log).toContain('remove');
   });
 });
 

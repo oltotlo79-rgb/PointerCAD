@@ -1,3 +1,8 @@
+import { mathDeclaredValuesFlow } from './mathDeclaredValuesFlow.js';
+import { mathDeclaredSymbolsFlow } from './mathDeclaredSymbolsFlow.js';
+import { mathMappingsFlow } from './mathMappingsFlow.js';
+import { mathDeclaredRenameFlow } from './mathDeclaredRenameFlow.js';
+import { mathLimitBoundsFlow } from './mathLimitBoundsFlow.js';
 import { mathSetBoundsFlow } from './mathSetBoundsFlow.js';
 import { mathUnresolvedProblemFlow } from './mathUnresolvedProblemFlow.js';
 import { mathNumericalRootFlow } from './mathNumericalRootFlow.js';
@@ -47,6 +52,7 @@ import { mathGammaBetaDistributionFlow } from './mathGammaBetaDistributionFlow.j
 import { mathNormalDistributionFlow } from './mathNormalDistributionFlow.js';
 import { mathRegionIntegralsFlow } from './mathRegionIntegralsFlow.js';
 import { INTEGRAL_SCENARIO_TIMEOUT_MS, mathIntegralsFlow } from './mathIntegralsFlow.js';
+import { MATH_COVERAGE_SCENARIO_TIMEOUT_MS, mathCoverageFlow } from './mathCoverageFlow.js';
 
 test('ADD-24 一様・指数・ポアソン分布の条件と保存再編集・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
   test.setTimeout(180_000);
@@ -513,5 +519,66 @@ test('ADD-22 集合の上下限と極値を区別し、保存再編集・座標�
     const page = await app.firstWindow(), errors: string[] = [];
     page.on('pageerror', error => { errors.push(error.message); });
     await mathSetBoundsFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-22 上極限と下極限の方向・整数条件を保ち、保存再編集・座標追従・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
+  test.setTimeout(600_000);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathLimitBoundsFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-25 記号の名前・意味・種類を保存再編集し、未指定値と型違反の拒否・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
+  test.setTimeout(600_000);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathDeclaredSymbolsFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-25 記号の改名で局所変数を変えず、予約名拒否・実保存再開・Undo・取消・F1を実Electronで通す', async ({ playwright }, info) => {
+  test.setTimeout(600_000);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathDeclaredRenameFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-25 写像の定義域と逆数との区別を保ち、合成・実保存再開・座標追従・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
+  test.setTimeout(600_000);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathMappingsFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-25 記号の値の種類を確認し、実保存再開・値編集・座標追従・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
+  test.setTimeout(600_000);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathDeclaredValuesFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('MC-21 追加の記号の候補・内積・成分・集合の場合分け・≈・∇・比・循環小数を係数と座標に使い、保存再開・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
+  // Six exact-runtime preparations in sequence, the same count as the coordinate flows (mathCoverageFlow.ts).
+  test.setTimeout(MATH_COVERAGE_SCENARIO_TIMEOUT_MS);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathCoverageFlow(page, info, app); expect(errors).toEqual([]);
   } finally { await app.close(); }
 });

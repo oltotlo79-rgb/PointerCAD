@@ -1,3 +1,5 @@
+import mappingsSource from '../../../expression/src/math/exactRuntime/cas_mappings.py?raw';
+import limitBoundsSource from '../../../expression/src/math/exactRuntime/cas_limit_bounds.py?raw';
 import setsSource from '../../../expression/src/math/exactRuntime/cas_sets.py?raw';
 import equationSystemsSource from '../../../expression/src/math/exactRuntime/cas_equation_systems.py?raw';
 import odeInputSource from '../../../expression/src/math/exactRuntime/cas_ode_input.py?raw';
@@ -28,6 +30,7 @@ import limitSource from '../../../expression/src/math/exactRuntime/cas_limits.py
 import integralSource from '../../../expression/src/math/exactRuntime/cas_integrals.py?raw';
 import derivativeSource from '../../../expression/src/math/exactRuntime/cas_derivatives.py?raw';
 import vectorCalculusSource from '../../../expression/src/math/exactRuntime/cas_vector_calculus.py?raw';
+import vectorProductsSource from '../../../expression/src/math/exactRuntime/cas_vector_products.py?raw';
 import lineIntegralsSource from '../../../expression/src/math/exactRuntime/cas_line_integrals.py?raw';
 
 import boxDomainSource from '../../../expression/src/math/exactRuntime/cas_box_domain.py?raw';
@@ -38,6 +41,12 @@ import integerSource from '../../../expression/src/math/exactRuntime/cas_integer
 import probabilitySource from '../../../expression/src/math/exactRuntime/cas_probability.py?raw';
 import probabilityLawsSource from '../../../expression/src/math/exactRuntime/cas_probability_laws.py?raw';
 import probabilityDomainSource from '../../../expression/src/math/exactRuntime/cas_probability_domain.py?raw';
+import extendedDispatchSource from '../../../expression/src/math/exactRuntime/cas_extended_dispatch.py?raw';
+import cardinalitySource from '../../../expression/src/math/exactRuntime/cas_cardinality.py?raw';
+import vectorProjectionSource from '../../../expression/src/math/exactRuntime/cas_vector_projection.py?raw';
+import matrixConstructorsSource from '../../../expression/src/math/exactRuntime/cas_matrix_constructors.py?raw';
+import setRelationsSource from '../../../expression/src/math/exactRuntime/cas_set_relations.py?raw';
+import logicExtendedSource from '../../../expression/src/math/exactRuntime/cas_logic_extended.py?raw';
 
 interface Runtime {
   readonly FS: {
@@ -83,15 +92,20 @@ async function initialize(notify: (phase: ExactMathEnginePhase) => void): Promis
     lockFileURL: new URL('pyodide-lock.json', base).href, packages: ['sympy'] });
   if (!isRuntime(runtime)) throw new Error('Invalid mathematics runtime');
   runtime.FS.mkdirTree('/pcad_exact');
-  for (const [name, source] of [['cas_sets.py', setsSource], ['cas_equation_systems.py', equationSystemsSource], ['cas_equations.py', equationsSource], ['cas_fourier_series.py', fourierSeriesSource], ['cas_transforms.py', transformsSource], ['cas_fourier.py', fourierSource], ['cas_error_functions.py', errorFunctionsSource], ['cas_zeta_functions.py', zetaSource], ['cas_elliptic_functions.py', ellipticSource], ['cas_airy_functions.py', airySource], ['cas_lambert_functions.py', lambertSource], ['cas_bessel_functions.py', besselSource], ['cas_gamma_functions.py', gammaSource], ['cas_taylor.py', taylorSource], ['cas_input.py', inputSource], ['cas_result.py', resultSource],
-    ['cas_ode_input.py', odeInputSource], ['cas_ode.py', odeSource],
+  for (const [name, source] of [['cas_limit_bounds.py', limitBoundsSource], ['cas_sets.py', setsSource], ['cas_equation_systems.py', equationSystemsSource], ['cas_equations.py', equationsSource], ['cas_fourier_series.py', fourierSeriesSource], ['cas_transforms.py', transformsSource], ['cas_fourier.py', fourierSource], ['cas_error_functions.py', errorFunctionsSource], ['cas_zeta_functions.py', zetaSource], ['cas_elliptic_functions.py', ellipticSource], ['cas_airy_functions.py', airySource], ['cas_lambert_functions.py', lambertSource], ['cas_bessel_functions.py', besselSource], ['cas_gamma_functions.py', gammaSource], ['cas_taylor.py', taylorSource], ['cas_input.py', inputSource], ['cas_result.py', resultSource],
+    ['cas_mappings.py', mappingsSource], ['cas_ode_input.py', odeInputSource], ['cas_ode.py', odeSource],
     ['cas_evaluate.py', evaluationSource], ['cas_linear.py', linearSource], ['cas_decompositions.py', decompositionSource],
     ['cas_spectral.py', spectralSource], ['cas_discrete.py', discreteSource], ['cas_limits.py', limitSource],
     ['cas_integrals.py', integralSource], ['cas_derivatives.py', derivativeSource], ['cas_vector_calculus.py', vectorCalculusSource],
+    ['cas_vector_products.py', vectorProductsSource],
     ['cas_line_integrals.py', lineIntegralsSource], ['cas_box_domain.py', boxDomainSource],
     ['cas_sequences.py', sequencesSource], ['cas_sequence_ranges.py', sequenceRangesSource], ['cas_integer.py', integerSource],
     ['cas_region_integrals.py', regionIntegralsSource], ['cas_probability.py', probabilitySource],
-    ['cas_probability_laws.py', probabilityLawsSource], ['cas_probability_domain.py', probabilityDomainSource]]) {
+    ['cas_probability_laws.py', probabilityLawsSource], ['cas_probability_domain.py', probabilityDomainSource],
+    // Registered operations: the dispatch and each implementing task's module (MC-12/16/18/23/24).
+    ['cas_extended_dispatch.py', extendedDispatchSource], ['cas_cardinality.py', cardinalitySource],
+    ['cas_vector_projection.py', vectorProjectionSource], ['cas_matrix_constructors.py', matrixConstructorsSource],
+    ['cas_set_relations.py', setRelationsSource], ['cas_logic_extended.py', logicExtendedSource]]) {
     if (source.length > 32_768) throw new Error('The fixed mathematics module exceeds its limit');
     runtime.FS.writeFile('/pcad_exact/' + name, source);
   }

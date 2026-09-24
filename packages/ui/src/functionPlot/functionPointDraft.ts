@@ -1,7 +1,7 @@
 /** Point searches use the same scalar editor and finite parent bounds as function plotting. */
 import {collectMathCoefficients,mathScalarExpression,type ExpressionValue} from '@pointercad/expression';
 import {FunctionPlotBounds,functionPointRequest,createPointFeature,replaceSketch,FREE_WORK_PLANE_ID,readFunctionPointChoice,
-  type PartDocument,type FunctionPointParent,type FunctionPointReference} from '@pointercad/model';
+  type PartDocument,type FunctionPointParent,type FunctionPointReference,type MathGeometryOutcome} from '@pointercad/model';
 import {expressionValueFromNumber as number} from '@pointercad/expression';
 import type {
   PointCalculationWorkerClient,
@@ -14,7 +14,7 @@ import {
   type PointCalculationRequest,
 } from '@pointercad/expression/math/contracts';
 
-import {prepareDocumentMathEnvironment} from '../math/prepareDocumentMathEditor.js';
+import {prepareDocumentMathEnvironment,waitForMathEditorGeometry} from '../math/prepareDocumentMathEditor.js';
 import {evaluateFunctionPlotDraft,functionPlotDraft,type FunctionScalarDraft,FUNCTION_AXES} from './functionPlotDraft.js';
 import {t} from '../i18n/t.js';
 
@@ -39,11 +39,19 @@ export async function searchFunctionPoints(document:PartDocument,documentVersion
   }
   const axes=FUNCTION_AXES.filter(axis=>fields[axis]!==null);
   if(axes.length<1 || axes.length>2) return {status:'failed',message:t('functionPoint.chooseCoordinates')};
-  const evaluated=await evaluateFunctionPlotDraft(document,documentVersion,functionPlotDraft(feature),client,signal,current);
+  // GR-18c: resolve the document's current math-geometry outcomes once (MathExpressionDialog.tsx's own
+  // pattern) and reuse them for both this draft's own evaluation and the point-search environment below, so
+  // a geometry-derived coefficient in the curve/surface's formula does not make every coefficient reference
+  // look like a syntax error.
+  let geometry:ReadonlyMap<string,MathGeometryOutcome>;
+  try { geometry=await waitForMathEditorGeometry(document,signal,current,()=>undefined); }
+  catch(error) { return current()?{status:'failed',message:error instanceof Error?error.message:t('math.workerFailed')}:{status:'cancelled'}; }
+  if(!current()) return {status:'cancelled'};
+  const evaluated=await evaluateFunctionPlotDraft(document,documentVersion,functionPlotDraft(feature),client,signal,current,geometry);
   if(!current() || (!evaluated.ok && evaluated.cancelled)) return {status:'cancelled'};
   if(!evaluated.ok) return {status:'failed',message:[...evaluated.fields.values()].join('\n')};
   const identity={documentId:document.id,documentVersion,editorId:'function-point-form',inputRevision:0};
-  const environment=await prepareDocumentMathEnvironment(evaluated.prepared,{client,identity,signal,isCurrent:current});
+  const environment=await prepareDocumentMathEnvironment(evaluated.prepared,{client,identity,signal,isCurrent:current,geometry});
   if(!current()) return {status:'cancelled'};
   const known:{axis:typeof FUNCTION_AXES[number];value:ExpressionValue}[]=[];
   for(const axis of axes) {

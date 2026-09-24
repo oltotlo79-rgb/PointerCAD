@@ -56,3 +56,27 @@ node scripts/manual/generate-pdf.mjs manual-preview-20260912 manual-pdf-preview-
 `manifest.json` の `nativeControlCoverage` と `feature-coverage.json` の `nativeControls` は、実際のUIのTSXからinput/select/textarea/buttonを列挙する。名前だけ、空のtitle、無関係な外枠のtitleは説明に数えない。明示された非表示欄だけを除外し、動的な説明・後から値を重ねる記述には実画面の確認を残す。読み取ったTSXの内容も入力の照合対象に含める。
 
 これはnative JSXの説明の入口を調べるもので、全画面・全状態・独自の入力部品の表示確認や本文の正確さを認証しない。未確認・不足を一覧に残し、`contentCertified` と `releaseCertified` はfalseのまま。P12-5では残る実入力の棚卸しとマウス・キーボードの確認を閉じ、P12-20で公開用の全条件を照合する。
+
+## 撮影の登録簿
+
+`packages/help-content/docs/ja/images/capture-manifest.json`(形式`pointercad-capture-registry/1`)は、`images/`フォルダーにある**全画像**の登録簿であり、一部だけを載せた一覧ではない。各画像について、SHA-256・撮影した画面の大きさ(`viewport`)とその区分(`viewportClass`。`standard`=1440×900、`tall-exception`=1440×1100、`needs-recapture`=それ以外で撮り直しが要る)に加え、撮影に使った台本・fixtureのSHA-256・撮影日時(`capturedAt`)・アプリの版の識別子(`applicationBuildId`。`captureRegistry.mjs`の`applicationInputDigest(root)`が返すSHA-256で、Gitのコミットではない。理由は次の手順の1を参照)を記録する。値が分からない項目は理由なしに`null`にはできず、`captureRegistry.mjs`の`CAPTURE_UNKNOWN_REASONS`にある既知の理由のどれか1つを必ず`unknown`へ添える。画面の大きさの区分や由来のフィールドなど、判定基準は`scripts/manual/captureRegistry.mjs`だけを正本とし、値をこのREADMEや他のファイルへ複製しない。
+
+画像を新しく足す、または撮り直すときの手順:
+
+1. `captureManualDetail`(`e2e/tests/captureManualDetail.ts`)を使う画面検査の台本、または同等の撮影の記録(`*-capture-details.json` / `*-image-sources.json`)を書く台本を実行する。`captureManualDetail`は撮影の記録へ台本・fixtureのSHA-256、撮影日時、アプリの版の識別子(`applicationBuildId`)を自動で書き、1440×900・1440×1100以外の画面の大きさでは撮影そのものを失敗させる。版の識別子はGitのコミットではなく、`captureRegistry.mjs`の`applicationInputDigest(root)`が返す値(Webの組立ての入力ファイル群のSHA-256一覧〔`scripts/vite/webBuildSources.mjs`の`captureWebBuildSources`と同じ集合〕から作る1つのdigest。`packages/help-content/docs/`配下の説明書の章・画像は含まない)を使う。Gitのコミットを使わない理由: 撮影した画像とその記録をコミットするとcommitが変わり、コミットのたびに全ての既存画像が「古い版」と判定されてしまうため(2026-09-24 統括の決定)。
+2. 採用する画像(PNG)を、その撮影の記録と一緒に`packages/help-content/docs/ja/images/`へ置く(既存の画像はこの記録が無いままなので、撮り直すまで`capturedAt`・`applicationBuildId`は`null`のまま残る)。
+3. `node scripts/manual/captureRegistry.mjs register`を実行する。実際の画像・撮影の記録・章のMarkdownから登録簿を組み立て直し、`capture-manifest.json`を上書きする(改行の形は既存ファイルのものを保つ)。新しく登録された画像名は結果の`added`に出る。
+
+書き込まずに現状だけ確かめたいときは`node scripts/manual/captureRegistry.mjs check`を使う。実際の画像・撮影の記録・章と保存済みの`capture-manifest.json`を比較するだけで、ファイルは変更しない。
+
+`register`・`check`はどちらも結果をJSONで標準出力へ書き、次のいずれかがあれば終了コードを0以外にして拒否する。
+
+- 保存済みの登録簿が実際の内容と一致しない(`check`のときの`registryOutdated`)。
+- 未登録の画像がある、または登録簿の項目に対応する画像がフォルダーに無い。
+- 画像のSHA-256が登録簿の値と食い違う、または画素数が`viewport`と矛盾する(`viewportSource`が`png-size`のときは完全一致、それ以外は画素数が`viewport`を超えないことを求める)。
+- 章のMarkdownが参照する画像がフォルダーに無い。
+- フォルダー内に想定外のファイルがある、撮影の記録が壊れている・形式が違う、同じ画像を2つ以上の記録が指す、記録が指す画像のSHA-256が実物と違う、登録済みの画像が新しい記録なしにバイト列だけ変わったなど、登録簿を組み立て直せない不整合がある(この場合は`CaptureRegistryError`で処理そのものが止まる)。
+
+`register`は書き込み直前にも`capture-manifest.json`の実ファイルを読み直し、処理開始時に読んだ内容と変わっていれば「もう一度実行してください」という趣旨のエラーで止まる(並行編集による上書き事故の防止)。
+
+`packages/help-content/src/captureRegistry.test.ts`は、実際の`packages/help-content/docs/ja/images/`フォルダーと章のMarkdownに対して`captureRegistry.mjs`の関数群(`readCaptureFolder`・`buildCaptureRegistry`・`auditCaptureRegistry`・`assessCaptureImages`・`applicationInputDigest`等)を動かす単体テストであり、`register`・`check`と同じ検査を通常の品質ゲート(`pnpm run test`のhelp-content検査)でも常に行う。未解決の既知の問題(どの章からも参照されない画像、標準の画面の大きさから外れた画像、撮影の記録が無い画像)は理由付きの一覧としてテストの中に書かれており、一覧に無い新しい問題が実物に増えると失敗する。一覧の項目を直して減らすのはよいが、理由を確かめずに一覧へ項目を足して赤を消さない。

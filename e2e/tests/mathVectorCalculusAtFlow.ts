@@ -29,6 +29,11 @@ export async function mathVectorCalculusAtFlow(page: Page, info: TestInfo, app?:
   }, { timeout: 225_000 }).toBeCloseTo(Math.PI / 180, 12);
   await angle.selectOption('radian'); await expect(result).toHaveText('= 1', { timeout: 225_000 });
   await angle.selectOption('degree');
+  // Wait for the degree result first: typing or switching notation while it runs cancels it, and a cancelled
+  // calculation part is replaced and prepares the exact runtime again (rules/06 §10.149).
+  await expect.poll(async () => {
+    const text = await result.innerText(); return /^= /u.test(text) ? Number(text.slice(2)) : NaN;
+  }, { timeout: 225_000 }).toBeCloseTo(Math.PI / 180, 12);
   for (const [source, value] of [
     ['component(gradientat(x^2*y,[x,y],[2,3]),1)', 12],
     ['divergenceat([x*y,x^2],[x,y],[2,3])', 3],
@@ -87,4 +92,5 @@ export async function mathVectorCalculusAtFlow(page: Page, info: TestInfo, app?:
   const undone = await savePart(page, info, 'vector-calculus-at-undone.pcad', app);
   expect(undone.parameters.find(parameter => parameter.name === '勾配の値')?.value).toMatchObject({ value: 12, source });
   expect(undone.sketches[0].features.find(feature => feature.kind === 'point')).toMatchObject({ at: { x: { value: 12, source: coordinate } } });
+  console.log('[確認] Undo後の保存内容を照合: 勾配の値=12（元の原式）、点のX=12（係数の参照）');
 }

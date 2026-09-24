@@ -4,12 +4,23 @@ import { join } from 'node:path';
 import { chooseToolMenuItem } from '../tests/assemblyTestSupport.js';
 import { serveOfflineCandidate } from './offlineCandidateServer.js';
 import { helpReaderFlow } from '../tests/helpReaderFlow.js';
+import {
+  verifyOfflineAssemblyPlacement,
+  verifyOfflineDrawingSheet,
+  verifyOfflineExactMath,
+  verifyOfflineScript,
+  verifyOfflineSheetMetalBaseFlange,
+} from './offlineDomainCoverage.js';
 
 const volume = (page: Page) => page.locator('.pcad-panel--right dt.pcad-properties__key', { hasText: '体積' })
   .locator('xpath=following-sibling::dd[1]');
 const treeBox = (page: Page) => page.locator('.pcad-panel--left').getByRole('button', { name: '箱1', exact: true });
 
 test('P12 配布候補を設定から保存し、切断後に実CADの作図・保存再開・全説明書と全PDFを使う', async ({ page, context }, info) => {
+  // 追加計算部・自動作図・組立・図面・板金の5操作(P12-22①)を切断後の後半で足すため、
+  // 既定の300秒(offline-candidate.config.ts)より大きく確保する(数学の厳密計算の初回準備は
+  // 最大90秒、計算自体も重ければ225秒まで許容するため。mathEditorReady.ts 参照)。
+  test.setTimeout(900_000);
   const server = await serveOfflineCandidate();
   const errors: string[] = [];
   const completedChapters: string[] = [];
@@ -70,6 +81,14 @@ test('P12 配布候補を設定から保存し、切断後に実CADの作図・�
     await expect(volume(offline)).toHaveText('24000 mm³', { timeout: 90_000 });
     // Every PDF and the adopted mathematics runtime can be read with the network removed.
     await helpReaderFlow(offline, info);
+    // P12-22①: 追加計算部・自動作図・組立・図面・板金も、通信を切ったこの実CADで
+    // 最小の1操作ずつ使えることを確かめる(棚卸しで見つかった抜け。各操作の間、想定外の
+    // 通信が増えないことも確かめる)。(c)以降は文書をアセンブリ→図面→新規部品と切り替える。
+    await verifyOfflineExactMath(offline, server);
+    await verifyOfflineScript(offline, server);
+    await verifyOfflineAssemblyPlacement(offline, server, saved);
+    await verifyOfflineDrawingSheet(offline, server);
+    await verifyOfflineSheetMetalBaseFlange(offline, server);
     const binary = server.manifest.assets.filter(asset => asset.url.startsWith('manual/pdf/') || asset.url.startsWith('exact-math/runtime/'));
     const downloaded = await offline.evaluate(async assets => {
       const results = [];

@@ -54,6 +54,10 @@ export async function mathFourierSeriesFlow(page: Page, info: TestInfo, app?: El
   await input.fill(source); await expectResult(result).toHaveText('= 2');
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
   await expect(dialog.locator('math-field')).toBeFocused();
+  // Let the structured evaluation (about 4 s) finish: switching back while it runs cancels it, the cancelled
+  // calculation part is replaced (rules/06 §10.149), and Firefox prepared the exact runtime a seventh time
+  // (77.0 s, RUN 20260924-180749) against this flow's budget of six. The switch clears the result first.
+  await expectResult(result).toHaveText('= 2');
   await dialog.getByRole('button', { name: 'テキスト入力', exact: true }).click();
   await expect(input).toHaveValue(source); await expectResult(result).toHaveText('= 2');
   await apply.click(); await expect(dialog).toHaveCount(0);

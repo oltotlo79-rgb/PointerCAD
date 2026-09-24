@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -8,7 +7,7 @@ import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import { BETA_FUNCTION_REFERENCES } from './betaFunctionReferences.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import type { MathNode } from './mathInputContract.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
@@ -74,37 +73,32 @@ describe('Betaの二つの正の引数と元の式を入力・追加計算・保
   });
   it('固定計算部の点の微分・混合微分・級数と元の正の領域を確認する', () => {
     const script = fileURLToPath(new URL('./exactRuntime/cas_beta_functions_test.py', import.meta.url));
-    const execution = spawnSync('python', ['-B', '-X', 'utf8', script], { encoding: 'utf8', timeout: 90_000,
+    const execution = spawnExactRuntime(['-B', '-X', 'utf8', script], { encoding: 'utf8', timeout: 90_000,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' } });
     expect(execution.error, execution.stderr).toBeUndefined(); expect(execution.status, execution.stderr).toBe(0);
   }, 90_000);
   it('実際の追加計算の返信を数値へ渡し、保存再開でも原式と厳密な答えを保つ', async () => {
-    const engine = { evaluate(expression: MathNode, angleUnit: 'degree' | 'radian'): Promise<unknown> {
-      const script = fileURLToPath(new URL('./exactRuntime/cas_derivatives_test.py', import.meta.url));
-      const execution = spawnSync('python', ['-B', '-X', 'utf8', script, '--batch'], {
-        input: JSON.stringify([{ expression, angleUnit }]), encoding: 'utf8', timeout: 60_000,
-        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
-      });
-      if (execution.error !== undefined || execution.status !== 0) throw new Error(execution.stderr);
-      const replies: unknown = JSON.parse(execution.stdout);
-      if (!Array.isArray(replies) || replies.length !== 1) throw new Error('Betaの返信数が一致しません。');
-      return Promise.resolve(replies[0]);
-    } };
-    for (const [source, expected] of [
+    const engine = sharedExactEngine(exactRuntimeBatch(fileURLToPath(new URL('./exactRuntime/cas_derivatives_test.py', import.meta.url)), 60_000), 'Betaの返信数が一致しません。');
+    const calculated = await Promise.all(([
       ['derivativeat(beta(x,1),x,1)', -1],
       ['derivativeat(beta(x,1),x,1,2)', 2],
       ['component(gradientat(beta(x,y),[x,y],[1,1]),2)', -1],
       ['component(hessianat(beta(x,y),[x,y],[1,1]),1,2)', 2-Math.PI**2/6],
-    ] as const) {
+    ] as const).map(async ([source, expected]) => {
       const input = request(source), envelope = { kind: 'evaluate-math', serial: 4, request: input };
-      const raw = await executeExactMathWorkRequest(envelope, { backend, engine, shouldStop: () => undefined });
+      return { source, expected, input, envelope,
+        raw: await executeExactMathWorkRequest(envelope, { backend, engine, shouldStop: () => undefined }) };
+    }));
+    const reopenedRuns = await Promise.all(calculated.map(async ({ source, expected, input, envelope, raw }) => {
       const result = decodeMathWorkReply(raw, input, { operationsById: CANDIDATE_MATH_BY_ID,
         coefficientIds: new Set(), declaredIds: new Set() }).result;
       if (result.evaluation.status !== 'value' || result.evaluation.kind !== 'real' || result.definition === null) throw new Error(JSON.stringify(result));
       expect(result.evaluation.coordinate).toBeCloseTo(expected, 12); expect(result.evaluation.exact).not.toBeNull();
       expect(result.definition.source).toBe(source);
       const saved: unknown = JSON.parse(JSON.stringify({ ...envelope, request: { ...input, definition: result.definition } }));
-      const reopened = await executeExactMathWorkRequest(saved, { backend, engine, shouldStop: () => undefined });
+      return { source, raw, reopened: await executeExactMathWorkRequest(saved, { backend, engine, shouldStop: () => undefined }) };
+    }));
+    for (const { source, raw, reopened } of reopenedRuns) {
       expect(reopened.source).toBe(source); expect(reopened.evaluation).toEqual(raw.evaluation);
     }
   }, 90_000);

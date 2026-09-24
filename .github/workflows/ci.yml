@@ -8,6 +8,16 @@ on:
   pull_request:
     branches: [main]
 
+# 最小権限(NFR-SE-2)。GITHUB_TOKEN を使うのは actions/checkout(リポジトリの取得)だけで、
+# コミット・PR・Issue・パッケージ公開など書き込みは一切行わない。
+# 根拠: actions/checkout の README(https://github.com/actions/checkout#usage)が
+# 「contents: read」を推奨。actions/upload-artifact は GITHUB_TOKEN の権限を使わず、
+# 別方式(アーティファクト用の一時トークン)で認証するため対象外
+# (https://github.com/actions/upload-artifact/issues/197)。actions/setup-node も
+# キャッシュや公開設定を使っておらず、GITHUB_TOKEN を必要としない。secret を使う step は無い。
+permissions:
+  contents: read
+
 jobs:
   sharded-checks:
     strategy:

@@ -1,6 +1,6 @@
 import { resolveSheetRule, sheetBendMetrics, sheetStraightLength, type LengthUnit, type SheetMetalFeature, type SheetMetalRule } from '@pointercad/model';
 import { t } from '../i18n/t.js';
-import { useAppStore } from '../store/useAppStore.js';
+import { referencesPendingVariable, useFieldUnits } from '../shell/propertyFieldUnits.js';
 import { evaluateSheetDraft } from './sheetDraft.js';
 import type { SheetFieldKey } from './sheetFields.js';
 
@@ -10,10 +10,15 @@ export function SheetBendSummary({ feature, rule, sources, lengthUnit, millimetr
   readonly sources: Readonly<Partial<Record<SheetFieldKey, string>>>; readonly lengthUnit: LengthUnit;
   readonly millimetreSourceKeys?: ReadonlySet<SheetFieldKey>;
 }): React.JSX.Element | null {
-  const analysis = useAppStore((state) => state.parameterAnalysis), nonLengthVariables = useAppStore((state) => state.nonLengthVariables);
+  const units = useFieldUnits();
   if (rule === undefined || (feature.kind !== 'sheetFlange' && feature.kind !== 'sheetBend')) return null;
-  const result = evaluateSheetDraft(feature, sources, lengthUnit, { variables: analysis.variables, exactVariables: analysis.exactVariables, nonLengthVariables }, millimetreSourceKeys);
-  if (!result.ok || (result.feature.kind !== 'sheetFlange' && result.feature.kind !== 'sheetBend')) return null;
+  const result = evaluateSheetDraft(feature, sources, lengthUnit, units, millimetreSourceKeys);
+  if (!result.ok) return result.pending === true ? <p role="status">{result.message}</p> : null;
+  if (result.feature.kind !== 'sheetFlange' && result.feature.kind !== 'sheetBend') return null;
+  const effectiveRule = [rule.thickness, result.feature.rule.innerRadius ?? rule.innerRadius, result.feature.rule.kFactor ?? rule.kFactor];
+  if (effectiveRule.some(value => referencesPendingVariable(value.source, units.pendingVariables, value.mathDefinition))) {
+    return <p role="status">{t('mathGeometry.status.pending')}</p>;
+  }
   const candidate = result.feature, resolved = resolveSheetRule(rule, candidate.rule); if (!resolved.ok) return null;
   const metrics = sheetBendMetrics({ ...resolved.rule, angle: candidate.angle.value }); if (!metrics.ok) return null;
   const straight = candidate.kind === 'sheetFlange' && candidate.profile === null

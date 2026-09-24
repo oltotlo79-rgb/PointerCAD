@@ -2,6 +2,8 @@ import { useEffect, useId, useRef } from 'react';
 
 import type { LengthUnit } from '@pointercad/model';
 
+import { isPendingFieldError, pendingFieldVariables, referencesPendingVariable } from '../shell/propertyFieldUnits.js';
+import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import { usesDisplayInputUnit } from './numericFieldUnits.js';
 import {
@@ -64,7 +66,11 @@ export function ExpressionField({
   const inputId = useId();
   const messageId = `${inputId}-message`;
   const inputRef = useRef<HTMLInputElement>(null);
-  const hasError = result.error !== null;
+  const pendingVariables = useAppStore(pendingFieldVariables);
+  const pending = isPendingFieldError(result.error) || referencesPendingVariable(
+    field.source.trim() === '' ? field.defaultSource : field.source, pendingVariables, field.mathValue?.mathDefinition ?? result.value?.mathDefinition,
+  );
+  const hasError = result.error !== null && !pending;
   // fieldExpressionと同じ条件。内部mmの初期値をinchと表示しない。
   const sourceUnit = usesDisplayInputUnit(field) ? lengthUnit : 'mm';
 
@@ -98,6 +104,7 @@ export function ExpressionField({
         spellCheck={false}
         value={field.source}
         aria-invalid={hasError}
+        aria-busy={pending || undefined}
         aria-describedby={messageId}
         title={t(field.tooltipKey)}
         onFocus={onFocus}
@@ -119,7 +126,7 @@ export function ExpressionField({
           hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'
         }
       >
-        {fieldMessage(field, result, lengthUnit)}
+        {pending ? t('mathGeometry.status.pending') : fieldMessage(field, result, lengthUnit)}
       </p>
     </div>
   );

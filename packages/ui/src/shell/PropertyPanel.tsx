@@ -5,7 +5,7 @@ import { PrintCheckSection } from '../solid/PrintCheckSection.js';
 import { InferConstraintsSection } from '../sketch/InferConstraintsSection.js';
 import { AppearanceSection } from '../appearance/AppearanceSection.js';
 import { FACE_COLORS } from '../appearance/appearancePropertyValues.js';
-import { useFieldUnits, evaluateFieldSource, committedFieldSource } from './propertyFieldUnits.js';
+import { useFieldUnits, evaluateFieldSource, committedFieldSource, isPendingFieldError } from './propertyFieldUnits.js';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { FunctionCurveProperties } from '../functionPlot/FunctionCurveProperties.js';
 import { FunctionSurfaceProperties } from '../functionPlot/FunctionSurfaceProperties.js';
@@ -46,6 +46,8 @@ import {
 } from '../appearance/appearanceCommands.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { ParameterPanel } from '../parameters/ParameterPanel.js';
+import { MathGeometryPanel } from '../math/MathGeometryPanel.js';
+import { mathGeometryPanelVisible } from '../math/mathGeometryRows.js';
 import { ConstraintList } from '../sketch/ConstraintList.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { PropertyMathField, replacePropertySketchFeature } from '../math/PropertyMathField.js';
@@ -90,7 +92,6 @@ import {
 import { ruledTwistNoteKey } from '../solid/ruledCommands.js';
 import { isValidSphereGridStep } from '../viewport/buildSphereGrid.js';
 import {
-  isLengthFieldUnit,
   numericChoiceOptionLabel,
   rangeErrorFor,
   type NumericField,
@@ -856,7 +857,10 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
    * 同じ `pcad-field` の見た目で値だけを見せる(タスク29b「ExpressionField を無効化」)。
    * `readOnly` の HTML 属性と `tabIndex=-1` で、打っても効かず Tab でも止まらないようにする。
    */
-  const renderReadOnlyField = (item: SolidFieldSummary): React.JSX.Element => (
+  const renderReadOnlyField = (item: SolidFieldSummary): React.JSX.Element => {
+    const evaluated = evaluateFieldSource(item.value.source, item.unit, false, units);
+    const pending = !evaluated.ok && isPendingFieldError(evaluated.error);
+    return (
     <div className="pcad-field pcad-field--readonly" key={item.key}>
       <span className="pcad-field__label" title={t(item.tooltipKey)}>
         {t(item.labelKey)}
@@ -870,21 +874,21 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         /*
           式を入れられない欄なので、**数そのもの**を表示の単位で出す(タスク3b)。
           打ち込める欄と違って「保存されている式」を見せる意味が無く、横の札(in)と
-          中身の数の単位が食い違うほうが読み違いを生む。mm のときは 1 文字も変わらない。
+          中身の数の単位が食い違うほうが読み違いを生む。
         */
-        value={
-          isLengthFieldUnit(item.unit) && units.lengthUnit === 'inch'
-            ? fieldValueNumberText(item.unit, item.value, units.lengthUnit)
-            : item.value.source
-        }
+        value={evaluated.ok ? fieldValueNumberText(item.unit, evaluated.value, units.lengthUnit) : ''}
+        aria-busy={pending || undefined}
+        aria-invalid={!evaluated.ok && !pending}
         title={t(item.tooltipKey)}
       />
       <span className="pcad-field__unit">{t(fieldUnitLabelKey(item.unit, units.lengthUnit))}</span>
       <p className="pcad-field__message">
-        {`= ${fieldValueText(item.unit, item.value, units.lengthUnit)}`}
+        {evaluated.ok ? `= ${fieldValueText(item.unit, evaluated.value, units.lengthUnit)}`
+          : pending ? t('mathGeometry.status.pending') : evaluated.error.message}
       </p>
     </div>
-  );
+    );
+  };
 
   const axis = summary.axis;
 
@@ -1909,6 +1913,8 @@ export function PropertyPanel(): React.JSX.Element {
   const scriptOpen = useAppStore(state => state.scriptPanelOpen);
   const sheetMetalTool = useAppStore((state) => state.sheetMetalTool);
   const [tab, setTab] = useState<PanelTab>('properties');
+  const showMathGeometry = useAppStore(mathGeometryPanelVisible);
+  useEffect(() => { if (showMathGeometry) setTab('properties'); }, [showMathGeometry]);
   const part = useAppStore((state) => state.document);
   const sketch = useAppStore((state) => state.sketch);
   const selection = useAppStore((state) => state.selection);
@@ -1933,9 +1939,9 @@ export function PropertyPanel(): React.JSX.Element {
   const measureSketch = useAppStore(state => state.isComputing ? undefined : state.resolvedSketch);
   const measureReady = partMeasureReadiness(selection, appearanceContext.bodies, measureSketch);
   const measurement = useAppStore((state) => state.measurement);
-  const showMeasure = measureReady.ready || measurement !== null;
+  const showMeasure = !showMathGeometry && (measureReady.ready || measurement !== null);
   // 質量特性は立体を 1 つ選んでいるときだけ(`measureReadiness` が種類でそう言う)。
-  const showMass = measureReady.kinds.includes('massProperties');
+  const showMass = !showMathGeometry && measureReady.kinds.includes('massProperties');
   const massTarget = measureReady.targets[0];
   const massBodyId = showMass && massTarget !== undefined && 'bodyFeatureId' in massTarget ? massTarget.bodyFeatureId : null;
 
@@ -1995,6 +2001,7 @@ export function PropertyPanel(): React.JSX.Element {
         </div>
       ) : (
       <div className="pcad-panel__body">
+        {showMathGeometry ? <MathGeometryPanel /> : null}
         {feature !== null ? (
           <FeatureProperties key={feature.id} feature={feature} />
         ) : solid !== null ? (
@@ -2011,7 +2018,7 @@ export function PropertyPanel(): React.JSX.Element {
               <dd className="pcad-properties__value">{kinds.join(' / ')}</dd>
             </dl>
           </div>
-        ) : origin !== null || appearanceReady || showMeasure ? null : (
+        ) : showMathGeometry || origin !== null || appearanceReady || showMeasure ? null : (
           /*
             立体の頂点だけを選んでいるときは「原点」の節が、面(または立体)を選んでいて
             外観を割り当てられるときは「外観」の節が、測れるもの(または測った結果)が

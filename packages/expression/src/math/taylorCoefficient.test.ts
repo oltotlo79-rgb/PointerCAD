@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -8,11 +7,12 @@ import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import type { MathNode } from './mathInputContract.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 let backend: MathExecutionBackend;
 const script = fileURLToPath(new URL('./exactRuntime/cas_taylor_test.py', import.meta.url));
 const engine = { evaluate(expression: MathNode, angleUnit: 'degree' | 'radian'): Promise<unknown> {
-  const execution = spawnSync('python', ['-B', '-X', 'utf8', script, '--batch'], {
+  const execution = spawnExactRuntime(['-B', '-X', 'utf8', script, '--batch'], {
     input: JSON.stringify([{ expression, angleUnit }]), encoding: 'utf8', timeout: 90_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });

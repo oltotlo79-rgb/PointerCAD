@@ -144,8 +144,10 @@ export function parameterEvaluationOrder(parameters: readonly Parameter[]): Para
 export function analyzeParameters(
   parameters: readonly Parameter[],
   usedSources: Iterable<string | Pick<ExpressionValue, 'source' | 'mathDefinition'>>,
+  // The caller must verify that the parameter AND shape inputs of this transient evaluation are unchanged.
+  evaluation?: Omit<ParameterAnalysis, 'unused'>,
 ): ParameterAnalysis {
-  const known = knownMathParameterEvaluation(parameters);
+  const known = evaluation ?? knownMathParameterEvaluation(parameters);
   if (known !== undefined) return { ...known, unused: unusedParameterNames(parameters, usedSources) };
   const byName = indexByName(parameters);
   const { order, circular } = parameterEvaluationOrder(parameters);

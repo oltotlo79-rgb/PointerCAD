@@ -1,12 +1,14 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
-import { executeExactMathWorkRequest, type ExactMathEngine } from './exactMathWorkExecution.js';
+import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { originalCoefficientExpression } from './mathCoefficientExpression.js';
+import { MATH_INPUT_FORMAT, type MathNode } from './mathInputContract.js';
 
 const examples = [
 {"source": "sum(sequencevalue(n^2,n,k),k,-3,3,2)", "value": 20},
@@ -155,7 +157,7 @@ function request(source: string, unit: 'degree' | 'radian' = 'degree'): MathWork
     identity: { documentId: 'sequences', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
 }
 function native(args: readonly string[], input?: string, program = script): string {
-  const result = spawnSync('python', ['-B', '-X', 'utf8', program, ...args], {
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', program, ...args], {
     input, encoding: 'utf8', timeout: 90_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });
@@ -180,16 +182,12 @@ beforeAll(() => {
 
 describe('数列・差分・漸化式を保存して計算する', () => {
   it('不要に見える成分も通常の準備経路から実計算へ渡して不成立を保つ', async () => {
-    for (const source of ['component([1,sequencevalue(1/n,n,0)],1)',
+    const engine = sharedExactEngine(batch => native(['--batch'], batch));
+    const replies = await Promise.all(['component([1,sequencevalue(1/n,n,0)],1)',
       'component([1,sum(sequencevalue(1/n,n,k),k,-1,1)],1)',
-      '0*sequencevalue(factorial(n),n,-1)']) {
-      const input = request(source);
-      const engine: ExactMathEngine = { evaluate: expression => {
-        const decoded: unknown = JSON.parse(native(['--batch'], JSON.stringify([{ expression, angleUnit: input.angleUnit }])));
-        if (!Array.isArray(decoded) || decoded.length !== 1) throw new Error('実計算の返信が一致しません。');
-        return Promise.resolve(decoded[0]);
-      } };
-      const reply = await executeExactMathWorkRequest(createMathWorkEnvelope(9, input), { backend, engine, shouldStop: () => undefined });
+      '0*sequencevalue(factorial(n),n,-1)'].map(source =>
+      executeExactMathWorkRequest(createMathWorkEnvelope(9, request(source)), { backend, engine, shouldStop: () => undefined })));
+    for (const reply of replies) {
       expect(reply.evaluation.status).not.toBe('value');
       expect(reply.evaluation).not.toHaveProperty('coordinate');
     }
@@ -228,21 +226,45 @@ describe('数列・差分・漸化式を保存して計算する', () => {
     }
   });
   it('係数と同名の局所添字を区別し、初期値の変更を再計算する', async () => {
-    for (const [decimal, expected] of [['3', 6], ['6', 12]] as const) {
+    const engine = sharedExactEngine(batch => native(['--batch'], batch));
+    const runs = await Promise.all(([['3', 6], ['6', 12]] as const).map(async ([decimal, expected]) => {
       const input: MathWorkRequest = { ...request('recurrencevalue(a+coef("n"),[n,a],0,[coef("初期値")],1)'),
         coefficients: [{ id: 'factor', label: 'n', decimal }, { id: 'mean', label: '初期値', decimal }] };
-      const engine: ExactMathEngine = { evaluate: expression => {
-        const values: unknown = JSON.parse(native(['--batch'], JSON.stringify([{ expression, angleUnit: input.angleUnit }])));
-        if (!Array.isArray(values) || values.length !== 1) throw new Error('実計算の返信数が一致しません。');
-        return Promise.resolve(values[0]);
-      } };
-      const result = await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined });
+      return { input, expected,
+        result: await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined }) };
+    }));
+    for (const { input, expected, result } of runs) {
       expect(result.evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: expected });
       const decoded = decodeMathWorkReply(result, input, { operationsById: backend.operationsById,
         coefficientIds: new Set(['factor', 'mean']), declaredIds: new Set() }).result;
       expect(decoded.definition?.source).toBe(input.source);
     }
   }, 30_000);
+  it('漸化式の総和を原式に持つ係数を別の欄から参照しても、同じ式を実計算へ渡して値を返す', async () => {
+    // ADD-21: a point coordinate coef("数列の値") whose coefficient keeps this original expression.
+    const source = 'sum(recurrencevalue(a+b,[n,a,b],0,[0,1],k),k,0,10)';
+    const index = examples.findIndex(example => example.source === source);
+    const parsed = executeMathWorkRequest(createMathWorkEnvelope(12, request(source)), backend);
+    if (index < 0 || parsed.expression === null) throw new Error(JSON.stringify(parsed.evaluation));
+    const direct = parsed.expression;
+    const definition = { format: MATH_INPUT_FORMAT, source, inputNotation: 'text' as const, angleUnit: 'degree' as const, expression: direct };
+    const coefficient = { id: 'sequence-value', label: '数列の値', decimal: '143', exactExpression: originalCoefficientExpression(
+      { source, value: 143, display: '143', mathDefinition: definition }, { resolveVariable: () => null }, []) };
+    const input: MathWorkRequest = { ...request('coef("数列の値")'), coefficients: [coefficient] };
+    // The synchronous preparation leaves the finite sum to the exact runtime; it never stops at a size limit.
+    expect(executeMathWorkRequest(createMathWorkEnvelope(13, input), backend).evaluation)
+      .toMatchObject({ status: 'invalid', reason: 'unsupported' });
+    // The fixed runtime already calculated this formula in the shared batch above; renamed local indices keep its meaning.
+    const sent: MathNode[] = [];
+    const evaluate = vi.fn((expression: MathNode) => { sent.push(expression); return Promise.resolve(results[index]); });
+    const raw = await executeExactMathWorkRequest(createMathWorkEnvelope(14, input), { backend, engine: { evaluate }, shouldStop: () => undefined });
+    expect(evaluate).toHaveBeenCalledOnce();
+    expect(sameMathMeaning(sent[0], direct)).toBe(true);
+    expect(raw.evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: 143 });
+    const decoded = decodeMathWorkReply(raw, input, { operationsById: backend.operationsById,
+      coefficientIds: new Set(['sequence-value']), declaredIds: new Set() }).result;
+    expect(decoded.definition?.source).toBe(input.source);
+  });
   it.each(['sequencevalue(n,[n],1)', 'recurrencevalue(a,[n,n],0,[1],2)',
     'recurrencevalue(a+b,[n,a,b],0,[1],2)', 'differenceat(n,n,0,1)'])('%sの不足を補って計算しない', source => {
     const result = executeMathWorkRequest(createMathWorkEnvelope(11, request(source)), backend);

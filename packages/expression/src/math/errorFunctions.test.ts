@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -16,6 +15,7 @@ import { errorFunctionDecimal } from './errorFunctionNumeric.js';
 import { MathInputProblem } from './mathInputContract.js';
 import { exact } from './statisticsData.js';
 import { ERROR_FUNCTION_REFERENCES } from './errorFunctionReferences.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
@@ -128,7 +128,7 @@ describe('実数の誤差関数は中心と裾の小さい値を失わず、元�
   });
   it('固定計算部の微分・級数・積分の結果を関数のまま受け渡す', () => {
     const script = fileURLToPath(new URL('./exactRuntime/cas_error_functions_test.py', import.meta.url));
-    const execution = spawnSync('python', ['-B', '-X', 'utf8', script], { encoding: 'utf8', timeout: 90_000,
+    const execution = spawnExactRuntime(['-B', '-X', 'utf8', script], { encoding: 'utf8', timeout: 90_000,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' } });
     expect(execution.error, execution.stderr).toBeUndefined(); expect(execution.status, execution.stderr).toBe(0);
   }, 90_000);

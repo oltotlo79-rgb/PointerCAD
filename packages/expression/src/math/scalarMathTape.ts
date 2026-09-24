@@ -19,6 +19,9 @@ import { exactDegreeTrig } from './exactDegreeTrig.js';
 import { exactDoubleInterval } from './exactDoubleInterval.js';
 import type { MathInterval } from './mathInterval.js';
 import { lowerReciprocalHyperbolic } from './hyperbolicOperations.js';
+import { normalizeElementaryOperation } from './elementaryMathNormalization.js';
+import { validateElementaryDomains } from './elementaryMathDomains.js';
+import { validateMathDomains } from './realRootDomains.js';
 import { lowerLegendrePolynomial } from './legendrePolynomial.js';
 import { errorFunctionSample } from './errorFunctionIntervals.js';
 import { gammaFunctionSample } from './gammaFunctionIntervals.js';
@@ -33,7 +36,20 @@ type Unary = 'negate' | 'sqrt' | 'absolute' | 'sign' | 'floor' | 'ceiling' | 'sq
   | 'arsinh' | 'arcosh' | 'artanh' | 'erf' | 'erfc' | 'gamma';
 type Binary = 'subtract' | 'divide' | 'power' | 'root' | 'log-base' | 'beta';
 type Variadic = 'add' | 'multiply' | 'minimum' | 'maximum';
+export type ScalarComparison = 'equal' | 'not-equal' | 'less' | 'less-equal' | 'greater' | 'greater-equal';
+export type ScalarCondition =
+  | { readonly kind: 'boolean'; readonly value: boolean }
+  | { readonly kind: 'not'; readonly operand: ScalarCondition }
+  | { readonly kind: 'and'; readonly operands: readonly ScalarCondition[] }
+  | { readonly kind: 'or'; readonly operands: readonly ScalarCondition[] }
+  | { readonly kind: 'comparison'; readonly operation: ScalarComparison; readonly operands: readonly ScalarTape[];
+      readonly dynamic: boolean };
+export interface ScalarConditionValue { readonly truth: boolean | null; readonly boundary: boolean }
+export interface ScalarPiecewiseBranch { readonly condition: ScalarCondition; readonly value: ScalarTape }
 type Instruction =
+  | { readonly kind: 'piecewise'; readonly branches: readonly ScalarPiecewiseBranch[]; readonly interior: boolean;
+      /** No unconditional operands: older derivative consumers conservatively return unknown. */
+      readonly operation: 'which'; readonly values: readonly [] }
   | { readonly kind: 'constant'; readonly value: number; readonly enclosure: MathInterval | null }
   | { readonly kind: 'input'; readonly slot: number }
   | { readonly kind: 'unary'; readonly operation: Unary; readonly value: number }
@@ -81,6 +97,22 @@ function dynamicName(reference: MathSymbolReference): ScalarInput | null {
 }
 
 export function compileScalarMath(expression: MathNode, options: ScalarCompileOptions): ScalarTape {
+  return compileTape(expression, options, { remaining: 4096 }, 0);
+}
+
+/** Compile a domain predicate with exactly the same grammar and budgets as which. */
+export function compileScalarCondition(expression: MathNode, options: Omit<ScalarCompileOptions, 'domainGuards'>): ScalarCondition {
+  const tape = compileScalarMath({ kind: 'operation', operation: 'which',
+    operands: [expression, { kind: 'number', decimal: '0' }] }, options);
+  const selection = tape.instructions[tape.output];
+  if (selection.kind !== 'piecewise' || selection.branches.length !== 1) {
+    throw new MathInputProblem('unsupported', '作図範囲の条件を確定できません。');
+  }
+  return selection.branches[0].condition;
+}
+
+function compileTape(expression: MathNode, options: ScalarCompileOptions, budget: { remaining: number }, depth: number): ScalarTape {
+  if (depth > 64) throw new MathInputProblem('budget', '場合分けの式の入れ子が深すぎます。');
   if (new Set(options.inputs).size !== options.inputs.length) throw new MathInputProblem('syntax', '変数の指定が重複しています。');
   const instructions: Instruction[] = [];
   const dynamic = new Map<MathNode, boolean>();
@@ -105,13 +137,83 @@ export function compileScalarMath(expression: MathNode, options: ScalarCompileOp
     return result;
   }
   function append(instruction: Instruction): number {
-    if (instructions.length >= 4096) throw new MathInputProblem('budget', '作図する数式が複雑すぎます。');
+    if (--budget.remaining < 0) throw new MathInputProblem('budget', '作図する数式が複雑すぎます。');
     instructions.push(instruction);
     return instructions.length - 1;
+  }
+  function child(node: MathNode): ScalarTape {
+    return compileTape(node, { ...options, domainGuards: [] }, budget, depth + 1);
+  }
+  function constantValue(node: MathNode): number | null {
+    try { return options.evaluateConstant(node); }
+    catch (error) {
+      if (depth === 0 || !(error instanceof MathInputProblem) || error.code !== 'domain') throw error;
+      // A failed conversion may mean unresolved, not outside the domain. Only a
+      // separate proof of invalid arithmetic permits an empty branch enclosure.
+      // Do not use an inactive nested which branch as such a proof.
+      const pending = [node];
+      while (pending.length > 0) {
+        const value = pending.pop();
+        if (value?.kind === 'operation') {
+          if (value.operation === 'which' || value.operation === 'which-derivative') throw error;
+          pending.push(...value.operands);
+        } else if (value?.kind === 'binder') throw error;
+      }
+      try { validateElementaryDomains(node, options.angleUnit); validateMathDomains(node); }
+      catch (proof) {
+        if (proof instanceof MathInputProblem && proof.code === 'domain') return null;
+        throw proof;
+      }
+      throw error;
+    }
+  }
+  function condition(node: MathNode, level = 0): ScalarCondition {
+    if (--budget.remaining < 0 || level > 64) throw new MathInputProblem('budget', '場合分けの条件が複雑すぎます。');
+    if (node.kind === 'constant' && (node.name === 'true' || node.name === 'false')) {
+      return { kind: 'boolean', value: node.name === 'true' };
+    }
+    if (node.kind === 'operation') {
+      if (node.operation === 'not' && node.operands.length === 1) return { kind: 'not', operand: condition(node.operands[0], level + 1) };
+      if ((node.operation === 'and' || node.operation === 'or') && node.operands.length >= 2) {
+        return { kind: node.operation, operands: node.operands.map(value => condition(value, level + 1)) };
+      }
+      const operation = node.operation;
+      if (node.operands.length >= 2 && (operation === 'equal' || operation === 'not-equal' || operation === 'less'
+          || operation === 'less-equal' || operation === 'greater' || operation === 'greater-equal')) {
+        return { kind: 'comparison', operation, operands: node.operands.map(child), dynamic: node.operands.some(depends) };
+      }
+    }
+    throw new MathInputProblem('unsupported', '場合分けの条件には比較、かつ、または、否定を指定してください。');
   }
   function emit(node: MathNode): number {
     const existing = emitted.get(node);
     if (existing !== undefined) return existing;
+    if (node.kind === 'operation' && (node.operation === 'which' || node.operation === 'which-derivative')) {
+      if (node.operands.length < 2 || node.operands.length % 2 !== 0) {
+        throw new MathInputProblem('syntax', '場合分けは条件と値を対で指定してください。');
+      }
+      const branches: ScalarPiecewiseBranch[] = [];
+      for (let index = 0; index < node.operands.length; index += 2) {
+        branches.push({ condition: condition(node.operands[index]), value: child(node.operands[index + 1]) });
+      }
+      // Keep dependencies visible to consumers that inspect only the outer tape.
+      const pending = [...node.operands];
+      while (pending.length > 0) {
+        const value = pending.pop();
+        if (value?.kind === 'symbol' && dynamicName(value.reference) !== null) emit(value);
+        else if (value?.kind === 'operation') pending.push(...value.operands);
+      }
+      const index = append({ kind: 'piecewise', operation: 'which', values: [], branches, interior: node.operation === 'which-derivative' });
+      emitted.set(node, index);
+      return index;
+    }
+    // An undecided which bypasses global preparation; retain the same scalar
+    // aliases inside and around its branches without selecting vector components.
+    if (node.kind === 'operation' && ['reciprocal', 'arccot', 'arcsec', 'arccsc', 'clamp'].includes(node.operation)) {
+      const index = emit(normalizeElementaryOperation(node, options.angleUnit));
+      emitted.set(node, index);
+      return index;
+    }
     const polynomial = lowerLegendrePolynomial(node);
     if (polynomial !== null) {
       const index = emit(polynomial);
@@ -130,7 +232,12 @@ export function compileScalarMath(expression: MathNode, options: ScalarCompileOp
     const retainOperation = constant && exact === null && node.kind === 'operation'
       && (unaryOf(node.operation) || binaryOf(node.operation) || variadicOf(node.operation) || node.operation === 'polygamma' || node.operation === 'lambertw' || node.operation==='zetaderivative' || airyFunction(node.operation) !== null || besselKind(node.operation) !== null || ellipticOperation(node.operation) !== null || zetaOrder(node.operation) !== null);
     if (constant && !retainOperation) {
-      const value = options.evaluateConstant(node);
+      const value = constantValue(node);
+      if (value === null) {
+        index = append({ kind: 'constant', value: NaN, enclosure: null });
+        emitted.set(node, index);
+        return index;
+      }
       if (!Number.isFinite(value)) throw new MathInputProblem('syntax', '作図式の定数部分は有限の実数にしてください。');
       const enclosure = exact !== null ? exactDoubleInterval(exact) : node.kind === 'constant' && node.name === 'pi'
         ? { lower: 3.141592653589793, upper: 3.1415926535897936 } : node.kind === 'constant' && node.name === 'e'
@@ -258,11 +365,62 @@ function binary(operation: Binary, left: number, right: number): number {
   }
 }
 
+/** Conditions are separate from scalar arithmetic; a root equality is still unsupported. */
+export function createScalarConditionSampler(condition: ScalarCondition): (inputs: readonly number[]) => ScalarConditionValue {
+  if (condition.kind === 'boolean') return () => ({ truth: condition.value, boundary: false });
+  if (condition.kind === 'not') {
+    const evaluate = createScalarConditionSampler(condition.operand);
+    return inputs => { const result = evaluate(inputs); return { ...result, truth: result.truth === null ? null : !result.truth }; };
+  }
+  if (condition.kind === 'and' || condition.kind === 'or') {
+    const operands = condition.operands.map(createScalarConditionSampler);
+    return inputs => {
+      let boundary = false;
+      for (const evaluate of operands) {
+        const result = evaluate(inputs); boundary ||= result.boundary;
+        if (result.truth === null) return { truth: null, boundary };
+        if (result.truth === (condition.kind === 'or')) return { truth: result.truth, boundary };
+      }
+      return { truth: condition.kind === 'and', boundary };
+    };
+  }
+  const operands = condition.operands.map(createScalarSampler);
+  return inputs => {
+    const values = operands.map(evaluate => evaluate(inputs));
+    if (values.some(value => !Number.isFinite(value))) return { truth: null, boundary: true };
+    let truth = true, boundary = false;
+    for (let i = 1; i < values.length; i++) {
+      for (let j = condition.operation === 'not-equal' ? 0 : i - 1; j < i; j++) {
+        const a = values[j], b = values[i];
+        boundary ||= condition.dynamic && a === b;
+        truth &&= condition.operation === 'equal' ? a === b : condition.operation === 'not-equal' ? a !== b
+          : condition.operation === 'less' ? a < b : condition.operation === 'less-equal' ? a <= b
+            : condition.operation === 'greater' ? a > b : a >= b;
+      }
+    }
+    return { truth, boundary };
+  };
+}
+
+function createPiecewiseSampler(instruction: Extract<Instruction, { kind: 'piecewise' }>): (inputs: readonly number[]) => number {
+  const branches = instruction.branches.map(branch => ({ condition: createScalarConditionSampler(branch.condition), value: createScalarSampler(branch.value) }));
+  return inputs => {
+    for (const branch of branches) {
+      const result = branch.condition(inputs);
+      if (result.truth === null || instruction.interior && result.boundary) return NaN;
+      if (result.truth) return branch.value(inputs);
+    }
+    return NaN;
+  };
+}
+
 /** One scratch buffer per sampler; never shared between workers or simultaneous jobs. */
 export function createScalarTapeEvaluation(tape: ScalarTape): {
   readonly evaluate: (inputs: readonly number[]) => number; readonly values: Float64Array;
 } {
   const values = new Float64Array(tape.instructions.length);
+  const piecewise = new Map(tape.instructions.flatMap((instruction, index) => instruction.kind === 'piecewise'
+    ? [[index, createPiecewiseSampler(instruction)] as const] : []));
   const degree = tape.angleUnit === 'degree', toRadians = degree ? Math.PI / 180 : 1;
   const evaluate = (inputs: readonly number[]): number => {
     if (inputs.length !== tape.inputs.length || inputs.some(value => !Number.isFinite(value))) return NaN;
@@ -270,7 +428,8 @@ export function createScalarTapeEvaluation(tape: ScalarTape): {
       const instruction = tape.instructions[index];
       if (!instruction) return NaN;
       let value: number;
-      if (instruction.kind === 'constant') value = instruction.value;
+      if (instruction.kind === 'piecewise') value = piecewise.get(index)?.(inputs) ?? NaN;
+      else if (instruction.kind === 'constant') value = instruction.value;
       else if (instruction.kind === 'input') value = inputs[instruction.slot] ?? NaN;
       else if (instruction.kind === 'unary') value = unary(instruction.operation, values[instruction.value] ?? NaN, toRadians, degree);
       else if (instruction.kind === 'polygamma') value = polygammaSample(instruction.order, values[instruction.value] ?? NaN);

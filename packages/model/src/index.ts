@@ -508,6 +508,56 @@ export type {
   PartRecomputeError, PartRecomputeOptions, PartRecomputeResult, PartSketchResult,
 } from './part/recomputePart.js';
 export { recomputePart } from './part/recomputePart.js';
+export type { MathGeometryPoint, MathGeometryCurve, MathGeometryBody, MathGeometryFace,
+  MathGeometryShape, MathGeometryQuantity, MathGeometryRequest, MathGeometryDefinition, MathGeometryOutcome,
+  MathGeometryTolerance, MathSubShapeReference } from './measure/mathGeometryTypes.js';
+export type { MathGeometryFrame } from './measure/mathGeometryTypes.js';
+/** 図形参照の名前・定義・係数・依存関係・関数作図・改名。 */
+export type {
+  MathGeometryNameIssue, MathGeometryCoefficientReference, MathGeometryUsage, MathGeometryTarget,
+} from './measure/mathGeometryIdentity.js';
+export {
+  MATH_GEOMETRY_COEFFICIENT_PREFIX, mathGeometryCoefficientId, mathGeometryDefinitionIdOf,
+  DEFAULT_MATH_GEOMETRY_TOLERANCE, MATH_GEOMETRY_NAME_MAX_LENGTH, checkMathGeometryName,
+  mathGeometryReferencesOf, EMPTY_MATH_GEOMETRY_USAGE, mathGeometryUsage, mathGeometryTargetsOf,
+} from './measure/mathGeometryIdentity.js';
+export type {
+  MathGeometryDefinitionInput, MathGeometryDefinitionReason, MathGeometryDefinitionResult,
+  MathGeometryToleranceField,
+  MathGeometryAngleQuantity,
+} from './measure/mathGeometryDefinitions.js';
+export {
+  validateMathGeometryTolerance, addMathGeometryDefinition, replaceMathGeometryQuantity,
+  setMathGeometryAngleUnit, setMathGeometryTolerance, removeMathGeometryDefinition,
+  mathGeometryAngleUnitOf, isMathGeometryAngleQuantity,
+} from './measure/mathGeometryDefinitions.js';
+export type {
+  MathGeometryValueUnit, MathGeometryParameterDraftInput, MathGeometryParameterDraftReason,
+  MathGeometryParameterDraftResult,
+} from './measure/mathGeometryParameterCreation.js';
+export { mathGeometryParameterDraft } from './measure/mathGeometryParameterCreation.js';
+export type {
+  GeometryDerivedOperationIssue, MathGeometryCoefficientInput,
+} from './measure/mathGeometryCoefficients.js';
+export {
+  GEOMETRY_DERIVED_OPERATIONS, checkGeometryDerivedOperations, mathGeometryDerivedParameters,
+  resolvableMathGeometryDefinitions, mathGeometryCoefficientValue,
+  mathGeometryReferenceMismatchMessage, mathGeometryUnresolvedMessage, mathGeometryBooleanMessage,
+  mathGeometryOperationMessage, mathGeometryPendingMessage, mathGeometryOutsideCoefficientMessage,
+} from './measure/mathGeometryCoefficients.js';
+export type {
+  MathGeometryCycle, MathGeometryOrderViolation, MathGeometryDependencyAnalysis,
+} from './measure/mathGeometryDependencies.js';
+export {
+  MATH_GEOMETRY_MAX_STAGES, mathGeometryCycleMessage, mathGeometryOrderMessage,
+  mathGeometryTooDeepMessage, analyzeMathGeometryDependencies, mathGeometryHistoryEdges,
+} from './measure/mathGeometryDependencies.js';
+export type { GeometryDerivedFunctionOperationIssue } from './measure/mathGeometryFunctionOperations.js';
+export {
+  functionFormulaExpressions, mathGeometryDerivedCoefficientIds, checkGeometryDerivedFunctionOperations,
+} from './measure/mathGeometryFunctionOperations.js';
+export type { MathGeometryRenameReason, MathGeometryRenameResult } from './part/renameDocumentMathGeometry.js';
+export { renameDocumentMathGeometry } from './part/renameDocumentMathGeometry.js';
 export { resolveConstrainedAssembly, type ConstrainedAssemblyResult } from './assembly/resolveConstrainedAssembly.js';
 export { drawingSourceCenter } from './drawing/sourceCenter.js';
 /**

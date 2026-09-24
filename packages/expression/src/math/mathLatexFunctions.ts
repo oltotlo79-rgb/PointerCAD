@@ -50,6 +50,10 @@ export function latexFunction(head: string, args: readonly ParsedMathJson[]): Pa
     if (args.length !== 3 || typeof args[1] !== 'string') throw new MathInputProblem('syntax', '式、未知数と解を求める範囲を指定してください。');
     return [head, ['Function', args[0], args[1]], args[2]];
   }
+  if (head === 'Mapping') {
+    if (args.length !== 4 || typeof args[1] !== 'string') throw new MathInputProblem('syntax', '写像の式、変数、定義域と出力先の集合を指定してください。');
+    return [head, ['Function', args[0], args[1]], ...args.slice(2)];
+  }
   if (head === 'NumericRoots') {
     if (args.length !== 5 || typeof args[1] !== 'string') throw new MathInputProblem('syntax', '式、未知数、探索範囲の両端と精度を指定してください。');
     return [head, ['Function', args[0], args[1]], ...args.slice(2)];
@@ -123,9 +127,28 @@ export function latexFunction(head: string, args: readonly ParsedMathJson[]): Pa
       ? [head, ['Function', args[0], ...names.slice(1)], ['Function', args[2], args[3]], args[4], args[5]]
       : [head, ['Function', args[0], ...names.slice(1)], args[2]];
   }
+  if (head === 'LimSup' || head === 'LimInf') {
+    if (args.length < 3 || args.length > 5 || typeof args[1] !== 'string') {
+      throw new MathInputProblem('syntax', '上極限・下極限の式、変数、近づける値と必要な方向・範囲を指定してください。');
+    }
+    return [head, ['Function', args[0], args[1]], ...args.slice(2)];
+  }
   if (head === 'DerivativeAt') {
     if (args.length !== 3 && args.length !== 4) throw new MathInputProblem('syntax', '微分する式、変数、位置、回数を指定してください。');
     return [head, ['Function', args[0], args[1]], args[2], args[3] ?? 1];
+  }
+  if (head === 'ForAll' || head === 'Exists') {
+    // Mirror mathTextSyntax.ts's forall/exists: bind the variable and its finite set with
+    // Element before decodeMathJson.ts sees it, instead of a flat 3-argument call.
+    // A presentation round trip re-parses this function's own \in serialization of the
+    // stored Element pair, so an already-bound first argument passes through unchanged.
+    if (args.length === 2 && Array.isArray(args[0]) && args[0].length === 3 && args[0][0] === 'Element') {
+      return [head, args[0], args[1]];
+    }
+    if (args.length !== 3 || typeof args[0] !== 'string') {
+      throw new MathInputProblem('syntax', '量化する変数、集合、条件を指定してください。');
+    }
+    return [head, ['Element', args[0], args[1]], args[2]];
   }
   return [head, ...args];
 }

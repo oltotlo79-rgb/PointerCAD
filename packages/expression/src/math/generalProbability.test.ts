@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -7,6 +6,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 const examples = [
   {
@@ -214,7 +214,7 @@ function request(source: string, unit: 'degree' | 'radian' = 'degree'): MathWork
     identity: { documentId: 'general-probability', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
 }
 function native(args: readonly string[], input?: string): string {
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], {
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {
     input, encoding: 'utf8', timeout: 90_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });
@@ -272,15 +272,14 @@ describe('分布を宣言した確率・期待値・依存関係を保存して�
     }
   });
   it('係数と同名の局所変数を区別し、分布の変更を再計算する', async () => {
-    for (const [decimal, expected] of [['3', 6], ['6', 12]] as const) {
+    const engine = sharedExactEngine(batch => native(['--batch'], batch));
+    const runs = await Promise.all(([['3', 6], ['6', 12]] as const).map(async ([decimal, expected]) => {
       const input: MathWorkRequest = { ...request('randomexpectation(x+coef("x"),[x],normaldistribution(coef("平均"),1))'),
         coefficients: [{ id: 'factor', label: 'x', decimal }, { id: 'mean', label: '平均', decimal }] };
-      const engine: ExactMathEngine = { evaluate: expression => {
-        const values: unknown = JSON.parse(native(['--batch'], JSON.stringify([{ expression, angleUnit: input.angleUnit }])));
-        if (!Array.isArray(values) || values.length !== 1) throw new Error('実計算の返信数が一致しません。');
-        return Promise.resolve(values[0]);
-      } };
-      const result = await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined });
+      return { input, expected,
+        result: await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined }) };
+    }));
+    for (const { input, expected, result } of runs) {
       expect(result.evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: expected });
       const decoded = decodeMathWorkReply(result, input, { operationsById: backend.operationsById,
         coefficientIds: new Set(['factor', 'mean']), declaredIds: new Set() }).result;

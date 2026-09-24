@@ -189,7 +189,8 @@ def inspect(root: Path, level: str, phase: str, comparison_base: str, force: boo
         return full('The push does not describe one checked HEAD update')
 
     def git(*args):
-        return subprocess.run(['git', '-C', str(root), *args], capture_output=True, check=True, timeout=15).stdout
+        return subprocess.run(['git', '-C', str(root), '-c', 'safe.directory=' + root.as_posix(),
+                               *args], capture_output=True, check=True, timeout=15).stdout
 
     head = git('rev-parse', '--verify', 'HEAD').decode().strip()
     if level == 'Commit':

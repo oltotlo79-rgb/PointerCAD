@@ -209,6 +209,8 @@ export function attachAssembly(
             if (!obsolete(request)) useAppStore.getState().setRecomputeProgress(progress);
           },
         });
+        // 形の計算に使うメモリ(NFR-PF-6)。部品ごとの返信でも控え、帯の警告に使う(取消でも控える)。
+        if (!detached) useAppStore.getState().recordKernelMemory(result.kernelMemory);
         if (obsolete(request)) return;
         if (result.cancelled) {
           useAppStore.setState({ isComputing: false, recomputeCancelled: true, recomputeProgress: null });

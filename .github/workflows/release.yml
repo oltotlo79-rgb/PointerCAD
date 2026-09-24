@@ -1,0 +1,459 @@
+# PointerCAD 配布CI(P13-16): 同一commitから再現可能な配布物を作る。
+#
+# 手動起動(workflow_dispatch、入力に対象commit)だけで動く。push/pull_request/tagでは動かない
+# (最終的にいつ実行するかはP13-19の公開手順で統括が決める。rules/05-リリース.md)。
+#
+# 流れ: (1) 通常CI(ci.yml)が対象commitで成功していることを確認する →
+# (2) 既存の手元用スクリプト(scripts/release/*.mjs、scripts/manual/*.mjs)を
+# Windows/Ubuntuのrunnerで順に呼び、Desktop(Windows: NSIS・ポータブル / Linux: AppImage)と
+# Web(通信なし利用版)の候補、取扱説明書(HTML/PDF)を作る。Desktopは作った直後にその配布物を起動して
+# 確かめてからartifactへ保存する(e2e/packaged-desktop.config.ts) →
+# (3) 両OSの候補とWeb候補を1つのrunnerへ集め、release-manifest.jsonとSBOM(sbom.json)を作る。
+#
+# 別commitの成果物が混ざっていないこと・組み立て後もバイト列が変わっていないことは
+# scripts/release/releaseManifest.mjs(createReleaseManifest)が既に厳密に検証する
+# (sourceCommitの一致、入力指紋の一致、candidate.json記録済みhashと再計算hashの一致)。
+# このworkflowはその検証を素通りさせないよう、各jobで対象commitを一貫して checkout し、
+# 対象commit入力の形式を検査する。
+#
+# 署名は行わない(rules/05: 初回は未署名の方針。P13-2の判断待ち)。署名鍵など秘密の値は
+# 使わない・ログに出さない。GitHub Releasesへの添付やCloudflare Pagesへのデプロイなど
+# 実際の公開操作もこのworkflowでは行わない(P13-19以降で統括が判断する)。
+#
+# 検査コマンドは scripts/release/*.mjs 等の既存スクリプトをそのまま呼ぶだけで、
+# ci.ymlのように scripts/check.ps1 を単一正本にする対象ではない(rules/03 §7.2は
+# scripts/check.ps1 が担う通常の型・lint・単体・ビルド・E2Eの話で、配布物の組み立ては別物)。
+name: 配布CI(手動)
+run-name: 配布物の作成 (${{ inputs.commit }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: '配布物を作る対象commitのフルSHA(40桁16進小文字)。ブランチ名・タグ名・短縮SHAは不可。'
+        required: true
+        type: string
+      tag:
+        description: '任意。公開版タグ(例: v1.2.3)。指定するとpackage.jsonのversionと一致するか確認する。空なら省略(0.0.0での模擬実行など)。'
+        required: false
+        type: string
+        default: ''
+
+# 最小権限(NFR-SE-2)。既定はcontents: readのみ。通常CIの成功確認(resolve job)だけ
+# checks: readを追加で持つ(GET /repos/{owner}/{repo}/commits/{ref}/check-runs の読み取り)。
+# actions/download-artifactは同一run内のartifactを取得するだけなのでactions: readは不要
+# (別runから取得する場合だけ追加のtokenと権限が要る。actions/download-artifact v4のREADME)。
+permissions:
+  contents: read
+
+# 同じcommitに対する多重起動だけを直列化する(取り違えの防止)。別commitへの起動は妨げない。
+concurrency:
+  group: release-${{ github.event.inputs.commit }}
+  cancel-in-progress: false
+
+jobs:
+  # 対象commitの形式確認・通常CI成功確認・versionの読み取り。
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: commit入力の形式を確認
+        shell: pwsh
+        env:
+          TARGET_COMMIT: ${{ inputs.commit }}
+        run: |
+          if ($env:TARGET_COMMIT -notmatch '^[0-9a-f]{40}$') {
+            throw "commit入力はフルSHA(40桁16進小文字)で指定すること。受け取った値: $env:TARGET_COMMIT"
+          }
+          Write-Host "[OK] commit入力の形式を確認しました: $env:TARGET_COMMIT"
+
+      # Windows runnerのgitは既定でcore.autocrlf=trueのことがあり、そのままでは
+      # checkoutしたテキストファイルがCRLFへ変換される。release-manifest.mjsは
+      # Windows/Linux両方のcheckout結果からソースの指紋(SHA-256)を比較するため、
+      # 改行変換が入るとcommitが同じでも指紋が食い違って誤って失敗する
+      # (このリポジトリの.gitattributesは一部のファイルだけ改行を固定しており、
+      # 大半のソースはcheckoutするmachine側のcore.autocrlfに委ねられている)。
+      # このjob(runner)限りのgit設定として変換を止め、常にリポジトリ保存どおりの
+      # バイト列を取り出す。
+      - name: Gitの改行変換を無効化(再現性の確保)
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: リポジトリの取得(対象commit)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.commit }}
+
+      - name: 取得したHEADが対象commitと一致することを確認
+        shell: pwsh
+        env:
+          TARGET_COMMIT: ${{ inputs.commit }}
+        run: |
+          $head = (git rev-parse HEAD).Trim()
+          if ($head -ne $env:TARGET_COMMIT) {
+            throw "取得したHEAD($head)が入力commit($env:TARGET_COMMIT)と一致しません。"
+          }
+          Write-Host "[OK] HEADは入力commitと一致します。"
+
+      - name: 通常CI(ci.yml)の成功を確認
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_COMMIT: ${{ inputs.commit }}
+        run: |
+          # ci.ymlの集約job「checks」はmatrix(windows-latest/ubuntu-latest)ごとに
+          # 「checks (windows-latest)」「checks (ubuntu-latest)」という名前のcheck runを
+          # 作る。両OSの全shardが成功したときだけこの2つが成功するので、これで足りる。
+          $required = @('checks (windows-latest)', 'checks (ubuntu-latest)')
+          $raw = gh api "repos/${{ github.repository }}/commits/$env:TARGET_COMMIT/check-runs" --paginate --jq '.check_runs[] | {name, status, conclusion, completed_at}'
+          if ($LASTEXITCODE -ne 0) { throw 'check-runsの取得に失敗しました。' }
+          $runs = @()
+          foreach ($line in ($raw -split "`n")) {
+            if ($line.Trim() -eq '') { continue }
+            $runs += ($line | ConvertFrom-Json)
+          }
+          foreach ($name in $required) {
+            $matching = @($runs | Where-Object { $_.name -eq $name })
+            if ($matching.Count -eq 0) { throw "通常CIの必須チェック '$name' が対象commitに見つかりません。" }
+            $completedRuns = @($matching | Where-Object { $_.completed_at })
+            if ($completedRuns.Count -eq 0) { throw "通常CIの必須チェック '$name' がまだ完了していません。" }
+            $latest = $completedRuns | Sort-Object { [datetime]$_.completed_at } -Descending | Select-Object -First 1
+            if ($latest.conclusion -ne 'success') {
+              throw "通常CIの必須チェック '$name' は成功していません(conclusion=$($latest.conclusion))。"
+            }
+            Write-Host "[OK] $name は成功しています($($latest.completed_at))。"
+          }
+
+      - name: バージョンを読み取る
+        id: version
+        shell: pwsh
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          "version=$($pkg.version)" >> $env:GITHUB_OUTPUT
+          Write-Host "[OK] version=$($pkg.version)"
+
+      - name: tag入力とversionの一致を確認
+        if: ${{ inputs.tag != '' }}
+        shell: pwsh
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $expected = "v$env:PACKAGE_VERSION"
+          if ($env:INPUT_TAG -ne $expected) {
+            throw "tag入力 '$env:INPUT_TAG' はpackage.jsonのversion($env:PACKAGE_VERSION)と一致しません。期待値: $expected"
+          }
+          Write-Host "[OK] tag入力はversionと一致しています: $expected"
+
+  # Desktop候補(Windows: NSIS・ポータブル / Linux: AppImage)をそれぞれ自OSのrunnerで作る。
+  desktop:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Gitの改行変換を無効化(再現性の確保)
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: リポジトリの取得(対象commit)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.commit }}
+
+      - name: Node.jsの準備
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: pnpmの準備(corepack)
+        shell: pwsh
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        run: corepack enable
+
+      - name: 依存関係の取得
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      # 取扱説明書のPDF生成(generate-pdf.mjs)がPlaywrightのchromiumで印刷するため必要。
+      - name: Playwrightのchromiumを確認
+        shell: pwsh
+        run: |
+          if ('${{ matrix.os }}' -eq 'ubuntu-latest') {
+            pnpm exec playwright install chromium --with-deps
+          } else {
+            pnpm exec playwright install chromium
+          }
+
+      - name: Desktop本体をビルド
+        shell: pwsh
+        run: node scripts/release/build-desktop-output.mjs desktop-build-output
+
+      - name: 取扱説明書(HTML)を生成
+        shell: pwsh
+        run: node scripts/manual/generate.mjs desktop-manual-output
+
+      - name: 取扱説明書(PDF)を生成
+        shell: pwsh
+        run: node scripts/manual/generate-pdf.mjs desktop-manual-output desktop-manual-pdf-output
+
+      - name: Desktop候補を組み立てる
+        shell: pwsh
+        run: node scripts/release/assemble-desktop.mjs desktop-build-output desktop-manual-output desktop-manual-pdf-output desktop-stage
+
+      - name: Desktopをpackageする(WindowsはNSISとポータブル、LinuxはAppImage)
+        shell: pwsh
+        run: node scripts/release/package-desktop.mjs desktop-stage
+
+      # 配布物そのものを起動して確かめる(P13-8・P13-9・P13-17)。通常CIの画面検査は開発用のElectronに
+      # 組み立て済みのmainを読ませるため、同梱の漏れ・パス・字体・WASM・計算部の読込みのような
+      # 配布物だけで起きる失敗を見つけられない。e2e/packaged-desktop.config.ts(検査の本体は
+      # e2e/release/packagedDesktop.spec.ts)が配布物の実行ファイルを一時のuserDataで起動し、
+      # 名前と版・主要な画面・形状と数式の計算部・字体・pageerror・閉じた後のプロセスを確かめる。
+      # 起動できない配布物をartifactへ保存しないよう、保存の前に置く。
+      - name: 配布物を起動して確かめる(Windowsはwin-unpacked)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        timeout-minutes: 25
+        env:
+          PCAD_PACKAGED_CANDIDATE: dist/desktop-stage/candidate.json
+        run: |
+          $executable = Join-Path $PWD.Path 'dist/desktop-stage/artifacts/win-unpacked/PointerCAD.exe'
+          if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+            throw "win-unpackedの実行ファイルがありません: $executable"
+          }
+          $env:PCAD_PACKAGED_EXECUTABLE = $executable
+          pnpm exec playwright test --config e2e/packaged-desktop.config.ts
+          if ($LASTEXITCODE -ne 0) { throw "配布物の起動の確認が失敗しました(終了コード $LASTEXITCODE)。" }
+
+      # Linuxの実行機には画面が無く、AppImageを普通に開くのに要るFUSE(libfuse2)も無い(ubuntu-latestの
+      # 導入済みの一覧にxvfbはあり、fuse・libfuse2は無い。
+      # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md )。
+      # AppImage公式の手順どおり --appimage-extract で展開し
+      # ( https://docs.appimage.org/user-guide/troubleshooting/fuse.html )、展開した中のAppRun
+      # (AppImageを開いたときと同じ入口)をxvfb-runの画面で起動する(scripts/check.ps1の実Electronの画面検査と
+      # 同じ方法。 https://playwright.dev/docs/ci#running-headed )。--no-sandboxは検査からは足さない。
+      # AppRunが利用者の環境と同じ判断(unshare -Ur trueで名前空間を試し、使えないときだけ自分で足す)をする
+      # (詳細はe2e/release/packagedDesktop.spec.tsのlaunchPackaged)。展開物はrunnerの一時領域に置き、
+      # artifactへ保存するdist/desktop-stageへ混ぜない。
+      - name: 配布物を起動して確かめる(LinuxはAppImageを展開してxvfbで)
+        if: matrix.os == 'ubuntu-latest'
+        shell: pwsh
+        timeout-minutes: 25
+        env:
+          PCAD_PACKAGED_CANDIDATE: dist/desktop-stage/candidate.json
+        run: |
+          $appImages = @(Get-ChildItem -Path 'dist/desktop-stage/artifacts' -Filter 'PointerCAD-*-linux-x64.AppImage' -File)
+          if ($appImages.Count -ne 1) {
+            throw "AppImageが1つだけ見つかりません(検出数: $($appImages.Count))"
+          }
+          $appImage = $appImages[0].FullName
+          & chmod +x $appImage
+          if ($LASTEXITCODE -ne 0) { throw 'AppImageへ実行の権限を付けられませんでした。' }
+          $extractRoot = Join-Path $env:RUNNER_TEMP 'pointercad-appimage'
+          New-Item -ItemType Directory -Path $extractRoot | Out-Null
+          Push-Location $extractRoot
+          try {
+            & $appImage --appimage-extract | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "AppImageを展開できませんでした(終了コード $LASTEXITCODE)。" }
+          } finally {
+            Pop-Location
+          }
+          $appRun = Join-Path $extractRoot 'squashfs-root/AppRun'
+          if (-not (Test-Path -LiteralPath $appRun -PathType Leaf)) {
+            throw "展開したAppImageにAppRunがありません: $appRun"
+          }
+          $env:PCAD_PACKAGED_EXECUTABLE = $appRun
+          & xvfb-run -a pnpm exec playwright test --config e2e/packaged-desktop.config.ts
+          if ($LASTEXITCODE -ne 0) { throw "配布物の起動の確認が失敗しました(終了コード $LASTEXITCODE)。" }
+
+      # 失敗の原因をActionsの記録から追えるよう、検査の記録(項目ごとの結果と所要時間・失敗時の画面)を残す。
+      - name: 配布物の起動の確認の記録を保存(失敗時だけ)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pointercad-packaged-launch-${{ matrix.os }}-${{ inputs.commit }}
+          path: test-results/packaged-desktop
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # app/(展開済み本体)とartifacts/(梱包済みinstaller)の両方を含む。
+      # release-manifest.mjsは組み立て後の検証にapp/側のファイルも読むため、
+      # artifacts/だけを取り出して縮小することはできない(既存スクリプトの設計)。
+      - name: Desktop候補をartifactへ保存
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pointercad-desktop-${{ matrix.os }}-${{ inputs.commit }}
+          path: dist/desktop-stage
+          retention-days: 14
+          if-no-files-found: error
+
+  # Web候補(通信なし利用版)をUbuntu runnerで作る(OS依存の処理を含まない)。
+  web:
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gitの改行変換を無効化(再現性の確保)
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: リポジトリの取得(対象commit)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.commit }}
+
+      - name: Node.jsの準備
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: pnpmの準備(corepack)
+        shell: pwsh
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        run: corepack enable
+
+      - name: 依存関係の取得
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Playwrightのchromiumを確認
+        shell: pwsh
+        run: pnpm exec playwright install chromium --with-deps
+
+      - name: Web版(通信なし利用)をビルド
+        shell: pwsh
+        run: node scripts/release/build-web-offline.mjs web-build-output
+
+      - name: 取扱説明書(HTML)を生成
+        shell: pwsh
+        run: node scripts/manual/generate.mjs web-manual-output
+
+      - name: 取扱説明書(PDF)を生成
+        shell: pwsh
+        run: node scripts/manual/generate-pdf.mjs web-manual-output web-manual-pdf-output
+
+      - name: Web候補を組み立てる
+        shell: pwsh
+        run: node scripts/release/assemble-web-offline.mjs web-build-output web-manual-output web-manual-pdf-output web-candidate
+
+      - name: Web候補をartifactへ保存
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pointercad-web-${{ inputs.commit }}
+          path: dist/web-candidate
+          retention-days: 14
+          if-no-files-found: error
+
+  # 両OSのDesktop候補とWeb候補を1つのrunnerへ集め、release-manifest.jsonとSBOMを作る。
+  combine:
+    needs: [desktop, web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gitの改行変換を無効化(再現性の確保)
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: リポジトリの取得(対象commit)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.commit }}
+
+      - name: Node.jsの準備
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: pnpmの準備(corepack)
+        shell: pwsh
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        run: corepack enable
+
+      - name: 依存関係の取得
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Windows配布候補を取得
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pointercad-desktop-windows-latest-${{ inputs.commit }}
+          path: dist/desktop-stage-windows
+
+      - name: Linux配布候補を取得
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pointercad-desktop-ubuntu-latest-${{ inputs.commit }}
+          path: dist/desktop-stage-linux
+
+      - name: Web配布候補を取得
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pointercad-web-${{ inputs.commit }}
+          path: dist/web-candidate
+
+      - name: SBOM(CycloneDX)を作る
+        shell: pwsh
+        run: node scripts/release/build-sbom.mjs sbom-output
+
+      # 別commitの成果物混入・改変されたhash・古いartifactの再利用は
+      # createReleaseManifest(releaseManifest.mjs)がsourceCommitと入力指紋・
+      # candidate.json記録済みhashとの一致で厳密に拒否する(このworkflowが
+      # 独自にゆるめることはできない設計)。
+      - name: release-manifestを組み立てる
+        shell: pwsh
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          $scriptArgs = @('scripts/release/build-release-manifest.mjs', 'desktop-stage-windows', 'desktop-stage-linux', 'web-candidate', 'release-output')
+          if ($env:INPUT_TAG -ne '') { $scriptArgs += $env:INPUT_TAG }
+          node @scriptArgs
+
+      - name: 対象commitと成果物の一致・数値の要約を確認
+        shell: pwsh
+        env:
+          TARGET_COMMIT: ${{ inputs.commit }}
+        run: |
+          $manifest = Get-Content dist/release-output/release-manifest.json -Raw | ConvertFrom-Json
+          if ($manifest.sourceCommit -ne $env:TARGET_COMMIT) {
+            throw "release-manifestのsourceCommit($($manifest.sourceCommit))が対象commit($env:TARGET_COMMIT)と一致しません。"
+          }
+          if ($manifest.releaseCertified -ne $false) { throw 'releaseCertifiedはfalseのはずです(公開前の実起動・リンク確認は別工程)。' }
+          Write-Host "[OK] release-manifestは対象commitと一致しています。"
+          $summary = @(
+            '## 配布CI結果(未署名候補・公開前)',
+            "- commit: $($manifest.sourceCommit)",
+            "- version: $($manifest.version)",
+            "- tag: $($manifest.tag)",
+            "- desktop windows assets: $($manifest.desktop.windows.assets.Count)",
+            "- desktop linux assets: $($manifest.desktop.linux.assets.Count)",
+            "- web files: $($manifest.web.files.Count)",
+            "- 取扱説明書 PDF巻数: $($manifest.manual.pdfVolumes)",
+            "- releaseCertified: $($manifest.releaseCertified)"
+          )
+          $summary -join "`n" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: release-manifestとSBOMをartifactへ保存
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pointercad-release-manifest-${{ inputs.commit }}
+          path: |
+            dist/release-output/release-manifest.json
+            dist/sbom-output/sbom.json
+          retention-days: 14
+          if-no-files-found: error

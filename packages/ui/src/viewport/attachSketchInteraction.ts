@@ -79,6 +79,7 @@ import {
   type AppearanceToolId,
   type ClickEditToolId,
   type CornerEditToolId,
+  type MathGeometryToolId,
   type MeasureToolId,
   type NumericInputState,
   type NumericInputStep,
@@ -202,16 +203,20 @@ export function isSolidTool(tool: NumericInputToolId): tool is SolidToolId {
  * (`AppearanceToolId` / `MeasureToolId`)としてしか持っていないので、**網羅の `Record`** で
  * 表を作る。型が増えたらこの表が型検査で落ちるので、追随の漏れが機械で見つかる
  * (`numericInput.ts` の `CLICK_EDIT_TOOLS` / `PICK_EDIT_TOOLS` と同じ流儀)。
+ *
+ * **図形の測定値(`MathGeometryToolId`、GR-30)も同じ性質**(立体を作らず、いま選んでいる
+ * ものについて何かをする)なのでここへ入る(scratchpad/claude/plans/geomref-plan.md §2.5)。
  */
-const LOOK_TOOLS: Readonly<Record<AppearanceToolId | MeasureToolId, true>> = {
+const LOOK_TOOLS: Readonly<Record<AppearanceToolId | MeasureToolId | MathGeometryToolId, true>> = {
   appearance: true,
   measure: true,
+  mathGeometry: true,
 };
 
-/** 「見た目」の一覧の道具(外観・測る)かどうか。一覧は `LOOK_TOOLS` の 1 か所だけ。 */
+/** 「見た目」の一覧の道具(外観・測る・図形の測定値)かどうか。一覧は `LOOK_TOOLS` の 1 か所だけ。 */
 export function isLookTool(
   tool: NumericInputToolId,
-): tool is AppearanceToolId | MeasureToolId {
+): tool is AppearanceToolId | MeasureToolId | MathGeometryToolId {
   return tool in LOOK_TOOLS;
 }
 
@@ -232,6 +237,10 @@ export function isLookTool(
  * P5 タスク11・32 でこの 2 つが増えたときにここへ足し忘れていたため、**その 2 つの道具の
  * あいだは立体をクリックしても選べず、ホバーの強調も出なかった**(2026-09-06 ヘッドレスで実測。
  * 「外観 → `4` → 箱を押す」で選択が空のまま)。
+ *
+ * **図形の測定値(GR-30)も測ると同じ理由でここへ入る**(`isLookTool` に足したので自動で
+ * 拾う)。選んだ点・辺・面・立体から作れる量が決まる道具なので、立体・部分形状を
+ * クリックで拾えないと何も測定値を作れない。
  */
 export function picksBodies(tool: NumericInputToolId): boolean {
   return tool === 'select' || isSolidTool(tool) || isPickEditTool(tool) || isLookTool(tool);

@@ -8,6 +8,7 @@ import {
 import {
   CANDIDATE_MATH_BY_ID,
   decodeMathWorkReply,
+  type MathEvaluation,
 } from '@pointercad/expression/math/contracts';
 
 import { MathEditorController } from './MathEditorController.js';
@@ -32,7 +33,7 @@ function fixture(source = '1/3') {
       return port;
     },
     decodeReply: (value, request) => decodeMathWorkReply(value, request, {
-      operationsById: CANDIDATE_MATH_BY_ID, coefficientIds: new Set(), declaredIds: new Set(),
+      operationsById: CANDIDATE_MATH_BY_ID, coefficientIds: new Set(), declaredIds: new Set(request.declarations?.map(value => value.id)),
     }),
   });
   const cancel = vi.fn();
@@ -45,15 +46,64 @@ function fixture(source = '1/3') {
     onApply: output => { applied.push(output); }, onCancel: cancel, onMoveOut: () => undefined,
   });
   cleanup.push(() => controller.dispose());
-  async function reply(index: number) {
+  async function reply(index: number, evaluation?: MathEvaluation) {
     const item = sent[index];
     if (item === undefined) throw new Error('Expected an actual queued request');
-    item.port.onmessage?.({ data: executeMathWorkRequest(item.value, backend) });
+    // An evaluation stands for the optional exact runtime's reply to the same parsed request.
+    const data = executeMathWorkRequest(item.value, backend);
+    item.port.onmessage?.({ data: evaluation === undefined ? data : { ...data, evaluation } });
     await vi.advanceTimersByTimeAsync(0);
   }
   return { controller, sent, terminated, applied, cancel, reply, changeGeneration: () => { generation += 1; } };
 }
 describe('数式画面の確定・変換・文書世代を1つの制御に接続する', () => {
+  it('記号名と原式を同時に変更し、識別番号と説明を保つ', async () => {
+    const state = fixture('a_1+1');
+    state.controller.setDeclarations([{ id: 'symbol:a', label: 'a_1', meaning: '未指定の長さ', type: 'real' }]);
+    state.controller.apply(); await state.reply(0);
+    const renamed = state.controller.renameDeclaration('symbol:a', 'b_2');
+    await state.reply(1); expect(await renamed).toBe(true);
+    expect(state.controller.current().source).toContain('b_2');
+    expect(state.controller.current().source).not.toContain('a_1');
+    expect(state.controller.current().declarations).toEqual([{ id: 'symbol:a', label: 'b_2', meaning: '未指定の長さ', type: 'real' }]);
+    expect(state.applied).toEqual([]);
+  });
+  it('改名の準備中に入力が変わった場合、遅れて届いた新しい名前を適用しない', async () => {
+    const state = fixture('a_1');
+    state.controller.setDeclarations([{ id: 'symbol:a', label: 'a_1', meaning: '未指定', type: 'real' }]);
+    state.controller.apply(); await state.reply(0);
+    const renamed = state.controller.renameDeclaration('symbol:a', 'b_2');
+    state.controller.sourceChanged('a_1+2'); await state.reply(1);
+    expect(await renamed).toBe(false);
+    expect(state.controller.current().source).toBe('a_1+2');
+    expect(state.controller.current().declarations?.[0].label).toBe('a_1');
+    expect(state.applied).toEqual([]);
+  });
+  it('記号の意味と種類だけを変更しても古い返信・表示変換・確定要求を使い回さない', async () => {
+    const state = fixture('a_1');
+    const declaration = { id: 'symbol:a', label: 'a_1', meaning: '実数の記号', type: 'real' as const };
+    state.controller.setDeclarations([declaration]);
+    state.controller.apply();
+    const original = state.controller.current();
+    state.controller.setDeclarations([{ ...declaration, meaning: '未指定の集合', type: 'set' }]);
+    expect(state.controller.current().identity.inputRevision).toBe(original.identity.inputRevision + 1);
+    await state.reply(0);
+    expect(state.applied).toEqual([]); expect(state.terminated).toHaveLength(1);
+    state.controller.requestNotation('latex'); await state.reply(1);
+    expect(state.controller.current()).toMatchObject({ notation: 'latex', declarations: [{ meaning: '未指定の集合', type: 'set' }] });
+    state.controller.apply(); await state.reply(2);
+    expect(state.controller.getSnapshot().state).toMatchObject({ status: 'evaluated', canApply: false,
+      output: { definition: { declarations: [{ meaning: '未指定の集合', type: 'set' }] }, evaluation: { status: 'unresolved' } } });
+    expect(state.applied).toEqual([]);
+  });
+  it('記号を削除してもその名前を勝手に数値や定数へ変更しない', async () => {
+    const state = fixture('a_1');
+    state.controller.setDeclarations([{ id: 'symbol:a', label: 'a_1', meaning: '未指定の実数', type: 'real' }]);
+    state.controller.setDeclarations([]); state.controller.apply(); await state.reply(0);
+    expect(state.controller.current().source).toBe('a_1');
+    expect(state.controller.getSnapshot().state).toMatchObject({ status: 'evaluated', canApply: false,
+      output: { evaluation: { status: 'invalid', reason: 'syntax' } } });
+  });
   it.each(['source', 'angle', 'document', 'close'] as const)('準備中の%s変更で古い計算を終了し、遅い通知を現在の表示へ戻さない', change => {
     const state = fixture(); state.controller.apply();
     const input = state.controller.current(), port = state.sent[0].port, late = port.onmessage;
@@ -143,6 +193,23 @@ describe('数式画面の確定・変換・文書世代を1つの制御に接続
     expect(state.controller.chooseResultComponent(before, [2,1])).toBe(false);
     expect(state.controller.current()).toEqual(current);
     expect(state.applied).toHaveLength(0);
+  });
+  it('行列の |A| の候補は確定も成分選択もせず、det(…)へ書き換えて再計算した値だけを原式とともに確定する', async () => {
+    const state = fixture('|[[1,2],[3,4]]|');
+    const number = (decimal: string) => ({ kind: 'number' as const, decimal });
+    state.controller.apply();
+    await state.reply(0, { status: 'multiple', exhaustive: true,
+      candidates: [number('-2'), { kind: 'operation', operation: 'sqrt', operands: [number('30')] }] });
+    expect(state.controller.getSnapshot().state).toMatchObject({ status: 'evaluated', canApply: false });
+    expect(mathEditorResultText(state.controller.getSnapshot()).detail).toContain('det(…)');
+    expect(state.controller.chooseResultComponent(state.controller.current(), [1])).toBe(false);
+    expect(state.applied).toHaveLength(0);
+    state.controller.sourceChanged('det([[1,2],[3,4]])');
+    state.controller.apply();
+    await state.reply(state.sent.length - 1, { status: 'value', kind: 'real', exact: number('-2'), decimal: '-2', coordinate: -2, approximation: null });
+    expect(state.applied).toHaveLength(1);
+    expect(state.applied[0].definition?.source).toBe('det([[1,2],[3,4]])');
+    expect(state.applied[0].evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: -2 });
   });
   it('確定操作は現在の入力の検証済み原式を返す', async () => {
     const state = fixture();

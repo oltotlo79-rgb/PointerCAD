@@ -1,6 +1,13 @@
 /** Pure rewrites give input aliases one explicit mathematical meaning before engine simplification. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { rationalOfExpression } from './exactRational.js';
+import { nativeMathProvenUndefined } from './nativeMathBackend.js';
+
+/** 50ms shared across every sibling of one selection; a slow candidate is skipped, not treated as bad. */
+function boundedCheck(): () => void {
+  const deadline = performance.now() + 50;
+  return () => { if (performance.now() > deadline) throw new MathInputProblem('budget', '成分の確認が計算時間を超えました。'); };
+}
 
 const number = (decimal: string): MathNode => ({ kind: 'number', decimal });
 const op = (operation: string, ...operands: MathNode[]): MathNode => ({ kind: 'operation', operation, operands });
@@ -45,8 +52,16 @@ export function normalizeElementaryOperation(node: Extract<MathNode, { kind: 'op
         }
         if (value.kind === 'operation' && value.operation === 'matrix') value = value.operands[0];
         if (value.kind !== 'operation' || value.operation !== 'list') throw new MathInputProblem('domain', '成分を取り出すベクトルまたは行列を指定してください。');
-        const selected = value.operands[Number(position.numerator) - 1];
+        const selectedIndex = Number(position.numerator) - 1, selected = value.operands[selectedIndex];
         if (selected === undefined) throw new MathInputProblem('domain', '指定した成分番号が要素数を超えています。');
+        // Evaluate every listed component, not only the selected one: like an outer 0, a selection
+        // must not silently discard a sibling that numeric evaluation proves undefined.
+        const check = boundedCheck();
+        value.operands.forEach((sibling, at) => {
+          if (at === selectedIndex) return;
+          const reason = nativeMathProvenUndefined(sibling, angleUnit, check);
+          if (reason !== null) throw new MathInputProblem('domain', reason);
+        });
         value = selected;
       }
       return value;

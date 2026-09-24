@@ -1,0 +1,21 @@
+{
+  "format": "pointercad-font-notices/1",
+  "scope": "Screen/drawing UI font shipped identically to apps/web/public/fonts and apps/desktop/resources/fonts; distinct from the mathematics fonts recorded in math-notices.json.",
+  "fonts": [
+    {
+      "name": "Noto Sans JP",
+      "style": "Regular",
+      "version": "Sans2.004",
+      "file": "NotoSansJP-Regular.otf",
+      "license": "OFL-1.1",
+      "notice": "LICENSES.txt",
+      "sha256": "dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073"
+    }
+  ],
+  "notices": [
+    {
+      "file": "LICENSES.txt",
+      "sha256": "33a9ea400838436e4816a36e09925ae61eb27c409c5e18d6a13d01280949408b"
+    }
+  ]
+}

@@ -125,3 +125,27 @@ def integral_value(body, variable, lower, upper, conditions, problem):
         return -total if reverse is s.true else total
     except NotImplementedError:
         raise problem('unevaluated', 'The exact integral domain could not be established') from None
+
+
+def indefinite_integral_value(body, variable, problem):
+    """Find a closed-form antiderivative and independently verify it against the original integrand.
+
+    Never trust the integration algorithm by itself: a wrong or partial antiderivative would silently
+    reach the caller as if it were exact. Differentiating the candidate must reproduce the original
+    body exactly (a provable symbolic zero, not merely "not disproved"). A residual unevaluated
+    Integral or a Piecewise (branch-dependent) candidate means no single closed form was established,
+    so both are rejected rather than returned as a partial or conditional answer. Unlike a definite
+    integral, no interval-of-validity proof is required here: the result is a formula, not a value.
+    """
+    if body.has(s.Integral):
+        raise problem('unevaluated', 'An inner integral needs established convergence')
+    try:
+        candidate = s.integrate(body, variable)
+    except NotImplementedError:
+        raise problem('unevaluated', 'No closed-form antiderivative could be established') from None
+    if candidate.has(s.Integral, s.Piecewise, s.AccumBounds, s.zoo, s.nan):
+        raise problem('unevaluated', 'No single closed-form antiderivative could be established')
+    check = s.simplify(s.diff(candidate, variable) - body)
+    if check.is_zero is not True:
+        raise problem('unevaluated', 'The candidate antiderivative does not verify against the original integrand')
+    return candidate

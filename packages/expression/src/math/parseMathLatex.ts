@@ -1,8 +1,11 @@
-import { derivativePrimeOrder } from './differentialEquationNotation.js';
+import { derivativeDotOrder, derivativePrimeOrder, DOT_DERIVATIVE_TARGET, NABLA_DEFAULT_VARIABLES, NABLA_LAPLACIAN,
+  NABLA_VARIABLE_LIST } from './differentialEquationNotation.js';
+import { CLOSED_INTEGRAL_UNAVAILABLE, closedIntegralHead } from './lineIntegrals.js';
 /** Parse only PointerCAD's mathematical notation; commands never execute code. */
 import { MathInputProblem, MATH_INPUT_LIMITS, validateMathDecimal } from './mathInputContract.js';
 import { latexTokens, type ParsedMathJson, type LatexToken } from './mathLatexTokens.js';
 import { LATEX_FUNCTIONS, latexFunction } from './mathLatexFunctions.js';
+import { RATIO_DEFINITION, RATIO_IN_LIST, RATIO_TERMS, RATIO_TIME, repeatingDecimalFraction } from './mathTextSyntax.js';
 
 const CONSTANTS: Readonly<Record<string, string>> = {
   '\\pi': 'Pi', 'π': 'Pi', '\\exponentialE': 'ExponentialE', '\\imaginaryI': 'ImaginaryUnit',
@@ -12,17 +15,30 @@ const CONSTANTS: Readonly<Record<string, string>> = {
 };
 const INFIX: Readonly<Record<string, readonly [string, number]>> = {
   '+': ['Add', 30], '-': ['Subtract', 30], '*': ['Multiply', 40], '/': ['Divide', 40],
+  '\\pm': ['PlusMinus', 30], '\\mp': ['MinusPlus', 30],
   '\\cdot': ['PcadDotToken', 40], '\\times': ['PcadTimesToken', 40], '\\otimes': ['TensorProduct', 40],
   '\\odot': ['HadamardProduct', 40], '^': ['Power', 60], '=': ['Equal', 20], '<': ['Less', 20], '>': ['Greater', 20],
   '\\le': ['LessEqual', 20], '\\leq': ['LessEqual', 20], '\\ge': ['GreaterEqual', 20], '\\geq': ['GreaterEqual', 20],
   '\\ne': ['NotEqual', 20], '\\neq': ['NotEqual', 20], '\\in': ['Element', 20], '\\cup': ['Union', 25],
+  '\\notin': ['NotElement', 20], '\\subset': ['Subset', 20], '\\subseteq': ['SubsetEqual', 20],
+  '\\supset': ['Superset', 20], '\\supseteq': ['SupersetEqual', 20], '\\approx': ['ApproxEqual', 20],
   '\\cap': ['Intersection', 25], '\\setminus': ['SetMinus', 25], '\\land': ['And', 15], '\\wedge': ['And', 15],
   '\\lor': ['Or', 10], '\\vee': ['Or', 10], '\\implies': ['Implies', 5], '\\iff': ['Equivalent', 5],
 };
-const CLOSERS = new Set(['', '}', ']', ')', '\\}', '\\rvert', '|', '&', '\\\\', '\\end', '\\differential', '\\partial']);
+const CLOSERS = new Set(['', '}', ']', ')', '\\}', '\\rvert', '\\rangle', '|', '&', '\\\\', '\\end', '\\differential', '\\partial']);
+const SYMBOLS: Readonly<Record<string, string>> = {
+  '±': '\\pm', '∓': '\\mp', '∉': '\\notin', '⊂': '\\subset', '⊆': '\\subseteq',
+  '⊃': '\\supset', '⊇': '\\supseteq', '≈': '\\approx', '∁': '\\complement',
+  '⟨': '\\langle', '⟩': '\\rangle', '×': '\\times',
+  '∇': '\\nabla', '∮': '\\oint', '∯': '\\oiint', '∶': ':', '：': ':',
+};
+const CLOSED_INTEGRALS = new Set(['\\oint', '\\oiint', '\\oiiint']);
+/** a:b is its value a÷b, looser than + and −, tighter than = (MC-19c, Q1=A); \% is ÷100 like the plain-text %. */
+const RATIO_BINDING = 26;
+const clockDigits = (token: LatexToken | undefined): boolean => token?.text === 'number' && /^0[0-9]/u.test(token.literal ?? '');
 
 export function parseMathLatex(source: string): ParsedMathJson {
-  return parseTokens(latexTokens(source));
+  return parseTokens(latexTokens(source).map(token => SYMBOLS[token.text] ? { ...token, text: SYMBOLS[token.text] } : token));
 }
 function parseTokens(tokens: readonly LatexToken[]): ParsedMathJson {
   let position = 0, depth = 0, remaining = MATH_INPUT_LIMITS.nodes;
@@ -39,11 +55,17 @@ function parseTokens(tokens: readonly LatexToken[]): ParsedMathJson {
     if (--remaining < 0 || args.length > MATH_INPUT_LIMITS.arguments) throw new MathInputProblem('budget', '数式が複雑すぎます。');
     return [head, ...args];
   }
-  function enclosed(close: string): ParsedMathJson[] {
+  // True while an element of [ ], \{ \} or a matrix is read directly; ( ), { } and the other delimiters reset it.
+  const groups: boolean[] = [];
+  function within<T>(listed: boolean, read: () => T): T {
+    groups.push(listed);
+    try { return read(); } finally { groups.pop(); }
+  }
+  function enclosed(close: string, listed = false): ParsedMathJson[] {
     const values: ParsedMathJson[] = [];
     if (peek() === close) { take(); return values; }
     for (;;) {
-      values.push(expression(0));
+      values.push(within(listed, () => expression(0)));
       if (values.length > MATH_INPUT_LIMITS.arguments) throw new MathInputProblem('budget', '引数が多すぎます。');
       if (peek() === close) { take(); return values; }
       expect(',');
@@ -87,7 +109,7 @@ function parseTokens(tokens: readonly LatexToken[]): ParsedMathJson {
     }
     const rows: ParsedMathJson[][] = [[]];
     while (peek() !== '\\end') {
-      rows[rows.length - 1].push(expression(0));
+      rows[rows.length - 1].push(within(name !== 'cases', () => expression(0)));
       if (peek() === '&') take();
       else if (peek() === '\\\\') { take(); rows.push([]); }
       else if (peek() !== '\\end') throw new MathInputProblem('syntax', '行列の区切りを確認してください。');
@@ -123,7 +145,7 @@ function parseTokens(tokens: readonly LatexToken[]): ParsedMathJson {
     }
     return node('Divide', group(), group());
   }
-  function limit(): ParsedMathJson {
+  function limit(head = 'Limit'): ParsedMathJson {
     expect('_'); expect('{'); const variable = atom();
     if (!['\\to', '\\rightarrow'].includes(take().text)) throw new MathInputProblem('syntax', '極限で近づける値を指定してください。');
     const target: LatexToken[] = []; let nesting = 0;
@@ -142,13 +164,49 @@ function parseTokens(tokens: readonly LatexToken[]): ParsedMathJson {
       direction = target.at(-1)?.text === '+' ? 1 : -1; target.splice(-2);
     }
     const value = parseTokens(target), body = peek() === '{' ? group() : expression(0);
-    return node('Limit', node('Function', body, variable), value, ...(direction === undefined ? [] : [direction]));
+    return node(head, node('Function', body, variable), value, ...(direction === undefined ? [] : [direction]));
+  }
+  /** \nabla_{[x,y,z]}, \nabla\cdot, \nabla\times and \nabla^{2}; without a list only a plot's X/Y/Z are implied. */
+  function nabla(): ParsedMathJson {
+    let variables: ParsedMathJson = NABLA_DEFAULT_VARIABLES, listed = false, laplacian = false;
+    for (let i = 0; i < 2; i++) {
+      const marker = peek();
+      if (marker === '_' && !listed) {
+        take(); const value = bound();
+        if (!Array.isArray(value) || value[0] !== 'List') throw new MathInputProblem('syntax', NABLA_VARIABLE_LIST);
+        variables = value; listed = true;
+      } else if ((marker === '^' || marker === '²') && !laplacian) {
+        take();
+        if (marker === '^' && bound() !== 2) throw new MathInputProblem('syntax', NABLA_LAPLACIAN);
+        laplacian = true;
+      } else break;
+    }
+    let head = laplacian ? 'Laplacian' : 'Gradient';
+    if (!laplacian && ['\\cdot', '·', '\\times'].includes(peek())) head = take().text === '\\times' ? 'Curl' : 'Divergence';
+    return node(head, expression(50), variables);
+  }
+  /**
+   * 0.1\overline{6} and 0.\bar{3}: an overline over digits only, directly after a plain decimal, marks the
+   * repeating digits (MC-19c, Q1=A; approved 09:52). Every other overline, including \overline{1.5} or
+   * \overline{3+4\mathrm{i}} after a decimal and one without braces, keeps the product with a conjugate.
+   */
+  function repeatingOverline(decimal: string): string | null {
+    if (!decimal.includes('.') || /[eE]/u.test(decimal) || !['\\overline', '\\bar'].includes(peek())) return null;
+    const digits = tokens[position + 2];
+    return tokens[position + 1]?.text === '{' && digits?.text === 'number' && /^[0-9]+$/u.test(digits.literal ?? '')
+      && tokens[position + 3]?.text === '}' ? digits.literal ?? null : null;
   }
   function atom(): ParsedMathJson {
     const token = take(), text = token.text;
     if (--remaining < 0) throw new MathInputProblem('budget', '式の要素が多すぎます。');
     if (text === 'number') {
       const value = token.literal ?? ''; validateMathDecimal(value);
+      const repetend = repeatingOverline(value);
+      if (repetend !== null) {
+        position += 4;
+        const { numerator, denominator } = repeatingDecimalFraction(value, repetend);
+        return denominator === '1' ? { num: numerator } : node('Divide', { num: numerator }, { num: denominator });
+      }
       const numeric = Number(value);
       return Number.isSafeInteger(numeric) && !/[.eE]/u.test(value) ? numeric : { num: value };
     }
@@ -156,12 +214,20 @@ function parseTokens(tokens: readonly LatexToken[]): ParsedMathJson {
     if (CONSTANTS[text]) return CONSTANTS[text];
     if (text === '{') { position--; return group(); }
     if (text === '(') { const args = enclosed(')'); return args.length === 1 ? args[0] : node('Tuple', ...args); }
-    if (text === '[') return node('List', ...enclosed(']'));
-    if (text === '\\{') return node('Set', ...enclosed('\\}'));
+    if (text === '[') return node('List', ...enclosed(']', true));
+    if (text === '\\{') return node('Set', ...enclosed('\\}', true));
+    if (text === '\\langle' || text === '\\complement') {
+      if (text === '\\complement') expect('(');
+      const args = enclosed(text === '\\langle' ? '\\rangle' : ')');
+      if (args.length !== 2) throw new MathInputProblem('syntax', text === '\\langle'
+        ? '内積には2つの値を指定してください。' : '補集合には集合と母集合を指定してください。');
+      return node(text === '\\langle' ? 'Dot' : 'Complement', ...args);
+    }
+    if (text === '\\pm' || text === '\\mp') return node(text === '\\pm' ? 'PlusMinus' : 'MinusPlus', expression(50));
     if (text === '+' || text === '-') return text === '+' ? expression(50) : node('Negate', expression(50));
     if (text === '\\neg' || text === '\\lnot') return node('Not', expression(19));
     if (text === '\\lvert' || text === '|') {
-      const value = expression(0); expect(text === '|' ? '|' : '\\rvert'); return node('Abs', value);
+      const value = within(false, () => expression(0)); expect(text === '|' ? '|' : '\\rvert'); return node('Abs', value);
     }
     if (text === '\\frac' || text === '\\dfrac' || text === '\\tfrac') return fraction();
     if (text === '\\sqrt') {
@@ -174,8 +240,24 @@ function parseTokens(tokens: readonly LatexToken[]): ParsedMathJson {
     if (text === '\\sum' || text === '\\prod' || text === '\\int') {
       return range(text === '\\sum' ? 'Sum' : text === '\\prod' ? 'Product' : 'Integrate');
     }
+    if (text === '\\nabla') return nabla();
+    // \oint(…) and \oiint(…) are the closed integrals (MC-19d); \oiiint and a symbol without arguments stay rejected.
+    if (CLOSED_INTEGRALS.has(text)) {
+      if (text === '\\oiiint' || peek() !== '(') throw new MathInputProblem('unsupported', CLOSED_INTEGRAL_UNAVAILABLE);
+      take();
+      const args = enclosed(')');
+      return latexFunction(closedIntegralHead(text === '\\oint' ? '∮' : '∯', args[0]), args);
+    }
+    // \dot{y}: Newton's notation, meaningful only inside a differential problem. \dot(…) keeps its old reading.
+    const dots = derivativeDotOrder(text);
+    if (dots > 0 && peek() === '{') {
+      const target = group();
+      if (typeof target !== 'string') throw new MathInputProblem('syntax', DOT_DERIVATIVE_TARGET);
+      return node('PcadDotDerivative', target, { num: String(dots) });
+    }
     if (text === '\\begin') return environment(token.literal);
     if (text === '\\lim') return limit();
+    if (text === '\\limsup' || text === '\\liminf') return limit(text === '\\limsup' ? 'LimSup' : 'LimInf');
     if (text === '\\log') {
       if (peek() !== '_') throw new MathInputProblem('syntax', '対数は底を指定してください。自然対数はlnを使えます。');
       take(); const base = bound(), args = argumentsOf();
@@ -225,6 +307,20 @@ function parseTokens(tokens: readonly LatexToken[]): ParsedMathJson {
           if (70 < minimum) break;
           take(); const double = peek() === '!'; if (double) take();
           left = node(double ? 'Factorial2' : 'Factorial', left); continue;
+        }
+        if (next === '\\%') {
+          if (70 < minimum) break;
+          take(); left = node('Divide', left, { num: '100' }); continue;
+        }
+        if (next === ':') {
+          if (RATIO_BINDING < minimum) break;
+          take();
+          if (peek() === '=') throw new MathInputProblem('syntax', `${RATIO_DEFINITION}。`);
+          if (groups.at(-1) === true) throw new MathInputProblem('syntax', `${RATIO_IN_LIST}。`);
+          if (clockDigits(tokens[position - 2]) || clockDigits(tokens[position])) throw new MathInputProblem('syntax', `${RATIO_TIME}。`);
+          left = node('Divide', left, expression(RATIO_BINDING + 1));
+          if (peek() === ':') throw new MathInputProblem('syntax', `${RATIO_TERMS}。`);
+          continue;
         }
         const operation = INFIX[next];
         if (operation) {

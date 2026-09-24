@@ -14,6 +14,7 @@ import { decodeMathRequestIdentity } from './mathWorkRequest.js';
 import { sameMathIdentity, type MathWorkRequest } from './mathWorkerClient.js';
 import {collectMathCoefficients} from './mathExpressionReferences.js';
 import {assertMathVariableScope} from './mathVariableScope.js';
+import { decodeMathDeclarations, referencedMathDeclarations, sameMathDeclarations } from './mathDeclarations.js';
 
 export interface MathWorkResult {
   readonly definition: StoredMathExpression | null;
@@ -161,20 +162,28 @@ export function decodeMathWorkReply(value: unknown, request: MathWorkRequest, co
 } {
   const raw=object(value,['kind','serial','identity','source','notation','angleUnit','expression','evaluation',
     ...(request.presentationNotation === undefined ? [] : ['presentation']),
-    ...(request.renameCoefficient === undefined ? [] : ['renamedDefinition'])]);
+    ...(request.renameCoefficient === undefined && request.renameDeclaration === undefined ? [] : ['renamedDefinition'])]);
   if(raw.kind!=='math-result'||typeof raw.serial!=='number'||!Number.isSafeInteger(raw.serial)||raw.serial<1
     ||!sameMathIdentity(decodeMathRequestIdentity(raw.identity),request.identity)||raw.source!==request.source
     ||raw.notation!==request.notation||raw.angleUnit!==request.angleUnit) {
     throw new MathInputProblem('syntax','現在の入力と計算結果が一致しません。');
   }
   const remaining={nodes:MATH_INPUT_LIMITS.nodes*8};
+  const declarations = request.declarations === undefined ? request.definition?.declarations : request.declarations;
+  const detachedDeclarations = declarations === undefined ? undefined : decodeMathDeclarations(declarations);
   let definition:StoredMathExpression|null=null;
   if(raw.expression!==null) {
     budgetNodes(raw.expression,remaining);
     definition={format:MATH_INPUT_FORMAT,source:request.source,inputNotation:request.notation,angleUnit:request.angleUnit,
-      expression:decodeStoredMathNode(raw.expression,context)};
+      expression:decodeStoredMathNode(raw.expression,context),
+      ...(detachedDeclarations === undefined ? {} : { declarations: detachedDeclarations })};
+    referencedMathDeclarations(definition.expression, detachedDeclarations ?? []);
   }
   const evaluation=decodeMathEvaluation(raw.evaluation,context,remaining);
+  if (definition !== null && referencedMathDeclarations(definition.expression, detachedDeclarations ?? []).some(value => value.valueSource === undefined)
+    && evaluation.status === 'value') {
+    throw new MathInputProblem('syntax', '値を指定していない記号を計算済みの結果として使うことはできません。');
+  }
   if (evaluation.status === 'value' && (evaluation.kind === 'series' || evaluation.kind === 'transform' || evaluation.kind === 'fourier-series' || evaluation.kind === 'equation-system' || evaluation.kind === 'root-intervals' || evaluation.kind === 'ode-solutions')
     && (definition === null || !sameMathMeaning(evaluation.expression, definition.expression))) {
     throw new MathInputProblem('syntax', '級数の元の式と現在の入力が一致しません。');
@@ -192,7 +201,8 @@ export function decodeMathWorkReply(value: unknown, request: MathWorkRequest, co
     budgetNodes(raw.presentation, remaining);
     presentation = decodeStoredMathStructure(raw.presentation, context);
     if (definition === null || presentation.inputNotation !== request.presentationNotation
-      || presentation.angleUnit !== request.angleUnit || !sameMathMeaning(definition.expression, presentation.expression)) {
+      || presentation.angleUnit !== request.angleUnit || !sameMathMeaning(definition.expression, presentation.expression)
+      || !sameMathDeclarations(definition.declarations, presentation.declarations)) {
       throw new MathInputProblem('syntax', '入力方式の変更前後で数式の意味が一致しません。');
     }
   }
@@ -200,22 +210,25 @@ export function decodeMathWorkReply(value: unknown, request: MathWorkRequest, co
     throw new MathInputProblem('syntax', '数式の変換結果がありません。');
   }
   let renamedDefinition: StoredMathExpression | null = null;
-  if (request.renameCoefficient !== undefined && raw.renamedDefinition !== null) {
+  const rename = request.renameCoefficient ?? request.renameDeclaration;
+  if (rename !== undefined && raw.renamedDefinition !== null) {
     budgetNodes(raw.renamedDefinition, remaining);
     renamedDefinition = decodeStoredMathStructure(raw.renamedDefinition, context);
-    const rename = request.renameCoefficient;
     const expectedLabels = new Map(request.coefficients.map(coefficient =>
-      [coefficient.id, coefficient.id === rename.id ? rename.label : coefficient.label]));
+      [coefficient.id, request.renameCoefficient !== undefined && coefficient.id === rename.id ? rename.label : coefficient.label]));
+    const expectedDeclarations = definition?.declarations?.map(value =>
+      request.renameDeclaration !== undefined && value.id === rename.id ? { ...value, label: rename.label } : value);
     if (definition === null || renamedDefinition.inputNotation !== request.notation
       || renamedDefinition.angleUnit !== request.angleUnit || !sameMathMeaning(definition.expression, renamedDefinition.expression)
+      || !sameMathDeclarations(expectedDeclarations, renamedDefinition.declarations)
       || collectMathCoefficients(renamedDefinition.expression).some(reference => expectedLabels.get(reference.id) !== reference.label)) {
-      throw new MathInputProblem('syntax', '係数の改名前後で参照先または数式の意味が一致しません。');
+      throw new MathInputProblem('syntax', '改名前後で参照先または数式の意味が一致しません。');
     }
   }
-  if (request.renameCoefficient !== undefined && evaluation.status === 'value') {
+  if (rename !== undefined && evaluation.status === 'value') {
     throw new MathInputProblem('syntax', '係数の改名結果を作図用の数値として使用できません。');
   }
   return {serial:raw.serial,result:{definition,evaluation,
-    ...(request.renameCoefficient === undefined ? {} : { renamedDefinition }),
+    ...(rename === undefined ? {} : { renamedDefinition }),
     ...(request.presentationNotation === undefined ? {} : { presentation })}};
 }

@@ -139,6 +139,7 @@ function toSolidBody(mesh: SolidBodyMesh): SolidBody {
  * カーネルの結果を model の言葉へ詰め替える。
  * 画面に出すはずの段(visible)なのにボディも理由も返らなかったものは、
  * 黙って消えないよう理由を補って失敗として扱う(FR-504。面の詰め替えと同じ書き方)。
+ * 計算部のメモリの量(NFR-PF-6)は、カーネルが添えたときだけ `kernelMemory` へ写す。
  */
 export function toSolidOutcome(
   steps: readonly ResolvedSolidStep[],
@@ -168,5 +169,13 @@ export function toSolidOutcome(
     cacheHits: result.cacheHits,
     cancelled: result.cancelled,
     appearanceMatches: toAppearanceMatches(appearance, result.appearanceMatches),
+    ...(result.memory === undefined
+      ? {}
+      : {
+          kernelMemory: {
+            usedBytes: result.memory.wasmHeapBytes,
+            limitBytes: result.memory.wasmHeapLimitBytes,
+          },
+        }),
   };
 }

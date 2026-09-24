@@ -1,6 +1,7 @@
 /** 作成と寸法換算で共用する式評価。文書・形状は変更しない。 */
 import type { EvaluateOptions } from '@pointercad/expression';
 import { evaluateSheetField, type LengthUnit, type SheetMetalFeature } from '@pointercad/model';
+import { pendingFieldResult, pendingVariablesFor, referencesPendingVariable } from '../sketch/numericMathValues.js';
 import { SHEET_FIELD_DEFINITIONS, setSheetField, sheetFieldValues, type SheetFieldKey } from './sheetFields.js';
 
 /** 欄の単位表示と式評価に同じ入力元を使い、設定のmmをinchと表示しない。 */
@@ -10,11 +11,16 @@ export function sheetSourceLengthUnit(key: SheetFieldKey, lengthUnit: LengthUnit
 }
 
 export function evaluateSheetDraft(feature: SheetMetalFeature, sources: Readonly<Partial<Record<SheetFieldKey, string>>>,
-  lengthUnit: LengthUnit, options: EvaluateOptions, millimetreSourceKeys: ReadonlySet<SheetFieldKey> = new Set()): { readonly ok: true; readonly feature: SheetMetalFeature }
-  | { readonly ok: false; readonly message: string; readonly field?: SheetFieldKey } {
+  lengthUnit: LengthUnit, options: EvaluateOptions & { readonly pendingVariables?: ReadonlySet<string> }, millimetreSourceKeys: ReadonlySet<SheetFieldKey> = new Set()): { readonly ok: true; readonly feature: SheetMetalFeature }
+  | { readonly ok: false; readonly message: string; readonly field?: SheetFieldKey; readonly pending?: true } {
   let next = feature;
-  for (const [key] of sheetFieldValues(feature)) {
-    const source = sources[key]; if (source === undefined) continue;
+  const pending = options.pendingVariables ?? pendingVariablesFor(options.variables);
+  for (const [key, stored] of sheetFieldValues(feature)) {
+    const source = sources[key];
+    if (referencesPendingVariable(source ?? stored.source, pending, source === undefined ? stored.mathDefinition : undefined)) {
+      return { ok: false, message: pendingFieldResult().error.message, field: key, pending: true };
+    }
+    if (source === undefined) continue;
     const definition = SHEET_FIELD_DEFINITIONS[key];
     const dimension = definition.unit === 'mm' ? 'length' : definition.unit === 'degree' ? 'angle' : 'ratio';
     const sourceLengthUnit = sheetSourceLengthUnit(key, lengthUnit, millimetreSourceKeys);

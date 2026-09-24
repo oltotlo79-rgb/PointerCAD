@@ -1,22 +1,19 @@
-import { collectMathCoefficients, exactExpressionValueFromNumber, type StoredMathExpression } from '@pointercad/expression';
-import type { FunctionDefinition, Parameter, PartDocument } from '@pointercad/model';
+import { collectMathCoefficients, exactExpressionValueFromNumber } from '@pointercad/expression';
+import { functionFormulaExpressions, mathGeometryDerivedCoefficientIds, mathGeometryDerivedParameters,
+  type FunctionDefinition, type Parameter, type PartDocument } from '@pointercad/model';
 import { commitReplaceParameter } from '../parameters/parameterCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { t } from '../i18n/t.js';
 
-function formulaExpressions(definition: FunctionDefinition): readonly StoredMathExpression[] {
-  const formula = definition.formula;
-  switch (formula.kind) {
-    case 'implicit-curve': case 'implicit-surface': case 'coordinate-surface': return [formula.expression];
-    case 'coordinate-curve': return Object.values(formula.outputs);
-    case 'parametric-curve': case 'parametric-surface': return [formula.outputs.X, formula.outputs.Y, formula.outputs.Z];
-  }
-}
-
+/** GR-18b: a slider replaces a coefficient's formula with a plain number (§4(e)), which would silently cut a
+ *  geometry-derived coefficient loose from the shape it measures (GR-04: the value is re-derived every
+ *  recomputation). Such a coefficient never gets a slider, and `applyFunctionCoefficientSlider` refuses one
+ *  offered anyway (defence in depth; the list below already omits it). */
 export function functionCoefficientParameters(document: PartDocument, definition: FunctionDefinition): readonly Parameter[] {
-  const ids = new Set(formulaExpressions(definition).flatMap(expression => collectMathCoefficients(expression.expression).map(item => item.id)));
-  return document.parameters.filter(parameter => parameter.mathId !== undefined && ids.has(parameter.mathId));
+  const ids = new Set(functionFormulaExpressions(definition).flatMap(expression => collectMathCoefficients(expression.expression).map(item => item.id)));
+  const derivedIds = mathGeometryDerivedCoefficientIds(document.parameters, mathGeometryDerivedParameters(document.parameters));
+  return document.parameters.filter(parameter => parameter.mathId !== undefined && ids.has(parameter.mathId) && !derivedIds.has(parameter.mathId));
 }
 
 export interface CoefficientSliderRange { readonly minimum: number; readonly maximum: number }
@@ -49,6 +46,8 @@ export function applyFunctionCoefficientSlider(input: {
   }
   const parameter = state.document.parameters.find(item => item.mathId === input.coefficientId);
   if (parameter === undefined) return { ok: false, message: t('parameter.error.notFound') };
+  const derivedIds = mathGeometryDerivedCoefficientIds(state.document.parameters, mathGeometryDerivedParameters(state.document.parameters));
+  if (derivedIds.has(input.coefficientId)) return { ok: false, message: t('mathGeometry.functionSlider.derived') };
   const nextValue = exactExpressionValueFromNumber(input.value);
   if (parameter.value.value === input.value && parameter.value.source === nextValue.source) return { ok: true };
   const outcome = commitReplaceParameter(state.document, parameter.name, { value: nextValue });

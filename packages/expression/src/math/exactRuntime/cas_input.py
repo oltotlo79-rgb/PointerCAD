@@ -12,9 +12,10 @@ import sympy as s
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import BooleanFunction
 from cas_linear import LINEAR_OPERATIONS, linear_operation, component
+from cas_vector_products import OPERATIONS as VECTOR_PRODUCTS, vector_operation
 from cas_sets import BOUNDS as SET_BOUNDS, OPERATIONS as SET_OPERATIONS, set_operation
-from cas_limits import limit_value
-from cas_integrals import integral_value
+from cas_limit_bounds import decode_limit
+from cas_integrals import integral_value, indefinite_integral_value
 from cas_derivatives import decode_derivative
 from cas_vector_calculus import OPERATIONS as VECTOR_AT, vector_at, smooth_operation, point_value
 from cas_line_integrals import OPERATIONS as LINE_INTEGRALS, line_integral
@@ -28,6 +29,7 @@ from cas_elliptic_functions import ARITY as ELLIPTIC, elliptic_operation
 from cas_zeta_functions import zeta_operation
 from cas_error_functions import error_point
 from cas_fourier import OPERATIONS as FOURIER, fourier_operation
+from cas_extended_dispatch import OPERATIONS as EXTENDED, extended_operation, quantifier
 
 
 class CasInputProblem(ValueError):
@@ -114,7 +116,8 @@ class Decoder:
         self.elliptic_domains = []
         self.zeta_domains = []
         self.error_arguments = []
-        self.infinite_set_bound = False
+        self.infinite_bound = False
+        self.antiderivative = None
 
     def nonzero(self, value):
         if value.is_zero is True:
@@ -196,9 +199,28 @@ class Decoder:
         operation, operands = value['operation'], value['operands']
         if type(operation) is not str or type(operands) is not list or len(operands) > 256:
             raise CasInputProblem('syntax', 'Invalid operation input')
+        if operation in EXTENDED:
+            return extended_operation(self, operation, operands, scope, depth, fields, reference_key, CasInputProblem)
+        if operation == 'which':
+            if len(operands) < 2 or len(operands) % 2:
+                raise CasInputProblem('syntax', 'Piecewise needs condition/value pairs')
+            if self.smooth_point is not None or self.domain_observer is not None:
+                raise CasInputProblem('unevaluated', 'A selected branch is not a neighbourhood regularity proof')
+            for index in range(0, len(operands), 2):
+                condition = self.node(operands[index], scope, depth+1)
+                if condition is s.true:
+                    return self.node(operands[index+1], scope, depth+1)
+                if condition is not s.false:
+                    if not isinstance(condition, (Relational, BooleanFunction)):
+                        raise CasInputProblem('domain', 'A condition needs a proposition, not scalar truthiness')
+                    raise CasInputProblem('unevaluated', 'Piecewise condition remains undecided')
+            raise CasInputProblem('domain', 'No piecewise branch applies')
         if operation == 'system-solution':
             from cas_equation_systems import system_solution
             return system_solution(self, operands, scope, depth)
+        if operation in ('mapping', 'mapping-value', 'mapping-compose', 'mapping-inverse', 'mapping-image', 'mapping-preimage'):
+            from cas_mappings import mapping_operation
+            return mapping_operation(self, operation, operands, scope, depth)
         if operation == 'ode-value':
             from cas_ode import ode_value
             return ode_value(self, operands, scope, depth)
@@ -218,7 +240,7 @@ class Decoder:
                 raise CasInputProblem('unevaluated', 'An inner expansion needs a separate regularity proof')
             from cas_taylor import series_coefficient
             return series_coefficient(self, operands, scope, depth)
-        if (self.smooth_point is not None or self.domain_observer is not None) and operation in VECTOR_AT | LINE_INTEGRALS | REGION_INTEGRALS | PROBABILITY_OPERATIONS.keys() | SEQUENCES.keys() | {'limit', 'differentiate-at'}:
+        if (self.smooth_point is not None or self.domain_observer is not None) and operation in VECTOR_AT | LINE_INTEGRALS | REGION_INTEGRALS | PROBABILITY_OPERATIONS.keys() | SEQUENCES.keys() | {'limit', 'limit-supremum', 'limit-infimum', 'differentiate-at'}:
             raise CasInputProblem('unevaluated', 'A nested calculation needs a separate field regularity proof')
         if operation in SEQUENCES:
             return sequence_operation(self, operation, operands, scope, depth, fields, reference_key, CasInputProblem)
@@ -230,8 +252,8 @@ class Decoder:
             return region_integral(self, operation, operands, scope, depth, fields, reference_key, CasInputProblem)
         if operation in LINE_INTEGRALS:
             return line_integral(self, operation, operands, scope, depth, fields, reference_key, CasInputProblem)
-        if operation == 'limit':
-            return self.limit_node(operands, scope, depth)
+        if operation in ('limit', 'limit-supremum', 'limit-infimum'):
+            return self.limit_node(operands, scope, depth, operation)
         if operation == 'differentiate-at':
             return self.derivative_node(operands, scope, depth)
         # Decode every child before evaluation so 0*invalid never hides invalid input.
@@ -274,6 +296,8 @@ class Decoder:
             return logic[operation](*args)
         if operation in LINEAR_OPERATIONS:
             return linear_operation(operation, args, lambda rows: self.operation('matrix', [rows]), CasInputProblem)
+        if operation in VECTOR_PRODUCTS:
+            return vector_operation(self, operation, args, CasInputProblem)
         if operation == 'component':
             return component(args, CasInputProblem)
         if operation == 'list':
@@ -389,42 +413,14 @@ class Decoder:
             raise CasInputProblem('domain', 'Operation produced an undefined value')
         return result
 
-    def limit_node(self, operands, outer_scope, depth):
-        if len(operands) not in (2, 3):
-            raise CasInputProblem('syntax', 'A limit requires a function, point and optional direction')
-        function = operands[0]
-        fields(function, ('kind', 'operation', 'bindings', 'body'))
-        if (function['kind'] != 'binder' or function['operation'] != 'lambda'
-                or type(function['bindings']) is not list or len(function['bindings']) != 1):
-            raise CasInputProblem('syntax', 'A limit binds exactly one local variable')
-        binding = function['bindings'][0]
-        fields(binding, ('variable', 'domain'))
-        fields(binding['domain'], ('kind',))
-        if binding['domain']['kind'] != 'unrestricted':
-            raise CasInputProblem('syntax', 'A limit function cannot carry an unrelated range')
-        key = reference_key(binding['variable'])
-        if key[0] != 'bound':
-            raise CasInputProblem('syntax', 'A local limit variable is required')
-        target = self.node(operands[1], outer_scope, depth+1)
-        direction = self.node(operands[2], outer_scope, depth+1) if len(operands) == 3 else s.S.Zero
-        if any(not isinstance(item, s.Expr) or isinstance(item, s.MatrixBase) for item in (target, direction)):
-            raise CasInputProblem('domain', 'Scalar limit point and direction are required')
-        variable = s.Dummy('pcad_limit_' + str(len(self.references)), real=True)
-        self.references[variable] = dict(binding['variable'])
-        scope = dict(outer_scope)
-        scope[key] = variable
-        condition_start = len(self.domain_conditions)
-        body = self.node(function['body'], scope, depth+1)
-        if not isinstance(body, s.Expr) or isinstance(body, s.MatrixBase):
-            raise CasInputProblem('domain', 'A scalar function is required')
-        conditions = self.domain_conditions[condition_start:]
-        local = [condition for condition in conditions if variable in condition.free_symbols]
-        self.domain_conditions[condition_start:] = [condition for condition in conditions if variable not in condition.free_symbols]
-        return limit_value(body, variable, target, direction, local, CasInputProblem)
+    def limit_node(self, operands, outer_scope, depth, operation='limit'):
+        return decode_limit(self, operands, outer_scope, depth, operation, fields, reference_key, CasInputProblem)
 
     def binder(self, value, outer_scope, depth):
         fields(value, ('kind', 'operation', 'bindings', 'body'))
         operation, bindings = value['operation'], value['bindings']
+        if operation in ('for-all', 'exists'):
+            return quantifier(self, value, outer_scope, depth, fields, reference_key, CasInputProblem)
         if operation not in ('sum', 'product', 'integrate', 'differentiate'):
             raise CasInputProblem('unsupported', 'Unsupported binder')
         if type(bindings) is not list or not 1 <= len(bindings) <= 15:
@@ -500,7 +496,7 @@ class Decoder:
             for limit in reversed(limits):
                 variable = limit[0]
                 if len(limit) == 1:
-                    body = s.Integral(body, variable)
+                    body = indefinite_integral_value(body, variable, CasInputProblem)
                     continue
                 _, lower, upper = limit
                 conditions = self.domain_conditions[condition_start:]
@@ -508,6 +504,8 @@ class Decoder:
                 body = integral_value(body, variable, lower, upper, local, CasInputProblem)
                 self.domain_conditions[condition_start:] = [condition for condition in conditions
                                                           if variable not in condition.free_symbols]
+            if depth == 0 and len(limits) == 1 and len(limits[0]) == 1:
+                self.antiderivative = limits[0][0]  # The whole answer is F+C: cas_result.py
             return body
         constructor = {'sum': s.Sum, 'product': s.Product, 'integrate': s.Integral}[operation]
         # SymPy extends reversed discrete ranges using Karr's convention. The

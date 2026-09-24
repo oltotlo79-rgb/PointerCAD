@@ -19,6 +19,7 @@
 import {
   canMoveHistoryItem,
   insertPositionAt,
+  mathGeometryHistoryEdges,
   timelineIndexOf,
   type PartDocument,
 } from '@pointercad/model';
@@ -161,6 +162,25 @@ export interface TimelineDrag {
   readonly moved: boolean;
 }
 
+// 文書は不変なので同じ文書のドラッグ中は解析を繰り返さない。導出値だけを覚え、
+// 文書の変更・取消・再読込は別の鍵で判定する。保存する状態は増やさない。
+const geometryEdgesByDocument = new WeakMap<PartDocument, ReadonlyMap<string, readonly string[]>>();
+
+function geometryEdgesForDrag(
+  document: PartDocument,
+): ReadonlyMap<string, readonly string[]> | undefined {
+  // 定義か係数が無ければ図形経由の辺は無い。文書全体の走査も省く。
+  if ((document.mathGeometry?.length ?? 0) === 0 || document.parameters.length === 0) {
+    return undefined;
+  }
+  let edges = geometryEdgesByDocument.get(document);
+  if (edges === undefined) {
+    edges = mathGeometryHistoryEdges(document);
+    geometryEdgesByDocument.set(document, edges);
+  }
+  return edges;
+}
+
 /**
  * その落とし先へ動かせるか(ドラッグ中の予告。NFR-UX-5「実行してから失敗させない」)。
  * 文書を作らない `canMoveHistoryItem` を呼ぶので、指が動くたびに何度呼んでもよい。
@@ -171,7 +191,7 @@ export function timelineDropCheck(
   featureId: string,
   toIndex: number,
 ): TimelineRefusal | null {
-  const check = canMoveHistoryItem(document, featureId, toIndex);
+  const check = canMoveHistoryItem(document, featureId, toIndex, geometryEdgesForDrag(document));
   return check.ok
     ? null
     : { message: check.reason, blockingFeatureId: check.blockingFeatureId };

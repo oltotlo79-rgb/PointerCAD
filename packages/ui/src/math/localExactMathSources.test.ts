@@ -18,7 +18,8 @@ function sources(): ReadonlyMap<string, string> {
   return shipped;
 }
 function missingDependencies(files: ReadonlyMap<string, string>): string[] {
-  return [...files].flatMap(([name, source]) => [...source.matchAll(/^(?:from|import) (cas_\w+)(?:\s|$)/gmu)]
+  // An import inside a function is indented; it still has to be shipped with its importer.
+  return [...files].flatMap(([name, source]) => [...source.matchAll(/^\s*(?:from|import) (cas_\w+)(?:\s|$)/gmu)]
     .filter(match => !files.has(match[1]+'.py')).map(match => `${name} → ${match[1]}.py`));
 }
 describe('配布する固定計算部に、読み込む自作ファイルを全て含める', () => {
@@ -58,5 +59,15 @@ describe('配布する固定計算部に、読み込む自作ファイルを全�
     expect(missingDependencies(withoutLambert)).toContain('cas_input.py → cas_lambert_functions.py');
     expect(missingDependencies(withoutLambert)).toContain('cas_result.py → cas_lambert_functions.py');
     expect(missingDependencies(withoutLambert)).toContain('cas_derivatives.py → cas_lambert_functions.py');
+    expect(missingDependencies(new Map([['cas_a.py', 'def f():\n    from cas_b import g\n    return g\n']])))
+      .toEqual(['cas_a.py → cas_b.py']);
+    const withoutMappings = new Map(shipped); withoutMappings.delete('cas_mappings.py');
+    expect(missingDependencies(withoutMappings)).toContain('cas_input.py → cas_mappings.py');
+    const withoutDispatch = new Map(shipped); withoutDispatch.delete('cas_extended_dispatch.py');
+    expect(missingDependencies(withoutDispatch)).toContain('cas_input.py → cas_extended_dispatch.py');
+    for (const module of ['cas_cardinality', 'cas_vector_projection', 'cas_matrix_constructors', 'cas_set_relations', 'cas_logic_extended']) {
+      const without = new Map(shipped); without.delete(`${module}.py`);
+      expect(missingDependencies(without)).toContain(`cas_extended_dispatch.py → ${module}.py`);
+    }
   });
 });

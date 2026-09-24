@@ -129,6 +129,8 @@ export function createInitialDocumentState(): InitialDocumentState {
     appearanceMatches: [],
     partErrors: [],
     cacheHits: 0,
+    // 図形の測定値(ADD-23、GR-14)。まだ 1 度も計算していないので、測った値を持たない。
+    mathGeometryResult: null,
     recomputeProgress: null,
     cancelRequestCount: 0,
     recomputeCancelled: false,

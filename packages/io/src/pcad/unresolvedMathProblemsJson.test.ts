@@ -26,6 +26,23 @@ function envelope() {
   return {root:raw,body:raw.document};
 }
 describe('未解決の式と条件を版16の実ファイルに保存する',()=>{
+  it('記号の名前・意味・種類・参照番号を実ファイルの保存再開で保つ',()=>{
+    const declaration={id:'symbol:a',label:'a_1',meaning:'未指定の実数の長さ',type:'real' as const};
+    const problem:UnresolvedMathProblem={id:'math-problem:symbol',name:'記号付きの式',status:'unresolved',
+      definition:{format:'pointercad-math/1',source:'a_1',inputNotation:'text',angleUnit:'radian',declarations:[declaration],
+        expression:{kind:'symbol',reference:{role:'declared',id:declaration.id,label:declaration.label}}}};
+    const original=setUnresolvedMathProblem(createEmptyPartDocument(),problem);
+    const decoded=readPcadFile(writePcadFile(original));
+    if(!decoded.ok) throw new Error(decoded.error.message);
+    expect(decoded.document.unresolvedMathProblems).toEqual([problem]);
+    expect(decoded.document.sketches).toEqual(original.sketches);
+    const raw:unknown=JSON.parse(serializeDocument(original));
+    if(!isRecord(raw)||!isRecord(raw.document)) throw new Error('部品ではありません。');
+    for(const declarations of [[],[{...declaration,type:'bad'}],[{...declaration,label:'別の記号'}]]) {
+      raw.document.unresolvedMathProblems=[{...problem,definition:{...problem.definition,declarations}}];
+      expect(parseDocument(JSON.stringify(raw))).toMatchObject({ok:false});
+    }
+  });
   it('圧縮した部品ファイルを開き直して原式・条件・未解決状態を全て保持する',()=>{
     const original=sample(), decoded=readPcadFile(writePcadFile(original));
     if(!decoded.ok) throw new Error(decoded.error.message);

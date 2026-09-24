@@ -4,7 +4,8 @@
  *
  * 対応要件: FR-301〜309(点・線分・円弧・点列・面を作る)、FR-307(続けてかく)。
  *
- * ここは DOM にもストアにも触れない純関数だけを置く。履歴の差し替えは呼び出し側
+ * 履歴を作る処理は純関数。球の案内の読取だけは、現在の図形由来の値の古さも確認する。
+ * 履歴の差し替えは呼び出し側
  * (`AppShell` と `attachSketchInteraction`)が行い、この層は「同じ入力からは必ず
  * 同じ履歴ができる」ことだけを受け持つ。副作用が無いので Node の単体検査で固定できる。
  */
@@ -31,6 +32,7 @@ import {
   type WorkPlaneId,
 } from '@pointercad/model';
 
+import { pendingFieldContext, referencesPendingVariable } from './numericMathValues.js';
 import type { MessageKey } from '../i18n/t.js';
 import type { NumericInputCommit, NumericInputState, SketchCommitFlags } from './numericInput.js';
 import {
@@ -249,6 +251,15 @@ export function sphereGridSphereOf(
   const shape = feature.shape;
   if (shape.kind !== 'sphere') {
     return null;
+  }
+  const context = pendingFieldContext();
+  if (context?.document.solids.includes(feature)) {
+    const pending = context.pendingVariables;
+    const values = [shape.radius];
+    if (feature.origin.kind === 'coordinate' && feature.origin.value.mode === 'absolute') {
+      values.push(feature.origin.value.x, feature.origin.value.y, feature.origin.value.z);
+    }
+    if (values.some(value => referencesPendingVariable(value.source, pending, value.mathDefinition))) return null;
   }
   const radius = shape.radius.value;
   if (!Number.isFinite(radius) || radius <= 0) {

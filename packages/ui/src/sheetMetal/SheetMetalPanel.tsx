@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createSheetBaseFeature, createSheetFlangeFeature, createSheetBendFeature, createSheetReliefFeature, resolveSheetSeams, availableSheetBoundaryEdges, resolvePart, sheetFlangeProfileEdges, pickSheetBoundary,
   type SheetMetalFeature, type SheetFlangeFeature, type SheetBendFeature, type SheetReliefFeature, type SheetPanelBoundaryRef, type SketchFaceRef } from '@pointercad/model';
+import { pendingFieldVariables } from '../shell/propertyFieldUnits.js';
 import { t } from '../i18n/t.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import { parseSubShapeId } from '../solid/subShapeSelection.js';
@@ -129,9 +130,9 @@ export function SheetMetalPanel({ session }: { readonly session: SheetMetalToolS
     const state = useAppStore.getState();
     if (state.sheetMetalTool !== session || state.activeDocumentId !== session.documentId || state.document !== session.document
       || state.assembly !== null || state.drawing !== null || state.isComputing || candidate === null || missingReferences) return;
-    const result = buildSheetCreation(state.document, candidate, sources, lengthUnit, {
-      variables: state.parameterAnalysis.variables, exactVariables: state.parameterAnalysis.exactVariables, nonLengthVariables: state.nonLengthVariables,
-    }, editing, millimetreSourceKeys);
+    const options = { variables: state.parameterAnalysis.variables, exactVariables: state.parameterAnalysis.exactVariables,
+      nonLengthVariables: state.nonLengthVariables, pendingVariables: pendingFieldVariables(state) };
+    const result = buildSheetCreation(state.document, candidate, sources, lengthUnit, options, editing, millimetreSourceKeys);
     if (!result.ok) { setMessage(result.message); setInvalidField(result.field ?? null); return; }
     void applySheetCreation(session, result, commit);
   };

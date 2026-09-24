@@ -124,6 +124,10 @@ class Encoder:
             return self.made({'kind': 'symbol', 'reference': dict(reference)}, depth)
         if isinstance(value, s.FiniteSet):
             return self.operation('set', [self.node(item, depth+1) for item in value.args], depth)
+        if isinstance(value, s.ProductSet):
+            if not 2 <= len(value.sets) <= 16:
+                raise CasInputProblem('budget', 'The result product has invalid dimensions')
+            return self.operation('cartesian-product', [self.node(item, depth+1) for item in value.sets], depth)
         if isinstance(value, s.Interval):
             ends = []
             for endpoint, opened in ((value.start, value.left_open), (value.end, value.right_open)):
@@ -174,10 +178,48 @@ class Encoder:
         return self.operation(operation, [self.node(item, depth+1) for item in value.args], depth)
 
 
+class AntiderivativeEncoder(Encoder):
+    """Permit only the indefinite integral's own variable, inside its returned lambda."""
+    def __init__(self, decoder, variable):
+        super().__init__(decoder)
+        self.variable = variable
+
+    def node(self, value, depth=0):
+        if value == self.variable:
+            return self.made({'kind': 'symbol', 'reference': dict(self.decoder.references[value])}, depth)
+        return super().node(value, depth)
+
+
+def encode_antiderivative(value, decoder, variable):
+    """A whole-formula indefinite integral is the family F+C, never one value or a coordinate.
+
+    Always return a one-variable lambda over the source's own binding, also when F is
+    constant (integrate(0,t)). A condition on that variable (t != 0 for 1/t) only says
+    where F applies; it is not an obligation of the whole answer and is not transferred.
+    Other conditions and every other bound or unknown symbol keep the ordinary rules.
+    """
+    if not isinstance(value, s.Expr) or isinstance(value, s.MatrixBase) or value.free_symbols - {variable}:
+        return {'status': 'unresolved', 'reason': 'unevaluated', 'coordinateAuthorized': False}
+    encoder = AntiderivativeEncoder(decoder, variable)
+    conditions = []
+    for condition in decoder.domain_conditions:
+        if condition is s.false:
+            raise CasInputProblem('domain', 'The original input domain is false')
+        if condition is not s.true and variable not in condition.free_symbols:
+            conditions.append(encoder.node(condition))
+    binding = {'variable': dict(decoder.references[variable]), 'domain': {'kind': 'unrestricted'}}
+    body = encoder.node(value, 1)
+    return {'status': 'value', 'kind': 'antiderivative',
+            'expression': encoder.made({'kind': 'binder', 'operation': 'lambda', 'bindings': [binding], 'body': body}, 0),
+            'domainConditions': conditions, 'coordinateAuthorized': False}
+
+
 def encode_result(value, decoder):
     """Transfer an exact value and original domain obligations, without evaluating it."""
     encoder = Encoder(decoder)
     try:
+        if decoder.antiderivative is not None:
+            return encode_antiderivative(value, decoder, decoder.antiderivative)
         conditions = []
         for condition in decoder.domain_conditions:
             if condition is s.false:
@@ -202,7 +244,7 @@ def encode_result(value, decoder):
             kind = 'set'
         elif value is s.true or value is s.false or isinstance(value, (Relational, BooleanFunction)):
             kind = 'boolean'
-        elif value in (s.oo, -s.oo) and decoder.infinite_set_bound:
+        elif value in (s.oo, -s.oo) and decoder.infinite_bound:
             kind = 'infinite-bound'
         elif value.free_symbols:
             kind = 'symbolic'

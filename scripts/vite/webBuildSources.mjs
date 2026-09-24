@@ -1,13 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { lstat, readFile } from 'node:fs/promises';
 import { offlineAssetUrl } from './offlineProtocol.mjs';
 import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
 
 /** Capture the complete build source set, including additions and deletions before a commit. */
 async function captureBuildSources(root, desktop) {
-  const git = args => execFileSync('git', ['ls-files', '-z', ...args],
+  const git = args => execFileSync('git', ['-c', 'safe.directory=' + realpathSync(root).replaceAll('\\', '/'),
+    'ls-files', '-z', ...args],
     { cwd: root, env: localGitEnvironment(), encoding: 'utf8', maxBuffer: 16_777_216,
       windowsHide: true }).split('\0').filter(Boolean);
   const deleted = new Set(git(['--deleted']));

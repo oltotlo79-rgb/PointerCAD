@@ -1,3 +1,8 @@
+import { mathDeclaredValuesFlow } from './mathDeclaredValuesFlow.js';
+import { mathDeclaredSymbolsFlow } from './mathDeclaredSymbolsFlow.js';
+import { mathMappingsFlow } from './mathMappingsFlow.js';
+import { mathDeclaredRenameFlow } from './mathDeclaredRenameFlow.js';
+import { mathLimitBoundsFlow } from './mathLimitBoundsFlow.js';
 import { mathSetBoundsFlow } from './mathSetBoundsFlow.js';
 import { mathUnresolvedProblemFlow } from './mathUnresolvedProblemFlow.js';
 import { mathNumericalRootFlow } from './mathNumericalRootFlow.js';
@@ -35,7 +40,7 @@ import { mathExactRuntimeFlow } from './mathExactRuntimeFlow.js';
 import { mathExactLinearFlow } from './mathExactLinearFlow.js';
 import { mathDiscreteRangesFlow } from './mathDiscreteRangesFlow.js';
 import { mathInfiniteRangesFlow } from './mathInfiniteRangesFlow.js';
-import { INFINITE_RANGES_SCENARIO_TIMEOUT_MS, waitForMathEditorText } from './mathEditorReady.js';
+import { EXACT_COORDINATE_SCENARIO_TIMEOUT_MS, INFINITE_RANGES_SCENARIO_TIMEOUT_MS, focusField, waitForMathEditorText } from './mathEditorReady.js';
 import { mathLimitsFlow } from './mathLimitsFlow.js';
 import { mathDerivativesFlow } from './mathDerivativesFlow.js';
 import { mathVectorCalculusAtFlow } from './mathVectorCalculusAtFlow.js';
@@ -47,6 +52,7 @@ import { mathNormalDistributionFlow } from './mathNormalDistributionFlow.js';
 import { mathRegionIntegralsFlow } from './mathRegionIntegralsFlow.js';
 import { INTEGRAL_SCENARIO_TIMEOUT_MS, mathIntegralsFlow } from './mathIntegralsFlow.js';
 import { uiMessage } from './uiMessages.js';
+import { MATH_COVERAGE_SCENARIO_TIMEOUT_MS, mathCoverageFlow } from './mathCoverageFlow.js';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test('ADD-24 Gamma・Beta分布の入力準備失敗を表示された理由で直ちに検出する', async ({ page }) => {
@@ -184,7 +190,7 @@ test('ADD-18 Legendre多項式の次数と値と保存再編集・Undo・F1を�
 });
 test('ADD-21 展開の係数選択と保存再編集・Undo・F1を通す', async ({ page }, info) => {
   // Includes separate exact-runtime preparations before and after document reopen.
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -202,7 +208,7 @@ test('ADD-21 級数の展開・打切り・収束と取消・F1を通す', async
 });
 test('ADD-21 数列と差分と漸化式の条件と保存再編集・Undo・F1を通す', async ({ page }, info) => {
   // Includes separate exact-runtime preparations before and after document reopen.
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -211,7 +217,7 @@ test('ADD-21 数列と差分と漸化式の条件と保存再編集・Undo・F1�
 });
 test('ADD-24 分布を宣言した確率と依存関係の条件と保存再編集・Undo・F1を通す', async ({ page }, info) => {
   // Includes separate exact-runtime preparations before and after document reopen.
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -265,7 +271,7 @@ test('ADD-23 面積分・流束・体積積分の向きと成立条件と保存�
 });
 
 test('ADD-23 線積分の弧長・向き・成立条件と保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(420_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -274,7 +280,7 @@ test('ADD-23 線積分の弧長・向き・成立条件と保存再編集・Undo
 });
 
 test('ADD-23 指定位置の勾配・行列成分・成立条件と保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(360_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -282,7 +288,7 @@ test('ADD-23 指定位置の勾配・行列成分・成立条件と保存再編�
   await page.goto('/'); await mathVectorCalculusAtFlow(page, info); expect(errors).toEqual([]);
 });
 test('ADD-22 指定位置の微分・高階・角度・不成立と保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(360_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -299,7 +305,7 @@ test('ADD-22 積分の端点・内部の発散・無限区間と保存再編集�
 });
 
 test('ADD-22 極限の左右・角度・不成立を区別し、表示切替・保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(360_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -429,7 +435,7 @@ for (const { name, flow } of [
 }
 
 test('ADD-26 離散フーリエ変換の符号と逆変換と保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(360_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -438,7 +444,7 @@ test('ADD-26 離散フーリエ変換の符号と逆変換と保存再編集・U
 });
 
 test('ADD-26 連続変換の成立範囲と数値選択と保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -447,7 +453,7 @@ test('ADD-26 連続変換の成立範囲と数値選択と保存再編集・Undo
 });
 
 test('ADD-26 フーリエ級数の係数と部分和と保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -456,7 +462,7 @@ test('ADD-26 フーリエ級数の係数と部分和と保存再編集・Undo・
 });
 
 test('ADD-26 方程式の解集合と選択・重根・保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -465,7 +471,7 @@ test('ADD-26 方程式の解集合と選択・重根・保存再編集・Undo・
 });
 
 test('ADD-26 複数式の解と自由変数・条件・保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -483,7 +489,7 @@ test('ADD-26 数値解の区間と未解決・選択・保存再編集・Undo・
 });
 
 test('ADD-26 微分方程式の条件と解候補・保存再編集・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
@@ -501,10 +507,93 @@ test('ADD-26 未解決の式と条件を保存再編集し、数値の拒否・�
 });
 
 test('ADD-22 集合の上下限と極値を区別し、保存再編集・座標追従・Undo・F1を通す', async ({ page }, info) => {
-  test.setTimeout(600_000);
+  test.setTimeout(EXACT_COORDINATE_SCENARIO_TIMEOUT_MS);
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
   await page.addInitScript(() => {
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
   });
   await page.goto('/'); await mathSetBoundsFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-22 上極限と下極限の方向・整数条件を保ち、保存再編集・座標追従・Undo・F1を通す', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await mathLimitBoundsFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-25 記号の名前・意味・種類を保存再編集し、未指定値と型違反の拒否・Undo・F1を通す', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await mathDeclaredSymbolsFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-25 記号の改名で局所変数を変えず、予約名拒否・実保存再開・Undo・取消・F1を通す', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await mathDeclaredRenameFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-25 写像の定義域と逆数との区別を保ち、合成・実保存再開・座標追従・Undo・F1を通す', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await mathMappingsFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-25 記号の値の種類を確認し、実保存再開・値編集・座標追従・Undo・F1を通す', async ({ page }, info) => {
+  test.setTimeout(600_000);
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await mathDeclaredValuesFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('MC-21 追加の記号の候補・内積・成分・集合の場合分け・≈・∇・比・循環小数を係数と座標に使い、保存再開・Undo・F1を通す', async ({ page }, info) => {
+  // Six exact-runtime preparations in sequence, the same count as the coordinate flows (mathCoverageFlow.ts).
+  test.setTimeout(MATH_COVERAGE_SCENARIO_TIMEOUT_MS);
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await mathCoverageFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('MC-27d Firefoxで構造入力に焦点があるままEscで閉じても、開き直した構造入力へ焦点を入れて例外にならない', async ({ page }) => {
+  // Firefox does not fire `blur` when the focused math-field is removed from the document
+  // (Chromium does), so MathLive's internal "currently focused mathfield" reference stayed stale
+  // and the next math-field to receive focus crashed inside MathLive's own onFocus/onBlur handling.
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'パラメータ', exact: true }).click();
+  await page.getByRole('button', { name: '名前を付けた数値を足します', exact: true }).click();
+  const row = page.locator('.pcad-parameter').last(), dialog = page.locator('.pcad-math-dialog');
+  const openStructured = async () => {
+    await row.getByRole('button', { name: '数式で入力', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
+    await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
+    await expect(dialog.locator('math-field')).toBeVisible();
+    await focusField(dialog.locator('math-field'));
+  };
+  await openStructured();
+  // Esc while focus is still inside the structured field closes the dialog without first
+  // moving focus elsewhere (unlike clicking a button), which is what reproduces the Firefox bug.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await openStructured();
+  await expect(dialog.locator('math-field')).toBeFocused();
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

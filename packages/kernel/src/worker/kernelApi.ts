@@ -93,6 +93,7 @@ import {
 
 import { compareCachedMaterials, type MaterialComparisonRequest } from './compareCachedMaterials.js';
 import type { MaterialComparisonOutcome } from './compareMaterialBodies.js';
+import { withKernelMemory } from './kernelMemory.js';
 
 const DEFAULT_PART_ID = 'part:current';
 
@@ -378,6 +379,8 @@ function resolveDisplayMeshes(
 
 /** UI 側から Comlink 越しに呼べる幾何カーネルの窓口。 */
 export interface KernelApi {
+  /** Read already computed topology without replacing a part's displayed meshes or rebuilding shapes. */
+  readCachedBodies(items: readonly { readonly id: string; readonly key: string }[]): Promise<SolidRecomputeResult>;
   /** Build and clip certified chords, then return every surviving corner in double precision. */
   functionSketchCurves(request: FunctionCurveGeometrySpec): Promise<FunctionCurveSketchResult>;
   /** スケッチの曲線を折れ線に、閉ループを面にする(FR-309)。 */
@@ -391,6 +394,9 @@ export interface KernelApi {
    * onProgress と cancelToken は Comlink.proxy で包んだ関数を渡す。
    * cancelToken が true を返すと、段と段の間で残りを打ち切って cancelled: true で返る
    * (1 段の演算そのものは途中で止められない。NFR-PF-4)。
+   *
+   * 返信には、計算を終えた時点の計算部のメモリの量(`memory`)を添える(NFR-PF-6)。
+   * 取り消した計算でも添えるので、画面は上限に近いことを中止の後も知らせ続けられる。
    */
   recomputeSolids(
     request: SolidRecomputeRequest,
@@ -585,6 +591,18 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
   }
 
   return {
+    readCachedBodies(items): Promise<SolidRecomputeResult> {
+      const bodies: SolidRecomputeResult['bodies'][number][] = [];
+      const failures: SolidRecomputeResult['failures'][number][] = [];
+      const counts = new Map<string, number>();
+      for (const item of items) counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
+      for (const item of items) {
+        const cached = item.id.length > 0 && counts.get(item.id) === 1 ? cache.get(item.key) : undefined;
+        if (cached === undefined) failures.push({ id: item.id, message: MISSING_BODY_MESSAGE });
+        else bodies.push({ ...cached.mesh, id: item.id });
+      }
+      return Promise.resolve({ bodies, failures, cacheHits: bodies.length, cancelled: false, appearanceMatches: [] });
+    },
     compareMaterials(request, shouldCancel) { return compareCachedMaterials(request, cache, loadOcct, shouldCancel); },
     async checkInterference(request, onProgress, shouldCancel, callbackDelivery): Promise<InterferenceResult> {
       const snapshot = snapshotInterferenceRequest(request);
@@ -716,7 +734,8 @@ export function createKernelApi(loadOcct: () => Promise<OpenCascadeInstance>, sh
             cache.release(previous);
           }
         }
-        return result;
+        // 計算ごとの返信に計算部のメモリの量を添える(NFR-PF-6)。取り消した計算でも添える。
+        return withKernelMemory(result, oc);
       });
     },
 

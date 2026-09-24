@@ -1,9 +1,9 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
+import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
@@ -25,7 +25,7 @@ describe('追加計算部でも空の範囲の和は0・積は1を保つ', () =>
   });
   it('直接の数え上げと照合し、積分の逆向きの符号は変えない', () => {
     const script = fileURLToPath(new URL('./exactRuntime/cas_empty_ranges_test.py', import.meta.url));
-    const result = spawnSync('python', ['-B', '-X', 'utf8', script], {
+    const result = spawnExactRuntime(['-B', '-X', 'utf8', script], {
       encoding: 'utf8', timeout: 30_000, maxBuffer: 2_000_000,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
     });

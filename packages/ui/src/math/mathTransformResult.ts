@@ -14,6 +14,8 @@ export function readableMathResult(node: Node): string {
     if (operation === 'power') {
       const exponent = value.operands[1];
       if (exponent.kind === 'number' && exponent.decimal === '-1') return { text: `1/${child(0, 21)}`, precedence: 20 };
+      // x^1 is x; a redundant exact exponent of exactly 1 (e.g. a computed sqrt(30)) never shows "^1".
+      if (exponent.kind === 'number' && exponent.decimal === '1') return children[0];
       return { text: `${child(0, 31)}^${child(1, 31)}`, precedence: 30 };
     }
     if (operation === 'negate') return { text: `-${child(0, 26)}`, precedence: 25 };

@@ -5,7 +5,7 @@ import { lambertWSlope } from './lambertWIntervals.js';
 import { ellipticMidpoint } from './ellipticIntervals.js';
 import { ellipticPartialRanges } from './ellipticPartials.js';
 /** Forward differentiation of the safe scalar tape. Nonsmooth and domain-boundary points have no invented normal. */
-import { createScalarTapeEvaluation, type ScalarTape } from './scalarMathTape.js';
+import { createScalarConditionSampler, createScalarTapeEvaluation, type ScalarTape } from './scalarMathTape.js';
 import { polygammaSample } from './polygammaIntervals.js';
 import { betaFunctionRanges } from './betaFunctionIntervals.js';
 export interface ScalarDifferential {
@@ -20,6 +20,22 @@ export function createScalarDifferential(tape: ScalarTape): (inputs: readonly nu
   const gradient = new Float64Array(count * dimensions);
   const valid = new Uint8Array(count);
   const toRadians = tape.angleUnit === 'degree' ? Math.PI / 180 : 1;
+  const branches = new Map(tape.instructions.flatMap((item, index) => item.kind === 'piecewise'
+    ? [[index, item.branches.map(branch => ({ condition: createScalarConditionSampler(branch.condition),
+      differential: createScalarDifferential(branch.value) }))] as const] : []));
+  const branchDifferential = (index: number, inputs: readonly number[]): ScalarDifferential['reason'] => {
+    valid[index] = 0;
+    for (const branch of branches.get(index) ?? []) {
+      const condition = branch.condition(inputs);
+      if (condition.truth === null || condition.boundary) return 'nonsmooth';
+      if (!condition.truth) continue;
+      const selected = branch.differential(inputs);
+      if (selected.gradient === null) return selected.reason;
+      gradient.set(selected.gradient, index * dimensions); valid[index] = 1;
+      return null;
+    }
+    return 'domain';
+  };
   return inputs => {
     const value = scalar.evaluate(inputs);
     if (!Number.isFinite(value)) return { value, gradient: null, reason: 'domain' };
@@ -119,6 +135,8 @@ export function createScalarDifferential(tape: ScalarTape): (inputs: readonly nu
         product = 1;
         for (let i = item.values.length - 1; i >= 0; i -= 1) { after[i] = product; product *= values[item.values[i]]; }
         combine(item.values.map((operand, i) => [operand, before[i] * after[i]]));
+      } else if (item.kind === 'piecewise') {
+        const failure = branchDifferential(index, inputs); reason ??= failure;
       } else {
         const selected = item.values.filter(operand => values[operand] === values[index]);
         if (selected.length !== 1) { valid[index] = 0; reason ??= 'nonsmooth'; }

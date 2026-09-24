@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { isPendingFieldError, pendingFieldVariables } from '../shell/propertyFieldUnits.js';
 import { t } from '../i18n/t.js';
 import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -276,6 +277,7 @@ export function NumericInputPopover({
    */
   const analysis = useAppStore((store) => store.parameterAnalysis);
   const variables = analysis.variables;
+  const pendingVariables = useAppStore(pendingFieldVariables);
   /*
    * 表示の単位(FR-811、P6 タスク3b)。単位を書かない入力を inch とみなすかどうかが
    * これで決まるので、**評価・確定・札のすべてへ同じ値を渡す**(片方だけだと欄の
@@ -309,7 +311,7 @@ export function NumericInputPopover({
     return null;
   }
 
-  const evaluation = evaluateNumericInput(state, variables, { lengthUnit, nonLengthVariables, exactVariables: analysis.exactVariables });
+  const evaluation = evaluateNumericInput(state, variables, { lengthUnit, nonLengthVariables, exactVariables: analysis.exactVariables, pendingVariables });
   const position = clampAnchor(anchor, viewportWidth, viewportHeight);
   const coordinateStep = asksCoordinate(state.step);
   // 欄が1つだけの段(押し出し・回転・縫合・R面取り)は、見出しの幅を内容に合わせる
@@ -363,7 +365,8 @@ export function NumericInputPopover({
     >
       <div className="pcad-popover__title">{t(STEP_TITLE_KEYS[state.step])}</div>
       {evaluation.carriedError === undefined ? null : (
-        <p className="pcad-field__error" role="alert">{evaluation.carriedError.message}</p>
+        <p className={isPendingFieldError(evaluation.carriedError) ? 'pcad-field__message' : 'pcad-field__error'}
+          role={isPendingFieldError(evaluation.carriedError) ? 'status' : 'alert'}>{evaluation.carriedError.message}</p>
       )}
       {state.previousStage === undefined ? null : (
         <button title={t('controlGuide.button.numericPrevious')} type="button" className="pcad-button"

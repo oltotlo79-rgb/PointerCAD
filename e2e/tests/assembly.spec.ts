@@ -415,4 +415,35 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     await expect(page.locator('.pcad-property-list')).toContainText('解決済み');
     expect(errors).toEqual([]);
   });
+
+  test('ファイル口の登録が遅れて現れても、実際に現れるまで待ってから使う', async ({ page }) => {
+    const errors = collectBrowserErrors(page);
+    const fixture = await twoBoxAssemblyFile(40);
+    await page.goto('/');
+    await waitForRecompute(page);
+    // 実際に登録済みの本物の口を一旦外し、smoke.spec.ts の pcadRecomputeStats 遅延確認
+    // (計算状態の読取り口が遅れて現れても...)と同じ考え方で250ms後に戻す。
+    // 固定秒数のsleepや偽物の関数で代用しない。
+    await page.evaluate(() => {
+      const install = window.pcadSetFileGateway;
+      if (install === undefined) throw new Error('検査専用の口 pcadSetFileGateway が見つかりません。');
+      delete window.pcadSetFileGateway;
+      setTimeout(() => { window.pcadSetFileGateway = install; }, 250);
+    });
+    await openAssemblyFixture(page, fixture);
+    await expect(componentRows(page)).toHaveCount(2);
+    expect(errors).toEqual([]);
+  });
+
+  test('ファイル口が現れないまま待ち上限に達すると、理由つきで失敗する', async ({ page }) => {
+    await page.goto('/');
+    await waitForRecompute(page);
+    // 登録済みの本物の口を外したまま戻さない(未登録のまま)。
+    await page.evaluate(() => { delete window.pcadSetFileGateway; });
+    const box = boxPartFile();
+    const startedAtMs = Date.now();
+    await expect(installAssemblyFileGateway(page, { parts: [{ fileName: '箱.pcad', bytes: box }] }))
+      .rejects.toThrow(/pcadSetFileGateway.*15秒/);
+    expect(Date.now() - startedAtMs).toBeGreaterThanOrEqual(14_000);
+  });
 });

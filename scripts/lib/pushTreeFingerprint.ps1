@@ -12,7 +12,8 @@ function Read-GitSnapshotMetadata {
     $start.StandardOutputEncoding = [Text.UTF8Encoding]::new($false, $true)
     $start.StandardErrorEncoding = [Text.UTF8Encoding]::new($false, $true)
     foreach ($name in $script:PointerCadInheritedGitEnvNames) { $start.EnvironmentVariables.Remove($name) }
-    $allArguments = @('-C', $Root, '-c', 'core.quotepath=false') + $Arguments
+    $allArguments = @('-C', $Root, '-c', ('safe.directory=' + ([IO.Path]::GetFullPath($Root).Replace('\', '/'))),
+        '-c', 'core.quotepath=false') + $Arguments
     if ($null -ne $start.PSObject.Properties['ArgumentList']) {
         foreach ($argument in $allArguments) { $start.ArgumentList.Add($argument) }
     } else {

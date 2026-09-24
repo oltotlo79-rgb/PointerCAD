@@ -519,9 +519,11 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
     // タスク32 の「測る」が 2 行目に入った(§0.a-0.29。区画は増やさない、要件§7.1)。
     // P6 タスク39 の「下絵」(FR-332)が 3 行目に入った(同じ理由で区画は増えない)。
     // P6 タスク46 の「3D プリントの点検」(FR-815)が 4 行目に入った(同じ理由)。
+    // GR-30 の「図形の測定値」(Q1=A4)が「測る」の次に入った(同じ理由。区画は増えない)。
     expect(LOOK_MENU_ITEMS.map((item) => item.id)).toEqual([
       'appearance',
       'measure',
+      'mathGeometry',
       'strength',
       'canvas',
       'printCheck',
@@ -533,7 +535,7 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       畳んだ一覧の中に項目をいくつ足しても溝の幅は変わらない、という約束の実例。
       平置きにしていたら図柄 4 個で 120 画素になり、1440 画素の窓の余裕が削れていた。
     */
-    expect(LOOK_MENU_ITEMS).toHaveLength(5);
+    expect(LOOK_MENU_ITEMS).toHaveLength(6);
     expect(segmentedWidthPixels(0, SINGLE_MENU_COUNT)).toBe(37);
   });
 

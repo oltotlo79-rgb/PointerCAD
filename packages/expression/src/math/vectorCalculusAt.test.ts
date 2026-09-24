@@ -1,12 +1,12 @@
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
-import { executeExactMathWorkRequest, type ExactMathEngine } from './exactMathWorkExecution.js';
+import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
 
 const examples = [
   { source: 'component(gradientat(x^2*y,[x,y],[2,3]),1)', value: 12 },
@@ -46,7 +46,7 @@ function request(source: string, unit: 'degree' | 'radian' = 'degree'): MathWork
     identity: { documentId: 'vector-at', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
 }
 function native(args: readonly string[], input?: string): string {
-  const result = spawnSync('python', ['-B', '-X', 'utf8', script, ...args], {
+  const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {
     input, encoding: 'utf8', timeout: 60_000, maxBuffer: 2_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
   });
@@ -71,24 +71,24 @@ beforeAll(() => {
 describe('指定位置の直交座標の微分を、全成分の成立条件を保って座標へ渡す', () => {
   it('同名の局所変数と係数IDを区別し、係数と評価点の変更を原式のまま反映する', async () => {
     const source = 'component(gradientat(coef("x")*x^2,[x],[coef("位置")]),1)';
-    for (const [factor, point, expected] of [['3', '2', 12], ['5', '3', 30]] as const) {
+    const engine = sharedExactEngine(batch => native(['--batch'], batch));
+    const calculated = await Promise.all(([['3', '2', 12], ['5', '3', 30]] as const).map(async ([factor, point, expected]) => {
       const input: MathWorkRequest = { ...request(source), coefficients: [
         { id: 'factor-id', label: 'x', decimal: factor }, { id: 'point-id', label: '位置', decimal: point },
       ] };
-      const engine: ExactMathEngine = { evaluate: expression => {
-        const values: unknown = JSON.parse(native(['--batch'], JSON.stringify([{ expression, angleUnit: input.angleUnit }])));
-        if (!Array.isArray(values) || values.length !== 1) throw new Error('実計算の返信数が一致しません。');
-        return Promise.resolve(values[0]);
-      } };
-      const raw = await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined });
+      return { input, expected,
+        raw: await executeExactMathWorkRequest(createMathWorkEnvelope(7, input), { backend, engine, shouldStop: () => undefined }) };
+    }));
+    const reopenedRuns = await Promise.all(calculated.map(async ({ input, expected, raw }) => {
       const result = decodeMathWorkReply(raw, input, { operationsById: backend.operationsById,
         coefficientIds: new Set(['factor-id', 'point-id']), declaredIds: new Set() }).result;
       expect(result.evaluation).toMatchObject({ status: 'value', kind: 'real', coordinate: expected });
       expect(result.definition?.source).toBe(source);
       if (result.definition === null) throw new Error('保存する原式がありません。');
       const reopened: unknown = JSON.parse(JSON.stringify(createMathWorkEnvelope(8, { ...input, definition: result.definition })));
-      expect((await executeExactMathWorkRequest(reopened, { backend, engine, shouldStop: () => undefined })).evaluation).toEqual(result.evaluation);
-    }
+      return { result, again: await executeExactMathWorkRequest(reopened, { backend, engine, shouldStop: () => undefined }) };
+    }));
+    for (const { result, again } of reopenedRuns) expect(again.evaluation).toEqual(result.evaluation);
   });
   it('6方式・変数順序・右手系と、元の穴・近傍不明を実計算で独立に検証する', () => { native([]); }, 75_000);
   it.each(examples)('$sourceの通常入力・保存・再評価', async example => {

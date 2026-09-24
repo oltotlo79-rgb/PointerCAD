@@ -21,7 +21,8 @@ const coefficients=[{id:'coefficient:7',label:'a',decimal:'2'}];
 const identity={documentId:'problem',documentVersion:1,editorId:'problem',inputRevision:1};
 function calculate(request: MathWorkRequest) {
   return decodeMathWorkReply(executeMathWorkRequest({kind:'evaluate-math',serial:1,request},backend),request,
-    {operationsById:CANDIDATE_MATH_BY_ID,coefficientIds:new Set(request.coefficients.map(value=>value.id)),declaredIds:new Set()}).result;
+    {operationsById:CANDIDATE_MATH_BY_ID,coefficientIds:new Set(request.coefficients.map(value=>value.id)),
+      declaredIds:new Set((request.declarations??request.definition?.declarations)?.map(value=>value.id))}).result;
 }
 function definition(source=plain): StoredMathExpression {
   const raw=executeMathWorkRequest({kind:'evaluate-math',serial:1,request:{identity,source,notation:'text',angleUnit:'degree',coefficients}},backend);
@@ -35,6 +36,32 @@ function context(document:PartDocument):DocumentMathContext {
 }
 
 describe('未解決の式は数値や形状に変えず、文書の式と条件として扱う',()=>{
+  it('数値の名前を変えても自由記号の名前・意味・識別番号と未解決状態を保つ',async()=>{
+    const declarations=[{id:'symbol:a',label:'a_1',meaning:'未知の長さ',type:'real' as const}];
+    const result=calculate({identity,source:'coef("a")+a_1',notation:'text',angleUnit:'degree',coefficients,declarations});
+    if(result.definition===null) throw new Error('記号の定義がありません。');
+    const saved=setUnresolvedMathProblem(createEmptyPartDocument(),{id:'math-problem:symbol',name:'記号付きの式',status:'unresolved',definition:result.definition});
+    const document:PartDocument={...saved,mathParameterSerial:7,parameters:[{name:'a',mathId:'coefficient:7',value:expressionValueFromNumber(2),unit:'none',description:''}]};
+    const renamed=await renameDocumentMathParameter(document,'a','厚さ',context(document));
+    if(!renamed.ok) throw new Error(renamed.message);
+    expect(renamed.document.unresolvedMathProblems?.[0]).toMatchObject({status:'unresolved',definition:{declarations}});
+    expect(renamed.document.unresolvedMathProblems?.[0].definition.source).toContain('厚さ');
+    expect(renamed.document.unresolvedMathProblems?.[0].definition.source).toContain('a_1');
+  });
+  it('記号の意味だけを編集しても文書の比較へ残し、形の再計算を起こさない',()=>{
+    const declaration={id:'symbol:a',label:'a_1',meaning:'未指定の長さ',type:'real' as const};
+    const original=createEmptyPartDocument();
+    const definition:StoredMathExpression={format:MATH_INPUT_FORMAT,source:'a_1',inputNotation:'text',angleUnit:'radian',
+      declarations:[declaration],expression:{kind:'symbol',reference:{role:'declared',id:declaration.id,label:declaration.label}}};
+    const entry={id:'math-problem:symbol',name:'記号の式',status:'unresolved' as const,definition};
+    const added=setUnresolvedMathProblem(original,entry);
+    const edited=setUnresolvedMathProblem(added,{...entry,definition:{...definition,declarations:[{...declaration,meaning:'変更した長さの意味'}]}});
+    expect(added.unresolvedMathProblems?.[0].definition.declarations?.[0].meaning).toBe(declaration.meaning);
+    expect(edited.unresolvedMathProblems?.[0].definition.declarations?.[0].meaning).toBe('変更した長さの意味');
+    expect(affectsShape(added,edited)).toBe(false);
+    expect(compareDocuments(added,edited,{relationship:'versions',beforeAttachmentsDigest:'same',afterAttachmentsDigest:'same'}).changes)
+      .toMatchObject([{group:'math-problem',status:'changed'}]);
+  });
   it('追加・編集・削除は文書の写しだけを変え、形の再計算を起こさない',()=>{
     const original=createEmptyPartDocument(), first=setUnresolvedMathProblem(original,problem());
     const replacement=problem(plain.replace('[0,t],0','[0,t],3'));

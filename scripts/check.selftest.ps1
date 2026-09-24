@@ -633,6 +633,19 @@ if (Test-Path -LiteralPath $scopeSelftest -PathType Leaf) {
     Assert-True $false '変更箇所別の検査範囲の自己試験が存在すること'
 }
 
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/record_time_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '記録時刻のフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/opus_concurrency_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) 'Opus 同時実行のフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/subagent_background_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '担当の背景実行と Monitor のフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/subagent_search_scope_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '担当のリポジトリ全体検索を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/instruction_check_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '指示書の新規・SHA-256・時刻を確かめるフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/invisible_char_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '見えない文字・特殊な空白を拒否するフックを自己試験する'
+
 
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red

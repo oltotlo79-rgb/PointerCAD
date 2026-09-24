@@ -6,6 +6,7 @@ import { createMathSessionCalculation } from './mathSessionWorker.js';
 import { convertMathSessionNotation } from './convertMathSessionNotation.js';
 import { chooseMathResultComponent } from './mathResultComponent.js';
 import type { MathEditorViewController } from './MathEditorSurface.js';
+import { decodeMathDeclarations, sameMathDeclarations, type MathDeclaration } from '@pointercad/expression/math/contracts';
 
 export interface MathEditorSnapshot {
   readonly state: MathEditorState;
@@ -92,6 +93,44 @@ export class MathEditorController implements MathEditorViewController {
     this.invalidate();
     this.session.update(source, this.current().notation, this.current().angleUnit);
   };
+  readonly setDeclarations = (values: readonly MathDeclaration[]): void => {
+    if (!this.isCurrent()) return;
+    const declarations = decodeMathDeclarations(values);
+    if (sameMathDeclarations(declarations, this.current().declarations)) return;
+    this.invalidate();
+    this.session.update(this.current().source, this.current().notation, this.current().angleUnit, declarations);
+  };
+  readonly renameDeclaration = async (id: string, label: string): Promise<boolean> => {
+    const state = this.snapshot.state;
+    if (!this.isCurrent() || state.status !== 'evaluated' || state.output.definition === null) return false;
+    const input = this.current(), existing = input.declarations?.find(value => value.id === id);
+    if (existing === undefined) return false;
+    if (existing.label === label) return true;
+    const declarations = decodeMathDeclarations(input.declarations?.map(value => value.id === id ? { ...value, label } : value));
+    this.invalidate();
+    const controller = new AbortController();
+    this.session.pause(); this.conversion = controller;
+    try {
+      const completion = await this.options.client.evaluate({ ...this.options.requestFor(input),
+        definition: state.output.definition, renameDeclaration: { id, label } }, 5_000, controller.signal);
+      if (controller.signal.aborted || this.conversion !== controller || !this.sameInput(input)) return false;
+      if (completion.status !== 'result' || !sameMathIdentity(completion.identity, input.identity)) return false;
+      const renamed = completion.result.renamedDefinition;
+      if (renamed == null || renamed.inputNotation !== input.notation || renamed.angleUnit !== input.angleUnit
+        || !sameMathDeclarations(declarations, renamed.declarations)) return false;
+      this.conversion = null;
+      this.publish({ ...this.snapshot, phase: null });
+      this.session.update(renamed.source, input.notation, input.angleUnit, renamed.declarations);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (this.conversion === controller) {
+        this.conversion = null;
+        if (this.sameInput(input)) { this.publish({ ...this.snapshot, phase: null }); this.session.resume(); }
+      }
+    }
+  };
   readonly chooseResultComponent = (expected: MathEditorInput, indices: readonly number[]): boolean => {
     const state = this.snapshot.state;
     if (!this.sameInput(expected) || state.status !== 'evaluated') return false;
@@ -126,7 +165,8 @@ export class MathEditorController implements MathEditorViewController {
   private sameInput(input: MathEditorInput): boolean {
     const current = this.current();
     return this.isCurrent() && sameMathIdentity(input.identity, current.identity)
-      && input.source === current.source && input.notation === current.notation && input.angleUnit === current.angleUnit;
+      && input.source === current.source && input.notation === current.notation && input.angleUnit === current.angleUnit
+      && sameMathDeclarations(input.declarations, current.declarations);
   }
   private async convertInsertion(input: MathEditorInput, signal: AbortSignal): Promise<string> {
     this.session.pause();

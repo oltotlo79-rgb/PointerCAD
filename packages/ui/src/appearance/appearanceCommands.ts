@@ -23,7 +23,8 @@
  * 使い、2 か所に書かない(同じ判断材料を 1 か所に置く。docs/報告記録.md 2026-09-04 03:20 ②)。
  */
 
-import type { ExpressionValue } from '@pointercad/expression';
+import { collectMathCoefficients, renameVariable, type ExpressionValue } from '@pointercad/expression';
+import { MathInputProblem } from '@pointercad/expression/math/contracts';
 import {
   appearanceFromPreset,
   appearanceOf,
@@ -33,6 +34,9 @@ import {
   DEFAULT_APPEARANCE,
   findMaterialPreset,
   isSameAppearanceTarget,
+  mathGeometryDerivedParameters,
+  mathGeometryDerivedCoefficientIds,
+  mathGeometryDefinitionIdOf,
   removeDocumentAppearance,
   resolveAppearanceFor,
   WOOD_SPECIES,
@@ -142,6 +146,55 @@ export function isSameAppearanceSpec(a: AppearanceSpec, b: AppearanceSpec): bool
 /* ---------------------------------------------------------------------------
  * 値の範囲(FR-1109)
  * ------------------------------------------------------------------------- */
+
+/** The provenance is static and reusable until the coefficient definitions change (GR-20c A5). */
+const derivedByParameters = new WeakMap<PartDocument['parameters'], ReadonlyMap<string, readonly string[]> | null>();
+
+function appearanceDerivedParameters(document: PartDocument): ReadonlyMap<string, readonly string[]> | null {
+  const cached = derivedByParameters.get(document.parameters);
+  if (cached !== undefined) return cached;
+  try {
+    const derived = mathGeometryDerivedParameters(document.parameters);
+    derivedByParameters.set(document.parameters, derived);
+    return derived;
+  } catch (error) {
+    if (!(error instanceof MathInputProblem)) throw error;
+    derivedByParameters.set(document.parameters, null);
+    return null;
+  }
+}
+
+/**
+ * A5: appearance never follows measured coefficients. Check provenance before evaluation, including
+ * while recomputation is current. The lexer behind renameVariable also recognises unfinished input
+ * such as `P +` without treating `Prefix` as a reference to `P` or a unit as a coefficient.
+ * Stored math is checked by identity as well as label; a stale label must not bypass the refusal.
+ * A file's existing formulas/values remain untouched and the renderer keeps using the saved values.
+ */
+export function appearanceExpressionRefusalFor(
+  document: PartDocument,
+  value: Pick<ExpressionValue, 'source' | 'mathDefinition'>,
+): MessageKey | null {
+  const refusal = 'mathGeometry.appearance.refused';
+  const derived = appearanceDerivedParameters(document);
+  if (value.mathDefinition !== undefined) {
+    try {
+      const references = collectMathCoefficients(value.mathDefinition.expression);
+      const ids = mathGeometryDerivedCoefficientIds(document.parameters, derived ?? undefined);
+      return references.some(reference => mathGeometryDefinitionIdOf(reference.id) !== null
+        || ids.has(reference.id) || derived?.has(reference.label) === true
+        || (derived === null && document.parameters.some(parameter => parameter.mathId === reference.id))) ? refusal : null;
+    } catch (error) {
+      if (!(error instanceof MathInputProblem)) throw error;
+      return refusal;
+    }
+  }
+  const names = derived?.keys() ?? document.parameters.map(parameter => parameter.name);
+  for (const name of names) {
+    if (renameVariable(value.source, name, '\u0000') !== value.source) return refusal;
+  }
+  return null;
+}
 
 /** 透過率・光沢・粗さの下限・上限(%、§2.2.1 の型の注釈)。 */
 const PERCENT_MIN = 0;
@@ -375,10 +428,11 @@ function assignOne(
 /**
  * 選んでいるものへ外観を割り当てる(FR-1106、FR-1107、FR-1109)。
  *
- * 断る条件は 3 つで、いずれも**割り当てを作る前**に判定する(NFR-UX-5)。
+ * 断る条件はいずれも**割り当てを作る前**に判定する(NFR-UX-5)。
  *
  * | 断り | 文言キー |
  * |---|---|
+ * | 図形由来の係数を使う式 | `mathGeometry.appearance.refused` |
  * | 透過率・光沢・粗さが 0〜100 の外 | `appearanceError.outOfRange` |
  * | 立体も面も選ばれていない | `appearanceError.noTarget` |
  * | そのボディの材質が 9 種以上になる | `appearanceError.tooManyMaterials` |
@@ -391,6 +445,12 @@ export function assignAppearanceToSelection(
   context: AppearanceContext,
   spec: AppearanceSpec,
 ): AppearanceOutcome {
+  const expressions = [spec.transmission, spec.gloss, spec.roughness, { source: spec.color },
+    ...(spec.pattern.kind === 'none' ? [] : [spec.pattern.spacing])];
+  for (const expression of expressions) {
+    const refusal = appearanceExpressionRefusalFor(context.document, expression);
+    if (refusal !== null) return { ok: false, reasonKey: refusal };
+  }
   const rangeRefusal = rangeRefusalFor(spec);
   if (rangeRefusal !== null) {
     return { ok: false, reasonKey: rangeRefusal };

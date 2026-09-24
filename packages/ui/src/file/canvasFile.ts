@@ -13,11 +13,16 @@
  * (種類の表へ画像を足すかどうかは `exchange/types.ts` を持つ担当の判断。足りたら
  * この口は `openFileThrough` の呼び出し 1 行へ縮む。)
  *
- * **受け付けの判定はここに書かない。** PNG / JPEG の見分け(マジックバイト)と 8MB の上限、
- * および断りの日本語は `@pointercad/model` の `sketch/canvas.ts`(タスク38)が持つ
- * (上限の数を知っているのがあの層だけなので、文言を写すと数字が 2 か所で食い違う)。
- * ここは選んだバイト列をそのまま返し、確かめるのは呼び出し側(ストア)が
- * `checkCanvasImage` で行う。
+ * **受け付けの判定(形式の見分け、断りの日本語)はここに書かない。** PNG / JPEG の見分け
+ * (マジックバイト)と断りの日本語は `@pointercad/model` の `sketch/canvas.ts`(タスク38)が持つ
+ * (文言を写すと数字が 2 か所で食い違う)。選んだバイト列を最終的に受け付けられるかは
+ * 呼び出し側(ストア)が `checkCanvasImage` で行う。
+ *
+ * **例外は「確保する前」のサイズ確認だけ。** `MAX_CANVAS_IMAGE_BYTES`(数の正本は
+ * `sketch/canvas.ts`。ここでは値を書き写さず参照するだけ)を超える `File` は、
+ * `file.arrayBuffer()` を呼ぶ前(=本文を確保する前)に断る(R07。300MiB 相当の File でも
+ * 本文を確保しない。`readBrowserFile.ts` と同じ流儀)。断った後の形式判定・最終的な
+ * 受け付け可否と文言は、これまでどおり `checkCanvasImage` が持つ。
  *
  * **DOM に触れるのはこのファイルの下半分だけ。** `document` と `createImageBitmap` は
  * `fileGateway.ts` と同じ流儀で `in` と `typeof` を 1 段ずつ辿って絞り込み、`as` による
@@ -27,6 +32,7 @@
 
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
+  MAX_CANVAS_IMAGE_BYTES,
   nextCanvasId,
   type CanvasImageFormat,
   type SketchCanvas,
@@ -110,9 +116,10 @@ interface DocumentScope {
   readonly document: DomDocument;
 }
 
-/** 読み出したファイルの中身(名前つき)。 */
+/** 読み出したファイルの中身(名前つき)。`size` は本文を確保する前のサイズ確認に使う(R07)。 */
 interface NamedReadableFile {
   readonly name: string;
+  readonly size: number;
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
@@ -149,6 +156,8 @@ function isNamedReadableFile(value: unknown): value is NamedReadableFile {
     isObject(value) &&
     'name' in value &&
     typeof value.name === 'string' &&
+    'size' in value &&
+    typeof value.size === 'number' &&
     'arrayBuffer' in value &&
     typeof value.arrayBuffer === 'function'
   );
@@ -214,8 +223,26 @@ export function pickCanvasImage(scope: object = globalThis): Promise<PickedCanva
         finish(null);
         return;
       }
+      // 本文を確保する前にサイズを確認する(R07)。300MiB 相当の File でも `arrayBuffer()`
+      // を呼ばずに断る。上限そのものは `sketch/canvas.ts` の `MAX_CANVAS_IMAGE_BYTES` を
+      // 参照するだけで、ここでは書き写さない(`readBrowserFile.ts` と同じ流儀)。
+      if (!Number.isSafeInteger(file.size) || file.size < 0) {
+        input.remove();
+        reject(new Error(t('file.error.invalidSize')));
+        return;
+      }
+      if (file.size > MAX_CANVAS_IMAGE_BYTES) {
+        input.remove();
+        reject(new Error(t('file.error.tooLarge')));
+        return;
+      }
       file.arrayBuffer().then(
         (buffer) => {
+          if (!(buffer instanceof ArrayBuffer) || buffer.byteLength !== file.size) {
+            input.remove();
+            reject(new Error(t('file.error.corrupted')));
+            return;
+          }
           finish({ fileName: file.name, bytes: new Uint8Array(buffer) });
         },
         (error: unknown) => {

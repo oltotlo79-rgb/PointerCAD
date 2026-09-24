@@ -24,7 +24,7 @@ export function requiresExactCalculus(expression: MathNode): boolean {
     const node = pending.pop();
     if (node === undefined) break;
     if (node.kind === 'operation') {
-      if (node.operation === 'limit' || node.operation === 'differentiate-at'
+      if (node.operation === 'limit' || node.operation === 'limit-supremum' || node.operation === 'limit-infimum' || node.operation === 'differentiate-at'
         || VECTOR_CALCULUS_AT_IDS.has(node.operation) || LINE_INTEGRAL_IDS.has(node.operation) || REGION_INTEGRAL_IDS.has(node.operation)) return true;
       pending.push(...node.operands);
     } else if (node.kind === 'binder') {

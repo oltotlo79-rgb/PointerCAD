@@ -9,6 +9,7 @@ from cas_ode import ode_result
 from cas_fourier_series import fourier_series_result
 from cas_transforms import OPERATIONS as TRANSFORMS, transform_result
 from cas_discrete import validate_discrete, prepare_infinite_values
+from cas_mappings import MAPS, mapping_result
 
 
 def unique_object(pairs):
@@ -50,7 +51,9 @@ def calculate_exact_json(payload):
         raw = json.loads(payload, object_pairs_hook=unique_object, parse_constant=invalid_constant)
         fields(raw, ('expression', 'angleUnit'))
         decoder = Decoder(raw['angleUnit'])
-        if type(raw['expression']) is dict and raw['expression'].get('operation') == 'solve-ode':
+        if type(raw['expression']) is dict and raw['expression'].get('operation') in MAPS:
+            result = mapping_result(raw['expression'], decoder)
+        elif type(raw['expression']) is dict and raw['expression'].get('operation') == 'solve-ode':
             result = ode_result(raw['expression'], decoder)
         elif type(raw['expression']) is dict and raw['expression'].get('operation') == 'solve-system':
             result = system_result(raw['expression'], decoder)

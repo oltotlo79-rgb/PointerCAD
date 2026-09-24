@@ -14,6 +14,85 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/record_time_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/invisible_char_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/opus_concurrency_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Monitor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/subagent_background_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/subagent_search_scope_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/instruction_check_guard.py"],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/record_time_guard.py"],
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

@@ -189,7 +189,7 @@ const FORBIDDEN_TERMS: readonly string[] = [
 function internalHelpTerms(topicId: string, source: string): readonly string[] {
   // This is the actual name of a user-operated math tool, not the assembly solver's internals.
   // Permit only the complete visible term in its own help topic; keep every other prohibition.
-  const text = topicId === 'math-input' ? source.replaceAll('連立一次式', '') : source;
+  const text = topicId === 'math-input' || topicId === 'math-symbols' ? source.replaceAll('連立一次式', '') : source;
   return FORBIDDEN_TERMS.filter(term => text.includes(term));
 }
 

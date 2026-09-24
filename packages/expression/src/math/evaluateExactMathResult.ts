@@ -36,6 +36,9 @@ export function evaluateExactMathResult(raw: unknown, source: MathNode, context:
           : result.reason === 'no-extremum' ? 'この集合には、指定した最大値または最小値が存在しません。上限・下限とは区別してください。'
           : '式の成立条件または計算結果を確認してください。',
       };
+      if (result.reportedKind === 'function') {
+        return { status: 'value', kind: 'function', expression: source };
+      }
       if (result.reportedKind === 'equation-system') {
         return { status: 'value', kind: 'equation-system', expression: source, solutions: result.solutions };
       }
@@ -60,6 +63,8 @@ export function evaluateExactMathResult(raw: unknown, source: MathNode, context:
         if (truth === null) return missing();
         if (!truth) return { status: 'invalid', reason: 'domain', detail: '元の式に必要な成立条件を満たしていません。' };
       }
+      // An indefinite integral's answer is the function F+C (MC-20): kept as its lambda, never evaluated as a number.
+      if (result.reportedKind === 'antiderivative') return { status: 'value', kind: 'function', expression: result.expression };
       if (result.reportedKind === 'infinite-bound' || result.reportedKind === 'set' || result.reportedKind === 'interval') {
         return { status: 'value', kind: result.reportedKind, expression: result.expression };
       }

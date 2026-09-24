@@ -1,6 +1,6 @@
 /** A saved problem is deliberately separate from every numeric coordinate and parameter. */
 import { decodeMathExpressionStorage, type StoredMathExpression } from '@pointercad/expression';
-import { differentialEquationProblem } from '@pointercad/expression/math/contracts';
+import { differentialEquationProblem, referencedMathDeclarations } from '@pointercad/expression/math/contracts';
 import type { PartDocument } from './types.js';
 
 export interface UnresolvedMathProblem {
@@ -47,10 +47,11 @@ export function readUnresolvedMathProblems(value: unknown): readonly UnresolvedM
       throw new Error('元の式が保存されていません。');
     }
     const definition = decodeMathExpressionStorage(source.definition, storedSource.value);
-    if (definition.expression.kind !== 'operation' || definition.expression.operation !== 'partial-equations') {
-      throw new Error('ここには解けていない偏微分方程式の式と条件を保存してください。');
+    if (definition.expression.kind === 'operation' && definition.expression.operation === 'partial-equations') {
+      differentialEquationProblem(definition.expression);
+    } else if (referencedMathDeclarations(definition.expression, definition.declarations ?? []).length === 0) {
+      throw new Error('ここには解けていない偏微分方程式、または意味を定義した記号を含む式を保存してください。');
     }
-    differentialEquationProblem(definition.expression);
     seen.add(source.id);
     return { id: source.id, name: source.name, status: 'unresolved', definition };
   });

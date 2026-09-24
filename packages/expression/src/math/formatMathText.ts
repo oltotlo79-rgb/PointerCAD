@@ -1,3 +1,4 @@
+import { mappingFunction } from './mathMappings.js';
 import { numericalRootFunction } from './numericalRootResult.js';
 import { equationSystemFunction } from './equationSystems.js';
 import { differentialEquationProblem } from './differentialEquations.js';
@@ -8,14 +9,19 @@ import { TAYLOR_IDS, taylorFunction } from './taylorExpansion.js';
 /** Explicit text preserves operation identity. The caller reparses it before replacing a user's input. */
 import { SEQUENCE_IDS, sequenceFunction } from './sequenceCalculations.js';
 import { MATH_INPUT_LIMITS, MathInputProblem, validateMathSource, type MathNode, type MathOperationDefinition } from './mathInputContract.js';
-import { VECTOR_CALCULUS_AT_IDS, vectorCalculusAtBounds } from './vectorCalculusAt.js';
-import { LINE_INTEGRAL_IDS, validateLineIntegral } from './lineIntegrals.js';
+import { COORDINATE_SELECTABLE_AT, VECTOR_CALCULUS_AT_IDS, taggedVectorTarget, vectorCalculusAtBounds } from './vectorCalculusAt.js';
+import { COORDINATE_SELECTABLE, coordinateSystemKeyword } from './vectorCalculusOperations.js';
+import { CLOSED_INTEGRAL_SYMBOLS, LINE_INTEGRAL_IDS, validateLineIntegral } from './lineIntegrals.js';
 import { REGION_INTEGRAL_IDS, validateRegionIntegral } from './regionIntegrals.js';
 import { GENERAL_PROBABILITY_IDS, probabilityFunction } from './generalProbability.js';
 
 const CONSTANTS: Readonly<Record<Extract<MathNode, { kind: 'constant' }>['name'], string>> = {
   pi: 'pi', e: 'e', 'imaginary-unit': 'i', infinity: '∞', true: 'true', false: 'false',
   'real-numbers': 'ℝ', 'complex-numbers': 'ℂ', integers: 'ℤ', naturals: 'ℕ', rationals: 'ℚ', 'empty-set': '∅',
+};
+const SYMBOLS: Readonly<Record<string, string>> = {
+  'plus-minus': '±', 'minus-plus': '∓', 'not-element': '∉', subset: '⊂', 'subset-equal': '⊆',
+  superset: '⊃', 'superset-equal': '⊇', 'approximately-equal': '≈',
 };
 
 export function formatMathText(expression: MathNode, operations: ReadonlyMap<string, MathOperationDefinition>): string {
@@ -32,6 +38,13 @@ export function formatMathText(expression: MathNode, operations: ReadonlyMap<str
     const operation = operations.get(node.operation);
     if (!operation || operation.structural) throw new MathInputProblem('unsupported', 'この演算のテキスト表記を確認できません。');
     if (node.kind === 'operation') {
+      const symbol = SYMBOLS[node.operation];
+      if (symbol && node.operands.length === 2) return node.operands.map(child => `(${format(child, depth + 1)})`).join(symbol);
+      if (['plus-minus', 'minus-plus'].includes(node.operation) && node.operands.length === 1) {
+        return `${symbol}(${format(node.operands[0], depth + 1)})`;
+      }
+      if (node.operation === 'dot' && node.operands.length === 2) return `⟨${node.operands.map(child => format(child, depth + 1)).join(',')}⟩`;
+      if (node.operation === 'complement' && node.operands.length === 2) return `∁(${node.operands.map(child => format(child, depth + 1)).join(',')})`;
       if (node.operation === 'interval') {
         if (node.operands.length !== 2) throw new MathInputProblem('syntax', '区間には二つの端点が必要です。');
         const ends = node.operands.map(endpoint => {
@@ -49,6 +62,10 @@ export function formatMathText(expression: MathNode, operations: ReadonlyMap<str
           format(problem.equations, depth + 1), independent,
           '[' + names.slice(problem.independentCount).join(',') + ']', format(problem.conditions, depth + 1),
         ].join(',') + ')';
+      }
+      if (node.operation === 'mapping') {
+        const fn = mappingFunction(node);
+        return `mapping(${format(fn.body, depth + 1)},${fn.bindings[0].variable.label},${node.operands.slice(1).map(child => format(child, depth + 1)).join(',')})`;
       }
       if (node.operation === 'solve-system') {
         const fn = equationSystemFunction(node);
@@ -96,7 +113,8 @@ export function formatMathText(expression: MathNode, operations: ReadonlyMap<str
         const args = [format(field.body, depth + 1), `[${field.bindings.map(binding => binding.variable.label).join(',')}]`,
           format(mapping.body, depth + 1), `[${mapping.bindings.map(binding => binding.variable.label).join(',')}]`,
           format(lower, depth + 1), format(upper, depth + 1)];
-        return `${operation.engineHead.toLowerCase()}(${args.join(',')})`;
+        // A closed surface is shown as ∯(…), which reads back as the same operation (MC-19d).
+        return `${CLOSED_INTEGRAL_SYMBOLS.get(node.operation) ?? operation.engineHead.toLowerCase()}(${args.join(',')})`;
       }
       if (LINE_INTEGRAL_IDS.has(node.operation)) {
         validateLineIntegral(node);
@@ -104,13 +122,18 @@ export function formatMathText(expression: MathNode, operations: ReadonlyMap<str
         if (field.kind !== 'binder' || path.kind !== 'binder') throw new MathInputProblem('syntax', '場と曲線を指定してください。');
         const args = [format(field.body, depth + 1), `[${field.bindings.map(binding => binding.variable.label).join(',')}]`,
           format(path.body, depth + 1), path.bindings[0].variable.label, format(lower, depth + 1), format(upper, depth + 1)];
-        return `${operation.engineHead.toLowerCase()}(${args.join(',')})`;
+        // A closed curve is shown as ∮(…), which reads back as the same operation (MC-19d).
+        return `${CLOSED_INTEGRAL_SYMBOLS.get(node.operation) ?? operation.engineHead.toLowerCase()}(${args.join(',')})`;
       }
       if (VECTOR_CALCULUS_AT_IDS.has(node.operation)) {
         vectorCalculusAtBounds(node);
         const [fn, target] = node.operands;
         if (fn.kind !== 'binder') throw new MathInputProblem('syntax', '微分する変数を指定してください。');
-        return `${operation.engineHead.toLowerCase()}(${format(fn.body, depth + 1)},[${fn.bindings.map(binding => binding.variable.label).join(',')}],${format(target, depth + 1)})`;
+        // A literal coordinate-system selector is shown by name: [[2,3,4],cylindrical] (MC-19c).
+        const tagged = COORDINATE_SELECTABLE_AT.has(node.operation) ? taggedVectorTarget(target) : null;
+        const keyword = coordinateSystemKeyword(tagged?.selector);
+        const point = tagged === null || keyword === null ? format(target, depth + 1) : `List(${format(tagged.point, depth + 2)},${keyword})`;
+        return `${operation.engineHead.toLowerCase()}(${format(fn.body, depth + 1)},[${fn.bindings.map(binding => binding.variable.label).join(',')}],${point})`;
       }
       if (node.operation === 'differentiate-at') {
         const [fn, target, order] = node.operands;
@@ -119,13 +142,17 @@ export function formatMathText(expression: MathNode, operations: ReadonlyMap<str
         }
         return `derivativeat(${format(fn.body, depth + 1)},${fn.bindings[0].variable.label},${format(target, depth + 1)},${format(order, depth + 1)})`;
       }
-      if (node.operation === 'limit') {
+      if (node.operation === 'limit' || node.operation === 'limit-supremum' || node.operation === 'limit-infimum') {
         const [fn, target] = node.operands;
-        if ((node.operands.length !== 2 && node.operands.length !== 3) || fn.kind !== 'binder' || fn.operation !== 'lambda' || fn.bindings.length !== 1) {
+        if ((node.operands.length < 2 || node.operands.length > (node.operation === 'limit' ? 3 : 4)) || fn.kind !== 'binder' || fn.operation !== 'lambda' || fn.bindings.length !== 1) {
           throw new MathInputProblem('unsupported', '片側極限の入力設定を保持できないため元の表記を残しました。');
         }
-        const direction = node.operands.length === 3 ? `,${format(node.operands[2], depth + 1)}` : '';
-        return `limit(${format(fn.body, depth + 1)},${fn.bindings[0].variable.label},${format(target, depth + 1)}${direction})`;
+        const suffix = node.operands.slice(2).map(value => `,${format(value, depth + 1)}`).join('');
+        return `${operation.engineHead.toLowerCase()}(${format(fn.body, depth + 1)},${fn.bindings[0].variable.label},${format(target, depth + 1)}${suffix})`;
+      }
+      const keyword = COORDINATE_SELECTABLE.has(node.operation) && node.operands.length === 3 ? coordinateSystemKeyword(node.operands[2]) : null;
+      if (keyword !== null) {
+        return `${operation.engineHead}(${[...node.operands.slice(0, 2).map(child => format(child, depth + 1)), keyword].join(',')})`;
       }
       return `${operation.engineHead}(${node.operands.map(child => format(child, depth + 1)).join(',')})`;
     }

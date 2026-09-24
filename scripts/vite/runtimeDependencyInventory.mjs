@@ -30,11 +30,18 @@ function dependencyFolder(root, owner, name) {
 
 export function installedRuntimeDependencies(repository) {
   const sourceRoot = realpathSync(repository);
+  let safeRoot = sourceRoot;
+  while (!existsSync(join(safeRoot, '.git'))) {
+    const parent = dirname(safeRoot);
+    if (parent === safeRoot) throw new Error('Runtime dependency repository is missing');
+    safeRoot = parent;
+  }
   // Commit checks use a project-local worktree and share the main project's
   // installed packages. Resolve that same boundary without inheriting Git's
   // index/worktree variables from the hook.
   const gitEnvironment = Object.fromEntries(Object.entries(env).filter(([name]) => !name.toUpperCase().startsWith('GIT_')));
-  const gitDirectory = realpathSync(execFileSync('git', ['--no-optional-locks', '-C', sourceRoot, 'rev-parse',
+  const gitDirectory = realpathSync(execFileSync('git', ['--no-optional-locks', '-C', sourceRoot,
+    '-c', 'safe.directory=' + safeRoot.replaceAll('\\', '/'), 'rev-parse',
     '--path-format=absolute', '--git-common-dir'], { env: gitEnvironment, encoding: 'utf8', windowsHide: true }).trim());
   const root = dirname(gitDirectory), visited = new Set(), packages = new Map();
   const selectedDependencies = runtimeDependencySelection(sourceRoot);

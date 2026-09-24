@@ -57,6 +57,8 @@ export interface StoredMathExpression {
   readonly inputNotation: 'text' | 'latex';
   readonly angleUnit: 'degree' | 'radian';
   readonly expression: MathNode;
+  /** Local definitions travel with the original formula, including their stable IDs and meanings. */
+  readonly declarations?: readonly import('./mathDeclarations.js').MathDeclaration[];
 }
 
 export type MathEvaluation =

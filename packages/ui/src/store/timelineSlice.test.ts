@@ -1,9 +1,14 @@
 /** タイムライン。useAppStore.test.ts から責務単位で移した回帰テスト。 */
 
+import { expressionValueFromNumber } from '@pointercad/expression';
+import { MATH_INPUT_FORMAT } from '@pointercad/expression/math/contracts';
 import {
   appendSolid,
   createEmptyPartDocument,
+  DEFAULT_MATH_GEOMETRY_TOLERANCE,
+  mathGeometryCoefficientId,
   removeSolid,
+  type PartDocument,
 } from '@pointercad/model';
 import {
   beforeEach,
@@ -20,6 +25,7 @@ import {
 import {
   useAppStore,
 } from './useAppStore.js';
+import { timelineDropCheck } from '../shell/timelineMove.js';
 import {
   resetTestStore,
   createFakeRecompute,
@@ -32,6 +38,81 @@ import {
 } from './testing/createTestStore.js';
 
 beforeEach(resetTestStore);
+
+/** 押し出し1の面積から得る係数を押し出し2の高さに使い、押し出し3は独立させる。 */
+function measuredPart(): PartDocument {
+  const base = partWithThreeSolids();
+  const source = 'coef("測る面")';
+  const value = expressionValueFromNumber(10);
+  const face = holeFeature('h', '1').face;
+  const fingerprint = face.fingerprint;
+  if (fingerprint.kind !== 'face') throw new Error('Expected a face fixture.');
+  return {
+    ...base,
+    solids: [base.solids[0], { ...extrudeFeature('2'), distance: { ...value, source: '高さ' } }, base.solids[2]],
+    mathGeometry: [{
+      id: 'measured-face', documentId: base.id, name: '測る面',
+      quantity: { kind: 'area', shape: { kind: 'face', reference: { ...face, fingerprint } } },
+      tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE,
+    }],
+    parameters: [{
+      name: '高さ', unit: 'mm', description: '', value: {
+        ...value, source, mathDefinition: {
+          format: MATH_INPUT_FORMAT, source, inputNotation: 'text', angleUnit: 'degree',
+          expression: { kind: 'symbol', reference: {
+            role: 'coefficient', id: mathGeometryCoefficientId('measured-face'), label: '測る面',
+          } },
+        },
+      },
+    }],
+  };
+}
+
+describe('図形の測定値の依存を確定へ配線する(TL-01、GR-07)', () => {
+  it('使う形を測る形より前へ動かす操作を予告と同じ理由で拒否し、文書とUndoを変えない', () => {
+    useAppStore.getState().applyDocument(measuredPart());
+    const before = useAppStore.getState();
+    const preview = timelineDropCheck(before.document, '2', 0);
+    expect(preview?.blockingFeatureId).toBe('2');
+    useAppStore.getState().moveTimelineItem('2', 0);
+    const after = useAppStore.getState();
+    expect(after.timelineRefusal).toEqual(preview);
+    expect(after.document).toBe(before.document);
+    expect(after.undoStack).toBe(before.undoStack);
+  });
+
+  it('無関係な形の移動はUndoを1段だけ積み、取消で測定定義も係数も元のまま戻る', () => {
+    useAppStore.getState().applyDocument(measuredPart());
+    const before = useAppStore.getState();
+    expect(timelineDropCheck(before.document, '3', 0)).toBeNull();
+    useAppStore.getState().moveTimelineItem('3', 0);
+    const after = useAppStore.getState();
+    expect(after.document.solids.map(feature => feature.id)).toEqual(['3', '1', '2']);
+    expect(after.timelineRefusal).toBeNull();
+    expect(after.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+    expect(after.document.mathGeometry).toBe(before.document.mathGeometry);
+    expect(after.document.parameters).toBe(before.document.parameters);
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().document).toBe(before.document);
+  });
+
+  it('立体の面に載る作業平面があっても独立した2立体を入れ替えられ、取消できる', () => {
+    const base = partWithThreeSolids();
+    const document: PartDocument = { ...base, references: [{
+      id: 'plane-on-face', name: '作業平面1', kind: 'referencePlane', visible: true,
+      plane: { kind: 'face', face: holeFeature('h', '1').face, offset: expressionValueFromNumber(0) },
+    }] };
+    useAppStore.getState().applyDocument(document);
+    const before = useAppStore.getState();
+    expect(timelineDropCheck(before.document, '3', 2)).toBeNull();
+    useAppStore.getState().moveTimelineItem('3', 2);
+    expect(useAppStore.getState().document.solids.map(feature => feature.id)).toEqual(['1', '3', '2']);
+    expect(useAppStore.getState().timelineRefusal).toBeNull();
+    expect(useAppStore.getState().undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().document).toBe(before.document);
+  });
+});
 
 describe('タイムラインのつまみ(FR-507、FR-506、P4b タスク19)', () => {
   it('起動直後のつまみは末尾(null)で、知らせも出ていない(§0.a-0.19)', () => {

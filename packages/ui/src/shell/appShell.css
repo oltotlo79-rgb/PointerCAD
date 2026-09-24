@@ -2139,6 +2139,21 @@ button.pcad-tree__row:focus-visible {
   text-align: right;
 }
 
+/*
+  GR-19d: 図形の測定値の一覧(MathGeometryPanel)の行だけ、見出し列を潰さず常に見せ、長い値
+  (参照先の名前・循環の理由など)は折り返して横にはみ出させない(FR-504)。`.pcad-properties`
+  は他の区画(プロパティ・シートメタル・強度など)とも共有しているので、専用の class を
+  重ねたときだけ列の比率を変える(他の区画の見た目は変えない)。`.pcad-property-list`
+  (`.pcad-properties`とは別の既存の定義一覧、AssemblyPropertyPanel)と同じ考え方。
+*/
+.pcad-properties.pcad-parameter__properties {
+  grid-template-columns: minmax(4.5em, max-content) minmax(0, 1fr);
+}
+
+.pcad-parameter__properties .pcad-properties__value {
+  overflow-wrap: anywhere;
+}
+
 /* 計算できていない理由(FR-504)。区画の頭に赤で出し、操作は止めない。 */
 .pcad-panel__error {
   padding: var(--pcad-space-2) var(--pcad-space-3);
@@ -3785,3 +3800,14 @@ button.pcad-tree__row:focus-visible {
 }
 /* A parameter transaction disables the existing controls while retaining their layout. */
 .pcad-parameters__fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+
+/*
+  GR-19d: 図形の測定値の「測る量」選択欄(MathGeometryPanel)だけ、区画の左端に接しないよう
+  左右の余白を持たせる(軽微な見た目の崩れ)。`.pcad-parameters__fields` は左右 padding を
+  0 にしていて(ParameterPanel と共有、直属の他の要素は各自 pcad-panel__note 等で左右の
+  余白を持つ)、この欄だけ何も持たないため区画の左端に接していた。専用の class にだけ
+  余白をつけ、ParameterPanel の見た目は変えない。
+*/
+.pcad-parameters__quantity-field {
+  padding: 0 var(--pcad-space-3);
+}

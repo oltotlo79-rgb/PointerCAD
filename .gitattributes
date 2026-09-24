@@ -12,7 +12,10 @@ scripts/hooks/commit-msg text eol=lf
 
 # 許諾原文は取得元と同じバイト列で検証・配布する。LF/CRLFが原文ごとに
 # 異なるため、保存時も取り出し時もGitの改行変換を適用しない。
+# 同梱フォント(Web/デスクトップ)の許諾原文(LICENSES.txt)も同じ方針の対象に含める。
 docs/standards/licenses/*.txt -text
+apps/web/public/fonts/LICENSES.txt -text
+apps/desktop/resources/fonts/LICENSES.txt -text
 
 # アプリ自身の許諾本文も取得元のバイト列を保持する。
 /LICENSE -text

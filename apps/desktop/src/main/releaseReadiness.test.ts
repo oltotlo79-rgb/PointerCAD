@@ -10,12 +10,12 @@ import { desktopPackagePlan, verifyDesktopPackageArtifacts } from '../../../../s
 import { createReleaseManifest } from '../../../../scripts/release/releaseManifest.mjs';
 import type { ReleaseCandidateInput } from '../../../../scripts/release/releaseManifest.mjs';
 import {
-  PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES, RELEASE_LINKS_END, RELEASE_LINKS_START, RELEASE_READINESS_CHECK_IDS, RELEASE_READINESS_EXIT,
+  MANUAL_CHECK_IDS, PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES, RELEASE_LINKS_END, RELEASE_LINKS_START, RELEASE_READINESS_CHECK_IDS, RELEASE_READINESS_EXIT,
   ReleaseReadinessUsageError, captureFreshnessFromRegistry, checkReadmeReleaseLinks, evaluateReleaseReadiness, formatReleaseReadinessReport,
   parseReleaseReadinessArguments, runReleaseReadiness,
 } from '../../../../scripts/release/releaseReadiness.mjs';
 import type {
-  CaptureFreshnessHook, CaptureFreshnessRequest, CurrentHelpEdition, PreReleaseInput, ReleaseReadinessReport,
+  CaptureFreshnessHook, CaptureFreshnessRequest, CurrentHelpEdition, ManualReleaseInput, PreReleaseInput, ReleaseReadinessReport,
 } from '../../../../scripts/release/releaseReadiness.mjs';
 import { assembleSbomDocument } from '../../../../scripts/release/sbom.mjs';
 import { assembleOfflineDistribution } from '../../../../scripts/vite/offlineDistribution.mjs';
@@ -458,5 +458,104 @@ describe('説明書④: 画像が今の版の撮影の生成物であること�
     expect(statusOf(report, 'manual-images')).toBe('fail');
     expect(problemsOf(report, 'manual-images')).toContain(`古い画像（今の版の撮影でない）: ${IMAGE}`);
     expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+  });
+});
+
+describe('説明書モード（P12-20）: 生成した説明書だけを、公開前モードと同じ説明書の5項目で判定する', () => {
+  const CURRENT_DIGEST = 'a'.repeat(64);
+  /** The capture folder holds today's image and its registry entry is this build's capture (fresh). */
+  const freshRegistry: CaptureRegistry = { format: CAPTURE_REGISTRY_FORMAT, viewportPolicy: CAPTURE_VIEWPORT_POLICY, unknownReasons: CAPTURE_UNKNOWN_REASONS,
+    images: [{ file: 'start-screen.png', sha256: hash(IMAGES.get(IMAGE) ?? IMAGE), viewport: [1440, 900], viewportClass: 'standard',
+      viewportSource: 'png-size', script: null, scriptSha256: null, fixtureSha256: null, capturedAt: null, applicationBuildId: CURRENT_DIGEST,
+      unknown: {}, records: [] }] };
+  /** Same comparison as loadCaptureFreshness: the capture folder's bytes and the manual's own copies. */
+  const captureFolder: CaptureFreshnessHook = request => captureFreshnessFromRegistry(freshRegistry,
+    request.images.map(image => ({ path: image.path, bytes: IMAGES.get(image.path) ?? bytes(image.path) })),
+    { applicationBuildId: CURRENT_DIGEST, manualImages: request.images });
+  const manualOf = (state: HelpState) => files(generateManual(state).manual);
+  const manualInput = (manualFiles: ManualReleaseInput['manualFiles'], captureFreshness: CaptureFreshnessHook | null = captureFolder): ManualReleaseInput =>
+    ({ mode: 'manual', manualFiles, currentHelp: currentHelpOf(BASE), captureFreshness });
+  /** A temporary copy of the correct manual with one file changed; every other file, manifest.json included, stays as generated. */
+  const injected = (path: string, change: (text: string) => string) => manualOf(BASE)
+    .map(file => file.path === path ? { path, bytes: bytes(change(new TextDecoder().decode(file.bytes))) } : file);
+  const replace = (from: string, to: string) => (text: string) => {
+    if (!text.includes(from)) throw new Error(`Missing fixture text: ${from}`);
+    return text.replace(from, to);
+  };
+
+  it('正しい一式だけが0: 説明書の5項目が全て合格し、公開前モードの説明書の項目と同じ並び', async () => {
+    const report = await evaluateReleaseReadiness(manualInput(manualOf(BASE)));
+    expect(report.mode).toBe('manual');
+    expect(report.checks.map(check => check.id)).toEqual(MANUAL_CHECK_IDS);
+    expect(MANUAL_CHECK_IDS).toEqual(RELEASE_READINESS_CHECK_IDS.filter(id => id.startsWith('manual-')));
+    expect(report.checks.filter(check => check.status !== 'pass').map(check => `${check.id}: ${check.problems.join(' / ')}`)).toEqual([]);
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.ready);
+    expect(report.releaseCertified).toBe(false);
+  });
+
+  it.each([
+    { name: '欠章', id: 'manual-chapters', message: '欠章: files「ファイルを保存する」（ページが無い）',
+      manual: () => manualOf(BASE).filter(file => file.path !== 'chapters/files.html') },
+    { name: '異なる題', id: 'manual-chapters', message: '題名の違い（章のページ）: chapters/sketch.html「スケッチを書く」／ヘルプ「スケッチを描く」',
+      manual: () => injected('chapters/sketch.html', replace('>スケッチを描く</h1>', '>スケッチを書く</h1>')) },
+    { name: '誤ボタン名（{{ui:キー}} の文言を書き換え）', id: 'manual-controls',
+      message: '誤った操作名・ボタン名（今の画面の文言に無い）: manual/chapters/settings.html の settings に「適用する」',
+      manual: () => injected('chapters/settings.html', replace('「適用」を押します', '「適用する」を押します')) },
+    { name: '誤ボタン名（本文に直接書いた名前）', id: 'manual-controls',
+      message: '誤った操作名・ボタン名（今の画面の文言に無い）: manual/chapters/sketch.html の sketch に「線を引く」',
+      manual: () => injected('chapters/sketch.html', replace('線を描きます。', '「線を引く」ボタンを押して線を描きます。')) },
+    { name: '旧画像', id: 'manual-images', message: `古い画像（今の版の撮影でない）: ${IMAGE}`,
+      manual: () => manualOf(BASE).map(file => file.path === IMAGE ? { path: IMAGE, bytes: bytes('PNG older start screen') } : file) },
+    { name: '孤立機能', id: 'manual-features', message: '孤立した機能（説明書だけにあり、今のヘルプに項目が無い）: FR-999',
+      manual: () => injected('manifest.json', text => {
+        const manifest = JSON.parse(text) as { featureCoverage: { entries: unknown[] } };
+        manifest.featureCoverage.entries.push({ id: 'FR-999', sourceLine: 999, description: '模擬の孤立した機能', priority: 'Must',
+          featureId: 'FR-999', topicIds: ['ghost'] });
+        return JSON.stringify(manifest);
+      }) },
+  ])('$name を1つ注入すると0以外で、理由を示す', async ({ id, message, manual }) => {
+    const report = await evaluateReleaseReadiness(manualInput(manual()));
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+    expect(statusOf(report, id)).toBe('fail');
+    expect(problemsOf(report, id)).toContain(message);
+    expect(statusOf(report, 'manual-current')).toBe('fail');
+  });
+
+  it('{{ui:キー}} の文言を含む別の名前（「適用」→「適用する」）は回数の照合では通るため、直接の名前の照合で落とす', async () => {
+    const report = await evaluateReleaseReadiness(manualInput(injected('chapters/settings.html', replace('「適用」を押します', '「適用する」を押します'))));
+    expect(problemsOf(report, 'manual-controls')).not.toContain('が 1 回必要なところ 0 回');
+    expect(report.checks.find(check => check.id === 'manual-controls')?.problems).toHaveLength(1);
+  });
+
+  it('公開前モード（P13-15）は同じ判定処理を呼ぶ: 同じ説明書なら説明書の5項目の結果が一致する', async () => {
+    const state: HelpState = { ...BASE, bodies: { ...BASE.bodies, sketch: '「線を引く」ボタンを押して線を描きます。' } };
+    const preRelease = await evaluateReleaseReadiness(await buildCandidate({ manualState: state }));
+    const manual = await evaluateReleaseReadiness(manualInput(manualOf(state), freshCaptures));
+    expect(preRelease.checks.filter(check => MANUAL_CHECK_IDS.includes(check.id))).toEqual(manual.checks);
+    expect(problemsOf(manual, 'manual-controls')).toContain('誤った操作名・ボタン名（今の画面の文言に無い）: manual/chapters/sketch.html の sketch に「線を引く」');
+    expect(problemsOf(manual, 'manual-controls')).toContain('誤った操作名・ボタン名（今の画面の文言に無い）: manual/volumes/sketch-and-functions.html の sketch に「線を引く」');
+  });
+
+  it('説明書を読めないときは5項目とも理由付きで不合格、撮影の登録簿が未接続なら④だけ保留で終了コード2', async () => {
+    const unreadable = await evaluateReleaseReadiness({ ...manualInput(null), readErrors: { manual: 'ENOENT: dist/manual-missing' } });
+    expect(unreadable.checks.map(check => check.status)).toEqual(MANUAL_CHECK_IDS.map(() => 'fail'));
+    expect(problemsOf(unreadable, 'manual-chapters')).toContain('ENOENT: dist/manual-missing');
+    expect(unreadable.exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+    const pending = await evaluateReleaseReadiness(manualInput(manualOf(BASE), null));
+    expect(statusOf(pending, 'manual-images')).toBe('pending');
+    expect(pending.exitCode).toBe(RELEASE_READINESS_EXIT.pending);
+  });
+
+  it('引数: --mode manual は dist/ 直下の説明書の名前1つだけを受け、一覧は説明書モードの見出しと意味を出す', async () => {
+    expect(parseReleaseReadinessArguments(['--mode', 'manual', '--manual', 'manual-preview-20260927']))
+      .toMatchObject({ mode: 'manual', manual: 'manual-preview-20260927' });
+    for (const args of [['--mode', 'manual'], ['--mode', 'manual', '--manual', '../outside'],
+      ['--mode', 'manual', '--manual', 'manual-preview', '--web', 'web-candidate'], ['--mode', 'pre-release', '--manual', 'manual-preview']]) {
+      expect(() => parseReleaseReadinessArguments(args)).toThrow(ReleaseReadinessUsageError);
+    }
+    const text = formatReleaseReadinessReport(await evaluateReleaseReadiness(manualInput(manualOf(BASE))), { targets: ['dist/manual-preview'] });
+    expect(text).toContain('PointerCAD 説明書の整合検査（説明書モード・P12-20）');
+    expect(text).toContain('[合格] 説明書② 操作名・ボタン名が今の画面の文言と一致する — 画面の文言の参照 4件・本文に直接書いたボタン名 2件');
+    expect(text).toContain('終了コード 0（説明書の整合4条件と出力全体の一致を満たす）');
   });
 });

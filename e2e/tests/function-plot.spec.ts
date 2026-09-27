@@ -14,6 +14,7 @@ import { functionSurfacePointFlow } from './functionSurfacePointFlow.js';
 import { functionCoefficientFlow } from './functionCoefficientFlow.js';
 import { functionSectionScenario } from './functionSectionFlow.js';
 import {scriptFunctionDocumentFlow} from './scriptFunctionDocumentFlow.js';
+import { functionPiecewiseCurveFlow, functionDomainSurfaceFlow } from './functionPiecewiseDomainFlow.js';
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
@@ -23,6 +24,22 @@ test('ADD-23 勾配とヘッセ行列の成分を曲線と曲面に使い、保�
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
   });
   await page.goto('/'); await functionVectorCalculusFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-25 場合分けの関数曲線を離れた枝で作り、根号の理由表示・半円への編集・保存再開・Undo・F1を通す', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await functionPiecewiseCurveFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-25 条件が成り立つ範囲だけの半球の曲面を作り、等式条件の理由表示・保存再開・編集Undo・F1を通す', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await functionDomainSurfaceFlow(page, info); expect(errors).toEqual([]);
 });
 
 test('ADD-17 双曲線関数の曲線・逆関数の曲面を作成し、原式の保存再開・編集Undo・F1を通す', async ({ page }, info) => {

@@ -80,11 +80,13 @@ export async function searchFunctionPoints(document:PartDocument,documentVersion
     {identity:{...identity,inputRevision:known.length+1},coefficients:environment.coefficients.filter(item=>used.has(item.id))});
   const completion=await points.evaluate(request,5_000,signal);
   if(!current() || completion.status==='cancelled') return {status:'cancelled'};
-  if(completion.status!=='result') return {status:'failed',message:t('math.workerFailed')};
+  if(completion.status!=='result') return {status:'failed',message:completion.status==='deadline'?t('functionPoint.deadline'):t('math.workerFailed')};
   const result=completion.result;
   if(result.status==='invalid') return {status:'failed',message:result.message};
   if(result.status==='underconstrained') return {status:'failed',message:t('functionPoint.moreCoordinates')};
   if(result.status==='out-of-range') return {status:'failed',message:t('functionPoint.outside')};
+  // A stop by the time limit is not a wrong range or accuracy: searching again may finish.
+  if(result.status==='stopped' && result.reason==='deadline') return {status:'failed',message:t('functionPoint.deadline')};
   if(result.status!=='ready') return {status:'failed',message:t('functionPoint.incomplete')};
   if(result.candidates.length===0 && result.unresolved.some(item=>item.reason==='continuum')) return {status:'failed',message:t('functionPoint.continuum')};
   return {status:'ready',search:{document:environment.prepared,parent,request,known,candidates:result.candidates,

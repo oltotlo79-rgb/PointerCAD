@@ -55,4 +55,13 @@ describe('加工受渡しの特権境界', () => {
     expect(await invoke('pcad:openExport', result.token)).toBe(false);
     expect(save).toHaveBeenCalledTimes(1);
   });
+  it.each([
+    ['名前が文字列でない', [42, 'stl', Uint8Array.of(1)]],
+    ['形式が未知', ['part.stl', 'exe', Uint8Array.of(1)]],
+    ['バイト列がUint8Arrayでない', ['part.stl', 'stl', 'not-bytes']],
+    ['引数が過不足', ['part.stl', 'stl']],
+  ])('許可済みsenderでも pcad:saveExport の依頼(%s)を例外で断り、保存を試みない', async (_label, args) => {
+    await expect(invoke('pcad:saveExport', ...args)).rejects.toThrow('書き出しの依頼の形が正しくありません。');
+    expect(save).not.toHaveBeenCalled();
+  });
 });

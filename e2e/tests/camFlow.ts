@@ -3,6 +3,7 @@ import { expect, type ElectronApplication, type Page, type TestInfo } from '@pla
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { diskFile, saveTarget } from './electronAppFlow.js';
 import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 const handoff = (page: Page) => page.getByRole('dialog', { name: '加工ソフトへ渡す', exact: true });
 async function exportFile(page: Page, info: TestInfo, format: 'STEP' | 'STL' | '3MF', app?: ElectronApplication): Promise<string> {
@@ -80,13 +81,13 @@ export async function camFlow(page: Page, info: TestInfo, app?: ElectronApplicat
     expect(await nativeCalls(app)).toEqual([]);
     await nativeButton.click(); await expect.poll(() => nativeCalls(app)).toEqual([step]);
   }
-  await page.screenshot({ path: info.outputPath('cam-step-handoff.png') });
+  await captureManualDetail(page, info, { name: 'cam-step-handoff', dialog: handoff(page), fixture: { format: 'STEP' }, script: new URL(import.meta.url) });
   await handoff(page).getByRole('button', { name: '閉じる', exact: true }).click();
   await expect(handoff(page)).toHaveCount(0); expect((await readFile(step)).length).toBeGreaterThan(100);
   for (const format of ['STL', '3MF'] satisfies readonly ('STL' | '3MF')[]) {
     await exportFile(page, info, format, app);
     await expect(handoff(page)).toContainText('形はこのアプリからは送られません');
-    await page.screenshot({ path: info.outputPath(`cam-${format.toLowerCase()}-handoff.png`) });
+    await captureManualDetail(page, info, { name: `cam-${format.toLowerCase()}-handoff`, dialog: handoff(page), fixture: { format }, script: new URL(import.meta.url) });
     await openWebsite(page, 'Kiri:Motoを開く', 'https://grid.space/kiri/', app);
     await openWebsite(page, 'PrusaSlicerの案内を開く', 'https://www.prusa3d.com/p/prusaslicer/', app);
     if (format === 'STL') { await handoff(page).getByRole('button', { name: '閉じる', exact: true }).click(); }

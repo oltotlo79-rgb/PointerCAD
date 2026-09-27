@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, type Page, type TestInfo } from '@playwright/test';
 import { readDrawingBundle, readPcadFile, writePcadFile } from '../../packages/io/src/index.js';
 import { sheetDrawingVectorFlow } from './sheetDrawingExportFlow.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 export async function sheetFlatDrawingFlow(page: Page, testInfo: TestInfo, partPath: string): Promise<void> {
   const form = page.getByRole('form', { name: '板金の展開', exact: true });
@@ -12,7 +13,8 @@ export async function sheetFlatDrawingFlow(page: Page, testInfo: TestInfo, partP
   const shapeText = () => paths.evaluateAll((elements) => elements.map((element) => element.getAttribute('d')).join('|'));
   const originalOutline = await shapeText();
   await sheetDrawingVectorFlow(page, testInfo);
-  await page.screenshot({ path: testInfo.outputPath('sheet-flat-drawing.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-flat-drawing', dialog: page.locator('.pcad-drawing-sheet'),
+    fixture: { originalOutline }, script: new URL(import.meta.url) });
   const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
   const file = testInfo.outputPath('sheet-flat.pcadd'); await (await saving).saveAs(file);
   const saved = await readDrawingBundle(await readFile(file)); if (!saved.ok) throw new Error(saved.error.message);

@@ -6,6 +6,7 @@ import { openTarget } from './electronAppFlow.js';
 import { savePart } from './scriptsFlow.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { helpNavigationFlow } from './helpNavigationFlow.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 const text = functionPlotMessage;
 export async function functionSurfaceFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -46,7 +47,7 @@ async function runSurfaceFlow(page: Page, info: TestInfo, app: ElectronApplicati
   await page.mouse.move(box.x + box.width / 2 + 35, box.y + box.height / 2 + 18, { steps: 6 }); await page.mouse.up();
   await expect(confirm).toBeInViewport();
   await expect(previewCanvas).toHaveAttribute('aria-label', text('surfacePreviewLabel'));
-  await page.screenshot({ path: info.outputPath('function-surface-xyz-preview.png'), fullPage: true });
+  await captureManualDetail(page, info, { name: 'function-surface-xyz-preview', dialog, fixture: { formula: 'X+Y' }, script: new URL(import.meta.url) });
   const created = await beginRecompute(page); await confirm.click(); await expect(dialog).toHaveCount(0); await waitForRecompute(page, created);
   const original = await savePart(page, info, 'function-surface.pcad', app);
   const surface = original.solids.find(feature => feature.kind === 'functionSurface');
@@ -85,7 +86,7 @@ async function runSurfaceFlow(page: Page, info: TestInfo, app: ElectronApplicati
   await dialog.getByRole('button', { name: text('preview'), exact: true }).click(); await expect(confirm).toBeEnabled({ timeout: 60_000 });
   await expect(previewCanvas).toBeInViewport({ ratio: 1 }); await expect(confirm).toBeInViewport();
   await expect(dialog.getByText(text('openSurface'), { exact: false })).toBeInViewport();
-  await page.screenshot({ path: info.outputPath('function-surface-parametric.png'), fullPage: true });
+  await captureManualDetail(page, info, { name: 'function-surface-parametric', dialog, fixture: original, script: new URL(import.meta.url) });
   const changed = await beginRecompute(page); await confirm.click(); await waitForRecompute(page, changed);
   const edited = (await savePart(page, info, 'function-surface-edited.pcad', app)).solids.find(feature => feature.id === surface.id);
   expect(edited).toMatchObject({ definition: { formula: { kind: 'parametric-surface', U: { min: { value: -1 }, max: { value: 1 } } }, bounds: surface.definition.bounds } });

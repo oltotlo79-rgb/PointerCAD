@@ -5,6 +5,10 @@
  * (runReleaseReadiness) reads the dist/<name>/ folders exactly like build-release-manifest.mjs, loads the current
  * catalog through Vite SSR like scripts/manual/currentManualEdition.mjs, and prints a human-readable list.
  * Post-release mode (download from the real URLs and compare hashes) is only an entry point here: P13-20 fills it in.
+ * Manual mode (P12-20) runs only the manual checks (MANUAL_CHECK_IDS: the four NFR-MA-6 conditions and the
+ * whole-edition equality) on one generated manual, dist/<name>/ from scripts/manual/generate.mjs, before any
+ * release candidate exists. Pre-release mode (P13-15) runs the very same check bodies on the manual inside the Web
+ * candidate, so the manual conditions are implemented once.
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -59,10 +63,13 @@ const CHECKS = Object.freeze([
   { id: 'readme-links', group: 'README', title: 'pointercad:release-links の導線の種類・版・未公開の案内' },
 ]);
 export const RELEASE_READINESS_CHECK_IDS = Object.freeze(CHECKS.map(check => check.id));
+/** The checks of manual mode (P12-20); pre-release mode runs them too, as the first five of its fourteen. */
+export const MANUAL_CHECK_IDS = Object.freeze(CHECKS.filter(check => check.id.startsWith('manual-')).map(check => check.id));
 
 const STATUS_LABELS = Object.freeze({ pass: '合格', fail: '不合格', pending: '保留', 'not-implemented': '未実装' });
 const EXIT_MEANINGS = Object.freeze({ 0: '公開前の全項目を満たす', 1: '公開できない', 2: '未接続の条件があり判定できない',
   3: '公開後モードは未実装', 64: '引数の誤り', 70: '内部の誤り' });
+const MANUAL_EXIT_MEANINGS = Object.freeze({ ...EXIT_MEANINGS, 0: '説明書の整合4条件と出力全体の一致を満たす', 1: '説明書が今のヘルプ・画面・機能・撮影と合わない' });
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -134,14 +141,21 @@ function occurrences(text, needle) {
 
 // ---------------------------------------------------------------- evaluation context
 
+/** The manual inside the Web candidate (manual/, without the PDF volumes) is the same edition as dist/<name>/. */
 function readManualEdition(webFiles) {
-  const manualFiles = [], byPath = new Map();
+  const manualFiles = [];
   for (const file of webFiles) {
     if (typeof file?.path !== 'string' || !(file.bytes instanceof Uint8Array)) throw new Error('Web の候補のファイルの形が違う');
-    if (file.path.startsWith('manual/') && !file.path.startsWith('manual/pdf/')) {
-      const path = file.path.slice('manual/'.length);
-      manualFiles.push({ path, bytes: file.bytes }); byPath.set(path, file.bytes);
-    }
+    if (file.path.startsWith('manual/') && !file.path.startsWith('manual/pdf/')) manualFiles.push({ path: file.path.slice('manual/'.length), bytes: file.bytes });
+  }
+  return manualEditionOf(manualFiles);
+}
+/** One generated manual (paths relative to its root, as scripts/manual/generate.mjs writes them). */
+function manualEditionOf(manualFiles) {
+  const byPath = new Map();
+  for (const file of manualFiles) {
+    if (typeof file?.path !== 'string' || !(file.bytes instanceof Uint8Array)) throw new Error('説明書のファイルの形が違う');
+    byPath.set(file.path, file.bytes);
   }
   const manifest = parseJson(byPath.get('manifest.json'), 'manual/manifest.json');
   if (!record(manifest) || manifest.format !== 'pointercad-manual/1' || !Array.isArray(manifest.chapters)
@@ -169,7 +183,9 @@ function createContext(input) {
     help: () => need(input.currentHelp, 'currentHelp', '今のヘルプ'),
     webFiles: () => need(input.webFiles, 'web', 'Web の候補'),
     candidates: () => need(input.candidates, 'candidates', 'デスクトップの候補'),
-    manual: () => once('manual', () => readManualEdition(need(input.webFiles, 'web', 'Web の候補'))),
+    manual: () => once('manual', () => input.mode === 'manual'
+      ? manualEditionOf(need(input.manualFiles, 'manual', '説明書'))
+      : readManualEdition(need(input.webFiles, 'web', 'Web の候補'))),
     saved: () => once('saved', () => {
       const value = parseJson(need(input.releaseManifest, 'releaseManifest', 'release-manifest.json '), 'release-manifest.json');
       if (!record(value)) throw new Error('release-manifest.json の形が違う');
@@ -249,10 +265,28 @@ function checkChapters(edition, help) {
   return { problems, summary: `${current.size}章・${help.volumes.length}巻を今の目録と照合` };
 }
 
-/** ② Every {{ui:key}} of the current chapter sources appears with today's label in the chapter and volume pages. */
+/** A button named directly in the text (「X」ボタン, 「X」を押す) rather than through {{ui:key}}. */
+const LITERAL_CONTROL = /「([^「」\r\n]{1,40})」(?=ボタン|を押)/gu;
+/**
+ * ② Every {{ui:key}} of the current chapter sources appears with today's label in the chapter and volume pages, and
+ * every button the pages name directly (「X」ボタン・「X」を押す) is one of today's screen labels (the ja message table).
+ */
 function checkControls(edition, help) {
   const problems = [];
-  let references = 0;
+  let references = 0, literals = 0;
+  const labels = new Set(Object.values(help.uiLabels).filter(label => typeof label === 'string' && label !== ''));
+  for (const chapter of help.chapters) {
+    for (const name of [`chapters/${chapter.id}.html`, `volumes/${chapter.volumeId}.html`]) {
+      const article = chapterArticle(edition.byPath.get(name), chapter.id);
+      if (article === null) continue; // A missing page or chapter is reported by ① and 全巻.
+      const unknown = new Set();
+      for (const match of visibleText(article).matchAll(LITERAL_CONTROL)) {
+        if (name.startsWith('chapters/')) literals += 1;
+        if (!labels.has(match[1])) unknown.add(match[1]);
+      }
+      for (const label of unknown) problems.push(`誤った操作名・ボタン名（今の画面の文言に無い）: manual/${name} の ${chapter.id} に「${label}」`);
+    }
+  }
   for (const chapter of help.chapters) {
     const source = help.chapterSources.get(chapter.id);
     if (typeof source !== 'string') { problems.push(`章の原文が無い: ${chapter.id}`); continue; }
@@ -278,7 +312,7 @@ function checkControls(edition, help) {
   }
   try { assertNativeControlDescriptions(edition.manifest.nativeControlCoverage); }
   catch (error) { problems.push(`説明の無い画面の部品: ${messageOf(error)}`); }
-  return { problems, summary: `画面の文言の参照 ${references}件（${help.chapters.length}章）と画面の部品の説明を照合` };
+  return { problems, summary: `画面の文言の参照 ${references}件・本文に直接書いたボタン名 ${literals}件（${help.chapters.length}章）と画面の部品の説明を照合` };
 }
 
 function coverageEntries(value, label) {
@@ -661,18 +695,25 @@ const CHECK_BODIES = Object.freeze({
   'readme-links': context => checkReadme(context),
 });
 
-/** Judge one candidate. Every check runs independently, so one unreadable part does not hide the other results. */
+/**
+ * Judge one candidate (pre-release) or one generated manual (manual: only MANUAL_CHECK_IDS, with the same bodies).
+ * Every check runs independently, so one unreadable part does not hide the other results.
+ */
 export async function evaluateReleaseReadiness(input) {
   if (!record(input)) throw new TypeError('Release readiness input must be an object');
   if (input.mode === 'post-release') return finish('post-release', [postReleaseCheck(input)]);
-  if (input.mode !== 'pre-release') throw new TypeError(`Unknown release readiness mode: ${String(input.mode)}`);
+  if (input.mode !== 'pre-release' && input.mode !== 'manual') throw new TypeError(`Unknown release readiness mode: ${String(input.mode)}`);
   const context = createContext(input), checks = [];
-  for (const check of CHECKS) checks.push(await runCheck(check, () => CHECK_BODIES[check.id](context)));
-  return finish('pre-release', checks);
+  for (const check of CHECKS) {
+    if (input.mode === 'manual' && !MANUAL_CHECK_IDS.includes(check.id)) continue;
+    checks.push(await runCheck(check, () => CHECK_BODIES[check.id](context)));
+  }
+  return finish(input.mode, checks);
 }
 
 export function formatReleaseReadinessReport(report, { targets = [] } = {}) {
-  const lines = [report.mode === 'pre-release' ? 'PointerCAD 公開前の整合検査（公開前モード）' : 'PointerCAD 公開後の確認（公開後モード）'];
+  const lines = [report.mode === 'pre-release' ? 'PointerCAD 公開前の整合検査（公開前モード）'
+    : report.mode === 'manual' ? 'PointerCAD 説明書の整合検査（説明書モード・P12-20）' : 'PointerCAD 公開後の確認（公開後モード）'];
   if (targets.length > 0) lines.push(`対象: ${targets.join(' ・ ')}`);
   for (const check of report.checks) {
     lines.push(`[${STATUS_LABELS[check.status] ?? check.status}] ${check.group} ${check.title} — ${check.summary}`);
@@ -682,7 +723,7 @@ export function formatReleaseReadinessReport(report, { targets = [] } = {}) {
   }
   const { summary } = report;
   lines.push(`合計: 合格 ${summary.pass}・不合格 ${summary.fail}・保留 ${summary.pending}・未実装 ${summary.notImplemented}`
-    + ` → 終了コード ${report.exitCode}（${EXIT_MEANINGS[report.exitCode] ?? '不明'}）`);
+    + ` → 終了コード ${report.exitCode}（${(report.mode === 'manual' ? MANUAL_EXIT_MEANINGS : EXIT_MEANINGS)[report.exitCode] ?? '不明'}）`);
   return lines.join('\n');
 }
 
@@ -692,10 +733,12 @@ const USAGE = [
   '使い方（<名前> は dist/ 直下のフォルダー名。英小文字・数字・-）:',
   '  公開前: node scripts/release/releaseReadiness.mjs --mode pre-release --windows <名前> --linux <名前> --web <名前> --release <名前> --sbom <名前> [--report <JSON の保存先>]',
   '  公開後: node scripts/release/releaseReadiness.mjs --mode post-release --release <名前> --web-url https://<公開先>/ --download-url https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/ [--report <JSON の保存先>]',
+  '  説明書: node scripts/release/releaseReadiness.mjs --mode manual --manual <名前（scripts/manual/generate.mjs の出力名）> [--report <JSON の保存先>]',
 ].join('\n');
 const FLAGS = Object.freeze({ '--mode': 'mode', '--windows': 'windows', '--linux': 'linux', '--web': 'web', '--release': 'release', '--sbom': 'sbom',
-  '--web-url': 'webUrl', '--download-url': 'downloadUrl', '--report': 'report' });
-const MODE_KEYS = Object.freeze({ 'pre-release': ['windows', 'linux', 'web', 'release', 'sbom'], 'post-release': ['release', 'webUrl', 'downloadUrl'] });
+  '--web-url': 'webUrl', '--download-url': 'downloadUrl', '--manual': 'manual', '--report': 'report' });
+const MODE_KEYS = Object.freeze({ 'pre-release': ['windows', 'linux', 'web', 'release', 'sbom'], 'post-release': ['release', 'webUrl', 'downloadUrl'],
+  manual: ['manual'] });
 
 export function parseReleaseReadinessArguments(args) {
   const options = { mode: 'pre-release' }, seen = new Set();
@@ -707,7 +750,7 @@ export function parseReleaseReadinessArguments(args) {
     seen.add(flag); options[FLAGS[flag]] = value;
   }
   const keys = MODE_KEYS[options.mode];
-  if (keys === undefined) throw new ReleaseReadinessUsageError(`--mode は pre-release か post-release: ${options.mode}`);
+  if (keys === undefined) throw new ReleaseReadinessUsageError(`--mode は pre-release・post-release・manual のどれか: ${options.mode}`);
   for (const key of Object.values(FLAGS)) {
     if (key !== 'mode' && key !== 'report' && options[key] !== undefined && !keys.includes(key)) {
       throw new ReleaseReadinessUsageError(`${options.mode} では使わない引数: --${key.replace(/[A-Z]/gu, letter => `-${letter.toLowerCase()}`)}`);
@@ -723,7 +766,7 @@ export function parseReleaseReadinessArguments(args) {
   if (options.mode === 'pre-release') {
     const names = MODE_KEYS['pre-release'].map(key => options[key]);
     if (new Set(names).size !== names.length) throw new ReleaseReadinessUsageError('5つのフォルダー名は互いに違う名前にする');
-  } else {
+  } else if (options.mode === 'post-release') {
     options.webUrl = webOrigin(options.webUrl); options.downloadUrl = downloadBase(options.downloadUrl);
   }
   return Object.freeze(options);
@@ -817,22 +860,27 @@ const APPLICATION_DIGEST_PATTERN = /^[a-f0-9]{64}$/u;
  * list at all stay unregistered; every other way a capture record fails to vouch for this exact, current
  * build — wrong content, an unknown or different application build, or a changed/missing script — becomes
  * stale, since none of them confirm the image is this build's capture output.
+ * `manualImages` (optional) are the manual's own copies (path and SHA-256, as CaptureFreshnessRequest.images carries
+ * them): a copy whose SHA-256 differs from the capture folder's current bytes is an older image under a current
+ * name, so it is stale too even when the folder and its registry are fresh (P12-20 旧画像).
  */
-export function captureFreshnessFromRegistry(registry, files, { applicationBuildId, scripts } = {}) {
-  const named = [], pathOf = new Map();
+export function captureFreshnessFromRegistry(registry, files, { applicationBuildId, scripts, manualImages = [] } = {}) {
+  const named = [], pathOf = new Map(), current = new Map();
   for (const file of files) {
     const match = MANUAL_IMAGE_NAME.exec(file.path);
     if (match === null) throw new Error(`説明書の画像の置き場が違う: ${file.path}`);
     named.push({ name: match[1], bytes: file.bytes });
-    pathOf.set(match[1], file.path);
+    pathOf.set(match[1], file.path); current.set(file.path, sha256(file.bytes));
   }
   const assessment = assessCaptureImages(registry, named, { applicationBuildId, scripts });
   const toPaths = names => names.map(name => pathOf.get(name) ?? name);
+  const replaced = manualImages.filter(image => current.has(image.path) && current.get(image.path) !== image.sha256).map(image => image.path);
   return {
     stale: [...new Set([...toPaths(assessment.mismatched), ...toPaths(assessment.buildUnknown),
-      ...toPaths(assessment.buildMismatch), ...toPaths(assessment.scriptChanged), ...toPaths(assessment.scriptMissing)])],
+      ...toPaths(assessment.buildMismatch), ...toPaths(assessment.scriptChanged), ...toPaths(assessment.scriptMissing), ...replaced])],
     unregistered: toPaths(assessment.unregistered),
-    notes: [`登録簿の画像 ${grouped(registry.images.length)}枚のうち ${grouped(assessment.checked)}枚を今のアプリの入力の指紋と照合`],
+    notes: [`登録簿の画像 ${grouped(registry.images.length)}枚のうち ${grouped(assessment.checked)}枚を今のアプリの入力の指紋と照合`,
+      ...(replaced.length > 0 ? [`説明書の中の画像が撮影の置き場（${CAPTURE_IMAGE_FOLDER}）の今の画像と違う ${grouped(replaced.length)}枚`] : [])],
   };
 }
 
@@ -846,7 +894,9 @@ export function captureFreshnessFromRegistry(registry, files, { applicationBuild
  * sources scripts/manual/captureRegistry.mjs itself is built from; the actual current image bytes are read
  * fresh from packages/help-content/docs/ja/images/ (not from request.images, which carries only path +
  * SHA-256 already computed from the release candidate's own bytes) so assessCaptureImages() hashes real
- * content instead of a value that would need to be fabricated to match a known digest.
+ * content instead of a value that would need to be fabricated to match a known digest. That SHA-256 of the
+ * manual's own copy must still equal the capture folder's image: a manual that carries an older image under a
+ * current name is stale even when the folder itself is fresh (P12-20 旧画像).
  */
 export function loadCaptureFreshness() {
   return async request => {
@@ -863,7 +913,7 @@ export function loadCaptureFreshness() {
       try { files.push({ path: image.path, bytes: await readFile(join(repositoryRoot, CAPTURE_IMAGE_FOLDER, match[1])) }); }
       catch { unreadable.push(image.path); }
     }
-    const result = captureFreshnessFromRegistry(registry, files, { applicationBuildId, scripts });
+    const result = captureFreshnessFromRegistry(registry, files, { applicationBuildId, scripts, manualImages: request.images });
     return unreadable.length === 0 ? result : { ...result, unregistered: [...new Set([...result.unregistered, ...unreadable])] };
   };
 }
@@ -901,6 +951,21 @@ export async function readPreReleaseInput(root, options) {
   return { mode: 'pre-release', packageFiles, builderConfig, readme, releaseManifest, sbom, webFiles, candidates, sourceCommit, sourceInputs,
     currentHelp, captureFreshness: loadCaptureFreshness(), readErrors: Object.freeze(readErrors) };
 }
+/** Manual mode: one generated manual, dist/<name>/, read like scripts/manual/verify.mjs, against the current help. */
+export async function readManualInput(root, options) {
+  const readErrors = {};
+  let manualFiles = null, currentHelp = null;
+  try {
+    const dist = join(root, 'dist'), info = await lstat(dist).catch(() => null);
+    if (info === null || info.isSymbolicLink() || !info.isDirectory()) throw new Error('dist/ が無いかリンク');
+    manualFiles = await collectDesktopFiles(root, join(dist, options.manual));
+  } catch (error) { readErrors.manual = messageOf(error); }
+  if (manualFiles === null) readErrors.currentHelp = '説明書を読めないため読み込まない';
+  else {
+    try { currentHelp = await loadCurrentHelp(root); } catch (error) { readErrors.currentHelp = messageOf(error); }
+  }
+  return { mode: 'manual', manualFiles, currentHelp, captureFreshness: loadCaptureFreshness(), readErrors: Object.freeze(readErrors) };
+}
 async function readPostReleaseInput(root, options) {
   const readErrors = {};
   let releaseManifest = null;
@@ -932,7 +997,8 @@ export async function runReleaseReadiness(args, { root = repositoryRoot, write =
   }
   const targets = MODE_KEYS[options.mode].filter(key => key !== 'webUrl' && key !== 'downloadUrl').map(key => `dist/${options[key]}`);
   if (options.mode === 'post-release') targets.push(options.webUrl, options.downloadUrl);
-  const input = options.mode === 'pre-release' ? await readPreReleaseInput(root, options) : await readPostReleaseInput(root, options);
+  const input = options.mode === 'pre-release' ? await readPreReleaseInput(root, options)
+    : options.mode === 'manual' ? await readManualInput(root, options) : await readPostReleaseInput(root, options);
   const report = await evaluateReleaseReadiness(input);
   write(formatReleaseReadinessReport(report, { targets }));
   if (reportPath !== null) {

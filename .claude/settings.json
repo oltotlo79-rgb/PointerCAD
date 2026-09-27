@@ -71,12 +71,34 @@
         ]
       },
       {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/chained_diag_wait_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "Agent",
         "hooks": [
           {
             "type": "command",
             "command": "python",
             "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/instruction_check_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/main_integration_guard.py"],
             "timeout": 5
           }
         ]

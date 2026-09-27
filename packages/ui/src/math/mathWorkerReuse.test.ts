@@ -78,6 +78,50 @@ describe('同じ文書の再計算の間だけ数式Workerの準備を再利用�
     } finally { pool.clear(); }
   });
 
+  it('入力画面を開いている間は待機Workerを時間で解放せず、最後の画面を閉じてから30秒で解放する', () => {
+    vi.useFakeTimers();
+    const { pool, workers, use } = fixture();
+    try {
+      const first = use(); first.port.postMessage('first'); workers[0].worker.onmessage?.({ data: 'first' });
+      first.port.terminate(); first.release(); vi.advanceTimersByTime(20_000);
+      // 待機20秒で入力画面が開き、画面の準備(Firefoxで65秒)の間も解放しない。
+      const editor = pool.hold(), other = pool.hold();
+      vi.advanceTimersByTime(120_000); expect(workers[0].ended).toBe(0);
+      editor(); editor(); vi.advanceTimersByTime(120_000); expect(workers[0].ended).toBe(0);
+      // 適用後の再計算は準備済みのWorkerを使い、終わった後も開いている画面が保持する。
+      const applied = use(); applied.port.postMessage('applied'); expect(workers).toHaveLength(1);
+      workers[0].worker.onmessage?.({ data: 'applied' }); applied.port.terminate(); applied.release();
+      vi.advanceTimersByTime(120_000); expect(workers[0].ended).toBe(0);
+      other(); vi.advanceTimersByTime(29_999); expect(workers[0].ended).toBe(0);
+      vi.advanceTimersByTime(1); expect(workers[0].ended).toBe(1);
+      const next = use(); next.port.postMessage('next'); expect(workers).toHaveLength(2);
+      next.port.terminate(); next.release();
+    } finally { pool.clear(); }
+  });
+
+  it('入力画面を開いていても、文書の切替・所有者の終了・取消・連続16回では解放する', () => {
+    vi.useFakeTimers();
+    const { pool, workers, use } = fixture();
+    const release = pool.hold();
+    try {
+      const warm = use(); warm.port.postMessage('warm'); workers[0].worker.onmessage?.({ data: 'warm' });
+      warm.port.terminate(); warm.release();
+      const other = use('other'); expect(workers[0].ended).toBe(1);
+      other.port.postMessage('other'); expect(workers).toHaveLength(2);
+      workers[1].worker.onmessage?.({ data: 'other' }); other.port.terminate(); other.release();
+      pool.clear(); expect(workers[1].ended).toBe(1);
+      const cancelled = use(); cancelled.port.postMessage('cancelled'); cancelled.port.terminate(); cancelled.release();
+      expect(workers[2].ended).toBe(1);
+      const after = use(); after.port.postMessage('after'); expect(workers).toHaveLength(4);
+      after.port.terminate(); after.release(); pool.clear();
+      for (let index = 0; index < 16; index++) {
+        const lease = use(); lease.port.postMessage(index); workers[4].worker.onmessage?.({ data: index });
+        lease.port.terminate(); lease.release();
+      }
+      expect(workers).toHaveLength(5); expect(workers[4].ended).toBe(1);
+    } finally { release(); pool.clear(); }
+  });
+
   it('実行中の取消で破棄されたWorkerを次の計算へ戻さない', () => {
     const { pool, workers, use } = fixture();
     try {

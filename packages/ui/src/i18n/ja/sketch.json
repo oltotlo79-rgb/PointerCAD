@@ -24,6 +24,7 @@
   "functionPoint.moreCoordinates": "この指定だけでは点が決まりません。もう1つの座標を指定してください。",
   "functionPoint.outside": "指定した座標は関数のXYZ範囲内にありません。",
   "functionPoint.incomplete": "この範囲では点の計算を完了できませんでした。範囲や精度を見直してください。",
+  "functionPoint.deadline": "点の計算が時間内に終わりませんでした。もう一度計算してください。",
   "functionPoint.unsupported": "この形式の関数上の点にはまだ対応していません。",
   "functionPoint.changedChoice": "候補が更新されています。もう一度点を選んでください。",
   "functionPoint.calculating": "関数上の点を探しています…",

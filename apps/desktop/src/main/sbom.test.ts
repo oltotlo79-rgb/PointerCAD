@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   assembleSbomDocument, assertSbomMatchesReleaseManifest, assertSbomPublishable, buildSbom,
@@ -24,6 +24,16 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
       expect(component?.properties?.some((entry) => entry.name === 'pointercad:distributedFile' && entry.value.startsWith(`licenses/runtime/`)), name).toBe(true);
     }
     expect(components.filter((item) => item.type === 'library' && item.purl?.startsWith('pkg:npm/'))).toHaveLength(11);
+  });
+
+  it('OCCTのLGPL例外条項をopencascade.js部品の配布資産として記録する(P13-6c)', () => {
+    const { components } = collectSbomComponents(root);
+    const occt = byName(components, 'opencascade.js');
+    expect(occt?.licenses).toEqual([{ license: { id: 'LGPL-2.1-only' } }]);
+    const distributed = occt?.properties?.filter((entry) => entry.name === 'pointercad:distributedFile') ?? [];
+    expect(distributed).toHaveLength(2);
+    expect(distributed.some((entry) => entry.value.startsWith('licenses/runtime/runtime-opencascade.js-2.0.0-beta.b5ff984-license.txt|'))).toBe(true);
+    expect(distributed.some((entry) => entry.value.startsWith('licenses/runtime/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt|'))).toBe(true);
   });
 
   it('数式字体20個と数式の追加原文2件を固定資産として集め、既存のnpm部品と二重計上しない', () => {
@@ -99,7 +109,7 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
       'Pyodide 314.0.6': 'MPL-2.0', 'Hiwire 6a1e67280a15d929ebeceee54a6358c9c8d5f697': 'MPL-2.0', 'CPython 3.14.2': 'PSF-2.0',
       'libffi f08493d249d2067c8b3207ba46693dd858f95db3': 'MIT', 'zlib 1.3.1': 'Zlib', 'bzip2 1.0.6': 'bzip2-1.0.6',
       'zstd 1.5.7': 'BSD-3-Clause', 'musl in Emscripten 5.0.3': 'MIT', 'MiniLZ4 in Emscripten 5.0.3': 'MIT',
-      'HACL in CPython 3.14.2': 'MIT', 'libmpdec in CPython 3.14.2': 'BSD-2-Clause', 'Expat in CPython 3.14.2': 'Expat',
+      'HACL in CPython 3.14.2': 'MIT', 'libmpdec in CPython 3.14.2': 'BSD-2-Clause', 'Expat in CPython 3.14.2': 'MIT',
       'StackFrame and ErrorStackParser in Pyodide 314.0.6': 'MIT', 'mpmath 1.3.0': 'BSD-3-Clause',
     };
     for (const [name, id] of Object.entries(expectedSingle)) {
@@ -199,5 +209,43 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
     expect(() => matchSbomToReleaseManifest(sbom, {})).toThrow('Invalid release manifest');
     expect(() => matchSbomToReleaseManifest(sbom, { web: { files: [{ path: 'x', sha256: 'not-a-hash' }] } })).toThrow('Invalid release manifest file entry');
     expect(() => matchSbomToReleaseManifest({ components: null }, { web: { files: [] } })).toThrow('Invalid SBOM document');
+  });
+
+  /**
+   * CycloneDX 1.6 official schema (docs/standards/licenses/cyclonedx-*.schema.json, verified in
+   * cyclonedx-schema-verification.json against the CycloneDX/specification repository at tag
+   * 1.6) machine-checks every SPDX id this file records, so an id that is not on SPDX's own
+   * list (like the "Expat" mistake this test replaces, P13-6b/P13-6c) fails a real schema
+   * check instead of only an equality assertion against a value this file itself chose. Uses
+   * the already-installed ajv 6.15.0 (draft-07 validator; no new dependency, see module doc).
+   */
+  it('CycloneDX 1.6公式スキーマで全85部品が合格し、SPDX一覧に無い識別子を機械的に検出する(P13-6c)', async () => {
+    interface AjvValidateFunction { (data: unknown): boolean; errors?: unknown }
+    interface AjvInstance {
+      addSchema(schema: unknown, key: string): AjvInstance;
+      compile(schema: unknown): AjvValidateFunction;
+    }
+    interface AjvConstructorOptions { allErrors?: boolean; schemaId?: string; unknownFormats?: string[] }
+    interface AjvConstructor { new (options?: AjvConstructorOptions): AjvInstance }
+
+    const readSchema = (name: string) => JSON.parse(readFileSync(join(root, 'docs/standards/licenses', name), 'utf8')) as unknown;
+    const ajvEntry = join(root, 'node_modules/.pnpm/ajv@6.15.0/node_modules/ajv/lib/ajv.js');
+    const ajvModule = await import(pathToFileURL(ajvEntry).href) as { default: AjvConstructor };
+    const Ajv = ajvModule.default;
+    const ajv = new Ajv({ allErrors: true, schemaId: 'auto', unknownFormats: ['iri-reference', 'idn-email'] });
+    ajv.addSchema(readSchema('cyclonedx-spdx.schema.json'), 'spdx.schema.json');
+    ajv.addSchema(readSchema('cyclonedx-jsf-0.82.schema.json'), 'jsf-0.82.schema.json');
+    const validate = ajv.compile(readSchema('cyclonedx-bom-1.6.schema.json'));
+
+    const sbom = buildSbom(root, { sourceCommit: '1'.repeat(40) });
+    expect(sbom.components).toHaveLength(85);
+    const valid = validate(sbom);
+    expect(valid, JSON.stringify(validate.errors)).toBe(true);
+
+    // A component whose license id is not on SPDX's own list must fail this same schema check
+    // (the exact mistake 'Expat' was: readable prose, but absent from the official enum).
+    const tampered = { ...sbom, components: sbom.components.map((component) =>
+      component.name === 'CPython 3.14.2' ? { ...component, licenses: [{ license: { id: 'not-a-real-spdx-id' } }] } : component) };
+    expect(validate(tampered)).toBe(false);
   });
 });

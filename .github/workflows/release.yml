@@ -153,6 +153,10 @@ jobs:
 
   # Desktop候補(Windows: NSIS・ポータブル / Linux: AppImage)をそれぞれ自OSのrunnerで作る。
   desktop:
+    # リポジトリの取得とartifactの保存(actions/upload-artifactはGITHUB_TOKENの権限を
+    # 使わず別方式で認証するため、contents: readだけで足りる。README参照)。
+    permissions:
+      contents: read
     needs: resolve
     strategy:
       fail-fast: false
@@ -301,6 +305,9 @@ jobs:
 
   # Web候補(通信なし利用版)をUbuntu runnerで作る(OS依存の処理を含まない)。
   web:
+    # desktop jobと同じ理由でcontents: readだけで足りる。
+    permissions:
+      contents: read
     needs: resolve
     runs-on: ubuntu-latest
     steps:
@@ -360,6 +367,10 @@ jobs:
 
   # 両OSのDesktop候補とWeb候補を1つのrunnerへ集め、release-manifest.jsonとSBOMを作る。
   combine:
+    # actions/download-artifactは同一run内のartifact取得だけなのでactions: readは不要
+    # (README参照)。contents: readだけで足りる。
+    permissions:
+      contents: read
     needs: [desktop, web]
     runs-on: ubuntu-latest
     steps:

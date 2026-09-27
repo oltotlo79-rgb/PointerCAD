@@ -161,6 +161,7 @@
   "math.palette.arcsin.meaning": "sinの逆関数です。1/sinとは別の演算です。",
   "math.palette.arcsin.keyword0": "逆三角",
   "math.palette.arcsin.keyword1": "sin⁻¹",
+  "math.palette.arcsin.keyword2": "asin",
   "math.palette.log-natural.label": "自然対数",
   "math.palette.log-natural.meaning": "底は自然対数の底eです。",
   "math.palette.log-natural.keyword0": "log",

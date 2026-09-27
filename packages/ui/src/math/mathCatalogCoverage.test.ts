@@ -58,7 +58,7 @@ describe('計画§1の32行と公開目録の機械照合（MC-04）', () => {
     expect(() => validateMathCatalogCoverage({ rows: MATH_CATALOG_COVERAGE, catalogIds, implementedCatalogIds })).not.toThrow();
   });
 
-  it('後続タスク待ちの記号数が想定どおり（MC-02dはMC-04bで、MC-20はMC-04cで全件catalogIds化。MC-19cは残る。書き換え対象の集計）', () => {
+  it('後続タスク待ちの記号数が想定どおり（MC-02dはMC-04bで、MC-20はMC-04cで全件catalogIds化。MC-19cはADD-17で完了し循環小数・%・比の理由を書き直した。書き換え対象の集計）', () => {
     const pendingReasons: string[] = [];
     for (const row of MATH_CATALOG_COVERAGE) {
       for (const entry of row.symbols) {
@@ -67,7 +67,7 @@ describe('計画§1の32行と公開目録の機械照合（MC-04）', () => {
     }
     const countByTask = (task: string) => pendingReasons.filter(reason => reason.includes(task)).length;
     expect(countByTask('MC-02d')).toBe(0);
-    expect(countByTask('MC-19c')).toBe(3);
+    expect(countByTask('MC-19c')).toBe(0);
     expect(countByTask('MC-20')).toBe(0);
     expect(pendingReasons.length).toBe(26);
   });

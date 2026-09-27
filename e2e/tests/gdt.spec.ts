@@ -6,6 +6,7 @@ import { drawingFromBox, chooseDrawingMenu, waitForDrawingReady } from './drawin
 import { drawingMessage } from './drawingMessages.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 import {installDrawingRefreshHold,controlDrawingRefresh,expectDrawingRefreshHeld} from './holdDrawingRefresh.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 test.describe('P9 幾何公差の実操作', () => {
   test('平面度とデータム参照付き直角度を作成し、編集・移動・削除Undo・保存・SVGでも意味が残る(P9-8〜18)', async ({ page }, testInfo) => {
@@ -74,7 +75,7 @@ test.describe('P9 幾何公差の実操作', () => {
     await tree.getByRole('button', { name: '幾何公差 1', exact: true }).click();
     await expect(form.getByLabel('公差の値・式', { exact: true })).toHaveValue('0.1/2');
     await expect(form.getByLabel('横の位置 (mm)', { exact: true })).not.toHaveValue('110');
-    await page.screenshot({ path: testInfo.outputPath('gdt-flatness-perpendicularity.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'gdt-flatness-perpendicularity', dialog: form, fixture: { step: 'flatness-perpendicularity' }, script: new URL(import.meta.url) });
     await sheet.focus(); const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
     const saved = await (await saving).path(); if (saved === null) throw new Error('公差図面の保存なし'); const bytes = await readFile(saved);
     await chooseDrawingMenu(page, 'ファイル', '図面を書き出す');
@@ -88,7 +89,7 @@ test.describe('P9 幾何公差の実操作', () => {
     await expect(owner('gdt-2').locator('[aria-label="B"]')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
     await tree.getByRole('button', { name: '幾何公差 1', exact: true }).click();
     await expect(form.getByLabel('公差の値・式', { exact: true })).toHaveValue('0.1/2');
-    await page.screenshot({ path: testInfo.outputPath('gdt-restored.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'gdt-restored', dialog: form, fixture: { step: 'restored' }, script: new URL(import.meta.url) });
     await form.getByLabel('公差の値・式', { exact: true }).focus(); await page.keyboard.press('F1');
     const help = page.getByRole('dialog', { name: 'PointerCAD ヘルプ', exact: true });
     await expect(help.getByRole('article').getByRole('heading', { level: 1 })).toHaveText('幾何公差とデータムを記入する');

@@ -238,7 +238,12 @@ function crc32(bytes: Uint8Array): number {
 }
 
 /** 1 エントリだけの無圧縮 ZIP。pcad の書式を変えず、未来の schema を作る検査に使う。 */
-function storedZip(name: string, content: Uint8Array): Uint8Array {
+/**
+ * `declaredExpanded` を省略すると `content.length`(正常な ZIP)。
+ * P12-26 で「虚偽サイズ」「圧縮爆弾」の控えを作るときだけ、実際の長さと違う値を渡す
+ * (CRC は常に実際の `content` から正しく計算するので、宣言サイズだけが嘘になる)。
+ */
+function storedZip(name: string, content: Uint8Array, declaredExpanded = content.length): Uint8Array {
   const nameBytes = new TextEncoder().encode(name);
   const localSize = 30 + nameBytes.length + content.length;
   const centralSize = 46 + nameBytes.length;
@@ -252,7 +257,7 @@ function storedZip(name: string, content: Uint8Array): Uint8Array {
   view.setUint16(8, 0, true);
   view.setUint32(14, checksum, true);
   view.setUint32(18, content.length, true);
-  view.setUint32(22, content.length, true);
+  view.setUint32(22, declaredExpanded, true);
   view.setUint16(26, nameBytes.length, true);
   bytes.set(nameBytes, 30);
   bytes.set(content, 30 + nameBytes.length);
@@ -265,7 +270,7 @@ function storedZip(name: string, content: Uint8Array): Uint8Array {
   view.setUint16(central + 10, 0, true);
   view.setUint32(central + 16, checksum, true);
   view.setUint32(central + 20, content.length, true);
-  view.setUint32(central + 24, content.length, true);
+  view.setUint32(central + 24, declaredExpanded, true);
   view.setUint16(central + 28, nameBytes.length, true);
   bytes.set(nameBytes, central + 46);
 
@@ -290,6 +295,38 @@ function futureRecord(document: PartDocument): AutoSaveRecord {
     bytes: storedZip(PCAD_DOCUMENT_ENTRY, new TextEncoder().encode(future)),
     documentName: '未来版の部品',
   };
+}
+
+/**
+ * 圧縮爆弾: 宣言した展開後サイズ(1バイト)より、実際に入っている中身がずっと大きい控え
+ * (P12-26。要件 NFR-RE-1・NFR-SE-1)。もっと大きな規模(512MiB 境界)の確認は
+ * `packages/io/src/pcad/readArchiveAllocation.test.ts` 側で済んでいるので、ここでは
+ * 確保前に安全に断られることと、控え・今の文書が変わらないことだけを確かめる。
+ */
+function zipBombRecord(): AutoSaveRecord {
+  return {
+    savedAt: SAVED_AT,
+    bytes: storedZip(PCAD_DOCUMENT_ENTRY, new Uint8Array(4096).fill(48), 1),
+    documentName: '圧縮爆弾の控え',
+  };
+}
+
+/** 虚偽サイズ: 展開後の上限(512MiB、`packages/io/src/limits.ts`)を上回る値を宣言した控え。 */
+function forgedSizeRecord(): AutoSaveRecord {
+  return {
+    savedAt: SAVED_AT,
+    bytes: storedZip(PCAD_DOCUMENT_ENTRY, new TextEncoder().encode('{}'), 600 * 1024 * 1024),
+    documentName: '虚偽サイズの控え',
+  };
+}
+
+/** CRC不一致: 宣言サイズは正しいまま、中身だけが壊れている控え。 */
+function crcMismatchRecord(): AutoSaveRecord {
+  const content = serializeDocument(partWithPoint(), { savedAt: SAVED_AT });
+  const bytes = storedZip(PCAD_DOCUMENT_ENTRY, new TextEncoder().encode(content));
+  const dataStart = 30 + new TextEncoder().encode(PCAD_DOCUMENT_ENTRY).length;
+  bytes[dataStart] = (bytes[dataStart] + 1) & 0xff; // 中身だけ変え、CRC欄は変えない
+  return { savedAt: SAVED_AT, bytes, documentName: 'CRC不一致の控え' };
 }
 
 beforeEach(() => {
@@ -663,6 +700,30 @@ describe('案内の返事', () => {
     await restoreAutoSave(saver);
 
     expect(clearSaveTargetCount).toBe(0);
+  });
+
+  it.each([
+    ['圧縮爆弾(宣言よりずっと大きく展開される控え)', zipBombRecord] as const,
+    ['虚偽サイズ(展開後の上限を超える値を宣言した控え)', forgedSizeRecord] as const,
+    ['CRC不一致(宣言サイズは正しいが中身が壊れた控え)', crcMismatchRecord] as const,
+  ])('%s に復元を試みても、控えを消さず、今の文書も変えない(P12-26)', async (_label, makeRecord) => {
+    const record = makeRecord();
+    const recording = createRecordingStorage(record);
+    const timer = createManualTimer();
+    const saver = createTestSaver(recording.storage, timer);
+    const before = useAppStore.getState().document;
+
+    await restoreAutoSave(saver);
+
+    // 控えは破棄を選ぶまで残す(復元できないまま消すと、直せる望みも無くなる)。
+    expect(recording.clearCount()).toBe(0);
+    expect(recording.stored()).toBe(record);
+    // 読めなかった控えを部品として適用しないので、今の文書は変わらない(NFR-RE-1)。
+    expect(useAppStore.getState().document).toBe(before);
+    expect(useAppStore.getState().restorePrompt).toMatchObject({
+      unrecoverable: true,
+      reasonKey: 'file.error.corrupted',
+    });
   });
 
   it('「控えを書き出す」は元のバイト列を既存の pcad 保存口へそのまま渡す', async () => {

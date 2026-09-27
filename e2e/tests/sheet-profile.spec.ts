@@ -4,6 +4,7 @@ import { readPcadFile } from '../../packages/io/src/index.js';
 import { openSheetPart } from './sheetPartFlow.js';
 import { sheetProfileFile } from './sheetProfileFixture.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 const tree = (page: Page, name: string) => page.locator('.pcad-panel--left').getByRole('button', { name, exact: true });
 async function choose(page: Page, name: string) {
@@ -47,11 +48,12 @@ test('P10 板金の任意輪郭・穴・複数縁・曲げ条件を指定してU
   await form.getByRole('textbox', { name: /^K係数/ }).fill('0.3');
   await form.getByRole('button', { name: 'プレビュー', exact: true }).click();
   await expect(form.getByRole('status')).toContainText('体積:', { timeout: 60_000 });
-  await page.screenshot({ path: testInfo.outputPath('sheet-profile-preview.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-profile-preview', dialog: form, fixture: { step: 'preview' }, script: new URL(import.meta.url) });
   await form.getByRole('button', { name: '作成', exact: true }).click(); await tree(page, 'フランジ1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(6200 + 484 * Math.PI, 4);
   await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
-  await page.screenshot({ path: testInfo.outputPath('sheet-profile-created.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-profile-created', dialog: page.locator('.pcad-panel--right'),
+    fixture: { step: 'created' }, script: new URL(import.meta.url) });
   await choose(page, '板金の展開'); const flat = page.getByRole('form', { name: '板金の展開', exact: true });
   await flat.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 3' });
   await flat.getByRole('button', { name: '展開を表示', exact: true }).click();

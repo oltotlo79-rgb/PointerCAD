@@ -118,6 +118,18 @@ describe('主窓と印刷窓の境界', () => {
     expect(print.destroy).toHaveBeenCalledOnce();
   });
 
+  it('許可済みsenderでも pcad:print の不正な引数を例外で断り、隠し窓を作らない', async () => {
+    const handler = native.handlers.get('pcad:print');
+    const main = native.windows[0];
+    if (handler === undefined || main === undefined) throw new Error('印刷口なし');
+    const windowsBefore = native.windows.length;
+    await expect(Reflect.apply(handler, undefined,
+      [{ sender: main.webContents, senderFrame: main.webContents.mainFrame }, 'not-bytes'])).rejects.toThrow('印刷の依頼の形が正しくありません。');
+    await expect(Reflect.apply(handler, undefined,
+      [{ sender: main.webContents, senderFrame: main.webContents.mainFrame }, Uint8Array.of(1), { pageSize: 'unknown-size' }])).rejects.toThrow('図面の印刷設定が正しくありません。');
+    expect(native.windows).toHaveLength(windowsBefore);
+  });
+
   it('sessionのブラウザーダウンロードを拒否する', () => {
     expect(native.denyBrowserPermissions).toHaveBeenCalledOnce();
     const download = native.sessionListeners.get('will-download');

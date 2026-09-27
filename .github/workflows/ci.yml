@@ -20,6 +20,11 @@ permissions:
 
 jobs:
   sharded-checks:
+    # このjobはリポジトリの取得(contents: read)としかトークンを使わない(コミット・PR・
+    # Issue・パッケージ公開は行わない)。job単位でも明示し、将来ステップが増えても
+    # 既定のwrite権限へ戻らないようにする。
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -60,6 +65,9 @@ jobs:
   # Preserve the existing required check names. One missing, cancelled or failed
   # shard must not turn either OS's overall check green.
   checks:
+    # 前job成功可否の判定だけ(GITHUB_TOKENは使わない)。contents: readのみで足りる。
+    permissions:
+      contents: read
     if: always()
     needs: sharded-checks
     strategy:

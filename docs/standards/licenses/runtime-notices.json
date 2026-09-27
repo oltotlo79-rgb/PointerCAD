@@ -186,5 +186,18 @@
         }
       ]
     }
+  ],
+  "additionalNotices": [
+    {
+      "appliesTo": "opencascade.js",
+      "reason": "Open CASCADE Technology(OCCT)自身がLGPL-2.1本文に追加する例外条項(version 1.0)。静的に組み込んだ利用先(本製品を含む)へ、著作権表示以外の追加義務を及ぼさないことを明示する。opencascade.jsのnpmパッケージにはこの原文が同梱されていないため、OCCT本家から個別に取得して記録する(P13-6b)。",
+      "file": "runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt",
+      "sha256": "04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b",
+      "source": "https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/47d9074abb0e4d98cde41c8648a98d3bc2af240e/OCCT_LGPL_EXCEPTION.txt",
+      "sourceCommit": "47d9074abb0e4d98cde41c8648a98d3bc2af240e",
+      "retrievedOn": "2026-09-27",
+      "status": "wired",
+      "note": "P13-6cで配線済み: collectRuntimeNotices(scripts/vite/runtimeNotices.mjs)がこの原文をlicenses/runtime/配下の配布資産へ追加し、SBOM(scripts/release/sbom.mjs)がopencascade.js部品のpointercad:distributedFile属性としてこのfile/sha256を記録する。検査はapps/desktop/src/main/runtimeNotices.test.tsとapps/desktop/src/main/sbom.test.ts。"
+    }
   ]
 }

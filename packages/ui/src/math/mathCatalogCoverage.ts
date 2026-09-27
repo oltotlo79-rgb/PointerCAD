@@ -57,6 +57,10 @@ export interface MathCoverageRow {
  * 置き換えた（範囲外3・図形参照9・不定積分1・設計上パレット化しない14の27件がreasonのまま残る）。
  * MC-04c（w29b）が、目録に追加した不定積分（原始関数、309項目目）へ照合し、「不定積分」1件のreasonを
  * catalogIdsへ置き換えた（範囲外3・図形参照9・設計上パレット化しない14の26件がreasonのまま残る）。
+ * ADD-17（w49a、2026-09-25）が、循環小数・%・比の3件（当時「MC-19cが実装中」だった理由）を、完了した
+ * MC-19c（構造入力の往復・百分率・比の読み取り）の実装に合わせて書き直した。catalogIdsは持たず、四則演算・
+ * 括弧・区間記法と同様「数の表記は直接入力が前提で目録の項目化対象外」の理由へ移した
+ * （範囲外0・図形参照9・設計上パレット化しない17の26件がreasonのまま残る）。
  */
 export const MATH_CATALOG_COVERAGE: readonly MathCoverageRow[] = [
   { line: 134, domain: '数・定数', planNotation: '自然数/整数/有理数/実数/複素数、π、e、i、∞、科学表記、循環小数', symbols: [
@@ -70,7 +74,7 @@ export const MATH_CATALOG_COVERAGE: readonly MathCoverageRow[] = [
     { symbol: 'i', catalogIds: ['imaginary-unit'] },
     { symbol: '∞', reason: '極限・区間端では実装済み（座標としての利用は拒否が正しい受入）。公開目録の単独項目なし。後続タスク未定。' },
     { symbol: '科学表記', reason: '数値の入力表記として実装済みだが公開目録の単独項目なし。後続タスク未定。' },
-    { symbol: '循環小数', reason: 'MC-19cが実装中（通常入力0.1(6)等・構造入力の小数点以下の上線を丸めない有理数として読む）。' },
+    { symbol: '循環小数', reason: '通常入力0.1(6)等・構造入力の上線（\\overline{}）の往復とも、丸めない有理数として読み書きする実装済みの機能。数の表記自体は直接入力が前提で、目録（パレット）の項目化対象外（計画§2の直接入力の方針）。' },
   ] },
   { line: 135, domain: '算術', planNotation: '+ − ± ∓ × · ÷ / 分数、括弧、百分率、比', symbols: [
     { symbol: '+', reason: '四則演算の基本記号は直接入力が前提で、目録（パレット）の項目化対象外（計画§2の直接入力の方針）。実装は確認済み。' },
@@ -83,8 +87,8 @@ export const MATH_CATALOG_COVERAGE: readonly MathCoverageRow[] = [
     { symbol: '/', catalogIds: ['fraction'] },
     { symbol: '分数', catalogIds: ['fraction'] },
     { symbol: '括弧', reason: '四則演算の基本記号は直接入力が前提で、目録（パレット）の項目化対象外（計画§2）。実装は確認済み。' },
-    { symbol: '百分率 %', reason: 'テキスト入力の÷100変換は実装済み（mathTextSyntax.ts）。構造入力の往復はMC-19cが実装中。' },
-    { symbol: '比', reason: 'MC-19cが実装中（a:bをa÷bとして読み、区間・時刻との曖昧性は候補提示で解決予定、Q1採用）。' },
+    { symbol: '百分率 %', reason: 'テキスト入力・構造入力の両方で÷100として読み書きする実装済みの機能（mathTextSyntax.ts・parseMathLatex.ts）。数の表記の記号は直接入力が前提で、目録の項目化対象外（計画§2の直接入力の方針）。' },
+    { symbol: '比', reason: 'a:bをa÷bとして読む実装済みの機能。区間・時刻表記と紛らわしいものは理由付きで断る。比の記法は直接入力が前提で、目録の項目化対象外（計画§2の直接入力の方針）。' },
   ] },
   { line: 136, domain: '冪・根', planNotation: 'xⁿ、x^y、√、∛、n乗根、逆数', symbols: [
     { symbol: 'xⁿ', catalogIds: ['power'] },

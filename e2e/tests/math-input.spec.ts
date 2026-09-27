@@ -51,6 +51,8 @@ import { mathGammaBetaDistributionFlow } from './mathGammaBetaDistributionFlow.j
 import { mathNormalDistributionFlow } from './mathNormalDistributionFlow.js';
 import { mathRegionIntegralsFlow } from './mathRegionIntegralsFlow.js';
 import { INTEGRAL_SCENARIO_TIMEOUT_MS, mathIntegralsFlow } from './mathIntegralsFlow.js';
+import { INDEFINITE_INTEGRALS_SCENARIO_TIMEOUT_MS, mathIndefiniteIntegralsFlow } from './mathIndefiniteIntegralsFlow.js';
+import { CLOSED_INTEGRALS_SCENARIO_TIMEOUT_MS, mathClosedIntegralsFlow } from './mathClosedIntegralsFlow.js';
 import { uiMessage } from './uiMessages.js';
 import { MATH_COVERAGE_SCENARIO_TIMEOUT_MS, mathCoverageFlow } from './mathCoverageFlow.js';
 
@@ -302,6 +304,26 @@ test('ADD-22 積分の端点・内部の発散・無限区間と保存再編集�
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
   });
   await page.goto('/'); await mathIntegralsFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-22 不定積分の原始関数と積分定数・係数と座標への適用不可・構造入力の往復・保存再開・Undo・F1を通す', async ({ page }, info) => {
+  // MC-21b: six exact-runtime preparations in sequence, the same count as the coordinate flows (mathIndefiniteIntegralsFlow.ts).
+  test.setTimeout(INDEFINITE_INTEGRALS_SCENARIO_TIMEOUT_MS);
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await mathIndefiniteIntegralsFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('ADD-23 閉じた曲線・曲面の積分（∮・∯）を閉じていることを確かめてから計算し、閉じていない理由・構造入力・保存再開・Undo・F1を通す', async ({ page }, info) => {
+  // MC-21b: six exact-runtime preparations in sequence, the same count as the coordinate flows (mathClosedIntegralsFlow.ts).
+  test.setTimeout(CLOSED_INTEGRALS_SCENARIO_TIMEOUT_MS);
+  const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); });
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await mathClosedIntegralsFlow(page, info); expect(errors).toEqual([]);
 });
 
 test('ADD-22 極限の左右・角度・不成立を区別し、表示切替・保存再編集・Undo・F1を通す', async ({ page }, info) => {

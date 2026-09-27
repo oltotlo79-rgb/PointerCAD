@@ -2,7 +2,8 @@ import type { CaptureRegistry } from '../manual/captureRegistry.mjs';
 import type { OfflineAssetInput } from '../vite/offlineAssets.mjs';
 import type { ReleaseCandidateInput, ReleaseManifestInput } from './releaseManifest.mjs';
 
-export type ReleaseReadinessMode = 'pre-release' | 'post-release';
+/** manual: one generated manual only (P12-20), with the same manual checks that pre-release runs (P13-15). */
+export type ReleaseReadinessMode = 'pre-release' | 'post-release' | 'manual';
 export type ReleaseReadinessStatus = 'pass' | 'fail' | 'pending' | 'not-implemented';
 
 export interface ReleaseReadinessCheck {
@@ -110,7 +111,17 @@ export interface PostReleaseInput {
   readonly downloadUrl: string;
   readonly readErrors?: Readonly<Record<string, string>>;
 }
-export type ReleaseReadinessInput = PreReleaseInput | PostReleaseInput;
+/** Manual mode: dist/<name>/ from scripts/manual/generate.mjs (paths relative to that folder) against the current help. */
+export interface ManualReleaseInput {
+  readonly mode: 'manual';
+  /** null when the manual could not be read; readErrors.manual gives the reason and every check fails. */
+  readonly manualFiles: readonly OfflineAssetInput[] | null;
+  readonly currentHelp: CurrentHelpEdition | null;
+  /** null makes condition ④ pending (exit code 2); loadCaptureFreshness() always returns a working hook. */
+  readonly captureFreshness: CaptureFreshnessHook | null;
+  readonly readErrors?: Readonly<Record<string, string>>;
+}
+export type ReleaseReadinessInput = PreReleaseInput | PostReleaseInput | ManualReleaseInput;
 
 export interface ReleaseReadinessOptions {
   readonly mode: ReleaseReadinessMode;
@@ -121,6 +132,7 @@ export interface ReleaseReadinessOptions {
   readonly sbom?: string;
   readonly webUrl?: string;
   readonly downloadUrl?: string;
+  readonly manual?: string;
   readonly report?: string;
 }
 export interface ReadmeReleaseLinkRow {
@@ -139,6 +151,8 @@ export const RELEASE_READINESS_EXIT: {
   readonly ready: 0; readonly failed: 1; readonly pending: 2; readonly notImplemented: 3; readonly usage: 64; readonly internal: 70;
 };
 export const RELEASE_READINESS_CHECK_IDS: readonly string[];
+/** The manual checks: manual mode runs only these; pre-release mode runs them among its fourteen. */
+export const MANUAL_CHECK_IDS: readonly string[];
 export const PAGES_MAX_FILES: number;
 export const PAGES_MAX_FILE_BYTES: number;
 export const CAPTURE_REGISTRY_PENDING: string;
@@ -158,8 +172,11 @@ export function parseReleaseReadinessArguments(args: readonly string[]): Release
 export function loadCurrentHelp(root: string): Promise<CurrentHelpEdition>;
 /** The registry match behind loadCaptureFreshness(), callable with a fabricated CaptureRegistry for tests. */
 export function captureFreshnessFromRegistry(registry: CaptureRegistry, files: readonly { readonly path: string; readonly bytes: Uint8Array }[],
-  options: { readonly applicationBuildId: string; readonly scripts?: ReadonlyMap<string, Uint8Array> }): CaptureFreshnessResult;
+  options: { readonly applicationBuildId: string; readonly scripts?: ReadonlyMap<string, Uint8Array>;
+    /** The manual's own copies; one that differs from `files` (the capture folder's current bytes) is stale. */
+    readonly manualImages?: CaptureFreshnessRequest['images'] }): CaptureFreshnessResult;
 export function loadCaptureFreshness(): CaptureFreshnessHook;
 export function readPreReleaseInput(root: string, options: ReleaseReadinessOptions): Promise<PreReleaseInput>;
+export function readManualInput(root: string, options: ReleaseReadinessOptions): Promise<ManualReleaseInput>;
 export function runReleaseReadiness(args: readonly string[],
   options?: { readonly root?: string; readonly write?: (text: string) => void }): Promise<number>;

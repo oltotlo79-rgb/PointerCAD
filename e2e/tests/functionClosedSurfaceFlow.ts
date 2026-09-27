@@ -5,6 +5,7 @@ import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { savePart } from './scriptsFlow.js';
 import { openTarget } from './electronAppFlow.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 const text = functionPlotMessage;
 export async function functionClosedSurfaceFlow(page: Page, info: TestInfo, app?: ElectronApplication, mode:'parametric'|'implicit'='parametric'): Promise<void> {
@@ -40,7 +41,8 @@ async function runClosedSurfaceFlow(page: Page, info: TestInfo, app: ElectronApp
   await expect(confirm).toBeEnabled({timeout:90_000});
   await expect(dialog.getByText(text('closedSurface'),{exact:false})).toBeInViewport();
   await expect(dialog.locator('canvas')).toBeInViewport({ratio:1});
-  await page.screenshot({path:info.outputPath(implicit?'function-implicit-sphere.png':'function-closed-sphere.png'),fullPage:true});
+  await captureManualDetail(page, info, { name: implicit ? 'function-implicit-sphere' : 'function-closed-sphere', dialog,
+    fixture: { mode }, script: new URL(import.meta.url) });
   const first=await beginRecompute(page); await confirm.click(); await waitForRecompute(page,first);
   const saved=await savePart(page,info,fileName,app), feature=saved.solids.find(item=>item.kind==='functionSurface');
   if (feature?.kind !== 'functionSurface') throw new Error('Sphere source not saved');
@@ -59,7 +61,7 @@ async function runClosedSurfaceFlow(page: Page, info: TestInfo, app: ElectronApp
   await dialog.getByRole('button',{name:text('preview'),exact:true}).click(); await expect(confirm).toBeEnabled({timeout:90_000});
   await expect(dialog.getByText(text('openSurface'),{exact:false})).toBeInViewport();
   await expect(dialog.getByText(`${text('volume')}:`,{exact:false})).toHaveCount(0);
-  await page.screenshot({path:info.outputPath(implicit?'function-implicit-cut-sphere.png':'function-cut-sphere.png'),fullPage:true});
+  await captureManualDetail(page,info,{name:implicit?'function-implicit-cut-sphere':'function-cut-sphere',dialog,fixture:saved,script:new URL(import.meta.url)});
   const changed=await beginRecompute(page); await confirm.click(); await waitForRecompute(page,changed);
   const cut=await savePart(page,info,'function-cut-sphere.pcad',app);
   expect(cut.solids.find(item=>item.id===feature.id)).toMatchObject({definition:{bounds:{Z:{min:{source:'0',value:0}}},formula:feature.definition.formula}});

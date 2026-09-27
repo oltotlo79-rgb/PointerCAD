@@ -16,6 +16,7 @@ export type {
 } from './mathWorkExecution.js';
 export {
   createMathBackend,
+  warmMathBackend,
 } from './createMathBackend.js';
 export {
   createFunctionMathSource,

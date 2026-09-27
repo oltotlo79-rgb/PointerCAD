@@ -645,6 +645,10 @@ Assert-True ($LASTEXITCODE -eq 0) '担当のリポジトリ全体検索を拒否
 Assert-True ($LASTEXITCODE -eq 0) '指示書の新規・SHA-256・時刻を確かめるフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/invisible_char_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) '見えない文字・特殊な空白を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/main_integration_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) 'main統合(gh pr create/ready/merge・git push・main上でのmerge/rebase)を判定記録なしで拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/chained_diag_wait_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '1回の命令で diag.py wait を連ねる・待ちの合計が上限を超える命令を拒否するフックを自己試験する'
 
 
 if ($failures -gt 0) {

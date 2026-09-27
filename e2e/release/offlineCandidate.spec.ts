@@ -137,6 +137,137 @@ test('P12 配布候補を設定から保存し、切断後に実CADの作図・�
   }
 });
 
+const OFFLINE_STATUS = {
+  idle: 'この端末ではまだ準備していません。',
+  ready: 'この端末で通信なしの利用を準備できました。',
+  download: '必要なファイルを取得できないか、内容が一致しません。通信を確認して準備をやり直してください。',
+  storage: 'この端末へ保存できませんでした。空き容量とブラウザーの保存設定を確認してください。',
+} as const;
+const offlineRegion = (page: Page) => page.getByRole('region', { name: '通信なしで使う', exact: true });
+// After a failed update the button returns to its first-time label, so accept either product label.
+const prepareButton = (page: Page) => offlineRegion(page).getByRole('button', { name: /^(通信なしで使う準備|新しい版を準備)$/u });
+/** Reopening the settings runs the product's own check of the saved editions. */
+async function reopenSettings(page: Page): Promise<void> {
+  if (await offlineRegion(page).count() > 0) await page.getByRole('button', { name: '設定', exact: true }).click();
+  await page.getByRole('button', { name: '設定', exact: true }).click();
+  await expect(offlineRegion(page)).toBeVisible();
+}
+async function prepareAndWait(page: Page, status: string): Promise<void> {
+  await prepareButton(page).click();
+  await expect(offlineRegion(page).getByRole('status')).toHaveText(status, { timeout: 180_000 });
+}
+/** Only the app's own edition caches; the completion marker is read without creating a cache. */
+async function savedEditions(page: Page): Promise<{ name: string; complete: boolean }[]> {
+  return page.evaluate(async () => {
+    const result: { name: string; complete: boolean }[] = [];
+    for (const name of await caches.keys()) {
+      if (!name.startsWith('pointercad-offline-edition-v1-')) continue;
+      const marker = await caches.match(new URL('offline-assets.json', document.baseURI).href, { cacheName: name });
+      result.push({ name, complete: marker !== undefined });
+    }
+    return result;
+  });
+}
+
+test('P12 配布候補の準備の障害: 1資産の破損・途中切断・画面を閉じた中断・保存領域の削除で完了を偽らず、旧版を保つ', async ({ page, context }, info) => {
+  // Three full preparations of the real candidate, one interrupted and two failed ones.
+  test.setTimeout(900_000);
+  const server = await serveOfflineCandidate();
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const middle = server.manifest.assets[Math.floor(server.manifest.assets.length / 2)];
+  try {
+    await page.goto(server.url);
+    await expect(page.locator('canvas.pcad-viewport__canvas')).toBeVisible();
+    await reopenSettings(page);
+    await expect(offlineRegion(page).getByRole('status')).toHaveText(OFFLINE_STATUS.idle);
+    // (1) One asset differs in a single byte: the same length must still be refused.
+    server.inject({ corrupt: decodeURIComponent(middle.url) });
+    await prepareAndWait(page, OFFLINE_STATUS.download);
+    expect(await savedEditions(page)).toEqual([]);
+    // (2) The connection drops in the middle of a body.
+    server.inject({ disconnectAfterAssets: Math.floor(server.manifest.assets.length / 3) });
+    await prepareAndWait(page, OFFLINE_STATUS.download);
+    expect(await savedEditions(page)).toEqual([]);
+    // A browser may retry a dropped request; each kind must have happened at least once.
+    expect(new Set(server.injectedFaults().map(fault => fault.fault))).toEqual(new Set(['corrupt', 'disconnect']));
+    server.inject({});
+    await prepareAndWait(page, OFFLINE_STATUS.ready);
+    const [first] = await savedEditions(page);
+    expect(first).toMatchObject({ complete: true });
+    // (3) The preparing page closes before its own clean-up runs; the next preparation reclaims it.
+    const other = await context.newPage();
+    await other.goto(server.url);
+    await expect(other.locator('canvas.pcad-viewport__canvas')).toBeVisible();
+    await reopenSettings(other);
+    await prepareButton(other).click();
+    await expect.poll(async () => (await savedEditions(page)).filter(edition => !edition.complete).length,
+      { timeout: 120_000 }).toBe(1);
+    await other.close();
+    const interrupted = (await savedEditions(page)).filter(edition => !edition.complete);
+    expect(interrupted).toHaveLength(1);
+    await reopenSettings(page);
+    await expect(offlineRegion(page).getByRole('status')).toHaveText(OFFLINE_STATUS.ready);
+    await prepareAndWait(page, OFFLINE_STATUS.ready);
+    const after = await savedEditions(page);
+    expect(after.map(edition => edition.name)).not.toContain(interrupted[0].name);
+    expect(after).toHaveLength(2);
+    expect(after.every(edition => edition.complete)).toBe(true);
+    expect(after[0].name).toBe(first.name);
+    // (4) The browser removes the saved data: never report success, and do not open stale bytes offline.
+    await page.evaluate(async () => { for (const name of await caches.keys()) await caches.delete(name); });
+    await reopenSettings(page);
+    await expect(offlineRegion(page).getByRole('status')).toHaveText(OFFLINE_STATUS.idle);
+    await context.setOffline(true); server.disconnect();
+    const offline = await context.newPage();
+    // The Worker answers 503 with guidance (or passes on the host's 503); the browser may also refuse outright.
+    const refused = await offline.goto(server.url).catch(() => null);
+    expect(refused === null || refused.status() === 503).toBe(true);
+    await expect(offline.locator('canvas.pcad-viewport__canvas')).toHaveCount(0);
+    const shown = await offline.locator('body').textContent().catch(() => null);
+    expect(errors).toEqual([]);
+    await info.attach('offline-fault-recovery', { body: JSON.stringify({ buildId: server.manifest.buildId,
+      corrupted: middle.url, injected: server.injectedFaults(), reclaimed: interrupted[0].name,
+      editionsAfterRetry: after.length, shownAfterRemoval: shown }), contentType: 'application/json' });
+  } finally {
+    await context.setOffline(false);
+    await server.close();
+  }
+});
+
+test('P12 配布候補の準備の障害: 保存容量の不足では理由を示し、旧版で通信なしに開ける(Chromiumの容量上書き)', async ({ page, context, browserName }, info) => {
+  test.skip(browserName !== 'chromium', 'The storage quota can only be overridden through the Chromium DevTools protocol.');
+  test.setTimeout(900_000);
+  const server = await serveOfflineCandidate();
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    await page.goto(server.url);
+    await expect(page.locator('canvas.pcad-viewport__canvas')).toBeVisible();
+    await reopenSettings(page);
+    await prepareAndWait(page, OFFLINE_STATUS.ready);
+    const [prepared] = await savedEditions(page);
+    const devtools = await context.newCDPSession(page), origin = new URL(server.url).origin;
+    const usage = await page.evaluate(async () => (await navigator.storage.estimate()).usage ?? 0);
+    // Room for a small part of a second edition only.
+    await devtools.send('Storage.overrideQuotaForOrigin', { origin, quotaSize: usage + 5_000_000 });
+    await prepareAndWait(page, OFFLINE_STATUS.storage);
+    expect(await savedEditions(page)).toEqual([prepared]);
+    await reopenSettings(page);
+    await expect(offlineRegion(page).getByRole('status')).toHaveText(OFFLINE_STATUS.ready);
+    await devtools.send('Storage.overrideQuotaForOrigin', { origin });
+    await context.setOffline(true); server.disconnect();
+    const offline = await context.newPage();
+    await offline.goto(server.url);
+    await expect(offline.locator('canvas.pcad-viewport__canvas')).toBeVisible();
+    expect(errors).toEqual([]);
+    await info.attach('offline-quota', { body: JSON.stringify({ usage, kept: prepared.name }), contentType: 'application/json' });
+  } finally {
+    await context.setOffline(false);
+    await server.close();
+  }
+});
+
 for (const capability of ['caches', 'serviceWorker'] as const) {
   test(`P12 ${capability}へのアクセスをブラウザーが拒否しても作図と通常保存は使える`, async ({ page, context }, info) => {
     const server = await serveOfflineCandidate();

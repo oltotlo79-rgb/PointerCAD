@@ -5,6 +5,7 @@ import { chooseToolMenuItem, openToolMenu, toolMenuPanel } from './assemblyTestS
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
 import { SCRIPT_LIMITS } from '../../packages/model/src/scripting/scriptTypes.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 export const panel = (page: Page): Locator => page.getByRole('region', { name: '自動作図', exact: true });
 export const source = (page: Page): Locator => panel(page).getByRole('textbox', { name: 'JavaScript user-script.js', exact: true });
@@ -70,8 +71,8 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   await panel(page).getByText('再実行の入力', { exact: true }).click();
   await successfulRun(page);
   await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
-  await page.screenshot({ path: info.outputPath('script-plate-created.png') });
   const plate = await savePart(page, info, 'script-plate.pcad', app);
+  await captureManualDetail(page, info, { name: 'script-plate-created', dialog: panel(page), fixture: plate, script: new URL(import.meta.url) });
   expect(plate.parameters.find(parameter => parameter.name === '板厚')?.value.source).toBe('5');
   expect(plate.solids.map(solid => solid.kind)).toEqual(['primitive', 'primitive', 'boolean']);
   const undoToken = await beginRecompute(page);
@@ -102,7 +103,8 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   await page.screenshot({ path: info.outputPath('script-tool-registered.png') });
   await openToolMenu(page, '自動作図');
   await expect(toolMenuPanel(page, '自動作図').getByRole('button', { name: '穴あき板', exact: true })).toBeVisible();
-  await page.screenshot({ path: info.outputPath('script-tool-menu.png') });
+  await captureManualDetail(page, info, { name: 'script-tool-menu', dialog: toolMenuPanel(page, '自動作図'),
+    fixture: { requestedGeneration: (await readRecomputeStats(page)).requestedGeneration }, script: new URL(import.meta.url) });
   await page.keyboard.press('Escape');
   await page.reload(); await expect(page.getByRole('button', { name: '新規', exact: true })).toBeVisible();
   // Loading the library does not run it. Explicit toolbar execution restores its input and creates the part.
@@ -118,7 +120,7 @@ export async function scriptsFlow(page: Page, info: TestInfo, app?: ElectronAppl
   await expect(panel(page).getByRole('alert')).toContainText('2行目の停止');
   await panel(page).getByRole('button', { name: /エラーの行へ移動 user-script.js:2/u }).click();
   expect(await source(page).evaluate(element => element instanceof HTMLTextAreaElement ? element.value.slice(0, element.selectionStart).split('\n').length : -1)).toBe(2);
-  await page.screenshot({ path: info.outputPath('script-error-line.png') });
+  await captureManualDetail(page, info, { name: 'script-error-line', dialog: panel(page), fixture: beforeFailure, script: new URL(import.meta.url) });
   expect(await savePart(page, info, 'script-after-failure.pcad', app)).toEqual(beforeFailure);
   // Real user cancellation while VM execution is active.
   await writeDraft(page, '中止の例', 'while (true) {}');

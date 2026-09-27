@@ -3,6 +3,7 @@ import {
   executePreparedFunctionWork,
   executeExactMathWorkRequest,
   decodeMathWorkEnvelope,
+  warmMathBackend,
   type MathWorkEnvelope,
 } from '@pointercad/expression/math/worker';
 import { createLocalExactMathEngine } from './localExactMathEngine.js';
@@ -10,12 +11,15 @@ const diagnose = import.meta.env.VITE_PCAD_E2E === '1';
 const initializationStarted = performance.now();
 if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'module-ready', elapsedMs: initializationStarted }));
 const backend = createMathBackend();
+// Compile the shared calculation code now, outside every request's wall clock; the result is discarded.
+const warmupMs = warmMathBackend(backend);
 let activeRequest: { readonly serial: number; readonly identity: MathWorkEnvelope['request']['identity'] } | null = null;
 let busy = false;
 let retire = false;
 const exactEngine = createLocalExactMathEngine({
   onPhase: phase => {
     if (activeRequest === null) throw new Error('No active mathematics request');
+    if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: `engine-${phase}`, serial: activeRequest.serial }));
     self.postMessage({ kind: 'math-phase', ...activeRequest, phase });
   },
   retire: () => { retire = true; },
@@ -48,7 +52,7 @@ async function runRequest(value: unknown, kind: unknown): Promise<void> {
     if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'request-end', kind, elapsedMs: performance.now() - requestStarted }));
   }
 }
-if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'backend-ready', elapsedMs: performance.now() - initializationStarted }));
+if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'backend-ready', elapsedMs: performance.now() - initializationStarted, warmupMs }));
 self.addEventListener('message', (event: MessageEvent<unknown>) => {
   const value = event.data;
   const kind = value !== null && typeof value === 'object' && 'kind' in value ? value.kind : undefined;

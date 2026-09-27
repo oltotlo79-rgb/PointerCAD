@@ -5,6 +5,7 @@ import { openTarget } from './electronAppFlow.js';
 import { savePart } from './scriptsFlow.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { uiMessage } from './uiMessages.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 const text = functionPlotMessage;
 export async function functionPlotFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -45,7 +46,7 @@ export async function functionPlotFlow(page: Page, info: TestInfo, app?: Electro
   await expect(dialog.locator('canvas')).toBeVisible();
   await expect(dialog.locator('canvas')).toBeInViewport({ ratio: 1 });
   await expect(dialog.getByRole('button', { name: text('apply'), exact: true })).toBeInViewport();
-  await page.screenshot({ path: info.outputPath('function-xyz-preview.png'), fullPage: true });
+  await captureManualDetail(page, info, { name: 'function-xyz-preview', dialog, fixture: { formula: 'X^2' }, script: new URL(import.meta.url) });
   const created = await beginRecompute(page);
   await dialog.getByRole('button', { name: text('apply'), exact: true }).click();
   await expect(dialog).toHaveCount(0); await waitForRecompute(page, created);
@@ -73,7 +74,7 @@ export async function functionPlotFlow(page: Page, info: TestInfo, app?: Electro
   await math.locator('textarea').fill('1/X');
   await math.getByRole('combobox', { name: uiMessage('math', 'math.angleUnit'), exact: true }).selectOption('degree');
   await expect(math.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
-  await page.screenshot({ path: info.outputPath('function-axis-math.png'), fullPage: true });
+  await captureManualDetail(page, info, { name: 'function-axis-math', dialog: math, fixture: { formula: '1/X' }, script: new URL(import.meta.url) });
   await math.getByRole('button', { name: 'この式を使う', exact: true }).click();
   await expect(math).toHaveCount(0);
   await dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true }).fill('2/X');
@@ -142,5 +143,6 @@ export async function functionPlotFlow(page: Page, info: TestInfo, app?: Electro
   const expected = Math.PI * 0.05 ** 2 * (2 * Math.sqrt(17) + Math.asinh(4) / 2);
   expect(Math.abs(volume / expected - 1)).toBeLessThan(0.005);
   await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
-  await page.screenshot({ path: info.outputPath('function-sweep.png'), fullPage: true });
+  await captureManualDetail(page, info, { name: 'function-sweep', dialog: page.locator('.pcad-panel--right'),
+    fixture: { source: 'sweep' }, script: new URL(import.meta.url) });
 }

@@ -63,8 +63,10 @@ export async function evaluateFunctionDirection(document:PartDocument,documentVe
     current:savePointCalculationInput(found.search.request),anchor:reference.choice.location,direction});
   const completion=await continuations.evaluate(request,5_000,signal);
   if(!current()||completion.status==='cancelled')return null;
-  if(completion.status!=='result')throw new Error(t('math.workerFailed'));
-  if(completion.result.status!=='ready')throw new Error(completion.result.status==='invalid'?completion.result.message:t('functionPoint.incomplete'));
+  if(completion.status!=='result')throw new Error(completion.status==='deadline'?t('functionPoint.deadline'):t('math.workerFailed'));
+  // A stop by the time limit is not a wrong range or accuracy: calculating again may finish.
+  if(completion.result.status!=='ready')throw new Error(completion.result.status==='invalid'?completion.result.message
+    :completion.result.status==='stopped'&&completion.result.reason==='deadline'?t('functionPoint.deadline'):t('functionPoint.incomplete'));
   const endpoint=completion.result.endpoint;if(!endpoint)throw new Error(t('functionDirection.unresolved'));
   const prepared=environment.prepared,owner=prepared.sketches.find(item=>item.id===sketch.id);if(!owner)throw new Error(t('functionDirection.choosePoint'));
   const previous=lineId===undefined?undefined:owner.features.find(item=>item.id===lineId);

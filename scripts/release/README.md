@@ -96,9 +96,9 @@ node scripts/release/releaseReadiness.mjs --mode pre-release --windows desktop-s
 | 項目 | 検査すること | 使う既存の部品 |
 |---|---|---|
 | 説明書① 章と題名 | 今の目録の全章が説明書の記録とページにあり、題名(章・巻のページの見出し)・巻・並びが一致する。目録に無い章・ページを拒否する | Vite SSRで読む`MANUAL_CHAPTERS`・`MANUAL_VOLUMES` |
-| 説明書② 操作名・ボタン名 | 今の章の原文の`{{ui:キー}}`を今の画面の文言で引き、章と巻のページに必要な回数だけあることと、画面の部品に説明の漏れが無いこと | `ja`(画面の文言)、`assertNativeControlDescriptions` |
+| 説明書② 操作名・ボタン名 | 今の章の原文の`{{ui:キー}}`を今の画面の文言で引き、章と巻のページに必要な回数だけあること。本文に直接書いたボタン名(「X」ボタン・「X」を押す)が今の画面の文言のどれかと完全に一致すること。画面の部品に説明の漏れが無いこと | `ja`(画面の文言)、`assertNativeControlDescriptions` |
 | 説明書③ 機能の双方向の対応 | 説明書と今のヘルプの機能・操作の対応表を両方向に照合し、説明書だけにある(孤立した)機能・操作、説明先の章が無いもの、説明の無い機能(未完)を拒否する | `buildHelpFeatureCoverage`・`buildCommandHelpCoverage`・`assertDocumentedFeatureCoverage` |
-| 説明書④ 今の版の画像 | 撮影の登録簿(`scripts/manual/captureRegistry.mjs`)で、説明書の画像が今のアプリの入力の指紋(`applicationInputDigest`。説明書の本文・画像は含まない。commitでない理由: 画像のcommitのたびに版が変わり全画像が古い判定になるため)で撮ったものであること。登録簿に無い画像、別の指紋・版が不明な画像、撮影台本が変わった画像はいずれも不合格 | `loadCaptureFreshness`・`captureFreshnessFromRegistry`・`assessCaptureImages` |
+| 説明書④ 今の版の画像 | 撮影の登録簿(`scripts/manual/captureRegistry.mjs`)で、説明書の画像が今のアプリの入力の指紋(`applicationInputDigest`。説明書の本文・画像は含まない。commitでない理由: 画像のcommitのたびに版が変わり全画像が古い判定になるため)で撮ったものであること。登録簿に無い画像、別の指紋・版が不明な画像、撮影台本が変わった画像、説明書の中の画像が撮影の置き場の今の画像と違うもの(古い画像を今の名前で持つもの)はいずれも不合格 | `loadCaptureFreshness`・`captureFreshnessFromRegistry`・`assessCaptureImages` |
 | 説明書の出力全体 | 入力の指紋・全ページ・画像・対応表が今のヘルプの生成結果とバイト単位で一致する | `verifyCurrentManualEdition`(内部で`verifyManualConsistency`) |
 | 版 | 3つの`package.json`、Windows・Linuxの`candidate.json`、`release-manifest.json`、`sbom.json`の版とタグが一致する | — |
 | 公開用の版 | 版が`0.0.0`(模擬の版)でない | — |
@@ -125,5 +125,20 @@ READMEの導線の約束(正本は`releaseReadiness.mjs`の`README_LINK_ROWS`と
 | 3 | 公開後モードは未実装 |
 | 64 | 引数の誤り |
 | 70 | 内部の誤り |
+
+### 説明書モード(P12-20)
+
+配布候補を組む前に、`scripts/manual/generate.mjs`で生成した説明書(`dist/<出力名>/`)だけを、上の表の「説明書①〜④」と「説明書の出力全体」の5項目で判定する。判定の本体は公開前モードと同じ関数(`releaseReadiness.mjs`の`MANUAL_CHECK_IDS`)で、公開前モード(P13-15)はWeb候補の中の説明書に同じ5項目を流すため、説明書の検査は1か所だけに実装する。
+
+```powershell
+node scripts/manual/generate.mjs manual-preview-20260927
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 -Mode Manual -Manual manual-preview-20260927
+# 同じ判定をnodeで直接
+node scripts/release/releaseReadiness.mjs --mode manual --manual manual-preview-20260927
+```
+
+- 今のヘルプ(目録・本文・画面の文言・機能の対応)と撮影の登録簿は作業ツリーから読む。生成の後に本文・翻訳・画面の部品を変えたら、新しい名前で生成し直してから検査する(「説明書の出力全体」が入力の変化を拒否する)。
+- 終了コードは下の表と同じ(0は説明書の5項目の合格。公開の可否は公開前モードで判定する)。
+- 欠章・異なる題・誤ボタン名・旧画像・孤立機能を1つずつ入れた説明書の写しがそれぞれ0以外になることは、`apps/desktop/src/main/releaseReadiness.test.ts`の「説明書モード(P12-20)」で通常の単体検査として確かめる。
 
 公開後モード(`-Mode PostRelease -Release <名前> -WebUrl https://<公開先>/ -DownloadUrl https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/`)は、実際のURLから配布物・説明書・Webを取得してhashを公開一覧と照合する入口として、引数の形だけを受け付ける。中身はP13-20で実装する。それまでは「未実装」で終了コード3を返す。

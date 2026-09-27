@@ -1,5 +1,5 @@
 import { MathInputProblem } from './mathInputContract.js';
-import type { MathExecutionBackend } from './mathWorkExecution.js';
+import { geometryCalculationClock, type MathExecutionBackend } from './mathWorkExecution.js';
 import type { MathRequestIdentity } from './mathWorkRequest.js';
 import { decodeFunctionSurfaceWorkEnvelope } from './functionSurfaceWorkRequest.js';
 import { createFunctionSurfaceEvaluator } from './functionSurfaceEvaluation.js';
@@ -13,10 +13,10 @@ export interface FunctionSurfaceWorkReply {
 export function executeFunctionSurfaceWorkRequest(value: unknown, backend: MathExecutionBackend): FunctionSurfaceWorkReply {
   const {request,serial} = decodeFunctionSurfaceWorkEnvelope(value);
   const reply = (result: FunctionSurfaceWorkResult): FunctionSurfaceWorkReply => ({kind:'function-surface-result',serial,identity:request.identity,result});
-  const started = performance.now(), shouldStop = () => performance.now()-started >= 2000 ? 'deadline' as const : undefined;
+  const clock = geometryCalculationClock(backend, performance.now()), { shouldStop } = clock;
   try {
-    const evaluator = createFunctionSurfaceEvaluator(request.outputs,request.independent,request.coefficients,{backend,shouldStop});
-    const boundary = proveFunctionSurfaceBoundary(request,{backend,shouldStop});
+    const evaluator = createFunctionSurfaceEvaluator(request.outputs,request.independent,request.coefficients,{backend:clock.backend,shouldStop});
+    const boundary = proveFunctionSurfaceBoundary(request,{backend:clock.backend,shouldStop});
     return reply(sampleFunctionSurface(evaluator,{...request,...request.budget,shouldStop,boundary}));
   } catch (error) {
     if (error instanceof MathInputProblem) return reply({status:'invalid',message:error.message});

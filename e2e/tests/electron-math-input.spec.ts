@@ -52,7 +52,12 @@ import { mathGammaBetaDistributionFlow } from './mathGammaBetaDistributionFlow.j
 import { mathNormalDistributionFlow } from './mathNormalDistributionFlow.js';
 import { mathRegionIntegralsFlow } from './mathRegionIntegralsFlow.js';
 import { INTEGRAL_SCENARIO_TIMEOUT_MS, mathIntegralsFlow } from './mathIntegralsFlow.js';
+import { INDEFINITE_INTEGRALS_SCENARIO_TIMEOUT_MS, mathIndefiniteIntegralsFlow } from './mathIndefiniteIntegralsFlow.js';
+import { CLOSED_INTEGRALS_SCENARIO_TIMEOUT_MS, mathClosedIntegralsFlow } from './mathClosedIntegralsFlow.js';
 import { MATH_COVERAGE_SCENARIO_TIMEOUT_MS, mathCoverageFlow } from './mathCoverageFlow.js';
+import {
+  mathGeometryComparisonFlow, mathGeometryReferenceFlow, mathGeometryToleranceFlow, mathGeometryUsageFlow,
+} from './mathGeometryReferenceFlow.js';
 
 test('ADD-24 一様・指数・ポアソン分布の条件と保存再編集・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
   test.setTimeout(180_000);
@@ -324,6 +329,28 @@ test('ADD-22 積分の端点・内部の発散・無限区間と保存再編集�
   } finally { await app.close(); }
 });
 
+test('ADD-22 不定積分の原始関数と積分定数・係数と座標への適用不可・構造入力の往復・保存再開・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
+  // MC-21b: six exact-runtime preparations in sequence, the same count as the coordinate flows (mathIndefiniteIntegralsFlow.ts).
+  test.setTimeout(INDEFINITE_INTEGRALS_SCENARIO_TIMEOUT_MS);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathIndefiniteIntegralsFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-23 閉じた曲線・曲面の積分（∮・∯）を閉じていることを確かめてから計算し、閉じていない理由・構造入力・保存再開・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
+  // MC-21b: six exact-runtime preparations in sequence, the same count as the coordinate flows (mathClosedIntegralsFlow.ts).
+  test.setTimeout(CLOSED_INTEGRALS_SCENARIO_TIMEOUT_MS);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathClosedIntegralsFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
 test('ADD-22 極限の左右・角度・不成立を区別し、表示切替・保存再編集・Undo・F1を実Electronで通す', async ({ playwright }, info) => {
   test.setTimeout(360_000);
   const { app } = await launchDesktop(playwright, info);
@@ -580,5 +607,43 @@ test('MC-21 追加の記号の候補・内積・成分・集合の場合分け�
     const page = await app.firstWindow(), errors: string[] = [];
     page.on('pageerror', error => { errors.push(error.message); });
     await mathCoverageFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+// GR-24e: the same geometry-measurement flows geometry-math-input.spec.ts runs in Chromium/Firefox, in real Electron.
+test('ADD-23 図形の測定値を実Electronで通す', async ({ playwright }, info) => {
+  test.setTimeout(360_000);
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathGeometryReferenceFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-23 図形の測定値の削除拒否を実Electronで通す', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathGeometryUsageFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-23 図形の測定値の比べる幅を実Electronで通す', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathGeometryToleranceFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-23 図形の測定値の合同相似を実Electronで通す', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = [];
+    page.on('pageerror', error => { errors.push(error.message); });
+    await mathGeometryComparisonFlow(page, info, app); expect(errors).toEqual([]);
   } finally { await app.close(); }
 });

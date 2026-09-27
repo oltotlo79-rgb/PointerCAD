@@ -146,7 +146,7 @@ export const MATH_PALETTE_BASIC: readonly MathPaletteCatalogItem[] = [
     { domain: t('math.paletteDomain.basic.cos'), argumentTypes: ['angle'], resultType: 'real', method: 'native', functionUse: true, help: HELP.inputUnits }),
   item('tan', 'functions', t('math.palette.tan.label'), 'tan', String.raw`\tan\left(#0\right)`, ['tan'], t('math.palette.tan.meaning'), [t('math.palette.tan.keyword0')],
     { domain: t('math.paletteDomain.basic.tan'), argumentTypes: ['angle'], resultType: 'real', method: 'native', functionUse: true, help: HELP.inputUnits }),
-  item('arcsin', 'functions', t('math.palette.arcsin.label'), 'arcsin', String.raw`\arcsin\left(#0\right)`, ['arcsin'], t('math.palette.arcsin.meaning'), [t('math.palette.arcsin.keyword0'), t('math.palette.arcsin.keyword1')],
+  item('arcsin', 'functions', t('math.palette.arcsin.label'), 'arcsin', String.raw`\arcsin\left(#0\right)`, ['arcsin'], t('math.palette.arcsin.meaning'), [t('math.palette.arcsin.keyword0'), t('math.palette.arcsin.keyword1'), t('math.palette.arcsin.keyword2')],
     { domain: t('math.paletteDomain.basic.arcsin'), argumentTypes: ['real'], resultType: 'real', method: 'native', functionUse: true, help: HELP.inputUnits }),
   item('log-natural', 'functions', t('math.palette.log-natural.label'), 'ln', String.raw`\ln\left(#0\right)`, ['natural-log'], t('math.palette.log-natural.meaning'), [t('math.palette.log-natural.keyword0'), t('math.palette.log-natural.keyword1')],
     { domain: t('math.paletteDomain.basic.log-natural'), argumentTypes: ['real'], resultType: 'real', method: 'native', functionUse: true, help: HELP.paletteArguments }),

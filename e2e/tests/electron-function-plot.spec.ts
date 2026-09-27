@@ -15,12 +15,29 @@ import { functionSurfacePointFlow } from './functionSurfacePointFlow.js';
 import { functionCoefficientFlow } from './functionCoefficientFlow.js';
 import { functionSectionScenario } from './functionSectionFlow.js';
 import {scriptFunctionDocumentFlow} from './scriptFunctionDocumentFlow.js';
+import { functionPiecewiseCurveFlow, functionDomainSurfaceFlow } from './functionPiecewiseDomainFlow.js';
 
 test('ADD-23 勾配とヘッセ行列の成分を実Electronで保存再開・ラプラシアンへ編集・Undo・F1まで通す', async ({ playwright }, info) => {
   const { app } = await launchDesktop(playwright, info);
   try {
     const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await functionVectorCalculusFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-25 実Electronで場合分けの関数曲線を離れた枝で作り、根号の理由表示・半円への編集・保存再開・Undo・F1を通す', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await functionPiecewiseCurveFlow(page, info, app); expect(errors).toEqual([]);
+  } finally { await app.close(); }
+});
+
+test('ADD-25 実Electronで条件が成り立つ範囲だけの半球の曲面を作り、等式条件の理由表示・保存再開・編集Undo・F1を通す', async ({ playwright }, info) => {
+  const { app } = await launchDesktop(playwright, info);
+  try {
+    const page = await app.firstWindow(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await functionDomainSurfaceFlow(page, info, app); expect(errors).toEqual([]);
   } finally { await app.close(); }
 });
 

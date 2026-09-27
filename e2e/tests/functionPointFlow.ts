@@ -8,6 +8,7 @@ import {beginRecompute,waitForRecompute} from './recompute.js';
 import {waitForFunctionPreview} from './waitForFunctionPreview.js';
 import {observeFunctionRecompute,attachFunctionRecomputeDiagnostics} from './functionRecomputeDiagnostics.js';
 import {functionDirectionFlow} from './functionDirectionFlow.js';
+import {captureManualDetail} from './captureManualDetail.js';
 
 const text = functionPointMessage;
 const plot = functionPlotMessage;
@@ -63,7 +64,7 @@ async function runFunctionPointFlow(page:Page,info:TestInfo,app:ElectronApplicat
   const positiveMarker=dialog.getByRole('button',{name:`${text('candidate')} ${count}: X=0, Y=0, Z=${height}`,exact:true});
   await expect(positiveMarker).toBeVisible();await positiveMarker.click();
   await expect(dialog.getByRole('radio').nth(index)).toBeChecked();await expect(positiveMarker).toHaveAttribute('aria-pressed','true');
-  await page.screenshot({path:info.outputPath('function-point-candidates.png'),fullPage:true});
+  await captureManualDetail(page,info,{name:'function-point-candidates',dialog,fixture:sphere,script:new URL(import.meta.url)});
   const first=await beginRecompute(page);await dialog.getByRole('button',{name:text('apply'),exact:true}).click();await waitForRecompute(page,first);
   const saved=await savePart(page,info,'function-point.pcad',app),point=saved.sketches.flatMap(sketch=>sketch.features).find(item=>item.kind==='point');
   if(point?.kind!=='point'||point.at.mode==='absolute'||point.at.base.kind!=='functionPoint')throw new Error('Function point definition not saved');

@@ -87,6 +87,14 @@ function runtimeLibraryComponents(root) {
       properties,
     });
   }
+  // Extra per-package notices beyond the base license text (currently: OCCT's LGPL-2.1 static-
+  // linking exception, which opencascade.js's own npm package does not bundle). Wired here so
+  // the exception ships alongside the package's own notice, without becoming a second license id.
+  for (const extra of distribution.additionalNotices) {
+    const component = components.get(extra.appliesTo);
+    if (!component) throw new Error('Additional runtime notice applies to an unknown component: ' + extra.appliesTo);
+    component.properties.push(distributedFile(`licenses/runtime/${extra.file}`, extra.sha256));
+  }
   return { components, unresolved: distribution.unresolved };
 }
 
@@ -189,8 +197,12 @@ const EXACT_MATH_LICENSES = {
   'HACL in CPython 3.14.2': 'MIT', // Hacl_Hash_SHA2.c header is the standard MIT text (C-comment wrapped).
   'libmpdec in CPython 3.14.2': 'BSD-2-Clause', // Stefan Krah header: 2 numbered conditions, no endorsement clause.
   // Copyright line names "Expat maintainers"; operative text matches the MIT-family paragraph
-  // exactly, and the manifest already calls this group "Expat in CPython 3.14.2" itself.
-  'Expat in CPython 3.14.2': 'Expat',
+  // exactly. The manifest calls this group "Expat in CPython 3.14.2" (the license's common
+  // name), but SPDX's own license list (docs/standards/licenses/cyclonedx-spdx.schema.json)
+  // has no id spelled "Expat" - it assigns id 'MIT' to the "Expat License" text (confirmed by
+  // the CycloneDX 1.6 schema validation in apps/desktop/src/main/sbom.test.ts; P13-6c fixed a
+  // gap the P13-6b schema check found, see cyclonedx-schema-verification.json).
+  'Expat in CPython 3.14.2': 'MIT',
   'StackFrame and ErrorStackParser in Pyodide 314.0.6': 'MIT', // Eric Wendelin stackframe LICENSE, standard MIT text.
   // LICENSE.txt.txt (latex2sympy) is MIT; LICENSE.txt (SymPy/Diofant/multipledispatch) is BSD-3-Clause.
   'sympy 1.14.0': 'BSD-3-Clause AND MIT',

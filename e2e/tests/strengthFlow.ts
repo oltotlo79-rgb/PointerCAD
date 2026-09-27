@@ -3,6 +3,7 @@ import { beginRecompute, readRecomputeStats, waitForRecompute } from './recomput
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { sheetHelpFlow } from './sheetHelpFlow.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 async function openStrength(page: Page): Promise<void> {
   await page.getByRole('button', { name: /^見た目/u }).click();
@@ -18,14 +19,14 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   const result = (name: string) => panel.locator(`[data-strength-result="${name}"]`);
   await expect(panel.getByLabel('幅 b', { exact: true })).toHaveValue('10mm');
   await assertRenderedControlDescriptions(panel);
-  await page.screenshot({ path: info.outputPath('strength-beam-input.png') });
+  await captureManualDetail(page, info, { name: 'strength-beam-input', dialog: panel, fixture: { before }, script: new URL(import.meta.url) });
   await panel.getByRole('button', { name: '計算する', exact: true }).click();
   await expect(result('stress')).toHaveText('6');
   await expect(result('deflection')).toHaveText('0.0195121951');
   await expect(result('actualSafetyFactor')).toHaveText('40.8333333');
   await expect(result('reserveFactor')).toHaveText('13.6111111');
   await result('reserveFactor').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: info.outputPath('strength-beam-results.png') });
+  await captureManualDetail(page, info, { name: 'strength-beam-results', dialog: panel, fixture: { before }, script: new URL(import.meta.url) });
   await panel.getByText('公式と数値の代入（N・mm・MPa・rad）', { exact: true }).click();
   await expect(panel.getByText('σ = 6*M/(b*h^2)', { exact: false })).toContainText('6*(1000)/((10)*(10)^2) = 6');
   await panel.getByLabel('力 F（N）', { exact: true }).fill('1kN');
@@ -52,7 +53,8 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   await panel.getByRole('button', { name: '計算し直す', exact: true }).click();
   await expect.poll(async () => Number(await result('shearStress').textContent())).toBeCloseTo(100000 / (Math.PI * 20 ** 3 / 16), 6);
   await expect(panel.getByText(/^判定: ミーゼス相当応力/u)).toBeVisible();
-  await result('twist').scrollIntoViewIfNeeded(); await page.screenshot({ path: info.outputPath('strength-shaft-results.png') });
+  await result('twist').scrollIntoViewIfNeeded();
+  await captureManualDetail(page, info, { name: 'strength-shaft-results', dialog: panel, fixture: { before }, script: new URL(import.meta.url) });
   await panel.getByLabel('計算の種類', { exact: true }).selectOption('bolt');
   await expect(panel.getByText('有効断面積 As（mm²）: 58', { exact: true })).toBeVisible();
   await assertRenderedControlDescriptions(panel);
@@ -67,7 +69,7 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   await panel.getByRole('button', { name: '計算し直す', exact: true }).click();
   await expect.poll(async () => Number(await result('stress').textContent())).toBeCloseTo(10000 / (Math.PI / 4 * (52 - 0.9382 * 3) ** 2), 7);
   await panel.getByLabel('有効断面積の求め方', { exact: true }).scrollIntoViewIfNeeded();
-  await page.screenshot({ path: info.outputPath('strength-bolt-input.png') });
+  await captureManualDetail(page, info, { name: 'strength-bolt-input', dialog: panel, fixture: { before }, script: new URL(import.meta.url) });
   await panel.getByLabel('力 F（N）', { exact: true }).fill('1/0');
   await expect(panel.getByLabel('力 F（N）', { exact: true })).toHaveAttribute('aria-invalid', 'true');
   await expect(panel.getByRole('button', { name: '計算し直す', exact: true })).toBeDisabled();

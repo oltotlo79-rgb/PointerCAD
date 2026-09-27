@@ -12,6 +12,7 @@ export interface OfflineCachePort {
   keys(): Promise<readonly Request[]>;
 }
 export interface OfflineCacheStoragePort {
+  keys(): Promise<readonly string[]>;
   has(name: string): Promise<boolean>;
   open(name: string): Promise<OfflineCachePort>;
   delete(name: string): Promise<boolean>;
@@ -61,6 +62,25 @@ export async function prepareOfflineEdition(options: OfflinePreparationOptions):
   });
 }
 
+/** A closed tab, a crashed browser or a lost connection can end an attempt before its own catch runs.
+ * Such a staging cache never received the completion marker, so no page or Worker was ever bound to it:
+ * binding requires a verified marker, and nothing in the app removes a marker once written.
+ * Only this origin-wide preparation lock's holder calls this, so no other attempt is still writing.
+ * Complete or damaged editions that have a marker are left to the client-aware cleanup.
+ */
+async function discardAbandonedPreparations(options: OfflinePreparationOptions): Promise<void> {
+  const markerUrl = new URL('offline-assets.json', options.baseUrl).href;
+  for (const name of await options.storage.keys()) {
+    options.signal.throwIfAborted();
+    if (!name.startsWith(OFFLINE_CACHE_PREFIX)) continue;
+    const marker = await (await options.storage.open(name)).match(markerUrl);
+    if (marker !== undefined) { void marker.body?.cancel().catch(() => undefined); continue; }
+    options.signal.throwIfAborted();
+    // A refusal only keeps the unused bytes; the new attempt still reports its own storage result.
+    await options.storage.delete(name).catch(() => false);
+  }
+}
+
 /** Each attempt owns a fresh cache. Only that cache is removed on failure. */
 async function prepareLockedEdition(options: OfflinePreparationOptions): Promise<PreparedOfflineEdition> {
   let manifest: OfflineAssetManifest;
@@ -71,6 +91,12 @@ async function prepareLockedEdition(options: OfflinePreparationOptions): Promise
     options.signal.throwIfAborted();
   } catch (error) {
     throw new OfflinePreparationError(options.signal.aborted ? 'cancelled' : 'inventory', false, { cause: error });
+  }
+  try {
+    // Reclaim space left by interrupted attempts before a new download needs it.
+    await discardAbandonedPreparations(options);
+  } catch (error) {
+    throw new OfflinePreparationError(options.signal.aborted ? 'cancelled' : 'storage', false, { cause: error });
   }
   const cacheName = `${OFFLINE_CACHE_PREFIX}${manifest.buildId}-${crypto.randomUUID()}`;
   let ownsCache = false;

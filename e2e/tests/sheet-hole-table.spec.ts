@@ -5,6 +5,7 @@ import { sheetHolePartFile } from './sheetHoleFixture.js';
 import { sheetDrawingVectorFlow } from './sheetDrawingExportFlow.js';
 import { sheetHelpFlow } from './sheetHelpFlow.js';
 import { openSheetPart } from './sheetPartFlow.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 test('P10 板金の展開穴表が固定面の座標を使い、基準点・元の穴編集・保存往復に追従する', async ({ page }, testInfo) => {
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
@@ -44,7 +45,8 @@ test('P10 板金の展開穴表が固定面の座標を使い、基準点・元�
   for (const text of ['10','35']) await expect(table.locator(`[aria-label="${text}"]`)).toHaveCount(1);
   await page.getByRole('button', { name: '元に戻す', exact: true }).click(); await expect(table.locator('[aria-label="40"]')).toHaveCount(1);
   await page.getByRole('button', { name: 'やり直す', exact: true }).click(); await expect(table.locator('[aria-label="35"]')).toHaveCount(1);
-  await page.screenshot({ path: testInfo.outputPath('sheet-flat-hole-table.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-flat-hole-table', dialog: page.locator('.pcad-drawing-sheet'),
+    fixture: { datumX: 5 }, script: new URL(import.meta.url) });
   await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイル/ }).first().click();
   const refreshing = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: '元の部品・組立を取り込み直す', exact: true }).click();

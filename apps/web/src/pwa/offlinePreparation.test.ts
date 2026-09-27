@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createOfflineAssetManifest } from '../../../../scripts/vite/offlineAssets.mjs';
 import { APP_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
-import { prepareOfflineEdition } from './offlinePreparation.js';
+import { OFFLINE_CACHE_PREFIX, prepareOfflineEdition } from './offlinePreparation.js';
 import type { OfflineCachePort, OfflineCacheStoragePort, OfflinePreparationProgress } from './offlinePreparation.js';
 
 const base = new URL('https://pointercad.test/app/');
@@ -44,6 +44,7 @@ class TestStorage implements OfflineCacheStoragePort {
   readonly deleted: string[] = [];
   beforePut: (url: string) => Promise<void> = () => Promise.resolve();
   failDelete = false;
+  keys(): Promise<readonly string[]> { return Promise.resolve([...this.caches.keys()]); }
   has(name: string): Promise<boolean> { return Promise.resolve(this.caches.has(name)); }
   open(name: string): Promise<TestCache> {
     const cache = this.caches.get(name) ?? new TestCache(url => this.beforePut(url));
@@ -167,5 +168,39 @@ describe('全ファイルを確認して最後に完了を記録し、旧版を�
     finish.resolve();
     await first;
     expect(f.locks.held).toBe(false);
+  });
+  it('画面を閉じるなどで片付けられなかった途中の準備は次の準備で消し、完了済みの版と他の保存は残す', async () => {
+    const f = await fixture(), marker = new URL('offline-assets.json', base).href;
+    // Interrupted attempts: the tab closed before the catch block could delete these staging caches.
+    const abandoned = [`${OFFLINE_CACHE_PREFIX}${manifest.buildId}-00000000-0000-4000-8000-00000000000a`, `${OFFLINE_CACHE_PREFIX}broken`];
+    for (const name of abandoned) await (await f.storage.open(name)).put(new URL('worker.js', base).href, new Response('partial'));
+    const complete = `${OFFLINE_CACHE_PREFIX}${manifest.buildId}-00000000-0000-4000-8000-00000000000b`;
+    await (await f.storage.open(complete)).put(marker, new Response('{"format":"pointercad-offline-ready/1"}'));
+    const result = await prepareOfflineEdition(f.options);
+    expect(f.storage.deleted).toEqual(abandoned);
+    expect([...f.storage.caches.keys()]).toEqual(['older-complete-edition', complete, result.cacheName]);
+    expect(await (await f.storage.caches.get(complete)?.match(marker))?.text()).toBe('{"format":"pointercad-offline-ready/1"}');
+  });
+  it('途中の準備を消せなくても成功した保存を偽らず、今回の準備は実際の保存結果で判定する', async () => {
+    const f = await fixture();
+    const abandoned = `${OFFLINE_CACHE_PREFIX}${manifest.buildId}-00000000-0000-4000-8000-00000000000a`;
+    await f.storage.open(abandoned);
+    f.storage.failDelete = true;
+    const result = await prepareOfflineEdition(f.options);
+    expect(f.storage.caches.has(abandoned)).toBe(true);
+    expect(await (await f.storage.caches.get(result.cacheName)?.match(new URL('offline-assets.json', base).href))?.json())
+      .toMatchObject({ cacheName: result.cacheName });
+  });
+  it('別の画面が準備中の間は、その途中の保存を片付けない', async () => {
+    const f = await fixture(), entered = deferred(), finish = deferred();
+    const waiting: typeof fetch = async input => { entered.resolve(); await finish.promise; return fetchFiles(input); };
+    const first = prepareOfflineEdition({ ...f.options, fetchResponse: waiting });
+    await entered.promise;
+    const staging = [...f.storage.caches.keys()].filter(name => name.startsWith(OFFLINE_CACHE_PREFIX));
+    expect(staging).toHaveLength(1);
+    await expect(prepareOfflineEdition(f.options)).rejects.toMatchObject({ reason: 'busy' });
+    expect(f.storage.deleted).toEqual([]);
+    finish.resolve();
+    expect((await first).cacheName).toBe(staging[0]);
   });
 });

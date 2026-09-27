@@ -6,6 +6,10 @@
 # 公開前モード(既定)。5つの名前は dist/ 直下のフォルダー名(配布CI release.yml の combine と同じ並び):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 `
 #     -Windows desktop-stage-windows -Linux desktop-stage-linux -Web web-candidate -Release release-output -Sbom sbom-output
+# 説明書モード(P12-20)。配布候補を組む前に、scripts/manual/generate.mjs が作った説明書 dist/<名前>/ だけを、
+# 公開前モードと同じ説明書の5項目(①章と題名 ②操作名・ボタン名 ③機能の双方向の対応 ④今の版の画像、出力全体の一致)で判定する。
+# 公開前モード(P13-15)はこの5項目を同じ判定処理で含むので、説明書の検査は二重に実装しない:
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 -Mode Manual -Manual manual-preview-20260927
 # 公開後モード(P13-20 で実装する。今は「未実装」で終了コード3):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 -Mode PostRelease `
 #     -Release release-output -WebUrl https://<公開先>/ -DownloadUrl https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/
@@ -15,7 +19,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet('PreRelease', 'PostRelease')]
+    [ValidateSet('PreRelease', 'PostRelease', 'Manual')]
     [string]$Mode = 'PreRelease',
     [string]$Windows = '',
     [string]$Linux = '',
@@ -24,6 +28,7 @@ param(
     [string]$Sbom = '',
     [string]$WebUrl = '',
     [string]$DownloadUrl = '',
+    [string]$Manual = '',
     [string]$ReportPath = ''
 )
 
@@ -42,10 +47,12 @@ if ($null -eq $node) {
 $nodeArguments = New-Object System.Collections.Generic.List[string]
 $nodeArguments.Add($entry)
 $nodeArguments.Add('--mode')
-if ($Mode -eq 'PreRelease') { $nodeArguments.Add('pre-release') } else { $nodeArguments.Add('post-release') }
+if ($Mode -eq 'PreRelease') { $nodeArguments.Add('pre-release') }
+elseif ($Mode -eq 'Manual') { $nodeArguments.Add('manual') }
+else { $nodeArguments.Add('post-release') }
 $pairs = @(
     @('--windows', $Windows), @('--linux', $Linux), @('--web', $Web), @('--release', $Release), @('--sbom', $Sbom),
-    @('--web-url', $WebUrl), @('--download-url', $DownloadUrl), @('--report', $ReportPath)
+    @('--web-url', $WebUrl), @('--download-url', $DownloadUrl), @('--manual', $Manual), @('--report', $ReportPath)
 )
 foreach ($pair in $pairs) {
     if ($pair[1] -ne '') {
@@ -70,8 +77,8 @@ try {
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
     $meaning = switch ($exitCode) {
-        0 { '合格: 公開前の全項目を満たしています。' }
-        1 { '不合格: 一覧の[不合格]の項目を直し、候補を作り直してから再検査してください。' }
+        0 { if ($Mode -eq 'Manual') { '合格: 説明書の整合4条件と出力全体の一致を満たしています。' } else { '合格: 公開前の全項目を満たしています。' } }
+        1 { if ($Mode -eq 'Manual') { '不合格: 一覧の[不合格]の項目を直し、説明書を新しい名前で生成し直してから再検査してください。' } else { '不合格: 一覧の[不合格]の項目を直し、候補を作り直してから再検査してください。' } }
         2 { '保留: 未接続の条件(一覧の[保留])があるため、公開できるとは判定できません。' }
         3 { '未実装: 公開後モードは P13-20 で実装します。' }
         64 { '引数の誤り: 上の使い方を確認してください。' }

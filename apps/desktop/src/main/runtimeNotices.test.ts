@@ -29,7 +29,7 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
       expect(() => runtimeDependencySelection(folder)).toThrow('still locked');
     }
   });
-  it('数学以外の部品も含め、固定した11件と11原文を両版へ渡す', () => {
+  it('数学以外の部品も含め、固定した11件と、11原文+OCCTの追加条項1件を両版へ渡す', () => {
     const dependencies = installedRuntimeDependencies(root), distribution = collectRuntimeNotices(root);
     expect(dependencies).toHaveLength(11);
     expect(dependencies.some(item => ['quickjs-wasi', '@cortex-js/compute-engine', '@arnog/colors', 'complex-esm'].includes(item.name))).toBe(false);
@@ -43,9 +43,22 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
       expect(bytes).toEqual(readFileSync(new URL('../../../../docs/standards/licenses/' + name, import.meta.url)));
       originals += 1;
     }
-    expect(originals).toBe(11);
+    expect(originals).toBe(12);
     expect(distribution.assets.get('LICENSE')).toEqual(readFileSync(new URL('../../../../LICENSE', import.meta.url)));
     expect(distribution.assets.get('NOTICE')).toEqual(readFileSync(new URL('../../../../NOTICE', import.meta.url)));
+  });
+  it('OCCTのLGPL例外条項をopencascade.jsへ紐づけて配布資産へ配線する(P13-6c)', () => {
+    const distribution = collectRuntimeNotices(root);
+    expect(distribution.additionalNotices).toEqual([{
+      appliesTo: 'opencascade.js',
+      file: 'runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt',
+      sha256: '04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b',
+    }]);
+    const path = 'licenses/runtime/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt';
+    expect(distribution.assets.has(path)).toBe(true);
+    expect(distribution.assets.get(path)).toEqual(
+      readFileSync(new URL('../../../../docs/standards/licenses/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt', import.meta.url)),
+    );
   });
   it('未確認の部品を除いた実依存は公開可能とし、未確認が再混入した場合は公開を拒否する', () => {
     const distribution = collectRuntimeNotices(root);

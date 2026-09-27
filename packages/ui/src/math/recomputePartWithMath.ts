@@ -11,6 +11,8 @@ import { createBrowserFunctionClient, createBrowserFunctionSurfaceClient, create
 export interface MathPartRecomputer {
   (document: PartDocument, bridge: KernelBridge, options?: PartRecomputeOptions): Promise<PartRecomputeResult>;
   releaseOwner(bridge: KernelBridge): void;
+  /** Keep the prepared idle Worker while a math editor is open; call the result when it closes. */
+  holdIdleWorker(): () => void;
 }
 export function createMathPartRecomputer(createClient: (createWorker: () => MathWorkerPort) => MathWorkerClient,
   createWorker: () => MathWorkerPort = createBrowserMathWorker): MathPartRecomputer {
@@ -48,6 +50,7 @@ export function createMathPartRecomputer(createClient: (createWorker: () => Math
       finally { lease.release(reusable && clientsReleased); }
     }
   }
-  return Object.assign(compute, { releaseOwner: (bridge: KernelBridge) => { workers.clear(bridge); } });
+  return Object.assign(compute, { releaseOwner: (bridge: KernelBridge) => { workers.clear(bridge); },
+    holdIdleWorker: () => workers.hold() });
 }
 export const recomputePartWithMath = createMathPartRecomputer(createBrowserMathClient);

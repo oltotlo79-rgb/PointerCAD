@@ -3,8 +3,8 @@
  * RD/RJ lie in [b^(-3/2),a^(-3/2)]. No truncated asymptotic polynomial.
  */
 import { MathInputProblem } from './mathInputContract.js';
-import { FIXED_ZERO, FIXED_ONE, fixedAdd, fixedMultiply, fixedDivide, fixedTimesRational,
-  type BesselFixedRange as Range } from './besselFixedRange.js';
+import { FIXED_ZERO, FIXED_ONE, fixedAdd, fixedSubtract, fixedMultiply, fixedDivide, fixedTimesRational,
+  fixedWiden, ceilQuotient, type BesselFixedRange as Range } from './besselFixedRange.js';
 import { ellipticSqrt,ellipticSquare } from './ellipticFixed.js';
 
 const GUARD=10n**110n;
@@ -38,10 +38,35 @@ export function carlsonRF(a:Range,b:Range,c:Range,check:()=>void):Range {
   }
   throw new MathInputProblem('budget','第一種の楕円積分を必要な桁数で確定できません。');
 }
+/** Before the series, duplication makes |u| at most 1/RC_SERIES_RATIO. */
+const RC_SERIES_RATIO=16n;
+/** RC(x,y)=y^(-1/2)*sum_n c_n*u^n with u=1-x/y, c_n=binomial(2n,n)/(4^n*(2n+1)) (arcsin(s)/s for u=s^2,
+ * arsinh(s)/s for u=-s^2; DLMF §19.2). Since 0<c_{n+1}<=c_n, the omitted tail after the term a_n*u^n
+ * (a_n=binomial(2n,n)/4^n) is at most |a_n*u^n|*|u|/((2n+3)*(1-|u|)); that bound is added to the enclosure.
+ */
+function rcSeries(x:Range,y:Range,check:()=>void):Range|null {
+  if(y.lower<=0n)return null;
+  const u=fixedDivide(fixedSubtract(y,x),y),magnitude=-u.lower>u.upper?-u.lower:u.upper;
+  if(magnitude*RC_SERIES_RATIO>FIXED_ONE.upper)return null;
+  const scale=fixedDivide(FIXED_ONE,ellipticSqrt(y,check));
+  let term=FIXED_ONE,sum=FIXED_ONE;
+  for(let n=1n;n<=512n;n++) {
+    check();
+    term=fixedTimesRational(fixedMultiply(term,u),2n*n-1n,2n*n);
+    sum=fixedAdd(sum,fixedTimesRational(term,1n,2n*n+1n));
+    const size=-term.lower>term.upper?-term.lower:term.upper;
+    const tail=ceilQuotient(size*magnitude,(2n*n+3n)*(FIXED_ONE.upper-magnitude));
+    const enclosure=fixedMultiply(fixedWiden(sum,tail),scale);
+    if(narrow(enclosure))return enclosure;
+  }
+  return null;
+}
 function carlsonRC(a:Range,b:Range,check:()=>void):Range {
   validate([a,b,b]);let x=a,y=b;
   for(let k=0;k<512;k++) {
-    check();const enclosure=remaining([x,y],false,check);
+    check();const series=rcSeries(x,y,check);
+    if(series!==null)return series;
+    const enclosure=remaining([x,y],false,check);
     if(enclosure!==null&&narrow(enclosure))return enclosure;
     const lambda=fixedAdd(fixedTimesRational(fixedMultiply(ellipticSqrt(x,check),ellipticSqrt(y,check)),2n),y);
     x=divideFour(fixedAdd(x,lambda));y=divideFour(fixedAdd(y,lambda));

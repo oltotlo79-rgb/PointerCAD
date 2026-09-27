@@ -32,6 +32,23 @@ describe('Carlson対称形の重複公式を等引数・解析値・同次性で
     const scaled=carlsonRJ(f(4n),f(8n),f(12n),f(16n),proceed);
     expect(scaled.lower*8n<=base.upper&&scaled.upper*8n>=base.lower).toBe(true);
   },30_000);
+  it.each([[1n,2n,5n],[9n,2n,3n],[0n,1n,4n],[3n,1n,2n],[1n,1n,100n]])(
+    '第三種の補助値RCの級数はxとyの大小どちらでも閉じた形と一致する(x=%s,y=%s,p=%s)',(x,y,p)=>{
+    // RJ(x,y,y,p)=3(RC(x,y)-RC(x,p))/(p-y), and RC by arccos/arcosh (DLMF §19.2, §19.20).
+    const rc=(a:bigint,b:bigint)=>{
+      const [u,v]=[new D(a.toString()),new D(b.toString())];
+      if(a===b)return v.sqrt().pow(-1);
+      return a<b?D.acos(u.div(v).sqrt()).div(v.sub(u).sqrt()):D.acosh(u.div(v).sqrt()).div(u.sub(v).sqrt());
+    };
+    const expected=rc(x,y).sub(rc(x,p)).mul(3).div(new D((p-y).toString()));
+    encloses(carlsonRJ(f(x),f(y),f(y),f(p),proceed),expected);
+  },30_000);
+  it('第三種の補助値は倍化の反復の中で入れ子の反復を重ねない',()=>{
+    // Each RJ duplication step calls RC; RC must finish by its series, not by ~180 more duplications.
+    let calls=0;const counting=()=>{calls++;};
+    carlsonRJ(f(0n),fixedRational(1n,2n),f(1n),fixedRational(3n,4n),counting);
+    expect(calls).toBeLessThan(40_000);
+  });
   it('入力区間の中の値を端の丸めで失わない',()=>{
     const range={lower:f(1n).lower,upper:f(2n).upper};
     const root=ellipticSqrt(range,proceed);

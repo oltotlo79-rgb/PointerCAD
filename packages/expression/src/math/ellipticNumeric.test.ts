@@ -51,6 +51,16 @@ describe('楕円積分の三種類で母数・角度・途中の極を区別す�
     const half=ellipticValue('F',[rational('0.5'),rational('0.5')],proceed,true);
     expect(half.decimal).toBe(value('K',['0.5']).decimal);
   });
+  it('振幅がπ/2の奇数倍の第三種は完全積分の奇数倍を上下限まで含み、入れ子の反復を重ねない',()=>{
+    const reference=ELLIPTIC_REFERENCES.find(([kind,args])=>kind==='Pi'&&args.join(',')==='0.25,0.5')?.[2];
+    if(reference===undefined)throw new Error('Pi(0.25,0.5)の独立値がありません。');
+    for(const multiple of ['0.5','1.5','-2.5']) {
+      let calls=0;
+      const result=ellipticValue('Piinc',[rational('0.25'),rational(multiple),rational('0.5')],()=>{calls++;},true);
+      matches(result,new D(reference).mul(new D(multiple).mul(2)).toString());
+      expect(calls).toBeLessThan(60_000);
+    }
+  },30_000);
   it.each(['F','Einc','Piinc'] as const)('%sの振幅の微分は独立した定義の被積分関数と一致する',kind=>{
     const h=new D('1e-10'),phi=new D('0.75'),m=new D('0.5'),n=new D('0.25');
     const args=(x:Decimal)=>kind==='Piinc'?[n.toString(),x.toString(),m.toString()]:[x.toString(),m.toString()];

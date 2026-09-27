@@ -26,6 +26,24 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return buffer;
 }
 
+/**
+ * `{ fileName, bytes }` の一致を確かめる(`toEqual` の代わり)。
+ *
+ * `expect(...).toEqual({ fileName, bytes })` は `bytes` が大きい(上限の8MiB)と、
+ * vitest の深い比較が要素を1つずつ辿るために非常に遅くなる(この機械の実測で
+ * `@vitest/expect` の `equals()` 単体が約3秒。CI の Windows ではこの検査だけで
+ * 60秒の上限に達して落ちた)。厳しさは変えず、名前の一致・長さの一致・バイト列の一致を
+ * `Buffer.compare` の一括比較で確かめ、キーが過不足ないことも確かめる。
+ */
+function expectPickedBytesEqual(actual: unknown, expected: { fileName: string; bytes: Uint8Array }): void {
+  expect(actual).not.toBeNull();
+  const picked = actual as { fileName: string; bytes: Uint8Array };
+  expect(Object.keys(picked).sort()).toEqual(['bytes', 'fileName']);
+  expect(picked.fileName).toBe(expected.fileName);
+  expect(picked.bytes.length).toBe(expected.bytes.length);
+  expect(Buffer.compare(Buffer.from(picked.bytes), Buffer.from(expected.bytes))).toBe(0);
+}
+
 /** 偽の `<input type="file">` と、それを作る偽の `document`。 */
 function createFakePickScope(file: unknown): {
   readonly scope: object;
@@ -152,7 +170,7 @@ describe('下絵の画像も本文取得前にサイズを確認する(R07)', ()
     const fake = createFakePickScope({ name: '間取り.png', size: MAX_CANVAS_IMAGE_BYTES, arrayBuffer });
     const picked = pickCanvasImage(fake.scope);
     fake.fire('change');
-    expect(await picked).toEqual({ fileName: '間取り.png', bytes });
+    expectPickedBytesEqual(await picked, { fileName: '間取り.png', bytes });
     expect(arrayBuffer).toHaveBeenCalledTimes(1);
   });
 

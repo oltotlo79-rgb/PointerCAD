@@ -61,10 +61,20 @@ function incomplete(kind:'F'|'Einc'|'Piinc',amplitude:ExactRational,m:ExactRatio
   if(restricted&&beforeHalf===null) {
     throw new MathInputProblem('budget','積分する角度と境界の順序を確定できません。');
   }
+  const doubled=2n*(amplitude.numerator<0n?-amplitude.numerator:amplitude.numerator);
+  const oddHalf=piMultiple&&doubled%amplitude.denominator===0n&&(doubled/amplitude.denominator)%2n===1n;
   let partial:Range;
   if(kind==='Einc'&&m.numerator===m.denominator) {
     if(domainOnly)return FIXED_ZERO;
     partial=sine;
+  }
+  else if(oddHalf) {
+    // |phi| is an exact odd multiple of pi/2: sin=±1 and cos=0 make x=0, y=1-m and p=1-n the complete
+    // integral's own arguments, so the partial part is ±that complete integral. Calculate it only once.
+    const whole=complete(kind==='F'?'K':kind==='Einc'?'E':'Pi',m,n,check,domainOnly);
+    if(domainOnly)return FIXED_ZERO;
+    const total=fixedTimesRational(whole,2n*low+(sine.lower<0n?-1n:1n));
+    return negative?fixedNegate(total):total;
   }
   else {
     const square=ellipticSquare(sine);

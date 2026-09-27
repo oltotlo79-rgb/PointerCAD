@@ -13,7 +13,8 @@ import { createCurvePointWorkEnvelope } from './curvePointWorkEnvelope.js';
 import { decodeCurvePointWorkReply } from './curvePointWorkReply.js';
 import { saveCurvePointInput, type CurvePointWorkRequest } from './curvePointWorkRequest.js';
 import { createCurvePointContinuationWorkEnvelope, decodeCurvePointContinuationWorkReply } from './curvePointContinuationWork.js';
-import { allowExactRuntimeLaunches, exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import type { MathNode } from './mathInputContract.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
@@ -37,6 +38,16 @@ function engine() {
     return Promise.resolve<readonly unknown[]>(values);
   });
   return { evaluateMany, evaluate: vi.fn<ExactMathEngine['evaluate']>(() => { throw new Error('一つの依頼の準備はまとめて行います。'); }) };
+}
+/** The one ODE a stored curve formula asks the engine to solve. */
+function odeProblem(source: MathNode): MathNode {
+  const pending = [source];
+  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+    if (node.kind !== 'operation') continue;
+    if (node.operation === 'solve-ode') return node;
+    pending.push(...node.operands);
+  }
+  throw new Error('式に微分方程式がありません。');
 }
 async function preparedWith(input: FunctionCurveWorkRequest, exact: ExactMathEngine) {
   const current = await prepareOdeFunctions(input.outputs.map(definition => ({ definition, inputs: [input.independent], coefficients: input.coefficients })),
@@ -102,7 +113,6 @@ describe('微分方程式の原式を曲線・点・方向へ共通に接続す�
     expect(fixed.point(1)).toEqual([1, 7, 0]);
   }, 130_000);
   it('曲線上の点から接線・法線を求める入口にも同じ準備を使う', async () => {
-    allowExactRuntimeLaunches(5, '点・接線・法線・直線の点・主法線の拒否は、先の返信の位置を使う別々の依頼で、製品も依頼ごとに解を準備する');
     const quadratic = 'component(odeat(odesolve([diff(y,x)=2*x],x,[y],[[y,0,1]]),1,[],T),1)';
     const input: CurvePointWorkRequest = { ...request(quadratic), kind: 'curve', known: [{ axis: 'X', value: 1 }], tolerance: 1e-7 };
     const exact = engine(), options = { backend, engine: exact, shouldStop: () => undefined };
@@ -127,9 +137,11 @@ describe('微分方程式の原式を曲線・点・方向へ共通に接続す�
       anchor: straightPoint.result.candidates[0].location, direction: { kind: 'normal' as const, length: 1, reverse: false } };
     const refused = decodeCurvePointContinuationWorkReply(await executePreparedFunctionWork(createCurvePointContinuationWorkEnvelope(4, normal), options), normal);
     expect(refused.result.status).toBe('invalid');
+    // 点・接線・法線は同じ放物線、直線の点と主法線は同じ直線の問題なので、計算部が解くのは2種類を1回ずつだけ。
+    expect(exact.evaluateMany.mock.calls.map(([payloads]) => payloads.map(({ expression }) => expression)))
+      .toEqual([[input.outputs[1].expression], [straight.outputs[1].expression]].map(sources => sources.map(odeProblem)));
   }, 130_000);
   it('保存した独立座標の点と主法線を、初期条件の編集と取り消しに追従させる', async () => {
-    allowExactRuntimeLaunches(3, '点・編集後の主法線・取り消しは、先の返信の位置を使う別々の依頼で、製品も依頼ごとに解を準備する');
     function pointInput(initial: number): CurvePointWorkRequest {
       const curve=request(), scope={axes:['X' as const],parameters:[],coefficients:[]};
       const source=`component(odeat(odesolve([diff(y,x)=2*x],x,[y],[[y,0,${initial}]]),1,[],X),1)`;
@@ -137,7 +149,7 @@ describe('微分方程式の原式を曲線・点・方向へ共通に接続す�
       return {...curve,kind:'curve',independent:'X',known:[{axis:'X',value:1}],tolerance:1e-7,
         minimum:[-2,-10,-10],maximum:[2,10,10],outputs:[definition('X'),definition(source),definition('0')]};
     }
-    const before=pointInput(1),after=pointInput(2),options={backend,engine:engine(),shouldStop:()=>undefined};
+    const before=pointInput(1),after=pointInput(2),exact=engine(),options={backend,engine:exact,shouldStop:()=>undefined};
     const first=decodeCurvePointWorkReply(await executePreparedFunctionWork(createCurvePointWorkEnvelope(1,before),options),before);
     if(first.result.status!=='ready') throw new Error(JSON.stringify(first));
     expect(first.result.candidates[0].point).toEqual([1,2,0]);
@@ -152,7 +164,20 @@ describe('微分方程式の原式を曲線・点・方向へ共通に接続す�
     const undo={...current,previous:current.current,current:current.previous,anchor:result.result.candidate.location};
     const restored=decodeCurvePointContinuationWorkReply(await executePreparedFunctionWork(createCurvePointContinuationWorkEnvelope(3,undo),options),undo);
     expect(restored.result).toMatchObject({status:'ready',candidate:{point:[1,2,0]}});
+    // 編集前の問題は最初の依頼で、編集後の問題は編集の依頼で1回ずつ解き、取り消しでは解き直さない。
+    expect(exact.evaluateMany.mock.calls.map(([payloads])=>payloads.map(({expression})=>expression)))
+      .toEqual([[before.outputs[1].expression],[after.outputs[1].expression]].map(sources=>sources.map(odeProblem)));
   },130_000);
+  it('計算部が拒否した返信は覚えず、次の依頼で同じ問題を解き直す', async () => {
+    const input = request(), rejected = { status: 'invalid', reason: 'domain', coordinateAuthorized: false };
+    const evaluateMany = vi.fn<NonNullable<ExactMathEngine['evaluateMany']>>(inputs => Promise.resolve(inputs.map(() => rejected)));
+    const options = { backend, engine: { evaluateMany, evaluate: vi.fn<ExactMathEngine['evaluate']>() }, shouldStop: () => undefined };
+    for (const serial of [1, 2]) {
+      const reply = decodeFunctionCurveWorkReply(await executePreparedFunctionWork(createFunctionCurveWorkEnvelope(serial, input), options), input);
+      expect(reply.result.status).toBe('invalid');
+    }
+    expect(evaluateMany).toHaveBeenCalledTimes(2);
+  });
   it('中止済みの入力と改変された保存内容は計算部を起動しない', async () => {
     const input = request(), exact = engine();
     const result = await executePreparedFunctionWork(createFunctionCurveWorkEnvelope(1, input), { backend, engine: exact, shouldStop: () => 'cancelled' });

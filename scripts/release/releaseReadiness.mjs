@@ -4,7 +4,15 @@
  * were already read plus the "current help" edition, and touches neither files nor the network. The command line
  * (runReleaseReadiness) reads the dist/<name>/ folders exactly like build-release-manifest.mjs, loads the current
  * catalog through Vite SSR like scripts/manual/currentManualEdition.mjs, and prints a human-readable list.
- * Post-release mode (download from the real URLs and compare hashes) is only an entry point here: P13-20 fills it in.
+ * Post-release mode (download from the real URLs and compare hashes): the Desktop part (--scope desktop) downloads
+ * the three desktop packages and every manual PDF volume from the GitHub Release, compares them with release-manifest.json
+ * and follows README's Desktop links; the whole (Web included) post-release mode stays an entry point until the Web
+ * version is published (P13-20).
+ * Desktop-first scope (--scope desktop, the owner's instruction of 2026-09-27 17:3x: release the desktop version first,
+ * do not wait for the Web version): pre-release mode runs every check, but the checks that only the Web publication needs
+ * (DESKTOP_DEFERRED_CHECK_IDS) are reported as deferred instead of failing, README's Web row may say WEB_DEFERRED_PHRASE,
+ * and the manual is reached through the PDF volumes attached to the GitHub Release (manualPdfReleaseAssetName). The
+ * default scope (all) keeps every condition, the Web ones included.
  * Manual mode (P12-20) runs only the manual checks (MANUAL_CHECK_IDS: the four NFR-MA-6 conditions and the
  * whole-edition equality) on one generated manual, dist/<name>/ from scripts/manual/generate.mjs, before any
  * release candidate exists. Pre-release mode (P13-15) runs the very same check bodies on the manual inside the Web
@@ -45,6 +53,32 @@ export const PAGES_MAX_FILE_BYTES = OFFLINE_MAX_FILE_BYTES;
 export const CAPTURE_REGISTRY_PENDING = '撮影の登録簿（scripts/manual/captureRegistry.mjs）の完了後につなぐ（未接続）';
 export const RELEASE_LINKS_START = '<!-- pointercad:release-links:start -->';
 export const RELEASE_LINKS_END = '<!-- pointercad:release-links:end -->';
+/** all: every condition (Web included). desktop: the desktop-first release; the Web-only conditions are deferred. */
+export const RELEASE_READINESS_SCOPES = Object.freeze(['all', 'desktop']);
+/** The only wording README's Web row may carry instead of a link, and only in the desktop scope. */
+export const WEB_DEFERRED_PHRASE = '後日公開';
+/** Cloudflare's limits on the Web files: they decide the Web publication only, so the desktop scope defers them. */
+export const DESKTOP_DEFERRED_CHECK_IDS = Object.freeze(['asset-size', 'asset-count']);
+const DEFERRED_REASON = 'Web 版の公開時に判定する（デスクトップ先行。2026-09-27 の利用者の指示）';
+/** Largest single download the post-release check hashes (GitHub Releases accepts files below 2 GiB). */
+export const RELEASE_DOWNLOAD_MAX_BYTES = 2 * 1024 ** 3;
+/** Name of one manual PDF volume attached to the GitHub Release, next to the desktop packages of the same version. */
+export function manualPdfReleaseAssetName(version, volumeId) {
+  if (typeof version !== 'string' || !VERSION_PATTERN.test(version)) throw new Error(`版の形が違う: ${String(version)}`);
+  if (typeof volumeId !== 'string' || !ID_PATTERN.test(volumeId)) throw new Error(`巻の名前の形が違う: ${String(volumeId)}`);
+  return `PointerCAD-${version}-manual-${volumeId}.pdf`;
+}
+function manualPdfAssetVolume(asset, version) {
+  const prefix = `PointerCAD-${version}-manual-`;
+  if (!asset.startsWith(prefix) || !asset.endsWith('.pdf')) return null;
+  const id = asset.slice(prefix.length, -'.pdf'.length);
+  return ID_PATTERN.test(id) ? id : null;
+}
+function scopeOf(value) {
+  const scope = value ?? 'all';
+  if (!RELEASE_READINESS_SCOPES.includes(scope)) throw new TypeError(`Unknown release readiness scope: ${String(scope)}`);
+  return scope;
+}
 
 const CHECKS = Object.freeze([
   { id: 'manual-chapters', group: '説明書①', title: '章と題名が今のヘルプの目録と一致する' },
@@ -66,10 +100,18 @@ export const RELEASE_READINESS_CHECK_IDS = Object.freeze(CHECKS.map(check => che
 /** The checks of manual mode (P12-20); pre-release mode runs them too, as the first five of its fourteen. */
 export const MANUAL_CHECK_IDS = Object.freeze(CHECKS.filter(check => check.id.startsWith('manual-')).map(check => check.id));
 
-const STATUS_LABELS = Object.freeze({ pass: '合格', fail: '不合格', pending: '保留', 'not-implemented': '未実装' });
+const STATUS_LABELS = Object.freeze({ pass: '合格', fail: '不合格', pending: '保留', 'not-implemented': '未実装', deferred: '後回し' });
 const EXIT_MEANINGS = Object.freeze({ 0: '公開前の全項目を満たす', 1: '公開できない', 2: '未接続の条件があり判定できない',
   3: '公開後モードは未実装', 64: '引数の誤り', 70: '内部の誤り' });
 const MANUAL_EXIT_MEANINGS = Object.freeze({ ...EXIT_MEANINGS, 0: '説明書の整合4条件と出力全体の一致を満たす', 1: '説明書が今のヘルプ・画面・機能・撮影と合わない' });
+const DESKTOP_EXIT_MEANINGS = Object.freeze({ ...EXIT_MEANINGS, 0: 'デスクトップ版の公開前の全項目を満たす（Web 版の項目は後回し）' });
+const POST_RELEASE_DESKTOP_EXIT_MEANINGS = Object.freeze({ ...EXIT_MEANINGS,
+  0: '公開した Release の配布物・説明書の PDF・README の Desktop の導線が公開一覧と一致する（Web 版は後回し）', 1: '公開した Release が公開一覧と合わない' });
+function exitMeanings(report) {
+  if (report.mode === 'manual') return MANUAL_EXIT_MEANINGS;
+  if (report.scope !== 'desktop') return EXIT_MEANINGS;
+  return report.mode === 'post-release' ? POST_RELEASE_DESKTOP_EXIT_MEANINGS : DESKTOP_EXIT_MEANINGS;
+}
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -211,13 +253,25 @@ async function runCheck(definition, body) {
     return Object.freeze({ ...base, status: 'fail', summary: '判定できない', problems: Object.freeze([messageOf(error)]), notes: Object.freeze([]) });
   }
 }
-function finish(mode, checks) {
+/**
+ * Deferred checks (desktop scope only) do not block exit code 0, but a report whose checks are all deferred proves
+ * nothing and fails, like an empty one.
+ */
+function finish(mode, checks, scope = 'all') {
   const count = status => checks.filter(check => check.status === status).length;
-  const summary = Object.freeze({ pass: count('pass'), fail: count('fail'), pending: count('pending'), notImplemented: count('not-implemented') });
-  const exitCode = summary.fail > 0 || checks.length === 0 ? RELEASE_READINESS_EXIT.failed
+  const summary = Object.freeze({ pass: count('pass'), fail: count('fail'), pending: count('pending'), notImplemented: count('not-implemented'),
+    deferred: count('deferred') });
+  const exitCode = summary.fail > 0 || checks.length === summary.deferred ? RELEASE_READINESS_EXIT.failed
     : summary.notImplemented > 0 ? RELEASE_READINESS_EXIT.notImplemented
       : summary.pending > 0 ? RELEASE_READINESS_EXIT.pending : RELEASE_READINESS_EXIT.ready;
-  return Object.freeze({ format: RELEASE_READINESS_FORMAT, mode, releaseCertified: false, checks: Object.freeze(checks), summary, exitCode });
+  return Object.freeze({ format: RELEASE_READINESS_FORMAT, mode, scope, releaseCertified: false, checks: Object.freeze(checks), summary, exitCode });
+}
+/** A desktop-scope check that only the Web publication needs: judged for reference, reported as deferred. */
+async function deferredCheck(definition, body) {
+  const judged = await runCheck(definition, body);
+  const reference = judged.problems.map(problem => `Web 版の公開時に直す（今の判定）: ${problem}`);
+  return Object.freeze({ ...judged, status: 'deferred', summary: `${DEFERRED_REASON}。今の判定: ${STATUS_LABELS[judged.status] ?? judged.status}・${judged.summary}`,
+    problems: Object.freeze([]), notes: Object.freeze([...reference, ...judged.notes]) });
 }
 
 // ---------------------------------------------------------------- manual: the four NFR-MA-6 conditions
@@ -526,7 +580,8 @@ export const README_LINK_ROWS = Object.freeze([
   { kind: 'manual', label: '取扱説明書（HTML と PDF 全巻）', keywords: ['説明書'] },
   { kind: 'web-app', label: 'Web アプリ版', keywords: ['Webアプリ', 'ブラウザ'] },
 ]);
-const PLACEHOLDER_PHRASES = Object.freeze(['初回リリース時', '準備中', '予定', '未公開', 'TODO', 'TBD', 'coming soon']);
+/** WEB_DEFERRED_PHRASE is a placeholder too, except on the Web row in the desktop scope. */
+const PLACEHOLDER_PHRASES = Object.freeze(['初回リリース時', '準備中', '予定', '未公開', 'TODO', 'TBD', 'coming soon', WEB_DEFERRED_PHRASE]);
 const KIND_LABELS = Object.freeze({ 'windows-installer': 'Windows のインストーラー', 'windows-portable': 'Windows のポータブル版',
   'linux-appimage': 'Linux の AppImage', 'manual-html': '取扱説明書の HTML（目次）', 'manual-volume-html': '取扱説明書の巻の HTML',
   'manual-pdf': '取扱説明書の PDF', 'web-app': 'Web アプリ版' });
@@ -550,8 +605,17 @@ function classifyReleaseUrl(target, expected) {
     try { asset = decodeURIComponent(rawAsset); } catch { return { problem: `URL の形が違う: ${target}` }; }
     if (tag !== `v${expected.version}`) return { problem: `配布対象版と違うタグ: ${target}（期待 v${expected.version}）` };
     const kind = Object.keys(expected.assets).find(name => expected.assets[name] === asset);
-    if (kind === undefined) return { problem: `配布対象版の配布物でない: ${asset}（期待 ${Object.values(expected.assets).join('・')}）` };
-    return { kind, repository: `${owner}/${repository}`.toLowerCase() };
+    // The desktop scope reaches the manual through the PDF volumes attached to the same GitHub Release.
+    const manualVolume = kind === undefined && expected.scope === 'desktop' ? manualPdfAssetVolume(asset, expected.version) : null;
+    if (manualVolume !== null) {
+      if (expected.volumeIds !== null && !expected.volumeIds.includes(manualVolume)) return { problem: `今の目録に無い巻への導線: ${target}` };
+      return { kind: 'manual-pdf', volume: manualVolume, asset, repository: `${owner}/${repository}`.toLowerCase() };
+    }
+    if (kind === undefined) {
+      const names = [...Object.values(expected.assets), ...(expected.scope === 'desktop' ? [`PointerCAD-${expected.version}-manual-<巻>.pdf`] : [])];
+      return { problem: `配布対象版の配布物でない: ${asset}（期待 ${names.join('・')}）` };
+    }
+    return { kind, asset, repository: `${owner}/${repository}`.toLowerCase() };
   }
   const path = url.pathname, origin = url.origin;
   if (path === '/') return { kind: 'web-app', origin };
@@ -575,9 +639,14 @@ function readmeLine(line) {
 /**
  * Pre-release contract of README.md's release-links region: every kind once, pinned to the release version, no placeholders.
  * volumeIds null means the volume list is unknown: PDF links are then only required to exist, not to cover every volume.
+ * scope all (default) requires the Web app and the Web manual (HTML contents and every PDF volume). scope desktop
+ * (desktop-first release) requires the three desktop packages and every manual PDF volume attached to the same GitHub
+ * Release (manualPdfReleaseAssetName); the Web row carries either its link or WEB_DEFERRED_PHRASE without a link, and
+ * while it is deferred no link may point at a Web site. Every link found is returned with its kind (and the release
+ * asset name for GitHub links), so the post-release check can follow the same links.
  */
-export function checkReadmeReleaseLinks(readme, { version, volumeIds }) {
-  const problems = [], links = [];
+export function checkReadmeReleaseLinks(readme, { version, volumeIds, scope = 'all' }) {
+  const problems = [], links = [], releaseScope = scopeOf(scope);
   const count = marker => readme.split(marker).length - 1;
   if (count(RELEASE_LINKS_START) !== 1 || count(RELEASE_LINKS_END) !== 1) {
     return { problems: [`区間の印が1組でない（開始 ${count(RELEASE_LINKS_START)}・終了 ${count(RELEASE_LINKS_END)}）`], summary: '区間が無い', links };
@@ -586,18 +655,29 @@ export function checkReadmeReleaseLinks(readme, { version, volumeIds }) {
   if (to < from) return { problems: ['区間の終了の印が開始より前にある'], summary: '区間が壊れている', links };
   const region = readme.slice(from, to);
   for (const phrase of PLACEHOLDER_PHRASES) {
+    if (releaseScope === 'desktop' && phrase === WEB_DEFERRED_PHRASE) continue; // Judged row by row below.
     if (region.toLowerCase().includes(phrase.toLowerCase())) problems.push(`未公開の案内が残っている: 「${phrase}」`);
   }
   const [installer, portable] = desktopPackagePlan('win32', version), [appImage] = desktopPackagePlan('linux', version);
-  const expected = { version, volumeIds, assets: { 'windows-installer': installer.name, 'windows-portable': portable.name, 'linux-appimage': appImage.name } };
+  const expected = { version, volumeIds, scope: releaseScope,
+    assets: { 'windows-installer': installer.name, 'windows-portable': portable.name, 'linux-appimage': appImage.name } };
   const found = new Map(), origins = new Set(), repositories = new Set();
+  let webDeferred = 0;
   for (const raw of region.split(/\r?\n/u)) {
-    const line = raw.trim();
-    if (line === '' || line.startsWith('<!--') || /^\|?[\s:|-]+\|?$/u.test(line)) continue;
+    const line = raw.trim(), deferredHere = releaseScope === 'desktop' && line.includes(WEB_DEFERRED_PHRASE);
+    if (line === '' || line.startsWith('<!--') || /^\|?[\s:|-]+\|?$/u.test(line)) {
+      if (deferredHere) problems.push(`「${WEB_DEFERRED_PHRASE}」は Web アプリ版の行だけに書ける: 「${line}」`);
+      continue;
+    }
     const { label, targets } = readmeLine(line);
     const rows = README_LINK_ROWS.filter(row => row.keywords.some(keyword => label.includes(keyword)));
     if (rows.length > 1) { problems.push(`行の種類が曖昧: 「${label}」`); continue; }
     const row = rows[0];
+    if (deferredHere) {
+      if (row?.kind !== 'web-app') problems.push(`「${WEB_DEFERRED_PHRASE}」は Web アプリ版の行だけに書ける: 「${label}」`);
+      else if (targets.length > 0) problems.push(`「${WEB_DEFERRED_PHRASE}」の行に導線がある（公開したなら「${WEB_DEFERRED_PHRASE}」を消す）: 「${label}」`);
+      else { webDeferred += 1; continue; }
+    }
     if (row === undefined) {
       if (targets.length > 0) problems.push(`種類の分からない行の導線: 「${label}」`);
       continue;
@@ -612,11 +692,12 @@ export function checkReadmeReleaseLinks(readme, { version, volumeIds }) {
       found.set(key, new Set([...(found.get(key) ?? []), target]));
       if (link.origin !== undefined) origins.add(link.origin);
       if (link.repository !== undefined) repositories.add(link.repository);
-      links.push({ kind: link.kind, url: target });
+      links.push(link.asset === undefined ? { kind: link.kind, url: target } : { kind: link.kind, url: target, asset: link.asset });
     }
   }
   const required = [['windows-installer', KIND_LABELS['windows-installer']], ['windows-portable', KIND_LABELS['windows-portable']],
-    ['linux-appimage', KIND_LABELS['linux-appimage']], ['manual-html', KIND_LABELS['manual-html']], ['web-app', KIND_LABELS['web-app']],
+    ['linux-appimage', KIND_LABELS['linux-appimage']],
+    ...(releaseScope === 'all' ? [['manual-html', KIND_LABELS['manual-html']], ['web-app', KIND_LABELS['web-app']]] : []),
     ...(volumeIds ?? []).map(id => [`manual-pdf:${id}`, `${KIND_LABELS['manual-pdf']}（${id}）`])];
   for (const [key, label] of required) {
     const urls = found.get(key);
@@ -624,9 +705,17 @@ export function checkReadmeReleaseLinks(readme, { version, volumeIds }) {
     else if (urls.size > 1) problems.push(`同じ種類の導線が複数: ${label}（${[...urls].join('・')}）`);
   }
   if (volumeIds === null && ![...found.keys()].some(key => key.startsWith('manual-pdf:'))) problems.push(`導線が無い: ${KIND_LABELS['manual-pdf']}`);
+  if (releaseScope === 'desktop') {
+    const webLinks = found.get('web-app')?.size ?? 0;
+    if (webDeferred === 0 && webLinks === 0) problems.push(`導線が無い: ${KIND_LABELS['web-app']}（公開前は Web アプリ版の行に「${WEB_DEFERRED_PHRASE}」と書く）`);
+    else if (webDeferred + webLinks > 1) problems.push(`Web アプリ版の行が複数ある（「${WEB_DEFERRED_PHRASE}」${webDeferred}行・導線 ${webLinks}件）`);
+    if (webDeferred > 0 && origins.size > 0) problems.push(`Web 版を「${WEB_DEFERRED_PHRASE}」とした区間に Web の公開先への導線がある: ${[...origins].join('・')}`);
+    else if (webLinks > 0 && found.get('manual-html') === undefined) problems.push(`導線が無い: ${KIND_LABELS['manual-html']}（Web 版を公開したなら説明書の目次も載せる）`);
+  }
   if (origins.size > 1) problems.push(`Web の公開先が複数ある: ${[...origins].join('・')}`);
   if (repositories.size > 1) problems.push(`配布物の置き場が複数のリポジトリにある: ${[...repositories].join('・')}`);
-  return { problems, summary: `導線 ${links.length}件（必要な種類 ${required.length}件）`, links };
+  const kinds = required.length + (releaseScope === 'desktop' ? 1 : 0);
+  return { problems, summary: `導線 ${links.length}件（必要な種類 ${kinds}件${webDeferred > 0 ? `・Web アプリ版は${WEB_DEFERRED_PHRASE}` : ''}）`, links };
 }
 function checkReadme(context) {
   const { input } = context;
@@ -643,7 +732,7 @@ function checkReadme(context) {
     if (Array.isArray(listed) && listed.length > 0) { volumeIds = listed.map(volume => String(volume?.id)); unknownVolumes = null; }
     else if (listed !== null) unknownVolumes = `${String(unknownVolumes)}／公開一覧に巻が無い`;
   }
-  const result = checkReadmeReleaseLinks(input.readme, { version, volumeIds });
+  const result = checkReadmeReleaseLinks(input.readme, { version, volumeIds, scope: scopeOf(input.scope) });
   const problems = unknownVolumes === null ? [...result.problems]
     : [...result.problems, `巻の一覧を読めないため PDF 全巻の導線を照合できない（${unknownVolumes}）`];
   return { problems, summary: result.summary };
@@ -676,6 +765,142 @@ function postReleaseCheck(input) {
     summary: 'P13-20 で実装する（実 URL からの取得と hash の照合）', problems: Object.freeze(problems), notes: Object.freeze(notes) });
 }
 
+// ---------------------------------------------------------------- post-release, Desktop part (P13-20, desktop-first)
+
+const POST_RELEASE_DESKTOP_CHECKS = Object.freeze([
+  { id: 'post-release-assets', group: '公開後', title: 'GitHub Release の配布物3種と説明書の PDF 全巻を取得し、大きさと hash が公開一覧と一致する' },
+  { id: 'post-release-readme', group: '公開後', title: 'README の Desktop の導線（配布物3種・説明書の PDF 全巻）が公開した Release の同じ実物に届く' },
+  { id: 'post-release-web', group: '公開後', title: 'Web 版と説明書の HTML を公開先から取得して照合する' },
+]);
+export const POST_RELEASE_DESKTOP_CHECK_IDS = Object.freeze(POST_RELEASE_DESKTOP_CHECKS.map(check => check.id));
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+
+/** What the GitHub Release of this version must carry, read from release-manifest.json alone. */
+function expectedReleaseAssets(saved) {
+  const version = saved.version;
+  if (typeof version !== 'string' || !VERSION_PATTERN.test(version)) throw new Error(`公開一覧の版の形が違う: ${String(version)}`);
+  const assets = [], problems = [];
+  const add = (entry, label, kind) => {
+    if (!record(entry) || typeof entry.name !== 'string' || !Number.isSafeInteger(entry.bytes) || entry.bytes <= 0
+      || typeof entry.sha256 !== 'string' || !SHA256_PATTERN.test(entry.sha256)) {
+      problems.push(`公開一覧の${label}の記録の形が違う: ${String(entry?.name)}`);
+      return;
+    }
+    assets.push({ kind, name: entry.name, bytes: entry.bytes, sha256: entry.sha256 });
+  };
+  for (const [platform, key] of [['win32', 'windows'], ['linux', 'linux']]) {
+    const listed = Array.isArray(saved.desktop?.[key]?.assets) ? saved.desktop[key].assets : [];
+    const names = listed.map(entry => String(entry?.name)).sort(), planned = desktopPackagePlan(platform, version).map(item => item.name).sort();
+    if (!same(names, planned)) problems.push(`公開一覧の ${platformLabel(platform)} の配布物が計画と違う: ${names.join('・')} ／ ${planned.join('・')}`);
+    for (const entry of listed) add(entry, ` ${platformLabel(platform)} の配布物`, 'package');
+  }
+  const files = new Map((Array.isArray(saved.web?.files) ? saved.web.files : []).filter(record).map(file => [file.path, file]));
+  const volumes = Array.isArray(saved.manual?.volumes) ? saved.manual.volumes : [];
+  if (volumes.length === 0) problems.push('公開一覧に説明書の巻が無い');
+  for (const volume of volumes) {
+    const id = String(volume?.id), file = files.get(volume?.pdf);
+    if (file === undefined) { problems.push(`公開一覧に説明書の PDF の記録が無い: ${String(volume?.pdf)}（${id}）`); continue; }
+    add({ ...file, name: manualPdfReleaseAssetName(version, id) }, '説明書の PDF', 'manual-pdf');
+  }
+  return { version, volumeIds: volumes.map(volume => String(volume?.id)), assets, problems };
+}
+async function compareDownload(fetchOnce, url, asset) {
+  const outcome = await fetchOnce(url);
+  if (Object.hasOwn(outcome, 'error')) return [`取得できない: ${asset.name}（${url}）: ${messageOf(outcome.error)}`];
+  const result = outcome.value;
+  if (!record(result) || !Number.isSafeInteger(result.status)) return [`取得の結果の形が違う: ${url}`];
+  if (result.status !== 200) return [`取得できない: ${asset.name}（${url}）: HTTP ${String(result.status)}`];
+  const problems = [];
+  if (result.bytes !== asset.bytes) problems.push(`大きさの違い: ${asset.name} 取得 ${grouped(Number(result.bytes))} バイト ／ 公開一覧 ${grouped(asset.bytes)} バイト`);
+  if (result.sha256 !== asset.sha256) problems.push(`hash の違い: ${asset.name}（${url}）`);
+  return problems;
+}
+/**
+ * Post-release mode for the desktop-first release: download every desktop package and manual PDF volume from the GitHub
+ * Release (input.download, one request per URL), compare size and SHA-256 with release-manifest.json, and follow README's
+ * Desktop links to the same assets. The Web part stays deferred until the Web version is published.
+ */
+async function evaluatePostReleaseDesktop(input) {
+  const downloads = new Map();
+  const fetchOnce = url => {
+    if (!downloads.has(url)) {
+      downloads.set(url, Promise.resolve().then(() => {
+        if (typeof input.download !== 'function') throw new Error('取得の処理が無い');
+        return input.download(url);
+      }).then(value => ({ value }), error => ({ error })));
+    }
+    return downloads.get(url);
+  };
+  let cached = null;
+  const saved = () => {
+    if (cached === null) {
+      if (!(input.releaseManifest instanceof Uint8Array)) throw new Error(`release-manifest.json を読めない（${input.readErrors?.releaseManifest ?? '入力が無い'}）`);
+      const value = parseJson(input.releaseManifest, 'release-manifest.json');
+      if (!record(value)) throw new Error('release-manifest.json の形が違う');
+      cached = { value, expected: expectedReleaseAssets(value) };
+    }
+    return cached;
+  };
+  const releaseBase = () => {
+    try { return downloadBase(String(input.downloadUrl)); } catch (error) { throw new Error(`--download-url: ${messageOf(error)}`, { cause: error }); }
+  };
+  const bodies = {
+    'post-release-assets': async () => {
+      const base = releaseBase(), { value, expected } = saved(), problems = [...expected.problems];
+      if (!base.endsWith(`/v${expected.version}/`)) problems.push(`公開一覧の版 v${expected.version} と違う Release: ${base}`);
+      if (value.tag !== null && value.tag !== undefined && value.tag !== `v${expected.version}`) problems.push(`公開一覧のタグ ${String(value.tag)} ／ 版 v${expected.version}`);
+      for (const asset of expected.assets) problems.push(...await compareDownload(fetchOnce, `${base}${encodeURIComponent(asset.name)}`, asset));
+      const packages = expected.assets.filter(asset => asset.kind === 'package').length, pdfs = expected.assets.length - packages;
+      return { problems, summary: `配布物 ${packages}件・説明書の PDF ${pdfs}巻を ${base} から取得して照合` };
+    },
+    'post-release-readme': async () => {
+      if (typeof input.readme !== 'string') throw new Error(`README.md を読めない（${input.readErrors?.readme ?? '入力が無い'}）`);
+      const base = releaseBase(), { expected } = saved();
+      const result = checkReadmeReleaseLinks(input.readme, { version: expected.version, volumeIds: expected.volumeIds, scope: 'desktop' });
+      const problems = [...result.problems], byName = new Map(expected.assets.map(asset => [asset.name, asset]));
+      let followed = 0;
+      for (const link of result.links) {
+        if (link.asset === undefined) continue; // A Web link: judged when the Web version is published.
+        const asset = byName.get(link.asset);
+        if (!link.url.startsWith(base)) { problems.push(`公開した Release と違う置き場への導線: ${link.url}（期待 ${base}…）`); continue; }
+        if (asset === undefined) { problems.push(`公開一覧に無い配布物への導線: ${link.url}`); continue; }
+        followed += 1;
+        problems.push(...(await compareDownload(fetchOnce, link.url, asset)).map(problem => `README の導線: ${problem}`));
+      }
+      return { problems, summary: `README の Desktop の導線 ${followed}件を取得して照合（${result.summary}）` };
+    },
+    'post-release-web': () => ({ status: 'deferred', problems: [],
+      summary: `${DEFERRED_REASON}（全体の公開後モード --scope all で実装する）` }),
+  };
+  const checks = [];
+  for (const check of POST_RELEASE_DESKTOP_CHECKS) checks.push(await runCheck(check, bodies[check.id]));
+  return finish('post-release', checks, 'desktop');
+}
+
+/**
+ * The real download behind post-release mode: follows GitHub's redirect to the file store and hashes the body while it
+ * streams, so a 2 GiB package never sits in memory. Anything but HTTP 200 is returned as its status (no body read).
+ */
+export function createReleaseDownloader({ fetch: fetchImpl = globalThis.fetch, timeoutMs = 1_800_000, maxBytes = RELEASE_DOWNLOAD_MAX_BYTES } = {}) {
+  if (typeof fetchImpl !== 'function') throw new Error('fetch が無い（Node.js 18 以降で実行する）');
+  return async url => {
+    const response = await fetchImpl(url, { redirect: 'follow', signal: globalThis.AbortSignal.timeout(timeoutMs),
+      headers: { 'user-agent': 'PointerCAD-release-check' } });
+    if (response.status !== 200 || response.body === null) {
+      await response.body?.cancel();
+      return { status: response.status, bytes: 0, sha256: null };
+    }
+    const hash = createHash('sha256');
+    let total = 0;
+    for await (const chunk of response.body) {
+      total += chunk.byteLength;
+      if (total > maxBytes) throw new Error(`大きすぎる（${grouped(maxBytes)} バイトを超えた）: ${url}`);
+      hash.update(chunk);
+    }
+    return { status: 200, bytes: total, sha256: hash.digest('hex') };
+  };
+}
+
 // ---------------------------------------------------------------- judgement and report
 
 const CHECK_BODIES = Object.freeze({
@@ -701,19 +926,23 @@ const CHECK_BODIES = Object.freeze({
  */
 export async function evaluateReleaseReadiness(input) {
   if (!record(input)) throw new TypeError('Release readiness input must be an object');
-  if (input.mode === 'post-release') return finish('post-release', [postReleaseCheck(input)]);
+  const scope = scopeOf(input.scope);
+  if (input.mode === 'post-release') return scope === 'desktop' ? evaluatePostReleaseDesktop(input) : finish('post-release', [postReleaseCheck(input)]);
   if (input.mode !== 'pre-release' && input.mode !== 'manual') throw new TypeError(`Unknown release readiness mode: ${String(input.mode)}`);
+  if (input.mode === 'manual' && scope !== 'all') throw new TypeError('Manual mode has no desktop scope');
   const context = createContext(input), checks = [];
   for (const check of CHECKS) {
     if (input.mode === 'manual' && !MANUAL_CHECK_IDS.includes(check.id)) continue;
-    checks.push(await runCheck(check, () => CHECK_BODIES[check.id](context)));
+    const body = () => CHECK_BODIES[check.id](context);
+    checks.push(scope === 'desktop' && DESKTOP_DEFERRED_CHECK_IDS.includes(check.id) ? await deferredCheck(check, body) : await runCheck(check, body));
   }
-  return finish(input.mode, checks);
+  return finish(input.mode, checks, scope);
 }
 
 export function formatReleaseReadinessReport(report, { targets = [] } = {}) {
-  const lines = [report.mode === 'pre-release' ? 'PointerCAD 公開前の整合検査（公開前モード）'
-    : report.mode === 'manual' ? 'PointerCAD 説明書の整合検査（説明書モード・P12-20）' : 'PointerCAD 公開後の確認（公開後モード）'];
+  const desktop = report.scope === 'desktop' ? '・デスクトップ先行（Web 版の項目は後回し）' : '';
+  const lines = [report.mode === 'pre-release' ? `PointerCAD 公開前の整合検査（公開前モード${desktop}）`
+    : report.mode === 'manual' ? 'PointerCAD 説明書の整合検査（説明書モード・P12-20）' : `PointerCAD 公開後の確認（公開後モード${desktop}）`];
   if (targets.length > 0) lines.push(`対象: ${targets.join(' ・ ')}`);
   for (const check of report.checks) {
     lines.push(`[${STATUS_LABELS[check.status] ?? check.status}] ${check.group} ${check.title} — ${check.summary}`);
@@ -723,7 +952,8 @@ export function formatReleaseReadinessReport(report, { targets = [] } = {}) {
   }
   const { summary } = report;
   lines.push(`合計: 合格 ${summary.pass}・不合格 ${summary.fail}・保留 ${summary.pending}・未実装 ${summary.notImplemented}`
-    + ` → 終了コード ${report.exitCode}（${(report.mode === 'manual' ? MANUAL_EXIT_MEANINGS : EXIT_MEANINGS)[report.exitCode] ?? '不明'}）`);
+    + (summary.deferred > 0 ? `・後回し ${summary.deferred}` : '')
+    + ` → 終了コード ${report.exitCode}（${exitMeanings(report)[report.exitCode] ?? '不明'}）`);
   return lines.join('\n');
 }
 
@@ -731,14 +961,19 @@ export function formatReleaseReadinessReport(report, { targets = [] } = {}) {
 
 const USAGE = [
   '使い方（<名前> は dist/ 直下のフォルダー名。英小文字・数字・-）:',
-  '  公開前: node scripts/release/releaseReadiness.mjs --mode pre-release --windows <名前> --linux <名前> --web <名前> --release <名前> --sbom <名前> [--report <JSON の保存先>]',
+  '  公開前: node scripts/release/releaseReadiness.mjs --mode pre-release [--scope desktop] --windows <名前> --linux <名前> --web <名前> --release <名前> --sbom <名前> [--report <JSON の保存先>]',
   '  公開後: node scripts/release/releaseReadiness.mjs --mode post-release --release <名前> --web-url https://<公開先>/ --download-url https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/ [--report <JSON の保存先>]',
+  '  公開後（デスクトップ先行）: node scripts/release/releaseReadiness.mjs --mode post-release --scope desktop --release <名前> --download-url https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/ [--report <JSON の保存先>]',
+  '  --scope: all（既定。Web 版を含む全条件）・desktop（デスクトップ先行。Web 版だけの条件は後回し）',
   '  説明書: node scripts/release/releaseReadiness.mjs --mode manual --manual <名前（scripts/manual/generate.mjs の出力名）> [--report <JSON の保存先>]',
 ].join('\n');
 const FLAGS = Object.freeze({ '--mode': 'mode', '--windows': 'windows', '--linux': 'linux', '--web': 'web', '--release': 'release', '--sbom': 'sbom',
-  '--web-url': 'webUrl', '--download-url': 'downloadUrl', '--manual': 'manual', '--report': 'report' });
+  '--web-url': 'webUrl', '--download-url': 'downloadUrl', '--manual': 'manual', '--report': 'report', '--scope': 'scope' });
 const MODE_KEYS = Object.freeze({ 'pre-release': ['windows', 'linux', 'web', 'release', 'sbom'], 'post-release': ['release', 'webUrl', 'downloadUrl'],
   manual: ['manual'] });
+/** The desktop-first post-release check has no Web site to visit, so it takes no --web-url. */
+const POST_RELEASE_DESKTOP_KEYS = Object.freeze(['release', 'downloadUrl']);
+const modeKeys = options => options.mode === 'post-release' && options.scope === 'desktop' ? POST_RELEASE_DESKTOP_KEYS : MODE_KEYS[options.mode];
 
 export function parseReleaseReadinessArguments(args) {
   const options = { mode: 'pre-release' }, seen = new Set();
@@ -749,11 +984,17 @@ export function parseReleaseReadinessArguments(args) {
     if (typeof value !== 'string' || value === '' || value.startsWith('--')) throw new ReleaseReadinessUsageError(`値が無い: ${flag}`);
     seen.add(flag); options[FLAGS[flag]] = value;
   }
-  const keys = MODE_KEYS[options.mode];
-  if (keys === undefined) throw new ReleaseReadinessUsageError(`--mode は pre-release・post-release・manual のどれか: ${options.mode}`);
+  if (!Object.hasOwn(MODE_KEYS, options.mode)) throw new ReleaseReadinessUsageError(`--mode は pre-release・post-release・manual のどれか: ${options.mode}`);
+  if (options.scope !== undefined && !RELEASE_READINESS_SCOPES.includes(options.scope)) {
+    throw new ReleaseReadinessUsageError(`--scope は ${RELEASE_READINESS_SCOPES.join('・')} のどれか: ${options.scope}`);
+  }
+  if (options.mode === 'manual' && options.scope !== undefined) throw new ReleaseReadinessUsageError('manual では使わない引数: --scope');
+  options.scope ??= 'all';
+  const keys = modeKeys(options);
   for (const key of Object.values(FLAGS)) {
-    if (key !== 'mode' && key !== 'report' && options[key] !== undefined && !keys.includes(key)) {
-      throw new ReleaseReadinessUsageError(`${options.mode} では使わない引数: --${key.replace(/[A-Z]/gu, letter => `-${letter.toLowerCase()}`)}`);
+    if (key !== 'mode' && key !== 'report' && key !== 'scope' && options[key] !== undefined && !keys.includes(key)) {
+      const where = options.mode === 'post-release' && options.scope === 'desktop' ? 'post-release --scope desktop' : options.mode;
+      throw new ReleaseReadinessUsageError(`${where} では使わない引数: --${key.replace(/[A-Z]/gu, letter => `-${letter.toLowerCase()}`)}`);
     }
   }
   for (const key of keys) {
@@ -767,7 +1008,8 @@ export function parseReleaseReadinessArguments(args) {
     const names = MODE_KEYS['pre-release'].map(key => options[key]);
     if (new Set(names).size !== names.length) throw new ReleaseReadinessUsageError('5つのフォルダー名は互いに違う名前にする');
   } else if (options.mode === 'post-release') {
-    options.webUrl = webOrigin(options.webUrl); options.downloadUrl = downloadBase(options.downloadUrl);
+    if (options.scope !== 'desktop') options.webUrl = webOrigin(options.webUrl);
+    options.downloadUrl = downloadBase(options.downloadUrl);
   }
   return Object.freeze(options);
 }
@@ -948,8 +1190,8 @@ export async function readPreReleaseInput(root, options) {
   }
   if (webFiles === null) readErrors.currentHelp = 'Web の候補を読めないため読み込まない';
   else currentHelp = await attempt('currentHelp', () => loadCurrentHelp(root));
-  return { mode: 'pre-release', packageFiles, builderConfig, readme, releaseManifest, sbom, webFiles, candidates, sourceCommit, sourceInputs,
-    currentHelp, captureFreshness: loadCaptureFreshness(), readErrors: Object.freeze(readErrors) };
+  return { mode: 'pre-release', scope: scopeOf(options.scope), packageFiles, builderConfig, readme, releaseManifest, sbom, webFiles, candidates,
+    sourceCommit, sourceInputs, currentHelp, captureFreshness: loadCaptureFreshness(), readErrors: Object.freeze(readErrors) };
 }
 /** Manual mode: one generated manual, dist/<name>/, read like scripts/manual/verify.mjs, against the current help. */
 export async function readManualInput(root, options) {
@@ -966,12 +1208,19 @@ export async function readManualInput(root, options) {
   }
   return { mode: 'manual', manualFiles, currentHelp, captureFreshness: loadCaptureFreshness(), readErrors: Object.freeze(readErrors) };
 }
-async function readPostReleaseInput(root, options) {
+/** Post-release input; the desktop scope also reads README.md and downloads from the GitHub Release (createReleaseDownloader). */
+export async function readPostReleaseInput(root, options, { download = null } = {}) {
   const readErrors = {};
   let releaseManifest = null;
   try { releaseManifest = await readCandidateFile(join(root, 'dist', options.release), 'release-manifest.json'); }
   catch (error) { readErrors.releaseManifest = messageOf(error); }
-  return { mode: 'post-release', releaseManifest, webUrl: options.webUrl, downloadUrl: options.downloadUrl, readErrors: Object.freeze(readErrors) };
+  if (scopeOf(options.scope) !== 'desktop') {
+    return { mode: 'post-release', releaseManifest, webUrl: options.webUrl, downloadUrl: options.downloadUrl, readErrors: Object.freeze(readErrors) };
+  }
+  let readme = null;
+  try { readme = await readFile(join(root, 'README.md'), 'utf8'); } catch (error) { readErrors.readme = messageOf(error); }
+  return { mode: 'post-release', scope: 'desktop', releaseManifest, downloadUrl: options.downloadUrl, readme,
+    download: download ?? createReleaseDownloader(), readErrors: Object.freeze(readErrors) };
 }
 function reportTarget(root, path) {
   const target = resolve(root, path), local = relative(root, target);
@@ -982,7 +1231,7 @@ function reportTarget(root, path) {
   return target;
 }
 
-export async function runReleaseReadiness(args, { root = repositoryRoot, write = text => log(text) } = {}) {
+export async function runReleaseReadiness(args, { root = repositoryRoot, write = text => log(text), download = null } = {}) {
   let options, reportPath = null;
   try {
     options = parseReleaseReadinessArguments(args);
@@ -995,10 +1244,10 @@ export async function runReleaseReadiness(args, { root = repositoryRoot, write =
     write(`check-release-ready: 引数の誤り: ${error.message}\n${USAGE}`);
     return RELEASE_READINESS_EXIT.usage;
   }
-  const targets = MODE_KEYS[options.mode].filter(key => key !== 'webUrl' && key !== 'downloadUrl').map(key => `dist/${options[key]}`);
-  if (options.mode === 'post-release') targets.push(options.webUrl, options.downloadUrl);
+  const targets = modeKeys(options).filter(key => key !== 'webUrl' && key !== 'downloadUrl').map(key => `dist/${options[key]}`);
+  if (options.mode === 'post-release') targets.push(...[options.webUrl, options.downloadUrl].filter(value => value !== undefined));
   const input = options.mode === 'pre-release' ? await readPreReleaseInput(root, options)
-    : options.mode === 'manual' ? await readManualInput(root, options) : await readPostReleaseInput(root, options);
+    : options.mode === 'manual' ? await readManualInput(root, options) : await readPostReleaseInput(root, options, { download });
   const report = await evaluateReleaseReadiness(input);
   write(formatReleaseReadinessReport(report, { targets }));
   if (reportPath !== null) {

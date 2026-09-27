@@ -1,10 +1,10 @@
 /** Browser-owned numerical evaluator for part, assembly, drawing and export computations. */
 import { createBrowserMathWorker } from './browserMathWorker.js';
-import { createMathWorkerReuse } from './mathWorkerReuse.js';
+import { createMathWorkerReuse, type MathWorkerLease } from './mathWorkerReuse.js';
 import { FunctionSurfacePlanCache, hasDocumentMath, recomputePart, type KernelBridge, type PartDocument,
   type PartRecomputeOptions, type PartRecomputeResult } from '@pointercad/model';
 import type { MathWorkerClient, MathWorkerPort } from '@pointercad/expression/math/client';
-import { createBrowserMathClient } from './createBrowserMathClient.js';
+import { createBrowserMathClient, pageMathResultMemory } from './createBrowserMathClient.js';
 import { createBrowserFunctionClient, createBrowserFunctionSurfaceClient, createBrowserImplicitSurfaceClient,
   createBrowserImplicitCurveClient, createBrowserFunctionPointContinuationClient } from './createBrowserFunctionClient.js';
 
@@ -13,8 +13,10 @@ export interface MathPartRecomputer {
   releaseOwner(bridge: KernelBridge): void;
   /** Keep the prepared idle Worker while a math editor is open; call the result when it closes. */
   holdIdleWorker(): () => void;
+  /** Lend a math editor the prepared Worker of the previous editor of this document; release it when the editor closes. */
+  acquireEditorWorker(documentId: string): MathWorkerLease;
 }
-export function createMathPartRecomputer(createClient: (createWorker: () => MathWorkerPort) => MathWorkerClient,
+export function createMathPartRecomputer(createClient: (createWorker: () => MathWorkerPort, hasWorker: () => boolean) => MathWorkerClient,
   createWorker: () => MathWorkerPort = createBrowserMathWorker): MathPartRecomputer {
   const surfacePlans = new FunctionSurfacePlanCache(), workers = createMathWorkerReuse(createWorker);
   async function compute(document: PartDocument, bridge: KernelBridge, options: PartRecomputeOptions = {}): Promise<PartRecomputeResult> {
@@ -28,7 +30,7 @@ export function createMathPartRecomputer(createClient: (createWorker: () => Math
     const isCurrent = () => !abort.signal.aborted && !options.shouldCancel?.();
     const cancelWatch = setInterval(() => { if (options.shouldCancel?.()) abort.abort(); }, 16);
     try {
-      const client = keep(createClient(lease.group.createPort));
+      const client = keep(createClient(lease.group.createPort, () => lease.group.hasWorker));
       const hasSurfaces = document.solids.some(feature => feature.kind === 'functionSurface' && !feature.suppressed);
       const curves = (hasSurfaces || document.sketches.some(sketch => sketch.features.some(feature => feature.kind === 'functionCurve')))
         && options.functions === undefined ? keep(createBrowserFunctionClient(lease.group.createPort)) : undefined;
@@ -51,6 +53,8 @@ export function createMathPartRecomputer(createClient: (createWorker: () => Math
     }
   }
   return Object.assign(compute, { releaseOwner: (bridge: KernelBridge) => { workers.clear(bridge); },
-    holdIdleWorker: () => workers.hold() });
+    holdIdleWorker: () => workers.hold(), acquireEditorWorker: (documentId: string) => workers.acquireEditor(documentId) });
 }
-export const recomputePartWithMath = createMathPartRecomputer(createBrowserMathClient);
+/** Shares validated values with the page's math editors: applying an edit already calculated its formulas. */
+export const recomputePartWithMath = createMathPartRecomputer((createWorker, hasWorker) =>
+  createBrowserMathClient(createWorker, pageMathResultMemory, hasWorker));

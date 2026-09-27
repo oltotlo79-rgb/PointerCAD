@@ -2,11 +2,14 @@
 # 検査コマンドをこのファイルへ直接書かない(rules/03-品質ゲート.md §7.2)。
 name: CI
 
+# 2026-09-27 利用者の決定「CIに任せてよい」: 手元の検査は画面検査の全件を流さないため、
+# 作業ブランチ(feature/**)へのpushでも両OSの全件を流す。手動の再実行は workflow_dispatch。
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # 最小権限(NFR-SE-2)。GITHUB_TOKEN を使うのは actions/checkout(リポジトリの取得)だけで、
 # コミット・PR・Issue・パッケージ公開など書き込みは一切行わない。

@@ -118,6 +118,30 @@ describe('一回の再計算の数値と形状の計算部を共有する', () =
     expect(await pending).toMatchObject({ status: 'deadline' }); expect(created[0].terminate).toHaveBeenCalledTimes(1);
     client.dispose(); owner.dispose();
   });
+  it('生きている実体の有無を示し、取消・期限・引退・解放の後は無いと示す', async () => {
+    vi.useFakeTimers();
+    const { owner, created } = fixture(); expect(owner.hasWorker).toBe(false);
+    const a = owner.createPort(); a.postMessage('a'); expect(owner.hasWorker).toBe(true);
+    created[0].port.onmessage?.({ data: 'a' }); a.terminate(); expect(owner.hasWorker).toBe(true);
+    const cancelled = owner.createPort(); cancelled.postMessage('cancelled'); cancelled.terminate();
+    expect(created[0].terminate).toHaveBeenCalledOnce(); expect(owner.hasWorker).toBe(false);
+    const client = new MathWorkerClient({ createWorker: owner.createPort, decodeReply: () => null });
+    const pending = client.evaluate(request, 50); expect(owner.hasWorker).toBe(true);
+    await vi.advanceTimersByTimeAsync(50); expect(await pending).toMatchObject({ status: 'deadline' });
+    expect(created[1].terminate).toHaveBeenCalledOnce(); expect(owner.hasWorker).toBe(false);
+    const retiring = owner.createPort(); retiring.postMessage('retiring');
+    Object.defineProperty(created[2].port, 'retireAfterReply', { value: true });
+    const retired = new MathWorkerClient({ createWorker: owner.createPort,
+      decodeReply: value => typeof value === 'number' ? { serial: value, result: { definition: null,
+        evaluation: { status: 'stopped', reason: 'budget' } } } : null });
+    created[2].port.onmessage?.({ data: 'retiring' }); retiring.terminate();
+    const result = retired.evaluate(request, 5000); created[2].port.onmessage?.({ data: 1 });
+    expect(await result).toMatchObject({ status: 'result' }); expect(created[2].terminate).toHaveBeenCalledOnce();
+    expect(owner.hasWorker).toBe(false);
+    const last = owner.createPort(); last.postMessage('last'); expect(owner.hasWorker).toBe(true);
+    owner.dispose(); expect(owner.hasWorker).toBe(false);
+    client.dispose(); retired.dispose();
+  });
   it('依頼の重複とクライアント数の上限を拒否して待ち行列を増やし続けない', () => {
     const { owner } = fixture(), ports = Array.from({ length: 16 }, owner.createPort);
     expect(() => owner.createPort()).toThrow(); ports[0].postMessage('first');

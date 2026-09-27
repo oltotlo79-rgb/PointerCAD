@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { CAPTURE_REGISTRY_FORMAT, CAPTURE_UNKNOWN_REASONS, CAPTURE_VIEWPORT_POLICY } from '../../../../scripts/manual/captureRegistry.mjs';
@@ -10,12 +11,14 @@ import { desktopPackagePlan, verifyDesktopPackageArtifacts } from '../../../../s
 import { createReleaseManifest } from '../../../../scripts/release/releaseManifest.mjs';
 import type { ReleaseCandidateInput } from '../../../../scripts/release/releaseManifest.mjs';
 import {
-  MANUAL_CHECK_IDS, PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES, RELEASE_LINKS_END, RELEASE_LINKS_START, RELEASE_READINESS_CHECK_IDS, RELEASE_READINESS_EXIT,
-  ReleaseReadinessUsageError, captureFreshnessFromRegistry, checkReadmeReleaseLinks, evaluateReleaseReadiness, formatReleaseReadinessReport,
-  parseReleaseReadinessArguments, runReleaseReadiness,
+  DESKTOP_DEFERRED_CHECK_IDS, MANUAL_CHECK_IDS, PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES, POST_RELEASE_DESKTOP_CHECK_IDS, RELEASE_LINKS_END,
+  RELEASE_LINKS_START, RELEASE_READINESS_CHECK_IDS, RELEASE_READINESS_EXIT, ReleaseReadinessUsageError, WEB_DEFERRED_PHRASE,
+  captureFreshnessFromRegistry, checkReadmeReleaseLinks, createReleaseDownloader, evaluateReleaseReadiness, formatReleaseReadinessReport,
+  manualPdfReleaseAssetName, parseReleaseReadinessArguments, runReleaseReadiness,
 } from '../../../../scripts/release/releaseReadiness.mjs';
 import type {
-  CaptureFreshnessHook, CaptureFreshnessRequest, CurrentHelpEdition, ManualReleaseInput, PreReleaseInput, ReleaseReadinessReport,
+  CaptureFreshnessHook, CaptureFreshnessRequest, CurrentHelpEdition, ManualReleaseInput, PostReleaseDesktopInput, PreReleaseInput,
+  ReleaseDownloadHook, ReleaseReadinessReport,
 } from '../../../../scripts/release/releaseReadiness.mjs';
 import { assembleSbomDocument } from '../../../../scripts/release/sbom.mjs';
 import { assembleOfflineDistribution } from '../../../../scripts/vite/offlineDistribution.mjs';
@@ -203,6 +206,16 @@ function readmeFor(installerUrl = `${DOWNLOAD}/${INSTALLER.name}`): string {
     `| Linux版のAppImageをダウンロード | [${APP_IMAGE.name}](${DOWNLOAD}/${APP_IMAGE.name}) |`,
     `| 取扱説明書を読む・ダウンロード（HTML / PDF） | [HTML の目次](${SITE}/manual/) ・ PDF: ${pdf} |`,
     `| Webアプリ版をブラウザで使う | [${SITE}/](${SITE}/) |`, RELEASE_LINKS_END, ''].join('\n');
+}
+/** README.md's release-links region for the desktop-first release: the Web row deferred, the manual as PDF volumes of the Release. */
+function desktopReadme(): string {
+  const pdf = BASE.volumes.map(volume => `[${volume.title}](${DOWNLOAD}/${manualPdfReleaseAssetName(version, volume.id)})`).join(' ・ ');
+  return ['# PointerCAD', '', RELEASE_LINKS_START, '| 利用方法 | 公開先 |', '|---|---|',
+    `| Windows版のインストーラーをダウンロード | [${INSTALLER.name}](${DOWNLOAD}/${INSTALLER.name}) |`,
+    `| Windowsポータブル版をダウンロード | [${PORTABLE.name}](${DOWNLOAD}/${PORTABLE.name}) |`,
+    `| Linux版のAppImageをダウンロード | [${APP_IMAGE.name}](${DOWNLOAD}/${APP_IMAGE.name}) |`,
+    `| 取扱説明書（PDF 全7巻。アプリ内のヘルプでも読めます） | ${pdf} |`,
+    `| Webアプリ版をブラウザで使う | ${WEB_DEFERRED_PHRASE}（公開したらここにリンクを掲載します） |`, RELEASE_LINKS_END, ''].join('\n');
 }
 
 const freshCaptures: CaptureFreshnessHook = () => ({ stale: [], unregistered: [] });
@@ -557,5 +570,251 @@ describe('説明書モード（P12-20）: 生成した説明書だけを、公�
     expect(text).toContain('PointerCAD 説明書の整合検査（説明書モード・P12-20）');
     expect(text).toContain('[合格] 説明書② 操作名・ボタン名が今の画面の文言と一致する — 画面の文言の参照 4件・本文に直接書いたボタン名 2件');
     expect(text).toContain('終了コード 0（説明書の整合4条件と出力全体の一致を満たす）');
+  });
+});
+
+describe('デスクトップ先行（--scope desktop。2026-09-27 の利用者の指示）: Web 版の公開を待たずにデスクトップ版を判定する', () => {
+  const WEB_ROW = `| Webアプリ版をブラウザで使う | ${WEB_DEFERRED_PHRASE}（公開したらここにリンクを掲載します） |`;
+  const change = (readme: string, from: string, to: string) => {
+    if (!readme.includes(from)) throw new Error(`Missing fixture text: ${from}`);
+    return readme.replace(from, to);
+  };
+  const desktopCandidateInput = async (readme = desktopReadme()): Promise<PreReleaseInput> => ({ ...await buildCandidate({ readme }), scope: 'desktop' });
+
+  it('正しい一式と Desktop 先行の README なら、Web のファイルの上限の2項目だけ後回しにして全14項目を判定し、終了コード0', async () => {
+    const report = await evaluateReleaseReadiness(await desktopCandidateInput());
+    expect(report.scope).toBe('desktop');
+    expect(report.checks.map(check => check.id)).toEqual(RELEASE_READINESS_CHECK_IDS);
+    expect(report.checks.filter(check => check.status === 'deferred').map(check => check.id)).toEqual([...DESKTOP_DEFERRED_CHECK_IDS]);
+    expect(report.checks.filter(check => check.status !== 'pass' && check.status !== 'deferred')
+      .map(check => `${check.id}: ${check.problems.join(' / ')}`)).toEqual([]);
+    expect(report.summary).toEqual({ pass: 12, fail: 0, pending: 0, notImplemented: 0, deferred: 2 });
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.ready);
+    expect(report.releaseCertified).toBe(false);
+    const text = formatReleaseReadinessReport(report);
+    expect(text).toContain('PointerCAD 公開前の整合検査（公開前モード・デスクトップ先行（Web 版の項目は後回し））');
+    expect(text).toContain('[後回し] 資産 Web の各ファイルが 26,214,400 バイト以下 — Web 版の公開時に判定する');
+    expect(text).toContain('・後回し 2 → 終了コード 0（デスクトップ版の公開前の全項目を満たす（Web 版の項目は後回し））');
+  });
+
+  it('全体モード（既定と --scope all）は同じ README を今までどおり落とす: Web アプリ版と説明書の HTML を要求し、「後日公開」と Release の PDF を拒否する', async () => {
+    for (const scope of [undefined, 'all'] as const) {
+      const input = await buildCandidate({ readme: desktopReadme() });
+      const report = await evaluateReleaseReadiness(scope === undefined ? input : { ...input, scope });
+      expect(report.scope).toBe('all');
+      expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+      expect(statusOf(report, 'readme-links')).toBe('fail');
+      for (const message of [`未公開の案内が残っている: 「${WEB_DEFERRED_PHRASE}」`, '導線が無い: Web アプリ版', '導線が無い: 取扱説明書の HTML（目次）',
+        `配布対象版の配布物でない: ${manualPdfReleaseAssetName(version, 'getting-started')}`]) expect(problemsOf(report, 'readme-links')).toContain(message);
+      expect(DESKTOP_DEFERRED_CHECK_IDS.map(id => statusOf(report, id))).toEqual(['pass', 'pass']);
+    }
+    const volumeIds = BASE.volumes.map(volume => volume.id);
+    expect(checkReadmeReleaseLinks(desktopReadme(), { version, volumeIds }).problems).not.toEqual([]);
+    expect(checkReadmeReleaseLinks(desktopReadme(), { version, volumeIds, scope: 'desktop' }).problems).toEqual([]);
+  });
+
+  it('Web のファイルの上限の超過は、Desktop 先行では後回し（今の判定を参考に残す）、全体モードでは今までどおり不合格', async () => {
+    const input = await desktopCandidateInput();
+    const webFiles = [...required(input.webFiles), { path: 'assets/huge.bin', bytes: new Uint8Array(PAGES_MAX_FILE_BYTES + 1) }];
+    const desktop = await evaluateReleaseReadiness({ ...input, webFiles });
+    expect(statusOf(desktop, 'asset-size')).toBe('deferred');
+    expect(problemsOf(desktop, 'asset-size')).toBe('');
+    expect(desktop.checks.find(check => check.id === 'asset-size')?.notes.join('\n'))
+      .toContain('Web 版の公開時に直す（今の判定）: 大きさの超過: assets/huge.bin 26,214,401 バイト');
+    const all = await evaluateReleaseReadiness({ ...input, scope: 'all', webFiles });
+    expect(statusOf(all, 'asset-size')).toBe('fail');
+    expect(problemsOf(all, 'asset-size')).toContain('大きさの超過: assets/huge.bin 26,214,401 バイト');
+  });
+
+  it.each([
+    { name: '説明書の PDF の1巻の欠け', message: '導線が無い: 取扱説明書の PDF（drawing）',
+      readme: () => change(desktopReadme(), ` ・ [図面・寸法・製図記号](${DOWNLOAD}/${manualPdfReleaseAssetName(version, 'drawing')})`, '') },
+    { name: 'インストーラーの未公開の案内', message: '導線が無い: Windows のインストーラー',
+      readme: () => change(desktopReadme(), `[${INSTALLER.name}](${DOWNLOAD}/${INSTALLER.name})`, '初回リリース時にダウンロードリンクを掲載') },
+    { name: 'Web アプリ版以外の行の「後日公開」', message: `「${WEB_DEFERRED_PHRASE}」は Web アプリ版の行だけに書ける: 「Linux版のAppImageをダウンロード」`,
+      readme: () => change(desktopReadme(), `[${APP_IMAGE.name}](${DOWNLOAD}/${APP_IMAGE.name})`, WEB_DEFERRED_PHRASE) },
+    { name: 'Web アプリ版の行に導線も「後日公開」も無い', message: `導線が無い: Web アプリ版（公開前は Web アプリ版の行に「${WEB_DEFERRED_PHRASE}」と書く）`,
+      readme: () => change(desktopReadme(), WEB_ROW, '| Webアプリ版をブラウザで使う | Web版は別の機会に |') },
+    { name: '後日公開とした区間の Web の公開先への導線', message: `Web 版を「${WEB_DEFERRED_PHRASE}」とした区間に Web の公開先への導線がある: ${SITE}`,
+      readme: () => change(desktopReadme(), '| 取扱説明書（PDF 全7巻。アプリ内のヘルプでも読めます） | ',
+        `| 取扱説明書（PDF 全7巻。アプリ内のヘルプでも読めます） | [HTML の目次](${SITE}/manual/) ・ `) },
+    { name: '後日公開の行の導線', message: `「${WEB_DEFERRED_PHRASE}」の行に導線がある`,
+      readme: () => change(desktopReadme(), WEB_ROW, `| Webアプリ版をブラウザで使う | ${WEB_DEFERRED_PHRASE}（[${SITE}/](${SITE}/)） |`) },
+    { name: '別の版の Release の PDF', message: '配布対象版と違うタグ',
+      readme: () => change(desktopReadme(), `${DOWNLOAD}/${manualPdfReleaseAssetName(version, 'assembly')}`,
+        `https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v0.9.0/${manualPdfReleaseAssetName(version, 'assembly')}`) },
+    { name: '今の目録に無い巻の PDF', message: '今の目録に無い巻への導線',
+      readme: () => change(desktopReadme(), manualPdfReleaseAssetName(version, 'sheet-and-scripting'), manualPdfReleaseAssetName(version, 'ghost')) },
+  ])('Desktop の条件の欠け（$name）は Desktop 先行でも0以外', async ({ message, readme }) => {
+    const report = await evaluateReleaseReadiness(await desktopCandidateInput(readme()));
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+    expect(statusOf(report, 'readme-links')).toBe('fail');
+    expect(problemsOf(report, 'readme-links')).toContain(message);
+  });
+
+  it('Desktop 先行でも Web の上限以外は緩めない: 版の違い・Web 候補の巻の欠け・SBOM の原文の欠け・撮影の登録簿の未接続は今までどおり', async () => {
+    const input = await desktopCandidateInput();
+    const versions = await evaluateReleaseReadiness({ ...input, packageFiles: { ...input.packageFiles, web: packageJson('@pointercad/web', '1.0.1') } });
+    expect([statusOf(versions, 'versions'), versions.exitCode]).toEqual(['fail', RELEASE_READINESS_EXIT.failed]);
+    const volumes = await evaluateReleaseReadiness({ ...input, webFiles: required(input.webFiles).filter(file => file.path !== 'manual/pdf/drawing.pdf') });
+    expect(problemsOf(volumes, 'volumes')).toContain('1巻の欠落: Web に「図面・寸法・製図記号」（drawing）の PDF が無い');
+    expect(volumes.exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+    const sbom = await evaluateReleaseReadiness({ ...await buildCandidate({ readme: desktopReadme(), unresolvedNotices: ['missing-package@1.0.0'] }), scope: 'desktop' });
+    expect([statusOf(sbom, 'sbom-notices'), sbom.exitCode]).toEqual(['fail', RELEASE_READINESS_EXIT.failed]);
+    const pending = await evaluateReleaseReadiness({ ...input, captureFreshness: null });
+    expect([statusOf(pending, 'manual-images'), pending.exitCode]).toEqual(['pending', RELEASE_READINESS_EXIT.pending]);
+  });
+
+  it('Web 版を公開した後の README（全体モードの一式）も Desktop 先行で合格する（Web の導線と説明書の目次を今までどおり照合する）', async () => {
+    const report = await evaluateReleaseReadiness(await desktopCandidateInput(readmeFor()));
+    expect(statusOf(report, 'readme-links')).toBe('pass');
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.ready);
+    const withoutContents = change(readmeFor(), `[HTML の目次](${SITE}/manual/) ・ `, '');
+    expect(checkReadmeReleaseLinks(withoutContents, { version, volumeIds: BASE.volumes.map(volume => volume.id), scope: 'desktop' }).problems)
+      .toEqual(['導線が無い: 取扱説明書の HTML（目次）（Web 版を公開したなら説明書の目次も載せる）']);
+  });
+
+  it('説明書の PDF を Release に置く名前は版と巻から1通りに決まり、形の違う版・巻を拒否する。説明書モードに Desktop 先行は無い', async () => {
+    expect(manualPdfReleaseAssetName('1.0.0', 'drawing')).toBe('PointerCAD-1.0.0-manual-drawing.pdf');
+    expect(() => manualPdfReleaseAssetName('v1.0.0', 'drawing')).toThrow('版の形が違う');
+    expect(() => manualPdfReleaseAssetName('1.0.0', '../drawing')).toThrow('巻の名前の形が違う');
+    const manual = { mode: 'manual', scope: 'desktop', manualFiles: files(generateManual(BASE).manual), currentHelp: currentHelpOf(BASE),
+      captureFreshness: freshCaptures } as const;
+    // The type has no scope for manual mode; a caller written in JavaScript can still pass one, and it is refused.
+    await expect(evaluateReleaseReadiness(manual as ManualReleaseInput)).rejects.toThrow('Manual mode has no desktop scope');
+  });
+
+  it('引数: --scope は all・desktop だけ。公開後の desktop は --web-url を取らず --download-url を要し、全体の公開後は今までどおり --web-url を要する', () => {
+    const names = ['--windows', 'desktop-stage-windows', '--linux', 'desktop-stage-linux', '--web', 'web-candidate',
+      '--release', 'release-output', '--sbom', 'sbom-output'];
+    expect(parseReleaseReadinessArguments(names).scope).toBe('all');
+    expect(parseReleaseReadinessArguments(['--scope', 'desktop', ...names])).toMatchObject({ mode: 'pre-release', scope: 'desktop', web: 'web-candidate' });
+    const post = ['--mode', 'post-release', '--scope', 'desktop', '--release', 'release-output', '--download-url', `${DOWNLOAD}/`];
+    const options = parseReleaseReadinessArguments(post);
+    expect(options).toMatchObject({ mode: 'post-release', scope: 'desktop', release: 'release-output', downloadUrl: `${DOWNLOAD}/` });
+    expect(options.webUrl).toBeUndefined();
+    for (const args of [['--scope', 'web', ...names], ['--mode', 'manual', '--scope', 'desktop', '--manual', 'manual-preview'],
+      ['--mode', 'manual', '--scope', 'all', '--manual', 'manual-preview'], [...post, '--web-url', `${SITE}/`], post.slice(0, 6),
+      ['--mode', 'post-release', '--scope', 'desktop', '--release', 'release-output', '--download-url', 'https://github.com/o/r/releases/latest/'],
+      ['--mode', 'post-release', '--release', 'release-output', '--download-url', `${DOWNLOAD}/`]]) {
+      expect(() => parseReleaseReadinessArguments(args)).toThrow(ReleaseReadinessUsageError);
+    }
+  });
+});
+
+describe('公開後モードの Desktop 部分（P13-20 の Desktop 側）: GitHub Release から取得して公開一覧と README を照合する', () => {
+  const RELEASE_BASE = `${DOWNLOAD}/`;
+  /** The GitHub Release as the coordinator publishes it: the three packages and the Web candidate's PDF volumes, renamed. */
+  async function publishedRelease() {
+    const input = await buildCandidate();
+    const releaseManifest = required(input.releaseManifest);
+    const manifest = JSON.parse(new TextDecoder().decode(releaseManifest)) as { manual: { volumes: { id: string; pdf: string }[] } };
+    const web = new Map(required(input.webFiles).map(file => [file.path, file.bytes] as const));
+    const assets = new Map<string, Uint8Array>();
+    for (const item of [...desktopPackagePlan('win32', version), ...desktopPackagePlan('linux', version)]) assets.set(item.name, bytes(item.name));
+    for (const volume of manifest.manual.volumes) assets.set(manualPdfReleaseAssetName(version, volume.id), required(web.get(volume.pdf) ?? null));
+    return { releaseManifest, assets };
+  }
+  /** A fake GitHub Release: 200 with the asset's size and SHA-256, 404 for anything else; records every request. */
+  const fakeRelease = (assets: ReadonlyMap<string, Uint8Array>, requested: string[] = []): ReleaseDownloadHook => url => {
+    requested.push(url);
+    const body = url.startsWith(RELEASE_BASE) ? assets.get(decodeURIComponent(url.slice(RELEASE_BASE.length))) : undefined;
+    return body === undefined ? { status: 404, bytes: 0, sha256: null } : { status: 200, bytes: body.length, sha256: hash(body) };
+  };
+  const postInput = (release: Awaited<ReturnType<typeof publishedRelease>>, overrides: Partial<PostReleaseDesktopInput> = {}): PostReleaseDesktopInput => ({
+    mode: 'post-release', scope: 'desktop', releaseManifest: release.releaseManifest, downloadUrl: RELEASE_BASE, readme: desktopReadme(),
+    download: fakeRelease(release.assets), ...overrides });
+
+  it('公開した Release が公開一覧と一致すれば、配布物3種と PDF 7巻を1回ずつ取得し、README の導線も合格、Web は後回しで終了コード0', async () => {
+    const release = await publishedRelease(), requested: string[] = [];
+    const report = await evaluateReleaseReadiness(postInput(release, { download: fakeRelease(release.assets, requested) }));
+    expect(report.checks.map(check => check.id)).toEqual(POST_RELEASE_DESKTOP_CHECK_IDS);
+    expect(report.checks.map(check => `${check.id}:${check.status}:${check.problems.join(' / ')}`))
+      .toEqual(['post-release-assets:pass:', 'post-release-readme:pass:', 'post-release-web:deferred:']);
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.ready);
+    expect(report.scope).toBe('desktop');
+    expect(requested).toHaveLength(10);
+    expect(new Set(requested).size).toBe(10);
+    expect(report.checks[0]?.summary).toBe(`配布物 3件・説明書の PDF 7巻を ${RELEASE_BASE} から取得して照合`);
+    expect(report.checks[1]?.summary).toContain('README の Desktop の導線 10件を取得して照合');
+    expect(formatReleaseReadinessReport(report))
+      .toContain('終了コード 0（公開した Release の配布物・説明書の PDF・README の Desktop の導線が公開一覧と一致する（Web 版は後回し））');
+  });
+
+  it.each([
+    { name: '差し替わった PDF', id: 'post-release-assets', message: `hash の違い: ${manualPdfReleaseAssetName(version, 'drawing')}`,
+      change: (assets: Map<string, Uint8Array>) => { assets.set(manualPdfReleaseAssetName(version, 'drawing'), bytes('%PDF-1.7 drawing (older)')); } },
+    { name: '置き忘れたポータブル版', id: 'post-release-assets', message: `取得できない: ${PORTABLE.name}（${DOWNLOAD}/${PORTABLE.name}）: HTTP 404`,
+      change: (assets: Map<string, Uint8Array>) => { assets.delete(PORTABLE.name); } },
+    { name: '差し替わったインストーラー（README の導線でも）', id: 'post-release-readme', message: `README の導線: hash の違い: ${INSTALLER.name}`,
+      change: (assets: Map<string, Uint8Array>) => { assets.set(INSTALLER.name, bytes(`${INSTALLER.name} rebuilt`)); } },
+  ])('$name は0以外で理由を示す', async ({ id, message, change }) => {
+    const release = await publishedRelease();
+    const assets = new Map(release.assets);
+    change(assets);
+    const report = await evaluateReleaseReadiness(postInput(release, { download: fakeRelease(assets) }));
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+    expect(statusOf(report, id)).toBe('fail');
+    expect(problemsOf(report, id)).toContain(message);
+  });
+
+  it('別の版の Release・別の置き場への README の導線・通信の失敗・読めない入力は0以外', async () => {
+    const release = await publishedRelease();
+    const otherBase = 'https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/';
+    const otherTag = await evaluateReleaseReadiness(postInput(release, { downloadUrl: otherBase }));
+    expect(problemsOf(otherTag, 'post-release-assets')).toContain(`公開一覧の版 v1.0.0 と違う Release: ${otherBase}`);
+    expect(problemsOf(otherTag, 'post-release-readme')).toContain(`公開した Release と違う置き場への導線: ${DOWNLOAD}/${INSTALLER.name}`);
+    const fork = `https://github.com/someone-else/PointerCAD/releases/download/v${version}/${INSTALLER.name}`;
+    const moved = await evaluateReleaseReadiness(postInput(release, { readme: desktopReadme().replace(`(${DOWNLOAD}/${INSTALLER.name})`, `(${fork})`) }));
+    expect(statusOf(moved, 'post-release-assets')).toBe('pass');
+    expect(problemsOf(moved, 'post-release-readme')).toContain(`公開した Release と違う置き場への導線: ${fork}`);
+    expect(problemsOf(moved, 'post-release-readme')).toContain('配布物の置き場が複数のリポジトリにある');
+    const offline = await evaluateReleaseReadiness(postInput(release, { download: () => { throw new Error('ECONNRESET'); } }));
+    expect(problemsOf(offline, 'post-release-assets')).toContain(`取得できない: ${INSTALLER.name}（${DOWNLOAD}/${INSTALLER.name}）: ECONNRESET`);
+    const unreadable = await evaluateReleaseReadiness(postInput(release, { releaseManifest: null, readme: null,
+      readErrors: { releaseManifest: 'ENOENT: dist/release-output', readme: 'ENOENT: README.md' } }));
+    expect(unreadable.checks.map(check => check.status)).toEqual(['fail', 'fail', 'deferred']);
+    expect(problemsOf(unreadable, 'post-release-assets')).toContain('ENOENT: dist/release-output');
+    expect(problemsOf(unreadable, 'post-release-readme')).toContain('ENOENT: README.md');
+    for (const report of [otherTag, moved, offline, unreadable]) expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.failed);
+  });
+
+  it('入口: dist/<名前>/release-manifest.json と README.md を読み、注入した取得で判定して一覧を出す', async () => {
+    const release = await publishedRelease();
+    const temporaryRoot = mkdtempSync(join(resolve(tmpdir()), 'pointercad-post-release-'));
+    try {
+      mkdirSync(join(temporaryRoot, 'dist', 'release-output'), { recursive: true });
+      writeFileSync(join(temporaryRoot, 'dist', 'release-output', 'release-manifest.json'), release.releaseManifest);
+      writeFileSync(join(temporaryRoot, 'README.md'), desktopReadme());
+      const lines: string[] = [];
+      const code = await runReleaseReadiness(['--mode', 'post-release', '--scope', 'desktop', '--release', 'release-output', '--download-url', RELEASE_BASE],
+        { root: temporaryRoot, write: text => { lines.push(text); }, download: fakeRelease(release.assets) });
+      expect(code).toBe(RELEASE_READINESS_EXIT.ready);
+      const text = lines.join('\n');
+      expect(text).toContain('PointerCAD 公開後の確認（公開後モード・デスクトップ先行（Web 版の項目は後回し））');
+      expect(text).toContain(`対象: dist/release-output ・ ${RELEASE_BASE}`);
+      expect(text).toContain('[後回し] 公開後 Web 版と説明書の HTML を公開先から取得して照合する');
+    } finally { rmSync(temporaryRoot, { recursive: true, force: true }); }
+  });
+
+  it('実際の取得: 転送先へ進んで本文を流しながら hash を取り、200 以外は本文を読まずに状態だけ返し、上限を超えたら止める', async () => {
+    const requests: { url: string; redirect: RequestRedirect | undefined }[] = [];
+    const download = createReleaseDownloader({ fetch: (url, init) => {
+      const target = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
+      requests.push({ url: target, redirect: init?.redirect });
+      return Promise.resolve(target.endsWith('missing.pdf') ? new Response('not found', { status: 404 }) : new Response(bytes('PointerCAD package')));
+    } });
+    await expect(Promise.resolve(download(`${DOWNLOAD}/${INSTALLER.name}`))).resolves.toEqual({ status: 200, bytes: 18, sha256: hash('PointerCAD package') });
+    await expect(Promise.resolve(download(`${DOWNLOAD}/missing.pdf`))).resolves.toEqual({ status: 404, bytes: 0, sha256: null });
+    expect(requests).toEqual([{ url: `${DOWNLOAD}/${INSTALLER.name}`, redirect: 'follow' }, { url: `${DOWNLOAD}/missing.pdf`, redirect: 'follow' }]);
+    const small = createReleaseDownloader({ maxBytes: 4, fetch: () => Promise.resolve(new Response(bytes('too large'))) });
+    await expect(Promise.resolve(small(`${DOWNLOAD}/${INSTALLER.name}`))).rejects.toThrow('大きすぎる');
+  });
+
+  it('全体の公開後モード（Web を含む）は今までどおり未実装で終了コード3', async () => {
+    const release = await publishedRelease();
+    const report = await evaluateReleaseReadiness({ mode: 'post-release', releaseManifest: release.releaseManifest, webUrl: `${SITE}/`, downloadUrl: RELEASE_BASE });
+    expect(report.checks.map(check => `${check.id}:${check.status}`)).toEqual(['post-release:not-implemented']);
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.notImplemented);
   });
 });

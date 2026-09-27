@@ -27,6 +27,23 @@ node scripts/release/build-release-manifest.mjs <windows-stage> <linux-stage> <w
 
 後続の検査は`scripts/release/releaseManifest.mjs`の`verifyReleaseManifest`に保存済みJSONと同じ入力を渡して再照合できる。`web.files`はPagesへの全ファイル、`manual.volumes`はHTML/PDF全巻、`desktop.windows/linux.assets`はダウンロード対象の一覧。`releaseCertified: false`は公開前の実起動・リンク・説明書整合の認定を別の工程へ残す。
 
+### 束ねた公開manifest（P13-1・P13-3）
+
+`--sbom <sbom-output>`を付けると、同じ入力から`release-manifest.json`に加えて`publication-manifest.json`（形式`pointercad-publication/1`）も同じフォルダーへ書く。先に`build-sbom.mjs`で`dist/<sbom-output>/sbom.json`を作っておく。付けない場合の動きと`release-manifest.json`の中身は従来と同じ。
+
+```powershell
+node scripts/release/build-sbom.mjs sbom-output
+node scripts/release/build-release-manifest.mjs desktop-stage-windows desktop-stage-linux web-candidate release-output [v<version>] --sbom sbom-output
+```
+
+判定は`scripts/release/publicationManifest.mjs`の`createPublicationManifest`。既存の記録の形式は変えず、束ねる側だけを足した。1つでも外れたら何も書かずに止まる。
+
+- 束ねるもの: `release-manifest.json`（候補2つ・`web-build.json`・`offline-assets.json`・説明書の版をすでに束ねている。配布物から作り直して一致を確かめてから使う）、`sbom.json`（版・commit・原文の欠け・配布ファイルの照合）、撮影の登録簿`packages/help-content/docs/ja/images/capture-manifest.json`。それぞれのSHA-256を記録する。自分自身のhashは記録しない。
+- 大きさ: Webの全ファイルを区分（`occt`・`exact-math`・`script-vm`・`fonts`・`manual-pdf`・`manual`・`licenses`・`control`・`application`）ごとに数とバイト数で記録し、1ファイル26,214,400バイト以下・1,000ファイル以下（Pagesの管理画面からの直接アップロード。`docs/standards/cloudflare-pages.md`）と、配布物1つが2GiB未満（GitHub Releases）を確かめる。上限の値は公開前検査（`releaseReadiness.mjs`の`PAGES_MAX_FILE_BYTES`・`PAGES_MAX_FILES`）と同じであることを単体検査で固定している。
+- 復元: `occt/manifest.json`の片をWebの読込みと同じくgzipとして明示的に展開し、記録の大きさ・SHA-256、WebAssemblyの先頭と一致すること、Windows・Linuxの候補に入っている展開済みの核と同じであることを確かめる。途中で切れた片、解凍済みのまま置かれた片、2回圧縮した片、記録より大きく展開される片は、それぞれ理由を付けて拒否する。`_headers`が`/occt/`の片へ`Content-Encoding`を付ける設定（通信の途中で解凍され、読込み側で2回目の解凍になる）と、`application/octet-stream`で配らない設定も拒否する。
+- 計算部: 追加計算部（`exact-math/runtime/pyodide.asm.wasm`）と自動作図の実行部（`assets/quickjs-pcad-*.wasm`）がWebにあり、両OSの候補と同じ内容であること、字体のファイルがあること、全巻のHTMLとPDFがそろっていることを確かめ、SBOMから核・計算部・数式入力の版（`opencascade.js`・`Pyodide`・`sympy`・`mpmath`・`quickjs-pcad.wasm`・`mathlive`）を読んで記録する。
+- 保存済みの`publication-manifest.json`は`verifyPublicationManifest`に同じ入力を渡して作り直し、1か所でも違えば拒否する。`releaseCertified: false`のままで、公開の可否は公開前検査（P13-15）と公開後の確認（P13-20）で決める。
+
 ## SBOM・ライセンス一覧の作成（P13-6）
 
 配布に入る直接・推移のnpm依存、数式字体・画面用字体、自動作図(QuickJS-ng)の実行部、追加計算部(Pyodide/SymPy/mpmath等)の固定資産を、既存の`scripts/vite/mathNotices.mjs`・`runtimeNotices.mjs`・`scriptRuntimeNotices.mjs`・`exactMathAssets.mjs`の検査結果から集め、1つのCycloneDX形式`sbom.json`にまとめる。生成やビルドは行わず、既存の記録を読むだけ。
@@ -113,16 +130,17 @@ READMEの導線の約束(正本は`releaseReadiness.mjs`の`README_LINK_ROWS`と
 - 行の種類は行の見出し(表なら1列目)の語で決める: 「インストーラ」→Windowsのインストーラー、「ポータブル」→Windowsのポータブル版、「AppImage」→Linux、「説明書」→取扱説明書、「Webアプリ」「ブラウザ」→Web版。導線の種類はURLで決め、行の種類と違う導線(例: インストーラーの行にポータブル版のURL)を拒否する。
 - 配布物は`https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/<配布物の名前>`。タグと名前の版は公開する版と同じにする(`latest`は不可)。3つとも同じリポジトリに置く。
 - 説明書は`https://<公開先>/manual/`(HTMLの目次)と、全巻の`https://<公開先>/manual/pdf/<巻>.pdf`。Web版は`https://<公開先>/`。Web・説明書の公開先は1つにそろえる。
-- 各種類は1つずつ(PDFは巻ごとに1つ)。「初回リリース時」「準備中」「予定」「未公開」などの未公開の案内、仮の公開先(example.com・localhost・IPアドレス等)、httpsでない導線を拒否する。実際に取得できるかは確かめない(公開後モードで確かめる)。
+- 各種類は1つずつ(PDFは巻ごとに1つ)。「初回リリース時」「準備中」「予定」「未公開」「後日公開」などの未公開の案内、仮の公開先(example.com・localhost・IPアドレス等)、httpsでない導線を拒否する。実際に取得できるかは確かめない(公開後モードで確かめる)。
+- デスクトップ先行(`-Scope Desktop`)では約束の一部が変わる(下の「デスクトップ先行」)。
 
 終了コード:
 
 | コード | 意味 |
 |---|---|
-| 0 | 全項目合格 |
+| 0 | 全項目合格(`-Scope Desktop`では[後回し]の項目を除く全項目) |
 | 1 | 1件以上の不合格(読めない候補を含む) |
 | 2 | 不合格は無いが、未接続の条件(保留)がある。公開できるとは判定しない |
-| 3 | 公開後モードは未実装 |
+| 3 | 公開後モードの全体(Webを含む)は未実装。デスクトップ部分は`-Scope Desktop`で判定する |
 | 64 | 引数の誤り |
 | 70 | 内部の誤り |
 
@@ -141,4 +159,33 @@ node scripts/release/releaseReadiness.mjs --mode manual --manual manual-preview-
 - 終了コードは下の表と同じ(0は説明書の5項目の合格。公開の可否は公開前モードで判定する)。
 - 欠章・異なる題・誤ボタン名・旧画像・孤立機能を1つずつ入れた説明書の写しがそれぞれ0以外になることは、`apps/desktop/src/main/releaseReadiness.test.ts`の「説明書モード(P12-20)」で通常の単体検査として確かめる。
 
-公開後モード(`-Mode PostRelease -Release <名前> -WebUrl https://<公開先>/ -DownloadUrl https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/`)は、実際のURLから配布物・説明書・Webを取得してhashを公開一覧と照合する入口として、引数の形だけを受け付ける。中身はP13-20で実装する。それまでは「未実装」で終了コード3を返す。
+### デスクトップ先行(`-Scope Desktop`。2026-09-27〜)
+
+利用者の指示「最優先でデスクトップアプリのリリースをすること」「Webアプリ側は進めるがデスクトップアプリのリリースは止めないこと」(2026-09-27 17:3x、`rules/01-役割と委譲.md`冒頭)により、デスクトップ版をWeb版より先に公開する。Web版の公開の条件は消さずに「後回し」と判定し、`-Scope`を付けない全体モードは上のとおりWeb版を含む全条件を要求する。手順全体は`docs/releases/release-checklist.md`の「デスクトップ先行の公開」。
+
+```powershell
+# 公開前(同じ5つの候補。Web候補は公開一覧と説明書のPDFの元なので、デスクトップ先行でも作る)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 -Scope Desktop -Windows desktop-stage-windows -Linux desktop-stage-linux -Web web-candidate -Release release-output -Sbom sbom-output
+node scripts/release/releaseReadiness.mjs --mode pre-release --scope desktop --windows desktop-stage-windows --linux desktop-stage-linux --web web-candidate --release release-output --sbom sbom-output
+# 公開後(GitHub Releaseから取得する。--web-urlは取らない)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 -Mode PostRelease -Scope Desktop -Release release-output -DownloadUrl https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v<版>/
+node scripts/release/releaseReadiness.mjs --mode post-release --scope desktop --release release-output --download-url https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v<版>/
+```
+
+公開前モードで変わるもの(正本は`releaseReadiness.mjs`の`DESKTOP_DEFERRED_CHECK_IDS`・`checkReadmeReleaseLinks`):
+
+- 14項目を全て判定する。Web版の公開だけが要る「資産の大きさ・数」(Cloudflareの上限)の2項目は[後回し]と表示し、今の判定を参考に残して終了コードを止めない。ほかの12項目(説明書の5項目、版、公開用の版、全巻〔Web候補を含む〕、SBOM、公開一覧、README)は全体モードと同じ判定で、1つでも外れれば0以外。
+- READMEの導線: 配布物3つは全体モードと同じ。取扱説明書は同じGitHub Releaseに添付したPDF全巻(`https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/PointerCAD-<版>-manual-<巻>.pdf`。名前は`manualPdfReleaseAssetName`)で満たし、Webの説明書の目次は求めない。Webアプリ版の行は`後日公開`(`WEB_DEFERRED_PHRASE`)とだけ書いてリンクを置かないか、公開後なら実際のリンクを置く(そのときは説明書の目次も要る)。`後日公開`はWebアプリ版の行の外、リンクと同じ行、Webの公開先へのリンクと同じ区間では不合格。全体モードでは`後日公開`もGitHubのPDFも不合格(今までどおりWebアプリ版と説明書の目次を要求する)。
+
+公開後モードのデスクトップ部分(P13-20のDesktop側)は3項目:
+
+| 項目 | 検査すること |
+|---|---|
+| 公開後 配布物 | `dist/<名前>/release-manifest.json`の配布物3つ(`desktop.windows/linux.assets`)と、説明書の全巻のPDF(`web.files`の`manual/pdf/<巻>.pdf`を`PointerCAD-<版>-manual-<巻>.pdf`として)を`--download-url`から1つずつ取得し(GitHubの転送先へ進み、本文を流しながらSHA-256を取る。1ファイル2GiB未満)、HTTP 200・大きさ・SHA-256が一致すること。`--download-url`のタグが公開一覧の版と一致すること |
+| 公開後 README | 作業ツリーの`README.md`の区間がデスクトップ先行の約束を満たし、その配布物・PDFのリンクが全て`--download-url`の下にあり、取得した実物が公開一覧と一致すること(同じURLは1回だけ取得する) |
+| 公開後 Web | [後回し]。Web版の公開時に全体モード(`--web-url`)で実装する |
+
+- 取得の処理は`createReleaseDownloader`。単体検査(`apps/desktop/src/main/releaseReadiness.test.ts`)は偽の取得を注入して、差し替わったPDF・置き忘れた配布物(404)・別の版のRelease・別の置き場へのREADMEの導線・通信の失敗を1つずつ入れると0以外になることを確かめる。
+- Releaseに添付するPDFはWeb候補のもの(公開一覧にSHA-256がある)。Windows・Linuxの候補の中のPDFは別のjobで印刷したもので、バイト列が同じとは限らない。
+
+公開後モードの全体(`-Mode PostRelease -Release <名前> -WebUrl https://<公開先>/ -DownloadUrl https://github.com/<所有者>/<リポジトリ>/releases/download/v<版>/`)は、実際のURLから配布物・説明書・Webを取得してhashを公開一覧と照合する入口として、引数の形だけを受け付ける。Webの部分はWeb版の公開時(P13-20のWeb側)に実装する。それまでは「未実装」で終了コード3を返す。

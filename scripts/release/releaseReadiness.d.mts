@@ -4,7 +4,10 @@ import type { ReleaseCandidateInput, ReleaseManifestInput } from './releaseManif
 
 /** manual: one generated manual only (P12-20), with the same manual checks that pre-release runs (P13-15). */
 export type ReleaseReadinessMode = 'pre-release' | 'post-release' | 'manual';
-export type ReleaseReadinessStatus = 'pass' | 'fail' | 'pending' | 'not-implemented';
+/** all: every condition, the Web ones included. desktop: the desktop-first release (2026-09-27); Web-only conditions are deferred. */
+export type ReleaseReadinessScope = 'all' | 'desktop';
+/** deferred: a Web-only condition in the desktop scope, judged for reference and left for the Web publication. */
+export type ReleaseReadinessStatus = 'pass' | 'fail' | 'pending' | 'not-implemented' | 'deferred';
 
 export interface ReleaseReadinessCheck {
   readonly id: string;
@@ -18,10 +21,13 @@ export interface ReleaseReadinessCheck {
 export interface ReleaseReadinessReport {
   readonly format: 'pointercad-release-readiness/1';
   readonly mode: ReleaseReadinessMode;
+  readonly scope: ReleaseReadinessScope;
   /** The gate never certifies publication; the post-release check against the real URLs is separate (P13-20). */
   readonly releaseCertified: false;
   readonly checks: readonly ReleaseReadinessCheck[];
-  readonly summary: { readonly pass: number; readonly fail: number; readonly pending: number; readonly notImplemented: number };
+  /** Deferred checks do not block exit code 0 (desktop scope only). */
+  readonly summary: { readonly pass: number; readonly fail: number; readonly pending: number; readonly notImplemented: number;
+    readonly deferred: number };
   readonly exitCode: number;
 }
 
@@ -89,6 +95,8 @@ export type CaptureFreshnessHook = (request: CaptureFreshnessRequest) => Capture
 
 export interface PreReleaseInput {
   readonly mode: 'pre-release';
+  /** Omitted: all. */
+  readonly scope?: ReleaseReadinessScope;
   readonly packageFiles: ReleaseManifestInput['packageFiles'];
   readonly builderConfig: string;
   readonly readme: string;
@@ -104,11 +112,33 @@ export interface PreReleaseInput {
   readonly captureFreshness: CaptureFreshnessHook | null;
   readonly readErrors?: Readonly<Record<string, string>>;
 }
+/** One download from the published release; sha256 is null unless status is 200. */
+export interface ReleaseDownloadResult {
+  readonly status: number;
+  readonly bytes: number;
+  readonly sha256: string | null;
+}
+export type ReleaseDownloadHook = (url: string) => ReleaseDownloadResult | Promise<ReleaseDownloadResult>;
+/** Whole post-release mode (Web included): still an entry point only (exit code 3) until the Web version is published. */
 export interface PostReleaseInput {
   readonly mode: 'post-release';
+  readonly scope?: 'all';
   readonly releaseManifest: Uint8Array | null;
   readonly webUrl: string;
   readonly downloadUrl: string;
+  readonly readErrors?: Readonly<Record<string, string>>;
+}
+/** Desktop part of post-release mode: the GitHub Release's packages and manual PDFs, and README's Desktop links. */
+export interface PostReleaseDesktopInput {
+  readonly mode: 'post-release';
+  readonly scope: 'desktop';
+  /** null when dist/<release>/release-manifest.json could not be read; readErrors.releaseManifest gives the reason. */
+  readonly releaseManifest: Uint8Array | null;
+  readonly downloadUrl: string;
+  /** README.md of the released commit; null when unreadable (readErrors.readme). */
+  readonly readme: string | null;
+  /** createReleaseDownloader() for the real release; a test passes a fake one. */
+  readonly download: ReleaseDownloadHook | null;
   readonly readErrors?: Readonly<Record<string, string>>;
 }
 /** Manual mode: dist/<name>/ from scripts/manual/generate.mjs (paths relative to that folder) against the current help. */
@@ -121,10 +151,12 @@ export interface ManualReleaseInput {
   readonly captureFreshness: CaptureFreshnessHook | null;
   readonly readErrors?: Readonly<Record<string, string>>;
 }
-export type ReleaseReadinessInput = PreReleaseInput | PostReleaseInput | ManualReleaseInput;
+export type ReleaseReadinessInput = PreReleaseInput | PostReleaseInput | PostReleaseDesktopInput | ManualReleaseInput;
 
 export interface ReleaseReadinessOptions {
   readonly mode: ReleaseReadinessMode;
+  /** parseReleaseReadinessArguments always sets it (all when --scope is not given). */
+  readonly scope?: ReleaseReadinessScope;
   readonly windows?: string;
   readonly linux?: string;
   readonly web?: string;
@@ -143,7 +175,8 @@ export interface ReadmeReleaseLinkRow {
 export interface ReadmeReleaseLinkResult {
   readonly problems: readonly string[];
   readonly summary: string;
-  readonly links: readonly { readonly kind: string; readonly url: string }[];
+  /** asset: the release asset's file name, for links into a GitHub Release. */
+  readonly links: readonly { readonly kind: string; readonly url: string; readonly asset?: string }[];
 }
 
 export const RELEASE_READINESS_FORMAT: 'pointercad-release-readiness/1';
@@ -159,14 +192,22 @@ export const CAPTURE_REGISTRY_PENDING: string;
 export const RELEASE_LINKS_START: string;
 export const RELEASE_LINKS_END: string;
 export const README_LINK_ROWS: readonly ReadmeReleaseLinkRow[];
+export const RELEASE_READINESS_SCOPES: readonly ReleaseReadinessScope[];
+export const WEB_DEFERRED_PHRASE: string;
+/** Checks that the desktop scope reports as deferred (Cloudflare's limits on the Web files). */
+export const DESKTOP_DEFERRED_CHECK_IDS: readonly string[];
+export const POST_RELEASE_DESKTOP_CHECK_IDS: readonly string[];
+export const RELEASE_DOWNLOAD_MAX_BYTES: number;
+/** PointerCAD-<version>-manual-<volume>.pdf: one manual PDF volume attached to the GitHub Release. */
+export function manualPdfReleaseAssetName(version: string, volumeId: string): string;
 
 export class ReleaseReadinessUsageError extends Error {
   constructor(message: string);
 }
 export function evaluateReleaseReadiness(input: ReleaseReadinessInput): Promise<ReleaseReadinessReport>;
-/** volumeIds null: the volume list is unknown, so PDF links are only required to exist. */
+/** volumeIds null: the volume list is unknown, so PDF links are only required to exist. scope omitted: all. */
 export function checkReadmeReleaseLinks(readme: string,
-  expected: { readonly version: string; readonly volumeIds: readonly string[] | null }): ReadmeReleaseLinkResult;
+  expected: { readonly version: string; readonly volumeIds: readonly string[] | null; readonly scope?: ReleaseReadinessScope }): ReadmeReleaseLinkResult;
 export function formatReleaseReadinessReport(report: ReleaseReadinessReport, context?: { readonly targets?: readonly string[] }): string;
 export function parseReleaseReadinessArguments(args: readonly string[]): ReleaseReadinessOptions;
 export function loadCurrentHelp(root: string): Promise<CurrentHelpEdition>;
@@ -178,5 +219,10 @@ export function captureFreshnessFromRegistry(registry: CaptureRegistry, files: r
 export function loadCaptureFreshness(): CaptureFreshnessHook;
 export function readPreReleaseInput(root: string, options: ReleaseReadinessOptions): Promise<PreReleaseInput>;
 export function readManualInput(root: string, options: ReleaseReadinessOptions): Promise<ManualReleaseInput>;
+export function readPostReleaseInput(root: string, options: ReleaseReadinessOptions,
+  context?: { readonly download?: ReleaseDownloadHook | null }): Promise<PostReleaseInput | PostReleaseDesktopInput>;
+/** Streams the body into SHA-256 (redirects followed); any status but 200 is returned without reading the body. */
+export function createReleaseDownloader(options?: { readonly fetch?: typeof globalThis.fetch; readonly timeoutMs?: number;
+  readonly maxBytes?: number }): ReleaseDownloadHook;
 export function runReleaseReadiness(args: readonly string[],
-  options?: { readonly root?: string; readonly write?: (text: string) => void }): Promise<number>;
+  options?: { readonly root?: string; readonly write?: (text: string) => void; readonly download?: ReleaseDownloadHook | null }): Promise<number>;

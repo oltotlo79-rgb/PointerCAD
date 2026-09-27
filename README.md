@@ -158,13 +158,13 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 初回の正式リリースに向けて準備中です。公開時には、ここから各配布物とWeb版へ直接進めるようにします。
 
 <!-- pointercad:release-links:start -->
-| 利用方法 | 公開状況 |
+| 利用方法 | 公開先 |
 |---|---|
-| Windows版のインストーラーをダウンロード | 初回リリース時にダウンロードリンクを掲載 |
-| Windowsポータブル版をダウンロード | 1つの.exeで配布する方式を準備中。起動確認後、初回リリース時にリンクを掲載 |
-| Linux版のAppImageをダウンロード | 初回リリース時にダウンロードリンクを掲載 |
-| 取扱説明書を読む・ダウンロード（HTML / PDF） | 初回リリース時に説明書のリンクを掲載 |
-| Webアプリ版をブラウザで使う | 初回リリース時にWebアプリのリンクを掲載 |
+| Windows版のインストーラーをダウンロード | [PointerCAD-1.0.0-windows-x64-setup.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-windows-x64-setup.exe) |
+| Windowsポータブル版をダウンロード（1つの.exe） | [PointerCAD-1.0.0-windows-x64-portable.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-windows-x64-portable.exe) |
+| Linux版のAppImageをダウンロード | [PointerCAD-1.0.0-linux-x64.AppImage](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-linux-x64.AppImage) |
+| 取扱説明書（PDF 全7巻。アプリ内のヘルプ〔F1〕でも同じ内容を読めます） | [導入・画面操作・ファイル](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-getting-started.pdf) ・ [スケッチ・座標・関数](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-sketch-and-functions.pdf) ・ [立体・外観・測定](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-solid-and-measurement.pdf) ・ [アセンブリ・部品表](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-assembly.pdf) ・ [図面・寸法・製図記号](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-drawing.pdf) ・ [板金・自動作図・加工連携](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-sheet-and-scripting.pdf) ・ [設定・履歴・表示](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-settings-and-history.pdf) |
+| Webアプリ版をブラウザで使う | 後日公開（公開したらここにリンクを掲載します） |
 <!-- pointercad:release-links:end -->
 
 [リリースの公開状況](https://github.com/oltotlo79-rgb/PointerCAD/releases) · [開発中の機能別ヘルプ](packages/help-content/docs/ja/)

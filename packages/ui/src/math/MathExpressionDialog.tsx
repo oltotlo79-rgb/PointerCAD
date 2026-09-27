@@ -3,7 +3,8 @@ import { unresolvedMathProblemOutput } from './unresolvedMathProblemOutput.js';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { mathScalarExpression, type AngleUnit, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
 import type { MathGeometryOutcome, PartDocument } from '@pointercad/model';
-import { createBrowserMathClient } from './createBrowserMathClient.js';
+import { createBrowserMathClient, pageMathResultMemory } from './createBrowserMathClient.js';
+import { recomputePartWithMath } from './recomputePartWithMath.js';
 import { prepareDocumentMathEditor, mathGeometryEditorCandidate, mathGeometryEditorProblem,
   mathGeometryEditorNotices, waitForMathEditorGeometry, type MathGeometryEditorTarget } from './prepareDocumentMathEditor.js';
 import { mathGeometryInputsFor } from './mathGeometryResults.js';
@@ -84,8 +85,13 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
     element?.showModal();
     return () => { element?.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, []);
+  // Applying recomputes the document next; keep that recomputation's prepared Worker while editing.
+  useEffect(() => recomputePartWithMath.holdIdleWorker(), []);
   useEffect(() => {
-    const abort = new AbortController(), client = createBrowserMathClient();
+    // Reuse the Worker the previous editor of this document prepared instead of preparing the exact
+    // runtime again (Chromium 16.7 s, Firefox 65 s per opening). Cancellation still terminates it.
+    const abort = new AbortController(), lease = recomputePartWithMath.acquireEditorWorker(owner.document.id);
+    const client = createBrowserMathClient(lease.group.createPort, pageMathResultMemory, () => lease.group.hasWorker);
     let controller: MathEditorController | undefined, applying = false;
     let geometry: ReadonlyMap<string, MathGeometryOutcome> | undefined, prepared = owner.document;
     const geometryTarget = owner.kind === 'function' || owner.kind === 'problem' ? undefined : owner.geometry;
@@ -172,7 +178,7 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
       }
     };
     void start();
-    return () => { unsubscribe(); abort.abort(); controller?.dispose(); client.dispose(); };
+    return () => { unsubscribe(); abort.abort(); controller?.dispose(); client.dispose(); lease.release(); };
   }, [owner, id, attempt]);
   return <dialog ref={dialog} className="pcad-math-dialog" aria-labelledby={`${id}-title`} data-help-topic="math-input"
     onCancel={event => { event.preventDefault(); owner.onClose(); }} onKeyDown={event => event.stopPropagation()}>

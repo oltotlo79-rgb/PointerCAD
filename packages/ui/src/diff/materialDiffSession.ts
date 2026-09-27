@@ -10,7 +10,7 @@ export interface MaterialDiffSession {
   dispose(): void;
 }
 export function createMaterialDiffSession(): MaterialDiffSession {
-  const bridge = createKernelBridge(), recompute = createMathPartRecomputer(createBrowserMathClient);
+  const bridge = createKernelBridge(), recompute = createMathPartRecomputer(factory => createBrowserMathClient(factory));
   let disposed = false;
   return {
     compute: (document, options) => recompute(document, bridge, options),

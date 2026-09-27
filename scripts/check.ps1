@@ -17,6 +17,9 @@
 # 既定は -Level Push。承認済みの変更範囲から関係先を選び、CI/Full/判定不能では全部を検査する。
 # pre-commit だけが -Level Commit を渡す。
 # 修正中の短いフィードバックには -E2EOnly と -E2EGrep を使えるが、最終合格の代用にはしない。
+# -Scope Local(2026-09-27 利用者の決定「CIに任せてよい」)は手元の軽い検査で、画面検査は起動の
+# 3 projectと変更したe2eが届くspecだけ。成功記録(B3とは別)を直後の同じコミット・pushのフックが
+# 一度ずつ共用する。判定不能は全体検査へ戻り、-Full・CI・リリース前は全件のまま。
 # ルート package.json が無い間(P0未着手)は検査対象なしとして合格扱い。
 # typecheck / lint / test / build のスクリプト欠落は失敗(fail-closed)。
 # 検査の単一正本: CI(.github/workflows/ci.yml)とgitフックもこのスクリプトを実行する。
@@ -55,7 +58,12 @@ param(
     [switch]$StaticOnly,
     # 診断用: 正確性優先の性能判定と実行場所の表示だけを行って終了する(pnpmは一切実行しない)。
     # 統括の動作確認、および scripts/check.selftest.ps1 からの検証に使う。
-    [switch]$ShowPerfModeOnly
+    [switch]$ShowPerfModeOnly,
+    # 2026-09-27 利用者の決定「CIに任せてよい」: 手元の軽い検査。型・lint・変更に関わる単体・
+    # 両ビルド・品質ゲートの自己試験・起動の3 projectと、変更したe2eが届くspecの画面検査だけを行う。
+    # 画面検査の全件はpush後の両OS CI、-Full(リリース前)は従来どおり全件。成功記録はB3と別。
+    [ValidateSet('', 'Local')]
+    [string]$Scope = ''
 )
 
 $scriptDirectory = [string]$PSScriptRoot
@@ -121,9 +129,56 @@ function Invoke-LocalPackageChecks {
     }
 }
 
+# 軽い検査の成功記録(local-light-receipt.json)。B3と同じ内容の指紋・封印・期限・一度だけの
+# 消費を local_change_scope.py --receipt が行う。欠落・不一致・期限切れは通常の検査へ戻る。
+function Invoke-LocalLightReceipt {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][ValidateSet('start', 'finish', 'reuse', 'invalidate')][string]$Action,
+        [ValidateSet('Manual', 'Commit', 'Push', 'Disabled')][string]$Phase = 'Manual',
+        [string]$Token = '',
+        [string]$Base = ''
+    )
+    try {
+        $selectedTools = @{}
+        if ($Action -ne 'invalidate') {
+            # validationReceipt.ps1 と同じ実行環境の特定(B3と同じ入力を比べるため)。
+            foreach ($tool in @('node', 'pnpm', 'git')) {
+                $selectedTools[$tool] = (Get-Command $tool -ErrorAction Stop).Source
+            }
+            $selectedTools['shell'] = (Get-Process -Id $PID).Path
+            Push-Location -LiteralPath $Root
+            try {
+                $runtimeOutput = & pnpm --silent run validation:runtime
+                if ($LASTEXITCODE -ne 0) { throw 'The actual validation runtime could not be identified' }
+                $runtime = ($runtimeOutput -join "`n") | ConvertFrom-Json -ErrorAction Stop
+                foreach ($name in @('node_runtime', 'pnpm_runtime')) {
+                    if ([string]::IsNullOrWhiteSpace($runtime.$name)) { throw "The runtime path $name is missing" }
+                    $selectedTools[$name] = [string]$runtime.$name
+                }
+            } finally { Pop-Location }
+        }
+        $encodedTools = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($selectedTools | ConvertTo-Json -Compress)))
+        $python = Get-Command python -ErrorAction Stop
+        $arguments = @('-B', '-X', 'utf8', (Join-Path $scriptDirectory 'lib/local_change_scope.py'), '--receipt', $Action,
+            '--root', $Root, '--tools', $encodedTools, '--phase', $Phase)
+        if (-not [string]::IsNullOrWhiteSpace($Token)) { $arguments += @('--token', $Token) }
+        if (-not [string]::IsNullOrWhiteSpace($Base)) { $arguments += @('--base', $Base) }
+        $raw = & $python.Source @arguments
+        $resultCode = $LASTEXITCODE
+        $result = ($raw -join "`n") | ConvertFrom-Json -ErrorAction Stop
+        if ($resultCode -eq 0 -and $result.ok) { return $result }
+        return [pscustomobject]@{ ok = $false; reason = [string]$result.reason }
+    } catch {
+        return [pscustomobject]@{ ok = $false; reason = $_.Exception.Message }
+    }
+}
+
 $validationQos = $null
 $receiptToken = ''
 $receiptCompleted = $false
+$lightReceiptToken = ''
+$lightReceiptCompleted = $false
 $savedTemporaryEnvironment = @{}
 Push-Location $root
 try {
@@ -199,6 +254,13 @@ try {
         Write-Host '[NG] -E2ENoDependencies は対象名付きの手動E2E診断だけに使用できます。全体検査・CI・フック・連続検査には使用できません。' -ForegroundColor Red
         exit 1
     }
+    $lightRequested = $Scope -eq 'Local'
+    if ($lightRequested -and ($Full -or $Install -or $isRunningOnCI -or $Level -ne 'Push' -or $ReceiptPhase -ne 'Manual' -or
+        $E2ERepeats -ne 1 -or $StaticOnly -or $unitDiagnostic -or $E2EOnly -or $E2ENoDependencies -or
+        -not [string]::IsNullOrWhiteSpace($E2EGrep) -or -not [string]::IsNullOrWhiteSpace($E2EShard))) {
+        Write-Host '[NG] -Scope Local は手元の通常の手動検査(-Level Push)だけに使用できます。-Full・CI・導入・フック・診断・連続検査とは併用できません。' -ForegroundColor Red
+        exit 1
+    }
 
     $packageJsonPath = Join-Path $root "package.json"
     if (-not (Test-Path -LiteralPath $packageJsonPath -PathType Leaf)) {
@@ -226,12 +288,15 @@ try {
     $localScope = $null
     $localRuntimeChecks = $false
     $localAllE2EChecks = $false
+    $localLight = $false
+    $localE2EFilters = @()
     if ($ordinaryGate -and -not $Full -and -not $isRunningOnCI -and $E2ERepeats -eq 1 -and $ReceiptPhase -ne 'Disabled') {
         $scopeScript = Join-Path $scriptDirectory 'lib/local_change_scope.py'
         if (Test-Path -LiteralPath $scopeScript -PathType Leaf) {
             try {
                 $scopeArgs = @('-B', $scopeScript, '--root', $root, '--level', $Level, '--phase', $ReceiptPhase)
                 if (-not [string]::IsNullOrWhiteSpace($ComparisonBase)) { $scopeArgs += @('--base', $ComparisonBase) }
+                if ($lightRequested) { $scopeArgs += '--light' }
                 $scopeJson = & python @scopeArgs
                 if ($LASTEXITCODE -ne 0) { throw 'Local scope inspection failed' }
                 $candidateScope = ($scopeJson -join "`n") | ConvertFrom-Json
@@ -247,16 +312,39 @@ try {
                         if ($candidateScope.allE2EChecks -isnot [bool]) { throw 'Invalid complete E2E scope flag' }
                         $localAllE2EChecks = $candidateScope.allE2EChecks
                     }
-                    Write-Host "[検査範囲] 変更箇所別: $($localScope.reason) / $($localScope.packages -join ', ')。全検査は両OS CIで実施します。" -ForegroundColor Cyan
+                    if ($candidateScope.PSObject.Properties.Name -contains 'light') {
+                        # A light result is accepted only when it was requested and is complete.
+                        if (-not $lightRequested -or $candidateScope.light -isnot [bool] -or -not $candidateScope.light -or
+                            -not $localRuntimeChecks -or $candidateScope.PSObject.Properties.Name -notcontains 'e2eSpecs') {
+                            throw 'Invalid light scope'
+                        }
+                        foreach ($spec in @($candidateScope.e2eSpecs)) {
+                            if ($spec -isnot [string] -or $spec -cnotmatch '^e2e/tests/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.spec\.ts$') {
+                                throw 'Invalid related E2E spec'
+                            }
+                            # Playwright matches file filters against the path (also as / on Windows).
+                            $localE2EFilters += (($spec -replace '\.', '\.') + '$')
+                        }
+                        $localLight = $true
+                    } elseif ($lightRequested) { throw 'The light scope was not established' }
+                    if ($localLight) {
+                        $relatedLabel = if ($localAllE2EChecks) { '全件(変更したe2eの影響を特定できないため)' } else { "$(@($candidateScope.e2eSpecs).Count) spec" }
+                        Write-Host "[検査範囲] 手元の軽い検査: $($localScope.reason) / 単体 $($localScope.packages -join ', ') / 起動の3 project / 関係する画面検査 $relatedLabel。画面検査の全件はpush後の両OS CIで実施します。" -ForegroundColor Cyan
+                    } else {
+                        Write-Host "[検査範囲] 変更箇所別: $($localScope.reason) / $($localScope.packages -join ', ')。全検査は両OS CIで実施します。" -ForegroundColor Cyan
+                    }
                 } else { Write-Host "[検査範囲] 全体: $($candidateScope.reason)" }
             } catch {
                 $localScope = $null
                 $localRuntimeChecks = $false
                 $localAllE2EChecks = $false
+                $localLight = $false
+                $localE2EFilters = @()
                 Write-Host "[検査範囲] 判定できないため全体検査へ戻します: $($_.Exception.Message)"
             }
         } else { Write-Host '[検査範囲] 判定処理が無いため全体検査へ戻します' }
     }
+    if ($localLight -and -not $hasE2E) { throw 'The light local check requires the test:e2e script' }
     if ($localAllE2EChecks -and -not $hasE2E) { throw 'Changed E2E tests require the test:e2e script' }
     $receiptPhaseMatches = ($ReceiptPhase -eq 'Commit' -and $Level -eq 'Commit') -or
         ($ReceiptPhase -eq 'Push' -and $Level -eq 'Push')
@@ -266,10 +354,19 @@ try {
             Write-Host "[OK] B3: 同一内容の厳密な全体検査を共用しました($ReceiptPhase / $($shared.tree))" -ForegroundColor Green
             exit 0
         }
-        Write-Host "[検査] B3の共用条件が揃わないため、通常検査を実行します: $($shared.reason)"
+        Write-Host "[検査] B3の共用条件が揃わないため、手元の軽い検査の記録を確かめます: $($shared.reason)"
+        # 2026-09-27: 同じ内容の軽い検査(-Scope Local)の成功を、直後の同じコミット・pushで一度ずつ共用する。
+        # pushは軽い検査が比べた基点(-ComparisonBase)と実際の送信先の古いコミットが一致する場合だけ。
+        $light = Invoke-LocalLightReceipt -Root $root -Action reuse -Phase $ReceiptPhase -Base $ComparisonBase
+        if ($light.ok) {
+            Write-Host "[OK] 同一内容の手元の軽い検査(型・lint・関係する単体・両ビルド・自己試験・起動・関係する画面検査)を共用しました($ReceiptPhase / $($light.tree))。画面検査の全件はpush後の両OS CIで確かめます。" -ForegroundColor Green
+            exit 0
+        }
+        Write-Host "[検査] 軽い検査の共用条件も揃わないため、通常検査を実行します: $($light.reason)"
     }
     # A failed/new/partial check cannot leave an earlier success available for a later push.
     $null = Invoke-ValidationReceipt -Root $root -Action invalidate
+    $null = Invoke-LocalLightReceipt -Root $root -Action invalidate
 
     # Windowsの自動バックグラウンド省電力で基準機の実測が約1.7倍になった(06 §10.54)。
     # 厳密検査の新しい子プロセスだけHighQoSにし、最後に元へ戻す。PC全体は変更しない。
@@ -380,6 +477,12 @@ try {
             if ($receiptStart.ok) { $receiptToken = $receiptStart.token }
             else { Write-Host "[検査] B3の開始記録を作成できませんでした: $($receiptStart.reason)" }
         }
+        if ($localLight -and $ReceiptPhase -eq 'Manual' -and -not $isRunningOnCI) {
+            # The base is the one the scope compared: the explicit one, otherwise origin/main.
+            $lightStart = Invoke-LocalLightReceipt -Root $root -Action start -Base ([string]$localScope.base)
+            if ($lightStart.ok) { $lightReceiptToken = $lightStart.token }
+            else { Write-Host "[検査] 軽い検査の開始記録を作成できませんでした(フックは通常検査を行います): $($lightStart.reason)" }
+        }
         if ($unitDiagnostic) {
             Write-Host "[診断] 指定ユニットテストだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
             # 公開の形式・旧版移行・UI文言は個別機能の診断でも一緒に検査する(06 10.83、10.132、10.133)。
@@ -420,7 +523,16 @@ try {
                     # Playwrightが同じ設定から分配し、各組でも性能・起動の前提を保持する。
                     $e2eArgs += "--shard=$E2EShard"
                 }
-                if ($localRuntimeChecks -and -not $localAllE2EChecks) {
+                if ($localRuntimeChecks -and -not $localAllE2EChecks -and $localE2EFilters.Count -gt 0) {
+                    # Light local check with changed operations: the specs that reach a changed
+                    # e2e/tests file run in functional (Chromium) and, for Electron-only specs,
+                    # electron. The startup specs are named explicitly so the same single run keeps
+                    # startup-firefox and startup-electron; viewport-performance is their shared
+                    # dependency, which Playwright runs completely (file filters never narrow a
+                    # dependency project). The extra Chromium smoke spec is the only addition.
+                    $e2eArgs += @('--project=startup-firefox', '--project=startup-electron', '--project=functional', '--project=electron',
+                        'e2e/tests/smoke\.spec\.ts$', 'e2e/tests/firefox-graphics\.spec\.ts$', 'e2e/tests/electron-startup\.spec\.ts$') + $localE2EFilters
+                } elseif ($localRuntimeChecks -and -not $localAllE2EChecks) {
                     # All unit tests of changed packages and their consumers ran above.
                     # Retain strict rendering and actual Firefox/Electron startup locally;
                     # the same commit's CI and release -Full run every existing operation.
@@ -474,6 +586,9 @@ try {
     elseif ($E2EOnly) {
         Write-Host "[OK] 指定したE2E診断に合格しました(最終のPushゲートには数えません)" -ForegroundColor Green
     }
+    elseif ($localLight) {
+        Write-Host '[OK] 手元の軽い検査に合格しました。画面検査の全件はpush後の両OS CIで確かめます。完成確定には同一SHAの両OS CI全検査、リリース前は-Fullが必要です。' -ForegroundColor Green
+    }
     elseif ($null -ne $localScope) {
         Write-Host '[OK] 変更箇所別のローカル検査に合格しました。完成確定には同一SHAの両OS CI全検査が必要です。' -ForegroundColor Green
     }
@@ -489,11 +604,20 @@ try {
         if ($receiptCompleted) { Write-Host '[OK] B3: 直後の同一コミット・pushに使う全体検査の記録を保存しました' -ForegroundColor Green }
         else { Write-Host "[検査] B3の共用記録は作成しませんでした: $($receiptFinish.reason)" }
     }
+    if (-not [string]::IsNullOrWhiteSpace($lightReceiptToken)) {
+        $lightFinish = Invoke-LocalLightReceipt -Root $root -Action finish -Token $lightReceiptToken
+        $lightReceiptCompleted = [bool]$lightFinish.ok
+        if ($lightReceiptCompleted) { Write-Host '[OK] 直後の同一コミット・pushに使う軽い検査の記録を保存しました(B3の全体検査の記録ではありません)' -ForegroundColor Green }
+        else { Write-Host "[検査] 軽い検査の共用記録は作成しませんでした: $($lightFinish.reason)" }
+    }
 }
 finally {
     try {
         if (-not [string]::IsNullOrWhiteSpace($receiptToken) -and -not $receiptCompleted) {
             $null = Invoke-ValidationReceipt -Root $root -Action invalidate
+        }
+        if (-not [string]::IsNullOrWhiteSpace($lightReceiptToken) -and -not $lightReceiptCompleted) {
+            $null = Invoke-LocalLightReceipt -Root $root -Action invalidate
         }
         if ($null -ne $validationQos) {
             $validationQos.Dispose()

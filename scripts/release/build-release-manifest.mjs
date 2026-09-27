@@ -1,4 +1,8 @@
-/** Read completed candidates and emit one release inventory; never build or publish assets. */
+/**
+ * Read completed candidates and emit one release inventory; never build or publish assets.
+ * With --sbom <sbom-output> (a finished dist/<name>/sbom.json), the same inputs also produce publication-manifest.json
+ * (publicationManifest.mjs): SBOM, capture registry, sizes against the publishing limits and the restored OCCT kernel.
+ */
 import { argv } from 'node:process';
 import { log } from 'node:console';
 import { execFileSync } from 'node:child_process';
@@ -13,11 +17,15 @@ import { captureDesktopBuildSources, captureWebBuildSources } from '../vite/webB
 import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
 import { offlineAssetUrl } from '../vite/offlineProtocol.mjs';
 import { createReleaseManifest } from './releaseManifest.mjs';
+import { CAPTURE_REGISTRY_PATH, createPublicationManifest } from './publicationManifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const names = argv.slice(2);
-if (names.length < 4 || names.length > 5 || names.some((name, index) => index !== 4 && !/^[a-z0-9][a-z0-9-]*$/u.test(name))) {
-  throw new Error('Usage: node scripts/release/build-release-manifest.mjs <windows-stage> <linux-stage> <web-candidate> <new-output> [v<version>]');
+const sbomFlag = names.indexOf('--sbom');
+const sbomName = sbomFlag === -1 ? null : names.splice(sbomFlag, 2)[1] ?? '';
+if (names.length < 4 || names.length > 5 || names.some((name, index) => index !== 4 && !/^[a-z0-9][a-z0-9-]*$/u.test(name))
+  || (sbomName !== null && !/^[a-z0-9][a-z0-9-]*$/u.test(sbomName))) {
+  throw new Error('Usage: node scripts/release/build-release-manifest.mjs <windows-stage> <linux-stage> <web-candidate> <new-output> [v<version>] [--sbom <sbom-output>]');
 }
 const dist = join(root, 'dist');
 if ((await lstat(dist)).isSymbolicLink()) throw new Error('Distribution parent must not be a link');
@@ -80,8 +88,26 @@ if (JSON.stringify(sourceInputs.web) !== JSON.stringify(await captureWebBuildSou
   throw new Error('Release source changed while reading candidates');
 }
 const output = folder(outputName);
+const manifestBytes = new globalThis.TextEncoder().encode(JSON.stringify(manifest, null, 2) + '\n');
+let publication = null;
+if (sbomName !== null) {
+  const sbomFolder = folder(sbomName);
+  for (const path of [sbomFolder, join(sbomFolder, 'sbom.json')]) {
+    if ((await lstat(path)).isSymbolicLink()) throw new Error('SBOM must not be a link: ' + path);
+  }
+  const registryPath = join(root, ...CAPTURE_REGISTRY_PATH.split('/'));
+  if ((await lstat(registryPath)).isSymbolicLink()) throw new Error('Capture registry must not be a link');
+  publication = await createPublicationManifest({ release: { packageFiles, builderConfig, tag, sourceCommit, sourceInputs, candidates, webFiles },
+    releaseManifestBytes: manifestBytes, sbomBytes: await readFile(join(sbomFolder, 'sbom.json')),
+    captureRegistryBytes: await readFile(registryPath) });
+}
 await mkdir(output);
-await writeFile(join(output, 'release-manifest.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
+await writeFile(join(output, 'release-manifest.json'), manifestBytes, { flag: 'wx' });
+if (publication !== null) {
+  await writeFile(join(output, 'publication-manifest.json'), JSON.stringify(publication, null, 2) + '\n', { flag: 'wx' });
+}
 log(JSON.stringify({ output, version: manifest.version, commit: manifest.sourceCommit,
   desktopArtifacts: manifest.desktop.windows.assets.length + manifest.desktop.linux.assets.length,
-  webFiles: manifest.web.files.length, pdfVolumes: manifest.manual.pdfVolumes, releaseCertified: false }));
+  webFiles: manifest.web.files.length, pdfVolumes: manifest.manual.pdfVolumes, releaseCertified: false,
+  ...(publication === null ? {} : { publication: { largestWebFile: publication.sizes.web.largest,
+    webFiles: publication.sizes.web.files, occtRestoredBytes: publication.runtimes.occt.restored.bytes } }) }));

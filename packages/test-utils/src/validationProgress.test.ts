@@ -1,12 +1,17 @@
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const script = fileURLToPath(new URL('../../../scripts/validation-progress.mjs', import.meta.url));
-function progress(log: string | Buffer, exit?: string) {
-  const result = spawnSync(process.execPath, [script, '--stdin', ...(exit === undefined ? [] : [exit])], { input: log, encoding: 'utf8' });
+function progress(log: string | Buffer, exit?: string, now?: number) {
+  const args = [script, '--stdin', ...(exit === undefined ? [] : [exit])];
+  const launch = now === undefined ? args : ['--input-type=module', '--eval',
+    `Date.now = () => ${String(now)}; process.argv = [process.execPath, ...${JSON.stringify(args)}]; await import(${JSON.stringify(pathToFileURL(script).href)});`];
+  const result = spawnSync(process.execPath, launch, { input: log, encoding: 'utf8' });
   expect(result.status, result.stderr).toBe(0);
-  return JSON.parse(result.stdout) as { status: string; e2ePassedEvents: number; e2eFailedEvents: number; failedE2E: string[] };
+  return JSON.parse(result.stdout) as { status: string; e2ePassedEvents: number; e2eFailedEvents: number; failedE2E: string[];
+    report: { latestEntry: string | null; ageMinutes: number | null; updateDue: boolean; action: string | null } };
 }
 
 describe('進捗報告は成功行だけを数えず実際の失敗を保持する', () => {
@@ -39,4 +44,15 @@ describe('進捗報告は成功行だけを数えず実際の失敗を保持す�
     const log = Buffer.concat([Buffer.from('x 1 [firefox] '), Buffer.from([0x93, 0xfa, 0x96, 0x7b]), Buffer.from('\n')]);
     expect(progress(log)).toMatchObject({ status: 'failed', e2eFailedEvents: 1 });
   });
+  it.each([[9, false], [10, true], [18, true], [-2, true]] as const)(
+    '実ファイルの報告から%s分なら更新警告は%sとなり、検査の成功とは分ける', (minutes, due) => {
+      const report = readFileSync(new URL('../../../docs/報告記録.md', import.meta.url), 'utf8');
+      const heading = report.match(/^## (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?:\s|$)/mu);
+      if (heading === null) throw new Error('報告記録の日時が見つかりません。');
+      const recordedAt = Date.parse(`${heading[1]}T${heading[2]}:00+09:00`);
+      const result = progress('✓ 1 [functional] › 保存\n', '0', recordedAt + minutes * 60_000);
+      expect(result.status).toBe('passed');
+      expect(result.report).toMatchObject({ latestEntry: heading[0].trim(), ageMinutes: minutes, updateDue: due });
+      expect(result.report.action === null).toBe(!due);
+    });
 });

@@ -12,7 +12,16 @@ scripts/hooks/commit-msg text eol=lf
 
 # 許諾原文は取得元と同じバイト列で検証・配布する。LF/CRLFが原文ごとに
 # 異なるため、保存時も取り出し時もGitの改行変換を適用しない。
+# 同梱フォント(Web/デスクトップ)の許諾原文(LICENSES.txt)も同じ方針の対象に含める。
 docs/standards/licenses/*.txt -text
+apps/web/public/fonts/LICENSES.txt -text
+apps/desktop/resources/fonts/LICENSES.txt -text
 
 # アプリ自身の許諾本文も取得元のバイト列を保持する。
 /LICENSE -text
+
+# packages/ui/src/help/mathCatalogHelp.ts が生成する内容と、mathCatalogHelp.test.ts が
+# バイト単位でtoBe比較する収録済みの章。core.autocrlf=true(Git for Windowsの既定)で取り出すと
+# CRLFになり、生成側(LF)と一致しなくなる(2026-09-27、c3の全体検査で判明)。
+# 常にLFで取り出すことで、Windows上の新規取り出し(CIのwindows-latest含む)でも一致させる。
+packages/help-content/docs/ja/math-symbols.md text eol=lf

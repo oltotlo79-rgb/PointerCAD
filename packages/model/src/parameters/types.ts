@@ -66,6 +66,13 @@ export interface ParameterAnalysis {
   readonly unused: readonly string[];
   /** 評価できなかった名前と理由。 */
   readonly failures: readonly ParameterFailure[];
+  /**
+   * 図形由来の係数(図形の測定値を直接、または他の係数を経由して使う係数)の名前 → 使う図形の測定値の定義ID。
+   * 表の並び順で、図形由来の係数だけが入る(1つも無ければ欄ごと省く)。評価に失敗した係数も由来は残す。
+   * これらの値は形の計算部の倍精度そのもので、厳密な原式・有理数として扱わず、パラメータ表の覚え書きにも
+   * 残さない(計画書 geomref-plan §4(e)、GR-04)。
+   */
+  readonly geometryDerived?: ReadonlyMap<string, readonly string[]>;
 }
 
 /**

@@ -114,6 +114,53 @@ function assemble(shape: readonly number[], cell: (index: number, spend: (nodes:
   return visit(0);
 }
 
+/** A literal integer size of a registered matrix constructor (the calculation checks its own limits). */
+function literalSize(node: MathNode | undefined): number | null {
+  const value = node === undefined ? null : rationalOfExpression(node);
+  return value !== null && value.denominator === 1n && value.numerator >= 1n && value.numerator <= 256n
+    ? Number(value.numerator) : null;
+}
+
+/**
+ * Axes of a vector or matrix that only the exact runtime calculates, when explicit operands fix them; [] for
+ * its scalar results and null when unknown. A selection from such a result waits for the calculation, and
+ * these axes let preparation reject an index outside the result with a reason before calculating.
+ */
+export function exactResultAxes(node: MathNode): readonly number[] | null {
+  if (node.kind !== 'operation') return null;
+  const axes = (value: MathNode | undefined): readonly number[] | null => {
+    if (value?.kind !== 'operation' || (value.operation !== 'list' && value.operation !== 'matrix')) {
+      return value === undefined ? null : exactResultAxes(value);
+    }
+    try { return readTensor(value).shape; } catch (error) {
+      if (error instanceof MathInputProblem) return null;
+      throw error;
+    }
+  };
+  switch (node.operation) {
+    case 'dot': case 'norm': case 'determinant': case 'trace': return [];
+    case 'cross': return [3];
+    case 'transpose': case 'conjugate-transpose': {
+      const input = axes(node.operands[0]);
+      return input?.length === 2 ? [input[1], input[0]] : null;
+    }
+    case 'inverse-matrix': {
+      const input = axes(node.operands[0]);
+      return input?.length === 2 && input[0] === input[1] ? input : null;
+    }
+    case 'projection': {
+      const onto = axes(node.operands[1]);
+      return onto?.length === 1 ? onto : null;
+    }
+    case 'identity-matrix': case 'zero-matrix': {
+      const height = literalSize(node.operands[0]);
+      const width = node.operands.length === 2 ? literalSize(node.operands[1]) : height;
+      return node.operands.length > 2 || height === null || width === null ? null : [height, width];
+    }
+    default: return null;
+  }
+}
+
 export function normalizeTensorOperation(node: Extract<MathNode, { kind: 'operation' }>): MathNode {
   if (!IDS.has(node.operation)) return node;
   const { operation, operands } = node;

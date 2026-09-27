@@ -1,3 +1,4 @@
+import { functionPreparationProgress } from './functionPreparationProgress.js';
 /** One bounded queue can switch between a curve and an implicit parent without accepting the other reply type. */
 import {BoundedCalculationClient,type CalculationWorkerPort} from './boundedCalculationClient.js';
 import {decodePointCalculationRequest,decodePointContinuationRequest,isCurvePointInput,isCurvePointContinuation,
@@ -16,7 +17,7 @@ import {createSurfacePointContinuationWorkEnvelope,decodeSurfacePointContinuatio
 
 export class PointCalculationWorkerClient extends BoundedCalculationClient<PointCalculationRequest,FunctionPointWorkResult|CurvePointWorkResult|SurfacePointWorkResult> {
   constructor(options:{readonly createWorker:()=>CalculationWorkerPort}) {
-    super({...options,decodeRequest:decodePointCalculationRequest,
+    super({ progress: functionPreparationProgress(),...options,decodeRequest:decodePointCalculationRequest,
       createEnvelope:(serial,request)=>isSurfacePointInput(request)?createSurfacePointWorkEnvelope(serial,request)
         :isCurvePointInput(request)?createCurvePointWorkEnvelope(serial,request):createFunctionPointWorkEnvelope(serial,request),
       decodeReply:(value,request)=>isSurfacePointInput(request)?decodeSurfacePointWorkReply(value,request)
@@ -25,7 +26,7 @@ export class PointCalculationWorkerClient extends BoundedCalculationClient<Point
 }
 export class PointContinuationWorkerClient extends BoundedCalculationClient<PointContinuationRequest,FunctionPointContinuationWorkResult|CurvePointContinuationWorkResult|SurfacePointContinuationWorkResult> {
   constructor(options:{readonly createWorker:()=>CalculationWorkerPort}) {
-    super({...options,decodeRequest:decodePointContinuationRequest,
+    super({ progress: functionPreparationProgress(),...options,decodeRequest:decodePointContinuationRequest,
       createEnvelope:(serial,request)=>isSurfacePointContinuation(request)?createSurfacePointContinuationWorkEnvelope(serial,request)
         :isCurvePointContinuation(request)?createCurvePointContinuationWorkEnvelope(serial,request):createFunctionPointContinuationWorkEnvelope(serial,request),
       decodeReply:(value,request)=>isSurfacePointContinuation(request)?decodeSurfacePointContinuationWorkReply(value,request)

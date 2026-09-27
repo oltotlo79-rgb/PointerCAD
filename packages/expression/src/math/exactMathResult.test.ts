@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeExactMathResult } from './exactMathResult.js';
+import { decodeExactMathResult, indefiniteIntegralBinding, isAntiderivativeOf } from './exactMathResult.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { type MathNode, type MathSymbolReference } from './mathInputContract.js';
 
@@ -115,5 +115,65 @@ describe('厳密な式と成立条件を受け取り、数値座標の判定を�
     const raw = { ...value, coordinateAuthorized: false };
     expect(decode(raw)).toEqual(raw);
     expect(() => decode({ ...raw, expression: number('0') })).toThrow();
+  });
+});
+
+describe('不定積分の答え(原始関数のlambda)だけを関数として受け取り、数として扱わない(MC-20)', () => {
+  const t = { role: 'bound', id: 'bound-t', label: 't' } as const;
+  const lambda = (body: MathNode, variable: Extract<MathSymbolReference, { role: 'bound' }> = t,
+    domain: Extract<MathNode, { kind: 'binder' }>['bindings'][number]['domain'] = { kind: 'unrestricted' }): MathNode =>
+    ({ kind: 'binder', operation: 'lambda', bindings: [{ variable, domain }], body });
+  const integral = (body: MathNode, domain: Extract<MathNode, { kind: 'binder' }>['bindings'][number]['domain'] = { kind: 'unrestricted' }): MathNode =>
+    ({ kind: 'binder', operation: 'integrate', bindings: [{ variable: t, domain }], body });
+  const source = integral(operation('power', symbol(t), number('2')));
+  const answer = lambda(operation('divide', operation('power', symbol(t), number('3')), number('3')));
+  const closedCondition = operation('not-equal', operation('subtract', constant('pi'), number('3')), number('0'));
+
+  it('原式の積分と同じ変数のlambdaを受け取り、その変数を含まない元の条件は保つ(定数の原始関数も関数)', () => {
+    expect(decode(reply(answer, 'antiderivative', [closedCondition]), source)).toEqual({ status: 'value', reportedKind: 'antiderivative',
+      expression: answer, domainConditions: [closedCondition], coordinateAuthorized: false });
+    expect(decode(reply(lambda(number('0')), 'antiderivative'), source)).toMatchObject({ reportedKind: 'antiderivative', expression: lambda(number('0')) });
+  });
+
+  it.each([
+    ['定積分の原式', answer, integral(operation('power', symbol(t), number('2')), { kind: 'range', lower: number('0'), upper: number('3'), step: null }), []],
+    ['式の内側の不定積分', answer, operation('multiply', number('2'), source), []],
+    ['変数が2つの積分', answer, { kind: 'binder', operation: 'integrate', body: symbol(t), bindings: [{ variable: t, domain: { kind: 'unrestricted' } },
+      { variable: { role: 'bound', id: 'bound-u', label: 'u' }, domain: { kind: 'unrestricted' } }] }, []],
+    ['別の識別子の変数', lambda(symbol({ role: 'bound', id: 'other', label: 't' }), { role: 'bound', id: 'other', label: 't' }), source, []],
+    ['別の表示名の変数', lambda(symbol({ role: 'bound', id: 'bound-t', label: 's' }), { role: 'bound', id: 'bound-t', label: 's' }), source, []],
+    ['lambdaでない答え', operation('divide', operation('power', symbol(t), number('3')), number('3')), source, []],
+    ['積分のままの答え', source, source, []],
+    ['真偽の本体', lambda(operation('less', symbol(t), number('0'))), source, []],
+    ['入れ子のlambda', lambda(lambda(symbol(t), { role: 'bound', id: 'bound-s', label: 's' })), source, []],
+    ['範囲の外の束縛変数を含む本体', lambda(symbol({ role: 'bound', id: 'bound-k', label: 'k' })), source, []],
+    ['積分の変数を含む条件', answer, source, [operation('not-equal', symbol(t), number('0'))]],
+  ] as const)('%sは原始関数の答えとして受け取らない', (_name, expression, original, conditions) => {
+    expect(() => decode(reply(expression, 'antiderivative', conditions), original)).toThrow();
+  });
+
+  it('原始関数の答えに座標や未知の項目を付けた返信を受け取らない', () => {
+    expect(() => decode({ ...reply(answer, 'antiderivative'), coordinateAuthorized: true }, source)).toThrow();
+    expect(() => decode({ ...reply(answer, 'antiderivative'), coordinate: 1 }, source)).toThrow();
+    expect(() => decode({ ...reply(answer, 'antiderivative'), request: source }, source)).toThrow();
+  });
+
+  it.each(['real', 'complex', 'symbolic', 'boolean', 'vector', 'matrix', 'set', 'interval', 'infinite-bound'])(
+    'lambdaは%sの値として受け取らず、演算の引数としても受け取らない', kind => {
+      expect(() => decode(reply(answer, kind), source)).toThrow('数式の厳密な計算結果の形式が不正です。');
+      expect(() => decode(reply(operation('add', answer, number('1')), kind), source)).toThrow();
+      expect(() => decode(reply(operation('list', answer), kind), source)).toThrow();
+    });
+
+  it('isAntiderivativeOfは原式の最上位が境界の無い積分のときだけ真で、写像などの関数値の原式には偽になる', () => {
+    expect(indefiniteIntegralBinding(source)).toEqual({ variable: t, domain: { kind: 'unrestricted' } });
+    expect(isAntiderivativeOf(answer, source)).toBe(true);
+    expect(isAntiderivativeOf(answer, integral(symbol(t), { kind: 'range', lower: number('0'), upper: number('1'), step: null }))).toBe(false);
+    expect(isAntiderivativeOf(answer, operation('multiply', number('2'), source))).toBe(false);
+    const mapping = operation('mapping', lambda(symbol(t)), constant('real-numbers'), constant('real-numbers'));
+    expect(indefiniteIntegralBinding(mapping)).toBeNull();
+    expect(isAntiderivativeOf(mapping, mapping)).toBe(false);
+    expect(isAntiderivativeOf(lambda(symbol(t)), mapping)).toBe(false);
+    expect(isAntiderivativeOf(source, source)).toBe(false);
   });
 });

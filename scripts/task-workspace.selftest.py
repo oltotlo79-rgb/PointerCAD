@@ -12,6 +12,7 @@ from lib.task_workspace import create_workspace, project_temp_directory
 ROOT = Path(__file__).resolve().parents[1]
 GIT_ENV = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
 COMMON = Path(subprocess.check_output(['git', '--no-optional-locks', '-C', str(ROOT),
+    '-c', 'safe.directory=' + ROOT.as_posix(),
     'rev-parse', '--path-format=absolute', '--git-common-dir'], env=GIT_ENV, text=True).strip()).resolve(strict=True)
 PROJECT = COMMON.parent
 assert COMMON.name == '.git' and ROOT.is_relative_to(PROJECT)
@@ -24,7 +25,8 @@ class TaskWorkspaceTests(unittest.TestCase):
         for directory in (first, second):
             self.addCleanup(directory.rmdir)
             self.assertTrue(directory.resolve().is_relative_to(PROJECT / 'scratchpad'))
-            result = subprocess.run(['git', '--no-optional-locks', '-C', str(PROJECT), 'check-ignore', str(directory)],
+            result = subprocess.run(['git', '--no-optional-locks', '-C', str(PROJECT),
+                                     '-c', 'safe.directory=' + PROJECT.as_posix(), 'check-ignore', str(directory)],
                                     capture_output=True, timeout=10, env=GIT_ENV)
             self.assertEqual(result.returncode, 0)
         self.assertNotEqual(first, second)

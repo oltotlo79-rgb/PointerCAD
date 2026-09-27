@@ -1,10 +1,21 @@
 /** Function form fields stay textual until the shared Worker has evaluated every required scalar. */
 import { mathScalarExpression, type AngleUnit, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
-import { FUNCTION_DEFINITION_FORMAT, FunctionPlotBounds, type FunctionDefinition, type FunctionPlotAxis,
-  type PartDocument, type SketchFunctionCurveFeature, type FunctionSurfaceFeature } from '@pointercad/model';
+import { FUNCTION_DEFINITION_FORMAT, FunctionPlotBounds, checkGeometryDerivedFunctionOperations,
+  mathGeometryDerivedCoefficientIds, mathGeometryDerivedParameters, type FunctionDefinition, type FunctionPlotAxis,
+  type MathGeometryOutcome, type PartDocument, type SketchFunctionCurveFeature, type FunctionSurfaceFeature } from '@pointercad/model';
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
 import { prepareDocumentMathEnvironment } from '../math/prepareDocumentMathEditor.js';
 import { t } from '../i18n/t.js';
+
+/**
+ * rules/06 §10.317 (GR-18b): the calculation tape has no `equal`; F in "F=0" is what a curve/surface samples, not
+ * "A=B". Checked on the parsed root before confirming, so a written "X^2+Y^2=1" is refused with a reason instead
+ * of being silently rewritten to "X^2+Y^2-(1)" (which side becomes F is the user's choice). `resolveFunctionInputs`
+ * (model) shows the same guidance text for an older saved file that still holds this form.
+ */
+function implicitEqualsRootRejected(expression: StoredMathExpression['expression']): boolean {
+  return expression.kind === 'operation' && expression.operation === 'equal' && expression.operands.length === 2;
+}
 
 export type FunctionScalarField = `${FunctionPlotAxis | 'T' | 'U' | 'V'}.${'min' | 'max'}` | 'tolerance' | 'fixedCoordinate';
 export interface FunctionTextDraft { readonly source: string; readonly angleUnit: AngleUnit }
@@ -71,15 +82,30 @@ export function functionDraftScope(draft: FunctionPlotDraft) {
 export type FunctionDraftResult = { readonly ok: true; readonly definition: FunctionDefinition; readonly prepared: PartDocument }
   | { readonly ok: false; readonly cancelled: boolean; readonly fields: ReadonlyMap<string, string> };
 
+/**
+ * rules/06 (GR-18c): the caller supplies the document's CURRENT math-geometry outcomes exactly as
+ * `MathExpressionDialog.tsx` does (`mathGeometryInputsFor`, waiting via `waitForMathEditorGeometry` while
+ * pending) so `prepareDocumentMathEnvironment`'s `evaluateDocumentMath` can resolve a geometry-derived
+ * coefficient instead of leaving the WHOLE document's coefficient list empty (GR-18b's report: an ordinary
+ * coefficient sharing the document with an unresolved geometry-derived one failed identically). Omitting
+ * `geometry` (scripting, and every pre-existing caller before this fix) keeps exactly today's behaviour.
+ */
 export async function evaluateFunctionPlotDraft(document: PartDocument, documentVersion: number,
   draft: FunctionPlotDraft, client: Pick<MathWorkerClient, 'evaluate'>, signal: AbortSignal,
-  isCurrent: () => boolean): Promise<FunctionDraftResult> {
+  isCurrent: () => boolean, geometry?: ReadonlyMap<string, MathGeometryOutcome>): Promise<FunctionDraftResult> {
   const current = () => !signal.aborted && isCurrent(), fields = new Map<string, string>();
   const failed = (): FunctionDraftResult => ({ ok: false, cancelled: !current(), fields });
   if (!current()) return failed();
-  const context = { client, identity: { documentId: document.id, documentVersion }, signal, isCurrent: current };
+  const context = { client, identity: { documentId: document.id, documentVersion }, signal, isCurrent: current,
+    ...(geometry === undefined ? {} : { geometry }) };
   const environment = await prepareDocumentMathEnvironment(document, context);
   if (!current()) return failed();
+  // A caller that already resolved geometry (so this is a genuine, not merely 計算待ち, problem) gets one
+  // clear reason instead of every field that happens to reference any coefficient failing to parse.
+  if (geometry !== undefined && environment.coefficientProblem !== null) {
+    fields.set('form', environment.coefficientProblem);
+    return failed();
+  }
   const scope = functionDraftScope(draft), values = new Map<FunctionScalarField, ExpressionValue>(), outputs = new Map<FunctionPlotAxis, StoredMathExpression>();
   const scalarFields: FunctionScalarField[] = ['X.min', 'X.max', 'Y.min', 'Y.max', 'Z.min', 'Z.max', 'tolerance',
     ...(draft.form==='implicit' && draft.geometry==='curve' ? ['fixedCoordinate'] as const : []),
@@ -107,15 +133,19 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
     const input = draft.outputs[axis], completion = await calculate(axis, input.source, input.angleUnit, input.accepted, true);
     if (!current()) return failed();
     if (completion === null) continue;
-    if (completion.definition === null || completion.evaluation.status !== 'value' || completion.evaluation.kind !== 'function') fields.set(axis, t('math.invalidSource'));
-    else outputs.set(axis, completion.definition);
+    // A refused formula keeps its own reason (e.g. an indefinite integral, MC-20); other states stay generic.
+    if (completion.definition === null || completion.evaluation.status !== 'value' || completion.evaluation.kind !== 'function') {
+      fields.set(axis, completion.evaluation.status === 'invalid' ? completion.evaluation.detail : t('math.invalidSource'));
+    } else outputs.set(axis, completion.definition);
   }
   let equation:StoredMathExpression|undefined;
   if(draft.form==='implicit'){
     const input=draft.equation,completion=await calculate('equation',input.source,input.angleUnit,input.accepted,true);
     if(!current()) return failed();
     if(completion!==null){
-      if(completion.definition===null || completion.evaluation.status!=='value' || completion.evaluation.kind!=='function') fields.set('equation',t('math.invalidSource'));
+      if(completion.definition===null || completion.evaluation.status!=='value' || completion.evaluation.kind!=='function') {
+        fields.set('equation',completion.evaluation.status==='invalid' ? completion.evaluation.detail : t('math.invalidSource'));
+      } else if(implicitEqualsRootRejected(completion.definition.expression)) fields.set('equation',t('functionPlot.implicitEqualsNotSupported'));
       else equation=completion.definition;
     }
   }
@@ -132,11 +162,24 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
     if (!(width > 0) || !Number.isFinite(width)) fields.set(`${parameter}.max`, t('functionPlot.invalidRange'));
   }
   if (fields.size > 0) return failed();
+  // GR-18b: a formula that feeds a geometry-derived coefficient into an operation that jumps at a value boundary
+  // is refused here (before confirming), with GR-06b's own reason placed on the formula field it came from.
+  const derivedCoefficientIds = mathGeometryDerivedCoefficientIds(environment.prepared.parameters,
+    mathGeometryDerivedParameters(environment.prepared.parameters));
+  const rejectGeometryDerived = (candidate: FunctionDefinition): boolean => {
+    if (derivedCoefficientIds.size === 0) return false;
+    const issue = checkGeometryDerivedFunctionOperations(candidate, derivedCoefficientIds);
+    if (issue === null) return false;
+    fields.set(issue.output ?? 'equation', issue.message);
+    return true;
+  };
   if(draft.form==='implicit'){
     if(equation===undefined) {fields.set('equation',t('functionPlot.required'));return failed();}
-    return {ok:true,prepared:environment.prepared,definition:{format:FUNCTION_DEFINITION_FORMAT,bounds,tolerance,
+    const definition: FunctionDefinition = {format:FUNCTION_DEFINITION_FORMAT,bounds,tolerance,
       formula:draft.geometry==='surface' ? {kind:'implicit-surface',expression:equation}
-        : {kind:'implicit-curve',expression:equation,fixedAxis:draft.fixedAxis,fixedCoordinate:scalar('fixedCoordinate')}}};
+        : {kind:'implicit-curve',expression:equation,fixedAxis:draft.fixedAxis,fixedCoordinate:scalar('fixedCoordinate')}};
+    if (rejectGeometryDerived(definition)) return failed();
+    return {ok:true,prepared:environment.prepared,definition};
   }
   const formula: FunctionDefinition['formula'] = draft.geometry === 'surface'
     ? draft.form === 'parametric'
@@ -146,5 +189,7 @@ export async function evaluateFunctionPlotDraft(document: PartDocument, document
     : draft.independent === 'X' ? { kind: 'coordinate-curve', independent: 'X', outputs: { Y: output('Y'), Z: output('Z') } }
       : draft.independent === 'Y' ? { kind: 'coordinate-curve', independent: 'Y', outputs: { X: output('X'), Z: output('Z') } }
         : { kind: 'coordinate-curve', independent: 'Z', outputs: { X: output('X'), Y: output('Y') } };
-  return { ok: true, prepared: environment.prepared, definition: { format: FUNCTION_DEFINITION_FORMAT, bounds, tolerance, formula } };
+  const definition: FunctionDefinition = { format: FUNCTION_DEFINITION_FORMAT, bounds, tolerance, formula };
+  if (rejectGeometryDerived(definition)) return failed();
+  return { ok: true, prepared: environment.prepared, definition };
 }

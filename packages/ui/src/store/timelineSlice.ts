@@ -3,7 +3,7 @@
  * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
  */
 
-import { moveHistoryItem } from '@pointercad/model';
+import { mathGeometryHistoryEdges, moveHistoryItem } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { MessageKey } from '../i18n/t.js';
 import type { TimelineRefusal } from '../shell/timelineMove.js';
@@ -89,7 +89,9 @@ export const createTimelineSlice: StateCreator<
   },
   moveTimelineItem: (featureId, toIndex) => {
     const state = get();
-    const outcome = moveHistoryItem(state.document, featureId, toIndex);
+    const outcome = moveHistoryItem(
+      state.document, featureId, toIndex, mathGeometryHistoryEdges(state.document),
+    );
     if (!outcome.ok) {
       // 断りは文書を変えずに理由だけ置く(FR-504、NFR-RE-1)。壊れる側の行に印が出る。
       set({

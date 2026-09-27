@@ -22,8 +22,7 @@
     "@pointercad/drawing": "workspace:*",
     "@pointercad/expression": "workspace:*",
     "@pointercad/kernel": "workspace:*",
-    "comlink": "catalog:",
-    "quickjs-wasi": "catalog:"
+    "comlink": "catalog:"
   },
   "devDependencies": {
     "@pointercad/test-utils": "workspace:*",

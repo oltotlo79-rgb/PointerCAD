@@ -6,6 +6,7 @@ import {savePart} from './scriptsFlow.js';
 import {beginRecompute,waitForRecompute} from './recompute.js';
 import {uiMessage} from './uiMessages.js';
 import {observeMathWorkers} from './mathWorkerDiagnostics.js';
+import {captureManualDetail} from './captureManualDetail.js';
 
 const text = functionPlotMessage;
 export async function functionImplicitCurveFlow(page:Page,info:TestInfo,app?:ElectronApplication):Promise<void>{
@@ -32,7 +33,8 @@ async function runFunctionImplicitCurveFlow(page:Page,info:TestInfo,app?:Electro
   await dialog.getByRole('button',{name:text('preview'),exact:true}).click();
   await expect(dialog.getByRole('button',{name:text('apply'),exact:true})).toBeEnabled({timeout:60_000});
   await expect(dialog.getByRole('status')).toContainText(`${text('closedCurveCount')}: 1`);
-  await expect(dialog.locator('canvas')).toBeInViewport({ratio:1});await page.screenshot({path:info.outputPath('function-implicit-circle.png'),fullPage:true});
+  await expect(dialog.locator('canvas')).toBeInViewport({ratio:1});
+  await captureManualDetail(page,info,{name:'function-implicit-circle',dialog,fixture:{preset:'implicit-circle'},script:new URL(import.meta.url)});
   const created=await beginRecompute(page);await dialog.getByRole('button',{name:text('apply'),exact:true}).click();await waitForRecompute(page,created);
   const original=await savePart(page,info,'function-implicit-circle.pcad',app);
   const feature=original.sketches.flatMap(sketch=>sketch.features).find(feature=>feature.kind==='functionCurve');
@@ -57,7 +59,8 @@ async function runFunctionImplicitCurveFlow(page:Page,info:TestInfo,app?:Electro
   await dialog.getByRole('button',{name:text('preview'),exact:true}).click();
   await expect(dialog.getByRole('button',{name:text('apply'),exact:true})).toBeEnabled({timeout:60_000});
   await expect(dialog.getByRole('status')).toContainText(`${text('closedCurveCount')}: 0`);
-  await expect(dialog.locator('canvas')).toBeInViewport({ratio:1});await page.screenshot({path:info.outputPath('function-implicit-open-arc.png'),fullPage:true});
+  await expect(dialog.locator('canvas')).toBeInViewport({ratio:1});
+  await captureManualDetail(page,info,{name:'function-implicit-open-arc',dialog,fixture:original,script:new URL(import.meta.url)});
   const changed=await beginRecompute(page);await dialog.getByRole('button',{name:text('apply'),exact:true}).click();await waitForRecompute(page,changed);
   const saved=await savePart(page,info,'function-implicit-open-arc.pcad',app);
   expect(saved.sketches.flatMap(sketch=>sketch.features).find(item=>item.id===feature.id)).toMatchObject({definition:{

@@ -2,31 +2,6 @@
   "schemaVersion": 1,
   "packages": [
     {
-      "name": "@cortex-js/compute-engine",
-      "version": "0.128.6",
-      "license": "MIT",
-      "chain": [
-        "packages/expression",
-        "@cortex-js/compute-engine"
-      ],
-      "installedNotice": "LICENSE",
-      "notice": "compute-engine.txt",
-      "sha256": "f9270498fcb583f1a8aa4664e1986910d005303ff9c5cbab432bb4d1f292f225"
-    },
-    {
-      "name": "complex-esm",
-      "version": "2.1.1-esm1",
-      "license": "MIT",
-      "chain": [
-        "packages/expression",
-        "@cortex-js/compute-engine",
-        "complex-esm"
-      ],
-      "installedNotice": "LICENSE",
-      "notice": "complex-esm-2.1.1-esm1.txt",
-      "sha256": "5bce81708ac83821fc48be1e97d89a5c8e733632ddb375d2c7101fb60dbfe6b2"
-    },
-    {
       "name": "mathlive",
       "version": "0.110.0",
       "license": "MIT",
@@ -39,26 +14,11 @@
       "sha256": "3caebd18611959ca725ab976a004d408017eb1d7093d6c9b9b09c5a4790eaff8"
     },
     {
-      "name": "@cortex-js/compute-engine",
-      "version": "0.58.0",
-      "license": "MIT",
-      "chain": [
-        "packages/ui",
-        "mathlive",
-        "@cortex-js/compute-engine"
-      ],
-      "installedNotice": "LICENSE",
-      "notice": "compute-engine-0.58.0.txt",
-      "sha256": "f9270498fcb583f1a8aa4664e1986910d005303ff9c5cbab432bb4d1f292f225"
-    },
-    {
       "name": "decimal.js",
       "version": "10.6.0",
       "license": "MIT",
       "chain": [
-        "packages/ui",
-        "mathlive",
-        "@cortex-js/compute-engine",
+        "packages/expression",
         "decimal.js"
       ],
       "installedNotice": "LICENCE.md",
@@ -158,22 +118,7 @@
       "sha256": "ebc109078c06f79af74cf2b27454c262830d12a65749f0e2bf25d1ac1db7a02a"
     }
   ],
-  "unresolved": [
-    {
-      "name": "@arnog/colors",
-      "version": "0.7.0",
-      "license": "MIT",
-      "reason": "Installed package has no separate copyright/license notice; repository URL currently returns 404.",
-      "gitHead": "052b0544d538e8ade3a95f4e1f4674c279c61b8a"
-    },
-    {
-      "name": "@arnog/colors",
-      "version": "0.5.0",
-      "license": "MIT",
-      "reason": "Installed package has no separate copyright/license notice; repository URL currently returns 404.",
-      "gitHead": "59011fa0a72ab5302641e8fd428badd627241c82"
-    }
-  ],
+  "unresolved": [],
   "fontSource": "https://github.com/arnog/mathlive/tree/v0.110.0/css/fonts",
   "fontLicenseSource": "https://openfontlicense.org/documents/OFL.txt"
 }

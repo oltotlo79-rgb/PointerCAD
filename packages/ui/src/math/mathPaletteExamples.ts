@@ -1,97 +1,95 @@
 import { MATH_PALETTE_DRAFT } from './mathPalette.js';
+import type { MathPaletteExample } from './mathPaletteGroups.js';
+import { MATH_PALETTE_BASIC_EXAMPLES } from './mathPaletteBasicExamples.js';
+import { MATH_PALETTE_CALCULUS_EXAMPLES } from './mathPaletteCalculusExamples.js';
+import { MATH_PALETTE_SETS_LOGIC_EXAMPLES } from './mathPaletteSetsLogicExamples.js';
+
+/**
+ * 公開パレットの表示順。分割前の189項目とMC-02の83項目、計272項目の順を保つ。
+ * 続く7項目（関数作図のベクトル解析6項目と偏微分方程式）と、MC-31で公開した内積・外積・ノルムの3項目も、
+ * 公開した位置をここで固定する（計282項目）。MC-19bで公開した微分・偏微分の2項目も続けて固定する（計284項目）。
+ * MC-02dで公開したe、射影・単位/零行列・全微分、集合の関係7件・≈・要素数・真偽の定数の16項目も
+ * 続けて固定する（計300項目。∞は標準の評価がinvalid/non-finiteになり公開できなかった。最終報告参照）。
+ * 後から分野別ファイルへ足した項目が、これらの前へ割り込まない。
+ * ここに無い新しい項目は、分野別の実例ファイル（基本→微積分→集合・論理）の順で後ろに続く。
+ * MC-02eが公開した±・∓、閉じた線・面積分4件（MC-19d実装分）、∀・∃（MC-24実装分）の8項目は
+ * このリストに含めず、上記の規則どおり各分野別ファイルの末尾から続けて並ぶ（計308項目）。
+ * MC-04cが公開した不定積分（原始関数）1項目も同様にこのリストへ含めず、微積分ファイルの末尾
+ * （closed-flux-integralの後ろ）へ続けて並ぶ（計309項目）。
+ */
+const MATH_PALETTE_DISPLAY_ORDER: readonly string[] = [
+  'mapping', 'mapping-value', 'mapping-compose', 'mapping-inverse', 'mapping-image', 'mapping-preimage',
+  'limit-supremum', 'limit-infimum', 'set-supremum', 'set-infimum', 'set-maximum', 'set-minimum', 'solve-ode',
+  'ode-value', 'numerical-roots', 'root-interval', 'solve-system', 'system-solution', 'solve-equation',
+  'polynomial-roots', 'solution-value', 'fourier-series', 'fourier-value', 'fourier-cosine', 'fourier-sine',
+  'fourier-transform', 'inverse-fourier-transform', 'laplace-transform', 'inverse-laplace-transform', 'z-transform',
+  'transform-value', 'dft', 'idft', 'fft', 'ifft', 'zeta', 'zetaderivative', 'elliptick', 'elliptice', 'ellipticf',
+  'ellipticeinc', 'ellipticpi', 'ellipticpiinc', 'airyai', 'airybi', 'airyaiprime', 'airybiprime', 'lambertw',
+  'besselj', 'bessely', 'besseli', 'besselk', 'beta', 'gamma', 'polygamma', 'erf', 'erfc', 'legendre',
+  'series-coefficient', 'taylor', 'maclaurin', 'sequence-value', 'difference-at', 'recurrence-value',
+  'event-probability', 'given-probability', 'random-expectation', 'random-variance', 'random-covariance',
+  'random-correlation', 'independent-events', 'independent-variables', 'chi-square-pdf', 'chi-square-cdf',
+  'chi-square-quantile', 't-pdf', 't-cdf', 't-quantile', 'f-pdf', 'f-cdf', 'f-quantile', 'gamma-pdf', 'gamma-cdf',
+  'gamma-quantile', 'beta-pdf', 'beta-cdf', 'beta-quantile', 'normal-pdf', 'normal-cdf', 'normal-quantile',
+  'expectation', 'probability-variance', 'conditional-probability', 'uniform-pdf', 'uniform-cdf', 'uniform-quantile',
+  'exponential-pdf', 'exponential-cdf', 'exponential-quantile', 'binomial-quantile', 'poisson-quantile',
+  'poisson-pmf', 'poisson-cdf', 'svd-u', 'svd-s', 'svd-v', 'eigenspace', 'tensor-product', 'hadamard-product',
+  'tensor-contract', 'tensor-permute', 'tensor-shape', 'tensor-element', 'kronecker-delta', 'levi-civita',
+  'integer-quotient', 'integer-remainder', 'divides', 'congruent-modulo', 'is-prime', 'next-prime', 'prime-factors',
+  'divisors', 'euler-totient', 'binomial-pmf', 'binomial-cdf', 'singular-values', 'eigenvalues', 'row-reduce',
+  'qr-q', 'qr-r', 'lu-p', 'lu-l', 'lu-u', 'characteristic-coefficients', 'null-space', 'column-space', 'row-space',
+  'linear-solve', 'linear-solution-space', 'mean', 'median', 'modes', 'quantile', 'population-variance',
+  'sample-variance', 'population-standard-deviation', 'sample-standard-deviation', 'population-covariance',
+  'sample-covariance', 'correlation', 'regression-slope', 'regression-intercept', 'r-squared', 'reciprocal',
+  'double-factorial', 'permutations', 'clamp', 'arccot', 'arcsec', 'arccsc', 'atan2', 'coth', 'sech', 'csch',
+  'arcoth', 'arsech', 'arcsch', 'component', 'fraction', 'power', 'square-root', 'nth-root', 'factorial', 'absolute',
+  'sin', 'cos', 'tan', 'arcsin', 'log-natural', 'log-ten', 'log-base', 'sinh', 'sum', 'product', 'integral',
+  'matrix', 'pi', 'imaginary-unit',
+  'arccos', 'arctan', 'cot', 'sec', 'csc',
+  'cosh', 'tanh', 'arsinh', 'arcosh', 'artanh',
+  'exponential', 'log-two', 'floor', 'ceiling', 'round',
+  'sign', 'minimum', 'maximum', 'binomial', 'gcd',
+  'lcm', 'modulo', 'argument', 'cis', 'real-part',
+  'imaginary-part', 'conjugate', 'limit', 'determinant', 'transpose',
+  'conjugate-transpose', 'inverse-matrix', 'trace', 'rank', 'gradient-at',
+  'divergence-at', 'curl-at', 'laplacian-at', 'jacobian-at', 'hessian-at',
+  'line-integral', 'circulation', 'surface-integral', 'flux-integral', 'volume-integral',
+  'derivative-at', 'infinite-sum', 'infinite-product', 'union', 'intersection',
+  'cases', 'equal', 'not-equal', 'less', 'less-equal',
+  'greater', 'greater-equal', 'and', 'or', 'not',
+  'implies', 'equivalent', 'empty-set', 'natural-numbers', 'integer-numbers',
+  'rational-numbers', 'real-numbers', 'complex-numbers', 'element', 'set-minus',
+  'normal-distribution', 'uniform-distribution', 'exponential-distribution', 'gamma-distribution', 'beta-distribution',
+  'chisquare-distribution', 't-distribution', 'f-distribution', 'binomial-distribution', 'poisson-distribution',
+  'finite-distribution', 'joint-finite-distribution', 'independent-distributions',
+  'gradient', 'divergence', 'curl', 'laplacian', 'jacobian', 'hessian', 'partial-equations',
+  'dot', 'cross', 'norm',
+  'derivative', 'partial',
+  'e',
+  'projection', 'identity-matrix', 'zero-matrix', 'total-differential-at',
+  'not-element', 'subset', 'subset-equal', 'superset', 'superset-equal', 'complement', 'cartesian-product',
+  'approximately-equal', 'cardinality', 'true', 'false',
+];
+
+function inDisplayOrder(examples: readonly MathPaletteExample[]): readonly MathPaletteExample[] {
+  const byId = new Map<string, MathPaletteExample>();
+  for (const example of examples) {
+    if (byId.has(example.id)) throw new Error(`Duplicate math palette example: ${example.id}`);
+    byId.set(example.id, example);
+  }
+  const listed = new Set(MATH_PALETTE_DISPLAY_ORDER);
+  const ordered = MATH_PALETTE_DISPLAY_ORDER.map(id => {
+    const example = byId.get(id);
+    if (example === undefined) throw new Error(`Missing math palette example in display order: ${id}`);
+    return example;
+  });
+  return [...ordered, ...examples.filter(example => !listed.has(example.id))];
+}
 
 /** Shared runnable examples: the browser palette and its real-engine acceptance use exactly the same templates. */
-export const MATH_PALETTE_EXAMPLES: readonly {
-  readonly id: string; readonly selection: string; readonly slots: readonly string[];
-  readonly expected: number | 'complex' | 'matrix' | 'vector' | 'boolean';
-}[] = [
-  {"id": "svd-u", "selection": "[[3,0],[4,0]]", "slots": [], "expected": "matrix"},
-  {"id": "svd-s", "selection": "[[3,0],[4,0]]", "slots": [], "expected": "matrix"},
-  {"id": "svd-v", "selection": "[[3,0],[4,0]]", "slots": [], "expected": "matrix"},
-  {"id": "eigenspace", "selection": "[[2,1],[0,2]]", "slots": ["2"], "expected": "matrix"},
-  {"id": "tensor-product", "selection": "[1,2]", "slots": ["[3,4]"], "expected": "matrix"},
-  {"id": "hadamard-product", "selection": "[[1,2],[3,4]]", "slots": ["[[2,3],[4,5]]"], "expected": "matrix"},
-  {"id": "tensor-contract", "selection": "[[1,2],[3,4]]", "slots": ["1", "2"], "expected": 5},
-  {"id": "tensor-permute", "selection": "[[1,2,3],[4,5,6]]", "slots": ["[2,1]"], "expected": "matrix"},
-  {"id": "tensor-shape", "selection": "[[1,2,3],[4,5,6]]", "slots": [], "expected": "vector"},
-  {"id": "tensor-element", "selection": "[[[1,2],[3,4]],[[5,6],[7,8]]]", "slots": ["[2,1,2]"], "expected": 6},
-  {"id": "kronecker-delta", "selection": "2", "slots": ["2"], "expected": 1},
-  {"id": "levi-civita", "selection": "[2,3,1]", "slots": [], "expected": 1},
-  {"id": "integer-quotient", "selection": "-7", "slots": ["3"], "expected": -3},
-  {"id": "integer-remainder", "selection": "-7", "slots": ["-3"], "expected": 2},
-  {"id": "divides", "selection": "4", "slots": ["20"], "expected": "boolean"},
-  {"id": "congruent-modulo", "selection": "-1", "slots": ["5", "3"], "expected": "boolean"},
-  {"id": "is-prime", "selection": "13", "slots": [], "expected": "boolean"},
-  {"id": "next-prime", "selection": "97", "slots": [], "expected": 101},
-  {"id": "prime-factors", "selection": "360", "slots": [], "expected": "matrix"},
-  {"id": "divisors", "selection": "36", "slots": [], "expected": "vector"},
-  {"id": "euler-totient", "selection": "36", "slots": [], "expected": 12},
-  { id: 'binomial-pmf', selection: '4', slots: ['1/2', '2'], expected: 0.375 },
-  { id: 'binomial-cdf', selection: '4', slots: ['1/2', '2'], expected: 0.6875 },
-  { id: 'singular-values', selection: '[[3,0],[0,4]]', slots: [], expected: 'vector' },
-  { id: 'eigenvalues', selection: '[[2,1],[1,2]]', slots: [], expected: 'vector' },
-  { id: 'row-reduce', selection: '[[1,2,3],[2,4,6]]', slots: [], expected: 'matrix' },
-  { id: 'qr-q', selection: '[[3,0],[4,5]]', slots: [], expected: 'matrix' },
-  { id: 'qr-r', selection: '[[3,0],[4,5]]', slots: [], expected: 'matrix' },
-  { id: 'lu-p', selection: '[[0,2],[3,4]]', slots: [], expected: 'matrix' },
-  { id: 'lu-l', selection: '[[1,1,1],[2,2,3],[4,5,6]]', slots: [], expected: 'matrix' },
-  { id: 'lu-u', selection: '[[1,1,1],[2,2,3],[4,5,6]]', slots: [], expected: 'matrix' },
-  { id: 'characteristic-coefficients', selection: '[[1,2],[3,4]]', slots: [], expected: 'vector' },
-  { id: 'null-space', selection: '[[1,2,3],[2,4,6]]', slots: [], expected: 'matrix' },
-  { id: 'column-space', selection: '[[1,2,3],[2,4,6]]', slots: [], expected: 'matrix' },
-  { id: 'row-space', selection: '[[1,2,3],[2,4,6]]', slots: [], expected: 'matrix' },
-  { id: 'linear-solve', selection: '[[2,1],[1,-1]]', slots: ['[5,1]'], expected: 'vector' },
-  { id: 'linear-solution-space', selection: '[[1,2,3],[2,4,6]]', slots: ['[4,8]'], expected: 'matrix' },
-  {"id": "mean", "selection": "[1,2,6]", "slots": [], "expected": 3},
-  {"id": "median", "selection": "[9,1,3,5]", "slots": [], "expected": 4},
-  {"id": "modes", "selection": "[1,1,2,2,3]", "slots": [], "expected": "vector"},
-  {"id": "quantile", "selection": "[0,10,20,30]", "slots": ["0.25"], "expected": 7.5},
-  {"id": "population-variance", "selection": "[1,2,3]", "slots": [], "expected": 0.6666666666666666},
-  {"id": "sample-variance", "selection": "[1,2,3]", "slots": [], "expected": 1},
-  {"id": "population-standard-deviation", "selection": "[1,3]", "slots": [], "expected": 1},
-  {"id": "sample-standard-deviation", "selection": "[1,3]", "slots": [], "expected": 1.4142135623730951},
-  {"id": "population-covariance", "selection": "[1,2,3]", "slots": ["[2,4,6]"], "expected": 1.3333333333333333},
-  {"id": "sample-covariance", "selection": "[1,2,3]", "slots": ["[2,4,6]"], "expected": 2},
-  {"id": "correlation", "selection": "[1,2,3]", "slots": ["[6,4,2]"], "expected": -1},
-  {"id": "regression-slope", "selection": "[1,2,3]", "slots": ["[3,5,7]"], "expected": 2},
-  {"id": "regression-intercept", "selection": "[1,2,3]", "slots": ["[3,5,7]"], "expected": 1},
-  {"id": "r-squared", "selection": "[1,2,3]", "slots": ["[3,5,7]"], "expected": 1},
-  { id: 'reciprocal', selection: '4', slots: [], expected: 0.25 },
-  { id: 'double-factorial', selection: '5', slots: [], expected: 15 },
-  { id: 'permutations', selection: '5', slots: ['3'], expected: 60 },
-  { id: 'clamp', selection: '8', slots: ['1', '5'], expected: 5 },
-  { id: 'arccot', selection: '-1', slots: [], expected: 135 },
-  { id: 'arcsec', selection: '2', slots: [], expected: 60 },
-  { id: 'arccsc', selection: '2', slots: [], expected: 30 },
-  { id: 'atan2', selection: '1', slots: ['-1'], expected: 135 },
-  { id: 'coth', selection: String.raw`\ln(3)`, slots: [], expected: 1.25 },
-  { id: 'sech', selection: '0', slots: [], expected: 1 },
-  { id: 'csch', selection: String.raw`\ln(3)`, slots: [], expected: 0.75 },
-  { id: 'arcoth', selection: '2', slots: [], expected: Math.log(3)/2 },
-  { id: 'arsech', selection: '1', slots: [], expected: 0 },
-  { id: 'arcsch', selection: '1', slots: [], expected: Math.log(1+Math.sqrt(2)) },
-  { id: 'component', selection: String.raw`\begin{pmatrix}1&2\\3&4\end{pmatrix}`, slots: ['2', '1'], expected: 3 },
-  { id: 'fraction', selection: '3', slots: ['2'], expected: 1.5 },
-  { id: 'power', selection: '2', slots: ['3'], expected: 8 },
-  { id: 'square-root', selection: '9', slots: [], expected: 3 },
-  { id: 'nth-root', selection: '8', slots: ['3'], expected: 2 },
-  { id: 'factorial', selection: '5', slots: [], expected: 120 },
-  { id: 'absolute', selection: '-3', slots: [], expected: 3 },
-  { id: 'sin', selection: '30', slots: [], expected: 0.5 },
-  { id: 'cos', selection: '60', slots: [], expected: 0.5 },
-  { id: 'tan', selection: '45', slots: [], expected: 1 },
-  { id: 'arcsin', selection: '0.5', slots: [], expected: 30 },
-  { id: 'log-natural', selection: '\\exponentialE', slots: [], expected: 1 },
-  { id: 'log-ten', selection: '100', slots: [], expected: 2 },
-  { id: 'log-base', selection: '8', slots: ['2'], expected: 3 },
-  { id: 'sinh', selection: '0', slots: [], expected: 0 },
-  { id: 'sum', selection: 'i^2', slots: ['3'], expected: 14 },
-  { id: 'product', selection: 'i', slots: ['4'], expected: 24 },
-  { id: 'integral', selection: 'x^2', slots: ['0', '3'], expected: 9 },
-  { id: 'matrix', selection: '', slots: ['1', '2', '3', '4'], expected: 'matrix' },
-  { id: 'pi', selection: '', slots: [], expected: Math.PI },
-  { id: 'imaginary-unit', selection: '', slots: [], expected: 'complex' },
-];
+export const MATH_PALETTE_EXAMPLES: readonly MathPaletteExample[] = inDisplayOrder([
+  ...MATH_PALETTE_BASIC_EXAMPLES, ...MATH_PALETTE_CALCULUS_EXAMPLES, ...MATH_PALETTE_SETS_LOGIC_EXAMPLES,
+]);
 
 export const MATH_INPUT_PALETTE = MATH_PALETTE_EXAMPLES.map(example => {
   const item = MATH_PALETTE_DRAFT.find(item => item.id === example.id);
@@ -99,8 +97,8 @@ export const MATH_INPUT_PALETTE = MATH_PALETTE_EXAMPLES.map(example => {
   return { ...item, acceptanceIds: [`mathPaletteExamples:${example.id}`] };
 });
 
-export function mathPaletteExampleSource(example: typeof MATH_PALETTE_EXAMPLES[number]): string {
-  const item = MATH_INPUT_PALETTE.find(item => item.id === example.id);
+export function mathPaletteExampleSource(example: MathPaletteExample): string {
+  const item = MATH_PALETTE_DRAFT.find(item => item.id === example.id);
   if (item === undefined) throw new Error(`Missing math palette example: ${example.id}`);
   let slot = 0;
   const source = item.template.replaceAll('#0', example.selection).replace(/#\?/gu, () => {

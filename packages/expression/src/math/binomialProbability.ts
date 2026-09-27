@@ -34,6 +34,22 @@ function boundedPower(base: bigint, exponent: bigint): bigint {
   return result;
 }
 
+/** Exact comparison includes equality: a CDF jump belongs to the smaller count. */
+export function binomialQuantile(values: readonly ExactRational[], check: () => void): string {
+  const [trials, probability, target] = values, n = trials.numerator;
+  const a = probability.numerator, b = probability.denominator, q = b - a;
+  check();
+  const denominator = boundedPower(b, n);
+  let term = boundedPower(q, n), sum = term;
+  for (let k = 0n; k <= n; k += 1n) {
+    check();
+    if (sum * target.denominator >= target.numerator * denominator) return k.toString();
+    term = term * (n - k) * a / ((k + 1n) * q);
+    sum += term;
+  }
+  throw new MathInputProblem('budget', '二項分布の分位点を確定できませんでした。');
+}
+
 export function normalizeBinomialProbability(
   node: Extract<MathNode, { kind: 'operation' }>,
 ): MathNode {

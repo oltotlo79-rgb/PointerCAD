@@ -14,6 +14,16 @@ describe('速度目標の未達を記録し、異常値と実用上の大幅な�
     expect(() => reportDuration(2_501, 500, '典型形状')).toThrow('実用上の遅延');
   });
 
+  it('次の面までの押し出しは500ms目標と実測を残し、5秒超を拒否する', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    expect(reportDuration(3_379.5556, 500, '次の面まで', 'solid-end')).toMatchObject({
+      actual: 3_379.5556, target: 500, practicalLimit: 5_000, meetsTarget: false, usable: true,
+    });
+    expect(reportDuration(5_000, 500, '次の面まで', 'solid-end').usable).toBe(true);
+    expect(() => reportDuration(5_000.01, 500, '次の面まで', 'solid-end')).toThrow('実用上の遅延');
+    expect(() => reportDuration(3_379.5556, 500, '通常の短い操作')).toThrow('実用上の遅延');
+  });
+
   it('描画の元の30fps目標を記録し、10fpsの境界と停止を区別する', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     expect(reportViewportRate(26.662, '50部品')).toMatchObject({ target: 30, meetsTarget: false, usable: true });
@@ -37,6 +47,7 @@ describe('速度目標の未達を記録し、異常値と実用上の大幅な�
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     expect(() => reportDuration(actual, 500, '測定')).toThrow('不正');
     expect(() => reportDuration(actual, 500, '測定', 'interference')).toThrow('不正');
+    expect(() => reportDuration(actual, 500, '測定', 'solid-end')).toThrow('不正');
     expect(() => reportViewportRate(actual, '測定')).toThrow('不正');
     expect(log).not.toHaveBeenCalled();
   });
@@ -45,6 +56,7 @@ describe('速度目標の未達を記録し、異常値と実用上の大幅な�
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     expect(() => reportDuration(1, target, '測定')).toThrow('不正');
     expect(() => reportDuration(1, target, '測定', 'interference')).toThrow('不正');
+    expect(() => reportDuration(1, target, '測定', 'solid-end')).toThrow('不正');
   });
 
   it('対象名の欠落を拒否して追跡不能な測定を作らない', () => {

@@ -11,6 +11,9 @@ import {resolveFunctionInputs} from './resolveFunctionInputs.js';
 import type {FunctionRecomputeContext} from './recomputeFunctionCurves.js';
 import {functionDirectionSource} from './functionDirectionSource.js';
 
+/** Shown on the point's owner when its calculation did not finish in time (not a wrong choice, range or accuracy). */
+export const POINT_DEADLINE_MESSAGE='関数上の点の計算が時間内に終わりませんでした。もう一度計算してください。';
+
 export async function recomputeFunctionPoints(document:PartDocument,analysis:ParameterAnalysis|undefined,
   math:DocumentMathContext|undefined,context:FunctionRecomputeContext|undefined,
   previousInvalid:ReadonlyMap<string,string>,shouldCancel:()=>boolean) {
@@ -53,6 +56,9 @@ export async function recomputeFunctionPoints(document:PartDocument,analysis:Par
       const continuation=decodePointContinuationRequest({identity:request.identity,previous:selected.choice.input,current:saved,anchor:selected.choice.location,...(direction?{direction}:{})});
       const completion=await context.points.evaluate(continuation,5_000,math.signal);
       if(!current() || completion.status==='cancelled') return result(true);
+      // A stop by the time limit says nothing about the saved choice: the next recomputation calculates it again.
+      if(completion.status==='deadline' || completion.status==='result'
+        && completion.result.status==='stopped' && completion.result.reason==='deadline') throw new Error(POINT_DEADLINE_MESSAGE);
       if(completion.status!=='result') throw new Error('関数上の点を計算しきれませんでした。範囲と指定座標を確認してください。');
       if(completion.result.status!=='ready') throw new Error(completion.result.status==='invalid'?completion.result.message:'選択した関数上の点の追従を確認できません。候補を選び直してください。');
       if(direction&&!completion.result.endpoint)throw new Error('接線・法線の終点を確認できません。');

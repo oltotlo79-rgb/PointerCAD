@@ -64,6 +64,8 @@
   "statusBar.progressHint": "すぐには止まらないことがあります。",
   "statusBar.cancel": "中止",
   "statusBar.cancelled": "計算を中止しました。",
+  "statusBar.memoryNearLimit": "形の計算に使うメモリが上限に近づいています",
+  "statusBar.memoryNearLimitDetail": "({used} GB / 上限 {limit} GB)。作業を保存し、画面を開き直してください。開き直すとメモリが空きます。",
   "statusBar.referenceError": "基準ジオメトリを作れませんでした:",
   "statusBar.timelineError": "順序を入れ替えられませんでした:",
   "statusBar.guide.referencePlaneThreePoints": "作業平面が通る 1 点目を入れます(3 点で面が決まります)。",

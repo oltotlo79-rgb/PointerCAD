@@ -3,6 +3,7 @@ import { readPcadFile } from '../../packages/io/src/index.js';
 import { resolveSketch } from '../../packages/model/src/index.js';
 import { tree, command } from './sheetUiFlow.js';
 import { sheetHelpFlow } from './sheetHelpFlow.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 type Point = readonly [number, number, number];
 const dot = (a: Point, b: Point) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -36,7 +37,8 @@ export async function intersectionEditingFlow(page: Page, info: TestInfo): Promi
     await page.locator('.pcad-popover input.pcad-field__input').first().press('Escape');
   }
   await expect(lineRows(page)).toHaveCount(4); await tree(page, '交点1').click();
-  await page.screenshot({ path: info.outputPath('intersection-created.png') });
+  await captureManualDetail(page, info, { name: 'intersection-created', dialog: page.locator('.pcad-panel--right'),
+    fixture: { step: 'created' }, script: new URL(import.meta.url) });
   await page.getByRole('group', { name: 'スケッチ', exact: true }).getByRole('button', { name: '選択', exact: true }).click();
   const start = await screenPoint(page, [0, 0, 0]), end = await screenPoint(page, [8, 6, 0]);
   await page.mouse.move(...start); await page.mouse.down(); await page.mouse.move(...end, { steps: 12 }); await page.mouse.up();
@@ -52,13 +54,16 @@ export async function intersectionEditingFlow(page: Page, info: TestInfo): Promi
     await pointFields(page).nth(index).fill(value); await pointFields(page).nth(index).press('Enter');
     await expect(pointFields(page).nth(index)).toHaveValue(value);
   }
-  await page.screenshot({ path: info.outputPath('intersection-bent.png') });
+  await captureManualDetail(page, info, { name: 'intersection-bent', dialog: page.locator('.pcad-panel--right'),
+    fixture: { step: 'bent' }, script: new URL(import.meta.url) });
   // The original polar formula remains editable on the named outer endpoint.
   await tree(page, '線分1 終点').click(); await expect(pointFields(page).nth(0)).toHaveValue('40*2');
   await page.getByRole('group', { name: 'スケッチ', exact: true }).locator('.pcad-menu__trigger').nth(1).click();
   await page.locator('.pcad-menu__panel[aria-label="編集"]').getByRole('button', { name: 'トリム', exact: true }).click();
   const trim = await screenPoint(page, [-16, 3, 0]);
-  await page.mouse.move(...trim); await page.screenshot({ path: info.outputPath('intersection-trim-preview.png') });
+  await page.mouse.move(...trim);
+  await captureManualDetail(page, info, { name: 'intersection-trim-preview', dialog: page.locator('.pcad-panel--left'),
+    fixture: { step: 'trim-preview' }, script: new URL(import.meta.url) });
   await page.mouse.click(...trim); await expect(lineRows(page)).toHaveCount(3);
   await expect(tree(page, '線分3')).toHaveCount(0);
   await expect(tree(page, '線分1')).toBeVisible();

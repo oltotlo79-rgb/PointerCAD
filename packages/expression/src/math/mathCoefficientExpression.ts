@@ -9,6 +9,8 @@ import { decodeStoredMathNode } from './decodeStoredMath.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { MATH_INPUT_LIMITS, MathInputProblem, type MathNode } from './mathInputContract.js';
 import { rationalOfExpression } from './exactRational.js';
+import { referencedMathDeclarations } from './mathDeclarations.js';
+import { parseMathDeclaredValue } from './mathDeclaredValues.js';
 
 export interface MathCoefficientValue {
   readonly id: string;
@@ -57,7 +59,8 @@ export function coefficientExpressionMap(values: readonly MathCoefficientValue[]
 }
 
 /** Substitute closed expressions with fresh bound names and a shared expansion budget. */
-export function substituteCoefficientExpressions(source: MathNode, values: ReadonlyMap<string, MathNode>): MathNode {
+export function substituteCoefficientExpressions(source: MathNode, values: ReadonlyMap<string, MathNode>,
+  role: 'coefficient' | 'declared' = 'coefficient'): MathNode {
   let remaining = MATH_INPUT_LIMITS.nodes, serial = 0;
   const occupied = new Set<string>();
   const pending: object[] = [source];
@@ -71,14 +74,14 @@ export function substituteCoefficientExpressions(source: MathNode, values: Reado
   }
   const nextBoundId = (): string => {
     let id: string;
-    do { id = `coefficient-bound:${++serial}`; } while (occupied.has(id));
+    do { id = `${role}-bound:${++serial}`; } while (occupied.has(id));
     occupied.add(id);
     return id;
   };
   function visit(node: MathNode, depth: number, names: ReadonlyMap<string, string>, replacement: boolean): MathNode {
     if (--remaining < 0 || depth > MATH_INPUT_LIMITS.depth) throw new MathInputProblem('budget', '係数の原式を展開する範囲が大きすぎます。');
     if (node.kind === 'symbol') {
-      if (node.reference.role === 'coefficient' && !replacement) {
+      if (node.reference.role === role && !replacement) {
         const value = values.get(node.reference.id);
         if (value === undefined) throw new MathInputProblem('syntax', '係数の原式を再計算できません。');
         return visit(value, depth + 1, new Map(), true);
@@ -113,7 +116,16 @@ export function substituteCoefficientExpressions(source: MathNode, values: Reado
 /** Called only after the immutable document has validated this source and its dependencies. */
 export function originalCoefficientExpression(value: ExpressionValue, names: LegacyMathNames,
   dependencies: readonly MathCoefficientValue[]): MathNode {
-  const own = value.mathDefinition?.expression ?? legacyMathToDefinition(parse(value.source), names).expression;
+  let own = value.mathDefinition?.expression ?? legacyMathToDefinition(parse(value.source), names).expression;
+  const declared = referencedMathDeclarations(own, value.mathDefinition?.declarations ?? []);
+  if (declared.length > 0) {
+    const values = new Map<string, MathNode>();
+    for (const declaration of declared) {
+      if (declaration.valueSource === undefined) throw new MathInputProblem('syntax', '係数に使う記号の値が指定されていません。');
+      values.set(declaration.id, parseMathDeclaredValue(declaration.valueSource));
+    }
+    own = substituteCoefficientExpressions(own, values, 'declared');
+  }
   const radians = mathInRadians(own, value.mathDefinition?.angleUnit ?? 'degree');
   const expanded = substituteCoefficientExpressions(radians, coefficientExpressionMap(dependencies));
   const exact = rationalOfExpression(expanded);

@@ -1,9 +1,9 @@
 /** Coordinate sections retain the parent body and an editable coordinate expression. */
 import { expressionValueFromNumber as number, mathScalarExpression, multiplyExpression, type ExpressionValue } from '@pointercad/expression';
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
-import { addSketch, createSketchFor, FunctionPlotBounds, setActiveSketch, type FunctionPlotAxis, type PartDocument } from '@pointercad/model';
+import { addSketch, createSketchFor, FunctionPlotBounds, setActiveSketch, type FunctionPlotAxis, type MathGeometryOutcome, type PartDocument } from '@pointercad/model';
 import { t } from '../i18n/t.js';
-import { prepareDocumentMathEnvironment } from '../math/prepareDocumentMathEditor.js';
+import { prepareDocumentMathEnvironment, waitForMathEditorGeometry } from '../math/prepareDocumentMathEditor.js';
 import { commitPlaneSection } from '../sketch/projectionCommands.js';
 import { commitWorkPlane } from '../sketch/referenceCommands.js';
 import { evaluateFunctionPlotDraft, functionPlotDraft, FUNCTION_AXES, type FunctionScalarDraft } from './functionPlotDraft.js';
@@ -51,14 +51,21 @@ export async function prepareFunctionSection(document: PartDocument, documentVer
   const parent = document.solids.find(feature => feature.id === parentId);
   if (parent?.kind !== 'functionSurface' || parent.suppressed) return { status: 'failed', message: t('functionPlot.missingCurve') };
   if (input.source.trim() === '') return { status: 'failed', message: t('functionPlot.required') };
-  const evaluated = await evaluateFunctionPlotDraft(document, documentVersion, functionPlotDraft(parent), client, signal, current);
+  // GR-18c: resolve the document's current math-geometry outcomes once and reuse them for both the parent
+  // surface's own re-evaluation and the section's coordinate environment below (same pattern as
+  // MathExpressionDialog.tsx / functionPointDraft.ts).
+  let geometry: ReadonlyMap<string, MathGeometryOutcome>;
+  try { geometry = await waitForMathEditorGeometry(document, signal, current, () => undefined); }
+  catch (error) { return current() ? { status: 'failed', message: error instanceof Error ? error.message : t('math.workerFailed') } : { status: 'cancelled' }; }
+  if (!current()) return { status: 'cancelled' };
+  const evaluated = await evaluateFunctionPlotDraft(document, documentVersion, functionPlotDraft(parent), client, signal, current, geometry);
   if (!current() || (!evaluated.ok && evaluated.cancelled)) return { status: 'cancelled' };
   if (!evaluated.ok) return { status: 'failed', message: [...evaluated.fields.values()].join('\n') };
   const bounds = FunctionPlotBounds.read(Object.fromEntries(FUNCTION_AXES.map(key => [key,
     { min: evaluated.definition.bounds[key].min.value, max: evaluated.definition.bounds[key].max.value }])));
   if (!bounds.ok) return { status: 'failed', message: t('functionPlot.invalidRange') };
   const identity = { documentId: document.id, documentVersion, editorId: 'function-section', inputRevision: 1 };
-  const environment = await prepareDocumentMathEnvironment(evaluated.prepared, { client, identity, signal, isCurrent: current });
+  const environment = await prepareDocumentMathEnvironment(evaluated.prepared, { client, identity, signal, isCurrent: current, geometry });
   if (!current()) return { status: 'cancelled' };
   if (environment.coefficientProblem) return { status: 'failed', message: environment.coefficientProblem };
   const completion = await client.evaluate({ identity, source: input.source, angleUnit: input.angleUnit,

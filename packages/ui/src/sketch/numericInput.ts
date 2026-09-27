@@ -128,6 +128,7 @@ export { DEFAULT_REVOLVE_AXIS, REFERENCE_AXIS_VALUE_PREFIX, type MirrorAxisOptio
 import type { FieldUnit } from './numericFieldUnits.js';
 export { applyDisplayUnit, isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
 
+import { pendingVariablesFor } from './numericMathValues.js';
 import { fillDefaults, evaluateNumericInput, evaluateNumericField, commitValues,
   type NumericInputEvaluation, type DisplayUnitOptions } from './numericInputEvaluation.js';
 export { rangeErrorFor, effectiveSource, fieldExpression, fillDefaults, evaluateNumericInput,
@@ -3804,6 +3805,8 @@ export function commitNumericInput(
   state: NumericInputState,
   context: NumericInputContext = {},
 ): NumericInputTransition {
+  // 表示・前の段の再評価・確定へ、同じ時点の計算待ちを渡す。
+  context = { ...context, pendingVariables: context.pendingVariables ?? pendingVariablesFor(context.variables) };
   const filled = fillDefaults(state);
   const evaluation = evaluateNumericInput(filled, context.variables, context);
   const values = commitValues(evaluation);

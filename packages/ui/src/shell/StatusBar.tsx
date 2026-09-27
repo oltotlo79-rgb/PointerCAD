@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { missingAppearanceCount } from '../appearance/appearanceCommands.js';
 import { documentLabel } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
+import { mathGeometryToolGuide, mathGeometryToolGuideText } from '../math/mathGeometryToolGuide.js';
 import { LENGTH_UNIT_LABEL_KEYS, nextLengthUnit } from '../settings/settings.js';
 import { constraintPickGuide } from '../sketch/constraintActions.js';
 import { workPlaneEntries, type WorkPlaneEntry } from '../sketch/referenceCommands.js';
@@ -159,6 +160,8 @@ export function StatusBar(): React.JSX.Element {
   // 3D プリントの点検(FR-815、P6 タスク46)。断りと「点検しています…」の 2 つ。
   const printCheckErrorMessage = useAppStore((state) => state.printCheckErrorMessage);
   const inspectingPrint = useAppStore((state) => state.isInspectingPrint);
+  // 形の計算に使うメモリ(NFR-PF-6)。上限に近いかどうかの判断と文言は statusText.ts が持つ。
+  const kernelMemory = useAppStore((state) => state.kernelMemory);
   /*
    * 順序の入れ替えの断り(FR-507、FR-504。P4b タスク20)。文だけを取り出す。
    * 断りの向け先(壊れる側の行)の印は `FeatureTree.tsx` が同じ値から出す。
@@ -234,6 +237,20 @@ export function StatusBar(): React.JSX.Element {
     }
     const { step } = state.numericInput;
     return step === 'springShape' || step === 'springLength' ? step : null;
+  });
+  /*
+   * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23、Q11=P2、GR-26)。判断は
+   * `math/mathGeometryToolGuide.ts` の純関数 1 か所に置く(節の先頭の文も同じものを使う)。
+   * 道具が有効なときだけ呼び、それ以外は常に null にして、無関係な選択の変化のたびには
+   * 描き直さない(上の springOriginSelected と同じ考え方、NFR-PF-1)。取り出すのは組み立てた
+   * 文字列だけにする。毎回新しい物を返す取り出し方だと、変わっていなくても描き直しになるため。
+   */
+  const mathGeometryGuide = useAppStore((state) => {
+    if (state.activeTool !== 'mathGeometry') {
+      return null;
+    }
+    const guide = mathGeometryToolGuide(state);
+    return guide === null ? null : mathGeometryToolGuideText(guide);
   });
 
   /*
@@ -320,6 +337,8 @@ export function StatusBar(): React.JSX.Element {
     exchangeNotice,
     printCheckErrorMessage,
     inspectingPrint,
+    // 上限に近いときだけ、帯に保存と開き直しを促す(NFR-PF-6)。ふだんは何も出さない。
+    kernelMemory,
     timelineRefusalMessage,
     constraintErrorMessage,
     constraintPickMessage,
@@ -341,6 +360,8 @@ export function StatusBar(): React.JSX.Element {
     selectionKind,
     springOriginSelected,
     springStep,
+    // 図形の測定値の道具の段階の案内(Q11=P2、GR-26)。道具が有効でなければ null。
+    mathGeometryGuide,
     // 3D スケッチのときだけ案内へ一言を添える(FR-330、タスク14)。
     workPlaneId,
   });

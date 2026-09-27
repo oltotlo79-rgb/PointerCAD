@@ -63,7 +63,9 @@ def inspect(project: Path, checkout: Path, expected_commit: str):
     environment = git_environment()
 
     def git(*args):
-        return subprocess.check_output(['git', '--no-optional-locks', '-C', str(checkout), *args], env=environment).decode().strip()
+        safe_directory = ['-c', 'safe.directory=' + checkout.as_posix()] if args[0] != 'write-tree' else []
+        return subprocess.check_output(['git', '--no-optional-locks', '-C', str(checkout),
+                                        *safe_directory, *args], env=environment).decode().strip()
 
     metadata = Path(git('rev-parse', '--path-format=absolute', '--git-common-dir')).resolve(strict=True)
     if metadata != checkout / '.git' or not metadata.is_dir():
@@ -82,7 +84,7 @@ def inspect(project: Path, checkout: Path, expected_commit: str):
 const items = installedRuntimeDependencies(process.cwd());
 console.log(JSON.stringify(items.map(({name, version}) => ({name, version}))));"""
     inventory = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', script],
-                                                  cwd=checkout, env=environment))
+                                                  cwd=checkout, env=environment, stderr=subprocess.STDOUT))
     return {'commit': expected_commit, 'tree': git('rev-parse', 'HEAD^{tree}'),
             'maximumFixturePathLength': maximum_path, 'dependencyLinks': links, 'runtimePackages': inventory}
 

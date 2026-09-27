@@ -2,6 +2,7 @@ import { activateMathConfiguration, createMathConfiguration, deleteMathConfigura
   type ConfigurationChange } from '@pointercad/model';
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
 import { createBrowserMathClient } from '../math/createBrowserMathClient.js';
+import { mathGeometryInputsFor, waitForCurrentMathGeometry } from '../math/mathGeometryResults.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { runConfigurationAction, type ConfigurationAction, type ConfigurationActionResult } from './configurationActions.js';
@@ -24,8 +25,15 @@ export async function runMathConfigurationAction(action: ConfigurationAction, op
   const unsubscribe = useAppStore.subscribe(() => { if (!isCurrent()) abort.abort(); });
   let client: MathWorkerClient | undefined;
   try {
+    let geometry = mathGeometryInputsFor(useAppStore.getState(), document);
+    if (geometry === null) {
+      await waitForCurrentMathGeometry(abort.signal);
+      if (!isCurrent()) return { ok: false, reason: 'invalidExpression' };
+      geometry = mathGeometryInputsFor(useAppStore.getState(), document);
+      if (geometry === null) return { ok: false, reason: 'invalidExpression' };
+    }
     client = (options.createClient ?? createBrowserMathClient)();
-    const context = { client, signal: abort.signal, isCurrent,
+    const context = { client, geometry, signal: abort.signal, isCurrent,
       identity: { documentId: document.id, documentVersion: state.documentVersion } };
     let result: ConfigurationChange;
     switch (action.kind) {
@@ -34,6 +42,7 @@ export async function runMathConfigurationAction(action: ConfigurationAction, op
       case 'delete': result = await deleteMathConfiguration(document, action.id, context); break;
     }
     if (!isCurrent()) return { ok: false, reason: 'invalidExpression' };
+    if (mathGeometryInputsFor(useAppStore.getState(), document) !== geometry) return { ok: false, reason: 'invalidExpression' };
     if (!result.ok) return result;
     if (result.document !== document) useAppStore.getState().applyDocument(result.document);
     return { ok: true };

@@ -1,6 +1,7 @@
 import { hasDocumentMath, renameDocumentMathParameter } from '@pointercad/model';
 import type { MathWorkerClient } from '@pointercad/expression/math/client';
 import { createBrowserMathClient } from '../math/createBrowserMathClient.js';
+import { mathGeometryInputsFor } from '../math/mathGeometryResults.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activePartDocument } from '../store/documentKind.js';
 import { t } from '../i18n/t.js';
@@ -28,10 +29,15 @@ export async function runMathParameterRename(from: string, to: string, options: 
   const unsubscribe = useAppStore.subscribe(() => { if (!isCurrent()) abort(); });
   let client: MathWorkerClient | undefined;
   try {
+    const geometry = mathGeometryInputsFor(useAppStore.getState(), document);
+    if (geometry === null) return { ok: false, message: t('mathGeometry.editor.pending') };
     client = (options.createClient ?? createBrowserMathClient)();
-    const result = await renameDocumentMathParameter(document, from, to, { client,
+    const result = await renameDocumentMathParameter(document, from, to, { client, geometry,
       identity: { documentId: document.id, documentVersion: state.documentVersion }, signal: controller.signal, isCurrent });
     if (!isCurrent()) return stopped();
+    if (mathGeometryInputsFor(useAppStore.getState(), document) !== geometry) {
+      return { ok: false, message: t('mathGeometry.editor.pending') };
+    }
     if (!result.ok) return result;
     if (result.document !== document) useAppStore.getState().applyDocument(result.document);
     return { ok: true };

@@ -3,8 +3,31 @@ import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { readPcadFile } from '../../packages/io/src/index.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
+import { startupRecoveryFlow } from './startupRecoveryFlow.js';
+import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
 
 test.beforeEach(async({page})=>{await installStartupDiagnostics(page);});
+
+test('起動ファイルの一時的な取得失敗から一度だけ復旧し、登録した道具を保持する', async ({ page }, info) => {
+  await startupRecoveryFlow(page, info, false);
+});
+
+test('起動ファイルの取得失敗が続いても案内を残し、手動で復旧して登録した道具を使える', async ({ page }, info) => {
+  await startupRecoveryFlow(page, info, true);
+});
+
+test('起動ファイルの入口も取得できない場合は通信を使わない案内から復旧できる', async ({ page }) => {
+  let blocked = 0;
+  await page.route('**/*.js', async route => { blocked++; await route.abort('failed'); });
+  await page.goto('/');
+  const retry = page.getByRole('link', { name: '画面を読み込み直す', exact: true });
+  await expect(retry).toBeVisible();
+  expect(blocked).toBeGreaterThan(0);
+  await expect(page.getByRole('button', { name: '新規', exact: true })).toHaveCount(0);
+  await page.unroute('**/*.js');
+  await retry.click();
+  await expect(page.getByRole('button', { name: '新規', exact: true })).toBeVisible();
+});
 
 test('Web 版が起動し、空のスケッチの案内が出る', async ({ page }, info) => {
   const consoleErrors: string[] = [];
@@ -109,4 +132,22 @@ test('OS標準書体と同梱日本語書体でツールバーの全操作が128
       expect(metrics.overflow).toBeLessThanOrEqual(1);
     }
   }
+});
+
+test('計算状態の読取り口が遅れて現れても実際の世代を待ち、仮の状態で操作を始めない', async ({ page }, info) => {
+  await page.goto('/');
+  await waitForStartupHealth(page, info);
+  await waitForRecompute(page);
+  const actual = await readRecomputeStats(page);
+  expect(actual.requestedGeneration).toBeGreaterThan(0);
+  // Use the real state provider. Only its availability is delayed, as during mount.
+  await page.evaluate(() => {
+    const read = window.pcadRecomputeStats;
+    if (read === undefined) throw new Error('The real observation hook is missing');
+    delete window.pcadRecomputeStats;
+    setTimeout(() => { window.pcadRecomputeStats = read; }, 250);
+  });
+  const token = await beginRecompute(page);
+  expect(token.requestedGeneration).toBe(actual.requestedGeneration);
+  expect(await readRecomputeStats(page)).toEqual(actual);
 });

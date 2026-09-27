@@ -1,3 +1,4 @@
+import { functionPreparationProgress } from './functionPreparationProgress.js';
 import {BoundedCalculationClient,type CalculationWorkerPort} from './boundedCalculationClient.js';
 import {createFunctionPointWorkEnvelope,decodeFunctionPointWorkRequest,type FunctionPointWorkRequest} from './functionPointWorkRequest.js';
 import {decodeFunctionPointWorkReply} from './functionPointWorkReply.js';
@@ -7,13 +8,13 @@ import {createFunctionPointContinuationWorkEnvelope,decodeFunctionPointContinuat
 
 export class FunctionPointWorkerClient extends BoundedCalculationClient<FunctionPointWorkRequest,FunctionPointWorkResult> {
   constructor(options:{readonly createWorker:()=>CalculationWorkerPort}){
-    super({...options,decodeRequest:decodeFunctionPointWorkRequest,createEnvelope:createFunctionPointWorkEnvelope,decodeReply:decodeFunctionPointWorkReply});
+    super({ progress: functionPreparationProgress(),...options,decodeRequest:decodeFunctionPointWorkRequest,createEnvelope:createFunctionPointWorkEnvelope,decodeReply:decodeFunctionPointWorkReply});
   }
 }
 
 export class FunctionPointContinuationWorkerClient extends BoundedCalculationClient<FunctionPointContinuationWorkRequest,FunctionPointContinuationWorkResult> {
   constructor(options:{readonly createWorker:()=>CalculationWorkerPort}){
-    super({...options,decodeRequest:decodeFunctionPointContinuationWorkRequest,createEnvelope:createFunctionPointContinuationWorkEnvelope,
+    super({ progress: functionPreparationProgress(),...options,decodeRequest:decodeFunctionPointContinuationWorkRequest,createEnvelope:createFunctionPointContinuationWorkEnvelope,
       decodeReply:decodeFunctionPointContinuationWorkReply});
   }
 }

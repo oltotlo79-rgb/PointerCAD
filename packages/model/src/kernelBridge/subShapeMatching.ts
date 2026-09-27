@@ -144,6 +144,52 @@ export function selectMateTargetGeometry(
 }
 
 /**
+ * 選び直しの最高点と次点(図形の測定値の曖昧さの判定、GR-05)。
+ * `index` と `score` は `selectMateTargetGeometry` が選ぶ候補そのものの番号と点。
+ */
+export interface SubShapeMatchScores {
+  /** 選ばれた部分形状の通し番号。 */
+  readonly index: number;
+  /** 最高点(しきい値以上)。 */
+  readonly score: number;
+  /** 選ばれた候補を除いた残りの最高点。しきい値に届く候補が無ければ null。 */
+  readonly runnerUpScore: number | null;
+}
+
+/** 同じ照合関数を、全候補と「最高点の候補を除いた残り」へ1回ずつかける。 */
+function bestAndRunnerUp<T extends { readonly index: number }>(
+  candidates: readonly T[],
+  match: (items: readonly T[]) => { readonly index: number; readonly score: number } | null,
+): SubShapeMatchScores | null {
+  const best = match(candidates);
+  if (best === null) return null;
+  const runnerUp = match(candidates.filter((candidate) => candidate.index !== best.index));
+  return { index: best.index, score: best.score, runnerUpScore: runnerUp === null ? null : runnerUp.score };
+}
+
+/**
+ * `selectMateTargetGeometry` と同じ候補を選び、その点と次点の点を返す(GR-05)。
+ *
+ * 次点は、選ばれた候補を除いた残りへ同じ kernel の `matchFace` / `matchEdge` / `matchVertex` を
+ * もう一度かけて求める。重み・しきい値・同点の決め方(番号の小さい方)をここへ複製しないので、
+ * 採点は加工フィーチャーの選び直しと常に同じになる。次点がしきい値に届かなければ null。
+ * 既存の選び直し(加工・外観・合致・図面)はこの関数を使わず、振る舞いは変わらない。
+ */
+export function scoreSubShapeMatch(body: SolidBody, reference: SubShapeRef): SubShapeMatchScores | null {
+  if (body.featureId !== reference.bodyFeatureId) return null;
+  const query = toSubShapeQuery(reference);
+  const scale = matchScaleOf(body);
+  switch (query.kind) {
+    case 'face':
+      return bestAndRunnerUp(body.faces, (faces) => matchFace(faces, query, scale));
+    case 'edge':
+      return bestAndRunnerUp(body.edges, (edges) => matchEdge(edges, query, scale));
+    case 'vertex':
+      return bestAndRunnerUp(body.vertices, (vertices) => matchVertex(vertices, query, scale));
+  }
+}
+
+/**
  * 部品を差し替えた後のボディから、保存し直せる部分形状参照を作る(FR-614)。
  * 採点・しきい値・同点時の選択は `selectSubShape` と同じ kernel の純関数を使う。
  * 見つからなければ元の参照を消さずに残せるよう `null` を返す。

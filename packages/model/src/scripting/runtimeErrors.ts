@@ -1,4 +1,4 @@
-import { JSException, type JSValueHandle, type QuickJS } from 'quickjs-wasi';
+import { NativeScriptException, type NativeScriptValue, type NativeScriptVm } from './nativeScriptVm.js';
 import { locateScriptError } from './scriptLocation.js';
 import type { ScriptFailure, ScriptFailureKind } from './scriptTypes.js';
 
@@ -32,10 +32,10 @@ export interface ScriptRuntimeControl {
 export function scriptFailure(kind: ScriptFailureKind, message: string): ScriptFailure {
   return { kind, message, location: null };
 }
-export function createRuntimeErrorReader(vm: QuickJS): JSValueHandle {
+export function createRuntimeErrorReader(vm: NativeScriptVm): NativeScriptValue {
   return vm.evalCode(ERROR_READER, 'pointercad-internal-errors.js');
 }
-export function readRuntimeError(vm: QuickJS, reader: JSValueHandle, value: JSValueHandle,
+export function readRuntimeError(vm: NativeScriptVm, reader: NativeScriptValue, value: NativeScriptValue,
   control: ScriptRuntimeControl, sources: ReadonlyMap<string, string>): ScriptFailure {
   const previous = control.deadline;
   control.deadline = performance.now() + 50; control.diagnostic = true;
@@ -51,7 +51,7 @@ export function readRuntimeError(vm: QuickJS, reader: JSValueHandle, value: JSVa
       : 'name' in detail && detail.name === 'SyntaxError' ? 'syntax' : 'runtime';
     return { kind, message, location: locateScriptError(stack, sources) };
   } catch (error) {
-    if (error instanceof JSException) error.dispose();
+    if (error instanceof NativeScriptException) error.dispose();
     return fallback;
   } finally { control.deadline = previous; control.diagnostic = false; }
 }

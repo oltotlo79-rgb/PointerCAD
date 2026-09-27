@@ -1,6 +1,6 @@
 /** Host-validated nonterminal updates for optional scalar mathematics only. */
 import { EXACT_MATH_ENGINE_LIMITS, type ExactMathEnginePhase } from './exactMathEngineClient.js';
-import { decodeMathRequestIdentity, type MathWorkRequest } from './mathWorkRequest.js';
+import { decodeMathRequestIdentity, type MathWorkRequest, type MathRequestIdentity } from './mathWorkRequest.js';
 
 export interface MathWorkProgress {
   readonly request: MathWorkRequest;
@@ -17,11 +17,18 @@ export function isMathWorkProgress(value: unknown): boolean {
 
 export function createMathWorkProgressReceiver(request: MathWorkRequest, serial: number, startedAt: number,
   notify: (value: MathWorkProgress) => void): (value: unknown) => number | null {
+  return createBoundedMathProgressReceiver(request.identity, serial, startedAt,
+    request.functionScope === undefined && request.renameCoefficient === undefined,
+    phase => notify({ request, phase }));
+}
+/** Shared identity/deadline rules; each caller explicitly authorizes preparation for its request kind. */
+export function createBoundedMathProgressReceiver(expected: MathRequestIdentity, serial: number, startedAt: number,
+  allowed: boolean, notify: (phase: ExactMathEnginePhase) => void): (value: unknown) => number | null {
   let previous = -1;
   return value => {
     if (!isMathWorkProgress(value)) return null;
     if (value === null || typeof value !== 'object' || Array.isArray(value)
-      || request.functionScope !== undefined || request.renameCoefficient !== undefined) {
+      || !allowed) {
       throw new Error('Unexpected scalar preparation response');
     }
     const prototype: unknown = Object.getPrototypeOf(value);
@@ -41,8 +48,8 @@ export function createMathWorkProgressReceiver(request: MathWorkRequest, serial:
       throw new Error('Progress does not belong to this request');
     }
     const identity = decodeMathRequestIdentity(value.identity);
-    if (identity.documentId !== request.identity.documentId || identity.documentVersion !== request.identity.documentVersion
-      || identity.editorId !== request.identity.editorId || identity.inputRevision !== request.identity.inputRevision) {
+    if (identity.documentId !== expected.documentId || identity.documentVersion !== expected.documentVersion
+      || identity.editorId !== expected.editorId || identity.inputRevision !== expected.inputRevision) {
       throw new Error('Progress does not belong to this input generation');
     }
     const phase = phases.find(candidate => candidate === value.phase);
@@ -57,7 +64,7 @@ export function createMathWorkProgressReceiver(request: MathWorkRequest, serial:
       ? Math.min(startedAt + EXACT_MATH_ENGINE_LIMITS.totalMs,
         (warm ? startedAt : performance.now()) + EXACT_MATH_ENGINE_LIMITS.calculationMs)
       : startedAt + EXACT_MATH_ENGINE_LIMITS.preparationMs;
-    notify({ request, phase });
+    notify(phase);
     return end;
   };
 }

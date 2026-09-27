@@ -5,7 +5,7 @@ import { PerformanceFirstSequencer } from '@pointercad/test-utils/performance-se
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     testTimeout: FUNCTIONAL_TEST_TIMEOUT_MS,
     fileParallelism: process.env.POINTERCAD_PERF_STRICT !== '1',
     sequence: { sequencer: PerformanceFirstSequencer },

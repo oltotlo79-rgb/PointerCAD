@@ -42,3 +42,20 @@ export function mapDocumentFunctionExpressions(document: PartDocument,
   });
   return changed ? { ...document, sketches, solids } : document;
 }
+
+/** Visit formulas used for references/renaming without evaluating them as scalar coordinates. */
+export function mapDocumentNonScalarExpressions(document: PartDocument,
+  map: (definition: StoredMathExpression, ownerId: string, scope: FunctionExpressionScope | undefined) => StoredMathExpression): PartDocument {
+  const result = mapDocumentFunctionExpressions(document, map);
+  if (result.unresolvedMathProblems === undefined) return result;
+  let changed = false;
+  const unresolvedMathProblems = result.unresolvedMathProblems.map(problem => {
+    // A saved unresolved formula has its own declared symbols. It is not a
+    // geometry function, whose scope deliberately rejects free declarations.
+    const definition = map(problem.definition, problem.id, undefined);
+    if (definition === problem.definition) return problem;
+    changed = true;
+    return { ...problem, definition };
+  });
+  return changed ? { ...result, unresolvedMathProblems } : result;
+}

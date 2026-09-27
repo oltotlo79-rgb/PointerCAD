@@ -1,5 +1,7 @@
 /// <reference lib="dom" />
 import { expect, test } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { readPcadFile } from '../../packages/io/src/index.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
 import { uiMessage } from './uiMessages.js';
 
@@ -10,6 +12,42 @@ test.beforeEach(async ({ page }) => {
       Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
     }
   });
+});
+
+test('数式入力ボタンに焦点があっても保存と開くが働き、入力途中の座標を勝手に確定しない', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('group', { name: 'スケッチ', exact: true }).getByRole('button', { name: '点', exact: true }).click();
+  const input = page.locator('.pcad-popover input.pcad-field__input').first();
+  const math = page.locator('.pcad-popover .pcad-field__math').first();
+  await input.fill('12+3');
+  await math.focus(); await math.press('Shift+Tab'); await expect(input).toBeFocused();
+  await math.focus(); await math.press('Tab');
+  await expect(page.locator('.pcad-popover input.pcad-field__input').nth(1)).toBeFocused();
+  await math.focus(); await expect(math).toBeFocused();
+  const [download] = await Promise.all([page.waitForEvent('download'), math.press('Control+s')]);
+  expect(await download.failure()).toBeNull();
+  const savedPath = await download.path();
+  if (savedPath === null) throw new Error('Saved document missing');
+  const saved = await readPcadFile(new Uint8Array(await readFile(savedPath)));
+  expect(saved.ok).toBe(true);
+  if (!saved.ok) throw new Error('Saved document invalid');
+  expect(saved.document.sketches.flatMap(sketch => sketch.features)).toEqual([]);
+  await expect(input).toHaveValue('12+3');
+  await math.focus();
+  const [opening] = await Promise.all([page.waitForEvent('filechooser'), math.press('Control+o')]);
+  await opening.setFiles([]);
+  await expect(input).toHaveValue('12+3');
+  await expect(page.locator('.pcad-panel--left').getByRole('button', { name: '点1', exact: true })).toHaveCount(0);
+  // Button activation opens the editor; it must not also commit the enclosing point popover.
+  for (const key of ['Enter', 'Space']) {
+    await math.focus(); await math.press(key);
+    const dialog = page.locator('.pcad-math-dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(input).toHaveValue('12+3');
+    await expect(page.locator('.pcad-panel--left').getByRole('button', { name: '点1', exact: true })).toHaveCount(0);
+  }
 });
 
 test('共通command IDのボタンと実際のキーが同じ保存・履歴操作を呼ぶ', async ({ page }, info) => {

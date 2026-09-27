@@ -6,7 +6,8 @@ import { COMMAND_DEFINITIONS, commandDefinition } from './commandDefinitions.js'
 describe('toolbar command catalog', () => {
   it('部品・組立・板金・図面の操作を登録し、保存の別入口を二重に割り当てない', () => {
     const originalGroups = TOOLBAR_COMMAND_CATALOG.filter(entry => !['sheetMetal', 'script', 'drawing', 'view', 'plane', 'reference', 'snap', 'assemblyUtility'].includes(entry.group));
-    expect(originalGroups).toHaveLength(109);
+    // GR-30 が「見た目」へ「図形の測定値」を1行足したので 109 → 110(Q1=A4)。
+    expect(originalGroups).toHaveLength(110);
     expect(new Set(TOOLBAR_COMMAND_CATALOG.map((entry) => entry.id)).size).toBe(TOOLBAR_COMMAND_CATALOG.length);
     expect(TOOLBAR_COMMAND_CATALOG.filter(item => item.group === 'sheetMetal')).toHaveLength(5);
     expect(TOOLBAR_COMMAND_CATALOG.filter(item => item.group === 'drawing').length).toBeGreaterThan(35);

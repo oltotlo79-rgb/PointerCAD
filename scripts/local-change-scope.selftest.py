@@ -322,6 +322,116 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(scope.classify(['packages/expression/vitest.config.ts'])['packages'], ['expression', 'test-utils'])
         self.assertEqual(scope.classify(['packages/expression/unknown.config.ts'])['mode'], 'full')
 
+    def install_operations(self):
+        # Specs reach the shared helper directly, transitively, without an extension and via re-export.
+        self.write('e2e/tests/sharedFlow.ts', 'export const shared = 1;\n')
+        self.write('e2e/tests/stepFlow.ts', "import { shared } from './sharedFlow.js';\nexport const step = shared;\n")
+        self.write('e2e/tests/reexport.ts', "export * from './sharedFlow';\n")
+        self.write('e2e/tests/unrelatedFlow.ts', 'export const unrelated = 2;\n')
+        self.write('e2e/tests/alpha.spec.ts', "import { shared } from './sharedFlow.js';\n")
+        self.write('e2e/tests/beta.spec.ts', "import type { step } from './stepFlow.js';\n")
+        self.write('e2e/tests/electron-delta.spec.ts', "const loaded = await import('./reexport.js');\n")
+        self.write('e2e/tests/gamma.spec.ts', "import './unrelatedFlow.js';\n")
+        self.write('e2e/tests/nested/omega.spec.ts', "import { shared } from '../sharedFlow.js';\n")
+        self.git('add', '.')
+        self.git('commit', '-qm', 'operation baseline')
+        self.base = self.git('rev-parse', 'HEAD').decode().strip()
+        self.git('update-ref', 'refs/remotes/origin/main', self.base)
+
+    def inspect_light(self, level='Push', phase='Manual', base='', force=False):
+        with patch.dict(os.environ, self.environment, clear=True):
+            return scope.inspect(self.root, level, phase, base, force, True)
+
+    def test_light_changed_helper_runs_only_the_specs_that_reach_it_with_startup(self):
+        self.install_operations()
+        self.write('e2e/tests/sharedFlow.ts', 'export const shared = 3;\n')
+        result = self.inspect_light(base=self.base)
+        self.assertEqual(result['mode'], 'targeted')
+        self.assertTrue(result['light'])
+        self.assertTrue(result['runtimeChecks'], 'The three startup projects always run locally')
+        self.assertFalse(result['allE2EChecks'])
+        self.assertEqual(result['packages'], ['test-utils'])
+        self.assertEqual(result['e2eSpecs'], ['e2e/tests/alpha.spec.ts', 'e2e/tests/beta.spec.ts',
+                                              'e2e/tests/electron-delta.spec.ts', 'e2e/tests/nested/omega.spec.ts'])
+        self.assertEqual(result['base'], self.base)
+        self.write('e2e/tests/gamma.spec.ts', "import './unrelatedFlow.js';\n// changed spec\n")
+        self.assertIn('e2e/tests/gamma.spec.ts', self.inspect_light(base=self.base)['e2eSpecs'])
+        # The ordinary (non-light) scope keeps every operation for the same change.
+        ordinary = self.inspect(base=self.base)
+        self.assertTrue(ordinary['allE2EChecks'])
+        self.assertNotIn('light', ordinary)
+        self.assertNotIn('e2eSpecs', ordinary)
+
+    def test_light_untraceable_operation_changes_keep_every_operation(self):
+        self.install_operations()
+        self.write('e2e/tests/orphanFlow.ts', 'export const nobodyImportsThis = 1;\n')
+        result = self.inspect_light(base=self.base)
+        self.assertEqual(result['mode'], 'targeted')
+        self.assertTrue(result['allE2EChecks'], 'A helper that no spec reaches cannot be bounded')
+        self.assertEqual(result['e2eSpecs'], [])
+        (self.root / 'e2e/tests/orphanFlow.ts').unlink()
+        self.write('e2e/tests/odd name.spec.ts', 'unsafe as a file filter')
+        self.assertTrue(self.inspect_light(base=self.base)['allE2EChecks'])
+        (self.root / 'e2e/tests/odd name.spec.ts').unlink()
+        self.assertTrue(scope.classify(['e2e/tests/sharedFlow.ts'], light=True)['allE2EChecks'],
+                        'Unavailable sources keep every operation')
+        self.git('rm', '-q', 'e2e/tests/unrelatedFlow.ts', 'e2e/tests/gamma.spec.ts')
+        deleted = self.inspect_light(base=self.base)
+        self.assertFalse(deleted['allE2EChecks'], 'A removed spec and its removed helper have no present importer')
+        self.assertEqual(deleted['e2eSpecs'], [])
+        self.assertTrue(deleted['runtimeChecks'])
+
+    def test_light_documentation_and_runtime_keep_units_builds_and_startup(self):
+        self.write('README.md', 'updated')
+        result = self.inspect_light()
+        self.assertEqual((result['mode'], result['packages'], result['e2eSpecs']),
+                         ('targeted', ['help-content', 'test-utils'], []))
+        self.assertTrue(result['runtimeChecks'])
+        self.install_workspace()
+        self.write('packages/expression/src/evaluate.ts', 'changed mathematics')
+        result = self.inspect_light()
+        self.assertEqual(result['packages'], ['expression', 'desktop', 'io', 'model', 'test-utils', 'ui', 'web'])
+        self.assertEqual(result['changedPackages'], ['expression'])
+        self.assertTrue(result['runtimeChecks'] and result['light'])
+
+    def test_light_is_manual_push_only_and_unknown_ci_or_forced_changes_are_full(self):
+        self.install_operations()
+        self.write('e2e/tests/sharedFlow.ts', 'export const shared = 4;\n')
+        self.git('add', '.')
+        self.assertEqual(self.inspect_light('Commit', 'Commit')['mode'], 'full')
+        self.assertEqual(self.inspect_light('Push', 'Push', self.base)['mode'], 'full')
+        self.assertEqual(self.inspect_light(force=True)['mode'], 'full')
+        with patch.dict(os.environ, {'CI': 'true'}):
+            self.assertEqual(scope.inspect(self.root, 'Push', 'Manual', '', False, True)['mode'], 'full')
+        for path in ['e2e/playwright.config.ts', 'pnpm-lock.yaml', 'e2e/tests/data.json']:
+            with self.subTest(path=path):
+                self.write(path, 'changed')
+                self.assertEqual(self.inspect_light(base=self.base)['mode'], 'full')
+                (self.root / path).unlink()
+
+    def test_related_specs_follow_every_static_import_form_and_ignore_outside_modules(self):
+        sources = {
+            'e2e/tests/a.spec.ts': "export { value } from './helpers/value.js';\n",
+            'e2e/tests/helpers/value.ts': "import '../side.js';\nexport const value = 1;\n",
+            'e2e/tests/side.ts': "import { launch } from '../firefoxLaunch.js';\n",
+            'e2e/tests/b.spec.ts': "const late = import('./helpers/value.js');\n",
+            'e2e/tests/c.spec.ts': "import { test } from '@playwright/test';\n",
+        }
+        self.assertEqual(scope.related_e2e_specs(['e2e/tests/side.ts'], sources),
+                         ['e2e/tests/a.spec.ts', 'e2e/tests/b.spec.ts'])
+        self.assertEqual(scope.related_e2e_specs(['e2e/tests/c.spec.ts'], sources), ['e2e/tests/c.spec.ts'])
+        self.assertIsNone(scope.related_e2e_specs(['e2e/tests/unused.ts'], {**sources, 'e2e/tests/unused.ts': ''}))
+        self.assertIsNone(scope.related_e2e_specs(['e2e/tests/a b.ts'], sources))
+        self.assertIsNone(scope.related_e2e_specs(['e2e/tests/side.ts'], None))
+        # A removed helper that a present spec still imports runs that spec (it reports the break).
+        remaining = {path: text for path, text in sources.items() if path != 'e2e/tests/side.ts'}
+        self.assertEqual(scope.related_e2e_specs(['e2e/tests/side.ts'], remaining),
+                         ['e2e/tests/a.spec.ts', 'e2e/tests/b.spec.ts'])
+        self.assertEqual(scope.related_e2e_specs(['e2e/tests/gone.ts', 'e2e/tests/gone.spec.ts'], sources), [])
+        # Playwright also runs *.test.ts by default; such a test cannot be a light filter.
+        self.assertIsNone(scope.related_e2e_specs(
+            ['e2e/tests/side.ts'], {**sources, 'e2e/tests/d.test.ts': "import './side.js';\n"}))
+
     def test_commit_copy_uses_staged_attributes_even_for_unchanged_originals(self):
         self.git('config', 'core.autocrlf', 'true')
         self.write('docs/standards/licenses/notice.txt', 'original\nsecond line\n')
@@ -494,6 +604,126 @@ class ScopeHookTests(unittest.TestCase):
         fixture.full_check()
         self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    # 2026-09-27 owner decision "leave every browser operation to CI": -Scope Local.
+    LIGHT_E2E = ('run test:e2e --project=startup-firefox --project=startup-electron --project=functional '
+                 '--project=electron e2e/tests/smoke\\.spec\\.ts$ e2e/tests/firefox-graphics\\.spec\\.ts$ '
+                 'e2e/tests/electron-startup\\.spec\\.ts$')
+
+    def install_operations(self):
+        fixture = self.fixture
+        fixture.write('e2e/tests/sharedFlow.ts', 'export const shared = 1;\n')
+        fixture.write('e2e/tests/alpha.spec.ts', "import { shared } from './sharedFlow.js';\n")
+        fixture.write('e2e/tests/gamma.spec.ts', 'export {};\n')
+        fixture.git('add', '.')
+        # Seed only the throwaway remote; the changes under test use the real hooks below.
+        fixture.git('-c', 'core.hooksPath=', 'commit', '-qm', 'operation fixture')
+        fixture.git('-c', 'core.hooksPath=', 'push', 'origin', 'HEAD:main')
+        self.base = fixture.git('rev-parse', 'HEAD').strip()
+
+    def light_check(self, *extra, success=True):
+        fixture = self.fixture
+        return fixture.command([fixture.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                                str(fixture.root / 'scripts/check.ps1'), '-Scope', 'Local', *extra], success)
+
+    def browser_preparation(self):
+        return ['exec playwright install ' + ('--with-deps ' if os.name != 'nt' else '') + 'chromium firefox',
+                '--filter @pointercad/desktop exec install-electron']
+
+    def test_light_scope_runs_related_operations_and_real_hooks_accept_it_once(self):
+        self.install_operations()
+        fixture = self.fixture
+        fixture.write('e2e/tests/sharedFlow.ts', 'export const shared = 2;\n')
+        fixture.git('add', '.')
+        output = self.light_check('-ComparisonBase', self.base)
+        expected = [*self.browser_preparation(), 'run typecheck', 'run lint',
+                    '--filter @pointercad/test-utils run test', 'run build',
+                    self.LIGHT_E2E + ' e2e/tests/alpha\\.spec\\.ts$']
+        self.assertEqual(fixture.calls(), expected, output[-4000:])
+        light = fixture.root / '.git/local-light-receipt.json'
+        self.assertTrue(light.is_file(), output[-4000:])
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists(), 'A light check is never a B3 receipt')
+        output = fixture.git('commit', '-qm', 'operation helper change')
+        self.assertEqual(fixture.calls(), expected, 'The real pre-commit must accept the light check\n' + output)
+        output = fixture.git('push', 'origin', 'HEAD:main')
+        self.assertEqual(fixture.calls(), expected, 'The real pre-push must accept the light check\n' + output)
+        self.assertFalse(light.exists(), 'The push consumes the light record')
+
+    def test_light_scope_is_rejected_with_full_ci_hooks_and_diagnostics_before_any_command(self):
+        fixture = self.fixture
+        fixture.write('e2e/tests/new-operation.spec.ts', 'new operation')
+        for arguments in [['-Full'], ['-Install'], ['-Level', 'Commit'], ['-ReceiptPhase', 'Push'],
+                          ['-ReceiptPhase', 'Commit'], ['-E2ERepeats', '2'], ['-StaticOnly'],
+                          ['-E2EOnly', '-E2EGrep', 'fixture-selected'], ['-UnitPackage', 'ui', '-UnitTests', 'src/a.test.ts']]:
+            with self.subTest(arguments=arguments):
+                self.light_check(*arguments, success=False)
+                self.assertEqual(fixture.calls(), [], 'Invalid combinations must stop before any package command')
+        fixture.command([fixture.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                         str(fixture.root / 'scripts/check.ps1'), '-Scope', 'Everything'], success=False)
+        fixture.env['CI'] = 'true'
+        self.light_check(success=False)
+        self.assertEqual(fixture.calls(), [])
+        self.assertFalse((fixture.root / '.git/local-light-receipt.json').exists())
+
+    def test_full_ci_and_untraceable_changes_still_run_every_operation(self):
+        self.install_operations()
+        fixture = self.fixture
+        fixture.write('e2e/tests/orphanFlow.ts', 'export const nobodyImportsThis = 1;\n')
+        fixture.git('add', '.')
+        self.light_check('-ComparisonBase', self.base)
+        self.assertEqual(fixture.calls()[-1], 'run test:e2e', 'An untraceable operation change keeps every operation')
+        self.assertTrue((fixture.root / '.git/local-light-receipt.json').exists())
+        before = len(fixture.calls())
+        fixture.command([fixture.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                         str(fixture.root / 'scripts/check.ps1'), '-Full'])
+        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+        self.assertFalse((fixture.root / '.git/local-light-receipt.json').exists(), 'A new check drops the light record')
+        self.assertTrue((fixture.root / '.git/validation-receipt.json').exists())
+        fixture.write('pnpm-lock.yaml', 'unknown impact')
+        fixture.git('add', '.')
+        before = len(fixture.calls())
+        self.light_check('-ComparisonBase', self.base)
+        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+        self.assertFalse((fixture.root / '.git/local-light-receipt.json').exists())
+        fixture.env['CI'] = 'true'
+        before = len(fixture.calls())
+        fixture.full_check()
+        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    def test_changed_content_failure_or_different_push_range_fall_back_to_ordinary_hook_checks(self):
+        self.install_operations()
+        fixture = self.fixture
+        fixture.write('e2e/tests/gamma.spec.ts', 'export const changed = 1;\n')
+        fixture.git('add', '.')
+        fixture.write('.git/fail-step', self.LIGHT_E2E + ' e2e/tests/gamma\\.spec\\.ts$')
+        self.light_check('-ComparisonBase', self.base, success=False)
+        light = fixture.root / '.git/local-light-receipt.json'
+        self.assertFalse(light.exists(), 'A failed light check leaves no record')
+        (fixture.root / '.git/fail-step').unlink()
+        self.light_check('-ComparisonBase', self.base)
+        self.assertTrue(light.exists())
+        fixture.write('e2e/tests/gamma.spec.ts', 'export const changed = 2;\n')
+        fixture.git('add', '.')
+        before = len(fixture.calls())
+        fixture.git('commit', '-qm', 'changed after the light check')
+        self.assertEqual(fixture.calls()[before:], ['run typecheck', 'run lint',
+                         '--filter @pointercad/test-utils run test', 'run build'])
+        self.assertFalse(light.exists())
+        # A checked commit sent to a new reference sends a different range than the check compared.
+        fixture.write('e2e/tests/gamma.spec.ts', 'export const changed = 3;\n')
+        fixture.git('add', '.')
+        head = fixture.git('rev-parse', 'HEAD').strip()
+        self.light_check('-ComparisonBase', head)
+        before = len(fixture.calls())
+        fixture.git('commit', '-qm', 'checked change')
+        self.assertEqual(len(fixture.calls()), before)
+        fixture.git('push', 'origin', 'HEAD:refs/heads/other')
+        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
+                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+        self.assertFalse(light.exists())
 
     def test_a_failed_local_package_stops_the_actual_gate_and_cannot_make_a_receipt(self):
         fixture = self.fixture

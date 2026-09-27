@@ -2,6 +2,7 @@ import { expect, type ElectronApplication, type Page, type TestInfo } from '@pla
 import { savePart } from './scriptsFlow.js';
 import { openTarget } from './electronAppFlow.js';
 import { uiMessage } from './uiMessages.js';
+import { focusField } from './mathEditorReady.js';
 import { mathCoordinateFlow } from './mathCoordinateFlow.js';
 import { mathStatisticsFlow } from './mathStatisticsFlow.js';
 
@@ -29,6 +30,8 @@ export async function mathInputFlow(page: Page, info: TestInfo, app?: ElectronAp
   await expect(dialog.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
   await dialog.getByRole('button', { name: '構造入力', exact: true }).click();
   await expect(dialog.locator('math-field')).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(globalThis, Symbol.for('io.cortexjs.compute-engine')) === undefined)).toBe(true);
+  expect(await dialog.locator('math-field').evaluate(field => Reflect.get(field.constructor, 'computeEngine') === null)).toBe(true);
   await expect(dialog.locator('math-field')).toBeFocused();
   await expect(dialog.getByRole('button', { name: 'この式を使う', exact: true })).toBeEnabled();
   await expect.poll(() => page.evaluate(() => document.fonts.check('16px KaTeX_Main'))).toBe(true);
@@ -36,7 +39,10 @@ export async function mathInputFlow(page: Page, info: TestInfo, app?: ElectronAp
   await dialog.getByRole('button', { name: '数式入力のヘルプ', exact: true }).click();
   await expect(page.locator('.pcad-help__article')).toContainText('係数と数学記号を区別する');
   await page.locator('.pcad-help').getByRole('button', { name: uiMessage('help', 'help.close'), exact: true }).click();
-  await dialog.locator('math-field').press('Control+Enter');
+  // OPS-11b: math-fieldへの直接の.press()はMathLiveの焦点処理と競合するため、focusFieldで焦点の
+  // 処理が終わるのを待ってからキーを送る(rules/06 §10.329、mathEditorReady.ts)。
+  await focusField(dialog.locator('math-field'));
+  await page.keyboard.press('Control+Enter');
   await expect(dialog).toHaveCount(0); await expect(result(1)).toHaveText('= 6.5');
   const adopted = await savePart(page, info, 'math-adopted.pcad', app);
   expect(adopted.parameters[1].value.mathDefinition).toMatchObject({ inputNotation: 'latex', angleUnit: 'degree' });

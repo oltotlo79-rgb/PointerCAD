@@ -1,6 +1,7 @@
 /** Domain obligations stay outside engine simplification: 0 * (-1)! must not silently become a usable zero. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { rationalOfExpression } from './exactRational.js';
+import { SEQUENCE_IDS, sequenceFunction } from './sequenceCalculations.js';
 
 export interface IntegerFacts {
   readonly integer: boolean | null;
@@ -14,8 +15,29 @@ export interface DiscreteDomainObligation {
   readonly expression: MathNode;
 }
 export interface DiscreteDomainContext {
+  /** The exact sequence evaluator checks the unchanged body at every used index. */
+  readonly deferSequenceBodies?: boolean;
   /** Trusted coefficient/axis facts. Unknown facts are not a successful validation. */
   readonly facts?: (expression: MathNode, local: ReadonlyMap<string, IntegerFacts>) => IntegerFacts | null;
+}
+export function isInfiniteRangeEndpoint(node: MathNode): boolean {
+  return node.kind === 'constant' && node.name === 'infinity'
+    || node.kind === 'operation' && node.operation === 'negate' && node.operands.length === 1
+      && node.operands[0].kind === 'constant' && node.operands[0].name === 'infinity';
+}
+/** Infinite series require term-domain and convergence checks before a value is authorized. */
+export function hasInfiniteDiscreteRange(node: MathNode): boolean {
+  if (node.kind === 'operation') return node.operands.some(hasInfiniteDiscreteRange);
+  if (node.kind !== 'binder') return false;
+  return node.bindings.some(binding => {
+    const domain = binding.domain;
+    if (domain.kind === 'set') return hasInfiniteDiscreteRange(domain.value);
+    return domain.kind === 'range' && (
+      (node.operation === 'sum' || node.operation === 'product')
+        && (isInfiniteRangeEndpoint(domain.lower) || isInfiniteRangeEndpoint(domain.upper))
+      || hasInfiniteDiscreteRange(domain.lower) || hasInfiniteDiscreteRange(domain.upper)
+      || domain.step !== null && hasInfiniteDiscreteRange(domain.step));
+  }) || hasInfiniteDiscreteRange(node.body);
 }
 export function validateDiscreteDomains(expression: MathNode, context: DiscreteDomainContext = {}): readonly DiscreteDomainObligation[] {
   const pending: DiscreteDomainObligation[] = [];
@@ -50,6 +72,11 @@ export function validateDiscreteDomains(expression: MathNode, context: DiscreteD
     if (budget < 0 || depth > 64) throw new MathInputProblem('budget', '整数条件を確認する式が複雑すぎます。');
     if (node.kind === 'operation') {
       const op = node.operation;
+      if (context.deferSequenceBodies && SEQUENCE_IDS.has(op)) {
+        sequenceFunction(node);
+        node.operands.slice(1).forEach((operand, index) => visit(operand, `${path}.${index + 1}`, local, depth + 1));
+        return;
+      }
       node.operands.forEach((operand, index) => {
         if (op === 'factorial') requireInteger(operand, op, `${path}.${index}`, local, 0n, 10_000n);
         if (op === 'double-factorial') requireInteger(operand, op, `${path}.${index}`, local, -1n, 10_000n);
@@ -69,11 +96,12 @@ export function validateDiscreteDomains(expression: MathNode, context: DiscreteD
           visit(domain.upper, `${path}.upper${index}`, nested, depth + 1);
           if (domain.step !== null) visit(domain.step, `${path}.step${index}`, nested, depth + 1);
           if (node.operation === 'sum' || node.operation === 'product') {
-            requireInteger(domain.lower, node.operation, `${path}.lower${index}`, nested);
-            requireInteger(domain.upper, node.operation, `${path}.upper${index}`, nested);
+            const infiniteLower = isInfiniteRangeEndpoint(domain.lower), infiniteUpper = isInfiniteRangeEndpoint(domain.upper);
+            if (!infiniteLower) requireInteger(domain.lower, node.operation, `${path}.lower${index}`, nested);
+            if (!infiniteUpper) requireInteger(domain.upper, node.operation, `${path}.upper${index}`, nested);
             if (domain.step !== null) requireInteger(domain.step, node.operation, `${path}.step${index}`, nested, 1n);
             const lower = facts(domain.lower, nested), upper = facts(domain.upper, nested);
-            value = { integer: lower.integer === true && upper.integer === true ? true : null,
+            value = { integer: (infiniteLower || lower.integer === true) && (infiniteUpper || upper.integer === true) ? true : null,
               minimum: lower.minimum, maximum: upper.maximum };
           }
         } else if (domain.kind === 'set') visit(domain.value, `${path}.set${index}`, nested, depth + 1);

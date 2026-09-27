@@ -8,18 +8,23 @@
  */
 
 import { expressionValueFromNumber } from '@pointercad/expression';
+import { MATH_INPUT_FORMAT } from '@pointercad/expression/math/contracts';
+import * as model from '@pointercad/model';
 import {
   buildTimeline,
   createEmptyPartDocument,
+  DEFAULT_MATH_GEOMETRY_TOLERANCE,
+  mathGeometryCoefficientId,
   type ExtrudeFeature,
   type FilletFeature,
   type HoleFeature,
+  type MathSubShapeReference,
   type PartDocument,
   type ReferenceFeature,
   type SolidFeature,
   type SubShapeRef,
 } from '@pointercad/model';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   beginTimelineDrag,
@@ -32,6 +37,8 @@ import {
 } from './timelineMove.js';
 
 const ev = expressionValueFromNumber;
+
+afterEach(() => { vi.restoreAllMocks(); });
 
 /** 立体の上面(穴の対象)。中身は依存の材料としてしか使わないので最小限にする。 */
 function faceRef(bodyFeatureId: string): SubShapeRef {
@@ -50,7 +57,7 @@ function faceRef(bodyFeatureId: string): SubShapeRef {
 }
 
 /** 穴の口の丸い辺(R 面取りの対象)。 */
-function edgeRef(bodyFeatureId: string): SubShapeRef {
+function edgeRef(bodyFeatureId: string): MathSubShapeReference<'edge'> {
   return {
     bodyFeatureId,
     index: 0,
@@ -136,6 +143,87 @@ function withSolid(document: PartDocument, feature: SolidFeature): PartDocument 
 function names(document: PartDocument): readonly string[] {
   return buildTimeline(document).map((entry) => entry.name);
 }
+
+/** 測った辺の長さを係数経由で押し出し2の高さに使う。構造上の辺だけなら独立。 */
+function measuredPart(): PartDocument {
+  const base = createEmptyPartDocument();
+  const source = 'coef("測る辺")';
+  return {
+    ...base,
+    solids: [
+      extrude('extrude-1', '押し出し1'),
+      { ...extrude('extrude-2', '押し出し2'), distance: { ...ev(10), source: '長さ' } },
+      extrude('extrude-3', '押し出し3'),
+    ],
+    mathGeometry: [{
+      id: 'measured-edge', documentId: base.id, name: '測る辺',
+      quantity: { kind: 'length', curve: { kind: 'edge', reference: edgeRef('extrude-1') } },
+      tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE,
+    }],
+    parameters: [{
+      name: '長さ', unit: 'mm', description: '', value: {
+        ...ev(10), source, mathDefinition: {
+          format: MATH_INPUT_FORMAT, source, inputNotation: 'text', angleUnit: 'degree',
+          expression: { kind: 'symbol', reference: {
+            role: 'coefficient', id: mathGeometryCoefficientId('measured-edge'), label: '測る辺',
+          } },
+        },
+      },
+    }],
+  };
+}
+
+describe('図形の測定値の依存を予告へ配線する(TL-01、GR-07)', () => {
+  it('測る形を追い越すドラッグとメニューを、同じ相手名付きの理由で拒否する', () => {
+    const document = measuredPart();
+    expect(model.historyDependencies(document).get('extrude-2')).toEqual([]);
+    const refusal = timelineDropCheck(document, 'extrude-2', 0);
+    expect(refusal).toEqual({ blockingFeatureId: 'extrude-2',
+      message: '押し出し2は押し出し1を使っているので、押し出し1より後ろでなければなりません。' });
+    expect(timelineMoveOffer(document, 'extrude-2', -1)).toEqual({ kind: 'refused', refusal });
+    const drag = beginTimelineDrag(document, 'extrude-2');
+    expect(drag).not.toBeNull();
+    if (drag === null) return;
+    expect(withDropTarget(document, drag, 0).refusal).toEqual(refusal);
+  });
+
+  it('測定と無関係な形の移動は許可し、測る側を利用側より後ろへは動かせない', () => {
+    const document = measuredPart();
+    expect(timelineDropCheck(document, 'extrude-3', 0)).toBeNull();
+    expect(timelineDropCheck(document, 'extrude-1', 1)?.blockingFeatureId).toBe('extrude-2');
+  });
+
+  it('測定定義なし・係数なしのドラッグは追加解析を呼ばない', () => {
+    const analyze = vi.spyOn(model, 'mathGeometryHistoryEdges');
+    const base = measuredPart();
+    for (const document of [{ ...base, mathGeometry: [] }, { ...base, parameters: [] }]) {
+      for (let index = 0; index < 10; index += 1) {
+        expect(timelineDropCheck(document, 'extrude-3', 0)).toBeNull();
+      }
+    }
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('図形由来でない係数だけなら同じ文書のドラッグで解析を繰り返さない', () => {
+    const base = measuredPart();
+    const document = { ...base, parameters: [{ ...base.parameters[0], value: ev(10) }] };
+    const analyze = vi.spyOn(model, 'mathGeometryHistoryEdges');
+    for (let index = 0; index < 10; index += 1) {
+      expect(timelineDropCheck(document, 'extrude-2', 0)).toBeNull();
+    }
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+
+  it('文書を変更すると追加辺を再解析し、取消で元の文書に戻ると元の依存が効く', () => {
+    const document = measuredPart();
+    const analyze = vi.spyOn(model, 'mathGeometryHistoryEdges');
+    expect(timelineDropCheck(document, 'extrude-2', 0)).not.toBeNull();
+    const changed = { ...document, parameters: [{ ...document.parameters[0], value: ev(10) }] };
+    expect(timelineDropCheck(changed, 'extrude-2', 0)).toBeNull();
+    expect(timelineDropCheck(document, 'extrude-2', 0)).not.toBeNull();
+    expect(analyze).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('つまみの位置への差し込み(FR-507、タスク20)', () => {
   it('つまみを 押し出し1(通し 0)に置いたまま作ると、その次へ入りつまみが 1 つ進む', () => {

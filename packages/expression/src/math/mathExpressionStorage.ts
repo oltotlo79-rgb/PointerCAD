@@ -5,7 +5,7 @@ import { MathInputProblem, type StoredMathExpression } from './mathInputContract
 
 export function decodeMathExpressionStorage(value: unknown, source: string): StoredMathExpression {
   const definition = decodeStoredMathStructure(value, { operationsById: CANDIDATE_MATH_BY_ID,
-    coefficientIds: new Set(), declaredIds: new Set(), allowUnresolvedCoefficients: true });
+    coefficientIds: new Set(), declaredIds: new Set(), allowUnresolvedCoefficients: true, allowStoredDeclarations: true });
   if (definition.source !== source) throw new MathInputProblem('syntax', '保存する原式と数学定義が一致しません。');
   return definition;
 }

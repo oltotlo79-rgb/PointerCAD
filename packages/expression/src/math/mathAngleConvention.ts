@@ -18,6 +18,9 @@ export function convertMathAngleConvention(expression:MathNode,from:'degree'|'ra
     if(--remaining<0||depth>64)throw new MathInputProblem('budget','角度の規約を適用する式が複雑すぎます。');
     if(node.kind==='operation') {
       const operands=node.operands.map(child=>visit(child,depth+1));
+      const amplitude=node.operation==='ellipticf'||node.operation==='ellipticeinc'?0:node.operation==='ellipticpiinc'?1:-1;
+      if(amplitude>=0&&operands[amplitude]!==undefined)return operation(node.operation,
+        ...operands.map((child,index)=>index===amplitude?operation('multiply',child,forward):child));
       if(FORWARD.has(node.operation)&&operands.length===1)return operation(node.operation,operation('multiply',operands[0],forward));
       const value:MathNode={...node,operands};
       return INVERSE.has(node.operation)?operation('multiply',value,inverse):value;

@@ -175,6 +175,19 @@ export interface SolidBodyFailure {
   readonly message: string;
 }
 
+/**
+ * 形状計算部のメモリの量(NFR-PF-6「WASM の実質上限(〜4GB)内で動作。上限接近時に警告する」)。
+ * kernel の `KernelMemoryUsage` と同じ意味だが、model は kernel の型を再輸出しないので
+ * 自分の言葉の型として持つ(P0 §0.11)。確保済みの量は増えるだけで、計算部を作り直す
+ * (画面を開き直す)まで減らない。上限に近いかどうかは画面が決める(ui の `statusText.ts`)。
+ */
+export interface KernelMemoryReading {
+  /** 形状計算部がいま確保しているバイト数。 */
+  readonly usedBytes: number;
+  /** 確保できる上限のバイト数(約 4GB)。 */
+  readonly limitBytes: number;
+}
+
 /** 立体の再計算の結果。1 段失敗しても止めずに残りを返す(FR-504、NFR-RE-1)。 */
 export interface SolidRecomputeOutcome {
   readonly bodies: readonly SolidBody[];
@@ -191,6 +204,11 @@ export interface SolidRecomputeOutcome {
    * 直せるのが別のタスクの担当だから)で、詰め替えでは必ず値を入れる。
    */
   readonly appearanceMatches?: readonly AppearanceMatchEntry[];
+  /**
+   * 計算を終えた時点の形状計算部のメモリの量(NFR-PF-6)。kernel が読めたときだけ入る
+   * (取り消した計算でも入る)。Worker が壊れたときの結果や偽物の橋では省く。
+   */
+  readonly kernelMemory?: KernelMemoryReading;
 }
 
 /** 計算の進み具合(NFR-PF-4)。kernel の SolidProgress を model の言葉へ写したもの。 */

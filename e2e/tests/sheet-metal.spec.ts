@@ -5,12 +5,15 @@ import { sheetFlatDrawingFlow } from './sheetDrawingFlow.js';
 import { sheetExportFlow, verifySheetStepFiles } from './sheetExportFlow.js';
 import { sheetHelpFlow } from './sheetHelpFlow.js';
 import { withBrowserFailureDiagnostics } from './browserFailureDiagnostics.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 import { tree, command, chooseSheet, volume, rectangleFace } from './sheetUiFlow.js';
 
 const fileAction = (page: Page, name: string) => page.getByRole('group', { name: 'ファイル', exact: true }).getByRole('button', { name, exact: true });
 
 test('P10 板金の指定線曲げを作成・取消・再展開・保存往復し、式編集とUndoを通す', async ({ page }, testInfo) => {
+  await withBrowserFailureDiagnostics(page, testInfo, async stage => {
+  stage('起動と板金基板の作成');
   await page.setViewportSize({ width: 1440, height: 900 });
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(() => {
@@ -25,6 +28,7 @@ test('P10 板金の指定線曲げを作成・取消・再展開・保存往復�
   await base.getByRole('button', { name: '作成', exact: true }).click();
   await expect(tree(page, '板金基板1')).toBeVisible(); await tree(page, '板金基板1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000, 5);
+  stage('指定線曲げの試し表示・取消・作成');
   await command(page, 'L'); await command(page, '0,15'); await command(page, '@50,0');
   await page.locator('.pcad-popover input.pcad-field__input').first().press('Escape');
   await expect(tree(page, '線分1')).toBeVisible(); await tree(page, '線分1').click();
@@ -38,7 +42,7 @@ test('P10 板金の指定線曲げを作成・取消・再展開・保存往復�
   await sheetHelpFlow(page, '指定線で板を曲げる・曲げリリーフを作る', testInfo, 'sheet-line-help.png');
   await form.getByRole('button', { name: 'プレビュー', exact: true }).click();
   await expect(form.getByRole('status')).toContainText('体積:', { timeout: 60_000 });
-  await page.screenshot({ path: testInfo.outputPath('sheet-line-preview.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-line-preview', dialog: form, fixture: { step: 'preview' }, script: new URL(import.meta.url) });
   await expect(tree(page, '指定線で曲げる1')).toHaveCount(0);
   await form.getByRole('button', { name: '取消', exact: true }).click();
   await tree(page, '板金基板1').click(); await expect.poll(() => volume(page)).toBeCloseTo(3000, 5);
@@ -48,28 +52,34 @@ test('P10 板金の指定線曲げを作成・取消・再展開・保存往復�
   await form.getByRole('button', { name: '作成', exact: true }).click();
   await expect(tree(page, '指定線で曲げる1')).toBeVisible(); await tree(page, '指定線で曲げる1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 + 10 * Math.PI, 4);
-  await page.screenshot({ path: testInfo.outputPath('sheet-line-created.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-line-created', dialog: page.locator('.pcad-panel--right'),
+    fixture: { step: 'created' }, script: new URL(import.meta.url) });
+  stage('板金の展開');
   await chooseSheet(page, '板金の展開');
   const unfold = page.getByRole('form', { name: '板金の展開', exact: true });
   await unfold.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 2' });
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  expect(Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(3000, 4);
+  await expect.poll(async () => Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1]), { timeout: 60_000 }).toBeCloseTo(3000, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-line-flat.png') });
-  const downloaded = page.waitForEvent('download'); await fileAction(page, '保存').click();
-  const savedPath = testInfo.outputPath('sheet-line.pcad'); await (await downloaded).saveAs(savedPath);
+  stage('展開後の文書を保存');
+  const [downloaded] = await Promise.all([page.waitForEvent('download'), fileAction(page, '保存').click()]);
+  const savedPath = testInfo.outputPath('sheet-line.pcad'); await downloaded.saveAs(savedPath);
   const decoded = readPcadFile(await readFile(savedPath)); if (!decoded.ok) throw new Error(decoded.error.message);
   expect(decoded.document.solids[1]).toMatchObject({ kind: 'sheetBend', fixedSide: 'left', angle: { source: '-45*2', value: -90 } });
+  stage('保存した文書を開き直す');
   await fileAction(page, '新規').click();
   const chooser = page.waitForEvent('filechooser'); await fileAction(page, '開く').click(); await (await chooser).setFiles(savedPath);
   await expect(tree(page, '指定線で曲げる1')).toBeVisible(); await tree(page, '指定線で曲げる1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 + 10 * Math.PI, 4);
   const angle = page.locator('.pcad-panel--right .pcad-field').filter({ has: page.locator('.pcad-field__label', { hasText: /^曲げ角$/ }) }).locator('input');
+  stage('曲げ角の再編集とUndo');
   await expect(angle).toHaveValue('-45*2'); await angle.fill('-45'); await angle.press('Tab');
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 + 5 * Math.PI, 4);
   await page.locator('canvas.pcad-viewport__canvas').press('Control+z'); await expect(angle).toHaveValue('-45*2');
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(3000 + 10 * Math.PI, 4);
   expect(errors).toEqual([]);
+  });
 });
 
 test('P10 板金基板とフランジを画面で作り、保存往復・式編集・Undoを通す', async ({ page }, testInfo) => {
@@ -88,7 +98,7 @@ test('P10 板金基板とフランジを画面で作り、保存往復・式編�
   await base.getByRole('textbox', { name: /^K係数/ }).fill('0.4');
   // 説明書には操作可能な状態を撮る。初回OCCT読込中の画面を採用しない。
   await expect(base.getByRole('button', { name: '作成', exact: true })).toBeEnabled({ timeout: 60_000 });
-  await page.screenshot({ path: testInfo.outputPath('sheet-base-input.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-base-input', dialog: base, fixture: { step: 'base-input' }, script: new URL(import.meta.url) });
   await sheetHelpFlow(page, '板金の基板と曲げ条件を作る', testInfo, 'sheet-base-help.png');
   await base.getByRole('button', { name: '作成', exact: true }).click();
   await expect(tree(page, '板金基板1')).toBeVisible(); await tree(page, '板金基板1').click();
@@ -114,7 +124,7 @@ test('P10 板金基板とフランジを画面で作り、保存往復・式編�
   await flange.getByRole('button', { name: 'プレビュー', exact: true }).click();
   await expect(flange.getByRole('status')).toContainText('体積:', { timeout: 60_000 });
   await expect(tree(page, 'フランジ1')).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath('sheet-flange-preview.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-flange-preview', dialog: flange, fixture: { step: 'preview' }, script: new URL(import.meta.url) });
   await flange.getByRole('button', { name: '作成', exact: true }).click();
   await expect(tree(page, 'フランジ1')).toBeVisible(); await tree(page, 'フランジ1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(5000 + 200 * Math.PI, 4);
@@ -126,9 +136,8 @@ test('P10 板金基板とフランジを画面で作り、保存往復・式編�
   const fixedPanelId = await unfold.getByRole('combobox', { name: '固定面', exact: true }).inputValue();
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  const flatVolume = Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1]);
-  expect(flatVolume).toBeCloseTo(5000 + 190 * Math.PI, 4);
-  await page.screenshot({ path: testInfo.outputPath('sheet-unfold.png') });
+  await expect.poll(async () => Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1]), { timeout: 60_000 }).toBeCloseTo(5000 + 190 * Math.PI, 4);
+  await captureManualDetail(page, testInfo, { name: 'sheet-unfold', dialog: unfold, fixture: { fixedPanelId }, script: new URL(import.meta.url) });
   await unfold.getByRole('button', { name: '折曲げを表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toHaveCount(0);
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
@@ -193,7 +202,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await relief.getByRole('textbox', { name: /^切欠きの深さ/ }).fill('5');
   await relief.getByRole('button', { name: 'プレビュー', exact: true }).click();
   await expect(relief.getByRole('status')).toContainText('体積:', { timeout: 60_000 });
-  await page.screenshot({ path: testInfo.outputPath('sheet-relief-preview.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-relief-preview', dialog: relief, fixture: { step: 'preview' }, script: new URL(import.meta.url) });
   await relief.getByRole('button', { name: '作成', exact: true }).click();
   await expect(tree(page, '曲げリリーフ1')).toBeVisible(); await tree(page, '曲げリリーフ1').click();
   const foldedVolume = 5000 + 200 * Math.PI - 78 * (6 + Math.PI) / 19;
@@ -205,7 +214,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await unfold.getByRole('combobox', { name: '固定面', exact: true }).selectOption({ label: 'パネル 2' });
   await unfold.getByRole('button', { name: '展開を表示', exact: true }).click();
   await expect(unfold.getByRole('status')).toContainText('展開を表示中', { timeout: 60_000 });
-  expect(Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1])).toBeCloseTo(4976 + 186 * Math.PI, 4);
+  await expect.poll(async () => Number((await unfold.getByRole('status').textContent())?.match(/体積: ([\d.]+)/u)?.[1]), { timeout: 60_000 }).toBeCloseTo(4976 + 186 * Math.PI, 4);
   await page.screenshot({ path: testInfo.outputPath('sheet-relief-flat.png') });
   stage('保存した板金の再読込');
   const downloaded = page.waitForEvent('download'); await fileAction(page, '保存').click();
@@ -233,7 +242,7 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await editingFlange.getByRole('textbox', { name: /^K係数/ }).fill('0.3');
   await editingFlange.getByRole('button', { name: 'プレビュー', exact: true }).click();
   await expect(editingFlange.getByRole('status')).toContainText('合計体積:', { timeout: 60_000 });
-  await page.screenshot({ path: testInfo.outputPath('sheet-edit-flange-preview.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-edit-flange-preview', dialog: editingFlange, fixture: { step: 'edit-preview' }, script: new URL(import.meta.url) });
   await editingFlange.getByRole('button', { name: '変更を適用', exact: true }).click();
   await expect(editingFlange).toHaveCount(0); await tree(page, '曲げリリーフ1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(5000 + 250 * Math.PI - 96 * (6 + Math.PI) / 23, 4);
@@ -252,7 +261,8 @@ test('P10 板金の曲げ帯をまたぐ長穴リリーフを作成し、展開�
   await editingFlange.getByRole('button', { name: '変更を適用', exact: true }).click();
   await expect(editingFlange).toHaveCount(0); await tree(page, '曲げリリーフ1').click();
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(4988 + 198 * Math.PI, 4);
-  await page.screenshot({ path: testInfo.outputPath('sheet-edit-reference.png') });
+  await captureManualDetail(page, testInfo, { name: 'sheet-edit-reference', dialog: page.locator('.pcad-panel--right'),
+    fixture: { step: 'edit-reference' }, script: new URL(import.meta.url) });
   await page.locator('canvas.pcad-viewport__canvas').press('Control+z');
   await expect.poll(() => volume(page), { timeout: 60_000 }).toBeCloseTo(foldedVolume, 4);
   await chooseSheet(page, '板金の展開');

@@ -1,4 +1,4 @@
-import { QuickJS, EvalFlags, JSException, type JSValueHandle } from 'quickjs-wasi';
+import { NativeScriptVm, NativeScriptException, type NativeScriptValue } from './nativeScriptVm.js';
 import { installRuntimeBindings, type RuntimeOutput } from './runtimeBindings.js';
 import { createRuntimeErrorReader, readRuntimeError, scriptFailure, type ScriptRuntimeControl } from './runtimeErrors.js';
 import { resolveScriptModule, validateScriptProgram } from './scriptModules.js';
@@ -16,17 +16,14 @@ export async function executeScriptVm(input: ScriptExecutionInput, wasm: BufferS
   const sources = new Map(modules); sources.set('user-script.js', input.program.source);
   const control: ScriptRuntimeControl = { deadline: Infinity, failure: null, diagnostic: false };
   let readNativeLimit: () => ScriptFailure | null = () => null;
-  const unhandled = new Map<number, JSValueHandle>();
-  const terminal: { result?: { value: JSValueHandle } | { error: JSValueHandle } } = {};
-  let vm: QuickJS | undefined, result: JSValueHandle | undefined, reader: JSValueHandle | undefined;
+  const unhandled = new Map<number, NativeScriptValue>();
+  const terminal: { result?: { value: NativeScriptValue } | { error: NativeScriptValue } } = {};
+  let vm: NativeScriptVm | undefined, result: NativeScriptValue | undefined, reader: NativeScriptValue | undefined;
   let output: RuntimeOutput = { commands: [], console: [] };
   const started = performance.now();
   try {
-    vm = await QuickJS.create({ wasm, memoryLimit: SCRIPT_LIMITS.heapBytes, maxStackSize: SCRIPT_LIMITS.stackBytes,
-      timezoneOffset: 0,
-      wasi: (memory) => ({ clock_time_get(_clock: number, _precision: bigint, pointer: number): number {
-        new DataView(memory.buffer).setBigUint64(pointer, BigInt(input.timeMs) * 1000000n, true); return 0;
-      } }),
+    vm = await NativeScriptVm.create({ wasm, memoryLimit: SCRIPT_LIMITS.heapBytes, maxStackSize: SCRIPT_LIMITS.stackBytes,
+      timeMs: input.timeMs,
       interruptHandler() {
         if (control.diagnostic) return performance.now() >= control.deadline;
         control.failure ??= readNativeLimit();
@@ -54,10 +51,10 @@ export async function executeScriptVm(input: ScriptExecutionInput, wasm: BufferS
     reader = createRuntimeErrorReader(vm);
     output = installRuntimeBindings(vm, input, control);
     const initialized = performance.now(); control.deadline = initialized + SCRIPT_LIMITS.javascriptMs;
-    result = vm.evalCode(input.program.source, 'user-script.js', EvalFlags.TYPE_MODULE);
+    result = vm.evalCode(input.program.source, 'user-script.js', true);
     vm.markPromiseHandled(result);
-    void vm.resolvePromise(result).then((value) => { terminal.result = value; });
-    vm.executePendingJobs(); await Promise.resolve();
+    vm.executePendingJobs();
+    terminal.result = vm.settled(result);
     captureNativeFailure();
     const error = terminal.result !== undefined && 'error' in terminal.result ? terminal.result.error : unhandled.values().next().value;
     if (control.failure !== null) {
@@ -70,7 +67,7 @@ export async function executeScriptVm(input: ScriptExecutionInput, wasm: BufferS
   } catch (error) {
     captureNativeFailure();
     let failure = control.failure ?? scriptFailure('worker', '処理を実行できませんでした。もう一度実行してください。');
-    if (error instanceof JSException) {
+    if (error instanceof NativeScriptException) {
       try {
         if (vm !== undefined && reader !== undefined && failure.location === null) {
           const detail = readRuntimeError(vm, reader, error.handle, control, sources);

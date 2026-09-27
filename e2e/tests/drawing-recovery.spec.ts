@@ -6,6 +6,7 @@ import { fullManufacturingDrawing } from './gdtFullFixture.js';
 import { expectDrawingStroke } from './drawingManufacturingFixture.js';
 import { drawingMessage as m } from './drawingMessages.js';
 import { KERNEL_TIMEOUT_MS } from './recompute.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 test('P9 図面の控えを起動時に案内し、全14公差・8溶接を復元して再保存まで保持する', async ({ page }, testInfo) => {
   const fixture = await fullManufacturingDrawing();
@@ -47,13 +48,14 @@ test('P9 図面の控えを起動時に案内し、全14公差・8溶接を復�
   await page.reload();
   const prompt = page.locator('.pcad-restore');
   await expect(prompt).toContainText('図面の名前'); await expect(prompt).toContainText(original.document.name);
-  await page.screenshot({ path: testInfo.outputPath('drawing-recovery-prompt.png'), fullPage: true });
+  await captureManualDetail(page, testInfo, { name: 'drawing-recovery-prompt', dialog: prompt, fixture: original.document, script: new URL(import.meta.url) });
   await prompt.getByRole('button', { name: '復元する', exact: true }).click();
   await expect(prompt).toHaveCount(0);
   await expect(owner('gdt-14').locator('[aria-label="0.1"]')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
   for (const item of [...original.document.gdtFrames, ...original.document.datums, ...original.document.weldSymbols]) await expectDrawingStroke(owner(item.id).locator('path'));
   await expect(page.getByRole('alert').filter({ hasText: m('drawing.manufacturing.outputUnresolved') })).toHaveCount(0);
-  await page.screenshot({ path: testInfo.outputPath('drawing-recovery-restored.png'), fullPage: true });
+  await captureManualDetail(page, testInfo, { name: 'drawing-recovery-restored', dialog: page.locator('.pcad-drawing-sheet'),
+    fixture: original.document, script: new URL(import.meta.url) });
   const resaving = page.waitForEvent('download'); await page.locator('.pcad-drawing-sheet').focus(); await page.keyboard.press('Control+s');
   const restored = await resaving; await restored.saveAs(testInfo.outputPath('drawing-recovered.pcadd'));
   const restoredPath = await restored.path(); if (restoredPath === null) throw new Error('再保存ファイルなし');

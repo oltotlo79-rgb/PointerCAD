@@ -17,8 +17,10 @@ if (argument.length !== 1 || !/^[a-z0-9][a-z0-9-]*$/u.test(argument[0])) {
 const destination = join(root, 'dist', argument[0]);
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const manifest = { format: 'pointercad-manual/1', releaseCertified: false,
-  sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  dirtySources: execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim() !== '',
+  sourceCommit: execFileSync('git', ['-c', 'safe.directory=' + root.replaceAll('\\', '/'),
+    'rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
+  dirtySources: execFileSync('git', ['-c', 'safe.directory=' + root.replaceAll('\\', '/'),
+    'status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim() !== '',
   inputs: {}, images: {}, outputs: {}, chapters: [], volumes: [], featureCoverage: null, commandCoverage: [], supplementaryCoverage: null, nativeControlCoverage: null, buildId: '' };
 const inputs = new Map();
 const buildErrors = [], logger = createLogger('warn'), writeBuildError = logger.error.bind(logger);

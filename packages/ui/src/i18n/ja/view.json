@@ -83,6 +83,10 @@
   "settings.scale.tooltip": "文字とボタンの大きさを変えます(90〜150%)",
   "settings.hint": "選んだ内容は、この端末に覚えます。",
   "bootstrap.rootMissing": "画面の土台が見つかりません。",
+  "bootstrap.loading": "画面を準備しています。",
+  "bootstrap.hint": "画面が開かない場合は、通信を確認してから読み込み直してください。ブラウザーに保存した設定や作業の控えは消さずに再試行します。",
+  "bootstrap.failed": "画面に必要なファイルを読み込めませんでした。",
+  "bootstrap.retry": "画面を読み込み直す",
   "measure.kind.pointDistance": "2 点の距離",
   "measure.kind.pointFaceDistance": "点と面の距離",
   "measure.kind.faceDistance": "面と面の距離",
@@ -345,5 +349,6 @@
   "offline.prepare": "通信なしで使う準備",
   "offline.update": "新しい版を準備",
   "offline.cancel": "準備を取り消す",
-  "offline.cancelHint": "今回の準備を中止します。以前の版と文書は保持します"
+  "offline.cancelHint": "今回の準備を中止します。以前の版と文書は保持します",
+  "documentDiff.group.math-problem": "未解決の式"
 }

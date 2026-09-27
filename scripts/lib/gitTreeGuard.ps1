@@ -105,7 +105,7 @@ function Get-StagedTrackedPaths {
     # 単一要素のコレクションをスカラーへ展開してしまう(呼び出し側の $x = Get-Foo で
     # 配列が文字列1個に化ける既知の罠)。pscustomobjectで包んで境界を越えさせない。
     $global:LASTEXITCODE = 0
-    $rawLines = @(Invoke-GitUtf8Output { & git -C $Root -c core.quotepath=false diff --cached --name-only -z })
+    $rawLines = @(Invoke-GitUtf8Output { & git -C $Root -c ('safe.directory=' + $Root.Replace('\', '/')) -c core.quotepath=false diff --cached --name-only -z })
     if ($LASTEXITCODE -ne 0) {
         return [pscustomobject]@{ Ok = $false; Paths = @() }
     }
@@ -127,7 +127,7 @@ function Get-GitFileFingerprint {
         return '<absent>'
     }
     $global:LASTEXITCODE = 0
-    $hash = & git -C $Root hash-object -- $RelativePath 2>$null
+    $hash = & git -C $Root -c ('safe.directory=' + $Root.Replace('\', '/')) hash-object -- $RelativePath 2>$null
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($hash)) {
         # git hash-object が失敗した場合はファイル内容そのもののハッシュへ後退する
         return (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash

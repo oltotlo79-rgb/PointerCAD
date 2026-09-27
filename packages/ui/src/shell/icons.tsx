@@ -1461,6 +1461,22 @@ export function MeasureIcon(props: IconProps): React.JSX.Element {
 }
 
 /**
+ * 図形の測定値(GR-30。Q1=A4)。測る(斜めの物差し)を土台に、右上へ名前の札を添えて
+ * 「測って名前を付けて保存する」ことを図柄だけで読めるようにする(NFR-UX-7)。
+ * 外観(枡)・測る(物差し)・点検(層+虫めがね)・下絵(作図面)と重ならない図柄にして、
+ * 一覧の行を見分けられるようにする。
+ */
+export function MathGeometryIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M1.8 9.4 7.4 3.8l2.6 2.6-5.6 5.6z" />
+      <path d="M4 6.4 5.2 7.6M6 4.4l1.2 1.2" />
+      <path d="M9.4 2.2h4.8v3.6h-2l-1.4 1.4V5.8h-1.4z" fill="currentColor" fillOpacity={0.35} />
+    </SvgIcon>
+  );
+}
+
+/**
  * 3D プリントの点検(FR-815、P6 タスク46)。積み上がった層の線 3 本と、調べる虫めがね。
  * 「積んで作るものを調べる」が図柄だけで読める(NFR-UX-7)。外観(枡)・測る(物差し)・
  * 下絵(作図面)と重ならない図柄にして、一覧の 4 行を見分けられるようにする。

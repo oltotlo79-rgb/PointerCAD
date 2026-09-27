@@ -16,6 +16,7 @@ export type {
 } from './mathWorkExecution.js';
 export {
   createMathBackend,
+  warmMathBackend,
 } from './createMathBackend.js';
 export {
   createFunctionMathSource,
@@ -36,3 +37,4 @@ export {
 export {
   executeFunctionPointWorkRequest,
 } from './functionPointWorkExecution.js';
+export { executePreparedFunctionWork } from './functionWorkPreparation.js';

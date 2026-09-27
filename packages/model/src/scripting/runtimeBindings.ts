@@ -1,4 +1,4 @@
-import type { JSValueHandle, QuickJS } from 'quickjs-wasi';
+import type { NativeScriptValue, NativeScriptVm } from './nativeScriptVm.js';
 import { readSerializedScriptCommand } from './commandValidation.js';
 import { scriptUtf8Bytes } from './scriptBytes.js';
 import { locateScriptError } from './scriptLocation.js';
@@ -7,14 +7,14 @@ import { SCRIPT_GUEST_BOOTSTRAP } from './scriptGuestBootstrap.js';
 import { SCRIPT_LIMITS, type ScriptCommand, type ScriptConsoleLine, type ScriptExecutionInput } from './scriptTypes.js';
 
 export interface RuntimeOutput { commands: ScriptCommand[]; console: ScriptConsoleLine[] }
-export function installRuntimeBindings(vm: QuickJS, input: ScriptExecutionInput, control: ScriptRuntimeControl): RuntimeOutput {
+export function installRuntimeBindings(vm: NativeScriptVm, input: ScriptExecutionInput, control: ScriptRuntimeControl): RuntimeOutput {
   const output: RuntimeOutput = { commands: [], console: [] };
   const sources = new Map(input.program.modules.map(module => [module.name, module.source])); sources.set('user-script.js', input.program.source);
   let commandBytes = 0, consoleBytes = 0;
   const fail = (kind: 'command' | 'console', message: string): void => {
     control.failure ??= scriptFailure(kind, message);
   };
-  const bind = (name: string, value: JSValueHandle): void => {
+  const bind = (name: string, value: NativeScriptValue): void => {
     try { vm.global.setProp(name, value); } finally { value.dispose(); }
   };
   bind('__pointercadCommand', vm.newFunction('pcad-command', (...args) => {

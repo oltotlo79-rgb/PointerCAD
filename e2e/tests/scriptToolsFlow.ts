@@ -2,6 +2,7 @@ import { expect, type ElectronApplication, type Page, type TestInfo } from '@pla
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { panel, source, writeDraft, savePart, successfulRun } from './scriptsFlow.js';
 import { readRecomputeStats } from './recompute.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 export async function scriptToolsFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -52,7 +53,8 @@ export async function scriptToolsFlow(page: Page, info: TestInfo, app?: Electron
   expect(await helper.evaluate(element => element instanceof HTMLTextAreaElement ? element.value.slice(0, element.selectionStart).split('\n').length : -1)).toBe(2);
   await helper.fill("export function make(){\ncad.solid.box({x:'30',y:'20',z:'5'});\n}");
   await successfulRun(page);
-  expect((await savePart(page, info, 'script-module.pcad', app)).solids).toHaveLength(1);
+  const moduleFile = await savePart(page, info, 'script-module.pcad', app);
+  expect(moduleFile.solids).toHaveLength(1);
   await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
-  await page.screenshot({ path: info.outputPath('script-module-created.png') });
+  await captureManualDetail(page, info, { name: 'script-module-created', dialog: panel(page), fixture: moduleFile, script: new URL(import.meta.url) });
 }

@@ -6,6 +6,7 @@
  */
 import {
   analyzeParameters,
+  affectsShape,
   baseWorkPlane,
   canRedo as stackCanRedo,
   canUndo as stackCanUndo,
@@ -276,7 +277,9 @@ export function documentPatch(
     // 基準ジオメトリ(FR-328、FR-329)は文書から導ける控えなので、ここで作り直す。
     ...referencePatch(next, workPlaneId),
     // パラメータ表(FR-207)も同じく文書から導ける控え。
-    ...parameterPatch(next),
+    // Presentation edits do not trigger recomputation. Keep its transient values, including geometry-derived ones.
+    ...parameterPatch(next, !replacesDocument && next.id === state.document.id && !affectsShape(state.document, next)
+      ? state.parameterAnalysis : undefined),
   };
 }
 
@@ -290,6 +293,7 @@ export function documentPatch(
  */
 export function parameterPatch(
   document: PartDocument,
+  evaluation?: ParameterAnalysis,
 ): Pick<AppState, 'parameterAnalysis' | 'nonLengthVariables'> {
   if (document.parameters.length === 0) {
     return {
@@ -297,7 +301,7 @@ export function parameterPatch(
       nonLengthVariables: EMPTY_NON_LENGTH_VARIABLES,
     };
   }
-  const parameterAnalysis = analyzeParameters(document.parameters, collectExpressionOwners(document));
+  const parameterAnalysis = analyzeParameters(document.parameters, collectExpressionOwners(document), evaluation);
   return { parameterAnalysis, nonLengthVariables: parameterAnalysis.nonLengthVariables };
 }
 

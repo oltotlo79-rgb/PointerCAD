@@ -149,6 +149,38 @@ function isOpenedTypedShape(value: unknown): value is OpenedTypedShape {
 }
 
 /**
+ * 本体プロセス(`apps/desktop/src/main/pcadDialogs.ts` の `readBytesFrom`)が「開く」を
+ * 大きさ理由で断ったときに文面へ混ぜる印(P12-26 続き。要件§1.5)。
+ *
+ * Electron の `ipcRenderer.invoke` の拒否は独自のクラスや追加の属性を運ばず、文面だけが
+ * `Error invoking remote method '…': Error: <message>` の形で届く(preload は素通しの口)。
+ * **日本語の言い回しの一致では判定しない**——この固定の印だけを見て、Web 版
+ * (`packages/ui/src/file/readBrowserFile.ts`)と同じ i18n の鍵を選ぶ。
+ *
+ * 本体プロセス専用の `electron` / `node:fs` を抱き込む `pcadDialogs.ts` をここから import
+ * せず、同じ文字列を書き写している(このファイル冒頭の preload との取り決めと同じ理由)。
+ */
+const READ_TOO_LARGE_REASON_MARKER = 'PCAD_READ_TOO_LARGE:';
+const READ_SIZE_CHANGED_REASON_MARKER = 'PCAD_READ_SIZE_CHANGED:';
+
+/**
+ * 「開く」の本体プロセスの拒否を、Web 版と同じ i18n の鍵へ直す。心当たりの印が無ければ
+ * null(呼び出し側は元の失敗をそのまま伝える)。
+ */
+function readFailureMessageKey(error: unknown): 'file.error.tooLarge' | 'file.error.corrupted' | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+  if (error.message.includes(READ_TOO_LARGE_REASON_MARKER)) {
+    return 'file.error.tooLarge';
+  }
+  if (error.message.includes(READ_SIZE_CHANGED_REASON_MARKER)) {
+    return 'file.error.corrupted';
+  }
+  return null;
+}
+
+/**
  * デスクトップ版のファイルの読み書きの口を作る。preload の口が無ければ null。
  *
  * 調べる相手を引数で受けるのは、検査で偽の `globalThis` を渡せるようにするため
@@ -195,7 +227,14 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
   const base: FileGateway = {
     ...desktopCamGateway(api),
     async openPcad(kind): Promise<PickedFile | null> {
-      const result: unknown = await api.openPcad(kind);
+      let result: unknown;
+      try {
+        result = await api.openPcad(kind);
+      } catch (error) {
+        const key = readFailureMessageKey(error);
+        if (key !== null) throw new Error(t(key), { cause: error });
+        throw error;
+      }
       if (result === null || result === undefined) {
         // 取り消された。
         return null;
@@ -264,7 +303,14 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
     // 返り値の形(`PickedTypedFile`)は `@pointercad/ui` の公開口に名前が出ていないので、
     // ここには書かずに `FileGateway` から受け取る(引数の種類の型も同じ経路で決まる)。
     async openFile(kinds) {
-      const result: unknown = await api.openFile(kinds);
+      let result: unknown;
+      try {
+        result = await api.openFile(kinds);
+      } catch (error) {
+        const key = readFailureMessageKey(error);
+        if (key !== null) throw new Error(t(key), { cause: error });
+        throw error;
+      }
       if (result === null || result === undefined) {
         // 取り消された。
         return null;

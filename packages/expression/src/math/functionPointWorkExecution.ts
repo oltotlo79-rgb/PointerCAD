@@ -1,5 +1,5 @@
 import {MathInputProblem} from './mathInputContract.js';
-import type {MathExecutionBackend} from './mathWorkExecution.js';
+import {geometryCalculationClock,type MathExecutionBackend} from './mathWorkExecution.js';
 import type {MathRequestIdentity} from './mathWorkRequest.js';
 import {decodeFunctionPointWorkEnvelope} from './functionPointWorkRequest.js';
 import {solveImplicitFunctionPoints} from './solveImplicitFunctionPoints.js';
@@ -11,12 +11,12 @@ export interface FunctionPointWorkReply {
 }
 export function executeFunctionPointWorkRequest(value:unknown,backend:MathExecutionBackend):FunctionPointWorkReply {
   const {request,serial}=decodeFunctionPointWorkEnvelope(value),started=performance.now();
-  const shouldStop=()=>performance.now()-started>=2000?'deadline' as const:undefined;
+  const clock=geometryCalculationClock(backend,started),{shouldStop}=clock;
   const reply=(result:FunctionPointWorkResult):FunctionPointWorkReply=>({kind:'function-points-result',serial,identity:request.identity,result});
   try {
-    return reply(backend.withinDeadline(()=>solveImplicitFunctionPoints(request,{backend,shouldStop})));
+    return reply(clock.settle(clock.run(()=>solveImplicitFunctionPoints(request,{backend:clock.backend,shouldStop}))));
   } catch(error) {
-    if(error instanceof MathInputProblem) return reply(error.code==='budget'?{status:'stopped',reason:'budget'}:{status:'invalid',message:error.message});
+    if(error instanceof MathInputProblem) return reply(clock.stopped(error)??{status:'invalid',message:error.message});
     throw error;
   }
 }

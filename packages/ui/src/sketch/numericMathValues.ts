@@ -1,6 +1,57 @@
-import { bindMathCompositionNames, collectMathCoefficients, type ExpressionResult, type ExpressionValue } from '@pointercad/expression';
-import type { StoredMathExpression } from '@pointercad/expression/math/contracts';
-import type { PartDocument } from '@pointercad/model';
+import { bindMathCompositionNames, collectMathCoefficients, collectVariableNames, evaluateExpression, type EvaluateOptions, type ExpressionError, type ExpressionResult, type ExpressionValue } from '@pointercad/expression';
+import { MathInputProblem, type StoredMathExpression } from '@pointercad/expression/math/contracts';
+import { mathGeometryDerivedParameters, type PartDocument } from '@pointercad/model';
+import { t } from '../i18n/t.js';
+
+interface PendingFieldContext {
+  readonly document: PartDocument;
+  readonly variables: ReadonlyMap<string, number>;
+  readonly pendingVariables: ReadonlySet<string>;
+}
+const NO_PENDING_VARIABLES: ReadonlySet<string> = new Set();
+let readPendingContext: () => PendingFieldContext | undefined = () => undefined;
+/** propertyFieldUnits がストアの読取を登録する。設定・履歴の純関数からストアへの循環を防ぐ。 */
+export function registerPendingFieldContext(read: () => PendingFieldContext): void { readPendingContext = read; }
+export function pendingFieldContext(): PendingFieldContext | undefined { return readPendingContext(); }
+/**
+ * 式が計算待ちの係数名を参照しているか(GR-20)。単位の中の名前(`(w*2)in` の `w`)も数える。
+ * 読めない式(構文の誤り)は参照なしとし、評価で誤りの理由をそのまま出させる。
+ */
+export function referencesPendingVariable(source: string, pending: ReadonlySet<string>, definition?: StoredMathExpression): boolean {
+  if (pending.size === 0) return false;
+  if (definition !== undefined) {
+    try {
+      return collectMathCoefficients(definition.expression).some(reference => pending.has(reference.label));
+    } catch (error) {
+      if (!(error instanceof MathInputProblem)) throw error;
+      // 壊れた数式は呼出し側の通常の検証に任せる。
+      return false;
+    }
+  }
+  return collectVariableNames(source).some((name) => pending.has(name));
+}
+
+/** 既存の error の受け渡しでも失われない、計算待ちの印。通常の誤りの形は変えない。 */
+export type PendingFieldError = ExpressionError & { readonly pending: true };
+export function isPendingFieldError(error: ExpressionError | null): error is PendingFieldError {
+  return error !== null && 'pending' in error && error.pending === true;
+}
+export function pendingFieldResult(): { readonly ok: false; readonly error: PendingFieldError } {
+  return { ok: false, error: { code: 'unknownVariable', message: t('mathGeometry.status.pending'), position: -1, pending: true } };
+}
+
+/** 既存の評価入口には現在の変数表と同一のときだけ計算待ちを補う。他文書の評価へ混ぜない。 */
+export function pendingVariablesFor(variables: ReadonlyMap<string, number> | undefined): ReadonlySet<string> {
+  const context = pendingFieldContext();
+  return context !== undefined && variables === context.variables ? context.pendingVariables : NO_PENDING_VARIABLES;
+}
+
+
+/** 単位を整えた式の共通評価。UI の evaluateFieldSource とその場入力から使う。 */
+export function evaluatePendingExpression(source: string, options: EvaluateOptions, pending: ReadonlySet<string>): ExpressionResult {
+  return referencesPendingVariable(source, pending) ? pendingFieldResult() : evaluateExpression(source, options);
+}
+
 
 interface CoefficientValue { readonly id: string; readonly label: string; readonly decimal: string }
 interface MathInputScope {
@@ -22,6 +73,13 @@ export function acceptNumericMath(value: ExpressionValue, prepared: PartDocument
   if (value.mathDefinition === undefined || value.source !== value.mathDefinition.source || !Number.isFinite(value.value)) {
     throw new Error('数式の評価結果を確認してください。');
   }
+  const context = pendingFieldContext();
+  if (context !== undefined && prepared.id === context.document.id && context.pendingVariables.size > 0) {
+    // 数式ダイアログの prepared は識別番号を補った文書。別文書の同名係数へ待機を混ぜない。
+    const derived = mathGeometryDerivedParameters(prepared.parameters);
+    const pending = new Set([...context.pendingVariables].filter(name => derived.has(name)));
+    if (referencesPendingVariable(value.source, pending, value.mathDefinition)) throw new Error(pendingFieldResult().error.message);
+  }
   const copy = structuredClone(value);
   const definition = copy.mathDefinition;
   if (definition === undefined) throw new Error('数式の定義がありません。');
@@ -40,7 +98,8 @@ export function acceptNumericMath(value: ExpressionValue, prepared: PartDocument
 }
 
 export function evaluateNumericMath(value: ExpressionValue, variables: ReadonlyMap<string, number>,
-  exactVariables?: ReadonlyMap<string, string>): ExpressionResult {
+  exactVariables?: ReadonlyMap<string, string>, pending: ReadonlySet<string> = pendingVariablesFor(variables)): ExpressionResult {
+  if (referencesPendingVariable(value.source, pending, value.mathDefinition)) return pendingFieldResult();
   const scope = value.mathDefinition === undefined ? undefined : scopes.get(value.mathDefinition);
   if (scope === undefined || scope.value.source !== value.source || scope.value.value !== value.value
       || scope.coefficients.some(item => exactVariables?.get(item.label) !== item.decimal || variables.get(item.label) !== Number(item.decimal))) {
@@ -53,6 +112,8 @@ export function evaluateNumericMath(value: ExpressionValue, variables: ReadonlyM
 /** Publish parameter identities only with an actual accepted geometry change, in the same Undo entry. */
 export function prepareNumericMathCommit(current: PartDocument, inputs: unknown):
   { readonly ok: true; readonly document: PartDocument } | { readonly ok: false; readonly message: string } {
+  const context = pendingFieldContext();
+  const pendingVariables = current === context?.document ? context.pendingVariables : NO_PENDING_VARIABLES;
   const used = new Set<MathInputScope>();
   let invalid = false;
   const seen = new Set<object>(), pending: unknown[] = [inputs];
@@ -66,7 +127,12 @@ export function prepareNumericMathCommit(current: PartDocument, inputs: unknown)
       const scope = definition !== null && typeof definition === 'object' ? scopes.get(definition as StoredMathExpression) : undefined;
       if (scope === undefined || !('source' in value) || scope.value.source !== value.source
           || !('value' in value) || scope.value.value !== value.value) invalid = true;
-      else used.add(scope);
+      else {
+        if (referencesPendingVariable(scope.value.source, pendingVariables, scope.value.mathDefinition)) {
+          return { ok: false, message: pendingFieldResult().error.message };
+        }
+        used.add(scope);
+      }
     } else {
       const children: unknown[] = Object.values(value);
       pending.push(...children);

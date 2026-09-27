@@ -1,0 +1,1650 @@
+{
+  "format": 1,
+  "releaseCertified": false,
+  "captures": [
+    {
+      "name": "math-set-bounds",
+      "script": "e2e/tests/mathSetBoundsFlow.ts",
+      "sourceValidation": "scratchpad/tasks/6131650ed8c2-set-bounds-uinvlgnc",
+      "sourceEvidence": "scratchpad/tasks/6131650ed8c2-set-bounds-uinvlgnc/browser-results/math-input-ADD-22-集合の上下限と極値を区別し、保存再編集・座標追従・Undo・F1を通す-functional",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "applicationBuildId": null,
+        "project": "functional",
+        "sourceTest": "ADD-22 集合の上下限と極値を区別し、保存再編集・座標追従・Undo・F1を通す",
+        "scriptSha256": "17e0abf4279cfca07f697d3e32ed136fd4297d04597aa1d873e85ebaa992c3ec",
+        "fixture": {
+          "filename": "math-set-bounds-fixture.json",
+          "sha256": "f962e17c8ef5eb2dea33e3afa01ba8000457de221d443ee79db8718483b16d48"
+        },
+        "screen": {
+          "filename": "math-set-bounds-screen.png",
+          "sha256": "764896ccb7e6c2abd798c2a73accee1ec0616d826337ac1d36ac5a661c44a7ef"
+        },
+        "detail": {
+          "filename": "math-set-bounds-detail.png",
+          "sha256": "6b1e23416898f2f8513f9ec7ef3ed72df86ac170f4ed5f7209b77019f609e1ab"
+        },
+        "controlDescriptions": {
+          "count": 265,
+          "controls": [
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "新規",
+              "description": "新規 (Ctrl/Cmd+N)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "開く",
+              "description": "開く (Ctrl/Cmd+O)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "保存",
+              "description": "保存 (Ctrl/Cmd+S)\nShift を押しながら押すと、名前を付けて保存します。\nこの環境では場所を選べないため、ダウンロードで保存します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ファイルのほかの操作",
+              "description": "ファイルのほかの操作: 新規・開く・保存のほかのファイル操作をまとめてあります\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "自動作図",
+              "description": "自動作図: JavaScriptで点・線・立体を作り、処理を道具として登録します\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "元に戻す",
+              "description": "元に戻す (Ctrl+Z)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "やり直す",
+              "description": "やり直す: 進める先はありません"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "モデリング",
+              "description": "モデリング"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "選択",
+              "description": "選択: 要素をクリックして選びます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "点",
+              "description": "点: 座標を入れて点を打ちます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "線分",
+              "description": "線分: 2 点を結ぶ線を引きます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "円弧",
+              "description": "円弧: 中心・半径・角度で円弧や円をかきます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "点列",
+              "description": "点列: 等間隔に点をまとめて打ちます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "面",
+              "description": "面: 囲まれたところに面を張ります"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "作図",
+              "description": "作図: 四角・多角形・長穴・円・楕円・曲線をまとめてかきます\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "編集",
+              "description": "編集: かいた線・円弧をずらす・切り取る・伸ばします\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "拘束",
+              "description": "拘束: 形を条件で決めます。道具を選んでから、条件を付ける要素を順に押してください\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "板金",
+              "description": "板金: 一定厚の基板を作り、縁を折り曲げます。\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "作る",
+              "description": "作る: 面や点を選び、数値を入れて立体を作ります\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "合わせる",
+              "description": "合わせる: 立体を 2 つ選んで組み合わせます\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "加工",
+              "description": "加工: 立体に穴・面取り・パターンなどの加工をします\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "見た目",
+              "description": "見た目: 立体の見え方を決めます(色と材質)\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "作図面: XY",
+              "description": "上から見た面(床の面)にかきます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "視点に合わせる",
+              "description": "視点に合わせる: 視点に合わせる: いま見ている向きに最も近い面へ切り替えます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "投影: 透視投影",
+              "description": "投影: 見え方を切り替えます(遠近をつける/つけない)\n透視投影: 遠近をつけて見せます(奥のものほど小さくなります)\n押すと一覧が開きます(↑↓ で選び、Enter で決め、Esc で閉じます)。最後に使った道具がこのボタンに出ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "4分割で見る",
+              "description": "4分割で見る"
+            },
+            {
+              "tag": "SELECT",
+              "id": "",
+              "name": "視点を選ぶ",
+              "description": "保存した視点を選びます。選んだだけでは画面は動かず、復元ボタンでその視点へ移ります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "この視点へ",
+              "description": "この視点へ"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "視点の名前",
+              "description": "保存または改名に使う視点の名前を、120文字以内で入力します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "今の視点を保存",
+              "description": "今の視点を保存"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "名前を変更",
+              "description": "名前を変更"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "削除",
+              "description": "削除"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "面のみ",
+              "description": "面のみ: 面のみ"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "面と稜線",
+              "description": "面と稜線: 面と稜線"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "稜線のみ",
+              "description": "稜線のみ: 稜線のみ"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "断面表示",
+              "description": "断面表示: 断面表示: 形を切らずに、見た目だけを平面で切って中を見ます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "グリッド",
+              "description": "グリッド: グリッド: 方眼と XYZ 軸の表示を切り替えます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "続けてかく",
+              "description": "続けてかく: 直前の端から続けて次をかきます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "吸着",
+              "description": "吸着: 近くの点にぴったり合わせます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "吸着の種別",
+              "description": "吸着の種別: 端点 / 交点 / 中点 / 中心 / 方眼 / 角度 / 延長線 / 垂線 / 平行線\nクリックで一覧を開き、合わせる場所を選べます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ホーム視点",
+              "description": "ホーム視点: ホーム視点: 斜め上から見た最初の向きに戻します(Home キー)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "設定",
+              "description": "表示設定を開きます(テーマ・拡大率・自動保存の間隔)"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ヘルプ (F1)",
+              "description": "ヘルプ (F1)"
+            },
+            {
+              "tag": "INPUT",
+              "id": "_r_1_",
+              "name": "名前で探す",
+              "description": "名前や所属を入力。下矢印で候補へ移動、Escで検索を解除します"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "履歴フォルダを作る",
+              "description": "履歴フォルダを作る"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "初めての作図を案内する",
+              "description": "点から穴のある板を作り、保存するまでを案内します。途中で止めても文書は残ります"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "プロパティ",
+              "description": "選択中の要素の寸法や設定を表示し、確認・編集します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "パラメータ",
+              "description": "文書の係数一覧と構成を開きます。"
+            },
+            {
+              "tag": "SELECT",
+              "id": "",
+              "name": "構成",
+              "description": "保存してある構成を選び、係数の組合せを切り替えます。形に関係する係数は再計算へ反映されます。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "構成の名前",
+              "description": "構成の新しい名前を入力します。Enterで新規作成でき、選択中の構成の改名にも使います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "追加",
+              "description": "現在の式を新しい構成として残します"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "改名",
+              "description": "選んだ構成の名前を変更します"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "削除",
+              "description": "選んだ構成を削除します。取り消しで戻せます"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "1 つ上へ動かします",
+              "description": "1 つ上へ動かします"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "1 つ下へ動かします",
+              "description": "1 つ下へ動かします"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "この名前を消します",
+              "description": "この名前を消します"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "名前 集合の上限",
+              "description": "式から参照する係数の名前を入力します。Enterまたは欄から離れる操作で確定し、参照している式の名前も合わせて更新します。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "式 集合の上限",
+              "description": "係数の値を決める数値または式を入力します。Enterまたは欄から離れる操作で確定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "数式で入力",
+              "description": "この係数の式を、数学入力で確認・編集します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "mm",
+              "description": "この係数の単位の種類を選びます。式が表す値と、他の係数からの参照を確認してください。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "°",
+              "description": "この係数の単位の種類を選びます。式が表す値と、他の係数からの参照を確認してください。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "なし",
+              "description": "この係数の単位の種類を選びます。式が表す値と、他の係数からの参照を確認してください。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "説明 集合の上限",
+              "description": "係数の用途などの説明を入力します。Enterまたは欄から離れる操作で確定し、形の寸法は変えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "名前を付けた数値を足します",
+              "description": "名前を付けた数値を足します"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "未解決の式を追加",
+              "description": "未解決の式を追加"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "数式入力のヘルプ",
+              "description": "式の入力、角度の単位、計算結果の使い方を説明する章を開きます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "テキスト入力",
+              "description": "式の意味が保たれることを確認し、文字で入力する表示へ切り替えます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "構造入力",
+              "description": "式の意味が保たれることを確認し、分数などを見た形のまま入力する表示へ切り替えます。"
+            },
+            {
+              "tag": "SELECT",
+              "id": "",
+              "name": "角度の単位",
+              "description": "この式の角度を度またはラジアンで扱います。三角関数の入力と、角度を返す関数の結果に適用されます。"
+            },
+            {
+              "tag": "TEXTAREA",
+              "id": "",
+              "name": "数式sup(interval(open(0),open(4)))",
+              "description": "Ctrl+Enterで確定、Escで取消。係数は名前の一覧から挿入できます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "π",
+              "description": "円周率。係数名のpiとは別の定数です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "e",
+              "description": "自然対数の底。係数名のeとは別の定数です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ⅈ",
+              "description": "虚数単位。係数iや総和の添字iとは区別します。"
+            },
+            {
+              "tag": "SELECT",
+              "id": "",
+              "name": "数学の分野",
+              "description": "挿入する関数や記号を、計算の分野で絞り込みます。入力済みの式は変えません。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "",
+              "name": "名前・記号で検索",
+              "description": "関数や記号の名前・説明から候補を探します。選ぶと式へ挿入できます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "sup 集合の上限",
+              "description": "集合の最小の上界を求めます。その値が集合に含まれるとは限りません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "inf 集合の下限",
+              "description": "集合の最大の下界を求めます。その値が集合に含まれるとは限りません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "setmax 集合の最大値",
+              "description": "集合に含まれる最大の値を求めます。上限を含まなければ最大値はありません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "setmin 集合の最小値",
+              "description": "集合に含まれる最小の値を求めます。下限を含まなければ最小値はありません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "odesolve 微分方程式の解候補",
+              "description": "式の一覧、独立変数、求める関数の一覧、条件の一覧を指定します。条件は[関数またはその微分, 位置, 値]です。元の式と条件を満たすことを確認した候補を返します。全ての解とは限りません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "odeat 微分方程式の値を選ぶ",
+              "description": "odesolveの結果、候補番号、積分定数の値の一覧、調べる位置の順です。定数がない場合は[]を指定します。求める関数の順番で返す値をcomponentで選びます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "numericroots 数値で解を探す",
+              "description": "式が0になる値を探します。式、未知数、有限範囲の下端、上端、正の精度を指定し、解を含む区間と未解決の範囲を返します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "rootinterval 解の区間を選ぶ",
+              "description": "numericrootsの結果と1からの候補番号を指定し、[下限,上限]を選びます。解そのものの正確な値ではありません。未解決の範囲がある結果は使えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "solvesystem 複数の方程式",
+              "description": "方程式の一覧、未知数の一覧、実数または複素数の範囲を指定します。多項式と分数式の解・自由変数・条件を保持します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "systemsolution 複数式の解を選ぶ",
+              "description": "solvesystemの結果、候補番号、自由変数の値の一覧の順です。自由変数がない場合は[]を指定します。成分を使うにはcomponentで選びます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "solve 方程式・不等式の解",
+              "description": "等式または不等式、未知数、実数ℝ・複素数ℂまたは区間の順です。解なしと未解決を区別し、元の分母が0になる点を解へ含めません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "polynomialroots 多項式の根と重複度",
+              "description": "多項式、未知数、範囲の順です。式を0にする根と同じ根の重複度を2列で返します。全ての根を確認できた場合だけ表示します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "solution 解を一つ選ぶ",
+              "description": "solveの有限個の解から、1から始まる番号で選びます。実部、次に虚部が小さい順です。区間や未解決の結果から勝手に値を選びません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "fourierseries フーリエ級数",
+              "description": "式、変数、周期区間の下端と上端、最高次数0〜12の順です。係数と部分和を求め、元の関数の値とは区別します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "fourierat フーリエ部分和の値",
+              "description": "指定したフーリエ級数の有限の部分和へ値を代入します。元の関数への近似誤差を保証する操作ではありません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "fouriercos フーリエ余弦係数",
+              "description": "級数と次数を指定し、余弦係数aを取り出します。次数0は定数項の2倍のa0です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "fouriersin フーリエ正弦係数",
+              "description": "級数と次数を指定し、正弦係数bを取り出します。次数0は0です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "fourier フーリエ変換",
+              "description": "変換前の式、変数、周波数の変数を指定します。指数の符号は負、周波数は周期数です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "inversefourier 逆フーリエ変換",
+              "description": "正の符号でフーリエ変換を戻します。元の式と成立範囲を保ちます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "laplace ラプラス変換",
+              "description": "時間0から正の無限大までの変換と、複素変数の成立範囲を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "inverselaplace 逆ラプラス変換",
+              "description": "片側ラプラス変換の正の時刻の値を求めます。時刻0の値は推測しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ztransform Z変換",
+              "description": "添字0からの数列を変換し、成立範囲を表示します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "transformat 変換の値",
+              "description": "成立範囲を確認して、変換結果の指定した位置の値を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "DFT 離散フーリエ変換 DFT",
+              "description": "数値の並びを周波数成分へ変換します。負の指数符号・倍率1で、0番目から順に返します。1〜64要素。座標にはcomponentで成分を選び、複素数ならreまたはimを使います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "IDFT 逆離散フーリエ変換 IDFT",
+              "description": "正の指数符号と1/Nの倍率で元の数値の並びへ戻します。Nは要素数です。1〜64要素で、要素を勝手に追加しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "FFT 高速離散フーリエ変換 FFT",
+              "description": "DFTと同じ符号・倍率・並び順です。要素数は1、2、4、8、16、32、64、128、256のいずれか。0の自動追加は行いません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "IFFT 逆高速離散フーリエ変換 IFFT",
+              "description": "FFTの逆変換。正の指数符号と1/Nで元へ戻します。要素数は1〜256の2の累乗です。変換自体の位相は度・ラジアンの設定で変わりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ζ ゼータ関数",
+              "description": "実数の引数でゼータ関数の値を求めます。引数1では発散します。この計算の範囲は−32〜128です。角度の単位は関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ζ⁽ⁿ⁾ ゼータ関数の微分",
+              "description": "微分の次数、実数の引数の順です。次数は0〜17の整数、引数は−32〜128で1を除きます。次数0は元の関数の値です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "K 楕円積分 K（完全第1種）",
+              "description": "母数mが1未満の実数で使えます。 母数はm=k²です。度・ラジアンは角度phiだけに適用します。積分途中の発散や実数でない範囲は越えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "E 楕円積分 E（完全第2種）",
+              "description": "母数mが1以下の実数で使えます。 母数はm=k²です。度・ラジアンは角度phiだけに適用します。積分途中の発散や実数でない範囲は越えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "F 楕円積分 F（不完全第1種）",
+              "description": "角度phi、母数mの順です。 母数はm=k²です。度・ラジアンは角度phiだけに適用します。積分途中の発散や実数でない範囲は越えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Einc 楕円積分 Einc（不完全第2種）",
+              "description": "角度phi、母数mの順です。 母数はm=k²です。度・ラジアンは角度phiだけに適用します。積分途中の発散や実数でない範囲は越えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Pi 楕円積分 Pi（完全第3種）",
+              "description": "係数n、母数mの順です。どちらも1未満にします。 母数はm=k²です。度・ラジアンは角度phiだけに適用します。積分途中の発散や実数でない範囲は越えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Piinc 楕円積分 Piinc（不完全第3種）",
+              "description": "係数n、角度phi、母数mの順です。 母数はm=k²です。度・ラジアンは角度phiだけに適用します。積分途中の発散や実数でない範囲は越えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Airy Ai Airy Ai（Airy関数）",
+              "description": "実数xでの値 Aiを求めます。今回の計算範囲は−32〜32です。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Airy Bi Airy Bi（Airy関数）",
+              "description": "実数xでの値 Biを求めます。今回の計算範囲は−32〜32です。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Airy Ai′ Airy Ai′（Airy関数）",
+              "description": "実数xでの傾き Ai′を求めます。今回の計算範囲は−32〜32です。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Airy Bi′ Airy Bi′（Airy関数）",
+              "description": "実数xでの傾き Bi′を求めます。今回の計算範囲は−32〜32です。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Lambert W Lambert W（実数の二枝）",
+              "description": "枝と実数xの順です。枝0はxが−1/e以上、枝−1は−1/e以上で0未満。同じ負のxでも選ぶ枝で答えが変わります。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Bessel J Bessel J（第1種）",
+              "description": "整数次数n、実数xの順です。次数は−128〜128。xは−128〜128。原点でも計算できます。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Bessel Y Bessel Y（第2種）",
+              "description": "整数次数n、実数xの順です。次数は−128〜128。xは0より大きく128以下。0や負の引数は使えません。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Bessel I Bessel I（変形第1種）",
+              "description": "整数次数n、実数xの順です。次数は−128〜128。xは−128〜128。原点でも計算できます。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Bessel K Bessel K（変形第2種）",
+              "description": "整数次数n、実数xの順です。次数は−128〜128。xは0より大きく128以下。0や負の引数は使えません。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Beta Beta関数",
+              "description": "二つの正の実数a、bを指定します。beta(2,3)=1/12です。引数の和は20000以下。0、負の数、複素数は指定できません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Gamma Gamma関数",
+              "description": "実数xのGamma関数を求めます。正の整数nでは(n−1)!で、gamma(5)=24です。0と負の整数、複素数は指定できません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "polygamma Gammaの微分関数 polygamma",
+              "description": "次数n、実数xの順に指定します。0階はGammaの微分をGammaで割った関数で、以降はその微分です。次数は0〜17の整数。xに0と負の整数は指定できません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "erf 誤差関数 erf",
+              "description": "実数または複素数の誤差関数を求めます。複素数は実部・虚部とも−8〜8の範囲です。座標にはreまたはimで成分を選びます。角度の単位はこの関数自体には掛かりません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "erfc 相補誤差関数 erfc",
+              "description": "1-erf(x)を、小さい値でも桁を失わない経路で直接計算します。実数と、実部・虚部がそれぞれ−8〜8の複素数を扱います。表現できないほど小さな結果を0で代用しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "legendre Legendre多項式",
+              "description": "次数n、引数xの順にP_n(x)を求めます。P_n(1)=1の標準の正規化で、P_0=1、P_1=xです。次数は0〜128の整数。複素数の答えを座標に使う場合は実部などを選びます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "seriescoefficient 展開の係数を選ぶ",
+              "description": "TaylorまたはMaclaurinの展開式・選ぶ次数の順。0は定数項です。残した次数の係数を数値に使います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "taylor Taylor展開",
+              "description": "式・変数・展開中心・残す次数（0〜12）の順。係数と省略項を表示します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "maclaurin Maclaurin展開",
+              "description": "式・変数・残す次数（0〜12）の順。中心0の展開で、数値誤差の上限とは区別します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "sequencevalue 数列の指定項",
+              "description": "式、添字、求める添字の順。添字は整数で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "differenceat 指定した項での差分",
+              "description": "式、添字、位置、差分の回数、正の整数の間隔の順。前方差分を求めます。間隔で割る微分ではありません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "recurrencevalue 漸化式の指定項",
+              "description": "次の項の式、[添字,古い順の項の変数]、初期添字、初期値一覧、求める添字の順。2項ならaは添字n、bはn+1の項で、式はn+2の項を表します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "probability 事象の確率",
+              "description": "事象、変数一覧、分布の順です。例: probability(x>0,[x],normaldistribution(0,1))。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "givenprobability 条件を満たすときの確率",
+              "description": "事象、条件、変数一覧、分布の順です。条件の確率が0なら決定しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "randomexpectation 確率変数の期待値",
+              "description": "式、変数一覧、分布の順です。分布から期待値を求め、発散する値を採用しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "randomvariance 確率変数の分散",
+              "description": "式、変数一覧、分布の順です。元の分布の分散を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "randomcovariance 確率変数の共分散",
+              "description": "二つの式、変数一覧、分布の順です。同じ変数を使う依存関係を保持します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "randomcorrelation 確率変数の相関",
+              "description": "二つの式、変数一覧、分布の順です。どちらかの分散が0なら相関は決定しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "independentevents 事象の独立",
+              "description": "二つの事象、変数一覧、分布の順です。同時確率が個別確率の積に一致するか確認します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "independentvariables 確率変数の独立",
+              "description": "二つの式、変数一覧、明示した同時分布の順です。共分散0だけで独立と決めず、不明なら未確定を返します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "chisquarepdf χ²分布の密度",
+              "description": "自由度、位置の順です。自由度は0より大きくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "chisquarecdf χ²分布の累積確率",
+              "description": "自由度、位置の順です。自由度は0より大きくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "chisquarequantile χ²分布の分位点",
+              "description": "自由度、確率の順です。自由度は0より大きくします。確率は0以上1未満です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "tpdf t分布の密度",
+              "description": "自由度、位置の順です。自由度は0より大きくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "tcdf t分布の累積確率",
+              "description": "自由度、位置の順です。自由度は0より大きくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "tquantile t分布の分位点",
+              "description": "自由度、確率の順です。自由度は0より大きくします。確率は0より大きく1未満です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "fpdf F分布の密度",
+              "description": "分子自由度、分母自由度、位置の順です。自由度は0より大きくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "fcdf F分布の累積確率",
+              "description": "分子自由度、分母自由度、位置の順です。自由度は0より大きくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "fquantile F分布の分位点",
+              "description": "分子自由度、分母自由度、確率の順です。自由度は0より大きくします。確率は0以上1未満です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "gammapdf Gamma分布の密度",
+              "description": "形状、尺度、位置の順です。形状と尺度は0より大きくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "gammacdf Gamma分布の累積確率",
+              "description": "形状、尺度、位置の順で、その位置以下になる確率を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "gammaquantile Gamma分布の分位点",
+              "description": "形状、尺度、確率の順です。確率は0以上1未満にします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "betapdf Beta分布の密度",
+              "description": "形状a、形状b、位置の順です。形状は0より大きく、位置の範囲は0〜1です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "betacdf Beta分布の累積確率",
+              "description": "形状a、形状b、位置の順で、その位置以下になる確率を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "betaquantile Beta分布の分位点",
+              "description": "形状a、形状b、確率の順です。確率は0以上1以下にします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "normalpdf 正規分布の密度",
+              "description": "平均、標準偏差、位置の順です。標準偏差は0より大きくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "normalcdf 正規分布の累積確率",
+              "description": "平均、標準偏差、位置の順で、その位置以下になる確率を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "normalquantile 正規分布の分位点",
+              "description": "平均、標準偏差、確率の順です。確率は0より大きく1より小さくします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "expectation 確率表の期待値",
+              "description": "値の一覧、確率の一覧の順です。各確率は0以上1以下、合計は正確に1とします。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "probabilityvariance 確率表の分散",
+              "description": "値の一覧、確率の一覧から、期待値からのずれの二乗の期待値を求めます。標本補正はしません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "conditionalprobability 条件付き確率",
+              "description": "同時確率、条件の確率の順です。条件は0より大きく、同時確率以上である必要があります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "uniformpdf 一様分布の密度",
+              "description": "下端a、上端b、位置xの順です。a<b。密度は一点の確率とは異なります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "uniformcdf 一様分布の累積確率",
+              "description": "下端a、上端b、上限xの順で、x以下になる確率を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "uniformquantile 一様分布の分位点",
+              "description": "下端a、上端b、累積確率pの順です。0≤p≤1。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "exponentialpdf 指数分布の密度",
+              "description": "正の発生率rate、位置xの順です。平均は1/rateで、位置の範囲は0以上です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "exponentialcdf 指数分布の累積確率",
+              "description": "正の発生率rate、上限xの順で、x以下になる確率を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "exponentialquantile 指数分布の分位点",
+              "description": "正の発生率rate、累積確率pの順です。有限な値には0≤p<1が必要です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "binomialquantile 二項分布の分位点",
+              "description": "試行回数n、成功確率p、下側確率qの順です。累積確率がq以上になる最小の非負整数回を求め、境界の等号を含みます。q=0は0です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "poissonquantile ポアソン分布の分位点",
+              "description": "平均回数、下側確率qの順です。累積確率がq以上になる最小の非負整数回を求めます。q=0は0、平均0は常に0です。平均が正ならqは1未満にしてください。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "poissonpmf ポアソン分布の確率",
+              "description": "平均回数、ちょうどの回数kの順です。平均0は必ず0回です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "poissoncdf ポアソン分布の累積確率",
+              "description": "平均回数、上限xの順で、x回以下になる確率を求めます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "U 特異値分解の左の基底",
+              "description": "A=UΣVᴴのUを返します。16行・16列以内で、平方根などの代数的な数と複素数を扱います。列は長さ1で互いに直交し、零特異値の方向も補います。実数の行列ではVᴴは転置Vᵀと同じです。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Σ 特異値分解の対角行列",
+              "description": "A=UΣVᴴのΣを元の行列と同じ行数・列数で返します。対角の特異値は非負で大きい順、その他の成分は0です。微小な特異値を0へ丸めません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "V 特異値分解の右の基底",
+              "description": "A=UΣVᴴのVを返します。返す値は転置・複素共役を行う前のVです。列は長さ1で互いに直交し、対応するUの列と組にして元の行列を再現します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ker(A−λI) 固有値を指定した基底",
+              "description": "指定した固有値λの固有空間の基底を、1行に1つのベクトルとして返します。重複固有値でも独立な方向だけを保持します。λは有理数または1つの平方根を含む二次代数数（複素数を含む）を指定できます。固有値ではない場合は空の一覧です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "A⊗B テンソル積",
+              "description": "配列の全ての成分どうしを掛けます。結果の軸は左の全軸、右の全軸の順です。行列積とは異なります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "A⊙B 成分ごとの積",
+              "description": "同じ形の配列の同じ位置の成分を掛けます。行列積とは異なり、形の違う配列は使えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ΣTᵢᵢ 軸を指定して縮約",
+              "description": "成分数が同じ異なる2軸を指定し、同じ添字の成分を足します。軸番号は1から数えます。暗黙の和は取りません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Tσ 軸を並べ替える",
+              "description": "全ての軸番号を1回ずつ指定して軸を並べ替えます。例: [2,1]は行と列を入れ替えます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "shape(T) 各軸の成分数",
+              "description": "各軸の成分数を配列で返します。2行3列なら[2,3]です。行列の階数rankとは異なります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Tᵢⱼₖ テンソルの成分を選ぶ",
+              "description": "全ての軸の添字を[1,2,3]のように指定します。番号は1から数えます。実数1つに定まれば座標に利用できます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "δᵢⱼ クロネッカーのデルタ",
+              "description": "2つの整数が等しければ1、異なれば0です。添字を整数へ勝手に丸めません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "εᵢⱼₖ レヴィ＝チヴィタ記号",
+              "description": "2〜8次元で、添字の順序が偶置換なら1、奇置換なら−1、重複があれば0です。添字は1から次元数までを指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "q 整数の商",
+              "description": "a=bq+r、0≤r<|b|を満たす整数の商qです。割る数は0以外です。例: −7を3で割る商は−3です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "r 整数の余り",
+              "description": "a=bq+r、0≤r<|b|を満たす余りrです。割る数が負でも余りは0以上です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "a|b 整数が割り切るか",
+              "description": "aがbを割り切るかを真偽で返します。a|bは絶対値の記号ではありません。0|0は真、0|b（b≠0）は偽です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "a≡b (mod m) 法を指定した合同",
+              "description": "2つの整数の差が法mで割り切れるかを真偽で返します。mは0以外で、負の法は絶対値と同じ意味です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "prime? 素数か判定する",
+              "description": "2以上の整数の素数性を確定して真偽を返します。探索上限では未確定で中止し、確率的な推測を確定扱いしません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "next prime 次の素数",
+              "description": "指定した整数より大きい最初の素数を返します。例: 97の次は101です。探索上限では未確定で中止します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "n=∏pᵏ 素因数と指数",
+              "description": "正の整数を[[素因数,指数],...]で返します。1の分解は空の一覧です。途中の分解だけを確定しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "d|n 正の約数の一覧",
+              "description": "1以上の整数の正の約数を、重複なく小さい順で返します。一覧が256個を超える場合は中止します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "φ(n) オイラーのトーシェント",
+              "description": "1からnまででnと互いに素な整数の個数です。nは1以上の整数で、φ(1)=1です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "P(X=k) 二項分布の確率（ちょうどk回）",
+              "description": "引数は試行回数n、成功確率p、成功回数kの順。同じ成功確率の独立なn回の試行で、成功がちょうどk回になる確率です。nは0以上の整数、pは0以上1以下。整数・小数・分数に確定できる式を使います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "P(X≤x) 二項分布の累積確率（x回以下）",
+              "description": "引数は試行回数n、成功確率p、成功回数の上限xの順。同じ成功確率の独立なn回の試行で、成功がx回以下になる確率です。xの端点を含み、小数ならその値以下の整数回を数えます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "σ 特異値",
+              "description": "16行・16列以内の行列から、非負の特異値を大きい順に返します。平方根などの代数的な数と複素数も扱い、小さい側の行数・列数と同じ個数を保ちます。全ての値と順序を正確に確定できない場合は理由を表示します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "λ 固有値",
+              "description": "16行・16列以内の正方行列の固有値を求めます。平方根などの代数的な数と複素数を成分に使え、重複した根も個数を保ちます。全ての根を正確な式で表せない場合は、途中の一覧や近似値を返さず理由を表示します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "rref 行列を簡約する",
+              "description": "行の基本変形で簡約階段形にします。整数・小数・分数のほか、16行・16列以内なら平方根やⅈを含む代数的な成分も扱います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Q QR分解の直交行列Q",
+              "description": "A=QRのQを求めます。行数と同じ次数の直交行列です。16行・16列以内の整数・小数・分数を指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "R QR分解の上三角行列R",
+              "description": "A=QRのRを求めます。入力と同じ行数・列数で、対角線より下は0になります。Qと組み合わせて元の行列を復元できます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "P LU分解の行交換P",
+              "description": "PA=LUのPを求めます。入力の行を入れ替える行列で、各行と各列に1が一つずつあります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "L LU分解の下三角行列L",
+              "description": "PA=LUのLを求めます。対角線は1、対角線より上は0になります。16行・16列以内の整数・小数・分数を指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "U LU分解の上三角行列U",
+              "description": "PA=LUのUを求めます。入力と同じ行数・列数で、対角線より下は0になります。行交換Pも合わせて確認してください。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "det(tI−A) 特性多項式の係数",
+              "description": "det(tI−A)の係数を最高次から並べます。先頭は1です。16行・16列以内の正方行列を指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ker A 零空間の基底",
+              "description": "Ax=0を満たす独立な方向を、ベクトルの一覧で返します。零ベクトルしか解がない場合は空の一覧です。平方根やⅈを含む代数的な成分は16行・16列以内で扱います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "col A 列空間の基底",
+              "description": "元の行列から独立な列を選び、各列を1本のベクトルとして一覧で返します。平方根やⅈを含む代数的な成分は16行・16列以内で扱います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "row A 行空間の基底",
+              "description": "簡約した行列の零でない行を、独立な方向の一覧として返します。平方根やⅈを含む代数的な成分は16行・16列以内で扱います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Ax=b 連立一次式の一意な解",
+              "description": "係数行列A、右辺bの順でAx=bを解きます。解がない場合や複数ある場合は確定しません。座標には成分を明示します。平方根やⅈを含む代数的な成分は16行・16列以内で扱います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "x₀+Σtᵢvᵢ 連立一次式の全ての解",
+              "description": "係数行列A、右辺bの順。先頭に特解、残りに任意の倍率で加える独立な方向を返します。解がなければ空集合です。平方根やⅈを含む代数的な成分は16行・16列以内で扱います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "mean 平均",
+              "description": "実数のデータ一覧の算術平均です。整数・小数・分数に確定できる式を指定します。空の一覧は使えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "median 中央値",
+              "description": "昇順の中央を求めます。偶数個なら中央2個の平均です。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "modes 最頻値の一覧",
+              "description": "最多の出現回数を持つ値を全て返します。同率なら全て残ります。座標には成分を指定してください。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "quantile 分位点（線形補間）",
+              "description": "データ、割合0〜1の順。昇順の位置(n−1)×割合で隣接値を線形補間します。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "σ² 母分散（nで割る）",
+              "description": "全データを母集団として、平均からの差の二乗の合計をデータ数nで割ります。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "s² 標本分散（n−1で割る）",
+              "description": "母分散の不偏推定値。平均からの差の二乗の合計をn−1で割ります。2個以上必要です。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "σ 母標準偏差",
+              "description": "母分散の平方根です。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "s 標本標準偏差",
+              "description": "n−1で割った標本分散の平方根です。標準偏差そのものの不偏推定ではありません。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "covₙ 母共分散（nで割る）",
+              "description": "対応するXの一覧、Yの一覧の順。平均からの差の積の合計をnで割ります。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "covₙ₋₁ 標本共分散（n−1で割る）",
+              "description": "対応するXの一覧、Yの一覧の順。平均からの差の積の合計をn−1で割ります。2組以上必要です。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "r 相関係数",
+              "description": "対応する2つの実数一覧のPearson相関です。どちらかが一定の場合は定義しません。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "a 回帰直線の傾き",
+              "description": "Xの一覧、Yの一覧の順。切片を含む最小二乗直線Y=aX+bのaです。Xが一定では定義しません。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "b 回帰直線の切片",
+              "description": "Xの一覧、Yの一覧の順。切片を含む最小二乗直線Y=aX+bのbです。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "R² 回帰の決定係数",
+              "description": "切片付き単回帰の相関係数の二乗です。どちらかの一覧が一定の場合は定義しません。 データは整数・小数・分数に確定できる式で指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "1/x 逆数",
+              "description": "1を指定値で割ります。0の逆数は定義しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "n!! 二重階乗",
+              "description": "2ずつ減らして掛けます。0!!と(-1)!!は1。階乗を2回行う演算とは異なります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "nPr 順列",
+              "description": "全体の個数、選ぶ個数の順。0以上の整数で、選ぶ個数は全体以下です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "clamp 上下限で制限",
+              "description": "値、下限、上限の順。範囲の外は近い端点の値になります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "arccot 逆余接",
+              "description": "実数入力の主値は0〜180度（0〜π）。角度単位の指定に従います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "arcsec 逆正割",
+              "description": "arccos(1/x)の主値。0では定義しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "arccsc 逆余割",
+              "description": "arcsin(1/x)の主値。0では定義しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "atan2(y,x) 2成分から向きの角度",
+              "description": "y、xの順で象限を含む向きを求めます。両方0は拒否。度/ラジアンを指定できます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "coth 双曲線余接",
+              "description": "1/tanh(x)。角度単位は適用しません。0では定義しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "sech 双曲線正割",
+              "description": "1/cosh(x)。角度単位は適用しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "csch 双曲線余割",
+              "description": "1/sinh(x)。角度単位は適用しません。0では定義しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "acoth 逆双曲線余接",
+              "description": "atanh(1/x)の主値。0は拒否し、実数解の範囲は|x|>1です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "asech 逆双曲線正割",
+              "description": "acosh(1/x)の主値。実数解の範囲は0<x≤1です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "acsch 逆双曲線余割",
+              "description": "asinh(1/x)の主値。0では定義しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Aᵢⱼ 行列から成分を選ぶ",
+              "description": "行列、行番号、列番号の順で1成分を明示します。番号は1から始まります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "a/b 分数",
+              "description": "分子を分母で割る。分母が0になる式は座標に使えません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "xⁿ 累乗",
+              "description": "右肩は指数。X、Y、Zは軸、n等の意味は別に指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "√ 平方根",
+              "description": "実数の平方根と複素主値を区別して結果を示します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ⁿ√ n乗根",
+              "description": "根の次数を左上へ指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "n! 階乗",
+              "description": "非負整数の階乗。0!は1です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "|x| 絶対値・大きさ",
+              "description": "実数の絶対値、複素数の大きさ。行列式や集合の要素数と区別します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "sin 正弦",
+              "description": "角度の単位は欄の「度／ラジアン」を使います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "cos 余弦",
+              "description": "角度の単位は欄の「度／ラジアン」を使います。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "tan 正接",
+              "description": "定義されない角度を跨ぐ作図は分けます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "arcsin 逆正弦",
+              "description": "sinの逆関数です。1/sinとは別の演算です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ln 自然対数",
+              "description": "底は自然対数の底eです。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "log₁₀ 常用対数",
+              "description": "底は10です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "logₐ 底を指定する対数",
+              "description": "左下が底、括弧内が真数です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "sinh 双曲線正弦",
+              "description": "双曲線関数。三角関数の角度単位の切替は適用しません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "Σ 総和",
+              "description": "添字iはこの総和の中の変数です。係数iや虚数単位とは別です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "∏ 総積",
+              "description": "指定した添字の範囲で掛け合わせます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "∫ 定積分",
+              "description": "xはこの積分の変数です。下限・上限と積分する式を指定します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "[A] 2×2行列",
+              "description": "行と列を持つ値です。座標では成分や行列式などを明示します。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "π 円周率",
+              "description": "数値の定数です。係数名piやπとは別です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "ⅈ 虚数単位",
+              "description": "2乗が−1になる定数です。添字iや係数iとは別です。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "取消",
+              "description": "この画面での式の変更を取り消し、元の入力を保って閉じます。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "この式を使う",
+              "description": "確認した式を元の入力欄へ渡します。配列などは使用する成分を先に選びます。"
+            },
+            {
+              "tag": "INPUT",
+              "id": "pcad-command-line-input",
+              "name": "コマンド",
+              "description": "道具の名前(線分 / LINE / L)や座標(10,20 / @40,0 / @30<90)を打って Enter。Space で入り、Esc で戻ります"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "頂点",
+              "description": "選べる種類の入切です。切ると、その種類は選べず色も出ません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "辺",
+              "description": "選べる種類の入切です。切ると、その種類は選べず色も出ません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "面",
+              "description": "選べる種類の入切です。切ると、その種類は選べず色も出ません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "立体",
+              "description": "選べる種類の入切です。切ると、その種類は選べず色も出ません。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "拘束の推定",
+              "description": "線を引くときに、水平・垂直・一致・接線・平行を推定して小さな印で予告し、引き終わると拘束を付けます。Shift を押している間は止まります。"
+            },
+            {
+              "tag": "BUTTON",
+              "id": "",
+              "name": "単位: mm",
+              "description": "押すと mm と inch を切り替えます"
+            }
+          ],
+          "missing": []
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 280.5,
+          "width": 720,
+          "height": 538.984375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/"
+        }
+      }
+    }
+  ]
+}

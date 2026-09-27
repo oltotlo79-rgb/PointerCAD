@@ -1,6 +1,7 @@
 /** Detect exact poles before multiplication by zero or other simplification can hide them. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { rational, rationalOfExpression, type ExactRational } from './exactRational.js';
+import { exactComplexRational } from './exactComplexRational.js';
 
 function piMultiple(expression: MathNode): ExactRational | null {
   let budget = 4096;
@@ -46,18 +47,39 @@ function piMultiple(expression: MathNode): ExactRational | null {
 }
 
 function isExactZero(node: MathNode): boolean {
-  return rationalOfExpression(node)?.numerator === 0n || node.kind === 'operation' && node.operation === 'complex'
-    && node.operands.length === 2 && node.operands.every(operand => rationalOfExpression(operand)?.numerator === 0n);
+  return exactComplexRational(node)?.every(value => value.numerator === 0n) === true;
 }
 
 export function validateElementaryFunction(node: Extract<MathNode, { kind: 'operation' }>, angleUnit: 'degree' | 'radian'): void {
   const [a, b] = node.operands;
+  if (node.operation === 'complex') {
+    for (const component of node.operands) {
+      const value = exactComplexRational(component);
+      if (value !== null && value[1].numerator !== 0n) throw new MathInputProblem('domain', '複素数の実部と虚部には実数を指定してください。');
+    }
+  }
+  if (node.operation === 'divide' && isExactZero(b)) throw new MathInputProblem('domain', '0では割れません。');
+  if (node.operation === 'arctan' || node.operation === 'artanh') {
+    const value = exactComplexRational(a);
+    if (value !== null) {
+      const [real, imaginary] = node.operation === 'arctan' ? [value[1], value[0]] : value;
+      if (imaginary.numerator === 0n && (real.numerator === real.denominator || real.numerator === -real.denominator)) {
+        throw new MathInputProblem('domain', '指定した値では逆関数が有限になりません。');
+      }
+    }
+  }
+  if (node.operation === 'power' && isExactZero(a)) {
+    const exponent = exactComplexRational(b);
+    if (exponent !== null && (exponent[1].numerator !== 0n || exponent[0].numerator <= 0n)) {
+      throw new MathInputProblem('domain', '0の累乗は正の実数の指数で指定してください。');
+    }
+  }
   if (['natural-log', 'log-two', 'log-ten', 'log-base'].includes(node.operation) && isExactZero(a)) {
     throw new MathInputProblem('domain', '対数の真数が0になる式は使えません。');
   }
   if (node.operation === 'log-base') {
-    const base = rationalOfExpression(b);
-    if (base !== null && (base.numerator === 0n || base.numerator === base.denominator)) throw new MathInputProblem('domain', '対数の底は0と1以外で指定してください。');
+    const base = exactComplexRational(b);
+    if (base !== null && base[1].numerator === 0n && (base[0].numerator === 0n || base[0].numerator === base[0].denominator)) throw new MathInputProblem('domain', '対数の底は0と1以外で指定してください。');
   }
   if (['coth', 'csch', 'arcsec', 'arccsc', 'arcoth', 'arsech', 'arcsch', 'argument', 'reciprocal'].includes(node.operation) && isExactZero(a)
     || node.operation === 'arctan-two' && isExactZero(a) && isExactZero(b)) {

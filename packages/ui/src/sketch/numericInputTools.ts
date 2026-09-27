@@ -247,6 +247,18 @@ export type AppearanceToolId = 'appearance';
  */
 export type MeasureToolId = 'measure';
 
+/**
+ * 図形の測定値の道具(GR-30。Q1=A4「ツールバーの新しい道具」、
+ * scratchpad/claude/plans/geomref-plan.md §4(a))。
+ *
+ * 測ると同じく数値を1つも聞かない(選んだ点・辺・面・立体から作れる量は選択そのものから
+ * 決まる)ので段の表には入れず、別の型にする。**選ぶ種類を切り替えない**唯一でない道具に
+ * なる(`solid/subShapeSelection.ts` の `keepsSelectionKind`。測ると同じ理由 — いま
+ * 選んでいるものをそのまま測るので、押した瞬間に選択が消えては何も測れない)。
+ * 「測る」との違いは、名前を付けて文書に保存し、係数の式から使えること(§4(a))。
+ */
+export type MathGeometryToolId = 'mathGeometry';
+
 /** ポップアップを開ける道具。スケッチの道具より広い。 */
 export type NumericInputToolId =
   | SketchToolId
@@ -258,7 +270,8 @@ export type NumericInputToolId =
   | ClickEditToolId
   | PickEditToolId
   | AppearanceToolId
-  | MeasureToolId;
+  | MeasureToolId
+  | MathGeometryToolId;
 
 /** 座標の指定方法(FR-301〜303)。 */
 export type CoordinateMode = 'absolute' | 'relative' | 'polar';

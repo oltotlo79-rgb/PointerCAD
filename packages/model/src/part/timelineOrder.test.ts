@@ -3,6 +3,7 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
+import { mathGeometryHistoryEdges } from '../measure/mathGeometryDependencies.js';
 import {
   absoluteCoordinate,
   appendFeature,
@@ -629,6 +630,252 @@ describe('並べ替えの妥当性(FR-507、FR-504)', () => {
     expectWithinBudget(elapsedMs, 20, '100 フィーチャーの並べ替えの判定');
   });
 });
+
+/**
+ * 何にも依存しない独立した球(FR-429、基本形状。原点座標・世界軸)を1つ足した文書。
+ * 「他の依存とは無関係な立体」を並べ替えの検査で作るための道具。
+ */
+function withIndependentSolid(document: PartDocument, id: string, x: number): PartDocument {
+  const sphere: SolidFeature = {
+    id,
+    name: id,
+    suppressed: false,
+    kind: 'primitive',
+    origin: { kind: 'coordinate', value: { mode: 'absolute', x: ev(x), y: ev(0), z: ev(0) } },
+    axis: { kind: 'world', axis: 'z' },
+    shape: { kind: 'sphere', radius: ev(5) },
+  };
+  return { ...document, solids: [...document.solids, sphere] };
+}
+
+describe('図形経由の追加の依存(GR-07。計画書 §4(d)、Q7=O1「測る形は、その値を使う形より履歴の前」)', () => {
+  /**
+   * `measure/mathGeometryDependencies.ts` の `mathGeometryHistoryEdges` が返す形
+   * (featureId → 自分より前になければならない featureId の一覧)を模した追加の辺。
+   * 「押し出し2 が、穴1 を測った図形の測定値を係数経由で使っている」状況を表す。
+   * GR-02・GR-04 の実物を動かさずに、`timelineOrder.ts` 側の合成そのものを検査する
+   * (GR-02 の実物を使った統合の確認は、このあとの「従来どおり」の検査で別に行う)。
+   */
+  function extraEdgesUsingHole1(): ReadonlyMap<string, readonly string[]> {
+    return new Map([['extrude-2', ['hole-1']]]);
+  }
+
+  it('使う側(押し出し2)を測る形(穴1)より前へ動かすと、既存と同じ書式の理由で拒否する', () => {
+    const { document } = createFixture();
+    const outcome = reorderTimeline(document, 4, 1, extraEdgesUsingHole1());
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      return;
+    }
+    // 理由の書式は既存の構造的な依存の断り(§0.a-0.20 の例文)と同じ組み立て。
+    expect(outcome.blockingFeatureId).toBe('extrude-2');
+    expect(outcome.reason).toBe('押し出し2は穴1を使っているので、穴1より後ろでなければなりません。');
+  });
+
+  it('canMoveHistoryItem も同じ判定を返す(文書を作らない可否だけの経路)', () => {
+    const { document } = createFixture();
+    const outcome = reorderTimeline(document, 4, 1, extraEdgesUsingHole1());
+    const check = canMoveHistoryItem(document, 'extrude-2', 1, extraEdgesUsingHole1());
+    expect(outcome.ok).toBe(false);
+    expect(check.ok).toBe(false);
+    if (outcome.ok || check.ok) {
+      return;
+    }
+    expect(check.blockingFeatureId).toBe(outcome.blockingFeatureId);
+    expect(check.reason).toBe(outcome.reason);
+  });
+
+  it('moveHistoryItem(id 版)も同じ追加の辺で断る', () => {
+    const { document } = createFixture();
+    const moved = moveHistoryItem(document, 'extrude-2', 1, extraEdgesUsingHole1());
+    expect(moved.ok).toBe(false);
+    if (moved.ok) {
+      return;
+    }
+    expect(moved.blockingFeatureId).toBe('extrude-2');
+  });
+
+  it('追加の辺と無関係な移動は、その辺があっても行える', () => {
+    // 帯: 作業平面1(0)・押し出し1(1)・穴1(2)・R面取り1(3)・押し出し2(4)・独立球(5)。
+    // 「押し出し2 は穴1 を使う」という追加の辺があっても、それに触れない独立球の移動は妨げない。
+    const withSphere = withIndependentSolid(createFixture().document, 'primitive-independent', 100);
+    const outcome = reorderTimeline(withSphere, 5, 4, extraEdgesUsingHole1());
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(featureIds(outcome.document)).toEqual([
+      'referencePlane-1',
+      'extrude-1',
+      'hole-1',
+      'fillet-1',
+      'primitive-independent',
+      'extrude-2',
+    ]);
+  });
+
+  it('図形由来の係数が無い文書は、追加の辺(GR-02 の実物)を渡しても渡さなくても同じ結果になる', () => {
+    // mathGeometryHistoryEdges は、係数が図形の測定値を1つも参照しない文書では空の
+    // Map を返す(GR-02 の実装。§4(d) 6)。実物を渡しても、省略時・空Map時と同じになることを
+    // 確かめる(「図形由来が無い文書は従来どおり」の確認。GR-02 の実物との統合も兼ねる)。
+    const { document } = createFixture();
+    const geometryEdges = mathGeometryHistoryEdges(document);
+    expect(geometryEdges.size).toBe(0);
+    const withoutArgument = reorderTimeline(document, 2, 3);
+    const withEmptyMap = reorderTimeline(document, 2, 3, new Map());
+    const withRealEmptyEdges = reorderTimeline(document, 2, 3, geometryEdges);
+    expect(withoutArgument).toEqual(withEmptyMap);
+    expect(withoutArgument).toEqual(withRealEmptyEdges);
+    // この文書ではもともと穴1 を R面取り1 の後ろへは動かせない(既存の検査と同じ断り)。
+    expect(withoutArgument.ok).toBe(false);
+  });
+});
+
+describe('基準ジオメトリが立体に依存する文書の並べ替え(TL-01、FR-328。既存の不具合の修正)', () => {
+  /** 帯: 作業平面2(0)・押し出し1(1)・球A(2)・球B(3)。 */
+  function planeOnFaceWithIndependentSolidsDocument(): PartDocument {
+    const base = planeOnFaceDocument();
+    return withIndependentSolid(withIndependentSolid(base, 'primitive-a', 100), 'primitive-b', 200);
+  }
+
+  /** 作業平面2上の別スケッチを使う押し出し3を追加。親立体とはスケッチを共有しない。 */
+  function withPlaneUser(): PartDocument {
+    const base = planeOnFaceWithIndependentSolidsDocument();
+    const points = addPoints(
+      { ...createEmptySketchDocument(), id: 'sketch-on-face' },
+      [[0, 0, 0], [10, 0, 0], [0, 10, 0]],
+      'referencePlane-2',
+    );
+    const sketch = addFace(points.sketch, 'face-on-plane', points.pointIds, 'referencePlane-2');
+    const user: ExtrudeFeature = {
+      id: 'extrude-3', name: '押し出し3', suppressed: false, kind: 'extrude',
+      profile: { sketchId: sketch.id, faceFeatureId: 'face-on-plane' },
+      distance: ev(4), reversed: false, symmetric: false,
+    };
+    return { ...base, references: [WORK_PLANE, ...base.references],
+      sketches: [...base.sketches, sketch], solids: [...base.solids, user] };
+  }
+
+  it('(既存の不具合の修正)作業平面2→押し出し1の既存の逆転があっても、無関係な立体どうしは入れ替えられる', () => {
+    // GR-07の「(現状の確認)」は全体走査による誤拒否を固定していた。
+    // TL-01でその不具合を修正するため、この1件だけ拒否から許可へ期待を変更する。
+    const document = planeOnFaceWithIndependentSolidsDocument();
+    const outcome = reorderTimeline(document, 3, 2);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(featureIds(outcome.document)).toEqual([
+      'referencePlane-2', 'extrude-1', 'primitive-b', 'primitive-a',
+    ]);
+    expect(featureIds(document)).toEqual([
+      'referencePlane-2', 'extrude-1', 'primitive-a', 'primitive-b',
+    ]);
+  });
+
+  it('(参考)独立した立体が無ければ、この文書は動かす先が無く問題が表に出ない', () => {
+    const document = planeOnFaceDocument();
+    expect(buildTimeline(document)).toHaveLength(2);
+  });
+
+  it('独立した球が作業平面と親立体の間へ入っても、当事者を動かしていないので許可する', () => {
+    const document = planeOnFaceWithIndependentSolidsDocument();
+    const outcome = moveHistoryItem(document, 'primitive-b', 1);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(featureIds(outcome.document)).toEqual([
+      'referencePlane-2', 'primitive-b', 'extrude-1', 'primitive-a',
+    ]);
+    expect(historyDependencies(outcome.document)).toEqual(historyDependencies(document));
+  });
+
+  it('作業平面自身をさらに前へ動かして既存の逆転を悪化させると、依存の相手名付きで拒否する', () => {
+    const document = withPlaneUser();
+    expect(canMoveHistoryItem(document, 'referencePlane-2', 0)).toEqual({
+      ok: false, blockingFeatureId: 'referencePlane-2',
+      reason: '作業平面2は押し出し1を使っているので、押し出し1より後ろでなければなりません。',
+    });
+  });
+
+  it('作業平面を親立体の直後へ動かして逆転を解消しても、立体区間への移動は拒否する', () => {
+    const document = withPlaneUser();
+    expect(canMoveHistoryItem(document, 'referencePlane-2', 2)).toEqual({
+      ok: false, blockingFeatureId: 'referencePlane-2',
+      reason: '作業平面2は基準ジオメトリなので、立体の間へは動かせません。',
+    });
+  });
+
+  it('親立体を作業平面に依存する押し出しより後ろへ動かせない', () => {
+    const document = withPlaneUser();
+    // 構造の正本は直接辺のまま。押し出し3 → 作業平面2 → 押し出し1。
+    expect(dependenciesOf(document, 'extrude-3')).toEqual(['referencePlane-2']);
+    expect(dependenciesOf(document, 'referencePlane-2')).toEqual(['extrude-1']);
+    const outcome = moveHistoryItem(document, 'extrude-1', 5);
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.reason).toContain('押し出し1');
+    expect(outcome.reason).toContain('作業平面2');
+  });
+
+  it('作業平面を介して親立体に依存する押し出しも、親立体を追い越せない', () => {
+    expect(canMoveHistoryItem(withPlaneUser(), 'extrude-3', 2)).toEqual({
+      ok: false, blockingFeatureId: 'extrude-3',
+      reason: '押し出し3は押し出し1を使っているので、押し出し1より後ろでなければなりません。',
+    });
+  });
+
+  it('既存の逆転を改善する親立体の移動は許可する', () => {
+    const base = withPlaneUser();
+    const document = { ...base, solids: [base.solids[1], base.solids[0], ...base.solids.slice(2)] };
+    const outcome = moveHistoryItem(document, 'extrude-1', 2);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(featureIds(outcome.document)).toEqual(featureIds(base));
+  });
+
+  it('図形経由の追加辺があると、使う形を測る形より前へ動かす新たな違反は拒否する', () => {
+    const document = planeOnFaceWithIndependentSolidsDocument();
+    const extra = new Map([['primitive-b', ['primitive-a']]]);
+    expect(canMoveHistoryItem(document, 'primitive-b', 2, extra)).toEqual({
+      ok: false, blockingFeatureId: 'primitive-b',
+      reason: 'primitive-bはprimitive-aを使っているので、primitive-aより後ろでなければなりません。',
+    });
+  });
+
+  it('図形経由の追加辺と既存の逆転が同居しても、無関係な移動は許可する', () => {
+    const document = withIndependentSolid(planeOnFaceWithIndependentSolidsDocument(), 'primitive-c', 300);
+    const extra = new Map([['primitive-b', ['primitive-a']]]);
+    const outcome = moveHistoryItem(document, 'primitive-c', 2, extra);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(featureIds(outcome.document)).toEqual([
+      'referencePlane-2', 'extrude-1', 'primitive-c', 'primitive-a', 'primitive-b',
+    ]);
+  });
+
+  it('既存の循環は探索を停止し、無関係な移動を妨げない', () => {
+    const document = planeOnFaceWithIndependentSolidsDocument();
+    const extra = new Map([['extrude-1', ['referencePlane-2']]]);
+    expect(canMoveHistoryItem(document, 'primitive-b', 2, extra)).toEqual({ ok: true });
+    expect(canMoveHistoryItem(document, 'primitive-a', 3, extra)).toEqual({ ok: true });
+  });
+
+  it.each([
+    ['primitive-b', 3, true],
+    ['referencePlane-2', 0, false],
+    ['referencePlane-2', 2, false],
+    ['extrude-1', 5, false],
+    ['extrude-3', 2, false],
+  ] as const)('3つの公開APIは同じ判定を返す: %s → %i', (id, to, allowed) => {
+    const document = withPlaneUser();
+    const from = buildTimeline(document).findIndex(entry => entry.featureId === id);
+    const check = canMoveHistoryItem(document, id, to);
+    const byId = moveHistoryItem(document, id, to);
+    const byIndex = reorderTimeline(document, from, to);
+    expect(check.ok).toBe(allowed);
+    expect(byId).toEqual(byIndex);
+    expect(check).toEqual(byId.ok ? { ok: true } : byId);
+  });
+});
+
 
 /** 基準点1(座標だけ)と押し出し1(基準の XY 面のスケッチ)。互いに依存しない。 */
 function independentSectionsDocument(): PartDocument {

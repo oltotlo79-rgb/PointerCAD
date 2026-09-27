@@ -2,7 +2,15 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: /
+    # pnpm workspace の全メンバー(ルート・apps/*・packages/*)を監視する。個々の package.json は
+    # "catalog:" で pnpm-workspace.yaml を参照するだけなので、各ディレクトリを明示して漏れを防ぐ
+    # (e2e/ は package.json を持たず、唯一の依存 @playwright/test はルートの catalog 参照のため
+    # ルートの監視だけで足りる。directory と directories は同じ更新設定内で併用できないため、
+    # 単一ディレクトリだった directory: / を directories の1項目として書き直した)。
+    directories:
+      - "/"
+      - "/apps/*"
+      - "/packages/*"
     schedule:
       interval: daily
       time: '07:00'

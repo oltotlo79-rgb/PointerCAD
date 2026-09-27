@@ -2,14 +2,32 @@
 # 検査コマンドをこのファイルへ直接書かない(rules/03-品質ゲート.md §7.2)。
 name: CI
 
+# 2026-09-27 利用者の決定「CIに任せてよい」: 手元の検査は画面検査の全件を流さないため、
+# 作業ブランチ(feature/**)へのpushでも両OSの全件を流す。手動の再実行は workflow_dispatch。
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+# 最小権限(NFR-SE-2)。GITHUB_TOKEN を使うのは actions/checkout(リポジトリの取得)だけで、
+# コミット・PR・Issue・パッケージ公開など書き込みは一切行わない。
+# 根拠: actions/checkout の README(https://github.com/actions/checkout#usage)が
+# 「contents: read」を推奨。actions/upload-artifact は GITHUB_TOKEN の権限を使わず、
+# 別方式(アーティファクト用の一時トークン)で認証するため対象外
+# (https://github.com/actions/upload-artifact/issues/197)。actions/setup-node も
+# キャッシュや公開設定を使っておらず、GITHUB_TOKEN を必要としない。secret を使う step は無い。
+permissions:
+  contents: read
 
 jobs:
   sharded-checks:
+    # このjobはリポジトリの取得(contents: read)としかトークンを使わない(コミット・PR・
+    # Issue・パッケージ公開は行わない)。job単位でも明示し、将来ステップが増えても
+    # 既定のwrite権限へ戻らないようにする。
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +68,9 @@ jobs:
   # Preserve the existing required check names. One missing, cancelled or failed
   # shard must not turn either OS's overall check green.
   checks:
+    # 前job成功可否の判定だけ(GITHUB_TOKENは使わない)。contents: readのみで足りる。
+    permissions:
+      contents: read
     if: always()
     needs: sharded-checks
     strategy:

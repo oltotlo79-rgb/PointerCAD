@@ -6,6 +6,8 @@ interface Work { readonly port: MathWorkerPort; readonly value: unknown }
 export function createMathWorkerGroup(createWorker: () => MathWorkerPort): {
   readonly createPort: () => MathWorkerPort;
   readonly dispose: () => void;
+  /** A physical Worker exists: its requests have not been cancelled, timed out or retired since it started. */
+  readonly hasWorker: boolean;
 } {
   const ports = new Set<MathWorkerPort>(), queue: Work[] = [];
   let worker: MathWorkerPort | null = null, active: Work | null = null;
@@ -70,7 +72,7 @@ export function createMathWorkerGroup(createWorker: () => MathWorkerPort): {
     };
     ports.add(port); return port;
   }
-  return { createPort, dispose() {
+  return { createPort, get hasWorker() { return !disposed && worker !== null; }, dispose() {
     if (disposed) return;
     disposed = true;
     for (const port of [...ports]) port.terminate();

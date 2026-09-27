@@ -1,13 +1,9 @@
-import {beforeAll, describe, expect, it, vi} from 'vitest';
+import {beforeAll, describe, expect, it} from 'vitest';
 import {createMathBackend} from './createMathBackend.js';
 import {executeMathWorkRequest, type MathExecutionBackend} from './mathWorkExecution.js';
 import {createMathWorkEnvelope, type MathWorkRequest} from './mathWorkRequest.js';
 import {decodeMathWorkReply} from './mathWorkReply.js';
 import {CANDIDATE_MATH_BY_ID} from './mathOperations.js';
-
-// The standalone positive LaTeX grammar is the only source parser. Loading the full
-// engine entry would also register another parser and unused code generators.
-vi.mock('@cortex-js/compute-engine', () => { throw new Error('Math evaluation must not load the full engine entry'); });
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
@@ -29,6 +25,9 @@ describe('共通数式を固定エンジンで評価し、原式と型付き返�
     {source: 'rank([[1,2],[2,4]])', expected: 1},
     {source: 'abs(3+4*i)', expected: 5},
     {source: 'sum(i^2,i,1,10)', expected: 385},
+    {source: 're((1+i)^32)', expected: 65536},
+    {source: 'im((1+i)^3)', expected: 2},
+    {source: 're((1+i)^(-8))', expected: 1/16},
   ])('$sourceの有限実数を作図用の値へ渡す', ({source, expected}) => {
     const result = evaluate(source);
     expect(result.definition).toMatchObject({source, inputNotation: 'text', angleUnit: 'radian'});

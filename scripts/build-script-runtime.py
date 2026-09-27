@@ -2,10 +2,11 @@
 
 python scripts/build-script-runtime.py --output-dir scratchpad/script-runtime-rebuild
 Requires clang 22.1.8 with wasm-ld and Python 3.12+. Downloads verified WASI/source
-inputs; no global installation, package changes or optional native extensions.
+inputs and uses PointerCAD's original bridge. No quickjs-wasi input is used.
 """
 from pathlib import Path
 import argparse, hashlib, json, re, shutil, subprocess, tarfile, urllib.request
+from lib.task_workspace import configure_project_temp
 
 ROOT = Path(__file__).resolve().parent.parent
 VENDOR = ROOT / 'packages/model/src/vendor/script-runtime'
@@ -51,16 +52,22 @@ def main():
     parser.add_argument('--output-dir', required=True)
     parser.add_argument('--clang', default=shutil.which('clang'))
     parser.add_argument('--input-cache', default=str(ROOT / 'scratchpad/script-runtime-inputs'))
+    parser.add_argument('--record-candidate', action='store_true', help='Record a new candidate without accepting it as the shipped binary')
     args = parser.parse_args()
     if not args.clang: raise ValueError('clang is required')
     build = Path(args.output_dir).resolve()
+    scratch = configure_project_temp(ROOT).parent
+    cache = Path(args.input_cache).resolve()
+    for path in (build, cache):
+        if not path.is_relative_to(scratch) or any(part.casefold() == '.git' for part in path.parts):
+            raise ValueError('Build and input cache must stay inside this project scratchpad')
     if build.exists(): raise ValueError('Output directory must not exist')
     config = json.loads((VENDOR / 'build-config.json').read_text(encoding='utf-8'))
     manifest = json.loads((VENDOR / 'manifest.json').read_text(encoding='utf-8'))
     version = subprocess.check_output([args.clang, '--version'], text=True)
     if not re.search(r'clang version ' + re.escape(config['clangVersion']) + r'\b', version):
         raise ValueError('Compiler version differs from build-config.json')
-    cache = Path(args.input_cache).resolve(); cache.mkdir(parents=True, exist_ok=True)
+    cache.mkdir(parents=True, exist_ok=True)
     inputs = {item['name']: download(item, cache) for item in config['inputs']}
     build.mkdir(parents=True)
     extracted = build / 'inputs'; extracted.mkdir()
@@ -75,7 +82,11 @@ def main():
     shutil.copytree(qjs, build / 'quickjs-ng')
     source = (qjs / 'quickjs.c').read_text(encoding='utf-8')
     (build / 'quickjs-ng/quickjs.c').write_text(apply_patch(source, patch), encoding='utf-8', newline='\n')
-    (build / 'c').mkdir(); shutil.copy2(inputs['interface.c'], build / 'c/interface.c')
+    bridge = VENDOR / 'pcad-interface.c'
+    if hashlib.sha256(bridge.read_text(encoding='utf-8').encode()).hexdigest() != config['bridgeSha256']:
+        raise ValueError('PointerCAD bridge checksum mismatch')
+    (build / 'c').mkdir()
+    (build / 'c/pcad-interface.c').write_text(bridge.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
     resource = build / 'clang-resource'; (resource / 'lib').mkdir(parents=True)
     clang_resource = Path(subprocess.check_output([args.clang, '-print-resource-dir'], text=True).strip())
     shutil.copytree(clang_resource / 'include', resource / 'include')
@@ -88,6 +99,9 @@ def main():
     output = build / 'quickjs-pcad.wasm'
     actual = {'sha256': digest(output), 'bytes': output.stat().st_size}
     (build / 'result.json').write_text(json.dumps(actual, indent=2), encoding='utf-8')
+    if args.record_candidate:
+        print(json.dumps(actual)); print('Candidate recorded; it is not yet a verified distribution binary.')
+        return
     if actual['sha256'] != manifest['sha256'] or actual['bytes'] != manifest['bytes']:
         raise ValueError('Rebuilt binary differs; inspect result.json and compile.log')
     print(json.dumps(actual)); print('Rebuild matches the shipped binary. No repository files were replaced.')

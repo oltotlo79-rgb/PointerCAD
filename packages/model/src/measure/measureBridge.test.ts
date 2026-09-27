@@ -26,6 +26,7 @@ function createFakeKernelApi(measureImpl: (request: MeasureRequest) => Promise<M
   return {
     tessellateSketch: () => unimplemented('tessellateSketch'),
     recomputeSolids: () => unimplemented('recomputeSolids'),
+    readCachedBodies: () => unimplemented('readCachedBodies'),
     offsetSketchCurves: () => unimplemented('offsetSketchCurves'),
     projectSketchCurves: () => unimplemented('projectSketchCurves'),
     sectionSketchCurves: () => unimplemented('sectionSketchCurves'),

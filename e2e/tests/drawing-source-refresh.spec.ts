@@ -7,6 +7,7 @@ import { absoluteCoordinate, appendSolid, createEmptyPartDocument, createPartDoc
 import { chooseDrawingMenu } from './drawingManufacturingFixture.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 import { drawingMessage as m } from './drawingMessages.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 test('P8 元部品の100×40×60をA3の1:1で寸法記入し、元を120へ更新・Undo・保存往復する', async ({ page }, testInfo) => {
   const empty = createEmptyPartDocument(), box = createPrimitiveFeature(empty, 'box', { kind: 'coordinate', value: absoluteCoordinate(0, 0, 0) });
@@ -45,7 +46,8 @@ test('P8 元部品の100×40×60をA3の1:1で寸法記入し、元を120へ更�
   await expect(dimension('120')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
   await page.keyboard.press('Control+z'); await expect(dimension('100')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
   await page.getByRole('button', { name: 'やり直す', exact: true }).click(); await expect(dimension('120')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
-  await page.screenshot({ path: testInfo.outputPath('drawing-source-updated.png'), fullPage: true });
+  await captureManualDetail(page, testInfo, { name: 'drawing-source-updated', dialog: page.locator('.pcad-drawing-sheet'),
+    fixture: { sizeX: 120 }, script: new URL(import.meta.url) });
   const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
   const saved = await saving; await saved.saveAs(testInfo.outputPath('source-updated.pcadd'));
   const file = await saved.path(); if (file === null) throw new Error('図面保存なし');

@@ -8,6 +8,10 @@ import sympy as s
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import BooleanFunction
 from cas_input import CasInputProblem
+from cas_bessel_functions import FAMILIES
+from cas_lambert_functions import branch_of
+from cas_elliptic_functions import signature as elliptic_signature, amplitude_index
+from cas_zeta_functions import real_finite, RealZeta, RealZetaDerivative, zeta_point
 
 
 CONSTANTS = {
@@ -22,6 +26,9 @@ OPERATIONS = {
     s.re: 'real-part', s.im: 'imaginary-part',
     s.sinh: 'sinh', s.cosh: 'cosh', s.tanh: 'tanh',
     s.asinh: 'arsinh', s.acosh: 'arcosh', s.atanh: 'artanh',
+    s.airyai: 'airyai', s.airybi: 'airybi', s.airyaiprime: 'airyaiprime', s.airybiprime: 'airybiprime',
+    s.gamma: 'gamma', s.polygamma: 'polygamma', s.beta: 'beta',
+    s.besselj: 'besselj', s.bessely: 'bessely', s.besseli: 'besseli', s.besselk: 'besselk',
     s.Eq: 'equal', s.Ne: 'not-equal', s.Lt: 'less', s.Le: 'less-equal',
     s.Gt: 'greater', s.Ge: 'greater-equal', s.And: 'and', s.Or: 'or',
     s.Not: 'not', s.Implies: 'implies', s.Equivalent: 'equivalent',
@@ -80,6 +87,29 @@ class Encoder:
             raise CasInputProblem('domain', 'The result is undefined')
         if value is -s.oo:
             return self.operation('negate', [self.node(s.oo, depth+1)], depth)
+        if value is s.EulerGamma:
+            # Preserve the exact constant without introducing a rounded literal
+            # or an engine-specific constant into the saved input grammar.
+            return self.operation('negate', [self.operation('polygamma',
+                [self.number(0, depth+2), self.number(1, depth+2)], depth+1)], depth)
+        if value is s.Catalan:
+            psi = self.operation('polygamma', [self.number(1, depth+3), self.node(s.Rational(1, 4), depth+3)], depth+2)
+            difference = self.operation('subtract', [psi, self.node(s.pi**2, depth+2)], depth+1)
+            return self.operation('divide', [difference, self.number(8, depth+1)], depth)
+        if value.func in (RealZeta, RealZetaDerivative):
+            order, argument = (s.S.Zero, value.args[0]) if value.func is RealZeta else value.args
+            if not argument.free_symbols:
+                zeta_point(order, argument, CasInputProblem)
+            elif not isinstance(order, s.Integer) or not 0 <= order <= 17:
+                raise CasInputProblem('budget', 'Generated zeta derivative exceeds its work bound')
+            return (self.operation('zeta', [self.node(argument, depth+1)], depth) if order == 0
+                    else self.operation('zetaderivative', [self.number(order, depth+1), self.node(argument, depth+1)], depth))
+        if value.func is s.zeta and isinstance(value.args[0], s.Integer) and 2 <= value.args[0] <= 18:
+            order = int(value.args[0])-1
+            argument = value.args[1] if len(value.args) == 2 else s.S.One
+            psi = self.operation('polygamma', [self.number(order, depth+2), self.node(argument, depth+2)], depth+1)
+            factor = self.node(s.Rational((-1)**(order+1), s.factorial(order)), depth+1)
+            return self.operation('multiply', [factor, psi], depth)
         if isinstance(value, s.Integer):
             return self.number(value, depth)
         if isinstance(value, s.Rational):
@@ -94,12 +124,24 @@ class Encoder:
             return self.made({'kind': 'symbol', 'reference': dict(reference)}, depth)
         if isinstance(value, s.FiniteSet):
             return self.operation('set', [self.node(item, depth+1) for item in value.args], depth)
+        if isinstance(value, s.ProductSet):
+            if not 2 <= len(value.sets) <= 16:
+                raise CasInputProblem('budget', 'The result product has invalid dimensions')
+            return self.operation('cartesian-product', [self.node(item, depth+1) for item in value.sets], depth)
         if isinstance(value, s.Interval):
             ends = []
             for endpoint, opened in ((value.start, value.left_open), (value.end, value.right_open)):
                 node = self.node(endpoint, depth+2 if opened else depth+1)
                 ends.append(self.operation('open-endpoint', [node], depth+1) if opened else node)
             return self.operation('interval', ends, depth)
+        elliptic = elliptic_signature(value)
+        if elliptic is not None:
+            operation, arguments = elliptic
+            arguments = list(arguments)
+            index = amplitude_index(operation)
+            if index is not None and self.decoder.angle_unit == 'degree':
+                arguments[index] *= 180/s.pi
+            return self.operation(operation, [self.node(argument, depth+1) for argument in arguments], depth)
         if value.func in TRIG:
             argument = value.args[0]
             if self.decoder.angle_unit == 'degree':
@@ -112,6 +154,22 @@ class Encoder:
             if self.decoder.angle_unit == 'degree':
                 return self.operation('multiply', [inner, self.node(s.pi/180, depth+1)], depth)
             return inner
+        if value.func in (s.erf, s.erfc):
+            # Transfer the original function; 1-rounded(erf) destroys a small tail.
+            return self.operation('erf' if value.func is s.erf else 'erfc',
+                                  [self.node(value.args[0], depth+1)], depth)
+        if value.is_Add and value.has(s.erf):
+            # Cancel complementary constants symbolically before finite-precision
+            # evaluation, e.g. a normal upper tail (1-erf(x))/2 -> erfc(x)/2.
+            rewritten = s.expand(value.rewrite(s.erfc))
+            if not rewritten.has(s.erf):
+                return self.node(rewritten, depth)
+        if value.func is s.LambertW:
+            branch = value.args[1] if len(value.args) == 2 else s.S.Zero
+            branch_of(branch, CasInputProblem)
+            return self.operation('lambertw', [self.node(branch, depth+1), self.node(value.args[0], depth+1)], depth)
+        if value.func in FAMILIES and (not isinstance(value.args[0], s.Integer) or abs(value.args[0]) > 128):
+            raise CasInputProblem('budget', 'The generated Bessel order exceeds the numerical input bound')
         operation = OPERATIONS.get(value.func)
         if operation is None:
             raise CasInputProblem('unsupported', 'An unevaluated or unsupported operation remains')
@@ -120,10 +178,48 @@ class Encoder:
         return self.operation(operation, [self.node(item, depth+1) for item in value.args], depth)
 
 
+class AntiderivativeEncoder(Encoder):
+    """Permit only the indefinite integral's own variable, inside its returned lambda."""
+    def __init__(self, decoder, variable):
+        super().__init__(decoder)
+        self.variable = variable
+
+    def node(self, value, depth=0):
+        if value == self.variable:
+            return self.made({'kind': 'symbol', 'reference': dict(self.decoder.references[value])}, depth)
+        return super().node(value, depth)
+
+
+def encode_antiderivative(value, decoder, variable):
+    """A whole-formula indefinite integral is the family F+C, never one value or a coordinate.
+
+    Always return a one-variable lambda over the source's own binding, also when F is
+    constant (integrate(0,t)). A condition on that variable (t != 0 for 1/t) only says
+    where F applies; it is not an obligation of the whole answer and is not transferred.
+    Other conditions and every other bound or unknown symbol keep the ordinary rules.
+    """
+    if not isinstance(value, s.Expr) or isinstance(value, s.MatrixBase) or value.free_symbols - {variable}:
+        return {'status': 'unresolved', 'reason': 'unevaluated', 'coordinateAuthorized': False}
+    encoder = AntiderivativeEncoder(decoder, variable)
+    conditions = []
+    for condition in decoder.domain_conditions:
+        if condition is s.false:
+            raise CasInputProblem('domain', 'The original input domain is false')
+        if condition is not s.true and variable not in condition.free_symbols:
+            conditions.append(encoder.node(condition))
+    binding = {'variable': dict(decoder.references[variable]), 'domain': {'kind': 'unrestricted'}}
+    body = encoder.node(value, 1)
+    return {'status': 'value', 'kind': 'antiderivative',
+            'expression': encoder.made({'kind': 'binder', 'operation': 'lambda', 'bindings': [binding], 'body': body}, 0),
+            'domainConditions': conditions, 'coordinateAuthorized': False}
+
+
 def encode_result(value, decoder):
     """Transfer an exact value and original domain obligations, without evaluating it."""
     encoder = Encoder(decoder)
     try:
+        if decoder.antiderivative is not None:
+            return encode_antiderivative(value, decoder, decoder.antiderivative)
         conditions = []
         for condition in decoder.domain_conditions:
             if condition is s.false:
@@ -138,17 +234,23 @@ def encode_result(value, decoder):
             if any(not isinstance(item, s.Expr) or isinstance(item, s.MatrixBase) for item in value):
                 return {'status': 'invalid', 'reason': 'dimension', 'coordinateAuthorized': False}
             kind = 'vector'
+        # Reals inherits Interval in SymPy, but its public node is a set constant.
+        # Classify the transferred meaning, not just the engine's class hierarchy.
+        elif value is s.S.Reals:
+            kind = 'set'
         elif isinstance(value, s.Interval):
             kind = 'interval'
         elif isinstance(value, s.Set):
             kind = 'set'
         elif value is s.true or value is s.false or isinstance(value, (Relational, BooleanFunction)):
             kind = 'boolean'
+        elif value in (s.oo, -s.oo) and decoder.infinite_bound:
+            kind = 'infinite-bound'
         elif value.free_symbols:
             kind = 'symbolic'
         elif value.is_finite is False:
             return {'status': 'invalid', 'reason': 'non-finite', 'coordinateAuthorized': False}
-        elif value.is_real is True:
+        elif value.is_real is True or real_finite(value):
             kind = 'real'
         elif value.is_complex is True:
             kind = 'complex'

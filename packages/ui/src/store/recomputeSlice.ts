@@ -3,17 +3,21 @@
  * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
  */
 
-import type {
-  AppearanceMatchEntry,
-  PartDocument,
-  PartProgress,
-  PartRecomputeError,
-  PartRecomputeResult,
-  SolidBody,
+import {
+  affectsShape,
+  type AppearanceMatchEntry,
+  type MathGeometryOutcome,
+  type PartDocument,
+  type PartProgress,
+  type PartRecomputeError,
+  type PartRecomputeResult,
+  type SolidBody,
 } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
+import type { MathGeometryResultSnapshot } from '../math/mathGeometryResults.js';
 import type { AppState } from './appState.js';
 import { activeSketchErrors, activeSketchOf, constraintSummaryPatch } from './documentDerived.js';
+import { activePartDocument } from './documentKind.js';
 
 /** 検査口からも読める、最後に完了した再計算の結末。 */
 export type RecomputeOutcome =
@@ -22,6 +26,9 @@ export type RecomputeOutcome =
   | 'failed'
   | 'cancelled'
   | 'workerBroken';
+
+/** 形状計算部のメモリの量(NFR-PF-6)。model の `PartRecomputeResult.kernelMemory` と同じ形。 */
+export type KernelMemoryState = NonNullable<PartRecomputeResult['kernelMemory']>;
 
 /** 再計算のスライスが持つ欄と操作。 */
 export interface RecomputeSlice {
@@ -53,18 +60,41 @@ export interface RecomputeSlice {
    * (時間で自動的に消さないのは、いつ消えるかを検査で決められるようにするため)。
    */
   readonly recomputeCancelled: boolean;
+  /**
+   * 図形の測定値の結果(ADD-23、計画書 geomref-plan.md §4(c)、GR-14)。計算した文書・世代と
+   * 対で持つ。**画面はここを直接読んで値を出さない**——いまの値かどうかの判定は
+   * `math/mathGeometryResults.ts` の `currentMathGeometry` だけが行う。中止・古い世代・
+   * 履歴の途中・部品以外・形の違う文書の結果は控えず、前の値も残さない(null)。
+   */
+  readonly mathGeometryResult: MathGeometryResultSnapshot | null;
   /** `attachPartRecompute` が最後に開始を依頼した世代。起動前は 0。 */
   readonly requestedGeneration: number;
   /** 成功・失敗・取消・Worker 破損のいずれかで最後に完了した世代。起動前は 0。 */
   readonly completedGeneration: number;
   /** `completedGeneration` の結末。まだ 1 度も完了していなければ `idle`。 */
   readonly lastOutcome: RecomputeOutcome;
+  /**
+   * 形状計算部のメモリの量(NFR-PF-6、計画書 P12-28)。まだ 1 度も届いていなければ null。
+   *
+   * **量は計算部の事実で、文書の事実ではない**ので、文書を作り直しても戻さない
+   * (`RecomputeInitialState` に入れない。世代の欄と同じ扱い)。量を添えない結果(ソリッドの段まで
+   * 進まなかった・Worker が壊れた等)では前の量を持ち続ける。確保済みの量は計算部を作り直す
+   * (画面を開き直す)まで減らないので、帯の警告は開き直して計算し直した後に消える。
+   * 上限に近いかどうかの判断は `shell/statusText.ts` の `isKernelMemoryNearLimit` の 1 か所。
+   */
+  readonly kernelMemory: KernelMemoryState | null;
   /** 部品まるごとの再計算の結果を反映する(要件§6.3)。 */
   readonly applyRecompute: (document: PartDocument, result: PartRecomputeResult) => void;
   /** 計算の進み具合を出す・消す(NFR-PF-4)。 */
   readonly setRecomputeProgress: (progress: PartProgress | null) => void;
   /** 計算を止めるよう頼む(NFR-PF-4)。段と段の間でしか止まらない(§2.6 の限界)。 */
   readonly cancelRecompute: () => void;
+  /**
+   * 形状計算部のメモリの量を控える(NFR-PF-6)。部品の再計算の量は `applyRecompute` が控える。
+   * これは結果を `applyRecompute` へ渡さない経路(アセンブリの部品ごとの再計算)が使う。
+   * 量が無い(undefined)ときは何もせず、前の量を持ち続ける。
+   */
+  readonly recordKernelMemory: (memory: KernelMemoryState | undefined) => void;
   /** 再計算を開始した世代を記録する(E2E の検査口、P7 タスク52)。 */
   readonly recordRecomputeRequest: (generation: number) => void;
   /** 再計算が終わった世代と結末を対で記録する(E2E の検査口、P7 タスク52)。 */
@@ -87,7 +117,47 @@ export type RecomputeInitialState = Pick<
   | 'recomputeProgress'
   | 'cancelRequestCount'
   | 'recomputeCancelled'
+  | 'mathGeometryResult'
 >;
+
+/**
+ * 図形の測定値の控えを作る(GR-14)。**前の値を残さない**: 中止・いま依頼中でない世代・
+ * 履歴の途中(つまみで切った文書)・部品以外・形の欄が違う文書の結果では null を返す。
+ *
+ * 計算の間に形に関わらない欄(外観・名前)だけが変わった文書では、計算した文書のまま控える。
+ * 外観だけの変更では再計算が起きない(`attachPartRecompute` の購読)ので、ここで捨てると値が
+ * 「計算中」のまま戻らなくなるため。形の欄が変わっていれば新しい計算が必ず予約されている。
+ * いまの値かどうかは `currentMathGeometry` が文書と世代でもう一度判定する。
+ */
+function mathGeometryResultOf(
+  state: AppState,
+  document: PartDocument,
+  result: PartRecomputeResult,
+): MathGeometryResultSnapshot | null {
+  if (
+    result.cancelled ||
+    result.generation !== state.requestedGeneration ||
+    state.timelineIndex !== null ||
+    activePartDocument(state) === null ||
+    document.id !== state.document.id ||
+    affectsShape(document, state.document)
+  ) {
+    return null;
+  }
+  const outcomes = new Map<string, MathGeometryOutcome>();
+  for (const outcome of result.mathGeometry ?? []) {
+    // この文書・この世代の測定だけを控える(model は同じ値を付けて返す。念のため照合する)。
+    if (outcome.documentId === document.id && outcome.generation === result.generation) {
+      outcomes.set(outcome.id, outcome);
+    }
+  }
+  return {
+    document,
+    generation: result.generation,
+    evaluated: result.mathGeometry !== undefined,
+    outcomes,
+  };
+}
 
 export const createRecomputeSlice: StateCreator<
   AppState,
@@ -99,6 +169,7 @@ export const createRecomputeSlice: StateCreator<
   requestedGeneration: 0,
   completedGeneration: 0,
   lastOutcome: 'idle',
+  kernelMemory: null,
   applyRecompute: (document, result) => {
     set((state) => {
       const sketch = activeSketchOf(document);
@@ -128,6 +199,8 @@ export const createRecomputeSlice: StateCreator<
           : (result.appearanceMatches ?? []),
         partErrors: result.errors,
         cacheHits: result.cacheHits,
+        // 図形の測定値(GR-14)。控えるかどうかの条件は mathGeometryResultOf の 1 か所。
+        mathGeometryResult: mathGeometryResultOf(state, document, result),
         ...(result.parameterAnalysis === undefined || result.cancelled || result.generation !== state.requestedGeneration
           || document.id !== state.document.id || document.parameters !== state.document.parameters ? {} : {
             parameterAnalysis: result.parameterAnalysis, nonLengthVariables: result.parameterAnalysis.nonLengthVariables,
@@ -141,6 +214,9 @@ export const createRecomputeSlice: StateCreator<
         // 幾何カーネルを積んで少なくとも 1 回計算が終わった(§0.a-0.23 ⑨)。
         // 購読通知(subscribe)の中で set を入れ子にしないよう、ここへ直接含める。
         kernelLoaded: true,
+        // 形状計算部のメモリの量(NFR-PF-6)。取り消した結果でも計算部の事実なので控える。
+        // 量を添えない結果では前の量を持ち続ける(`recordKernelMemory` と同じ決め)。
+        kernelMemory: result.kernelMemory ?? state.kernelMemory,
       };
     });
   },
@@ -149,6 +225,11 @@ export const createRecomputeSlice: StateCreator<
   },
   cancelRecompute: () => {
     set((state) => ({ cancelRequestCount: state.cancelRequestCount + 1 }));
+  },
+  recordKernelMemory: (memory) => {
+    if (memory !== undefined) {
+      set({ kernelMemory: memory });
+    }
   },
   recordRecomputeRequest: (requestedGeneration) => {
     set({ requestedGeneration });

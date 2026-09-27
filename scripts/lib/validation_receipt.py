@@ -51,7 +51,8 @@ def file_hash(path: Path) -> str:
 
 def git(root: Path, *args: str) -> bytes:
     environment = {key: value for key, value in os.environ.items() if key not in GIT_CONTEXT}
-    return subprocess.run(['git', '-C', str(root), *args], env=environment, check=True,
+    safe_directory = ['-c', 'safe.directory=' + root.resolve(strict=True).as_posix()] if args[0] != 'write-tree' else []
+    return subprocess.run(['git', '-C', str(root), *safe_directory, *args], env=environment, check=True,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
 
 

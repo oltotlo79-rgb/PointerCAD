@@ -1,3 +1,9 @@
+import { normalizeTestDistribution } from './testDistributions.js';
+import { normalizeDiscreteQuantile } from './discreteDistributionQuantile.js';
+import { normalizeProbabilityDistribution } from './probabilityDistributions.js';
+import { normalizeProbabilityMoment } from './probabilityMoments.js';
+import { normalizeGammaBetaDistribution } from './gammaBetaDistribution.js';
+import { normalizeNormalDistribution } from './normalDistribution.js';
 import { normalizeBinomialProbability } from './binomialProbability.js';
 /** Sample/population conventions are separate operations, never a hidden default. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
@@ -12,6 +18,18 @@ const sqrt = (value: MathNode): MathNode => ({ kind: 'operation', operation: 'sq
 export function normalizeStatisticsOperation(node: Extract<MathNode, { kind: 'operation' }>): MathNode {
   if (!operations.has(node.operation)) return node;
   const { operation, operands } = node;
+  const discreteQuantile = normalizeDiscreteQuantile(node);
+  if (discreteQuantile !== null) return discreteQuantile;
+  const testDistribution = normalizeTestDistribution(node);
+  if (testDistribution !== null) return testDistribution;
+  const gammaBeta = normalizeGammaBetaDistribution(node);
+  if (gammaBeta !== null) return gammaBeta;
+  const normal = normalizeNormalDistribution(node);
+  if (normal !== null) return normal;
+  const moment = normalizeProbabilityMoment(node);
+  if (moment !== null) return moment;
+  const distribution = normalizeProbabilityDistribution(node);
+  if (distribution !== null) return distribution;
   if (operation === 'binomial-pmf' || operation === 'binomial-cdf') return normalizeBinomialProbability(node);
   const values = observations(operands[0], operation.startsWith('sample-') ? 2 : 1);
   if (operation === 'mean') return rationalNode(mean(values));

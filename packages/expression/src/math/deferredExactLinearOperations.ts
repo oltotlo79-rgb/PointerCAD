@@ -3,6 +3,7 @@ import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { normalizeExactLinearOperation } from './exactLinearOperations.js';
 import { normalizeTensorOperation } from './tensorOperations.js';
 import { rationalOfExpression } from './exactRational.js';
+import { VECTOR_CALCULUS_AT_IDS, vectorCalculusAtBounds } from './vectorCalculusAt.js';
 
 type Operation = Extract<MathNode, { kind: 'operation' }>;
 const supported = new Set(['row-reduce', 'null-space', 'column-space', 'row-space',
@@ -60,6 +61,12 @@ export class DeferredExactLinearOperations {
   constructor(private readonly enabled: boolean) {}
 
   reduce(node: Operation): MathNode {
+    // These operations always await the exact engine's local-domain proof, even
+    // for rational input. Keeping their shape also preserves component selection.
+    if (VECTOR_CALCULUS_AT_IDS.has(node.operation)) {
+      this.bounds.set(node, vectorCalculusAtBounds(node));
+      return node;
+    }
     try { return normalizeExactLinearOperation(node); }
     catch (error) {
       if (!this.enabled || !supported.has(node.operation)

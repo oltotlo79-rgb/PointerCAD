@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { evaluateExpression } from '@pointercad/expression';
 import { DENSITY_MATERIALS, formatMass, type AppearanceSpec } from '@pointercad/model';
 import { AppearanceMenu } from '../appearance/AppearanceMenu.js';
 import { t, type MessageKey } from '../i18n/t.js';
-import { useFieldUnits } from '../shell/propertyFieldUnits.js';
+import { evaluateFieldSource, isPendingFieldError, useFieldUnits } from '../shell/propertyFieldUnits.js';
 import type { PartMeasureReadiness } from '../sketch/sketchMeasure.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { measureKindLabel } from './measure.js';
@@ -128,9 +127,11 @@ export function MassPropertiesSection({
   /** 密度の欄の式。材料を選び直すとその材料の密度で置き換わる(式で上書きもできる)。 */
   const [densitySource, setDensitySource] = useState(() => String(densityOf(materialId)));
 
-  const evaluated = evaluateExpression(densitySource, units);
+  const evaluated = evaluateFieldSource(densitySource, 'ratio', false, units);
+  const pending = !evaluated.ok && isPendingFieldError(evaluated.error);
+  const hasError = !evaluated.ok && !pending;
   const density = evaluated.ok ? evaluated.value.value : densityOf(materialId);
-  const view = massProperties === null ? null : massPropertiesView(massProperties, density);
+  const view = massProperties === null || pending ? null : massPropertiesView(massProperties, density);
 
   return (
     <div className="pcad-section">
@@ -149,7 +150,7 @@ export function MassPropertiesSection({
         }}
       />
       <div className="pcad-coordinate__fields">
-        <div className={evaluated.ok ? 'pcad-field' : 'pcad-field pcad-field--error'}>
+        <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'}>
           <span className="pcad-field__label" title={t('propertyPanel.massDensity')}>
             {t('propertyPanel.massDensity')}
           </span>
@@ -160,7 +161,7 @@ export function MassPropertiesSection({
             autoComplete="off"
             spellCheck={false}
             value={densitySource}
-            aria-invalid={!evaluated.ok}
+            aria-invalid={hasError}
             title={t('propertyPanel.massDensity')}
             onChange={(event) => {
               setDensitySource(event.target.value);
@@ -171,7 +172,7 @@ export function MassPropertiesSection({
           </span>
           <p
             className={
-              evaluated.ok ? 'pcad-field__message' : 'pcad-field__message pcad-field__message--error'
+              hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'
             }
           >
             {evaluated.ok ? `= ${evaluated.value.display}` : evaluated.error.message}
@@ -179,7 +180,7 @@ export function MassPropertiesSection({
         </div>
       </div>
       {massProperties === null || view === null ? (
-        <p className="pcad-panel__note">{t('propertyPanel.massNotYet')}</p>
+        <p className="pcad-panel__note">{t(pending ? 'mathGeometry.status.pending' : 'propertyPanel.massNotYet')}</p>
       ) : (
         <dl className="pcad-properties">
           <dt className="pcad-properties__key">{t('propertyPanel.massVolume')}</dt>

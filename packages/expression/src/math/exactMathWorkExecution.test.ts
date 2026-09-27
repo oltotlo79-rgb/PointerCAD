@@ -7,6 +7,7 @@ import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { type MathExecutionBackend } from './mathWorkExecution.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
+import { mathScalarExpression } from './mathScalarExpression.js';
 
 const number = (decimal: string): MathNode => ({ kind: 'number', decimal });
 const operation = (name: string, ...operands: readonly MathNode[]): MathNode => ({ kind: 'operation', operation: name, operands });
@@ -29,6 +30,36 @@ function decode(value: unknown, input: MathWorkRequest) {
 }
 
 describe('補助計算中も原式と編集番号を保持して既存の返信検証へ戻す', () => {
+  it('推定値しかない有限積分を採用済みの補助計算へ渡し、確定した原式で作図できる', async () => {
+    const input = request('integrate(sin(X),X,0,180)');
+    const exact = operation('divide', number('360'), { kind: 'constant', name: 'pi' });
+    const evaluate = vi.fn(() => Promise.resolve(wire(exact)));
+    const reply = await executeExactMathWorkRequest(createMathWorkEnvelope(26, input), {
+      backend, engine: { evaluate }, shouldStop: () => undefined,
+    });
+    expect(evaluate).toHaveBeenCalledOnce();
+    const result = decode(reply, input).result;
+    expect(result.evaluation).toMatchObject({ status: 'value', kind: 'real', exact, coordinate: 360 / Math.PI });
+    expect(mathScalarExpression(result).ok).toBe(true);
+  });
+  it('厳密な結果が求まらない積分は推定表示を保つが作図の許可を付けない', async () => {
+    const input = request('integrate(sin(X^2),X,0,1)');
+    const evaluate = vi.fn(() => Promise.resolve({ status: 'unresolved', reason: 'unevaluated', coordinateAuthorized: false }));
+    const reply = await executeExactMathWorkRequest(createMathWorkEnvelope(27, input), {
+      backend, engine: { evaluate }, shouldStop: () => undefined,
+    });
+    expect(evaluate).toHaveBeenCalledOnce();
+    const result = decode(reply, input).result;
+    expect(result.evaluation).toMatchObject({ status: 'value', kind: 'real', exact: null, approximation: { absoluteError: null } });
+    expect(mathScalarExpression(result).ok).toBe(false);
+  });
+  it.each(['cancelled', 'deadline'] as const)('積分の推定値があっても%sを正常終了に戻さない', async reason => {
+    const input = request('integrate(sin(X),X,0,180)');
+    const reply = await executeExactMathWorkRequest(createMathWorkEnvelope(28, input), {
+      backend, engine: { evaluate: () => Promise.reject(new ExactMathEngineStopped(reason)) }, shouldStop: () => undefined,
+    });
+    expect(decode(reply, input).result.evaluation).toEqual({ status: 'stopped', reason });
+  });
   it('有理数でない行列の階数を未対応の再判定で止めず、厳密計算へ渡す', async () => {
     const input = request('rank([[sqrt(2),1],[2,sqrt(2)]])');
     // The second row is sqrt(2) times the first, so its exact rank is one.

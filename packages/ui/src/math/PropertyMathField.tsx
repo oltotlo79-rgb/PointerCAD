@@ -4,7 +4,10 @@ import { evaluateDocumentMath, evaluatedDocumentMathValue, replaceFeature, repla
 import { ExpressionField, type ExpressionFieldProps } from '../sketch/ExpressionField.js';
 import { fieldExpression, fieldUnitLabelKey, rangeErrorFor } from '../sketch/numericInput.js';
 import { useAppStore } from '../store/useAppStore.js';
+import type { AppState } from '../store/appState.js';
+import { pendingFieldVariables, referencesPendingVariable } from '../shell/propertyFieldUnits.js';
 import { MathExpressionDialog } from './MathExpressionDialog.js';
+import { currentMathGeometry, mathGeometryInputsFor } from './mathGeometryResults.js';
 import { t } from '../i18n/t.js';
 
 interface PropertyMathFieldProps extends ExpressionFieldProps {
@@ -25,14 +28,23 @@ export function replacePropertySketchFeature(document: PartDocument, featureId: 
   return replaceSketch(document, replaceFeature(sketch, featureId, feature));
 }
 
+/** Read confirmed values through the same history/geometry freshness rules as legacy fields. */
+function verifiedPropertyValue(state: AppState, value: ExpressionValue): ExpressionValue | null {
+  if (state.timelineIndex !== null) return null;
+  const pending = pendingFieldVariables(state);
+  if (referencesPendingVariable(value.source, pending, value.mathDefinition)) return null;
+  const verified = evaluatedDocumentMathValue(state.document, value);
+  if (verified !== null) return verified;
+  // Appearance edits keep the completed snapshot. Its owner, shape and generation must still match.
+  return currentMathGeometry(state).status === 'current' && state.mathGeometryResult !== null
+    ? evaluatedDocumentMathValue(state.mathGeometryResult.document, value) : null;
+}
+
 /** All property editors share cancellation, coefficient identities, current values, and one Undo. */
 export function PropertyMathField({ storedValue, replaceValue, ...props }: PropertyMathFieldProps): React.JSX.Element {
-  const part = useAppStore(state => state.document);
-  // Completed recomputation publishes this object even when the saved document is unchanged.
-  const analysis = useAppStore(state => state.parameterAnalysis);
   const [target, setTarget] = useState<Target | null>(null);
   const structured = storedValue.mathDefinition !== undefined && props.field.source === storedValue.source;
-  const verified = structured && analysis !== null ? evaluatedDocumentMathValue(part, storedValue) : null;
+  const verified = useAppStore(state => structured ? verifiedPropertyValue(state, storedValue) : null);
   const result = structured ? { key: props.field.key, value: verified,
     error: verified === null ? null : rangeErrorFor(props.field, verified) } : props.result;
   const isCurrent = () => target !== null && useAppStore.getState().document === target.document
@@ -50,13 +62,19 @@ export function PropertyMathField({ storedValue, replaceValue, ...props }: Prope
       isCurrent={isCurrent} onClose={() => setTarget(null)} onApply={async (value, prepared, signal, client) => {
         const error = rangeErrorFor(props.field, value);
         if (error !== null) return { ok: false, message: error.message };
+        // The prepared candidate is private; measured inputs belong to the original, current document.
+        const geometry = mathGeometryInputsFor(useAppStore.getState(), target.document);
+        if (geometry === null) return { ok: false, message: t('mathGeometry.editor.pending') };
         bindMathCompositionNames(value, prepared.parameters.flatMap(parameter => parameter.mathId === undefined ? [] : [{
           id: parameter.mathId, label: parameter.name, kind: parameter.unit === 'mm' ? 'length' : parameter.unit === 'degree' ? 'angle' : 'scalar',
         }]));
         const candidate = target.replaceValue(prepared, value);
-        const evaluated = await evaluateDocumentMath(candidate, { client,
+        const evaluated = await evaluateDocumentMath(candidate, { client, geometry,
           identity: { documentId: prepared.id, documentVersion: target.documentVersion }, signal, isCurrent });
         if (!isCurrent() || signal.aborted) return { ok: false, message: t('math.operation.cancelled') };
+        if (mathGeometryInputsFor(useAppStore.getState(), target.document) !== geometry) {
+          return { ok: false, message: t('mathGeometry.editor.pending') };
+        }
         if (!evaluated.ok) return { ok: false, message: evaluated.failures[0]?.message ?? t('math.workerFailed') };
         useAppStore.getState().applyDocument(evaluated.document);
         return { ok: true };

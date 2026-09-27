@@ -4,6 +4,7 @@ import { readPcadFile } from '../../packages/io/src/index.js';
 import { sheetConfigurationFile, SHEET_CONFIGURATIONS } from './sheetConfigurationFixture.js';
 import { openSheetPart } from './sheetPartFlow.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 async function checkShape(page: Page, expected: { readonly folded: number; readonly flat: number }) {
   await page.getByRole('tab', { name: 'プロパティ', exact: true }).click();
@@ -34,7 +35,8 @@ test('P10 板金の構成で板厚・半径・K・両フランジを切り替え
   const switching = await beginRecompute(page);
   await configuration.selectOption({ label: '厚板' }); await waitForRecompute(page, switching);
   await page.getByRole('button', { name: 'ホーム視点', exact: true }).click();
-  await page.screenshot({ path: info.outputPath('sheet-configuration.png') });
+  await captureManualDetail(page, info, { name: 'sheet-configuration', dialog: page.locator('.pcad-panel--right'),
+    fixture: SHEET_CONFIGURATIONS.thick, script: new URL(import.meta.url) });
   await checkShape(page, SHEET_CONFIGURATIONS.thick);
   const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
   const path = info.outputPath('sheet-configuration.pcad'); await (await saving).saveAs(path);

@@ -1,9 +1,9 @@
 /** 入力欄の式・単位・許容範囲を評価する。道具の段階遷移や文書更新は担当しない。 */
-import { evaluateExpression, type ExpressionError, type ExpressionValue } from '@pointercad/expression';
+import { type ExpressionError, type ExpressionValue } from '@pointercad/expression';
 import type { LengthUnit } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { applyDisplayUnit, usesDisplayInputUnit } from './numericFieldUnits.js';
-import { evaluateNumericMath } from './numericMathValues.js';
+import { evaluateNumericMath, evaluatePendingExpression, pendingVariablesFor } from './numericMathValues.js';
 import type { NumericField, NumericFieldRange, NumericInputState } from './numericInput.js';
 
 export interface NumericFieldResult {
@@ -108,6 +108,7 @@ export function fillDefaults(state: NumericInputState): NumericInputState {
  * 検査は 1 文字も書き換えずに同じ値を返す(安全側の既定)。
  */
 export interface DisplayUnitOptions {
+  readonly pendingVariables?: ReadonlySet<string>;
   /** パラメータ間の精度を決定時まで保持する。 */
   readonly exactVariables?: ReadonlyMap<string, string>;
   /** 画面に出している長さの単位(`DisplaySettings.lengthUnit`)。省くと mm。 */
@@ -157,11 +158,11 @@ export function evaluateNumericField(field: NumericField, variables: ReadonlyMap
   if (field.mathValue !== undefined) {
     if (field.source !== field.mathValue.source) return { ok: false as const, error: { code: 'unknownVariable' as const,
       position: -1, message: '数式を変更したため再確認が必要です。「数式で入力」を開いてください。' } };
-    return evaluateNumericMath(field.mathValue, variables, display.exactVariables);
+    return evaluateNumericMath(field.mathValue, variables, display.exactVariables, display.pendingVariables ?? pendingVariablesFor(variables));
   }
-  return evaluateExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
+  return evaluatePendingExpression(fieldExpression(field, display.lengthUnit ?? 'mm'), {
     variables, nonLengthVariables: display.nonLengthVariables, exactVariables: display.exactVariables,
-  });
+  }, display.pendingVariables ?? pendingVariablesFor(variables));
 }
 
 /** 評価できた値だけを順に取り出す。決定のときに使う。 */

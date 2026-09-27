@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { env } from 'node:process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { runtimeDependencySelection } from './runtimeDependencySelection.mjs';
 
 const packageName = /^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/u;
 function within(root, folder) {
@@ -29,13 +30,21 @@ function dependencyFolder(root, owner, name) {
 
 export function installedRuntimeDependencies(repository) {
   const sourceRoot = realpathSync(repository);
+  let safeRoot = sourceRoot;
+  while (!existsSync(join(safeRoot, '.git'))) {
+    const parent = dirname(safeRoot);
+    if (parent === safeRoot) throw new Error('Runtime dependency repository is missing');
+    safeRoot = parent;
+  }
   // Commit checks use a project-local worktree and share the main project's
   // installed packages. Resolve that same boundary without inheriting Git's
   // index/worktree variables from the hook.
   const gitEnvironment = Object.fromEntries(Object.entries(env).filter(([name]) => !name.toUpperCase().startsWith('GIT_')));
-  const gitDirectory = realpathSync(execFileSync('git', ['--no-optional-locks', '-C', sourceRoot, 'rev-parse',
+  const gitDirectory = realpathSync(execFileSync('git', ['--no-optional-locks', '-C', sourceRoot,
+    '-c', 'safe.directory=' + safeRoot.replaceAll('\\', '/'), 'rev-parse',
     '--path-format=absolute', '--git-common-dir'], { env: gitEnvironment, encoding: 'utf8', windowsHide: true }).trim());
   const root = dirname(gitDirectory), visited = new Set(), packages = new Map();
+  const selectedDependencies = runtimeDependencySelection(sourceRoot);
   if (relative(root, gitDirectory) !== '.git') throw new Error('Unknown project metadata location');
   within(root, sourceRoot);
   const visit = (folder, parent, depth) => {
@@ -54,8 +63,7 @@ export function installedRuntimeDependencies(repository) {
     }
     if (visited.has(folder)) return;
     visited.add(folder);
-    const dependencies = { ...metadata.dependencies, ...metadata.optionalDependencies };
-    for (const name of Object.keys(dependencies).sort()) {
+    for (const name of selectedDependencies(metadata).sort()) {
       let target;
       try { target = dependencyFolder(root, folder, name); }
       catch (error) {

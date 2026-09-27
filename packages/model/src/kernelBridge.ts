@@ -37,6 +37,7 @@ import type {
 } from './drawing/resolveDrawing.js';
 
 import type { ExportMeshQuality } from './exchange/types.js';
+import type { ResolvedSolidStep } from './part/resolvePart.js';
 
 import type {
   ResolvedFace,
@@ -531,6 +532,20 @@ function toOutcome(
 export const KERNEL_BROKEN_MESSAGE =
   'カーネルが止まりました。値を元に戻してから、もう一度お試しください。';
 
+function cachedBodySteps(steps: readonly ResolvedSolidStep[], ids: readonly string[]): readonly ResolvedSolidStep[] | null {
+  if (new Set(ids).size !== ids.length) return null;
+  const result: ResolvedSolidStep[] = [];
+  for (const id of ids) {
+    const matches = steps.filter(step => step.featureId === id);
+    if (matches.length !== 1) return null;
+    result.push(matches[0]);
+  }
+  return result;
+}
+function cachedBodyFailure(ids: readonly string[], message: string): SolidRecomputeOutcome {
+  return { bodies: [], failures: ids.map(featureId => ({ featureId, message })), cacheHits: 0, cancelled: false, appearanceMatches: [] };
+}
+
 export function createKernelHealth(): KernelHealth {
   let broken = false;
   return {
@@ -994,6 +1009,17 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
       );
     },
 
+    async readCachedBodies(steps, ids): Promise<SolidRecomputeOutcome> {
+      const selected = cachedBodySteps(steps, ids);
+      if (selected === null) return cachedBodyFailure(ids, MEASURE_MISSING_SHAPE_MESSAGE);
+      if (health.broken && !disposed) restart();
+      const active = connection;
+      return raceWithBroken(active,
+        () => active.remote.readCachedBodies(selected.map(step => ({ id: step.featureId, key: step.key })))
+          .then(result => toSolidOutcome(selected, result)),
+        () => cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE));
+    },
+
     async measure(steps, targets, kind): Promise<MeasureOutcome> {
       const request = toMeasureRequest(steps, targets, kind);
       if (request === null) {
@@ -1229,6 +1255,12 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
         items: requests.map((request) => toSectionItem(request)),
       });
       return toProjectionResult(requests, outcome);
+    },
+
+    async readCachedBodies(steps, ids): Promise<SolidRecomputeOutcome> {
+      const selected = cachedBodySteps(steps, ids);
+      if (selected === null) return cachedBodyFailure(ids, MEASURE_MISSING_SHAPE_MESSAGE);
+      return toSolidOutcome(selected, await api.readCachedBodies(selected.map(step => ({ id: step.featureId, key: step.key }))));
     },
 
     async measure(steps, targets, kind): Promise<MeasureOutcome> {

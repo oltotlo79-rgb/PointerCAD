@@ -2,6 +2,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { extname } from 'node:path';
 import { TextDecoder } from 'node:util';
+import { URL } from 'node:url';
 import process from 'node:process';
 import console from 'node:console';
 
@@ -36,6 +37,19 @@ const failures = lines.filter(line => /^(?:Test Files|Tests|[1-9]\d* failed)\b.*
 const headings = lines.filter(line => line.startsWith('==='));
 const status = failed.length > 0 || failures.length > 0 || (exitCode !== null && exitCode !== 0) ? 'failed'
   : exitCode === 0 ? 'passed' : 'running';
+// Read the actual report beside this script, not a different worktree's draft.
+// A warning is only a reminder while this reader runs; it is not an auto-report.
+const reportPath = new URL('../docs/報告記録.md', import.meta.url);
+const reportHeading = existsSync(reportPath)
+  ? readFileSync(reportPath, 'utf8').match(/^## (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?:\s|$)/mu) : null;
+const reportTime = reportHeading === null ? Number.NaN
+  : Date.parse(`${reportHeading[1]}T${reportHeading[2]}:00+09:00`);
+const reportAgeMinutes = Number.isFinite(reportTime) ? (Date.now() - reportTime) / 60_000 : null;
+const reportUpdateDue = reportAgeMinutes === null || reportAgeMinutes >= 10 || reportAgeMinutes < -1;
+const report = { latestEntry: reportHeading?.[0].trim() ?? null,
+  ageMinutes: reportAgeMinutes === null ? null : Math.round(reportAgeMinutes * 10) / 10,
+  updateDue: reportUpdateDue,
+  action: reportUpdateDue ? '普段の作業場所の報告記録を更新し、実ファイルを読み直してください。' : null };
 console.log(JSON.stringify({ status, stage: headings.at(-1) ?? null, exitCode,
   e2ePassedEvents: passed.length, e2eFailedEvents: failed.length, failedE2E: failed,
-  failureSummaries: failures, lastE2E: passed.slice(-2) }, null, 2));
+  failureSummaries: failures, lastE2E: passed.slice(-2), report }, null, 2));

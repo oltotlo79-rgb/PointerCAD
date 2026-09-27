@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { evaluateExpression } from '@pointercad/expression';
+import { evaluateFieldSource, isPendingFieldError, useFieldUnits } from '../shell/propertyFieldUnits.js';
 
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -39,10 +39,12 @@ interface ConstraintValueFieldProps {
  * なった時点で文書へ流し、読めないあいだは形を変えない(打っている途中で壊れないように)。
  */
 function ConstraintValueField({ summary }: ConstraintValueFieldProps): React.JSX.Element {
-  const analysis = useAppStore((state) => state.parameterAnalysis);
+  const units = useFieldUnits();
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft ?? summary.value?.source ?? '';
-  const readable = evaluateExpression(shown, analysis).ok;
+  const evaluated = evaluateFieldSource(shown, 'ratio', false, units);
+  const pending = !evaluated.ok && isPendingFieldError(evaluated.error);
+  const readable = evaluated.ok || pending;
 
   return (
     <input
@@ -56,13 +58,14 @@ function ConstraintValueField({ summary }: ConstraintValueFieldProps): React.JSX
       spellCheck={false}
       autoComplete="off"
       inputMode="text"
-      title={t('constraintList.valueTooltip')}
+      title={pending ? t('mathGeometry.status.pending') : t('constraintList.valueTooltip')}
       aria-label={`${summary.label} ${t('constraintList.valueTooltip')}`}
       aria-invalid={!readable}
       onChange={(event) => {
         setDraft(event.target.value);
         // 読めない式のあいだは `changeConstraintValue` が文書を変えない(そちらの注釈)。
-        changeConstraintValue(summary.id, event.target.value);
+        const next = evaluateFieldSource(event.target.value, 'ratio', false, units);
+        if (next.ok || !isPendingFieldError(next.error)) changeConstraintValue(summary.id, event.target.value);
       }}
       onBlur={() => {
         // 打ちかけを捨てて、文書に入っている式へ戻す。

@@ -8,6 +8,7 @@ import { mathEditorLabels } from './mathEditorLabels.js';
 import { mathResultAxes } from './mathResultComponent.js';
 import { MathResultComponentPicker } from './MathResultComponentPicker.js';
 import { mathEditorResultText } from './mathEditorResult.js';
+import { MathDeclarationEditor } from './MathDeclarationEditor.js';
 
 export interface MathEditorPanelProps {
   readonly controller: MathEditorController;
@@ -16,6 +17,7 @@ export interface MathEditorPanelProps {
   readonly groups: readonly MathInsertGroup[];
   readonly palette: readonly MathPaletteItem[];
   readonly readOnly: boolean;
+  readonly acceptLabel?: string;
   readonly onHelp: () => void;
 }
 
@@ -23,9 +25,13 @@ export interface MathEditorPanelProps {
 export function MathEditorPanel(props: MathEditorPanelProps): React.JSX.Element {
   const snapshot = useSyncExternalStore(props.controller.subscribe, props.controller.getSnapshot, props.controller.getSnapshot);
   const description = mathEditorResultText(snapshot);
+  const labels = mathEditorLabels();
+  const appliedLabels = props.acceptLabel === undefined ? labels
+    : { ...labels, apply: props.acceptLabel, hints: { ...labels.hints, apply: props.acceptLabel } };
   const axes = snapshot.state.status === 'evaluated' ? mathResultAxes(snapshot.state.output.evaluation) : null;
-  return <MathEditorSurface input={snapshot.state.input} controller={props.controller}
-    createField={props.createField} labels={mathEditorLabels()} groups={props.groups} palette={props.palette}
+  return <><MathDeclarationEditor controller={props.controller} declarations={snapshot.state.input.declarations ?? []}
+    disabled={props.readOnly || !props.controller.isCurrent()}/><MathEditorSurface input={snapshot.state.input} controller={props.controller}
+    createField={props.createField} labels={appliedLabels} groups={props.groups} palette={props.palette}
     query={snapshot.query} onQuery={props.controller.setQuery} resultMessage={description.message}
     resultActions={axes === null ? null : <MathResultComponentPicker
       key={snapshot.state.input.identity.inputRevision} axes={axes}
@@ -34,5 +40,5 @@ export function MathEditorPanel(props: MathEditorPanelProps): React.JSX.Element 
     resultDetail={description.detail} hasError={description.hasError} busy={description.busy}
     canApply={snapshot.state.status === 'evaluated' && snapshot.state.canApply}
     canChangeNotation={props.controller.isCurrent()} readOnly={props.readOnly}
-    onHelp={props.onHelp} maximumSourceLength={MATH_INPUT_LIMITS.sourceCodeUnits}/>;
+    onHelp={props.onHelp} maximumSourceLength={MATH_INPUT_LIMITS.sourceCodeUnits}/></>;
 }

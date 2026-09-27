@@ -14,5 +14,5 @@ Web版ではアプリのフォルダー、デスクトップ版ではresources/a
 - LICENSE.electron.txt（またはLICENSE）: Electron
 - LICENSES.chromium.html: Chromiumと同梱部品
 
-上記の一覧で原文未取得と記された部品の確認は未完了です。
+上記の一覧に原文が同梱されていない部品はありません。liblzma・SQLite由来の部品は原文を同梱済みですが、許諾の種類の識別子は未分類のままです。
 開発中の配布候補の作成だけで正式公開可能と認定しません。

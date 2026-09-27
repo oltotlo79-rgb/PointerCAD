@@ -6,6 +6,7 @@ import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute
 import { offsetHolePartFile } from './drawingTestSupport.js';
 import { chooseDrawingMenu, expectDrawingStroke } from './drawingManufacturingFixture.js';
 import { drawingMessage as m } from './drawingMessages.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 test.describe('P9 サイズ形体の幾何公差', () => {
   test('実際の穴に直径0.1M/A/B/Cを付け、二面幅の中心平面・多段・失われた参照も編集して保存する', async ({ page }, testInfo) => {
@@ -69,7 +70,7 @@ test.describe('P9 サイズ形体の幾何公差', () => {
     await apply();
     for (const label of ['0.1', 'A', 'B', 'C']) await expect(owner('gdt-1').locator(`[aria-label="${label}"]`)).toHaveCount(1);
     await tree.getByRole('button', { name: '幾何公差 1', exact: true }).click(); await form.locator('strong').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: testInfo.outputPath('gdt-position-abc.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'gdt-position-abc', dialog: form, fixture: { step: 'position-abc' }, script: new URL(import.meta.url) });
     // 幅を表す2本の実投影辺から、裏面を直接選ばず二面の中心平面を指定する。
     const edges = await strokes('view-1').evaluateAll((paths) => {
       const lines = paths.flatMap((path) => {
@@ -101,7 +102,7 @@ test.describe('P9 サイズ形体の幾何公差', () => {
     await second.getByLabel(m('drawing.gdt.value'), { exact: true }).fill('0.03'); await apply();
     await expect(owner('gdt-1').locator('[aria-label="0.03"]')).toHaveCount(1);
     await form.locator('strong').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: testInfo.outputPath('gdt-position-median-multirow.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'gdt-position-median-multirow', dialog: form, fixture: { step: 'median-multirow' }, script: new URL(import.meta.url) });
     // 不足参照を保存し、再読込から編集して復旧できることを確かめる。
     await tree.getByRole('button', { name: 'データム 2 B', exact: true }).click(); await sheet.focus(); await page.keyboard.press('Delete');
     await expect(page.getByRole('alert').filter({ hasText: m('drawing.manufacturing.outputUnresolved') })).toBeVisible();

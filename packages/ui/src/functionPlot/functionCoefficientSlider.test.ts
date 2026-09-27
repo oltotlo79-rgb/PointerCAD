@@ -1,9 +1,13 @@
 import { expressionValueFromNumber as number } from '@pointercad/expression';
-import { createEmptyPartDocument, createPrimitiveFeature } from '@pointercad/model';
+import { MATH_INPUT_FORMAT, type StoredMathExpression } from '@pointercad/expression/math/contracts';
+import { createEmptyPartDocument, createPrimitiveFeature, DEFAULT_MATH_GEOMETRY_TOLERANCE, FUNCTION_DEFINITION_FORMAT,
+  mathGeometryParameterDraft, type FunctionDefinition, type MathGeometryDefinition, type Parameter } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { applyFunctionCoefficientSlider, coefficientSliderRange, initialCoefficientSliderRange } from './functionCoefficientSlider.js';
+import { t } from '../i18n/t.js';
+import { applyFunctionCoefficientSlider, coefficientSliderRange, functionCoefficientParameters,
+  initialCoefficientSliderRange } from './functionCoefficientSlider.js';
 
 function fixture() {
   const base = createEmptyPartDocument();
@@ -76,5 +80,72 @@ describe('係数の有限範囲', () => {
     expect(coefficientSliderRange(String(range.minimum), String(range.maximum))).toEqual(range);
     expect(value).toBeGreaterThanOrEqual(range.minimum);
     expect(value).toBeLessThanOrEqual(range.maximum);
+  });
+});
+
+const DERIVED_ID = 'coefficient:derived-r', PLAIN_ID = 'coefficient:plain-a';
+
+function coefficientReference(id: string, label: string): StoredMathExpression {
+  return { format: MATH_INPUT_FORMAT, source: `coef(${JSON.stringify(label)})`, inputNotation: 'text', angleUnit: 'degree',
+    expression: { kind: 'symbol', reference: { role: 'coefficient', id, label } } };
+}
+
+/**
+ * GR-18b: R's own formula is `coef("G")` (`mathGeometryParameterDraft`, GR-03b), so R is geometry-derived
+ * (GR-04) even though the plot formula below only ever reads R by its own coefficient ID, `coef("R")` — the
+ * same two-step reference the real editor builds (measured value → coefficient → plot). A is an ordinary
+ * coefficient with no such formula, for contrast.
+ */
+function geometryDerivedFixture() {
+  const base = createEmptyPartDocument();
+  const geometryDefinition: MathGeometryDefinition = { id: 'g1', documentId: base.id, name: 'G',
+    tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE,
+    quantity: { kind: 'length', curve: { kind: 'sketch-curve', sketchId: 'sketch-x', featureId: 'line-x' } } };
+  const withGeometry = { ...base, mathGeometry: [geometryDefinition] };
+  const draft = mathGeometryParameterDraft(withGeometry, 'g1', { name: 'R', value: 2, unit: 'mm', description: '' });
+  if (!draft.ok) throw new Error(draft.message);
+  const derived: Parameter = { ...draft.parameter, mathId: DERIVED_ID };
+  const plain: Parameter = { name: 'A', mathId: PLAIN_ID, unit: 'none', description: '', value: number(2.5) };
+  const document = { ...withGeometry, parameters: [derived, plain] };
+  const formula: FunctionDefinition['formula'] = { kind: 'coordinate-curve', independent: 'X',
+    outputs: { Y: coefficientReference(DERIVED_ID, 'R'), Z: coefficientReference(PLAIN_ID, 'A') } };
+  const range = { min: number(-4), max: number(4) };
+  const definition: FunctionDefinition = { format: FUNCTION_DEFINITION_FORMAT,
+    bounds: { X: range, Y: range, Z: range }, tolerance: number(0.05), formula };
+  return { document, definition };
+}
+
+describe('図形由来の係数はつまみに出さず、書込みも断る(GR-18b)', () => {
+  it('つまみの一覧(functionCoefficientParameters)は図形由来の係数Rを除き、図形由来でない係数Aだけを返す', () => {
+    const { document, definition } = geometryDerivedFixture();
+    expect(functionCoefficientParameters(document, definition).map(parameter => parameter.name)).toEqual(['A']);
+  });
+
+  it('式にRを使わなければ、Rが図形由来でも一覧には無関係として出さない', () => {
+    const { document, definition } = geometryDerivedFixture();
+    const withoutR: FunctionDefinition = { ...definition, formula: { kind: 'coordinate-curve', independent: 'X',
+      outputs: { Y: coefficientReference(PLAIN_ID, 'A'), Z: coefficientReference(PLAIN_ID, 'A') } } };
+    expect(functionCoefficientParameters(document, withoutR).map(parameter => parameter.name)).toEqual(['A']);
+  });
+
+  it('図形由来の係数へつまみを適用すると理由付きで断り、文書もUndo段も変えない', () => {
+    const { document } = geometryDerivedFixture();
+    useAppStore.getState().applyDocument(document);
+    const state = useAppStore.getState(), past = state.undoStack.past.length;
+    const result = applyFunctionCoefficientSlider({ documentId: document.id, documentVersion: state.documentVersion,
+      coefficientId: DERIVED_ID, gesture: 'drag-derived', value: 5, range: { minimum: 0, maximum: 10 } });
+    expect(result).toEqual({ ok: false, message: t('mathGeometry.functionSlider.derived') });
+    expect(useAppStore.getState()).toBe(state);
+    expect(useAppStore.getState().undoStack.past).toHaveLength(past);
+  });
+
+  it('図形由来でない係数Aへのつまみは今どおり動き、文書へ反映する', () => {
+    const { document } = geometryDerivedFixture();
+    useAppStore.getState().applyDocument(document);
+    const state = useAppStore.getState();
+    const result = applyFunctionCoefficientSlider({ documentId: document.id, documentVersion: state.documentVersion,
+      coefficientId: PLAIN_ID, gesture: 'drag-plain', value: 5, range: { minimum: 0, maximum: 10 } });
+    expect(result.ok).toBe(true);
+    expect(useAppStore.getState().document.parameters.find(parameter => parameter.mathId === PLAIN_ID)?.value.value).toBe(5);
   });
 });

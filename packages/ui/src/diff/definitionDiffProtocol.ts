@@ -16,7 +16,7 @@ export function isDefinitionDiffRequest(value: unknown): value is DefinitionDiff
     && (value.relationship === 'versions' || value.relationship === 'unrelated');
 }
 const groups = new Set(['document', 'sketch', 'sketch-feature', 'reference', 'solid', 'parameter', 'configuration',
-  'sheet-unfold', 'named-view', 'selection-set', 'canvas', 'appearance', 'note', 'folder', 'attachments']);
+  'sheet-unfold', 'named-view', 'selection-set', 'canvas', 'appearance', 'note', 'folder', 'math-problem', 'attachments']);
 const differenceKinds = new Set(['value', 'expression', 'expression-and-value', 'stored-value', 'order']);
 const text = (value: unknown): value is string => typeof value === 'string' && value.length <= 131_072;
 function difference(value: unknown): value is DefinitionDifference {

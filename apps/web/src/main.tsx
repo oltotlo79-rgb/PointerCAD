@@ -1,4 +1,4 @@
-import { PointerCadApp, setOfflineGateway, t } from '@pointercad/ui';
+import { attachUnsavedChangesGuard, PointerCadApp, setOfflineGateway, t } from '@pointercad/ui';
 import { attachOfflineManualNavigation } from '@pointercad/ui/offline-navigation';
 import '@pointercad/ui/style.css';
 import { StrictMode } from 'react';
@@ -28,6 +28,12 @@ if (offline.serviceWorker !== undefined) {
   import.meta.hot?.dispose(stopManualNavigation);
   import.meta.hot?.dispose(stopMaintenance);
 }
+
+// 保存していない変更がある間だけ、読み直し・タブを閉じる・別の頁へ移る前にブラウザーの確認を出す(P12-24)。
+// 新しい版の準備が別のタブで終わっても、この頁は読み直されない(offlineRegistration.ts)ので、
+// 失われ得るのは利用者自身が頁を離れるときだけ。
+const stopUnsavedChangesGuard = attachUnsavedChangesGuard(window);
+import.meta.hot?.dispose(stopUnsavedChangesGuard);
 
 const container = document.getElementById('root');
 if (container === null) {

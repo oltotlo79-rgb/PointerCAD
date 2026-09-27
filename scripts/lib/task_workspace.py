@@ -10,7 +10,8 @@ import tempfile
 def _workspace_locations(repository: Path) -> tuple[Path, Path]:
     repository = repository.resolve(strict=True)
     common = subprocess.check_output(
-        ['git', '--no-optional-locks', '-C', str(repository), 'rev-parse',
+        ['git', '--no-optional-locks', '-C', str(repository), '-c',
+         'safe.directory=' + repository.as_posix(), 'rev-parse',
          '--path-format=absolute', '--git-common-dir'], text=True,
         env={key: value for key, value in os.environ.items() if not key.startswith('GIT_')}).strip()
     git_directory = Path(common).resolve(strict=True)

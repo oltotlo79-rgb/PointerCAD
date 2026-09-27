@@ -1,5 +1,5 @@
 /** Controlled editor view. The controller owns text, generations, calculation, and acceptance. */
-import {useEffect,useId,useRef,useState} from 'react';
+import {useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
 import {attachMathField,type StructuredMathField} from './mathFieldHost.js';
 import {searchMathPalette,type MathPaletteGroup,type MathPaletteItem} from './mathPalette.js';
 import type {MathEditorInput} from './mathEditorSession.js';
@@ -52,7 +52,11 @@ function StructuredField({input,controller,createField,readOnly,maximumSourceLen
   readonly readOnly:boolean;readonly maximumSourceLength:number;readonly label:string;readonly descriptionId:string;readonly hint:string;
 }):React.JSX.Element {
   const container=useRef<HTMLDivElement>(null),binding=useRef<ReturnType<typeof attachMathField>|null>(null);
-  useEffect(()=>{
+  // A layout effect, so that React runs the cleanup (dispose, which blurs the field) before it removes the
+  // dialog's DOM. A passive cleanup ran after the removal: MathLive had already disposed the field in its
+  // disconnectedCallback, blur() did nothing, and in Firefox (no blur event on removal) the next structured
+  // field's focus() threw inside MathLive and React unmounted the app (ADD-17 and MC-27d, 2026-09-24).
+  useLayoutEffect(()=>{
     if(container.current===null)return;
     const field=attachMathField(container.current,createField,{label,describedBy:descriptionId,
       initialSource:controller.current().source,maximumSourceLength,isCurrent:controller.isCurrent,

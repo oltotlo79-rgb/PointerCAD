@@ -9,6 +9,7 @@ import { drawingMessage } from './drawingMessages.js';
 import { expectDrawingStroke } from './drawingManufacturingFixture.js';
 import { observeDrawingPrint } from './observeDrawingPrint.js';
 import { startDrawingCpuProfile } from './drawingCpuProfile.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 type ClientBounds = Readonly<{ x: number; y: number; width: number; height: number }>;
 
@@ -221,7 +222,8 @@ test.describe('P8 図面の実操作', () => {
     await apply('断面A', 'view-4');
     await expect(page.locator('.pcad-drawing-svg [data-owner-id="view-4"] [aria-label="A–A"]')).toHaveCount(1);
     await expect(page.locator('.pcad-drawing-svg [data-owner-id="view-4"] [aria-label="A"]')).toHaveCount(2);
-    await page.screenshot({ path: testInfo.outputPath('advanced-drawing-section.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'advanced-drawing-section', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { view: 'section' }, script: new URL(import.meta.url) });
     const section = page.locator('.pcad-drawing-svg [data-owner-id="view-4"] path');
     await expect.poll(() => section.evaluateAll((elements) => elements.filter((element) => {
       if (!(element instanceof SVGPathElement) || Number.parseFloat(getComputedStyle(element).strokeWidth) !== 0.25) return false;
@@ -251,7 +253,8 @@ test.describe('P8 図面の実操作', () => {
     await create('drawing.tool.brokenView', '破断E', 350, 165);
     await fill('drawing.advanced.from', '-5'); await fill('drawing.advanced.to', '5'); await fill('drawing.advanced.gap', '3');
     await apply('破断E', 'view-8');
-    await page.screenshot({ path: testInfo.outputPath('advanced-drawing-views.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'advanced-drawing-views', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { views: ['断面A', '詳細B', '補助C', '部分D', '破断E'] }, script: new URL(import.meta.url) });
     const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
     const downloaded = await saving; const path = await downloaded.path(); if (path === null) throw new Error('図面保存なし');
     const bytes = await readFile(path);
@@ -302,7 +305,8 @@ test.describe('P8 図面の実操作', () => {
     await expectVolume(16000);
     await parametersTab.click(); await expect(source).toHaveValue('40');
     await expect(select.locator('option:checked')).toHaveText('長い');
-    await page.screenshot({ path: testInfo.outputPath('configuration-long.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'configuration-long', dialog: configuration,
+      fixture: { parameter: '長い' }, script: new URL(import.meta.url) });
     const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
     const download = await saving; expect(download.suggestedFilename()).toMatch(/\.pcad$/u);
     const savedPath = await download.path(); if (savedPath === null) throw new Error('部品を保存できませんでした');
@@ -370,7 +374,8 @@ test.describe('P8 図面の実操作', () => {
     await rows.nth(1).click();
     await expect.poll(async () => Math.abs(Number(await tolerance.getByLabel(drawingMessage('drawing.dimension.offset'), { exact: true }).inputValue()) - Number(original)))
       .toBeGreaterThanOrEqual(8);
-    await page.screenshot({ path: testInfo.outputPath('parallel-arranged.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'parallel-arranged', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { step: 'parallel-arranged' }, script: new URL(import.meta.url) });
     await page.locator('.pcad-drawing-sheet').focus();
     for (let index = 0; index < 3; index++) await page.keyboard.press('Control+z');
     await expect(rows).toHaveCount(0);
@@ -382,7 +387,8 @@ test.describe('P8 図面の実操作', () => {
     const progressive = page.locator('.pcad-drawing-svg [data-owner-id="dim-1"]');
     for (const value of ['-20', '0', '30', '70']) await expect(progressive.locator(`[aria-label="${value}"]`)).toHaveCount(1);
     await expectDrawingStroke(progressive.locator('path'));
-    await page.screenshot({ path: testInfo.outputPath('progressive-dimensions.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'progressive-dimensions', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { step: 'progressive' }, script: new URL(import.meta.url) });
     const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
     const saved = await (await saving).path(); if (saved === null) throw new Error('累進保存なし'); const bytes = await readFile(saved);
     await page.reload(); const reopening = page.waitForEvent('filechooser'); await page.getByRole('button', { name: '開く', exact: true }).click();
@@ -451,7 +457,8 @@ test.describe('P8 図面の実操作', () => {
     await expect(coordinate.locator('[aria-label="X: 20±0.1 / Y: 20±0.1"]')).toHaveCount(1);
     await expect(page.locator('.pcad-panel--left').getByRole('button', { name: '1. 弧長 — ⌒12.57', exact: true })).toBeVisible();
     await expect(page.locator('.pcad-panel--left').getByRole('button', { name: '2. 座標寸法 — X: 20±0.1 / Y: 20±0.1', exact: true })).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath('arc-and-coordinate-dimensions.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'arc-and-coordinate-dimensions', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { step: 'arc-coordinate' }, script: new URL(import.meta.url) });
     const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
     const saved = await (await saving).path(); if (saved === null) throw new Error('寸法の保存なし'); const bytes = await readFile(saved);
     await page.reload(); const reopening = page.waitForEvent('filechooser'); await page.getByRole('button', { name: '開く', exact: true }).click();
@@ -493,7 +500,8 @@ test.describe('P8 図面の実操作', () => {
     await page.getByRole('button', { name: '元に戻す', exact: true }).click();
     await expect(table.locator('[aria-label="2"]')).toHaveCount(1, { timeout: KERNEL_TIMEOUT_MS });
     await expect(page.locator('.pcad-drawing-notice')).toHaveCount(0);
-    await page.screenshot({ path: testInfo.outputPath('drawing-hole-table.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'drawing-hole-table', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { step: 'hole-table' }, script: new URL(import.meta.url) });
     await openDrawingProperties(page, 'table');
     await tables.getByLabel('表と部品番号', { exact: true }).selectOption('revision');
     await tables.getByLabel('左からの位置（mm）', { exact: true }).fill('220');
@@ -583,7 +591,8 @@ test.describe('P8 図面の実操作', () => {
     await page.mouse.click(rowBounds.x + rowBounds.width / 2, rowBounds.y + rowBounds.height / 2);
     await expectDrawingStroke(balloon.locator('path[stroke="#2563eb"]'));
     await expectDrawingStroke(page.locator('.pcad-drawing-svg [data-owner-id^="projection:"] path[stroke="#2563eb"]'));
-    await page.screenshot({ path: testInfo.outputPath('drawing-bom-balloon.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'drawing-bom-balloon', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { step: 'bom-balloon' }, script: new URL(import.meta.url) });
     const updating = page.waitForEvent('filechooser');
     await chooseDrawingMenu(page, 'ファイル', '元の部品・組立を取り込み直す');
     await (await updating).setFiles({ name: '2部品.pcada', mimeType: 'application/zip', buffer: Buffer.from(await addThirdBoxAssemblyFile(originalAssembly)) });
@@ -629,7 +638,8 @@ test.describe('P8 図面の実操作', () => {
       const selected = page.locator('.pcad-panel--right dt').filter({ hasText: /^選んでいるもの$/u }).locator('xpath=following-sibling::dd[1]');
       await expect(selected).toHaveText('立体');
     }
-    await page.screenshot({ path: testInfo.outputPath('quad-four-views.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'quad-four-views', dialog: page.locator('.pcad-quad'),
+      fixture: { step: 'quad' }, script: new URL(import.meta.url) });
     const center = { x: box.x + box.width * 0.75, y: box.y + box.height * 0.25 };
     await page.mouse.move(center.x, center.y);
     const stats = () => page.evaluate(() => {
@@ -722,7 +732,8 @@ test.describe('P8 図面の実操作', () => {
     await expect(page.locator('.pcad-drawing-svg [data-owner-id="view-1"]')).toHaveCount(0);
     await page.getByRole('button', { name: 'やり直す', exact: true }).click();
     await expect.poll(() => page.locator('.pcad-drawing-svg [data-owner-id="view-1"] path').count(), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
-    await page.screenshot({ path: testInfo.outputPath('drawing-template-view.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'drawing-template-view', dialog: view,
+      fixture: { step: 'template-view' }, script: new URL(import.meta.url) });
     expect(errors).toEqual([]);
   });
 
@@ -796,7 +807,8 @@ test.describe('P8 図面の実操作', () => {
     const svg = await readFile(path, 'utf8');
     expect(svg).toContain('width="420mm"'); expect(svg).not.toContain('<text'); expect(svg).toContain('20±0.1');
     expect(errors).toEqual([]);
-    await page.screenshot({ path: testInfo.outputPath('drawing-dimensions.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'drawing-dimensions', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { step: 'dimensions' }, script: new URL(import.meta.url) });
     const toolbar = await page.locator('.pcad-toolbar').boundingBox();
     expect(toolbar?.height).toBeLessThanOrEqual(100);
   });
@@ -826,7 +838,9 @@ test.describe('P8 図面の実操作', () => {
     await expect(page.locator('.pcad-drawing-svg [aria-label="Ra 3.2"]')).toHaveCount(0);
     await page.getByRole('button', { name: 'やり直す', exact: true }).click();
     await expect(page.locator('.pcad-drawing-svg [aria-label="Ra 3.2"]')).toHaveCount(1);
-    await page.screenshot({ path: testInfo.outputPath('drawing-surface-finish.png'), fullPage: true });
+    // Undo (line 831/833) closes the annotation form (selection is cleared); capture the drawing sheet, not the form.
+    await captureManualDetail(page, testInfo, { name: 'drawing-surface-finish', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { step: 'surface-finish' }, script: new URL(import.meta.url) });
   });
 });
 
@@ -928,7 +942,8 @@ test.describe('P8 図面の出力と文字注記', () => {
     await expect(noteRow).toHaveCount(1);
     await page.getByRole('button', { name: 'やり直す', exact: true }).click();
     await expect(tableRow).toHaveCount(1);
-    await page.screenshot({ path: testInfo.outputPath('drawing-tree-groups.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'drawing-tree-groups', dialog: tree,
+      fixture: { step: 'tree-groups' }, script: new URL(import.meta.url) });
     expect(errors).toEqual([]);
   });
 
@@ -982,7 +997,8 @@ test.describe('P8 図面の出力と文字注記', () => {
       const paths = element.matches('path') ? [element] : Array.from(element.querySelectorAll('path'));
       return paths.some((path) => getComputedStyle(path).fill === 'rgb(37, 99, 235)');
     })).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath('drawing-layer-settings.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'drawing-layer-settings', dialog: form,
+      fixture: { step: 'layer-settings' }, script: new URL(import.meta.url) });
     expect(errors).toEqual([]);
   });
 
@@ -1006,7 +1022,9 @@ test.describe('P8 図面の出力と文字注記', () => {
     await expect(page.locator('.pcad-drawing-svg [aria-label="検査済み"]')).toHaveCount(1);
     await page.getByRole('button', { name: '元に戻す', exact: true }).click();
     await expect(text).toHaveCount(1);
-    await page.screenshot({ path: testInfo.outputPath('drawing-note.png'), fullPage: true });
+    // Undo (line 1023) closes the annotation form (selection is cleared); capture the drawing sheet, not the form.
+    await captureManualDetail(page, testInfo, { name: 'drawing-note', dialog: page.locator('.pcad-drawing-sheet'),
+      fixture: { step: 'note' }, script: new URL(import.meta.url) });
   });
 
   test('部品へ戻る際の破棄を断ると図面とUndoが残り、同意した時だけ閉じる（R03）', async ({ page }) => {
@@ -1047,8 +1065,10 @@ test.describe('P8 図面の出力と文字注記', () => {
       console.log(`[実測] 図面${format}: ${bytes.length}バイト`);
     }
     await chooseDrawingMenu(page, 'ファイル', '図面を書き出す');
-    await page.getByRole('form', { name: '図面を書き出す', exact: true }).getByLabel('ファイルの種類', { exact: true }).selectOption('pdf');
-    await page.screenshot({ path: testInfo.outputPath('drawing-export-panel.png'), fullPage: true });
+    const exportPanel = page.getByRole('form', { name: '図面を書き出す', exact: true });
+    await exportPanel.getByLabel('ファイルの種類', { exact: true }).selectOption('pdf');
+    await captureManualDetail(page, testInfo, { name: 'drawing-export-panel', dialog: exportPanel,
+      fixture: { format: 'pdf' }, script: new URL(import.meta.url) });
     expect(errors).toEqual([]);
   });
 
@@ -1107,6 +1127,8 @@ test.describe('P8 図面の出力と文字注記', () => {
 
 test('P8 文字の輪郭を作図面へ置き、全ての辺をUndo一回で戻せる', async ({ page }, testInfo) => {
   await page.goto('/');
+  // Manual captures require the registry's standard viewport (this test otherwise runs at the Playwright default 1280x720).
+  await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
   const sketch = page.locator('.pcad-panel--left .pcad-tree__sections > li').filter({ hasText: 'スケッチ' });
   const rows = sketch.locator('.pcad-tree__children > li');
@@ -1125,5 +1147,6 @@ test('P8 文字の輪郭を作図面へ置き、全ての辺をUndo一回で戻�
   const featureCount = await rows.count();
   await page.keyboard.press('Control+z'); await expect(rows).toHaveCount(0);
   await page.keyboard.press('Control+y'); await expect(rows).toHaveCount(featureCount);
-  await page.screenshot({ path: testInfo.outputPath('sketch-text-outlines.png'), fullPage: true });
+  await captureManualDetail(page, testInfo, { name: 'sketch-text-outlines', dialog: sketch,
+    fixture: { text: '8日φ' }, script: new URL(import.meta.url) });
 });

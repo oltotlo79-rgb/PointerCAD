@@ -118,6 +118,32 @@ export async function chooseToolMenuItem(page: Page, menu: string, item: string)
   await button.click();
 }
 
+/**
+ * `window.pcadSetFileGateway` は `PointerCadApp.tsx` の useEffect が登録する(検査専用)。
+ * ページ遷移の直後はまだ登録前のことがあり(rules/06 §10.302と同じ理由: 同じuseEffect内の
+ * `pcadRecomputeStats` でも同様の遅れが起きた)、実際に関数になるまで上限付きで待つ。
+ * 固定秒数のsleepや偽物の関数で代用しない。上限は、同じuseEffect内で数行前に登録される
+ * `pcadRecomputeStats` の待ち(`recompute.ts` の `readRecomputeStats`)と同じ15秒とする
+ * (両者は同期的に連続登録されるため、待つ理由・現れるまでの時間帯は同一とみなせる)。
+ */
+const FILE_GATEWAY_ENTRANCE_TIMEOUT_MS = 15_000;
+
+async function waitForFileGatewayEntrance(page: Page): Promise<void> {
+  try {
+    await page.waitForFunction(
+      () => typeof window.pcadSetFileGateway === 'function',
+      undefined,
+      { timeout: FILE_GATEWAY_ENTRANCE_TIMEOUT_MS },
+    );
+  } catch (error: unknown) {
+    throw new Error(
+      `検査専用の口 window.pcadSetFileGateway が ${String(FILE_GATEWAY_ENTRANCE_TIMEOUT_MS / 1_000)}` +
+        '秒待っても現れませんでした(PointerCadAppのuseEffect登録待ち)。',
+      { cause: error },
+    );
+  }
+}
+
 export async function installAssemblyFileGateway(page: Page, input: {
   readonly documents?: readonly { readonly name: string; readonly bytes: Uint8Array }[];
   readonly parts?: readonly { readonly fileName: string; readonly bytes: Uint8Array }[];
@@ -131,6 +157,7 @@ export async function installAssemblyFileGateway(page: Page, input: {
     fileName: file.fileName,
     bytes: [...file.bytes],
   }));
+  await waitForFileGatewayEntrance(page);
   await page.evaluate(({ documents: queuedDocuments, parts: queuedParts }) => {
     const install = window.pcadSetFileGateway;
     if (install === undefined) throw new Error('検査専用の口 pcadSetFileGateway が見つかりません。');

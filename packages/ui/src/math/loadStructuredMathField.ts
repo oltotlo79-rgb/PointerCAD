@@ -5,7 +5,7 @@ let factory:Promise<()=>StructuredMathField>|null=null;
 export function loadStructuredMathField():Promise<()=>StructuredMathField> {
   if(factory!==null)return factory;
   factory=import('mathlive').then(async ({MathfieldElement})=>{
-    // Compute Engine is owned by the calculation Worker. MathLive remains an editor.
+    // The unused Compute Engine dependency is removed. MathLive remains an editor only.
     MathfieldElement.computeEngine=null;
     // The locally bundled @font-face CSS owns fonts. Null prevents the automatic remote font loader.
     MathfieldElement.fontsDirectory=null;

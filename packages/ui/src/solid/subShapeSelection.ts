@@ -506,6 +506,10 @@ const PRIMITIVE_TOOLS: Readonly<Record<PrimitiveShapeKind, true>> = {
  * 「球を選んでから押してください。」になってしまう。切り替えないことで、
  * **立体で選んでも球面で選んでも同じように点を置ける**(NFR-UX-1)。
  *
+ * **図形の測定値**(GR-30、scratchpad/claude/plans/geomref-plan.md §4(a))も**測ると同じ
+ * 理由**でここへ入る。測れる量は「いま選んでいるものが何か」で決まるので、決め打ちで
+ * 種類を切り替えると押した瞬間に材料の選択が消えてしまう。
+ *
  * **この表もここ 1 か所だけに置く**(`selectionKindForTool` と同じ理由)。
  */
 export function keepsSelectionKind(tool: NumericInputToolId): boolean {
@@ -513,6 +517,7 @@ export function keepsSelectionKind(tool: NumericInputToolId): boolean {
     tool === 'ruled' ||
     tool === 'loft' ||
     tool === 'measure' ||
+    tool === 'mathGeometry' ||
     tool === 'cut' ||
     tool === 'shell' ||
     tool === 'sphereGridPoint' ||

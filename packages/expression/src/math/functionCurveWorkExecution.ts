@@ -1,6 +1,6 @@
 /** Synchronous math-Worker handler. The client also terminates the Worker on cancellation/deadline. */
 import { MathInputProblem } from './mathInputContract.js';
-import type { MathExecutionBackend } from './mathWorkExecution.js';
+import { geometryCalculationClock, type MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeFunctionCurveWorkEnvelope, FUNCTION_CURVE_LIMITS } from './functionCurveWorkRequest.js';
 import { createFunctionCurveEvaluator } from './functionCurveEvaluation.js';
 import { sampleFunctionCurve, type FunctionCurveSamplingResult } from './adaptiveFunctionCurve.js';
@@ -16,9 +16,9 @@ export function executeFunctionCurveWorkRequest(value: unknown, backend: MathExe
   const { request, serial } = decodeFunctionCurveWorkEnvelope(value);
   const reply = (result: FunctionCurveWorkResult): FunctionCurveWorkReply => ({ kind: 'function-curve-result', serial, identity: request.identity, result });
   const started = performance.now();
-  const shouldStop = () => performance.now() - started >= 2000 ? 'deadline' as const : undefined;
+  const clock = geometryCalculationClock(backend, started), { shouldStop } = clock;
   try {
-    const evaluator = createFunctionCurveEvaluator(request.outputs, request.independent, request.coefficients, { backend, shouldStop });
+    const evaluator = createFunctionCurveEvaluator(request.outputs, request.independent, request.coefficients, { backend: clock.backend, shouldStop });
     const sampled = sampleFunctionCurve(evaluator, { ...request, ...FUNCTION_CURVE_LIMITS, shouldStop });
     const bezier = sampled.status === 'ready' ? exactFunctionCurveBezier(request, () => shouldStop() !== undefined) : null;
     return reply(bezier === null ? sampled : { ...sampled, bezier });

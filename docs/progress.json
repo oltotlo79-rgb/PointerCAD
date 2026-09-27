@@ -3,7 +3,7 @@
   "totalTasks": 580,
   "futureEstimateTasks": 115,
   "completedBeforeTrackedPhases": 305,
-  "reportedCompleted": 533,
+  "reportedCompleted": 543,
   "phases": [
     {
       "id": "ADD",
@@ -54,7 +54,16 @@
         "ADD-13",
         "ADD-14",
         "ADD-15",
-        "ADD-16"
+        "ADD-16",
+        "ADD-17",
+        "ADD-18",
+        "ADD-19",
+        "ADD-20",
+        "ADD-21",
+        "ADD-22",
+        "ADD-24",
+        "ADD-25",
+        "ADD-26"
       ]
     },
     {
@@ -551,29 +560,52 @@
         "P12-14",
         "P12-15"
       ]
+    },
+    {
+      "id": "P13",
+      "plannedTaskCount": 20,
+      "plannedTaskIds": [
+        "P13-1",
+        "P13-2",
+        "P13-3",
+        "P13-4",
+        "P13-5",
+        "P13-6",
+        "P13-7",
+        "P13-8",
+        "P13-9",
+        "P13-10",
+        "P13-11",
+        "P13-12",
+        "P13-13",
+        "P13-14",
+        "P13-15",
+        "P13-16",
+        "P13-17",
+        "P13-18",
+        "P13-19",
+        "P13-20"
+      ],
+      "completedTaskIds": [
+        "P13-1"
+      ]
     }
   ],
   "pendingConfirmation": {
     "status": "local-candidate-awaiting-full-check-and-same-commit-ci",
-    "confirmedCompleted": 518,
-    "candidateCompleted": 533,
+    "confirmedCompleted": 533,
+    "candidateCompleted": 543,
     "taskIds": [
-      "P12-1",
-      "P12-2",
-      "P12-3",
-      "P12-4",
-      "P12-5",
-      "P12-6",
-      "P12-7",
-      "P12-8",
-      "P12-9",
-      "P12-10",
-      "P12-11",
-      "P12-12",
-      "P12-13",
-      "P12-14",
-      "P12-15"
-    ],
-    "review": "docs/reviews/2026-09-16-P12-1-15.md"
+      "ADD-17",
+      "ADD-18",
+      "ADD-19",
+      "ADD-20",
+      "ADD-21",
+      "ADD-22",
+      "ADD-24",
+      "ADD-25",
+      "ADD-26",
+      "P13-1"
+    ]
   }
 }

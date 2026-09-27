@@ -1,5 +1,5 @@
 import { MathInputProblem } from './mathInputContract.js';
-import type { MathExecutionBackend } from './mathWorkExecution.js';
+import { geometryCalculationClock, type MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeFunctionImplicitWorkEnvelope } from './functionImplicitWorkRequest.js';
 import { createFunctionImplicitEvaluator } from './functionImplicitEvaluation.js';
 import { buildImplicitGrid } from './implicitGrid.js';
@@ -8,12 +8,12 @@ import type { FunctionImplicitWorkReply, FunctionImplicitWorkResult } from './fu
 import { tryImplicitPrimitive } from './tryImplicitPrimitive.js';
 export function executeFunctionImplicitWorkRequest(value:unknown,backend:MathExecutionBackend):FunctionImplicitWorkReply {
   const {request,serial}=decodeFunctionImplicitWorkEnvelope(value),started=performance.now();
-  const shouldStop=()=>performance.now()-started>=2000 ? 'deadline' as const : undefined;
+  const clock=geometryCalculationClock(backend,started),{shouldStop}=clock;
   const reply=(result:FunctionImplicitWorkResult):FunctionImplicitWorkReply=>({kind:'function-implicit-surface-result',serial,identity:request.identity,result});
   try{
-    const primitive=tryImplicitPrimitive(request,backend,()=>shouldStop()!==undefined);
+    const primitive=tryImplicitPrimitive(request,clock.backend,()=>shouldStop()!==undefined);
     if(primitive!==null) return reply({status:'analytic',...primitive});
-    const evaluator=createFunctionImplicitEvaluator(request.expression,request.coefficients,{backend,shouldStop});
+    const evaluator=createFunctionImplicitEvaluator(request.expression,request.coefficients,{backend:clock.backend,shouldStop});
     const grid=buildImplicitGrid(evaluator,{...request,...request.budget,shouldStop});
     const stats={gridSamples:grid.samples,cells:grid.visited,vertices:0,triangles:0};
     if(grid.status==='stopped') return reply({status:'stopped',reason:grid.reason,stats});

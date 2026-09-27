@@ -5,10 +5,11 @@
  * 分け方の決定は P6 タスク52(一覧ごとに 1 ファイル)。
  */
 
-import type { AppearanceToolId, MeasureToolId } from '../../sketch/numericInput.js';
+import type { AppearanceToolId, MathGeometryToolId, MeasureToolId } from '../../sketch/numericInput.js';
 import type { ProjectionMode } from '../../store/viewSlice.js';
 import {
   AppearanceIcon,
+  MathGeometryIcon,
   MeasureIcon,
   OrthographicIcon,
   PerspectiveIcon,
@@ -45,7 +46,7 @@ export const PROJECTION_MENU_ITEMS: readonly ToolMenuItem<ProjectionMode>[] = [
  * 外観(FR-1106〜1110)と測る(FR-1101、FR-1102)は、どちらも**立体を作らず**
  * 「選んでいるものについて何かをする」道具なので、同じ一覧に入る。
  */
-export type LookToolId = AppearanceToolId | MeasureToolId | CanvasActionId | PrintCheckActionId | 'strength';
+export type LookToolId = AppearanceToolId | MeasureToolId | MathGeometryToolId | CanvasActionId | PrintCheckActionId | 'strength';
 
 /**
  * 下絵(FR-332、P6 タスク39)の入口の id。
@@ -90,6 +91,19 @@ export const LOOK_MENU_ITEMS: readonly ToolMenuItem<LookToolId>[] = [
     labelKey: 'toolbar.measure.title',
     tooltipKey: 'toolbar.measure.tooltip',
     Icon: MeasureIcon,
+  },
+  /*
+    図形の測定値(GR-30。Q1=A4「ツールバーの新しい道具」、
+    scratchpad/claude/plans/geomref-plan.md §4(a))。「測る」の次に置く。選んだ点・辺・面・
+    立体の測定値に名前を付けて文書に保存し、係数の式から使える点が「測る」(その場で見る
+    だけで保存しない)との違い。この 1 行を足してもツールバーの幅は 1 画素も増えない
+    (`segmentedWidthPixels` は溝に並ぶボタンの個数しか見ない。§0.a-0.80)。
+  */
+  {
+    id: 'mathGeometry',
+    labelKey: 'toolbar.look.mathGeometry',
+    tooltipKey: 'toolbar.look.mathGeometryTooltip',
+    Icon: MathGeometryIcon,
   },
   {
     id: 'strength',

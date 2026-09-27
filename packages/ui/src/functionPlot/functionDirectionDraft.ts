@@ -3,7 +3,7 @@ import {expressionValueFromNumber as number,mathScalarExpression,type Expression
 import {nextFeatureId,nextFeatureName,replaceSketch,FREE_WORK_PLANE_ID,type PartDocument,type FunctionPointReference,type SketchLineFeature} from '@pointercad/model';
 import {decodePointContinuationRequest,savePointCalculationInput,type FunctionPointDirectionKind,type PointCalculationSavedInput} from '@pointercad/expression/math/contracts';
 import type {MathWorkerClient,PointCalculationWorkerClient,PointContinuationWorkerClient} from '@pointercad/expression/math/client';
-import {prepareDocumentMathEnvironment} from '../math/prepareDocumentMathEditor.js';
+import {prepareDocumentMathEnvironment,waitForMathEditorGeometry} from '../math/prepareDocumentMathEditor.js';
 import {searchFunctionPoints,type FunctionPointFields} from './functionPointDraft.js';
 import type {FunctionScalarDraft} from './functionPlotDraft.js';
 import {t} from '../i18n/t.js';
@@ -36,7 +36,12 @@ export async function evaluateFunctionDirection(document:PartDocument,documentVe
   if(found.status==='failed')throw new Error(found.message);
   if(!found.search.exhaustive||found.search.unresolved!==0)throw new Error(t('functionPoint.completeRequired'));
   const identity={documentId:document.id,documentVersion,editorId:'function-direction',inputRevision:0};
-  const environment=await prepareDocumentMathEnvironment(found.search.document,{identity,client,signal,isCurrent:current});
+  // GR-18c: the offset/length fields below can reference a coefficient the same way any dimension field
+  // does, so this needs the document's current math-geometry outcomes exactly as searchFunctionPoints's own
+  // (already-fixed) internal evaluation does.
+  const geometry=await waitForMathEditorGeometry(document,signal,current,()=>undefined);
+  if(!current())return null;
+  const environment=await prepareDocumentMathEnvironment(found.search.document,{identity,client,signal,isCurrent:current,geometry});
   if(!current())return null;
   let revision=0;
   const scalar=async(input:FunctionScalarDraft):Promise<ExpressionValue|null>=>{
@@ -58,8 +63,10 @@ export async function evaluateFunctionDirection(document:PartDocument,documentVe
     current:savePointCalculationInput(found.search.request),anchor:reference.choice.location,direction});
   const completion=await continuations.evaluate(request,5_000,signal);
   if(!current()||completion.status==='cancelled')return null;
-  if(completion.status!=='result')throw new Error(t('math.workerFailed'));
-  if(completion.result.status!=='ready')throw new Error(completion.result.status==='invalid'?completion.result.message:t('functionPoint.incomplete'));
+  if(completion.status!=='result')throw new Error(completion.status==='deadline'?t('functionPoint.deadline'):t('math.workerFailed'));
+  // A stop by the time limit is not a wrong range or accuracy: calculating again may finish.
+  if(completion.result.status!=='ready')throw new Error(completion.result.status==='invalid'?completion.result.message
+    :completion.result.status==='stopped'&&completion.result.reason==='deadline'?t('functionPoint.deadline'):t('functionPoint.incomplete'));
   const endpoint=completion.result.endpoint;if(!endpoint)throw new Error(t('functionDirection.unresolved'));
   const prepared=environment.prepared,owner=prepared.sketches.find(item=>item.id===sketch.id);if(!owner)throw new Error(t('functionDirection.choosePoint'));
   const previous=lineId===undefined?undefined:owner.features.find(item=>item.id===lineId);

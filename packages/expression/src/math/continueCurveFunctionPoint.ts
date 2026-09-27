@@ -18,10 +18,17 @@ const contains=(outer:MathInterval,inner:MathInterval)=>outer.lower<=inner.lower
 export function continueCurveFunctionPoint(previous:unknown,current:unknown,anchor:CurvePointCandidate['location'],
   context:Omit<PreparedScalarMathContext,'angleUnit'>):CurvePointContinuation {
   const before=decodeCurvePointWorkRequest(previous),after=decodeCurvePointWorkRequest(current);
+  const formulaChanged=before.outputs.some((item,index)=>!sameMathMeaning(item.expression,after.outputs[index].expression));
+  // A supplied independent coordinate names a unique location, even if dependent
+  // formulas change. Still prove both saved/current candidates, all additional
+  // constraints, domains and ranges below. An isolated root has no such identity.
+  const directLocation=anchor.direct && before.independent!=='T'
+    && before.known.some(item=>item.axis===before.independent)
+    && after.known.some(item=>item.axis===after.independent);
   if(before.independent!==after.independent || before.known.length!==after.known.length
     || before.known.some(item=>!after.known.some(next=>next.axis===item.axis))
-    || before.outputs.some((item,index)=>item.angleUnit!==after.outputs[index].angleUnit
-      || !sameMathMeaning(item.expression,after.outputs[index].expression))) return unresolved('formula-changed');
+    || before.outputs.some((item,index)=>item.angleUnit!==after.outputs[index].angleUnit)
+    || (formulaChanged && !directLocation)) return unresolved('formula-changed');
   const interval=anchor.interval;
   if(anchor.kind!=='curve' || anchor.independent!==before.independent || typeof anchor.direct!=='boolean'
     || !Number.isFinite(interval.lower) || !Number.isFinite(interval.upper) || interval.lower>interval.upper

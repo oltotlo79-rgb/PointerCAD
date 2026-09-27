@@ -31,9 +31,14 @@ class IndependentCheckoutTests(unittest.TestCase):
         for app in ['web', 'desktop']:
             self.write(f'apps/{app}/package.json', json.dumps({
                 'name': f'fixture-{app}', 'version': '1.0.0', 'dependencies': {'fixture-runtime': '1.0.0'}}))
-        target = self.checkout / 'scripts/vite/runtimeDependencyInventory.mjs'
-        target.parent.mkdir(parents=True)
-        shutil.copyfile(ROOT / 'scripts/vite/runtimeDependencyInventory.mjs', target)
+        # Exercise the real inventory, including its dependency selection and
+        # the workspace/lock declarations that selection validates.
+        for relative in ['scripts/vite/runtimeDependencyInventory.mjs',
+                         'scripts/vite/runtimeDependencySelection.mjs',
+                         'pnpm-workspace.yaml', 'pnpm-lock.yaml']:
+            target = self.checkout / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, target)
         self.write('node_modules/fixture-runtime/package.json',
                    '{"name":"fixture-runtime","version":"1.0.0","license":"MIT"}')
         hook = self.write('scripts/hooks/pre-push', '#!/bin/sh\nprintf checked > hook-ran\n')
@@ -82,8 +87,11 @@ class IndependentCheckoutTests(unittest.TestCase):
     def test_missing_and_foreign_dependencies_are_rejected(self):
         metadata = self.checkout / 'node_modules/fixture-runtime/package.json'
         metadata.unlink()
-        with self.assertRaises(subprocess.CalledProcessError):
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
             inspect(PROJECT, self.checkout, self.commit)
+        # A broken helper import must not masquerade as the expected rejection
+        # of an absent application dependency.
+        self.assertIn(b"Cannot find module 'fixture-runtime'", failure.exception.output)
         metadata.parent.rmdir()
         link = metadata.parent
         target = self.area / 'foreign-package'

@@ -1,3 +1,4 @@
+import { functionPreparationProgress } from './functionPreparationProgress.js';
 import { BoundedCalculationClient,type CalculationWorkerPort } from './boundedCalculationClient.js';
 import { createFunctionImplicitCurveWorkEnvelope,decodeFunctionImplicitCurveWorkRequest,type FunctionImplicitCurveWorkRequest } from './functionImplicitCurveWorkRequest.js';
 import { decodeFunctionImplicitCurveWorkReply } from './functionImplicitCurveWorkReply.js';
@@ -5,6 +6,6 @@ import type { FunctionImplicitCurveWorkResult } from './functionImplicitCurvePro
 
 export class FunctionImplicitCurveWorkerClient extends BoundedCalculationClient<FunctionImplicitCurveWorkRequest,FunctionImplicitCurveWorkResult> {
   constructor(options:{readonly createWorker:()=>CalculationWorkerPort}){
-    super({...options,decodeRequest:decodeFunctionImplicitCurveWorkRequest,createEnvelope:createFunctionImplicitCurveWorkEnvelope,decodeReply:decodeFunctionImplicitCurveWorkReply});
+    super({ progress: functionPreparationProgress(),...options,decodeRequest:decodeFunctionImplicitCurveWorkRequest,createEnvelope:createFunctionImplicitCurveWorkEnvelope,decodeReply:decodeFunctionImplicitCurveWorkReply});
   }
 }

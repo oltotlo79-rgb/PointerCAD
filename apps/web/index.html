@@ -11,10 +11,27 @@
         height: 100%;
         margin: 0;
       }
+      [data-startup-shell] {
+        box-sizing: border-box;
+        max-width: 42rem;
+        padding: 2rem;
+        margin: 0 auto;
+        font: 1rem/1.6 system-ui, sans-serif;
+        color: #202020;
+        background: #fff;
+      }
+      [data-startup-shell] a { color: #124db3; }
     </style>
   </head>
   <body>
+    <main data-startup-shell>
+      <h1>PointerCAD</h1>
+      <p data-startup-loading role="status">{{startup:loading}}</p>
+      <p data-startup-failure hidden>{{startup:failed}}</p>
+      <p>{{startup:hint}}</p>
+      <a href="">{{startup:retry}}</a>
+    </main>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/bootstrap.ts"></script>
   </body>
 </html>

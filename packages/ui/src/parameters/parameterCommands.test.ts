@@ -1,6 +1,7 @@
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { createEmptyPartDocument, type Parameter, type PartDocument, type SolidFeature } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
+import { t } from '../i18n/t.js';
 
 import {
   commitAddParameter,
@@ -106,6 +107,45 @@ describe('parameterDraftFor', () => {
 
   it('表が空なら「パラメータ1」', () => {
     expect(parameterDraftFor(documentWith([])).name).toBe('パラメータ1');
+  });
+});
+
+describe('図形の測定値と係数の共通の名前空間（GR-31）', () => {
+  function measuredDocument(): PartDocument {
+    const document = documentWith([param('板厚', '3')]);
+    return { ...document, mathGeometry: [{ id: 'g1', documentId: document.id, name: '長さ1',
+      quantity: { kind: 'length', curve: { kind: 'sketch-curve', sketchId: 'sketch-1', featureId: 'line-1' } },
+      tolerance: { linearMm: 1e-6, angularRadians: 1e-6 } }] };
+  }
+
+  it('係数の追加で測定値と同じ名前を断り、文書を変更しない', () => {
+    const document = measuredDocument(), before = JSON.stringify(document);
+    expect(commitAddParameter(document, draft('長さ1', '2'))).toEqual({ ok: false,
+      reason: 'duplicateName', message: t('parameter.error.duplicateName') });
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
+  it('係数の改名で測定値と同じ名前を断り、文書を変更しない', () => {
+    const document = measuredDocument(), before = JSON.stringify(document);
+    expect(commitRenameParameter(document, '板厚', '長さ1')).toEqual({ ok: false,
+      reason: 'duplicateRename', message: t('parameter.error.duplicateName') });
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
+  it('数式を持つ構成があるときも重複の理由を優先する', () => {
+    const document = { ...measuredDocument(), configurations: [{ id: 'c1', name: '構成1', values: { 板厚: '3' }, mathDefinitions: {} }] };
+    expect(commitRenameParameter(document, '板厚', '長さ1')).toEqual({ ok: false,
+      reason: 'duplicateRename', message: t('parameter.error.duplicateName') });
+  });
+
+  it('異なる名前なら追加と改名を許し、測定の定義は保つ', () => {
+    const document = measuredDocument();
+    const added = commitAddParameter(document, draft('長さ1の値', '2'));
+    ok(added);
+    const renamed = commitRenameParameter(added.document, '長さ1の値', '長さ1の係数');
+    ok(renamed);
+    expect(renamed.document.parameters.map(parameter => parameter.name)).toEqual(['板厚', '長さ1の係数']);
+    expect(renamed.document.mathGeometry).toBe(document.mathGeometry);
   });
 });
 

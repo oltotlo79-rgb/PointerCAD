@@ -5,6 +5,27 @@ const names = { axes: new Set<never>(), parameters: new Set<never>(), declared: 
   coefficients: [{ role: 'coefficient' as const, id: 'scalar', label: 'X' }] };
 const options = { names, operations: CANDIDATE_MATH_OPERATIONS, allowRenderedProducts: true };
 describe('×と·は演算前の型と形から意味を決める', () => {
+  it('Legendre多項式の数の引数だけを倍率付きの表示へ接続する', () => {
+    for (const token of ['PcadTimesToken', 'PcadDotToken']) {
+      expect(decodeMathJson([token, ['Legendre', 4, 0], 2], options)).toMatchObject({ operation: 'multiply' });
+      expect(() => decodeMathJson([token, ['Legendre', 0, ['List', 1, 2]], 2], options)).toThrow();
+    }
+  });
+  it('展開全体は数にせず、明示的に選んだ係数だけを数の積へ接続する', () => {
+    const expansion = ['Taylor', ['Function', ['Power', 'x', 3], 'x'], 2, 4];
+    for (const token of ['PcadTimesToken', 'PcadDotToken']) {
+      expect(decodeMathJson([token, ['SeriesCoefficient', expansion, 1], 2], options))
+        .toMatchObject({ operation: 'multiply' });
+      expect(() => decodeMathJson([token, expansion, 2], options)).toThrow();
+    }
+  });
+  it('指定位置の微分の変数だけを数とし、一般の関数の引数は推測しない', () => {
+    const fn = ['Function', ['PcadTimesToken', 't', 2], 't'];
+    expect(() => decodeMathJson(fn, options)).toThrow('掛け算／外積');
+    expect(decodeMathJson(['DerivativeAt', fn, 3, 1], options)).toMatchObject({
+      operation: 'differentiate-at', operands: [{ body: { operation: 'multiply' } }, { decimal: '3' }, { decimal: '1' }],
+    });
+  });
   it.each(['PcadDotToken', 'PcadTimesToken'])('%sの数同士は掛け算になる', token => {
     expect(decodeMathJson([token, 3, 4], options)).toMatchObject({ kind: 'operation', operation: 'multiply' });
   });

@@ -430,6 +430,93 @@ function pcadWithDocumentText(text: string): Uint8Array {
   );
 }
 
+/**
+ * ZIP の CRC-32(検査専用の最小実装。`fflate` は `@pointercad/ui` の依存に無く
+ * 〔依存の追加は禁止〕、`packages/ui/src/file/attachAutoSave.test.ts` の `crc32` と
+ * 同じ手書きの実装をここでも使う)。
+ */
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ ((crc & 1) === 0 ? 0 : 0xedb88320);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * 単一エントリの無圧縮(method 0) ZIP を手で組み立てる(検査専用。
+ * `attachAutoSave.test.ts` の `storedZip` と同じ手法)。`declaredExpanded` を省略すると
+ * 実際の長さと同じ(正常な ZIP)。中身の CRC は実際の `content` から正しく計算するので、
+ * `declaredExpanded` だけを実際と違う値にすると「虚偽サイズ」「圧縮爆弾」を作れる。
+ */
+function storedZip(name: string, content: Uint8Array, declaredExpanded = content.length): Uint8Array {
+  const nameBytes = new TextEncoder().encode(name);
+  const localSize = 30 + nameBytes.length + content.length;
+  const centralSize = 46 + nameBytes.length;
+  const bytes = new Uint8Array(localSize + centralSize + 22);
+  const view = new DataView(bytes.buffer);
+  const checksum = crc32(content);
+
+  view.setUint32(0, 0x04034b50, true);
+  view.setUint16(4, 20, true);
+  view.setUint16(6, 0x0800, true);
+  view.setUint16(8, 0, true);
+  view.setUint32(14, checksum, true);
+  view.setUint32(18, content.length, true);
+  view.setUint32(22, declaredExpanded, true);
+  view.setUint16(26, nameBytes.length, true);
+  bytes.set(nameBytes, 30);
+  bytes.set(content, 30 + nameBytes.length);
+
+  const central = localSize;
+  view.setUint32(central, 0x02014b50, true);
+  view.setUint16(central + 4, 20, true);
+  view.setUint16(central + 6, 20, true);
+  view.setUint16(central + 8, 0x0800, true);
+  view.setUint16(central + 10, 0, true);
+  view.setUint32(central + 16, checksum, true);
+  view.setUint32(central + 20, content.length, true);
+  view.setUint32(central + 24, declaredExpanded, true);
+  view.setUint16(central + 28, nameBytes.length, true);
+  bytes.set(nameBytes, central + 46);
+
+  const end = central + centralSize;
+  view.setUint32(end, 0x06054b50, true);
+  view.setUint16(end + 8, 1, true);
+  view.setUint16(end + 10, 1, true);
+  view.setUint32(end + 12, centralSize, true);
+  view.setUint32(end + 16, central, true);
+  return bytes;
+}
+
+/**
+ * 圧縮爆弾: 宣言した展開後サイズ(1バイト)より、実際に入っている中身がずっと大きい
+ * document.json(P12-26。要件 NFR-RE-1・NFR-SE-1)。宣言だけを信じて小さな入れ物へ
+ * 実物を流し込むと壊れる、という向きの偽装。もっと大きな規模(512MiB 境界)の確認は
+ * `packages/io/src/pcad/readArchiveAllocation.test.ts` 側で済んでいるので、ここでは
+ * 確保前に安全に断られることと、今の文書が変わらないことだけを確かめる。
+ */
+function zipBombPcad(): Uint8Array {
+  return storedZip('document.json', new Uint8Array(4096).fill(48), 1);
+}
+
+/** 虚偽サイズ: 展開後の上限(512MiB、`packages/io/src/limits.ts`)を上回る値を宣言した document.json。 */
+function forgedSizePcad(): Uint8Array {
+  return storedZip('document.json', new TextEncoder().encode('{}'), 600 * 1024 * 1024);
+}
+
+/** CRC不一致: 宣言サイズは正しいまま、中身だけが壊れている document.json。 */
+function crcMismatchPcad(): Uint8Array {
+  const name = 'document.json';
+  const bytes = storedZip(name, new TextEncoder().encode('{"length":20}'));
+  const dataStart = 30 + new TextEncoder().encode(name).length;
+  bytes[dataStart] = (bytes[dataStart] + 1) & 0xff; // 中身だけ変え、CRC欄は変えない
+  return bytes;
+}
+
 beforeEach(() => {
   useAppStore.setState(createInitialDocumentState());
 });
@@ -759,6 +846,25 @@ describe('開く(FR-806、NFR-RE-1)', () => {
     await openPart(createFakeDeps(true).deps);
 
     const state = useAppStore.getState();
+    expect(state.document).toBe(before);
+    expect(state.fileName).toBeNull();
+    expect(state.fileMessage).toEqual({ key: 'file.error.corrupted', failed: true });
+  });
+
+  it.each([
+    ['圧縮爆弾(宣言よりずっと大きく展開されるdocument.json)', zipBombPcad] as const,
+    ['虚偽サイズ(展開後の上限を超える値を宣言したdocument.json)', forgedSizePcad] as const,
+    ['CRC不一致(宣言サイズは正しいが中身が壊れたdocument.json)', crcMismatchPcad] as const,
+  ])('%s では理由を帯へ出し、今の文書は変えない(P12-26)', async (_label, makeBytes) => {
+    const fake = createFakeGateway({ openBytes: makeBytes() });
+    useFake(fake);
+    const before = partWithPoint();
+    useAppStore.getState().applyDocument(before);
+
+    await openPart(createFakeDeps(true).deps);
+
+    const state = useAppStore.getState();
+    // 今の文書は変えない(NFR-RE-1)。
     expect(state.document).toBe(before);
     expect(state.fileName).toBeNull();
     expect(state.fileMessage).toEqual({ key: 'file.error.corrupted', failed: true });

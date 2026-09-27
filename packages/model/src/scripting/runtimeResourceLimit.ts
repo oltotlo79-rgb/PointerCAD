@@ -1,4 +1,4 @@
-import type { QuickJS } from 'quickjs-wasi';
+import type { NativeScriptVm } from './nativeScriptVm.js';
 import { scriptFailure } from './runtimeErrors.js';
 import type { ScriptFailure } from './scriptTypes.js';
 import { locateScriptError } from './scriptLocation.js';
@@ -17,7 +17,7 @@ function hasNativeLimitExport(value: unknown): value is NativeLimitExport {
     && 'pointercad_resource_file_byte' in value && typeof value.pointercad_resource_file_byte === 'function';
 }
 /** One isolated VM per transaction. Fail closed if the unpatched npm binary is supplied. */
-export function nativeResourceLimit(vm: QuickJS, sources: ReadonlyMap<string, string>): () => ScriptFailure | null {
+export function nativeResourceLimit(vm: NativeScriptVm, sources: ReadonlyMap<string, string>): () => ScriptFailure | null {
   const native: unknown = vm._getExports();
   if (!hasNativeLimitExport(native)) throw new Error('必要な資源制限付き実行器がありません。');
   return () => {

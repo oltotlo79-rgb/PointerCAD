@@ -3,64 +3,6 @@
   "scope": "Declared production dependencies; additional binaries and fonts have their own notices.",
   "packages": [
     {
-      "name": "@arnog/colors",
-      "version": "0.5.0",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "https://github.com/arnog/colors"
-      },
-      "status": "unresolved",
-      "notices": [],
-      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
-    },
-    {
-      "name": "@arnog/colors",
-      "version": "0.7.0",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "https://github.com/arnog/colors"
-      },
-      "status": "unresolved",
-      "notices": [],
-      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
-    },
-    {
-      "name": "@cortex-js/compute-engine",
-      "version": "0.128.6",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "https://github.com/cortex-js/compute-engine.git"
-      },
-      "status": "verified",
-      "notices": [
-        {
-          "file": "runtime-cortex-js-compute-engine-0.128.6-license.txt",
-          "installedFile": "LICENSE",
-          "sha256": "f9270498fcb583f1a8aa4664e1986910d005303ff9c5cbab432bb4d1f292f225"
-        }
-      ]
-    },
-    {
-      "name": "@cortex-js/compute-engine",
-      "version": "0.58.0",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "https://github.com/cortex-js/compute-engine.git"
-      },
-      "status": "verified",
-      "notices": [
-        {
-          "file": "runtime-cortex-js-compute-engine-0.58.0-license.txt",
-          "installedFile": "LICENSE",
-          "sha256": "f9270498fcb583f1a8aa4664e1986910d005303ff9c5cbab432bb4d1f292f225"
-        }
-      ]
-    },
-    {
       "name": "comlink",
       "version": "4.4.2",
       "license": "Apache-2.0",
@@ -74,23 +16,6 @@
           "file": "runtime-comlink-4.4.2-license.txt",
           "installedFile": "LICENSE",
           "sha256": "bcf29b4fd3ec2cb5f9d40a0866da446f6da62170d2ccedf4aeca9cf9406dd20c"
-        }
-      ]
-    },
-    {
-      "name": "complex-esm",
-      "version": "2.1.1-esm1",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "git://github.com/holgerengels/Complex.js.git"
-      },
-      "status": "verified",
-      "notices": [
-        {
-          "file": "runtime-complex-esm-2.1.1-esm1-license.txt",
-          "installedFile": "LICENSE",
-          "sha256": "5bce81708ac83821fc48be1e97d89a5c8e733632ddb375d2c7101fb60dbfe6b2"
         }
       ]
     },
@@ -172,18 +97,6 @@
           "sha256": "a5b87c9bc191e7f9c06b07bd7cbbed3ed846dfdb50e859484b2c245aa1ab2e61"
         }
       ]
-    },
-    {
-      "name": "quickjs-wasi",
-      "version": "3.6.0",
-      "license": "MIT",
-      "repository": {
-        "type": "git",
-        "url": "git://github.com/vercel-labs/quickjs-wasi.git"
-      },
-      "status": "unresolved",
-      "notices": [],
-      "reason": "配布元のMIT宣言は確認しましたが、著作権表示と許諾本文の正式な取得先を確認中です。"
     },
     {
       "name": "react",
@@ -272,6 +185,19 @@
           "sha256": "c1e6e266563517467b1bf874817d23e426f3149252bd7d42758cd697514b8417"
         }
       ]
+    }
+  ],
+  "additionalNotices": [
+    {
+      "appliesTo": "opencascade.js",
+      "reason": "Open CASCADE Technology(OCCT)自身がLGPL-2.1本文に追加する例外条項(version 1.0)。静的に組み込んだ利用先(本製品を含む)へ、著作権表示以外の追加義務を及ぼさないことを明示する。opencascade.jsのnpmパッケージにはこの原文が同梱されていないため、OCCT本家から個別に取得して記録する(P13-6b)。",
+      "file": "runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt",
+      "sha256": "04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b",
+      "source": "https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/47d9074abb0e4d98cde41c8648a98d3bc2af240e/OCCT_LGPL_EXCEPTION.txt",
+      "sourceCommit": "47d9074abb0e4d98cde41c8648a98d3bc2af240e",
+      "retrievedOn": "2026-09-27",
+      "status": "wired",
+      "note": "P13-6cで配線済み: collectRuntimeNotices(scripts/vite/runtimeNotices.mjs)がこの原文をlicenses/runtime/配下の配布資産へ追加し、SBOM(scripts/release/sbom.mjs)がopencascade.js部品のpointercad:distributedFile属性としてこのfile/sha256を記録する。検査はapps/desktop/src/main/runtimeNotices.test.tsとapps/desktop/src/main/sbom.test.ts。"
     }
   ]
 }

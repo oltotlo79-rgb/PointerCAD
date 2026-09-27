@@ -96,6 +96,17 @@ const propertyPanelImportGuard = {
   message: '外観・測定・入力単位の担当モジュールから大きなプロパティパネルを参照し直さないでください（レビューR14/F11）。',
 };
 
+/**
+ * math-field(MathLive の構造入力の欄)への直接の .press()/.focus() を拒否する。MathLive
+ * 0.110.0は焦点が入ってから約60msの間に焦点が外へ移ると欄へ戻すため、この間にキーを送ると
+ * 検査が不安定になる(rules/06 §10.329)。mathEditorReady.tsのfocusFieldはこの処理の
+ * 終わりを待ってから焦点を確定するので、新しい画面検査はそちらを使う。
+ */
+const mathFieldDirectCallGuard = {
+  selector: "CallExpression[callee.property.name=/^(press|focus)$/][callee.object.callee.property.name='locator'][callee.object.arguments.0.value='math-field']",
+  message: 'math-fieldへの直接の.press()/.focus()はMathLiveの焦点処理と競合します（rules/06 §10.329）。mathEditorReady.tsのfocusFieldと画面から読んだ値を使ってください。',
+};
+
 const e2eSyntaxGuards = [{
         selector: 'CallExpression[callee.property.name="toBeVisible"] CallExpression[callee.property.name="locator"] > Literal.arguments[value=/(^| )path$/]',
         message: 'SVGの線は幅か高さが0でも描かれます。pathの面積をtoBeVisibleで判定せずexpectDrawingStrokeで実線長・線幅・表示状態を確認してください。',
@@ -137,6 +148,27 @@ export default tseslint.config(
       }, {
         selector: "CallExpression[callee.callee.object.name='it'][callee.callee.property.name='each'] > ArrowFunctionExpression.arguments ForOfStatement:has(CallExpression[callee.name=/^(recomputeSheetFlat|makeSheetMetalBody)$/])",
         message: '固定面・角度等の独立したOCCTケースはit.eachの行へ展開し、1件の5秒枠へ複数の再計算を詰め込まないでください（rules/06 §10.71）。',
+      }],
+    },
+  },
+  {
+    // packages/expression の検査だけ計算部の直接起動を拒否する(rules/06 §10.323)。
+    // flat configは同じfilesパターンのno-restricted-syntaxを上書きするため、上の
+    // '**/*.test.{ts,tsx}' の2件をここにも複製してから3件目を足す(2026-09-24 OPS-09)。
+    // packages/ui 等にも同名のspawnSync('python',…)を使う既存検査があるが、
+    // exactRuntimeTestSupport.tsはexpressionパッケージのexportsに公開しておらず
+    // 他パッケージから使えないため、対象をexpressionだけに絞る(統括2026-09-24 08:0xの指示)。
+    files: ['packages/expression/src/**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'CallExpression[callee.name=/^(beforeEach|beforeAll|afterEach|afterAll)$/] > ArrowFunctionExpression.arguments[expression=true] > CallExpression.body[callee.property.name=/^mock(Clear|Reset|Restore)$/]',
+        message: 'mockClear等の戻り値はmock関数です。テストhookから返すと後処理として呼ばれるため、voidのブロック本体を使ってください（rules/06 §10.67）。',
+      }, {
+        selector: "CallExpression[callee.callee.object.name='it'][callee.callee.property.name='each'] > ArrowFunctionExpression.arguments ForOfStatement:has(CallExpression[callee.name=/^(recomputeSheetFlat|makeSheetMetalBody)$/])",
+        message: '固定面・角度等の独立したOCCTケースはit.eachの行へ展開し、1件の5秒枠へ複数の再計算を詰め込まないでください（rules/06 §10.71）。',
+      }, {
+        selector: "CallExpression[callee.name='spawnSync'][arguments.0.value='python']",
+        message: '計算部は exactRuntimeTestSupport.ts の spawnExactRuntime で起動する（rules/06 §10.323）。',
       }],
     },
   },
@@ -261,7 +293,7 @@ export default tseslint.config(
       'no-restricted-syntax': ['error', ...e2eSyntaxGuards, {
         selector: 'CallExpression[callee.property.name="poll"] :matches(MemberExpression[property.name=/^(requestedGeneration|completedGeneration|lastOutcome|isComputing)$/], CallExpression[callee.name="readRecomputeStats"])',
         message: '再計算の待機はrecompute.tsの共通関数を使い、世代・結末・有限上限を個別に作り直さないでください。',
-      }],
+      }, mathFieldDirectCallGuard],
     },
   },
   {

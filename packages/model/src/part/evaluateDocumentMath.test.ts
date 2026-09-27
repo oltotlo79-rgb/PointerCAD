@@ -185,6 +185,39 @@ describe('原式・係数・作図座標の非同期再計算を一括で成立�
   });
 });
 
+/**
+ * GR-19d (w15a's e2e finding, `scratchpad/claude/instructions/w19a-gr19d-list-headings.md`): a legacy
+ * (name-referencing, no `mathDefinition`) formula naming an already-failed coefficient must relay that
+ * coefficient's own reason, not claim the name is undefined. Before this fix, referencing a coefficient
+ * that failed for any reason (not just GR-02's geometry cycle; see the sibling test in
+ * `evaluateDocumentMathGeometry.test.ts` for that one) always produced `決まっていない名前です`
+ * (`packages/expression/src/errors.ts`, code `unknownVariable`), because the legacy evaluator's
+ * `variables`/`exactVariables` maps never receive an entry for a coefficient that failed to evaluate.
+ */
+describe('GR-19d: 旧式の式が失敗済みの係数を名前で使うとき、決まっていない名前ではなく元の理由を示す', () => {
+  it('循環する係数(数学定義)を旧式の名前参照で使うと、循環の理由を含む', async () => {
+    const a = math('coef("B")+1', [{ id: 'B', label: 'B', decimal: '1' }]);
+    const b = math('coef("A")+1', [{ id: 'A', label: 'A', decimal: '1' }]);
+    const document = part([row('A', a), row('B', b), row('C', { ...legacy('0'), source: 'A*2' })]);
+    const result = await evaluateDocumentMath(document, context(document));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const c = result.failures.find(failure => failure.ownerId === 'C');
+    expect(c?.message).not.toContain('決まっていない名前');
+    expect(c?.message).toContain('循環');
+  });
+
+  it('本当に存在しない名前を旧式で参照したときは、決まっていない名前のまま示す(回帰確認)', async () => {
+    const document = part([row('C', { ...legacy('0'), source: 'Z+1' })]);
+    const result = await evaluateDocumentMath(document, context(document));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const c = result.failures.find(failure => failure.ownerId === 'C');
+    expect(c?.message).toContain('決まっていない名前');
+    expect(c?.message).toContain('Z');
+  });
+});
+
 describe('構成切替でも数学定義と参照IDを保持する', () => {
   function configured(): PartDocument {
     return synchronizeConfigurations(part([row('A', legacy('3')), row('B', math('coef("A")*2', [{ id: 'A', label: 'A', decimal: '3' }]))]));

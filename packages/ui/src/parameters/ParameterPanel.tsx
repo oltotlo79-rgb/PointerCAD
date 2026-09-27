@@ -1,3 +1,4 @@
+import { UnresolvedMathPanel } from './UnresolvedMathPanel.js';
 /**
  * パラメータ表(名前を付けた数値)のパネル(要件 FR-207・FR-201・FR-502、
  * 計画書 docs/plans/P4b-スケッチの仕上げ.md §0.a-0.15・タスク11)。
@@ -24,6 +25,7 @@ import { evaluateExpression } from '@pointercad/expression';
 import { PARAMETER_UNITS, type ParameterUnit } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { currentMathGeometry } from '../math/mathGeometryResults.js';
 import { ConfigurationPanel } from './ConfigurationPanel.js';
 import { initialDraftVersionState, reconcileDraftVersion } from '../shell/fieldDraft.js';
 import { applyDisplayUnit, fieldValueText } from '../sketch/numericInput.js';
@@ -73,6 +75,7 @@ const PARAMETER_UNIT_KEYS: Readonly<Record<ParameterUnit, MessageKey>> = {
 export function ParameterPanel(): React.JSX.Element {
   const document = useAppStore((state) => state.document);
   const analysis = useAppStore((state) => state.parameterAnalysis);
+  const geometry = useAppStore(currentMathGeometry);
   const documentVersion = useAppStore((state) => state.documentVersion);
   const pendingRename = useRef<AbortController | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
@@ -98,7 +101,7 @@ export function ParameterPanel(): React.JSX.Element {
   }
   const draft = reconciled.draft;
 
-  const rows = parameterRowsOf(document, analysis);
+  const rows = parameterRowsOf(document, analysis, geometry);
   const usage = parameterUsageCounts(document);
 
   /** 打ちかけを覚える。まだ文書は変えない(確定は Enter / blur、タスク10 の落とし穴)。 */
@@ -201,6 +204,7 @@ export function ParameterPanel(): React.JSX.Element {
     if (current !== null && current.message !== null) {
       return current.message;
     }
+    if (row.geometry?.pending) return t('mathGeometry.status.pending');
     // 値だけを表示の単位で出す(タスク3b)。式そのものは書き換えない(FR-202)。
     const unit = isLengthRow(row) ? 'mm' : 'degree';
     if (current === null) {
@@ -291,6 +295,12 @@ export function ParameterPanel(): React.JSX.Element {
       >
         <div className="pcad-parameter__head">
           <span className="pcad-parameter__marks">
+            {row.geometry === undefined ? null : (
+              <span className="pcad-parameter__mark"
+                title={[t('mathGeometry.derivedTooltip'), ...row.geometry.definitionNames].join('\n')}>
+                {t('mathGeometry.derived')}
+              </span>
+            )}
             {/* 使われていない名前は薄い印で示す(FR-207)。消してよいかの手掛かりになる。 */}
             {row.unused ? (
               <span
@@ -369,7 +379,7 @@ export function ParameterPanel(): React.JSX.Element {
           'parameterPanel.sourceLabel',
           row.source,
           sourceMessage(row),
-          row.circular || row.failureMessage !== null || draftOf(row, 'source')?.message != null,
+          row.circular || (!row.geometry?.pending && row.failureMessage !== null) || draftOf(row, 'source')?.message != null,
         )}
         <button title={t('controlGuide.parameter.math')} type="button" className="pcad-button" onMouseDown={event => event.preventDefault()}
           onClick={() => {
@@ -454,6 +464,7 @@ export function ParameterPanel(): React.JSX.Element {
           {t('parameterPanel.addMark')}
         </button>
       </div>
+      <UnresolvedMathPanel />
       </fieldset>
       {mathTarget === null ? null : <ParameterMathDialog target={mathTarget} onClose={() => setMathTarget(null)} />}
     </div>

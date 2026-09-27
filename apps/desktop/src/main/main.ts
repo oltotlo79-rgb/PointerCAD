@@ -44,6 +44,9 @@ function createMainWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
     },
   });
   registerAppWindow(window);
@@ -53,6 +56,10 @@ function createMainWindow(): void {
       event.preventDefault();
     }
   });
+  window.webContents.on('will-redirect', (event) => {
+    if (!isAllowedAppUrl(event.url, devServerUrl)) event.preventDefault();
+  });
+  window.webContents.on('will-attach-webview', (event) => { event.preventDefault(); });
   // 加工先は検証済みの専用IPCから固定HTTPSだけを開く。一般の新窓要求は許可しない。
   window.webContents.setWindowOpenHandler(({ url }) => {
     // ヘルプ内の公式リンクも完全一致の表だけをOSへ渡す。アプリ内の新窓は作らない。
@@ -90,6 +97,9 @@ async function printInHiddenWindow(png: Uint8Array, options?: DrawingPrintOption
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
     },
   });
   printWindow.webContents.on('will-navigate', (event, targetUrl) => {
@@ -97,6 +107,10 @@ async function printInHiddenWindow(png: Uint8Array, options?: DrawingPrintOption
       event.preventDefault();
     }
   });
+  printWindow.webContents.on('will-redirect', (event) => {
+    if (!isAllowedAppUrl(event.url, devServerUrl)) event.preventDefault();
+  });
+  printWindow.webContents.on('will-attach-webview', (event) => { event.preventDefault(); });
   // P11b タスク 1 の固定 HTTPS 許可表による外部リンク処理は、この拒否口へ追加する。
   printWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   try {
@@ -139,6 +153,7 @@ function registerPrintIpc(): void {
 
 void app.whenReady().then(() => {
   denyBrowserPermissions(session.defaultSession);
+  session.defaultSession.on('will-download', (event) => { event.preventDefault(); });
   // 既定のメニューバー(File / Edit / View / Window)は使わないので消す。
   Menu.setApplicationMenu(null);
   handleAppScheme(rendererRoot);

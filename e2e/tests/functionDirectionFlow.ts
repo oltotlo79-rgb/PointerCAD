@@ -61,7 +61,7 @@ export async function functionDirectionFlow(page:Page,info:TestInfo,point:{reado
   await measureDirection(page, line.name, 10);
   const restored=await savePart(page,info,'function-direction-undo-edit.pcad',app);
   expect(restored.sketches.flatMap(sketch=>sketch.features).find(feature=>feature.id===line.id)).toEqual(line);
-  await page.screenshot({ path: info.outputPath('function-direction-measure.png'), fullPage: true });
+  await captureManualDetail(page,info,{name:'function-direction-measure',dialog:page.locator('.pcad-panel--right'),fixture:restored,script:new URL(import.meta.url)});
 }
 
 /** Exercise the ordinary tool and current resolved length, including after Undo. */

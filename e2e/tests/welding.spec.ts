@@ -5,6 +5,7 @@ import { KERNEL_TIMEOUT_MS } from './recompute.js';
 import { drawingFromBox, chooseDrawingMenu, expectDrawingStroke } from './drawingManufacturingFixture.js';
 import { drawingMessage } from './drawingMessages.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
+import { captureManualDetail } from './captureManualDetail.js';
 
 test.describe('P9 溶接記号の実操作', () => {
   test('8種類・両側・式・断続・現場・全周・折れ矢を作り、編集Undo・保存と5形式出力でも指示が残る', async ({ page }, testInfo) => {
@@ -96,7 +97,7 @@ test.describe('P9 溶接記号の実操作', () => {
     await sheet.focus(); await page.keyboard.press('Control+z');
     await tree.getByRole('button', { name: `${drawingMessage('drawing.weld.title')} 1`, exact: true }).click();
     await form.locator('strong').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: testInfo.outputPath('welding-eight-kinds.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'welding-eight-kinds', dialog: form, fixture: { kinds }, script: new URL(import.meta.url) });
     await sheet.focus(); const saving = page.waitForEvent('download'); await page.keyboard.press('Control+s');
     const savedPath = await (await saving).path(); if (savedPath === null) throw new Error('溶接図面なし'); const bytes = await readFile(savedPath);
     for (const format of ['svg', 'pdf', 'png', 'jpg', 'dxf']) {
@@ -121,7 +122,7 @@ test.describe('P9 溶接記号の実操作', () => {
     await tree.getByRole('button', { name: `${drawingMessage('drawing.weld.title')} 1`, exact: true }).click();
     await expect(field('size.throat')).toHaveValue('10/2'); await expect(field('pitch')).toHaveValue('200');
     await form.locator('strong').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: testInfo.outputPath('welding-restored.png'), fullPage: true });
+    await captureManualDetail(page, testInfo, { name: 'welding-restored', dialog: form, fixture: { restored: true }, script: new URL(import.meta.url) });
     await field('size.throat').focus(); await page.keyboard.press('F1');
     const help = page.getByRole('dialog', { name: 'PointerCAD ヘルプ', exact: true });
     await expect(help.getByRole('article').getByRole('heading', { level: 1 })).toHaveText('溶接記号で施工する側・寸法・方法を伝える');

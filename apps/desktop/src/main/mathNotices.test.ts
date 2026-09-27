@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { collectMathNotices, verifyMathFontAssets } from '../../../../scripts/vite/mathNotices.mjs';
+import { collectMathNotices, verifyMathFontAssets, verifyRemovedMathModules } from '../../../../scripts/vite/mathNotices.mjs';
 import { installedMathDependencies, verifyMathDependencyInventory } from '../../../../scripts/vite/mathDependencyInventory.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -11,10 +11,23 @@ const expected = new Map([['KaTeX_Main-Regular.woff2', createHash('sha256').upda
 const asset = { type: 'asset', fileName: 'assets/KaTeX_Main-Regular-hash.woff2', source: font };
 
 describe('数学の許諾と字体をWebとDesktopへ同梱する', () => {
+  it.each([
+    '/node_modules/@cortex-js/compute-engine/dist/index.js',
+    'C:\\project\\node_modules\\.pnpm\\@arnog+colors@0.7.0\\node_modules\\@arnog\\colors\\index.js',
+    '/node_modules/.pnpm/quickjs-wasi@3.6.0/node_modules/quickjs-wasi/dist/index.js',
+    '/node_modules/complex-esm/dist/index.js',
+  ])('外した計算部の再混入を配布作成時に拒否する: %s', path => {
+    expect(() => verifyRemovedMathModules({ js: { type: 'chunk', modules: { [path]: {} } } })).toThrow('Removed calculation dependency');
+  });
+  it('独自計算部と入力用部品は混入拒否と取り違えない', () => {
+    expect(() => verifyRemovedMathModules({ js: { type: 'chunk', modules: {
+      '/packages/expression/src/math/nativeMathBackend.ts': {}, '/node_modules/mathlive/mathlive.min.js': {},
+    } }, notice: { type: 'asset' } })).not.toThrow();
+  });
   it('固定した実依存の原文と字体20個を読み、配布用の参照一覧へ含める', () => {
     const distribution = collectMathNotices(root);
     expect(distribution.fonts.size).toBe(20);
-    for (const name of ['compute-engine.txt', 'mathlive.txt', 'mathlive-fonts.txt', 'ofl-1.1.txt']) {
+    for (const name of ['decimal.js-10.6.0.txt', 'mathlive.txt', 'mathlive-fonts.txt', 'ofl-1.1.txt']) {
       expect(distribution.assets.get(`licenses/${name}`))
         .toEqual(readFileSync(new URL(`../../../../docs/standards/licenses/${name}`, import.meta.url)));
       expect(distribution.assets.get('licenses/index.html')?.toString('utf8')).toContain(`./${name}`);
@@ -39,11 +52,10 @@ describe('数学の許諾と字体をWebとDesktopへ同梱する', () => {
       .toThrow('missing or duplicated');
   });
 
-  it('異なる版を含む7依存を、未確認の2件も漏らさず数える', () => {
+  it('数学入力と既存の小数計算だけを数え、外した計算部・色処理を含めない', () => {
     const actual = installedMathDependencies(root);
     expect(actual.map(entry => `${entry.name}@${entry.version}`).sort()).toEqual([
-      '@arnog/colors@0.5.0', '@arnog/colors@0.7.0', '@cortex-js/compute-engine@0.128.6',
-      '@cortex-js/compute-engine@0.58.0', 'complex-esm@2.1.1-esm1', 'decimal.js@10.6.0', 'mathlive@0.110.0',
+      'decimal.js@10.6.0', 'mathlive@0.110.0',
     ]);
     expect(() => verifyMathDependencyInventory(actual, actual)).not.toThrow();
   });

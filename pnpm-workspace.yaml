@@ -6,7 +6,7 @@ packages:
 # 範囲指定(^ / ~)を使わず完全固定する(docs/requirements.md §6.1)。
 catalog:
   "@eslint/js": 10.0.1
-  "@playwright/test": 1.62.1
+  "@playwright/test": 1.63.0
   "@types/node": 22.20.1
   "@types/react": 19.2.18
   "@types/react-dom": 19.2.5

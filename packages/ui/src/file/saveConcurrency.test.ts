@@ -137,8 +137,11 @@ describe('保存の完了を開始した文書へ結び付ける（レビュー 
     await delayed.started.promise;
     delayed.completed.resolve('A.pcad');
     await started.promise;
+    // 実際の編集の口で変える。プロパティ欄の 1 文字ずつの編集と同じく版の番号は増えない
+    // (docs/review-2026-09-28-codex.md R01 の注意)。版の番号を手で増やすと、版だけの判定でも通ってしまう。
     const state = useAppStore.getState();
-    useAppStore.setState({ document: { ...state.document, name: '削除待機中の編集' }, documentVersion: state.documentVersion + 1 });
+    state.applyDocument({ ...state.document, name: '削除待機中の編集' }, { coalesceKey: 'name' });
+    expect(useAppStore.getState().documentVersion).toBe(state.documentVersion);
     finished.resolve();
     await pending;
     expect(discard).toHaveBeenCalledTimes(1);

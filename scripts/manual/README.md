@@ -23,6 +23,8 @@ node scripts/manual/generate.mjs manual-preview-20260912
 
 生成した説明書を現在のヘルプ本文と照合する場合は、`node scripts/manual/verify.mjs <出力名>`を実行する。現在の章・巻・機能・操作・設定の目録と、アプリと同じ表示処理で作った全HTMLを比較する。画像も現在の本文が参照する内容と照合するため、出力側の指紋だけを更新して古い本文・操作名・画像を通すことはできない。追加された入力部品、本文や翻訳の変更、欠落した章も拒否する。ファイルや認定値は書き換えない。
 
+生成した説明書をヘルプ・説明書の整合4条件(①章と題名 ②操作名・ボタン名〔`{{ui:キー}}`と、本文に直接書いた「X」ボタン・「X」を押す〕 ③機能の双方向の対応 ④今の版の撮影の画像)で判定する場合は、`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-release-ready.ps1 -Mode Manual -Manual <出力名>`を実行する(P12-20)。判定の本体は`scripts/release/releaseReadiness.mjs`にあり、公開前の検査(P13-15)も同じ本体を使う。項目と終了コードは[配布の手順](../release/README.md)の「公開前の整合検査」を正とする。
+
 同じ照合はWeb版・デスクトップ版の配布一式を組む際にも必ず行う。これは現在のヘルプとの一致の確認であり、本文の内容が正しいこと、画像が最新の実画面で撮影されたこと、PDFの全ページの目視確認、全機能の完成や公開の認定は別に必要。
 
 HTMLの閲覧画面を記録する台本は`capture-html.mjs`。生成済みの出力名と新しい撮影出力名を渡す。例: `node scripts/manual/capture-html.mjs manual-preview-20260912 manual-reader-20260912`。既存のChromium/Firefoxでローカルファイルを開き、検索、キーボード移動、全章と全巻の画像・字体、狭い画面を確認してPNGと結果を`dist/<撮影出力名>`へ保存する。本文と出力の指紋を前後で照合し、途中の失敗も保存して過去の結果を上書きしない。この台本で撮るのは説明書を閲覧する画面であり、全機能を操作したアプリ画面の撮影・PDFの目視確認・通常の品質ゲートの代わりにはしない。
@@ -80,3 +82,30 @@ node scripts/manual/generate-pdf.mjs manual-preview-20260912 manual-pdf-preview-
 `register`は書き込み直前にも`capture-manifest.json`の実ファイルを読み直し、処理開始時に読んだ内容と変わっていれば「もう一度実行してください」という趣旨のエラーで止まる(並行編集による上書き事故の防止)。
 
 `packages/help-content/src/captureRegistry.test.ts`は、実際の`packages/help-content/docs/ja/images/`フォルダーと章のMarkdownに対して`captureRegistry.mjs`の関数群(`readCaptureFolder`・`buildCaptureRegistry`・`auditCaptureRegistry`・`assessCaptureImages`・`applicationInputDigest`等)を動かす単体テストであり、`register`・`check`と同じ検査を通常の品質ゲート(`pnpm run test`のhelp-content検査)でも常に行う。未解決の既知の問題(どの章からも参照されない画像、標準の画面の大きさから外れた画像、撮影の記録が無い画像)は理由付きの一覧としてテストの中に書かれており、一覧に無い新しい問題が実物に増えると失敗する。一覧の項目を直して減らすのはよいが、理由を確かめずに一覧へ項目を足して赤を消さない。
+
+## 撮影の来歴の束(Playwrightの出力から登録簿まで。P12-16)
+
+上の手順2の「採用する画像と撮影の記録を置く」を手で写さず、`scripts/manual/captureProvenance.mjs`で行う。別建ての撮影の道具は作らず、撮影そのものは画面検査の台本(`captureManualDetail`)で行う。
+
+`captureManualDetail`は撮影の時点で次を確かめ、外れたら撮影(その画面検査)を失敗させる。値の正本は`captureRegistry.mjs`の`CAPTURE_VIEWPORT_POLICY`と`CAPTURE_SCREEN_REQUIREMENTS`で、ここへ値を複製しない。
+
+- 画面の大きさ(標準と縦長の例外だけ)、暗色のテーマ(`data-theme`)、UIの倍率100%(`data-ui-scale`)、`deviceScaleFactor`、字体の読込み済み。Electronの窓は説明書の画像に使わないので、記録だけ残す。
+- 再計算が最新の世代まで成功で終わっていること(撮影の前後で同じ)。形状の計算部(WASM)が一度も成功していない画面はここで止まる。
+- 3D表示の描画が落ち着いていること。撮影の前に、2フレームの間に描画が増えない状態を待ち、撮影の後も描画の回数が変わっていないことを確かめる(3D表示の無い画面は`viewportRender: null`)。
+
+撮影の記録(`<名前>-capture.json`)には、上の値に加えて台本のパス(`script`)とSHA-256、fixture・画面全体・詳細の画像のSHA-256、撮影日時、アプリの版の識別子(`applicationBuildId`)を書く。
+
+Playwrightの出力フォルダー(`diag.py e2e`では`scratchpad/claude/runs/<RUN_ID>/test-results`)から画像を採用する:
+
+```powershell
+node scripts/manual/captureProvenance.mjs plan --results <出力フォルダー> --bundle <束の名前> --referenced
+node scripts/manual/captureProvenance.mjs adopt --results <出力フォルダー> --bundle <束の名前> --referenced
+```
+
+- `plan`は書き込まずに結果をJSONで出す。`adopt`は全部の確認が通った後にだけ書き込む。どちらも拒否の理由を全部並べて終了コード1で止まり、一部だけを採用することはない。
+- `--referenced`は、章が参照している`<名前>-detail.png`・`<名前>-screen.png`だけを選ぶ(参照されない撮影は`skipped`に出る)。個別に選ぶ場合は`--referenced`の代わりに`<名前>`(詳細の画像)または`<名前>:screen`(画面全体)を並べる。`--project`の既定は`functional`(Chromium)。
+- 拒否する撮影: その検査が失敗した(同じフォルダーに`test-failed-*.png`・`error-context.md`・`trace.zip`がある)、fixture・画像のバイトが記録のSHA-256と違う、今の`applicationInputDigest`と違う版で撮った、撮影の後に台本が変わった・台本が無い、上の撮影時の条件を満たさない記録(古い形式の記録を含む)、同じ名前の撮影が複数ある、章が参照していない画像、既にある束の名前。
+- 書き込むもの: 採用した画像(同じ名前の画像は置き換える)、束`<束の名前>-capture-details.json`(形式`pointercad-capture-provenance/1`。版の識別子1つ、台本のパスとSHA-256の表、画像ごとの撮影の記録とfixtureの文書そのもの。画面の説明の一覧`controlDescriptions`は検査の記録なので入れない)、置き換えた画像を指していた古い記録からの項目の削除(空になった記録のファイルは消す)、最後に`capture-manifest.json`。書き込む直前に触るファイルを読み直し、途中で変わっていれば止まる。
+- 登録簿を組み立て直すとき(`register`・`check`・`captureRegistry.test.ts`)も、この形式の束は全ての値を必須として検査し直す(束の中のfixtureの文書のSHA-256を計算し直す、版・台本の表の一致、撮影時の条件、再計算と描画の完了)。検査は`packages/help-content/src/captureProvenance.test.ts`。
+
+版の識別子はアプリの入力のSHA-256から作るので、撮影から採用までの間にアプリの入力(`packages/`など)が変わると採用を拒否する。撮り直しは、アプリの変更を止めた状態で、撮影の台本の画面検査を流してから続けて`adopt`し、`check`で登録簿が最新であることを確かめる。

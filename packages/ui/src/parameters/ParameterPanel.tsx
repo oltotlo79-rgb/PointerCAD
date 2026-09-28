@@ -146,8 +146,40 @@ export function ParameterPanel(): React.JSX.Element {
   const parameterExpression = (row: ParameterRow, text: string): string =>
     isLengthRow(row) ? applyDisplayUnit(text, 'mm', lengthUnit) : text;
 
+  /**
+   * 名前欄の打ちかけを確定する。打ちかけが無い、または改名処理中なら何もしない(null)。
+   * 確定した先の名前(`to`)と、改名が終わるまで待てる約束を返す。数式の窓を開く前に
+   * 名前を確定させたい呼び出し元(数式ボタン)と、Enter・blur からの呼び出しの両方で使う
+   * (窓の showModal が奪う焦点で blur が走り、改名の途中で文書が差し替わって窓がすぐ
+   * 閉じる不具合の対策。窓を開く前に改名を終わらせてから開く)。
+   */
+  const commitNameDraft = (row: ParameterRow): { readonly to: string; readonly done: Promise<void> } | null => {
+    const current = draftOf(row, 'name');
+    if (current === null || pendingRename.current !== null) {
+      return null;
+    }
+    const text = current.text;
+    const to = text.trim();
+    const rejected = { name: row.name, field: 'name' as const, text };
+    const controller = new AbortController();
+    pendingRename.current = controller;
+    setRenameBusy(true);
+    setDraft(null);
+    const done = runMathParameterRename(row.name, to, { signal: controller.signal }).then(outcome => {
+      if (pendingRename.current !== controller) return;
+      pendingRename.current = null;
+      setRenameBusy(false);
+      if (!outcome.ok && useAppStore.getState().document === document) setDraft({ ...rejected, message: outcome.message });
+    });
+    return { to, done };
+  };
+
   /** 打ちかけを確定する。打ちかけが無ければ何もしない(Enter の後の blur で二重に通さない)。 */
   const commitDraft = (row: ParameterRow, field: ParameterFieldKind): void => {
+    if (field === 'name') {
+      commitNameDraft(row);
+      return;
+    }
     const current = draftOf(row, field);
     if (current === null) {
       return;
@@ -156,20 +188,6 @@ export function ParameterPanel(): React.JSX.Element {
     const rejected = { name: row.name, field, text };
     const key = `parameter:${row.name}:${field}`;
     switch (field) {
-      case 'name': {
-        if (pendingRename.current !== null) return;
-        const controller = new AbortController();
-        pendingRename.current = controller;
-        setRenameBusy(true);
-        setDraft(null);
-        void runMathParameterRename(row.name, text.trim(), { signal: controller.signal }).then(outcome => {
-          if (pendingRename.current !== controller) return;
-          pendingRename.current = null;
-          setRenameBusy(false);
-          if (!outcome.ok && useAppStore.getState().document === document) setDraft({ ...rejected, message: outcome.message });
-        });
-        return;
-      }
       case 'source':
         /*
          * 式は**文字列のまま**入れる(FR-202)。読めない式でも断らず、値は前のまま
@@ -383,11 +401,27 @@ export function ParameterPanel(): React.JSX.Element {
         )}
         <button title={t('controlGuide.parameter.math')} type="button" className="pcad-button" onMouseDown={event => event.preventDefault()}
           onClick={() => {
-            const parameter = document.parameters.find(parameter => parameter.name === row.name);
-            if (parameter === undefined) return;
-            const sourceDraft = draftOf(row, 'source');
-            setMathTarget({ document, documentVersion, parameter: sourceDraft === null ? parameter : { ...parameter,
-              value: { source: parameterExpression(row, sourceDraft.text), value: row.value, display: String(row.value) } } });
+            /*
+             * 名前欄が打ちかけのまま(Enter 未確定)だと、窓の showModal が焦点を奪って
+             * blur を起こし、改名の途中で文書が差し替わって窓がすぐ閉じる(w104a)。
+             * 窓を開く前に名前の下書きを確定させ、改名が終わってから開く。
+             */
+            const openWith = (name: string): void => {
+              const latest = useAppStore.getState();
+              const parameter = latest.document.parameters.find(parameter => parameter.name === name)
+                ?? latest.document.parameters.find(parameter => parameter.name === row.name);
+              if (parameter === undefined) return;
+              const sourceDraft = draftOf(row, 'source');
+              setMathTarget({ document: latest.document, documentVersion: latest.documentVersion,
+                parameter: sourceDraft === null ? parameter : { ...parameter,
+                  value: { source: parameterExpression(row, sourceDraft.text), value: row.value, display: String(row.value) } } });
+            };
+            const pendingName = commitNameDraft(row);
+            if (pendingName === null) {
+              openWith(row.name);
+              return;
+            }
+            void pendingName.done.then(() => openWith(pendingName.to));
           }}>{t('math.open')}</button>
 
         <div className="pcad-choice pcad-parameter__units">

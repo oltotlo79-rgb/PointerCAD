@@ -22,7 +22,7 @@ async function runFunctionCurvePointFlow(page:Page,info:TestInfo,form:'coordinat
   await dialog.getByRole('combobox',{name:plot('form'),exact:true}).selectOption(form);
   if(form==='coordinate')await dialog.getByRole('combobox',{name:plot('independent'),exact:true}).selectOption('Y');
   for(const [axis,source] of form==='coordinate'?[['X','Y^2'],['Z','0']]:[['X','T^2'],['Y','T'],['Z','0']]) {
-    await dialog.getByRole('textbox',{name:`${axis} ${plot('formula')}`,exact:true}).fill(source);
+    await dialog.getByRole('textbox',{name:`${axis} =`,exact:true}).fill(source);
   }
   for(const axis of ['X','Y','Z'])for(const endpoint of ['minimum','maximum'] as const) {
     await dialog.getByRole('textbox',{name:`${axis} ${plot(endpoint)}`,exact:true}).fill(endpoint==='minimum'?'-4':'4');

@@ -142,17 +142,19 @@ function collectErrors(page: Page): readonly string[] {
 }
 
 /**
- * 確認の窓(`window.confirm`)に「はい」で答え、聞かれた文言を控える(NFR-UX-3)。
+ * 保存していない変更の確認(画面の中の日本語の3択。w91a)に「保存せずに続ける」で答え、
+ * 聞かれた文言を控える(NFR-UX-3)。
  *
- * 「新規」「開く」は押した瞬間に確認を出すので、**押す前に**答える用意をしておく。
- * 用意せずに押すと、頁が答えを待って止まったままになり、押す操作そのものが返ってこない。
+ * 「新規」「開く」の後の次の操作・確かめの前に答えるよう、**押す前に**用意しておく。
+ * 用意せずに押すと、確認の窓が後ろの画面を覆ったままになり、次の操作が届かない。
  * 控えた文言は「いつ聞かれ、いつ聞かれなかったか」を確かめるのに使う。
  */
-function acceptConfirms(page: Page): readonly string[] {
+async function acceptConfirms(page: Page): Promise<readonly string[]> {
   const messages: string[] = [];
-  page.on('dialog', (dialog) => {
-    messages.push(dialog.message());
-    void dialog.accept();
+  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
+    messages.push(await dialog.locator('p').innerText());
+    await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });
   return messages;
 }
@@ -614,7 +616,7 @@ test('点→線→面→押し出し→保存→再読込→編集ができる(�
   page,
 }, testInfo) => {
   const errors = collectErrors(page);
-  const confirms = acceptConfirms(page);
+  const confirms = await acceptConfirms(page);
   await disableFilePickers(page);
 
   await page.goto('/');
@@ -1267,7 +1269,7 @@ test.describe('P3 加工フィーチャー', () => {
     page,
   }, testInfo) => {
     const errors = collectErrors(page);
-    const confirms = acceptConfirms(page);
+    const confirms = await acceptConfirms(page);
     await disableFilePickers(page);
 
     await page.goto('/');

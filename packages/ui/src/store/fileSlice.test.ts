@@ -20,6 +20,9 @@ import {
   resetTestStore,
   partWithPoint,
 } from './testing/createTestStore.js';
+import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
+import { createDefaultPartFileDeps } from '../file/partFile.js';
+import type { FileGateway } from '../file/fileGateway.js';
 
 beforeEach(resetTestStore);
 
@@ -161,5 +164,64 @@ describe('自動保存まわりの状態(FR-805、計画書 タスク24)', () =>
 
     useAppStore.getState().setRestorePrompt(null);
     expect(useAppStore.getState().restorePrompt).toBeNull();
+  });
+});
+
+describe('保存していない変更の確認を画面の中の日本語の3択で聞く(w91a)', () => {
+  it('答えるまで待ち、答えたら閉じる。新しい確認は前の確認を「戻る」で終える', async () => {
+    const first = useAppStore.getState().requestDiscardConfirm('file.discardConfirm');
+    expect(useAppStore.getState().discardConfirm?.messageKey).toBe('file.discardConfirm');
+    const second = useAppStore.getState().requestDiscardConfirm('file.openChangedWhileReading');
+    await expect(first).resolves.toBe('cancel');
+    expect(useAppStore.getState().discardConfirm?.messageKey).toBe('file.openChangedWhileReading');
+
+    useAppStore.getState().answerDiscardConfirm('discard');
+    await expect(second).resolves.toBe('discard');
+    expect(useAppStore.getState().discardConfirm).toBeNull();
+    // 確認が無いときの答えは何もしない(二度押しで次の確認へ答えを渡さない)。
+    useAppStore.getState().answerDiscardConfirm('save');
+    expect(useAppStore.getState().discardConfirm).toBeNull();
+  });
+
+  it.each([['discard', true], ['cancel', false]] as const)(
+    '画面から呼ぶ既定の口は、答え %s を進めるかどうか(%s)へ直す',
+    async (choice, proceed) => {
+      useAppStore.getState().applyDocument(partWithPoint());
+      const answer = createDefaultPartFileDeps().confirmDiscard('file.discardConfirm');
+      expect(useAppStore.getState().discardConfirm?.messageKey).toBe('file.discardConfirm');
+      useAppStore.getState().answerDiscardConfirm(choice);
+      await expect(answer).resolves.toBe(proceed);
+      expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(true);
+    },
+  );
+
+  it('「保存して続ける」は保存できたときだけ進め、保存を取り消したら変更を残して止まる', async () => {
+    const saved: string[] = [];
+    let accept = false;
+    const gateway: FileGateway = {
+      openPcad: () => Promise.resolve(null),
+      savePcad: (suggestedName) => {
+        if (!accept) return Promise.resolve(null);
+        saved.push(suggestedName);
+        return Promise.resolve(suggestedName);
+      },
+      hasSaveTarget: () => false,
+    };
+    useAppStore.getState().setFileGateway(gateway);
+    useAppStore.getState().applyDocument(partWithPoint());
+    const deps = createDefaultPartFileDeps();
+
+    const cancelled = deps.confirmDiscard('file.discardConfirm');
+    useAppStore.getState().answerDiscardConfirm('save');
+    await expect(cancelled).resolves.toBe(false);
+    expect(saved).toEqual([]);
+    expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(true);
+
+    accept = true;
+    const confirmed = deps.confirmDiscard('file.discardConfirm');
+    useAppStore.getState().answerDiscardConfirm('save');
+    await expect(confirmed).resolves.toBe(true);
+    expect(saved).toHaveLength(1);
+    expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(false);
   });
 });

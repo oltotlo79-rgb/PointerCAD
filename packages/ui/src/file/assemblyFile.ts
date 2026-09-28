@@ -5,8 +5,10 @@ import { createAssemblyDocument, createAssemblyDocumentBundle, partLibraryOfBund
 import { activeDocument } from '../store/documentKind.js';
 import type { AppState } from '../store/appState.js';
 import type { AssemblySnapshot } from '../store/assemblySlice.js';
+import type { DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
+import { beginOpenRequest, mayOpenAfterRead, mayReportOpenFailure } from './documentOpenGuard.js';
 import { withPcadaExtension, type PickedFile } from './fileGateway.js';
 import { hasUnsavedChanges, openErrorMessageKey, type PartFileDeps } from './partFile.js';
 import { recordRecentFile } from './recentFiles.js';
@@ -54,17 +56,28 @@ export async function newAssembly(deps: PartFileDeps): Promise<void> {
   useAppStore.getState().openAssembly(createAssemblyDocument(t('assembly.untitled')));
 }
 
-/** 検証と適用が済むまで保存先を確定しない。失敗・取消は今の文書を保つ。 */
-export async function applyPickedAssembly(picked: PickedFile, deps: PartFileDeps): Promise<void> {
-  const before = useAppStore.getState();
-  const identity = before.activeDocumentId;
+/**
+ * 検証と適用が済むまで保存先を確定しない。失敗・取消は今の文書を保つ。
+ *
+ * `request` は破棄の確認に答えた時点の札(`beginOpenRequest`)。読込の間に文書が変わったら
+ * `mayOpenAfterRead` が改めて確認するか、開くのをやめる(組立を開くと取り消しの履歴を
+ * 作り直すため、確認なしに置き換えると読込中の編集を取り戻せない。R02)。
+ */
+export async function applyPickedAssembly(
+  picked: PickedFile,
+  deps: PartFileDeps,
+  request: DocumentRequest = beginOpenRequest(),
+): Promise<void> {
   const result = await readDocumentBundle(picked.bytes, 'assembly');
-  if (useAppStore.getState().activeDocumentId !== identity) return;
   if (!result.ok) {
-    before.setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
+    if (mayReportOpenFailure(request)) {
+      useAppStore.getState().setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
+    }
     return;
   }
   if (result.bundle.kind !== 'assembly') return;
+  if (!(await mayOpenAfterRead(request, deps))) return;
+  const before = useAppStore.getState();
   const library = partLibraryOfBundle(result.bundle);
   before.openAssembly(result.bundle.document, library, { preserveSaveTarget: true });
   const openedId = useAppStore.getState().activeDocumentId;
@@ -73,7 +86,8 @@ export async function applyPickedAssembly(picked: PickedFile, deps: PartFileDeps
     if (picked.saveTargetToken === null) before.fileGateway.clearSaveTarget?.();
     else await before.fileGateway.confirmSaveTarget?.(picked.saveTargetToken);
   } catch {
-    before.fileGateway.clearSaveTarget?.();
+    // 確定を待つ間に別の文書へ切り替わったら、その文書の保存先には触らない(図面を開くのと同じ)。
+    if (useAppStore.getState().activeDocumentId === openedId) before.fileGateway.clearSaveTarget?.();
   }
   if (useAppStore.getState().activeDocumentId === openedId) {
     recordRecentFile(picked.name, { storage: deps.recentFilesStorage });
@@ -82,9 +96,11 @@ export async function applyPickedAssembly(picked: PickedFile, deps: PartFileDeps
 
 export async function openAssembly(deps: PartFileDeps): Promise<void> {
   if (activeHasUnsavedChanges(useAppStore.getState()) && !(await deps.confirmDiscard('file.discardConfirm'))) return;
+  // ファイルを選ぶ窓の間の変更も、確認に答えた時点と比べる。
+  const request = beginOpenRequest();
   try {
     const picked = await useAppStore.getState().fileGateway.openPcad('assembly');
-    if (picked !== null) await applyPickedAssembly(picked, deps);
+    if (picked !== null) await applyPickedAssembly(picked, deps, request);
   } catch {
     useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
   }

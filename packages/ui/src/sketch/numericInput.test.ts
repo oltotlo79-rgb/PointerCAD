@@ -3987,6 +3987,19 @@ describe('表示が inch のときの数値欄(P6 タスク3b、§0.a-0.63)', ()
     expect(fieldValueText('mm', { value: 10, display: '10' }, 'mm')).toBe('10');
   });
 
+  it('1/64 インチでちょうど表せる長さだけ分数インチも添える(FR-814、w91a)', () => {
+    expect(fieldValueText('mm', { value: 9.525, display: '9.525' }, 'inch')).toBe('0.375 in (3/8")');
+    expect(fieldValueText('mm', { value: 38.1, display: '38.1' }, 'inch')).toBe('1.5 in (1 1/2")');
+    expect(fieldValueText('mm', { value: -12.7, display: '-12.7' }, 'inch')).toBe('-0.5 in (-1/2")');
+    expect(fieldValueText('mm', { value: 0.396875, display: '0.396875' }, 'inch')).toBe('0.015625 in (1/64")');
+    // 割り切れない長さ・整数のインチ・mm の表示・角度には添えない(丸めた分数で違う長さを示さない)。
+    expect(fieldValueText('mm', { value: 10, display: '10' }, 'inch')).toBe('0.393700787 in');
+    expect(fieldValueText('mm', { value: 25.4, display: '25.4' }, 'inch')).toBe('1 in');
+    expect(fieldValueText('mm', { value: 0, display: '0' }, 'inch')).toBe('0 in');
+    expect(fieldValueText('mm', { value: 9.525, display: '9.525' }, 'mm')).toBe('9.525');
+    expect(fieldValueText('degree', { value: 9.525, display: '9.525' }, 'inch')).toBe('9.525');
+  });
+
   it('角度と個数の欄は inch の影響を受けない(FR-205)', () => {
     const angle = reduceNumericInput(createNumericInput('revolve', 'revolveAngle'), {
       type: 'edit',

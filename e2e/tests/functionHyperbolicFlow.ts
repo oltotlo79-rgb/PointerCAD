@@ -12,7 +12,7 @@ export async function functionHyperbolicFlow(page: Page, info: TestInfo, app?: E
   await page.setViewportSize({ width: 1440, height: 900 });
   await chooseToolMenuItem(page, '作図', text('menuTitle'));
   const dialog = page.locator('.pcad-function-dialog');
-  const formula = dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true });
+  const formula = dialog.getByRole('textbox', { name: `Y =`, exact: true });
   const preview = dialog.getByRole('button', { name: text('preview'), exact: true });
   const apply = dialog.getByRole('button', { name: text('apply'), exact: true });
   const source = 'cosh(X)', changedSource = 'sech(X)';
@@ -60,7 +60,7 @@ export async function functionHyperbolicFlow(page: Page, info: TestInfo, app?: E
 
   await chooseToolMenuItem(page, '作図', text('menuTitle'));
   await dialog.getByRole('combobox', { name: text('geometry'), exact: true }).selectOption('surface');
-  await dialog.getByRole('textbox', { name: `Z ${text('formula')}`, exact: true }).fill('asinh(X)+acosh(Y)');
+  await dialog.getByRole('textbox', { name: `Z =`, exact: true }).fill('asinh(X)+acosh(Y)');
   for (const [axis, min, max] of [['X', '-1', '1'], ['Y', '1.1', '2'], ['Z', '-2', '3']] as const) {
     await dialog.getByRole('textbox', { name: `${axis} ${text('minimum')}`, exact: true }).fill(min);
     await dialog.getByRole('textbox', { name: `${axis} ${text('maximum')}`, exact: true }).fill(max);
@@ -76,7 +76,7 @@ export async function functionHyperbolicFlow(page: Page, info: TestInfo, app?: E
   if (surface?.kind !== 'functionSurface') throw new Error('双曲線関数の曲面が保存されていません。');
   await page.getByText(surface.name, { exact: true }).click();
   await page.getByRole('button', { name: text('edit'), exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: `Z ${text('formula')}`, exact: true })).toHaveValue('asinh(X)+acosh(Y)');
+  await expect(dialog.getByRole('textbox', { name: `Z =`, exact: true })).toHaveValue('asinh(X)+acosh(Y)');
   await dialog.getByRole('button', { name: text('surfaceHelp'), exact: true }).click();
   await expect(page.locator('.pcad-help__article')).toContainText('asinh');
   await page.keyboard.press('Escape'); await expect(page.locator('.pcad-help')).toHaveCount(0);

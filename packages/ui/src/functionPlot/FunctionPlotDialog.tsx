@@ -153,9 +153,13 @@ export function FunctionPlotDialog({ featureId, onClose }: {
           {draft.form === 'coordinate' ? <label>{t(surface ? 'functionPlot.dependent' : 'functionPlot.independent')} <select title={t('functionPlot.control.axis')} value={surface ? draft.dependent : draft.independent} onChange={event => {
             const axis = event.target.value; if (axis === 'X' || axis === 'Y' || axis === 'Z') change({ ...draft, ...(surface ? { dependent: axis } : { independent: axis }) });
           }}>{FUNCTION_AXES.map(axis => <option key={axis}>{axis}</option>)}</select></label> : null}
+          {/*
+            式の欄の名前は画面に見えている「Y =」そのもの(w91a)。見た目と読み上げ名が違うと、説明書も
+            音声での操作も 1 つの名前で欄を指せない。何の式かは囲みの見出し「関数の式」が伝える。
+          */}
           {activeFunctionOutputs(draft).map(axis => <div key={axis} className="pcad-function-equation"
-            role="group" aria-label={`${axis} ${t('functionPlot.formula')}`}>
-            <span>{axis} = </span><input title={t('functionPlot.control.output')} aria-label={`${axis} ${t('functionPlot.formula')}`} required value={draft.outputs[axis].source}
+            role="group" aria-label={`${axis} =`}>
+            <label htmlFor={`${id}-output-${axis}`}>{axis} =</label><input id={`${id}-output-${axis}`} title={t('functionPlot.control.output')} required value={draft.outputs[axis].source}
               aria-invalid={issues.has(axis)} onChange={event => change({ ...draft, outputs: { ...draft.outputs, [axis]: editFunctionField(draft.outputs[axis], event.target.value) } })} />
             <button title={t('functionPlot.control.mathEditor')} type="button" aria-label={`${axis}: ${t('math.open')}`} onClick={() => setEditor({ kind: 'function', axis })}>{t('math.open')}</button>
             <small>{t('math.angleUnit')}: {t(draft.outputs[axis].angleUnit === 'degree' ? 'math.degree' : 'math.radian')}</small>
@@ -170,10 +174,10 @@ export function FunctionPlotDialog({ featureId, onClose }: {
             </div> : null}
             <p>{t(surface?'functionPlot.implicitHint':'functionPlot.implicitCurveHint')}</p>
             {!surface ? <p>{t('functionPlot.equationAxes')}: {functionDraftScope(draft).axes.join(t('display.listSeparator'))}</p> : null}
-            <div className="pcad-function-equation" role="group" aria-label={equationLabel}>
-              <span>F = </span><input title={t('functionPlot.control.equation')} aria-label={equationLabel} required value={draft.equation.source} aria-invalid={issues.has('equation')}
+            <div className="pcad-function-equation" role="group" aria-label="F =">
+              <label htmlFor={`${id}-equation`}>F =</label><input id={`${id}-equation`} title={t('functionPlot.control.equation')} required value={draft.equation.source} aria-invalid={issues.has('equation')}
                 onChange={event=>change({...draft,equation:editFunctionField(draft.equation,event.target.value)})} />
-              <button title={t('functionPlot.control.mathEditor')} type="button" aria-label={`${equationLabel}: ${t('math.open')}`} onClick={()=>setEditor({kind:'equation'})}>{t('math.open')}</button>
+              <button title={t('functionPlot.control.mathEditor')} type="button" aria-label={`F: ${t('math.open')}`} onClick={()=>setEditor({kind:'equation'})}>{t('math.open')}</button>
               <small>{t('math.angleUnit')}: {t(draft.equation.angleUnit === 'degree' ? 'math.degree' : 'math.radian')}</small>
             </div>
           </> : null}

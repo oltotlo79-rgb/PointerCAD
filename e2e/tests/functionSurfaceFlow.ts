@@ -28,7 +28,7 @@ async function runSurfaceFlow(page: Page, info: TestInfo, app: ElectronApplicati
   for (const axis of ['X', 'Y', 'Z']) for (const endpoint of ['minimum', 'maximum'] as const) {
     await expect(dialog.getByRole('textbox', { name: `${axis} ${text(endpoint)}`, exact: true })).toHaveValue('');
   }
-  await dialog.getByRole('textbox', { name: `Z ${text('formula')}`, exact: true }).fill('X+Y');
+  await dialog.getByRole('textbox', { name: `Z =`, exact: true }).fill('X+Y');
   for (const [axis, min, max] of [['X', '-1', '1'], ['Y', '-1', '1'], ['Z', '-0.5', '']] as const) {
     await dialog.getByRole('textbox', { name: `${axis} ${text('minimum')}`, exact: true }).fill(min);
     if (max) await dialog.getByRole('textbox', { name: `${axis} ${text('maximum')}`, exact: true }).fill(max);
@@ -77,7 +77,7 @@ async function runSurfaceFlow(page: Page, info: TestInfo, app: ElectronApplicati
   await dialog.getByRole('combobox', { name: text('form'), exact: true }).selectOption('parametric');
   const parameterTable = dialog.getByRole('table', { name: text('surfaceParameterRange'), exact: true });
   for (const axis of ['U', 'V']) await expect(parameterTable.getByRole('rowheader', { name: axis, exact: true })).toBeVisible();
-  for (const [axis, expression] of [['X', 'U'], ['Y', 'V'], ['Z', 'U*V']] as const) await dialog.getByRole('textbox', { name: `${axis} ${text('formula')}`, exact: true }).fill(expression);
+  for (const [axis, expression] of [['X', 'U'], ['Y', 'V'], ['Z', 'U*V']] as const) await dialog.getByRole('textbox', { name: `${axis} =`, exact: true }).fill(expression);
   for (const axis of ['U', 'V']) {
     await dialog.getByRole('textbox', { name: `${axis} ${text('minimum')}`, exact: true }).fill('-1');
     await dialog.getByRole('textbox', { name: `${axis} ${text('maximum')}`, exact: true }).fill('1');

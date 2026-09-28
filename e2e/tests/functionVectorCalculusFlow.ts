@@ -12,7 +12,7 @@ export async function functionVectorCalculusFlow(page: Page, info: TestInfo, app
   await page.setViewportSize({ width: 1440, height: 900 });
   await chooseToolMenuItem(page, '作図', text('menuTitle'));
   const dialog = page.locator('.pcad-function-dialog');
-  const formula = dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true });
+  const formula = dialog.getByRole('textbox', { name: `Y =`, exact: true });
   const preview = dialog.getByRole('button', { name: text('preview'), exact: true });
   const apply = dialog.getByRole('button', { name: text('apply'), exact: true });
   const source = 'component(gradient(X^3,[X]),1)', changedSource = 'laplacian(X^3,[X])';
@@ -60,7 +60,7 @@ export async function functionVectorCalculusFlow(page: Page, info: TestInfo, app
 
   await chooseToolMenuItem(page, '作図', text('menuTitle'));
   await dialog.getByRole('combobox', { name: text('geometry'), exact: true }).selectOption('surface');
-  await dialog.getByRole('textbox', { name: `Z ${text('formula')}`, exact: true }).fill('component(hessian(X^2*Y,[X,Y]),1,2)');
+  await dialog.getByRole('textbox', { name: `Z =`, exact: true }).fill('component(hessian(X^2*Y,[X,Y]),1,2)');
   for (const [axis, min, max] of [['X', '-1', '1'], ['Y', '-1', '1'], ['Z', '-3', '3']] as const) {
     await dialog.getByRole('textbox', { name: `${axis} ${text('minimum')}`, exact: true }).fill(min);
     await dialog.getByRole('textbox', { name: `${axis} ${text('maximum')}`, exact: true }).fill(max);
@@ -76,7 +76,7 @@ export async function functionVectorCalculusFlow(page: Page, info: TestInfo, app
   if (surface?.kind !== 'functionSurface') throw new Error('ヘッセ行列から作った曲面が保存されていません。');
   await page.getByText(surface.name, { exact: true }).click();
   await page.getByRole('button', { name: text('edit'), exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: `Z ${text('formula')}`, exact: true })).toHaveValue('component(hessian(X^2*Y,[X,Y]),1,2)');
+  await expect(dialog.getByRole('textbox', { name: `Z =`, exact: true })).toHaveValue('component(hessian(X^2*Y,[X,Y]),1,2)');
   await dialog.getByRole('button', { name: text('surfaceHelp'), exact: true }).click();
   await expect(page.locator('.pcad-help__article')).toContainText('hessian');
   await page.keyboard.press('Escape'); await expect(page.locator('.pcad-help')).toHaveCount(0);

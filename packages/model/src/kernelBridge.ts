@@ -125,6 +125,7 @@ export type {
 } from './kernelBridge/analysisContracts.js';
 export type {
   ExportColor,
+  ExportFaceRange,
   ShapeExportBody,
   ShapeExportFormat,
   ShapeExportOptions,

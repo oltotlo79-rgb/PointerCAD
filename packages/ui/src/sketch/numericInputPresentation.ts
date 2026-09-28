@@ -1,5 +1,5 @@
 /** 表示用の札と値の整形。入力の遷移・確定や文書の更新を持たない。 */
-import { toDisplayLength, type LengthUnit } from '@pointercad/model';
+import { DEFAULT_INCH_DENOMINATOR, toDisplayLength, toFractionalInch, type LengthUnit } from '@pointercad/model';
 import { t, type MessageKey } from '../i18n/t.js';
 import { isLengthFieldUnit, type FieldUnit } from './numericFieldUnits.js';
 import type { CoordinateMode } from './numericInputTools.js';
@@ -72,11 +72,29 @@ export function roundToSignificantDigits(value: number, digits: number): number 
   return Math.round(value * factor) / factor;
 }
 
+/** 1/64 インチの刻みに「ちょうど」乗っているとみなす、刻みの数の誤差(浮動小数の丸めの分だけ)。 */
+const FRACTIONAL_INCH_STEP_TOLERANCE = 1e-6;
+
+/**
+ * 1/64 インチの刻みで**ちょうど**表せる長さ(内部 mm)だけ、分数インチの表記を返す(FR-814、w91a)。
+ *
+ * 刻みへ丸めた分数を出すと元と違う長さを示してしまう(`10`mm は `25/64"` = 9.921875mm)ので、
+ * 割り切れない長さには出さない(null)。整数のインチ(`1"`)も小数の `1 in` と同じなので出さない。
+ */
+export function exactFractionalInchText(millimeters: number): string | null {
+  const steps = toDisplayLength(millimeters, 'inch') * DEFAULT_INCH_DENOMINATOR;
+  if (!Number.isFinite(steps)) return null;
+  const rounded = Math.round(steps);
+  if (Math.abs(steps - rounded) > FRACTIONAL_INCH_STEP_TOLERANCE || rounded % DEFAULT_INCH_DENOMINATOR === 0) return null;
+  return toFractionalInch(millimeters);
+}
+
 /**
  * 欄の下へ添える「= 値」の右辺(P6 タスク3b)。
  *
  * 長さの欄で表示が inch のときだけ、**評価した値だけ**を inch へ直して単位を添える
  * (例: 内部 `10`mm → `0.393700787 in`)。式そのものは書き換えない(FR-202)。
+ * 1/64 インチでちょうど表せる長さには分数インチも添える(`9.525`mm → `0.375 in (3/8")`。FR-814)。
  * それ以外(mm・角度・個数)は式エンジンの表示文字列をそのまま出す(P1 からの見え方)。
  */
 export function fieldValueText(
@@ -86,9 +104,9 @@ export function fieldValueText(
   lengthUnit: LengthUnit = 'mm',
 ): string {
   const text = fieldValueNumberText(unit, value, lengthUnit);
-  return isLengthFieldUnit(unit) && lengthUnit === 'inch'
-    ? `${text} ${t(INCH_FIELD_UNIT_KEY)}`
-    : text;
+  if (!isLengthFieldUnit(unit) || lengthUnit !== 'inch') return text;
+  const fraction = exactFractionalInchText(value.value);
+  return fraction === null ? `${text} ${t(INCH_FIELD_UNIT_KEY)}` : `${text} ${t(INCH_FIELD_UNIT_KEY)} (${fraction})`;
 }
 
 /**

@@ -79,10 +79,13 @@ test('P8 100フィーチャー・三面図・50寸法を開き、字体と寸法
     }, { once: true });
   });
   // WASM準備は別の起動条件。箱を実UIで作って準備を終え、図面を開く操作から測る。
-  await createBox(page); page.on('dialog', (dialog) => { void dialog.accept(); });
+  await createBox(page);
   const stopOpeningProfile = await startDrawingCpuProfile(page, testInfo);
   try {
     const opening = page.waitForEvent('filechooser'); await page.keyboard.press('Control+o');
+    // 箱が保存していない変更なので、画面の中の確認(w91a)に「保存せずに続ける」で答えてから選ぶ窓が開く。
+    await page.getByRole('alertdialog', { name: '保存していない変更があります' })
+      .getByRole('button', { name: '保存せずに続ける', exact: true }).click();
     await (await opening).setFiles({ name: '100フィーチャー.pcadd', mimeType: 'application/zip', buffer: Buffer.from(fixture) });
     await expect.poll(() => page.evaluate(() => window.__drawingPerformance.drawingAt), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
   } finally { await stopOpeningProfile(); }

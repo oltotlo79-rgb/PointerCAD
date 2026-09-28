@@ -14,7 +14,7 @@ export async function functionSectionScenario(page: Page, info: TestInfo, app?: 
   await chooseToolMenuItem(page, '作図', plot('menuTitle'));
   const dialog = page.locator('.pcad-function-dialog');
   await dialog.getByRole('combobox', { name: plot('geometry'), exact: true }).selectOption('surface');
-  await dialog.getByRole('textbox', { name: `Z ${plot('formula')}`, exact: true }).fill('X+Y');
+  await dialog.getByRole('textbox', { name: `Z =`, exact: true }).fill('X+Y');
   for (const [axis, min, max] of [['X', '-1', '1'], ['Y', '-1', '1'], ['Z', '-0.5', '0.5']]) {
     await dialog.getByRole('textbox', { name: `${axis} ${plot('minimum')}`, exact: true }).fill(min);
     await dialog.getByRole('textbox', { name: `${axis} ${plot('maximum')}`, exact: true }).fill(max);

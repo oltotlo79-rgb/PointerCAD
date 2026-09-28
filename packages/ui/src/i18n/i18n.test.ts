@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { MESSAGE_KEYS, type MessageKey, t } from './t.js';
@@ -239,5 +240,140 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
       }
     }
     expect(offenders, 'ja.json へ移してください').toEqual([]);
+  });
+});
+
+/**
+ * 製品のコードからも説明書(`{{ui:鍵}}`)からも引かれていない文言の鍵(w91a で見つけた時点の残り)。
+ * **ここへ足さない。** 新しく使われなくなった鍵は表から消す。ここにある鍵を使い始めたか消したら、
+ * この一覧からも消す(一覧は減るだけ)。見た目に出ない文言は、翻訳や点検の手間だけを増やし、
+ * 説明書の照合で「画面に無い文言」として紛れる(未使用の `exchange.dwgType` の点検、w65b §3-A)。
+ */
+const KNOWN_UNUSED_MESSAGE_KEYS: readonly string[] = [
+  'commandLine.error.toolNotHere',
+  'constraintList.countLabel',
+  'constraintList.empty',
+  'controlGuide.mathGeometry.tool',
+  'exchange.import',
+  'functionPoint.unsupported',
+  'machiningError.notPlanarFace',
+  'mathGeometry.hint',
+  'mathGeometry.palette.pending',
+  'propertyPanel.coilDiameter',
+  'propertyPanel.coordinate.origin',
+  'propertyPanel.count',
+  'propertyPanel.cutPlane',
+  'propertyPanel.diameter',
+  'propertyPanel.embossRaised',
+  'propertyPanel.patternPlacement',
+  'propertyPanel.planeAngle',
+  'propertyPanel.planeAzimuth',
+  'propertyPanel.planeOffset',
+  'propertyPanel.planeTilt',
+  'propertyPanel.primitiveCenterCoordinate',
+  'propertyPanel.radius',
+  'propertyPanel.scaleFactor',
+  'propertyPanel.sectionPoints',
+  'propertyPanel.shellOutward',
+  'propertyPanel.spacing',
+  'propertyPanel.springLength',
+  'propertyPanel.springPitch',
+  'propertyPanel.springTurns',
+  'propertyPanel.sweepFrenet',
+  'propertyPanel.taperOutward',
+  'propertyPanel.threadLength',
+  'propertyPanel.transformTranslation',
+  'propertyPanel.wireDiameter',
+  'settings.lengthUnit',
+  'settings.lengthUnitInch',
+  'settings.lengthUnitMillimeter',
+  'springError.pitchTooSmall',
+  'springError.tooManyTurns',
+  'springError.wireTooThick',
+  'statusBar.unit',
+];
+
+/** 文言の鍵を引いている製品のコード(検査・検査用の補助を除く)の本文と、説明書の `{{ui:鍵}}` を集める。 */
+function usedMessageKeys(): { readonly literals: ReadonlySet<string>; readonly prefixes: readonly string[] } {
+  const repositoryRoot = resolve(sourceRoot, '../../..');
+  const sources: string[] = [];
+  for (const group of ['packages', 'apps']) {
+    for (const entry of readdirSync(join(repositoryRoot, group), { withFileTypes: true })) {
+      const source = join(repositoryRoot, group, entry.name, 'src');
+      if (!entry.isDirectory() || !existsSync(source)) continue;
+      for (const extension of ['.ts', '.tsx', '.mts']) {
+        for (const file of listFiles(source, extension)) {
+          if (/\.test\.[cm]?tsx?$/u.test(file) || /[\\/]testing[\\/]/u.test(file)) continue;
+          sources.push(readFileSync(file, 'utf8'));
+        }
+      }
+    }
+  }
+  const code = sources.join('\n');
+  const manual = listFiles(join(repositoryRoot, 'packages/help-content/docs/ja'), '.md')
+    .map((file) => readFileSync(file, 'utf8')).join('\n');
+  const literals = new Set<string>([
+    ...Array.from(code.matchAll(/['"`]([A-Za-z][\w.-]*)['"`]/gu), (match) => match[1]),
+    ...Array.from(manual.matchAll(/\{\{ui:([^{}]+)\}\}/gu), (match) => match[1]),
+  ]);
+  // `math.palette.${id}.label` や 'drawing.error.' + kind のように組み立てる鍵は、決まった頭の部分で見る。
+  const prefixes = [
+    ...Array.from(code.matchAll(/`([A-Za-z][\w.-]*)\$\{/gu), (match) => match[1]),
+    ...Array.from(code.matchAll(/['"]([A-Za-z][\w.-]*)['"]\s*\+/gu), (match) => match[1]),
+  ];
+  return { literals, prefixes };
+}
+
+/**
+ * モデルブラウザの「⋮」一覧(部品・アセンブリの木)の項目の、名前と説明(title)の抜けを探す(w91a)。
+ * 説明を「押せないときだけ」付ける書き方(`title={cond ? undefined : …}`)も抜けとして数える。
+ */
+function menuItemsWithoutDescription(file: string, text: string): string[] {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const problems: string[] = [];
+  const visit = (node: ts.Node): void => {
+    const opening = ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : null;
+    if (opening !== null) {
+      const attributes = opening.attributes.properties.filter(ts.isJsxAttribute);
+      const attribute = (name: string) => attributes.find((item) => item.name.getText(source) === name);
+      if (attribute('role')?.initializer?.getText(source) === '"menuitem"') {
+        const line = source.getLineAndCharacterOfPosition(opening.getStart(source)).line + 1;
+        const title = attribute('title')?.initializer;
+        const titleText = title === undefined ? '' : title.getText(source);
+        if (titleText === '' || titleText === '""' || /\b(undefined|null)\b/u.test(titleText)) problems.push(`${line}: title`);
+        const named = attribute('aria-label') !== undefined
+          || (ts.isJsxElement(node) && node.children.some((child) => !ts.isJsxText(child) || child.getText(source).trim() !== ''));
+        if (!named) problems.push(`${line}: name`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return problems;
+}
+
+describe('モデルブラウザの「⋮」一覧の項目は名前と説明を持つ(w91a、FR-904)', () => {
+  it.each(['shell/FeatureTree.tsx', 'shell/AssemblyTree.tsx', 'shell/PropertyPanel.tsx'])('%s', (file) => {
+    const path = join(sourceRoot, file);
+    expect(menuItemsWithoutDescription(path, readFileSync(path, 'utf8'))).toEqual([]);
+  });
+  it('説明の無い項目と、押せないときだけ説明を付ける書き方を抜けとして見つける(検査そのものの確認)', () => {
+    const probe = [
+      'const a = <button role="menuitem" title={blocked ? undefined : t(key)}>{t(label)}</button>;',
+      'const b = <button role="menuitem">{t(label)}</button>;',
+      'const c = <button role="menuitem" title={t(hint)} />;',
+      'const d = <button role="menuitem" title={t(hint)}>{t(label)}</button>;',
+    ].join('\n');
+    expect(menuItemsWithoutDescription('probe.tsx', probe)).toEqual(['1: title', '2: title', '3: name']);
+  });
+});
+
+describe('使われていない文言の鍵を残さない(w91a)', () => {
+  it('どの鍵も製品のコードか説明書から引かれている(見つけた時点の残りは一覧のとおりで、増やさない)', () => {
+    const { literals, prefixes } = usedMessageKeys();
+    const unused = MESSAGE_KEYS.filter((key) => !literals.has(key) && !prefixes.some((prefix) => key.startsWith(prefix)));
+    expect([...unused].sort(), '使われていない鍵を足したか、一覧の鍵を使い始めた・消した。表と一覧をそろえる').toEqual(
+      [...KNOWN_UNUSED_MESSAGE_KEYS].sort());
+    expect(MESSAGE_KEYS).not.toContain('exchange.dwgType');
   });
 });

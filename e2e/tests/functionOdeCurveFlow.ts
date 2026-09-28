@@ -30,9 +30,9 @@ export async function functionOdeCurveFlow(page: Page, info: TestInfo, app?: Ele
   const source = 'component(odeat(odesolve([diff(y,x)=2*x],x,[y],[[y,0,1]]),1,[],X),1)';
   const changedSource = source.replace('[y,0,1]', '[y,0,2]');
   await chooseToolMenuItem(page, '作図', plot('menuTitle'));
-  const formula = dialog.getByRole('textbox', { name: `Y ${plot('formula')}`, exact: true });
+  const formula = dialog.getByRole('textbox', { name: `Y =`, exact: true });
   await formula.fill(source);
-  await dialog.getByRole('textbox', { name: `Z ${plot('formula')}`, exact: true }).fill('0');
+  await dialog.getByRole('textbox', { name: `Z =`, exact: true }).fill('0');
   for (const [axis, min, max] of [['X', '-2', '2'], ['Y', '0', '8'], ['Z', '-1', '1']] as const) {
     await dialog.getByRole('textbox', { name: `${axis} ${plot('minimum')}`, exact: true }).fill(min);
     await dialog.getByRole('textbox', { name: `${axis} ${plot('maximum')}`, exact: true }).fill(max);

@@ -6,6 +6,9 @@ const table = Uint32Array.from({ length: 256 }, (_, byte) => {
 });
 export function zipCrc32(bytes: Uint8Array): number {
   let value = 0xffffffff;
-  for (const byte of bytes) value = (value >>> 8) ^ table[(value ^ byte) & 0xff];
+  // 添字で回す(反復子の for...of より約3倍速い。40MiB で 527ms → 195ms の実測。R06)。
+  for (let index = 0; index < bytes.length; index += 1) {
+    value = (value >>> 8) ^ table[(value ^ bytes[index]) & 0xff];
+  }
   return (value ^ 0xffffffff) >>> 0;
 }

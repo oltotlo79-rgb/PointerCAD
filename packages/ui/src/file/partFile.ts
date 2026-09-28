@@ -29,6 +29,7 @@ import { currentPcadAttachments } from '../store/attachKernel.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activeDocument } from '../store/documentKind.js';
 import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly } from './assemblyFile.js';
+import { beginOpenRequest, mayOpenAfterRead } from './documentOpenGuard.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
@@ -38,9 +39,8 @@ import { applyPickedDrawing, saveDrawing } from './drawingFile.js';
 /**
  * 手続きが外の世界へ触れる口(検査では偽物を差し込む)。
  *
- * `confirmDiscard` を約束(Promise)で受けるのは、P2 の仕上げで画面の中の確認カードへ
- * 差し替えられるようにするため(NFR-UX-2「モーダルを増やさない」)。今の既定はブラウザの
- * 確認窓で、答えはすぐ返る。
+ * `confirmDiscard` を約束(Promise)で受けるのは、画面の中の確認へ答えるまで待つため。
+ * 既定は画面の中の日本語の 3 択(`confirmInApp`、w91a)。
  */
 export interface PartFileDeps {
   /** サムネイルの PNG。作れなければ null(サムネイルなしで保存する、§0.a-0.18)。 */
@@ -240,12 +240,17 @@ export function hasUnsavedChanges(
 // 既定の口(画面から呼ぶときのもの)
 // ---------------------------------------------------------------------------
 
-/** ブラウザの確認窓で聞く。窓を出せない環境では、失うものがある操作を進めない。 */
-function confirmWithBrowser(messageKey: MessageKey): Promise<boolean> {
-  if (typeof globalThis.confirm !== 'function') {
-    return Promise.resolve(false);
-  }
-  return Promise.resolve(globalThis.confirm(t(messageKey)));
+/**
+ * 画面の中の確認(AppShell の `DiscardConfirmDialog`)で聞く(w91a)。ブラウザー標準の `confirm` は
+ * デスクトップ版で英語の OK/Cancel になるので使わない(lint が拒否する)。答えは窓を閉じる前の
+ * 確認と同じ 3 つで、「保存して続ける」は保存できたときだけ進める(取消・失敗なら変更を残して止まる)。
+ */
+async function confirmInApp(messageKey: MessageKey): Promise<boolean> {
+  const choice = await useAppStore.getState().requestDiscardConfirm(messageKey);
+  if (choice === 'discard') return true;
+  if (choice !== 'save') return false;
+  await savePart(createDefaultPartFileDeps(), false);
+  return !activeHasUnsavedChanges(useAppStore.getState());
 }
 
 /** ビューポートが差し出したサムネイルの作り手を呼ぶ。無ければ・失敗すれば null。 */
@@ -278,7 +283,7 @@ function storeAttachments(attachments: PcadAttachments): void {
 export function createDefaultPartFileDeps(): PartFileDeps {
   return {
     captureThumbnail: captureThumbnailFromViewport,
-    confirmDiscard: confirmWithBrowser,
+    confirmDiscard: confirmInApp,
     attachmentsOf: currentPcadAttachments,
     onAttachmentsLoaded: storeAttachments,
   };
@@ -321,6 +326,9 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   if (!(await mayDiscard(deps))) {
     return;
   }
+  // 確認に答えた時点の文書を控える。ファイルを選ぶ窓や読込の間に編集・取り消しをしたら、
+  // 開く前に改めて確認する(docs/review-2026-09-28-codex.md R02)。
+  const request = beginOpenRequest();
   let picked: PickedFile | null;
   try {
     picked = await useAppStore.getState().fileGateway.openPcad('all');
@@ -332,16 +340,19 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     return;
   }
   if (picked.name.toLowerCase().endsWith('.pcada')) {
-    await applyPickedAssembly(picked, deps);
+    await applyPickedAssembly(picked, deps, request);
     return;
   }
   if (picked.name.toLowerCase().endsWith('.pcadd')) {
-    await applyPickedDrawing(picked, deps);
+    await applyPickedDrawing(picked, deps, request);
     return;
   }
   const result = readPartDocument(picked.bytes);
   if (!result.ok) {
     useAppStore.getState().setFileMessage({ key: result.messageKey, failed: true });
+    return;
+  }
+  if (!(await mayOpenAfterRead(request, deps))) {
     return;
   }
   // ここまで来たら中身は確かめ済み。文書を差し替え、Undo で開く前へ戻れるようにする。

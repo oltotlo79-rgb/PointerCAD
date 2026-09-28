@@ -30,6 +30,17 @@ test('実Electronで新規の箱・図面・保存再開・復元・出力・F1�
     await page.locator('.pcad-popover input.pcad-field__input').first().press('Enter');
     await waitForRecompute(page, created);
     if (await page.locator('.pcad-popover').count()) await page.locator('.pcad-popover input').first().press('Escape');
+    // 保存していない箱があるまま「新規」を押すと、画面の中の日本語の3択が出る(w91a。ブラウザー標準の
+    // confirm はデスクトップ版で英語の OK/Cancel になっていた)。「戻る」で箱はそのまま残る。
+    await page.getByRole('button', { name: '新規', exact: true }).click();
+    const discardConfirm = page.getByRole('alertdialog', { name: '保存していない変更があります' });
+    await expect(discardConfirm).toContainText('保存していない変更は失われます。続けますか。');
+    for (const choice of ['保存して続ける', '保存せずに続ける', '戻る']) {
+      await expect(discardConfirm.getByRole('button', { name: choice, exact: true })).toBeVisible();
+    }
+    await discardConfirm.getByRole('button', { name: '戻る', exact: true }).click();
+    await expect(discardConfirm).toHaveCount(0);
+    await expect(page.locator('.pcad-statusbar__file')).toContainText('*');
     const partPath = join(directory, '日本語の部品.pcad');
     await saveTarget(app, partPath);
     await page.locator('canvas.pcad-viewport__canvas').focus();

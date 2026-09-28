@@ -141,6 +141,7 @@
   "controlGuide.button.featureSuppress": "この操作を計算から一時的に外すか、計算対象へ戻します。後続の形も再計算されます。",
   "controlGuide.button.referenceVisible": "この基準の点・軸・平面の表示を入・切します。",
   "controlGuide.button.featureRename": "この項目の表示名を編集します。",
+  "controlGuide.button.featureDelete": "この項目を消します。消した後も「元に戻す」で戻せます。",
   "controlGuide.button.rectangleInput": "矩形の寸法を対角の2点で見るか、中心と幅・高さで見るかを切り替えます。矩形の形は変えません。",
   "controlGuide.button.toggle": "「{name}」の入・切を切り替えます。",
   "controlGuide.button.solidAxis": "この立体の操作に使う座標軸を選び、形を再計算します。",

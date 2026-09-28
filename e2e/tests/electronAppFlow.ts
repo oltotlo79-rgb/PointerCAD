@@ -110,6 +110,13 @@ async function sweepStaleElectronProfiles(): Promise<void> {
   }));
 }
 
+/**
+ * 画面検査の後片付け(Playwright の `app.close()` = `app.quit()`)で、未保存の確認(レビュー R03)を省く印。
+ * 製品(`apps/desktop/src/main/closeGuard.ts` の `CLOSE_GUARD_TEST_BYPASS_ENV`)は終了の時点でこれを読み、
+ * `1` のときだけアプリ全体の終了で確認を省く。×で閉じる確認は印があっても省かない。
+ */
+export const CLOSE_CONFIRM_BYPASS_ENV = 'PCAD_E2E_QUIT_WITHOUT_CLOSE_CONFIRM';
+
 export async function openTarget(app: ElectronApplication, path: string): Promise<void> {
   await app.evaluate(({ dialog }, filePath) => {
     dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [filePath] });
@@ -148,6 +155,8 @@ const startup = { loader: typeof globalThis.__playwright_run === 'function', rea
 if (!startup.loader || startup.ready || startup.windows !== 0) throw new Error('Electron startup barrier missing');
 require('node:fs').writeFileSync(${JSON.stringify(join(directory, 'bootstrap.json'))}, JSON.stringify(startup));
 app.setPath('userData', ${JSON.stringify(profile)});
+// The test's own app.close() quits the app; skip only that quit's unsaved-changes confirmation.
+process.env[${JSON.stringify(CLOSE_CONFIRM_BYPASS_ENV)}] = '1';
 // Native desktop input must not enter an automated test window.
 // Playwright sends input directly to webContents; the real window still renders.
 app.on('browser-window-created', (_event, window) => {

@@ -101,11 +101,16 @@ function resolveSizes(reader: ZipBytes, extra: number | null, expanded: number, 
   return { expanded, compressed, local, disk, zip64 };
 }
 
+/** 項目名として受け入れる名前か(空・絶対パス・逆斜線・NUL・ドライブ名・`..` を断る)。 */
+export function isSafeZipEntryName(name: string): boolean {
+  return !(!name || name.startsWith('/') || name.includes('\\') || name.includes('\0')
+    || /^[A-Za-z]:/.test(name) || name.split('/').includes('..'));
+}
+
 function entryName(bytes: Uint8Array, utf8: boolean): string {
   const name = utf8 ? new TextDecoder('utf-8', { fatal: true }).decode(bytes)
     : Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
-  if (!name || name.startsWith('/') || name.includes('\\') || name.includes('\0')
-    || /^[A-Za-z]:/.test(name) || name.split('/').includes('..')) throw new ZipDirectoryError('invalidName', name);
+  if (!isSafeZipEntryName(name)) throw new ZipDirectoryError('invalidName', name);
   return name;
 }
 

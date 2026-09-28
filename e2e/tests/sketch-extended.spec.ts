@@ -3,6 +3,7 @@ import { statSync, writeFileSync } from 'node:fs';
 import { crc32 } from 'node:zlib';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { answerDiscardConfirm } from './discardDialogSupport.js';
 
 /**
  * P4「スケッチ拡張」の完了条件のうち、**作図面の上でかく新しい図形と、その編集**を
@@ -52,16 +53,6 @@ function collectErrors(page: Page): readonly string[] {
     errors.push(error.message);
   });
   return errors;
-}
-
-/**
- * 確認の窓(`window.confirm`)に「はい」で答える(NFR-UX-3)。
- * 「新規」「開く」は押した瞬間に確認を出すので、**押す前に**答える用意をしておく。
- */
-function acceptConfirms(page: Page): void {
-  page.on('dialog', (dialog) => {
-    void dialog.accept();
-  });
 }
 
 /**
@@ -1010,7 +1001,6 @@ test.describe('P4 スケッチ拡張(作図面の上の図形と編集)', () => 
     page,
   }, testInfo) => {
     const errors = collectErrors(page);
-    acceptConfirms(page);
     await disableFilePickers(page);
 
     await page.goto('/');
@@ -1064,8 +1054,12 @@ test.describe('P4 スケッチ拡張(作図面の上の図形と編集)', () => 
       legacyPath,
       buildStoredZip('document.json', Buffer.from(legacyVersion3DocumentJson(), 'utf8')),
     );
+    // 直前(3)の式の書き換えで保存していない変更があるので、「開く」は先に画面の中の確認を
+    // 出す。`addLocatorHandler` は生の `waitForEvent` の待ちの間は働かないため、明示的に答える
+    // (w105a、`discardDialogSupport.ts` の doc comment)。
     const legacyChooserPromise = page.waitForEvent('filechooser');
     await fileAction(page, '開く').click();
+    await answerDiscardConfirm(page);
     await (await legacyChooserPromise).setFiles(legacyPath);
 
     await expect(treeRow(page, '線分1')).toBeVisible();

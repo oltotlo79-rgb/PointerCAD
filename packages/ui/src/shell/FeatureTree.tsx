@@ -1387,7 +1387,7 @@ export function FeatureTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item pcad-menu__item--danger"
             disabled={sketchDeleteBlockedKey !== null}
-            title={sketchDeleteBlockedKey === null ? undefined : t(sketchDeleteBlockedKey)}
+            title={t(sketchDeleteBlockedKey ?? 'controlGuide.button.featureDelete')}
             onClick={() => {
               removeRow(menu.featureId, menu.sectionKey);
               setMenu(null);

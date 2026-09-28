@@ -713,8 +713,10 @@ test.describe('P8 図面の実操作', () => {
     const download = await downloading;
     expect(download.suggestedFilename()).toBe('社内A3標準.pcadt');
     const path = await download.path(); if (path === null) throw new Error('ひな形の保存先がありません');
-    page.once('dialog', (dialog) => { void dialog.accept(); });
     await chooseDrawingMenu(page, 'ファイル', '部品へ戻る');
+    // 保存していない図面を閉じる前の確認(画面の中の日本語の3択。w91a)。
+    await page.getByRole('alertdialog', { name: '保存していない変更があります' })
+      .getByRole('button', { name: '保存せずに続ける', exact: true }).click();
     await expect(page.locator('canvas.pcad-viewport__canvas')).toHaveCount(1);
     await page.locator('.pcad-toolbar').getByRole('button', { name: /^ファイル/u }).first().click();
     const choosing = page.waitForEvent('filechooser');
@@ -1030,17 +1032,21 @@ test.describe('P8 図面の出力と文字注記', () => {
   test('部品へ戻る際の破棄を断ると図面とUndoが残り、同意した時だけ閉じる（R03）', async ({ page }) => {
     await drawingFromBox(page); await addNote(page);
     const text = page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]');
-    const dialogOpened = page.waitForEvent('dialog');
-    const clicked = chooseDrawingMenu(page, 'ファイル', '部品へ戻る');
-    const dialog = await dialogOpened;
-    expect(dialog.type()).toBe('confirm'); expect(dialog.message()).toContain('保存していない変更');
-    await dialog.dismiss(); await clicked;
+    // 閉じる前の確認は画面の中の日本語の3択(w91a。デスクトップ版で英語の OK/Cancel にならない)。
+    const discardConfirm = page.getByRole('alertdialog', { name: '保存していない変更があります' });
+    await chooseDrawingMenu(page, 'ファイル', '部品へ戻る');
+    await expect(discardConfirm).toContainText('保存していない変更は失われます。続けますか。');
+    for (const choice of ['保存して続ける', '保存せずに続ける', '戻る']) {
+      await expect(discardConfirm.getByRole('button', { name: choice, exact: true })).toBeVisible();
+    }
+    // Esc は「戻る」と同じで、図面も記入も残る。
+    await page.keyboard.press('Escape');
+    await expect(discardConfirm).toHaveCount(0);
     await expect(text).toHaveCount(1);
     await page.getByRole('button', { name: '元に戻す', exact: true }).click();
     await expect(text).toHaveCount(0);
-    const confirmed = page.waitForEvent('dialog');
-    const returnClick = chooseDrawingMenu(page, 'ファイル', '部品へ戻る');
-    await (await confirmed).accept(); await returnClick;
+    await chooseDrawingMenu(page, 'ファイル', '部品へ戻る');
+    await discardConfirm.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
     await expect(page.locator('.pcad-drawing-svg')).toHaveCount(0);
     await expect(page.locator('canvas.pcad-viewport__canvas')).toBeVisible();
   });

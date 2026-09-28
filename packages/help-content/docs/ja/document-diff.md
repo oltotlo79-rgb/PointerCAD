@@ -4,7 +4,7 @@
 
 ## 2つのファイルを選ぶ
 
-1. 部品の「ファイルのほかの操作」から**{{ui:documentDiff.title}}**を選びます。
+1. 部品の「{{ui:toolbar.fileMenu.groupLabel}}」から**{{ui:documentDiff.title}}**を選びます。
 2. **{{ui:documentDiff.pick.before}}**で、変更する前の`.pcad`を選びます。
 3. **{{ui:documentDiff.pick.after}}**で、変更した後の`.pcad`を選びます。表示されたファイル名と部品名を確認してください。
 4. **{{ui:documentDiff.relationship}}**を選びます。同じ部品から保存した版なら**{{ui:documentDiff.versions}}**、別々に新規作成した部品なら**{{ui:documentDiff.unrelated}}**です。

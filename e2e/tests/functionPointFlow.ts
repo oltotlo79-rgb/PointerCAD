@@ -35,7 +35,7 @@ async function runFunctionPointFlow(page:Page,info:TestInfo,app:ElectronApplicat
   else{
     await dialog.getByRole('combobox',{name:plot('form'),exact:true}).selectOption('coordinate');
     await dialog.getByRole('combobox',{name:plot('dependent'),exact:true}).selectOption('Z');
-    await dialog.getByRole('textbox',{name:`Z ${plot('formula')}`,exact:true}).fill('X^2+Y^2');
+    await dialog.getByRole('textbox',{name:`Z =`,exact:true}).fill('X^2+Y^2');
   }
   for(const axis of ['X','Y','Z']) for(const endpoint of ['minimum','maximum'] as const) {
     await dialog.getByRole('textbox',{name:`${axis} ${plot(endpoint)}`,exact:true}).fill(endpoint==='minimum'?'-2':'2');

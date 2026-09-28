@@ -8,6 +8,7 @@ import { drawingPrintDocument } from './drawingPrintDocument.js';
 
 import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './appProtocol.js';
 import { isAllowedAppUrl, registerAppWindow, validateAppSender } from './appSender.js';
+import { registerCloseGuard } from './closeGuard.js';
 import { PCAD_PRINT_CHANNEL, registerPcadIpc } from './pcadDialogs.js';
 
 /**
@@ -161,6 +162,8 @@ void app.whenReady().then(() => {
   registerPcadIpc();
   // 「印刷」の受け口(FR-810、P6 計画書 タスク29)。
   registerPrintIpc();
+  // 窓を閉じるときの未保存の確認(レビュー R03)。窓を作る前に見張りを付ける。
+  registerCloseGuard();
   createMainWindow();
 
   app.on('activate', () => {

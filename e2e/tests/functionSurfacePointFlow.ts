@@ -15,7 +15,7 @@ export async function functionSurfacePointFlow(page:Page,info:TestInfo,app?:Elec
   await dialog.getByRole('combobox',{name:plot('geometry'),exact:true}).selectOption('surface');
   await dialog.getByRole('combobox',{name:plot('form'),exact:true}).selectOption('parametric');
   for(const [axis,source] of [['X','U+V'],['Y','U-V'],['Z','U*V']]){
-    await dialog.getByRole('textbox',{name:`${axis} ${plot('formula')}`,exact:true}).fill(source);
+    await dialog.getByRole('textbox',{name:`${axis} =`,exact:true}).fill(source);
   }
   for(const axis of ['X','Y','Z','U','V'])for(const endpoint of ['minimum','maximum'] as const){
     const extent=axis==='U'?2:axis==='V'?1:4;

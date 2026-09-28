@@ -2,9 +2,16 @@ import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, relative, isAbsolute, sep } from 'node:path';
 import { createDesktopUninstallScript } from './desktopUninstall.mjs';
 
+/** Builder resources copied from apps/desktop/packaging (icon.ico/icon.png are named by electron-builder.yml). */
+export const DESKTOP_BUILD_RESOURCES = Object.freeze(['installer.nsh', 'icon.ico', 'icon.png']);
+
 export async function prepareDesktopInstallerResources(root, destination) {
   await mkdir(destination);
-  await writeFile(join(destination, 'installer.nsh'), await readFile(join(root, 'apps/desktop/packaging/installer.nsh')), { flag: 'wx' });
+  for (const name of DESKTOP_BUILD_RESOURCES) {
+    const bytes = await readFile(join(root, 'apps/desktop/packaging', name));
+    if (bytes.length === 0) throw new Error('Empty desktop build resource: ' + name);
+    await writeFile(join(destination, name), bytes, { flag: 'wx' });
+  }
 }
 
 /** Called by builder after the actual Electron runtime has been assembled, before NSIS compilation. */

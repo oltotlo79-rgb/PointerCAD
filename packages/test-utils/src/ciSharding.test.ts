@@ -53,18 +53,33 @@ describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
     console.log('[CI分割] 全操作の選択と前提検査を照合', { total: whole.size, partitions: 3 });
   });
 
-  it('両OSの3組を実行し、欠落・中止・失敗を既存の合格名へ変えない', () => {
+  it('両OSの前段・単体の先行分・画面検査3組を同時に流し、欠落・中止・失敗を既存の合格名へ変えない', () => {
     const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
-    const shards = workflow.slice(workflow.indexOf('  sharded-checks:'), workflow.indexOf('\n  checks:'));
-    expect(shards).toContain('os: [windows-latest, ubuntu-latest]');
-    expect(shards).toContain('shard: [1, 2, 3]');
-    expect(shards).toContain('fail-fast: false');
-    expect(shards).toContain("./scripts/check.ps1 -Install -E2EShard '${{ matrix.shard }}/3'");
-    expect(shards).not.toContain('--no-deps');
+    const section = (name: string, next: string): string =>
+      workflow.slice(workflow.indexOf(`\n  ${name}:`), workflow.indexOf(`\n  ${next}:`));
+    const front = section('front', 'unit-lead');
+    const unitLead = section('unit-lead', 'e2e');
+    const e2e = section('e2e', 'checks');
+    const evidence = " -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'";
+    for (const stage of [front, unitLead, e2e]) {
+      expect(stage).toContain('os: [windows-latest, ubuntu-latest]');
+      expect(stage).toContain('fail-fast: false');
+      expect(stage).toContain('if-no-files-found: error');
+      // 各段は他の段を待たずに同時に流れる(画面検査は前段の成果物を使わない)。
+      expect(stage).not.toContain('needs:');
+      expect(stage).not.toContain('--no-deps');
+    }
+    expect(front).toContain('./scripts/check.ps1 -Install -CIStage Front' + evidence);
+    expect(unitLead).toContain('./scripts/check.ps1 -Install -CIStage UnitLead' + evidence);
+    expect(e2e).toContain('shard: [1, 2, 3]');
+    expect(e2e).toContain("./scripts/check.ps1 -Install -CIStage E2E -E2EShard '${{ matrix.shard }}/3'" + evidence);
     const combined = workflow.slice(workflow.indexOf('\n  checks:'));
+    expect(combined).toContain('os: [windows-latest, ubuntu-latest]');
     expect(combined).toContain('if: always()');
-    expect(combined).toContain('needs: sharded-checks');
-    expect(combined).toContain('${{ needs.sharded-checks.result }}');
-    expect(combined).toContain("if ($env:SHARDED_RESULT -ne 'success') { throw");
+    expect(combined).toContain('needs: [front, unit-lead, e2e]');
+    for (const job of ['front', 'unit-lead', 'e2e']) expect(combined).toContain('${{ needs.' + job + '.result }}');
+    expect(combined).toContain("-ne 'success'");
+    expect(combined).toContain('pattern: ci-stage-*');
+    expect(combined).toContain('./scripts/check.ps1 -CIStage Verify' + evidence);
   });
 });

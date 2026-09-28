@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
@@ -6,7 +6,7 @@ import { symlink } from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildSha256Sums, collectReleaseFileDigests, formatSha256Sums,
-  readDesktopCandidateAssets, verifyReleaseDigestsAgainstCandidates,
+  readDesktopCandidateAssets, stageManualPdfVolumes, verifyReleaseDigestsAgainstCandidates,
 } from '../../../../scripts/release/build-sha256sums.mjs';
 
 const version = '1.0.0';
@@ -150,5 +150,47 @@ describe('配布物ごとのSHA-256一覧(SHA256SUMS)を作る', () => {
     const { windowsStage, linuxStage } = makeStagedCandidates(folder);
     writeFileSync(join(folder, setup), 'tampered-bytes');
     await expect(buildSha256Sums({ folder, windowsStage, linuxStage })).rejects.toThrow('differs from the desktop candidate record');
+  });
+
+  function writeWebCandidateManualPdfs(ids: string[]): string {
+    const webStage = tempDir('pointercad-sha256sums-web-');
+    const pdfDir = join(webStage, 'manual', 'pdf');
+    mkdirSync(pdfDir, { recursive: true });
+    for (const id of ids) writeFileSync(join(pdfDir, `${id}.pdf`), `pdf-bytes-${id}`);
+    return webStage;
+  }
+
+  it('Web候補の説明書PDF全巻を、GitHubのRelease向けの名前(PointerCAD-<版>-manual-<巻>.pdf)へ変えて配布フォルダーへ写す', async () => {
+    const folder = tempDir('pointercad-sha256sums-manual-stage-');
+    const webStage = writeWebCandidateManualPdfs(['getting-started', 'drawing']);
+    const names = await stageManualPdfVolumes({ folder, webStage, version });
+    expect(names).toEqual([`PointerCAD-${version}-manual-drawing.pdf`, `PointerCAD-${version}-manual-getting-started.pdf`].sort());
+    expect(readFileSync(join(folder, `PointerCAD-${version}-manual-getting-started.pdf`), 'utf8')).toBe('pdf-bytes-getting-started');
+    expect(readFileSync(join(folder, `PointerCAD-${version}-manual-drawing.pdf`), 'utf8')).toBe('pdf-bytes-drawing');
+  });
+
+  it('Web候補に説明書PDFが1つも無いフォルダーを拒否する', async () => {
+    const folder = tempDir('pointercad-sha256sums-manual-empty-');
+    const webStage = tempDir('pointercad-sha256sums-web-empty-');
+    mkdirSync(join(webStage, 'manual', 'pdf'), { recursive: true });
+    await expect(stageManualPdfVolumes({ folder, webStage, version })).rejects.toThrow('no manual PDF volumes');
+  });
+
+  it('中身が空の説明書PDFを拒否する', async () => {
+    const folder = tempDir('pointercad-sha256sums-manual-invalidfile-');
+    const webStage = tempDir('pointercad-sha256sums-web-invalidfile-');
+    const pdfDir = join(webStage, 'manual', 'pdf');
+    mkdirSync(pdfDir, { recursive: true });
+    writeFileSync(join(pdfDir, 'empty.pdf'), '');
+    await expect(stageManualPdfVolumes({ folder, webStage, version })).rejects.toThrow('Invalid manual PDF source');
+  });
+
+  it('通し(buildSha256Sums)にwebStageを渡すと、説明書PDFも改名して写してから配布物3つと一緒に集計する', async () => {
+    const folder = tempDir('pointercad-sha256sums-build-with-manual-');
+    const { windowsStage, linuxStage } = makeStagedCandidates(folder);
+    const webStage = writeWebCandidateManualPdfs(['getting-started']);
+    const result = await buildSha256Sums({ folder, windowsStage, linuxStage, webStage });
+    const manualName = `PointerCAD-${version}-manual-getting-started.pdf`;
+    expect(result.entries.map((entry) => entry.name)).toEqual([appImage, manualName, portable, setup].sort());
   });
 });

@@ -633,6 +633,277 @@ if (Test-Path -LiteralPath $scopeSelftest -PathType Leaf) {
     Assert-True $false '変更箇所別の検査範囲の自己試験が存在すること'
 }
 
+# === シナリオ13: CIの段(-CIStage、2026-09-28)。前段・単体の先行分・画面検査3組を別々の実行機で流し、
+#     集約(Verify)で両OSの全段の記録を照合する。記録と照合の細かな拒否は ci_stage_evidence.py の自己試験、
+#     ここでは実際の check.ps1 の入口(不正な組合せの拒否、各段が呼ぶ命令、失敗時に記録しないこと、照合)を確かめる。
+$ciStageScript = Join-Path $scriptDirectory 'lib/ci_stage_evidence.py'
+if (Test-Path -LiteralPath $ciStageScript -PathType Leaf) {
+    & python -B -X utf8 $ciStageScript selftest
+    Assert-True ($LASTEXITCODE -eq 0) 'CIの段の記録・照合・単体の分け方(先行分 && 残り)を自己試験する'
+} else {
+    Assert-True $false 'CIの段の記録の処理が存在すること'
+}
+if ($null -ne $perfModeShellCommand) {
+    $stageEnvironmentNames = @('CI', 'RUNNER_OS', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_SHA', 'DISPLAY', 'PATH',
+        'PCAD_STAGE_CALL_LOG', 'PCAD_STAGE_FAIL', 'ImageOS', 'ImageVersion')
+    $savedStageEnvironment = @{}
+    foreach ($name in $stageEnvironmentNames) { $savedStageEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+    $stageBase = Join-Path ([IO.Path]::GetTempPath()) ("pointercad-cistage-" + [Guid]::NewGuid().ToString("N"))
+    try {
+        New-Item -ItemType Directory -Path $stageBase | Out-Null
+        $rejectedEvidence = Join-Path $stageBase 'rejected-evidence'
+        Remove-Item Env:CI -ErrorAction SilentlyContinue
+        $stageOutput = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath -CIStage Front -StageEvidence $rejectedEvidence | Out-String
+        Assert-True ($LASTEXITCODE -ne 0 -and $stageOutput.Contains('[NG]') -and -not $stageOutput.Contains('=== (')) 'CIの段はCIの外では検査を始める前に拒否する'
+        $env:CI = 'true'
+        foreach ($arguments in @(
+            @('-CIStage', 'Front'),
+            @('-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '4/3', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'Front', '-E2EShard', '1/3', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'UnitLead', '-E2EShard', '2/3', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'Verify', '-Install', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'UnitLead', '-Full', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'Front', '-Level', 'Commit', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'Front', '-ReceiptPhase', 'Push', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '1/3', '-E2ERepeats', '2', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'E2E', '-E2EShard', '1/3', '-E2EOnly', '-StageEvidence', $rejectedEvidence),
+            @('-CIStage', 'Front', '-StaticOnly', '-StageEvidence', $rejectedEvidence)
+        )) {
+            $stageOutput = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath @arguments | Out-String
+            Assert-True ($LASTEXITCODE -ne 0 -and $stageOutput.Contains('[NG]') -and -not $stageOutput.Contains('=== (')) "CIの段の不正な組合せは検査を始める前に拒否する: $(($arguments -join ' ').Replace($rejectedEvidence, '<記録先>'))"
+        }
+        Assert-True (-not (Test-Path -LiteralPath $rejectedEvidence)) '拒否した場合は段の記録を作らない'
+
+        # 実際の check.ps1 を、命令を記録するだけの pnpm で段ごとに流す(製品の検査は動かさない)。
+        $fixture = Join-Path $stageBase 'repository'
+        $tools = Join-Path $stageBase 'tools'
+        $evidence = Join-Path $stageBase 'evidence'
+        $callLog = Join-Path $stageBase 'calls.log'
+        foreach ($folder in @((Join-Path $fixture 'scripts'), (Join-Path $fixture 'apps/desktop'), $tools)) {
+            New-Item -ItemType Directory -Path $folder -Force | Out-Null
+        }
+        $utf8 = [Text.UTF8Encoding]::new($false)
+        $rootTest = 'pnpm --filter @pointercad/expression run test && pnpm --recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test'
+        [IO.File]::WriteAllText((Join-Path $fixture 'package.json'), (@{ scripts = [ordered]@{
+            typecheck = 'fixture'; lint = 'fixture'; test = $rootTest; build = 'fixture'; 'test:e2e' = 'fixture' } } | ConvertTo-Json -Depth 3), $utf8)
+        [IO.File]::WriteAllText((Join-Path $fixture 'pnpm-lock.yaml'), "lockfileVersion: fixture`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $fixture 'apps/desktop/package.json'), '{"name":"@pointercad/desktop"}', $utf8)
+        [IO.File]::WriteAllText((Join-Path $fixture 'scripts/check.selftest.ps1'), "exit 0`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $fixture '.gitignore'), "scratchpad/`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $tools 'pnpm-fixture.mjs'), @'
+import fs from 'node:fs';
+const args = process.argv.slice(2).join(' ');
+if (args === '--version') { process.stdout.write('10.0.0-fixture\n'); process.exit(0); }
+fs.appendFileSync(process.env.PCAD_STAGE_CALL_LOG, args + '\n');
+if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process.exit(1);
+'@, $utf8)
+        $nodePath = (Get-Command node -ErrorAction Stop).Source
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            [IO.File]::WriteAllText((Join-Path $tools 'pnpm.cmd'), "@echo off`r`n`"$nodePath`" `"%~dp0pnpm-fixture.mjs`" %*`r`n", $utf8)
+            $env:RUNNER_OS = 'Windows'
+            $otherStageOs = 'Linux'
+            $browserCall = 'exec playwright install chromium firefox'
+        } else {
+            $stub = Join-Path $tools 'pnpm'
+            [IO.File]::WriteAllText($stub, "#!/bin/sh`nexec `"$nodePath`" `"`$(dirname `"`$0`")/pnpm-fixture.mjs`" `"`$@`"`n", $utf8)
+            & chmod +x $stub
+            $env:RUNNER_OS = 'Linux'
+            $otherStageOs = 'Windows'
+            $browserCall = 'exec playwright install --with-deps chromium firefox'
+            # 実際の xvfb-run は起動しない(命令の記録だけを確かめる)。
+            $env:DISPLAY = ':99'
+        }
+        & git -C $fixture init --quiet 2>$null | Out-Null
+        & git -C $fixture config user.email "selftest@example.invalid" | Out-Null
+        & git -C $fixture config user.name "check.selftest" | Out-Null
+        & git -C $fixture config core.autocrlf false | Out-Null
+        & git -C $fixture add -A | Out-Null
+        & git -C $fixture commit --quiet -m "ci stage fixture" | Out-Null
+        $fixtureHead = ((& git -C $fixture rev-parse HEAD) -join '').Trim()
+        Assert-True ($fixtureHead -match '^[0-9a-f]{40}$') 'シナリオ13 前提: 段の検査用の専用リポジトリを用意する'
+        $env:GITHUB_RUN_ID = '4242'
+        $env:GITHUB_RUN_ATTEMPT = '1'
+        $env:GITHUB_SHA = $fixtureHead
+        $env:PCAD_STAGE_CALL_LOG = $callLog
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        $env:PATH = $tools + [IO.Path]::PathSeparator + $env:PATH
+
+        function Invoke-StageFixture {
+            param([string[]]$Arguments)
+            if (Test-Path -LiteralPath $callLog) { Remove-Item -LiteralPath $callLog -Force }
+            $output = & $perfModeShellCommand -NoProfile -ExecutionPolicy Bypass -File $checkScriptPath -RepositoryRoot $fixture @Arguments | Out-String
+            $code = $LASTEXITCODE
+            $calls = @(if (Test-Path -LiteralPath $callLog) { [IO.File]::ReadAllLines($callLog) })
+            if ($code -ne 0) { Write-Host "[記録] check.ps1 $($Arguments -join ' ') の終了コード $code の出力の末尾: $($output.Substring([Math]::Max(0, $output.Length - 1500)))" }
+            return [pscustomobject]@{ Code = $code; Output = $output; Calls = $calls }
+        }
+        $restCall = '--recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test'
+        $env:PCAD_STAGE_FAIL = 'run lint'
+        $failedFront = Invoke-StageFixture @('-CIStage', 'Front', '-StageEvidence', $evidence)
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        Assert-True ($failedFront.Code -ne 0 -and -not (Test-Path -LiteralPath $evidence)) '段の途中で失敗したら記録を作らない'
+        Assert-True (($failedFront.Calls -join '|') -ceq 'run typecheck|run lint') '失敗した段は後の命令へ進まない'
+
+        $front = Invoke-StageFixture @('-CIStage', 'Front', '-StageEvidence', $evidence)
+        Assert-True ($front.Code -eq 0) '前段(自己試験・型・lint・単体の残り・ビルド)が成功する'
+        Assert-True (($front.Calls -join '|') -ceq ("run typecheck|run lint|$restCall|run build")) "前段は型・lint・単体の残り・ビルドだけを呼び、画面検査を呼ばない: $($front.Calls -join ' | ')"
+        Assert-True ($front.Output.Contains('=== (0) 品質ゲート自身の自己試験 ===')) '前段は品質ゲートの自己試験を行う'
+        $unitLead = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
+        Assert-True ($unitLead.Code -eq 0 -and ($unitLead.Calls -join '|') -ceq '--filter @pointercad/expression run test') "単体の先行分は先行の包の単体だけを呼ぶ: $($unitLead.Calls -join ' | ')"
+        Assert-True (-not $unitLead.Output.Contains('品質ゲート自身の自己試験')) '単体の先行分は自己試験を繰り返さない'
+        foreach ($shard in 1..3) {
+            $e2e = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', "$shard/3", '-StageEvidence', $evidence)
+            Assert-True ($e2e.Code -eq 0 -and ($e2e.Calls -join '|') -ceq "$browserCall|--filter @pointercad/desktop exec install-electron|run test:e2e --shard=$shard/3") "画面検査の組 $shard/3 は準備と画面検査だけを呼ぶ: $($e2e.Calls -join ' | ')"
+        }
+        $unitCalls = @('--filter @pointercad/expression run test', $restCall)
+        Assert-True (('pnpm ' + $unitCalls[0] + ' && pnpm ' + $unitCalls[1]) -ceq $rootTest) '単体の先行分と残りをつなぐとルートのtestと一致する(単体の欠落が無い)'
+        $written = @(Get-ChildItem -LiteralPath $evidence -File | ForEach-Object { $_.Name } | Sort-Object)
+        $osPrefix = $env:RUNNER_OS.ToLowerInvariant()
+        Assert-True (($written -join ',') -ceq (@("$osPrefix-e2e-1of3.json", "$osPrefix-e2e-2of3.json", "$osPrefix-e2e-3of3.json", "$osPrefix-front.json", "$osPrefix-unit-lead.json") -join ',')) "5段の記録がそろう: $($written -join ',')"
+        $duplicate = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
+        Assert-True ($duplicate.Code -ne 0) '同じ段の記録を二重に書かない'
+
+        # もう一方のOSの記録は、同じ版の記録の OS 名だけを変えて用意する(このOSの実行機では作れないため)。
+        foreach ($name in $written) {
+            $text = [IO.File]::ReadAllText((Join-Path $evidence $name), $utf8)
+            $otherText = $text.Replace("`"os`": `"$($env:RUNNER_OS)`"", "`"os`": `"$otherStageOs`"")
+            [IO.File]::WriteAllText((Join-Path $evidence ($otherStageOs.ToLowerInvariant() + $name.Substring($osPrefix.Length))), $otherText, $utf8)
+        }
+        $verified = Invoke-StageFixture @('-CIStage', 'Verify', '-StageEvidence', $evidence)
+        Assert-True ($verified.Code -eq 0 -and $verified.Calls.Count -eq 0) '集約は両OSの全10段の記録を照合して合格し、pnpmを呼ばない'
+        Remove-Item -LiteralPath (Join-Path $evidence ($otherStageOs.ToLowerInvariant() + '-e2e-2of3.json'))
+        $incomplete = Invoke-StageFixture @('-CIStage', 'Verify', '-StageEvidence', $evidence)
+        # python の日本語の出力は親の文字コードで崩れることがあるため、check.ps1 の失敗の行と ASCII のファイル名で確かめる。
+        Assert-True ($incomplete.Code -ne 0 -and $incomplete.Output.Contains('(照合) 両OSの全段の記録 が失敗しました') -and
+            $incomplete.Output.Contains($otherStageOs.ToLowerInvariant() + '-e2e-2of3.json')) '画面検査の1組の記録が欠けたら集約は不合格'
+
+        # === シナリオ14: 画面検査の段の直前の合図(-E2EStartSignal、2026-09-28 w96a の提案)。手元の全体検査の道具が
+        #     画面検査の排他を段の直前にだけ取れるよう、check.ps1 は合言葉つきの要求を書き、同じ合言葉の答えを待つ。
+        #     CI・フック・診断との併用の拒否、答えを待つ間は画面検査を始めないこと、古い答えでは進まないこと、
+        #     断り・上限切れでは画面検査をせずに失敗することを、実際の check.ps1 と命令を記録するだけの pnpm で確かめる。
+        Remove-Item Env:CI -ErrorAction SilentlyContinue
+        $signal = Join-Path $stageBase 'signal'
+        New-Item -ItemType Directory -Path $signal | Out-Null
+        $signalRequest = Join-Path $signal 'e2e-request.json'
+        $signalAnswer = Join-Path $signal 'e2e-go.json'
+        foreach ($arguments in @(
+            @('-E2EStartSignalTimeoutSeconds', '5'),
+            @('-E2EStartSignal', (Join-Path $stageBase 'missing-signal')),
+            @('-E2EStartSignal', $signal, '-Level', 'Commit'),
+            @('-E2EStartSignal', $signal, '-ReceiptPhase', 'Push'),
+            @('-E2EStartSignal', $signal, '-Install'),
+            @('-E2EStartSignal', $signal, '-E2ERepeats', '2'),
+            @('-E2EStartSignal', $signal, '-StaticOnly'),
+            @('-E2EStartSignal', $signal, '-E2EOnly', '-E2EGrep', 'fixture')
+        )) {
+            $rejectedSignal = Invoke-StageFixture $arguments
+            Assert-True ($rejectedSignal.Code -ne 0 -and $rejectedSignal.Output.Contains('[NG]') -and -not $rejectedSignal.Output.Contains('=== (') -and
+                $rejectedSignal.Calls.Count -eq 0) "開始の合図の不正な組合せは検査を始める前に拒否する: $(($arguments -join ' ').Replace($stageBase, '<一時>'))"
+        }
+        $env:CI = 'true'
+        $rejectedSignal = Invoke-StageFixture @('-E2EStartSignal', $signal)
+        Assert-True ($rejectedSignal.Code -ne 0 -and $rejectedSignal.Output.Contains('[NG]') -and $rejectedSignal.Calls.Count -eq 0) 'CIでは開始の合図を使わず、検査を始める前に拒否する'
+        Remove-Item Env:CI -ErrorAction SilentlyContinue
+        Assert-True (-not (Test-Path -LiteralPath $signalRequest)) '拒否した場合は開始の合図の要求を書かない'
+
+        function Start-SignalFixture {
+            param([string[]]$Arguments, [string]$Name)
+            foreach ($path in @($callLog, $signalRequest)) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force } }
+            $outFile = Join-Path $stageBase "$Name.out.log"
+            $errFile = Join-Path $stageBase "$Name.err.log"
+            $all = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $checkScriptPath, '-RepositoryRoot', $fixture) + $Arguments
+            $quoted = @($all | ForEach-Object { '"' + $_ + '"' })
+            $process = Start-Process -FilePath $perfModeShellCommand -ArgumentList $quoted -NoNewWindow -PassThru `
+                -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+            try { $null = $process.Handle } catch {}  # Windows PowerShell 5.1 で終了コードを後から読めるよう、起動直後に取っておく
+            return [pscustomobject]@{ Process = $process; Out = $outFile; Err = $errFile }
+        }
+        function Wait-SignalRequest {
+            param([int]$Seconds = 180)
+            $requestTimer = [Diagnostics.Stopwatch]::StartNew()
+            while ($requestTimer.Elapsed.TotalSeconds -lt $Seconds) {
+                if (Test-Path -LiteralPath $signalRequest -PathType Leaf) {
+                    try { return (Get-Content -LiteralPath $signalRequest -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop) } catch {}
+                }
+                Start-Sleep -Milliseconds 250
+            }
+            return $null
+        }
+        function Complete-SignalFixture {
+            param($Started, [int]$Seconds = 180)
+            if (-not $Started.Process.WaitForExit($Seconds * 1000)) {
+                # 止まった試験用の検査だけを片付ける(製品の検査ではない)。
+                try { $Started.Process.Kill() } catch {}
+                return [pscustomobject]@{ Code = 999; Output = 'timeout'; Calls = @() }
+            }
+            $Started.Process.WaitForExit()
+            $output = [IO.File]::ReadAllText($Started.Out) + [IO.File]::ReadAllText($Started.Err)
+            $calls = @(if (Test-Path -LiteralPath $callLog) { [IO.File]::ReadAllLines($callLog) })
+            $code = $Started.Process.ExitCode
+            if ($code -ne 0) { Write-Host "[記録] 合図の試験の終了コード $code の出力の末尾: $($output.Substring([Math]::Max(0, $output.Length - 1500)))" }
+            return [pscustomobject]@{ Code = $code; Output = $output; Calls = $calls }
+        }
+
+        # 前の検査の答えの残り(違う合言葉)があっても進まず、同じ合言葉の答えで画面検査を始める。
+        [IO.File]::WriteAllText($signalAnswer, '{"token":"stale-answer-from-an-earlier-check","go":true}', $utf8)
+        $started = Start-SignalFixture @('-E2EStartSignal', $signal) 'signal-go'
+        $request = Wait-SignalRequest
+        Assert-True ($null -ne $request -and [string]$request.token -cmatch '^[0-9a-f]{32}$' -and [int]$request.pid -eq $started.Process.Id -and
+            [string]$request.stage -ceq '(5/5) pnpm run test:e2e') '画面検査の段の前で、合言葉・検査のpid・段の名前を書いた要求を出す'
+        Start-Sleep -Seconds 3
+        $callsWhileWaiting = @(if (Test-Path -LiteralPath $callLog) { [IO.File]::ReadAllLines($callLog) })
+        Assert-True (-not $started.Process.HasExited -and $callsWhileWaiting -contains 'run build' -and $callsWhileWaiting -notcontains 'run test:e2e') `
+            "答えを待つ間は(古い答えがあっても)画面検査を始めず、型・lint・単体・ビルドは先に済ませる: $($callsWhileWaiting -join ' | ')"
+        if ($null -ne $request) {
+            [IO.File]::WriteAllText($signalAnswer, (@{ token = [string]$request.token; go = $true } | ConvertTo-Json -Compress), $utf8)
+        }
+        $goDone = Complete-SignalFixture $started
+        Assert-True ($goDone.Code -eq 0 -and @($goDone.Calls | Where-Object { $_ -ceq 'run test:e2e' }).Count -eq 1 -and $goDone.Calls[-1] -ceq 'run test:e2e') `
+            "同じ合言葉の開始の合図で画面検査を1回だけ始めて合格する: $($goDone.Calls -join ' | ')"
+
+        # 道具が断ったら(排他を取れない等)、画面検査を始めずに理由を示して失敗する。
+        $started = Start-SignalFixture @('-E2EStartSignal', $signal) 'signal-refused'
+        $request = Wait-SignalRequest
+        if ($null -ne $request) {
+            [IO.File]::WriteAllText($signalAnswer, (@{ token = [string]$request.token; go = $false; reason = 'fixture-refused-by-the-gate-tool' } | ConvertTo-Json -Compress), $utf8)
+        }
+        $refusedDone = Complete-SignalFixture $started
+        Assert-True ($null -ne $request -and $refusedDone.Code -ne 0 -and $refusedDone.Code -ne 999 -and $refusedDone.Output.Contains('fixture-refused-by-the-gate-tool') -and
+            $refusedDone.Calls -contains 'run build' -and $refusedDone.Calls -notcontains 'run test:e2e') '道具が開始を断ったら画面検査を始めずに理由を示して失敗する'
+
+        # 合図が上限までに来なければ、画面検査を始めずに失敗する(答えを書かない)。
+        $started = Start-SignalFixture @('-E2EStartSignal', $signal, '-E2EStartSignalTimeoutSeconds', '2') 'signal-timeout'
+        $timeoutDone = Complete-SignalFixture $started
+        Assert-True ($timeoutDone.Code -ne 0 -and $timeoutDone.Code -ne 999 -and $timeoutDone.Output.Contains('[NG]') -and
+            $timeoutDone.Calls -contains 'run build' -and $timeoutDone.Calls -notcontains 'run test:e2e') '開始の合図が上限までに来なければ画面検査を始めずに失敗する'
+
+        # 合図を指定しない通常の手元の検査は待たずに画面検査まで進む(従来どおり)。
+        $plain = Invoke-StageFixture @()
+        Assert-True ($plain.Code -eq 0 -and $plain.Calls[-1] -ceq 'run test:e2e' -and -not $plain.Output.Contains('[合図]')) '合図を指定しなければ従来どおり待たずに画面検査まで進む'
+    }
+    finally {
+        foreach ($name in $stageEnvironmentNames) { [Environment]::SetEnvironmentVariable($name, $savedStageEnvironment[$name], 'Process') }
+        if (Test-Path -LiteralPath $stageBase) {
+            $verifiedStageBase = [IO.Path]::GetFullPath($stageBase)
+            $expectedStageParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([char[]]"\/")
+            if ((Split-Path -Parent $verifiedStageBase).TrimEnd([char[]]"\/") -ne $expectedStageParent -or
+                (Split-Path -Leaf $verifiedStageBase) -notmatch '^pointercad-cistage-[a-f0-9]{32}$') {
+                throw "自己試験の削除対象が専用一時ディレクトリ外です: $verifiedStageBase"
+            }
+            try {
+                Get-ChildItem -LiteralPath $stageBase -Recurse -Force -ErrorAction SilentlyContinue |
+                    ForEach-Object { $_.Attributes = 'Normal' }
+            } catch {}
+            Remove-Item -LiteralPath $stageBase -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $stageBase) {
+                Write-Host "[警告] 一時フォルダーを削除できませんでした(手動確認要): $stageBase" -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/record_time_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) '記録時刻のフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/opus_concurrency_guard.selftest.py')

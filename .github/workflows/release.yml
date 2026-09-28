@@ -226,6 +226,7 @@ jobs:
       # e2e/release/packagedDesktop.spec.ts)が配布物の実行ファイルを一時のuserDataで起動し、
       # 名前と版・主要な画面・形状と数式の計算部・字体・pageerror・閉じた後のプロセスを確かめる。
       # 起動できない配布物をartifactへ保存しないよう、保存の前に置く。
+      # package-desktop.mjsは配布ファイルだけをartifacts/へ置き、builderの展開済みの本体はbuilder/へ分ける。
       - name: 配布物を起動して確かめる(Windowsはwin-unpacked)
         if: matrix.os == 'windows-latest'
         shell: pwsh
@@ -233,7 +234,7 @@ jobs:
         env:
           PCAD_PACKAGED_CANDIDATE: dist/desktop-stage/candidate.json
         run: |
-          $executable = Join-Path $PWD.Path 'dist/desktop-stage/artifacts/win-unpacked/PointerCAD.exe'
+          $executable = Join-Path $PWD.Path 'dist/desktop-stage/builder/win-unpacked/PointerCAD.exe'
           if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
             throw "win-unpackedの実行ファイルがありません: $executable"
           }
@@ -295,11 +296,14 @@ jobs:
       # app/(展開済み本体)とartifacts/(梱包済みinstaller)の両方を含む。
       # release-manifest.mjsは組み立て後の検証にapp/側のファイルも読むため、
       # artifacts/だけを取り出して縮小することはできない(既存スクリプトの設計)。
+      # builder/(electron-builderの展開済みの本体・設定の控え・変換したアイコン)はcombineが読まないため除く。
       - name: Desktop候補をartifactへ保存
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pointercad-desktop-${{ matrix.os }}-${{ inputs.commit }}
-          path: dist/desktop-stage
+          path: |
+            dist/desktop-stage
+            !dist/desktop-stage/builder
           retention-days: 14
           if-no-files-found: error
 

@@ -23,6 +23,8 @@ win:
       arch: [x64]
   signExecutable: false
   signAndEditExecutable: true
+  # 製品の印(ツールバーの立方体)。16〜256pxを1つの.icoに収め、本体・導入・削除の画面で使う。
+  icon: icon.ico
   artifactName: PointerCAD-${version}-windows-${arch}-setup.${ext}
 nsis:
   include: installer.nsh
@@ -49,4 +51,9 @@ linux:
     - target: AppImage
       arch: [x64]
   category: Graphics
-  artifactName: PointerCAD-${version}-linux-${arch}.${ext}
+  icon: icon.png
+  # 窓と.desktopの項目を結び付ける名前(app_id / WM_CLASS)。本体のpackage.jsonのdesktopNameと揃える。
+  syncDesktopName: true
+  # 26.15.3の${arch}はAppImageでx64をx86_64と書く(builder-utilのgetArtifactArchName)。
+  # 配布の計画(desktopPackageTargets.mjs)の名前どおりx64を直接書く。
+  artifactName: PointerCAD-${version}-linux-x64.${ext}

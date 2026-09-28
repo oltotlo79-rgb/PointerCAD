@@ -25,9 +25,10 @@ function collectErrors(page: Page): readonly string[] {
   return errors;
 }
 
-function acceptConfirms(page: Page): void {
-  page.on('dialog', (dialog) => {
-    void dialog.accept();
+async function acceptConfirms(page: Page): Promise<void> {
+  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
+    await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });
 }
 
@@ -208,7 +209,7 @@ test.describe('P4b コマンドライン入力(FR-208)', () => {
 
   test('新規で開き直すと欄が空になる(書きかけの文字を持ち越さない)', async ({ page }) => {
     const errors = collectErrors(page);
-    acceptConfirms(page);
+    await acceptConfirms(page);
 
     await page.goto('/');
     await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');

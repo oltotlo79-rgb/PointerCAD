@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { IpcRendererEvent } from 'electron';
 import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
 
 /**
@@ -51,4 +52,27 @@ contextBridge.exposeInMainWorld('pointercadDesktop', {
    */
   print: (bytes: Uint8Array, options?: DrawingPrintOptions): Promise<unknown> => options === undefined
     ? ipcRenderer.invoke('pcad:print', bytes) : ipcRenderer.invoke('pcad:print', bytes, options),
+  /**
+   * 窓を閉じるときの未保存の確認(レビュー R03)。本体の `apps/desktop/src/main/closeGuard.ts` と
+   * チャンネル名をそろえる。画面が用意と文言を知らせるまで、本体は閉じるのを止めない。
+   */
+  closeGuardReady: (texts: unknown): Promise<unknown> => ipcRenderer.invoke('pcad:closeGuardReady', texts),
+  /** 未保存の有無が変わったことを本体へ知らせる(OS の終了要求を止めるかの判断に使う)。 */
+  reportUnsavedWork: (unsaved: boolean): Promise<unknown> => ipcRenderer.invoke('pcad:closeGuardState', unsaved),
+  /**
+   * 本体からの「閉じてよいか」の問合せを受ける。渡すのは問合せの番号(文字列)だけで、
+   * IPC の event は画面へ渡さない。戻り値の関数で受けるのをやめる。
+   */
+  onCloseRequest: (listener: (requestId: string) => void): (() => void) => {
+    const receive = (_event: IpcRendererEvent, requestId: unknown): void => {
+      if (typeof requestId === 'string') listener(requestId);
+    };
+    ipcRenderer.on('pcad:closeRequest', receive);
+    return () => { ipcRenderer.removeListener('pcad:closeRequest', receive); };
+  },
+  /** 本体の窓で「保存して閉じる・保存せずに閉じる・戻る」を出させる。答えは 'save'・'discard'・'cancel'。 */
+  chooseCloseAction: (requestId: string): Promise<unknown> => ipcRenderer.invoke('pcad:closeChoice', requestId),
+  /** 問合せに答える。close が true なら本体が窓を閉じる。 */
+  answerCloseRequest: (requestId: string, close: boolean): Promise<unknown> =>
+    ipcRenderer.invoke('pcad:closeAnswer', requestId, close),
 });

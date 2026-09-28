@@ -34,6 +34,7 @@ import { createAssemblyDocumentBundle, createPartDocumentBundle, drawingSourceIn
 
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import type { AppState } from '../store/appState.js';
+import { beginDocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { saveFileAsThrough, withPcadExtension, withPcadaExtension, withPcaddExtension } from './fileGateway.js';
 import { openErrorMessageKey, readPartDocument } from './partFile.js';
@@ -294,8 +295,10 @@ export async function loadAutoSavePrompt(
  */
 export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   const before = useAppStore.getState();
-  const isCurrent = () => useAppStore.getState().activeDocumentId === before.activeDocumentId
-    && useAppStore.getState().documentVersion === before.documentVersion;
+  // 押した時点の文書と比べる。版の番号は通常の編集で増えないので、参照で調べる共通の判定を使う
+  // (docs/review-2026-09-28-codex.md R01 の注意)。変わっていたら何もせず、案内を残す。
+  const request = beginDocumentRequest('restore', before);
+  const isCurrent = (): boolean => request.isCurrent();
   const record = await recoveryRecordOf(saver);
   if (!isCurrent()) return;
   if (record === null) {
@@ -319,8 +322,9 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   }
   if (record.kind === 'assembly') {
     const outcome = await readDocumentBundle(record.bytes, 'assembly');
+    if (!isCurrent()) return;
     if (!outcome.ok || outcome.bundle.kind !== 'assembly') {
-      await loadAutoSavePrompt(saver, { record });
+      await loadAutoSavePrompt(saver, { record, shouldApply: isCurrent });
       return;
     }
     const state = useAppStore.getState();

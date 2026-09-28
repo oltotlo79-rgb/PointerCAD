@@ -65,7 +65,7 @@ node scripts/release/build-sbom.mjs <new-output>
 処理の流れ:
 
 1. `resolve`job: 入力commitの形式を確認し、その版を`checkout`した上で、通常CI(`ci.yml`)の集約check run「`checks (windows-latest)`」「`checks (ubuntu-latest)`」が両方とも成功していることを`gh api .../check-runs`で確認する。両方の成功が無ければ以降のjobを実行しない。
-2. `desktop`job(Windows/Ubuntuのrunnerでmatrix実行): `build-desktop-output.mjs` → `scripts/manual/generate.mjs` → `scripts/manual/generate-pdf.mjs` → `assemble-desktop.mjs` → `package-desktop.mjs`を順に呼び、Windows(NSIS・ポータブル)/Linux(AppImage)それぞれの候補一式(`app/`・`packaging/`・`artifacts/`・`candidate.json`)をartifactへ保存する。
+2. `desktop`job(Windows/Ubuntuのrunnerでmatrix実行): `build-desktop-output.mjs` → `scripts/manual/generate.mjs` → `scripts/manual/generate-pdf.mjs` → `assemble-desktop.mjs` → `package-desktop.mjs`を順に呼び、Windows(NSIS・ポータブル)/Linux(AppImage)それぞれの候補一式(`app/`・`packaging/`・`artifacts/`・`candidate.json`)をartifactへ保存する。`artifacts/`には配布するファイル(Windowsは`-setup.exe`と`-portable.exe`、Linuxは`.AppImage`)だけを置き、electron-builderの展開済みの本体(`win-unpacked/`・`linux-unpacked/`)・設定の控え・変換したアイコンは`builder/`へ分ける(`builder/`はartifactへ保存しない)。
 3. `web`job(Ubuntu runner): `build-web-offline.mjs` → `scripts/manual/generate.mjs` → `scripts/manual/generate-pdf.mjs` → `assemble-web-offline.mjs`を順に呼び、Web候補一式をartifactへ保存する。
 4. `combine`job(Ubuntu runner): 対象commitを`checkout`し直し、上記2種のDesktop候補とWeb候補をartifactから取得した上で、`build-sbom.mjs`でSBOMを作り、`build-release-manifest.mjs`で本節冒頭の`release-manifest.json`を組み立てる。別commitの成果物混入・組み立て後のバイト列の変化・古いartifactの再利用は、このスクリプトが呼ぶ`createReleaseManifest`(`releaseManifest.mjs`)自身がsourceCommitの一致・入力指紋の一致・`candidate.json`記録済みhashとの一致で厳密に拒否する(workflow側で検査を緩めることはできない)。結果の`release-manifest.json`と`sbom.json`を1つのartifactへまとめて保存する。
 
@@ -81,7 +81,7 @@ node scripts/release/build-sbom.mjs <new-output>
 
 `desktop`jobは`package-desktop.mjs`の直後、artifactへ保存する前に、作った配布物そのものを起動して確かめる。設定は`e2e/packaged-desktop.config.ts`、検査は`e2e/release/packagedDesktop.spec.ts`。起動できない配布物はartifactへ保存しない。
 
-- Windows: `dist/desktop-stage/artifacts/win-unpacked/PointerCAD.exe`を起動する。
+- Windows: `dist/desktop-stage/builder/win-unpacked/PointerCAD.exe`を起動する。
 - Linux: runnerにFUSEが無いため、AppImageを`--appimage-extract`でrunnerの一時領域(`$RUNNER_TEMP`)へ展開し、`squashfs-root/AppRun`を`xvfb-run -a`の画面で起動する。展開物は`dist/desktop-stage`へ混ぜない。`--no-sandbox`は検査からは足さず、AppRun自身の判断(利用者の名前空間が使えないときだけ足す)に任せる。
 - 渡し方は環境変数`PCAD_PACKAGED_EXECUTABLE`(起動する実行ファイル)と`PCAD_PACKAGED_CANDIDATE`(その配布物の`candidate.json`)。相対パスはリポジトリの根から。
 - 確かめる項目(一時のuserDataへの隔離、窓の表示、名前と版の記録との一致、主要な画面、形状・数式の計算部と字体、pageerror、閉じた後のプロセス、実際のプロファイルが変わらないこと)と、導入版での走らせ方は`docs/standards/desktop-distribution.md`の「(d) 配布物の起動確認」。
@@ -91,7 +91,7 @@ node scripts/release/build-sbom.mjs <new-output>
 手元(Windows)でwin-unpackedを確かめる場合は、画面検査の排他を守るため担当が`diag.py`を通して走らせる(配布物の組み立て・起動は統括の指示の後):
 
 ```powershell
-$env:PCAD_PACKAGED_EXECUTABLE = 'dist\<候補の名前>\artifacts\win-unpacked\PointerCAD.exe'
+$env:PCAD_PACKAGED_EXECUTABLE = 'dist\<候補の名前>\builder\win-unpacked\PointerCAD.exe'
 $env:PCAD_PACKAGED_CANDIDATE = 'dist\<候補の名前>\candidate.json'
 python -B -X utf8 scratchpad/claude/tools/diag.py e2e --owner <担当名> -- --config e2e/packaged-desktop.config.ts
 ```

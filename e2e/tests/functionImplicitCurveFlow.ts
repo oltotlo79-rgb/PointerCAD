@@ -49,10 +49,10 @@ async function runFunctionImplicitCurveFlow(page:Page,info:TestInfo,app?:Electro
     await(await chooser).setFiles(info.outputPath('function-implicit-circle.pcad'));
   }
   await waitForRecompute(page);await page.getByText(feature.name,{exact:true}).click();await page.getByRole('button',{name:text('edit'),exact:true}).click();
-  await expect(dialog.getByRole('textbox',{name:text('implicitCurveEquation'),exact:true})).toHaveValue('X^2+Y^2-1');
+  await expect(dialog.getByRole('textbox',{name:'F =',exact:true})).toHaveValue('X^2+Y^2-1');
   await expect(dialog.getByRole('textbox',{name:`Z ${text('fixedCoordinate')}`,exact:true})).toHaveValue('0.5');
   await dialog.getByRole('combobox',{name:text('fixedAxis'),exact:true}).selectOption('X');
-  await dialog.getByRole('button',{name:`${text('implicitCurveEquation')}: ${uiMessage('math','math.open')}`,exact:true}).click();
+  await dialog.getByRole('button',{name:`F: ${uiMessage('math','math.open')}`,exact:true}).click();
   const math=page.locator('.pcad-math-dialog');await math.locator('textarea').fill('Y^2+Z^2-1');
   await expect(math.getByRole('button',{name:'この式を使う',exact:true})).toBeEnabled();await math.getByRole('button',{name:'この式を使う',exact:true}).click();
   await expect(math).toHaveCount(0);await dialog.getByRole('textbox',{name:`Z ${text('maximum')}`,exact:true}).fill('0');

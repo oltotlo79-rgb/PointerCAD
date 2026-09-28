@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { applicationInputDigest, classifyCaptureViewport } from '../../scripts/manual/captureRegistry.mjs';
-import { readRecomputeStats } from './recompute.js';
+import { applicationInputDigest, CAPTURE_SCREEN_REQUIREMENTS, classifyCaptureViewport } from '../../scripts/manual/captureRegistry.mjs';
+import { readRecomputeStats, waitForSettledRecompute } from './recompute.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -35,6 +35,40 @@ function resolveApplicationBuildId(): Promise<string> {
   return cachedApplicationBuildId;
 }
 
+/**
+ * The 3D view's finished drawings once no drawing is pending any more (two animation frames without a new
+ * one), or null on a screen without the 3D view. captureManualDetail requires the same value after
+ * photographing, so a picture taken while the view was still being drawn is never recorded as finished.
+ */
+async function settledViewportRender(page: Page): Promise<{ readonly completedRenders: number; readonly lastCompletedAtMs: number } | null> {
+  const read = () => page.evaluate(async () => {
+    const stats = window.pcadViewportRenderStats;
+    if (stats === undefined) return null;
+    const before = stats().completedRenders;
+    // A draw requested inside the watched frames (e.g. the ResizeObserver after setViewportSize) runs in
+    // the next frame, possibly after this page's own animation-frame callback. So watch three frames and
+    // then a task after the last one, by which time such a draw has run and is counted.
+    // A hidden page may not run animation frames; then it cannot draw either, so a short timer suffices.
+    const frame = () => new Promise(done => { requestAnimationFrame(done); });
+    await Promise.race([frame().then(frame).then(frame).then(() => new Promise(done => { setTimeout(done, 0); })),
+      new Promise(done => { setTimeout(done, 1_000); })]);
+    const { completedRenders, lastCompletedAtMs } = stats();
+    return completedRenders === before && completedRenders > 0 ? { completedRenders, lastCompletedAtMs } : 'drawing' as const;
+  });
+  // Settled only when two consecutive reads agree: one quiet read right after setViewportSize ended just
+  // before such a draw in real Electron (gate 20260928-133915: one 30-40 ms read, then one more draw while capturing).
+  const latest: { value: Awaited<ReturnType<typeof read>> } = { value: 'drawing' };
+  let previous: number | null = null;
+  await expect.poll(async () => {
+    const value = await read();
+    const stable = value === null || (value !== 'drawing' && value.completedRenders === previous);
+    previous = value === null || value === 'drawing' ? null : value.completedRenders;
+    latest.value = value;
+    return stable ? value : 'drawing';
+  }, { message: '3D表示の描画が落ち着いてから撮影する', timeout: 15_000 }).not.toBe('drawing');
+  return latest.value === 'drawing' ? null : latest.value;
+}
+
 /** Keep the whole working screen and a legible, unmodified dialog image together with their actual fixture. */
 export async function captureManualDetail(page: Page, info: TestInfo, input: {
   readonly name: string;
@@ -45,19 +79,27 @@ export async function captureManualDetail(page: Page, info: TestInfo, input: {
   expect(input.name).toMatch(/^[a-z][a-z0-9-]*$/u);
   await input.dialog.waitFor({ state: 'visible' });
   await page.evaluate(async () => { await document.fonts.ready; });
-  const before = await readRecomputeStats(page);
+  // 世代の帳簿(isComputing・世代)だけでなく、ドラッグ等に伴う個別の計算部呼び出し
+  // (pendingWaiters)も含めて落ち着くまで待つ。個別 flow の waitForRecompute に頼らない。
+  const before = await waitForSettledRecompute(page);
   expect(before.isComputing).toBe(false);
   expect(before.lastOutcome).toBe('success');
   expect(before.completedGeneration).toBe(before.requestedGeneration);
+  expect(before.pendingWaiters).toBe(0);
   const screenState = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, deviceScaleFactor: devicePixelRatio,
-    fontStatus: document.fonts.status, url: location.href }));
+    fontStatus: document.fonts.status, url: location.href,
+    theme: document.documentElement.dataset.theme ?? null, uiScale: document.documentElement.dataset.uiScale ?? null }));
   // Only the registry's standard screen and tall-dialog exception may be captured (scripts/manual/captureRegistry.mjs).
   const viewportClass = classifyCaptureViewport([screenState.width, screenState.height]);
   // Electron never supplies manual images (see isElectronProject above), so it only records viewportClass
   // in the metadata below; Chromium (functional) and firefox keep failing on an unsupported screen size.
   if (!isElectronProject(info.project.name)) {
     expect(viewportClass !== 'needs-recapture', `Unsupported capture screen size ${screenState.width}x${screenState.height}`).toBe(true);
+    // Dark theme, UI scale 100 %, device scale 1 and loaded fonts (plan P12-16; the same values the provenance bundle requires).
+    expect({ theme: screenState.theme, uiScale: screenState.uiScale, deviceScaleFactor: screenState.deviceScaleFactor,
+      fontStatus: screenState.fontStatus }, 'Manual captures use the fixed screen conditions').toEqual(CAPTURE_SCREEN_REQUIREMENTS);
   }
+  const viewportRender = await settledViewportRender(page);
   // Reuse this already prepared, stable screen; do not add another operation or alter focus.
   // The whole screen includes the toolbar and property fields surrounding the photographed dialog.
   const controlDescriptions = await assertRenderedControlDescriptions(page.locator('body'));
@@ -68,17 +110,22 @@ export async function captureManualDetail(page: Page, info: TestInfo, input: {
   const detail = await input.dialog.screenshot({ path: info.outputPath(detailName), animations: 'disabled' });
   const after = await readRecomputeStats(page);
   expect(after).toEqual(before);
+  if (viewportRender !== null) {
+    expect(await page.evaluate(() => window.pcadViewportRenderStats?.().completedRenders), 'The 3D view must not redraw while capturing')
+      .toBe(viewportRender.completedRenders);
+  }
   const fixtureName = `${input.name}-fixture.json`;
   await writeFile(info.outputPath(fixtureName), fixtureBytes, { flag: 'wx' });
   const metadata = {
     format: 'pointercad-manual-detail/1', releaseCertified: false,
     capturedAt: new Date().toISOString(),
     applicationBuildId: await resolveApplicationBuildId(),
-    project: info.project.name, sourceTest: info.title, scriptSha256: hash(scriptBytes),
+    project: info.project.name, sourceTest: info.title,
+    script: relative(projectRoot, fileURLToPath(input.script)).split(sep).join('/'), scriptSha256: hash(scriptBytes),
     fixture: { filename: fixtureName, sha256: hash(fixtureBytes) },
     screen: { filename: screenName, sha256: hash(screen) }, detail: { filename: detailName, sha256: hash(detail) },
     controlDescriptions,
-    recompute: after, dialogBounds: await input.dialog.boundingBox(),
+    recompute: after, viewportRender, dialogBounds: await input.dialog.boundingBox(),
     screenState, viewportClass,
   };
   await writeFile(info.outputPath(`${input.name}-capture.json`), JSON.stringify(metadata, null, 2), { flag: 'wx' });

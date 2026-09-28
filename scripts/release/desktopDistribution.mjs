@@ -47,7 +47,8 @@ function appMetadata(metadata) {
     || !/^[a-f0-9]{40}$/u.test(metadata.sourceCommit) || !['win32', 'linux'].includes(metadata.platform)
     || metadata.arch !== 'x64' || !/^\d+\.\d+\.\d+$/u.test(metadata.electronVersion)
     || metadata.builderVersion !== '26.15.3') throw new Error('Invalid desktop package identity');
-  return { name: 'pointercad', productName: 'PointerCAD', version: metadata.version, private: true,
+  // desktopName: Linuxで窓を.desktopの項目(electron-builder.ymlのsyncDesktopName)へ結び付ける名前。
+  return { name: 'pointercad', productName: 'PointerCAD', desktopName: 'PointerCAD.desktop', version: metadata.version, private: true,
     main: './dist/main/main.cjs', description: '座標と数式で作図するCAD',
     author: { name: 'PointerCAD contributors' }, license: 'Apache-2.0',
     homepage: 'https://github.com/oltotlo79-rgb/PointerCAD' };

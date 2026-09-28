@@ -47,12 +47,15 @@ test('P12-26 中身が壊れた.pcadを開いても理由が出て、今の文�
   await expect(pointRow).toBeVisible();
   await expect(page.locator('.pcad-statusbar__file')).toContainText('*');
 
-  // 壊れた .pcad を開こうとする。保存していない変更があるので、開く前の確認(window.confirm)
-  // に「はい」で答える(NFR-UX-3。答えないと既定で自動的に打ち消され、選ぶ窓が開かない)。
-  page.on('dialog', (dialog) => { void dialog.accept(); });
+  // 壊れた .pcad を開こうとする。保存していない変更があるので、開く前の確認(画面の中の
+  // 日本語の3択。w91a)に「保存せずに続ける」で答える(NFR-UX-3。答えるまで選ぶ窓は開かない)。
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('group', { name: 'ファイル', exact: true }).getByRole('button', { name: '開く', exact: true }).click();
+  const discardConfirm = page.getByRole('alertdialog', { name: '保存していない変更があります' });
+  await expect(discardConfirm).toContainText('保存していない変更は失われます。続けますか。');
+  await discardConfirm.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   await (await chooser).setFiles(brokenPath);
+  await expect(discardConfirm).toHaveCount(0);
 
   // 理由が赤い帯に出る。
   await expect(page.locator('.pcad-statusbar')).toHaveClass(/pcad-statusbar--error/);

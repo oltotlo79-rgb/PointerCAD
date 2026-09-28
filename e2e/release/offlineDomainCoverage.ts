@@ -44,7 +44,11 @@ export async function verifyOfflineExactMath(page: Page, server: OfflineCandidat
     await page.getByRole('button', { name: '名前を付けた数値を足します', exact: true }).click();
     const row = page.locator('.pcad-parameter').last();
     const dialog = page.locator('.pcad-math-dialog');
-    await row.locator('.pcad-field').first().locator('input').fill('厳密係数');
+    // 名前は Enter で確定してから数式の窓を開く(packagedDesktop.spec.ts の (d-2) と同じ理由。確定しないまま
+    // 開くと、窓へ焦点が移った時の名前の確定で文書が変わり、窓は古い文書のものとして閉じる)。
+    const name = row.locator('.pcad-field').first().locator('input');
+    await name.fill('厳密係数'); await name.press('Enter');
+    await expect(page.getByRole('textbox', { name: '名前 厳密係数', exact: true }), '名前の確定が文書へ入ったこと').toHaveValue('厳密係数');
     await row.getByRole('button', { name: '数式で入力', exact: true }).click();
     await waitForMathEditorText(dialog);
     const input = dialog.locator('textarea');

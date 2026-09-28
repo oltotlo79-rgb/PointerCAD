@@ -14,26 +14,32 @@ on:
 # 最小権限(NFR-SE-2)。GITHUB_TOKEN を使うのは actions/checkout(リポジトリの取得)だけで、
 # コミット・PR・Issue・パッケージ公開など書き込みは一切行わない。
 # 根拠: actions/checkout の README(https://github.com/actions/checkout#usage)が
-# 「contents: read」を推奨。actions/upload-artifact は GITHUB_TOKEN の権限を使わず、
-# 別方式(アーティファクト用の一時トークン)で認証するため対象外
-# (https://github.com/actions/upload-artifact/issues/197)。actions/setup-node も
-# キャッシュや公開設定を使っておらず、GITHUB_TOKEN を必要としない。secret を使う step は無い。
+# 「contents: read」を推奨。actions/upload-artifact・actions/download-artifact は同じrunの
+# アーティファクトだけを扱い、GITHUB_TOKEN の権限を使わず別方式(アーティファクト用の一時トークン)で
+# 認証するため対象外(https://github.com/actions/upload-artifact/issues/197、
+# actions/download-artifact v4 の README)。actions/setup-node もキャッシュや公開設定を使っておらず、
+# GITHUB_TOKEN を必要としない。secret を使う step は無い。
 permissions:
   contents: read
 
+# 2026-09-28(レビュー §6.3「検査の待ち時間を減らす」): 以前は両OS×3組の各組が型・lint・全単体・
+# ビルドを繰り返してから画面検査の1/3を流していた(run 36346675432 で1組 84〜189分)。画面検査は webServer が
+# 自分で組み立てるため前段の成果物を使わない。そこで OS ごとに、前段(自己試験・型・lint・単体の
+# 残り・ビルド)と単体の先行分を1回ずつ、画面検査を3組に分けて、5台で同時に流す。検査の件数・OS・
+# 精度・時間の判定は変えない。各段は成功したときだけ「同じ版・lock・道具と通した手順」を記録し、
+# 集約(checks)が両OSの全10段の記録を照合する(scripts/lib/ci_stage_evidence.py)。
 jobs:
-  sharded-checks:
-    # このjobはリポジトリの取得(contents: read)としかトークンを使わない(コミット・PR・
-    # Issue・パッケージ公開は行わない)。job単位でも明示し、将来ステップが増えても
-    # 既定のwrite権限へ戻らないようにする。
+  front:
+    # 前段: 品質ゲートの自己試験・型・lint・単体の残り(ルートの test の後半)・両アプリの組み立て。
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
-        shard: [1, 2, 3]
     runs-on: ${{ matrix.os }}
+    # 止まった検査で6時間待たないための上限(実測の最大 約40分の2倍強。検査の時間判定ではない)。
+    timeout-minutes: 90
     steps:
       - name: リポジトリの取得
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -52,9 +58,108 @@ jobs:
           COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
         run: corepack enable
 
-      - name: 一括検査 (scripts/check.ps1)
+      - name: 前段の検査 (scripts/check.ps1)
         shell: pwsh
-        run: ./scripts/check.ps1 -Install -E2EShard '${{ matrix.shard }}/3'
+        run: ./scripts/check.ps1 -Install -CIStage Front -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'
+
+      - name: 前段の記録を渡す
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-stage-${{ matrix.os }}-front
+          path: ${{ runner.temp }}/pointercad-ci-stage/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  unit-lead:
+    # 単体の先行分(ルートの test の前半。前半と後半をつなぐと元の test と一致することを
+    # check.ps1 と集約が確かめる)。実形状の数式計算を別の実行機で専有して流す。
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    # 止まった検査で6時間待たないための上限(実測の最大 約24分の2倍強。検査の時間判定ではない)。
+    timeout-minutes: 60
+    steps:
+      - name: リポジトリの取得
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Node.js の準備
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: pnpm の準備 (corepack)
+        if: ${{ hashFiles('package.json') != '' }}
+        shell: pwsh
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        run: corepack enable
+
+      - name: 単体の先行分 (scripts/check.ps1)
+        shell: pwsh
+        run: ./scripts/check.ps1 -Install -CIStage UnitLead -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'
+
+      - name: 単体の先行分の記録を渡す
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-stage-${{ matrix.os }}-unit-lead
+          path: ${{ runner.temp }}/pointercad-ci-stage/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  e2e:
+    # 画面検査を Playwright の同じ設定から3組へ分配する(性能・起動の前提 project は各組で重複して流す)。
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        shard: [1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    # 止まった検査で6時間待たないための上限。検査の時間判定ではない。
+    # 実測(run 36346675432、分割前)の画面検査の段: Win 1組 50.6分・2組 126.1分・3組 36.9分、
+    # Linux 35.7分・112.8分・42.2分。最大の Win 2組は firefox の math-input.spec.ts が1つの worker で約100分。
+    # 2026-09-28 に math-input.spec.ts を3ファイルへ分け(a-/z-math-input.spec.ts)、並列にした後の見込み
+    # (全 project の一覧から Playwright 1.62.1 の組の選び方を再現し、上の run の1件ごとの所要で積算)は
+    # 最大 Win 2組 約77分(firefox 約84分・functional 約47分の合計を2 worker で。Linux 2組 約62分)。
+    # 160分 = 分割が効かなかった場合の実測の最大(126.1分+準備)でも切らず、見込みの最大の約2倍(以前は240分)。
+    timeout-minutes: 160
+    steps:
+      - name: リポジトリの取得
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Node.js の準備
+        if: ${{ hashFiles('package.json') != '' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: pnpm の準備 (corepack)
+        if: ${{ hashFiles('package.json') != '' }}
+        shell: pwsh
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+        run: corepack enable
+
+      - name: 画面検査の1組 (scripts/check.ps1)
+        shell: pwsh
+        run: ./scripts/check.ps1 -Install -CIStage E2E -E2EShard '${{ matrix.shard }}/3' -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'
+
+      - name: 画面検査の記録を渡す
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-stage-${{ matrix.os }}-e2e-${{ matrix.shard }}
+          path: ${{ runner.temp }}/pointercad-ci-stage/
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
       - name: 失敗した実画面検査の記録を保存
         if: failure()
@@ -66,22 +171,39 @@ jobs:
           retention-days: 7
 
   # Preserve the existing required check names. One missing, cancelled or failed
-  # shard must not turn either OS's overall check green.
+  # stage must not turn either OS's overall check green.
   checks:
-    # 前job成功可否の判定だけ(GITHUB_TOKENは使わない)。contents: readのみで足りる。
+    # 前jobの結果と段の記録の照合だけ(GITHUB_TOKENはリポジトリの取得にだけ使う)。contents: readのみで足りる。
     permissions:
       contents: read
     if: always()
-    needs: sharded-checks
+    needs: [front, unit-lead, e2e]
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
-      - name: 両OSの全3組の成功を確認
+      - name: 両OSの全段の成功を確認
         shell: pwsh
         env:
-          SHARDED_RESULT: ${{ needs.sharded-checks.result }}
+          FRONT_RESULT: ${{ needs.front.result }}
+          UNIT_LEAD_RESULT: ${{ needs.unit-lead.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
         run: |
-          if ($env:SHARDED_RESULT -ne 'success') { throw '両OSの全3組が成功していません。' }
-          Write-Host '[OK] 同じ版のWindows・Linux全検査が成功しました。'
+          if ($env:FRONT_RESULT -ne 'success' -or $env:UNIT_LEAD_RESULT -ne 'success' -or $env:E2E_RESULT -ne 'success') { throw '両OSの前段・単体の先行分・画面検査の全3組が成功していません。' }
+          Write-Host '[OK] 両OSの全段のjobが成功しました。段の記録を照合します。'
+
+      - name: リポジトリの取得
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: 両OSの段の記録を受け取る
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: ci-stage-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/pointercad-ci-stage
+
+      - name: 両OSの全段の記録を照合 (scripts/check.ps1)
+        shell: pwsh
+        run: ./scripts/check.ps1 -CIStage Verify -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'

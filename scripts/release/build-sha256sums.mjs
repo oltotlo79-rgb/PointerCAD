@@ -11,6 +11,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { offlineAssetUrl } from '../vite/offlineProtocol.mjs';
 import { desktopPackagePlan, verifyDesktopPackageArtifacts } from './desktopPackageTargets.mjs';
+import { manualPdfReleaseAssetName } from './releaseReadiness.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -91,13 +92,55 @@ export function formatSha256Sums(entries) {
   return sorted.map(({ name, sha256 }) => sha256 + '  ' + name).join('\n') + '\n';
 }
 
-/** Hash every file in the finished release folder, cross-check the Windows and Linux candidates, and write SHA256SUMS once. */
-export async function buildSha256Sums({ folder, windowsStage, linuxStage }) {
-  const entries = await collectReleaseFileDigests(folder);
+/**
+ * Copy every manual PDF volume out of the Web candidate (`<webStage>/manual/pdf/<id>.pdf`, one file per volume, as
+ * `assemble-web-offline.mjs` lays it out) into the release folder, renamed to its GitHub Release asset name
+ * (`manualPdfReleaseAssetName`, e.g. `PointerCAD-1.0.0-manual-getting-started.pdf`). The generator
+ * (`scripts/manual/generate-pdf.mjs`) and the Web candidate both name the file by volume id alone; README.md's
+ * release-links region, `checkReadmeReleaseLinks` and the post-release download check all expect the renamed form.
+ * Without this step a human has to rename each volume by hand before attaching it to the Release (see
+ * docs/releases/release-checklist.md「Releaseに添付するもの」), which is where the naming mismatch used to come from.
+ * Never overwrites an existing file in the release folder and rejects a link, an empty volume, or a folder with no
+ * PDF volumes at all.
+ */
+export async function stageManualPdfVolumes({ folder, webStage, version }) {
+  const pdfDir = join(resolve(webStage), 'manual', 'pdf');
+  const items = (await readdir(pdfDir, { withFileTypes: true })).filter(item => item.isFile() && item.name.endsWith('.pdf'));
+  if (items.length === 0) throw new Error('Web candidate has no manual PDF volumes: ' + pdfDir);
+  const names = [];
+  for (const item of items.sort((left, right) => compare(left.name, right.name))) {
+    const id = item.name.slice(0, -'.pdf'.length);
+    if (!/^[a-z][a-z0-9-]*$/u.test(id)) throw new Error('Invalid manual PDF volume name: ' + item.name);
+    const source = join(pdfDir, item.name);
+    const before = await lstat(source);
+    if (before.isSymbolicLink() || !before.isFile() || before.size === 0) throw new Error('Invalid manual PDF source: ' + source);
+    const bytes = await readFile(source);
+    const after = await lstat(source);
+    if (bytes.length !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ino !== before.ino) {
+      throw new Error('Manual PDF source changed while reading: ' + source);
+    }
+    const name = manualPdfReleaseAssetName(version, id);
+    const target = join(resolve(folder), name);
+    await writeFile(target, bytes, { flag: 'wx' });
+    if (!(await readFile(target)).equals(bytes)) throw new Error('Staged manual PDF differs: ' + name);
+    names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Hash every file in the finished release folder, cross-check the Windows and Linux candidates, and write SHA256SUMS
+ * once. Pass `webStage` (the assembled Web candidate folder) to also stage the manual PDF volumes into `folder` under
+ * their Release asset names (`stageManualPdfVolumes`) before hashing, so SHA256SUMS and the folder attached to the
+ * GitHub Release already use the same names README.md and the post-release check require.
+ */
+export async function buildSha256Sums({ folder, windowsStage, linuxStage, webStage }) {
   const windows = await readDesktopCandidateAssets(windowsStage);
   const linux = await readDesktopCandidateAssets(linuxStage);
   if (windows.platform !== 'win32' || linux.platform !== 'linux') throw new Error('Desktop candidate platforms are swapped or duplicated');
   if (windows.version !== linux.version) throw new Error('Desktop candidate versions differ');
+  if (webStage !== undefined) await stageManualPdfVolumes({ folder, webStage, version: windows.version });
+  const entries = await collectReleaseFileDigests(folder);
   verifyReleaseDigestsAgainstCandidates(entries, [windows, linux]);
   const content = formatSha256Sums(entries);
   const path = join(resolve(folder), 'SHA256SUMS');
@@ -107,11 +150,13 @@ export async function buildSha256Sums({ folder, windowsStage, linuxStage }) {
 
 if (import.meta.url === pathToFileURL(argv[1] ?? '').href) {
   const pattern = /^[a-z0-9][a-z0-9-]*$/u;
-  const [folderName, windowsName, linuxName] = argv.slice(2);
-  if (!folderName || !windowsName || !linuxName || ![folderName, windowsName, linuxName].every(name => pattern.test(name))) {
-    throw new Error('Usage: node scripts/release/build-sha256sums.mjs <release-folder> <windows-stage> <linux-stage>');
+  const [folderName, windowsName, linuxName, webName] = argv.slice(2);
+  if (!folderName || !windowsName || !linuxName || ![folderName, windowsName, linuxName].every(name => pattern.test(name))
+    || (webName !== undefined && !pattern.test(webName))) {
+    throw new Error('Usage: node scripts/release/build-sha256sums.mjs <release-folder> <windows-stage> <linux-stage> [web-candidate]');
   }
   const dist = join(root, 'dist');
-  const result = await buildSha256Sums({ folder: join(dist, folderName), windowsStage: join(dist, windowsName), linuxStage: join(dist, linuxName) });
+  const result = await buildSha256Sums({ folder: join(dist, folderName), windowsStage: join(dist, windowsName), linuxStage: join(dist, linuxName),
+    webStage: webName === undefined ? undefined : join(dist, webName) });
   log(JSON.stringify({ path: result.path, files: result.entries.length }));
 }

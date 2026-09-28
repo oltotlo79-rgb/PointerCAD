@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { expect, test, type ElectronApplication, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
+import { DRAWING_FONT_ASSET } from '../../packages/drawing/src/text/fontAsset.js';
 import { chooseToolMenuItem } from '../tests/assemblyTestSupport.js';
 import { waitForMathEditorText } from '../tests/mathEditorReady.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from '../tests/recompute.js';
@@ -40,6 +41,13 @@ const USER_DATA_PATH_BUDGET = 90;
 const STALE_ISOLATION_AGE_MS = 60 * 60_000;
 const SWIFTSHADER_ARGS = ['--use-gl=angle', '--use-angle=swiftshader-webgl', '--enable-unsafe-swiftshader'];
 const PROCESS_EXIT_TIMEOUT_MS = 30_000;
+/**
+ * app.close() を待つ上限。(f) の正常な終了(PROCESS_EXIT_TIMEOUT_MS)の2倍。
+ * (f) 自身の最初の close 呼出しと、失敗の後片付けの close 呼出しの両方で使う(2026-09-29: 外部の重い負荷と
+ * 重なった手元の実行で (f) の `await app.close()` が戻らず、この保護の無い旧版は900秒のテスト上限まで
+ * 止まって worker ごと強制終了された。(f) にも同じ上限を掛け、原因を記録に残してから失敗させる)。
+ */
+const CLEANUP_CLOSE_TIMEOUT_MS = 60_000;
 const runFile = promisify(execFile);
 
 interface CandidateRecord {
@@ -362,6 +370,33 @@ function stopLeftovers(entries: readonly ProcessEntry[]): string[] {
   });
 }
 
+/** 本体が出した閉じるときの確認を、本体の標準出力へ書く行の印。(f) は閉じた後に子プロセスの出力から数える。 */
+const CLOSE_CONFIRM_LOG = '[配布物の起動:閉じる確認]';
+const CLOSE_CONFIRM_CHOICES = [uiMessage('file', 'file.closeGuard.save'), uiMessage('file', 'file.closeGuard.discard'),
+  uiMessage('file', 'file.closeGuard.cancel')];
+
+/**
+ * 窓を閉じるときの未保存の確認(レビュー R03、apps/desktop/src/main/closeGuard.ts)に、利用者と同じく
+ * 「保存せずに閉じる」で答える。検査の後片付けで確認を省く印(electronAppFlow.ts の launchDesktop)は使わない。
+ * 確認の窓は OS の窓で Playwright から押せないので、本体の `dialog.showMessageBox` を、出されたボタンから
+ * 画面の文言(ja.json)の「保存せずに閉じる」を選ぶものへ替える。未保存の判定・画面への問合せ・画面の答え・
+ * 窓を閉じて終わる処理は配布物のまま通る。想定と違う確認(画面が固まったときの確認など)には「戻る」で答え、
+ * 閉じられないまま上限で失敗させる。出された確認は本体の標準出力へ書く(閉じた後は Playwright から本体を読めない)。
+ */
+async function answerCloseConfirmWithDiscard(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ dialog }, [marker, choices]) => {
+    dialog.showMessageBox = (...args: unknown[]) => {
+      const options: unknown = args.at(-1);
+      const raw: unknown = typeof options === 'object' && options !== null ? Reflect.get(options, 'buttons') : undefined;
+      const buttons = Array.isArray(raw) ? raw.map(String) : [];
+      console.log(`${marker}${JSON.stringify(buttons)}`);
+      const expected = buttons.length === choices.length && buttons.every((button, index) => button === choices[index]);
+      // 1 は「保存せずに閉じる」(CLOSE_CONFIRM_CHOICES の順)。想定外なら最後のボタン(戻る)。
+      return Promise.resolve({ response: expected ? 1 : Math.max(buttons.length - 1, 0), checkboxChecked: false });
+    };
+  }, [CLOSE_CONFIRM_LOG, CLOSE_CONFIRM_CHOICES] as const);
+}
+
 async function launchPackaged(playwright: PlaywrightWorkerArgs['playwright'], target: LaunchTarget, isolation: Isolation): Promise<ElectronApplication> {
   return playwright._electron.launch({
     executablePath: target.executable,
@@ -381,6 +416,8 @@ function createItemRecorder(): { records: ItemRecord[]; run: <T>(id: string, lab
   const records: ItemRecord[] = [];
   const run = async <T>(id: string, label: string, body: () => Promise<T>): Promise<T> => {
     const started = performance.now();
+    // 段の終わりの行は終わった時にしか出ない。止まった段を記録から特定できるよう、始まりも時刻付きで出す。
+    console.log(`[配布物の起動] 開始 ${new Date().toISOString()} ${id} ${label}`);
     try {
       const value = await test.step(`${id} ${label}`, body);
       records.push({ id, label, result: '成功', ms: Math.round(performance.now() - started) });
@@ -400,12 +437,13 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
   const evidence: Record<string, unknown> = {};
   const session: {
     isolation?: Isolation; profiles?: readonly string[]; before?: readonly TreeSnapshot[];
-    app?: ElectronApplication; page?: Page; closed: boolean;
+    app?: ElectronApplication; page?: Page; closed: boolean; target?: LaunchTarget;
   } = { closed: false };
   const pageErrors: string[] = [], crashes: string[] = [], consoleErrors: string[] = [];
   let completed = false;
   try {
     const target = await run('(0-1)', '配布物と配布物の記録を読む', () => readLaunchTarget());
+    session.target = target;
     evidence.target = { executable: target.executable, candidate: target.candidatePath, version: target.candidate.version,
       sourceCommit: target.candidate.sourceCommit, packagedFiles: target.packagedFiles };
     const isolation = await prepareIsolation();
@@ -535,7 +573,12 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
       await page.getByRole('button', { name: uiMessage('parameters', 'parameterPanel.addTooltip'), exact: true }).click();
       const row = page.locator('.pcad-parameter').last();
       const dialog = page.locator('.pcad-math-dialog');
-      await row.locator('.pcad-field').first().locator('input').fill('厳密係数');
+      // 名前は Enter で確定してから数式の窓を開く(通常の画面検査 mathAiryFlow.ts 等と同じ)。確定しないまま開くと、
+      // 窓へ焦点が移った時の名前の確定で文書が変わり、窓は古い文書のものとして閉じる(2026-09-28 配布CIの試走)。
+      const name = row.locator('.pcad-field').first().locator('input');
+      await name.fill('厳密係数'); await name.press('Enter');
+      await expect(page.getByRole('textbox', { name: `${uiMessage('parameters', 'parameterPanel.nameLabel')} 厳密係数`, exact: true }),
+        '名前の確定が文書へ入ったこと').toHaveValue('厳密係数');
       await row.getByRole('button', { name: uiMessage('math', 'math.open'), exact: true }).click();
       await waitForMathEditorText(dialog);
       await dialog.locator('textarea').fill('integrate(t^2,t,0,3)');
@@ -549,12 +592,11 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
       await expect.poll(() => page.locator('.pcad-drawing-svg [data-owner-id="view-1"] path').count(), { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(0);
       await expect(page.getByRole('alert').filter({ hasText: uiMessage('drawing', 'drawing.error.fontFailed') })).toHaveCount(0);
       await expect(page.getByRole('button', { name: uiMessage('drawing', 'drawing.font.retry'), exact: true })).toHaveCount(0);
-      // 図面が実際に読んだ字体を、同じ独自スキームで読み直して配布物の記録(desktop-package.json)の大きさと SHA-256 に照らす。
-      const fonts = await page.evaluate(async () => {
-        const urls = [...new Set(performance.getEntriesByType('resource')
-          .filter(entry => entry instanceof PerformanceResourceTiming && entry.initiatorType === 'fetch'
-            && new URL(entry.name).pathname.startsWith('/fonts/'))
-          .map(entry => entry.name))];
+      // 図面が読む字体(DRAWING_FONT_ASSET.url を画面の場所から解決した URL。fetchDrawingFont と同じ)を、同じ独自スキームで
+      // 読み直して配布物の記録(desktop-package.json)と字体の資産の大きさ・SHA-256 に照らす。app:// の fetch は Resource Timing に
+      // 載らない(2026-09-28 手元の配布物: 記録は起動時の script/link の9件だけで fetch は0件)ため、読込みの記録からは探さない。
+      const fonts = await page.evaluate(async (fontUrl: string) => {
+        const urls = [new URL(fontUrl, location.href).href];
         const results: { url: string; path: string; status: number; bytes: number; sha256: string }[] = [];
         for (const url of urls) {
           const response = await fetch(url);
@@ -564,14 +606,23 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
           results.push({ url, path: new URL(url).pathname, status: response.status, bytes: bytes.byteLength, sha256: digest });
         }
         return results;
-      });
+      }, DRAWING_FONT_ASSET.url);
       evidence.fonts = fonts;
+      // 読込みの記録の概要も証拠として残す(app:// の fetch が載らないことを後から確かめられるように)。
+      evidence.resourceTiming = await page.evaluate(() => {
+        const entries = performance.getEntriesByType('resource').filter(entry => entry instanceof PerformanceResourceTiming);
+        return { total: entries.length, fetches: entries.filter(entry => entry.initiatorType === 'fetch').length,
+          schemes: [...new Set(entries.map(entry => new URL(entry.name).protocol))],
+          lastNames: entries.slice(-15).map(entry => `${entry.initiatorType} ${new URL(entry.name).pathname}`) };
+      });
       expect(fonts.length, '図面が同梱の字体を読んだこと').toBeGreaterThan(0);
       for (const font of fonts) {
         const recorded = target.packaged.files.find(file => file.path === `dist/renderer${font.path}`);
         expect(recorded, `配布物の記録に ${font.path} があること`).toBeDefined();
         expect({ status: font.status, bytes: font.bytes, sha256: font.sha256 }, `${font.url} の中身`)
           .toEqual({ status: 200, bytes: recorded?.bytes, sha256: recorded?.sha256 });
+        expect({ bytes: font.bytes, sha256: font.sha256 }, `${font.url} が図面の字体の資産(${DRAWING_FONT_ASSET.id})であること`)
+          .toEqual({ bytes: DRAWING_FONT_ASSET.bytes, sha256: DRAWING_FONT_ASSET.sha256 });
       }
     });
     await run('(e)', 'pageerror が0件', async () => {
@@ -579,10 +630,34 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
       expect(crashes, '画面の処理が落ちていないこと').toEqual([]);
     });
     await run('(f)', '閉じた後に配布物のプロセスが残らない', async () => {
-      await app.close();
+      // app.close() 自体が戻らないことがある(2026-09-29 手元の実行。外部の重い負荷と重なった)。上限を掛け、
+      // 戻らなければ配布物のフォルダーの全プロセスを止めてから、900秒のテスト上限で無記録のまま止まる代わりに
+      // 理由を記録して明確に失敗させる。
+      // 2つ目のコールバックで拒否も飲み込む(タイムアウト後に closing が拒否されても、二重に投げず未処理の
+      // 拒否も残さない。失敗した場合は closeError へ控えて、待ち切れた場合だけ元どおり投げ直す)。
+      // (d) で作った箱と図面は保存していないので、閉じると本体が未保存の確認を1回出す(2026-09-29 手元の診断
+      // RUN 20260929-032537: 答えない確認の窓で close が戻らず、出たボタンは3択だった)。利用者と同じく答えて閉じる。
+      const unsaved = (await page.title()).includes('*');
+      const mainOutput: string[] = [];
+      child.stdout?.on('data', (chunk: unknown) => { mainOutput.push(String(chunk)); });
+      await answerCloseConfirmWithDiscard(app);
+      let closeError: unknown;
+      const closing = app.close().then(() => 'closed' as const, (error: unknown) => { closeError = error; return 'closed' as const; });
+      const outcome = await Promise.race([closing, new Promise<'timeout'>(done => { setTimeout(() => { done('timeout'); }, CLEANUP_CLOSE_TIMEOUT_MS); })]);
       session.closed = true;
+      if (outcome === 'timeout') {
+        const remaining = await packagedProcesses(target, false).catch(() => []);
+        const stopped = stopLeftovers(remaining);
+        throw new Error(`app.close() が${String(CLEANUP_CLOSE_TIMEOUT_MS / 1_000)}秒で戻らなかった: ${JSON.stringify(remaining)}(検査の片付けとして停止: ${stopped.join('、')})`);
+      }
+      if (closeError !== undefined) throw closeError;
       await expect.poll(() => [child.exitCode, child.signalCode], { message: '配布物が終了コード0で終わること', timeout: PROCESS_EXIT_TIMEOUT_MS })
         .toEqual([0, null]);
+      const asked = mainOutput.join('').split('\n').filter(line => line.startsWith(CLOSE_CONFIRM_LOG))
+        .map(line => line.slice(CLOSE_CONFIRM_LOG.length).trim());
+      evidence.closeConfirmation = { unsavedBeforeClose: unsaved, asked };
+      expect(asked, '未保存があれば閉じるときに本体の確認が1回だけ出て、3択であること(無ければ出ないこと)')
+        .toEqual(unsaved ? [JSON.stringify(CLOSE_CONFIRM_CHOICES)] : []);
       let remaining: ProcessEntry[] = [];
       try {
         await expect.poll(async () => {
@@ -608,7 +683,19 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
     if (!completed && session.page !== undefined && !session.closed) {
       await session.page.screenshot({ path: info.outputPath('packaged-desktop-failure.png') }).catch(() => undefined);
     }
-    if (session.app !== undefined && !session.closed) await session.app.close().catch(() => undefined);
+    if (session.app !== undefined && !session.closed) {
+      // 失敗の後片付け。閉じる処理が戻らないと結果の記録を書けず、worker ごと強制終了される(2026-09-28 手元の流し直し)。
+      // 上限の後は起動した本体を止め、閉じられなかったことを記録に残す(判定は失敗のまま。成功の回の (f) は変えない)。
+      // 途中で落ちた回も未保存が残り得る。(f) と同じく本体の確認に「保存せずに閉じる」で答えてから閉じる。
+      await answerCloseConfirmWithDiscard(session.app).catch(() => undefined);
+      const closing = session.app.close().then(() => 'closed' as const, () => 'closed' as const);
+      const outcome = await Promise.race([closing, new Promise<'timeout'>(done => { setTimeout(() => { done('timeout'); }, CLEANUP_CLOSE_TIMEOUT_MS); })]);
+      if (outcome === 'timeout') {
+        // 起動したプロセスの子に本体が残る場合がある(2026-09-28 手元の ARM64 の Windows)。配布物のフォルダーから動く全てを止める。
+        const remaining = session.target === undefined ? [] : await packagedProcesses(session.target, false).catch(() => []);
+        evidence.cleanupClose = `${String(CLEANUP_CLOSE_TIMEOUT_MS / 1_000)}秒で閉じず、配布物のプロセスを止めた: ${stopLeftovers(remaining).join('、')}`;
+      }
+    }
     const { profiles, before, isolation } = session;
     if (!completed && profiles !== undefined && before !== undefined) {
       // 失敗の回も、実際のプロファイルが変わったかどうかを記録に残す(判定は失敗のまま)。

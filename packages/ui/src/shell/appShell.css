@@ -2574,6 +2574,36 @@ button.pcad-tree__row:focus-visible {
 }
 
 /*
+ * 保存していない変更を失う操作の前の確認(w91a)。ブラウザー標準の confirm(デスクトップ版で
+ * 英語の OK/Cancel になる)の代わりに、画面の中へ日本語の 3 択を出す。答えるまで後ろの
+ * 操作を止める確認なので、この窓だけはモーダルにする(NFR-UX-3「確認は復元できない操作に限る」)。
+ */
+.pcad-discard-confirm {
+  box-sizing: border-box;
+  width: min(calc(420px * var(--pcad-scale)), calc(100vw - 24px));
+  color: var(--pcad-text);
+  background: var(--pcad-bg);
+  border: 1px solid var(--pcad-border);
+  border-radius: var(--pcad-radius-small);
+  padding: var(--pcad-space-3);
+  font: inherit;
+}
+
+.pcad-discard-confirm::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.pcad-discard-confirm h2 {
+  margin: 0 0 var(--pcad-space-2);
+  font-size: 1.05em;
+}
+
+.pcad-discard-confirm p {
+  margin: 0 0 var(--pcad-space-2);
+  overflow-wrap: anywhere;
+}
+
+/*
   読み込んだファイルの単位を訊く小窓(FR-811、P6 §0.a-0.6、タスク32b)。
   復元の案内と同じカードの上に、問い 1 行と 3 つのボタンだけを置く。
 */

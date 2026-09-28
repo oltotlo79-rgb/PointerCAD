@@ -14,6 +14,7 @@
 import { writeThreeMf, type ThreeMfMeshInput } from '@pointercad/io';
 import type { LengthUnit } from '@pointercad/model';
 
+import { beginDocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import {
@@ -53,6 +54,11 @@ function buildThreeMf(baseName: string) {
       color: mesh.color,
       positions: mesh.positions,
       indices: mesh.indices,
+      // 面ごとの色と面ごとの三角形の範囲(R04)。片方だけ渡しても
+      // `writeThreeMf` は立体の色にしか使わないので、対で渡す。
+      ...(mesh.faceColors === undefined
+        ? {}
+        : { faceColors: mesh.faceColors, faceRanges: mesh.faceRanges }),
     }));
     return { fileName: `${baseName}.3mf`, bytes: writeThreeMf(meshes) };
   };
@@ -128,6 +134,13 @@ function showNotices(notices: readonly string[]): void {
  */
 export async function importFile(format?: ImportFileKind): Promise<void> {
   const store = useAppStore.getState();
+  /*
+   * 待ちの間(ファイルを選ぶ・形を読む・単位を訊く)に文書を切り替えた・編集した・取り消した
+   * ときは、開始時の文書から作った結果を当てない(docs/review-2026-09-28-codex.md R01)。
+   * 版の番号は通常の編集で増えないので、参照で調べる共通の判定を使う。後から始めた
+   * 読み込みがあれば、先の結果は黙って捨てる(依頼の順序)。
+   */
+  const request = beginDocumentRequest('import', store);
   const outcome = await runImport(
     createExchangeDeps(''),
     store.document,
@@ -136,10 +149,17 @@ export async function importFile(format?: ImportFileKind): Promise<void> {
     format,
   );
   if (!outcome.ok) {
-    // 取り消しは失敗ではないので、断りも出さない(NFR-UX-3)。
-    if (!('cancelled' in outcome)) {
+    // 取り消しは失敗ではないので、断りも出さない(NFR-UX-3)。後の依頼の断りと混ぜない。
+    if (!('cancelled' in outcome) && request.status() !== 'superseded') {
       useAppStore.getState().setError(outcome.message);
     }
+    return;
+  }
+  const status = request.status();
+  if (status === 'superseded') return;
+  if (status !== 'current') {
+    // 形と添付は 1 つも入れない。今の文書・取り消しの履歴はそのまま(NFR-RE-1)。
+    useAppStore.getState().setError(t('exchange.importStale'));
     return;
   }
   const after = useAppStore.getState();

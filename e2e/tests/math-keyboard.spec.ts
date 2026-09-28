@@ -210,7 +210,7 @@ test('MC-27c 関数作図の画面から開いた数式の画面でも、候補�
   await chooseToolMenuItem(page, '作図', functionPlotMessage('menuTitle'));
   const plot = page.locator('.pcad-function-dialog');
   await expect(plot).toBeVisible();
-  await plot.getByRole('textbox', { name: `Y ${functionPlotMessage('formula')}`, exact: true }).fill('X^2');
+  await plot.getByRole('textbox', { name: `Y =`, exact: true }).fill('X^2');
   await plot.getByRole('button', { name: `Y: ${uiMessage('math', 'math.open')}`, exact: true }).click();
   const dialog = page.locator('.pcad-math-dialog');
   await waitForMathEditorText(dialog);

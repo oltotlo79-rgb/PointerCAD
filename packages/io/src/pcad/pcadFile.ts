@@ -54,8 +54,9 @@ import {
   type EmbeddedPartMesh,
   type LengthUnit,
   type PartDocument,
+  type PartLibrary,
 } from '@pointercad/model';
-import { strFromU8, strToU8, zipSync, type Zippable } from 'fflate';
+import { strFromU8, strToU8, zipSync, type ZipOptions, type Zippable } from 'fflate';
 
 import {
   IO_LIMITS,
@@ -78,8 +79,10 @@ import {
 import {
   ARCHIVE_TOO_LARGE_MESSAGE,
   readArchive,
+  type ArchiveReadError,
   type ArchiveReadLimits,
 } from './readArchive.js';
+import { isSafeZipEntryName } from './zipDirectory.js';
 
 /** 部品文書を入れる ZIP のエントリ名(要件§8)。 */
 export const PCAD_DOCUMENT_ENTRY = 'document.json';
@@ -137,6 +140,41 @@ const ATTACHMENT_BINARY_LEVEL = 6;
 const ATTACHMENT_IMAGE_LEVEL = 0;
 
 /**
+ * ZIP へ入れる 1 項目(中身と圧縮の指定)。
+ *
+ * **文書から項目を作る処理と、最後の圧縮を分ける**(レビュー R06)。図面の束
+ * (`drawingBundle.ts`)は参照元の部品・アセンブリの項目をこの形のまま結合し、
+ * 圧縮してから展開し直す往復をしない。
+ */
+export type PcadZipEntry = readonly [bytes: Uint8Array, options: ZipOptions];
+/**
+ * 項目の表。**挿入の順がそのまま ZIP の項目の順になる**(同じ名前を入れ直したときは
+ * 最初の位置のまま中身だけ替わる。以前の平たいオブジェクトと同じ振る舞い)。
+ */
+export type PcadZipEntries = Map<string, PcadZipEntry>;
+
+function zipEntry(bytes: Uint8Array, level: 0 | 6): PcadZipEntry {
+  return [bytes, { level, mtime: FIXED_ENTRY_MTIME }];
+}
+
+/**
+ * 項目の表を**1 回だけ**圧縮して ZIP のバイト列にする。`.pcad` 系の書き手が
+ * `zipSync` を呼ぶのはここだけにする(`zipPasses.test.ts` が回数と置き場所を照合する)。
+ */
+export function zipPcadEntries(entries: ReadonlyMap<string, PcadZipEntry>): Uint8Array {
+  const zippable: Zippable = {};
+  for (const [name, [bytes, options]] of entries) {
+    Object.defineProperty(zippable, name, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: [bytes, options],
+    });
+  }
+  return zipSync(zippable);
+}
+
+/**
  * 読み込んだ三角形の中身(`meshes/<meshRef>.bin` の中身。§2.8)。
  *
  * 位置・法線は頂点 1 つにつき 3 つ、添字は三角形 1 つにつき 3 つ。
@@ -172,15 +210,27 @@ export async function writeDocumentBundle(
   bundle: DocumentBundle,
   options: WriteDocumentBundleOptions = {},
 ): Promise<Uint8Array> {
+  // 部品は以前と同じく待たずに書く(完了までの待ちの段数を変えない。自動保存の検査が段数に依る)。
   if (bundle.kind === 'part') {
-    return writePcadFile(bundle.document, { ...options, attachments: bundle.attachments });
+    return zipPcadEntries(pcadEntries(bundle.document, { ...options, attachments: bundle.attachments }));
+  }
+  return zipPcadEntries(await documentBundleEntries(bundle, options));
+}
+
+/** `writeDocumentBundle` の圧縮前の項目。図面の束が項目のまま抱き込むための口(R06)。 */
+export async function documentBundleEntries(
+  bundle: DocumentBundle,
+  options: WriteDocumentBundleOptions = {},
+): Promise<PcadZipEntries> {
+  if (bundle.kind === 'part') {
+    return pcadEntries(bundle.document, { ...options, attachments: bundle.attachments });
   }
   // 現行pcadaで原本を持つのは抱き込んだ部品。保存できない原本を黙って捨てない。
   if (bundle.attachments.shapes.size + bundle.attachments.meshes.size + bundle.attachments.canvases.size > 0) {
     throw new Error('Assembly attachments must belong to an embedded part');
   }
   const library = partLibraryOfBundle(bundle);
-  return writePcadaFile(bundle.document, {
+  return pcadaEntries(bundle.document, {
     ...options,
     partFiles: library.partFiles,
     parts: library.parts,
@@ -204,23 +254,71 @@ export async function readDocumentBundle(
   kind: DocumentBundle['kind'],
   options: ReadPcadaFileOptions = {},
 ): Promise<ReadDocumentBundleResult> {
-  if (kind === 'part') {
-    const result = readPcadFile(bytes);
-    if (!result.ok) return result;
-    return {
-      ok: true,
-      bundle: createPartDocumentBundle(result.document, result.attachments),
-      savedAt: result.savedAt,
-      thumbnailPng: result.thumbnailPng,
-    };
-  }
+  if (kind === 'part') return partBundleResult(readPcadFile(bytes));
+  // 待ちの段数を以前と同じに保つため、ダイジェストを待つ所だけをこの関数の中に置く。
   const result = await readPcadaFile(bytes, options);
   if (!result.ok) return result;
-  const partFiles = await Promise.all(result.partFiles.map(async (file) => ({
+  return assemblyBundleOf(result, await partFilesWithDigests(result));
+}
+
+/**
+ * `readArchive` が取り出した項目の表から、部品・アセンブリの束を読む(図面の束の参照元。R06)。
+ *
+ * ZIP を作り直して読み直さずに、`readDocumentBundle` と同じ検査を通す。以前の図面の読み手は
+ * 項目名を戻した ZIP を作り直していたので、そのときの項目名の検査(空・絶対パス等を断る)も
+ * ここで同じ判定で行う。
+ */
+export async function readDocumentBundleEntries(
+  entries: ReadonlyMap<string, Uint8Array>,
+  kind: DocumentBundle['kind'],
+): Promise<ReadDocumentBundleResult> {
+  for (const name of entries.keys()) {
+    if (!isSafeZipEntryName(name)) return { ok: false, error: { code: 'notZip', message: NOT_ZIP_MESSAGE } };
+  }
+  if (kind === 'part') return partBundleResult(readPcadEntries(pickEntries(entries, isPcadArchiveEntry)));
+  const result = await readPcadaEntries(pickEntries(entries, isPcadaArchiveEntry));
+  if (!result.ok) return result;
+  return assemblyBundleOf(result, await partFilesWithDigests(result));
+}
+
+/** 読み手が取り出す名前だけを、元の順のまま残す(`readArchive` の `shouldExtract` と同じ選び方)。 */
+function pickEntries(
+  entries: ReadonlyMap<string, Uint8Array>,
+  shouldExtract: (name: string) => boolean,
+): ReadonlyMap<string, Uint8Array> {
+  const picked = new Map<string, Uint8Array>();
+  for (const [name, bytes] of entries) {
+    if (shouldExtract(name)) picked.set(name, bytes);
+  }
+  return picked;
+}
+
+function partBundleResult(result: ReadPcadFileResult): ReadDocumentBundleResult {
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    bundle: createPartDocumentBundle(result.document, result.attachments),
+    savedAt: result.savedAt,
+    thumbnailPng: result.thumbnailPng,
+  };
+}
+
+type ReadPcadaFileSuccess = Extract<ReadPcadaFileResult, { readonly ok: true }>;
+type EmbeddedPartFile = PartLibrary['partFiles'][number];
+
+/** 素性へ照合済みの添付ダイジェストを付ける(古いファイルは空の添付の値で補う)。 */
+function partFilesWithDigests(result: ReadPcadaFileSuccess): Promise<EmbeddedPartFile[]> {
+  return Promise.all(result.partFiles.map(async (file) => ({
     ...file,
     attachmentsDigest: result.partAttachmentDigests.get(file.ref)
       ?? await attachmentsDigestOf(emptyPcadAttachments()),
   })));
+}
+
+function assemblyBundleOf(
+  result: ReadPcadaFileSuccess,
+  partFiles: readonly EmbeddedPartFile[],
+): ReadDocumentBundleResult {
   return {
     ok: true,
     bundle: createAssemblyDocumentBundle(result.document, {
@@ -417,31 +515,31 @@ export interface WritePcadFileOptions {
  * 呼び出し側が壊れた配列を渡さない限り起きない)。
  */
 function appendAttachments(
-  entries: Zippable,
+  entries: PcadZipEntries,
   attachments: PcadAttachments,
   entryPrefix = '',
 ): void {
   for (const [ref, bytes] of sortedEntries(attachments.shapes)) {
-    entries[`${entryPrefix}${PCAD_SHAPE_ENTRY_PREFIX}${ref}${PCAD_SHAPE_ENTRY_SUFFIX}`] = [
-      bytes,
-      { level: ATTACHMENT_BINARY_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    entries.set(
+      `${entryPrefix}${PCAD_SHAPE_ENTRY_PREFIX}${ref}${PCAD_SHAPE_ENTRY_SUFFIX}`,
+      zipEntry(bytes, ATTACHMENT_BINARY_LEVEL),
+    );
   }
   for (const [ref, mesh] of sortedEntries(attachments.meshes)) {
     const bytes = encodeImportedMeshBytes(mesh);
     if (bytes === null) {
       continue;
     }
-    entries[`${entryPrefix}${PCAD_MESH_ENTRY_PREFIX}${ref}${PCAD_MESH_ENTRY_SUFFIX}`] = [
-      bytes,
-      { level: ATTACHMENT_BINARY_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    entries.set(
+      `${entryPrefix}${PCAD_MESH_ENTRY_PREFIX}${ref}${PCAD_MESH_ENTRY_SUFFIX}`,
+      zipEntry(bytes, ATTACHMENT_BINARY_LEVEL),
+    );
   }
   for (const [ref, bytes] of sortedEntries(attachments.canvases)) {
-    entries[`${entryPrefix}${PCAD_CANVAS_ENTRY_PREFIX}${ref}${PCAD_CANVAS_ENTRY_SUFFIX}`] = [
-      bytes,
-      { level: ATTACHMENT_IMAGE_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    entries.set(
+      `${entryPrefix}${PCAD_CANVAS_ENTRY_PREFIX}${ref}${PCAD_CANVAS_ENTRY_SUFFIX}`,
+      zipEntry(bytes, ATTACHMENT_IMAGE_LEVEL),
+    );
   }
 }
 
@@ -465,25 +563,27 @@ export function writePcadFile(
   document: PartDocument,
   options: WritePcadFileOptions = {},
 ): Uint8Array {
+  return zipPcadEntries(pcadEntries(document, options));
+}
+
+/** `writePcadFile` の圧縮前の項目(並びと圧縮の指定は `writePcadFile` の説明のとおり)。 */
+function pcadEntries(document: PartDocument, options: WritePcadFileOptions): PcadZipEntries {
   const text = serializeDocument(document, {
     savedAt: options.savedAt,
     kind: options.kind,
     lengthUnit: options.lengthUnit,
     toolDefaults: options.toolDefaults,
   });
-  const entries: Zippable = {
-    [PCAD_DOCUMENT_ENTRY]: [strToU8(text), { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME }],
-  };
+  const entries: PcadZipEntries = new Map([
+    [PCAD_DOCUMENT_ENTRY, zipEntry(strToU8(text), DOCUMENT_LEVEL)],
+  ]);
   if (options.thumbnailPng !== undefined) {
-    entries[PCAD_THUMBNAIL_ENTRY] = [
-      options.thumbnailPng,
-      { level: THUMBNAIL_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    entries.set(PCAD_THUMBNAIL_ENTRY, zipEntry(options.thumbnailPng, THUMBNAIL_LEVEL));
   }
   if (options.attachments !== undefined) {
     appendAttachments(entries, options.attachments);
   }
-  return zipSync(entries);
+  return entries;
 }
 
 /**
@@ -688,16 +788,26 @@ export interface ReadPcadFileOptions { readonly limits?: ArchiveReadLimits }
 export function readPcadFile(bytes: Uint8Array, options: ReadPcadFileOptions = {}): ReadPcadFileResult {
   const archive = readArchive(bytes, { shouldExtract: isPcadArchiveEntry, limits: options.limits });
   if (!archive.ok) {
-    const message =
-      archive.error.kind === 'compressedInput' ||
-      archive.error.kind === 'entryCount' ||
-      archive.error.kind === 'entryExpanded' ||
-      archive.error.kind === 'totalExpanded'
-        ? archive.error.reason
-        : NOT_ZIP_MESSAGE;
-    return fail('notZip', message);
+    return fail('notZip', archiveFailureMessage(archive.error));
   }
-  const entries = archive.entries;
+  return readPcadEntries(archive.entries);
+}
+
+/**
+ * 大きすぎるものは上限の理由を、それ以外(ZIP でない・壊れている)は共通の文言を返す。
+ * 3 つの読み手(`.pcad`・`.pcada`・`.pcadd`)で同じ判定にする。
+ */
+function archiveFailureMessage(error: ArchiveReadError): string {
+  return error.kind === 'compressedInput' ||
+    error.kind === 'entryCount' ||
+    error.kind === 'entryExpanded' ||
+    error.kind === 'totalExpanded'
+    ? error.reason
+    : NOT_ZIP_MESSAGE;
+}
+
+/** 取り出し済みの項目から部品文書と添付を読む(`readPcadFile` の ZIP を開いた後の段)。 */
+function readPcadEntries(entries: ReadonlyMap<string, Uint8Array>): ReadPcadFileResult {
   const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentEntry === null) {
     return fail('missingDocument', MISSING_DOCUMENT_MESSAGE);
@@ -801,53 +911,53 @@ export interface WritePcadaFileOptions {
  * 書き出したバイト列が呼ぶたびに変わってしまうため(決定性。このファイル冒頭)。
  */
 function appendParts(
-  entries: Zippable,
+  entries: PcadZipEntries,
   parts: ReadonlyMap<string, PartDocument>,
   savedAt: string,
 ): void {
   for (const [ref, document] of sortedEntries(parts)) {
     const text = serializeDocument(document, { savedAt });
-    entries[`${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`] = [
-      strToU8(text),
-      { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    entries.set(
+      `${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`,
+      zipEntry(strToU8(text), DOCUMENT_LEVEL),
+    );
   }
 }
 
 /** サブアセンブリも同じ名前空間へ、assembly 封筒のまま決定的に書く。 */
 function appendAssemblies(
-  entries: Zippable,
+  entries: PcadZipEntries,
   assemblies: ReadonlyMap<string, AssemblyDocument>,
   savedAt: string,
 ): void {
   for (const [ref, document] of sortedEntries(assemblies)) {
     const text = writeAssemblyDocument(document, { savedAt, partFiles: [] });
-    entries[`${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`] = [
-      strToU8(text),
-      { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    entries.set(
+      `${PCAD_PART_ENTRY_PREFIX}${ref}${PCAD_PART_ENTRY_SUFFIX}`,
+      zipEntry(strToU8(text), DOCUMENT_LEVEL),
+    );
   }
 }
 
 /** 部品添付を一時表へ集め、完全なエントリ名の順に本表へ足す。 */
 async function appendPartAttachments(
-  entries: Zippable,
+  entries: PcadZipEntries,
   partAttachments: ReadonlyMap<string, PcadAttachments>,
 ): Promise<void> {
-  const staged: Zippable = {};
+  const staged: PcadZipEntries = new Map();
   for (const [ref, attachments] of sortedEntries(partAttachments)) {
     const prefix = `${PCAD_PART_ENTRY_PREFIX}${ref}/`;
     const digest = await attachmentsDigestOf(attachments);
-    staged[`${prefix}${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY}`] = [
-      strToU8(digest),
-      { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    staged.set(
+      `${prefix}${PCAD_PART_ATTACHMENTS_DIGEST_ENTRY}`,
+      zipEntry(strToU8(digest), DOCUMENT_LEVEL),
+    );
     appendAttachments(staged, attachments, prefix);
   }
-  for (const name of Object.keys(staged).sort()) {
-    const entry = staged[name];
+  for (const name of [...staged.keys()].sort()) {
+    const entry = staged.get(name);
     if (entry !== undefined) {
-      entries[name] = entry;
+      entries.set(name, entry);
     }
   }
 }
@@ -863,17 +973,39 @@ export async function writePcadaFile(
   document: AssemblyDocument,
   options: WritePcadaFileOptions = {},
 ): Promise<Uint8Array> {
+  // 待つのは添付のダイジェストだけにする(以前と同じ待ちの段数で書き終える)。
+  const entries = pcadaDocumentEntries(document, options);
+  if (options.partAttachments !== undefined) {
+    await appendPartAttachments(entries, options.partAttachments);
+  }
+  return zipPcadEntries(entries);
+}
+
+/** `writePcadaFile` の圧縮前の項目(並びと圧縮の指定は `writePcadaFile` の説明のとおり)。 */
+async function pcadaEntries(
+  document: AssemblyDocument,
+  options: WritePcadaFileOptions,
+): Promise<PcadZipEntries> {
+  const entries = pcadaDocumentEntries(document, options);
+  if (options.partAttachments !== undefined) {
+    await appendPartAttachments(entries, options.partAttachments);
+  }
+  return entries;
+}
+
+/** アセンブリの封筒・サムネイル・抱き込んだ文書の項目(添付の項目の前まで)。 */
+function pcadaDocumentEntries(
+  document: AssemblyDocument,
+  options: WritePcadaFileOptions,
+): PcadZipEntries {
   // 封筒と抱き込んだ部品で**同じ保存時刻**を使うため、既定値をここで 1 回だけ決める。
   const savedAt = options.savedAt ?? new Date().toISOString();
   const text = writeAssemblyDocument(document, { savedAt, partFiles: options.partFiles });
-  const entries: Zippable = {
-    [PCAD_DOCUMENT_ENTRY]: [strToU8(text), { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME }],
-  };
+  const entries: PcadZipEntries = new Map([
+    [PCAD_DOCUMENT_ENTRY, zipEntry(strToU8(text), DOCUMENT_LEVEL)],
+  ]);
   if (options.thumbnailPng !== undefined) {
-    entries[PCAD_THUMBNAIL_ENTRY] = [
-      options.thumbnailPng,
-      { level: THUMBNAIL_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    entries.set(PCAD_THUMBNAIL_ENTRY, zipEntry(options.thumbnailPng, THUMBNAIL_LEVEL));
   }
   if (options.parts !== undefined) {
     appendParts(entries, options.parts, savedAt);
@@ -881,10 +1013,7 @@ export async function writePcadaFile(
   if (options.assemblies !== undefined) {
     appendAssemblies(entries, options.assemblies, savedAt);
   }
-  if (options.partAttachments !== undefined) {
-    await appendPartAttachments(entries, options.partAttachments);
-  }
-  return zipSync(entries);
+  return entries;
 }
 
 export type ReadPcadaFileResult =
@@ -1107,7 +1236,7 @@ export interface ReadPcadaFileOptions {
   readonly limits?: ArchiveReadLimits;
 }
 
-export async function readPcadaFile(
+export function readPcadaFile(
   bytes: Uint8Array,
   options: ReadPcadaFileOptions = {},
 ): Promise<ReadPcadaFileResult> {
@@ -1116,16 +1245,16 @@ export async function readPcadaFile(
     limits: options.limits,
   });
   if (!archive.ok) {
-    const message =
-      archive.error.kind === 'compressedInput' ||
-      archive.error.kind === 'entryCount' ||
-      archive.error.kind === 'entryExpanded' ||
-      archive.error.kind === 'totalExpanded'
-        ? archive.error.reason
-        : NOT_ZIP_MESSAGE;
-    return failPcada('notZip', message);
+    return Promise.resolve(failPcada('notZip', archiveFailureMessage(archive.error)));
   }
-  const entries = archive.entries;
+  // 続きの段の約束をそのまま返し、以前(1 つの async 関数)と同じ待ちの段数で終える。
+  return readPcadaEntries(archive.entries);
+}
+
+/** 取り出し済みの項目からアセンブリ文書と抱き込んだ部品を読む(`readPcadaFile` の ZIP を開いた後の段)。 */
+async function readPcadaEntries(
+  entries: ReadonlyMap<string, Uint8Array>,
+): Promise<ReadPcadaFileResult> {
   const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentEntry === null) {
     return failPcada('missingDocument', MISSING_DOCUMENT_MESSAGE);
@@ -1202,6 +1331,14 @@ export function writePcaddFile(
   document: DrawingDocument,
   options: WritePcaddFileOptions,
 ): Uint8Array {
+  return zipPcadEntries(pcaddEntries(document, options));
+}
+
+/** `writePcaddFile` の圧縮前の項目。図面の束が参照元の項目と結合するための口(R06)。 */
+export function pcaddEntries(
+  document: DrawingDocument,
+  options: WritePcaddFileOptions,
+): PcadZipEntries {
   const savedAt = options.savedAt ?? new Date().toISOString();
   const flat = document.source.flatSheet;
   if (document.source.sourceKind !== options.source.sourceKind
@@ -1214,23 +1351,17 @@ export function writePcaddFile(
   const sourceText = options.source.sourceKind === 'part'
     ? serializeDocument(options.source.document, { savedAt })
     : writeAssemblyDocument(options.source.document, { savedAt, partFiles: [] });
-  const entries: Zippable = {
-    [PCAD_DOCUMENT_ENTRY]: [
-      strToU8(serializeDrawing(document, { savedAt })),
-      { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ],
-  };
+  const entries: PcadZipEntries = new Map([
+    [PCAD_DOCUMENT_ENTRY, zipEntry(strToU8(serializeDrawing(document, { savedAt })), DOCUMENT_LEVEL)],
+  ]);
   if (options.thumbnailPng !== undefined) {
-    entries[PCAD_THUMBNAIL_ENTRY] = [
-      options.thumbnailPng,
-      { level: THUMBNAIL_LEVEL, mtime: FIXED_ENTRY_MTIME },
-    ];
+    entries.set(PCAD_THUMBNAIL_ENTRY, zipEntry(options.thumbnailPng, THUMBNAIL_LEVEL));
   }
-  entries[`${PCAD_SOURCE_ENTRY_PREFIX}${document.source.sourceRef}${PCAD_SOURCE_ENTRY_SUFFIX}`] = [
-    strToU8(sourceText),
-    { level: DOCUMENT_LEVEL, mtime: FIXED_ENTRY_MTIME },
-  ];
-  return zipSync(entries);
+  entries.set(
+    `${PCAD_SOURCE_ENTRY_PREFIX}${document.source.sourceRef}${PCAD_SOURCE_ENTRY_SUFFIX}`,
+    zipEntry(strToU8(sourceText), DOCUMENT_LEVEL),
+  );
+  return entries;
 }
 
 export type ReadPcaddFileResult =
@@ -1247,23 +1378,18 @@ function failPcadd(code: ReadPcadFileErrorCode, message: string): ReadPcaddFileR
   return { ok: false, error: { code, message } };
 }
 
-function isPcaddArchiveEntry(name: string): boolean {
+/** `.pcadd` の読み手が最初に取り出す項目(図面・サムネイル・参照元の封筒)。 */
+export function isPcaddArchiveEntry(name: string): boolean {
   return name === PCAD_DOCUMENT_ENTRY
     || name === PCAD_THUMBNAIL_ENTRY
     || attachmentRef(name, PCAD_SOURCE_ENTRY_PREFIX, PCAD_SOURCE_ENTRY_SUFFIX) !== null;
 }
 
 /** `.pcadd` を読み、図面が指す1件の参照元も既存の部品・アセンブリ読み手で検査する。 */
-export function readPcaddFile(bytes: Uint8Array): ReadPcaddFileResult {
-  const archive = readArchive(bytes, { shouldExtract: isPcaddArchiveEntry });
+export function readPcaddFile(bytes: Uint8Array, options: ReadPcadFileOptions = {}): ReadPcaddFileResult {
+  const archive = readArchive(bytes, { shouldExtract: isPcaddArchiveEntry, limits: options.limits });
   if (!archive.ok) {
-    const message = archive.error.kind === 'compressedInput'
-      || archive.error.kind === 'entryCount'
-      || archive.error.kind === 'entryExpanded'
-      || archive.error.kind === 'totalExpanded'
-      ? archive.error.reason
-      : NOT_ZIP_MESSAGE;
-    return failPcadd('notZip', message);
+    return failPcadd('notZip', archiveFailureMessage(archive.error));
   }
   const documentBytes = findEntry(archive.entries, PCAD_DOCUMENT_ENTRY);
   if (documentBytes === null) {

@@ -109,7 +109,7 @@ candidate.jsonに生成物の名前・大きさ・内容指紋、配布形式ご
    ```
 
    `diag.py e2e`は`pnpm run test:e2e`(中身は`playwright test --config e2e/playwright.config.ts`)の後ろへ引数を足す。Playwright 1.62.1が同梱する引数の解析(commander)は同じ指定を2回受けると後の値を採るため、この`--config`で設定が替わる(同梱のcommanderだけで確かめた。`diag.py`を通した実行での確認と、`diag.py`へ専用の指定を足すかどうかは2026-09-24時点で統括の判断待ち)。
-3. 導入の前に、同じ手順で`dist\<候補の名前>\artifacts\win-unpacked\PointerCAD.exe`を走らせてもよい(配布CIのWindowsと同じ対象)。
+3. 導入の前に、同じ手順で`dist\<候補の名前>\builder\win-unpacked\PointerCAD.exe`を走らせてもよい(配布CIのWindowsと同じ対象。`artifacts\`は配布する成果物だけを置く場所で、展開済みの中間物は`builder\`にある。`scripts/release/package-desktop.mjs`)。
 4. 結果を(c)の表の形で記録する。「操作」は「(d) 配布物の起動確認」、「結果」は項目ごとの成功・失敗と所要時間とRUN_ID。失敗した回は、Playwrightの出力先の`packaged-desktop-failure.png`と、残した一時フォルダー(`scratchpad/temp/p/`の下。次の実行が1時間より古いものを消す)も控える。
 
 注意:

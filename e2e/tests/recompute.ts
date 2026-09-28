@@ -26,6 +26,14 @@ export interface RecomputeStats {
   readonly requestedGeneration: number;
   readonly completedGeneration: number;
   readonly lastOutcome: RecomputeOutcome;
+  /**
+   * いま応答待ちの計算部呼び出し(kernelBridge の RPC)の件数(PointerCadApp.tsx の
+   * `pcadRecomputeStats` が返す実際の値には元からあったが、この型には無かった)。
+   * `isComputing`・世代は再計算スライスだけの帳簿で、ドラッグに伴う測定・印刷確認などの
+   * 個別呼び出しは数えない。撮影直前の比較が動かないことを保証するには、この件数も
+   * 0 まで落ち着くのを待つ必要がある(w94a、rules/06 記録予定)。
+   */
+  readonly pendingWaiters: number;
 }
 
 /** `beginRecompute` が操作前に控える世代と時刻。 */
@@ -59,6 +67,35 @@ export async function readRecomputeStats(page: Page): Promise<RecomputeStats> {
 export async function beginRecompute(page: Page): Promise<RecomputeToken> {
   const stats = await readRecomputeStats(page);
   return { requestedGeneration: stats.requestedGeneration, startedAtMs: Date.now() };
+}
+
+function isSettled(stats: RecomputeStats): boolean {
+  return !stats.isComputing && stats.requestedGeneration === stats.completedGeneration && stats.pendingWaiters === 0;
+}
+
+/**
+ * 撮影のように「操作の前後で値が動かないこと」を比較する処理の直前に、その値が動きえない
+ * 状態まで待つ(captureManualDetail 用。個別 flow ごとの waitForRecompute には頼らない)。
+ *
+ * `isComputing===false` かつ世代が一致していても、ドラッグに伴う測定・印刷確認などの個別の
+ * kernelBridge 呼び出しがまだ応答待ちであれば `pendingWaiters` は 0 でない。その状態で比較を
+ * 始めると、撮影の間に呼び出しが解決して `pendingWaiters` だけが動き、比較が割れる
+ * (P9 gdt.spec.ts で実際に発生。rules/06 記録予定)。
+ */
+export async function waitForSettledRecompute(page: Page): Promise<RecomputeStats> {
+  const deadlineMs = Date.now() + KERNEL_TIMEOUT_MS;
+  for (;;) {
+    const stats = await readRecomputeStats(page);
+    if (isSettled(stats)) return stats;
+    if (Date.now() >= deadlineMs) {
+      throw new Error(
+        `撮影前に再計算と計算部呼び出しが落ち着くのを待てなかった: isComputing=${String(stats.isComputing)}, ` +
+          `requestedGeneration=${String(stats.requestedGeneration)}, completedGeneration=${String(stats.completedGeneration)}, ` +
+          `pendingWaiters=${String(stats.pendingWaiters)}, lastOutcome=${stats.lastOutcome}`,
+      );
+    }
+    await page.waitForTimeout(50);
+  }
 }
 
 interface RecomputeSnapshot {

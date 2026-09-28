@@ -40,10 +40,11 @@ function collectErrors(page: Page): readonly string[] {
   return errors;
 }
 
-/** ブラウザの確認窓(「保存していない変更を捨てますか」)に「はい」で答える(NFR-UX-3)。 */
-function acceptConfirms(page: Page): void {
-  page.on('dialog', (dialog) => {
-    void dialog.accept();
+/** 保存していない変更の確認(画面の中の日本語の3択。w91a)に「保存せずに続ける」で答える(NFR-UX-3)。 */
+async function acceptConfirms(page: Page): Promise<void> {
+  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
+    await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });
 }
 
@@ -276,7 +277,7 @@ test.describe('P6 断面表示とひな形(要件§9 P6、計画書 §0.59)', ()
     page,
   }, testInfo) => {
     const errors = collectErrors(page);
-    acceptConfirms(page);
+    await acceptConfirms(page);
     await disableFilePickers(page);
 
     await page.goto('/');

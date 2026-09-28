@@ -74,6 +74,7 @@ export {
   type ExportColor,
   type ExportedFile,
   type ExportedMeshBody,
+  type ExportFaceRange,
   type ImportedBody,
   type ImportedTriangles,
   type KernelBridge,

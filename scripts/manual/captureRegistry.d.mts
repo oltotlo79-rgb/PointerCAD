@@ -16,6 +16,16 @@ export type CaptureUnknownReason =
   | 'no-script-path' | 'image-source-no-hash' | 'image-source-no-build-id';
 export const CAPTURE_UNKNOWN_REASONS: Readonly<Record<CaptureUnknownReason, string>>;
 
+/** Screen conditions of an adoptable capture besides its size (plan P12-16). */
+export const CAPTURE_SCREEN_REQUIREMENTS: {
+  readonly theme: 'dark';
+  readonly uiScale: '100';
+  readonly deviceScaleFactor: 1;
+  readonly fontStatus: 'loaded';
+};
+/** Format of a `*-capture-details.json` bundle written by scripts/manual/captureProvenance.mjs. */
+export const CAPTURE_PROVENANCE_FORMAT: 'pointercad-capture-provenance/1';
+
 export type CaptureViewportClass = 'standard' | 'tall-exception' | 'needs-recapture';
 export type CaptureViewportSource = 'capture-details' | 'image-sources' | 'capture-manifest' | 'png-size';
 export type CaptureProvenanceField = 'script' | 'scriptSha256' | 'fixtureSha256' | 'capturedAt' | 'applicationBuildId';
@@ -107,6 +117,12 @@ export function sha256Hex(bytes: Uint8Array): string;
 export function applicationInputDigest(root: string): Promise<string>;
 export function readPngSize(bytes: Uint8Array): CaptureSize;
 export function classifyCaptureViewport(viewport: CaptureSize): CaptureViewportClass;
+/**
+ * Problems that keep a `pointercad-manual-detail/1` record from being adopted as a manual image of `name`
+ * (build, script, time, hashes, screen size and requirements, finished recompute, settled 3D drawing).
+ * Empty when it may be adopted.
+ */
+export function inspectAdoptableCapture(capture: unknown, name: string): string[];
 export function collectChapterImageReferences(chapters: readonly CaptureChapter[]): ReadonlyMap<string, readonly string[]>;
 export function validateCaptureRegistry(value: unknown): CaptureRegistry;
 export function parseCaptureRegistry(text: string): CaptureRegistry;

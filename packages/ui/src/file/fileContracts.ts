@@ -16,7 +16,6 @@ const descriptions = {
   'file.typeDescription': fileMessages['file.typeDescription'],
   'assembly.fileType': assemblyMessages['assembly.fileType'],
   'drawing.fileType': drawingMessages['drawing.fileType'],
-  'exchange.dwgType': fileMessages['exchange.dwgType'],
 };
 
 interface FileKindSpec {
@@ -39,7 +38,7 @@ export const FILE_KIND_SPECS: Readonly<Record<SaveFileKind | FileKind, FileKindS
   glb: { label: 'glTF', accept: { 'model/gltf-binary': ['.glb'], 'model/gltf+json': ['.gltf'] } },
   '3mf': { label: '3MF', accept: { 'model/3mf': ['.3mf'] } },
   dxf: { label: 'DXF', accept: { 'image/vnd.dxf': ['.dxf'] } },
-  dwg: { label: 'DWG', descriptionKey: 'exchange.dwgType', accept: { 'image/vnd.dwg': ['.dwg'] } },
+  dwg: { label: 'DWG', accept: { 'image/vnd.dwg': ['.dwg'] } },
   svg: { label: 'SVG', accept: { 'image/svg+xml': ['.svg'] } },
   pdf: { label: 'PDF', accept: { 'application/pdf': ['.pdf'] } },
   png: { label: 'PNG', accept: { 'image/png': ['.png'] } },

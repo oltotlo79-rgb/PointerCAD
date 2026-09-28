@@ -12,6 +12,7 @@ import {
   type PickedCanvasImage,
 } from '../../file/canvasFile.js';
 import { t } from '../../i18n/t.js';
+import { beginDocumentRequest } from '../../store/documentRequest.js';
 import { useAppStore } from '../../store/useAppStore.js';
 
 /**
@@ -28,9 +29,14 @@ import { useAppStore } from '../../store/useAppStore.js';
  *
  * **断りは下絵の欄に出す**(ステータスバーの「図形を作れませんでした:」等の言い回しに
  * 混ぜない)。取り消し(窓を閉じた)は断りではないので何も出さない。
+ *
+ * **画像を選ぶ・復号する間に文書を切り替えた・編集した・取り消したら貼らない**
+ * (docs/review-2026-09-28-codex.md R01・§6.1 の1。切り替えた先の別の文書へ貼らない)。
+ * 判定は共通の `beginDocumentRequest`。続けて読み込み直したときは、先の画像は黙って捨てる。
  */
 export async function addCanvasFromFile(): Promise<void> {
   const store = useAppStore.getState();
+  const request = beginDocumentRequest('canvas', store);
   let picked: PickedCanvasImage | null;
   try {
     picked = await pickCanvasImage();
@@ -53,7 +59,12 @@ export async function addCanvasFromFile(): Promise<void> {
     store.setCanvasMessage(t('file.openFailed'));
     return;
   }
-  // 待っている間に文書が変わっているかもしれないので、いまの状態を読み直してから足す。
+  const status = request.status();
+  if (status !== 'current') {
+    image.close?.();
+    if (status !== 'superseded') useAppStore.getState().setCanvasMessage(t('canvas.documentChanged'));
+    return;
+  }
   const latest = useAppStore.getState();
   // 3D スケッチ(作図面なし、FR-330)のときは基準の XY へ貼る(貼る面が要るため)。
   const plane = isFreeWorkPlaneId(latest.workPlaneId) ? DEFAULT_WORK_PLANE_ID : latest.workPlaneId;

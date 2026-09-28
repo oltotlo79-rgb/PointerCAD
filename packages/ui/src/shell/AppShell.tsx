@@ -1,6 +1,6 @@
 import { KeyboardControlHint } from '../help/KeyboardControlHint.js';
 import { RadialCommandMenu } from '../commands/RadialCommandMenu.js';
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef } from 'react';
 import { ViewportBoundary } from '../viewport/ViewportBoundary.js';
 import { TutorialPanel, TutorialWelcome } from '../tutorial/TutorialPanel.js';
 
@@ -35,6 +35,7 @@ import { SketchTextInputHost } from '../sketch/SketchTextInputHost.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import type { DiscardChoice } from '../store/fileSlice.js';
 import { StrengthPropertyPanel } from '../strength/StrengthPropertyPanel.js';
 import { AssemblyTree } from './AssemblyTree.js';
 import { FeatureTree } from './FeatureTree.js';
@@ -163,6 +164,7 @@ export function AppShell(): React.JSX.Element {
       <HelpHost />
       <KeyboardControlHint />
       <ExportHandoffPanel />
+      <DiscardConfirmDialog />
       {documentKind === 'drawing' ? <DrawingToolbar /> : <Toolbar />}
       <div className="pcad-shell__body">
         {/*
@@ -354,5 +356,64 @@ export function AppShell(): React.JSX.Element {
       <RadialCommandMenu viewport={viewportRef} />
       {documentKind === 'drawing' ? <DrawingStatusBar /> : <StatusBar />}
     </div>
+  );
+}
+
+/**
+ * 保存していない変更を失う操作(新規・開く・図面を閉じる・ひな形から新規など)の前の確認(w91a)。
+ *
+ * ブラウザー標準の `confirm` はデスクトップ版で英語の OK/Cancel になり、日本語の画面から浮くので
+ * 使わない(lint が拒否する)。答えは窓を閉じる前の確認(`unsavedChangesGuard.ts`・本体の
+ * `closeGuard.ts`)と同じ「保存して続ける・保存せずに続ける・戻る」の 3 つにそろえる。
+ * 答えるまで後ろの操作を止める確認なので、この窓だけはモーダルにする。Esc は「戻る」と同じで、
+ * 最初の焦点も何も失わない「戻る」に置く(NFR-UX-3)。
+ */
+function DiscardConfirmDialog(): React.JSX.Element | null {
+  const request = useAppStore((state) => state.discardConfirm);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const messageId = useId();
+  useEffect(() => {
+    const element = dialog.current;
+    if (request === null || element === null) return;
+    const previous = globalThis.document.activeElement;
+    if (!element.open) element.showModal();
+    cancel.current?.focus();
+    return () => {
+      if (element.open) element.close();
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, [request]);
+  if (request === null) return null;
+  const answer = (choice: DiscardChoice): void => {
+    useAppStore.getState().answerDiscardConfirm(choice);
+  };
+  return (
+    <dialog ref={dialog} className="pcad-discard-confirm" role="alertdialog" aria-modal="true" aria-labelledby={titleId}
+      aria-describedby={messageId} data-help-topic="save-and-open"
+      onCancel={(event) => { event.preventDefault(); answer('cancel'); }}
+      onKeyDown={(event) => {
+        // 画面全体の近道のキーより先に Esc を「戻る」として受ける(全体の処理が既定の動きを止めても閉じられる)。
+        if (event.key === 'Escape') { event.preventDefault(); answer('cancel'); }
+        event.stopPropagation();
+      }}>
+      <h2 id={titleId}>{t('file.discardConfirm.title')}</h2>
+      <p id={messageId}>{t(request.messageKey)}</p>
+      <div className="pcad-restore__actions">
+        <button type="button" className="pcad-button pcad-button--action pcad-button--primary"
+          title={t('file.discardConfirm.saveHint')} onClick={() => { answer('save'); }}>
+          {t('file.discardConfirm.save')}
+        </button>
+        <button type="button" className="pcad-button pcad-button--action"
+          title={t('file.discardConfirm.discardHint')} onClick={() => { answer('discard'); }}>
+          {t('file.discardConfirm.discard')}
+        </button>
+        <button ref={cancel} type="button" className="pcad-button pcad-button--action"
+          title={t('file.discardConfirm.cancelHint')} onClick={() => { answer('cancel'); }}>
+          {t('file.discardConfirm.cancel')}
+        </button>
+      </div>
+    </dialog>
   );
 }

@@ -57,7 +57,8 @@ function builderSettings(value, expected) {
   if (!equal(names, [
     'PointerCAD-${version}-windows-${arch}-setup.${ext}',
     'PointerCAD-${version}-windows-${arch}-portable.${ext}',
-    'PointerCAD-${version}-linux-${arch}.${ext}',
+    // AppImageの${arch}はx86_64になるため、配布の計画(desktopPackageTargets.mjs)の名前どおりx64を直接書く。
+    'PointerCAD-${version}-linux-x64.${ext}',
   ])) throw new Error('Desktop builder artifact names differ');
 }
 

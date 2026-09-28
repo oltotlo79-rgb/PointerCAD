@@ -45,9 +45,9 @@ export function DrawingToolbar(): React.JSX.Element {
           data-help-topic={group.helpTopic}>
           <span className="pcad-toolbar__group-label" title={t(group.tooltip)}>{t(group.label)}</span>
           <div className="pcad-segmented">
-            <ToolMenu<DrawingToolbarAction> items={group.items} groupLabelKey={group.label} groupTooltipKey={group.tooltip}
+            <ToolMenu<DrawingToolbarAction> items={group.items} groupLabelKey={'menuLabel' in group ? group.menuLabel : group.label} groupTooltipKey={group.tooltip}
               GroupIcon={group.Icon} activeTool={tool} showPressed={group.label !== 'toolbar.file.title'}
-              readinessOf={(id) => ({ ready: !busy || id === 'open' || id === 'save' || id === 'saveAs', reasonKey: busy ? 'drawing.status.computing' : null })}
+              readinessOf={(id) => ({ ready: !busy || id === 'saveAs', reasonKey: busy ? 'drawing.status.computing' : null })}
               commandGroup="drawing" />
           </div>
         </div>)}

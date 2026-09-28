@@ -19,12 +19,12 @@ export async function functionPlotFlow(page: Page, info: TestInfo, app?: Electro
   for (const axis of ['X', 'Y', 'Z']) for (const endpoint of ['minimum', 'maximum'] as const) {
     await expect(dialog.getByRole('textbox', { name: `${axis} ${text(endpoint)}`, exact: true })).toHaveValue('');
   }
-  await dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true }).fill('X^2');
+  await dialog.getByRole('textbox', { name: `Y =`, exact: true }).fill('X^2');
   await page.keyboard.press('F1');
   await expect(help.getByRole('heading', { name: '関数とXYZの範囲から曲線を作る', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(help).toHaveCount(0);
-  await expect(dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true })).toHaveValue('X^2');
+  await expect(dialog.getByRole('textbox', { name: `Y =`, exact: true })).toHaveValue('X^2');
   await dialog.getByRole('button', { name: `Y: ${uiMessage('math', 'math.open')}`, exact: true }).click();
   const math = page.locator('.pcad-math-dialog');
   const angleUnit = math.getByRole('combobox', { name: uiMessage('math', 'math.angleUnit'), exact: true });
@@ -67,7 +67,7 @@ export async function functionPlotFlow(page: Page, info: TestInfo, app?: Electro
   await waitForRecompute(page);
   await page.getByText(curve.name, { exact: true }).click();
   await page.getByRole('button', { name: text('edit'), exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true })).toHaveValue('X^2');
+  await expect(dialog.getByRole('textbox', { name: `Y =`, exact: true })).toHaveValue('X^2');
   await dialog.getByRole('button', { name: `Y: ${uiMessage('math', 'math.open')}`, exact: true }).click();
   await expect(angleUnit).toHaveValue('radian');
   await expect(math.locator('textarea')).toBeVisible();
@@ -77,8 +77,8 @@ export async function functionPlotFlow(page: Page, info: TestInfo, app?: Electro
   await captureManualDetail(page, info, { name: 'function-axis-math', dialog: math, fixture: { formula: '1/X' }, script: new URL(import.meta.url) });
   await math.getByRole('button', { name: 'この式を使う', exact: true }).click();
   await expect(math).toHaveCount(0);
-  await dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true }).fill('2/X');
-  await expect(dialog.getByRole('group', { name: `Y ${text('formula')}`, exact: true }))
+  await dialog.getByRole('textbox', { name: `Y =`, exact: true }).fill('2/X');
+  await expect(dialog.getByRole('group', { name: `Y =`, exact: true }))
     .toContainText(`${uiMessage('math', 'math.angleUnit')}: ${uiMessage('math', 'math.degree')}`);
   await dialog.getByRole('textbox', { name: `Z ${text('minimum')}`, exact: true }).fill('0.2');
   await dialog.getByRole('button', { name: text('preview'), exact: true }).click();

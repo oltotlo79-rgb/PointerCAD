@@ -330,7 +330,8 @@ class ScopeTests(unittest.TestCase):
                                         'scripts/commit-message.selftest.py'])['packages'], ['desktop', 'test-utils'])
         for path in ['scripts/lib/task_workspace.py', 'scripts/task-workspace.selftest.py']:
             self.assertEqual(scope.classify([path])['packages'], ['desktop', 'test-utils'], path)
-        for path in ['.github/workflows/ci.yml', 'scripts/lib/isolated_checkout_preflight.py',
+        for path in ['.github/workflows/ci.yml', 'scripts/lib/ci_stage_evidence.py',
+                     'scripts/lib/isolated_checkout_preflight.py',
                      'scripts/isolated-checkout-preflight.selftest.py', 'scripts/lib/gitEnvironment.mjs',
                      'scripts/lib/gitEnvironment.d.mts', 'scripts/vite/webBuildSources.mjs',
                      'scripts/vite/webBuildSources.d.mts']:
@@ -379,24 +380,44 @@ class ScopeTests(unittest.TestCase):
         self.assertNotIn('light', ordinary)
         self.assertNotIn('e2eSpecs', ordinary)
 
-    def test_light_untraceable_operation_changes_keep_every_operation(self):
+    def test_light_untraceable_operation_changes_are_left_to_ci_every_operation(self):
+        # 2026-09-28 19:5x owner decision "3": a light check never runs every operation
+        # locally. An untraceable change keeps the startup projects and is marked for CI.
         self.install_operations()
         self.write('e2e/tests/orphanFlow.ts', 'export const nobodyImportsThis = 1;\n')
         result = self.inspect_light(base=self.base)
         self.assertEqual(result['mode'], 'targeted')
-        self.assertTrue(result['allE2EChecks'], 'A helper that no spec reaches cannot be bounded')
+        self.assertFalse(result['allE2EChecks'], 'The light check leaves every operation to CI')
+        self.assertTrue(result['e2eDeferredToCI'], 'A helper that no spec reaches cannot be bounded')
+        self.assertTrue(result['runtimeChecks'], 'The three startup projects always run locally')
+        self.assertIn('deferred-e2e', result['reason'])
         self.assertEqual(result['e2eSpecs'], [])
+        # One untraceable helper does not hide the specs known to reach another changed helper.
+        self.write('e2e/tests/sharedFlow.ts', 'export const shared = 5;\n')
+        mixed = self.inspect_light(base=self.base)
+        self.assertTrue(mixed['e2eDeferredToCI'])
+        self.assertFalse(mixed['allE2EChecks'])
+        self.assertEqual(mixed['e2eSpecs'], ['e2e/tests/alpha.spec.ts', 'e2e/tests/beta.spec.ts',
+                                             'e2e/tests/electron-delta.spec.ts', 'e2e/tests/nested/omega.spec.ts'])
+        self.write('e2e/tests/sharedFlow.ts', 'export const shared = 1;\n')
         (self.root / 'e2e/tests/orphanFlow.ts').unlink()
         self.write('e2e/tests/odd name.spec.ts', 'unsafe as a file filter')
-        self.assertTrue(self.inspect_light(base=self.base)['allE2EChecks'])
+        odd = self.inspect_light(base=self.base)
+        self.assertTrue(odd['e2eDeferredToCI'])
+        self.assertFalse(odd['allE2EChecks'])
         (self.root / 'e2e/tests/odd name.spec.ts').unlink()
-        self.assertTrue(scope.classify(['e2e/tests/sharedFlow.ts'], light=True)['allE2EChecks'],
-                        'Unavailable sources keep every operation')
+        unavailable = scope.classify(['e2e/tests/sharedFlow.ts'], light=True)
+        self.assertTrue(unavailable['e2eDeferredToCI'], 'Unavailable sources leave the operations to CI')
+        self.assertFalse(unavailable['allE2EChecks'])
         self.git('rm', '-q', 'e2e/tests/unrelatedFlow.ts', 'e2e/tests/gamma.spec.ts')
         deleted = self.inspect_light(base=self.base)
         self.assertFalse(deleted['allE2EChecks'], 'A removed spec and its removed helper have no present importer')
+        self.assertFalse(deleted['e2eDeferredToCI'])
         self.assertEqual(deleted['e2eSpecs'], [])
         self.assertTrue(deleted['runtimeChecks'])
+        # The ordinary (non-light) scope still keeps every operation for an e2e change.
+        self.assertTrue(scope.classify(['e2e/tests/orphanFlow.ts'])['allE2EChecks'])
+        self.assertNotIn('e2eDeferredToCI', scope.classify(['e2e/tests/orphanFlow.ts']))
 
     def test_light_documentation_and_runtime_keep_units_builds_and_startup(self):
         self.write('README.md', 'updated')
@@ -415,16 +436,61 @@ class ScopeTests(unittest.TestCase):
         self.install_operations()
         self.write('e2e/tests/sharedFlow.ts', 'export const shared = 4;\n')
         self.git('add', '.')
-        self.assertEqual(self.inspect_light('Commit', 'Commit')['mode'], 'full')
-        self.assertEqual(self.inspect_light('Push', 'Push', self.base)['mode'], 'full')
-        self.assertEqual(self.inspect_light(force=True)['mode'], 'full')
+        # Hooks, CI and an explicit full run never receive the light (deferred) result.
+        for result in [self.inspect_light('Commit', 'Commit'), self.inspect_light('Push', 'Push', self.base),
+                       self.inspect_light(force=True)]:
+            self.assertEqual(result['mode'], 'full')
+            self.assertNotIn('light', result)
+            self.assertNotIn('e2eDeferredToCI', result)
         with patch.dict(os.environ, {'CI': 'true'}):
-            self.assertEqual(scope.inspect(self.root, 'Push', 'Manual', '', False, True)['mode'], 'full')
-        for path in ['e2e/playwright.config.ts', 'pnpm-lock.yaml', 'e2e/tests/data.json']:
+            ci = scope.inspect(self.root, 'Push', 'Manual', '', False, True)
+            self.assertEqual(ci['mode'], 'full')
+            self.assertNotIn('light', ci)
+        for path in ['e2e/playwright.config.ts', 'pnpm-lock.yaml', 'e2e/tests/data.json', 'eslint.config.js']:
             with self.subTest(path=path):
                 self.write(path, 'changed')
-                self.assertEqual(self.inspect_light(base=self.base)['mode'], 'full')
+                # 2026-09-29 owner decision "5" (replaces the 2026-09-28 19:5x decision "3"):
+                # every unit suite, both builds and the self-tests still run; locally the
+                # browser operations are only the three startup projects. Every spec a
+                # changed e2e/tests helper reaches is deferred to CI on both OSes, never
+                # widened to "the known related specs" as decision "3" had it.
+                result = self.inspect_light(base=self.base)
+                self.assertEqual(result['mode'], 'full')
+                self.assertIn(path, result['reason'])
+                self.assertEqual(result['packages'], [])
+                self.assertTrue(result['light'] and result['runtimeChecks'] and result['e2eDeferredToCI'])
+                self.assertFalse(result['allE2EChecks'])
+                self.assertEqual(result['e2eSpecs'], [])
+                self.assertEqual(result['base'], self.base)
+                ordinary = self.inspect(base=self.base)
+                self.assertEqual(ordinary['mode'], 'full')
+                self.assertNotIn('light', ordinary)
                 (self.root / path).unlink()
+
+    def test_light_full_keeps_the_reason_for_links_manifests_and_scope_errors(self):
+        self.install_workspace()
+        self.write('packages/model/src/runtime.ts', 'changed')
+        self.write('packages/ui/package.json', '{broken json')
+        self.git('add', 'packages/ui/package.json')
+        result = self.inspect_light()
+        self.assertEqual((result['mode'], result['reason']),
+                         ('full', 'The checked workspace dependency coverage could not be established'))
+        self.assertTrue(result['light'] and result['e2eDeferredToCI'])
+        self.assertEqual((result['e2eSpecs'], result['base']), ([], self.base))
+        self.assertEqual(self.inspect()['reason'], 'The checked workspace dependency coverage could not be established')
+        self.assertNotIn('light', self.inspect())
+        self.git('checkout', 'HEAD', '--', 'packages/ui/package.json')
+        blob = subprocess.run(['git', '-C', str(self.root), 'hash-object', '-w', '--stdin'],
+                              input=b'../../../../README.md', env=self.environment,
+                              capture_output=True, check=True, timeout=15).stdout.decode().strip()
+        self.git('update-index', '--add', '--cacheinfo', '120000,' + blob + ',packages/model/src/linked.ts')
+        linked = self.inspect_light()
+        self.assertEqual((linked['mode'], linked['reason']), ('full', 'Changed links or submodules require full validation'))
+        self.assertTrue(linked['light'] and linked['e2eDeferredToCI'])
+        self.assertEqual((linked['e2eSpecs'], linked['base']), ([], self.base))
+        self.assertNotIn('light', self.inspect())
+        self.assertEqual(scope.classify([], light=True)['e2eDeferredToCI'], True)
+        self.assertNotIn('light', scope.classify([]))
 
     def test_related_specs_follow_every_static_import_form_and_ignore_outside_modules(self):
         sources = {
@@ -688,33 +754,79 @@ class ScopeHookTests(unittest.TestCase):
         self.assertEqual(fixture.calls(), [])
         self.assertFalse((fixture.root / '.git/local-light-receipt.json').exists())
 
-    def test_full_ci_and_untraceable_changes_still_run_every_operation(self):
+    STARTUP_E2E = 'run test:e2e --project=viewport-performance --project=startup-firefox --project=startup-electron'
+
+    def test_untraceable_and_unknown_changes_leave_every_operation_to_ci_while_full_and_ci_run_it(self):
+        # 2026-09-28 19:5x owner decision "3": -Scope Local never runs every operation. An
+        # unknown change runs every unit suite, both builds and the self-tests locally, and
+        # records a light receipt (never B3); -Full and CI still run every operation.
         self.install_operations()
         fixture = self.fixture
+        light = fixture.root / '.git/local-light-receipt.json'
+        full_receipt = fixture.root / '.git/validation-receipt.json'
         fixture.write('e2e/tests/orphanFlow.ts', 'export const nobodyImportsThis = 1;\n')
         fixture.git('add', '.')
-        self.light_check('-ComparisonBase', self.base)
-        self.assertEqual(fixture.calls()[-1], 'run test:e2e', 'An untraceable operation change keeps every operation')
-        self.assertTrue((fixture.root / '.git/local-light-receipt.json').exists())
+        output = self.light_check('-ComparisonBase', self.base)
+        self.assertEqual(fixture.calls(), [*self.browser_preparation(), 'run typecheck', 'run lint',
+                                           '--filter @pointercad/test-utils run test', 'run build', self.STARTUP_E2E],
+                         'An untraceable operation change is left to CI\n' + output[-4000:])
+        self.assertTrue(light.exists())
+        self.assertFalse(full_receipt.exists(), 'A light check is never a B3 receipt')
         before = len(fixture.calls())
         fixture.command([fixture.shell, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                          str(fixture.root / 'scripts/check.ps1'), '-Full'])
         self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
-        self.assertFalse((fixture.root / '.git/local-light-receipt.json').exists(), 'A new check drops the light record')
-        self.assertTrue((fixture.root / '.git/validation-receipt.json').exists())
+        self.assertFalse(light.exists(), 'A new check drops the light record')
+        self.assertTrue(full_receipt.exists())
         fixture.write('pnpm-lock.yaml', 'unknown impact')
         fixture.git('add', '.')
         before = len(fixture.calls())
-        self.light_check('-ComparisonBase', self.base)
-        self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
-                         ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
-        self.assertFalse((fixture.root / '.git/local-light-receipt.json').exists())
+        output = self.light_check('-ComparisonBase', self.base)
+        self.assertEqual(fixture.calls()[before:], [*self.browser_preparation(), 'run typecheck', 'run lint',
+                                                    'run test', 'run build', self.STARTUP_E2E], output[-4000:])
+        self.assertTrue(light.exists(), 'The widened light check records its own light receipt')
+        self.assertFalse(full_receipt.exists(), 'A widened light check never issues or keeps a B3 receipt')
         fixture.env['CI'] = 'true'
         before = len(fixture.calls())
         fixture.full_check()
         self.assertEqual([call for call in fixture.calls()[before:] if call.startswith('run ')],
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
+
+    def test_widened_light_check_defers_related_specs_and_real_hooks_accept_it_once(self):
+        # 2026-09-29 owner decision "5" (replaces the 2026-09-28 19:5x decision "3"): a
+        # configuration change that widens the units to every suite runs only the three
+        # startup projects locally; the changed helper's specs (e.g. alpha.spec.ts here)
+        # are deferred to CI on both OSes, never added to the local browser run.
+        self.install_operations()
+        fixture = self.fixture
+        fixture.write('e2e/tests/sharedFlow.ts', 'export const shared = 7;\n')
+        fixture.write('eslint.config.js', 'export default [];\n')
+        fixture.git('add', '.')
+        output = self.light_check('-ComparisonBase', self.base)
+        expected = [*self.browser_preparation(), 'run typecheck', 'run lint', 'run test', 'run build',
+                    self.STARTUP_E2E]
+        self.assertEqual(fixture.calls(), expected, output[-4000:])
+        light = fixture.root / '.git/local-light-receipt.json'
+        self.assertTrue(light.is_file(), output[-4000:])
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists(), 'A light check is never a B3 receipt')
+        output = fixture.git('commit', '-qm', 'configuration and operation helper change')
+        self.assertEqual(fixture.calls(), expected, 'The real pre-commit must accept the light check\n' + output)
+        output = fixture.git('push', 'origin', 'HEAD:main')
+        self.assertEqual(fixture.calls(), expected, 'The real pre-push must accept the light check\n' + output)
+        self.assertFalse(light.exists(), 'The push consumes the light record')
+
+    def test_a_failed_widened_light_check_leaves_no_receipt(self):
+        self.install_operations()
+        fixture = self.fixture
+        fixture.write('pnpm-lock.yaml', 'unknown impact')
+        fixture.git('add', '.')
+        fixture.write('.git/fail-step', self.STARTUP_E2E)
+        self.light_check('-ComparisonBase', self.base, success=False)
+        self.assertEqual(fixture.calls()[-1], self.STARTUP_E2E)
+        self.assertIn('run test', fixture.calls())
+        self.assertFalse((fixture.root / '.git/local-light-receipt.json').exists())
+        self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
 
     def test_changed_content_failure_or_different_push_range_fall_back_to_ordinary_hook_checks(self):
         self.install_operations()

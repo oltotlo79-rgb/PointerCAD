@@ -371,7 +371,7 @@
   "drawing.property.multiple": "{count}件を選択中です。個別の設定を変えるには1つ選んでください。",
   "drawing.property.elementLayer": "選んだ要素のレイヤー",
   "drawing.toolbar.dimensions": "寸法",
-  "drawing.toolbar.fileHint": "図面の保存・書き出し・印刷・部品への移動を選びます。",
+  "drawing.toolbar.fileHint": "開く・保存のほかの図面のファイル操作(名前を付けて保存・書き出し・印刷・部品への移動)をまとめてあります",
   "drawing.toolbar.exportHint": "用紙サイズを保ってPDF・DXF・画像を書き出します。",
   "drawing.toolbar.svgHint": "線と文字を拡大しても鮮明なSVGファイルを保存します。",
   "drawing.toolbar.printHint": "用紙の実寸で印刷します。デスクトップ版は部数も指定できます。",

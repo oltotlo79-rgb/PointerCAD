@@ -17,5 +17,7 @@ export { PointerCadApp } from './app/PointerCadApp.js';
 export { setFileGateway } from './file/installFileGateway.js';
 export type { FileGateway, PickedFile } from './file/fileGateway.js';
 export { attachUnsavedChangesGuard } from './file/unsavedChangesGuard.js';
+// デスクトップ版の入口が preload の口を確かめて渡す形(レビュー R03)。
+export type { CloseRequestTarget } from './file/unsavedChangesGuard.js';
 export { setOfflineGateway } from './settings/offlineGateway.js';
 export type { OfflineGateway, OfflineStatus } from './settings/offlineGateway.js';

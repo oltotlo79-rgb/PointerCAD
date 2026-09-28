@@ -39,4 +39,13 @@ describe('数値欄の原式と単位表示', () => {
     expect(clicked).toContain('value="50.8"');
     expect(clicked).toContain('class="pcad-field__unit">mm</span>'); expect(clicked).toContain('= 2 in');
   });
+
+  it('分数インチで打った長さは、欄の下に小数と分数インチを並べて出す(FR-814、w91a)', () => {
+    const typed = reduceNumericInput(createNumericInput('circle', 'circleRadius', 'absolute'),
+      { type: 'edit', index: 0, source: '3/8"' });
+    const markup = render(typed);
+    expect(markup).toContain('value="3/8&quot;"');
+    expect(markup).toContain('= 0.375 in (3/8&quot;)');
+    expect(typed.fields[0].source).toBe('3/8"');
+  });
 });

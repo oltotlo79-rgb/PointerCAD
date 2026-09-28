@@ -107,6 +107,10 @@ const mathFieldDirectCallGuard = {
   message: 'math-fieldへの直接の.press()/.focus()はMathLiveの焦点処理と競合します（rules/06 §10.329）。mathEditorReady.tsのfocusFieldと画面から読んだ値を使ってください。',
 };
 
+/** ブラウザー標準の窓(w91a)。製品のコードでは使わない。 */
+const browserDialogNames = ['confirm', 'alert', 'prompt'];
+const browserDialogMessage = 'ブラウザー標準の confirm・alert・prompt はデスクトップ版で英語の OK/Cancel になります。画面の中の日本語の確認（useAppStore の requestDiscardConfirm と AppShell の DiscardConfirmDialog）か、帯の知らせ（setFileMessage）を使ってください（w91a）。';
+
 const e2eSyntaxGuards = [{
         selector: 'CallExpression[callee.property.name="toBeVisible"] CallExpression[callee.property.name="locator"] > Literal.arguments[value=/(^| )path$/]',
         message: 'SVGの線は幅か高さが0でも描かれます。pathの面積をtoBeVisibleで判定せずexpectDrawingStrokeで実線長・線幅・表示状態を確認してください。',
@@ -301,6 +305,19 @@ export default tseslint.config(
     ignores: ['**/*.test.ts', '**/*.test.tsx', '**/*.worker.ts'],
     rules: {
       'no-restricted-syntax': ['error', ...uiRuntimeImportGuards],
+    },
+  },
+  {
+    // 製品のコードからブラウザー標準の確認・通知・入力の窓を出さない(w91a)。デスクトップ版では
+    // 英語の OK/Cancel になり、日本語の画面から浮く。確認は画面の中の日本語の3択
+    // (AppShell.tsx の DiscardConfirmDialog、ストアの requestDiscardConfirm)を使う。
+    // no-restricted-syntax は同じファイルの他の塊が上書きするため、別の規則で拒否する。
+    files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx'],
+    rules: {
+      'no-restricted-globals': ['error', ...browserDialogNames.map((name) => ({ name, message: browserDialogMessage }))],
+      'no-restricted-properties': ['error', ...['window', 'globalThis', 'self', 'top', 'parent'].flatMap((object) =>
+        browserDialogNames.map((property) => ({ object, property, message: browserDialogMessage })))],
     },
   },
   {

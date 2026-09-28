@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { ja } from '../i18n/ja.js';
 import { DRAWING_PROPERTY_KEYS, DRAWING_TOOL_GROUPS, DRAWING_TREE_KEYS } from './DrawingWorkspace.js';
+import { DRAWING_FILE_BUTTON_ACTIONS } from './drawingToolbarItems.js';
 
 const refusalMessages = [
   'もとにする部品を選んでください。',
@@ -43,6 +46,19 @@ describe('図面画面の5区画に入る内容', () => {
     expect(new Set(tools.map((tool) => tool.id)).size).toBe(tools.length);
     expect(tools.map((tool) => tool.id)).toEqual(expect.arrayContaining(['section', 'detail', 'auxiliary', 'partial', 'broken', 'note', 'annotation', 'centerMark']));
     for (const tool of tools) expect(ja[tool.tooltipKey].length).toBeGreaterThan(8);
+  });
+  it('▾のファイルの一覧は部品と同じ名前で、上の段の図柄のボタン(開く・保存)を重ねない(w65b §3-A)', () => {
+    const fileGroup = DRAWING_TOOL_GROUPS[0];
+    expect(fileGroup.label).toBe('toolbar.file.title');
+    expect(fileGroup.menuLabel).toBe('toolbar.fileMenu.groupLabel');
+    // 部品の▾(Toolbar.tsx)も同じ鍵で名前を引く。どちらかだけ変えると説明書が1つの名前で書けなくなる。
+    const partToolbar = readFileSync(fileURLToPath(new URL('../shell/Toolbar.tsx', import.meta.url)), 'utf8');
+    expect(partToolbar).toContain('groupLabelKey="toolbar.fileMenu.groupLabel"');
+    const inMenu: readonly string[] = fileGroup.items.map((item) => item.id);
+    for (const action of DRAWING_FILE_BUTTON_ACTIONS) expect(inMenu, action).not.toContain(action);
+    expect(inMenu).toEqual(['saveAs', 'refreshSource', 'export', 'svg', 'print', 'return']);
+    const drawingToolbar = readFileSync(fileURLToPath(new URL('./DrawingToolbar.tsx', import.meta.url)), 'utf8');
+    for (const action of DRAWING_FILE_BUTTON_ACTIONS) expect(drawingToolbar).toContain(`onClick={() => choose('${action}')}`);
   });
   it('プロパティは6つの節を持つ', () => expect(DRAWING_PROPERTY_KEYS).toHaveLength(6));
   it.each(refusalMessages)('断り文言を正本へ収録する: %s', (message) => {

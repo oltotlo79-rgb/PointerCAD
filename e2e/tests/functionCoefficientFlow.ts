@@ -22,8 +22,8 @@ export async function functionCoefficientFlow(page: Page, info: TestInfo, app?: 
   await page.getByRole('tab', { name: 'プロパティ', exact: true }).click();
   await chooseToolMenuItem(page, '作図', plot('menuTitle'));
   const dialog = page.locator('.pcad-function-dialog');
-  await dialog.getByRole('textbox', { name: `Y ${plot('formula')}`, exact: true }).fill('coef("高さ")*X');
-  await dialog.getByRole('textbox', { name: `Z ${plot('formula')}`, exact: true }).fill('0');
+  await dialog.getByRole('textbox', { name: `Y =`, exact: true }).fill('coef("高さ")*X');
+  await dialog.getByRole('textbox', { name: `Z =`, exact: true }).fill('0');
   for (const [axis, min, max] of [['X', '-2', '2'], ['Y', '-10', '10'], ['Z', '-1', '1']] as const) {
     await dialog.getByRole('textbox', { name: `${axis} ${plot('minimum')}`, exact: true }).fill(min);
     await dialog.getByRole('textbox', { name: `${axis} ${plot('maximum')}`, exact: true }).fill(max);

@@ -51,6 +51,6 @@ Web版は、画面を開くためのファイルを一時的に取得できな�
 | `Cross-Origin-Embedder-Policy` | `require-corp` |
 | `Cross-Origin-Resource-Policy` | `same-origin` |
 
-Cloudflare Pages向けの配布物には、これらを含む`_headers`を用意しています。配布物に含まれる他の設定も保ち、利用者にブラウザーの保護機能を切るよう案内しないでください。公開後は、実際の公開先で起動・作図・保存・説明書を確認します。
+Web版の配布物には、これらを含む`_headers`を用意しています。配布物に含まれる他の設定も保ち、利用者にブラウザーの保護機能を切るよう案内しないでください。公開後は、実際の公開先で起動・作図・保存・説明書を確認します。
 
 [保存場所と通信](local-data.md)・[文書を保存する・開く](save-and-open.md)・[通信なしで使う準備](offline-use.md)

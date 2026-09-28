@@ -35,9 +35,10 @@ function collectErrors(page: Page): readonly string[] {
   return errors;
 }
 
-function acceptConfirms(page: Page): void {
-  page.on('dialog', (dialog) => {
-    void dialog.accept();
+async function acceptConfirms(page: Page): Promise<void> {
+  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
+    await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });
 }
 
@@ -374,7 +375,7 @@ test.describe('P4b パラメータ表(FR-207・FR-201・FR-502)', () => {
 
   test('保存して開き直すとパラメータ表が残り、式のまま再編集できる', async ({ page }, testInfo) => {
     const errors = collectErrors(page);
-    acceptConfirms(page);
+    await acceptConfirms(page);
     await disableFilePickers(page);
 
     await page.goto('/');

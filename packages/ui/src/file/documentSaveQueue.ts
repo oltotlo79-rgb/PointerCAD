@@ -1,4 +1,5 @@
 import type { AppState } from '../store/appState.js';
+import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { FileGateway } from './fileGateway.js';
 
@@ -29,14 +30,15 @@ export async function completeDocumentSave(
   isCurrent: () => boolean,
   discardRecovery: () => Promise<void>,
 ): Promise<void> {
-  const version = useAppStore.getState().documentVersion;
+  // 版の番号は通常の編集で増えないので、文書・履歴・添付の参照で「途中の編集」を調べる。
+  const identity = captureDocumentIdentity(useAppStore.getState());
   try {
     await discardRecovery();
   } catch {
     // ファイル自体の保存は成功済み。消去できない控えを残しても保存失敗とは扱わない。
   }
   const current = useAppStore.getState();
-  if (isCurrent() && current.documentVersion === version) {
+  if (isCurrent() && compareDocumentIdentity(identity, current) === 'current') {
     current.setFileMessage({ key: 'file.saved', failed: false });
   }
 }

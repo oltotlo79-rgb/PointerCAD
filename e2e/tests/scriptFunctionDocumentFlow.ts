@@ -9,8 +9,8 @@ import {captureManualDetail} from './captureManualDetail.js';
 export async function scriptFunctionDocumentFlow(page:Page,info:TestInfo,app?:ElectronApplication):Promise<void>{
   const label = functionPlotMessage,dialog=page.locator('.pcad-function-dialog');
   await chooseToolMenuItem(page,'作図',label('menuTitle'));
-  await dialog.getByRole('textbox',{name:`Y ${label('formula')}`,exact:true}).fill('X');
-  await dialog.getByRole('textbox',{name:`Z ${label('formula')}`,exact:true}).fill('0');
+  await dialog.getByRole('textbox',{name:`Y =`,exact:true}).fill('X');
+  await dialog.getByRole('textbox',{name:`Z =`,exact:true}).fill('0');
   for(const axis of ['X','Y','Z'])for(const end of ['minimum','maximum'] as const){
     await dialog.getByRole('textbox',{name:`${axis} ${label(end)}`,exact:true}).fill(end==='minimum'?'-2':'2');
   }

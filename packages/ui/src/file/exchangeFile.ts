@@ -37,6 +37,8 @@ import {
   selectExportBodies,
   sketchToDxf,
   usesTriangles,
+  type ExportColor,
+  type ExportFaceRange,
   type ExportFormat,
   type ExportNoticeKey,
   type ExportRequest,
@@ -385,6 +387,13 @@ export interface ExchangeExportMesh {
   readonly color: readonly [number, number, number] | null;
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
+  /**
+   * 面ごとの色(面の通し番号 → 色)。色を付けた面が 1 枚も無い立体では省く(R04)。
+   * model の `toShapeExportOutcome`(`kernelBridge/exchangeConversions.ts`)が詰めて返す。
+   */
+  readonly faceColors?: ReadonlyMap<number, ExportColor>;
+  /** 面ごとの三角形の範囲(面の通し番号は配列の位置)。`faceColors` を渡すときだけ要る。 */
+  readonly faceRanges?: readonly ExportFaceRange[];
 }
 
 /** 書き出しの結果。**`files` はそのまま全部保存する**(数えない。§2.4)。 */

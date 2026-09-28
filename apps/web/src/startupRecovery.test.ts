@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { startBrowserApplication } from './startupRecovery.js';
+import { startBrowserApplication, watchPageLeaving } from './startupRecovery.js';
 
 function fixture() {
   const data = new Map([['saved-user-setting', 'keep']]);
@@ -9,7 +9,8 @@ function fixture() {
     removeItem: (key: string) => { data.delete(key); },
   };
   return { data, storage, options: { load: vi.fn<() => Promise<unknown>>(), storage: () => storage,
-    address: 'https://example.test/cad/?edition=1#part', reload: vi.fn(), ready: vi.fn(), failed: vi.fn() } };
+    address: 'https://example.test/cad/?edition=1#part', leaving: vi.fn(() => false), reload: vi.fn(), ready: vi.fn(), failed: vi.fn(),
+    interrupted: vi.fn() } };
 }
 
 describe('起動前の取得失敗だけ一度再試行し、保存内容を保持する', () => {
@@ -71,5 +72,75 @@ describe('起動前の取得失敗だけ一度再試行し、保存内容を保�
     expect(await startBrowserApplication(f.options)).toBe('ready');
     expect(f.options.ready).toHaveBeenCalledTimes(1);
     expect(f.data.get('saved-user-setting')).toBe('keep');
+  });
+});
+
+describe('頁を離れる途中の取得の中断は、読み込み失敗として再読み込みしない', () => {
+  const cancelled = [
+    new TypeError('error loading dynamically imported module: /assets/main.js'),
+    new TypeError('Failed to fetch dynamically imported module: /assets/main.js'),
+    new Error('Unable to preload CSS for /assets/main.css'),
+  ];
+
+  it.each(cancelled)('離れる途中の%sは再試行も失敗の案内もせず、次の頁の再試行を残す', async error => {
+    const f = fixture(); f.options.load.mockRejectedValue(error); f.options.leaving.mockReturnValue(true);
+    expect(await startBrowserApplication(f.options)).toBe('leaving');
+    expect(f.options.reload).not.toHaveBeenCalled();
+    expect(f.options.failed).not.toHaveBeenCalled();
+    expect(f.options.ready).not.toHaveBeenCalled();
+    expect(f.options.interrupted).toHaveBeenCalledTimes(1);
+    expect(f.options.interrupted).toHaveBeenCalledWith(error);
+    expect([...f.data]).toEqual([['saved-user-setting', 'keep']]);
+    // The next page at the same address still has its one retry for a real failure.
+    f.options.leaving.mockReturnValue(false);
+    expect(await startBrowserApplication(f.options)).toBe('reloading');
+    expect(f.options.reload).toHaveBeenCalledTimes(1);
+    expect(f.options.failed).not.toHaveBeenCalled();
+  });
+
+  it.each(cancelled)('離れていない%sは今までどおり一度だけ再試行する', async error => {
+    const f = fixture(); f.options.load.mockRejectedValue(error);
+    expect(await startBrowserApplication(f.options)).toBe('reloading');
+    expect(f.options.leaving).toHaveBeenCalled();
+    expect(f.options.reload).toHaveBeenCalledTimes(1);
+    expect(f.options.interrupted).not.toHaveBeenCalled();
+    expect(await startBrowserApplication(f.options)).toBe('failed');
+    expect(f.options.reload).toHaveBeenCalledTimes(1);
+    expect(f.options.failed).toHaveBeenCalledWith(error);
+  });
+
+  it('離れる途中でも読み込み失敗以外の例外は隠さず案内へ渡す', async () => {
+    const f = fixture(), error = new SyntaxError('Unexpected token');
+    f.options.load.mockRejectedValue(error); f.options.leaving.mockReturnValue(true);
+    expect(await startBrowserApplication(f.options)).toBe('failed');
+    expect(f.options.failed).toHaveBeenCalledWith(error);
+    expect(f.options.interrupted).not.toHaveBeenCalled();
+    expect(f.options.reload).not.toHaveBeenCalled();
+  });
+
+  it('離れる途中かどうかを読めなくても、離れていない失敗として一度だけ再試行する', async () => {
+    const f = fixture(); f.options.load.mockRejectedValue(new TypeError('error loading dynamically imported module'));
+    f.options.leaving.mockImplementation(() => { throw new Error('denied'); });
+    expect(await startBrowserApplication(f.options)).toBe('reloading');
+    expect(f.options.reload).toHaveBeenCalledTimes(1);
+    expect(f.options.interrupted).not.toHaveBeenCalled();
+  });
+
+  it('頁を離れ始めた印を beforeunload・pagehide で立て、履歴から戻った頁と解除後は立てない', () => {
+    for (const type of ['beforeunload', 'pagehide']) {
+      const target = new EventTarget(), watch = watchPageLeaving(target);
+      expect(watch.active()).toBe(false);
+      target.dispatchEvent(new Event('pageshow'));
+      expect(watch.active()).toBe(false);
+      target.dispatchEvent(new Event(type));
+      expect(watch.active()).toBe(true);
+      target.dispatchEvent(new Event('pageshow'));
+      expect(watch.active()).toBe(true);
+      target.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+      expect(watch.active()).toBe(false);
+      watch.dispose();
+      target.dispatchEvent(new Event(type));
+      expect(watch.active()).toBe(false);
+    }
   });
 });

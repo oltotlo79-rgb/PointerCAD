@@ -75,6 +75,17 @@ export interface ExportedFile {
   readonly bytes: Uint8Array;
 }
 
+/**
+ * 面 1 枚ぶんの三角形の範囲(kernel の `occt/exportMesh.ts` の `FaceTriangleRange`・
+ * `packages/io` の `ThreeMfFaceRange` と同じ形)。面の通し番号は配列の位置。
+ */
+export interface ExportFaceRange {
+  /** この面の最初の三角形の通し番号(立体の中での通し)。 */
+  readonly triangleOffset: number;
+  /** この面の三角形の枚数。三角形分割が付かなかった面は 0。 */
+  readonly triangleCount: number;
+}
+
 /** 書き出した立体 1 つぶんの三角形(3MF のときだけ返る。§0.a-0.19)。 */
 export interface ExportedMeshBody {
   /** 依頼に入れた名前をそのまま返す(io が 3MF の物体の名前に使う)。 */
@@ -83,6 +94,17 @@ export interface ExportedMeshBody {
   readonly color: ExportColor | null;
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
+  /**
+   * 面ごとの色(依頼に入れた `ShapeExportBody.faceColors` をそのまま返す。§2.5.1)。
+   * `packages/io` の `writeThreeMf` が `<basematerials>` の材質参照まで届かせるのに使う。
+   * 色を付けた面が 1 枚も無い立体では省く。
+   */
+  readonly faceColors?: ReadonlyMap<number, ExportColor>;
+  /**
+   * 面ごとの三角形の範囲(kernel が返した `ExportMesh.faceRanges` をそのまま返す)。
+   * `faceColors` を渡すときだけ要る。
+   */
+  readonly faceRanges?: readonly ExportFaceRange[];
 }
 
 /**

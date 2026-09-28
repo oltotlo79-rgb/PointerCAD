@@ -33,7 +33,7 @@ async function confirmInMathDialog(page: Page, dialog: Locator, axis: 'Y' | 'Z',
   await page.keyboard.press('Escape'); await expect(page.locator('.pcad-help')).toHaveCount(0);
   const use = math.getByRole('button', { name: 'この式を使う', exact: true });
   await expect(use).toBeEnabled(); await use.click(); await expect(math).toHaveCount(0);
-  await expect(dialog.getByRole('textbox', { name: `${axis} ${text('formula')}`, exact: true })).toHaveValue(source);
+  await expect(dialog.getByRole('textbox', { name: `${axis} =`, exact: true })).toHaveValue(source);
 }
 
 /** A rejected preview names the reason, enables nothing, and shows no shape. */
@@ -53,7 +53,7 @@ export async function functionPiecewiseCurveFlow(page: Page, info: TestInfo, app
   await page.setViewportSize({ width: 1440, height: 900 });
   await chooseToolMenuItem(page, '作図', text('menuTitle'));
   const dialog = page.locator('.pcad-function-dialog');
-  const formula = dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true });
+  const formula = dialog.getByRole('textbox', { name: `Y =`, exact: true });
   const preview = dialog.getByRole('button', { name: text('preview'), exact: true });
   const apply = dialog.getByRole('button', { name: text('apply'), exact: true });
   const status = dialog.getByRole('status').filter({ hasText: text('curveCount') });
@@ -117,7 +117,7 @@ export async function functionDomainSurfaceFlow(page: Page, info: TestInfo, app?
   const dialog = page.locator('.pcad-function-dialog');
   await dialog.getByRole('combobox', { name: text('geometry'), exact: true }).selectOption('surface');
   await expect(dialog.getByRole('heading', { name: text('surfaceTitle'), exact: true })).toBeVisible();
-  const formula = dialog.getByRole('textbox', { name: `Z ${text('formula')}`, exact: true });
+  const formula = dialog.getByRole('textbox', { name: `Z =`, exact: true });
   const preview = dialog.getByRole('button', { name: text('preview'), exact: true });
   const confirm = dialog.getByRole('button', { name: text('surfaceApply'), exact: true });
   const hemisphere = 'which(X^2+Y^2<1,sqrt(1-X^2-Y^2))', disc = 'which(X^2+Y^2<1,X^2-Y^2)', equality = 'which(X^2+Y^2=1,0.5)';

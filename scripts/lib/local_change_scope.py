@@ -5,10 +5,17 @@ CI and release checks always run the full gate. This never certifies completion.
 --light (2026-09-27 owner decision "leave every browser operation to CI"): a manual
 local check keeps types, lint, the selected unit suites, both builds, the gate
 self-tests and the three startup projects, and runs only the browser specs that a
-changed e2e/tests file can reach through static relative imports. Anything that
-cannot be traced returns to every operation or to the full gate. The success of a
+changed e2e/tests file can reach through static relative imports. The success of a
 light check is recorded separately from B3 (--receipt), so the ordinary commit and
 push hooks can accept exactly the checked content without repeating it.
+
+2026-09-28 19:5x owner decision "3": a light check never runs every browser operation
+locally. A change it cannot bound (configuration, hooks, tools, links, unknown paths)
+still returns mode "full" -- every unit suite, both builds and the gate self-tests --
+but carries light=True and e2eDeferredToCI=True: locally only the three startup
+projects and the specs a changed e2e/tests file is known to reach run, and every
+operation is left to the same SHA's CI on both OSes. An untraceable e2e change is
+deferred the same way. The ordinary (non-light) scope and CI are unchanged.
 """
 from __future__ import annotations
 
@@ -33,7 +40,7 @@ GATE_FILES = {
     '.github/workflows/ci.yml',
     'scripts/check.ps1', 'scripts/check.selftest.ps1', 'scripts/hooks/pre-commit', 'scripts/hooks/pre-push',
     'scripts/lib/local_change_scope.py', 'scripts/local-change-scope.selftest.py',
-    'scripts/lib/gitTreeGuard.ps1',
+    'scripts/lib/gitTreeGuard.ps1', 'scripts/lib/ci_stage_evidence.py',
     'scripts/check-commit-batch.selftest.ps1', 'scripts/git-selftest-environment.selftest.py',
     'scripts/hooks/commit-msg', 'scripts/lib/commit_message.py', 'scripts/commit-message.selftest.py',
     'scripts/validation-receipt.integration.selftest.py',
@@ -110,6 +117,39 @@ def related_e2e_specs(changed, sources):
     if any(not E2E_SOURCE.fullmatch(spec) or not spec.endswith('.spec.ts') for spec in related):
         return None
     return sorted(related)
+
+
+def light_related_specs(changed, sources):
+    """(specs, deferred) for a light check: the union of the specs each changed e2e/tests
+    file is known to reach, and whether any changed file could not be traced.
+
+    Each file is traced on its own, so one untraceable helper does not hide the specs
+    that are known to reach another changed file. A deferred file never widens the
+    local run to every operation (owner decision "3"); CI runs every operation.
+    """
+    related, deferred = set(), False
+    for path in changed:
+        specs = related_e2e_specs([path], sources)
+        if specs is None:
+            deferred = True
+        else:
+            related.update(specs)
+    return sorted(related), deferred
+
+
+def light_full(reason, specs=()):
+    """A light result for a change that needs the complete unit gate (mode "full").
+
+    Every unit suite, both builds and the gate self-tests still run; the browser
+    operations are only the three startup projects (viewport-performance,
+    startup-firefox, startup-electron). Every other operation, including any specs
+    a changed e2e/tests file reaches, is deferred to the same SHA's CI on both OSes
+    (owner decision "5", 2026-09-29: light_full never widens the local screen check
+    beyond startup, superseding the earlier "known related specs" decision "3").
+    """
+    del specs  # Kept for call-site compatibility; light_full always defers every spec.
+    return {**full(reason), 'light': True, 'runtimeChecks': True, 'allE2EChecks': False,
+            'e2eSpecs': [], 'e2eDeferredToCI': True}
 
 
 def e2e_sources(root, git):
@@ -208,80 +248,35 @@ def has_linked_parent(root, name):
 def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=None,
              light=False, e2e_source_texts=None):
     if not paths:
-        return full('No bounded change set was found')
+        return light_full('No bounded change set was found') if light else full('No bounded change set was found')
     packages = set()
     areas = set()
     runtime = set()
     all_e2e = False
     changed_e2e = []
+    # The first reason that needs the complete gate. The ordinary scope returns it at
+    # once; the light scope keeps reading so the changed e2e files are still traced.
+    unbounded = None
     for path in paths:
-        if path == '.gitattributes':
-            permitted = {'docs/standards/licenses/*.txt -text', 'scripts/hooks/commit-msg text eol=lf'}
-            before = attribute_rules(before_attributes)
-            after = attribute_rules(after_attributes)
-            if [line for line in before if line not in permitted] != [line for line in after if line not in permitted]:
-                return full('Attributes outside the notice originals or commit-message hook changed')
-            packages.add('desktop')
-            areas.add('notices')
-        elif path in GATE_FILES:
-            packages.update(['desktop', 'test-utils'])
-            areas.add('quality-gate')
-        elif path == 'packages/expression/vitest.config.ts':
-            packages.update(['expression', 'test-utils'])
-            areas.add('expression-test-configuration')
-        elif path in NOTICE_BUILD_FILES or re.fullmatch(r'docs/standards/licenses/[a-z0-9.-]+\.(txt|json)', path):
-            packages.add('desktop')
-            areas.add('notices')
-        elif path in {'README.md', 'CLAUDE.md', 'AGENTS.md', 'docs/progress.json'} or re.fullmatch(r'(docs|rules)/[^\x00-\x1f]+\.md', path):
-            packages.update(['help-content', 'test-utils'])
-            areas.add('documentation')
-        elif re.fullmatch(r'packages/help-content/docs/[^\x00-\x1f]+\.md', path):
-            packages.add('help-content')
-            areas.add('help-content')
-        elif re.fullmatch(r'packages/help-content/docs/ja/images/[^/\x00-\x1f]+\.(png|json)', path):
-            packages.add('help-content')
-            areas.add('help-images')
-        elif path == 'wrangler.jsonc':
-            # Cloudflare Workers Builds が根で読む静的資産配信の設定だけ(2026-09-28の事故:
-            # gate.log 20260928-051433 で555件へ広がった)。ビルド入力ではない
-            # (scripts/vite/webBuildSources.mjs のパターンに一致せず、apps/web/vite.config.ts も
-            # 参照しない)。検査するのは apps/desktop/src/main/wranglerConfig.test.ts(desktopの
-            # 単体)だけなので、desktopの単体対象にとどめ、他パッケージ・全画面検査へ広げない。
-            packages.add('desktop')
-            areas.add('cloudflare-deployment-config')
-        elif re.fullmatch(r'e2e/tests/[^\x00-\x1f]+\.ts', path):
-            # Run every operation, including shared helpers and all startup dependencies.
-            # This narrows only unrelated unit packages, never the changed E2E coverage.
-            packages.add('test-utils')
-            if light:
-                # The light local check runs the operations that reach this file.
-                changed_e2e.append(path)
-                areas.add('related-e2e')
-            else:
-                areas.add('all-e2e')
-                all_e2e = True
-        elif runtime_package(path) is not None:
-            if runtime_graph is None:
-                return full('Runtime dependency coverage is unavailable: ' + path)
-            runtime.add(runtime_package(path))
-            areas.add('runtime-and-dependents')
-        else:
-            match = re.fullmatch(r'(?:packages/([^/]+)|apps/(desktop|web))/src/[^\x00-\x1f]+\.test\.tsx?', path)
-            package = (match[1] or match[2]) if match else None
-            if package not in PACKAGE_NAMES:
-                return full('Runtime, dependencies, configuration, E2E or unknown impact: ' + path)
-            packages.add(package)
-            areas.add('unit-tests')
+        reason = classify_path(path, before_attributes, after_attributes, runtime_graph, light,
+                               packages, areas, runtime, changed_e2e)
+        if reason == 'all-e2e':
+            all_e2e = True
+        elif reason is not None:
+            if not light:
+                return full(reason)
+            unbounded = unbounded or reason
     light_fields = {}
     if light:
-        related = related_e2e_specs(changed_e2e, e2e_source_texts) if changed_e2e else []
-        if related is None:
-            # An untraceable operation change keeps every operation (never fewer).
-            all_e2e = True
-            related = []
-            areas.add('all-e2e')
+        related, deferred = light_related_specs(changed_e2e, e2e_source_texts) if changed_e2e else ([], False)
+        if unbounded is not None:
+            return light_full(unbounded, related)
+        if deferred:
+            # An untraceable operation change is left to CI's every operation (owner
+            # decision "3"); locally the startup projects and known specs still run.
+            areas.add('deferred-e2e')
         # Startup and 50-part rendering are always part of the light local check.
-        light_fields = {'light': True, 'runtimeChecks': True, 'e2eSpecs': related}
+        light_fields = {'light': True, 'runtimeChecks': True, 'e2eSpecs': related, 'e2eDeferredToCI': deferred}
     if runtime:
         packages.update(dependent_packages(runtime, runtime_graph) & PACKAGE_NAMES)
         packages.add('test-utils')
@@ -292,6 +287,69 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
                 **light_fields}
     return {'mode': 'targeted', 'reason': ', '.join(sorted(areas)), 'packages': sorted(packages),
             'allE2EChecks': all_e2e, **light_fields}
+
+
+def classify_path(path, before_attributes, after_attributes, runtime_graph, light,
+                  packages, areas, runtime, changed_e2e):
+    """Record one changed path. Returns None, 'all-e2e', or the reason it needs the full gate."""
+    if path == '.gitattributes':
+        permitted = {'docs/standards/licenses/*.txt -text', 'scripts/hooks/commit-msg text eol=lf'}
+        before = attribute_rules(before_attributes)
+        after = attribute_rules(after_attributes)
+        if [line for line in before if line not in permitted] != [line for line in after if line not in permitted]:
+            return 'Attributes outside the notice originals or commit-message hook changed'
+        packages.add('desktop')
+        areas.add('notices')
+    elif path in GATE_FILES:
+        packages.update(['desktop', 'test-utils'])
+        areas.add('quality-gate')
+    elif path == 'packages/expression/vitest.config.ts':
+        packages.update(['expression', 'test-utils'])
+        areas.add('expression-test-configuration')
+    elif path in NOTICE_BUILD_FILES or re.fullmatch(r'docs/standards/licenses/[a-z0-9.-]+\.(txt|json)', path):
+        packages.add('desktop')
+        areas.add('notices')
+    elif path in {'README.md', 'CLAUDE.md', 'AGENTS.md', 'docs/progress.json'} or re.fullmatch(r'(docs|rules)/[^\x00-\x1f]+\.md', path):
+        packages.update(['help-content', 'test-utils'])
+        areas.add('documentation')
+    elif re.fullmatch(r'packages/help-content/docs/[^\x00-\x1f]+\.md', path):
+        packages.add('help-content')
+        areas.add('help-content')
+    elif re.fullmatch(r'packages/help-content/docs/ja/images/[^/\x00-\x1f]+\.(png|json)', path):
+        packages.add('help-content')
+        areas.add('help-images')
+    elif path == 'wrangler.jsonc':
+        # Cloudflare Workers Builds が根で読む静的資産配信の設定だけ(2026-09-28の事故:
+        # gate.log 20260928-051433 で555件へ広がった)。ビルド入力ではない
+        # (scripts/vite/webBuildSources.mjs のパターンに一致せず、apps/web/vite.config.ts も
+        # 参照しない)。検査するのは apps/desktop/src/main/wranglerConfig.test.ts(desktopの
+        # 単体)だけなので、desktopの単体対象にとどめ、他パッケージ・全画面検査へ広げない。
+        packages.add('desktop')
+        areas.add('cloudflare-deployment-config')
+    elif re.fullmatch(r'e2e/tests/[^\x00-\x1f]+\.ts', path):
+        # Run every operation, including shared helpers and all startup dependencies.
+        # This narrows only unrelated unit packages, never the changed E2E coverage.
+        packages.add('test-utils')
+        if light:
+            # The light local check runs the operations that reach this file.
+            changed_e2e.append(path)
+            areas.add('related-e2e')
+        else:
+            areas.add('all-e2e')
+            return 'all-e2e'
+    elif runtime_package(path) is not None:
+        if runtime_graph is None:
+            return 'Runtime dependency coverage is unavailable: ' + path
+        runtime.add(runtime_package(path))
+        areas.add('runtime-and-dependents')
+    else:
+        match = re.fullmatch(r'(?:packages/([^/]+)|apps/(desktop|web))/src/[^\x00-\x1f]+\.test\.tsx?', path)
+        package = (match[1] or match[2]) if match else None
+        if package not in PACKAGE_NAMES:
+            return 'Runtime, dependencies, configuration, E2E or unknown impact: ' + path
+        packages.add(package)
+        areas.add('unit-tests')
+    return None
 
 
 def inspect(root: Path, level: str, phase: str, comparison_base: str, force: bool, light: bool = False):
@@ -328,38 +386,51 @@ def inspect(root: Path, level: str, phase: str, comparison_base: str, force: boo
         paths += git('diff', '--cached', '--no-ext-diff', '--no-renames', '--name-only', '-z', base, '--')
         paths += git('ls-files', '--others', '--exclude-standard', '-z')
     names = sorted(set(paths.decode('utf8').split('\0')) - {''})
+
+    def unbounded(reason):
+        # The light check still runs every unit suite, both builds and the self-tests, and
+        # leaves every browser operation to CI. Links are never traced for related specs.
+        result = light_full(reason) if light else full(reason)
+        return {**result, 'base': base, 'head': head, 'paths': names}
+
     # Links and submodules can point outside the inspected contents.
     for line in git('ls-files', '--stage', '-z').decode('utf8').split('\0'):
         if not line:
             continue
         metadata, name = line.split('\t', 1)
         if name in names and metadata.split()[0] not in {'100644', '100755'}:
-            return full('Changed links or submodules require full validation')
+            return unbounded('Changed links or submodules require full validation')
     for line in git('--literal-pathspecs', 'ls-tree', '-r', '-z', base, '--', *names).decode('utf8').split('\0'):
         if not line:
             continue
         metadata, name = line.split('\t', 1)
         if name in names and metadata.split()[0] not in {'100644', '100755'}:
-            return full('Removing or replacing a link or submodule requires full validation')
+            return unbounded('Removing or replacing a link or submodule requires full validation')
     if any(has_linked_parent(root, name) for name in names):
-        return full('Changed filesystem links require full validation')
+        return unbounded('Changed filesystem links require full validation')
     before = after = b''
     if '.gitattributes' in names:
         before = git('show', base + ':.gitattributes')
         after = git('show', ':.gitattributes') if level == 'Commit' else (root / '.gitattributes').read_bytes()
     graph = None
+    graph_failure = None
     if any(runtime_package(name) is not None for name in names):
         try:
             graph = workspace_dependencies(git)
         except (OSError, ValueError, subprocess.SubprocessError):
-            return full('The checked workspace dependency coverage could not be established')
+            graph_failure = 'The checked workspace dependency coverage could not be established'
+            if not light:
+                return full(graph_failure)
     sources = None
     if light and any(re.fullmatch(r'e2e/tests/[^\x00-\x1f]+\.ts', name) for name in names):
         try:
             sources = e2e_sources(root, git)
         except (OSError, ValueError, subprocess.SubprocessError):
-            sources = None  # related_e2e_specs then keeps every operation
+            sources = None  # related_e2e_specs then leaves the unreadable operations to CI
     result = classify(names, before, after, graph, light, sources)
+    if graph_failure is not None:
+        # Light only: keep the related specs classify traced, with the actual reason.
+        result = light_full(graph_failure, result.get('e2eSpecs', []))
     return {**result, 'base': base, 'head': head, 'paths': names}
 
 
@@ -496,7 +567,8 @@ def main():
     try:
         result = inspect(args.root.resolve(), args.level, args.phase, args.base, args.full, args.light)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
-        result = full('Cannot establish a safe local scope: ' + type(error).__name__)
+        # A light check still runs every unit suite and leaves every operation to CI.
+        result = (light_full if args.light else full)('Cannot establish a safe local scope: ' + type(error).__name__)
     print(json.dumps(result, ensure_ascii=True))
     return 0
 

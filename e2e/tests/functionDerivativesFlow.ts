@@ -12,7 +12,7 @@ export async function functionDerivativesFlow(page: Page, info: TestInfo, app?: 
   await page.setViewportSize({ width: 1440, height: 900 });
   await chooseToolMenuItem(page, '作図', text('menuTitle'));
   const dialog = page.locator('.pcad-function-dialog');
-  const formula = dialog.getByRole('textbox', { name: `Y ${text('formula')}`, exact: true });
+  const formula = dialog.getByRole('textbox', { name: `Y =`, exact: true });
   const preview = dialog.getByRole('button', { name: text('preview'), exact: true });
   const apply = dialog.getByRole('button', { name: text('apply'), exact: true });
   const source = 'diff(X^3,X,X)', changedSource = 'diff(X^3,X,X,X)';
@@ -60,7 +60,7 @@ export async function functionDerivativesFlow(page: Page, info: TestInfo, app?: 
 
   await chooseToolMenuItem(page, '作図', text('menuTitle'));
   await dialog.getByRole('combobox', { name: text('geometry'), exact: true }).selectOption('surface');
-  await dialog.getByRole('textbox', { name: `Z ${text('formula')}`, exact: true }).fill('diff(X^2+Y^2,X)');
+  await dialog.getByRole('textbox', { name: `Z =`, exact: true }).fill('diff(X^2+Y^2,X)');
   for (const [axis, min, max] of [['X', '-1', '1'], ['Y', '-1', '1'], ['Z', '-3', '3']] as const) {
     await dialog.getByRole('textbox', { name: `${axis} ${text('minimum')}`, exact: true }).fill(min);
     await dialog.getByRole('textbox', { name: `${axis} ${text('maximum')}`, exact: true }).fill(max);
@@ -76,7 +76,7 @@ export async function functionDerivativesFlow(page: Page, info: TestInfo, app?: 
   if (surface?.kind !== 'functionSurface') throw new Error('偏微分の曲面が保存されていません。');
   await page.getByText(surface.name, { exact: true }).click();
   await page.getByRole('button', { name: text('edit'), exact: true }).click();
-  await expect(dialog.getByRole('textbox', { name: `Z ${text('formula')}`, exact: true })).toHaveValue('diff(X^2+Y^2,X)');
+  await expect(dialog.getByRole('textbox', { name: `Z =`, exact: true })).toHaveValue('diff(X^2+Y^2,X)');
   await dialog.getByRole('button', { name: text('surfaceHelp'), exact: true }).click();
   await expect(page.locator('.pcad-help__article')).toContainText('diff');
   await page.keyboard.press('Escape'); await expect(page.locator('.pcad-help')).toHaveCount(0);

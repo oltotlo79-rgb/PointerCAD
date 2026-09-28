@@ -28,6 +28,18 @@ This hook applies to every caller (orchestrator included) -- unlike subagent_bac
 and subagent_search_scope_guard.py, it does not exempt the orchestrator's own transcript, because
 2026-09-25's precipitating incident (rules/06 §10.359) was the orchestrator itself creating the
 PR without checking rules/03 §6.
+
+2026-09-27 (rules/06 §10.357, w69a/w71a): `git push`/`git merge`/`git rebase` detection used to
+look only at the first two words of a segment (`tokens[0]=='git' and tokens[1]=='push'`), so any
+git *global* option before the subcommand -- `git -C <path> push origin main`, `git -c a=b push
+...`, `git --git-dir=... push ...`, `--work-tree`, `--no-pager`, etc. -- slipped past unseen.
+`_git_subcommand_index()` now skips git's (closed) global-option surface first and locates the
+actual subcommand wherever it falls. Two more routes that push to an explicit ref without the
+literal text "git push" ever appearing -- `scratchpad/claude/tools/deliver.py gate --push-ref
+<ref>` and `scripts/lib/isolated_checkout_preflight.py ... --push-ref <ref>` -- are now checked by
+`_push_ref_script_violation()`: if `--push-ref` resolves to `main`/`refs/heads/main`, the same
+judgment-record requirement applies, matched by script basename so the interpreter/path prefix in
+front of it (`python -B -X utf8 <path>/deliver.py ...`) does not matter.
 """
 
 from __future__ import annotations
@@ -110,6 +122,88 @@ def _flag_value(tokens: list[str], index: int, long_name: str) -> tuple[str | No
     return None, index + 1
 
 
+# --- git global options: skip past them to find the real subcommand. `git -C <path> push ...`,
+# `git -c a=b push ...`, `git --git-dir=... push ...` etc. must be recognized as `git push`, not
+# missed because the naive "tokens[0]=='git' and tokens[1]=='push'" check only looked at the first
+# two words (rules/06 §10.357 loophole). Git's global-option surface is closed (git itself rejects
+# anything else before the subcommand), so an exhaustive allowlist is safe here: any option not on
+# it either takes no value or git would already refuse to parse it as a subcommand invocation. ---
+
+_GIT_GLOBAL_VALUE_SEPARATE = ("-C", "-c")  # always "-C <path>" / "-c <key>=<value>" (a separate
+# token) in real-world usage -- config values routinely contain "=" themselves, so an inline
+# "-C=..."/"-c=..." form is not treated specially; git does not document it either.
+_GIT_GLOBAL_VALUE_LONG = (
+    "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env",
+    "--attr-source", "--exec-path", "--list-cmds",
+)
+_GIT_GLOBAL_FLAG = (
+    "-p", "--paginate", "-P", "--no-pager", "--no-replace-objects", "--bare",
+    "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs",
+    "--no-optional-locks", "--no-advice",
+)
+
+
+def _git_subcommand_index(tokens: list[str]) -> int | None:
+    """Returns the index of the real git subcommand (push/merge/rebase/...) after skipping any
+    global options, or None if tokens is not a `git ...` invocation or has no subcommand."""
+    if not tokens or tokens[0].lower() != "git":
+        return None
+    i = 1
+    n = len(tokens)
+    while i < n:
+        token = tokens[i]
+        if not token.startswith("-"):
+            return i
+        if token in _GIT_GLOBAL_VALUE_SEPARATE:
+            i += 2
+            continue
+        inline = re.match(_INLINE_FLAG_PATTERN, token)
+        name = (inline.group(1) if inline is not None else token).lower()
+        if name in _GIT_GLOBAL_VALUE_LONG:
+            i += 1 if inline is not None else 2
+            continue
+        if name in _GIT_GLOBAL_FLAG or token in _GIT_GLOBAL_FLAG:
+            i += 1
+            continue
+        # Unrecognized "-" token before any subcommand: git's global-option surface above is
+        # exhaustive, so this is not a real global option. Skip it as a bare flag rather than
+        # guessing it takes a value -- undershooting here would only make push/merge/rebase
+        # detection look one token later, not earlier, and this project's existing tokens never
+        # emit anything else here.
+        i += 1
+    return None
+
+
+# --- scripts that push to an explicit ref without the command text containing "git push":
+# `scratchpad/claude/tools/deliver.py gate --push-ref <ref>` and
+# `scripts/lib/isolated_checkout_preflight.py ... --push-ref <ref>` (rules/06 §10.357: the
+# w69a instruction's own procedure explicitly avoids these two precisely because this hook did not
+# used to look for them). Detected by script basename, irrespective of interpreter/path prefix. ---
+
+_PUSH_REF_SCRIPT_BASENAMES = ("deliver.py", "isolated_checkout_preflight.py")
+
+
+def _push_ref_script_violation(tokens: list[str]) -> str | None:
+    script_name = None
+    for token in tokens:
+        base = os.path.basename(token.strip("\"'")).lower()
+        if base in _PUSH_REF_SCRIPT_BASENAMES:
+            script_name = base
+            break
+    if script_name is None:
+        return None
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token == "--push-ref" or re.match(r"^--push-ref[=:]", token):
+            value, i = _flag_value(tokens, i, "--push-ref")
+            if value is not None and _is_main_ref(value):
+                return f"{script_name} --push-ref (main への送信)"
+            continue
+        i += 1
+    return None
+
+
 # --- gh pr create: base branch (explicit or default) ---
 
 def _gh_pr_create_target(tokens: list[str]) -> str | None:
@@ -155,9 +249,10 @@ _PUSH_VALUE_FLAGS = ("--repo", "--receive-pack", "-o", "--push-option")
 
 
 def _git_push_violation(tokens: list[str]) -> bool:
-    if len(tokens) < 2 or tokens[0].lower() != "git" or tokens[1].lower() != "push":
+    subcommand_index = _git_subcommand_index(tokens)
+    if subcommand_index is None or tokens[subcommand_index].lower() != "push":
         return False
-    i = 2
+    i = subcommand_index + 1
     while i < len(tokens):
         token = tokens[i]
         matched_flag = None
@@ -189,14 +284,16 @@ _MERGE_REBASE_NO_OP_FLAGS = ("--abort", "--continue", "--skip", "--quit")
 
 
 def _git_merge_or_rebase_subcommand(tokens: list[str]) -> str | None:
-    if len(tokens) < 2 or tokens[0].lower() != "git":
+    subcommand_index = _git_subcommand_index(tokens)
+    if subcommand_index is None:
         return None
-    if tokens[1].lower() not in ("merge", "rebase"):
+    subcommand = tokens[subcommand_index].lower()
+    if subcommand not in ("merge", "rebase"):
         return None
-    rest = [t.lower() for t in tokens[2:]]
+    rest = [t.lower() for t in tokens[subcommand_index + 1:]]
     if any(flag in rest for flag in _MERGE_REBASE_NO_OP_FLAGS):
         return None  # not integrating anything new onto the current branch
-    return tokens[1].lower()
+    return subcommand
 
 
 def _current_branch(cwd: str) -> str | None:
@@ -233,7 +330,10 @@ def find_main_integration(command: str, cwd: str) -> str | None:
         if _git_push_violation(tokens):
             return "git push (main への送信)"
         if _git_merge_or_rebase_violation(tokens, cwd):
-            return f"git {tokens[1].lower()} (main の上で実行)"
+            return f"git {_git_merge_or_rebase_subcommand(tokens)} (main の上で実行)"
+        push_ref_violation = _push_ref_script_violation(tokens)
+        if push_ref_violation is not None:
+            return push_ref_violation
     return None
 
 

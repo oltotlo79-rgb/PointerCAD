@@ -25,7 +25,7 @@ async function runClosedSurfaceFlow(page: Page, info: TestInfo, app: ElectronApp
     await expect(input).toHaveValue(''); if(!(implicit && axis==='Z' && endpoint==='maximum')) await input.fill(endpoint === 'minimum' ? '-2' : '2');
   }
   if(implicit){
-    await expect(dialog.getByRole('textbox',{name:text('implicitEquation'),exact:true})).toHaveValue('X^2+Y^2+Z^2-1');
+    await expect(dialog.getByRole('textbox',{name:'F =',exact:true})).toHaveValue('X^2+Y^2+Z^2-1');
     await expect(dialog.getByRole('textbox',{name:`U ${text('maximum')}`,exact:true})).toHaveCount(0);
     await dialog.getByRole('button',{name:text('preview'),exact:true}).click();
     await expect(dialog.getByRole('button',{name:text('surfaceApply'),exact:true})).toBeDisabled();

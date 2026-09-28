@@ -47,6 +47,22 @@ export const CAPTURE_UNKNOWN_REASONS = deepFreeze({
   'image-source-no-build-id': '画像の出所の記録（*-image-sources.json）に版の識別子の欄が無い。',
 });
 
+/**
+ * Screen conditions of an adoptable capture besides its size (plan P12-16): dark theme, UI scale 100 %,
+ * device scale 1 and loaded fonts. `e2e/tests/captureManualDetail.ts` enforces them while capturing and
+ * the provenance bundle (CAPTURE_PROVENANCE_FORMAT) requires them again. Not stored in the registry file.
+ */
+export const CAPTURE_SCREEN_REQUIREMENTS = deepFreeze({ theme: 'dark', uiScale: '100', deviceScaleFactor: 1, fontStatus: 'loaded' });
+
+/**
+ * A `*-capture-details.json` of this format bundles captures adopted from one Playwright run
+ * (scripts/manual/captureProvenance.mjs): one application build, the SHA-256 of every capture script and,
+ * per image, the whole capture record and fixture document. Unlike the hand-copied format 1 files, every
+ * value is required and checked again here (rebuilding the registry), so an incomplete drawing, another
+ * fixture, another build or an edited image cannot be registered through it.
+ */
+export const CAPTURE_PROVENANCE_FORMAT = 'pointercad-capture-provenance/1';
+
 const PROVENANCE_FIELDS = ['script', 'scriptSha256', 'fixtureSha256', 'capturedAt', 'applicationBuildId'];
 const ENTRY_KEYS = ['file', 'sha256', 'viewport', 'viewportClass', 'viewportSource', ...PROVENANCE_FIELDS, 'unknown', 'records'];
 const LEGACY_KEYS = ['file', 'testRun', 'testSource', 'viewport', 'sha256', 'kind', 'edited'];
@@ -202,7 +218,120 @@ function readManualDetailCapture(capture, where, problems) {
   };
 }
 
+const isCount = value => Number.isInteger(value) && value >= 0;
+/** Electron's window never supplies manual images (e2e/tests/captureManualDetail.ts). */
+const ELECTRON_PROJECT = /electron/u;
+const BUILD_ID = /^[0-9a-f]{64}$/u;
+const PROVENANCE_KEYS = ['format', 'releaseCertified', 'applicationBuildId', 'adoptedAt', 'scripts', 'captures'];
+const PROVENANCE_ENTRY_KEYS = ['name', 'selectedImage', 'script', 'capture', 'fixture'];
+const encodeUtf8 = value => new globalThis.TextEncoder().encode(value);
+
+/**
+ * Problems that keep one `pointercad-manual-detail/1` record (as written by captureManualDetail) from being
+ * adopted as a manual image of `name`: its build, script, time, fixture and image hashes, a screen size of
+ * the policy, CAPTURE_SCREEN_REQUIREMENTS, a finished recompute of the latest generation and a settled 3D
+ * drawing. Empty when it may be adopted.
+ */
+export function inspectAdoptableCapture(capture, name) {
+  const problems = [];
+  if (!isObject(capture) || capture.format !== 'pointercad-manual-detail/1') return ['not a pointercad-manual-detail/1 capture'];
+  if (typeof capture.applicationBuildId !== 'string' || !BUILD_ID.test(capture.applicationBuildId)) {
+    problems.push('the application build (applicationBuildId) is not recorded');
+  }
+  if (!isTimestamp(capture.capturedAt)) problems.push('the capture time is not recorded');
+  if (typeof capture.project !== 'string' || capture.project === '' || ELECTRON_PROJECT.test(capture.project)) {
+    problems.push(`captured in an unsupported project: ${String(capture.project)}`);
+  }
+  if (typeof capture.sourceTest !== 'string' || capture.sourceTest === '') problems.push('the source test is not recorded');
+  if (typeof capture.script !== 'string' || !SCRIPT_PATH.test(capture.script)) problems.push('the capture script path is not recorded');
+  if (!isSha256(capture.scriptSha256)) problems.push('the script SHA-256 is not recorded');
+  if (!isObject(capture.fixture) || capture.fixture.filename !== `${name}-fixture.json` || !isSha256(capture.fixture.sha256)) {
+    problems.push('the fixture SHA-256 is not recorded');
+  }
+  for (const part of ['screen', 'detail']) {
+    const image = capture[part];
+    if (!isObject(image) || image.filename !== `${name}-${part}.png` || !isSha256(image.sha256)) problems.push(`the ${part} image is not recorded`);
+  }
+  const state = capture.screenState;
+  if (!isObject(state) || !isSize([state.width, state.height])) problems.push('the screen size is not recorded');
+  else {
+    if (classifyCaptureViewport([state.width, state.height]) === 'needs-recapture') {
+      problems.push(`unsupported screen size ${state.width}x${state.height}`);
+    }
+    for (const [key, expected] of Object.entries(CAPTURE_SCREEN_REQUIREMENTS)) {
+      if (state[key] !== expected) problems.push(`screenState.${key} is ${JSON.stringify(state[key])}, not ${JSON.stringify(expected)}`);
+    }
+  }
+  const recompute = capture.recompute;
+  if (!isObject(recompute) || recompute.isComputing !== false || recompute.lastOutcome !== 'success'
+    || !isCount(recompute.requestedGeneration) || recompute.completedGeneration !== recompute.requestedGeneration) {
+    problems.push('the recompute of the latest generation had not finished successfully');
+  }
+  // null only for a screen without the 3D view; otherwise at least one finished drawing, unchanged while capturing.
+  const render = capture.viewportRender;
+  if (render === undefined) problems.push('the 3D drawing state (viewportRender) is not recorded');
+  else if (render !== null && (!isObject(render) || !Number.isInteger(render.completedRenders) || render.completedRenders < 1
+    || typeof render.lastCompletedAtMs !== 'number' || !Number.isFinite(render.lastCompletedAtMs))) {
+    problems.push('the 3D drawing had not settled (viewportRender)');
+  }
+  return problems;
+}
+
+/** A pointercad-capture-provenance/1 bundle; every problem is reported, nothing is guessed. */
+function readProvenanceBundle(file, json, problems) {
+  const records = [], before = problems.length;
+  if (!hasExactKeys(json, PROVENANCE_KEYS) || json.releaseCertified !== false || typeof json.applicationBuildId !== 'string'
+    || !BUILD_ID.test(json.applicationBuildId) || !isTimestamp(json.adoptedAt) || !isObject(json.scripts)
+    || !Array.isArray(json.captures) || json.captures.length === 0) {
+    problems.push(`${file}: invalid ${CAPTURE_PROVENANCE_FORMAT} bundle`);
+    return records;
+  }
+  const scripts = Object.entries(json.scripts);
+  if (scripts.some(([path, digest]) => !SCRIPT_PATH.test(path) || !isSha256(digest))
+    || scripts.some(([path], index) => index > 0 && !(compare(scripts[index - 1][0], path) < 0))) {
+    problems.push(`${file}: scripts must map sorted script paths to their SHA-256`);
+  }
+  const used = new Set();
+  json.captures.forEach((entry, index) => {
+    const where = `${file} captures[${index}]`;
+    if (!isObject(entry) || !hasExactKeys(entry, PROVENANCE_ENTRY_KEYS) || typeof entry.name !== 'string' || !CAPTURE_NAME.test(entry.name)
+      || (entry.selectedImage !== 'detail' && entry.selectedImage !== 'screen')) {
+      problems.push(`${where}: the capture name or selected image is not recorded`);
+      return;
+    }
+    const previous = json.captures[index - 1];
+    if (index > 0 && isObject(previous) && !(compare(`${previous.name}-${previous.selectedImage}`, `${entry.name}-${entry.selectedImage}`) < 0)) {
+      problems.push(`${where}: captures must be sorted by image without duplicates`);
+    }
+    const found = inspectAdoptableCapture(entry.capture, entry.name).map(problem => `${where}: ${problem}`);
+    if (found.length > 0) {
+      problems.push(...found);
+      return;
+    }
+    const capture = entry.capture;
+    used.add(entry.script);
+    if (entry.script !== capture.script || json.scripts[entry.script] !== capture.scriptSha256) {
+      problems.push(`${where}: the script or its SHA-256 differs from the bundle's scripts`);
+    }
+    if (capture.applicationBuildId !== json.applicationBuildId) problems.push(`${where}: captured from another application build`);
+    if (Date.parse(capture.capturedAt) > Date.parse(json.adoptedAt)) problems.push(`${where}: captured after the bundle was adopted`);
+    if (entry.fixture === undefined || sha256Hex(encodeUtf8(JSON.stringify(entry.fixture))) !== capture.fixture.sha256) {
+      problems.push(`${where}: the fixture document differs from the recorded fixture SHA-256`);
+    }
+    const state = capture.screenState;
+    records.push({
+      viewport: [state.width, state.height], scriptSha256: capture.scriptSha256, fixtureSha256: capture.fixture.sha256,
+      capturedAt: capture.capturedAt, applicationBuildId: capture.applicationBuildId, reasons: {},
+      image: capture[entry.selectedImage].filename, sha256: capture[entry.selectedImage].sha256, script: entry.script,
+      ref: { kind: 'capture-details', file, name: entry.name, image: entry.selectedImage },
+    });
+  });
+  for (const [path] of scripts) if (!used.has(path)) problems.push(`${file}: script ${path} is not used by any capture`);
+  return problems.length === before ? records : [];
+}
+
 function readCaptureDetails(file, json, problems) {
+  if (isObject(json) && json.format === CAPTURE_PROVENANCE_FORMAT) return readProvenanceBundle(file, json, problems);
   const records = [];
   if (!isObject(json) || !DETAILS_FORMATS.has(json.format) || !Array.isArray(json.captures) || json.captures.length === 0) {
     problems.push(`${file}: unsupported capture details`);

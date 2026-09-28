@@ -231,6 +231,98 @@ class MainIntegrationGuardTests(unittest.TestCase):
     def test_git_push_force_with_lease_head_main_denied(self):
         self.assert_denied(self.invoke(command="git push --force-with-lease origin HEAD:main"))
 
+    # --- git push with global options before the subcommand (rules/06 §10.357 loophole: these
+    # used to slip past because only tokens[0]/tokens[1] were checked) ---
+
+    def test_git_dash_capital_c_push_main_denied(self):
+        self.assert_denied(self.invoke(command="git -C scratchpad/c3 push origin main"),
+                            contains="git push")
+
+    def test_git_dash_capital_c_push_feature_allowed(self):
+        self.assert_allowed(self.invoke(command="git -C scratchpad/c3 push origin feature/x"))
+
+    def test_git_dash_lower_c_push_head_main_denied(self):
+        self.assert_denied(self.invoke(command="git -c user.name=x push origin HEAD:main"))
+
+    def test_git_dash_lower_c_multiple_push_main_denied(self):
+        self.assert_denied(self.invoke(
+            command="git -c user.name=x -c user.email=y@example.invalid push origin main"))
+
+    def test_git_dash_dash_git_dir_inline_push_main_denied(self):
+        self.assert_denied(self.invoke(command="git --git-dir=scratchpad/c3/.git push origin main"))
+
+    def test_git_dash_dash_git_dir_separate_push_main_denied(self):
+        self.assert_denied(
+            self.invoke(command="git --git-dir scratchpad/c3/.git push origin main"))
+
+    def test_git_dash_dash_work_tree_push_main_denied(self):
+        self.assert_denied(self.invoke(
+            command="git --work-tree=scratchpad/c3 --git-dir=scratchpad/c3/.git push origin main"))
+
+    def test_git_no_pager_push_main_denied(self):
+        self.assert_denied(self.invoke(command="git --no-pager push origin main"))
+
+    def test_git_dash_capital_c_push_main_allowed_with_valid_record(self):
+        self._write_record(VALID_RECORD)
+        self.assert_allowed(self.invoke(command="git -C scratchpad/c3 push origin main"))
+
+    def test_powershell_git_dash_capital_c_push_main_denied(self):
+        self.assert_denied(self.invoke(tool="PowerShell",
+                                        command="git -C scratchpad/c3 push origin main"))
+
+    # --- git merge / rebase with global options before the subcommand ---
+
+    def test_git_dash_capital_c_merge_on_main_denied(self):
+        repo = self._make_repo(branch="main")
+        self.assert_denied(self.invoke(command="git -C unrelated merge feature-x", cwd=repo),
+                            contains="git merge")
+
+    def test_git_dash_lower_c_rebase_on_main_denied(self):
+        repo = self._make_repo(branch="main")
+        self.assert_denied(self.invoke(command="git -c rebase.autoStash=true rebase origin/main",
+                                        cwd=repo), contains="git rebase")
+
+    # --- deliver.py gate --push-ref / isolated_checkout_preflight.py --push-ref (rules/06 §10.357:
+    # these push an explicit ref without the literal text "git push" ever appearing) ---
+
+    def test_deliver_gate_push_ref_refs_heads_main_denied(self):
+        self.assert_denied(self.invoke(
+            command="python -B -X utf8 scratchpad/claude/tools/deliver.py gate "
+                     "--delivery x --message m.txt --push-ref refs/heads/main"),
+            contains="deliver.py")
+
+    def test_deliver_gate_push_ref_bare_main_denied(self):
+        self.assert_denied(self.invoke(
+            command="python scratchpad/claude/tools/deliver.py gate --push-ref main"))
+
+    def test_deliver_gate_push_ref_feature_branch_allowed(self):
+        self.assert_allowed(self.invoke(
+            command="python scratchpad/claude/tools/deliver.py gate "
+                     "--push-ref refs/heads/feature/math-extensions-20260913"))
+
+    def test_deliver_gate_push_ref_main_allowed_with_valid_record(self):
+        self._write_record(VALID_RECORD)
+        self.assert_allowed(self.invoke(
+            command="python scratchpad/claude/tools/deliver.py gate --push-ref refs/heads/main"))
+
+    def test_isolated_checkout_preflight_push_ref_main_denied(self):
+        self.assert_denied(self.invoke(
+            command="python -B -X utf8 scripts/lib/isolated_checkout_preflight.py "
+                     "--project . --checkout scratchpad/c3 --commit " + "a" * 40 +
+                     " --push-ref refs/heads/main"),
+            contains="isolated_checkout_preflight.py")
+
+    def test_isolated_checkout_preflight_push_ref_feature_allowed(self):
+        self.assert_allowed(self.invoke(
+            command="python scripts/lib/isolated_checkout_preflight.py "
+                     "--project . --checkout scratchpad/c3 --commit " + "a" * 40 +
+                     " --push-ref refs/heads/feature/x"))
+
+    def test_isolated_checkout_preflight_without_push_ref_allowed(self):
+        self.assert_allowed(self.invoke(
+            command="python scripts/lib/isolated_checkout_preflight.py "
+                     "--project . --checkout scratchpad/c3 --commit " + "a" * 40))
+
     # --- PowerShell: same results ---
 
     def test_powershell_head_main_denied(self):

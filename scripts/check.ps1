@@ -19,7 +19,11 @@
 # 修正中の短いフィードバックには -E2EOnly と -E2EGrep を使えるが、最終合格の代用にはしない。
 # -Scope Local(2026-09-27 利用者の決定「CIに任せてよい」)は手元の軽い検査で、画面検査は起動の
 # 3 projectと変更したe2eが届くspecだけ。成功記録(B3とは別)を直後の同じコミット・pushのフックが
-# 一度ずつ共用する。判定不能は全体検査へ戻り、-Full・CI・リリース前は全件のまま。
+# 一度ずつ共用する。-Full・CIは全件のまま。リリース前の最終確認は、手元の軽い全体検査と同じSHAの
+# 両OS CIの全件の成功で行う(2026-09-28 利用者の決定。-Fullは明示したときの全件として残す)。
+# 2026-09-28 19:5x 利用者の決定「３」: -Scope Local で判定できない変更・設定の変更が全体へ広がる場合も、
+# 単体は全件・両ビルド・自己試験だけを全体にし、画面検査は起動の3 project(と変更したe2eが届くspec)
+# までにとどめ、画面検査の全件は送信後の同じSHAの両OS CIに任せる(成功記録は軽い検査の記録。B3ではない)。
 # ルート package.json が無い間(P0未着手)は検査対象なしとして合格扱い。
 # typecheck / lint / test / build のスクリプト欠落は失敗(fail-closed)。
 # 検査の単一正本: CI(.github/workflows/ci.yml)とgitフックもこのスクリプトを実行する。
@@ -36,7 +40,8 @@ param(
     # B3: hooks can consume a completed full-check receipt. Manual checks always execute.
     [ValidateSet('Manual', 'Commit', 'Push', 'Disabled')]
     [string]$ReceiptPhase = 'Manual',
-    # 2026-09-13: local checks follow the complete change scope; CI/release remain full.
+    # 2026-09-13: local checks follow the complete change scope; CI remains full (2026-09-28: the
+    # release check is the light local check plus the same SHA's complete CI on both OSes).
     [switch]$Full,
     # pre-push passes the actual remote commit, never an inferred branch tip.
     [string]$ComparisonBase = '',
@@ -61,9 +66,28 @@ param(
     [switch]$ShowPerfModeOnly,
     # 2026-09-27 利用者の決定「CIに任せてよい」: 手元の軽い検査。型・lint・変更に関わる単体・
     # 両ビルド・品質ゲートの自己試験・起動の3 projectと、変更したe2eが届くspecの画面検査だけを行う。
-    # 画面検査の全件はpush後の両OS CI、-Full(リリース前)は従来どおり全件。成功記録はB3と別。
+    # 画面検査の全件はpush後の両OS CI、-Fullは従来どおり全件。リリース前は軽い全体検査と同じSHAの
+    # 両OS CIの全件の成功(2026-09-28 利用者の決定)。成功記録はB3と別。全体へ広がる変更でも手元の
+    # 画面検査は起動の3 project(と関係するspec)まで(2026-09-28 19:5x 利用者の決定「３」)。
     [ValidateSet('', 'Local')]
-    [string]$Scope = ''
+    [string]$Scope = '',
+    # 2026-09-28(レビュー §6.3「検査の待ち時間を減らす」): CIだけで、1つのOSの検査を別々の実行機へ
+    # 分けて同時に流す段。Front=自己試験・型・lint・単体の残り・ビルド、UnitLead=単体の先行分
+    # (ルートのtestの「先行分 && 残り」を分けたもの)、E2E=画面検査の1組(-E2EShard)、Verify=両OSの
+    # 全段の記録の照合(集約のchecksだけ)。どの段も単独では合格にならない。
+    [ValidateSet('', 'Front', 'UnitLead', 'E2E', 'Verify')]
+    [string]$CIStage = '',
+    # -CIStage のときだけ: 段の記録を書く(Verifyは読む)フォルダー。scripts/lib/ci_stage_evidence.py が扱う。
+    [string]$StageEvidence = '',
+    # 2026-09-28(w96a の提案): 手元の全体検査の道具(統括の deliver.py gate)が、画面検査(ポート4173・
+    # CPU)の排他を画面検査の段の直前にだけ取るための合図のフォルダー。指定したときだけ、画面検査の段の
+    # 直前に e2e-request.json(毎回新しい合言葉)を書き、同じ合言葉の e2e-go.json を待つ。CI・フック・
+    # 診断では使えない。指定しなければ従来どおり待たない。
+    [string]$E2EStartSignal = '',
+    # -E2EStartSignal の待ちの上限(秒)。既定の200分は、道具が待つ担当の画面検査の上限
+    # (diag.py の E2E_GLOBAL_TIMEOUT_MS 3時間)に20分を足した値。
+    [ValidateRange(1, 12000)]
+    [int]$E2EStartSignalTimeoutSeconds = 12000
 )
 
 $scriptDirectory = [string]$PSScriptRoot
@@ -115,6 +139,28 @@ function Invoke-Check {
         Write-Host "[NG] $Name が失敗しました(終了コード: $checkExitCode)" -ForegroundColor Red
         exit $checkExitCode
     }
+}
+
+# 軽い検査の関係する画面検査のspec名を、Playwrightへ渡すファイルの絞込みとして確かめる。
+# 形の違う名前が1つでもあれば例外にする(呼出し元は起動の3 projectだけへ戻す)。
+function ConvertTo-LocalE2EFilter {
+    param([object[]]$Specs)
+    $filters = @()
+    foreach ($spec in @($Specs)) {
+        if ($spec -isnot [string] -or $spec -cnotmatch '^e2e/tests/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.spec\.ts$') {
+            throw 'Invalid related E2E spec'
+        }
+        # Playwright treats a plain string filter as a glob (createFileMatcher in
+        # playwright/lib/util.js), never as a regular expression, unless it is
+        # already a RegExp object (CLI arguments never are). A backslash-escaped
+        # "\." plus a trailing "$" is matched literally by minimatch, so the
+        # trailing "$" never matches any real file path and the run reports
+        # "No tests found." (observed 2026-09-28, gate 20260928-065436). Pass the
+        # plain relative path instead; createFileMatcher prefixes it with "**/" and
+        # matches it against the path on both Windows and POSIX.
+        $filters += $spec
+    }
+    return , $filters
 }
 
 function Invoke-LocalPackageChecks {
@@ -171,6 +217,53 @@ function Invoke-LocalLightReceipt {
         return [pscustomobject]@{ ok = $false; reason = [string]$result.reason }
     } catch {
         return [pscustomobject]@{ ok = $false; reason = $_.Exception.Message }
+    }
+}
+
+# 画面検査の段の直前の合図(-E2EStartSignal)。要求に毎回新しい合言葉を書き、同じ合言葉の答えだけを
+# 受け取る(前の検査の答えの残りでは進まない)。go が true なら進み、false(道具が排他を取れない等)と
+# 上限切れは画面検査を始めずに失敗にする。答えが書きかけで読めない間は待ち続ける。
+function Wait-E2EStartSignal {
+    param(
+        [Parameter(Mandatory)][string]$Folder,
+        [Parameter(Mandatory)][int]$TimeoutSeconds,
+        [Parameter(Mandatory)][string]$StageName
+    )
+    $token = [guid]::NewGuid().ToString('N')
+    $requestPath = Join-Path $Folder 'e2e-request.json'
+    $answerPath = Join-Path $Folder 'e2e-go.json'
+    $request = [ordered]@{
+        version = 1
+        token = $token
+        pid = $PID
+        stage = $StageName
+        requestedAt = ('{0:yyyy-MM-ddTHH:mm:ss.fffzzz}' -f [DateTimeOffset]::Now)
+    } | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText($requestPath, $request, (New-Object Text.UTF8Encoding($false)))
+    Write-Host ''
+    Write-Host ("[合図] {0:yyyy-MM-ddTHH:mm:ss.fffzzz} 画面検査の段の前で、全体検査の道具の開始の合図を待ちます(上限 {1} 秒、合言葉 {2})" -f `
+        [DateTimeOffset]::Now, $TimeoutSeconds, $token) -ForegroundColor Cyan
+    $waitTimer = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        if (Test-Path -LiteralPath $answerPath -PathType Leaf) {
+            $answer = $null
+            try { $answer = Get-Content -LiteralPath $answerPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
+            catch { $answer = $null }
+            if ($null -ne $answer -and [string]$answer.token -ceq $token) {
+                if ($answer.go -is [bool] -and $answer.go) {
+                    Write-Host ("[合図] {0:yyyy-MM-ddTHH:mm:ss.fffzzz} 開始の合図を受けました(待ち {1:F1} 秒)。画面検査を始めます" -f `
+                        [DateTimeOffset]::Now, $waitTimer.Elapsed.TotalSeconds) -ForegroundColor Cyan
+                    return
+                }
+                Write-Host "[NG] 全体検査の道具が画面検査の開始を断りました: $([string]$answer.reason)。画面検査は実行していません。" -ForegroundColor Red
+                exit 1
+            }
+        }
+        if ($waitTimer.Elapsed.TotalSeconds -ge $TimeoutSeconds) {
+            Write-Host "[NG] 画面検査の段の開始の合図が $TimeoutSeconds 秒以内に来ませんでした(合図のフォルダー: $Folder)。全体検査の道具が画面検査の排他を取れないまま止まったか終了しています。画面検査は実行していません。" -ForegroundColor Red
+            exit 1
+        }
+        Start-Sleep -Milliseconds 1000
     }
 }
 
@@ -261,6 +354,44 @@ try {
         Write-Host '[NG] -Scope Local は手元の通常の手動検査(-Level Push)だけに使用できます。-Full・CI・導入・フック・診断・連続検査とは併用できません。' -ForegroundColor Red
         exit 1
     }
+    # CIの段(2026-09-28): CIの通常Push検査だけ。画面検査の段は組の指定が必須、他の段は組を付けない。
+    # 照合(Verify)は依存を使わないため導入と併用しない。不正な組合せは検査を始める前に拒否する。
+    $ciStageRequested = -not [string]::IsNullOrWhiteSpace($CIStage)
+    if (-not $ciStageRequested -and -not [string]::IsNullOrWhiteSpace($StageEvidence)) {
+        Write-Host '[NG] -StageEvidence は -CIStage と一緒に指定してください。' -ForegroundColor Red
+        exit 1
+    }
+    if ($ciStageRequested) {
+        $stageShardValid = if ($CIStage -eq 'E2E') { $E2EShard -match '^[1-3]/3$' } else { [string]::IsNullOrWhiteSpace($E2EShard) }
+        if (-not $isRunningOnCI -or $Level -ne 'Push' -or $ReceiptPhase -ne 'Manual' -or $E2ERepeats -ne 1 -or $Full -or
+            $StaticOnly -or $unitDiagnostic -or $E2EOnly -or $E2ENoDependencies -or $lightRequested -or
+            -not [string]::IsNullOrWhiteSpace($E2EGrep) -or [string]::IsNullOrWhiteSpace($StageEvidence) -or
+            -not $stageShardValid -or ($CIStage -eq 'Verify' -and $Install)) {
+            Write-Host '[NG] CIの段(-CIStage)はCIの通常Push検査だけで、記録先(-StageEvidence)を付けて使用できます。画面検査の段(E2E)だけが組(-E2EShard)を持ち、照合(Verify)は導入と併用できません。診断・フック・連続検査・-Full・-Scope Localとも併用できません。' -ForegroundColor Red
+            exit 1
+        }
+    }
+    $ciStageEvidenceScript = Join-Path $scriptDirectory 'lib/ci_stage_evidence.py'
+    # 画面検査の段の直前の合図(2026-09-28): 手元の通常の手動検査(-Level Push)の全体検査だけ。
+    # CI・導入・フック・診断・連続検査・CIの段とは併用せず、合図のフォルダーは実在するものに限る。
+    $e2eStartSignalRequested = -not [string]::IsNullOrWhiteSpace($E2EStartSignal)
+    if (-not $e2eStartSignalRequested -and $PSBoundParameters.ContainsKey('E2EStartSignalTimeoutSeconds')) {
+        Write-Host '[NG] -E2EStartSignalTimeoutSeconds は -E2EStartSignal と一緒に指定してください。' -ForegroundColor Red
+        exit 1
+    }
+    if ($e2eStartSignalRequested) {
+        if ($isRunningOnCI -or $Install -or $Level -ne 'Push' -or $ReceiptPhase -ne 'Manual' -or $E2ERepeats -ne 1 -or
+            $StaticOnly -or $unitDiagnostic -or $E2EOnly -or $E2ENoDependencies -or $ciStageRequested -or
+            -not [string]::IsNullOrWhiteSpace($E2EGrep) -or -not [string]::IsNullOrWhiteSpace($E2EShard)) {
+            Write-Host '[NG] -E2EStartSignal は手元の通常の手動検査(-Level Push)の全体検査だけで使用できます。CI・導入・フック・診断・連続検査・CIの段とは併用できません。' -ForegroundColor Red
+            exit 1
+        }
+        if (-not (Test-Path -LiteralPath $E2EStartSignal -PathType Container)) {
+            Write-Host "[NG] -E2EStartSignal のフォルダーがありません: $E2EStartSignal" -ForegroundColor Red
+            exit 1
+        }
+        $E2EStartSignal = (Resolve-Path -LiteralPath $E2EStartSignal).ProviderPath
+    }
 
     $packageJsonPath = Join-Path $root "package.json"
     if (-not (Test-Path -LiteralPath $packageJsonPath -PathType Leaf)) {
@@ -283,6 +414,25 @@ try {
     }
     $hasE2E = $definedScripts -contains "test:e2e"
     if (-not [string]::IsNullOrWhiteSpace($E2EShard) -and -not $hasE2E) { throw 'CIの3分割にはtest:e2eが必要です。' }
+    if ($CIStage -eq 'Verify') {
+        # 集約(checks)だけ: 両OSの全段(前段・単体の先行分・画面検査3組)の記録がそろい、全てが
+        # 同じ版・同じlock・OSごとに同じnode/pnpmで成功したことを確かめる。pnpmは実行しない。
+        Invoke-Check "(照合) 両OSの全段の記録" python @('-B', '-X', 'utf8', $ciStageEvidenceScript, 'verify', '--root', $root, '--dir', $StageEvidence)
+        Write-Host ''
+        Write-Host '[OK] 両OSの前段・単体の先行分・画面検査の全3組が、同じ版で全て成功したことを照合しました。' -ForegroundColor Green
+        exit 0
+    }
+    $ciStageUnitSplit = $null
+    $ciStageSteps = [Collections.Generic.List[string]]::new()
+    if ($CIStage -in @('Front', 'UnitLead')) {
+        # ルートのtest「先行分 && 残り」をそのまま2つに分ける(つなぐと元と一致しなければ止める)。
+        $splitOutput = & python -B -X utf8 $ciStageEvidenceScript unit-split --root $root
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[NG] 単体の分け方を決められません: $($splitOutput -join ' ')" -ForegroundColor Red
+            exit 1
+        }
+        $ciStageUnitSplit = ($splitOutput -join "`n") | ConvertFrom-Json
+    }
 
     $ordinaryGate = -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and -not $Install
     $localScope = $null
@@ -290,6 +440,11 @@ try {
     $localAllE2EChecks = $false
     $localLight = $false
     $localE2EFilters = @()
+    # 軽い検査の比較の基点(成功記録に残す)・全体へ広がった軽い検査・CIへ任せた画面検査の印。
+    $localLightBase = ''
+    $localLightFull = $false
+    $localE2EDeferred = $false
+    $lightFullScope = $null
     if ($ordinaryGate -and -not $Full -and -not $isRunningOnCI -and $E2ERepeats -eq 1 -and $ReceiptPhase -ne 'Disabled') {
         $scopeScript = Join-Path $scriptDirectory 'lib/local_change_scope.py'
         if (Test-Path -LiteralPath $scopeScript -PathType Leaf) {
@@ -318,38 +473,69 @@ try {
                             -not $localRuntimeChecks -or $candidateScope.PSObject.Properties.Name -notcontains 'e2eSpecs') {
                             throw 'Invalid light scope'
                         }
-                        foreach ($spec in @($candidateScope.e2eSpecs)) {
-                            if ($spec -isnot [string] -or $spec -cnotmatch '^e2e/tests/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.spec\.ts$') {
-                                throw 'Invalid related E2E spec'
-                            }
-                            # Playwright treats a plain string filter as a glob (createFileMatcher in
-                            # playwright/lib/util.js), never as a regular expression, unless it is
-                            # already a RegExp object (CLI arguments never are). A backslash-escaped
-                            # "\." plus a trailing "$" is matched literally by minimatch, so the
-                            # trailing "$" never matches any real file path and the run reports
-                            # "No tests found." (observed 2026-09-28, gate 20260928-065436). Pass the
-                            # plain relative path instead; createFileMatcher prefixes it with "**/" and
-                            # matches it against the path on both Windows and POSIX.
-                            $localE2EFilters += $spec
+                        # A light check never runs every operation locally (owner decision "3").
+                        if ($localAllE2EChecks) { throw 'A light scope must not require every operation locally' }
+                        if ($candidateScope.PSObject.Properties.Name -contains 'e2eDeferredToCI') {
+                            if ($candidateScope.e2eDeferredToCI -isnot [bool]) { throw 'Invalid deferred E2E flag' }
+                            $localE2EDeferred = $candidateScope.e2eDeferredToCI
                         }
+                        $localE2EFilters = ConvertTo-LocalE2EFilter -Specs @($candidateScope.e2eSpecs)
+                        $localLightBase = [string]$candidateScope.base
                         $localLight = $true
                     } elseif ($lightRequested) { throw 'The light scope was not established' }
                     if ($localLight) {
-                        $relatedLabel = if ($localAllE2EChecks) { '全件(変更したe2eの影響を特定できないため)' } else { "$(@($candidateScope.e2eSpecs).Count) spec" }
+                        $relatedLabel = "$($localE2EFilters.Count) spec"
+                        if ($localE2EDeferred) { $relatedLabel += '(影響を特定できない変更したe2eの画面検査は両OS CIの全件で確かめます)' }
                         Write-Host "[検査範囲] 手元の軽い検査: $($localScope.reason) / 単体 $($localScope.packages -join ', ') / 起動の3 project / 関係する画面検査 $relatedLabel。画面検査の全件はpush後の両OS CIで実施します。" -ForegroundColor Cyan
                     } else {
                         Write-Host "[検査範囲] 変更箇所別: $($localScope.reason) / $($localScope.packages -join ', ')。全検査は両OS CIで実施します。" -ForegroundColor Cyan
                     }
-                } else { Write-Host "[検査範囲] 全体: $($candidateScope.reason)" }
+                } else {
+                    Write-Host "[検査範囲] 全体: $($candidateScope.reason)"
+                    if ($lightRequested) { $lightFullScope = $candidateScope }
+                }
             } catch {
                 $localScope = $null
                 $localRuntimeChecks = $false
                 $localAllE2EChecks = $false
                 $localLight = $false
                 $localE2EFilters = @()
+                $localLightBase = ''
+                $localE2EDeferred = $false
+                $lightFullScope = $null
                 Write-Host "[検査範囲] 判定できないため全体検査へ戻します: $($_.Exception.Message)"
             }
         } else { Write-Host '[検査範囲] 判定処理が無いため全体検査へ戻します' }
+    }
+    if ($lightRequested -and -not $localLight) {
+        # [local-light-full-e2e-deferred] 2026-09-28 19:5x 利用者の決定「３」: -Scope Local で全体へ広がる
+        # (判定できない・設定の変更・判定の失敗)場合も、単体は全件(pnpm run test)・両ビルド・品質ゲートの
+        # 自己試験は全体のまま、画面検査は起動の3 projectと、判定が示した関係するspecだけにする。画面検査の
+        # 全件は送信後の同じSHAの両OS CIに任せる。成功記録は軽い検査の記録で、B3の全体検査の記録にしない。
+        # (scratchpad/claude/tools/deliver.py は独立コピーの check.ps1 にこの印があるかで予告を変える。)
+        $localScope = $null
+        $localLight = $true
+        $localLightFull = $true
+        $localRuntimeChecks = $true
+        $localAllE2EChecks = $false
+        $localE2EDeferred = $true
+        $localE2EFilters = @()
+        $lightFullReason = '判定できない変更'
+        if ($null -ne $lightFullScope) {
+            $lightFullReason = [string]$lightFullScope.reason
+            $lightFullNames = @($lightFullScope.PSObject.Properties.Name)
+            if ($lightFullNames -contains 'light' -and $lightFullScope.light -is [bool] -and $lightFullScope.light -and
+                $lightFullNames -contains 'e2eSpecs') {
+                try { $localE2EFilters = ConvertTo-LocalE2EFilter -Specs @($lightFullScope.e2eSpecs) }
+                catch {
+                    $localE2EFilters = @()
+                    Write-Host "[検査範囲] 関係する画面検査の名前を使えないため、起動の3 projectだけにします: $($_.Exception.Message)"
+                }
+            }
+            if ([string]$lightFullScope.base -cmatch '^[0-9a-f]{40}$') { $localLightBase = [string]$lightFullScope.base }
+        }
+        if ([string]::IsNullOrWhiteSpace($localLightBase)) { $localLightBase = $ComparisonBase }
+        Write-Host "[検査範囲] 手元の軽い検査(全体へ広がる変更: $lightFullReason) / 単体は全件・両ビルド・自己試験 / 起動の3 project / 関係する画面検査 $($localE2EFilters.Count) spec。画面検査の全件は送信後の同じSHAの両OS CIで実施します(利用者の決定 2026-09-28「３」)。" -ForegroundColor Cyan
     }
     if ($localLight -and -not $hasE2E) { throw 'The light local check requires the test:e2e script' }
     if ($localAllE2EChecks -and -not $hasE2E) { throw 'Changed E2E tests require the test:e2e script' }
@@ -453,15 +639,20 @@ try {
             Write-Host "[警告] stage 済みのファイルが無いため、検査前後の比較を省略します" -ForegroundColor Yellow
         }
 
-        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and ($null -eq $localScope -or $localRuntimeChecks -or $localAllE2EChecks)
+        # CIの段 Front・UnitLead は画面検査を別の実行機(段 E2E)へ任せる。
+        $runE2E = $hasE2E -and -not $unitDiagnostic -and -not $StaticOnly -and ($null -eq $localScope -or $localRuntimeChecks -or $localAllE2EChecks) -and
+            $CIStage -notin @('Front', 'UnitLead')
         if ($E2EOnly -and -not $runE2E) {
             Write-Host "[NG] -E2EOnly を指定しましたが test:e2e スクリプトがありません" -ForegroundColor Red
             exit 1
         }
-        $totalChecks = if ($StaticOnly) { 2 } elseif ($E2EOnly) { 1 } elseif ($runE2E) { 5 } else { 4 }
-        if (-not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic) {
+        if ($CIStage -eq 'E2E' -and -not $runE2E) { throw 'CIの画面検査の段にはtest:e2eが必要です。' }
+        $totalChecks = if ($StaticOnly) { 2 } elseif ($E2EOnly) { 1 } elseif ($runE2E -or $ciStageRequested) { 5 } else { 4 }
+        # 自己試験はCIでは前段(Front)で1回だけ行う。単体の先行分・画面検査の段は同じ版の前段に任せる。
+        if (-not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and $CIStage -in @('', 'Front')) {
             Invoke-Check "(0) 品質ゲート自身の自己試験" (Get-Process -Id $PID).Path @(
                 "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "scripts/check.selftest.ps1"))
+            $ciStageSteps.Add('selftest')
         }
         if ($runE2E) {
             # Initial downloads change the dependencies/browsers protected by B3.
@@ -471,22 +662,25 @@ try {
                 $browserInstallArgs = @("exec", "playwright", "install", "--with-deps", "chromium", "firefox")
             }
             Invoke-Check "(準備) Playwright のブラウザ確認" pnpm $browserInstallArgs
+            $ciStageSteps.Add('browsers')
             if (Test-Path -LiteralPath (Join-Path $root 'apps/desktop/package.json') -PathType Leaf) {
                 Invoke-Check "(準備) Electron の実行ファイル確認" pnpm @('--filter', '@pointercad/desktop', 'exec', 'install-electron')
+                $ciStageSteps.Add('electron')
             }
         }
         # Self-tests launch deliberately invalid diagnostics in this repository.
         # They must finish before recording the inputs of the five product stages.
         # The original source snapshot still guards the entire check, including (0).
         # A pre-push fallback never issues a reusable success for a failed send.
-        if ($ReceiptPhase -eq 'Manual' -and -not $isRunningOnCI -and -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and $hasE2E -and $null -eq $localScope) {
+        # A light check (also one widened to every unit suite) never issues the B3 full-check receipt.
+        if ($ReceiptPhase -eq 'Manual' -and -not $isRunningOnCI -and -not $StaticOnly -and -not $E2EOnly -and -not $unitDiagnostic -and $hasE2E -and $null -eq $localScope -and -not $localLight) {
             $receiptStart = Invoke-ValidationReceipt -Root $root -Action start -Repeats $E2ERepeats
             if ($receiptStart.ok) { $receiptToken = $receiptStart.token }
             else { Write-Host "[検査] B3の開始記録を作成できませんでした: $($receiptStart.reason)" }
         }
         if ($localLight -and $ReceiptPhase -eq 'Manual' -and -not $isRunningOnCI) {
             # The base is the one the scope compared: the explicit one, otherwise origin/main.
-            $lightStart = Invoke-LocalLightReceipt -Root $root -Action start -Base ([string]$localScope.base)
+            $lightStart = Invoke-LocalLightReceipt -Root $root -Action start -Base $localLightBase
             if ($lightStart.ok) { $lightReceiptToken = $lightStart.token }
             else { Write-Host "[検査] 軽い検査の開始記録を作成できませんでした(フックは通常検査を行います): $($lightStart.reason)" }
         }
@@ -512,6 +706,25 @@ try {
         elseif ($E2EOnly) {
             Write-Host "[診断] E2Eだけを実行します。最終のPushゲート合格には数えません。" -ForegroundColor Yellow
         }
+        elseif ($CIStage -eq 'E2E') {
+            Write-Host "[CIの段] 画面検査の組 $E2EShard だけを行います。自己試験・型・lint・単体・ビルドは同じ版の前段と単体の先行分の段が行い、集約(checks)が全段の記録を照合します。" -ForegroundColor Cyan
+        }
+        elseif ($CIStage -eq 'UnitLead') {
+            Write-Host "[CIの段] 単体の先行分だけを行います(ルートのtestの前半。後半は前段が行います)。" -ForegroundColor Cyan
+            Invoke-Check "(3/$totalChecks) 単体の先行分: $($ciStageUnitSplit.leadCommand)" pnpm @($ciStageUnitSplit.lead)
+            $ciStageSteps.Add('unit-lead')
+        }
+        elseif ($CIStage -eq 'Front') {
+            Write-Host "[CIの段] 前段: 型・lint・単体の残り(ルートのtestの後半。前半は単体の先行分の段)・ビルドを行います。画面検査は別の段です。" -ForegroundColor Cyan
+            Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
+            $ciStageSteps.Add('typecheck')
+            Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
+            $ciStageSteps.Add('lint')
+            Invoke-Check "(3/$totalChecks) 単体の残り: $($ciStageUnitSplit.restCommand)" pnpm @($ciStageUnitSplit.rest)
+            $ciStageSteps.Add('unit-rest')
+            Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
+            $ciStageSteps.Add('build')
+        }
         else {
             Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
             Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
@@ -521,7 +734,14 @@ try {
                 Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             }
         }
+        if ($e2eStartSignalRequested -and -not $runE2E) {
+            Write-Host '[合図] この検査には画面検査の段が無いため、開始の合図は使いません。' -ForegroundColor Cyan
+        }
         if ($runE2E) {
+            if ($e2eStartSignalRequested) {
+                # 型・lint・単体・ビルドの間は担当の画面検査を妨げず、ここで道具が排他を取るのを待つ。
+                Wait-E2EStartSignal -Folder $E2EStartSignal -TimeoutSeconds $E2EStartSignalTimeoutSeconds -StageName "(5/$totalChecks) pnpm run test:e2e"
+            }
             for ($e2eRun = 1; $e2eRun -le $E2ERepeats; $e2eRun++) {
                 $repeatLabel = ""
                 if ($E2ERepeats -gt 1) { $repeatLabel = " ($e2eRun/$E2ERepeats)" }
@@ -548,7 +768,9 @@ try {
                 } elseif ($localRuntimeChecks -and -not $localAllE2EChecks) {
                     # All unit tests of changed packages and their consumers ran above.
                     # Retain strict rendering and actual Firefox/Electron startup locally;
-                    # the same commit's CI and release -Full run every existing operation.
+                    # the same commit's CI on both OSes (the release check) and an explicit -Full run
+                    # every existing operation. A light check widened to every unit suite (owner
+                    # decision "3") also ends here or in the branch above, never with every operation.
                     $e2eArgs += @('--project=viewport-performance', '--project=startup-firefox', '--project=startup-electron')
                 }
                 if ($E2EOnly -and -not [string]::IsNullOrWhiteSpace($E2EGrep)) {
@@ -570,6 +792,7 @@ try {
                     Invoke-Check "($e2eStep/$totalChecks) pnpm run test:e2e$repeatLabel" pnpm $e2eArgs
                 }
             }
+            $ciStageSteps.Add('e2e')
         }
 
         $afterSnapshot = Get-TrackedTreeSnapshot -Root $root -Level $Level
@@ -587,6 +810,14 @@ try {
                 exit 1
             }
         }
+        if ($ciStageRequested) {
+            # 成功した段だけ、同じ版・lock・道具と通した手順を記録する。集約(Verify)が両OSの全段を照合する。
+            $recordArgs = @('-B', '-X', 'utf8', $ciStageEvidenceScript, 'write', '--root', $root, '--dir', $StageEvidence,
+                '--stage', $CIStage, '--node', ((& node --version) -join '').Trim(), '--pnpm', ((& pnpm --version) -join '').Trim())
+            if ($CIStage -eq 'E2E') { $recordArgs += @('--shard', $E2EShard) }
+            foreach ($step in $ciStageSteps) { $recordArgs += @('--step', $step) }
+            Invoke-Check "(記録) CIの段 $CIStage $E2EShard" python $recordArgs
+        }
     }
 
     Write-Host ""
@@ -599,11 +830,17 @@ try {
     elseif ($E2EOnly) {
         Write-Host "[OK] 指定したE2E診断に合格しました(最終のPushゲートには数えません)" -ForegroundColor Green
     }
+    elseif ($localLightFull) {
+        Write-Host '[OK] 手元の軽い検査(全体へ広がる変更のため単体は全件)に合格しました。画面検査は起動の3 projectと関係するspecだけで、全件はpush後の両OS CIで確かめます。完成確定とリリース前の最終確認には、同一SHAの両OS CIの全件の成功が必要です。' -ForegroundColor Green
+    }
     elseif ($localLight) {
-        Write-Host '[OK] 手元の軽い検査に合格しました。画面検査の全件はpush後の両OS CIで確かめます。完成確定には同一SHAの両OS CI全検査、リリース前は-Fullが必要です。' -ForegroundColor Green
+        Write-Host '[OK] 手元の軽い検査に合格しました。画面検査の全件はpush後の両OS CIで確かめます。完成確定とリリース前の最終確認には、同一SHAの両OS CIの全件の成功が必要です。' -ForegroundColor Green
     }
     elseif ($null -ne $localScope) {
         Write-Host '[OK] 変更箇所別のローカル検査に合格しました。完成確定には同一SHAの両OS CI全検査が必要です。' -ForegroundColor Green
+    }
+    elseif ($ciStageRequested) {
+        Write-Host "[OK] CIの段 $CIStage $E2EShard が成功し、記録しました。全体合格には、集約(checks)が両OSの全段の記録を照合して成功することが必要です。" -ForegroundColor Green
     }
     elseif (-not [string]::IsNullOrWhiteSpace($E2EShard)) {
         Write-Host "[OK] CIの全単体・型・lint・ビルドと画面操作の分割 $E2EShard が成功しました。全体合格には両OSの全3組の成功が必要です。" -ForegroundColor Green

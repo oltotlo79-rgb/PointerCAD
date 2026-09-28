@@ -241,6 +241,14 @@ def classify(paths, before_attributes=b'', after_attributes=b'', runtime_graph=N
         elif re.fullmatch(r'packages/help-content/docs/ja/images/[^/\x00-\x1f]+\.(png|json)', path):
             packages.add('help-content')
             areas.add('help-images')
+        elif path == 'wrangler.jsonc':
+            # Cloudflare Workers Builds が根で読む静的資産配信の設定だけ(2026-09-28の事故:
+            # gate.log 20260928-051433 で555件へ広がった)。ビルド入力ではない
+            # (scripts/vite/webBuildSources.mjs のパターンに一致せず、apps/web/vite.config.ts も
+            # 参照しない)。検査するのは apps/desktop/src/main/wranglerConfig.test.ts(desktopの
+            # 単体)だけなので、desktopの単体対象にとどめ、他パッケージ・全画面検査へ広げない。
+            packages.add('desktop')
+            areas.add('cloudflare-deployment-config')
         elif re.fullmatch(r'e2e/tests/[^\x00-\x1f]+\.ts', path):
             # Run every operation, including shared helpers and all startup dependencies.
             # This narrows only unrelated unit packages, never the changed E2E coverage.

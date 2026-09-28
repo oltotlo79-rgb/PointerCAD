@@ -4,6 +4,12 @@ import { beginRecompute, waitForRecompute } from './recompute.js';
 
 /** Reopening must finish a generation after the file choice, not the empty startup document. */
 export async function reopenPart(page: Page, info: TestInfo, filename: string, app?: ElectronApplication): Promise<void> {
+  // Never reload a page that is still loading its editor module. Firefox aborts the old page's
+  // fetches when the reload starts; the startup retry (apps/web/src/startupRecovery.ts) then
+  // reads that as a failed module load and calls location.reload() itself, which replaces this
+  // reload and rejects it with NS_BINDING_ABORTED (CI 1e06c93, name-search on Firefox).
+  // The hook below is installed only after the editor module has loaded and mounted.
+  await page.waitForFunction(() => typeof window.pcadRecomputeStats === 'function');
   await page.reload();
   const open = page.getByRole('group', { name: 'ファイル', exact: true }).getByRole('button', { name: '開く', exact: true });
   await expect(open).toBeVisible();

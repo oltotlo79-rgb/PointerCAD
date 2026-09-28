@@ -1,0 +1,22 @@
+{
+  // Cloudflare Workers の設定。Workers Builds が根で `npx wrangler deploy` を実行するため、
+  // 根に置く（Root directory をアプリ側へ変える運用は取らない。2026-09-28 のログの原因は
+  // 根に設定ファイルが無く、ワークスペースの自動検出が「複数アプリのどれを対象にするか」
+  // 決められなかったこと。根に設定を置くと自動検出より優先される）。
+  // 参照:
+  // - https://developers.cloudflare.com/workers/wrangler/configuration/
+  // - https://developers.cloudflare.com/workers/static-assets/
+  // - https://developers.cloudflare.com/workers/ci-cd/builds/configuration/ (Root directory の説明)
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pointercad",
+  "compatibility_date": "2026-09-28",
+  "assets": {
+    // Web 版のビルド出力(vite の既定 outDir、apps/web/vite.config.ts に outDir 指定は無い)。
+    "directory": "./apps/web/dist",
+    // ルーティングはクライアント内の状態遷移だけで、react-router 等のパス遷移は無い
+    // (packages/ui・apps/web に BrowserRouter 等は無い)。直リンクや再読込みでも index.html を
+    // 返す方が壊れない側なので single-page-application を選ぶ。Worker script は使わないため
+    // "main" は指定しない(静的資産のみの構成、上の Configuration の記載どおり)。
+    "not_found_handling": "single-page-application"
+  }
+}

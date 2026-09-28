@@ -35,13 +35,63 @@ const BESSEL_HEADS: ReadonlyMap<string, BesselKind> = new Map([['BesselJ','J'],[
 const TEST_DISTRIBUTION_HEADS: ReadonlyMap<string, string> = new Map([['ChiSquarePdf', 'chi-square-pdf'], ['ChiSquareCdf', 'chi-square-cdf'], ['ChiSquareQuantile', 'chi-square-quantile'], ['TPdf', 't-pdf'], ['TCdf', 't-cdf'], ['TQuantile', 't-quantile'], ['FPdf', 'f-pdf'], ['FCdf', 'f-cdf'], ['FQuantile', 'f-quantile']]);
 const GAMMA_BETA_HEADS: ReadonlyMap<string, string> = new Map([['GammaPdf', 'gamma-pdf'], ['GammaCdf', 'gamma-cdf'], ['GammaQuantile', 'gamma-quantile'], ['BetaPdf', 'beta-pdf'], ['BetaCdf', 'beta-cdf'], ['BetaQuantile', 'beta-quantile']]);
 const NORMAL_HEADS: ReadonlyMap<string, string> = new Map([['NormalPdf', 'normal-pdf'], ['NormalCdf', 'normal-cdf'], ['NormalQuantile', 'normal-quantile']]);
+// Heads dispatched below (102-218 or so) by a single literal comparison instead of one of the
+// lookup tables above. Centralised here so the completeness table just below reads the exact
+// identifiers `visit()` branches on, instead of a hand-kept parallel list that can silently drop
+// one entry (AiryAi/AiryBi/AiryAiPrime/AiryBiPrime kept their AIRY_HEADS dispatch entry but were
+// missing from the deadline classification below — CI run 36346675432, job 108697069543, ADD-18).
+const QUANTILE_HEADS = new Set(['BinomialQuantile', 'PoissonQuantile']);
+const SCALAR_ZETA_HEADS = new Set(['Zeta', 'ZetaDerivative']);
+const SCALAR_LAMBERT_HEAD = 'LambertW';
+const SCALAR_BETA_HEAD = 'Beta';
+const SCALAR_GAMMA_HEADS = new Set(['Gamma', 'Polygamma']);
+const SCALAR_ERROR_HEADS = new Set(['Erf', 'Erfc']);
+
+type NumericHeadKind = 'elliptic' | 'distribution';
+interface NumericHeadEntry { readonly kind: NumericHeadKind | 'light'; readonly reason?: string }
+const headEntry = (head: string, entry: NumericHeadEntry): readonly [string, NumericHeadEntry] => [head, entry];
+/** Whether 200ms (ordinary expression) is enough, with the reason relied on. Every head with a
+ * dedicated numeric routine below MUST appear in exactly one of `NUMERIC_HEAD_ALLOWANCE`'s entries
+ * (checked exhaustively by `nativeMathBackend.test.ts`), so a head added only to a dispatch table
+ * and never classified here (like Airy was) fails a test instead of shipping unnoticed. */
+// 2026-09-28 (w87a): measured cold(このファイルでの初回)/warm(以降19回)のmax/中央値を
+// packages/expression/src/math/__benchmarkEdgeHeads.bench.test.ts で計測し(統括の指示、推測で決めない)、
+// 手元の最大が200msの1/4(50ms)を超えるか、手元を3〜5倍(CIのWindowsの遅さの見積もり、job-108697069543の
+// 個別ファイルの所要から)しても200msに近づかないかで判定した。計測時の負荷: 他の複数の担当が並行して
+// 検査を実行中の共有機だったため、数値はやや重め(=distribution判定に有利)の条件での実測。
+const NORMAL_HEAD_MEASUREMENTS = {
+  NormalPdf: { kind: 'light' as const, reason:
+    '実測(w87a 2026-09-28, edge=x=19の裾際): cold=2.071ms warm中央値=0.799ms warm最大=2.897ms。'
+    + '最大2.897msは50msの1/20未満、5倍しても15ms未満で200msに遠い。' },
+  NormalCdf: { kind: 'light' as const, reason:
+    '実測(w87a 2026-09-28, edge=x=19の裾際): cold=3.043ms warm中央値=0.827ms warm最大=1.990ms。'
+    + '最大3.043msは50msの1/16未満、5倍しても16ms未満で200msに遠い。' },
+  NormalQuantile: { kind: 'distribution' as const, reason:
+    '実測(w87a 2026-09-28, edge=確率1e-1000の裾際): cold=52.069ms warm中央値=6.951ms warm最大=17.585ms。'
+    + 'cold=52.069msが50msの基準を超え、5倍(CIのWindowsの遅さの見積もり)で260msとなり200msに達し得るため'
+    + 'distributionへ変更(1秒の猶予)。' },
+};
+const QUANTILE_HEAD_MEASUREMENTS = {
+  BinomialQuantile: { kind: 'light' as const, reason:
+    '実測(w87a 2026-09-28, edge=試行10,000回・target≈1で最大反復近くを狙う): cold=1.674ms warm中央値=0.035ms '
+    + 'warm最大=0.455ms。最大1.674msは50msの1/29未満、5倍しても9ms未満で200msに遠い。' },
+  PoissonQuantile: { kind: 'distribution' as const, reason:
+    '実測(w87a 2026-09-28, edge=λ=5000・target≈1で最大反復(10,000回)近くを狙う): cold=58.702ms '
+    + 'warm中央値=54.484ms warm最大=86.100ms。最大86.100msが50msの基準を大きく超え、5倍で430msとなり'
+    + '200msを超え得るためdistributionへ変更(1秒の猶予)。' },
+};
+export const NUMERIC_HEAD_ALLOWANCE: ReadonlyMap<string, NumericHeadEntry> = new Map([
+  ...[...ELLIPTIC_HEADS.keys()].map(head => headEntry(head, { kind: 'elliptic' })),
+  ...[...AIRY_HEADS.keys(), ...BESSEL_HEADS.keys(), ...TEST_DISTRIBUTION_HEADS.keys(), ...GAMMA_BETA_HEADS.keys(),
+    ...SCALAR_ZETA_HEADS, SCALAR_LAMBERT_HEAD, SCALAR_BETA_HEAD, ...SCALAR_GAMMA_HEADS, ...SCALAR_ERROR_HEADS]
+    .map(head => headEntry(head, { kind: 'distribution' })),
+  ...[...NORMAL_HEADS.keys()].map(head => headEntry(head, NORMAL_HEAD_MEASUREMENTS[head as keyof typeof NORMAL_HEAD_MEASUREMENTS])),
+  ...[...QUANTILE_HEADS].map(head => headEntry(head, QUANTILE_HEAD_MEASUREMENTS[head as keyof typeof QUANTILE_HEAD_MEASUREMENTS])),
+]);
 /** Same allowance classes used by the numeric branches below; inspect before evaluation starts. */
-export function nativeMathDeadlineKind(head: string): 'elliptic' | 'distribution' | null {
-  if (ELLIPTIC_HEADS.has(head)) return 'elliptic';
-  if (TEST_DISTRIBUTION_HEADS.has(head) || GAMMA_BETA_HEADS.has(head) || BESSEL_HEADS.has(head)
-    || head === 'Zeta' || head === 'ZetaDerivative' || head === 'LambertW' || head === 'Beta'
-    || head === 'Gamma' || head === 'Polygamma' || head === 'Erf' || head === 'Erfc') return 'distribution';
-  return null;
+export function nativeMathDeadlineKind(head: string): NumericHeadKind | null {
+  const entry = NUMERIC_HEAD_ALLOWANCE.get(head);
+  return entry === undefined || entry.kind === 'light' ? null : entry.kind;
 }
 
 const TRUTH = (value: boolean): EngineMathJson => value ? 'True' : 'False';
@@ -100,7 +150,7 @@ export function createNativeMathBox(source: EngineMathJson, check: () => void, d
         throw new MathInputProblem('domain', '値が定義される条件がありません。');
       }
       const testDistribution = TEST_DISTRIBUTION_HEADS.get(head);
-      if (numeric && (head === 'BinomialQuantile' || head === 'PoissonQuantile')) {
+      if (numeric && QUANTILE_HEADS.has(head)) {
         const parameters = raw.map(jsonRational);
         if (parameters.every(parameter => parameter !== null)) {
           return N((head === 'BinomialQuantile' ? binomialQuantile : poissonQuantile)(parameters, check));
@@ -127,7 +177,7 @@ export function createNativeMathBox(source: EngineMathJson, check: () => void, d
         throw new MathInputProblem('unsupported', '正規分布の条件を整数・小数・分数に確定できません。');
       }
       const args = raw.map(child => visit(child, scope, depth + 1));
-      if(numeric&&(head==='Zeta'||head==='ZetaDerivative')) {
+      if(numeric&&SCALAR_ZETA_HEADS.has(head)) {
         distributionAllowance?.();
         const index=head==='Zeta'?0:1,argument=jsonRational(raw[index])??jsonRational(args[index]);
         if(argument===null)throw new MathInputProblem('unsupported','ゼータ関数の引数を有限の実数へ確定できません。');
@@ -159,7 +209,7 @@ export function createNativeMathBox(source: EngineMathJson, check: () => void, d
         const result = airyValues(airy[0], argument, check);
         return N((airy[1] ? result.first : result.value).decimal);
       }
-      if (numeric && head === 'LambertW') {
+      if (numeric && head === SCALAR_LAMBERT_HEAD) {
         distributionAllowance?.();
         const branch = jsonRational(raw[0]) ?? jsonRational(args[0]);
         const argument = jsonRational(raw[1]) ?? jsonRational(args[1]);
@@ -182,13 +232,13 @@ export function createNativeMathBox(source: EngineMathJson, check: () => void, d
         return N(bessel === 'J' || bessel === 'I' ? integerBesselDecimal(bessel, Number(order.numerator), argument, check)
           : secondBesselDecimal(bessel, Number(order.numerator), argument, check));
       }
-      if (numeric && head === 'Beta') {
+      if (numeric && head === SCALAR_BETA_HEAD) {
         distributionAllowance?.();
         const a = jsonRational(raw[0]) ?? jsonRational(args[0]), b = jsonRational(raw[1]) ?? jsonRational(args[1]);
         if (a === null || b === null) throw new MathInputProblem('unsupported', 'Beta関数の引数を有限の実数へ確定できません。');
         return N(betaFunctionDecimal(a, b, check));
       }
-      if (numeric && (head === 'Gamma' || head === 'Polygamma')) {
+      if (numeric && SCALAR_GAMMA_HEADS.has(head)) {
         distributionAllowance?.();
         const argumentIndex = head === 'Gamma' ? 0 : 1;
         const argument = jsonRational(raw[argumentIndex]) ?? jsonRational(args[argumentIndex]);
@@ -200,7 +250,7 @@ export function createNativeMathBox(source: EngineMathJson, check: () => void, d
         }
         return N(polygammaDecimal(Number(order.numerator), argument, check));
       }
-      if (numeric && (head === 'Erf' || head === 'Erfc')) {
+      if (numeric && SCALAR_ERROR_HEADS.has(head)) {
         distributionAllowance?.();
         const argument = jsonRational(raw[0]) ?? jsonRational(args[0]);
         if (argument !== null) return N(errorFunctionDecimal(head === 'Erf' ? 'erf' : 'erfc', argument, check));

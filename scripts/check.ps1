@@ -322,8 +322,15 @@ try {
                             if ($spec -isnot [string] -or $spec -cnotmatch '^e2e/tests/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.spec\.ts$') {
                                 throw 'Invalid related E2E spec'
                             }
-                            # Playwright matches file filters against the path (also as / on Windows).
-                            $localE2EFilters += (($spec -replace '\.', '\.') + '$')
+                            # Playwright treats a plain string filter as a glob (createFileMatcher in
+                            # playwright/lib/util.js), never as a regular expression, unless it is
+                            # already a RegExp object (CLI arguments never are). A backslash-escaped
+                            # "\." plus a trailing "$" is matched literally by minimatch, so the
+                            # trailing "$" never matches any real file path and the run reports
+                            # "No tests found." (observed 2026-09-28, gate 20260928-065436). Pass the
+                            # plain relative path instead; createFileMatcher prefixes it with "**/" and
+                            # matches it against the path on both Windows and POSIX.
+                            $localE2EFilters += $spec
                         }
                         $localLight = $true
                     } elseif ($lightRequested) { throw 'The light scope was not established' }
@@ -530,8 +537,14 @@ try {
                     # startup-firefox and startup-electron; viewport-performance is their shared
                     # dependency, which Playwright runs completely (file filters never narrow a
                     # dependency project). The extra Chromium smoke spec is the only addition.
+                    # These are plain relative paths, not regular expressions: Playwright's
+                    # createFileMatcher (playwright/lib/util.js) treats a plain string filter as a
+                    # glob via minimatch unless it is already a RegExp object, which CLI arguments
+                    # never are. A backslash-escaped "\." plus trailing "$" used to be matched
+                    # literally, so the "$" never matched any real path and the run reported
+                    # "No tests found." (observed 2026-09-28, gate 20260928-065436).
                     $e2eArgs += @('--project=startup-firefox', '--project=startup-electron', '--project=functional', '--project=electron',
-                        'e2e/tests/smoke\.spec\.ts$', 'e2e/tests/firefox-graphics\.spec\.ts$', 'e2e/tests/electron-startup\.spec\.ts$') + $localE2EFilters
+                        'e2e/tests/smoke.spec.ts', 'e2e/tests/firefox-graphics.spec.ts', 'e2e/tests/electron-startup.spec.ts') + $localE2EFilters
                 } elseif ($localRuntimeChecks -and -not $localAllE2EChecks) {
                     # All unit tests of changed packages and their consumers ran above.
                     # Retain strict rendering and actual Firefox/Electron startup locally;

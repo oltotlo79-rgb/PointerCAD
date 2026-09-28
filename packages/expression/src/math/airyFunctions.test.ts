@@ -6,6 +6,7 @@ import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import { AIRY_REFERENCES } from './airyReferences.js';
+import { nativeMathDeadlineKind } from './nativeMathBackend.js';
 
 const D=Decimal.clone({precision:310,rounding:Decimal.ROUND_HALF_EVEN});
 let backend:MathExecutionBackend;
@@ -50,5 +51,12 @@ describe('Airy関数を原式と40桁の値を保って通常入力する',()=>{
   it.each(['airyai(33)','airybi(-33)','airyaiprime(1/0)','airybiprime(∞)','airyai(i)','airybi(sqrt(-1))','airyai([1])','airybi(true)'])(
     '%sの不成立を0倍や成分の選択で隠さない',source=>{
       for(const formula of [source,`0*${source}`,`component([7,${source}],1)`])expect(evaluate(formula).evaluation.status,formula).not.toBe('value');
+    });
+  // Bessel/Gamma/Beta/Zeta/LambertWと同じ高精度な特殊関数なのに、この分類が抜けていると通常式扱いの200msしか
+  // 与えられず、キャッシュの無い新しいWorker（文書を開き直した直後など）でdeadlineに達して失敗する
+  // （CI run 36346675432、job 108697069543、ADD-18 Airyの再編集検査）。
+  it.each(['AiryAi','AiryBi','AiryAiPrime','AiryBiPrime'])(
+    '%sは他の特殊関数と同じ1秒の計算猶予（distribution）に分類される',head=>{
+      expect(nativeMathDeadlineKind(head)).toBe('distribution');
     });
 });

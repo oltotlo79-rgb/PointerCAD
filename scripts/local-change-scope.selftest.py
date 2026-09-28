@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -218,6 +219,22 @@ class ScopeTests(unittest.TestCase):
         self.assertIn('desktop', self.inspect()['packages'])
         self.write('packages/model/src/runtime.ts', 'changed')
         self.assertEqual(self.inspect()['mode'], 'full')
+
+    def test_wrangler_config_stays_desktop_only_and_root_package_json_remains_full(self):
+        # 2026-09-28の事故(gate.log 20260928-051433で555件へ広がった)の再発防止。
+        # 配信だけの設定は desktop の単体にとどまり、画面検査は広がらない。
+        result = scope.classify(['wrangler.jsonc'])
+        self.assertEqual(result['mode'], 'targeted')
+        self.assertEqual(result['packages'], ['desktop'])
+        self.assertFalse(result['allE2EChecks'])
+        # 一方、根のpackage.json(ビルド・全パッケージへ実際に効く)は従来どおり判定不能で全体へ倒す。
+        self.assertEqual(scope.classify(['package.json'])['mode'], 'full')
+        # 実際のGit差分でも同じ結果になることを確かめる(untrackedの新規ファイルとして)。
+        self.write('wrangler.jsonc', '{"name": "pointercad-test"}\n')
+        real = self.inspect()
+        self.assertEqual(real['mode'], 'targeted')
+        self.assertEqual(real['packages'], ['desktop'])
+        self.assertFalse(real['allE2EChecks'])
 
     def test_commit_only_reads_the_index_and_manual_checks_both_index_and_worktree(self):
         self.write('README.md', 'updated')
@@ -606,9 +623,15 @@ class ScopeHookTests(unittest.TestCase):
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
 
     # 2026-09-27 owner decision "leave every browser operation to CI": -Scope Local.
+    # 2026-09-28: these are plain relative paths, not regular expressions. Playwright's
+    # createFileMatcher (playwright/lib/util.js) treats a plain string filter as a glob
+    # via minimatch unless it is already a RegExp object, which CLI arguments never are.
+    # The previous backslash-escaped "\." plus trailing "$" was matched literally, so the
+    # "$" never matched any real file path and the run reported "No tests found."
+    # (gate 20260928-065436).
     LIGHT_E2E = ('run test:e2e --project=startup-firefox --project=startup-electron --project=functional '
-                 '--project=electron e2e/tests/smoke\\.spec\\.ts$ e2e/tests/firefox-graphics\\.spec\\.ts$ '
-                 'e2e/tests/electron-startup\\.spec\\.ts$')
+                 '--project=electron e2e/tests/smoke.spec.ts e2e/tests/firefox-graphics.spec.ts '
+                 'e2e/tests/electron-startup.spec.ts')
 
     def install_operations(self):
         fixture = self.fixture
@@ -638,7 +661,7 @@ class ScopeHookTests(unittest.TestCase):
         output = self.light_check('-ComparisonBase', self.base)
         expected = [*self.browser_preparation(), 'run typecheck', 'run lint',
                     '--filter @pointercad/test-utils run test', 'run build',
-                    self.LIGHT_E2E + ' e2e/tests/alpha\\.spec\\.ts$']
+                    self.LIGHT_E2E + ' e2e/tests/alpha.spec.ts']
         self.assertEqual(fixture.calls(), expected, output[-4000:])
         light = fixture.root / '.git/local-light-receipt.json'
         self.assertTrue(light.is_file(), output[-4000:])
@@ -698,7 +721,7 @@ class ScopeHookTests(unittest.TestCase):
         fixture = self.fixture
         fixture.write('e2e/tests/gamma.spec.ts', 'export const changed = 1;\n')
         fixture.git('add', '.')
-        fixture.write('.git/fail-step', self.LIGHT_E2E + ' e2e/tests/gamma\\.spec\\.ts$')
+        fixture.write('.git/fail-step', self.LIGHT_E2E + ' e2e/tests/gamma.spec.ts')
         self.light_check('-ComparisonBase', self.base, success=False)
         light = fixture.root / '.git/local-light-receipt.json'
         self.assertFalse(light.exists(), 'A failed light check leaves no record')
@@ -732,6 +755,190 @@ class ScopeHookTests(unittest.TestCase):
         fixture.full_check(success=False)
         self.assertNotIn('run build', fixture.calls())
         self.assertFalse((fixture.root / '.git/validation-receipt.json').exists())
+
+
+class PlaywrightFileFilterFormatTests(unittest.TestCase):
+    """Runs the real `pnpm run test:e2e --list` against the actual repository (not a
+    fixture, not a fake pnpm shim) with the exact spec-filter tokens scripts/check.ps1
+    builds for the light local check, to prove the fix is not just a string-shape
+    assertion but actually lists a non-zero number of tests.
+
+    2026-09-28 gate 20260928-065436: `pnpm run test:e2e` failed with
+    "Error: No tests found." even though every named spec file existed. Calling
+    Playwright's own CLI directly (node node_modules/@playwright/test/cli.js) with the
+    same backslash-escaped, "$"-anchored tokens (e.g. `e2e/tests/smoke\\.spec\\.ts$`)
+    lists the tests correctly, so Playwright's own argument matching is not at fault.
+    The corruption happens one layer up: `pnpm run <script>` always runs the resolved
+    command through a shell (cmd.exe on Windows) and pnpm's own quoting doubles every
+    backslash in a forwarded argument regardless of whether a following character
+    requires it, turning `smoke\\.spec\\.ts$` into a `\\\\.` (escaped literal backslash
+    followed by a wildcard dot in glob terms) that cannot match any real file path.
+    scripts/check.ps1 used to build exactly such tokens for its base filters (line
+    ~534) and for each related spec found by scripts/lib/local_change_scope.py (line
+    ~326). This regressed silently because no earlier light check had happened to add
+    a related-spec filter, and scripts/local-change-scope.selftest.py's
+    ScopeHookTests only records the shell-quoted call string against a fake pnpm shim,
+    so it could not catch an argument the real pnpm would corrupt. The fix removes the
+    backslash escaping and the trailing "$" anchor entirely: Playwright's
+    createFileMatcher (node_modules/@playwright/test -> playwright's lib/util.js)
+    treats a plain string CLI argument as a glob via minimatch (never as a regular
+    expression, since CLI arguments are never RegExp objects), so a plain relative
+    path such as `e2e/tests/smoke.spec.ts` already matches the file directly and
+    carries no backslash for pnpm to mangle.
+    """
+
+    ROOT = HERE.parent
+
+    @classmethod
+    def setUpClass(cls):
+        cls.node = shutil.which('node') or shutil.which('node.exe')
+        if not cls.node:
+            raise unittest.SkipTest('node not found on PATH')
+        cls.pnpm_cjs = cls.resolve_pnpm_cjs()
+        if not cls.pnpm_cjs:
+            raise unittest.SkipTest('pnpm.cjs not found (see resolve_pnpm_cjs candidates)')
+        # 2026-09-28 coordinator review (gate 20260928-081320's (0) self-test): this class must
+        # stand on files a clean checkout (CI, the coordinator's independent c3 copy) actually
+        # has, never on another worker's uncommitted work-in-progress spec. `git ls-files`
+        # reads HEAD's index, not the work tree, so an uncommitted file such as
+        # e2e/tests/startup-navigation-smoke.spec.ts (w81a, unstaged at the time of this fix)
+        # is absent from it even though it exists on disk here.
+        listing = subprocess.run(['git', 'ls-files', 'e2e/tests'], cwd=cls.ROOT, capture_output=True,
+                                  text=True, check=True, timeout=30)
+        cls.committed_e2e_tests = frozenset(listing.stdout.splitlines())
+
+    def assert_committed(self, *relative_paths):
+        for relative_path in relative_paths:
+            self.assertIn(relative_path, self.committed_e2e_tests,
+                           f'{relative_path} must be committed (git ls-files e2e/tests) for this self-test '
+                           'to hold on a clean checkout; an uncommitted file must not be used here')
+
+    @staticmethod
+    def resolve_pnpm_cjs():
+        # Mirrors scratchpad/claude/tools/diag.py's resolve_pnpm_and_node, kept
+        # independent here because a self-test must not depend on scratchpad
+        # (absent from a clean checkout and from CI).
+        candidates = []
+        pnpm_path = shutil.which('pnpm')
+        if pnpm_path:
+            candidates.append(Path(pnpm_path).parent / 'node_modules' / 'pnpm' / 'bin' / 'pnpm.cjs')
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            candidates.append(Path(appdata) / 'npm' / 'node_modules' / 'pnpm' / 'bin' / 'pnpm.cjs')
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    LIST_LINE = re.compile(r'^\s*\[(?P<project>[\w-]+)\]\s*›\s*(?P<file>[\w.-]+\.spec\.ts):', re.MULTILINE)
+
+    def listed_files(self, *args):
+        """Runs `pnpm run test:e2e --list <args>` for real (the same node+pnpm.cjs
+        invocation scripts/check.ps1's production path and scratchpad/claude/tools/
+        diag.py use) and returns the exact set of (project, file) pairs Playwright
+        actually lists -- never just a count, so an unexpectedly broad match (a
+        similarly-named file, an unlisted project) cannot hide behind a non-zero
+        total."""
+        temp_root = self.ROOT / 'scratchpad' / 'temp'
+        temp_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='pointercad-pw-list-', dir=str(temp_root)) as output:
+            argv = [self.node, str(self.pnpm_cjs), 'run', 'test:e2e', '--list', *args, '--output', output]
+            completed = subprocess.run(argv, cwd=self.ROOT, capture_output=True, text=True, timeout=90)
+            combined = completed.stdout + completed.stderr
+            pairs = {(m.group('project'), m.group('file')) for m in self.LIST_LINE.finditer(combined)}
+            if not pairs:
+                self.assertIn('No tests found', combined, f'Unexpected playwright --list output:\n{combined}')
+            return pairs
+
+    def test_the_previous_backslash_escaped_dollar_anchored_filter_matches_nothing_through_pnpm(self):
+        # Locks in the regression through the real production path (pnpm run
+        # test:e2e). The corruption comes from pnpm always running the script through
+        # a shell; on Windows that shell is cmd.exe and pnpm's quoting doubles the
+        # backslashes, which is what gate 20260928-065436 hit. This is asserted only
+        # on Windows because a POSIX shell's argument passing does not go through the
+        # same cmd.exe quoting path, so the same tokens are not guaranteed to corrupt
+        # there. The cross-platform requirement is carried by the *fixed* form below,
+        # which every platform must list successfully.
+        if os.name != 'nt':
+            self.skipTest('The pnpm/cmd.exe backslash-doubling this locks in is Windows-only')
+        self.assertEqual(self.listed_files('--project=functional', 'e2e/tests/smoke\\.spec\\.ts$'), set())
+
+    # 2026-09-28 coordinator review: confirm precisely *why* the light gate's actual
+    # command (gate 20260928-065436's base 3 specs + 10 related specs, across its 4
+    # projects) lists more than the 13 requested files, and prove the extra files are
+    # exactly the declared project `dependencies` in e2e/playwright.config.ts (never a
+    # too-broad glob match). Playwright always runs a project's *entire* dependency
+    # project regardless of any CLI file filter (the filter only narrows the
+    # dependent project itself), which is why `--project=functional` (dependencies:
+    # ['viewport-performance']) always drags in every viewport-performance spec.
+    BASE_SPECS = ('e2e/tests/smoke.spec.ts', 'e2e/tests/firefox-graphics.spec.ts', 'e2e/tests/electron-startup.spec.ts')
+    RELATED_SPECS = ('e2e/tests/electron-function-plot.spec.ts', 'e2e/tests/electron-history-notes.spec.ts',
+                      'e2e/tests/electron-math-input.spec.ts', 'e2e/tests/electron-name-search.spec.ts',
+                      'e2e/tests/function-plot.spec.ts', 'e2e/tests/geometry-math-input.spec.ts',
+                      'e2e/tests/history-notes.spec.ts', 'e2e/tests/math-high-dpi.spec.ts',
+                      'e2e/tests/math-input.spec.ts', 'e2e/tests/name-search.spec.ts')
+    # The only dependency project any of startup-firefox/startup-electron/functional/electron
+    # declares is viewport-performance (e2e/playwright.config.ts); Playwright always runs it
+    # in full, so its 5 specs appear regardless of the requested file filters.
+    VIEWPORT_PERFORMANCE_FILES = ('assembly.spec.ts', 'drawing-performance.spec.ts', 'p8-drawing.spec.ts',
+                                   'script-performance.spec.ts', 'sheet-performance.spec.ts')
+
+    def test_the_light_gates_actual_command_lists_exactly_the_requested_specs_plus_their_declared_dependency(self):
+        # Every spec this test requests, and every dependency file the projects are expected to
+        # drag in, must be committed (git ls-files): a clean checkout (CI, the coordinator's
+        # independent c3 copy) has none of this session's other uncommitted work-in-progress.
+        self.assert_committed(*self.BASE_SPECS, *self.RELATED_SPECS,
+                               *(f'e2e/tests/{name}' for name in self.VIEWPORT_PERFORMANCE_FILES))
+        args = ['--project=startup-firefox', '--project=startup-electron', '--project=functional', '--project=electron',
+                *self.BASE_SPECS, *self.RELATED_SPECS]
+        pairs = self.listed_files(*args)
+        # Each requested spec runs under whichever project(s) its own testMatch/testIgnore in
+        # e2e/playwright.config.ts already select it for -- a file filter can only narrow a
+        # project's own tests, never add a file the project would not otherwise run.
+        expected = {
+            ('startup-firefox', 'smoke.spec.ts'), ('startup-firefox', 'firefox-graphics.spec.ts'),
+            ('startup-electron', 'electron-startup.spec.ts'),
+            ('functional', 'smoke.spec.ts'), ('functional', 'function-plot.spec.ts'),
+            ('functional', 'geometry-math-input.spec.ts'), ('functional', 'history-notes.spec.ts'),
+            ('functional', 'math-high-dpi.spec.ts'), ('functional', 'math-input.spec.ts'),
+            ('functional', 'name-search.spec.ts'),
+            ('electron', 'electron-function-plot.spec.ts'), ('electron', 'electron-history-notes.spec.ts'),
+            ('electron', 'electron-math-input.spec.ts'), ('electron', 'electron-name-search.spec.ts'),
+        }
+        expected |= {('viewport-performance', name) for name in self.VIEWPORT_PERFORMANCE_FILES}
+        self.assertEqual(pairs, expected)
+
+    def test_a_plain_filter_does_not_also_match_a_committed_spec_whose_name_shares_its_suffix(self):
+        # e2e/tests/auto-save-settings.spec.ts and e2e/tests/tool-defaults-auto-save-settings.spec.ts
+        # are both committed (git ls-files, asserted below) and both fall inside the same `firefox`
+        # project's own testMatch, which matches on a "...auto-save-settings.spec.ts" suffix, not an
+        # exact filename (e2e/playwright.config.ts's alternation list has no start anchor, so
+        # "tool-defaults-auto-save-settings.spec.ts" also ends in the listed word "auto-save-settings"
+        # immediately followed by ".spec.ts$"). Confirmed with a real --list of the whole `firefox`
+        # project below: without any CLI filter, both files are already listed under it. The CLI file
+        # filter itself must not repeat that broad suffix match: minimatch treats an un-wildcarded
+        # segment as an exact equality check, so "e2e/tests/auto-save-settings.spec.ts" must select
+        # only the file named exactly that.
+        self.assert_committed('e2e/tests/auto-save-settings.spec.ts', 'e2e/tests/tool-defaults-auto-save-settings.spec.ts')
+        both_unfiltered = {file for _project, file in self.listed_files('--project=firefox')}
+        self.assertLessEqual({'auto-save-settings.spec.ts', 'tool-defaults-auto-save-settings.spec.ts'}, both_unfiltered,
+                              'Both specs must already be in scope for the firefox project with no filter, '
+                              'or this test is not exercising the suffix-overlap it claims to')
+        pairs = self.listed_files('--project=firefox', 'e2e/tests/auto-save-settings.spec.ts')
+        files = {file for _project, file in pairs}
+        self.assertIn('auto-save-settings.spec.ts', files)
+        self.assertNotIn('tool-defaults-auto-save-settings.spec.ts', files)
+
+    def test_a_plain_name_search_filter_does_not_also_match_electron_name_search(self):
+        # electron-name-search.spec.ts only matches the `electron` project's own testMatch
+        # (ELECTRON_TEST_FILE), so `--project=functional` alone already excludes it; this proves
+        # the CLI filter itself is exact even when the `electron` project (whose testMatch would
+        # otherwise admit it) is included in the same run. Both files are committed (git ls-files).
+        self.assert_committed('e2e/tests/name-search.spec.ts', 'e2e/tests/electron-name-search.spec.ts')
+        pairs = self.listed_files('--project=functional', '--project=electron', 'e2e/tests/name-search.spec.ts')
+        files = {file for _project, file in pairs}
+        self.assertIn('name-search.spec.ts', files)
+        self.assertNotIn('electron-name-search.spec.ts', files)
 
 
 if __name__ == '__main__':

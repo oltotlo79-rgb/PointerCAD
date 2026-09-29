@@ -28,6 +28,7 @@ permissions:
 # 残り・ビルド)と単体の先行分を1回ずつ、画面検査を3組に分けて、5台で同時に流す。検査の件数・OS・
 # 精度・時間の判定は変えない。各段は成功したときだけ「同じ版・lock・道具と通した手順」を記録し、
 # 集約(checks)が両OSの全10段の記録を照合する(scripts/lib/ci_stage_evidence.py)。
+# 各段でNode.jsの版がずれると集約の照合に失敗するため、同じ正確な版に固定する。
 jobs:
   front:
     # 前段: 品質ゲートの自己試験・型・lint・単体の残り(ルートの test の後半)・両アプリの組み立て。
@@ -48,7 +49,7 @@ jobs:
         if: ${{ hashFiles('package.json') != '' }}
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.23.3
 
       - name: pnpm の準備 (corepack)
         if: ${{ hashFiles('package.json') != '' }}
@@ -91,7 +92,7 @@ jobs:
         if: ${{ hashFiles('package.json') != '' }}
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.23.3
 
       - name: pnpm の準備 (corepack)
         if: ${{ hashFiles('package.json') != '' }}
@@ -139,7 +140,7 @@ jobs:
         if: ${{ hashFiles('package.json') != '' }}
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.23.3
 
       - name: pnpm の準備 (corepack)
         if: ${{ hashFiles('package.json') != '' }}

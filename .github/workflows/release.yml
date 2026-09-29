@@ -23,6 +23,7 @@
 # 検査コマンドは scripts/release/*.mjs 等の既存スクリプトをそのまま呼ぶだけで、
 # ci.ymlのように scripts/check.ps1 を単一正本にする対象ではない(rules/03 §7.2は
 # scripts/check.ps1 が担う通常の型・lint・単体・ビルド・E2Eの話で、配布物の組み立ては別物)。
+# 各jobで配布物を作るNode.jsの版をそろえるため、同じ正確な版に固定する。
 name: 配布CI(手動)
 run-name: 配布物の作成 (${{ inputs.commit }})
 
@@ -178,7 +179,7 @@ jobs:
       - name: Node.jsの準備
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.23.3
 
       - name: pnpmの準備(corepack)
         shell: pwsh
@@ -335,7 +336,7 @@ jobs:
       - name: Node.jsの準備
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.23.3
 
       - name: pnpmの準備(corepack)
         shell: pwsh
@@ -404,7 +405,7 @@ jobs:
       - name: Node.jsの準備
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22
+          node-version: 22.23.3
 
       - name: pnpmの準備(corepack)
         shell: pwsh

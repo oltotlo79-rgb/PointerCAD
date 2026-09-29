@@ -212,6 +212,12 @@ jobs:
         shell: pwsh
         run: node scripts/manual/generate-pdf.mjs desktop-manual-output desktop-manual-pdf-output
 
+      # PyMuPDF非依存のNode版判定(scripts/manual/pdf_font_scan.mjs)。同梱でない字体(OSの字体へ
+      # 落ちた文字)が1件でもあれば終了コード1でこのstep、ひいてはjobを失敗させる。
+      - name: 取扱説明書(PDF)の同梱字体を検査
+        shell: pwsh
+        run: node scripts/manual/pdf_font_scan.mjs dist/desktop-manual-pdf-output
+
       - name: Desktop候補を組み立てる
         shell: pwsh
         run: node scripts/release/assemble-desktop.mjs desktop-build-output desktop-manual-output desktop-manual-pdf-output desktop-stage
@@ -356,6 +362,12 @@ jobs:
       - name: 取扱説明書(PDF)を生成
         shell: pwsh
         run: node scripts/manual/generate-pdf.mjs web-manual-output web-manual-pdf-output
+
+      # PyMuPDF非依存のNode版判定(scripts/manual/pdf_font_scan.mjs)。同梱でない字体(OSの字体へ
+      # 落ちた文字)が1件でもあれば終了コード1でこのstep、ひいてはjobを失敗させる。
+      - name: 取扱説明書(PDF)の同梱字体を検査
+        shell: pwsh
+        run: node scripts/manual/pdf_font_scan.mjs dist/web-manual-pdf-output
 
       - name: Web候補を組み立てる
         shell: pwsh

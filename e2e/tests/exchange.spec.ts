@@ -72,6 +72,30 @@ async function disableFilePickers(page: Page): Promise<void> {
   });
 }
 
+/**
+ * Windows の CI で、頁を開く最初の接続そのものが `net::ERR_NO_BUFFER_SPACE`(OS の通信の資源の一時的な不足)で
+ * 断られることがある(CI run 36506536360 の job 109209112057。(c) の `page.goto('/')` が 552ms で失敗し、同じ job の
+ * 他の 207 件に同じ誤りは無かった。rules/06 §10.194・§10.243 と同じ種類)。まだ製品の操作に入る前の段なので、
+ * **この誤りだけ**を、間を空けて最大 2 回まで開き直す(合わせて 3 回)。接続の拒否・時間切れ・その他の誤りは
+ * 開き直さずにそのまま失敗にする。開き直した回は出力と検査の注記に残し、黙って隠さない。
+ */
+const NO_BUFFER_SPACE = 'net::ERR_NO_BUFFER_SPACE';
+const OPEN_ATTEMPTS = 3;
+async function openApp(page: Page): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await page.goto('/');
+      return;
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes(NO_BUFFER_SPACE) || attempt >= OPEN_ATTEMPTS) throw error;
+      const note = `頁を開く接続が ${NO_BUFFER_SPACE} で断られたため、${String(attempt)} 秒待って開き直す(${String(attempt)}/${String(OPEN_ATTEMPTS - 1)})`;
+      console.log(`[再試行] ${note}`);
+      test.info().annotations.push({ type: 'open-retry', description: note });
+      await page.waitForTimeout(attempt * 1_000);
+    }
+  }
+}
+
 /** 保存していない変更の確認(画面の中の日本語の3択。w91a)に「保存せずに続ける」で答える(「新規」で出る)。 */
 async function acceptConfirms(page: Page): Promise<void> {
   // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
@@ -411,7 +435,7 @@ test.describe('P6 ファイルの往復(要件§9 P6、計画書 §0.59)', () =>
     const errors = collectErrors(page);
     await disableFilePickers(page);
 
-    await page.goto('/');
+    await openApp(page);
     await placeBox(page);
 
     const stepPath = testInfo.outputPath('exchange-a.step');
@@ -446,7 +470,7 @@ test.describe('P6 ファイルの往復(要件§9 P6、計画書 §0.59)', () =>
     const errors = collectErrors(page);
     await disableFilePickers(page);
 
-    await page.goto('/');
+    await openApp(page);
     await placeBox(page);
 
     // 「文字で書く(ASCII)」は既定が切(DEFAULT_EXPORT_ASCII = false)なので、触らなければバイナリ。
@@ -496,7 +520,7 @@ await expect(panel.getByRole('checkbox')).not.toBeChecked();
     const errors = collectErrors(page);
     await disableFilePickers(page);
 
-    await page.goto('/');
+    await openApp(page);
     await placeBox(page);
 
     // mm で書き出したものを、座標はそのままに「単位だけ inch」へ書き換える。
@@ -534,7 +558,7 @@ await expect(panel.getByRole('checkbox')).not.toBeChecked();
     const errors = collectErrors(page);
     await disableFilePickers(page);
 
-    await page.goto('/');
+    await openApp(page);
     await expect(page.locator('.pcad-viewport__empty-state')).toContainText('点をプロット');
 
     const dxfPath = testInfo.outputPath('exchange-d.dxf');
@@ -580,7 +604,7 @@ await expect(panel.getByRole('checkbox')).not.toBeChecked();
     await disableFilePickers(page);
     await acceptConfirms(page);
 
-    await page.goto('/');
+    await openApp(page);
 
     /*
       1) 線分 1 本と円弧 1 つのスケッチを用意する。**(d) と同じ DXF を読み込むのが最短**で、

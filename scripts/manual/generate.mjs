@@ -8,6 +8,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, build, createLogger } from 'vite';
 import { buildNativeControlInventory } from './control-inventory.mjs';
+import { sourceFileHash, sourceText } from '../release/desktopFileInventory.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const argument = argv.slice(2);
@@ -28,7 +29,8 @@ logger.error = (message, options) => { buildErrors.push(message); writeBuildErro
 const readInput = async path => {
   const absolute = resolve(root, path);
   if (relative(root, absolute).startsWith(`..${sep}`)) throw new Error(`Input escapes project: ${path}`);
-  const bytes = await readFile(absolute); inputs.set(path, bytes); manifest.inputs[path] = hash(bytes); return bytes;
+  // Recorded like the application's own inputs: the CRLF (Windows) and LF (distribution CI) checkouts give one value.
+  const bytes = await readFile(absolute); inputs.set(path, bytes); manifest.inputs[path] = sourceFileHash(bytes); return bytes;
 };
 const controlSources = [];
 const readControls = async folder => {
@@ -57,7 +59,7 @@ try {
     await server.ssrLoadModule('/packages/help-content/src/helpFeatureCoverage.ts');
   const { COMMAND_DEFINITIONS } = await server.ssrLoadModule('/packages/ui/src/commands/commandDefinitions.ts');
   manifest.featureCoverage = buildHelpFeatureCoverage(
-    parseHelpRequirements((await readInput('docs/requirements.md')).toString('utf8')), MANUAL_CHAPTERS, FEATURE_HELP_BINDINGS);
+    parseHelpRequirements(sourceText((await readInput('docs/requirements.md')).toString('utf8'))), MANUAL_CHAPTERS, FEATURE_HELP_BINDINGS);
   manifest.commandCoverage = buildCommandHelpCoverage(COMMAND_DEFINITIONS, MANUAL_CHAPTERS);
   const { buildSupplementaryHelpCoverage } = await server.ssrLoadModule('/packages/ui/src/help/supplementaryHelpCoverage.ts');
   manifest.supplementaryCoverage = buildSupplementaryHelpCoverage(MANUAL_CHAPTERS);
@@ -65,7 +67,7 @@ try {
   ({ validateManualLinks } = await server.ssrLoadModule('/packages/ui/src/help/manualLinks.ts'));
   const sources = new Map(), images = {}, imageFiles = new Map();
   for (const chapter of MANUAL_CHAPTERS) {
-    const markdown = (await readInput(`packages/help-content/${chapter.path}`)).toString('utf8');
+    const markdown = sourceText((await readInput(`packages/help-content/${chapter.path}`)).toString('utf8'));
     sources.set(chapter.id, markdown);
     for (const match of markdown.matchAll(/!\[[^\]]*\]\(([^\s)]+)\)/gu)) {
       const name = match[1].replace(/^\.\//u, '');
@@ -111,12 +113,35 @@ try {
     await readInput(`packages/ui/src/i18n/ja/${name}`);
   }
   await readInput('packages/ui/src/i18n/ja.ts');
-  // Embed the verified font in the shared stylesheet so file:// manuals need no font fetch/CORS exception.
-  const font = await readInput('apps/web/public/fonts/NotoSansJP-Regular.otf');
-  const css = inputs.get('scripts/manual/manual.css').toString('utf8');
-  if (!css.includes('"fonts/NotoSansJP-Regular.otf"')) throw new Error('Manual font reference is missing');
-  pages.set('manual.css', css.replace('"fonts/NotoSansJP-Regular.otf"', `"data:font/otf;base64,${font.toString('base64')}"`));
-  pages.set('fonts/LICENSES.txt', await readInput('apps/web/public/fonts/LICENSES.txt'));
+  // Embed the verified fonts in the shared stylesheet so file:// manuals need no font fetch/CORS exception.
+  // Noto Sans JP is the application's own font. Noto Sans and Noto Sans Math (scripts/manual/fonts, recorded in
+  // its font-notices.json) cover the Latin, Greek and mathematical symbols Noto Sans JP lacks, so the printed
+  // PDF never falls back to an operating-system font. They are used only here, outside the application input
+  // digest of the recorded screenshots (captureRegistry.mjs applicationInputDigest).
+  const manualFonts = JSON.parse(sourceText((await readInput('scripts/manual/fonts/font-notices.json')).toString('utf8')));
+  if (manualFonts.format !== 'pointercad-font-notices/1' || !Array.isArray(manualFonts.fonts) || manualFonts.fonts.length === 0
+    || !Array.isArray(manualFonts.notices)) throw new Error('Manual font notices are incomplete');
+  const embeddedFonts = [{ reference: 'fonts/NotoSansJP-Regular.otf', path: 'apps/web/public/fonts/NotoSansJP-Regular.otf' },
+    ...manualFonts.fonts.map(font => ({ reference: `fonts/${font.file}`, path: `scripts/manual/fonts/${font.file}`, sha256: font.sha256 }))];
+  let css = sourceText(inputs.get('scripts/manual/manual.css').toString('utf8'));
+  for (const { reference, path, sha256 } of embeddedFonts) {
+    if (!/^fonts\/[A-Za-z0-9-]+\.otf$/u.test(reference) || !css.includes(`"${reference}"`)) throw new Error(`Manual font reference is missing: ${reference}`);
+    const font = await readInput(path);
+    if (sha256 !== undefined && sourceFileHash(font) !== sha256) throw new Error(`Manual font differs from its notice record: ${path}`);
+    css = css.replace(`"${reference}"`, `"data:font/otf;base64,${font.toString('base64')}"`);
+  }
+  pages.set('manual.css', css);
+  // One notice file travels with the HTML and the PDF editions: the application font's notice, then the original
+  // OFL text of each manual-only font.
+  const notices = [sourceText((await readInput('apps/web/public/fonts/LICENSES.txt')).toString('utf8')).trimEnd()];
+  for (const font of manualFonts.fonts) {
+    const record = manualFonts.notices.find(notice => notice.file === font.notice);
+    if (!record || !/^[A-Za-z0-9-]+\.txt$/u.test(record.file)) throw new Error(`Manual font notice is missing: ${font.file}`);
+    const text = await readInput(`scripts/manual/fonts/${record.file}`);
+    if (sourceFileHash(text) !== record.sha256) throw new Error(`Manual font notice differs from its record: ${record.file}`);
+    notices.push(`${font.name} ${font.style} (Version ${font.version}), ${font.file}: embedded in this manual\n\n${sourceText(text.toString('utf8')).trimEnd()}`);
+  }
+  pages.set('fonts/LICENSES.txt', notices.join('\n\n\n') + '\n');
   manifest.chapters = MANUAL_CHAPTERS; manifest.volumes = MANUAL_VOLUMES;
 } finally { await server.close(); }
 const bundle = await build({ configFile: false, root, logLevel: 'warn', customLogger: logger, build: { write: false, minify: true,

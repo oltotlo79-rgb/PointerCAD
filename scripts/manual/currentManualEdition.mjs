@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createServer } from 'vite';
 import { buildNativeControlInventory } from './control-inventory.mjs';
 import { verifyManualConsistency } from './manualConsistency.mjs';
-import { desktopFileHash } from '../release/desktopFileInventory.mjs';
+import { sourceFileHash, sourceText } from '../release/desktopFileInventory.mjs';
 import { offlineAssetUrl } from '../vite/offlineProtocol.mjs';
 
 export async function verifyCurrentManualEdition(root, manualFiles) {
@@ -22,7 +22,8 @@ export async function verifyCurrentManualEdition(root, manualFiles) {
     }
     if (!(await lstat(cursor)).isFile()) throw new Error('Manual source must be a file: ' + name);
     const content = await readFile(cursor);
-    if (manifest.inputs[name] !== desktopFileHash(content)) throw new Error('Manual source changed or unrecorded: ' + name);
+    // Same reading as scripts/manual/generate.mjs: a CRLF checkout matches a manual generated from the LF checkout.
+    if (manifest.inputs[name] !== sourceFileHash(content)) throw new Error('Manual source changed or unrecorded: ' + name);
     return content;
   };
   // Recheck every recorded input, including labels, generation code and local fonts.
@@ -56,7 +57,7 @@ export async function verifyCurrentManualEdition(root, manualFiles) {
     const { validateManualLinks } = await server.ssrLoadModule('/packages/ui/src/help/manualLinks.ts');
     const sources = new Map(), imageLinks = {}, images = new Map();
     for (const chapter of chapters) {
-      const markdown = (await readInput('packages/help-content/' + chapter.path)).toString('utf8');
+      const markdown = sourceText((await readInput('packages/help-content/' + chapter.path)).toString('utf8'));
       sources.set(chapter.id, markdown);
       for (const match of markdown.matchAll(/!\[[^\]]*\]\(([^\s)]+)\)/gu)) {
         const name = match[1].replace(/^\.\//u, '');
@@ -68,7 +69,7 @@ export async function verifyCurrentManualEdition(root, manualFiles) {
     const pages = buildManualPages(sources, imageLinks);
     validateManualLinks(pages, new Set(manualFiles.map(file => file.path)));
     result = verifyManualConsistency(manualFiles, { chapters, volumes, pages, images,
-      featureCoverage: buildHelpFeatureCoverage(parseHelpRequirements((await readInput('docs/requirements.md')).toString('utf8')),
+      featureCoverage: buildHelpFeatureCoverage(parseHelpRequirements(sourceText((await readInput('docs/requirements.md')).toString('utf8'))),
         chapters, FEATURE_HELP_BINDINGS), commandCoverage: buildCommandHelpCoverage(COMMAND_DEFINITIONS, chapters),
       supplementaryCoverage: buildSupplementaryHelpCoverage(chapters), nativeControlCoverage: buildNativeControlInventory(controls) });
   } finally { await server.close(); }

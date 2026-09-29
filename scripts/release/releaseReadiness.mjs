@@ -29,7 +29,7 @@ import { fileURLToPath, URL } from 'node:url';
 import { verifyReleaseManifest } from './releaseManifest.mjs';
 import { assertSbomMatchesReleaseManifest, assertSbomPublishable, findSbomGaps, matchSbomToReleaseManifest } from './sbom.mjs';
 import { desktopPackagePlan } from './desktopPackageTargets.mjs';
-import { collectDesktopFiles } from './desktopFileInventory.mjs';
+import { collectDesktopFiles, sourceFileHash, sourceText } from './desktopFileInventory.mjs';
 import { assertNativeControlDescriptions } from '../manual/control-inventory.mjs';
 import { applicationInputDigest, assessCaptureImages, CAPTURE_IMAGE_FOLDER, readCaptureRegistry, readCaptureScripts } from '../manual/captureRegistry.mjs';
 import { captureDesktopBuildSources, captureWebBuildSources } from '../vite/webBuildSources.mjs';
@@ -1049,7 +1049,7 @@ async function manualSourceInputs(root, webFiles) {
       if ((await lstat(cursor)).isSymbolicLink()) throw new Error(`説明書の入力がリンク: ${name}`);
     }
     if (!(await lstat(cursor)).isFile()) throw new Error(`説明書の入力が通常のファイルでない: ${name}`);
-    inputs[name] = sha256(await readFile(cursor));
+    inputs[name] = sourceFileHash(await readFile(cursor)); // scripts/manual/generate.mjs と同じ読み方（改行の形に依らない）
   }
   return inputs;
 }
@@ -1075,11 +1075,11 @@ export async function loadCurrentHelp(root) {
     const coverage = await server.ssrLoadModule('/packages/help-content/src/helpFeatureCoverage.ts');
     const { COMMAND_DEFINITIONS } = await server.ssrLoadModule('/packages/ui/src/commands/commandDefinitions.ts');
     const { ja } = await server.ssrLoadModule('/packages/ui/src/i18n/ja.ts');
-    const requirements = coverage.parseHelpRequirements(await readFile(join(root, 'docs/requirements.md'), 'utf8'));
+    const requirements = coverage.parseHelpRequirements(sourceText(await readFile(join(root, 'docs/requirements.md'), 'utf8')));
     const chapterSources = new Map();
     for (const chapter of chapters) {
       if (chapter.path !== `docs/ja/${chapter.id}.md`) throw new Error(`章の原文の置き場が違う: ${chapter.id}`);
-      chapterSources.set(chapter.id, await readFile(join(root, 'packages/help-content', chapter.path), 'utf8'));
+      chapterSources.set(chapter.id, sourceText(await readFile(join(root, 'packages/help-content', chapter.path), 'utf8')));
     }
     return Object.freeze({ chapters, volumes, chapterSources, uiLabels: ja,
       featureCoverage: coverage.buildHelpFeatureCoverage(requirements, chapters, FEATURE_HELP_BINDINGS),

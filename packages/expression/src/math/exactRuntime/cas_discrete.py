@@ -60,6 +60,34 @@ def validate_discrete(decoder):
             raise CasInputProblem('unevaluated', 'Convergence requires additional conditions')
 
 
+def balanced_gamma_limit(partial, cutoff):
+    """The exact limit of C*prod(gamma(cutoff+b)**e) whose gamma powers balance, else None.
+
+    For a fixed rational b, gamma(n+b)/(gamma(n)*n**b) -> 1 as the integer n -> oo
+    (Wendel's limit). With sum(e) == 0 and sum(e*b) == 0 the gamma powers therefore
+    tend to 1, and the limit is exactly the constant C. The general symbolic limit
+    took seconds for such partial products (Wallis: 3.6 s in CPython, beyond the 45 s
+    calculation limit in Firefox on a busy Windows CI runner, 2026-09-29). Any other
+    factor, exponent, shift or constant is left to the general limit.
+    """
+    constant, weight, moment = s.S.One, s.S.Zero, s.S.Zero
+    for factor in s.Mul.make_args(partial.rewrite(s.gamma)):
+        if cutoff not in factor.free_symbols:
+            constant *= factor
+            continue
+        base, exponent = factor.as_base_exp()
+        if not isinstance(base, s.gamma) or not exponent.is_Integer:
+            return None
+        shift = s.expand(base.args[0]-cutoff)
+        if not shift.is_Rational:
+            return None
+        weight += exponent
+        moment += exponent*shift
+    if weight != 0 or moment != 0 or constant.is_finite is not True or constant.is_zero is not False:
+        return None
+    return constant
+
+
 def evaluate_infinite_discrete(value):
     result = value.doit(deep=True)
     if not isinstance(result, s.Product) or len(result.limits) != 1:
@@ -70,7 +98,8 @@ def evaluate_infinite_discrete(value):
         cutoff = s.Dummy('pcad_product_limit', integer=True, positive=True)
         partial = s.Product(result.function, (variable, lower, cutoff)).doit()
         if not partial.has(s.Product):
-            return s.limit(partial, cutoff, s.oo)
+            balanced = balanced_gamma_limit(partial, cutoff)
+            return balanced if balanced is not None else s.limit(partial, cutoff, s.oo)
     return result
 
 

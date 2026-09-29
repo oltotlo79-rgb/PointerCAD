@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { assembleDesktopDistribution, verifyDesktopDistribution } from '../../../../scripts/release/desktopDistribution.mjs';
 import type { DesktopPackageMetadata } from '../../../../scripts/release/desktopDistribution.mjs';
 import { inspectDesktopEntry } from '../../../../scripts/release/desktopEntryReferences.mjs';
+import { desktopFileHash, sourceFileHash, sourceText } from '../../../../scripts/release/desktopFileInventory.mjs';
 import { bytes, files, fixture, hash, inputs, json } from './distributionTestFixture.js';
 
 function desktopFixture() {
@@ -85,5 +86,28 @@ describe('配布する本体から開発PCの依存を読み込まない', () =>
   });
   it('隔離した読み込み口へ不要なNode機能を足せない', () => {
     expect(() => inspectDesktopEntry('preload/preload.cjs', bytes("require('electron');require('node:fs');"))).toThrow();
+  });
+});
+
+describe('ソースの指紋は取り出しの改行の形（Windows の CRLF・配布 CI の LF）に依らない', () => {
+  const text = '一行目\nsecond line\n\n{ "last": true }';
+  const crlf = (value: string) => value.replaceAll('\n', '\r\n');
+  it('同じ中身の CRLF と LF の取り出しで同じ値になり、LF では今までの SHA-256 と同じ', () => {
+    expect(sourceFileHash(bytes(crlf(text)))).toBe(sourceFileHash(bytes(text)));
+    expect(sourceFileHash(bytes(text))).toBe(desktopFileHash(bytes(text)));
+    expect(sourceFileHash(bytes('a\r\nb\nc\r\n'))).toBe(desktopFileHash(bytes('a\nb\nc\n')));
+    expect(sourceText(crlf(text))).toBe(text);
+  });
+  it('改行以外の違いと、単独の CR は今までどおり区別する', () => {
+    expect(sourceFileHash(bytes('a\nb'))).not.toBe(sourceFileHash(bytes('a\nc')));
+    expect(sourceFileHash(bytes('a\rb'))).not.toBe(sourceFileHash(bytes('a\nb')));
+    expect(sourceFileHash(bytes('a\r\r\nb'))).toBe(desktopFileHash(bytes('a\r\nb')));
+    expect(sourceText('a\r\r\nb')).toBe('a\r\nb');
+    expect(sourceText('a\r\nb\r')).toBe('a\nb\r');
+  });
+  it('NUL を含む中身（画像・字体・WebAssembly）は1バイトも読み替えない', () => {
+    const binary = Uint8Array.of(0x89, 0x50, 0x00, 0x0d, 0x0a, 0x01), shortened = Uint8Array.of(0x89, 0x50, 0x00, 0x0a, 0x01);
+    expect(sourceFileHash(binary)).toBe(desktopFileHash(binary));
+    expect(sourceFileHash(binary)).not.toBe(sourceFileHash(shortened));
   });
 });

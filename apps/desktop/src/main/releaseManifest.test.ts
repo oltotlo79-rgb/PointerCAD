@@ -14,15 +14,21 @@ import { PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES } from '../../../../scripts/relea
 import { assembleSbomDocument } from '../../../../scripts/release/sbom.mjs';
 import type { SbomComponentInput } from '../../../../scripts/release/sbom.mjs';
 import { bytes, files, fixture, hash, inputs, json } from './distributionTestFixture.js';
+import { sourceFileHash } from '../../../../scripts/release/desktopFileInventory.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const packageFiles = { root: readFileSync(join(root, 'package.json')),
   desktop: readFileSync(join(root, 'apps/desktop/package.json')), web: readFileSync(join(root, 'apps/web/package.json')) };
 const builderConfig = readFileSync(join(root, 'apps/desktop/electron-builder.yml'), 'utf8');
+// 本物のpackage.jsonの版を読む(決め打ちの'0.0.0'は版を上げると全件落ちるため、rules/06 P5)。
+const version = (JSON.parse(packageFiles.root.toString('utf8')) as { version: string }).version;
+// 版違いの拒否検査専用に、実際の版とは必ず異なる値を作る。
+const mismatchedVersion = version === '1.0.0' ? '2.0.0' : '1.0.0';
 const sourceCommit = 'a'.repeat(40);
-const webInputs = { ...inputs, 'package.json': hash(packageFiles.root), 'apps/web/package.json': hash(packageFiles.web) };
-const desktopInputs = { ...inputs, 'package.json': hash(packageFiles.root), 'apps/desktop/package.json': hash(packageFiles.desktop),
-  'apps/desktop/electron-builder.yml': hash(builderConfig) };
+// The source inventories read files through the checkout (sourceFileHash); the real files here may be CRLF on Windows.
+const webInputs = { ...inputs, 'package.json': sourceFileHash(packageFiles.root), 'apps/web/package.json': sourceFileHash(packageFiles.web) };
+const desktopInputs = { ...inputs, 'package.json': sourceFileHash(packageFiles.root),
+  'apps/desktop/package.json': sourceFileHash(packageFiles.desktop), 'apps/desktop/electron-builder.yml': sourceFileHash(bytes(builderConfig)) };
 
 function candidate(manual: ReturnType<typeof fixture>, platform: 'win32' | 'linux',
   runtime: ReadonlyMap<string, Uint8Array> = new Map()): ReleaseCandidateInput {
@@ -39,16 +45,16 @@ function candidate(manual: ReturnType<typeof fixture>, platform: 'win32' | 'linu
     outputs: Object.fromEntries([...desktop].map(([name, value]) => [name, hash(value)])) }));
   const result = assembleDesktopDistribution(files(desktop), files(manual.manual), files(manual.pdf),
     new Map([['LICENSE', bytes('license')], ['NOTICE', bytes('notice')]]),
-    { version: '0.0.0', sourceCommit, platform, arch: 'x64', electronVersion: '44.1.0', builderVersion: '26.15.3' });
+    { version, sourceCommit, platform, arch: 'x64', electronVersion: '44.1.0', builderVersion: '26.15.3' });
   const packageManifestBytes = result.files.get('desktop-package.json');
   if (packageManifestBytes === undefined) throw new Error('Missing fixture package inventory');
   const application = verifyDesktopDistribution(files(result.files), packageManifestBytes);
   const names = platform === 'win32'
-    ? ['PointerCAD-0.0.0-windows-x64-setup.exe', 'PointerCAD-0.0.0-windows-x64-portable.exe']
-    : ['PointerCAD-0.0.0-linux-x64.AppImage'];
+    ? [`PointerCAD-${version}-windows-x64-setup.exe`, `PointerCAD-${version}-windows-x64-portable.exe`]
+    : [`PointerCAD-${version}-linux-x64.AppImage`];
   const artifacts = names.map(name => ({ name, bytes: bytes(name).length, sha256: hash(name) }));
-  const receipt = { format: 'pointercad-desktop-candidate/1', version: '0.0.0', sourceCommit, platform, arch: 'x64',
-    signed: false, assets: artifacts, packages: verifyDesktopPackageArtifacts(platform, '0.0.0', artifacts),
+  const receipt = { format: 'pointercad-desktop-candidate/1', version, sourceCommit, platform, arch: 'x64',
+    signed: false, assets: artifacts, packages: verifyDesktopPackageArtifacts(platform, version, artifacts),
     application, installed: false, releaseCertified: false };
   return { receiptBytes: json(receipt), packageManifestBytes, stagedFiles: files(result.files), artifacts };
 }
@@ -99,7 +105,7 @@ describe('公開manifestは既存の候補・Web・説明書の記録を束ね�
     const input = releaseFixture(), manifest = await createReleaseManifest(input);
     expect(manifest.targets).toEqual(['windows-x64-nsis', 'windows-x64-portable', 'linux-x64-AppImage', 'cloudflare-pages']);
     expect(manifest.sourceCommit).toBe(sourceCommit);
-    expect(manifest.version).toBe('0.0.0');
+    expect(manifest.version).toBe(version);
     expect(manifest.manual.pdfVolumes).toBe(2);
     expect(manifest.manual.volumes.map(volume => volume.pdf)).toEqual(['manual/pdf/first.pdf', 'manual/pdf/second.pdf']);
     expect(manifest.web.files.some(file => file.path === 'service-worker.js')).toBe(true);
@@ -107,11 +113,11 @@ describe('公開manifestは既存の候補・Web・説明書の記録を束ね�
     await expect(verifyReleaseManifest(manifest, input)).resolves.toEqual(manifest);
   });
   it('渡された版と一致するtagを記録する', async () => {
-    expect((await createReleaseManifest({ ...releaseFixture(), tag: 'v0.0.0' })).tag).toBe('v0.0.0');
+    expect((await createReleaseManifest({ ...releaseFixture(), tag: 'v' + version })).tag).toBe('v' + version);
   });
   it.each(['root', 'desktop', 'web'] as const)('%s packageの版違いを拒否する', async name => {
     const input = releaseFixture(), value = JSON.parse(new TextDecoder().decode(input.packageFiles[name])) as Record<string, unknown>;
-    value.version = '1.0.0';
+    value.version = mismatchedVersion;
     await expect(createReleaseManifest({ ...input, packageFiles: { ...input.packageFiles, [name]: json(value) } }))
       .rejects.toThrow(/version differs|source fingerprint differs/u);
   });
@@ -264,7 +270,7 @@ async function publicationFixture(options: PublicationOptions = {}): Promise<Pub
   const release = releaseFixture(sourceCommit, { sourceCommit, dirtySources: false }, { web, desktop });
   const releaseManifestBytes = bytes(JSON.stringify(await createReleaseManifest(release), null, 2) + '\n');
   const components = options.sbom === undefined ? runtimeComponents() : options.sbom(runtimeComponents());
-  const sbom = assembleSbomDocument({ components }, { rootPackageVersion: options.sbomVersion ?? '0.0.0',
+  const sbom = assembleSbomDocument({ components }, { rootPackageVersion: options.sbomVersion ?? version,
     sourceCommit: options.sbomCommit ?? sourceCommit, generatedAt: '2026-09-27T00:00:00.000Z' });
   return { release, releaseManifestBytes, sbomBytes: json(sbom),
     captureRegistryBytes: json({ format: 'pointercad-capture-registry/1', images: {} }) };
@@ -274,7 +280,7 @@ describe('公開manifest(publication)は公開一覧・SBOM・撮影の登録簿
   it('既存の記録を指紋で束ね、OCCTを復元して両OSの核と同じと確かめ、大きさを区分ごとに記録する', async () => {
     const input = await publicationFixture(), manifest = await createPublicationManifest(input);
     expect(manifest.format).toBe('pointercad-publication/1');
-    expect(manifest.version).toBe('0.0.0');
+    expect(manifest.version).toBe(version);
     expect(manifest.sourceCommit).toBe(sourceCommit);
     expect(manifest.releaseCertified).toBe(false);
     expect(manifest.records.releaseManifest).toEqual({ format: 'pointercad-release/1', sha256: hash(input.releaseManifestBytes) });

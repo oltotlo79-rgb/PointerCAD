@@ -28,6 +28,10 @@ export async function mathSequenceFlow(page: Page, info: TestInfo, app?: Electro
     ['recurrencevalue(a*a,[n,a],0,[2],3)', '256'], ['recurrencevalue(a+n,[n,a],-2,[10],1)', '7']] as const) {
     await input.fill(formula); await expectResult(result).toHaveText('= ' + value);
   }
+  const valueSource = 'recurrencevalue(a+b,[n,a,b],0,[0,1],10)';
+  await input.fill(valueSource); await expectResult(result).toHaveText('= 55');
+  await captureManualDetail(page, info, { name: 'math-sequence-value', dialog, script: new URL(import.meta.url),
+    fixture: { source: valueSource, expected: 55, initial: [0, 1], index: 10 } });
   const source = 'sum(recurrencevalue(a+b,[n,a,b],0,[0,1],k),k,0,10)',
     changed = 'sum(recurrencevalue(a+b,[n,a,b],0,[1,1],k),k,0,10)';
   await input.fill(source); await expectResult(result).toHaveText('= 143');

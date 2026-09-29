@@ -7,6 +7,7 @@ import {
 import {
   CaptureAdoptionError, collectCaptureRun, planCaptureAdoption, referencedSelections, type CaptureRunFile,
 } from '../../../scripts/manual/captureProvenance.mjs';
+import { sourceFileHash } from '../../../scripts/release/desktopFileInventory.mjs';
 
 /**
  * 撮影の来歴の束（計画 P12-16）。Playwright の出力（captureManualDetail の *-capture.json）から、
@@ -178,6 +179,15 @@ describe('撮影の来歴の束（captureProvenance.mjs）', () => {
     expect(problemsOf(() => plan(run('fresh', 70), ['fresh'], { scripts: new Map([[SCRIPT, encoder.encode('// edited\n')]]) })).join('\n'))
       .toMatch(/exampleFlow\.ts changed after the capture/u);
     expect(problemsOf(() => plan(run('fresh', 70), ['fresh'], { scripts: new Map() })).join('\n')).toMatch(/capture script .* is missing/u);
+    // A line-end change is not a change: the CRLF checkout of the same script is accepted (and its edit is not).
+    const crlf = encoder.encode(decoder.decode(scriptBytes).replaceAll('\n', '\r\n'));
+    expect(sha(crlf)).not.toBe(sha(scriptBytes));
+    expect(plan(run('fresh', 70), ['fresh'], { scripts: new Map([[SCRIPT, crlf]]) }).summary.adopted).toEqual(['fresh-detail.png']);
+    // Captured in the CRLF checkout (as captureManualDetail records it) and adopted in the LF checkout.
+    const fromCrlf = run('fresh', 70, capture => { capture.scriptSha256 = sourceFileHash(crlf); });
+    expect(plan(fromCrlf, ['fresh']).summary.adopted).toEqual(['fresh-detail.png']);
+    expect(problemsOf(() => plan(run('fresh', 70), ['fresh'], { scripts: new Map([[SCRIPT, encoder.encode('// edited\r\n')]]) })).join('\n'))
+      .toMatch(/exampleFlow\.ts changed after the capture/u);
     expect(problemsOf(() => plan(run('fresh', 70, capture => { capture.applicationBuildId = null; }), ['fresh'])).join('\n'))
       .toMatch(/applicationBuildId\) is not recorded/u);
     const electron = run('fresh', 70, capture => { capture.project = 'electron'; }, 'flow-fresh-electron');

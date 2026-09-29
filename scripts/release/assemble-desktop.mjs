@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { captureDesktopBuildSources } from '../vite/webBuildSources.mjs';
-import { collectDesktopFiles, desktopFileHash } from './desktopFileInventory.mjs';
+import { collectDesktopFiles, desktopFileHash, sourceFileHash } from './desktopFileInventory.mjs';
 import { assembleDesktopDistribution, desktopJson } from './desktopDistribution.mjs';
 import { offlineAssetUrl } from '../vite/offlineProtocol.mjs';
 import { verifyCurrentManualEdition } from '../manual/currentManualEdition.mjs';
@@ -27,7 +27,7 @@ for (const [name, expected] of Object.entries(manual.inputs)) {
   offlineAssetUrl(name);
   let path = root;
   for (const part of name.split('/')) { path = join(path, part); if ((await lstat(path)).isSymbolicLink()) throw new Error('Manual source is a link'); }
-  if (desktopFileHash(await readFile(path)) !== expected) throw new Error('Manual source changed: ' + name);
+  if (sourceFileHash(await readFile(path)) !== expected) throw new Error('Manual source changed: ' + name);
 }
 const packages = await Promise.all(['package.json', 'apps/desktop/package.json', 'apps/web/package.json'].map(async name => desktopJson(await readFile(join(root, name)))));
 if (packages.some(value => value.version !== packages[0].version)) throw new Error('Root, desktop and Web versions differ');

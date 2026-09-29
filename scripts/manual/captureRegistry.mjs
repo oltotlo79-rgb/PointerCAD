@@ -13,6 +13,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { sourceFileHash } from '../release/desktopFileInventory.mjs';
 import { captureWebBuildSources } from '../vite/webBuildSources.mjs';
 
 export const CAPTURE_REGISTRY_FORMAT = 'pointercad-capture-registry/1';
@@ -695,7 +696,8 @@ export function auditCaptureRegistry(registry, { files, chapters }) {
 /**
  * Release check of "images of the current version": every given image (bare file name → bytes) must be
  * registered with the same SHA-256 and captured from `applicationBuildId`; with `scripts` (path → bytes),
- * the recorded capture script must also be unchanged.
+ * the recorded capture script must also be unchanged. A script is compared by sourceFileHash (CRLF read as
+ * LF, as e2e/tests/captureManualDetail.ts records it), so a CRLF and an LF checkout of one commit agree.
  */
 export function assessCaptureImages(registry, images, { applicationBuildId, scripts } = {}) {
   if (typeof applicationBuildId !== 'string' || applicationBuildId.trim() === '') throw new Error('applicationBuildId is required');
@@ -717,7 +719,7 @@ export function assessCaptureImages(registry, images, { applicationBuildId, scri
     if (scripts !== undefined && entry.script !== null && entry.scriptSha256 !== null) {
       const script = scripts.get(entry.script);
       if (script === undefined) report.scriptMissing.push(name);
-      else if (sha256Hex(script) !== entry.scriptSha256) report.scriptChanged.push(name);
+      else if (sourceFileHash(script) !== entry.scriptSha256) report.scriptChanged.push(name);
     }
   }
   const current = ['unregistered', 'mismatched', 'buildUnknown', 'buildMismatch', 'scriptChanged', 'scriptMissing']
@@ -748,7 +750,10 @@ export async function readCaptureRegistry(root) {
   return parseCaptureRegistry(await readFile(join(root, CAPTURE_IMAGE_FOLDER, CAPTURE_REGISTRY_FILE), 'utf8'));
 }
 
-/** Current bytes of the recorded capture scripts (for assessCaptureImages); absent scripts are left out. */
+/**
+ * Current bytes of the recorded capture scripts (for assessCaptureImages, which hashes them with sourceFileHash);
+ * absent scripts are left out.
+ */
 export async function readCaptureScripts(root, registry) {
   const scripts = new Map();
   for (const path of new Set(registry.images.map(entry => entry.script).filter(path => path !== null))) {

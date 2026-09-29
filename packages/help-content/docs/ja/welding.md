@@ -2,7 +2,7 @@
 
 図面の「記入」→「溶接記号」で、溶接する箇所に結び付いた記号を作れます。矢、基線、寸法、施工方法を一緒に編集できます。対応する表示方式はJIS Z3021:2016のSystem Bです。
 
-![8種類の溶接記号を配置したPointerCADの実画面](images/welding-eight-kinds.png)
+![8種類の溶接記号を配置したPointerCADの実画面](images/welding-eight-kinds-screen.png)
 
 この画面は、記号の種類を同じ用紙で見比べるための操作例です。
 
@@ -85,4 +85,4 @@
 
 [幾何公差とデータム](gdt.md)・[文字注記](drawing-note.md)・[図面のレイヤー](drawing-layer.md)
 
-![保存した図面を開き直し、のど厚の式を編集している実画面](images/welding-restored.png)
+![保存した図面を開き直し、のど厚の式を編集している実画面](images/welding-restored-screen.png)

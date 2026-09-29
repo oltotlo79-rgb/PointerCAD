@@ -22,6 +22,13 @@ describe('操作欄の説明漏れを実際の画面ソースから見つける'
     expect(inventory.requiresRenderedCheck).toHaveLength(1);
     expect(inventory.contentCertified).toBe(false);
   });
+  it('Windows の CRLF と配布 CI の LF の取り出しで同じ一覧を作る（説明書の照合が改行で落ちない）', () => {
+    const lf = `<div>\n  <button title={ready\n    ? t('save.ready') : t('save.wait')}>保存</button>\n  <input title="長さ" />\n</div>`;
+    const inventory = inspect(lf);
+    expect(inspect(lf.replaceAll('\n', '\r\n'))).toEqual(inventory);
+    expect(inventory.controls.map(control => control.line)).toEqual([2, 4]);
+    expect(inventory.controls[0].sourceExpression).toContain('\n');
+  });
   it('重複した読み元・壊れた画面・空の検査を拒否する', () => {
     expect(() => buildNativeControlInventory([{ path: 'x.tsx', source: '' }, { path: 'x.tsx', source: '' }])).toThrow('Duplicate');
     expect(() => inspect('<input')).toThrow('invalid JSX');

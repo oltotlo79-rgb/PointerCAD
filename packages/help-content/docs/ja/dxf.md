@@ -20,7 +20,7 @@ DXF は、CAD どうしで平らな図形をやり取りするためのファイ
 
 読み込みの形式一覧で**DWG（変換が必要）**を選ぶと、ファイルを選ぶ前に案内が出ます。**DWGをDXFへ変換する手順**でこの章を開けます。PointerCADはDWGを直接読み書きしません。
 
-![DWGを選ぶと、変換手順と変換済みDXFを選ぶ入口が表示される](images/dwg-conversion-guide.png)
+![DWGを選ぶと、変換手順と変換済みDXFを選ぶ入口が表示される](images/dwg-conversion-guide-screen.png)
 
 1. [Open Design Alliance公式のODA DWG-DXF Converter](https://www.opendesign.com/guestfiles/oda_file_converter)を用意します。旧称はODA File Converterです。OSに合う配布物を選んでください。
 2. 元のDWGを専用の入力フォルダーへコピーし、出力には別のフォルダーを指定します。入力のフィルターを `*.dwg` にします。

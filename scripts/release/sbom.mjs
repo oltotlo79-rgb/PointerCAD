@@ -278,6 +278,35 @@ function screenFontComponents(root) {
 }
 
 /**
+ * Fonts embedded only in the generated manual (scripts/manual/generate.mjs base64-embeds them into
+ * manual.css and the printed PDFs); never copied as a standalone application asset, so there is no
+ * fixed release-manifest path to match (the manual's own output folder name varies per build) - the
+ * KaTeX math fonts above are the same "matched by hash only" shape. Recorded separately from
+ * docs/standards/licenses/font-notices.json (the screen/drawing font) because these two are outside
+ * the application input digest (scripts/manual/captureRegistry.mjs applicationInputDigest) by design.
+ */
+function manualFontComponents(root) {
+  const manifest = readJson(join(root, 'scripts/manual/fonts/font-notices.json'));
+  if (manifest.format !== 'pointercad-font-notices/1' || !Array.isArray(manifest.fonts) || manifest.fonts.length === 0
+    || !Array.isArray(manifest.notices)) throw new Error('Manual font notices are incomplete');
+  const noticesByFile = new Map(manifest.notices.map((notice) => [notice.file, notice]));
+  return manifest.fonts.map((font) => {
+    const bytes = readFileSync(join(root, 'scripts/manual/fonts', font.file));
+    if (sha256(bytes) !== font.sha256) throw new Error('Manual font changed: ' + font.file);
+    const notice = noticesByFile.get(font.notice);
+    if (!notice) throw new Error('Manual font notice is missing: ' + font.file);
+    const noticeBytes = readFileSync(join(root, 'scripts/manual/fonts', notice.file));
+    if (sha256(noticeBytes) !== notice.sha256) throw new Error('Manual font notice changed: ' + notice.file);
+    return {
+      type: 'file', name: font.file, version: font.version, licenses: [{ license: { id: font.license } }],
+      hashes: [{ alg: 'SHA-256', content: font.sha256 }],
+      properties: [property('pointercad:distributionNote',
+        'Embedded (base64) only in the generated manual (scripts/manual/generate.mjs); matched by hash only, no fixed release-manifest path')],
+    };
+  });
+}
+
+/**
  * Collect every component this SBOM tracks, reusing the existing per-system collectors for
  * hash/inventory verification. Never throws for a *documented* gap (an unresolved runtime
  * notice, or a component with no recorded SPDX id) - those are returned for the caller to
@@ -292,6 +321,7 @@ export function collectSbomComponents(root = repositoryRoot) {
     ...scriptRuntimeComponents(root),
     ...exactMathComponents(root),
     ...screenFontComponents(root),
+    ...manualFontComponents(root),
   ];
   const seen = new Set();
   for (const component of components) {

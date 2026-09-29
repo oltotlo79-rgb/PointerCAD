@@ -11,7 +11,7 @@ import { createReadStream } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { collectDesktopFiles } from './desktopFileInventory.mjs';
+import { collectDesktopFiles, sourceFileHash } from './desktopFileInventory.mjs';
 import { collectOfflineAssetFiles } from '../vite/offlineAssets.mjs';
 import { captureDesktopBuildSources, captureWebBuildSources } from '../vite/webBuildSources.mjs';
 import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
@@ -79,7 +79,7 @@ for (const name of Object.keys(manualRecord.inputs)) {
     if ((await lstat(cursor)).isSymbolicLink()) throw new Error('Manual source is a link: ' + name);
   }
   if (!(await lstat(cursor)).isFile()) throw new Error('Missing manual source: ' + name);
-  manualInputs[name] = createHash('sha256').update(await readFile(cursor)).digest('hex');
+  manualInputs[name] = sourceFileHash(await readFile(cursor)); // As scripts/manual/generate.mjs records it.
 }
 const sourceInputs = { web: await captureWebBuildSources(root), desktop: await captureDesktopBuildSources(root), manual: manualInputs };
 const manifest = await createReleaseManifest({ packageFiles, builderConfig, tag, sourceCommit, sourceInputs, candidates, webFiles });

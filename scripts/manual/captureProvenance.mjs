@@ -19,6 +19,7 @@ import {
   applicationInputDigest, auditCaptureRegistry, buildCaptureRegistry, CAPTURE_IMAGE_FOLDER, CAPTURE_PROVENANCE_FORMAT,
   CAPTURE_REGISTRY_FILE, collectChapterImageReferences, formatCaptureRegistry, inspectAdoptableCapture, readCaptureFolder, sha256Hex,
 } from './captureRegistry.mjs';
+import { sourceFileHash } from '../release/desktopFileInventory.mjs';
 
 /** What Playwright leaves in a test's output folder when the test failed (e2e/playwright.config.ts: screenshot/trace on failure). */
 export const CAPTURE_FAILURE_ARTIFACT = /^(?:test-failed-\d+\.png|error-context\.md|trace\.zip)$/u;
@@ -179,7 +180,8 @@ export function planCaptureAdoption({ captures, selections, bundle, project = 'f
     }
     const script = scripts.get(capture.script);
     if (script === undefined) problems.push(`${where}: the capture script ${capture.script} is missing`);
-    else if (sha256Hex(script) !== capture.scriptSha256) problems.push(`${where}: ${capture.script} changed after the capture`);
+    // Recorded with sourceFileHash (e2e/tests/captureManualDetail.ts): the CRLF and the LF checkout of one script agree.
+    else if (sourceFileHash(script) !== capture.scriptSha256) problems.push(`${where}: ${capture.script} changed after the capture`);
     if (Date.parse(capture.capturedAt) > Date.parse(adoptedAt)) problems.push(`${where}: captured after ${adoptedAt}`);
     let fixture;
     try {

@@ -9,7 +9,10 @@ sys.dont_write_bytecode = True
 sys.path[:0] = [str(Path(__file__).resolve().parent),
                str(ROOT / 'vendor/exact-math/runtime/sympy-1.14.0-py3-none-any.whl'),
                str(ROOT / 'vendor/exact-math/runtime/mpmath-1.3.0-py3-none-any.whl')]
+from unittest import mock
+import mpmath
 import sympy as s
+from cas_discrete import balanced_gamma_limit, evaluate_infinite_discrete
 from cas_evaluate import calculate_exact_json
 from cas_input import Decoder
 from cas_step_ranges_test import num, sym, op, binding, binder
@@ -73,6 +76,40 @@ class InfiniteRanges(unittest.TestCase):
         telescoping = op('subtract', num(1), op('divide', num(1), square))
         self.assertEqual(self.value(series('product', wallis)), s.pi/2)
         self.assertEqual(self.value(series('product', telescoping, 2)), s.Rational(1, 2))
+
+    def test_balanced_gamma_products_take_the_exact_rule_not_the_general_limit(self):
+        # The general limit took 3.3-3.9 s per product in CPython and exceeded the 45 s
+        # calculation limit in Firefox on Windows CI (2026-09-29). Independent values:
+        # mpmath's accelerated numerical infinite product, compared to 25 digits.
+        k = s.Symbol('k', integer=True)
+        cases = [(4*k**2/(4*k**2-1), 1, s.pi/2), (1-1/k**2, 2, s.Rational(1, 2)),
+                 ((k+1)**2/(k*(k+2)), 1, 2),
+                 ((k+s.Rational(1, 3))*(k+s.Rational(2, 3))/(k*(k+1)), 1, None)]
+        with mock.patch('sympy.limit', side_effect=AssertionError('general limit used')):
+            values = [evaluate_infinite_discrete(s.Product(term, (k, lower, s.oo))) for term, lower, _ in cases]
+        with mpmath.workdps(40):
+            for (term, lower, exact), value in zip(cases, values):
+                self.assertFalse(value.has(s.Product, s.Limit), value)
+                if exact is not None:
+                    self.assertEqual(s.simplify(value-exact), 0, value)
+                function = s.lambdify(k, term, 'mpmath')
+                reference = mpmath.nprod(function, [lower, mpmath.inf])
+                self.assertLess(abs(s.N(value, 40)-s.Float(reference, 40)), s.Float('1e-25'), (term, value))
+
+    def test_unbalanced_or_other_partial_products_keep_the_general_limit(self):
+        n = s.Dummy('n', integer=True, positive=True)
+        half = s.Rational(1, 2)
+        for partial in [s.factorial(n), s.gamma(n+1)/s.gamma(n+half), s.factorial(2*n)/s.factorial(n)**2,
+                        n*s.gamma(n)/s.gamma(n+1), 2**n*s.gamma(n+1)/s.gamma(n+1+half),
+                        s.sqrt(s.gamma(n+1)/s.gamma(n+half))*s.gamma(n+half)/s.gamma(n+1),
+                        s.gamma(n+s.I)/s.gamma(n)]:
+            self.assertIsNone(balanced_gamma_limit(partial, n), partial)
+        self.assertEqual(balanced_gamma_limit(s.gamma(n+half)*s.gamma(n+1+half)/s.gamma(n+1)**2, n), 1)
+        wallis = s.factorial(n)**2/(s.RisingFactorial(half, n)*s.RisingFactorial(1+half, n))
+        self.assertEqual(balanced_gamma_limit(wallis, n), s.pi/2)
+        # The rule declines, so the general limit still decides (a zero limit is not a finite product value).
+        k = s.Symbol('k', integer=True)
+        self.assertEqual(evaluate_infinite_discrete(s.Product(k/(k+1), (k, 1, s.oo))), 0)
 
     def test_zero_factors_and_zero_limit_have_separate_results(self):
         zero_factor = op('subtract', num(1), op('divide', num(1), op('power', sym('k'), num(2))))

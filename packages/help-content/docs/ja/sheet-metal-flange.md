@@ -2,7 +2,7 @@
 
 フランジは、既存の板の直線縁に曲げと平らな部分を追加する操作です。まず[板金基板](sheet-metal.md)を作成します。
 
-![フランジの長さと曲げ条件を指定して形を確認している実画面。](images/sheet-flange-preview.png)
+![フランジの長さと曲げ条件を指定して形を確認している実画面。](images/sheet-flange-preview-screen.png)
 
 ## 矩形のフランジ
 
@@ -42,9 +42,9 @@
 
 輪郭の基準縁が違う、幅が合わない、穴や輪郭が不正な場合は説明が出ます。参照を選び直すか元のスケッチを直してください。
 
-![二つの向かい合う縁へ、穴付きの台形の面を指定し、内半径とK係数を上書きして確認する実画面。](images/sheet-profile-preview.png)
+![二つの向かい合う縁へ、穴付きの台形の面を指定し、内半径とK係数を上書きして確認する実画面。](images/sheet-profile-preview-screen.png)
 
-![穴付き台形を両側へ作成した実画面。元の輪郭も残り、曲げ角・内半径・K係数の式を編集できます。](images/sheet-profile-created.png)
+![穴付き台形を両側へ作成した実画面。元の輪郭も残り、曲げ角・内半径・K係数の式を編集できます。](images/sheet-profile-created-screen.png)
 
 ## 編集と保存
 

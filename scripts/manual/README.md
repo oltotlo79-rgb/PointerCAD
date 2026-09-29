@@ -14,7 +14,9 @@ node scripts/manual/generate.mjs manual-preview-20260912
 - `chapters/*.html`: 個別の章。前後章・その章を含む巻へ移動できる。
 - `volumes/*.html`: 各巻の通し読み。同じ巻の別章へはページ内で移動する。印刷用CSSはA4・余白15mm・本文10.5pt。
 - `images/`: 本文が参照した実画像。参照先がない場合は出力を拒否する。
-- `fonts/`: アプリでも使用するNoto Sans JP Regularの原文の許諾文書。字体自体は共通の`manual.css`に埋め込み、ローカルで開く際も字体の通信を要求しない。新しい字体の取得は行わない。
+- `fonts/`: 説明書に埋め込んだ字体の許諾文書(`LICENSES.txt`)。アプリでも使用するNoto Sans JP Regularの原文の後に、説明書だけで使うNoto Sans Regular・Noto Sans Math Regularの原文(OFL 1.1)を続ける。字体自体は共通の`manual.css`に埋め込み、ローカルで開く際も字体の通信を要求しない。新しい字体の取得は行わない。
+  - Noto Sans JPに無いラテン・ギリシャ文字の上付き・下付き、集合の記号(ℝ等)、数学の記号(⟨⟩・⌈⌉等)を、OSの字体へ落とさずに描くため、`scripts/manual/fonts/`のNoto Sans(2.015)とNoto Sans Math(3.000)を字体の列でNoto Sans JPの次に置く(`"PointerCAD Manual", "PointerCAD Manual Latin", "PointerCAD Manual Math", …`)。取得元の版・SHA-256・原文は同じフォルダーの`font-notices.json`に記録し、生成時に照合する(`apps/desktop/src/main/fontNotices.test.ts`も照合する)。
+  - この2本は説明書だけで使い、アプリの入力(撮影の版の識別子`applicationInputDigest`の元)に入らない`scripts/manual/`に置く。アプリの字体の置き場所(`apps/web/public/fonts`・`apps/desktop/resources/fonts`)へ写さない。
 - `manifest.json`: 章と巻、本文・翻訳・画像・生成処理・依存固定情報・出力のSHA-256、元コミット、未コミット差分の有無。生成の最後に書き出す。
 
 生成処理は、画像の欠落、章の欠落、内部リンク切れ、見出しIDの重複、元の入力が生成中に変わった場合を拒否する。出力後の`index.html`をローカルで開く場合も検索用の通信は発生しない。公開サーバーに載せる場合も、フォルダー全体の相対配置を保つ。
@@ -42,6 +44,14 @@ node scripts/manual/generate-pdf.mjs manual-preview-20260912 manual-pdf-preview-
 第1引数は生成済みHTMLの出力名、第2引数は新しいPDFの出力名。`dist/<第2引数>`へ各巻のPDFと字体の許諾原文、生成結果の`pdf-manifest.json`を保存する。各PDFには巻内の目次・章内移動・全巻索引・ページ番号を含める。別の巻への参照は巻名と章名を本文へ記し、元のパソコンのファイル位置に依存させない。
 
 本文はHTMLと同じものを使う。日本語字体の読み込み、画像の欠落、章の順序、移動先、生成前後の入力を確認してから出力する。途中で失敗した記録は残し、既存の出力は上書きしない。
+
+PDFを作ったら、全巻の全ページで同梱でない字体(OSの字体へ落ちた文字)が0件であることを確かめる。PyMuPDF(`import fitz`)が要る。
+
+```powershell
+python -B -X utf8 scripts/manual/font_scan.py dist/manual-pdf-preview-20260915
+```
+
+同梱の字体は、アプリの字体(Noto Sans JP)と`scripts/manual/fonts/font-notices.json`に記録した字体。名前の付いた字体(OSの字体)が1つでも埋め込まれた場合と、名前の無い字体(Chromiumが同梱の字体を埋め込む形)で同梱の字体に無い文字を描いた場合を数える。全巻で0件なら`PASS`(終了コード0)、1件でもあれば巻・ページ・文字を示して`FAIL`(終了コード1)、PDFが無いか同梱の字体を読めなければ終了コード2。`FAIL`のPDFは配布しない。配布CI(`.github/workflows/release.yml`)にはPyMuPDFが無いため、この確かめはまだ手元の手順だけで行う。
 
 この生成は未認定の出力を作る。配布前に全ページの文字・画像・表・改頁・リンクを実物で確認し、本文や撮影元と照合する。`releaseCertified`などの値を手で変更して確認の代用にはしない。
 

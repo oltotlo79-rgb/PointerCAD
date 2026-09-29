@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { lstat, readFile } from 'node:fs/promises';
 import { offlineAssetUrl } from './offlineProtocol.mjs';
 import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
+import { sourceFileHash } from '../release/desktopFileInventory.mjs';
 
 /** Capture the complete build source set, including additions and deletions before a commit. */
 async function captureBuildSources(root, desktop) {
@@ -25,7 +25,8 @@ async function captureBuildSources(root, desktop) {
       path = join(path, part); if ((await lstat(path)).isSymbolicLink()) throw new Error('Build source must not be a link');
     }
     if (!(await lstat(path)).isFile()) throw new Error('Build input is not a regular file');
-    inputs[name] = createHash('sha256').update(await readFile(path)).digest('hex');
+    // One value for the CRLF (Windows, core.autocrlf) and the LF (distribution CI) checkout of one commit.
+    inputs[name] = sourceFileHash(await readFile(path));
   }
   if (Object.keys(inputs).length === 0) throw new Error('Missing Web source inventory');
   return inputs;

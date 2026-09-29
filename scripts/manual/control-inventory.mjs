@@ -1,5 +1,6 @@
 /** Source inventory; actual rendering and explanation quality require separate verification. */
 import ts from 'typescript';
+import { sourceText } from '../release/desktopFileInventory.mjs';
 
 const tags = new Set(['input', 'select', 'textarea', 'button']);
 function attribute(node, name) {
@@ -25,7 +26,8 @@ export function buildNativeControlInventory(sources) {
   for (const { path, source } of sources) {
     if (seen.has(path)) throw new Error(`Duplicate control inventory source: ${path}`);
     seen.add(path);
-    const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    // The CRLF (Windows) and LF (distribution CI) checkouts must give one inventory: expressions keep their line ends.
+    const file = ts.createSourceFile(path, sourceText(source), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     if (file.parseDiagnostics.length > 0) throw new Error(`Cannot inspect invalid JSX: ${path}`);
     function visit(node) {
       if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {

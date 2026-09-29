@@ -12,7 +12,7 @@
 
 例の板は60×40×5mm、穴径8mmです。`板厚`パラメータを変更すると、板の厚みと穴の深さが追従します。詳しいコードは[APIの説明](script-api.md)を参照してください。
 
-![穴あき板のコードを実行し、立体と穴を作った画面](./images/script-plate-created.png)
+![穴あき板のコードを実行し、立体と穴を作った画面](./images/script-plate-created-screen.png)
 
 ## 編集と中止
 
@@ -26,7 +26,7 @@
 
 エラーには理由と、取得できたファイル名・行・列が表示されます。「エラーの行へ移動」を押すと、対象のJavaScriptまたは同梱モジュールを開いて該当行を選択します。読込前の形式エラーなど、コード上の位置がないエラーには行番号を付けません。
 
-![エラーの理由と2行目への移動を示した画面](./images/script-error-line.png)
+![エラーの理由と2行目への移動を示した画面](./images/script-error-line-screen.png)
 
 `console.log()`、`console.info()`、`console.warn()`、`console.error()`は「実行ログ」に表示します。成功時はAPI版、ソースのSHA-256、乱数の種、入力時刻、命令数と処理時間も記録します。
 

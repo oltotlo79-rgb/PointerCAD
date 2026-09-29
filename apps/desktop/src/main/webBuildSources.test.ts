@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it, vi } from 'vitest';
-import { captureWebBuildSources } from '../../../../scripts/vite/webBuildSources.mjs';
+import { captureDesktopBuildSources, captureWebBuildSources } from '../../../../scripts/vite/webBuildSources.mjs';
+import { applicationInputDigest } from '../../../../scripts/manual/captureRegistry.mjs';
 import { localGitEnvironment } from '../../../../scripts/lib/gitEnvironment.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -67,4 +69,37 @@ it('呼出元のGit保存先が渡されても別の配布元を読み、元の�
     expect(snapshot()).toEqual(before);
     for (const [name, value] of Object.entries(variables)) expect(process.env[name]).toBe(value);
   } finally { vi.unstubAllEnvs(); }
+});
+
+it('同じコミットを CRLF（Windows の core.autocrlf=true）と LF（配布 CI）で取り出しても配布元の指紋と画像の版が同じ', async () => {
+  const folder = workspace();
+  git(folder, 'init', '--quiet');
+  mkdirSync(join(folder, 'packages/example/src'), { recursive: true }); mkdirSync(join(folder, 'vendor'));
+  const text = join(folder, 'packages/example/src/main.ts'), binary = join(folder, 'packages/example/src/data.bin');
+  const notice = join(folder, 'vendor/notice.txt');
+  writeFileSync(join(folder, '.gitattributes'), 'vendor/notice.txt -text\n');
+  writeFileSync(text, 'export const a = 1;\nexport const b = `x\ny`;\n');
+  writeFileSync(binary, Uint8Array.of(0x00, 0x0d, 0x0a, 0x01, 0x0a));
+  writeFileSync(notice, 'original\r\nnotice\r\n');
+  writeFileSync(join(folder, 'package.json'), '{\n  "version": "1.0.0"\n}\n');
+  git(folder, '-c', 'core.autocrlf=false', 'add', '.');
+  // checkout-index skips a file whose stat is unchanged, so the tracked files are removed first (a fresh checkout).
+  const checkout = (autocrlf: string) => {
+    for (const name of git(folder, 'ls-files', '-z').split('\0').filter(Boolean)) unlinkSync(join(folder, name));
+    git(folder, '-c', `core.autocrlf=${autocrlf}`, '-c', 'core.eol=lf', 'checkout-index', '--all');
+  };
+  checkout('false');
+  const lf = { web: await captureWebBuildSources(folder), desktop: await captureDesktopBuildSources(folder), image: await applicationInputDigest(folder) };
+  expect(lf.web['packages/example/src/main.ts']).toBe(createHash('sha256').update(readFileSync(text)).digest('hex'));
+  checkout('true');
+  // The conversion really happened: text is CRLF, binary content and a -text original are unchanged.
+  expect(readFileSync(text, 'utf8')).toContain('\r\n'); expect(readFileSync(join(folder, 'package.json'), 'utf8')).toContain('\r\n');
+  expect([...readFileSync(binary)]).toEqual([0x00, 0x0d, 0x0a, 0x01, 0x0a]); expect(readFileSync(notice, 'utf8')).toBe('original\r\nnotice\r\n');
+  expect({ web: await captureWebBuildSources(folder), desktop: await captureDesktopBuildSources(folder), image: await applicationInputDigest(folder) })
+    .toEqual(lf);
+  // A real edit is still a different source, whatever the line ends.
+  writeFileSync(text, 'export const a = 2;\r\nexport const b = `x\r\ny`;\r\n');
+  expect(await applicationInputDigest(folder)).not.toBe(lf.image);
+  writeFileSync(binary, Uint8Array.of(0x00, 0x0a, 0x01, 0x0a));
+  expect((await captureWebBuildSources(folder))['packages/example/src/data.bin']).not.toBe(lf.web['packages/example/src/data.bin']);
 });

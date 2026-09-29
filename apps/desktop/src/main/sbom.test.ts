@@ -11,6 +11,8 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const exactMathManifest = JSON.parse(readFileSync(join(root, 'vendor/exact-math/manifest.json'), 'utf8')) as {
   components: Record<string, string[]>; files: Record<string, unknown>;
 };
+// 本物のpackage.jsonの版を読む(決め打ちの'0.0.0'は版を上げると落ちるため、rules/06 P5)。buildSbomも同じ経路で読む。
+const rootPackageVersion = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string }).version;
 type SbomComponent = ReturnType<typeof collectSbomComponents>['components'][number];
 const byName = (components: readonly SbomComponent[], name: string) => components.find((item) => item.name === name);
 
@@ -142,12 +144,27 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
     expect(font?.version).toBe('Sans2.004');
   });
 
+  it('説明書だけに埋め込む字体(Noto Sans・Noto Sans Math)を固定資産として集める', () => {
+    const { components } = collectSbomComponents(root);
+    for (const [file, version] of [['NotoSans-Regular.otf', '2.015'], ['NotoSansMath-Regular.otf', '3.000']] as const) {
+      const font = byName(components, file);
+      expect(font?.type, file).toBe('file');
+      expect(font?.version, file).toBe(version);
+      expect(font?.licenses, file).toEqual([{ license: { id: 'OFL-1.1' } }]);
+      expect(font?.hashes?.[0]?.alg, file).toBe('SHA-256');
+      expect(font?.hashes?.[0]?.content, file).toMatch(/^[a-f0-9]{64}$/u);
+      expect(font?.properties?.some((entry) => entry.name === 'pointercad:distributionNote'), file).toBe(true);
+      // 画面・図面用フォント(NotoSansJP-Regular.otf)と二重計上しない別部品であること。
+      expect(font?.name).not.toBe('NotoSansJP-Regular.otf');
+    }
+  });
+
   it('CycloneDXの文書形状(bomFormat・specVersion・決定的なUUID)を組み立てる', () => {
     const sbom = buildSbom(root, { sourceCommit: '1'.repeat(40) });
     expect(sbom.bomFormat).toBe('CycloneDX');
     expect(sbom.specVersion).toBe('1.6');
     expect(sbom.serialNumber).toMatch(/^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
-    expect(sbom.metadata.component).toEqual({ type: 'application', name: 'PointerCAD', version: '0.0.0' });
+    expect(sbom.metadata.component).toEqual({ type: 'application', name: 'PointerCAD', version: rootPackageVersion });
     expect(deterministicUuid('same-seed')).toBe(deterministicUuid('same-seed'));
     expect(deterministicUuid('a')).not.toBe(deterministicUuid('b'));
   });
@@ -238,7 +255,7 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
     const validate = ajv.compile(readSchema('cyclonedx-bom-1.6.schema.json'));
 
     const sbom = buildSbom(root, { sourceCommit: '1'.repeat(40) });
-    expect(sbom.components).toHaveLength(85);
+    expect(sbom.components).toHaveLength(87); // P13-6bの85部品 + 説明書だけの字体2本(w131a)。
     const valid = validate(sbom);
     expect(valid, JSON.stringify(validate.errors)).toBe(true);
 

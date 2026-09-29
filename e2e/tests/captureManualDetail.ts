@@ -4,6 +4,7 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { applicationInputDigest, CAPTURE_SCREEN_REQUIREMENTS, classifyCaptureViewport } from '../../scripts/manual/captureRegistry.mjs';
+import { sourceFileHash } from '../../scripts/release/desktopFileInventory.mjs';
 import { readRecomputeStats, waitForSettledRecompute } from './recompute.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 
@@ -69,6 +70,46 @@ async function settledViewportRender(page: Page): Promise<{ readonly completedRe
   return latest.value === 'drawing' ? null : latest.value;
 }
 
+/**
+ * How many times in all one pair of images may be taken when the 3D view drew again while it was being taken.
+ * CI run 36506536360 (commit eae0101, the first run with the check below): 11 captures on Linux (1 Chromium
+ * sheet-profile, 10 real Electron) saw 1-2 more finished drawings between the settled read and the end of the
+ * capture, while the same specs never did on Windows (runs 20260929-112131 / -115159). Such a pair is never
+ * kept: it is taken again once the view has settled again, and a view that keeps drawing still fails.
+ */
+const CAPTURE_ATTEMPTS = 3;
+
+/** The screen and dialog images, taken while the 3D view (if any) finished no drawing at all. */
+async function captureStillImages(page: Page, info: TestInfo, dialog: Locator, names: { readonly screen: string; readonly detail: string }) {
+  const readRenders = () => page.evaluate(() => window.pcadViewportRenderStats?.().completedRenders);
+  for (let attempt = 1; ; attempt += 1) {
+    const viewportRender = await settledViewportRender(page);
+    // Reuse this already prepared, stable screen; do not add another operation or alter focus.
+    // The whole screen includes the toolbar and property fields surrounding the photographed dialog.
+    const controlDescriptions = await assertRenderedControlDescriptions(page.locator('body'));
+    const screen = await page.screenshot({ path: info.outputPath(names.screen), animations: 'disabled' });
+    const afterScreen = viewportRender === null ? null : await readRenders();
+    const detail = await dialog.screenshot({ path: info.outputPath(names.detail), animations: 'disabled' });
+    const images = { viewportRender, controlDescriptions, screen, detail };
+    if (viewportRender === null) return images;
+    const afterDetail = await readRenders();
+    const settled = viewportRender.completedRenders;
+    if (afterScreen === settled && afterDetail === settled) return images;
+    // Only a view that is still there and drew more is taken again; a vanished view or a lower count fails at once.
+    const drewAgain = typeof afterScreen === 'number' && typeof afterDetail === 'number' && afterScreen >= settled && afterDetail >= afterScreen;
+    const drawn = `settled ${String(settled)}, after the screen image ${String(afterScreen)}, after the dialog image ${String(afterDetail)}`;
+    if (!drewAgain || attempt >= CAPTURE_ATTEMPTS) {
+      expect({ afterScreen, afterDetail }, `The 3D view must not redraw while capturing (attempt ${String(attempt)}/${String(CAPTURE_ATTEMPTS)}: ${drawn})`)
+        .toEqual({ afterScreen: settled, afterDetail: settled });
+      return images;
+    }
+    // Recorded in the output and the report, never hidden: the retaken pair replaces this one.
+    const note = `${names.screen}: the 3D view drew again while capturing (${drawn}); retaking ${String(attempt + 1)}/${String(CAPTURE_ATTEMPTS)}`;
+    console.log(`[撮影の撮り直し] ${note}`);
+    info.annotations.push({ type: 'capture-retake', description: note });
+  }
+}
+
 /** Keep the whole working screen and a legible, unmodified dialog image together with their actual fixture. */
 export async function captureManualDetail(page: Page, info: TestInfo, input: {
   readonly name: string;
@@ -99,21 +140,13 @@ export async function captureManualDetail(page: Page, info: TestInfo, input: {
     expect({ theme: screenState.theme, uiScale: screenState.uiScale, deviceScaleFactor: screenState.deviceScaleFactor,
       fontStatus: screenState.fontStatus }, 'Manual captures use the fixed screen conditions').toEqual(CAPTURE_SCREEN_REQUIREMENTS);
   }
-  const viewportRender = await settledViewportRender(page);
-  // Reuse this already prepared, stable screen; do not add another operation or alter focus.
-  // The whole screen includes the toolbar and property fields surrounding the photographed dialog.
-  const controlDescriptions = await assertRenderedControlDescriptions(page.locator('body'));
   const fixtureBytes = Buffer.from(JSON.stringify(input.fixture)), scriptBytes = await readFile(input.script);
   const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
   const screenName = `${input.name}-screen.png`, detailName = `${input.name}-detail.png`;
-  const screen = await page.screenshot({ path: info.outputPath(screenName), animations: 'disabled' });
-  const detail = await input.dialog.screenshot({ path: info.outputPath(detailName), animations: 'disabled' });
+  const { viewportRender, controlDescriptions, screen, detail } = await captureStillImages(page, info, input.dialog,
+    { screen: screenName, detail: detailName });
   const after = await readRecomputeStats(page);
   expect(after).toEqual(before);
-  if (viewportRender !== null) {
-    expect(await page.evaluate(() => window.pcadViewportRenderStats?.().completedRenders), 'The 3D view must not redraw while capturing')
-      .toBe(viewportRender.completedRenders);
-  }
   const fixtureName = `${input.name}-fixture.json`;
   await writeFile(info.outputPath(fixtureName), fixtureBytes, { flag: 'wx' });
   const metadata = {
@@ -121,7 +154,9 @@ export async function captureManualDetail(page: Page, info: TestInfo, input: {
     capturedAt: new Date().toISOString(),
     applicationBuildId: await resolveApplicationBuildId(),
     project: info.project.name, sourceTest: info.title,
-    script: relative(projectRoot, fileURLToPath(input.script)).split(sep).join('/'), scriptSha256: hash(scriptBytes),
+    // sourceFileHash reads CRLF as LF, so the Windows (CRLF) and the CI (LF) checkout of one script record the
+    // same value, as the registry and the adoption compare it (scripts/manual/captureRegistry.mjs, captureProvenance.mjs).
+    script: relative(projectRoot, fileURLToPath(input.script)).split(sep).join('/'), scriptSha256: sourceFileHash(scriptBytes),
     fixture: { filename: fixtureName, sha256: hash(fixtureBytes) },
     screen: { filename: screenName, sha256: hash(screen) }, detail: { filename: detailName, sha256: hash(detail) },
     controlDescriptions,

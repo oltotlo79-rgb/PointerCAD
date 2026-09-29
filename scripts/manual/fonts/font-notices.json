@@ -1,0 +1,38 @@
+{
+  "format": "pointercad-font-notices/1",
+  "scope": "Fonts embedded only in the generated manual (HTML manual.css and the printed PDF volumes) by scripts/manual/generate.mjs; not shipped as application fonts. Kept outside the application input digest (scripts/manual/captureRegistry.mjs applicationInputDigest), so adding them does not invalidate recorded screenshots. The screen/drawing font is recorded in docs/standards/licenses/font-notices.json.",
+  "fonts": [
+    {
+      "name": "Noto Sans",
+      "style": "Regular",
+      "version": "2.015",
+      "file": "NotoSans-Regular.otf",
+      "license": "OFL-1.1",
+      "notice": "OFL-NotoSans.txt",
+      "sha256": "bfb44de2c2031c391ff856943fe8f105ebb5d725cb9a04d493d211d5bbd5c21b",
+      "source": "https://github.com/notofonts/notofonts.github.io/raw/f145d86c53996717bc4c25d4602eb9294e43dccc/fonts/NotoSans/unhinted/otf/NotoSans-Regular.otf"
+    },
+    {
+      "name": "Noto Sans Math",
+      "style": "Regular",
+      "version": "3.000",
+      "file": "NotoSansMath-Regular.otf",
+      "license": "OFL-1.1",
+      "notice": "OFL-NotoSansMath.txt",
+      "sha256": "a3a3904ede36039d4ba8177ec0aa9cf90653e7c7927d74d766bf31ea26e2a7c1",
+      "source": "https://github.com/notofonts/notofonts.github.io/raw/f145d86c53996717bc4c25d4602eb9294e43dccc/fonts/NotoSansMath/unhinted/otf/NotoSansMath-Regular.otf"
+    }
+  ],
+  "notices": [
+    {
+      "file": "OFL-NotoSans.txt",
+      "sha256": "cee9892f9f0cc8fe882c9e9537ee6a89621d86ee7ceaf70b02e2b2b1c25c061a",
+      "source": "https://github.com/notofonts/latin-greek-cyrillic/raw/023d7b73d5c1a5ed6489bd04a120244c1f2bff3f/OFL.txt"
+    },
+    {
+      "file": "OFL-NotoSansMath.txt",
+      "sha256": "403a95275b469061b7d4371c328e0ada3bc7d63328abe2e88aad5cd243b2fe21",
+      "source": "https://github.com/notofonts/math/raw/fbb2a1334f1d693c3c863b3b694ffadf75094b36/OFL.txt"
+    }
+  ]
+}

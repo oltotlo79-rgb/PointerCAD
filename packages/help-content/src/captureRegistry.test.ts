@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -10,8 +10,13 @@ import {
   readCaptureRegistry, readCaptureScripts, readPngSize, validateCaptureRegistry, type CaptureFile, type CaptureRegistry,
 } from '../../../scripts/manual/captureRegistry.mjs';
 import { localGitEnvironment } from '../../../scripts/lib/gitEnvironment.mjs';
+import { sourceFileHash } from '../../../scripts/release/desktopFileInventory.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
+/** A new folder inside the project's scratchpad (scripts/lib/task_workspace.py refuses places outside the project). */
+const taskWorkspace = (task: string): string => execFileSync('python',
+  ['-B', '-X', 'utf8', join(root, 'scripts/lib/task_workspace.py'), task],
+  { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
 const chapterFolder = new URL('../docs/ja/', import.meta.url);
 const imageFolder = new URL('../docs/ja/images/', import.meta.url);
 const REGISTER = 'node scripts/manual/captureRegistry.mjs register で登録し直す';
@@ -44,6 +49,11 @@ const KNOWN_WITHOUT_CAPTURE_RECORD: Readonly<Record<string, string>> = {
 const beyond = (found: readonly string[], known: Readonly<Record<string, string>>) => found.filter(name => !Object.hasOwn(known, name));
 
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+/**
+ * SHA-256 of a script as Git stores it: every CRLF read as LF. Computed here without sourceFileHash
+ * (scripts/release/desktopFileInventory.mjs) so the registry functions do not check themselves; latin1 keeps every byte.
+ */
+const lfSha = (bytes: Uint8Array) => sha(Buffer.from(Buffer.from(bytes).toString('latin1').replaceAll('\r\n', '\n'), 'latin1'));
 const encoder = new TextEncoder();
 const file = (name: string, bytes: Uint8Array): CaptureFile => ({ name, bytes });
 const json = (name: string, value: unknown): CaptureFile => ({ name, bytes: encoder.encode(JSON.stringify(value)) });
@@ -124,16 +134,22 @@ describe('撮影の登録簿（capture-manifest.json）と実際の画像・章'
     const images = (await readCaptureFolder(root)).files.filter(entry => entry.name.endsWith('.png'));
     const report = assessCaptureImages(registry, images, { applicationBuildId: 'build-under-test',
       scripts: await readCaptureScripts(root, registry) });
-    expect(report).toMatchObject({ checked: images.length, unregistered: [], mismatched: [], buildMismatch: [] });
+    expect(report).toMatchObject({ checked: images.length, unregistered: [], mismatched: [] });
     // An image without a recorded build is not confirmed as the current version.
     expect(report.buildUnknown).toEqual(registry.images.filter(entry => entry.applicationBuildId === null).map(entry => entry.file));
+    // An image recorded from another build is reported as such, whether or not adopted images exist yet
+    // (after adopting, every adopted image records its real build, never the placeholder of this test).
+    expect(report.buildMismatch).toEqual(registry.images.filter(entry => entry.applicationBuildId !== null
+      && entry.applicationBuildId !== 'build-under-test').map(entry => entry.file));
+    // No image has the placeholder build, so every checked image is either of unknown or of another build.
+    expect([...report.buildUnknown, ...report.buildMismatch].sort()).toEqual(images.map(entry => entry.name).sort());
     // Compare the recorded script hashes with the current scripts independently.
     const scripts = new Set(readdirSync(new URL('../../../e2e/tests/', import.meta.url)).map(name => `e2e/tests/${name}`));
     const hashed = registry.images.flatMap(entry => (entry.script !== null && entry.scriptSha256 !== null
       ? [{ file: entry.file, script: entry.script, scriptSha256: entry.scriptSha256 }] : []));
     expect(report.scriptMissing).toEqual(hashed.filter(entry => !scripts.has(entry.script)).map(entry => entry.file));
     expect(report.scriptChanged).toEqual(hashed.filter(entry => scripts.has(entry.script)
-      && sha(readFileSync(new URL(`../../../${entry.script}`, import.meta.url))) !== entry.scriptSha256).map(entry => entry.file));
+      && lfSha(readFileSync(new URL(`../../../${entry.script}`, import.meta.url))) !== entry.scriptSha256).map(entry => entry.file));
     expect(report.current).toBe(report.buildUnknown.length === 0 && report.scriptChanged.length === 0 && report.scriptMissing.length === 0);
   });
 });
@@ -277,12 +293,43 @@ describe('撮影の登録簿の作成と照合の誤りを見つける', () => {
       .toMatchObject({ buildUnknown: ['u.png'], current: false });
     expect(() => assessCaptureImages(registry, [], { applicationBuildId: ' ' })).toThrow('applicationBuildId');
   });
+
+  it('撮影の台本は LF と CRLF の写しで同じ値になり、どちらの取り出しで判定しても変わらず、中身の違いだけを見つける', async () => {
+    // The real recorder script, as the Windows checkout (CRLF) and the CI checkout (LF) write it.
+    const real = readFileSync(new URL('../../../e2e/tests/captureManualDetail.ts', import.meta.url)).toString('latin1');
+    const lfText = real.replaceAll('\r\n', '\n'), crlfText = lfText.replaceAll('\n', '\r\n');
+    const lf = Buffer.from(lfText, 'latin1'), crlf = Buffer.from(crlfText, 'latin1');
+    expect(crlf.length).toBeGreaterThan(lf.length);
+    expect(sha(crlf)).not.toBe(sha(lf));
+    expect(sourceFileHash(crlf)).toBe(sourceFileHash(lf));
+    expect(sourceFileHash(lf)).toBe(lfSha(crlf));
+    const edited = Buffer.from(crlfText.replace('captureManualDetail', 'captureManualDetailEdited'), 'latin1');
+    expect(sourceFileHash(edited)).not.toBe(sourceFileHash(lf));
+
+    // Recorded in either checkout, judged from the files of either checkout read by readCaptureScripts.
+    const folder = taskWorkspace('capture-script-line-ends-test');
+    try {
+      const image = png(720, 540, 23), script = join(folder, 'e2e/tests/exampleFlow.ts');
+      mkdirSync(join(folder, 'e2e/tests'), { recursive: true });
+      for (const recorded of [lf, crlf]) {
+        const registry = buildCaptureRegistry([file('m-detail.png', image),
+          details('m', image, { buildId: 'build-1', scriptSha256: sourceFileHash(recorded) })]);
+        expect(registry.images[0].scriptSha256).toBe(lfSha(lf));
+        for (const [checkout, changed] of [[lf, []], [crlf, []], [edited, ['m-detail.png']]] as const) {
+          writeFileSync(script, checkout);
+          const report = assessCaptureImages(registry, [file('m-detail.png', image)],
+            { applicationBuildId: 'build-1', scripts: await readCaptureScripts(folder, registry) });
+          expect(report).toMatchObject({ scriptChanged: changed, scriptMissing: [], current: changed.length === 0 });
+        }
+      }
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('アプリの入力の指紋（applicationInputDigest）', () => {
-  const digestWorkspace = (): string => execFileSync('python',
-    ['-B', '-X', 'utf8', join(root, 'scripts/lib/task_workspace.py'), 'application-input-digest-test'],
-    { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+  const digestWorkspace = (): string => taskWorkspace('application-input-digest-test');
   const git = (folder: string, ...args: string[]): string => execFileSync('git', ['--no-optional-locks', ...args],
     { cwd: folder, env: localGitEnvironment(), encoding: 'utf8', windowsHide: true });
 

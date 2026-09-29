@@ -6,6 +6,7 @@ import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { offlineAssetRoute, offlineAssetUrl, readOfflineAssetManifest } from '../../scripts/vite/offlineProtocol.mjs';
 import { captureWebBuildSources } from '../../scripts/vite/webBuildSources.mjs';
+import { sourceFileHash } from '../../scripts/release/desktopFileInventory.mjs';
 
 export interface OfflineCandidateFaults {
   /** Asset path whose served preparation bytes differ in one byte. */
@@ -30,7 +31,7 @@ export async function serveOfflineCandidate() {
     for (const component of name.split('/')) {
       path = join(path, component); assert(!(await lstat(path)).isSymbolicLink());
     }
-    assert.equal(createHash('sha256').update(await readFile(path)).digest('hex'), expected, 'Manual source changed: ' + name);
+    assert.equal(sourceFileHash(await readFile(path)), expected, 'Manual source changed: ' + name);
   }
   const files = new Map<string, { bytes: Buffer; file: string }>();
   for (const asset of [...manifest.assets, { url: 'offline-assets.json' }, { url: 'service-worker.js' }]) {

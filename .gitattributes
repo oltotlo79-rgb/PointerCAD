@@ -16,6 +16,7 @@ scripts/hooks/commit-msg text eol=lf
 docs/standards/licenses/*.txt -text
 apps/web/public/fonts/LICENSES.txt -text
 apps/desktop/resources/fonts/LICENSES.txt -text
+scripts/manual/fonts/*.txt -text
 
 # アプリ自身の許諾本文も取得元のバイト列を保持する。
 /LICENSE -text

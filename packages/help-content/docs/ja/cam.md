@@ -12,11 +12,11 @@ PointerCADで形を作り、加工機や3Dプリンターに合うソフトで�
 
 **押さなくても書き出しは完了しています。** 「閉じる」やEscで案内を閉じても、保存したファイルは残ります。別の書き出しを始めるか新規文書へ切り替えると、前の案内は消えます。
 
-![Desktop版でSTEP保存後に表示される加工先の案内](images/cam-step-handoff.png)
+![Desktop版でSTEP保存後に表示される加工先の案内](images/cam-step-handoff-screen.png)
 
 **形はこのアプリからは送られません。** Webサイトへのボタンは案内先を開きます。開いた先で、いま保存したファイルを自分で選んでください。ブラウザ版には「既定のアプリで開く」はありません。ダウンロードしたファイルを保存先から選びます。
 
-![Web版でSTL保存後に表示される加工先と受け渡し手順](images/cam-stl-handoff.png)
+![Web版でSTL保存後に表示される加工先と受け渡し手順](images/cam-stl-handoff-screen.png)
 
 ## Kiri:Motoで加工する
 

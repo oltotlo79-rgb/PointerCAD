@@ -11,6 +11,7 @@ import { assembleOfflineDistribution } from '../vite/offlineDistribution.mjs';
 import { captureWebBuildSources } from '../vite/webBuildSources.mjs';
 import { localGitEnvironment } from '../lib/gitEnvironment.mjs';
 import { verifyCurrentManualEdition } from '../manual/currentManualEdition.mjs';
+import { sourceFileHash } from './desktopFileInventory.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const args = argv.slice(2);
@@ -50,7 +51,8 @@ for (const [index, marker] of [[0, 'web-build.json'], [1, 'manifest.json']]) {
       cursor = join(cursor, component);
       if ((await lstat(cursor)).isSymbolicLink()) throw new Error('Source must not be a link');
     }
-    if (hash(await readFile(cursor)) !== expected) throw new Error('Source changed: ' + name);
+    // Both inventories are recorded with sourceFileHash (scripts/vite/webBuildSources.mjs, scripts/manual/generate.mjs).
+    if (sourceFileHash(await readFile(cursor)) !== expected) throw new Error('Source changed: ' + name);
   }
 }
 await verifyCurrentManualEdition(root, groups[1]);

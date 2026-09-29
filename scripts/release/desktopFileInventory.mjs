@@ -6,6 +6,31 @@ import { offlineAssetUrl } from '../vite/offlineProtocol.mjs';
 export const desktopFileHash = bytes => createHash('sha256').update(bytes).digest('hex');
 const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 
+/**
+ * A source text as it is stored in Git, whatever line ends the checkout wrote: every CRLF is read as LF.
+ * Git for Windows checks text out with CRLF (core.autocrlf=true) while the distribution CI checks out LF
+ * (release.yml), so anything derived from source text (manual pages, fingerprints) must not see the difference.
+ */
+export const sourceText = text => text.replaceAll('\r\n', '\n');
+
+/**
+ * SHA-256 of a source file that is the same for the CRLF and the LF checkout of one commit (sourceText).
+ * Text (no NUL byte) is hashed with every CRLF read as LF; binary content (images, fonts, WebAssembly: a NUL
+ * byte, which a line-end conversion never adds or removes) is hashed unchanged. Distribution outputs keep
+ * desktopFileHash: only source inputs are read through the checkout.
+ */
+export function sourceFileHash(bytes) {
+  if (!(bytes instanceof Uint8Array)) throw new Error('Source file bytes are required');
+  if (bytes.includes(0) || !bytes.includes(0x0d)) return desktopFileHash(bytes);
+  const text = new Uint8Array(bytes.length);
+  let length = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    if (bytes[index] === 0x0d && bytes[index + 1] === 0x0a) continue;
+    text[length] = bytes[index]; length += 1;
+  }
+  return desktopFileHash(text.subarray(0, length));
+}
+
 /** The desktop OCCT is uncompressed and exceeds Pages' per-file limit. */
 export async function collectDesktopFiles(projectRoot, outputFolder) {
   const root = await realpath(projectRoot), folder = resolve(outputFolder), local = relative(root, folder);

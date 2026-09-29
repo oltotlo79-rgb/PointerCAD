@@ -123,10 +123,10 @@ try {
       }
     }, { links, volumes: manifest.volumes, chapters: manifest.chapters, current: volume.id });
     assert.equal(failures.length, 0, failures.join('\n'));
-    const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true, tagged: true, outline: true,
-      displayHeaderFooter: true, headerTemplate: '<span></span>',
-      footerTemplate: '<div style="font-size:8pt;width:100%;text-align:center"><span class="pageNumber"></span> / <span class="totalPages"></span></div>',
-    });
+    // Page numbers come from the @page margin box in manual.css (@bottom-center), which can use the
+    // bundled font. Chromium's displayHeaderFooter/footerTemplate cannot see the page's @font-face
+    // rules and always falls back to a system font (ArialMT), so it is not used here.
+    const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true, tagged: true, outline: true });
     assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
     await writeFile(resolve(destination, name), pdf, { flag: 'wx' });
     const record = { id: volume.id, title: volume.title, name, bytes: pdf.length, sha256: hash(pdf), source: html, content,

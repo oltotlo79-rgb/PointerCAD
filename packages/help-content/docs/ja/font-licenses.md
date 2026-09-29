@@ -5,6 +5,13 @@ PointerCADは、日本語の文字を図面に描くためにNoto Sans JP Regula
 - Noto Sans JP Regular、Sans2.004：SIL Open Font License 1.1
 - opentype.js、2.0.0：MIT License
 
+また、生成する取扱説明書(HTML・PDF)は、Noto Sans JPに無いラテン・ギリシャ文字や数学記号をOSの字体へ落とさず描くため、次の2書体をSIL Open Font License 1.1で追加同梱しています(アプリ本体では使用しません)。
+
+- Noto Sans Regular、2.015：SIL Open Font License 1.1（取扱説明書だけに同梱）
+- Noto Sans Math Regular、3.000：SIL Open Font License 1.1（取扱説明書だけに同梱）
+
+原文はNoto Sans JP Regularと同じSIL Open Font License 1.1(下記)です。
+
 以下は各ライセンスの原文です。
 
 ```text

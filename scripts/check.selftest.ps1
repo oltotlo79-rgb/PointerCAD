@@ -808,6 +808,32 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
         Remove-Item Env:CI -ErrorAction SilentlyContinue
         Assert-True (-not (Test-Path -LiteralPath $signalRequest)) '拒否した場合は開始の合図の要求を書かない'
 
+        # Start-Process は親の環境変数をそのまま子へ渡す。CI の Windows は check.ps1 を PowerShell 7(pwsh)で動かすため、
+        # 親の PSModulePath の先頭に PowerShell 7 のモジュールの場所($PSHOME\Modules)がある。子の Windows PowerShell 5.1 は
+        # そこの PowerShell 7 用の Microsoft.PowerShell.Utility を読みに行って失敗し、Get-FileHash が見つからず検査前の
+        # ファイル状態を取れない(CI run 36506536360 の front (windows-latest)、2026-09-29)。& で起動した子は PowerShell 7 が
+        # Windows PowerShell 用の場所へ直して渡すため起きない(同じログで & の子は合格)。Start-Process の子にも、Windows
+        # PowerShell の標準のモジュールを別の版で隠す場所を除いた PSModulePath を渡す(Windows PowerShell の親では通常は何も除かない)。
+        $signalChildModulePath = $null
+        if ($perfModeShellCommand -eq 'powershell.exe' -and -not [string]::IsNullOrEmpty($env:PSModulePath)) {
+            $windowsPowerShellModules = (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules').TrimEnd([char[]]"\/")
+            $keptModulePaths = [Collections.Generic.List[string]]::new()
+            foreach ($moduleEntry in ($env:PSModulePath -split [IO.Path]::PathSeparator)) {
+                $moduleEntry = $moduleEntry.Trim()
+                if ($moduleEntry.Length -eq 0) { continue }
+                $isWindowsPowerShellHome = $moduleEntry.TrimEnd([char[]]"\/") -ieq $windowsPowerShellModules
+                $shadowsInboxModule = @('Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Security' | Where-Object {
+                        try { Test-Path -LiteralPath (Join-Path $moduleEntry $_) -PathType Container } catch { $false }
+                    }).Count -gt 0
+                if ($isWindowsPowerShellHome -or -not $shadowsInboxModule) { $keptModulePaths.Add($moduleEntry) }
+                else { Write-Host "[記録] 開始の合図の試験の子(Windows PowerShell)の PSModulePath から外す場所: $moduleEntry" }
+            }
+            if (@($keptModulePaths | Where-Object { $_.TrimEnd([char[]]"\/") -ieq $windowsPowerShellModules }).Count -eq 0) {
+                $keptModulePaths.Add($windowsPowerShellModules)
+            }
+            $signalChildModulePath = $keptModulePaths -join [IO.Path]::PathSeparator
+        }
+
         function Start-SignalFixture {
             param([string[]]$Arguments, [string]$Name)
             foreach ($path in @($callLog, $signalRequest)) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force } }
@@ -815,8 +841,14 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
             $errFile = Join-Path $stageBase "$Name.err.log"
             $all = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $checkScriptPath, '-RepositoryRoot', $fixture) + $Arguments
             $quoted = @($all | ForEach-Object { '"' + $_ + '"' })
-            $process = Start-Process -FilePath $perfModeShellCommand -ArgumentList $quoted -NoNewWindow -PassThru `
-                -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+            $savedModulePath = $env:PSModulePath
+            if ($null -ne $signalChildModulePath) { $env:PSModulePath = $signalChildModulePath }
+            try {
+                $process = Start-Process -FilePath $perfModeShellCommand -ArgumentList $quoted -NoNewWindow -PassThru `
+                    -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+            } finally {
+                $env:PSModulePath = $savedModulePath
+            }
             try { $null = $process.Handle } catch {}  # Windows PowerShell 5.1 で終了コードを後から読めるよう、起動直後に取っておく
             return [pscustomobject]@{ Process = $process; Out = $outFile; Err = $errFile }
         }

@@ -23,6 +23,7 @@ import type {
 import { assembleSbomDocument } from '../../../../scripts/release/sbom.mjs';
 import { assembleOfflineDistribution } from '../../../../scripts/vite/offlineDistribution.mjs';
 import { bytes, files, hash, json } from './distributionTestFixture.js';
+import { sourceFileHash } from '../../../../scripts/release/desktopFileInventory.mjs';
 
 /** What one generated manual is made from; the candidate below is rebuilt from a state that differs in one place. */
 interface HelpState {
@@ -51,7 +52,7 @@ const packageFiles = { root: packageJson('pointercad', version), desktop: packag
 const manualInputs = { 'packages/ui/src/example.ts': hash('source') };
 const webInputs = { ...manualInputs, 'package.json': hash(packageFiles.root), 'apps/web/package.json': hash(packageFiles.web) };
 const desktopInputs = { ...manualInputs, 'package.json': hash(packageFiles.root), 'apps/desktop/package.json': hash(packageFiles.desktop),
-  'apps/desktop/electron-builder.yml': hash(builderConfig) };
+  'apps/desktop/electron-builder.yml': sourceFileHash(bytes(builderConfig)) }; // the real file may be CRLF on Windows
 const sourceInputs = { web: webInputs, desktop: desktopInputs, manual: manualInputs };
 const SUPPLEMENTARY = { settings: [], outputs: [], toolDefaults: [], contentCertified: false };
 const NATIVE_CONTROLS = { scope: 'native-jsx-controls', contentCertified: false, sources: ['packages/ui/src/Example.tsx'],

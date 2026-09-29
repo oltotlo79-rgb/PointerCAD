@@ -64,7 +64,9 @@ async function runFunctionPointFlow(page:Page,info:TestInfo,app:ElectronApplicat
   const positiveMarker=dialog.getByRole('button',{name:`${text('candidate')} ${count}: X=0, Y=0, Z=${height}`,exact:true});
   await expect(positiveMarker).toBeVisible();await positiveMarker.click();
   await expect(dialog.getByRole('radio').nth(index)).toBeChecked();await expect(positiveMarker).toHaveAttribute('aria-pressed','true');
-  await captureManualDetail(page,info,{name:'function-point-candidates',dialog,fixture:sphere,script:new URL(import.meta.url)});
+  // 説明書が写すのは球面(implicit)でZが正負に分かれる場面だけ(function-point.md)。
+  // 同じ名前でcoordinate形式も撮ると同一実行内で撮影名が重複するため、対象を絞る。
+  if(form==='implicit')await captureManualDetail(page,info,{name:'function-point-candidates',dialog,fixture:sphere,script:new URL(import.meta.url)});
   const first=await beginRecompute(page);await dialog.getByRole('button',{name:text('apply'),exact:true}).click();await waitForRecompute(page,first);
   const saved=await savePart(page,info,'function-point.pcad',app),point=saved.sketches.flatMap(sketch=>sketch.features).find(item=>item.kind==='point');
   if(point?.kind!=='point'||point.at.mode==='absolute'||point.at.base.kind!=='functionPoint')throw new Error('Function point definition not saved');

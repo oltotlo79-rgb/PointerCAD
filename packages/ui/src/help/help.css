@@ -31,6 +31,7 @@
 .pcad-help__article h2 { font-size: 20px; }
 .pcad-help__article h3 { font-size: 17px; }
 .pcad-help__article li p { margin: 4px 0; }
+.pcad-help__article code, .pcad-help__article pre { font-family: var(--pcad-font); }
 .pcad-help__article code { padding: 1px 4px; background: var(--pcad-bg); font-size: 0.95em; }
 .pcad-help__article pre { padding: 12px; overflow-x: auto; background: var(--pcad-bg); }
 .pcad-help__article pre code { padding: 0; }

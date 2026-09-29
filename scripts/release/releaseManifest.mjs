@@ -1,6 +1,7 @@
 /** Bind the existing desktop, Web and offline inventories to one release edition. */
 import { createHash } from 'node:crypto';
 import { verifyDesktopPackageArtifacts } from './desktopPackageTargets.mjs';
+import { sourceFileHash } from './desktopFileInventory.mjs';
 import { verifyDesktopDistribution } from './desktopDistribution.mjs';
 import { assembleManualDistribution } from '../vite/offlineDistribution.mjs';
 import { readOfflineAssetManifest, offlineAssetUrl } from '../vite/offlineProtocol.mjs';
@@ -82,13 +83,16 @@ export async function createReleaseManifest({ packageFiles, builderConfig, tag =
   for (const name of ['package.json', 'apps/desktop/package.json', 'apps/desktop/electron-builder.yml']) {
     if (currentDesktop[name] === undefined) throw new Error('Missing desktop version source: ' + name);
   }
+  // The source inventories read files through the checkout (sourceFileHash); these files are read the same way.
   for (const [name, value] of [['package.json', packageFiles.root], ['apps/web/package.json', packageFiles.web]]) {
-    if (currentWeb[name] !== sha256(value)) throw new Error('Web package source fingerprint differs: ' + name);
+    if (currentWeb[name] !== sourceFileHash(value)) throw new Error('Web package source fingerprint differs: ' + name);
   }
   for (const [name, value] of [['package.json', packageFiles.root], ['apps/desktop/package.json', packageFiles.desktop]]) {
-    if (currentDesktop[name] !== sha256(value)) throw new Error('Desktop package source fingerprint differs: ' + name);
+    if (currentDesktop[name] !== sourceFileHash(value)) throw new Error('Desktop package source fingerprint differs: ' + name);
   }
-  if (currentDesktop['apps/desktop/electron-builder.yml'] !== sha256(builderConfig)) throw new Error('Desktop builder source fingerprint differs');
+  if (currentDesktop['apps/desktop/electron-builder.yml'] !== sourceFileHash(new globalThis.TextEncoder().encode(builderConfig))) {
+    throw new Error('Desktop builder source fingerprint differs');
+  }
   for (const name of Object.keys(currentWeb)) {
     if (currentDesktop[name] !== undefined && currentDesktop[name] !== currentWeb[name]) throw new Error('Web and desktop input fingerprints differ: ' + name);
   }

@@ -1463,6 +1463,8 @@ DFT／IDFTは1〜64要素、FFT／IFFTは1、2、4、8、16、32、64、128、25
 
 一覧の「{{ui:mathGeometry.quantityLabel}}」で量を選び、「{{ui:mathGeometry.add}}」を押すと一覧に追加されます(Undo1回で取り消せます)。もう一度「{{ui:toolbar.look.mathGeometry}}」を押すか、一覧の「{{ui:mathGeometry.closeTool}}」を押すと道具を終えて選択の道具に戻ります(選んでいた対象は保たれます)。
 
+![箱1体積・箱2体積の2行を加えた「図形の測定値」の節(2行目は途中まで)。1行目は測る量「体積」、参照先「箱1 (立体)」、値24000 mm³、比べる幅と、選び直す・比べる幅を変える・削除・この値の係数を作るが並ぶ](images/math-geometry-reference-detail.png)
+
 ### 名前の変更・選び直し・角度の単位・削除
 
 一覧の行の「{{ui:mathGeometry.nameLabel}}」欄を書き直してEnterを押すか欄の外を押すと、名前が変わります。この名前を使っている係数の式の表示も一緒に更新されます。Undo1回で前の名前に戻ります。
@@ -1481,6 +1483,8 @@ DFT／IDFTは1〜64要素、FFT／IFFTは1、2、4、8、16、32、64、128、25
 
 比べる幅を変えると、平行・垂直や合同・相似の判定結果が変わることがあります。たとえば2本の直線が0.5度だけ傾いている場合、既定の幅(角度0.000001ラジアン)では平行と判定されませんが、幅を1度まで広げると平行と判定されます。
 
+![2本の線分の「平行1」の行で「比べる幅を変える」を開き、角度の幅を1度にした後。値は「はい」、比べる幅は長さ0.000001 mm / 角度1度](images/math-geometry-tolerance-detail.png)
+
 ### この値の係数を作る
 
 値が決まっている行では「{{ui:mathGeometry.createParameter}}」を押せます。測定値の名前に「{{ui:mathGeometry.createParameter.nameSuffix}}」を付けた名前(たとえば測定値「箱1体積」なら「箱1体積の値」)で、式が`coef("測定値の名前")`の係数がパラメータの一覧に追加され、1行の知らせが出ます。Undo1回で取り消せます。
@@ -1490,6 +1494,8 @@ DFT／IDFTは1〜64要素、FFT／IFFTは1、2、4、8、16、32、64、128、25
 作った係数はパラメータの一覧で「{{ui:mathGeometry.derived}}」の印が付きます({{ui:mathGeometry.derivedTooltip}})。その係数を使って計算した別の係数にも同じ印が付きます。形を計算し直している間は値の代わりに「{{ui:mathGeometry.status.pending}}」と表示され、古い値は使いません。
 
 作った係数を式で使うには、「数式で入力」を開き、パレットの「{{ui:mathGeometry.palette.group}}」の一覧から選びます。選ぶと`coef("名前")`が入力されます。寸法などふつうの数値欄では、他の係数と同じように名前をそのまま書けます。
+
+![係数「幅B」の「数式を編集」を開いた画面。パレットの「図形の測定値」に「箱1体積」、「係数(名前を付けた値)」に「箱1体積の値」が並ぶ](images/math-geometry-palette-detail.png)
 
 {{ui:mathGeometry.appearance.refused}}
 

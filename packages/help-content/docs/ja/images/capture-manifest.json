@@ -71,6 +71,78 @@
       ]
     },
     {
+      "file": "appearance-color-material-detail.png",
+      "sha256": "8aa7f5bdd0b5888cb3c6c44676751f62c2c3c806c9f54a0285b0d5b023533483",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/appearanceColorCaptureFlow.ts",
+      "scriptSha256": "8e755efc0606297abbbdcafa10590e564219ce4f6f50ef53fb0d5f95187ba20d",
+      "fixtureSha256": "2573b647c5518641fb2cf5a5c3e0d9b5cefa193cbafe20d6ff76223d616e6995",
+      "capturedAt": "2026-09-29T09:30:33.583Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "appearance-color-material",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "appearance-glass-transmission-detail.png",
+      "sha256": "2d0aefe556104fd2c73ddcb0cd9c7c27fa42dc777ef4394ef5f44afcd455dc85",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/appearanceGlassCaptureFlow.ts",
+      "scriptSha256": "8373b573b955cee395cc9a9b81750757777c8721716e484d68965c67d8ff25b5",
+      "fixtureSha256": "9a57ec5e94a62851fa34266b35d5a9ad0b1b8372f74e185aa5a904fafe700b1e",
+      "capturedAt": "2026-09-29T09:30:40.735Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "appearance-glass-transmission",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "appearance-pattern-checker-detail.png",
+      "sha256": "dc4a7d55efeca2a72c3f5743adf329b232239094d2e5d17d50412473ac1aeca9",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/appearancePatternCaptureFlow.ts",
+      "scriptSha256": "d5b1088324f520009970d61fdf4294066ffa302b3349bd2c2699650278fd7175",
+      "fixtureSha256": "b2c870d6105cd8507fb88edc98eddcd87b98e7dbb4a781bb904f8f4818e85f7f",
+      "capturedAt": "2026-09-29T09:32:09.890Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "appearance-pattern-checker",
+          "image": "detail"
+        }
+      ]
+    },
+    {
       "file": "arc-and-coordinate-dimensions-screen.png",
       "sha256": "44288f01be4f0ca5dcdd480a0b63a8798759fae3c08ed5f7dec8883b735cae0c",
       "viewport": [
@@ -402,6 +474,30 @@
           "kind": "capture-details",
           "file": "s5-v100-capture-details.json",
           "name": "copy-array-mirror",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "cut-plane-detail.png",
+      "sha256": "0e99cbc2d767903a11b4f5ac32d1d7daa545e002ee4901a43f393b1c4b93f289",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/cutCaptureFlow.ts",
+      "scriptSha256": "b00848687890ff91ddeb9027b27409b18c302aa4912aaab999c10b247117753d",
+      "fixtureSha256": "4a0d78faca9e350ab99ebcf48dfe059277c0d7730639d2d1c7e53bdccd25bf1d",
+      "capturedAt": "2026-09-29T09:32:14.689Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "cut-plane",
           "image": "detail"
         }
       ]
@@ -1002,6 +1098,54 @@
           "kind": "capture-details",
           "file": "s5-v100-capture-details.json",
           "name": "face-and-color-swatches",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "fillet-chamfer-method-detail.png",
+      "sha256": "a8f3539797aa8f04b34b8b8f527601f622c274814e4f33125567cb5e91bab176",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/filletChamferCaptureFlow.ts",
+      "scriptSha256": "8ccbcea45b95fd29d7714b365d4ea799422cea7aed45e5afacd0062791869951",
+      "fixtureSha256": "83cde9adfc5d2690fa61bd1a5aff5b2d74ac2267fe34fc43a6aac32ee1afe211",
+      "capturedAt": "2026-09-29T09:33:35.493Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "fillet-chamfer-method",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "fillet-chamfer-round-detail.png",
+      "sha256": "48b57546c657fb85b1ea0e29c5be017fcf564b05e6cf21d11c3c2262910cdd33",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/filletChamferCaptureFlow.ts",
+      "scriptSha256": "8ccbcea45b95fd29d7714b365d4ea799422cea7aed45e5afacd0062791869951",
+      "fixtureSha256": "a6d690b630158f03006d13b55a3b3d92ee3ac8cc694eef1864fa606d0db78bfa",
+      "capturedAt": "2026-09-29T09:33:40.124Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "fillet-chamfer-round",
           "image": "detail"
         }
       ]
@@ -1647,6 +1791,54 @@
           "kind": "capture-details",
           "file": "s5-v100-capture-details.json",
           "name": "history-design-note",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "hole-basic-detail.png",
+      "sha256": "bc300693e165c99901b44e0f4fe4f6fe1ecbe8d12ac8b5d88cb97fec99e26e2c",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/holeCaptureFlow.ts",
+      "scriptSha256": "f95232f6fb7cff5ab4c859ff059c43c0e9cb5c1ed7b469923a938a9902811b90",
+      "fixtureSha256": "42d33158d13a27e44a4a9956cd2efc80a0d20cdb68b7148b47ff1c3bde49c225",
+      "capturedAt": "2026-09-29T09:35:56.100Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "hole-basic",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "hole-counterbore-detail.png",
+      "sha256": "2eedbe02702d1190d84099e0db6d418078b9bc8235d8725eb1e27097260d8ad7",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/holeCaptureFlow.ts",
+      "scriptSha256": "f95232f6fb7cff5ab4c859ff059c43c0e9cb5c1ed7b469923a938a9902811b90",
+      "fixtureSha256": "b34e34ea5c18027d163c57d4d514f7286e70116b8e40cddf95a71f685315f781",
+      "capturedAt": "2026-09-29T09:35:57.575Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "hole-counterbore",
           "image": "detail"
         }
       ]
@@ -2516,6 +2708,78 @@
       ]
     },
     {
+      "file": "math-geometry-palette-detail.png",
+      "sha256": "17e50859e03f55a9c767dc46bfe42e21c543c40a0886278d9e52537baadf78dc",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/mathGeometryReferenceFlow.ts",
+      "scriptSha256": "654d0dc00a14bee51430bfd1c59b3d861b6d21951820810816750d3bafc5c3c4",
+      "fixtureSha256": "fb6d6077d4e097f01039be2ddefea827bd5b5481f2aa6af3e9aea014b2bae0f4",
+      "capturedAt": "2026-09-29T09:33:53.228Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "math-geometry-palette",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "math-geometry-reference-detail.png",
+      "sha256": "aa510939372bfb0b8e840a0fe1c58ae247ed65c5ae085127249a3df852e3a69e",
+      "viewport": [
+        1440,
+        1100
+      ],
+      "viewportClass": "tall-exception",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/mathGeometryReferenceFlow.ts",
+      "scriptSha256": "654d0dc00a14bee51430bfd1c59b3d861b6d21951820810816750d3bafc5c3c4",
+      "fixtureSha256": "18b45656d6c4242a06a5a77e4c173baa2235dc44fa12b224c4e8f3461c6baf86",
+      "capturedAt": "2026-09-29T09:34:01.312Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "math-geometry-reference",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "math-geometry-tolerance-detail.png",
+      "sha256": "3f184a40065c6a34d76d1df8b760d3bb0d23a42228005f031ae477716be0a785",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/mathGeometryReferenceFlow.ts",
+      "scriptSha256": "654d0dc00a14bee51430bfd1c59b3d861b6d21951820810816750d3bafc5c3c4",
+      "fixtureSha256": "d8fc08becbdc40b05ad1d0cacde612beeb1880c11bd8dcb80a05387832f993ec",
+      "capturedAt": "2026-09-29T09:38:58.400Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "math-geometry-tolerance",
+          "image": "detail"
+        }
+      ]
+    },
+    {
       "file": "math-infinite-range-detail.png",
       "sha256": "b768c645337806b48d140935fe9d82829cea9ab1365f5caa238ebfc236009631",
       "viewport": [
@@ -3092,6 +3356,30 @@
       ]
     },
     {
+      "file": "measure-two-points-detail.png",
+      "sha256": "f93a3d2435d24e02caf794bc64a6e7b377f2d285972c6ca7ee0046aa0a19cc4c",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/measureCaptureFlow.ts",
+      "scriptSha256": "5a7ede993f3b158f58d7f09e6a061da494b5687b0931a516b1215e86990cf4fd",
+      "fixtureSha256": "6c39a2b40d28a73a25e47f05b6651c8acb48b25e64c9cbcecccc46250ecc28ca",
+      "capturedAt": "2026-09-29T09:38:27.752Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "measure-two-points",
+          "image": "detail"
+        }
+      ]
+    },
+    {
       "file": "name-search-assembly-matching-names-detail.png",
       "sha256": "ea308074f1c5f91fe0bc3da6531279f06784c111496ef252eada309f380b88fe",
       "viewport": [
@@ -3256,6 +3544,174 @@
           "file": "s5-v100-capture-details.json",
           "name": "parallel-arranged",
           "image": "screen"
+        }
+      ]
+    },
+    {
+      "file": "pattern-circular-detail.png",
+      "sha256": "539c58bbdf7ae24625c0423518e864298825b4b94adbc202d58630076527ea63",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/patternCaptureFlow.ts",
+      "scriptSha256": "4fb4f6d94f107a076fa2779072b4be892d55910157f7cd077d87712a823e2cbe",
+      "fixtureSha256": "6708375342e75a66196f5f4cd1271b54a26cb32610dac29b9d7edd86bf9c9b89",
+      "capturedAt": "2026-09-29T09:40:00.165Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add2-capture-details.json",
+          "name": "pattern-circular",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "pattern-linear-detail.png",
+      "sha256": "68226e04673f239cd776eb0abc33322a097ef13e6ee25bdd185bf21f953a26fd",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/patternCaptureFlow.ts",
+      "scriptSha256": "4fb4f6d94f107a076fa2779072b4be892d55910157f7cd077d87712a823e2cbe",
+      "fixtureSha256": "7c960bf19e62205b27af09706eedfac3639d674379e252951016f70726b35833",
+      "capturedAt": "2026-09-29T09:39:58.384Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "pattern-linear",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "primitive-menu-detail.png",
+      "sha256": "3957331df9cef8e2250c2741524415316f5dbb8f934761543f967a648aec71ef",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/primitiveCaptureFlow.ts",
+      "scriptSha256": "282ef5b185bc5d3664a1a8ba008bb3245beffa1459cedfca92ea446f6e704371",
+      "fixtureSha256": "6f63714a9a037030c25eb3ba5da4e1d1a49b69deac3ca0764a331341a1738b32",
+      "capturedAt": "2026-09-29T09:40:03.194Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "primitive-menu",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "primitive-properties-detail.png",
+      "sha256": "2c3aa29b273876cd8ff1d7d32e251e68eabb940b9d0eb5306fa094fb56e2313b",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/primitiveCaptureFlow.ts",
+      "scriptSha256": "282ef5b185bc5d3664a1a8ba008bb3245beffa1459cedfca92ea446f6e704371",
+      "fixtureSha256": "69a83227e4146d4392f6a57d6fb4fe93667da810d6bdf9b65700a4dace26460c",
+      "capturedAt": "2026-09-29T09:41:33.623Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "primitive-properties",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "print-check-result-detail.png",
+      "sha256": "b870c033b0679956b93f54d73bcb763f8212647d67959483669a79bfa4e1c4f4",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/printCheckCaptureFlow.ts",
+      "scriptSha256": "b2d8392d815b532748ef737ee4100525295884c46d662e38f6c6bae7e4af632e",
+      "fixtureSha256": "a0c475b2033461190e992785a40fab23a5bda5c3f53a764a2d2a350ca0e85f66",
+      "capturedAt": "2026-09-29T09:43:04.977Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "print-check-result",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "print-save-as-menu-screen.png",
+      "sha256": "f447356168628e1fd055b57c2d841d7e6d2b0e3df512a4e166959947dcdc3939",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/printSaveAsCaptureFlow.ts",
+      "scriptSha256": "5d3bb3890385a4485e62b8ad1a3f9307bbd7b38cf127bc578dfc44b414de1862",
+      "fixtureSha256": "2e3e9f3bfbce576eb04a7fd30b4cbad090a7ef3396e08dbbe36de79539ef84b0",
+      "capturedAt": "2026-09-29T09:43:11.217Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "print-save-as-menu",
+          "image": "screen"
+        }
+      ]
+    },
+    {
+      "file": "print-save-as-status-detail.png",
+      "sha256": "5ce4228417a2f3b0b1341d09e2b4b430a84609cdf5f96d4631fc87dd9d163c74",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/printSaveAsCaptureFlow.ts",
+      "scriptSha256": "5d3bb3890385a4485e62b8ad1a3f9307bbd7b38cf127bc578dfc44b414de1862",
+      "fixtureSha256": "c3ca369a27c22fe0707a413bd1a0325a6c521bdf84239d0ffc2b8c6fbefc16c5",
+      "capturedAt": "2026-09-29T09:43:12.577Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "print-save-as-status",
+          "image": "detail"
         }
       ]
     },
@@ -3428,6 +3884,78 @@
       ]
     },
     {
+      "file": "save-and-open-buttons-detail.png",
+      "sha256": "d572be95e4d431b7206ba28ccfe495ca3efcc78dd940a62171871a5e045e8410",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+      "scriptSha256": "103fbf7e18661fefd183fcd1a56eabf5ab5702f75a0996bd3db72606f3960264",
+      "fixtureSha256": "36bdf0fecfe688324a0c73d324d58dfbb1536dbc0179342f448f17a48cbffefd",
+      "capturedAt": "2026-09-29T09:43:09.039Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "save-and-open-buttons",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "save-and-open-file-error-detail.png",
+      "sha256": "86ee501b4fc2e9447b148e8b918fde52f3fce3315b5a5c4b66863bc84982503b",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+      "scriptSha256": "103fbf7e18661fefd183fcd1a56eabf5ab5702f75a0996bd3db72606f3960264",
+      "fixtureSha256": "fe4a831b8012b203386812bf8627648fc44f8e826a3980cf050563296efae9eb",
+      "capturedAt": "2026-09-29T09:43:13.827Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "save-and-open-file-error",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "save-and-open-restore-detail.png",
+      "sha256": "bf12366b854aebc2d279a71739c8e15eae7220e3c84ed4457ed753fa7023692d",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+      "scriptSha256": "103fbf7e18661fefd183fcd1a56eabf5ab5702f75a0996bd3db72606f3960264",
+      "fixtureSha256": "a142e7537719690992158a9166e33b5c3513601d1e79d76740ac666175b3d9b5",
+      "capturedAt": "2026-09-29T09:43:12.561Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "save-and-open-restore",
+          "image": "detail"
+        }
+      ]
+    },
+    {
       "file": "script-error-line-screen.png",
       "sha256": "9584778d1e980b08476d0c8d7c94861d489eb20cd7dff7bf70d53860ca14a438",
       "viewport": [
@@ -3543,6 +4071,102 @@
           "kind": "capture-details",
           "file": "s5-v100-capture-details.json",
           "name": "section-plane-outline",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "section-view-offset-detail.png",
+      "sha256": "7495df5aeb469368c0cb3d70b751c02806cbfddd18d019c8047bd5da9120c74e",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/sectionViewCaptureFlow.ts",
+      "scriptSha256": "dd117121c06b4daec894c6e38ccc5502544143c8d219e39c360381357a8a89f2",
+      "fixtureSha256": "726536b52e6bfc5176d2f8e91cd9b88baf60aa711dbe7103dd76aa09110d1fd0",
+      "capturedAt": "2026-09-29T09:44:46.410Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "section-view-offset",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "select-subshape-kind-detail.png",
+      "sha256": "683d8cc87fd2107fd3006a0e633b666456b479d2d2194b515bcced4cfaf5ca0b",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/selectSubshapeCaptureFlow.ts",
+      "scriptSha256": "e2ede9160dbd8641c55d2e4c79ce4a85da33818ffcccabca2b669c297394eefc",
+      "fixtureSha256": "f69f6bc097f0a555ea9c9d10e958b32ccd1986f9ab15242fef6da3a1d3cb3565",
+      "capturedAt": "2026-09-29T09:44:47.745Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "select-subshape-kind",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "selection-filter-off-detail.png",
+      "sha256": "9a90001e5ccbdb1909a60e2ce9617a67b3241913a1659dd0f44d1762a8adddbf",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/selectionCaptureFlow.ts",
+      "scriptSha256": "9118037f06d1eb224052905696d3d2bbf53878e91dfef340e39a1a23d7477c1b",
+      "fixtureSha256": "ee5460aebb6d9b2ab0615b335f9ec312d6aa9469e3e816c98919f81d0ec91a58",
+      "capturedAt": "2026-09-29T09:46:45.512Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "selection-filter-off",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "selection-named-set-detail.png",
+      "sha256": "e0f2d54c40833fdebd52d9f6579cb9ba9bb40b7551f24a6337bc0fb001f94fb2",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/selectionCaptureFlow.ts",
+      "scriptSha256": "9118037f06d1eb224052905696d3d2bbf53878e91dfef340e39a1a23d7477c1b",
+      "fixtureSha256": "6f4e80b4245d3356fb9dd12587c55e7fb16fd4f8e1ff77e62a8a4d26d26e323f",
+      "capturedAt": "2026-09-29T09:46:43.976Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "selection-named-set",
           "image": "detail"
         }
       ]
@@ -4090,6 +4714,126 @@
       ]
     },
     {
+      "file": "solid-basics-extrude-detail.png",
+      "sha256": "b2008abb868e14cf4b3224b5dd6ad96fd54082de21da8327a70aaacf83fa96e9",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/solidBasicsCaptureFlow.ts",
+      "scriptSha256": "d963f0f7c4aa891f260c9139285fd075df160d84bc9d87bf0c480ece999b771c",
+      "fixtureSha256": "fdf5b94e815ec7da68343d2fb5ff018a27e0839b7c72a12b20b0168b5f76d161",
+      "capturedAt": "2026-09-29T09:46:48.095Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "solid-basics-extrude",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "solid-basics-rotate-detail.png",
+      "sha256": "09e8d504abbed8cb361b2435326481332049c1f17e6a2439f92ad447085f48b7",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/solidBasicsCaptureFlow.ts",
+      "scriptSha256": "d963f0f7c4aa891f260c9139285fd075df160d84bc9d87bf0c480ece999b771c",
+      "fixtureSha256": "4d3ff2953b667b48d04a529f859c39d8711244ceee3777e595002756f7bad17c",
+      "capturedAt": "2026-09-29T09:46:49.726Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "solid-basics-rotate",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "solid-combine-menu-detail.png",
+      "sha256": "2ba9c397a6d27b10b8e67891f374a5a6b4b1b04b2fab03b93cc327556edf2230",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/solidCombineCaptureFlow.ts",
+      "scriptSha256": "e6c5284748bb2c66fb5c4b5ecbe643da2521dffd0c20e50f8c379e6cb9eea648",
+      "fixtureSha256": "1a97afa365ededaa8020b1fd8e145d0b9925459f047437ff70593ddcdc4e87cb",
+      "capturedAt": "2026-09-29T09:48:15.055Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "solid-combine-menu",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "sphere-grid-hint-detail.png",
+      "sha256": "3f575c862c3ca00b93e4197ea799e1a7007911bff5081363f0ccb3e1e38ae21c",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/sphereGridCaptureFlow.ts",
+      "scriptSha256": "82cbf719a994b9d89b560b90dcdb92e757cde553f9d7a0c086d69474b001231d",
+      "fixtureSha256": "6cf7d995daac71d4c59d8c1f1c666761ecd48a450ae70b588391241feaa721c4",
+      "capturedAt": "2026-09-29T09:48:16.036Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "sphere-grid-hint",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "sphere-grid-point-detail.png",
+      "sha256": "9962ba0c24d0aa227b757911f069fb2a0731a0256a35983fbe4ef14b118885d6",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/sphereGridCaptureFlow.ts",
+      "scriptSha256": "82cbf719a994b9d89b560b90dcdb92e757cde553f9d7a0c086d69474b001231d",
+      "fixtureSha256": "adc2c2a133b8f525f0bb7c9331003b6d83ac0d4a280c3ca0e584a4aa605dc795",
+      "capturedAt": "2026-09-29T09:48:17.706Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "sphere-grid-point",
+          "image": "detail"
+        }
+      ]
+    },
+    {
       "file": "spline-finish-detail.png",
       "sha256": "6598d7138ed75a4e33c106c0a78c3a65e2381ea5d7daa7ad894642d9f0120ed0",
       "viewport": [
@@ -4133,6 +4877,54 @@
           "kind": "capture-details",
           "file": "s5-v100-capture-details.json",
           "name": "spline-points",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "spring-length-detail.png",
+      "sha256": "eeb665dcb8dc0e6add244e77a104ee2035114e84412dd43e2b67ad5d3ccdeeb5",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/springCaptureFlow.ts",
+      "scriptSha256": "507d2956141549dec1350a6ef5f49cd983850a4674893f8c377afdc6a59c4056",
+      "fixtureSha256": "09ec5afbab2dc882e1ec020ae5991f0eeede0f2bac5710ba4f032df56f9571a1",
+      "capturedAt": "2026-09-29T09:48:19.871Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "spring-length",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "spring-shape-detail.png",
+      "sha256": "50ad5c90101866d81cb84bcb54e14148d30b12709ed5c8577f8804cbc04368a8",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/springCaptureFlow.ts",
+      "scriptSha256": "507d2956141549dec1350a6ef5f49cd983850a4674893f8c377afdc6a59c4056",
+      "fixtureSha256": "051af5da47563186a34e9d0df261c1e5e49c66d01c9b2a0498e9c0672ad8b9e2",
+      "capturedAt": "2026-09-29T09:48:18.847Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "spring-shape",
           "image": "detail"
         }
       ]
@@ -4301,6 +5093,150 @@
           "kind": "capture-details",
           "file": "s5-v100-capture-details.json",
           "name": "sweep-guide-result",
+          "image": "screen"
+        }
+      ]
+    },
+    {
+      "file": "template-has-history-detail.png",
+      "sha256": "136d3eb0bde2432508714a4e40fa3920a593fdd381ceef3c99ec9941bc74b1ad",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/templateCaptureFlow.ts",
+      "scriptSha256": "5e47238d4c2f4c79cac827779df3ded9c511bf31e431fd7608fc4932e6db0a67",
+      "fixtureSha256": "8d5609cee750b65768ab0b7dbfacddf69e6649aa5281f292542e09fe1035c6e6",
+      "capturedAt": "2026-09-29T09:50:10.411Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "template-has-history",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "template-menu-screen.png",
+      "sha256": "720e356330d42181d38beccf9c6d232fa1c00fa009e849f466f0d667c25db5c8",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/templateCaptureFlow.ts",
+      "scriptSha256": "5e47238d4c2f4c79cac827779df3ded9c511bf31e431fd7608fc4932e6db0a67",
+      "fixtureSha256": "21c7208a10e94d41962f9bf70ab339e460441cde67d927eabded69a108b12baa",
+      "capturedAt": "2026-09-29T09:50:09.369Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "template-menu",
+          "image": "screen"
+        }
+      ]
+    },
+    {
+      "file": "thread-basic-detail.png",
+      "sha256": "10382d71d03962dbac7216ebbfd432bc383036c3b71055a30192267975fcb018",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/threadCaptureFlow.ts",
+      "scriptSha256": "d7ed4db126f585a79d95c8650c4bf8cddc3c0340dca5b92369510d404f714c98",
+      "fixtureSha256": "a355b1b52439129eaefcbf01e9be9326c65ab9de14e29a577dccad40a56cf6b8",
+      "capturedAt": "2026-09-29T09:50:15.280Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "thread-basic",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "thread-pitch-detail.png",
+      "sha256": "854e7ff01fb6d1c80023d3736f7619dfb5ef3633e5fc9241b416b00e80fb056b",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/threadCaptureFlow.ts",
+      "scriptSha256": "d7ed4db126f585a79d95c8650c4bf8cddc3c0340dca5b92369510d404f714c98",
+      "fixtureSha256": "6ede84fdaafdcc08faef207cd836a767211317575787b978fa67bc61e869aa41",
+      "capturedAt": "2026-09-29T09:50:26.420Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "thread-pitch",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "timeline-rollback-banner-detail.png",
+      "sha256": "b268b82a0bc19e6421757212ee54eead936f2356afde05519a46ae3d027a4722",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/timelineCaptureFlow.ts",
+      "scriptSha256": "1c129a258e4a29bd76ae4ac91de585a1fdbaf1a13eff367b9b1408f9746a0475",
+      "fixtureSha256": "86d17b1bd1b3acbfd58809ff49b4f9b64e62c3b0c5b5b288dc5ae06afa6d4ba1",
+      "capturedAt": "2026-09-29T09:50:44.830Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "timeline-rollback-banner",
+          "image": "detail"
+        }
+      ]
+    },
+    {
+      "file": "timeline-rollback-tree-screen.png",
+      "sha256": "2a81a9582dbd9dea717425dd470276754b1c2c60c23f24f7564f22a4685c88bd",
+      "viewport": [
+        1440,
+        900
+      ],
+      "viewportClass": "standard",
+      "viewportSource": "capture-details",
+      "script": "e2e/tests/timelineCaptureFlow.ts",
+      "scriptSha256": "1c129a258e4a29bd76ae4ac91de585a1fdbaf1a13eff367b9b1408f9746a0475",
+      "fixtureSha256": "86d17b1bd1b3acbfd58809ff49b4f9b64e62c3b0c5b5b288dc5ae06afa6d4ba1",
+      "capturedAt": "2026-09-29T09:50:44.057Z",
+      "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+      "unknown": {},
+      "records": [
+        {
+          "kind": "capture-details",
+          "file": "s5-v100-add-capture-details.json",
+          "name": "timeline-rollback-tree",
           "image": "screen"
         }
       ]

@@ -112,6 +112,13 @@ try {
         default { '内部の誤り: 上の出力を確認してください。' }
     }
     Write-Host "check-release-ready: $meaning (終了コード $exitCode)"
+    # 説明書の章に画像が要るかの判定(scripts/manual/chapterImagePolicy.mjs)は generate.mjs 自身が
+    # 生成時に強制する(w148a、2026-09-29)。ここでは、画像は撮影済みだがどの章からも参照されていない
+    # 撮影名の一覧(scripts/manual/unusedCaptureNames.mjs)を、失敗させずに毎回の説明書検査で報告する。
+    if ($Mode -eq 'Manual' -or $Mode -eq 'PreRelease') {
+        Write-Host 'check-release-ready: 撮影済みだが章から参照されていない撮影名の報告(失敗にはしない):'
+        & $node.Path (Join-Path $repositoryRoot 'scripts/manual/unusedCaptureNames.mjs')
+    }
 } finally {
     if ($null -ne $previousEncoding) {
         try { [Console]::OutputEncoding = $previousEncoding } catch { $previousEncoding = $null }

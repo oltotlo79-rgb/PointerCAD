@@ -8,6 +8,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, build, createLogger } from 'vite';
 import { buildNativeControlInventory } from './control-inventory.mjs';
+import { checkChapterImagePolicy } from './chapterImagePolicy.mjs';
 import { sourceFileHash, sourceText } from '../release/desktopFileInventory.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -79,6 +80,15 @@ try {
       }
     }
   }
+  // w148a (2026-09-29): a chapter that should walk through the screen but has zero images passed the
+  // former NFR-MA-6 checks (they only compare an already-referenced image against the capture registry,
+  // never "does this chapter have any image at all"). Fail generation before any output is written.
+  const imagePolicy = checkChapterImagePolicy([...sources].map(([id, markdown]) => ({ name: `${id}.md`, text: markdown })));
+  if (imagePolicy.problems.length > 0) {
+    throw new Error(`Manual chapter image policy failed (scripts/manual/chapterImagePolicy.mjs):\n- ${imagePolicy.problems.join('\n- ')}`);
+  }
+  manifest.chapterImagePolicy = { chapters: imagePolicy.chapters,
+    openExceptions: imagePolicy.openExceptions.map(({ id, images: count, reason, deadline }) => ({ id, images: count, reason, deadline })) };
   pages = new Map(buildManualPages(sources, images));
   pages.set('feature-coverage.json', JSON.stringify({ format: 'pointercad-help-coverage/1',
     features: manifest.featureCoverage, commands: manifest.commandCoverage, supplementary: manifest.supplementaryCoverage, nativeControls: manifest.nativeControlCoverage, releaseCertified: false }, null, 2));
@@ -166,4 +176,5 @@ for (const [name, content] of pages) {
 }
 await writeFile(join(destination, 'manifest.json'), JSON.stringify(manifest, null, 2), { flag: 'wx' });
 log(JSON.stringify({ destination, chapters: manifest.chapters.length, volumes: manifest.volumes.length,
-  images: Object.keys(manifest.images).length, buildId: manifest.buildId, releaseCertified: false }));
+  images: Object.keys(manifest.images).length, buildId: manifest.buildId, releaseCertified: false,
+  chapterImagePolicy: manifest.chapterImagePolicy }));

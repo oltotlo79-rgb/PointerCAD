@@ -75,13 +75,27 @@ async function settledViewportRender(page: Page): Promise<{ readonly completedRe
  * CI run 36506536360 (commit eae0101, the first run with the check below): 11 captures on Linux (1 Chromium
  * sheet-profile, 10 real Electron) saw 1-2 more finished drawings between the settled read and the end of the
  * capture, while the same specs never did on Windows (runs 20260929-112131 / -115159). Such a pair is never
- * kept: it is taken again once the view has settled again, and a view that keeps drawing still fails.
+ * kept as it is: it is taken again once the view has settled again, and a view that keeps drawing still fails.
+ * CI run 36544970638 (commit cbdc2a5): 4 real Electron captures on Linux drew exactly once more on every one of
+ * the 3 attempts, always while the dialog image was taken and never while the screen image was, although other
+ * Electron captures of the same size and place (e.g. loft-spline-smooth, 280x802 at the right edge) did not.
+ * The view redraws on every store change (packages/ui/src/viewport/ViewportCanvas.tsx), and on Windows the
+ * same images come out byte for byte the same from run to run, so such a redraw does not have to change a
+ * single pixel. What such a redraw leaves on the pictures is therefore judged by the pictures themselves: a pair
+ * taken again after the view has settled again is kept only when both images are byte-identical to the pair
+ * before it (see captureStillImages).
  */
 const CAPTURE_ATTEMPTS = 3;
 
-/** The screen and dialog images, taken while the 3D view (if any) finished no drawing at all. */
+/**
+ * The screen and dialog images of a finished 3D view (if any): either the view finished no drawing at all while
+ * both were taken, or it drew again but the pair taken again after it had settled again is byte-identical in both
+ * images to the pair before it, so what it drew did not change a single pixel of either picture. A redraw that
+ * changes what is on the pictures (a view still being drawn or moved) never yields two identical pairs and fails.
+ */
 async function captureStillImages(page: Page, info: TestInfo, dialog: Locator, names: { readonly screen: string; readonly detail: string }) {
   const readRenders = () => page.evaluate(() => window.pcadViewportRenderStats?.().completedRenders);
+  let previous: { readonly screen: Buffer; readonly detail: Buffer } | null = null;
   for (let attempt = 1; ; attempt += 1) {
     const viewportRender = await settledViewportRender(page);
     // Reuse this already prepared, stable screen; do not add another operation or alter focus.
@@ -98,8 +112,17 @@ async function captureStillImages(page: Page, info: TestInfo, dialog: Locator, n
     // Only a view that is still there and drew more is taken again; a vanished view or a lower count fails at once.
     const drewAgain = typeof afterScreen === 'number' && typeof afterDetail === 'number' && afterScreen >= settled && afterDetail >= afterScreen;
     const drawn = `settled ${String(settled)}, after the screen image ${String(afterScreen)}, after the dialog image ${String(afterDetail)}`;
+    if (drewAgain && previous !== null && previous.screen.equals(screen) && previous.detail.equals(detail)) {
+      // Recorded in the output and the report, never hidden: the redraw is kept only because it changed no pixel.
+      const note = `${names.screen}: the 3D view drew again while capturing (${drawn}), but both images are byte-identical `
+        + `to the pair taken before the view settled again; kept on attempt ${String(attempt)}/${String(CAPTURE_ATTEMPTS)}`;
+      console.log(`[撮影の一致] ${note}`);
+      info.annotations.push({ type: 'capture-identical-retake', description: note });
+      return images;
+    }
     if (!drewAgain || attempt >= CAPTURE_ATTEMPTS) {
-      expect({ afterScreen, afterDetail }, `The 3D view must not redraw while capturing (attempt ${String(attempt)}/${String(CAPTURE_ATTEMPTS)}: ${drawn})`)
+      const changed = previous === null ? '' : `; the images differ from the pair taken before (screen ${String(!previous.screen.equals(screen))}, dialog ${String(!previous.detail.equals(detail))})`;
+      expect({ afterScreen, afterDetail }, `The 3D view must not redraw while capturing (attempt ${String(attempt)}/${String(CAPTURE_ATTEMPTS)}: ${drawn}${changed})`)
         .toEqual({ afterScreen: settled, afterDetail: settled });
       return images;
     }
@@ -107,6 +130,7 @@ async function captureStillImages(page: Page, info: TestInfo, dialog: Locator, n
     const note = `${names.screen}: the 3D view drew again while capturing (${drawn}); retaking ${String(attempt + 1)}/${String(CAPTURE_ATTEMPTS)}`;
     console.log(`[撮影の撮り直し] ${note}`);
     info.annotations.push({ type: 'capture-retake', description: note });
+    previous = { screen, detail };
   }
 }
 

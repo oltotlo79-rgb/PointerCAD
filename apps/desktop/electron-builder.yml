@@ -42,6 +42,9 @@ nsis:
   createStartMenuShortcut: true
   installerLanguages: [ja_JP, en_US]
 portable:
+  # 26.15.3の共有書庫を使わず、portable.nsiのFile /rで同梱する。
+  # nsisのZIPを7zとして扱う組合せを避ける（nsis.useZipは継承されない）。
+  useZip: true
   artifactName: PointerCAD-${version}-windows-${arch}-portable.${ext}
   requestExecutionLevel: user
   # 固定版26.15.3ではtrueが$PLUGINSDIRを使う。同時起動で展開先を共有しない。

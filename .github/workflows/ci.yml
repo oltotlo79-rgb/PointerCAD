@@ -64,7 +64,7 @@ jobs:
         run: ./scripts/check.ps1 -Install -CIStage Front -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'
 
       - name: 前段の記録を渡す
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-stage-${{ matrix.os }}-front
           path: ${{ runner.temp }}/pointercad-ci-stage/
@@ -106,7 +106,7 @@ jobs:
         run: ./scripts/check.ps1 -Install -CIStage UnitLead -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'
 
       - name: 単体の先行分の記録を渡す
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-stage-${{ matrix.os }}-unit-lead
           path: ${{ runner.temp }}/pointercad-ci-stage/
@@ -154,7 +154,7 @@ jobs:
         run: ./scripts/check.ps1 -Install -CIStage E2E -E2EShard '${{ matrix.shard }}/3' -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'
 
       - name: 画面検査の記録を渡す
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-stage-${{ matrix.os }}-e2e-${{ matrix.shard }}
           path: ${{ runner.temp }}/pointercad-ci-stage/
@@ -164,7 +164,7 @@ jobs:
 
       - name: 失敗した実画面検査の記録を保存
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-failure-${{ matrix.os }}-${{ matrix.shard }}
           path: test-results/

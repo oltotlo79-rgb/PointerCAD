@@ -4,8 +4,11 @@ import { copyFile, lstat, mkdir, readFile, readdir, realpath } from 'node:fs/pro
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, type Browser, type PlaywrightWorkerArgs } from '@playwright/test';
-import { portableDebuggerEndpoint, portableExtractionDirectory, portableLaunchPlan,
+import { portableDebuggerEndpoint, portableLaunchPlan,
   type PortableCandidate } from '../../scripts/release/portableLaunch.mjs';
+// v1.0.1: NSIS names the extraction "ns" + a..z + hex (CI run 36818570903: nsy3217.tmp). The scripts/release copy
+// still accepts only "nsi"; it is outside this fix's scope and is unified again in v1.0.2.
+import { nsisExtractionDirectory } from './portableExtraction.mjs';
 import { collectDesktopFiles } from '../../scripts/release/desktopFileInventory.mjs';
 import { verifyDesktopDistribution } from '../../scripts/release/desktopDistribution.mjs';
 
@@ -119,7 +122,7 @@ export async function verifyPortableExtraction(
   expect(mains, '単一 exe の子として展開先の本体が1つ動くこと').toHaveLength(1);
   const main = mains[0];
   if (main === undefined) throw new Error('Portable main process is missing.');
-  const directory = portableExtractionDirectory(main.path, isolation.temporary);
+  const directory = nsisExtractionDirectory(main.path, isolation.temporary);
   expect((await realpath(main.path)).toLowerCase()).toBe(resolve(main.path).toLowerCase());
   const resources = join(dirname(main.path), 'resources', 'app');
   const manifestBytes = await readFile(join(resources, 'desktop-package.json'));

@@ -23,9 +23,12 @@ import {
   DEFAULT_DENSITY_MATERIAL_ID,
   densityMaterialFor,
   findDensityMaterial,
-  formatLength,
+  formatDisplayLength,
+  INCH_DISPLAY_DIGITS,
+  MM_PER_INCH,
   inertiaWithDensity,
   massFromVolume,
+  parseElementId,
   type AppearancePresetId,
   type LengthUnit,
   type MeasureOutcome,
@@ -54,6 +57,7 @@ import {
   type MeasureTarget,
 } from './measure.js';
 import { resolveCachedSteps, type CachedResolveDeps } from './resolveCachedSteps.js';
+import { formatArea, formatVolume, AREA_UNIT_KEYS, VOLUME_UNIT_KEYS } from './measureFormatting.js';
 import type { SolidToolReadiness } from './solidCommands.js';
 import {
   parseSubShapeId,
@@ -127,6 +131,29 @@ export function describeMeasureTargets(targets: readonly Pick<MeasureTarget, 'ki
   return targets.map((target) => t(SELECTION_KIND_LABEL_KEYS[target.kind])).join(SUMMARY_SEPARATOR);
 }
 
+/** Names are captured with the request, so later selection or renaming cannot relabel its result. */
+export function measureTargetNames(document: PartDocument, selection: readonly string[]): readonly string[] {
+  const features = [...document.solids, ...document.sketches.flatMap(sketch => sketch.features)];
+  return selection.map((id) => {
+    const part = parseSubShapeId(id);
+    const sketchElement = parseElementId(id);
+    const featureId = part?.bodyFeatureId ?? sketchElement.featureId;
+    const feature = features.find(item => item.id === featureId);
+    const name = feature?.name ?? id;
+    if (part !== null) {
+      const bodyName = feature?.name ?? part.bodyFeatureId;
+      return `${bodyName} / ${t(SELECTION_KIND_LABEL_KEYS[part.kind])} ${part.index + 1}`;
+    }
+    return feature !== undefined && sketchElement.index !== null
+      ? `${name} / ${sketchElement.index + 1}${t('constraint.detail.indexSuffix')}`
+      : name;
+  });
+}
+
+export interface NamedMeasurementState extends MeasurementState {
+  readonly targetNames?: readonly string[];
+}
+
 /** 測れる種類の要約(「面と面の距離 / 面と面の角度」)。 */
 export function describeMeasureKinds(kinds: readonly MeasureKind[]): string {
   return kinds.map((kind) => measureKindLabel(kind)).join(SUMMARY_SEPARATOR);
@@ -144,19 +171,19 @@ const ANGLE_FRACTION_DIGITS = 2;
  *
  * **画面の札(`formatMeasure`、小数 3 桁)とは書式が違う。** 札は「ひと目で読む」ための
  * 幅の揃った数で、こちらは「読み取って書き写す」ための数だから(統括の指示: 距離は
- * `formatLength`、面積は mm²、角度は度で小数 2 桁)。長さは 1000mm 以上で m へ、
- * 面積・体積は式エンジンの表示規則(有効数字 12 桁)に任せる。
+ * `formatDisplayLength`、角度は度で小数 2 桁)。mm の長さは 1000mm 以上で m へ、
+ * mm の面積・体積は有効数字 12 桁、inch の長さ・面積・体積は小数 3 桁で出す。
  */
-export function formatMeasureValue(result: LocalMeasureResult): string {
+export function formatMeasureValue(result: LocalMeasureResult, unit: LengthUnit = 'mm'): string {
   switch (result.unit) {
     case 'mm':
-      return formatLength(result.value);
+      return formatDisplayLength(result.value, unit);
     case 'degree':
       return `${result.value.toFixed(ANGLE_FRACTION_DIGITS)} ${t('measure.unit.degree')}`;
     case 'mm2':
-      return `${displayNumber(result.value)} ${t('measure.unit.squareMillimeter')}`;
+      return `${formatArea(result.value, unit)} ${t(AREA_UNIT_KEYS[unit])}`;
     case 'mm3':
-      return `${displayNumber(result.value)} ${t('measure.unit.cubicMillimeter')}`;
+      return `${formatVolume(result.value, unit)} ${t(VOLUME_UNIT_KEYS[unit])}`;
   }
 }
 
@@ -192,7 +219,14 @@ function roundForDisplay(value: number): number {
  * 座標の書き方は `featureSummary.ts` の「= (x, y, z)」と違うが、あちらは**入力の解**で、
  * こちらは**測った値**なので、括弧で囲まずに単位を添える書き方にそろえる。
  */
-export function formatMeasurePoint(point: Vec3): string {
+export function formatMeasurePoint(point: Vec3, unit: LengthUnit = 'mm'): string {
+  if (unit === 'inch') {
+    const numbers = point.map(value => {
+      const text = (value / MM_PER_INCH).toFixed(INCH_DISPLAY_DIGITS);
+      return Number(text) === 0 ? (0).toFixed(INCH_DISPLAY_DIGITS) : text;
+    });
+    return `${numbers.join(NUMBER_SEPARATOR)} ${t('measure.unit.inch')}`;
+  }
   const numbers = [point[0], point[1], point[2]].map((value) =>
     displayNumber(roundForDisplay(value)),
   );
@@ -457,6 +491,7 @@ export function massPropertiesView(
   result: MassPropertiesResult,
   densityGPerCm3: number,
 ): MassPropertiesView {
+  if (!isValidDensity(densityGPerCm3)) throw new RangeError(t('propertyPanel.massDensityPositive'));
   return {
     mass: massFromVolume(result.volume, densityGPerCm3),
     moments: [
@@ -465,6 +500,10 @@ export function massPropertiesView(
       inertiaWithDensity(result.principalMoments[2], densityGPerCm3),
     ],
   };
+}
+
+export function isValidDensity(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
 }
 
 /**
@@ -552,7 +591,7 @@ export type MeasureOutcomeView =
   | {
       readonly ok: true;
       /** 画面に出す測定 1 件。 */
-      readonly measurement: MeasurementState;
+      readonly measurement: NamedMeasurementState;
       /** 立体 1 つを測ったときの質量特性。それ以外は null。 */
       readonly massProperties: MassPropertiesResult | null;
     }
@@ -588,7 +627,8 @@ export interface MeasureContext {
  */
 export async function runMeasure(context: MeasureContext): Promise<MeasureOutcomeView> {
   const ready = partMeasureReadiness(context.selection, context.bodies, context.sketch, context.lengthUnit);
-  if ('source' in ready) return { ok: true, measurement: ready.measurement, massProperties: null };
+  const targetNames = measureTargetNames(context.document, context.selection);
+  if ('source' in ready) return { ok: true, measurement: { ...ready.measurement, targetNames }, massProperties: null };
   const readiness = ready;
   if (!readiness.ready || readiness.kind === null) {
     return { ok: false, reasonKey: measureRejectionKeyOf(readiness) };
@@ -605,7 +645,7 @@ export async function runMeasure(context: MeasureContext): Promise<MeasureOutcom
   const massProperties = readiness.kinds.includes('massProperties')
     ? await measureMassProperties(context, readiness.targets)
     : null;
-  return { ok: true, measurement, massProperties };
+  return { ok: true, measurement: { ...measurement, targetNames }, massProperties };
 }
 
 /**

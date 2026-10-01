@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDrawingDocument } from './createDrawingDocument.js';
-import { createDrawingTemplate, drawingFromTemplate, validateDrawingTemplate, type DrawingTemplate } from './drawingTemplate.js';
+import { createDrawingTemplate, drawingFromTemplate, evaluateDrawingSheetExpression, validateDrawingTemplate, type DrawingTemplate } from './drawingTemplate.js';
 
 const source = { sourceRef: 'source-1', sourceKind: 'part' as const, fileName: 'part.pcad', path: '', contentHash: 'hash', importedAt: '2026-01-01' };
 function fixture(): DrawingTemplate {
@@ -10,6 +10,41 @@ function fixture(): DrawingTemplate {
     generalTolerance: 'm' }, layers: document.layers };
 }
 describe('図面ひな形の設定(P8-58)', () => {
+  it('原式と値を用紙・ひな形・新規図面に保持し、縮尺の配列も共有しない', () => {
+    const template = fixture();
+    const sheet = { ...template.sheet, scale: 0.5, scaleExpression: '1/2', textHeight: 3.5, textHeightExpression: '7/2',
+      scaleOptions: [0.5, 1, 2], scaleOptionExpressions: ['1/2', '1', 'root(8, 3)'],
+      titleBlockFields: [{ key: 'title', label: '名称', widthWeight: 2, widthExpression: '1+1' }] };
+    const created = createDrawingTemplate({ ...createDrawingDocument('original', source), sheet }, '式の標準');
+    if (!created.ok) throw new Error(created.reason);
+    const opened = drawingFromTemplate(created.template, 'new', source);
+    if (!opened.ok) throw new Error(opened.reason);
+    expect(created.template.sheet).toEqual(sheet);
+    expect(opened.document.sheet).toEqual(sheet);
+    expect(opened.document.sheet.scaleOptionExpressions).not.toBe(created.template.sheet.scaleOptionExpressions);
+    expect(created.template.sheet.titleBlockFields?.[0]).not.toBe(sheet.titleBlockFields[0]);
+  });
+  it.each([
+    ['1/2', 'ratio', 0.5], ['7/2', 'length', 3.5], ['1+1', 'ratio', 2],
+    ['sqrt(4)', 'ratio', 2], ['root(8, 3)', 'ratio', 2], ['1in', 'length', 25.4],
+  ] as const)('共通の数式評価で%sを%sとして評価する', (expression, quantity, value) => {
+    expect(evaluateDrawingSheetExpression(expression, quantity)).toMatchObject({ ok: true, value: { source: expression, value } });
+  });
+  it.each(['0', '-1', '1/0', 'sqrt(-1)', '未知の値', '', '1+', '2in'])('不成立の倍率%sを断る', (expression) => {
+    expect(evaluateDrawingSheetExpression(expression, 'ratio').ok).toBe(false);
+  });
+  it('任意の原式が数値と食い違う、対応する数値が無い、個数が違う設定を断る', () => {
+    const template = fixture();
+    for (const sheet of [
+      { ...template.sheet, scaleExpression: '1/2' },
+      { ...template.sheet, scaleExpression: '0' },
+      { ...template.sheet, textHeightExpression: '7/3' },
+      { ...template.sheet, textHeight: undefined, textHeightExpression: '7/2' },
+      { ...template.sheet, scaleOptionExpressions: ['1/2'] },
+      { ...template.sheet, scaleOptions: undefined, scaleOptionExpressions: ['1'] },
+      { ...template.sheet, titleBlockFields: [{ key: 'title', label: '図名', widthWeight: 2, widthExpression: '1+2' }] },
+    ]) expect(validateDrawingTemplate({ ...template, sheet }).ok).toBe(false);
+  });
   it('表題欄の順・固定文字・字体寸法・縮尺候補・普通公差を残す', () => {
     const template = fixture();
     const result = drawingFromTemplate(template, 'new', { ...source, sourceRef: 'new-source' });

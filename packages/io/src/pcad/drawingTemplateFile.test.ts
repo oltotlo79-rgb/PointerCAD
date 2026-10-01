@@ -4,6 +4,7 @@ import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate';
 import { readDrawingTemplateFile, writeDrawingTemplateFile } from './drawingTemplateFile.js';
 import { parseDrawingTemplate, serializeDrawingTemplate } from './drawingTemplateJson.js';
 import { serializeDrawing } from './drawingJson.js';
+import { isRecord } from './guards.js';
 import { PCAD_DRAWING_TEMPLATE_KIND, PCAD_SCHEMA_VERSION } from './schema.js';
 
 const savedAt = '2026-09-10T00:00:00.000Z';
@@ -16,6 +17,28 @@ function fixture(): DrawingTemplate {
 }
 
 describe('図面ひな形.pcadtの保存と互換(P8-58)', () => {
+  it('用紙の原式をZIPから新規図面へ往復し、未知の設定を残す', () => {
+    const base = fixture();
+    const template = { ...base, sheet: { ...base.sheet, scale: 0.5, scaleExpression: '1/2', textHeight: 3.5, textHeightExpression: '7/2',
+      scaleOptions: [0.5, 1, 2], scaleOptionExpressions: ['1/2', '1', 'root(8, 3)'], futureSetting: { enabled: true },
+      titleBlockFields: [{ key: 'title', label: '図名', widthWeight: 2, widthExpression: '1+1', futureField: 'retained' }] } };
+    const parsed = readDrawingTemplateFile(writeDrawingTemplateFile(template, savedAt));
+    expect(parsed).toEqual({ ok: true, template, savedAt });
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    expect(drawingFromTemplate(parsed.template, 'new', source)).toMatchObject({ ok: true, document: { sheet: template.sheet } });
+  });
+  it.each([
+    { scaleExpression: 123 }, { scaleExpression: '1/2' }, { scaleExpression: '1/0' },
+    { textHeightExpression: '7/2' }, { textHeightExpression: null },
+    { scaleOptionExpressions: ['1/2'] }, { scaleOptionExpressions: ['1/2', '1', 2] },
+    { titleBlockFields: [{ key: 'title', label: '図名', widthWeight: 2, widthExpression: '1+2' }] },
+  ])('図面と共通の検証で不正な原式のひな形を拒む: %j', (change) => {
+    const template = fixture();
+    const raw: unknown = JSON.parse(serializeDrawingTemplate(template, savedAt));
+    if (!isRecord(raw) || !isRecord(raw['template'])) throw new Error('missing template');
+    raw['template']['sheet'] = { ...template.sheet, ...change };
+    expect(parseDrawingTemplate(JSON.stringify(raw))).toMatchObject({ ok: false, error: { code: 'invalidTemplate' } });
+  });
   it('設定だけをZIPのdocument.jsonへ格納し、kindを部品と分ける', () => {
     const entries = unzipSync(writeDrawingTemplateFile(fixture(), savedAt));
     expect(Object.keys(entries)).toEqual(['document.json']);

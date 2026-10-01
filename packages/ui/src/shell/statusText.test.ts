@@ -3,7 +3,7 @@
  *
  * 帯は 1 本しかないので、同時に言いたいことがあるときに**どれを選ぶか**が要。
  * ここでは優先順位・進み具合の文と割合・失敗のまとめ方・案内の選び方を検査する。
- * 描画そのもの(`StatusBar.tsx`)は Node では検査できないので E2E と目視に任せる。
+ * 描画の配線は `StatusBar.test.ts`、実画面の操作は E2E で検査する。
  */
 
 import { addComponent, createAssemblyDocument, createComponentFor, diagnoseMates, resolveAssembly, solveMates,
@@ -159,6 +159,108 @@ function sketchError(message: string): SketchError {
   return { featureId: 'face-1', code: 'kernelFailed', message };
 }
 
+describe('計算中も道具の案内を残す(FR-905)', () => {
+  it.each(['projectedCurve', 'planeSection', 'point', 'line', 'arc'] as const)(
+    '%s の案内と計算中の印を並べる', (activeTool) => {
+      const line = describeStatus({ ...quiet(), activeTool, isComputing: true });
+      expect(line.kind).toBe('guide');
+      expect(line.text).toBe(t(guideKeyFor(activeTool, 0)));
+      expect(line.activity).toEqual({
+        text: t('statusBar.activityComputing'), detail: t('statusBar.loading'),
+      });
+      expect(line.progress).toBeNull();
+    },
+  );
+
+  it('初回の計算部の準備中も投影の案内を残す', () => {
+    const line = describeStatus({
+      ...quiet(), activeTool: 'projectedCurve', isComputing: true, kernelLoaded: false,
+    });
+    expect(line.text).toBe(t('statusBar.guide.projectedCurve'));
+    expect(line.activity).toEqual({
+      text: t('statusBar.activityPreparing'), detail: t('statusBar.loadingKernel'),
+    });
+  });
+
+  it.each([false, true])('道具なしの計算中は従来の文だけを出す(準備完了=%s)', (kernelLoaded) => {
+    const line = describeStatus({ ...quiet(), isComputing: true, kernelLoaded });
+    expect(line.kind).toBe('computing');
+    expect(line.text).toBe(t(kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel'));
+    expect(line.activity).toBeNull();
+  });
+
+  it('計算していないときは道具の案内だけを出す', () => {
+    const line = describeStatus({ ...quiet(), activeTool: 'projectedCurve' });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe(t('statusBar.guide.projectedCurve'));
+    expect(line.activity).toBeNull();
+  });
+
+  it('進み具合が届いても案内と3Dの一言を残し、進捗の数も渡す', () => {
+    const line = describeStatus({
+      ...quiet(), activeTool: 'point', workPlaneId: 'free',
+      isComputing: true, progress: progressAt(2, 12),
+    });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe(t('statusBar.guide.point'));
+    expect(line.hint).toBe(t('statusBar.guide.freeSketch'));
+    expect(line.progress).toEqual({ done: 3, total: 12, ratio: 0.25 });
+    expect(line.activity).toEqual({ text: '計算中 3/12', detail: progressText(progressAt(2, 12)) });
+  });
+
+  it('計算中も選択に応じた加工の段階を案内する', () => {
+    const line = describeStatus({
+      ...quiet(), activeTool: 'spring', springOriginSelected: true,
+      springStep: 'springLength', isComputing: true,
+    });
+    expect(line.text).toBe(t('statusBar.guide.springLengthReady'));
+    expect(line.activity).not.toBeNull();
+  });
+
+  it('計算中の拘束の対象選択も案内する', () => {
+    const line = describeStatus({
+      ...quiet(), constraintPickMessage: '直角: 線を 2 本選んでください。', isComputing: true,
+    });
+    expect(line.text).toBe('直角: 線を 2 本選んでください。');
+    expect(line.activity).not.toBeNull();
+  });
+
+  it.each([false, true])('拘束の決まり具合は選択中の道具を隠さない(計算中=%s)', (isComputing) => {
+    const line = describeStatus({
+      ...quiet(), activeTool: 'projectedCurve', constraintSummaryText: 'すべて決まりました。', isComputing,
+    });
+    expect(line.text).toBe(t('statusBar.guide.projectedCurve'));
+  });
+
+  it('組立の操作案内も計算中に消さない', () => {
+    const line = describeStatus({
+      ...quiet(), assemblyOperationStatus: assemblyToolGuide('placePart'), isComputing: true,
+    });
+    expect(line.text).toBe(assemblyToolGuide('placePart'));
+    expect(line.activity).not.toBeNull();
+  });
+
+  it('合致の対象選択と操作後の診断を区別する', () => {
+    const input = {
+      ...quiet(), assemblyMateStatus: { text: t('assembly.mate.pickSecond'), failed: false }, isComputing: true,
+    };
+    expect(describeStatus({ ...input, assemblyMateActive: true }).text).toBe(t('assembly.mate.pickSecond'));
+    expect(describeStatus(input).text).toBe(t('statusBar.loading'));
+  });
+
+  it('失敗理由と中止の知らせの優先順位は維持する', () => {
+    const input = { ...quiet(), activeTool: 'projectedCurve' as const, isComputing: true };
+    const failure = describeStatus({ ...input, errorMessage: '計算できません。' });
+    expect(failure.kind).toBe('failure');
+    expect(failure.text).toBe(`${t('statusBar.error')} 計算できません。`);
+    expect(failure.activity).toBeNull();
+    const cancelled = describeStatus({ ...input, cancelled: true });
+    expect(cancelled.kind).toBe('cancelled');
+    expect(cancelled.text).toBe(t('statusBar.cancelled'));
+    expect(cancelled.activity).toBeNull();
+  });
+});
+
 describe('アセンブリ道具の次の一手(P7タスク47)', () => {
   it.each(ASSEMBLY_TOOL_GUIDE_IDS)('%sに空でない案内がある', (id) => {
     expect(assemblyToolGuide(id)).not.toBe('');
@@ -204,6 +306,10 @@ describe('帯に出す 1 文の優先順位(FR-905)', () => {
     const line = describeStatus(quiet());
     expect(line.kind).toBe('guide');
     expect(line.text).toBe(t('statusBar.ready'));
+    expect(line.text).toContain('中ボタンのドラッグで回転');
+    expect(line.text).toContain('右ドラッグで平行移動');
+    expect(line.text).toContain('ホイールで拡大・縮小');
+    expect(line.text).toContain('右クリックで道具の一覧を開きます');
     expect(line.progress).toBeNull();
   });
 

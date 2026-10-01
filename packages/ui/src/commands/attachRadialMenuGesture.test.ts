@@ -3,7 +3,8 @@ import { attachCameraControls } from '../viewport/attachCameraControls.js';
 import { attachRadialMenuGesture, type RadialMenuAttachmentOptions } from './attachRadialMenuGesture.js';
 import type { RadialMenuGesture } from './radialMenuGesture.js';
 
-function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeClickTarget?: RadialMenuAttachmentOptions['nativeClickTarget']) {
+function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeClickTarget?: RadialMenuAttachmentOptions['nativeClickTarget'],
+  clickOnly = false, cameraFirst = false) {
   const view = new EventTarget(), captured = new Set<number>();
   let owner: object = {}, blocked = false;
   const show = vi.fn<(gesture: RadialMenuGesture | null) => void>(), choose = vi.fn();
@@ -14,10 +15,11 @@ function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeCli
     hasPointerCapture: (id: number) => captured.has(id),
     releasePointerCapture: (id: number) => { captured.delete(id); }, focus: vi.fn(),
   }) as unknown as HTMLCanvasElement;
-  const menu = attachRadialMenuGesture(surface, { owner: () => owner, blocked: () => blocked, show, choose,
+  const earlyCamera = cameraFirst ? attachCameraControls(surface, () => {}) : null;
+  const menu = attachRadialMenuGesture(surface, { owner: () => owner, blocked: () => blocked, show, choose, clickOnly,
     ...(clickSlot === undefined ? {} : { clickSlot }),
     ...(nativeClickTarget === undefined ? {} : { nativeClickTarget }) });
-  const camera = attachCameraControls(surface, () => {});
+  const camera = earlyCamera ?? attachCameraControls(surface, () => {});
   const send = (type: string, values: object = {}): Event => {
     const event = Object.assign(new Event(type, { cancelable: true }), {
       pointerId: 1, pointerType: 'mouse', button: 2, buttons: 2, clientX: 400, clientY: 300,
@@ -129,12 +131,99 @@ describe('右ボタンで道具を選ぶ間の入力所有権', () => {
       f.send('pointerdown');
       f.send('pointerup', { pointerId: 2, clientY: 200, buttons: 0 });
       expect(f.choose).not.toHaveBeenCalled(); expect(f.captured.has(1)).toBe(true);
-      f.menu.detach(); f.show.mockClear();
+      f.menu.detach(); f.camera.detach(); f.show.mockClear();
       expect(f.captured.size).toBe(0);
       expect(f.send('pointerdown').defaultPrevented).toBe(false);
       expect(f.send('pointerup', { clientY: 200, buttons: 0 }).defaultPrevented).toBe(false);
       expect(f.send('contextmenu').defaultPrevented).toBe(false);
       expect(f.choose).not.toHaveBeenCalled(); expect(f.show).not.toHaveBeenCalled();
+    } finally { f.close(); }
+  });
+});
+
+describe('3Dの右クリックと右ドラッグの振り分け', () => {
+  it.each([false, true])('カメラの先行登録=%sでも、6px以下では離した時だけ一覧を開く', cameraFirst => {
+    const f = fixture(undefined, undefined, true, cameraFirst), before = f.camera.getOrbit();
+    try {
+      f.send('pointerdown');
+      expect(f.camera.isDragging()).toBe(true);
+      expect(f.captured.has(1)).toBe(true);
+      expect(f.show).not.toHaveBeenCalled();
+      f.send('pointermove', { clientX: 406 });
+      expect(f.camera.getOrbit()).toBe(before);
+      expect(f.show).not.toHaveBeenCalled();
+      f.send('pointerup', { clientX: 406, buttons: 0 });
+      f.send('lostpointercapture');
+      expect(f.show.mock.lastCall?.[0]).not.toBeNull();
+      expect(f.show).toHaveBeenCalledTimes(1);
+      expect(f.camera.getOrbit()).toBe(before);
+      expect(f.camera.isDragging()).toBe(false);
+      expect(f.captured.size).toBe(0);
+      f.send('pointerdown', { button: 0, buttons: 1, clientY: 200 });
+      f.send('pointerup', { button: 0, buttons: 0, clientY: 200 });
+      expect(f.choose.mock.calls).toEqual([[0]]);
+      expect(f.camera.getOrbit()).toBe(before);
+    } finally { f.close(); }
+  });
+
+  it.each([false, true])('6pxを超えて戻ってもメニューを開かず平行移動を続ける（先行登録=%s）', cameraFirst => {
+    const f = fixture(undefined, undefined, true, cameraFirst), before = f.camera.getOrbit();
+    try {
+      f.send('pointerdown');
+      f.send('pointermove', { clientX: 406.001 });
+      expect(f.camera.getOrbit().target).not.toEqual(before.target);
+      f.send('pointermove');
+      expect(f.camera.isDragging()).toBe(true);
+      f.send('pointermove', { clientX: 460, clientY: 325 });
+      f.send('pointerup', { clientX: 460, clientY: 325, buttons: 0 });
+      expect(f.camera.getOrbit().target).not.toEqual(before.target);
+      expect(f.camera.getOrbit().azimuth).toBe(before.azimuth);
+      expect(f.camera.getOrbit().elevation).toBe(before.elevation);
+      expect(f.camera.isDragging()).toBe(false);
+      expect(f.captured.size).toBe(0);
+      expect(f.show).not.toHaveBeenCalled(); expect(f.choose).not.toHaveBeenCalled();
+    } finally { f.close(); }
+  });
+
+  it('moveが届かなくても実際の解放位置が6pxを超えれば平行移動する', () => {
+    const f = fixture(undefined, undefined, true), before = f.camera.getOrbit();
+    try {
+      f.send('pointerdown'); f.send('pointerup', { clientY: 307, buttons: 0 });
+      expect(f.camera.getOrbit().target).not.toEqual(before.target);
+      expect(f.show).not.toHaveBeenCalled(); expect(f.choose).not.toHaveBeenCalled();
+      expect(f.captured.size).toBe(0);
+    } finally { f.close(); }
+  });
+
+  it.each(['pointercancel', 'lostpointercapture', 'blur', 'resize', 'escape', 'document', 'blocked', 'extra-button', 'detach'])(
+    '%sで保留したクリックを開かない', reason => {
+      const f = fixture(undefined, undefined, true);
+      try {
+        f.send('pointerdown');
+        if (reason === 'escape') f.send('keydown', { key: 'Escape' });
+        else if (reason === 'document') f.changeDocument();
+        else if (reason === 'blocked') f.block();
+        else if (reason === 'extra-button') f.send('pointermove', { buttons: 3 });
+        else if (reason === 'detach') f.menu.detach();
+        else f.send(reason);
+        f.send('pointerup', { buttons: 0 });
+        expect(f.show).not.toHaveBeenCalled(); expect(f.choose).not.toHaveBeenCalled();
+        expect(f.camera.isDragging()).toBe(false); expect(f.captured.size).toBe(0);
+      } finally { f.close(); }
+    },
+  );
+
+  it('別ポインターでは保留中のクリックもカメラも終了しない', () => {
+    const f = fixture(undefined, undefined, true);
+    try {
+      f.send('pointerdown');
+      f.send('pointermove', { pointerId: 2, clientX: 600 });
+      f.send('pointerup', { pointerId: 2, buttons: 0 });
+      f.send('lostpointercapture', { pointerId: 2 });
+      expect(f.camera.isDragging()).toBe(true); expect(f.captured.has(1)).toBe(true);
+      expect(f.show).not.toHaveBeenCalled();
+      f.send('pointerup', { buttons: 0 });
+      expect(f.show).toHaveBeenCalledTimes(1); expect(f.captured.size).toBe(0);
     } finally { f.close(); }
   });
 });

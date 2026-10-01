@@ -1,261 +1,248 @@
 import * as THREE from 'three';
 
 import { cameraPosition, type OrbitState } from '../viewport/cameraMath.js';
-import { cssColor, DEFAULT_THEME_COLORS, type ThemeColors } from '../viewport/themeColors.js';
-import { createFaceTexture, CUBE_FACES } from './faceTexture.js';
-import {
-  regionFromLocalPoint,
-  REGION_THRESHOLD,
-  type AxisSign,
-  type ViewCubeRegion,
-} from './viewCubeMath.js';
+import { DEFAULT_THEME_COLORS, type ThemeColors } from '../viewport/themeColors.js';
+import { createAxisTexture, createCubeTexture } from './faceTexture.js';
+import { VIEW_CUBE_CAMERA_DISTANCE, VIEW_CUBE_FIELD_OF_VIEW } from './viewCubeCamera.js';
+import { createRegionGeometry, createViewCubeGeometry } from './viewCubeGeometry.js';
+import { regionFromLocalPoint, type ViewCubeRegion } from './viewCubeMath.js';
 
-/** ビューキューブの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
 export interface ViewCubeScene {
-  /** 視点とホバー中の領域を反映して描く。前回と同じ内容なら描き直さない。 */
-  render(orbit: OrbitState, highlighted: ViewCubeRegion | null): void;
-  /** canvas 上の位置(-1 〜 +1 の正規化座標)から、指している領域を返す。 */
+  /** Equal orientation, region and press state do not submit another frame. */
+  render(orbit: OrbitState, highlighted: ViewCubeRegion | null, pressed?: boolean): void;
   pick(normalizedX: number, normalizedY: number): ViewCubeRegion | null;
-  /** 表示の一辺(画素)を合わせる。 */
   resize(sizePixels: number): void;
-  /**
-   * 面・稜線・ホバーの下地の色をテーマから読み直す(FR-908、P4 タスク2 仕上げ)。
-   * 面はテクスチャに色を焼き込んでいるため、材質の色を差し替えるのではなく
-   * テクスチャを作り直す(呼ぶのはテーマ変更時だけなので毎フレームの負荷にはならない、
-   * NFR-PF-1)。呼んだ後、視点やホバーが直前と同じでも次の `render` は描き直す。
-   */
   setThemeColors(colors: ThemeColors): void;
   dispose(): void;
 }
 
-/** 立方体の一辺の半分。領域判定(viewCubeMath)は -1 〜 +1 を前提とするので 1 にする。 */
-const CUBE_HALF_SIZE = 1;
-
-/** 本アプリは Z 軸が上(計画書 §0.a-0.9)。 */
-const UP_AXIS = new THREE.Vector3(0, 0, 1);
-
-const CAMERA_FIELD_OF_VIEW_DEGREES = 35;
-const CAMERA_NEAR_PLANE = 0.1;
-const CAMERA_FAR_PLANE = 100;
-
-/**
- * カメラと立方体の距離。
- *
- * 等角視(角が正面を向く向き)では、手前寄りの角がカメラから 6.5 - 1/√3 ≒ 5.92 の距離に、
- * 視線から √(3 - 1/3) ≒ 1.633 だけ離れて見える。画角 35 度の半分の正接が 0.3153 なので、
- * 画面の半分に対する占有率は 1.633 / 5.92 / 0.3153 ≒ 0.87 に収まり、角が枠から出ない。
- * 計画書の 4 では占有率が 1.5 を超えて角が切れるため、検算のうえ広げた。
- */
-const CAMERA_DISTANCE = 6.5;
-
-/** 端末の画素密度をそのまま使うと高精細画面で負荷が跳ね上がるため上限を設ける(NFR-PF-1)。 */
 const MAX_PIXEL_RATIO = 2;
-
-/** ホバー中の領域を示す板を、面からわずかに浮かせる量。面と重なってちらつくのを防ぐ。 */
-const HIGHLIGHT_LIFT = 0.012;
-/**
- * ホバーの下地の不透明度。色そのもの(押せる場所であることを一目で分かるようにする、
- * NFR-UX-7)はテーマの `selected`(スケッチ・立体の選択と同じ色)を使う(P4 タスク2 仕上げ)。
- */
-const HIGHLIGHT_OPACITY = 0.42;
-
-/**
- * 稜線を面よりわずかに外へ広げる倍率。面とちょうど同じ位置だと深度が競って線が途切れる。
- * 一辺 120 画素の表示で 0.4% は 0.3 画素未満なので、太って見えることはない。
- */
-const EDGE_SCALE = 1.004;
-
-/** 領域の板の中心。面の中央(0)ならキューブの中心、端(±1)なら外寄りに置く。 */
-function highlightCenter(sign: AxisSign): number {
-  return sign === 0 ? 0 : sign * ((1 + REGION_THRESHOLD) / 2) * CUBE_HALF_SIZE;
-}
-
-/** 領域の板の一辺。しきい値で区切られた 3 × 3 の升目に合わせる。 */
-function highlightSize(sign: AxisSign): number {
-  const half = sign === 0 ? REGION_THRESHOLD : (1 - REGION_THRESHOLD) / 2;
-  return 2 * (half * CUBE_HALF_SIZE + HIGHLIGHT_LIFT);
-}
+const UP_AXIS = new THREE.Vector3(0, 0, 1);
+const GUIDE_HEIGHT = -1.24;
+const GUIDE_RADIUS = 1.5;
+const GUIDE_SEGMENTS = 48;
+const GUIDE_WIDTH = 0.035;
+const LABEL_RADIUS = 0.82;
 
 function regionKey(region: ViewCubeRegion | null): string {
-  return region === null ? '' : `${region.x},${region.y},${region.z}`;
+  return region === null ? '' : [region.x, region.y, region.z].join(',');
+}
+
+/** Flat ribbons keep a visible width on WebGL implementations with 1px lines. */
+function guideGeometry(colors: ThemeColors): THREE.BufferGeometry {
+  const positions: number[] = [], vertexColors: number[] = [];
+  const ringColor = new THREE.Color(colors.viewCubeEdge);
+  function line(from: number[], to: number[], color: THREE.Color): void {
+    const a = new THREE.Vector3(from[0], from[1], from[2]), b = new THREE.Vector3(to[0], to[1], to[2]);
+    const width = b.clone().sub(a).cross(UP_AXIS).normalize().multiplyScalar(GUIDE_WIDTH / 2);
+    const corners = [a.clone().add(width), a.clone().sub(width), b.clone().sub(width), b.clone().add(width)];
+    for (const index of [0, 1, 2, 0, 2, 3]) {
+      positions.push(...corners[index].toArray());
+      vertexColors.push(...color.toArray());
+    }
+  }
+  function onRing(angle: number, radius: number): number[] {
+    return [Math.cos(angle) * radius, Math.sin(angle) * radius, GUIDE_HEIGHT];
+  }
+  for (let index = 0; index < GUIDE_SEGMENTS; index += 1) {
+    const angle = index * Math.PI * 2 / GUIDE_SEGMENTS;
+    line(onRing(angle, GUIDE_RADIUS), onRing((index + 1) * Math.PI * 2 / GUIDE_SEGMENTS, GUIDE_RADIUS), ringColor);
+    if (index % 4 === 0) line(onRing(angle, GUIDE_RADIUS), onRing(angle, GUIDE_RADIUS - (index % 12 === 0 ? 0.14 : 0.07)), ringColor);
+  }
+  // Last three ribbons are positioned in the camera plane when orientation changes.
+  for (const color of [colors.axisX, colors.axisY, colors.axisZ]) line([0, 0, 0], [0, 0, 0], new THREE.Color(color));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(vertexColors, 3));
+  return geometry;
 }
 
 /**
- * 本体のビューポートとは別の小さな canvas に、独立した描画器で立方体だけを描く(FR-103)。
- * 当たり判定は three.js の Raycaster で行い、当たった点を viewCubeMath の領域判定へ渡す。
+ * A bevelled cube, compass and axis labels with no lights, shadows or idle loop.
+ * Five draws at rest, seven on hover (previously seven/eight). Picking deliberately
+ * uses the original six-sided box and the unchanged 0.5 region boundary.
  */
 export function createViewCubeScene(canvas: HTMLCanvasElement, sizePixels: number): ViewCubeScene {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio, MAX_PIXEL_RATIO));
   renderer.setClearAlpha(0);
-
   const scene = new THREE.Scene();
-
-  // 面の文字を確実に読ませたいので、光の当たり方に左右されない材質で描く。
-  // 面ごとの明暗は光ではなく地の色で付ける(向きを変えても各面の明るさが変わらないので、
-  // どの面を見ているかが色でも分かる)。テクスチャは色を焼き込む都合上、初期状態は空で
-  // 作り(まだテーマの色が無い)、この関数の末尾の `applyThemeColors(DEFAULT_THEME_COLORS)`
-  // で最初のテクスチャを用意する(P4 タスク2 仕上げ)。
-  const materials = CUBE_FACES.map(() => new THREE.MeshBasicMaterial());
-  const cubeGeometry = new THREE.BoxGeometry(
-    CUBE_HALF_SIZE * 2,
-    CUBE_HALF_SIZE * 2,
-    CUBE_HALF_SIZE * 2,
-  );
-  const cube = new THREE.Mesh(cubeGeometry, materials);
-  // three.js の既定は Y 上、本アプリは Z 上。立方体を倒して軸の意味を合わせる。
-  // 向き(+90 度)と面の並びの対応は faceTexture.ts の CUBE_FACES の注釈を参照。
+  const cubeGeometry = createViewCubeGeometry();
+  const material = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const cube = new THREE.Mesh(cubeGeometry, material);
   cube.rotation.x = Math.PI / 2;
   scene.add(cube);
 
-  // 12 本の稜線。立方体の子にして向きを合わせ、当たり判定(intersectObject の非再帰)からは外す。
-  // 色は面の地の色より一段暗くして、角の位置を読み取れるようにする(テーマの
-  // viewCubeEdge、applyThemeColors が設定する)。
-  const edgeGeometry = new THREE.EdgesGeometry(cubeGeometry);
-  const edgeMaterial = new THREE.LineBasicMaterial();
-  const cubeEdges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-  cubeEdges.scale.setScalar(EDGE_SCALE);
-  cube.add(cubeEdges);
+  // Decoration must not make an existing corner or edge target harder to acquire.
+  const pickGeometry = new THREE.BoxGeometry(2, 2, 2);
+  const pickMaterial = new THREE.MeshBasicMaterial();
+  const pickCube = new THREE.Mesh(pickGeometry, pickMaterial);
+  pickCube.updateMatrixWorld();
 
-  // ホバー中の面・辺・頂点を示す板(NFR-UX-7)。位置と大きさは領域ごとに付け替える。
-  // 色はテーマの selected(スケッチ・立体の選択と同じ色、applyThemeColors が設定する)。
-  const highlightMaterial = new THREE.MeshBasicMaterial({
-    transparent: true,
-    opacity: HIGHLIGHT_OPACITY,
-    depthWrite: false,
+  const guideMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const guide = new THREE.Mesh(guideGeometry(DEFAULT_THEME_COLORS), guideMaterial);
+  scene.add(guide);
+  const axisLabels = (['X', 'Y', 'Z'] as const).map(label => {
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false }));
+    sprite.scale.setScalar(0.4);
+    scene.add(sprite);
+    return { label, sprite };
   });
-  const highlight = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), highlightMaterial);
+
+  const regions = new Map<string, { surface: THREE.BufferGeometry; outline: THREE.EdgesGeometry }>();
+  for (const x of [-1, 0, 1] as const) {
+    for (const y of [-1, 0, 1] as const) {
+      for (const z of [-1, 0, 1] as const) {
+        if (x === 0 && y === 0 && z === 0) continue;
+        const region = { x, y, z };
+        const surface = createRegionGeometry(cubeGeometry, region);
+        regions.set(regionKey(region), { surface, outline: new THREE.EdgesGeometry(surface, 25) });
+      }
+    }
+  }
+  const emptyGeometry = new THREE.BufferGeometry();
+  const highlightMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.3, depthWrite: false });
+  const highlight = new THREE.Mesh(emptyGeometry, highlightMaterial);
+  const outlineMaterial = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.95, depthWrite: false });
+  const outline = new THREE.LineSegments(emptyGeometry, outlineMaterial);
   highlight.visible = false;
-  scene.add(highlight);
+  outline.visible = false;
+  scene.add(highlight, outline);
 
-  const camera = new THREE.PerspectiveCamera(
-    CAMERA_FIELD_OF_VIEW_DEGREES,
-    1,
-    CAMERA_NEAR_PLANE,
-    CAMERA_FAR_PLANE,
-  );
+  const camera = new THREE.PerspectiveCamera(VIEW_CUBE_FIELD_OF_VIEW, 1, 0.1, 100);
   camera.up.copy(UP_AXIS);
-
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
+  let lastAzimuth = Number.NaN, lastElevation = Number.NaN, lastRegionKey = '';
+  let lastPressed = false;
+  let lastSize = 0, lastPixelRatio = 0;
 
-  // 前回描いた内容。同じなら描き直さず、待機中に GPU を回し続けないようにする(NFR-PF-1)。
-  let lastAzimuth = Number.NaN;
-  let lastElevation = Number.NaN;
-  let lastRegionKey = '';
+  function placeAxisLabels(): void {
+    const directions = axisLabels.map((_axis, index) => {
+      const direction = new THREE.Vector3().setComponent(index, 1).project(camera);
+      // An axis looking straight at the viewer has no projected direction.
+      return Math.hypot(direction.x, direction.y) < 1e-6 ? Math.PI / 2 + index * Math.PI * 2 / 3 : Math.atan2(direction.y, direction.x);
+    });
+    const angles: number[] = [];
+    const signedAngle = (angle: number): number => Math.atan2(Math.sin(angle), Math.cos(angle));
+    const overlapsHome = (angle: number): boolean => signedAngle(angle) > 2.08 && signedAngle(angle) < 2.81;
+    // Reserve the upper-left home button and separate nearly parallel axes.
+    // Only the labels move aside; each stem still starts on its projected axis.
+    for (const direction of directions) {
+      const preferred = overlapsHome(direction) ? (direction < 2.445 ? 2.08 : 2.81) : direction;
+      const candidates = [preferred];
+      for (let step = 1; step <= 9; step += 1) candidates.push(preferred - step * 0.36, preferred + step * 0.36);
+      angles.push(candidates.find(angle => !overlapsHome(angle) && angles.every(other => Math.abs(signedAngle(angle - other)) >= 0.36 - 1e-6)) ?? preferred);
+    }
+    const extent = VIEW_CUBE_CAMERA_DISTANCE * Math.tan(VIEW_CUBE_FIELD_OF_VIEW * Math.PI / 360);
+    const positions = guide.geometry.getAttribute('position');
+    for (const [index, { sprite }] of axisLabels.entries()) {
+      const x = Math.cos(angles[index]), y = Math.sin(angles[index]);
+      sprite.position.set(x * LABEL_RADIUS * extent, y * LABEL_RADIUS * extent, -VIEW_CUBE_CAMERA_DISTANCE).applyMatrix4(camera.matrixWorld);
+      const from = new THREE.Vector2(Math.cos(directions[index]), Math.sin(directions[index])).multiplyScalar(0.69 * extent);
+      const to = new THREE.Vector2(x, y).multiplyScalar(0.76 * extent);
+      const width = new THREE.Vector2(-(to.y - from.y), to.x - from.x).normalize().multiplyScalar(GUIDE_WIDTH / 2);
+      const ends = [from, from, to, from, to, to];
+      const across = [1, -1, -1, 1, -1, 1];
+      for (let vertex = 0; vertex < 6; vertex += 1) {
+        const point = new THREE.Vector3(
+          ends[vertex].x + width.x * across[vertex],
+          ends[vertex].y + width.y * across[vertex],
+          -VIEW_CUBE_CAMERA_DISTANCE,
+        ).applyMatrix4(camera.matrixWorld);
+        positions.setXYZ(positions.count - 18 + index * 6 + vertex, point.x, point.y, point.z);
+      }
+    }
+    if (positions instanceof THREE.BufferAttribute) {
+      positions.clearUpdateRanges();
+      positions.addUpdateRange((positions.count - 18) * 3, 18 * 3);
+    }
+    positions.needsUpdate = true;
+    // The camera-facing stems move, so stale culling bounds must not discard them.
+    guide.frustumCulled = false;
+  }
 
   function applySize(pixels: number): void {
+    const pixelRatio = Math.min(globalThis.devicePixelRatio || 1, MAX_PIXEL_RATIO);
     const size = Math.max(Math.round(pixels), 1);
-    // CSS で大きさを指定済みなので描画バッファだけを合わせる。
-    renderer.setSize(size, size, false);
+    if (size === lastSize && pixelRatio === lastPixelRatio) return;
+    lastSize = size;
+    lastPixelRatio = pixelRatio;
+    // Set density and dimensions together: setPixelRatio would resize once itself.
+    renderer.setDrawingBufferSize(size, size, pixelRatio);
+    lastAzimuth = Number.NaN;
   }
   applySize(sizePixels);
 
-  /**
-   * 面・稜線・ホバーの下地の色をテーマから読み直す。面は色をテクスチャに焼き込んでいるので
-   * 材質の色(`material.color`)ではなく、テクスチャそのものを作り直す。古いテクスチャは
-   * 破棄してから差し替える(GPU 資源を残さない)。
-   */
   function applyThemeColors(colors: ThemeColors): void {
-    for (const [index, face] of CUBE_FACES.entries()) {
-      const material = materials[index];
-      const previousMap = material.map;
-      material.map = createFaceTexture(
-        face.labelKey,
-        cssColor(colors[face.fillField]),
-        cssColor(colors.viewCubeText),
-      );
-      material.needsUpdate = true;
-      previousMap?.dispose();
+    const previousMap = material.map;
+    material.map = createCubeTexture(colors);
+    material.needsUpdate = true;
+    previousMap?.dispose();
+    guide.geometry.dispose();
+    guide.geometry = guideGeometry(colors);
+    for (const [index, { label, sprite }] of axisLabels.entries()) {
+      const previous = sprite.material.map;
+      sprite.material.map = createAxisTexture(label, [colors.axisX, colors.axisY, colors.axisZ][index]);
+      sprite.material.needsUpdate = true;
+      previous?.dispose();
     }
-    edgeMaterial.color.setHex(colors.viewCubeEdge);
-    // ホバーの色は選択と同じ色にそろえる(スケッチ・立体の強調と一貫させる)。
     highlightMaterial.color.setHex(colors.selected);
-    // 色が変わったこと自体は視点・ホバーの変化ではないので、直前の記録を無効にして
-    // 次の render を確実に描き直させる(resize と同じやり方)。
+    outlineMaterial.color.setHex(colors.hovered);
     lastAzimuth = Number.NaN;
   }
   applyThemeColors(DEFAULT_THEME_COLORS);
 
   return {
-    render(orbit, highlighted): void {
+    render(orbit, highlighted, pressed = false): void {
       const key = regionKey(highlighted);
-      if (
-        orbit.azimuth === lastAzimuth &&
-        orbit.elevation === lastElevation &&
-        key === lastRegionKey
-      ) {
-        return;
-      }
+      if (orbit.azimuth === lastAzimuth && orbit.elevation === lastElevation && key === lastRegionKey && pressed === lastPressed) return;
+      const orientationChanged = orbit.azimuth !== lastAzimuth || orbit.elevation !== lastElevation;
       lastAzimuth = orbit.azimuth;
       lastElevation = orbit.elevation;
       lastRegionKey = key;
-
-      if (highlighted === null) {
-        highlight.visible = false;
-      } else {
-        highlight.visible = true;
-        highlight.position.set(
-          highlightCenter(highlighted.x),
-          highlightCenter(highlighted.y),
-          highlightCenter(highlighted.z),
-        );
-        highlight.scale.set(
-          highlightSize(highlighted.x),
-          highlightSize(highlighted.y),
-          highlightSize(highlighted.z),
-        );
+      lastPressed = pressed;
+      const region = regions.get(key);
+      highlight.visible = region !== undefined;
+      outline.visible = region !== undefined;
+      if (region !== undefined) {
+        highlight.geometry = region.surface;
+        outline.geometry = region.outline;
+        highlightMaterial.opacity = pressed ? 0.52 : 0.3;
       }
-
-      // 立方体は原点に固定し、本体のビューポートと同じ向きからカメラだけを回す。
-      const [x, y, z] = cameraPosition({
-        ...orbit,
-        distance: CAMERA_DISTANCE,
-        target: [0, 0, 0],
-      });
-      camera.position.set(x, y, z);
+      camera.position.set(...cameraPosition({ ...orbit, distance: VIEW_CUBE_CAMERA_DISTANCE, target: [0, 0, 0] }));
       camera.up.copy(UP_AXIS);
       camera.lookAt(0, 0, 0);
-      // 描画の前後どちらで pick が呼ばれても当たり判定がずれないようにする。
       camera.updateMatrixWorld();
-
+      if (orientationChanged) placeAxisLabels();
       renderer.render(scene, camera);
     },
-
     pick(normalizedX, normalizedY): ViewCubeRegion | null {
       pointer.set(normalizedX, normalizedY);
       raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObject(cube, false).at(0);
-      if (hit === undefined) {
-        return null;
-      }
-      // シーンのワールド座標は Z 上で、立方体は原点中心・軸に沿った一辺 2×CUBE_HALF_SIZE。
-      // 交点をそのまま -1 〜 +1 へ直せば領域判定へ渡せる(立方体の回転に依存しない)。
-      return regionFromLocalPoint([
-        hit.point.x / CUBE_HALF_SIZE,
-        hit.point.y / CUBE_HALF_SIZE,
-        hit.point.z / CUBE_HALF_SIZE,
-      ]);
+      const hit = raycaster.intersectObject(pickCube, false).at(0);
+      return hit === undefined ? null : regionFromLocalPoint([hit.point.x, hit.point.y, hit.point.z]);
     },
-
-    resize(pixels): void {
-      applySize(pixels);
-      // 大きさが変わったら描き直しが要るので、前回の記録を無効にする。
-      lastAzimuth = Number.NaN;
-    },
-
+    resize: applySize,
     setThemeColors: applyThemeColors,
-
     dispose(): void {
-      cube.geometry.dispose();
-      for (const material of materials) {
-        material.map?.dispose();
-        material.dispose();
+      cubeGeometry.dispose();
+      material.map?.dispose();
+      material.dispose();
+      pickGeometry.dispose();
+      pickMaterial.dispose();
+      guide.geometry.dispose();
+      guideMaterial.dispose();
+      for (const { sprite } of axisLabels) {
+        sprite.material.map?.dispose();
+        sprite.material.dispose();
       }
-      edgeGeometry.dispose();
-      edgeMaterial.dispose();
-      highlight.geometry.dispose();
+      for (const { surface, outline: border } of regions.values()) {
+        surface.dispose();
+        border.dispose();
+      }
+      emptyGeometry.dispose();
       highlightMaterial.dispose();
+      outlineMaterial.dispose();
       renderer.dispose();
     },
   };

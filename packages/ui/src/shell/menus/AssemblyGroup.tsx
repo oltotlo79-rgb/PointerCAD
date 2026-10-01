@@ -6,7 +6,7 @@ import type { EditToolReadiness } from '../../sketch/editCommands.js';
 import { useAppStore } from '../../store/useAppStore.js';
 import { BomIcon, CoincidentConstraintIcon, CubeIcon, IntersectIcon, TransformIcon } from '../icons.js';
 import { ToolMenu } from './ToolMenu.js';
-import { ASSEMBLY_MENU_ITEMS, MATE_MENU_ITEMS, type AssemblyMenuActionId } from './assemblyMenuItems.js';
+import { assemblyMenuItems, MATE_MENU_ITEMS, type AssemblyMenuActionId } from './assemblyMenuItems.js';
 import { assemblyBuildReadiness, assemblyToolbarIdle,
   explodeActionReadiness, isMateMenuAction } from './assemblyToolActions.js';
 export { ASSEMBLY_MENU_ITEMS, MATE_MENU_ITEMS, ASSEMBLY_MATE_TOOLS, ASSEMBLY_JOINT_TOOLS } from './assemblyMenuItems.js';
@@ -31,7 +31,7 @@ export function AssemblyGroup(): React.JSX.Element | null {
       </span>
       <div className="pcad-segmented">
       <ToolMenu
-        items={ASSEMBLY_MENU_ITEMS}
+        items={assemblyMenuItems(assembly, selection)}
         groupLabelKey="assembly.menu.build"
         groupTooltipKey="assembly.menu.buildTooltip"
         GroupIcon={CubeIcon}

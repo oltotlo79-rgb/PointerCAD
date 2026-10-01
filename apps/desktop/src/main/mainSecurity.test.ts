@@ -3,6 +3,8 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 const native = vi.hoisted(() => {
   const windows: FakeWindow[] = [];
   const sessionListeners = new Map<string, (...args: unknown[]) => void>();
+  const appListeners = new Map<string, () => void>();
+  const load = vi.fn<(url: string) => Promise<void>>(() => Promise.resolve());
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   class FakeWindow {
     readonly listeners = new Map<string, (...args: unknown[]) => void>();
@@ -16,18 +18,20 @@ const native = vi.hoisted(() => {
     readonly once = vi.fn();
     readonly show = vi.fn();
     readonly destroy = vi.fn();
-    readonly loadURL = vi.fn(() => Promise.resolve());
+    readonly isDestroyed = vi.fn(() => false);
+    readonly loadURL = vi.fn((url: string) => load(url));
     constructor(readonly options: { webPreferences: Record<string, unknown> }) { windows.push(this); }
     static getAllWindows() { return windows; }
   }
-  return { FakeWindow, windows, sessionListeners, handlers,
+  return { FakeWindow, windows, sessionListeners, appListeners, load, handlers,
     openExternal: vi.fn(() => Promise.resolve()),
     denyBrowserPermissions: vi.fn(),
   };
 });
 
 vi.mock('electron', () => ({
-  app: { isPackaged: true, whenReady: () => Promise.resolve(), on: vi.fn(), quit: vi.fn() },
+  app: { isPackaged: true, whenReady: () => Promise.resolve(),
+    on: (name: string, listener: () => void) => { native.appListeners.set(name, listener); }, quit: vi.fn() },
   BrowserWindow: native.FakeWindow,
   ipcMain: { handle: (name: string, callback: (...args: unknown[]) => unknown) => { native.handlers.set(name, callback); } },
   Menu: { setApplicationMenu: vi.fn() },
@@ -69,6 +73,8 @@ describe('主窓と印刷窓の境界', () => {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, allowRunningInsecureContent: false, webviewTag: false,
     });
+    expect(main.options).toMatchObject({ show: true, backgroundColor: '#16181d' });
+    expect(main.once).not.toHaveBeenCalledWith('ready-to-show', expect.any(Function));
     const navigation = event();
     windowListener(0, 'will-navigate')(navigation, 'https://untrusted.example/');
     expect(navigation.prevented).toBe(true);
@@ -103,6 +109,7 @@ describe('主窓と印刷窓の境界', () => {
       webSecurity: true, allowRunningInsecureContent: false, webviewTag: false,
     });
     expect(print.options.webPreferences).not.toHaveProperty('preload');
+    expect(print.options).toMatchObject({ show: false });
     const navigation = event();
     windowListener(1, 'will-navigate')(navigation, 'https://untrusted.example/');
     expect(navigation.prevented).toBe(true);
@@ -137,5 +144,28 @@ describe('主窓と印刷窓の境界', () => {
     const attempted = event();
     download(attempted);
     expect(attempted.prevented).toBe(true);
+  });
+
+  it('初回のHTML読込みが失敗しても同じ窓で復旧表示を出す', async () => {
+    const activate = native.appListeners.get('activate');
+    if (activate === undefined) throw new Error('窓を作り直す入口なし');
+    const error = new Error('renderer document unavailable');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const windows = vi.spyOn(native.FakeWindow, 'getAllWindows').mockReturnValueOnce([]);
+    try {
+      native.load.mockRejectedValueOnce(error);
+      const count = native.windows.length;
+      activate();
+      await vi.waitFor(() => { expect(native.windows[count]?.loadURL).toHaveBeenCalledTimes(2); });
+      const failedWindow = native.windows[count];
+      const address = failedWindow?.loadURL.mock.calls[1]?.[0];
+      if (address === undefined) throw new Error('復旧の文書なし');
+      expect(address).toMatch(/^data:text\/html;charset=utf-8,/u);
+      const html = decodeURIComponent(address.slice(address.indexOf(',') + 1));
+      expect(html).toContain('data-startup-failure role="alert"');
+      expect(html).toContain('<a href="app://pointercad/index.html">');
+      expect(log).toHaveBeenCalledWith('PointerCAD document load failed', error);
+      expect(native.windows).toHaveLength(count + 1);
+    } finally { windows.mockRestore(); log.mockRestore(); }
   });
 });

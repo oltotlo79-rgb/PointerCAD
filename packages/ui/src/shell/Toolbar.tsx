@@ -307,19 +307,16 @@ export function Toolbar(): React.JSX.Element {
         </div>
       </div>
 
-      {/*
-        モードのタブ。今はモデリングだけが使える。「アセンブリ」「図面」は、それを実装する
-        P7 / P8 まで出さない(畳んで薄く見せるのではなく、丸ごと隠す。§0.a-0.25 ①、
-        §0.34 の幅の圧縮)。実装したらここへ戻す。
-      */}
-      <nav className="pcad-toolbar__modes" aria-label={t('toolbar.mode.groupLabel')}>
-        <button type="button" className="pcad-tab pcad-toolbar__mode" aria-pressed={true}
+      {/* 現在の文書の種類を示す札。操作やキーボードの移動先にはしない。 */}
+      <div className="pcad-toolbar__modes" role="group" aria-label={t('toolbar.mode.groupLabel')}>
+        <span className="pcad-toolbar__mode" role="img"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 24, whiteSpace: 'nowrap' }}
           aria-label={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}
           title={t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}>
           <CubeIcon className="pcad-toolbar__mode-icon" />
-          <span className="pcad-toolbar__mode-label">{t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}</span>
-        </button>
-      </nav>
+          <span className="pcad-toolbar__mode-label" style={{ padding: '0 var(--pcad-space-2)' }}>{t(documentKind === 'assembly' ? 'assembly.mode' : 'toolbar.mode.modeling')}</span>
+        </span>
+      </div>
 
       {documentKind === 'part' ? <><div
         className="pcad-toolbar__group"

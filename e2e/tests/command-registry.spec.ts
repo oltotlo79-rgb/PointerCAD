@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { readPcadFile } from '../../packages/io/src/index.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
 import { uiMessage } from './uiMessages.js';
+import { waitForMathEditorText } from './mathEditorReady.js';
 
 test.beforeEach(async ({ page }) => {
   await installStartupDiagnostics(page);
@@ -43,6 +44,8 @@ test('数式入力ボタンに焦点があっても保存と開くが働き、�
     await math.focus(); await math.press(key);
     const dialog = page.locator('.pcad-math-dialog');
     await expect(dialog).toBeVisible();
+    // The preparing view has its own 取消, replaced by the editor's; a click during the swap is lost.
+    await waitForMathEditorText(dialog);
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(input).toHaveValue('12+3');

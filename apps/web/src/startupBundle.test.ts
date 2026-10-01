@@ -13,6 +13,15 @@ describe('実際の組立てで起動復旧へ本体の依存を戻さない', (
   it('独立した起動入口を受け入れ、後から読む本体は別に保つ', () => {
     expect(() => assertStartupIsolation(fixture())).not.toThrow();
   });
+  it('共有した小さな起動処理だけ許し、共有UIの他の依存は拒否する', () => {
+    const bundle = fixture();
+    const entry = bundle['index.js'];
+    Object.assign(entry.modules, { 'C:/repo/packages/ui/src/shell/startupPresentation.ts': {},
+      'C:/repo/packages/ui/src/shell/startupRecovery.ts': {} });
+    expect(() => assertStartupIsolation(bundle)).not.toThrow();
+    Object.assign(entry.modules, { 'C:/repo/packages/ui/src/shell/AppShell.tsx': {} });
+    expect(() => assertStartupIsolation(bundle)).toThrow('Application dependency');
+  });
   it('読み込み補助処理から本体へ間接依存すると組立てを止める', () => {
     const bundle = fixture(); bundle['loader.js'].imports.push('app.js');
     expect(() => assertStartupIsolation(bundle)).toThrow('Application dependency');

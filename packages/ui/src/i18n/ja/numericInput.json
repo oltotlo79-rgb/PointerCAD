@@ -1,4 +1,5 @@
 {
+  "numericInput.moveWindow": "見出しをドラッグして入力の窓を動かせます。",
   "numericInput.previousStage": "前の入力へ戻る",
   "numericInput.toggle.splitIntersections": "交点でつなぐ",
   "numericInput.title.point": "点を作る",

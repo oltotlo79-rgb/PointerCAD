@@ -1,4 +1,5 @@
 import { HOME_ORBIT, orbit, pan, zoom, type OrbitState } from './cameraMath.js';
+import { exceedsRightDragThreshold, isPlainRightPointer } from './rightPointerGesture.js';
 
 /** 視点の正本。ビューキューブなど外側の部品もここを通してだけ視点を読み書きする。 */
 export interface CameraControls {
@@ -45,7 +46,7 @@ function wheelDeltaInPixels(event: WheelEvent): number {
  *
  * 操作の割当(要件§12 の Blender 互換ショートカットに対する P0 の決定):
  * - 視点回転: 中ボタンドラッグ / Alt + 左ボタンドラッグ
- * - 平行移動: Shift + 中ボタンドラッグ / Alt + Shift + 左ボタンドラッグ
+ * - 平行移動: 右ボタンドラッグ / Shift + 中ボタンドラッグ / Alt + Shift + 左ボタンドラッグ
  * - 拡大縮小: ホイール / タッチパッドの2本指スクロール / Ctrl + ホイール
  * - ホーム視点: Home キー(このビューポートに入力の焦点があるとき)
  *
@@ -60,8 +61,12 @@ export function attachCameraControls(
 ): CameraControls {
   let state: OrbitState = HOME_ORBIT;
   let dragMode: 'orbit' | 'pan' | null = null;
+  let dragPointer: number | null = null;
+  let rightStart: { readonly x: number; readonly y: number } | null = null;
+  let rightPanning = false;
   let lastX = 0;
   let lastY = 0;
+  const view = canvas.ownerDocument?.defaultView;
 
   const getOrbit = (): OrbitState => override?.getOrbit() ?? state;
   const setOrbit = (next: OrbitState): void => {
@@ -76,15 +81,17 @@ export function attachCameraControls(
   };
 
   function beginDrag(event: PointerEvent): void {
+    if (dragMode !== null) return;
     const isOrbitButton = event.button === MIDDLE_BUTTON && !event.shiftKey;
     const isPanButton = event.button === MIDDLE_BUTTON && event.shiftKey;
     const isAltOrbit = event.button === LEFT_BUTTON && event.altKey && !event.shiftKey;
     const isAltPan = event.button === LEFT_BUTTON && event.altKey && event.shiftKey;
+    const isRightPan = isPlainRightPointer(event);
 
     if (isOrbitButton || isAltOrbit) {
       if (override?.getOrbit() != null && !override.canOrbit()) return;
       dragMode = 'orbit';
-    } else if (isPanButton || isAltPan) {
+    } else if (isPanButton || isAltPan || isRightPan) {
       dragMode = 'pan';
     } else {
       return;
@@ -92,6 +99,9 @@ export function attachCameraControls(
 
     lastX = event.clientX;
     lastY = event.clientY;
+    dragPointer = event.pointerId;
+    rightStart = isRightPan ? { x: lastX, y: lastY } : null;
+    rightPanning = false;
     // ビューポートの外へ出ても操作が続くようにする。
     canvas.setPointerCapture(event.pointerId);
     onInteractionChange(true);
@@ -101,11 +111,20 @@ export function attachCameraControls(
   }
 
   function moveDrag(event: PointerEvent): void {
-    if (dragMode === null) {
-      return;
+    if (dragMode === null || event.pointerId !== dragPointer) return;
+    if (rightStart !== null && event.buttons !== 2) { cancelDrag(); return; }
+    updateDrag(event);
+  }
+
+  function updateDrag(event: PointerEvent): void {
+    if (rightStart !== null && !rightPanning) {
+      if (!exceedsRightDragThreshold(rightStart, event)) return;
+      rightPanning = true;
+      // Include the initial six pixels so the grabbed point stays under the pointer.
     }
     const deltaX = event.clientX - lastX;
     const deltaY = event.clientY - lastY;
+    if (deltaX === 0 && deltaY === 0) return;
     lastX = event.clientX;
     lastY = event.clientY;
 
@@ -118,22 +137,30 @@ export function attachCameraControls(
   }
 
   function endDrag(event: PointerEvent): void {
-    if (dragMode === null) {
-      return;
+    if (dragMode === null || event.pointerId !== dragPointer) return;
+    if (rightStart !== null && event.type === 'pointerup') {
+      if (event.button !== 2) return;
+      if (event.buttons === 0) updateDrag(event);
     }
+    cancelDrag();
+  }
+
+  function cancelDrag(): void {
+    if (dragMode === null) return;
+    const pointer = dragPointer;
     dragMode = null;
+    dragPointer = null;
+    rightStart = null;
+    rightPanning = false;
     onInteractionChange(false);
-    if (canvas.hasPointerCapture(event.pointerId)) {
-      canvas.releasePointerCapture(event.pointerId);
+    if (pointer !== null && canvas.hasPointerCapture(pointer)) {
+      canvas.releasePointerCapture(pointer);
     }
   }
 
   /** 捕捉が外部要因で外れたときも掴んだままにしない。 */
-  function onLostPointerCapture(): void {
-    if (dragMode !== null) {
-      onInteractionChange(false);
-    }
-    dragMode = null;
+  function onLostPointerCapture(event: PointerEvent): void {
+    if (event.pointerId === dragPointer) cancelDrag();
   }
 
   function onWheel(event: WheelEvent): void {
@@ -171,6 +198,7 @@ export function attachCameraControls(
   canvas.addEventListener('mousedown', onMiddleButtonMouseDown);
   canvas.addEventListener('auxclick', onAuxClick);
   canvas.addEventListener('keydown', onKeyDown);
+  view?.addEventListener('blur', cancelDrag);
 
   return {
     getOrbit,
@@ -178,10 +206,7 @@ export function attachCameraControls(
     setOrbit,
     goHome,
     detach: () => {
-      if (dragMode !== null) {
-        dragMode = null;
-        onInteractionChange(false);
-      }
+      cancelDrag();
       canvas.removeEventListener('pointerdown', beginDrag);
       canvas.removeEventListener('pointermove', moveDrag);
       canvas.removeEventListener('pointerup', endDrag);
@@ -191,6 +216,7 @@ export function attachCameraControls(
       canvas.removeEventListener('mousedown', onMiddleButtonMouseDown);
       canvas.removeEventListener('auxclick', onAuxClick);
       canvas.removeEventListener('keydown', onKeyDown);
+      view?.removeEventListener('blur', cancelDrag);
     },
   };
 }

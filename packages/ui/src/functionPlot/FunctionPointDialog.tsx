@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import {createMathWorkerGroup} from '../math/mathWorkerGroup.js';
 import {createBrowserMathWorker} from '../math/browserMathWorker.js';
 import {useEffect,useId,useMemo,useRef,useState} from 'react';
@@ -68,7 +69,7 @@ export function FunctionPointDialog({parent,pointId,onClose}:{readonly parent:Fu
   const coordinateCount=FUNCTION_AXES.filter(axis=>fields[axis]!==null).length;
   return <>
     <dialog ref={dialog} className="pcad-function-dialog" aria-labelledby={`${id}-title`} data-help-topic="function-point" onCancel={event=>{event.preventDefault();close();}} onKeyDown={event=>event.stopPropagation()}>
-      <h2 id={`${id}-title`}>{t('functionPoint.title')}</h2><p>{feature?.name}</p><p>{t('functionPoint.hint')}</p>
+      <DraggableWindowTitle as="h2" id={`${id}-title`}>{t('functionPoint.title')}</DraggableWindowTitle><p>{feature?.name}</p><p>{t('functionPoint.hint')}</p>
       {definition?<dl>{FUNCTION_AXES.map(axis=><div key={axis}><dt>{axis} (mm)</dt><dd>{definition.bounds[axis].min.source}{t('display.rangeSeparator')}{definition.bounds[axis].max.source}</dd></div>)}</dl>:null}
       {parameterRanges.length>0?<fieldset><legend>{t('functionPoint.parameter')}</legend><dl>{parameterRanges.map(({name,range})=>
         <div key={name}><dt>{name}</dt><dd>{range.min.source}{t('display.rangeSeparator')}{range.max.source}</dd></div>)}</dl></fieldset>:null}

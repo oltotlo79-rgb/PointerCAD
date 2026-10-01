@@ -5,11 +5,12 @@
  * A geometry-derived coefficient carries the shape kernel's double (GR-04). A coefficient formula computed from one
  * may only use continuous operations (Q4=S1, `GEOMETRY_DERIVED_OPERATIONS`). A function plot (a curve, a surface and
  * the points placed on them) also contains its own axes and parameters, so the rule is applied per operation: an
- * operation outside the Q4=S1 list, or a binder (sum, integral, …), is refused only when its own operands read a
+ * operation outside the Q4=S1 list, or a binder (sum, integrate, …), is refused only when its own operands read a
  * geometry-derived coefficient. `floor(X)+coef("R")` is accepted (the floor jumps with X, which the plot samples on
  * purpose); `floor(coef("R"))` is refused (a measured 2.9999999999999996 would silently become 2). The one exception
  * is the `=` at the root of an implicit curve or surface: it defines the geometry (F = G) and is not a comparison;
- * both of its sides are checked by the same rule.
+ * both of its sides are checked by the same rule. Q10's explicit geometric integrals admit their field/map local
+ * functions, but check the entire integral: measured coordinates can also affect bound variables in its field.
  *
  * Scalar fields of a plot (bounds, tolerance, T/U/V ranges, the fixed coordinate) are not formulas here:
  * `evaluateDocumentMath` already applies GR-04's stricter whole-formula check to them. Kept pure so the
@@ -21,7 +22,7 @@ import type { MathNode } from '@pointercad/expression/math/contracts';
 import type { FunctionDefinition } from '../functionGeometry/functionDefinitionTypes.js';
 import type { FunctionPlotAxis } from '../functionGeometry/functionPlotBounds.js';
 import type { Parameter } from '../parameters/types.js';
-import { checkGeometryDerivedOperations, GEOMETRY_DERIVED_OPERATIONS, type GeometryDerivedOperationIssue,
+import { checkGeometryDerivedOperations, GEOMETRY_DERIVED_OPERATIONS, geometryDerivedIntegralOperands, type GeometryDerivedOperationIssue,
 } from './mathGeometryCoefficients.js';
 
 /** GR-04's issue, plus which formula of the plot holds the refused operation (so the editor can mark that field). */
@@ -145,6 +146,14 @@ function firstRefusedOperation(root: MathNode, ids: ReadonlySet<string>, implici
     const node = pending.pop();
     if (node === undefined) break;
     if (!reading.has(node)) continue;
+    if (geometryDerivedIntegralOperands(node) !== null) {
+      // The coordinate map can carry measured values into bound variables in the field, even when
+      // that field has no direct coefficient reference (e.g. floor(x) on x = R*t). Check the whole
+      // integral, including both bounds; inspecting only coefficient-reading subtrees would miss it.
+      const issue = checkGeometryDerivedOperations(node);
+      if (issue !== null) return issue;
+      continue;
+    }
     if (refusedOperation(node)) {
       // GR-04's checker reports its own root first (pre-order), so for a refused node it yields exactly GR-04's
       // issue: the same operation ID and the same spelling in Appendix C's sentence (e.g. `ceiling` → 「ceil」).

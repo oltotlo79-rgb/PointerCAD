@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from './DraggableWindowTitle.js';
 import { useState } from 'react';
 import { toDisplayLength, type Vec3, type WorkPlane } from '@pointercad/model';
 import { t } from '../i18n/t.js';
@@ -28,7 +29,7 @@ export function SketchTextPopover({ origin, plane, anchor }: {
       event.preventDefault(); if (busy) return;
       setBusy(true); void applySketchText({ text, heightSource: height, angleSource: angle, align, origin, plane }).then(() => setBusy(false));
     }}>
-    <strong>{t('text.tool')}</strong>
+    <DraggableWindowTitle as="strong">{t('text.tool')}</DraggableWindowTitle>
     <label className="pcad-field">{t('text.input.text')}<input title={t('controlGuide.text.value')} className="pcad-field__input" value={text} autoFocus disabled={busy} maxLength={1000}
       onChange={(event) => { const state = useAppStore.getState(); if (state.numericInput !== null) state.updateNumericInput({ ...state.numericInput, textValue: event.target.value }); }} /></label>
     <label className="pcad-field">{t('text.input.height')} ({unit})<input title={t('controlGuide.text.height')} className="pcad-field__input" value={height} disabled={busy}

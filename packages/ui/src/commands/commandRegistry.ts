@@ -1,4 +1,5 @@
-import { runToolbarCommand } from './toolbarCommandExecution.js';
+import { executeToolbarCommand, type ToolbarCommandExecutionResult } from './toolbarCommandExecution.js';
+import type { MessageKey } from '../i18n/t.js';
 import { commitDrawingDimension, deleteSelectedDrawingElements } from '../drawing/dimensionCommands.js';
 import { commitDrawingDimensionSeries } from '../drawing/dimensionSeriesCommands.js';
 import { contextualHelpTopic } from '../help/helpContext.js';
@@ -17,8 +18,8 @@ import {
 import { EMPTY_SHORTCUT_ASSIGNMENTS, resolveAssignedShortcut, type ShortcutAssignments } from './shortcutAssignments.js';
 
 export type CommandExecutionResult =
-  | { readonly status: 'executed'; readonly commandId: CommandId }
-  | { readonly status: 'disabled'; readonly commandId: CommandId }
+  | { readonly status: 'executed'; readonly commandId: CommandId; readonly ready: true; readonly reasonKey: null }
+  | { readonly status: 'disabled'; readonly commandId: CommandId; readonly ready: false; readonly reasonKey: MessageKey }
   | { readonly status: 'unregistered'; readonly requestedId: string }
   | { readonly status: 'unmatched' };
 
@@ -34,7 +35,9 @@ export interface CommandRuntimeState {
 }
 
 export interface CommandActions {
-  readonly toolbarCommand?: (id: string) => boolean;
+  readonly toolbarCommand?: (id: string) => ToolbarCommandExecutionResult;
+  /** Null starts a new command; a reason replaces its notice without touching input or computation. */
+  readonly commandFeedback?: (reasonKey: MessageKey | null) => void;
   readonly newFile: () => void;
   readonly openFile: () => void;
   readonly saveFile: (saveAs: boolean) => void;
@@ -65,13 +68,18 @@ function browserRuntimeState(): CommandRuntimeState {
     canUndo: state.canUndo,
     canRedo: state.canRedo,
     strengthOpen: state.strengthSession !== null,
-    measurementOpen: state.measurement !== null || state.massProperties !== null,
+    measurementOpen: state.measurement !== null || state.massProperties !== null || state.measurementRequest !== null,
     drawingTool: state.drawingTool,
   };
 }
 
 const browserActions: CommandActions = {
-  toolbarCommand: runToolbarCommand,
+  toolbarCommand: executeToolbarCommand,
+  commandFeedback: (reasonKey) => {
+    const state = useAppStore.getState();
+    if (reasonKey !== null) state.setFileMessage({ key: reasonKey, failed: true });
+    else if (state.fileMessage !== null) state.setFileMessage(null);
+  },
   newFile: () => { void newPart(createDefaultPartFileDeps()); },
   openFile: () => { void openPart(createDefaultPartFileDeps()); },
   saveFile: (saveAs) => { void savePart(createDefaultPartFileDeps(), saveAs); },
@@ -96,45 +104,61 @@ export const browserCommandEnvironment: CommandEnvironment = {
   actions: browserActions,
 };
 
-function isEnabled(id: string, runtime: CommandRuntimeState): boolean {
+function disabledReason(id: string, runtime: CommandRuntimeState): MessageKey | null {
   const definition = commandDefinition(id);
-  if (definition === null) return false;
-  if (!definition.documentKinds.includes(runtime.documentKind)) return false;
-  if (runtime.helpOpen && id !== 'help.contextual') return false;
+  if (definition === null) return 'command.unavailable.action';
+  if (!definition.documentKinds.includes(runtime.documentKind)) return 'command.unavailable.document';
+  if (runtime.helpOpen && id !== 'help.contextual') return 'command.unavailable.help';
   switch (definition.enabledBy) {
-    case 'always': return true;
-    case 'undo': return runtime.canUndo;
-    case 'redo': return runtime.canRedo;
-    case 'strength': return runtime.strengthOpen;
-    case 'measurement': return runtime.measurementOpen;
+    case 'always': return null;
+    case 'undo': return runtime.canUndo ? null : 'command.unavailable.undo';
+    case 'redo': return runtime.canRedo ? null : 'command.unavailable.redo';
+    case 'strength': return runtime.strengthOpen ? null : 'command.unavailable.strength';
+    case 'measurement': return runtime.measurementOpen ? null : 'command.unavailable.measurement';
   }
 }
 
-function run(id: CommandId, environment: CommandEnvironment, runtime: CommandRuntimeState): boolean {
+function run(id: CommandId, environment: CommandEnvironment, runtime: CommandRuntimeState): ToolbarCommandExecutionResult {
   const action = environment.actions;
   switch (id) {
-    case 'file.new': action.newFile(); return true;
-    case 'file.open': action.openFile(); return true;
-    case 'file.save': action.saveFile(false); return true;
-    case 'file.saveAs': action.saveFile(true); return true;
-    case 'history.undo': action.undo(); return true;
-    case 'history.redo': action.redo(); return true;
-    case 'selection.vertex': action.setSelectionKind('vertex'); return true;
-    case 'selection.edge': action.setSelectionKind('edge'); return true;
-    case 'selection.face': action.setSelectionKind('face'); return true;
-    case 'selection.body': action.setSelectionKind('body'); return true;
-    case 'commandLine.focus': action.focusCommandLine(); return true;
-    case 'drawing.cancelTool': action.cancelDrawingTool(); return true;
+    case 'file.new': action.newFile(); break;
+    case 'file.open': action.openFile(); break;
+    case 'file.save': action.saveFile(false); break;
+    case 'file.saveAs': action.saveFile(true); break;
+    case 'history.undo': action.undo(); break;
+    case 'history.redo': action.redo(); break;
+    case 'selection.vertex': action.setSelectionKind('vertex'); break;
+    case 'selection.edge': action.setSelectionKind('edge'); break;
+    case 'selection.face': action.setSelectionKind('face'); break;
+    case 'selection.body': action.setSelectionKind('body'); break;
+    case 'commandLine.focus': action.focusCommandLine(); break;
+    case 'drawing.cancelTool': action.cancelDrawingTool(); break;
     case 'drawing.commitDimension':
       if (runtime.drawingTool === 'dimensionSeries') action.commitDrawingDimensionSeries();
       else action.commitDrawingDimension();
-      return true;
-    case 'drawing.deleteSelection': action.deleteDrawingSelection(); return true;
-    case 'help.contextual': action.openContextualHelp(null, false); return true;
-    case 'workspace.closeStrength': action.closeStrength(); return true;
-    case 'workspace.clearMeasurement': action.clearMeasurement(); return true;
-    default: return action.toolbarCommand?.(id) ?? false;
+      break;
+    case 'drawing.deleteSelection': action.deleteDrawingSelection(); break;
+    case 'help.contextual': action.openContextualHelp(null, false); break;
+    case 'workspace.closeStrength': action.closeStrength(); break;
+    case 'workspace.clearMeasurement': action.clearMeasurement(); break;
+    default: return action.toolbarCommand?.(id) ?? { ready: false, reasonKey: 'command.unavailable.action' };
   }
+  return { ready: true, reasonKey: null };
+}
+
+function executeRegisteredCommand(id: CommandId, environment: CommandEnvironment, runtime: CommandRuntimeState): CommandExecutionResult {
+  const reasonKey = disabledReason(id, runtime);
+  if (reasonKey !== null) {
+    environment.actions.commandFeedback?.(reasonKey);
+    return { status: 'disabled', commandId: id, ready: false, reasonKey };
+  }
+  // Reading contextual help keeps the notice being explained, just as F1 does.
+  if (id !== 'help.contextual') environment.actions.commandFeedback?.(null);
+  const result = run(id, environment, runtime);
+  if (result.ready) return { status: 'executed', commandId: id, ready: true, reasonKey: null };
+  const refusal = result.reasonKey ?? 'command.unavailable.action';
+  if (result.feedback !== 'handled') environment.actions.commandFeedback?.(refusal);
+  return { status: 'disabled', commandId: id, ready: false, reasonKey: refusal };
 }
 
 export function executeCommand(
@@ -144,8 +168,7 @@ export function executeCommand(
   const definition = commandDefinition(requestedId);
   if (definition === null) return { status: 'unregistered', requestedId };
   const runtime = environment.state();
-  if (!isEnabled(definition.id, runtime)) return { status: 'disabled', commandId: definition.id };
-  return { status: run(definition.id, environment, runtime) ? 'executed' : 'disabled', commandId: definition.id };
+  return executeRegisteredCommand(definition.id, environment, runtime);
 }
 
 export function isTextEntry(target: EventTarget | null): boolean {
@@ -200,7 +223,7 @@ export function dispatchCommandKey(
     runtime.shortcutAssignments ?? EMPTY_SHORTCUT_ASSIGNMENTS, (definition) =>
     definition.enabledBy !== 'strength' && definition.enabledBy !== 'measurement'
       ? true
-      : isEnabled(definition.id, runtime),
+      : disabledReason(definition.id, runtime) === null,
   );
   if (resolved === null) return { status: 'unmatched' };
   const assigned = runtime.shortcutAssignments?.[resolved.commandId];
@@ -209,14 +232,13 @@ export function dispatchCommandKey(
   // Existing file shortcuts remain available during numeric editing. Custom keys respect handled input.
   if (event.defaultPrevented && resolved.binding.allowInTextEntry !== true && phase === 'bubble') return { status: 'unmatched' };
   applyEventResult(event, resolved.binding);
-  if (!isEnabled(resolved.commandId, runtime)) return { status: 'disabled', commandId: resolved.commandId };
   if (resolved.commandId === 'help.contextual') {
     const target = event.target instanceof HTMLElement
       ? event.target.closest('[data-help-topic], [data-command-id]') : null;
     const explicit = target?.getAttribute('data-help-topic')
       ?? commandDefinition(target?.getAttribute('data-command-id') ?? '')?.helpTopic ?? null;
     environment.actions.openContextualHelp(explicit, isTextEntry(event.target));
-    return { status: 'executed', commandId: resolved.commandId };
+    return { status: 'executed', commandId: resolved.commandId, ready: true, reasonKey: null };
   }
-  return { status: run(resolved.commandId, environment, runtime) ? 'executed' : 'disabled', commandId: resolved.commandId };
+  return executeRegisteredCommand(resolved.commandId, environment, runtime);
 }

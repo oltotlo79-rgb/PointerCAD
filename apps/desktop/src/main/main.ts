@@ -10,6 +10,7 @@ import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './appProtocol
 import { isAllowedAppUrl, registerAppWindow, validateAppSender } from './appSender.js';
 import { registerCloseGuard } from './closeGuard.js';
 import { PCAD_PRINT_CHANNEL, registerPcadIpc } from './pcadDialogs.js';
+import { startupFailureDocument } from './startupHtml.js';
 
 /**
  * このファイルの出力先 dist/main。
@@ -26,16 +27,27 @@ const preloadPath = join(currentDirectory, '..', 'preload', 'preload.cjs');
 const devServerUrl = app.isPackaged ? undefined : process.env['PCAD_DEV_SERVER_URL'];
 
 registerAppScheme();
+// v1.0.1: the portable post-exit cleanup (portableCleanup.ts) is intentionally not registered.
+// It started a hidden PowerShell whose script was passed as an encoded command line (gzip + base64), and on
+// 2026-10-01 02:00:07 Microsoft Defender blocked that same launch shape as Trojan:Win32/Commando.A!ml. Its 30-second
+// deadline also included the Add-Type compilation and overran under load. It returns in v1.0.2 with a launch that
+// Defender does not block and a real-device check. noEncodedPowerShell.test.ts keeps it unreachable from this entry.
 
 function createMainWindow(): void {
+  const started = performance.now();
+  const stage = (name: string): void => {
+    console.info(`[pcad:desktop-startup] ${JSON.stringify({ stage: name,
+      elapsedMs: Math.round((performance.now() - started) * 100) / 100,
+      processMs: Math.round(performance.now() * 100) / 100, timeOrigin: performance.timeOrigin })}`);
+  };
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
     // これより狭いとツールバーの機能グループが折り返して読みにくくなる。
     minWidth: 960,
     minHeight: 600,
-    // 画面の用意ができるまで出さない。白い一瞬の画面を見せないため。
-    show: false,
+    // Show the dark window immediately; app:// supplies a tiny static splash before editor JS.
+    show: true,
     autoHideMenuBar: true,
     // 画面本体の地の色(appShell.css の --pcad-bg)と合わせる。
     backgroundColor: '#16181d',
@@ -50,6 +62,7 @@ function createMainWindow(): void {
       webviewTag: false,
     },
   });
+  stage('window-created');
   registerAppWindow(window);
 
   window.webContents.on('will-navigate', (event, targetUrl) => {
@@ -68,11 +81,18 @@ function createMainWindow(): void {
     return { action: 'deny' };
   });
 
-  window.once('ready-to-show', () => {
-    window.show();
-  });
+  window.webContents.on('dom-ready', () => { stage('document-ready'); });
+  window.webContents.on('did-finish-load', () => { stage('document-loaded'); });
 
-  void window.loadURL(devServerUrl ?? APP_ENTRY_URL);
+  stage('navigation-start');
+  void window.loadURL(devServerUrl ?? APP_ENTRY_URL).catch(error => {
+    if (window.isDestroyed()) return;
+    stage('document-failed');
+    console.error('PointerCAD document load failed', error);
+    const fallback = startupFailureDocument(devServerUrl ?? APP_ENTRY_URL);
+    void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fallback)}`)
+      .catch(recoveryError => { console.error('PointerCAD recovery document failed', recoveryError); });
+  });
 }
 
 /**

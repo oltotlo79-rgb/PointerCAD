@@ -6,12 +6,14 @@ import {
   appendSolid,
   assignBodyAppearance,
   createEmptyPartDocument,
+  type MeasureOutcome,
 } from '@pointercad/model';
 import {
   beforeEach,
   describe,
   expect,
   it,
+  vi,
 } from 'vitest';
 import type {
   PartMeasurer,
@@ -32,6 +34,7 @@ import {
   resetTestStore,
   partWithPoint,
   extrudeFeature,
+  bodyFor,
 } from './testing/createTestStore.js';
 
 beforeEach(resetTestStore);
@@ -115,6 +118,64 @@ describe('測定の結果の消え方(FR-1102、P5 タスク31)', () => {
     useAppStore.setState({ measurement: MEASUREMENT });
     useAppStore.getState().resetDocument(createEmptyPartDocument());
     expect(useAppStore.getState().measurement).toBeNull();
+  });
+});
+
+describe('FIX-02 measurement request ordering', () => {
+  function prepare(): { calls: ((outcome: MeasureOutcome) => void)[] } {
+    const calls: ((outcome: MeasureOutcome) => void)[] = [];
+    const document = ['a', 'b', 'c'].reduce((part, id) => appendSolid(part, extrudeFeature(id)), createEmptyPartDocument());
+    useAppStore.setState({ document, bodies: ['a', 'b', 'c'].map(bodyFor), selection: ['a', 'b'],
+      partMeasurer: () => new Promise(resolve => { calls.push(resolve); }) });
+    return { calls };
+  }
+  function answer(value: number): MeasureOutcome {
+    return { kind: 'distance', distance: value, pointA: [0, 0, 0], pointB: [value, 0, 0], inner: false };
+  }
+  async function settle(): Promise<void> { for (let i = 0; i < 8; i += 1) await Promise.resolve(); }
+
+  it('clearing an in-flight measurement prevents its result from returning', async () => {
+    const { calls } = prepare();
+    useAppStore.getState().measureSelection();
+    expect(calls).toHaveLength(1);
+    useAppStore.getState().clearMeasurement();
+    calls[0](answer(25.4));
+    await settle();
+    expect(useAppStore.getState().measurement).toBeNull();
+    expect(useAppStore.getState().massProperties).toBeNull();
+    expect(useAppStore.getState().measureErrorKey).toBeNull();
+  });
+
+  it.each(['success', 'failure'] as const)('keeps the newer request after the older %s arrives', async outcome => {
+    const { calls } = prepare();
+    const before = useAppStore.getState();
+    before.measureSelection();
+    useAppStore.getState().setSelection(['b', 'c']);
+    useAppStore.getState().measureSelection();
+    calls[1](answer(50.8));
+    await vi.waitFor(() => { expect(useAppStore.getState().measurement?.result.value).toBe(50.8); });
+    const newer = useAppStore.getState().measurement;
+    calls[0](outcome === 'success' ? answer(25.4) : { kind: 'failed', message: 'old failure' });
+    await settle();
+    expect(useAppStore.getState().measurement).toBe(newer);
+    expect(newer?.targetNames).toEqual(['押し出しb', '押し出しc']);
+    expect(newer?.result.segment).toEqual([[0, 0, 0], [50.8, 0, 0]]);
+    expect(useAppStore.getState().measureErrorKey).toBeNull();
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+  });
+
+  it('uses the display unit at completion and updates the label after another switch', async () => {
+    const { calls } = prepare();
+    useAppStore.getState().measureSelection();
+    useAppStore.getState().setDisplaySettings({ ...useAppStore.getState().displaySettings, lengthUnit: 'inch' });
+    calls[0](answer(25.4));
+    await settle();
+    const measured = useAppStore.getState().measurement;
+    expect(measured?.text).toBe('1.000 in');
+    useAppStore.getState().setDisplaySettings({ ...useAppStore.getState().displaySettings, lengthUnit: 'mm' });
+    expect(useAppStore.getState().measurement?.text).toBe('25.400 mm');
+    expect(useAppStore.getState().measurement?.result).toBe(measured?.result);
   });
 });
 

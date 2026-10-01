@@ -22,8 +22,9 @@
  *
  * 1. マウスの位置から「どの角か」を決める(`cornerNear`)、
  * 2. 確定に使うのとまったく同じ式で予告の折れ線を作る(`cornerPreview`)、
- * 3. 選択と欄の値を model の `filletCorner` / `chamferCorner` の引数へ詰め替え、断りの鍵を
- *    画面の文言キー(ja.json)へ移し替える(`commitSketchFillet` / `commitSketchChamfer`)
+ * 3. 選択と欄の値を model の `filletCorner` / `chamferCorner` の引数へ詰め替え、既存の面の
+ *    境界を更新し、断りの鍵を画面の文言キー(ja.json)へ移し替える
+ *    (`commitSketchFillet` / `commitSketchChamfer`)
  *
  * の 3 つだけである。**トリム・延長の予告(`trimPreview.ts`)が model の区間の決め方を写して
  * いるのとは対照的に、ここは写しを 1 行も持たない。** 角の形は「2 本の線分と半径」だけで
@@ -43,15 +44,18 @@ import {
   isSamePoint,
   lengthVec3,
   normalizeVec3,
+  resolveSketch,
   sketchChamferGeometry,
   sketchFilletGeometry,
   subVec3,
   type ResolvedSegment,
   type ResolvedSketch,
   type SketchCornerErrorKey,
+  type SketchCornerOutcome,
   type SketchCornerPlane,
   type SketchDocument,
   type SketchElementRef,
+  type SketchFeature,
   type SketchResolveOptions,
   type Vec3,
   type WorkPlane,
@@ -388,11 +392,8 @@ export type CornerCommitOutcome =
       readonly document: SketchDocument;
       /** 足した円弧(丸め)または線分(面取り)。確定後はこれを選んでおく。 */
       readonly featureId: string;
-      /**
-       * 丸めた 2 本を境界に使っている面があったか(t18 の申し送り)。真なら
-       * 「面の境界に足した曲線を入れ直してください」と案内する(FR-504、NFR-UX-7)。
-       */
-      readonly boundaryNeedsUpdate: boolean;
+      /** 既存の面の境界を、追加した円弧・線分まで含めて更新したか。 */
+      readonly boundaryUpdated: boolean;
     }
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
@@ -413,8 +414,8 @@ function valueOf(field: ExpressionValue | undefined, fallback: number): number {
 /**
  * 面の境界(`SketchFaceFeature.boundary`)が、いま丸める 2 本を使っているか。
  *
- * 使っていれば、丸めたあとの輪郭は「短くなった 2 本 + 足した曲線」になるので、面の境界へ
- * 足した曲線を入れ直さないと輪郭が閉じない(t18 の申し送り。model は面を書き換えない)。
+ * 使っていれば、丸めたあとの輪郭は「短くなった 2 本 + 足した曲線」になるので、
+ * 確定時に面の境界も同じ文書の中で更新する。
  * 要素 id の `featureId#n` は、面の境界では `index` に分かれて入るので突き合わせる。
  */
 export function facesUseCorner(
@@ -437,9 +438,114 @@ export function facesUseCorner(
   );
 }
 
+/** 移動した曲線の終点を、既存の「直前の点」の新しい基準にしない。 */
+function usesPreviousPoint(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  if ('kind' in value && value.kind === 'previous') return true;
+  return Object.values(value).some((child: unknown) => usesPreviousPoint(child));
+}
+
+/** 同じ図形の中で解決済みの始点などを使う相対座標は、履歴の挿入に影響されない。 */
+function usesPreviousFeaturePoint(feature: SketchFeature): boolean {
+  switch (feature.kind) {
+    case 'line': return usesPreviousPoint(feature.from);
+    case 'rectangle': return usesPreviousPoint(feature.corner1);
+    case 'slot': return usesPreviousPoint(feature.center1);
+    case 'spline': return usesPreviousPoint(feature.points[0]);
+    default: return usesPreviousPoint(feature);
+  }
+}
+
+function insertionChangesPreviousPoint(
+  document: SketchDocument,
+  firstFace: number,
+  options: SketchResolveOptions,
+): boolean {
+  const following = document.features.slice(firstFace).filter((feature) => feature.kind !== 'face');
+  if (!following.some(usesPreviousFeaturePoint)) return false;
+  // 未解決の図形は「直前の点」を更新しないため、その先の図形まで確認する。
+  const resolved = resolveSketch(document, options);
+  const producesPoint = new Set([
+    ...resolved.points, ...resolved.segments, ...resolved.arcs, ...resolved.ellipses, ...resolved.splines,
+  ].map((geometry) => geometry.featureId));
+  for (const feature of following) {
+    if (usesPreviousFeaturePoint(feature)) return true;
+    if (producesPoint.has(feature.id)) return false;
+  }
+  return false;
+}
+
 /**
- * 角を丸める(FR-323)。選んでいる 2 本と欄の半径を model の `filletCorner` へ渡すだけで、
- * 幾何の判断も文書の書き換えもここには無い。
+ * 分解後の参照を使って、短くした辺の間へ新しい曲線を挿入する。
+ * 参照には向きの欄がないため、境界の巡回順を保ち、向きの照合は resolveSketch に任せる。
+ * 面は履歴順に解かれるので、新しい曲線を最初の対象面より前へ移す必要もある。
+ * どれかの面を閉じられない場合は文書全体を返さず、ストアへ不完全な変更を渡さない。
+ */
+function finishCornerCommit(
+  before: SketchDocument,
+  outcome: SketchCornerOutcome,
+  options: SketchResolveOptions,
+): CornerCommitOutcome {
+  if (!outcome.ok) {
+    return { ok: false, reasonKey: CORNER_ERROR_KEYS[outcome.reason] };
+  }
+  const [firstId, secondId] = outcome.trimmedFeatureIds;
+  const affected = outcome.document.features.filter(
+    (feature) => feature.kind === 'face' && feature.boundary.some(
+      (reference) => reference.featureId === firstId || reference.featureId === secondId,
+    ),
+  );
+  if (affected.length === 0) {
+    return {
+      ok: true, document: outcome.document, featureId: outcome.addedFeatureId,
+      boundaryUpdated: false,
+    };
+  }
+  const refuseBoundary = (): CornerCommitOutcome => ({
+    ok: false, reasonKey: 'corner.error.faceBoundary',
+  });
+  const validBefore = new Set(resolveSketch(before, options).faces.map((face) => face.featureId));
+  const boundaries = new Map<string, readonly SketchElementRef[]>();
+  for (const face of affected) {
+    if (face.kind !== 'face' || !validBefore.has(face.id)) return refuseBoundary();
+    const first = face.boundary.flatMap((reference, index) =>
+      reference.featureId === firstId ? [index] : []);
+    const second = face.boundary.flatMap((reference, index) =>
+      reference.featureId === secondId ? [index] : []);
+    if (first.length !== 1 || second.length !== 1) return refuseBoundary();
+    const count = face.boundary.length;
+    const insertAfter = (first[0] + 1) % count === second[0] ? first[0]
+      : (second[0] + 1) % count === first[0] ? second[0] : null;
+    if (insertAfter === null) return refuseBoundary();
+    boundaries.set(face.id, [
+      ...face.boundary.slice(0, insertAfter + 1),
+      { featureId: outcome.addedFeatureId },
+      ...face.boundary.slice(insertAfter + 1),
+    ]);
+  }
+  const added = outcome.document.features.find((feature) => feature.id === outcome.addedFeatureId);
+  if (added === undefined) return refuseBoundary();
+  const features = outcome.document.features.filter((feature) => feature.id !== added.id);
+  const firstFace = features.findIndex((feature) => boundaries.has(feature.id));
+  if (insertionChangesPreviousPoint({ ...outcome.document, features }, firstFace, options)) {
+    return { ok: false, reasonKey: 'corner.error.previousPoint' };
+  }
+  features.splice(firstFace, 0, added);
+  const document: SketchDocument = {
+    ...outcome.document,
+    features: features.map((feature) => {
+      const boundary = boundaries.get(feature.id);
+      return feature.kind === 'face' && boundary !== undefined ? { ...feature, boundary } : feature;
+    }),
+  };
+  const validAfter = new Set(resolveSketch(document, options).faces.map((face) => face.featureId));
+  if (affected.some((face) => !validAfter.has(face.id))) return refuseBoundary();
+  return { ok: true, document, featureId: added.id, boundaryUpdated: true };
+}
+
+/**
+ * 角を丸める(FR-323)。形の計算と線の変更は model の `filletCorner` へ渡し、
+ * その結果と既存の面の境界の更新を一緒に返す。
  *
  * 矩形・正多角形・長穴の角を丸めると、model がその図形を線分・円弧へ**分解してから**
  * 丸める。分解・書き換え・追加はまとめて 1 つの新しい文書になるので、取り消し(Ctrl+Z)は
@@ -463,15 +569,7 @@ export function commitSketchFillet(
     },
     options,
   );
-  if (!outcome.ok) {
-    return { ok: false, reasonKey: CORNER_ERROR_KEYS[outcome.reason] };
-  }
-  return {
-    ok: true,
-    document: outcome.document,
-    featureId: outcome.addedFeatureId,
-    boundaryNeedsUpdate: facesUseCorner(document, selection),
-  };
+  return finishCornerCommit(document, outcome, options);
 }
 
 /**
@@ -495,13 +593,5 @@ export function commitSketchChamfer(
       ? valueOf(commit.values.cornerDistance2, distance1)
       : distance1;
   const outcome = chamferCorner(document, { ...elements, distance1, distance2 }, options);
-  if (!outcome.ok) {
-    return { ok: false, reasonKey: CORNER_ERROR_KEYS[outcome.reason] };
-  }
-  return {
-    ok: true,
-    document: outcome.document,
-    featureId: outcome.addedFeatureId,
-    boundaryNeedsUpdate: facesUseCorner(document, selection),
-  };
+  return finishCornerCommit(document, outcome, options);
 }

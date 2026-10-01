@@ -89,10 +89,19 @@ describe('GR-19b: measurement panel wiring', () => {
     expect(rendered.controls.find(item => item.children === t('mathGeometry.createParameter'))?.disabled).toBe(true);
   });
 
-  it('appears first in properties and suppresses both temporary measurement sections until exit', () => {
+  it('appears first in properties and suppresses both temporary measurement sections until exit', async () => {
     install();
     useAppStore.setState({ selection: ['box'] });
+    // PropertyPanel loads this panel on first use (shell/deferredShell.tsx). While its code is
+    // loading, the temporary measurement sections must already stay hidden.
+    const loading = render(PropertyPanel);
+    expect(loading).toContain(t('bootstrap.loading'));
+    expect(loading).not.toContain(t('propertyPanel.sectionMeasure'));
+    expect(loading).not.toContain(t('propertyPanel.sectionMassProperties'));
+    await vi.dynamicImportSettled();
+    await new Promise(resolve => { setTimeout(resolve, 0); });
     const markup = render(PropertyPanel);
+    expect(markup).not.toContain(t('bootstrap.loading'));
     const titles = [...markup.matchAll(/<h3[^>]*>(.*?)<\/h3>/g)].map(match => match[1]);
     expect(titles[0]).toBe(t('mathGeometry.title'));
     expect(titles).not.toContain(t('propertyPanel.sectionMeasure'));

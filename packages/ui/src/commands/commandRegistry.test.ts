@@ -14,7 +14,7 @@ function environment(overrides: Partial<CommandRuntimeState> = {}): {
     setSelectionKind: vi.fn(), focusCommandLine: vi.fn(), cancelDrawingTool: vi.fn(),
     commitDrawingDimension: vi.fn(), commitDrawingDimensionSeries: vi.fn(),
     deleteDrawingSelection: vi.fn(), openContextualHelp: vi.fn(), closeStrength: vi.fn(),
-    clearMeasurement: vi.fn(),
+    clearMeasurement: vi.fn(), commandFeedback: vi.fn(),
   };
   return { value: { state: () => runtime, actions }, actions };
 }
@@ -22,7 +22,9 @@ function environment(overrides: Partial<CommandRuntimeState> = {}): {
 describe('command execution', () => {
   it.each(['part', 'assembly'] as const)('図面用の削除を%sから直接呼んでも実行しない', documentKind => {
     const target = environment({ documentKind });
-    expect(executeCommand('drawing.deleteSelection', target.value)).toEqual({ status: 'disabled', commandId: 'drawing.deleteSelection' });
+    expect(executeCommand('drawing.deleteSelection', target.value)).toEqual({ status: 'disabled', commandId: 'drawing.deleteSelection',
+      ready: false, reasonKey: 'command.unavailable.document' });
+    expect(target.actions.commandFeedback).toHaveBeenCalledWith('command.unavailable.document');
     expect(target.actions.deleteDrawingSelection).not.toHaveBeenCalled();
   });
 
@@ -55,7 +57,9 @@ describe('command execution', () => {
 
   it('does not execute an unavailable registered command', () => {
     const target = environment({ canUndo: false });
-    expect(executeCommand('history.undo', target.value)).toEqual({ status: 'disabled', commandId: 'history.undo' });
+    expect(executeCommand('history.undo', target.value)).toEqual({ status: 'disabled', commandId: 'history.undo',
+      ready: false, reasonKey: 'command.unavailable.undo' });
+    expect(target.actions.commandFeedback).toHaveBeenCalledWith('command.unavailable.undo');
     expect(target.actions.undo).not.toHaveBeenCalled();
   });
 
@@ -72,5 +76,36 @@ describe('command execution', () => {
     expect(executeCommand('drawing.commitDimension', target.value).status).toBe('executed');
     expect(target.actions.commitDrawingDimensionSeries).toHaveBeenCalledOnce();
     expect(target.actions.commitDrawingDimension).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['history.redo', 'command.unavailable.redo'],
+    ['workspace.closeStrength', 'command.unavailable.strength'],
+    ['workspace.clearMeasurement', 'command.unavailable.measurement'],
+  ])('returns and publishes the specific reason for %s', (id, reasonKey) => {
+    const target = environment();
+    expect(executeCommand(id, target.value)).toEqual({ status: 'disabled', commandId: id, ready: false, reasonKey });
+    expect(target.actions.commandFeedback).toHaveBeenCalledWith(reasonKey);
+  });
+
+  it('preserves a complete failure already published by the action while returning disabled', () => {
+    const target = environment();
+    const toolbarCommand = vi.fn(() => ({ ready: false, reasonKey: 'solidError.needTwoBodies' as const,
+      feedback: 'handled' as const }));
+    const value = { ...target.value, actions: { ...target.actions, toolbarCommand } };
+    expect(executeCommand('toolbar.solidCombine.subtract', value)).toEqual({ status: 'disabled',
+      commandId: 'toolbar.solidCombine.subtract', ready: false, reasonKey: 'solidError.needTwoBodies' });
+    expect(toolbarCommand).toHaveBeenCalledOnce();
+    expect(target.actions.commandFeedback).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it('passes through the toolbar refusal and does not report an execution', () => {
+    const target = environment({ documentKind: 'assembly' });
+    const toolbarCommand = vi.fn(() => ({ ready: false, reasonKey: 'assembly.mate.needTwo' as const }));
+    const value = { ...target.value, actions: { ...target.actions, toolbarCommand } };
+    expect(executeCommand('toolbar.mate.coincident', value)).toEqual({ status: 'disabled',
+      commandId: 'toolbar.mate.coincident', ready: false, reasonKey: 'assembly.mate.needTwo' });
+    expect(toolbarCommand).toHaveBeenCalledOnce();
+    expect(target.actions.commandFeedback).toHaveBeenLastCalledWith('assembly.mate.needTwo');
   });
 });

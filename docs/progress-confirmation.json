@@ -1,101 +1,102 @@
 {
   "schemaVersion": 1,
-  "confirmedAt": "2026-09-16T20:07:01.889944+09:00",
-  "mainCommit": "2179c4fcac72586f0dd36c4cb4b275a7e983d979",
+  "confirmedAt": "2026-09-28T14:17:31.215166+09:00",
+  "mainCommit": "8616ae902784f55adffdd1691b6e9c1d787b7ea8",
   "totalTasks": 580,
   "futureEstimateTasks": 115,
-  "confirmedCompleted": 533,
-  "previousConfirmedCompleted": 518,
+  "confirmedCompleted": 543,
+  "previousConfirmedCompleted": 533,
   "newlyConfirmedTaskIds": [
-    "P12-1",
-    "P12-2",
-    "P12-3",
-    "P12-4",
-    "P12-5",
-    "P12-6",
-    "P12-7",
-    "P12-8",
-    "P12-9",
-    "P12-10",
-    "P12-11",
-    "P12-12",
-    "P12-13",
-    "P12-14",
-    "P12-15"
+    "ADD-17",
+    "ADD-18",
+    "ADD-19",
+    "ADD-20",
+    "ADD-21",
+    "ADD-22",
+    "ADD-24",
+    "ADD-25",
+    "ADD-26",
+    "P13-1"
   ],
   "ciRun": {
-    "id": 35082614968,
+    "id": 36366830988,
     "status": "completed",
     "conclusion": "success",
-    "html_url": "https://github.com/oltotlo79-rgb/PointerCAD/actions/runs/35082614968",
-    "head_sha": "2179c4fcac72586f0dd36c4cb4b275a7e983d979",
+    "html_url": "https://github.com/oltotlo79-rgb/PointerCAD/actions/runs/36366830988",
+    "head_sha": "8616ae902784f55adffdd1691b6e9c1d787b7ea8",
     "head_branch": "main"
   },
   "ciJobs": [
     {
-      "name": "sharded-checks (ubuntu-latest, 1)",
-      "status": "completed",
-      "conclusion": "success",
-      "started_at": "2026-09-16T10:00:44Z",
-      "completed_at": "2026-09-16T10:46:24Z"
-    },
-    {
-      "name": "sharded-checks (windows-latest, 1)",
-      "status": "completed",
-      "conclusion": "success",
-      "started_at": "2026-09-16T10:00:44Z",
-      "completed_at": "2026-09-16T11:05:17Z"
-    },
-    {
       "name": "sharded-checks (windows-latest, 2)",
       "status": "completed",
       "conclusion": "success",
-      "started_at": "2026-09-16T10:00:45Z",
-      "completed_at": "2026-09-16T11:01:22Z"
-    },
-    {
-      "name": "sharded-checks (ubuntu-latest, 3)",
-      "status": "completed",
-      "conclusion": "success",
-      "started_at": "2026-09-16T10:00:45Z",
-      "completed_at": "2026-09-16T10:31:49Z"
+      "started_at": "2026-09-28T01:39:48Z",
+      "completed_at": "2026-09-28T04:53:34Z"
     },
     {
       "name": "sharded-checks (ubuntu-latest, 2)",
       "status": "completed",
       "conclusion": "success",
-      "started_at": "2026-09-16T10:00:44Z",
-      "completed_at": "2026-09-16T10:29:52Z"
+      "started_at": "2026-09-28T01:39:49Z",
+      "completed_at": "2026-09-28T04:21:15Z"
     },
     {
       "name": "sharded-checks (windows-latest, 3)",
       "status": "completed",
       "conclusion": "success",
-      "started_at": "2026-09-16T10:00:45Z",
-      "completed_at": "2026-09-16T11:06:08Z"
+      "started_at": "2026-09-28T01:39:49Z",
+      "completed_at": "2026-09-28T03:32:37Z"
     },
     {
-      "name": "checks (windows-latest)",
+      "name": "sharded-checks (ubuntu-latest, 1)",
       "status": "completed",
       "conclusion": "success",
-      "started_at": "2026-09-16T11:06:10Z",
-      "completed_at": "2026-09-16T11:06:23Z"
+      "started_at": "2026-09-28T01:39:49Z",
+      "completed_at": "2026-09-28T02:53:59Z"
+    },
+    {
+      "name": "sharded-checks (windows-latest, 1)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-28T01:39:50Z",
+      "completed_at": "2026-09-28T03:35:46Z"
+    },
+    {
+      "name": "sharded-checks (ubuntu-latest, 3)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-28T01:39:49Z",
+      "completed_at": "2026-09-28T03:09:04Z"
     },
     {
       "name": "checks (ubuntu-latest)",
       "status": "completed",
       "conclusion": "success",
-      "started_at": "2026-09-16T11:06:10Z",
-      "completed_at": "2026-09-16T11:06:16Z"
+      "started_at": "2026-09-28T04:53:36Z",
+      "completed_at": "2026-09-28T04:53:39Z"
+    },
+    {
+      "name": "checks (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-28T04:53:37Z",
+      "completed_at": "2026-09-28T04:53:48Z"
     }
   ],
-  "acceptanceReview": "docs/reviews/2026-09-16-P12-1-15.md",
-  "sourcePreservation": "scratchpad/tasks/6131650ed8c2-ci-wait-reduction-9byj59dd/p12-source-preservation.json",
-  "verifiedAcceptanceFiles": 52,
-  "localGate": "scratchpad/tasks/6131650ed8c2-p12-main-integration-r7kse0w9/full.log",
-  "deliveryRecord": "scratchpad/tasks/6131650ed8c2-ci-wait-reduction-9byj59dd/delivery-short-state.json",
-  "acceptanceUnitTests": 15003,
-  "acceptanceE2EPasses": [
-    363
+  "acceptanceReview": "scratchpad/claude/state/main-integration-judgment.json",
+  "mainIntegrationJudgment": {
+    "judgedBy": "w69a-main-integration-prep (opus)",
+    "judgedAt": "2026-09-27T17:56:22+09:00",
+    "rule": "計画の合格条件を全て満たし、同じフェーズの先行の原タスクも満たすものだけ（案A）",
+    "sourceCommit": "aef5b8ef0ce332129932531650224083198eed85",
+    "integratedIntoMainAt": "1e06c9339f0a78b02dcf8fe0c75c4928e62d2986",
+    "note": "1e06c93 自身の main CI で Windows 3 件が失敗（楕円積分・常微分方程式・下絵画像の時間超過）し、33a2c74・8616ae9 で答えを変えずに修正。1e06c93 は 8616ae9 の祖先であり、対象10件の実装ファイルは後退していないことを git diff で確認した。"
+  },
+  "gateSummary": "main-integration-judgment.json の 15回目（20260927-180158）: 自己試験・型・lint・単体・ビルド 終了コード0、画面検査 555 passed（2.2h）。8616ae9 は同じ内容が乗った版での両OS CI（36366830988）で sharded-checks 6組・checks 2組の計8ジョブ全て success。",
+  "notYetComplete": [
+    "ADD-23",
+    "ADD-27",
+    "ADD-28"
   ]
 }

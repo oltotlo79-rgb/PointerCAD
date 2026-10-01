@@ -1,4 +1,4 @@
-import React, { useState, type ReactElement } from 'react';
+import React, { type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber as number, type ExpressionValue } from '@pointercad/expression';
@@ -29,11 +29,7 @@ import { bodyFor, extrudeFeature, partWithPoint, resetTestStore } from '../store
 import { useAppStore } from '../store/useAppStore.js';
 import { evaluateFieldSource, pendingFieldVariables } from './propertyFieldUnits.js';
 
-// Local draft state is seeded; the real consumers, evaluation, store and event handlers run.
-vi.mock('react', async importOriginal => {
-  const react = await importOriginal<typeof import('react')>();
-  return { ...react, useState: vi.fn(react.useState) };
-});
+// The real consumers, local state, evaluation, store and event handlers run.
 const rendered = vi.hoisted(() => ({ tags: [] as { tag: string; props: Record<string, unknown> }[] }));
 vi.mock('react/jsx-runtime', async importOriginal => {
   const runtime = await importOriginal<typeof import('react/jsx-runtime')>();
@@ -109,8 +105,12 @@ function units() {
   return { ...state.parameterAnalysis, nonLengthVariables: state.nonLengthVariables, lengthUnit: 'mm' as const,
     pendingVariables: pendingFieldVariables(state) };
 }
-beforeEach(() => { resetTestStore(); install(); });
-afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); resetTestStore(); });
+beforeEach(() => { resetTestStore(); useAppStore.getState().setMassDensityDraft(null); install(); });
+afterEach(() => {
+  vi.restoreAllMocks(); vi.clearAllMocks(); resetTestStore();
+  useAppStore.getState().setMassDensityDraft(null);
+  expect(vi.isMockFunction(React.useState)).toBe(false);
+});
 
 describe('GR-20b B1 appearance fields', () => {
   it.each(['transmission', 'gloss', 'roughness'] as const)('%s never displays or saves a pending value', field => {
@@ -131,25 +131,43 @@ describe('GR-20b B1 appearance fields', () => {
 
 describe('GR-20b B2 density and mass', () => {
   function mass(source: string): string {
-    vi.mocked(useState).mockReturnValueOnce(['steel', () => undefined]).mockReturnValueOnce([source, () => undefined]);
     useAppStore.setState({ massProperties: { bodyFeatureId: 'solid', volume: 1000, area: 600,
       centreOfMass: [0, 0, 0], principalMoments: [1, 2, 3] } });
+    useAppStore.getState().setMassDensityDraft({ documentId: useAppStore.getState().document.id,
+      bodyFeatureId: 'solid', materialId: 'steel', source });
     return render(<MassPropertiesSection spec={appearanceFromPreset('steel')} />);
+  }
+  function uncomputedWithGeometry(markup: string): void {
+    for (const key of ['propertyPanel.massMass', 'propertyPanel.massInertia'] as const) {
+      expect(markup).toContain(`<dt class="pcad-properties__key">${t(key)}</dt><dd class="pcad-properties__value">${t('propertyPanel.massUncomputed')}</dd>`);
+    }
+    expect(markup).toContain('>1000 mm³</dd>');
+    expect(markup).toContain('>600 mm²</dd>');
+    expect(markup).toContain('>0, 0, 0 mm</dd>');
+    expect(markup).not.toContain('7.85 g');
+    expect(useAppStore.getState().massProperties).toEqual({ bodyFeatureId: 'solid', volume: 1000, area: 600,
+      centreOfMass: [0, 0, 0], principalMoments: [1, 2, 3] });
   }
   it('pending density hides the previous value and mass, including fallback mass', () => {
     const markup = mass('P');
     expect(markup).toContain(t('mathGeometry.status.pending'));
     expect(markup).not.toContain('= 10');
-    expect(markup).not.toContain(`<dt class="pcad-properties__key">${t('propertyPanel.massMass')}</dt>`);
+    uncomputedWithGeometry(markup);
     expect(markup).not.toContain('10 g');
     expect(markup).not.toContain('7.85 g');
     expect(markup).not.toContain('pcad-field--error');
   });
-  it('unrelated formulas and the normal error fallback retain their density', () => {
+  it('unrelated formulas keep 5g while invalid density has no fallback and can recover', () => {
     expect(mass('R')).toContain('= 5');
     expect(mass('R')).toContain('5 g');
-    expect(mass('unknown')).toContain('7.85 g');
-    expect(mass('unknown')).toContain('pcad-field--error');
+    const markup = mass('unknown');
+    uncomputedWithGeometry(markup);
+    expect(markup).toContain('pcad-field--error');
+    expect(markup).toContain(t('propertyPanel.massDensityInvalid'));
+    const recovered = mass('R');
+    expect(recovered).toContain('5 g');
+    expect(recovered).not.toContain(t('propertyPanel.massUncomputed'));
+    expect(recovered).not.toContain('pcad-field--error');
   });
 });
 

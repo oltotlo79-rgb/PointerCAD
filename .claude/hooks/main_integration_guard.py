@@ -40,6 +40,14 @@ literal text "git push" ever appearing -- `scratchpad/claude/tools/deliver.py ga
 `_push_ref_script_violation()`: if `--push-ref` resolves to `main`/`refs/heads/main`, the same
 judgment-record requirement applies, matched by script basename so the interpreter/path prefix in
 front of it (`python -B -X utf8 <path>/deliver.py ...`) does not matter.
+
+2026-09-30 (rules/01, user's release instruction): a published release may be integrated
+regardless of the completed-task count. A separate user-approved record must name the published
+tag and its full commit SHA. Only a single literal `git [-C <path>] push origin <sha>:main`
+(or `:refs/heads/main`) can use this exception. Remote tag lookup is read-only and bounded;
+annotated tags are compared by their peeled commit, never by the tag object's SHA. Unrecognized
+commands and failed lookups retain the ordinary judgment requirement. This does not bypass CI
+or Git's own hooks, and never executes the proposed push.
 """
 
 from __future__ import annotations
@@ -50,12 +58,15 @@ import re
 import shlex
 import subprocess
 import sys
+from datetime import datetime
 
 # main_integration_guard.py lives at .claude/hooks/main_integration_guard.py -- three dirname()
 # calls up from its own real path reaches the repository root, matching the other hooks in this
 # directory (e.g. subagent_search_scope_guard.py's ROOT).
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 JUDGMENT_PATH = os.path.join(ROOT, "scratchpad", "claude", "state", "main-integration-judgment.json")
+RELEASE_PATH = os.path.join(ROOT, "scratchpad", "claude", "state", "main-release-integration.json")
+RELEASE_LOOKUP_TIMEOUT = 3
 
 REASON_TEMPLATE = (
     "{what} は main への統合に当たります(rules/03 §6: main への統合は10原タスク以上の完了の"
@@ -367,6 +378,115 @@ def _judgment_defect(record: object) -> str | None:
     return None
 
 
+# --- narrow, fail-closed exception for the user's published-release instruction ---
+
+def _release_record_valid(record: object) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if record.get("approvedBy") != "user" or record.get("recordedBy") != "orchestrator":
+        return False
+    for key in ("reason", "tag", "sha", "recordedAt"):
+        value = record.get(key)
+        if not isinstance(value, str) or not value.strip():
+            return False
+        if any(ord(char) < 32 or ord(char) == 127 for char in value):
+            return False
+    if re.fullmatch(r"[0-9a-fA-F]{40}", record["sha"]) is None:
+        return False
+    tag = record["tag"]
+    # Closed subset of literal tag names: no options, patterns, revision expressions, or refs.
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", tag) is None:
+        return False
+    if ".." in tag or tag.startswith("refs/"):
+        return False
+    if any(not part or part.startswith(".") or part.endswith((".", ".lock"))
+           for part in tag.split("/")):
+        return False
+    stamp = record["recordedAt"]
+    if re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}", stamp) is None:
+        return False
+    try:
+        datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def _release_push(command: str, cwd: str) -> tuple[str, str] | None:
+    # Fullmatch the ORIGINAL text, not _tokens(): shlex erases quoting and escapes. No shell
+    # substitutions, command separators, redirections, force flags, extra refs, or wrappers.
+    # Forward-slash paths work in both supported shells; other spellings stay on the old path.
+    path = r'''(?:[A-Za-z0-9_./:-]+|"[A-Za-z0-9_./: -]+"|'[A-Za-z0-9_./: -]+')'''
+    match = re.fullmatch(
+        rf"[ \t]*git(?:[ \t]+-C[ \t]+(?P<directory>{path}))?"
+        r"[ \t]+push[ \t]+origin[ \t]+(?P<quote>['\"]?)"
+        r"(?P<sha>[0-9a-fA-F]{40}):(?:main|refs/heads/main)(?P=quote)[ \t]*",
+        command,
+    )
+    if match is None:
+        return None
+    directory = match.group("directory")
+    if directory is not None:
+        cwd = os.path.abspath(os.path.join(cwd, directory.strip("\"'")))
+    return match.group("sha").lower(), cwd
+
+
+def _published_release_sha(tag: str, cwd: str) -> str | None:
+    tag_ref = f"refs/tags/{tag}"
+    peeled_ref = f"{tag_ref}^{{}}"
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--tags", "origin", tag_ref, peeled_ref],
+            cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True,
+            text=True, encoding="utf-8", timeout=RELEASE_LOOKUP_TIMEOUT, env=env,
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
+    if result.returncode != 0:
+        return None
+    refs: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            return None
+        sha, ref = fields
+        if re.fullmatch(r"[0-9a-fA-F]{40}", sha) is None:
+            return None
+        if ref not in (tag_ref, peeled_ref) or ref in refs:
+            return None
+        refs[ref] = sha.lower()
+    if tag_ref not in refs:
+        return None
+    return refs.get(peeled_ref, refs[tag_ref])
+
+
+def _release_integration_reason(command: str, cwd: str) -> str | None:
+    # Every failure here retains the ordinary denial; it must not reach main's input-error
+    # fail-open handler. In particular, a broken record, missing git, or timeout is no approval.
+    try:
+        push = _release_push(command, cwd)
+        if push is None:
+            return None
+        with open(RELEASE_PATH, "r", encoding="utf-8") as handle:
+            record = json.load(handle)
+        if not _release_record_valid(record):
+            return None
+        sha, git_cwd = push
+        if sha != record["sha"].lower():
+            return None
+        if _published_release_sha(record["tag"], git_cwd) != sha:
+            return None
+        return (
+            f"公開時の main 統合の例外: {record['reason']} "
+            f"(tag={record['tag']}, sha={sha}; 利用者の承認・公開タグ・送信SHAが一致)"
+        )
+    except Exception:
+        return None
+
+
 def hook(payload: object, cwd: str) -> dict | None:
     if not isinstance(payload, dict):
         raise ValueError("フック入力がオブジェクトではない")
@@ -394,6 +514,11 @@ def hook(payload: object, cwd: str) -> dict | None:
         record_defect = _judgment_defect(record)
 
     if record_defect is None:
+        return None
+
+    release_reason = _release_integration_reason(command, cwd)
+    if release_reason is not None:
+        print(f"POINTERCAD_MAIN_RELEASE_INTEGRATION: {release_reason}", file=sys.stderr)
         return None
 
     return {"hookSpecificOutput": {

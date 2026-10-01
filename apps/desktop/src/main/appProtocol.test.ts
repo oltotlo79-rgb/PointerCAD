@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import type { Protocol } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_ORIGIN, handleAppScheme } from './appProtocol.js';
+import { startupFailureDocument } from './startupHtml.js';
 
 const electron = vi.hoisted(() => ({
   handle: vi.fn<Protocol['handle']>(),
@@ -25,6 +26,42 @@ beforeEach(() => {
 });
 
 describe('画面の独自スキームで不正なURLを拒否する', () => {
+  it('HTML自体の読込み失敗でもJSに頼らない復旧表示と安全な読み直し先を残す', () => {
+    const html = startupFailureDocument(APP_ORIGIN + '/index.html');
+    expect(html).toContain('data-startup-shell data-state="failed"');
+    expect(html).toContain('data-startup-loading hidden');
+    expect(html).toContain('data-startup-failure role="alert"');
+    expect(html).toContain('[data-startup-shell][data-state="failed"] .pcad-startup__recovery { animation: none; visibility: visible; }');
+    expect(html).toContain(`<a href="${APP_ORIGIN}/index.html">`);
+    expect(html).toContain("default-src 'none'; style-src 'unsafe-inline'");
+    expect(html).not.toContain('<script');
+    expect(startupFailureDocument('https://localhost/?a="&b=<')).toContain('a=&quot;&amp;b=&lt;');
+  });
+
+  it('JSを実行する前のHTMLへ起動画面を載せ、資源URLと保護を保持する', async () => {
+    electron.fetch.mockResolvedValue(new Response('<!doctype html><html><head><script type="module" src="./assets/entry.js"></script></head><body><div id="root"></div></body></html>',
+      { headers: { 'Content-Length': '10' } }));
+    const response = await request(APP_ORIGIN + '/index.html');
+    const html = await response.text();
+    expect(html).toContain('<main data-startup-shell');
+    expect(html).toContain('画面を準備しています。');
+    expect(html).toContain('prefers-reduced-motion: reduce');
+    expect(html).toContain('animation: pcad-startup-recovery 0s 8s forwards;');
+    expect(html).toContain('@keyframes pcad-startup-recovery { to { visibility: visible; } }');
+    expect(html).toContain('<script type="module" src="./assets/entry.js"></script>');
+    expect(html).not.toContain('/src/bootstrap.ts');
+    expect(html).not.toContain('{{startup:');
+    expect(response.headers.has('Content-Length')).toBe(false);
+    expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'none'");
+  });
+
+  it('起動画面はHTMLの正常応答だけへ挿入する', async () => {
+    electron.fetch.mockResolvedValue(new Response('<body>missing</body>', { status: 404 }));
+    expect(await (await request(APP_ORIGIN + '/index.html')).text()).toBe('<body>missing</body>');
+    electron.fetch.mockResolvedValue(new Response('<body>asset</body>'));
+    expect(await (await request(APP_ORIGIN + '/assets/other.html')).text()).toBe('<body>asset</body>');
+  });
+
   it.each(['/%', '/%GG', '/%C0%AF', '/%E3%81', '/%00.js'])(
     '%sを400で断り、ファイルを読み込まず次の要求に応答する', async (path) => {
       expect((await request(APP_ORIGIN + path)).status).toBe(400);

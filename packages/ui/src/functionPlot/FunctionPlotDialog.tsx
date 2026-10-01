@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import type { PartDocument, SketchFunctionCurveFeature, FunctionSurfaceFeature, ResolvedSpline, SolidBody } from '@pointercad/model';
@@ -131,7 +132,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
   return <>
     <dialog ref={dialog} className="pcad-function-dialog" aria-labelledby={`${id}-title`} data-help-topic={surface ? 'function-surface' : 'function-curve'} onCancel={event => { event.preventDefault(); close(); }}
       onKeyDown={event => event.stopPropagation()}>
-      <h2 id={`${id}-title`}>{t(surface ? 'functionPlot.surfaceTitle' : 'functionPlot.curveTitle')}</h2>
+      <DraggableWindowTitle as="h2" id={`${id}-title`}>{t(surface ? 'functionPlot.surfaceTitle' : 'functionPlot.curveTitle')}</DraggableWindowTitle>
       <p>{t('functionPlot.scopeHint')}</p>
       <form onSubmit={event => { event.preventDefault(); void calculate(); }}>
         <label>{t('functionPlot.geometry')} <select title={t('functionPlot.control.geometry')} disabled={busy || featureId !== undefined} value={draft.geometry}

@@ -9,7 +9,8 @@ import { chooseToolMenuItem } from './assemblyTestSupport.js';
 // starts, not retries that could turn a failed launch into an apparent success.
 for (let attempt = 1; attempt <= 5; attempt += 1) {
   test(`実Electronの起動同期 ${attempt}/5: 接続前のreadyを保留し実画面を開く`, async ({ playwright }, info) => {
-    const { app, directory } = await launchDesktop(playwright, info);
+    // Inspects the startup itself: return as soon as the window has loaded, before the startup screen ends.
+    const { app, directory } = await launchDesktop(playwright, info, { waitForStartup: false });
     // Playwright releases the application dispatcher on close. Retain the real
     // child process while the application is alive, then inspect its exit.
     const child = app.process();
@@ -18,6 +19,8 @@ for (let attempt = 1; attempt <= 5; attempt += 1) {
         loader: true, ready: false, windows: 0,
       });
       const page = await app.firstWindow();
+      await expect(page.locator('html')).toHaveAttribute('data-startup-stage', 'splash-hidden');
+      await expect(page.locator('[data-startup-shell]')).toHaveCount(0);
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().every(window =>
         window.isVisible() && !window.webContents.isLoadingMainFrame()))).toBe(true);
       // Exercise an item selection immediately after launch while native pointer
@@ -38,6 +41,7 @@ for (let attempt = 1; attempt <= 5; attempt += 1) {
       await page.reload();
       await expect(page.getByRole('button', { name: '開く', exact: true })).toBeVisible();
       await waitForStartupHealth(page, info);
+      await expect(page.locator('html')).toHaveAttribute('data-startup-stage', 'splash-hidden');
     } finally { await app.close(); }
     await expect.poll(() => child.exitCode).toBe(0);
   });

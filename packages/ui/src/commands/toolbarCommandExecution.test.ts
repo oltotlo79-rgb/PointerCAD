@@ -69,7 +69,8 @@ describe('ボタンと割当キーは同じ文書と入力へ接続する', () =
     state().openAssembly(createAssemblyDocument('組立'));
     const before = state();
     for (const id of ['toolbar.shape.circle', 'toolbar.sheetMetal.sheetBase', 'toolbar.drawing.note', 'toolbar.look.appearance']) {
-      expect(run(id).status).toBe('disabled'); expect(state()).toBe(before);
+      expect(run(id)).toEqual({ status: 'disabled', commandId: id, ready: false, reasonKey: 'command.unavailable.document' });
+      expect(state()).toEqual({ ...before, fileMessage: { key: 'command.unavailable.document', failed: true } });
     }
     run('toolbar.projection.orthographic'); expect(state().projection).toBe('orthographic');
     expect(state().assembly).toBe(before.assembly);
@@ -97,7 +98,8 @@ describe('ボタンと割当キーは同じ文書と入力へ接続する', () =
   it('計算中の図面から注記や出力の画面を開始しない', () => {
     openDrawing(); useAppStore.setState({ drawingBusy: true }); const before = state();
     expect(run('toolbar.drawing.note').status).toBe('disabled');
-    expect(run('toolbar.drawing.export').status).toBe('disabled'); expect(state()).toBe(before);
+    expect(run('toolbar.drawing.export').status).toBe('disabled');
+    expect(state()).toEqual({ ...before, fileMessage: { key: 'command.unavailable.computing', failed: true } });
   });
 
   it('図面の出力を共通の入口から開き、部品用の閉じ処理から保護する', () => {

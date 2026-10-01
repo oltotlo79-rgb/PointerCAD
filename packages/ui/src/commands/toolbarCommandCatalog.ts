@@ -129,7 +129,8 @@ function toolbarHelpTopic(group: ToolbarCommandGroup, id: string): string {
     if (['linearPattern', 'circularPattern'].includes(id)) return 'pattern';
     if (['box', 'cylinder', 'sphere', 'cone', 'torus'].includes(id)) return 'primitive';
     if (['loft', 'ruled'].includes(id)) return 'ruled-loft';
-    if (['extrude', 'revolve', 'sew'].includes(id)) return 'solid-basics';
+    if (id === 'sew') return 'solid-combine';
+    if (['extrude', 'revolve'].includes(id)) return 'solid-basics';
     if (id.toLowerCase().includes('cut')) return 'cut';
     return 'shape-edit';
   }

@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { prepareDocumentMathProblem } from './prepareDocumentMathProblem.js';
 import { unresolvedMathProblemOutput } from './unresolvedMathProblemOutput.js';
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
@@ -182,7 +183,7 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
   }, [owner, id, attempt]);
   return <dialog ref={dialog} className="pcad-math-dialog" aria-labelledby={`${id}-title`} data-help-topic="math-input"
     onCancel={event => { event.preventDefault(); owner.onClose(); }} onKeyDown={event => event.stopPropagation()}>
-    <h2 id={`${id}-title`}>{t('math.title')}</h2>
+    <DraggableWindowTitle as="h2" id={`${id}-title`}>{t('math.title')}</DraggableWindowTitle>
     <p>{t(owner.kind === 'function' ? 'math.functionOutput' : owner.kind === 'problem' ? 'math.problem.hint' : 'math.valueUnit')} {owner.unitLabel}</p>
     {owner.kind === 'function' ? <p>{t('math.functionRangeHint')}</p> : null}
     {problem === null ? null : <p role="alert">{problem}</p>}

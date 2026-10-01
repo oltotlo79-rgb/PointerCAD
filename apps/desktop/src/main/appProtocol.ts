@@ -2,6 +2,7 @@ import { net, protocol } from 'electron';
 import { contentSecurityPolicyFor } from '@pointercad/ui/security-policy';
 import { join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { injectStartupShell } from './startupHtml.js';
 
 /** 画面の配信に使う独自スキーム。Web 版と同じ「http のような」条件を再現する。 */
 export const APP_SCHEME = 'app';
@@ -63,6 +64,11 @@ export function handleAppScheme(rendererRoot: string): void {
     headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
     headers.set('Cross-Origin-Resource-Policy', 'same-origin');
 
+    if (relativePath === '/index.html' && response.ok) {
+      const html = injectStartupShell(await response.text());
+      headers.delete('Content-Length');
+      return new Response(html, { status: response.status, headers });
+    }
     return new Response(response.body, { status: response.status, headers });
   });
 }

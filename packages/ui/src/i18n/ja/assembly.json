@@ -71,6 +71,8 @@
   "assembly.replace.confirm": "差し替える",
   "assembly.tool.fixComponent": "固定する",
   "assembly.tool.fixComponentTooltip": "選んだ部品を動かない状態にします。",
+  "assembly.tool.unfixComponent": "固定を解除する",
+  "assembly.tool.unfixComponentTooltip": "選んだ部品の固定を解除して、動かせる状態にします。",
   "assembly.tool.mateCoincident": "一致",
   "assembly.tool.mateConcentric": "同心",
   "assembly.tool.mateDistance": "距離",

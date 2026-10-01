@@ -2,6 +2,7 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { expect } from '@playwright/test';
 import { captureManualDetail } from './captureManualDetail.js';
+import { beginRecompute, waitForRecompute } from './recompute.js';
 import { waitForStartupHealth } from './startupHealth.js';
 import {
   choosePlaneMenuItem, chooseEditTool, clickWorldPoint, drawRectangle, extrudeFace,
@@ -31,12 +32,15 @@ export async function projectIntersectCaptureFlow(page: Page, info: TestInfo): P
   await expect(treeRow(page, '矩形1')).toBeVisible();
   await makeFace(page, ['矩形1']);
   await expect(treeRow(page, '面1')).toBeVisible({ timeout: KERNEL_TIMEOUT_MS });
+  const extrusion = await beginRecompute(page);
   await extrudeFace(page, '面1', '10');
   await treeRow(page, '押し出し1').click();
+  await waitForRecompute(page, extrusion);
 
   // 2) スケッチを1本足し、板の上面を投影する。
   await featureTree(page).getByRole('button', { name: 'スケッチを追加', exact: true }).click();
   await expect(treeRow(page, 'スケッチ2')).toBeVisible();
+  await waitForRecompute(page);
   await chooseEditTool(page, '投影');
   await expect(statusText(page)).toContainText('写したい立体の面か辺をクリック');
   await clickWorldPoint(page, [20, 15, 10]);
@@ -57,6 +61,7 @@ export async function projectIntersectCaptureFlow(page: Page, info: TestInfo): P
   await expect(treeRow(page, 'スケッチ3')).toBeVisible();
   await choosePlaneMenuItem(page, '作業平面1');
   await expect(planeBadge(page)).toContainText('作業平面1');
+  await waitForRecompute(page);
   await chooseEditTool(page, '断面');
   await expect(statusText(page)).toContainText('断面をとりたい立体をクリック');
   await clickWorldPoint(page, [20, 15, 10]);

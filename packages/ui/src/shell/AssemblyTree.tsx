@@ -2,6 +2,7 @@ import { useRevealNamedTreeRow } from './useRevealNamedTreeRow.js';
 import { useEffect, useRef, useState } from 'react';
 import { DocumentNameSearch } from './DocumentNameSearch.js';
 import { assemblyNameSearchEntries } from './nameSearch.js';
+import { nextHighlightIndex } from './menus/menuItem.js';
 
 import {
   findComponent,
@@ -172,6 +173,7 @@ export function AssemblyTree(): React.JSX.Element {
   const [collapsedComponents, setCollapsedComponents] = useState<readonly string[]>([]);
   const [menu, setMenu] = useState<RowMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   // 一覧の外を押したとき・Esc を押したときに閉じる。開いている間だけ見張る。
   useEffect(() => {
@@ -186,8 +188,9 @@ export function AssemblyTree(): React.JSX.Element {
       setMenu(null);
     };
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229) {
         setMenu(null);
+        menuTriggerRef.current?.focus();
       }
     };
     window.addEventListener('pointerdown', onPointerDown);
@@ -203,7 +206,7 @@ export function AssemblyTree(): React.JSX.Element {
     if (menu === null) {
       return;
     }
-    menuRef.current?.querySelector('button')?.focus();
+    menuRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
   }, [menu]);
 
   if (assembly === null) {
@@ -270,6 +273,7 @@ export function AssemblyTree(): React.JSX.Element {
             const target = assemblyRowMenuTarget(sectionKey, row.id);
             if (target === null) return;
             event.preventDefault();
+            menuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
             useAppStore.getState().setSelection([row.id]);
             setMenu({
               ...target,
@@ -345,6 +349,7 @@ export function AssemblyTree(): React.JSX.Element {
               onClick={(event) => {
                 const target = assemblyRowMenuTarget(sectionKey, row.id);
                 if (target === null) return;
+                menuTriggerRef.current = event.currentTarget;
                 const rect = event.currentTarget.getBoundingClientRect();
                 setMenu({
                   ...target,
@@ -459,6 +464,24 @@ export function AssemblyTree(): React.JSX.Element {
           className="pcad-menu__panel pcad-tree__menu"
           role="menu"
           style={{ left: menu.x, top: menu.y }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              setMenu(null);
+              menuTriggerRef.current?.focus();
+              return;
+            }
+            const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)'));
+            const current = Math.max(0, items.findIndex(item => item === event.currentTarget.ownerDocument.activeElement));
+            const next = nextHighlightIndex(current, event.key, items.length);
+            if (next !== null) {
+              event.preventDefault();
+              event.stopPropagation();
+              items[next]?.focus();
+            }
+          }}
         >
           {menuComponent === undefined ? null : <><button title={t('controlGuide.button.assemblyDuplicate')}
             type="button"

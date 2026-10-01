@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createFeatureFolder, FEATURE_FOLDER_NAME_MAX_LENGTH, FeatureFolderError, featureFolderMemberKey,
   moveFeatureFolderMember, removeFeatureFolder, renameFeatureFolder, type FeatureFolder, type FeatureFolderMember,
@@ -70,7 +71,7 @@ export function FeatureFolderDialog({ draft, onClose }: {
       }
     }}>
     <form onSubmit={event => { event.preventDefault(); if (!invalidName) commit(); }}>
-      <h2 id={titleId}>{t(draft.mode === 'move' ? 'historyFolder.moveTitle' : 'historyFolder.title')}</h2>
+      <DraggableWindowTitle as="h2" id={titleId}>{t(draft.mode === 'move' ? 'historyFolder.moveTitle' : 'historyFolder.title')}</DraggableWindowTitle>
       {draft.mode === 'move' ? <p>{draft.name}</p> : <>
         <label htmlFor={nameId}>{t('historyFolder.name')}</label>
         <input title={t('historyFolder.nameHint').replace('{max}', String(FEATURE_FOLDER_NAME_MAX_LENGTH))} id={nameId} value={name} aria-invalid={invalidName} onChange={event => { setName(event.currentTarget.value); setProblem(null); }} />

@@ -1,5 +1,6 @@
 import { beginRadialMenuGesture, finishRadialMenuGesture, moveRadialMenuGesture, type RadialMenuGesture } from './radialMenuGesture.js';
 import { placeRadialMenu, type RadialMenuSlot, type ScreenPoint } from './radialMenuGeometry.js';
+import { exceedsRightDragThreshold, isPlainRightPointer } from '../viewport/rightPointerGesture.js';
 
 export interface RadialMenuAttachmentOptions {
   /** Reference identity of the current document; an edit or switch cancels a held gesture. */
@@ -12,6 +13,8 @@ export interface RadialMenuAttachmentOptions {
   /** Latched DOM buttons retain their ordinary pointer and click sequence. */
   readonly nativeClickTarget?: (target: EventTarget | null) => boolean;
   readonly scale?: () => number;
+  /** In 3D, the camera owns right drags; open only after a stationary right release. */
+  readonly clickOnly?: boolean;
 }
 
 /** Right drag chooses on release; a short right click leaves the menu for a subsequent left click. */
@@ -27,8 +30,10 @@ export function attachRadialMenuGesture(
   let active: { readonly gesture: RadialMenuGesture; readonly owner: object; readonly start: ScreenPoint;
     readonly holding: 'right' | 'left' | 'native' | null; readonly moved: boolean; readonly clicked?: RadialMenuSlot | null;
     readonly nativeTarget?: EventTarget | null } | null = null;
+  let pending: { readonly gesture: RadialMenuGesture; readonly owner: object; readonly start: ScreenPoint } | null = null;
 
   const cancel = (): void => {
+    pending = null;
     const previous = active;
     active = null;
     if (previous === null) return;
@@ -44,8 +49,7 @@ export function attachRadialMenuGesture(
     if (allowed) options.choose(slot);
   };
   const down = (event: PointerEvent): void => {
-    if (event.button !== 2 || event.buttons !== 2 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
-      || event.pointerType !== 'mouse' || options.blocked()) return;
+    if (!isPlainRightPointer(event) || options.blocked()) return;
     cancel();
     const bounds = surface.getBoundingClientRect();
     const scale = options.scale?.() ?? 1;
@@ -53,14 +57,19 @@ export function attachRadialMenuGesture(
     const geometry = placeRadialMenu({ x: event.clientX, y: event.clientY },
       { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height - 80 * scale }, 152 * scale, 32 * scale);
     if (geometry === null) return;
-    stop(event);
     const gesture = beginRadialMenuGesture({ x: event.clientX, y: event.clientY }, event.pointerId, geometry);
+    if (options.clickOnly === true) {
+      pending = { gesture, owner: options.owner(), start: { x: event.clientX, y: event.clientY } };
+      return;
+    }
+    stop(event);
     active = { gesture, owner: options.owner(), start: { x: event.clientX, y: event.clientY }, holding: 'right', moved: false };
     surface.setPointerCapture(event.pointerId);
     surface.focus({ preventScroll: true });
     options.show(gesture);
   };
   const nextDown = (event: PointerEvent): void => {
+    if (pending !== null && event.pointerId === pending.gesture.pointerId) pending = null;
     if (active === null || event.pointerId !== active.gesture.pointerId) return;
     if (active.holding !== null) { cancel(); return; }
     if (event.button !== 0 || event.buttons !== 1 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
@@ -80,6 +89,11 @@ export function attachRadialMenuGesture(
     options.show(gesture);
   };
   const move = (event: PointerEvent): void => {
+    if (pending !== null && event.pointerId === pending.gesture.pointerId) {
+      if (options.blocked() || options.owner() !== pending.owner || event.buttons !== 2
+        || exceedsRightDragThreshold(pending.start, event)) pending = null;
+      return;
+    }
     if (active === null || event.pointerId !== active.gesture.pointerId) return;
     if (active.holding === 'native') {
       if (changed() || event.buttons !== 1) cancel();
@@ -92,10 +106,21 @@ export function attachRadialMenuGesture(
     if (active.holding !== 'right' && options.clickSlot !== undefined) {
       gesture = { ...gesture, selected: options.clickSlot({ x: event.clientX, y: event.clientY }) };
     }
-    active = { ...active, gesture, moved: active.moved || Math.hypot(event.clientX - active.start.x, event.clientY - active.start.y) > 6 };
+    active = { ...active, gesture, moved: active.moved || exceedsRightDragThreshold(active.start, event) };
     options.show(gesture, active.holding === null);
   };
   const up = (event: PointerEvent): void => {
+    if (pending !== null && event.pointerId === pending.gesture.pointerId) {
+      const click = pending;
+      pending = null;
+      if (!options.blocked() && options.owner() === click.owner && event.button === 2 && event.buttons === 0
+        && !exceedsRightDragThreshold(click.start, event)) {
+        active = { ...click, holding: null, moved: false };
+        options.show(click.gesture, true);
+      }
+      // Do not consume the release: the camera still owns pointer capture.
+      return;
+    }
     if (active === null || event.pointerId !== active.gesture.pointerId) return;
     if (active.holding === 'native') {
       if (changed() || event.button !== 0 || event.buttons !== 0 || event.target !== active.nativeTarget) cancel();
@@ -105,7 +130,7 @@ export function attachRadialMenuGesture(
     stop(event);
     if (active.holding === null) return;
     if (!changed() && active.holding === 'right' && !active.moved && event.button === 2 && event.buttons === 0
-      && Math.hypot(event.clientX - active.start.x, event.clientY - active.start.y) <= 6) {
+      && !exceedsRightDragThreshold(active.start, event)) {
       // Keep the visible menu after a click, but release native pointer ownership.
       active = { ...active, holding: null };
       if (surface.hasPointerCapture(event.pointerId)) surface.releasePointerCapture(event.pointerId);
@@ -121,16 +146,18 @@ export function attachRadialMenuGesture(
     if (slot !== null) options.choose(slot);
   };
   const cancelled = (event: PointerEvent): void => {
+    if (event.pointerId === pending?.gesture.pointerId) pending = null;
     if (event.pointerId === active?.gesture.pointerId && (event.type !== 'lostpointercapture' || active.holding !== null)) cancel();
   };
   const key = (event: KeyboardEvent): void => {
+    pending = null;
     if (active === null) return;
     // The opened menu retains ordinary keyboard navigation and activation.
     if (event.key === 'Escape') stop(event);
     else if (active.holding === null && event.target instanceof Element && event.target.closest('.pcad-radial-menu') !== null) return;
     cancel();
   };
-  const wheel = (event: WheelEvent): void => { if (active !== null) stop(event); };
+  const wheel = (event: WheelEvent): void => { pending = null; if (active !== null) stop(event); };
   const context = (event: MouseEvent): void => {
     if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && !options.blocked()) event.preventDefault();
   };

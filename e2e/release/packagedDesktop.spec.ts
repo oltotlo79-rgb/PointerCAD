@@ -11,8 +11,8 @@ import { DRAWING_FONT_ASSET } from '../../packages/drawing/src/text/fontAsset.js
 import { chooseToolMenuItem } from '../tests/assemblyTestSupport.js';
 import { waitForMathEditorText } from '../tests/mathEditorReady.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from '../tests/recompute.js';
-import { waitForStartupHealth } from '../tests/startupHealth.js';
 import { uiMessage } from '../tests/uiMessages.js';
+import { verifyPackagedStartup } from './packagedStartup.js';
 
 /*
  * 配布物の起動の確認(P13-8・P13-9・P13-10・P13-17)。設定は e2e/packaged-desktop.config.ts、
@@ -534,19 +534,7 @@ test('配布物を一時の userData で起動し、名前・版・画面・同�
     await run('(c)', '主要な画面の要素(electron-startup.spec.ts と同じもの)', async () => {
       // 同じ検査のうち、起動の保留の記録(bootstrap.json)と窓の焦点は対象外。配布物には loader を入れられず、
       // 焦点を外す指定も窓が表示された後にしか掛けられないため。
-      expect(page.url()).toBe('app://pointercad/index.html');
-      expect(await page.evaluate(() => globalThis.crossOriginIsolated), '独自スキームの隔離の見出しが効いていること').toBe(true);
-      await chooseToolMenuItem(page, uiMessage('toolbar', 'toolbar.shape.groupLabel'), uiMessage('sketch', 'functionPlot.menuTitle'));
-      await expect(page.locator('.pcad-function-dialog')).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(page.locator('.pcad-function-dialog')).toHaveCount(0);
-      await waitForStartupHealth(page, info);
-      const search = page.locator('.pcad-panel--left input').first();
-      await search.fill('startup-input'); await expect(search).toHaveValue('startup-input'); await search.fill('');
-      // 最初の読込みは Playwright の接続より前に始まるため、例外の見張りを付けた状態で読み直して確かめる。
-      await page.reload();
-      await expect(page.getByRole('button', { name: uiMessage('toolbar', 'toolbar.file.open'), exact: true })).toBeVisible();
-      await waitForStartupHealth(page, info);
+      await verifyPackagedStartup(page, info);
       expect(await app.evaluate(({ app: electronApp }) => electronApp.isReady())).toBe(true);
       // (d-3) で図面が字体を読んだ記録を確かめるため、資源の読込みの記録を取りこぼさない大きさにする。
       await page.evaluate(() => { performance.setResourceTimingBufferSize(100_000); });

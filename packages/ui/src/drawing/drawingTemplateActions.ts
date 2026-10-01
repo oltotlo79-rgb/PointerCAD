@@ -1,10 +1,74 @@
-import { createDrawingTemplate, validateDrawingTemplate } from '@pointercad/model';
+import { createDrawingTemplate, evaluateDrawingSheetExpression, validateDrawingTemplate } from '@pointercad/model';
+import { exactExpressionValueFromNumber } from '@pointercad/expression';
 import { readDrawingTemplateFile, writeDrawingTemplateFile } from '@pointercad/io';
 import type { DrawingSheet } from '@pointercad/drawing';
 import { openFileThrough, saveFileAsThrough } from '../file/fileGateway.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import { createDrawingFromCurrentPart } from './createDrawingCommands.js';
+
+export interface DrawingSheetDraft {
+  readonly scale: string;
+  readonly scaleOptions: string;
+  readonly textHeight: string;
+  readonly fields: NonNullable<DrawingSheet['titleBlockFields']>;
+}
+
+export interface DrawingSheetDraftErrors {
+  readonly scale?: string;
+  readonly scaleOptions?: string;
+  readonly textHeight?: string;
+  readonly fields: readonly { readonly label?: string; readonly width?: string }[];
+}
+
+/** 関数の引数のカンマは候補の区切りにしない(root(8, 3)等)。 */
+function scaleSources(source: string): readonly string[] {
+  const values: string[] = [];
+  let start = 0, depth = 0;
+  for (let index = 0; index < source.length; index++) {
+    if (source[index] === '(') depth++;
+    else if (source[index] === ')') depth = Math.max(0, depth - 1);
+    else if (source[index] === ',' && depth === 0) { values.push(source.slice(start, index).trim()); start = index + 1; }
+  }
+  values.push(source.slice(start).trim());
+  return values;
+}
+
+/** 表示単位に依らず紙面のmmと無次元の倍率を評価する。エラー時には部分適用しない。 */
+export function parseDrawingSheetDraft(sheet: DrawingSheet, draft: DrawingSheetDraft):
+  | { readonly ok: true; readonly sheet: DrawingSheet }
+  | { readonly ok: false; readonly errors: DrawingSheetDraftErrors } {
+  const evaluate = (source: string, quantity: 'length' | 'ratio'): { value: number; error?: string } => {
+    const result = evaluateDrawingSheetExpression(source, quantity);
+    if (result.ok) return { value: result.value.value };
+    return { value: 0, error: result.reason === 'expression' ? result.message
+      : t(result.reason === 'positive' ? 'drawing.sheet.positive' : 'drawing.sheet.unitless') };
+  };
+  const scale = evaluate(draft.scale, 'ratio'), height = evaluate(draft.textHeight, 'length');
+  const sources = scaleSources(draft.scaleOptions), values = sources.map((source) => evaluate(source, 'ratio'));
+  const invalidOption = values.findIndex((value) => value.error !== undefined);
+  const optionError = invalidOption >= 0 ? t('drawing.sheet.candidateError')
+    .replace('{index}', String(invalidOption + 1)).replace('{reason}', values[invalidOption].error ?? '')
+    : new Set(values.map((value) => value.value)).size !== values.length ? t('drawing.sheet.duplicateScales') : undefined;
+  const widths = draft.fields.map((field) => evaluate(field.widthExpression ?? exactExpressionValueFromNumber(field.widthWeight ?? 1).source, 'ratio'));
+  const fieldErrors = draft.fields.map((field, index) => ({
+    ...(field.label.trim() === '' ? { label: t('drawing.sheet.emptyFieldLabel') } : {}),
+    ...(widths[index].error === undefined ? {} : { width: widths[index].error }),
+  }));
+  if (scale.error !== undefined || height.error !== undefined || optionError !== undefined
+    || fieldErrors.some((field) => field.label !== undefined || field.width !== undefined)) {
+    return { ok: false, errors: { scale: scale.error, textHeight: height.error, scaleOptions: optionError, fields: fieldErrors } };
+  }
+  return { ok: true, sheet: { ...sheet, scale: scale.value, scaleExpression: draft.scale,
+    scaleOptions: values.map((value) => value.value), scaleOptionExpressions: sources,
+    textHeight: height.value, textHeightExpression: draft.textHeight,
+    titleBlockFields: draft.fields.map(({ fixedText, ...field }, index) => ({ ...field,
+      widthWeight: widths[index].value,
+      widthExpression: field.widthExpression ?? exactExpressionValueFromNumber(field.widthWeight ?? 1).source,
+      ...(fixedText === undefined || fixedText === '' ? {} : { fixedText }),
+    })),
+  } };
+}
 
 export function commitDrawingSheet(sheet: DrawingSheet): boolean {
   const state = useAppStore.getState(), document = state.drawing;

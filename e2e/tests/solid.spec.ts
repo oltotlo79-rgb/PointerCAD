@@ -29,7 +29,7 @@ const NEED_TWO_BODIES_REASON = '立体を 2 つ選んでください。';
 /** ja.json の propertyPanel.unitCubicMillimeter。 */
 const VOLUME_UNIT = 'mm³';
 /** ja.json の statusBar.ready。何も選んでいないときに帯へ出る案内。 */
-const READY_GUIDE = '中ボタンのドラッグで向きを変え、ホイールで拡大・縮小できます。';
+const READY_GUIDE = '中ボタンのドラッグで回転、右ドラッグで平行移動、ホイールで拡大・縮小。右クリックで道具の一覧を開きます。';
 
 /** 自動保存の控えの置き場所。`packages/io/src/autoSave.ts` の既定値と同じ(DB・ストア・鍵)。 */
 const AUTO_SAVE_DB_NAME = 'pointercad';

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { createEmptyPartDocument, type MeasureOutcome, type PartDocument } from '@pointercad/model';
+import { expressionValueFromNumber as number } from '@pointercad/expression';
+import { absoluteCoordinate, appendFeature, createEmptyPartDocument, createPointFeature, replaceSketch,
+  resolveSketch, type MeasureOutcome, type PartDocument, type SketchPointArrayFeature } from '@pointercad/model';
 
 import {
   defaultDensityMaterialId,
@@ -10,7 +12,9 @@ import {
   formatMeasurePoint,
   formatMeasureValue,
   formatMoments,
+  isValidDensity,
   massPropertiesView,
+  measureTargetNames,
   measurementFromDistance,
   measurementOf,
   measureToolReadiness,
@@ -184,6 +188,49 @@ describe('「測る」の押せる条件(NFR-UX-5、タスク32)', () => {
 
   it('押せるときは理由を持たない(押せる/押せないの表し方を 1 つにする)', () => {
     expect(measureToolReadiness(['extrude-1'], BODIES).reasonKey).toBeNull();
+  });
+});
+
+describe('FIX-02 display conversion and density bounds', () => {
+  it('converts lengths, squared/cubed units and centroid without mutating the result', () => {
+    const distance: LocalMeasureResult = { kind: 'pointDistance', value: 25.4, unit: 'mm', segment: null };
+    expect(formatMeasureValue(distance, 'inch')).toBe('1.000 in');
+    expect(formatMeasureValue({ ...distance, unit: 'mm2', value: 25.4 ** 2 }, 'inch')).toBe('1.000 in²');
+    expect(formatMeasureValue({ ...distance, unit: 'mm3', value: 25.4 ** 3 }, 'inch')).toBe('1.000 in³');
+    expect(formatMeasurePoint([25.4, -25.4, -1e-18], 'inch')).toBe('1.000, -1.000, 0.000 in');
+    expect(formatMeasurePoint([1.23456789, 0, 0])).toBe('1.234568, 0, 0 mm');
+    expect(distance.value).toBe(25.4);
+  });
+
+  it.each([0, -1, -0.5, Infinity, -Infinity, NaN])('rejects a nonphysical density of %s at the view boundary', density => {
+    expect(isValidDensity(density)).toBe(false);
+    expect(() => massPropertiesView({ bodyFeatureId: 'box', volume: 1000, area: 600,
+      centreOfMass: [0, 0, 0], principalMoments: [1, 2, 3] }, density)).toThrow(RangeError);
+  });
+
+  it('captures distinct subshape labels even on the same named body', () => {
+    const names = measureTargetNames(DOCUMENT, ['extrude-1#vertex:0', 'extrude-1#vertex:1']);
+    expect(names).toEqual(['extrude-1 / 頂点 1', 'extrude-1 / 頂点 2']);
+  });
+
+  it('captures the names of actual sketch points and distinguishes members of a point array', async () => {
+    const empty = createEmptyPartDocument();
+    const array: SketchPointArrayFeature = { id: 'pointArray-1', name: '測定用の点列', kind: 'pointArray',
+      planeId: 'xy', layout: { kind: 'linear', base: absoluteCoordinate(0, 0, 0),
+        azimuth: number(0), spacing: number(25.4), count: number(2) } };
+    const sketchDocument = appendFeature(appendFeature(empty.sketches[0], array),
+      createPointFeature(empty.sketches[0], absoluteCoordinate(50.8, 0, 0)));
+    const document = replaceSketch(empty, sketchDocument);
+    const sketch = resolveSketch(sketchDocument);
+    const result = await runMeasure({ document, sketch, selection: ['pointArray-1#0', 'pointArray-1#1'], bodies: [], measurer: null });
+    expect(result).toMatchObject({ ok: true, measurement: {
+      targetNames: ['測定用の点列 / 1番目', '測定用の点列 / 2番目'],
+      result: { value: 25.4, segment: [[0, 0, 0], [25.4, 0, 0]] },
+    } });
+    const mixed = await runMeasure({ document, sketch, selection: ['point-1', 'extrude-1#vertex:0'], bodies: BODIES, measurer: null });
+    expect(mixed).toMatchObject({ ok: true, measurement: {
+      targetNames: ['点1', 'extrude-1 / 頂点 1'], result: { value: 50.8 },
+    } });
   });
 });
 

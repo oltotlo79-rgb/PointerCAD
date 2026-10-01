@@ -75,6 +75,8 @@ describe('ポータブル版に導入版のZIPを7zとして埋め込まない',
     expect(member(definitions, 'APP_DIR_64')).toBe(appFolder);
     expect(member(definitions, 'APP_64')).toBeUndefined();
     expect(member(definitions, 'REQUEST_EXECUTION_LEVEL')).toBe('user');
+    // The shutdown cleanup checks the environment value emitted by portable.nsi, not productName.
+    expect(member(definitions, 'APP_FILENAME')).toBe('pointercad');
     expect(member(definitions, 'UNPACK_DIR_NAME')).toBeUndefined();
     expect(packArch).not.toHaveBeenCalled();
     const template = readFileSync(join(builderFolder, 'templates/nsis/portable.nsi'), 'utf8');

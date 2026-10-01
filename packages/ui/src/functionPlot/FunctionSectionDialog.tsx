@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { expressionValueFromNumber as number } from '@pointercad/expression';
 import type { FunctionPlotAxis } from '@pointercad/model';
@@ -54,7 +55,7 @@ export function FunctionSectionDialog({ parentId, edit, onClose }: {
   return <>
     <dialog ref={dialog} className="pcad-function-dialog" aria-labelledby={`${id}-title`} data-help-topic="function-surface"
       onCancel={event => { event.preventDefault(); close(); }} onKeyDown={event => event.stopPropagation()}>
-      <h2 id={`${id}-title`}>{t(edit ? 'functionSection.edit' : 'functionSection.title')}</h2><p>{parent?.name}</p><p>{t('functionSection.hint')}</p>
+      <DraggableWindowTitle as="h2" id={`${id}-title`}>{t(edit ? 'functionSection.edit' : 'functionSection.title')}</DraggableWindowTitle><p>{parent?.name}</p><p>{t('functionSection.hint')}</p>
       <form onSubmit={event => { event.preventDefault(); void apply(); }}>
         <fieldset disabled={busy}>
           <legend>{t('functionSection.coordinate')}</legend>

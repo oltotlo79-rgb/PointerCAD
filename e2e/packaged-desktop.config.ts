@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertPortableLaunchEnvironment } from '../scripts/release/portableLaunch.mjs';
 
 /*
  * 配布物そのもの(win-unpacked・NSIS で導入した本体・AppImage を展開した中身)を起動する検査
@@ -11,11 +12,14 @@ import { fileURLToPath } from 'node:url';
  * 実行中の配布物を取り違えないよう1本ずつ動かし、失敗を再試行で成功へ置き換えない。
  */
 const root = fileURLToPath(new URL('..', import.meta.url));
+const variant = process.env.PCAD_PACKAGED_VARIANT ?? 'unpacked';
+if (variant !== 'unpacked' && variant !== 'portable') throw new Error(`Unknown packaged variant: ${variant}`);
+if (variant === 'portable') assertPortableLaunchEnvironment(process.env, process.platform);
 
 export default defineConfig({
   testDir: './release',
-  testMatch: 'packagedDesktop.spec.ts',
-  outputDir: resolve(root, 'test-results', 'packaged-desktop'),
+  testMatch: variant === 'portable' ? 'portableDesktop.spec.ts' : 'packagedDesktop.spec.ts',
+  outputDir: resolve(root, 'test-results', 'packaged-desktop', ...(variant === 'portable' ? ['portable'] : [])),
   workers: 1,
   retries: 0,
   // 1回の起動で(a)〜(f)を順に確かめる。初回の計算部の準備(数式は最大225秒)を含むため長めに取る。

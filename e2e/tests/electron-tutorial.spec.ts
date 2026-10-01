@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { tutorialFlow, tutorialPauseFlow } from './tutorialFlow.js';
+import { waitForStartupHealth } from './startupHealth.js';
 
 for (const [name, flow] of [
   ['Enterで点から穴のある板を作り、保存取消・実保存・再開まで通す', tutorialFlow],
@@ -10,6 +11,8 @@ for (const [name, flow] of [
   try {
     const page = await app.firstWindow(), errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
+    // Like tutorial.spec.ts: the app is inert under the startup screen, so focus/Enter must wait for it.
+    await waitForStartupHealth(page, info);
     await flow(page, info, app); expect(errors).toEqual([]);
   } finally { await app.close(); }
 });

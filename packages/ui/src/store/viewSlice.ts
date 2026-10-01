@@ -17,6 +17,7 @@ import { orbitFromNamedCamera } from '../viewport/namedCamera.js';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
 import { createQuadCameraState, resetQuadCamera, updateQuadCamera, type QuadCameraState } from '../viewport/quadCamera.js';
 import type { QuadViewId } from '../viewport/quadLayout.js';
+import { formatMeasure } from '../solid/measure.js';
 
 /** 透視投影 / 平行投影(FR-102)。 */
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -277,7 +278,11 @@ export const createViewSlice: StateCreator<
   },
   setDisplaySettings: (displaySettings) => {
     saveSettings(displaySettings);
-    set({ displaySettings });
+    set(state => ({ displaySettings,
+      measurement: state.measurement === null || state.displaySettings.lengthUnit === displaySettings.lengthUnit
+        ? state.measurement
+        : { ...state.measurement, text: formatMeasure(state.measurement.result, displaySettings.lengthUnit) },
+    }));
   },
   requestHomeView: () => {
     set((state) => ({ homeViewRequestCount: state.homeViewRequestCount + 1 }));

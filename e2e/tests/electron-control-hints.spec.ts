@@ -1,10 +1,13 @@
 import { test } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { controlHintsFlow } from './controlHintsFlow.js';
+import { waitForStartupHealth } from './startupHealth.js';
 
 test('P12-5 実Electronでキー移動の説明・入力保全・150%表示を通す', async ({ playwright }, info) => {
   const { app } = await launchDesktop(playwright, info);
-  try { await controlHintsFlow(await app.firstWindow(), info); }
+  // Like the web flow (command-registry.spec.ts), focus only after the startup screen has
+  // finished: the app stays inert under it, so an earlier focus() is silently ignored.
+  try { const page = await app.firstWindow(); await waitForStartupHealth(page, info); await controlHintsFlow(page, info); }
   finally { await app.close(); }
 });
 

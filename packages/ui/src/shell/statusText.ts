@@ -2,10 +2,8 @@
  * ステータスバーに出す 1 文の組み立て(計画書 docs/plans/P2-ソリッド基礎.md タスク25、
  * FR-504、FR-905、NFR-PF-4、NFR-UX-7)。
  *
- * 帯は 1 本しかないので、同時に言いたいことがあるときは**優先順位**で 1 つだけ選ぶ。
- * 選ぶ規則と文の組み立てをここへ純関数として置き、`StatusBar.tsx` は描くだけにする。
- * `.tsx` は Node の検査で描けないため(docs/報告記録.md 2026-09-02 23:09
- * 「操作の判断は純関数へ切り出して Node で検査する」)。
+ * 状況の優先順位と文の組み立てを純関数として置き、`StatusBar.tsx` は描くだけにする。
+ * 計算中も道具の案内を残し、計算の状態は小さな表示として隣に添える。
  */
 
 import {
@@ -261,8 +259,10 @@ export interface StatusLine {
   readonly text: string;
   /** 添える一言(ツールチップや薄い字)。無ければ null。 */
   readonly hint: string | null;
-  /** 細い帯の値。`kind` が `'progress'` のときだけ入る。 */
+  /** 細い帯の値。操作案内と進み具合を並べるときにも入る。 */
   readonly progress: StatusProgressView | null;
+  /** 道具の案内と並べる計算表示。詳細はツールチップと読み上げに使う。 */
+  readonly activity: { readonly text: string; readonly detail: string } | null;
   /**
    * 選択の種類の札の文言(§0.a-0.6)。優先順位のどの1文を選んでいても常に出すので、
    * 上の `kind` / `text` とは独立に持つ(`[ファイル名] [状況の1文] [spacer] [選ぶもの]
@@ -460,6 +460,8 @@ export interface StatusInput {
   readonly assemblyMateStatus?: { readonly text: string; readonly failed: boolean } | null;
   /** 配置・規格部品・置換・干渉・分解・部品表で、いま行う次の一手。 */
   readonly assemblyOperationStatus?: string | null;
+  /** 合致の対象を選んでいるか。操作後の診断と区別する。 */
+  readonly assemblyMateActive?: boolean;
   /** 干渉を調べ終えたときだけ渡す組数。未実行・実行中は null。 */
   readonly assemblyInterferenceCount?: number | null;
   /** 部品を合致に沿って直接動かした結果。 */
@@ -861,7 +863,7 @@ function withPrefix(prefixKey: MessageKey | null, text: string): string {
 /** `describeStatus` の本体が組み立てる値。選択の種類の札(`selectionKindLabel`)と
  * つまみの札(`rollbackLabel`)は優先順位のどれを選んでも常に添えるものなので、
  * ここには含めず呼び出し側で足す。 */
-type StatusLineWithoutSelectionKind = Omit<StatusLine, 'selectionKindLabel' | 'rollbackLabel'>;
+type StatusLineWithoutSelectionKind = Omit<StatusLine, 'selectionKindLabel' | 'rollbackLabel' | 'activity'>;
 
 function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWithoutSelectionKind {
   return { kind: 'failure', text: withPrefix(prefixKey, text), hint: null, progress: null };
@@ -891,8 +893,28 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * ここで一度だけ足す。
  */
 export function describeStatus(input: StatusInput): StatusLine {
+  const line = resolveLine(input);
+  const hasToolGuide = input.activeTool !== 'select'
+    || input.constraintPickMessage != null
+    || input.dragging === true
+    || input.assemblyOperationStatus != null
+    || input.assemblyMateActive === true
+    || input.assemblyDragNotice === 'dragging';
+  const showActivity = hasToolGuide && (line.kind === 'computing' || line.kind === 'progress');
+  const guide = showActivity ? resolveGuide(input) : line;
   return {
-    ...resolveLine(input),
+    ...guide,
+    // 案内を出しても、長い計算の進捗と中止を消さない(NFR-PF-4)。
+    progress: line.progress,
+    activity: showActivity ? {
+      text: line.progress !== null
+        ? fill(t('statusBar.activityProgress'), {
+            done: String(line.progress.done), total: String(line.progress.total),
+          })
+        : t(input.isComputing && !input.kernelLoaded
+          ? 'statusBar.activityPreparing' : 'statusBar.activityComputing'),
+      detail: line.text,
+    } : null,
     selectionKindLabel: selectionKindText(input.selectionKind),
     // つまみの札も 1 文とは独立に常に添える(FR-507、タスク19)。
     rollbackLabel: rollbackText(input.rollback),
@@ -1038,6 +1060,11 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     const key = input.kernelLoaded ? 'statusBar.loading' : 'statusBar.loadingKernel';
     return { kind: 'computing', text: t(key), hint: null, progress: null };
   }
+  return resolveGuide(input);
+}
+
+/** 計算状態に左右されない、いま行う操作の案内。 */
+function resolveGuide(input: StatusInput): StatusLineWithoutSelectionKind {
   switch (input.assemblyDragNotice) {
     case 'dragging':
       return { kind: 'guide', text: t('assembly.drag.dragging'), hint: null, progress: null };
@@ -1115,7 +1142,7 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
       ? input.constraintPickMessage
       : null;
   const summaryText =
-    input.constraintSummaryText !== undefined && input.constraintSummaryText !== null
+    input.activeTool === 'select' && input.constraintSummaryText !== undefined && input.constraintSummaryText !== null
       ? input.constraintSummaryText
       : null;
   /*

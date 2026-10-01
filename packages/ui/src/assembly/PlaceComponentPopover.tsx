@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -26,7 +27,7 @@ export function PlaceComponentPopover(): React.JSX.Element | null {
   if (placement.kind === 'choosing') {
     return (
       <div className="pcad-popover" role="status" style={{ left: '16px', top: '16px' }}>
-        <div className="pcad-popover__title">{t('assembly.place.choosing')}</div>
+        <DraggableWindowTitle className="pcad-popover__title">{t('assembly.place.choosing')}</DraggableWindowTitle>
       </div>
     );
   }
@@ -57,7 +58,7 @@ export function PlaceComponentPopover(): React.JSX.Element | null {
         }
       }}
     >
-      <div className="pcad-popover__title">{t('assembly.place.title')}</div>
+      <DraggableWindowTitle className="pcad-popover__title">{t('assembly.place.title')}</DraggableWindowTitle>
       <div className="pcad-popover__fields">
         {FIELDS.map(([labelKey, index]) => {
           const error = evaluation.ok ? null : evaluation.errors[index];

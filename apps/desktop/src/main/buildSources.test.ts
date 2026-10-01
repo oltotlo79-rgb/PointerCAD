@@ -7,7 +7,9 @@ import { expect, it } from 'vitest';
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 
 it('両版のビルド設定から読むローカル実装を、Gitの除外フォルダーへ置かない', () => {
-  const available = new Set(execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+  // The sandbox user can differ from the checkout owner. Trust only this read's exact root;
+  // do not write safe.directory to the person's Git configuration.
+  const available = new Set(execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
     { cwd: root, encoding: 'utf8' }).split('\0'));
   const pending = [resolve(root, 'apps/web/vite.config.ts'), resolve(root, 'apps/desktop/vite.renderer.config.ts')];
   const checked = new Set<string>();

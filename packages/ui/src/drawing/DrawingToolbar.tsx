@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { executeCommand } from '../commands/commandRegistry.js';
 import { toolbarCommandId } from '../commands/toolbarCommandCatalog.js';
 import { currentCommandLabel } from '../commands/commandLabels.js';
@@ -69,7 +70,7 @@ export function DrawingToolbar(): React.JSX.Element {
     {panel === 'export' ? <DrawingExportPopover onClose={() => setPanel(null)} /> : null}
     {panel === 'print' ? <section className="pcad-popover pcad-drawing-print" role="dialog" aria-label={t('drawing.print.title')}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setPanel(null); } }}>
-      <h3>{t('drawing.print.title')}</h3>
+      <DraggableWindowTitle as="h3">{t('drawing.print.title')}</DraggableWindowTitle>
       <label title={t('drawing.print.copies.controlHint')}>{t('drawing.print.copies')}<input className="pcad-field__input" aria-label={t('drawing.print.copies')} value={copies} inputMode="numeric"
         onChange={(event) => setCopies(event.target.value)} /></label>
       <div className="pcad-popover__actions">

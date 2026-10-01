@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { cancelReplacementPreview, confirmReplacementPreview } from './replaceActions.js';
@@ -31,7 +32,7 @@ export function ReplacementPopover(): React.JSX.Element | null {
         }
       }}
     >
-      <div className="pcad-popover__title">{t('assembly.tool.replacePart')}</div>
+      <DraggableWindowTitle className="pcad-popover__title">{t('assembly.tool.replacePart')}</DraggableWindowTitle>
       <p className="pcad-popover__hint">
         {replacementPreviewText(plan.affectedCount, plan.unmatchedCount)}
       </p>

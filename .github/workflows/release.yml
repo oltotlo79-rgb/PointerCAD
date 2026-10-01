@@ -3,12 +3,14 @@
 # 手動起動(workflow_dispatch、入力に対象commit)だけで動く。push/pull_request/tagでは動かない
 # (最終的にいつ実行するかはP13-19の公開手順で統括が決める。rules/05-リリース.md)。
 #
-# 流れ: (1) 通常CI(ci.yml)が対象commitで成功していることを確認する →
-# (2) 既存の手元用スクリプト(scripts/release/*.mjs、scripts/manual/*.mjs)を
+# 流れ: (1) 対象commitの形式とversionを確認する →
+# (2) 通常CI(ci.yml)と並行して、既存の手元用スクリプト(scripts/release/*.mjs、scripts/manual/*.mjs)を
 # Windows/Ubuntuのrunnerで順に呼び、Desktop(Windows: NSIS・ポータブル / Linux: AppImage)と
 # Web(通信なし利用版)の候補、取扱説明書(HTML/PDF)を作る。Desktopは作った直後にその配布物を起動して
 # 確かめてからartifactへ保存する(e2e/packaged-desktop.config.ts) →
-# (3) 両OSの候補とWeb候補を1つのrunnerへ集め、release-manifest.jsonとSBOM(sbom.json)を作る。
+# (3) 通常CIの両OSの成功を確認(実行中なら最大120分待機)した後、両OSの候補とWeb候補を
+# 1つのrunnerへ集め、release-manifest.jsonとSBOM(sbom.json)を作る。
+# combineが成功していないrunの中間artifactは公開に使わない(rules/05 §11.2)。
 #
 # 別commitの成果物が混ざっていないこと・組み立て後もバイト列が変わっていないことは
 # scripts/release/releaseManifest.mjs(createReleaseManifest)が既に厳密に検証する
@@ -40,7 +42,7 @@ on:
         type: string
         default: ''
 
-# 最小権限(NFR-SE-2)。既定はcontents: readのみ。通常CIの成功確認(resolve job)だけ
+# 最小権限(NFR-SE-2)。既定はcontents: readのみ。通常CIの成功確認(combine job)だけ
 # checks: readを追加で持つ(GET /repos/{owner}/{repo}/commits/{ref}/check-runs の読み取り)。
 # actions/download-artifactは同一run内のartifactを取得するだけなのでactions: readは不要
 # (別runから取得する場合だけ追加のtokenと権限が要る。actions/download-artifact v4のREADME)。
@@ -53,12 +55,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 対象commitの形式確認・通常CI成功確認・versionの読み取り。
+  # 対象commitの形式確認・versionの読み取り。通常CIを待たずに候補の作成へ進む。
   resolve:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      checks: read
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -101,35 +102,6 @@ jobs:
             throw "取得したHEAD($head)が入力commit($env:TARGET_COMMIT)と一致しません。"
           }
           Write-Host "[OK] HEADは入力commitと一致します。"
-
-      - name: 通常CI(ci.yml)の成功を確認
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_COMMIT: ${{ inputs.commit }}
-        run: |
-          # ci.ymlの集約job「checks」はmatrix(windows-latest/ubuntu-latest)ごとに
-          # 「checks (windows-latest)」「checks (ubuntu-latest)」という名前のcheck runを
-          # 作る。両OSの全shardが成功したときだけこの2つが成功するので、これで足りる。
-          $required = @('checks (windows-latest)', 'checks (ubuntu-latest)')
-          $raw = gh api "repos/${{ github.repository }}/commits/$env:TARGET_COMMIT/check-runs" --paginate --jq '.check_runs[] | {name, status, conclusion, completed_at}'
-          if ($LASTEXITCODE -ne 0) { throw 'check-runsの取得に失敗しました。' }
-          $runs = @()
-          foreach ($line in ($raw -split "`n")) {
-            if ($line.Trim() -eq '') { continue }
-            $runs += ($line | ConvertFrom-Json)
-          }
-          foreach ($name in $required) {
-            $matching = @($runs | Where-Object { $_.name -eq $name })
-            if ($matching.Count -eq 0) { throw "通常CIの必須チェック '$name' が対象commitに見つかりません。" }
-            $completedRuns = @($matching | Where-Object { $_.completed_at })
-            if ($completedRuns.Count -eq 0) { throw "通常CIの必須チェック '$name' がまだ完了していません。" }
-            $latest = $completedRuns | Sort-Object { [datetime]$_.completed_at } -Descending | Select-Object -First 1
-            if ($latest.conclusion -ne 'success') {
-              throw "通常CIの必須チェック '$name' は成功していません(conclusion=$($latest.conclusion))。"
-            }
-            Write-Host "[OK] $name は成功しています($($latest.completed_at))。"
-          }
 
       - name: バージョンを読み取る
         id: version
@@ -248,6 +220,23 @@ jobs:
           $env:PCAD_PACKAGED_EXECUTABLE = $executable
           pnpm exec playwright test --config e2e/packaged-desktop.config.ts
           if ($LASTEXITCODE -ne 0) { throw "配布物の起動の確認が失敗しました(終了コード $LASTEXITCODE)。" }
+
+      # 単一exeの自己展開を必ず通す。win-unpackedの成功ではNSISの展開の失敗を検出できない。
+      # candidate.jsonと実際のartifactsの名前・サイズ・SHA-256を照合し、欠落時は失敗する。
+      # 起動器の終了コードと本体プロセスの終了まで確かめる。
+      # v1.0.1では終了後の片付けの機能を止めた(PowerShellを符号化したコマンドで起こす形がDefenderに
+      # Trojan:Win32/Commando.A!mlと判定されたため)ので、「終了後30秒以内の展開先の消失」の確認は外した。
+      # 止めた片付けを起動していないこと(起動の記録が無いこと)は確かめる。v1.0.2で機能と共に戻す。
+      - name: ポータブル版の単一exeを起動し正常終了まで確かめる
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        timeout-minutes: 25
+        env:
+          PCAD_PACKAGED_CANDIDATE: dist/desktop-stage/candidate.json
+          PCAD_PACKAGED_VARIANT: portable
+        run: |
+          pnpm exec playwright test --config e2e/packaged-desktop.config.ts
+          if ($LASTEXITCODE -ne 0) { throw "単一ポータブルexeの起動・終了の確認が失敗しました(終了コード $LASTEXITCODE)。" }
 
       # Linuxの実行機には画面が無く、AppImageを普通に開くのに要るFUSE(libfuse2)も無い(ubuntu-latestの
       # 導入済みの一覧にxvfbはあり、fuse・libfuse2は無い。
@@ -382,14 +371,16 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  # 両OSのDesktop候補とWeb候補を1つのrunnerへ集め、release-manifest.jsonとSBOMを作る。
+  # 通常CIの両OSの成功後だけ候補を採用し、release-manifest.jsonとSBOMを作る。
   combine:
-    # actions/download-artifactは同一run内のartifact取得だけなのでactions: readは不要
-    # (README参照)。contents: readだけで足りる。
+    # checks: readは通常CIの成功確認だけで使う。actions/download-artifactは
+    # 同一run内のartifact取得だけなのでactions: readは不要(README参照)。
     permissions:
       contents: read
+      checks: read
     needs: [desktop, web]
     runs-on: ubuntu-latest
+    timeout-minutes: 150
     steps:
       - name: Gitの改行変換を無効化(再現性の確保)
         shell: pwsh
@@ -416,6 +407,59 @@ jobs:
       - name: 依存関係の取得
         shell: pwsh
         run: pnpm install --frozen-lockfile
+
+      # 通常CIと候補の作成は並行してよい。採用する候補を取得する前に両OSの成功を待つ。
+      - name: 通常CI(ci.yml)の成功を確認(最大120分待機)
+        shell: pwsh
+        # API応答そのものが止まった場合も、Actions側で120分を上限にする。
+        timeout-minutes: 120
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_COMMIT: ${{ inputs.commit }}
+        run: |
+          # ci.ymlの集約job「checks」は両OSの全shardが成功したときだけ成功する。
+          # check名と、completed_atが最新の完了済みcheckの結論による判定は従来どおり。
+          # 未登録・未完了は待ち、過去の成功があっても実行中のcheckを飛ばさない。
+          $required = @('checks (windows-latest)', 'checks (ubuntu-latest)')
+          $pollIntervalSeconds = 30
+          $timeoutMinutes = 120
+          $deadline = (Get-Date).AddMinutes($timeoutMinutes)
+          while ($true) {
+            if ((Get-Date) -ge $deadline) { throw "通常CIの成功確認が上限$($timeoutMinutes)分を過ぎました。" }
+            $raw = gh api "repos/${{ github.repository }}/commits/$env:TARGET_COMMIT/check-runs" --paginate --jq '.check_runs[] | {name, status, conclusion, completed_at}'
+            if ($LASTEXITCODE -ne 0) { throw 'check-runsの取得に失敗しました。' }
+            $runs = @()
+            foreach ($line in ($raw -split "`n")) {
+              if ($line.Trim() -eq '') { continue }
+              $runs += ($line | ConvertFrom-Json)
+            }
+            $waiting = @()
+            foreach ($name in $required) {
+              $matching = @($runs | Where-Object { $_.name -eq $name })
+              if ($matching.Count -eq 0) {
+                $waiting += "$name (未登録)"
+                continue
+              }
+              $completedRuns = @($matching | Where-Object { $_.completed_at -and $_.status -eq 'completed' })
+              if ($completedRuns.Count -gt 0) {
+                $latest = $completedRuns | Sort-Object { [datetime]$_.completed_at } -Descending | Select-Object -First 1
+                if ($latest.conclusion -ne 'success') {
+                  throw "通常CIの必須チェック '$name' は成功していません(conclusion=$($latest.conclusion))。"
+                }
+              }
+              $pendingRuns = @($matching | Where-Object { $_.status -ne 'completed' -or -not $_.completed_at })
+              if ($completedRuns.Count -eq 0 -or $pendingRuns.Count -gt 0) {
+                $waiting += "$name (未完了)"
+                continue
+              }
+              Write-Host "[OK] $name は成功しています($($latest.completed_at))。"
+            }
+            $remainingSeconds = ($deadline - (Get-Date)).TotalSeconds
+            if ($remainingSeconds -le 0) { throw "通常CIの成功確認が上限$($timeoutMinutes)分を過ぎました。" }
+            if ($waiting.Count -eq 0) { break }
+            Write-Host "[WAIT] 通常CIの成功を待っています: $($waiting -join ', ')。$($pollIntervalSeconds)秒ごとに確認します(上限$($timeoutMinutes)分)。"
+            Start-Sleep -Seconds ([Math]::Min($pollIntervalSeconds, $remainingSeconds))
+          }
 
       - name: Windows配布候補を取得
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4

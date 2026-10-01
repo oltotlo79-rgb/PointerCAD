@@ -6,16 +6,21 @@
  * `part/importedShapeKernel.test.ts` が箱 1 個で確かめている。
  */
 
-import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
+import { createEmptyPartDocument, createOffsetCache, createProjectionCache, createSubShapeCache, type PartDocument } from '@pointercad/model';
 import { describe, expect, it, vi } from 'vitest';
 
 import { t } from '../i18n/t.js';
 import {
   printCheckTargets,
+  createPartInspector,
+  DEFAULT_PRINT_CHECK_DRAFT,
+  evaluatePrintCheckDraft,
   runPrintCheck,
   type PartInspector,
   type PrintCheckBody,
+  type PartInspectorDeps,
 } from './printCheckCommands.js';
+import type { FieldUnits } from '../shell/propertyFieldUnits.js';
 
 const DOCUMENT: PartDocument = createEmptyPartDocument();
 
@@ -81,6 +86,65 @@ describe('点検する立体を決める(FR-815)', () => {
 
   it('立体が 1 つも無ければ空', () => {
     expect(printCheckTargets([], ['box-1'])).toEqual([]);
+  });
+});
+
+describe('FIX-02 print criteria input and forwarding', () => {
+  const units: FieldUnits = { variables: new Map(), exactVariables: new Map(), nonLengthVariables: new Set(),
+    pendingVariables: new Set(), lengthUnit: 'mm' };
+  it('starts at 0.8 mm / 45 degrees and evaluates both expressions', () => {
+    expect(evaluatePrintCheckDraft(DEFAULT_PRINT_CHECK_DRAFT, units).criteria).toEqual({ minThicknessMm: 0.8, overhangAngleDeg: 45 });
+    expect(evaluatePrintCheckDraft({ ...DEFAULT_PRINT_CHECK_DRAFT, minThicknessSource: '1/2', overhangAngleSource: '30+30' }, units).criteria)
+      .toEqual({ minThicknessMm: 0.5, overhangAngleDeg: 60 });
+  });
+  it('retains the original length unit while the display changes', () => {
+    const inch = { ...DEFAULT_PRINT_CHECK_DRAFT, minThicknessUnit: 'inch' as const, minThicknessSource: '1/2' };
+    expect(evaluatePrintCheckDraft(inch, units).criteria?.minThicknessMm).toBeCloseTo(12.7, 12);
+    expect(evaluatePrintCheckDraft(DEFAULT_PRINT_CHECK_DRAFT, { ...units, lengthUnit: 'inch' }).criteria?.minThicknessMm).toBe(0.8);
+    expect(evaluatePrintCheckDraft({ ...inch, minThicknessSource: '0.8mm' }, units).criteria?.minThicknessMm).toBe(0.8);
+  });
+  it.each(['0', '-1', '-1/2', 'Infinity', '1/0', '', 'unknown_name', '1+'])('rejects thickness %s with a field reason', source => {
+    const result = evaluatePrintCheckDraft({ ...DEFAULT_PRINT_CHECK_DRAFT, minThicknessSource: source }, units);
+    expect(result.criteria).toBeNull();
+    expect(result.thicknessError).toBeTruthy();
+    expect(result.angleError).toBeNull();
+  });
+  it.each(['-1', '90+1', 'Infinity', '1/0', '', 'unknown_name'])('rejects angle %s with a field reason', source => {
+    const result = evaluatePrintCheckDraft({ ...DEFAULT_PRINT_CHECK_DRAFT, overhangAngleSource: source }, units);
+    expect(result.criteria).toBeNull();
+    expect(result.angleError).toBeTruthy();
+    expect(result.thicknessError).toBeNull();
+  });
+  it.each(['0', '90'])('accepts the angle boundary %s', source => {
+    expect(evaluatePrintCheckDraft({ ...DEFAULT_PRINT_CHECK_DRAFT, overhangAngleSource: source }, units).criteria?.overhangAngleDeg).toBe(Number(source));
+  });
+  it('does not use the stale value of a pending geometry parameter', () => {
+    const result = evaluatePrintCheckDraft({ ...DEFAULT_PRINT_CHECK_DRAFT, minThicknessSource: 'wall' },
+      { ...units, variables: new Map([['wall', 2]]), pendingVariables: new Set(['wall']) });
+    expect(result.criteria).toBeNull();
+    expect(result.thicknessPending).toBe(true);
+  });
+  it('forwards numeric criteria and cancellation through the application inspector to the bridge', async () => {
+    const inspectPrintability = vi.fn<PartInspectorDeps['inspectPrintability']>(() => inspected(12)(DOCUMENT, ['box-1']));
+    const inspector = createPartInspector({ offsets: createOffsetCache(), projections: createProjectionCache(),
+      subShapes: createSubShapeCache(), inspectPrintability });
+    const shouldCancel = (): boolean => false;
+    const criteria = { minThicknessMm: 1.2, overhangAngleDeg: 60 };
+    const result = await runPrintCheck({ document: DOCUMENT, bodies: [bodyOf('box-1', 12)], selection: [], inspector, shouldCancel, criteria });
+    expect(result.ok).toBe(true);
+    expect(inspectPrintability).toHaveBeenCalledExactlyOnceWith([], { bodies: ['box-1'], shouldCancel, ...criteria });
+  });
+  it.each([{ minThicknessMm: 0, overhangAngleDeg: 45 }, { minThicknessMm: 0.8, overhangAngleDeg: 91 },
+    { minThicknessMm: Infinity, overhangAngleDeg: 45 }, { minThicknessMm: 0.8, overhangAngleDeg: NaN }])('refuses invalid numeric criteria before calling the inspector: %j', async criteria => {
+    const inspector = vi.fn<PartInspector>(inspected(12));
+    const outcome = await runPrintCheck({ document: DOCUMENT, bodies: [bodyOf('box-1', 12)], selection: [], inspector, criteria });
+    expect(outcome.ok).toBe(false);
+    expect(inspector).not.toHaveBeenCalled();
+  });
+  it('reports a rejected inspection rather than leaving an unhandled promise', async () => {
+    const inspector: PartInspector = () => Promise.reject(new Error('worker unavailable'));
+    await expect(runPrintCheck({ document: DOCUMENT, bodies: [bodyOf('box-1', 12)], selection: [], inspector }))
+      .resolves.toEqual({ ok: false, message: t('propertyPanel.printCheckFailed') });
   });
 });
 

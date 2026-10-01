@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { selectionSetRefusalMessageKey } from './selectionSetCommands.js';
 import { withCount } from '../shell/propertySectionText.js';
 import { t } from '../i18n/t.js';
@@ -17,6 +17,7 @@ export function SelectionSetSection(): React.JSX.Element {
   const sets = useAppStore((state) => state.document.selectionSets);
   const selection = useAppStore((state) => state.selection);
   const [name, setName] = useState('');
+  const nameId = useId();
   /** 断り・知らせの 1 行(NFR-UX-5)。押すたびに入れ替わる、画面だけの状態。 */
   const [notice, setNotice] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ readonly id: string; readonly text: string } | null>(
@@ -54,6 +55,7 @@ export function SelectionSetSection(): React.JSX.Element {
                     setRenaming({ id: set.id, text: event.target.value });
                   }}
                   onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                     if (event.key !== 'Enter') {
                       return;
                     }
@@ -119,27 +121,30 @@ export function SelectionSetSection(): React.JSX.Element {
           ))}
         </ul>
       )}
-      <div className="pcad-field">
-        <span className="pcad-field__label">{t('propertyPanel.selectionSetName')}</span>
-        <input title={t('controlGuide.selectionSet.name')}
-          className="pcad-field__input"
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder={t('propertyPanel.selectionSetNamePlaceholder')}
-          aria-label={t('propertyPanel.selectionSetName')}
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              // Enter だけで作れる(NFR-UX-4)。
-              event.preventDefault();
-              create();
-            }
-          }}
-        />
+      <div className="pcad-section__fields">
+        <div className="pcad-field">
+          <label className="pcad-field__label" htmlFor={nameId}>{t('propertyPanel.selectionSetName')}</label>
+          <input id={nameId} title={t('controlGuide.selectionSet.name')}
+            className="pcad-field__input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={t('propertyPanel.selectionSetNamePlaceholder')}
+            aria-label={t('propertyPanel.selectionSetName')}
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+              if (event.key === 'Enter') {
+                // Enter だけで作れる(NFR-UX-4)。
+                event.preventDefault();
+                create();
+              }
+            }}
+          />
+        </div>
       </div>
       <div className="pcad-appearance__actions">
         <button

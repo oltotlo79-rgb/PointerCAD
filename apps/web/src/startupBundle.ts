@@ -25,6 +25,7 @@ export function assertStartupIsolation(bundle: Readonly<Record<string, BundleEnt
     for (const id of Object.keys(chunk.modules)) {
       const path = id.replaceAll('\\', '/');
       if (!/\/apps\/web\/(?:index\.html|src\/(?:bootstrap|startupRecovery)\.ts)$/u.test(path)
+        && !/\/packages\/ui\/src\/shell\/startup(?:Presentation|Recovery)\.ts$/u.test(path)
         && !['\0vite/preload-helper.js', '\0vite/modulepreload-polyfill.js', '\0rolldown/runtime.js', 'rolldown:runtime'].includes(id)) {
         throw new Error(`Application dependency in startup recovery: ${id}`);
       }

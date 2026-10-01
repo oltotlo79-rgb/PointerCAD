@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import type { FastenerDimensionSeries, ThreadSeries } from '@pointercad/model';
 import { useEffect, useRef, useState } from 'react';
 
@@ -71,7 +72,7 @@ export function StandardPartPicker(): React.JSX.Element | null {
         event.stopPropagation();
         useAppStore.getState().closeStandardPartPicker();
       }}>
-      <div className="pcad-popover__title">{t('assembly.standardPart.title')}</div>
+      <DraggableWindowTitle className="pcad-popover__title">{t('assembly.standardPart.title')}</DraggableWindowTitle>
       <div className="pcad-popover__fields">
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.standardPart.category')}</span>

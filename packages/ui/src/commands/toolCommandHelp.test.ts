@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { findHelpTopic } from '@pointercad/help-content';
 import { toolCommandHelpTopic } from './toolCommandHelp.js';
+import { commandDefinition } from './commandDefinitions.js';
+import { toolbarCommand } from './toolbarCommandCatalog.js';
+import { executeCommand } from './commandRegistry.js';
 import { contextualHelpTopic } from '../help/helpContext.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -13,6 +16,7 @@ describe('道具・入力・編集中の形から該当する説明へ進む', (
     ['loft', 'ruled-loft'], ['sweep', 'shape-edit'], ['sketchFillet', 'sketch-fillet'], ['projectedCurve', 'project-intersect'],
     ['ellipse', 'ellipse'], ['spline', 'spline'], ['text', 'text-sketch'], ['referenceAxis', 'reference-geometry'],
     ['referencePlaneTilted', 'work-plane-custom'], ['measure', 'measure'],
+    ['sew', 'solid-combine'], ['threadShaft', 'thread'],
   ])('%sの説明を無関係なスケッチ章へ送らない', (tool, topic) => {
     expect(toolCommandHelpTopic(tool)).toBe(topic);
     expect(findHelpTopic(topic)).toBeDefined();
@@ -33,5 +37,24 @@ describe('道具・入力・編集中の形から該当する説明へ進む', (
     expect(contextualHelpTopic(before)).toBe('solid-basics');
     expect(contextualHelpTopic(before, toolCommandHelpTopic(input.toolId), true)).toBe('solid-basics');
     expect(useAppStore.getState()).toBe(before);
+  });
+  it('縫合のメニュー・対象選択中・数値入力中は、縫合と許容差のある章へ案内する', () => {
+    const commandId = 'toolbar.solidCreate.sew';
+    expect(toolbarCommand(commandId)?.helpTopic).toBe('solid-combine');
+    expect(commandDefinition(commandId)?.helpTopic).toBe('solid-combine');
+    const initial = useAppStore.getState();
+    expect(contextualHelpTopic(initial, commandDefinition(commandId)?.helpTopic)).toBe('solid-combine');
+    expect(executeCommand(commandId).status).toBe('executed');
+    expect(useAppStore.getState().numericInput).toBeNull();
+    expect(contextualHelpTopic(useAppStore.getState())).toBe('solid-combine');
+    const input = createNumericInput('sew', SOLID_TOOL_STEPS.sew);
+    useAppStore.getState().openNumericInput(input, [100, 100]);
+    const beforeHelp = useAppStore.getState();
+    expect(contextualHelpTopic(beforeHelp, toolCommandHelpTopic(input.toolId), true)).toBe('solid-combine');
+    expect(executeCommand('help.contextual').status).toBe('executed');
+    expect(useAppStore.getState().helpTopicId).toBe('solid-combine');
+    expect(useAppStore.getState().numericInput).toBe(beforeHelp.numericInput);
+    expect(useAppStore.getState().document).toBe(initial.document);
+    expect(useAppStore.getState().canUndo).toBe(false);
   });
 });

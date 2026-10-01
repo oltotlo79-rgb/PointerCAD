@@ -8,6 +8,7 @@ import { featureNoteOf, featureNoteTargetExists, type FeatureNoteTarget } from '
 import { useEffect, useRef, useState } from 'react';
 import { DocumentNameSearch } from './DocumentNameSearch.js';
 import { partNameSearchEntries } from './nameSearch.js';
+import { nextHighlightIndex } from './menus/menuItem.js';
 import { SheetBaseIcon, SheetFlangeIcon, SheetLineBendIcon, SheetReliefIcon } from './icons.js';
 
 import {
@@ -242,7 +243,7 @@ interface RowMenuState {
   readonly sketchId?: string;
   readonly featureId: string;
   /**
-   * どちらの節の行から開いたか。ソリッドだけ抑制・改名を持つ(P3 §0.a-0.23 ②)。
+   * どちらの節の行から開いたか。ソリッドだけ抑制を持つ(P3 §0.a-0.23 ②)。
    * `sketchDocument` はスケッチそのものの親行(P4 仕上げ (g))で、改名と削除を持つ。
    */
   readonly sectionKey: RowMenuSection;
@@ -341,7 +342,7 @@ function withTimelineConsumed(
  * 計算できていない行には赤い印を出し、理由をホバーで見せる(FR-504)。
  *
  * どの行も「⋮」ボタンか右クリックで小さな一覧を開く(P3 §0.a-0.23 ②)。立体の行は
- * 抑制・改名・削除ができ(FR-503)、スケッチの行は削除だけを持つ。
+ * 抑制・改名・削除ができ(FR-503)、スケッチにも改名・メモ・フォルダ移動・削除がある。
  * 一覧も改名の欄も**モーダルにしない**(NFR-UX-2)ので、開いている間も視点操作は効く。
  * 削除の前に確認を出さないのは、元に戻す(Ctrl+Z)で戻せるため(NFR-UX-3)。参照していた
  * 立体を消しても止めず、後の段が赤い印になるだけにする(FR-504、NFR-RE-1)。
@@ -376,6 +377,7 @@ export function FeatureTree(): React.JSX.Element {
   const [menu, setMenu] = useState<RowMenuState | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   /*
    * 順序を入れ替えるドラッグ(FR-507、タスク20)。掴んでいるものと落とし先、そこへ
    * 落とせるかどうかを持つ。見た目だけの一時状態なのでコンポーネントに持つ
@@ -494,8 +496,9 @@ export function FeatureTree(): React.JSX.Element {
       setMenu(null);
     };
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229) {
         setMenu(null);
+        menuTriggerRef.current?.focus();
       }
     };
     window.addEventListener('pointerdown', onPointerDown);
@@ -511,7 +514,7 @@ export function FeatureTree(): React.JSX.Element {
     if (menu === null) {
       return;
     }
-    menuRef.current?.querySelector('button')?.focus();
+    menuRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
   }, [menu]);
 
   /*
@@ -765,6 +768,7 @@ export function FeatureTree(): React.JSX.Element {
           data-name-search-key={featureFolderMemberKey({ kind: 'sketch', id: group.sketchId })}
           onContextMenu={(event) => {
             event.preventDefault();
+            menuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
             setMenu({
               featureId: group.sketchId,
               name: group.name,
@@ -791,6 +795,7 @@ export function FeatureTree(): React.JSX.Element {
                 commitRename(group.sketchId, 'sketchDocument', event.currentTarget.value);
               }}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (event.key === 'Enter') {
                   event.preventDefault();
                   commitRename(group.sketchId, 'sketchDocument', event.currentTarget.value);
@@ -843,6 +848,7 @@ export function FeatureTree(): React.JSX.Element {
             aria-haspopup="menu"
             aria-expanded={menu !== null && menu.featureId === group.sketchId}
             onClick={(event) => {
+              menuTriggerRef.current = event.currentTarget;
               const rect = event.currentTarget.getBoundingClientRect();
               setMenu({
                 featureId: group.sketchId,
@@ -972,6 +978,7 @@ export function FeatureTree(): React.JSX.Element {
           }}
           onContextMenu={(event) => {
             event.preventDefault();
+            menuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
             activateRowSketch(sketchId);
             useAppStore.getState().setSelection([row.id]);
             setMenu({
@@ -1007,6 +1014,7 @@ export function FeatureTree(): React.JSX.Element {
                 commitRename(row.id, sectionKey, event.currentTarget.value);
               }}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                 if (event.key === 'Enter') {
                   event.preventDefault();
                   commitRename(row.id, sectionKey, event.currentTarget.value);
@@ -1103,6 +1111,7 @@ export function FeatureTree(): React.JSX.Element {
             aria-haspopup="menu"
             aria-expanded={menu !== null && menu.featureId === row.id}
             onClick={(event) => {
+              menuTriggerRef.current = event.currentTarget;
               const rect = event.currentTarget.getBoundingClientRect();
               setMenu({
                 featureId: row.id,
@@ -1279,6 +1288,24 @@ export function FeatureTree(): React.JSX.Element {
           className="pcad-menu__panel pcad-tree__menu"
           role="menu"
           style={{ left: menu.x, top: menu.y }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              setMenu(null);
+              menuTriggerRef.current?.focus();
+              return;
+            }
+            const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)'));
+            const current = Math.max(0, items.findIndex(item => item === event.currentTarget.ownerDocument.activeElement));
+            const next = nextHighlightIndex(current, event.key, items.length);
+            if (next !== null) {
+              event.preventDefault();
+              event.stopPropagation();
+              items[next]?.focus();
+            }
+          }}
         >
           {menu.sectionKey === 'solid' && menuFeature !== undefined ? (
             <button title={t('controlGuide.button.featureSuppress')}

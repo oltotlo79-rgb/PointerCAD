@@ -27,9 +27,6 @@ export const KNOWN_UNUSED_CAPTURE_NAMES = Object.freeze({
   'command-line-suggestions': 'command-line.md にはコマンド欄の別の状態(相対座標の入力)の画像は使っているが、'
     + '候補一覧の状態の画像はまだ本文に差し込んでいない(w143a の目録で既知)。',
   'import-properties': 'import.md には単位を訊く小窓の画像は使っているが、読み込み後のプロパティの画像はまだ本文に差し込んでいない(w143a の目録で既知)。',
-  'viewport-cube': 'viewport.md には「保存した視点」の画像は使っているが、起動直後の向きの立方体の画像はまだ本文に差し込んでいない(w143a の目録で既知)。',
-  'mass-properties-steel': 'mass-properties.md 用に撮影済みだが、章自体が製品側の不具合で画像を見送っている '
-    + '(chapterImagePolicy.mjs の KNOWN_EXCEPTIONS.mass-properties と同じ理由)。',
   'math-geometry-reference-2': 'math-geometry-reference.md には一覧の先頭側の画像は使っているが、スクロール末尾側の2枚目はまだ本文に差し込んでいない(w143a の目録で既知)。',
 });
 

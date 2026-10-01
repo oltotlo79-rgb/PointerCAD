@@ -309,7 +309,7 @@ describe('commitSketchFillet', () => {
     expect(second?.from[1]).toBeCloseTo(5, 9);
     // 足したのは 1 本だけ(2 本の書き換え + 円弧 1 本)。
     expect(outcome.document.features).toHaveLength(document.features.length + 1);
-    expect(outcome.boundaryNeedsUpdate).toBe(false);
+    expect(outcome.boundaryUpdated).toBe(false);
   });
 
   it('半径が大きすぎると断り、文書は変えない(NFR-UX-5)', () => {
@@ -416,8 +416,8 @@ describe('commitSketchChamfer', () => {
   });
 });
 
-describe('面の境界の案内(t18 の申し送り)', () => {
-  it('丸める 2 本を境界に使っている面があれば案内を出す', () => {
+describe('面の境界の検出と、つなげられない境界の拒否', () => {
+  it('閉じていない2辺だけの面を使う角は、面と線を変更する前に断る', () => {
     const document = appendFeature(lShapeDocument(), {
       id: 'face1',
       name: '面1',
@@ -428,11 +428,9 @@ describe('面の境界の案内(t18 の申し送り)', () => {
     });
     expect(facesUseCorner(document, ['line1', 'line2'])).toBe(true);
     const outcome = commitSketchFillet(document, ['line1', 'line2'], filletCommit(5));
-    expect(outcome.ok).toBe(true);
-    if (!outcome.ok) {
-      return;
-    }
-    expect(outcome.boundaryNeedsUpdate).toBe(true);
+    expect(outcome).toEqual({ ok: false, reasonKey: 'corner.error.faceBoundary' });
+    expect(document.features).toHaveLength(3);
+    expect(resolveSketch(document).segments[0].to).toEqual([20, 0, 0]);
   });
 
   it('面が無ければ案内は出さない', () => {

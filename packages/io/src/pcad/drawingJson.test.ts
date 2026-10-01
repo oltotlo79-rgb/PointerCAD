@@ -62,6 +62,30 @@ function populatedDrawing(): DrawingDocument {
 }
 
 describe('図面 document.json', () => {
+  it('用紙と表題欄の数式を数値とともに往復し、未知の拡張欄も保つ', () => {
+    const base = populatedDrawing();
+    const sheet = { ...base.sheet, scale: 0.5, scaleExpression: '1/2', textHeight: 3.5, textHeightExpression: '7/2',
+      scaleOptions: [0.5, 1, 2], scaleOptionExpressions: ['1/2', '1', 'root(8, 3)'], futureSetting: { enabled: true },
+      titleBlockFields: [{ key: 'title', label: '図名', widthWeight: 2, widthExpression: '1+1', futureField: { position: 1 } }] };
+    const document = { ...base, sheet };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT }))).toEqual({ ok: true, document, savedAt: SAVED_AT, kind: 'drawing' });
+  });
+  it.each([
+    { scaleExpression: 123 }, { scaleExpression: '' }, { scaleExpression: '1/0' }, { scaleExpression: '1/2' },
+    { scaleExpression: '1mm' }, { textHeightExpression: {} }, { textHeightExpression: '7/2' },
+    { textHeight: 3.5, textHeightExpression: '0' },
+    { scaleOptionExpressions: ['1'] }, { scaleOptions: [1, 2], scaleOptionExpressions: ['1'] },
+    { scaleOptions: [1], scaleOptionExpressions: [null] }, { scaleOptions: [1], scaleOptionExpressions: ['2'] },
+    { titleBlockFields: [{ key: 'title', label: '図名', widthWeight: 2, widthExpression: ['1+1'] }] },
+    { titleBlockFields: [{ key: 'title', label: '図名', widthWeight: 2, widthExpression: '1+2' }] },
+    { titleBlockFields: [{ key: 'title', label: '図名', widthExpression: '1+1' }] },
+  ])('用紙の不正な原式や値との食い違いを読込時に拒む: %j', (change) => {
+    const document = populatedDrawing();
+    const raw: unknown = JSON.parse(serializeDrawing(document, { savedAt: SAVED_AT }));
+    if (!isRecord(raw) || !isRecord(raw['document'])) throw new Error('missing document');
+    raw['document']['sheet'] = { ...document.sheet, ...change };
+    expect(parseDrawing(JSON.stringify(raw)).ok).toBe(false);
+  });
   it('累進の基準と全点の参照を保存し、実測値・投影線は保存しない', () => {
     const base = populatedDrawing();
     const document = { ...base, dimensions: [{ ...base.dimensions[0], series: { kind: 'progressive' as const, baseIndex: 1 } }] };

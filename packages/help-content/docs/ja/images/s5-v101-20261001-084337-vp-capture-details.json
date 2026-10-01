@@ -1,8 +1,8 @@
 {
   "format": "pointercad-capture-provenance/1",
   "releaseCertified": false,
-  "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
-  "adoptedAt": "2026-09-29T07:13:59.549Z",
+  "applicationBuildId": "be41b64de49483fb814e77ee9e2ac67f3938a99965dd028af65638259953f554",
+  "adoptedAt": "2026-10-01T02:49:10.462Z",
   "scripts": {
     "e2e/tests/p8-drawing.spec.ts": "e4cb8d38f1539924b88d06be0911bc365f51ad496f092c90b5261d3fc9a226b4"
   },
@@ -14,8 +14,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-09-29T06:35:57.499Z",
-        "applicationBuildId": "e05d6709fb4cb0c51288cea3abe454eebc2e67a314f1b1328ea0889e3f9060d4",
+        "capturedAt": "2026-10-01T02:31:33.456Z",
+        "applicationBuildId": "be41b64de49483fb814e77ee9e2ac67f3938a99965dd028af65638259953f554",
         "project": "viewport-performance",
         "sourceTest": "4分割の実描画性能・区画ごとの立体選択と1画面復帰(FR-113)",
         "script": "e2e/tests/p8-drawing.spec.ts",
@@ -26,11 +26,11 @@
         },
         "screen": {
           "filename": "quad-four-views-screen.png",
-          "sha256": "cba0d1913fcf358b6d7961d345c156a6b435ba6cce5fb65cfe78b7faa519ec22"
+          "sha256": "c75d16198e9c8c314616c0507649f663262cc741110a0a2d362541f9a8a170ac"
         },
         "detail": {
           "filename": "quad-four-views-detail.png",
-          "sha256": "e81df89a663cf93ba20aeb37e1b2f555296c63fdaa4347f42e60b3392169b6a7"
+          "sha256": "82d90b6efed7a6949d7d853be8d6319822d0ac79c9cb0f56c96fde2c70b9abeb"
         },
         "recompute": {
           "pendingWaiters": 0,
@@ -42,8 +42,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 19,
-          "lastCompletedAtMs": 13707.289999961853
+          "completedRenders": 18,
+          "lastCompletedAtMs": 11866.985000133514
         },
         "dialogBounds": {
           "x": 240,

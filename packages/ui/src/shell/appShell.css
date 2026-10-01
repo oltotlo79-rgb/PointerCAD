@@ -2116,9 +2116,10 @@ button.pcad-tree__row:focus-visible {
   background: var(--pcad-accent-soft-hover);
 }
 
+/* 長い慣性モーメントや関数式でも見出しを潰さず、値を残りの幅で折り返す。 */
 .pcad-properties {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(4.5em, max-content) minmax(0, 1fr);
   gap: var(--pcad-space-1) var(--pcad-space-2);
   align-items: baseline;
   padding: 0 var(--pcad-space-3);
@@ -2133,6 +2134,8 @@ button.pcad-tree__row:focus-visible {
 }
 
 .pcad-properties__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
   margin: 0;
   font-variant-numeric: tabular-nums;
   color: var(--pcad-text);
@@ -2140,11 +2143,8 @@ button.pcad-tree__row:focus-visible {
 }
 
 /*
-  GR-19d: 図形の測定値の一覧(MathGeometryPanel)の行だけ、見出し列を潰さず常に見せ、長い値
-  (参照先の名前・循環の理由など)は折り返して横にはみ出させない(FR-504)。`.pcad-properties`
-  は他の区画(プロパティ・シートメタル・強度など)とも共有しているので、専用の class を
-  重ねたときだけ列の比率を変える(他の区画の見た目は変えない)。`.pcad-property-list`
-  (`.pcad-properties`とは別の既存の定義一覧、AssemblyPropertyPanel)と同じ考え方。
+  GR-19d: 図形の測定値(MathGeometryPanel)は専用の class でも見出し列と折り返しを保護する。
+  P102で同じ対策を共通の規則へ広げた。参照先の名前・循環の理由も省略しない(FR-504)。
 */
 .pcad-properties.pcad-parameter__properties {
   grid-template-columns: minmax(4.5em, max-content) minmax(0, 1fr);
@@ -2306,6 +2306,29 @@ button.pcad-tree__row:focus-visible {
   flex-direction: column;
   gap: var(--pcad-space-1);
   padding: 0 var(--pcad-space-3) var(--pcad-space-2);
+}
+
+/* 名前や点検基準は節の余白にそろえ、長い札を入力の上へ置く。 */
+.pcad-section__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pcad-space-2);
+  padding: 0 var(--pcad-space-3) var(--pcad-space-2);
+}
+
+.pcad-section__fields > .pcad-field {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.pcad-section__fields .pcad-field__label {
+  grid-column: 1 / -1;
+  white-space: nowrap;
+}
+
+.pcad-section__fields .pcad-field__input:last-child,
+.pcad-section__fields .pcad-field__message {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
 }
 
 /* 座標のまとまりの中では、外側の余白が二重に付かないようにする。 */

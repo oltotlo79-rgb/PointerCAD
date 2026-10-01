@@ -18,6 +18,7 @@
 
 import {
   DISPLAY_MESH_QUALITY,
+  type LengthUnit,
   type PartDocument,
   type PrintabilityOutcome,
   type PrintabilityReport,
@@ -31,6 +32,60 @@ import {
   type PrintabilityBodyTriangles,
 } from './printabilityColors.js';
 import { resolveCachedSteps, type CachedResolveDeps } from './resolveCachedSteps.js';
+import type { FieldUnits } from '../shell/propertyFieldUnits.js';
+import { evaluatePendingExpression, isPendingFieldError } from '../sketch/numericMathValues.js';
+import { applyDisplayUnit } from '../sketch/numericFieldUnits.js';
+
+export interface PrintCheckCriteria {
+  readonly minThicknessMm: number;
+  readonly overhangAngleDeg: number;
+}
+
+export interface PrintCheckDraft {
+  readonly minThicknessSource: string;
+  /** Preserve the meaning of a unitless expression when the display unit changes. */
+  readonly minThicknessUnit: LengthUnit;
+  readonly overhangAngleSource: string;
+}
+
+export const DEFAULT_PRINT_CHECK_DRAFT: PrintCheckDraft = {
+  minThicknessSource: '0.8', minThicknessUnit: 'mm', overhangAngleSource: '45',
+};
+
+function thicknessError(value: number): string | null {
+  return Number.isFinite(value) && value > 0 ? null : t('propertyPanel.printCheckThicknessPositive');
+}
+
+function angleError(value: number): string | null {
+  return Number.isFinite(value) && value >= 0 && value <= 90 ? null : t('propertyPanel.printCheckAngleRange');
+}
+
+export function evaluatePrintCheckDraft(draft: PrintCheckDraft, units: FieldUnits): {
+  readonly criteria: PrintCheckCriteria | null;
+  readonly thicknessError: string | null;
+  readonly angleError: string | null;
+  readonly thicknessPending: boolean;
+  readonly anglePending: boolean;
+  readonly thicknessMm: number | null;
+  readonly angleDeg: number | null;
+} {
+  // Use the same field evaluator without importing its React/store wrapper here.
+  const thickness = evaluatePendingExpression(applyDisplayUnit(draft.minThicknessSource, 'mm', draft.minThicknessUnit), units, units.pendingVariables);
+  const angle = evaluatePendingExpression(draft.overhangAngleSource, units, units.pendingVariables);
+  const minThicknessMm = thickness.ok ? thickness.value.value : null;
+  const overhangAngleDeg = angle.ok ? angle.value.value : null;
+  const thicknessMessage = thickness.ok ? thicknessError(thickness.value.value) : thickness.error.message;
+  const angleMessage = angle.ok ? angleError(angle.value.value) : angle.error.message;
+  return {
+    criteria: minThicknessMm !== null && overhangAngleDeg !== null && thicknessMessage === null && angleMessage === null
+      ? { minThicknessMm, overhangAngleDeg } : null,
+    thicknessError: thicknessMessage, angleError: angleMessage,
+    thicknessPending: !thickness.ok && isPendingFieldError(thickness.error),
+    anglePending: !angle.ok && isPendingFieldError(angle.error),
+    thicknessMm: thicknessMessage === null ? minThicknessMm : null,
+    angleDeg: angleMessage === null ? overhangAngleDeg : null,
+  };
+}
 
 /**
  * 点検する手立て(ストアが持つ口)。`PartMeasurer` と同じ形で、カーネル(Worker)を
@@ -44,6 +99,7 @@ export type PartInspector = (
    * **そこまでの結果を返す**(投げない。`PrintabilityReport.cancelled` が真になる)。
    */
   shouldCancel?: () => boolean,
+  criteria?: PrintCheckCriteria,
 ) => Promise<PrintabilityOutcome>;
 
 /** `createPartInspector` に渡すもの。解くのに要るものは測定・書き出しと共通。 */
@@ -54,6 +110,8 @@ export interface PartInspectorDeps extends CachedResolveDeps {
     options: {
       readonly bodies: readonly string[];
       readonly shouldCancel?: () => boolean;
+      readonly minThicknessMm?: number;
+      readonly overhangAngleDeg?: number;
     },
   ) => Promise<PrintabilityOutcome>;
 }
@@ -66,8 +124,8 @@ export interface PartInspectorDeps extends CachedResolveDeps {
  * Worker は別メッシュを作らず、直近に画面へ返した表示メッシュをそのまま点検する。
  */
 export function createPartInspector(deps: PartInspectorDeps): PartInspector {
-  return (document, bodies, shouldCancel) =>
-    deps.inspectPrintability(resolveCachedSteps(document, deps), { bodies, shouldCancel });
+  return (document, bodies, shouldCancel, criteria) =>
+    deps.inspectPrintability(resolveCachedSteps(document, deps), { bodies, shouldCancel, ...criteria });
 }
 
 /**
@@ -132,6 +190,7 @@ export type PrintCheckOutcomeView =
 
 /** `runPrintCheck` に渡すもの。すべてストアから読める値。 */
 export interface PrintCheckInput {
+  readonly criteria?: PrintCheckCriteria;
   readonly document: PartDocument;
   /** 画面に出ている立体(`bodies` の並びのまま)。 */
   readonly bodies: readonly PrintCheckBody[];
@@ -151,6 +210,10 @@ export interface PrintCheckInput {
  * (§0.a-0.30 の読み取り。`measureSelection` とまったく同じ性質)。
  */
 export async function runPrintCheck(input: PrintCheckInput): Promise<PrintCheckOutcomeView> {
+  if (input.criteria !== undefined) {
+    const error = thicknessError(input.criteria.minThicknessMm) ?? angleError(input.criteria.overhangAngleDeg);
+    if (error !== null) return { ok: false, message: error };
+  }
   const targets = printCheckTargets(input.bodies, input.selection);
   if (targets.length === 0) {
     return { ok: false, message: t(PRINT_CHECK_NO_BODY_KEY) };
@@ -158,11 +221,15 @@ export async function runPrintCheck(input: PrintCheckInput): Promise<PrintCheckO
   if (input.inspector === null) {
     return { ok: false, message: t(PRINT_CHECK_UNAVAILABLE_KEY) };
   }
-  const outcome = await input.inspector(
-    input.document,
-    targets.map((body) => body.featureId),
-    input.shouldCancel,
-  );
+  let outcome: PrintabilityOutcome;
+  try {
+    const ids = targets.map(body => body.featureId);
+    outcome = input.criteria === undefined
+      ? await input.inspector(input.document, ids, input.shouldCancel)
+      : await input.inspector(input.document, ids, input.shouldCancel, input.criteria);
+  } catch {
+    return { ok: false, message: t('propertyPanel.printCheckFailed') };
+  }
   if (outcome.kind === 'failed') {
     // 断りの日本語はカーネル(または橋)が持っているものをそのまま出す(文言の正本は 1 つ)。
     return { ok: false, message: outcome.message };

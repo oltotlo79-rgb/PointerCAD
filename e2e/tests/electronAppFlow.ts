@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { basename, dirname, join } from 'node:path';
 import { expect, type ElectronApplication, type PlaywrightWorkerArgs, type TestInfo } from '@playwright/test';
 import { KERNEL_TIMEOUT_MS } from './recompute.js';
+import { waitForStartupReady } from './startupHealth.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const requireDesktop = createRequire(new URL('../../apps/desktop/package.json', import.meta.url));
@@ -137,7 +138,13 @@ export async function diskFile(path: string): Promise<Buffer> {
   }, { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(100);
   return readFile(path);
 }
-export async function launchDesktop(playwright: PlaywrightWorkerArgs['playwright'], info: TestInfo) {
+/**
+ * By default, return only after the startup screen has finished (the same condition as the web
+ * waitForStartupHealth): the app is inert under it, so an earlier focus() or key press is ignored.
+ * `waitForStartup: false` keeps the raw launch for specs that inspect the startup itself.
+ */
+export async function launchDesktop(playwright: PlaywrightWorkerArgs['playwright'], info: TestInfo,
+  options: { readonly waitForStartup?: boolean } = {}) {
   const executable: unknown = requireDesktop('electron');
   if (typeof executable !== 'string') throw new Error('Electron実行ファイルなし');
   const directory = info.outputPath('native');
@@ -178,6 +185,7 @@ require(${JSON.stringify(join(root, 'apps/desktop/dist/main/main.cjs'))});
       const window = BrowserWindow.getAllWindows()[0];
       return window !== undefined && window.isVisible() && !window.webContents.isLoadingMainFrame();
     }), { message: '実Electronの表示と初回の読込が完了すること', timeout: 30_000 }).toBe(true);
+    if (options.waitForStartup !== false) await waitForStartupReady(await app.firstWindow());
     return { app, directory };
   } catch (error) {
     await app.close();

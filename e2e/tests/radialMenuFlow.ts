@@ -4,6 +4,7 @@ import { savePart } from './scriptsFlow.js';
 import { beginRecompute, waitForRecompute } from './recompute.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { uiMessage } from './uiMessages.js';
+import { chooseToolMenuItem } from './assemblyTestSupport.js';
 
 const menu = (page: Page) => page.getByRole('menu', { name: uiMessage('commands', 'radial.title'), exact: true });
 async function centre(locator: Locator): Promise<{ readonly x: number; readonly y: number }> {
@@ -20,6 +21,61 @@ async function open(page: Page, position?: { readonly x: number; readonly y: num
   await expect(menu(page)).toBeVisible();
   await expect(menu(page).getByRole('menuitem')).toHaveCount(8);
 }
+
+/** Inspect cameras through ordinary named-view saving, without changing state from the test. */
+export async function rightDragPanFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const canvas = page.locator('canvas.pcad-viewport__canvas');
+  const remember = async (name: string): Promise<void> => {
+    const views = page.locator('.pcad-named-views');
+    await views.locator('summary').click();
+    await views.getByRole('textbox', { name: uiMessage('view', 'view.named.name'), exact: true }).fill(name);
+    await views.getByRole('button', { name: uiMessage('view', 'view.named.save'), exact: true }).click();
+    await expect(views.getByRole('option', { name, exact: true })).toHaveCount(1);
+    await views.locator('summary').click();
+  };
+  for (const projection of ['perspective', 'orthographic'] as const) {
+    await chooseToolMenuItem(page, uiMessage('toolbar', 'toolbar.projection.groupLabel'),
+      uiMessage('toolbar', `toolbar.projection.${projection}`));
+    await canvas.focus(); await page.keyboard.press('Home');
+    await remember(`${projection}-before`);
+    const start = await centre(canvas);
+    await page.mouse.move(start.x, start.y); await page.mouse.down({ button: 'right' });
+    await expect(menu(page)).toHaveCount(0);
+    await page.mouse.move(start.x + 3, start.y);
+    await expect(menu(page)).toHaveCount(0);
+    await page.mouse.move(start.x + 60, start.y + 36, { steps: 6 });
+    await page.mouse.up({ button: 'right' });
+    await expect(menu(page)).toHaveCount(0);
+    await remember(`${projection}-pan`);
+    await open(page);
+    await menu(page).getByRole('button', { name: uiMessage('commands', 'radial.cancel'), exact: true }).click();
+    await expect(menu(page)).toHaveCount(0);
+    await remember(`${projection}-click`);
+    await canvas.focus(); await page.keyboard.press('Home');
+    await remember(`${projection}-home`);
+  }
+  const saved = await savePart(page, info, 'right-drag-views.pcad', app);
+  const find = (name: string) => {
+    const view = saved.namedViews.find(candidate => candidate.name === name);
+    if (view === undefined) throw new Error(`保存した視点がありません: ${name}`);
+    return view;
+  };
+  for (const projection of ['perspective', 'orthographic'] as const) {
+    const before = find(`${projection}-before`), moved = find(`${projection}-pan`);
+    const clicked = find(`${projection}-click`), home = find(`${projection}-home`);
+    expect(before.target).toEqual([0, 0, 0]);
+    expect(moved.target).not.toEqual(before.target);
+    expect(moved.projection).toBe(projection);
+    expect(moved.up).toEqual(before.up); expect(moved.zoom).toBe(before.zoom);
+    for (let axis = 0; axis < 3; axis++) {
+      expect(moved.position[axis] - before.position[axis]).toBeCloseTo(moved.target[axis] - before.target[axis], 9);
+    }
+    expect(clicked.target).toEqual(moved.target); expect(clicked.position).toEqual(moved.position);
+    expect(home.target).toEqual([0, 0, 0]); expect(home.position).toEqual(before.position);
+  }
+}
+
 export async function radialMenuFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   const generation = await beginRecompute(page);
@@ -32,12 +88,9 @@ export async function radialMenuFlow(page: Page, info: TestInfo, app?: ElectronA
   await expect(menu(page)).toHaveCount(0);
   expect(await savePart(page, info, 'radial-cancel.pcad', app)).toEqual(before);
 
-  // A held right gesture goes through the same circle input, then one ordinary Undo restores the file.
-  const start = await centre(page.locator('canvas.pcad-viewport__canvas'));
-  await page.mouse.move(start.x, start.y); await page.mouse.down({ button: 'right' });
-  await expect(menu(page)).toBeVisible();
-  const circle = await centre(menu(page).locator('[data-command-id="toolbar.shape.circle"]'));
-  await page.mouse.move(circle.x, circle.y); await page.mouse.up({ button: 'right' });
+  // In 3D a click opens the menu; its circle still uses the same input, save and Undo.
+  await open(page);
+  await menu(page).locator('[data-command-id="toolbar.shape.circle"]').click();
   await expect(menu(page)).toHaveCount(0);
   const popup = page.locator('.pcad-popover'), title = page.locator('.pcad-popover__title');
   await expect(title).toHaveText('円の中心');

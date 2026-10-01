@@ -590,22 +590,5 @@
         "P13-1"
       ]
     }
-  ],
-  "pendingConfirmation": {
-    "status": "local-candidate-awaiting-full-check-and-same-commit-ci",
-    "confirmedCompleted": 533,
-    "candidateCompleted": 543,
-    "taskIds": [
-      "ADD-17",
-      "ADD-18",
-      "ADD-19",
-      "ADD-20",
-      "ADD-21",
-      "ADD-22",
-      "ADD-24",
-      "ADD-25",
-      "ADD-26",
-      "P13-1"
-    ]
-  }
+  ]
 }

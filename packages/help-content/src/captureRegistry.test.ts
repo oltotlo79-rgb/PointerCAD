@@ -150,7 +150,10 @@ describe('撮影の登録簿（capture-manifest.json）と実際の画像・章'
     expect(report.scriptMissing).toEqual(hashed.filter(entry => !scripts.has(entry.script)).map(entry => entry.file));
     expect(report.scriptChanged).toEqual(hashed.filter(entry => scripts.has(entry.script)
       && lfSha(readFileSync(new URL(`../../../${entry.script}`, import.meta.url))) !== entry.scriptSha256).map(entry => entry.file));
-    expect(report.current).toBe(report.buildUnknown.length === 0 && report.scriptChanged.length === 0 && report.scriptMissing.length === 0);
+    // "current" needs every image to be of the given build; an image of another build is not current either
+    // (once every image is adopted, buildUnknown is empty but buildMismatch still lists all of them here).
+    expect(report.current).toBe(report.buildUnknown.length === 0 && report.buildMismatch.length === 0
+      && report.scriptChanged.length === 0 && report.scriptMissing.length === 0);
   });
 });
 

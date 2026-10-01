@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from './DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { isPendingFieldError, pendingFieldVariables } from '../shell/propertyFieldUnits.js';
@@ -363,7 +364,7 @@ export function NumericInputPopover({
         handleKey(key);
       }}
     >
-      <div className="pcad-popover__title">{t(STEP_TITLE_KEYS[state.step])}</div>
+      <DraggableWindowTitle className="pcad-popover__title">{t(STEP_TITLE_KEYS[state.step])}</DraggableWindowTitle>
       {evaluation.carriedError === undefined ? null : (
         <p className={isPendingFieldError(evaluation.carriedError) ? 'pcad-field__message' : 'pcad-field__error'}
           role={isPendingFieldError(evaluation.carriedError) ? 'status' : 'alert'}>{evaluation.carriedError.message}</p>

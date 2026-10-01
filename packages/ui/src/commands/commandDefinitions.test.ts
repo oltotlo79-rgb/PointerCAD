@@ -29,7 +29,7 @@ describe('command definitions', () => {
     }
   });
 
-  it('keeps all existing file and history chords, including the current document-kind difference', () => {
+  it('keeps all existing file and history chords and adds Cmd history for parts', () => {
     expect(resolveShortcut(input('s', { ctrl: true }), context())?.commandId).toBe('file.save');
     expect(resolveShortcut(input('S', { meta: true, shift: true }), context({ documentKind: 'drawing' }))?.commandId).toBe('file.saveAs');
     expect(resolveShortcut(input('o', { meta: true }), context())?.commandId).toBe('file.open');
@@ -37,8 +37,31 @@ describe('command definitions', () => {
     expect(resolveShortcut(input('z', { ctrl: true }), context())?.commandId).toBe('history.undo');
     expect(resolveShortcut(input('y', { ctrl: true }), context())?.commandId).toBe('history.redo');
     expect(resolveShortcut(input('z', { ctrl: true, shift: true }), context())?.commandId).toBe('history.redo');
-    expect(resolveShortcut(input('z', { meta: true }), context())).toBeNull();
+    expect(resolveShortcut(input('z', { meta: true }), context())?.commandId).toBe('history.undo');
     expect(resolveShortcut(input('z', { meta: true }), context({ documentKind: 'drawing' }))?.commandId).toBe('history.undo');
+  });
+
+  it.each(['part', 'assembly', 'drawing'] as const)('uses Ctrl and Cmd history consistently in %s without taking text editing', documentKind => {
+    const chords = [
+      { key: 'z', shift: false, commandId: 'history.undo', display: 'Ctrl/Cmd+Z' },
+      { key: 'y', shift: false, commandId: 'history.redo', display: 'Ctrl/Cmd+Y' },
+      { key: 'y', shift: true, commandId: 'history.redo', display: 'Ctrl/Cmd+Y' },
+      { key: 'z', shift: true, commandId: 'history.redo', display: 'Ctrl/Cmd+Shift+Z' },
+    ] as const;
+    for (const modifier of [{ ctrl: true }, { meta: true }]) {
+      for (const chord of chords) {
+        const key = input(chord.key, { ...modifier, shift: chord.shift });
+        const result = resolveShortcut(key, context({ documentKind }));
+        expect(result?.commandId).toBe(chord.commandId);
+        expect(result?.binding.display).toBe(chord.display);
+        for (const blocked of [{ textEntry: true }, { composing: true }, { insideDialog: true }, { helpOpen: true }]) {
+          expect(resolveShortcut(key, context({ documentKind, ...blocked }))).toBeNull();
+        }
+        expect(resolveShortcut({ ...key, alt: true }, context({ documentKind }))).toBeNull();
+      }
+    }
+    expect(resolveShortcut(input('z'), context({ documentKind }))).toBeNull();
+    expect(resolveShortcut(input('y'), context({ documentKind }))).toBeNull();
   });
 
   it('does not take editing, IME, menu, repeat, or dialog keys', () => {

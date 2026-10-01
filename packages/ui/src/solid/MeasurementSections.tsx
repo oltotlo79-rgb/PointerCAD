@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId } from 'react';
 import { DENSITY_MATERIALS, formatMass, type AppearanceSpec } from '@pointercad/model';
 import { AppearanceMenu } from '../appearance/AppearanceMenu.js';
 import { t, type MessageKey } from '../i18n/t.js';
@@ -8,7 +8,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { measureKindLabel } from './measure.js';
 import {
   defaultDensityMaterialId, densityOf, describeMeasureKinds, describeMeasureTargets,
-  formatMeasurePoint, formatMeasureValue, formatMoments, massPropertiesView,
+  formatMeasurePoint, formatMeasureValue, formatMoments, isValidDensity, massPropertiesView,
 } from './measureCommands.js';
 import { formatArea, formatVolume, AREA_UNIT_KEYS, VOLUME_UNIT_KEYS } from './measureFormatting.js';
 
@@ -63,6 +63,8 @@ export function MeasureSection({
   readonly readiness: PartMeasureReadiness;
 }): React.JSX.Element {
   const measurement = useAppStore((state) => state.measurement);
+  const unit = useAppStore(state => state.displaySettings.lengthUnit);
+  const request = useAppStore(state => state.measurementRequest);
   return (
     <div className="pcad-section">
       <h3 className="pcad-section__title">{t('propertyPanel.sectionMeasure')}</h3>
@@ -81,10 +83,20 @@ export function MeasureSection({
         <dd className="pcad-properties__value">
           {measurement === null
             ? t('propertyPanel.measureNotYet')
-            : `${measureKindLabel(measurement.result.kind)}: ${formatMeasureValue(measurement.result)}`}
+            : `${measureKindLabel(measurement.result.kind)}: ${formatMeasureValue(measurement.result, unit)}`}
         </dd>
+        {measurement?.targetNames !== undefined && <>
+          <dt className="pcad-properties__key">{t('propertyPanel.measureResultTargets')}</dt>
+          <dd className="pcad-properties__value">{measurement.targetNames.join(' / ')}</dd>
+        </>}
       </dl>
+      {request !== null && <p className="pcad-panel__note" role="status">{t('propertyPanel.measurePending')}</p>}
       <div className="pcad-appearance__actions">
+        {request !== null && <button type="button" className="pcad-button"
+          title={t('propertyPanel.measureCancelTooltip')}
+          onClick={() => { useAppStore.getState().clearMeasurement(); }}>
+          {t('propertyPanel.measureCancel')}
+        </button>}
         <button
           type="button"
           className="pcad-button"
@@ -105,10 +117,10 @@ export function MeasureSection({
  * 「質量特性」の節(FR-1101、§0.a-0.31、§0.a-0.32、計画書タスク32)。立体を 1 つ選んで
  * いるときだけ出す。
  *
- * **材料と密度はこの節が持つ**(文書には保存しない)。密度を変えるたびに文書が変わると
+ * **材料と密度はストアの一時入力が持つ**(文書には保存しない)。密度を変えるたびに文書が変わると
  * 取り消しの段が積まれ、形が変わっていないのに再計算の判定を通ることになるため
- * (rules/04-設計の規律.md「導出できるものは保存しない」)。立体を選び直すと `key` で
- * 作り直され、その立体の**外観のプリセットに対応する材料**から始まる(§0.a-0.31)。
+ * (rules/04-設計の規律.md「導出できるものは保存しない」)。一時入力は文書と立体に
+ * ひも付き、別の立体ではその外観のプリセットに対応する材料から始まる(§0.a-0.31)。
  *
  * 体積・重心・慣性モーメントはカーネルが測った密度なしの値で、**密度の掛け算は model の
  * 関数だけ**を通す(`massPropertiesView` → `massFromVolume` / `inertiaWithDensity`。
@@ -121,17 +133,23 @@ export function MassPropertiesSection({
 }): React.JSX.Element {
   const massProperties = useAppStore((state) => state.massProperties);
   const units = useFieldUnits();
-  const [materialId, setMaterialId] = useState(() =>
-    defaultDensityMaterialId(spec.preset, spec.pattern.kind === 'woodGrain' ? spec.pattern.species : null),
-  );
-  /** 密度の欄の式。材料を選び直すとその材料の密度で置き換わる(式で上書きもできる)。 */
-  const [densitySource, setDensitySource] = useState(() => String(densityOf(materialId)));
+  const documentId = useAppStore(state => state.document.id);
+  const selectedId = useAppStore(state => state.selection.length === 1 ? state.selection[0] : null);
+  const draft = useAppStore(state => state.massDensityDraft);
+  const bodyFeatureId = selectedId ?? massProperties?.bodyFeatureId ?? null;
+  const currentDraft = draft?.documentId === documentId && draft.bodyFeatureId === bodyFeatureId ? draft : null;
+  const materialId = currentDraft?.materialId
+    ?? defaultDensityMaterialId(spec.preset, spec.pattern.kind === 'woodGrain' ? spec.pattern.species : null);
+  const densitySource = currentDraft?.source ?? String(densityOf(materialId));
+  const densityId = useId();
+  const messageId = useId();
+  const otherTarget = massProperties !== null && bodyFeatureId !== massProperties.bodyFeatureId;
 
   const evaluated = evaluateFieldSource(densitySource, 'ratio', false, units);
   const pending = !evaluated.ok && isPendingFieldError(evaluated.error);
-  const hasError = !evaluated.ok && !pending;
-  const density = evaluated.ok ? evaluated.value.value : densityOf(materialId);
-  const view = massProperties === null || pending ? null : massPropertiesView(massProperties, density);
+  const density = evaluated.ok && isValidDensity(evaluated.value.value) ? evaluated.value.value : null;
+  const hasError = density === null && !pending;
+  const view = massProperties === null || otherTarget || density === null ? null : massPropertiesView(massProperties, density);
 
   return (
     <div className="pcad-section">
@@ -144,17 +162,18 @@ export function MassPropertiesSection({
           labelKey: densityMaterialLabelKey(material.id),
         }))}
         onChoose={(value) => {
-          setMaterialId(value);
           // 材料を選び直したら、密度の欄もその材料の値へ戻す(打った式は上書きされる)。
-          setDensitySource(String(densityOf(value)));
+          useAppStore.getState().setMassDensityDraft({ documentId, bodyFeatureId, materialId: value, source: String(densityOf(value)) });
         }}
       />
       <div className="pcad-coordinate__fields">
         <div className={hasError ? 'pcad-field pcad-field--error' : 'pcad-field'}>
-          <span className="pcad-field__label" title={t('propertyPanel.massDensity')}>
+          <label htmlFor={densityId} className="pcad-field__label" title={t('propertyPanel.massDensity')}>
             {t('propertyPanel.massDensity')}
-          </span>
+          </label>
           <input
+            id={densityId}
+            aria-describedby={messageId}
             className="pcad-field__input"
             type="text"
             inputMode="text"
@@ -164,23 +183,25 @@ export function MassPropertiesSection({
             aria-invalid={hasError}
             title={t('propertyPanel.massDensity')}
             onChange={(event) => {
-              setDensitySource(event.target.value);
+              useAppStore.getState().setMassDensityDraft({ documentId, bodyFeatureId, materialId, source: event.target.value });
             }}
           />
           <span className="pcad-field__unit">
             {t('propertyPanel.unitGramPerCubicCentimeter')}
           </span>
           <p
+            id={messageId}
             className={
               hasError ? 'pcad-field__message pcad-field__message--error' : 'pcad-field__message'
             }
           >
-            {evaluated.ok ? `= ${evaluated.value.display}` : evaluated.error.message}
+            {!evaluated.ok ? evaluated.error.message : density === null
+              ? t('propertyPanel.massDensityPositive') : `= ${evaluated.value.display}`}
           </p>
         </div>
       </div>
-      {massProperties === null || view === null ? (
-        <p className="pcad-panel__note">{t(pending ? 'mathGeometry.status.pending' : 'propertyPanel.massNotYet')}</p>
+      {massProperties === null || otherTarget ? (
+        <p className="pcad-panel__note">{t(otherTarget ? 'propertyPanel.massOtherTarget' : 'propertyPanel.massNotYet')}</p>
       ) : (
         <dl className="pcad-properties">
           <dt className="pcad-properties__key">{t('propertyPanel.massVolume')}</dt>
@@ -192,15 +213,18 @@ export function MassPropertiesSection({
             {`${formatArea(massProperties.area, units.lengthUnit)} ${t(AREA_UNIT_KEYS[units.lengthUnit])}`}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massMass')}</dt>
-          <dd className="pcad-properties__value">{formatMass(view.mass)}</dd>
+          <dd className="pcad-properties__value">{view === null ? t('propertyPanel.massUncomputed') : formatMass(view.mass)}</dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massCentre')}</dt>
           <dd className="pcad-properties__value">
-            {formatMeasurePoint(massProperties.centreOfMass)}
+            {formatMeasurePoint(massProperties.centreOfMass, units.lengthUnit)}
           </dd>
           <dt className="pcad-properties__key">{t('propertyPanel.massInertia')}</dt>
-          <dd className="pcad-properties__value">{formatMoments(view.moments)}</dd>
+          <dd className="pcad-properties__value">{view === null ? t('propertyPanel.massUncomputed') : formatMoments(view.moments)}</dd>
         </dl>
       )}
+      {density === null && <p className="pcad-panel__note" role="status">
+        {t(pending ? 'mathGeometry.status.pending' : 'propertyPanel.massDensityInvalid')}
+      </p>}
     </div>
   );
 }

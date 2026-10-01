@@ -35,6 +35,10 @@ const crossOriginIsolationHeaders = {
 function manualChunks(id: string): string | undefined {
   const path = id.replace(/\\/g, '/');
 
+  // Vite shares this helper with the editor. Keep it outside pcad-core, otherwise
+  // the bootstrap entry would statically require the very asset it must recover.
+  if (id === '\0vite/preload-helper.js') return 'bootstrap-loader';
+
   if (path.includes('/node_modules/')) {
     // 画面の土台。版が上がるまで中身が変わらないので、控えが効きやすい。
     if (/\/node_modules\/(?:react-dom|react|scheduler|zustand)\//.test(path)) {

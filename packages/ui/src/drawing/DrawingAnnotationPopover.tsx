@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import type { Annotation, DimensionTarget, SurfaceFinishProcess } from '@pointercad/drawing';
 import { useState } from 'react';
 import { t } from '../i18n/t.js';
@@ -38,7 +39,7 @@ export function DrawingAnnotationPopover({ target, annotation, inline = false }:
     if (kind === 'machining') addDrawingMachiningNote(target, position, number(height));
     else addDrawingSurfaceFinish({ target, position, process, parameter, value, height: number(height) });
   }}>
-    <strong>{t('drawing.tool.annotation')}</strong>
+    <DraggableWindowTitle as="strong" enabled={!inline}>{t('drawing.tool.annotation')}</DraggableWindowTitle>
     <label title={t('drawing.annotation.kind.controlHint')}>{t('drawing.annotation.kind')}<select aria-label={t('drawing.annotation.kind')} value={kind} disabled={annotation !== undefined} onChange={(event) => setKind(event.target.value)}>
       <option value="surface">{t('drawing.annotation.surface')}</option>
       <option value="machining">{t('drawing.annotation.machining')}</option>

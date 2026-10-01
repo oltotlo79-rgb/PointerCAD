@@ -15,7 +15,7 @@ import { FunctionSectionProperties } from '../functionPlot/FunctionSectionProper
 import { tryMathComposition } from '../math/tryMathComposition.js';
 import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { SheetMetalPanel } from '../sheetMetal/SheetMetalPanel.js';
-import { ScriptPanel } from '../scripting/ScriptPanel.js';
+import { deferredExport } from './deferredShell.js';
 import { SheetUnfoldPanel } from '../sheetMetal/SheetUnfoldPanel.js';
 import { sheetFieldUnitError } from '../sheetMetal/sheetFieldError.js';
 
@@ -46,8 +46,8 @@ import {
 } from '../appearance/appearanceCommands.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { ParameterPanel } from '../parameters/ParameterPanel.js';
-import { MathGeometryPanel } from '../math/MathGeometryPanel.js';
 import { mathGeometryPanelVisible } from '../math/mathGeometryRows.js';
+
 import { ConstraintList } from '../sketch/ConstraintList.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { PropertyMathField, replacePropertySketchFeature } from '../math/PropertyMathField.js';
@@ -127,6 +127,12 @@ import {
 } from '../solid/solidSummary.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { useAppStore } from '../store/useAppStore.js';
+
+// These editors are not visible in an empty part; keep their code behind the existing conditions.
+// The wait for the chunk lives in deferredExport, so this file has no wait of its own
+// (store/documentRequest.test.ts watches files that write the document after a wait).
+const ScriptPanel = deferredExport(() => import('../scripting/ScriptPanel.js'), 'ScriptPanel');
+const MathGeometryPanel = deferredExport(() => import('../math/MathGeometryPanel.js'), 'MathGeometryPanel');
 
 /** 打っている途中の欄。式として読めるようになるまで履歴へは書き戻さない。 */
 interface FieldDraft {
@@ -1939,7 +1945,8 @@ export function PropertyPanel(): React.JSX.Element {
   const measureSketch = useAppStore(state => state.isComputing ? undefined : state.resolvedSketch);
   const measureReady = partMeasureReadiness(selection, appearanceContext.bodies, measureSketch);
   const measurement = useAppStore((state) => state.measurement);
-  const showMeasure = !showMathGeometry && (measureReady.ready || measurement !== null);
+  const measurementRequest = useAppStore(state => state.measurementRequest);
+  const showMeasure = !showMathGeometry && (measureReady.ready || measurement !== null || measurementRequest !== null);
   // 質量特性は立体を 1 つ選んでいるときだけ(`measureReadiness` が種類でそう言う)。
   const showMass = !showMathGeometry && measureReady.kinds.includes('massProperties');
   const massTarget = measureReady.targets[0];

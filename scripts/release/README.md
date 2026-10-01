@@ -81,12 +81,16 @@ node scripts/release/build-sbom.mjs <new-output>
 
 `desktop`jobは`package-desktop.mjs`の直後、artifactへ保存する前に、作った配布物そのものを起動して確かめる。設定は`e2e/packaged-desktop.config.ts`、検査は`e2e/release/packagedDesktop.spec.ts`。起動できない配布物はartifactへ保存しない。
 
-- Windows: `dist/desktop-stage/builder/win-unpacked/PointerCAD.exe`を起動する。
+- Windows: `dist/desktop-stage/builder/win-unpacked/PointerCAD.exe`の検査に続けて、`artifacts/PointerCAD-<版>-windows-x64-portable.exe`そのものを検査する。単一exeは候補記録の名前・サイズ・SHA-256と照合し、exeだけを別のフォルダーへ移して起動する。無い場合や記録と違う場合は失敗し、展開済み本体で代用しない。
 - Linux: runnerにFUSEが無いため、AppImageを`--appimage-extract`でrunnerの一時領域(`$RUNNER_TEMP`)へ展開し、`squashfs-root/AppRun`を`xvfb-run -a`の画面で起動する。展開物は`dist/desktop-stage`へ混ぜない。`--no-sandbox`は検査からは足さず、AppRun自身の判断(利用者の名前空間が使えないときだけ足す)に任せる。
 - 渡し方は環境変数`PCAD_PACKAGED_EXECUTABLE`(起動する実行ファイル)と`PCAD_PACKAGED_CANDIDATE`(その配布物の`candidate.json`)。相対パスはリポジトリの根から。
 - 確かめる項目(一時のuserDataへの隔離、窓の表示、名前と版の記録との一致、主要な画面、形状・数式の計算部と字体、pageerror、閉じた後のプロセス、実際のプロファイルが変わらないこと)と、導入版での走らせ方は`docs/standards/desktop-distribution.md`の「(d) 配布物の起動確認」。
 - 失敗した回は`test-results/packaged-desktop`(項目ごとの結果と所要時間の`packaged-desktop-results.json`、失敗時の画面)を`pointercad-packaged-launch-<OS>-<commit>`のartifactへ14日保存する。
 - この確認は`candidate.json`を書き換えない(`packages[].launchVerified`は`false`のまま)。結果はActionsの記録と報告記録に残す。
+
+単一ポータブル版の段は **WindowsのGitHub Actions専用**。`PCAD_PACKAGED_VARIANT=portable`で`portableDesktop.spec.ts`を選び、CI以外では設定と起動口の両方で拒否する。ローカルで実行する手順は設けない。起動器の標準出力の転送に頼らず、専用userDataの`DevToolsActivePort`から接続する。画面準備は通常の配布検査と共通の`packagedStartup.ts`（3D描画、ビューキューブ、入力、再読込みなど）を使い、実際の子プロセスの展開先と全同梱ファイルも照合する。起動60秒・窓60秒・終了30秒、検査全体900秒・再試行0・1 workerを維持する。形状・数式の計算操作と図面の字体の検査は従来のwin-unpacked段で引き続き行う。
+
+単一exeの通常終了後は、今回専用のTEMPの`nsi…tmp`が30秒以内に消えることを、検査自身が削除する前に確かめる。`portable-desktop-results.json`には起動したexe、展開先、本体PID、終了コード、残留の一覧、取得できた片付けのログを保存する。失敗時は`test-results/packaged-desktop/portable`も既存の失敗artifactへ含まれる。次の手動配布CIでは`desktop (windows-latest)`の「ポータブル版の単一exeを起動し終了後の片付けまで確かめる」を確認する。
 
 手元(Windows)でwin-unpackedを確かめる場合は、画面検査の排他を守るため担当が`diag.py`を通して走らせる(配布物の組み立て・起動は統括の指示の後):
 

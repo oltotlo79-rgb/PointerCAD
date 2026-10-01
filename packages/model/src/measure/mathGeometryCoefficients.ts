@@ -36,7 +36,8 @@ const TRIGONOMETRIC_OPERATIONS = [
  * Q4=S1 (§4(e)): the operation IDs a geometry-derived formula may contain. Every one is continuous in
  * its operands, so a measured double that is off by a rounding step moves the result by a comparable
  * amount instead of jumping (floor, round, comparisons, cases, integer arithmetic, sets, equations and
- * ranged sums/integrals are all absent on purpose). The structural IDs only carry notation.
+ * ranged sums are absent on purpose). Integrals have their own contextual check below: their local
+ * functions must not make a general function literal admissible. The structural IDs only carry notation.
  */
 export const GEOMETRY_DERIVED_OPERATIONS: ReadonlySet<string> = new Set<string>([
   'add', 'subtract', 'negate', 'multiply', 'divide', 'power', 'sqrt', 'root', 'square', 'absolute',
@@ -59,10 +60,32 @@ function operationName(operation: string): string {
   return CANDIDATE_MATH_BY_ID.get(operation)?.engineHead.toLowerCase() ?? operation;
 }
 
+/** Q10: existing explicit curve/surface/volume integrals, including oriented and closed variants. */
+const GEOMETRY_DERIVED_INTEGRALS: ReadonlySet<string> = new Set([
+  'line-integral', 'circulation', 'surface-integral', 'flux-integral', 'volume-integral',
+  'closed-line-integral', 'closed-circulation', 'closed-surface-integral', 'closed-flux-integral',
+]);
+
+/**
+ * Inspect the field and coordinate map as expressions only in an integral's two function slots.
+ * Input/reply decoding and the math engine still own dimensions, bound-variable scopes, finite results,
+ * original-domain/smoothness proofs and closure. Nothing is substituted, simplified or re-bound here.
+ * Returning bodies instead of accepting `lambda` globally also prevents an unrelated function literal
+ * or a binding domain from bypassing Q4. Bounds are checked just like the field and coordinate map.
+ */
+export function geometryDerivedIntegralOperands(node: MathNode): readonly MathNode[] | null {
+  if (node.kind !== 'operation' || !GEOMETRY_DERIVED_INTEGRALS.has(node.operation) || node.operands.length !== 4) return null;
+  const [field, mapping, lower, upper] = node.operands;
+  if (field.kind !== 'binder' || mapping.kind !== 'binder' || field.operation !== 'lambda' || mapping.operation !== 'lambda'
+    || [field, mapping].some(fn => fn.bindings.length === 0 || fn.bindings.some(binding => binding.domain.kind !== 'unrestricted'))) return null;
+  return [field.body, mapping.body, lower, upper];
+}
+
 /**
  * The first operation (pre-order, left to right) in `expression` that a geometry-derived formula may
- * not use, or `null` when the whole formula is allowed. A binder (sum, product, integral, derivative,
- * limit, function literal, quantifier) is always rejected: none of them is in the Q4=S1 list. Numbers,
+ * not use, or `null` when the whole formula is allowed. Only explicit geometric integrals may carry
+ * local field/map functions; other binders (sum, product, integrate, derivative, limit, standalone
+ * function literal, quantifier) remain rejected. Numbers,
  * constants and symbols are not operations and are accepted; a declared value is a closed constant and
  * a declared map can only be applied through `mapping-value`, which is rejected here.
  *
@@ -73,6 +96,11 @@ export function checkGeometryDerivedOperations(expression: MathNode): GeometryDe
   while (pending.length > 0) {
     const node = pending.pop();
     if (node === undefined) break;
+    const integral = geometryDerivedIntegralOperands(node);
+    if (integral !== null) {
+      for (let index = integral.length - 1; index >= 0; index -= 1) pending.push(integral[index]);
+      continue;
+    }
     if (node.kind === 'binder' || (node.kind === 'operation' && !GEOMETRY_DERIVED_OPERATIONS.has(node.operation))) {
       return { operation: node.operation, message: mathGeometryOperationMessage(operationName(node.operation)) };
     }

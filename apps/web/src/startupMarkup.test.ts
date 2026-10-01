@@ -13,6 +13,23 @@ describe('起動案内は本体や文言ファイルを取得できなくてもH
     expect(html).not.toContain('{{startup:');
     expect(html).toContain('src="/src/bootstrap.ts"');
     expect(source).not.toMatch(/from ['"](?:react|@pointercad\/ui)/u);
+    expect(html).toContain('aria-labelledby="pcad-startup-title"');
+    expect(html).toContain('class="pcad-startup__mark"');
+    expect(html).toContain('M8 1.75 14 5.25v5.5L8 14.25 2 10.75v-5.5z');
+    expect(html).toContain('prefers-reduced-motion: reduce');
+    expect(html).toContain('animation: none');
+  });
+
+  it('復旧案内だけを8秒待ち、失敗時は即座に表示できるCSSをHTMLへ同梱する', () => {
+    const html = renderStartupMessages(template, messages);
+    expect(html).toMatch(/\.pcad-startup__recovery \{[^}]*visibility: hidden;[^}]*animation: pcad-startup-recovery 0s 8s forwards;/u);
+    expect(html).toContain('@keyframes pcad-startup-recovery { to { visibility: visible; } }');
+    expect(html).toContain('[data-startup-shell][data-state="failed"] .pcad-startup__recovery { animation: none; visibility: visible; }');
+    // Reduced motion stops the moving progress line, but never disables recovery.
+    const reducedMotion = html.slice(html.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reducedMotion).toContain('.pcad-startup__track::after { animation: none; width: 100%; }');
+    expect(reducedMotion).not.toContain('pcad-startup__recovery {');
+    expect(html.indexOf('@keyframes pcad-startup-recovery')).toBeLessThan(html.indexOf('<script'));
   });
 
   it('文言の記号をHTMLやスクリプトとして追加しない', () => {

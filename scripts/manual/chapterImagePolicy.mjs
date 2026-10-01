@@ -48,11 +48,6 @@ export const NO_IMAGE_NEEDED = deepFreeze({
  * when none is decided yet; `note` records who/when decided the deferral.
  */
 export const KNOWN_EXCEPTIONS = deepFreeze({
-  'mass-properties': {
-    reason: '質量特性の表示に製品側の不具合があり、正しい画面を撮影できるまで見送っている（利用者へ報告済みの既知の不具合）。',
-    deadline: '製品側の不具合の修正後、次の撮影の機会に解消する（公開前に再検討する）。',
-    note: '指示書 w148a（2026-09-29）で期限付きの既知の例外として記録。',
-  },
   'web-version': {
     reason: 'Web版は後日公開のため、確実に撮影できる手順がまだ無い（公開先が決まっていない）。',
     deadline: 'Web版の公開前の撮り直しで再検討する。',

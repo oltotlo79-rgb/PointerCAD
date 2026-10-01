@@ -34,7 +34,7 @@ PointerCADのデスクトップ版は、Windows(10・11、64ビット)とLinux(6
 
 ### 正式な入手元
 
-PointerCADの配布物は、GitHubの本プロジェクトのリリースページ(`https://github.com/<所有者>/<リポジトリ名>/releases`。実際のURLはREADMEと本書の入手方法の章に掲載します)からだけ配布します。他の場所で見つけたPointerCADと称するファイルは、内容を保証できないため使わないでください。
+PointerCADの配布物は、GitHubの[本プロジェクトのリリースページ](https://github.com/oltotlo79-rgb/PointerCAD/releases)からだけ配布します。他の場所で見つけたPointerCADと称するファイルは、内容を保証できないため使わないでください。
 
 ### 未署名であることと、Windowsの警告の出方・進め方
 

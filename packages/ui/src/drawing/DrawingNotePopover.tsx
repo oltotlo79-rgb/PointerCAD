@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useState } from 'react';
 import type { Annotation, Point2 } from '@pointercad/drawing';
 import { t } from '../i18n/t.js';
@@ -35,7 +36,7 @@ export function DrawingNotePopover({ annotation, position = [80, 200], anchor, i
     onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation();
       const state = useAppStore.getState(); state.setDrawingTool('select'); state.selectDrawingIds([]); } }}
     onSubmit={(event) => { event.preventDefault(); apply(); }}>
-    <strong>{t('drawing.note.title')}</strong>
+    <DraggableWindowTitle as="strong" enabled={!inline}>{t('drawing.note.title')}</DraggableWindowTitle>
     <label title={t('drawing.note.text.controlHint')}>{t('drawing.note.text')}<textarea aria-label={t('drawing.note.text')} value={text} onChange={(event) => setText(event.target.value)} rows={4} maxLength={10000} autoFocus={annotation === undefined} /></label>
     <label title={t('drawing.note.height.controlHint')}>{t('drawing.note.height')}<input value={height} onChange={(event) => setHeight(event.target.value)} inputMode="decimal" /></label>
     <label title={t('drawing.note.x.controlHint')}>{t('drawing.note.x')}<input value={x} onChange={(event) => setX(event.target.value)} inputMode="decimal" /></label>

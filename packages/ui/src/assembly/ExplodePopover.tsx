@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -36,7 +37,7 @@ export function ExplodePopover(): React.JSX.Element | null {
           event.preventDefault(); event.stopPropagation(); submit();
         }
       }}>
-      <div className="pcad-popover__title">{t('assembly.explode.title')}</div>
+      <DraggableWindowTitle className="pcad-popover__title">{t('assembly.explode.title')}</DraggableWindowTitle>
       <div className="pcad-popover__fields">
         <label className="pcad-field">
           <span className="pcad-field__label">{t('assembly.explode.direction')}</span>

@@ -1,4 +1,4 @@
-import type { JointKind, MateKind } from '@pointercad/model';
+import { findComponent, type AssemblyDocument, type JointKind, type MateKind } from '@pointercad/model';
 import type { ToolMenuItem } from './menuItem.js';
 import { AngleConstraintIcon, CoincidentConstraintIcon, ConcentricConstraintIcon, CubeIcon, CylinderIcon, DistanceConstraintIcon, FixConstraintIcon, LayersIcon, ParallelConstraintIcon, RevolveIcon, SphereIcon, TangentConstraintIcon, ThreadShaftIcon, TransformIcon } from '../icons.js';
 
@@ -17,6 +17,22 @@ export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] 
   { id: 'replacePart', labelKey: 'assembly.tool.replacePart', tooltipKey: 'assembly.tool.replacePartTooltip', Icon: TransformIcon },
   { id: 'toggleFixed', labelKey: 'assembly.tool.fixComponent', tooltipKey: 'assembly.tool.fixComponentTooltip', Icon: FixConstraintIcon },
 ];
+
+/** 操作対象と同じ部品の固定状態から、次に行う操作の名前を決める。 */
+export function assemblyMenuItems(
+  assembly: AssemblyDocument,
+  selection: readonly string[],
+): readonly ToolMenuItem<AssemblyMenuActionId>[] {
+  const components = selection.map(id => findComponent(assembly, id)).filter(component => component !== undefined);
+  const component = components.length === 1 ? components[0] : undefined;
+  return ASSEMBLY_MENU_ITEMS.map(item => {
+    if (item.id !== 'toggleFixed') return item;
+    if (component === undefined) return { ...item,
+      labelKey: 'assembly.tool.toggleFixed', tooltipKey: 'assembly.tool.toggleFixedTooltip' };
+    return component.fixed ? { ...item,
+      labelKey: 'assembly.tool.unfixComponent', tooltipKey: 'assembly.tool.unfixComponentTooltip' } : item;
+  });
+}
 
 export const ASSEMBLY_MATE_TOOLS: readonly (ToolMenuItem<MateKind> & { readonly kind: MateKind })[] = [
   { id: 'coincident', kind: 'coincident', labelKey: 'assembly.tool.mateCoincident', tooltipKey: 'assembly.mate.coincidentTooltip', Icon: CoincidentConstraintIcon },

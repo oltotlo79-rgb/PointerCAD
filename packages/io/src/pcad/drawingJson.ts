@@ -16,7 +16,7 @@ import type {
   DrawingView,
 } from '@pointercad/model';
 
-import { drawingNumberIssue } from '@pointercad/model';
+import { drawingNumberIssue, drawingSheetExpressionMatches } from '@pointercad/model';
 import { cleanDrawingFlatReference, isDrawingFlatReference } from './drawingFlatJson.js';
 import { isRecord, isUnknownArray } from './guards.js';
 import { cleanDrawingConstruction, isDrawingConstruction } from './drawingConstructionJson.js';
@@ -106,6 +106,7 @@ export function cleanSheet(sheet: DrawingSheet): DrawingSheet {
     paperSizeId: sheet.paperSizeId,
     orientation: sheet.orientation,
     scale: sheet.scale,
+    ...(sheet.scaleExpression === undefined ? {} : { scaleExpression: sheet.scaleExpression }),
     projectionMethod: sheet.projectionMethod,
     frame: { visible: sheet.frame.visible },
     titleBlock: {
@@ -118,7 +119,9 @@ export function cleanSheet(sheet: DrawingSheet): DrawingSheet {
     },
     ...(sheet.generalTolerance === undefined ? {} : { generalTolerance: sheet.generalTolerance }),
     ...(sheet.textHeight === undefined ? {} : { textHeight: sheet.textHeight }),
+    ...(sheet.textHeightExpression === undefined ? {} : { textHeightExpression: sheet.textHeightExpression }),
     ...(sheet.scaleOptions === undefined ? {} : { scaleOptions: [...sheet.scaleOptions] }),
+    ...(sheet.scaleOptionExpressions === undefined ? {} : { scaleOptionExpressions: [...sheet.scaleOptionExpressions] }),
     ...(sheet.titleBlockFields === undefined ? {} : { titleBlockFields: sheet.titleBlockFields.map((field) => ({ ...field })) }),
   };
 }
@@ -400,7 +403,13 @@ function isSource(value: unknown): value is DrawingSource {
 function isTitleBlockField(value: unknown): boolean {
   return isRecord(value) && hasString(value, 'key') && hasString(value, 'label')
     && (value['fixedText'] === undefined || typeof value['fixedText'] === 'string')
-    && (value['widthWeight'] === undefined || (isFiniteNumber(value['widthWeight']) && value['widthWeight'] > 0));
+    && (value['widthWeight'] === undefined || (isFiniteNumber(value['widthWeight']) && value['widthWeight'] > 0))
+    && isSheetExpression(value['widthExpression'], value['widthWeight'], 'ratio');
+}
+
+function isSheetExpression(source: unknown, value: unknown, quantity: 'length' | 'ratio'): boolean {
+  return source === undefined || (typeof source === 'string' && isFiniteNumber(value)
+    && drawingSheetExpressionMatches(source, value, quantity));
 }
 
 export function isSheet(value: unknown): value is DrawingSheet {
@@ -416,9 +425,15 @@ export function isSheet(value: unknown): value is DrawingSheet {
   return ['title', 'drawingNumber', 'revision', 'author', 'date', 'material'].every(
     (key) => hasString(title, key),
   ) && (value['generalTolerance'] === undefined || typeof value['generalTolerance'] === 'string')
+    && isSheetExpression(value['scaleExpression'], value['scale'], 'ratio')
     && (value['textHeight'] === undefined || (isFiniteNumber(value['textHeight']) && value['textHeight'] > 0))
+    && isSheetExpression(value['textHeightExpression'], value['textHeight'], 'length')
     && (value['scaleOptions'] === undefined || (isUnknownArray(value['scaleOptions']) && value['scaleOptions'].length > 0
       && value['scaleOptions'].every((scale) => isFiniteNumber(scale) && scale > 0)))
+    && (value['scaleOptionExpressions'] === undefined || (isUnknownArray(value['scaleOptionExpressions'])
+      && isUnknownArray(value['scaleOptions']) && value['scaleOptionExpressions'].length === value['scaleOptions'].length
+      && value['scaleOptionExpressions'].every((source, index) => isUnknownArray(value['scaleOptions'])
+        && isSheetExpression(source, value['scaleOptions'][index], 'ratio'))))
     && (value['titleBlockFields'] === undefined || (isUnknownArray(value['titleBlockFields']) && value['titleBlockFields'].length > 0
       && value['titleBlockFields'].every(isTitleBlockField)));
 }

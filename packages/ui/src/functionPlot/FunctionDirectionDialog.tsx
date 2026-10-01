@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import {createMathWorkerGroup} from '../math/mathWorkerGroup.js';
 import {createBrowserMathWorker} from '../math/browserMathWorker.js';
 import {useEffect,useId,useMemo,useRef,useState} from 'react';
@@ -49,7 +50,7 @@ export function FunctionDirectionDialog({pointId,reference,onClose,lineId}:{read
   };
   return <><dialog ref={dialog} className="pcad-function-dialog" aria-labelledby={`${id}-title`} data-help-topic="function-point"
     onCancel={event=>{event.preventDefault();close();}} onKeyDown={event=>event.stopPropagation()}>
-    <h2 id={`${id}-title`}>{t(lineId?'functionDirection.edit':'functionDirection.title')}</h2><p>{t('functionDirection.hint')}</p>
+    <DraggableWindowTitle as="h2" id={`${id}-title`}>{t(lineId?'functionDirection.edit':'functionDirection.title')}</DraggableWindowTitle><p>{t('functionDirection.hint')}</p>
     <form onSubmit={event=>{event.preventDefault();void calculate();}}>
       <fieldset disabled={busy}><legend>{t('functionDirection.kind')}</legend>{kinds.map(value=><label key={value} className="pcad-function-point-choice">
         <input title={t('functionPlot.control.directionKind')} type="radio" name={`${id}-kind`} checked={kind===value} onChange={()=>{invalidate();setKind(value);}}/>{t(`functionDirection.${value}`)}

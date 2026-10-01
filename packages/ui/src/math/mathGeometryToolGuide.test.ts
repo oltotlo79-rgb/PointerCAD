@@ -441,7 +441,13 @@ describe('状態欄の 1 文での優先順位(describeStatus の mathGeometryGu
     const base: StatusInput = { ...quiet(), activeTool: 'mathGeometry', mathGeometryGuide: READY_TWO };
     expect(describeStatus({ ...base, errorMessage: '計算できません' }).kind).toBe('failure');
     expect(describeStatus({ ...base, cancelled: true }).kind).toBe('cancelled');
-    expect(describeStatus({ ...base, isComputing: true }).kind).toBe('computing');
+    expect(describeStatus({ ...base, isComputing: true, errorMessage: '計算できません' }).kind).toBe('failure');
+    expect(describeStatus({ ...base, isComputing: true, cancelled: true }).kind).toBe('cancelled');
+    // FR-905(2026-09-30): 道具を使っている間の計算中は、案内を主の 1 文に残し、計算中は隣の印で示す。
+    const computing = describeStatus({ ...base, isComputing: true });
+    expect(computing.kind).toBe('guide');
+    expect(computing.text).toBe(READY_TWO);
+    expect(computing.activity).toEqual({ text: t('statusBar.activityComputing'), detail: t('statusBar.loading') });
     expect(describeStatus({ ...base, snapKind: 'endpoint' }).kind).toBe('snap');
     expect(describeStatus({ ...base, dragging: true }).text).toBe(t('statusBar.guide.dragging'));
     expect(describeStatus({ ...base, constraintPickMessage: '次の点を押してください' }).text).toBe('次の点を押してください');

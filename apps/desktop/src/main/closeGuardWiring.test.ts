@@ -48,7 +48,8 @@ function reachableSources(appDirectory: string, entry: string): Map<string, stri
 
 describe('未保存の確認の配線(R03 の再発防止)', () => {
   it('全てのアプリの画面の入口から、未保存の確認を取り付けている', () => {
-    const pages = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps'],
+    // Per-command trust of this exact checkout supports a separate sandbox user without Git writes.
+    const pages = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps'],
       { cwd: root, encoding: 'utf8' }).split('\0').filter((name) => /^apps\/[^/]+\/index\.html$/u.test(name));
     expect(pages.sort()).toEqual(['apps/desktop/index.html', 'apps/web/index.html']);
     for (const page of pages) {
@@ -78,7 +79,8 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
     }
     expect(preload).toContain(`ipcRenderer.on('${CLOSE_REQUEST_CHANNEL}'`);
     expect(preload).toContain(`ipcRenderer.removeListener('${CLOSE_REQUEST_CHANNEL}'`);
-    const renderer = read('apps/desktop/src/renderer/main.tsx');
+    const renderer = [...reachableSources(resolve(root, 'apps/desktop'),
+      resolve(root, 'apps/desktop/src/renderer/main.tsx')).values()].join('\n');
     const methods = /CLOSE_REQUEST_METHODS\b[^=]*= \{([^}]+)\}/u.exec(renderer)?.[1];
     const names = [...(methods ?? '').matchAll(/([A-Za-z]+): true/gu)].map((match) => match[1]);
     expect(names).toEqual(['closeGuardReady', 'reportUnsavedWork', 'onCloseRequest', 'chooseCloseAction', 'answerCloseRequest']);
@@ -89,7 +91,7 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
     const flow = read('e2e/tests/electronAppFlow.ts');
     expect(flow).toContain(`CLOSE_CONFIRM_BYPASS_ENV = '${CLOSE_GUARD_TEST_BYPASS_ENV}'`);
     expect(flow).toContain('process.env[${JSON.stringify(CLOSE_CONFIRM_BYPASS_ENV)}] = \'1\'');
-    const products = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps', 'packages'],
+    const products = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps', 'packages'],
       { cwd: root, encoding: 'utf8' }).split('\0')
       .filter((name) => /\/src\/.+\.(?:ts|tsx|mts|cts|js|mjs|cjs)$/u.test(name) && !/\.test\.[a-z]+$/u.test(name));
     const mentioning = products.filter((name) => read(name).includes(CLOSE_GUARD_TEST_BYPASS_ENV));
@@ -115,7 +117,7 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
   it('_electron.launch を直接呼ぶ所は、launchDesktop を使うか終了の確認に自分で答える', () => {
     const definesLaunchDesktop = 'e2e/tests/electronAppFlow.ts';
     expect(read(definesLaunchDesktop)).toContain('_electron.launch(');
-    const files = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps', 'e2e', 'packages'],
+    const files = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps', 'e2e', 'packages'],
       { cwd: root, encoding: 'utf8' }).split('\0')
       .filter((name) => /\.(?:ts|tsx|mts|cts)$/u.test(name) && !/\.test\.[a-z]+$/u.test(name));
     const callers = files.filter((name) => name !== definesLaunchDesktop && /_electron\.launch\s*\(/u.test(read(name)));

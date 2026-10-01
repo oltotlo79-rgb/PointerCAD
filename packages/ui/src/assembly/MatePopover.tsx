@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useRef } from 'react';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -45,7 +46,7 @@ export function MatePopover(): React.JSX.Element | null {
           event.preventDefault(); event.stopPropagation();
         }
       }}>
-      <div className="pcad-popover__title">{t(titleKey)}</div>
+      <DraggableWindowTitle className="pcad-popover__title">{t(titleKey)}</DraggableWindowTitle>
       <p className="pcad-popover__hint">
         {t(draft.targets.length === 0 ? 'assembly.mate.pickFirst' : draft.targets.length === 1 ? 'assembly.mate.pickSecond'
           : draft.targets.length === 2 ? 'assembly.mate.ready' : 'assembly.mate.needTwo')}

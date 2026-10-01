@@ -43,6 +43,7 @@ export function RadialCommandMenu({ viewport }: { readonly viewport: RefObject<H
       if (next === null) return;
       control.current = attachRadialMenuGesture(next, {
         owner: documentOwner, blocked,
+        clickOnly: next.matches('.pcad-viewport__canvas'),
         scale: () => useAppStore.getState().displaySettings.uiScale / 100,
         nativeClickTarget: target => target instanceof Node && menu.current?.contains(target) === true,
         clickSlot: point => {
@@ -56,9 +57,7 @@ export function RadialCommandMenu({ viewport }: { readonly viewport: RefObject<H
           const currentKind = activeDocumentKind(useAppStore.getState());
           if (currentKind !== kind) return;
           const id = radialCommandAt(kind, slot);
-          if (id !== null && executeCommand(id).status === 'disabled') {
-            useAppStore.getState().setError(t('radial.unavailable'));
-          }
+          if (id !== null) executeCommand(id);
         },
       });
     };

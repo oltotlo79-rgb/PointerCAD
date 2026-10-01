@@ -401,8 +401,8 @@ export function applyProjectionCommit(
  *
  * 他の整形系と 2 つだけ違う。①**道具を選んだまま残す**(続けて別の角を指せる。
  * 利用者の決定「続けて別の角も。Esc で終了」)。②丸めた 2 本を境界に使っている面が
- * あったときは、案内を帯へ出す(model は面の境界を書き換えないので、足した曲線を
- * 面の境界へ入れ直すのは利用者の操作になる。t18 の申し送り)。
+ * あったときは、新しい円弧・線分を境界へ組み込んだことを帯へ知らせる。
+ * 面の参照と境界の更新も同じ文書の差し替えに含めるので、Undo は 1 回で済む。
  *
  * 案内は `setSketch` の**あと**に出す。`applyDocument` は文書が変わるたびに古い断り・
  * 案内を落とすので、先に出すと消えてしまう。
@@ -422,7 +422,7 @@ function applyCornerCommit(commit: EditInputCommit, base: PartDocument): boolean
   store.applyDocument(replaceSketch(base, outcome.document));
   // 足した円弧・線分を選んでおく(次の一手がそのまま続く、NFR-UX-1)。道具は残す。
   store.setSelection([outcome.featureId]);
-  if (outcome.boundaryNeedsUpdate) {
+  if (outcome.boundaryUpdated) {
     store.setEditNotice('corner.notice.faceBoundary');
   }
   return true;

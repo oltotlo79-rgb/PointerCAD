@@ -1,5 +1,5 @@
 {
-  "statusBar.ready": "中ボタンのドラッグで向きを変え、ホイールで拡大・縮小できます。",
+  "statusBar.ready": "中ボタンのドラッグで回転、右ドラッグで平行移動、ホイールで拡大・縮小。右クリックで道具の一覧を開きます。",
   "statusBar.guide.point": "点の座標を入れます(Tab で次の欄、Enter で決定、Esc で取消)。",
   "statusBar.guide.line": "線分の始点を入れます(Tab で次の欄、Enter で決定、Esc で取消)。",
   "statusBar.guide.arc": "円弧の中心を入れます(Tab で次の欄、Enter で決定、Esc で取消)。",
@@ -51,6 +51,9 @@
   "statusBar.track.suffix": "。このままクリックすると、その位置が入ります。",
   "statusBar.track.unnamedSource": "線",
   "statusBar.loading": "形を計算しています…",
+  "statusBar.activityComputing": "計算中…",
+  "statusBar.activityPreparing": "計算の準備中…",
+  "statusBar.activityProgress": "計算中 {done}/{total}",
   "statusBar.loadingKernel": "形の計算部を読み込んでいます…(初回だけ少し時間がかかります)",
   "statusBar.unit": "単位: mm",
   "statusBar.error": "計算に失敗しました:",

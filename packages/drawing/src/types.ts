@@ -101,16 +101,22 @@ export interface DrawingSheet {
   readonly paperSizeId: string;
   readonly orientation: 'landscape' | 'portrait';
   readonly scale: number;
+  /** 用紙の縮尺の原式。省略時は従来の数値指定。 */
+  readonly scaleExpression?: string;
   readonly projectionMethod: 'third';
   readonly frame: DrawingFrameSettings;
   readonly titleBlock: DrawingTitleBlock;
   readonly generalTolerance?: string;
   /** 表題欄の項目・並び・固定文字(FR-725)。省略時は既定の項目。 */
-  readonly titleBlockFields?: readonly TitleBlockFieldDefinition[];
+  readonly titleBlockFields?: readonly (TitleBlockFieldDefinition & { readonly widthExpression?: string })[];
   /** 新規注記と表題欄の文字高さ(mm)。既存の個別指定はそのまま使う。 */
   readonly textHeight?: number;
+  /** 紙面のmmで評価した文字高さの原式。 */
+  readonly textHeightExpression?: string;
   /** 縮尺の候補。値自体はscaleに持つ。 */
   readonly scaleOptions?: readonly number[];
+  /** scaleOptionsと同じ順・個数の原式。 */
+  readonly scaleOptionExpressions?: readonly string[];
 }
 
 /** P8 で扱う投影図の種類(FR-702、FR-704、FR-713〜715)。 */

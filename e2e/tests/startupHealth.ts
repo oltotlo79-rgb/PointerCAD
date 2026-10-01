@@ -25,23 +25,49 @@ export async function installStartupDiagnostics(page:Page):Promise<void> {
   });
 }
 
+/**
+ * The startup screen keeps the app inert until the lazy 3D view and the cube are ready.
+ * Shared by waitForStartupHealth and launchDesktop, so both wait for the same condition.
+ */
+async function expectStartupReady(page: Page, errors: readonly string[]): Promise<void> {
+  await expect.poll(async () => {
+    if (errors.length > 0) return errors.join('\n');
+    return page.evaluate(() => {
+      const refusal = document.querySelector('.pcad-viewport [role="alert"]');
+      if (refusal !== null) return refusal.textContent;
+      const stats = window.pcadViewportRenderStats?.();
+      const canvas = document.querySelector('canvas.pcad-viewport__canvas');
+      return canvas !== null && stats !== undefined && stats.completedRenders > 0
+        && document.querySelector('canvas.pcad-viewcube') !== null ? 'ready' : 'waiting';
+    });
+  }, { message: '3D表示とビューキューブが起動すること', timeout: 15_000 }).toBe('ready');
+  await expect(page.locator('[data-startup-shell]'), '起動画面の終了後に操作する').toHaveCount(0);
+}
+
+/** Wait until the startup screen has finished, without the extra health checks and menu gesture. */
+export async function waitForStartupReady(page: Page): Promise<void> {
+  const errors: string[] = [];
+  const onError = (error: Error): void => { errors.push(error.message); };
+  page.on('pageerror', onError);
+  try { await expectStartupReady(page, errors); }
+  finally { page.off('pageerror', onError); }
+}
+
 /** Observe the lazy 3D mount as well as the earlier toolbar; fail at its real error. */
 export async function waitForStartupHealth(page: Page, info: TestInfo): Promise<void> {
   const errors: string[] = [];
   const onError = (error: Error): void => { errors.push(error.message); };
   page.on('pageerror', onError);
   try {
-    await expect.poll(async () => {
-      if (errors.length > 0) return errors.join('\n');
-      return page.evaluate(() => {
-        const refusal = document.querySelector('.pcad-viewport [role="alert"]');
-        if (refusal !== null) return refusal.textContent;
-        const stats = window.pcadViewportRenderStats?.();
-        const canvas = document.querySelector('canvas.pcad-viewport__canvas');
-        return canvas !== null && stats !== undefined && stats.completedRenders > 0
-          && document.querySelector('canvas.pcad-viewcube') !== null ? 'ready' : 'waiting';
-      });
-    }, { message: '3D表示とビューキューブが起動すること', timeout: 15_000 }).toBe('ready');
+    await expectStartupReady(page, errors);
+    const startup = await page.evaluate(() => ({
+      timeOrigin: performance.timeOrigin,
+      paint: performance.getEntriesByType('paint').map(entry => ({ name: entry.name, ms: entry.startTime })),
+      stages: performance.getEntriesByType('mark').filter(entry => entry.name.startsWith('pcad:startup:'))
+        .map(entry => ({ name: entry.name, ms: entry.startTime })),
+    }));
+    console.log(`[起動時間] ${JSON.stringify({ project: info.project.name, ...startup })}`);
+    await info.attach('startup-timing', { body: JSON.stringify(startup), contentType: 'application/json' });
     const graphics = await page.locator('canvas.pcad-viewport__canvas').evaluate((canvas) => {
       if (!(canvas instanceof HTMLCanvasElement)) throw new Error('3D canvas missing');
       const gl = canvas.getContext('webgl2');

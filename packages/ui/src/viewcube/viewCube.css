@@ -1,0 +1,140 @@
+/* The cube labels use the app font stack (faceTexture.ts). Do not fetch the drawing font here. */
+
+/* Keep the existing canvas and pointer surface; the extra room fits the compass. */
+.pcad-viewcube-control {
+  --pcad-viewcube-face-top: #536178;
+  --pcad-viewcube-face-front: #455269;
+  --pcad-viewcube-face-right: #3b485e;
+  --pcad-viewcube-face-left: #394559;
+  --pcad-viewcube-face-back: #333e52;
+  --pcad-viewcube-face-bottom: #2c374a;
+  --pcad-viewcube-edge: #7c8ba1;
+  --pcad-viewcube-text: #f1f5fb;
+  --pcad-axis-x: #f28487;
+  --pcad-axis-y: #85c897;
+  --pcad-axis-z: #89adff;
+  position: absolute;
+  top: var(--pcad-space-3);
+  right: var(--pcad-space-3);
+  width: calc(144px * var(--pcad-scale));
+  height: calc(144px * var(--pcad-scale));
+  box-sizing: border-box;
+  border: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+[data-theme='darkModern'] .pcad-viewcube-control {
+  --pcad-viewcube-face-top: #52647e;
+  --pcad-viewcube-face-front: #43566f;
+  --pcad-viewcube-face-right: #394b64;
+  --pcad-viewcube-face-left: #35465f;
+  --pcad-viewcube-face-back: #303f57;
+  --pcad-viewcube-face-bottom: #29374d;
+  --pcad-viewcube-edge: #8094b0;
+  --pcad-viewcube-text: #f0f5fd;
+  --pcad-axis-x: #f38990;
+  --pcad-axis-y: #84d2a1;
+  --pcad-axis-z: #93b6ff;
+}
+
+[data-theme='light'] .pcad-viewcube-control {
+  --pcad-viewcube-face-top: #596981;
+  --pcad-viewcube-face-front: #4e5e77;
+  --pcad-viewcube-face-right: #43536d;
+  --pcad-viewcube-face-left: #3e4e67;
+  --pcad-viewcube-face-back: #37475e;
+  --pcad-viewcube-face-bottom: #303f56;
+  --pcad-viewcube-edge: #697b94;
+  --pcad-viewcube-text: #f7f9fd;
+  --pcad-axis-x: #b23742;
+  --pcad-axis-y: #287542;
+  --pcad-axis-z: #2a59be;
+}
+
+[data-theme='lightModern'] .pcad-viewcube-control {
+  --pcad-viewcube-face-top: #566983;
+  --pcad-viewcube-face-front: #495e7b;
+  --pcad-viewcube-face-right: #3e526e;
+  --pcad-viewcube-face-left: #394d69;
+  --pcad-viewcube-face-back: #34445e;
+  --pcad-viewcube-face-bottom: #2d3d56;
+  --pcad-viewcube-edge: #637791;
+  --pcad-viewcube-text: #f7faff;
+  --pcad-axis-x: #ae3440;
+  --pcad-axis-y: #26733e;
+  --pcad-axis-z: #2855b8;
+}
+
+[data-theme='modern'] .pcad-viewcube-control {
+  --pcad-viewcube-face-top: #4e5b6d;
+  --pcad-viewcube-face-front: #414f63;
+  --pcad-viewcube-face-right: #354457;
+  --pcad-viewcube-face-left: #324052;
+  --pcad-viewcube-face-back: #2d394b;
+  --pcad-viewcube-face-bottom: #263244;
+  --pcad-viewcube-edge: #344357;
+  --pcad-viewcube-text: #f4f7fc;
+  --pcad-axis-x: #75232d;
+  --pcad-axis-y: #184d2e;
+  --pcad-axis-z: #203f75;
+}
+
+.pcad-viewcube.pcad-viewcube--detailed {
+  position: static;
+  display: block;
+  width: calc(144px * var(--pcad-scale));
+  height: calc(144px * var(--pcad-scale));
+  border-radius: 18%;
+  background: transparent;
+  filter: none;
+  transition: none;
+  pointer-events: auto;
+}
+
+.pcad-viewcube.pcad-viewcube--detailed[data-interaction='dragging'] {
+  cursor: grabbing;
+}
+
+/* Override the shell's legacy hover disc regardless of stylesheet load order. */
+.pcad-viewcube.pcad-viewcube--detailed:hover {
+  background: transparent;
+}
+
+.pcad-viewcube-home {
+  position: absolute;
+  top: calc(16px * var(--pcad-scale));
+  left: calc(8px * var(--pcad-scale));
+  display: grid;
+  place-items: center;
+  width: calc(26px * var(--pcad-scale));
+  height: calc(26px * var(--pcad-scale));
+  padding: 0;
+  color: var(--pcad-text-muted);
+  background: var(--pcad-surface);
+  border: 1px solid var(--pcad-border);
+  border-radius: calc(7px * var(--pcad-scale));
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pcad-viewcube-home:hover {
+  color: var(--pcad-text);
+  background: var(--pcad-surface-raised);
+  border-color: var(--pcad-accent);
+}
+
+.pcad-viewcube-home svg {
+  width: calc(16px * var(--pcad-scale));
+  height: calc(16px * var(--pcad-scale));
+}
+
+.pcad-viewcube-home:active {
+  color: var(--pcad-accent);
+  background: var(--pcad-accent-soft);
+}
+
+.pcad-viewcube-home:focus-visible {
+  outline: 2px solid var(--pcad-accent);
+  outline-offset: 2px;
+}

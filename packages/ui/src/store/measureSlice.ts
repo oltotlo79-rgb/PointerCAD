@@ -7,18 +7,30 @@ import type { StateCreator } from 'zustand';
 import type { MessageKey } from '../i18n/t.js';
 import {
   type MassPropertiesResult,
+  type NamedMeasurementState,
   type PartMeasurer,
   runMeasure,
 } from '../solid/measureCommands.js';
-import type { MeasurementState } from '../viewport/createMeasureLayer.js';
+import { formatMeasure } from '../solid/measure.js';
 import type { AppState } from './appState.js';
 import {
   calculateStrengthSession, createStrengthSession, editStrengthSession,
   type StrengthEdit, type StrengthSession,
 } from '../strength/strengthSession.js';
 
+export interface MassDensityDraft {
+  readonly documentId: string;
+  readonly bodyFeatureId: string | null;
+  readonly materialId: string;
+  readonly source: string;
+}
+
 /** 測定のスライスが持つ欄と操作。 */
 export interface MeasureSlice {
+  readonly massDensityDraft: MassDensityDraft | null;
+  readonly setMassDensityDraft: (draft: MassDensityDraft | null) => void;
+  /** Identity of the latest request; clearing or replacing a result invalidates it. */
+  readonly measurementRequest: object | null;
   readonly strengthSession: StrengthSession | null;
   readonly toggleStrength: () => void;
   readonly closeStrength: () => void;
@@ -36,12 +48,12 @@ export interface MeasureSlice {
    * 変更(FR-1106〜1110)では消えない**(形は 1 ミリも動いていないので、測った値は
    * そのまま正しい)。
    */
-  readonly measurement: MeasurementState | null;
+  readonly measurement: NamedMeasurementState | null;
   /**
    * いま出している質量特性(FR-1101、P5 タスク32)。無ければ null。
    *
    * 体積・重心・慣性モーメントはカーネルが測った**密度を掛けていない**値で、
-   * 材料と密度はプロパティ欄が持つ(材料を切り替えるたびに測り直さないため)。
+   * 材料と密度の入力は `massDensityDraft` が持つ(材料ごとに測り直さないため)。
    * 消える条件は `measurement` とまったく同じ(形の変更と Esc)。
    */
   readonly massProperties: MassPropertiesResult | null;
@@ -68,13 +80,12 @@ export interface MeasureSlice {
    * 「値は消えたのに重さだけ残る」状態にならない。
    */
   readonly setMeasurement: (
-    measurement: MeasurementState | null,
+    measurement: NamedMeasurementState | null,
     massProperties?: MassPropertiesResult | null,
   ) => void;
   /**
-   * 測った結果を消す(FR-1102、§0.a-0.68 の Esc)。**何も測っていなければ何もしない**
-   * ので、Esc の他の働き(道具の取り消し)を横取りするかどうかを呼ぶ側が
-   * `measurement` の有無で決められる。
+   * 測った値と進行中の要求を消す(FR-1102、§0.a-0.68 の Esc)。
+   * 結果も進行中の要求も無い場合は何もしない。
    */
   readonly clearMeasurement: () => void;
   /** 測れなかった理由を出す・消す(FR-1102、NFR-UX-5)。 */
@@ -112,6 +123,9 @@ export const createMeasureSlice: StateCreator<
   [],
   Omit<MeasureSlice, keyof MeasureInitialState>
 > = (set, get) => ({
+  massDensityDraft: null,
+  setMassDensityDraft: massDensityDraft => { set({ massDensityDraft }); },
+  measurementRequest: null,
   toggleStrength: () => {
     const state = get();
     set({ strengthSession: state.strengthSession === null ? createStrengthSession(state.displaySettings.lengthUnit) : null });
@@ -127,21 +141,23 @@ export const createMeasureSlice: StateCreator<
   },
   setMeasurement: (measurement, massProperties = null) => {
     // 測った値を出したら、前の断りは用済み(NFR-UX-5「押したら必ず何かが起きる」)。
-    set({ measurement, massProperties, measureErrorKey: null });
+    set({ measurement, massProperties, measureErrorKey: null, measurementRequest: null });
   },
   clearMeasurement: () => {
     const state = get();
-    if (state.measurement === null && state.massProperties === null) {
+    if (state.measurement === null && state.massProperties === null && state.measurementRequest === null) {
       // 何も出していない。Esc の他の働き(道具の取り消し)へそのまま譲る(§0.a-0.68)。
       return;
     }
-    set({ measurement: null, massProperties: null });
+    set({ measurement: null, massProperties: null, measurementRequest: null });
   },
   setMeasureError: (measureErrorKey) => {
     set({ measureErrorKey });
   },
   measureSelection: () => {
     const state = get();
+    const request = {};
+    set({ measurementRequest: request, measureErrorKey: null });
     void runMeasure({
       document: state.document,
       sketch: state.isComputing ? undefined : state.resolvedSketch,
@@ -154,13 +170,19 @@ export const createMeasureSlice: StateCreator<
     }).then((outcome) => {
       // 待っているあいだに文書が変わっていることがあるので、置く先は取り直す。
       const after = get();
+      if (after.measurementRequest !== request) return;
       // A result belongs to the document and geometry captured before the await.
-      if (after.document !== state.document || after.resolvedSketch !== state.resolvedSketch || after.bodies !== state.bodies) return;
-      if (outcome.ok) {
-        after.setMeasurement(outcome.measurement, outcome.massProperties);
+      if (after.document !== state.document || after.resolvedSketch !== state.resolvedSketch || after.bodies !== state.bodies) {
+        set({ measurementRequest: null });
         return;
       }
-      after.setMeasureError(outcome.reasonKey);
+      if (outcome.ok) {
+        after.setMeasurement({ ...outcome.measurement,
+          text: formatMeasure(outcome.measurement.result, after.displaySettings.lengthUnit),
+        }, outcome.massProperties);
+        return;
+      }
+      set({ measurementRequest: null, measureErrorKey: outcome.reasonKey });
     });
   },
   setPartMeasurer: (partMeasurer) => {

@@ -231,10 +231,15 @@ export function ToolMenu<Id extends string>({
                   setHighlight(index);
                 }}
                 onClick={() => {
-                  setRecentId(rememberRecentTool(items, recentId, item.id));
                   const command = commandOf(item.id);
-                  if (command !== null) executeCommand(command.id);
-                  else onChoose?.(item.id, activeTool === item.id);
+                  if (command !== null) {
+                    if (executeCommand(command.id).status === 'executed') {
+                      setRecentId(rememberRecentTool(items, recentId, item.id));
+                    }
+                  } else if (onChoose !== undefined) {
+                    onChoose(item.id, activeTool === item.id);
+                    if (ready) setRecentId(rememberRecentTool(items, recentId, item.id));
+                  }
                   setOpen(false);
                 }}
               >

@@ -7,6 +7,7 @@ import {
   type BaseWorkPlaneId,
 } from '@pointercad/model';
 import { useEffect, useState } from 'react';
+import './statusBar.css';
 
 import { missingAppearanceCount } from '../appearance/appearanceCommands.js';
 import { documentLabel } from '../file/partFile.js';
@@ -88,8 +89,8 @@ function widthPercent(ratio: number): string {
 /**
  * 下端のステータスバー(要件§7.1、FR-905)。
  *
- * 左は今の状況を 1 文で伝える(失敗 / 中止 / 計算の進み具合 / 吸着中の案内 / 道具ごとの
- * 操作ガイド)。どれを出すかの順番と文の組み立ては `statusText.ts` の純関数が決める。
+ * 左は今の状況を伝える。計算中も道具の操作ガイドを残し、計算状態を小さく並べる。
+ * どれを出すかの順番と文の組み立ては `statusText.ts` の純関数が決める。
  * 右は「作図面」「吸着」「単位」を小さな札で常に見せる。**単位の札だけは押せる**
  * (mm ↔ inch、FR-811。P6 タスク3)。札の数も区画も P5 までと同じで、増やしていない。
  * 失敗しても操作は止めず、帯の色と文言で知らせる(FR-504、NFR-RE-1)。
@@ -316,6 +317,7 @@ export function StatusBar(): React.JSX.Element {
 
   const line = describeStatus({
     assemblyMateStatus: assemblyMateStatus(mateDraft, mateDiagnosis, mateTargetErrors ?? new Map()),
+    assemblyMateActive: mateDraft !== null,
     assemblyOperationStatus,
     assemblyInterferenceCount,
     assemblyDragNotice,
@@ -385,7 +387,7 @@ export function StatusBar(): React.JSX.Element {
       <CommandLine onFailureChange={setCommandFailure} />
       <span className="pcad-statusbar__message" aria-live="polite">
         {statusIcon(line.kind)}
-        <span className="pcad-statusbar__text">{line.text}</span>
+        <span className="pcad-statusbar__text" title={line.text}>{line.text}</span>
         {/*
           案内に添える一言(3D スケッチで頂点を押せること、FR-330 / NFR-UX-7、タスク14)。
           計算中の進み具合に添える一言は下の進捗の並びで出すので、ここでは案内のときだけ。
@@ -394,6 +396,17 @@ export function StatusBar(): React.JSX.Element {
           <span className="pcad-statusbar__hint">{line.hint}</span>
         ) : null}
       </span>
+      {line.activity === null ? null : (
+        <span
+          className="pcad-statusbar__activity"
+          role="status"
+          aria-label={line.activity.detail}
+          title={line.activity.detail}
+        >
+          <span className="pcad-spinner" aria-hidden="true" />
+          <span>{line.activity.text}</span>
+        </span>
+      )}
       {line.progress === null ? null : (
         /*
          * 計算の進み具合と中止(NFR-PF-4)。中止は段と段の間でしか効かないので、
@@ -413,13 +426,11 @@ export function StatusBar(): React.JSX.Element {
               style={{ width: widthPercent(line.progress.ratio) }}
             />
           </span>
-          {line.hint === null ? null : (
-            <span className="pcad-statusbar__hint">{line.hint}</span>
-          )}
+          <span className="pcad-statusbar__hint">{t('statusBar.progressHint')}</span>
           <button
             type="button"
             className="pcad-button pcad-button--action pcad-statusbar__cancel"
-            title={line.hint ?? t('statusBar.cancel')}
+            title={t('statusBar.progressHint')}
             onClick={() => {
               cancelRecompute();
             }}

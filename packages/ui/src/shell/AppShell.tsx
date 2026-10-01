@@ -15,29 +15,13 @@ import { ImportUnitPanel } from '../file/ImportUnitPanel.js';
 import { ExportHandoffPanel } from '../file/ExportHandoffPanel.js';
 import { windowTitle } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
-import { HelpHost } from '../help/HelpHost.js';
-import {
-  DrawingPropertyPanel,
-  DrawingStatusBar,
-  DrawingToolbar,
-  DrawingTree,
-  DrawingViewport,
-} from '../drawing/DrawingWorkspace.js';
-import { PlaceComponentPopover } from '../assembly/PlaceComponentPopover.js';
-import { AssemblyMotionControls } from '../assembly/AssemblyMotionControls.js';
-import { AssemblyInterferencePanel } from '../assembly/AssemblyInterferencePanel.js';
-import { StandardPartPicker } from '../assembly/StandardPartPickerPanel.js';
-import { AssemblyPropertyPanel } from '../assembly/AssemblyPropertyPanel.js';
-import { ExplodePopover } from '../assembly/ExplodePopover.js';
-import { ReplacementPopover } from '../assembly/ReplacementPopover.js';
+import { deferredShell } from './deferredShell.js';
 import { ConstraintValuePopover } from '../sketch/ConstraintValuePopover.js';
 import { SketchTextInputHost } from '../sketch/SketchTextInputHost.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { DiscardChoice } from '../store/fileSlice.js';
-import { StrengthPropertyPanel } from '../strength/StrengthPropertyPanel.js';
-import { AssemblyTree } from './AssemblyTree.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
 import { PropertyPanel } from './PropertyPanel.js';
@@ -54,6 +38,19 @@ const ViewportCanvas = lazy(async () => {
   return { default: viewportModule.ViewportCanvas };
 });
 
+// Empty-part startup does not need help, a drawing workspace or the strength editor.
+// Keep their loading failures local, so the document and save controls stay available.
+const HelpHost = deferredShell(async () => ({ default: (await import('../help/HelpHost.js')).HelpHost }), true);
+const DrawingPropertyPanel = deferredShell(async () => ({ default: (await import('../drawing/DrawingWorkspace.js')).DrawingPropertyPanel }));
+const DrawingStatusBar = deferredShell(async () => ({ default: (await import('../drawing/DrawingWorkspace.js')).DrawingStatusBar }));
+const DrawingToolbar = deferredShell(async () => ({ default: (await import('../drawing/DrawingWorkspace.js')).DrawingToolbar }));
+const DrawingTree = deferredShell(async () => ({ default: (await import('../drawing/DrawingWorkspace.js')).DrawingTree }));
+const DrawingViewport = deferredShell(async () => ({ default: (await import('../drawing/DrawingWorkspace.js')).DrawingViewport }));
+const StrengthPropertyPanel = deferredShell(async () => ({ default: (await import('../strength/StrengthPropertyPanel.js')).StrengthPropertyPanel }));
+const AssemblyTree = deferredShell(async () => ({ default: (await import('./AssemblyTree.js')).AssemblyTree }));
+const AssemblyPropertyPanel = deferredShell(async () => ({ default: (await import('../assembly/AssemblyPropertyPanel.js')).AssemblyPropertyPanel }));
+const AssemblyOverlays = deferredShell(async () => ({ default: (await import('./AssemblyOverlays.js')).AssemblyOverlays }), true);
+
 /**
  * 画面の5区画(ツールバー / ツリー / ビューポート+ビューキューブ / プロパティ / ステータスバー)。
  * 区画は増やさない(rules/04-設計の規律.md、要件§7.1)。
@@ -69,6 +66,16 @@ export function AppShell(): React.JSX.Element {
    * (NFR-PF-1)。木・ツールバー・プロパティの中身の入れ替えは以後の段が足す。
    */
   const documentKind = useAppStore(activeDocumentKind);
+  const helpOpen = useAppStore(state => state.helpTopicId !== null);
+  const activeDocumentId = useAppStore(state => state.activeDocumentId);
+  const helpDocument = useRef(activeDocumentId);
+  useEffect(() => {
+    // Preserve HelpHost's document-change behaviour even while its chunk is still loading.
+    if (helpDocument.current !== activeDocumentId) {
+      helpDocument.current = activeDocumentId;
+      useAppStore.getState().closeHelp();
+    }
+  }, [activeDocumentId]);
   const strengthOpen = useAppStore(state => state.strengthSession !== null);
   const isComputing = useAppStore((state) => state.isComputing);
   // 幾何カーネルをまだ読み込み終えていないか(§0.a-0.23 ⑨)。初回の計算中だけ帯と札の
@@ -161,7 +168,7 @@ export function AppShell(): React.JSX.Element {
       rules/04-設計の規律.md)。E2E もここを見れば、どちらの画面が出ているかを判定できる。
     */
     <div className="pcad-shell" data-document-kind={documentKind}>
-      <HelpHost />
+      {helpOpen ? <HelpHost /> : null}
       <KeyboardControlHint />
       <ExportHandoffPanel />
       <DiscardConfirmDialog />
@@ -311,14 +318,7 @@ export function AppShell(): React.JSX.Element {
           */}
           <TutorialPanel />
           {documentKind === 'assembly' ? (
-            <>
-              <PlaceComponentPopover />
-              <StandardPartPicker />
-              <ExplodePopover />
-              <ReplacementPopover />
-              <AssemblyMotionControls />
-              <AssemblyInterferencePanel />
-            </>
+            <AssemblyOverlays />
           ) : documentKind === 'part' ? (
             <><SketchTextInputHost /><NumericInputPopover
               viewportWidth={viewportSize[0]}

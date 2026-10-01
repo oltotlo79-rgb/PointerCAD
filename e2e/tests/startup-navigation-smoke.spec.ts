@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { waitForStartupHealth } from './startupHealth.js';
 
 // Firefox cancels the old page's pending module fetches as soon as a navigation starts. The
 // startup retry (apps/web/src/startupRecovery.ts) must not take that for a load failure and
@@ -73,4 +74,64 @@ test('起動の読込み中に別の画面へ移っても、元の画面へ引�
   expect(new URL(page.url()).search).toBe('?startup-navigation=other');
   expect(observed.navigations.slice(before).map(url => new URL(url).search)).toEqual(['?startup-navigation=other']);
   expect(observed.startupErrors).toEqual([]);
+});
+
+for (const reducedMotion of ['reduce', 'no-preference'] as const) {
+  test(`JSなしでも起動画面を先に描き、8秒後に読み直す入口を表示する: ${reducedMotion}`, async ({ browser }, info) => {
+    const baseURL = info.project.use.baseURL;
+    if (typeof baseURL !== 'string') throw new Error('Startup test base URL is missing');
+    const context = await browser.newContext({ baseURL, javaScriptEnabled: false, reducedMotion });
+    try {
+      const page = await context.newPage();
+      await page.goto('/');
+      await expect(page.locator('[data-startup-shell]')).toBeVisible();
+      await expect(page.locator('.pcad-startup__mark')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'PointerCAD', exact: true })).toBeVisible();
+      await expect(page.getByRole('status')).toHaveText('画面を準備しています。');
+      const recovery = page.locator('.pcad-startup__recovery');
+      const retry = recovery.locator('a');
+      await expect(recovery).toBeHidden();
+      await expect(retry).toHaveAttribute('href', '');
+      await page.keyboard.press('Tab');
+      await expect(retry).not.toBeFocused();
+      await page.screenshot({ path: info.outputPath('startup-without-js-waiting.png') });
+      // Wait for the real CSS delay; script execution is disabled in this context.
+      await expect(page.getByRole('link', { name: '画面を読み込み直す', exact: true })).toBeVisible({ timeout: 12_000 });
+      const animation = await recovery.evaluate(element => {
+        const current = element.getAnimations()[0];
+        return { time: Number(current?.currentTime), delay: Number(current?.effect?.getTiming().delay) };
+      });
+      expect(animation.delay).toBe(8000);
+      expect(animation.time).toBeGreaterThanOrEqual(8000);
+      await expect(page.locator('[data-startup-failure]')).toBeHidden();
+      await page.getByRole('heading', { name: 'PointerCAD', exact: true }).click();
+      await page.keyboard.press('Tab');
+      await expect(retry).toBeFocused();
+      await page.screenshot({ path: info.outputPath('startup-without-js.png') });
+    } finally { await context.close(); }
+  });
+}
+
+test('本体の読込みを待つ間も起動画面を描き、減らす設定を守って実描画後に消す', async ({ page }, info) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  let release = (): void => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route(MAIN_CHUNK, async route => { await held; await route.continue(); });
+  try {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('[data-startup-shell]')).toBeVisible();
+    await expect(page.locator('.pcad-shell')).toHaveCount(0);
+    await expect(page.locator('.pcad-startup__recovery')).toBeHidden();
+    expect(await page.locator('.pcad-startup__track').evaluate(element =>
+      getComputedStyle(element, '::after').animationName)).toBe('none');
+    expect(await page.locator('body').evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgb(22, 24, 29)');
+    await page.screenshot({ path: info.outputPath('startup-waiting.png') });
+  } finally { release(); }
+  await expectEditorStarted(page);
+  await waitForStartupHealth(page, info);
+  expect(await page.locator('#root').evaluate(element => element instanceof HTMLElement && element.inert)).toBe(false);
+  const stages = await page.evaluate(() => ['bootstrap', 'load-start', 'modules-ready', 'view-ready', 'splash-hidden']
+    .map(stage => performance.getEntriesByName(`pcad:startup:${stage}`)[0]?.startTime ?? -1));
+  stages.forEach(value => { expect(value).toBeGreaterThanOrEqual(0); });
+  expect(stages).toEqual([...stages].sort((a, b) => a - b));
 });

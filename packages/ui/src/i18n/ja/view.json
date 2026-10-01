@@ -38,7 +38,7 @@
   "timeline.rollback": "途中まで戻しています({position} 件目 / {total} 件)",
   "timeline.rollbackTooltip": "作ったものの一覧の左のつまみで、どこまで戻すかを変えられます。最後の行のつまみを押すと元に戻ります。",
   "timeline.inserted": "つまみのところへ差し込みました。つまみは差し込んだ行へ進みました。",
-  "timeline.hint": "左端のつまみを引くと途中まで戻せます。",
+  "timeline.hint": "左端の丸を押すと途中まで戻せます。",
   "timeline.dragTooltip": "上下へドラッグすると、作る順序を入れ替えられます",
   "timeline.moveUp": "1 つ上へ",
   "timeline.moveDown": "1 つ下へ",

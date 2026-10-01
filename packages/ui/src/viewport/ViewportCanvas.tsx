@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { evaluateExpression } from '@pointercad/expression';
@@ -254,7 +255,7 @@ function SectionOffsetField(): React.JSX.Element | null {
       この欄を取り違えないようにするために添えてある(タスク44)。
     */
     <div className="pcad-popover pcad-section-view">
-      <span className="pcad-popover__title">{t('sectionView.title')}</span>
+      <DraggableWindowTitle className="pcad-popover__title">{t('sectionView.title')}</DraggableWindowTitle>
       <label className="pcad-field">
         <span className="pcad-field__label">{t('sectionView.offset')}</span>
         <input title={t('controlGuide.section.offset')}
@@ -397,9 +398,9 @@ function CanvasScaleField(): React.JSX.Element | null {
   return (
     <div className="pcad-popover pcad-canvas-scale">
       {/* 受け付けられない画像を断るだけのときは、寸法合わせの見出しにしない。 */}
-      <span className="pcad-popover__title">
+      <DraggableWindowTitle className="pcad-popover__title">
         {canvasScale === null ? t('toolbar.canvas.label') : t('canvas.title')}
-      </span>
+      </DraggableWindowTitle>
       {ready ? (
         <label className="pcad-field">
           <span className="pcad-field__label">{t('canvas.realLength')}</span>

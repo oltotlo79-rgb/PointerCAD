@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from './DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { type ExpressionError, type ExpressionValue } from '@pointercad/expression';
@@ -110,7 +111,7 @@ export function ConstraintValuePopover(): React.JSX.Element | null {
         }
       }}
     >
-      <div className="pcad-popover__title">{t('constraint.value.title')}</div>
+      <DraggableWindowTitle className="pcad-popover__title">{t('constraint.value.title')}</DraggableWindowTitle>
       <div className="pcad-popover__fields">
         <ExpressionField
           field={field}

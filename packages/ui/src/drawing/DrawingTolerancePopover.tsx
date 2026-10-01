@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { FIT_SYMBOLS, type Dimension } from '@pointercad/drawing';
 import { useState } from 'react';
 import { t } from '../i18n/t.js';
@@ -37,7 +38,7 @@ export function DrawingTolerancePopover({ dimension, inline = false }: { readonl
       commonNormalCoordinate: number(offset), textPosition: automaticText ? null : [number(textX), number(textY)],
     } }, dimension);
   }}>
-    <strong>{t('drawing.tolerance.title')}</strong>
+    <DraggableWindowTitle as="strong" enabled={!inline}>{t('drawing.tolerance.title')}</DraggableWindowTitle>
     <output title={t('drawing.error.dimensionReadOnly')}>{value ?? '…'}</output>
     <label title={t('drawing.dimension.prefix.controlHint')}>{t('drawing.dimension.prefix')}<input value={prefix} maxLength={100} onChange={(event) => setPrefix(event.target.value)} /></label>
     <label title={t('drawing.dimension.suffix.controlHint')}>{t('drawing.dimension.suffix')}<input value={suffix} maxLength={100} onChange={(event) => setSuffix(event.target.value)} /></label>

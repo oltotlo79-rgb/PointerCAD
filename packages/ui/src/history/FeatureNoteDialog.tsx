@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { FEATURE_NOTE_MAX_LENGTH, featureNoteOf, featureNoteTargetExists, setFeatureNote, type FeatureNoteTarget } from '@pointercad/model';
 import { t } from '../i18n/t.js';
@@ -42,7 +43,7 @@ export function FeatureNoteDialog({ draft, onClose }: { readonly draft: FeatureN
       }
     }}>
     <form onSubmit={event => { event.preventDefault(); commit(text); }}>
-      <h2 id={titleId}>{t('historyNote.title')}</h2>
+      <DraggableWindowTitle as="h2" id={titleId}>{t('historyNote.title')}</DraggableWindowTitle>
       <p className="pcad-feature-note__target">{draft.name}</p>
       <label htmlFor={inputId}>{t('historyNote.label')}</label>
       <textarea title={t('historyNote.hint').replace('{max}', String(FEATURE_NOTE_MAX_LENGTH))} id={inputId} ref={input} value={text} rows={8} aria-describedby={helpId} aria-invalid={tooLong}

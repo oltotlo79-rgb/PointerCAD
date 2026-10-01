@@ -1,0 +1,10 @@
+/* 操作案内の隣に計算状態を添える。小さい窓でも回る印と短い文言を残す。 */
+.pcad-statusbar__activity {
+  display: inline-flex;
+  flex: none;
+  gap: var(--pcad-space-1);
+  align-items: center;
+  font-size: var(--pcad-font-size-small);
+  color: var(--pcad-text-muted);
+  white-space: nowrap;
+}

@@ -1,3 +1,4 @@
+import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useState } from 'react';
 import { t } from '../i18n/t.js';
 import { exportDrawing, type DrawingOutputFormat } from './exportDrawing.js';
@@ -14,7 +15,7 @@ export function DrawingExportPopover({ onClose }: { readonly onClose: () => void
     setBusy(true);
     void exportDrawing({ format, dpi }).then((saved) => { setBusy(false); if (saved) onClose(); });
   }}>
-    <strong>{t('drawing.export.title')}</strong>
+    <DraggableWindowTitle as="strong">{t('drawing.export.title')}</DraggableWindowTitle>
     <label>{t('drawing.export.format')}<select aria-label={t('drawing.export.format')} title={t('drawing.export.formatHint')} value={format} disabled={busy} onChange={(event) => {
       const selected = formats.find((item) => item === event.target.value); if (selected !== undefined) setFormat(selected);
     }}>{formats.map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select></label>

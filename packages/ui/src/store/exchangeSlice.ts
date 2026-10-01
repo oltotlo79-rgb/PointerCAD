@@ -11,10 +11,14 @@ import type { ExportHandoff } from '../file/openWith.js';
 import { t } from '../i18n/t.js';
 import {
   type PartInspector,
+  type PrintCheckDraft,
+  DEFAULT_PRINT_CHECK_DRAFT,
+  evaluatePrintCheckDraft,
   PRINT_CHECK_STALE_KEY,
   runPrintCheck,
 } from '../solid/printCheckCommands.js';
 import type { AppState } from './appState.js';
+import { pendingFieldVariables } from '../shell/propertyFieldUnits.js';
 
 /**
  * 3D プリント向けの点検の要約と結果(FR-815、P6 §0.51・§0.53・§2.16、タスク42・43・46)。
@@ -28,6 +32,10 @@ export type { PrintabilityReport, PrintabilitySummary } from '@pointercad/model'
 
 /** 入出力と点検のスライスが持つ欄と操作。 */
 export interface ExchangeSlice {
+  /** Session settings; they do not change the document or create an Undo step. */
+  readonly printCheckDraft: PrintCheckDraft;
+  readonly setPrintCheckDraft: (draft: PrintCheckDraft) => void;
+  readonly printCheckRequest: object | null;
   readonly exportHandoff: ExportHandoff | null;
   readonly exportHandoffAttempt: object | null;
   readonly beginExportHandoff: () => object;
@@ -199,6 +207,9 @@ export const createExchangeSlice: StateCreator<
   [],
   Omit<ExchangeSlice, keyof ExchangeInitialState>
 > = (set, get) => ({
+  printCheckDraft: DEFAULT_PRINT_CHECK_DRAFT,
+  setPrintCheckDraft: printCheckDraft => { set({ printCheckDraft }); },
+  printCheckRequest: null,
   beginExportHandoff: () => {
     const attempt = {};
     set({ exportHandoff: null, exportHandoffAttempt: attempt });
@@ -231,6 +242,9 @@ export const createExchangeSlice: StateCreator<
       printability,
       printabilityOffsets: printability === null ? null : offsets,
       printCheckErrorMessage: null,
+      printCheckRequest: null,
+      isInspectingPrint: false,
+      printCheckCancelRequested: false,
     });
   },
   invalidatePrintability: () => {
@@ -238,6 +252,9 @@ export const createExchangeSlice: StateCreator<
       printability: null,
       printabilityOffsets: null,
       printCheckErrorMessage: t(PRINT_CHECK_STALE_KEY),
+      printCheckRequest: null,
+      isInspectingPrint: false,
+      printCheckCancelRequested: false,
     });
   },
   inspectPrintability: () => {
@@ -251,7 +268,20 @@ export const createExchangeSlice: StateCreator<
       set({ printCheckCancelRequested: true });
       return;
     }
+    const evaluated = evaluatePrintCheckDraft(state.printCheckDraft, {
+      variables: state.parameterAnalysis.variables,
+      exactVariables: state.parameterAnalysis.exactVariables,
+      pendingVariables: pendingFieldVariables(state),
+      nonLengthVariables: state.nonLengthVariables,
+      lengthUnit: state.displaySettings.lengthUnit,
+    });
+    if (evaluated.criteria === null) {
+      set({ printCheckErrorMessage: evaluated.thicknessError ?? evaluated.angleError });
+      return;
+    }
+    const request = {};
     set({
+      printCheckRequest: request,
       isInspectingPrint: true,
       printCheckCancelRequested: false,
       printCheckErrorMessage: null,
@@ -262,17 +292,25 @@ export const createExchangeSlice: StateCreator<
       bodies: state.bodies,
       selection: state.selection,
       inspector: state.partInspector,
+      criteria: evaluated.criteria,
       // 中止の答えは**その場のストア**から読む(押した瞬間の値を閉じ込めない)。
-      shouldCancel: () => get().printCheckCancelRequested,
+      shouldCancel: () => get().printCheckCancelRequested || get().printCheckRequest !== request
+        || get().document !== state.document || get().bodies !== state.bodies,
     }).then((outcome) => {
       // 待っているあいだに文書が変わっていることがあるので、置く先は取り直す。
       const after = get();
+      if (after.printCheckRequest !== request) return;
+      if (after.document !== state.document || after.bodies !== state.bodies) {
+        after.invalidatePrintability();
+        return;
+      }
       if (outcome.ok) {
         after.setPrintability(outcome.report, outcome.offsets);
         set({ isInspectingPrint: false, printCheckCancelRequested: false });
         return;
       }
       set({
+        printCheckRequest: null,
         isInspectingPrint: false,
         printCheckCancelRequested: false,
         printCheckErrorMessage: outcome.message,

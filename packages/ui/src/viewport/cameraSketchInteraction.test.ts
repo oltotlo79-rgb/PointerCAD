@@ -4,6 +4,7 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { attachCameraControls } from './attachCameraControls.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import type { ViewportScene } from './createViewportScene.js';
+import { createNumericInput } from '../sketch/numericInput.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -13,10 +14,15 @@ describe('視点を動かす間の作図入力の所有権', () => {
     { name: '中ボタンの平行移動', button: 1, shiftKey: true, altKey: false },
     { name: 'Altと左ボタンの回転', button: 0, shiftKey: false, altKey: true },
     { name: 'Altと左ボタンの平行移動', button: 0, shiftKey: true, altKey: true },
+    { name: '右ボタンの平行移動', button: 2, shiftKey: false, altKey: false },
+    { name: '線分を入力中の右ボタンの平行移動', button: 2, shiftKey: false, altKey: false, drafting: true },
   ].flatMap(mode => ['pointerup', 'pointercancel', 'lostpointercapture'].map(end => ({ ...mode, end }))))(
     '$nameでは吸着を繰り返さず、$end後は同じ文書で再開する', mode => {
       resetTestStore();
       useAppStore.setState({ activeTool: 'select', selectionKind: 'body', snapEnabled: true, snapKinds: ['grid'] });
+      if ('drafting' in mode && mode.drafting) {
+        useAppStore.setState({ activeTool: 'line', numericInput: createNumericInput('line', 'lineStart') });
+      }
       const captured = new Set<number>();
       const canvas = Object.assign(new EventTarget(), {
         clientHeight: 600,
@@ -35,7 +41,8 @@ describe('視点を動かす間の作図入力の所有権', () => {
       const sketch = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging());
       const send = (type: string, props: object = {}): void => {
         canvas.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), {
-          pointerId: 1, button: 0, buttons: 0, clientX: 0, clientY: 0, altKey: false, shiftKey: false, ...props,
+          pointerId: 1, pointerType: 'mouse', button: mode.button, buttons: type === 'pointerup' ? 0 : mode.button === 2 ? 2 : 0,
+          clientX: 0, clientY: 0, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false, ...props,
         }));
       };
       let updates = 0;
@@ -57,6 +64,11 @@ describe('視点を動かす間の作図入力の所有権', () => {
         expect(useAppStore.getState().document).toBe(before.document);
         expect(useAppStore.getState().requestedGeneration).toBe(before.requestedGeneration);
         expect(useAppStore.getState().selection).toBe(before.selection);
+        expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+        expect(useAppStore.getState().activeTool).toBe(before.activeTool);
+        expect(useAppStore.getState().numericInput).toBe(before.numericInput);
+        expect(useAppStore.getState().pendingStart).toBe(before.pendingStart);
+        expect(useAppStore.getState().shapeDraft).toBe(before.shapeDraft);
         send(mode.end);
         send('pointermove');
         expect(useAppStore.getState().snapIndicator?.kind).toBe('grid');

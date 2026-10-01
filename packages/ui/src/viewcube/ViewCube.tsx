@@ -1,34 +1,27 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { t } from '../i18n/t.js';
+import { HomeIcon } from '../shell/icons.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { orbit, type OrbitState } from '../viewport/cameraMath.js';
 import { readThemeColors } from '../viewport/themeColors.js';
 import { createViewCubeScene } from './createViewCubeScene.js';
+import { CUBE_FACES, FACE_FONT } from './faceTexture.js';
 import {
   interpolateOrbit,
   orbitStateForRegion,
   VIEW_TRANSITION_DURATION_MS,
   type ViewCubeRegion,
 } from './viewCubeMath.js';
+import './viewCube.css';
 
-/** 表示の一辺(画素)。実寸は appShell.css の .pcad-viewcube が決め、読み取って合わせる。 */
-const CUBE_SIZE_PIXELS = 120;
+/** Canvas and compass fit inside the existing viewport overlay. */
+const CUBE_SIZE_PIXELS = 144;
 
 /** これ以上動いたらクリックではなくドラッグとみなす(画素)。 */
 const DRAG_THRESHOLD_PIXELS = 4;
 
 const PRIMARY_BUTTON = 0;
-
-/**
- * 面を押して視点が移った直後に、ホバーの丸い下地を消しておくための打ち消し。
- *
- * CSS の `.pcad-viewcube:hover` は指が同じ場所に留まっている限り外れないので、
- * ポインタが動かなくても下地が残ってしまう(docs/報告記録.md 2026-09-03 00:06 の (c))。
- * 要素に直接書いた指定は CSS の規則より強いため、ここで背景を打ち消す。
- * 次にポインタが動いたら外し、ふつうのホバーへ戻す。
- */
-const HOVER_SUPPRESSED_STYLE: React.CSSProperties = { background: 'transparent' };
 
 /** クリックで始まった視点の移り変わり。 */
 interface ViewTransition {
@@ -64,7 +57,7 @@ export interface ViewCubeProps {
  * 同じ描画機会に 1 回だけ描く。自前でこまを進めるのはクリックの遷移中だけで、遷移が終われば
  * 予約を止める。待機中に requestAnimationFrame が回り続けないようにするため(NFR-PF-1)。
  *
- * 面を押して視点が移り始めたら、指が止まったままでも強調(面の青と丸い下地)を消す。
+ * 面を押して視点が移り始めたら、指が止まったままでも面と輪郭の強調を消す。
  * 押した後も光ったままだと、まだ押せる場所を指しているのか区別が付かないため(NFR-UX-7)。
  *
  * 面・稜線・文字・ホバーの色はテーマに追従する(FR-908、P4 タスク2 仕上げ)。
@@ -74,9 +67,6 @@ export interface ViewCubeProps {
  */
 export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // ホバーの見た目だけの一時状態なのでストアへは載せない(rules/04-設計の規律.md)。
-  const [hoverSuppressed, setHoverSuppressed] = useState(false);
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) {
@@ -84,11 +74,32 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
     }
 
     const scene = createViewCubeScene(canvas, CUBE_SIZE_PIXELS);
+    const control = canvas.parentElement;
+    let offsetX = 0, offsetY = 0;
+
+    // A wrapped toolbar can put the viewport on a fractional CSS pixel. Align
+    // the entire control, including its home button, without changing its size.
+    // Integer CSS bounds also avoid an extra row in enclosing screenshot clips.
+    const alignControl = (): void => {
+      if (control === null) return;
+      const bounds = control.getBoundingClientRect();
+      const ratio = globalThis.devicePixelRatio || 1;
+      let grid = 1;
+      // Common fractional densities (125%, 150%, 175%) share a grid with CSS.
+      while (grid < 8 && Math.abs(grid * ratio - Math.round(grid * ratio)) > 1e-6) grid += 1;
+      if (grid === 8) grid = 1;
+      const x = bounds.left - offsetX, y = bounds.top - offsetY;
+      offsetX = Math.round(x / grid) * grid - x;
+      offsetY = Math.round(y / grid) * grid - y;
+      control.style.translate = `${offsetX}px ${offsetY}px`;
+    };
 
     let frameId = 0;
     let transition: ViewTransition | null = null;
     let highlighted: ViewCubeRegion | null = null;
     let dragging = false;
+    let pressed = false;
+    let disposed = false;
     let movedDistance = 0;
     let lastX = 0;
     let lastY = 0;
@@ -99,9 +110,10 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
     const drawOnce = (): void => {
       if (themeDirty) {
         themeDirty = false;
-        scene.setThemeColors(readThemeColors());
+        alignControl();
+        scene.setThemeColors(readThemeColors(control ?? canvas));
       }
-      scene.render(getOrbit(), highlighted);
+      scene.render(getOrbit(), highlighted, pressed);
     };
 
     /** 遷移の 1 こまを進める。遷移が終わったら次のこまを予約せず、ループを止める。 */
@@ -141,18 +153,6 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       drawOnce();
     };
 
-    /** いまホバーの下地を打ち消しているか。変わったときだけ描き直しを頼む。 */
-    let hoverSuppressedNow = false;
-
-    /** ホバーの丸い下地を消す・戻す。 */
-    const suppressHover = (next: boolean): void => {
-      if (hoverSuppressedNow === next) {
-        return;
-      }
-      hoverSuppressedNow = next;
-      setHoverSuppressed(next);
-    };
-
     // ビューポートが描いたら、同じ視点でビューキューブも描き直す。
     const unsubscribeDraw = subscribeDraw(drawOnce);
 
@@ -162,6 +162,12 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
     const unsubscribeTheme = useAppStore.subscribe((next, previous) => {
       if (next.displaySettings.theme !== previous.displaySettings.theme) {
         themeDirty = true;
+      }
+      // Home must win even if it is requested during a cube transition.
+      if (next.homeViewRequestCount !== previous.homeViewRequestCount) {
+        transition = null;
+        highlighted = null;
+        pressed = false;
       }
     });
 
@@ -181,17 +187,20 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
         return;
       }
       dragging = true;
+      pressed = true;
+      transition = null;
       movedDistance = 0;
       lastX = event.clientX;
       lastY = event.clientY;
       canvas.setPointerCapture(event.pointerId);
+      canvas.dataset.interaction = 'pressed';
+      highlighted = pickAt(event);
+      drawOnce();
       event.preventDefault();
     };
 
     const onPointerMove = (event: PointerEvent): void => {
       if (!dragging) {
-        // 指が動いたらふつうのホバーへ戻す(直前のクリックで消していても)。
-        suppressHover(false);
         setHighlighted(pickAt(event));
         return;
       }
@@ -207,8 +216,8 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
         // 予約済みのこまは stepTransition が transition === null を見て自分で止める。
         transition = null;
         highlighted = null;
-        // 回し始めれば指は動いている。ふつうのホバーへ戻してよい。
-        suppressHover(false);
+        pressed = false;
+        canvas.dataset.interaction = 'dragging';
         // setOrbit がビューポートの描画を予約し、その通知でビューキューブも描き直る。
         setOrbit(orbit(getOrbit(), deltaX, deltaY));
       }
@@ -225,19 +234,22 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
         return;
       }
       dragging = false;
+      pressed = false;
+      delete canvas.dataset.interaction;
       releaseCapture(event);
 
       const region = pickAt(event);
       if (movedDistance > DRAG_THRESHOLD_PIXELS || region === null) {
         // 回し終わり、または立方体の外。指のある場所のホバーを出し直すだけ。
         setHighlighted(region);
+        drawOnce();
         return;
       }
 
-      // ここから視点が移る。指が止まったままでも強調は残さない(面の青も丸い下地も消す)。
+      // ここから視点が移る。指が止まったままでも面と輪郭の強調は残さない。
       // pointerleave を待つと、押した場所から動かさない限り強調が残り続けるため。
       setHighlighted(null);
-      suppressHover(true);
+      drawOnce();
 
       // 遷移中に押し直されたら、前の遷移は今の視点から引き継いで打ち切る。
       const current = getOrbit();
@@ -250,20 +262,25 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
 
     const onPointerCancel = (event: PointerEvent): void => {
       dragging = false;
+      pressed = false;
+      delete canvas.dataset.interaction;
       releaseCapture(event);
-      suppressHover(false);
       setHighlighted(null);
+      drawOnce();
     };
 
     /** 捕捉が外部要因で外れたときも掴んだままにしない。 */
     const onLostPointerCapture = (): void => {
+      if (!dragging) return;
       dragging = false;
+      pressed = false;
+      delete canvas.dataset.interaction;
+      setHighlighted(null);
+      drawOnce();
     };
 
     const onPointerLeave = (): void => {
       if (!dragging) {
-        // 出ていけば CSS のホバーも外れるので、打ち消しはもう要らない。
-        suppressHover(false);
         setHighlighted(null);
       }
     };
@@ -276,15 +293,28 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
     canvas.addEventListener('pointerleave', onPointerLeave);
 
     // 大きさを変えると描画バッファが空になるので、合わせ直したその場で描く。
-    const observer = new ResizeObserver(() => {
+    const resize = (): void => {
+      alignControl();
       scene.resize(canvas.clientWidth);
       drawOnce();
-    });
+    };
+    const observer = new ResizeObserver(resize);
     observer.observe(canvas);
-    scene.resize(canvas.clientWidth);
-    drawOnce();
+    // Toolbar wrapping can move the overlay without changing the cube's size.
+    if (control?.parentElement !== null && control?.parentElement !== undefined) observer.observe(control.parentElement);
+    globalThis.addEventListener('resize', resize);
+    resize();
+
+    // Canvas text is rasterized once. Rebuild it after the label font is ready;
+    // otherwise the first fallback glyphs would remain for the entire session.
+    void document.fonts.load(FACE_FONT, CUBE_FACES.map(face => t(face.labelKey)).join('')).then(() => {
+      if (disposed) return;
+      themeDirty = true;
+      drawOnce();
+    }).catch(() => undefined);
 
     return () => {
+      disposed = true;
       if (frameId !== 0) {
         globalThis.cancelAnimationFrame(frameId);
       }
@@ -297,19 +327,30 @@ export function ViewCube({ getOrbit, setOrbit, subscribeDraw }: ViewCubeProps): 
       canvas.removeEventListener('lostpointercapture', onLostPointerCapture);
       canvas.removeEventListener('pointerleave', onPointerLeave);
       observer.disconnect();
+      globalThis.removeEventListener('resize', resize);
       scene.dispose();
     };
   }, [getOrbit, setOrbit, subscribeDraw]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="pcad-viewcube"
-      style={hoverSuppressed ? HOVER_SUPPRESSED_STYLE : undefined}
-      width={CUBE_SIZE_PIXELS}
-      height={CUBE_SIZE_PIXELS}
-      aria-label={t('viewCube.label')}
-      title={t('viewCube.tooltip')}
-    />
+    <div className="pcad-viewcube-control">
+      <canvas
+        ref={canvasRef}
+        className="pcad-viewcube pcad-viewcube--detailed"
+        width={CUBE_SIZE_PIXELS}
+        height={CUBE_SIZE_PIXELS}
+        aria-label={t('viewCube.label')}
+        title={t('viewCube.tooltip')}
+      />
+      <button
+        type="button"
+        className="pcad-viewcube-home"
+        aria-label={`${t('viewCube.label')}: ${t('toolbar.home.label')}`}
+        title={t('toolbar.home.tooltip')}
+        onClick={() => useAppStore.getState().requestHomeView()}
+      >
+        <HomeIcon />
+      </button>
+    </div>
   );
 }

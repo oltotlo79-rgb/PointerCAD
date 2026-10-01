@@ -73,21 +73,21 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 | **Fusionのように名前付きの寸法や式で形を管理する**。Fusionにもパラメータと数式による寸法管理があります。[公式説明](https://help.autodesk.com/view/fusion360/ENU/?contextId=SLD-REF-PARAMETERS) | パラメータを加工寸法に加え、点を置くコマンド入力にも使います。`板厚`などの日本語名で、座標から加工までの寸法の関係を読める形で残せます。 |
 | **OpenSCADのように数式やパラメータで形を定義する**。OpenSCADはモデルを記述したスクリプトから形を生成します。[公式説明](https://openscad.org/about.html) | 画面での点・辺・面の選択や式入力と、JavaScriptによる自動作図を組み合わせられます。自動で作った形も通常の履歴に残り、画面で後から寸法を編集できます。 |
 
-比較は各製品の公式説明とPointerCAD(デスクトップ版v1.0.0)の機能に基づく、操作方法の整理です（表内3件の公式資料を2026年9月27日に再確認し、記載内容と相違なし）。
+比較は各製品の公式説明とPointerCAD(デスクトップ版v1.0.1)の機能に基づく、操作方法の整理です（表内3件の公式資料を2026年9月27日に再確認し、記載内容と相違なし）。
 
 ## 実際の画面・操作デモ
 
-以下はPointerCADデスクトップ版v1.0.0の実画面です。座標入力・寸法変更・組み立ての短い操作動画は、公開後に順次掲載します。
+以下はPointerCADデスクトップ版v1.0.1の実画面です。座標入力・寸法変更・組み立ての短い操作動画は、公開後に順次掲載します。
 
 <!-- pointercad:demo-media:start -->
 
 **穴付きの輪郭を使い、二つの縁へフランジを作成。** 曲げ角や内半径、K係数を後から式で編集できます。
 
-![穴付き台形のフランジを両側に持つ板金部品の実画面](packages/help-content/docs/ja/images/sheet-profile-created.png)
+![穴付き台形のフランジを両側に持つ板金部品の実画面](packages/help-content/docs/ja/images/sheet-profile-created-screen.png)
 
 **展開した形を、曲げ指示と穴表が付いた製作図へ。** 部品の穴位置を変えた後も、図面を更新して追従させられます。
 
-![板金の展開図に曲げ指示と穴表を配置した実画面](packages/help-content/docs/ja/images/sheet-flat-hole-table.png)
+![板金の展開図に曲げ指示と穴表を配置した実画面](packages/help-content/docs/ja/images/sheet-flat-hole-table-screen.png)
 
 
 <!-- 公開する実画面と操作動画の選定・撮影・掲載条件は rules/05-リリース.md §11.4 を参照。公開後は上の案内を実画像・動画へのリンクと説明に置き換える。 -->
@@ -95,28 +95,40 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 
 ## できること
 
-| 用途 | v1.0.0で使える機能 |
+| 用途 | v1.0.1で使える機能 |
 |---|---|
 | 下書きを描く | 点・線分・円・円弧・矩形・多角形・楕円・スプライン、交点の自動接続・折曲げ・区間削除、寸法や位置の拘束、3Dスケッチ |
 | 立体を作る | 押し出し・回転・スイープ・ロフト、スプライン断面・案内線を使った曲面、箱・球・円柱などの基本形状、立体の結合・切り抜き |
 | 部品を加工する | 穴・ねじ穴・面取り・角丸め、ミラー・配列、平面による切断、コイルばね |
 | 組み立てる | 部品の配置と合致、回転・スライド、干渉確認、分解表示、規格部品、部品表 |
-| 図面を作る | 三面図・断面図・詳細図、寸法・公差・幾何公差、表面性状・溶接記号、部品表・穴表、PDF・SVG・DXF出力 |
+| 図面を作る | 三面図・断面図・詳細図、寸法・公差・幾何公差、表面性状・溶接記号、部品表・穴表、用紙の縮尺・文字高さへの式の入力、PDF・SVG・DXF出力 |
 | 板金を設計する | 基板、複数縁・任意輪郭のフランジ、指定線の曲げ、曲げリリーフ、K係数による展開、曲げ指示付き図面、折曲げ・展開STEP |
 | 数式から形を作る | 座標式・媒介式・等式からの関数曲線・曲面（XYZの範囲で切り取り）、閉じた曲面の立体化、関数上の点・接線・法線・断面線、係数のスライダー、自動作図からの関数の作成 |
 | 形を調べる | 距離・角度・体積・質量、断面表示、3Dプリント向け点検 |
 | 強度を検討する | 梁の曲げ・軸のねじり・ボルトの引張の簡易計算、公式と数値の代入、材料値の出典・適用条件の確認 |
 | 作図を自動化する | JavaScriptの作図API、例からの実行、処理全体のUndo、中止、処理ファイルとモジュールの保存、よく使う処理の道具登録 |
+| 画面を動かす | 中ボタンでの回転、右ドラッグでの平行移動、ホイールでの拡大縮小、面・辺・角を押して向きを切り替える立方体と最初の向きへ戻す家のボタン、入力の窓を見出しのドラッグで移動 |
 | 見やすくする | 色・材質・透明度の指定、選択セット、表示テーマと画面の拡大率の切替 |
 | 履歴を管理する | 履歴の各段へのメモ、履歴のフォルダーとタイムライン（途中まで戻す・途中に差し込む・順序の入替え）、2つの保存ファイルの変更と形の違いの比較、名前での検索 |
-| 操作を覚える | アプリ内のヘルプと説明の検索、入力中のF1、ボタンや入力欄の短い説明、初めての作図の案内、右クリックの8方向メニュー、ショートカットの変更 |
+| 操作を覚える | アプリ内のヘルプと説明の検索、入力中のF1、ボタンや入力欄の短い説明、初めての作図の案内、計算中も下の帯に残る次の操作の案内、使えない操作の理由と次にすることの表示、右クリックの8方向メニュー、ショートカットの変更 |
 | 保存・受け渡し | 編集可能な文書の保存・再読込、自動保存からの復元、STEP・STL・DXFの読み書き |
 
-上記はデスクトップ版v1.0.0で使える機能です。下の「数学の追加分野」は受入の確認中のため今回のv1.0.0には含まれず、この表にも含めていません。実装状況は[開発計画](docs/plans/)と[進捗台帳](docs/progress.json)で確認できます。
+上記はデスクトップ版v1.0.1で使える機能です。下の「数学の追加分野」は受入の確認中のため今回のv1.0.1には含まれず、この表にも含めていません。実装状況は[開発計画](docs/plans/)と[進捗台帳](docs/progress.json)で確認できます。
+
+### v1.0.1で変わったこと
+
+- **右ドラッグで画面を平行移動**：3D表示を右ボタンで引っ張ると、表示の中心を動かせます。右ボタンを動かさずに押して離したときは、今までどおり道具の一覧が開きます。[画面を回す・動かす・拡大する](packages/help-content/docs/ja/viewport.md)
+- **起動してすぐ出る起動の画面**：アプリを開くとすぐに製品名の入った画面が出て、3D表示の準備ができると切り替わります。起動の時に読み込む量も減らしました。
+- **入力の窓を動かせる**：点・線分の座標や加工の寸法、数式などを入れる窓は、見出しをドラッグして、見たい形に重ならない所へ動かせます。入力中の値と焦点は保たれます。[入力の窓を動かす](packages/help-content/docs/ja/numeric-input.md#入力の窓を動かす)
+- **向きの立方体を見やすく**：角を面取りした立方体に、触れた所の強調、方位のリング、赤・緑・青のX・Y・Z、最初の向きへ戻す家のボタンを付けました。
+- **計算中も次の操作が分かる**：形を計算している間も、下の帯に選んだ道具の案内が残り、隣の印で計算中であることが分かります。長い計算では進み具合と中止のボタンも出ます。[画面の見方](packages/help-content/docs/ja/tutorial.md#画面の見方)
+- **使えない操作の理由をそろえて表示**：使えない操作を選んだときは、理由と次にすることを下の帯に表示します。
+- **図面の用紙に式を使える**：用紙の縮尺・縮尺の候補・文字高さ・表題欄の幅の比率に`1/2`のような式を入力でき、保存して開き直した後も式のまま編集できます。[用紙の設定](packages/help-content/docs/ja/drawing-scale.md#用紙の設定)
+- このほか、測定・質量の表示、角丸め・面取りの後の面のつながり、部品と組立のメニューのキー操作、日本語入力の確定のEnterなどを直し、説明書の画像を全て今の画面で撮り直しました。詳しくは[v1.0.1のリリースノート](docs/releases/v1.0.1.md)をご覧ください。
 
 ## 数式から曲線・曲面を設計する
 
-**座標式・媒介式・等式から曲線・曲面を作る関数作図は、v1.0.0に実装済みです。関数上の点、接線・法線、断面線、係数の調整、自動作図からの作成を含め、作成・保存・再編集の操作をChrome・Firefox・デスクトップ版の実画面で確認しています。**
+**座標式・媒介式・等式から曲線・曲面を作る関数作図は、v1.0.0から実装済みです。関数上の点、接線・法線、断面線、係数の調整、自動作図からの作成を含め、作成・保存・再編集の操作をChrome・Firefox・デスクトップ版の実画面で確認しています。**
 
 「作図」→「関数作図」で式を入力し、X・Y・Zそれぞれの最小値・最大値を指定します。無限に続く関数でも、その範囲にある部分だけがCADの曲線になります。画面で回転して形を確認してから確定でき、原式・係数・範囲を保存して再編集できます。座標軸Xと同名の係数X、πなどの定数は入力欄で区別します。[関数曲線の操作説明](packages/help-content/docs/ja/function-curve.md)
 
@@ -124,15 +136,15 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 
 三角関数の角度は**度が既定で、必要に応じてラジアンへ切り替えられます**。選んだ単位も式と一緒に保存するため、開き直しても式の意味を保持します。
 
-![v1.0.0の実画面：式とXYZの範囲を指定し、切り取られた曲線を確認する](packages/help-content/docs/ja/images/function-xyz-preview.png)
+![v1.0.1の実画面：式とXYZの範囲を指定し、切り取られた曲線を確認する](packages/help-content/docs/ja/images/function-xyz-preview-screen.png)
 
 `Z=X+Y`の斜面や`Z=U*V`の鞍状の面も、**XYZの範囲で切り取ったCAD曲面**として作れます。媒介変数U・Vの範囲とXYZの範囲を別々に指定し、回転・拡大して確認できます。開いた面の体積を立体の体積として表示することはありません。[関数曲面の操作説明](packages/help-content/docs/ja/function-surface.md)
 
-![v1.0.0の実画面：U・VとXYZの範囲を指定して関数曲面を確認する](packages/help-content/docs/ja/images/function-surface-parametric.png)
+![v1.0.1の実画面：U・VとXYZの範囲を指定して関数曲面を確認する](packages/help-content/docs/ja/images/function-surface-parametric-screen.png)
 
 球面・トーラスなどの例を選んで始められます。**式や係数を残したまま、閉じた曲面を体積のある立体として使える**ことも特徴です。XYZの範囲で球面を途中まで切ったときは、開いた曲面になります。切り口に底面を勝手に追加しません。
 
-![v1.0.0の実画面：球面の式と範囲から閉じた立体を作り、面積と体積を確認する](packages/help-content/docs/ja/images/function-closed-sphere.png)
+![v1.0.1の実画面：球面の式と範囲から閉じた立体を作り、面積と体積を確認する](packages/help-content/docs/ja/images/function-closed-sphere-screen.png)
 
 関数で作った形は、次の作図や設計へつなげられます。
 
@@ -144,7 +156,7 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 
 ### 数学の追加分野（受入の確認中）
 
-座標欄や関数の式で使える数学の分野を広げています。分数、累乗、階乗、絶対値、三角関数、対数、微積分、行列、複素数、確率統計などを分野別に整理し、XYZ、係数、πなどの定数、演算記号を区別して指定できる入力欄と数学パレットで使います。計算結果の型や複数解も明示します。**次の内容は作業中の版に組み込み、初回リリース前の受入の確認を進めています。確認が終わるまでは完成した機能として扱いません。**
+座標欄や関数の式で使える数学の分野を広げています。分数、累乗、階乗、絶対値、三角関数、対数、微積分、行列、複素数、確率統計などを分野別に整理し、XYZ、係数、πなどの定数、演算記号を区別して指定できる入力欄と数学パレットで使います。計算結果の型や複数解も明示します。**次の内容は作業中の版に組み込み、受入の確認を進めています。確認が終わるまでは完成した機能として扱いません。**
 
 - **データから求めた値を、寸法や位置に使う**：測定データの平均・母分散／標本分散・相関・回帰を同じ数式入力で求め、式として保存します。整数・小数・分数に確定できるデータを扱います。[統計入力の規約と操作](packages/help-content/docs/ja/math-input.md#データから統計量を求める)
 - **連立一次式と行列から値を決める**：解が一つに決まる式と自由な値が残る式を区別し、使う成分を明示して保存します。行列・統計などは数学の分野で絞り込んで探せます。QR分解では直交した方向とその係数を、LU分解では行交換と下三角・上三角の成分を取り出せます。特性多項式の係数や、2次・三角行列の固有値も同じ数式欄で扱います。[行列・連立一次式の入力](packages/help-content/docs/ja/math-input.md#連立一次式と行列から値を求める)
@@ -160,10 +172,10 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 <!-- pointercad:release-links:start -->
 | 利用方法 | 公開先 |
 |---|---|
-| Windows版のインストーラーをダウンロード | [PointerCAD-1.0.0-windows-x64-setup.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-windows-x64-setup.exe) |
-| Windowsポータブル版をダウンロード（1つの.exe） | [PointerCAD-1.0.0-windows-x64-portable.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-windows-x64-portable.exe) |
-| Linux版のAppImageをダウンロード | [PointerCAD-1.0.0-linux-x64.AppImage](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-linux-x64.AppImage) |
-| 取扱説明書（PDF 全7巻。アプリ内のヘルプ〔F1〕でも同じ内容を読めます） | [導入・画面操作・ファイル](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-getting-started.pdf) ・ [スケッチ・座標・関数](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-sketch-and-functions.pdf) ・ [立体・外観・測定](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-solid-and-measurement.pdf) ・ [アセンブリ・部品表](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-assembly.pdf) ・ [図面・寸法・製図記号](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-drawing.pdf) ・ [板金・自動作図・加工連携](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-sheet-and-scripting.pdf) ・ [設定・履歴・表示](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.0/PointerCAD-1.0.0-manual-settings-and-history.pdf) |
+| Windows版のインストーラーをダウンロード | [PointerCAD-1.0.1-windows-x64-setup.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-windows-x64-setup.exe) |
+| Windowsポータブル版をダウンロード（1つの.exe） | [PointerCAD-1.0.1-windows-x64-portable.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-windows-x64-portable.exe) |
+| Linux版のAppImageをダウンロード | [PointerCAD-1.0.1-linux-x64.AppImage](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-linux-x64.AppImage) |
+| 取扱説明書（PDF 全7巻。アプリ内のヘルプ〔F1〕でも同じ内容を読めます） | [導入・画面操作・ファイル](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-getting-started.pdf) ・ [スケッチ・座標・関数](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-sketch-and-functions.pdf) ・ [立体・外観・測定](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-solid-and-measurement.pdf) ・ [アセンブリ・部品表](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-assembly.pdf) ・ [図面・寸法・製図記号](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-drawing.pdf) ・ [板金・自動作図・加工連携](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-sheet-and-scripting.pdf) ・ [設定・履歴・表示](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-settings-and-history.pdf) |
 | Webアプリ版をブラウザで使う | 後日公開（公開したらここにリンクを掲載します） |
 <!-- pointercad:release-links:end -->
 

@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
-import { planPortableCleanup, portableCleanupArguments } from './portableCleanup.js';
+import { planPortableCleanup, portableCleanupArguments, registerPortableCleanup, stagePortableCleanup } from './portableCleanup.js';
 import type { PortableCleanupPlan } from './portableCleanup.js';
 import cleanupScript from './portableCleanup.ps1?raw';
 
@@ -41,7 +42,8 @@ function symbolicLinksSupported(): boolean {
 function fixture() {
   const root = mkdtempSync(join(fixtureParent(), 'fs-'));
   fixtures.push(root);
-  const directory = join(root, '日本語 [1] O\'Brien $x', 'nsiAD.tmp');
+  // NSIS picks the third letter at random; "nsy" is the shape the release CI actually saw (nsy3217.tmp).
+  const directory = join(root, '日本語 [1] O\'Brien $x', 'nsy3217.tmp');
   const executable = join(directory, 'app', 'PointerCAD.exe');
   mkdirSync(join(directory, 'app'), { recursive: true });
   writeFileSync(executable, 'fixture only; never executable');
@@ -83,22 +85,16 @@ const HOLDER_SAFETY_LIMIT_MS = 120000;
  */
 const SLOW_FIXTURE_TEST_TIMEOUT_MS = 180000;
 
-/** A test-only script: the command line stays short and constant, and the script text goes through standard input. */
-type ScriptLaunch = { args: string[]; input: string };
-
-function start(launch: string[] | ScriptLaunch, cwd: string, ignoreOutput = false) {
+function start(args: string[], cwd: string, ignoreOutput = false) {
   const env: NodeJS.ProcessEnv = { ...process.env, TEMP: cwd, TMP: cwd, TMPDIR: cwd };
   delete env['PSModulePath'];
-  const args = Array.isArray(launch) ? launch : launch.args;
-  const input = Array.isArray(launch) ? undefined : launch.input;
+  // Prove that the launch's own -ExecutionPolicy lets the staged file run, not a policy inherited from this shell.
+  delete env['PSExecutionPolicyPreference'];
   const output = ignoreOutput ? 'ignore' : 'pipe';
-  const child = spawn(powershell, args, { cwd, env, windowsHide: true, stdio: [input === undefined ? 'ignore' : 'pipe', output, output] });
+  const child = spawn(powershell, args, { cwd, env, windowsHide: true, stdio: ['ignore', output, output] });
   let text = '';
   child.stdout?.on('data', (bytes: Buffer) => { text += bytes.toString('utf8'); });
   child.stderr?.on('data', (bytes: Buffer) => { text += bytes.toString('utf8'); });
-  // A shell that dies before reading its script closes the pipe; keep that in the output, the exit code decides.
-  child.stdin?.on('error', (error: Error) => { text += `\n[stdin] ${error.message}`; });
-  child.stdin?.end(input, 'utf8');
   const done = new Promise<{ code: number | null; output: string }>((resolveResult, reject) => {
     child.on('error', reject);
     child.on('close', code => { resolveResult({ code, output: text }); });
@@ -106,21 +102,31 @@ function start(launch: string[] | ScriptLaunch, cwd: string, ignoreOutput = fals
   return { child, done, get output() { return text; } };
 }
 
-/**
- * Runs a test-only script without putting it on the command line.
- * 2026-10-01 02:00:07 Microsoft Defender blocked the former `-EncodedCommand` + gzip/base64 + scriptblock command line
- * of a fixture shell as Trojan:Win32/Commando.A!ml (a machine-learning verdict that depends on the random payload),
- * so the process was never created and spawn threw EPERM. The script itself is unchanged; only its transport is.
- */
-function command(script: string): ScriptLaunch {
-  const reader = '$r = [IO.StreamReader]::new([Console]::OpenStandardInput(), [Text.UTF8Encoding]::new($false)); '
-    + 'try { $code = $r.ReadToEnd() } finally { $r.Dispose() }; & ([scriptblock]::Create($code))';
-  return { args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', reader], input: script };
+/** A PowerShell single-quoted literal: only ' is special inside it, so paths with $, `, [ ] and Japanese stay data. */
+function literal(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
-function scriptFor(plan: PortableCleanupPlan, script = cleanupScript): string {
-  const data = Buffer.from(JSON.stringify({ ...plan, requestedAt: Date.now() }), 'utf8').toString('base64');
-  return `$cleanup = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json\n${script}`;
+let scriptCount = 0;
+/**
+ * Test-only scripts run the same way as the product helper: an ordinary UTF-8 file started with -File.
+ * 2026-10-01 02:00:07 Microsoft Defender blocked the former encoded command line (gzip/base64 + scriptblock) as
+ * Trojan:Win32/Commando.A!ml, so neither the product nor these fixtures put code on the command line.
+ */
+function scriptFile(root: string, script: string): string[] {
+  scriptCount += 1;
+  const path = join(root, `fixture-${String(scriptCount)}.ps1`);
+  writeFileSync(path, String.fromCharCode(0xfeff) + script, { encoding: 'utf8', flag: 'wx' });
+  return portableCleanupArguments(path);
+}
+
+/** Starts the helper exactly like the app: staged copy and plan beside the extraction, then -File. */
+function startCleanup(plan: PortableCleanupPlan, script = cleanupScript, ignoreOutput = false) {
+  return start(portableCleanupArguments(stagePortableCleanup(plan, script).cleanup), plan.temporary, ignoreOutput);
+}
+
+function stages(folder: string): string[] {
+  return readdirSync(folder).filter(name => name.startsWith('pointercad-cleanup-'));
 }
 
 function records(plan: PortableCleanupPlan) {
@@ -129,23 +135,23 @@ function records(plan: PortableCleanupPlan) {
     if (typeof value !== 'object' || value === null || !('result' in value) || typeof value.result !== 'string'
       || !('elapsedMs' in value) || typeof value.elapsedMs !== 'number' || !('lastError' in value) || typeof value.lastError !== 'string'
       || !('attempts' in value) || typeof value.attempts !== 'number' || !('errorCode' in value) || typeof value.errorCode !== 'number'
-      || !('processId' in value) || typeof value.processId !== 'number') throw new Error('Invalid cleanup record');
-    return { result: value.result, elapsedMs: value.elapsedMs, lastError: value.lastError,
-      attempts: value.attempts, errorCode: value.errorCode, processId: value.processId };
+      || !('processId' in value) || typeof value.processId !== 'number'
+      || !('preparationMs' in value) || typeof value.preparationMs !== 'number'
+      || !('stageRemoved' in value) || typeof value.stageRemoved !== 'boolean') throw new Error('Invalid cleanup record');
+    return { result: value.result, elapsedMs: value.elapsedMs, lastError: value.lastError, attempts: value.attempts,
+      errorCode: value.errorCode, processId: value.processId, preparationMs: value.preparationMs, stageRemoved: value.stageRemoved };
   });
 }
 
 function hold(root: string, key: string, executable?: string) {
   const ready = join(root, key + '-ready'), release = join(root, key + '-release');
-  const data = Buffer.from(JSON.stringify({ ready, release, executable }), 'utf8').toString('base64');
-  const running = start(command(`$ErrorActionPreference = 'Stop'
-$d = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
+  const running = start(scriptFile(root, `$ErrorActionPreference = 'Stop'
 $stream = $null
 try {
-  if ($d.executable) { $stream = [IO.File]::Open($d.executable, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read) }
-  [IO.File]::WriteAllText($d.ready, 'ready')
+  ${executable === undefined ? '' : `$stream = [IO.File]::Open(${literal(executable)}, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)`}
+  [IO.File]::WriteAllText(${literal(ready)}, 'ready')
   $wait = [Diagnostics.Stopwatch]::StartNew()
-  while (-not [IO.File]::Exists($d.release) -and $wait.ElapsedMilliseconds -lt ${HOLDER_SAFETY_LIMIT_MS}) { Start-Sleep -Milliseconds 20 }
+  while (-not [IO.File]::Exists(${literal(release)}) -and $wait.ElapsedMilliseconds -lt ${HOLDER_SAFETY_LIMIT_MS}) { Start-Sleep -Milliseconds 20 }
 } finally { if ($null -ne $stream) { $stream.Dispose() } }`), root);
   return { ...running, ready, release };
 }
@@ -165,23 +171,8 @@ afterAll(() => {
   fixtureParentPath = undefined;
 });
 
-/**
- * v1.0.1 does not call this cleanup from the product (main.ts; see noEncodedPowerShell.test.ts), so these cases no
- * longer prove shipped behaviour. They are kept as checks of the parts (the deletion-safety rules of the .ps1 helper
- * and its plan) that v1.0.2 resumes with a launch Defender does not block. When v1.0.2 replaces the launch, cases that
- * start the helper through portableCleanupArguments must move to the new launch together with the product.
- */
-/**
- * v1.0.2 で起動の形を作り直すまで省く（Defender が -EncodedCommand を Trojan:Win32/Commando.A!ml と判定するため。製品は呼ばない）。
- * These cases start PowerShell with an encoded command line: the helper through portableCleanupArguments, or (the
- * process-identity case) a child shell. On 2026-10-01 02:00:07 Microsoft Defender blocked that launch shape, so they
- * can fail with spawn EPERM on Windows machines and CI. v1.0.1 does not call the cleanup from the product (main.ts).
- * Cases that pass their script on standard input (command()) keep running. Re-enable these with the new launch.
- */
-const itEncodedLaunch = it.skip;
-
-describe.skipIf(process.platform !== 'win32')('v1.0.2 で再開する機能の部品: Windows実ファイルで終了後の片付けを確認（アプリ起動なし）', { timeout: SLOW_FIXTURE_TEST_TIMEOUT_MS }, () => {
-  itEncodedLaunch('既知3ファイルと空の展開先だけ消し、別起動・文書・配布exeは保持する', async () => {
+describe.skipIf(process.platform !== 'win32')('Windows実ファイルで終了後の片付けを確認（アプリ起動なし。製品と同じ -File の起動）', { timeout: SLOW_FIXTURE_TEST_TIMEOUT_MS }, () => {
+  it('既知3ファイルと空の展開先だけ消し、別起動・文書・配布exeは保持し、写した台本も消す', async () => {
     const { root, plan } = fixture();
     const other = join(root, 'nsiAE.tmp');
     mkdirSync(other); writeFileSync(join(other, 'PointerCAD.exe'), 'other launch');
@@ -195,43 +186,68 @@ describe.skipIf(process.platform !== 'win32')('v1.0.2 で再開する機能の�
     });
     expect(resolved).not.toBeNull();
     if (resolved === null) throw new Error('Real extraction path was rejected');
-    const result = await start(portableCleanupArguments(resolved), root).done;
+    const staged = stagePortableCleanup(resolved);
+    // The staged copy is beside the extraction in the same temporary folder, never inside it.
+    expect(dirname(staged.directory)).toBe(resolved.temporary);
+    expect(stages(resolved.temporary)).toHaveLength(1);
+    const result = await start(portableCleanupArguments(staged.cleanup), root).done;
     // Windows PowerShell may emit module preparation progress as CLIXML even on success.
     expect(result.code, result.output).toBe(0);
     expect(existsSync(plan.directory)).toBe(false);
     expect(readFileSync(join(other, 'PointerCAD.exe'), 'utf8')).toBe('other launch');
     expect(readFileSync(join(root, 'document.pcad'), 'utf8')).toBe('saved document');
     expect(readFileSync(plan.launcher, 'utf8')).toBe('portable download');
+    expect(stages(resolved.temporary)).toEqual([]);
     const entries = records(plan);
     expect(entries).toHaveLength(1);
     expect(entries[0]?.result).toBe('completed');
     expect(entries[0]?.lastError).toBe('');
     expect(entries[0]?.elapsedMs).toBeGreaterThanOrEqual(0);
     expect(entries[0]?.elapsedMs).toBeLessThan(30000);
+    expect(entries[0]?.preparationMs).toBeGreaterThan(0);
+    expect(entries[0]?.stageRemoved).toBe(true);
+  });
+
+  it('アプリと同じ起動（終了の確定で一度・起動役を待つ・窓なし・-File）で、展開先と写した台本が消える', async () => {
+    const { root, plan } = fixture();
+    const events = new EventEmitter();
+    // The product passes no env: hide a policy inherited from this shell so the launch's own policy is what runs it.
+    const inherited = process.env['PSExecutionPolicyPreference'];
+    delete process.env['PSExecutionPolicyPreference'];
+    try {
+      registerPortableCleanup({ isPackaged: true, on: events.on.bind(events), getPath: () => plan.logDirectory }, plan);
+      events.emit('quit');
+    } finally {
+      if (inherited !== undefined) process.env['PSExecutionPolicyPreference'] = inherited;
+    }
+    const startup: unknown = JSON.parse(readFileSync(join(plan.logDirectory, 'portable-cleanup-startup.json'), 'utf8'));
+    // The quit waited for the starter, which started the cleanup as its own process and exited.
+    expect(startup).toMatchObject({ result: 'started', lastError: '' });
+    // The cleanup reports only through its log, written last. Allow its start (Add-Type) plus the 30 s deadline.
+    await expect.poll(() => {
+      try { return records(plan).length; } catch { return 0; }
+    }, { timeout: FIXTURE_START_TIMEOUT_MS + 30000 }).toBeGreaterThan(0);
+    const entries = records(plan);
+    expect(entries.map(entry => entry.result)).toEqual(['completed']);
+    expect(entries[0]?.stageRemoved).toBe(true);
+    expect(existsSync(plan.directory)).toBe(false);
+    expect(stages(root)).toEqual([]);
   });
 
   it('ロック中は残し、実際に解放された後に削除を再試行する', async () => {
     const { root, plan } = fixture();
-    const ready = join(root, 'ready'), release = join(root, 'release');
-    const data = Buffer.from(JSON.stringify({ executable: plan.executable, ready, release }), 'utf8').toString('base64');
-    const holder = start(command(`$d = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
-$stream = [IO.File]::Open($d.executable, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-try {
-  [IO.File]::WriteAllText($d.ready, 'ready')
-  $timer = [Diagnostics.Stopwatch]::StartNew()
-  while (-not [IO.File]::Exists($d.release) -and $timer.ElapsedMilliseconds -lt ${HOLDER_SAFETY_LIMIT_MS}) { Start-Sleep -Milliseconds 25 }
-} finally { $stream.Dispose() }`), root);
+    const holder = hold(root, 'lock', plan.executable);
     let cleaner: ReturnType<typeof start> | undefined;
     try {
-      await expect.poll(() => existsSync(ready), { timeout: FIXTURE_START_TIMEOUT_MS }).toBe(true);
-      cleaner = start(command(`Set-PSDebug -Trace 1\n${scriptFor(plan)}`), root);
+      await expect.poll(() => existsSync(holder.ready), { timeout: FIXTURE_START_TIMEOUT_MS }).toBe(true);
+      cleaner = startCleanup(plan, `Set-PSDebug -Trace 1\n${cleanupScript}`);
       const observed = cleaner;
       // Trace the real helper until it has actually tried twice while the real file lock is held.
       // The wait includes the helper shell's own start (Add-Type), so it uses the fixture start allowance.
       await expect.poll(() => observed.output.split('$lease = [PointerCadPortableCleanup]::Open').length - 1, { timeout: FIXTURE_START_TIMEOUT_MS }).toBeGreaterThanOrEqual(2);
       expect(existsSync(plan.executable)).toBe(true);
     } finally {
-      writeFileSync(release, 'release');
+      writeFileSync(holder.release, 'release');
       expect((await holder.done).code).toBe(0);
       if (cleaner !== undefined) {
         const result = await cleaner.done;
@@ -239,43 +255,44 @@ try {
       }
     }
     expect(existsSync(plan.directory)).toBe(false);
+    expect(stages(root)).toEqual([]);
   });
 
-  itEncodedLaunch('想定外のファイルを再帰削除せず、失敗として残す', async () => {
-    const { root, plan } = fixture();
+  it('想定外のファイルを再帰削除せず、失敗として残す', async () => {
+    const { plan } = fixture();
     const document = join(plan.directory, 'app', 'document.pcad');
     writeFileSync(document, 'unspecified user file');
-    const result = await start(portableCleanupArguments(plan), root).done;
+    const result = await startCleanup(plan).done;
     expect(result.code, result.output).toBe(1);
     expect(result.output).toContain('Unexpected portable application residue.');
     expect(readFileSync(document, 'utf8')).toBe('unspecified user file');
   });
 
-  itEncodedLaunch('展開先が置き換わっていたら既知名のファイルも削除しない', async () => {
-    const { root, plan } = fixture();
-    const result = await start(portableCleanupArguments({ ...plan, createdAt: plan.createdAt - 1000 }), root).done;
+  it('展開先が置き換わっていたら既知名のファイルも削除しない', async () => {
+    const { plan } = fixture();
+    const result = await startCleanup({ ...plan, createdAt: plan.createdAt - 1000 }).done;
     expect(result.code, result.output).toBe(1);
     expect(result.output).toContain('Portable extraction directory was replaced.');
     expect(existsSync(plan.executable)).toBe(true);
     expect(existsSync(join(plan.directory, 'System.dll'))).toBe(true);
   });
 
-  itEncodedLaunch('PIDが別の実行ファイルを指すときは削除しない', async () => {
-    const { root, plan } = fixture();
-    const result = await start(portableCleanupArguments({ ...plan, processId: process.pid }), root).done;
+  it('PIDが別の実行ファイルを指すときは削除しない', async () => {
+    const { plan } = fixture();
+    const result = await startCleanup({ ...plan, processId: process.pid }).done;
     expect(result.code, result.output).toBe(1);
     expect(result.output).toContain('Portable process identity differs.');
     expect(existsSync(plan.executable)).toBe(true);
   });
 
-  itEncodedLaunch('展開後にappがジャンクションへ変わっても外側の同名ファイルを消さない', async () => {
+  it('展開後にappがジャンクションへ変わっても外側の同名ファイルを消さない', async () => {
     const { root, plan } = fixture();
     const outside = join(root, 'outside');
     mkdirSync(outside);
     writeFileSync(join(outside, 'PointerCAD.exe'), 'unrelated file');
     renameSync(join(plan.directory, 'app'), join(plan.directory, 'original-app'));
     symlinkSync(outside, join(plan.directory, 'app'), 'junction');
-    const result = await start(portableCleanupArguments(plan), root).done;
+    const result = await startCleanup(plan).done;
     expect(result.code, result.output).toBe(1);
     expect(result.output).toContain('Portable cleanup refuses a reparse point.');
     expect(readFileSync(join(outside, 'PointerCAD.exe'), 'utf8')).toBe('unrelated file');
@@ -295,7 +312,7 @@ try {
       : level === 'extraction' ? plan.directory : dirname(plan.directory);
     const outside = join(root, 'outside');
     mkdirSync(outside);
-    const outsideExtraction = level === 'ancestor' ? join(outside, 'nsiAD.tmp') : outside;
+    const outsideExtraction = level === 'ancestor' ? join(outside, 'nsy3217.tmp') : outside;
     const outsideApp = level === 'extraction' || level === 'ancestor' ? join(outsideExtraction, 'app') : outside;
     mkdirSync(outsideApp, { recursive: true });
     const bait = join(outsideApp, 'PointerCAD.exe');
@@ -306,16 +323,14 @@ try {
     // Create the real junction/symlink first, so missing OS link privileges cannot masquerade as protection.
     symlinkSync(level === 'file' ? bait : outside, prepared, linkType);
     const ready = join(root, 'checked'), release = join(root, 'continue');
-    const barrier = Buffer.from(JSON.stringify({ ready, release }), 'utf8').toString('base64');
     expect(cleanupScript.split('$lease.Remove()')).toHaveLength(2);
     const script = cleanupScript.replace('$lease.Remove()', `
-      $barrier = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${barrier}')) | ConvertFrom-Json
-      [IO.File]::WriteAllText($barrier.ready, 'all handles inspected')
+      [IO.File]::WriteAllText(${literal(ready)}, 'all handles inspected')
       $wait = [Diagnostics.Stopwatch]::StartNew()
-      while (-not [IO.File]::Exists($barrier.release) -and $wait.ElapsedMilliseconds -lt 10000) { Start-Sleep -Milliseconds 10 }
-      if (-not [IO.File]::Exists($barrier.release)) { throw 'Test barrier expired.' }
+      while (-not [IO.File]::Exists(${literal(release)}) -and $wait.ElapsedMilliseconds -lt 10000) { Start-Sleep -Milliseconds 10 }
+      if (-not [IO.File]::Exists(${literal(release)})) { throw 'Test barrier expired.' }
       $lease.Remove()`);
-    const cleaner = start(command(scriptFor(plan, script)), root);
+    const cleaner = startCleanup(plan, script);
     let blocked = false;
     try {
       await expect.poll(() => existsSync(ready), { timeout: FIXTURE_START_TIMEOUT_MS }).toBe(true);
@@ -337,39 +352,41 @@ try {
     expect(existsSync(plan.directory)).toBe(false);
   });
 
-  itEncodedLaunch('作成時刻を同じ値にした実際の別フォルダーをファイルIDで拒否する', async () => {
+  it('作成時刻を同じ値にした実際の別フォルダーをファイルIDで拒否する', async () => {
     const { root, plan } = fixture();
     renameSync(plan.directory, join(root, 'old-extraction'));
     mkdirSync(dirname(plan.executable), { recursive: true });
     writeFileSync(plan.executable, 'replacement exe');
     for (const file of ['StdUtils.dll', 'System.dll']) writeFileSync(join(plan.directory, file), 'replacement dll');
-    const data = Buffer.from(JSON.stringify(plan), 'utf8').toString('base64');
-    const restoreTime = await start(command(`$d = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
-[IO.Directory]::SetCreationTimeUtc($d.directory, [DateTimeOffset]::FromUnixTimeMilliseconds($d.createdAt).UtcDateTime)`), root).done;
+    const restoreTime = await start(scriptFile(root,
+      `[IO.Directory]::SetCreationTimeUtc(${literal(plan.directory)}, [DateTimeOffset]::FromUnixTimeMilliseconds(${String(plan.createdAt)}).UtcDateTime)`),
+    root).done;
     expect(restoreTime.code, restoreTime.output).toBe(0);
     expect(Math.floor(statSync(plan.directory).birthtimeMs)).toBe(plan.createdAt);
-    const result = await start(portableCleanupArguments(plan), root, true).done;
+    const result = await startCleanup(plan, cleanupScript, true).done;
     expect(result.code).toBe(1);
     expect(records(plan)[0]?.lastError).toBe('Portable extraction identity was replaced.');
     expect(readFileSync(plan.executable, 'utf8')).toBe('replacement exe');
   });
 
-  itEncodedLaunch('出力破棄でも失敗を記録し、上限を超えた既存ログを65536バイト以内に収める', async () => {
+  it('出力破棄でも失敗を記録し、上限を超えた既存ログを65536バイト以内に収め、写した台本は消す', async () => {
     const { root, plan } = fixture();
     writeFileSync(join(plan.logDirectory, 'portable-cleanup.log'), 'x'.repeat(65536));
     writeFileSync(join(plan.directory, 'app', 'document.pcad'), 'document');
-    const result = await start(portableCleanupArguments(plan), root, true).done;
+    const result = await startCleanup(plan, cleanupScript, true).done;
     expect(result.code).toBe(1);
     const entries = records(plan);
     expect(entries).toHaveLength(1);
     expect(entries[0]?.result).toBe('failed');
     expect(entries[0]?.lastError).toBe('Unexpected portable application residue.');
     expect(entries[0]?.elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(entries[0]?.stageRemoved).toBe(true);
+    expect(stages(root)).toEqual([]);
     expect(statSync(join(plan.logDirectory, 'portable-cleanup.log')).size).toBeLessThanOrEqual(65536);
     expect(readFileSync(join(plan.directory, 'app', 'document.pcad'), 'utf8')).toBe('document');
   });
 
-  itEncodedLaunch.each(['lock', 'process'])('実際の%sが30秒続くと有限終了し、原因と経過時間をログへ残す', async mode => {
+  it.each(['lock', 'process'])('実際の%sが30秒続くと有限終了し、原因と経過時間をログへ残す', async mode => {
     const { root, plan } = fixture();
     const holder = hold(root, 'deadline', mode === 'lock' ? plan.executable : undefined);
     try {
@@ -377,12 +394,14 @@ try {
       const heldId = holder.child.pid;
       if (heldId === undefined) throw new Error('Missing fixture process');
       const actual = mode === 'process' ? { ...plan, executable: powershell, processId: heldId } : plan;
-      const result = await start(portableCleanupArguments(actual), root, true).done;
+      const result = await startCleanup(actual, cleanupScript, true).done;
       expect(result.code).toBe(1);
       const entry = records(plan)[0];
       expect(entry?.result).toBe('deadline');
+      // The deadline clock starts after preparation (plan read and Add-Type), which is recorded separately.
       expect(entry?.elapsedMs).toBeGreaterThanOrEqual(30000);
       expect(entry?.elapsedMs).toBeLessThan(35000);
+      expect(entry?.preparationMs).toBeGreaterThan(0);
       expect(entry?.lastError.length).toBeGreaterThan(0);
       if (mode === 'lock') {
         expect(entry?.errorCode).toBe(32);
@@ -402,6 +421,21 @@ try {
     }
   });
 
+  it('期限は台本の準備（Add-Typeの型のコンパイル）の後から数える', async () => {
+    const { plan } = fixture();
+    // Model a slow machine: preparation itself takes longer than the whole 30 s deadline.
+    const marker = '  Initialize-CleanupNative';
+    expect(cleanupScript.split(marker)).toHaveLength(2);
+    const result = await startCleanup(plan, cleanupScript.replace(marker, `${marker}\n  Start-Sleep -Seconds 31`), true).done;
+    expect(result.code).toBe(0);
+    const entry = records(plan)[0];
+    expect(entry?.result).toBe('completed');
+    expect(entry?.attempts).toBe(1);
+    expect(entry?.preparationMs).toBeGreaterThanOrEqual(31000);
+    expect(entry?.elapsedMs).toBeLessThan(30000);
+    expect(existsSync(plan.directory)).toBe(false);
+  });
+
   it('実プロセス2組と補助2つを同時起動し、一方の終了で他方を消さず共通ログへ両方を残す', async () => {
     const first = fixture(), second = fixture();
     const holders = [hold(first.root, 'app'), hold(first.root, 'launcher'), hold(second.root, 'app'), hold(second.root, 'launcher')];
@@ -417,11 +451,10 @@ try {
         const processId = ids[index * 2], launcherId = ids[index * 2 + 1];
         if (processId === undefined || launcherId === undefined) throw new Error('Missing fixture identities');
         const plan = { ...current.plan, processId, launcherId, executable: powershell, launcher: powershell, logDirectory: first.plan.logDirectory };
-        const marker = Buffer.from(join(current.root, 'waiting'), 'utf8').toString('base64');
         const script = cleanupScript.replace('  Wait-OwnedProcess $cleanup.processId $cleanup.executable',
-          `  [IO.File]::WriteAllText([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${marker}')), 'waiting')
+          `  [IO.File]::WriteAllText(${literal(join(current.root, 'waiting'))}, 'waiting')
   Wait-OwnedProcess $cleanup.processId $cleanup.executable`);
-        cleaners.push(start(command(scriptFor(plan, script)), current.root, true));
+        cleaners.push(startCleanup(plan, script, true));
       }
       await expect.poll(() => [first, second].every(current => existsSync(join(current.root, 'waiting'))), { timeout: FIXTURE_START_TIMEOUT_MS }).toBe(true);
       expect(existsSync(first.plan.executable)).toBe(true);
@@ -439,31 +472,34 @@ try {
       const entries = records(first.plan);
       expect(entries.map(entry => entry.result)).toEqual(['completed', 'completed']);
       expect(entries.map(entry => entry.processId)).toEqual([ids[0], ids[2]]);
+      expect(stages(first.root)).toEqual([]);
+      expect(stages(second.root)).toEqual([]);
     } finally {
       for (const holder of holders) writeFileSync(holder.release, 'release');
       await Promise.all([...holders, ...cleaners].map(running => running.done));
     }
   });
 
-  itEncodedLaunch('本物のプロセスの終了をハンドルで待ち、同じPIDでも新しい開始時刻を拒否する', async () => {
+  it('本物のプロセスの終了をハンドルで待ち、同じPIDでも新しい開始時刻を拒否する', async () => {
     const { root } = fixture();
-    const functions = cleanupScript.slice(0, cleanupScript.indexOf('$timer = [Diagnostics.Stopwatch]::StartNew()'));
-    const identity = Buffer.from(JSON.stringify({ requestedAt: 0, executable: powershell }), 'utf8').toString('base64');
+    const main = '$preparation = [Diagnostics.Stopwatch]::StartNew()';
+    expect(cleanupScript.split(main)).toHaveLength(2);
+    const functions = cleanupScript.slice(0, cleanupScript.indexOf(main));
     // Sleep only keeps a disposable shell alive. The assertion checks actual exit, never elapsed time.
-    const childCode = Buffer.from("[Console]::Out.WriteLine('ready'); [Console]::Out.Flush(); [Threading.Thread]::Sleep(3000)", 'utf16le').toString('base64');
-    const result = await start(command(`$cleanup = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${identity}')) | ConvertFrom-Json
+    // The child is a plain, readable -Command (nothing encoded): '' is a quote inside the PowerShell literal.
+    const childArguments = "-NoLogo -NoProfile -NonInteractive -Command \"[Console]::Out.WriteLine(''ready''); [Console]::Out.Flush(); [Threading.Thread]::Sleep(3000)\"";
+    const result = await start(scriptFile(root, `$cleanup = [pscustomobject]@{ requestedAt = 0; executable = ${literal(powershell)} }
 ${functions}
 $startInfo = [Diagnostics.ProcessStartInfo]::new()
 $startInfo.FileName = $cleanup.executable
-$startInfo.Arguments = '-NoLogo -NoProfile -NonInteractive -EncodedCommand ${childCode}'
+$startInfo.Arguments = '${childArguments}'
 $startInfo.UseShellExecute = $false
 $startInfo.CreateNoWindow = $true
-$startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
 $startInfo.RedirectStandardOutput = $true
 $held = [Diagnostics.Process]::Start($startInfo)
 try {
   $ready = $held.StandardOutput.ReadLineAsync()
-  if (-not $ready.Wait(5000) -or $ready.Result -ne 'ready') { throw 'Fixture shell did not start.' }
+  if (-not $ready.Wait(${String(FIXTURE_START_TIMEOUT_MS)}) -or $ready.Result -ne 'ready') { throw 'Fixture shell did not start.' }
   $reusedRejected = $false
   try { Wait-OwnedProcess $held.Id $cleanup.executable }
   catch {
@@ -473,7 +509,7 @@ try {
   if (-not $reusedRejected) { throw 'Reused process identity was accepted.' }
   $cleanup.requestedAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   if ($held.HasExited) { throw 'Fixture exited before the wait.' }
-$timer = [Diagnostics.Stopwatch]::StartNew()
+  $timer = [Diagnostics.Stopwatch]::StartNew()
   Wait-OwnedProcess $held.Id $cleanup.executable
   if (-not $held.HasExited) { throw 'Wait returned while the process was still alive.' }
   [Console]::Out.WriteLine('real process exited; reused identity rejected')

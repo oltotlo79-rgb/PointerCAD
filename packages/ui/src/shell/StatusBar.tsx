@@ -240,6 +240,17 @@ export function StatusBar(): React.JSX.Element {
     return step === 'springShape' || step === 'springLength' ? step : null;
   });
   /*
+   * いま開いているその場入力の段(FR-905)。窓が次の段(線分の終点・外ねじの大きさ)へ
+   * 進んだら案内もその段の一手へ替える(`numericStepGuideText`)。今の道具の窓でなければ
+   * null にして、ほかの道具の案内へ前の窓の段が混ざらないようにする。段名は文字列なので、
+   * 変わらない間は描き直さない(NFR-PF-1)。
+   */
+  const numericInputStep = useAppStore((state) =>
+    state.numericInput === null || state.numericInput.toolId !== state.activeTool
+      ? null
+      : state.numericInput.step,
+  );
+  /*
    * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23、Q11=P2、GR-26)。判断は
    * `math/mathGeometryToolGuide.ts` の純関数 1 か所に置く(節の先頭の文も同じものを使う)。
    * 道具が有効なときだけ呼び、それ以外は常に null にして、無関係な選択の変化のたびには
@@ -362,6 +373,8 @@ export function StatusBar(): React.JSX.Element {
     selectionKind,
     springOriginSelected,
     springStep,
+    // その場入力の段ごとの案内(FR-905)。窓が開いていなければ null。
+    numericInputStep,
     // 図形の測定値の道具の段階の案内(Q11=P2、GR-26)。道具が有効でなければ null。
     mathGeometryGuide,
     // 3D スケッチのときだけ案内へ一言を添える(FR-330、タスク14)。

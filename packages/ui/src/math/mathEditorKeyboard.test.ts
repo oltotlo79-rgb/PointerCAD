@@ -244,23 +244,23 @@ describe('MC-27 読み上げと Tab 順(画面の構造)', () => {
     expect(view.createField).not.toHaveBeenCalled();
   });
 
-  it('Tab 順は文書の順で入力欄→挿入→記号一覧→取消→確定と進み、tabindex で順序を変えない(Shift+Tab はその逆順)', () => {
+  it('Tab 順は文書の順で入力欄→挿入→記号一覧→確定と進み、tabindex で順序を変えない(Shift+Tab はその逆順。取消は MathExpressionDialog の常設の欄が持つ)', () => {
     const view = renderSurface();
     const { hints } = view.labels;
     expect(focusableElements(view.tree).map(element => element.props.title ?? element.type)).toEqual([
       hints.help, hints.text, hints.structured, hints.angleUnit, view.labels.keyboardHint,
-      GROUPS[0].choices[0].meaning, 'summary', hints.category, hints.search, PALETTE[0].meaning, hints.cancel, hints.apply,
+      GROUPS[0].choices[0].meaning, 'summary', hints.category, hints.search, PALETTE[0].meaning, hints.apply,
     ]);
     expect(elementsOf(view.tree).filter(element => element.props.tabIndex !== undefined)).toEqual([]);
     expect(view.markup).not.toMatch(/tabindex/iu);
   });
 
-  it('確定の処理中は編集の操作を無効にして Tab で止まらず、説明・入力欄・一覧の検索・取消へは移れる', () => {
+  it('確定の処理中は編集の操作を無効にして Tab で止まらず、説明・入力欄・一覧の検索へは移れる(取消は MathExpressionDialog の常設の欄が持つ)', () => {
     const view = renderSurface({ readOnly: true });
     const { hints } = view.labels;
     expect(focusableElements(view.tree).filter(element => element.props.disabled !== true)
       .map(element => element.props.title ?? element.type))
-      .toEqual([hints.help, view.labels.keyboardHint, 'summary', hints.category, hints.search, hints.cancel]);
+      .toEqual([hints.help, view.labels.keyboardHint, 'summary', hints.category, hints.search]);
   });
 });
 

@@ -223,11 +223,10 @@ jobs:
 
       # 単一exeの自己展開を必ず通す。win-unpackedの成功ではNSISの展開の失敗を検出できない。
       # candidate.jsonと実際のartifactsの名前・サイズ・SHA-256を照合し、欠落時は失敗する。
-      # 起動器の終了コードと本体プロセスの終了まで確かめる。
-      # v1.0.1では終了後の片付けの機能を止めた(PowerShellを符号化したコマンドで起こす形がDefenderに
-      # Trojan:Win32/Commando.A!mlと判定されたため)ので、「終了後30秒以内の展開先の消失」の確認は外した。
-      # 止めた片付けを起動していないこと(起動の記録が無いこと)は確かめる。v1.0.2で機能と共に戻す。
-      - name: ポータブル版の単一exeを起動し正常終了まで確かめる
+      # 起動器の終了コードと本体プロセスの終了、終了後30秒以内に当該TEMPのNSIS展開先(ns+英字+16進.tmp)と
+      # 片付けの台本の写しが消えることまで確かめる。v1.0.1で止めた片付け(符号化したコマンドでPowerShellを起こす形が
+      # DefenderにTrojan:Win32/Commando.A!mlと判定された)は、v1.0.2で台本のファイルを-Fileで起こす形に直して戻した。
+      - name: ポータブル版の単一exeを起動し終了後の片付けまで確かめる
         if: matrix.os == 'windows-latest'
         shell: pwsh
         timeout-minutes: 25
@@ -236,7 +235,7 @@ jobs:
           PCAD_PACKAGED_VARIANT: portable
         run: |
           pnpm exec playwright test --config e2e/packaged-desktop.config.ts
-          if ($LASTEXITCODE -ne 0) { throw "単一ポータブルexeの起動・終了の確認が失敗しました(終了コード $LASTEXITCODE)。" }
+          if ($LASTEXITCODE -ne 0) { throw "単一ポータブルexeの起動・終了・片付けの確認が失敗しました(終了コード $LASTEXITCODE)。" }
 
       # Linuxの実行機には画面が無く、AppImageを普通に開くのに要るFUSE(libfuse2)も無い(ubuntu-latestの
       # 導入済みの一覧にxvfbはあり、fuse・libfuse2は無い。

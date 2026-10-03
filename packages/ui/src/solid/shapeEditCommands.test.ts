@@ -24,7 +24,12 @@ import {
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
-import type { SolidInputCommit } from '../sketch/numericInput.js';
+import {
+  chooseNumericInput,
+  commitNumericInput,
+  createNumericInput,
+  type SolidInputCommit,
+} from '../sketch/numericInput.js';
 
 import type { MachiningContext } from './machiningCommands.js';
 import {
@@ -612,6 +617,32 @@ describe('Should 群の確定(タスク50)', () => {
     expect(feature.fromEnd).toBe('last');
     expect(feature.modeled).toBe(false);
     expect(feature.length.value).toBe(20);
+  });
+
+  it('外ねじ: 入力の窓で呼びを M6→M20 に選び直すと、作られる外ねじのピッチも 2.5 になる(FR-423)', () => {
+    // 窓の欄のピッチ(既定 M6 の 1)が先に使われるので、呼びを選んだ時に欄が入れ替わらないと
+    // M20 なのにピッチ 1 の外ねじになる(v1.0.1 の不具合)。窓の状態から確定まで通して確かめる。
+    const state = chooseNumericInput(
+      createNumericInput('threadShaft', 'threadShaftSize'),
+      'threadDesignation',
+      'M20',
+    );
+    const transition = commitNumericInput(state);
+    if (transition.kind !== 'solidCommitted') {
+      throw new Error(`expected solidCommitted transition, got ${transition.kind}`);
+    }
+    const outcome = commitShapeEdit(contextOf([CYLINDER_FACE]), transition.commit, 'threadShaft');
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const feature = findSolid(outcome.document, outcome.featureId);
+    if (feature?.kind !== 'threadShaft') {
+      throw new Error(`expected threadShaft, got ${String(feature?.kind)}`);
+    }
+    expect(feature.nominal).toBe('M20');
+    expect(feature.series).toBe('coarse');
+    expect(feature.pitch.value).toBe(2.5);
   });
 
   it('曲面: 作り方ごとに要る材料が違い、足りなければ断る(FR-428)', () => {

@@ -1,11 +1,11 @@
 /** Pure rewrites give input aliases one explicit mathematical meaning before engine simplification. */
-import { MathInputProblem, type MathNode } from './mathInputContract.js';
+import { MathInputProblem, pacedCalculationMs, type MathNode } from './mathInputContract.js';
 import { rationalOfExpression } from './exactRational.js';
 import { nativeMathProvenUndefined } from './nativeMathBackend.js';
 
 /** 50ms shared across every sibling of one selection; a slow candidate is skipped, not treated as bad. */
 function boundedCheck(): () => void {
-  const deadline = performance.now() + 50;
+  const deadline = performance.now() + pacedCalculationMs(50);
   return () => { if (performance.now() > deadline) throw new MathInputProblem('budget', '成分の確認が計算時間を超えました。'); };
 }
 

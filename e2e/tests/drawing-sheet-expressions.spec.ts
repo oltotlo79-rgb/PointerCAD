@@ -3,6 +3,7 @@ import { expect, test, type Locator } from '@playwright/test';
 import { readDrawingBundle, readDrawingTemplateFile } from '../../packages/io/src/index.js';
 import { createBox, drawingFromBox, chooseDrawingMenu, waitForDrawingReady } from './drawingManufacturingFixture.js';
 import { drawingMessage as m } from './drawingMessages.js';
+import { drawingSheetExpressionCaptureFlow } from './drawingSheetExpressionCaptureFlow.js';
 
 async function openFields(settings: Locator): Promise<void> {
   const details = settings.locator('.pcad-drawing-settings details');
@@ -117,4 +118,10 @@ test('FIX-13 用紙の原式を再編集・Undo・保存再開・ひな形で保
   await expect(height).toHaveValue('7/2');
   await openFields(settings);
   await expect(width).toHaveValue('1+1');
+});
+
+test('FIX-13 用紙の縮尺・縮尺の候補・文字高さに式を入れて適用した画面を撮る', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await drawingSheetExpressionCaptureFlow(page, info);
+  expect(errors).toEqual([]);
 });

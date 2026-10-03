@@ -1,6 +1,9 @@
 /** Bounded disposable Worker queue shared by scalar input and function geometry. */
 import type { MathRequestIdentity } from './mathWorkRequest.js';
+import { readCalculationPaceMessage } from './mathInputContract.js';
 export interface CalculationRequest { readonly identity: MathRequestIdentity }
+/** The absolute limit of one request's Worker deadline, also after the machine's pace stretches it. */
+export const CALCULATION_DEADLINE_CEILING_MS = 30_000;
 
 /** Platform-independent transport. DOM Worker construction belongs to the UI adapter. */
 export interface CalculationWorkerPort {
@@ -52,6 +55,7 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
   private startedAt = 0;
   private deadline = 0;
   private receivedProgress = false;
+  private receivedPace = false;
   private receiveProgress: ((value: unknown) => number | null) | null = null;
 
   constructor(options: CalculationClientOptions<Request, Result>) {
@@ -68,7 +72,7 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
     request = this.options.decodeRequest(request);
     if (this.disposed) return Promise.resolve({ status: 'disposed', identity: request.identity });
     if (signal?.aborted) return Promise.resolve({ status: 'cancelled', identity: request.identity });
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw new RangeError('Invalid math deadline');
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > CALCULATION_DEADLINE_CEILING_MS) throw new RangeError('Invalid math deadline');
     if (this.pending.length >= 32) return Promise.resolve({ status: 'queue-full', identity: request.identity });
     if (this.serial >= Number.MAX_SAFE_INTEGER) throw new RangeError('Math request identifiers exhausted');
     this.serial += 1;
@@ -99,6 +103,7 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
     this.active = null;
     this.receiveProgress = null;
     this.receivedProgress = false;
+    this.receivedPace = false;
     if (this.timeout !== null) { clearTimeout(this.timeout); this.timeout = null; }
     if (replaceWorker) this.stopWorker();
     work.detachAbort();
@@ -126,6 +131,7 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
     this.startedAt = performance.now();
     this.deadline = this.startedAt + work.timeoutMs;
     this.receivedProgress = false;
+    this.receivedPace = false;
     try {
       this.receiveProgress = this.options.progress?.createReceiver(work.request, work.serial, this.startedAt) ?? null;
       if (this.worker === null) {
@@ -139,6 +145,8 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
             this.complete({ status: 'deadline', identity: active.request.identity }, true); return;
           }
           try {
+            const pace = readCalculationPaceMessage(event.data);
+            if (pace !== null) { this.allowPace(pace, active); return; }
             const end = this.receiveProgress?.(event.data) ?? null;
             // A progress listener may have cancelled this request or disposed its owner.
             if (this.active !== active) return;
@@ -193,6 +201,16 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
     } catch {
       if (this.active === work) this.complete({ status: 'worker-error', identity: work.request.identity }, true);
     }
+  }
+
+  /** The Worker measured this machine's pace before calculating: the caller's deadline stretches by the same
+   * factor as the Worker's own limits, never beyond the absolute ceiling, and never shortens a longer allowance
+   * (first request, preparation phases). One pace per request. */
+  private allowPace(pace: number, work: PendingWork<Request, Result>): void {
+    if (this.receivedPace) throw new Error('Repeated calculation pace');
+    this.receivedPace = true;
+    const end = this.startedAt + Math.min(CALCULATION_DEADLINE_CEILING_MS, Math.ceil(work.timeoutMs * pace));
+    if (end > this.deadline) this.armDeadline(end, work);
   }
 
   private armDeadline(end: number, work: PendingWork<Request, Result>): void {

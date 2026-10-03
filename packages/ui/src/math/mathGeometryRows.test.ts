@@ -127,7 +127,7 @@ describe('math geometry rows: values and status', () => {
       representation: 'geometry-double', tolerance: DEFAULT_MATH_GEOMETRY_TOLERANCE };
     const row = mathGeometryRows(stateFor(documentWith(QUANTITIES.parallel), [result]))[0];
     expect(row.valueText).toBe(value ? 'はい' : 'いいえ');
-    expect(row.createParameter.reasonKey).toBe('mathGeometry.createParameter.disabled.noValue');
+    expect(row.createParameter.reasonKey).toBe('mathGeometry.createParameter.disabled.booleanValue');
   });
 
   const statuses = [

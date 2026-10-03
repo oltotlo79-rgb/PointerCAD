@@ -18,6 +18,7 @@ import {
   DEFAULT_THREAD_SHAFT_FROM_END,
   DEFAULT_THREAD_SHAFT_LENGTH_MM,
   DEFAULT_TRANSLATION_MM,
+  findMetricThread,
   MAX_DRAFT_ANGLE_DEGREES,
   MAX_PATTERN_COUNT,
   MAX_POINT_ARRAY_COUNT,
@@ -26,6 +27,7 @@ import {
   MAX_SPRING_TURNS,
   MAX_TAPER_ANGLE_DEGREES,
   METRIC_THREAD_DESIGNATIONS,
+  metricThreadPitch,
   MIN_SCALE,
   type CoordinateInput,
 } from '@pointercad/model';
@@ -3771,6 +3773,50 @@ describe('P5 タスク49: 新しい道具の id と段の一意性、確定結�
     expect(commit.shapeChoices?.threadShaftEnd).toBe('last');
     expect(commit.flags.modeledThread).toBe(true);
     expect(commit.values.threadShaftLength?.value).toBe(20);
+    // 呼び・系列を選んだのでピッチも M10 細目の規格の値になる。
+    const m10 = findMetricThread('M10');
+    expect(commit.values.threadShaftPitch?.value).toBe(
+      m10 === undefined ? undefined : metricThreadPitch(m10, 'fine'),
+    );
+  });
+
+  it('外ねじの呼びを選び直すとピッチの欄へ規格(並目)の値が入る(M6→M20 で 2.5、FR-423)', () => {
+    const pitchSource = (state: NumericInputState): string | undefined =>
+      state.fields.find((field) => field.key === 'threadShaftPitch')?.source;
+    let state = createNumericInput('threadShaft', 'threadShaftSize');
+    expect(pitchSource(state)).toBe('1');
+    state = chooseNumericInput(state, 'threadDesignation', 'M20');
+    expect(pitchSource(state)).toBe('2.5');
+    const m20 = findMetricThread('M20');
+    expect(m20 === undefined ? undefined : String(metricThreadPitch(m20, 'coarse'))).toBe('2.5');
+    const { commit } = expectSolidCommitted(commitNumericInput(state));
+    expect(commit.threadDesignation).toBe('M20');
+    expect(commit.values.threadShaftPitch?.value).toBe(2.5);
+  });
+
+  it('外ねじの系列を細目へ変えるとピッチも細目の値になり、端の選択ではピッチに触れない', () => {
+    const pitchSource = (state: NumericInputState): string | undefined =>
+      state.fields.find((field) => field.key === 'threadShaftPitch')?.source;
+    let state = chooseNumericInput(createNumericInput('threadShaft', 'threadShaftSize'), 'threadDesignation', 'M20');
+    state = chooseNumericInput(state, 'threadSeries', 'fine');
+    const m20 = findMetricThread('M20');
+    expect(pitchSource(state)).toBe(m20 === undefined ? undefined : String(metricThreadPitch(m20, 'fine')));
+    const pitchIndex = state.fields.findIndex((field) => field.key === 'threadShaftPitch');
+    state = reduceNumericInput(state, { type: 'edit', index: pitchIndex, source: '3/2' });
+    state = chooseNumericInput(state, 'threadShaftEnd', 'last');
+    expect(pitchSource(state)).toBe('3/2');
+  });
+
+  it('外ねじのピッチを手で変えた後に呼びを選び直すと規格の値で上書きする(プロパティでの呼びの変更と同じ決め)', () => {
+    let state = createNumericInput('threadShaft', 'threadShaftSize');
+    const pitchIndex = state.fields.findIndex((field) => field.key === 'threadShaftPitch');
+    state = reduceNumericInput(state, { type: 'edit', index: pitchIndex, source: '0.75' });
+    state = chooseNumericInput(state, 'threadDesignation', 'M8');
+    const pitch = state.fields[pitchIndex];
+    const m8 = findMetricThread('M8');
+    expect(pitch?.source).toBe(m8 === undefined ? undefined : String(metricThreadPitch(m8, 'coarse')));
+    // 規格の値は内部の mm なので、打った印を落とす(inch 表示で包まれない)。
+    expect(pitch?.typed).toBe(false);
   });
 
   it('押し出しの終わり方を「選んだ面まで」にすると距離は確定結果へ入らない(FR-415)', () => {

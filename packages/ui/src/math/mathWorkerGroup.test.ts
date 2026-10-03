@@ -43,6 +43,21 @@ describe('一回の再計算の数値と形状の計算部を共有する', () =
     expect(received).not.toHaveBeenCalled(); created[1].port.onmessage?.({ data: 'surface-result' });
     expect(received).toHaveBeenCalledWith({ data: 'surface-result' }); client.dispose(); owner.dispose();
   });
+  it('計算の前の機械の速さの知らせで依頼を終えず、同じ依頼の返信を元の呼出し側へ渡す', async () => {
+    const { owner, created } = fixture();
+    const client = new MathWorkerClient({ createWorker: owner.createPort,
+      decodeReply: value => typeof value === 'number' ? { serial: value, result: { definition: null,
+        evaluation: { status: 'stopped', reason: 'budget' } } } : null });
+    const pending = client.evaluate(request, 5000);
+    const next = owner.createPort(), received = vi.fn(); next.onmessage = received; next.postMessage('surface');
+    created[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 2 } });
+    expect(created[0].sent).toHaveLength(1); expect(received).not.toHaveBeenCalled();
+    created[0].port.onmessage?.({ data: 1 });
+    expect(await pending).toMatchObject({ status: 'result' });
+    expect(created[0].sent).toHaveLength(2); expect(created[0].terminate).not.toHaveBeenCalled();
+    created[0].port.onmessage?.({ data: 'surface-result' });
+    expect(received).toHaveBeenCalledWith({ data: 'surface-result' }); client.dispose(); owner.dispose();
+  });
   it('共有中でも不正な準備通知を受けた実体を捨て、後続だけを新しく始める', async () => {
     const { owner, created } = fixture(), client = new MathWorkerClient({ createWorker: owner.createPort, decodeReply: () => null });
     const pending = client.evaluate(request, 5000), next = owner.createPort(); next.postMessage('next');

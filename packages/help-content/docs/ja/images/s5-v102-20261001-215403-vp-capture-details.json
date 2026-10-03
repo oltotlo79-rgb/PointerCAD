@@ -1,8 +1,8 @@
 {
   "format": "pointercad-capture-provenance/1",
   "releaseCertified": false,
-  "applicationBuildId": "be41b64de49483fb814e77ee9e2ac67f3938a99965dd028af65638259953f554",
-  "adoptedAt": "2026-10-01T02:49:10.462Z",
+  "applicationBuildId": "6787f63c8fd66d361227839cf06c656482052e5380ce5e4caaaff162ff9e936c",
+  "adoptedAt": "2026-10-03T06:44:58.328Z",
   "scripts": {
     "e2e/tests/p8-drawing.spec.ts": "e4cb8d38f1539924b88d06be0911bc365f51ad496f092c90b5261d3fc9a226b4"
   },
@@ -14,8 +14,8 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-10-01T02:31:33.456Z",
-        "applicationBuildId": "be41b64de49483fb814e77ee9e2ac67f3938a99965dd028af65638259953f554",
+        "capturedAt": "2026-10-03T06:31:46.789Z",
+        "applicationBuildId": "6787f63c8fd66d361227839cf06c656482052e5380ce5e4caaaff162ff9e936c",
         "project": "viewport-performance",
         "sourceTest": "4分割の実描画性能・区画ごとの立体選択と1画面復帰(FR-113)",
         "script": "e2e/tests/p8-drawing.spec.ts",
@@ -42,8 +42,8 @@
           "lastOutcome": "success"
         },
         "viewportRender": {
-          "completedRenders": 18,
-          "lastCompletedAtMs": 11866.985000133514
+          "completedRenders": 16,
+          "lastCompletedAtMs": 10438.694999933243
         },
         "dialogBounds": {
           "x": 240,

@@ -73,11 +73,11 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 | **Fusionのように名前付きの寸法や式で形を管理する**。Fusionにもパラメータと数式による寸法管理があります。[公式説明](https://help.autodesk.com/view/fusion360/ENU/?contextId=SLD-REF-PARAMETERS) | パラメータを加工寸法に加え、点を置くコマンド入力にも使います。`板厚`などの日本語名で、座標から加工までの寸法の関係を読める形で残せます。 |
 | **OpenSCADのように数式やパラメータで形を定義する**。OpenSCADはモデルを記述したスクリプトから形を生成します。[公式説明](https://openscad.org/about.html) | 画面での点・辺・面の選択や式入力と、JavaScriptによる自動作図を組み合わせられます。自動で作った形も通常の履歴に残り、画面で後から寸法を編集できます。 |
 
-比較は各製品の公式説明とPointerCAD(デスクトップ版v1.0.1)の機能に基づく、操作方法の整理です（表内3件の公式資料を2026年9月27日に再確認し、記載内容と相違なし）。
+比較は各製品の公式説明とPointerCAD(デスクトップ版v1.0.2)の機能に基づく、操作方法の整理です（表内3件の公式資料を2026年9月27日に再確認し、記載内容と相違なし）。
 
 ## 実際の画面・操作デモ
 
-以下はPointerCADデスクトップ版v1.0.1の実画面です。座標入力・寸法変更・組み立ての短い操作動画は、公開後に順次掲載します。
+以下はPointerCADデスクトップ版v1.0.2の実画面です。座標入力・寸法変更・組み立ての短い操作動画は、公開後に順次掲載します。
 
 <!-- pointercad:demo-media:start -->
 
@@ -95,7 +95,7 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 
 ## できること
 
-| 用途 | v1.0.1で使える機能 |
+| 用途 | v1.0.2で使える機能 |
 |---|---|
 | 下書きを描く | 点・線分・円・円弧・矩形・多角形・楕円・スプライン、交点の自動接続・折曲げ・区間削除、寸法や位置の拘束、3Dスケッチ |
 | 立体を作る | 押し出し・回転・スイープ・ロフト、スプライン断面・案内線を使った曲面、箱・球・円柱などの基本形状、立体の結合・切り抜き |
@@ -113,7 +113,15 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 | 操作を覚える | アプリ内のヘルプと説明の検索、入力中のF1、ボタンや入力欄の短い説明、初めての作図の案内、計算中も下の帯に残る次の操作の案内、使えない操作の理由と次にすることの表示、右クリックの8方向メニュー、ショートカットの変更 |
 | 保存・受け渡し | 編集可能な文書の保存・再読込、自動保存からの復元、STEP・STL・DXFの読み書き |
 
-上記はデスクトップ版v1.0.1で使える機能です。下の「数学の追加分野」は受入の確認中のため今回のv1.0.1には含まれず、この表にも含めていません。実装状況は[開発計画](docs/plans/)と[進捗台帳](docs/progress.json)で確認できます。
+上記はデスクトップ版v1.0.2で使える機能です。下の「数学の追加分野」は受入の確認中のため今回のv1.0.2には含まれず、この表にも含めていません。実装状況は[開発計画](docs/plans/)と[進捗台帳](docs/progress.json)で確認できます。
+
+### v1.0.2で変わったこと
+
+- **ポータブル版の終了後の片付けが動くようになった**：Windowsポータブル版を閉じると、起動時に取り出した一時フォルダーの内容を自動で削除するようになりました（通常30秒以内）。他に起動中のポータブル版があるときはその分は消しません。[デスクトップ版の導入・更新・削除](packages/help-content/docs/ja/desktop-install.md)
+- **遅いパソコンでも計算が時間切れになりにくくなった**：数式や関数の計算は、そのパソコンのその時の速さに合わせて待ち時間の上限を最大4倍まで伸ばすようにしました。普段どおりの速さのパソコンでは、今までと同じ待ち時間のままです。[計算の準備と取消](packages/help-content/docs/ja/math-input.md#計算の準備と取消)
+- **数式の窓の「取消」を開いた直後でも確実に押せるようにした**：数式の窓を開いてすぐ「取消」を押すと、準備中と準備後でボタンの位置が変わって押し逃すことがありました。常に同じ位置の同じボタンで取り消せるようにしました。
+- **「比べる幅」の説明の文言を直した**：合同・相似のように「はい」「いいえ」で答える結果で、「係数を作る」が押せない理由が「値が決まっていない」という誤った説明になっていたのを、正しい説明に直しました。
+- **説明書に画像を5件足した**：取扱説明書の説明をより分かりやすくするため、画像を5件追加しました。
 
 ### v1.0.1で変わったこと
 
@@ -136,15 +144,15 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 
 三角関数の角度は**度が既定で、必要に応じてラジアンへ切り替えられます**。選んだ単位も式と一緒に保存するため、開き直しても式の意味を保持します。
 
-![v1.0.1の実画面：式とXYZの範囲を指定し、切り取られた曲線を確認する](packages/help-content/docs/ja/images/function-xyz-preview-screen.png)
+![v1.0.2の実画面：式とXYZの範囲を指定し、切り取られた曲線を確認する](packages/help-content/docs/ja/images/function-xyz-preview-screen.png)
 
 `Z=X+Y`の斜面や`Z=U*V`の鞍状の面も、**XYZの範囲で切り取ったCAD曲面**として作れます。媒介変数U・Vの範囲とXYZの範囲を別々に指定し、回転・拡大して確認できます。開いた面の体積を立体の体積として表示することはありません。[関数曲面の操作説明](packages/help-content/docs/ja/function-surface.md)
 
-![v1.0.1の実画面：U・VとXYZの範囲を指定して関数曲面を確認する](packages/help-content/docs/ja/images/function-surface-parametric-screen.png)
+![v1.0.2の実画面：U・VとXYZの範囲を指定して関数曲面を確認する](packages/help-content/docs/ja/images/function-surface-parametric-screen.png)
 
 球面・トーラスなどの例を選んで始められます。**式や係数を残したまま、閉じた曲面を体積のある立体として使える**ことも特徴です。XYZの範囲で球面を途中まで切ったときは、開いた曲面になります。切り口に底面を勝手に追加しません。
 
-![v1.0.1の実画面：球面の式と範囲から閉じた立体を作り、面積と体積を確認する](packages/help-content/docs/ja/images/function-closed-sphere-screen.png)
+![v1.0.2の実画面：球面の式と範囲から閉じた立体を作り、面積と体積を確認する](packages/help-content/docs/ja/images/function-closed-sphere-screen.png)
 
 関数で作った形は、次の作図や設計へつなげられます。
 
@@ -172,10 +180,10 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 <!-- pointercad:release-links:start -->
 | 利用方法 | 公開先 |
 |---|---|
-| Windows版のインストーラーをダウンロード | [PointerCAD-1.0.1-windows-x64-setup.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-windows-x64-setup.exe) |
-| Windowsポータブル版をダウンロード（1つの.exe） | [PointerCAD-1.0.1-windows-x64-portable.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-windows-x64-portable.exe) |
-| Linux版のAppImageをダウンロード | [PointerCAD-1.0.1-linux-x64.AppImage](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-linux-x64.AppImage) |
-| 取扱説明書（PDF 全7巻。アプリ内のヘルプ〔F1〕でも同じ内容を読めます） | [導入・画面操作・ファイル](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-getting-started.pdf) ・ [スケッチ・座標・関数](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-sketch-and-functions.pdf) ・ [立体・外観・測定](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-solid-and-measurement.pdf) ・ [アセンブリ・部品表](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-assembly.pdf) ・ [図面・寸法・製図記号](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-drawing.pdf) ・ [板金・自動作図・加工連携](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-sheet-and-scripting.pdf) ・ [設定・履歴・表示](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.1/PointerCAD-1.0.1-manual-settings-and-history.pdf) |
+| Windows版のインストーラーをダウンロード | [PointerCAD-1.0.2-windows-x64-setup.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-windows-x64-setup.exe) |
+| Windowsポータブル版をダウンロード（1つの.exe） | [PointerCAD-1.0.2-windows-x64-portable.exe](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-windows-x64-portable.exe) |
+| Linux版のAppImageをダウンロード | [PointerCAD-1.0.2-linux-x64.AppImage](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-linux-x64.AppImage) |
+| 取扱説明書（PDF 全7巻。アプリ内のヘルプ〔F1〕でも同じ内容を読めます） | [導入・画面操作・ファイル](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-getting-started.pdf) ・ [スケッチ・座標・関数](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-sketch-and-functions.pdf) ・ [立体・外観・測定](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-solid-and-measurement.pdf) ・ [アセンブリ・部品表](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-assembly.pdf) ・ [図面・寸法・製図記号](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-drawing.pdf) ・ [板金・自動作図・加工連携](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-sheet-and-scripting.pdf) ・ [設定・履歴・表示](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/PointerCAD-1.0.2-manual-settings-and-history.pdf) |
 | Webアプリ版をブラウザで使う | 後日公開（公開したらここにリンクを掲載します） |
 <!-- pointercad:release-links:end -->
 

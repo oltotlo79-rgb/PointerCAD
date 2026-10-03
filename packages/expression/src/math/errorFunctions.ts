@@ -1,5 +1,5 @@
 /** Check the original argument before a component or zero product can erase it. */
-import { MathInputProblem, type MathNode } from './mathInputContract.js';
+import { MathInputProblem, pacedCalculationMs, type MathNode } from './mathInputContract.js';
 import { rationalOfExpression } from './exactRational.js';
 import { resolveTypedMathProduct } from './mathProductTypes.js';
 import { exactComplexRational } from './exactComplexRational.js';
@@ -35,7 +35,7 @@ export function normalizeErrorFunction(node: MathNode, angleUnit: 'degree' | 'ra
     if (pair === null) {
       // Check the complete closed argument before zero/component rewrites. Exact
       // rational components above must not be rounded onto a numerical boundary.
-      const deadline = performance.now() + 1000;
+      const deadline = performance.now() + pacedCalculationMs(1000);
       const check = (): void => {
         if (performance.now() > deadline) throw new MathInputProblem('budget', '誤差関数の引数の確認が計算時間を超えました。');
       };

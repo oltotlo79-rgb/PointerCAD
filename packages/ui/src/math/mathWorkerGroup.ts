@@ -1,4 +1,4 @@
-import { isMathWorkProgress, type MathWorkerPort } from '@pointercad/expression/math/client';
+import { isCalculationPaceMessage, isMathWorkProgress, type MathWorkerPort } from '@pointercad/expression/math/client';
 
 interface Work { readonly port: MathWorkerPort; readonly value: unknown }
 
@@ -24,7 +24,9 @@ export function createMathWorkerGroup(createWorker: () => MathWorkerPort): {
     try {
       if (worker === null) {
         const current = createWorker(); worker = current;
-        current.onmessage = event => dispatch(current, port => port.onmessage?.(event), isMathWorkProgress(event.data));
+        // A preparation phase or the request's pace precedes the terminal reply of the same request.
+        current.onmessage = event => dispatch(current, port => port.onmessage?.(event),
+          isMathWorkProgress(event.data) || isCalculationPaceMessage(event.data));
         current.onerror = event => dispatch(current, port => port.onerror?.(event));
         current.onmessageerror = () => dispatch(current, port => port.onmessageerror?.());
       }

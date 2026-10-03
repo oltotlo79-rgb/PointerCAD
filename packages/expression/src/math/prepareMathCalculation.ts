@@ -22,7 +22,7 @@ import { LINE_INTEGRAL_IDS, validateLineIntegral } from './lineIntegrals.js';
 import { REGION_INTEGRAL_IDS, validateRegionIntegral } from './regionIntegrals.js';
 import { GENERAL_PROBABILITY_IDS, probabilityFunction } from './generalProbability.js';
 /** Substitute declared values without simplifying away invalid source operands. */
-import {MATH_INPUT_LIMITS,MathInputProblem,type MathNode,type MathSymbolReference} from './mathInputContract.js';
+import {MATH_INPUT_LIMITS,MathInputProblem,pacedCalculationMs,type MathNode,type MathSymbolReference} from './mathInputContract.js';
 import {substituteMathValues} from './substituteMathValues.js';
 import {validateMathDomains} from './realRootDomains.js';
 import {reduceExactMatrixRank} from './exactMatrixOperation.js';
@@ -228,7 +228,7 @@ function checkTensorElementSiblingsDefined(node: Extract<MathNode, { kind: 'oper
   if (node.operation !== 'tensor-element' || node.operands.length !== 2) return;
   const [array, list] = node.operands;
   if (list.kind !== 'operation' || list.operation !== 'list') return;
-  const deadline = performance.now() + 50;
+  const deadline = performance.now() + pacedCalculationMs(50);
   const check = (): void => { if (performance.now() > deadline) throw new MathInputProblem('budget', '成分の確認が計算時間を超えました。'); };
   let value = array;
   for (const index of list.operands) {

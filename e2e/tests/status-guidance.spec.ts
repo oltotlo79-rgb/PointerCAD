@@ -3,7 +3,11 @@ import { expect, test } from '@playwright/test';
 import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
 import { chooseEditTool, propertyValue, sketchTool, statusText } from './sketchFinishCaptureSupport.js';
 import { drawRectangle, extrudeFace, makeFace, propertyPanel, treeRow } from './solidCaptureSupport.js';
+import {
+  cancelPopover, chooseShapeTool, chooseSketchTool, commitPopover, fillFields, popoverTitle, useAbsolute,
+} from './sketchDrawCaptureSupport.js';
 import { waitForStartupHealth } from './startupHealth.js';
+import { uiMessage } from './uiMessages.js';
 
 test('形の計算中も投影の次の操作と計算状況を同時に読める(FR-905)', async ({ page }, info) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -64,4 +68,57 @@ test('形の計算中も投影の次の操作と計算状況を同時に読め�
   await sketchTool(page, '選択').click();
   await treeRow(page, '押し出し1').click();
   await expect(propertyValue(page, '体積')).toHaveText('12000 mm³');
+});
+
+test('作図の道具は入力の窓の段が進むごとに状態の欄の案内が替わる(矩形・円弧・長穴、FR-905)', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await waitForStartupHealth(page, info);
+  const guide = (key: string): string => uiMessage('statusBar', key);
+
+  // 矩形: 1 つ目の角 → 2 つ目の角(対角)。
+  await chooseShapeTool(page, '矩形');
+  await expect(popoverTitle(page)).toHaveText('矩形の 1 つ目の角');
+  await expect(statusText(page)).toHaveText(guide('statusBar.guide.rectangle'));
+  await fillFields(page, ['0', '0', '0']);
+  await commitPopover(page);
+  await expect(popoverTitle(page)).toHaveText('矩形の 2 つ目の角');
+  await expect(statusText(page)).toHaveText(guide('statusBar.guide.rectangleCorner2'));
+  await useAbsolute(page);
+  await fillFields(page, ['40', '30', '0']);
+  await commitPopover(page);
+  await cancelPopover(page);
+  await expect(treeRow(page, '矩形1')).toBeVisible();
+
+  // 円弧: 中心 → 形(半径・始まりの角度・終わりの角度)。
+  await chooseSketchTool(page, '円弧');
+  await expect(popoverTitle(page)).toHaveText('円弧の中心');
+  await expect(statusText(page)).toHaveText(guide('statusBar.guide.arc'));
+  await fillFields(page, ['80', '0', '0']);
+  await commitPopover(page);
+  await expect(popoverTitle(page)).toHaveText('円弧の形');
+  await expect(statusText(page)).toHaveText(guide('statusBar.guide.arcShape'));
+  await commitPopover(page);
+  await cancelPopover(page);
+  await expect(treeRow(page, '円弧1')).toBeVisible();
+
+  // 長穴: 1 つ目の中心 → 2 つ目の中心 → 幅。
+  await chooseShapeTool(page, '長穴');
+  await expect(popoverTitle(page)).toHaveText('長穴の 1 つ目の中心');
+  await expect(statusText(page)).toHaveText(guide('statusBar.guide.slot'));
+  await fillFields(page, ['0', '60', '0']);
+  await commitPopover(page);
+  await expect(popoverTitle(page)).toHaveText('長穴の 2 つ目の中心');
+  await expect(statusText(page)).toHaveText(guide('statusBar.guide.slotCenter2'));
+  await useAbsolute(page);
+  await fillFields(page, ['40', '60', '0']);
+  await commitPopover(page);
+  await expect(popoverTitle(page)).toHaveText('長穴の幅');
+  await expect(statusText(page)).toHaveText(guide('statusBar.guide.slotShape'));
+  await fillFields(page, ['10']);
+  await commitPopover(page);
+  await cancelPopover(page);
+  await expect(treeRow(page, '長穴1')).toBeVisible();
+  expect(errors).toEqual([]);
 });

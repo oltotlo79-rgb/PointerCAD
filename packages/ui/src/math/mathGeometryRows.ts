@@ -212,10 +212,12 @@ interface RowValue {
   readonly statusKey: MessageKey | null;
   readonly statusText: string | null;
   readonly real: boolean;
+  /** True for a settled 合同/相似 (congruent/similar) はい・いいえ result: a value, but not one a coefficient can hold. */
+  readonly isBoolean: boolean;
 }
 
 function unavailable(key: MessageKey, detail?: string | null): RowValue {
-  return { valueText: null, statusKey: key, statusText: detail ? `${t(key)} ${detail}` : t(key), real: false };
+  return { valueText: null, statusKey: key, statusText: detail ? `${t(key)} ${detail}` : t(key), real: false, isBoolean: false };
 }
 
 function rowValue(document: PartDocument, definition: MathGeometryDefinition,
@@ -229,11 +231,12 @@ function rowValue(document: PartDocument, definition: MathGeometryDefinition,
   if (outcome.status === 'unresolved') return unavailable(MATH_GEOMETRY_REASON_KEYS[outcome.reason], outcome.message);
   const valueText = mathGeometryValueText(outcome, lengthUnit);
   if (valueText === null) return unavailable(MATH_GEOMETRY_REASON_KEYS['failed-geometry']);
-  return { valueText, statusKey: null, statusText: null, real: outcome.kind === 'real' };
+  return { valueText, statusKey: null, statusText: null, real: outcome.kind === 'real', isBoolean: outcome.kind === 'boolean' };
 }
 
-function createParameterReadiness(document: PartDocument, definition: MathGeometryDefinition, real: boolean): MathGeometryReadiness {
-  if (!real) return disabled('mathGeometry.createParameter.disabled.noValue');
+function createParameterReadiness(document: PartDocument, definition: MathGeometryDefinition,
+  real: boolean, isBoolean: boolean): MathGeometryReadiness {
+  if (!real) return disabled(isBoolean ? 'mathGeometry.createParameter.disabled.booleanValue' : 'mathGeometry.createParameter.disabled.noValue');
   const name = `${definition.name}${t('mathGeometry.createParameter.nameSuffix')}`;
   // This is a parameter name (GR-31/commitAddParameter), not a new geometry definition name.
   if (checkVariableName(name) !== null) return disabled('mathGeometry.createParameter.disabled.invalidName');
@@ -271,7 +274,7 @@ export function mathGeometryRows(state: MathGeometryRowsState): readonly MathGeo
       reselect: { ...reselect, quantity },
       remove: usageNames.length === 0 ? READY : disabled('mathGeometry.error.referencedBy',
         t('mathGeometry.error.referencedBy').replace('{names}', usageNames.join(' / '))),
-      createParameter: createParameterReadiness(document, definition, value.real),
+      createParameter: createParameterReadiness(document, definition, value.real, value.isBoolean),
     };
   });
 }

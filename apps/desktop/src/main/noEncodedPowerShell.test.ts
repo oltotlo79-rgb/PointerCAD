@@ -4,12 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Recurrence check for 2026-10-01 02:00:07: Microsoft Defender blocked a hidden PowerShell whose script was passed as an
- * encoded command line (gzip + base64 + scriptblock) as Trojan:Win32/Commando.A!ml. The product's portable cleanup
- * used the same shape, so v1.0.1 stops calling it (main.ts). The shipped main process must not be able to start
- * PowerShell that way. The cleanup module is kept only as a part for v1.0.2 and must stay unreachable from main.ts.
+ * Recurrence check for 2026-10-01 02:00:07: Microsoft Defender blocked a PowerShell whose script was passed as an
+ * encoded command line (gzip + base64 + scriptblock) as Trojan:Win32/Commando.A!ml, judged from the command line alone.
+ * The portable cleanup used the same shape, so v1.0.1 stopped it. v1.0.2 restores it as a staged script file started
+ * with -File (portableCleanup.ts). No desktop source may start PowerShell with an encoded, compressed or inline script
+ * again, and the cleanup must stay wired into the real entry.
  */
 const mainDirectory = dirname(fileURLToPath(import.meta.url));
+const sourceDirectory = dirname(mainDirectory);
 const entry = join(mainDirectory, 'main.ts');
 
 // PowerShell accepts any unambiguous prefix of -EncodedCommand (-e, -en, -enc, ...) and the alias -ec.
@@ -18,17 +20,19 @@ const ENCODED_LAUNCH_PATTERNS: readonly RegExp[] = [
   /EncodedCommand/iu,
   new RegExp(String.raw`(?<![\w-])-(?:${encodedSwitches.join('|')})(?=[\s'"\x60,\]]|$)`, 'imu'),
   /FromBase64String/iu,
+  // Shapes that read as obfuscation: compressed payloads, run-a-string, and a hidden window switch.
+  /GZipStream|DeflateStream/iu,
+  /Invoke-Expression|(?<![\w-])iex(?![\w-])/iu,
+  /\[scriptblock\]::Create/iu,
+  /-WindowStyle/iu,
 ];
-
-/** Modules that still contain the blocked launch shape. They are parked for v1.0.2 and must not be reachable. */
-const PARKED_MODULES = ['portableCleanup.ts'];
 
 function shippedSources(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap(item => {
     const path = join(directory, item.name);
     if (item.isDirectory()) return shippedSources(path);
-    if (!item.isFile() || /\.test\.ts$/u.test(item.name)) return [];
-    return ['.ts', '.ps1'].includes(extname(item.name).toLowerCase()) ? [path] : [];
+    if (!item.isFile() || /\.test\.tsx?$/u.test(item.name)) return [];
+    return ['.ts', '.tsx', '.mts', '.mjs', '.cjs', '.js', '.ps1', '.html'].includes(extname(item.name).toLowerCase()) ? [path] : [];
   });
 }
 
@@ -62,31 +66,36 @@ function reachableFrom(start: string): Set<string> {
   return seen;
 }
 
-describe('配布する主プロセスが PowerShell を符号化したコマンドで起こさない', () => {
-  it('走査の型が実際の起動の形を見つける', () => {
+function hits(source: string): string[] {
+  return ENCODED_LAUNCH_PATTERNS.filter(pattern => pattern.test(source)).map(pattern => pattern.source);
+}
+
+describe('配布するデスクトップ版が PowerShell を符号化・圧縮・文字列実行の形で起こさない', () => {
+  it('走査の型が実際の起動の形を見つけ、普通の書き方は見つけない', () => {
     const launches = ['-EncodedCommand JABz', "'-EncodedCommand',", '-enc JABz', '-e JABz', "'-ec', data",
-      "[Convert]::FromBase64String('AA==')"];
-    for (const launch of launches) expect(ENCODED_LAUNCH_PATTERNS.some(pattern => pattern.test(launch)), launch).toBe(true);
-    for (const harmless of ['Out-File -Encoding utf8', '-NoProfile -Command -', 'value-enc x', 'case -e1']) {
-      expect(ENCODED_LAUNCH_PATTERNS.some(pattern => pattern.test(harmless)), harmless).toBe(false);
+      "[Convert]::FromBase64String('AA==')", '[IO.Compression.GZipStream]::new($bytes)', 'IEX $code',
+      'Invoke-Expression $code', '& ([scriptblock]::Create($source))', "'-WindowStyle', 'Hidden'"];
+    for (const launch of launches) expect(hits(launch), launch).not.toEqual([]);
+    for (const harmless of ['Out-File -Encoding utf8', '-NoProfile -Command -', 'value-enc x', 'case -e1',
+      "'-ExecutionPolicy', 'RemoteSigned', '-File', script", 'const suffix = "-ex"', 'complexity']) {
+      expect(hits(harmless), harmless).toEqual([]);
     }
   });
 
-  it('主プロセスのソース(テストを除く .ts・.ps1)で符号化の起動を含むのは止めた片付けの部品だけ', () => {
-    const hits = shippedSources(mainDirectory)
-      .filter(path => ENCODED_LAUNCH_PATTERNS.some(pattern => pattern.test(readFileSync(path, 'utf8'))))
-      .map(name).sort();
-    expect(hits).toEqual(PARKED_MODULES);
+  it('デスクトップ版のソース(テストを除く)のどこにも符号化・圧縮・文字列実行の起動が無い', () => {
+    const sources = shippedSources(sourceDirectory);
+    // Guard against an empty scan: the cleanup and its script are part of what is shipped.
+    expect(sources.map(name)).toEqual(expect.arrayContaining(['main.ts', 'portableCleanup.ts', 'portableCleanup.ps1', 'portableCleanupStart.ps1', 'portableExtraction.mjs']));
+    const found = sources.flatMap(path => hits(readFileSync(path, 'utf8')).map(pattern => `${name(path)}: ${pattern}`));
+    expect(found).toEqual([]);
   });
 
-  it('止めた片付けの部品(と台本)は main.ts から到達しない', () => {
+  it('終了後の片付け(と台本・展開先の判定)は main.ts から到達し、到達する全ファイルにその形が無い', () => {
     const reachable = [...reachableFrom(entry)].map(name);
-    expect(reachable).toContain('main.ts');
-    expect(reachable).toContain('appProtocol.ts');
-    for (const parked of [...PARKED_MODULES, 'portableCleanup.ps1']) expect(reachable).not.toContain(parked);
-    for (const path of reachable) {
-      const source = readFileSync(join(mainDirectory, path), 'utf8');
-      for (const pattern of ENCODED_LAUNCH_PATTERNS) expect(pattern.test(source), `${path}: ${pattern.source}`).toBe(false);
+    for (const part of ['main.ts', 'appProtocol.ts', 'portableCleanup.ts', 'portableCleanup.ps1', 'portableCleanupStart.ps1',
+      'portableExtraction.mjs']) {
+      expect(reachable).toContain(part);
     }
+    for (const path of reachable) expect(hits(readFileSync(join(mainDirectory, path), 'utf8')), path).toEqual([]);
   });
 });

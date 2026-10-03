@@ -13,7 +13,13 @@ import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
-import { t } from '../i18n/t.js';
+import { MESSAGE_KEYS, t, type MessageKey } from '../i18n/t.js';
+import {
+  NUMERIC_INPUT_STEPS,
+  STEP_TITLE_KEYS,
+  type NumericInputStep,
+  type NumericInputToolId,
+} from '../sketch/numericInput.js';
 import {
   ASSEMBLY_TOOL_GUIDE_KEYS,
   ASSEMBLY_TOOL_GUIDE_IDS,
@@ -25,6 +31,8 @@ import {
   describeStatus,
   guideKeyFor,
   machiningGuideText,
+  NUMERIC_STEP_GUIDE_KEYS,
+  numericStepGuideText,
   progressText,
   progressView,
   PROGRESS_DELAY_MS,
@@ -695,6 +703,201 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
     // ばねの案内は出ず通常の案内に戻る。
     const afterCommit = describeStatus({ ...quiet(), activeTool: 'select' });
     expect(afterCommit.text).toBe(t('statusBar.ready'));
+  });
+
+  it('線分は始点の窓では始点、終点の窓へ進むと終点の案内に替わる(FR-905)', () => {
+    const start = describeStatus({ ...quiet(), activeTool: 'line', numericInputStep: 'lineStart' });
+    expect(start.text).toBe(t('statusBar.guide.line'));
+    expect(start.text).toContain('始点');
+    const end = describeStatus({ ...quiet(), activeTool: 'line', numericInputStep: 'lineEnd' });
+    expect(end.text).toBe(t('statusBar.guide.lineEnd'));
+    expect(end.text).toContain('終点');
+    expect(end.text).not.toBe(start.text);
+    // 窓が閉じたら(段が無い)道具の基本案内へ戻る。
+    expect(describeStatus({ ...quiet(), activeTool: 'line', numericInputStep: null }).text)
+      .toBe(t('statusBar.guide.line'));
+    // 終点の窓でも、点に吸い付いているあいだは吸着の知らせを先に出す(今までどおり)。
+    expect(describeStatus({ ...quiet(), activeTool: 'line', numericInputStep: 'lineEnd', snapKind: 'endpoint' }).text)
+      .toBe(t('statusBar.snap.endpoint'));
+  });
+
+  it('外ねじは面を選ぶまで面の案内、「外ねじの大きさ」の窓が開いたら窓での入力の案内(FR-905、FR-423)', () => {
+    const pickFace = describeStatus({ ...quiet(), activeTool: 'threadShaft', selectionKind: 'face' });
+    expect(pickFace.text).toBe(t('statusBar.guide.threadShaft'));
+    const sized = describeStatus({
+      ...quiet(),
+      activeTool: 'threadShaft',
+      selectionKind: 'face',
+      selectedSubShapeCount: 1,
+      numericInputStep: 'threadShaftSize',
+    });
+    expect(sized.text).toBe(t('statusBar.guide.threadShaftSize'));
+    expect(sized.text).not.toBe(pickFace.text);
+    expect(sized.kind).toBe('guide');
+  });
+
+  it('段の案内の表は案内の文が実在し、表に無い段は null(基本案内へ後退する)', () => {
+    for (const [step, key] of Object.entries(NUMERIC_STEP_GUIDE_KEYS)) {
+      expect(MESSAGE_KEYS, step).toContain(key);
+    }
+    expect(numericStepGuideText('lineStart')).toBeNull();
+    expect(numericStepGuideText(null)).toBeNull();
+    expect(numericStepGuideText(undefined)).toBeNull();
+    expect(numericStepGuideText('lineEnd')).toBe(t('statusBar.guide.lineEnd'));
+  });
+
+  /*
+    全ての段の案内を 1 段ずつ固定する(FR-905)。`Record<NumericInputStep, …>` なので、段を足すと
+    ここへ書き足すまで型の検査が通らない(足し忘れて基本案内のまま残る段を作らない)。
+    - 文言キー: その段だけの案内。
+    - 'window': 選び終えてから窓が開く道具の段。窓の見出しを差し込んだ「窓で決めて Enter」。
+    - 'base': 基本案内(または加工の選択の進み具合の案内)がそのまま当たる段。
+  */
+  const STEP_GUIDES: Readonly<Record<NumericInputStep, MessageKey | 'window' | 'base'>> = {
+    point: 'base',
+    lineStart: 'base',
+    lineEnd: 'statusBar.guide.lineEnd',
+    arcCenter: 'base',
+    arcShape: 'statusBar.guide.arcShape',
+    pointArrayBase: 'base',
+    pointArrayShape: 'statusBar.guide.pointArrayShape',
+    pointArrayGridColumns: 'statusBar.guide.pointArrayGridColumns',
+    circleCenter: 'base',
+    circleRadius: 'statusBar.guide.circleRadius',
+    twoPointArcStart: 'base',
+    twoPointArcEnd: 'statusBar.guide.twoPointArcEnd',
+    twoPointArcRadius: 'statusBar.guide.twoPointArcRadius',
+    threePointArcStart: 'base',
+    threePointArcEnd: 'statusBar.guide.threePointArcEnd',
+    threePointArcVia: 'statusBar.guide.threePointArcVia',
+    rectangleCorner1: 'base',
+    rectangleCorner2: 'statusBar.guide.rectangleCorner2',
+    polygonCenter: 'base',
+    polygonShape: 'statusBar.guide.polygonShape',
+    slotCenter1: 'base',
+    slotCenter2: 'statusBar.guide.slotCenter2',
+    slotShape: 'statusBar.guide.slotShape',
+    ellipseCenter: 'base',
+    ellipseShape: 'statusBar.guide.ellipseShape',
+    ellipseAngles: 'statusBar.guide.ellipseAngles',
+    ellipseArcAngles: 'statusBar.guide.ellipseArcAngles',
+    splinePoint: 'base',
+    splineShape: 'statusBar.guide.splineShape',
+    extrudeDistance: 'window',
+    revolveAngle: 'window',
+    sewTolerance: 'window',
+    holeSize: 'window',
+    threadSize: 'window',
+    filletRadius: 'window',
+    chamferSize: 'window',
+    // 直線/円形パターン・ばねは選択の進み具合で文を替える(`machiningGuideText`)。
+    linearPattern: 'base',
+    circularPattern: 'base',
+    springShape: 'base',
+    springLength: 'base',
+    // 基本形状・球面上の点は、窓が開いている間も基本案内(中心の選び方・直接入れられること)が当たる。
+    sphereSize: 'base',
+    boxSize: 'base',
+    cylinderSize: 'base',
+    coneSize: 'base',
+    torusSize: 'base',
+    sphereGridPoint: 'base',
+    ruledTwist: 'window',
+    loftTwist: 'window',
+    draftAngle: 'window',
+    mirrorPlane: 'window',
+    transformTranslation: 'statusBar.guide.transformTranslation',
+    transformRotation: 'statusBar.guide.transformRotation',
+    scaleAmount: 'window',
+    sweepOptions: 'window',
+    ribThickness: 'window',
+    embossHeight: 'window',
+    threadShaftSize: 'statusBar.guide.threadShaftSize',
+    pointPattern: 'window',
+    surfaceShape: 'window',
+    shellThickness: 'window',
+    cutPlane: 'window',
+    // 基準の道具の 1 段目は、基本案内が 1 段目そのものを言う。
+    referencePlanePoint1: 'base',
+    referencePlanePoint2: 'statusBar.guide.referencePlanePoint2',
+    referencePlanePoint3: 'statusBar.guide.referencePlanePoint3',
+    referencePlaneBasePoint: 'base',
+    referencePlaneThrough: 'statusBar.guide.referencePlaneThrough',
+    referencePlaneOffset: 'base',
+    referencePlaneTilt: 'base',
+    referenceAxisKind: 'base',
+    referenceAxisStart: 'statusBar.guide.referenceAxisStart',
+    referenceAxisEnd: 'statusBar.guide.referenceAxisEnd',
+    referencePointKind: 'base',
+    referencePointAt: 'statusBar.guide.referencePointAt',
+    referenceCsOrigin: 'base',
+    referenceCsAxes: 'statusBar.guide.referenceCsAxes',
+    offsetDistance: 'window',
+    mirrorBasis: 'window',
+    copyDelta: 'window',
+    linearArrayDirection: 'window',
+    linearArrayCount: 'statusBar.guide.linearArrayCount',
+    circularArrayCenter: 'window',
+    circularArrayShape: 'statusBar.guide.circularArrayShape',
+    // 線の角の丸め・面取りは、基本案内が半径・距離を入れて Enter まで言う。
+    sketchFilletRadius: 'base',
+    sketchChamferSize: 'base',
+  };
+
+  it('全ての段で、段ごとの案内が決まっている(FR-905)', () => {
+    expect(Object.keys(STEP_GUIDES).sort()).toEqual([...NUMERIC_INPUT_STEPS].sort());
+    for (const step of NUMERIC_INPUT_STEPS) {
+      const expected = STEP_GUIDES[step];
+      const text = numericStepGuideText(step);
+      if (expected === 'base') {
+        expect(text, step).toBeNull();
+      } else if (expected === 'window') {
+        expect(text, step).toBe(`入力欄「${t(STEP_TITLE_KEYS[step])}」で値を決めて、Enter を押してください(Tab で次の欄、Esc で取消)。`);
+      } else {
+        expect(MESSAGE_KEYS, step).toContain(expected);
+        expect(text, step).toBe(t(expected));
+      }
+    }
+  });
+
+  it('作図の道具は段が進むごとに案内が替わる(矩形・円弧・長穴・2点/3点の円弧・円・楕円・多角形・スプライン)', () => {
+    const flows: readonly (readonly [NumericInputToolId, readonly NumericInputStep[]])[] = [
+      ['rectangle', ['rectangleCorner1', 'rectangleCorner2']],
+      ['arc', ['arcCenter', 'arcShape']],
+      ['slot', ['slotCenter1', 'slotCenter2', 'slotShape']],
+      ['twoPointArc', ['twoPointArcStart', 'twoPointArcEnd', 'twoPointArcRadius']],
+      ['threePointArc', ['threePointArcStart', 'threePointArcEnd', 'threePointArcVia']],
+      ['circle', ['circleCenter', 'circleRadius']],
+      ['ellipse', ['ellipseCenter', 'ellipseShape', 'ellipseAngles', 'ellipseArcAngles']],
+      ['polygon', ['polygonCenter', 'polygonShape']],
+      ['spline', ['splinePoint', 'splineShape']],
+      ['pointArray', ['pointArrayBase', 'pointArrayShape', 'pointArrayGridColumns']],
+      ['line', ['lineStart', 'lineEnd']],
+    ];
+    for (const [tool, steps] of flows) {
+      const texts = steps.map((step) => describeStatus({ ...quiet(), activeTool: tool, numericInputStep: step }).text);
+      // 1 段目は道具の基本案内、それより後は段ごとに違う文。
+      expect(texts[0], tool).toBe(t(guideKeyFor(tool, 0)));
+      expect(new Set(texts).size, tool).toBe(steps.length);
+    }
+  });
+
+  it('選び終えて窓が開いた後は、選択の案内でなく窓で決める案内を出す(押し出し・穴・オフセット)', () => {
+    expect(describeStatus({ ...quiet(), activeTool: 'extrude', selectionKind: 'face', numericInputStep: 'extrudeDistance' }).text)
+      .toBe('入力欄「押し出す」で値を決めて、Enter を押してください(Tab で次の欄、Esc で取消)。');
+    // 穴の窓が開いた後は「中心にする点を選んでください」(選択の進み具合)を残さない。
+    expect(describeStatus({ ...quiet(), activeTool: 'hole', selectionKind: 'face', selectedSubShapeCount: 1, numericInputStep: 'holeSize' }).text)
+      .toBe('入力欄「穴をあける」で値を決めて、Enter を押してください(Tab で次の欄、Esc で取消)。');
+    // 窓が開く前は今までどおり選択の進み具合。
+    expect(describeStatus({ ...quiet(), activeTool: 'hole', selectionKind: 'face', selectedSubShapeCount: 1 }).text)
+      .toBe(t('statusBar.guide.centerPoint'));
+    expect(describeStatus({ ...quiet(), activeTool: 'offset', numericInputStep: 'offsetDistance' }).text)
+      .toBe('入力欄「オフセットの距離」で値を決めて、Enter を押してください(Tab で次の欄、Esc で取消)。');
+    // ばね・直線パターンは選択の進み具合の案内のまま(表に載せない)。
+    expect(describeStatus({ ...quiet(), activeTool: 'spring', springOriginSelected: true, springStep: 'springLength', numericInputStep: 'springLength' }).text)
+      .toBe(t('statusBar.guide.springLengthReady'));
+    expect(describeStatus({ ...quiet(), activeTool: 'linearPattern', selectedBodyCount: 1, numericInputStep: 'linearPattern' }).text)
+      .toBe(t('statusBar.guide.linearPatternReady'));
   });
 
   it('穴・ねじ穴は面を選ぶまでは基本案内、面を選んだら「中心にする点を選んでください」', () => {

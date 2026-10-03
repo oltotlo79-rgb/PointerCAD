@@ -87,6 +87,7 @@
   "mathGeometry.editor.unitMismatch": "測定値の単位（{unit}）とこの係数の単位が異なります。",
   "mathGeometry.createParameter": "この値の係数を作る",
   "mathGeometry.createParameter.disabled.noValue": "値が決まっていないため、係数を作れません。",
+  "mathGeometry.createParameter.disabled.booleanValue": "この結果は「はい」「いいえ」なので、係数を作れません。",
   "mathGeometry.createParameter.disabled.duplicateName": "同じ名前の係数がすでにあります。測定値の名前を変えてください。",
   "mathGeometry.createParameter.disabled.invalidName": "この測定値の名前は係数の名前として使えません。名前を変えてください。",
   "mathGeometry.createParameter.notice": "係数「{name}」を作りました。",

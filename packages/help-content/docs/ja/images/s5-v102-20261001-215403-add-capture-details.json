@@ -1,0 +1,662 @@
+{
+  "format": "pointercad-capture-provenance/1",
+  "releaseCertified": false,
+  "applicationBuildId": "6787f63c8fd66d361227839cf06c656482052e5380ce5e4caaaff162ff9e936c",
+  "adoptedAt": "2026-10-03T06:45:20.069Z",
+  "scripts": {
+    "e2e/tests/drawingSheetExpressionCaptureFlow.ts": "62a77d5cc8484e577b8d0689dff07f799a1b29bb67f7cca198224c9ec02036e3",
+    "e2e/tests/featureTreeRenameCaptureFlow.ts": "0ad94d552207e6720a3c44b03d9db7d59b2ac299c163549817d3682155afaa79",
+    "e2e/tests/mathGeometryIntegralCaptureFlow.ts": "f986e893fb1b0ca29ef452a1cf5a3792732882266c57f328146881ea20e3f7e0",
+    "e2e/tests/numericInputDragCaptureFlow.ts": "6289ba8577c719d40acbb5a71aded2340fc47957b7877775c0ff567a1124bea0",
+    "e2e/tests/threadShaftCaptureFlow.ts": "223b2c1649bca8357bd78b52e93946072e926b7e4523c3512a40beeb7ebbafff"
+  },
+  "captures": [
+    {
+      "name": "drawing-sheet-expression",
+      "selectedImage": "detail",
+      "script": "e2e/tests/drawingSheetExpressionCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-10-01T13:07:46.378Z",
+        "applicationBuildId": "6787f63c8fd66d361227839cf06c656482052e5380ce5e4caaaff162ff9e936c",
+        "project": "functional",
+        "sourceTest": "FIX-13 用紙の縮尺・縮尺の候補・文字高さに式を入れて適用した画面を撮る",
+        "script": "e2e/tests/drawingSheetExpressionCaptureFlow.ts",
+        "scriptSha256": "62a77d5cc8484e577b8d0689dff07f799a1b29bb67f7cca198224c9ec02036e3",
+        "fixture": {
+          "filename": "drawing-sheet-expression-fixture.json",
+          "sha256": "f167fa2e0f60dc3b194edd71ef5b8e3d9b8ee956e7854b7d1baa494c7660a68e"
+        },
+        "screen": {
+          "filename": "drawing-sheet-expression-screen.png",
+          "sha256": "bb531cba8c17dfa1c8f4358de317cd643587a4cd3fe6f12bcf3aa924fe7f8bed"
+        },
+        "detail": {
+          "filename": "drawing-sheet-expression-detail.png",
+          "sha256": "88de04cec3801c5c2f510a0a8b049170e8d6f9d2201dfca0f1ab4c3048fff328"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 1160,
+          "y": 68.5,
+          "width": 280,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "part": "box",
+        "sheet": {
+          "scale": "1/2",
+          "scaleOptions": "1/2, 1, root(8, 3)",
+          "textHeight": "7/2"
+        },
+        "ratio": "1:2"
+      }
+    },
+    {
+      "name": "feature-tree-rename-menu",
+      "selectedImage": "detail",
+      "script": "e2e/tests/featureTreeRenameCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-10-01T13:59:23.202Z",
+        "applicationBuildId": "6787f63c8fd66d361227839cf06c656482052e5380ce5e4caaaff162ff9e936c",
+        "project": "functional",
+        "sourceTest": "FIX-10 立体の行を右クリックして名前を変える一覧の画面を撮る",
+        "script": "e2e/tests/featureTreeRenameCaptureFlow.ts",
+        "scriptSha256": "0ad94d552207e6720a3c44b03d9db7d59b2ac299c163549817d3682155afaa79",
+        "fixture": {
+          "filename": "feature-tree-rename-menu-fixture.json",
+          "sha256": "07140956f74261b8a4ae37ca85d93fb76466ea64ffceb9180ccd0c7670631bed"
+        },
+        "screen": {
+          "filename": "feature-tree-rename-menu-screen.png",
+          "sha256": "4e412b01455415b887074cad720635003d003d822513eba2ea786631321ea11e"
+        },
+        "detail": {
+          "filename": "feature-tree-rename-menu-detail.png",
+          "sha256": "24ce21a47ae1d594ec955eaa893dd4a3bdf477729097b9cde9040b23671a0868"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 79521.03499984741
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 68.5,
+          "width": 240,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "feature": "箱1",
+        "open": "context-menu",
+        "hovered": "名前を変える"
+      }
+    },
+    {
+      "name": "math-geometry-integral",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathGeometryIntegralCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-10-03T06:21:13.068Z",
+        "applicationBuildId": "6787f63c8fd66d361227839cf06c656482052e5380ce5e4caaaff162ff9e936c",
+        "project": "functional",
+        "sourceTest": "FIX-01 図形の測定値から作った係数を線積分の座標式に使い、答えを係数へ適用する",
+        "script": "e2e/tests/mathGeometryIntegralCaptureFlow.ts",
+        "scriptSha256": "f986e893fb1b0ca29ef452a1cf5a3792732882266c57f328146881ea20e3f7e0",
+        "fixture": {
+          "filename": "math-geometry-integral-fixture.json",
+          "sha256": "0497552f9bc7df1f751e79f8758c06f3f25a53f9032305f33507cf55cc805c8d"
+        },
+        "screen": {
+          "filename": "math-geometry-integral-screen.png",
+          "sha256": "80823dbf09510d6396c8011720b21c22d05c881721fe75d88f354241aa966021"
+        },
+        "detail": {
+          "filename": "math-geometry-integral-detail.png",
+          "sha256": "42d15956b23d0968821625e2399b4bfa6d5a6a88f41b917d112a815cf6d08c51"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 2,
+          "isComputing": false,
+          "requestedGeneration": 7,
+          "completedGeneration": 7,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 23,
+          "lastCompletedAtMs": 20392.914999961853
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 89.71875,
+          "width": 720,
+          "height": 720.546875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "document": {
+          "id": "part-1",
+          "name": "図形の測定値の検査",
+          "schemaVersion": 17,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": [
+                {
+                  "id": "line-1",
+                  "name": "線分1",
+                  "kind": "line",
+                  "planeId": "xy",
+                  "construction": false,
+                  "from": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "y": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "z": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "50",
+                      "value": 50,
+                      "display": "50"
+                    },
+                    "y": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "z": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  }
+                },
+                {
+                  "id": "line-2",
+                  "name": "線分2",
+                  "kind": "line",
+                  "planeId": "xy",
+                  "construction": false,
+                  "from": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "y": {
+                      "source": "20",
+                      "value": 20,
+                      "display": "20"
+                    },
+                    "z": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "50",
+                      "value": 50,
+                      "display": "50"
+                    },
+                    "y": {
+                      "source": "20.4363433895",
+                      "value": 20.4363433895,
+                      "display": "20.4363433895"
+                    },
+                    "z": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "box-1",
+              "name": "箱1",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "30",
+                  "value": 30,
+                  "display": "30"
+                },
+                "sizeZ": {
+                  "source": "40",
+                  "value": 40,
+                  "display": "40"
+                }
+              }
+            },
+            {
+              "id": "box-2",
+              "name": "箱2",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "100",
+                    "value": 100,
+                    "display": "100"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "幅B",
+                  "value": 10,
+                  "display": "10"
+                },
+                "sizeY": {
+                  "source": "10",
+                  "value": 10,
+                  "display": "10"
+                },
+                "sizeZ": {
+                  "source": "10",
+                  "value": 10,
+                  "display": "10"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [
+            {
+              "name": "幅B",
+              "value": {
+                "source": "10",
+                "value": 10,
+                "display": "10"
+              },
+              "unit": "mm",
+              "description": ""
+            }
+          ],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {
+                "幅B": "10"
+              }
+            }
+          ],
+          "activeConfigurationId": "configuration-1",
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": []
+        },
+        "measured": {
+          "name": "長さ",
+          "kind": "length",
+          "target": "線分1",
+          "value": 50
+        },
+        "coefficient": "長さの値",
+        "parameter": "積分の値",
+        "source": "lineintegral(1,[x],[coef(\"長さの値\")*t],t,0,1)",
+        "expected": 50
+      }
+    },
+    {
+      "name": "numeric-input-drag",
+      "selectedImage": "detail",
+      "script": "e2e/tests/numericInputDragCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-10-03T06:20:58.730Z",
+        "applicationBuildId": "6787f63c8fd66d361227839cf06c656482052e5380ce5e4caaaff162ff9e936c",
+        "project": "functional",
+        "sourceTest": "UX-03 入力の窓を見出しのドラッグで動かした画面を撮る",
+        "script": "e2e/tests/numericInputDragCaptureFlow.ts",
+        "scriptSha256": "6289ba8577c719d40acbb5a71aded2340fc47957b7877775c0ff567a1124bea0",
+        "fixture": {
+          "filename": "numeric-input-drag-fixture.json",
+          "sha256": "63b6d46a268f522cda2a1dafb5034811c7ca76abfc5835a2e59fc93ef94a94de"
+        },
+        "screen": {
+          "filename": "numeric-input-drag-screen.png",
+          "sha256": "aa33157b46e9d4914a75d97984cd8d172b660973ee62f9823ec44f2a482a7acc"
+        },
+        "detail": {
+          "filename": "numeric-input-drag-detail.png",
+          "sha256": "ef09b43facdb2d09af4d9420923ad09b9978aa6b425aec862e5cb5b63d4b5043"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 14,
+          "lastCompletedAtMs": 6008.90499997139
+        },
+        "dialogBounds": {
+          "x": 454,
+          "y": 284.5,
+          "width": 260,
+          "height": 361.171875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "tool": "line",
+        "start": [
+          0,
+          0,
+          0
+        ],
+        "end": [
+          "30",
+          "10*2",
+          "0"
+        ],
+        "drag": {
+          "dx": -260,
+          "dy": -200
+        }
+      }
+    },
+    {
+      "name": "thread-shaft",
+      "selectedImage": "detail",
+      "script": "e2e/tests/threadShaftCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-10-01T14:11:57.213Z",
+        "applicationBuildId": "6787f63c8fd66d361227839cf06c656482052e5380ce5e4caaaff162ff9e936c",
+        "project": "functional",
+        "sourceTest": "FIX-06 円柱の側面を選んで外ねじの入力欄を開く画面を撮る",
+        "script": "e2e/tests/threadShaftCaptureFlow.ts",
+        "scriptSha256": "223b2c1649bca8357bd78b52e93946072e926b7e4523c3512a40beeb7ebbafff",
+        "fixture": {
+          "filename": "thread-shaft-fixture.json",
+          "sha256": "b96d30956403989ec4e8ae0d6045f9c1fb51945a376330e6fd6e977c39cfc008"
+        },
+        "screen": {
+          "filename": "thread-shaft-screen.png",
+          "sha256": "2c6ceae164b13b929bc538651d510b942d4739308f0ffeb1111bd17eb5b8aded"
+        },
+        "detail": {
+          "filename": "thread-shaft-detail.png",
+          "sha256": "3884738607f35bcb90cee93cf4c7068818b5cf8c8bd4e5f1726cf0f7f0baf634"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 13,
+          "lastCompletedAtMs": 24133.79000020027
+        },
+        "dialogBounds": {
+          "x": 714,
+          "y": 441.71875,
+          "width": 260,
+          "height": 421.78125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "shaft": {
+          "kind": "cylinder",
+          "radius": 3,
+          "height": 20
+        },
+        "size": "M6",
+        "series": "coarse",
+        "pitch": 1,
+        "length": "30/2",
+        "fromEnd": "first"
+      }
+    }
+  ]
+}

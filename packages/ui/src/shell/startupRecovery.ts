@@ -1,4 +1,5 @@
-const RETRY_KEY = 'pointercad.startup-retry.v1';
+/** Shared with startupGuard.ts (which must not import it), so both paths retry at most once. */
+export const RETRY_KEY = 'pointercad.startup-retry.v1';
 type RetryStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 type LeavingTarget = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 

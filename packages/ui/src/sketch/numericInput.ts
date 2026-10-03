@@ -2552,10 +2552,48 @@ function applyChoiceToFields(
   state: NumericInputState,
   choices: readonly NumericChoice[],
 ): NumericInputState {
+  if (state.step === 'threadShaftSize') {
+    return { ...state, fields: withStandardThreadShaftPitch(state, choices), choices };
+  }
   if (CHOICE_DEPENDENT_STEPS[state.step] !== true) {
     return { ...state, choices };
   }
   return { ...rebuiltFields(state, choices, state.toggles), choices };
+}
+
+/**
+ * 外ねじの呼び・系列を選び直したら、ピッチの欄へ規格表(model の `metricThreadPitch`)の値を
+ * 入れ直す(FR-423。欄の説明・ヘルプ `thread.md` の「選ぶと規格の値が入る」)。
+ *
+ * **ピッチを手で書き換えた後でも、呼び・系列を選び直すと規格の値で上書きする。**
+ * 作った後のプロパティでねじ穴・外ねじの呼びを変えたときと同じ決めにそろえる
+ * (`holeThreadPropertyUpdates.ts` の `setThreadDesignation`・`setThreadShaftNominal`。
+ * 「呼びを変え直すと上書きは失われる」)。呼びを変えたのに前の呼びのピッチが残ると、
+ * 呼びと合わないねじが黙って作られるため。特殊なピッチにしたいときは、呼びを選んだ後に
+ * ピッチを書き換える。呼び・系列が変わらない選択(切り始める端)では欄に触れない。
+ */
+function withStandardThreadShaftPitch(
+  state: NumericInputState,
+  choices: readonly NumericChoice[],
+): readonly NumericField[] {
+  const designation = choiceValueFrom(choices, 'threadDesignation');
+  const series = toThreadSeries(choiceValueFrom(choices, 'threadSeries'));
+  if (
+    designation === choiceValueFrom(state.choices, 'threadDesignation') &&
+    series === toThreadSeries(choiceValueFrom(state.choices, 'threadSeries'))
+  ) {
+    return state.fields;
+  }
+  const size = designation === undefined ? undefined : findMetricThread(designation);
+  if (size === undefined || series === undefined) {
+    return state.fields;
+  }
+  const source = expressionValueFromNumber(metricThreadPitch(size, series)).source;
+  return state.fields.map((field) =>
+    field.key === 'threadShaftPitch'
+      ? { ...field, source, typed: false, mathValue: undefined }
+      : field,
+  );
 }
 
 /**

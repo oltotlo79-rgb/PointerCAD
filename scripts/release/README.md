@@ -90,7 +90,7 @@ node scripts/release/build-sbom.mjs <new-output>
 
 単一ポータブル版の段は **WindowsのGitHub Actions専用**。`PCAD_PACKAGED_VARIANT=portable`で`portableDesktop.spec.ts`を選び、CI以外では設定と起動口の両方で拒否する。ローカルで実行する手順は設けない。起動器の標準出力の転送に頼らず、専用userDataの`DevToolsActivePort`から接続する。画面準備は通常の配布検査と共通の`packagedStartup.ts`（3D描画、ビューキューブ、入力、再読込みなど）を使い、実際の子プロセスの展開先と全同梱ファイルも照合する。起動60秒・窓60秒・終了30秒、検査全体900秒・再試行0・1 workerを維持する。形状・数式の計算操作と図面の字体の検査は従来のwin-unpacked段で引き続き行う。
 
-単一exeの通常終了後は、今回専用のTEMPの`nsi…tmp`が30秒以内に消えることを、検査自身が削除する前に確かめる。`portable-desktop-results.json`には起動したexe、展開先、本体PID、終了コード、残留の一覧、取得できた片付けのログを保存する。失敗時は`test-results/packaged-desktop/portable`も既存の失敗artifactへ含まれる。次の手動配布CIでは`desktop (windows-latest)`の「ポータブル版の単一exeを起動し終了後の片付けまで確かめる」を確認する。
+単一exeの通常終了後は、今回専用のTEMPのNSIS展開先(`ns`＋英字1文字＋16進の`.tmp`。例`nsy3217.tmp`。判定は`apps/desktop/src/main/portableExtraction.mjs`の1か所で、製品の片付けと共有)と片付けの台本の写し(`pointercad-cleanup-…`)が30秒以内に消えることを、検査自身が削除する前に確かめる。片付けは、アプリが台本・起動役・計画(JSON)を展開先の外の同じTEMPへ写し、終了の確定時に起動役を`powershell.exe -ExecutionPolicy RemoteSigned -File <写し>`で起こして終わりを待ち(上限20秒)、起動役が片付けを窓なしの別の処理として同じ形で起こす(符号化したコマンドは使わない。切り離して起こしたWindows PowerShellは何もせずに終わるため、この2段にした。v1.0.1で止め、v1.0.2で戻した)。`portable-desktop-results.json`には起動したexe、展開先、本体PID、終了コード、残留の一覧、取得できた片付けのログを保存する。失敗時は`test-results/packaged-desktop/portable`も既存の失敗artifactへ含まれる。次の手動配布CIでは`desktop (windows-latest)`の「ポータブル版の単一exeを起動し終了後の片付けまで確かめる」を確認する。
 
 手元(Windows)でwin-unpackedを確かめる場合は、画面検査の排他を守るため担当が`diag.py`を通して走らせる(配布物の組み立て・起動は統括の指示の後):
 

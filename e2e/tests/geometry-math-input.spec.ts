@@ -2,6 +2,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import {
   mathGeometryComparisonFlow, mathGeometryReferenceFlow, mathGeometryToleranceFlow, mathGeometryUsageFlow,
 } from './mathGeometryReferenceFlow.js';
+import { mathGeometryIntegralCaptureFlow } from './mathGeometryIntegralCaptureFlow.js';
 
 /*
  * GR-24: the tool "図形の測定値" in Chromium (functional) and Firefox. The name ends in math-input.spec.ts, so the
@@ -11,7 +12,7 @@ import {
  */
 test.use({ viewport: { width: 1440, height: 900 } });
 
-async function run(page: Page, info: TestInfo, flow: typeof mathGeometryReferenceFlow): Promise<void> {
+async function run(page: Page, info: TestInfo, flow: (page: Page, info: TestInfo) => Promise<void>): Promise<void> {
   const errors: string[] = [];
   page.on('pageerror', error => { errors.push(error.message); });
   // Saves use the download path and opening uses the file chooser in every browser.
@@ -41,4 +42,9 @@ test('ADD-23 比べる幅で平行の判定を変え、Undo・Redo・保存再�
 test('ADD-23 線分どうしの合同・相似を追加し、長さの比べる幅で合同の判定を変える', async ({ page }, info) => {
   test.setTimeout(180_000);
   await run(page, info, mathGeometryComparisonFlow);
+});
+
+test('FIX-01 図形の測定値から作った係数を線積分の座標式に使い、答えを係数へ適用する', async ({ page }, info) => {
+  test.setTimeout(360_000);
+  await run(page, info, mathGeometryIntegralCaptureFlow);
 });

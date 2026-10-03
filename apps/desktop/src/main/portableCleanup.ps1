@@ -1,5 +1,21 @@
 # Runs after non-cancellable quit. $cleanup is JSON data, never shell syntax.
+# The app copies this file, its starter (portableCleanupStart.ps1) and the plan into a folder made for this launch
+# outside the extraction; the starter runs this copy with "powershell.exe -File <copy>". No code or data travels on a
+# command line (portableCleanup.ts).
 $ErrorActionPreference = 'Stop'
+
+function Read-CleanupPlan {
+  $text = [IO.File]::ReadAllText([IO.Path]::Combine($PSScriptRoot, 'plan.json'), [Text.Encoding]::UTF8)
+  return ($text | ConvertFrom-Json)
+}
+
+function Remove-CleanupStage {
+  # Delete only the three files the app wrote into the stage folder, then the folder itself without recursion.
+  $stage = [IO.DirectoryInfo]::new($PSScriptRoot)
+  if (($stage.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Portable cleanup stage was replaced.' }
+  foreach ($name in @('plan.json', 'start.ps1', 'portableCleanup.ps1')) { [IO.File]::Delete([IO.Path]::Combine($stage.FullName, $name)) }
+  $stage.Delete($false)
+}
 
 function Initialize-CleanupNative {
   Add-Type -TypeDefinition @'
@@ -174,10 +190,13 @@ function Wait-OwnedProcess([int] $processId, [string] $executable) {
 }
 
 function Write-CleanupResult([string] $result, [string] $lastError, [int] $errorCode) {
+  if ($null -eq $cleanup) { throw 'Portable cleanup plan is unavailable.' }
+  # elapsedMs is the 30-second deadline clock; preparationMs is the plan read and Add-Type compile before it.
   $entry = [ordered]@{
     at = [DateTimeOffset]::UtcNow.ToString('o'); processId = $cleanup.processId
-    result = $result; elapsedMs = $timer.ElapsedMilliseconds; attempts = $attempts
-    lastError = $lastError.Substring(0, [Math]::Min(512, $lastError.Length)); errorCode = $errorCode
+    result = $result; elapsedMs = $timer.ElapsedMilliseconds; preparationMs = $preparation.ElapsedMilliseconds
+    attempts = $attempts; lastError = $lastError.Substring(0, [Math]::Min(512, $lastError.Length)); errorCode = $errorCode
+    stageRemoved = $stageRemoved; stageError = $stageError.Substring(0, [Math]::Min(256, $stageError.Length))
   } | ConvertTo-Json -Compress
   $bytes = [Text.Encoding]::UTF8.GetBytes($entry + [Environment]::NewLine)
   $log = [IO.Path]::Combine($cleanup.logDirectory, 'portable-cleanup.log')
@@ -197,14 +216,24 @@ function Write-CleanupResult([string] $result, [string] $lastError, [int] $error
   }
 }
 
-$timer = [Diagnostics.Stopwatch]::StartNew()
+# Preparation (reading the plan, compiling the native helper with Add-Type) has its own clock. Under heavy load the
+# compile alone took over 30 s (2026-10-01) and used up the deadline before the first attempt, so the 30-second
+# deadline for waiting and retrying starts only after preparation.
+$preparation = [Diagnostics.Stopwatch]::StartNew()
+$timer = [Diagnostics.Stopwatch]::new()
+$cleanup = $null
 $result = 'failed'
 $lastError = ''
 $errorCode = 0
 $attempts = 0
 $exitCode = 1
+$stageRemoved = $false
+$stageError = ''
 try {
+  $cleanup = Read-CleanupPlan
   Initialize-CleanupNative
+  $preparation.Stop()
+  $timer.Start()
   Wait-OwnedProcess $cleanup.processId $cleanup.executable
   Wait-OwnedProcess $cleanup.launcherId $cleanup.launcher
   while ($timer.ElapsedMilliseconds -lt 30000) {
@@ -237,6 +266,9 @@ catch {
   if ($cause -is [ComponentModel.Win32Exception]) { $errorCode = $cause.NativeErrorCode }
 }
 finally {
+  $preparation.Stop()
+  try { Remove-CleanupStage; $stageRemoved = $true }
+  catch { $stageError = $_.Exception.GetBaseException().Message }
   try { Write-CleanupResult $result $lastError $errorCode }
   catch { [Console]::Error.WriteLine('Portable cleanup log failed: ' + $_.Exception.Message); $exitCode = 1 }
   if ($exitCode -ne 0) { [Console]::Error.WriteLine($lastError) }

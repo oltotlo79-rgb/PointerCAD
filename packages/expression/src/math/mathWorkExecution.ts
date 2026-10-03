@@ -1,6 +1,6 @@
 /** Synchronous Worker-owned evaluation. The outer client separately enforces termination deadlines. */
 export { executeFunctionPointContinuationWork } from './functionPointContinuationWorkExecution.js';
-import {MathInputProblem,type MathNode,type MathEvaluation,type MathOperationDefinition,type StoredMathExpression,MATH_INPUT_FORMAT,MATH_INPUT_LIMITS} from './mathInputContract.js';
+import {MathInputProblem,pacedCalculationMs,type MathNode,type MathEvaluation,type MathOperationDefinition,type StoredMathExpression,MATH_INPUT_FORMAT,MATH_INPUT_LIMITS} from './mathInputContract.js';
 import {createMathWorkEnvelope, decodeMathWorkEnvelope} from './mathWorkRequest.js';
 import {parseMathText} from './mathTextSyntax.js';
 import {decodeMathJson} from './decodeMathJson.js';
@@ -39,7 +39,8 @@ export interface MathExecutionBackend {
   readonly box:(expression:EngineMathJson)=>MathBackendBox;
   /** Classify validated input before preparation; allowances remain relative to the current request. */
   readonly prepareDeadline?: (expression: MathNode) => void;
-  /** One synchronous block of 200ms, or of `allowance` ms when given (only the point calculations below pass it).
+  /** One synchronous block of 200ms at the machine's pace (`pacedCalculationMs`), or of `allowance` ms of this machine
+   * when given (only the point calculations below pass it, already paced).
    * A nested block never outlasts the block around it. */
   readonly withinDeadline:<T>(operation:()=>T extends Promise<unknown> ? never : T,allowance?:number)=>T;
 }
@@ -54,7 +55,8 @@ export class MathDeadlineExceeded extends MathInputProblem {
 }
 /** The user's limit for one calculation that makes a shape from a function (decided 2026-09-26): a point search
  * or continuation on a function, and the samples of a function curve or surface (also when a document is reopened).
- * Ordinary expressions in the input fields keep their 200ms. */
+ * Ordinary expressions in the input fields keep their 200ms. Both are stated for a machine at its usual speed and
+ * stretch with the machine's current pace (v1.0.2, `pacedCalculationMs`). */
 export const GEOMETRY_CALCULATION_MS=2000;
 type GeometryStop={readonly status:'stopped';readonly reason:'deadline'|'budget'};
 /** The clock of one such calculation, started when its request was decoded. Every block of the calculation (given
@@ -62,8 +64,9 @@ type GeometryStop={readonly status:'stopped';readonly reason:'deadline'|'budget'
  * the wall clock is the time limit ('deadline'); a step or size limit stays 'budget'. */
 export function geometryCalculationClock(backend:MathExecutionBackend,started:number) {
   let exceeded=false;
-  const left=():number=>Math.max(0,GEOMETRY_CALCULATION_MS-(performance.now()-started));
-  const shouldStop=():'deadline'|undefined=>performance.now()-started>=GEOMETRY_CALCULATION_MS?'deadline':undefined;
+  const limit=pacedCalculationMs(GEOMETRY_CALCULATION_MS);
+  const left=():number=>Math.max(0,limit-(performance.now()-started));
+  const shouldStop=():'deadline'|undefined=>performance.now()-started>=limit?'deadline':undefined;
   const timeStopped=():boolean=>exceeded||shouldStop()!==undefined;
   const watched:MathExecutionBackend={...backend,
     withinDeadline:<T>(operation:()=>T extends Promise<unknown> ? never : T,allowance?:number):T=>{
@@ -210,9 +213,9 @@ export function executeMathWorkRequest(value:unknown,backend:MathExecutionBacken
       const evaluate = (candidate: MathNode): MathEvaluation => {
         let substituted = candidate;
         if(request.functionScope===undefined) {
-          const numericalStarted = performance.now();
+          const numericalStarted = performance.now(), numericalLimit = pacedCalculationMs(200);
           const numerical=resolveNumericalRoots(substituted,candidates === null ? source : candidate,{backend,angleUnit:request.angleUnit,
-            shouldStop:()=>performance.now()-numericalStarted>=200?'deadline':undefined});
+            shouldStop:()=>performance.now()-numericalStarted>=numericalLimit?'deadline':undefined});
           if(numerical.evaluation!==undefined)return numerical.evaluation;
           substituted=numerical.expression;
         }
@@ -224,9 +227,9 @@ export function executeMathWorkRequest(value:unknown,backend:MathExecutionBacken
         if(prepared.status==='unresolved')return {status:'unresolved',reason:'missing-condition',names:prepared.operations};
         if(hasInfiniteDiscreteRange(prepared.expression)||requiresExactCalculus(prepared.expression))return {status:'unresolved',reason:'unevaluated',names:[]};
         // All branches remain inside the enclosing backend deadline; never renew it per candidate.
-        const scalarStarted = performance.now();
+        const scalarStarted = performance.now(), scalarLimit = pacedCalculationMs(200);
         return evaluatePreparedScalarMath(prepared.expression,candidates === null ? source : candidate,{backend,angleUnit:request.angleUnit,
-          shouldStop:()=>performance.now()-scalarStarted>=200?'deadline':undefined});
+          shouldStop:()=>performance.now()-scalarStarted>=scalarLimit?'deadline':undefined});
       };
       return reply(candidates === null ? evaluate(plan.expression)
         : plusMinusEvaluation(candidates.map(expression => ({ expression, evaluation: evaluate(expression) }))));

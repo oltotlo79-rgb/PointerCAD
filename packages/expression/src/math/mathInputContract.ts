@@ -10,6 +10,112 @@ export const MATH_INPUT_LIMITS = Object.freeze({
   matrixEntries: 4_096,
 });
 
+/**
+ * The machine's current calculation pace (v1.0.2). Every wall-clock limit of a calculation (200ms per block, 1s or
+ * 3s for special functions, 2s for a shape made from a function, the caller's Worker deadline) was measured on a
+ * machine at its usual speed; on a slower or throttled PC the same correct formula took 3.1s and was refused
+ * (2026-10-01, CPU at 24% of its rated speed). The calculation Worker therefore times a fixed reference workload
+ * before each request and stretches its limits by `elapsed / referenceMs`: never below 1 (a fast machine keeps
+ * exactly the stated limits) and never above `maximum` (a calculation still ends in finite time; cancelling still
+ * stops it at once). The host's Worker deadline follows the same pace up to its absolute 30s ceiling.
+ */
+export const CALCULATION_PACE_LIMITS = Object.freeze({
+  maximum: 4,
+  /** The reference workload's fastest run (ms) on the machine and speed the stated limits were measured at: the
+   * check machine's Chromium Worker took 7.3–10.9ms at 55–75% of its rated speed (2026-10-01), where the limits pass. */
+  referenceMs: 10,
+  /** Rounds of the reference workload in one run. */
+  rounds: 800,
+  /** Runs in one measurement; the fastest counts (a pause or an unoptimized first run is only ever slower). */
+  runs: 3,
+  /** A measurement is reused by the next requests for this long. */
+  reuseMs: 5_000,
+});
+let currentCalculationPace = 1;
+/** True for a pace a calculation may use: finite, from 1 to `CALCULATION_PACE_LIMITS.maximum`. */
+export function isCalculationPace(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= CALCULATION_PACE_LIMITS.maximum;
+}
+/** The pace of the request this Worker is calculating; 1 outside a calculation Worker. */
+export function calculationPace(): number { return currentCalculationPace; }
+/** A stated wall-clock limit (ms) at the current pace. */
+export function pacedCalculationMs(milliseconds: number): number { return milliseconds * currentCalculationPace; }
+/** Set by the calculation Worker before each request, outside every limit of that request. */
+export function setCalculationPace(pace: number): void {
+  if (!isCalculationPace(pace)) throw new RangeError('Invalid calculation pace');
+  currentCalculationPace = pace;
+}
+/** The pace for the reference workload's fastest run. An unusable time keeps the stated limits. */
+export function calculationPaceFromElapsed(elapsedMs: number): number {
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) return 1;
+  return Math.min(CALCULATION_PACE_LIMITS.maximum, Math.max(1, elapsedMs / CALCULATION_PACE_LIMITS.referenceMs));
+}
+let paceWorkloadSink = 0;
+function paceWorkload(rounds: number): number {
+  const values = new Float64Array(256);
+  let x = 0.5, sum = 0;
+  for (let round = 0; round < rounds; round += 1) {
+    for (let index = 0; index < values.length; index += 1) {
+      x = Math.sin(x * 1.0001 + index * 1e-3) + Math.sqrt(x * x + 1) * 0.5;
+      values[index] = values[(index * 7 + round) & 255] * 0.25 + x;
+      sum += values[index];
+    }
+  }
+  return sum;
+}
+/** The fastest of `runs` timed runs of the fixed reference workload (ms). */
+export function measureCalculationReferenceMs(now: () => number = () => performance.now()): number {
+  let fastest = Infinity;
+  for (let run = 0; run < CALCULATION_PACE_LIMITS.runs; run += 1) {
+    const started = now();
+    paceWorkloadSink += paceWorkload(CALCULATION_PACE_LIMITS.rounds);
+    fastest = Math.min(fastest, now() - started);
+  }
+  // The sink keeps the workload observable; it never affects the time.
+  if (Number.isNaN(paceWorkloadSink)) paceWorkloadSink = 0;
+  return fastest;
+}
+/** Reuses one measurement for `CALCULATION_PACE_LIMITS.reuseMs`; a Worker measures again after that. */
+export function createCalculationPaceMeter(now: () => number = () => performance.now(),
+  measure: () => number = () => measureCalculationReferenceMs(now)) {
+  let elapsedMs = measure(), measuredAt = now();
+  return {
+    /** The pace for the next request, measured again once the previous measurement is too old. */
+    current(): number {
+      if (!(now() - measuredAt < CALCULATION_PACE_LIMITS.reuseMs)) { elapsedMs = measure(); measuredAt = now(); }
+      return calculationPaceFromElapsed(elapsedMs);
+    },
+    /** The reference workload's time behind the current pace (for diagnostics). */
+    get elapsedMs(): number { return elapsedMs; },
+  };
+}
+const CALCULATION_PACE_KIND = 'math-pace';
+/** The Worker tells the host the pace of the request it starts, before calculating it. */
+export function createCalculationPaceMessage(pace: number): { readonly kind: 'math-pace'; readonly pace: number } {
+  if (!isCalculationPace(pace)) throw new RangeError('Invalid calculation pace');
+  return { kind: CALCULATION_PACE_KIND, pace };
+}
+/** Marker only (a shared transport keeps the request active); the receiving client validates every field. */
+export function isCalculationPaceMessage(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return false;
+  const descriptor = Object.getOwnPropertyDescriptor(value, 'kind');
+  return descriptor !== undefined && Object.hasOwn(descriptor, 'value') && descriptor.value === CALCULATION_PACE_KIND;
+}
+/** The pace of a pace message, or null for any other message. A malformed pace message throws. */
+export function readCalculationPaceMessage(value: unknown): number | null {
+  if (!isCalculationPaceMessage(value) || value === null || typeof value !== 'object') return null;
+  if (Array.isArray(value)) throw new Error('Invalid pace message');
+  const prototype: unknown = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) throw new Error('Invalid pace message prototype');
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== 2 || !keys.includes('kind') || !keys.includes('pace')) throw new Error('Invalid pace message fields');
+  const pace = Object.getOwnPropertyDescriptor(value, 'pace');
+  if (pace === undefined || !Object.hasOwn(pace, 'value') || !pace.enumerable) throw new Error('Invalid pace message property');
+  const paceValue: unknown = pace.value;
+  if (!isCalculationPace(paceValue)) throw new Error('Invalid calculation pace');
+  return paceValue;
+}
+
 export type MathAxis = 'X' | 'Y' | 'Z';
 export type MathParameter = 'T' | 'U' | 'V';
 export type MathSymbolReference =

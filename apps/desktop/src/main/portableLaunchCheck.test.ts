@@ -135,7 +135,10 @@ describe('単一ポータブル exe の起動検査の準備（実行ファイ�
     const temporary = 'D:/a/PointerCAD/scratchpad/temp/p/123456/t';
     const directory = win32.join(temporary, 'nsi123A.tmp');
     expect(portableExtractionDirectory(win32.join(directory, 'app', 'PointerCAD.exe'), temporary)).toBe(directory);
-    for (const path of ['C:/Windows/PointerCAD.exe', `${temporary}/other/app/PointerCAD.exe`,
+    // NSIS picks the third letter at random (CI run 36818570903: nsy3217.tmp); "ns" without a letter is not its name.
+    const actual = win32.join(temporary, 'nsy3217.tmp');
+    expect(portableExtractionDirectory(win32.join(actual, 'app', 'PointerCAD.exe'), temporary)).toBe(actual);
+    for (const path of ['C:/Windows/PointerCAD.exe', `${temporary}/other/app/PointerCAD.exe`, `${temporary}/nsz.tmp/app/PointerCAD.exe`,
       `${temporary}/nsi123A.tmp/PointerCAD.exe`, `${temporary}/nested/nsi123A.tmp/app/PointerCAD.exe`,
       `${temporary}/nsi123A.tmp/app/Other.exe`, `${temporary}-other/nsi123A.tmp/app/PointerCAD.exe`]) {
       expect(() => portableExtractionDirectory(path, temporary)).toThrow('outside');

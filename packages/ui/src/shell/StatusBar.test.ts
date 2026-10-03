@@ -2,6 +2,7 @@ import React, { createElement, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
+import { createNumericInput } from '../sketch/numericInput.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { StatusBar } from './StatusBar.js';
@@ -80,5 +81,22 @@ describe('ステータスバーの操作案内と計算表示(FR-905)', () => {
     expect(html).toContain('pcad-statusbar__cancel');
     expect(html).toContain(`title="${t('statusBar.progressHint')}"`);
     expect(html).toContain(`>${t('statusBar.cancel')}</button>`);
+  });
+
+  it('開いているその場入力の段に合わせて案内を描く(線分の終点・外ねじの大きさ)', () => {
+    useAppStore.setState({ activeTool: 'line', numericInput: createNumericInput('line', 'lineStart') });
+    expect(primaryText(renderStatus())).toBe(t('statusBar.guide.line'));
+    useAppStore.setState({ numericInput: createNumericInput('line', 'lineEnd') });
+    expect(primaryText(renderStatus())).toBe(t('statusBar.guide.lineEnd'));
+    useAppStore.setState({
+      activeTool: 'threadShaft',
+      numericInput: createNumericInput('threadShaft', 'threadShaftSize'),
+    });
+    expect(primaryText(renderStatus())).toBe(t('statusBar.guide.threadShaftSize'));
+  });
+
+  it('今の道具のものでない窓の段は案内に混ぜない', () => {
+    useAppStore.setState({ activeTool: 'circle', numericInput: createNumericInput('line', 'lineEnd') });
+    expect(primaryText(renderStatus())).toBe(t('statusBar.guide.circle'));
   });
 });

@@ -10,6 +10,7 @@ import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './appProtocol
 import { isAllowedAppUrl, registerAppWindow, validateAppSender } from './appSender.js';
 import { registerCloseGuard } from './closeGuard.js';
 import { PCAD_PRINT_CHANNEL, registerPcadIpc } from './pcadDialogs.js';
+import { registerPortableCleanup } from './portableCleanup.js';
 import { startupFailureDocument } from './startupHtml.js';
 
 /**
@@ -27,11 +28,9 @@ const preloadPath = join(currentDirectory, '..', 'preload', 'preload.cjs');
 const devServerUrl = app.isPackaged ? undefined : process.env['PCAD_DEV_SERVER_URL'];
 
 registerAppScheme();
-// v1.0.1: the portable post-exit cleanup (portableCleanup.ts) is intentionally not registered.
-// It started a hidden PowerShell whose script was passed as an encoded command line (gzip + base64), and on
-// 2026-10-01 02:00:07 Microsoft Defender blocked that same launch shape as Trojan:Win32/Commando.A!ml. Its 30-second
-// deadline also included the Add-Type compilation and overran under load. It returns in v1.0.2 with a launch that
-// Defender does not block and a real-device check. noEncodedPowerShell.test.ts keeps it unreachable from this entry.
+// The single-file portable removes this launch's %TEMP% extraction after a confirmed quit (v1.0.2). The helper and its
+// starter are staged script files run with -File; noEncodedPowerShell.test.ts keeps encoded or inline launches out.
+registerPortableCleanup(app);
 
 function createMainWindow(): void {
   const started = performance.now();

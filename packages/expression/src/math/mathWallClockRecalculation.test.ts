@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest, type ExactMathEngine } from './exactMathWorkExecution.js';
-import { MathInputProblem } from './mathInputContract.js';
+import { MathInputProblem, setCalculationPace } from './mathInputContract.js';
 import { executeMathWorkRequest, MathDeadlineExceeded } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import * as preparation from './prepareMathCalculation.js';
@@ -122,5 +122,23 @@ describe('時間の上限による停止を手順の上限と区別し、同じ�
     const problem = new MathDeadlineExceeded();
     expect(problem).toBeInstanceOf(MathInputProblem);
     expect(problem.code).toBe('budget');
+  });
+});
+
+describe('通常の式の200msの区切りは、機械の速さの倍率をかけて使う（v1.0.2）', () => {
+  afterEach(() => { setCalculationPace(1); });
+
+  it('倍率1の機械で2回とも301msかかれば、時間の上限として止める（今までどおり）', async () => {
+    replaceClock().delays.push(...Array.from({ length: 10 }, () => 301));
+    const { reply } = calculate('1+2');
+    expect((await reply).evaluation).toEqual({ status: 'stopped', reason: 'deadline' });
+  });
+
+  it('倍率2の機械では、301msかかっても1回目で値を返す', async () => {
+    setCalculationPace(2);
+    replaceClock().delays.push(301);
+    const { reply, blocks } = calculate('1+2');
+    expect((await reply).evaluation).toMatchObject({ status: 'value', kind: 'real', decimal: '3', coordinate: 3 });
+    expect(blocks).toHaveBeenCalledTimes(1);
   });
 });

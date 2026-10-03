@@ -119,7 +119,9 @@ describe('未保存の確認の配線(R03 の再発防止)', () => {
     expect(read(definesLaunchDesktop)).toContain('_electron.launch(');
     const files = execFileSync('git', ['-c', `safe.directory=${root}`, 'ls-files', '-z', '--cached', '--others', '--exclude-standard', 'apps', 'e2e', 'packages'],
       { cwd: root, encoding: 'utf8' }).split('\0')
-      .filter((name) => /\.(?:ts|tsx|mts|cts)$/u.test(name) && !/\.test\.[a-z]+$/u.test(name));
+      .filter((name) => /\.(?:ts|tsx|mts|cts)$/u.test(name) && !/\.test\.[a-z]+$/u.test(name))
+      // --cached still lists a tracked file deleted in the working tree until the deletion is committed; it runs nothing.
+      .filter((name) => existsSync(resolve(root, name)));
     const callers = files.filter((name) => name !== definesLaunchDesktop && /_electron\.launch\s*\(/u.test(read(name)));
     expect(callers.length).toBeGreaterThan(0);
     for (const caller of callers) {

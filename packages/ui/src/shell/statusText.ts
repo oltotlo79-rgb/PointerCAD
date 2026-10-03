@@ -19,7 +19,7 @@ import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { picksSolidVertices } from '../sketch/freeSketch.js';
-import type { NumericInputToolId } from '../sketch/numericInput.js';
+import { STEP_TITLE_KEYS, type NumericInputStep, type NumericInputToolId } from '../sketch/numericInput.js';
 import type { SnapKind } from '../sketch/snapMath.js';
 import type { TrackKind } from '../sketch/trackMath.js';
 import { SELECTION_KIND_LABEL_KEYS } from '../solid/selectionFilter.js';
@@ -661,6 +661,13 @@ export interface StatusInput {
    */
   readonly springStep: SpringNumericInputStep | null;
   /**
+   * いま開いているその場入力の段(FR-905「次に行う操作を常時表示」)。窓が開いていない、
+   * または開いている窓が今の道具のものでないときは null。`numericStepGuideText` が
+   * 段ごとの案内へ置き換えるのに使う。省略できるのは、この欄を持たない既存の呼び出し
+   * (検査)をそのまま通すため。
+   */
+  readonly numericInputStep?: NumericInputStep | null;
+  /**
    * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23、利用者の回答 Q11=P2、GR-26)。
    * 「{count}件の量を測れます。…」「選ぶのは3つまでです。」のように、選択が進むにつれて
    * 変わる 1 文。判断はストアを読む `math/mathGeometryToolGuide.ts` の純関数 1 か所にあり、
@@ -743,6 +750,104 @@ export function springGuideText(
     return t('statusBar.guide.springLengthReady');
   }
   return originSelected ? t('statusBar.guide.springShapeReady') : null;
+}
+
+/**
+ * その場入力の窓の段ごとの案内(FR-905「次に行う操作を常時表示」)。
+ *
+ * 道具の基本案内(`GUIDE_KEYS`)は道具を選んだ直後の一手(線分なら始点を入れる、外ねじなら
+ * 丸い軸の面を選ぶ)を言う。窓が次の段へ進んだ後や、選び終えて窓が開いた後も同じ文のままだと、
+ * いま入れるものと食い違う(v1.0.1 で「線分の終点」の窓の間も「線分の始点を入れます」、
+ * 「外ねじの大きさ」の窓の間も「面を選んでください」のままだった)。
+ *
+ * - **2 段目以降の段**(作図・基準・整形・移動の道具)は、ここに段ごとの文を書く。文の形は
+ *   1 段目の案内(「〜を入れます(Tab で次の欄、Enter で決定、Esc で取消)。」)にそろえ、
+ *   言葉はヘルプの手順(shapes.md・sketch-tools.md・ellipse.md・spline.md・
+ *   reference-geometry.md・copy-array.md・shape-edit.md)に合わせる。
+ * - **選び終えてから窓が開く道具の段**(押し出し・穴・面取り・オフセットなど。基本案内が
+ *   「〜を選んでください」)は `NUMERIC_WINDOW_GUIDE_STEPS` に置き、窓の見出しを差し込んだ
+ *   1 つの文で「窓で決めて Enter」を伝える(窓の欄は段ごとに違い、つまみで出入りするため、
+ *   欄の名前を並べると窓と食い違いやすい)。
+ * - どちらにも無い段は基本案内のままでよい。1 段目で基本案内がそのまま当たる段(線分の始点・
+ *   円の中心・基準の決め方など)、基本案内が窓の中身まで言う段(基本形状・球面上の点・
+ *   角の丸め/面取り)、選択の進み具合で文を替える段(ばね・直線/円形パターンは
+ *   `machiningGuideText`)である。一覧は単体(`statusText.test.ts`)で段ごとに固定している。
+ */
+export const NUMERIC_STEP_GUIDE_KEYS: Readonly<Partial<Record<NumericInputStep, MessageKey>>> = {
+  lineEnd: 'statusBar.guide.lineEnd',
+  arcShape: 'statusBar.guide.arcShape',
+  pointArrayShape: 'statusBar.guide.pointArrayShape',
+  pointArrayGridColumns: 'statusBar.guide.pointArrayGridColumns',
+  circleRadius: 'statusBar.guide.circleRadius',
+  twoPointArcEnd: 'statusBar.guide.twoPointArcEnd',
+  twoPointArcRadius: 'statusBar.guide.twoPointArcRadius',
+  threePointArcEnd: 'statusBar.guide.threePointArcEnd',
+  threePointArcVia: 'statusBar.guide.threePointArcVia',
+  rectangleCorner2: 'statusBar.guide.rectangleCorner2',
+  polygonShape: 'statusBar.guide.polygonShape',
+  slotCenter2: 'statusBar.guide.slotCenter2',
+  slotShape: 'statusBar.guide.slotShape',
+  ellipseShape: 'statusBar.guide.ellipseShape',
+  ellipseAngles: 'statusBar.guide.ellipseAngles',
+  ellipseArcAngles: 'statusBar.guide.ellipseArcAngles',
+  splineShape: 'statusBar.guide.splineShape',
+  transformTranslation: 'statusBar.guide.transformTranslation',
+  transformRotation: 'statusBar.guide.transformRotation',
+  threadShaftSize: 'statusBar.guide.threadShaftSize',
+  referencePlanePoint2: 'statusBar.guide.referencePlanePoint2',
+  referencePlanePoint3: 'statusBar.guide.referencePlanePoint3',
+  referencePlaneThrough: 'statusBar.guide.referencePlaneThrough',
+  referenceAxisStart: 'statusBar.guide.referenceAxisStart',
+  referenceAxisEnd: 'statusBar.guide.referenceAxisEnd',
+  referencePointAt: 'statusBar.guide.referencePointAt',
+  referenceCsAxes: 'statusBar.guide.referenceCsAxes',
+  linearArrayCount: 'statusBar.guide.linearArrayCount',
+  circularArrayShape: 'statusBar.guide.circularArrayShape',
+};
+
+/**
+ * 選び終えてから窓が開く道具の段(上の注釈の 2 つ目)。窓の見出し(`STEP_TITLE_KEYS`)を
+ * `statusBar.guide.numericWindow` へ差し込んで出す。
+ */
+export const NUMERIC_WINDOW_GUIDE_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> = {
+  extrudeDistance: true,
+  revolveAngle: true,
+  sewTolerance: true,
+  holeSize: true,
+  threadSize: true,
+  filletRadius: true,
+  chamferSize: true,
+  ruledTwist: true,
+  loftTwist: true,
+  draftAngle: true,
+  mirrorPlane: true,
+  scaleAmount: true,
+  sweepOptions: true,
+  ribThickness: true,
+  embossHeight: true,
+  pointPattern: true,
+  surfaceShape: true,
+  shellThickness: true,
+  cutPlane: true,
+  offsetDistance: true,
+  mirrorBasis: true,
+  copyDelta: true,
+  linearArrayDirection: true,
+  circularArrayCenter: true,
+};
+
+/** その場入力の段の案内。表に無い段・窓が開いていないときは null(基本案内へ後退する)。 */
+export function numericStepGuideText(step: NumericInputStep | null | undefined): string | null {
+  if (step === null || step === undefined) {
+    return null;
+  }
+  const key = NUMERIC_STEP_GUIDE_KEYS[step];
+  if (key !== undefined) {
+    return t(key);
+  }
+  return NUMERIC_WINDOW_GUIDE_STEPS[step] === true
+    ? fill(t('statusBar.guide.numericWindow'), { title: t(STEP_TITLE_KEYS[step]) })
+    : null;
 }
 
 /**
@@ -1155,6 +1260,7 @@ function resolveGuide(input: StatusInput): StatusLineWithoutSelectionKind {
     text:
       draggingText ??
       constraintText ??
+      numericStepGuideText(input.numericInputStep) ??
       machiningText ??
       mathGeometryText ??
       summaryText ??

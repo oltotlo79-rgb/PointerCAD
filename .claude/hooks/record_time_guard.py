@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DATED = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?!\d)")
+MONTH_DAY = re.compile(r"(?<![0-9-])([0-9]{2}-[0-9]{2}) ([0-9]{2}:[0-9]{2})(?![0-9])")
 BARE = re.compile(r"(?<!\d)(\d{2}:\d{2})(?!\d)")
 FORECAST = ("見込み", "予定", "予測", "目標", "までに", "resets")
 RECENT = timedelta(minutes=3)
@@ -61,6 +62,17 @@ def candidates(root: Path = ROOT) -> list[Path]:
     return [path for path in paths if path.is_file()]
 
 
+def registry_month_day_stamp(value: str, now: datetime) -> datetime | None:
+    """年なしの台帳は現在に最も近い年で読む（12月→1月の日またぎを含む）。"""
+    stamps = []
+    for year in (now.year - 1, now.year, now.year + 1):
+        try:
+            stamps.append(datetime.strptime(f"{year}-{value}", "%Y-%m-%d %H:%M"))
+        except ValueError:
+            continue
+    return min(stamps, key=lambda stamp: abs(stamp - now)) if stamps else None
+
+
 def future_times(path: Path, content: str, now: datetime, root: Path = ROOT) -> list[tuple[int, str]]:
     file_kind = kind(path, root)
     if file_kind is None:
@@ -79,6 +91,15 @@ def future_times(path: Path, content: str, now: datetime, root: Path = ROOT) -> 
                 continue
             if stamp > now + ALLOWANCE:
                 found.append((line_number, match.group()))
+        # 台帳の新書式は日付込みで判定する。旧HH:MMだけの行から日付を推測しない。
+        # queueの更新時刻など、台帳以外の従来の文脈限定の検査は維持する。
+        registry_file = path.resolve() == (root / "scratchpad/claude/agents/registry.md").resolve()
+        if registry_file:
+            for match in MONTH_DAY.finditer(line):
+                stamp = registry_month_day_stamp(match.group(), now)
+                if stamp is not None and stamp > now + ALLOWANCE:
+                    found.append((line_number, match.group()))
+            continue
         if file_kind not in ("registry", "manifest", "instruction"):
             continue
         for match in BARE.finditer(line):

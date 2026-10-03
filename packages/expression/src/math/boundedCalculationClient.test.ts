@@ -84,3 +84,93 @@ describe('数式の初回読み込みだけ有限の猶予を与える', () => {
     expect(vi.getTimerCount()).toBe(0); expect(terminate).not.toHaveBeenCalled(); client.dispose();
   });
 });
+
+// v1.0.2: the Worker reports the machine's pace before calculating; the caller's deadline follows it.
+describe('Worker が知らせた機械の速さの倍率だけ、呼出し元の期限を伸ばす', () => {
+  it('倍率2.5なら5秒の期限を12.5秒まで伸ばし、その間の返信を受け取る', async () => {
+    vi.useFakeTimers();
+    const { client, workers } = fixture(0);
+    const pending = client.evaluate(request, 5_000);
+    workers[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 2.5 } });
+    await vi.advanceTimersByTimeAsync(12_400);
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+    workers[0].reply(1);
+    expect(await pending).toMatchObject({ status: 'result', result: 'done' });
+    client.dispose();
+  });
+
+  it('倍率2.5でも、伸ばした12.5秒を過ぎたら Worker を終了する', async () => {
+    vi.useFakeTimers();
+    const { client, workers } = fixture(0);
+    const pending = client.evaluate(request, 5_000);
+    workers[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 2.5 } });
+    await vi.advanceTimersByTimeAsync(12_400);
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).toMatchObject({ status: 'deadline' });
+    expect(workers[0].terminate).toHaveBeenCalledTimes(1); client.dispose();
+  });
+
+  it('速い機械（倍率1）では元の5秒のまま打ち切る', async () => {
+    vi.useFakeTimers();
+    const { client, workers } = fixture(0);
+    const pending = client.evaluate(request, 5_000);
+    workers[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 1 } });
+    await vi.advanceTimersByTimeAsync(4_900);
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).toMatchObject({ status: 'deadline' }); client.dispose();
+  });
+
+  it('伸ばしても30秒の絶対上限を超えない', async () => {
+    vi.useFakeTimers();
+    const { client, workers } = fixture(0);
+    const pending = client.evaluate(request, 10_000);
+    workers[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 4 } });
+    await vi.advanceTimersByTimeAsync(29_900);
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).toMatchObject({ status: 'deadline' }); client.dispose();
+  });
+
+  it('初回の15秒の猶予より短くは縮めない', async () => {
+    vi.useFakeTimers();
+    const { client, workers } = fixture();
+    const pending = client.evaluate(request, 5_000);
+    workers[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 2 } });
+    await vi.advanceTimersByTimeAsync(14_900);
+    expect(workers[0].terminate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await pending).toMatchObject({ status: 'deadline' }); client.dispose();
+  });
+
+  it.each([
+    { kind: 'math-pace', pace: 5 }, { kind: 'math-pace', pace: 0.5 }, { kind: 'math-pace', pace: NaN },
+    { kind: 'math-pace' }, { kind: 'math-pace', pace: 2, serial: 1 },
+  ])('形の崩れた倍率の知らせ %o は Worker の誤りとして終了する', async data => {
+    const { client, workers } = fixture(0);
+    const pending = client.evaluate(request, 5_000);
+    workers[0].port.onmessage?.({ data });
+    expect(await pending).toMatchObject({ status: 'worker-error' });
+    expect(workers[0].terminate).toHaveBeenCalledTimes(1); client.dispose();
+  });
+
+  it('1つの依頼で倍率を2回知らせた Worker は誤りとして終了する', async () => {
+    const { client, workers } = fixture(0);
+    const pending = client.evaluate(request, 5_000);
+    workers[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 2 } });
+    workers[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 3 } });
+    expect(await pending).toMatchObject({ status: 'worker-error' }); client.dispose();
+  });
+
+  it('次の依頼は自分の倍率の知らせを受けるまで元の期限を使う', async () => {
+    vi.useFakeTimers();
+    const { client, workers } = fixture(0);
+    const first = client.evaluate(request, 5_000);
+    workers[0].port.onmessage?.({ data: { kind: 'math-pace', pace: 3 } });
+    workers[0].reply(1); expect(await first).toMatchObject({ status: 'result' });
+    const second = client.evaluate(request, 5_000);
+    await vi.advanceTimersByTimeAsync(5_100);
+    expect(await second).toMatchObject({ status: 'deadline' }); client.dispose();
+  });
+});

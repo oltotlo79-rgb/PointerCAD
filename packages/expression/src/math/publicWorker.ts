@@ -38,3 +38,4 @@ export {
   executeFunctionPointWorkRequest,
 } from './functionPointWorkExecution.js';
 export { executePreparedFunctionWork } from './functionWorkPreparation.js';
+export { createCalculationPaceMeter, createCalculationPaceMessage, setCalculationPace } from './mathInputContract.js';

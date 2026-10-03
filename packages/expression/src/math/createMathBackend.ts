@@ -1,6 +1,6 @@
 /** Instantiate inside the disposable calculation Worker; never attach an engine to the input field. */
 import {createNativeMathBox,nativeMathDeadlineKind} from './nativeMathBackend.js';
-import type {MathNode} from './mathInputContract.js';
+import {pacedCalculationMs,type MathNode} from './mathInputContract.js';
 import {CANDIDATE_MATH_OPERATIONS,CANDIDATE_MATH_BY_ID} from './mathOperations.js';
 import {createMathLatexCodec} from './mathLatexCodec.js';
 import {MathDeadlineExceeded,executeMathWorkRequest,type MathExecutionBackend} from './mathWorkExecution.js';
@@ -10,10 +10,11 @@ export function createMathBackend():MathExecutionBackend {
   let deadline=Infinity,startedAt=0,parentDeadline=Infinity;
   const check=():void=>{if(performance.now()>deadline)throw new MathDeadlineExceeded();};
   // Special functions (including real/complex erf) and distributions share bounded high-precision kernels.
-  // Keep 200ms for ordinary expressions, 1s for these operations, 3s for elliptic integrals.
+  // Keep 200ms for ordinary expressions, 1s for these operations, 3s for elliptic integrals (each at the machine's
+  // current pace, v1.0.2: never shorter, at most CALCULATION_PACE_LIMITS.maximum times longer).
   // The allowance is relative to the original request, never renewed per function.
   const distributionAllowance=(kind?:'elliptic'):void=>{if(Number.isFinite(deadline))deadline=Math.min(parentDeadline,
-    Math.max(deadline,startedAt+(kind==='elliptic'?3000:1000)));};
+    Math.max(deadline,startedAt+pacedCalculationMs(kind==='elliptic'?3000:1000)));};
   // Only validated input/substitution trees enter here (bounded by MATH_INPUT_LIMITS).
   const prepareDeadline=(expression:MathNode):void=>{
     const pending=[expression];
@@ -41,9 +42,10 @@ export function createMathBackend():MathExecutionBackend {
     parseLatex:codec.parse,serializeLatex:codec.serialize,operations:CANDIDATE_MATH_OPERATIONS,operationsById:CANDIDATE_MATH_BY_ID,
     prepareDeadline,
     box:expression=>createNativeMathBox(expression,check,distributionAllowance),
-    withinDeadline:<T>(operation:()=>T extends Promise<unknown> ? never : T,allowance=200):T=>{
+    // An explicit allowance is already in milliseconds of this machine (the geometry clock paces its own limit).
+    withinDeadline:<T>(operation:()=>T extends Promise<unknown> ? never : T,allowance?:number):T=>{
       const previous={deadline,startedAt,parentDeadline};parentDeadline=deadline;startedAt=performance.now();
-      deadline=Math.min(parentDeadline,startedAt+allowance);
+      deadline=Math.min(parentDeadline,startedAt+(allowance??pacedCalculationMs(200)));
       try{const result=operation();check();return result;}
       finally{({deadline,startedAt,parentDeadline}=previous);}
     },

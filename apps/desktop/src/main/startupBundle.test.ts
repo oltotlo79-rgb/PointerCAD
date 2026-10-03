@@ -45,6 +45,19 @@ it('実際のデスクトップの起動入口は64KiB以内で、本体・React
   visited.clear();
   visit(entry.fileName);
   expect(bytes).toBeLessThanOrEqual(65_536);
+  // The import-free guard runs just before the entry, so a failed static import of the entry still reloads once.
+  const guard = [...chunks.values()].find(chunk => chunk.isEntry && chunk.facadeModuleId?.endsWith('/packages/ui/src/shell/startupGuardEntry.ts'));
+  if (guard === undefined) throw new Error('Desktop startup guard missing');
+  expect(guard.imports).toEqual([]);
+  expect(guard.dynamicImports).toEqual([]);
+  expect(Object.keys(guard.modules).every(id => /\/packages\/ui\/src\/shell\/startupGuard(?:Entry)?\.ts$/u.test(id.replaceAll('\\', '/')))).toBe(true);
+  const page = result.output.find(item => item.type === 'asset' && item.fileName === 'index.html');
+  if (page?.type !== 'asset') throw new Error('Desktop page missing');
+  const html = String(page.source);
+  const guardAt = html.indexOf(`<script type="module" crossorigin src="./${guard.fileName}" data-startup-guard></script>`);
+  const entryAt = html.indexOf(`src="./${entry.fileName}"`);
+  expect(guardAt).toBeGreaterThan(html.indexOf('http-equiv="Content-Security-Policy"'));
+  expect(entryAt).toBeGreaterThan(guardAt);
 });
 
 it('配布する本体へ起動画面のHTML・文言を同梱し、起動時の外部読込みを要しない', async () => {

@@ -13,7 +13,7 @@ import { connectPortable, EXIT_TIMEOUT_MS, LAUNCH_TIMEOUT_MS, pathExists, portab
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
-test('単一ポータブル exe の展開・窓の準備・正常終了', async ({ playwright }, info) => {
+test('単一ポータブル exe の展開・窓の準備・正常終了・一時展開物の片付け', async ({ playwright }, info) => {
   // This guard runs before creating folders or starting any executable. It is intentionally not a skip.
   assertPortableLaunchEnvironment(process.env, process.platform);
   const candidatePath = process.env.PCAD_PACKAGED_CANDIDATE;
@@ -63,15 +63,20 @@ test('単一ポータブル exe の展開・窓の準備・正常終了', async 
       await expect.poll(() => portableProcesses(isolated.temporary, exitTimeLeft()), { timeout: exitTimeLeft(), intervals: [1_000] }).toEqual([]);
       evidence.exit = { code: launcher.exitCode, signal: launcher.signalCode };
     });
-    // The former step "the NSIS extraction under this TEMP disappears within 30 seconds after exit" was removed
-    // because v1.0.1 stops the portable post-exit cleanup feature (apps/desktop/src/main/main.ts): its hidden
-    // PowerShell launch with an encoded command line was blocked by Microsoft Defender as Trojan:Win32/Commando.A!ml.
-    // It returns with the feature in v1.0.2. Until then, prove the stopped feature never asked for PowerShell, and
-    // only record whether the extraction remains. The isolation folder holding it is removed after success below.
-    await test.step('止めた終了後の片付けを起動していない（v1.0.1）', async () => {
-      expect(await pathExists(join(isolated.userData, 'portable-cleanup-startup.json')),
-        '終了後の片付けの起動の記録が無いこと').toBe(false);
-      evidence.extractionRemainsAfterExit = await pathExists(extraction.directory);
+    // v1.0.2 restores the post-exit cleanup (apps/desktop/src/main/portableCleanup.ts), now started as a staged script
+    // file with -File instead of the encoded command line Defender blocked in v1.0.0. Judge before this test deletes
+    // anything: the isolation folder is removed only after success, below. Both waits share the 30 s after exit.
+    await test.step('(g) 終了後30秒以内に当該TEMPのNSIS展開先と片付けの写しが無くなる（終了後の片付け）', async () => {
+      await expect.poll(() => pathExists(extraction.directory),
+        { timeout: exitTimeLeft(), intervals: [500], message: '当該TEMPのNSIS展開先が終了後30秒以内に無くなること' }).toBe(false);
+      await expect.poll(async () => (await readdir(isolated.temporary)).filter(name => name.startsWith('pointercad-cleanup-')),
+        { timeout: exitTimeLeft(), intervals: [500], message: '片付けの台本の写しも消えること' }).toEqual([]);
+      evidence.extractionRemovedWithinMs = Date.now() - lifetime.exitedAt;
+      // The app's cleanup removed it (not something else): its log in the dedicated profile, written last, says so.
+      // Waiting for it also keeps the folder removal below from racing the cleanup's final write.
+      await expect.poll(async () => (await readFile(join(isolated.userData, 'portable-cleanup.log'), 'utf8').catch(() => ''))
+        .includes('"result":"completed"'), { timeout: exitTimeLeft(), intervals: [500], message: '片付けが完了を記録すること' }).toBe(true);
+      expect(await readFile(join(isolated.userData, 'portable-cleanup-startup.json'), 'utf8'), '片付けを起動した記録').toContain('"result":"started"');
     });
     completed = true;
   } catch (error) {

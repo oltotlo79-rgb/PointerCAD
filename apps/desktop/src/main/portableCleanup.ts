@@ -1,6 +1,8 @@
-import { lstatSync, mkdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { win32 } from 'node:path';
 import cleanupScript from './portableCleanup.ps1?raw';
+import startScript from './portableCleanupStart.ps1?raw';
+import { nsisExtractionDirectory } from './portableExtraction.mjs';
 
 interface QuitEvents {
   readonly isPackaged: boolean;
@@ -52,10 +54,11 @@ export function planPortableCleanup(context: PortableCleanupContext): PortableCl
     || !Number.isSafeInteger(processId) || processId <= 0 || processId > 2147483647
     || !Number.isSafeInteger(launcherId) || launcherId <= 0 || launcherId > 2147483647
     || processId === launcherId) return null;
-  const appDirectory = win32.dirname(executable), directory = win32.dirname(appDirectory);
-  if (win32.basename(executable) !== 'PointerCAD.exe' || win32.basename(appDirectory) !== 'app'
-    || !/^nsi[0-9a-f]{1,4}\.tmp$/iu.test(win32.basename(directory)) || !samePath(win32.dirname(directory), temporary)
-    || !samePath(win32.dirname(launcher), launcherDirectory) || win32.extname(launcher).toLowerCase() !== '.exe') return null;
+  // The one shared judgement of this launch's NSIS extraction ("ns" + a..z + hex; see portableExtraction.mjs).
+  const directory = nsisExtractionDirectory(executable, temporary);
+  if (directory === null || !samePath(win32.dirname(launcher), launcherDirectory)
+    || win32.extname(launcher).toLowerCase() !== '.exe') return null;
+  const appDirectory = win32.dirname(executable);
   const launcherRelative = win32.relative(directory, launcher);
   if (!launcherRelative.startsWith('..' + win32.sep) && !win32.isAbsolute(launcherRelative)) return null;
   const logRelative = win32.relative(directory, userData);
@@ -82,18 +85,69 @@ export function planPortableCleanup(context: PortableCleanupContext): PortableCl
   }
 }
 
-/** Data is base64 JSON inside an encoded command: quotes/metacharacters in paths cannot become code. */
-export function portableCleanupArguments(plan: PortableCleanupPlan): string[] {
-  const data = Buffer.from(JSON.stringify({ ...plan, requestedAt: Date.now() }), 'utf8').toString('base64');
-  // Compress the embedded helper to stay below Windows' 32767-character command-line limit.
-  const source = process.getBuiltinModule('zlib').gzipSync(Buffer.from(cleanupScript, 'utf8')).toString('base64');
-  const script = `$cleanup = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')) | ConvertFrom-Json
-$bytes = [IO.MemoryStream]::new([Convert]::FromBase64String('${source}'))
-$gzip = [IO.Compression.GZipStream]::new($bytes, [IO.Compression.CompressionMode]::Decompress)
-$reader = [IO.StreamReader]::new($gzip, [Text.Encoding]::UTF8)
-try { $source = $reader.ReadToEnd() } finally { $reader.Dispose(); $bytes.Dispose() }
-& ([scriptblock]::Create($source))`;
-  return ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')];
+/** The only files in a launch's stage folder. portableCleanup.ps1 deletes exactly these three, then the empty folder. */
+export const PORTABLE_CLEANUP_STAGE = { start: 'start.ps1', cleanup: 'portableCleanup.ps1', plan: 'plan.json' } as const;
+
+/** Paths of one launch's staged copies. */
+export interface PortableCleanupStage {
+  readonly directory: string;
+  readonly start: string;
+  readonly cleanup: string;
+}
+
+/**
+ * How long the confirmed quit waits for the short starter (normally 0.2-1 s; Windows PowerShell's own start under
+ * load took several seconds in the 2026-10-01 measurements). The window is already gone at this point.
+ */
+export const PORTABLE_CLEANUP_START_TIMEOUT_MS = 20000;
+
+/** Windows PowerShell 5.1 reads a script without a byte order mark in the ANSI code page; mark it as UTF-8. */
+const UTF8_BOM = String.fromCharCode(0xfeff);
+
+function removeStage(stage: string): void {
+  try {
+    for (const name of Object.values(PORTABLE_CLEANUP_STAGE)) rmSync(win32.join(stage, name), { force: true });
+    rmdirSync(stage);
+  } catch (error) { console.error('Portable cleanup stage could not be removed:', error); }
+}
+
+/**
+ * Copies the cleanup script, its starter and this launch's plan into a new folder in the same temporary folder as the
+ * NSIS extraction (beside it, never inside it).
+ *
+ * 2026-10-01 02:00:07 Microsoft Defender blocked a PowerShell whose script was passed as an encoded command line
+ * (gzip + base64 + a script block, v1.0.0) as Trojan:Win32/Commando.A!ml, judged from the command line alone.
+ * Nothing is encoded or embedded in a command line any more: the scripts are ordinary files run with -File, and the
+ * plan is JSON data the cleanup reads from beside itself, so quotes or metacharacters in paths cannot become code.
+ * `cleanup` exists only for the real-file tests that add synchronization points; the app always uses the shipped one.
+ */
+export function stagePortableCleanup(plan: PortableCleanupPlan, cleanup: string = cleanupScript): PortableCleanupStage {
+  const directory = mkdtempSync(win32.join(plan.temporary, 'pointercad-cleanup-'));
+  const staged: PortableCleanupStage = { directory,
+    start: win32.join(directory, PORTABLE_CLEANUP_STAGE.start), cleanup: win32.join(directory, PORTABLE_CLEANUP_STAGE.cleanup) };
+  try {
+    writeFileSync(win32.join(directory, PORTABLE_CLEANUP_STAGE.plan), JSON.stringify({ ...plan, requestedAt: Date.now() }),
+      { encoding: 'utf8', flag: 'wx' });
+    writeFileSync(staged.cleanup, UTF8_BOM + cleanup, { encoding: 'utf8', flag: 'wx' });
+    writeFileSync(staged.start, UTF8_BOM + startScript, { encoding: 'utf8', flag: 'wx' });
+  } catch (error) {
+    removeStage(directory);
+    throw error;
+  }
+  return staged;
+}
+
+/**
+ * A short, fixed command line whose only variable part is a staged script's path. No encoded command, no inline
+ * code and no hidden-window switch (the processes are started without a visible window: windowsHide / CreateNoWindow).
+ * RemoteSigned applies to this process only and lets the local, unsigned copy run where the default policy is Restricted.
+ */
+export function portableCleanupArguments(scriptPath: string): string[] {
+  return ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'RemoteSigned', '-File', scriptPath];
+}
+
+function isTimeout(error: Error | undefined): boolean {
+  return error !== undefined && 'code' in error && error.code === 'ETIMEDOUT';
 }
 
 function startPortableCleanup(plan: PortableCleanupPlan): void {
@@ -124,14 +178,25 @@ function startPortableCleanup(plan: PortableCleanupPlan): void {
     }
   };
   record('requested');
+  let stage: PortableCleanupStage | undefined;
   try {
+    stage = stagePortableCleanup(plan);
+    // Windows PowerShell does nothing when started without a console (Node's detached start; measured 2026-10-01),
+    // and an ordinary child is ended together with the app's process job. So wait, bounded, for the short starter: it
+    // starts the cleanup as its own windowless process outside that job and exits.
     // Resolve Node built-ins at runtime: the existing main bundle external list is intentionally unchanged.
-    const helper = process.getBuiltinModule('child_process').spawn(plan.powershell, portableCleanupArguments(plan), {
-      cwd: plan.temporary, detached: true, windowsHide: true, stdio: 'ignore',
+    const started = process.getBuiltinModule('child_process').spawnSync(plan.powershell, portableCleanupArguments(stage.start), {
+      cwd: plan.temporary, windowsHide: true, stdio: 'ignore', timeout: PORTABLE_CLEANUP_START_TIMEOUT_MS,
     });
-    helper.on('error', (error: Error) => { record('start-failed', error); });
-    helper.unref();
+    if (started.error === undefined && started.status === 0) {
+      record('started');
+      return;
+    }
+    // A starter that timed out may already have started the cleanup, which removes the stage itself.
+    if (!isTimeout(started.error)) removeStage(stage.directory);
+    record('start-failed', started.error ?? `Portable cleanup starter ended with ${String(started.status ?? started.signal)}`);
   } catch (error) {
+    if (stage !== undefined) removeStage(stage.directory);
     record('start-failed', error);
   }
 }

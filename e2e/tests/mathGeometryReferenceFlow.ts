@@ -524,7 +524,7 @@ export async function mathGeometryComparisonFlow(page: Page, info: TestInfo, app
   await expect(rowProperty(congruent, 'mathGeometry.targetsLabel')).toHaveText(lineTargets);
   // Booleans are shown but never become coefficients.
   await expect(rowButton(congruent, 'mathGeometry.createParameter')).toBeDisabled();
-  await expect(congruent.getByText(m('mathGeometry.createParameter.disabled.noValue'), { exact: true })).toBeVisible();
+  await expect(congruent.getByText(m('mathGeometry.createParameter.disabled.booleanValue'), { exact: true })).toBeVisible();
   await changeTolerance(page, congruent, 'linear', '0.01');
   await expect(rowProperty(congruent, 'mathGeometry.valueLabel')).toHaveText(m('mathGeometry.boolean.true'));
   await expect(rowProperty(congruent, 'mathGeometry.toleranceLabel')).toHaveText(toleranceText('0.01', DEFAULT_ANGULAR));

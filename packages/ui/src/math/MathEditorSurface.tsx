@@ -139,8 +139,9 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
       role="status" aria-live="polite" aria-atomic="true"><p>{props.resultMessage}</p>
       {props.resultDetail===''?null:<p>{props.resultDetail}</p>}</div>
     {props.resultActions}
+    {/* Cancel lives outside this panel (MathExpressionDialog's persistent footer) so the same button, in the
+        same place, closes the dialog whether the panel is still loading or ready (rules/06, MC-27 regression). */}
     <footer className="pcad-math-editor__actions">
-      <button type="button" className="pcad-button" title={labels.hints.cancel} onClick={controller.cancel}>{labels.cancel}</button>
       <button type="button" className="pcad-button pcad-button--primary" title={labels.hints.apply} disabled={!props.canApply||editingBlocked} onClick={controller.apply}>{labels.apply}</button>
     </footer>
   </section>;

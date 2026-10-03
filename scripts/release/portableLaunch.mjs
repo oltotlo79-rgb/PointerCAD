@@ -2,8 +2,9 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, readFile, realpath } from 'node:fs/promises';
-import { dirname, join, win32 } from 'node:path';
+import { dirname, join } from 'node:path';
 import { desktopPackagePlan, verifyDesktopPackageArtifacts } from './desktopPackageTargets.mjs';
+import { nsisExtractionDirectory } from '../../apps/desktop/src/main/portableExtraction.mjs';
 
 export function assertPortableLaunchEnvironment(environment, platform) {
   if (platform !== 'win32' || environment.CI !== 'true' || environment.GITHUB_ACTIONS !== 'true') {
@@ -62,14 +63,12 @@ export function portableDebuggerEndpoint(contents) {
   return `http://127.0.0.1:${port}`;
 }
 
-/** Accept only this run's NSIS extraction, never a globally discovered TEMP directory. */
+/**
+ * Accept only this run's NSIS extraction, never a globally discovered TEMP directory. The name rule ("ns" + a..z +
+ * hex) and the place are judged once in apps/desktop/src/main/portableExtraction.mjs, shared with the product cleanup.
+ */
 export function portableExtractionDirectory(executable, temporary) {
-  const app = win32.dirname(executable), directory = win32.dirname(app);
-  if (!win32.isAbsolute(executable) || !win32.isAbsolute(temporary)
-    || win32.basename(executable) !== 'PointerCAD.exe' || win32.basename(app) !== 'app'
-    || !/^nsi[0-9a-f]{1,4}\.tmp$/iu.test(win32.basename(directory))
-    || win32.normalize(win32.dirname(directory)).toLowerCase() !== win32.normalize(temporary).toLowerCase()) {
-    throw new Error(`Portable process is outside this run's NSIS extraction: ${executable}`);
-  }
+  const directory = nsisExtractionDirectory(executable, temporary);
+  if (directory === null) throw new Error(`Portable process is outside this run's NSIS extraction: ${executable}`);
   return directory;
 }

@@ -83,20 +83,49 @@ class RecordTimeGuardTests(unittest.TestCase):
     def test_progress_embedded(self):
         self.allow(invoke(path=PROGRESS, content=f"作業 {self.future}"))
 
-    def test_registry_bare(self):
-        self.deny(invoke(path="scratchpad/claude/agents/registry.md", content=f"| {self.future[11:]} |"))
+    def test_registry_legacy_bare_has_no_inferred_date(self):
+        self.allow(invoke(path="scratchpad/claude/agents/registry.md", content=f"| {self.future[11:]} |"))
+
+    def test_month_day_date_boundaries_and_status(self):
+        path = ROOT / 'scratchpad/claude/agents/registry.md'
+        cases = [
+            (datetime(2026, 10, 1, 0, 3), '| 09-30 23:58 | 完了09-30 23:59 |', []),
+            (datetime(2026, 10, 1, 4, 7), '| 09-30 04:10 | 完了04:10 |', []),
+            (datetime(2026, 10, 1, 4, 7), '| 10-01 04:08 |', [(1, '10-01 04:08')]),
+            (datetime(2026, 10, 1, 4, 7), '| 完了10-01 04:08 |', [(1, '10-01 04:08')]),
+            (datetime(2026, 10, 1, 4, 7), '| 終了 10-01 04:08 exit=0 |', [(1, '10-01 04:08')]),
+            (datetime(2026, 10, 1, 4, 7), '| 10-01 18:00 |', [(1, '10-01 18:00')]),
+            (datetime(2026, 9, 30, 23, 58), '| 10-01 00:03 |', [(1, '10-01 00:03')]),
+            (datetime(2027, 1, 1, 0, 3), '| 12-31 23:58 |', []),
+            (datetime(2026, 12, 31, 23, 58), '| 01-01 00:03 |', [(1, '01-01 00:03')]),
+            (datetime(2026, 10, 1, 4, 7, 55), '| 10-01 04:07 |', []),
+            (datetime(2026, 10, 1, 4, 7), '| 2026-10-01 04:08 |', [(1, '2026-10-01 04:08')]),
+            (datetime(2026, 10, 1, 4, 7), '| 2026-09-30 04:08 |', []),
+            (datetime(2026, 10, 1, 4, 7), '| 13-01 04:08 | 10-01 25:00 |', []),
+        ]
+        for now, content, expected in cases:
+            with self.subTest(now=now, content=content):
+                self.assertEqual(guard.future_times(path, content, now), expected)
+
+    def test_new_registry_format_through_write_protocol(self):
+        stamp = (datetime.now() + timedelta(minutes=10)).strftime('%m-%d %H:%M')
+        self.deny(invoke(path='scratchpad/claude/agents/registry.md', content=f'| {stamp} |'))
+
+    def test_queue_bare_time_still_checked_at_day_boundary(self):
+        path = ROOT / 'scratchpad/claude/plans/orchestrator-queue.md'
+        self.assertEqual(guard.future_times(path, '00:03 更新', datetime(2026, 9, 30, 23, 58)), [(1, '00:03')])
 
     def test_previous_evening_bare_allowed(self):
         path = ROOT / "scratchpad/claude/agents/registry.md"
         self.assertEqual(guard.future_times(path, "| 22:13 |", datetime(2026, 9, 24, 4, 7)), [])
 
-    def test_near_future_bare_denied(self):
+    def test_legacy_near_future_clock_has_no_inferred_date(self):
         path = ROOT / "scratchpad/claude/agents/registry.md"
-        self.assertEqual(guard.future_times(path, "| 04:10 |", datetime(2026, 9, 24, 4, 7)), [(1, "04:10")])
+        self.assertEqual(guard.future_times(path, "| 04:10 |", datetime(2026, 9, 24, 4, 7)), [])
 
-    def test_midnight_forward_bare_denied(self):
+    def test_legacy_midnight_forward_has_no_inferred_date(self):
         path = ROOT / "scratchpad/claude/agents/registry.md"
-        self.assertEqual(guard.future_times(path, "| 00:03 |", datetime(2026, 9, 24, 23, 58)), [(1, "00:03")])
+        self.assertEqual(guard.future_times(path, "| 00:03 |", datetime(2026, 9, 24, 23, 58)), [])
 
     def test_midnight_previous_bare_allowed(self):
         path = ROOT / "scratchpad/claude/agents/registry.md"

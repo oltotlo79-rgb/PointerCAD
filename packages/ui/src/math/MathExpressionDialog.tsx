@@ -189,12 +189,17 @@ export function MathExpressionDialog(props: MathExpressionDialogProps | Function
     {problem === null ? null : <p role="alert">{problem}</p>}
     {ready === null ? <div><p role="status">{problem === null ? t(geometryPending ? 'mathGeometry.editor.pending' : 'math.loading') : t('math.loadFailed')}</p>
       {problem === null ? null : <button type="button" className="pcad-button" title={t('math.guide.retry')} onClick={() => { setProblem(null); setAttempt(value => value + 1); }}>{t('math.retry')}</button>}
-      <button type="button" className="pcad-button" title={t('math.guide.cancel')} onClick={owner.onClose}>{t('math.cancel')}</button>
     </div> : <>
       {ready.coefficientProblem === null ? null : <p role="status">{t('math.coefficientsUnavailable')} {ready.coefficientProblem}</p>}
       {owner.kind !== 'function' && owner.kind !== 'problem' && owner.geometry !== undefined
         ? <GeometryEditorFeedback ready={ready} target={owner.geometry} /> : null}
       <MathEditorPanel {...ready} acceptLabel={owner.kind === 'problem' ? t('math.problem.apply') : undefined} palette={MATH_INPUT_PALETTE} readOnly={busy} onHelp={() => useAppStore.getState().openHelpTopic('math-input')} />
     </>}
+    {/* Same button in the same place whether the editor is still preparing or ready, so a click or Esc that
+        lands during the preparation-to-ready transition still closes the dialog (MC-27 regression, 2026-10-01). */}
+    <div className="pcad-math-dialog__actions">
+      <button type="button" className="pcad-button" title={t('math.guide.cancel')}
+        onClick={() => { if (ready === null) owner.onClose(); else ready.controller.cancel(); }}>{t('math.cancel')}</button>
+    </div>
   </dialog>;
 }

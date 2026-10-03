@@ -1,8 +1,11 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { createFunctionMathSource } from './functionMathSource.js';
-import { MathInputProblem } from './mathInputContract.js';
-import { MathDeadlineExceeded, GEOMETRY_CALCULATION_MS, executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
+import {
+  CALCULATION_PACE_LIMITS, MathInputProblem, calculationPace, calculationPaceFromElapsed, createCalculationPaceMeter,
+  createCalculationPaceMessage, isCalculationPaceMessage, measureCalculationReferenceMs, readCalculationPaceMessage, setCalculationPace,
+} from './mathInputContract.js';
+import { MathDeadlineExceeded, GEOMETRY_CALCULATION_MS, executeMathWorkRequest, geometryCalculationClock, type MathExecutionBackend } from './mathWorkExecution.js';
 import { createMathWorkEnvelope } from './mathWorkRequest.js';
 import * as preparation from './prepareMathCalculation.js';
 import { createFunctionPointWorkEnvelope, saveFunctionPointInput, type FunctionPointWorkRequest } from './functionPointWorkRequest.js';
@@ -242,6 +245,102 @@ describe.each(samplings)('$name の式の組立ては、200msではなく2000ms�
   it('式の組立てが2000msを超えたら、形を作らずに止める（これまでの中止の文のまま）', () => {
     const clock = replaceClock();
     slowCompilation(clock, GEOMETRY_CALCULATION_MS + 1);
+    expect(sampling.run()).toEqual({ status: 'invalid', message: '関数の計算を中止しました。' });
+  });
+});
+
+// v1.0.2: the stated limits are for a machine at its usual speed; a slower or throttled PC stretches them by its pace.
+describe('計算の期限は機械の今の速さ（倍率1〜4）に合わせ、速い機械では今の期限のまま', () => {
+  afterEach(() => { setCalculationPace(1); });
+
+  it('倍率は基準の計算の時間から決め、1未満にも上限の4倍超にもしない。測れない時間は1', () => {
+    const reference = CALCULATION_PACE_LIMITS.referenceMs;
+    expect(calculationPaceFromElapsed(reference / 2)).toBe(1);
+    expect(calculationPaceFromElapsed(reference)).toBe(1);
+    expect(calculationPaceFromElapsed(reference * 2.5)).toBe(2.5);
+    expect(calculationPaceFromElapsed(reference * 100)).toBe(CALCULATION_PACE_LIMITS.maximum);
+    for (const unusable of [0, -1, NaN, Infinity]) expect(calculationPaceFromElapsed(unusable)).toBe(1);
+    expect(CALCULATION_PACE_LIMITS.maximum).toBe(4);
+  });
+
+  it('Worker の外（窓・単体）の倍率は1で、不正な倍率は受け付けない', () => {
+    expect(calculationPace()).toBe(1);
+    for (const invalid of [0.99, 4.01, NaN, Infinity]) expect(() => setCalculationPace(invalid)).toThrow(RangeError);
+    expect(calculationPace()).toBe(1);
+  });
+
+  it('基準の計算は決めた回数だけ測り、最も速い1回の時間を使う', () => {
+    const marks = [0, 30, 100, 112, 200, 250];
+    let index = 0;
+    const now = (): number => marks[index++] ?? 0;
+    expect(measureCalculationReferenceMs(now)).toBe(12);
+    expect(index).toBe(CALCULATION_PACE_LIMITS.runs * 2);
+  });
+
+  it('測った値を5秒の間は使い回し、古くなったら測り直す', () => {
+    let time = 0;
+    const measured = [CALCULATION_PACE_LIMITS.referenceMs * 3, CALCULATION_PACE_LIMITS.referenceMs / 2];
+    const measure = vi.fn(() => measured.shift() ?? 0);
+    const meter = createCalculationPaceMeter(() => time, measure);
+    expect(meter.current()).toBe(3);
+    time = CALCULATION_PACE_LIMITS.reuseMs - 1;
+    expect(meter.current()).toBe(3); expect(measure).toHaveBeenCalledTimes(1);
+    time = CALCULATION_PACE_LIMITS.reuseMs;
+    expect(meter.current()).toBe(1); expect(measure).toHaveBeenCalledTimes(2);
+    expect(meter.elapsedMs).toBe(CALCULATION_PACE_LIMITS.referenceMs / 2);
+  });
+
+  it('倍率の知らせは種類と倍率だけを持ち、形の崩れた知らせは拒む', () => {
+    const message = createCalculationPaceMessage(2.5);
+    expect(message).toEqual({ kind: 'math-pace', pace: 2.5 });
+    expect(isCalculationPaceMessage(message)).toBe(true);
+    expect(readCalculationPaceMessage(message)).toBe(2.5);
+    for (const other of [null, 1, 'math-pace', { kind: 'math-phase' }, { serial: 1 }]) {
+      expect(isCalculationPaceMessage(other)).toBe(false); expect(readCalculationPaceMessage(other)).toBeNull();
+    }
+    for (const broken of [{ kind: 'math-pace' }, { kind: 'math-pace', pace: 0.5 }, { kind: 'math-pace', pace: 5 },
+      { kind: 'math-pace', pace: '2' }, { kind: 'math-pace', pace: 2, serial: 1 }, Object.assign(Object.create({ extra: 1 }) as object, { kind: 'math-pace', pace: 2 })]) {
+      expect(() => readCalculationPaceMessage(broken)).toThrow();
+    }
+    expect(() => createCalculationPaceMessage(4.5)).toThrow(RangeError);
+  });
+
+  it('形の計算の2秒は倍率をかけた時間で止め、速い機械（倍率1）では2秒のまま', () => {
+    const time = replaceClock();
+    const fast = geometryCalculationClock(backend, 0);
+    time.advance(GEOMETRY_CALCULATION_MS - 1); expect(fast.shouldStop()).toBeUndefined();
+    time.advance(1); expect(fast.shouldStop()).toBe('deadline');
+    setCalculationPace(2.5);
+    const slow = geometryCalculationClock(backend, GEOMETRY_CALCULATION_MS);
+    // 2026-10-01: the curve of ADD-23 took 3143ms on this machine at 24% of its rated speed.
+    time.advance(3143); expect(slow.shouldStop()).toBeUndefined();
+    time.advance(GEOMETRY_CALCULATION_MS * 2.5 - 3143 - 1); expect(slow.shouldStop()).toBeUndefined();
+    time.advance(1); expect(slow.shouldStop()).toBe('deadline');
+  });
+
+  it('通常の式の200msの区切りも倍率をかけ、明示した残り時間はそのまま使う', () => {
+    const time = replaceClock();
+    setCalculationPace(2);
+    expect(backend.withinDeadline(() => { time.advance(399); return 1; })).toBe(1);
+    expect(() => backend.withinDeadline(() => { time.advance(401); return 1; })).toThrow(MathDeadlineExceeded);
+    expect(() => backend.withinDeadline(() => { time.advance(301); return 1; }, 300)).toThrow(MathDeadlineExceeded);
+  });
+});
+
+describe.each(samplings)('$name の形の計算は、遅い機械では倍率をかけた期限まで続ける', sampling => {
+  afterEach(() => { setCalculationPace(1); });
+
+  it('倍率2.5の機械では、式の組立てに3143msかかっても形を作る', () => {
+    setCalculationPace(2.5);
+    const clock = replaceClock();
+    slowCompilation(clock, 3143);
+    expect(sampling.run().status).toBe('ready');
+  });
+
+  it('倍率2.5の機械でも、倍率をかけた期限を超えたら形を作らずに止める', () => {
+    setCalculationPace(2.5);
+    const clock = replaceClock();
+    slowCompilation(clock, GEOMETRY_CALCULATION_MS * 2.5 + 1);
     expect(sampling.run()).toEqual({ status: 'invalid', message: '関数の計算を中止しました。' });
   });
 });

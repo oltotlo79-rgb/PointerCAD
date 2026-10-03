@@ -1,8 +1,11 @@
 import {
+  createCalculationPaceMessage,
+  createCalculationPaceMeter,
   createMathBackend,
   executePreparedFunctionWork,
   executeExactMathWorkRequest,
   decodeMathWorkEnvelope,
+  setCalculationPace,
   warmMathBackend,
   type MathWorkEnvelope,
 } from '@pointercad/expression/math/worker';
@@ -13,6 +16,9 @@ if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'module
 const backend = createMathBackend();
 // Compile the shared calculation code now, outside every request's wall clock; the result is discarded.
 const warmupMs = warmMathBackend(backend);
+// The machine's current pace (v1.0.2): every wall-clock limit of a request follows it, so a slow or throttled PC
+// does not refuse a correct calculation that a machine at its usual speed completes.
+const pace = createCalculationPaceMeter();
 let activeRequest: { readonly serial: number; readonly identity: MathWorkEnvelope['request']['identity'] } | null = null;
 let busy = false;
 let retire = false;
@@ -26,8 +32,12 @@ const exactEngine = createLocalExactMathEngine({
 });
 async function runRequest(value: unknown, kind: unknown): Promise<void> {
   const requestStarted = performance.now();
-  if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'request-start', kind }));
   try {
+    // Measured (or reused) before the request's own clocks start; the host stretches its deadline by the same pace.
+    const requestPace = pace.current();
+    setCalculationPace(requestPace);
+    self.postMessage(createCalculationPaceMessage(requestPace));
+    if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'request-start', kind, pace: requestPace, referenceMs: pace.elapsedMs }));
     const options = { backend, engine: exactEngine,
       // The window's bounded client terminates this entire Worker, including Python.
       // A timer in this same thread could not interrupt a synchronous calculation.
@@ -52,7 +62,7 @@ async function runRequest(value: unknown, kind: unknown): Promise<void> {
     if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'request-end', kind, elapsedMs: performance.now() - requestStarted }));
   }
 }
-if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'backend-ready', elapsedMs: performance.now() - initializationStarted, warmupMs }));
+if (diagnose) console.debug('[pcad:math-phase]', JSON.stringify({ phase: 'backend-ready', elapsedMs: performance.now() - initializationStarted, warmupMs, referenceMs: pace.elapsedMs }));
 self.addEventListener('message', (event: MessageEvent<unknown>) => {
   const value = event.data;
   const kind = value !== null && typeof value === 'object' && 'kind' in value ? value.kind : undefined;

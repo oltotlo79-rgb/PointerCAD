@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { readPcadFile } from '../../packages/io/src/index.js';
 import { installStartupDiagnostics, waitForStartupHealth } from './startupHealth.js';
@@ -27,6 +27,50 @@ test('起動ファイルの入口も取得できない場合は通信を使わ�
   await page.unroute('**/*.js');
   await retry.click();
   await expect(page.getByRole('button', { name: '新規', exact: true })).toBeVisible();
+});
+
+/**
+ * CI(run 36847227872)では、起動入口が静的に読む bootstrap-loader だけが ERR_NO_BUFFER_SPACE で取れず、
+ * 入口が1行も動かないまま起動画面で止まった。その最初の取得だけを失敗させ、入口の前の見張りが一度だけ
+ * 読み直して編集画面を開くこと、失敗が続いても読み直しを繰り返さず案内を残すことを確かめる。
+ */
+async function blockStartupLoader(page: Page, persistent: boolean): Promise<{ navigations: () => number; blocked: () => number }> {
+  let navigations = 0, blocked = 0;
+  page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) navigations++; });
+  await page.route('**/assets/bootstrap-loader-*.js', async route => {
+    if (persistent || navigations === 1) { blocked++; await route.abort('failed'); }
+    else await route.continue();
+  });
+  return { navigations: () => navigations, blocked: () => blocked };
+}
+
+test('起動入口が静的に読む部品の取得に一度失敗しても、一度だけ自動で読み直して編集画面を開く', async ({ page }) => {
+  const counts = await blockStartupLoader(page, false);
+  // The guard reloads at DOMContentLoaded, before the first document's load event.
+  await page.goto('/', { waitUntil: 'commit' });
+  await expect(page.getByRole('button', { name: '新規', exact: true })).toBeVisible();
+  await expect(page.locator('[data-startup-shell]')).toHaveCount(0);
+  expect(counts.blocked()).toBeGreaterThan(0);
+  expect(counts.navigations()).toBe(2);
+  // 成功した起動は入口の復旧と同じ印を消すので、次の失敗でもまた一度だけ読み直せる。
+  await expect(page.locator('html')).toHaveAttribute('data-startup-stage', 'splash-hidden');
+  expect(await page.evaluate(() => sessionStorage.getItem('pointercad.startup-retry.v1'))).toBeNull();
+});
+
+test('起動入口が静的に読む部品の取得失敗が続いても、読み直しは一度だけで案内から手動で復旧できる', async ({ page }) => {
+  const counts = await blockStartupLoader(page, true);
+  await page.goto('/', { waitUntil: 'commit' });
+  await expect(page.locator('[data-startup-failure]')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-startup-stage', 'entry-failed');
+  expect(counts.navigations()).toBe(2);
+  await expect(page.getByRole('button', { name: '新規', exact: true })).toHaveCount(0);
+  await page.unroute('**/assets/bootstrap-loader-*.js');
+  await page.getByRole('link', { name: '画面を読み込み直す', exact: true }).click();
+  await expect(page.getByRole('button', { name: '新規', exact: true })).toBeVisible();
+  expect(counts.navigations()).toBe(3);
+  // The entry clears the shared record once its load has finished (before the splash leaves).
+  await expect(page.locator('html')).toHaveAttribute('data-startup-stage', 'splash-hidden');
+  expect(await page.evaluate(() => sessionStorage.getItem('pointercad.startup-retry.v1'))).toBeNull();
 });
 
 test('Web 版が起動し、空のスケッチの案内が出る', async ({ page }, info) => {

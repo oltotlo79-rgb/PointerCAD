@@ -281,7 +281,7 @@ jobs:
       # 失敗の原因をActionsの記録から追えるよう、検査の記録(項目ごとの結果と所要時間・失敗時の画面)を残す。
       - name: 配布物の起動の確認の記録を保存(失敗時だけ)
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pointercad-packaged-launch-${{ matrix.os }}-${{ inputs.commit }}
           path: test-results/packaged-desktop
@@ -293,7 +293,7 @@ jobs:
       # artifacts/だけを取り出して縮小することはできない(既存スクリプトの設計)。
       # builder/(electron-builderの展開済みの本体・設定の控え・変換したアイコン)はcombineが読まないため除く。
       - name: Desktop候補をartifactへ保存
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pointercad-desktop-${{ matrix.os }}-${{ inputs.commit }}
           path: |
@@ -363,7 +363,7 @@ jobs:
         run: node scripts/release/assemble-web-offline.mjs web-build-output web-manual-output web-manual-pdf-output web-candidate
 
       - name: Web候補をartifactへ保存
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pointercad-web-${{ inputs.commit }}
           path: dist/web-candidate
@@ -520,7 +520,7 @@ jobs:
           $summary -join "`n" >> $env:GITHUB_STEP_SUMMARY
 
       - name: release-manifestとSBOMをartifactへ保存
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pointercad-release-manifest-${{ inputs.commit }}
           path: |

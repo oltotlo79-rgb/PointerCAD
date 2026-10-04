@@ -6,7 +6,9 @@ export function runtimeDependencySelection(root) {
   const workspace = readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8');
   const lock = readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8');
   const selector = 'mathlive@0.110.0>@cortex-js/compute-engine';
-  const declaration = new RegExp('^  ["\']' + selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&') + '["\']: ["\']-["\']\\r?$', 'mu');
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  // pnpm 11 may emit an unchanged override key without quotes when regenerating the lock.
+  const declaration = new RegExp(`^  (?:${escaped}|"${escaped}"|'${escaped}'): (?:'-'|"-")\\r?$`, 'mu');
   const section = text => /^overrides:\r?\n((?:[ \t].*\r?\n|\r?\n)*)/mu.exec(text)?.[1] ?? '';
   if (!declaration.test(section(workspace)) || !declaration.test(section(lock))) throw new Error('Unverified mathematics dependency removal');
   if (/^ {2,8}['"]?(?:@cortex-js\/compute-engine|@arnog\/colors|quickjs-wasi|complex-esm)(?:@|['"]?:)/mu.test(lock)) {

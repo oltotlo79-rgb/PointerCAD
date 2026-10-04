@@ -2,8 +2,8 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    # pnpm workspace の全メンバー(ルート・apps/*・packages/*)を監視する。個々の package.json は
-    # "catalog:" で pnpm-workspace.yaml を参照するだけなので、各ディレクトリを明示して漏れを防ぐ
+    # ルート・apps/*・packages/* の manifest を発見する範囲。catalog/importer/lock の
+    # 整合や間接依存の更新成功は、設定の存在とは別に各実行ログで確認する。
     # (e2e/ は package.json を持たず、唯一の依存 @playwright/test はルートの catalog 参照のため
     # ルートの監視だけで足りる。directory と directories は同じ更新設定内で併用できないため、
     # 単一ディレクトリだった directory: / を directories の1項目として書き直した)。
@@ -12,13 +12,14 @@ updates:
       - "/apps/*"
       - "/packages/*"
     schedule:
-      interval: daily
+      interval: daily # GitHub の daily は月〜金。security updates の起動時刻ではない。
       time: '07:00'
       timezone: Asia/Tokyo
     open-pull-requests-limit: 10
     versioning-strategy: increase
     groups:
       compatible-tooling:
+        applies-to: version-updates
         dependency-type: development
         patterns: ['*']
         update-types: [minor, patch]

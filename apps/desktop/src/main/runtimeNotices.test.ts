@@ -19,6 +19,12 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
     const select = runtimeDependencySelection(folder);
     expect(select({ name: 'mathlive', version: '0.110.0', dependencies: { '@cortex-js/compute-engine': '0.58.0', kept: '1' } })).toEqual(['kept']);
     expect(() => select({ name: 'mathlive', version: '0.111.0', dependencies: { '@cortex-js/compute-engine': '0.58.0' } })).toThrow('changed mathematics editor');
+    for (const key of ["'mathlive@0.110.0>@cortex-js/compute-engine'", 'mathlive@0.110.0>@cortex-js/compute-engine']) {
+      reset();
+      writeFileSync(join(folder, 'pnpm-lock.yaml'), `overrides:\n  ${key}: '-'\n`);
+      expect(runtimeDependencySelection(folder)({ name: 'mathlive', version: '0.110.0',
+        dependencies: { '@cortex-js/compute-engine': '0.58.0', kept: '1' } })).toEqual(['kept']);
+    }
     for (const file of ['pnpm-workspace.yaml', 'pnpm-lock.yaml']) {
       reset();
       writeFileSync(join(folder, file), readFileSync(join(folder, file), 'utf8').replace('overrides:', 'ignored-removal:'));

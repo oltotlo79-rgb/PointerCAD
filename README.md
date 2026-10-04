@@ -4,7 +4,7 @@
 
 PointerCADは、**「前の点から右へ40mm」「板厚の2倍の位置」など、作りたい形の決め方をそのまま入力できる3D CAD**です。座標・相対距離・角度・数式を使って描き、マウスで形を確かめながら立体や加工を加えられます。機械部品の設計、DIY、3Dプリントに向けて、部品作成から組み立て、データの受け渡しまで扱います。
 
-Web版とデスクトップ版を無料で公開しています(ライセンス: Apache-2.0)。**デスクトップ版(Windows・Linux)を先行して正式公開しており、Web版は後日あらためて公開します。**
+デスクトップ版(Windows・Linux)の最新版v1.0.2を無料で公開しています(ライセンス: Apache-2.0)。**Web版は後日あらためて公開します。**
 
 不具合の報告、修正の確認と提出は[開発への参加](CONTRIBUTING.md)にまとめています。
 
@@ -175,7 +175,7 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 
 ## 入手方法・取扱説明書
 
-デスクトップ版を先行して公開します。デスクトップ版はGitHubのReleaseから入手できます。Web版は後日公開し、公開時にここへリンクを掲載します。配布物は未署名で、確かめ方は取扱説明書「導入・画面操作・ファイル」の「正式な入手元と、未署名の配布物への警告・確認方法」の章にあります。
+現在の公開版はデスクトップ版v1.0.2です。[GitHubのv1.0.2リリース](https://github.com/oltotlo79-rgb/PointerCAD/releases/tag/v1.0.2)から入手できます。開発中のv1.0.3はまだ公開版ではありません。Web版は後日公開し、公開時にここへリンクを掲載します。配布物は未署名で、確かめ方は取扱説明書「導入・画面操作・ファイル」の「正式な入手元と、未署名の配布物への警告・確認方法」の章にあります。
 
 <!-- pointercad:release-links:start -->
 | 利用方法 | 公開先 |
@@ -187,7 +187,7 @@ PointerCADが重視するのは、**座標で点・線を置く操作と、数�
 | Webアプリ版をブラウザで使う | 後日公開（公開したらここにリンクを掲載します） |
 <!-- pointercad:release-links:end -->
 
-[リリースの公開状況](https://github.com/oltotlo79-rgb/PointerCAD/releases) · [機能別ヘルプ](packages/help-content/docs/ja/)
+[リリースの公開状況](https://github.com/oltotlo79-rgb/PointerCAD/releases) · [v1.0.2のSHA256SUMS](https://github.com/oltotlo79-rgb/PointerCAD/releases/download/v1.0.2/SHA256SUMS) · [機能別ヘルプ](packages/help-content/docs/ja/)
 
 説明書は、必要な操作を探しやすいように**7分冊**にまとめ、アプリ内のF1ヘルプと同じ本文・画面の呼び方で、章ごとにも通しても読める構成にしています。ヘルプの検索は端末の中で行い、検索語を外部へ送りません。実画面の説明とPDFを含む配布一式は、内容の整合を確認したうえで配布物に同梱しています。[分冊と章の目録](packages/help-content/src/manualManifest.ts) · [ヘルプの使い方](packages/help-content/docs/ja/help-reader.md)
 

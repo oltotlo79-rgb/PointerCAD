@@ -1,9 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import { assembleDesktopDistribution, verifyDesktopDistribution } from '../../../../scripts/release/desktopDistribution.mjs';
+import * as desktopDistribution from '../../../../scripts/release/desktopDistribution.mjs';
 import type { DesktopPackageMetadata } from '../../../../scripts/release/desktopDistribution.mjs';
 import { inspectDesktopEntry } from '../../../../scripts/release/desktopEntryReferences.mjs';
 import { desktopFileHash, sourceFileHash, sourceText } from '../../../../scripts/release/desktopFileInventory.mjs';
 import { bytes, files, fixture, hash, inputs, json } from './distributionTestFixture.js';
+
+describe('配布時の Electron 取得では共有 HTTP 応答キャッシュを許さない', () => {
+  const guard: unknown = Reflect.get(desktopDistribution, 'sealDesktopBuilderDownloadConfig');
+  if (typeof guard !== 'function') throw new Error('Missing desktop download policy');
+  const cache = 'C:/pointercad/artifact-cache';
+  const download = { cache, strictSSL: true, isVerifyChecksum: true };
+  const config = { extends: 'electron-builder.yml', electronDownload: download };
+  const seal = (candidate: unknown): unknown => {
+    const result: unknown = Reflect.apply(guard, undefined, [candidate, cache]);
+    return result;
+  };
+
+  it('ファイルキャッシュ、TLS 検証、checksum を維持した設定を固定する', () => {
+    expect(seal(config)).toEqual({ ...config, extends: null });
+  });
+  it.each([
+    { downloadOptions: { cache: new Map() } },
+    { mirrorOptions: {} },
+    { strictSSL: false },
+    { isVerifyChecksum: false },
+    { cache: 'C:/other-cache' },
+  ])('HTTP キャッシュ注入や検証の無効化を拒否する: %j', alteration => {
+    expect(() => seal({ ...config, electronDownload: { ...download, ...alteration } })).toThrow('download policy differs');
+  });
+  it('非列挙 mirrorOptions による builder の取得分岐切替も拒否する', () => {
+    const hidden = { ...download };
+    Object.defineProperty(hidden, 'mirrorOptions', { value: { mirror: 'https://example.invalid/' } });
+    expect(() => seal({ ...config, electronDownload: hidden })).toThrow('download policy differs');
+  });
+});
 
 function desktopFixture() {
   const manual = fixture();

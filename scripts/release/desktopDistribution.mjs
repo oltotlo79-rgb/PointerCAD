@@ -6,6 +6,19 @@ import { inspectDesktopEntry } from './desktopEntryReferences.mjs';
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const sha = value => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 const encode = value => new globalThis.TextEncoder().encode(JSON.stringify(value, null, 2) + '\n');
+/** Keep electron-builder's file artifact cache while preventing Got's shared HTTP response cache. */
+export function sealDesktopBuilderDownloadConfig(config, fileCache) {
+  const download = config?.electronDownload;
+  if (!record(config) || !record(download) || typeof fileCache !== 'string'
+    || !Object.hasOwn(download, 'cache') || !Object.hasOwn(download, 'strictSSL')
+    || !Object.hasOwn(download, 'isVerifyChecksum') || Reflect.ownKeys(download).length !== 3
+    || download.cache !== fileCache || download.strictSSL !== true || download.isVerifyChecksum !== true
+    || Object.hasOwn(config, 'downloadOptions')) {
+    throw new Error('Desktop builder download policy differs');
+  }
+  // getConfig has already merged electron-builder.yml. Do not inherit it a second time during build().
+  return { ...config, extends: null };
+}
 export function desktopJson(bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.length > 8_388_608) throw new Error('Missing or excessive desktop metadata');
   return JSON.parse(new globalThis.TextDecoder('utf-8', { fatal: true }).decode(bytes));

@@ -33,6 +33,43 @@ describe('複素数の初等関数は主値・角度・元の不成立を保持�
     }
   });
   it.each([
+    ['im(ln(complex(1,9e-26)))', '9e-26'],
+    ['im(ln(complex(1,-9e-26)))', '-9e-26'],
+    ['im(ln(complex(1,1e-25)))', '1e-25'],
+    ['im(ln(complex(1,-1e-25)))', '-1e-25'],
+    // atan(t) lies just below this 40-digit midpoint: returning t alone rounds upward.
+    ['im(ln(complex(1,1.0000000000000000000000000000000000000015e-26)))',
+      '1.000000000000000000000000000000000000001e-26'],
+    // asin(z) and atanh(z) differ from z by O(z^3), beyond 40 digits here.
+    ['re(asin(complex(1e-80,1e-100)))', '1e-80'],
+    ['im(asin(complex(1e-80,1e-100)))', '1e-100'],
+    ['re(atanh(complex(1e-80,-1e-100)))', '1e-80'],
+    ['im(atanh(complex(1e-80,-1e-100)))', '-1e-100'],
+  ])('%sの小角・符号・丸め境界を独立の解析値と照合する', (source, expected) => {
+    expect(decimal(source).toString()).toBe(expected);
+  });
+  it.each([
+    // On the negative real side arg(-1+iy) = sign(y)*pi + atan(y/-1).
+    ['im(ln(complex(-1,9e-26)))', '3.141592653589793238462643293279502884197'],
+    ['im(ln(complex(-1,-9e-26)))', '-3.141592653589793238462643293279502884197'],
+    ['im(ln(complex(-1,1e-25)))', '3.141592653589793238462643283279502884197'],
+    // At the imaginary axis arg(x+iy) = sign(y)*pi/2 - atan(x/y).
+    ['im(ln(complex(9e-26,1)))', '1.570796326794896619231321601639751442099'],
+    ['im(ln(complex(-9e-26,1)))', '1.570796326794896619231321781639751442099'],
+    ['im(ln(complex(9e-26,-1)))', '-1.570796326794896619231321601639751442099'],
+    ['im(ln(complex(-9e-26,-1)))', '-1.570796326794896619231321781639751442099'],
+    ['im(ln(complex(1e-25,1)))', '1.570796326794896619231321591639751442099'],
+    ['im(ln(complex(0,1)))', '1.570796326794896619231321691639751442099'],
+    ['im(ln(complex(0,-1)))', '-1.570796326794896619231321691639751442099'],
+    // acos(1+iy) = (1-i*sign(y))*sqrt(|y|) + O(|y|^(3/2)).
+    ['re(acos(complex(1,1e-80)))', '1e-40'],
+    ['im(acos(complex(1,1e-80)))', '-1e-40'],
+    ['re(acos(complex(1,-1e-80)))', '1e-40'],
+    ['im(acos(complex(1,-1e-80)))', '1e-40'],
+  ])('%sの主値象限と切断面を独立の解析値と照合する', (source, expected) => {
+    expect(decimal(source).toString()).toBe(expected);
+  });
+  it.each([
     ['re(exp(i*pi))', '-1'], ['im(exp(i*pi))', '0'], ['re(exp(i*pi/2))', '0'],
     ['im(exp(i*pi/2))', '1'], ['re(sin(i*ln(2)))', '0'], ['im(sin(i*ln(2)))', '0.75'],
     ['re(sqrt(3+4*i))', '2'], ['im(sqrt(3+4*i))', '1'], ['im(sqrt(3-4*i))', '-1'],

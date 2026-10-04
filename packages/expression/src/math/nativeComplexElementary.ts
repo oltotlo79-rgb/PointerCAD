@@ -60,9 +60,38 @@ export function principalComplexOperation(head: string, pair: Pair, other?: Pair
     const imaginary = radius.sub(a).div(2).sqrt().mul(b.isNegative() ? -1 : 1);
     return [b.div(imaginary.mul(2)), imaginary];
   };
+  const smallAngleAtan = (t: Decimal): Decimal | null => {
+    // For |t| < 1e-25, each alternating term shrinks by at least 1e-50.
+    // The first omitted term bounds the remainder; precision <= 512 needs at most 11 terms.
+    const square = t.mul(t), limit = t.abs().mul(new D(`1e-${precision + 10}`));
+    let power = t, sum = t;
+    for (let denominator = 3; denominator <= 25; denominator += 2) {
+      power = power.mul(square);
+      const term = power.div(denominator);
+      if (term.abs().lte(limit)) return sum;
+      sum = denominator % 4 === 3 ? sum.sub(term) : sum.add(term);
+    }
+    return null;
+  };
+  const nearAxisAtan = (numerator: Decimal, denominator: Decimal): Decimal | null => {
+    if (denominator.isZero() || !numerator.abs().lt(denominator.abs().mul('1e-25'))) return null;
+    const slope = numerator.div(denominator);
+    return slope.isFinite() ? smallAngleAtan(slope) : null;
+  };
   const log = ([a, b]: Complex): Complex => {
     if (a.isZero() && b.isZero()) throw new MathInputProblem('domain', '0の複素対数は有限になりません。');
-    return [a.mul(a).add(b.mul(b)).ln().div(2), b.isZero() && a.isNegative() ? pi : D.atan2(b, a)];
+    let angle: Decimal;
+    if (b.isZero() && a.isNegative()) angle = pi;
+    else {
+      const nearReal = nearAxisAtan(b, a);
+      if (nearReal !== null) angle = a.gt(0) ? nearReal : (b.gt(0) ? pi : pi.neg()).add(nearReal);
+      else {
+        const nearImaginary = nearAxisAtan(a, b);
+        angle = nearImaginary === null ? D.atan2(b, a)
+          : (b.gt(0) ? pi : pi.neg()).div(2).sub(nearImaginary);
+      }
+    }
+    return [a.mul(a).add(b.mul(b)).ln().div(2), angle];
   };
   const exp = ([a, b]: Complex): Complex => [a.exp().mul(b.cos()), a.exp().mul(b.sin())];
   const unit: Complex = [one, zero], imaginary: Complex = [zero, one];

@@ -2,9 +2,9 @@
  * 式パーサーと任意精度評価(要件 FR-2xx)。
  * このパッケージは他の @pointercad/* に依存しない純粋ロジックとする。
  *
- * 外へ見せるのは evaluateExpression と、その結果の型だけにする。
- * tokenize / parse / evaluateNode を輸出しないのは、内部の作りを後から変えられる
- * 余地を残すため(計画書 docs/plans/P1-式とスケッチ.md タスク7 手順2)。
+ * 評価と参照位置の読み取りは安全な公開関数を通す。tokenize / parse /
+ * evaluateNode や内部ASTは輸出せず、内部の作りを後から変えられる余地を残す
+ * (計画書 docs/plans/P1-式とスケッチ.md タスク7 手順2)。
  */
 
 /**
@@ -67,6 +67,12 @@ export {
   type ExpressionLengthUnit,
 } from './lengthUnits.js';
 export { containsLengthUnit } from './tokenize.js';
+export {
+  inspectExpression,
+  type ExpressionInspection,
+  type ExpressionReference,
+  type ExpressionUnitReference,
+} from './inspectExpression.js';
 export {
   checkVariableName,
   collectVariableNames,

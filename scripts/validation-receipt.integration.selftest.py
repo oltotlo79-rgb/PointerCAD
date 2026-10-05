@@ -11,7 +11,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
+from unittest.mock import patch
 from lib.task_workspace import configure_project_temp
 
 configure_project_temp(Path(__file__).resolve().parents[1])
@@ -143,7 +145,62 @@ if (args === '--silent run validation:runtime') {
 
     def command(self, args, success=True):
         child_environment = {key: value for key, value in self.env.items() if key.upper() != 'PSMODULEPATH'}
-        result = subprocess.run(args, cwd=self.root, env=child_environment, capture_output=True, timeout=100)
+        started = time.monotonic()
+        try:
+            result = subprocess.run(args, cwd=self.root, env=child_environment, capture_output=True, timeout=100)
+        except subprocess.TimeoutExpired as error:
+            elapsed = time.monotonic() - started
+
+            def observed(stream):
+                if stream is None:
+                    return '<none>'
+                decoded = stream.decode('utf-8', errors='replace') if isinstance(stream, bytes) else stream
+                return f'<{len(stream)} captured>\n{decoded[-12000:]}'
+
+            try:
+                fixture_tail = self.calls()[-10:]
+            except Exception as observation_error:
+                fixture_tail = f'<unavailable: {type(observation_error).__name__}: {observation_error}>'
+
+            raw_capture = '<disabled>'
+            raw_root = os.environ.get('POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR')
+            if raw_root:
+                raw_folder = None
+                try:
+                    raw_parent = Path(raw_root)
+                    if not raw_parent.is_absolute() or not raw_parent.is_dir():
+                        raise ValueError('POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR must be an existing absolute directory')
+                    raw_folder = Path(tempfile.mkdtemp(prefix='receipt-timeout-', dir=str(raw_parent)))
+                    streams = {}
+                    for name, stream in (('stdout', error.stdout), ('stderr', error.stderr)):
+                        if stream is None:
+                            streams[name] = {'type': 'none', 'encoding': None, 'file': None, 'stored_bytes': 0}
+                            continue
+                        is_bytes = isinstance(stream, bytes)
+                        data = stream if is_bytes else stream.encode('utf-8')
+                        filename = f'{name}.bin'
+                        (raw_folder / filename).write_bytes(data)
+                        streams[name] = {'type': 'bytes' if is_bytes else 'str',
+                                         'encoding': None if is_bytes else 'utf-8',
+                                         'file': filename, 'stored_bytes': len(data)}
+                    metadata = {'argv': [str(part) for part in args], 'timeout_seconds': 100,
+                                'elapsed_seconds': elapsed, 'fixture_tail': fixture_tail,
+                                'streams': streams}
+                    (raw_folder / 'metadata.json').write_text(
+                        json.dumps(metadata, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+                    raw_capture = str(raw_folder)
+                except Exception as save_error:
+                    raw_capture = (f'<failed at {raw_folder or raw_root}: '
+                                   f'{type(save_error).__name__}: {save_error}>')
+
+            error.add_note(
+                f'check subprocess timed out: argv={args!r}, timeout=100s, '
+                f'elapsed={elapsed:.3f}s, raw capture={raw_capture}\n'
+                f'fixture gate-calls.log tail={fixture_tail!r}\n'
+                f'partial stdout: {observed(error.stdout)}\n'
+                f'partial stderr: {observed(error.stderr)}'
+            )
+            raise
         text = (result.stdout + result.stderr).decode('utf-8', errors='replace')
         if success:
             self.assertEqual(result.returncode, 0, text[-12000:])
@@ -343,6 +400,122 @@ process.exitCode = process.env.PCAD_PRODUCT_EXIT === '7' ? 7 : 0;
         self.assertEqual([line for line in self.calls()[len(before):] if line.startswith('run ')],
                          ['run typecheck', 'run lint', 'run test', 'run build', 'run test:e2e'])
         self.assertTrue(proof.exists())
+
+
+class ReceiptTimeoutObservationTests(unittest.TestCase):
+    def test_timeout_preserves_bytes_and_fixture_stage(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-receipt-timeout-unit-') as temporary:
+            fixture = ReceiptHookTests('runTest')
+            fixture.root = Path(temporary)
+            fixture.env = {'PSMODULEPATH': 'discarded', 'CHECK': 'kept'}
+            (fixture.root / 'gate-calls.log').write_text('run typecheck\nrun lint\n', encoding='utf-8')
+            timeout = subprocess.TimeoutExpired(['fixture', 'check'], 100,
+                                                output=b'stdout-stage', stderr=b'stderr-cause')
+            with patch.object(subprocess, 'run', side_effect=timeout) as run:
+                with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                    fixture.command(['fixture', 'check'])
+            self.assertIs(raised.exception, timeout)
+            note = '\n'.join(timeout.__notes__)
+            for expected in ('fixture', 'check', 'timeout=100s', 'stdout-stage', 'stderr-cause', 'run lint'):
+                self.assertIn(expected, note)
+            self.assertEqual(run.call_args.kwargs['timeout'], 100)
+            self.assertEqual(run.call_args.kwargs['env'], {'CHECK': 'kept'})
+
+    def test_timeout_preserves_text_and_missing_stream(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-receipt-timeout-unit-') as temporary:
+            fixture = ReceiptHookTests('runTest')
+            fixture.root = Path(temporary)
+            fixture.env = {}
+            timeout = subprocess.TimeoutExpired(['fixture'], 100, output='text-stage', stderr=None)
+            with patch.object(subprocess, 'run', side_effect=timeout):
+                with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                    fixture.command(['fixture'])
+            self.assertIs(raised.exception, timeout)
+            note = '\n'.join(timeout.__notes__)
+            self.assertIn('text-stage', note)
+            self.assertIn('partial stderr: <none>', note)
+
+    def test_opt_in_raw_capture_keeps_large_bytes_and_stream_types(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-receipt-raw-unit-') as temporary:
+            root = Path(temporary)
+            raw_parent = root / 'raw'
+            raw_parent.mkdir()
+            fixture = ReceiptHookTests('runTest')
+            fixture.root = root
+            fixture.env = {}
+            large_stdout = b'begin-' + b'x' * 13000 + b'-end'
+            timeout = subprocess.TimeoutExpired(['fixture'], 100,
+                                                output=large_stdout, stderr='text-cause\u2713')
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': str(raw_parent)}):
+                with patch.object(subprocess, 'run', side_effect=timeout):
+                    with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                        fixture.command(['fixture'])
+            self.assertIs(raised.exception, timeout)
+            folder, = raw_parent.iterdir()
+            metadata = json.loads((folder / 'metadata.json').read_text(encoding='utf-8'))
+            self.assertEqual((folder / 'stdout.bin').read_bytes(), large_stdout)
+            self.assertEqual((folder / 'stderr.bin').read_bytes(), 'text-cause\u2713'.encode('utf-8'))
+            self.assertEqual(metadata['streams']['stdout']['type'], 'bytes')
+            self.assertEqual(metadata['streams']['stderr']['type'], 'str')
+            self.assertEqual(metadata['streams']['stderr']['encoding'], 'utf-8')
+            self.assertEqual(metadata['timeout_seconds'], 100)
+            self.assertIn(str(folder), '\n'.join(timeout.__notes__))
+
+    def test_missing_stream_and_save_failure_keep_original_timeout(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-receipt-raw-unit-') as temporary:
+            root = Path(temporary)
+            raw_parent = root / 'raw'
+            raw_parent.mkdir()
+            fixture = ReceiptHookTests('runTest')
+            fixture.root = root
+            fixture.env = {}
+            timeout = subprocess.TimeoutExpired(['fixture'], 100, output=None, stderr=None)
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': str(raw_parent)}):
+                with patch.object(subprocess, 'run', side_effect=timeout):
+                    with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                        fixture.command(['fixture'])
+            self.assertIs(raised.exception, timeout)
+            folder, = raw_parent.iterdir()
+            metadata = json.loads((folder / 'metadata.json').read_text(encoding='utf-8'))
+            self.assertEqual(metadata['streams']['stdout']['type'], 'none')
+            self.assertEqual(metadata['streams']['stderr']['type'], 'none')
+            self.assertFalse((folder / 'stdout.bin').exists())
+            self.assertFalse((folder / 'stderr.bin').exists())
+            failure = subprocess.TimeoutExpired(['fixture'], 100, output=b'partial', stderr=None)
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': str(raw_parent)}):
+                with patch.object(subprocess, 'run', side_effect=failure):
+                    with patch.object(Path, 'write_bytes', side_effect=OSError('disk full')):
+                        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                            fixture.command(['fixture'])
+            self.assertIs(raised.exception, failure)
+            self.assertIn('OSError: disk full', '\n'.join(failure.__notes__))
+            self.assertIn('raw capture=<failed at ', '\n'.join(failure.__notes__))
+
+    def test_disabled_or_relative_capture_and_unreadable_fixture_keep_timeout(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-receipt-raw-unit-') as temporary:
+            root = Path(temporary)
+            fixture = ReceiptHookTests('runTest')
+            fixture.root = root
+            fixture.env = {}
+            disabled = subprocess.TimeoutExpired(['fixture'], 100, output=b'partial', stderr=None)
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': ''}):
+                with patch.object(subprocess, 'run', side_effect=disabled):
+                    with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                        fixture.command(['fixture'])
+            self.assertIs(raised.exception, disabled)
+            self.assertEqual(list(root.iterdir()), [])
+            self.assertIn('raw capture=<disabled>', '\n'.join(disabled.__notes__))
+            relative = subprocess.TimeoutExpired(['fixture'], 100, output=None, stderr=None)
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': 'relative-path'}):
+                with patch.object(fixture, 'calls', side_effect=OSError('log unreadable')):
+                    with patch.object(subprocess, 'run', side_effect=relative):
+                        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                            fixture.command(['fixture'])
+            self.assertIs(raised.exception, relative)
+            note = '\n'.join(relative.__notes__)
+            self.assertIn('raw capture=<failed at relative-path: ValueError:', note)
+            self.assertIn('log unreadable', note)
+            self.assertEqual(list(root.iterdir()), [])
 
 
 if __name__ == '__main__':

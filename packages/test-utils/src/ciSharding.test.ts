@@ -1,8 +1,9 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
 interface ListedSuite {
@@ -12,14 +13,31 @@ interface ListedSuite {
 
 const root = new URL('../../../', import.meta.url);
 const prerequisiteProjects = new Set(['viewport-performance', 'startup-firefox', 'startup-electron']);
+const execFileAsync = promisify(execFile);
 
-function listCases(shard?: number): Map<string, string> {
+function listFailure(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const code = 'code' in error ? error.code : null;
+  const signal = 'signal' in error ? error.signal : null;
+  const killed = 'killed' in error ? error.killed : null;
+  const stderr = 'stderr' in error && typeof error.stderr === 'string' ? error.stderr : '';
+  const stdout = 'stdout' in error ? error.stdout : null;
+  return JSON.stringify({ message: error.message,
+    code: typeof code === 'number' || typeof code === 'string' ? code : null,
+    signal: typeof signal === 'string' ? signal : null,
+    killed: typeof killed === 'boolean' ? killed : null,
+    stderr: stderr.slice(0, 4_000), stderrLength: stderr.length,
+    stdoutLength: typeof stdout === 'string' || stdout instanceof Uint8Array ? stdout.length : null });
+}
+
+async function listCases(shard?: number): Promise<Map<string, string>> {
   const cli = createRequire(new URL('package.json', root)).resolve('@playwright/test/cli');
-  const output = execFileSync(process.execPath, [cli, 'test', '--config=e2e/playwright.config.ts',
+  const { stdout, stderr } = await execFileAsync(process.execPath, [cli, 'test', '--config=e2e/playwright.config.ts',
     '--list', '--reporter=json', ...(shard === undefined ? [] : [`--shard=${shard}/3`])], {
     cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, timeout: 45_000, maxBuffer: 8_000_000,
   });
-  const report = JSON.parse(output) as ListedSuite;
+  if (stderr.trim() !== '') throw new Error(`Playwright列挙 stderr (${shard ?? 'whole'}): ${stderr}`);
+  const report = JSON.parse(stdout) as ListedSuite;
   const cases = new Map<string, string>();
   function collect(suite: ListedSuite): void {
     for (const spec of suite.specs ?? []) for (const test of spec.tests) {
@@ -34,12 +52,27 @@ function listCases(shard?: number): Map<string, string> {
 }
 
 describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
-  it('実際のPlaywrightが選ぶ3組の和集合は全検査と一致し、通常操作を重複させない', () => {
-    const whole = listCases();
+  it('実際のPlaywrightが選ぶ3組の和集合は全検査と一致し、通常操作を重複させない', async () => {
+    const labels = ['whole', 'shard1', 'shard2', 'shard3'] as const;
+    const firstWaveStartedAt = Date.now();
+    const firstWave = await Promise.allSettled([listCases(), listCases(1)]);
+    console.log('[CI分割] 列挙wave1', { elapsedMs: Date.now() - firstWaveStartedAt });
+    const secondWaveStartedAt = Date.now();
+    const secondWave = await Promise.allSettled([listCases(2), listCases(3)]);
+    console.log('[CI分割] 列挙wave2', { elapsedMs: Date.now() - secondWaveStartedAt });
+    const listed = [...firstWave, ...secondWave];
+    const failures = listed.flatMap((result, index) => result.status === 'rejected'
+      ? [`${labels[index]}: ${listFailure(result.reason)}`] : []);
+    expect(failures).toEqual([]);
+    const [whole, ...shards] = listed.map(result => {
+      if (result.status !== 'fulfilled') throw new Error(`Playwright列挙に失敗: ${listFailure(result.reason)}`);
+      return result.value;
+    });
+    if (whole === undefined || shards.length !== 3) throw new Error('全体と3分割の列挙が揃いません');
     expect(whole.size).toBeGreaterThan(300);
     const counts = new Map<string, number>();
-    for (const shard of [1, 2, 3]) {
-      const selected = listCases(shard);
+    for (const [index, selected] of shards.entries()) {
+      if (selected === undefined) throw new Error(`shard${index + 1}の列挙がありません`);
       expect(selected.size).toBeGreaterThan(0);
       for (const [key, project] of selected) {
         expect(whole.get(key), key).toBe(project);

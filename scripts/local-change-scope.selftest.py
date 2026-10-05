@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 from lib.task_workspace import configure_project_temp
 
@@ -955,10 +956,62 @@ class PlaywrightFileFilterFormatTests(unittest.TestCase):
         temp_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix='pointercad-pw-list-', dir=str(temp_root)) as output:
             argv = [self.node, str(self.pnpm_cjs), 'run', 'test:e2e', '--list', *args, '--output', output]
-            completed = subprocess.run(argv, cwd=self.ROOT, capture_output=True, text=True, timeout=90)
+            started = time.monotonic()
+            try:
+                completed = subprocess.run(argv, cwd=self.ROOT, capture_output=True, text=True, timeout=90)
+            except subprocess.TimeoutExpired as error:
+                elapsed = time.monotonic() - started
+
+                def observed(stream):
+                    if stream is None:
+                        return '<none>'
+                    decoded = stream.decode('utf-8', errors='replace') if isinstance(stream, bytes) else stream
+                    return f'<{len(stream)} captured>\n{decoded[-12000:]}'
+
+                raw_capture = '<disabled>'
+                raw_root = os.environ.get('POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR')
+                if raw_root:
+                    raw_folder = None
+                    try:
+                        raw_parent = Path(raw_root)
+                        if not raw_parent.is_absolute() or not raw_parent.is_dir():
+                            raise ValueError('POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR must be an existing absolute directory')
+                        raw_folder = Path(tempfile.mkdtemp(prefix='playwright-list-timeout-', dir=str(raw_parent)))
+                        streams = {}
+                        for name, stream in (('stdout', error.stdout), ('stderr', error.stderr)):
+                            if stream is None:
+                                streams[name] = {'type': 'none', 'encoding': None, 'file': None, 'stored_bytes': 0}
+                                continue
+                            is_bytes = isinstance(stream, bytes)
+                            data = stream if is_bytes else stream.encode('utf-8')
+                            filename = f'{name}.bin'
+                            (raw_folder / filename).write_bytes(data)
+                            streams[name] = {'type': 'bytes' if is_bytes else 'str',
+                                             'encoding': None if is_bytes else 'utf-8',
+                                             'file': filename, 'stored_bytes': len(data)}
+                        metadata = {'argv': [str(part) for part in argv], 'timeout_seconds': 90,
+                                    'elapsed_seconds': elapsed, 'streams': streams}
+                        (raw_folder / 'metadata.json').write_text(
+                            json.dumps(metadata, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+                        raw_capture = str(raw_folder)
+                    except Exception as save_error:
+                        raw_capture = (f'<failed at {raw_folder or raw_root}: '
+                                       f'{type(save_error).__name__}: {save_error}>')
+
+                error.add_note(
+                    f'Playwright --list timed out: argv={argv!r}, timeout=90s, '
+                    f'elapsed={elapsed:.3f}s, raw capture={raw_capture}\n'
+                    f'partial stdout: {observed(error.stdout)}\n'
+                    f'partial stderr: {observed(error.stderr)}'
+                )
+                raise
             combined = completed.stdout + completed.stderr
             pairs = {(m.group('project'), m.group('file')) for m in self.LIST_LINE.finditer(combined)}
-            if not pairs:
+            if pairs:
+                self.assertEqual(completed.returncode, 0,
+                                 f'Playwright --list failed after a partial listing (exit {completed.returncode}):\n'
+                                 f'{combined[-12000:]}')
+            else:
                 self.assertIn('No tests found', combined, f'Unexpected playwright --list output:\n{combined}')
             return pairs
 
@@ -1051,6 +1104,141 @@ class PlaywrightFileFilterFormatTests(unittest.TestCase):
         files = {file for _project, file in pairs}
         self.assertIn('name-search.spec.ts', files)
         self.assertNotIn('electron-name-search.spec.ts', files)
+
+
+class PlaywrightListObservationTests(unittest.TestCase):
+    def fixture(self, root):
+        fixture = PlaywrightFileFilterFormatTests('runTest')
+        fixture.ROOT = Path(root)
+        fixture.node = 'node-fixture'
+        fixture.pnpm_cjs = Path(root) / 'pnpm.cjs'
+        return fixture
+
+    def test_timeout_preserves_bytes_argv_and_deadline(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-list-timeout-unit-') as temporary:
+            fixture = self.fixture(temporary)
+            timeout = subprocess.TimeoutExpired(['node-fixture'], 90,
+                                                output=b'list-stage', stderr=b'list-cause')
+            with patch.object(subprocess, 'run', side_effect=timeout) as run:
+                with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                    fixture.listed_files('--project=firefox')
+            self.assertIs(raised.exception, timeout)
+            note = '\n'.join(timeout.__notes__)
+            for expected in ('node-fixture', 'test:e2e', '--project=firefox', 'timeout=90s',
+                             'list-stage', 'list-cause'):
+                self.assertIn(expected, note)
+            self.assertEqual(run.call_args.kwargs['timeout'], 90)
+            self.assertTrue(run.call_args.kwargs['text'])
+
+    def test_timeout_preserves_text_and_missing_stream(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-list-timeout-unit-') as temporary:
+            fixture = self.fixture(temporary)
+            timeout = subprocess.TimeoutExpired(['node-fixture'], 90, output='text-stage', stderr=None)
+            with patch.object(subprocess, 'run', side_effect=timeout):
+                with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                    fixture.listed_files('--project=firefox')
+            self.assertIs(raised.exception, timeout)
+            note = '\n'.join(timeout.__notes__)
+            self.assertIn('text-stage', note)
+            self.assertIn('partial stderr: <none>', note)
+
+    def test_partial_listing_with_nonzero_exit_is_rejected(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-list-timeout-unit-') as temporary:
+            fixture = self.fixture(temporary)
+            listed = '[firefox] › auto-save-settings.spec.ts:1:1\n'
+            completed = subprocess.CompletedProcess(['node-fixture'], 7, listed, 'failure-marker')
+            with patch.object(subprocess, 'run', return_value=completed):
+                with self.assertRaisesRegex(AssertionError, 'partial listing'):
+                    fixture.listed_files('--project=firefox')
+
+    def test_zero_exit_listing_and_no_tests_negative_case(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-list-timeout-unit-') as temporary:
+            fixture = self.fixture(temporary)
+            listed = '[firefox] › auto-save-settings.spec.ts:1:1\n'
+            completed = subprocess.CompletedProcess(['node-fixture'], 0, listed, '')
+            with patch.object(subprocess, 'run', return_value=completed):
+                self.assertEqual(fixture.listed_files('--project=firefox'),
+                                 {('firefox', 'auto-save-settings.spec.ts')})
+            empty = subprocess.CompletedProcess(['node-fixture'], 1, '', 'No tests found')
+            with patch.object(subprocess, 'run', return_value=empty):
+                self.assertEqual(fixture.listed_files('--project=firefox'), set())
+            invalid = subprocess.CompletedProcess(['node-fixture'], 1, '', 'module load failed')
+            with patch.object(subprocess, 'run', return_value=invalid):
+                with self.assertRaises(AssertionError):
+                    fixture.listed_files('--project=firefox')
+
+    def test_opt_in_raw_capture_keeps_large_bytes_and_stream_types(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-list-raw-unit-') as temporary:
+            root = Path(temporary)
+            raw_parent = root / 'raw'
+            raw_parent.mkdir()
+            fixture = self.fixture(root)
+            large_stdout = b'begin-' + b'x' * 13000 + b'-end'
+            timeout = subprocess.TimeoutExpired(['node-fixture'], 90,
+                                                output=large_stdout, stderr='text-cause\u2713')
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': str(raw_parent)}):
+                with patch.object(subprocess, 'run', side_effect=timeout):
+                    with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                        fixture.listed_files('--project=firefox')
+            self.assertIs(raised.exception, timeout)
+            folder, = raw_parent.iterdir()
+            metadata = json.loads((folder / 'metadata.json').read_text(encoding='utf-8'))
+            self.assertEqual((folder / 'stdout.bin').read_bytes(), large_stdout)
+            self.assertEqual((folder / 'stderr.bin').read_bytes(), 'text-cause\u2713'.encode('utf-8'))
+            self.assertEqual(metadata['streams']['stdout']['type'], 'bytes')
+            self.assertEqual(metadata['streams']['stderr']['type'], 'str')
+            self.assertEqual(metadata['streams']['stderr']['encoding'], 'utf-8')
+            self.assertEqual(metadata['timeout_seconds'], 90)
+            self.assertIn(str(folder), '\n'.join(timeout.__notes__))
+
+    def test_missing_stream_and_save_failure_keep_original_timeout(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-list-raw-unit-') as temporary:
+            root = Path(temporary)
+            raw_parent = root / 'raw'
+            raw_parent.mkdir()
+            fixture = self.fixture(root)
+            timeout = subprocess.TimeoutExpired(['node-fixture'], 90, output=None, stderr=None)
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': str(raw_parent)}):
+                with patch.object(subprocess, 'run', side_effect=timeout):
+                    with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                        fixture.listed_files('--project=firefox')
+            self.assertIs(raised.exception, timeout)
+            folder, = raw_parent.iterdir()
+            metadata = json.loads((folder / 'metadata.json').read_text(encoding='utf-8'))
+            self.assertEqual(metadata['streams']['stdout']['type'], 'none')
+            self.assertEqual(metadata['streams']['stderr']['type'], 'none')
+            self.assertFalse((folder / 'stdout.bin').exists())
+            self.assertFalse((folder / 'stderr.bin').exists())
+            failure = subprocess.TimeoutExpired(['node-fixture'], 90, output=b'partial', stderr=None)
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': str(raw_parent)}):
+                with patch.object(subprocess, 'run', side_effect=failure):
+                    with patch.object(Path, 'write_bytes', side_effect=OSError('disk full')):
+                        with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                            fixture.listed_files('--project=firefox')
+            self.assertIs(raised.exception, failure)
+            self.assertIn('OSError: disk full', '\n'.join(failure.__notes__))
+            self.assertIn('raw capture=<failed at ', '\n'.join(failure.__notes__))
+
+    def test_disabled_or_relative_capture_keeps_original_timeout(self):
+        with tempfile.TemporaryDirectory(prefix='pointercad-list-raw-unit-') as temporary:
+            root = Path(temporary)
+            fixture = self.fixture(root)
+            disabled = subprocess.TimeoutExpired(['node-fixture'], 90, output=b'partial', stderr=None)
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': ''}):
+                with patch.object(subprocess, 'run', side_effect=disabled):
+                    with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                        fixture.listed_files('--project=firefox')
+            self.assertIs(raised.exception, disabled)
+            self.assertFalse((root / 'raw').exists())
+            self.assertIn('raw capture=<disabled>', '\n'.join(disabled.__notes__))
+            relative = subprocess.TimeoutExpired(['node-fixture'], 90, output=None, stderr=None)
+            with patch.dict(os.environ, {'POINTERCAD_TIMEOUT_DIAGNOSTICS_DIR': 'relative-path'}):
+                with patch.object(subprocess, 'run', side_effect=relative):
+                    with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                        fixture.listed_files('--project=firefox')
+            self.assertIs(raised.exception, relative)
+            self.assertIn('raw capture=<failed at relative-path: ValueError:', '\n'.join(relative.__notes__))
+            self.assertFalse((root / 'raw').exists())
 
 
 if __name__ == '__main__':

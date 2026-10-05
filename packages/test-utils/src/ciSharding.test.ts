@@ -54,11 +54,15 @@ async function listCases(shard?: number): Promise<Map<string, string>> {
 describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
   it('実際のPlaywrightが選ぶ3組の和集合は全検査と一致し、通常操作を重複させない', async () => {
     const labels = ['whole', 'shard1', 'shard2', 'shard3'] as const;
+    // Playwrightは変換した検査ファイルと行の対応表(.map)を共有の変換キャッシュへ書き、書く前に同じファイルの
+    // 控えを消す。キャッシュが空のまま2つの列挙を同時に流すと、片方が消して書き直す間の .map を他方が読めず、
+    // そのファイルの全検査が変換後の行で列挙される(CI run 37260692577 の Linux)。全体の列挙を単独で流して
+    // キャッシュを満たし、3組はキャッシュを読むだけの状態で同時に流す。
     const firstWaveStartedAt = Date.now();
-    const firstWave = await Promise.allSettled([listCases(), listCases(1)]);
+    const firstWave = await Promise.allSettled([listCases()]);
     console.log('[CI分割] 列挙wave1', { elapsedMs: Date.now() - firstWaveStartedAt });
     const secondWaveStartedAt = Date.now();
-    const secondWave = await Promise.allSettled([listCases(2), listCases(3)]);
+    const secondWave = await Promise.allSettled([listCases(1), listCases(2), listCases(3)]);
     console.log('[CI分割] 列挙wave2', { elapsedMs: Date.now() - secondWaveStartedAt });
     const listed = [...firstWave, ...secondWave];
     const failures = listed.flatMap((result, index) => result.status === 'rejected'

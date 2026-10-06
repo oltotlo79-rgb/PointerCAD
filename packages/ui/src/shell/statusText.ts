@@ -1116,7 +1116,10 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // 原点を移したときの一言(FR-331)。これも断りではないので赤くしない。
     return { kind: 'saved', text: input.originNoticeMessage, hint: null, progress: null };
   }
-  if (input.timelineNoticeKey !== undefined && input.timelineNoticeKey !== null) {
+  // 初回のつまみ案内は操作結果ではないので、保存・開く等の成功通知を覆わない。
+  // 実際に差し込んだ通知などの優先順位は保つ。失敗・中止・進捗は既に上で選ぶ。
+  if (input.timelineNoticeKey !== undefined && input.timelineNoticeKey !== null
+    && (input.timelineNoticeKey !== 'timeline.hint' || input.fileMessage === null)) {
     // つまみを末尾へ戻したことの知らせ(FR-507、タスク19)。断りではないので赤くしない。
     return { kind: 'saved', text: t(input.timelineNoticeKey), hint: null, progress: null };
   }

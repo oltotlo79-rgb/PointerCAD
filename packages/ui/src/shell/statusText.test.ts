@@ -1558,3 +1558,69 @@ describe('書き出しの添え物と点検の 1 文(P6 タスク45・46)', () =
     expect(line.text).toBe(t('printCheck.unavailable'));
   });
 });
+
+
+describe('保存成功と初回timeline案内の優先順位', () => {
+  it('実保存の成功通知は残っている一般timeline案内より先に出す', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, rollback: { position: 1, total: 3 } });
+    expect(line.kind).toBe('saved');
+    expect(line.text).toBe(t('file.saved'));
+    expect(line.hint).toBeNull();
+    expect(line.progress).toBeNull();
+    // 独立したつまみ位置の札は保存成功が出ても消さない。
+    expect(line.rollbackLabel).toBe('途中まで戻しています(1 件目 / 3 件)');
+    expect(line.selectionKindLabel).toBe(describeStatus(quiet()).selectionKindLabel);
+  });
+
+  it('ファイル通知がないときと消えた後は初回timeline案内を保つ', () => {
+    const input = { ...quiet(), timelineNoticeKey: 'timeline.hint' as const };
+    expect(describeStatus(input).text).toBe(t('timeline.hint'));
+    expect(describeStatus({ ...input, fileMessage: { key: 'file.saved', failed: false } }).text).toBe(t('file.saved'));
+    expect(describeStatus({ ...input, fileMessage: null }).text).toBe(t('timeline.hint'));
+  });
+
+  it('実timeline差し込み通知は一般案内扱いへ変えない', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.inserted',
+      fileMessage: { key: 'file.saved', failed: false } });
+    expect(line.kind).toBe('saved');
+    expect(line.text).toBe(t('timeline.inserted'));
+  });
+
+  it('ファイル失敗は一般timeline案内より先に出す', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.openFailed', failed: true } });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(t('file.openFailed'));
+  });
+
+  it('重大エラーは保存成功と一般timeline案内に優先する', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, errorMessage: '計算できません' });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.error')} 計算できません`);
+  });
+
+  it('実timelineの断りは保存成功に隠れない', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, timelineRefusalMessage: '履歴を入れ替えられません' });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.timelineError')} 履歴を入れ替えられません`);
+  });
+
+  it('中止は保存成功と一般timeline案内と進捗に優先する', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, cancelled: true, progress: progressAt(1, 4) });
+    expect(line.kind).toBe('cancelled');
+    expect(line.text).toBe(t('statusBar.cancelled'));
+    expect(line.progress).toBeNull();
+  });
+
+  it('進捗は保存成功と一般timeline案内に優先する', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, progress: progressAt(2, 12) });
+    expect(line.kind).toBe('progress');
+    expect(line.progress).toEqual({ done: 3, total: 12, ratio: 0.25 });
+    expect(line.hint).toBe(t('statusBar.progressHint'));
+  });
+});

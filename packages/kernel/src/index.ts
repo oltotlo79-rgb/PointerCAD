@@ -267,6 +267,8 @@ export {
   MATCH_WEIGHT_VERTEX_INDEX,
   MATCH_WEIGHT_VERTEX_POSITION,
   SUB_SHAPE_MATCH_THRESHOLD,
+  SUB_SHAPE_AMBIGUITY_MARGIN,
+  resolveSubShapeCandidates,
   matchEdge,
   matchFace,
   matchVertex,

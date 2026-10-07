@@ -56,6 +56,9 @@ export const MATCH_WEIGHT_VERTEX_POSITION = 0.5;
 /** これ未満の点しか取れなければ「見つからない」とする(§0.a-0.4)。 */
 export const SUB_SHAPE_MATCH_THRESHOLD = 0.6;
 
+/** しきい値以上の最高点と次点の差がこれ未満なら、自動採用せず候補を残す。 */
+export const SUB_SHAPE_AMBIGUITY_MARGIN = 0.05;
+
 /**
  * 選び直しの結果。しきい値に届かなかったときは null を返すので、
  * これが返ってきたときは必ずそのまま採用してよい。
@@ -65,6 +68,26 @@ export interface SubShapeMatch {
   readonly index: number;
   /** 0〜1 の点。しきい値以上のときだけ返る。 */
   readonly score: number;
+}
+
+export type SubShapeCandidateResolution<T> = { readonly candidates: readonly T[] } & (
+  | { readonly status: 'matched'; readonly match: T }
+  | { readonly status: 'missing' }
+  | { readonly status: 'ambiguous' }
+);
+
+/** 全bodyを集約した候補にも同じ基準を使う。元の配列・候補を変更しない。 */
+export function resolveSubShapeCandidates<T extends { readonly score: number }>(
+  candidates: readonly T[],
+): SubShapeCandidateResolution<T> {
+  const accepted = candidates.filter((candidate) => Number.isFinite(candidate.score) && candidate.score >= SUB_SHAPE_MATCH_THRESHOLD)
+    .sort((first, second) => second.score - first.score);
+  const [best, runnerUp] = accepted;
+  if (best === undefined) return { status: 'missing', candidates: accepted };
+  if (runnerUp !== undefined && best.score - runnerUp.score < SUB_SHAPE_AMBIGUITY_MARGIN) {
+    return { status: 'ambiguous', candidates: accepted };
+  }
+  return { status: 'matched', candidates: accepted, match: best };
 }
 
 /**

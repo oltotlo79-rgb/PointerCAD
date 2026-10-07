@@ -16,6 +16,8 @@ import {
   MATCH_WEIGHT_SIZE,
   MATCH_WEIGHT_VERTEX_INDEX,
   MATCH_WEIGHT_VERTEX_POSITION,
+  SUB_SHAPE_AMBIGUITY_MARGIN,
+  resolveSubShapeCandidates,
   SUB_SHAPE_MATCH_THRESHOLD,
   matchEdge,
   matchFace,
@@ -394,6 +396,68 @@ describe('部分形状の指紋の採点(計画書 §2.2.3、FR-502、FR-504)', 
         expect(value).toBeGreaterThanOrEqual(0);
         expect(value).toBeLessThanOrEqual(1);
       }
+    });
+  });
+});
+
+describe('resolveSubShapeCandidates independent aggregate admission', () => {
+  it('rejects empty and non-finite or below-threshold candidates', () => {
+    expect(resolveSubShapeCandidates([])).toEqual({ status: 'missing', candidates: [] });
+    expect(resolveSubShapeCandidates([
+      { score: Number.NaN }, { score: Number.POSITIVE_INFINITY },
+      { score: Number.NEGATIVE_INFINITY }, { score: 0.599 },
+    ])).toEqual({ status: 'missing', candidates: [] });
+    expect(SUB_SHAPE_MATCH_THRESHOLD).toBe(0.6);
+    expect(SUB_SHAPE_AMBIGUITY_MARGIN).toBe(0.05);
+  });
+
+  it('accepts the exact threshold and preserves generic candidate identity', () => {
+    const candidate = { score: 0.6, bodyId: 'body-a' };
+    const result = resolveSubShapeCandidates([candidate]);
+    expect(result.status).toBe('matched');
+    if (result.status !== 'matched') throw new Error('expected matched');
+    expect(result.match).toBe(candidate);
+    expect(result.match.bodyId).toBe('body-a');
+    expect(result.candidates).toEqual([candidate]);
+  });
+
+  it('rejects a tie in either input order without inventing an index winner', () => {
+    const a = { score: 0.8, bodyId: 'a' };
+    const b = { score: 0.8, bodyId: 'b' };
+    expect(resolveSubShapeCandidates([a, b])).toEqual({ status: 'ambiguous', candidates: [a, b] });
+    expect(resolveSubShapeCandidates([b, a])).toEqual({ status: 'ambiguous', candidates: [b, a] });
+  });
+
+  it('rejects a runner-up within the margin and preserves all accepted candidates', () => {
+    const best = { score: 0.8 };
+    const close = { score: 0.76 };
+    const other = { score: 0.6 };
+    expect(resolveSubShapeCandidates([other, close, best])).toEqual({
+      status: 'ambiguous', candidates: [best, close, other],
+    });
+  });
+
+  it('accepts a separated winner without mutating a frozen input or candidates', () => {
+    const best = Object.freeze({ score: 0.9 });
+    const runner = Object.freeze({ score: 0.7 });
+    const rejected = Object.freeze({ score: 0.5 });
+    const input = Object.freeze([runner, rejected, best]);
+    const result = resolveSubShapeCandidates(input);
+    expect(result).toEqual({ status: 'matched', candidates: [best, runner], match: best });
+    expect(input).toEqual([runner, rejected, best]);
+    expect(result.candidates[0]).toBe(best);
+  });
+
+  it('accepts a representable gap at least the margin and ignores a rejected runner-up', () => {
+    const best = { score: 0.65 };
+    const runner = { score: 0.6 };
+    expect(best.score - runner.score).toBeGreaterThanOrEqual(SUB_SHAPE_AMBIGUITY_MARGIN);
+    expect(resolveSubShapeCandidates([runner, best])).toEqual({
+      status: 'matched', candidates: [best, runner], match: best,
+    });
+    const threshold = { score: 0.6 };
+    expect(resolveSubShapeCandidates([{ score: 0.599 }, threshold])).toEqual({
+      status: 'matched', candidates: [threshold], match: threshold,
     });
   });
 });

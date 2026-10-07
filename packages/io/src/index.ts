@@ -56,6 +56,7 @@ export {
   type ParseErrorCode,
   type SerializeOptions,
 } from './pcad/documentJson.js';
+export { readArchive } from './pcad/readArchive.js';
 // .pcad(ZIP コンテナ)の読み書き(FR-801、要件§8)。
 export {
   decodeImportedMeshBytes,
@@ -78,6 +79,9 @@ export {
   PCAD_SHAPE_ENTRY_PREFIX,
   PCAD_SHAPE_ENTRY_SUFFIX,
   PCAD_THUMBNAIL_ENTRY,
+  FIXED_ENTRY_MTIME,
+  zipPcadEntries,
+  type PcadZipEntries,
   readPcadaFile,
   readPcaddFile,
   readPcadFile,

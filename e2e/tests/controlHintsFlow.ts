@@ -4,6 +4,29 @@ import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 import { uiMessage } from './uiMessages.js';
 import { captureManualDetail } from './captureManualDetail.js';
 
+/** IDREF lists require exact tokens and live references in this control's own document. */
+export function descriptionIdrefsValid(value: string | null, required: readonly string[], available: readonly string[]): boolean {
+  const ids = value === null ? [] : value.trim().split(/[\t\n\f\r ]+/).filter(Boolean);
+  return ids.length > 0 && new Set(ids).size === ids.length && required.length > 0 && required.every(id => id.length > 0 && ids.includes(id))
+    && ids.every(id => available.includes(id));
+}
+
+async function expectDescriptionReferences(control: ReturnType<Page['locator']>, required: readonly string[], reason?: string): Promise<void> {
+  await expect.poll(async () => {
+    const snapshot = await control.evaluate(element => {
+      const description = element.getAttribute('aria-describedby');
+      const ids = (description ?? '').trim().split(/[\t\n\f\r ]+/).filter(Boolean);
+      const references = ids.map(id => {
+        const target = element.ownerDocument.getElementById(id);
+        return { id, exists: target !== null, text: target?.textContent ?? '' };
+      });
+      return { description, references };
+    });
+    return descriptionIdrefsValid(snapshot.description, required, snapshot.references.filter(reference => reference.exists).map(reference => reference.id))
+      && (reason === undefined || snapshot.references.filter(reference => required.includes(reference.id)).map(reference => reference.text).join(' ').includes(reason));
+  }).toBe(true);
+}
+
 async function keyboardFocus(page: Page, control: ReturnType<Page['locator']>): Promise<void> {
   await control.focus();
   await page.keyboard.press('Tab'); await page.keyboard.press('Shift+Tab');
@@ -31,8 +54,7 @@ export async function controlHintsFlow(page: Page, info: TestInfo): Promise<void
   await keyboardFocus(page, input);
   await expect(hint).toContainText((await input.getAttribute('title')) ?? 'missing-input-title');
   await expect(input).toHaveValue('12/2');
-  const description = await input.getAttribute('aria-describedby');
-  expect(description).toContain(originalDescription);
+  await expectDescriptionReferences(input, originalDescription.trim().split(/[\t\n\f\r ]+/).filter(Boolean));
   const bounds = await hint.boundingBox();
   expect(bounds).not.toBeNull();
   if (bounds !== null) { expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(1440); }
@@ -53,7 +75,7 @@ export async function controlHintsFlow(page: Page, info: TestInfo): Promise<void
     await expect(hint).toContainText(inputTitle);
     const tooltipId = await hint.getAttribute('id');
     if (tooltipId === null) throw new Error('The keyboard explanation needs an accessible id');
-    expect(await input.getAttribute('aria-describedby')).toContain(tooltipId);
+    await expectDescriptionReferences(input, [tooltipId]);
     expect(await label.getAttribute('aria-describedby')).toBe(labelDescription);
   } finally {
     await input.evaluate((element, title) => element.setAttribute('title', title), inputTitle);

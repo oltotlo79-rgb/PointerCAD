@@ -37,6 +37,7 @@ minimumReleaseAgeStrict: true
 # 数式の読み取り・計算はアプリと既存の計算部が担当する。入力画面の未使用の計算部を取得しない。
 overrides:
   "mathlive@0.110.0>@cortex-js/compute-engine": "-"
+  "app-builder-lib@26.15.3>@electron/get": "5.1.0"
   "@electron/get@5.1.0>undici": "7.29.1"
   "minimatch@10.2.6>brace-expansion": "5.0.12"
 

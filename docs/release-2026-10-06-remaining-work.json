@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "recorded_at": "2026-10-09T09:07:57.828770+09:00",
+  "recorded_at": "2026-10-09T17:35:29.464592+09:00",
   "policy": {
     "optional_features_frozen": true,
     "all_original_reviews_required": true,
@@ -12,8 +12,8 @@
     "historical_inventories_are_immutable_snapshots_not_current_forecast_policy": true
   },
   "release_estimate": {
-    "minimum_work_minutes": 1166,
-    "maximum_work_minutes": 3067,
+    "minimum_work_minutes": 1143,
+    "maximum_work_minutes": 3004,
     "publication_at": null,
     "publication_window": {
       "earliest_date": "2026-10-10",
@@ -22,16 +22,16 @@
       "timezone": "Asia/Tokyo",
       "conditional": true
     },
-    "basis": "Root read full cold helper and both old-process-close/fresh-launch wrappers, exact9 prelist, actual9PASS83.261seconds with owned37660 reaped and stable3195Source430E2E/index. Verify original exact ZIP, all non-time envelope/document and all non-thumbnail attachments/PNG/visibility, real savedAt windows, deleted negative and visible positive pixels, and no old Undo restoration. Worker independently preserved30ZIPs with exact pins; original assertions unchanged. Keep thumbnail rendering unproved and old failed whole runs. Only R20-COLD accepted; KEYS, all quality and release remain open. No historical20/60 double subtraction from conditional ETA. Root acceptance of actual current nine original native operations with exact prelist and unchanged full Source/E2E. Retire only remaining COLD implementation5/15, validation5/15, repair5/20 and admission5/10 once. Prior failed cold runs and stalls remain historical and are not the acceptance basis. Historical allocation totals are not the conditional publication ETA.",
+    "basis": "Root accepts only original R16-ACTUAL after personally reading current original-condition text, candidate full acceptance script, six-condition recommendation, all three raw asset cancellation/retention proofs, current actual terminal and preserved mixed-run successes. Historical behavior reuse is explicitly justified by unchanged paths and independent CRC/ZIP verification. All failures and generation distinctions remain. Other unfinished conditions, full quality, GPU, manual, OS IME and release are not accepted. Root acceptance of original R16 conditions using pinned historical/current actual evidence and exact current full Source/E2E equivalence review. Retire residual implementation5/15, validation8/18, repair5/20 and admission5/10 once. Preserve all failures and execution generations. Historical allocations are not a measured publication ETA.",
     "origin_report": 140,
     "origin_at": "2026-10-06T13:02:01.607271+09:00",
     "revision_report": 517,
-    "forecast_recorded_at": "2026-10-09T09:07:57.828770+09:00",
+    "forecast_recorded_at": "2026-10-09T17:35:29.464592+09:00",
     "work_groups": [
       {
         "id": "R16-R17-R18-R20-actual-three-environments",
-        "low_minutes": 63,
-        "high_minutes": 158,
+        "low_minutes": 40,
+        "high_minutes": 95,
         "inventory_ids": [
           "R16-ENTRY",
           "R16-ACTUAL",
@@ -91,7 +91,7 @@
     "external_wait_separate": false,
     "total_remaining_minutes_low": null,
     "total_remaining_minutes_high": null,
-    "total_time_expression": "Historical engineering allocation 1166/3067 minutes plus unknown waiting and unmeasured repair inside total; not current conditional publication ETA.",
+    "total_time_expression": "Historical engineering allocation 1143/3004 minutes plus unknown waiting and unmeasured repair inside total; not current conditional publication ETA.",
     "calendar_model": {
       "continuous_execution": true,
       "assumed_effective_workhours_per_day": null,
@@ -99,8 +99,8 @@
     },
     "superseded_estimate": "17-32h actual10:12 estimate preserved in history; explicit original21 leaf reassessment, not an elapsed-only credit or implicit calendar slide.",
     "confidence": "low; explicit serial21leaf allocation, unknown environment and repair tails included",
-    "forecast_revision_id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598",
-    "forecast_reference_at": "2026-10-09T09:07:57.828770+09:00",
+    "forecast_revision_id": "v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e",
+    "forecast_reference_at": "2026-10-09T17:35:29.464592+09:00",
     "recorded_at": "2026-10-08T13:05:21.730296+09:00",
     "current_item_estimates": [
       {
@@ -139,35 +139,35 @@
       {
         "id": "R16-ACTUAL",
         "remaining_minutes": [
-          23,
-          63
+          0,
+          0
         ],
         "phases": {
           "implementation": [
-            5,
-            15
+            0,
+            0
           ],
           "mandatory_validation": [
-            8,
-            18
+            0,
+            0
           ],
           "bounded_repair_allowance": [
-            5,
-            20
+            0,
+            0
           ],
           "management_review_admission_cleanup": [
-            5,
-            10
+            0,
+            0
           ]
         },
         "original_conditions": [
           "TrialA/before-order immutable points: list/duplicate/compare/restore, source SHA unchanged, cancel and oneUndo restore old document/attachments, shared assets and retained-point references, limit refusal without automatic deletion, external transmission0. Chromium/Firefox/Electron."
         ],
         "minutes": [
-          23,
-          63
+          0,
+          0
         ],
-        "remaining": "{\"bounded_repair_allowance\": [5, 20], \"implementation\": [5, 15], \"management_review_admission_cleanup\": [5, 10], \"mandatory_validation\": [8, 18]}"
+        "remaining": "{\"bounded_repair_allowance\": [0, 0], \"implementation\": [0, 0], \"management_review_admission_cleanup\": [0, 0], \"mandatory_validation\": [0, 0]}"
       },
       {
         "id": "R18-RED5-EXCHANGE",
@@ -16354,6 +16354,859 @@
         }
       ],
       "reason": "Preserve every prior allocation/credit; current COLD residual acceptance only."
+    },
+    {
+      "recorded_at": "2026-10-09T09:07:57.828770+09:00",
+      "ledger_sha256": "637e24cfbd823f04e0e507d98170eca5e4d219d6e6274ba540d6ddce342f000f",
+      "release_estimate": {
+        "minimum_work_minutes": 1166,
+        "maximum_work_minutes": 3067,
+        "publication_at": null,
+        "publication_window": {
+          "earliest_date": "2026-10-10",
+          "latest_date": "2026-10-11",
+          "time_of_day": "Historical allocation accounting only; current conditional publication forecast is separately approved by Root.",
+          "timezone": "Asia/Tokyo",
+          "conditional": true
+        },
+        "basis": "Root read full cold helper and both old-process-close/fresh-launch wrappers, exact9 prelist, actual9PASS83.261seconds with owned37660 reaped and stable3195Source430E2E/index. Verify original exact ZIP, all non-time envelope/document and all non-thumbnail attachments/PNG/visibility, real savedAt windows, deleted negative and visible positive pixels, and no old Undo restoration. Worker independently preserved30ZIPs with exact pins; original assertions unchanged. Keep thumbnail rendering unproved and old failed whole runs. Only R20-COLD accepted; KEYS, all quality and release remain open. No historical20/60 double subtraction from conditional ETA. Root acceptance of actual current nine original native operations with exact prelist and unchanged full Source/E2E. Retire only remaining COLD implementation5/15, validation5/15, repair5/20 and admission5/10 once. Prior failed cold runs and stalls remain historical and are not the acceptance basis. Historical allocation totals are not the conditional publication ETA.",
+        "origin_report": 140,
+        "origin_at": "2026-10-06T13:02:01.607271+09:00",
+        "revision_report": 517,
+        "forecast_recorded_at": "2026-10-09T09:07:57.828770+09:00",
+        "work_groups": [
+          {
+            "id": "R16-R17-R18-R20-actual-three-environments",
+            "low_minutes": 63,
+            "high_minutes": 158,
+            "inventory_ids": [
+              "R16-ENTRY",
+              "R16-ACTUAL",
+              "R18-RED5-EXCHANGE",
+              "R18-RIM",
+              "R18-WALL-MATE",
+              "R20-COLD",
+              "R20-KEYS-DISABLED",
+              "R17-W12b"
+            ]
+          },
+          {
+            "id": "PG4-provider-and-performance-memory-acceptance",
+            "low_minutes": 358,
+            "high_minutes": 1027,
+            "inventory_ids": [
+              "PG4-provider",
+              "PG4b",
+              "W19-performance",
+              "W07-export",
+              "PG5a-W08",
+              "W21-W22"
+            ]
+          },
+          {
+            "id": "manual-security-full-gates-independent-review-release-and-operation",
+            "low_minutes": 745,
+            "high_minutes": 1882,
+            "inventory_ids": [
+              "R20-HELP",
+              "WM1-manual",
+              "W27-security",
+              "distribution-version",
+              "full-quality",
+              "same-SHA-CI",
+              "independent90"
+            ],
+            "operational_work": [
+              "Root20minute personal monitoring",
+              "Forecast reconciliation and durable progress reports",
+              "Owned children/locks cleanup",
+              "WIP/checkpoint and handoff preservation",
+              "R23 W25b original five-stage/cold tutorial confirmation",
+              "Current manual generation and visual inspection",
+              "Both-platform build/install/remove/Twin and release asset validation",
+              "Two independent same-rubric reviews",
+              "Git commit/push, CI and main integration, release publication/post-publication validation"
+            ]
+          }
+        ],
+        "assumptions": [
+          "Attributable GPU resident measurement becomes available",
+          "Git writes, push and same-SHA CI become available",
+          "All original mandatory review requirements and lower independent score>=90 remain unchanged"
+        ],
+        "external_wait_minutes": null,
+        "external_wait_separate": false,
+        "total_remaining_minutes_low": null,
+        "total_remaining_minutes_high": null,
+        "total_time_expression": "Historical engineering allocation 1166/3067 minutes plus unknown waiting and unmeasured repair inside total; not current conditional publication ETA.",
+        "calendar_model": {
+          "continuous_execution": true,
+          "assumed_effective_workhours_per_day": null,
+          "unknown_environment_time_in_total": true
+        },
+        "superseded_estimate": "17-32h actual10:12 estimate preserved in history; explicit original21 leaf reassessment, not an elapsed-only credit or implicit calendar slide.",
+        "confidence": "low; explicit serial21leaf allocation, unknown environment and repair tails included",
+        "forecast_revision_id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598",
+        "forecast_reference_at": "2026-10-09T09:07:57.828770+09:00",
+        "recorded_at": "2026-10-08T13:05:21.730296+09:00",
+        "current_item_estimates": [
+          {
+            "id": "R16-ENTRY",
+            "remaining_minutes": [
+              0,
+              0
+            ],
+            "phases": {
+              "implementation": [
+                0,
+                0
+              ],
+              "mandatory_validation": [
+                0,
+                0
+              ],
+              "bounded_repair_allowance": [
+                0,
+                0
+              ],
+              "management_review_admission_cleanup": [
+                0,
+                0
+              ]
+            },
+            "original_conditions": [
+              "The existing real named-save-points flow reaches the current file-menu command in all three modes without weakening its original nine environment/mode oracles."
+            ],
+            "minutes": [
+              0,
+              0
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [0, 0], \"implementation\": [0, 0], \"management_review_admission_cleanup\": [0, 0], \"mandatory_validation\": [0, 0]}"
+          },
+          {
+            "id": "R16-ACTUAL",
+            "remaining_minutes": [
+              23,
+              63
+            ],
+            "phases": {
+              "implementation": [
+                5,
+                15
+              ],
+              "mandatory_validation": [
+                8,
+                18
+              ],
+              "bounded_repair_allowance": [
+                5,
+                20
+              ],
+              "management_review_admission_cleanup": [
+                5,
+                10
+              ]
+            },
+            "original_conditions": [
+              "TrialA/before-order immutable points: list/duplicate/compare/restore, source SHA unchanged, cancel and oneUndo restore old document/attachments, shared assets and retained-point references, limit refusal without automatic deletion, external transmission0. Chromium/Firefox/Electron."
+            ],
+            "minutes": [
+              23,
+              63
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [5, 20], \"implementation\": [5, 15], \"management_review_admission_cleanup\": [5, 10], \"mandatory_validation\": [8, 18]}"
+          },
+          {
+            "id": "R18-RED5-EXCHANGE",
+            "remaining_minutes": [
+              0,
+              0
+            ],
+            "phases": {
+              "implementation": [
+                0,
+                0
+              ],
+              "mandatory_validation": [
+                0,
+                0
+              ],
+              "bounded_repair_allowance": [
+                0,
+                0
+              ],
+              "management_review_admission_cleanup": [
+                0,
+                0
+              ]
+            },
+            "original_conditions": [
+              "Imported STEP download/file bytes and hole cold reopen in three environments; original P3 pattern two Web environments with existing0.01mm3 values/Undo/Redo/save/edit; exchange(a) actual STEP output/import volume. Literal5+1 target selection, not dependency counts."
+            ],
+            "minutes": [
+              0,
+              0
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [0, 0], \"implementation\": [0, 0], \"management_review_admission_cleanup\": [0, 0], \"mandatory_validation\": [0, 0]}"
+          },
+          {
+            "id": "R18-RIM",
+            "remaining_minutes": [
+              0,
+              0
+            ],
+            "phases": {
+              "implementation": [
+                0,
+                0
+              ],
+              "mandatory_validation": [
+                0,
+                0
+              ],
+              "bounded_repair_allowance": [
+                0,
+                0
+              ],
+              "management_review_admission_cleanup": [
+                0,
+                0
+              ]
+            },
+            "original_conditions": [
+              "New hole rim R/C operations preserve proven semantic owner/face intersection, independent volume/native surface oracle, actualZIP cold and expression2*4 edits; ambiguous/missing origin stays unresolved. Three actual environments."
+            ],
+            "minutes": [
+              0,
+              0
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [0, 0], \"implementation\": [0, 0], \"management_review_admission_cleanup\": [0, 0], \"mandatory_validation\": [0, 0]}"
+          },
+          {
+            "id": "R18-WALL-MATE",
+            "remaining_minutes": [
+              0,
+              0
+            ],
+            "phases": {
+              "implementation": [
+                0,
+                0
+              ],
+              "mandatory_validation": [
+                0,
+                0
+              ],
+              "bounded_repair_allowance": [
+                0,
+                0
+              ],
+              "management_review_admission_cleanup": [
+                0,
+                0
+              ]
+            },
+            "original_conditions": [
+              "Two actual saved hole parts: select fresh cylindrical wall from each component, concentric mate, native solved-axis collinearity with fixedA preserved, actualPCADA processcold and unchanged targets. Do not substitute origin mate or two-box capture."
+            ],
+            "minutes": [
+              0,
+              0
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [0, 0], \"implementation\": [0, 0], \"management_review_admission_cleanup\": [0, 0], \"mandatory_validation\": [0, 0]}"
+          },
+          {
+            "id": "R20-COLD",
+            "remaining_minutes": [
+              0,
+              0
+            ],
+            "phases": {
+              "implementation": [
+                0,
+                0
+              ],
+              "mandatory_validation": [
+                0,
+                0
+              ],
+              "bounded_repair_allowance": [
+                0,
+                0
+              ],
+              "management_review_admission_cleanup": [
+                0,
+                0
+              ]
+            },
+            "original_conditions": [
+              "Deleted/visible/off xChromium/Firefox/actualElectron: original input exactZIP, oldprocessclose then freshlaunch, complete saved document and non-time envelope/all attachments and PNG/visibility; savedAt alone may differ within actual save interval; deletion negative image and visible positive control; oldUndo history not resurrected. Thumbnail separately unproved until actual capture."
+            ],
+            "minutes": [
+              0,
+              0
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [0, 0], \"implementation\": [0, 0], \"management_review_admission_cleanup\": [0, 0], \"mandatory_validation\": [0, 0]}"
+          },
+          {
+            "id": "R20-KEYS-DISABLED",
+            "remaining_minutes": [
+              40,
+              95
+            ],
+            "phases": {
+              "implementation": [
+                15,
+                35
+              ],
+              "mandatory_validation": [
+                10,
+                25
+              ],
+              "bounded_repair_allowance": [
+                10,
+                25
+              ],
+              "management_review_admission_cleanup": [
+                5,
+                10
+              ]
+            },
+            "original_conditions": [
+              "Five keys xthree modes15cells with text ownership, IME incorrect commit0, actual disabled reasons visible text at all real entrances and refused handlers leave document unchanged. Preserve100 open/cancel and5 syntheticcomposition trials without calling them OS IME acceptance."
+            ],
+            "minutes": [
+              40,
+              95
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [10, 25], \"implementation\": [15, 35], \"management_review_admission_cleanup\": [5, 10], \"mandatory_validation\": [10, 25]}"
+          },
+          {
+            "id": "R17-W12b",
+            "remaining_minutes": [
+              0,
+              0
+            ],
+            "phases": {
+              "implementation": [
+                0,
+                0
+              ],
+              "mandatory_validation": [
+                0,
+                0
+              ],
+              "bounded_repair_allowance": [
+                0,
+                0
+              ],
+              "management_review_admission_cleanup": [
+                0,
+                0
+              ]
+            },
+            "original_conditions": [
+              "Within two operations show source/candidate/affected dimensions and mates; hover/cancel no document or Undo change; confirm exactly one history; stale generation rejected; Part/Assembly/Drawing and accurate unavailable reason."
+            ],
+            "minutes": [
+              0,
+              0
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [0, 0], \"implementation\": [0, 0], \"management_review_admission_cleanup\": [0, 0], \"mandatory_validation\": [0, 0]}"
+          },
+          {
+            "id": "PG4-provider",
+            "remaining_minutes": [
+              75,
+              240
+            ],
+            "phases": {
+              "implementation": [
+                30,
+                90
+              ],
+              "mandatory_validation": [
+                15,
+                45
+              ],
+              "bounded_repair_allowance": [
+                20,
+                80
+              ],
+              "management_review_admission_cleanup": [
+                10,
+                25
+              ]
+            },
+            "original_conditions": [
+              "Identify attributable actual PID/creation-time GPU resident and distinct allocated/committed series with sampling/phase limitations; missing or unsupported stays unknown."
+            ],
+            "minutes": [
+              75,
+              240
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [20, 80], \"implementation\": [30, 90], \"management_review_admission_cleanup\": [10, 25], \"mandatory_validation\": [15, 45]}"
+          },
+          {
+            "id": "PG4b",
+            "remaining_minutes": [
+              95,
+              275
+            ],
+            "phases": {
+              "implementation": [
+                25,
+                70
+              ],
+              "mandatory_validation": [
+                35,
+                90
+              ],
+              "bounded_repair_allowance": [
+                25,
+                90
+              ],
+              "management_review_admission_cleanup": [
+                10,
+                25
+              ]
+            },
+            "original_conditions": [
+              "All owning PIDs/native/WASM/IPC/actual GPU phase high-water, 100 cycles, three environments, actual 512MiB boundary; retain unknown; final current ownership and release evidence."
+            ],
+            "minutes": [
+              95,
+              275
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [25, 90], \"implementation\": [25, 70], \"management_review_admission_cleanup\": [10, 25], \"mandatory_validation\": [35, 90]}"
+          },
+          {
+            "id": "W19-performance",
+            "remaining_minutes": [
+              35,
+              100
+            ],
+            "phases": {
+              "implementation": [
+                10,
+                30
+              ],
+              "mandatory_validation": [
+                10,
+                30
+              ],
+              "bounded_repair_allowance": [
+                10,
+                30
+              ],
+              "management_review_admission_cleanup": [
+                5,
+                10
+              ]
+            },
+            "original_conditions": [
+              "100 Scene cycles, resource difference0, same input/store boundary behavior; original 7704-line and Assembly50x20 observations resolved with required timing/real drawing controls."
+            ],
+            "minutes": [
+              35,
+              100
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [10, 30], \"implementation\": [10, 30], \"management_review_admission_cleanup\": [5, 10], \"mandatory_validation\": [10, 30]}"
+          },
+          {
+            "id": "W07-export",
+            "remaining_minutes": [
+              50,
+              137
+            ],
+            "phases": {
+              "implementation": [
+                15,
+                40
+              ],
+              "mandatory_validation": [
+                15,
+                40
+              ],
+              "bounded_repair_allowance": [
+                15,
+                45
+              ],
+              "management_review_admission_cleanup": [
+                5,
+                12
+              ]
+            },
+            "original_conditions": [
+              "Million triangles, 25 seconds, actual working512MiB, exceed limit yields zero partial files; deviation/tolerance and six pre-export checks accurate across three environments."
+            ],
+            "minutes": [
+              50,
+              137
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [15, 45], \"implementation\": [15, 40], \"management_review_admission_cleanup\": [5, 12], \"mandatory_validation\": [15, 40]}"
+          },
+          {
+            "id": "PG5a-W08",
+            "remaining_minutes": [
+              40,
+              112
+            ],
+            "phases": {
+              "implementation": [
+                15,
+                35
+              ],
+              "mandatory_validation": [
+                10,
+                30
+              ],
+              "bounded_repair_allowance": [
+                10,
+                35
+              ],
+              "management_review_admission_cleanup": [
+                5,
+                12
+              ]
+            },
+            "original_conditions": [
+              "Enable only actual current receipt.final admission, then0/1e6/1e9mm pixel error<=1px and documented BinarySTL limits; no fabricated world admission."
+            ],
+            "minutes": [
+              40,
+              112
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [10, 35], \"implementation\": [15, 35], \"management_review_admission_cleanup\": [5, 12], \"mandatory_validation\": [10, 30]}"
+          },
+          {
+            "id": "W21-W22",
+            "remaining_minutes": [
+              63,
+              163
+            ],
+            "phases": {
+              "implementation": [
+                20,
+                50
+              ],
+              "mandatory_validation": [
+                20,
+                50
+              ],
+              "bounded_repair_allowance": [
+                15,
+                45
+              ],
+              "management_review_admission_cleanup": [
+                8,
+                18
+              ]
+            },
+            "original_conditions": [
+              "Cold/warm online/offline five repetitions x three environments, median20% gain, Worker2 memory/CPU, asset counts/limits, actual desktop HTTP404 and specified geometry; slow2 conditions x three environments without deadline relaxation."
+            ],
+            "minutes": [
+              63,
+              163
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [15, 45], \"implementation\": [20, 50], \"management_review_admission_cleanup\": [8, 18], \"mandatory_validation\": [20, 50]}"
+          },
+          {
+            "id": "R20-HELP",
+            "remaining_minutes": [
+              45,
+              112
+            ],
+            "phases": {
+              "implementation": [
+                20,
+                45
+              ],
+              "mandatory_validation": [
+                10,
+                25
+              ],
+              "bounded_repair_allowance": [
+                10,
+                30
+              ],
+              "management_review_admission_cleanup": [
+                5,
+                12
+              ]
+            },
+            "original_conditions": [
+              "Two reproducible deletionUndo/deletionSave lessons match actual saved document/ZIP and body; current110topic/title/headings and all images consistent, real rendered reader keeps pending input/save unchanged; same-current-source capture evidence, not historical232-image evidence."
+            ],
+            "minutes": [
+              45,
+              112
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [10, 30], \"implementation\": [20, 45], \"management_review_admission_cleanup\": [5, 12], \"mandatory_validation\": [10, 25]}"
+          },
+          {
+            "id": "WM1-manual",
+            "remaining_minutes": [
+              150,
+              365
+            ],
+            "phases": {
+              "implementation": [
+                80,
+                180
+              ],
+              "mandatory_validation": [
+                30,
+                75
+              ],
+              "bounded_repair_allowance": [
+                25,
+                75
+              ],
+              "management_review_admission_cleanup": [
+                15,
+                35
+              ]
+            },
+            "original_conditions": [
+              "Frozen UI captures approximately232 plus new functionality, current help/chapter/image registry1:1 and hashes; PDF/HTML generated, Manual readiness and PDF visual review, same release input."
+            ],
+            "minutes": [
+              150,
+              365
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [25, 75], \"implementation\": [80, 180], \"management_review_admission_cleanup\": [15, 35], \"mandatory_validation\": [30, 75]}"
+          },
+          {
+            "id": "W27-security",
+            "remaining_minutes": [
+              85,
+              215
+            ],
+            "phases": {
+              "implementation": [
+                35,
+                80
+              ],
+              "mandatory_validation": [
+                20,
+                50
+              ],
+              "bounded_repair_allowance": [
+                20,
+                60
+              ],
+              "management_review_admission_cleanup": [
+                10,
+                25
+              ]
+            },
+            "original_conditions": [
+              "Current lock and actual installed/build environment agree; all alerts reGET and High#15 closed or exact valid disposition; SBOM lock/vendor/WASM/Python/license mapping no unexplained gaps."
+            ],
+            "minutes": [
+              85,
+              215
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [20, 60], \"implementation\": [35, 80], \"management_review_admission_cleanup\": [10, 25], \"mandatory_validation\": [20, 50]}"
+          },
+          {
+            "id": "distribution-version",
+            "remaining_minutes": [
+              100,
+              245
+            ],
+            "phases": {
+              "implementation": [
+                35,
+                80
+              ],
+              "mandatory_validation": [
+                30,
+                70
+              ],
+              "bounded_repair_allowance": [
+                20,
+                60
+              ],
+              "management_review_admission_cleanup": [
+                15,
+                35
+              ]
+            },
+            "original_conditions": [
+              "NSIS/portable/AppImage/Web/PDF/HTML/NOTICE/SBOM13 release assets and matching SHA/version/URLs; real portable -Twin, install/update/remove, actual Linux; draft/public/post-release correct and no invented URL."
+            ],
+            "minutes": [
+              100,
+              245
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [20, 60], \"implementation\": [35, 80], \"management_review_admission_cleanup\": [15, 35], \"mandatory_validation\": [30, 70]}"
+          },
+          {
+            "id": "full-quality",
+            "remaining_minutes": [
+              165,
+              420
+            ],
+            "phases": {
+              "implementation": [
+                10,
+                30
+              ],
+              "mandatory_validation": [
+                90,
+                180
+              ],
+              "bounded_repair_allowance": [
+                40,
+                150
+              ],
+              "management_review_admission_cleanup": [
+                25,
+                60
+              ]
+            },
+            "original_conditions": [
+              "Current complete type/lint/all-package units/both builds and required E2E, official local gate, same immutable candidate; no excluded failures."
+            ],
+            "minutes": [
+              165,
+              420
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [40, 150], \"implementation\": [10, 30], \"management_review_admission_cleanup\": [25, 60], \"mandatory_validation\": [90, 180]}"
+          },
+          {
+            "id": "same-SHA-CI",
+            "remaining_minutes": [
+              75,
+              200
+            ],
+            "phases": {
+              "implementation": [
+                10,
+                25
+              ],
+              "mandatory_validation": [
+                35,
+                90
+              ],
+              "bounded_repair_allowance": [
+                20,
+                60
+              ],
+              "management_review_admission_cleanup": [
+                10,
+                25
+              ]
+            },
+            "original_conditions": [
+              "Windows/Ubuntu standard CI and release CI succeed on the exact pushed40-hex SHA; main integration CI also succeeds; build assets map to that SHA."
+            ],
+            "minutes": [
+              75,
+              200
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [20, 60], \"implementation\": [10, 25], \"management_review_admission_cleanup\": [10, 25], \"mandatory_validation\": [35, 90]}"
+          },
+          {
+            "id": "independent90",
+            "remaining_minutes": [
+              125,
+              325
+            ],
+            "phases": {
+              "implementation": [
+                30,
+                60
+              ],
+              "mandatory_validation": [
+                50,
+                110
+              ],
+              "bounded_repair_allowance": [
+                30,
+                120
+              ],
+              "management_review_admission_cleanup": [
+                15,
+                35
+              ]
+            },
+            "original_conditions": [
+              "Two independent reviews using same10 criteria/weights/evidence distinctions, lower result >=90 before publication; 37 primary-review units mapped, all required proposals addressed; no predicted/self-awarded score."
+            ],
+            "minutes": [
+              125,
+              325
+            ],
+            "remaining": "{\"bounded_repair_allowance\": [30, 120], \"implementation\": [30, 60], \"management_review_admission_cleanup\": [15, 35], \"mandatory_validation\": [50, 110]}"
+          }
+        ],
+        "item_estimates_evidence": {
+          "path": "scratchpad/claude/inspections/v103-item-plan-494-20261008-203800-dba9e0412459432981620a84c28b29af/item-assessment.json",
+          "sha256": "6877cfc9c9968c7e0360db972d41b1c4cab48f138aa2fa35a095a9af4589841c"
+        },
+        "empirical_item_estimates_validated": false,
+        "empirical_duration_validated": false
+      },
+      "work_group_adjustments": [
+        {
+          "id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598-adjustment",
+          "group_id": "R16-R17-R18-R20-actual-three-environments",
+          "inventory_ids": [
+            "R20-COLD"
+          ],
+          "delta_low_minutes": -20,
+          "delta_high_minutes": -60,
+          "basis": "Root read full cold helper and both old-process-close/fresh-launch wrappers, exact9 prelist, actual9PASS83.261seconds with owned37660 reaped and stable3195Source430E2E/index. Verify original exact ZIP, all non-time envelope/document and all non-thumbnail attachments/PNG/visibility, real savedAt windows, deleted negative and visible positive pixels, and no old Undo restoration. Worker independently preserved30ZIPs with exact pins; original assertions unchanged. Keep thumbnail rendering unproved and old failed whole runs. Only R20-COLD accepted; KEYS, all quality and release remain open. No historical20/60 double subtraction from conditional ETA. Root acceptance of actual current nine original native operations with exact prelist and unchanged full Source/E2E. Retire only remaining COLD implementation5/15, validation5/15, repair5/20 and admission5/10 once. Prior failed cold runs and stalls remain historical and are not the acceptance basis. Historical allocation totals are not the conditional publication ETA.",
+          "work_kind": "existing-required-work",
+          "environment_wait_reclassification": false,
+          "primary_evidence": [
+            {
+              "kind": "original-review",
+              "path": "docs/review-2026-10-03-pointercad.md",
+              "sha256": "de320c256903c5aff22c75e0fad2c705ba2772f02ed595bfd6d7671c28d4e00d"
+            },
+            {
+              "kind": "static-cause",
+              "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/current-root-evidence-acceptance.json",
+              "sha256": "1da58fc640b51c7b48a1efc854c91b6fe2b78b1853100aea64b7a21a7ec26398"
+            },
+            {
+              "kind": "formal-scope",
+              "path": "docs/plans/review-2026-10-04-response.md",
+              "sha256": "8aba3ae6977a7e73d360e9db1a7e572c101a433b8a87dbf56c83a29019c5a1f8"
+            }
+          ],
+          "root_decision": {
+            "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/adjustment-decision.json",
+            "sha256": "aacdea53e1edc944cc9b3abd9e14715575f4ce94313f8511d08698bf83d94dc9"
+          }
+        }
+      ],
+      "completed_since_previous_forecast": [],
+      "accepted_remaining_subtask_credits": [
+        {
+          "id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598-credit",
+          "unit_id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598-review",
+          "inventory_ids": [
+            "R20-COLD"
+          ],
+          "source_manifest_sha256": "34eff037044a0f6b0fe6ad99c596947a964a7a470fd5b4b5451e7c92da2d0e3c",
+          "actual_evidence": {
+            "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/current-review-terminal.json",
+            "sha256": "13e2500bee33c8d56c5515b78f978c840ea749573647c62a0a7c6268598ea08d"
+          },
+          "removed_low_minutes": 20,
+          "removed_high_minutes": 60,
+          "adoption_receipt_sha256": "491004e760fe11a5115233295cf0514d0d8d1ee2b89c7ca1f218724eb8b6cd21",
+          "closes_inventory": false,
+          "adjustment_id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598-adjustment"
+        }
+      ],
+      "reason": "Preserve every prior allocation/credit; current R16 residual acceptance only."
     }
   ],
   "next_action": {
@@ -16653,6 +17506,26 @@
       "historical_whole_runs_pass": false,
       "historical_cold_stall_retained": true,
       "complete_descendant_cleanup_certified": false
+    },
+    "R16_ACTUAL": {
+      "original_condition_closed": true,
+      "remaining_phase_credit_minutes": [
+        23,
+        63
+      ],
+      "original_condition_accepted_at": "2026-10-09T17:35:29.440279+09:00",
+      "original_condition_acceptance": {
+        "path": "scratchpad/claude/inspections/v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e/current-root-evidence-acceptance.json",
+        "sha256": "92d8735154ae32062e25420e81ed44122e46b63bc9ce9748b89cbe6d095f30ef"
+      },
+      "original_conditions_evidence_accepted": true,
+      "current_native_receipt": {
+        "path": "scratchpad/claude/agents/cx_v103_capacity_stall_astra/candidate/r16-final-acceptance/evidence.json",
+        "sha256": "778c410db16910d8b61c325c81328b0ccb0db95140c6be13b152c4722556b9c3"
+      },
+      "mixed_historical_whole_runs_pass": false,
+      "historical_failures_retained": true,
+      "complete_descendant_cleanup_certified": false
     }
   },
   "forecast_revision_proposals": [
@@ -16782,14 +17655,14 @@
   ],
   "work_group_adjustments": [
     {
-      "id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598-adjustment",
+      "id": "v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e-adjustment",
       "group_id": "R16-R17-R18-R20-actual-three-environments",
       "inventory_ids": [
-        "R20-COLD"
+        "R16-ACTUAL"
       ],
-      "delta_low_minutes": -20,
-      "delta_high_minutes": -60,
-      "basis": "Root read full cold helper and both old-process-close/fresh-launch wrappers, exact9 prelist, actual9PASS83.261seconds with owned37660 reaped and stable3195Source430E2E/index. Verify original exact ZIP, all non-time envelope/document and all non-thumbnail attachments/PNG/visibility, real savedAt windows, deleted negative and visible positive pixels, and no old Undo restoration. Worker independently preserved30ZIPs with exact pins; original assertions unchanged. Keep thumbnail rendering unproved and old failed whole runs. Only R20-COLD accepted; KEYS, all quality and release remain open. No historical20/60 double subtraction from conditional ETA. Root acceptance of actual current nine original native operations with exact prelist and unchanged full Source/E2E. Retire only remaining COLD implementation5/15, validation5/15, repair5/20 and admission5/10 once. Prior failed cold runs and stalls remain historical and are not the acceptance basis. Historical allocation totals are not the conditional publication ETA.",
+      "delta_low_minutes": -23,
+      "delta_high_minutes": -63,
+      "basis": "Root accepts only original R16-ACTUAL after personally reading current original-condition text, candidate full acceptance script, six-condition recommendation, all three raw asset cancellation/retention proofs, current actual terminal and preserved mixed-run successes. Historical behavior reuse is explicitly justified by unchanged paths and independent CRC/ZIP verification. All failures and generation distinctions remain. Other unfinished conditions, full quality, GPU, manual, OS IME and release are not accepted. Root acceptance of original R16 conditions using pinned historical/current actual evidence and exact current full Source/E2E equivalence review. Retire residual implementation5/15, validation8/18, repair5/20 and admission5/10 once. Preserve all failures and execution generations. Historical allocations are not a measured publication ETA.",
       "work_kind": "existing-required-work",
       "environment_wait_reclassification": false,
       "primary_evidence": [
@@ -16800,8 +17673,8 @@
         },
         {
           "kind": "static-cause",
-          "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/current-root-evidence-acceptance.json",
-          "sha256": "1da58fc640b51c7b48a1efc854c91b6fe2b78b1853100aea64b7a21a7ec26398"
+          "path": "scratchpad/claude/inspections/v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e/current-root-evidence-acceptance.json",
+          "sha256": "92d8735154ae32062e25420e81ed44122e46b63bc9ce9748b89cbe6d095f30ef"
         },
         {
           "kind": "formal-scope",
@@ -16810,14 +17683,14 @@
         }
       ],
       "root_decision": {
-        "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/adjustment-decision.json",
-        "sha256": "aacdea53e1edc944cc9b3abd9e14715575f4ce94313f8511d08698bf83d94dc9"
+        "path": "scratchpad/claude/inspections/v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e/adjustment-decision.json",
+        "sha256": "fbb6c3b378ccd208b64aeba0dac19b1b40b84c45fd2ab8e73766b76847bb51e3"
       }
     }
   ],
   "forecast_revision_receipt": {
-    "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/forecast-revision.json",
-    "sha256": "63047d139bf37d061e08ee1dff45143926ec6af2c81456008f29eed2a38f6072"
+    "path": "scratchpad/claude/inspections/v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e/forecast-revision.json",
+    "sha256": "ed81a0c74d85a9dbaf51364e4ae96294394d1c962729435fe6203d1c09939288"
   },
   "progress_snapshots": [
     {
@@ -17156,21 +18029,21 @@
   ],
   "accepted_remaining_subtask_credits": [
     {
-      "id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598-credit",
-      "unit_id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598-review",
+      "id": "v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e-credit",
+      "unit_id": "v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e-review",
       "inventory_ids": [
-        "R20-COLD"
+        "R16-ACTUAL"
       ],
-      "source_manifest_sha256": "34eff037044a0f6b0fe6ad99c596947a964a7a470fd5b4b5451e7c92da2d0e3c",
+      "source_manifest_sha256": "ddf075718a578305ff98464ef5d7dc55c2ef59852fb4abc322e1148570732b96",
       "actual_evidence": {
-        "path": "scratchpad/claude/inspections/v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598/current-review-terminal.json",
-        "sha256": "13e2500bee33c8d56c5515b78f978c840ea749573647c62a0a7c6268598ea08d"
+        "path": "scratchpad/claude/inspections/v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e/current-review-terminal.json",
+        "sha256": "ff7f8d176213b4163f526d0247eae455151fca535450569abca00b3e3fd11287"
       },
-      "removed_low_minutes": 20,
-      "removed_high_minutes": 60,
-      "adoption_receipt_sha256": "491004e760fe11a5115233295cf0514d0d8d1ee2b89c7ca1f218724eb8b6cd21",
+      "removed_low_minutes": 23,
+      "removed_high_minutes": 63,
+      "adoption_receipt_sha256": "bdfe497f689eb4817833cfd2c2ea6ad3a8970fe03a19cacd0b8ab5c7fc3a5b54",
       "closes_inventory": false,
-      "adjustment_id": "v103-cold9-original-acceptance-20261009-090756-3b7b3db6d11e4b1295e1999075a5a598-adjustment"
+      "adjustment_id": "v103-r16-original-acceptance-20261009-173459-f0e8c80b49fe48b9a1e1591e8d00cd9e-adjustment"
     }
   ]
 }

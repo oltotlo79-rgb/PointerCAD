@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  'mathlive@0.110.0>@cortex-js/compute-engine': '-'
-
 catalogs:
   default:
     '@eslint/js':
@@ -37,8 +34,8 @@ catalogs:
       specifier: 10.6.0
       version: 10.6.0
     electron:
-      specifier: 44.1.0
-      version: 44.1.0
+      specifier: 44.5.1
+      version: 44.5.1
     electron-builder:
       specifier: 26.15.3
       version: 26.15.3
@@ -87,6 +84,9 @@ catalogs:
     zustand:
       specifier: 5.0.15
       version: 5.0.15
+
+overrides:
+  mathlive@0.110.0>@cortex-js/compute-engine: '-'
 
 importers:
 
@@ -149,7 +149,7 @@ importers:
         version: 6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
       electron:
         specifier: 'catalog:'
-        version: 44.1.0(supports-color@7.2.0)
+        version: 44.5.1(supports-color@7.2.0)
       vite:
         specifier: 'catalog:'
         version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
@@ -1138,8 +1138,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@44.1.0:
-    resolution: {integrity: sha512-kmLg8axOg22DC3fXx5NCwBYW8fx0rK2zzJ3Tf67GjNCkxfoxEcd+yo0QfDjlBtHJs3xeA8fTg64b6iVzFTVErg==}
+  electron@44.5.1:
+    resolution: {integrity: sha512-lx7AYoFIiyvEvgvpyWO9kOC60xtNPpiPZAth6Fmg9NutzpCAMLwpUlaBY2EXfZyIgUdzEmLMj9KvK0Vrokl1yQ==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -3263,7 +3263,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.1.0(supports-color@7.2.0):
+  electron@44.5.1(supports-color@7.2.0):
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0(supports-color@7.2.0)

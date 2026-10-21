@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  'mathlive@0.110.0>@cortex-js/compute-engine': '-'
-
 catalogs:
   default:
     '@eslint/js':
@@ -79,14 +76,17 @@ catalogs:
       specifier: 8.69.0
       version: 8.69.0
     vite:
-      specifier: 8.2.2
-      version: 8.2.2
+      specifier: 8.2.4
+      version: 8.2.4
     vitest:
       specifier: 4.1.11
       version: 4.1.11
     zustand:
       specifier: 5.0.15
       version: 5.0.15
+
+overrides:
+  mathlive@0.110.0>@cortex-js/compute-engine: '-'
 
 importers:
 
@@ -121,10 +121,10 @@ importers:
         version: 8.69.0(eslint@10.9.1(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       vite:
         specifier: 'catalog:'
-        version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+        version: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   apps/desktop:
     dependencies:
@@ -146,16 +146,16 @@ importers:
         version: 19.2.5(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: 'catalog:'
-        version: 6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 6.1.1(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
       electron:
         specifier: 'catalog:'
         version: 44.1.0(supports-color@7.2.0)
       vite:
         specifier: 'catalog:'
-        version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+        version: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   apps/web:
     dependencies:
@@ -177,10 +177,10 @@ importers:
         version: 19.2.5(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: 'catalog:'
-        version: 6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 6.1.1(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
       vite:
         specifier: 'catalog:'
-        version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+        version: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
 
   packages/drawing:
     dependencies:
@@ -193,7 +193,7 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/expression:
     dependencies:
@@ -206,7 +206,7 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/help-content:
     devDependencies:
@@ -215,7 +215,7 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/io:
     dependencies:
@@ -231,7 +231,7 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/kernel:
     dependencies:
@@ -247,10 +247,10 @@ importers:
         version: link:../test-utils
       vite:
         specifier: 'catalog:'
-        version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+        version: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/model:
     dependencies:
@@ -272,13 +272,13 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/test-utils:
     devDependencies:
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/ui:
     dependencies:
@@ -327,7 +327,7 @@ importers:
         version: 0.185.4
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
 packages:
 
@@ -2128,8 +2128,8 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
-  vite@8.2.2:
-    resolution: {integrity: sha512-cFKLV/PRgAUlIRm5WjMjJ86jrftzpqcgH+Us+DS8mI3CDNiH30Whrz8uHL3+MOLPAgqbMBAqWdAHAphOAM+z/Q==}
+  vite@8.2.4:
+    resolution: {integrity: sha512-lfauXnrf2x0p+UoA+wXh0dgFWnUjCyG6Js95KBkgaCwUU9k0DAHI4W6Q0WCx+h+5g+Alce1y4Zi2QjjK0UvGBw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -2848,10 +2848,10 @@ snapshots:
       '@typescript-eslint/types': 8.69.0
       eslint-visitor-keys: 5.0.1
 
-  '@vitejs/plugin-react@6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))':
+  '@vitejs/plugin-react@6.1.1(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+      vite: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
 
   '@vitest/expect@4.1.11':
     dependencies:
@@ -2862,13 +2862,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.1
 
-  '@vitest/mocker@4.1.11(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))':
+  '@vitest/mocker@4.1.11(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))':
     dependencies:
       '@vitest/spy': 4.1.11
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+      vite: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
 
   '@vitest/pretty-format@4.1.11':
     dependencies:
@@ -4222,7 +4222,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0):
+  vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -4234,10 +4234,10 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitest@4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0)):
+  vitest@4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0)):
     dependencies:
       '@vitest/expect': 4.1.11
-      '@vitest/mocker': 4.1.11(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+      '@vitest/mocker': 4.1.11(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
       '@vitest/pretty-format': 4.1.11
       '@vitest/runner': 4.1.11
       '@vitest/snapshot': 4.1.11
@@ -4254,7 +4254,7 @@ snapshots:
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vite: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+      vite: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.20.1

@@ -3,6 +3,7 @@ import { expect, type ElectronApplication, type Locator, type Page, type TestInf
 import { assemblyFlexibleMotionFile, FLEXIBLE_JOINT, FLEXIBLE_LEAF_Z, FLEXIBLE_TOP } from './assemblyFlexibleMotionFixture.js';
 import { readAssemblyStats } from './assemblyTestSupport.js';
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
+import { expectAssemblyInputUnchanged } from './assemblyMechanismOracleFlow.js';
 
 /*
  * EX12 flexible subassembly host step (task012 flexible-r2), only through visible controls. Contracts read in source:
@@ -71,7 +72,8 @@ export async function assemblyFlexibleMotionFlow(page: Page, info: TestInfo, app
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const source = info.outputPath('flexible-motion.pcada');
-  await writeFile(source, await assemblyFlexibleMotionFile());
+  const sourceBytes = await assemblyFlexibleMotionFile();
+  await writeFile(source, sourceBytes);
   await openSaveFlowFile(page, source, app);
   await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'assembly');
   await expectTopPlacements(page);
@@ -103,7 +105,7 @@ export async function assemblyFlexibleMotionFlow(page: Page, info: TestInfo, app
 
   // Save and reopen: the drive is not saved, both placements show their written positions again.
   const saved = info.outputPath('flexible-motion-saved.pcada');
-  await saveFlowFile(page, saved, app);
+  await expectAssemblyInputUnchanged(sourceBytes, await saveFlowFile(page, saved, app));
   await openSaveFlowFile(page, saved, app);
   await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'assembly');
   await expectTopPlacements(page);

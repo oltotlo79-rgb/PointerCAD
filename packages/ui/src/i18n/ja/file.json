@@ -125,6 +125,7 @@
   "exchange.unitNoticeMillimeter": "ファイルはミリメートルで書き出します。",
   "exchange.unitNoticeMeter": "ファイルはメートルで書き出します。",
   "exchange.stlNoColor": "STL には色が付きません。",
+  "exchange.stlCoordinatePrecision": "このアプリではSTLへの変換中に座標を32ビットで扱います。大きい座標では小さい寸法や位置が丸められます。偏差を小さくしても、この丸めは戻りません。絶対座標の精度を保つ必要がある場合はSTEPを選んでください。",
   "exchange.importUnitQuestion": "このファイルの単位を選んでください。",
   "exchange.importUnitMillimeter": "ミリメートル",
   "exchange.importUnitInch": "インチ",

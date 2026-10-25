@@ -351,3 +351,85 @@ describe('W07 independent gear/cam/two-pin-link constraint-cycle oracle', () => 
       phaseDeg: walk.phaseDeg, reason: result.couplingFailure?.reason, iterations: result.iterations })}${String.fromCharCode(10)}`);
   });
 });
+
+describe('W06 independent world-vector gear oracle', () => {
+  const phase = 17, degrees = Math.PI / 180;
+  const targets = [181, 179, 120, 60, 0, -60, -120, -179, -181, -179];
+  function worldX(rotation: readonly number[]): readonly [number, number, number] {
+    const [x, y, z, w] = rotation;
+    return [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)];
+  }
+  function unwrappedWorldAngle(rotation: readonly number[], previous: number): number {
+    const x = worldX(rotation), principal = Math.atan2(-x[1], x[0]) / degrees;
+    return principal + 360 * Math.round((previous - principal) / 360);
+  }
+  function document(f: ReturnType<typeof fixture>, ratio: number) {
+    return { ...f.assembly, mechanismCouplings: [{ ...coupling({ ratio, phaseDeg: phase, referenceAngleA: 179 }),
+      ratio: expressionValueFromNumber(ratio), phaseDeg: expressionValueFromNumber(phase) }] };
+  }
+  it.each([2, -2, 0.5, -0.5])('ratio=%s crosses both half-turn boundaries using only world-vector expectations', ratio => {
+    const f = fixture([179, ratio * 179 + phase, 13]), assembly = document(f, ratio);
+    const before = structuredClone({ assembly, placements: f.placements });
+    let placements: ReadonlyMap<string, RigidPlacement> = f.placements, previousA = 179, previousB = ratio * 179 + phase;
+    const maximum = { angleDeg: 0, relationDeg: 0, positionMm: 0 };
+    for (const target of targets) {
+      const result = solveDrivenJoint(assembly, new Map(), placements,
+        { jointId: 'ja', coordinate: 'angle', value: target, referenceAngle: previousA }, { jointFrames: f.frames });
+      expect(result.ok, `ratio ${ratio}, input ${target}`).toBe(true);
+      if (!result.ok) throw new Error(result.reason);
+      const angles: number[] = [];
+      for (const [id, expected, previous] of [['a', target, previousA], ['b', ratio * target + phase, previousB]] as const) {
+        const actual = result.placements.get(id), initial = before.placements.get(id);
+        if (actual === undefined || initial === undefined) throw new Error('Missing oracle placement');
+        const x = worldX(actual.rotation), c = Math.cos(expected * degrees), s = -Math.sin(expected * degrees);
+        const cross = [x[1] * 0 - x[2] * s, x[2] * c - x[0] * 0, x[0] * s - x[1] * c];
+        const angleError = Math.atan2(Math.hypot(...cross), x[0] * c + x[1] * s) / degrees;
+        const positionError = Math.hypot(...actual.position.map((value, axis) => value - initial.position[axis]));
+        expect(angleError, `${id} world x-axis`).toBeLessThanOrEqual(1e-6);
+        expect(positionError, `${id} world origin`).toBeLessThanOrEqual(1e-6);
+        const angle = unwrappedWorldAngle(actual.rotation, previous);
+        expect(Math.abs(angle - expected), `${id} continuous world angle`).toBeLessThanOrEqual(1e-6);
+        angles.push(angle);
+        maximum.angleDeg = Math.max(maximum.angleDeg, angleError);
+        maximum.positionMm = Math.max(maximum.positionMm, positionError);
+        // The orientation oracle must be invariant under the equivalent quaternion sign.
+        expect(worldX(actual.rotation.map(value => -value))).toEqual(x);
+      }
+      const relation = Math.abs(angles[1] - ratio * angles[0] - phase);
+      expect(relation).toBeLessThanOrEqual(1e-6);
+      maximum.relationDeg = Math.max(maximum.relationDeg, relation);
+      expect(result.placements.get('c')).toEqual(before.placements.get('c'));
+      expect(result.placements.get('ground')).toEqual(before.placements.get('ground'));
+      placements = result.placements; previousA = angles[0]; previousB = angles[1];
+    }
+    expect({ assembly, placements: f.placements }).toEqual(before);
+    stdout.write(`[W06] ${JSON.stringify({ ratio, phaseDeg: phase, targetsDeg: targets, maximum })}${String.fromCharCode(10)}`);
+  });
+  it('refuses contradictory phase and missing references atomically, then accepts the healthy drive', () => {
+    const f = fixture([179, -2 * 179 + phase, 13]), healthy = document(f, -2), ab = healthy.mechanismCouplings[0];
+    const relation = (id: string, jointAId: string, jointBId: string, ratio: number, phaseDeg: number) => ({
+      ...ab, id, jointAId, jointBId, ratio: expressionValueFromNumber(ratio), phaseDeg: expressionValueFromNumber(phaseDeg),
+      referenceAngleA: jointAId === 'jb' ? -2 * 179 + phase : 179,
+    });
+    for (const [definitions, reason] of [
+      [[ab, relation('bc', 'jb', 'jc', 1, 0), relation('ac', 'ja', 'jc', -2, phase + 1)], 'contradictoryLoop'],
+      [[{ ...ab, jointBId: 'absent-joint' }], 'missingJoint'],
+    ] as const) {
+      const assembly = { ...healthy, mechanismCouplings: definitions }, before = structuredClone({ assembly, placements: f.placements });
+      const refused = solveDrivenJoint(assembly, new Map(), f.placements,
+        { jointId: 'ja', coordinate: 'angle', value: 181, referenceAngle: 179 }, { jointFrames: f.frames });
+      expect(refused.ok).toBe(false);
+      if (refused.ok) throw new Error('Invalid relation was accepted');
+      expect(refused.outcome?.couplingFailure).toMatchObject({ reason });
+      expect({ assembly, placements: f.placements }).toEqual(before);
+      const accepted = solveDrivenJoint(healthy, new Map(), f.placements,
+        { jointId: 'ja', coordinate: 'angle', value: 181, referenceAngle: 179 }, { jointFrames: f.frames });
+      expect(accepted.ok).toBe(true);
+      if (!accepted.ok) throw new Error(accepted.reason);
+      const a = accepted.placements.get('a'), b = accepted.placements.get('b');
+      if (a === undefined || b === undefined) throw new Error('Missing recovered placement');
+      expect(Math.abs(unwrappedWorldAngle(a.rotation, 179) - 181)).toBeLessThanOrEqual(1e-6);
+      expect(Math.abs(unwrappedWorldAngle(b.rotation, -2 * 179 + phase) - (-2 * 181 + phase))).toBeLessThanOrEqual(1e-6);
+    }
+  });
+});

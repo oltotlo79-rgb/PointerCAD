@@ -89,7 +89,7 @@ interface LargeSaveFixture {
 const largeSaveFixtures = new Map<32 | 128, LargeSaveFixture>();
 
 /** 箱1つと、抑制した大容量の読込み原本1つを持つ部品。抑制でも現在文書が原本を所有する。 */
-function largeSaveFixture(mib: 32 | 128): LargeSaveFixture {
+export function largeSaveFixture(mib: 32 | 128): LargeSaveFixture {
   const cached = largeSaveFixtures.get(mib);
   if (cached !== undefined) return cached;
   const fixture = buildLargeSaveFixture(mib);

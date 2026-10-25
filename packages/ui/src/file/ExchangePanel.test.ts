@@ -282,6 +282,38 @@ const STEP_FILE: ExchangeExportOutcome = {
   files: [{ fileName: '部品.step', bytes: Uint8Array.of(1, 2) }], droppedTriangleCount: 0,
 };
 
+describe('STL座標変換の出力前の注意', () => {
+  it.each([false, true])('ASCII=%sでも保存前に変換精度と既存の色なし注意を示す', ascii => {
+    const panel = pendingExportPanel('stl', false);
+    try {
+      const toggle = elementWith(panel.root, element => element.type === 'input'
+        && (element.props as { title?: string }).title === t('controlGuide.exchange.ascii'));
+      (toggle.props as { onChange: (event: { target: { checked: boolean } }) => void })
+        .onChange({ target: { checked: ascii } });
+      const root = panel.harness.render(panel.props);
+      const current = elementWith(root, element => element.type === 'input'
+        && (element.props as { title?: string }).title === t('controlGuide.exchange.ascii'));
+      expect(current.props).toMatchObject({ checked: ascii });
+      const markup = renderToStaticMarkup(root);
+      expect(t('exchange.stlCoordinatePrecision')).toContain('このアプリではSTLへの変換中に座標を32ビットで扱います。');
+      expect(markup).toContain(t('exchange.stlCoordinatePrecision'));
+      expect(markup).toContain(t('exchange.stlNoColor'));
+      expect(panel.save).not.toHaveBeenCalled();
+      expect(panel.finished).not.toHaveBeenCalled();
+    } finally { panel.restore(); }
+  });
+
+  it('STEPの保存前にはSTL変換の注意を表示しない', () => {
+    const panel = pendingExportPanel('step', false);
+    try {
+      const markup = renderToStaticMarkup(panel.root);
+      expect(markup).not.toContain(t('exchange.stlCoordinatePrecision'));
+      expect(markup).not.toContain(t('exchange.stlNoColor'));
+      expect(panel.save).not.toHaveBeenCalled();
+    } finally { panel.restore(); }
+  });
+});
+
 describe('書き出しパネルの実handlerとeffect寿命', () => {
   it('既定STEPを再選択しても再renderなしのsubmitから現ファイルを保存する', async () => {
     const panel = pendingExportPanel('step', false);

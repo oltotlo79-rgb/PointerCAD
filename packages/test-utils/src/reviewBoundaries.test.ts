@@ -152,7 +152,12 @@ describe('レビューで分離した担当へ呼出元・通信・下層への�
       const lint = (source: string) => new Linter().verify(source, [config], { filename: example.path });
       expect(lint(example.allowed)).toEqual([]);
       expect(lint(example.allowed+'\n\n').some(message=>message.ruleId==='no-multiple-empty-lines')).toBe(true);
-      for (const source of example.denied) {
+      const denied = [...example.denied, ...(example.path.startsWith('packages/model/') ? [
+        "import type { Value } from '@pointercad/fem/analysis';",
+        "export * from '../../../fem/dist/index.js';",
+        "import('@pointercad/fem');",
+      ] : [])];
+      for (const source of denied) {
         const messages = lint(source);
         expect(messages.some(message => message.ruleId === 'no-restricted-imports' || message.ruleId === 'no-restricted-syntax'), source).toBe(true);
         expect(messages.some(message => message.fatal)).toBe(false);
@@ -172,7 +177,10 @@ describe('model cannot acquire upper-layer dependencies through test or import s
         "export * from '@pointercad/ui/solid/subShapeSelection';",
         "import type { Value } from '../../../ui/src/solid/subShapeSelection.js';",
         "export { value } from '../../../io/src/pcad/pcadFile.js';",
-        "import { value } from '../../../io/dist/pcad/pcadFile.js';"];
+        "import { value } from '../../../io/dist/pcad/pcadFile.js';",
+        "import type { Value } from '@pointercad/fem';",
+        "export * from '@pointercad/fem/analysis';",
+        "import { value } from '../../../fem/src/index.js';"];
       for (const source of denied) {
         const results = await eslint.lintText(source, { filePath: path });
         expect(results.flatMap(result => result.messages).some(message => message.fatal)).toBe(false);
@@ -199,7 +207,7 @@ describe('model layer restrictions remain an ESLint-accepted configuration', () 
       const eslint = new ESLint({ cwd: root });
       await expect(eslint.calculateConfigForFile(example.path)).resolves.toBeDefined();
       const denied = ["import { view } from '@pointercad/ui';", "import { value } from '@pointercad/io';",
-        "import { topic } from '@pointercad/help-content';", ...example.denied];
+        "import { topic } from '@pointercad/help-content';", "import { value } from '@pointercad/fem';", ...example.denied];
       for (const source of denied) {
         const messages = (await eslint.lintText(source, { filePath: example.path })).flatMap(result => result.messages);
         expect(messages.some(message => message.fatal), source).toBe(false);

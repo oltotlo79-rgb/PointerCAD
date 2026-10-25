@@ -7,6 +7,9 @@ const identity = { sha256: 'a'.repeat(64), byteLength: 42 };
 const reply = { kind: 'http', url: desktopOcctTransportUrl(identity.sha256), ...identity };
 
 describe('desktop OCCT transport contract', () => {
+  it('keeps the product origin fixed independently of test listener ports', () => {
+    expect(DESKTOP_OCCT_TRANSPORT_ORIGIN).toBe('http://127.0.0.1:49721');
+  });
   it('pins the exact loopback authority and full decoded SHA path', () => {
     expect(reply.url).toBe(`${DESKTOP_OCCT_TRANSPORT_ORIGIN}/occt/${identity.sha256}.wasm`);
     expect(validateDesktopOcctTransportReply(reply, identity)).toEqual(reply);

@@ -9,6 +9,9 @@ import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { waitForStartupReady } from './startupHealth.js';
+import { chooseSteelFlatBar50x6 } from './steelPickerFlow.js';
+import { expectSteelStockCsv, expectSteelStockCsvProvenance, expectSteelStockTableHeader,
+  expectSteelStockTableRevisions, SS400_FLAT } from './steelStockExpectation.js';
 
 /*
  * EX08/EX03 public host flow: an SS400 FB 50×6 bend made in the standard-part picker, then the picker's own cut-list
@@ -16,10 +19,10 @@ import { waitForStartupReady } from './startupHealth.js';
  * Every step is a user action through the UI; no fixture file is loaded and no store state is injected.
  * Independent expectation (steelBend.test.ts closed form, not read from the exporter): FB 50×6 bent towards +X with
  * inside radius 30 has the centroid radius 30 + 50 / 2 = 55, so the developed length is 200 + 100 + 55 * pi / 2.
- * No density, strength or catalog value is introduced; the catalog columns are those of steelStockCsvFlow.ts.
+ * No density, strength or catalog value is introduced; the catalog expectations are independently fixed in steelStockExpectation.ts.
  */
 const DEVELOPED = 300 + 55 * Math.PI / 2;
-const SS400_FLAT_COLUMNS = ['SS400', 'JIS G 3101', '王子製鉄 公表断面寸法', '平鋼', 'FB 50×6', '熱間圧延材・熱処理条件未指定'];
+const SS400_FLAT_COLUMNS = SS400_FLAT.columns;
 const FINISHED_UNKNOWN = '未確定（加工履歴の確認が必要）';
 const COLUMN = { kind: 0, stockLength: 7, quantity: 8, totalLength: 9, paths: 10, notice: 11, finished: 13 } as const;
 
@@ -33,33 +36,13 @@ function stockDetails(dialog: Locator): Locator {
   return dialog.locator('details').filter({ has: dialog.page().locator('summary', { hasText: '鋼材切断リスト' }) });
 }
 
-/** RFC 4180 reader used only by this check (quoted fields, doubled quotes, CRLF records). */
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [], field = '', quoted = false;
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (quoted) {
-      if (char === '"' && text[index + 1] === '"') { field += '"'; index += 1; }
-      else if (char === '"') quoted = false;
-      else field += char;
-    } else if (char === '"' && field === '') quoted = true;
-    else if (char === ',') { row.push(field); field = ''; }
-    else if (char === '\r' && text[index + 1] === '\n') { row.push(field); rows.push(row); row = []; field = ''; index += 1; }
-    else field += char;
-  }
-  expect(field === '' && row.length === 0, 'CSV ends with CRLF').toBe(true);
-  return rows;
-}
 
 async function openSteelPicker(page: Page): Promise<Locator> {
   await chooseToolMenuItem(page, '組む', '規格部品');
   const dialog = picker(page);
   await expect(dialog).toBeVisible();
   await choice(dialog, '種類').selectOption('structuralSection');
-  await choice(dialog, '鋼種').selectOption('SS400');
-  await choice(dialog, '断面形状').selectOption('flatBar');
-  await choice(dialog, '呼び寸法').selectOption('steel:SS400:flatBar:FB 50×6');
+  await chooseSteelFlatBar50x6(dialog, { grade: 'SS400', size: SS400_FLAT_COLUMNS[4], condition: SS400_FLAT_COLUMNS[5] });
   return dialog;
 }
 
@@ -89,7 +72,9 @@ async function expectBendTable(dialog: Locator): Promise<string> {
   if (await details.getAttribute('open') === null) await details.locator('summary').click();
   const rows = details.locator('tbody tr');
   await expect(rows).toHaveCount(1);
+  await expectSteelStockTableHeader(details);
   const cells = await rows.first().locator('td').allTextContents();
+  expectSteelStockTableRevisions(cells, SS400_FLAT);
   expect(cells.slice(0, 2)).toEqual(['SS400', 'FB 50×6']);
   expect(cells[3], 'finished length is proved, not unknown').not.toBe(FINISHED_UNKNOWN);
   expect(cells[3]).toBe(cells[2]);
@@ -121,12 +106,11 @@ async function exportCsv(page: Page, dialog: Locator, path: string, app: Electro
 
 /** The CSV has exactly one cut row for the placed bend component, with the table's stock and finished lengths. */
 async function expectBendCsv(page: Page, bytes: Buffer, stockCell: string): Promise<void> {
-  expect([...bytes.subarray(0, 3)], 'UTF-8 BOM').toEqual([0xef, 0xbb, 0xbf]);
-  const rows = parseCsv(bytes.subarray(3).toString('utf8'));
-  expect(rows.every(row => row.length === 14), 'every record has 14 fields').toBe(true);
+  const rows = expectSteelStockCsv(bytes);
   const cut = rows.filter(row => row[COLUMN.kind] === '切断明細');
   expect(cut).toHaveLength(1);
   const row = cut[0];
+  expectSteelStockCsvProvenance(row, SS400_FLAT);
   expect(row.slice(1, 7)).toEqual(SS400_FLAT_COLUMNS);
   expect([row[COLUMN.stockLength], row[COLUMN.quantity], row[COLUMN.totalLength], row[COLUMN.finished]])
     .toEqual([stockCell, '1', stockCell, stockCell]);
@@ -252,18 +236,20 @@ async function expectUnknownTable(dialog: Locator, stockCell: string): Promise<v
   if (await details.getAttribute('open') === null) await details.locator('summary').click();
   const rows = details.locator('tbody tr');
   await expect(rows).toHaveCount(1);
-  expect(await rows.first().locator('td').allTextContents())
+  await expectSteelStockTableHeader(details);
+  const cells = await rows.first().locator('td').allTextContents();
+  expectSteelStockTableRevisions(cells, SS400_FLAT);
+  expect(cells.slice(0, 6))
     .toEqual(['SS400', 'FB 50×6', stockCell, FINISHED_UNKNOWN, '1', stockCell]);
   await expect(details.locator('tfoot td')).toHaveText(['1', stockCell]);
 }
 
 /** After machining: the single cut row keeps product columns, stock, quantity, total and the occurrence; finished is 未確定. */
 async function expectUnknownCsv(page: Page, bytes: Buffer, stockCell: string, componentId: string): Promise<void> {
-  expect([...bytes.subarray(0, 3)], 'UTF-8 BOM').toEqual([0xef, 0xbb, 0xbf]);
-  const rows = parseCsv(bytes.subarray(3).toString('utf8'));
-  expect(rows.every(row => row.length === 14), 'every record has 14 fields').toBe(true);
+  const rows = expectSteelStockCsv(bytes);
   const cut = rows.filter(row => row[COLUMN.kind] === '切断明細');
   expect(cut).toHaveLength(1);
+  expectSteelStockCsvProvenance(cut[0], SS400_FLAT);
   expect(cut[0].slice(1, 7)).toEqual(SS400_FLAT_COLUMNS);
   expect([cut[0][COLUMN.stockLength], cut[0][COLUMN.quantity], cut[0][COLUMN.totalLength], cut[0][COLUMN.finished]])
     .toEqual([stockCell, '1', stockCell, FINISHED_UNKNOWN]);

@@ -645,7 +645,7 @@ pointercad/
 └── docs/                # 本書・設計文書
 ```
 
-依存方向は `apps → ui → model → kernel / expression / drawing` の一方向とし、逆流を禁止する。`drawing` は kernel / model / ui / io に依存しない葉とする。
+依存方向は `apps → ui → model → kernel / expression / drawing` と `ui → fem → model` の一方向とし、逆流を禁止する。FEMはmodel（`@pointercad/model/beam-analysis`を含む）を使う計算層とし、modelからFEM、FEMからui / apps / io / help-contentへの依存は型だけでも禁止する。FEMの契約にUIや保存層の型を持ち込まない。`drawing` は kernel / model / ui / io に依存しない葉とする。
 
 ### 6.3 データフロー
 

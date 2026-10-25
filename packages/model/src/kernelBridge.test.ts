@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createKernelApi } from '@pointercad/kernel';
 import type { AnalysisBoundaryReply, AnalysisBoundaryRequest } from './geometry/analysisMesh.js';
 import type { SolidRecomputeRequest, SolidRecomputeResult } from '@pointercad/kernel';
-import { expressionValueFromNumber } from '@pointercad/expression';
+import { exactExpressionValueFromNumber, expressionValueFromNumber } from '@pointercad/expression';
 import * as Comlink from 'comlink';
 import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
 import { createShapeCache, type AcquiringShapeCache } from '../../kernel/src/worker/shapeCache.js';
@@ -804,6 +804,130 @@ describe('部品の識別子を kernel へ素通しする', () => {
     } finally {
       bridge.dispose();
     }
+  });
+});
+
+describe('current native shape survives export preview cancellation', () => {
+  beforeEach(() => silentWorkers.clear());
+
+  it('reopened ordinary Part reaches its exact native key after a lone STL preview is cancelled', async () => {
+    const api = createKernelApi(loadOcctForNode);
+    const created = vi.spyOn(silentWorkers, 'create');
+    const bridge = createKernelBridge();
+    Comlink.expose(api, silentWorkers.serverEndpoint());
+    const nativeExport = api.exportShapes.bind(api);
+    let release = (): void => { throw new Error('preview gate missing'); };
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let started = (): void => { throw new Error('preview start missing'); };
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const exported = vi.spyOn(api, 'exportShapes').mockImplementationOnce(async request => {
+      started();
+      await gate;
+      return nativeExport(request);
+    });
+    try {
+      const empty = createEmptyPartDocument();
+      const feature = createPrimitiveFeature(empty, 'box');
+      const exact = exactExpressionValueFromNumber;
+      const document = { ...appendSolid(empty, { ...feature, id: 'pg5a-box-1000000000',
+        origin: { kind: 'coordinate' as const, value: { mode: 'absolute' as const,
+          x: exact(1e9 + 3 / 128), y: exact(1e9 + 5 / 128), z: exact(1e9 + 7 / 128) } },
+        shape: { kind: 'box' as const, sizeX: exact(0.5), sizeY: exact(0.375), sizeZ: exact(0.25) } }),
+        id: 'pg5a-part-1000000000' };
+      // Opened data is independently resolved, exactly as the UI's read-only exporter does.
+      const reopened = structuredClone(document);
+      const steps = resolvePart(reopened).steps;
+      const current = await recomputePart(reopened, bridge, { generation: 7,
+        localMesh: { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 512 * 1024 * 1024 } });
+      expect(current.errors).toEqual([]);
+      expect(current.bodies.map(body => body.featureId)).toEqual(['pg5a-box-1000000000']);
+      const options: ShapeExportOptions = { format: 'stl', bodies: [{ featureId: 'pg5a-box-1000000000',
+        name: null, color: null }], meshQuality: { deviationMm: 0.1, angularDeflectionRad: 0.5 },
+        withColors: false, ascii: false, baseName: 'pg5a' };
+      const controller = new AbortController();
+      const pending = bridge.exportShapes(steps, { ...options, signal: controller.signal });
+      await entered;
+      // If cancellation closes the Worker, its replacement truthfully has no native shape.
+      silentWorkers.connectNextCreated(() => Comlink.expose(createKernelApi(loadOcctForNode), silentWorkers.serverEndpoint()));
+      controller.abort();
+      await expect(pending).resolves.toEqual({ kind: 'cancelled' });
+      release();
+      const result = await bridge.exportShapes(steps, options);
+      expect(result).toEqual({ kind: 'failed',
+        message: 'STL に書き出せる面がありません。原点に近い位置へ移動するか、STEP を使ってください。' });
+      expect(created).toHaveBeenCalledTimes(1);
+      expect(exported.mock.calls.at(-1)?.[0]).toMatchObject({ partId: undefined,
+        bodies: [{ bodyKey: steps[0].key }] });
+      expect(await bridge.checkShapeAvailability('part:current', [steps[0].key, 'missing-key']))
+        .toEqual({ partId: 'part:current', missingKeys: ['missing-key'] });
+      await expect(bridge.exportShapes([], options)).resolves.toEqual({ kind: 'failed',
+        message: 'もとになる立体が見つかりませんでした。もう一度計算し直してください。' });
+      await expect(bridge.exportShapes(steps.map(step => ({ ...step, key: 'missing-key' })), options))
+        .resolves.toEqual({ kind: 'failed',
+          message: 'もとになる立体が見つかりませんでした。もう一度計算し直してください。' });
+    } finally { release(); exported.mockRestore(); bridge.dispose(); created.mockRestore(); }
+  });
+
+  it.each(['wrong-part', 'wrong-feature', 'superseded-key'] as const)(
+    'does not preserve a Worker for a %s association', async mismatch => {
+      const api = createKernelApi(loadOcctForNode);
+      const created = vi.spyOn(silentWorkers, 'create');
+      const bridge = createKernelBridge();
+      Comlink.expose(api, silentWorkers.serverEndpoint());
+      const exported = vi.spyOn(api, 'exportShapes');
+      try {
+        const steps = [fakeStep('body-1', 'key-1')];
+        await bridge.recomputeSolids(steps, { partId: 'live-part', generation: 7 });
+        if (mismatch === 'superseded-key') {
+          await bridge.recomputeSolids([fakeStep('body-1', 'key-2')], { partId: 'live-part', generation: 8 });
+        }
+        let started = (): void => { throw new Error('preview start missing'); };
+        const entered = new Promise<void>(resolve => { started = resolve; });
+        exported.mockImplementationOnce(() => { started(); return new Promise(() => undefined); });
+        const controller = new AbortController();
+        const featureId = mismatch === 'wrong-feature' ? 'other-feature' : 'body-1';
+        const pending = bridge.exportShapes(steps.map(step => ({ ...step, featureId })), {
+          partId: mismatch === 'wrong-part' ? 'other-part' : 'live-part', format: 'step',
+          bodies: [{ featureId, name: null, color: null }], meshQuality: null,
+          withColors: false, ascii: false, baseName: 'part', signal: controller.signal });
+        await entered;
+        controller.abort();
+        await expect(pending).resolves.toEqual({ kind: 'cancelled' });
+        expect(created).toHaveBeenCalledTimes(2);
+        expect(bridge.pendingWaiters()).toBe(0);
+      } finally { exported.mockRestore(); bridge.dispose(); created.mockRestore(); }
+    },
+  );
+
+  it('a cancelled preview with a current owner still closes a silent native job at the original deadline', async () => {
+    const api = createKernelApi(loadOcctForNode);
+    const created = vi.spyOn(silentWorkers, 'create');
+    const bridge = createKernelBridge();
+    Comlink.expose(api, silentWorkers.serverEndpoint());
+    const controller = new AbortController();
+    const exported = vi.spyOn(api, 'exportShapes');
+    try {
+      const steps = [fakeStep('body-1', 'key-1')];
+      await bridge.recomputeSolids(steps, { partId: 'live-part', generation: 7 });
+      let started = (): void => { throw new Error('preview start missing'); };
+      const entered = new Promise<void>(resolve => { started = resolve; });
+      exported.mockImplementationOnce(() => { started(); return new Promise(() => undefined); });
+      vi.useFakeTimers();
+      const pending = bridge.exportShapes(steps, { partId: 'live-part', format: 'step',
+        bodies: [{ featureId: 'body-1', name: null, color: null }], meshQuality: null,
+        withColors: false, ascii: false, baseName: 'part', signal: controller.signal });
+      await entered;
+      controller.abort();
+      await expect(pending).resolves.toEqual({ kind: 'cancelled' });
+      expect(created).toHaveBeenCalledTimes(1);
+      expect(bridge.pendingWaiters()).toBe(1);
+      await vi.advanceTimersByTimeAsync(EXPORT_TIMEOUT_MS - 1);
+      expect(created).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(created).toHaveBeenCalledTimes(2);
+      expect(bridge.pendingWaiters()).toBe(0);
+      expect(bridge.operationCounts()).toEqual({ success: 1, failed: 0, cancelled: 1, workerBroken: 0 });
+    } finally { vi.useRealTimers(); exported.mockRestore(); bridge.dispose(); created.mockRestore(); }
   });
 });
 

@@ -452,16 +452,25 @@ export function tessellate(
   const shared = createAllocations();
 
   try {
+    // A cut can share faces with its cached sweep and refine their native triangulation.
+    // Rebuild a bounded local reply at the requested settings on mesh-free topology,
+    // rather than inherit those finer triangles or change the borrowed cache's mesh.
+    // Geometry stays shared, as in exportMesh; the temporary topology is released below.
+    let meshingShape = shape;
+    if (frame !== undefined && admission !== undefined) {
+      const copier = shared.keep(new oc.BRepBuilderAPI_Copy_2(shape, false, false));
+      meshingShape = shared.keep(copier.Shape());
+    }
     // 独立した幾何と三角形を平行移動複製した直後だけ、元の実完了状態を使う。
     // 長さ・角度の両条件が同じでも、実形状の分割が失われていれば通常分割へ戻す。
     if (matchesTriangulation(copiedTriangulation, linearDeflection, angularDeflection)
-      && oc.BRepTools.Triangulation(shape, linearDeflection, false)) {
+      && oc.BRepTools.Triangulation(meshingShape, linearDeflection, false)) {
       mesherDone = copiedTriangulation.mesherDone;
       mesherStatus = copiedTriangulation.mesherStatus;
     } else {
       admission?.checkDeadline();
       const mesher = shared.keep(
-        new oc.BRepMesh_IncrementalMesh_2(shape, linearDeflection, false, angularDeflection, false),
+        new oc.BRepMesh_IncrementalMesh_2(meshingShape, linearDeflection, false, angularDeflection, false),
       );
       mesherDone = mesher.IsDone();
       // opencascade.jsの未定義な戻り型を、実体の整数へ変換する。
@@ -472,7 +481,7 @@ export function tessellate(
     // 第3・第4引数は「向きと位置を親からたどって積み上げる」指定で、
     // TopExp_Explorer と同じ結果になる既定値。
     const subShapes = shared.keep(new oc.TopTools_IndexedMapOfShape_1());
-    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+    oc.TopExp.MapShapes_2(meshingShape, subShapes, true, true);
     const faceType = oc.TopAbs_ShapeEnum.TopAbs_FACE;
     const subShapeCount = subShapes.Size();
 

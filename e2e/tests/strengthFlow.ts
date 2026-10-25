@@ -1,5 +1,5 @@
 import { expect, type Page, type TestInfo } from '@playwright/test';
-import { beginRecompute, readRecomputeStats, waitForRecompute } from './recompute.js';
+import { beginRecompute, readRecomputeStats, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
 import { sheetHelpFlow } from './sheetHelpFlow.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
@@ -13,7 +13,8 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.getByRole('button', { name: '開く', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => typeof window.pcadRecomputeStats)).toBe('function');
-  const before = await readRecomputeStats(page);
+  await waitForRecompute(page);
+  const before = await waitForSettledRecompute(page);
   await openStrength(page);
   const panel = page.getByRole('form', { name: '簡易強度計算', exact: true });
   const result = (name: string) => panel.locator(`[data-strength-result="${name}"]`);
@@ -29,9 +30,29 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   await captureManualDetail(page, info, { name: 'strength-beam-results', dialog: panel, fixture: { before }, script: new URL(import.meta.url) });
   await panel.getByText('公式と数値の代入（N・mm・MPa・rad）', { exact: true }).click();
   await expect(panel.getByText('σ = 6*M/(b*h^2)', { exact: false })).toContainText('6*(1000)/((10)*(10)^2) = 6');
+  const force = panel.getByLabel('力 F（N）', { exact: true });
+  await force.fill('1k');
+  const previousResults = await panel.locator('[data-strength-result]').allTextContents();
+  // Synthetic composition/key events exercise the browser handler; this is not a native IME test.
+  await force.dispatchEvent('compositionstart', { data: '' });
+  await force.dispatchEvent('compositionupdate', { data: 'k' });
+  for (const key of [
+    { key: 'Escape', code: 'Escape', isComposing: true, keyCode: 27 },
+    { key: 'Escape', code: 'Escape', isComposing: false, keyCode: 229 },
+    { key: 'Process', isComposing: false, keyCode: 0 },
+  ]) {
+    await force.dispatchEvent('keydown', key);
+    await expect(panel).toBeVisible();
+    await expect(force).toHaveValue('1k');
+    expect(await panel.locator('[data-strength-result]').allTextContents()).toEqual(previousResults);
+    expect(await readRecomputeStats(page)).toEqual(before);
+  }
+  await force.dispatchEvent('compositionend', { data: 'k' });
   await panel.getByLabel('力 F（N）', { exact: true }).fill('1kN');
   await expect(result('stress')).toHaveText('6');
   await expect(panel.getByText(/^前回の計算結果です/u)).toBeVisible();
+  await force.press('Enter');
+  await expect(result('stress')).toHaveText('600');
   await panel.getByRole('button', { name: '計算し直す', exact: true }).click();
   await expect(result('stress')).toHaveText('600');
   await expect(panel.getByText(/^指定安全率に達していません/u)).toBeVisible();
@@ -85,7 +106,7 @@ export async function strengthFlow(page: Page, info: TestInfo): Promise<void> {
   await chooseToolMenuItem(page, 'ファイルのほかの操作', '新しいアセンブリ');
   await waitForRecompute(page, assemblyToken);
   await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'assembly');
-  const assemblyBefore = await readRecomputeStats(page);
+  const assemblyBefore = await waitForSettledRecompute(page);
   await openStrength(page);
   await expect(panel.getByLabel('幅 b', { exact: true })).toHaveValue('10mm');
   await panel.getByLabel('力 F（N）', { exact: true }).fill('30N');

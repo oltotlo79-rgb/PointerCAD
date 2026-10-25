@@ -8,7 +8,7 @@ import tseslint from 'typescript-eslint';
  * 検査専用のパッケージだけは層の外側に置く。
  *
  * `@pointercad/test-utils` は性能上限の判定の切替(`expectWithinBudget`)だけを持ち、
- * 製品の実行時コードを 1 行も含まない。層(apps → ui → model → kernel / expression / drawing)の
+ * 製品の実行時コードを 1 行も含まない。層(apps → ui → fem → model → kernel / expression / drawing)の
  * どこからも devDependencies として参照してよいので、`@pointercad/*` を丸ごと禁じる
  * 最下層(expression / help-content / kernel)でも、これだけは除外する。
  * `!` で始まる項目は除外を表す(no-restricted-imports の group は gitignore と同じ書き方)。
@@ -30,14 +30,25 @@ const reviewModuleFiles = [
   'packages/ui/src/solid/solidPropertyFields.ts',
 ];
 
-/** 依存方向 apps → ui → model → kernel / expression / drawing を機械施行する(rules/04)。 */
+/** UI → model と UI → FEM → model の依存方向を機械施行する(rules/04)。 */
 const layerRules = [
   { files: ['packages/expression/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
   { files: ['packages/help-content/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
   { files: ['packages/kernel/**/*.ts'], forbidden: ['@pointercad/*', TEST_ONLY_PACKAGE_EXCEPTION] },
   {
     files: ['packages/model/**/*.ts'],
-    forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content'],
+    forbidden: ['@pointercad/ui', '@pointercad/io', '@pointercad/help-content', '@pointercad/fem'],
+  },
+  {
+    files: ['packages/fem/**/*.{ts,tsx}'],
+    forbidden: [
+      '@pointercad/ui', '@pointercad/ui/**', '@pointercad/io', '@pointercad/io/**',
+      '@pointercad/help-content', '@pointercad/help-content/**',
+      '@pointercad/web', '@pointercad/web/**', '@pointercad/desktop', '@pointercad/desktop/**',
+      '@pointercad/apps', '@pointercad/apps/**', '**/apps/**',
+      '**/ui/src/**', '**/ui/dist/**', '**/io/src/**', '**/io/dist/**',
+      '**/help-content/src/**', '**/help-content/dist/**',
+    ],
   },
   {
     files: ['packages/drawing/**/*.ts'],
@@ -138,6 +149,24 @@ const e2eSyntaxGuards = [{
         message: 'E2EのJSONはNodeのimport属性差を避けてreadFileSyncで読み、操作ラベルはuiMessageの共通入口を使ってください（rules/06 §10.91）。',
       }];
 
+const testSyntaxGuards = [{
+        selector: 'CallExpression[callee.name=/^(beforeEach|beforeAll|afterEach|afterAll)$/] > ArrowFunctionExpression.arguments[expression=true] > CallExpression.body[callee.property.name=/^mock(Clear|Reset|Restore)$/]',
+        message: 'mockClear等の戻り値はmock関数です。テストhookから返すと後処理として呼ばれるため、voidのブロック本体を使ってください（rules/06 §10.67）。',
+      }, {
+        selector: "CallExpression[callee.callee.object.name='it'][callee.callee.property.name='each'] > ArrowFunctionExpression.arguments ForOfStatement:has(CallExpression[callee.name=/^(recomputeSheetFlat|makeSheetMetalBody)$/])",
+        message: '固定面・角度等の独立したOCCTケースはit.eachの行へ展開し、1件の5秒枠へ複数の再計算を詰め込まないでください（rules/06 §10.71）。',
+      }];
+
+// no-restricted-imports covers declarations/re-exports; these also cover dynamic and type queries.
+const modelFemImportGuards = [{
+  selector: ':matches(ImportExpression, TSImportType)[source.value=/(^@pointercad\\/fem($|\\/)|(^|\\/)fem\\/(src|dist)\\/)/]',
+  message: 'modelからFEMへの逆依存は禁止です。型もmodelの契約を使ってください（rules/04）。',
+}];
+const femUpperImportGuards = [{
+  selector: ':matches(ImportExpression, TSImportType)[source.value=/(^@pointercad\\/(ui|io|help-content|web|desktop|apps)($|\\/)|(^|\\/)(ui|io|help-content)\\/(src|dist)\\/|(^|\\/)apps\\/)/]',
+  message: 'FEMはmodelを使う計算層です。画面・アプリ・保存・ヘルプへの依存は型だけでも禁止です（rules/04）。',
+}];
+
 export default tseslint.config(
   {
     ignores: [
@@ -164,13 +193,7 @@ export default tseslint.config(
   {
     files: ['**/*.test.{ts,tsx}'],
     rules: {
-      'no-restricted-syntax': ['error', {
-        selector: 'CallExpression[callee.name=/^(beforeEach|beforeAll|afterEach|afterAll)$/] > ArrowFunctionExpression.arguments[expression=true] > CallExpression.body[callee.property.name=/^mock(Clear|Reset|Restore)$/]',
-        message: 'mockClear等の戻り値はmock関数です。テストhookから返すと後処理として呼ばれるため、voidのブロック本体を使ってください（rules/06 §10.67）。',
-      }, {
-        selector: "CallExpression[callee.callee.object.name='it'][callee.callee.property.name='each'] > ArrowFunctionExpression.arguments ForOfStatement:has(CallExpression[callee.name=/^(recomputeSheetFlat|makeSheetMetalBody)$/])",
-        message: '固定面・角度等の独立したOCCTケースはit.eachの行へ展開し、1件の5秒枠へ複数の再計算を詰め込まないでください（rules/06 §10.71）。',
-      }],
+      'no-restricted-syntax': ['error', ...testSyntaxGuards],
     },
   },
   {
@@ -194,6 +217,16 @@ export default tseslint.config(
       }],
     },
   },
+  ...[
+    { files: ['packages/model/**/*.ts'], guards: modelFemImportGuards },
+    { files: ['packages/fem/**/*.{ts,tsx}'], guards: femUpperImportGuards },
+  ].flatMap(({ files, guards }) => [{
+    files,
+    rules: { 'no-restricted-syntax': ['error', ...guards] },
+  }, {
+    files: files.map(file => file.replace('**/*.', '**/*.test.')),
+    rules: { 'no-restricted-syntax': ['error', ...testSyntaxGuards, ...guards] },
+  }]),
   {
     files: ['packages/io/src/pcad/documentJson.ts', 'packages/io/src/pcad/codecs/**/*.ts'],
     rules: {
@@ -231,7 +264,7 @@ export default tseslint.config(
     rules: {
       'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 200, skipBlankLines: true, skipComments: true }],
-      'no-restricted-syntax': ['error', {
+      'no-restricted-syntax': ['error', ...modelFemImportGuards, {
         selector: "ImportDeclaration[source.value='@pointercad/kernel'][importKind!='type']",
         message: '依頼・結果の変換はkernelの型だけを参照し、カーネルの実行を通信の入口へ残してください（レビューF08）。',
       }, {
@@ -247,7 +280,7 @@ export default tseslint.config(
     files: ['packages/model/src/kernelBridge/*Contracts.ts'],
     rules: {
       'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
-      'no-restricted-syntax': ['error', {
+      'no-restricted-syntax': ['error', ...modelFemImportGuards, {
         selector: "ImportDeclaration[importKind!='type']",
         message: 'カーネルとの契約は型だけを参照し、変換や通信の実行処理を持たせないでください（レビューF08）。',
       }, {
@@ -262,7 +295,7 @@ export default tseslint.config(
       'max-lines': ['error', { max: 250, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
       'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }],
-      'no-restricted-syntax': ['error', {
+      'no-restricted-syntax': ['error', ...modelFemImportGuards, {
         selector: "ImportDeclaration[source.value='@pointercad/kernel'] > ImportSpecifier[imported.name!=/^(matchFace|matchEdge|matchVertex|resolveFaceReference|resolveEdgeReference|resolveVertexReference)$/]",
         message: '部分形状の照合は既存の採点関数だけを使い、形状生成やWorkerの実行を持ち込まないでください（レビューF08）。',
       }, {
@@ -280,7 +313,7 @@ export default tseslint.config(
         'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
         'max-lines-per-function': ['error', { max: 260, skipBlankLines: true, skipComments: true }],
         'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }],
-        'no-restricted-syntax': ['error', {
+        'no-restricted-syntax': ['error', ...modelFemImportGuards, {
           selector: ":matches(ImportDeclaration[importKind!='type'], ExportNamedDeclaration[exportKind!='type'], ExportAllDeclaration[exportKind!='type'])[source.value=/resolvePart/]",
           message: 'キャッシュの鍵は解決済みの型だけを参照し、履歴の再計算を呼び戻さないでください（レビューF11）。',
         }, {
@@ -518,12 +551,12 @@ export default tseslint.config(
     // Keep upper-layer guards even when a narrower model rule overrides this group; the rule schema requires unique group members.
     const restricted = files.every(file => file.startsWith('packages/model/'))
       ? [...new Set([...forbidden, '@pointercad/ui', '@pointercad/ui/**', '@pointercad/io', '@pointercad/io/**',
-        '@pointercad/help-content', '@pointercad/help-content/**',
-        '**/ui/src/**', '**/ui/dist/**', '**/io/src/**', '**/io/dist/**',
+        '@pointercad/help-content', '@pointercad/help-content/**', '@pointercad/fem', '@pointercad/fem/**',
+        '**/fem/src/**', '**/fem/dist/**', '**/ui/src/**', '**/ui/dist/**', '**/io/src/**', '**/io/dist/**',
         '**/help-content/src/**', '**/help-content/dist/**'])] : forbidden;
     const patterns = restricted.length === 0 ? [] : [{
       group: restricted,
-      message: '依存方向 apps → ui → model → kernel / expression / drawing に違反しています(rules/04-設計の規律.md)。',
+      message: '依存方向 UI → model / FEM → model → kernel / expression / drawing に違反しています(rules/04-設計の規律.md)。',
     }];
     // 混在する汎用groupはfixtureだけ。全patternがui/appsのgroupだけをfrontendとする。
     const frontend = files.every((file) => file.startsWith('packages/ui/') || file.startsWith('apps/'));

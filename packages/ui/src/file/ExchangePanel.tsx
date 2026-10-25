@@ -686,7 +686,10 @@ export function ExchangePanel({
 
       {/* STL には色が無いので 1 行で断っておく(§0.a-0.15)。 */}
       {shape.showsNoColorNotice ? (
-        <p className="pcad-exchange__notice">{t('exchange.stlNoColor')}</p>
+        <>
+          <p className="pcad-exchange__notice">{t('exchange.stlNoColor')}</p>
+          <p className="pcad-exchange__notice">{t('exchange.stlCoordinatePrecision')}</p>
+        </>
       ) : null}
 
       {/*

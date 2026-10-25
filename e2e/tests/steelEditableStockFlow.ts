@@ -8,6 +8,9 @@ import { componentRows, disableFilePickers } from './boltedJointTestSupport.js';
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
+import { chooseSteelFlatBar50x6 } from './steelPickerFlow.js';
+import { expectSteelStockCsv, expectSteelStockCsvProvenance, expectSteelStockTableHeader,
+  expectSteelStockTableRevisions, SS400_FLAT, S45C_FLAT, type SteelStockProductExpectation as Product } from './steelStockExpectation.js';
 
 /*
  * EX02 from the visible 加工できる部品にする command (task155; successor of the task154 flow, whose generated input
@@ -22,16 +25,6 @@ import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
  * the element (the host145 failure at steelStockCsvFlow openPicker; task154's flow repeats that pattern).
  */
 
-interface Product {
-  readonly grade: 'SS400' | 'S45C';
-  readonly size: 'FB 50×6';
-  /** 鋼種, 材料規格, 寸法・製品規格, 断面形状, 呼び寸法, 供給条件 (catalog and ja i18n, as in host146). */
-  readonly columns: readonly string[];
-}
-const SS400_FLAT: Product = { grade: 'SS400', size: 'FB 50×6',
-  columns: ['SS400', 'JIS G 3101', '王子製鉄 公表断面寸法', '平鋼', 'FB 50×6', '熱間圧延材・熱処理条件未指定'] };
-const S45C_FLAT: Product = { grade: 'S45C', size: 'FB 50×6',
-  columns: ['S45C', 'JIS G 4051', 'JIS G 3123', '平鋼', 'FB 50×6', 'みがき棒鋼・加工方法と熱処理条件未指定'] };
 
 const STOCK_MM = 1000;
 const LONG_STOCK_MM = 1500;
@@ -48,13 +41,9 @@ const PART_FILE = `${PART_NAME}.pcad`;
 const TITLE = {
   category: '配置する規格部品の種類を選びます。種類に合わせて寸法の候補が切り替わります。',
   grade: '鋼種を選ぶと、製造元資料で確認した断面と寸法だけを表示します。',
-  shape: '選んだ鋼種で確認済みの断面形状を選びます。',
-  size: '配置する部品の呼びを選びます。未確認の候補には、その旨と理由を表示します。',
   length: '部品の長さをmmまたは式で指定します。選んだ部品に長さの指定が必要な時に表示されます。',
 } as const;
 
-const HEADER = ['集計区分', '鋼種', '材料規格', '寸法・製品規格', '断面形状', '呼び寸法', '供給条件', '素材購入長 (mm)',
-  '数量', '総延長 (mm)', '配置の階層（ID）', '対象範囲・除外理由', '部分組立の参照', '完成長 (mm)'];
 const COLUMN = { kind: 0, grade: 1, materialStandard: 2, productStandard: 3, shape: 4, size: 5, stockLength: 7,
   quantity: 8, totalLength: 9, paths: 10, notice: 11, finished: 13 } as const;
 
@@ -92,24 +81,6 @@ function csvRow(row: ExpectedRow): string[] {
     String(row.stockMm * row.placements.length), String(row.finishedMm)];
 }
 
-/** RFC 4180 reader used only by this check (quoted fields, doubled quotes, CRLF records). */
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [], field = '', quoted = false;
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    if (quoted) {
-      if (char === '"' && text[index + 1] === '"') { field += '"'; index += 1; }
-      else if (char === '"') quoted = false;
-      else field += char;
-    } else if (char === '"' && field === '') quoted = true;
-    else if (char === ',') { row.push(field); field = ''; }
-    else if (char === '\r' && text[index + 1] === '\n') { row.push(field); rows.push(row); row = []; field = ''; index += 1; }
-    else field += char;
-  }
-  expect(field === '' && row.length === 0, 'CSV ends with CRLF').toBe(true);
-  return rows;
-}
 
 function picker(page: Page): Locator {
   return page.getByRole('dialog', { name: '規格部品を置く', exact: true });
@@ -160,10 +131,7 @@ async function closePicker(dialog: Locator): Promise<void> {
   await expect(dialog).toHaveCount(0);
 }
 async function chooseBar(dialog: Locator, product: Product, lengthMm: number): Promise<void> {
-  await dialog.getByTitle(TITLE.grade, { exact: true }).selectOption(product.grade);
-  await dialog.getByTitle(TITLE.shape, { exact: true }).selectOption('flatBar');
-  // Option values are standardPartPicker.ts steelChoice keys: `steel:${grade}:${catalog}:${size}`.
-  await dialog.getByTitle(TITLE.size, { exact: true }).selectOption(`steel:${product.grade}:flatBar:${product.size}`);
+  await chooseSteelFlatBar50x6(dialog, { grade: product.grade, size: product.size, condition: product.columns[5] });
   await dialog.getByTitle(TITLE.length, { exact: true }).fill(String(lengthMm));
 }
 async function placeBar(page: Page, dialog: Locator, product: Product, lengthMm: number): Promise<void> {
@@ -214,16 +182,23 @@ async function placeEditableBar(page: Page, path: string, app: ElectronApplicati
   return part;
 }
 
-/** The picker's on-screen cut list: 鋼種, 呼び寸法, 素材購入長, 完成長, 数量, 総延長 per row, then the totals. */
+/** Eight columns: check the original six independently from catalog/generator revisions, then the totals. */
 async function expectStockTable(page: Page, rows: readonly ExpectedRow[]): Promise<void> {
   const details = stockDetails(page);
   if (await details.getAttribute('open') === null) await details.locator('summary').click();
   const body = details.locator('tbody tr');
   await expect(body).toHaveCount(rows.length);
+  await expectSteelStockTableHeader(details);
   const shown = await body.evaluateAll(trs => trs.map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.textContent ?? '')));
-  expect(shown.map(cells => cells.join('|')).sort()).toEqual(rows.map(row => [row.product.grade, row.product.size,
+  const expected = rows.map(row => ({ product: row.product, cells: [row.product.grade, row.product.size,
     String(row.stockMm), String(row.finishedMm), String(row.placements.length),
-    String(row.stockMm * row.placements.length)].join('|')).sort());
+    String(row.stockMm * row.placements.length)] }));
+  expect(shown.map(cells => cells.slice(0, 6).join('|')).sort()).toEqual(expected.map(row => row.cells.join('|')).sort());
+  for (const cells of shown) {
+    const row = expected.find(item => item.cells.join('|') === cells.slice(0, 6).join('|'));
+    if (row === undefined) throw new Error(`Unexpected stock table row ${cells.join('|')}`);
+    expectSteelStockTableRevisions(cells, row.product);
+  }
   await expect(details.locator('tfoot td')).toHaveText([String(TOTAL_QUANTITY), String(TOTAL_LENGTH_MM)]);
 }
 
@@ -239,13 +214,16 @@ async function exportCsv(page: Page, path: string, app: ElectronApplication | un
 
 /** Checks one CSV against the expected rows and placement ids; returns the cut rows in file order. */
 function expectStockCsv(bytes: Buffer, rows: readonly ExpectedRow[], placementIds: readonly string[]): string[][] {
-  expect([...bytes.subarray(0, 3)], 'UTF-8 BOM').toEqual([0xef, 0xbb, 0xbf]);
-  const records = parseCsv(bytes.subarray(3).toString('utf8'));
-  expect(records.every(record => record.length === HEADER.length), 'every record has 14 fields').toBe(true);
-  expect(records[0]).toEqual(HEADER);
+  const records = expectSteelStockCsv(bytes);
   const cut = records.filter(record => record[COLUMN.kind] === '切断明細');
   const summary = (record: readonly string[]): string[] => [...record.slice(0, COLUMN.paths), record[COLUMN.finished] ?? ''];
   expect(cut.map(summary).sort()).toEqual(rows.map(csvRow).sort());
+  for (const record of cut) {
+    const row = rows.find(item => csvRow(item).join('|') === summary(record).join('|'));
+    if (row === undefined) throw new Error(`Unexpected CSV cut row ${summary(record).join('|')}`);
+    expectSteelStockCsvProvenance(record, row.product);
+    expect(record.slice(11, 13), 'cut row has no exclusion or assembly reference').toEqual(['', '']);
+  }
   // Occurrence ids per row: the machined rows hold exactly the part occurrences, the sibling keeps its own row.
   const idsOf = (record: readonly string[]): string[] => {
     const paths: unknown = JSON.parse(record[COLUMN.paths] ?? '');
@@ -337,9 +315,16 @@ async function expectDrawingStockTable(page: Page, csvCut: readonly string[][]):
   }
   // Cells may wrap inside their column; compare each row's text in reading order, whitespace removed.
   const squash = (text: string): string => text.replace(/\s+/gu, '');
-  const expected = csvCut.map(record => squash([`${record[COLUMN.shape]} ${record[COLUMN.size]}`, record[COLUMN.grade],
-    `${record[COLUMN.productStandard]} / ${record[COLUMN.materialStandard]}`, record[COLUMN.stockLength],
-    record[COLUMN.quantity], record[COLUMN.finished]].join('')));
+  const expected = csvCut.map(record => {
+    const product = [SS400_FLAT, S45C_FLAT].find(item => item.grade === record[COLUMN.grade]);
+    if (product === undefined) throw new Error(`Unexpected drawing stock grade ${record[COLUMN.grade]}`);
+    // steelCatalog.ts:9..11 fixes both revisions; ja/assembly.json names them in the drawing's standard cell.
+    // Read the independent product snapshot, so a missing/incorrect revision in both CSV and drawing cannot agree by accident.
+    const standard = `${product.columns[2]} / ${product.columns[1]}\n`
+      + `カタログの版: ${product.additionalCsvColumns[0]}\n形状生成の版: ${product.additionalCsvColumns[1]}`;
+    return squash([`${record[COLUMN.shape]} ${record[COLUMN.size]}`, record[COLUMN.grade], standard,
+      record[COLUMN.stockLength], record[COLUMN.quantity], record[COLUMN.finished]].join(''));
+  });
   expect([...byRow.keys()].sort((a, b) => a - b)).toEqual(expected.map((_, index) => index + 1));
   expect(expected.map((_, index) => squash(byRow.get(index + 1) ?? ''))).toEqual(expected);
 }

@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { createAssemblyDocument, DEFAULT_COMPONENT_PLACEMENT } from '../createAssemblyDocument.js';
 import { IDENTITY_PLACEMENT, quaternionFromAxisAngle, type RigidPlacement } from '../placementMath.js';
-import type { AssemblyComponent, Mate } from '../types.js';
+import type { AssemblyComponent, AssemblyDocument, Joint, Mate } from '../types.js';
+import { createJointFrame } from '../joints/jointFrames.js';
+import { joinRigidGroup } from '../rigidGroups.js';
 import type { Vec3 } from '../../sketch/vec3.js';
 import type { MateResidualTargetPair } from './mateResiduals.js';
 import { prepareMateDrag, solveMateDrag, type MateDragOptions } from './solveMates.js';
@@ -40,6 +42,48 @@ function position(result: ReturnType<typeof solveMateDrag>): Vec3 {
   if (p === undefined) throw new Error('missing moving placement');
   return p.position;
 }
+
+describe('camera-plane drag of a revolute wheel and radial slider', () => {
+  it.each([
+    { degrees: 12, radius: 50, grouped: false }, { degrees: -12, radius: 50, grouped: false },
+    { degrees: 12, radius: 1e-5, grouped: false }, { degrees: -12, radius: 1e-5, grouped: false },
+    { degrees: 12, radius: 50, grouped: true }, { degrees: -12, radius: 50, grouped: true },
+  ])('settles reachable XY or refuses unresolved weak motion ($degrees degrees, radius $radius, grouped $grouped)', ({ degrees, radius, grouped }) => {
+    const targetId = (componentId: string, element: 'x' | 'z') => ({ kind: 'origin', componentId, element } as const);
+    const joint = (id: string, kind: Joint['kind'], a: string, b: string, axis: 'x' | 'z'): Joint => ({
+      id, name: id, kind, a: targetId(a, axis), b: targetId(b, axis), minValue: null, maxValue: null, suppressed: false,
+    });
+    let assembly: AssemblyDocument = { ...createAssemblyDocument('camera drag'),
+      components: [component('ground', true), component('wheel'), component('moving'), component('other')],
+      joints: [joint('turn', 'revolute', 'wheel', 'ground', 'z'), joint('slide', 'slider', 'moving', 'wheel', 'x')] };
+    if (grouped) assembly = joinRigidGroup({ ...assembly, joints: assembly.joints.slice(0, 1) }, ['wheel', 'moving']);
+    const initial = new Map<string, RigidPlacement>(assembly.components.map(c => [c.id, IDENTITY_PLACEMENT]));
+    initial.set('moving', { ...IDENTITY_PLACEMENT, position: [radius, 0, 0] });
+    const turn = createJointFrame([0, 0, 0], [0, 0, 1]), slide = createJointFrame([0, 0, 0], [1, 0, 0]);
+    if (turn === null || slide === null) throw new Error('fixture frames');
+    const prepared = prepareMateDrag(assembly, new Map(), initial, 'moving',
+      { jointFrames: new Map([['turn', { a: turn, b: turn }], ['slide', { a: slide, b: slide }]]) });
+    if (!prepared.ok) throw new Error(prepared.reason);
+    if (grouped) expect(prepared.drag.variableComponentId).toBe('wheel');
+    const x = radius * Math.cos(degrees * Math.PI / 180), y = radius * Math.sin(degrees * Math.PI / 180);
+    // Plane through (radius,0,0), normal (1,-1,1). Group members also require the wheel's angular arm.
+    const result = solveMateDrag(prepared.drag, [x, y, radius - x + y], { phase: 'release' });
+    expect(result.hardSatisfied).toBe(true);
+    expect(result.counts.totalIterations).toBeLessThanOrEqual(50);
+    const xyError = Math.max(...position(result).map((value, axis) => Math.abs(value - [x, y, 0][axis])));
+    // The tiny lever detects false stationary success; it does not promise convergence within the unchanged budget.
+    if (radius === 1e-5 && xyError >= 1e-9) {
+      expect(result.committable).toBe(false);
+      expect(['iterationLimit', 'stalled', 'dampingLimit']).toContain(result.stop);
+    } else {
+      expect(result.committable).toBe(true);
+      expect(result.stop).toBe('stationary');
+      expect(xyError).toBeLessThan(1e-9);
+    }
+    expect(result.placements.get('ground')).toEqual(initial.get('ground'));
+    expect(result.placements.get('other')).toEqual(initial.get('other'));
+  });
+});
 
 describe('P7-18 一時位置目標と hard 成立の契約', () => {
   it.each([0.1, 100, 1e5])('L=%s: 振幅0.01・目的係数0.0001をscaleで相殺しない', (length) => {

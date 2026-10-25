@@ -1,4 +1,5 @@
 import { strengthCalculationFields } from '@pointercad/model';
+import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -26,7 +27,7 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
   const evaluation = evaluateStrengthSession(session, parameters);
   return <form className="pcad-panel__body pcad-strength" aria-label={t('strength.title')} data-help-topic="strength"
     onSubmit={event => { event.preventDefault(); calculate(); }}
-    onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
+    onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) return; if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
     <h3 className="pcad-section__title">{t('strength.title')}</h3>
     <details><summary>{t('strength.help')}</summary><p>{t('strength.assumptions')}</p></details>
     {assembly === null ? null : <button type="button" className="pcad-button" data-testid="beam-open"

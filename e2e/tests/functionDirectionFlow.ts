@@ -27,6 +27,7 @@ export async function functionDirectionFlow(page:Page,info:TestInfo,point:{reado
   await dialog.getByRole('checkbox',{name:text('reverse'),exact:true}).check();
   await dialog.getByRole('button',{name:text('preview'),exact:true}).click();
   await expect(dialog.getByRole('button',{name:text('apply'),exact:true})).toBeEnabled();
+  await expect(dialog.getByRole('button',{name:text('preview'),exact:true})).toBeFocused();
   await expect(dialog.locator('canvas')).toBeVisible();
   await expect(dialog.locator('canvas')).toHaveAttribute('aria-label',text('result'));
   await page.keyboard.press('F1');await expect(page.locator('.pcad-help__article')).toContainText('点から接線・法線を作る');
@@ -52,6 +53,7 @@ export async function functionDirectionFlow(page:Page,info:TestInfo,point:{reado
   await dialog.getByRole('checkbox',{name:text('reverse'),exact:true}).uncheck();
   await dialog.getByRole('button',{name:text('preview'),exact:true}).click();
   await expect(dialog.getByRole('button',{name:text('update'),exact:true})).toBeEnabled();
+  await expect(dialog.getByRole('button',{name:text('preview'),exact:true})).toBeFocused();
   await captureManualDetail(page,info,{name:`function-direction-${geometry}-edit`,dialog,fixture:created,script:new URL(import.meta.url)});
   const editing=await beginRecompute(page);await dialog.getByRole('button',{name:text('update'),exact:true}).click();await waitForRecompute(page,editing);
   const changed=await savePart(page,info,'function-direction-edited.pcad',app);

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { intervalUnion } from './mathIntervalUnion.js';
-import { certifySplineAgainstMesh, smoothFunctionSurface, type FunctionSurfaceSpline, type SmoothSurfaceOptions, type SmoothSurfaceSource,
+import { certifySplineAgainstMesh, certifySplineAgainstMeshSteps, completeSteps, smoothFunctionSurface, type FunctionSurfaceSpline, type SmoothSurfaceOptions, type SmoothSurfaceSource,
   type SurfaceMeshEvidence } from './smoothFunctionSurface.js';
 import type { SurfaceLeaf } from './surfaceParameterGrid.js';
 
@@ -91,6 +91,60 @@ function ready(outcome: ReturnType<typeof smoothFunctionSurface>): FunctionSurfa
 }
 /** Knot indices of the synthetic grid: u [0, 4, 6, 7, 8], v [0, 2, 3, 4, 8]; 25 nodes, 16 product cells. */
 const NODES = 25, CELLS = 16;
+
+describe('certificate geometry checks yield within a densely covered cell', () => {
+  const count = 600;
+  function fan(lastHeight = 0) {
+    const vertices: SurfaceMeshEvidence['vertices'][number][] = [], triangles: [number, number, number][] = [];
+    const edge: (readonly [number, number])[] = [];
+    for (let j = 0; j <= count / 2; j++) edge.push([1, j / (count / 2)]);
+    for (let j = 1; j <= count / 2; j++) edge.push([1 - j / (count / 2), 1]);
+    // Separate vertex objects let getters identify each triangle's geometry check without wall-clock assumptions.
+    for (let t = 0; t < count; t++) {
+      const first = vertices.length;
+      for (const parameters of [[0, 0] as const, edge[t], edge[t + 1]]) {
+        vertices.push({ parameters, point: [parameters[0], parameters[1], t === count - 1 ? lastHeight : 0] });
+      }
+      triangles.push([first, first + 1, first + 2]);
+    }
+    const poles: Point[] = [];
+    for (const u of [0, 1 / 3, 1 - 1 / 3, 1]) for (const v of [0, 1 / 3, 1 - 1 / 3, 1]) poles.push([u, v, 0]);
+    return { spline: { uKnots: [0, 1], vKnots: [0, 1], poles }, mesh: { vertices, triangles, bound: 0 } };
+  }
+  function watch(evidence: SurfaceMeshEvidence) {
+    const seen = new Set<number>(), stepMembers = new Set<number>();
+    const vertices = evidence.vertices.map((vertex, index) => ({ parameters: vertex.parameters,
+      get point() { seen.add(Math.floor(index / 3)); stepMembers.add(Math.floor(index / 3)); return vertex.point; },
+    }));
+    return { mesh: { ...evidence, vertices }, seen, stepMembers };
+  }
+
+  it.each([0, 1, Number.POSITIVE_INFINITY])('bounds each geometry step and preserves every check, including last height %s', lastHeight => {
+    const { spline, mesh: evidence } = fan(lastHeight), observed = watch(evidence);
+    const steps = certifySplineAgainstMeshSteps(spline, observed.mesh, box);
+    let largest = 0, step;
+    do {
+      observed.stepMembers.clear();
+      step = steps.next();
+      largest = Math.max(largest, observed.stepMembers.size);
+    } while (step.done !== true);
+    expect(observed.seen.size).toBe(count);
+    expect(largest).toBeLessThanOrEqual(256);
+    expect(step.value).toEqual(certifySplineAgainstMesh(spline, evidence, box));
+    expect(step.value).toEqual(completeSteps(certifySplineAgainstMeshSteps(spline, evidence, box)));
+    if (Number.isFinite(lastHeight)) {
+      expect(step.value).toMatchObject({ status: 'certified', coveredCells: 1, work: 2 * count + count * (count - 1) / 2 });
+      if (step.value.status === 'certified') expect(step.value.splineToMesh).toBeGreaterThanOrEqual(lastHeight);
+    } else expect(step.value).toMatchObject({ status: 'rejected', reason: 'nonfinite' });
+  });
+
+  it('honours cancellation after geometry checking has begun without finishing the cell', () => {
+    const { spline, mesh: evidence } = fan(), observed = watch(evidence);
+    const result = completeSteps(certifySplineAgainstMeshSteps(spline, observed.mesh, box, () => observed.seen.size >= 256));
+    expect(result).toEqual({ status: 'stopped', visitedCells: 1 });
+    expect(observed.seen.size).toBe(256);
+  });
+});
 
 describe('reuse of already certified sampler nodes', () => {
   const quadratic: Surface = (u, v) => [u, v, u * u + u * v - 2 * v * v];
@@ -218,7 +272,8 @@ describe('関数曲面の証明付きC1双3次Bスプライン（不等間隔の
     ready(smoothFunctionSurface(source(quadratic), leaves(4), options(quadratic, 4, 100, { stop: () => { checks++; return false; } })));
     // Node loop 1, derivative loops 5 + 5 + 5, poles 10, certificate triangles 1 (every 256) + rows 4; its work counter
     // (every 1024 clip/overlap tests) does not reach 1024 on this small mesh.
-    expect(checks).toBe(1 + 15 + 10 + 1 + 4);
+    // Each of the 16 covered cells also checks before its member geometry proof.
+    expect(checks).toBe(1 + 15 + 10 + 1 + 4 + CELLS);
     for (let at = 1; at <= checks; at++) {
       let calls = 0;
       const outcome = smoothFunctionSurface(source(quadratic), leaves(4), options(quadratic, 4, 100, { stop: () => ++calls >= at }));

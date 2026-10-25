@@ -94,7 +94,7 @@ export default defineConfig({
       testIgnore: [ELECTRON_TEST_FILE, WEB_STARTUP_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
       // 実カーネル・保存再読込・復元・製作図・F1・CSPを既存の同じ操作で検査する。
       // 板金の操作検査は分割した新ファイルも自動的に対象へ入れる。
-      testMatch: /(?:smoke|solid|extrude-operation|bolted-joint|fillet-weld|steel-bend|steel-bend-stock|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|named-save-points|name-search|parameter-search-csv|auto-save-settings|command-registry|tutorial|shortcut-settings|camera-controls-settings|radial-menu|connect-points|canvas|drawing-delete-elements|reference-ambiguity|usability-keyboard|offline-routing|offline-editions|function-plot|function-spline-surface|memory-highwater|impact-browser|sheet-[\w-]+)\.spec\.ts$/u,
+      testMatch: /(?:smoke|solid|extrude-operation|bolted-joint|fillet-weld|steel-editable-stock|assembly-coupled-drag|assembly-flexible-motion|steel-bend|steel-bend-stock|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|named-save-points|name-search|parameter-search-csv|auto-save-settings|command-registry|tutorial|shortcut-settings|camera-controls-settings|radial-menu|connect-points|canvas|drawing-delete-elements|reference-ambiguity|usability-keyboard|offline-routing|offline-editions|function-plot|function-spline-surface|memory-highwater|impact-browser|sheet-[\w-]+)\.spec\.ts$/u,
       ...(selectedMeasurement === null ? {} : { testMatch: dedicatedMatch(false) }),
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       use: FIREFOX_USE,

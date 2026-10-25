@@ -598,6 +598,8 @@ interface WorkerTimeout<T> {
 interface WorkerCancellation<T> {
   readonly signal: AbortSignal;
   readonly refuse: () => T;
+  /** A live display can still own the native shapes needed by the next export. */
+  readonly preservesCurrentShapes?: () => boolean;
 }
 
 interface KernelConnection {
@@ -754,7 +756,7 @@ async function raceWithBroken<T>(
     const cancelled = cancellation === undefined ? null : new Promise<BrokenRace<T>>((resolve) => {
       abort = () => {
         if (requestSettled || connection.interruption !== null) return;
-        orphaned = connection.waiters.size > 1;
+        orphaned = connection.waiters.size > 1 || cancellation.preservesCurrentShapes?.() === true;
         resolve({ kind: 'aborted' });
         if (!orphaned) timeout?.terminateAndRestart();
       };
@@ -1164,6 +1166,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
   }
   return { host, dispatch, reserve, admitReply, adopt, bind, capture, issued, attachWorker, refuse,
     ownerCoverageReason,
+    displayOwner: (partId: string) => logicalDisplayOwners.get(partId),
     retire: (owner: MeshLedgerOwner) => {
       host.revokeOwner(owner.dispatchId);
       if (logicalDisplayOwners.get(owner.partId) === owner) logicalDisplayOwners.delete(owner.partId);
@@ -1977,6 +1980,12 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
         options.signal === undefined ? undefined : {
           signal: options.signal,
           refuse: (): ShapeExportOutcome => ({ kind: 'cancelled' }),
+          preservesCurrentShapes: () => {
+            const owner = ledger.displayOwner(options.partId ?? 'part:current');
+            return connection === active && !active.closed && owner !== undefined && items.length > 0
+              && items.every((item, index) => owner.steps.some(step => step.key === item.bodyKey
+                && step.id === options.bodies[index]?.featureId));
+          },
         },
       );
     },

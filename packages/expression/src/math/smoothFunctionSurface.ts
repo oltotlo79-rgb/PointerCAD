@@ -240,7 +240,7 @@ export function certifySplineAgainstMesh(spline: Pick<FunctionSurfaceSpline, 'uK
 
 /**
  * The same certificate as resumable steps: it pauses (yields) at least every STEP_UNITS work units, every 256
- * triangles and before every cell, so a receiving thread can return to its event loop between slices. Pausing never
+ * triangles, every STEP_UNITS member geometry checks and before every cell, so a receiving thread can return to its event loop between slices. Pausing never
  * changes a check, a count or the result; abandoning the steps simply produces no result.
  */
 export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSpline, 'uKnots' | 'vKnots' | 'poles'>, mesh: SurfaceMeshEvidence,
@@ -330,6 +330,8 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
       };
       let meshGap = 0;
       for (const [member, t] of members[cell].entries()) {
+        // A single cell can contain thousands of triangles. Its error proof must yield too, after the overlap proof.
+        if (member % STEP_UNITS === 0) { if (stop()) return stopped(); yield; }
         const [a, b, c] = mesh.triangles[t].map(index => mesh.vertices[index]);
         const e1: Planar = [b.parameters[0] - a.parameters[0], b.parameters[1] - a.parameters[1]];
         const e2: Planar = [c.parameters[0] - a.parameters[0], c.parameters[1] - a.parameters[1]];

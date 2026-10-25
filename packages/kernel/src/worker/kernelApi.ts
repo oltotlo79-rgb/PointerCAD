@@ -1548,6 +1548,9 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
               ascii: request.ascii ?? false,
             });
             work.verifySerializedOutput(written.bytes.byteLength);
+            if (shapes.length > 0 && written.triangleCount === 0) {
+              throw new Error('STL に書き出せる面がありません。原点に近い位置へ移動するか、STEP を使ってください。');
+            }
             return {
               format: 'stl',
               files: [

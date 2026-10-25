@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
-import { writeFile } from 'node:fs/promises';
-import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
+import { readFile, writeFile } from 'node:fs/promises';
+import { expect, type Download, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { exactExpressionValueFromNumber, expressionValueFromNumber } from '../../packages/expression/src/index.js';
 import { readPcadFile, writePcadFile } from '../../packages/io/src/index.js';
 import { appendSolid, appearanceFromPreset, assignAppearance,
@@ -9,6 +9,9 @@ import { readRecomputeStats, waitForSettledRecompute } from './recompute.js';
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { waitForStartupHealth } from './startupHealth.js';
 import { readViewportRenderStats } from './viewportRenderStats.js';
+import { openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
+import { saveTarget } from './electronAppFlow.js';
+import { statusBar } from './fileCaptureSupport.js';
 
 const OFFSETS = [0, 1e6, 1e9] as const;
 const SIZES = [0.5, 0.375, 0.25] as const;
@@ -53,15 +56,15 @@ function fixture(offset: number) {
   return { document, feature, center, cameras, bytes };
 }
 
-async function restoreAndRemember(page: Page, view: View): Promise<void> {
+async function restoreAndRemember(page: Page, view: View, name: string): Promise<void> {
   const menu = page.locator('.pcad-named-views');
   await menu.locator('summary').click();
   await menu.getByRole('combobox', { name: '視点を選ぶ', exact: true }).selectOption(`pg5a-${view}`);
   const before = await readViewportRenderStats(page);
   await menu.getByRole('button', { name: 'この視点へ', exact: true }).click();
-  await menu.getByRole('textbox', { name: '視点の名前', exact: true }).fill(`PG5a actual ${view}`);
+  await menu.getByRole('textbox', { name: '視点の名前', exact: true }).fill(name);
   await menu.getByRole('button', { name: '今の視点を保存', exact: true }).click();
-  await expect(menu.getByRole('option', { name: `PG5a actual ${view}`, exact: true })).toHaveCount(1);
+  await expect(menu.getByRole('option', { name, exact: true })).toHaveCount(1);
   await menu.locator('summary').click();
   await page.mouse.move(0, 0);
   // Existing render-counter observation; no sleep standing in for a completed frame.
@@ -181,6 +184,43 @@ function mismatchesBeyondOnePixel(a: Pixels, b: Pixels): number {
   return misses;
 }
 
+/** The same saved/reopened Part warns at 1e6; its collapsed 1e9 STL must be refused. */
+async function inspectStlLimit(page: Page, info: TestInfo, offset: number, app?: ElectronApplication): Promise<void> {
+  const notice = 'このアプリではSTLへの変換中に座標を32ビットで扱います。大きい座標では小さい寸法や位置が丸められます。偏差を小さくしても、この丸めは戻りません。絶対座標の精度を保つ必要がある場合はSTEPを選んでください。';
+  await openToolMenu(page, 'ファイルのほかの操作');
+  await toolMenuPanel(page, 'ファイルのほかの操作').getByRole('button', { name: '書き出す', exact: true }).click();
+  const panel = page.locator('.pcad-exchange');
+  await expect(panel.getByRole('radio', { name: 'STEP', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(panel.getByText(notice, { exact: true })).toHaveCount(0);
+  await panel.getByRole('radio', { name: 'STL', exact: true }).click();
+  const ascii = panel.getByRole('checkbox', { name: '文字で書く(ASCII)', exact: true });
+  for (const value of [false, true]) {
+    await ascii.setChecked(value);
+    await expect(panel.getByText(notice, { exact: true })).toBeVisible();
+    await expect(panel.getByText('STL には色が付きません。', { exact: true })).toBeVisible();
+    await info.attach(`pg5a-${offset}-stl-ascii-${value}-notice.png`, {
+      body: await panel.screenshot(), contentType: 'image/png' });
+  }
+  if (offset === 1e9) {
+    await ascii.uncheck();
+    const unexpectedPath = info.outputPath('pg5a-unexpected-empty.stl');
+    if (app !== undefined) await saveTarget(app, unexpectedPath);
+    const downloads: string[] = [];
+    const recordDownload = (download: Download): void => { downloads.push(download.suggestedFilename()); };
+    page.on('download', recordDownload);
+    try {
+      await panel.getByRole('button', { name: '書き出す', exact: true }).click();
+      await expect(statusBar(page)).toContainText('STL に書き出せる面がありません。原点に近い位置へ移動するか、STEP を使ってください。');
+      await expect(panel.getByRole('button', { name: '書き出す', exact: true })).toBeEnabled();
+      expect(downloads, 'A refused empty STL never becomes a browser download').toEqual([]);
+      await expect(readFile(unexpectedPath), 'A refused empty STL never becomes a native saved file').rejects.toMatchObject({ code: 'ENOENT' });
+      await info.attach('pg5a-stl-limit-refusal.png', { body: await page.screenshot(), contentType: 'image/png' });
+    } finally { page.off('download', recordDownload); }
+  }
+  await panel.getByRole('button', { name: 'やめる', exact: true }).click();
+  await expect(panel).toHaveCount(0);
+}
+
 export async function pg5aSolidPixels(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
   await waitForStartupHealth(page, info);
@@ -195,58 +235,85 @@ export async function pg5aSolidPixels(page: Page, info: TestInfo, app?: Electron
   await expect(grid).toHaveAttribute('aria-pressed', 'false');
   for (const offset of OFFSETS) {
     const input = fixture(offset), path = info.outputPath(`pg5a-${offset}.pcad`);
+    const savedPath = info.outputPath(`pg5a-${offset}-saved.pcad`);
+    const originalPixels = new Map<View, Pixels>();
     await writeFile(path, input.bytes);
-    await openSaveFlowFile(page, path, app); // Existing normal file open + real generation-bound recompute.
-    const recompute = await waitForSettledRecompute(page);
-    expect(recompute.lastOutcome).toBe('success');
-    await expect(page.locator('.pcad-panel--left').getByRole('button', { name: input.feature.name, exact: true })).toBeVisible();
-    for (const view of VIEWS) {
-      await restoreAndRemember(page, view);
-      const before = await publication(page, input.feature.id, recompute.completedGeneration);
-      const geometry = await canvas.evaluate(element => {
-        if (!(element instanceof HTMLCanvasElement)) throw new Error('Viewport canvas unavailable');
-        const bounds = element.getBoundingClientRect();
-        return { cssWidth: bounds.width, cssHeight: bounds.height,
-          bufferWidth: element.width, bufferHeight: element.height, dpr: devicePixelRatio };
+    for (const phase of ['opened', 'reopened'] as const) {
+      // The second pass opens the actual product-saved file and recomputes its native shape.
+      await openSaveFlowFile(page, phase === 'opened' ? path : savedPath, app);
+      const recompute = await waitForSettledRecompute(page);
+      expect(recompute.lastOutcome).toBe('success');
+      // The live session is distinct from the persisted model ID (documentIdentity.ts).
+      // Read current store identity independently of the mesh publication event.
+      const currentDocumentId = await page.evaluate(() => {
+        const read: unknown = Reflect.get(window, 'pcadViewportAssemblyOwner');
+        if (typeof read !== 'function') throw new Error('Current document observation unavailable');
+        const current: unknown = read();
+        if (current === null || typeof current !== 'object' || !('activeDocumentId' in current)
+          || typeof current.activeDocumentId !== 'string' || current.activeDocumentId.length === 0) {
+          throw new Error('Current document session unavailable');
+        }
+        return current.activeDocumentId;
       });
-      if (originalGeometry === undefined) originalGeometry = geometry;
-      expect(geometry, 'The same camera scale and drawing buffer across every offset/view').toEqual(originalGeometry);
-      const png = await canvas.screenshot({ scale: 'device' });
-      await info.attach(`pg5a-${offset}-${view}.png`, { body: png, contentType: 'image/png' });
-      const pixels = await decodePixels(page, png);
-      expect(Math.abs(pixels.width - geometry.cssWidth * geometry.dpr)).toBeLessThanOrEqual(1);
-      expect(Math.abs(pixels.height - geometry.cssHeight * geometry.dpr)).toBeLessThanOrEqual(1);
-      const expected = expectedRectangle(pixels, view), measurement = inspectSilhouette(pixels, expected);
-      const nearOrigin = baseline.get(view);
-      const differingPixels = nearOrigin === undefined ? 0 : mismatchesBeyondOnePixel(nearOrigin, pixels);
-      const after = await publication(page, input.feature.id, recompute.completedGeneration);
-      expect(after, 'Same current owner around the real screenshot').toEqual(before);
-      await info.attach(`pg5a-${offset}-${view}-measurement.json`, { body: JSON.stringify({ offset, view, geometry,
-        image: { width: pixels.width, height: pixels.height }, expected, measurement, differingPixels, before, after }),
-      contentType: 'application/json' });
-      expect(measurement.colored, 'Actual opaque solid pixels, not an empty screenshot').toBeGreaterThan(100);
-      expect(measurement.missingInterior, 'No missing native face inside the independent double rectangle').toBe(0);
-      expect(measurement.outsideError, 'Actual face pixels outside the independent boundary').toBeLessThanOrEqual(1);
-      expect(measurement.boundaryError, 'Every actual row/column silhouette vs independent double projection').toBeLessThanOrEqual(1);
-      expect(differingPixels, 'Whole actual origin/far masks agree within 1 physical pixel').toBe(0);
-      if (nearOrigin === undefined) baseline.set(view, pixels);
+      await expect(page.locator('.pcad-panel--left').getByRole('button', { name: input.feature.name, exact: true })).toBeVisible();
+      for (const view of VIEWS) {
+        await restoreAndRemember(page, view, `PG5a ${phase === 'opened' ? 'actual' : 'reopened'} ${view}`);
+        const before = await publication(page, input.feature.id, recompute.completedGeneration);
+        expect(before.documentId, 'The native publication belongs to the independently observed current session').toBe(currentDocumentId);
+        const geometry = await canvas.evaluate(element => {
+          if (!(element instanceof HTMLCanvasElement)) throw new Error('Viewport canvas unavailable');
+          const bounds = element.getBoundingClientRect();
+          return { cssWidth: bounds.width, cssHeight: bounds.height,
+            bufferWidth: element.width, bufferHeight: element.height, dpr: devicePixelRatio };
+        });
+        if (originalGeometry === undefined) originalGeometry = geometry;
+        expect(geometry, 'The same camera scale and drawing buffer across every offset/view').toEqual(originalGeometry);
+        const png = await canvas.screenshot({ scale: 'device' });
+        await info.attach(`pg5a-${offset}-${view}-${phase}.png`, { body: png, contentType: 'image/png' });
+        const pixels = await decodePixels(page, png);
+        expect(Math.abs(pixels.width - geometry.cssWidth * geometry.dpr)).toBeLessThanOrEqual(1);
+        expect(Math.abs(pixels.height - geometry.cssHeight * geometry.dpr)).toBeLessThanOrEqual(1);
+        const expected = expectedRectangle(pixels, view), measurement = inspectSilhouette(pixels, expected);
+        const nearOrigin = baseline.get(view);
+        const differingPixels = nearOrigin === undefined ? 0 : mismatchesBeyondOnePixel(nearOrigin, pixels);
+        const original = originalPixels.get(view);
+        const reopenedDifferingPixels = original === undefined ? 0 : mismatchesBeyondOnePixel(original, pixels);
+        if (phase === 'reopened') expect(original, 'An actual original screenshot exists for this offset/view').toBeDefined();
+        const after = await publication(page, input.feature.id, recompute.completedGeneration);
+        expect(after, 'Same current owner around the real screenshot').toEqual(before);
+        await info.attach(`pg5a-${offset}-${view}-${phase}-measurement.json`, { body: JSON.stringify({ offset, view, phase, geometry,
+          image: { width: pixels.width, height: pixels.height }, currentDocumentId, expected, measurement, differingPixels, reopenedDifferingPixels, before, after }),
+        contentType: 'application/json' });
+        expect(measurement.colored, 'Actual opaque solid pixels, not an empty screenshot').toBeGreaterThan(100);
+        expect(measurement.missingInterior, 'No missing native face inside the independent double rectangle').toBe(0);
+        expect(measurement.outsideError, 'Actual face pixels outside the independent boundary').toBeLessThanOrEqual(1);
+        expect(measurement.boundaryError, 'Every actual row/column silhouette vs independent double projection').toBeLessThanOrEqual(1);
+        expect(differingPixels, 'Whole actual origin/far masks agree within 1 physical pixel').toBe(0);
+        expect(reopenedDifferingPixels, 'The saved/reopened solid agrees with its original within 1 physical pixel').toBe(0);
+        if (phase === 'opened') originalPixels.set(view, pixels);
+        if (nearOrigin === undefined) baseline.set(view, pixels);
+      }
+      // Capture cameras via the product's normal save path and inspect the actual saved values.
+      const savePath = phase === 'opened' ? savedPath : info.outputPath(`pg5a-${offset}-reopened-saved.pcad`);
+      const saved = readPcadFile(new Uint8Array(await saveFlowFile(page, savePath, app)));
+      if (!saved.ok) throw new Error(saved.error.message);
+      expect(saved.document.id, 'Saving preserves the input model identity across live sessions').toBe(input.document.id);
+      expect(saved.document.solids).toEqual(input.document.solids);
+      expect(saved.document.appearance).toEqual(input.document.appearance);
+      for (const view of VIEWS) {
+        const actual = saved.document.namedViews.find(value => value.name === `PG5a ${phase === 'opened' ? 'actual' : 'reopened'} ${view}`);
+        const expected = input.cameras.find(value => value.id === `pg5a-${view}`);
+        if (actual === undefined || expected === undefined) throw new Error('Actual saved camera missing');
+        expect(actual.target).toEqual(expected.target); expect(actual.up).toEqual(expected.up);
+        expect(actual.projection).toBe('orthographic'); expect(actual.zoom).toBe(1);
+        for (let axis = 0; axis < 3; axis += 1) expect(Math.abs(actual.position[axis] - expected.position[axis])).toBeLessThanOrEqual(1e-7);
+      }
+      const final = await readRecomputeStats(page);
+      expect(final.completedGeneration).toBe(recompute.completedGeneration);
+      expect(final.lastOutcome).toBe('success');
+      expect(errors).toEqual([]);
     }
-    // Capture cameras via the product's normal save path and inspect the actual saved values.
-    const saved = readPcadFile(new Uint8Array(await saveFlowFile(page, info.outputPath(`pg5a-${offset}-saved.pcad`), app)));
-    if (!saved.ok) throw new Error(saved.error.message);
-    expect(saved.document.solids).toEqual(input.document.solids);
-    expect(saved.document.appearance).toEqual(input.document.appearance);
-    for (const view of VIEWS) {
-      const actual = saved.document.namedViews.find(value => value.name === `PG5a actual ${view}`);
-      const expected = input.cameras.find(value => value.id === `pg5a-${view}`);
-      if (actual === undefined || expected === undefined) throw new Error('Actual saved camera missing');
-      expect(actual.target).toEqual(expected.target); expect(actual.up).toEqual(expected.up);
-      expect(actual.projection).toBe('orthographic'); expect(actual.zoom).toBe(1);
-      for (let axis = 0; axis < 3; axis += 1) expect(Math.abs(actual.position[axis] - expected.position[axis])).toBeLessThanOrEqual(1e-7);
-    }
-    const final = await readRecomputeStats(page);
-    expect(final.completedGeneration).toBe(recompute.completedGeneration);
-    expect(final.lastOutcome).toBe('success');
-    expect(errors).toEqual([]);
+    if (offset === 1e6 || offset === 1e9) await inspectStlLimit(page, info, offset, app);
   }
+  expect(errors).toEqual([]);
 }

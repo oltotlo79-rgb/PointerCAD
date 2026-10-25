@@ -1,5 +1,5 @@
 {
-  "actualTime": "2026-10-25T07:11:36.887494+09:00",
+  "actualTime": "2026-10-25T18:11:23.891659+09:00",
   "format": "pointercad-fem-application-source/1",
   "files": {
     "LICENSE": {
@@ -158,8 +158,8 @@
       "source": "apps/desktop/src/main/mainSecurity.test.ts"
     },
     "apps/desktop/src/main/mathNoticeCheckout.test.ts": {
-      "sha256": "7e42db4087c0af528707796bc87336fddaefbce36ab1d5db86bc2e0c3ffb31fe",
-      "bytes": 3535,
+      "sha256": "f67dda2418d8165a734ce2d00aa77f5bb87171223f4cdb80194fd30b894d8a90",
+      "bytes": 4946,
       "source": "apps/desktop/src/main/mathNoticeCheckout.test.ts"
     },
     "apps/desktop/src/main/mathNotices.test.ts": {
@@ -178,8 +178,8 @@
       "source": "apps/desktop/src/main/noEncodedPowerShell.test.ts"
     },
     "apps/desktop/src/main/occtHttpTransport.test.ts": {
-      "sha256": "b5f94c1f7365562ad78d7dffe78d6bc997cf4a59c15775419883da527283aa0c",
-      "bytes": 10322,
+      "sha256": "16c3631807e090ea16caecce5b76ac0911ed00a6f6219331e3dd7b395d9396eb",
+      "bytes": 16444,
       "source": "apps/desktop/src/main/occtHttpTransport.test.ts"
     },
     "apps/desktop/src/main/occtHttpTransport.ts": {
@@ -4763,8 +4763,8 @@
       "source": "packages/fem/src/beamWeldMultiPatch.test.py"
     },
     "packages/fem/src/buckling.package.test.ts": {
-      "sha256": "b00b6d1f83fcd25282d96b756fb58c00a28beccb17cc7eea07c67fd6d4d7f3f0",
-      "bytes": 5829,
+      "sha256": "e674fb00278286cde587e8eadc7a12efadf1d7edd8258c8c248771230334c8c5",
+      "bytes": 14532,
       "source": "packages/fem/src/buckling.package.test.ts"
     },
     "packages/fem/src/buckling.test.ts": {
@@ -5078,8 +5078,8 @@
       "source": "packages/fem/src/fixtures/beamImpactNativeFixture.json"
     },
     "packages/fem/src/index.ts": {
-      "sha256": "6615de0c0b087b9c08a962586714ff07f145a3b88929262ba9d4ccafb2b317ec",
-      "bytes": 13938,
+      "sha256": "2c86997323dbfb92fab4fb1ec11e1819b963903fb1f3548245938cfebad307eb",
+      "bytes": 13934,
       "source": "packages/fem/src/index.ts"
     },
     "packages/fem/src/modal.test.ts": {
@@ -5172,6 +5172,11 @@
       "bytes": 18428,
       "source": "packages/fem/src/runtime.ts"
     },
+    "packages/fem/src/shellAnalysis.py": {
+      "sha256": "4319a6b5943d1144637329f9911b15e3074d190e9beb86976654c9b4717018cf",
+      "bytes": 20375,
+      "source": "packages/fem/src/shellAnalysis.py"
+    },
     "packages/fem/src/shellAnalysisModel.ts": {
       "sha256": "3d985164364baaa71a9f7470f3eb9b158b5307b3438258ac4718712b9520ace2",
       "bytes": 7382,
@@ -5186,6 +5191,16 @@
       "sha256": "76e6d34d7da4202e24c758067db4a0ad2274e240d56bf56cfc55d5e2df325c9c",
       "bytes": 15194,
       "source": "packages/fem/src/shellCapability.test.ts"
+    },
+    "packages/fem/src/shellPatch.test.ts": {
+      "sha256": "c97faa0daec9bf40a8643459aca233af075117d2166b3b0c6270ae9d11d9daa3",
+      "bytes": 43478,
+      "source": "packages/fem/src/shellPatch.test.ts"
+    },
+    "packages/fem/src/shellTranslation.ts": {
+      "sha256": "80a9d72e1f8d39ad30f592905d3d12764ce36aab42bb722c25a542feb6b19bc8",
+      "bytes": 30456,
+      "source": "packages/fem/src/shellTranslation.ts"
     },
     "packages/fem/src/solidAnalysis.py": {
       "sha256": "7400849514b0dbf35b16bd124339fd400facf08f214a1f6946007c0219f91e69",
@@ -5473,8 +5488,8 @@
       "source": "packages/fem/tsconfig.json"
     },
     "packages/fem/vitest.config.ts": {
-      "sha256": "32f5e2f9030af567678e2dbc971f562684f1c38f357fcaae666f2c5933a4ae01",
-      "bytes": 3028,
+      "sha256": "4efa6e53685b57215c60b10ad202670813b9f89c15c031a2bf47fa71569e005e",
+      "bytes": 3060,
       "source": "packages/fem/vitest.config.ts"
     },
     "packages/help-content/docs/ja/images/capture-manifest.json": {
@@ -6773,8 +6788,8 @@
       "source": "packages/kernel/src/occt/cylindricalFaceSpan.ts"
     },
     "packages/kernel/src/occt/desktopOcctTransportContract.test.ts": {
-      "sha256": "e4acdb732c6f0252b1bf645ea7d2c11f202d22be7ca402b6c501f16d963691d2",
-      "bytes": 2267,
+      "sha256": "325589c1a3749d4f82b37f82850023456a9a2eb1a1575ca15f7b34689a66581c",
+      "bytes": 2431,
       "source": "packages/kernel/src/occt/desktopOcctTransportContract.test.ts"
     },
     "packages/kernel/src/occt/desktopOcctTransportContract.ts": {
@@ -19008,7 +19023,7 @@
       "source": "tsconfig.tools.json"
     }
   },
-  "archiveSha256": "bfde6f58c2d0e351bc2563df67e1dc413f64e2aaec5698f50063815435fd06b5",
+  "archiveSha256": "9b8aca8d5e7f3c70aadbb5d215368b98c0be763abaa18dac519eed3286436409",
   "scope": "Exact integrated application/bridge/tests/build source; native rebuild and legal clearance remain incomplete",
   "excluded": [
     "fixed upstream runtime closure",
@@ -19018,7 +19033,7 @@
   ],
   "correspondingSourceComplete": false,
   "nativeRebuildExecuted": false,
-  "derivedFrom": "decde094fdf1f074cb19783588db997a93b5e4675606da1969f6c873ad18efc1",
+  "derivedFrom": "5c478b08345cadbec0acf777a8ad796ee03cf300f973dfc09d192a3f3586fa58",
   "timestampMeaning": "Actual private source archive regeneration from the current working tree (every selected tracked or untracked-not-ignored file) by the r5 successor; native/legal/release acceptance remain separate",
   "proposedUnion": {
     "materializer": {
@@ -19034,12 +19049,12 @@
       "sha256": "09739bab7fc7a94f6a671022dab4e9a918861cd2474a8a87410b10255a82c66d"
     },
     "previousIndex": {
-      "sha256": "c7af75f7d063707eaee5243cb744633bf762521ded58e865be1a0b3af1310dca",
+      "sha256": "702f491ceac7bad25db7b7f13d3914d3df5b17ef62f38ee04996d0da1c45da19",
       "bytes": 904822
     },
     "previousArchive": {
-      "sha256": "05e5252e2981cdc05d6b440f4ee5d3f2fdc1a5302b190ed19220ccb2c638ef0d",
-      "bytes": 12614194
+      "sha256": "bfde6f58c2d0e351bc2563df67e1dc413f64e2aaec5698f50063815435fd06b5",
+      "bytes": 12614210
     },
     "r5ProposedUnion": {
       "source": {
@@ -19097,11 +19112,11 @@
         "path": "scratchpad/claude/agents/cl-v103-fem-evidence-refresh/regen_index.py",
         "sha256": "64f634b736f7f769e513f6bce75d913e40ce43a5f1c133addde4d637e4fec7b0"
       },
-      "actualTime": "2026-10-25T06:49:18.188568+09:00",
-      "derivedFrom": "bc9d8359a1f59600d0cfcd75f155f54ba35a1990038a44f519d750ab05ba0391",
+      "actualTime": "2026-10-25T07:11:36.887494+09:00",
+      "derivedFrom": "decde094fdf1f074cb19783588db997a93b5e4675606da1969f6c873ad18efc1",
       "delta": {
-        "updated": 2,
-        "new": 2,
+        "updated": 1,
+        "new": 0,
         "removed": 0,
         "sourceFieldChanged": 0
       }
@@ -19109,15 +19124,15 @@
     "domain": {
       "rule": "git ls-files -co --exclude-standard; existing regular files; archivePattern selected()",
       "gitHead": "a9eb87d7d17559aa4497b0ed16182b3072d8c762",
-      "members": 3801,
-      "membersSha256": "5613816d856046b38f6fc3363be823447fc05d8cfc625f9cb11360c003e5a1b2"
+      "members": 3804,
+      "membersSha256": "97ce41ff388a7ddae98343e18890774f3e8f7957da0f70287a3230030d3f736e"
     },
     "delta": {
-      "updated": 1,
-      "new": 0,
+      "updated": 6,
+      "new": 3,
       "removed": 0,
       "sourceFieldChanged": 0
     },
-    "deltaSha256": "2a668dfed9dad56a9066813edde3023802402e850d0c8b46dbede2d49d38c813"
+    "deltaSha256": "db645834f7e29c3ab8b907ccfe9fa41b3d798dbf18b7986894ac971a0976ced1"
   }
 }

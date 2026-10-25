@@ -22,6 +22,7 @@ import {
   hasFileSystemAccess,
   openFileInBrowser,
   openFileThrough,
+  openParameterCsvThrough,
   PCAD_EXTENSION,
   saveFileAsInBrowser,
   saveFileAsThrough,
@@ -30,6 +31,71 @@ import {
   type FileGateway,
   type PickedFile,
 } from './fileGateway.js';
+import { saveExportFile } from './saveExportFile.js';
+
+describe('export試行のcontrolを保存口まで渡す', () => {
+  it('CAM保存中の取消後は同じcontrolを受けた旧tokenを返さない', async () => {
+    const controller = new AbortController();
+    const control = { signal: controller.signal, isCurrent: () => !controller.signal.aborted };
+    let forwarded: unknown;
+    let finish: (value: { token: string } | null) => void = () => { throw new Error('未初期化'); };
+    const pending = new Promise<{ token: string } | null>((resolve) => { finish = resolve; });
+    const saveExport: NonNullable<FileGateway['saveExport']> = (_name, _kind, _bytes, received) => {
+      forwarded = received;
+      return pending;
+    };
+    const gateway: FileGateway = { openPcad: () => Promise.resolve(null),
+      savePcad: () => Promise.resolve(null), hasSaveTarget: () => false, saveExport };
+    const saving = saveExportFile(gateway, 'part.stl', 'stl', Uint8Array.of(1), control);
+    expect(forwarded).toBe(control);
+    controller.abort();
+    finish({ token: 'old' });
+    expect(await saving).toEqual({ saved: false });
+  });
+});
+
+describe('保存ストリームの後始末', () => {
+  for (const entrance of ['document', 'export'] as const) {
+    for (const failure of ['write', 'close'] as const) {
+      for (const abortFails of [false, true]) {
+        it(`${entrance}: ${failure}失敗後はabortを1回試し元の例外を保つ (abort失敗=${String(abortFails)})`, async () => {
+          const original = new Error(failure);
+          const calls: string[] = [];
+          let fail = true;
+          const scope = { showSaveFilePicker: () => Promise.resolve({
+            name: 'retry.pcad',
+            createWritable: () => Promise.resolve({
+              write: () => {
+                calls.push('write');
+                return fail && failure === 'write' ? Promise.reject(original) : Promise.resolve();
+              },
+              close: () => {
+                calls.push('close');
+                return fail && failure === 'close' ? Promise.reject(original) : Promise.resolve();
+              },
+              abort: () => {
+                calls.push('abort');
+                return abortFails ? Promise.reject(new Error('abort')) : Promise.resolve();
+              },
+            }),
+          }) };
+          const gateway = createBrowserFileGateway(scope);
+          const save = () => entrance === 'document'
+            ? gateway.savePcad('retry.pcad', Uint8Array.of(1, 2), false)
+            : saveFileAsInBrowser('retry.pcad', 'pcad', Uint8Array.of(1, 2), scope);
+          await expect(save()).rejects.toBe(original);
+          expect(calls).toEqual(failure === 'write' ? ['write', 'abort'] : ['write', 'close', 'abort']);
+          expect(gateway.hasSaveTarget()).toBe(false);
+          fail = false;
+          calls.length = 0;
+          await expect(save()).resolves.toBe(entrance === 'document' ? 'retry.pcad' : true);
+          expect(calls).toEqual(['write', 'close']);
+          expect(gateway.hasSaveTarget()).toBe(entrance === 'document');
+        });
+      }
+    }
+  }
+});
 
 describe('保存の候補名(.pcad の補完)', () => {
   it('拡張子が無ければ .pcad を足す', () => {
@@ -415,6 +481,73 @@ describe('種類を選んで開く(openFile)', () => {
 });
 
 describe('名前を訊いて書き出す(saveFileAs)', () => {
+  it('picker待ち中の失効は書込み先を作らない', async () => {
+    let choose: (value: unknown) => void = () => { throw new Error('picker未設定'); };
+    const picker = new Promise<unknown>((resolve) => { choose = resolve; });
+    const calls: string[] = [];
+    const controller = new AbortController();
+    const scope = { showSaveFilePicker: () => picker };
+    const saving = saveFileAsInBrowser('part.stl', 'stl', Uint8Array.of(1), scope,
+      { signal: controller.signal, isCurrent: () => !controller.signal.aborted });
+    controller.abort();
+    choose({ name: 'part.stl', createWritable: () => { calls.push('create'); return Promise.resolve({}); } });
+    expect(await saving).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('createWritable待ち中の失効はwritableをabortしwriteしない', async () => {
+    let ready: (value: unknown) => void = () => { throw new Error('writable未設定'); };
+    const writable = new Promise<unknown>((resolve) => { ready = resolve; });
+    let beganCreate: () => void = () => { throw new Error('create未設定'); };
+    const creating = new Promise<void>((resolve) => { beganCreate = resolve; });
+    const calls: string[] = [];
+    const controller = new AbortController();
+    const scope = { showSaveFilePicker: () => Promise.resolve({ name: 'part.stl', createWritable: () => {
+      beganCreate();
+      return writable;
+    } }) };
+    const saving = saveFileAsInBrowser('part.stl', 'stl', Uint8Array.of(1), scope,
+      { signal: controller.signal, isCurrent: () => !controller.signal.aborted });
+    await creating;
+    controller.abort();
+    ready({ write: () => { calls.push('write'); return Promise.resolve(); },
+      close: () => { calls.push('close'); return Promise.resolve(); },
+      abort: () => { calls.push('abort'); return Promise.resolve(); } });
+    expect(await saving).toBe(false);
+    expect(calls).toEqual(['abort']);
+  });
+
+  it('write待ち中の失効はcloseせずabortし、正常な別試行はcloseする', async () => {
+    let finishWrite: () => void = () => { throw new Error('write未設定'); };
+    const written = new Promise<void>((resolve) => { finishWrite = resolve; });
+    let beganWrite: () => void = () => { throw new Error('write開始未設定'); };
+    const writing = new Promise<void>((resolve) => { beganWrite = resolve; });
+    const calls: string[] = [];
+    const controller = new AbortController();
+    const scope = { showSaveFilePicker: () => Promise.resolve({ name: 'part.stl', createWritable: () => Promise.resolve({
+      write: () => { calls.push('write'); beganWrite(); return written; },
+      close: () => { calls.push('close'); return Promise.resolve(); },
+      abort: () => { calls.push('abort'); return Promise.resolve(); },
+    }) }) };
+    const saving = saveFileAsInBrowser('part.stl', 'stl', Uint8Array.of(1), scope,
+      { signal: controller.signal, isCurrent: () => !controller.signal.aborted });
+    await writing;
+    controller.abort(); finishWrite();
+    expect(await saving).toBe(false);
+    expect(calls).toEqual(['write', 'abort']);
+    const current = new AbortController();
+    expect(await saveFileAsInBrowser('part.stl', 'stl', Uint8Array.of(1), scope,
+      { signal: current.signal, isCurrent: () => true })).toBe(true);
+    expect(calls).toEqual(['write', 'abort', 'write', 'close']);
+  });
+
+  it('CSV保存は専用フィルタを使い、部品の保存先を変更しない', async () => {
+    const fake = createFakeSaveScope();
+    const gateway = createBrowserFileGateway(fake.scope);
+    expect(await saveFileAsThrough(gateway, '係数.csv', 'csv', Uint8Array.of(1, 2))).toBe(true);
+    expect(fake.options[0]?.types?.flatMap(type => Object.values(type.accept).flat())).toEqual(['.csv']);
+    expect(gateway.hasSaveTarget()).toBe(false);
+  });
   it('保存の窓が呼ばれ、名前と種類の拡張子が渡り、バイト列が書かれる', async () => {
     const fake = createFakeSaveScope();
     const bytes = new Uint8Array([7, 8, 9]);
@@ -476,6 +609,14 @@ describe('差し込まれた口を通す(openFileThrough / saveFileAsThrough)', 
     savePcad: (): Promise<string | null> => Promise.resolve(null),
     hasSaveTarget: (): boolean => false,
   };
+
+  it('CSV専用の読込口があればCAD形式の読込口を呼ばない', async () => {
+    const gateway: FileGateway = { ...oldGateway,
+      openFile: () => { throw new Error('CAD形式の入口へ漏れた'); },
+      openParameterCsv: () => Promise.resolve({ fileName: '係数.csv', bytes: Uint8Array.of(1) }),
+    };
+    expect(await openParameterCsvThrough(gateway)).toEqual({ fileName: '係数.csv', bytes: Uint8Array.of(1) });
+  });
 
   it('口が種類つきの書き出しを持っていればそれを呼ぶ', async () => {
     const calls: { fileName: string; kind: string }[] = [];

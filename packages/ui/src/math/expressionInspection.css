@@ -1,0 +1,15 @@
+.pcad-expression-inspection {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--pcad-text-muted);
+  font-size: var(--pcad-font-size-small);
+  border-inline-start: 2px solid var(--pcad-border-strong);
+  padding-inline-start: var(--pcad-space-1);
+}
+.pcad-field > .pcad-expression-inspection { grid-column: 2 / 4; }
+.pcad-expression-inspection p { margin: 2px 0; }
+.pcad-expression-inspection ul { margin: 2px 0; padding-inline-start: 1.4em; }
+.pcad-expression-inspection code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.pcad-expression-inspection mark { color: var(--pcad-danger-text); background: var(--pcad-accent-soft); text-decoration: underline; }
+.pcad-expression-inspection__error { color: var(--pcad-danger-text); }
+.pcad-expression-inspection__end { display: inline-block; min-width: .4em; }

@@ -11,6 +11,7 @@
  * (`buildBoxProjectedUv`、FR-1108)と面のまとまり(FR-1106)の検査を足した。
  */
 
+import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   appearanceFromPreset,
   DEFAULT_APPEARANCE,
@@ -18,14 +19,17 @@ import {
   type SolidBody,
 } from '@pointercad/model';
 import { expectWithinBudget } from '@pointercad/test-utils';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { dataUrlToBytes, THUMBNAIL_SIZE, thumbnailFitRect } from '../file/thumbnail.js';
 import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
 
 import {
   buildBoxProjectedUv,
+  AllocatedBackingRegistrationError,
   buildSolidGeometry,
+  DisplayCopyCache,
+  distinctBackingBytes,
   EMPTY_SOLID_GEOMETRY,
   solidEmphasisOf,
   type AppearanceInput,
@@ -33,6 +37,7 @@ import {
   type SolidBodyWithSubShapes,
   type SolidGeometryBundle,
 } from './buildSolidGeometry.js';
+import { AssemblyUiBackingLedger } from './assemblyMeshAdmission.js';
 
 /**
  * 検査用のボディ。三角形の数と稜線の本数だけを指定し、中身は 0 のままにする
@@ -85,6 +90,311 @@ function shapeOf(bundle: SolidGeometryBundle): unknown {
 }
 
 describe('buildSolidGeometry(FR-105、FR-106)', () => {
+  it.each([0, 1e6, -1e6, 1e9, -1e9])(
+    'local patterned triangle keeps a continuous 20 mm phase across a tile boundary at origin %s',
+    (originX) => {
+      const source = makeBody('phase', 2, 0);
+      const positions = Float32Array.from([
+        19.99, 0, 0, 20.01, 0, 0, 19.99, 1, 0, 20.01, 1, 0,
+      ]);
+      const normals = Float32Array.from([
+        0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+      ]);
+      const indices = Uint32Array.from([0, 1, 2, 1, 3, 2]);
+      const body: SolidBody = { ...source, mesh: { ...source.mesh, positions, normals, indices },
+        coordinateFrame: { space: 'local', origin: [originX, 0, 0], maximumFloat32ErrorMm: 0.01 } };
+      const preset = appearanceFromPreset('checkerPlate');
+      const patterned: AppearanceSpec = preset.pattern.kind === 'none' ? preset : {
+        ...preset, pattern: { ...preset.pattern, spacing: expressionValueFromNumber(20) },
+      };
+      const appearance: AppearanceInput = {
+        defaultAppearance: DEFAULT_APPEARANCE,
+        byBody: new Map([['phase', { bodyAppearance: patterned, faceAppearances: new Map() }]]),
+      };
+      const first = buildSolidGeometry([body], null, [], appearance).entries[0];
+      const repeat = buildSolidGeometry([body], 'phase', [], appearance).entries[0];
+      expect(repeat.positions).toBe(first.positions);
+      expect(repeat.uv).toBe(first.uv);
+      expect(first.positions).not.toBe(positions);
+      expect(Array.from(first.indices)).toEqual([0, 1, 2, 3, 4, 5]);
+      expect(Array.from(indices)).toEqual([0, 1, 2, 1, 3, 2]);
+      expect(Array.from(positions)).toEqual([
+        19.989999771118164, 0, 0, 20.010000228881836, 0, 0,
+        19.989999771118164, 1, 0, 20.010000228881836, 1, 0,
+      ]);
+      expect(Math.abs((first.uv[0] + first.uv[2]) / 2 - 20)).toBeLessThan(2e-5);
+      expect(Math.abs((first.uv[6] + first.uv[10]) / 2)).toBeLessThan(2e-5);
+      expect(first.groups).toEqual([{ start: 0, count: 6, materialIndex: 0 }]);
+      expect(first.triangleCount).toBe(2);
+    },
+  );
+
+  it('reserves source and drawing copies before constructing patterned local buffers', () => {
+    const source = makeBody('budget', 1, 0);
+    const body: SolidBody = { ...source, coordinateFrame: {
+      space: 'local', origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01,
+    } };
+    const patterned = appearanceFromPreset('expandedMetal');
+    const appearance: AppearanceInput = {
+      defaultAppearance: DEFAULT_APPEARANCE,
+      byBody: new Map([['budget', { bodyAppearance: patterned, faceAppearances: new Map() }]]),
+    };
+    const sourceBytes = source.mesh.positions.byteLength + source.mesh.normals.byteLength
+      + source.mesh.indices.byteLength + source.mesh.edgePositions.byteLength;
+    const drawBytes = source.mesh.indices.length * 36;
+    expect(() => buildSolidGeometry([body], null, [], appearance, sourceBytes + drawBytes - 1))
+      .toThrow(/live-byte budget/);
+    const entry = buildSolidGeometry([body], null, [], appearance, sourceBytes + drawBytes).entries[0];
+    expect(entry.uv.length).toBe(source.mesh.indices.length * 2);
+    expect(() => buildSolidGeometry([body], null, [], appearance, Number.POSITIVE_INFINITY))
+      .toThrow(/positive safe integer/);
+  });
+
+  it('uses the stricter caller or local-result budget before patterned drawing allocation', () => {
+    const source = makeBody('budget-result', 1, 0);
+    const required = source.mesh.positions.byteLength + source.mesh.normals.byteLength
+      + source.mesh.indices.byteLength + source.mesh.edgePositions.byteLength
+      + source.mesh.indices.length * 36;
+    const patterned = appearanceFromPreset('expandedMetal');
+    const appearance: AppearanceInput = {
+      defaultAppearance: DEFAULT_APPEARANCE,
+      byBody: new Map([['budget-result', { bodyAppearance: patterned, faceAppearances: new Map() }]]),
+    };
+    const framed = (limit: number): SolidBody => ({ ...source, coordinateFrame: {
+      space: 'local', origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01,
+      maximumLiveMeshBytes: limit,
+    } });
+    expect(() => buildSolidGeometry([framed(required - 1)], null, [], appearance))
+      .toThrow(/live-byte budget/);
+    expect(buildSolidGeometry([framed(required)], null, [], appearance).entries).toHaveLength(1);
+    expect(() => buildSolidGeometry([framed(required + 1)], null, [], appearance, required - 1))
+      .toThrow(/live-byte budget/);
+    expect(buildSolidGeometry([framed(required + 1)], null, [], appearance, required).entries).toHaveLength(1);
+    for (const limit of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5, 512 * 1024 * 1024 + 1]) {
+      expect(() => buildSolidGeometry([framed(limit)], null, [], appearance))
+        .toThrow(/positive safe integer/);
+    }
+  });
+
+  it('does not reuse a larger local-result budget for a second body in the same bundle', () => {
+    const first = makeBody('first-budget', 1, 0);
+    const second = makeBody('second-budget', 1, 0);
+    const required = first.mesh.positions.byteLength + first.mesh.normals.byteLength
+      + first.mesh.indices.byteLength + first.mesh.edgePositions.byteLength
+      + first.mesh.indices.length * 36;
+    const patterned = appearanceFromPreset('expandedMetal');
+    const appearance: AppearanceInput = {
+      defaultAppearance: DEFAULT_APPEARANCE,
+      byBody: new Map<string, BodyAppearanceInput>(['first-budget', 'second-budget'].map((id) => [id, {
+        bodyAppearance: patterned, faceAppearances: new Map(),
+      }])),
+    };
+    const framed = (body: SolidBody, limit: number): SolidBody => ({ ...body, coordinateFrame: {
+      space: 'local', origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01,
+      maximumLiveMeshBytes: limit,
+    } });
+    const large = framed(first, 2 * required + 1);
+    expect(() => buildSolidGeometry([large, framed(second, 2 * required - 1)], null, [], appearance))
+      .toThrow(/live-byte budget/);
+    expect(buildSolidGeometry([large, framed(second, 2 * required)], null, [], appearance)
+      .entries.map((entry) => entry.featureId)).toEqual(['first-budget', 'second-budget']);
+  });
+
+  it('uses the double origin remainder before interpolation for non-aligned positive and negative origins', () => {
+    const source = makeBody('remainder', 1, 0);
+    source.mesh.positions.set([19.99, 0, 0, 20.01, 0, 0, 19.99, 1, 0]);
+    source.mesh.normals.set([0, 0, 1, 0, 0, 1, 0, 0, 1]);
+    const preset = appearanceFromPreset('checkerPlate');
+    if (preset.pattern.kind === 'none') throw new Error('expected patterned preset');
+    const patterned: AppearanceSpec = { ...preset, pattern: {
+      ...preset.pattern, spacing: expressionValueFromNumber(20),
+    } };
+    const appearance: AppearanceInput = { defaultAppearance: DEFAULT_APPEARANCE,
+      byBody: new Map([['remainder', { bodyAppearance: patterned, faceAppearances: new Map() }]]),
+    };
+    for (const [originX, expectedMidpoint] of [[1e9 + 7, 7], [-1e9 - 7, 13]] as const) {
+      const body: SolidBody = { ...source, coordinateFrame: {
+        space: 'local', origin: [originX, 0, 0], maximumFloat32ErrorMm: 0.01,
+      } };
+      const uv = buildSolidGeometry([body], null, [], appearance).entries[0].uv;
+      expect(Math.abs((uv[0] + uv[2]) / 2 - expectedMidpoint)).toBeLessThan(2e-5);
+    }
+  });
+
+  it('projects a normal-X patterned face to the YZ axes at a double origin', () => {
+    const source = makeBody('yz', 1, 0);
+    source.mesh.positions.set([0, 19.99, 3, 0, 20.01, 3, 0, 19.99, 4]);
+    source.mesh.normals.set([1, 0, 0, 1, 0, 0, 1, 0, 0]);
+    const preset = appearanceFromPreset('checkerPlate');
+    if (preset.pattern.kind === 'none') throw new Error('expected patterned preset');
+    const patterned: AppearanceSpec = { ...preset, pattern: {
+      ...preset.pattern, spacing: expressionValueFromNumber(20),
+    } };
+    const appearance: AppearanceInput = { defaultAppearance: DEFAULT_APPEARANCE,
+      byBody: new Map([['yz', { bodyAppearance: patterned, faceAppearances: new Map() }]]),
+    };
+    const body: SolidBody = { ...source, coordinateFrame: {
+      space: 'local', origin: [0, 1e9, -1e9], maximumFloat32ErrorMm: 0.01,
+    } };
+    const uv = buildSolidGeometry([body], null, [], appearance).entries[0].uv;
+    expect(Math.abs((uv[0] + uv[2]) / 2 - 20)).toBeLessThan(2e-5);
+    expect(uv[1]).toBe(3);
+    expect(uv[5]).toBe(4);
+  });
+
+  it('keeps face groups and indices while shared source vertices take per-face spacing and projection', () => {
+    const source = makeBody('shared', 2, 0);
+    const positions = Float32Array.from([
+      19.99, 2, 3, 20.01, 2, 3, 19.99, 4, 3, 20.01, 4, 5,
+    ]);
+    const normals = Float32Array.from([
+      0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0,
+    ]);
+    const indices = Uint32Array.from([0, 1, 2, 1, 3, 2]);
+    const template = makeBoxBody('template', 1, 1, 1);
+    const faces: SolidFaceEntry[] = [
+      { ...template.faces[0], index: 0, triangleOffset: 0, triangleCount: 1 },
+      { ...template.faces[1], index: 1, triangleOffset: 1, triangleCount: 1 },
+    ];
+    const body: SolidBodyWithSubShapes = { ...source, faces,
+      mesh: { ...source.mesh, positions, normals, indices },
+      coordinateFrame: { space: 'local', origin: [1e9, -1e9, 1e6], maximumFloat32ErrorMm: 0.01 },
+    };
+    const checker = appearanceFromPreset('checkerPlate');
+    const metal = appearanceFromPreset('expandedMetal');
+    const withSpacing = (spec: AppearanceSpec, value: number): AppearanceSpec =>
+      spec.pattern.kind === 'none' ? spec : {
+        ...spec, pattern: { ...spec.pattern, spacing: expressionValueFromNumber(value) },
+      };
+    const appearance = appearanceInputFor('shared', new Map([
+      [0, withSpacing(checker, 20)], [1, withSpacing(metal, 30)],
+    ]));
+    const entry = buildSolidGeometry([body], null, [], appearance).entries[0];
+    expect(entry.groups).toEqual([
+      { start: 0, count: 3, materialIndex: 1 },
+      { start: 3, count: 3, materialIndex: 2 },
+    ]);
+    expect(Array.from(entry.indices)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(Array.from(indices)).toEqual([0, 1, 2, 1, 3, 2]);
+    expect(entry.positions.slice(3, 6)).toEqual(entry.positions.slice(9, 12));
+    // Face 0 projects XY; face 1 projects XZ and uses a different 30 mm repeat.
+    expect(Math.abs(entry.uv[3] - 2)).toBeLessThan(2e-5);
+    expect(Math.abs(entry.uv[7] - 13)).toBeLessThan(2e-5);
+    expect(Math.abs(entry.uv[6] - entry.uv[2])).toBeGreaterThan(1);
+    expect(entry.faces).toBe(faces);
+  });
+
+  it('replaces one cached phase across 100 origins and rejects malformed patterned input before a copy', () => {
+    const source = makeBody('phase-cache', 1, 0);
+    source.mesh.normals.set([0, 0, 1, 0, 0, 1, 0, 0, 1]);
+    const patterned = appearanceFromPreset('wood');
+    const appearance: AppearanceInput = { defaultAppearance: DEFAULT_APPEARANCE,
+      byBody: new Map([['phase-cache', {
+        bodyAppearance: patterned, faceAppearances: new Map(),
+      }]]),
+    };
+    const framed = (x: number): SolidBody => ({ ...source,
+      coordinateFrame: { space: 'local', origin: [x, 0, 0], maximumFloat32ErrorMm: 0.01 },
+    });
+    const initial = buildSolidGeometry([framed(0)], null, [], appearance).entries[0];
+    for (let x = 1; x <= 100; x += 1) {
+      const entry = buildSolidGeometry([framed(x)], null, [], appearance).entries[0];
+      expect(entry.uv).not.toBe(initial.uv);
+      expect(buildSolidGeometry([framed(x)], 'phase-cache', [], appearance).entries[0].uv).toBe(entry.uv);
+    }
+    expect(buildSolidGeometry([framed(0)], null, [], appearance).entries[0].uv).not.toBe(initial.uv);
+    const badIndex = { ...source, mesh: { ...source.mesh, indices: Uint32Array.from([0, 1, 99]) },
+      coordinateFrame: framed(0).coordinateFrame };
+    expect(() => buildSolidGeometry([badIndex], null, [], appearance)).toThrow(/index is invalid/);
+    const badPositions = Float32Array.from(source.mesh.positions);
+    badPositions[0] = Number.NaN;
+    expect(() => buildSolidGeometry([{ ...source,
+      mesh: { ...source.mesh, positions: badPositions },
+      coordinateFrame: framed(0).coordinateFrame,
+    }], null, [], appearance)).toThrow(/coordinate is invalid/);
+    if (patterned.pattern.kind === 'none') throw new Error('expected patterned preset');
+    const invalidPattern: AppearanceSpec = { ...patterned, pattern: {
+      ...patterned.pattern, spacing: { ...patterned.pattern.spacing, value: Number.POSITIVE_INFINITY },
+    } };
+    const invalidAppearance: AppearanceInput = { ...appearance, byBody: new Map([[
+      'phase-cache', { bodyAppearance: invalidPattern, faceAppearances: new Map() },
+    ]]) };
+    expect(() => buildSolidGeometry([framed(0)], null, [], invalidAppearance)).toThrow(/spacing is invalid/);
+  });
+
+  it('local frameを保持し、面と稜線の配列を写さず、UVだけworld基準にする', () => {
+    for (const origin of [[0, 0, 0], [1e6, -1e6, 0], [-1e9, 1e9, 1e9]] as const) {
+      const body = makeBody('local', 1, 1);
+      body.mesh.positions.set([2, 3, 4, 3, 3, 4, 2, 4, 4]);
+      body.mesh.normals.set([0, 0, 1, 0, 0, 1, 0, 0, 1]);
+      const framed: SolidBody = {
+        ...body,
+        coordinateFrame: { space: 'local', origin, maximumFloat32ErrorMm: 0.01 },
+      };
+      const entry = buildSolidGeometry([framed], null, []).entries[0];
+      expect(entry.coordinateFrame).toBe(framed.coordinateFrame);
+      expect(entry.positions).toBe(body.mesh.positions);
+      expect(entry.edgePositions).toBe(body.mesh.edgePositions);
+      expect(Array.from(entry.uv.slice(0, 2))).toEqual([
+        Math.fround(origin[0] + 2), Math.fround(origin[1] + 3),
+      ]);
+      expect(Array.from(entry.positions.slice(0, 3))).toEqual([2, 3, 4]);
+    }
+  });
+
+  it('同じmeshのUVは直近の法線とoriginだけ再利用し、古いframeを保持しない', () => {
+    const body = makeBody('uv-cache', 1, 1);
+    body.mesh.positions.set([2, 3, 4, 3, 3, 4, 2, 4, 4]);
+    body.mesh.normals.set([0, 0, 1, 0, 0, 1, 0, 0, 1]);
+    const withOrigin = (x: number, normals = body.mesh.normals): SolidBody => ({
+      ...body,
+      mesh: { ...body.mesh, normals },
+      coordinateFrame: { space: 'local', origin: [x, 0, 0], maximumFloat32ErrorMm: 0.01 },
+    });
+    const first = buildSolidGeometry([withOrigin(0)], null, []).entries[0];
+    const repeated = buildSolidGeometry([withOrigin(0)], 'uv-cache', []).entries[0];
+    expect(repeated.uv).toBe(first.uv);
+    expect(repeated.positions).toBe(first.positions);
+    expect(repeated.indices).toBe(first.indices);
+    expect(repeated.groups).toEqual(first.groups);
+    expect(repeated.appearances).toEqual(first.appearances);
+    expect(repeated.emphasis).toBe('hovered');
+
+    for (let x = 1; x <= 100; x += 1) {
+      const shifted = buildSolidGeometry([withOrigin(x)], null, []).entries[0];
+      expect(Array.from(shifted.uv.slice(0, 2))).toEqual([x + 2, 3]);
+    }
+    const revisited = buildSolidGeometry([withOrigin(0)], null, []).entries[0];
+    expect(revisited.uv).not.toBe(first.uv);
+    expect(Array.from(revisited.uv.slice(0, 2))).toEqual([2, 3]);
+
+    const xNormals = Float32Array.from([1, 0, 0, 1, 0, 0, 1, 0, 0]);
+    const changedNormal = buildSolidGeometry([withOrigin(0, xNormals)], null, []).entries[0];
+    expect(changedNormal.uv).not.toBe(revisited.uv);
+    expect(Array.from(changedNormal.uv.slice(0, 2))).toEqual([3, 4]);
+    expect(buildSolidGeometry([withOrigin(0, xNormals)], null, []).entries[0].uv).toBe(changedNormal.uv);
+  });
+
+  it('不正なlocal frameをworld配列として黙って描かない', () => {
+    const body = makeBody('invalid', 1, 1);
+    const sparse: [number, number, number] = [1e9, 0, 0];
+    Reflect.deleteProperty(sparse, '0');
+    const inherited: [number, number, number] = [1e9, 0, 0];
+    Reflect.deleteProperty(inherited, '0');
+    Object.setPrototypeOf(inherited, [1e9]);
+    expect(inherited[0]).toBe(1e9);
+    for (const frame of [
+      { space: 'local' as const, origin: [Number.NaN, 0, 0] as const, maximumFloat32ErrorMm: 0.01 },
+      { space: 'local' as const, origin: [0, 0, 0] as const, maximumFloat32ErrorMm: 0 },
+      { space: 'local' as const, origin: sparse, maximumFloat32ErrorMm: 0.01 },
+      { space: 'local' as const, origin: inherited, maximumFloat32ErrorMm: 0.01 },
+    ]) {
+      expect(buildSolidGeometry([{ ...body, coordinateFrame: frame }], null, []).entries).toEqual([]);
+    }
+    const legacy = buildSolidGeometry([body], null, []).entries[0];
+    expect(legacy.coordinateFrame).toBeUndefined();
+  });
+
   it('ボディが 1 つも無ければ空の結果になる', () => {
     const bundle = buildSolidGeometry([], null, []);
     expect(bundle.entries).toEqual([]);
@@ -254,6 +564,141 @@ describe('buildSolidGeometry(FR-105、FR-106)', () => {
     expect(bundle.entries[0].faces).toBe(body.faces);
     expect(bundle.entries[0].edges).toBe(body.edges);
     expect(bundle.entries[0].vertices).toBe(body.vertices);
+  });
+});
+
+describe('scene-managed display copies on a kernel baseline (B2)', () => {
+  it('registers exact new UV backing before a subsequent actual cache insertion throws', () => {
+    const body = makeBody('cache-throw', 1, 0), cache = new DisplayCopyCache(), ledger = new AssemblyUiBackingLedger();
+    const borrowed: ArrayBufferLike[] = [];
+    const set = vi.spyOn(cache.uv, 'set').mockImplementationOnce(() => { throw new Error('Actual cache insertion failed'); });
+    expect(() => buildSolidGeometry([body], null, [], undefined, undefined,
+      { cache, allocated: buffer => { ledger.allocated(buffer); borrowed.push(buffer); } })).toThrow('Actual cache insertion failed');
+    expect(set).toHaveBeenCalledTimes(1); expect(cache.buffers()).toEqual([]);
+    expect(borrowed).toHaveLength(1); expect(ledger.bytes()).toBe(24);
+    expect(borrowed[0]).not.toBe(body.mesh.positions.buffer); expect(borrowed[0].byteLength).toBe(24);
+  });
+
+  it('registers constructor-returned UV before normal-value fill throws and retains that actual backing', () => {
+    const positions = new Float32Array([1, 2, 3]), ledger = new AssemblyUiBackingLedger(), borrowed: ArrayBufferLike[] = [];
+    let reads = 0;
+    const normals = new Proxy(new Float32Array([0, 0, 1]), { get(target, key): unknown {
+      if (key === '0') { reads += 1; throw new Error('Actual normal fill read failed'); }
+      return Reflect.get(target, key, target);
+    } });
+    expect(() => buildBoxProjectedUv(positions, normals, [0, 0, 0], buffer => {
+      ledger.allocated(buffer); borrowed.push(buffer);
+    })).toThrow('Actual normal fill read failed');
+    expect(reads).toBe(1); expect(borrowed).toHaveLength(1); expect(ledger.bytes()).toBe(8);
+    expect(borrowed[0]).not.toBe(positions.buffer);
+  });
+
+  it('a callback failure carries the actual constructed backing without filling or caching it', () => {
+    const body = makeBody('callback-throw', 1, 0), cache = new DisplayCopyCache(), ledger = new AssemblyUiBackingLedger();
+    let failure: unknown;
+    try { buildSolidGeometry([body], null, [], undefined, undefined, { cache, allocated: () => { throw new Error('Observer failed'); } }); }
+    catch (error) { failure = error; }
+    if (!(failure instanceof AllocatedBackingRegistrationError)) throw new Error('Actual backing was not handed back');
+    expect(failure.backing.byteLength).toBe(24); expect(cache.buffers()).toEqual([]);
+    ledger.retainUnregistered(failure.backing); expect(ledger.known()).toBe(false);
+    ledger.retryRegistration(); expect(ledger.known()).toBe(true); expect(ledger.bytes()).toBe(24);
+  });
+
+  const local = (body: SolidBody, origin: [number, number, number] = [1e9, 0, 0]): SolidBody => ({
+    ...body, coordinateFrame: { space: 'local', origin, maximumFloat32ErrorMm: 0.01 },
+  });
+  const patternedAppearance = (ids: readonly string[]): AppearanceInput => ({
+    defaultAppearance: DEFAULT_APPEARANCE,
+    byBody: new Map<string, BodyAppearanceInput>(ids.map((id) => [id, {
+      bodyAppearance: appearanceFromPreset('expandedMetal'), faceAppearances: new Map(),
+    }])),
+  });
+  /** The kernel's post-token union of 1000 bytes already contains the received source arrays. */
+  const budget = (limitBytes: number, retained: readonly ArrayBufferLike[] = []) =>
+    ({ limitBytes, baselineBytes: 1000, retained });
+
+  it('adds only the 24-byte UV of a plain one-triangle body and refuses before allocating it', () => {
+    const body = local(makeBody('plain', 1, 0));
+    const refused = new DisplayCopyCache();
+    expect(() => buildSolidGeometry([body], null, [], undefined, undefined, { cache: refused, budget: budget(1023) }))
+      .toThrow(/live-byte budget/);
+    expect(refused.buffers()).toEqual([]);
+    const cache = new DisplayCopyCache();
+    const bundle = buildSolidGeometry([body], null, [], undefined, undefined, { cache, budget: budget(1024) });
+    expect(bundle.displayCopies).toEqual([bundle.entries[0].uv.buffer]);
+    expect(distinctBackingBytes(bundle.displayCopies ?? [])).toBe(24);
+    expect(cache.buffers()).toEqual([bundle.entries[0].uv.buffer]);
+    expect(bundle.entries[0].positions).toBe(body.mesh.positions);
+  });
+
+  it('adds 108 bytes for a patterned copy and 132 bytes for a plain and a patterned body together', () => {
+    const patterned = local(makeBody('pattern', 1, 0));
+    const appearance = patternedAppearance(['pattern']);
+    const refused = new DisplayCopyCache();
+    expect(() => buildSolidGeometry([patterned], null, [], appearance, undefined,
+      { cache: refused, budget: budget(1107) })).toThrow(/live-byte budget/);
+    expect(refused.buffers()).toEqual([]);
+    const one = buildSolidGeometry([patterned], null, [], appearance, undefined,
+      { cache: new DisplayCopyCache(), budget: budget(1108) });
+    // positions 36 + normals 36 + indices 12 + UV 24.
+    expect(distinctBackingBytes(one.displayCopies ?? [])).toBe(108);
+    const plain = local(makeBody('plain', 1, 0), [0, 1e9, 0]);
+    expect(() => buildSolidGeometry([plain, patterned], null, [], appearance, undefined,
+      { cache: new DisplayCopyCache(), budget: budget(1131) })).toThrow(/live-byte budget/);
+    const both = buildSolidGeometry([plain, patterned], null, [], appearance, undefined,
+      { cache: new DisplayCopyCache(), budget: budget(1132) });
+    expect(distinctBackingBytes(both.displayCopies ?? [])).toBe(132);
+  });
+
+  it('counts a shared UV once and keeps the published copy until the next candidate replaces it', () => {
+    const source = makeBody('shared-a', 1, 0);
+    const a = local(source, [5, 0, 0]);
+    const b: SolidBody = { ...local(source, [5, 0, 0]), featureId: 'shared-b' };
+    const cache = new DisplayCopyCache();
+    const shared = buildSolidGeometry([a, b], null, [], undefined, undefined, { cache, budget: budget(1024) });
+    expect(shared.entries[1].uv).toBe(shared.entries[0].uv);
+    expect(distinctBackingBytes(shared.displayCopies ?? [])).toBe(24);
+    // A moved origin needs a new UV while the published one is still alive: 24 old plus 24 new.
+    const moved = local(source, [6, 0, 0]);
+    expect(() => buildSolidGeometry([moved], null, [], undefined, undefined,
+      { cache, budget: budget(1047, shared.displayCopies) })).toThrow(/live-byte budget/);
+    const next = buildSolidGeometry([moved], null, [], undefined, undefined,
+      { cache, budget: budget(1048, shared.displayCopies) });
+    expect(next.entries[0].uv).not.toBe(shared.entries[0].uv);
+    cache.retainBodies([moved]);
+    expect(cache.buffers()).toEqual([next.entries[0].uv.buffer]);
+  });
+
+  it('prunes copies of unpublished sources and leaves pure callers on the shared cache', () => {
+    const first = local(makeBody('first-prune', 1, 0));
+    const second = local(makeBody('second-prune', 1, 0));
+    const cache = new DisplayCopyCache();
+    const bundle = buildSolidGeometry([first, second], null, [], undefined, undefined, { cache });
+    expect(cache.buffers()).toHaveLength(2);
+    expect(bundle.displayCopies).toHaveLength(2);
+    cache.retainBodies([second]);
+    expect(cache.buffers()).toEqual([bundle.entries[1].uv.buffer]);
+    cache.clear();
+    expect(cache.buffers()).toEqual([]);
+    const pure = buildSolidGeometry([first], null, []);
+    expect(pure.displayCopies).toBeUndefined();
+    expect(cache.buffers()).toEqual([]);
+    // A world display uses the managed cache without a byte limit.
+    expect(buildSolidGeometry([makeBody('world-managed', 1, 0)], null, [], undefined, undefined,
+      { cache }).displayCopies).toHaveLength(1);
+  });
+
+  it('refuses an invalid budget before any copy', () => {
+    const body = local(makeBody('invalid-budget', 1, 0));
+    for (const bad of [{ limitBytes: 0, baselineBytes: 0, retained: [] },
+      { limitBytes: 100, baselineBytes: -1, retained: [] },
+      { limitBytes: 512 * 1024 * 1024 + 1, baselineBytes: 0, retained: [] },
+      { limitBytes: 100, baselineBytes: 0.5, retained: [] }]) {
+      const cache = new DisplayCopyCache();
+      expect(() => buildSolidGeometry([body], null, [], undefined, undefined, { cache, budget: bad }))
+        .toThrow(/live-byte budget/);
+      expect(cache.buffers()).toEqual([]);
+    }
   });
 });
 

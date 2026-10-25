@@ -4,6 +4,8 @@ import { AssemblyInterferencePanel } from '../assembly/AssemblyInterferencePanel
 import { StandardPartPicker } from '../assembly/StandardPartPickerPanel.js';
 import { ExplodePopover } from '../assembly/ExplodePopover.js';
 import { ReplacementPopover } from '../assembly/ReplacementPopover.js';
+import { BoltedJointPopover } from '../assembly/BoltedJointPopover.js';
+import { FilletWeldPopover } from '../assembly/FilletWeldPopover.js';
 
 /** Keep the existing overlay group together, loading it only for assembly documents. */
 export function AssemblyOverlays(): React.JSX.Element {
@@ -12,6 +14,8 @@ export function AssemblyOverlays(): React.JSX.Element {
     <StandardPartPicker />
     <ExplodePopover />
     <ReplacementPopover />
+    <BoltedJointPopover />
+    <FilletWeldPopover />
     <AssemblyMotionControls />
     <AssemblyInterferencePanel />
   </>;

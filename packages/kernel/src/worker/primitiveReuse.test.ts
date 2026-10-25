@@ -34,6 +34,38 @@ function sameGeometry(actual: unknown, expected: unknown): void {
 }
 
 describe('基本形状の平行移動複製は独立した形状・参照と精度を保つ', () => {
+  it('円筒の別featureへのCopyは全8起点を更新し、大座標では通常構築へ退避する', async () => {
+    const cache = createShapeCache<CachedSolid>(), reuse = createPrimitiveReuse(oc, cache);
+    const input = spec({ kind: 'cylinder', radius: 5, height: 20 });
+    try {
+      const result = await recomputeSolids({ oc, cache }, { generation: 1, steps: [request('source', input)] });
+      expect(result.failures).toEqual([]);
+      expect(result.bodies[0]?.origins?.state).toBe('tracked');
+      reuse.remember(input, 'source');
+      for (const [id, origin] of [
+        ['copy-a', [100.25, -40.5, 70.125]],
+        ['copy-b', [-300, 400, 0]],
+      ] as const) {
+        const clone = reuse.copy(spec(input.shape, origin), id);
+        if (clone === null) throw new Error('円筒Copyがありません');
+        try {
+          expect(clone.origins?.state).toBe('tracked');
+          if (clone.origins?.state === 'tracked') {
+            expect(clone.origins.bindings).toHaveLength(8);
+            expect(clone.origins.bindings.every(binding => binding.state === 'unique'
+              && binding.origin.identity.featureId === id)).toBe(true);
+          }
+          const direct = primitive.makePrimitive(oc, spec(input.shape, origin), id);
+          try { expect(measureVolume(oc, clone.shape)).toBeCloseTo(measureVolume(oc, direct.shape), 7); }
+          finally { direct.delete(); }
+        } finally { clone.delete(); }
+      }
+      for (const origin of [[1e6, 0, 0], [-1e6, 0, 0], [1e9, 0, 0]] as const) {
+        expect(reuse.copy(spec(input.shape, origin), 'large')).toBeNull();
+      }
+    } finally { cache.clear(); }
+  });
+
   it.each(shapes)('$kindは元の解放後も妥当で、元の全三角形と直接構築の実形状を保つ', async (shape) => {
     const cache = createShapeCache<CachedSolid>(), reuse = createPrimitiveReuse(oc, cache), input = spec(shape);
     try {
@@ -163,4 +195,37 @@ describe('基本形状の平行移動複製は独立した形状・参照と精�
       } finally { copy.delete(); }
     } finally { cache.clear(); }
   });
+  it('releases fifty cold Box generations and rebinds more than 256 Copy owners', async () => {
+    const cold = createShapeCache<CachedSolid>(1);
+    try {
+      for (let index = 0; index < 50; index += 1) {
+        const id = `cold-${index}`;
+        const result = await recomputeSolids({ oc, cache: cold },
+          { generation: index, steps: [request(id, spec())] });
+        expect(result.failures).toEqual([]);
+        expect(result.bodies[0]?.origins?.state).toBe('tracked');
+        expect(cold.delete(id)).toBe(true);
+      }
+      expect(cold.stats().released).toBe(50);
+      expect(cold.size).toBe(0);
+    } finally { cold.clear(); }
+
+    const cache = createShapeCache<CachedSolid>();
+    try {
+      const steps = Array.from({ length: 270 }, (_, index) =>
+        request(`copy-${index}`, spec(shapes[0], [index * 30, 0, 0])));
+      const result = await recomputeSolids({ oc, cache }, { generation: 1, steps });
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(270);
+      expect(cache.size).toBe(256);
+      expect(cache.stats().evictions).toBeGreaterThanOrEqual(14);
+      for (const body of result.bodies) {
+        expect(body.origins?.state).toBe('tracked');
+        if (body.origins?.state !== 'tracked') continue;
+        expect(body.origins.bindings).toHaveLength(26);
+        expect(body.origins.bindings.every((binding) =>
+          binding.origin.identity.featureId === body.id)).toBe(true);
+      }
+    } finally { cache.clear(); }
+  }, 180_000);
 });

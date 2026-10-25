@@ -15,6 +15,21 @@ describe('図面の前方互換と有限値(P8-64、R09)', () => {
     const source = { views: [{ id: 'v1', future: 'view' }], dimensions: [{ id: 'd1', future: 'dimension' }] };
     expect(preserveDrawingJsonFields(source, { views: [{ id: 'v1' }], dimensions: [{ id: 'd1' }] })).toEqual(source);
   });
+  it('参照の意味起点と未知の文書指定を保持し、現在表とnative履歴だけを落とす', () => {
+    const ref = { bodyFeatureId: 'box-1', index: 0, fingerprint: { kind: 'face' },
+      origin: { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'box-1', role: 'top' } } };
+    const source = { dimensions: [{ targets: [{ ref: { ...ref, future: 'keep', origins: { state: 'tracked' },
+      currentOriginIndex: { bindings: [] }, bindings: [], nativeHistory: [1] } }] }] };
+    const clean = { dimensions: [{ targets: [{ ref }] }] };
+    expect(preserveDrawingJsonFields(source, clean)).toEqual({ dimensions: [{ targets: [{ ref: { ...ref, future: 'keep' } }] }] });
+  });
+  it('検証済みoriginの内部へruntime欄を再注入しない', () => {
+    const origin = { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'box-1', role: 'top' } };
+    const ref = { bodyFeatureId: 'box-1', index: 0, fingerprint: { kind: 'face' }, origin };
+    const source = { ref: { ...ref, origin: { ...origin, identity: { ...origin.identity, nativeShape: 'owned' },
+      currentOriginIndex: { bindings: [] } } } };
+    expect(preserveDrawingJsonFields(source, { ref })).toEqual({ ref });
+  });
   it('投影線と寸法の計算結果は保存しない', () => {
     const source = { views: [{ id: 'v', visible: [[0, 0]], hidden: [], curves: [] }],
       dimensions: [{ id: 'd', value: 42, measuredValue: 42, geometry: {} }], mesh: {}, renderItems: [] };

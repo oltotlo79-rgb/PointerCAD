@@ -4,6 +4,7 @@ import {
   createDrawingDocument,
   type DrawingDocument,
   type DrawingSource,
+  type DimensionTarget,
 } from '@pointercad/model';
 
 import { isRecord, isUnknownArray } from './guards.js';
@@ -62,6 +63,24 @@ function populatedDrawing(): DrawingDocument {
 }
 
 describe('図面 document.json', () => {
+  it('寸法と注記の面参照に保存された意味起点を往復する', () => {
+    const base = populatedDrawing();
+    const target: Extract<DimensionTarget, { kind: 'subShape' }> = {
+      kind: 'subShape', viewId: 'view-1', sourceRef: 'source-1', componentId: 'component-1',
+      ref: { bodyFeatureId: 'box-1', index: 5,
+        fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1200,
+          position: [0, 0, 20], axis: [0, 0, 1], radius: null },
+        origin: { version: 1, shapeKind: 'face',
+          identity: { kind: 'box-face', featureId: 'box-1', role: 'top' } } },
+    };
+    const document: DrawingDocument = { ...base,
+      dimensions: [{ ...base.dimensions[0], targets: [target, base.dimensions[0].targets[1]] }],
+      annotations: [{ ...base.annotations[0], kind: 'leaderNote', target: target.ref, sourceTarget: target }],
+      balloons: [{ ...base.balloons[0], sourceTarget: target }],
+    };
+    expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT })))
+      .toEqual({ ok: true, document, savedAt: SAVED_AT, kind: 'drawing' });
+  });
   it('用紙と表題欄の数式を数値とともに往復し、未知の拡張欄も保つ', () => {
     const base = populatedDrawing();
     const sheet = { ...base.sheet, scale: 0.5, scaleExpression: '1/2', textHeight: 3.5, textHeightExpression: '7/2',
@@ -294,5 +313,25 @@ describe('文字注記の引出線を保存する(P8-52)', () => {
     const base = populatedDrawing();
     const document: DrawingDocument = { ...base, annotations: [{ ...base.annotations[0], leaderEnd: 'dot' }] };
     expect(parseDrawing(serializeDrawing(document, { savedAt: SAVED_AT })).ok).toBe(false);
+  });
+});
+
+describe('steel stock drawing schema ownership', () => {
+  it('preserves the dynamic steel mode but never saves derived stock quantities', () => {
+    const base = createDrawingDocument('stock', { ...source, sourceKind: 'assembly' });
+    const document = { ...base, tables: [{ id: 'stock-1', kind: 'bom' as const, position: [20, 250] as const,
+      columns: ['number', 'name'], options: { stockList: true }, layerId: base.layers[0].id }] };
+    const bytes = serializeDrawing(document, { savedAt: SAVED_AT });
+    const reopened = parseDrawing(bytes);
+    expect(reopened.ok).toBe(true);
+    if (reopened.ok) expect(reopened.document.tables).toEqual(document.tables);
+    expect(() => serializeDrawing({ ...document, schemaVersion: 18 })).toThrow('schema19');
+    const raw: unknown = JSON.parse(bytes);
+    if (!isRecord(raw) || !isRecord(raw['document']) || !isUnknownArray(raw['document']['tables'])
+      || !isRecord(raw['document']['tables'][0]) || !isRecord(raw['document']['tables'][0]['options'])) throw new Error('Missing table fixture');
+    raw['schema'] = 18; raw['document']['schemaVersion'] = 18;
+    expect(parseDrawing(JSON.stringify(raw)).ok).toBe(false);
+    raw['schema'] = 19; raw['document']['schemaVersion'] = 19; raw['document']['tables'][0]['options']['stockList'] = 'true';
+    expect(parseDrawing(JSON.stringify(raw)).ok).toBe(false);
   });
 });

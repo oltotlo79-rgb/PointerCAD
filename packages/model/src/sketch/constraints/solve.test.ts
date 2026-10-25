@@ -1,10 +1,12 @@
 import { expectWithinBudget } from '@pointercad/test-utils';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   CONSTRAINT_INITIAL_DAMPING,
   CONSTRAINT_MAX_ITERATIONS,
   CONSTRAINT_TOLERANCE,
+  createLevenbergMarquardtJob,
+  DAMPING_ATTEMPT_LIMIT,
   eliminate,
   matrixRank,
   qrDecomposition,
@@ -12,6 +14,7 @@ import {
   solveLevenbergMarquardt,
   solveLinearSystem,
   type LinearizedRow,
+  type SolveOutcome,
 } from './solve.js';
 
 /**
@@ -1099,5 +1102,264 @@ describe('拘束を解く速さ(§2.9、NFR-PF-2)', () => {
       `拘束を解く(変数 400・式 200、散らした並び)の 1 反復: 中央値 ${elapsedMs.toFixed(2)} ms(計画書 §2.2 の見積り 20〜40 ms)`,
     );
     expectWithinBudget(elapsedMs, 40, '変数 400・式 200(散らした並び)の 1 反復');
+  });
+});
+
+/** A single connected cycle across all coordinates, with independent known target coordinates. */
+function coupledTargetRows(x: readonly number[], target: readonly number[]): LinearizedRow[] {
+  const rows: LinearizedRow[] = [];
+  for (let i = 0; i < x.length; i += 1) {
+    const next = (i + 1) % x.length;
+    rows.push(row(x[i] - target[i], [[i, 1]]));
+    rows.push(row((x[i] - x[next]) - (target[i] - target[next]), [[i, 1], [next, -1]]));
+  }
+  return rows;
+}
+
+describe('Levenberg-Marquardt sparse integration', () => {
+  it.each([128, 129])('retains the same residual contract on either side of the dense/sparse boundary (%i)', (n) => {
+    const target = Array.from({ length: n }, (_, i) => ((i * 13) % 19) / 3);
+    const initial = target.map((value, i) => value + ((i % 7) - 3) / 10);
+    const outcome = solveLevenbergMarquardt(initial, x => coupledTargetRows(x, target));
+    expect(outcome.converged).toBe(true);
+    expect(outcome.stop).toBe('converged');
+    expect(outcome.maxResidual).toBeLessThan(CONSTRAINT_TOLERANCE);
+    for (let i = 0; i < n; i += 1) expectClose(outcome.x[i], target[i]);
+    expect(initial).toEqual(target.map((value, i) => value + ((i % 7) - 3) / 10));
+    expect(solveLevenbergMarquardt(initial, x => coupledTargetRows(x, target))).toEqual(outcome);
+  });
+
+  it('solves CONNECTED 2000 variables (1000 coordinate pairs) without quadratic typed-array storage', () => {
+    const n = 1000 * 2;
+    const target = Array.from({ length: n }, (_, i) => ((i * 13) % 23) / 4);
+    const initial = Array.from({ length: n }, (_, i) => ((i * 7) % 17) / 3);
+    const lengths: number[] = [];
+    const original = Float64Array;
+    const guarded = new Proxy(original, {
+      construct(constructor, args) {
+        if (typeof args[0] === 'number') {
+          lengths.push(args[0]);
+          if (args[0] > 8 * n) throw new Error('quadratic allocation on the large solve path');
+        }
+        return Reflect.construct(constructor, args) as Float64Array;
+      },
+    });
+    const outcome = (() => {
+      vi.stubGlobal('Float64Array', guarded);
+      try {
+        return solveLevenbergMarquardt(initial, x => coupledTargetRows(x, target));
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    })();
+    // The old solver allocates n*n normal/work and fails the allocation guard before computation.
+    expect(lengths.length).toBeGreaterThan(0);
+    expect(Math.max(...lengths)).toBeLessThanOrEqual(n);
+    expect(outcome.converged).toBe(true);
+    expect(outcome.maxResidual).toBeLessThan(CONSTRAINT_TOLERANCE);
+    expect(outcome.iterations).toBeLessThanOrEqual(CONSTRAINT_MAX_ITERATIONS);
+    for (let i = 0; i < n; i += 1) expectClose(outcome.x[i], target[i]);
+    for (const entry of coupledTargetRows(outcome.x, target)) expect(Math.abs(entry.value)).toBeLessThan(CONSTRAINT_TOLERANCE);
+  });
+
+  it('still solves nonlinear distance/horizontal chains above the dense boundary', () => {
+    const { initial, evaluate } = chainProblem(65, true);
+    const outcome = solveLevenbergMarquardt(initial, evaluate);
+    expect(outcome.converged).toBe(true);
+    expect(outcome.maxResidual).toBeLessThan(CONSTRAINT_TOLERANCE);
+    for (let i = 0; i < 65; i += 1) {
+      expectClose(outcome.x[2 * i], 10 * i, 1e-8);
+      expectClose(outcome.x[2 * i + 1], 0, 1e-8);
+    }
+  });
+
+  it('keeps minimum movement and untouched free coordinates in a rank-deficient large system', () => {
+    const initial = new Array<number>(130).fill(42);
+    initial[0] = 0; initial[1] = 0;
+    const outcome = solveLevenbergMarquardt(initial, x => [row(x[0] + 2 * x[1] - 3, [[0, 1], [1, 2]])]);
+    expect(outcome.converged).toBe(true);
+    expectClose(outcome.x[0], 0.6);
+    expectClose(outcome.x[1], 1.2);
+    expect(outcome.x.slice(2)).toEqual(initial.slice(2));
+  });
+
+  it('does not mistake a converged linear step for feasible contradictory constraints', () => {
+    const initial = new Array<number>(129).fill(42);
+    initial[0] = 0;
+    const outcome = solveLevenbergMarquardt(initial, x => [row(x[0] - 10, [[0, 1]]), row(x[0] - 12, [[0, 1]])]);
+    expect(outcome.converged).toBe(false);
+    expect(outcome.maxResidual).toBeGreaterThanOrEqual(1);
+    expectClose(outcome.x[0], 11, 1e-6);
+    expect(outcome.x.slice(1)).toEqual(initial.slice(1));
+    expect(outcome.iterations).toBeLessThanOrEqual(CONSTRAINT_MAX_ITERATIONS);
+  });
+
+  it.each([129, -1, 0.5, NaN])('refuses invalid sparse column %s before accepting an LM step', (column) => {
+    const initial = new Array<number>(129).fill(0);
+    const outcome = solveLevenbergMarquardt(initial, () => [row(1, [[column, 1]])]);
+    expect(outcome.converged).toBe(false);
+    expect(outcome.stop).toBe('singular');
+    expect(outcome.iterations).toBe(0);
+    expect(outcome.x).toEqual(initial);
+  });
+
+  it('rejects a nonfinite large initial coordinate even when residuals are already zero', () => {
+    const initial = new Array<number>(129).fill(0);
+    initial[0] = Infinity;
+    const outcome = solveLevenbergMarquardt(initial, () => [row(0, [[0, 1]])]);
+    expect(outcome.converged).toBe(false);
+    expect(outcome.stop).toBe('singular');
+    expect(outcome.trace).toEqual([]);
+  });
+
+  it('retains the last good coordinates when trial evaluation is nonfinite', () => {
+    const initial = new Array<number>(129).fill(0);
+    const outcome = solveLevenbergMarquardt(initial, x => [row(x[0] === 0 ? 1 : NaN, [[0, 1]])]);
+    expect(outcome.converged).toBe(false);
+    expect(outcome.x).toEqual(initial);
+    expect(outcome.trace.every(record => !record.accepted)).toBe(true);
+    expect(outcome.iterations).toBeLessThanOrEqual(CONSTRAINT_MAX_ITERATIONS);
+  });
+
+  it('preserves the caller nonlinear iteration bound on the sparse path', () => {
+    const { initial, evaluate } = chainProblem(65, true);
+    const outcome = solveLevenbergMarquardt(initial, evaluate, { maxIterations: 1 });
+    expect(outcome.iterations).toBe(1);
+    expect(outcome.stop).toBe('maxIterations');
+    expect(outcome.converged).toBe(false);
+    expect(outcome.trace).toHaveLength(1);
+  });
+});
+
+
+describe('sparse trial admission', () => {
+  it('does not accept a zero residual with an invalid trial Jacobian', () => {
+    const initial = new Array<number>(129).fill(0);
+    const outcome = solveLevenbergMarquardt(initial, x => x[0] === 0
+      ? [row(1, [[0, 1]])] : [row(0, [[129, 1]])]);
+    expect(outcome.converged).toBe(false);
+    expect(outcome.x).toEqual(initial);
+    expect(outcome.trace.every(record => !record.accepted)).toBe(true);
+  });
+});
+
+describe('sparse minimum movement and finite-domain boundary', () => {
+  it.each([128, 129])('preserves ordinary Euclidean minimum movement with %i variables', (n) => {
+    const initial = new Array<number>(n).fill(42);
+    initial[0] = 0;
+    initial[1] = 0;
+    const outcome = solveLevenbergMarquardt(initial, x => [row(x[0] + 2 * x[1] - 3, [[0, 1], [1, 2]])]);
+    expect(outcome.converged).toBe(true);
+    expectClose(outcome.x[0], 0.6);
+    expectClose(outcome.x[1], 1.2);
+    expect(outcome.x.slice(2)).toEqual(initial.slice(2));
+  });
+
+  it.each([1024, 2 ** 20])('does not accept a scaled rank-deficient nullspace displacement at scale %s', (scale) => {
+    const initial = new Array<number>(129).fill(42);
+    initial[0] = 0;
+    initial[1] = 0;
+    const outcome = solveLevenbergMarquardt(initial, x => [
+      row(scale * (x[0] + 2 * x[1] - 3), [[0, scale], [1, 2 * scale]]),
+    ]);
+    expect(outcome.converged).toBe(true);
+    expect(outcome.maxResidual).toBeLessThan(CONSTRAINT_TOLERANCE);
+    expectClose(outcome.x[0], 0.6);
+    expectClose(outcome.x[1], 1.2);
+    expect(Math.abs(2 * outcome.x[0] - outcome.x[1])).toBeLessThanOrEqual(1e-12);
+    expect(outcome.x.slice(2)).toEqual(initial.slice(2));
+  });
+
+  it.each([128, 129])('solves the finite condition-one 2^500 diagonal system with %i variables', (n) => {
+    const gradient = 2 ** 500;
+    const target = 2 ** 20;
+    const initial = new Array<number>(n).fill(0);
+    const outcome = solveLevenbergMarquardt(initial, x => x.map((value, i) =>
+      row(gradient * (value - (i === 0 ? target : 0)), [[i, gradient]])));
+    expect(outcome.converged).toBe(true);
+    expect(outcome.maxResidual).toBe(0);
+    expect(outcome.x).toEqual([target, ...new Array<number>(n - 1).fill(0)]);
+    expect(initial).toEqual(new Array<number>(n).fill(0));
+  });
+});
+
+/**
+ * Resumable Levenberg–Marquardt: a connected nonlinear chain (anchored start, unit segment lengths, last point pulled
+ * towards (5, 3)), small enough for the dense path and large enough (142 variables) for the sparse path. The stepped
+ * job must give exactly the synchronous outcome, and one step unit performs at most one residual evaluation.
+ */
+describe('createLevenbergMarquardtJob', () => {
+  function chain(segments: number) {
+    const n = 2 * (segments + 1);
+    const initial = Array.from({ length: n }, (_, index) => (index % 2 === 0 ? 1.2 * (index / 2) : 0.1 * Math.sin(index)));
+    let evaluations = 0;
+    const evaluate = (x: readonly number[]): readonly LinearizedRow[] => {
+      evaluations += 1;
+      const rows: LinearizedRow[] = [
+        { value: x[0], gradient: new Map([[0, 1]]) },
+        { value: x[1], gradient: new Map([[1, 1]]) },
+      ];
+      for (let s = 0; s < segments; s += 1) {
+        const dx = x[2 * s + 2] - x[2 * s], dy = x[2 * s + 3] - x[2 * s + 1];
+        const length = Math.hypot(dx, dy);
+        rows.push({ value: length - 1, gradient: new Map([
+          [2 * s, -dx / length], [2 * s + 1, -dy / length], [2 * s + 2, dx / length], [2 * s + 3, dy / length]]) });
+      }
+      rows.push({ value: 0.1 * (x[n - 2] - 5), gradient: new Map([[n - 2, 0.1]]) });
+      rows.push({ value: 0.1 * (x[n - 1] - 3), gradient: new Map([[n - 1, 0.1]]) });
+      return rows;
+    };
+    return { initial, evaluate, evaluations: () => evaluations };
+  }
+
+  it.each([6, 70])('%s segments: stepping one attempt at a time gives exactly the synchronous outcome', (segments) => {
+    const sync = chain(segments);
+    const expected = solveLevenbergMarquardt(sync.initial, sync.evaluate);
+    const stepped = chain(segments);
+    const job = createLevenbergMarquardtJob(stepped.initial, stepped.evaluate);
+    let outcome: SolveOutcome | null = null;
+    let steps = 0;
+    while (outcome === null) {
+      const before = stepped.evaluations();
+      outcome = job.step(1);
+      // One unit = one damping attempt = at most one residual evaluation (never a whole nonlinear solve).
+      expect(stepped.evaluations() - before).toBeLessThanOrEqual(1);
+      steps += 1;
+      expect(steps).toBeLessThanOrEqual(CONSTRAINT_MAX_ITERATIONS * DAMPING_ATTEMPT_LIMIT);
+    }
+    expect(outcome).toEqual(expected);
+    expect(steps).toBeGreaterThan(1);
+    expect(job.step(1)).toBe(outcome);
+    expect(stepped.evaluations()).toBe(sync.evaluations());
+  });
+
+  it('rejects a non-positive or non-integer unit budget instead of running unbounded', () => {
+    const fixture = chain(6);
+    const job = createLevenbergMarquardtJob(fixture.initial, fixture.evaluate);
+    for (const budget of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => job.step(budget)).toThrow(RangeError);
+    }
+  });
+});
+
+
+describe('resumable solver preserves the original loop exit', () => {
+  it.each(['synchronous', 'stepped'] as const)('%s does not attempt a step for a NaN iteration limit', mode => {
+    const evaluate = vi.fn((x: readonly number[]): readonly LinearizedRow[] => [
+      { value: x[0] - 1, gradient: new Map([[0, 1]]) },
+    ]);
+    const options = { maxIterations: Number.NaN };
+    const outcome = mode === 'synchronous'
+      ? solveLevenbergMarquardt([0], evaluate, options)
+      : createLevenbergMarquardtJob([0], evaluate, options).step(1);
+    // Independent reference: the old 1 <= NaN loop predicate is false, so only the initial residual is evaluated.
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(outcome).not.toBeNull();
+    expect(outcome?.x).toEqual([0]);
+    expect(outcome?.trace).toEqual([]);
+    expect(outcome?.stop).toBe('maxIterations');
+    expect(outcome?.iterations).toBeNaN();
+    expect(outcome?.maxResidual).toBe(1);
+    expect(outcome?.converged).toBe(false);
   });
 });

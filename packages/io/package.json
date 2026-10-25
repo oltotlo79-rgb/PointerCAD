@@ -20,6 +20,8 @@
     "fflate": "catalog:"
   },
   "devDependencies": {
+    "@pointercad/expression": "workspace:*",
+    "@pointercad/kernel": "workspace:*",
     "@pointercad/test-utils": "workspace:*",
     "vitest": "catalog:"
   }

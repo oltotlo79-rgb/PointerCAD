@@ -128,6 +128,8 @@
   "statusBar.guide.ruled": "つなぐ面を 2 つ選んでください。スケッチの面・立体の面のほか、球そのものも選べます。",
   "statusBar.guide.loft": "つなぐ面を、つなぐ順に 2 つ以上選んでください。",
   "statusBar.guide.draft": "基準にする平らな面を選んでから、傾けたい側面を選んでください。",
+  "statusBar.guide.faceOffset": "動かす平らな面を 1 枚選んでください。隣の面が直角な面だけ動かせます。",
+  "statusBar.guide.faceOffsetDistance": "面を動かす距離を入力し、Enterで確定してください。正は外向き、負は内向きです。Escで取り消します。",
   "statusBar.guide.mirrorSolid": "映したい立体を 1 つ選んでください。鏡にする面は段で選びます。",
   "statusBar.guide.transform": "動かしたい立体を 1 つ選んでください。",
   "statusBar.guide.scale": "大きさを変えたい立体を 1 つ選んでください。",

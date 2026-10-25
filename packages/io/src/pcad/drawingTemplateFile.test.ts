@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createDrawingDocument, createDrawingTemplate, drawingFromTemplate, type DrawingTemplate } from '@pointercad/model';
 import { strToU8, strFromU8, unzipSync, zipSync } from 'fflate';
-import { readDrawingTemplateFile, writeDrawingTemplateFile } from './drawingTemplateFile.js';
+import { drawingTemplateEntries, readDrawingTemplateFile, writeDrawingTemplateFile } from './drawingTemplateFile.js';
+import { FIXED_ENTRY_MTIME, PCAD_DOCUMENT_ENTRY, zipPcadEntries } from './pcadFile.js';
 import { parseDrawingTemplate, serializeDrawingTemplate } from './drawingTemplateJson.js';
 import { serializeDrawing } from './drawingJson.js';
 import { isRecord } from './guards.js';
@@ -17,6 +18,16 @@ function fixture(): DrawingTemplate {
 }
 
 describe('図面ひな形.pcadtの保存と互換(P8-58)', () => {
+  it('版17の設定だけのひな形を現在の版へ読み、新形式で保存し直す', () => {
+    const previous: unknown = JSON.parse(serializeDrawingTemplate(fixture(), savedAt));
+    if (!isRecord(previous)) throw new Error('template envelope');
+    previous['schema'] = 17;
+    const opened = parseDrawingTemplate(JSON.stringify(previous));
+    expect(opened).toEqual({ ok: true, template: fixture(), savedAt });
+    if (!opened.ok) return;
+    // 入力の封筒の版17は固定(旧版を読む検査)。保存し直した結果は現在の版なので定数と比べる。
+    expect(serializeDrawingTemplate(opened.template, savedAt)).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
+  });
   it('用紙の原式をZIPから新規図面へ往復し、未知の設定を残す', () => {
     const base = fixture();
     const template = { ...base, sheet: { ...base.sheet, scale: 0.5, scaleExpression: '1/2', textHeight: 3.5, textHeightExpression: '7/2',
@@ -51,6 +62,16 @@ describe('図面ひな形.pcadtの保存と互換(P8-58)', () => {
   });
   it('同じ入力を2回書くとZIPの時刻も含め全バイトが一致する', () => {
     expect(writeDrawingTemplateFile(fixture(), savedAt)).toEqual(writeDrawingTemplateFile(fixture(), savedAt));
+  });
+  it('共有エントリからの圧縮が従来の1エントリZIPと全バイト一致する', () => {
+    const template = fixture(), json = strToU8(serializeDrawingTemplate(template, savedAt));
+    const legacy = zipSync({ [PCAD_DOCUMENT_ENTRY]: [json, { level: 6, mtime: FIXED_ENTRY_MTIME }] });
+    const entries = drawingTemplateEntries(template, savedAt);
+    expect([...entries.keys()]).toEqual([PCAD_DOCUMENT_ENTRY]);
+    expect(entries.get(PCAD_DOCUMENT_ENTRY)?.[0]).toEqual(json);
+    expect(zipPcadEntries(entries)).toEqual(legacy);
+    expect(writeDrawingTemplateFile(template, savedAt)).toEqual(legacy);
+    expect(readDrawingTemplateFile(legacy)).toEqual({ ok: true, template, savedAt });
   });
   it('新規図面の投影図・寸法・注記・表・風船はすべて空', () => {
     const result = readDrawingTemplateFile(writeDrawingTemplateFile(fixture(), savedAt));

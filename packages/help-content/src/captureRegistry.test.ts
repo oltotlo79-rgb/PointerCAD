@@ -366,3 +366,28 @@ describe('アプリの入力の指紋（applicationInputDigest）', () => {
     expect(await applicationInputDigest(folder)).not.toBe(before);
   });
 });
+
+describe('Current capture script provenance must exist when scripts are checked', () => {
+  it.each(['script', 'scriptSha256', 'both'])('rejects a valid partial registry with missing %s', missing => {
+    const image = png(720, 540, 24), script = encoder.encode('capture script');
+    const registry = buildCaptureRegistry([file('m-detail.png', image),
+      details('m', image, { buildId: 'build-1', scriptSha256: sha(script) })]);
+    const entry = registry.images[0];
+    const missingPath = missing !== 'scriptSha256', missingHash = missing !== 'script';
+    const partial = validateCaptureRegistry({ ...registry, images: [{ ...entry,
+      script: missingPath ? null : entry.script,
+      scriptSha256: missingHash ? null : entry.scriptSha256,
+      unknown: { ...entry.unknown,
+        ...(missingPath ? { script: 'no-script-path' } : {}),
+        ...(missingHash ? { scriptSha256: 'image-source-no-hash' } : {}) },
+    }] });
+    const scripts = new Map([['e2e/tests/exampleFlow.ts', script]]);
+    expect(assessCaptureImages(registry, [file('m-detail.png', image)],
+      { applicationBuildId: 'build-1', scripts })).toMatchObject({ scriptMissing: [], current: true });
+    expect(assessCaptureImages(partial, [file('m-detail.png', image)],
+      { applicationBuildId: 'build-1', scripts })).toMatchObject({
+      checked: 1, mismatched: [], buildUnknown: [], buildMismatch: [],
+      scriptMissing: ['m-detail.png'], current: false,
+    });
+  });
+});

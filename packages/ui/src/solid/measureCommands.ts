@@ -51,6 +51,7 @@ import {
   measureRejectionMessageKey,
   MEASURE_FAILED_MESSAGE_KEY,
   type LocalMeasureResult,
+  type MeasurementProvenance,
   type MeasureBody,
   type MeasureKind,
   type MeasureReadiness,
@@ -446,6 +447,7 @@ export function measurementFromDistance(
     value: distance,
     unit: 'mm',
     segment: [pointA, pointB],
+    provenance: 'brep',
   };
   return { result, text: formatMeasure(result, unit), angle: null, anchor: null };
 }
@@ -463,6 +465,7 @@ export function measurementFromDistance(
  * model の 1 か所)。
  */
 export interface MassPropertiesResult {
+  readonly provenance?: MeasurementProvenance;
   /** 測った立体を作ったフィーチャーの id(= ボディの id)。 */
   readonly bodyFeatureId: string;
   /** 体積(mm³)。 */
@@ -628,7 +631,14 @@ export interface MeasureContext {
 export async function runMeasure(context: MeasureContext): Promise<MeasureOutcomeView> {
   const ready = partMeasureReadiness(context.selection, context.bodies, context.sketch, context.lengthUnit);
   const targetNames = measureTargetNames(context.document, context.selection);
-  if ('source' in ready) return { ok: true, measurement: { ...ready.measurement, targetNames }, massProperties: null };
+  if ('source' in ready) {
+    const includesBrepVertex = ready.targets.some(target =>
+      target.kind === 'vertex' && !context.sketch?.points.some(point => point.id === target.elementId)
+      && parseSubShapeId(target.elementId)?.kind === 'vertex');
+    const provenance: MeasurementProvenance = includesBrepVertex ? 'sketch-brep' : 'sketch';
+    return { ok: true, measurement: { ...ready.measurement, targetNames,
+      result: { ...ready.measurement.result, provenance } }, massProperties: null };
+  }
   const readiness = ready;
   if (!readiness.ready || readiness.kind === null) {
     return { ok: false, reasonKey: measureRejectionKeyOf(readiness) };
@@ -711,6 +721,7 @@ async function measureMassProperties(
   }
   return {
     bodyFeatureId: first.bodyFeatureId,
+    provenance: 'brep',
     volume: outcome.volume,
     area: outcome.area,
     centreOfMass: outcome.centreOfMass,

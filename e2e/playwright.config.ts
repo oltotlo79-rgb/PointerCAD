@@ -1,6 +1,25 @@
 import { defineConfig, devices } from '@playwright/test';
 import { FIREFOX_GRAPHICS_PREFS } from './firefoxLaunch.js';
 
+// Dedicated measurements require the existing owned-input runners, never ordinary CI.
+const MEASUREMENT_FILES = {
+  w21: ['occt-compile-reuse-solid.spec.ts', 'electron-occt-compile-reuse.spec.ts'],
+  w22: ['math-pace-slow-function-plot.spec.ts', 'electron-math-pace-slow.spec.ts'],
+  ex12host: ['assembly-1000-host.spec.ts', 'electron-assembly-1000-host.spec.ts'],
+} as const;
+const measurementMode = process.env.PCAD_DEDICATED_MEASUREMENT;
+if (measurementMode !== undefined && measurementMode !== 'w21' && measurementMode !== 'w22' && measurementMode !== 'ex12host') {
+  throw new Error('Unknown dedicated measurement mode');
+}
+const selectedMeasurement = measurementMode === undefined ? null : MEASUREMENT_FILES[measurementMode];
+const requestedSpecs = process.argv.filter(value => value.endsWith('.spec.ts')).map(value => value.split(/[\\/]/u).at(-1));
+if (selectedMeasurement !== null && requestedSpecs.some(name => !selectedMeasurement.some(file => file === name))) {
+  throw new Error('Dedicated measurement mode and explicit spec disagree');
+}
+const dedicatedFiles = Object.values(MEASUREMENT_FILES).flat();
+const dedicatedMatch = (electron: boolean) => selectedMeasurement?.filter(name => name.startsWith('electron-') === electron)
+  .map(name => `**/${name}`);
+
 const ELECTRON_TEST_FILE = /electron-[\w-]+\.spec\.ts$/u;
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PREVIEW_PORT}`;
@@ -60,7 +79,8 @@ export default defineConfig({
     },
     {
       name: 'functional',
-      testIgnore: [ELECTRON_TEST_FILE, FIREFOX_GRAPHICS_TEST],
+      testIgnore: [ELECTRON_TEST_FILE, FIREFOX_GRAPHICS_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
+      ...(selectedMeasurement === null ? {} : { testMatch: dedicatedMatch(false) }),
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       dependencies: ['viewport-performance'],
     },
@@ -71,10 +91,11 @@ export default defineConfig({
     {
       name: 'firefox',
       // Electron専用ケースの末尾がWebの名前と重なっても、Firefox枠へ混入させない。
-      testIgnore: [ELECTRON_TEST_FILE, WEB_STARTUP_TEST],
+      testIgnore: [ELECTRON_TEST_FILE, WEB_STARTUP_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
       // 実カーネル・保存再読込・復元・製作図・F1・CSPを既存の同じ操作で検査する。
       // 板金の操作検査は分割した新ファイルも自動的に対象へ入れる。
-      testMatch: /(?:smoke|solid|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|name-search|auto-save-settings|command-registry|tutorial|shortcut-settings|radial-menu|offline-routing|offline-editions|function-plot|sheet-[\w-]+)\.spec\.ts$/u,
+      testMatch: /(?:smoke|solid|extrude-operation|bolted-joint|fillet-weld|steel-bend|steel-bend-stock|gdt|drawing-recovery|browser-security|sketch-intersections|strength|dwg|surfaces|cam|scripts|math-input|math-high-dpi|history-notes|document-diff|named-save-points|name-search|parameter-search-csv|auto-save-settings|command-registry|tutorial|shortcut-settings|camera-controls-settings|radial-menu|connect-points|canvas|drawing-delete-elements|reference-ambiguity|usability-keyboard|offline-routing|offline-editions|function-plot|function-spline-surface|memory-highwater|impact-browser|sheet-[\w-]+)\.spec\.ts$/u,
+      ...(selectedMeasurement === null ? {} : { testMatch: dedicatedMatch(false) }),
       grepInvert: VIEWPORT_PERFORMANCE_TEST,
       use: FIREFOX_USE,
       dependencies: ['viewport-performance', 'startup-firefox'],
@@ -85,7 +106,8 @@ export default defineConfig({
     },
     {
       name: 'electron',
-      testMatch: ELECTRON_TEST_FILE, testIgnore: ELECTRON_STARTUP_TEST,
+      testMatch: dedicatedMatch(true) ?? ELECTRON_TEST_FILE,
+      testIgnore: [ELECTRON_STARTUP_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
       workers: 1,
       dependencies: ['viewport-performance', 'startup-electron'],
     },

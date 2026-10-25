@@ -3,6 +3,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { SegmentSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { createAllocations } from './allocations.js';
+import { readLegacyOcctFixture, legacyOcctFixtures } from './legacyOcctFixtureLoader.js';
 import {
   makeSketchFillet,
   type SketchFilletPlaneSpec,
@@ -56,67 +58,29 @@ function distance(a: Vec3Tuple, b: Vec3Tuple): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
-/**
- * 同じ角を OCCT の ChFi2d_FilletAlgo_3 で丸め、①書き換わった 2 辺の新しい端点と
- * ②弧の中心・半径を読み取る。照合と、`.Result` の副作用の記録に使う(計画書 §1.4-4)。
- */
-function filletWithOcct(
-  line1: SegmentSpec,
-  line2: SegmentSpec,
-  cornerPoint: Vec3Tuple,
-  radius: number,
-): {
-  readonly trimmed1: Vec3Tuple;
-  readonly trimmed2: Vec3Tuple;
-  readonly center: Vec3Tuple;
-  readonly radius: number;
-  readonly before1: Vec3Tuple;
-} {
-  const origin = new oc.gp_Pnt_3(0, 0, 0);
-  const normal = new oc.gp_Dir_4(0, 0, 1);
-  const plane = new oc.gp_Pln_3(origin, normal);
-  const edge1 = makeOcctSegment(line1);
-  const edge2 = makeOcctSegment(line2);
-  const before1 = lastPointOf(edge1);
-  const algo = new oc.ChFi2d_FilletAlgo_3(edge1, edge2, plane);
-  expect(algo.Perform(radius)).toBe(true);
-  const corner = new oc.gp_Pnt_3(cornerPoint[0], cornerPoint[1], cornerPoint[2]);
-  expect(Number(algo.NbResults(corner))).toBeGreaterThanOrEqual(1);
-  const arc = algo.Result(corner, edge1, edge2, 1);
-
-  const adaptor = new oc.BRepAdaptor_Curve_2(arc);
-  const circle = adaptor.Circle();
-  const location = circle.Location();
-  const center: Vec3Tuple = [location.X(), location.Y(), location.Z()];
-  const arcRadius = circle.Radius();
-
-  // 書き換わった辺の、角に近いほうの端点(遠いほうは元のまま残る)。
-  const trimmed1 = nearestEndTo(edge1, cornerPoint);
-  const trimmed2 = nearestEndTo(edge2, cornerPoint);
-
-  location.delete();
-  circle.delete();
-  adaptor.delete();
-  arc.delete();
-  corner.delete();
-  algo.delete();
-  edge2.delete();
-  edge1.delete();
-  plane.delete();
-  normal.delete();
-  origin.delete();
-  return { trimmed1, trimmed2, center, radius: arcRadius, before1 };
-}
-
-function makeOcctSegment(line: SegmentSpec): TopoDS_Edge {
-  const from = new oc.gp_Pnt_3(line.from[0], line.from[1], line.from[2]);
-  const to = new oc.gp_Pnt_3(line.to[0], line.to[1], line.to[2]);
-  const maker = new oc.BRepBuilderAPI_MakeEdge_3(from, to);
-  const edge = maker.Edge();
-  maker.delete();
-  to.delete();
-  from.delete();
-  return edge;
+/** Original native numeric oracle; current backend reads the captured edge/arc geometry. */
+function filletWithOcct(line1: SegmentSpec, line2: SegmentSpec, cornerPoint: Vec3Tuple, radius: number) {
+  expect(line1).toEqual(segment([20, 0, 0], [0, 0, 0]));
+  expect(line2).toEqual(segment([0, 0, 0], [0, 20, 0]));
+  expect(cornerPoint).toEqual([0, 0, 0]);
+  expect(radius).toBe(5);
+  const { keep, release } = createAllocations();
+  try {
+    const before = keep(oc.TopoDS.Edge_1(keep(readLegacyOcctFixture(oc, 'filletBefore1'))));
+    const edge1 = keep(oc.TopoDS.Edge_1(keep(readLegacyOcctFixture(oc, 'filletEdge1'))));
+    const edge2 = keep(oc.TopoDS.Edge_1(keep(readLegacyOcctFixture(oc, 'filletEdge2'))));
+    const arc = keep(oc.TopoDS.Edge_1(keep(readLegacyOcctFixture(oc, 'fillet'))));
+    const circle = keep(keep(new oc.BRepAdaptor_Curve_2(arc)).Circle());
+    const location = keep(circle.Location());
+    const center: Vec3Tuple = [location.X(), location.Y(), location.Z()];
+    const result = { before1: lastPointOf(before), trimmed1: nearestEndTo(edge1, cornerPoint),
+      trimmed2: nearestEndTo(edge2, cornerPoint), center, radius: circle.Radius() };
+    const captured = legacyOcctFixtures.observations.fillet;
+    expect(captured.results).toBeGreaterThanOrEqual(1);
+    expect(result).toEqual({ before1: captured.before1, trimmed1: captured.trimmed1,
+      trimmed2: captured.trimmed2, center: captured.center, radius: captured.radius });
+    return result;
+  } finally { release(); }
 }
 
 function vertexPoint(vertex: TopoDS_Vertex): Vec3Tuple {
@@ -331,13 +295,13 @@ describe('スケッチのフィレット(FR-323)', () => {
     ).toThrow(/作図面の向きが求まらない/);
   });
 
-  it('OCCT の ChFi2d_FilletAlgo_3 と照合すると公差 1e-7 以内で一致し、Result は入力の辺を書き換える(計画書 §1.4-4)', () => {
+  it('旧 OCCT の固定フィレット結果と公差 1e-7 以内で一致し、現在の OCCT で辺と円弧を読む(計画書 §1.4-4)', () => {
     const line1 = segment([20, 0, 0], [0, 0, 0]);
     const line2 = segment([0, 0, 0], [0, 20, 0]);
     const mine = makeSketchFillet({ line1, line2, plane: XY_PLANE, radius: 5 });
     const theirs = filletWithOcct(line1, line2, [0, 0, 0], 5);
 
-    // ①`.Result` は呼び出し側の辺そのものを書き換える(§1.4-4 の未確認事項への答え)。
+    // ①旧 `.Result` の呼び出し前後を保存した辺で、入力辺の変更を検証する。
     expectPointClose(theirs.before1, [0, 0, 0], 12);
     expect(distance(theirs.trimmed1, [0, 0, 0])).toBeGreaterThan(1);
 

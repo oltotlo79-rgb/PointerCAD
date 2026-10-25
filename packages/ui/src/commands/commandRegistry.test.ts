@@ -20,6 +20,65 @@ function environment(overrides: Partial<CommandRuntimeState> = {}): {
 }
 
 describe('command execution', () => {
+  it('2点接続の共通判定が不可なら実行せず、可でも実行直前の再検証結果を返す', () => {
+    const disabled = environment({ connectPointsReason: 'sketch.connect.samePoint' });
+    const connectPoints = vi.fn(() => ({ ready: false as const, reasonKey: 'sketch.connect.unresolved' as const }));
+    const disabledEnvironment = { ...disabled.value, actions: { ...disabled.actions, connectPoints } };
+    expect(executeCommand('sketch.connectPoints', disabledEnvironment)).toMatchObject({
+      status: 'disabled', reasonKey: 'sketch.connect.samePoint',
+    });
+    expect(connectPoints).not.toHaveBeenCalled();
+    const enabled = environment({ connectPointsReason: null });
+    expect(executeCommand('sketch.connectPoints', { ...enabled.value, actions: { ...enabled.actions, connectPoints } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'sketch.connect.unresolved' });
+    expect(connectPoints).toHaveBeenCalledOnce();
+    expect(enabled.actions.commandFeedback).toHaveBeenLastCalledWith('sketch.connect.unresolved');
+  });
+  it('点で面を張る共通判定が不可なら実行せず、可でも実行直前の再検証結果を返す', () => {
+    const faceFromPoints = vi.fn(() => ({ ready: false as const, reasonKey: 'sketch.facePoints.notPlanar' as const }));
+    const disabled = environment({ faceFromPointsReason: 'sketch.facePoints.collinear' });
+    expect(executeCommand('sketch.faceFromPoints', { ...disabled.value, actions: { ...disabled.actions, faceFromPoints } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'sketch.facePoints.collinear' });
+    expect(faceFromPoints).not.toHaveBeenCalled();
+    expect(disabled.actions.commandFeedback).toHaveBeenLastCalledWith('sketch.facePoints.collinear');
+    const unknown = environment();
+    expect(executeCommand('sketch.faceFromPoints', { ...unknown.value, actions: { ...unknown.actions, faceFromPoints } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'sketch.facePoints.selectThree' });
+    expect(faceFromPoints).not.toHaveBeenCalled();
+    const enabled = environment({ faceFromPointsReason: null });
+    expect(executeCommand('sketch.faceFromPoints', { ...enabled.value, actions: { ...enabled.actions, faceFromPoints } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'sketch.facePoints.notPlanar' });
+    expect(faceFromPoints).toHaveBeenCalledOnce();
+    expect(enabled.actions.commandFeedback).toHaveBeenLastCalledWith('sketch.facePoints.notPlanar');
+    const created = vi.fn(() => ({ ready: true as const, reasonKey: null }));
+    expect(executeCommand('sketch.faceFromPoints', { ...enabled.value, actions: { ...enabled.actions, faceFromPoints: created } }))
+      .toEqual({ status: 'executed', commandId: 'sketch.faceFromPoints', ready: true, reasonKey: null });
+    const assembly = environment({ documentKind: 'assembly', faceFromPointsReason: null });
+    expect(executeCommand('sketch.faceFromPoints', { ...assembly.value, actions: { ...assembly.actions, faceFromPoints: created } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'command.unavailable.document' });
+    expect(created).toHaveBeenCalledOnce();
+  });
+  it('基準点に点を置く共通判定が不可なら実行せず、未判定は1つ選ぶよう案内し、可なら実行直前の再検証結果を返す', () => {
+    const pointAtReference = vi.fn(() => ({ ready: false as const, reasonKey: 'sketch.referencePoint.ambiguous' as const }));
+    const disabled = environment({ pointAtReferenceReason: 'sketch.referencePoint.unsupported' });
+    expect(executeCommand('sketch.pointAtReference', { ...disabled.value, actions: { ...disabled.actions, pointAtReference } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'sketch.referencePoint.unsupported' });
+    const unknown = environment();
+    expect(executeCommand('sketch.pointAtReference', { ...unknown.value, actions: { ...unknown.actions, pointAtReference } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'sketch.referencePoint.selectOne' });
+    expect(pointAtReference).not.toHaveBeenCalled();
+    const enabled = environment({ pointAtReferenceReason: null });
+    expect(executeCommand('sketch.pointAtReference', { ...enabled.value, actions: { ...enabled.actions, pointAtReference } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'sketch.referencePoint.ambiguous' });
+    expect(enabled.actions.commandFeedback).toHaveBeenLastCalledWith('sketch.referencePoint.ambiguous');
+    const created = vi.fn(() => ({ ready: true as const, reasonKey: null }));
+    expect(executeCommand('sketch.pointAtReference', { ...enabled.value, actions: { ...enabled.actions, pointAtReference: created } }))
+      .toEqual({ status: 'executed', commandId: 'sketch.pointAtReference', ready: true, reasonKey: null });
+    const assembly = environment({ documentKind: 'assembly', pointAtReferenceReason: null });
+    expect(executeCommand('sketch.pointAtReference', { ...assembly.value, actions: { ...assembly.actions, pointAtReference: created } }))
+      .toMatchObject({ status: 'disabled', reasonKey: 'command.unavailable.document' });
+    expect(created).toHaveBeenCalledOnce();
+  });
   it.each(['part', 'assembly'] as const)('図面用の削除を%sから直接呼んでも実行しない', documentKind => {
     const target = environment({ documentKind });
     expect(executeCommand('drawing.deleteSelection', target.value)).toEqual({ status: 'disabled', commandId: 'drawing.deleteSelection',

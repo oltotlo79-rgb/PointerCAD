@@ -7,7 +7,7 @@
  *  - 図面の後ろに残る部品の未保存の変更も守る。
  *  - 取り外した後は何もしない。
  */
-import { writePcadFile } from '@pointercad/io';
+import { encodeSaveDocument, writePcadFile } from '@pointercad/io';
 import {
   absoluteCoordinate,
   appendFeature,
@@ -75,6 +75,8 @@ function createGateway(options: { readonly failSave?: boolean; readonly open?: P
 /** 確認には「はい」と答え、履歴はどこにも残さない口。 */
 function deps(): PartFileDeps {
   return {
+    // WorkerのないNodeでも、保存バイトは実IOで生成する。
+    encodeSave: encodeSaveDocument,
     captureThumbnail: () => null,
     confirmDiscard: () => Promise.resolve(true),
     recentFilesStorage: null,

@@ -9,8 +9,14 @@ import type {
   ThreadMarkInfo,
 } from '../types.js';
 import { extractEdges } from './extractEdges.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 import { collectSubShapes } from './subShapes.js';
-import { tessellate, type SurfaceMesh } from './tessellate.js';
+import { tessellate, type SurfaceMesh, type TessellationAdmission } from './tessellate.js';
+
+export interface SolidMeshJsAdmission {
+  readonly admitEdges: (segments: number, edges: number) => void;
+  readonly admitSubShapes: (entries: number) => void;
+}
 import { computeVolumeProperties } from './volumeProperties.js';
 
 /**
@@ -132,20 +138,30 @@ export function buildSolidBodyMesh(
   oc: OpenCascadeInstance,
   id: string,
   shape: TopoDS_Shape,
-  options: TessellationOptions = {},
+  options: TessellationOptions & { readonly admission?: TessellationAdmission;
+    readonly jsAdmission?: SolidMeshJsAdmission } = {},
   threadMarks: readonly ThreadMarkInfo[] = [],
   measureAreas = true,
   knownVolume?: number,
   knownArea?: number,
   preparedSurface?: SurfaceMesh,
+  frame?: MeshCoordinateFrame,
 ): SolidBodyMesh {
-  const surface = preparedSurface ?? tessellate(oc, shape, options);
-  const edges = extractEdges(oc, shape, options);
-  const subShapes = collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges);
+  // SurfaceMesh has no frame certificate. Reusing a prepared world (or differently
+  // translated) surface for a local edge array would corrupt the display silently.
+  if (frame !== undefined && preparedSurface !== undefined) {
+    throw new RangeError('A prepared surface cannot prove the requested mesh frame');
+  }
+  const surface = preparedSurface ?? tessellate(oc, shape, options, undefined, frame);
+  const edges = extractEdges(oc, shape, options, frame, options.jsAdmission?.admitEdges);
+  const subShapes = collectSubShapes(oc, shape, surface.faceRanges, edges.edgeRanges,
+    undefined, options.jsAdmission?.admitSubShapes);
   const bodyKind: SolidBodyKind = shapeBodyKind(oc, shape);
 
   return {
     id,
+    ...(frame === undefined ? {} : { coordinateFrame: { space: 'local' as const,
+      origin: frame.origin, maximumFloat32ErrorMm: frame.maximumFloat32ErrorMm } }),
     positions: surface.positions,
     normals: surface.normals,
     indices: surface.indices,

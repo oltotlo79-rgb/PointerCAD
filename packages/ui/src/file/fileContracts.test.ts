@@ -6,6 +6,10 @@ import { nativeFileFilter, isFileDialogKind, FILE_KIND_SPECS } from '@pointercad
 vi.mock('react', () => { throw new Error('ファイル契約の読込にReactは不要です'); });
 
 describe('Web/Desktop共通のファイル選択契約', () => {
+  it('CSVは読込対象CAD形式には混ぜず、共通の保存フィルタに載せる', () => {
+    expect(nativeFileFilter('csv')).toEqual({ name: 'CSV', extensions: ['csv'] });
+    expect(extensionsOf('csv')).toEqual(['.csv']);
+  });
   it('全形式の拡張子とその順序が両方の入口で一致する', () => {
     for (const kind of Object.keys(FILE_KIND_SPECS)) {
       if (!isFileDialogKind(kind)) throw new Error(`形式が解決できません: ${kind}`);

@@ -2,6 +2,7 @@ import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPa
   resolveAssembly, resolvePart, type PartDocument, type SolidBody } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachAssemblyInteraction, mateTargetFromFaceHit, pickAssemblyMateTarget } from './attachAssemblyInteraction.js';
+import { assemblyTargetId } from '../assembly/mateCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { commitMateDraft, editAssemblyMate, mateKindReadiness, startMate } from '../assembly/mateActions.js';
@@ -21,6 +22,22 @@ function body(): SolidBody {
 }
 
 describe('アセンブリ面pickから保存参照への変換', () => {
+  it('currentの一意な面originをcomponentと組にして保存し、曖昧/重複bodyは拒否する', () => {
+    const origin = { version: 1, shapeKind: 'face', identity: {
+      kind: 'box-face', featureId: 'box', role: 'top' } } as const;
+    const front = { version: 1, shapeKind: 'face', identity: {
+      kind: 'box-face', featureId: 'box', role: 'front' } } as const;
+    const source: SolidBody = { ...body(), origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current: { kind: 'face', index: 3 } }] } };
+    const hit = { componentId: 'component-2', bodyFeatureId: 'box', faceIndex: 3 };
+    expect(mateTargetFromFaceHit(hit, [source])).toMatchObject({ kind: 'subShape', componentId: 'component-2',
+      ref: { origin, index: 3 } });
+    expect(mateTargetFromFaceHit(hit, [source, { ...source }])).toBeNull();
+    expect(mateTargetFromFaceHit(hit, [{ ...source, isValid: false }])).toBeNull();
+    expect(mateTargetFromFaceHit(hit, [{ ...source, origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'merged', current: { kind: 'face', index: 3 }, coOrigins: [origin, front] }] } }])).toBeNull();
+  });
+
   it('instance idと部品内指紋を組にする', () => {
     expect(mateTargetFromFaceHit({ componentId: 'component-2', bodyFeatureId: 'box', faceIndex: 3 }, [body()]))
       .toMatchObject({ kind: 'subShape', componentId: 'component-2', ref: { bodyFeatureId: 'box', index: 3,
@@ -31,7 +48,7 @@ describe('アセンブリ面pickから保存参照への変換', () => {
     { componentId: 'component-1', bodyFeatureId: 'missing', faceIndex: 3 },
     { componentId: 'component-1', bodyFeatureId: 'box', faceIndex: 2 },
     { componentId: 'component-1', bodyFeatureId: 'box', faceIndex: -1 },
-  ])('存在しないbody/faceは対象を捏造しない', (hit) => {
+  ])('存在しないbody/faceは対象を捏造しない(%#)', (hit) => {
     expect(mateTargetFromFaceHit(hit, [body()])).toBeNull();
   });
 
@@ -283,14 +300,20 @@ describe('assemblyの実listener', () => {
   it.each(['vertex', 'edge'] as const)('%sは配置を一度だけ適用して拾い、保存指紋は局所のまま', (kind) => {
     const f = interactionFixture();
     try {
+      const origin = kind === 'vertex'
+        ? { version: 1, shapeKind: 'vertex', identity: { kind: 'box-vertex', featureId: 'box', role: 'top-front-left' } } as const
+        : { version: 1, shapeKind: 'edge', identity: { kind: 'box-edge', featureId: 'box', role: 'top-front' } } as const;
       const source: SolidBody = { ...body(), vertices: [{ index: 0, position: [2, 3, 0] }],
         edges: [{ index: 0, curveKind: 'line', length: 10, midpoint: [5, 0, 0], start: [0, 0, 0], end: [10, 0, 0], axis: [1, 0, 0], radius: null, segmentOffset: 0, segmentCount: 1 }],
-        mesh: { ...body().mesh, edgePositions: new Float32Array([0, 0, 0, 10, 0, 0]) } };
+        mesh: { ...body().mesh, edgePositions: new Float32Array([0, 0, 0, 10, 0, 0]) },
+        origins: { version: 1, state: 'tracked', bindings: [
+          { origin, state: 'unique', current: { kind, index: 0 } }] } };
       const view = { ...f.view, bodies: new Map([['part', [source]]]), resolved: { ...f.view.resolved,
         placements: new Map([['component-2', { position: [100, 20, 0] as const, rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] as const }]]) } };
       const point: readonly [number, number] = kind === 'vertex' ? [97, 22] : [100, 29];
       const hit = pickAssemblyMateTarget(f.document, view, f.scene, point, kind);
-      expect(hit).toMatchObject({ kind: 'subShape', componentId: 'component-2', ref: { fingerprint: { kind, position: kind === 'vertex' ? [2, 3, 0] : [5, 0, 0] } } });
+      expect(hit).toMatchObject({ kind: 'subShape', componentId: 'component-2', ref: { origin,
+        fingerprint: { kind, position: kind === 'vertex' ? [2, 3, 0] : [5, 0, 0] } } });
     } finally { f.interaction.detach(); }
   });
 
@@ -301,6 +324,147 @@ describe('assemblyの実listener', () => {
         : condition === 'suppressed' ? { ...component, suppressed: true } : component) };
       const view = condition === 'missingPart' ? { ...f.view, bodies: new Map() } : f.view;
       expect(pickAssemblyMateTarget(document, view, f.scene, [0, 0], 'face')).toBeNull();
+    } finally { f.interaction.detach(); }
+  });
+});
+
+describe('bolted joint composition keys at the real viewport listener', () => {
+  it.each([
+    { key: 'Enter', isComposing: true }, { key: 'Escape', isComposing: true },
+    { key: 'Enter', keyCode: 229 }, { key: 'Escape', keyCode: 229 }, { key: 'Process' },
+  ])('does not commit/cancel or consume browser defaults for %j', properties => {
+    const f = interactionFixture();
+    try {
+      expect(useAppStore.getState().beginBoltedJoint()).toBe(true);
+      const before = useAppStore.getState();
+      const commit = vi.spyOn(before, 'commitBoltedJoint');
+      const cancel = vi.spyOn(before, 'cancelBoltedJoint');
+      try {
+        const event = f.send('keydown', properties);
+        expect(commit).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+        expect(event.defaultPrevented).toBe(false);
+        expect(f.downstream).toHaveBeenCalledExactlyOnceWith(event);
+        const after = useAppStore.getState();
+        expect(after.assembly).toBe(before.assembly); expect(after.document).toBe(before.document);
+        expect(after.assemblyUndoStack).toBe(before.assemblyUndoStack);
+        expect(after.assemblyBoltedJointDraft).toBe(before.assemblyBoltedJointDraft);
+      } finally { commit.mockRestore(); cancel.mockRestore(); }
+    } finally { f.interaction.detach(); }
+  });
+  it('the next normal Enter reaches commit once, and normal Escape still cancels', () => {
+    const f = interactionFixture();
+    try {
+      useAppStore.getState().beginBoltedJoint();
+      const before = useAppStore.getState();
+      const commit = vi.spyOn(before, 'commitBoltedJoint').mockReturnValue(false);
+      try {
+        f.send('keydown', { key: 'Enter', keyCode: 229 });
+        expect(commit).not.toHaveBeenCalled();
+        expect(f.send('keydown', { key: 'Enter', keyCode: 13 }).defaultPrevented).toBe(true);
+        expect(commit).toHaveBeenCalledOnce();
+      } finally { commit.mockRestore(); }
+      expect(f.send('keydown', { key: 'Escape', keyCode: 27 }).defaultPrevented).toBe(true);
+      expect(useAppStore.getState().assemblyBoltedJointDraft).toBeNull();
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { f.interaction.detach(); }
+  });
+});
+
+describe('締結の穴の枠だけで、実らせんの壁の当たりを組の選択にする(実listener)', () => {
+  const wall = { kind: 'hole-face', featureId: 'thread', center: { sketchId: 'sketch', producer: { kind: 'point', featureId: 'c' } },
+    placement: { kind: 'original' }, stage: 'bore', role: 'wall' } as const;
+  const plane = (index: number, z: number, adjacentFaces: readonly number[]) => ({ index, surfaceKind: 'plane' as const, area: 100,
+    centroid: [5, 5, z] as [number, number, number], axis: [0, 0, 1] as [number, number, number], radius: null,
+    triangleOffset: 0, triangleCount: 1, adjacentFaces });
+  const piece = (index: number, extent: readonly [number, number], adjacentFaces: readonly number[]) => ({ index,
+    surfaceKind: 'cylinder' as const, area: 10, centroid: [0, 0, 14] as [number, number, number],
+    axis: [0, 0, 1] as [number, number, number], axisOrigin: [0, 0, 20] as [number, number, number], cylinderSpan: null,
+    cylinderAxialExtent: extent, radius: 2.5, triangleOffset: 0, triangleCount: 1, adjacentFaces });
+  // 0〜2 は無関係な面。3・4 が壁の小片(z 8〜15・14〜20)、5 が溝、6 が入口の平面(z 20)、7 が底(z 8)。
+  const threaded = (): SolidBody => ({ ...body(), faces: [plane(0, 30, []), plane(1, 31, []), plane(2, 32, []),
+    piece(3, [-12, -5], [4, 5, 7]), piece(4, [-6, 0], [3, 5, 6]),
+    { index: 5, surfaceKind: 'other', area: 1, centroid: [2, 0, 14], axis: null, radius: null, triangleOffset: 0, triangleCount: 1,
+      adjacentFaces: [3, 4, 6] }, plane(6, 20, [4, 5]), plane(7, 8, [3])],
+  origins: { version: 1, state: 'tracked', bindings: [
+    { origin: { version: 1, shapeKind: 'face', identity: wall }, state: 'split',
+      candidates: [{ kind: 'face', index: 3 }, { kind: 'face', index: 4 }] },
+    { origin: { version: 1, shapeKind: 'face', identity: { ...wall, stage: 'thread', role: 'groove' } }, state: 'unique',
+      current: { kind: 'face', index: 5 } },
+  ] } });
+
+  it('穴Aの枠では組になり、合わせ面の枠や普通の選択では split の面を断る', () => {
+    const f = interactionFixture();
+    try {
+      const view = { ...f.view, bodies: new Map([['part', [threaded()]]]) };
+      useAppStore.setState({ assemblyView: view });
+      expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face')).toBeNull();
+      expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face', undefined, true)).toEqual({
+        kind: 'modeledThreadGroup', componentId: 'component-1', group: { bodyFeatureId: 'box', origin: wall, hitFaceIndex: 3 } });
+      expect(useAppStore.getState().beginBoltedJoint()).toBe(true);
+      f.send('pointerdown');
+      expect(useAppStore.getState().assemblyBoltedJointDraft?.picks).toEqual([
+        { kind: 'modeledThreadGroup', componentId: 'component-1', group: { bodyFeatureId: 'box', origin: wall, hitFaceIndex: 3 } }]);
+      const before = useAppStore.getState().assemblyBoltedJointDraft;
+      f.send('pointerdown');
+      expect(useAppStore.getState().assemblyBoltedJointDraft).toBe(before);
+      expect(useAppStore.getState().assembly?.mates).toEqual(f.document.mates);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('pointermove: 穴の枠では組の今の面を hover し、合わせ面の枠・取消後・普通の選択では split の面を hover しない', () => {
+    const f = interactionFixture();
+    try {
+      const view = { ...f.view, bodies: new Map([['part', [threaded()]]]) };
+      useAppStore.setState({ assemblyView: view, hoveredElementId: null });
+      // 期待の id は既存の面の対象(同じボディ・番地)から既存の関数で作る。
+      const faceId = assemblyTargetId({ kind: 'subShape', componentId: 'component-1', ref: { bodyFeatureId: 'box', index: 3,
+        fingerprint: { kind: 'face', surfaceKind: 'cylinder', area: 10, position: [0, 0, 14], axis: [0, 0, 1], radius: 2.5 } } });
+      f.send('pointermove');
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      expect(useAppStore.getState().beginBoltedJoint()).toBe(true);
+      expect(() => f.send('pointermove')).not.toThrow();
+      expect(useAppStore.getState().hoveredElementId).toBe(faceId);
+      f.send('pointerdown');
+      f.send('pointermove');
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      useAppStore.getState().cancelBoltedJoint();
+      f.send('pointermove');
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      expect(useAppStore.getState().assembly?.mates).toEqual(f.document.mates);
+    } finally { f.interaction.detach(); }
+  });
+
+  it('同じ id のボディが2つあれば、穴の枠でも組にならない(同じ中身・片方が壊れた形、どちらの順でも)', () => {
+    const f = interactionFixture();
+    try {
+      const good = threaded();
+      const broken: SolidBody = { ...good, faces: good.faces.map((face) => face.index === 5
+        ? { index: 5, surfaceKind: 'other' as const, area: 1, centroid: [2, 0, 14] as [number, number, number], axis: null,
+          radius: null, triangleOffset: 0, triangleCount: 1 } : face) };
+      for (const bodies of [[good, threaded()], [good, broken], [broken, good]]) {
+        const view = { ...f.view, bodies: new Map([['part', bodies]]) };
+        expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face', undefined, true)).toBeNull();
+      }
+    } finally { f.interaction.detach(); }
+  });
+
+  it('無効なボディは、穴の枠でも組にならない(当たりの番地と由来が同じでも)', () => {
+    const f = interactionFixture();
+    try {
+      const view = { ...f.view, bodies: new Map([['part', [{ ...threaded(), isValid: false }]]]) };
+      expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face', undefined, true)).toBeNull();
+    } finally { f.interaction.detach(); }
+  });
+
+  it('溝の隣の一覧が無い形では、穴の枠でも組にならない', () => {
+    const f = interactionFixture();
+    try {
+      const damaged = threaded();
+      const view = { ...f.view, bodies: new Map([['part', [{ ...damaged, faces: damaged.faces.map((face) => face.index === 5
+        ? { index: 5, surfaceKind: 'other' as const, area: 1, centroid: [2, 0, 14] as [number, number, number], axis: null,
+          radius: null, triangleOffset: 0, triangleCount: 1 } : face) }]]]) };
+      expect(pickAssemblyMateTarget(f.document, view, f.scene, [0, 0], 'face', undefined, true)).toBeNull();
     } finally { f.interaction.detach(); }
   });
 });

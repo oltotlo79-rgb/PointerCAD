@@ -3,6 +3,10 @@ import {
   absoluteCoordinate,
   appendFeature,
   createEmptyPartDocument,
+  createUndoStack,
+  pushUndo,
+  redo,
+  undo,
   DEFAULT_FACE_COLOR,
   DEFAULT_SEW_TOLERANCE_MM,
   liveBodyIds,
@@ -43,7 +47,7 @@ import {
   selectedSpringOrigin,
   solidToolReadiness,
 } from './solidCommands.js';
-import { subShapeElementId, type SolidFaceEntry, type SubShapeBody } from './subShapeSelection.js';
+import { subShapeElementId, subShapeRefOf, type SolidFaceEntry, type SubShapeBody } from './subShapeSelection.js';
 
 const SKETCH_ID = 'sketch-1';
 
@@ -1563,5 +1567,132 @@ describe('畳み先の 3 段は、既定のままなら従来と同じ文書に�
     expect(feature?.kind === 'extrude' ? feature.end : 'x').toBeUndefined();
     expect(feature?.kind === 'extrude' ? feature.taperAngle : 'x').toBeUndefined();
     expect(feature?.kind === 'extrude' ? feature.thickness : 'x').toBeUndefined();
+  });
+});
+
+
+describe('integrated extrude operation', () => {
+  const commit = (operation?: string, target?: string): SolidInputCommit => ({
+    kind: 'solid', tool: 'extrude', step: 'extrudeDistance',
+    values: { distance: DISTANCE_10 }, flags: {},
+    shapeChoices: { extrudeOperation: operation, extrudeTarget: target },
+  });
+  function withTarget(): { document: PartDocument; target: string } {
+    const outcome = commitSolidInput(documentWithFaces(['face-1']), ['face-1'], commit());
+    if (!outcome.ok) throw new Error('Fixture extrusion failed');
+    return { document: outcome.document, target: outcome.featureId };
+  }
+  it('default and explicit new preserve the original extrusion document exactly', () => {
+    const document = documentWithFaces(['face-1']);
+    const original = commitExtrude(document, { profile: faceRef('face-1'), distance: DISTANCE_10,
+      reversed: false, symmetric: false });
+    expect(commitSolidInput(document, ['face-1'], commit())).toEqual(original);
+    expect(commitSolidInput(document, ['face-1'], commit('new', 'ignored'))).toEqual(original);
+  });
+  it.each([['join', 'union'], ['cut', 'subtract']] as const)('%s composes the exact explicit target and tool', (mode, operation) => {
+    const { document, target } = withTarget();
+    const original = document.solids.slice();
+    const outcome = commitSolidInput(document, [target, 'face-1'], commit(mode, target));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) throw new Error('Expected composition');
+    expect(document.solids).toEqual(original);
+    expect(outcome.document.solids).toHaveLength(document.solids.length + 2);
+    const tool = outcome.document.solids.at(-2);
+    expect(tool?.kind).toBe('extrude');
+    expect(outcome.document.solids.at(-1)).toMatchObject({ kind: 'boolean', operation,
+      targetFeatureId: target, toolFeatureId: tool?.id, id: outcome.featureId });
+    expect(liveBodyIds(outcome.document)).toEqual([outcome.featureId]);
+  });
+  it.each([undefined, '', 'deleted'])('rejects missing or deleted target %s before any composition', (target) => {
+    const fixture = withTarget();
+    const before = JSON.stringify(fixture.document);
+    expect(commitSolidInput(fixture.document, ['face-1'], commit('join', target)).ok).toBe(false);
+    expect(JSON.stringify(fixture.document)).toBe(before);
+  });
+  it('rejects consumed target and invalid operation', () => {
+    const fixture = withTarget();
+    const joined = commitSolidInput(fixture.document, ['face-1'], commit('join', fixture.target));
+    if (!joined.ok) throw new Error('Expected composition');
+    expect(commitSolidInput(joined.document, ['face-1'], commit('cut', fixture.target))).toEqual({
+      ok: false, reasonKey: 'solidError.extrudeTargetUnavailable' });
+    expect(commitSolidInput(fixture.document, ['face-1'], commit('invalid', fixture.target))).toEqual({
+      ok: false, reasonKey: 'shapeError.unknownChoice' });
+  });
+  it('preserves the full existing extrusion option set on the composed tool', () => {
+    const { document, target } = withTarget();
+    const input: SolidInputCommit = { ...commit('cut', target),
+      values: { distance: DISTANCE_10, taperAngle: expressionValueFromNumber(3), thickness: expressionValueFromNumber(2) },
+      flags: { reversed: true, symmetric: true, tapered: true, taperOutward: true, thinWalled: true },
+      shapeChoices: { extrudeOperation: 'cut', extrudeTarget: target, extrudeEnd: 'toNext', thicknessSide: 'both' } };
+    const plain = commitSolidInput(document, ['face-1'], { ...input,
+      shapeChoices: { ...input.shapeChoices, extrudeOperation: 'new' } });
+    const composed = commitSolidInput(document, ['face-1'], input);
+    if (!plain.ok || !composed.ok) throw new Error('Expected extrusion');
+    expect(composed.document.solids.at(-2)).toEqual(plain.document.solids.at(-1));
+  });
+});
+
+
+describe('surface sewing selection and one-step undo', () => {
+  const commit: SolidInputCommit = { kind: 'solid', tool: 'sew', step: 'sewTolerance', values: {}, flags: {} };
+  function fixture() {
+    let document = documentWithFaces(['face-1']);
+    const bodies: SubShapeBody[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const extruded = commitExtrude(document, { profile: faceRef('face-1'), distance: DISTANCE_10, reversed: false, symmetric: false });
+      if (!extruded.ok) throw new Error('Could not prepare source body');
+      document = extruded.document;
+      const body = makeHoleTargetBody(extruded.featureId);
+      bodies.push(index === 0 ? { ...body, faces: [{ ...body.faces[0], surfaceKind: 'cylinder', radius: 10 }] } : body);
+    }
+    const selection = bodies.map(body => subShapeElementId(body.featureId, 'face', 0));
+    const refs = selection.map(id => {
+      const ref = subShapeRefOf(bodies, id);
+      if (ref === null) throw new Error('Could not capture current face');
+      return ref;
+    });
+    return { document, bodies, selection, refs };
+  }
+
+  it('commits the chosen curved and planar faces as references, and one undo restores the whole document', () => {
+    const { document, bodies, selection, refs } = fixture();
+    const before = structuredClone(document);
+    expect(solidToolReadiness(document, selection, 'sew', bodies)).toEqual({ ready: true, reasonKey: null });
+    const outcome = commitSolidInput(document, selection, commit, bodies);
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    expect(outcome.document.solids).toHaveLength(document.solids.length + 1);
+    const feature = outcome.document.solids.find(entry => entry.id === outcome.featureId);
+    expect(feature).toMatchObject({ kind: 'sew', faces: [], surfaceFaces: refs, tolerance: DEFAULT_SEW_TOLERANCE });
+    const stack = pushUndo(createUndoStack(document), outcome.document);
+    const undone = undo(stack);
+    expect(undone.present).toBe(document);
+    expect(undone.past).toHaveLength(0);
+    expect(redo(undone).present).toBe(outcome.document);
+    expect(document).toEqual(before);
+  });
+
+  it('rejects mixed, missing and non-face selections without silently removing any input', () => {
+    const { document, bodies, selection, refs } = fixture();
+    const before = structuredClone(document);
+    const refused: readonly (readonly string[])[] = [
+      [...selection, 'face-1'], [...selection, 'missing#face:0'],
+      [...selection, subShapeElementId(bodies[0].featureId, 'face', 99)],
+      [...selection, subShapeElementId(bodies[0].featureId, 'edge', 0)],
+    ];
+    for (const selected of refused) {
+      expect(solidToolReadiness(document, selected, 'sew', bodies).ready).toBe(false);
+      expect(commitSolidInput(document, selected, commit, bodies)).toEqual({ ok: false, reasonKey: 'solidError.noFace' });
+    }
+    expect(commitSew(document, { faces: [faceRef('face-1')], surfaceFaces: refs, tolerance: TOLERANCE_DEFAULT }))
+      .toEqual({ ok: false, reasonKey: 'solidError.noFace' });
+    expect(commitSew(document, { faces: [], surfaceFaces: [{ ...refs[0], bodyFeatureId: 'missing' }, refs[1]], tolerance: TOLERANCE_DEFAULT }))
+      .toEqual({ ok: false, reasonKey: 'solidError.noFace' });
+    expect(commitSolidInput(document, selection.slice(0, 1), commit, bodies))
+      .toEqual({ ok: false, reasonKey: 'solidError.needTwoFaces' });
+    expect(commitSolidInput(document, selection, commit, bodies.map(body => ({ ...body, isValid: false }))))
+      .toEqual({ ok: false, reasonKey: 'solidError.noFace' });
+    const suppressed = { ...document, solids: document.solids.map(feature => ({ ...feature, suppressed: true })) };
+    expect(commitSolidInput(suppressed, selection, commit, bodies)).toEqual({ ok: false, reasonKey: 'solidError.noFace' });
+    expect(document).toEqual(before);
   });
 });

@@ -1,0 +1,34 @@
+--- a/bindings/python/oofem/util.py
++++ b/bindings/python/oofem/util.py
+@@ -2,9 +2,8 @@
+ except ImportError: import oofempy # imported in the build-tree, oofempy being in PYTHONPATH
+ 
+ import numpy as np
+-import matplotlib
+-import matplotlib.pyplot as plt
+-import matplotlib.tri as tri
++# matplotlib is imported only inside the plotting helpers below, so setupDomain (the only helper the solver
++# drivers use) does not require the plotting stack to be installed or loaded.
+ 
+ 
+ #
+@@ -67,6 +66,9 @@
+     warpScale : float, optional
+         The scale factor for warping the mesh coordinates.
+     """
++    import matplotlib
++    import matplotlib.pyplot as plt
++    import matplotlib.tri as tri
+     x=[];
+     y=[];
+     z=[];
+@@ -144,6 +146,9 @@
+     elementLabels : bool, optional
+         Whether to display labels for elements.
+     """
++    import matplotlib
++    import matplotlib.pyplot as plt
++    import matplotlib.tri as tri
+     x=[];
+     y=[];
+     

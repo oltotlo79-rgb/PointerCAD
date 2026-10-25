@@ -1,4 +1,4 @@
-import { createAutoSaver, createMemoryAutoSaveStorage, readDrawingBundle, type AutoSaveRecord, type AutoSaveStorage } from '@pointercad/io';
+import { encodeSaveDocument, createAutoSaver, createMemoryAutoSaveStorage, readDrawingBundle, type AutoSaveRecord, type AutoSaveStorage } from '@pointercad/io';
 import { createDrawingDocument, createEmptyPartDocument, embedDrawingSource, emptyDrawingSourceLibrary,
   type DrawingDocument, type GdtFeature, type ToleranceCharacteristic } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,7 +11,8 @@ import { savePart, type PartFileDeps } from './partFile.js';
 const cleanup: (() => void)[] = [];
 beforeEach(resetTestStore);
 afterEach(() => { for (const stop of cleanup.splice(0)) stop(); });
-const deps: PartFileDeps = { captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null };
+// NodeにはWorkerがないため、通常保存と自動保存の両方へ実IOを明示する。
+const deps: PartFileDeps = { encodeSave: encodeSaveDocument, captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null };
 const kinds: readonly ToleranceCharacteristic[] = ['straightness', 'flatness', 'roundness', 'cylindricity', 'lineProfile', 'surfaceProfile',
   'parallelism', 'perpendicularity', 'angularity', 'position', 'coaxiality', 'symmetry', 'circularRunout', 'totalRunout'];
 
@@ -36,7 +37,7 @@ async function fixture() {
 }
 
 function start(storage: AutoSaveStorage, sessionId = 'new-window') {
-  const stop = startAutoSave({ storage, sessionId }); cleanup.push(stop);
+  const stop = startAutoSave({ storage, sessionId, encodeSave: encodeSaveDocument }); cleanup.push(stop);
   const saver = useAppStore.getState().autoSaver; if (saver === null) throw new Error('図面の自動保存が接続されていない');
   return saver;
 }

@@ -51,7 +51,9 @@ import type {
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { matchVertex } from './matchSubShape.js';
+import type { CurrentOriginIndex } from '../subShapeOrigin.js';
+import { boxSubShapeOrigins, cylinderSubShapeOrigins, sphereSubShapeOrigins, coneSubShapeOrigins, torusSubShapeOrigins } from './subShapeOrigins.js';
+import { resolveVertexReference } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { boundingDiagonal } from './subShapes.js';
 
@@ -290,7 +292,7 @@ export function offsetFromVertex(vertex: Vec3Tuple, offset: Vec3Tuple): Vec3Tupl
 /**
  * 立体の頂点を基準にする基本形状の基準点を、対象の形から引く(FR-429、§0.a-0.18、タスク14b)。
  *
- * 採点は P3 の部分形状の参照とまったく同じ `matchVertex`(重み 0.5 / 0.5、しきい値 0.6)で、
+ * 採点は P3 の部分形状の参照とまったく同じ `resolveVertexReference`(重み 0.5 / 0.5、しきい値 0.6)で、
  * **基本形状のための別の規約は作らない**。位置を正規化する物差し(`scale`)も加工フィーチャーと
  * 同じ「対象の境界箱の対角長の半分」にするので、同じ指紋からは穴・面取り・投影と必ず同じ
  * 頂点が選ばれる(`pickSubShape.ts` と同じ決め方)。
@@ -310,17 +312,18 @@ export function resolvePrimitiveOrigin(
   offset: Vec3Tuple,
   shape: TopoDS_Shape,
   vertices: readonly SolidVertexInfo[],
+  origins?: CurrentOriginIndex,
 ): Vec3Tuple {
   if (query.kind !== 'vertex') {
     throw new Error(PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE);
   }
-  const match = matchVertex(vertices, query, boundingDiagonal(oc, shape) * 0.5);
-  if (match === null) {
+  const match = resolveVertexReference(vertices, query, boundingDiagonal(oc, shape) * 0.5, origins);
+  if (match.status !== 'matched') {
     throw new Error(MISSING_PRIMITIVE_VERTEX_MESSAGE);
   }
   // 一覧は通し番号の順に並ぶ約束だが、並びに頼らず番号で引き当てる
   // (matchSubShape.ts の selectBest が「並びが変わっても答えを変えない」のと同じ理由)。
-  const found = vertices.find((vertex) => vertex.index === match.index);
+  const found = vertices.find((vertex) => vertex.index === match.match.index);
   if (found === undefined) {
     throw new Error(MISSING_PRIMITIVE_VERTEX_MESSAGE);
   }
@@ -354,53 +357,49 @@ function buildPrimitiveShape(
   oc: OpenCascadeInstance,
   spec: PrimitiveStepSpec,
   keep: Allocations['keep'],
+  featureId?: string,
+  onOrigins?: (origins: CurrentOriginIndex) => void,
 ): TopoDS_Shape {
   const axes = primitiveAxes(oc, spec.origin, spec.axis, keep);
   const shape = spec.shape;
   const name = SHAPE_NAMES[shape.kind];
 
   switch (shape.kind) {
-    case 'sphere':
-      // 球は gp_Ax2 の原点が中心。極が Z 方向、継ぎ目が X 方向に来る。
-      return finishMaker(oc, keep(new oc.BRepPrimAPI_MakeSphere_9(axes, shape.radius)), name, keep);
+    case 'sphere': {
+      const maker = keep(new oc.BRepPrimAPI_MakeSphere_9(axes, shape.radius));
+      const solid = finishMaker(oc, maker, name, keep);
+      if (featureId !== undefined) onOrigins?.(sphereSubShapeOrigins(oc, maker, solid, featureId));
+      return solid;
+    }
     case 'box': {
       const frame = readAxesFrame(axes, keep);
       const corner = boxCornerOrigin(spec.origin, frame, shape.sizeX, shape.sizeY, shape.sizeZ);
       // 枠の 3 方向はそのままに、原点だけを角へ移す(SetLocation は位置だけを変える)。
       axes.SetLocation(keep(new oc.gp_Pnt_3(corner[0], corner[1], corner[2])));
-      return finishMaker(
-        oc,
-        keep(new oc.BRepPrimAPI_MakeBox_5(axes, shape.sizeX, shape.sizeY, shape.sizeZ)),
-        name,
-        keep,
-      );
+      const maker = keep(new oc.BRepPrimAPI_MakeBox_5(axes, shape.sizeX, shape.sizeY, shape.sizeZ));
+      const solid = finishMaker(oc, maker, name, keep);
+      if (featureId !== undefined) onOrigins?.(boxSubShapeOrigins(oc, maker, solid, featureId));
+      return solid;
     }
-    case 'cylinder':
+    case 'cylinder': {
       // 円柱は gp_Ax2 の原点が底面の中心。そのまま渡せば決めどおりになる。
-      return finishMaker(
-        oc,
-        keep(new oc.BRepPrimAPI_MakeCylinder_3(axes, shape.radius, shape.height)),
-        name,
-        keep,
-      );
-    case 'cone':
-      // 円錐も底面の中心が原点。R2(上半径)が 0 なら尖り、R1 と同じなら円柱になる。
-      return finishMaker(
-        oc,
-        keep(
-          new oc.BRepPrimAPI_MakeCone_3(axes, shape.bottomRadius, shape.topRadius, shape.height),
-        ),
-        name,
-        keep,
-      );
-    case 'torus':
-      // トーラスは gp_Ax2 の原点が輪の中心。R1 が中心までの半径、R2 が管の半径。
-      return finishMaker(
-        oc,
-        keep(new oc.BRepPrimAPI_MakeTorus_5(axes, shape.majorRadius, shape.minorRadius)),
-        name,
-        keep,
-      );
+      const maker = keep(new oc.BRepPrimAPI_MakeCylinder_3(axes, shape.radius, shape.height));
+      const solid = finishMaker(oc, maker, name, keep);
+      if (featureId !== undefined) onOrigins?.(cylinderSubShapeOrigins(oc, maker, solid, featureId));
+      return solid;
+    }
+    case 'cone': {
+      const maker = keep(new oc.BRepPrimAPI_MakeCone_3(axes, shape.bottomRadius, shape.topRadius, shape.height));
+      const solid = finishMaker(oc, maker, name, keep);
+      if (featureId !== undefined) onOrigins?.(coneSubShapeOrigins(oc, maker, solid, featureId));
+      return solid;
+    }
+    case 'torus': {
+      const maker = keep(new oc.BRepPrimAPI_MakeTorus_5(axes, shape.majorRadius, shape.minorRadius));
+      const solid = finishMaker(oc, maker, name, keep);
+      if (featureId !== undefined) onOrigins?.(torusSubShapeOrigins(oc, maker, solid, featureId));
+      return solid;
+    }
   }
 }
 
@@ -415,12 +414,13 @@ function buildPrimitiveShape(
  * 断るときは必ず日本語の `Error`(FR-504)。OCCT の C++ 例外は数値で飛んでくるので、
  * `Error` でないものは形ごとの理由へ言い換えてから投げ直す(`makeSpring.ts` と同じ)。
  */
-export function makePrimitive(oc: OpenCascadeInstance, spec: PrimitiveStepSpec): OcctShapeHandle {
+export function makePrimitive(oc: OpenCascadeInstance, spec: PrimitiveStepSpec, featureId?: string): OcctShapeHandle {
   checkPrimitiveSpec(spec);
 
   const { keep, release } = createAllocations();
   try {
-    const shape = buildPrimitiveShape(oc, spec, keep);
+    let origins: CurrentOriginIndex | undefined;
+    const shape = buildPrimitiveShape(oc, spec, keep, featureId, (value) => { origins = value; });
 
     if (!hasSolid(oc, shape) || Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3) {
       throw new Error(NOT_SOLID_MESSAGE);
@@ -429,7 +429,7 @@ export function makePrimitive(oc: OpenCascadeInstance, spec: PrimitiveStepSpec):
       throw new Error(NOT_SOLID_MESSAGE);
     }
 
-    return { shape, delete: release };
+    return { shape, ...(origins === undefined ? {} : { origins }), delete: release };
   } catch (error) {
     release();
     throw error instanceof Error

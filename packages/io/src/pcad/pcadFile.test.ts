@@ -9,6 +9,7 @@ import {
   EMPTY_PART_LIBRARY,
   resolvePart,
   createEmptyPartDocument,
+  appendSolid,
   emptyAppearanceTable,
   PART_SCHEMA_VERSION,
   type AssemblyDocument,
@@ -20,7 +21,7 @@ import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 
 import { IO_LIMITS } from '../limits.js';
-import { serializeDocument } from './documentJson.js';
+import { parseDocument, serializeDocument } from './documentJson.js';
 import {
   decodeImportedMeshBytes,
   emptyPcadAttachments,
@@ -42,6 +43,7 @@ import {
   readPcadaFile,
   readPcaddFile,
   readPcadFile,
+  readPcadEntries,
   readDocumentBundle,
   writeDocumentBundle,
   writePcadaFile,
@@ -53,7 +55,7 @@ import {
   type ReadPcadFileError,
   type ReadPcadFileResult,
 } from './pcadFile.js';
-import { ARCHIVE_TOO_LARGE_MESSAGE } from './readArchive.js';
+import { ARCHIVE_TOO_LARGE_MESSAGE, readArchive } from './readArchive.js';
 import {
   PCAD_APP_NAME,
   PCAD_DOCUMENT_KIND,
@@ -65,6 +67,38 @@ import {
 
 /** 検査で保存時刻を固定する(時刻が違ってもバイト列が同じであることを確かめるため)。 */
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
+
+describe('validated archive entries parser', () => {
+  it('preserves all metadata, attachments and template kind without another ZIP read', () => {
+    for (const kind of [PCAD_DOCUMENT_KIND, PCAD_TEMPLATE_KIND] as const) {
+      const bytes = writePcadFile({ ...importedDocument(), canvases: canvasDocument().canvases }, {
+        savedAt: SAVED_AT, kind, thumbnailPng: fakePng(),
+        attachments: { ...importedAttachments(), canvases: new Map([['canvas-1', fakePng()]]) },
+      });
+      const archive = readArchive(bytes, { shouldExtract: () => true });
+      if (!archive.ok) throw new Error('Expected valid bounded archive');
+      const parsed = readPcadEntries(archive.entries);
+      expect(parsed).toEqual(readPcadFile(bytes));
+      expect(expectOk(parsed).kind).toBe(kind);
+    }
+  });
+
+  it('retains malformed document, missing attachment and broken mesh rejection', () => {
+    const cases: [Record<string, Uint8Array>, string][] = [
+      [{ 'notes.txt': strToU8('missing') }, 'missingDocument'],
+      [{ 'document.json': strToU8('{') }, 'invalidJson'],
+      [{ 'document.json': strToU8(serializeDocument(canvasDocument(), { savedAt: SAVED_AT })) }, 'missingField'],
+      [{ 'document.json': strToU8(envelopeText()), 'meshes/broken.bin': Uint8Array.of(1, 2, 3) }, 'invalidField'],
+    ];
+    for (const [entries, code] of cases) {
+      const bytes = zipSync(entries), archive = readArchive(bytes, { shouldExtract: () => true });
+      if (!archive.ok) throw new Error('Expected valid ZIP with invalid PCAD content');
+      const parsed = readPcadEntries(archive.entries);
+      expect(parsed).toEqual(readPcadFile(bytes));
+      expect(parsed).toMatchObject({ ok: false, error: { code } });
+    }
+  });
+});
 
 describe('文書の束とZIPの変換', () => {
   it('旧pcadの原本にSHA-256を補い、再解決時に原本を読み直さない', () => {
@@ -1009,6 +1043,22 @@ describe('.pcad の添付(§0.a-0.55)', () => {
     expect(result.attachments.canvases.get('canvas-1')?.length).toBe(png.length);
   });
 
+  it('四隅補正を保存しても下絵画像のZIP原本を同じバイトで開く', () => {
+    const base = canvasDocument();
+    const sourceQuad = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]] as const;
+    const document: PartDocument = { ...base,
+      canvases: [{ ...base.canvases[0], rectification: { sourceQuad } }] };
+    const png = fakePng();
+    const attachments = { ...emptyPcadAttachments(), canvases: new Map([['canvas-1', png]]) };
+    const bytes = writePcadFile(document, { savedAt: SAVED_AT, attachments });
+    const read = expectOk(readPcadFile(bytes));
+    expect(read.document.canvases[0]?.rectification).toEqual({ sourceQuad });
+    expect(read.attachments.canvases.get('canvas-1')).toEqual(png);
+    const entries = unzipSync(bytes);
+    expect(entries[`${PCAD_CANVAS_ENTRY_PREFIX}canvas-1${PCAD_CANVAS_ENTRY_SUFFIX}`]).toEqual(png);
+    expect(writePcadFile(read.document, { savedAt: SAVED_AT, attachments: read.attachments })).toEqual(bytes);
+  });
+
   it('文書が指す下絵の画像が欠けていれば missingField で断る(コードを増やさない)', () => {
     const bytes = writePcadFile(canvasDocument(), {
       savedAt: SAVED_AT,
@@ -1649,5 +1699,213 @@ describe('.pcada の読み書き(P7 タスク3、FR-601、FR-801、要件§8)', 
     const error = expectError(readPcadFile(await writeExample()));
     expect(error.code).toBe('unsupportedKind');
     expect(error.message).toContain('assembly');
+  });
+});
+
+describe('円筒の側面の穴の .pcad と組立への埋め込み(EX05、版20)', () => {
+  const expression = (source: string, value: number) => ({ source, value, display: source });
+  function cylindricalHoleDocument(schemaVersion: number): PartDocument {
+    return {
+      ...createEmptyPartDocument(),
+      schemaVersion,
+      solids: [{
+        id: 'hole-1', kind: 'hole', name: '穴1', suppressed: false, targetFeatureId: 'cylinder-1',
+        face: { bodyFeatureId: 'cylinder-1', index: 2, fingerprint: {
+          kind: 'face', surfaceKind: 'cylinder', area: 2513.2741228718346, position: [0, 0, 20], axis: [0, 0, 1], radius: 10,
+        } },
+        centers: [], diameter: expression('4', 4), depth: { kind: 'through' },
+        tiltAngle: expression('0', 0), tiltAzimuth: expression('0', 0),
+        cylindrical: { kind: 'cylinder-face', locations: [{ height: expression('h', 12), angle: expression('90', 90) }] },
+      }],
+    };
+  }
+
+  it('部品の .pcad は高さ・角度を式のまま往復し、書き直しても同じバイト列になる', () => {
+    const document = cylindricalHoleDocument(PCAD_SCHEMA_VERSION);
+    const bytes = writePcadFile(document, { savedAt: SAVED_AT });
+    const read = expectOk(readPcadFile(bytes));
+    expect(read.document).toEqual(document);
+    expect(writePcadFile(read.document, { savedAt: SAVED_AT })).toEqual(bytes);
+  });
+
+  it('版19と名乗る部品の .pcad には書かない', () => {
+    expect(() => writePcadFile(cylindricalHoleDocument(19), { savedAt: SAVED_AT })).toThrow('版20');
+  });
+
+  it('組立に埋め込んだ部品も円筒の穴を保って往復し、版19と名乗る埋め込みは保存で断る', async () => {
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, cylindricalHoleDocument(PCAD_SCHEMA_VERSION), 'c.pcad', './c.pcad', {
+      importedAt: SAVED_AT,
+    });
+    const bundle = createAssemblyDocumentBundle(createAssemblyDocument('組立1'), embedded.library);
+    const bytes = await writeDocumentBundle(bundle, { savedAt: SAVED_AT });
+    const read = await readDocumentBundle(bytes, 'assembly');
+    if (!read.ok || read.bundle.kind !== 'assembly') throw new Error('アセンブリの束が必要');
+    const parts = [...read.bundle.embeddedDocuments.values()];
+    expect(parts).toHaveLength(1);
+    const hole = parts[0]?.document.solids[0];
+    expect(hole?.kind === 'hole' ? hole.cylindrical : undefined).toEqual(
+      { kind: 'cylinder-face', locations: [{ height: expression('h', 12), angle: expression('90', 90) }] });
+    expect(await writeDocumentBundle(read.bundle, { savedAt: SAVED_AT })).toEqual(bytes);
+    await expect((async () => {
+      const old = await embedPart(EMPTY_PART_LIBRARY, cylindricalHoleDocument(19), 'old.pcad', './old.pcad', { importedAt: SAVED_AT });
+      return writeDocumentBundle(createAssemblyDocumentBundle(createAssemblyDocument('組立1'), old.library), { savedAt: SAVED_AT });
+    })()).rejects.toThrow('版20');
+  });
+});
+
+/*
+ * EX04 差の requireRemoval の保存と読み込み(UNEXECUTED until Root runs it)。
+ * 書くのは true だけ。欄が無い差は以前と同じ JSON のまま往復し、true 以外の値は壊れた欄として断る。
+ */
+describe('差の requireRemoval を保存・読み込みする', () => {
+  function subtractDocument(requireRemoval: boolean): PartDocument {
+    const feature = {
+      id: 'subtract-1', name: '差', suppressed: false, kind: 'boolean' as const, operation: 'subtract' as const,
+      targetFeatureId: 'extrude-1', toolFeatureId: 'extrude-2',
+    };
+    return appendSolid(createEmptyPartDocument(), requireRemoval ? { ...feature, requireRemoval: true } : feature);
+  }
+
+  function documentText(bytes: Uint8Array): string {
+    const entry = unzipSync(bytes)[PCAD_DOCUMENT_ENTRY];
+    if (entry === undefined) throw new Error('document.json がありません');
+    return strFromU8(entry);
+  }
+
+  it('true は true のまま、欄なしは欄なしのまま往復する', () => {
+    for (const flag of [true, false]) {
+      const document = subtractDocument(flag);
+      const bytes = writePcadFile(document, { savedAt: SAVED_AT });
+      expect(documentText(bytes).includes('requireRemoval')).toBe(flag);
+      const read = expectOk(readPcadFile(bytes));
+      const solid = read.document.solids.find((feature) => feature.id === 'subtract-1');
+      expect(solid).toEqual(document.solids.find((feature) => feature.id === 'subtract-1'));
+      expect(solid !== undefined && 'requireRemoval' in solid).toBe(flag);
+    }
+  });
+
+  it.each([['"yes"'], ['false'], ['1']])('requireRemoval が %s の文書は壊れた欄として断る', (value) => {
+    const entries = unzipSync(writePcadFile(subtractDocument(true), { savedAt: SAVED_AT }));
+    const original = entries[PCAD_DOCUMENT_ENTRY];
+    if (original === undefined) throw new Error('document.json がありません');
+    const text = strFromU8(original);
+    const broken = text.replace(/"requireRemoval":\s*true/, `"requireRemoval": ${value}`);
+    expect(broken).not.toBe(text);
+    entries[PCAD_DOCUMENT_ENTRY] = strToU8(broken);
+    expect(readPcadFile(zipSync(entries))).toMatchObject({ ok: false, error: { code: 'invalidField' } });
+  });
+});
+
+/*
+ * EX04 押し出しの「対象を貫く」終端の保存と読み込み(closed-profile-cut-parametric-r1。UNEXECUTED until Root runs it)。
+ * 書くのは種類と対象の id だけ。対象の id が無い・文字列でない・空なら壊れた欄として断る。
+ */
+describe('押し出しの「対象を貫く」終端を保存・読み込みする', () => {
+  function cutterDocument(): PartDocument {
+    return appendSolid(createEmptyPartDocument(), {
+      id: 'extrude-2', name: '押し出し2', suppressed: false, kind: 'extrude',
+      profile: { sketchId: 'sketch-1', faceFeatureId: 'face-2' },
+      distance: { source: '69', value: 69, display: '69' }, reversed: false, symmetric: false,
+      end: { kind: 'throughTarget', targetFeatureId: 'extrude-1' },
+    });
+  }
+
+  function documentTextOf(bytes: Uint8Array): string {
+    const entry = unzipSync(bytes)[PCAD_DOCUMENT_ENTRY];
+    if (entry === undefined) throw new Error('document.json がありません');
+    return strFromU8(entry);
+  }
+
+  it('種類と対象の id がそのまま往復する', () => {
+    const document = cutterDocument();
+    const bytes = writePcadFile(document, { savedAt: SAVED_AT });
+    expect(documentTextOf(bytes)).toContain('"throughTarget"');
+    const read = expectOk(readPcadFile(bytes));
+    const solid = read.document.solids.find((feature) => feature.id === 'extrude-2');
+    expect(solid).toEqual(document.solids.find((feature) => feature.id === 'extrude-2'));
+    expect(solid?.kind === 'extrude' ? solid.end : undefined).toEqual({ kind: 'throughTarget', targetFeatureId: 'extrude-1' });
+  });
+
+  // 欄が無いのは documentJson.ts の約束どおり missingField、形が違うのは invalidField。
+  it.each([
+    ['対象の id が無い', '"targetFeatureId": "extrude-1"', '"other": "extrude-1"', 'missingField'],
+    ['対象の id が数', '"targetFeatureId": "extrude-1"', '"targetFeatureId": 1', 'invalidField'],
+    ['対象の id が空', '"targetFeatureId": "extrude-1"', '"targetFeatureId": ""', 'invalidField'],
+    ['知らない種類', '"kind": "throughTarget"', '"kind": "throughAll"', 'invalidField'],
+  ])('%s文書は理由つきで断る', (_title, from, to, code) => {
+    const entries = unzipSync(writePcadFile(cutterDocument(), { savedAt: SAVED_AT }));
+    const original = entries[PCAD_DOCUMENT_ENTRY];
+    if (original === undefined) throw new Error('document.json がありません');
+    const text = strFromU8(original);
+    const pattern = new RegExp(from.replace(': ', ':\\s*'));
+    const broken = text.replace(pattern, to);
+    expect(broken).not.toBe(text);
+    entries[PCAD_DOCUMENT_ENTRY] = strToU8(broken);
+    expect(readPcadFile(zipSync(entries))).toMatchObject({ ok: false, error: { code } });
+  });
+});
+
+/*
+ * EX-04 W3 閉じた輪郭の切断の残す側の保存と読み込み(UNEXECUTED until Root runs it)。
+ * 残す側は演算(差 = 外側、積 = 内側)で、両方は差と積の対(2 つ目だけが `pairedWith` で 1 つ目を指す)。
+ * 欄があるときだけ書き、JSON と .pcad の往復で同じ定義に戻る。欄の無い以前のファイルは欄なしのまま
+ * (単独の外側を残す差 = 従来の動き)。空文字列・文字列でない値は壊れた欄として断る。
+ */
+describe('閉じた輪郭の切断の残す側(差・積・対の結び)を保存・読み込みする', () => {
+  const OUTSIDE = {
+    id: 'subtract-1', name: '差1', suppressed: false, kind: 'boolean' as const, operation: 'subtract' as const,
+    targetFeatureId: 'extrude-1', toolFeatureId: 'extrude-2', requireRemoval: true as const,
+  };
+
+  function pairDocument(): PartDocument {
+    const inside = { ...OUTSIDE, id: 'intersect-1', name: '積1', operation: 'intersect' as const, pairedWith: OUTSIDE.id };
+    return appendSolid(appendSolid(createEmptyPartDocument(), OUTSIDE), inside);
+  }
+
+  function documentTextOf(bytes: Uint8Array): string {
+    const entry = unzipSync(bytes)[PCAD_DOCUMENT_ENTRY];
+    if (entry === undefined) throw new Error('document.json がありません');
+    return strFromU8(entry);
+  }
+
+  it('JSON と .pcad の往復で差・積・対の結びがそのまま戻り、結びは 2 つ目にだけ書く', () => {
+    const document = pairDocument();
+    const parsed = parseDocument(serializeDocument(document, { savedAt: SAVED_AT }));
+    if (!parsed.ok) throw new Error(`JSON を読めませんでした: ${parsed.error.code}`);
+    expect(parsed.document.solids).toEqual(document.solids);
+    const bytes = writePcadFile(document, { savedAt: SAVED_AT });
+    const text = documentTextOf(bytes);
+    expect(text.match(/"pairedWith"/g)).toHaveLength(1);
+    const read = expectOk(readPcadFile(bytes));
+    expect(read.document.solids).toEqual(document.solids);
+    // 読み込んだ文書をもう一度保存しても同じ中身(欄が増えも減りもしない)。
+    expect(documentTextOf(writePcadFile(read.document, { savedAt: SAVED_AT }))).toBe(text);
+    const inside = read.document.solids.find((feature) => feature.id === 'intersect-1');
+    expect(inside).toMatchObject({ kind: 'boolean', operation: 'intersect', requireRemoval: true, pairedWith: 'subtract-1' });
+  });
+
+  it('欄の無い以前のファイルは欄なしのまま読み、単独の外側を残す差のまま(従来の動き)', () => {
+    const before = appendSolid(createEmptyPartDocument(), OUTSIDE);
+    const bytes = writePcadFile(before, { savedAt: SAVED_AT });
+    expect(documentTextOf(bytes).includes('pairedWith')).toBe(false);
+    const read = expectOk(readPcadFile(bytes));
+    const solid = read.document.solids.find((feature) => feature.id === OUTSIDE.id);
+    expect(solid).toEqual(OUTSIDE);
+    expect(solid !== undefined && 'pairedWith' in solid).toBe(false);
+    const parsed = parseDocument(serializeDocument(before, { savedAt: SAVED_AT }));
+    if (!parsed.ok) throw new Error(`JSON を読めませんでした: ${parsed.error.code}`);
+    expect(parsed.document.solids).toEqual(before.solids);
+  });
+
+  it.each([['""'], ['1'], ['null'], ['true']])('pairedWith が %s の文書は JSON でも .pcad でも壊れた欄として断る', (value) => {
+    const entries = unzipSync(writePcadFile(pairDocument(), { savedAt: SAVED_AT }));
+    const original = entries[PCAD_DOCUMENT_ENTRY];
+    if (original === undefined) throw new Error('document.json がありません');
+    const text = strFromU8(original);
+    const broken = text.replace(/"pairedWith":\s*"subtract-1"/, `"pairedWith": ${value}`);
+    expect(broken).not.toBe(text);
+    entries[PCAD_DOCUMENT_ENTRY] = strToU8(broken);
+    expect(readPcadFile(zipSync(entries))).toMatchObject({ ok: false, error: { code: 'invalidField' } });
+    expect(parseDocument(broken)).toMatchObject({ ok: false, error: { code: 'invalidField' } });
   });
 });

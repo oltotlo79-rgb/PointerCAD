@@ -1,4 +1,4 @@
-import { buildBom, buildStandardPartFromSource, drawingSourceCenter, EMPTY_PART_LIBRARY, resolveConstrainedAssembly,
+import { buildSteelStockList, buildBom, buildStandardPartFromSource, drawingSourceCenter, EMPTY_PART_LIBRARY, resolveConstrainedAssembly,
   type AssemblyDocument, type AssemblyKernelBridge, type BomResolvedData, type DrawingDimensionInstance,
   type DrawingSourceInput, type DrawingSourceResolution, type ResolvedAssembly, type ResolvedPart,
   type PartDocument, type SolidBody } from '@pointercad/model';
@@ -69,5 +69,6 @@ export async function prepareAssemblyDrawingSource(source: Extract<DrawingSource
   return { owners, result: { dimensionInstances, center,
     bodyIds: [...new Set(dimensionInstances.map((instance) => instance.bodyId))],
     instances: dimensionInstances.map((instance) => ({ bodyId: instance.bodyId, occurrenceId: instance.componentId ?? '', placement: instance.placement })),
+    steelStockList: buildSteelStockList(source.document, library.assemblies, library.parts),
     bomRows: buildBom(source.document, bomData(resolved.resolved, bodies, documents), source.document.bom) } };
 }

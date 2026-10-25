@@ -1,0 +1,183 @@
+{
+ "schema": "pointercad-oofem-replay-acquisition/1",
+ "status": "request to Root; the worker copied and installed nothing",
+ "absentFromRepository": "all 13 wheelhouse files (none is in the repository); all 13 are present byte-exact in the read-only toolchain tree's pip cache",
+ "steps": [
+  "Create a new empty directory WHEELHOUSE (not inside the toolchain tree).",
+  "For each row below, copy <toolchain>/<cacheBody> to WHEELHOUSE/<filename> (byte copy, no pip involvement).",
+  "Check: (cd WHEELHOUSE && sha256sum --check --strict wheelhouse-SHA256SUMS) and that WHEELHOUSE holds exactly these 13 regular files.",
+  "Alternative source if the cache is gone: download <pypi.url>; the same SHA-256 must match (PyPI index entry cached at <pypi.indexMtime>)."
+ ],
+ "files": [
+  {
+   "filename": "cmake-4.4.4-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+   "sha256": "b3029f586853e01ddf2824c1ff124a1c5284f8ae897994758e9c4eeb45903b58",
+   "bytes": 30300845,
+   "cacheBody": "cache/pip/http-v2/8/6/5/3/8/86538443452f5c1790c10b670d76834553a30ad39bbdd1ef97a723e3.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/76/0a/f6c1119b24ca4b81476f9398e90f3f8175756dfe16e082c691b12992c991/cmake-4.4.4-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/7/4/f/0/9/74f09646c419db58e72289c9d9958b156e21bab1ea0f1191be0fdd34.body",
+    "indexBodySha256": "02945edd3b4da05d26b39472f401ef471bf91fb1ac4e20644b34a2c6f9d51daf",
+    "indexMtime": "2026-10-11T22:13:25+09:00",
+    "uploadTime": "2026-10-04T09:09:12.830409Z"
+   }
+  },
+  {
+   "filename": "iniconfig-2.3.1-py3-none-any.whl",
+   "sha256": "9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7",
+   "bytes": 7552,
+   "cacheBody": "cache/pip/http-v2/b/8/e/6/d/b8e6d5935f9ced55635d32bdf46f328b37f77b0474abe35d0a0dbc83.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/56/43/4ca9e49d27a1fcf6bece6f6aec0ea46bb9112489b93d4b688fb415457bdb/iniconfig-2.3.1-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/0/7/5/9/3/07593bb905dded4b84aacb1d96c1e64704669d6bab658dcaeab79c36.body",
+    "indexBodySha256": "2b690f752ef9a361a727f8c72ed9cf6eacba29d5136456dafb811387f78c45d1",
+    "indexMtime": "2026-10-11T22:13:22+09:00",
+    "uploadTime": "2026-10-06T22:48:36.959685Z"
+   }
+  },
+  {
+   "filename": "ninja-1.13.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+   "sha256": "d775a5e43e9088f507a6250d57fcf5678eb31268c545feb5064ffeee33735622",
+   "bytes": 177180,
+   "cacheBody": "cache/pip/http-v2/7/c/7/e/a/7c7eaf6959137e1d30857f16257253486f8c08d93eee987b643ca7d1.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/35/54/7368ce188625e39acc03ee362bb86cc9bfa6ad15e25c50889ae36e2889b3/ninja-1.13.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/0/2/f/8/e/02f8e820ca8231526982c4a2b93baef519d0948ff85c925acd226f06.body",
+    "indexBodySha256": "8e7aa92973409153357fe4eeb8688a575018bbe45d110b6d13bbdd6d30b69567",
+    "indexMtime": "2026-10-11T22:13:26+09:00",
+    "uploadTime": "2026-08-30T15:49:29.590314Z"
+   }
+  },
+  {
+   "filename": "packaging-26.3-py3-none-any.whl",
+   "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+   "bytes": 129956,
+   "cacheBody": "cache/pip/http-v2/b/1/1/9/0/b11909f451f61fb29636217082b1c638b177c59eac335e0200a136e6.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/4/4/e/5/b/44e5b11a6caa92636d8ccfe658d420ba4ed8f67f7f4e835b214255aa.body",
+    "indexBodySha256": "838454e1cd9a16010d91baa79a13219595e25fc1cadccb6c8afe65e7c96b101a",
+    "indexMtime": "2026-10-11T21:38:00+09:00",
+    "uploadTime": "2026-08-04T18:15:27.159957Z"
+   }
+  },
+  {
+   "filename": "pathspec-1.1.1-py3-none-any.whl",
+   "sha256": "a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189",
+   "bytes": 57328,
+   "cacheBody": "cache/pip/http-v2/1/5/9/c/5/159c56e4ec3c8e71dacef647c600365ad192876d095dd29b5b5c8ace.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/f1/d9/7fb5aa316bc299258e68c73ba3bddbc499654a07f151cba08f6153988714/pathspec-1.1.1-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/9/e/d/3/7/9ed377a761861346a483546ee4ebbe92a83f2d3a40e917849c2eb140.body",
+    "indexBodySha256": "a675895532f109692fdcf98640c0c5c373ca38b601dc06964a41626d8e63aa9a",
+    "indexMtime": "2026-10-11T21:38:00+09:00",
+    "uploadTime": "2026-04-27T01:46:07.060850Z"
+   }
+  },
+  {
+   "filename": "pluggy-1.6.0-py3-none-any.whl",
+   "sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746",
+   "bytes": 20538,
+   "cacheBody": "cache/pip/http-v2/0/e/d/3/3/0ed336d749e009fe1267c844e36c442e5b3dc645d5eb9865c545b81a.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/3/3/9/7/4/33974f84394d9a943f68359da08431dab4af9f86c33962982ea21b5f.body",
+    "indexBodySha256": "f0ae778c3971aa1c94fde8fa673cc7d0b953194fb69639870246e63a2c197077",
+    "indexMtime": "2026-10-11T21:38:01+09:00",
+    "uploadTime": "2025-05-15T12:30:06.134003Z"
+   }
+  },
+  {
+   "filename": "pybind11-3.1.0-py3-none-any.whl",
+   "sha256": "b8488090f8acffbcb6b5d6a85571a6827a0a2981ffb75e5a0b27b87c4a6b7dd0",
+   "bytes": 319402,
+   "cacheBody": "cache/pip/http-v2/a/c/1/7/f/ac17f6c39215c5ed0a91348af47c2c574ae9fa05d28c02946f92f90e.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/33/fd/8762f7ee3e4e4be6d1d846cffb4916dd9bb02b2f800d3603718a0efe494c/pybind11-3.1.0-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/f/5/4/b/f/f54bf1ab24b17702a3d5b634fb0987938080d9ce378e65475199368a.body",
+    "indexBodySha256": "2272500eceb200485ab656f14397cd5c9f49d4781da72e34184ac0c1be7e298e",
+    "indexMtime": "2026-10-11T22:13:22+09:00",
+    "uploadTime": "2026-08-06T23:32:59.047135Z"
+   }
+  },
+  {
+   "filename": "pygments-2.21.0-py3-none-any.whl",
+   "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+   "bytes": 1250147,
+   "cacheBody": "cache/pip/http-v2/0/0/4/f/5/004f51e4cdaa64d7951a6294c47f410a2290cde6415bd52c394181fd.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/7/a/5/f/7/7a5f717e7b3fb99ec006f4d173aad55224eb063005c662c586ba0518.body",
+    "indexBodySha256": "34b31f37f7848a79a1de528dc6d305fc22c52dbbcc3250aa872dba9733e4ffa5",
+    "indexMtime": "2026-10-11T21:38:16+09:00",
+    "uploadTime": "2026-08-17T08:02:44.912148Z"
+   }
+  },
+  {
+   "filename": "pytest-9.1.1-py3-none-any.whl",
+   "sha256": "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c",
+   "bytes": 386536,
+   "cacheBody": "cache/pip/http-v2/1/8/4/3/9/1843990886992e88d6f0c35768bd6fa5e0a4572b3de8e42a63f69a96.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/0/c/2/1/8/0c218d526767991766d9b365a4f3e4449ce3579fd8b0f96a707d5a52.body",
+    "indexBodySha256": "71bc8ea67b8aebca2301c7c40068400e91331f2924070a05ca54c3d9ca5a9762",
+    "indexMtime": "2026-10-11T22:13:21+09:00",
+    "uploadTime": "2026-06-19T10:58:31.347074Z"
+   }
+  },
+  {
+   "filename": "scikit_build_core-0.11.6-py3-none-any.whl",
+   "sha256": "ce6d8fe64e6b4c759ea0fb95d2f8a68f60d2df31c2989838633b8ec930736360",
+   "bytes": 185764,
+   "cacheBody": "cache/pip/http-v2/9/1/0/e/d/910edaaeda49918e480dfc128ddbaaf37ed4c2ddf52749502f0360d5.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/43/49/ec16b3db6893db788ae35f98506ff5a9c25dca7eb18cc38ada8a4c1dc944/scikit_build_core-0.11.6-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/e/3/e/0/6/e3e06c4cfe0e455836f37e8eeb3bc26ed4be2aeb1e1c72135893c538.body",
+    "indexBodySha256": "f08ac21d29450081c4a78007ff58468774c0f8f1eb4b955e19e2dfea5f5d6930",
+    "indexMtime": "2026-10-11T22:13:21+09:00",
+    "uploadTime": "2025-08-22T22:11:52.438766Z"
+   }
+  },
+  {
+   "filename": "setuptools-84.0.0-py3-none-any.whl",
+   "sha256": "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670",
+   "bytes": 818216,
+   "cacheBody": "cache/pip/http-v2/3/7/2/a/d/372ad9ff4adce1adccbe73a1199bf4918643dd20cf06b98bb816a416.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/0/4/1/8/c/0418c83b80f7f7bfaec2738bfbbee53d2c1562196c0781702f6eddc8.body",
+    "indexBodySha256": "adda37eec0d5328fe05200f20fc80f5b1f9fed6c29cd9e3c71be012adc85592b",
+    "indexMtime": "2026-10-11T21:38:02+09:00",
+    "uploadTime": "2026-08-08T18:27:56.719708Z"
+   }
+  },
+  {
+   "filename": "setuptools_scm-10.3.4-py3-none-any.whl",
+   "sha256": "82f34c3e3084fc2b57d397200637cc13f2338004052d2fee47baa5f0e902464e",
+   "bytes": 33366,
+   "cacheBody": "cache/pip/http-v2/e/d/0/7/2/ed072ed3ef9c5ccbd237396550cc4f1e965d5ffad26fac20d22d4df8.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/da/f5/54538a1f17ea753c42b0928dc2e62986d463f8c393340b9a1e602f2d4dd9/setuptools_scm-10.3.4-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/1/9/3/d/2/193d2b14cf4cd704ac983a718ec8edac2afad38c2e26f3f739d3d911.body",
+    "indexBodySha256": "77f4180ab9971306723c142779c4e230b5ff01b9a54346eb0f7a692d81037830",
+    "indexMtime": "2026-10-11T21:38:01+09:00",
+    "uploadTime": "2026-09-23T19:21:41.607429Z"
+   }
+  },
+  {
+   "filename": "vcs_versioning-2.6.0-py3-none-any.whl",
+   "sha256": "f8bebd1302ebc12e67ceb30fc7dd698ec969414b6fa43b30c3f14ac9b1e72c41",
+   "bytes": 123154,
+   "cacheBody": "cache/pip/http-v2/f/4/a/d/7/f4ad7d2529f7ab1f2584ef1251788ef804ccaacf992045afdc16c995.body",
+   "pypiUrl": "https://files.pythonhosted.org/packages/73/1d/ad4064bf12f4503bf61e65d74c93c523672776d25ee0a06aaf42ae09ef3f/vcs_versioning-2.6.0-py3-none-any.whl",
+   "availabilityEvidence": {
+    "indexBody": "http-v2/0/1/b/7/d/01b7d4043eec23dae6770db5094ffe5a6ba4bcc9773c36321eaf057a.body",
+    "indexBodySha256": "3ab9c42c09f52c312004295d1c6a9dba50330b40d16a30389777415a53954352",
+    "indexMtime": "2026-10-11T21:38:02+09:00",
+    "uploadTime": "2026-10-06T22:21:53.267565Z"
+   }
+  }
+ ],
+ "notRequested": "CPython, xbuildenv and emsdk/Emscripten are already installed in the toolchain tree and are passed by path; the venv is the existing post-repair venv (s_venv checks its 42 distributions)."
+}

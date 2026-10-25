@@ -27,7 +27,9 @@
 import { exactExpressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   baseWorkPlane,
+  buildResidualReport,
   collectVariables,
+  constraintPointKey,
   constraintTargets,
   curveEnd,
   curveStart,
@@ -59,12 +61,14 @@ import { toElementRef } from './sketchCommands.js';
 
 /**
  * 種類ごとの見出しの鍵(ja.json)。**文言は 1 か所だけ**にし、一覧・印・断り・拘束の名前
- * (「直角1」)がすべてここを引く(NFR-MA-5)。14 種を網羅する `Record` なので、model 側で
+ * (「直角1」)がすべてここを引く(NFR-MA-5)。18 種を網羅する `Record` なので、model 側で
  * 種類が増えたらこの表が型検査で落ちる(`SketchFeatureKind` に種類を足したとき網羅箇所が
  * 落ちた P4 タスク4 の教訓)。
  */
 export const CONSTRAINT_KIND_LABEL_KEYS: Readonly<Record<SketchConstraintKind, MessageKey>> = {
   coincident: 'constraint.kind.coincident',
+  midpoint: 'constraint.kind.midpoint',
+  pointOnCurve: 'constraint.kind.pointOnCurve',
   horizontal: 'constraint.kind.horizontal',
   vertical: 'constraint.kind.vertical',
   parallel: 'constraint.kind.parallel',
@@ -74,6 +78,8 @@ export const CONSTRAINT_KIND_LABEL_KEYS: Readonly<Record<SketchConstraintKind, M
   equal: 'constraint.kind.equal',
   symmetric: 'constraint.kind.symmetric',
   fix: 'constraint.kind.fix',
+  horizontalDistance: 'constraint.kind.horizontalDistance',
+  verticalDistance: 'constraint.kind.verticalDistance',
   distance: 'constraint.kind.distance',
   angle: 'constraint.kind.angle',
   radius: 'constraint.kind.radius',
@@ -81,13 +87,15 @@ export const CONSTRAINT_KIND_LABEL_KEYS: Readonly<Record<SketchConstraintKind, M
 };
 
 /**
- * 一覧に並べる順(ツールバーの並び。タスク13)。幾何拘束 10 種 → 寸法拘束 4 種の順で、
+ * 一覧に並べる順(ツールバーの並び。タスク13)。幾何拘束と固定の 12 種 → 寸法拘束 6 種の順で、
  * 幾何は「点を合わせる」→「向きをそろえる」→「大きさをそろえる」の並びにする。
  * model の `SKETCH_CONSTRAINT_KINDS` と同じ並びだが、あちらは保存形の網羅表で、
  * こちらは画面の並びなので別に持つ(画面の都合で並べ替えても保存形は動かない)。
  */
 export const CONSTRAINT_KIND_ORDER: readonly SketchConstraintKind[] = [
   'coincident',
+  'midpoint',
+  'pointOnCurve',
   'horizontal',
   'vertical',
   'parallel',
@@ -97,6 +105,8 @@ export const CONSTRAINT_KIND_ORDER: readonly SketchConstraintKind[] = [
   'equal',
   'symmetric',
   'fix',
+  'horizontalDistance',
+  'verticalDistance',
   'distance',
   'angle',
   'radius',
@@ -113,8 +123,8 @@ export function constraintKindLabel(kind: SketchConstraintKind): string {
   return t(CONSTRAINT_KIND_LABEL_KEYS[kind]);
 }
 
-/** 数値を聞く拘束(寸法拘束 4 種)。その他は選んだ瞬間に付く。 */
-const VALUE_KINDS: readonly SketchConstraintKind[] = ['distance', 'angle', 'radius', 'diameter'];
+/** 数値を聞く拘束(寸法拘束 6 種)。その他は選んだ瞬間に付く。 */
+const VALUE_KINDS: readonly SketchConstraintKind[] = ['distance', 'horizontalDistance', 'verticalDistance', 'angle', 'radius', 'diameter'];
 
 /** その拘束は数値を聞くか(段を開くかどうかの判断。タスク13)。 */
 export function constraintNeedsValue(kind: SketchConstraintKind): boolean {
@@ -124,6 +134,8 @@ export function constraintNeedsValue(kind: SketchConstraintKind): boolean {
 /** 数値を聞く拘束の欄の単位。聞かない拘束は null。 */
 export function constraintValueUnit(kind: SketchConstraintKind): FieldUnit | null {
   switch (kind) {
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
     case 'radius':
     case 'diameter':
@@ -148,6 +160,8 @@ export type ConstraintCommandRejectionReason =
   /** 面・オフセット・矩形など、拘束の対象にできない要素。 */
   | 'unsupportedElement'
   | 'needTwoPoints'
+  | 'needPointAndLine'
+  | 'needPointAndCurve'
   | 'needOneLine'
   | 'needTwoLines'
   | 'needTwoSameKind'
@@ -177,6 +191,8 @@ const REJECTION_MESSAGE_KEYS: Readonly<Record<ConstraintCommandRejectionReason, 
   otherSketch: 'constraint.error.otherSketch',
   unsupportedElement: 'constraint.error.unsupportedElement',
   needTwoPoints: 'constraint.error.needTwoPoints',
+  needPointAndLine: 'constraint.error.needPointAndLine',
+  needPointAndCurve: 'constraint.error.needPointAndCurve',
   needOneLine: 'constraint.error.needOneLine',
   needTwoLines: 'constraint.error.needTwoLines',
   needTwoSameKind: 'constraint.error.needTwoSameKind',
@@ -494,6 +510,8 @@ export function measuredConstraintValue(
 ): ExpressionValue | null {
   const { resolved, plane } = context;
   switch (kind) {
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance': {
       if (targets.length !== 2) {
         return null;
@@ -502,6 +520,11 @@ export function measuredConstraintValue(
       const to = targetPositionOf(resolved, targets[1]);
       if (from === null || to === null) {
         return null;
+      }
+      if (kind === 'horizontalDistance' || kind === 'verticalDistance') {
+        if (plane === null) return null;
+        const a = worldToPlane(plane, from), b = worldToPlane(plane, to);
+        return exactExpressionValueFromNumber(kind === 'horizontalDistance' ? b[0] - a[0] : b[1] - a[1]);
       }
       const length = distanceVec3(from, to);
       return length > 0 ? exactExpressionValueFromNumber(length) : null;
@@ -582,6 +605,14 @@ function selectionTargets(
       return elements.length === 2 && points.length === 2
         ? { ok: true, targets: targetsOf(points) }
         : needs('needTwoPoints');
+    case 'midpoint':
+      return elements.length === 2 && points.length === 1 && lines.length === 1
+        ? { ok: true, targets: [points[0].target, lines[0].target] } : needs('needPointAndLine');
+    case 'pointOnCurve': {
+      const curves = [...lines, ...circles];
+      return elements.length === 2 && points.length === 1 && curves.length === 1
+        ? { ok: true, targets: [points[0].target, curves[0].target] } : needs('needPointAndCurve');
+    }
     case 'horizontal':
     case 'vertical':
       return elements.length === 1 && lines.length === 1
@@ -616,6 +647,8 @@ function selectionTargets(
       return elements.length >= 1
         ? { ok: true, targets: targetsOf(elements) }
         : needs('needAnyElement');
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
       if (elements.length === 2 && points.length === 2) {
         return { ok: true, targets: targetsOf(points) };
@@ -651,6 +684,10 @@ function targetShapeReason(
 ): ConstraintCommandRejectionReason | null {
   const isPoint = (target: ConstraintTarget): boolean => target.kind !== 'curve';
   switch (kind) {
+    case 'midpoint':
+    case 'pointOnCurve':
+      return targets.length === 2 && isPoint(targets[0]) && targets[1].kind === 'curve' ? null
+        : kind === 'midpoint' ? 'needPointAndLine' : 'needPointAndCurve';
     case 'coincident':
       return targets.length === 2 && targets.every(isPoint) ? null : 'needTwoPoints';
     case 'horizontal':
@@ -673,6 +710,8 @@ function targetShapeReason(
         : 'needSymmetric';
     case 'fix':
       return targets.length >= 1 ? null : 'needAnyElement';
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
       return targets.length === 2 && targets.every(isPoint) ? null : 'needDistance';
     case 'radius':
@@ -747,10 +786,26 @@ function valueReason(
   if (!Number.isFinite(value.value)) {
     return 'invalidValue';
   }
-  if (kind !== 'angle' && value.value <= 0) {
+  if ((kind === 'distance' || kind === 'radius' || kind === 'diameter') && value.value <= 0) {
     return 'invalidSize';
   }
   return null;
+}
+
+/** Reuse the actual residual admission so UI cannot accept a spline chord or an ellipse as a circle. */
+function pointCurveReason(kind: SketchConstraintKind, targets: readonly ConstraintTarget[],
+  context: ConstraintContext): ConstraintCommandRejectionReason | null {
+  if (kind !== 'midpoint' && kind !== 'pointOnCurve' && kind !== 'horizontalDistance' && kind !== 'verticalDistance') return null;
+  const shape = targetShapeReason(kind, targets);
+  if (shape !== null) return shape;
+  const set = context.variableSet;
+  if (set === null) return 'freeSketch';
+  const constraint = buildConstraint(kind, 'preview', 'preview', targets, exactExpressionValueFromNumber(0));
+  if (constraint === null) return 'unsupportedElement';
+  const report = buildResidualReport([constraint], set, set.initial);
+  const rejection = report.skipped.find(item => item.constraintId === constraint.id);
+  return rejection === undefined ? null : rejection.reason === 'dangling' ? 'otherSketch'
+    : rejection.reason === 'degenerate' ? 'cannotMeasure' : 'unsupportedElement';
 }
 
 /* ---------------------------------------------------------------------------
@@ -816,6 +871,8 @@ export function constraintReadiness(
     return notReady(outcome.reason);
   }
   const targets = outcome.targets;
+  const geometryReason = pointCurveReason(kind, targets, context);
+  if (geometryReason !== null) return notReady(geometryReason);
   if (variableSet === null) {
     return notReady('freeSketch');
   }
@@ -837,7 +894,7 @@ export function constraintReadiness(
 
 /**
  * いま選んでいる要素に付けられる拘束の一覧(ツールバーの活性に使う)。
- * 14 種を順に下見して、付けられるものだけを `CONSTRAINT_KIND_ORDER` の順で返す。
+ * 18 種を順に下見して、付けられるものだけを `CONSTRAINT_KIND_ORDER` の順で返す。
  */
 export function applicableConstraintKinds(
   document: SketchDocument,
@@ -922,6 +979,8 @@ function buildConstraint(
 ): SketchConstraint | null {
   switch (kind) {
     case 'coincident':
+    case 'midpoint':
+    case 'pointOnCurve':
       return { id, name, kind, a: targets[0], b: targets[1] };
     case 'horizontal':
     case 'vertical':
@@ -942,6 +1001,8 @@ function buildConstraint(
     }
     case 'fix':
       return { id, name, kind, target: targets[0] };
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
       return value === null ? null : { id, name, kind, a: targets[0], b: targets[1], length: value };
     case 'angle':
@@ -973,10 +1034,25 @@ export function commitAddConstraint(
   value?: ExpressionValue,
   context: ConstraintContext = constraintContextOf(document),
 ): ConstraintAddOutcome {
+  if (kind === 'horizontalDistance' || kind === 'verticalDistance' || kind === 'midpoint' || kind === 'pointOnCurve') {
+    // Never commit a prompt against cached points from a different document revision.
+    const plane = context.plane;
+    context = constraintContextOf(document, { workPlane: id =>
+      plane?.id === id ? plane : baseWorkPlane(id) });
+    const currentVariables = context.variableSet;
+    if (currentVariables !== null && (kind === 'horizontalDistance' || kind === 'verticalDistance') && targets.some(target =>
+      constraintPointKey(currentVariables, target) === null)) return reject('otherSketch');
+    if (currentVariables !== null && (kind === 'horizontalDistance' || kind === 'verticalDistance') && targets.some(target => {
+      const key = constraintPointKey(currentVariables, target);
+      return key === null || !currentVariables.constraintPoints.has(key);
+    })) return reject('unsupportedElement');
+  }
   const shapeReason = targetShapeReason(kind, targets);
   if (shapeReason !== null) {
     return reject(shapeReason);
   }
+  const geometryReason = pointCurveReason(kind, targets, context);
+  if (geometryReason !== null) return reject(geometryReason);
   if (context.variableSet === null) {
     return reject('freeSketch');
   }
@@ -1075,6 +1151,8 @@ export function commitRemoveConstraints(
 /** その拘束が持っている値。数値を持たない拘束は null。 */
 export function constraintValueOf(constraint: SketchConstraint): ExpressionValue | null {
   switch (constraint.kind) {
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
       return constraint.length;
     case 'angle':
@@ -1090,6 +1168,8 @@ export function constraintValueOf(constraint: SketchConstraint): ExpressionValue
 /** 値を差し替えた拘束。数値を持たない拘束は null。 */
 function withValue(constraint: SketchConstraint, value: ExpressionValue): SketchConstraint | null {
   switch (constraint.kind) {
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
       return { ...constraint, length: value };
     case 'angle':

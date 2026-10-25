@@ -8,7 +8,11 @@
 
 import { addComponent, createAssemblyDocument, createComponentFor, diagnoseMates, resolveAssembly, solveMates,
   type AssemblyDocument, type Mate, type MateResidualTargetPair, type SolveMatesOptions,
-  type PartProgress, type PartRecomputeError, type SketchError } from '@pointercad/model';
+  type PartProgress, type PartRecomputeError, type SketchError, type BoltedJointPlan, type BoltedJointRejectionCode,
+  type MateTarget } from '@pointercad/model';
+import {
+  BOLTED_JOINT_PICK_GUIDE_KEYS, createBoltedJointDraft, type AssemblyBoltedJointDraft, type BoltedJointDraftIssue,
+} from '../assembly/boltedJointDraft.js';
 import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
@@ -26,6 +30,7 @@ import {
   assemblyToolGuide,
   commandLineFailureText,
   assemblyMateStatus,
+  boltedJointStatus,
   countSelectedBodies,
   countSelectedSubShapes,
   describeStatus,
@@ -805,6 +810,7 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
     ruledTwist: 'window',
     loftTwist: 'window',
     draftAngle: 'window',
+    faceOffsetDistance: 'statusBar.guide.faceOffsetDistance',
     mirrorPlane: 'window',
     transformTranslation: 'statusBar.guide.transformTranslation',
     transformRotation: 'statusBar.guide.transformRotation',
@@ -1283,6 +1289,125 @@ describe('合致を保つ部品ドラッグの帯(P7 タスク18)', () => {
   });
 });
 
+function boltedFace(componentId: string, index: number): MateTarget {
+  return { kind: 'subShape', componentId, ref: { bodyFeatureId: 'body-1', index,
+    fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1, position: [0, 0, 0], axis: [0, 0, 1], radius: null } } };
+}
+
+function boltedDraft(count: number): AssemblyBoltedJointDraft {
+  const picks = [boltedFace('component-1', 1), boltedFace('component-1', 2), boltedFace('component-2', 1),
+    boltedFace('component-2', 2)].slice(0, count);
+  return { ...createBoltedJointDraft('doc'), picks };
+}
+
+const READY_PLAN: BoltedJointPlan = {
+  configuration: 'throughBoltWithNut', headSideComponentId: 'component-1', farSideComponentId: 'component-2',
+  nominal: 'M8', pitch: 1.25, threadSeries: 'coarse', gripLength: 22, boltLength: 30,
+  engagedLength: null, penetration: null, protrusion: 1.5, lengthBasis: 'perDiameterEvidence', lengthVerified: true,
+  missingFacts: [], sourceIdentities: {},
+  alignment: { movedComponentIds: [], delta: { position: [0, 0, 0], rotation: [0, 0, 0, 1] }, placementFingerprints: {} },
+  operations: [],
+};
+
+/** 状態の分岐の照合のため、型から全ての断る理由・下書きの誤りを列挙する(足し忘れは型で落ちる)。 */
+const REJECTION_CODES = Object.keys({
+  componentMissing: true, componentSuppressed: true, componentNotPlaceable: true, sameComponent: true,
+  staleSource: true, missingSourceRevision: true, invalidPlacement: true, invalidWorldFrame: true,
+  holeFeatureMissing: true, holeFaceMissing: true, holeFaceMismatch: true, matingFaceMissing: true,
+  holeNotOnMatingFace: true, threadEntryUnknown: true, alignmentBlocked: true, unsupportedHole: true,
+  invalidDimension: true, invalidAxis: true, axisNotNormalized: true, faceAxisMismatch: true,
+  axesNotOpposed: true, axesNotCoaxial: true, facesNotInContact: true, facesOverlap: true,
+  bothHolesThreaded: true, unknownThread: true, pitchNotInCatalog: true, nominalMismatch: true, pitchMismatch: true,
+  boltSizeUnspecified: true, boltRowMissing: true, nutRowMissing: true, washerRowMissing: true,
+  insufficientClearance: true, holeLargerThanBearing: true, washerDoesNotFit: true,
+  washerOnTappedSide: true, engagementRequired: true, engagementExceedsThread: true,
+  blindClearanceRequired: true, blindBottoming: true, protrusionRequired: true,
+  lengthAvailabilityMissing: true, noStandardLengthFits: true,
+  existingConstraintConflict: true, existingConstraintUnresolved: true,
+} satisfies Record<BoltedJointRejectionCode, true>) as BoltedJointRejectionCode[];
+const DRAFT_ISSUES = Object.keys({
+  needPicks: true, notFace: true, holeFeatureUnknown: true, value: true, stale: true,
+  jointRecordMissing: true, jointPartsChanged: true, jointPartsConstrained: true, jointGeometryChanged: true,
+} satisfies Record<BoltedJointDraftIssue['kind'], true>) as BoltedJointDraftIssue['kind'][];
+
+describe('ボルト締結の打ちかけの帯(追加要件6)', () => {
+  it('打ちかけでなければ何も出さず、従来の案内を変えない', () => {
+    expect(boltedJointStatus(null, null)).toBeNull();
+    expect(describeStatus({ ...quiet(), assemblyBoltedJointStatus: null }).text).toBe(t('statusBar.ready'));
+  });
+
+  it.each([0, 1, 2, 3])('%d 面を選んだ時は何面目かと次に選ぶ面を、赤くせずに出す', (count) => {
+    const status = boltedJointStatus(boltedDraft(count), count < 2 ? null : { kind: 'issue', issue: { kind: 'needPicks', count } });
+    const next = t(BOLTED_JOINT_PICK_GUIDE_KEYS[count] ?? 'assembly.boltedJoint.pickHoleA');
+    expect(status).toEqual({ failed: false, text: t('assembly.status.boltedJointStep')
+      .replace('{count}', String(count + 1)).replace('{total}', '4').replace('{next}', next) });
+    expect(status?.text).toContain(`${String(count + 1)}/4`);
+    const line = describeStatus({ ...quiet(), assemblyBoltedJointStatus: status });
+    expect([line.kind, line.text]).toEqual(['guide', status?.text]);
+  });
+
+  it('選ぶ順は 穴A・当てる面A・穴B・当てる面B で、窓の文と同じキー', () => {
+    expect(BOLTED_JOINT_PICK_GUIDE_KEYS).toEqual(['assembly.boltedJoint.pickHoleA', 'assembly.boltedJoint.pickFaceA',
+      'assembly.boltedJoint.pickHoleB', 'assembly.boltedJoint.pickFaceB']);
+  });
+
+  it('4 面がそろって締結できる時は Enter と Esc を案内する', () => {
+    const status = boltedJointStatus(boltedDraft(4), { kind: 'plan', result: { ok: true, plan: READY_PLAN } });
+    expect(status).toEqual({ failed: false, text: t('assembly.status.boltedJointReady') });
+    expect(status?.text).toContain('Enter');
+    expect(status?.text).toContain('Esc');
+  });
+
+  it('形の計算待ち・予告前は赤くせず、選択や欄の誤りと断る理由は赤で窓と同じ文を出す', () => {
+    const waiting = t('assembly.status.boltedJointIssue').replace('{reason}', t('assembly.boltedJoint.issue.stale'));
+    expect(boltedJointStatus(boltedDraft(4), null)).toEqual({ failed: false, text: waiting });
+    expect(boltedJointStatus(boltedDraft(4), { kind: 'issue', issue: { kind: 'stale' } }))
+      .toEqual({ failed: false, text: waiting });
+    const value = boltedJointStatus(boltedDraft(4), { kind: 'issue', issue: { kind: 'value', field: 'protrusion' } });
+    expect(value).toEqual({ failed: true,
+      text: t('assembly.status.boltedJointIssue').replace('{reason}', t('assembly.boltedJoint.issue.value')) });
+    const refused = boltedJointStatus(boltedDraft(4), { kind: 'plan', result: { ok: false, rejections: [
+      { code: 'facesNotInContact', detail: {} }, { code: 'axesNotCoaxial', detail: {} }] } });
+    expect(refused?.failed).toBe(true);
+    expect(refused?.text).toContain(t('assembly.boltedJoint.reason.facesNotInContact'));
+    const line = describeStatus({ ...quiet(), assemblyBoltedJointStatus: refused });
+    expect(line.kind).toBe('failure');
+  });
+
+  it('計算中も選ぶ順の案内を残し、ファイルの失敗は締結の案内より先に出す', () => {
+    const status = boltedJointStatus(boltedDraft(1), null);
+    const computing = describeStatus({ ...quiet(), assemblyBoltedJointStatus: status, isComputing: true });
+    expect(computing.text).toBe(status?.text);
+    expect(computing.activity).not.toBeNull();
+    const failed = describeStatus({ ...quiet(), assemblyBoltedJointStatus: status, errorMessage: '読めません。' });
+    expect(failed.kind).toBe('failure');
+    expect(failed.text).toContain('読めません。');
+  });
+
+  it('打ちかけ中の案内は他の組立の操作案内より先に出す', () => {
+    const status = boltedJointStatus(boltedDraft(0), null);
+    const line = describeStatus({ ...quiet(), assemblyBoltedJointStatus: status,
+      assemblyOperationStatus: assemblyToolGuide('bom') });
+    expect(line.text).toBe(status?.text);
+  });
+
+  it('全ての断る理由・下書きの誤り・案内のキーが翻訳にある', () => {
+    const keys: readonly string[] = MESSAGE_KEYS;
+    const required = [
+      ...REJECTION_CODES.map((code) => `assembly.boltedJoint.reason.${code}`),
+      ...DRAFT_ISSUES.map((kind) => `assembly.boltedJoint.issue.${kind}`),
+      ...BOLTED_JOINT_PICK_GUIDE_KEYS,
+      'assembly.status.boltedJointStep', 'assembly.status.boltedJointReady', 'assembly.status.boltedJointIssue',
+      ASSEMBLY_TOOL_GUIDE_KEYS.boltedJoint, ASSEMBLY_TOOL_GUIDE_KEYS.releaseFastening,
+    ];
+    expect(required.filter((key) => !keys.includes(key))).toEqual([]);
+    for (const code of REJECTION_CODES) {
+      const status = boltedJointStatus(boltedDraft(4), { kind: 'plan', result: { ok: false, rejections: [{ code, detail: {} }] } });
+      expect(status?.text).toContain(t(`assembly.boltedJoint.reason.${code}`));
+    }
+  });
+});
+
 describe('外観の案内と警告(FR-1106〜1110、P5 タスク11)', () => {
   it('外観の道具を選ぶと「面か立体を選んでください」の案内を出す', () => {
     expect(guideKeyFor('appearance', 0)).toBe('statusBar.guide.appearance');
@@ -1558,3 +1683,154 @@ describe('書き出しの添え物と点検の 1 文(P6 タスク45・46)', () =
     expect(line.text).toBe(t('printCheck.unavailable'));
   });
 });
+
+
+describe('保存成功と初回timeline案内の優先順位', () => {
+  it('実保存の成功通知は残っている一般timeline案内より先に出す', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, rollback: { position: 1, total: 3 } });
+    expect(line.kind).toBe('saved');
+    expect(line.text).toBe(t('file.saved'));
+    expect(line.hint).toBeNull();
+    expect(line.progress).toBeNull();
+    // 独立したつまみ位置の札は保存成功が出ても消さない。
+    expect(line.rollbackLabel).toBe('途中まで戻しています(1 件目 / 3 件)');
+    expect(line.selectionKindLabel).toBe(describeStatus(quiet()).selectionKindLabel);
+  });
+
+  it('ファイル通知がないときと消えた後は初回timeline案内を保つ', () => {
+    const input = { ...quiet(), timelineNoticeKey: 'timeline.hint' as const };
+    expect(describeStatus(input).text).toBe(t('timeline.hint'));
+    expect(describeStatus({ ...input, fileMessage: { key: 'file.saved', failed: false } }).text).toBe(t('file.saved'));
+    expect(describeStatus({ ...input, fileMessage: null }).text).toBe(t('timeline.hint'));
+  });
+
+  it('実timeline差し込み通知は一般案内扱いへ変えない', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.inserted',
+      fileMessage: { key: 'file.saved', failed: false } });
+    expect(line.kind).toBe('saved');
+    expect(line.text).toBe(t('timeline.inserted'));
+  });
+
+  it('ファイル失敗は一般timeline案内より先に出す', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.openFailed', failed: true } });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(t('file.openFailed'));
+  });
+
+  it('重大エラーは保存成功と一般timeline案内に優先する', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, errorMessage: '計算できません' });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.error')} 計算できません`);
+  });
+
+  it('実timelineの断りは保存成功に隠れない', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, timelineRefusalMessage: '履歴を入れ替えられません' });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(`${t('statusBar.timelineError')} 履歴を入れ替えられません`);
+  });
+
+  it('中止は保存成功と一般timeline案内と進捗に優先する', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, cancelled: true, progress: progressAt(1, 4) });
+    expect(line.kind).toBe('cancelled');
+    expect(line.text).toBe(t('statusBar.cancelled'));
+    expect(line.progress).toBeNull();
+  });
+
+  it('進捗は保存成功と一般timeline案内に優先する', () => {
+    const line = describeStatus({ ...quiet(), timelineNoticeKey: 'timeline.hint',
+      fileMessage: { key: 'file.saved', failed: false }, progress: progressAt(2, 12) });
+    expect(line.kind).toBe('progress');
+    expect(line.progress).toEqual({ done: 3, total: 12, ratio: 0.25 });
+    expect(line.hint).toBe(t('statusBar.progressHint'));
+  });
+});
+
+
+describe('受動的な履歴ヒントと操作案内の共存', () => {
+  const firstBoltedGuide = t('assembly.status.boltedJointStep').replace('{count}', '1')
+    .replace('{total}', '4').replace('{next}', t('assembly.boltedJoint.pickHoleA'));
+  const guides: readonly { readonly name: string; readonly input: Partial<StatusInput>; readonly text: string }[] = [
+    { name: 'activeTool', input: { activeTool: 'line' }, text: t(guideKeyFor('line', 0)) },
+    { name: 'constraintPick', input: { constraintPickMessage: '次の拘束対象' }, text: '次の拘束対象' },
+    { name: 'dragging', input: { dragging: true }, text: t('statusBar.guide.dragging') },
+    { name: 'assemblyOperation', input: { assemblyOperationStatus: assemblyToolGuide('placePart') }, text: assemblyToolGuide('placePart') },
+    { name: 'assemblyMate', input: { assemblyMateActive: true, assemblyMateStatus: { text: t('assembly.mate.pickFirst'), failed: false } },
+      text: t('assembly.mate.pickFirst') },
+    { name: 'assemblyBoltedJoint', input: { assemblyBoltedJointStatus: boltedJointStatus(boltedDraft(0), null) }, text: firstBoltedGuide },
+    { name: 'assemblyDrag', input: { assemblyDragNotice: 'dragging' }, text: t('assembly.drag.dragging') },
+  ];
+
+  it.each(guides)('$name の次の一手を初回履歴ヒントで隠さない', ({ input, text }) => {
+    const line = describeStatus({ ...quiet(), ...input, timelineNoticeKey: 'timeline.hint' });
+    expect(line.kind).toBe('guide');
+    expect(line.text).toBe(text);
+    expect(line.text).not.toBe(t('timeline.hint'));
+    expect(line.activity).toBeNull();
+  });
+
+  it.each([
+    ['complete', 'saved', 'assembly.drag.complete'],
+    ['limited', 'guide', 'assembly.drag.limited'],
+    ['cancelled', 'cancelled', 'assembly.drag.cancelled'],
+  ] as const)('部品ドラッグの %s を残っている初回履歴ヒントで隠さない', (notice, kind, key) => {
+    const base: StatusInput = { ...quiet(), timelineNoticeKey: 'timeline.hint', assemblyDragNotice: notice };
+    const line = describeStatus(base);
+    expect(line.kind).toBe(kind);
+    expect(line.text).toBe(t(key));
+    expect(line.progress).toBeNull();
+    expect(line.activity).toBeNull();
+    expect(describeStatus({ ...base, timelineNoticeKey: 'timeline.inserted' }).text).toBe(t('timeline.inserted'));
+    expect(describeStatus({ ...base, errorMessage: '操作失敗' }).kind).toBe('failure');
+    expect(describeStatus({ ...base, fileMessage: { key: 'file.openFailed', failed: true } }).text).toBe(t('file.openFailed'));
+    expect(describeStatus({ ...base, fileMessage: { key: 'file.saved', failed: false } }).text).toBe(t('file.saved'));
+    const progress = describeStatus({ ...base, progress: progressAt(1, 4) });
+    expect(progress.kind).toBe('progress');
+    expect(progress.progress).toEqual({ done: 2, total: 4, ratio: 0.5 });
+  });
+
+  it('未指定またはnullの任意入力と既定選択では受動ヒントを残す', () => {
+    const base = { ...quiet(), timelineNoticeKey: 'timeline.hint' as const };
+    const line = describeStatus({ ...base, constraintPickMessage: null, dragging: false,
+      assemblyOperationStatus: null, assemblyMateActive: false, assemblyMateStatus: null,
+      assemblyBoltedJointStatus: null, assemblyDragNotice: null });
+    expect(line.text).toBe(t('timeline.hint'));
+    expect(line.selectionKindLabel).toBe(describeStatus(quiet()).selectionKindLabel);
+    expect(line).toEqual(describeStatus(base));
+  });
+
+  it('締結案内と履歴ヒントが同居しても重大な通知と進捗を保つ', () => {
+    const base: StatusInput = { ...quiet(), timelineNoticeKey: 'timeline.hint',
+      assemblyBoltedJointStatus: boltedJointStatus(boltedDraft(0), null) };
+    expect(describeStatus({ ...base, fileMessage: { key: 'file.openFailed', failed: true } }).text).toBe(t('file.openFailed'));
+    expect(describeStatus({ ...base, errorMessage: '操作失敗' }).kind).toBe('failure');
+    expect(describeStatus({ ...base, cancelled: true }).text).toBe(t('statusBar.cancelled'));
+    expect(describeStatus({ ...base, timelineNoticeKey: 'timeline.inserted' }).text).toBe(t('timeline.inserted'));
+    expect(describeStatus({ ...base, fileMessage: { key: 'file.saved', failed: false } }).text).toBe(t('file.saved'));
+    const progress = describeStatus({ ...base, progress: progressAt(1, 4) });
+    expect(progress.text).toBe(firstBoltedGuide);
+    expect(progress.progress).toEqual({ done: 2, total: 4, ratio: 0.5 });
+    expect(progress.activity).not.toBeNull();
+    const computing = describeStatus({ ...base, isComputing: true });
+    expect(computing.text).toBe(firstBoltedGuide);
+    expect(computing.activity).not.toBeNull();
+    const memory = describeStatus({ ...base, kernelMemory: { usedBytes: 3.5 * 1024 ** 3, limitBytes: 4 * 1024 ** 3 } });
+    expect(memory.kind).toBe('failure');
+    expect(memory.text).toContain(t('statusBar.memoryNearLimit'));
+  });
+});
+
+
+it.each(['jointRecordMissing', 'jointPartsChanged', 'jointPartsConstrained', 'jointGeometryChanged'] as const)(
+  'shows the exact bolted edit refusal %s as a failure', (kind) => {
+    const status = boltedJointStatus(boltedDraft(4), { kind: 'issue', issue: { kind } });
+    expect(status).toEqual({ failed: true,
+      text: t('assembly.status.boltedJointIssue').replace('{reason}', t(`assembly.boltedJoint.issue.${kind}`)) });
+    const line = describeStatus({ ...quiet(), assemblyBoltedJointStatus: status });
+    expect(line.kind).toBe('failure');
+    expect(line.text).toBe(status?.text);
+  });

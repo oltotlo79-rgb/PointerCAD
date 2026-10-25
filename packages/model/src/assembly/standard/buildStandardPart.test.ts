@@ -1,16 +1,64 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { canonicalPartDocumentText } from '../partLibrary.js';
+import { STEEL_GOLDEN } from './steelGolden.fixture.js';
 
+import { resolveSketch } from '../../sketch/resolveSketch.js';
+import { STEEL_PRODUCTS, steelProductOptions } from './steelCatalog.js';
 import { liveBodyIds } from '../../part/createPartDocument.js';
 import {
   buildStandardPart, buildStandardPartFromSource, createStandardPartSource,
   DEFAULT_STANDARD_FASTENER_LENGTH, DEFAULT_STANDARD_SECTION_LENGTH,
   standardPartNominalVolume,
 } from './buildStandardPart.js';
+import { findHexBolt } from './fasteners.js';
+import { MISUMI_HEX_BOLT_MAIN_EVIDENCE } from './hexBoltEvidence.js';
 import {
-  STANDARD_CATALOG_REVISION, STANDARD_PART_GENERATOR_REVISION,
+  HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION, STANDARD_CATALOG_REVISION, STANDARD_PART_GENERATOR_REVISION,
 } from './types.js';
+import type { PartDocument } from '../../part/types.js';
+
+describe('saved legacy and steel r1 frozen canonical SHA-256', () => {
+  it('retains exactly 41 legacy and 31 original steel inputs with 72 distinct frozen hashes', () => {
+    expect(STEEL_GOLDEN).toHaveLength(72);
+    expect(STEEL_GOLDEN.filter(({ source }) => source.catalogRevision === STANDARD_CATALOG_REVISION)).toHaveLength(41);
+    expect(STEEL_GOLDEN.filter(({ source }) => source.catalogRevision === 'jp-steel-2026-10-10-r1')).toHaveLength(31);
+    expect(new Set(STEEL_GOLDEN.map(({ sha256 }) => sha256)).size).toBe(72);
+  });
+
+  it.each(STEEL_GOLDEN)('$source.catalogRevision / $source.catalog / $source.size / $sha256', ({ source, sha256 }) => {
+    expect(sha256).toMatch(/^[0-9a-f]{64}$/);
+    const document = buildStandardPartFromSource(source);
+    if (document === null) throw new Error(`Cannot rebuild frozen ${source.catalog} ${source.size}`);
+    const text = canonicalPartDocumentText(document).replace(/\r\n?/g, '\n');
+    expect(createHash('sha256').update(text, 'utf8').digest('hex')).toBe(sha256);
+    expect(canonicalPartDocumentText({ ...document }).replace(/\r\n?/g, '\n')).toBe(text);
+  });
+});
 
 describe('寸法表から普通の部品文書を組む台本', () => {
+  it('pairs cylindrical weld radius with revision 3 and computes circular-sector volume instead of triangular volume', () => {
+    const options = { length: '25', weldId: 'weld-1', weldSegment: '0', weldStation: '0', contactLength: '100',
+      weldParts: 'a,b', weldCylinderRadius: '10' };
+    const source = createStandardPartSource('filletWeld', '2x3', options);
+    expect(source.generatorRevision).toBe('fillet-weld-3');
+    expect(buildStandardPartFromSource(source)).not.toBeNull();
+    const expected = (30 * Math.sin(0.2) - 100 * (0.2 - Math.sin(0.2))) * 25 / 2;
+    expect(standardPartNominalVolume('filletWeld', '2x3', options)).toBeCloseTo(expected, 10);
+    expect(expected).not.toBe(75);
+    expect(standardPartNominalVolume('filletWeld', '6x1', options)).toBeNull();
+    expect(standardPartNominalVolume('filletWeld', '2x3', { ...options, weldAngle: '60' })).toBeNull();
+    for (const radius of ['0', '-1', 'Infinity', 'NaN', '']) {
+      expect(standardPartNominalVolume('filletWeld', '2x3', { ...options, weldCylinderRadius: radius })).toBeNull();
+    }
+    const { weldCylinderRadius: removed, ...legacy } = options;
+    expect(removed).toBe('10');
+    expect(createStandardPartSource('filletWeld', '2x3', legacy).generatorRevision).toBe('fillet-weld-1');
+    expect(standardPartNominalVolume('filletWeld', '2x3', legacy)).toBe(75);
+    expect(createStandardPartSource('filletWeld', '2x3', { ...legacy, weldAngle: '60' }).generatorRevision).toBe('fillet-weld-2');
+    expect(standardPartNominalVolume('filletWeld', '2x3', { ...legacy, weldAngle: '60' })).toBeCloseTo(75 * Math.sqrt(3) / 2, 10);
+  });
+
   it('M8×30六角ボルトは正六角形・押し出し・円柱・簡略外ねじ・和で1ボディになる', () => {
     const document = buildStandardPart('hexBolt', 'M8', { length: '30' });
     expect(document?.name).toBe('六角ボルト M8×30');
@@ -199,5 +247,168 @@ describe('規格部品の版と体積の検算', () => {
     ['hBeam', 'H 100×100×6×8'],
   ] as const)('%sの簡略体積は正である', (catalog, size) => {
     expect(standardPartNominalVolume(catalog, size)).toBeGreaterThan(0);
+  });
+});
+
+describe('versioned analytic steel profile generation', () => {
+  const sections = STEEL_PRODUCTS.filter((row) => row.geometry === 'profileSection');
+  it.each(sections)('$size uses actual analytic arcs, a closed resolved face and one ordinary extrusion', (row) => {
+    const source = createStandardPartSource(row.catalog, row.size, { ...steelProductOptions(row), length: '50*2' });
+    expect(source.generatorRevision).toBe('3-steel-profile-1');
+    const document = buildStandardPartFromSource(source);
+    if (document === null) throw new Error('Missing generated section');
+    const sketch = resolveSketch(document.sketches[0]);
+    expect(sketch.errors).toEqual([]);
+    expect(sketch.faces).toHaveLength(1);
+    expect(sketch.arcs).toHaveLength(row.catalog === 'equalAngle' ? 3 : 4);
+    expect(sketch.faces[0].curves.filter((curve) => curve.kind === 'arc')).toHaveLength(sketch.arcs.length);
+    expect(document.solids).toHaveLength(1);
+    expect(document.solids[0]).toMatchObject({ kind: 'extrude', distance: { source: '50*2', value: 100 } });
+    expect(liveBodyIds(document)).toHaveLength(1);
+  });
+  it.each(sections)('$size retains exact old polygon geometry under saved2-steel-1', (row) => {
+    const current = createStandardPartSource(row.catalog, row.size, { ...steelProductOptions(row), length: '100' });
+    const saved = { ...current, generatorRevision: '2-steel-1' };
+    const old = buildStandardPartFromSource(saved);
+    const legacy = buildStandardPart(row.catalog, row.size, { length: '100' });
+    expect(old).not.toBeNull();
+    expect(old?.sketches).toEqual(legacy?.sketches);
+    expect(old?.solids).toEqual(legacy?.solids);
+    expect(old?.sketches[0].features.some((feature) => feature.kind === 'arc')).toBe(false);
+    expect(buildStandardPartFromSource(current)?.sketches).not.toEqual(old?.sketches);
+  });
+  it.each(STEEL_PRODUCTS.filter((row) => row.geometry === 'nominal'))('$key keeps nominal shape identical across steel generator versions', (row) => {
+    const current = createStandardPartSource(row.catalog, row.size, steelProductOptions(row));
+    const saved = { ...current, generatorRevision: '2-steel-1' };
+    const oldDocument = buildStandardPartFromSource(saved);
+    const currentDocument = buildStandardPartFromSource(current);
+    if (oldDocument === null || currentDocument === null) throw new Error('Missing nominal steel document');
+    expect(oldDocument.steelStockSource).toEqual(saved);
+    expect(currentDocument.steelStockSource).toEqual(current);
+    const { steelStockSource: oldSource, ...oldShape } = oldDocument;
+    const { steelStockSource: currentSource, ...currentShape } = currentDocument;
+    expect(oldSource?.generatorRevision).toBe('2-steel-1');
+    expect(currentSource?.generatorRevision).toBe('3-steel-profile-1');
+    expect(oldShape).toEqual(currentShape);
+  });
+});
+
+function boltShape(document: PartDocument | null): { readonly length: number; readonly thread: number } {
+  const shaft = document?.solids.find((feature) => feature.kind === 'primitive' && feature.shape.kind === 'cylinder');
+  const thread = document?.solids.find((feature) => feature.kind === 'threadShaft');
+  if (shaft?.kind !== 'primitive' || shaft.shape.kind !== 'cylinder' || thread?.kind !== 'threadShaft') {
+    throw new Error('六角ボルトの軸またはねじが無い');
+  }
+  expect(thread.targetFeatureId).toBe(shaft.id);
+  expect(thread.fromEnd).toBe('last');
+  return { length: shaft.shape.height.value, thread: thread.length.value };
+}
+
+const mainCoarse = (length: string) => ({ length, dimensionSeries: 'main', threadSeries: 'coarse' });
+
+describe('六角ボルトの長さの区分ごとのねじ部の版(追加要件6)', () => {
+  it('旧版 1 で保存した 125mm 超の本体規格のボルトは、読み直しても b(ℓ≤125)の形のまま', () => {
+    const current = createStandardPartSource('hexBolt', 'M20', mainCoarse('150'));
+    const saved = { ...current, generatorRevision: STANDARD_PART_GENERATOR_REVISION };
+    const reloaded = buildStandardPartFromSource(structuredClone(saved));
+    expect(boltShape(reloaded)).toEqual({ length: 150, thread: 46 });
+    expect(buildStandardPartFromSource(saved)).toEqual(reloaded);
+    const next = buildStandardPartFromSource(current);
+    expect(boltShape(next)).toEqual({ length: 150, thread: 52 });
+    expect(next?.solids.filter((feature) => feature.kind !== 'threadShaft'))
+      .toEqual(reloaded?.solids.filter((feature) => feature.kind !== 'threadShaft'));
+    expect(next?.sketches).toEqual(reloaded?.sketches);
+  });
+
+  it.each([
+    ['125', STANDARD_PART_GENERATOR_REVISION, 46],
+    ['126', HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION, 52],
+    ['200', HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION, 52],
+    ['201', HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION, 65],
+    ['100*2', HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION, 52],
+  ] as const)('M20 本体規格・並目の長さ %s は版 %s・ねじ部 %dmm', (length, revision, thread) => {
+    const source = createStandardPartSource('hexBolt', 'M20', mainCoarse(length));
+    expect(source.generatorRevision).toBe(revision);
+    const document = buildStandardPartFromSource(source);
+    expect(boltShape(document).thread).toBe(thread);
+    expect(buildStandardPart('hexBolt', 'M20', mainCoarse(length))).toEqual(document);
+  });
+
+  it.each([
+    ['附属書JA', 'M20', { length: '150', dimensionSeries: 'annexJA', threadSeries: 'coarse' }, 46],
+    ['細目', 'M20', { length: '150', dimensionSeries: 'main', threadSeries: 'fine' }, 46],
+    ['根拠の無い第2選択', 'M14', mainCoarse('150'), 34],
+  ] as const)('%s は 125mm を超えても版 1 のまま b(ℓ≤125)で作る', (_label, size, options, thread) => {
+    const source = createStandardPartSource('hexBolt', size, options);
+    expect(source.generatorRevision).toBe(STANDARD_PART_GENERATOR_REVISION);
+    expect(boltShape(buildStandardPartFromSource(source)).thread).toBe(thread);
+  });
+
+  const evidenceRows = MISUMI_HEX_BOLT_MAIN_EVIDENCE.filter((row) => findHexBolt(row.nominal, 'main') !== undefined);
+
+  it('根拠のある全ての呼びで、125mm 以下は新旧の版の形が一致する', () => {
+    expect(evidenceRows.map((row) => row.nominal)).toEqual(['M3', 'M4', 'M5', 'M6', 'M8', 'M10', 'M12', 'M16', 'M20']);
+    for (const row of evidenceRows) {
+      for (const length of ['8', String(row.threadLength.upTo125), '60', '125']) {
+        const old = createStandardPartSource('hexBolt', row.nominal, mainCoarse(length));
+        expect(old.generatorRevision).toBe(STANDARD_PART_GENERATOR_REVISION);
+        expect(buildStandardPartFromSource({ ...old, generatorRevision: HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION }))
+          .toEqual(buildStandardPartFromSource(old));
+      }
+    }
+  });
+
+  it('全長は呼び長さのまま、ねじ部は先端から続き全長を超えず、区分の境で根拠の値へ切り替わる', () => {
+    for (const row of evidenceRows) {
+      for (const [length, expected] of [
+        [125, row.threadLength.upTo125], [125.5, row.threadLength.upTo200], [200, row.threadLength.upTo200],
+        [200.5, row.threadLength.over200], [300, row.threadLength.over200],
+      ] as const) {
+        const document = buildStandardPartFromSource(
+          createStandardPartSource('hexBolt', row.nominal, mainCoarse(String(length))));
+        const shape = boltShape(document);
+        expect(shape.length).toBe(length);
+        expect(shape.thread).toBe(Math.min(expected, length));
+        expect(shape.length - shape.thread).toBeGreaterThanOrEqual(0);
+        expect(document === null ? [] : liveBodyIds(document)).toHaveLength(1);
+      }
+    }
+  });
+
+  it('新しい版は六角ボルトにだけ付き、ほかの部品の保存版としては組まない', () => {
+    for (const catalog of ['hexNut', 'plainWasher', 'socketHeadCapScrew'] as const) {
+      const source = createStandardPartSource(catalog, 'M8', { length: '150', dimensionSeries: 'main' });
+      expect(source.generatorRevision).toBe(STANDARD_PART_GENERATOR_REVISION);
+      expect(buildStandardPartFromSource({ ...source, generatorRevision: HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION }))
+        .toBeNull();
+    }
+  });
+});
+
+
+describe('inner cylindrical weld public standard source', () => {
+  it('pairs explicit interior side with version 4 and adds the independent circular segment', () => {
+    const options = { length: '25', weldId: 'weld-1', weldSegment: '0', weldStation: '0', contactLength: '100',
+      weldParts: 'a,b', weldCylinderRadius: '10', weldCylinderSide: 'interior' };
+    const source = createStandardPartSource('filletWeld', '2x3', options);
+    expect(source.generatorRevision).toBe('fillet-weld-4');
+    expect(buildStandardPartFromSource(source)).not.toBeNull();
+    const expected = (30 * Math.sin(0.2) + 100 * (0.2 - Math.sin(0.2))) * 25 / 2;
+    expect(standardPartNominalVolume('filletWeld', '2x3', options)).toBeCloseTo(expected, 10);
+    expect(expected).toBeGreaterThan(75 * Math.sin(0.2) / 0.2);
+    for (const generatorRevision of ['fillet-weld-1', 'fillet-weld-2', 'fillet-weld-3']) {
+      expect(buildStandardPartFromSource({ ...source, generatorRevision })).toBeNull();
+    }
+    for (const value of ['unknown', 'exterior', '']) {
+      const invalid = { ...options, weldCylinderSide: value };
+      expect(buildStandardPartFromSource(createStandardPartSource('filletWeld', '2x3', invalid))).toBeNull();
+      expect(standardPartNominalVolume('filletWeld', '2x3', invalid)).toBeNull();
+    }
+    const { weldCylinderRadius: removed, ...withoutRadius } = options;
+    expect(removed).toBe('10');
+    expect(buildStandardPartFromSource(createStandardPartSource('filletWeld', '2x3', withoutRadius))).toBeNull();
+    expect(standardPartNominalVolume('filletWeld', '2x3', withoutRadius)).toBeNull();
+    expect(standardPartNominalVolume('filletWeld', '2x20', options)).toBeNull();
+    expect(buildStandardPartFromSource({ ...source, size: '2x20' })).toBeNull();
   });
 });

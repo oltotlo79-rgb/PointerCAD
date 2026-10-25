@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ReferenceRepairSection } from '../solid/referenceRepairPanel.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { DRAWING_PROPERTY_KINDS, drawingPropertySectionKey, type DrawingPropertyKind } from '../shell/propertySectionKeys.js';
@@ -71,6 +72,7 @@ export function DrawingPropertyPanel(): React.JSX.Element {
   return <section className="pcad-panel pcad-panel--right">
     <h2 className="pcad-panel__title">{t('drawing.property.title')}</h2>
     <div className="pcad-panel__body" key={documentId}>
+      <ReferenceRepairSection />
       {selection.kind === 'multiple' ? <p>{t('drawing.property.multiple').replace('{count}', String(selection.count))}</p> : null}
       {singleElement === null || drawing === null ? null : <label className="pcad-drawing-element-layer">
         {t('drawing.property.elementLayer')}

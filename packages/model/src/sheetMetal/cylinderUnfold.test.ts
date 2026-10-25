@@ -30,4 +30,18 @@ describe('円筒曲げの中立面への写像', () => {
     expect(unfoldCylindricalPoint([0, 1e308, 0], { ...frame, innerRadius: 1e308, thickness: 1e308 }))
       .toEqual({ ok: false, error: 'frame' });
   });
+
+  it.each([Math.PI / 3, -2 * Math.PI / 3].flatMap((angleRadians) => [0, 0.4, 0.5]
+    .map((kFactor) => ({ angleRadians, kFactor }))))(
+    '角度$angleRadians・K=$kFactorで両接線と中間点を独立BAへ1e-9mmで写す', ({ angleRadians, kFactor }) => {
+      const input = { ...frame, angleRadians, kFactor }, before = JSON.stringify(input);
+      for (const fraction of [0, 0.5, 1]) for (const radius of [3, 4, 5]) {
+        const theta = angleRadians * fraction;
+        const result = unfoldCylindricalPoint([12, radius * Math.cos(theta), radius * Math.sin(theta)], input);
+        if (!result.ok) throw new Error(result.error);
+        expect(Math.abs(result.point[0] - 12)).toBeLessThanOrEqual(1e-9);
+        expect(Math.abs(result.point[1] - Math.abs(theta) * (3 + kFactor * 2))).toBeLessThanOrEqual(1e-9);
+      }
+      expect(JSON.stringify(input)).toBe(before);
+  });
 });

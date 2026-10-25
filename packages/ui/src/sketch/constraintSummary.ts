@@ -76,10 +76,12 @@ export interface ConstraintSummary {
 /**
  * 種類ごとの印の記号(§0.a-0.7 の①)。**言葉ではなく記号**なので `ja.json` へ置かない
  * (日本語以外へ広げても同じ記号を使う。NFR-MA-5 が分離を求めているのは文言)。
- * 14 種を網羅する `Record` なので、種類が増えたら型検査で落ちる。
+ * 18 種を網羅する `Record` なので、種類が増えたら型検査で落ちる。
  */
 const CONSTRAINT_SYMBOLS: Readonly<Record<SketchConstraintKind, string>> = {
   coincident: '●',
+  midpoint: 'M',
+  pointOnCurve: 'P',
   horizontal: 'H',
   vertical: 'V',
   parallel: '∥',
@@ -90,6 +92,8 @@ const CONSTRAINT_SYMBOLS: Readonly<Record<SketchConstraintKind, string>> = {
   symmetric: '⇔',
   fix: '▣',
   distance: '↔',
+  horizontalDistance: 'dU',
+  verticalDistance: 'dV',
   angle: '∠',
   radius: 'R',
   diameter: '⌀',

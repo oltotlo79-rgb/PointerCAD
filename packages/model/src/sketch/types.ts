@@ -11,6 +11,7 @@ import type { ExpressionValue } from '@pointercad/expression';
 import type { FunctionDefinition } from '../functionGeometry/functionDefinitionTypes.js';
 import type { FunctionPointReference } from '../functionGeometry/functionPointReference.js';
 
+import type { PointProducerAnchor } from '../geometry/subShapeOrigin.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import type { SketchConstraint } from './constraints/types.js';
 import type { WorkPlane, WorkPlaneId } from './planeMath.js';
@@ -514,6 +515,7 @@ export interface SketchDocument {
 
 /** 解決済みの点。id は点フィーチャーなら featureId、点列の n 番目なら `featureId#n`。 */
 export interface ResolvedPoint {
+  readonly producerAnchor?: PointProducerAnchor;
   readonly id: string;
   readonly featureId: string;
   readonly position: Vec3;
@@ -575,8 +577,17 @@ export interface ResolvedSpline {
   /** 通過点(interpolate)または制御点(control)。並び順が曲線の向き。 */
   readonly points: readonly Vec3[];
   readonly closed: boolean;
-  /** Function samples preserve their certified chords; ordinary splines omit this. */
-  readonly degree?: 1;
+  /**
+   * Function curves only; ordinary splines omit this. 1 keeps certified chords. 3 is a certified smooth function
+   * curve, which always carries `knots`.
+   */
+  readonly degree?: 1 | 3;
+  /**
+   * Distinct, strictly increasing knots of a smooth function curve (degree 3, control mode, open). Multiplicities
+   * are implied: 4 at both ends and 2 inside, so it is C1 and `points` holds exactly 2 * knots.length poles. A record
+   * with knots is never an implicit uniform spline.
+   */
+  readonly knots?: readonly number[];
 }
 
 export type ResolvedCurve = ResolvedSegment | ResolvedArc | ResolvedEllipse | ResolvedSpline;

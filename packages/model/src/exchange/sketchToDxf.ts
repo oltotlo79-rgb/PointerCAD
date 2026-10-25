@@ -289,6 +289,10 @@ function splineEntity(plane: WorkPlane, spline: ResolvedSpline): SketchDxfSpline
     points,
     closed: spline.closed,
     degree: EXPORTED_SPLINE_DEGREE,
+    // Function curves keep their own degree and parameter knots (an affine plane map moves only the points), so
+    // the writer evaluates the same curve instead of reading the poles as uniform control points.
+    ...(spline.degree === undefined ? {} : { curveDegree: spline.degree }),
+    ...(spline.knots === undefined ? {} : { knots: spline.knots }),
     warnings: [],
   };
 }

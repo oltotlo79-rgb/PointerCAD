@@ -25,12 +25,15 @@ import {
   selectionSetElementIds,
 } from '../solid/selectionSetCommands.js';
 import { type SelectionKind, subShapeBodiesOf } from '../solid/subShapeSelection.js';
+import { captureConnectionSelection, hasCurrentConnectionGeometry, selectedVertexReferences, type ConnectionSelection,
+  type SelectionSource } from '../sketch/connectionSelection.js';
 import type { AppState } from './appState.js';
 
 /** 選択・選択セット・外観のスライスが持つ欄と操作。 */
 export interface SelectionSlice {
   /** 選択中の要素 id(FR-106)。面を張るときは選んだ順に意味がある(FR-309)。 */
   readonly selection: readonly string[];
+  readonly connectionSelection: ConnectionSelection | null;
   /** ホバー中の要素 id(FR-106)。 */
   readonly hoveredElementId: string | null;
   /**
@@ -70,8 +73,8 @@ export interface SelectionSlice {
    * 「n 件は見つかりませんでした」と知らせる(FR-504、§2.13。組そのものは残す)。
    */
   readonly selectSelectionSet: (id: string) => number;
-  readonly setSelection: (ids: readonly string[]) => void;
-  readonly toggleSelection: (id: string) => void;
+  readonly setSelection: (ids: readonly string[], source?: SelectionSource) => void;
+  readonly toggleSelection: (id: string, source?: SelectionSource) => void;
   readonly setHovered: (id: string | null) => void;
   /** 外観を割り当てられなかった理由を出す・消す(FR-1106〜1110、NFR-UX-5)。 */
   readonly setAppearanceError: (key: MessageKey | null) => void;
@@ -97,6 +100,7 @@ export interface SelectionSlice {
 export type SelectionInitialState = Pick<
   SelectionSlice,
   | 'selection'
+  | 'connectionSelection'
   | 'hoveredElementId'
   | 'selectionKind'
   | 'appearanceErrorKey'
@@ -111,12 +115,12 @@ export const createSelectionSlice: StateCreator<
   setSelectionKind: (selectionKind) => {
     // 変わらないときは選択を残す(手動切替でも自動切替と同じ規約、§0.a-0.6)。
     set((state) =>
-      state.selectionKind === selectionKind ? {} : { selectionKind, selection: [] },
+      state.selectionKind === selectionKind ? state : { selectionKind, selection: [], connectionSelection: null },
     );
   },
   createSelectionSetFromSelection: (name) => {
     const state = get();
-    const members = selectionMembersOf(subShapeBodiesOf(state.bodies), state.selection);
+    const members = selectionMembersOf(subShapeBodiesOf(state.bodies), state.selection, selectedVertexReferences(state));
     const outcome = createSelectionSet(state.document.selectionSets, name, members);
     if (!outcome.ok) {
       // 断るときは文書を 1 バイトも変えない(NFR-UX-5。取り消しの段も積まない)。
@@ -147,7 +151,7 @@ export const createSelectionSlice: StateCreator<
   },
   addSelectionToSet: (id) => {
     const state = get();
-    const members = selectionMembersOf(subShapeBodiesOf(state.bodies), state.selection);
+    const members = selectionMembersOf(subShapeBodiesOf(state.bodies), state.selection, selectedVertexReferences(state));
     const selectionSets = addSelectionSetMembers(state.document.selectionSets, id, members);
     if (selectionSets === state.document.selectionSets) {
       // 1 件も増えないとき(同じ面をもう一度足した)は文書を作り直さない。
@@ -161,19 +165,24 @@ export const createSelectionSlice: StateCreator<
     if (found === undefined) {
       return 0;
     }
-    const outcome = selectionSetElementIds(subShapeBodiesOf(state.bodies), found);
+    if (!hasCurrentConnectionGeometry(state)) {
+      state.setEditError('sketch.connect.reselect');
+      return found.members.length;
+    }
+    const outcome = selectionSetElementIds(state.bodies, found);
     /*
       選ぶ種類を**先に**合わせる。`setSelectionKind` は種類が変わると選択を空にするので、
       順序を逆にすると選んだそばから消える(§0.a-0.6)。
     */
     state.setSelectionKind(selectionKindForSet(found));
-    state.setSelection(outcome.elementIds);
+    state.setSelection(outcome.elementIds, { kind: 'references', references: outcome.references });
     return outcome.missingCount;
   },
-  setSelection: (selection) => {
+  setSelection: (selection, source) => {
     // 選び直したら、直前に断られた面・立体・オフセットの理由は用済みなので消す(NFR-UX-5)。
     set({
       selection,
+      connectionSelection: captureConnectionSelection(get(), selection, source),
       faceErrorKey: null,
       solidErrorKey: null,
       editErrorKey: null,
@@ -181,17 +190,21 @@ export const createSelectionSlice: StateCreator<
       editNoticeKey: null,
     });
   },
-  toggleSelection: (id) => {
-    set((state) => ({
-      selection: state.selection.includes(id)
+  toggleSelection: (id, source) => {
+    set((state) => {
+      const selection = state.selection.includes(id)
         ? state.selection.filter((selected) => selected !== id)
-        : [...state.selection, id],
-      faceErrorKey: null,
-      solidErrorKey: null,
-      editErrorKey: null,
-      appearanceErrorKey: null,
-      editNoticeKey: null,
-    }));
+        : [...state.selection, id];
+      return {
+        selection,
+        connectionSelection: captureConnectionSelection(state, selection, source, true),
+        faceErrorKey: null,
+        solidErrorKey: null,
+        editErrorKey: null,
+        appearanceErrorKey: null,
+        editNoticeKey: null,
+      };
+    });
   },
   setHovered: (hoveredElementId) => {
     set({ hoveredElementId });

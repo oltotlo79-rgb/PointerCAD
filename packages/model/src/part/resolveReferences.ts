@@ -1,3 +1,4 @@
+import type { PointPlacementSourceAnchor } from '../geometry/subShapeOrigin.js';
 /**
  * 基準ジオメトリ(任意の作業平面 FR-328、基準軸・基準点・座標系 FR-329)の解決
  * (P4 計画書 §2.8、タスク9)。
@@ -135,6 +136,15 @@ export interface ReferenceResolveDeps {
   readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
 }
 
+interface PointResolution {
+  readonly position: Vec3;
+  readonly identity?: PointPlacementSourceAnchor;
+}
+
+export type ResolvedPointWithIdentity =
+  | { readonly state: 'identified'; readonly position: Vec3; readonly identity: PointPlacementSourceAnchor }
+  | { readonly state: 'unidentified'; readonly position: Vec3; readonly reason: 'producer-unavailable'; readonly identity?: never };
+
 export interface ReferenceResolver {
   /** 作図面の id から平面を引く(基準 3 面 → 任意の作業平面の順)。 */
   readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
@@ -142,6 +152,8 @@ export interface ReferenceResolver {
   readonly axis: (spec: AxisSpec) => AxisFrame | null;
   /** 点の参照を解決する。 */
   readonly point: (reference: PointReference) => Vec3 | null;
+  /** Same resolution rules, but refuses unavailable logical producer proof. */
+  readonly pointWithIdentity: (reference: PointReference) => ResolvedPointWithIdentity | null;
   /** 履歴順にすべて解決する(ツリー・画面表示・失敗の一覧のため)。 */
   readonly resolveAll: () => ResolvedReferences;
 }
@@ -218,6 +230,13 @@ function vertexOfSketch(
  *
  * 返す関数はどれも例外を投げず、解けなければ null か理由つきの失敗を返す(FR-504)。
  */
+/** Persist authored formal definition, never its evaluated value or displayed coordinates. */
+function canonicalPointExpressionDefinition(value: unknown): string {
+  return JSON.stringify(value, (_key: string, item: unknown): unknown =>
+    item !== null && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item);
+}
+
 export function createReferenceResolver(
   document: PartDocument,
   deps: ReferenceResolveDeps,
@@ -355,10 +374,10 @@ export function createReferenceResolver(
     return center === null ? null : { center, radius };
   }
 
-  function pointAt(reference: PointReference, limit: number): Vec3 | null {
+  function pointResolutionAt(reference: PointReference, limit: number): PointResolution | null {
     switch (reference.kind) {
       case 'origin':
-        return ORIGIN;
+        return { position: ORIGIN, identity: { kind: 'origin' } };
       case 'previous':
         // 部品文書の基準ジオメトリには「直前の点」という順序の文脈が無い。
         return null;
@@ -366,7 +385,7 @@ export function createReferenceResolver(
         if (withinHistory(reference.pointId, limit)) {
           const outcome = resolveReference(reference.pointId, limit);
           if (outcome.ok && outcome.value.kind === 'referencePoint') {
-            return outcome.value.position;
+            return { position: outcome.value.position, identity: { kind: 'reference-point', featureId: reference.pointId } };
           }
           return null;
         }
@@ -380,7 +399,9 @@ export function createReferenceResolver(
           }
           const found = resolved.points.find((point) => point.id === reference.pointId);
           if (found !== undefined) {
-            return found.position;
+            return { position: found.position, ...(found.producerAnchor === undefined ? {} : { identity: {
+              kind: 'sketch-point', anchor: { sketchId: sketch.id, producer: found.producerAnchor },
+            } as const }) };
           }
         }
         return null;
@@ -393,7 +414,16 @@ export function createReferenceResolver(
           }
           const found = vertexOfSketch(resolved, reference.featureId, reference.vertex);
           if (found !== null) {
-            return found;
+            const curves = [...resolved.segments, ...resolved.arcs, ...resolved.ellipses, ...resolved.splines]
+              .filter((curve) => curve.featureId === reference.featureId);
+            if (curves.length === 1) return { position: found, identity: { kind: 'curve-vertex', sketchId: sketch.id,
+              featureId: reference.featureId, vertex: reference.vertex } };
+            if (curves.length !== 0) return { position: found };
+            const points = resolved.points.filter((point) => point.featureId === reference.featureId);
+            const selected = reference.vertex === 'start' ? points[0] : points[points.length - 1];
+            return { position: found, ...(selected?.producerAnchor === undefined ? {} : { identity: {
+              kind: 'sketch-point', anchor: { sketchId: sketch.id, producer: selected.producerAnchor },
+            } as const }) };
           }
         }
         return null;
@@ -402,13 +432,17 @@ export function createReferenceResolver(
         // 立体の部分形状(3D スケッチの点、FR-330。P4 タスク10)。
         // 頂点はその位置、辺は中点、面は重心(`subShapeFromFingerprint` と同じ約束)。
         const found = resolveSubShape(reference.ref);
-        return found === null ? null : found.position;
+        return found === null ? null : { position: found.position,
+          ...(reference.ref.origin === undefined || deps.subShape === undefined ? {} : { identity: {
+            kind: 'semantic-subshape', bodyFeatureId: reference.ref.bodyFeatureId, origin: reference.ref.origin,
+          } as const }) };
       }
       case 'functionPoint': {
         // This order contains reference geometry only; a sketch/solid ID cannot be checked against it.
         // The point recomputer must have validated and evaluated this exact owner before publishing it.
         const owner=document.references[limit]?.id;
-        return owner===undefined?null:deps.functionPoint?.(reference,owner)??null;
+        const position = owner === undefined ? null : deps.functionPoint?.(reference, owner) ?? null;
+        return position === null ? null : { position };
       }
       case 'sphereGrid': {
         // 球面上の点(FR-431、P5 タスク19)。**位置と緯度の範囲の規則は
@@ -423,9 +457,28 @@ export function createReferenceResolver(
           sphere: (sphereFeatureId) => sphereAt(sphereFeatureId, limit),
         };
         const outcome = resolvePointReference(reference, context, reference.sphereFeatureId);
-        return outcome.ok ? outcome.value : null;
+        return outcome.ok ? { position: outcome.value, identity: { kind: 'sphere-grid', featureId: reference.sphereFeatureId,
+          latitudeSource: reference.latitude.source, longitudeSource: reference.longitude.source,
+          ...(reference.latitude.mathDefinition === undefined ? {} : {
+            latitudeMathDefinition: canonicalPointExpressionDefinition(reference.latitude.mathDefinition),
+          }),
+          ...(reference.longitude.mathDefinition === undefined ? {} : {
+            longitudeMathDefinition: canonicalPointExpressionDefinition(reference.longitude.mathDefinition),
+          }) } } : null;
       }
     }
+  }
+
+  function pointAt(reference: PointReference, limit: number): Vec3 | null {
+    return pointResolutionAt(reference, limit)?.position ?? null;
+  }
+
+  function pointWithIdentityAt(reference: PointReference, limit: number): ResolvedPointWithIdentity | null {
+    const resolved = pointResolutionAt(reference, limit);
+    if (resolved === null) return null;
+    return resolved.identity === undefined
+      ? { state: 'unidentified', position: resolved.position, reason: 'producer-unavailable' }
+      : { state: 'identified', position: resolved.position, identity: resolved.identity };
   }
 
   function axisAt(spec: AxisSpec, limit: number): AxisFrame | null {
@@ -841,6 +894,7 @@ export function createReferenceResolver(
     },
     axis: (spec) => axisAt(spec, NO_LIMIT),
     point: (reference) => pointAt(reference, NO_LIMIT),
+    pointWithIdentity: (reference) => pointWithIdentityAt(reference, NO_LIMIT),
     resolveAll,
   };
 }

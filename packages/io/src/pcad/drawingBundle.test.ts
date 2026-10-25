@@ -22,6 +22,22 @@ async function assemblySource(): Promise<Extract<DrawingSourceInput, { sourceKin
 }
 
 describe('図面が参照元の部品文書と原本を一緒に保存する(P8-59/64)', () => {
+  it('図面へ抱き込んだ部品の選択参照を再読込後も意味起点付きで保つ', async () => {
+    const ref = { bodyFeatureId: 'box-1', index: 5,
+      fingerprint: { kind: 'face' as const, surfaceKind: 'plane' as const, area: 1200,
+        position: [0, 0, 20] as const, axis: [0, 0, 1] as const, radius: null },
+      origin: { version: 1 as const, shapeKind: 'face' as const,
+        identity: { kind: 'box-face' as const, featureId: 'box-1', role: 'top' as const } } };
+    const part: PartDocument = { ...createEmptyPartDocument(),
+      selectionSets: [{ id: 'top', name: 'top face', members: [{ kind: 'face', ref }] }] };
+    const input = await fixture({ sourceKind: 'part', document: part });
+    const saved = await writeDrawingBundle(input.document, { source: input.source, savedAt });
+    const opened = await readDrawingBundle(saved);
+    expect(opened).toMatchObject({ ok: true, source: { document: part } });
+    if (!opened.ok || opened.source.sourceKind !== 'part') return;
+    expect(opened.source.document.selectionSets[0]?.members[0]).toEqual({ kind: 'face', ref });
+    expect(await writeDrawingBundle(opened.document, { source: opened.source, savedAt })).toEqual(saved);
+  });
   it('新しい部品の図面を往復する', async () => {
     const input = await fixture({ sourceKind: 'part', document: createEmptyPartDocument() });
     const read = await readDrawingBundle(await writeDrawingBundle(input.document, { source: input.source, savedAt }));

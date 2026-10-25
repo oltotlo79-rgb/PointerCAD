@@ -1,5 +1,8 @@
-import { absoluteCoordinate, createEmptyPartDocument, replaceSketch, createSheetBaseFeature, createSheetFlangeFeature, resolvePart, sheetBoundaryEdges } from '@pointercad/model';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { absoluteCoordinate, createEmptyPartDocument, replaceSketch, createSheetBaseFeature, createSheetFlangeFeature, resolvePart, sheetBoundaryEdges, createDirectKernelBridge, recomputePart } from '@pointercad/model';
+import { createKernelApi } from '../../../kernel/src/index.js';
+import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { t } from '../i18n/t.js';
 import { bodyFor, createFakeRecompute, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { buildSheetCreation } from './sheetCommands.js';
@@ -26,6 +29,80 @@ function setup() {
 }
 beforeEach(() => { resetTestStore(); useAppStore.getState().setSheetMetalComputer(null); });
 afterEach(() => { useAppStore.getState().closeSheetMetalTool(); useAppStore.getState().setSheetMetalComputer(null); });
+
+describe('W05 creation action against actual kernel refusals', () => {
+  const bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode));
+  beforeAll(async () => { await loadOcctForNode(); }, 180_000);
+  afterAll(() => { bridge.dispose(); });
+
+  it.each(['overlap', 'disconnected'] as const)('%s keeps document, draft and complete Undo/Redo state and recovers with valid geometry', async (kind) => {
+    const initial = setup(), document = initial.candidate.document;
+    const resolved = resolvePart(document), panel = resolved.sheetMetalBodies?.get(initial.base.id)?.panels[0];
+    if (panel === undefined) throw new Error('Expected base panel');
+    const edges = sheetBoundaryEdges(panel);
+    if (!edges.ok) throw new Error(edges.message);
+    const references = [edges.value[0], edges.value[2]].map((edge) => ({ panelId: panel.id, boundaryId: edge.id }));
+    const feature = createSheetFlangeFeature(document, initial.base.id, kind === 'overlap' ? references : [references[0]]);
+    const sources = kind === 'overlap' ? { sheetAngle: '179', sheetLength: '40' } : { sheetAngle: '90', sheetLength: '10' };
+    const built = buildSheetCreation(document, feature, sources, 'mm', {});
+    if (!built.ok) throw new Error(built.message);
+    const missing = { ...feature, edges: [{ ...references[0], panelId: 'missing-panel' }] };
+    if (kind === 'disconnected') {
+      // Normal authoring refuses the stale stable reference before dispatch.
+      expect(buildSheetCreation(document, missing, sources, 'mm', {})).toEqual({ ok: false, message: t('sheetMetal.missingFlangePanel') });
+    }
+    const badFeature = kind === 'overlap' ? built.feature : missing;
+    // Also exercise the action's real recompute guard if a previously built candidate
+    // arrives with an invalid reference. No successful native response is stubbed.
+    const candidate = kind === 'overlap' ? built : { ok: true as const, feature: badFeature,
+      document: { ...document, solids: [...document.solids, badFeature] } };
+    const original = await recomputePart(document, bridge, { partId: document.id });
+    expect(original.errors).toEqual([]);
+    useAppStore.getState().applyDocument(document, { undoable: false });
+    useAppStore.getState().applyRecompute(document, original);
+    useAppStore.getState().openSheetMetalTool('sheetFlange');
+    const session = useAppStore.getState().sheetMetalTool;
+    if (session === null) throw new Error('Expected creation session');
+    useAppStore.getState().setSheetMetalComputer((doc, _requestId, shouldCancel) =>
+      recomputePart(doc, bridge, { partId: document.id, shouldCancel }));
+    const before = useAppStore.getState(), inputBefore = structuredClone({ document, feature, sources, candidate });
+    try {
+      await applySheetCreation(session, candidate, true);
+      const after = useAppStore.getState();
+      expect(after.sheetMetalError).toBe(t(kind === 'overlap' ? 'sheetMetal.flangeOverlap' : 'sheetMetal.missingFlangePanel'));
+      expect(after).toEqual({ ...before, sheetMetalError: after.sheetMetalError });
+      expect(after.document).toBe(document);
+      expect(after.sheetMetalTool).toBe(session);
+      expect(after.canUndo).toBe(false);
+      expect(after.canRedo).toBe(false);
+      expect({ document, feature, sources, candidate }).toEqual(inputBefore);
+
+      const valid = createSheetFlangeFeature(document, initial.base.id, [references[0]]);
+      const recovery = buildSheetCreation(document, valid, { sheetAngle: '90', sheetLength: '10' }, 'mm', {});
+      if (!recovery.ok) throw new Error(recovery.message);
+      await applySheetCreation(session, recovery, false);
+      const preview = useAppStore.getState().sheetMetalPreview;
+      if (preview === null) throw new Error(useAppStore.getState().sheetMetalError ?? 'Missing native preview');
+      expect(preview.bodies).toHaveLength(1);
+      expect(preview.bodies[0].isValid).toBe(true);
+      // Independent base area, thickness, tangent length and circular band volume.
+      const width = 50, thickness = initial.base.rule.thickness.value, radius = initial.base.rule.innerRadius.value;
+      const expectedVolume = 50 * 30 * thickness + width * thickness * 10
+        + width * thickness * (radius + thickness / 2) * Math.PI / 2;
+      expect(preview.volume).toBeGreaterThan(0);
+      expect(Math.abs(preview.volume - expectedVolume) / expectedVolume).toBeLessThanOrEqual(1e-9);
+      expect(useAppStore.getState().document).toBe(document);
+      expect(useAppStore.getState().canUndo).toBe(false);
+      await applySheetCreation(session, recovery, true);
+      expect(useAppStore.getState().document).toBe(recovery.document);
+      useAppStore.getState().undo();
+      expect(useAppStore.getState().document).toBe(document);
+      expect(useAppStore.getState().canUndo).toBe(false);
+      useAppStore.getState().redo();
+      expect(useAppStore.getState().document).toBe(recovery.document);
+    } finally { await bridge.releasePart(document.id); }
+  });
+});
 
 describe('実形状が成功した板金だけを文書へ確定する', () => {
   it('消費済みの基板の再編集では後続形状を検査し、失敗は保持、成功は同じ位置でUndo1回へまとめる', async () => {

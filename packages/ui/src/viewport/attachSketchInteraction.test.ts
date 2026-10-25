@@ -2,17 +2,18 @@
  * `attachSketchInteraction.ts` の当たり判定の順序を決める純関数の検査
  * (計画書 docs/plans/P3-加工フィーチャー.md タスク23、§2.3.2)。
  *
- * `attachSketchInteraction` 本体は DOM(PointerEvent・canvas)を直に触るので、この
- * パッケージの方針(jsdom を入れない、P1 §0.8)により Node の単体検査からは外れる。
- * ここでは選択の種類・道具から「何を拾うか」を決める判定と、`pickSolidSubShape` へ渡す
- * 形への詰め替えだけを、DOM に触れない純関数として検査する。実際の pointermove /
- * pointerdown の配線は E2E(タスク30)で確かめる。
+ * 選択種類の純判定に加え、Node の EventTarget に最小の canvas/projection 契約を用意し、
+ * pointermove / pointerdown が実ストアへ同じ候補を渡すことを検査する。
+ * ブラウザーの投影・実カーネル形状のhitは E2E の connect-points で確かめる。
  */
-import type { Vec3 } from '@pointercad/model';
+import { absoluteCoordinate, appendFeature, appendSolid, createEmptyPartDocument, createPointFeature,
+  replaceSketch, type Vec3 } from '@pointercad/model';
 import { expectWithinBudget } from '@pointercad/test-utils';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  addsToSketchSelection,
+  attachSketchInteraction,
   isDrawingTool,
   isLookTool,
   isSolidTool,
@@ -24,6 +25,353 @@ import {
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
 import { snapToSphereGrid, type SphereGridSpec } from './buildSphereGrid.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
+import { bodyFor, extrudeFeature, orbitFrom, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
+import { createNumericInput } from '../sketch/numericInput.js';
+import { accountingSnapshot, captureStagedSolidOwnership, currentStagedSolid, type PartStager,
+  type StagedSolidState } from '../store/recomputeSlice.js';
+import { useAppStore } from '../store/useAppStore.js';
+import { attachCameraControls } from './attachCameraControls.js';
+import type { ViewportScene } from './createViewportScene.js';
+
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+function interactionCanvas(): { canvas: HTMLCanvasElement; captured: Set<number>;
+  send: (type: string, x?: number, y?: number, pointerId?: number) => void } {
+  const captured = new Set<number>();
+  const canvas = Object.assign(new EventTarget(), {
+    clientHeight: 600, getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 600,
+      width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) }),
+    setPointerCapture: (id: number): void => { captured.add(id); },
+    hasPointerCapture: (id: number): boolean => captured.has(id),
+    releasePointerCapture: (id: number): void => { captured.delete(id); },
+    focus: (): void => {},
+  }) as HTMLCanvasElement;
+  return { canvas, captured, send: (type, x = 40, y = 50, pointerId = 1): void => {
+    canvas.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), {
+      pointerId, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1,
+      clientX: x, clientY: y, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false,
+    }));
+  } };
+}
+
+function attachPointInteraction(canvas: HTMLCanvasElement): ReturnType<typeof attachSketchInteraction> {
+  const projection: Pick<ViewportScene, 'worldToScreen' | 'screenToPlanePoint' | 'pointerRay'> = {
+    worldToScreen: point => [point[0], point[1]], screenToPlanePoint: (x, y) => [x, y, 0],
+    pointerRay: () => null,
+  };
+  return attachSketchInteraction(canvas, projection as ViewportScene, () => orbitFrom(0, 0), () => false);
+}
+
+function resetPointDocument(): void {
+  resetTestStore();
+  const empty = createEmptyPartDocument();
+  const sketch = appendFeature(empty.sketches[0], createPointFeature(empty.sketches[0], absoluteCoordinate(40, 50, 0)));
+  const document = replaceSketch(empty, sketch);
+  const state = useAppStore.getState();
+  state.resetDocument(document);
+  state.recordRecomputeRequest(1);
+  state.applyRecompute(document, { ...resultFor(document), generation: 1 });
+  state.recordRecomputeCompletion(1, 'success');
+  useAppStore.setState({ snapEnabled: false });
+}
+
+describe('sketch interaction の入力所有権', () => {
+  it('点の作図押下は数値入力だけを開き、文書を確定しない', () => {
+    resetPointDocument();
+    useAppStore.getState().setActiveTool('point');
+    const { canvas, send } = interactionCanvas();
+    const attached = attachPointInteraction(canvas);
+    try {
+      const before = useAppStore.getState();
+      send('pointerdown', 100, 120);
+      expect(useAppStore.getState().numericInput?.toolId).toBe('point');
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+    } finally { attached.detach(); resetTestStore(); }
+  });
+
+  it.each(['pointerup', 'pointercancel', 'detach'] as const)(
+    '断面つまみの%sは捕捉を解き、文書とUndoを変更しない', ending => {
+      resetPointDocument();
+      useAppStore.getState().toggleSectionView();
+      const { canvas, captured, send } = interactionCanvas();
+      const attached = attachPointInteraction(canvas);
+      try {
+        const before = useAppStore.getState();
+        send('pointerdown', 0, 0);
+        expect(captured.has(1)).toBe(true);
+        if (ending === 'detach') attached.detach();
+        else send(ending, 0, 0);
+        expect(captured.size).toBe(0);
+        send('pointerup', 0, 0);
+        expect(useAppStore.getState().document).toBe(before.document);
+        expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      } finally { attached.detach(); resetTestStore(); }
+    },
+  );
+
+  it('100回の装着破棄で6 listenerとstore購読を残さない', () => {
+    resetPointDocument();
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const id = nextFrame++; frames.set(id, callback); return id;
+    });
+    const cancel = vi.fn((id: number) => { frames.delete(id); });
+    vi.stubGlobal('cancelAnimationFrame', cancel);
+    const { canvas, captured, send } = interactionCanvas();
+    const add = vi.spyOn(canvas, 'addEventListener');
+    const remove = vi.spyOn(canvas, 'removeEventListener');
+    const focus = vi.spyOn(canvas, 'focus');
+    const subscribe = vi.spyOn(useAppStore, 'subscribe');
+    for (let index = 0; index < 100; index++) {
+      const attached = attachPointInteraction(canvas);
+      send('pointerdown');
+      send('pointermove', 55, 60);
+      expect(frames.size).toBe(1);
+      expect(captured.has(1)).toBe(true);
+      attached.detach();
+      attached.detach();
+      expect(frames.size).toBe(0);
+      expect(captured.size).toBe(0);
+      expect(useAppStore.getState().sketchDrag).toBeNull();
+    }
+    expect(add).toHaveBeenCalledTimes(600);
+    expect(remove).toHaveBeenCalledTimes(600);
+    expect(add.mock.calls.map(([type]) => type)).toEqual(remove.mock.calls.map(([type]) => type));
+    expect(subscribe).toHaveBeenCalledTimes(100);
+    expect(cancel).toHaveBeenCalledTimes(100);
+    useAppStore.getState().requestViewportFocus();
+    expect(focus).not.toHaveBeenCalled();
+    resetTestStore();
+  });
+
+  it('同値の吸着を新canvasが再公開した後、旧canvasのdetachは新しい印を消さない', () => {
+    resetPointDocument();
+    useAppStore.setState({ snapEnabled: true });
+    const first = interactionCanvas();
+    const second = interactionCanvas();
+    const oldAttachment = attachPointInteraction(first.canvas);
+    const newAttachment = attachPointInteraction(second.canvas);
+    try {
+      first.send('pointermove');
+      const oldIndicator = useAppStore.getState().snapIndicator;
+      expect(oldIndicator).not.toBeNull();
+      second.send('pointermove');
+      const newIndicator = useAppStore.getState().snapIndicator;
+      expect(newIndicator).toEqual(oldIndicator);
+      expect(newIndicator).not.toBe(oldIndicator);
+      oldAttachment.detach();
+      expect(useAppStore.getState().snapIndicator).toBe(newIndicator);
+      newAttachment.detach();
+      expect(useAppStore.getState().snapIndicator).toBeNull();
+    } finally { oldAttachment.detach(); newAttachment.detach(); resetTestStore(); }
+  });
+
+  it('旧dragのownerが新canvasへ移った後のstopDragは新しい一時表示を消さない', () => {
+    resetPointDocument();
+    const first = interactionCanvas();
+    const second = interactionCanvas();
+    const oldAttachment = attachPointInteraction(first.canvas);
+    const newAttachment = attachPointInteraction(second.canvas);
+    try {
+      first.send('pointerdown');
+      const oldDrag = useAppStore.getState().sketchDrag;
+      second.send('pointerdown');
+      expect(useAppStore.getState().sketchDrag).not.toBe(oldDrag);
+      const indicator = { screen: [40, 50], kind: 'endpoint', elementId: 'new-canvas' } as const;
+      const editPreview = { kind: 'trim', points: [[0, 0, 0], [1, 0, 0]] } as const;
+      useAppStore.getState().setSnapIndicator(indicator);
+      useAppStore.getState().setEditPreview(editPreview);
+      first.send('pointermove');
+      expect(first.captured.size).toBe(0);
+      expect(useAppStore.getState().snapIndicator).toBe(indicator);
+      expect(useAppStore.getState().editPreview).toBe(editPreview);
+    } finally { oldAttachment.detach(); newAttachment.detach(); resetTestStore(); }
+  });
+
+  it('文書差替えは次のpointer/RAFを待たず掴みと断面の捕捉を解く', () => {
+    resetPointDocument();
+    const { canvas, captured, send } = interactionCanvas();
+    const attached = attachPointInteraction(canvas);
+    try {
+      send('pointerdown');
+      expect(captured.has(1)).toBe(true);
+      useAppStore.getState().resetDocument(createEmptyPartDocument());
+      expect(captured.size).toBe(0);
+      expect(useAppStore.getState().sketchDrag).toBeNull();
+      useAppStore.getState().toggleSectionView();
+      send('pointerdown', 0, 0);
+      expect(captured.has(1)).toBe(true);
+      useAppStore.getState().resetDocument(createEmptyPartDocument());
+      expect(captured.size).toBe(0);
+    } finally { attached.detach(); resetTestStore(); }
+  });
+
+  it.each(['pointercancel', 'Escape', 'detach', 'old-document'] as const)(
+    '%sは解いた仮形と予約RAFを捨て、遅れたpointerupでも確定しない', ending => {
+      resetPointDocument();
+      const frames = new Map<number, FrameRequestCallback>();
+      let nextFrame = 1;
+      const cancel = vi.fn((id: number) => { frames.delete(id); });
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        const id = nextFrame++; frames.set(id, callback); return id;
+      });
+      vi.stubGlobal('cancelAnimationFrame', cancel);
+      const { canvas, captured, send } = interactionCanvas();
+      const attached = attachPointInteraction(canvas);
+      try {
+        send('pointerdown');
+        expect(useAppStore.getState().sketchDrag).not.toBeNull();
+        expect(captured.has(1)).toBe(true);
+        send('pointermove', 55, 60);
+        expect(frames.size).toBe(1);
+        const firstFrame = [...frames.entries()][0];
+        expect(firstFrame).toBeDefined();
+        if (firstFrame !== undefined) {
+          frames.delete(firstFrame[0]);
+          firstFrame[1](0);
+        }
+        expect(useAppStore.getState().dragResolved).not.toBeNull();
+        send('pointermove', 60, 65);
+        expect(frames.size).toBe(1);
+        const oldFrame = [...frames.values()][0];
+        expect(oldFrame).toBeDefined();
+        const before = useAppStore.getState();
+        if (ending === 'old-document') {
+          useAppStore.getState().resetDocument(createEmptyPartDocument());
+        } else if (ending === 'Escape') {
+          canvas.dispatchEvent(Object.assign(new Event('keydown', { cancelable: true }), { key: 'Escape' }));
+        } else if (ending === 'detach') attached.detach();
+        else send('pointercancel');
+        const afterCancel = useAppStore.getState();
+        expect(afterCancel.sketchDrag).toBeNull();
+        expect(afterCancel.dragResolved).toBeNull();
+        expect(frames.size).toBe(0);
+        expect(cancel).toHaveBeenCalledTimes(1);
+        expect(captured.size).toBe(0);
+        oldFrame?.(0);
+        expect(useAppStore.getState().dragResolved).toBeNull();
+        send('pointerup');
+        expect(useAppStore.getState().document).toBe(afterCancel.document);
+        expect(useAppStore.getState().undoStack).toBe(afterCancel.undoStack);
+        if (ending !== 'old-document') {
+          expect(afterCancel.document).toBe(before.document);
+          expect(afterCancel.undoStack).toBe(before.undoStack);
+        }
+      } finally { attached.detach(); resetTestStore(); }
+    },
+  );
+
+  it('drag後のpointerupだけが点を確定し、Undoを1段増やす', () => {
+    resetPointDocument();
+    const frames = new Map<number, FrameRequestCallback>();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(1, callback); return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id); });
+    const { canvas, captured, send } = interactionCanvas();
+    const attached = attachPointInteraction(canvas);
+    try {
+      const before = useAppStore.getState();
+      send('pointerdown');
+      send('pointermove', 90, 90, 2);
+      send('pointerup', 90, 90, 2);
+      expect(frames.size).toBe(0);
+      expect(useAppStore.getState().sketchDrag).not.toBeNull();
+      expect(captured.has(1)).toBe(true);
+      send('pointermove', 55, 60);
+      expect(frames.size).toBe(1);
+      const frame = frames.get(1);
+      expect(frame).toBeDefined();
+      frames.delete(1);
+      frame?.(0);
+      expect(useAppStore.getState().dragResolved).not.toBeNull();
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      send('pointerup', 55, 60);
+      expect(useAppStore.getState().document).not.toBe(before.document);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      expect(useAppStore.getState().sketchDrag).toBeNull();
+      expect(captured.size).toBe(0);
+    } finally { attached.detach(); resetTestStore(); }
+  });
+});
+
+describe('頂点モードの実canvasイベントはhoverと確定で同じpoint/vertex候補を使う', () => {
+  it.each(['shiftKey', 'ctrlKey'] as const)('%sで実点を追加し重なる投影は拒否する', modifier => {
+    resetTestStore();
+    let document = appendSolid(createEmptyPartDocument(), extrudeFeature('solid-1'));
+    const sketch = appendFeature(document.sketches[0], createPointFeature(document.sketches[0], absoluteCoordinate(40, 50, 60), 'free'));
+    document = replaceSketch(document, sketch);
+    const vertexOrigin = { version: 1, shapeKind: 'vertex', identity: {
+      kind: 'box-vertex', featureId: 'solid-1', role: 'top-front-left' } } as const;
+    const body = { ...bodyFor('solid-1'),
+      mesh: { ...bodyFor('solid-1').mesh, positions: new Float32Array([0, 0, 0, 10, 20, 30]) },
+      vertices: [{ index: 0, position: [10, 20, 30] as Vec3 }],
+      origins: { version: 1, state: 'tracked', bindings: [
+        { origin: vertexOrigin, state: 'unique', current: { kind: 'vertex', index: 0 } }] } as const };
+    const state = () => useAppStore.getState();
+    state().resetDocument(document);
+    state().recordRecomputeRequest(1);
+    state().applyRecompute(document, { ...resultFor(document), generation: 1, bodies: [body] });
+    state().recordRecomputeCompletion(1, 'success');
+    state().setSelectionKind('vertex');
+    const captured = new Set<number>();
+    const canvas = Object.assign(new EventTarget(), {
+      clientHeight: 600, getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 600,
+        width: 800, height: 600, x: 0, y: 0, toJSON: () => ({}) }),
+      setPointerCapture: (id: number): void => { captured.add(id); }, hasPointerCapture: (id: number): boolean => captured.has(id),
+      releasePointerCapture: (id: number): void => { captured.delete(id); }, focus: () => {},
+    }) as HTMLCanvasElement;
+    const projection: Pick<ViewportScene, 'worldToScreen' | 'screenToPlanePoint'> = {
+      worldToScreen: point => [point[0], point[1]], screenToPlanePoint: (x, y) => [x, y, 0],
+    };
+    const scene = projection as ViewportScene;
+    const controls = attachCameraControls(canvas, () => {});
+    const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging());
+    const send = (type: string, x: number, y: number, additive = false): void => {
+      canvas.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), {
+        pointerId: 1, pointerType: 'mouse', button: 0, buttons: type === 'pointerdown' ? 1 : 0,
+        clientX: x, clientY: y, altKey: false, shiftKey: false, ctrlKey: false, metaKey: false,
+        [modifier]: additive,
+      }));
+    };
+    try {
+      send('pointermove', 10, 20);
+      expect(state().hoveredElementId).toBe('solid-1#vertex:0');
+      send('pointerdown', 10, 20); send('pointerup', 10, 20);
+      expect(state().selection).toEqual(['solid-1#vertex:0']);
+      const original = state().connectionSelection?.endpoints.get('solid-1#vertex:0');
+      expect(original).toMatchObject({ kind: 'vertex', originalReference: { origin: vertexOrigin },
+        matchedReference: { origin: vertexOrigin } });
+      send('pointermove', 40, 50);
+      expect(state().hoveredElementId).toBe('point-1');
+      send('pointerdown', 40, 50, true); send('pointerup', 40, 50, true);
+      expect(state().selection).toEqual(['solid-1#vertex:0', 'point-1']);
+      expect(state().connectionSelection?.endpoints.get('solid-1#vertex:0')).toBe(original);
+      expect(state().connectionSelection?.endpoints.get('point-1')).toMatchObject({ kind: 'point', sketchId: sketch.id });
+      expect(state().document).toBe(document);
+      const selection = state().selection, undo = state().undoStack;
+      useAppStore.setState({ bodies: [{ ...body, vertices: [...body.vertices, { index: 1, position: [40, 50, 90] }] }] });
+      send('pointermove', 40, 50); expect(state().hoveredElementId).toBeNull();
+      send('pointerdown', 40, 50, true); send('pointerup', 40, 50, true);
+      expect(state().selection).toBe(selection); expect(state().undoStack).toBe(undo);
+      expect(state().editErrorKey).toBe('sketch.connect.ambiguous');
+    } finally { interaction.detach(); controls.detach(); resetTestStore(); }
+  });
+});
+
+describe('Shift/Ctrlで追加・解除する選択とドラッグの共通判定', () => {
+  it.each([
+    { shiftKey: false, ctrlKey: false, additive: false },
+    { shiftKey: true, ctrlKey: false, additive: true },
+    { shiftKey: false, ctrlKey: true, additive: true },
+    { shiftKey: true, ctrlKey: true, additive: true },
+  ])('$shiftKey/$ctrlKeyでは追加=$additive', event => {
+    expect(addsToSketchSelection(event)).toBe(event.additive);
+  });
+});
 
 describe('isSolidTool', () => {
   it('P2 の3道具(押し出し・回転・縫合)を拾う', () => {
@@ -194,6 +542,16 @@ describe('toSubShapeBodies', () => {
     expect(result.vertices).toEqual([]);
   });
 
+  it('currentの起点表と有効性を参照捕捉へ持ち越す', () => {
+    const origin = { version: 1, shapeKind: 'face', identity: {
+      kind: 'box-face', featureId: 'hole-1', role: 'top' } } as const;
+    const body = { ...withSubShapes, origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current: { kind: 'face', index: 0 } }] } as const };
+    const [result] = toSubShapeBodies([body]);
+    expect(result).toMatchObject({ isValid: true, origins: body.origins });
+    expect(result.faces).toBe(body.faces);
+  });
+
   it('部分形状の一覧が空のボディは空の一覧として詰め替える', () => {
     const [result] = toSubShapeBodies([withoutSubShapes]);
     expect(result.featureId).toBe('extrude-1');
@@ -253,5 +611,138 @@ describe('球面の案内線の交点への吸着の費用(FR-431、NFR-PF-1、�
       `[実測] 球面の案内線の吸着(交点 ${String(SPHERE_GRID_POINT_COUNT)} 個): ${elapsed.toFixed(5)} ms / pointermove(吸い付いた回数 ${String(hits)})`,
     );
     expectWithinBudget(elapsed, POINTER_MOVE_BUDGET_MS, '球面の案内線の交点への吸着');
+  });
+});
+
+describe('押し出しの仮の形を表示している間の押下(EX-14)', () => {
+  /** 押し出しの道具・輪郭の選択・開いた入力欄。`withPreview` なら成功した仮の形も表示中にする。 */
+  function extrusionInProgress(withPreview: boolean): StagedSolidState | null {
+    resetPointDocument();
+    const document = appendSolid(useAppStore.getState().document, extrudeFeature('first'));
+    useAppStore.getState().applyDocument(document);
+    useAppStore.setState({ bodies: [bodyFor('first')] });
+    useAppStore.getState().setActiveTool('extrude');
+    useAppStore.getState().setSelection(['first']);
+    useAppStore.getState().openNumericInput(createNumericInput('extrude', 'extrudeDistance'), [10, 10]);
+    if (!withPreview) return null;
+    let owned: StagedSolidState | null = null;
+    const stager: PartStager = { stage: () => null, confirm: () => 'refused', cancel: () => undefined,
+      owns: (staged) => staged === owned };
+    useAppStore.getState().setPartStager(stager);
+    const state = useAppStore.getState();
+    const ownership = captureStagedSolidOwnership(state, stager, 1);
+    if (ownership === null) throw new Error('An open part input must own staged work');
+    const displayed = appendSolid(state.document, extrudeFeature('extrude-new'));
+    const result = { ...resultFor(displayed), generation: 9, bodies: [bodyFor('first'), bodyFor('extrude-new')],
+      meshJsAccounting: { documentId: displayed.id, partId: 'part-fixture', generation: 9,
+        reading: { status: 'known' as const, limitBytes: 1000, cacheActiveBytes: 0, cacheRetiredBytes: 0,
+          cacheProtectedBytes: 0, retainedReplyBytes: 0, requestPeakReservedBytes: 0 },
+        final: { status: 'known' as const, limitBytes: 1000, cacheActiveBytes: 0, cacheRetiredBytes: 0,
+          cacheProtectedBytes: 0, displayBackingBytes: 0, replyBackingBytes: 0, retainedBackingBytes: 0,
+          replyCloneReservedBytes: 0 } } };
+    const staged: StagedSolidState = Object.freeze({ ownership, fingerprint: 'k', finalFeatureId: 'extrude-new',
+      placement: { document: displayed, timelineIndex: null, inserted: false }, displayed, status: 'ready',
+      result, accounting: accountingSnapshot(displayed, null, state.activeDocumentId, result, result.meshJsAccounting),
+      wholeGeneration: null, errors: [], errorMessage: null, failure: null, confirmRequested: false });
+    owned = staged;
+    useAppStore.getState().publishStagedSolid(staged);
+    return staged;
+  }
+
+  function attachWithEmptyScene(canvas: HTMLCanvasElement): ReturnType<typeof attachSketchInteraction> {
+    // The real scene returns no body/face while a preview is displayed; here nothing is hit at all.
+    const scene: Pick<ViewportScene, 'worldToScreen' | 'screenToPlanePoint' | 'pointerRay' | 'pickBody' | 'pickFaceAt'> = {
+      worldToScreen: point => [point[0], point[1]], screenToPlanePoint: (x, y) => [x, y, 0],
+      pointerRay: () => null, pickBody: () => null, pickFaceAt: () => null,
+    };
+    return attachSketchInteraction(canvas, scene as ViewportScene, () => orbitFrom(0, 0), () => false);
+  }
+
+  it('a click on the preview or empty space keeps the selection the extrusion needs and the preview', () => {
+    const staged = extrusionInProgress(true);
+    const { canvas, send } = interactionCanvas();
+    const attached = attachWithEmptyScene(canvas);
+    try {
+      const before = useAppStore.getState();
+      expect(currentStagedSolid(before)).toBe(staged);
+      send('pointerdown', 700, 500); send('pointerup', 700, 500);
+      const after = useAppStore.getState();
+      expect(after.selection).toBe(before.selection);
+      expect(after.selection).toEqual(['first']);
+      expect(after.numericInput).toBe(before.numericInput);
+      expect(currentStagedSolid(after)).toBe(staged);
+      expect(after.document).toBe(before.document);
+      expect(after.undoStack).toBe(before.undoStack);
+    } finally { attached.detach(); resetTestStore(); }
+  });
+
+  it('without a preview the same empty click still clears the selection (unchanged behaviour)', () => {
+    extrusionInProgress(false);
+    const { canvas, send } = interactionCanvas();
+    const attached = attachWithEmptyScene(canvas);
+    try {
+      send('pointerdown', 700, 500); send('pointerup', 700, 500);
+      expect(useAppStore.getState().selection).toEqual([]);
+    } finally { attached.detach(); resetTestStore(); }
+  });
+});
+
+
+describe('drag release uses the actual canvas pointerup coordinates', () => {
+  it.each(['pending', 'completed'] as const)('%s move A followed by release B commits B exactly once', phase => {
+    resetPointDocument();
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frameId += 1; frames.set(frameId, callback); return frameId;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id); });
+    const drain = (): void => {
+      for (let count = 0; frames.size > 0; count += 1) {
+        if (count >= 100) throw new Error('point drag frames did not settle');
+        const entry = frames.entries().next();
+        if (entry.done === true) break;
+        frames.delete(entry.value[0]); entry.value[1](0);
+      }
+    };
+    const { canvas, captured, send } = interactionCanvas();
+    const attached = attachPointInteraction(canvas);
+    try {
+      const before = useAppStore.getState();
+      send('pointerdown', 40, 50);
+      send('pointermove', 55, 60);
+      if (phase === 'completed') drain();
+      send('pointerup', 80, 95);
+      expect(captured.size).toBe(0);
+      expect(useAppStore.getState().document).toBe(before.document);
+      drain();
+      const after = useAppStore.getState();
+      expect(after.sketch.features[0]).toEqual({ ...before.sketch.features[0], at: absoluteCoordinate(80, 95, 0) });
+      expect(after.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      expect(after.sketchDrag).toBeNull();
+      send('pointerup', 100, 110);
+      drain();
+      expect(useAppStore.getState().document).toBe(after.document);
+      expect(useAppStore.getState().undoStack).toBe(after.undoStack);
+    } finally { attached.detach(); resetTestStore(); }
+  });
+
+  it('pointerdown and pointerup at the same position remain a click without solving or Undo', () => {
+    resetPointDocument();
+    const requestFrame = vi.fn(() => 1);
+    vi.stubGlobal('requestAnimationFrame', requestFrame);
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const { canvas, captured, send } = interactionCanvas();
+    const attached = attachPointInteraction(canvas);
+    try {
+      const before = useAppStore.getState();
+      send('pointerdown', 40, 50);
+      send('pointerup', 40, 50);
+      expect(requestFrame).not.toHaveBeenCalled();
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      expect(useAppStore.getState().sketchDrag).toBeNull();
+      expect(captured.size).toBe(0);
+    } finally { attached.detach(); resetTestStore(); }
   });
 });

@@ -865,6 +865,19 @@ export function SaveIcon(props: IconProps): React.JSX.Element {
   );
 }
 
+/** Named save point: a bookmark beside three history checkpoints. */
+export function SavePointIcon(props: IconProps): React.JSX.Element {
+  return (
+    <SvgIcon {...props}>
+      <path d="M2.5 2h6v11l-3-2-3 2z" />
+      <path d="M11.5 3v10" />
+      <circle cx="11.5" cy="3" r="1" fill="currentColor" />
+      <circle cx="11.5" cy="8" r="1" fill="currentColor" />
+      <circle cx="11.5" cy="13" r="1" fill="currentColor" />
+    </SvgIcon>
+  );
+}
+
 /**
  * 名前を付けて保存(FR-812、P6 タスク31)。保存の板の右下に鉛筆を重ねて
  * 「保存するときに名前を書く」を表す。保存(`SaveIcon`)と見分けが付くよう、

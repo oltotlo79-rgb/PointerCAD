@@ -1,53 +1,66 @@
+/**
+ * 左のモデルブラウザ(要件§7.1、FR-501)の表示(R07、レビュー F07 の責務の分離)。
+ *
+ * | 責務 | 置き場所 | 確定の時点 | 取消 |
+ * |---|---|---|---|
+ * | 表示(節・行・フォルダ・札・一覧の中身・名前の欄) | このファイル(描くだけ) | — | — |
+ * | 入力の一時状態(一覧・名前の欄・ドラッグ・下書き・ホバー)と寿命 | `useFeatureTreeInput.ts` | — | Esc・外側の押下・文書の差し替え・破棄 |
+ * | 窓の listener と、一時状態を結び付ける文書 | `featureTreeLifetime.ts` | 離した 1 回 | pointercancel・Esc・外した後の遅い callback |
+ * | ストアの更新(選択・ホバー・編集の確定) | `featureTreeCommands.ts` | 各操作で 1 回 | — |
+ *
+ * 選択・編集の確定・ドラッグ・取消の4系列が、分ける前と同じ操作で同じ更新を同じ順に起こすことは
+ * `FeatureTree.boundary.test.tsx` が分ける前の記録と照合する。
+ */
 import { useRevealNamedTreeRow } from './useRevealNamedTreeRow.js';
 import { featureFolderAncestors } from '../history/featureFolderAncestors.js';
 import { FeatureFolderTree } from '../history/FeatureFolderTree.js';
-import { FeatureFolderDialog, type FeatureFolderDraft } from '../history/FeatureFolderDialog.js';
+import { FeatureFolderDialog } from '../history/FeatureFolderDialog.js';
 import { featureFolderMemberKey } from '@pointercad/model';
-import { FeatureNoteDialog, type FeatureNoteDraft } from '../history/FeatureNoteDialog.js';
+import { FeatureNoteDialog } from '../history/FeatureNoteDialog.js';
 import { featureNoteOf, featureNoteTargetExists, type FeatureNoteTarget } from '@pointercad/model';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { DocumentNameSearch } from './DocumentNameSearch.js';
 import { partNameSearchEntries } from './nameSearch.js';
 import { nextHighlightIndex } from './menus/menuItem.js';
 import { SheetBaseIcon, SheetFlangeIcon, SheetLineBendIcon, SheetReliefIcon } from './icons.js';
 
 import {
-  addSketch,
-  createSketchFor,
-  findFeature,
   findReference,
-  findSketch,
   findSolid,
-  removeReference,
-  removeSketch,
-  removeSolid,
-  replaceReference,
-  replaceSketch,
-  replaceSolid,
-  setActiveSketch,
   type PartDocument,
   type ReferenceFeatureKind,
   type SolidLabelKey,
 } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
-import { featureIdOf, renameFeature, type SketchTreeKind } from '../sketch/featureSummary.js';
-import { originChangeFor, treeRowTakesOrigin } from '../sketch/originCommands.js';
+import { featureIdOf, type SketchTreeKind } from '../sketch/featureSummary.js';
+import { treeRowTakesOrigin } from '../sketch/originCommands.js';
 import {
   buildReferenceSection,
   buildSketchGroups,
   buildTreeSections,
-  renameReference,
-  renameSketch,
-  renameSolid,
-  setReferenceVisible,
-  setSolidSuppressed,
   type SketchTreeGroup,
   type TreeRow,
   type TreeSection,
   type TreeSectionKey,
 } from '../solid/solidSummary.js';
 import { useAppStore } from '../store/useAppStore.js';
+import {
+  addNewSketch,
+  moveTreeRow,
+  noteTargetForRow,
+  removeTreeRow,
+  renameTreeRow,
+  selectRowForMenu,
+  selectSearchedRow,
+  selectTreeRow,
+  setTreeOrigin,
+  switchSketch,
+  toggleReferenceVisible,
+  toggleSolidSuppressed,
+  type RowMenuSection,
+} from './featureTreeCommands.js';
+import { useFeatureTreeInput } from './useFeatureTreeInput.js';
 import {
   AlertIcon,
   ArcToolIcon,
@@ -116,16 +129,12 @@ import { TimelineStopHandle } from './Timeline.js';
 import {
   beginTimelineDrag,
   dropMarkerFor,
-  parseDropIndex,
   timelineMoveOffer,
-  withDropTarget,
-  type TimelineDrag,
   type TimelineMoveOffer,
 } from './timelineMove.js';
 import {
   buildTimelineStops,
   consumedIdsUpToTimeline,
-  historySize,
   isTimelineAtEnd,
   timelineStopsById,
   type TimelineStop,
@@ -206,6 +215,9 @@ const KIND_ICONS: Readonly<
   */
   mirror: MirrorSolidIcon,
   draft: DraftIcon,
+  // 平らな面の移動(EX-18 の限られた一段)。面を押し出して足す / 削る操作なので、
+  // 専用の図柄ができるまで押し出しの絵を借りる(木の名前は「面の移動」で見分けられる)。
+  faceOffset: ExtrudeIcon,
   transform: TransformIcon,
   scale: ScaleIcon,
   sweep: SweepIcon,
@@ -220,6 +232,7 @@ const KIND_ICONS: Readonly<
   shell: ShellIcon,
   // 平面による切断(FR-432、P5 タスク27c)。タスク27f で道具と同じ図柄へ差し替えた。
   cut: CutIcon,
+  surfaceCut: CutIcon,
   // 読み込んだ形のベースボディ 2 種(FR-802、P6 タスク20)。木の行がそのまま道具の絵になる。
   importedSolid: ImportedSolidIcon,
   importedMesh: ImportedMeshIcon,
@@ -231,36 +244,6 @@ const SECTION_ICONS: Readonly<Record<TreeSectionKey, (props: IconProps) => React
   sketch: PlaneIcon,
   solid: CubeIcon,
 };
-
-/**
- * 行から開く小さな一覧の位置(画面座標、画素)。
- *
- * 一覧はモデルブラウザの中に置くと区画の縁で切り取られてしまうので、画面に対して
- * 固定して出す(位置は開いた瞬間のボタンかカーソルの場所)。
- */
-interface RowMenuState {
-  readonly name: string;
-  readonly sketchId?: string;
-  readonly featureId: string;
-  /**
-   * どちらの節の行から開いたか。ソリッドだけ抑制を持つ(P3 §0.a-0.23 ②)。
-   * `sketchDocument` はスケッチそのものの親行(P4 仕上げ (g))で、改名と削除を持つ。
-   */
-  readonly sectionKey: RowMenuSection;
-  readonly x: number;
-  readonly y: number;
-}
-
-/**
- * 一覧を開ける行の種類。節のキー 3 つに、スケッチそのものの親行(P4 仕上げ (g))を足す。
- * 親行は節ではないので `TreeSectionKey` には入れない(節の並びを作る関数の戻りが変わるため)。
- */
-type RowMenuSection = TreeSectionKey | 'sketchDocument';
-
-function noteTargetForRow(part: PartDocument, id: string, section: RowMenuSection, sketchId?: string): FeatureNoteTarget {
-  if (section === 'sketch') return { kind: 'sketch-feature', sketchId: sketchId ?? part.activeSketchId, id };
-  return { kind: section === 'sketchDocument' ? 'sketch' : section, id };
-}
 
 /**
  * 一覧の高さの見込み(画素)。下端からはみ出すときに上へ出すかを決めるのに使う。
@@ -290,27 +273,6 @@ function menuRight(right: number): number {
   const smallest = ROW_MENU_WIDTH + ROW_MENU_MARGIN;
   const largest = window.innerWidth - ROW_MENU_MARGIN;
   return Math.min(Math.max(right, smallest), Math.max(smallest, largest));
-}
-
-/**
- * ここまで動いたら「掴んで動かしている」とみなす距離(画素)。
- * これ未満の動きは押し間違いの震えとみなし、これまでどおり行の選択にする。
- * 26px の行を 1 つ跨ぐより十分に小さく、指の震えより大きい値として 4 を採る。
- */
-const DRAG_THRESHOLD_PX = 4;
-
-/** 行に付けた通し番号の印。落とし先を画面の座標から引くのに使う。 */
-const TIMELINE_INDEX_ATTRIBUTE = 'data-timeline-index';
-
-/**
- * その画面座標の下にある行の、帯の通し番号。行の上に無ければ null。
- * ドラッグ中は指の下の行が変わり続けるので、行ごとの `onPointerEnter` ではなく
- * 画面の座標から引く(押している間は入る・出るの知らせが届かないことがあるため)。
- */
-function dropIndexAtPoint(x: number, y: number, total: number): number | null {
-  const found = window.document.elementFromPoint(x, y);
-  const row = found === null ? null : found.closest(`[${TIMELINE_INDEX_ATTRIBUTE}]`);
-  return parseDropIndex(row?.getAttribute(TIMELINE_INDEX_ATTRIBUTE), total);
 }
 
 /**
@@ -347,15 +309,16 @@ function withTimelineConsumed(
  * 削除の前に確認を出さないのは、元に戻す(Ctrl+Z)で戻せるため(NFR-UX-3)。参照していた
  * 立体を消しても止めず、後の段が赤い印になるだけにする(FR-504、NFR-RE-1)。
  *
- * 開いているかどうか・一覧を出しているかどうか・改名中かどうかは見た目だけの一時状態なので
- * コンポーネントに持つ(rules/04-設計の規律.md)。形の正本はストアの `document` だけ。
+ * 一覧・名前の欄・並べ替えのドラッグなど入力の一時状態と、その寿命は `useFeatureTreeInput`、
+ * ストアの更新は `featureTreeCommands` が持つ。ここは描くことと、入力を両者へつなぐことだけ
+ * (形の正本はストアの `document` だけ。rules/04-設計の規律.md)。
  */
 export function FeatureTree(): React.JSX.Element {
   const searchReveal = useRevealNamedTreeRow();
   const part = useAppStore((state) => state.document);
   const documentVersion = useAppStore((state) => state.documentVersion);
-  const [noteDraft, setNoteDraft] = useState<FeatureNoteDraft | null>(null);
-  const [folderDraft, setFolderDraft] = useState<FeatureFolderDraft | null>(null);
+  const input = useFeatureTreeInput(part, documentVersion);
+  const { menu, renamingId, drag } = input;
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<ReadonlySet<string>>(() => new Set());
   const folders = part.featureFolders ?? [];
   const folderContext = () => ({ documentId: part.id, documentVersion, originalFolders: JSON.stringify(folders) });
@@ -374,29 +337,6 @@ export function FeatureTree(): React.JSX.Element {
   const [isExpanded, setIsExpanded] = useState(true);
   const [collapsed, setCollapsed] = useState<readonly TreeSectionKey[]>([]);
   const [collapsedSketchIds, setCollapsedSketchIds] = useState<readonly string[]>([]);
-  const [menu, setMenu] = useState<RowMenuState | null>(null);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
-  /*
-   * 順序を入れ替えるドラッグ(FR-507、タスク20)。掴んでいるものと落とし先、そこへ
-   * 落とせるかどうかを持つ。見た目だけの一時状態なのでコンポーネントに持つ
-   * (rules/04-設計の規律.md。一覧・改名中と同じ扱い)。形の正本はストアの `document` だけ。
-   *
-   * 依存(HTML5 のドラッグ&ドロップ)は使わず、pointer の押す・動く・離すで自前に組む。
-   * ①落とせない位置を**離す前**に赤い線で予告できる(NFR-UX-5)、②行の中に押せるもの
-   * (つまみ・「⋮」)があっても掴む場所を選り分けられる、③ペンや指でも同じに動く、
-   * の 3 つが要るため。ライブラリは足さない(rules/02-禁止事項.md)。
-   */
-  const [drag, setDrag] = useState<TimelineDrag | null>(null);
-  /** 掴んだ場所(画面座標)。ここから離れて初めて「動かした」とみなす。 */
-  const dragOriginRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
-  /**
-   * 直前の押し下げがドラッグだったか。ドラッグの後には `click` も飛んでくるので、
-   * 行の選択が起きないようにここで見分ける(過去の失敗: docs/報告記録.md 2026-09-04 11:10
-   * の (a) と同じ「確定と選択の順序」の話)。
-   */
-  const draggedRef = useRef(false);
 
   // 基準の節(FR-328、FR-329、P4 タスク33)は「作業平面 → スケッチ → 立体」の順で
   // 使うものなので、いちばん上に置く。中身は履歴順のまま。
@@ -483,216 +423,14 @@ export function FeatureTree(): React.JSX.Element {
     (menu.sectionKey === 'sketch' || menu.sectionKey === 'reference') &&
     treeRowTakesOrigin(menu.sectionKey, menuRow);
 
-  // 一覧の外を押したとき・Esc を押したときに閉じる。開いている間だけ見張る。
-  useEffect(() => {
-    if (menu === null) {
-      return undefined;
-    }
-    const onPointerDown = (event: PointerEvent): void => {
-      const node = menuRef.current;
-      if (node !== null && event.target instanceof Node && node.contains(event.target)) {
-        return;
-      }
-      setMenu(null);
-    };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229) {
-        setMenu(null);
-        menuTriggerRef.current?.focus();
-      }
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [menu]);
-
-  // 開いた直後は先頭の項目へ焦点を移し、キーボードだけでも選べるようにする(NFR-UX-7)。
-  useEffect(() => {
-    if (menu === null) {
-      return;
-    }
-    menuRef.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
-  }, [menu]);
-
-  /*
-   * 順序を入れ替えるドラッグの見張り(FR-507、タスク20)。掴んでいる間だけ窓に付ける。
-   *
-   * 落とせるかどうかは `canMoveHistoryItem`(文書を作らない)で毎回引き直すので、
-   * 指を動かすたびに呼んでも形の計算は 1 回も起きない。離した瞬間にだけ
-   * `moveTimelineItem`(= `moveHistoryItem`)で文書を 1 回積む(NFR-UX-3、NFR-UX-5)。
-   */
-  useEffect(() => {
-    if (drag === null) {
-      return undefined;
-    }
-    const total = historySize(part);
-    const onPointerMove = (event: PointerEvent): void => {
-      const origin = dragOriginRef.current;
-      if (
-        !drag.moved &&
-        origin !== null &&
-        Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < DRAG_THRESHOLD_PX
-      ) {
-        // まだ震えの範囲。掴んだだけとみなし、行の選択(click)を邪魔しない。
-        return;
-      }
-      draggedRef.current = true;
-      const index = dropIndexAtPoint(event.clientX, event.clientY, total);
-      const next =
-        index === null
-          ? // 帯の外(スケッチの行や区画の余白)。落とし先は変えず、掴んでいることだけ示す。
-            { ...drag, moved: true }
-          : withDropTarget(part, drag, index);
-      if (next.toIndex !== drag.toIndex || next.moved !== drag.moved) {
-        setDrag(next);
-      }
-    };
-    const onPointerUp = (): void => {
-      setDrag(null);
-      dragOriginRef.current = null;
-      if (!drag.moved || drag.toIndex === drag.fromIndex) {
-        return;
-      }
-      // 断られたら文書は 1 バイトも変わらず、理由が帯と壊れる側の行に出る(FR-504)。
-      useAppStore.getState().moveTimelineItem(drag.featureId, drag.toIndex);
-    };
-    const onCancel = (): void => {
-      // 窓の外へ出た・Esc を押した。並べ替えはやめて元の順序のままにする(NFR-UX-3)。
-      setDrag(null);
-      dragOriginRef.current = null;
-    };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        onCancel();
-      }
-    };
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-    window.addEventListener('pointercancel', onCancel);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onCancel);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [drag, part]);
-
   const selectedIds = new Set(selection.map((id) => featureIdOf(id)));
   const hoveredId = hoveredElementId === null ? null : featureIdOf(hoveredElementId);
   const chevronClassName = 'pcad-tree__chevron' + (isExpanded ? ' pcad-tree__chevron--open' : '');
 
-  /**
-   * 新しいスケッチを 1 本作り、そこへ作図を切り替える(P4 仕上げ (g)、FR-501)。
-   *
-   * 投影・断面(FR-325)は「そのスケッチを使う立体より前の立体」しかもとにできないので、
-   * 押し出しに使ったスケッチとは別のスケッチが要る。その入口がこれ。
-   * 文書は 1 回だけ積むので、取り消し(Ctrl+Z)1 回で元へ戻る(NFR-UX-3)。
-   * 作図面はいまのまま(まだ何も置いていないスケッチには面が決まらない)。別の面へ描くには
-   * これまでどおりツールバーの作図面を選び直す。
-   */
-  const addNewSketch = (): void => {
-    const store = useAppStore.getState();
-    const sketch = createSketchFor(store.document);
-    store.applyDocument(setActiveSketch(addSketch(store.document, sketch), sketch.id));
-  };
-
-  const removeRow = (featureId: string, sectionKey: RowMenuSection): void => {
-    const store = useAppStore.getState();
-    if (sectionKey === 'sketchDocument') {
-      // 最後の 1 本は model 側(`removeSketch`)が断る。要素を立体が使っているスケッチは
-      // 一覧の「削除」を押せなくしてある(`sketchDeleteBlockedKey`)。
-      store.applyDocument(removeSketch(store.document, featureId));
-      return;
-    }
-    if (sectionKey === 'sketch') {
-      store.removeSketchFeature(featureId);
-      return;
-    }
-    if (sectionKey === 'reference') {
-      // 参照していた作業平面や軸が消えても止めず、後の段が赤い印になるだけにする
-      // (FR-504、NFR-RE-1。立体の行と同じ扱い)。
-      store.applyDocument(removeReference(store.document, featureId));
-      return;
-    }
-    store.applyDocument(removeSolid(store.document, featureId));
-  };
-
-  /** 名前を変える(FR-503)。どの節の行でも、スケッチそのものの親行でも変えられる。 */
+  /** 名前の欄の確定(Enter・欄を離れる)。名前を変えて、欄を閉じる。 */
   const commitRename = (featureId: string, sectionKey: RowMenuSection, name: string): void => {
-    const store = useAppStore.getState();
-    if (sectionKey === 'sketchDocument') {
-      const sketch = findSketch(store.document, featureId);
-      if (sketch !== undefined) {
-        const next = renameSketch(sketch, name);
-        if (next !== sketch) {
-          store.applyDocument(replaceSketch(store.document, next));
-        }
-      }
-      setRenamingId(null);
-      return;
-    }
-    if (sectionKey === 'sketch') {
-      const feature = findFeature(store.sketch, featureId);
-      if (feature !== undefined) {
-        const next = renameFeature(feature, name);
-        if (next !== feature) {
-          store.replaceSketchFeature(featureId, next);
-        }
-      }
-      setRenamingId(null);
-      return;
-    }
-    if (sectionKey === 'reference') {
-      const feature = findReference(store.document, featureId);
-      if (feature !== undefined) {
-        const next = renameReference(feature, name);
-        if (next !== feature) {
-          store.applyDocument(replaceReference(store.document, featureId, next));
-        }
-      }
-      setRenamingId(null);
-      return;
-    }
-    const feature = findSolid(store.document, featureId);
-    if (feature !== undefined) {
-      const next = renameSolid(feature, name);
-      if (next !== feature) {
-        store.applyDocument(replaceSolid(store.document, featureId, next));
-      }
-    }
-    setRenamingId(null);
-  };
-
-  /** 基準ジオメトリを画面に出す・隠す(FR-329)。参照はどちらでもできる。 */
-  const toggleReferenceVisible = (featureId: string): void => {
-    const store = useAppStore.getState();
-    const feature = findReference(store.document, featureId);
-    if (feature === undefined) {
-      return;
-    }
-    store.applyDocument(
-      replaceReference(store.document, featureId, setReferenceVisible(feature, !feature.visible)),
-    );
-  };
-
-  /**
-   * 選んだ点を原点にする(FR-331、タスク35b)。座標の式を書き換えるだけで履歴に段は
-   * 増えないので、文書を 1 回積めば Undo 1 回で戻る(利用者の決定 2026-09-04)。
-   * 動かした量は帯に一言で出す。位置が計算できていない点は断って何も変えない(FR-504)。
-   */
-  const setOrigin = (featureId: string): void => {
-    const store = useAppStore.getState();
-    const change = originChangeFor(store, featureId);
-    if (change === null) {
-      store.setEditError('originCommand.failed');
-      return;
-    }
-    store.applyDocument(change.document);
-    store.setOriginNotice(change.notice);
+    renameTreeRow(featureId, sectionKey, name);
+    input.stopRename();
   };
 
   /**
@@ -726,24 +464,13 @@ export function FeatureTree(): React.JSX.Element {
         }
         onClick={() => {
           if (offer.kind === 'ready') {
-            useAppStore.getState().moveTimelineItem(featureId, offer.toIndex);
+            moveTreeRow(featureId, offer.toIndex);
           }
-          setMenu(null);
+          input.closeMenu();
         }}
       >
         {t(labelKey)}
       </button>
-    );
-  };
-
-  const toggleSuppressed = (featureId: string): void => {
-    const store = useAppStore.getState();
-    const feature = findSolid(store.document, featureId);
-    if (feature === undefined) {
-      return;
-    }
-    store.applyDocument(
-      replaceSolid(store.document, featureId, setSolidSuppressed(feature, !feature.suppressed)),
     );
   };
 
@@ -768,8 +495,8 @@ export function FeatureTree(): React.JSX.Element {
           data-name-search-key={featureFolderMemberKey({ kind: 'sketch', id: group.sketchId })}
           onContextMenu={(event) => {
             event.preventDefault();
-            menuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
-            setMenu({
+            input.menuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+            input.openMenu({
               featureId: group.sketchId,
               name: group.name,
               sectionKey: 'sketchDocument',
@@ -803,7 +530,7 @@ export function FeatureTree(): React.JSX.Element {
                 }
                 if (event.key === 'Escape') {
                   event.preventDefault();
-                  setRenamingId(null);
+                  input.stopRename();
                 }
               }}
             />
@@ -816,7 +543,7 @@ export function FeatureTree(): React.JSX.Element {
               title={t('featureTree.switchSketch')}
               onClick={() => {
                 if (!group.active) {
-                  useAppStore.getState().setActiveSketch(group.sketchId);
+                  switchSketch(group.sketchId);
                   setCollapsedSketchIds((ids) => ids.filter((id) => id !== group.sketchId));
                   return;
                 }
@@ -848,9 +575,9 @@ export function FeatureTree(): React.JSX.Element {
             aria-haspopup="menu"
             aria-expanded={menu !== null && menu.featureId === group.sketchId}
             onClick={(event) => {
-              menuTriggerRef.current = event.currentTarget;
+              input.menuTriggerRef.current = event.currentTarget;
               const rect = event.currentTarget.getBoundingClientRect();
-              setMenu({
+              input.openMenu({
                 featureId: group.sketchId,
               name: group.name,
                 sectionKey: 'sketchDocument',
@@ -871,31 +598,6 @@ export function FeatureTree(): React.JSX.Element {
         )}
       </li>
     );
-  };
-
-  /**
-   * 木でスケッチの要素を選ぶと、その要素を持つスケッチを作図中に切り替える(P4 仕上げ (h))。
-   *
-   * `PropertyPanel` は編集中のスケッチ(`state.sketch`)からしか要素を探さないため、
-   * 編集中でないスケッチの要素を選んでもプロパティが空になっていた。編集中のスケッチだけを
-   * 読み取り専用で出す代わりに、選んだ時点でそのスケッチへ切り替える方を採る(利用者には
-   * 「選んだものが編集できる状態になる」ほうが分かりやすい)。作図面の追従は
-   * `useAppStore.ts` の `setActiveSketch` が既に行う。
-   *
-   * `sketchId` は呼び出し側(`renderSketchGroup`)が `group.sketchId` として渡す。要素 id は
-   * スケッチをまたいで重なる(`buildSketchGroups` の注釈)ため、id だけから逆引きすると
-   * 編集中のスケッチが偶然持つ同じ id と取り違える(`sketchRefs.ts` の `findSketchFeatureAt` が
-   * 編集中のスケッチを先に見るのと同じ理由)。木はどの行がどの親(スケッチ)の下にあるかを
-   * 描画時にすでに知っているので、その所属をそのまま渡してもらう。
-   */
-  const activateRowSketch = (sketchId: string | undefined): void => {
-    if (sketchId === undefined) {
-      return;
-    }
-    const store = useAppStore.getState();
-    if (store.document.activeSketchId !== sketchId) {
-      store.setActiveSketch(sketchId);
-    }
   };
 
   const renderRow = (
@@ -949,8 +651,8 @@ export function FeatureTree(): React.JSX.Element {
              * この時点ではまだ「押しただけ」で、`DRAG_THRESHOLD_PX` を超えて動いて
              * 初めて並べ替えになる(押しただけなら今までどおり行の選択)。
              */
-            draggedRef.current = false;
-            if (stop === undefined || event.button !== 0 || renamingId === row.id) {
+            input.resetDragClick();
+            if (stop === undefined || event.button !== 0 || event.shiftKey || event.ctrlKey || renamingId === row.id) {
               return;
             }
             if (
@@ -963,25 +665,19 @@ export function FeatureTree(): React.JSX.Element {
             if (started === null) {
               return;
             }
-            dragOriginRef.current = { x: event.clientX, y: event.clientY };
-            setDrag(started);
+            input.beginDrag(started, event.clientX, event.clientY);
           }}
           onPointerEnter={() => {
-            useAppStore.getState().setHovered(row.id);
+            input.hoverRow(row.id);
           }}
           onPointerLeave={() => {
-            const store = useAppStore.getState();
-            const current = store.hoveredElementId;
-            if (current !== null && featureIdOf(current) === row.id) {
-              store.setHovered(null);
-            }
+            input.leaveRow(row.id);
           }}
           onContextMenu={(event) => {
             event.preventDefault();
-            menuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
-            activateRowSketch(sketchId);
-            useAppStore.getState().setSelection([row.id]);
-            setMenu({
+            input.menuTriggerRef.current = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]');
+            selectRowForMenu(row.id, sketchId);
+            input.openMenu({
               featureId: row.id,
               name: row.name,
               sketchId,
@@ -1022,7 +718,7 @@ export function FeatureTree(): React.JSX.Element {
                 }
                 if (event.key === 'Escape') {
                   event.preventDefault();
-                  setRenamingId(null);
+                  input.stopRename();
                 }
               }}
             />
@@ -1035,17 +731,10 @@ export function FeatureTree(): React.JSX.Element {
               onClick={(event) => {
                 // 並べ替えのために掴んで動かした後にも `click` は飛んでくる。その 1 回だけは
                 // 選択にしない(掴んで動かしたのに選択が入れ替わると読み取れないため)。
-                if (draggedRef.current) {
-                  draggedRef.current = false;
+                if (input.consumeDragClick()) {
                   return;
                 }
-                const store = useAppStore.getState();
-                if (event.shiftKey) {
-                  store.toggleSelection(row.id);
-                  return;
-                }
-                activateRowSketch(sketchId);
-                store.setSelection([row.id]);
+                selectTreeRow(row.id, sketchId, event.shiftKey || event.ctrlKey);
               }}
               onKeyDown={(event) => {
                 if (event.key !== 'Delete') {
@@ -1053,7 +742,7 @@ export function FeatureTree(): React.JSX.Element {
                 }
                 // 参照していたものが壊れても消させる。理由は帯と赤い印で伝える(FR-504)。
                 event.preventDefault();
-                removeRow(row.id, sectionKey);
+                removeTreeRow(row.id, sectionKey);
               }}
             >
               <KindIcon size={14} className="pcad-tree__icon" />
@@ -1111,9 +800,9 @@ export function FeatureTree(): React.JSX.Element {
             aria-haspopup="menu"
             aria-expanded={menu !== null && menu.featureId === row.id}
             onClick={(event) => {
-              menuTriggerRef.current = event.currentTarget;
+              input.menuTriggerRef.current = event.currentTarget;
               const rect = event.currentTarget.getBoundingClientRect();
-              setMenu({
+              input.openMenu({
                 featureId: row.id,
                 name: row.name,
                 sketchId,
@@ -1159,10 +848,10 @@ export function FeatureTree(): React.JSX.Element {
             setCollapsedFolderIds(previous => new Set([...previous].filter(id => !ancestors.has(id))));
           }
           if (entry.sketchId !== undefined) setCollapsedSketchIds(previous => previous.filter(id => id !== entry.sketchId));
-          activateRowSketch(entry.sketchId); useAppStore.getState().setSelection(entry.selectionId === null ? [] : [entry.selectionId]);
+          selectSearchedRow(entry.selectionId, entry.sketchId);
         }} />
       <div className="pcad-panel__body">
-        <button type="button" className="pcad-button" data-help-topic="history-notes" title={t('historyFolder.create')} onClick={() => setFolderDraft({ ...folderContext(), mode: 'create' })}>{t('historyFolder.create')}</button>
+        <button type="button" className="pcad-button" data-help-topic="history-notes" title={t('historyFolder.create')} onClick={() => input.setFolderDraft({ ...folderContext(), mode: 'create' })}>{t('historyFolder.create')}</button>
         {rowCount === 0 && folders.length === 0 ? (
           <div className="pcad-panel__empty">
             <EmptyBoxIcon size={28} />
@@ -1188,7 +877,7 @@ export function FeatureTree(): React.JSX.Element {
                 <ul className="pcad-tree__sections">
                   {folders.length === 0 ? null : <FeatureFolderTree key={part.id} folders={folders} collapsed={collapsedFolderIds} renderMember={renderFolderMember}
                     onToggle={id => setCollapsedFolderIds(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
-                    onEdit={folder => setFolderDraft({ ...folderContext(), mode: 'edit', folderId: folder.id })} />}
+                    onEdit={folder => input.setFolderDraft({ ...folderContext(), mode: 'edit', folderId: folder.id })} />}
                   {sections.map((section) => {
                     const SectionIcon = SECTION_ICONS[section.key];
                     const open = !collapsed.includes(section.key);
@@ -1258,7 +947,8 @@ export function FeatureTree(): React.JSX.Element {
                           </p>
                         ) : (
                           <ul className="pcad-tree__children">
-                            {section.rows.filter(row => !ownedRow(row.id, section.key)).map((row) => renderRow(row, section.key))}
+                            {section.rows.filter(row => !ownedRow(row.id, section.key)).map((row) =>
+                              renderRow(row, section.key, section.key === 'sketch' ? part.activeSketchId : undefined))}
                           </ul>
                         )}
                       </li>
@@ -1284,7 +974,7 @@ export function FeatureTree(): React.JSX.Element {
       (menu.sectionKey === 'reference' && menuReference === undefined) ||
       (menu.sectionKey === 'sketchDocument' && menuSketchGroup === undefined) ? null : (
         <div
-          ref={menuRef}
+          ref={input.menuRef}
           className="pcad-menu__panel pcad-tree__menu"
           role="menu"
           style={{ left: menu.x, top: menu.y }}
@@ -1293,8 +983,8 @@ export function FeatureTree(): React.JSX.Element {
             if (event.key === 'Escape') {
               event.preventDefault();
               event.stopPropagation();
-              setMenu(null);
-              menuTriggerRef.current?.focus();
+              input.closeMenu();
+              input.menuTriggerRef.current?.focus();
               return;
             }
             const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)'));
@@ -1313,8 +1003,8 @@ export function FeatureTree(): React.JSX.Element {
               role="menuitem"
               className="pcad-button pcad-menu__item"
               onClick={() => {
-                toggleSuppressed(menu.featureId);
-                setMenu(null);
+                toggleSolidSuppressed(menu.featureId);
+                input.closeMenu();
               }}
             >
               {t(menuFeature.suppressed ? 'featureTree.unsuppress' : 'featureTree.suppress')}
@@ -1327,7 +1017,7 @@ export function FeatureTree(): React.JSX.Element {
               className="pcad-button pcad-menu__item"
               onClick={() => {
                 toggleReferenceVisible(menu.featureId);
-                setMenu(null);
+                input.closeMenu();
               }}
             >
               {t(menuReference.visible ? 'featureTree.hide' : 'featureTree.show')}
@@ -1360,7 +1050,7 @@ export function FeatureTree(): React.JSX.Element {
               title={t('featureTree.addSketchTooltip')}
               onClick={() => {
                 addNewSketch();
-                setMenu(null);
+                input.closeMenu();
               }}
             >
               {t('featureTree.addSketch')}
@@ -1377,8 +1067,8 @@ export function FeatureTree(): React.JSX.Element {
               className="pcad-button pcad-menu__item"
               title={t('originCommand.tooltip')}
               onClick={() => {
-                setOrigin(menu.featureId);
-                setMenu(null);
+                setTreeOrigin(menu.featureId);
+                input.closeMenu();
               }}
             >
               {t('originCommand.action')}
@@ -1389,20 +1079,20 @@ export function FeatureTree(): React.JSX.Element {
             role="menuitem"
             className="pcad-button pcad-menu__item"
             onClick={() => {
-              setRenamingId(menu.featureId);
-              setMenu(null);
+              input.startRename(menu.featureId);
+              input.closeMenu();
             }}
           >
             {t('featureTree.rename')}
           </button>
           <button type="button" role="menuitem" className="pcad-button pcad-menu__item" data-help-topic="history-notes" title={t('historyNote.edit')} onClick={() => {
             const target = noteTargetForRow(part, menu.featureId, menu.sectionKey, menu.sketchId);
-            setNoteDraft({ target, name: menu.name, documentId: part.id, documentVersion, original: featureNoteOf(part, target) });
-            setMenu(null);
+            input.setNoteDraft({ target, name: menu.name, documentId: part.id, documentVersion, original: featureNoteOf(part, target) });
+            input.closeMenu();
           }}>{t('historyNote.edit')}</button>
           <button type="button" role="menuitem" className="pcad-button pcad-menu__item" data-help-topic="history-notes" title={t('historyFolder.moveTitle')} onClick={() => {
-            setFolderDraft({ ...folderContext(), mode: 'move', target: noteTargetForRow(part, menu.featureId, menu.sectionKey, menu.sketchId), name: menu.name });
-            setMenu(null);
+            input.setFolderDraft({ ...folderContext(), mode: 'move', target: noteTargetForRow(part, menu.featureId, menu.sectionKey, menu.sketchId), name: menu.name });
+            input.closeMenu();
           }}>{t('historyFolder.moveTitle')}</button>
           {/*
             消せないスケッチ(最後の 1 本、要素を立体が使っているもの)は押せなくし、
@@ -1416,18 +1106,18 @@ export function FeatureTree(): React.JSX.Element {
             disabled={sketchDeleteBlockedKey !== null}
             title={t(sketchDeleteBlockedKey ?? 'controlGuide.button.featureDelete')}
             onClick={() => {
-              removeRow(menu.featureId, menu.sectionKey);
-              setMenu(null);
+              removeTreeRow(menu.featureId, menu.sectionKey);
+              input.closeMenu();
             }}
           >
             {t('featureTree.delete')}
           </button>
         </div>
       )}
-      {folderDraft !== null && folderDraft.documentId === part.id && folderDraft.documentVersion === documentVersion
-        ? <FeatureFolderDialog draft={folderDraft} onClose={() => setFolderDraft(null)} /> : null}
-      {noteDraft !== null && noteDraft.documentId === part.id && noteDraft.documentVersion === documentVersion
-        && featureNoteTargetExists(part, noteDraft.target) ? <FeatureNoteDialog draft={noteDraft} onClose={() => setNoteDraft(null)} /> : null}
+      {input.folderDraft !== null && input.folderDraft.documentId === part.id && input.folderDraft.documentVersion === documentVersion
+        ? <FeatureFolderDialog draft={input.folderDraft} onClose={() => input.setFolderDraft(null)} /> : null}
+      {input.noteDraft !== null && input.noteDraft.documentId === part.id && input.noteDraft.documentVersion === documentVersion
+        && featureNoteTargetExists(part, input.noteDraft.target) ? <FeatureNoteDialog draft={input.noteDraft} onClose={() => input.setNoteDraft(null)} /> : null}
     </section>
   );
 }

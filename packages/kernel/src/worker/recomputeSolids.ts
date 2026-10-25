@@ -7,14 +7,17 @@ import type {
 import { createAllocations } from '../occt/allocations.js';
 import { booleanOp, type BooleanResult } from '../occt/booleanOp.js';
 import { readBrepBytes } from '../occt/brepBytes.js';
+import { editSolidFace } from '../occt/editSolidFace.js';
 import type { OcctShapeHandle } from '../occt/makeBox.js';
 import { makeChamfer } from '../occt/makeChamfer.js';
 import { makeCut } from '../occt/makeCut.js';
+import { makeSurfaceCut, SurfaceCutError } from '../occt/makeSurfaceCut.js';
 import { makeDraft } from '../occt/makeDraft.js';
 import { makeEmboss } from '../occt/makeEmboss.js';
 import { makeFillet } from '../occt/makeFillet.js';
 import { makeHole } from '../occt/makeHole.js';
 import { makePrimitive, resolvePrimitiveOrigin } from '../occt/makePrimitive.js';
+import { createMeshCoordinateFrame } from '../occt/meshCoordinateFrame.js';
 import { makeRib } from '../occt/makeRib.js';
 import { makeShell } from '../occt/makeShell.js';
 import { makeSheetMetalBase } from '../occt/makeSheetMetalBase.js';
@@ -26,18 +29,20 @@ import { makeSpring } from '../occt/makeSpring.js';
 import type { SurfaceResult } from '../occt/makeSurface.js';
 import { makeSurface } from '../occt/makeSurface.js';
 import { makeFunctionSurfaceBody } from '../occt/makeFunctionSurfaceBody.js';
+import { boundingBoxOf, boundingBoxRange } from '../occt/placeBodies.js';
 import { makeSweep } from '../occt/makeSweep.js';
 import { makeThinExtrude } from '../occt/makeThinExtrude.js';
 import { makeThreadHole, makeThreadShaft } from '../occt/makeThread.js';
 import { makeThruSections, sectionWireFromFace } from '../occt/makeThruSections.js';
 import { makeVariableFillet } from '../occt/makeVariableFillet.js';
-import { matchFace } from '../occt/matchSubShape.js';
-import { sewSolid } from '../occt/sewSolid.js';
+import { resolveFaceReference } from '../occt/matchSubShape.js';
+import { sewSolid, sewSolidFaces, SewFacesError } from '../occt/sewSolid.js';
 import { mirrorShape, scaleShape, transformShape } from '../occt/transformShape.js';
-import { buildSolidBodyMesh, measureArea } from '../occt/solidMesh.js';
-import { tessellate } from '../occt/tessellate.js';
+import { rebindTransformedOrigins } from '../occt/subShapeOrigins.js';
+import { buildSolidBodyMesh, measureArea, type SolidMeshJsAdmission } from '../occt/solidMesh.js';
+import { tessellate, type TessellationAdmission } from '../occt/tessellate.js';
 import { rememberTriangulation, type KnownTriangulation } from '../occt/triangulationReuse.js';
-import { boundingDiagonal } from '../occt/subShapes.js';
+import { boundingDiagonal, faceAt } from '../occt/subShapes.js';
 import type {
   AppearanceMatch,
   AppearanceQuery,
@@ -45,9 +50,9 @@ import type {
   ExtrudeStepSpec,
   FilletStepSpec,
   ImportedSolidStepSpec,
+  MeshJsAccounting,
   PrimitiveStepSpec,
   SolidBodyMesh,
-  SolidFaceInfo,
   SolidProgress,
   SolidRecomputeRequest,
   SolidRecomputeResult,
@@ -60,9 +65,13 @@ import type {
   ThreadMarkInfo,
   ThruSectionsStepSpec,
 } from '../types.js';
-import type { ShapeCache } from './shapeCache.js';
+import { meshBackingBytes, meshBackingFailureReason, type MeshBufferSnapshot, type ShapeCache,
+  type ShapeCacheStats } from './shapeCache.js';
 import { createSheetBodyReuse } from './sheetBodyReuse.js';
 import { createPrimitiveReuse } from './primitiveReuse.js';
+import { OriginCacheBudget, originBytes as measuredOriginBytes, originRows, withinBodyOriginBudget, withinReplyOriginBudget } from './originBudget.js';
+
+const originCacheBudgets = new WeakMap<ShapeCache<CachedSolid>, OriginCacheBudget>();
 
 /**
  * 掃引体(ばね・実らせん)専用の粗いテッセレーション許容値(P3 仕上げ、2026-09-04)。
@@ -223,6 +232,7 @@ function withMeasuredArea(
 export interface CachedSolid {
   readonly shape: TopoDS_Shape;
   readonly triangulation?: KnownTriangulation;
+  readonly tessellation?: TessellationOptions;
   readonly mesh: SolidBodyMesh;
   delete(): void;
 }
@@ -236,6 +246,19 @@ export interface CachedSolid {
 export interface SolidRecomputeDeps {
   readonly oc: OpenCascadeInstance;
   readonly cache: ShapeCache<CachedSolid>;
+  /**
+   * Worker-retained display arrays outside this request (every part's adopted display meshes).
+   * kernelApi supplies them so that a local request's live budget unions them with the cache by
+   * ArrayBuffer identity. Direct callers retain no display meshes and omit it.
+   */
+  readonly retainedMeshBuffers?: () => Iterable<ArrayBufferLike>;
+}
+
+/** The four arrays a body retains, for whole-backing identity accounting. */
+export function solidMeshBuffers(
+  mesh: Pick<SolidBodyMesh, 'positions' | 'normals' | 'indices' | 'edgePositions'>,
+): readonly ArrayBufferLike[] {
+  return [mesh.positions.buffer, mesh.normals.buffer, mesh.indices.buffer, mesh.edgePositions.buffer];
 }
 
 /** 段を始める前に 1 回ずつ呼ばれる。Comlink 越しでは Comlink.proxy した関数が入る。 */
@@ -333,10 +356,16 @@ function createBooleanSolid(
   spec: BooleanStepSpec,
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
+  featureId?: string,
 ): BooleanResult {
   const target = findStepInput(cache, failedLabels, spec.targetKey);
   const tool = findStepInput(cache, failedLabels, spec.toolKey);
-  return booleanOp(oc, spec.operation, target.shape, tool.shape);
+  const semantic = featureId !== undefined && target.mesh.origins?.state === 'tracked'
+    && tool.mesh.origins?.state === 'tracked'
+    ? { featureId, target: target.mesh.origins, tool: tool.mesh.origins } : undefined;
+  // 「何も削れない差」の断りは、段の欄が立っているときだけ頼む(既定は従来どおり)。
+  return booleanOp(oc, spec.operation, target.shape, tool.shape, semantic, undefined,
+    spec.requireRemoval === true ? { requireRemoval: true } : undefined);
 }
 
 /**
@@ -366,9 +395,10 @@ function createPrimitiveSolid(
   spec: PrimitiveStepSpec,
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
+  featureId?: string,
 ): OcctShapeHandle {
   if (spec.originQuery === null) {
-    return makePrimitive(oc, spec);
+    return makePrimitive(oc, spec, featureId);
   }
   if (spec.targetKey === null) {
     throw new Error(MISSING_PRIMITIVE_TARGET_MESSAGE);
@@ -380,10 +410,11 @@ function createPrimitiveSolid(
     spec.origin,
     target.shape,
     target.mesh.vertices,
+    target.mesh.origins,
   );
   // 解決し終えた指紋と鍵は落として渡す。makePrimitive は世界座標だけを見る約束なので、
   // 解決済みであることを型ではなく値で示しておく(二重に解決する余地を残さない)。
-  return makePrimitive(oc, { ...spec, origin, originQuery: null, targetKey: null });
+  return makePrimitive(oc, { ...spec, origin, originQuery: null, targetKey: null }, featureId);
 }
 
 /**
@@ -447,6 +478,10 @@ function createThruSectionsSolid(
 const MISSING_EXTRUDE_TARGET_MESSAGE =
   '「次の面まで」の相手になる立体が見つかりません。相手の立体を選び直してください。';
 
+/** 「対象を貫く」押し出し(EX04 の輪郭による貫通切断)に、貫く対象の鍵が入っていないとき(FR-504)。 */
+const MISSING_THROUGH_TARGET_MESSAGE =
+  '貫いて切る対象の立体が見つかりません。切る立体を選び直してください。';
+
 /**
  * 薄板押し出し(FR-416)に、終端の指定やテーパ角が一緒に来たとき(FR-504)。
  *
@@ -474,6 +509,7 @@ function createExtrudeSolid(
   options: TessellationOptions,
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
+  featureId?: string,
 ): OcctShapeHandle {
   if (spec.thin !== undefined) {
     if (spec.end !== undefined || spec.taperAngle !== undefined) {
@@ -493,10 +529,11 @@ function createExtrudeSolid(
   }
 
   let target: TopoDS_Shape | null = null;
-  if (spec.end?.kind === 'toNext') {
+  if (spec.end?.kind === 'toNext' || spec.end?.kind === 'throughTarget') {
     if (spec.targetKey === undefined || spec.targetKey === null) {
-      throw new Error(MISSING_EXTRUDE_TARGET_MESSAGE);
+      throw new Error(spec.end.kind === 'toNext' ? MISSING_EXTRUDE_TARGET_MESSAGE : MISSING_THROUGH_TARGET_MESSAGE);
     }
+    // どちらも相手を消費しない(長さを決めるために形を読むだけ)。
     target = findStepInput(cache, failedLabels, spec.targetKey).shape;
   }
 
@@ -505,7 +542,7 @@ function createExtrudeSolid(
     taperAngle: spec.taperAngle,
     taperOutward: spec.taperOutward,
     target,
-  });
+  }, featureId);
 }
 
 /**
@@ -519,10 +556,13 @@ function createFilletSolid(
   oc: OpenCascadeInstance,
   spec: FilletStepSpec,
   target: CachedSolid,
+  featureId?: string,
 ): OcctShapeHandle {
   const radius = spec.radius;
   if (typeof radius === 'number') {
-    return makeFillet(oc, { ...spec, radius }, target.shape, target.mesh);
+    return makeFillet(oc, { ...spec, radius }, target.shape, target.mesh,
+      featureId !== undefined && target.mesh.origins?.state === 'tracked'
+        ? { featureId, origins: target.mesh.origins } : undefined);
   }
   return makeVariableFillet(oc, target.shape, target.mesh, {
     targets: spec.targets.map((subShape) => ({
@@ -552,12 +592,13 @@ function createSurfaceSolid(
   options: TessellationOptions,
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
+  featureId?: string,
 ): SurfaceResult {
   if (spec.targetKey === null) {
-    return makeSurface(oc, spec.shape, null, null, options);
+    return makeSurface(oc, spec.shape, null, null, options, featureId);
   }
   const target = findStepInput(cache, failedLabels, spec.targetKey);
-  return makeSurface(oc, spec.shape, target.shape, target.mesh, options);
+  return makeSurface(oc, spec.shape, target.shape, target.mesh, options, featureId);
 }
 
 /**
@@ -648,6 +689,7 @@ function createStepSolid(
   options: TessellationOptions,
   cache: ShapeCache<CachedSolid>,
   failedLabels: ReadonlyMap<string, string>,
+  featureId?: string,
 ): StepSolidResult {
   switch (spec.kind) {
     case 'functionSurface': {
@@ -671,43 +713,64 @@ function createStepSolid(
     case 'extrude':
       // 終端(FR-415)・テーパ(FR-401)・薄板(FR-416)の振り分けは createExtrudeSolid に
       // 集めてある。欄をすべて省いた依頼は P2 からの押し出しと同じ道を通る。
-      return noMarks(createExtrudeSolid(oc, spec, options, cache, failedLabels));
+      return noMarks(createExtrudeSolid(oc, spec, options, cache, failedLabels, featureId));
     case 'revolve':
       return noMarks(makeRevolveSolid(oc, spec, options));
-    case 'sew':
-      return noMarks(sewSolid(oc, spec, options));
+    case 'sew': {
+      if ('profiles' in spec) return noMarks(sewSolid(oc, spec, options));
+      const { keep, release } = createAllocations();
+      try {
+        const faces = spec.faces.map(({ targetKey, query }) => {
+          const target = findStepInput(cache, failedLabels, targetKey);
+          if (query.kind !== 'face') throw new SewFacesError('missing-face');
+          const match = resolveFaceReference(target.mesh.faces, query,
+            boundingDiagonal(oc, target.shape) * 0.5, target.mesh.origins);
+          if (match.status !== 'matched') throw new SewFacesError('missing-face');
+          const face = faceAt(oc, target.shape, match.match.index);
+          if (face === null) throw new SewFacesError('missing-face');
+          // faceAt の wrapper はここが所有し、下地を共有するキャッシュの形は借用のまま。
+          return { ownership: 'borrowed' as const, face: keep(face) };
+        });
+        const result = sewSolidFaces(oc, { faces, tolerance: spec.tolerance });
+        return noMarks(result, result.volume);
+      } finally {
+        release();
+      }
+    }
     case 'boolean': {
-      const combined = createBooleanSolid(oc, spec, cache, failedLabels);
+      const combined = createBooleanSolid(oc, spec, cache, failedLabels, featureId);
       return noMarks(combined, combined.volume);
     }
     case 'hole': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       // 入口の形(ざぐり・皿もみ、FR-422)。省かれていれば makeHole が真っ直ぐな穴にする。
-      const drilled = makeHole(oc, spec, target.shape, target.mesh.faces, spec.entry);
+      const drilled = makeHole(oc, spec, target.shape, target.mesh.faces, spec.entry, target.mesh.origins, featureId);
       return noMarks(drilled, drilled.volume);
     }
     case 'thread': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       // 入口の形(ざぐり・皿もみ、FR-422、タスク42c)は段の欄のまま `makeThreadHole` が読む
       // (段の型が作り手の依頼の上位互換なので詰め替えない)。省かれていれば真っ直ぐな下穴。
-      const { handle, marks } = makeThreadHole(oc, spec, target.shape, target.mesh.faces);
+      const { handle, marks } = makeThreadHole(oc, spec, target.shape, target.mesh.faces, target.mesh.origins, featureId);
       return { handle, threadMarks: marks };
     }
     case 'fillet': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       // 一定半径と可変半径(FR-426)の振り分けは createFilletSolid の 1 か所だけ。
-      return noMarks(createFilletSolid(oc, spec, target));
+      return noMarks(createFilletSolid(oc, spec, target, featureId));
     }
     case 'chamfer': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      return noMarks(makeChamfer(oc, spec, target.shape, target.mesh));
+      return noMarks(makeChamfer(oc, spec, target.shape, target.mesh,
+        featureId !== undefined && target.mesh.origins?.state === 'tracked'
+          ? { featureId, origins: target.mesh.origins } : undefined));
     }
     case 'spring':
       return noMarks(makeSpring(oc, spec));
     case 'primitive':
       // 基本形状(FR-429)。中心・向き・寸法だけで決まるが、基準点を立体の頂点に
       // したときだけ対象の形から頂点を引く(消費はしない。タスク14b)。
-      return noMarks(createPrimitiveSolid(oc, spec, cache, failedLabels));
+      return noMarks(createPrimitiveSolid(oc, spec, cache, failedLabels, featureId));
     case 'thruSections':
       // 罫線面(FR-430)とロフト(FR-410)。断面が立体の面(faceQuery)のときだけ
       // 上流の形を見て輪郭を取り出す(タスク24b)。それでも材料にした立体は
@@ -721,19 +784,50 @@ function createStepSolid(
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       return noMarks(makeDraft(oc, target.shape, target.mesh, spec));
     }
+    case 'faceOffset': {
+      // 平らな面の移動(EX-18)。段の型は作り手の依頼の上位互換なので詰め替えない。
+      // 対象の形は借りるだけで、断ったときも元の形はキャッシュに残る(editSolidFace の約束)。
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      const moved = editSolidFace(oc, target.shape, target.mesh, spec);
+      return noMarks(moved, moved.volume);
+    }
     case 'mirror': {
       // ミラー(FR-419)は対象を消費しない(§0.a-0.36)。鏡像を 1 つ作るだけで、
       // 元と鏡像を 1 つにまとめたければ利用者が和(FR-404)を取る。
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      return noMarks(mirrorShape(oc, target.shape, spec));
+      // 鏡像は形の全ての部分を一対一に写す(向きの反転は OCCT が面の向きで直す)。対象の tracked の出どころを
+      // 実の変換の履歴で写し、鏡像の面・辺の参照を意味のまま保つ(以前は untracked と記録された)。
+      const source = target.mesh.origins;
+      const rebound: { origins?: NonNullable<typeof source> } = {};
+      const mirrored = mirrorShape(oc, target.shape, spec, source?.state === 'tracked'
+        ? (maker, output) => { rebound.origins = rebindTransformedOrigins(oc, source, target.shape, maker, output); }
+        : undefined);
+      return noMarks(rebound.origins === undefined ? mirrored
+        : { shape: mirrored.shape, origins: rebound.origins, delete: () => mirrored.delete() });
     }
     case 'transform': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      return noMarks(transformShape(oc, target.shape, spec));
+      // A rigid move keeps every native member: carry the target's tracked origin index through the actual
+      // transform history, so references to the moved body stay semantic (previously recorded as untracked).
+      const source = target.mesh.origins;
+      const rebound: { origins?: NonNullable<typeof source> } = {};
+      const moved = transformShape(oc, target.shape, spec, source?.state === 'tracked'
+        ? (maker, output) => { rebound.origins = rebindTransformedOrigins(oc, source, target.shape, maker, output); }
+        : undefined);
+      return noMarks(rebound.origins === undefined ? moved
+        : { shape: moved.shape, origins: rebound.origins, delete: () => moved.delete() });
     }
     case 'scale': {
       const target = findStepInput(cache, failedLabels, spec.targetKey);
-      return noMarks(scaleShape(oc, target.shape, spec));
+      // 全体の倍率は相似変換(BRepBuilderAPI_Transform)で全ての部分を一対一に写すので、出どころを実の履歴で写す。
+      // 軸ごとの倍率(GTransform)は scaleShape が onBuilt を呼ばず、従来どおり untracked(unsupported-producer)。
+      const source = target.mesh.origins;
+      const rebound: { origins?: NonNullable<typeof source> } = {};
+      const scaled = scaleShape(oc, target.shape, spec, source?.state === 'tracked'
+        ? (maker, output) => { rebound.origins = rebindTransformedOrigins(oc, source, target.shape, maker, output); }
+        : undefined);
+      return noMarks(rebound.origins === undefined ? scaled
+        : { shape: scaled.shape, origins: rebound.origins, delete: () => scaled.delete() });
     }
     case 'sweep':
       // スイープ(FR-409)は対象を取らない「作る」段(ばね・基本形状と同じ)。
@@ -761,8 +855,31 @@ function createStepSolid(
       // 曲面(FR-428)。ここだけが `bodyKind: 'shell'` のボディを作る。
       // 判定そのものは buildSolidBodyMesh の hasSolid が行うので、ここに分岐は要らない。
       // 面積は makeSurface が測り済みなので添えて返し、測り直させない(タスク42b)。
-      const surface = createSurfaceSolid(oc, spec, options, cache, failedLabels);
+      const surface = createSurfaceSolid(oc, spec, options, cache, failedLabels, featureId);
       return noMarks(surface, undefined, surface.area);
+    }
+    case 'surfaceCut': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      const blade = spec.blade.kind === 'surface'
+        ? { kind: 'surface' as const, shape: findStepInput(cache, failedLabels, spec.blade.sourceKey).shape }
+        : spec.blade;
+      const { keep, release } = createAllocations();
+      try {
+        const result = makeSurfaceCut(oc, target.shape, blade);
+        try {
+          const piece = result.pieces.find(candidate => candidate.side === (spec.keepPositive ? 1 : -1));
+          if (piece === undefined) throw new SurfaceCutError('ambiguous-side');
+          // The result owns its pieces. Cache an independent copy before releasing the result.
+          const copier = keep(new oc.BRepBuilderAPI_Copy_2(piece.shape, true, false));
+          const shape = keep(copier.Shape());
+          return noMarks({ shape, delete: release }, piece.volume);
+        } finally {
+          result.delete();
+        }
+      } catch (error) {
+        release();
+        throw error;
+      }
     }
     case 'cut': {
       // 平面による切断(FR-432)。`makeCut` は積(intersect)を通るので体積を測り済みだが、
@@ -804,24 +921,73 @@ function buildCachedSolid(
   knownVolume?: number,
   knownArea?: number,
   copiedTriangulation?: KnownTriangulation,
+  originBudget?: { readonly key: string; readonly cache: OriginCacheBudget; readonly cacheEmpty: boolean;
+    readonly isLive: (key: string) => boolean },
+  memoryBudget?: { readonly maximumLiveMeshBytes: number; readonly cacheBytes: number;
+    readonly retainedReplyBytes: number; readonly reservePeak: (bytes: number) => void },
 ): CachedSolid {
   try {
-    const surface = tessellate(oc, handle.shape, options, copiedTriangulation);
+    const boundedOrigins = handle.origins === undefined ? undefined : withinBodyOriginBudget(handle.origins);
+    const originBytes = boundedOrigins === undefined ? 0
+      : checkedLocalBytes(measuredOriginBytes(boundedOrigins) * 2, originRows(boundedOrigins) * 512);
+    const fixedBytes = checkedLocalBytes(4096, originBytes);
+    const baseBytes = memoryBudget === undefined ? 0
+      : checkedLocalBytes(memoryBudget.cacheBytes, memoryBudget.retainedReplyBytes, fixedBytes);
+    if (memoryBudget !== undefined) memoryBudget.reservePeak(checkedLocalBytes(baseBytes, 1));
+    if (memoryBudget !== undefined && baseBytes >= memoryBudget.maximumLiveMeshBytes) {
+      throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+    }
+    // Tessellation admits each array against remainingJsBytes before allocation. Until it
+    // returns its actual byte count, reserve the whole finite allowance as an upper bound.
+    if (memoryBudget !== undefined) memoryBudget.reservePeak(memoryBudget.maximumLiveMeshBytes);
+    const admission: TessellationAdmission | undefined = memoryBudget === undefined ? undefined : {
+      remainingTriangles: Number.MAX_SAFE_INTEGER,
+      remainingJsBytes: memoryBudget.maximumLiveMeshBytes - baseBytes,
+      checkDeadline: (): void => {},
+    };
+    const surface = tessellate(oc, handle.shape,
+      admission === undefined ? options : { ...options, admission }, copiedTriangulation);
+    const surfaceBytes = checkedLocalBytes(surface.positions.byteLength, surface.normals.byteLength,
+      surface.indices.byteLength, surface.faceRanges.length * 64);
+    let edgeSegments = 0;
+    let edgeCount = 0;
+    const reserveWorld = (entries: number): void => {
+      if (memoryBudget === undefined) return;
+      const peak = checkedLocalBytes(baseBytes, surfaceBytes, edgeSegments * 72,
+        edgeCount * 64, entries * 520);
+      memoryBudget.reservePeak(peak);
+      if (peak > memoryBudget.maximumLiveMeshBytes) throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+    };
+    const jsAdmission: SolidMeshJsAdmission | undefined = memoryBudget === undefined ? undefined : {
+      admitEdges: (segments, edges): void => {
+        edgeSegments = segments;
+        edgeCount = edges;
+        reserveWorld(0);
+      },
+      admitSubShapes: (entries): void => reserveWorld(entries),
+    };
+    reserveWorld(0);
     const mesh = buildSolidBodyMesh(
       oc,
       id,
       handle.shape,
-      options,
+      jsAdmission === undefined ? options : { ...options, jsAdmission },
       threadMarks,
       measureAreas,
       knownVolume,
       knownArea,
       surface,
     );
+    const bounded = withinBodyOriginBudget(handle.origins
+      ?? { version: 1, state: 'untracked', reason: 'unsupported-producer' });
+    const origins = originBudget === undefined ? bounded
+      : originBudget.cache.admit(originBudget.key, bounded, originBudget.cacheEmpty, originBudget.isLive);
+    const meshWithOrigins: SolidBodyMesh = { ...mesh, origins };
     return {
       shape: handle.shape,
-      mesh,
+      mesh: meshWithOrigins,
       triangulation: rememberTriangulation(surface, options),
+      tessellation: Object.freeze({ ...options }),
       delete(): void {
         handle.delete();
       },
@@ -832,10 +998,214 @@ function buildCachedSolid(
   }
 }
 
+const MAX_LOCAL_MESH_BYTES = 512 * 1024 * 1024;
+const LOCAL_MESH_BUDGET_MESSAGE = '表示メッシュの追加メモリが上限を超えました。';
+class LocalMeshAccountingOverflow extends RangeError {}
+
+function localMeshBudget(request: SolidRecomputeRequest): NonNullable<SolidRecomputeRequest['localMesh']> | undefined {
+  const budget = request.localMesh;
+  if (budget === undefined) return undefined;
+  if (budget === null || !Number.isFinite(budget.maximumFloat32ErrorMm)
+    || budget.maximumFloat32ErrorMm <= 0
+    || !Number.isSafeInteger(budget.maximumLiveMeshBytes)
+    || budget.maximumLiveMeshBytes <= 0 || budget.maximumLiveMeshBytes > MAX_LOCAL_MESH_BYTES) {
+    throw new RangeError('Local mesh requires finite positive display and memory budgets');
+  }
+  return budget;
+}
+
+function meshArrayBytes(mesh: SolidBodyMesh): number {
+  return mesh.positions.byteLength + mesh.normals.byteLength + mesh.indices.byteLength
+    + mesh.edgePositions.byteLength;
+}
+
+function checkedLocalBytes(...parts: readonly number[]): number {
+  const total = parts.reduce((sum, part) => sum + part, 0);
+  if (parts.some(part => !Number.isSafeInteger(part) || part < 0)
+    || !Number.isSafeInteger(total)) throw new LocalMeshAccountingOverflow(LOCAL_MESH_BUDGET_MESSAGE);
+  return total;
+}
+
+function validCacheByteCounts(
+  counts: ShapeCacheStats['meshByteCounts'] | undefined,
+): counts is Extract<ShapeCacheStats['meshByteCounts'], { readonly status: 'known' }> {
+  if (counts?.status !== 'known') return false;
+  const values = [counts.activeBytes, counts.retiredBytes, counts.protectedBytes, counts.totalBytes];
+  return values.every(value => Number.isSafeInteger(value) && value >= 0)
+    && Number.isSafeInteger(counts.activeBytes + counts.retiredBytes)
+    && counts.totalBytes === counts.activeBytes + counts.retiredBytes
+    && counts.protectedBytes <= counts.totalBytes;
+}
+
+function measuredCacheBytes(cache: ShapeCache<CachedSolid>, known?: SolidBodyMesh): number {
+  const stats = cache.stats();
+  const counts = stats.meshByteCounts;
+  if (!validCacheByteCounts(counts)) {
+    throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+  }
+  const bytes = counts.totalBytes;
+  if (stats.meshBytesMeasured !== true || !Number.isSafeInteger(bytes) || bytes < 0
+    || !Number.isSafeInteger(stats.shapeCount) || stats.shapeCount < cache.size
+    || (stats.shapeCount > 0 && bytes === 0)
+    || (known !== undefined && bytes < meshArrayBytes(known))) {
+    throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+  }
+  return bytes;
+}
+
+type LiveBackingBytes =
+  | { readonly status: 'known'; readonly bytes: number }
+  | Extract<MeshBufferSnapshot, { readonly status: 'unknown' }>;
+
+/**
+ * Unions the cache's whole backing buffers with Worker-retained display arrays and an uncached
+ * world body by ArrayBuffer identity. Undefined keeps the legacy numeric cache total, which is
+ * only allowed when no retained display arrays must be unioned.
+ */
+function liveBackingBytes(
+  cache: ShapeCache<CachedSolid>,
+  retained: (() => Iterable<ArrayBufferLike>) | undefined,
+  uncached?: SolidBodyMesh,
+): LiveBackingBytes | undefined {
+  const snapshot = cache.meshBufferSnapshot?.() ?? { status: 'unknown', reason: 'callback-missing' };
+  if (snapshot.status === 'unknown') {
+    // Display arrays may alias cache entries; without cache identities they cannot be unioned.
+    return retained === undefined && snapshot.reason === 'callback-missing' ? undefined : snapshot;
+  }
+  let extra: ArrayBufferLike[];
+  try {
+    extra = [...(retained?.() ?? []), ...(uncached === undefined ? [] : solidMeshBuffers(uncached))];
+  } catch {
+    return { status: 'unknown', reason: 'callback-error' };
+  }
+  try {
+    return { status: 'known', bytes: meshBackingBytes([...snapshot.active, ...snapshot.retired, ...extra]) };
+  } catch (error) {
+    return { status: 'unknown', reason: meshBackingFailureReason(error) };
+  }
+}
+
+/** Cache plus retained display (plus an uncached world body), validated as a live JS budget term. */
+function measuredLiveBytes(
+  cache: ShapeCache<CachedSolid>,
+  retained: (() => Iterable<ArrayBufferLike>) | undefined,
+  known?: SolidBodyMesh,
+  uncached?: SolidBodyMesh,
+): number {
+  const cacheBytes = measuredCacheBytes(cache, known);
+  const live = liveBackingBytes(cache, retained, uncached);
+  if (live === undefined) {
+    return checkedLocalBytes(cacheBytes, uncached === undefined ? 0 : meshArrayBytes(uncached));
+  }
+  if (live.status === 'unknown') {
+    if (live.reason === 'overflow') throw new LocalMeshAccountingOverflow(LOCAL_MESH_BUDGET_MESSAGE);
+    throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+  }
+  if (live.bytes < cacheBytes) throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+  return live.bytes;
+}
+
+/** A deliberately conservative JS reservation, not a claim about the whole WASM/GPU process. */
+function localReplyReservation(mesh: SolidBodyMesh): { readonly retained: number; readonly transient: number;
+  readonly surfaceAdmission: number } {
+  const arrays = meshArrayBytes(mesh);
+  const boundedOrigins = mesh.origins === undefined ? undefined : withinBodyOriginBudget(mesh.origins);
+  const metadata = checkedLocalBytes(4096, 512 * (mesh.faces.length + mesh.edges.length
+    + mesh.vertices.length + mesh.threadMarks.length
+    + (boundedOrigins === undefined ? 0 : originRows(boundedOrigins))),
+    boundedOrigins === undefined ? 0 : measuredOriginBytes(boundedOrigins) * 2);
+  // The second full array copy is the structured-clone reply. Edges use a temporary
+  // JS number array before Float32 conversion; reserve four times its final bytes.
+  const retained = checkedLocalBytes(arrays, arrays, metadata);
+  const transient = checkedLocalBytes(mesh.edgePositions.byteLength * 4,
+    mesh.positions.byteLength * 2, metadata);
+  const surfaceAdmission = checkedLocalBytes(mesh.positions.byteLength, mesh.normals.byteLength,
+    mesh.indices.byteLength, mesh.faceCount * 64);
+  return { retained, transient, surfaceAdmission };
+}
+
+function localReplyFromWorld(
+  oc: OpenCascadeInstance,
+  measureLiveBytes: () => number,
+  world: SolidBodyMesh,
+  shape: TopoDS_Shape,
+  id: string,
+  options: TessellationOptions,
+  budget: NonNullable<SolidRecomputeRequest['localMesh']>,
+  retainedReplyBytes: number,
+  reservePeak: (bytes: number) => void,
+): { readonly mesh: SolidBodyMesh; readonly retainedBytes: number } {
+  if (world.coordinateFrame !== undefined) throw new RangeError('Cached mesh must use world coordinates');
+  const cacheBytes = measureLiveBytes();
+  const replyOrigins = world.origins === undefined ? undefined : withinBodyOriginBudget(world.origins);
+  const reservation = localReplyReservation({ ...world, origins: replyOrigins });
+  const requestedBytes = checkedLocalBytes(cacheBytes, retainedReplyBytes,
+    reservation.retained, reservation.transient);
+  reservePeak(requestedBytes);
+  if (requestedBytes > budget.maximumLiveMeshBytes) {
+    throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+  }
+  const box = boundingBoxOf(oc, shape);
+  try {
+    const range = boundingBoxRange(box.box);
+    const frame = createMeshCoordinateFrame({ minimum: range.min, maximum: range.max },
+      budget.maximumFloat32ErrorMm);
+    const maximumSegments = world.edgePositions.length / 6;
+    const maximumEntries = checkedLocalBytes(world.faces.length, world.edges.length,
+      world.vertices.length);
+    const local = buildSolidBodyMesh(oc, id, shape, {
+      ...options, admission: {
+        remainingTriangles: world.triangleCount,
+        remainingJsBytes: reservation.surfaceAdmission,
+        checkDeadline: (): void => {},
+      },
+      jsAdmission: {
+        admitEdges: (segments, edges): void => {
+          if (segments > maximumSegments || edges > world.edgeCount) {
+            throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+          }
+        },
+        admitSubShapes: (entries): void => {
+          if (entries > maximumEntries) throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+        },
+      },
+    }, world.threadMarks, world.area !== undefined, world.volume, world.area, undefined, frame);
+    if (meshArrayBytes(local) !== meshArrayBytes(world)
+      || local.positions.length !== world.positions.length
+      || local.edgePositions.length !== world.edgePositions.length) {
+      throw new RangeError('Local and cached meshes do not have the same native topology');
+    }
+    if (local.coordinateFrame === undefined) throw new RangeError('Local mesh frame is missing');
+    return { mesh: { ...local, coordinateFrame: {
+      ...local.coordinateFrame, maximumLiveMeshBytes: budget.maximumLiveMeshBytes,
+    }, origins: replyOrigins }, retainedBytes: reservation.retained };
+  } finally {
+    box.delete();
+  }
+}
+
+/** Re-tessellate a borrowed cached native shape; retain cache ownership and world arrays. */
+export function localCachedReferenceMesh(
+  oc: OpenCascadeInstance, cache: ShapeCache<CachedSolid>, cached: CachedSolid, id: string,
+  budget: NonNullable<SolidRecomputeRequest['localMesh']>,
+  retained: () => Iterable<ArrayBufferLike>,
+  retainedReplies: readonly SolidBodyMesh[] = [],
+): SolidBodyMesh {
+  if (!Number.isFinite(budget.maximumFloat32ErrorMm) || budget.maximumFloat32ErrorMm <= 0
+    || !Number.isSafeInteger(budget.maximumLiveMeshBytes) || budget.maximumLiveMeshBytes <= 0
+    || budget.maximumLiveMeshBytes > MAX_LOCAL_MESH_BYTES) {
+    throw new RangeError('Local mesh requires finite positive display and memory budgets');
+  }
+  return localReplyFromWorld(oc, () => measuredLiveBytes(cache, retained, cached.mesh),
+    cached.mesh, cached.shape, id, cached.tessellation ?? {}, budget,
+    retainedReplies.reduce((bytes, mesh) => checkedLocalBytes(bytes, localReplyReservation(mesh).retained), 0),
+    (bytes): void => { if (bytes > budget.maximumLiveMeshBytes) throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE); }).mesh;
+}
+
 /**
  * 外観を割り当てた面 1 つを、できたボディの面へ照合し直す(FR-1106、P5 §2.2.3)。
  *
- * 採点は P3 の部分形状の参照とまったく同じ `matchFace`(重み 0.35/0.25/0.2/0.2、
+ * 採点は P3 の部分形状の参照とまったく同じ `resolveFaceReference`(重み 0.35/0.25/0.2/0.2、
  * しきい値 0.6)で、**外観のための別の規約は作らない**。届かなければ `null` を返し、
  * 呼び出し側(UI)が「見つからない」と断って既定の外観に戻す。
  *
@@ -848,7 +1218,7 @@ function buildCachedSolid(
  */
 function matchAppearanceFace(
   query: SubShapeQuery,
-  faces: readonly SolidFaceInfo[],
+  body: SolidBodyMesh,
   scale: number,
 ): number | null {
   if (query.kind !== 'face') {
@@ -857,8 +1227,8 @@ function matchAppearanceFace(
   if (!Number.isFinite(scale) || scale <= 0) {
     return null;
   }
-  const found = matchFace(faces, query, scale);
-  return found === null ? null : found.index;
+  const found = resolveFaceReference(body.faces, query, scale, body.origins);
+  return found.status === 'matched' ? found.match.index : null;
 }
 
 /**
@@ -883,23 +1253,91 @@ export function matchAppearances(
     return [];
   }
 
-  const facesByBodyId = new Map<string, readonly SolidFaceInfo[]>();
+  const bodyById = new Map<string, SolidBodyMesh>();
   for (const body of bodies) {
-    facesByBodyId.set(body.id, body.faces);
+    bodyById.set(body.id, body);
   }
+  const references = new Map<string, number | null>();
 
   return queries.map((query) => {
     const bodyId = bodyIdByKey.get(query.bodyKey);
     if (bodyId === undefined) {
       return { id: query.id, bodyId: '', faceIndex: null };
     }
-    const faces = facesByBodyId.get(bodyId);
+    const body = bodyById.get(bodyId);
     const scale = scaleByBodyId.get(bodyId);
-    if (faces === undefined || scale === undefined) {
+    if (body === undefined || scale === undefined) {
       return { id: query.id, bodyId, faceIndex: null };
     }
-    return { id: query.id, bodyId, faceIndex: matchAppearanceFace(query.query, faces, scale) };
+    const referenceKey = JSON.stringify([bodyId, query.query]);
+    if (!references.has(referenceKey)) references.set(referenceKey, matchAppearanceFace(query.query, body, scale));
+    return { id: query.id, bodyId, faceIndex: references.get(referenceKey) ?? null };
   });
+}
+
+/** Shared real cache/backing accounting, including the no-native-work request. */
+function readMeshJsAccounting(
+  { cache, retainedMeshBuffers }: Pick<SolidRecomputeDeps, 'cache' | 'retainedMeshBuffers'>,
+  localBudget: SolidRecomputeRequest['localMesh'], retainedReplyBytes: number,
+  requestPeakReservedBytes: number, accountingOverflow: boolean,
+): MeshJsAccounting | undefined {
+  let meshJsAccounting: MeshJsAccounting | undefined;
+  if (localBudget !== undefined) {
+    const stats = cache.stats();
+    const counts = stats.meshByteCounts;
+    if (accountingOverflow) {
+      meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
+        reason: 'overflow' };
+    } else if (counts === undefined) {
+      meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
+        reason: 'missing-counts' };
+    } else if (counts.status === 'unknown') {
+      meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
+        reason: counts.reason };
+    } else if (!validCacheByteCounts(counts) || stats.meshBytesMeasured !== true
+      || !Number.isSafeInteger(stats.shapeCount) || stats.shapeCount < cache.size
+      || (stats.shapeCount > 0 && counts.totalBytes === 0)) {
+      meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
+        reason: 'invalid-byte-count' };
+    } else {
+      // Retained display arrays outside the cache are part of the live peak, not cache fields.
+      const live = liveBackingBytes(cache, retainedMeshBuffers);
+      const liveTotal = live === undefined ? counts.totalBytes
+        : live.status === 'known' ? live.bytes : Number.NaN;
+      const currentBytes = liveTotal + retainedReplyBytes;
+      if (live?.status === 'unknown') {
+        meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
+          reason: live.reason };
+      } else if (liveTotal < counts.totalBytes) {
+        meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
+          reason: 'invalid-byte-count' };
+      } else if (!Number.isSafeInteger(currentBytes)) {
+        meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
+          reason: 'overflow' };
+      } else {
+        requestPeakReservedBytes = Math.max(requestPeakReservedBytes, currentBytes);
+        meshJsAccounting = { status: 'known', limitBytes: localBudget.maximumLiveMeshBytes,
+          cacheActiveBytes: counts.activeBytes, cacheRetiredBytes: counts.retiredBytes,
+          cacheProtectedBytes: counts.protectedBytes, retainedReplyBytes,
+          requestPeakReservedBytes };
+      }
+    }
+  }
+
+  return meshJsAccounting;
+}
+
+/** Empty work still releases old display ownership and reports actual retained bytes. */
+export function recomputeEmptySolids(
+  deps: Pick<SolidRecomputeDeps, 'cache' | 'retainedMeshBuffers'>,
+  request: SolidRecomputeRequest,
+): SolidRecomputeResult {
+  if (request.steps.length !== 0) throw new RangeError('Empty recompute requires no solid steps');
+  const localBudget = localMeshBudget(request);
+  const meshJsAccounting = readMeshJsAccounting(deps, localBudget, 0, 0, false);
+  return { bodies: [], failures: [], cacheHits: 0, cancelled: false,
+    appearanceMatches: matchAppearances(request.appearanceQueries ?? [], [], new Map(), new Map()),
+    ...(meshJsAccounting === undefined ? {} : { meshJsAccounting }) };
 }
 
 /**
@@ -928,7 +1366,28 @@ export async function recomputeSolids(
   onProgress?: SolidProgressCallback,
   shouldCancel?: SolidCancelToken,
 ): Promise<SolidRecomputeResult> {
-  const { oc, cache } = deps;
+  const { oc, cache, retainedMeshBuffers } = deps;
+  const localBudget = localMeshBudget(request);
+  /** Cache plus Worker-retained display arrays, measured at each admission point. */
+  const liveBytes = (known?: SolidBodyMesh, uncached?: SolidBodyMesh): number =>
+    measuredLiveBytes(cache, retainedMeshBuffers, known, uncached);
+  let retainedReplyBytes = 0;
+  let requestPeakReservedBytes = 0;
+  let accountingOverflow = false;
+  const reservePeak = (bytes: number): void => {
+    if (localBudget === undefined) return;
+    if (!Number.isSafeInteger(bytes) || bytes < 0) {
+      accountingOverflow = true;
+      throw new LocalMeshAccountingOverflow(LOCAL_MESH_BUDGET_MESSAGE);
+    }
+    if (bytes > localBudget.maximumLiveMeshBytes) throw new RangeError(LOCAL_MESH_BUDGET_MESSAGE);
+    requestPeakReservedBytes = Math.max(requestPeakReservedBytes, bytes);
+  };
+  let originCacheBudget = originCacheBudgets.get(cache);
+  if (originCacheBudget === undefined) {
+    originCacheBudget = new OriginCacheBudget();
+    originCacheBudgets.set(cache, originCacheBudget);
+  }
   const sheetBodies = createSheetBodyReuse(oc, cache);
   const primitives = createPrimitiveReuse(oc, cache);
   const total = request.steps.length;
@@ -983,25 +1442,42 @@ export async function recomputeSolids(
     onProgress?.({ stepId: step.id, index, total, label: step.label });
 
     const cached = cache.get(step.key);
-    if (cached !== undefined) {
+    if (cached !== undefined && (cached.mesh.origins?.state !== 'tracked' || cached.mesh.id === step.id)) {
       cacheHits += 1;
       sheetBodies.remember(step.step, step.key);
       primitives.remember(step.step, step.key);
       if (step.visible) {
-        // 同じ形を別のフィーチャーが使うことがあるので、id はこの段のものに差し替える。
-        // 表面積を求められていて覚えていなければ、覚えてある形からその場で測って足す。
-        const mesh = withMeasuredArea(oc, cached.mesh, cached.shape, measureAreas);
-        bodies.push({ ...mesh, id: step.id });
-        rememberBodyForAppearance(step.key, step.id, cached.shape);
+        try {
+          // 同じ形を別のフィーチャーが使うことがあるので、id はこの段のものに差し替える。
+          // 表面積を求められていて覚えていなければ、覚えてある形からその場で測って足す。
+          const world = withMeasuredArea(oc, cached.mesh, cached.shape, measureAreas);
+          if (localBudget === undefined) bodies.push({ ...world, id: step.id });
+          else {
+            const local = localReplyFromWorld(oc, () => liveBytes(world), world, cached.shape, step.id,
+              resolveTessellationOptions(options, step), localBudget, retainedReplyBytes, reservePeak);
+            retainedReplyBytes = checkedLocalBytes(retainedReplyBytes, local.retainedBytes);
+            bodies.push(local.mesh);
+          }
+          rememberBodyForAppearance(step.key, step.id, cached.shape);
+        } catch (error) {
+          if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
+          failures.push({ id: step.id, message: toFailureMessage(error),
+            ...(error instanceof SurfaceCutError ? { code: error.code } : {}) });
+          failedLabels.set(step.key, step.label);
+        }
       }
       continue;
     }
 
     try {
+      const cacheBytes = localBudget === undefined ? 0 : liveBytes();
+      if (localBudget !== undefined) {
+        reservePeak(checkedLocalBytes(cacheBytes, retainedReplyBytes, 4096, 1));
+      }
       const sheetCopy = sheetBodies.copy(step.step);
-      const primitiveCopy = sheetCopy === null ? primitives.copy(step.step) : null;
+      const primitiveCopy = sheetCopy === null ? primitives.copy(step.step, step.id) : null;
       const reused = sheetCopy ?? primitiveCopy;
-      const stepResult = reused === null ? createStepSolid(oc, step.step, options, cache, failedLabels) : noMarks(reused, reused.volume);
+      const stepResult = reused === null ? createStepSolid(oc, step.step, options, cache, failedLabels, step.id) : noMarks(reused, reused.volume);
       const meshOptions = resolveTessellationOptions(options, step);
       const meshStarted = performance.now();
       const entry = buildCachedSolid(
@@ -1014,28 +1490,53 @@ export async function recomputeSolids(
         stepResult.volume,
         stepResult.area,
         primitiveCopy?.triangulation,
+        { key: step.key, cache: originCacheBudget, cacheEmpty: cache.size === 0,
+          isLive: (key) => cache.has(key) },
+        localBudget === undefined ? undefined : { maximumLiveMeshBytes: localBudget.maximumLiveMeshBytes,
+          cacheBytes, retainedReplyBytes, reservePeak },
       );
       if (step.step.kind === 'functionSurface') console.debug('[pcad:function-phase]', JSON.stringify({ phase: 'display-mesh', elapsedMs: performance.now() - meshStarted }));
+      let local: ReturnType<typeof localReplyFromWorld> | undefined;
+      if (step.visible && localBudget !== undefined) {
+        try {
+          // The new world body is not cached yet; union its own buffers with the live set.
+          local = localReplyFromWorld(oc, () => liveBytes(undefined, entry.mesh), entry.mesh,
+            entry.shape, step.id, meshOptions, localBudget, retainedReplyBytes, reservePeak);
+        } catch (error) {
+          entry.delete();
+          throw error;
+        }
+      }
       cache.set(step.key, entry);
       sheetBodies.remember(step.step, step.key);
       primitives.remember(step.step, step.key);
       if (step.visible) {
-        bodies.push(entry.mesh);
+        if (localBudget === undefined) bodies.push(entry.mesh);
+        else if (local !== undefined) {
+          retainedReplyBytes = checkedLocalBytes(retainedReplyBytes, local.retainedBytes);
+          bodies.push(local.mesh);
+        }
         rememberBodyForAppearance(step.key, step.id, entry.shape);
       }
     } catch (error) {
-      failures.push({ id: step.id, message: toFailureMessage(error) });
+      if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
+      failures.push({ id: step.id, message: toFailureMessage(error),
+            ...(error instanceof SurfaceCutError ? { code: error.code } : {}) });
       failedLabels.set(step.key, step.label);
     }
   }
 
+  const meshJsAccounting = readMeshJsAccounting(deps, localBudget,
+    retainedReplyBytes, requestPeakReservedBytes, accountingOverflow);
+
   return {
-    bodies,
+    bodies: withinReplyOriginBudget(bodies),
     failures,
     cacheHits,
     cancelled,
     // 途中で取り消したときも、そこまでに出来たボディに対して照合しておく。
     // 依頼が空なら空配列が返るだけで、OCCT は 1 回も呼ばれない。
     appearanceMatches: matchAppearances(appearanceQueries, bodies, bodyIdByKey, scaleByBodyId),
+    ...(meshJsAccounting === undefined ? {} : { meshJsAccounting }),
   };
 }

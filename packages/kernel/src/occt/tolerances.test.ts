@@ -2,6 +2,7 @@ import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.j
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOcctForNode } from './loadOcct.node.js';
+import { R22_NEAR_CONTACT, R22_THIN_SOLIDS } from './geometryAcceptanceFixtures.js';
 import {
   DEFAULT_SEWING_REPAIR_TOLERANCE_MM,
   GEOMETRIC_CONFUSION_MM,
@@ -27,6 +28,15 @@ describe('用途別の許容誤差', () => {
   it('固定 OCCT WASM の幾何一致と角度の実測値に一致する', () => {
     expect(oc.Precision.Confusion()).toBe(GEOMETRIC_CONFUSION_MM);
     expect(oc.Precision.Angular()).toBe(1e-12);
+  });
+
+  it('R22 の近接・薄板・短辺は修復幅へ丸めず、幾何一致幅と別の寸法として保つ', () => {
+    expect(R22_NEAR_CONTACT.overlapMm / GEOMETRIC_CONFUSION_MM).toBeCloseTo(1000, 9);
+    expect(R22_THIN_SOLIDS[0].size[2]).toBe(0.001);
+    expect(R22_THIN_SOLIDS[1].size[0]).toBe(0.0001);
+    expect(R22_THIN_SOLIDS[0].size[2]).toBeLessThan(DEFAULT_SEWING_REPAIR_TOLERANCE_MM);
+    expect(R22_THIN_SOLIDS[1].size[0]).toBeLessThan(DEFAULT_SEWING_REPAIR_TOLERANCE_MM);
+    expect(R22_THIN_SOLIDS[1].size[0]).toBeGreaterThan(GEOMETRIC_CONFUSION_MM);
   });
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -0.01])(

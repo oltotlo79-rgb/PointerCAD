@@ -146,6 +146,102 @@ class OpusGuardTests(unittest.TestCase):
             else:
                 EXCEPTIONS.write_bytes(original)
 
+    # --- 2026-10-05: SubagentHandback で終わった担当を完了と数える ---
+    def records(self, agent_id, recs, age_minutes=0):
+        (self.folder / f"agent-{agent_id}.meta.json").write_text(
+            json.dumps({"model": "opus", "description": f"task {agent_id}"}), encoding="utf-8")
+        path = self.folder / f"agent-{agent_id}.jsonl"
+        path.write_text("".join(json.dumps(r) + "\n" for r in recs), encoding="utf-8")
+        stamp = path.stat().st_mtime - age_minutes * 60
+        os.utime(path, (stamp, stamp))
+
+    @staticmethod
+    def tool_use(name, tool_id="t1", stop=None, text=""):
+        return {"type": "assistant", "message": {"role": "assistant", "stop_reason": stop,
+                "content": [{"type": "tool_use", "id": tool_id, "name": name, "input": {"message": text}}]}}
+
+    @staticmethod
+    def tool_result(tool_id="t1"):
+        return {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": tool_id,
+             "content": [{"type": "text", "text": "Report delivered to your caller."}]}]}}
+
+    ATTACH = {"type": "attachment", "attachment": {"type": "total_tokens_reminder"}}
+
+    def handback_records(self, trailing=()):
+        return [self.tool_use("Bash", "b0"), self.tool_result("b0"),
+                self.tool_use("SubagentHandback", "h1"), self.tool_result("h1"), *trailing]
+
+    def three_running_plus(self, extra):
+        for name in ("one", "two"):
+            self.agent(name)
+        extra()
+        return self.invoke(model="opus")
+
+    def test_handback_completed_not_counted(self):
+        # 実物と同じ形: handback の tool_use → その tool_result で終わる
+        result = self.three_running_plus(lambda: self.records("hb", self.handback_records()))
+        self.assertEqual(result.stdout, "")
+
+    def test_handback_with_trailing_attachment_not_counted(self):
+        result = self.three_running_plus(
+            lambda: self.records("hb", self.handback_records([self.ATTACH, self.ATTACH])))
+        self.assertEqual(result.stdout, "")
+
+    def test_handback_tool_use_without_result_not_counted(self):
+        result = self.three_running_plus(lambda: self.records(
+            "hb", [self.tool_use("Bash", "b0"), self.tool_result("b0"), self.tool_use("SubagentHandback", "h1")]))
+        self.assertEqual(result.stdout, "")
+
+    def test_handback_then_end_turn_not_counted(self):
+        # 2026-10-01 の旧い記録の形: handback の後に end_turn の text が付く
+        end = {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn",
+               "content": [{"type": "text", "text": "done"}]}}
+        result = self.three_running_plus(lambda: self.records("hb", self.handback_records([end])))
+        self.assertEqual(result.stdout, "")
+
+    def test_running_after_ordinary_tool_result_still_counted(self):
+        # 稼働中: Bash の tool_result が最後。handback ではないので完了と数えてはならない
+        recs = [self.tool_use("SubagentHandback", "h0"), self.tool_result("h0"),  # 再開前の旧い handback
+                {"type": "user", "message": {"role": "user", "content": "再開の依頼"}},
+                self.tool_use("Bash", "b1"), self.tool_result("b1")]
+        for name in ("one", "two"):
+            self.agent(name)
+        self.records("resumed", recs)
+        self.assertIn('"deny"', self.invoke(model="opus").stdout)
+
+    def test_running_last_is_assistant_tool_use_still_counted(self):
+        for name in ("one", "two"):
+            self.agent(name)
+        self.records("busy", [self.tool_use("Bash", "b1")])
+        self.assertIn('"deny"', self.invoke(model="opus").stdout)
+
+    def test_handback_result_of_different_id_still_counted(self):
+        # handback の tool_use の後ろに別 id の tool_result: 完了の証拠にならない
+        for name in ("one", "two"):
+            self.agent(name)
+        self.records("odd", [self.tool_use("SubagentHandback", "h1"), self.tool_result("other")])
+        self.assertIn('"deny"', self.invoke(model="opus").stdout)
+
+    def test_resumed_after_handback_user_prompt_last_counted(self):
+        for name in ("one", "two"):
+            self.agent(name)
+        self.records("resumed", self.handback_records([{"type": "user", "message": {"role": "user", "content": "続きを"}}]))
+        self.assertIn('"deny"', self.invoke(model="opus").stdout)
+
+    def test_handback_with_huge_report_record_not_counted(self):
+        big = self.tool_use("SubagentHandback", "h1", text="x" * 400000)
+        recs = [self.tool_use("Bash", "b0"), self.tool_result("b0"), big, self.tool_result("h1"), self.ATTACH]
+        result = self.three_running_plus(lambda: self.records("hb", recs))
+        self.assertEqual(result.stdout, "")
+
+    def test_handback_completed_restart_message_denied_like_end_turn(self):
+        # 完了した担当への SendMessage は、稼働3本のとき拒む(従来の end_turn と同じ扱い)
+        for name in ("one", "two", "three"):
+            self.agent(name)
+        self.records("hb", self.handback_records())
+        self.assertIn('"deny"', self.invoke(tool="SendMessage", to="hb", message="再開").stdout)
+
     def test_bad_json_fail_open(self):
         result = subprocess.run([sys.executable, "-B", "-X", "utf8", str(HOOK)],
                                 input="{", text=True, capture_output=True, cwd=ROOT)

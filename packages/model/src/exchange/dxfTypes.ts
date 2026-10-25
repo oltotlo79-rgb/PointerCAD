@@ -105,6 +105,13 @@ export interface SketchDxfSplineEntity extends SketchDxfEntityBase {
   readonly closed: boolean;
   /** DXF に書かれていた次数。写し先の曲線は 3 次までなので、案内の判断に使う。 */
   readonly degree: number;
+  /**
+   * Function curves only (export): the sketch curve's own degree. 1 is a certified polyline whose points are its
+   * vertices; 3 is a smooth function curve evaluated with `knots`. Without it, points are uniform control points.
+   */
+  readonly curveDegree?: 1 | 3;
+  /** Explicit knots of a smooth function curve (with `curveDegree` 3); never read as uniform control points. */
+  readonly knots?: readonly number[];
   /** 形が変わる読み替えをしたときの案内(FR-504「止めずに警告する」)。 */
   readonly warnings: readonly string[];
 }

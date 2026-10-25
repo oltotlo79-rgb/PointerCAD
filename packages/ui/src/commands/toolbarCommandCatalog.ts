@@ -60,11 +60,12 @@ export function toolbarCommandId(group: ToolbarCommandGroup, sourceId: string): 
     if (sourceId === 'save') return 'file.save';
   }
   if (group === 'fileMenu' && sourceId === 'saveAs') return 'file.saveAs';
+  if (group === 'drawing' && sourceId === 'savePoints') return toolbarCommandId('fileMenu', 'savePoints');
   return `toolbar.${group}.${sourceId}`;
 }
 
 function toolbarDocumentKinds(group: ToolbarCommandGroup, id: string): readonly ('part' | 'assembly' | 'drawing')[] {
-  if (group === 'file' || (group === 'fileMenu' && id === 'saveAs')) return ['part', 'assembly', 'drawing'];
+  if (group === 'file' || (group === 'fileMenu' && (id === 'saveAs' || id === 'savePoints'))) return ['part', 'assembly', 'drawing'];
   if (group === 'drawing') return ['drawing'];
   if (group === 'view') return ['section', 'chaining', 'snap', 'matchWorkPlane'].includes(id) ? ['part'] : ['part', 'assembly'];
   if (group === 'assembly' || group === 'mate' || group === 'assemblyUtility') return ['assembly'];
@@ -176,7 +177,7 @@ function createToolbarCommandCatalog(): readonly ToolbarCommandCatalogEntry[] {
     ...entries('mate', MATE_MENU_ITEMS),
     ...entries('sheetMetal', SHEET_METAL_MENU_ITEMS),
     ...entries('script', SCRIPT_MENU_ITEMS),
-    ...DRAWING_TOOL_GROUPS.flatMap(group => entries('drawing', group.items.filter(item => !['open', 'save', 'saveAs'].includes(item.id)))),
+    ...DRAWING_TOOL_GROUPS.flatMap(group => entries('drawing', group.items.filter(item => !['open', 'save', 'saveAs', 'savePoints'].includes(item.id)))),
     ...entries('drawing', DRAWING_TABLE_ACTIONS),
     ...entries('view', VIEW_COMMAND_ITEMS),
     ...entries('assemblyUtility', ASSEMBLY_UTILITY_ITEMS),

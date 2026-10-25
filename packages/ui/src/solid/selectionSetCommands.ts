@@ -28,7 +28,8 @@
  * 写すだけにして、同じ日本語を 2 か所に置かない。
  */
 
-import type { SelectionMember, SelectionSet, SelectionSetRefusal } from '@pointercad/model';
+import { createSubShapeReferenceResolver, type SelectionMember, type SelectionSet, type SelectionSetRefusal,
+  type SolidBody, type SubShapeRef } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
 
@@ -38,7 +39,6 @@ import {
   subShapeRefOf,
   type SelectionKind,
   type SubShapeBody,
-  type SubShapeKind,
 } from './subShapeSelection.js';
 
 /**
@@ -65,6 +65,7 @@ import {
 export function selectionMembersOf(
   bodies: readonly SubShapeBody[],
   selection: readonly string[],
+  vertexReferences?: ReadonlyMap<string, SubShapeRef>,
 ): readonly SelectionMember[] {
   const members: SelectionMember[] = [];
   for (const elementId of selection) {
@@ -76,8 +77,9 @@ export function selectionMembersOf(
       }
       continue;
     }
-    const ref = subShapeRefOf(bodies, elementId);
-    if (ref !== null) {
+    const ref = parsed.kind === 'vertex' && vertexReferences !== undefined
+      ? vertexReferences.get(elementId) ?? null : subShapeRefOf(bodies, elementId);
+    if (ref !== null && ref.fingerprint.kind === parsed.kind && ref.bodyFeatureId === parsed.bodyFeatureId) {
       // 判別子は指紋の種類から採る(`ref` の中身と食い違った員を作らない。io が断る形)。
       members.push({ kind: ref.fingerprint.kind, ref });
     }
@@ -94,57 +96,55 @@ export interface SelectionSetElementIds {
    * 画面は「n 件は見つかりませんでした」と知らせるだけでよい(§2.13)。
    */
   readonly missingCount: number;
+  readonly references: readonly ResolvedSelectionSetReference[];
 }
 
-/**
- * その通し番号の部分形状がいまの立体にあるか。
- * 面・辺・頂点で見る一覧が違うだけで、判定は同じ(利用者の決定、2026-09-06)。
- */
-function hasSubShapeIndex(body: SubShapeBody, kind: SubShapeKind, index: number): boolean {
-  switch (kind) {
-    case 'face':
-      return body.faces.some((face) => face.index === index);
-    case 'edge':
-      return body.edges.some((edge) => edge.index === index);
-    case 'vertex':
-      return body.vertices.some((vertex) => vertex.index === index);
-  }
+/** The saved reference and its current unique match travel together to selection state. */
+export interface ResolvedSelectionSetReference {
+  readonly elementId: string;
+  readonly originalReference: SubShapeRef;
+  readonly matchedReference: SubShapeRef;
 }
 
 /**
  * 覚えてある組を、いまの形の要素 id へ戻す(FR-112「呼び出せる」)。
  *
- * **通し番号(`ref.index`)をそのまま使う。** 手がかり(`ref.fingerprint`)による選び直しは
- * カーネルとの照合(P5 の `appearanceMatches` と同じ仕組み)が受け持ち、その結果は
- * 文書の側の `index` に書き戻される。ここで採点をやり直すと、同じ判断が 2 か所に
- * 分かれてしまう(§2.13「指紋で持つので再計算の後も選び直せる」の仕組みに乗る)。
+ * 共通の参照解決で一意に一致した現在の番号だけを採用する。保存した組の指紋と番号は
+ * 書き換えない。古い番号に別の形が存在しても、それだけでは一致とみなさない。
  *
  * 立体が消えている・その番号の面がもう無いときは**その 1 件だけを飛ばして数える**。
  * 引けたものは選べたほうが、何も選べないより利用者の意図に近い(FR-504、NFR-RE-1)。
  */
 export function selectionSetElementIds(
-  bodies: readonly SubShapeBody[],
+  bodies: readonly SolidBody[],
   set: SelectionSet,
 ): SelectionSetElementIds {
   const elementIds: string[] = [];
+  const references: ResolvedSelectionSetReference[] = [];
+  const resolve = createSubShapeReferenceResolver();
   let missingCount = 0;
   for (const member of set.members) {
     if (member.kind === 'body') {
-      if (bodies.some((body) => body.featureId === member.bodyFeatureId)) {
+      if (bodies.filter(body => body.featureId === member.bodyFeatureId && body.isValid).length === 1) {
         elementIds.push(member.bodyFeatureId);
       } else {
         missingCount += 1;
       }
       continue;
     }
-    const body = bodies.find((candidate) => candidate.featureId === member.ref.bodyFeatureId);
-    if (body === undefined || !hasSubShapeIndex(body, member.kind, member.ref.index)) {
+    const matches = bodies.filter(candidate => candidate.featureId === member.ref.bodyFeatureId && candidate.isValid);
+    const resolution = matches.length === 1 && member.ref.fingerprint.kind === member.kind
+      ? resolve(matches[0], member.ref) : null;
+    if (resolution?.status !== 'matched' || resolution.match.geometry.kind !== member.kind) {
       missingCount += 1;
       continue;
     }
-    elementIds.push(subShapeElementId(body.featureId, member.kind, member.ref.index));
+    const matchedReference = resolution.match.reference;
+    const elementId = subShapeElementId(matchedReference.bodyFeatureId, member.kind, matchedReference.index);
+    elementIds.push(elementId);
+    references.push({ elementId, originalReference: member.ref, matchedReference });
   }
-  return { elementIds, missingCount };
+  return { elementIds, missingCount, references };
 }
 
 /**

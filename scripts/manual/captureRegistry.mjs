@@ -716,7 +716,11 @@ export function assessCaptureImages(registry, images, { applicationBuildId, scri
     if (sha256Hex(bytes) !== entry.sha256) report.mismatched.push(name);
     if (entry.applicationBuildId === null) report.buildUnknown.push(name);
     else if (entry.applicationBuildId !== applicationBuildId) report.buildMismatch.push(name);
-    if (scripts !== undefined && entry.script !== null && entry.scriptSha256 !== null) {
+    if (scripts !== undefined) {
+      if (entry.script === null || entry.scriptSha256 === null) {
+        report.scriptMissing.push(name);
+        continue;
+      }
       const script = scripts.get(entry.script);
       if (script === undefined) report.scriptMissing.push(name);
       else if (sourceFileHash(script) !== entry.scriptSha256) report.scriptChanged.push(name);

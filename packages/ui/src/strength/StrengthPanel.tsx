@@ -12,6 +12,14 @@ import './strength.css';
 export function StrengthPanel({ session }: { readonly session: StrengthSession }): React.JSX.Element {
   const parameters = useAppStore(state => state.assembly?.parameters ?? state.document.parameters);
   const edit = useAppStore(state => state.editStrength);
+  const openSolidAnalysis = useAppStore(state => state.openSolidAnalysis);
+  const openSolidPlastic = useAppStore(state => state.openSolidPlastic);
+  const openBeam = useAppStore(state => state.openBeam);
+  const openPlasticBar = useAppStore(state => state.openPlasticBar);
+  const openFatigue = useAppStore(state => state.openFatigue);
+  const openFatigueStrain = useAppStore(state => state.openFatigueStrain);
+  const openFatigueLocalCycle = useAppStore(state => state.openFatigueLocalCycle);
+  const assembly = useAppStore(state => state.assembly);
   const calculate = useAppStore(state => state.calculateStrength);
   const close = useAppStore(state => state.closeStrength);
   const help = useAppStore(state => state.openHelpTopic);
@@ -21,6 +29,20 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
     onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
     <h3 className="pcad-section__title">{t('strength.title')}</h3>
     <details><summary>{t('strength.help')}</summary><p>{t('strength.assumptions')}</p></details>
+    {assembly === null ? null : <button type="button" className="pcad-button" data-testid="beam-open"
+      title={t('beam.openHelp')} onClick={openBeam}>{t('beam.open')}</button>}
+    <button type="button" className="pcad-button" data-testid="plastic-bar-open"
+      title={t('plasticBar.openHelp')} onClick={openPlasticBar}>{t('plasticBar.open')}</button>
+    <button type="button" className="pcad-button" data-testid="fatigue-open"
+      title={t('fatigue.openHelp')} onClick={openFatigue}>{t('fatigue.open')}</button>
+    <button type="button" className="pcad-button" data-testid="fatigue-strain-open"
+      onClick={openFatigueStrain} title={t('fatigueStrain.openHelp')}>{t('fatigueStrain.open')}</button>
+    <button type="button" className="pcad-button" data-testid="fatigue-local-cycle-open"
+      onClick={openFatigueLocalCycle} title={t('fatigueLocalCycle.openHelp')}>{t('fatigueLocalCycle.open')}</button>
+    {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-analysis-open"
+      onClick={openSolidAnalysis} title={t('solidAnalysis.openHelp')}>{t('solidAnalysis.open')}</button> : null}
+    {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-plastic-open"
+      onClick={openSolidPlastic} title={t('solidPlastic.openHelp')}>{t('solidPlastic.open')}</button> : null}
     <StrengthOptions session={session} edit={edit} />
     <StrengthMaterialFields session={session} parameters={parameters} edit={edit} />
     {strengthCalculationFields(session.calculation).filter(([name]) => name !== 'tensileArea').map(([name, quantity, allowZero]) =>

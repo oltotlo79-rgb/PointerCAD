@@ -37,6 +37,34 @@ function changeHole(document: PartDocument, index: number, change: Partial<HoleF
   return { ...document, solids: document.solids.map((feature, i) => i === index ? { ...feature, ...change } as HoleFeature : feature) };
 }
 
+describe('穴表と円筒の側面の穴(EX05)', () => {
+  const cylindrical: Partial<HoleFeature> = {
+    centers: [],
+    face: { bodyFeatureId: 'box-1', index: 2, fingerprint: {
+      kind: 'face', surfaceKind: 'cylinder', area: 2513.2741228718346, position: [0, 0, 20], axis: [0, 0, 1], radius: 10,
+    } },
+    cylindrical: { kind: 'cylinder-face', locations: [{ height: value(12), angle: value(90) }] },
+  };
+
+  it('円筒の側面の穴は平面の表に載せず、ほかの穴の行と表は今までのまま', () => {
+    const planar = fixture([8, 8]);
+    const document = changeHole(planar, 1, cylindrical);
+    const asked: string[] = [];
+    const result = rows(buildHoleSchedule(document, context(document, {
+      resolvePlane: (id) => { asked.push(id); return { origin: [0, 0, 10], normal: [0, 0, 1] }; },
+    })));
+    expect(result.map((row) => row.featureIds)).toEqual([['hole-0']]);
+    expect(result.map((row) => [row.symbol, row.x, row.y])).toEqual([['A1', 0, 0]]);
+    // 円筒の面を平面として解決しない。
+    expect(asked).toEqual(['box-0']);
+  });
+
+  it('円筒の側面の穴だけの部品では、中心が無いことで断らずに空の表を返す', () => {
+    const document = changeHole(fixture([8]), 0, cylindrical);
+    expect(buildHoleSchedule(document, context(document))).toEqual({ ok: true, rows: [] });
+  });
+});
+
 describe('穴フィーチャーから作る穴表(P8-56、FR-729)', () => {
   it('径の小さい順でφ8の3個をA、φ12の2個をBにする', () => {
     const document = fixture();

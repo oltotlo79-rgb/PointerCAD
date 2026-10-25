@@ -22,6 +22,8 @@ import {
   serializePlaneSpec,
 } from './referenceGeometry.js';
 import {
+  readCurveRef,
+  serializeCurveRef,
   readSubShapeRef,
   readSubShapeRefField,
   serializeSubShapeRef,
@@ -32,6 +34,8 @@ import {
 import {
   type ChamferSize,
   type CutFeature,
+  type SurfaceCutFeature,
+  type SurfaceCutBlade,
   type SolidFeature,
 } from '@pointercad/model';
 
@@ -42,6 +46,55 @@ const CHAMFER_SIZE_KINDS: readonly ChamferSize['kind'][] = [
 ];
 
 /** 切断で残す側(FR-432、§0.a-0.57)。法線の側か、その反対。 */
+
+/** Surface blades retain definitions and references, never evaluated geometry. */
+function readSurfaceCutBlade(value: unknown, path: string): Checked<SurfaceCutBlade> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const kinds: readonly SurfaceCutBlade['kind'][] = ['plane', 'extrusion', 'surface'];
+  const kind = readLiteral(record.value, 'kind', path, kinds);
+  if (!kind.ok) return kind;
+  switch (kind.value) {
+    case 'plane': {
+      const plane = readPlaneSpec(record.value, 'plane', path);
+      return plane.ok ? { ok: true, value: { kind: 'plane', plane: plane.value } } : plane;
+    }
+    case 'extrusion': {
+      const profile = readCurveRef(record.value, 'profile', path);
+      return profile.ok ? { ok: true, value: { kind: 'extrusion', profile: profile.value } } : profile;
+    }
+    case 'surface': {
+      const source = readString(record.value, 'surfaceFeatureId', path);
+      return source.ok ? { ok: true, value: { kind: 'surface', surfaceFeatureId: source.value } } : source;
+    }
+  }
+}
+
+export function readSurfaceCutFeature(
+  record: Record<string, unknown>, path: string, base: SolidFeatureBase,
+): Checked<SurfaceCutFeature> {
+  const target = readString(record, 'targetFeatureId', path);
+  if (!target.ok) return target;
+  const blade = readSurfaceCutBlade(record.blade, joinPath(path, 'blade'));
+  if (!blade.ok) return blade;
+  const keep = readLiteral(record, 'keep', path, CUT_KEEP_SIDES);
+  if (!keep.ok) return keep;
+  const pairedWith = readNullableString(record, 'pairedWith', path);
+  if (!pairedWith.ok) return pairedWith;
+  return { ok: true, value: { ...base, kind: 'surfaceCut', targetFeatureId: target.value,
+    blade: blade.value, keep: keep.value, pairedWith: pairedWith.value } };
+}
+
+export function serializeSurfaceCutFeature(feature: SurfaceCutFeature): SurfaceCutFeature {
+  const blade: SurfaceCutBlade = feature.blade.kind === 'plane'
+    ? { kind: 'plane', plane: serializePlaneSpec(feature.blade.plane) }
+    : feature.blade.kind === 'extrusion'
+      ? { kind: 'extrusion', profile: serializeCurveRef(feature.blade.profile) }
+      : { kind: 'surface', surfaceFeatureId: feature.blade.surfaceFeatureId };
+  return { id: feature.id, kind: 'surfaceCut', name: feature.name, suppressed: feature.suppressed,
+    targetFeatureId: feature.targetFeatureId, blade, keep: feature.keep, pairedWith: feature.pairedWith };
+}
+
 const CUT_KEEP_SIDES: readonly CutFeature['keep'][] = ['positive', 'negative'];
 
 function serializeChamferSize(size: ChamferSize): ChamferSize {
@@ -258,6 +311,39 @@ export function readDraftFeature(
   };
 }
 
+/**
+ * 平らな面の移動(EX-18 の限られた一段)を読む。保存するのは対象の id・面の指紋・
+ * 符号付きの距離の式だけ(座標や解決した形は読まない。要件§8)。
+ */
+export function readFaceOffsetFeature(
+  record: Record<string, unknown>,
+  path: string,
+  base: SolidFeatureBase,
+): Checked<SolidFeature> {
+  const targetFeatureId = readString(record, 'targetFeatureId', path);
+  if (!targetFeatureId.ok) {
+    return targetFeatureId;
+  }
+  const face = readSubShapeRefField(record, 'face', path);
+  if (!face.ok) {
+    return face;
+  }
+  const offset = readExpression(record, 'offset', path);
+  if (!offset.ok) {
+    return offset;
+  }
+  return {
+    ok: true,
+    value: {
+      ...base,
+      kind: 'faceOffset',
+      targetFeatureId: targetFeatureId.value,
+      face: face.value,
+      offset: offset.value,
+    },
+  };
+}
+
 /** くり抜き(FR-418、§2.12、P5 タスク46)を読む。開ける面は 0 枚でもよい。 */
 export function readShellFeature(
   record: Record<string, unknown>,
@@ -379,6 +465,21 @@ export function serializeDraftFeature(feature: Extract<SolidFeature, { readonly 
     neutralFace: serializeSubShapeRef(feature.neutralFace),
     angle: serializeExpression(feature.angle),
     reversed: feature.reversed,
+  };
+}
+
+/** faceOffset の保存欄。解決値(mm の数・世界座標)を足さず、元の式と面の参照を保持する。 */
+export function serializeFaceOffsetFeature(
+  feature: Extract<SolidFeature, { readonly kind: 'faceOffset' }>,
+): SolidFeature {
+  return {
+    id: feature.id,
+    kind: 'faceOffset',
+    name: feature.name,
+    suppressed: feature.suppressed,
+    targetFeatureId: feature.targetFeatureId,
+    face: serializeSubShapeRef(feature.face),
+    offset: serializeExpression(feature.offset),
   };
 }
 

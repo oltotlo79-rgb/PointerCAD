@@ -1,6 +1,6 @@
 /** 板金パネルの安定境界と接線座標。OCCTの面番号や表示メッシュへ依存しない。 */
 import { curveEnd, curveStart } from '../sketch/intersectionMath.js';
-import { sampleSpline } from '../sketch/splineMath.js';
+import { reverseSpline, sampleSpline } from '../sketch/splineMath.js';
 import type { ResolvedCurve, ResolvedSegment } from '../sketch/types.js';
 import { addVec3, crossVec3, distanceVec3, dotVec3, lengthVec3, normalizeVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import { sheetPanelId } from './featureInputs.js';
@@ -35,7 +35,8 @@ function reverseCurve(curve: ResolvedCurve): ResolvedCurve {
   switch (curve.kind) {
     case 'segment': return { ...curve, from: curve.to, to: curve.from };
     case 'arc': case 'ellipse': return { ...curve, startAngle: curve.endAngle, endAngle: curve.startAngle };
-    case 'spline': return { ...curve, points: [...curve.points].reverse() };
+    // Explicit smooth-curve knots are mirrored with the points by the shared helper.
+    case 'spline': return reverseSpline(curve);
   }
 }
 

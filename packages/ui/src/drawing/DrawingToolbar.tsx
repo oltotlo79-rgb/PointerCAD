@@ -10,6 +10,7 @@ import { SettingsPanel } from '../settings/SettingsPanel.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { CubeIcon, OpenFileIcon, SaveIcon, UndoIcon, RedoIcon } from '../shell/icons.js';
 import { ToolMenu } from '../shell/menus/ToolMenu.js';
+import { SavePointsDialogHost } from '../shell/SavePointsButton.js';
 import { DrawingExportPopover } from './DrawingExportPopover.js';
 import { printDrawing } from './printDrawing.js';
 import { DRAWING_TABLE_ACTIONS, DRAWING_TOOL_GROUPS, type DrawingToolbarAction } from './drawingToolbarItems.js';
@@ -38,8 +39,9 @@ export function DrawingToolbar(): React.JSX.Element {
         <div className="pcad-segmented">
           <button type="button" className="pcad-button pcad-button--icon" aria-label={t('toolbar.file.open')} data-command-id="file.open" title={currentCommandLabel('file.open', assignments, 'drawing')} onClick={() => choose('open')}><OpenFileIcon /></button>
           <button type="button" className="pcad-button pcad-button--icon" aria-label={t('toolbar.file.save')} data-command-id="file.save" title={currentCommandLabel('file.save', assignments, 'drawing')} onClick={() => choose('save')}><SaveIcon /></button>
-          <button type="button" className="pcad-button pcad-button--icon" disabled={!canUndo} aria-label={t('toolbar.history.undo')} data-command-id="history.undo" title={currentCommandLabel('history.undo', assignments, 'drawing')} onClick={() => executeCommand('history.undo')}><UndoIcon /></button>
-          <button type="button" className="pcad-button pcad-button--icon" disabled={!canRedo} aria-label={t('toolbar.history.redo')} data-command-id="history.redo" title={currentCommandLabel('history.redo', assignments, 'drawing')} onClick={() => executeCommand('history.redo')}><RedoIcon /></button>
+          <button type="button" className="pcad-button pcad-button--icon" disabled={!canUndo} aria-label={t('toolbar.history.undo')} data-command-id="history.undo" aria-describedby={!canUndo ? 'drawing-undo-unavailable' : undefined} title={canUndo ? currentCommandLabel('history.undo', assignments, 'drawing') : t('toolbar.history.undoUnavailable')} onClick={() => executeCommand('history.undo')}><UndoIcon /></button>
+          <button type="button" className="pcad-button pcad-button--icon" disabled={!canRedo} aria-label={t('toolbar.history.redo')} data-command-id="history.redo" aria-describedby={!canRedo ? 'drawing-redo-unavailable' : undefined} title={canRedo ? currentCommandLabel('history.redo', assignments, 'drawing') : t('toolbar.history.redoUnavailable')} onClick={() => executeCommand('history.redo')}><RedoIcon /></button>
+
         </div>
         <span className="pcad-badge">{t('drawing.mode')}</span>
         {DRAWING_TOOL_GROUPS.map((group) => <div className="pcad-toolbar__group" key={group.label}
@@ -48,7 +50,7 @@ export function DrawingToolbar(): React.JSX.Element {
           <div className="pcad-segmented">
             <ToolMenu<DrawingToolbarAction> items={group.items} groupLabelKey={'menuLabel' in group ? group.menuLabel : group.label} groupTooltipKey={group.tooltip}
               GroupIcon={group.Icon} activeTool={tool} showPressed={group.label !== 'toolbar.file.title'}
-              readinessOf={(id) => ({ ready: !busy || id === 'saveAs', reasonKey: busy ? 'drawing.status.computing' : null })}
+              readinessOf={(id) => ({ ready: !busy || id === 'saveAs' || id === 'savePoints', reasonKey: busy && id !== 'savePoints' ? 'drawing.status.computing' : null })}
               commandGroup="drawing" />
           </div>
         </div>)}
@@ -57,7 +59,8 @@ export function DrawingToolbar(): React.JSX.Element {
           <div className="pcad-segmented">
             {DRAWING_TABLE_ACTIONS.map((action) => <button key={action.id} type="button" className="pcad-button pcad-button--icon"
               disabled={busy || action.id === 'bom' && sourceKind !== 'assembly'} aria-label={t(action.labelKey)}
-              title={`${t(action.labelKey)}: ${t(action.id === 'bom' && sourceKind !== 'assembly' ? 'drawing.toolbar.assemblyOnly' : action.tooltipKey)}`}
+              aria-describedby={busy ? 'drawing-busy-unavailable' : action.id === 'bom' && sourceKind !== 'assembly' ? 'drawing-bom-unavailable' : undefined}
+              title={`${t(action.labelKey)}: ${t(busy ? 'drawing.status.computing' : action.id === 'bom' && sourceKind !== 'assembly' ? 'drawing.toolbar.assemblyOnly' : action.tooltipKey)}`}
               data-command-id={toolbarCommandId('drawing', action.id)}
               data-help-topic={action.id === 'bom' ? 'drawing-bom' : 'drawing-table'}
               onClick={() => choose(action.id)}><action.Icon /></button>)}
@@ -66,7 +69,14 @@ export function DrawingToolbar(): React.JSX.Element {
         <SettingsPanel />
         <HelpButton />
       </div>
+      <aside className="pcad-toolbar__group-label" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', flexBasis: '100%' }} aria-label={t('drawing.mode')}>
+        {!canUndo ? <span id="drawing-undo-unavailable" role="note" tabIndex={0}>{t('toolbar.history.undoUnavailable')}</span> : null}
+        {!canRedo ? <span id="drawing-redo-unavailable" role="note" tabIndex={0}>{t('toolbar.history.redoUnavailable')}</span> : null}
+        {busy ? <span id="drawing-busy-unavailable" role="note" tabIndex={0}>{t('drawing.status.computing')}</span> : null}
+        {sourceKind !== 'assembly' ? <span id="drawing-bom-unavailable" role="note" tabIndex={0}>{t('drawing.toolbar.assemblyOnly')}</span> : null}
+      </aside>
     </header>
+    <SavePointsDialogHost />
     {panel === 'export' ? <DrawingExportPopover onClose={() => setPanel(null)} /> : null}
     {panel === 'print' ? <section className="pcad-popover pcad-drawing-print" role="dialog" aria-label={t('drawing.print.title')}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setPanel(null); } }}>
@@ -74,7 +84,7 @@ export function DrawingToolbar(): React.JSX.Element {
       <label title={t('drawing.print.copies.controlHint')}>{t('drawing.print.copies')}<input className="pcad-field__input" aria-label={t('drawing.print.copies')} value={copies} inputMode="numeric"
         onChange={(event) => setCopies(event.target.value)} /></label>
       <div className="pcad-popover__actions">
-        <button type="button" className="pcad-button" disabled={busy} title={t('drawing.toolbar.printHint')}
+        <button type="button" className="pcad-button" disabled={busy} aria-describedby={busy ? 'drawing-busy-unavailable' : undefined} title={t(busy ? 'drawing.status.computing' : 'drawing.toolbar.printHint')}
           onClick={() => { void printDrawing(Number(copies)); }}>{t('drawing.print.title')}</button>
         <button type="button" className="pcad-button" title={t('drawing.action.close')} onClick={() => setPanel(null)}>{t('drawing.action.close')}</button>
       </div>

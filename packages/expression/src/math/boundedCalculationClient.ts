@@ -4,6 +4,7 @@ import { readCalculationPaceMessage } from './mathInputContract.js';
 export interface CalculationRequest { readonly identity: MathRequestIdentity }
 /** The absolute limit of one request's Worker deadline, also after the machine's pace stretches it. */
 export const CALCULATION_DEADLINE_CEILING_MS = 30_000;
+let observedClient = 0;
 
 /** Platform-independent transport. DOM Worker construction belongs to the UI adapter. */
 export interface CalculationWorkerPort {
@@ -24,6 +25,17 @@ export type CalculationCompletion<Result> =
   | { readonly status: 'result'; readonly identity: MathRequestIdentity; readonly result: Result }
   | { readonly status: 'cancelled' | 'deadline' | 'worker-error' | 'queue-full' | 'disposed'; readonly identity: MathRequestIdentity };
 
+/** A reply whose envelope was checked; `steps` decodes and verifies the rest and returns the whole decoded reply. */
+export interface CalculationReplyStart<Result> {
+  readonly serial: number;
+  readonly steps: Iterator<void, { readonly serial: number; readonly result: Result }, void>;
+}
+/**
+ * Longest synchronous slice of a resumable reply decode before the client yields to the event loop. Well inside the
+ * 100 ms bound for one blocked task (docs/requirements.md §5.2) and close to one 60 fps frame.
+ */
+export const CALCULATION_REPLY_SLICE_MS = 8;
+
 interface PendingWork<Request extends CalculationRequest, Result> {
   readonly serial: number;
   readonly request: Request;
@@ -37,6 +49,14 @@ export interface CalculationClientOptions<Request extends CalculationRequest, Re
   readonly createWorker: () => CalculationWorkerPort;
   /** Validate the untrusted Worker envelope and value; a malformed reply never becomes a CAD coordinate. */
   readonly decodeReply: (value: unknown, request: Request) => { readonly serial: number; readonly result: Result } | null;
+  /**
+   * Optional resumable form of decodeReply for replies whose validation is long. It checks only the envelope and
+   * returns its serial; the client compares that with the active request before any step runs, so a reply for another
+   * request is rejected without reading its result. The steps then run in slices of at most CALCULATION_REPLY_SLICE_MS,
+   * returning to the event loop between slices. Cancellation, disposal, any further Worker message or an exception ends
+   * them, and only a finished decode is delivered. When present it replaces decodeReply for terminal replies.
+   */
+  readonly beginReply?: (value: unknown, request: Request) => CalculationReplyStart<Result>;
   /** Optional host-owned preparation protocol. Each client must validate eligible request kinds. */
   readonly progress?: {
     readonly maximumDurationMs: number;
@@ -57,6 +77,21 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
   private receivedProgress = false;
   private receivedPace = false;
   private receiveProgress: ((value: unknown) => number | null) | null = null;
+  private observationId: number | null = null;
+  /** The active request's terminal reply is being verified in slices (identity token of that verification). */
+  private verifying: object | null = null;
+  private verifyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Passive E2E evidence; diagnostics must never interrupt cancellation or queue progress. */
+  private observe(event: string, work: PendingWork<Request, Result>, status?: string, replaceWorker?: boolean): void {
+    try {
+      if (Reflect.get(globalThis, Symbol.for('pcad.w22.completion-observer')) !== true) return;
+      this.observationId ??= ++observedClient;
+      console.debug('[pcad:math-client]', JSON.stringify({ event, client: this.observationId,
+        serial: work.serial, identity: work.request.identity, status, replaceWorker,
+        timeOrigin: performance.timeOrigin, at: performance.now() }));
+    } catch { /* Observation failure cannot alter the product outcome. */ }
+  }
 
   constructor(options: CalculationClientOptions<Request, Result>) {
     const maximum = options.progress?.maximumDurationMs;
@@ -100,14 +135,19 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
   private complete(result: CalculationCompletion<Result>, replaceWorker: boolean): void {
     const work = this.active;
     if (!work) return;
+    this.observe('complete', work, result.status, replaceWorker);
     this.active = null;
     this.receiveProgress = null;
     this.receivedProgress = false;
     this.receivedPace = false;
     if (this.timeout !== null) { clearTimeout(this.timeout); this.timeout = null; }
+    // Any unfinished verification is abandoned: its steps are never resumed and nothing partial is delivered.
+    this.verifying = null;
+    if (this.verifyTimer !== null) { clearTimeout(this.verifyTimer); this.verifyTimer = null; }
     if (replaceWorker) this.stopWorker();
     work.detachAbort();
     work.finish(result);
+    this.observe('finished', work, result.status, replaceWorker);
     this.pump();
   }
 
@@ -141,6 +181,10 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
           if (this.worker !== worker) return;
           const active = this.active;
           if (!active) return;
+          // The terminal reply already arrived: a second message from the same Worker is a protocol race.
+          if (this.verifying !== null) {
+            this.complete({ status: 'worker-error', identity: active.request.identity }, true); return;
+          }
           if (performance.now() >= this.deadline) {
             this.complete({ status: 'deadline', identity: active.request.identity }, true); return;
           }
@@ -161,6 +205,17 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
             if (this.active === active) this.complete({ status: 'worker-error', identity: active.request.identity }, true);
             return;
           }
+          const beginReply = this.options.beginReply;
+          if (beginReply !== undefined) {
+            let begun: CalculationReplyStart<Result> | null;
+            try { begun = beginReply(event.data, active.request); }
+            catch { begun = null; }
+            // Another request's (stale) reply is refused here, before any of its result is decoded.
+            if (begun === null || begun.serial !== active.serial) {
+              this.complete({ status: 'worker-error', identity: active.request.identity }, true);
+            } else this.verify(active, begun.steps, worker.retireAfterReply === true);
+            return;
+          }
           let decoded: ReturnType<CalculationClientOptions<Request, Result>['decodeReply']>;
           try { decoded = this.options.decodeReply(event.data, active.request); }
           catch { decoded = null; }
@@ -176,7 +231,9 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
         worker.onmessageerror = failure;
       }
       this.armDeadline(this.deadline, work);
+      this.observe('dispatch', work);
       this.worker.postMessage(this.options.createEnvelope(work.serial,work.request));
+      this.observe('dispatched', work);
       // A synchronous transport can already have completed/cancelled this work.
       if (this.active !== work) return;
       // A shared transport finishes its current dispatch before selecting the next
@@ -188,8 +245,39 @@ export class BoundedCalculationClient<Request extends CalculationRequest, Result
     }
   }
 
+  /**
+   * Run a resumable reply decode in slices. Like the former synchronous decode, an arrived reply's own bounded
+   * validation is not cut by the calculation deadline; cancellation, disposal, a further Worker message and exceptions
+   * still end it, and the request completes only with the finished, whole result.
+   */
+  private verify(work: PendingWork<Request, Result>, steps: CalculationReplyStart<Result>['steps'], retireAfterReply: boolean): void {
+    const token = {};
+    this.verifying = token;
+    if (this.timeout !== null) { clearTimeout(this.timeout); this.timeout = null; }
+    const current = () => this.active === work && this.verifying === token;
+    const slice = () => {
+      this.verifyTimer = null;
+      if (!current()) return;
+      const start = performance.now();
+      try {
+        for (;;) {
+          const step = steps.next();
+          if (step.done === true) {
+            this.complete({ status: 'result', identity: work.request.identity, result: step.value.result }, retireAfterReply);
+            return;
+          }
+          if (performance.now() - start >= CALCULATION_REPLY_SLICE_MS) { this.verifyTimer = setTimeout(slice, 0); return; }
+        }
+      } catch {
+        if (current()) this.complete({ status: 'worker-error', identity: work.request.identity }, true);
+      }
+    };
+    slice();
+  }
+
   private allowStartup(work: PendingWork<Request, Result>): void {
-    if (this.active !== work || this.worker === null) return;
+    // A reply under verification has arrived; no startup allowance re-arms its finished calculation deadline.
+    if (this.active !== work || this.worker === null || this.verifying !== null) return;
     try {
       const startupTimeoutMs = this.worker.startupTimeoutMs ?? 0;
       if (!Number.isSafeInteger(startupTimeoutMs) || startupTimeoutMs < 0 || startupTimeoutMs > 30_000) {

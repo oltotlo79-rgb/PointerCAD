@@ -22,6 +22,13 @@ import drawing from './ja/drawing.json';
 import help from './ja/help.json';
 import sheetMetal from './ja/sheetMetal.json';
 import strength from './ja/strength.json';
+import beam from './ja/beam.json';
+import plasticBar from './ja/plasticBar.json';
+import fatigue from './ja/fatigue.json';
+import fatigueStrain from './ja/fatigueStrain.json';
+import fatigueLocalCycle from './ja/fatigueLocalCycle.json';
+import solidAnalysis from './ja/solidAnalysis.json';
+import solidPlastic from './ja/solidPlastic.json';
 import script from './ja/script.json';
 import math from './ja/math.json';
 import mathGeometry from './ja/mathGeometry.json';
@@ -30,8 +37,41 @@ import mathPaletteCalculus from './ja/mathPaletteCalculus.json';
 import mathPaletteSetsLogic from './ja/mathPaletteSetsLogic.json';
 import commands from './ja/commands.json';
 
+const steelBend = {
+  'assembly.steel.bend.enable': '曲げ部品を作る',
+  'assembly.steel.bend.enableGuide': '選択した鋼材断面から新しい曲げ部品を作り、位置を指定して配置します。',
+  'assembly.steel.bend.radius': '曲げ半径 R (mm)',
+  'assembly.steel.bend.angle': '曲げ角度 (度)',
+  'assembly.steel.bend.direction': '断面に対する曲げ方向 (度)',
+  'assembly.steel.bend.directionGuide': '開始接線は+Zです。断面を固定し、0度は+X、90度は+Y、180度は−X、270度は−Yへ曲げます。平鋼は0度が幅方向、90度が厚さ方向です。',
+  'assembly.steel.bend.invalidDirection': '曲げ方向に有限の角度を入力してください。',
+  'assembly.steel.bend.firstLeg': '第1脚の寸法 (mm)',
+  'assembly.steel.bend.secondLeg': '第2脚の寸法 (mm)',
+  'assembly.steel.bend.expressionGuide': '数値または式を入力してください。',
+  'assembly.steel.bend.radiusConvention': '半径の基準',
+  'assembly.steel.bend.legConvention': '脚寸法の基準',
+  'assembly.steel.bend.inside': '内側',
+  'assembly.steel.bend.outside': '外側',
+  'assembly.steel.bend.tangent': '接線の直線部分',
+  'assembly.steel.bend.requiredLength': '幾何学上の必要素材長: {length} mm',
+  'assembly.steel.bend.allowance': '断面の面積重心経路による長さです。製造用の曲げ代・中立軸・スプリングバックを指定するものではありません。既存の購入材は変更せず、この長さの新規部品を作ります。',
+  'assembly.steel.bend.place': '曲げ部品の配置へ',
+  'assembly.steel.bend.unavailable': '現在は配置を開始できません。実行中の操作を終了してください。',
+  'assembly.steel.bend.invalidExpression': '半径・角度・脚寸法に有効な数値または式を入力してください。',
+  'assembly.steel.bend.invalidRadius': '半径の基準と、正の内側半径を確認してください。',
+  'assembly.steel.bend.invalidAngle': '曲げ角度は0度より大きく180度より小さくしてください。',
+  'assembly.steel.bend.invalidLength': '両脚の寸法に有限の正の値を入力してください。',
+  'assembly.steel.bend.invalidSection': 'この断面は曲げ部品に対応していません。',
+  'assembly.steel.bend.insufficientLegLength': '指定した半径と角度では脚の直線部分が残りません。脚寸法を増やしてください。',
+  'assembly.steel.bend.radiusTooTight': '断面に対して曲げ半径が小さすぎます。半径を増やしてください。',
+  'assembly.steel.bend.unsupportedSource': 'この鋼材の出自または生成版は曲げに対応していません。',
+  'assembly.steel.bend.invalidStockLength': '幾何学上の必要素材長が対応する素材長の範囲外です。',
+  'assembly.steel.bend.stockLengthMismatch': '素材長と曲げ形状の幾何学上の長さが一致しません。',
+} as const;
+
 /** 機能ごとの表を 1 つに合わせたもの。鍵の型(`MessageKey`)はここから導く。 */
 export const ja = {
+  ...steelBend,
   // その場入力(道具ごとの段・欄・つまみ・選択肢)
   ...numericInput,
   // プロパティ区画
@@ -61,6 +101,13 @@ export const ja = {
   ...help,
   ...sheetMetal,
   ...strength,
+  ...beam,
+  ...plasticBar,
+  ...fatigue,
+  ...fatigueStrain,
+  ...fatigueLocalCycle,
+  ...solidAnalysis,
+  ...solidPlastic,
   ...script,
   ...math,
   ...mathGeometry,
@@ -89,9 +136,17 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['view', view],
   ['parameters', parameters],
   ['assembly', assembly],
+  ['steelBend', steelBend],
   ['drawing', drawing],
   ['help', help],
   ['sheetMetal', sheetMetal],
   ['strength', strength],
+  ['beam', beam],
+  ['plasticBar', plasticBar],
+  ['fatigue', fatigue],
+  ['fatigueStrain', fatigueStrain],
+  ['fatigueLocalCycle', fatigueLocalCycle],
+  ['solidAnalysis', solidAnalysis],
+  ['solidPlastic', solidPlastic],
   ['commands', commands],
 ];

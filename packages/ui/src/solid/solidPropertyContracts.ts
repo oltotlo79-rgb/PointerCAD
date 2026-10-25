@@ -52,10 +52,18 @@ export type SolidFieldKey =
   | 'counterboreDepth'
   | 'countersinkDiameter'
   | 'countersinkAngle'
+  /*
+    円筒の側面の穴(EX05)の位置。高さ(mm)は円筒の面の下側の端から軸に沿って、角度(度)は軸の
+    まわり。位置が 1 つの穴にだけ出す(欄の種類は 1 つずつしか持てないため)。
+  */
+  | 'holeCylinderHeight'
+  | 'holeCylinderAngle'
   /** 可変半径フィレットの終点側の半径(mm、FR-426)。一定半径のときは出さない。 */
   | 'radiusEnd'
   /** 抜き勾配の角度(度、FR-417)。 */
   | 'draftAngle'
+  /** 平らな面の移動の符号付きの距離(mm、EX-18)。正で外へ足し、負で内へ削る。 */
+  | 'faceOffsetDistance'
   /* 移動/回転(FR-424)。平行移動 3 欄と回す角度。 */
   | 'translationX'
   | 'translationY'

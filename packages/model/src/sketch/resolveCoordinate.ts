@@ -71,6 +71,17 @@ export function vertexKey(featureId: string, vertex: 'start' | 'end' | 'center')
   return `${featureId}:${vertex}`;
 }
 
+/**
+ * 部品の基準点(ReferencePointFeature)を引いた結果(EX-18 組立の文脈の参照からスケッチへ)。
+ * none は「その id の部品の基準点は無い」、refused は「あるが基準にできない(古い・循環し得る)」。
+ */
+export type PartPointLookup =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'point'; readonly position: Vec3 }
+  | { readonly kind: 'refused'; readonly message: string };
+
+export const NO_PART_POINT: PartPointLookup = { kind: 'none' };
+
 /** 解決に使える手掛かり。フィーチャーを履歴順にたどりながら育てる。 */
 export interface ResolveContext {
   /**
@@ -112,6 +123,11 @@ export interface ResolveContext {
    */
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
   readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
+  /**
+   * 部品の基準点を id から引く(EX-18)。スケッチ 1 本は部品を知らないので、`sphere` と同じく
+   * 部品文書の側(`resolvePart.ts`)が渡す。渡されなければ部品の基準点は無い扱い(従来どおり)。
+   */
+  readonly partPoint?: (pointId: string) => PartPointLookup;
 }
 
 export type ResolveOutcome<T> =
@@ -148,10 +164,16 @@ export function resolvePointReference(
       return { ok: true, value: context.previous };
     case 'point': {
       const found = context.points.find((point) => point.id === reference.pointId);
-      if (found === undefined) {
-        return failure(featureId, 'missingBase', `基準の点が見つかりません: ${reference.pointId}`);
+      // 部品の基準点(EX-18)。同じ id のスケッチの点もあれば、どちらかを黙って選ばずに断る。
+      const part = context.partPoint?.(reference.pointId) ?? NO_PART_POINT;
+      if (found !== undefined && part.kind !== 'none') {
+        return failure(featureId, 'invalidValue',
+          `基準の点 ${reference.pointId} がスケッチの点と部品の基準点の両方の内部の id になっています。表示の名前を変えても id は変わらないので、スケッチの点を消してから「基準点に点を置く」で置き直してください(新しい点には別の id が付きます)。`);
       }
-      return { ok: true, value: found.position };
+      if (found !== undefined) return { ok: true, value: found.position };
+      if (part.kind === 'point') return { ok: true, value: part.position };
+      if (part.kind === 'refused') return failure(featureId, 'missingBase', part.message);
+      return failure(featureId, 'missingBase', `基準の点が見つかりません: ${reference.pointId}`);
     }
     case 'vertex': {
       const found = context.vertices.get(vertexKey(reference.featureId, reference.vertex));

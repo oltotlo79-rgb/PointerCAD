@@ -342,6 +342,32 @@ describe('下絵の層(NFR-PF-1、P5 §4)', () => {
     layer.dispose();
   });
 
+  it('GPUへ渡す行列は既知の射影を内部点でも保ち、既存map shaderだけを置き換える', () => {
+    const layer = createCanvasLayer();
+    const homography = [0.8, 0.05, 0.1, 0.03, 0.7, 0.12, 0.2, -0.08, 1] as const;
+    layer.update([draw({ homography })]);
+    const material = basicMaterialOf(layer.group.children[0]);
+    if (material === null) throw new Error('canvas material missing');
+    const shader: { fragmentShader: string; uniforms: Record<string, { value: unknown }> } = {
+      fragmentShader: '#include <common>\n#include <map_fragment>', uniforms: {},
+    };
+    Reflect.apply(material.onBeforeCompile.bind(material), material, [shader, undefined]);
+    expect(shader.fragmentShader).toContain('uniform mat3 canvasHomography;');
+    expect(shader.fragmentShader).toContain('source.x / source.z');
+    expect(shader.fragmentShader).not.toContain('#include <map_fragment>');
+    const matrix = shader.uniforms['canvasHomography']?.value;
+    if (!(matrix instanceof THREE.Matrix3)) throw new Error('canvas homography uniform missing');
+    for (const s of [0.25, 0.5, 0.75]) {
+      for (const t of [0.25, 0.5, 0.75]) {
+        const result = new THREE.Vector3(s, t, 1).applyMatrix3(matrix);
+        const denominator = 0.2 * s - 0.08 * t + 1;
+        expect(result.x / result.z).toBeCloseTo((0.8 * s + 0.05 * t + 0.1) / denominator, 12);
+        expect(result.y / result.z).toBeCloseTo((0.03 * s + 0.7 * t + 0.12) / denominator, 12);
+      }
+    }
+    layer.dispose();
+  });
+
   it('スケッチの線・作図面の矩形より後ろに描く(§0.a-0.46)', () => {
     const layer = createCanvasLayer();
     layer.update([draw()]);

@@ -2,15 +2,18 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { BoxParameters, SolidFaceInfo, SubShapeQuery } from '../types.js';
+import type { BoxParameters, PrimitiveStepSpec, SolidFaceInfo, SubShapeQuery } from '../types.js';
+import type { CurrentOriginIndex, SubShapeOrigin } from '../subShapeOrigin.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
+import { makePrimitive } from './makePrimitive.js';
+import { resolveFaceReference, scoreFace, SUB_SHAPE_MATCH_THRESHOLD } from './matchSubShape.js';
 import type { ShellInput } from './makeShell.js';
 import { makeShell } from './makeShell.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
-import { collectSubShapes } from './subShapes.js';
+import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 
 /**
@@ -122,7 +125,7 @@ describe('くり抜き(FR-418、FR-504、NFR-RE-1)', () => {
   }
 
   /** 一覧の面 1 枚から、文書が保存するのと同じ形の指紋を作る(makeDraft.test.ts と同じ)。 */
-  function faceQuery(face: SolidFaceInfo): SubShapeQuery {
+  function faceQuery(face: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
     return {
       kind: 'face',
       index: face.index,
@@ -411,5 +414,91 @@ describe('くり抜き(FR-418、FR-504、NFR-RE-1)', () => {
         }),
       ).toThrow('開ける面が見つかりません。');
     });
+  });
+
+  it('実Boxの保存top起点で移動後も開口シェルを作り、高scoreの曖昧・消失・別featureを拒否する', () => {
+    const spec: PrimitiveStepSpec = { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1],
+      shape: { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }, originQuery: null, targetKey: null };
+    const old = makePrimitive(oc, spec, 'shell-feature');
+    const changedSpec: PrimitiveStepSpec = { ...spec, origin: [500, 500, 0],
+      shape: { kind: 'box', sizeX: 200, sizeY: 200, sizeZ: 30 } };
+    const current = makePrimitive(oc, changedSpec, 'shell-feature');
+    const other = makePrimitive(oc, changedSpec, 'other-feature');
+    try {
+      if (old.origins?.state !== 'tracked' || current.origins?.state !== 'tracked'
+        || other.origins?.state !== 'tracked') throw new Error('実Box起点がありません');
+      const oldTables = collectTables(old.shape);
+      const tables = { ...collectTables(current.shape), origins: current.origins };
+      const otherTables = { ...collectTables(other.shape), origins: other.origins };
+      const oldTopBinding = old.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
+        && item.origin.identity.role === 'top');
+      if (oldTopBinding?.state !== 'unique' || oldTopBinding.current.kind !== 'face') {
+        throw new Error('旧Boxのtop起点が一意でありません');
+      }
+      const oldTop = oldTables.faces.find(item => item.index === oldTopBinding.current.index);
+      if (oldTop === undefined) throw new Error('旧Boxのtop面がありません');
+      const savedTop = { ...faceQuery(oldTop), origin: oldTopBinding.origin };
+      const savedJson = JSON.stringify(savedTop);
+      const scale = boundingDiagonal(oc, current.shape) * 0.5;
+      const topMatch = resolveFaceReference(tables.faces, savedTop, scale, tables.origins);
+      expect(topMatch.status).toBe('matched');
+      if (topMatch.status !== 'matched') throw new Error('現Boxのtop起点を解決できません');
+      const topScore = scoreFace(topMatch.match.candidate, savedTop, scale).total;
+      expect(topScore).toBeLessThan(SUB_SHAPE_MATCH_THRESHOLD);
+      console.log(`Shell保存起点の実幾何score: top=${topScore}`);
+      expect(topMatch.match.candidate.centroid[2]).toBeCloseTo(15, 8); // primitive Boxは中心原点
+      const result = makeShell(oc, current.shape, tables, {
+        openFaces: [savedTop], thickness: THICKNESS, outward: false,
+      });
+      try {
+        expect(measureVolume(oc, result.shape)).toBeCloseTo(1_200_000 - 196 * 196 * 28, 6);
+        expect(hasSolid(oc, result.shape)).toBe(true);
+        expect(isValidShape(oc, result.shape)).toBe(true);
+      } finally {
+        result.delete();
+      }
+      expect(measureVolume(oc, old.shape)).toBeCloseTo(CUBE_VOLUME, 6);
+      expect(measureVolume(oc, current.shape)).toBeCloseTo(1_200_000, 6);
+      expect(JSON.stringify(savedTop)).toBe(savedJson);
+
+      const legacyTop = faceQuery(topMatch.match.candidate);
+      const alternate = tables.faces.find(face => face.index !== legacyTop.index);
+      if (alternate === undefined) throw new Error('曖昧反例の別面がありません');
+      const highTop = { ...legacyTop, origin: savedTop.origin };
+      const input: ShellInput = { openFaces: [legacyTop, highTop], thickness: THICKNESS, outward: false };
+      expect(() => makeShell(oc, other.shape, otherTables, input)).toThrow('開ける面が見つかりません');
+      const topBinding = current.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
+        && item.origin.identity.role === 'top');
+      if (topBinding?.state !== 'unique') throw new Error('現Boxのtop起点が一意でありません');
+      const otherOrigin: SubShapeOrigin = { version: 1, shapeKind: 'face',
+        identity: { kind: 'box-face', featureId: 'other-feature', role: 'top' } };
+      const blockers: readonly (CurrentOriginIndex | undefined)[] = [
+        undefined,
+        { version: 1, state: 'untracked', reason: 'unsupported-operation' },
+        { version: 1, state: 'tracked', bindings: current.origins.bindings.map(binding =>
+          binding.state === 'unique' && binding === topBinding
+            ? { origin: binding.origin, state: 'split' as const,
+              candidates: [binding.current, { kind: 'face', index: alternate.index }] as const }
+            : binding) },
+        { version: 1, state: 'tracked', bindings: current.origins.bindings.map(binding =>
+          binding.state === 'unique' && binding === topBinding
+            ? { origin: binding.origin, state: 'merged' as const, current: binding.current,
+              coOrigins: [binding.origin, otherOrigin] as const }
+            : binding) },
+        { version: 1, state: 'tracked', bindings: current.origins.bindings.map(binding =>
+          binding === topBinding
+            ? { origin: binding.origin, state: 'missing' as const, reason: 'deleted' as const }
+            : binding) },
+      ];
+      for (const origins of blockers) {
+        expect(() => makeShell(oc, current.shape, { ...tables, origins }, input)).toThrow('開ける面が見つかりません');
+      }
+      expect(measureVolume(oc, current.shape)).toBeCloseTo(1_200_000, 6);
+      expect(JSON.stringify(savedTop)).toBe(savedJson);
+    } finally {
+      other.delete();
+      current.delete();
+      old.delete();
+    }
   });
 });

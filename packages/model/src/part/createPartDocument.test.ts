@@ -1,3 +1,4 @@
+import { allocatePatternPointSlots, patternSlotHighWater } from './patternPointSlots.js';
 import {
   evaluateExpression,
   expressionValueFromNumber,
@@ -18,6 +19,7 @@ import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
 import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
 import type { SketchDocument, SketchFaceFeature, SketchLineFeature } from '../sketch/types.js';
 import { DEFAULT_THREAD_DESIGNATION, threadMinorDiameter } from '../thread/metricThread.js';
+import { createUndoStack, pushUndo, redo, undo } from '../history/undoStack.js';
 import {
   addSketch,
   appendReference,
@@ -478,7 +480,7 @@ describe('部品文書の生成(要件§8、FR-501)', () => {
   // P8 タスク3で版 9 へ上げた(封筒に `kind: 'drawing'` を足したため。
   // 部品とアセンブリで版の系列を分けない)。P8-60/62/64では名前付き視点・構成を足して版10へ上げる。
   it('保存形式の現行版と新規部品文書の版が一致する', () => {
-    expect(PART_SCHEMA_VERSION).toBe(17);
+    expect(PART_SCHEMA_VERSION).toBe(22);
     expect(createEmptyPartDocument().schemaVersion).toBe(PART_SCHEMA_VERSION);
   });
 
@@ -647,6 +649,8 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       loft: 'ロフト',
       // P5 の Should 群(§2.11、タスク43)。9 種 + 点パターン。
       draft: '抜き勾配',
+      // 平らな面の移動(EX-18 の限られた一段)。
+      faceOffset: '面の移動',
       mirror: 'ミラー',
       transform: '移動・回転',
       scale: '拡大縮小',
@@ -661,6 +665,7 @@ describe('名前と id の採番(§0.a-0.19、FR-501)', () => {
       shell: 'くり抜き',
       // 平面による切断(FR-432、§2.9b、タスク27c)。
       cut: '切断',
+      surfaceCut: '面による切断',
       // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
       importedSolid: '読み込んだ形',
       importedMesh: '読み込んだ三角形の形',
@@ -773,15 +778,18 @@ describe('ボディの消費と、いま画面に出るボディ(§0.a-0.5)', ()
 });
 
 describe('加工フィーチャーとばねの名前・id の採番(P3 タスク13、FR-501)', () => {
-  it('種類ごとの既定名は39個(従来34 + 板金4種類 + 関数曲面)', () => {
+  it('種類ごとの既定名は41個(従来34 + 板金4種類 + 関数曲面 + 面の移動 + 面による切断)', () => {
     // P5 タスク15 で基本形状5種(球・箱・円柱・円錐・トーラス)が増えて 13 → 18 になり、
     // タスク25 で面をつなぐ(FR-430)・ロフト(FR-410)が増えて 18 → 20 になった。
     // タスク43 で Should 群 9 種と点パターン(FR-425)が増えて 20 → 30 になり、
     // タスク46 でくり抜き(FR-418、§2.12)が増えて 30 → 31 になり、
     // タスク27c で平面による切断(FR-432、§2.9b)が増えて 31 → 32 になり、
     // P6 タスク20 で読み込んだ形のベースボディ 2 種(FR-802、§2.8)が増えて 32 → 34 になった。
-    // P10の板金基板・フランジ・指定線曲げを含む。全キーの一致は上の独立した表で検査する。
-    expect(Object.keys(SOLID_LABELS)).toHaveLength(39);
+    // P10の板金基板・フランジ・指定線曲げを含む。EX-18 の平らな面の移動で 39 → 40 になった。
+    // EX-04 の面による切断を足して 40 → 41 になった。
+    // 全キーの一致は上の独立した表で検査する。
+    expect(Object.keys(SOLID_LABELS)).toHaveLength(41);
+    expect(SOLID_LABELS.faceOffset).toBe('面の移動');
     expect(SOLID_LABELS.functionSurface).toBe('関数曲面');
     expect(SOLID_LABELS.hole).toBe('穴');
     expect(SOLID_LABELS.threadHole).toBe('ねじ穴');
@@ -1371,7 +1379,7 @@ describe('基本形状(FR-429、P5 タスク15)', () => {
 });
 
 describe('基本形状を足したあとの立体フィーチャーの種類(FR-501)', () => {
-  it('板金と関数曲面を含む31種で、数え漏れは型検査で落ちる', () => {
+  it('板金と関数曲面・面の移動を含む33種で、数え漏れは型検査で落ちる', () => {
     /*
       `Record<SolidFeatureKind, true>` にしておくと、種類を足したのにこの表を直し忘れた
       ときに**型検査で落ちる**(kernel の `SolidStepSpec` の数え方と同じ手)。
@@ -1402,6 +1410,7 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       ruled: true,
       loft: true,
       draft: true,
+      faceOffset: true,
       mirror: true,
       transform: true,
       scale: true,
@@ -1413,18 +1422,19 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
       functionSurface: true,
       shell: true,
       cut: true,
+      surfaceCut: true,
       importedSolid: true,
       importedMesh: true,
     };
-    expect(Object.keys(kinds)).toHaveLength(31);
+    expect(Object.keys(kinds)).toHaveLength(33);
   });
 
   it(
-    'SOLID_FEATURE_KINDS(実行時の一覧、P10板金と関数曲面を含む)は31種を重複なく持ち、' +
+    'SOLID_FEATURE_KINDS(実行時の一覧、P10板金と関数曲面・面の移動を含む)は33種を重複なく持ち、' +
       '上のテストで手で数え上げた表(SolidFeatureKind そのものの網羅の確かめ)と同じ集合になる',
     () => {
-      expect(SOLID_FEATURE_KINDS).toHaveLength(31);
-      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(31);
+      expect(SOLID_FEATURE_KINDS).toHaveLength(33);
+      expect(new Set(SOLID_FEATURE_KINDS).size).toBe(33);
       const kinds: Readonly<Record<SolidFeatureKind, true>> = {
         sheetBase: true,
         sheetFlange: true,
@@ -1444,6 +1454,7 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
         ruled: true,
         loft: true,
         draft: true,
+        faceOffset: true,
         mirror: true,
         transform: true,
         scale: true,
@@ -1455,6 +1466,7 @@ describe('基本形状を足したあとの立体フィーチャーの種類(FR-
         functionSurface: true,
         shell: true,
         cut: true,
+        surfaceCut: true,
         importedSolid: true,
         importedMesh: true,
       };
@@ -1878,13 +1890,10 @@ describe('点の集まりへ複製(FR-425、§0.a-0.42、タスク43)', () => {
       suppressed: false,
       kind: 'pattern',
       sourceFeatureId: hole.id,
-      placement: {
-        kind: 'points',
-        points: [
+      placement: allocatePatternPointSlots([
           { kind: 'point', pointId: 'point-1' },
           { kind: 'point', pointId: 'point-2' },
-        ],
-      },
+        ]),
     };
     expect(consumedTargetsOf(pattern)).toEqual([hole.id]);
     // パターンそのものは工具ではないので、もとにはできない(§0.a-0.20)。
@@ -1961,5 +1970,92 @@ describe('平面による切断の消費と名前(FR-432、§0.a-0.58、P5 タ�
     });
     expect(nextSolidName(document, 'cut')).toBe('切断2');
     expect(nextSolidId(document, 'cut')).toBe('cut-2');
+  });
+});
+
+describe('point-pattern slot issuance through placement-kind changes', () => {
+  it('preserves issued slots across points to linear to circular to new points', () => {
+    const { document, hole } = documentWithHole();
+    const feature: PatternFeature = { id: 'kind-change-pattern', name: 'pattern', suppressed: false,
+      kind: 'pattern', sourceFeatureId: hole.id,
+      placement: allocatePatternPointSlots([{ kind: 'origin' }, { kind: 'origin' }]) };
+    const added = appendSolid(document, feature);
+    const linear = replaceSolid(added, feature.id, { ...feature, placement: {
+      kind: 'linear', direction: { kind: 'world', axis: 'x' }, spacing: expr('10'), count: expr('3'), symmetric: false,
+    } });
+    const circular = replaceSolid(linear, feature.id, { ...feature, placement: {
+      kind: 'circular', axis: { kind: 'world', axis: 'z' }, angle: expr('360'), count: expr('4'), fullCircle: true,
+    } });
+    expect(patternSlotHighWater(circular, feature.id)).toBe(3);
+    const returned = replaceSolid(circular, feature.id, { ...feature, placement: allocatePatternPointSlots([
+      { kind: 'point', pointId: 'replacement-source' },
+    ], undefined, undefined, patternSlotHighWater(circular, feature.id)) });
+    const current = returned.solids.find((solid) => solid.id === feature.id);
+    if (current?.kind !== 'pattern' || current.placement.kind !== 'points') throw new Error('Missing returned pattern');
+    expect(current.placement.points.map((slot) => slot.slotId)).toEqual(['slot-3']);
+    expect(returned.patternSlotHighWater?.[feature.id]).toBe(4);
+    expect(() => replaceSolid(circular, feature.id, feature)).toThrow();
+  });
+});
+
+/*
+  EX-18 W15c: 既にある面を縫う縫合(`surfaceFaces`)は、縫った曲面の本体を取り込む(消費する)。
+  立体の本体の面なら立体を残す。文書だけの判定(ツリーの「統合済み」・押せるかの判定)が使う
+  consumedBodyIds・liveBodyIds も、解決(resolvePart)と同じ規則になる
+  (2026-10-25 の画面検査 20261025-031920・20261025-032503 で、残った入力が縫合の結果と重なった)。
+*/
+describe('面入力の縫合が取り込む曲面の本体(EX-18 W15c)', () => {
+  function sewnSurfaces() {
+    const { document: withFace, faceRef } = documentWithFace();
+    const extrude = buildExtrude(withFace, faceRef);
+    let document = appendSolid(withFace, extrude);
+    const first = buildSurface(document, planarSurfaceOperation(document));
+    document = appendSolid(document, first);
+    const second = buildSurface(document, planarSurfaceOperation(document));
+    document = appendSolid(document, second);
+    const sew: SewFeature = { ...buildSew(document, []), surfaceFaces: [faceRefOf(first.id), faceRefOf(second.id)] };
+    return { before: document, extrude, faceRef, first, second, sew, after: appendSolid(document, sew) };
+  }
+
+  it('曲面の面だけを縫うと、縫った曲面の本体を取り込み、文書だけの判定でも画面に出なくなる', () => {
+    const { after, extrude, first, second, sew } = sewnSurfaces();
+    expect(consumedTargetsOf(sew, after.solids)).toEqual([first.id, second.id]);
+    expect([...consumedBodyIds(after)]).toEqual([first.id, second.id]);
+    expect(liveBodyIds(after)).toEqual([extrude.id, sew.id]);
+    // 文書を渡さない呼び出し(履歴の依存・三角形の形の断り)は、今までどおり何も返さない。
+    expect(consumedTargetsOf(sew)).toEqual([]);
+  });
+
+  it('立体の本体の面を縫っても立体は残し、同じ曲面の面を何枚縫ってもその曲面を 1 度だけ取り込む', () => {
+    const { before, extrude, faceRef, first, second, sew } = sewnSurfaces();
+    const mixed: SewFeature = {
+      ...sew, surfaceFaces: [faceRefOf(extrude.id), faceRefOf(first.id), faceRefOf(first.id, 1)],
+    };
+    const document = appendSolid(before, mixed);
+    expect(consumedTargetsOf(mixed, document.solids)).toEqual([first.id]);
+    expect(liveBodyIds(document)).toEqual([extrude.id, second.id, mixed.id]);
+    // スケッチの面を縫う従来の縫合は、文書を渡しても何も取り込まない。
+    const planar = buildSew(before, [faceRef, faceRef]);
+    expect(consumedTargetsOf(planar, appendSolid(before, planar).solids)).toEqual([]);
+  });
+
+  it('取り込みは Undo 1 回で外れて曲面が戻り、Redo で再び取り込む(文書の形は変えず毎回導く)', () => {
+    const { before, after, extrude, first, second, sew } = sewnSurfaces();
+    const undone = undo(pushUndo(createUndoStack(before), after));
+    expect(undone.present).toBe(before);
+    expect(consumedBodyIds(undone.present).size).toBe(0);
+    expect(liveBodyIds(undone.present)).toEqual([extrude.id, first.id, second.id]);
+    const redone = redo(undone);
+    expect(redone.present).toBe(after);
+    expect(liveBodyIds(redone.present)).toEqual([extrude.id, sew.id]);
+  });
+
+  it('抑制した縫合と、履歴で縫合より後ろにある曲面は取り込まない', () => {
+    const { before, extrude, first, second, sew } = sewnSurfaces();
+    // 抑制した縫合は何も取り込まず、自分の本体も作らない(FR-503)。
+    expect(liveBodyIds(appendSolid(before, { ...sew, suppressed: true }))).toEqual([extrude.id, first.id, second.id]);
+    // 後ろの曲面は参照できない(解決が missingBody で断る)ので、取り込みにも数えない。
+    const reordered: PartDocument = { ...before, solids: [extrude, sew, first, second] };
+    expect(liveBodyIds(reordered)).toEqual([extrude.id, sew.id, first.id, second.id]);
   });
 });

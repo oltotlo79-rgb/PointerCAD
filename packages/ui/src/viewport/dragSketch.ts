@@ -16,9 +16,10 @@
  * `pinned`)。拘束を先に満たしたうえで、残った自由度のぶんだけポインタへ寄る。
  */
 
-import { exactExpressionValueFromNumber } from '@pointercad/expression';
+import { exactExpressionValueFromNumber, isNumericLiteral } from '@pointercad/expression';
 import {
   canonicalPointKey,
+  createConstrainedSketchJob,
   dotVec3,
   featureIdOfPointKey,
   findFeature,
@@ -26,11 +27,11 @@ import {
   pointValueAt,
   radiansToDegrees,
   replaceFeature,
-  resolveConstrainedSketch,
   subShapeFromFingerprint,
   subVec3,
   vertexKey,
   type ConstrainedSketch,
+  type ConstrainedSketchJob,
   type ConstraintTarget,
   type CoordinateInput,
   type PointReference,
@@ -294,15 +295,33 @@ export function dragTargetUv(
  * 引っぱっている間の解(§0.a 追記 3)。**文書は変えない**ので、返ってきた
  * `ConstrainedSketch.resolved` を表示だけに使う。
  */
+/**
+ * The drag solve for one pointer target as a resumable job (`createConstrainedSketchJob`). Its result belongs
+ * to exactly this document, drag and target; the session owns which job is current.
+ */
+export function createDragSolveJob(
+  document: SketchDocument,
+  drag: SketchDrag,
+  targetUv: readonly [number, number],
+  options: SketchResolveOptions = {},
+): ConstrainedSketchJob {
+  return createConstrainedSketchJob(document, options, {
+    pinned: new Map([[drag.pointKey, [targetUv[0], targetUv[1]] as const]]),
+  });
+}
+
+/** Synchronous drag solve: drains the same job as `createDragSolveJob`. */
 export function solveWithDrag(
   document: SketchDocument,
   drag: SketchDrag,
   targetUv: readonly [number, number],
   options: SketchResolveOptions = {},
 ): ConstrainedSketch {
-  return resolveConstrainedSketch(document, options, {
-    pinned: new Map([[drag.pointKey, [targetUv[0], targetUv[1]] as const]]),
-  });
+  const job = createDragSolveJob(document, drag, targetUv, options);
+  for (;;) {
+    const result = job.step(Number.MAX_SAFE_INTEGER);
+    if (result !== null) return result;
+  }
 }
 
 /**
@@ -456,34 +475,63 @@ function withDraggedField(
   }
 }
 
+/** Numeric seed coordinates are editable inputs, not a persisted solver cache. */
+function numericCoordinate(input: CoordinateInput): boolean {
+  if (input.mode !== 'absolute' && input.base.kind === 'functionPoint') return false;
+  switch (input.mode) {
+    case 'absolute': return [input.x, input.y, input.z].every(value => isNumericLiteral(value.source));
+    case 'relative': return [input.dx, input.dy, input.dz].every(value => isNumericLiteral(value.source));
+    case 'polar': return [input.distance, input.azimuth, input.elevation].every(value => isNumericLiteral(value.source));
+  }
+}
+
+function sameCoordinate(a: CoordinateInput, b: CoordinateInput): boolean {
+  if (a.mode === 'absolute' && b.mode === 'absolute') {
+    return a.x.value === b.x.value && a.y.value === b.y.value && a.z.value === b.z.value;
+  }
+  if (a.mode === 'relative' && b.mode === 'relative') {
+    return a.base === b.base && a.dx.value === b.dx.value && a.dy.value === b.dy.value && a.dz.value === b.dz.value;
+  }
+  if (a.mode === 'polar' && b.mode === 'polar') {
+    return a.base === b.base && a.distance.value === b.distance.value &&
+      a.azimuth.value === b.azimuth.value && a.elevation.value === b.elevation.value;
+  }
+  return false;
+}
+
 /**
- * 離したときの確定(§0.a-0.4)。**引っぱった点の座標だけ**を新しい値へ書き換える。
- *
- * 拘束につられて動いた他の点は書き換えない(解いた座標は保存しない、`rules/04`
- * 「導出できるものは保存しない」)。開き直せば同じ拘束から同じ形へ解き直る。
- * 解の表にその点が無いとき(動かせなかったとき)は文書をそのまま返す。
+ * Commit editable point seeds together. Saving only the grabbed point loses the
+ * chosen nullspace position on the next unpinned recompute. Expressions and
+ * derived coordinates remain definitions; relative/polar bases remain references.
  */
 export function commitDrag(
   document: SketchDocument,
   drag: SketchDrag,
   solution: ReadonlyMap<string, Vec3>,
-  /**
-   * 引っぱった後の形。相対・極の基準の位置を読むのに使う(P4b タスク22b)。
-   * 渡さなければ従来どおり絶対座標で書き戻す(既存の呼び出しをそのまま通すため)。
-   */
   resolved: ResolvedSketch | null = null,
-  /** 作図面(極座標の角度の基準)。渡さなければ極も絶対座標へ落とす。 */
   plane: WorkPlane | null = null,
 ): SketchDocument {
-  const position = solution.get(drag.pointKey);
-  if (position === undefined) {
-    return document;
+  if (!solution.has(drag.pointKey) || findFeature(document, drag.featureId) === undefined) return document;
+  let next = document;
+  for (const [pointKey, position] of solution) {
+    if (!position.every(Number.isFinite)) return document;
+    const featureId = featureIdOfPointKey(pointKey);
+    const feature = findFeature(next, featureId);
+    if (feature === undefined) continue;
+    const field = fieldOf(feature, pointKey);
+    if ('reason' in field) continue;
+    const stored = coordinateOf(feature, field.field, field.index);
+    if (stored === null || !numericCoordinate(stored)) continue;
+    const member: SketchDrag = { ...drag, pointKey, featureId, field: field.field, index: field.index };
+    // Never flatten a followed point whose reference cannot be reconstructed.
+    // The legacy no-resolved overload still applies only to the grabbed point.
+    if (pointKey !== drag.pointKey && stored.mode !== 'absolute' &&
+      (resolved === null || baseWorldPosition(stored.base, member, resolved) === null ||
+        (stored.mode === 'polar' && plane === null))) return document;
+    const coordinate = commitInput(stored, member, position, resolved, plane);
+    if (sameCoordinate(stored, coordinate)) continue;
+    const updated = withDraggedField(feature, member, coordinate);
+    if (updated !== feature) next = replaceFeature(next, featureId, updated);
   }
-  const feature = findFeature(document, drag.featureId);
-  if (feature === undefined) {
-    return document;
-  }
-  const stored = coordinateOf(feature, drag.field, drag.index);
-  const next = withDraggedField(feature, drag, commitInput(stored, drag, position, resolved, plane));
-  return next === feature ? document : replaceFeature(document, drag.featureId, next);
+  return next;
 }

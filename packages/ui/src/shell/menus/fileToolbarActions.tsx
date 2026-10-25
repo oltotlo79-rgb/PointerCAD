@@ -6,11 +6,13 @@
  */
 
 import { analyzeParameters } from '@pointercad/model';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { createDrawingFromCurrentPart } from '../../drawing/createDrawingCommands.js';
 import { createDrawingFromTemplateFile } from '../../drawing/drawingTemplateActions.js';
 import { activeHasUnsavedChanges, newAssembly } from '../../file/assemblyFile.js';
+import { queueDocumentSave } from '../../file/documentSaveQueue.js';
+import { captureDocumentIdentity, compareDocumentIdentity } from '../../store/documentRequest.js';
 import { createExchangeDeps } from '../../file/exchangeActions.js';
 import { exportBaseNameOf } from '../../file/exchangeFile.js';
 import { ExchangePanel } from '../../file/ExchangePanel.js';
@@ -44,6 +46,7 @@ import type { CommandDocumentKind } from '../../commands/commandDefinitions.js';
 import type { ShortcutAssignments } from '../../commands/shortcutAssignments.js';
 import { mergeTemplateToolDefaults, templateToolDefaults } from '../../settings/numericToolDefaults.js';
 import { useAppStore } from '../../store/useAppStore.js';
+import { prepareDocumentSession, SecurePartIdentityError, type PreparedDocumentSession } from '../../store/fileSlice.js';
 import {
   type FileMenuActionId,
   type FileMenuItemId,
@@ -152,19 +155,22 @@ async function runSaveAsTemplate(): Promise<void> {
     state.setFileMessage({ key: 'settings.toolDefaults.invalidCurrent', failed: true });
     return;
   }
-  const outcome = await saveTemplate(createTemplateDeps(), {
-    document: state.document,
-    lengthUnit: state.displaySettings.lengthUnit,
-    toolDefaults,
-    name: templateNameOf(state.fileName),
+  const identity = captureDocumentIdentity(state);
+  const deps = { ...createTemplateDeps(), gateway: state.fileGateway, encodeSave: state.saveDocumentEncoder };
+  return queueDocumentSave(state, async (isCurrent, control) => {
+    const stillCurrent = (): boolean => isCurrent()
+      && compareDocumentIdentity(identity, useAppStore.getState()) === 'current';
+    const outcome = await saveTemplate(deps, {
+      document: state.document,
+      lengthUnit: state.displaySettings.lengthUnit,
+      toolDefaults,
+      name: templateNameOf(state.fileName),
+    }, { ...control, isCurrent: stillCurrent });
+    if (!stillCurrent() || (!outcome.ok && 'cancelled' in outcome)) return;
+    state.setFileMessage(outcome.ok
+      ? { key: 'template.saved', failed: false }
+      : { key: outcome.messageKey, failed: true });
   });
-  useAppStore
-    .getState()
-    .setFileMessage(
-      outcome.ok
-        ? { key: 'template.saved', failed: false }
-        : { key: outcome.messageKey, failed: true },
-    );
 }
 
 /**
@@ -212,12 +218,19 @@ export async function runNewFromTemplate(source: TemplateSource): Promise<void> 
   if (numericToolDefaults === null) {
     store.setFileMessage({ key: 'settings.toolDefaults.invalidTemplate', failed: true }); return;
   }
+  let preparedSession: PreparedDocumentSession;
+  try { preparedSession = prepareDocumentSession(); }
+  catch (error) {
+    if (!(error instanceof SecurePartIdentityError)) throw error;
+    store.setFileMessage({ key: 'command.unavailable.action', failed: true });
+    return;
+  }
   // 読み込みと初期値の確認が成功し、元の文書が同じときだけ保存先を解除する。
   // 組立からの切替ではresetDocumentが解除するため二重に呼ばない。
   if (store.assembly === null) store.fileGateway.clearSaveTarget?.();
   store.setDisplaySettings({ ...store.displaySettings, lengthUnit: outcome.lengthUnit, numericToolDefaults });
   // 履歴のスタックごと作り直す(ひな形から始めた前へは戻れない。「新規」と同じ)。
-  store.resetDocument(outcome.document);
+  store.resetDocument(outcome.document, preparedSession);
   store.setFileState(null, null);
   if (outcome.notice !== null) {
     // 形の入ったひな形だった。断りではないので、そのまま開いたうえで 1 行知らせる(§2.10)。
@@ -289,6 +302,11 @@ export function runFileMenuAction(
   runFileMenuActionId(id, openExportPanel, onTemplatesChanged, openImportPanel, openComparison);
 }
 
+/** 保存点は既存の一覧を開くだけ。文書・原本・通常保存先はこの入口で変更しない。 */
+export function openNamedSavePoints(): void {
+  useAppStore.getState().setUtilityPanelOpen('savePoints', true);
+}
+
 /** 決まった操作の配り先(網羅 `switch`。行を足すと型検査がここを落とす)。 */
 function runFileMenuActionId(
   id: FileMenuActionId,
@@ -298,6 +316,9 @@ function runFileMenuActionId(
   openComparison: () => void,
 ): void {
   switch (id) {
+    case 'savePoints':
+      openNamedSavePoints();
+      return;
     case 'compareDocuments':
       openComparison();
       return;
@@ -346,26 +367,29 @@ export function ExportPanelHost({
   readonly onClose: () => void;
 }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
+  const abortAttemptRef = useRef<(() => void) | null>(null);
   const fileName = useAppStore((state) => state.fileName);
+  const closePanel = useCallback((): void => { abortAttemptRef.current?.(); onClose(); }, [onClose]);
 
   useEffect(() => {
     // 外を押したら閉じる。覆いを作らないので、押した先の操作はそのまま通る。
     const onPointerDown = (event: PointerEvent): void => {
       const container = containerRef.current;
       if (container !== null && event.target instanceof Node && !container.contains(event.target)) {
-        onClose();
+        closePanel();
       }
     };
     globalThis.addEventListener('pointerdown', onPointerDown);
     return () => {
       globalThis.removeEventListener('pointerdown', onPointerDown);
     };
-  }, [onClose]);
+  }, [closePanel]);
 
   return (
     <div className="pcad-menu pcad-menu--exchange" ref={containerRef}>
       <ExchangePanel
-        onClose={onClose}
+        onClose={closePanel}
+        abortAttemptRef={abortAttemptRef}
         deps={createExchangeDeps(exportBaseNameOf(fileName))}
         onFinished={(notices) => {
           /*

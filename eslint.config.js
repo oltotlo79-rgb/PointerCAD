@@ -79,8 +79,24 @@ const layerRules = [
   { files: ['apps/**/*.{ts,tsx}'], forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*'] },
 ];
 
+// 製品の参照はidentity・世代を確認する入口を使い、採点だけの公開関数を直接使わない。
+const frontendReferenceImportGuard = {
+  regex: '(?:^@pointercad/model(?:/|$)|(?:^|/)model/(?:src|dist)/)',
+  importNames: ['selectSubShape', 'selectMateTargetGeometry', 'rematchSubShapeRef'],
+  allowTypeImports: true,
+  message: '画面の参照はresolveSubShapeReference等のidentity・世代を確認する入口を使い、低水準の採点関数を直接参照しないでください。',
+};
+
+const referenceRepairFixtureImportGuard = {
+  regex: '(^|/)referenceRepairFixture(?:\\.[cm]?[jt]sx?)?$',
+  message: 'referenceRepairFixtureはテスト専用です。製品のコードから読み込まず、実際の文書・再計算結果を使ってください。',
+};
+
 // 追加の責務制約でも、画面から数学の計算部を呼ぶ禁止を維持する。
 const uiRuntimeImportGuards = [{
+  selector: "ImportExpression[source.value=/(^|\\/)referenceRepairFixture([.][cm]?[jt]sx?)?$/]",
+  message: 'referenceRepairFixtureはテスト専用です。製品の画面から動的に読み込まないでください。',
+}, {
   selector: "ImportDeclaration[importKind!='type'][source.value=/^@pointercad\\/expression\\/math\\/(worker|geometry)$/]",
   message: '画面の実行時は数学のcontracts/client入口を使い、計算処理はWorkerへ依頼してください。型だけならimport typeを使います（レビューF09）。',
 }, {
@@ -139,6 +155,8 @@ export default tseslint.config(
       // アプリが作成する受渡し処理はpackages配下に置き、通常の検査対象を維持する。
       'vendor/exact-math/runtime/**',
       'vendor/exact-math/notices/**',
+      // Pinned upstream FEM distribution; authored FEM source remains checked.
+      'packages/fem/runtime/assets/**',
     ],
   },
   js.configs.recommended,
@@ -245,7 +263,7 @@ export default tseslint.config(
       'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
       'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }],
       'no-restricted-syntax': ['error', {
-        selector: "ImportDeclaration[source.value='@pointercad/kernel'] > ImportSpecifier[imported.name!=/^(matchFace|matchEdge|matchVertex)$/]",
+        selector: "ImportDeclaration[source.value='@pointercad/kernel'] > ImportSpecifier[imported.name!=/^(matchFace|matchEdge|matchVertex|resolveFaceReference|resolveEdgeReference|resolveVertexReference)$/]",
         message: '部分形状の照合は既存の採点関数だけを使い、形状生成やWorkerの実行を持ち込まないでください（レビューF08）。',
       }, {
         selector: "ImportDeclaration[source.value='@pointercad/kernel'] > :matches(ImportDefaultSpecifier, ImportNamespaceSpecifier)",
@@ -492,21 +510,36 @@ export default tseslint.config(
       'react-hooks/exhaustive-deps': 'warn',
     },
   },
-  ...layerRules.map(({ files, forbidden }) => ({
-    files,
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          patterns: [
-            {
-              group: forbidden,
-              message:
-                '依存方向 apps → ui → model → kernel / expression / drawing に違反しています(rules/04-設計の規律.md)。',
-            },
-          ],
-        },
-      ],
-    },
-  })),
+  ...[
+    // 個別の層制約がない製品パッケージにもfixtureの禁止を適用する。
+    { files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'], forbidden: [] },
+    ...layerRules,
+  ].flatMap(({ files, forbidden }) => {
+    // Keep upper-layer guards even when a narrower model rule overrides this group; the rule schema requires unique group members.
+    const restricted = files.every(file => file.startsWith('packages/model/'))
+      ? [...new Set([...forbidden, '@pointercad/ui', '@pointercad/ui/**', '@pointercad/io', '@pointercad/io/**',
+        '@pointercad/help-content', '@pointercad/help-content/**',
+        '**/ui/src/**', '**/ui/dist/**', '**/io/src/**', '**/io/dist/**',
+        '**/help-content/src/**', '**/help-content/dist/**'])] : forbidden;
+    const patterns = restricted.length === 0 ? [] : [{
+      group: restricted,
+      message: '依存方向 apps → ui → model → kernel / expression / drawing に違反しています(rules/04-設計の規律.md)。',
+    }];
+    // 混在する汎用groupはfixtureだけ。全patternがui/appsのgroupだけをfrontendとする。
+    const frontend = files.every((file) => file.startsWith('packages/ui/') || file.startsWith('apps/'));
+    return [{
+      files,
+      rules: { 'no-restricted-imports': ['error', { patterns }] },
+    }, {
+      files,
+      ignores: ['**/*.test.ts', '**/*.test.tsx'],
+      // flat configの上書きでも、元の層制約と製品専用の追加制約を同時に残す。
+      rules: {
+        'no-restricted-imports': ['error', {
+          patterns: [...patterns, referenceRepairFixtureImportGuard,
+            ...(frontend ? [frontendReferenceImportGuard] : [])],
+        }],
+      },
+    }];
+  }),
 );

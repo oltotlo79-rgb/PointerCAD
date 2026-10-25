@@ -5,7 +5,7 @@ import fileMessages from '../i18n/ja/file.json';
 import assemblyMessages from '../i18n/ja/assembly.json';
 import drawingMessages from '../i18n/ja/drawing.json';
 
-export type SaveFileKind = Exclude<FileKind, 'dwg'> | 'pcada' | 'pcadd' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg';
+export type SaveFileKind = Exclude<FileKind, 'dwg'> | 'pcada' | 'pcadd' | 'zip' | 'svg' | 'pdf' | 'png' | 'jpg' | 'csv';
 export const PCAD_EXTENSION = '.pcad';
 export const PCADA_EXTENSION = '.pcada';
 export const PCADD_EXTENSION = '.pcadd';
@@ -27,6 +27,7 @@ interface FileKindSpec {
 /** One table drives the browser MIME filters and Electron extension filters. */
 export const FILE_KIND_SPECS: Readonly<Record<SaveFileKind | FileKind, FileKindSpec>> = {
   pcadscript: { label: 'PointerCAD Script', accept: { 'application/json': ['.pcadscript'] } },
+  csv: { label: 'CSV', accept: { 'text/csv': ['.csv'] } },
   zip: { label: 'ZIP', accept: { 'application/zip': ['.zip'] } },
   pcada: { label: 'PointerCAD', descriptionKey: 'assembly.fileType', accept: { [PCAD_MIME_TYPE]: [PCADA_EXTENSION] } },
   pcadd: { label: 'PointerCAD', descriptionKey: 'drawing.fileType', accept: { [PCAD_MIME_TYPE]: [PCADD_EXTENSION] } },

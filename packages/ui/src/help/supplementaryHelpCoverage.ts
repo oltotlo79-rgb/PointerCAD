@@ -6,6 +6,7 @@ import { t } from '../i18n/t.js';
 /** Keys are checked against the persisted settings type, including optional and internal flags. */
 export const SETTINGS_HELP_BINDINGS = {
   theme: ['display-settings'], uiScale: ['display-settings'],
+  cameraControls: ['display-settings', 'viewport'],
   shortcutAssignments: ['shortcuts'], numericToolDefaults: ['display-settings', 'template'],
   autoSaveIntervalMs: ['save-and-open', 'display-settings'],
   trackAngleStep: ['tracking'], lengthUnit: ['units'], selectionFilter: ['select-subshape'],
@@ -15,6 +16,7 @@ export const SETTINGS_HELP_BINDINGS = {
 /** DWG is deliberately absent: its conversion instructions are not an implemented export. */
 export const OUTPUT_HELP_BINDINGS = {
   pcad: ['save-and-open'], pcada: ['assembly', 'save-and-open'], pcadd: ['drawing-export'],
+  csv: ['parameters'],
   pcadt: ['template'], pcadscript: ['script-tools'], zip: ['joint', 'explode'],
   step: ['export', 'cam'], stl: ['export', 'print-check', 'cam'], '3mf': ['export', 'cam'],
   obj: ['export'], glb: ['export'], dxf: ['dxf', 'drawing-export', 'sheet-metal-flat'],

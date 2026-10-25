@@ -1,5 +1,6 @@
 import type { DrawingDocument, GdtFeature, GdtShapeTarget, Vector3 } from '@pointercad/drawing';
-import { rematchSubShapeRef, type SolidBody, type SolidEdgeEntry, type SolidFaceEntry } from '../kernelBridge.js';
+import { resolveSubShapeReference, type SolidBody, type SolidEdgeEntry, type SolidFaceEntry } from '../kernelBridge.js';
+import { createSubShapeReference } from '../kernelBridge/createSubShapeReference.js';
 import type { DimensionResolveContext } from './dimensionTarget.js';
 import { resolveGdtFeature } from './gdt.js';
 
@@ -54,14 +55,20 @@ export function drawingMedianPlaneFeature(targets: readonly GdtShapeTarget[], do
   if (instances.length !== 1) return null;
   const body = instances[0].body;
   const candidates = (target: GdtShapeTarget): readonly GdtShapeTarget[] => {
-    const ref = rematchSubShapeRef([body], target.ref);
-    if (ref === null || ref.fingerprint.kind === 'vertex') return [];
+    const resolution = resolveSubShapeReference(body, target.ref);
+    if (resolution.status !== 'matched') return [];
+    const ref = resolution.match.reference;
+    if (ref.fingerprint.kind === 'vertex') return [];
     const edge = ref.fingerprint.kind === 'edge' ? body.edges.find((item) => item.index === ref.index) : undefined;
     const faces = ref.fingerprint.kind === 'face' ? body.faces.filter((item) => item.index === ref.index && item.surfaceKind === 'plane')
       : edge === undefined ? [] : incidentPlanes(edge, body);
-    return faces.map((face) => ({ ...target, ref: { bodyFeatureId: body.featureId, index: face.index, fingerprint: {
-      kind: 'face', surfaceKind: face.surfaceKind, area: face.area, position: face.centroid, axis: face.axis, radius: face.radius,
-    } } }));
+    return faces.flatMap((face) => {
+      const current = body.origins?.state === 'tracked' ? createSubShapeReference(body, 'face', face.index)
+        : { bodyFeatureId: body.featureId, index: face.index, fingerprint: {
+          kind: 'face' as const, surfaceKind: face.surfaceKind, area: face.area, position: face.centroid, axis: face.axis, radius: face.radius,
+        } };
+      return current === null ? [] : [{ ...target, ref: current }];
+    });
   };
   const matches = new Map<string, Extract<GdtFeature, { readonly kind: 'medianPlane' }>>();
   for (const a of candidates(first)) for (const b of candidates(second)) {

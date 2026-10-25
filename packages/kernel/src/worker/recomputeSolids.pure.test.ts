@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { SUB_SHAPE_MATCH_THRESHOLD } from '../occt/matchSubShape.js';
+import { scoreFace, SUB_SHAPE_MATCH_THRESHOLD } from '../occt/matchSubShape.js';
+import type { CurrentOriginIndex, SubShapeOrigin } from '../subShapeOrigin.js';
 import type {
   AppearanceQuery,
   SolidBodyMesh,
@@ -114,6 +115,50 @@ function plateTables(): {
 }
 
 describe('外観の面の照合(matchAppearances、FR-1106)', () => {
+  it('現bodyのunique起点だけが低scoreの面を選び、曖昧・消失・別featureは指紋へ戻さない', () => {
+    const origin: SubShapeOrigin = { version: 1, shapeKind: 'face',
+      identity: { kind: 'box-face', featureId: 'extrude-1', role: 'top' } };
+    const otherOrigin: SubShapeOrigin = { version: 1, shapeKind: 'face',
+      identity: { kind: 'box-face', featureId: 'other', role: 'top' } };
+    const stale = { ...TOP_FACE_QUERY, index: 99, area: 40_000,
+      position: [200, 200, 30] as const, origin };
+    expect(scoreFace(PLATE_FACES[1], stale, PLATE_SCALE).total).toBeLessThan(0.6);
+    const key = new Map([['key-a', 'extrude-1']]);
+    const scale = new Map([['extrude-1', PLATE_SCALE]]);
+    const run = (origins?: CurrentOriginIndex) => matchAppearances(
+      [query('saved', 'key-a', stale)], [{ ...bodyWithFaces('extrude-1', PLATE_FACES),
+        ...(origins === undefined ? {} : { origins }) }], key, scale)[0].faceIndex;
+    const current = { kind: 'face' as const, index: TOP_FACE_INDEX };
+    expect(run({ version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current }] })).toBe(TOP_FACE_INDEX);
+    const sameGeometry = { ...TOP_FACE_QUERY, origin };
+    const runHighScore = (origins?: CurrentOriginIndex) => matchAppearances(
+      [query('saved', 'key-a', sameGeometry)], [{ ...bodyWithFaces('extrude-1', PLATE_FACES),
+        ...(origins === undefined ? {} : { origins }) }], key, scale)[0].faceIndex;
+    expect(runHighScore()).toBeNull(); // 現在表なし。旧指紋なら index 1 に誤採用する。
+    expect(runHighScore({ version: 1, state: 'tracked', bindings: [
+      { origin, state: 'split', candidates: [current, { kind: 'face', index: 0 }] }] })).toBeNull();
+    expect(runHighScore({ version: 1, state: 'tracked', bindings: [
+      { origin, state: 'merged', current, coOrigins: [origin, otherOrigin] }] })).toBeNull();
+    expect(runHighScore({ version: 1, state: 'tracked', bindings: [
+      { origin, state: 'missing', reason: 'deleted' }] })).toBeNull();
+    expect(runHighScore({ version: 1, state: 'untracked', reason: 'unsupported-producer' })).toBeNull();
+    expect(matchAppearances([query('other', 'other-key', sameGeometry)],
+      [{ ...bodyWithFaces('other', PLATE_FACES), origins: { version: 1, state: 'tracked', bindings: [
+        { origin: otherOrigin, state: 'unique', current }] } }],
+      new Map([['other-key', 'other']]), new Map([['other', PLATE_SCALE]]))[0].faceIndex).toBeNull();
+  });
+
+  it.each([false, true])('同点の面への外観自動採用を候補順=%sでも断り、保存割当を保持する', (reverse) => {
+    const faces = [{ ...PLATE_FACES[1], index: 7 }, { ...PLATE_FACES[1], index: 19 }];
+    const queries = [query('appearance-ambiguous', 'key-a', { ...TOP_FACE_QUERY, index: 99 })];
+    const original = JSON.stringify(queries);
+    const matches = matchAppearances(queries, [bodyWithFaces('extrude-1', reverse ? [...faces].reverse() : faces)],
+      new Map([['key-a', 'extrude-1']]), new Map([['extrude-1', PLATE_SCALE]]));
+    expect(matches).toEqual([{ id: 'appearance-ambiguous', bodyId: 'extrude-1', faceIndex: null }]);
+    expect(JSON.stringify(queries)).toBe(original);
+  });
+
   it('依頼が空なら結果も空で、ボディを 1 つも見ない', () => {
     const { bodies, bodyIdByKey, scaleByBodyId } = plateTables();
     expect(matchAppearances([], bodies, bodyIdByKey, scaleByBodyId)).toEqual([]);
@@ -318,6 +363,8 @@ describe('段の種類(SolidStepSpec の union)', () => {
     thruSections: true,
     // P5 タスク42a で足した 11 種。
     draft: true,
+    // EX-18 の限られた一段(平らな面の移動)。
+    faceOffset: true,
     mirror: true,
     transform: true,
     scale: true,
@@ -327,6 +374,7 @@ describe('段の種類(SolidStepSpec の union)', () => {
     threadShaft: true,
     surface: true,
     cut: true,
+    surfaceCut: true,
     shell: true,
     // P6 タスク10 で足した 1 種(読み込んだ形のベースボディ、FR-802)。
     importedSolid: true,
@@ -338,8 +386,8 @@ describe('段の種類(SolidStepSpec の union)', () => {
     functionSurface: true,
   };
 
-  it('段の種類は28種で、既存の形状・板金・関数曲面を含む', () => {
-    expect(Object.keys(STEP_KINDS)).toHaveLength(28);
+  it('段の種類は30種で、既存の形状・板金・関数曲面・面の移動を含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(30);
     expect(Object.keys(STEP_KINDS)).toContain('functionSurface');
     expect(Object.keys(STEP_KINDS)).toContain('primitive');
     expect(Object.keys(STEP_KINDS)).toContain('thruSections');

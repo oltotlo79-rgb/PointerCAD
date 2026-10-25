@@ -397,12 +397,47 @@ function expandKnots(data: SplineCurveData): number[] {
 }
 
 /**
+ * 関数の滑らかな曲線(明示した節点を持つ C1 の 3 次)。カーネルの `makeSplineEdge.ts` と同じ決まりで、
+ * 節点は与えられたまま、多重度は両端 4・内側 2、極は節点の 2 倍。形の崩れた記録は一様な曲線として読まずに断る。
+ */
+function explicitCubicData(spline: ResolvedSpline): SplineCurveData | null {
+  const knots = spline.knots;
+  if (spline.mode !== 'control' || spline.degree !== 3 || spline.closed || knots === undefined || knots.length < 2
+    || spline.points.length !== 2 * knots.length || spline.points.length > MAX_LINEAR_SPLINE_POINTS) return null;
+  for (let index = 0; index < knots.length; index += 1) {
+    if (!Number.isFinite(knots[index]) || (index > 0 && !(knots[index] > knots[index - 1]))) return null;
+  }
+  // Like the kernel's makeSplineEdge, a pole that is not a finite XYZ point makes the record unsolvable.
+  if (!spline.points.every((point) => point.length === 3 && point.every(Number.isFinite))) return null;
+  return {
+    poles: [...spline.points],
+    knots: [...knots],
+    multiplicities: knots.map((_, index) => (index === 0 || index === knots.length - 1 ? 4 : 2)),
+    degree: 3,
+    periodic: false,
+  };
+}
+
+/**
+ * 向きを逆にしたスプライン。明示した節点を持つ曲線は節点も `first + last − t` で写して並べ替える
+ * (点だけを逆に並べると、不等間隔の節点では形が変わる)。曲線を逆向きにする処理はここを使う。
+ */
+export function reverseSpline(spline: ResolvedSpline): ResolvedSpline {
+  const points = [...spline.points].reverse();
+  const knots = spline.knots;
+  if (knots === undefined) return { ...spline, points };
+  const total = knots[0] + knots[knots.length - 1];
+  return { ...spline, points, knots: knots.map((knot) => total - knot).reverse() };
+}
+
+/**
  * スプラインの曲線の形(極・節点・多重度・次数)を解く。
  * 使えない指定(点が足りない、通過点が重なっている、方程式が解けない)は `null` を返す。
  * どこが悪いかを利用者へ伝えるのは解決の側(`resolveSketch.ts`)の担当で、
  * ここは「解けたか解けなかったか」だけを返す。
  */
 export function splineCurveData(spline: ResolvedSpline): SplineCurveData | null {
+  if (spline.degree === 3 || spline.knots !== undefined) return explicitCubicData(spline);
   const points = spline.points;
   const minimum = spline.closed ? MIN_CLOSED_SPLINE_POINTS : MIN_SPLINE_POINTS;
   const linear = spline.degree === 1 && spline.mode === 'control';
@@ -501,6 +536,18 @@ export function sampleSpline(
   }
   // Every knot is a real corner. Keep them exactly and avoid making 16 redundant points per span.
   if (data.degree === 1) return spline.closed ? [...data.poles, data.poles[0]] : [...data.poles];
+  if (spline.knots !== undefined) {
+    // Nonuniform knots: divide each span separately so a short span is not skipped by an even global step.
+    const fullKnots = expandKnots(data);
+    const points: Vec3[] = [];
+    for (let span = 0; span < data.knots.length - 1; span += 1) {
+      const lower = data.knots[span], upper = data.knots[span + 1];
+      for (let step = span === 0 ? 0 : 1; step <= segmentsPerSpan; step += 1) {
+        points.push(pointAt(data, fullKnots, lower + ((upper - lower) * step) / segmentsPerSpan));
+      }
+    }
+    return points;
+  }
   const spans = spline.closed ? spline.points.length : spline.points.length - 1;
   return sampleSplineCurve(data, Math.max(1, segmentsPerSpan * spans));
 }

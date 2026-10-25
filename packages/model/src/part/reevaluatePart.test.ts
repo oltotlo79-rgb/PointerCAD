@@ -1,11 +1,17 @@
+import { allocatePatternPointSlots } from './patternPointSlots.js';
+import { createFunctionMathSource, createMathBackend } from '@pointercad/expression/math/worker';
+import { collectFunctionPointReferences } from '../functionGeometry/collectFunctionPointReferences.js';
+import { readFunctionPointChoice, type FunctionPointReference } from '../functionGeometry/functionPointReference.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import type { Parameter } from '../parameters/types.js';
+import { expressionParameterNames } from '../parameters/expressionReferences.js';
 import type { SketchConstraint } from '../sketch/constraints/types.js';
 import { DEFAULT_FACE_COLOR } from '../sketch/createSketchDocument.js';
+import { FUNCTION_DEFINITION_FORMAT } from '../functionGeometry/functionDefinitionTypes.js';
 import { DEFAULT_WORK_PLANE_ID } from '../sketch/planeMath.js';
 import type {
   CoordinateInput,
@@ -16,6 +22,7 @@ import type {
 import { createEmptyPartDocument } from './createPartDocument.js';
 import {
   applyParameters,
+  collectParameterUsages,
   collectExpressionOwners,
   collectExpressionSources,
   reevaluatePartDocument,
@@ -321,6 +328,72 @@ describe('collectExpressionSources', () => {
   it('パラメータ表自身の式は含めない(自己参照を「使われている」と数えないため)', () => {
     const document = buildDocument({ parameters: [parameter('板厚', '3')] });
     expect(collectExpressionSources(document)).toEqual([]);
+  });
+});
+
+describe('scoped parameter usage sources', () => {
+  it('keeps equal point IDs in two sketches distinct and groups only at the caller boundary', () => {
+    const base = createEmptyPartDocument();
+    const first = base.sketches[0];
+    if (first === undefined) throw new Error('Expected default sketch');
+    const second = { ...first, id: 'sketch-other', name: first.name };
+    const a = point('point1', pendingCoordinate('A', 'A', '0'));
+    const b = point('point1', pendingCoordinate('A', '0', '0'));
+    const document: PartDocument = { ...base, sketches: [
+      { ...first, features: [a] }, { ...second, features: [b] },
+    ] };
+    const before = JSON.stringify(document);
+    expect(collectParameterUsages(document).filter(owner => owner.source === 'A')).toEqual([
+      { kind: 'sketchFeature', sketchId: first.id, ownerId: 'point1', ownerName: 'point1', source: 'A' },
+      { kind: 'sketchFeature', sketchId: first.id, ownerId: 'point1', ownerName: 'point1', source: 'A' },
+      { kind: 'sketchFeature', sketchId: second.id, ownerId: 'point1', ownerName: 'point1', source: 'A' },
+    ]);
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
+  it('preserves a non-scalar math problem source and owner kind', () => {
+    const source = 'coef("A")';
+    const document: PartDocument = { ...createEmptyPartDocument(), unresolvedMathProblems: [{
+      id: 'problem-1', name: '関係式', status: 'unresolved', definition: {
+        format: 'pointercad-math/1', source, inputNotation: 'text', angleUnit: 'degree',
+        expression: { kind: 'symbol', reference: { role: 'coefficient', id: 'coefficient:1', label: 'A' } },
+      },
+    }] };
+    expect(collectParameterUsages(document).filter(owner => owner.ownerId === 'problem-1')).toMatchObject([{
+      kind: 'mathProblem', ownerId: 'problem-1', ownerName: '関係式', source,
+      mathDefinition: document.unresolvedMathProblems?.[0]?.definition,
+    }]);
+  });
+
+  it('keeps function coefficient and local axis definitions in their sketch owner scope', () => {
+    const base = createEmptyPartDocument();
+    const sketch = base.sketches[0];
+    if (sketch === undefined) throw new Error('Expected default sketch');
+    const bound = { min: expr('-1'), max: expr('1') };
+    const curve: SketchFeature = { id: 'curve-1', name: '関数曲線', kind: 'functionCurve',
+      planeId: DEFAULT_WORK_PLANE_ID, construction: false,
+      definition: { format: FUNCTION_DEFINITION_FORMAT,
+        bounds: { X: bound, Y: bound, Z: bound }, tolerance: expr('0.01'),
+        formula: { kind: 'coordinate-curve', independent: 'X', outputs: {
+          Y: { format: 'pointercad-math/1', source: 'coef("幅")', inputNotation: 'text', angleUnit: 'degree',
+            expression: { kind: 'symbol', reference: { role: 'coefficient', id: 'coefficient:1', label: '幅' } } },
+          Z: { format: 'pointercad-math/1', source: 'X', inputNotation: 'text', angleUnit: 'degree',
+            expression: { kind: 'symbol', reference: { role: 'axis', name: 'X' } } },
+        } } },
+    };
+    const document: PartDocument = { ...base, sketches: [{ ...sketch, features: [curve] }] };
+    const formulas = collectParameterUsages(document).filter(owner => owner.ownerId === curve.id
+      && owner.mathDefinition !== undefined);
+    expect(formulas).toMatchObject([
+      { kind: 'sketchFeature', sketchId: sketch.id, ownerId: 'curve-1', ownerName: '関数曲線',
+        source: 'coef("幅")' },
+      { kind: 'sketchFeature', sketchId: sketch.id, ownerId: 'curve-1', ownerName: '関数曲線', source: 'X' },
+    ]);
+    const parameters: Parameter[] = [
+      { ...parameter('幅', '1'), mathId: 'coefficient:1' },
+      { ...parameter('X', '1'), mathId: 'coefficient:2' },
+    ];
+    expect(formulas.map(formula => expressionParameterNames(formula, parameters))).toEqual([['幅'], []]);
   });
 });
 
@@ -1047,6 +1120,31 @@ describe('Should 群の式の欄の評価し直し(FR-207、P5 タスク43)', ()
     expect(second.entry).toBeUndefined();
   });
 
+  it('function-point slots retain identity and expose the reevaluated reference to the actual collector', () => {
+    const expression = createFunctionMathSource('X^2+Y^2-1', 'text', 'radian',
+      { axes: ['X', 'Y'], parameters: [], coefficients: [] }, createMathBackend());
+    const reference: FunctionPointReference = { kind: 'functionPoint',
+      parent: { kind: 'curve', sketchId: 'sketch-1', featureId: 'curve-1' },
+      known: [{ axis: 'X', value: pending('position') }],
+      choice: readFunctionPointChoice({ input: { expression, minimum: [-4, -4, -4], maximum: [4, 4, 4],
+        tolerance: 1e-6, coefficients: [], known: [{ axis: 'X', value: 0 }], fixed: { axis: 'Z', value: 0 } },
+        location: { kind: 'implicit', axis: 'Y', interval: { lower: 1, upper: 1 } } }) };
+    const placement = allocatePatternPointSlots([reference]);
+    const document = buildDocument({ solids: [{ kind: 'pattern', id: 'function-pattern', name: 'function-pattern',
+      suppressed: false, sourceFeatureId: 'hole-1', placement }] });
+    const updated = reevaluatePartDocument(document, variables({ position: 0.5 })).document;
+    const solid = updated.solids[0];
+    if (solid.kind !== 'pattern' || solid.placement.kind !== 'points') throw new Error('Point placement required');
+    const slot = solid.placement.points[0];
+    if (slot.reference.kind !== 'functionPoint') throw new Error('Function point required');
+    expect(slot.slotId).toBe(placement.points[0].slotId);
+    expect(slot.reference.known[0].value.value).toBe(0.5);
+    expect(slot.reference.known[0].value.source).toBe('position');
+    expect(collectFunctionPointReferences(updated)).toEqual([{ ownerId: 'function-pattern',
+      reference: slot.reference, solidIndex: 0 }]);
+    expect(reference.known[0].value.value).toBe(0);
+  });
+
   it('点集合パターンの球面上の点の緯度・経度が追従する(FR-425、FR-431)', () => {
     const document = buildDocument({
       solids: [
@@ -1056,17 +1154,14 @@ describe('Should 群の式の欄の評価し直し(FR-207、P5 タスク43)', ()
           suppressed: false,
           kind: 'pattern',
           sourceFeatureId: 'hole-1',
-          placement: {
-            kind: 'points',
-            points: [
+          placement: allocatePatternPointSlots([
               {
                 kind: 'sphereGrid',
                 sphereFeatureId: 'sphere-1',
                 latitude: pending('緯'),
                 longitude: pending('緯 * 2'),
               },
-            ],
-          },
+            ]),
         },
       ],
     });
@@ -1074,7 +1169,7 @@ describe('Should 群の式の欄の評価し直し(FR-207、P5 タスク43)', ()
     if (solid.kind !== 'pattern' || solid.placement.kind !== 'points') {
       throw new Error('点集合パターンのはず');
     }
-    const first = solid.placement.points[0];
+    const first = solid.placement.points[0].reference;
     if (first.kind !== 'sphereGrid') {
       throw new Error('球面上の点のはず');
     }
@@ -1104,5 +1199,53 @@ describe('Should 群の式の欄の評価し直し(FR-207、P5 タスク43)', ()
       ownerId: 'draft-1',
       ownerName: '抜き勾配1',
     });
+  });
+});
+
+describe('円筒の側面の穴の高さ・角度の評価し直し(EX05)', () => {
+  function cylindrical(): SolidFeature {
+    const base = hole('hole-1', expr('4'), expr('3'));
+    if (base.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    return {
+      ...base,
+      centers: [],
+      cylindrical: {
+        kind: 'cylinder-face',
+        locations: [
+          { height: pending('高さ'), angle: pending('角度 + 90') },
+          { height: expr('5'), angle: expr('0') },
+        ],
+      },
+    };
+  }
+
+  it('変数が変われば高さと角度を解き直し、式と位置の並びは保つ', () => {
+    const document = buildDocument({ solids: [cylindrical()] });
+    const first = reevaluatePartDocument(document, variables({ 高さ: 12, 角度: 0 })).document;
+    const second = reevaluatePartDocument(first, variables({ 高さ: 20, 角度: 45 })).document;
+    const expected: readonly [PartDocument, number, number][] = [[first, 12, 90], [second, 20, 135]];
+    for (const [evaluated, height, angle] of expected) {
+      const solid = evaluated.solids[0];
+      if (solid === undefined || solid.kind !== 'hole' || solid.cylindrical === undefined) {
+        throw new Error('円筒の側面の穴のはず');
+      }
+      const [moved, fixed] = solid.cylindrical.locations;
+      expect(solid.cylindrical.locations).toHaveLength(2);
+      expect(moved?.height.value).toBe(height);
+      expect(moved?.height.source).toBe('高さ');
+      expect(moved?.angle.value).toBe(angle);
+      expect(moved?.angle.source).toBe('角度 + 90');
+      expect(fixed?.height.value).toBe(5);
+      expect(fixed?.angle.value).toBe(0);
+    }
+  });
+
+  it('平面の穴には欄を作らない(undefined の欄も足さない)', () => {
+    const document = buildDocument({ solids: [hole('hole-1', expr('4'), expr('3'))] });
+    const solid = reevaluatePartDocument(document, variables({})).document.solids[0];
+    expect(solid?.kind).toBe('hole');
+    expect(solid !== undefined && 'cylindrical' in solid).toBe(false);
   });
 });

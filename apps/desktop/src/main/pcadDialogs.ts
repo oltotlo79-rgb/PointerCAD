@@ -8,7 +8,7 @@ import { nativeFileFilter, isFileDialogKind, MAX_COMPRESSED_INPUT_BYTES,
   PCAD_EXTENSION as PCAD_DOTTED_EXTENSION, type NativeFileFilter as KindFilter } from '@pointercad/ui/file-contracts';
 
 import { validateAppSender } from './appSender.js';
-import { clearExportHandoff, registerExportHandoffIpc } from './exportHandoffIpc.js';
+import { beginExportWrite, clearExportHandoff, registerExportHandoffIpc } from './exportHandoffIpc.js';
 
 /**
  * デスクトップ版の「開く」「保存」「名前を付けて保存」(計画書 docs/plans/P2-ソリッド基礎.md タスク26)と、
@@ -73,6 +73,7 @@ export const READ_TOO_LARGE_REASON_MARKER = 'PCAD_READ_TOO_LARGE:';
 export const READ_SIZE_CHANGED_REASON_MARKER = 'PCAD_READ_SIZE_CHANGED:';
 
 class InputTooLargeError extends Error {}
+class ExportCancelledError extends Error {}
 
 const PCAD_FILE_FILTER = nativeFileFilter('pcad');
 const PCADA_FILE_FILTER = nativeFileFilter('pcada');
@@ -125,7 +126,9 @@ async function readBytesFrom(filePath: string): Promise<Uint8Array> {
   try {
     const metadata = await fileSystem.stat(filePath);
     // Script JSON may escape each source byte six times. Mirrors SCRIPT_FILE_LIMITS.bytes.
-    const maximum = extname(filePath).toLowerCase() === '.pcadscript' ? 6 * 1024 * 1024 + 65536 : MAX_COMPRESSED_INPUT_BYTES;
+    const extension = extname(filePath).toLowerCase();
+    const maximum = extension === '.csv' ? 1024 * 1024
+      : extension === '.pcadscript' ? 6 * 1024 * 1024 + 65536 : MAX_COMPRESSED_INPUT_BYTES;
     if (metadata.size > maximum) {
       throw new InputTooLargeError(`${READ_TOO_LARGE_REASON_MARKER} ファイルが大きすぎます。種類ごとの読込上限を超えています。`);
     }
@@ -156,18 +159,26 @@ async function removeTemporaryFile(filePath: string): Promise<void> {
  * ファイルを書く。同じディレクトリの一時ファイルを完成させてから置換する。
  * Windows で既存先への rename ができない場合は、元を控えてから上書きし、失敗時に戻す。
  */
-async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> {
+function requireExportCurrent(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new ExportCancelledError('書き出しを取り消しました。');
+}
+
+async function writeBytesTo(filePath: string, bytes: Uint8Array, signal?: AbortSignal): Promise<void> {
   const directory = dirname(filePath);
   const temporaryPath = join(directory, `${basename(filePath)}.tmp-${crypto.randomUUID()}`);
   const backupPath = join(directory, `${basename(filePath)}.backup-${crypto.randomUUID()}`);
   let backupCreated = false;
   let backupMayBeRemoved = false;
   try {
-    await fileSystem.writeFile(temporaryPath, bytes, { flag: 'wx' });
+    requireExportCurrent(signal);
+    await fileSystem.writeFile(temporaryPath, bytes, signal === undefined ? { flag: 'wx' } : { flag: 'wx', signal });
+    requireExportCurrent(signal);
     try {
+      requireExportCurrent(signal);
       await fileSystem.rename(temporaryPath, filePath);
       return;
     } catch {
+      requireExportCurrent(signal);
       try {
         await fileSystem.copyFile(filePath, backupPath, fileSystemConstants.COPYFILE_EXCL);
         backupCreated = true;
@@ -177,9 +188,12 @@ async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> 
         });
       }
 
+      backupMayBeRemoved = true;
+      requireExportCurrent(signal);
       try {
         await fileSystem.copyFile(temporaryPath, filePath);
       } catch (copyCause) {
+        backupMayBeRemoved = false;
         try {
           await fileSystem.copyFile(backupPath, filePath);
           backupMayBeRemoved = true;
@@ -194,6 +208,7 @@ async function writeBytesTo(filePath: string, bytes: Uint8Array): Promise<void> 
     }
   } catch (cause) {
     if (hasSaveRecoveryCopy(cause)) throw cause;
+    if (cause instanceof ExportCancelledError || signal?.aborted) throw new ExportCancelledError('書き出しを取り消しました。');
     throw new Error('ファイルを保存できませんでした。', { cause });
   } finally {
     await removeTemporaryFile(temporaryPath);
@@ -360,8 +375,9 @@ export async function openAnyDialog(
  * 種類を選んで「書き出す」。**呼ぶたびに必ず窓を出す**(上書き先を覚えない。§0.a-0.4)。
  * 書けたら true、取り消されたら false。**返り値にパスも名前も含めない**(NFR-SE-1)。
  */
-export async function saveAsDialog(window: BrowserWindow | null, fileName: string, kind: string, bytes: Uint8Array): Promise<boolean> {
-  return await saveAsPathDialog(window, fileName, kind, bytes) !== null;
+export async function saveAsDialog(window: BrowserWindow | null, fileName: string, kind: string,
+  bytes: Uint8Array, signal?: AbortSignal): Promise<boolean> {
+  return await saveAsPathDialog(window, fileName, kind, bytes, signal) !== null;
 }
 
 async function saveAsPathDialog(
@@ -369,7 +385,9 @@ async function saveAsPathDialog(
   fileName: string,
   kind: string,
   bytes: Uint8Array,
+  signal?: AbortSignal,
 ): Promise<string | null> {
+  if (signal?.aborted) return null;
   if (kind === 'dwg') throw new Error(DWG_GUIDE);
   const filter = filterOf(kind);
   const options: SaveDialogOptions = {
@@ -385,8 +403,15 @@ async function saveAsPathDialog(
   if (result.canceled || result.filePath === '') {
     return null;
   }
+  if (signal?.aborted) return null;
   const path = withKindExtension(result.filePath, kind);
-  await writeBytesTo(path, bytes);
+  try {
+    await writeBytesTo(path, bytes, signal);
+  } catch (error) {
+    if (error instanceof ExportCancelledError) return null;
+    throw error;
+  }
+  if (signal?.aborted) return null; // A commit may already have completed; never delete it here.
   return path;
 }
 
@@ -577,8 +602,9 @@ export function registerPcadIpc(): void {
       if (!validateAppSender(event)) {
         return false;
       }
-      const [fileName, kind, bytes] = args;
+      const [fileName, kind, bytes, requestId] = args;
       if (
+        (args.length !== 3 && args.length !== 4) ||
         typeof fileName !== 'string' ||
         typeof kind !== 'string' ||
         filterOf(kind) === undefined ||
@@ -588,7 +614,13 @@ export function registerPcadIpc(): void {
       }
       // `rememberPath` を呼ばない。書き出した先は覚えないので、次の Ctrl+S は部品へ向かう。
       clearExportHandoff(event.sender.id);
-      return saveAsDialog(windowOf(event), fileName, kind, bytes);
+      const attempt = beginExportWrite(event, requestId);
+      if (attempt === null) return false;
+      try {
+        return await saveAsDialog(windowOf(event), fileName, kind, bytes, attempt.signal);
+      } finally {
+        attempt.finish();
+      }
     },
   );
 }

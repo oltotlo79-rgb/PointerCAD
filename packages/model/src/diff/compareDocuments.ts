@@ -5,7 +5,10 @@ import { compareDefinitionValues, type DefinitionDifference, type DiffBudget } f
 export type DocumentRelationship = 'versions' | 'unrelated';
 export type DefinitionGroup = 'document' | 'sketch' | 'sketch-feature' | 'reference' | 'solid'
   | 'parameter' | 'configuration' | 'sheet-unfold' | 'named-view' | 'selection-set' | 'canvas'
-  | 'appearance' | 'note' | 'folder' | 'math-problem' | 'attachments';
+  | 'appearance' | 'note' | 'folder' | 'math-problem' | 'attachments'
+  | 'assembly-document' | 'component' | 'mate' | 'joint' | 'presentation' | 'library-part' | 'library-assembly'
+  | 'drawing-document' | 'drawing-view' | 'dimension' | 'annotation' | 'table' | 'balloon' | 'datum' | 'gdt' | 'weld'
+  | 'layer' | 'drawing-parameter' | 'drawing-source';
 export interface DocumentDefinitionEntry {
   readonly key: string;
   readonly group: DefinitionGroup;
@@ -37,7 +40,9 @@ export class DocumentComparisonLimit extends Error {
 
 // 追加項目を無言で比較対象から落とさない。新しい保存欄は型検査で分類を要求する。
 const FIELDS = {
-  id: 'identity', name: 'document', schemaVersion: 'format', mathParameterSerial: 'serial',
+  steelStockSource: 'document',
+  beamAnalysisInputs: 'document',
+  id: 'identity', name: 'document', schemaVersion: 'format', mathParameterSerial: 'serial', patternSlotHighWater: 'serial',
   unresolvedMathProblems: 'entries', mathGeometry: 'document', featureNotes: 'entries', featureFolders: 'entries', sketches: 'entries', activeSketchId: 'view',
   references: 'entries', solids: 'entries', sheetUnfolds: 'entries', parameters: 'entries',
   namedViews: 'entries', configurations: 'entries', activeConfigurationId: 'document',
@@ -94,28 +99,24 @@ function commonOrder(entries: readonly DocumentDefinitionEntry[], otherKeys: Rea
   return result;
 }
 
-/** 関係の指定を必須にする。旧文書のpart-1を由来の証明にしない。入力は一切更新しない。 */
-export function compareDocuments(before: PartDocument, after: PartDocument, options: {
+/** 項目の一覧どうしの比較。部品・組立・図面で同じ判定(追加・削除・変更・並び順)を使う。 */
+export function compareDefinitionEntries(old: readonly DocumentDefinitionEntry[], next: readonly DocumentDefinitionEntry[], owners: {
+  readonly before: ReadonlyMap<string, string>;
+  readonly after: ReadonlyMap<string, string>;
+}, options: {
   readonly relationship: DocumentRelationship;
-  readonly beforeAttachmentsDigest: string;
-  readonly afterAttachmentsDigest: string;
-  readonly maxWork?: number;
+  readonly tick: () => void;
   readonly maxChanges?: number;
 }): DocumentDefinitionComparison {
-  let remaining = options.maxWork ?? 1_000_000;
-  const maxChanges = options.maxChanges ?? 10_000;
-  if (!Number.isSafeInteger(remaining) || remaining <= 0 || !Number.isSafeInteger(maxChanges) || maxChanges <= 0) throw new DocumentComparisonLimit();
-  const tick = (): void => { if (--remaining < 0) throw new DocumentComparisonLimit(); };
+  const maxChanges = options.maxChanges ?? 10_000, tick = options.tick;
+  if (!Number.isSafeInteger(maxChanges) || maxChanges <= 0) throw new DocumentComparisonLimit();
   let outputCharacters = 8_000_000;
   const budget: DiffBudget = { tick, text: length => { outputCharacters -= length; if (outputCharacters < 0) throw new DocumentComparisonLimit(); },
     fail: () => { throw new DocumentComparisonLimit(); } };
-  const old = entries(before, options.beforeAttachmentsDigest, tick), next = entries(after, options.afterAttachmentsDigest, tick);
-  const oldOwners = new Map(before.sketches.map(sketch => [sketch.id, sketch.name]));
-  const nextOwners = new Map(after.sketches.map(sketch => [sketch.id, sketch.name]));
   const changes: DocumentDefinitionChange[] = [];
   const append = (entry: DocumentDefinitionEntry, previous: DocumentDefinitionEntry | null, status: DocumentDefinitionChange['status'], differences: readonly DefinitionDifference[]): void => {
     if (changes.length >= maxChanges || differences.length > 1_024) throw new DocumentComparisonLimit();
-    const ownerName = (status === 'removed' ? oldOwners : nextOwners).get(entry.owner) ?? '';
+    const ownerName = (status === 'removed' ? owners.before : owners.after).get(entry.owner) ?? '';
     budget.text(entry.key.length + entry.group.length + entry.name.length + (previous?.name.length ?? 0) + entry.owner.length + ownerName.length + status.length);
     changes.push({ key: `${status}:${entry.key}`, group: entry.group, beforeName: previous?.name ?? null,
       afterName: status === 'removed' ? null : entry.name, owner: entry.owner, ownerName, status, differences });
@@ -138,4 +139,23 @@ export function compareDocuments(before: PartDocument, after: PartDocument, opti
     else append(entry, previous, 'changed', differences);
   }
   return { relationship: options.relationship, changes, unchanged, geometryCompared: false };
+}
+
+/** 関係の指定を必須にする。旧文書のpart-1を由来の証明にしない。入力は一切更新しない。 */
+export function compareDocuments(before: PartDocument, after: PartDocument, options: {
+  readonly relationship: DocumentRelationship;
+  readonly beforeAttachmentsDigest: string;
+  readonly afterAttachmentsDigest: string;
+  readonly maxWork?: number;
+  readonly maxChanges?: number;
+}): DocumentDefinitionComparison {
+  let remaining = options.maxWork ?? 1_000_000;
+  const maxChanges = options.maxChanges ?? 10_000;
+  if (!Number.isSafeInteger(remaining) || remaining <= 0 || !Number.isSafeInteger(maxChanges) || maxChanges <= 0) throw new DocumentComparisonLimit();
+  const tick = (): void => { if (--remaining < 0) throw new DocumentComparisonLimit(); };
+  const old = entries(before, options.beforeAttachmentsDigest, tick), next = entries(after, options.afterAttachmentsDigest, tick);
+  return compareDefinitionEntries(old, next, {
+    before: new Map(before.sketches.map(sketch => [sketch.id, sketch.name])),
+    after: new Map(after.sketches.map(sketch => [sketch.id, sketch.name])),
+  }, { relationship: options.relationship, tick, maxChanges });
 }

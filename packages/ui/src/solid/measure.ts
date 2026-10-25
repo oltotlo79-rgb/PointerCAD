@@ -24,6 +24,7 @@ import {
   INCH_DISPLAY_DIGITS,
   MM_PER_INCH,
   type LengthUnit,
+  type SolidBodyKind,
   type SubShapeRef,
   type Vec3,
 } from '@pointercad/model';
@@ -272,6 +273,7 @@ export const MEASURE_FAILED_MESSAGE_KEY: MessageKey = 'measureError.failed';
  * 「部分形状を選ぶのに要るものだけ」を持つ型で、測定の都合で欄を増やす場所ではないため。
  */
 export interface MeasureBody extends SubShapeBody {
+  readonly bodyKind?: SolidBodyKind;
   /** 体積(mm³)。 */
   readonly volume: number;
 }
@@ -621,7 +623,22 @@ export function measurableKinds(
  * ------------------------------------------------------------------------- */
 
 /** 一覧から出せた測定の結果。 */
+export type MeasurementProvenance = 'brep' | 'sketch' | 'sketch-brep' | 'triangles';
+
+const MEASUREMENT_PROVENANCE_KEYS: Readonly<Record<MeasurementProvenance, MessageKey>> = {
+  brep: 'measureProvenance.brep',
+  sketch: 'measureProvenance.sketch',
+  'sketch-brep': 'measureProvenance.sketchBrep',
+  triangles: 'measureProvenance.triangles',
+};
+
+export function measurementProvenanceLabel(provenance?: MeasurementProvenance): string {
+  return t(provenance === undefined ? 'measureProvenance.unknown' : MEASUREMENT_PROVENANCE_KEYS[provenance]);
+}
+
 export interface LocalMeasureResult {
+  /** Recorded by the computation path; absent on older results, never inferred from selection. */
+  readonly provenance?: MeasurementProvenance;
   readonly kind: MeasureKind;
   readonly value: number;
   /** 表示の単位。 */
@@ -634,10 +651,12 @@ function localResult(
   kind: MeasureKind,
   value: number,
   segment: readonly [Vec3, Vec3] | null,
+  provenance: MeasurementProvenance | null = 'brep',
 ): LocalMeasureResult | null {
   // 退化した形(長さ 0 の辺など)で NaN や Infinity が出たら、値を出さずに黙って断る。
   return Number.isFinite(value)
-    ? { kind, value, unit: measureKindUnit(kind), segment }
+    ? { kind, value, unit: measureKindUnit(kind), segment,
+      ...(provenance === null ? {} : { provenance }) }
     : null;
 }
 
@@ -814,7 +833,10 @@ function faceArea(resolved: readonly ResolvedTarget[]): LocalMeasureResult | nul
 /** 立体の体積。 */
 function bodyVolume(resolved: readonly ResolvedTarget[]): LocalMeasureResult | null {
   const body = bodyOf(resolved);
-  return body === null ? null : localResult('bodyVolume', body.volume, null);
+  if (body === null) return null;
+  const provenance = body.bodyKind === 'mesh' ? 'triangles'
+    : body.bodyKind === 'solid' || body.bodyKind === 'shell' || body.bodyKind === 'mixed' ? 'brep' : null;
+  return localResult('bodyVolume', body.volume, null, provenance);
 }
 
 /**

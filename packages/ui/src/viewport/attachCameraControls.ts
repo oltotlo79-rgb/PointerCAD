@@ -1,5 +1,7 @@
+import { readCameraControlSettings, type CameraControlSettings } from '../settings/cameraControlSettings.js';
+import { cameraDragAction, cameraWheelMatches } from './cameraControlBindings.js';
 import { HOME_ORBIT, orbit, pan, zoom, type OrbitState } from './cameraMath.js';
-import { exceedsRightDragThreshold, isPlainRightPointer } from './rightPointerGesture.js';
+import { exceedsRightDragThreshold } from './rightPointerGesture.js';
 
 /** 視点の正本。ビューキューブなど外側の部品もここを通してだけ視点を読み書きする。 */
 export interface CameraControls {
@@ -21,7 +23,6 @@ export interface CameraControlOverride {
   canOrbit(): boolean;
 }
 
-const LEFT_BUTTON = 0;
 const MIDDLE_BUTTON = 1;
 
 /**
@@ -44,10 +45,10 @@ function wheelDeltaInPixels(event: WheelEvent): number {
 /**
  * ビューポートの視点操作を canvas へ結びつける(FR-101)。
  *
- * 操作の割当(要件§12 の Blender 互換ショートカットに対する P0 の決定):
+ * 設定された最大2枠を完全一致の修飾キーで解決する。初期値:
  * - 視点回転: 中ボタンドラッグ / Alt + 左ボタンドラッグ
- * - 平行移動: 右ボタンドラッグ / Shift + 中ボタンドラッグ / Alt + Shift + 左ボタンドラッグ
- * - 拡大縮小: ホイール / タッチパッドの2本指スクロール / Ctrl + ホイール
+ * - 平行移動: 右ボタンドラッグ / Shift + 中ボタンドラッグ
+ * - 拡大縮小: 修飾なしホイール / Ctrl + ホイール
  * - ホーム視点: Home キー(このビューポートに入力の焦点があるとき)
  *
  * Home キーを受けるため、呼び出し側は canvas を焦点の当たる要素にしておく(`tabIndex` を 0 以上にする)。
@@ -58,12 +59,15 @@ export function attachCameraControls(
   onChange: () => void,
   onInteractionChange: (active: boolean) => void = () => {},
   override?: CameraControlOverride,
+  readSettings: () => CameraControlSettings = () => readCameraControlSettings(undefined),
 ): CameraControls {
   let state: OrbitState = HOME_ORBIT;
-  let dragMode: 'orbit' | 'pan' | null = null;
+  let dragMode: 'orbit' | 'pan' | 'zoom' | null = null;
   let dragPointer: number | null = null;
   let rightStart: { readonly x: number; readonly y: number } | null = null;
   let rightPanning = false;
+  let dragButtons = 0;
+  let dragSettings = readSettings();
   let lastX = 0;
   let lastY = 0;
   const view = canvas.ownerDocument?.defaultView;
@@ -82,20 +86,14 @@ export function attachCameraControls(
 
   function beginDrag(event: PointerEvent): void {
     if (dragMode !== null) return;
-    const isOrbitButton = event.button === MIDDLE_BUTTON && !event.shiftKey;
-    const isPanButton = event.button === MIDDLE_BUTTON && event.shiftKey;
-    const isAltOrbit = event.button === LEFT_BUTTON && event.altKey && !event.shiftKey;
-    const isAltPan = event.button === LEFT_BUTTON && event.altKey && event.shiftKey;
-    const isRightPan = isPlainRightPointer(event);
-
-    if (isOrbitButton || isAltOrbit) {
-      if (override?.getOrbit() != null && !override.canOrbit()) return;
-      dragMode = 'orbit';
-    } else if (isPanButton || isAltPan || isRightPan) {
-      dragMode = 'pan';
-    } else {
-      return;
-    }
+    const settings = readSettings();
+    const action = cameraDragAction(settings, event);
+    if (action === null) return;
+    if (action === 'orbit' && override?.getOrbit() != null && !override.canOrbit()) return;
+    dragMode = action;
+    dragButtons = event.buttons;
+    dragSettings = settings;
+    const isRightPan = event.button === 2;
 
     lastX = event.clientX;
     lastY = event.clientY;
@@ -106,13 +104,16 @@ export function attachCameraControls(
     canvas.setPointerCapture(event.pointerId);
     onInteractionChange(true);
     event.preventDefault();
+    // Right clicks also belong to the radial release/drag observer on this canvas.
+    if (event.button === 2) event.stopPropagation();
+    else event.stopImmediatePropagation();
     // 既定動作を止めると焦点が移らないので、Home キーのために自分で当てる。
     canvas.focus({ preventScroll: true });
   }
 
   function moveDrag(event: PointerEvent): void {
     if (dragMode === null || event.pointerId !== dragPointer) return;
-    if (rightStart !== null && event.buttons !== 2) { cancelDrag(); return; }
+    if (event.buttons !== dragButtons) { cancelDrag(); return; }
     updateDrag(event);
   }
 
@@ -132,7 +133,9 @@ export function attachCameraControls(
     setOrbit(
       dragMode === 'orbit'
         ? orbit(current, deltaX, deltaY)
-        : pan(current, deltaX, deltaY, override?.getOrbit() != null ? override.viewportHeight() : canvas.clientHeight),
+        : dragMode === 'pan'
+          ? pan(current, deltaX, deltaY, override?.getOrbit() != null ? override.viewportHeight() : canvas.clientHeight)
+          : zoom(current, deltaY * dragSettings.dragSensitivity * (dragSettings.invertDrag ? -1 : 1)),
     );
   }
 
@@ -164,9 +167,11 @@ export function attachCameraControls(
   }
 
   function onWheel(event: WheelEvent): void {
+    const settings = readSettings();
+    if (!cameraWheelMatches(settings, event)) return;
     // Ctrl + ホイールでの頁全体の拡大や、タッチパッドの慣性スクロールを止める。
     event.preventDefault();
-    setOrbit(zoom(getOrbit(), wheelDeltaInPixels(event)));
+    setOrbit(zoom(getOrbit(), wheelDeltaInPixels(event) * settings.wheelSensitivity * (settings.invertWheel ? -1 : 1)));
   }
 
   function onKeyDown(event: KeyboardEvent): void {

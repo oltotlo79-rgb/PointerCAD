@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./desktop-occt-transport": {
+      "types": "./dist/occt/desktopOcctTransportContract.d.ts",
+      "default": "./src/occt/desktopOcctTransportContract.ts"
     }
   },
   "scripts": {

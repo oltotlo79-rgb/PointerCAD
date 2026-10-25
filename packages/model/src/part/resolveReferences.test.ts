@@ -8,6 +8,7 @@ import type { SketchDocument, SketchFeature } from '../sketch/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
 import { createEmptyPartDocument } from './createPartDocument.js';
 import { createReferenceResolver } from './resolveReferences.js';
+import { reevaluatePartDocument } from './reevaluatePart.js';
 import type {
   PartDocument,
   PrimitiveFeature,
@@ -497,6 +498,32 @@ describe('球面上の点(FR-431)', () => {
     };
   }
 
+  it('keeps authored sphere-grid producer across real parameter reevaluation and distinguishes reselected constant', () => {
+    const base = documentWithSphere([sphere([0, 0, 0], 10)], 0, 0);
+    const document: PartDocument = { ...base, references: [{ id: 'coordinate-grid', kind: 'referenceCoordinateSystem',
+      name: 'grid coordinate', visible: true, origin: { kind: 'sphereGrid', sphereFeatureId: 'primitive-1',
+        latitude: { source: 'lat', value: 0, display: '0' }, longitude: ev(0) },
+      xAxis: { kind: 'world', axis: 'x' }, yAxis: { kind: 'world', axis: 'y' } }] };
+    const first = reevaluatePartDocument(document, new Map([['lat', 0]]));
+    const second = reevaluatePartDocument(document, new Map([['lat', 30]]));
+    expect(first.failures).toEqual([]); expect(second.failures).toEqual([]);
+    const point = (part: PartDocument) => {
+      const ref = part.references[0];
+      if (ref?.kind !== 'referenceCoordinateSystem') throw new Error('grid reference missing');
+      return resolverFor(part).pointWithIdentity(ref.origin);
+    };
+    const before = point(first.document), after = point(second.document);
+    expect(before?.position).toEqual([10, 0, 0]);
+    if (after === null) throw new Error('evaluated point missing');
+    expectVec3(after.position, [Math.sqrt(75), 0, 5]);
+    expect(before?.identity).toEqual(after.identity);
+    expect(after.identity).toEqual({ kind: 'sphere-grid', featureId: 'primitive-1', latitudeSource: 'lat', longitudeSource: '0' });
+    const constant = resolverFor(second.document).pointWithIdentity({ kind: 'sphereGrid', sphereFeatureId: 'primitive-1',
+      latitude: ev(30), longitude: ev(0) });
+    expect(constant?.position).toEqual(after.position);
+    expect(constant?.identity).not.toEqual(after.identity);
+  });
+
   it('球の中心と半径から緯度・経度の位置を出す(r=10、30°、45°)', () => {
     const document = documentWithSphere([sphere([0, 0, 0], 10)], 30, 45);
     const resolved = resolverFor(document).resolveAll();
@@ -603,4 +630,94 @@ describe('球面上の点(FR-431)', () => {
     expect(resolved.points).toEqual([]);
     expect(resolved.errors[0].code).toBe('missingPoint');
   });
+});
+
+describe('resolved point identity accompanies the same actual source', () => {
+  it('reads the sketch once and returns its actual producer with its position', () => {
+    const document = documentWith([]);
+    const sketch = document.sketches[0];
+    if (sketch === undefined) throw new Error('Missing sketch fixture');
+    const resolved = resolveSketch(sketch);
+    let calls = 0;
+    const resolver = createReferenceResolver(document, { sketch: () => { calls += 1; return resolved; } });
+    expect(resolver.pointWithIdentity({ kind: 'point', pointId: 'point-1' })).toEqual({
+      state: 'identified', position: [0, 0, 10], identity: { kind: 'sketch-point', anchor: {
+        sketchId: sketch.id, producer: { kind: 'point', featureId: 'point-1' },
+      } },
+    });
+    expect(calls).toBe(1);
+  });
+
+  it('refuses absent producer proof while retaining the existing point position result', () => {
+    const document = documentWith([]);
+    const sketch = document.sketches[0];
+    if (sketch === undefined) throw new Error('Missing sketch fixture');
+    const resolved = resolveSketch(sketch);
+    const withoutProof = { ...resolved, points: resolved.points.map((point) => ({
+      id: point.id, featureId: point.featureId, position: point.position,
+    })) };
+    const resolver = createReferenceResolver(document, { sketch: () => withoutProof });
+    expect(resolver.point({ kind: 'point', pointId: 'point-1' })).toEqual([0, 0, 10]);
+    expect(resolver.pointWithIdentity({ kind: 'point', pointId: 'point-1' })).toEqual({
+      state: 'unidentified', position: [0, 0, 10], reason: 'producer-unavailable',
+    });
+    expect(resolver.pointWithIdentity({ kind: 'previous' })).toBeNull();
+    expect(resolver.point({ kind: 'previous' })).toBeNull();
+    expect(resolver.pointWithIdentity({ kind: 'point', pointId: 'missing' })).toBeNull();
+  });
+
+  it('distinguishes equal-position producers and selects the same first sketch as the point API', () => {
+    const first = sketchWithPoints();
+    const second = { ...sketchWithPoints(), id: 'second-sketch' };
+    const document = { ...createEmptyPartDocument(), sketches: [first, second], activeSketchId: first.id };
+    const resolver = createReferenceResolver(document, {
+      sketch: (id) => id === first.id ? resolveSketch(first) : id === second.id ? resolveSketch(second) : null,
+    });
+    const named = resolver.pointWithIdentity({ kind: 'point', pointId: 'point-1' });
+    expect(named?.position).toEqual(resolver.point({ kind: 'point', pointId: 'point-1' }));
+    expect(named?.identity).toEqual({ kind: 'sketch-point', anchor: {
+      sketchId: first.id, producer: { kind: 'point', featureId: 'point-1' },
+    } });
+    const onlySecond = createReferenceResolver({ ...document, sketches: [second] }, { sketch: () => resolveSketch(second) });
+    expect(onlySecond.pointWithIdentity({ kind: 'point', pointId: 'point-1' })?.position).toEqual(named?.position);
+    expect(onlySecond.pointWithIdentity({ kind: 'point', pointId: 'point-1' })?.identity).not.toEqual(named?.identity);
+  });
+});
+
+it('retains position success for origin, reference point, sketch vertex and unnamed subshape sources', () => {
+  const document = documentWith([{ id: 'referencePoint-position', name: 'reference point', kind: 'referencePoint',
+    visible: true, definition: { kind: 'coordinate', at: { mode: 'absolute', x: ev(2), y: ev(3), z: ev(4) } } }]);
+  const resolver = createReferenceResolver(document, { sketch: (id) => {
+    const sketch = document.sketches.find((candidate) => candidate.id === id);
+    return sketch === undefined ? null : resolveSketch(sketch);
+  } });
+  const refs = [
+    { kind: 'origin' } as const,
+    { kind: 'point', pointId: 'referencePoint-position' } as const,
+    { kind: 'vertex', featureId: 'point-1', vertex: 'start' } as const,
+    { kind: 'subShape', ref: { bodyFeatureId: 'legacy-body', index: 0, fingerprint: {
+      kind: 'vertex', position: [7, 8, 9],
+    } } } as const,
+  ];
+  const expected = [[0, 0, 0], [2, 3, 4], [0, 0, 10], [7, 8, 9]];
+  for (const [index, reference] of refs.entries()) {
+    expect(resolver.point(reference)).toEqual(expected[index]);
+    expect(resolver.pointWithIdentity(reference)?.position).toEqual(expected[index]);
+  }
+  expect(resolver.pointWithIdentity(refs[3])).toEqual({ state: 'unidentified', position: [7, 8, 9], reason: 'producer-unavailable' });
+});
+
+
+it('distinguishes selected body producers even when they carry the same semantic source and position', () => {
+  const origin = { version: 1, shapeKind: 'vertex', identity: { kind: 'box-vertex', featureId: 'source-box', role: 'bottom-front-left' } } as const;
+  const resolver = createReferenceResolver(documentWith([]), { sketch: () => null,
+    subShape: () => ({ kind: 'vertex', position: [1, 2, 3], axis: null, surfaceKind: null, curveKind: null }) });
+  const selected = (bodyFeatureId: string) => resolver.pointWithIdentity({ kind: 'subShape', ref: {
+    bodyFeatureId, index: 0, fingerprint: { kind: 'vertex', position: [1, 2, 3] }, origin,
+  } });
+  const a = selected('body-A'), b = selected('body-B');
+  expect(a?.position).toEqual([1, 2, 3]); expect(b?.position).toEqual(a?.position);
+  expect(a?.identity).toEqual({ kind: 'semantic-subshape', bodyFeatureId: 'body-A', origin });
+  expect(b?.identity).toEqual({ kind: 'semantic-subshape', bodyFeatureId: 'body-B', origin });
+  expect(b?.identity).not.toEqual(a?.identity);
 });

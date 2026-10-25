@@ -1,7 +1,9 @@
 /// <reference lib="dom" />
 import { readFileSync, statSync } from 'node:fs';
 
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { updateHoleWallMatePhi8Scenario, inspectFreshNativeHoleWallMatePhi8, reopenHoleWallMatePhi8Scenario, createHoleWallMateScenario, inspectFreshNativeHoleWallMate, reopenHoleWallMateScenario, createCylinderColdScenario, createImportedHoleScenario, inspectFreshNativeCylinderOrigins,
+  reopenCylinderColdScenario, reopenImportedHoleScenario, type CylinderColdOperation } from './cylinderSubshapeColdFlow.js';
 
 /**
  * 要件§9 P2 の完了条件「簡単な部品を作って保存・再編集できる」を、実際のブラウザで
@@ -704,6 +706,47 @@ test('点→線→面→押し出し→保存→再読込→編集ができる(�
   expect(confirms).toEqual(['保存していない変更は失われます。続けますか。']);
 
   expect(errors).toEqual([]);
+});
+
+for (const operation of ['hole', 'threadShaft'] as const satisfies readonly CylinderColdOperation[]) {
+  test(`実PCAD ZIPの円柱A/B所有と${operation}を新しいWeb画面で再開する`, async ({ page, context }, info) => {
+    const errors = collectErrors(page);
+    await disableFilePickers(page);
+    await page.goto('/');
+    const saved = await createCylinderColdScenario(page, info, operation);
+    await page.close();
+    await inspectFreshNativeCylinderOrigins(saved);
+    const fresh = await context.newPage();
+    try {
+      const freshErrors = collectErrors(fresh);
+      await disableFilePickers(fresh);
+      await fresh.goto('/');
+      await reopenCylinderColdScenario(fresh, info, saved);
+      expect(errors).toEqual([]);
+      expect(freshErrors).toEqual([]);
+    } finally {
+      await fresh.close();
+    }
+  });
+}
+
+test('実PCAD ZIPの輸入形状(履歴なし)の穴は指紋補助の参照のまま新しいWeb画面で再開する', async ({ page, context }, info) => {
+  const errors = collectErrors(page);
+  await disableFilePickers(page);
+  await page.goto('/');
+  const saved = await createImportedHoleScenario(page, info);
+  await page.close();
+  const fresh = await context.newPage();
+  try {
+    const freshErrors = collectErrors(fresh);
+    await disableFilePickers(fresh);
+    await fresh.goto('/');
+    await reopenImportedHoleScenario(fresh, info, saved);
+    expect(errors).toEqual([]);
+    expect(freshErrors).toEqual([]);
+  } finally {
+    await fresh.close();
+  }
 });
 
 test('立体どうしを組み合わせられる(FR-404)', async ({ page }) => {
@@ -1905,4 +1948,142 @@ test.describe('P3 加工フィーチャー', () => {
 
     expect(errors).toEqual([]);
   });
+});
+
+/** Same project renderer/device/action limits; runner owns tracing even in these real owned processes. */
+async function withR18ColdPage<T>(browser: Browser, info: TestInfo, run: (page: Page) => Promise<T>): Promise<T> {
+  const use = info.project.use;
+  const context = await browser.newContext({ baseURL: use.baseURL, viewport: use.viewport, userAgent: use.userAgent,
+    deviceScaleFactor: use.deviceScaleFactor, isMobile: use.isMobile, hasTouch: use.hasTouch,
+    locale: use.locale, colorScheme: use.colorScheme, acceptDownloads: use.acceptDownloads });
+  try {
+    context.setDefaultTimeout(use.actionTimeout ?? 0); context.setDefaultNavigationTimeout(use.navigationTimeout ?? 0);
+    const page = await context.newPage();
+    const startupErrors = collectErrors(page);
+    await disableFilePickers(page);
+    await page.goto('/');
+    const result = await run(page);
+    expect(startupErrors).toEqual([]);
+    return result;
+  } finally { await context.close(); }
+}
+
+test('R18 actual new hole walls concentric mate survives PCADA full Web process restart', async ({ playwright, browserName }, info) => {
+  const use = info.project.use;
+  const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+    ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+  const first = await launch();
+  let scenario: Awaited<ReturnType<typeof createHoleWallMateScenario>>;
+  try { scenario = await withR18ColdPage(first, info, async page => {
+    const errors = collectErrors(page);
+    const saved = await createHoleWallMateScenario(page, info, undefined, false, true);
+    expect(errors).toEqual([]);
+    return saved;
+  }); } finally { await first.close(); }
+  expect(first.isConnected()).toBe(false);
+  await inspectFreshNativeHoleWallMate(scenario);
+  const second = await launch();
+  try { await withR18ColdPage(second, info, async fresh => {
+    const freshErrors = collectErrors(fresh);
+    await reopenHoleWallMateScenario(fresh, info, scenario);
+    expect(freshErrors).toEqual([]);
+  }); } finally { await second.close(); }
+});
+
+test('R18 same hole phi6 to expression phi8 preserves old mate refs, one Undo and actual process-cold ZIP', async ({ playwright, browserName }, info) => {
+  const use = info.project.use;
+  const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+    ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+  const first = await launch();
+  let updated: Awaited<ReturnType<typeof updateHoleWallMatePhi8Scenario>>;
+  try { updated = await withR18ColdPage(first, info, async page => {
+    const errors = collectErrors(page);
+    const scenario = await createHoleWallMateScenario(page, info);
+    const result = await updateHoleWallMatePhi8Scenario(page, info, scenario);
+    expect(errors).toEqual([]);
+    return result;
+  }); } finally { await first.close(); }
+  expect(first.isConnected()).toBe(false);
+  await inspectFreshNativeHoleWallMatePhi8(updated);
+  const second = await launch();
+  try { await withR18ColdPage(second, info, async page => {
+    const errors = collectErrors(page);
+    await reopenHoleWallMatePhi8Scenario(page, info, updated);
+    expect(errors).toEqual([]);
+  }); } finally { await second.close(); }
+});
+
+test('R18 legacy native confirmation Escape Cancel doubleclick and phi6 to expression phi8 preserves old mate refs, one Undo and actual process-cold ZIP', async ({ playwright, browserName }, info) => {
+  const use = info.project.use;
+  const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+    ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+  const first = await launch();
+  let updated: Awaited<ReturnType<typeof updateHoleWallMatePhi8Scenario>>;
+  try { updated = await withR18ColdPage(first, info, async page => {
+    const errors = collectErrors(page);
+    const scenario = await createHoleWallMateScenario(page, info, undefined, true);
+    const result = await updateHoleWallMatePhi8Scenario(page, info, scenario, undefined, true);
+    expect(errors).toEqual([]);
+    return result;
+  }); } finally { await first.close(); }
+  expect(first.isConnected()).toBe(false);
+  await inspectFreshNativeHoleWallMatePhi8(updated);
+  const second = await launch();
+  try { await withR18ColdPage(second, info, async page => {
+    const errors = collectErrors(page);
+    await reopenHoleWallMatePhi8Scenario(page, info, updated);
+    expect(errors).toEqual([]);
+  }); } finally { await second.close(); }
+});
+import { createHoleRimScenario, inspectFreshNativeHoleRim, reopenHoleRimScenario, updateHoleRimPhi8Scenario } from './cylinderSubshapeColdFlow.js';
+
+for (const operation of ['R面取り', 'C面取り'] as const) {
+  test(`R18 actual hole rim ${operation} native semantic owner and expression UndoRedo survive full Web process-cold ZIP`, async ({ playwright, browserName }, info) => {
+    const use = info.project.use;
+    const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+      ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+    const first = await launch();
+    let saved: Awaited<ReturnType<typeof createHoleRimScenario>>;
+    try { saved = await withR18ColdPage(first, info, page => createHoleRimScenario(page, info, operation)); }
+    finally { await first.close(); }
+    expect(first.isConnected()).toBe(false);
+    await inspectFreshNativeHoleRim(saved, info);
+    const second = await launch();
+    let updated: Awaited<ReturnType<typeof updateHoleRimPhi8Scenario>>;
+    try { updated = await withR18ColdPage(second, info, async page => {
+      await reopenHoleRimScenario(page, info, saved);
+      return updateHoleRimPhi8Scenario(page, info, saved);
+    }); } finally { await second.close(); }
+    expect(second.isConnected()).toBe(false);
+    await inspectFreshNativeHoleRim(updated, info);
+    const third = await launch();
+    try { await withR18ColdPage(third, info, page => reopenHoleRimScenario(page, info, updated)); }
+    finally { await third.close(); }
+    expect(third.isConnected()).toBe(false);
+  });
+}
+
+import { updateIndependentHoleWallMatePhi8Scenario, inspectIndependentHoleWallMatePhi8, reopenIndependentHoleWallMatePhi8Scenario } from './cylinderSubshapeColdFlow.js';
+
+test('R18 independent A phi6 to expression phi8 preserves old mate refs, one Undo and actual process-cold ZIP', async ({ playwright, browserName }, info) => {
+  const use = info.project.use;
+  const launch = () => playwright[browserName].launch({ ...use.launchOptions,
+    ...(use.headless === undefined ? {} : { headless: use.headless }), ...(use.channel === undefined ? {} : { channel: use.channel }) });
+  const first = await launch();
+  let updated: Awaited<ReturnType<typeof updateIndependentHoleWallMatePhi8Scenario>>;
+  try { updated = await withR18ColdPage(first, info, async page => {
+    const errors = collectErrors(page);
+    const scenario = await createHoleWallMateScenario(page, info, undefined, false, true);
+    const result = await updateIndependentHoleWallMatePhi8Scenario(page, info, scenario);
+    expect(errors).toEqual([]);
+    return result;
+  }); } finally { await first.close(); }
+  expect(first.isConnected()).toBe(false);
+  await inspectIndependentHoleWallMatePhi8(updated);
+  const second = await launch();
+  try { await withR18ColdPage(second, info, async page => {
+    const errors = collectErrors(page);
+    await reopenIndependentHoleWallMatePhi8Scenario(page, info, updated);
+    expect(errors).toEqual([]);
+  }); } finally { await second.close(); }
 });

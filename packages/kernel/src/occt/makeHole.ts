@@ -18,6 +18,8 @@
  */
 
 import type {
+  BRepAdaptor_Surface,
+  BRepPrim_Cylinder, BRepPrim_Cone,
   OpenCascadeInstance,
   TopoDS_Face,
   TopoDS_Shape,
@@ -31,12 +33,16 @@ import type {
   SubShapeQuery,
   Vec3Tuple,
 } from '../types.js';
+import type { CurrentOriginIndex, HoleCenterAnchor, HolePlacementRole, HoleFaceOrigin } from '../subShapeOrigin.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
-import { booleanOp, type BooleanResult } from './booleanOp.js';
+import { HoleOriginMapError, rebindHoleToolFaces, rebindTransformedHoleFaces, rebindTransformedOrigins, type NativeHoleToolFace } from './subShapeOrigins.js';
+import { OriginHistoryLimitError } from './subShapeHistory.js';
+import { booleanOp, type BooleanResult, type BooleanSemanticContext } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { matchFace } from './matchSubShape.js';
-import { measureVolume } from './solidMesh.js';
+import { resolveFaceReference } from './matchSubShape.js';
+import { hasSolid, measureVolume } from './solidMesh.js';
+import { buildBooleanShape } from './buildBooleanShape.js';
 import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
 import { isIdentityTransform, transformShape, transformsOrIdentity } from './transformShape.js';
 
@@ -46,6 +52,33 @@ const MISSING_FACE_MESSAGE =
 
 /** P3 の制限。曲がった面への穴は、面の平面が決まらないので扱わない。 */
 const NOT_PLANAR_MESSAGE = '穴をあけられるのは平らな面だけです。平らな面を選び直してください。';
+
+/** 円筒の側面の穴(EX05)で、選び直した面が円筒でなかったとき。 */
+const NOT_CYLINDRICAL_MESSAGE = '円筒の側面の穴をあけられるのは円筒の面だけです。円筒の面を選び直してください。';
+
+/** 円筒の側面の穴の位置が 1 つも無いとき。 */
+const NO_CYLINDER_LOCATION_MESSAGE = '円筒の側面の穴の位置(高さと角度)が 1 つもありません。';
+
+/** 高さか角度が数でない(NaN・∞)とき。 */
+const CYLINDER_LOCATION_NOT_FINITE_MESSAGE = '円筒の側面の穴の高さと角度は数にしてください。';
+
+/** 位置が選んだ円筒の面の境界(トリム)の外、または境界の上にあるとき。 */
+const CYLINDER_OUTSIDE_MESSAGE = '穴の位置が選んだ円筒の面の外です。高さか角度を見直してください。';
+
+/**
+ * 円筒の側面の穴で、まだ正しく扱えない組み合わせを頼まれたとき。
+ * 曲面の上の傾き・皿もみの意味(どこから測るか)をまだ決めていないので、
+ * **黙って平面の穴やまっすぐな穴にせず断る**。
+ */
+const CYLINDER_UNSUPPORTED_MESSAGE =
+  '円筒の側面の穴では、中心の点・傾き・皿もみはまだ使えません。位置は高さと角度で指定してください。';
+
+/** 円筒の面の座標系が読めない・拡大縮小を含む・計算した点と OCCT の点が食い違うとき(fail closed)。 */
+const CYLINDER_FRAME_MESSAGE = '円筒の面の向きを確かめられませんでした。面を選び直してください。';
+
+/** 管の内面から、内側の空洞より太い穴をあけようとした(刃物が空洞に入らない)。 */
+const CYLINDER_BORE_TOO_SMALL_MESSAGE =
+  '穴またはざぐりの直径が、選んだ円筒の内面の直径以上です。径を小さくするか、外側の面を選んでください。';
 
 /** 中心の点が 1 つも無いとき。 */
 const NO_CENTER_MESSAGE = '穴の中心になる点が選ばれていません。';
@@ -100,8 +133,8 @@ const NOTHING_LEFT_MESSAGE = '穴をあけたら立体が残りませんでし�
 const NOTHING_REMOVED_MESSAGE = '穴が材料に当たりませんでした。中心の位置や向きを見直してください。';
 
 /**
- * これ未満(mm³)しか削れていなければ「何も削れなかった」とみなす。
- * `booleanOp` の「立体が残らなかった」の判定と同じ大きさに揃えてある。
+ * 体積差だけで切削ありと判定する閾値(mm³)。これ未満や負の差は積分誤差と区別できないため、
+ * 対象と結果の差で得た除去立体を調べる。微小な実切削をこの閾値だけで拒否しない。
  */
 const MIN_REMOVED_VOLUME_MM3 = 1e-9;
 
@@ -112,6 +145,7 @@ const MIN_REMOVED_VOLUME_MM3 = 1e-9;
  * 既定は `plain`(広げない)で、読み手が古い文書へ補う値もこれになる。
  *
  * - `counterbore`(ざぐり): 径 `diameter`・深さ `depth` の円柱で入口を広げる。
+ *   円筒面では高さ・角度で決まる入口から放射方向へ測った深さで、底は穴の軸に垂直な平面。
  * - `countersink`(皿もみ): 頭径 `diameter`・開き角 `angle`(**ラジアン**)の円錐で広げる。
  *   円錐の深さは `(頭径 − 穴の径) / 2 / tan(angle / 2)` で**カーネルが決める**
  *   (model には計算させない。計画書 タスク46 手順4)。
@@ -150,10 +184,20 @@ export function holeEntryDepth(entry: HoleEntrySpec | undefined, diameter: numbe
 
 /** 面の向きから求めた、穴をあけるための座標系(§2.4.2)。 */
 export interface HoleFrame {
-  /** 掘り進む向き(単位ベクトル)。傾きを適用した後。 */
+  /** 掘り進む向き(単位ベクトル)。傾きを適用した後。円筒の側面の穴では最初の位置の向き。 */
   readonly direction: Vec3Tuple;
-  /** 面の平面へ投影した中心点。centers と同じ並び。 */
+  /** 面の平面へ投影した中心点。centers と同じ並び。円筒の側面の穴では面の上の入口の点。 */
   readonly origins: readonly Vec3Tuple[];
+  /**
+   * 円筒の側面の穴(EX05)だけが持つ、`origins` と同じ並びの**位置ごとの**掘る向き。
+   * 平面の穴では省く(すべての穴が `direction` へ掘る。今までの作りと 1 命令も変わらない)。
+   */
+  readonly directions?: readonly Vec3Tuple[];
+  /**
+   * 円筒の側面の穴(EX05)だけが持つ、`origins` と同じ並びの**凹んだ面(管の内面)の半径**。
+   * 凸の面(外面)の位置は null。刃物を口の外側へ戻す量を、内側の空洞の中に収めるために使う。
+   */
+  readonly concaveRadii?: readonly (number | null)[];
   /**
    * もとの立体の境界箱の対角長(mm)。
    *
@@ -310,6 +354,25 @@ function resolvePlanarFace(
   faces: readonly SolidFaceInfo[],
   query: SubShapeQuery,
   diagonal: number,
+  origins?: CurrentOriginIndex,
+): TopoDS_Face {
+  return resolveFaceOfKind(oc, shape, faces, query, diagonal, 'plane', NOT_PLANAR_MESSAGE, origins);
+}
+
+/**
+ * 面の指紋から、決まった種類(平面・円筒)の面 1 枚を選び直す。照合の規則と断り方は平面の穴と同じ
+ * (指紋が当たらない・一覧と形が食い違う・番号が消えた = 古い参照は「見つかりません」)。
+ * 当たった面が違う種類なら `wrongKindMessage` で断る(曲面へ黙って平面の穴をあけない)。
+ */
+function resolveFaceOfKind(
+  oc: OpenCascadeInstance,
+  shape: TopoDS_Shape,
+  faces: readonly SolidFaceInfo[],
+  query: SubShapeQuery,
+  diagonal: number,
+  surfaceKind: 'plane' | 'cylinder',
+  wrongKindMessage: string,
+  origins?: CurrentOriginIndex,
 ): TopoDS_Face {
   if (query.kind !== 'face') {
     // 面以外(辺・頂点)の指紋が来るのは model 側の取り違えだが、
@@ -319,21 +382,21 @@ function resolvePlanarFace(
 
   // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する(§2.2.3)。
   const scale = diagonal * 0.5;
-  const match = matchFace(faces, query, scale);
-  if (match === null) {
+  const match = resolveFaceReference(faces, query, scale, origins);
+  if (match.status !== 'matched') {
     throw new Error(MISSING_FACE_MESSAGE);
   }
 
   // 一覧は通し番号の順で来る約束だが、番号で引き直して並びに依存しないようにする。
-  const info = faces.find((candidate) => candidate.index === match.index);
+  const info = faces.find((candidate) => candidate.index === match.match.index);
   if (info === undefined) {
     throw new Error(MISSING_FACE_MESSAGE);
   }
-  if (info.surfaceKind !== 'plane') {
-    throw new Error(NOT_PLANAR_MESSAGE);
+  if (info.surfaceKind !== surfaceKind) {
+    throw new Error(wrongKindMessage);
   }
 
-  const face = faceAt(oc, shape, match.index);
+  const face = faceAt(oc, shape, match.match.index);
   if (face === null) {
     // 一覧と形が食い違っている(別の形から作った一覧を渡している)合図。
     throw new Error(MISSING_FACE_MESSAGE);
@@ -347,12 +410,191 @@ function resolvePlanarFace(
  *
  * 引数の `shape` は解放しない(呼び出し側=形状キャッシュの持ち物)。
  */
+/** 円筒の側面の位置の許容(mm)。cylindricalFaceSpan.ts の LINEAR_TOLERANCE と同じ大きさ(OCCT の許容は広げない)。 */
+const CYLINDER_LINEAR_TOLERANCE = 1e-7;
+
+/**
+ * 選んだ円筒の面の座標系(EX05)。すべて OCCT の解析曲面(`BRepAdaptor_Surface_2(face, true)` の
+ * `Cylinder()` と、面の境界を読み込んだパラメーターの範囲)から読む。三角形分割は使わない。
+ */
+interface CylinderFrame {
+  readonly adaptor: BRepAdaptor_Surface;
+  /** 軸の上の点(v = 0 の点)。 */
+  readonly location: Vec3Tuple;
+  /** 面自身の軸の向き(高さの向き)。面の Orientation では反転しない。 */
+  readonly zAxis: Vec3Tuple;
+  /** 角度 0 の向き(`Position().XDirection()`)。 */
+  readonly xAxis: Vec3Tuple;
+  /** 角度の正の向きの第 2 軸 `zAxis × xAxis`(右手の回り。Ax3 が左手系でも同じ)。 */
+  readonly yAxis: Vec3Tuple;
+  readonly radius: number;
+  /** OCCT の u は Ax3 が右手系なら角度と同じ向き、左手系なら逆向きに進む。 */
+  readonly direct: boolean;
+  readonly uFirst: number;
+  readonly uLast: number;
+  readonly vFirst: number;
+  readonly vLast: number;
+  /** 面の向きが FORWARD なら +1、REVERSED なら −1(材料の外を向く法線の符号)。 */
+  readonly orientationSign: 1 | -1;
+}
+
+function readCylinderFrame(oc: OpenCascadeInstance, face: TopoDS_Face, keep: Allocations['keep']): CylinderFrame {
+  const orientation = face.Orientation_1();
+  if (orientation !== oc.TopAbs_Orientation.TopAbs_FORWARD && orientation !== oc.TopAbs_Orientation.TopAbs_REVERSED) {
+    throw new Error(CYLINDER_FRAME_MESSAGE);
+  }
+  // 第 2 引数 true: 面の境界(トリム)を読み込み、パラメーターの範囲を面の実際の範囲にする。
+  const adaptor = keep(new oc.BRepAdaptor_Surface_2(face, true));
+  if (adaptor.GetType() !== oc.GeomAbs_SurfaceType.GeomAbs_Cylinder) {
+    throw new Error(NOT_CYLINDRICAL_MESSAGE);
+  }
+  // 高さは mm で測るので、拡大縮小を含む形は断る(パラメーター v が mm にならない)。
+  const scale = keep(adaptor.Trsf()).ScaleFactor();
+  if (!Number.isFinite(scale) || Math.abs(Math.abs(scale) - 1) > 1e-12) {
+    throw new Error(CYLINDER_FRAME_MESSAGE);
+  }
+  const cylinder = keep(adaptor.Cylinder());
+  const position = keep(cylinder.Position());
+  const zDirection = keep(position.Direction());
+  const xDirection = keep(position.XDirection());
+  const location = keep(position.Location());
+  const zAxis = toUnit([zDirection.X(), zDirection.Y(), zDirection.Z()]);
+  const xAxis = toUnit([xDirection.X(), xDirection.Y(), xDirection.Z()]);
+  const radius = cylinder.Radius();
+  const bounds = [adaptor.FirstUParameter(), adaptor.LastUParameter(), adaptor.FirstVParameter(), adaptor.LastVParameter()];
+  const point: Vec3Tuple = [location.X(), location.Y(), location.Z()];
+  if (zAxis === null || xAxis === null || !Number.isFinite(radius) || radius <= 0 || !bounds.every(Number.isFinite)
+    || !isFiniteTuple(point) || Math.abs(dot(zAxis, xAxis)) > 1e-9) {
+    throw new Error(CYLINDER_FRAME_MESSAGE);
+  }
+  const uFirst = adaptor.FirstUParameter(), uLast = adaptor.LastUParameter();
+  const vFirst = adaptor.FirstVParameter(), vLast = adaptor.LastVParameter();
+  if (!(uLast > uFirst) || !(vLast > vFirst)) throw new Error(CYLINDER_FRAME_MESSAGE);
+  return { adaptor, location: point, zAxis, xAxis, yAxis: cross(zAxis, xAxis), radius, direct: position.Direct(),
+    uFirst, uLast, vFirst, vLast, orientationSign: orientation === oc.TopAbs_Orientation.TopAbs_FORWARD ? 1 : -1 };
+}
+
+/**
+ * 位置 1 つの入口の点と掘る向き(EX05)。
+ *
+ * 1. 高さ・角度を OCCT のパラメーターへ: v = vFirst + 高さ、u = 角度(右手系)または −角度(左手系)を
+ *    [uFirst, uFirst + 2π) へ畳む。
+ * 2. 境界の判定は `BRepClass_FaceClassifier` の TopAbs_IN だけを通す(外・境界の上・不明は断る。
+ *    部分円筒・窓のある面も実際の境界で判定する)。
+ * 3. 入口の点と法線は OCCT の `D1(u, v)` から: 法線 = D1U × D1V を面の向き(REVERSED なら反転)で
+ *    材料の外へ向け、掘る向きはその逆(材料の中)。管の内面(REVERSED)なら外側の肉へ向かって掘る。
+ * 4. 自前の定義 `location + v·z + R(cos 角度·x + sin 角度·y)` と OCCT の点が食い違う、または法線が
+ *    その点の放射方向と平行でないときは断る(座標系の読み違いを黙って通さない)。
+ */
+function cylinderLocationFrame(
+  oc: OpenCascadeInstance,
+  face: TopoDS_Face,
+  frame: CylinderFrame,
+  height: number,
+  angle: number,
+  keep: Allocations['keep'],
+): { readonly origin: Vec3Tuple; readonly direction: Vec3Tuple; readonly concave: boolean } {
+  if (!Number.isFinite(height) || !Number.isFinite(angle)) {
+    throw new Error(CYLINDER_LOCATION_NOT_FINITE_MESSAGE);
+  }
+  const period = 2 * Math.PI;
+  const v = frame.vFirst + height;
+  const turned = frame.direct ? angle : -angle;
+  const u = frame.uFirst + (((turned - frame.uFirst) % period) + period) % period;
+  if (v < frame.vFirst || v > frame.vLast || u > frame.uLast) {
+    throw new Error(CYLINDER_OUTSIDE_MESSAGE);
+  }
+  const classify = (uu: number) => keep(new oc.BRepClass_FaceClassifier_3(face, keep(new oc.gp_Pnt2d_3(uu, v)),
+    CYLINDER_LINEAR_TOLERANCE, false, CYLINDER_LINEAR_TOLERANCE)).State();
+  const state = classify(u);
+  if (state !== oc.TopAbs_State.TopAbs_IN) {
+    // 全周の面の継ぎ目(u = uFirst、角度 0 など)は分類器が境界の上(ON)と答える。継ぎ目なら左右どちらも
+    // 面の中(周期で [uFirst, uFirst + 2π) へ畳む)。本物の境界(上下の端・部分円筒の端)は片側が外なので断る。
+    const delta = Math.max(1e-6, (1e3 * CYLINDER_LINEAR_TOLERANCE) / frame.radius);
+    const fold = (uu: number) => frame.uFirst + (((uu - frame.uFirst) % period) + period) % period;
+    const neighbours = [fold(u + delta), fold(u - delta)];
+    if (state !== oc.TopAbs_State.TopAbs_ON
+      || neighbours.some((uu) => uu > frame.uLast || classify(uu) !== oc.TopAbs_State.TopAbs_IN)) {
+      throw new Error(CYLINDER_OUTSIDE_MESSAGE);
+    }
+  }
+  const point = keep(new oc.gp_Pnt_1()), du = keep(new oc.gp_Vec_1()), dv = keep(new oc.gp_Vec_1());
+  frame.adaptor.D1(u, v, point, du, dv);
+  const natural = toUnit(cross([du.X(), du.Y(), du.Z()], [dv.X(), dv.Y(), dv.Z()]));
+  const origin: Vec3Tuple = [normalizeZero(point.X()), normalizeZero(point.Y()), normalizeZero(point.Z())];
+  if (natural === null || !isFiniteTuple(origin)) throw new Error(CYLINDER_FRAME_MESSAGE);
+  const outward: Vec3Tuple = [natural[0] * frame.orientationSign, natural[1] * frame.orientationSign, natural[2] * frame.orientationSign];
+  const radial: Vec3Tuple = [
+    Math.cos(angle) * frame.xAxis[0] + Math.sin(angle) * frame.yAxis[0],
+    Math.cos(angle) * frame.xAxis[1] + Math.sin(angle) * frame.yAxis[1],
+    Math.cos(angle) * frame.xAxis[2] + Math.sin(angle) * frame.yAxis[2],
+  ];
+  const { location, zAxis, radius } = frame;
+  const expected: Vec3Tuple = [
+    location[0] + v * zAxis[0] + radius * radial[0],
+    location[1] + v * zAxis[1] + radius * radial[1],
+    location[2] + v * zAxis[2] + radius * radial[2],
+  ];
+  // 許容は位置の大きさに比例させる(1e-7 mm を 1 mm あたりの基準にする。OCCT の許容は広げない)。
+  const scale = Math.max(1, radius, Math.abs(v), Math.hypot(location[0], location[1], location[2]));
+  if (Math.hypot(origin[0] - expected[0], origin[1] - expected[1], origin[2] - expected[2]) > CYLINDER_LINEAR_TOLERANCE * scale
+    || Math.abs(Math.abs(dot(outward, radial)) - 1) > 1e-9) {
+    throw new Error(CYLINDER_FRAME_MESSAGE);
+  }
+  // 材料の外向きが軸の側を向く(放射方向と逆)なら凹んだ面(管の内面)。
+  return { origin, direction: [normalizeZero(-outward[0]), normalizeZero(-outward[1]), normalizeZero(-outward[2])],
+    concave: dot(outward, radial) < 0 };
+}
+
+/**
+ * 円筒の側面の穴の座標系(EX05)。平面の穴の `resolveHoleFrame` と同じ照合・断り方で面を選び直し、
+ * 位置ごとに入口の点と掘る向きを返す。中心の点・傾きは受け付けない(`CYLINDER_UNSUPPORTED_MESSAGE`)。
+ */
+function resolveCylindricalHoleFrame(
+  oc: OpenCascadeInstance,
+  shape: TopoDS_Shape,
+  faces: readonly SolidFaceInfo[],
+  spec: Pick<HoleStepSpec, 'face' | 'centers' | 'tiltAngle' | 'tiltAzimuth'> & { readonly cylindrical: NonNullable<HoleStepSpec['cylindrical']> },
+  origins?: CurrentOriginIndex,
+): HoleFrame {
+  if (spec.cylindrical.kind !== 'cylinder-face' || spec.centers.length !== 0 || spec.tiltAngle !== 0 || spec.tiltAzimuth !== 0) {
+    throw new Error(CYLINDER_UNSUPPORTED_MESSAGE);
+  }
+  if (spec.cylindrical.locations.length === 0) {
+    throw new Error(NO_CYLINDER_LOCATION_MESSAGE);
+  }
+  for (const location of spec.cylindrical.locations) {
+    if (!Number.isFinite(location.height) || !Number.isFinite(location.angle)) {
+      throw new Error(CYLINDER_LOCATION_NOT_FINITE_MESSAGE);
+    }
+  }
+  const diagonal = boundingDiagonal(oc, shape);
+  const face = resolveFaceOfKind(oc, shape, faces, spec.face, diagonal, 'cylinder', NOT_CYLINDRICAL_MESSAGE, origins);
+  const { keep, release } = createAllocations();
+  try {
+    keep(face);
+    const frame = readCylinderFrame(oc, face, keep);
+    const placed = spec.cylindrical.locations.map(location =>
+      cylinderLocationFrame(oc, face, frame, location.height, location.angle, keep));
+    const first = placed[0];
+    if (first === undefined) throw new Error(NO_CYLINDER_LOCATION_MESSAGE);
+    return { direction: first.direction, origins: placed.map(row => row.origin), directions: placed.map(row => row.direction),
+      concaveRadii: placed.map(row => (row.concave ? frame.radius : null)), diagonal };
+  } finally {
+    release();
+  }
+}
+
 export function resolveHoleFrame(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
-  spec: Pick<HoleStepSpec, 'face' | 'centers' | 'tiltAngle' | 'tiltAzimuth'>,
+  spec: Pick<HoleStepSpec, 'face' | 'centers' | 'tiltAngle' | 'tiltAzimuth' | 'cylindrical'>,
+  origins?: CurrentOriginIndex,
 ): HoleFrame {
+  if (spec.cylindrical !== undefined) {
+    return resolveCylindricalHoleFrame(oc, shape, faces, { ...spec, cylindrical: spec.cylindrical }, origins);
+  }
   if (spec.centers.length === 0) {
     throw new Error(NO_CENTER_MESSAGE);
   }
@@ -372,7 +614,7 @@ export function resolveHoleFrame(
   // 境界箱の対角長は、指紋の物差しと工具の長さの両方が使う。段で 1 回だけ測って持ち回る
   // (`HoleFrame.diagonal` の注釈)。
   const diagonal = boundingDiagonal(oc, shape);
-  const face = resolvePlanarFace(oc, shape, faces, spec.face, diagonal);
+  const face = resolvePlanarFace(oc, shape, faces, spec.face, diagonal, origins);
   const { keep, release } = createAllocations();
 
   try {
@@ -438,6 +680,7 @@ function makeEntryTool(
   diameter: number,
   margin: number,
   keep: Allocations['keep'],
+  capture?: (primitive: BRepPrim_Cylinder | BRepPrim_Cone, stage: HoleFaceOrigin['stage']) => void,
 ): TopoDS_Shape | null {
   switch (entry.kind) {
     case 'plain':
@@ -446,7 +689,9 @@ function makeEntryTool(
       const maker = keep(
         new oc.BRepPrimAPI_MakeCylinder_3(axes, entry.diameter / 2, entry.depth + margin),
       );
-      return keep(maker.Shape());
+      const shape = keep(maker.Shape());
+      capture?.(keep(maker.Cylinder()), 'counterbore');
+      return shape;
     }
     case 'countersink': {
       // 半角の正接。口の外側へ伸ばしたぶんだけ半径を広げるのに要る(深さの式は
@@ -461,7 +706,9 @@ function makeEntryTool(
           depth + margin,
         ),
       );
-      return keep(maker.Shape());
+      const shape = keep(maker.Shape());
+      capture?.(keep(maker.Cone()), 'countersink');
+      return shape;
     }
   }
 }
@@ -483,12 +730,13 @@ function fuseEntryTool(
   drill: TopoDS_Shape,
   entryTool: TopoDS_Shape | null,
   keep: Allocations['keep'],
+  onBuilt?: Parameters<typeof booleanOp>[5],
 ): TopoDS_Shape {
   if (entryTool === null) {
     return drill;
   }
   try {
-    return keep(booleanOp(oc, 'union', drill, entryTool)).shape;
+    return keep(booleanOp(oc, 'union', drill, entryTool, undefined, onBuilt)).shape;
   } catch (error) {
     throw new Error(ENTRY_FAILED_MESSAGE, { cause: error });
   }
@@ -515,6 +763,17 @@ function fuseEntryTool(
  * 返した handle の delete() で、円柱・軸・複製・コンパウンドをまとめて解放する。
  * もとの立体そのものは要らない(`frame.diagonal` にその境界箱の対角長が入っている)。
  */
+interface HoleToolNaming {
+  readonly featureId: string;
+  readonly centerAnchors: readonly HoleCenterAnchor[];
+  readonly placementRoles: readonly HolePlacementRole[];
+}
+interface HoleToolsHandle extends OcctShapeHandle {
+  readonly newHoleFaces: readonly NativeHoleToolFace[];
+  readonly originProofLimitExceeded: boolean;
+  readonly originProofMissingNativeMap: boolean;
+}
+
 export function makeHoleTools(
   oc: OpenCascadeInstance,
   frame: HoleFrame,
@@ -522,7 +781,8 @@ export function makeHoleTools(
   depth: number | null,
   transforms: readonly RigidTransformSpec[],
   entry: HoleEntrySpec = PLAIN_ENTRY,
-): OcctShapeHandle {
+  naming?: HoleToolNaming,
+): HoleToolsHandle {
   if (!Number.isFinite(diameter) || diameter <= 0) {
     throw new Error(DIAMETER_MESSAGE);
   }
@@ -545,8 +805,22 @@ export function makeHoleTools(
   // 長さも両側へこのぶん足す。
   const margin = booleanMargin(diagonal);
   const length = depth === null ? diagonal + 2 * margin : depth + margin;
-  const { direction } = frame;
+  // 円筒の側面の穴(EX05)は位置ごとに向きが違う。並びが食い違えば作らない(取り違えた向きで掘らない)。
+  if (frame.directions !== undefined && (frame.directions.length !== frame.origins.length || entry.kind === 'countersink')) {
+    throw new Error(frame.directions.length !== frame.origins.length ? HOLE_FAILED_MESSAGE : CYLINDER_UNSUPPORTED_MESSAGE);
+  }
+  if (frame.concaveRadii !== undefined && frame.concaveRadii.length !== frame.origins.length) {
+    throw new Error(HOLE_FAILED_MESSAGE);
+  }
   const placements = transformsOrIdentity(transforms);
+  if (naming !== undefined && (naming.centerAnchors.length !== frame.origins.length
+    || naming.placementRoles.length !== transforms.length)) throw new Error('Hole producer roles do not match the operation');
+  const placementRoles: readonly HolePlacementRole[] = transforms.length === 0
+    ? [{ kind: 'original' }] : naming?.placementRoles ?? [];
+  // Bound new proof allocation without lowering the existing geometry input scale.
+  let originProofLimitExceeded = frame.origins.length > 100_000 / (placements.length * (entry.kind === 'plain' ? 3 : 6));
+  let originProofMissingNativeMap = false;
+  const newHoleFaces: NativeHoleToolFace[] = [];
   const { keep, release } = createAllocations();
 
   try {
@@ -554,28 +828,78 @@ export function makeHoleTools(
     const compound = keep(new oc.TopoDS_Compound());
     builder.MakeCompound(compound);
 
-    for (const origin of frame.origins) {
-      // 口の外側へ margin だけ戻った位置から掘り始める(接触面を作らない)。
+    for (const [centerOffset, origin] of frame.origins.entries()) {
+      const direction = frame.directions?.[centerOffset] ?? frame.direction;
+      // 管の内面(凹んだ面、EX05)では、戻る量を内側の空洞の中に収める。最大刃径を検査してから
+      // 戻り量を決める。平面・外面の工具は今までの値を保つ。
+      const concaveRadius = frame.concaveRadii?.[centerOffset] ?? null;
+      const largestToolRadius = (entry.kind === 'counterbore' ? entry.diameter : diameter) / 2;
+      if (concaveRadius !== null && largestToolRadius >= concaveRadius) {
+        throw new Error(CYLINDER_BORE_TOO_SMALL_MESSAGE);
+      }
+      // 内面では plain でも太い刃物の入口が margin より盛り上がる。始点を空洞の軸まで戻せば、最大刃径が Ri 未満のとき
+      // 入口全体を空洞内へ収め、反対側の壁には届かない。深さは戻り量ではなく入口から測る。
+      const backoff = concaveRadius ?? margin;
+      const toolLength = backoff === margin ? length : depth === null ? diagonal + margin + backoff : depth + backoff;
+      // 口の外側へ backoff(ふつうは margin)だけ戻った位置から掘り始める(接触面を作らない)。
       const base = keep(
         new oc.gp_Pnt_3(
-          origin[0] - direction[0] * margin,
-          origin[1] - direction[1] * margin,
-          origin[2] - direction[2] * margin,
+          origin[0] - direction[0] * backoff,
+          origin[1] - direction[1] * backoff,
+          origin[2] - direction[2] * backoff,
         ),
       );
       const axisDirection = keep(new oc.gp_Dir_4(direction[0], direction[1], direction[2]));
       const axes = keep(new oc.gp_Ax2_3(base, axisDirection));
-      const maker = keep(new oc.BRepPrimAPI_MakeCylinder_3(axes, diameter / 2, length));
+      const maker = keep(new oc.BRepPrimAPI_MakeCylinder_3(axes, diameter / 2, toolLength));
       // Shape() は maker の中の実体を指すので、控えへ maker の後に積む(解放は逆順)。
       const cylinder = keep(maker.Shape());
-      const tool = fuseEntryTool(oc, cylinder, makeEntryTool(oc, entry, axes, diameter, margin, keep), keep);
+      const center = naming?.centerAnchors[centerOffset];
+      const stageFaces: NativeHoleToolFace[] = [];
+      const capture = (primitive: BRepPrim_Cylinder | BRepPrim_Cone, stage: HoleFaceOrigin['stage']): void => {
+        for (const [role, face] of [
+          ['wall', keep(primitive.LateralFace())], ['floor', keep(primitive.TopFace())],
+          ['entry-cap', keep(primitive.BottomFace())],
+        ] as const) {
+          stageFaces.push(naming === undefined || center === undefined ? { face, reason: 'unsupported-producer' } : { face, origin: { version: 1, shapeKind: 'face', identity: {
+            kind: 'hole-face', featureId: naming.featureId, center, placement: { kind: 'original' }, stage, role,
+          } } });
+        }
+      };
+      if (!originProofLimitExceeded && !originProofMissingNativeMap) capture(keep(maker.Cylinder()), 'bore');
+      const entryTool = makeEntryTool(oc, entry, axes, diameter, backoff, keep, originProofLimitExceeded || originProofMissingNativeMap ? undefined : capture);
+      let fusedFaces: readonly NativeHoleToolFace[] = stageFaces;
+      const tool = fuseEntryTool(oc, cylinder, entryTool, keep, originProofLimitExceeded || originProofMissingNativeMap ? undefined : (fuse, output) => {
+        try { fusedFaces = rebindHoleToolFaces(oc, fuse, output, stageFaces, keep); }
+        catch (error) {
+          if (error instanceof OriginHistoryLimitError) originProofLimitExceeded = true;
+          else if (error instanceof HoleOriginMapError) originProofMissingNativeMap = true;
+          else throw error;
+          fusedFaces = []; newHoleFaces.length = 0;
+        }
+      });
 
-      for (const placement of placements) {
+      for (const [placementOffset, placement] of placements.entries()) {
+        const role = placementRoles[placementOffset];
+        const placedFaces: NativeHoleToolFace[] = fusedFaces.map((producer): NativeHoleToolFace => {
+          if (producer.origin === undefined || role === undefined) return { face: producer.face, reason: 'unsupported-producer' };
+          if (producer.origin.identity.kind !== 'hole-face') throw new Error('Unexpected hole tool producer');
+          return { face: producer.face, origin: { ...producer.origin, identity: { ...producer.origin.identity, placement: role } } };
+        });
         if (isIdentityTransform(placement)) {
           builder.Add(compound, tool);
+          newHoleFaces.push(...placedFaces);
           continue;
         }
-        const moved = transformShape(oc, tool, placement);
+        const moved = transformShape(oc, tool, placement, originProofLimitExceeded || originProofMissingNativeMap ? undefined : (transform, output) => {
+          try { newHoleFaces.push(...rebindTransformedHoleFaces(oc, transform, output, placedFaces, keep)); }
+          catch (error) {
+            if (error instanceof OriginHistoryLimitError) originProofLimitExceeded = true;
+            else if (error instanceof HoleOriginMapError) originProofMissingNativeMap = true;
+            else throw error;
+            newHoleFaces.length = 0;
+          }
+        });
         // handle は「複製した形 → maker → 変換」をまとめて解放する。控えへ積んで
         // 円柱より後に置くと、解放が逆順(複製 → 円柱)になり順序が保たれる。
         keep(moved);
@@ -583,7 +907,7 @@ export function makeHoleTools(
       }
     }
 
-    return { shape: compound, delete: release };
+    return { shape: compound, newHoleFaces, originProofLimitExceeded, originProofMissingNativeMap, delete: release };
   } catch (error) {
     release();
     throw error;
@@ -602,9 +926,10 @@ function cutHoles(
   oc: OpenCascadeInstance,
   target: TopoDS_Shape,
   tools: TopoDS_Shape,
+  semantic?: BooleanSemanticContext,
 ): BooleanResult {
   try {
-    return booleanOp(oc, 'subtract', target, tools);
+    return booleanOp(oc, 'subtract', target, tools, semantic);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(reason.includes('立体が残りませんでした') ? NOTHING_LEFT_MESSAGE : HOLE_FAILED_MESSAGE, {
@@ -614,15 +939,43 @@ function cutHoles(
 }
 
 /**
+ * A difference of two large, fixed-quadrature volumes can be negative for a real tiny cut.
+ * In that ambiguous case measure the actual removed solid, not target/tool overlap (which
+ * would also accept an erroneous no-op cut). Exact tangency has no removed solid.
+ * Both inputs are borrowed: even a no-op boolean must only see independently copied topology.
+ */
+export function hasHoleMaterialRemoval(
+  oc: OpenCascadeInstance, target: TopoDS_Shape, result: TopoDS_Shape, volumeDifference: number,
+): boolean {
+  if (Number.isFinite(volumeDifference) && volumeDifference >= MIN_REMOVED_VOLUME_MM3) return true;
+  const owned = createAllocations();
+  try {
+    const copy = (shape: TopoDS_Shape): TopoDS_Shape => {
+      const copier = owned.keep(new oc.BRepBuilderAPI_Copy_2(shape, true, true));
+      if (!copier.IsDone()) throw new Error(HOLE_FAILED_MESSAGE);
+      const copied = owned.keep(copier.Shape());
+      if (copied.IsNull() || copied.IsSame(shape)) throw new Error(HOLE_FAILED_MESSAGE);
+      return copied;
+    };
+    const removed = buildBooleanShape(oc, 'subtract', copy(target), [copy(result)],
+      owned.keep(new oc.Message_ProgressRange_1()), owned);
+    if (!hasSolid(oc, removed)) return false;
+    const properties = owned.keep(new oc.GProp_GProps_1());
+    const error = oc.BRepGProp.VolumeProperties_2(removed, properties, 1e-9, false, false);
+    const volume = properties.Mass();
+    return Number.isFinite(error) && Math.abs(error) < 1e-8 && Number.isFinite(volume) && volume > 0;
+  } finally { owned.release(); }
+}
+
+/**
  * 穴をあける(FR-405)。対象は消費せず、新しい形を返す。
  *
  * 引数の `target` は解放しない(形状キャッシュの持ち物。`booleanOp` と同じ約束)。
  * `faces` は `target` から作った面の一覧(`collectSubShapes` の `faces`)で、
  * 別の形から作った一覧を渡すと「面が見つからない」で断る。
  *
- * 工具(円柱のコンパウンド)は差し引いた直後にこの関数が解放する。
- * 差し引きが終われば結果の形は工具と切り離されている(2026-09-03 に Node で実測:
- * 工具の解放後も体積・面数・妥当性・三角形分割がすべて解放前と同じだった)。
+ * 工具、対象の独立した複製、差の結果は、返す handle の delete() まで所有する。
+ * 途中で断った場合は同じ控えを解放する。借りた対象の形やフラグには書き戻さない。
  *
  * 返す値は `booleanOp` の結果そのもので、**測り済みの体積を持ったまま**返る
  * (`BooleanResult` の注釈。呼び出し側の `buildSolidBodyMesh` が測り直さずに使う)。
@@ -636,28 +989,41 @@ export function makeHole(
   target: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
   entry: HoleEntrySpec = PLAIN_ENTRY,
+  origins?: CurrentOriginIndex,
+  featureId?: string,
 ): BooleanResult {
-  const frame = resolveHoleFrame(oc, target, faces, spec);
-  const tools = makeHoleTools(oc, frame, spec.diameter, spec.depth, spec.transforms, entry);
-
-  let result: BooleanResult;
+  const frame = resolveHoleFrame(oc, target, faces, spec, origins);
+  const naming = featureId !== undefined && spec.centerAnchors !== undefined && spec.placementRoles !== undefined
+    ? { featureId, centerAnchors: spec.centerAnchors, placementRoles: spec.placementRoles } : undefined;
+  const owned = createAllocations();
   try {
-    result = cutHoles(oc, target, tools.shape);
-  } finally {
-    tools.delete();
-  }
+    const tools = owned.keep(makeHoleTools(oc, frame, spec.diameter, spec.depth, spec.transforms, entry, naming));
+    // A no-op native cut may reuse its input solid in an output compound and
+    // freeze that TShape even in non-destructive mode. Work on independently
+    // copied topology, geometry and mesh; never restore flags on shared input.
+    const copier = owned.keep(new oc.BRepBuilderAPI_Copy_2(target, true, true));
+    if (!copier.IsDone()) throw new Error(HOLE_FAILED_MESSAGE);
+    const workingTarget = owned.keep(copier.Shape());
+    if (workingTarget.IsNull() || workingTarget.IsSame(target)) throw new Error(HOLE_FAILED_MESSAGE);
+    const workingOrigins = origins === undefined ? undefined
+      : rebindTransformedOrigins(oc, origins, target, copier, workingTarget);
+    const result = owned.keep(cutHoles(oc, workingTarget, tools.shape,
+      featureId !== undefined && workingOrigins !== undefined
+        ? { featureId, target: workingOrigins, newHoleFaces: tools.newHoleFaces } : undefined));
 
-  try {
-    // 何も削れていないなら断る(NOTHING_REMOVED_MESSAGE の説明を参照)。
-    // hasSolid と体積 0 は booleanOp が済ませてあるので、ここでは減った量だけを見る。
-    // 結果の体積は booleanOp がすでに測ってあるので測り直さない。
+    // Ambiguous volume differences require checking the actual removed solid.
     const removed = measureVolume(oc, target) - result.volume;
-    if (!(removed >= MIN_REMOVED_VOLUME_MM3)) {
+    if (!hasHoleMaterialRemoval(oc, workingTarget, result.shape, removed)) {
       throw new Error(NOTHING_REMOVED_MESSAGE);
     }
-    return result;
+    return { ...result, delete: owned.release,
+      ...(tools.originProofLimitExceeded
+        ? { origins: { version: 1 as const, state: 'untracked' as const, reason: 'limit' as const } }
+        : tools.originProofMissingNativeMap
+          ? { origins: { version: 1 as const, state: 'untracked' as const, reason: 'missing-native-map' as const } } : {}),
+    };
   } catch (error) {
-    result.delete();
+    owned.release();
     throw error;
   }
 }

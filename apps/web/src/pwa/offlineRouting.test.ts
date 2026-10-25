@@ -8,6 +8,12 @@ import { readOfflineClientBinding } from './offlineClientBindings.js';
 import { OFFLINE_MANUAL_EDITION_QUERY } from '../../../../scripts/vite/offlineProtocol.mjs';
 
 const base = new URL('https://pointercad.test/app/');
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
 class RoutingLocks implements Pick<LockManager, 'request'> {
   private readonly pending = new Map<string, Promise<unknown>>();
   request<T>(name: string, callback: LockGrantedCallback<T>): Promise<T>;
@@ -70,6 +76,80 @@ function input(path: string, clientId = '', resultingClientId = '', kind: 'fetch
 }
 
 describe('画面の起動時だけ版を選び、子処理と保存済みファイルを同じ版へ接続する', () => {
+  it('one cancelled request does not cancel another real handler sharing edition verification', async () => {
+    const f = fixture(); const edition = f.edition('shared');
+    await f.router.respond(input('', '', 'window', 'navigate'));
+    const router = f.restart(), gate = deferred<Response | undefined>();
+    const original = f.storage.match;
+    const markerUrl = offlineAssetRequestUrl(base, 'offline-assets.json').href;
+    const match = vi.spyOn(f.storage, 'match').mockImplementation((url, options) =>
+      url === markerUrl ? gate.promise : original(url, options));
+    const abort = new AbortController();
+    const first = router.respond({ ...input('worker.js', 'window'),
+      request: new Request(new URL('worker.js', base), { signal: abort.signal }) });
+    const firstRejected = expect(first).rejects.toBeDefined();
+    await vi.waitFor(() => expect(match.mock.calls.some(([url]) => url === markerUrl)).toBe(true));
+    const secondInput = input('value.json', 'window');
+    const listener = vi.spyOn(secondInput.request.signal, 'addEventListener');
+    const second = router.respond(secondInput);
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledWith('abort', expect.any(Function), { once: true }));
+    abort.abort();
+    await firstRejected;
+    // Return fresh responses for subsequent marker checks, never a consumed body.
+    match.mockImplementation(original);
+    gate.resolve(await original(markerUrl, { cacheName: edition.name }));
+    expect(await (await second).text()).toBe('shared-value.json');
+    expect(f.fetchResponse).not.toHaveBeenCalled();
+    listener.mockRestore(); match.mockRestore();
+  });
+
+  it('an obsolete failed validation cannot evict a navigation-installed responder', async () => {
+    const f = fixture(); f.edition('same');
+    await f.router.respond(input('', '', 'window', 'navigate'));
+    const router = f.restart(), gate = deferred<Response | undefined>();
+    const original = f.storage.match;
+    const markerUrl = offlineAssetRequestUrl(base, 'offline-assets.json').href;
+    let held = false;
+    const match = vi.spyOn(f.storage, 'match').mockImplementation((url, options) => {
+      if (url === markerUrl && !held) { held = true; return gate.promise; }
+      return original(url, options);
+    });
+    const old = router.respond(input('worker.js', 'window'));
+    const rejected = expect(old).rejects.toBeDefined();
+    await vi.waitFor(() => expect(held).toBe(true));
+    expect(await (await router.respond(input('', '', 'new-window', 'navigate'))).text()).toBe('same-index.html');
+    gate.reject(new Error('obsolete storage read failed'));
+    await rejected;
+    const markers = match.mock.calls.filter(([url]) => url === markerUrl).length;
+    expect(await (await router.respond(input('value.json', 'window'))).text()).toBe('same-value.json');
+    expect(match.mock.calls.filter(([url]) => url === markerUrl)).toHaveLength(markers);
+    match.mockRestore();
+  });
+
+  it('last cancelled requester releases pending verification and a later request validates anew', async () => {
+    const f = fixture(); const edition = f.edition('again');
+    await f.router.respond(input('', '', 'window', 'navigate'));
+    const router = f.restart(), gate = deferred<Response | undefined>();
+    const original = f.storage.match;
+    const markerUrl = offlineAssetRequestUrl(base, 'offline-assets.json').href;
+    let held = false;
+    const match = vi.spyOn(f.storage, 'match').mockImplementation((url, options) => {
+      if (url === markerUrl && !held) { held = true; return gate.promise; }
+      return original(url, options);
+    });
+    const controller = new AbortController();
+    const request = new Request(new URL('worker.js', base), { signal: controller.signal });
+    const old = router.respond({ request, clientId: 'window', resultingClientId: '' });
+    const rejected = expect(old).rejects.toBeDefined();
+    await vi.waitFor(() => expect(held).toBe(true));
+    controller.abort(); await rejected;
+    expect(await (await router.respond(input('value.json', 'window'))).text()).toBe('again-value.json');
+    // Old verification settles only after the fresh responder exists.
+    gate.resolve(await original(markerUrl, { cacheName: edition.name }));
+    await Promise.resolve();
+    expect(await (await router.respond(input('worker.js', 'window'))).text()).toBe('again-worker.js');
+    match.mockRestore();
+  });
   it('新しい画面は新版を使い、前の画面とその計算は処理再起動後も元の版を使う', async () => {
     const f = fixture(); f.edition('old');
     expect(await (await f.router.respond(input('', '', 'old-window', 'navigate'))).text()).toBe('old-index.html');

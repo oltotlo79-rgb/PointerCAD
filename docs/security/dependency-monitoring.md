@@ -45,11 +45,13 @@
 | #5 [2gqq-gqf2-x968](https://github.com/nodejs/undici/security/advisories/GHSA-2gqq-gqf2-x968) | Low / open | 同じundici 7系、過大chunk | 7.29.1、同上 |
 | #9 [r53p-7pc4-xj5r](https://github.com/nodejs/undici/security/advisories/GHSA-r53p-7pc4-xj5r) | Low / open | 同じundici 7系、retry後の応答 | 7.29.1、同上 |
 | #13 [q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr) | Medium / open | brace-expansion 5.0.9、minimatch 10.2.6のglob | 5.0.12、同上 |
-| #15 [ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp) | High / open | http-cache-semantics 4.2.0、electron-builder→@electron/get 3.1.0→gotの配布取得経路 | **修正版なし**、10/4 12:00 JSTに再確認 |
+| #15 [ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp) | High / open(取得時点) | http-cache-semantics 4.2.0、electron-builder→@electron/get 3.1.0→gotの配布取得経路 | 修正版なし。**依存の置き換えで解消(2026-10-05 18:00 JST、手元。GitHub側のstateは取り込み後に再GET)**。下記 |
 
 「同上」の期限は次の作業開始が10/5 07:00 JSTより早ければその開始時、関連更新・公開が先ならその直前とする。候補は`@electron/get@5.1.0>undici=7.29.1`と`minimatch@10.2.6>brace-expansion=5.0.12`の2辺だけ。undici 6.28.1、brace-expansion 1.1.21/2.1.7と全親版を維持する。#15はこの2件では解消しない。配布処理では設定を合成した後に、gotへ共有HTTP cacheを渡せる枝を拒否し、ファイル成果物のcache、TLS検証、checksumを維持する。これは把握した配布入口の制限であり、#15のalertをdismissしたり修正版適用済みと呼んだりしない。上流の修正と新しい経路を期限ごとに再確認し、有効な未解消Highの公開判定は統括が別に行う。
 
 Dependabotの**通常更新は実行中だが失敗中**。10/1のsecurity job `110320211909`（brace）と`110320211204`（undici）は固定版更新とfallbackの後、各`security_update_not_possible`、`update_files`終了1。結果欄のlatest possibleはそれぞれ1.1.21と6.28.1で、脆弱な5系/7系の実解決を代表しない。10/1の通常更新job `110119937869`は`pnpm install --lockfile-only`終了1、`dependency_file_not_resolvable` 40件、10/2の`110608291825`は`npm install ... --package-lock-only --dry-run`終了1を含み同種50件で、両方とも`update_files`終了1。通常更新の一部PR created表示をjob全体の成功に読み替えない。初回の固定版pin拒否とfallbackの正確な原因は隔離lockと原ログで追う。pnpm 11.25.0の実jobとGitHubの公表対応表（pnpm v7〜v10）の差も監視する。
+
+#15の解消(2026-10-05 18:00 JST、手元の確認)。`pnpm-workspace.yaml`のoverridesへ`app-builder-lib@26.15.3>@electron/get: 5.1.0`を足し、app-builder-libが使う@electron/getをgot不使用(組込みfetch)の5.1.0へ寄せた。5.1.0は既にElectron本体(electron@44.1.0)が使う版でlock上の新規取得は無く、undici 7.29.1の固定も維持する。lockからhttp-cache-semantics 4.2.0・got 11.8.6・cacheable-request等353行が消え、`pnpm install --frozen-lockfile`が成功し、`pnpm why http-cache-semantics`は空。electronDistで元を取りに行かない案は、app-builder-libが7zip・NSIS・AppImageの道具も@electron/get経由で取るため、lockの辺が残り採らない。確認: 隔離コピーで実際にelectron-builder 26.15.3(5.1.0経由)が7zip道具(checksum検証)とElectron 44.1.0本体を取得・展開しwin-unpackedを作成。desktop単体45ファイル557件合格・型・全lint合格、build-sbom成功(部品87、原文欠け0)。制限: 5.1.0の失敗はHTTPError.response.statusで、app-builder-libの5xx再試行判定(response.statusCode)に当たらず、5xxの自動再試行だけ効かない(接続系のcode再試行は有効)。`sealDesktopBuilderDownloadConfig`の方針(cache・strictSSL・checksum)は維持。別件でfast-uri(Moderate)が`pnpm audit`に出る(本件外)。両OSのCIと配布CIで最終確認する。
 
 配布SBOMは実際に同梱するWeb/Desktopのproduction資産・字体・WASM/Python・許諾を対象とする。開発・ビルド道具のlock全量は別の依存監査範囲であり、配布SBOMにないことを脆弱性不存在とはしない。両方の目録、NOTICE、同梱ファイルhashを同じ候補SHAで照合し、新しい除外例外で指摘を隠さない。default branch反映後は全12 IDのstateをAPIで再GETし、新規alertも確認する。
 

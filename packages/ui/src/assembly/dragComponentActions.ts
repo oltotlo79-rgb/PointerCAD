@@ -5,7 +5,9 @@ import { moveComponent, normalizeQuaternion, prepareMateDrag, solveMateDrag,
   type MateDragOutcome, type PartLibrary, type Vec3, type WorkPlane, type MateResidualTargetPair } from '@pointercad/model';
 import { componentDragTarget, finiteComponentDragVector } from '../viewport/dragComponent.js';
 import { useAppStore } from '../store/useAppStore.js';
+import type { AssemblyOccurrenceDrive } from '../store/assemblyOccurrenceDriveSlice.js';
 import type { AssemblyView } from '../store/assemblySlice.js';
+import { coupledDragFollow, type CoupledDragOutcome } from './coupledComponentDrag.js';
 import { resolveCurrentMateTarget } from './mateCommands.js';
 
 export type AssemblyDragNotice = 'dragging' | 'fixed' | 'waiting' | 'unavailable' | 'cancelled' | 'failed' | 'complete' | 'limited';
@@ -22,6 +24,10 @@ export interface AssemblyDragState {
   readonly origin: Vec3;
   readonly prepared: PreparedMateDrag;
   readonly placements: ReadonlyMap<string, RigidPlacement>;
+  /** EX12: the occurrence drives shown when the drag began, given back when a coupled preview ends without a release. */
+  readonly occurrenceDrives: ReadonlyMap<string, AssemblyOccurrenceDrive>;
+  /** EX12: the coupled child drives the last frame published (null when the last frame turned no coupled joint). */
+  readonly published: ReadonlyMap<string, AssemblyOccurrenceDrive> | null;
 }
 export interface AssemblyDragOverlay {
   readonly document: AssemblyDocument;
@@ -65,13 +71,15 @@ export function beginComponentDrag(componentId: string, plane: WorkPlane, grab: 
       const a = resolveCurrentMateTarget(document, view, mate.a), b = resolveCurrentMateTarget(document, view, mate.b);
       if (a.ok && b.ok) targets.set(mate.id, { a: a.target, b: b.target });
     }
-    const result = prepareMateDrag(document, targets, view.resolved.placements, componentId);
+    const result = prepareMateDrag(document, targets, view.resolved.placements, componentId,
+      { jointFrames: view.jointFrames });
     if (!result.ok) return refuse(result.reason === 'invalidInput' ? 'failed' : 'unavailable');
     const origin = result.drag.initial.get(componentId)?.position;
     if (origin === undefined) return refuse('unavailable');
     const drag: AssemblyDragState = { token: crypto.randomUUID(), document, library: state.assemblyLibrary,
       documentId: state.activeDocumentId, version: state.documentVersion, generation: state.requestedGeneration,
-      view, plane, grab: [...grab], origin: [...origin], prepared: result.drag, placements: result.drag.initial };
+      view, plane, grab: [...grab], origin: [...origin], prepared: result.drag, placements: result.drag.initial,
+      occurrenceDrives: state.assemblyOccurrenceDrives, published: null };
     useAppStore.setState({ assemblyDrag: drag, assemblyDragOverlay: { document, library: drag.library, documentId: drag.documentId,
       version: drag.version, generation: drag.generation, placements: drag.placements,
       validatedIds: drag.prepared.variableSet.movableComponentIds }, assemblyDragNotice: 'dragging' });
@@ -79,10 +87,25 @@ export function beginComponentDrag(componentId: string, plane: WorkPlane, grab: 
   } catch { return refuse('failed'); }
 }
 
+/** The drives to show again when a coupled preview ends: only if nothing else replaced the ones this drag published. */
+function restoredDrives(drag: AssemblyDragState): { readonly assemblyOccurrenceDrives: ReadonlyMap<string, AssemblyOccurrenceDrive> } | null {
+  const state = useAppStore.getState();
+  return state.assembly === drag.document && state.assemblyLibrary === drag.library
+    && state.activeDocumentId === drag.documentId && state.documentVersion === drag.version
+    && drag.published !== null && state.assemblyOccurrenceDrives === drag.published
+    ? { assemblyOccurrenceDrives: drag.occurrenceDrives } : null;
+}
+
 /** Cancel never runs another solve and never restores an old document into a new one. */
 export function cancelComponentDrag(notice: AssemblyDragNotice = 'cancelled'): void {
-  if (useAppStore.getState().assemblyDrag === null) return;
-  useAppStore.setState({ assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: notice });
+  const drag = useAppStore.getState().assemblyDrag;
+  if (drag !== null) cancelOwnedComponentDrag(drag, notice);
+}
+
+/** A completed or interrupted request may cancel only the input operation it captured. */
+function cancelOwnedComponentDrag(drag: AssemblyDragState, notice: AssemblyDragNotice = 'cancelled'): void {
+  if (useAppStore.getState().assemblyDrag?.token !== drag.token) return;
+  useAppStore.setState({ assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: notice, ...restoredDrives(drag) });
 }
 
 function confinedPlacements(drag: AssemblyDragState, placements: ReadonlyMap<string, RigidPlacement>): boolean {
@@ -96,49 +119,79 @@ function confinedPlacements(drag: AssemblyDragState, placements: ReadonlyMap<str
   return placements.size === drag.prepared.initial.size;
 }
 
-function requestComponentDrag(pointer: Vec3, phase: 'frame' | 'release', options: DragRequestOptions): MateDragOutcome | null {
+interface DragStep {
+  readonly result: MateDragOutcome;
+  readonly coupled: Exclude<CoupledDragOutcome, { readonly kind: 'refused' }>;
+}
+
+function requestComponentDrag(pointer: Vec3, phase: 'frame' | 'release', options: DragRequestOptions): DragStep | null {
   const drag = useAppStore.getState().assemblyDrag;
   if (drag === null) return null;
-  if (!currentComponentDrag(drag)) { cancelComponentDrag(); return null; }
+  if (!currentComponentDrag(drag)) { cancelOwnedComponentDrag(drag); return null; }
   const target = componentDragTarget(drag.origin, drag.grab, pointer);
-  if (target === null) { cancelComponentDrag('failed'); return null; }
+  if (target === null) { cancelOwnedComponentDrag(drag, 'failed'); return null; }
   try {
     const result = solveMateDrag(drag.prepared, target, { ...options, phase,
       maxIterations: options.maxIterations ?? (phase === 'frame' ? 5 : 50), placements: drag.placements,
       shouldCancel: () => !currentComponentDrag(drag) });
-    if (!currentComponentDrag(drag)) { cancelComponentDrag(); return null; }
+    if (!currentComponentDrag(drag)) { cancelOwnedComponentDrag(drag); return null; }
     if (!result.hardSatisfied || !confinedPlacements(drag, result.placements)) {
-      if (phase === 'release') cancelComponentDrag('failed');
+      if (phase === 'release') cancelOwnedComponentDrag(drag, 'failed');
+      else useAppStore.setState({ assemblyDragNotice: 'failed' });
+      return null;
+    }
+    // EX12: a drag that turns the parent joint of a saved cross-level gear or the joint of a saved cam carries every
+    // coupled child (the same follow as every other parent-level motion), or is refused whole with the reason shown.
+    const coupled = coupledDragFollow({ document: drag.document, view: drag.view, initial: drag.prepared.initial }, result.placements);
+    if (coupled.kind === 'refused') {
+      useAppStore.setState({ assemblyCrossLevelMotionNotice: coupled.notice });
+      if (phase === 'release') cancelOwnedComponentDrag(drag, 'failed');
       else useAppStore.setState({ assemblyDragNotice: 'failed' });
       return null;
     }
     if (phase === 'frame') {
-      useAppStore.setState({ assemblyDrag: { ...drag, placements: result.placements },
+      // The parent preview and its coupled children in one update; a frame that turns no coupled joint shows the drives
+      // of the drag start again.
+      const drives = coupled.kind === 'coupled' ? { assemblyOccurrenceDrives: coupled.drives, assemblyCrossLevelMotionNotice: null }
+        : restoredDrives(drag);
+      useAppStore.setState({ assemblyDrag: { ...drag, placements: result.placements, published: coupled.kind === 'coupled' ? coupled.drives : null },
         assemblyDragOverlay: { document: drag.document, library: drag.library, documentId: drag.documentId, version: drag.version,
           generation: drag.generation, placements: result.placements, validatedIds: drag.prepared.variableSet.movableComponentIds },
-        assemblyDragNotice: result.stop === 'stationary' ? 'limited' : 'dragging' });
+        assemblyDragNotice: result.stop === 'stationary' ? 'limited' : 'dragging', ...drives });
     }
-    return result;
-  } catch { cancelComponentDrag('failed'); return null; }
+    return { result, coupled };
+  } catch { cancelOwnedComponentDrag(drag, 'failed'); return null; }
 }
 
 export function moveComponentDrag(pointer: Vec3, options: DragRequestOptions = {}): MateDragOutcome | null {
-  return requestComponentDrag(pointer, 'frame', options);
+  return requestComponentDrag(pointer, 'frame', options)?.result ?? null;
 }
 
 export function finishComponentDrag(pointer: Vec3, options: DragRequestOptions = {}): boolean {
   const drag = useAppStore.getState().assemblyDrag;
   if (drag === null) return false;
-  const result = requestComponentDrag(pointer, 'release', options);
-  if (result === null || !result.committable || !currentComponentDrag(drag)) { cancelComponentDrag('failed'); return false; }
+  const step = requestComponentDrag(pointer, 'release', options);
+  if (step === null || !step.result.committable || !currentComponentDrag(drag)) { cancelOwnedComponentDrag(drag, 'failed'); return false; }
+  const result = step.result;
+  if (step.coupled.kind === 'coupled') {
+    // EX12: joint motion, not a placement edit. The parent placements, the reached joint values and every coupled child
+    // are published together like a joint drive: no document edit, no Undo step, not saved.
+    useAppStore.setState({ assemblyDrag: null, assemblyDragOverlay: null, assemblyDragNotice: null,
+      assemblyMotionTime: 0, assemblyMotionPlaying: false, assemblyMotionPlacements: result.placements,
+      assemblyMotionSourceDocument: drag.document, assemblyMotionJointValues: step.coupled.values, assemblyMotionNotice: null,
+      // A running cooperative top-level drive no longer owns the motion (it checks assemblyJointDrive before each slice).
+      assemblyJointDrive: null, assemblyOccurrenceDrives: step.coupled.drives, assemblyCrossLevelMotionNotice: null });
+    return true;
+  }
   const document = componentDragDocument(drag.document, drag.prepared.initial, result.placements);
-  if (document === null) { cancelComponentDrag('failed'); return false; }
+  if (document === null) { cancelOwnedComponentDrag(drag, 'failed'); return false; }
   // End the session before subscribers or capture release can deliver another end event.
   useAppStore.setState({ assemblyDrag: null,
     assemblyDragOverlay: document === drag.document ? null : { document, library: drag.library, documentId: drag.documentId,
       version: drag.version, generation: drag.generation + 1, placements: result.placements,
       validatedIds: drag.prepared.variableSet.movableComponentIds },
-    assemblyDragNotice: result.stop === 'stationary' ? 'limited' : document === drag.document ? null : 'complete' });
+    assemblyDragNotice: result.stop === 'stationary' ? 'limited' : document === drag.document ? null : 'complete',
+    ...restoredDrives(drag) });
   if (document !== drag.document) useAppStore.getState().applyAssembly(document);
   return true;
 }

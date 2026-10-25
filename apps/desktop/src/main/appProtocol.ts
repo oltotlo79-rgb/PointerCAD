@@ -3,6 +3,7 @@ import { contentSecurityPolicyFor } from '@pointercad/ui/security-policy';
 import { join, normalize, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { injectStartupShell } from './startupHtml.js';
+import { desktopAppContentSecurityPolicy } from '../occtHttpPolicy.js';
 
 /** 画面の配信に使う独自スキーム。Web 版と同じ「http のような」条件を再現する。 */
 export const APP_SCHEME = 'app';
@@ -20,6 +21,8 @@ export function registerAppScheme(): void {
       scheme: APP_SCHEME,
       privileges: {
         standard: true,
+        // Custom schemes must opt in to Chromium's managed code cache.
+        codeCache: true,
         secure: true,
         supportFetchAPI: true,
         corsEnabled: true,
@@ -56,7 +59,9 @@ export function handleAppScheme(rendererRoot: string): void {
 
     const response = await net.fetch(pathToFileURL(filePath).toString());
     const headers = new Headers(response.headers);
-    headers.set('Content-Security-Policy', contentSecurityPolicyFor(url.pathname));
+    const policy = contentSecurityPolicyFor(url.pathname);
+    headers.set('Content-Security-Policy', relativePath === '/index.html'
+      ? desktopAppContentSecurityPolicy(policy) : policy);
     headers.set('X-Frame-Options', 'DENY');
     headers.set('Referrer-Policy', 'no-referrer');
     // Web 版(apps/web/public/_headers)と同じ隔離状態を作る(FR-1003)。

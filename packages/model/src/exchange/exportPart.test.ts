@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SolidBody, SolidBodyKind } from '../kernelBridge.js';
+import { toShapeExportRequest } from '../kernelBridge/exchangeConversions.js';
 
 import {
   acceptsMeshBody,
@@ -349,6 +350,36 @@ describe('書き出しの依頼の既定値(§0.a-0.12、§0.a-0.14、§0.a-0.22
 });
 
 describe('三角形の細かさの対(§0.a-0.64、FR-803)', () => {
+  it('詳細指定の偏差を既存の角度と対にし、すべてのメッシュ形式へ渡す', () => {
+    for (const deviationMm of [0.005, 0.05, 0.5]) {
+      for (const format of ['stl', '3mf', 'obj', 'glb'] as const) {
+        const request = createExportRequest(format, { quality: 'normal', customDeviationMm: deviationMm });
+        const outcome = selectExportBodies(THREE_SOLIDS, request);
+        expect(outcome.ok).toBe(true);
+        if (!outcome.ok) continue;
+        expect(outcome.selection.deviationMm).toBe(deviationMm);
+        expect(outcome.selection.meshQuality).toEqual({ deviationMm, angularDeflectionRad: 0.2 });
+        const workerFormat = format === '3mf' ? 'mesh' : format === 'glb' ? 'gltf' : format;
+        expect(toShapeExportRequest([], {
+          format: workerFormat, bodies: [], meshQuality: outcome.selection.meshQuality,
+          withColors: false, ascii: false, baseName: 'part',
+        })).toMatchObject({ deviationMm, angularDeflectionRad: 0.2 });
+      }
+    }
+    expect(exportMeshQuality('stl', 'fine', 0.05)).toEqual({
+      deviationMm: 0.05, angularDeflectionRad: 0.1,
+    });
+    expect(exportDeviationMm('step', 'normal', 0.05)).toBeNull();
+  });
+
+  it('0・負・NaN・Infinity の詳細指定を依頼作成と選択の両方で拒否する', () => {
+    for (const invalid of [0, -0.05, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => createExportRequest('stl', { customDeviationMm: invalid })).toThrow(RangeError);
+      expect(() => selectExportBodies(THREE_SOLIDS, {
+        ...createExportRequest('stl'), customDeviationMm: invalid,
+      })).toThrow(RangeError);
+    }
+  });
   it('3 択の裏は長さと角度の対で、粗い 0.5/0.5・標準 0.1/0.2・細かい 0.02/0.1', () => {
     expect(EXPORT_MESH_QUALITY).toEqual({
       coarse: { deviationMm: 0.5, angularDeflectionRad: 0.5 },

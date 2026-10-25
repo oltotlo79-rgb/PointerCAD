@@ -6,6 +6,7 @@
  * 足す。待たせない限り実物と同じに動く。
  */
 
+import { encodeSaveDocument } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addComponent, createAssemblyDocument, createComponentFor, createDrawingDocument, createEmptyPartDocument,
@@ -81,7 +82,8 @@ function gateway() {
 }
 
 function depsWith(confirmDiscard: PartFileDeps['confirmDiscard']): PartFileDeps {
-  return { captureThumbnail: () => null, confirmDiscard, recentFilesStorage: null };
+  // WorkerのないNodeでも、保存バイトは実IOで生成する。
+  return { captureThumbnail: () => null, confirmDiscard, recentFilesStorage: null, encodeSave: encodeSaveDocument };
 }
 
 /** 部品を 1 つ置いた組立を保存し、その組立を開いたままにする。 */

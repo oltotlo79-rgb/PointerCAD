@@ -11,7 +11,7 @@
 import type { ShapeExportFile, ShapeExportMeshBody, ShapeExportResult } from '@pointercad/kernel';
 import { describe, expect, it } from 'vitest';
 
-import { toShapeExportOutcome } from './exchangeConversions.js';
+import { toShapeExportOutcome, toShapeExportRequest } from './exchangeConversions.js';
 import type {
   ExportColor,
   ShapeExportBody,
@@ -52,6 +52,15 @@ function exportOptions(
     baseName: 'model',
   };
 }
+
+it.each(['step', 'stl', 'obj', 'gltf', 'mesh'] as const)(
+  '%s の Worker request に caller の AbortSignal を含めない', (format) => {
+    const controller = new AbortController();
+    const request = toShapeExportRequest([], { ...exportOptions([], format), signal: controller.signal });
+    expect(request).not.toHaveProperty('signal');
+    expect(structuredClone(request)).toEqual(request);
+  },
+);
 
 describe("toShapeExportOutcome('mesh') の面色・面範囲(R04)", () => {
   it('依頼の faceColors と kernel が返した faceRanges を、そのまま結果へ引き継ぐ', () => {
@@ -163,5 +172,25 @@ describe('形式ごとに面の色の運び手が出力まで届く(共通検査
   ])('$format: 面の色の運び手が outcome まで届く', ({ format, result }) => {
     const outcome = toShapeExportOutcome(result, exportOptions(bodies, format));
     assertCarriesFaceColor(format, outcome);
+    if (outcome.kind === 'files') {
+      if (format === 'step') expect(outcome).not.toHaveProperty('triangleCount');
+      else expect(outcome.triangleCount).toBe(2);
+    }
+  });
+
+  it.each([NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    '不正な実枚数 %s は存在しない値として保つ', (triangleCount) => {
+      const result: ShapeExportResult = {
+        format: 'stl', files: filesResult('stl'), triangleCount, droppedTriangleCount: 0,
+      };
+      const outcome = toShapeExportOutcome(result, exportOptions(bodies, 'stl'));
+      expect(outcome).not.toHaveProperty('triangleCount');
+    },
+  );
+
+  it('完成ファイルが空なら kernel 数値から枚数を捏造しない', () => {
+    const outcome = toShapeExportOutcome({ format: 'stl', files: [], triangleCount: 0, droppedTriangleCount: 0 },
+      exportOptions(bodies, 'stl'));
+    expect(outcome).not.toHaveProperty('triangleCount');
   });
 });

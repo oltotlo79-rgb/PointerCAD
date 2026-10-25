@@ -24,14 +24,17 @@
  * `commitFillet` が受け持つ(統括の決定 2026-09-06)。
  */
 
+import { allocatePatternPointSlots, patternSlotHighWater } from '@pointercad/model';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { selectedSweepGuide } from './sweepGuideChoices.js';
 import { SKETCH_PATH_KINDS } from './sketchPathKinds.js';
 import {
   appendSolid,
+  createFaceOffsetFeature,
   DEFAULT_DRAFT_ANGLE_DEGREES,
   DEFAULT_EMBOSS_HEIGHT_MM,
   DEFAULT_EMBOSS_RAISED,
+  DEFAULT_FACE_OFFSET_MM,
   DEFAULT_MIRROR_PLANE_ID,
   DEFAULT_PRIMITIVE_AXIS,
   DEFAULT_RIB_EXTEND_TO_BODY,
@@ -106,6 +109,7 @@ import {
  */
 export type ShapeEditToolId =
   | 'draft'
+  | 'faceOffset'
   | 'mirrorSolid'
   | 'transform'
   | 'scale'
@@ -157,6 +161,8 @@ export const DEFAULT_SURFACE_OFFSET: ExpressionValue =
   expressionValueFromNumber(DEFAULT_SURFACE_OFFSET_MM);
 export const DEFAULT_SHELL_THICKNESS: ExpressionValue =
   expressionValueFromNumber(DEFAULT_SHELL_THICKNESS_MM);
+/** 平らな面の移動の距離の既定(EX-18)。数は model の DEFAULT_FACE_OFFSET_MM 1 か所にある。 */
+export const DEFAULT_FACE_OFFSET: ExpressionValue = expressionValueFromNumber(DEFAULT_FACE_OFFSET_MM);
 
 /* ------------------------------------------------------------------ *
  * 選択 → 材料(スケッチの面・曲線・点、立体の面)
@@ -418,6 +424,20 @@ function draftRejection(context: MachiningContext): MessageKey | null {
   return shapeEditTargetOf(context) === null ? 'shapeError.noTargetBody' : null;
 }
 
+/**
+ * 平らな面の移動(EX-18)。平らな面をちょうど 1 枚選び、その面を持つ立体が決まること。
+ * 立体も一緒に選んでいて面と別の立体なら断る(別の立体の面を動かす形を作らない)。
+ * 隣の面が直角か・ほかの形に当たらないかは確定後にカーネルが確かめて断る(元の立体は残る)。
+ */
+function faceOffsetRejection(context: MachiningContext): MessageKey | null {
+  const faces = selectedSolidFaces(context);
+  const face = faces[0];
+  if (faces.length !== 1 || face === undefined || !isFlatFace(face)) {
+    return 'shapeError.noFlatFace';
+  }
+  return shapeEditTargetOf(context) === face.bodyFeatureId ? null : 'shapeError.noTargetBody';
+}
+
 /** 立体をちょうど 1 つ選ぶ道具(ミラー・移動/回転・拡大縮小・くり抜き)。 */
 function singleBodyRejection(context: MachiningContext): MessageKey | null {
   return shapeEditTargetOf(context) === null ? 'shapeError.noTargetBody' : null;
@@ -519,6 +539,8 @@ function shapeEditRejection(
   switch (tool) {
     case 'draft':
       return draftRejection(context);
+    case 'faceOffset':
+      return faceOffsetRejection(context);
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
@@ -547,6 +569,7 @@ function shapeEditRejection(
 export function shapeEditToolOf(tool: string): ShapeEditToolId | null {
   switch (tool) {
     case 'draft':
+    case 'faceOffset':
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
@@ -601,6 +624,31 @@ function commitDraft(context: MachiningContext, commit: SolidInputCommit): Solid
     angle: commit.values.draftAngle ?? DEFAULT_DRAFT_ANGLE,
     reversed: commit.flags.reversed ?? false,
   };
+  return appended(context.document, feature, id);
+}
+
+/**
+ * 平らな面の移動(EX-18)。選んだ平らな面 1 枚を、その面を持つ立体の上で符号付きの距離だけ動かす。
+ * **対象を消費する**(抜き勾配と同じ)。欄が空なら model の既定(外向き 1mm)で作る(NFR-UX-4)。
+ */
+function commitFaceOffset(context: MachiningContext, commit: SolidInputCommit): SolidCommandOutcome {
+  const rejection = faceOffsetRejection(context);
+  if (rejection !== null) {
+    return { ok: false, reasonKey: rejection };
+  }
+  const face = selectedSolidFaces(context)[0];
+  if (face === undefined) {
+    // faceOffsetRejection が確かめた後なので通らないが、型の絞り込みに要る。
+    return { ok: false, reasonKey: 'shapeError.noFlatFace' };
+  }
+  const id = nextSolidId(context.document, 'faceOffset');
+  const feature = createFaceOffsetFeature({
+    id,
+    name: nextSolidName(context.document, 'faceOffset'),
+    targetFeatureId: face.bodyFeatureId,
+    face,
+    offset: commit.values.faceOffsetDistance ?? DEFAULT_FACE_OFFSET,
+  });
   return appended(context.document, feature, id);
 }
 
@@ -930,7 +978,7 @@ function commitPointPattern(context: MachiningContext): SolidCommandOutcome {
     suppressed: false,
     kind: 'pattern',
     sourceFeatureId,
-    placement: { kind: 'points', points },
+    placement: allocatePatternPointSlots(points, undefined, undefined, patternSlotHighWater(context.document, id)),
   };
   return appended(context.document, feature, id);
 }
@@ -973,6 +1021,8 @@ export function commitShapeEdit(
   switch (tool) {
     case 'draft':
       return commitDraft(context, commit);
+    case 'faceOffset':
+      return commitFaceOffset(context, commit);
     case 'mirrorSolid':
       return commitMirror(context, commit);
     case 'transform':

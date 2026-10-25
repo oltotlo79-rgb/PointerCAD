@@ -153,6 +153,40 @@ export function quaternionFromAxisAngle(axis: Vec3, angleRadians: number): Quate
 }
 
 /**
+ * 正規直交の右手系 `(x, y, z)` (部品の局所 X/Y/Z 軸が組立でどちらを向くか)から四元数を作る。
+ * 回転行列の列がこの 3 本になる向きを返す(Shepperd の方法。分母は最も大きい対角成分から選ぶ)。
+ * 長さ 1・直交・右手系のどれかが `tolerance` を超えて崩れていれば `null`(黙って近い回転へ寄せない)。
+ */
+export function quaternionFromBasis(x: Vec3, y: Vec3, z: Vec3, tolerance: number): Quaternion | null {
+  const all = [...x, ...y, ...z];
+  if (!all.every((value) => Number.isFinite(value))) return null;
+  const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross: Vec3 = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]];
+  if (Math.abs(dot(x, x) - 1) > tolerance || Math.abs(dot(y, y) - 1) > tolerance || Math.abs(dot(z, z) - 1) > tolerance
+    || Math.abs(dot(x, y)) > tolerance || Math.abs(dot(y, z)) > tolerance || Math.abs(dot(z, x)) > tolerance
+    || dot(cross, z) < 1 - tolerance) return null;
+  const [m00, m10, m20] = x;
+  const [m01, m11, m21] = y;
+  const [m02, m12, m22] = z;
+  const trace = m00 + m11 + m22;
+  let q: Quaternion;
+  if (trace > 0) {
+    const s = Math.sqrt(trace + 1) * 2;
+    q = [(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, s / 4];
+  } else if (m00 > m11 && m00 > m22) {
+    const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
+    q = [s / 4, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s];
+  } else if (m11 > m22) {
+    const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
+    q = [(m01 + m10) / s, s / 4, (m12 + m21) / s, (m02 - m20) / s];
+  } else {
+    const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
+    q = [(m02 + m20) / s, (m12 + m21) / s, s / 4, (m10 - m01) / s];
+  }
+  return normalizeQuaternion(q);
+}
+
+/**
  * 四元数から「軸と角度」へ戻す(§2.4)。`θ = 2·acos(clamp(w, −1, 1))`、`a = (x,y,z)/sin(θ/2)`。
  *
  * 先に `normalizeQuaternion` を通すので `w >= 0`、つまり返す角は必ず `0 <= θ <= π` になる。

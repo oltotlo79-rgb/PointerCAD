@@ -39,6 +39,19 @@ function tamper(value: unknown, viewKind = 'section'): string {
 }
 
 describe('派生図の保存条件', () => {
+  it('断面と補助投影の面参照に意味起点を保存する', () => {
+    if (target.kind !== 'subShape') throw new Error('fixture');
+    const withOrigin: DimensionTarget = { ...target, ref: { ...target.ref,
+      origin: { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'plate', role: 'top' } } } };
+    const plane: DrawingPlaneDefinition = { kind: 'face', target: withOrigin, offset: expression(0) };
+    for (const kind of ['section', 'auxiliary'] as const) {
+      const construction: DrawingViewConstruction = kind === 'section'
+        ? { kind, plane, mode: 'full', keepSide: 'positive', reversed: false, label: 'A' }
+        : { kind, sourceViewId: 'front', plane };
+      const result = parseDrawing(envelope(construction));
+      expect(result.ok && result.document.views[1].construction).toEqual(construction);
+    }
+  });
   it.each(constructions)('式と参照を失わず往復する: $kind', (construction) => {
     const result = parseDrawing(envelope(construction));
     expect(result.ok && result.document.views[1].construction).toEqual(construction);

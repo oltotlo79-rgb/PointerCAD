@@ -109,6 +109,8 @@ export async function radialMenuFlow(page: Page, info: TestInfo, app?: ElectronA
   await select(page);
 
   // The moved centre and cancellation stay inside the viewport at its edge.
+  // Point selection has a contextual connection item; this flow checks the ordinary line slot.
+  await page.locator('canvas.pcad-viewport__canvas').focus(); await page.keyboard.press('Escape');
   const bounds = await page.locator('canvas.pcad-viewport__canvas').boundingBox();
   if (bounds === null) throw new Error('作図画面がありません。');
   await open(page, { x: bounds.x + 3, y: bounds.y + 3 });

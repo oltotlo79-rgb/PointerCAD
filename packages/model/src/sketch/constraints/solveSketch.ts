@@ -34,7 +34,8 @@ import { diagnoseConstraints, type ConstraintDiagnosis } from './diagnose.js';
 import { buildResiduals } from './residuals.js';
 import {
   CONSTRAINT_TOLERANCE,
-  solveLevenbergMarquardt,
+  createLevenbergMarquardtJob,
+  type LevenbergMarquardtJob,
   type LinearizedRow,
   type SolveOptions,
   type SolveOutcome,
@@ -302,6 +303,9 @@ function constraintErrors(
     return [sketchError(documentId, 'constraintTooMany', diagnosis.summary)];
   }
   const errors: SketchError[] = [];
+  if (diagnosis.rank === null) {
+    errors.push(sketchError(documentId, 'constraintUnsolved', diagnosis.summary));
+  }
   if (diagnosis.conflictDetails.length > 0) {
     // 同じ文が相手の側にも入っているので、重複を除いてから並べる。
     const sentences: string[] = [];
@@ -355,11 +359,11 @@ function unsolved(
  * `CONSTRAINT_*`)で、診断の許容量も同じ値に揃える。**引っぱり**(P4b タスク14)も
  * ここから入る(`pinned`)。
  */
-export function resolveConstrainedSketch(
+function prepareConstrainedSketch(
   document: SketchDocument,
-  options: SketchResolveOptions = {},
-  solveOptions?: ConstrainedSolveOptions,
-): ConstrainedSketch {
+  options: SketchResolveOptions,
+  solveOptions: ConstrainedSolveOptions | undefined,
+): ConstrainedSketch | PendingConstrainedSolve {
   const initial = resolveInvalidConstraintInputs(document, options);
   const checkedOptions = initial.options, invalidInputs = checkedOptions.invalidInputs;
   const constraintInputErrors: readonly SketchError[] = sketchConstraints(document).flatMap(constraint => {
@@ -452,45 +456,165 @@ export function resolveConstrainedSketch(
     }
     return withPins;
   };
-  const outcome = solveLevenbergMarquardt(variableSet.initial, evaluate, solveOptions);
+  const solver = createLevenbergMarquardtJob(variableSet.initial, evaluate, solveOptions);
+  const complete = (outcome: SolveOutcome): ConstrainedSketch => {
 
-  /*
-    診断(足りない・足しすぎ・矛盾)と断りは、**引っぱっている間は出さない**。理由は 2 つ。
+    /*
+      診断(足りない・足しすぎ・矛盾)と断りは、**引っぱっている間は出さない**。理由は 2 つ。
 
-    ①引っぱりは重み付きの釣り合いなので、目標が拘束の届かないところにあると拘束の式が
-      きっちり 0 にはならない(実測: 20mm 行き過ぎた引っぱりで長さの誤差 2e-3mm、
-      `DRAG_PIN_WEIGHT` の注釈)。これを「解けていない」と読むと、引っぱるたびに
-      帯が赤くなる。文書の拘束は 1 つも変わっていないのだから、正しい診断は**離した後の
-      再計算**(引っぱりの式が無い状態)で出せばよい。
-    ②ヤコビアンの階数を毎コマ数えると、ドラッグの 1 コマ(16.6ms)に収まらなくなる
-      (NFR-PF-1、§2.9)。
+      ①引っぱりは重み付きの釣り合いなので、目標が拘束の届かないところにあると拘束の式が
+        きっちり 0 にはならない(実測: 20mm 行き過ぎた引っぱりで長さの誤差 2e-3mm、
+        `DRAG_PIN_WEIGHT` の注釈)。これを「解けていない」と読むと、引っぱるたびに
+        帯が赤くなる。文書の拘束は 1 つも変わっていないのだから、正しい診断は**離した後の
+        再計算**(引っぱりの式が無い状態)で出せばよい。
+      ②ヤコビアンの階数を毎コマ数えると、ドラッグの 1 コマ(16.6ms)に収まらなくなる
+        (NFR-PF-1、§2.9)。
 
-    引っぱっていないときは従来どおり。診断には**解いた後の x** を渡す(初期値のままだと、
-    解けば消える残差を「矛盾」と読み違える。タスク7 の申し送り)。
-  */
-  const diagnosis =
-    pins.length > 0
-      ? null
-      : diagnoseConstraints(constraints, variableSet, outcome.x, {
-          tolerance: solveOptions?.tolerance,
-        });
+      引っぱっていないときは従来どおり。診断には**解いた後の x** を渡す(初期値のままだと、
+      解けば消える残差を「矛盾」と読み違える。タスク7 の申し送り)。
+    */
+    const diagnosis =
+      pins.length > 0
+        ? null
+        : diagnoseConstraints(constraints, variableSet, outcome.x, {
+            tolerance: solveOptions?.tolerance,
+          });
 
-  // ③ 解を差し込んで解決し直す。収束しなかったときも**最後に得られた x** で上書きし、
-  // 形は最も近い状態で描く(FR-504「止めずに警告する」)。
-  const { pointOverrides, radiusOverrides } = buildOverrides(variableSet, outcome.x, plane);
-  const resolved =
-    pointOverrides.size === 0 && radiusOverrides.size === 0
-      ? base
-      : resolveChecked({ ...checkedOptions, pointOverrides, radiusOverrides });
+    // ③ 解を差し込んで解決し直す。収束しなかったときも**最後に得られた x** で上書きし、
+    // 形は最も近い状態で描く(FR-504「止めずに警告する」)。
+    const { pointOverrides, radiusOverrides } = buildOverrides(variableSet, outcome.x, plane);
+    const resolved =
+      pointOverrides.size === 0 && radiusOverrides.size === 0
+        ? base
+        : resolveChecked({ ...checkedOptions, pointOverrides, radiusOverrides });
 
-  return {
-    resolved,
-    diagnosis,
-    errors:
-      diagnosis === null ? [] : constraintErrors(document.id, diagnosis, outcome.converged),
-    solution: pointOverrides,
-    radiusSolution: radiusOverrides,
-    variableSet,
-    outcome,
+    return {
+      resolved,
+      diagnosis,
+      errors:
+        diagnosis === null ? [] : constraintErrors(document.id, diagnosis, outcome.converged),
+      solution: pointOverrides,
+      radiusSolution: radiusOverrides,
+      variableSet,
+      outcome,
+    };
   };
+  return { solver, complete };
+}
+
+/** The nonlinear part of one constrained resolve, advanced in bounded damping attempts. */
+interface PendingConstrainedSolve {
+  readonly solver: LevenbergMarquardtJob;
+  readonly complete: (outcome: SolveOutcome) => ConstrainedSketch;
+}
+
+/**
+ * A resumable `resolveConstrainedSketch`: the same three stages, with the Levenberg–Marquardt stage advanced
+ * by `step(maxAttempts)` (see `createLevenbergMarquardtJob`). Returns the result once finished, otherwise
+ * null. Cases that need no nonlinear solve are finished on the first step. A caller that stops stepping
+ * can cancel explicitly; nothing is shared or mutated. `stepWork` separates setup, inner solver work
+ * and finalization. Its totalWork counts work charged through that API, not legacy `step` calls.
+ */
+export interface ConstrainedSketchJob {
+  step(maxAttempts: number): ConstrainedSketch | null;
+  stepWork(maxWork: number): ConstrainedSketchProgress;
+  cancel(): void;
+}
+
+export type ConstrainedSketchProgress = {
+  readonly work: number;
+  readonly totalWork: number;
+  readonly linearWork: number;
+  readonly productEntries: number;
+  readonly phase: 'setup' | 'solve' | 'finalize';
+} & (
+  | { readonly status: 'pending' | 'cancelled'; readonly result: null }
+  | { readonly status: 'completed'; readonly result: ConstrainedSketch }
+);
+
+export function createConstrainedSketchJob(
+  document: SketchDocument,
+  options: SketchResolveOptions = {},
+  solveOptions?: ConstrainedSolveOptions,
+): ConstrainedSketchJob {
+  // Construction is lazy: an owner can cancel before any setup or numerical work starts.
+  let prepared: ConstrainedSketch | PendingConstrainedSolve | null = null;
+  let result: ConstrainedSketch | null = null;
+  let solved: SolveOutcome | null = null;
+  let cancelled = false;
+  let phase: ConstrainedSketchProgress['phase'] = 'setup';
+  let totalWork = 0, linearWork = 0, productEntries = 0;
+  const progress = (work: number): ConstrainedSketchProgress => {
+    const counts = { work, totalWork, linearWork, productEntries, phase };
+    if (cancelled) return { ...counts, status: 'cancelled', result: null };
+    if (result !== null) return { ...counts, status: 'completed', result };
+    return { ...counts, status: 'pending', result: null };
+  };
+  return {
+    step(maxAttempts: number): ConstrainedSketch | null {
+      if (cancelled) return null;
+      if (result !== null) return result;
+      prepared ??= prepareConstrainedSketch(document, options, solveOptions);
+      if (!('solver' in prepared)) { phase = 'finalize'; result = prepared; return result; }
+      phase = 'solve';
+      const outcome = solved ?? prepared.solver.step(maxAttempts);
+      if (outcome === null) return null;
+      phase = 'finalize';
+      result = prepared.complete(outcome);
+      return result;
+    },
+    stepWork(maxWork: number): ConstrainedSketchProgress {
+      if (!Number.isSafeInteger(maxWork) || maxWork < 1) throw new RangeError('maxWork must be a positive safe integer');
+      if (cancelled || result !== null) return progress(0);
+      if (prepared === null) {
+        prepared = prepareConstrainedSketch(document, options, solveOptions);
+        phase = 'solver' in prepared ? 'solve' : 'finalize';
+        totalWork += 1;
+        // A case that needs no nonlinear solve (e.g. a drag without constraints) is finished by its setup, as with
+        // `step`: nothing is left to compute, so its result is not held back for another call (a drag frame).
+        if (!('solver' in prepared)) result = prepared;
+        // Setup is still indivisible; always return control before starting the solve.
+        return progress(1);
+      }
+      if ('solver' in prepared && solved === null) {
+        const current = prepared.solver.stepWork(maxWork);
+        totalWork += current.work;
+        linearWork = current.linearWork;
+        productEntries = current.productEntries;
+        if (current.status === 'cancelled') { cancelled = true; return progress(current.work); }
+        if (current.status === 'completed') { solved = current.outcome; phase = 'finalize'; }
+        // Finalization gets its own call even if the solve finishes with budget remaining.
+        return progress(current.work);
+      }
+      if ('solver' in prepared) {
+        if (solved === null) throw new Error('Missing completed constrained solve');
+        result = prepared.complete(solved);
+      } else result = prepared;
+      totalWork += 1;
+      return progress(1);
+    },
+    cancel(): void {
+      if (cancelled || result !== null) return;
+      cancelled = true;
+      if (prepared !== null && 'solver' in prepared) prepared.solver.cancel();
+      prepared = null;
+      solved = null;
+    },
+  };
+}
+
+/**
+ * 3 段の解決の入口(§2.2)。**例外を投げない**(FR-504、NFR-RE-1)。
+ * The synchronous API drains the same resumable job (`createConstrainedSketchJob`), so they cannot drift.
+ */
+export function resolveConstrainedSketch(
+  document: SketchDocument,
+  options: SketchResolveOptions = {},
+  solveOptions?: ConstrainedSolveOptions,
+): ConstrainedSketch {
+  const job = createConstrainedSketchJob(document, options, solveOptions);
+  for (;;) {
+    const result = job.step(Number.MAX_SAFE_INTEGER);
+    if (result !== null) return result;
+  }
 }

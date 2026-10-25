@@ -2,9 +2,11 @@
 import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import {
-  OFFLINE_ASSET_FORMAT, OFFLINE_CONTROL_FILES, OFFLINE_DEPLOYMENT_FILES,
-  OFFLINE_MAX_FILES, OFFLINE_MAX_FILE_BYTES, OFFLINE_MAX_TOTAL_BYTES, OFFLINE_MAX_MANIFEST_BYTES,
+  OFFLINE_ASSET_FORMAT, OFFLINE_ASSET_FORMAT_V2, OFFLINE_CONTROL_FILES, OFFLINE_DEPLOYMENT_FILES,
+  OFFLINE_MAX_FILES, OFFLINE_MAX_V2_FILES, OFFLINE_MAX_FILE_BYTES, OFFLINE_MAX_STREAM_BYTES,
+  OFFLINE_MAX_TOTAL_BYTES, OFFLINE_MAX_MANIFEST_BYTES,
   offlineAssetUrl, offlineAssetRoute, offlineManifestBody,
 } from './offlineProtocol.mjs';
 export {
@@ -13,17 +15,76 @@ export {
 } from './offlineProtocol.mjs';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
+const hashPattern = /^[a-f0-9]{64}$/u;
+const record = value => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function verifiedStream(files) {
+  const byPath = new Map(files.map(file => [file.path, file.bytes]));
+  const raw = byPath.get('occt/manifest.json');
+  const streamFiles = files.filter(file => file.path.startsWith('occt/stream/'));
+  if (raw === undefined) {
+    if (streamFiles.length !== 0) throw new Error('Missing OCCT stream manifest');
+    return undefined;
+  }
+  if (!(raw instanceof Uint8Array) || raw.byteLength > OFFLINE_MAX_MANIFEST_BYTES) {
+    if (streamFiles.length !== 0) throw new Error('Invalid OCCT manifest');
+    return undefined;
+  }
+  let manifest;
+  try { manifest = JSON.parse(new globalThis.TextDecoder('utf-8', { fatal: true }).decode(raw)); }
+  catch {
+    if (streamFiles.length !== 0) throw new Error('Invalid OCCT manifest');
+    return undefined;
+  }
+  if (!record(manifest) || manifest.stream === undefined) {
+    if (streamFiles.length !== 0) throw new Error('Unlisted OCCT stream asset');
+    return undefined;
+  }
+  const stream = manifest.stream;
+  if (!record(stream) || !hashPattern.test(manifest.sha256) || manifest.compression !== 'gzip'
+    || !Number.isSafeInteger(manifest.byteLength)
+    || manifest.byteLength <= 0 || manifest.byteLength > OFFLINE_MAX_STREAM_BYTES
+    || stream.file !== `stream/opencascade.full-${manifest.sha256}.wasm`
+    || stream.compression !== 'gzip' || stream.decodedByteLength !== manifest.byteLength
+    || stream.decodedSha256 !== manifest.sha256 || !Number.isSafeInteger(stream.transportByteLength)
+    || stream.transportByteLength <= 0 || stream.transportByteLength > OFFLINE_MAX_FILE_BYTES
+    || !hashPattern.test(stream.transportSha256) || !Array.isArray(manifest.parts)
+    || manifest.parts.length !== 1 || !record(manifest.parts[0]) || manifest.parts[0].order !== 0
+    || manifest.parts[0].byteLength !== stream.transportByteLength
+    || manifest.parts[0].file !== `opencascade.full-${manifest.sha256.slice(0, 16)}.bin`) {
+    throw new Error('Invalid OCCT stream manifest');
+  }
+  const path = `occt/${stream.file}`, compressed = byPath.get(path);
+  const legacy = byPath.get(`occt/${manifest.parts[0].file}`);
+  if (!(compressed instanceof Uint8Array) || compressed.byteLength !== stream.transportByteLength
+    || sha256(compressed) !== stream.transportSha256 || !(legacy instanceof Uint8Array)
+    || legacy.byteLength !== compressed.byteLength || sha256(legacy) !== stream.transportSha256
+    || streamFiles.length !== 1) {
+    throw new Error('OCCT stream transport does not match emitted gzip');
+  }
+  let decoded;
+  try { decoded = gunzipSync(compressed, { maxOutputLength: manifest.byteLength + 1 }); }
+  catch { throw new Error('OCCT stream gzip exceeds decoded bound or is invalid'); }
+  if (decoded.byteLength !== manifest.byteLength || sha256(decoded) !== manifest.sha256) {
+    throw new Error('OCCT stream decoded bytes do not match manifest');
+  }
+  return { path, byteLength: decoded.byteLength, sha256: manifest.sha256,
+    transport: Object.freeze({ encoding: 'gzip', byteLength: compressed.byteLength, sha256: stream.transportSha256 }) };
+}
 
 /** Inventory the final emitted bytes, including nested Workers, fonts, and all manual volumes. */
 export function createOfflineAssetManifest(files, requiredPaths) {
   if (!Array.isArray(files) || files.length === 0 || files.length > OFFLINE_MAX_FILES) {
     throw new Error('Invalid offline asset count');
   }
-  if (!Array.isArray(requiredPaths) || requiredPaths.length === 0 || requiredPaths.length > OFFLINE_MAX_FILES) {
+  const stream = verifiedStream(files);
+  const maxFiles = stream === undefined ? OFFLINE_MAX_FILES : OFFLINE_MAX_V2_FILES;
+  if (files.length > maxFiles) throw new Error('Invalid offline v2 asset count');
+  if (!Array.isArray(requiredPaths) || requiredPaths.length === 0 || requiredPaths.length > maxFiles) {
     throw new Error('Missing or excessive required offline assets');
   }
   const used = new Set(), folded = new Set(), routes = new Set(), records = [];
-  let totalBytes = 0;
+  let totalBytes = 0, transportTotalBytes = 0;
   for (const file of files) {
     const url = offlineAssetUrl(file.path);
     if (OFFLINE_CONTROL_FILES.includes(file.path.toLowerCase()) || OFFLINE_DEPLOYMENT_FILES.includes(file.path.toLowerCase())) {
@@ -35,16 +96,24 @@ export function createOfflineAssetManifest(files, requiredPaths) {
     if (!(file.bytes instanceof Uint8Array) || file.bytes.byteLength === 0
       || file.bytes.byteLength > OFFLINE_MAX_FILE_BYTES) throw new Error('Invalid offline asset size: ' + file.path);
     used.add(url); folded.add(collisionKey); routes.add(route);
-    totalBytes += file.bytes.byteLength;
+    const streamed = file.path === stream?.path;
+    totalBytes += streamed ? stream.byteLength : file.bytes.byteLength;
+    transportTotalBytes += file.bytes.byteLength;
     if (!Number.isSafeInteger(totalBytes) || totalBytes > OFFLINE_MAX_TOTAL_BYTES) throw new Error('Offline edition is too large');
-    records.push(Object.freeze({ url, byteLength: file.bytes.byteLength, sha256: sha256(file.bytes) }));
+    if (!Number.isSafeInteger(transportTotalBytes) || transportTotalBytes > OFFLINE_MAX_TOTAL_BYTES) {
+      throw new Error('Offline transport is too large');
+    }
+    records.push(Object.freeze(streamed
+      ? { url, byteLength: stream.byteLength, sha256: stream.sha256, transport: stream.transport }
+      : { url, byteLength: file.bytes.byteLength, sha256: sha256(file.bytes) }));
   }
   records.sort((left, right) => compare(left.url, right.url));
   const required = requiredPaths.map(offlineAssetUrl).sort(compare);
   if (new Set(required).size !== required.length) throw new Error('Duplicate required offline asset');
   for (const url of required) if (!used.has(url)) throw new Error('Missing required offline asset: ' + url);
   if (!required.includes('index.html')) throw new Error('Offline entry HTML must be required');
-  const body = { format: OFFLINE_ASSET_FORMAT, entry: 'index.html', totalBytes, required,
+  const body = { format: stream === undefined ? OFFLINE_ASSET_FORMAT : OFFLINE_ASSET_FORMAT_V2,
+    entry: 'index.html', totalBytes, required,
     assets: records };
   // Stable order and exact bytes give the same identifier on both OSes; no timestamp or self-hash.
   const buildId = sha256(JSON.stringify(offlineManifestBody(body)));

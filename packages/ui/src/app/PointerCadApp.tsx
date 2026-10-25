@@ -6,6 +6,13 @@ import {
 } from '@pointercad/model';
 import { useEffect } from 'react';
 
+import { attachBeamAnalysis, type BeamWorkerStatistics } from '../beam/attachBeamAnalysis.js';
+import { attachPlasticBar } from '../plasticBar/attachPlasticBar.js';
+import { attachFatigue } from '../fatigue/attachFatigue.js';
+import { attachFatigueStrain } from '../fatigueStrain/attachFatigueStrain.js';
+import { attachFatigueLocalCycle } from '../fatigueLocalCycle/attachFatigueLocalCycle.js';
+import { attachSolidAnalysis } from '../solidAnalysis/attachSolidAnalysis.js';
+import { attachSolidPlastic } from '../solidPlastic/attachSolidPlastic.js';
 import { attachAssembly } from '../assembly/attachAssembly.js';
 import { attachAssemblyInterference } from '../assembly/attachAssemblyInterference.js';
 import { attachDrawing } from '../drawing/attachDrawing.js';
@@ -29,10 +36,26 @@ import {
 } from '../store/attachKernel.js';
 import type { RecomputeOutcome } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { currentOccurrenceDrive } from '../store/assemblyOccurrenceDriveSlice.js';
 import { recomputePartWithMath as recomputePart } from '../math/recomputePartWithMath.js';
 
-/** 検査だけが使う読み取り口の 1 件ぶんの形(下の `useEffect` の注釈が理由)。 */
-interface RecomputeStats {
+type RuntimePhaseObservation = Awaited<ReturnType<ReturnType<typeof createKernelBridge>['readRuntimePhases']>>;
+type RuntimePhaseCaptureControl = Pick<ReturnType<typeof createKernelBridge>,
+  'beginRuntimePhaseCapture' | 'readRuntimePhaseCapture' | 'endRuntimePhaseCapture'>;
+
+/** One shown flexible-subassembly drive (E2E only): the occurrence path, its child joint values and child placements. */
+interface AssemblyOccurrenceDriveTestStats {
+  readonly key: string;
+  readonly path: readonly string[];
+  readonly values: readonly { readonly key: string; readonly value: number }[];
+  readonly placements: readonly { readonly id: string; readonly position: readonly number[]; readonly rotation: readonly number[] }[];
+}
+
+/**
+ * 検査だけが使う読み取り口の 1 件ぶんの形(下の `useEffect` の注釈が理由)。
+ * e2e/tests/recompute.ts はこの型を import するだけで、形を書き写さない(正本はここ 1 か所)。
+ */
+export interface RecomputeStats {
   readonly pendingWaiters: number;
   readonly activeDocumentKind: DocumentKind;
   /** 作り直さずに済んだ段の数(ストアの `cacheHits`)。 */
@@ -77,12 +100,21 @@ declare global {
      * 頁を開いてから `PointerCadApp` が載るまでの間は `undefined`。
      */
     pcadRecomputeStats?: () => RecomputeStats;
+    /** Read-only actual FEM Worker ownership; available only in E2E builds. */
+    pcadBeamWorkers?: () => BeamWorkerStatistics;
+    /** E2E-only Worker counts of the plastic-bar attachment (same shape as pcadBeamWorkers). */
+    pcadPlasticBarWorkers?: () => BeamWorkerStatistics;
+    /** E2E-only actual managed bridge; metadata subset, never physical resident proof. */
+    pcadRuntimePhases?: () => Promise<RuntimePhaseObservation>;
+    pcadRuntimePhaseCapture?: RuntimePhaseCaptureControl;
     /** E2E専用。VITE_PCAD_E2E=1 のビルドだけが設定する。 */
     pcadSetFileGateway?: (gateway: FileGateway) => void;
     /** E2E専用。試験で差し替えたファイル口を起動時の値へ戻す。 */
     pcadResetFileGateway?: () => void;
     /** E2E専用。保存値を書き換えず、解決済み・表示中の組立状態を読む。 */
     pcadAssemblyStats?: () => AssemblyTestStats;
+    /** E2E専用。表示中の入れ子の置き場所ごとの子ジョイントの駆動(一時的な動きの状態。文書・履歴・保存に入らない)を読む。 */
+    pcadAssemblyOccurrenceDrives?: () => readonly AssemblyOccurrenceDriveTestStats[];
   }
 }
 
@@ -97,7 +129,17 @@ declare global {
  */
 export function PointerCadApp(): React.JSX.Element {
   useEffect(() => {
-    const bridge = createKernelBridge();
+    const bridge = createKernelBridge(() => {
+      const state = useAppStore.getState();
+      return { activeDocumentId: state.activeDocumentId, documentVersion: state.documentVersion,
+        documentKind: activeDocumentKind(state) };
+    });
+    const runtimePhases = () => bridge.readRuntimePhases();
+    const runtimePhaseCapture: RuntimePhaseCaptureControl = {
+      beginRuntimePhaseCapture: nonce => bridge.beginRuntimePhaseCapture(nonce),
+      readRuntimePhaseCapture: (nonce, main, worker) => bridge.readRuntimePhaseCapture(nonce, main, worker),
+      endRuntimePhaseCapture: nonce => bridge.endRuntimePhaseCapture(nonce),
+    };
     const initialFileGateway = useAppStore.getState().fileGateway;
     window.pcadRecomputeStats = () => {
       const state = useAppStore.getState();
@@ -112,8 +154,19 @@ export function PointerCadApp(): React.JSX.Element {
       };
     };
     if (import.meta.env.VITE_PCAD_E2E === '1') {
+      window.pcadRuntimePhases = runtimePhases;
+      window.pcadRuntimePhaseCapture = runtimePhaseCapture;
       window.pcadSetFileGateway = setFileGateway;
       window.pcadResetFileGateway = () => { setFileGateway(initialFileGateway); };
+      window.pcadAssemblyOccurrenceDrives = () => {
+        const state = useAppStore.getState();
+        return [...state.assemblyOccurrenceDrives]
+          .filter(([, entry]) => currentOccurrenceDrive(state, entry.path) === entry)
+          .map(([key, entry]) => ({ key, path: [...entry.path],
+            values: [...entry.values].map(([valueKey, value]) => ({ key: valueKey, value })),
+            placements: [...entry.placements].map(([id, placement]) => ({ id, position: [...placement.position],
+              rotation: [...placement.rotation] })) }));
+      };
       window.pcadAssemblyStats = () => {
         const state = useAppStore.getState();
         const assembly = state.assembly;
@@ -149,6 +202,17 @@ export function PointerCadApp(): React.JSX.Element {
         };
       };
     }
+    const solidAnalysis = attachSolidAnalysis(bridge);
+    const solidPlastic = attachSolidPlastic(bridge);
+    const beam = attachBeamAnalysis();
+    const plasticBar = attachPlasticBar();
+    const detachFatigue = attachFatigue();
+    const detachFatigueStrain = attachFatigueStrain();
+    const detachFatigueLocalCycle = attachFatigueLocalCycle();
+    const beamStatistics = () => beam.statistics();
+    if (import.meta.env.VITE_PCAD_E2E === '1') window.pcadBeamWorkers = beamStatistics;
+    const plasticBarStatistics = () => plasticBar.statistics();
+    if (import.meta.env.VITE_PCAD_E2E === '1') window.pcadPlasticBarWorkers = plasticBarStatistics;
     const detachAssembly = attachAssembly(bridge);
     const detachAssemblyInterference = attachAssemblyInterference(bridge);
     const detachDrawing = attachDrawing(bridge);
@@ -192,7 +256,12 @@ export function PointerCadApp(): React.JSX.Element {
       subShapes.clear();
     });
     const detach = attachPartRecompute((document, options) =>
-      recomputePart(document, bridge, { ...options, offsets, projections, subShapes }),
+      recomputePart(document, bridge, { ...options, offsets, projections, subShapes,
+        onResolved: resolved => {
+          options.onResolved?.(resolved);
+          solidAnalysis.captureResolved(document, options.generation ?? 0, resolved);
+          solidPlastic.captureResolved(document, options.generation ?? 0, resolved);
+        } }),
     );
     /*
      * 測定・質量特性(FR-1101、FR-1102、P5 タスク32)。**再計算とは別の口**で、覚えてある形を
@@ -249,6 +318,15 @@ export function PointerCadApp(): React.JSX.Element {
     );
 
     return () => {
+      solidAnalysis.dispose();
+      solidPlastic.dispose();
+      beam.dispose();
+      plasticBar.dispose();
+      detachFatigue();
+      detachFatigueStrain();
+      detachFatigueLocalCycle();
+      if (window.pcadBeamWorkers === beamStatistics) delete window.pcadBeamWorkers;
+      if (window.pcadPlasticBarWorkers === plasticBarStatistics) delete window.pcadPlasticBarWorkers;
       detachSheetMetal();
       detachScripting();
       detachFunctionPlot();
@@ -260,10 +338,13 @@ export function PointerCadApp(): React.JSX.Element {
       unwatchDocument();
       detachAssemblyInterference();
       detachAssembly();
+      if (window.pcadRuntimePhases === runtimePhases) delete window.pcadRuntimePhases;
+      if (window.pcadRuntimePhaseCapture === runtimePhaseCapture) delete window.pcadRuntimePhaseCapture;
       delete window.pcadRecomputeStats;
       delete window.pcadSetFileGateway;
       delete window.pcadResetFileGateway;
       delete window.pcadAssemblyStats;
+      delete window.pcadAssemblyOccurrenceDrives;
       recomputePart.releaseOwner(bridge);
       bridge.dispose();
     };

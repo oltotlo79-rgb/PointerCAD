@@ -1,0 +1,19 @@
+{
+  "name": "@pointercad/fem",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": { "test": "vitest run" },
+  "devDependencies": { "@pointercad/test-utils": "workspace:*", "vitest": "catalog:" },
+  "dependencies": {
+    "@pointercad/model": "workspace:*"
+  }
+}

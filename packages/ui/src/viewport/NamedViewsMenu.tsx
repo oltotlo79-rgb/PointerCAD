@@ -22,6 +22,12 @@ function NamedViewsForm(): React.JSX.Element {
   const [selected, setSelected] = useState('');
   const [message, setMessage] = useState<MessageKey | null>(null);
   const selectedView = views.find((view) => view.id === selected);
+  const selectionUnavailable = selectedView === undefined;
+  const restoreUnavailable = !ready || selectionUnavailable;
+  const unavailableTitle = (label: MessageKey, reason: MessageKey | null): string =>
+    reason === null ? t(label) : `${t(label)}: ${t(reason)}`;
+  const selectionReason = selectionUnavailable ? 'view.named.chooseRequired' : null;
+  const readyReason = ready ? null : 'view.named.unavailable';
   const run = (action: NamedViewAction): void => {
     const result = runNamedViewAction(action);
     setMessage(result.ok ? null : errors[result.reason]);
@@ -32,9 +38,9 @@ function NamedViewsForm(): React.JSX.Element {
       <MatchViewIcon /><span className="pcad-named-views__label">{t('view.named.title')}</span><ChevronRightIcon size={10} />
     </summary>
     <div className="pcad-menu__panel" role="group" aria-label={t('view.named.title')}>
-      <button type="button" className="pcad-button" aria-pressed={quadEnabled} disabled={!ready}
-        title={t(quadEnabled ? 'view.quad.single' : 'view.quad.enable')}
-        onClick={() => useAppStore.getState().setQuadViewEnabled(!quadEnabled)}>
+      <button type="button" className="pcad-button" data-command-id="toolbar.namedView.quad" aria-pressed={quadEnabled} aria-disabled={!ready}
+        title={unavailableTitle(quadEnabled ? 'view.quad.single' : 'view.quad.enable', readyReason)}
+        onClick={() => { if (ready) useAppStore.getState().setQuadViewEnabled(!quadEnabled); }}>
         {t(quadEnabled ? 'view.quad.single' : 'view.quad.enable')}
       </button>
       <label>{t('view.named.choose')}<select title={t('controlGuide.namedView.choose')} className="pcad-field__input" aria-label={t('view.named.choose')} value={selectedView?.id ?? ''}
@@ -45,15 +51,18 @@ function NamedViewsForm(): React.JSX.Element {
         <option value="">{t('view.named.choose')}</option>
         {views.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}
       </select></label>
-      <button type="button" className="pcad-button" disabled={!ready || selectedView === undefined}
-        title={t('view.named.restore')}
-        onClick={() => run({ kind: 'restore', id: selected })}>{t('view.named.restore')}</button>
+      <button type="button" className="pcad-button" data-command-id="toolbar.namedView.restore" aria-disabled={restoreUnavailable}
+        title={unavailableTitle('view.named.restore', readyReason ?? selectionReason)}
+        onClick={() => { if (!restoreUnavailable) run({ kind: 'restore', id: selected }); }}>{t('view.named.restore')}</button>
       <label>{t('view.named.name')}<input title={t('controlGuide.namedView.name')} className="pcad-field__input" aria-label={t('view.named.name')} value={name} maxLength={120}
         onChange={(event) => setName(event.target.value)} /></label>
       <div className="pcad-segmented">
-        <button type="button" className="pcad-button" title={t('view.named.save')} disabled={!ready} onClick={() => run({ kind: 'save', name })}>{t('view.named.save')}</button>
-        <button type="button" className="pcad-button" title={t('view.named.rename')} disabled={selectedView === undefined} onClick={() => run({ kind: 'rename', id: selected, name })}>{t('view.named.rename')}</button>
-        <button type="button" className="pcad-button" title={t('view.named.delete')} disabled={selectedView === undefined} onClick={() => run({ kind: 'delete', id: selected })}>{t('view.named.delete')}</button>
+        <button type="button" className="pcad-button" data-command-id="toolbar.namedView.save" title={unavailableTitle('view.named.save', readyReason)} aria-disabled={!ready}
+          onClick={() => { if (ready) run({ kind: 'save', name }); }}>{t('view.named.save')}</button>
+        <button type="button" className="pcad-button" data-command-id="toolbar.namedView.rename" title={unavailableTitle('view.named.rename', selectionReason)} aria-disabled={selectionUnavailable}
+          onClick={() => { if (!selectionUnavailable) run({ kind: 'rename', id: selected, name }); }}>{t('view.named.rename')}</button>
+        <button type="button" className="pcad-button" data-command-id="toolbar.namedView.delete" title={unavailableTitle('view.named.delete', selectionReason)} aria-disabled={selectionUnavailable}
+          onClick={() => { if (!selectionUnavailable) run({ kind: 'delete', id: selected }); }}>{t('view.named.delete')}</button>
       </div>
       {message === null ? null : <p role="status">{t(message)}</p>}
     </div>

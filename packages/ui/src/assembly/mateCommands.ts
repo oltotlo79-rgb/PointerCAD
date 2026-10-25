@@ -3,7 +3,7 @@ import {
   assemblyExpressionContext,
   findComponent,
   resolveMateTarget,
-  selectMateTargetGeometry,
+  resolveSubShapeReference,
   nextMateId,
   nextJointId,
   type AssemblyDocument,
@@ -122,7 +122,8 @@ export function resolveCurrentMateTarget(document: AssemblyDocument, view: Assem
   if (component === undefined || component.suppressed) return { ok: false, code: 'missingComponent', message: t('assembly.mate.targetMissing') };
   return resolveMateTarget(target, view.resolved, { subShape: (partKey, reference) => {
     const body = view.bodies.get(partKey)?.find((item) => item.featureId === reference.bodyFeatureId);
-    return body === undefined ? null : selectMateTargetGeometry(body, reference);
+    const resolution = body === undefined ? null : resolveSubShapeReference(body, reference);
+    return resolution?.status === 'matched' ? resolution.match.geometry : null;
   } });
 }
 

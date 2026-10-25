@@ -27,6 +27,13 @@ function appliedPolicies(path: string): readonly string[] {
 }
 
 describe('説明書に必要な字体の条件を通常画面と計算部へ混在させない', () => {
+  it('保存専用module Workerは同一配信元だけを許可し、配信条件を緩めない', () => {
+    expect(directives(APP_CONTENT_SECURITY_POLICY).get('worker-src')).toEqual(["'self'"]);
+    const path = '/assets/pcadSave.worker-ab_CD.js';
+    expect(contentSecurityPolicyFor(path)).toBe(APP_CONTENT_SECURITY_POLICY);
+    expect(appliedPolicies('/index.html').map(policy => directives(policy).get('worker-src'))).toEqual([["'self'"]]);
+    expect(directives(APP_CONTENT_SECURITY_POLICY).get('worker-src')).not.toContain('blob:');
+  });
   it('説明書だけが埋込字体を読め、外部通信や動的なプログラムを許可しない', () => {
     const manual = directives(MANUAL_CONTENT_SECURITY_POLICY), app = directives(APP_CONTENT_SECURITY_POLICY);
     expect(manual.get('font-src')).toEqual(["'self'", 'data:']);

@@ -67,8 +67,16 @@ export interface SplineSpec {
    * 通過点方式では重なった点として断る。
    */
   readonly closed?: boolean;
-  /** Only control polylines may override the ordinary automatic degree. */
-  readonly degree?: 1;
+  /**
+   * Only control splines may override the ordinary automatic degree: 1 for certified function chords, 3 for a
+   * certified smooth function curve, which must also carry its explicit knots.
+   */
+  readonly degree?: 1 | 3;
+  /**
+   * Distinct, strictly increasing knots of a smooth function curve (degree 3, open). Multiplicities are implied:
+   * 4 at both ends and 2 inside, so the curve is C1 and `points` holds exactly 2 * knots.length poles.
+   */
+  readonly knots?: readonly number[];
 }
 
 /**
@@ -364,6 +372,30 @@ function controlPointData(points: readonly Vec3Tuple[], degree: number, closed: 
 }
 
 /**
+ * 関数の滑らかな曲線(C1 の 3 次)。節点は与えられたまま使い、多重度は両端 4・内側 2 に固定する。
+ * 一様な節点へ直すと曲線の形が変わるため、ここでは何も解き直さない。
+ */
+function explicitCubicData(spec: SplineSpec): BSplineData {
+  const knots = spec.knots;
+  if (spec.mode !== 'control' || spec.degree !== 3 || spec.closed === true || knots === undefined
+    || knots.length < 2 || spec.points.length !== 2 * knots.length) {
+    throw new Error('滑らかな関数曲線は、節点と制御点を組にした開いた3次の曲線として指定してください。');
+  }
+  for (let index = 0; index < knots.length; index += 1) {
+    if (!Number.isFinite(knots[index]) || (index > 0 && !(knots[index] > knots[index - 1]))) {
+      throw new Error('滑らかな関数曲線の節点は増加する有限の実数にしてください。');
+    }
+  }
+  return {
+    poles: [...spec.points],
+    knots: [...knots],
+    multiplicities: knots.map((_, index) => (index === 0 || index === knots.length - 1 ? 4 : 2)),
+    degree: 3,
+    periodic: false,
+  };
+}
+
+/**
  * スプラインの指定を、OCCT へ渡す極・節点・多重度・次数へ直す(OCCT を使わない純関数)。
  * 使えない指定は日本語の `Error` で断る。
  */
@@ -379,6 +411,9 @@ export function bsplineDataForSpline(spec: SplineSpec): BSplineData {
     }
   }
 
+  if (spec.degree === 3 || spec.knots !== undefined) {
+    return explicitCubicData(spec);
+  }
   if (spec.degree !== undefined && (spec.degree !== 1 || spec.mode !== 'control')) {
     throw new Error('一次のスプラインは制御点の折れ線として指定してください。');
   }

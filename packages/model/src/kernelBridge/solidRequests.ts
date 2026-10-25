@@ -60,6 +60,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
       return {
         kind: 'extrude',
         profile: plan.profile.map((curve) => toCurveSpec(curve)),
+        ...(plan.profileOrigin === undefined ? {} : { profileOrigin: plan.profileOrigin }),
         direction: plan.direction,
         distance: plan.distance,
         ...(plan.end === undefined ? {} : { end: plan.end }),
@@ -80,6 +81,13 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         angle: plan.angle,
       };
     case 'sew':
+      if (plan.faces !== undefined) {
+        return {
+          kind: 'sew',
+          faces: plan.faces.map(face => ({ targetKey: face.targetKey, query: toSubShapeQuery(face.query) })),
+          tolerance: plan.tolerance,
+        };
+      }
       return {
         kind: 'sew',
         profiles: plan.profiles.map((profile) => profile.map((curve) => toCurveSpec(curve))),
@@ -91,10 +99,13 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         operation: plan.operation,
         targetKey: plan.targetKey,
         toolKey: plan.toolKey,
+        ...(plan.requireRemoval === true ? { requireRemoval: true } : {}),
       };
     case 'hole':
       return {
         kind: 'hole',
+        ...(plan.centerAnchors === undefined ? {} : { centerAnchors: plan.centerAnchors }),
+        ...(plan.placementRoles === undefined ? {} : { placementRoles: plan.placementRoles }),
         targetKey: plan.targetKey,
         face: toSubShapeQuery(plan.face),
         centers: plan.centers,
@@ -106,10 +117,15 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         // 入口の形(ざぐり・皿もみ、FR-422、タスク46)。**広げないときは段にも載せない**
         // (省くとカーネルでも `{ kind: 'plain' }` になる。`HoleStepSpec.entry` の注釈)。
         ...(plan.entry === undefined ? {} : { entry: plan.entry }),
+        // 円筒の側面の穴(EX05)。**平面の穴では段にも載せない**(`HoleStepSpec.cylindrical` の注釈)。
+        ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
       };
     case 'thread':
       return {
         kind: 'thread',
+        // 下穴の面の名前の材料(穴の節と同じ)。欄が無ければ段にも載せない。
+        ...(plan.centerAnchors === undefined ? {} : { centerAnchors: plan.centerAnchors }),
+        ...(plan.placementRoles === undefined ? {} : { placementRoles: plan.placementRoles }),
         targetKey: plan.targetKey,
         face: toSubShapeQuery(plan.face),
         centers: plan.centers,
@@ -122,6 +138,8 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         mark: plan.mark,
         // 入口の形(ざぐり・皿もみ、FR-422、42c/46c)。穴とまったく同じ扱い(上の 'hole' 節)。
         ...(plan.entry === undefined ? {} : { entry: plan.entry }),
+        // 円筒の側面のねじ穴(EX05)。**平面のねじ穴では段にも載せない**。位置ごとの向きは kernel が面から決める。
+        ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
       };
     case 'fillet':
       return {
@@ -276,6 +294,14 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         shape: toSurfaceInput(plan.shape),
         targetKey: plan.targetKey,
       };
+    case 'faceOffset':
+      // 平らな面の移動(EX-18)。指紋の詰め替えだけで、距離は解決済みの mm をそのまま渡す。
+      return {
+        kind: 'faceOffset',
+        targetKey: plan.targetKey,
+        face: toSubShapeQuery(plan.face),
+        offset: plan.offset,
+      };
     case 'shell':
       return {
         kind: 'shell',
@@ -283,6 +309,12 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         openFaces: plan.openFaces.map((face) => toSubShapeQuery(face)),
         thickness: plan.thickness,
         outward: plan.outward,
+      };
+    case 'surfaceCut':
+      return {
+        kind: 'surfaceCut', targetKey: plan.targetKey, keepPositive: plan.keepPositive,
+        blade: plan.blade.kind === 'extrusion'
+          ? { ...plan.blade, profile: plan.blade.profile.map(toCurveSpec) } : plan.blade,
       };
     case 'cut':
       // 平面による切断(FR-432、§2.9b)。平面は resolvePart が「通る点+単位法線」まで
@@ -315,6 +347,7 @@ function toSurfaceInput(shape: SurfaceShapePlan): SurfaceInput {
       return {
         kind: 'extrude',
         profile: shape.profile.map((curve) => toCurveSpec(curve)),
+        ...(shape.profileOrigins === undefined ? {} : { profileOrigins: shape.profileOrigins }),
         direction: shape.direction,
         distance: shape.distance,
       };

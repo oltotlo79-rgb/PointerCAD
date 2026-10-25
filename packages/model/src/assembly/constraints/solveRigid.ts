@@ -2,8 +2,9 @@
 import {
   CONSTRAINT_INITIAL_DAMPING, CONSTRAINT_MAX_DAMPING, CONSTRAINT_MAX_ITERATIONS,
   CONSTRAINT_MIN_DAMPING, CONSTRAINT_STEP_TOLERANCE, DAMPING_ATTEMPT_LIMIT, LINEAR_PIVOT_TOLERANCE,
-  qrDecomposition, solveLeastSquares, type LinearizedRow,
+  type LinearizedRow,
 } from '../../sketch/constraints/solve.js';
+import { qrDecompositionSteps, solveLeastSquaresSteps, type QrWork } from './rigidQrSteps.js';
 
 export type RigidSolveStopReason =
   | 'converged' | 'iterationLimit' | 'stalled' | 'provenConstantConflict' | 'suspectedConflict';
@@ -96,6 +97,52 @@ export const DEFAULT_RIGID_LENGTH_TOLERANCE = 1e-9;
 export const DEFAULT_RIGID_ANGLE_TOLERANCE = 1e-9;
 export const DEFAULT_RIGID_CHARACTERISTIC_LENGTH = 100;
 
+/**
+ * Cooperative work accounting for solveRigidSteps. Counted work: the inner multiply-adds of each normal-equation row,
+ * the inner multiply-adds of each Cholesky dot product, and one unit per residual row before an evaluation. A yield is
+ * due once `units` counted operations accumulated. The condition scan, dampingDiagonal, the diagonal scaling, the
+ * triangular solves, the QR fallback and each evaluate()/retract() call are not split and run between two points.
+ */
+export interface RigidWorkBudget {
+  readonly units: number;
+}
+
+export interface RigidWorkPoint {
+  readonly phase: 'assembly' | 'factorization' | 'residual';
+  /** Counted operations so far in this solve (monotone). */
+  readonly done: number;
+}
+
+/** Never yields: synchronous callers drain the same steps with exactly the same arithmetic. */
+export const UNLIMITED_RIGID_WORK: RigidWorkBudget = { units: Number.POSITIVE_INFINITY };
+
+interface RigidWorkMeter {
+  readonly units: number;
+  pending: number;
+  done: number;
+}
+
+function rigidWorkMeter(budget: RigidWorkBudget): RigidWorkMeter {
+  return { units: budget.units > 0 ? budget.units : 1, pending: 0, done: 0 };
+}
+
+/** Adds counted work; true when a yield is due. */
+function charge(meter: RigidWorkMeter, cost: number): boolean {
+  meter.done += cost;
+  meter.pending += cost;
+  if (meter.pending < meter.units) return false;
+  meter.pending = 0;
+  return true;
+}
+
+/** Runs cooperative steps to completion without giving control away. */
+export function drainRigidSteps<T>(steps: Generator<RigidWorkPoint, T, void>): T {
+  for (;;) {
+    const next = steps.next();
+    if (next.done === true) return next.value;
+  }
+}
+
 /** value/gradientと同じ尺度の許容。solverと表示用診断で判定を共有する。 */
 export function rigidRowTolerance(row: RigidResidualRow, options: RigidSolveOptions = {}): number {
   return row.scale * (row.tolerance ?? (row.unit === 'length'
@@ -147,10 +194,10 @@ function measure(evaluation: RigidEvaluation, options: RigidSolveOptions) {
 }
 
 /** 疎な行から対称な正規行列の下三角を作る。棄却後はgradientを保ったまま行列だけ再構築できる。 */
-function assembleNormalSystem(
+function* assembleNormalSystemSteps(
   rows: readonly RigidResidualRow[], scales: readonly number[], options: RigidSolveOptions, n: number,
-  normal: Float64Array, gradient: Float64Array | null, rowColumns: number[], rowValues: number[],
-): void {
+  normal: Float64Array, gradient: Float64Array | null, rowColumns: number[], rowValues: number[], meter: RigidWorkMeter,
+): Generator<RigidWorkPoint, void, void> {
   normal.fill(0);
   gradient?.fill(0);
   for (const row of rows) {
@@ -171,6 +218,7 @@ function assembleNormalSystem(
         normal[index] += gj * rowValues[q];
       }
     }
+    if (charge(meter, count * (count + 1) / 2 + count + 1)) yield { phase: 'assembly', done: meter.done };
   }
 }
 
@@ -183,6 +231,13 @@ export function solvePositiveDefinite(
   b: Float64Array,
   n: number,
 ): Float64Array | null {
+  return drainRigidSteps(positiveDefiniteSteps(a, b, n, rigidWorkMeter(UNLIMITED_RIGID_WORK)));
+}
+
+/** solvePositiveDefinite with a possible yield after each inner dot product; the arithmetic is unchanged. */
+function* positiveDefiniteSteps(
+  a: Float64Array, b: Float64Array, n: number, meter: RigidWorkMeter,
+): Generator<RigidWorkPoint, Float64Array | null, void> {
   if (!Number.isInteger(n) || n < 0 || n * n > a.length || n > b.length) return null;
   const rows = Array.from({ length: n }, (_, index) => a.subarray(index * n, (index + 1) * n));
   // 行頭の厳密な零より前には消去による非零要素も生じない。対角まで密に走査する
@@ -208,6 +263,7 @@ export function solvePositiveDefinite(
         if (!(sum > LINEAR_PIVOT_TOLERANCE) || !Number.isFinite(sum)) return null;
         target[j] = Math.sqrt(sum);
       } else target[j] = sum / source[j];
+      if (charge(meter, j - first + 1)) yield { phase: 'factorization', done: meter.done };
     }
   }
   for (let i = 0; i < n; i += 1) {
@@ -226,11 +282,16 @@ export function solvePositiveDefinite(
   return x;
 }
 
+/** QR work shares the solve meter and is reported as factorization work. */
+function rigidQrWork(meter: RigidWorkMeter): QrWork<RigidWorkPoint> {
+  return { due: (cost) => charge(meter, cost) ? { phase: 'factorization', done: meter.done } : null };
+}
+
 /** 減衰Dだけを構成する。階数用Jsとnormal/QR切替用の生normは変更しない。 */
-function dampingDiagonal(
+function* dampingDiagonalSteps(
   rows: readonly RigidResidualRow[], scales: readonly number[], options: RigidSolveOptions,
-  columnNorms: Float64Array, diagonal: Float64Array,
-): void {
+  columnNorms: Float64Array, diagonal: Float64Array, meter: RigidWorkMeter,
+): Generator<RigidWorkPoint, void, void> {
   let largestNorm = 0;
   for (const norm of columnNorms) largestNorm = Math.max(largestNorm, norm);
   const protectedNorm = largestNorm > 0 ? Math.min(1, largestNorm) : 1;
@@ -253,8 +314,8 @@ function dampingDiagonal(
   // 除き、列番号だけ戻す。normの二乗がunderflowした微小な非零列は除かない。
   const activeColumns = Array.from({ length: columnNorms.length }, (_value, j) => j)
     .filter((j) => columnNorms[j] !== 0 || rows.some((_row, i) => valueAt(i, j) !== 0));
-  const qr = qrDecomposition(rows.map((_row, i) => activeColumns.map((j) => valueAt(i, j))),
-    activeColumns.length, { rankTolerance: roundoff });
+  const qr = yield* qrDecompositionSteps(rows.map((_row, i) => activeColumns.map((j) => valueAt(i, j))),
+    activeColumns.length, { rankTolerance: roundoff }, rigidQrWork(meter));
   const independent = new Set(qr.columnOrder.slice(0, qr.rank).map((column) => activeColumns[column]));
   for (const j of weak) {
     if (independent.has(j)) continue;
@@ -279,6 +340,18 @@ function dampingDiagonal(
  * [WJ_s D⁻¹; √λ I] y = [−Wr;0] を解くので、切替で目的を変えない。
  */
 export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcome<Base> {
+  return drainRigidSteps(solveRigidSteps(input, UNLIMITED_RIGID_WORK));
+}
+
+/**
+ * The same solve as solveRigid, yielding only at counted work points: normal-equation rows, Cholesky dot products and
+ * before residual evaluations. Draining it is exactly solveRigid. A caller that stops iterating discards the partial
+ * state: nothing outside the generator has been changed, so a cancelled solve is never a numerical outcome.
+ */
+export function* solveRigidSteps<Base>(
+  input: RigidSolveInput<Base>, budget: RigidWorkBudget,
+): Generator<RigidWorkPoint, RigidSolveOutcome<Base>, void> {
+  const meter = rigidWorkMeter(budget);
   const options = input.options ?? {};
   const n = input.variables.length;
   const scales = columnScales(input.variables, options);
@@ -332,6 +405,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         if (expired()) return finish('iterationLimit', iteration - 1, 'time');
         attempt += 1;
         if (step.length !== n || !step.every(Number.isFinite)) continue;
+        if (charge(meter, evaluation.rows.length + 1)) yield { phase: 'residual', done: meter.done };
         const trialEvaluation = input.evaluate(base, step);
         const trial = measure(trialEvaluation, options);
         // 分岐は離散条件。まず違反数、同じ分岐では残差の二乗和を減らす。
@@ -344,6 +418,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         input.observer?.trial(trace[trace.length - 1]);
         if (accepted) {
           base = input.retract(base, step);
+          if (charge(meter, evaluation.rows.length + 1)) yield { phase: 'residual', done: meter.done };
           evaluation = input.evaluate(base, zero);
           current = measure(evaluation, options);
           madeProgress = true;
@@ -356,7 +431,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
       }
     }
 
-    assembleNormalSystem(evaluation.rows, scales, options, n, normal, gradient, rowColumns, rowValues);
+    yield* assembleNormalSystemSteps(evaluation.rows, scales, options, n, normal, gradient, rowColumns, rowValues, meter);
     const inspectCondition = options.linearSolver !== 'normal';
     let smallest = Infinity;
     let largest = 0;
@@ -372,11 +447,11 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
       // Protect null/span directions in physical pose units as well. Applying the old floor before
       // this change of coordinates would make the same translation depend on the arbitrary L.
       for (let j = 0; j < n; j += 1) metricNorms[j] = columnNorms[j] / dampingCeilings[j];
-      dampingDiagonal(evaluation.rows, metricScales, options, metricNorms, diagonal);
+      yield* dampingDiagonalSteps(evaluation.rows, metricScales, options, metricNorms, diagonal, meter);
       for (let j = 0; j < n; j += 1) {
         diagonal[j] = Math.min(diagonal[j], 1) * dampingCeilings[j];
       }
-    } else dampingDiagonal(evaluation.rows, scales, options, columnNorms, diagonal);
+    } else yield* dampingDiagonalSteps(evaluation.rows, scales, options, columnNorms, diagonal, meter);
     for (let j = 0; j < n; j += 1) inverseDiagonal[j] = 1 / diagonal[j];
     let illConditioned = inspectCondition && largest / smallest > 1e12;
     // ほぼ同じ列の桁落ちを、正規方程式を解く前に検出する。
@@ -398,14 +473,14 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         input.observer?.linearSolve('normal', false);
         // コレスキー分解は行列を書き換える。通常の初回受理ではコピーを作らず、
         // 候補を棄却して同じ線形化を再利用するときだけ疎な行から下三角を作り直す。
-        if (attempt > 1) assembleNormalSystem(evaluation.rows, scales, options, n, normal, null, rowColumns, rowValues);
+        if (attempt > 1) yield* assembleNormalSystemSteps(evaluation.rows, scales, options, n, normal, null, rowColumns, rowValues, meter);
         for (let j = 0; j < n; j += 1) {
           rhs[j] = -gradient[j] * inverseDiagonal[j];
           const rowScale = inverseDiagonal[j];
           for (let k = 0; k <= j; k += 1) normal[j * n + k] *= rowScale * inverseDiagonal[k];
           normal[j * n + j] += damping;
         }
-        solved = solvePositiveDefinite(normal, rhs, n);
+        solved = yield* positiveDefiniteSteps(normal, rhs, n, meter);
       }
       if (solved === null) {
         input.observer?.linearSolve('qr', options.linearSolver !== 'qr');
@@ -431,7 +506,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
             right.splice(j, 0, 0);
           }
         }
-        const reduced = solveLeastSquares(matrix, right, qrColumns.length);
+        const reduced = yield* solveLeastSquaresSteps(matrix, right, qrColumns.length, rigidQrWork(meter));
         if (reduced !== null) {
           const expanded = new Float64Array(n);
           for (let j = 0; j < qrColumns.length; j += 1) expanded[qrColumns[j]] = reduced[j];
@@ -446,6 +521,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
         }
       }
       const stepSize = step === null ? 0 : Math.max(0, ...step.map((value, j) => Math.abs(value / scales[j])));
+      if (charge(meter, evaluation.rows.length + 1)) yield { phase: 'residual', done: meter.done };
       const trialEvaluation = step === null ? null : input.evaluate(base, step);
       const trial = trialEvaluation === null ? null : measure(trialEvaluation, options);
       accepted = trial !== null && trialEvaluation !== null && trialEvaluation.valid !== false
@@ -457,6 +533,7 @@ export function solveRigid<Base>(input: RigidSolveInput<Base>): RigidSolveOutcom
       input.observer?.trial(trace[trace.length - 1]);
       if (accepted && step !== null) {
         base = input.retract(base, step);
+        if (charge(meter, evaluation.rows.length + 1)) yield { phase: 'residual', done: meter.done };
         evaluation = input.evaluate(base, zero);
         current = measure(evaluation, options);
         madeProgress = true;

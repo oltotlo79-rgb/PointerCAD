@@ -1,6 +1,6 @@
 import { t, type FileGateway, type PickedFile } from '@pointercad/ui';
 import type { DrawingPrintOptions } from '@pointercad/ui/print-settings';
-import { desktopCamGateway } from './desktopCamGateway.js';
+import { controlledDesktopExport, desktopCamGateway } from './desktopCamGateway.js';
 
 /**
  * `window.pointercadDesktop`(preload が出す口)を、画面が使う `FileGateway` の形へ直す
@@ -34,7 +34,8 @@ interface DesktopFileApi {
  */
 interface DesktopExchangeApi {
   openFile(kinds: readonly string[]): Promise<unknown>;
-  saveFileAs(fileName: string, kind: string, bytes: Uint8Array): Promise<unknown>;
+  saveFileAs(fileName: string, kind: string, bytes: Uint8Array, requestId?: string): Promise<unknown>;
+  cancelExportSave?(requestId: string): Promise<unknown> | void;
 }
 
 /**
@@ -302,6 +303,26 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
 
     // 返り値の形(`PickedTypedFile`)は `@pointercad/ui` の公開口に名前が出ていないので、
     // ここには書かずに `FileGateway` から受け取る(引数の種類の型も同じ経路で決まる)。
+    async openParameterCsv() {
+      let result: unknown;
+      try {
+        result = await api.openFile(['csv']);
+      } catch (error) {
+        const key = readFailureMessageKey(error);
+        if (key !== null) throw new Error(t(key), { cause: error });
+        throw error;
+      }
+      if (result === null || result === undefined) return null;
+      if (!isOpenedTypedShape(result) || result.kind !== 'csv' ||
+          !result.name.toLowerCase().endsWith('.csv')) {
+        throw new Error(t('file.openFailed'));
+      }
+      const bytes = toBytes(result.bytes);
+      if (bytes === null) throw new Error(t('file.openFailed'));
+      if (bytes.byteLength > 1024 * 1024) throw new Error(t('file.error.tooLarge'));
+      return { fileName: result.name, bytes };
+    },
+
     async openFile(kinds) {
       let result: unknown;
       try {
@@ -327,8 +348,10 @@ export function createDesktopFileGateway(scope: object = globalThis): FileGatewa
       return { kind, fileName: result.name, bytes };
     },
 
-    async saveFileAs(fileName, kind, bytes): Promise<boolean> {
-      const result: unknown = await api.saveFileAs(fileName, kind, bytes);
+    async saveFileAs(fileName, kind, bytes, control): Promise<boolean> {
+      const result: unknown = await controlledDesktopExport(api, control,
+        (requestId) => requestId === undefined ? api.saveFileAs(fileName, kind, bytes)
+          : api.saveFileAs(fileName, kind, bytes, requestId));
       if (result === true) {
         return true;
       }

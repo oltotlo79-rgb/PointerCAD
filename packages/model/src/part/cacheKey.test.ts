@@ -738,6 +738,25 @@ describe('keyMaterialText: P2 の4種類の文字列が変わっていない(既
   });
 });
 
+/*
+ * EX-04 W3 閉じた輪郭の切断の残す側(UNEXECUTED until Root runs it)。残す側は演算で表す(差 = 輪郭の外側、
+ * 積 = 輪郭の内側)ので、材料に欄を足さずに鍵が分かれる。対の結び(`pairedWith`)は形に効かないので材料に無い。
+ */
+describe('keyMaterialText: 閉じた輪郭の切断の残す側(EX-04 W3)', () => {
+  it('外側(差)と内側(積)は印のまま演算だけが違う鍵になり、印の無い差・以前の差の文字列は変わらない', () => {
+    const outside: BooleanKeyMaterial = { kind: 'boolean', operation: 'subtract', targetKey: 'a', toolKey: 'b',
+      requireRemoval: true };
+    const inside: BooleanKeyMaterial = { ...outside, operation: 'intersect' };
+    expect(keyMaterialText(outside)).toBe('boolean{operation=subtract;targetKey=a;toolKey=b;requireRemoval=true}');
+    expect(keyMaterialText(inside)).toBe('boolean{operation=intersect;targetKey=a;toolKey=b;requireRemoval=true}');
+    expect(cacheKeyFor(inside)).not.toBe(cacheKeyFor(outside));
+    // 他の入力が同じなら同じ鍵(残す側を戻せば鍵も戻る)。
+    expect(cacheKeyFor({ ...inside, operation: 'subtract' })).toBe(cacheKeyFor(outside));
+    expect(keyMaterialText({ kind: 'boolean', operation: 'subtract', targetKey: 'a', toolKey: 'b' }))
+      .toBe('boolean{operation=subtract;targetKey=a;toolKey=b}');
+  });
+});
+
 describe('keyMaterialText: 楕円・スプラインの曲線(P4 タスク5、FR-317・FR-318)', () => {
   const ELLIPSE: KeyEllipse = {
     kind: 'ellipse',
@@ -980,6 +999,30 @@ describe('cacheKeyFor: ねじ穴の欄', () => {
   it('同じ寸法でも穴とねじ穴は違う鍵になる(種類が先頭に混ざる)', () => {
     const asHole = hole({ diameter: 4.917468, depth: null });
     expect(cacheKeyFor(asHole)).not.toBe(cacheKeyFor(thread()));
+  });
+
+  // 下穴の面の名前(由来)は形の結果に入る。名前の材料だけが違う段で古い由来を使い回さない。
+  const anchors: NonNullable<ThreadKeyMaterial['centerAnchors']> = [
+    { sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'point-1' } },
+  ];
+  const otherAnchors: NonNullable<ThreadKeyMaterial['centerAnchors']> = [
+    { sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'point-2' } },
+  ];
+
+  it('名前の材料が無い時の鍵の文字列は以前と同じ(欄を出さない)', () => {
+    const text = keyMaterialText(thread());
+    expect(text).not.toContain('centerAnchors');
+    expect(text).not.toContain('placementRoles');
+    expect(text.startsWith(`thread{targetKey=${TARGET_KEY};face=`)).toBe(true);
+  });
+
+  it('中心の生成元だけ・並べ方の役割だけが違っても違う鍵になり、同じなら同じ鍵になる', () => {
+    const named = thread({ centerAnchors: anchors, placementRoles: [] });
+    expect(cacheKeyFor(named)).not.toBe(cacheKeyFor(thread()));
+    expect(cacheKeyFor(named)).not.toBe(cacheKeyFor(thread({ centerAnchors: otherAnchors, placementRoles: [] })));
+    expect(cacheKeyFor(named)).not.toBe(cacheKeyFor(thread({ centerAnchors: anchors,
+      placementRoles: [{ kind: 'linear', step: 1 }] })));
+    expect(cacheKeyFor(named)).toBe(cacheKeyFor(thread({ centerAnchors: [...anchors], placementRoles: [] })));
   });
 });
 
@@ -1853,5 +1896,61 @@ describe('取り込み原本の SHA-256', () => {
   it('バッファの一部だけのビューでは、その範囲だけを識別する', () => {
     const bytes = Uint8Array.of(0, 97, 98, 99, 255).subarray(1, 4);
     expect(importedShapeOf(bytes).shapeDigest).toBe(ABC_DIGEST);
+  });
+});
+
+describe('hole keys retain logical producer identity independently of equal geometry', () => {
+  it('changes the key for an equal-position different placement source, but not a cold reconstruction', () => {
+    const center = { sketchId: 'center-sketch', producer: { kind: 'point', featureId: 'center' } } as const;
+    const firstRole = { kind: 'point-slot', slotId: 'slot-5', source: { kind: 'reference-point', featureId: 'source-A' } } as const;
+    const first = hole({ centers: [[10, 15, 10]], centerAnchors: [center], placementRoles: [firstRole] });
+    const changed = hole({ centers: [[10, 15, 10]], centerAnchors: [center], placementRoles: [
+      { kind: 'point-slot', slotId: 'slot-5', source: { kind: 'reference-point', featureId: 'source-B' } },
+    ] });
+    const cold = hole({ centers: [[10, 15, 10]], centerAnchors: [
+      { sketchId: 'center-sketch', producer: { kind: 'point', featureId: 'center' } },
+    ], placementRoles: [{ kind: 'point-slot', slotId: 'slot-5', source: { kind: 'reference-point', featureId: 'source-A' } }] });
+    expect(first.centers).toEqual(changed.centers);
+    expect(cacheKeyFor(first)).not.toBe(cacheKeyFor(changed));
+    expect(cacheKeyFor(cold)).toBe(cacheKeyFor(first));
+  });
+});
+
+it('distinguishes unsupported source references at equal positions without inventing semantic roles', () => {
+  const first = hole({ centers: [[10, 15, 10]], pointPlacementReferences: [
+    { slotId: 'slot-7', reference: { kind: 'point', pointId: 'unsupported-A' } },
+  ] });
+  const second = hole({ centers: [[10, 15, 10]], pointPlacementReferences: [
+    { slotId: 'slot-7', reference: { kind: 'point', pointId: 'unsupported-B' } },
+  ] });
+  expect(first.centers).toEqual(second.centers);
+  expect(first.placementRoles).toBeUndefined();
+  expect(second.placementRoles).toBeUndefined();
+  expect(cacheKeyFor(first)).not.toBe(cacheKeyFor(second));
+  const reorderedMembers = hole({ centers: [[10, 15, 10]], pointPlacementReferences: [
+    { reference: { pointId: 'unsupported-A', kind: 'point' }, slotId: 'slot-7' },
+  ] });
+  expect(cacheKeyFor(reorderedMembers)).toBe(cacheKeyFor(first));
+});
+
+
+describe('surface-face sewing cache keys', () => {
+  it('distinguishes upstream keys, face fingerprints, order and tolerance while preserving the old text', () => {
+    const faces = [
+      { targetKey: TARGET_KEY, query: faceFingerprint(0) },
+      { targetKey: 'second-body', query: faceFingerprint(1) },
+    ];
+    const original: SewKeyMaterial = { kind: 'sew', profiles: [], faces, tolerance: 0.01 };
+    const variants: SewKeyMaterial[] = [
+      { ...original, faces: [{ ...faces[0], targetKey: 'changed-body' }, faces[1]] },
+      { ...original, faces: [{ ...faces[0], query: faceFingerprint(0, 1300) }, faces[1]] },
+      { ...original, faces: [{ ...faces[0], query: faceFingerprint(2) }, faces[1]] },
+      { ...original, faces: [...faces].reverse() },
+      { ...original, faces: [faces[0]] },
+      { ...original, tolerance: 0.02 },
+      sew([]),
+    ];
+    expect(new Set([original, ...variants].map(cacheKeyFor)).size).toBe(variants.length + 1);
+    expect(keyMaterialText(sew([]))).toBe('sew{profiles=0:[];tolerance=0.010000000}');
   });
 });

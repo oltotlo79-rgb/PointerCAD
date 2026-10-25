@@ -68,9 +68,12 @@ export async function addCanvasFromFile(): Promise<void> {
   const latest = useAppStore.getState();
   // 3D スケッチ(作図面なし、FR-330)のときは基準の XY へ貼る(貼る面が要るため)。
   const plane = isFreeWorkPlaneId(latest.workPlaneId) ? DEFAULT_WORK_PLANE_ID : latest.workPlaneId;
-  const canvas = newSketchCanvas(latest.document.canvases, plane, picked.fileName, image);
-  latest.setCanvasPixelSize(canvas.imageId, { width: image.width, height: image.height });
+  const canvas = newSketchCanvas(latest.document.canvases, plane, picked.fileName, image,
+    `canvas-image-${globalThis.crypto.randomUUID()}`);
+  const pixelSize = { width: image.width, height: image.height };
   image.close?.();
   latest.addCanvas(canvas, picked.bytes);
+  // 追加時の購読で表示用の復号が始まっても、検証済みの画素で直ちに寸法合わせできる。
+  latest.setCanvasPixelSize(canvas.imageId, pixelSize);
   latest.startCanvasScale(canvas.id);
 }

@@ -1,4 +1,4 @@
-import { OFFLINE_MAX_FILE_BYTES, offlineAssetRoute } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { OFFLINE_MAX_STREAM_BYTES, offlineAssetRoute } from '../../../../scripts/vite/offlineProtocol.mjs';
 
 export type OfflineTransferReason = 'cancelled' | 'timeout' | 'network' | 'response' | 'size' | 'hash' | 'inventory';
 export class OfflineTransferError extends Error {
@@ -73,11 +73,11 @@ export async function requestOfflineResponse<T>(baseUrl: URL, path: string, opti
 /** Bound actual bytes before JSON parsing or hashing. Content-Length is not trusted. */
 export async function readBoundedOfflineBody(response: Response, maximumBytes: number, path: string,
   signal: AbortSignal, fetchedBytes: (bytes: number) => void): Promise<Uint8Array<ArrayBuffer>> {
-  if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0 || maximumBytes > OFFLINE_MAX_FILE_BYTES) {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0 || maximumBytes > OFFLINE_MAX_STREAM_BYTES) {
     throw new OfflineTransferError('size', path);
   }
   if (response.body === null) throw new OfflineTransferError('size', path);
-  const reader = response.body.getReader(), bytes = new Uint8Array(maximumBytes);
+  const reader = response.body.getReader(), chunks: Uint8Array[] = [];
   let received = 0;
   const onAbort = () => { void reader.cancel().catch(() => undefined); };
   signal.addEventListener('abort', onAbort, { once: true });
@@ -88,11 +88,14 @@ export async function readBoundedOfflineBody(response: Response, maximumBytes: n
       signal.throwIfAborted();
       if (chunk.done) break;
       if (received + chunk.value.byteLength > maximumBytes) throw new OfflineTransferError('size', path);
-      bytes.set(chunk.value, received);
+      chunks.push(chunk.value.slice());
       received += chunk.value.byteLength;
       fetchedBytes(received);
     }
-    return received === maximumBytes ? bytes : bytes.subarray(0, received);
+    const bytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return bytes;
   } catch (error) {
     void reader.cancel().catch(() => undefined);
     throw error;

@@ -18,7 +18,7 @@ import type { StateCreator } from 'zustand';
 import type { MessageKey } from '../i18n/t.js';
 import { commitRemoveConstraints, constraintsReferencing } from '../sketch/constraintCommands.js';
 import type { InferredConstraintPreview } from '../sketch/inferredConstraints.js';
-import type { NumericInputState, NumericInputToolId } from '../sketch/numericInput.js';
+import { numericInputSemanticKey, type NumericInputState, type NumericInputToolId } from '../sketch/numericInput.js';
 import { EMPTY_REFERENCE_DRAFT, type ReferenceDraft } from '../sketch/referenceCommands.js';
 import { EMPTY_SHAPE_DRAFT, type ShapeDraft } from '../sketch/shapeCommands.js';
 import type { SnapKind } from '../sketch/snapMath.js';
@@ -186,6 +186,13 @@ export interface SketchSlice {
   ) => void;
   readonly updateNumericInput: (state: NumericInputState) => void;
   readonly closeNumericInput: () => void;
+  /**
+   * 入力欄の通し番号(EX-14)。開く・閉じるたびと、値・選択肢・つまみ・道具・段など**意味**が
+   * 変わる更新のたびに 1 つ進み、戻らない。焦点の移動だけの更新では進まない。同じ値の入力欄を
+   * 開き直した場合も進むので、開き直す前の入力で始めた計算を採用しない。文書の世代ではなく、
+   * 入力欄の中だけで使う。文書を作り直しても戻さない(`SketchInitialState` に入れない)。
+   */
+  readonly numericInputRevision: number;
   readonly setPendingStart: (start: CoordinateInput | null) => void;
   /** 新しい図形の途中経過を置き換える(タスク12)。 */
   readonly setShapeDraft: (draft: ShapeDraft) => void;
@@ -351,8 +358,10 @@ export const createSketchSlice: StateCreator<
   setChaining: (chaining) => {
     set({ chaining });
   },
+  numericInputRevision: 0,
   openNumericInput: (numericInput, numericInputAnchor) => {
-    set({ numericInput, numericInputAnchor });
+    // 開くのは新しい入力欄。同じ道具・同じ値でも前の入力欄とは別の持ち主にする(EX-14)。
+    set((state) => ({ numericInput, numericInputAnchor, numericInputRevision: state.numericInputRevision + 1 }));
   },
   updateNumericInput: (numericInput) => {
     /*
@@ -367,17 +376,22 @@ export const createSketchSlice: StateCreator<
       通らない——押した場所を欄へ入れる `openInputAt` は開き直す側だから、
       「クリックで置く → Enter で確定」の道筋では予告はそのまま残る。
     */
-    set({ numericInput, inferredConstraints: null });
+    set((state) => ({ numericInput, inferredConstraints: null,
+      // 意味の変わる更新だけ通し番号を進める(焦点の移動・評価の表示だけでは進めない。EX-14)。
+      ...(state.numericInput !== null
+        && numericInputSemanticKey(state.numericInput) === numericInputSemanticKey(numericInput)
+        ? {} : { numericInputRevision: state.numericInputRevision + 1 }) }));
   },
   closeNumericInput: () => {
     // 取りかけの図形(置いた点・前の段の値)も一緒に捨てる。ポップアップが閉じたあとに
     // 別の道具で置いた点と混ざらないようにするため(NFR-UX-3、タスク12)。
-    set({
+    set((state) => ({
       numericInput: null,
       numericInputAnchor: null,
+      numericInputRevision: state.numericInputRevision + 1,
       shapeDraft: EMPTY_SHAPE_DRAFT,
       referenceDraft: EMPTY_REFERENCE_DRAFT,
-    });
+    }));
   },
   setPendingStart: (pendingStart) => {
     set({ pendingStart });

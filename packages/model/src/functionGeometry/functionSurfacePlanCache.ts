@@ -4,7 +4,9 @@ import { decodeFunctionSurfaceWorkRequest, type FunctionSurfaceWorkRequest } fro
 export function functionSurfaceInputSignature(request: FunctionSurfaceWorkRequest): string {
   // Validation owns the snapshot. Include future validated request fields automatically;
   // only the recipient identity is excluded from the mathematical input.
-  return JSON.stringify({ algorithm: 'function-surface/3', ...decodeFunctionSurfaceWorkRequest(request), identity: undefined });
+  // /4: the same inputs may now yield a certified C1 spline instead of planar triangles, so earlier plans and the
+  // solid shapes keyed by this signature must not be reused.
+  return JSON.stringify({ algorithm: 'function-surface/4', ...decodeFunctionSurfaceWorkRequest(request), identity: undefined });
 }
 
 /** Derived samples only. Full-precision evaluated inputs identify a plan; document IDs never do. */
@@ -29,7 +31,9 @@ export class FunctionSurfacePlanCache {
   set(plan: FunctionSurfacePlan): void {
     const geometry = plan.geometry;
     if (!('vertices' in geometry)) return;
-    const numbers = 3 * (geometry.vertices.length + geometry.triangles.length) + 6;
+    const spline = geometry.spline;
+    const numbers = 3 * (geometry.vertices.length + geometry.triangles.length) + 6
+      + (spline === undefined ? 0 : 3 * spline.poles.length + spline.uKnots.length + spline.vKnots.length + 1);
     // A large valid surface is still calculated and displayed; only retaining it is declined.
     if (numbers > this.maximumNumbers || plan.inputSignature.length > 262_144) return;
     const previous = this.entries.get(plan.inputSignature);
@@ -38,6 +42,9 @@ export class FunctionSurfacePlanCache {
     const saved: FunctionSurfacePlan = Object.freeze({ ...plan, geometry: Object.freeze({
       vertices: Object.freeze(geometry.vertices.map(triple)), triangles: Object.freeze(geometry.triangles.map(triple)),
       bounds: Object.freeze({ minimum: triple(geometry.bounds.minimum), maximum: triple(geometry.bounds.maximum) }),
+      // The retained plan must keep the spline: dropping it would silently rebuild the surface from triangles.
+      ...(spline === undefined ? {} : { spline: Object.freeze({ uKnots: Object.freeze([...spline.uKnots]),
+        vKnots: Object.freeze([...spline.vKnots]), poles: Object.freeze(spline.poles.map(triple)), errorBound: spline.errorBound }) }),
     }) });
     this.entries.set(plan.inputSignature, { plan: saved, numbers });
     this.numbers += numbers;

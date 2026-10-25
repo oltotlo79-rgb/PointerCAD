@@ -6,6 +6,7 @@ import {
   type TessellationOptions,
 } from '../types.js';
 import { createAllocations } from './allocations.js';
+import { localFloat32Coordinates, type MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 /**
  * 辺 1 本ぶんの線分の位置。positions の線分単位(6 個で 1 本)で数える。
@@ -50,12 +51,15 @@ export function extractEdges(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   options: TessellationOptions = {},
+  frame?: MeshCoordinateFrame,
+  admitBytes?: (segments: number, edges: number) => void,
 ): EdgeLines {
   const linearDeflection = options.linearDeflection ?? DEFAULT_LINEAR_DEFLECTION;
   const angularDeflection = options.angularDeflection ?? DEFAULT_ANGULAR_DEFLECTION;
 
   const segments: number[] = [];
   const edgeRanges: EdgeSegmentRange[] = [];
+  admitBytes?.(0, 0);
 
   const shared = createAllocations();
 
@@ -96,17 +100,28 @@ export function extractEdges(
           // (tessellate.ts の NbNodes() と同じ理由)。点が 1 つ以下の辺は線分が 0 本になり、
           // 範囲表には 0 本として積まれる。
           const pointCount = Number(discretizer.NbPoints());
+          if (!Number.isSafeInteger(pointCount) || pointCount < 0) {
+            throw new RangeError('Edge point count is invalid');
+          }
+          admitBytes?.(segmentOffset + Math.max(0, pointCount - 1), edgeRanges.length + 1);
           for (let i = 1; i < pointCount; i += 1) {
             const from = discretizer.Value(i);
-            const to = discretizer.Value(i + 1);
-            segments.push(from.X(), from.Y(), from.Z(), to.X(), to.Y(), to.Z());
-            from.delete();
-            to.delete();
+            try {
+              const to = discretizer.Value(i + 1);
+              try {
+                segments.push(from.X(), from.Y(), from.Z(), to.X(), to.Y(), to.Z());
+              } finally {
+                to.delete();
+              }
+            } finally {
+              from.delete();
+            }
           }
         } finally {
           perEdge.release();
         }
 
+        admitBytes?.(segments.length / 6, edgeRanges.length + 1);
         edgeRanges.push({
           segmentOffset,
           segmentCount: segments.length / 6 - segmentOffset,
@@ -120,7 +135,7 @@ export function extractEdges(
   }
 
   return {
-    positions: new Float32Array(segments),
+    positions: frame === undefined ? new Float32Array(segments) : localFloat32Coordinates(segments, frame),
     edgeCount: edgeRanges.length,
     edgeRanges,
   };

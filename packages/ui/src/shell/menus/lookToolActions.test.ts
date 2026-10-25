@@ -7,12 +7,15 @@
  */
 
 import { createEmptyPartDocument } from '@pointercad/model';
+import { readPcadFile, writePcadFile } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DecodedCanvasImage, PickedCanvasImage } from '../../file/canvasFile.js';
 import { t } from '../../i18n/t.js';
 import { resetTestStore } from '../../store/testing/createTestStore.js';
 import { useAppStore } from '../../store/useAppStore.js';
+import { currentPcadAttachments } from '../../store/attachKernel.js';
+import { createCanvasImageCache } from '../../viewport/createCanvasImageCache.js';
 import { addCanvasFromFile } from './lookToolActions.js';
 
 const dom = vi.hoisted(() => ({
@@ -50,6 +53,77 @@ function renamePart(name: string): void {
 }
 
 describe('下絵を読み込む間の文書の変化', () => {
+  it('表示キャッシュが復号中でも追加前に確認した画素で寸法合わせを始める', async () => {
+    const cache = createCanvasImageCache({
+      readSource: () => {
+        const state = useAppStore.getState();
+        return { documentId: state.activeDocumentId, canvases: state.document.canvases,
+          images: state.canvases, retries: state.canvasImageRetries };
+      },
+      publish: () => undefined,
+      setLoad: (id, owner, load) => { useAppStore.getState().setCanvasImageLoad(id, owner, load); },
+      reportInvalid: message => { throw new Error(message); },
+    });
+    const unsubscribe = useAppStore.subscribe((next, previous) => {
+      if (next.document !== previous.document || next.canvases !== previous.canvases) cache.sync();
+    });
+    try {
+      const adding = addCanvasFromFile(); await pickAndReachDecode(0);
+      // Closing a real ImageBitmap sets its dimensions to zero.
+      const decoded = { width: 200, height: 100, close: vi.fn(() => { decoded.width = 0; decoded.height = 0; }) };
+      dom.decodes[0].resolve(decoded); await adding;
+      expect(dom.decodes).toHaveLength(2);
+      const state = useAppStore.getState(), canvas = state.document.canvases[0];
+      expect(state.canvasScale?.canvasId).toBe(canvas.id);
+      expect(state.canvasPixelSizes.get(canvas.imageId)).toEqual({ width: 200, height: 100 });
+      expect(state.canvasImageLoads.get(canvas.imageId)?.status).toBe('ready');
+      expect(decoded.close).toHaveBeenCalledTimes(1);
+      const displayed = { width: 200, height: 100, close: vi.fn() };
+      dom.decodes[1].resolve(displayed); await Promise.resolve();
+      expect(useAppStore.getState().canvasScale?.canvasId).toBe(canvas.id);
+      expect(useAppStore.getState().document).toBe(state.document);
+      expect(useAppStore.getState().undoStack).toBe(state.undoStack);
+      cache.dispose(); expect(displayed.close).toHaveBeenCalledTimes(1);
+    } finally { unsubscribe(); cache.dispose(); }
+  });
+
+  it.each([0, 1])('既存 %i 枚に続く最大番号を削除して追加しても Undo・Redo・保存で画像を取り違えない', async (retainedCount) => {
+    const originalBytes = PNG_BYTES.slice();
+    const replacementBytes = PNG_BYTES.slice();
+    replacementBytes[replacementBytes.length - 1] = 99;
+    async function add(index: number, name: string, bytes: Uint8Array, width: number): Promise<void> {
+      const adding = addCanvasFromFile();
+      dom.picks[index]?.resolve({ fileName: name, bytes });
+      await vi.waitFor(() => { expect(dom.decodes).toHaveLength(index + 1); });
+      dom.decodes[index]?.resolve({ width, height: 100 });
+      await adding;
+    }
+    if (retainedCount > 0) await add(0, '残す下絵.png', PNG_BYTES.slice(), 100);
+    const retained = useAppStore.getState().document.canvases;
+    await add(retainedCount, 'A.png', originalBytes, 200);
+    const original = useAppStore.getState().document.canvases[retainedCount];
+    useAppStore.getState().removeCanvas(original.id);
+    await add(retainedCount + 1, 'B.png', replacementBytes, 300);
+    const replacement = useAppStore.getState().document.canvases[retainedCount];
+    expect(replacement.id).toBe(original.id);
+    useAppStore.getState().undo();
+    useAppStore.getState().undo();
+    const restored = useAppStore.getState();
+    expect(restored.document.canvases).toEqual([...retained, original]);
+    expect(restored.canvases.get(original.imageId)).toEqual(originalBytes);
+    expect(replacement.imageId).not.toBe(original.imageId);
+    const read = readPcadFile(writePcadFile(restored.document, { attachments: currentPcadAttachments() }));
+    expect(read.ok).toBe(true);
+    if (!read.ok) throw new Error('Part round trip failed');
+    expect(read.attachments.canvases.get(original.imageId)).toEqual(originalBytes);
+    expect(read.attachments.canvases.size).toBe(retainedCount + 1);
+    useAppStore.getState().redo();
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().document.canvases).toEqual([...retained, replacement]);
+    expect(useAppStore.getState().canvases.get(replacement.imageId)).toEqual(replacementBytes);
+    expect(useAppStore.getState().canvases.get(original.imageId)).toEqual(originalBytes);
+  });
+
   it('何も変わらなければ、いまの作図面へ貼って寸法合わせを始める', async () => {
     const adding = addCanvasFromFile();
     await pickAndReachDecode(0);

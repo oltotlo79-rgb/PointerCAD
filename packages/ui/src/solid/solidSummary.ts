@@ -43,9 +43,11 @@ import {
   filletRadiusOf,
   findSolid,
   holeEntryOf,
+  withFaceOffsetDistance,
   METRIC_THREAD_DESIGNATIONS,
   RULED_SPHERE_SEGMENT_CHOICES,
   type AxisSpec,
+  type BooleanFeature,
   type ChamferSize,
   type CutFeature,
   type ExtrudeEnd,
@@ -142,15 +144,25 @@ function holeSubShapeCounts(
 }
 
 /** 穴の欄。直径・(止まりのときだけ深さ)・傾き・傾ける向き(§0.a-0.10、0.11)。 */
-function holeFields(feature: HoleFeature): SolidFieldSummary[] {
+function holeFields(feature: HoleFeature, locationIndex?: number): SolidFieldSummary[] {
   const fields = [fieldSummary('diameter', feature.diameter)];
   if (feature.depth.kind === 'blind') {
     fields.push(fieldSummary('depth', feature.depth.depth));
   }
   fields.push(
-    fieldSummary('tiltAngle', feature.tiltAngle),
-    fieldSummary('tiltAzimuth', feature.tiltAzimuth),
+    holeTiltField(feature, 'tiltAngle'),
+    holeTiltField(feature, 'tiltAzimuth'),
   );
+  // 書き戻しと同じ位置を表示する。複数位置では呼び出し側が index を明示する。
+  const placement = feature.cylindrical;
+  const index = locationIndex ?? (placement?.locations.length === 1 ? 0 : -1);
+  const location = Number.isInteger(index) ? placement?.locations[index] : undefined;
+  if (location !== undefined) {
+    fields.push(
+      fieldSummary('holeCylinderHeight', location.height),
+      fieldSummary('holeCylinderAngle', location.angle),
+    );
+  }
   return fields;
 }
 
@@ -158,7 +170,7 @@ function holeFields(feature: HoleFeature): SolidFieldSummary[] {
  * ねじ穴の欄。ピッチ・下穴径・ねじ部の長さ・(止まりのときだけ深さ)・傾き・傾ける向き
  * (§0.a-0.10、0.13、0.14。穴の `holeFields` と同じ並びに、規格から入る3つを前へ足す)。
  */
-function threadHoleFields(feature: ThreadHoleFeature): SolidFieldSummary[] {
+function threadHoleFields(feature: ThreadHoleFeature, locationIndex?: number): SolidFieldSummary[] {
   const fields = [
     fieldSummary('pitch', feature.pitch),
     fieldSummary('drillDiameter', feature.drillDiameter),
@@ -168,10 +180,30 @@ function threadHoleFields(feature: ThreadHoleFeature): SolidFieldSummary[] {
     fields.push(fieldSummary('depth', feature.depth.depth));
   }
   fields.push(
-    fieldSummary('tiltAngle', feature.tiltAngle),
-    fieldSummary('tiltAzimuth', feature.tiltAzimuth),
+    holeTiltField(feature, 'tiltAngle'),
+    holeTiltField(feature, 'tiltAzimuth'),
   );
+  // 穴と同じく、位置の指定を省略できるのは 1 件のときだけ。
+  const placement = feature.cylindrical;
+  const index = locationIndex ?? (placement?.locations.length === 1 ? 0 : -1);
+  const location = Number.isInteger(index) ? placement?.locations[index] : undefined;
+  if (location !== undefined) {
+    fields.push(
+      fieldSummary('holeCylinderHeight', location.height),
+      fieldSummary('holeCylinderAngle', location.angle),
+    );
+  }
   return fields;
+}
+
+function holeTiltField(
+  feature: HoleFeature | ThreadHoleFeature,
+  key: 'tiltAngle' | 'tiltAzimuth',
+): SolidFieldSummary {
+  const field = fieldSummary(key, feature[key], feature.cylindrical !== undefined);
+  return feature.cylindrical === undefined
+    ? field
+    : { ...field, tooltipKey: 'numericInput.tooltip.cylinderHoleTiltUnsupported' };
 }
 
 /** 深さの種類(貫通/止まり)を選ぶ欄。穴・ねじ穴で共用する。 */
@@ -375,6 +407,24 @@ function solidToggle(key: SolidToggleKey, labelKey: MessageKey, value: boolean):
 }
 
 /**
+ * 閉じた輪郭の切断(EX04)のブーリアンか(EX-04 W3)。`requireRemoval` を立てた差(輪郭の外側を残す)と
+ * 積(輪郭の内側を残す)だけが当たり、手作業の和・差・積(欄なし)は当たらない。
+ */
+function isProfileCutBoolean(feature: BooleanFeature): boolean {
+  return feature.requireRemoval === true && (feature.operation === 'subtract' || feature.operation === 'intersect');
+}
+
+/**
+ * 閉じた輪郭の切断が「反対側も残す」の対になっているか(EX-04 W3)。抑制されていない別のブーリアンと
+ * `pairedWith` で結ばれていれば(どちら向きでも)対。相手が消えた・抑制されたときは単独に戻る
+ * (model の `resolvePart` の対の引き方と同じ見方)。
+ */
+function isPairedProfileCut(document: PartDocument, feature: BooleanFeature): boolean {
+  return document.solids.some((candidate) => candidate.kind === 'boolean' && candidate.id !== feature.id
+    && !candidate.suppressed && (candidate.id === feature.pairedWith || candidate.pairedWith === feature.id));
+}
+
+/**
  * 押し出しの終わり方(FR-415)。
  *
  * **「選んだ面まで」はプロパティからは選べない**(面を指す操作が要る)ので、いまそれで
@@ -388,6 +438,11 @@ function extrudeEndChoice(end: ExtrudeEnd): SolidChoiceSummary {
       ? [{ value: 'toFace', labelKey: 'numericInput.extrudeEnd.toFace' } as const]
       : []),
     { value: 'toNext', labelKey: 'numericInput.extrudeEnd.toNext' },
+    // 「対象を貫く」は切断の道具だけが作る(対象を名指しする)ので、いまそれのときだけ出す。
+    // 選び直しても `setExtrudeEnd` は知らない値として何も変えない。
+    ...(end.kind === 'throughTarget'
+      ? [{ value: 'throughTarget', labelKey: 'numericInput.extrudeEnd.throughTarget' } as const]
+      : []),
   ];
   return { key: 'extrudeEnd', labelKey: 'propertyPanel.extrudeEnd', value: end.kind, options };
 }
@@ -407,16 +462,17 @@ function thicknessSideChoice(side: ThicknessSide): SolidChoiceSummary {
 }
 
 /** 穴・ねじ穴の入口の形(FR-422、§0.a-0.39)。 */
-function holeEntryChoice(entry: HoleEntry): SolidChoiceSummary {
+function holeEntryChoice(entry: HoleEntry, cylindrical: boolean): SolidChoiceSummary {
+  const options: SolidChoiceSummary['options'] = [
+    { value: 'plain', labelKey: 'numericInput.holeEntry.plain' },
+    { value: 'counterbore', labelKey: 'numericInput.holeEntry.counterbore' },
+    { value: 'countersink', labelKey: 'numericInput.holeEntry.countersink' },
+  ];
   return {
     key: 'holeEntry',
     labelKey: 'propertyPanel.holeEntry',
     value: entry.kind,
-    options: [
-      { value: 'plain', labelKey: 'numericInput.holeEntry.plain' },
-      { value: 'counterbore', labelKey: 'numericInput.holeEntry.counterbore' },
-      { value: 'countersink', labelKey: 'numericInput.holeEntry.countersink' },
-    ],
+    options: cylindrical ? options.filter(option => option.value !== 'countersink') : options,
   };
 }
 
@@ -684,6 +740,7 @@ export function summarizeSolid(
   document: PartDocument,
   feature: SolidFeature,
   errors: readonly PartRecomputeError[] = [],
+  cylindricalLocationIndex?: number,
 ): SolidSummary {
   const kind = solidKindOf(feature);
   const base = {
@@ -767,14 +824,26 @@ export function summarizeSolid(
         subShapeCounts: [],
       };
     case 'boolean':
+      /*
+        閉じた輪郭の切断(EX04。`requireRemoval` を立てた差・積)だけは、残す側を「輪郭の内側を残す」の
+        つまみ 1 つで切り替える(EX-04 W3。差 = 輪郭の外側、積 = 輪郭の内側)。「反対側も残す」で
+        対になった 2 つ(どちらかが `pairedWith` で相手を指す)は両側を残しているので、片方だけを
+        裏返すと同じ側の 2 つになって再計算が断る。だから対のあいだはつまみを出さず、2 つ目に相手への
+        案内を参照として足す(平面の切断の `cutPaired` と同じ)。手作業の和・差・積はつまみを持たない。
+      */
       return {
         ...base,
         fields: [],
-        toggles: [],
+        toggles: isProfileCutBoolean(feature) && !isPairedProfileCut(document, feature)
+          ? [solidToggle('cutKeepOpposite', 'numericInput.toggle.profileKeepInside', feature.operation === 'intersect')]
+          : [],
         choices: [],
         references: [
           bodyReference(document, 'propertyPanel.target', feature.targetFeatureId),
           bodyReference(document, 'propertyPanel.tool', feature.toolFeatureId),
+          ...(feature.pairedWith === undefined
+            ? []
+            : [bodyReference(document, 'propertyPanel.cutPaired', feature.pairedWith)]),
         ],
         subShapeCounts: [],
       };
@@ -782,9 +851,9 @@ export function summarizeSolid(
       // 入口(ざぐり・皿もみ、FR-422)は **`holeEntryOf` を通して**読む(既定は「広げない」)。
       return {
         ...base,
-        fields: [...holeFields(feature), ...holeEntryFields(holeEntryOf(feature))],
+        fields: [...holeFields(feature, cylindricalLocationIndex), ...holeEntryFields(holeEntryOf(feature))],
         toggles: [],
-        choices: [depthKindChoice(feature.depth.kind), holeEntryChoice(holeEntryOf(feature))],
+        choices: [depthKindChoice(feature.depth.kind), holeEntryChoice(holeEntryOf(feature), feature.cylindrical !== undefined)],
         references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
         subShapeCounts: holeSubShapeCounts(feature),
       };
@@ -793,11 +862,11 @@ export function summarizeSolid(
       // (§0.a-0.13、0.14。タスク28で深さ・傾きの欄と選択肢を仕上げた)。
       return {
         ...base,
-        fields: [...threadHoleFields(feature), ...holeEntryFields(holeEntryOf(feature))],
+        fields: [...threadHoleFields(feature, cylindricalLocationIndex), ...holeEntryFields(holeEntryOf(feature))],
         toggles: [],
         choices: [
           depthKindChoice(feature.depth.kind),
-          holeEntryChoice(holeEntryOf(feature)),
+          holeEntryChoice(holeEntryOf(feature), feature.cylindrical !== undefined),
           threadDesignationChoice(feature.designation),
           threadSeriesChoice(feature.series),
           threadRepresentationChoice(feature.representation),
@@ -965,6 +1034,17 @@ export function summarizeSolid(
           { labelKey: 'propertyPanel.draftFaces', count: feature.faces.length },
         ],
       };
+    case 'faceOffset':
+      // 平らな面の移動(EX-18)。直せるのは符号付きの距離 1 つ。動かす面は画面で指すものなので
+      // 欄にせず枚数だけを出す(抜き勾配の面と同じ切り分け)。
+      return {
+        ...base,
+        fields: [fieldSummary('faceOffsetDistance', feature.offset)],
+        toggles: [],
+        choices: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 }],
+      };
     case 'mirror':
       return {
         ...base,
@@ -1046,6 +1126,10 @@ export function summarizeSolid(
           { labelKey: 'propertyPanel.shellOpenFaces', count: feature.openFaces.length },
         ],
       };
+    case 'surfaceCut':
+      return { ...base, fields: [], toggles: [], choices: [],
+        references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [] };
     case 'cut':
       /*
         平面による切断(FR-432、タスク27f)。**切断が持つ式は切る面の中にある**ので、
@@ -1163,7 +1247,7 @@ export function setSolidField(
   key: SolidFieldKey,
   value: ExpressionValue,
   variables?: ReadonlyMap<string, number>,
-  options: Omit<EvaluateOptions, 'variables'> = {},
+  options: Omit<EvaluateOptions, 'variables'> & { readonly cylindricalLocationIndex?: number } = {},
 ): SolidFeature {
   switch (feature.kind) {
     case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return setSheetField(feature, key, value);
@@ -1174,9 +1258,9 @@ export function setSolidField(
     case 'sew':
       return key === 'tolerance' ? { ...feature, tolerance: value } : feature;
     case 'hole':
-      return setHoleField(feature, key, value);
+      return setHoleField(feature, key, value, options.cylindricalLocationIndex);
     case 'threadHole':
-      return setThreadHoleField(feature, key, value);
+      return setThreadHoleField(feature, key, value, options.cylindricalLocationIndex);
     case 'fillet':
       if (key === 'radius') {
         return { ...feature, radius: value };
@@ -1208,6 +1292,8 @@ export function setSolidField(
       return key === 'ruledTwist' ? { ...feature, twist: value } : feature;
     case 'draft':
       return key === 'draftAngle' ? { ...feature, angle: value } : feature;
+    case 'faceOffset':
+      return key === 'faceOffsetDistance' ? withFaceOffsetDistance(feature, value) : feature;
     case 'transform':
       return setTransformField(feature, key, value);
     case 'scale':
@@ -1224,6 +1310,7 @@ export function setSolidField(
     case 'surface':
       return setSurfaceField(feature, key, value);
     case 'functionSurface':
+    case 'surfaceCut':
       return feature;
     case 'shell':
       return key === 'shellThickness' ? { ...feature, thickness: value } : feature;
@@ -1649,6 +1736,13 @@ export function setSolidToggle(
     // 反対側を残す(§0.a-0.57)。法線の向きは変えず、残す側だけを裏返す。
     return key === 'cutKeepOpposite'
       ? { ...feature, keep: value ? 'negative' : 'positive' }
+      : feature;
+  }
+  if (feature.kind === 'boolean') {
+    // 閉じた輪郭の切断の「輪郭の内側を残す」(EX-04 W3)。対象・輪郭・印はそのままで、差 ⇔ 積だけを替える。
+    // 手作業の和・差・積はこのつまみを持たないので、そのまま返す。
+    return key === 'cutKeepOpposite' && isProfileCutBoolean(feature)
+      ? { ...feature, operation: value ? 'intersect' : 'subtract' }
       : feature;
   }
   return feature;

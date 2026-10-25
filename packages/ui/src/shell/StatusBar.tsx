@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react';
 import './statusBar.css';
 
 import { missingAppearanceCount } from '../appearance/appearanceCommands.js';
+import { nestedBoltedJointRefusalKey } from '../assembly/nestedBoltedJointDisplay.js';
 import { documentLabel } from '../file/partFile.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { mathGeometryToolGuide, mathGeometryToolGuideText } from '../math/mathGeometryToolGuide.js';
@@ -34,6 +35,8 @@ import {
   describeStatus,
   assemblyMateStatus,
   assemblyToolGuide,
+  boltedJointStatus,
+  filletWeldStatus,
   PROGRESS_DELAY_MS,
   type SpringNumericInputStep,
   type StatusLineKind,
@@ -110,6 +113,15 @@ export function StatusBar(): React.JSX.Element {
   const assemblyReplacementBusy = useAppStore((state) => state.assemblyReplacementBusy);
   const assemblyReplacementPreview = useAppStore((state) => state.assemblyReplacementPreview);
   const assemblyExplodeDraft = useAppStore((state) => state.assemblyExplodeDraft);
+  // ボルト締結の打ちかけ(追加要件6)。下書きと予告はストアの同じ物を取り出し、文は statusText.ts が組む。
+  const boltedJointDraft = useAppStore((state) => state.assemblyBoltedJointDraft);
+  const boltedJointPreview = useAppStore((state) => state.assemblyBoltedJointPreview);
+  // すみ肉溶接の打ちかけ。締結の打ちかけとは同時に開かない(「組む」の道具が互いを止める)ので、同じ欄で出す。
+  const filletWeldDraft = useAppStore((state) => state.assemblyFilletWeldDraft);
+  const filletWeldPreview = useAppStore((state) => state.assemblyFilletWeldPreview);
+  const nestedWeldDraft = useAppStore((state) => state.assemblyNestedWeldDraft);
+  const nestedBoltDraft = useAppStore((state) => state.assemblyNestedBoltDraft);
+  const nestedBoltRefusal = nestedBoltedJointRefusalKey(useAppStore((state) => state.assemblyNestedBoltPreview));
   const checkingAssemblyInterference = useAppStore(
     (state) => state.isCheckingAssemblyInterference,
   );
@@ -206,6 +218,10 @@ export function StatusBar(): React.JSX.Element {
   const sketchFeatures = useAppStore((state) => state.sketch.features);
   const fileName = useAppStore(activeFileName);
   const fileMessage = useAppStore((state) => state.fileMessage);
+  const saveOperation = useAppStore(state => state.documentSaveOperation?.documentId === state.activeDocumentId
+    && state.documentSaveOperation.gateway === state.fileGateway ? state.documentSaveOperation : null);
+  const recoveryState = useAppStore(state => state.recoverySaveState?.documentId === state.activeDocumentId
+    && state.recoverySaveState.saver === state.autoSaver ? state.recoverySaveState : null);
   const recomputeProgress = useAppStore((state) => state.recomputeProgress);
   const recomputeCancelled = useAppStore((state) => state.recomputeCancelled);
   const cancelRecompute = useAppStore((state) => state.cancelRecompute);
@@ -329,6 +345,8 @@ export function StatusBar(): React.JSX.Element {
   const line = describeStatus({
     assemblyMateStatus: assemblyMateStatus(mateDraft, mateDiagnosis, mateTargetErrors ?? new Map()),
     assemblyMateActive: mateDraft !== null,
+    assemblyBoltedJointStatus: boltedJointStatus(boltedJointDraft, boltedJointPreview, nestedBoltDraft, nestedBoltRefusal)
+      ?? filletWeldStatus(filletWeldDraft, filletWeldPreview, nestedWeldDraft),
     assemblyOperationStatus,
     assemblyInterferenceCount,
     assemblyDragNotice,
@@ -382,6 +400,12 @@ export function StatusBar(): React.JSX.Element {
   });
   const className =
     line.kind === 'failure' ? 'pcad-statusbar pcad-statusbar--error' : 'pcad-statusbar';
+  const saveText = saveOperation === null ? null : t(`file.save.${saveOperation.stage}`)
+    .replace('{name}', saveOperation.fileName ?? fileLabel);
+  // 「復元用の保存を待っています」は今の文書に保存していない変更がある間だけ示す。新規・開く・Undo で
+  // 保存済みの内容になった文書へ、差し替えの途中で付いた待機の表示を残さない(R06 の4表示を現世代だけに)。
+  const recoveryText = recoveryState === null || (recoveryState.stage === 'pending' && !unsaved)
+    ? null : t(`file.recovery.${recoveryState.stage}`);
 
   return (
     <footer className={className}>
@@ -398,9 +422,33 @@ export function StatusBar(): React.JSX.Element {
         欄が広がり、そのぶんを右の余白と状況の 1 文が譲る(appShell.css)。
       */}
       <CommandLine onFailureChange={setCommandFailure} />
+      {saveOperation === null ? null : (
+        <span className="pcad-statusbar__progress" data-save-stage={saveOperation.stage}>
+          <span role="status" aria-live="polite" title={saveText ?? undefined}
+            style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {saveText}{unsaved ? ` ${t('file.unsavedChanges')}` : ''}
+          </span>
+          {saveOperation.cancel === null ? null : (
+            <button type="button" className="pcad-button pcad-button--action pcad-statusbar__cancel"
+              title={t('controlGuide.save.cancel')}
+              onClick={saveOperation.cancel}>{t('file.save.cancel')}</button>
+          )}
+        </span>
+      )}
+      {recoveryText === null ? null : (
+        <span role="status" title={recoveryState?.detail ?? recoveryText}
+          style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {recoveryText}
+        </span>
+      )}
+      {unsaved && saveOperation === null ? <span
+        style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+      >{t('file.unsavedChanges')}</span> : null}
       <span className="pcad-statusbar__message" aria-live="polite">
         {statusIcon(line.kind)}
-        <span className="pcad-statusbar__text" title={line.text}>{line.text}</span>
+        <span className="pcad-statusbar__text" title={line.text}>
+          {line.text}{fileMessage?.detail === undefined ? '' : ` ${fileMessage.detail}`}
+        </span>
         {/*
           案内に添える一言(3D スケッチで頂点を押せること、FR-330 / NFR-UX-7、タスク14)。
           計算中の進み具合に添える一言は下の進捗の並びで出すので、ここでは案内のときだけ。

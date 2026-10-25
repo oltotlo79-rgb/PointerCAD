@@ -345,6 +345,60 @@ function coincidentOutcome(
   return ok(samePointRows(id, p, q));
 }
 
+function pointCurveOutcome(
+  variableSet: VariableSet,
+  x: readonly number[],
+  id: string,
+  pointTarget: ConstraintTarget,
+  curveTarget: ConstraintTarget,
+  midpoint: boolean,
+): ResidualOutcome {
+  if (!isPointTarget(pointTarget) || curveTarget.kind !== 'curve'
+    || (curveTarget.element.index !== undefined && curveTarget.element.index !== 0)) {
+    return skip('unsupportedTarget');
+  }
+  const pointKey = constraintPointKey(variableSet, pointTarget);
+  const point = readPoint(variableSet, x, pointKey);
+  if (point === null || !variableSet.elementFeatureIds.has(curveTarget.element.featureId)) {
+    return skip('dangling');
+  }
+  if (pointKey === null || !variableSet.constraintPoints.has(pointKey)) return skip('unsupportedTarget');
+  const kind = variableSet.constraintCurves.get(curveTarget.element.featureId);
+  if (kind === 'line') {
+    const line = readLine(variableSet, x, curveTarget);
+    if (line === null) return skip('dangling');
+    if (line.length <= SKETCH_TOLERANCE_MM) return skip('degenerate');
+    if (midpoint) {
+      const u = new Map<number, number>(), v = new Map<number, number>();
+      addPointTerm(u, point, 1, 0);
+      addPointTerm(u, line.start, -0.5, 0); addPointTerm(u, line.end, -0.5, 0);
+      addPointTerm(v, point, 0, 1);
+      addPointTerm(v, line.start, 0, -0.5); addPointTerm(v, line.end, 0, -0.5);
+      return ok([rowOf(id, point.u - (line.start.u + line.end.u) / 2, u),
+        rowOf(id, point.v - (line.start.v + line.end.v) / 2, v)]);
+    }
+    // Infinite supporting line, with physical distance units and no segment clamping.
+    const du = point.u - line.start.u, dv = point.v - line.start.v;
+    const gradient = new Map<number, number>();
+    addPointTerm(gradient, point, line.unitV, -line.unitU);
+    addPointTerm(gradient, line.start, -line.unitV, line.unitU);
+    addDirectionTerms(gradient, line, -dv, du);
+    return ok([rowOf(id, du * line.unitV - dv * line.unitU, gradient)]);
+  }
+  if (midpoint || kind !== 'circle') return skip('unsupportedTarget');
+  const circle = readCircle(variableSet, x, curveTarget);
+  if (circle === null) return skip('dangling');
+  const spoke = makeLine(circle.center, point);
+  if (circle.radius.value <= SKETCH_TOLERANCE_MM || spoke.length <= SKETCH_TOLERANCE_MM) {
+    return skip('degenerate');
+  }
+  const gradient = new Map<number, number>();
+  addPointTerm(gradient, point, spoke.unitU, spoke.unitV);
+  addPointTerm(gradient, circle.center, -spoke.unitU, -spoke.unitV);
+  addTerm(gradient, circle.radius.column, -1);
+  return ok([rowOf(id, spoke.length - circle.radius.value, gradient)]);
+}
+
 function concentricOutcome(
   variableSet: VariableSet,
   x: readonly number[],
@@ -534,6 +588,29 @@ function symmetricOutcome(
 }
 
 /** 距離。2 点の間の長さ − 目標値。 */
+function axisDistanceOutcome(
+  variableSet: VariableSet,
+  x: readonly number[],
+  constraint: Extract<SketchConstraint, { readonly length: unknown }>,
+): ResidualOutcome {
+  if (!isPointTarget(constraint.a) || !isPointTarget(constraint.b)) {
+    return skip('unsupportedTarget');
+  }
+  const a = readPoint(variableSet, x, constraintPointKey(variableSet, constraint.a));
+  const b = readPoint(variableSet, x, constraintPointKey(variableSet, constraint.b));
+  if (a === null || b === null) return skip('dangling');
+  for (const target of [constraint.a, constraint.b]) {
+    const key = constraintPointKey(variableSet, target);
+    if (key === null || !variableSet.constraintPoints.has(key)) return skip('unsupportedTarget');
+  }
+  const horizontal = constraint.kind === 'horizontalDistance';
+  const gradient = new Map<number, number>();
+  addPointTerm(gradient, a, horizontal ? -1 : 0, horizontal ? 0 : -1);
+  addPointTerm(gradient, b, horizontal ? 1 : 0, horizontal ? 0 : 1);
+  return ok([rowOf(constraint.id,
+    (horizontal ? b.u - a.u : b.v - a.v) - constraint.length.value, gradient)]);
+}
+
 function distanceOutcome(
   variableSet: VariableSet,
   x: readonly number[],
@@ -632,6 +709,9 @@ function constraintOutcome(
   switch (constraint.kind) {
     case 'coincident':
       return coincidentOutcome(variableSet, x, id, constraint.a, constraint.b);
+    case 'midpoint':
+    case 'pointOnCurve':
+      return pointCurveOutcome(variableSet, x, id, constraint.a, constraint.b, constraint.kind === 'midpoint');
     case 'horizontal':
     case 'vertical':
       return axisAlignedOutcome(variableSet, x, id, constraint.target, constraint.kind);
@@ -652,6 +732,9 @@ function constraintOutcome(
     case 'fix':
       // 固定は式を足さず、変数を減らす道具(`collectVariables` が済ませている)。
       return NO_ROWS;
+    case 'horizontalDistance':
+    case 'verticalDistance':
+      return axisDistanceOutcome(variableSet, x, constraint);
     case 'distance':
       return distanceOutcome(variableSet, x, id, constraint.a, constraint.b, constraint.length.value);
     case 'angle':

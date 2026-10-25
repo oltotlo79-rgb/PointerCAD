@@ -1438,6 +1438,11 @@
   scrollbar-color: var(--pcad-border-strong) transparent;
 }
 
+/* Keep the final property section clear of fractional scrollport edges. */
+.pcad-panel--right > div.pcad-panel__body {
+  padding-block-end: var(--pcad-space-2);
+}
+
 .pcad-property-list {
   display: grid;
   grid-template-columns: minmax(5em, auto) minmax(0, 1fr);
@@ -2765,6 +2770,12 @@ button.pcad-tree__row:focus-visible {
   box-shadow: var(--pcad-shadow-soft-raised);
 }
 
+/* Keep the active fastening and weld forms above the persistent assembly timeline (z-index: 2). */
+.pcad-popover--bolted-joint,
+.pcad-popover--fillet-weld {
+  z-index: 3;
+}
+
 .pcad-tree__branch-toggle {
   display: inline-flex;
   flex: none;
@@ -2792,6 +2803,7 @@ button.pcad-tree__row:focus-visible {
 }
 
 .pcad-popover--standard-part {
+  z-index: 3;
   top: 16px;
   left: 16px;
   width: min(340px, calc(100% - 32px));

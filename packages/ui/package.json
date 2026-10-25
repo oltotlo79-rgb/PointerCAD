@@ -6,6 +6,10 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./desktop-occt-transport": {
+      "types": "./dist/desktopOcctTransport.d.ts",
+      "default": "./src/desktopOcctTransport.ts"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
@@ -20,7 +24,7 @@
     "./style.css": "./src/shell/appShell.css"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run && vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@pointercad/drawing": "workspace:*",
@@ -28,6 +32,7 @@
     "@pointercad/help-content": "workspace:*",
     "@pointercad/io": "workspace:*",
     "@pointercad/model": "workspace:*",
+    "@pointercad/fem": "workspace:*",
     "mathlive": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",

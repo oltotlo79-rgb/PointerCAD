@@ -1,21 +1,30 @@
 import { findComponent, type AssemblyDocument, type JointKind, type MateKind } from '@pointercad/model';
 import type { ToolMenuItem } from './menuItem.js';
-import { AngleConstraintIcon, CoincidentConstraintIcon, ConcentricConstraintIcon, CubeIcon, CylinderIcon, DistanceConstraintIcon, FixConstraintIcon, LayersIcon, ParallelConstraintIcon, RevolveIcon, SphereIcon, TangentConstraintIcon, ThreadShaftIcon, TransformIcon } from '../icons.js';
+import { AngleConstraintIcon, ChamferIcon, CoincidentConstraintIcon, ConcentricConstraintIcon, CubeIcon, CylinderIcon, DistanceConstraintIcon, FixConstraintIcon, LayersIcon, ParallelConstraintIcon, RevolveIcon, SphereIcon, TangentConstraintIcon, ThreadShaftIcon, TransformIcon } from '../icons.js';
 
 export type AssemblyMenuActionId =
   | 'placePart'
   | 'placeStandardPart'
   | 'placeSubAssembly'
   | 'replacePart'
-  | 'toggleFixed';
+  | 'toggleFixed'
+  | 'boltedJoint'
+  | 'releaseFastening'
+  | 'filletWeld';
 
-/** 「組む」の正本。計画書 §0.43 の5項目をこの順に保つ。 */
+/**
+ * 「組む」の正本。計画書 §0.43 の5項目をこの順に保ち、ボルト締結(追加要件6)の2項目、すみ肉溶接の1項目を
+ * 後ろへ足す。
+ */
 export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] = [
   { id: 'placePart', labelKey: 'assembly.tool.placePart', tooltipKey: 'assembly.tool.placePartTooltip', Icon: CubeIcon },
   { id: 'placeStandardPart', labelKey: 'assembly.tool.placeStandardPart', tooltipKey: 'assembly.tool.placeStandardPartTooltip', Icon: ThreadShaftIcon },
   { id: 'placeSubAssembly', labelKey: 'assembly.tool.placeSubAssembly', tooltipKey: 'assembly.tool.placeSubAssemblyTooltip', Icon: LayersIcon },
   { id: 'replacePart', labelKey: 'assembly.tool.replacePart', tooltipKey: 'assembly.tool.replacePartTooltip', Icon: TransformIcon },
   { id: 'toggleFixed', labelKey: 'assembly.tool.fixComponent', tooltipKey: 'assembly.tool.fixComponentTooltip', Icon: FixConstraintIcon },
+  { id: 'boltedJoint', labelKey: 'assembly.boltedJoint.tool', tooltipKey: 'assembly.boltedJoint.toolTooltip', Icon: ThreadShaftIcon },
+  { id: 'releaseFastening', labelKey: 'assembly.boltedJoint.release', tooltipKey: 'assembly.boltedJoint.releaseTooltip', Icon: TransformIcon },
+  { id: 'filletWeld', labelKey: 'assembly.filletWeld.tool', tooltipKey: 'assembly.filletWeld.toolTooltip', Icon: ChamferIcon },
 ];
 
 /** 操作対象と同じ部品の固定状態から、次に行う操作の名前を決める。 */

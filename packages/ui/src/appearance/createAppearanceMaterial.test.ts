@@ -114,6 +114,61 @@ function withNumbers(
 }
 
 describe('createAppearanceMaterialStore(FR-1107、FR-1109、§2.5.3)', () => {
+  it('returns material and both texture owners independently before retrying failed owners', () => {
+    const patterns = createFakePatternSource();
+    const store = createAppearanceMaterialStore(patterns.source);
+    const material = store.materialFor(appearanceFromPreset('expandedMetal'), null);
+    const texture = material.map, alpha = material.alphaMap;
+    if (texture === null || alpha === null) throw new Error('pattern fixtures missing');
+    const materialCount = countMaterialDisposals(material);
+    const textureCount = countTextureDisposals(texture), alphaCount = countTextureDisposals(alpha);
+    const fail = () => { throw new Error('texture return'); };
+    texture.addEventListener('dispose', fail);
+    expect(() => store.dispose()).toThrow('texture return');
+    expect(materialCount()).toBe(1); expect(textureCount()).toBe(1); expect(alphaCount()).toBe(1);
+    expect(patterns.disposeAllCount()).toBe(1);
+    texture.removeEventListener('dispose', fail); store.dispose(); store.dispose();
+    expect(materialCount()).toBe(1); expect(textureCount()).toBe(2); expect(alphaCount()).toBe(1);
+    expect(patterns.disposeAllCount()).toBe(1);
+  });
+
+  it('retains failed pattern return ownership and blocks reuse until retry succeeds', () => {
+    let fail = true, attempts = 0;
+    const patterns = createFakePatternSource();
+    const store = createAppearanceMaterialStore({ ...patterns.source, disposeAll() {
+      attempts += 1; if (fail) throw new Error('pattern return');
+    } });
+    const old = store.materialFor(appearanceFromPreset('default'), null);
+    const count = countMaterialDisposals(old);
+    expect(() => store.dispose()).toThrow('pattern return');
+    expect(count()).toBe(1);
+    expect(() => store.materialFor(appearanceFromPreset('default'), null)).toThrow('pending');
+    fail = false; store.collect([]); store.dispose();
+    expect(attempts).toBe(2); expect(count()).toBe(1);
+    const next = store.materialFor(appearanceFromPreset('default'), null);
+    expect(next).not.toBe(old); store.dispose();
+    expect(attempts).toBe(3);
+  });
+
+  it('retires failed materials, attempts every entry and retries only failed returns', () => {
+    const patterns = createFakePatternSource();
+    const store = createAppearanceMaterialStore(patterns.source);
+    const first = store.materialFor(appearanceFromPreset('default'), null);
+    const second = store.materialFor(appearanceFromPreset('steel'), null);
+    const firstCount = countMaterialDisposals(first), secondCount = countMaterialDisposals(second);
+    const fail = () => { throw new Error('material return'); };
+    first.addEventListener('dispose', fail);
+    expect(() => store.collect([])).toThrow('material return');
+    expect(firstCount()).toBe(1); expect(secondCount()).toBe(1);
+    const replacement = store.materialFor(appearanceFromPreset('default'), null);
+    expect(replacement).not.toBe(first);
+    first.removeEventListener('dispose', fail);
+    store.collect([appearanceFromPreset('default')]);
+    expect(firstCount()).toBe(2); expect(secondCount()).toBe(1);
+    store.dispose(); store.dispose();
+    expect(firstCount()).toBe(2); expect(secondCount()).toBe(1);
+    expect(patterns.disposeAllCount()).toBe(1);
+  });
   it('既定の外観は、いまの立体の材質と同じ値になる(§0.a-0.12)', () => {
     const store = createAppearanceMaterialStore(createFakePatternSource().source);
     const material = store.materialFor(appearanceFromPreset('default'), null);

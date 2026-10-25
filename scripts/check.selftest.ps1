@@ -504,6 +504,10 @@ try {
         Assert-True ($LASTEXITCODE -eq 1 -and $emptyIndexOutput.Contains("stage 済みの変更がありません")) "空indexのCommit検査はpnpm起動前に拒否する"
         foreach ($badArgs in @(
             @('-UnitPackage', 'kernel'),
+            @('-UnitPackage', 'model', '-UnitTests', 'integration/example.test.ts'),
+            @('-UnitPackage', 'ui', '-UnitTests', 'integration/../escape.test.ts'),
+            @('-UnitPackage', 'ui', '-UnitTests', 'integration/nested/example.test.ts'),
+            @('-UnitPackage', 'ui', '-UnitTests', '--config=other.test.ts'),
             @('-UnitPackage', 'kernel', '-UnitTests', 'src/../escape.test.ts'),
             @('-UnitTests', 'src/example.test.ts'),
             @('-UnitPackage', 'kernel', '-UnitTests', 'src/example.test.ts', '-E2EOnly')
@@ -739,6 +743,22 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
             if ($code -ne 0) { Write-Host "[記録] check.ps1 $($Arguments -join ' ') の終了コード $code の出力の末尾: $($output.Substring([Math]::Max(0, $output.Length - 1500)))" }
             return [pscustomobject]@{ Code = $code; Output = $output; Calls = $calls }
         }
+        # Cross-layer integration uses its fixed config; mandatory UI contracts run first.
+        foreach ($relative in @('packages/ui/integration/example.test.ts', 'packages/ui/src/i18n/i18n.test.ts', 'packages/ui/src/i18n/jaMessages.test.ts')) {
+            $destination = Join-Path $fixture $relative
+            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+            [IO.File]::WriteAllText($destination, '// fixture', $utf8)
+        }
+        Remove-Item Env:CI -ErrorAction SilentlyContinue
+        $integrationResult = Invoke-StageFixture @('-Level', 'Push', '-UnitPackage', 'ui', '-UnitTests', 'integration/example.test.ts')
+        $contractsCall = '--filter @pointercad/ui exec vitest run src/i18n/i18n.test.ts src/i18n/jaMessages.test.ts'
+        $integrationCall = '--filter @pointercad/ui exec vitest run --config vitest.integration.config.ts integration/example.test.ts'
+        Assert-True ($integrationResult.Code -eq 0 -and ($integrationResult.Calls -join '|') -ceq "$contractsCall|$integrationCall") 'Integration diagnostic retains mandatory UI contracts and uses only the fixed integration config'
+        $env:PCAD_STAGE_FAIL = $integrationCall
+        $integrationFailed = Invoke-StageFixture @('-Level', 'Push', '-UnitPackage', 'ui', '-UnitTests', 'integration/example.test.ts')
+        Assert-True ($integrationFailed.Code -ne 0) 'Integration failure cannot become diagnostic success'
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        $env:CI = 'true'
         $restCall = '--recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test'
         $env:PCAD_STAGE_FAIL = 'run lint'
         $failedFront = Invoke-StageFixture @('-CIStage', 'Front', '-StageEvidence', $evidence)
@@ -952,7 +972,54 @@ Assert-True ($LASTEXITCODE -eq 0) '見えない文字・特殊な空白を拒否
 Assert-True ($LASTEXITCODE -eq 0) 'main統合(gh pr create/ready/merge・git push・main上でのmerge/rebase)を判定記録なしで拒否するフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/chained_diag_wait_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) '1回の命令で diag.py wait を連ねる・待ちの合計が上限を超える命令を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/git_optional_locks_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '担当の git の読み取りに --no-optional-locks も GIT_OPTIONAL_LOCKS=0 も無い命令を拒否するフックを自己試験する'
 
+
+# 2026-10-05 利用者の指示: 手元の軽い検査で、品質ゲートの道具が基点から変わっていない時は自己試験を省き、
+# 変わった時は流す(Test-GateToolsChanged)。専用の一時リポジトリで2つの対照と、失敗側へ倒す場合を確かめる。
+$toolRepo = Join-Path ([IO.Path]::GetTempPath()) ("pointercad-gatetools-" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path (Join-Path $toolRepo 'scripts') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $toolRepo 'packages') -Force | Out-Null
+try {
+    & git -C $toolRepo init --quiet 2>$null | Out-Null
+    & git -C $toolRepo config user.email "selftest@example.invalid" | Out-Null
+    & git -C $toolRepo config user.name "check.selftest" | Out-Null
+    & git -C $toolRepo config core.autocrlf false | Out-Null
+    Set-Content -LiteralPath (Join-Path $toolRepo 'scripts/tool.ps1') -Value 'one' -NoNewline -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $toolRepo 'packages/product.ts') -Value 'one' -NoNewline -Encoding UTF8
+    & git -C $toolRepo add -A | Out-Null
+    & git -C $toolRepo commit --quiet -m "base" | Out-Null
+    $toolBase = (& git -C $toolRepo rev-parse HEAD).Trim()
+
+    $unchangedTools = Test-GateToolsChanged -Root $toolRepo -Base $toolBase
+    Assert-True (-not $unchangedTools.Changed) '品質ゲートの道具が基点から変わっていなければ自己試験を省ける(変更なし)'
+
+    Set-Content -LiteralPath (Join-Path $toolRepo 'packages/product.ts') -Value 'two' -NoNewline -Encoding UTF8
+    $productOnly = Test-GateToolsChanged -Root $toolRepo -Base $toolBase
+    Assert-True (-not $productOnly.Changed) '製品のコードだけが変わっても自己試験は省ける(対照1: 道具は変わっていない)'
+
+    Set-Content -LiteralPath (Join-Path $toolRepo 'scripts/tool.ps1') -Value 'two' -NoNewline -Encoding UTF8
+    $toolEdited = Test-GateToolsChanged -Root $toolRepo -Base $toolBase
+    Assert-True ($toolEdited.Changed -and @($toolEdited.Paths) -contains 'scripts/tool.ps1') '道具(scripts/)が変わったら自己試験を流す(対照2: 変更を見つけて報告する)'
+
+    Set-Content -LiteralPath (Join-Path $toolRepo 'scripts/tool.ps1') -Value 'one' -NoNewline -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $toolRepo 'scripts/new-tool.ps1') -Value 'new' -NoNewline -Encoding UTF8
+    $toolAdded = Test-GateToolsChanged -Root $toolRepo -Base $toolBase
+    Assert-True ($toolAdded.Changed) '未追跡の新しい道具があれば自己試験を流す'
+    Remove-Item -LiteralPath (Join-Path $toolRepo 'scripts/new-tool.ps1') -Force
+
+    Assert-True ((Test-GateToolsChanged -Root $toolRepo -Base '').Changed) '比較の基点が無ければ自己試験を流す(失敗側に倒す)'
+    Assert-True ((Test-GateToolsChanged -Root $toolRepo -Base ('0' * 40)).Changed) '比較の基点のコミットが無ければ自己試験を流す(失敗側に倒す)'
+}
+finally {
+    $verifiedToolRepo = [IO.Path]::GetFullPath($toolRepo)
+    if ((Split-Path -Leaf $verifiedToolRepo) -match '^pointercad-gatetools-[a-f0-9]{32}$' -and (Test-Path -LiteralPath $verifiedToolRepo)) {
+        Get-ChildItem -LiteralPath $verifiedToolRepo -Recurse -Force -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Attributes = 'Normal' }
+        Remove-Item -LiteralPath $verifiedToolRepo -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 
 if ($failures -gt 0) {
     Write-Host "[NG] 自己試験に $failures 件の失敗があります" -ForegroundColor Red

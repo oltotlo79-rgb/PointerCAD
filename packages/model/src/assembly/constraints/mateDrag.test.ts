@@ -176,13 +176,41 @@ describe('P7-18 境界と準備snapshot', () => {
       }
     }
   });
-  it.each([99, 100, 101])('全assembly %s部品の上限を対象1部品への切出しで迂回しない', (count) => {
+  // The approved cap is600 variables per connected group, before gauge removal.
+  // Keep the complete assembly at the public entry; a selected target must not hide its connected neighbours.
+  it.each([99, 100, 101])('connected%s components retain the600-variable cap without target extraction', (count) => {
     const data = fixture();
     data.assembly.components = Array.from({ length: count }, (_, index) => component(index === 0 ? 'moving' : String(index)));
     data.placements = new Map(data.assembly.components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    data.assembly.mates = data.assembly.components.slice(1).map((c, index): Mate => ({
+      id: `chain-${index}`, name: `chain-${index}`, kind: 'coincident',
+      a: { kind: 'origin', componentId: data.assembly.components[index].id, element: 'origin' },
+      b: { kind: 'origin', componentId: c.id, element: 'origin' },
+      value: expressionValueFromNumber(0), flipped: false, suppressed: false,
+    }));
+    for (const mate of data.assembly.mates) data.targets.set(mate.id, {
+      a: { kind: 'point', point: [0, 0, 0], direction: null, radius: null },
+      b: { kind: 'point', point: [0, 0, 0], direction: null, radius: null },
+    });
     const ready = prepareMateDrag(data.assembly, data.targets, data.placements, 'moving');
     expect(ready.ok).toBe(count <= 100);
     if (!ready.ok) expect(ready.reason).toBe('variableLimit');
+    else {
+      expect(ready.drag.variableSet.variables).toHaveLength(count * 6);
+      expect(ready.drag.initial.size).toBe(count);
+    }
+  });
+  it.each([99, 100, 101])('independent%s components are admitted while preserving the complete assembly snapshot', (count) => {
+    const data = fixture();
+    data.assembly.components = Array.from({ length: count }, (_, index) => component(index === 0 ? 'moving' : String(index)));
+    data.placements = new Map(data.assembly.components.map((c) => [c.id, IDENTITY_PLACEMENT]));
+    const before = structuredClone(data);
+    const ready = prepareMateDrag(data.assembly, data.targets, data.placements, 'moving');
+    expect(ready.ok).toBe(true);
+    if (!ready.ok) throw new Error(ready.reason);
+    expect(ready.drag.variableSet.variables).toHaveLength(6);
+    expect(ready.drag.initial.size).toBe(count);
+    expect(data).toEqual(before);
   });
   it.each([5, 6, 7])('gauge前の成分6変数と上限%sを比較する', (maximum) => {
     const data = fixture();

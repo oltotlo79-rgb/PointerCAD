@@ -1,9 +1,14 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-const native = vi.hoisted(() => {
+const native = await vi.hoisted(async () => {
+  const { EventEmitter } = await import('node:events');
   const windows: FakeWindow[] = [];
+  const startupOrder: string[] = [];
+  const getSwitchValue = vi.fn((name: string) => name === 'js-flags' ? '--stack-trace-limit=25' : '');
+  const appendSwitch = vi.fn<(name: string, value: string) => void>(() => { startupOrder.push('flags'); });
+  const whenReady = vi.fn(() => { startupOrder.push('ready'); return Promise.resolve(); });
   const sessionListeners = new Map<string, (...args: unknown[]) => void>();
-  const appListeners = new Map<string, () => void>();
+  const appListeners = new EventEmitter();
   const load = vi.fn<(url: string) => Promise<void>>(() => Promise.resolve());
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   class FakeWindow {
@@ -20,18 +25,22 @@ const native = vi.hoisted(() => {
     readonly destroy = vi.fn();
     readonly isDestroyed = vi.fn(() => false);
     readonly loadURL = vi.fn((url: string) => load(url));
-    constructor(readonly options: { webPreferences: Record<string, unknown> }) { windows.push(this); }
+    constructor(readonly options: { webPreferences: Record<string, unknown> }) { startupOrder.push('window'); windows.push(this); }
     static getAllWindows() { return windows; }
   }
-  return { FakeWindow, windows, sessionListeners, appListeners, load, handlers,
+  return { FakeWindow, windows, startupOrder, getSwitchValue, appendSwitch, whenReady, sessionListeners, appListeners, load, handlers,
+    prepareOcctTransport: vi.fn(() => Promise.resolve({ kind: 'direct', reason: 'port-unavailable' })),
+    closeOcctTransport: vi.fn(() => Promise.resolve()),
     openExternal: vi.fn(() => Promise.resolve()),
     denyBrowserPermissions: vi.fn(),
   };
 });
 
 vi.mock('electron', () => ({
-  app: { isPackaged: true, whenReady: () => Promise.resolve(),
-    on: (name: string, listener: () => void) => { native.appListeners.set(name, listener); }, quit: vi.fn() },
+  app: { isPackaged: true, whenReady: native.whenReady,
+    commandLine: { getSwitchValue: native.getSwitchValue, appendSwitch: native.appendSwitch },
+    once: (name: string, listener: () => void) => { native.appListeners.once(name, listener); },
+    on: (name: string, listener: () => void) => { native.appListeners.on(name, listener); }, quit: vi.fn() },
   BrowserWindow: native.FakeWindow,
   ipcMain: { handle: (name: string, callback: (...args: unknown[]) => unknown) => { native.handlers.set(name, callback); } },
   Menu: { setApplicationMenu: vi.fn() },
@@ -47,6 +56,9 @@ vi.mock('./appProtocol.js', () => ({
 }));
 vi.mock('./pcadDialogs.js', () => ({ PCAD_PRINT_CHANNEL: 'pcad:print', registerPcadIpc: vi.fn() }));
 vi.mock('./sessionPermissions.js', () => ({ denyBrowserPermissions: native.denyBrowserPermissions }));
+vi.mock('./occtHttpTransport.js', () => ({ createOcctHttpTransport: () => ({
+  prepare: native.prepareOcctTransport, close: native.closeOcctTransport,
+}) }));
 vi.mock('./drawingPrintDocument.js', () => ({ drawingPrintDocument: vi.fn() }));
 
 beforeAll(async () => {
@@ -66,6 +78,23 @@ function windowListener(index: number, name: string): (...args: unknown[]) => vo
 }
 
 describe('主窓と印刷窓の境界', () => {
+  it('OCCT準備は起動時に実行せず登録済みmain frameの引数無しIPCだけを許す', async () => {
+    expect(native.prepareOcctTransport).not.toHaveBeenCalled();
+    const handler = native.handlers.get('pcad:prepareOcctTransport');
+    const window = native.windows[0];
+    if (handler === undefined || window === undefined) throw new Error('OCCT IPC not registered');
+    expect(() => handler({ sender: {}, senderFrame: null })).toThrow('Invalid OCCT transport');
+    const sender = window.webContents;
+    const event = { sender, senderFrame: sender.mainFrame };
+    expect(() => handler(event, 'http://elsewhere/')).toThrow('Invalid OCCT transport');
+    await expect(handler(event)).resolves.toEqual({ kind: 'direct', reason: 'port-unavailable' });
+    expect(native.appListeners.listenerCount('before-quit')).toBe(2);
+    native.appListeners.emit('before-quit');
+    expect(native.appListeners.listenerCount('before-quit')).toBe(1);
+    native.appListeners.emit('before-quit');
+    expect(native.appListeners.listenerCount('before-quit')).toBe(1);
+    expect(native.closeOcctTransport).toHaveBeenCalledOnce();
+  });
   it('主窓の安全な設定と外部遷移・リダイレクト・webview拒否を固定する', () => {
     const main = native.windows[0];
     if (main === undefined) throw new Error('主窓なし');
@@ -147,15 +176,14 @@ describe('主窓と印刷窓の境界', () => {
   });
 
   it('初回のHTML読込みが失敗しても同じ窓で復旧表示を出す', async () => {
-    const activate = native.appListeners.get('activate');
-    if (activate === undefined) throw new Error('窓を作り直す入口なし');
+    if (native.appListeners.listenerCount('activate') === 0) throw new Error('窓を作り直す入口なし');
     const error = new Error('renderer document unavailable');
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const windows = vi.spyOn(native.FakeWindow, 'getAllWindows').mockReturnValueOnce([]);
     try {
       native.load.mockRejectedValueOnce(error);
       const count = native.windows.length;
-      activate();
+      native.appListeners.emit('activate');
       await vi.waitFor(() => { expect(native.windows[count]?.loadURL).toHaveBeenCalledTimes(2); });
       const failedWindow = native.windows[count];
       const address = failedWindow?.loadURL.mock.calls[1]?.[0];
@@ -167,5 +195,13 @@ describe('主窓と印刷窓の境界', () => {
       expect(log).toHaveBeenCalledWith('PointerCAD document load failed', error);
       expect(native.windows).toHaveLength(count + 1);
     } finally { windows.mockRestore(); log.mockRestore(); }
+  });
+});
+
+describe('native cache startup setting', () => {
+  it('preserves existing JS flags and appends before readiness and the first window', () => {
+    expect(native.getSwitchValue).toHaveBeenCalledExactlyOnceWith('js-flags');
+    expect(native.appendSwitch).toHaveBeenCalledExactlyOnceWith('js-flags', '--stack-trace-limit=25 --wasm-caching-timeout-ms=0');
+    expect(native.startupOrder.slice(0, 3)).toEqual(['flags', 'ready', 'window']);
   });
 });

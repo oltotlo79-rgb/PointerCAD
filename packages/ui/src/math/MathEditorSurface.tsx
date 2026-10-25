@@ -3,6 +3,10 @@ import {useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
 import {attachMathField,type StructuredMathField} from './mathFieldHost.js';
 import {searchMathPalette,type MathPaletteGroup,type MathPaletteItem} from './mathPalette.js';
 import type {MathEditorInput} from './mathEditorSession.js';
+import type {ParameterUnit} from '@pointercad/model';
+import type {InputExpressionInspection} from './expressionInspectionContext.js';
+import {ExpressionInspectionPreview} from './ExpressionInspectionPreview.js';
+import {t} from '../i18n/t.js';
 
 export interface MathEditorViewController {
   readonly current:()=>MathEditorInput;
@@ -45,6 +49,9 @@ export interface MathEditorSurfaceProps {
   readonly resultMessage:string;readonly resultDetail:string;readonly hasError:boolean;readonly busy:boolean;
   readonly canApply:boolean;readonly canChangeNotation:boolean;readonly readOnly:boolean;
   readonly onHelp:()=>void;readonly maximumSourceLength:number;
+  readonly inspection?:InputExpressionInspection|null;
+  readonly parameterUnits?:ReadonlyMap<string,ParameterUnit>;
+  readonly usageCounts?:ReadonlyMap<string,number>;
 }
 
 function StructuredField({input,controller,createField,readOnly,maximumSourceLength,label,descriptionId,hint}:{
@@ -74,7 +81,7 @@ function StructuredField({input,controller,createField,readOnly,maximumSourceLen
 }
 
 export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Element {
-  const id=useId(),messageId=`${id}-message`,hintId=`${id}-hint`,textRef=useRef<HTMLTextAreaElement>(null);
+  const id=useId(),messageId=`${id}-message`,hintId=`${id}-hint`,inspectionId=`${id}-inspection`,textRef=useRef<HTMLTextAreaElement>(null);
   const {input,controller,labels}=props;
   const [category,setCategory]=useState<MathPaletteGroup|'all'>('all');
   const categories=[...new Set(props.palette.map(item=>item.group))];
@@ -83,6 +90,8 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
   useEffect(()=>{if(input.notation==='text')textRef.current?.focus();},[input.notation]);
   const palette=searchMathPalette(props.query,props.palette.filter(item=>category==='all'||item.group===category));
   const editingBlocked=props.readOnly;
+  const hasInspection=input.notation==='text' && props.inspection!==undefined && props.inspection!==null
+    && (props.inspection.references.length>0||props.inspection.inspection.units.length>0);
   return <section className="pcad-math-editor" aria-labelledby={`${id}-title`}>
     <header className="pcad-math-editor__header"><h3 id={`${id}-title`}>{labels.title}</h3>
       <button type="button" className="pcad-button" onClick={props.onHelp} title={labels.hints.help}>{labels.help}</button>
@@ -103,7 +112,7 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
       {input.notation==='latex'?<StructuredField input={input} controller={controller} createField={props.createField}
         readOnly={editingBlocked} maximumSourceLength={props.maximumSourceLength} label={labels.input} descriptionId={`${messageId} ${hintId}`} hint={labels.keyboardHint}/>
         :<label>{labels.input}<textarea title={labels.keyboardHint} ref={textRef} value={input.source} spellCheck={false} readOnly={editingBlocked}
-          aria-invalid={props.hasError} aria-describedby={`${messageId} ${hintId}`}
+          aria-invalid={props.hasError} aria-describedby={`${messageId} ${hintId}${hasInspection?` ${inspectionId}`:''}`}
           onChange={event=>controller.sourceChanged(event.currentTarget.value)}
           onKeyDown={event=>{
             if(event.nativeEvent.isComposing||event.keyCode===229)return;
@@ -113,6 +122,10 @@ export function MathEditorSurface(props:MathEditorSurfaceProps):React.JSX.Elemen
             }else if(event.key==='Escape'){event.preventDefault();event.stopPropagation();controller.cancel();}
           }}/></label>}
     </div>
+    {hasInspection?<ExpressionInspectionPreview id={inspectionId} context={props.inspection??null}
+      unitHeading={t('math.inspection.angleContext')}
+      unitLabel={input.angleUnit==='degree'?labels.degree:labels.radian}
+      parameterUnits={props.parameterUnits} usageCounts={props.usageCounts} showErrorPosition={false}/>:null}
     <p id={hintId} className="pcad-math-editor__hint">{labels.keyboardHint}</p>
     <div className="pcad-math-editor__symbols">
       {props.groups.map(group=><fieldset key={group.id}><legend>{group.label}</legend>

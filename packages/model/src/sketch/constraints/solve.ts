@@ -23,6 +23,12 @@
  * 乱数・時刻・`Map` の反復順に頼らないので、**同じ入力からは必ず同じ解**が出る(§2.2)。
  */
 
+import { prepareSparseNormalSystem } from './sparseSolve.js';
+import type { SparseLinearJob } from './sparseSolve.js';
+
+// Keep small systems on the existing dense route, including the 100-variable latency case.
+const DENSE_VARIABLE_LIMIT = 128;
+
 /**
  * 線形化した式 1 本。`value` が残差、`gradient` が「変数の列番号 → 偏微分」で、
  * **0 の項は入れない**(疎な行)。1 行あたりの項は拘束の種類によって 2〜8 個で、
@@ -525,29 +531,44 @@ function measure(rows: readonly LinearizedRow[]): { max: number; norm: number } 
 }
 
 /**
- * 非線形の連立 `f(x) = 0` を Gauss–Newton + Levenberg–Marquardt で解く(§2.2)。
- *
- * ```
- * 繰り返し:
- *   ‖f‖∞ < tolerance なら収束
- *   (JᵀJ + λI) Δ = −Jᵀf を密行列のガウス消去(部分ピボット)で解く
- *   ‖f(x+Δ)‖ が減れば x ← x+Δ、λ ← λ/3。減らなければ λ ← λ×3 でやり直す
- * ```
- *
- * **例外を投げない。** 解けない組(同時に成り立たない拘束)でも、そこまでで最も
- * 残差の小さかった x と `converged: false` を返す(FR-504、NFR-RE-1「止めずに警告する」)。
- *
- * **階数が落ちている(自由度が残る)ときは、いまの位置から最も近い解へ動く。**
- * λ > 0 のおかげで 1 歩 Δ が `‖Δ‖` の最も小さい向き(擬似逆に近い歩)になるため、
- * 拘束で決まらない座標は動かない(§0.a-0.4「引っぱったときに他が勝手に動かない」)。
- *
- * `evaluate` は純関数であること(同じ x からは同じ行)。`initial` は書き換えない。
+ * A resumable Levenberg–Marquardt solve: the same algorithm, state and stop reasons as
+ * `solveLevenbergMarquardt`, advanced in bounded units. One unit is one damping attempt, i.e. one
+ * linear solve (dense elimination, or the sparse normal-equation solve with its fixed 2n linear-iteration
+ * bound) plus one residual evaluation; the dense normal matrix is assembled once per outer iteration
+ * before its first attempt. The total work stays bounded by `maxIterations × DAMPING_ATTEMPT_LIMIT`
+ * attempts. A step never runs past its unit budget, so a caller can stop between units; a unit itself
+ * is synchronous and is not interruptible.
  */
-export function solveLevenbergMarquardt(
+export interface LevenbergMarquardtJob {
+  /**
+   * Advances by at most `maxAttempts` damping attempts (a positive safe integer). Returns the outcome
+   * once the solve has finished (and the same outcome on later calls), otherwise null.
+   */
+  step(maxAttempts: number): SolveOutcome | null;
+  /** Shared work budget, including inner sparse work. Setup/evaluation/dense work remain synchronous. */
+  stepWork(maxWork: number): LevenbergMarquardtProgress;
+  /** Cancels pending work without exposing the current iterate or retrying its damping attempt. */
+  cancel(): void;
+}
+
+export type LevenbergMarquardtPhase = 'ready' | 'linear' | 'candidate' | 'evaluate' | 'prepare' | 'accept';
+export type LevenbergMarquardtProgress = {
+  readonly work: number;
+  readonly totalWork: number;
+  readonly linearWork: number;
+  readonly productEntries: number;
+  readonly attemptsStarted: number;
+  readonly phase: LevenbergMarquardtPhase;
+} & (
+  | { readonly status: 'pending' | 'cancelled'; readonly outcome: null }
+  | { readonly status: 'completed'; readonly outcome: SolveOutcome }
+);
+
+export function createLevenbergMarquardtJob(
   initial: readonly number[],
   evaluate: (x: readonly number[]) => readonly LinearizedRow[],
   options?: SolveOptions,
-): SolveOutcome {
+): LevenbergMarquardtJob {
   const n = initial.length;
   const tolerance = options?.tolerance ?? CONSTRAINT_TOLERANCE;
   const maxIterations = options?.maxIterations ?? CONSTRAINT_MAX_ITERATIONS;
@@ -558,6 +579,8 @@ export function solveLevenbergMarquardt(
   let rows = evaluate(Array.from(x));
   let current = measure(rows);
   const trace: SolveIterationRecord[] = [];
+  const useSparse = n > DENSE_VARIABLE_LIMIT;
+  let sparseSystem = useSparse ? prepareSparseNormalSystem(rows, n) : null;
 
   const finish = (stop: SolveStopReason, iterations: number): SolveOutcome => ({
     x: Array.from(x),
@@ -569,99 +592,242 @@ export function solveLevenbergMarquardt(
     trace,
   });
 
+  let outcome: SolveOutcome | null = null;
   // 変数が 1 つも無い、拘束が 1 つも無い、すでに解 — どれも計算せずに返す。
-  if (n === 0 || rows.length === 0 || current.max < tolerance) {
-    return finish('converged', 0);
+  if (useSparse && (sparseSystem === null || !initial.every(Number.isFinite))) {
+    outcome = { ...finish('singular', 0), converged: false };
+  } else if (n === 0 || rows.length === 0 || current.max < tolerance) {
+    outcome = finish('converged', 0);
   }
 
-  const normal = new Float64Array(n * n);
-  const gradient = new Float64Array(n);
-  const work = new Float64Array(n * n);
-  const rhs = new Float64Array(n);
+  const normal = useSparse ? null : new Float64Array(n * n);
+  const gradient = useSparse ? null : new Float64Array(n);
+  const work = useSparse ? null : new Float64Array(n * n);
+  const rhs = useSparse ? null : new Float64Array(n);
   const candidate = new Float64Array(n);
 
-  for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
-    // JᵀJ と Jᵀf を疎な勾配から組む。1 行の非ゼロだけを回すので、
-    // 変数 400・式 200 でも 200 × 4² = 3200 回で済む(素朴な組み方は 200 × 16 万回)。
-    normal.fill(0);
-    gradient.fill(0);
-    for (const row of rows) {
-      const entries = [...row.gradient];
-      for (const [i, gi] of entries) {
-        gradient[i] += gi * row.value;
-        for (const [j, gj] of entries) {
-          normal[i * n + j] += gi * gj;
-        }
-      }
-    }
+  let iteration = 1;
+  let attempts = 0;
+  let assembled = false;
+  let cancelled = false;
+  let totalWork = 0;
+  let linearWork = 0;
+  let productEntries = 0;
+  let attemptsStarted = 0;
+  let attemptsCompleted = 0;
+  let phase: LevenbergMarquardtPhase = 'ready';
+  let unitCost = 1;
+  let linearJob: SparseLinearJob | null = null;
+  let attemptWork: Generator<LevenbergMarquardtPhase, SolveOutcome | null, number> | null = null;
 
-    let accepted = false;
-    let attempts = 0;
-    let stepSize = 0;
-    let nextRows: readonly LinearizedRow[] = rows;
-    let next = current;
-
-    while (attempts < DAMPING_ATTEMPT_LIMIT) {
-      attempts += 1;
+  /** One damping attempt of the current outer iteration (the body of the original inner loop). */
+  function* attempt(): Generator<LevenbergMarquardtPhase, SolveOutcome | null, number> {
+    attempts += 1;
+    attemptsStarted += 1;
+    let step: Float64Array | null;
+    if (normal !== null && gradient !== null && work !== null && rhs !== null) {
       work.set(normal);
       for (let i = 0; i < n; i += 1) {
         work[i * n + i] += damping;
         rhs[i] = -gradient[i];
       }
-      const step = eliminate(work, rhs, n);
-      if (step === null) {
-        // 減衰を増やせば必ず正定値になるので、増やしてやり直す。
-        damping *= DAMPING_INCREASE;
-        if (damping > CONSTRAINT_MAX_DAMPING) {
-          trace.push({ iteration, maxResidual: current.max, norm: current.norm, damping, stepSize: 0, accepted: false, attempts });
-          return finish('singular', iteration);
+      step = eliminate(work, rhs, n);
+    } else {
+      linearJob = sparseSystem?.createSolveJob(damping) ?? null;
+      step = null;
+      if (linearJob !== null) {
+        let previousEntries = 0;
+        let childBudget = 1;
+        for (;;) {
+          const progress = linearJob.step(childBudget);
+          unitCost = Math.max(1, progress.work);
+          linearWork += progress.work;
+          productEntries += progress.productEntries - previousEntries;
+          previousEntries = progress.productEntries;
+          if (progress.status === 'cancelled') {
+            cancelled = true;
+            linearJob = null;
+            return null;
+          }
+          childBudget = yield 'linear';
+          if (progress.status === 'completed') {
+            step = progress.outcome.step;
+            linearJob = null;
+            break;
+          }
         }
-        continue;
       }
-      let size = 0;
-      for (let i = 0; i < n; i += 1) {
-        candidate[i] = x[i] + step[i];
-        const move = Math.abs(step[i]);
-        if (move > size) {
-          size = move;
-        }
-      }
-      const trialRows = evaluate(Array.from(candidate));
-      const trial = measure(trialRows);
-      if (Number.isFinite(trial.norm) && trial.norm < current.norm) {
-        accepted = true;
-        stepSize = size;
-        nextRows = trialRows;
-        next = trial;
-        break;
-      }
-      // 減らなかった(発散した場合を含む)。歩幅を縮めてやり直す。
+    }
+    if (step === null) {
+      // 疎な反復の未収束も歩として採用せず、同じ上限内で減衰を増やす。
       damping *= DAMPING_INCREASE;
       if (damping > CONSTRAINT_MAX_DAMPING) {
-        trace.push({ iteration, maxResidual: current.max, norm: current.norm, damping, stepSize: size, accepted: false, attempts });
-        return finish('damping', iteration);
+        trace.push({ iteration, maxResidual: current.max, norm: current.norm, damping, stepSize: 0, accepted: false, attempts });
+        return finish('singular', iteration);
+      }
+      return null;
+    }
+    let size = 0;
+    for (let i = 0; i < n; i += 1) {
+      yield 'candidate';
+      candidate[i] = x[i] + step[i];
+      const move = Math.abs(step[i]);
+      if (move > size) {
+        size = move;
       }
     }
-
-    if (!accepted) {
-      trace.push({ iteration, maxResidual: current.max, norm: current.norm, damping, stepSize: 0, accepted: false, attempts });
+    yield 'evaluate';
+    const finiteCandidate = !useSparse || candidate.every(Number.isFinite);
+    const trialRows = finiteCandidate ? evaluate(Array.from(candidate)) : rows;
+    const trial = finiteCandidate ? measure(trialRows) : { max: Infinity, norm: Infinity };
+    const trialImproves = Number.isFinite(trial.norm) && trial.norm < current.norm;
+    yield 'prepare';
+    const trialSystem = useSparse && trialImproves ? prepareSparseNormalSystem(trialRows, n) : null;
+    yield 'accept';
+    if (trialImproves && (!useSparse || trialSystem !== null)) {
+      sparseSystem = trialSystem;
+      x.set(candidate);
+      rows = trialRows;
+      current = trial;
+      trace.push({ iteration, maxResidual: current.max, norm: current.norm, damping, stepSize: size, accepted: true, attempts });
+      if (current.max < tolerance) {
+        return finish('converged', iteration);
+      }
+      // 動けなくなった = 残差の 2 乗和の底に着いた。これ以上の反復は結果を変えない。
+      if (size < stepTolerance) {
+        return finish('step', iteration);
+      }
+      damping = Math.max(damping / DAMPING_DECREASE, CONSTRAINT_MIN_DAMPING);
+      iteration += 1;
+      attempts = 0;
+      assembled = false;
+      return null;
+    }
+    // 減らなかった(発散した場合を含む)。歩幅を縮めてやり直す。
+    damping *= DAMPING_INCREASE;
+    if (damping > CONSTRAINT_MAX_DAMPING) {
+      trace.push({ iteration, maxResidual: current.max, norm: current.norm, damping, stepSize: size, accepted: false, attempts });
       return finish('damping', iteration);
     }
-
-    x.set(candidate);
-    rows = nextRows;
-    current = next;
-    trace.push({ iteration, maxResidual: current.max, norm: current.norm, damping, stepSize, accepted: true, attempts });
-
-    if (current.max < tolerance) {
-      return finish('converged', iteration);
-    }
-    // 動けなくなった = 残差の 2 乗和の底に着いた。これ以上の反復は結果を変えない。
-    if (stepSize < stepTolerance) {
-      return finish('step', iteration);
-    }
-    damping = Math.max(damping / DAMPING_DECREASE, CONSTRAINT_MIN_DAMPING);
+    return null;
   }
 
-  return finish('maxIterations', maxIterations);
+  /** One shared scheduling unit. An existing child is always resumed before another attempt starts. */
+  function advanceUnit(maxWork: number): number {
+    unitCost = 1;
+    if (attemptWork === null) {
+      if (!(iteration <= maxIterations)) {
+        outcome = finish('maxIterations', maxIterations);
+        return unitCost;
+      }
+      if (attempts >= DAMPING_ATTEMPT_LIMIT) {
+        trace.push({ iteration, maxResidual: current.max, norm: current.norm, damping, stepSize: 0, accepted: false, attempts });
+        outcome = finish('damping', iteration);
+        return unitCost;
+      }
+      if (!assembled) {
+        // JᵀJ と Jᵀf を疎な勾配から組む。1 行の非ゼロだけを回すので、
+        // 変数 400・式 200 でも 200 × 4² = 3200 回で済む(素朴な組み方は 200 × 16 万回)。
+        if (normal !== null && gradient !== null) {
+          normal.fill(0);
+          gradient.fill(0);
+          for (const row of rows) {
+            const entries = [...row.gradient];
+            for (const [i, gi] of entries) {
+              gradient[i] += gi * row.value;
+              for (const [j, gj] of entries) {
+                normal[i * n + j] += gi * gj;
+              }
+            }
+          }
+        }
+        assembled = true;
+      }
+      attemptWork = attempt();
+    }
+    const next = attemptWork.next(maxWork);
+    if (next.done) {
+      outcome = next.value;
+      attemptWork = null;
+      if (!cancelled) attemptsCompleted += 1;
+      phase = 'ready';
+    } else {
+      phase = next.value;
+    }
+    return unitCost;
+  }
+
+  function progress(workUsed: number): LevenbergMarquardtProgress {
+    const counts = { work: workUsed, totalWork, linearWork, productEntries, attemptsStarted, phase };
+    if (cancelled) return { ...counts, status: 'cancelled', outcome: null };
+    if (outcome !== null) return { ...counts, status: 'completed', outcome };
+    return { ...counts, status: 'pending', outcome: null };
+  }
+
+  return {
+    stepWork(maxWork: number): LevenbergMarquardtProgress {
+      if (!Number.isSafeInteger(maxWork) || maxWork < 1) {
+        throw new RangeError('maxWork must be a positive safe integer');
+      }
+      let used = 0;
+      while (used < maxWork && outcome === null && !cancelled) {
+        const consumed = advanceUnit(maxWork - used);
+        used += consumed;
+        totalWork += consumed;
+      }
+      return progress(used);
+    },
+    // Compatibility path: an attempt is still the old public unit. Interactive callers must use stepWork.
+    step(maxAttempts: number): SolveOutcome | null {
+      if (outcome !== null) return outcome;
+      if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
+        throw new RangeError('maxAttempts must be a positive safe integer');
+      }
+      const before = attemptsCompleted;
+      while (attemptsCompleted - before < maxAttempts && outcome === null && !cancelled) {
+        totalWork += advanceUnit(4096);
+      }
+      return outcome;
+    },
+    cancel(): void {
+      if (outcome !== null || cancelled) return;
+      cancelled = true;
+      linearJob?.cancel();
+      linearJob = null;
+      attemptWork = null;
+    },
+  };
+}
+
+/**
+ * 非線形の連立 `f(x) = 0` を Gauss–Newton + Levenberg–Marquardt で解く(§2.2)。
+ *
+ * ```
+ * 繰り返し:
+ *   ‖f‖∞ < tolerance なら収束
+ *   (JᵀJ + λI) Δ = −Jᵀf を小系の密消去 / 大系の疎な行列ベクトル積で解く
+ *   ‖f(x+Δ)‖ が減れば x ← x+Δ、λ ← λ/3。減らなければ λ ← λ×3 でやり直す
+ * ```
+ *
+ * **例外を投げない。** 解けない組(同時に成り立たない拘束)でも、そこまでで最も
+ * 残差の小さかった x と `converged: false` を返す(FR-504、NFR-RE-1「止めずに警告する」)。
+ *
+ * **階数が落ちている(自由度が残る)ときは、いまの位置から最も近い解へ動く。**
+ * λ > 0 のおかげで 1 歩 Δ が `‖Δ‖` の最も小さい向き(擬似逆に近い歩)になるため、
+ * 拘束で決まらない座標は動かない(§0.a-0.4「引っぱったときに他が勝手に動かない」)。
+ *
+ * `evaluate` は純関数であること(同じ x からは同じ行)。`initial` は書き換えない。
+ * The synchronous API drains the same resumable job, so the two cannot drift.
+ */
+export function solveLevenbergMarquardt(
+  initial: readonly number[],
+  evaluate: (x: readonly number[]) => readonly LinearizedRow[],
+  options?: SolveOptions,
+): SolveOutcome {
+  const job = createLevenbergMarquardtJob(initial, evaluate, options);
+  // Every unit either finishes or advances; the attempt total is bounded, so this loop terminates.
+  for (;;) {
+    const outcome = job.step(Number.MAX_SAFE_INTEGER);
+    if (outcome !== null) return outcome;
+  }
 }

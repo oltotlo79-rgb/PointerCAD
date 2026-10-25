@@ -3,6 +3,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { SegmentSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { createAllocations } from './allocations.js';
+import { readLegacyOcctFixture, legacyOcctFixtures } from './legacyOcctFixtureLoader.js';
 import { makeSketchChamfer } from './makeSketchChamfer2d.js';
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
@@ -25,17 +27,6 @@ function expectPointClose(actual: Vec3Tuple, expected: Vec3Tuple, digits: number
   expect(actual[2]).toBeCloseTo(expected[2], digits);
 }
 
-function makeOcctSegment(line: SegmentSpec): TopoDS_Edge {
-  const from = new oc.gp_Pnt_3(line.from[0], line.from[1], line.from[2]);
-  const to = new oc.gp_Pnt_3(line.to[0], line.to[1], line.to[2]);
-  const maker = new oc.BRepBuilderAPI_MakeEdge_3(from, to);
-  const edge = maker.Edge();
-  maker.delete();
-  to.delete();
-  from.delete();
-  return edge;
-}
-
 function vertexPoint(vertex: TopoDS_Vertex): Vec3Tuple {
   const point = oc.BRep_Tool.Pnt(vertex);
   const value: Vec3Tuple = [point.X(), point.Y(), point.Z()];
@@ -52,38 +43,21 @@ function endsOf(edge: TopoDS_Edge): readonly [Vec3Tuple, Vec3Tuple] {
   return ends;
 }
 
-/**
- * 同じ角を OCCT の ChFi2d_ChamferAPI_3 で面取りし、書き換わった 2 辺の端点と
- * 返ってきた面取りの線の端点を読む。照合と `.Result` の副作用の記録に使う(§1.4-4)。
- */
-function chamferWithOcct(
-  line1: SegmentSpec,
-  line2: SegmentSpec,
-  distance1: number,
-  distance2: number,
-): {
-  readonly edge1Ends: readonly [Vec3Tuple, Vec3Tuple];
-  readonly edge2Ends: readonly [Vec3Tuple, Vec3Tuple];
-  readonly chamferEnds: readonly [Vec3Tuple, Vec3Tuple];
-  readonly before1: readonly [Vec3Tuple, Vec3Tuple];
-} {
-  const edge1 = makeOcctSegment(line1);
-  const edge2 = makeOcctSegment(line2);
-  const before1 = endsOf(edge1);
-  const api = new oc.ChFi2d_ChamferAPI_3(edge1, edge2);
-  expect(api.Perform()).toBe(true);
-  const chamfer = api.Result(edge1, edge2, distance1, distance2);
-  const result = {
-    edge1Ends: endsOf(edge1),
-    edge2Ends: endsOf(edge2),
-    chamferEnds: endsOf(chamfer),
-    before1,
-  };
-  chamfer.delete();
-  api.delete();
-  edge2.delete();
-  edge1.delete();
-  return result;
+/** Original native result is captured; current backend decodes every before/after edge. */
+function chamferWithOcct(line1: SegmentSpec, line2: SegmentSpec, distance1: number, distance2: number) {
+  expect(line1).toEqual(segment([20, 0, 0], [0, 0, 0]));
+  expect(line2).toEqual(segment([0, 0, 0], [0, 20, 0]));
+  expect([distance1, distance2]).toEqual([3, 4]);
+  const { keep, release } = createAllocations();
+  try {
+    const before = keep(oc.TopoDS.Edge_1(keep(readLegacyOcctFixture(oc, 'chamferBefore1'))));
+    const edge1 = keep(oc.TopoDS.Edge_1(keep(readLegacyOcctFixture(oc, 'chamferEdge1'))));
+    const edge2 = keep(oc.TopoDS.Edge_1(keep(readLegacyOcctFixture(oc, 'chamferEdge2'))));
+    const chamfer = keep(oc.TopoDS.Edge_1(keep(readLegacyOcctFixture(oc, 'chamfer'))));
+    const result = { before1: endsOf(before), edge1Ends: endsOf(edge1), edge2Ends: endsOf(edge2), chamferEnds: endsOf(chamfer) };
+    expect(result).toEqual(legacyOcctFixtures.observations.chamfer);
+    return result;
+  } finally { release(); }
 }
 
 describe('スケッチの面取り(FR-323)', () => {
@@ -221,13 +195,13 @@ describe('スケッチの面取り(FR-323)', () => {
     ).toThrow(/重なっている/);
   });
 
-  it('OCCT の ChFi2d_ChamferAPI_3 と一致し、Result は入力の辺を書き換える(計画書 §1.4-4)', () => {
+  it('旧 OCCT の固定面取り結果と一致し、記録された入力辺の変更を現在の OCCT で読む(計画書 §1.4-4)', () => {
     const line1 = segment([20, 0, 0], [0, 0, 0]);
     const line2 = segment([0, 0, 0], [0, 20, 0]);
     const mine = makeSketchChamfer({ line1, line2, distance1: 3, distance2: 4 });
     const theirs = chamferWithOcct(line1, line2, 3, 4);
 
-    // ①`.Result` は呼び出し側の辺そのものを書き換える(§1.4-4 の未確認事項への答え)。
+    // ①旧 `.Result` の呼び出し前後を保存した辺で、入力辺の変更を検証する。
     //    角にあった端点 (0,0,0) が (3,0,0) / (0,4,0) へ動き、遠いほうの端は残る。
     expectPointClose(theirs.before1[1], [0, 0, 0], 12);
     expectPointClose(theirs.edge1Ends[0], [20, 0, 0], 12);

@@ -51,7 +51,7 @@ describe('GR-09 角度と平面の判定の保存', () => {
     const reopened = readPcadFile(writePcadFile(source));
     if (!reopened.ok) throw new Error(JSON.stringify(reopened.error));
     expect(reopened.document).toEqual(source);
-    expect(reopened.document.schemaVersion).toBe(17);
+    expect(reopened.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
     expect(reopened.document.mathGeometry?.[0]).not.toBe(definition);
   });
   it('既定と違う長さ・角度の比べる幅を全新種で保持し、測定値やキャッシュは保存しない', () => {
@@ -103,6 +103,25 @@ describe('GR-09 角度と平面の判定の保存', () => {
 });
 
 describe('図形を参照する量は数値ではなく型と参照を保存する', () => {
+  it('頂点・辺・面の測定定義で保存意味起点を落とさない', () => {
+    const semanticVertex: MathGeometryPoint = { ...vertex, reference: { ...vertex.reference,
+      origin: { version: 1, shapeKind: 'vertex',
+        identity: { kind: 'box-vertex', featureId: 'box', role: 'top-front-left' } } } };
+    const semanticEdge: MathGeometryCurve = { ...edge, reference: { ...edge.reference,
+      origin: { version: 1, shapeKind: 'edge',
+        identity: { kind: 'box-edge', featureId: 'box', role: 'top-front' } } } };
+    const semanticFace: MathGeometryFace = { ...face, reference: { ...face.reference,
+      origin: { version: 1, shapeKind: 'face',
+        identity: { kind: 'box-face', featureId: 'box', role: 'top' } } } };
+    const source = { ...document, mathGeometry: [
+      { ...definitions[0], quantity: { kind: 'coordinate' as const, point: semanticVertex, component: 'Z' as const } },
+      { ...definitions[1], quantity: { kind: 'length' as const, curve: semanticEdge } },
+      { ...definitions[2], quantity: { kind: 'area' as const, shape: semanticFace } },
+    ] };
+    const opened = readPcadFile(writePcadFile(source));
+    if (!opened.ok) throw new Error(JSON.stringify(opened.error));
+    expect(opened.document.mathGeometry).toEqual(source.mathGeometry);
+  });
   it('全ての量・点・辺・面・立体と角度単位を実pcadファイルで往復する', () => {
     const source = { ...document, mathGeometry: definitions };
     const bytes = writePcadFile(source);
@@ -158,8 +177,8 @@ describe('図形を参照する量は数値ではなく型と参照を保存す�
       kind: 'sketch-point', sketchId: 's1', reference: { kind: 'point', pointId: '' } } } }],
   ].map(value => ({ value })))('壊れた型・番号・単位・許容差を読み飛ばさず拒否する #%#', ({ value }) => {
     expect(readMathGeometry(value, document.id, 'document.mathGeometry').ok).toBe(false);
-    const malformed = serializeDocument(document).replace('"schemaVersion": 17,',
-      `"schemaVersion": 17, "mathGeometry": ${JSON.stringify(value)},`);
+    const malformed = serializeDocument(document).replace(`"schemaVersion": ${String(PCAD_SCHEMA_VERSION)},`,
+      `"schemaVersion": ${String(PCAD_SCHEMA_VERSION)}, "mathGeometry": ${JSON.stringify(value)},`);
     expect(parseDocument(malformed).ok).toBe(false);
   });
 });
@@ -179,7 +198,7 @@ describe('GR-10 半径・中心角・輪郭長の保存', () => {
     const reopened = readPcadFile(writePcadFile(source));
     if (!reopened.ok) throw new Error(JSON.stringify(reopened.error));
     expect(reopened.document).toEqual(source);
-    expect(reopened.document.schemaVersion).toBe(17);
+    expect(reopened.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
     expect(reopened.document.mathGeometry?.[0]).not.toBe(definition);
   });
   it('派生値とキャッシュを全新種で保存しない', () => {
@@ -213,12 +232,12 @@ describe('GR-10b 座標系付き座標の保存', () => {
   const quantity: MathGeometryQuantity = { kind: 'coordinate', point, component: 'X', frame };
   const definition = { ...definitions[0], quantity };
 
-  it.each(['X', 'Y', 'Z'] as const)('座標系付き%s成分を実pcadで往復し版17を保つ', component => {
+  it.each(['X', 'Y', 'Z'] as const)('座標系付き%s成分を実pcadで往復し現在の版を保つ', component => {
     const source = { ...document, mathGeometry: [{ ...definition, quantity: { ...quantity, component } }] };
     const reopened = readPcadFile(writePcadFile(source));
     if (!reopened.ok) throw new Error(JSON.stringify(reopened.error));
     expect(reopened.document).toEqual(source);
-    expect(reopened.document.schemaVersion).toBe(17);
+    expect(reopened.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
     expect(reopened.document.mathGeometry?.[0].quantity).not.toBe(source.mathGeometry[0].quantity);
     // Missing frames remain repairable definitions; opening never rebinds by name.
     expect(reopened.document.references).toEqual([]);
@@ -271,7 +290,7 @@ describe('GR-11 合同・相似の定義の保存', () => {
     const reopened = readPcadFile(writePcadFile(source));
     if (!reopened.ok) throw new Error(JSON.stringify(reopened.error));
     expect(reopened.document).toEqual(source);
-    expect(reopened.document.schemaVersion).toBe(17);
+    expect(reopened.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
     expect(reopened.document.mathGeometry?.[0]).not.toBe(definition);
   });
   it('真偽・周長比・角と辺の並び・世代・キャッシュを保存しない', () => {

@@ -337,3 +337,27 @@ describe('引っぱると拘束を保ったまま追従する(FR-313、タスク
     expect(Number.isFinite(samples[15])).toBe(true);
   });
 });
+
+
+describe('1000-point drag admission', () => {
+  it('moves only the pinned point and leaves the original document and other 999 points intact', () => {
+    const features: SketchFeature[] = Array.from({ length: 1000 }, (_, i) => ({
+      id: `capacity-${i}`, name: `capacity-${i}`, kind: 'point', planeId: 'xy',
+      at: absoluteCoordinate(i, 0, 0),
+    }));
+    const document = documentOf(features);
+    const before = JSON.stringify(document);
+    const result = resolveConstrainedSketch(document, {}, pinnedAt('capacity-999', 7, 11));
+    expect(result.errors).toEqual([]);
+    expect(result.variableSet?.variables).toHaveLength(2000);
+    expect(result.diagnosis).toBeNull();
+    expect(result.outcome).toBeNull();
+    expect(solvedAt(result, 'capacity-999')).toEqual([7, 11, 0]);
+    expect([...result.solution.keys()]).toEqual(['capacity-999']);
+    const positions = new Map(result.resolved.points.map((point) => [point.id, point.position]));
+    for (let i = 0; i < 999; i += 1) {
+      expect(positions.get(`capacity-${i}`)).toEqual([i, 0, 0]);
+    }
+    expect(JSON.stringify(document)).toBe(before);
+  });
+});

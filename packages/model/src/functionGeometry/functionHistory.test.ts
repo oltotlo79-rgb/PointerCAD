@@ -50,6 +50,19 @@ function feature(maxY: ExpressionValue = number(2)): SketchFunctionCurveFeature 
       Y: { min: number(-1), max: maxY }, Z: { min: number(-1), max: number(1) } }, tolerance: number(0.001),
     formula: { kind: 'coordinate-curve', independent: 'X', outputs: { Y: formula('coef("幅")*X^2'), Z: formula('0') } } } };
 }
+/**
+ * Distance from (x, y) to the graph y = a(t + shift)^2 + offset, by Newton's method on the squared distance from
+ * t = x. Vertical gaps would overstate the error where the slope is steep; the curve proof bounds the distance.
+ */
+function parabolaDistance([x, y]: readonly [number, number], a: number, shift: number, offset: number): number {
+  let t = x;
+  for (let iteration = 0; iteration < 20; iteration++) {
+    const u = t + shift, gap = a * u * u + offset - y;
+    const slope = (t - x) + gap * 2 * a * u, curvature = 1 + 4 * a * a * u * u + gap * 2 * a;
+    t -= slope / curvature;
+  }
+  return Math.hypot(t - x, a * (t + shift) ** 2 + offset - y);
+}
 function fixture(input = feature()): PartDocument {
   const base = createEmptyPartDocument(), sketch = base.sketches[0];
   return { ...base, parameters: [{ name: '幅', mathId: 'coefficient:8', unit: 'none', description: '', value: number(1) }],
@@ -119,7 +132,7 @@ describe('関数を通常の履歴として再計算する', () => {
     expect(result.errors).toEqual([]);expect(result.cancelled).toBe(false);
     const splines=result.sketches[0].resolved.splines;expect(splines).toHaveLength(1);expect(splines[0].closed).toBe(true);
     const fixed=['X','Y','Z'].indexOf(fixedAxis),slots=[0,1,2].filter(axis=>axis!==fixed);
-    for(const point of splines[0].points){expect(point[fixed]).toBeCloseTo(0.5,10);expect(Math.abs(Math.hypot(point[slots[0]],point[slots[1]])-1)).toBeLessThan(0.05);}
+    for(const point of sampleSpline(splines[0])){expect(point[fixed]).toBeCloseTo(0.5,10);expect(Math.abs(Math.hypot(point[slots[0]],point[slots[1]])-1)).toBeLessThan(0.05);}
     expect(JSON.stringify(document)).toBe(before);expect(result.parameterAnalysis?.unused).not.toContain('幅');
   },30_000);
   it('平面等式の円をXYZで切ると開いた弧になり、分離した双曲線は別の実CAD曲線になる',async()=>{
@@ -131,7 +144,7 @@ describe('関数を通常の履歴として再計算する', () => {
           expression:createFunctionMathSource(source,'text','radian',{axes:['X','Y'],parameters:[],coefficients:[]},backend)}}};
       const document=fixture(curve),result=await recomputePart(document,bridge,options(document));expect(result.errors).toEqual([]);
       const splines=result.sketches[0].resolved.splines;expect(splines).toHaveLength(circle?1:2);
-      for(const spline of splines){expect(spline.closed).toBe(false);for(const point of spline.points){
+      for(const spline of splines){expect(spline.closed).toBe(false);for(const point of sampleSpline(spline)){
         expect(point[0]).toBeLessThanOrEqual((circle?0:2)+1e-6);expect(point[0]).toBeGreaterThanOrEqual(-2-1e-6);
         expect(Math.abs(circle?Math.hypot(point[0],point[1])-1:point[0]*point[1]-1)).toBeLessThan(0.05);
       }}
@@ -143,11 +156,13 @@ describe('関数を通常の履歴として再計算する', () => {
     expect(result.errors).toEqual([]); expect(result.cancelled).toBe(false);
     const curves = result.sketches[0].resolved.splines;
     expect(curves).toHaveLength(1); expect(curves[0].featureId).toBe('function');
-    expect(curves[0].points.length).toBeGreaterThan(10);
-    for (const [x, y, z] of curves[0].points) {
+    // Points on the actual curve (a smooth curve's `points` are poles, not curve points).
+    const onCurve = sampleSpline(curves[0]);
+    expect(onCurve.length).toBeGreaterThan(10);
+    for (const [x, y, z] of onCurve) {
       expect(x).toBeGreaterThanOrEqual(-2); expect(x).toBeLessThanOrEqual(2);
       expect(y).toBeGreaterThanOrEqual(-1-1e-6); expect(y).toBeLessThanOrEqual(2+1e-6);
-      expect(Math.abs(y-x*x)).toBeLessThanOrEqual(0.001); expect(z).toBeCloseTo(0, 10);
+      expect(parabolaDistance([x, y], 1, 0, 0)).toBeLessThanOrEqual(0.001); expect(z).toBeCloseTo(0, 10);
     }
     expect(result.parameterAnalysis?.unused).not.toContain('幅');
     expect(JSON.stringify(document)).toBe(before);
@@ -157,8 +172,8 @@ describe('関数を通常の履歴として再計算する', () => {
     const document = { ...source, parameters: [{ ...source.parameters[0], value: number(2) }] };
     const result = await recomputePart(document, bridge, options(document));
     expect(result.errors).toEqual([]);
-    for (const [x, y] of result.sketches[0].resolved.splines[0].points) {
-      expect(y).toBeLessThanOrEqual(0.5+1e-6); expect(Math.abs(y-2*x*x)).toBeLessThanOrEqual(0.001);
+    for (const [x, y] of sampleSpline(result.sketches[0].resolved.splines[0])) {
+      expect(y).toBeLessThanOrEqual(0.5+1e-6); expect(parabolaDistance([x, y], 2, 0, 0)).toBeLessThanOrEqual(0.001);
     }
   });
   it.each(['1/0', '-2'])('範囲の原式%sが不正なら曲線を残さず、独立した点は表示する', async source => {
@@ -233,9 +248,9 @@ describe('関数を通常の履歴として再計算する', () => {
     const document = fixture(moved), result = await recomputePart(document, bridge, options(document));
     expect(result.errors).toEqual([]);
     expect(moved.definition.bounds.Z.min.value).toBe(-4); expect(moved.definition.bounds.Z.max.value).toBe(-2);
-    for (const [x, y, z] of result.sketches[0].resolved.splines[0].points) {
+    for (const [x, y, z] of sampleSpline(result.sketches[0].resolved.splines[0])) {
       expect(x).toBeGreaterThanOrEqual(-3); expect(x).toBeLessThanOrEqual(1);
-      expect(y).toBeLessThanOrEqual(1e-6); expect(Math.abs(y-((x+1)**2-2))).toBeLessThanOrEqual(0.001);
+      expect(y).toBeLessThanOrEqual(1e-6); expect(parabolaDistance([x, y], 1, 1, -2)).toBeLessThanOrEqual(0.001);
       expect(z).toBeCloseTo(-3, 10);
     }
   });

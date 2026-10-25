@@ -6,12 +6,16 @@ import { gzipSync } from 'node:zlib';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { webSecurityPolicy } from './build/securityPolicy.js';
+import { occtPreviewHeaders } from './build/occtPreviewHeaders.js';
 import { startupPage } from './build/startupPage.js';
 import { runtimeNotices } from '../../scripts/vite/runtimeNotices.mjs';
 import { mathNotices } from '../../scripts/vite/mathNotices.mjs';
 import { exactMathAssets } from '../../scripts/vite/exactMathAssets.mjs';
+import { femRuntimeAssets } from '../../scripts/vite/femRuntimeAssets.mjs';
+import { FEM_WORKER_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
 import { offlineServiceWorker } from '../../scripts/vite/offlineServiceWorker.mjs';
 import { startupGuard } from '../../scripts/vite/startupGuard.mjs';
+import { assertDeferredSmallHelp, smallHelpChunk } from './src/helpChunkPolicy.js';
 
 const OCCT_WASM_IMPORT = 'opencascade.js/dist/opencascade.full.wasm?url';
 const OCCT_WASM_VIRTUAL_ID = '\0pointercad:occt-wasm-url-disabled';
@@ -51,7 +55,12 @@ function occtAssets(emitAssets = true): Plugin {
       const source = readFileSync(OCCT_WASM_PATH);
       const sha256 = createHash('sha256').update(source).digest('hex');
       const compressed = gzipSync(source, { level: 9 });
+      if (source.byteLength > 64 * 1024 * 1024 || compressed.byteLength > 25 * 1024 * 1024) {
+        throw new Error('OCCT stream 資産が復号または配信の上限を超えています。');
+      }
       const fileName = `occt/opencascade.full-${sha256.slice(0, 16)}.bin`;
+      const streamFile = `stream/opencascade.full-${sha256}.wasm`;
+      const transportSha256 = createHash('sha256').update(compressed).digest('hex');
       const manifest = {
         byteLength: source.byteLength,
         sha256,
@@ -59,9 +68,19 @@ function occtAssets(emitAssets = true): Plugin {
         parts: [
           { order: 0, file: fileName.slice('occt/'.length), byteLength: compressed.byteLength },
         ],
+        stream: {
+          file: streamFile,
+          compression: 'gzip',
+          transportByteLength: compressed.byteLength,
+          transportSha256,
+          decodedByteLength: source.byteLength,
+          decodedSha256: sha256,
+        },
       };
 
       this.emitFile({ type: 'asset', fileName, source: compressed });
+      // The encoded HTTP entity is the same gzip bytes as the legacy .bin asset.
+      this.emitFile({ type: 'asset', fileName: `occt/${streamFile}`, source: compressed });
       this.emitFile({
         type: 'asset',
         fileName: 'occt/manifest.json',
@@ -95,6 +114,8 @@ const crossOriginIsolationHeaders = {
  * 控えから使えること(NFR-PF-5 の「2 回目 3 秒」)。
  */
 function manualChunks(id: string): string | undefined {
+  const helpChunk = smallHelpChunk(id);
+  if (helpChunk !== undefined) return helpChunk;
   const path = id.replace(/\\/g, '/');
 
   // Vite shares this helper with the editor. Keep it outside pcad-core, otherwise
@@ -137,7 +158,8 @@ function manualChunks(id: string): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react(), occtAssets(), startupPage(), startupGuard(), webSecurityPolicy(), mathNotices(), runtimeNotices(), exactMathAssets(), offlineServiceWorker()],
+  plugins: [react(), occtAssets(), startupPage(), startupGuard(),
+    { name: 'pointercad-deferred-help-chunks', generateBundle(_options, bundle) { assertDeferredSmallHelp(bundle); } }, webSecurityPolicy(), occtPreviewHeaders(), mathNotices(), runtimeNotices(), exactMathAssets(), femRuntimeAssets(FEM_WORKER_CONTENT_SECURITY_POLICY), offlineServiceWorker()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },
   // 幾何カーネルの Worker は ES モジュールとして出力する。

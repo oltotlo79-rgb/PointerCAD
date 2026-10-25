@@ -1,5 +1,5 @@
 import { expectWithinBudget } from '@pointercad/test-utils';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type {
   OpenCascadeInstance,
@@ -8,9 +8,13 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { RigidTransformSpec, Vec3Tuple } from '../types.js';
+import * as allocationModule from './allocations.js';
+import type { OcctDeletable } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { R22_CASES, r22Bounds, r22Primitive, r22Translation, r22Volume } from './geometryAcceptanceFixtures.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
+import { makePrimitive } from './makePrimitive.js';
 import { isValidShape, measureArea, measureVolume } from './solidMesh.js';
 import {
   IDENTITY_TRANSFORM,
@@ -68,6 +72,69 @@ describe('剛体変換とコンパウンド(FR-411、FR-412)', () => {
 
   /** 計画書 タスク9 の検証表が使う箱。20×10×5、原点が角。 */
   const BAR = { dx: 20, dy: 10, dz: 5 } as const;
+
+  it('observes the live transform before release and remains equivalent to the unobserved path', () => {
+    const source = makeBox(oc, BAR);
+    const spec = transform({ translation: [7, -4, 3], rotationAngle: Math.PI / 2 });
+    const control = transformShape(oc, source.shape, spec);
+    const records: { deletes: number }[] = [];
+    const originalCreate = allocationModule.createAllocations;
+    vi.spyOn(allocationModule, 'createAllocations').mockImplementation(() => {
+      const owned = originalCreate();
+      return { release: owned.release, keep<T extends OcctDeletable>(item: T): T {
+        const record = { deletes: 0 }, dispose = item.delete.bind(item);
+        records.push(record);
+        item.delete = () => { record.deletes += 1; dispose(); };
+        return owned.keep(item);
+      } };
+    });
+    let calls = 0;
+    try {
+      const observed = transformShape(oc, source.shape, spec, (maker, output) => {
+        calls += 1;
+        expect(maker.IsDone()).toBe(true);
+        expect(output.IsNull()).toBe(false);
+        expect(records.every((record) => record.deletes === 0)).toBe(true);
+        expect(measureVolume(oc, output)).toBeCloseTo(1000, 9);
+      });
+      try {
+        expect(calls).toBe(1);
+        expect(corners(oc, observed.shape)).toEqual(corners(oc, control.shape));
+        expect(measureVolume(oc, observed.shape)).toBeCloseTo(measureVolume(oc, control.shape), 9);
+        expectTuple(corners(oc, source.shape).low, [0, 0, 0]);
+      } finally { observed.delete(); }
+      expect(records.length).toBeGreaterThan(0);
+      expect(records.every((record) => record.deletes === 1)).toBe(true);
+    } finally { vi.restoreAllMocks(); control.delete(); source.delete(); }
+  });
+
+  it('releases every allocation once when the observer throws and retains the borrowed input', () => {
+    const source = makeBox(oc, BAR);
+    const records: { deletes: number }[] = [];
+    const originalCreate = allocationModule.createAllocations;
+    vi.spyOn(allocationModule, 'createAllocations').mockImplementation(() => {
+      const owned = originalCreate();
+      return { release: owned.release, keep<T extends OcctDeletable>(item: T): T {
+        const record = { deletes: 0 }, dispose = item.delete.bind(item);
+        records.push(record);
+        item.delete = () => { record.deletes += 1; dispose(); };
+        return owned.keep(item);
+      } };
+    });
+    try {
+      expect(() => transformShape(oc, source.shape, transform({ translation: [3, 2, 1] }), (maker, output) => {
+        expect(maker.IsDone()).toBe(true);
+        expect(output.IsNull()).toBe(false);
+        throw new Error('observer exploded');
+      })).toThrow('observer exploded');
+      expect(records.length).toBeGreaterThan(0);
+      expect(records.every((record) => record.deletes === 1)).toBe(true);
+      vi.restoreAllMocks();
+      expect(measureVolume(oc, source.shape)).toBeCloseTo(1000, 9);
+      expectTuple(corners(oc, source.shape).low, [0, 0, 0]);
+    } finally { vi.restoreAllMocks(); source.delete(); }
+  });
+
 
   it('平行移動だけの変換は、箱を X へ 10 ずらす', () => {
     const handle = makeBox(oc, BAR);
@@ -662,3 +729,44 @@ function expectVolumeUnchanged(
   const source = measureVolume(oc, before);
   expect(Math.abs(measureVolume(oc, after) - source) / source).toBeLessThan(1e-12);
 }
+
+describe('R22: 3形×3尺度×3変換の独立したnative幾何期待', () => {
+  let oc: Occt;
+  beforeAll(async () => { oc = await loadOcctForNode(); });
+
+  it.each(R22_CASES)('$shape scale=$scale operation=$operation', ({ shape, scale, operation }) => {
+    const original = makePrimitive(oc, r22Primitive(shape, scale));
+    let transformed: ReturnType<typeof transformShape> | null = null;
+    try {
+      if (operation !== 'inch') {
+        transformed = transformShape(oc, original.shape, transform(operation === 'translate'
+          ? { translation: r22Translation(scale) }
+          : { rotationAxis: [0, 1, 0], rotationAngle: Math.PI / 2 }));
+      }
+      const target = transformed?.shape ?? original.shape;
+      const expected = r22Bounds(shape, scale, operation);
+      const actual = corners(oc, target);
+      expect(isValidShape(oc, target)).toBe(true);
+      expect(Math.abs(measureVolume(oc, target) - r22Volume(shape, scale)) / r22Volume(shape, scale))
+        .toBeLessThan(1e-6);
+      if (shape === 'box') {
+        expectTuple(actual.low, expected.low);
+        expectTuple(actual.high, expected.high);
+      } else {
+        for (let axis = 0; axis < 3; axis += 1) {
+          expect(Math.abs(actual.low[axis] - expected.low[axis])).toBeLessThanOrEqual(1e-7);
+          expect(Math.abs(actual.high[axis] - expected.high[axis])).toBeLessThanOrEqual(1e-7);
+        }
+      }
+      const untouched = corners(oc, original.shape);
+      const baseline = r22Bounds(shape, scale, 'inch');
+      for (let axis = 0; axis < 3; axis += 1) {
+        expect(Math.abs(untouched.low[axis] - baseline.low[axis])).toBeLessThanOrEqual(1e-7);
+        expect(Math.abs(untouched.high[axis] - baseline.high[axis])).toBeLessThanOrEqual(1e-7);
+      }
+    } finally {
+      transformed?.delete();
+      original.delete();
+    }
+  });
+});

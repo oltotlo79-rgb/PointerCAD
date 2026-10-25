@@ -1,9 +1,12 @@
 /** Shared by the build inventory and its browser reader; no Node or filesystem imports. */
 export const OFFLINE_ASSET_FORMAT = 'pointercad-offline-assets/1';
+export const OFFLINE_ASSET_FORMAT_V2 = 'pointercad-offline-assets/2';
 export const OFFLINE_CONTROL_FILES = Object.freeze(['offline-assets.json', 'service-worker.js']);
 export const OFFLINE_DEPLOYMENT_FILES = Object.freeze(['_headers', '_redirects']);
 export const OFFLINE_MAX_FILES = 20_000;
+export const OFFLINE_MAX_V2_FILES = 1_000;
 export const OFFLINE_MAX_FILE_BYTES = 26_214_400;
+export const OFFLINE_MAX_STREAM_BYTES = 67_108_864;
 export const OFFLINE_MAX_TOTAL_BYTES = 1_073_741_824;
 export const OFFLINE_MAX_MANIFEST_BYTES = 8_388_608;
 export const OFFLINE_MANUAL_NAVIGATION = 'pointercad-offline-navigation/1';
@@ -14,6 +17,8 @@ export function isPreparedOfflineCacheName(value) {
 const hashPattern = /^[a-f0-9]{64}$/u;
 const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 const record = value => typeof value === 'object' && value !== null && !Array.isArray(value);
+const onlyKeys = (value, keys) => Object.keys(value).length === keys.length
+  && keys.every(key => Object.hasOwn(value, key));
 
 /** A canonical same-origin path, before URL encoding. */
 export function offlineAssetUrl(path) {
@@ -40,8 +45,16 @@ export function offlineManifestBody(manifest) {
   return {
     format: manifest.format, entry: manifest.entry, totalBytes: manifest.totalBytes,
     required: [...manifest.required],
-    assets: manifest.assets.map(asset => ({ url: asset.url, byteLength: asset.byteLength, sha256: asset.sha256 })),
+    assets: manifest.assets.map(asset => ({ url: asset.url, byteLength: asset.byteLength, sha256: asset.sha256,
+      ...(manifest.format === OFFLINE_ASSET_FORMAT_V2 && asset.transport !== undefined
+        ? { transport: { encoding: asset.transport.encoding, byteLength: asset.transport.byteLength,
+          sha256: asset.transport.sha256 } } : {}) })),
   };
+}
+
+export function isOfflineStreamAsset(asset) {
+  return record(asset) && typeof asset.url === 'string' && typeof asset.sha256 === 'string'
+    && asset.url === `occt/stream/opencascade.full-${asset.sha256}.wasm`;
 }
 
 function canonicalApplicationUrl(url) {
@@ -56,18 +69,32 @@ function canonicalApplicationUrl(url) {
 
 /** Validate unknown network data before allocating or downloading any listed asset. */
 export async function readOfflineAssetManifest(value) {
-  if (!record(value) || value.format !== OFFLINE_ASSET_FORMAT || value.entry !== 'index.html'
+  const v2 = record(value) && value.format === OFFLINE_ASSET_FORMAT_V2;
+  if (!record(value) || (!v2 && value.format !== OFFLINE_ASSET_FORMAT)
+    || (v2 && !onlyKeys(value, ['format', 'entry', 'totalBytes', 'required', 'assets', 'buildId']))
+    || value.entry !== 'index.html'
     || !Number.isSafeInteger(value.totalBytes) || value.totalBytes <= 0 || value.totalBytes > OFFLINE_MAX_TOTAL_BYTES
     || typeof value.buildId !== 'string' || !hashPattern.test(value.buildId)
-    || !Array.isArray(value.assets) || value.assets.length === 0 || value.assets.length > OFFLINE_MAX_FILES
-    || !Array.isArray(value.required) || value.required.length === 0 || value.required.length > OFFLINE_MAX_FILES) {
+    || !Array.isArray(value.assets) || value.assets.length === 0 || value.assets.length > (v2 ? OFFLINE_MAX_V2_FILES : OFFLINE_MAX_FILES)
+    || !Array.isArray(value.required) || value.required.length === 0 || value.required.length > (v2 ? OFFLINE_MAX_V2_FILES : OFFLINE_MAX_FILES)) {
     throw new Error('Invalid offline edition inventory');
   }
   const assets = [], used = new Set(), folded = new Set(), routes = new Set();
-  let totalBytes = 0, previous = '';
+  let totalBytes = 0, transportTotalBytes = 0, previous = '';
   for (const asset of value.assets) {
+    const stream = v2 && isOfflineStreamAsset(asset);
     if (!record(asset) || !Number.isSafeInteger(asset.byteLength) || asset.byteLength <= 0
-      || asset.byteLength > OFFLINE_MAX_FILE_BYTES || typeof asset.sha256 !== 'string' || !hashPattern.test(asset.sha256)) {
+      || asset.byteLength > (stream ? OFFLINE_MAX_STREAM_BYTES : OFFLINE_MAX_FILE_BYTES)
+      || typeof asset.sha256 !== 'string' || !hashPattern.test(asset.sha256)
+      || (v2 && !onlyKeys(asset, stream
+        ? ['url', 'byteLength', 'sha256', 'transport'] : ['url', 'byteLength', 'sha256']))
+      || (v2 && 'transport' in asset && (!stream || !record(asset.transport)
+        || !onlyKeys(asset.transport, ['encoding', 'byteLength', 'sha256'])
+        || asset.transport.encoding !== 'gzip' || !Number.isSafeInteger(asset.transport.byteLength)
+        || asset.transport.byteLength <= 0 || asset.transport.byteLength > OFFLINE_MAX_FILE_BYTES
+        || typeof asset.transport.sha256 !== 'string' || !hashPattern.test(asset.transport.sha256)))
+      || (stream && !('transport' in asset))
+      || (v2 && !stream && typeof asset.url === 'string' && asset.url.startsWith('occt/stream/'))) {
       throw new Error('Invalid offline asset record');
     }
     const path = canonicalApplicationUrl(asset.url);
@@ -77,8 +104,14 @@ export async function readOfflineAssetManifest(value) {
     }
     previous = asset.url; used.add(asset.url); folded.add(path.toLowerCase()); routes.add(route);
     totalBytes += asset.byteLength;
+    transportTotalBytes += stream ? asset.transport.byteLength : asset.byteLength;
     if (!Number.isSafeInteger(totalBytes) || totalBytes > OFFLINE_MAX_TOTAL_BYTES) throw new Error('Offline edition is too large');
-    assets.push(Object.freeze({ url: asset.url, byteLength: asset.byteLength, sha256: asset.sha256 }));
+    if (!Number.isSafeInteger(transportTotalBytes) || transportTotalBytes > OFFLINE_MAX_TOTAL_BYTES) {
+      throw new Error('Offline transport is too large');
+    }
+    assets.push(Object.freeze({ url: asset.url, byteLength: asset.byteLength, sha256: asset.sha256,
+      ...(stream ? { transport: Object.freeze({ encoding: 'gzip', byteLength: asset.transport.byteLength,
+        sha256: asset.transport.sha256 }) } : {}) }));
   }
   if (totalBytes !== value.totalBytes) throw new Error('Offline inventory total does not match its assets');
   const required = []; previous = '';
@@ -88,7 +121,7 @@ export async function readOfflineAssetManifest(value) {
     previous = url; required.push(url);
   }
   if (!required.includes('index.html')) throw new Error('Offline entry HTML must be required');
-  const manifest = Object.freeze({ format: OFFLINE_ASSET_FORMAT, entry: 'index.html', totalBytes,
+  const manifest = Object.freeze({ format: value.format, entry: 'index.html', totalBytes,
     required: Object.freeze(required), assets: Object.freeze(assets), buildId: value.buildId });
   const digest = await globalThis.crypto.subtle.digest('SHA-256', new globalThis.TextEncoder().encode(JSON.stringify(offlineManifestBody(manifest))));
   const actual = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');

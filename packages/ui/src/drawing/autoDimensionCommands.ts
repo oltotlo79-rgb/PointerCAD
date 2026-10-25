@@ -1,4 +1,4 @@
-import { drawingDimensionContext, resolvedDimensionView, unfoldDrawingPick, drawingSectionRetainsPoint } from '@pointercad/model';
+import { createSubShapeReference, drawingDimensionContext, resolvedDimensionView, unfoldDrawingPick, drawingSectionRetainsPoint } from '@pointercad/model';
 import { autoDimension, resolveStyle, type AutoDimensionCircle, type AutoDimensionPoint, type DimensionTarget, type DrawingDocument } from '@pointercad/drawing';
 import { drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingDimensions, type DrawingSourceResolution, type ResolvedDrawingView } from '@pointercad/model';
 import { t } from '../i18n/t.js';
@@ -33,10 +33,15 @@ function generateAutoDimensionsResult(document: DrawingDocument, source: Drawing
     if (projection === undefined) return null;
     const boundary: AutoDimensionPoint[] = [];
     for (const instance of context.instances) {
+      if (instance.sourceRef !== document.source.sourceRef || context.instances.filter((other) => other.sourceRef === instance.sourceRef
+        && other.body.featureId === instance.body.featureId && other.componentId === instance.componentId).length !== 1) continue;
       for (const vertex of instance.body.vertices) {
+        const ref = instance.body.origins?.state === 'tracked' ? createSubShapeReference(instance.body, 'vertex', vertex.index)
+          : { bodyFeatureId: instance.body.featureId, index: vertex.index, fingerprint: { kind: 'vertex' as const, position: vertex.position } };
+        if (ref === null) continue;
         const target: DimensionTarget = { kind: 'subShape', sourceRef: document.source.sourceRef, viewId: view.id,
           ...(instance.componentId === undefined ? {} : { componentId: instance.componentId }),
-          ref: { bodyFeatureId: instance.body.featureId, index: vertex.index, fingerprint: { kind: 'vertex', position: vertex.position } } };
+          ref };
         const resolved = resolveDimensionTarget(target, document, context);
         if (resolved?.kind !== 'point') continue;
         if (frame !== undefined && ((frame.clips?.length ?? 0) > 0 || frame.section !== undefined || frame.breakSpec !== undefined)

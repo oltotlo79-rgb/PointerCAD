@@ -8,7 +8,7 @@
  * (docs/報告記録.md 2026-09-02 14:50 の④と同じ理由)。
  */
 
-import {
+import { encodeSaveDocument, type SaveEncodingControl,
   AUTO_SAVE_INTERVAL_MS,
   PCAD_DOCUMENT_ENTRY,
   createAutoSaver,
@@ -330,7 +330,42 @@ function crcMismatchRecord(): AutoSaveRecord {
 }
 
 beforeEach(() => {
-  useAppStore.setState(createInitialDocumentState());
+  useAppStore.setState({ ...createInitialDocumentState(), saveDocumentEncoder: encodeSaveDocument, recoverySaveState: null });
+});
+
+describe('復元用保存の進行状態', () => {
+  it.each(['edit', 'switch', 'detach'])('圧縮中の%sを過去の成功で最新の控えありにしない', async kind => {
+    useAppStore.setState({ assembly: null, drawing: null, activeDocumentId: crypto.randomUUID() });
+    const storage = createMemoryAutoSaveStorage();
+    let control: SaveEncodingControl | undefined;
+    let finish: () => Promise<void> = () => Promise.resolve();
+    const detach = startAutoSave({ storage, encodeSave: (input, current) => {
+      control = current; current?.onProgress?.('compressing');
+      return new Promise<Uint8Array>((resolve, reject) => {
+        finish = async () => { try { resolve(await encodeSaveDocument(input)); } catch (error) { reject(error instanceof Error ? error : new Error(String(error))); } };
+      });
+    } });
+    try {
+      const original = partWithPoint(); useAppStore.getState().applyDocument(original);
+      expect(useAppStore.getState().recoverySaveState?.stage).toBe('pending');
+      const saving = useAppStore.getState().autoSaver?.saveNow(createPartDocumentBundle(original));
+      expect(useAppStore.getState().recoverySaveState?.stage).toBe('compressing');
+      if (kind === 'edit') useAppStore.getState().applyDocument({ ...original, name: '追加編集' });
+      else if (kind === 'switch') useAppStore.getState().resetDocument(createEmptyPartDocument());
+      else detach();
+      const after = useAppStore.getState().recoverySaveState;
+      control?.onProgress?.('compressing'); await finish(); await saving;
+      if (kind === 'edit') {
+        expect(useAppStore.getState().recoverySaveState?.stage).toBe('pending');
+        const records = await storage.listRecords(); expect(records).toHaveLength(1);
+        expect(readPcadFile(records[0].bytes)).toMatchObject({ ok: true, document: original });
+      } else {
+        expect(control?.signal?.aborted).toBe(true);
+        expect(useAppStore.getState().recoverySaveState).toBe(after);
+        expect(await storage.listRecords()).toHaveLength(0);
+      }
+    } finally { detach(); }
+  });
 });
 
 describe('保管庫を選ぶ(§0.a-0.11)', () => {
@@ -660,11 +695,14 @@ describe('案内の返事', () => {
     const saver = createTestSaver(recording.storage, timer);
     useAppStore.getState().setRestorePrompt({ savedAt: SAVED_AT, documentName: '部品1' });
 
+    const before = useAppStore.getState().document;
+
     await restoreAutoSave(saver);
 
     const state = useAppStore.getState();
     expect(state.restorePrompt).toBeNull();
-    expect(state.document).toEqual(createEmptyPartDocument());
+    expect(state.document).toBe(before);
+    expect(state.document).toEqual({ ...createEmptyPartDocument(), id: before.id });
   });
 
   it('読めない控えに復元を試しても消さず、復元不可の案内を保つ', async () => {
@@ -1042,4 +1080,62 @@ describe('保存間隔の変更は現在の文書の保存キューへ接続す�
       expect(opened.bundle.document).toEqual(edited);
     } finally { detach(); useAppStore.getState().setDisplaySettings(previousSettings); }
   });
+});
+
+it('fresh autosave module import requires no entropy and failed start has no saver or storage effects', async () => {
+  // Keep the real already-created store while isolating only module lifetime identity.
+  const store = useAppStore;
+  const storage = createMemoryAutoSaveStorage();
+  const listRecords = vi.spyOn(storage, 'listRecords');
+  const write = vi.spyOn(storage, 'write');
+  const createSaver = vi.fn((options: Parameters<typeof createAutoSaver>[0]) => createAutoSaver(options));
+  const before = store.getState();
+  vi.resetModules();
+  vi.doMock('../store/useAppStore.js', () => ({ useAppStore: store }));
+  vi.stubGlobal('crypto', {});
+  try {
+    const fresh = await import('./attachAutoSave.js');
+    expect(store.getState()).toBe(before);
+    expect(store.getState()).toEqual(before);
+    expect(listRecords).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    const stop = fresh.startAutoSave({ storage, createSaver });
+    expect(createSaver).not.toHaveBeenCalled();
+    expect(listRecords).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(store.getState()).toEqual({ ...before, fileMessage: {
+      key: 'autoSave.failed', failed: true, detail: 'Secure document identity is unavailable' } });
+    const failed = store.getState();
+    stop();
+    expect(store.getState()).toBe(failed);
+    expect(createSaver).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+    vi.doUnmock('../store/useAppStore.js');
+    vi.resetModules();
+  }
+});
+
+it('actual autosave restore failure retains old authored/runtime owner, recovery bytes and storage', async () => {
+  const recovered = partWithPoint();
+  const storage = createMemoryAutoSaveStorage();
+  await storage.write(recordOf(recovered, 'Recovery source'));
+  const saver = createTestSaver(storage, createManualTimer());
+  await loadAutoSavePrompt(saver, { record: firstRecord(await storage.listRecords()) });
+  const records = await storage.listRecords();
+  const before = useAppStore.getState();
+  const clearSaveTarget = vi.fn();
+  useAppStore.setState({ fileGateway: { ...before.fileGateway, clearSaveTarget } });
+  const owner = useAppStore.getState();
+  vi.stubGlobal('crypto', {});
+  try {
+    await restoreAutoSave(saver);
+    expect(clearSaveTarget).not.toHaveBeenCalled();
+    expect(useAppStore.getState()).toEqual({ ...owner, fileMessage: {
+      key: 'autoSave.failed', failed: true, detail: 'Secure document identity is unavailable' } });
+    expect(await storage.listRecords()).toEqual(records);
+    expect(useAppStore.getState().restorePrompt).toBe(owner.restorePrompt);
+    expect(useAppStore.getState().recoveryRecord).toBe(owner.recoveryRecord);
+  } finally { vi.unstubAllGlobals(); }
 });

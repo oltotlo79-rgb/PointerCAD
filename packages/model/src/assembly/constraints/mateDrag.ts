@@ -17,6 +17,11 @@ type Placements = ReadonlyMap<string, RigidPlacement>;
 const DRAG_REJECTION_DAMPING_FLOOR = 1;
 export interface PreparedMateDrag {
   readonly componentId: string;
+  /**
+   * 引く点の変数を持つ部品。互いに固定した組の部品を引くときは組の代表(`rigidGroups.ts`)で、
+   * `componentId` の位置は代表の変数で動く。省略は `componentId` と同じ。
+   */
+  readonly variableComponentId?: string;
   readonly initial: Placements;
   readonly initialEvaluation: RigidEvaluation;
   readonly variableSet: MateVariableSet;
@@ -261,7 +266,8 @@ export function solveMateDrag(drag: PreparedMateDrag, target: Vec3, request: Mat
     acceptedEvaluation = warmEvaluation;
     interrupt();
     const columns = ['tx', 'ty', 'tz'].map((axis) =>
-      drag.variableSet.variables.findIndex((variable) => variable.componentId === drag.componentId && variable.axis === axis));
+      drag.variableSet.variables.findIndex((variable) => variable.componentId === (drag.variableComponentId ?? drag.componentId)
+        && variable.axis === axis));
     if (columns.some((column) => column < 0)) throw new DragInterrupted('numericalFailure');
     const driverColumns: [number, number, number] = [columns[0], columns[1], columns[2]];
     const driverGradients = driverColumns.map((column) => new Map([[column, DRAG_PIN_WEIGHT / length]]));

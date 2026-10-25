@@ -1,8 +1,10 @@
 import type { OpenCascadeInstance, TopoDS_Face } from 'opencascade.js/dist/opencascade.full.js';
 
-import type { CurveSpec, TessellationOptions } from '../types.js';
+import type { CurveSpec, ExtrudeStepSpec, TessellationOptions } from '../types.js';
 import { discretizeEdge, makeCurveEdge, type OcctEdgeHandle } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
+import type { NativeProfileCurve, NativeProfileLine } from './subShapeOrigins.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 /** OCCT の面と、そのために確保した領域の解放手続き。 */
 export interface OcctFaceHandle {
@@ -14,6 +16,8 @@ export interface OcctFaceHandle {
   readonly boundaryPositions: Float32Array;
   /** 外周を作っている曲線の本数(線分・円弧を合わせた数)。 */
   readonly boundaryEdgeCount: number;
+  readonly nativeProfileLines?: readonly NativeProfileLine[];
+  readonly nativeProfileCurves?: readonly NativeProfileCurve[];
   delete(): void;
 }
 
@@ -55,28 +59,93 @@ export function makePlanarFace(
   oc: OpenCascadeInstance,
   curves: readonly CurveSpec[],
   options: TessellationOptions = {},
+  profileOrigin?: ExtrudeStepSpec['profileOrigin'],
+  frame?: MeshCoordinateFrame,
 ): OcctFaceHandle {
   if (curves.length === 0) {
     throw new Error('面を作るには曲線が 1 本以上必要です。');
   }
 
   const edges: OcctEdgeHandle[] = [];
+  const sharedVertices: { delete(): void }[] = [];
   const wireMaker = new oc.BRepBuilderAPI_MakeWire_1();
   const boundary: number[] = [];
+  const nativeProfileLines: NativeProfileLine[] = [];
+  const nativeProfileCurves: NativeProfileCurve[] = [];
 
   const deleteParts = (): void => {
     wireMaker.delete();
     for (const handle of edges) {
       handle.delete();
     }
+    for (let index = sharedVertices.length - 1; index >= 0; index -= 1) sharedVertices[index].delete();
   };
 
   try {
-    for (const curve of continuousCurvePieces(curves)) {
-      const handle = makeCurveEdge(oc, curve);
-      edges.push(handle);
-      wireMaker.Add_1(handle.edge);
-      appendSegments(boundary, discretizeEdge(oc, handle.edge, options));
+    // Shared native vertices keep the four source edges as members of MakeFace.
+    // The ordinary edge constructor may let MakeWire replace three of them.
+    const fourLines = profileOrigin !== undefined && 'lineFeatureIds' in profileOrigin && curves.length === 4
+      && profileOrigin.lineFeatureIds.length === 4
+      && curves.every((curve) => curve.kind === 'segment')
+      && curves.every((curve, index) => {
+        const next = curves[(index + 1) % 4];
+        return curve.kind === 'segment' && next?.kind === 'segment'
+          && curve.to.every((value, axis) => value === next.from[axis]);
+      });
+    if (fourLines && profileOrigin !== undefined && 'lineFeatureIds' in profileOrigin) {
+      const points = curves.map((curve) => {
+        if (curve.kind !== 'segment') throw new Error('線分の輪郭が必要です。');
+        const point = new oc.gp_Pnt_3(...curve.from);
+        sharedVertices.push(point);
+        return point;
+      });
+      const vertices = points.map((point) => {
+        const maker = new oc.BRepBuilderAPI_MakeVertex(point);
+        sharedVertices.push(maker);
+        const vertex = maker.Vertex();
+        sharedVertices.push(vertex);
+        return vertex;
+      });
+      for (let index = 0; index < 4; index += 1) {
+        const maker = new oc.BRepBuilderAPI_MakeEdge_2(vertices[index], vertices[(index + 1) % 4]);
+        if (!maker.IsDone()) { maker.delete(); throw new Error('線分の稜線を作れませんでした。'); }
+        const edge = maker.Edge();
+        const handle: OcctEdgeHandle = { edge, delete() { edge.delete(); maker.delete(); } };
+        edges.push(handle);
+        wireMaker.Add_1(edge);
+        appendSegments(boundary, discretizeEdge(oc, edge, options, frame));
+        nativeProfileLines.push({ edge, anchor: { sketchId: profileOrigin.sketchId,
+          faceFeatureId: profileOrigin.faceFeatureId,
+          lineFeatureId: profileOrigin.lineFeatureIds[index], role: 'whole-line' } });
+      }
+    } else if (profileOrigin !== undefined && 'curveFeatureIds' in profileOrigin
+      && curves.length >= 3 && curves.length <= 32
+      && profileOrigin.curveFeatureIds.length === curves.length
+      && new Set(profileOrigin.curveFeatureIds).size === curves.length
+      && curves.every(curve => curve.kind === 'segment' || (curve.kind === 'spline'
+        && !curve.closed && curve.degree === undefined && curve.knots === undefined))) {
+      for (let index = 0; index < curves.length; index++) {
+        const handle = makeCurveEdge(oc, curves[index]);
+        edges.push(handle);
+        wireMaker.Add_1(handle.edge);
+        // MakeWire may replace a coincident vertex in a copied edge. Edge() is
+        // the actual last inserted edge, not an ordinal/nearest-geometry guess.
+        if (!wireMaker.IsDone()) throw new Error('Saved profile edges are disconnected');
+        const inserted = wireMaker.Edge();
+        sharedVertices.push(inserted);
+        nativeProfileCurves.push({ edge: inserted, anchor: {
+          sketchId: profileOrigin.sketchId, faceFeatureId: profileOrigin.faceFeatureId,
+          curveFeatureId: profileOrigin.curveFeatureIds[index], role: 'whole-curve',
+        } });
+        appendSegments(boundary, discretizeEdge(oc, inserted, options, frame));
+      }
+    } else {
+      for (const curve of continuousCurvePieces(curves)) {
+        const handle = makeCurveEdge(oc, curve);
+        edges.push(handle);
+        wireMaker.Add_1(handle.edge);
+        appendSegments(boundary, discretizeEdge(oc, handle.edge, options, frame));
+      }
     }
   } catch (error) {
     deleteParts();
@@ -126,6 +195,8 @@ export function makePlanarFace(
     face,
     boundaryPositions: new Float32Array(boundary),
     boundaryEdgeCount: edges.length,
+    ...(nativeProfileLines.length === 4 ? { nativeProfileLines } : {}),
+    ...(nativeProfileCurves.length === curves.length ? { nativeProfileCurves } : {}),
     delete: deleteAll,
   };
 }

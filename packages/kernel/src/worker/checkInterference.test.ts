@@ -49,7 +49,21 @@ function addBox(key: string, size = 20, x = 0): CachedSolid {
   return entry;
 }
 function addWedge(): CachedSolid {
-  const shape = fixtures.keep(fixtures.keep(new oc.BRepPrimAPI_MakeWedge_1(20, 20, 20, 10)).Shape());
+  // MakeWedge(20, 20, 20, 10): XY の台形を +Z へ 20mm 掃く。
+  // 下辺 x=0..20 (y=0)、上辺 x=0..10 (y=20)。反時計回りなので面の法線は +Z。
+  const polygon = fixtures.keep(new oc.BRepBuilderAPI_MakePolygon_1());
+  for (const [x, y] of [[0, 0], [20, 0], [10, 20], [0, 20]] as const) {
+    polygon.Add_1(fixtures.keep(new oc.gp_Pnt_3(x, y, 0)));
+  }
+  polygon.Close();
+  expect(polygon.IsDone()).toBe(true);
+  const wire = fixtures.keep(polygon.Wire());
+  const faceMaker = fixtures.keep(new oc.BRepBuilderAPI_MakeFace_15(wire, true));
+  expect(faceMaker.IsDone()).toBe(true);
+  const face = fixtures.keep(faceMaker.Face());
+  const direction = fixtures.keep(new oc.gp_Vec_4(0, 0, 20));
+  const prism = fixtures.keep(new oc.BRepPrimAPI_MakePrism_1(face, direction, true, true));
+  const shape = fixtures.keep(prism.Shape());
   const entry = { shape, mesh: buildSolidBodyMesh(oc, 'wedge', shape), delete: () => undefined };
   bodies.set('wedge', entry); return entry;
 }
@@ -548,6 +562,9 @@ describe('部品単位の非破壊干渉解析', () => {
   });
   it('K47 8頂点12辺6平面のwedgeを直方体と誤認しない', () => {
     const wedge = addWedge(); expect(wedge.mesh.vertices).toHaveLength(8); expect(wedge.mesh.edges).toHaveLength(12); expect(wedge.mesh.faces).toHaveLength(6);
+    expect(isValidShape(oc, wedge.shape)).toBe(true);
+    // 符号付き体積も確認し、向きと ((20 + 10) / 2) * 20 * 20 = 6000mm³ を保つ。
+    expect(Math.abs(measureVolume(oc, wedge.shape) - 6000)).toBeLessThanOrEqual(1e-6);
     expect(certifyInterferenceBox(oc, wedge.shape)).toBeNull();
   });
   it('K48 認証箱の誤差境界内だけ近接相対配置を共有し体積誤差を守る', async () => {

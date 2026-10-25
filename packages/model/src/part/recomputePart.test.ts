@@ -843,6 +843,7 @@ describe('段の詰め替え', () => {
 
     expect(request.step.kind).toBe('sew');
     if (request.step.kind === 'sew') {
+      if (!('profiles' in request.step)) throw new Error('平面の縫合には profiles が必要です。');
       expect(request.step.profiles).toHaveLength(2);
       expect(request.step.profiles[0]).toHaveLength(4);
       expect(request.step.tolerance).toBe(0.01);
@@ -992,6 +993,21 @@ describe('段の詰め替え', () => {
       tiltAzimuth: 0.2,
       transforms: [],
     });
+  });
+
+  it('ねじ穴の段は、下穴の名前の材料を計画にある時だけ載せる(無ければ欄を作らない)', () => {
+    const anchors = [{ sketchId: 'sketch-1', producer: { kind: 'point' as const, featureId: 'point-1' } }];
+    const named = toSolidStepRequest({ featureId: 'threadHole-1', name: 'ねじ穴1', key: 'key-thread-1', visible: true,
+      plan: { kind: 'thread', centerAnchors: anchors, placementRoles: [], targetKey: 'key-extrude-1', face: faceRef(3),
+        centers: [[10, 10, 10]], drillDiameter: 4.917468, pitch: 1, depth: null, tiltAngle: 0, tiltAzimuth: 0,
+        transforms: [], thread: null, mark: { majorDiameter: 6, length: 10 } } });
+    expect(named.step).toMatchObject({ kind: 'thread', centerAnchors: anchors, placementRoles: [] });
+    const plain = toSolidStepRequest({ featureId: 'threadHole-1', name: 'ねじ穴1', key: 'key-thread-1', visible: true,
+      plan: { kind: 'thread', targetKey: 'key-extrude-1', face: faceRef(3), centers: [[10, 10, 10]],
+        drillDiameter: 4.917468, pitch: 1, depth: null, tiltAngle: 0, tiltAzimuth: 0, transforms: [],
+        thread: null, mark: { majorDiameter: 6, length: 10 } } });
+    expect('centerAnchors' in plain.step).toBe(false);
+    expect('placementRoles' in plain.step).toBe(false);
   });
 
   it('貫通穴は depth が null のまま渡る(§0.a-0.12)', () => {
@@ -1780,6 +1796,28 @@ describe('部品を通した投影・交差の解決(FR-325、タスク25)', () 
     };
   }
 
+  it('returns only the final receipt from two solid passes and never adds their reservations', async () => {
+    const document = projectionChain(2);
+    const cached = bridgeWithShapeCache();
+    let calls = 0;
+    const final = { status: 'known' as const, limitBytes: 1000, cacheActiveBytes: 130,
+      cacheRetiredBytes: 110, cacheProtectedBytes: 240, retainedReplyBytes: 300, requestPeakReservedBytes: 1000 };
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(async (steps, options) => {
+      const outcome = await cached.bridge.recomputeSolids(steps, options);
+      calls += 1;
+      return { ...outcome, meshJsAccounting: { partId: 'chain', generation: 7,
+        reading: calls === 1 ? { ...final, cacheActiveBytes: 13, cacheRetiredBytes: 11,
+          cacheProtectedBytes: 24, retainedReplyBytes: 30, requestPeakReservedBytes: 100 } : final } };
+    });
+    const result = await recomputePart(document, fakeBridge({ ...cached.bridge, recomputeSolids }), {
+      partId: 'chain', generation: 7,
+      localMesh: { maximumFloat32ErrorMm: 0.01, maximumLiveMeshBytes: 1000 },
+    });
+    expect(recomputeSolids).toHaveBeenCalledTimes(2);
+    expect(result.errors).toEqual([]);
+    expect(result.meshJsAccounting).toEqual({ documentId: document.id, partId: 'chain', generation: 7, reading: final });
+  });
+
   it('三段連鎖を空のキャッシュから1回で解決し、温かいキャッシュと同じ形・エラーになる', async () => {
     const document = projectionChain();
     const { bridge, recomputeSolids, projectSketchCurves } = bridgeWithShapeCache();
@@ -2493,6 +2531,145 @@ describe('外観の橋渡し(FR-1106、タスク4)', () => {
   });
 });
 
+describe('request-local JS accounting follows only the completed solid pass', () => {
+  const budget = { maximumFloat32ErrorMm: 0.01, maximumLiveMeshBytes: 1000 };
+  const reading: NonNullable<SolidRecomputeOutcome['meshJsAccounting']>['reading'] = {
+    status: 'known', limitBytes: 1000, cacheActiveBytes: 130, cacheRetiredBytes: 110,
+    cacheProtectedBytes: 240, retainedReplyBytes: 300, requestPeakReservedBytes: 1000,
+  };
+  const receipt = { partId: 'part:A', generation: 7, reading };
+
+  it('forwards an explicit budget and stamps the document without adding clone or cache terms', async () => {
+    const { document } = oneExtrude();
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: document.id },
+    }));
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids }), {
+      partId: document.id, generation: 7, localMesh: budget,
+    });
+    expect(recomputeSolids.mock.calls[0][1]).toMatchObject({
+      partId: document.id, generation: 7, localMesh: budget,
+    });
+    expect(result.meshJsAccounting).toEqual({ ...receipt, partId: document.id, documentId: document.id });
+    expect(result.meshJsAccounting?.reading).toBe(reading);
+    expect(result.kernelMemory).toBeUndefined();
+  });
+
+  it('carries the post-token final union with the receipt unchanged and unsummed', async () => {
+    const { document } = oneExtrude();
+    const final = { status: 'known' as const, limitBytes: 1000, cacheActiveBytes: 130,
+      cacheRetiredBytes: 0, cacheProtectedBytes: 130, displayBackingBytes: 60, replyBackingBytes: 60,
+      retainedBackingBytes: 190, replyCloneReservedBytes: 60 };
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids: () => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: document.id, final },
+    }) }), { partId: document.id, generation: 7, localMesh: budget });
+    expect(result.meshJsAccounting).toEqual({ ...receipt, partId: document.id, documentId: document.id, final });
+    expect(result.meshJsAccounting?.final).toBe(final);
+    expect(result.meshJsAccounting?.reading).toBe(reading);
+    expect(Object.isFrozen(result.meshJsAccounting)).toBe(true);
+  });
+
+  it('requests accounting for an empty local part while the world empty shortcut stays intact', async () => {
+    const document = createEmptyPartDocument();
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: document.id },
+    }));
+    const bridge = fakeBridge({ recomputeSolids });
+    const world = await recomputePart(document, bridge);
+    expect(recomputeSolids).not.toHaveBeenCalled();
+    expect(world.meshJsAccounting).toBeUndefined();
+    const local = await recomputePart(document, bridge, { partId: document.id, generation: 7, localMesh: budget });
+    expect(recomputeSolids).toHaveBeenCalledTimes(1);
+    expect(recomputeSolids.mock.calls[0][0]).toEqual([]);
+    expect(local.meshJsAccounting?.documentId).toBe(document.id);
+  });
+
+  it('discards a cancelled receipt while preserving the existing WASM cancellation contract', async () => {
+    const { document } = oneExtrude();
+    const kernelMemory = { usedBytes: 91, limitBytes: 100 };
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({ ...EMPTY_SOLID_OUTCOME, cancelled: true,
+        kernelMemory, meshJsAccounting: receipt }),
+    }), { partId: document.id, generation: 7, localMesh: budget });
+    expect(result.cancelled).toBe(true);
+    expect(result.meshJsAccounting).toBeUndefined();
+    expect(result.kernelMemory).toEqual(kernelMemory);
+  });
+
+  it('keeps a session partId independent of documentId and captures options before asynchronous work', async () => {
+    const { document } = oneExtrude();
+    const options = { partId: 'session:A', generation: 7, localMesh: { ...budget } };
+    let announce: () => void = () => { throw new Error('dispatch wait not initialized'); };
+    const reached = new Promise<void>(resolve => { announce = resolve; });
+    let settle: ((outcome: SolidRecomputeOutcome) => void) | undefined;
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() => {
+      announce();
+      return new Promise<SolidRecomputeOutcome>(resolve => { settle = resolve; });
+    });
+    const pending = recomputePart(document, fakeBridge({ recomputeSolids }), options);
+    await reached;
+    options.partId = 'session:B'; options.generation = 8; options.localMesh.maximumLiveMeshBytes = 999;
+    expect(recomputeSolids.mock.calls[0][1]).toMatchObject({ partId: 'session:A', generation: 7, localMesh: budget });
+    if (settle === undefined) throw new Error('dispatch resolver missing');
+    settle({ ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: 'session:A' } });
+    const result = await pending;
+    expect(result.meshJsAccounting?.partId).toBe('session:A');
+    expect(result.meshJsAccounting?.generation).toBe(7);
+    expect(result.meshJsAccounting?.documentId).toBe(document.id);
+    const empty = createEmptyPartDocument();
+    const defaultPart = await recomputePart(empty, fakeBridge({ recomputeSolids: () => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, meshJsAccounting: { ...receipt, partId: 'part:current' },
+    }) }), { generation: 7, localMesh: budget });
+    expect(defaultPart.meshJsAccounting?.partId).toBe('part:current');
+    expect(defaultPart.meshJsAccounting?.documentId).toBe(empty.id);
+  });
+
+  it.each(['part', 'generation', 'unknown', 'failure'] as const)('rejects a final %s receipt before document stamping', async scenario => {
+    const { document } = oneExtrude();
+    const candidate: NonNullable<SolidRecomputeOutcome['meshJsAccounting']> = {
+      ...receipt, partId: scenario === 'part' ? 'other' : document.id,
+      generation: scenario === 'generation' ? 6 : 7,
+      reading: scenario === 'unknown' ? { status: 'unknown', limitBytes: 1000, reason: 'missing-counts' } : reading,
+    };
+    const result = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.resolve({ ...EMPTY_SOLID_OUTCOME, meshJsAccounting: candidate,
+        failures: scenario === 'failure' ? [{ featureId: 'extrude-1', message: 'failed' }] : [] }),
+    }), { partId: document.id, generation: 7, localMesh: budget });
+    expect(result.meshJsAccounting).toBeUndefined();
+  });
+
+  it('does not synthesize a zero receipt for missing, rejected or pre-cancelled results', async () => {
+    const { document } = oneExtrude();
+    const plain = await recomputePart(document, fakeBridge(), { localMesh: budget });
+    const failed = await recomputePart(document, fakeBridge({
+      recomputeSolids: () => Promise.reject(new Error('invalid accounting')),
+    }), { localMesh: budget });
+    const neverCalled = vi.fn<KernelBridge['recomputeSolids']>(() => Promise.resolve(EMPTY_SOLID_OUTCOME));
+    const cancelled = await recomputePart(document, fakeBridge({ recomputeSolids: neverCalled }), {
+      localMesh: budget, shouldCancel: () => true,
+    });
+    expect(plain.meshJsAccounting).toBeUndefined();
+    expect(failed.meshJsAccounting).toBeUndefined();
+    expect(failed.errors).toHaveLength(1);
+    expect(cancelled.meshJsAccounting).toBeUndefined();
+    expect(neverCalled).not.toHaveBeenCalled();
+  });
+
+  it('returns no receipt when the mathematical input stage stops before solids', async () => {
+    const fixture = oneExtrude();
+    const document: PartDocument = { ...fixture.document, parameters: [{ name: 'input', unit: 'mm',
+      description: '', value: { ...expr('1'), mathDefinition: { format: 'pointercad-math/1', source: '1',
+        inputNotation: 'text', angleUnit: 'degree', expression: { kind: 'number', decimal: '1' } } } }] };
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(() => Promise.resolve(EMPTY_SOLID_OUTCOME));
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids }), { generation: 7, localMesh: budget });
+    expect(result.cancelled).toBe(false);
+    expect(result.errors).toEqual([{ featureId: document.id, code: 'invalidValue',
+      message: '数学計算部を準備できません。数式の再計算後に作図してください。' }]);
+    expect(result.meshJsAccounting).toBeUndefined();
+    expect(recomputeSolids).not.toHaveBeenCalled();
+  });
+});
+
 describe('形状計算部のメモリの量を素通しする(NFR-PF-6、P12-28)', () => {
   /** 上限(約 4GB)の 4 分の 3 を超えた量を模擬する。実物の量は kernel の検査で確かめる。 */
   const memory = { wasmHeapBytes: 3_300_000_000, wasmHeapLimitBytes: 4_294_901_760 };
@@ -2536,5 +2713,108 @@ describe('形状計算部のメモリの量を素通しする(NFR-PF-6、P12-28)
     );
     expect(failed.errors).toHaveLength(1);
     expect('kernelMemory' in failed).toBe(false);
+  });
+});
+
+describe('imported triangle display bodies', () => {
+  function cube() {
+    return { positions: new Float32Array([0, 0, 0, 20, 0, 0, 20, 20, 0, 0, 20, 0,
+      0, 0, 20, 20, 0, 20, 20, 20, 20, 0, 20, 20]), normals: new Float32Array(24),
+      indices: new Uint32Array([0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4,
+        1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]) };
+  }
+  function importedDocument(): PartDocument {
+    return { ...createEmptyPartDocument(), solids: [{ id: 'mesh-1', name: 'cube', kind: 'importedMesh',
+      meshRef: 'payload', suppressed: false, triangleCount: 12, volume: 123,
+      source: { format: 'stl', fileName: 'cube.stl', unit: 'mm', byteLength: 684 } }] };
+  }
+  it('derives the independent 20 cubed volume from real triangles, not saved volume', async () => {
+    const source = cube();
+    const result = await recomputePart(importedDocument(), fakeBridge(), { importedMeshes: new Map([['payload', source]]) });
+    expect(result.errors).toEqual([]);
+    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0].bodyKind).toBe('mesh');
+    expect(result.bodies[0].mesh.triangleCount).toBe(12);
+    expect(result.bodies[0].volume).toBe(8000);
+    expect(result.bodies[0].mesh.positions).toEqual(source.positions);
+    expect(result.bodies[0].mesh.positions).not.toBe(source.positions);
+    expect(result.mainMeshBacking?.retainedBackingBytes).toBe(672);
+  });
+  it.each(['missing', 'index', 'normal', 'coordinate', 'count'] as const)('refuses %s attachment without a fabricated body', async kind => {
+    const source = cube();
+    if (kind === 'index') source.indices[0] = 99;
+    if (kind === 'normal') source.normals[0] = Number.NaN;
+    if (kind === 'coordinate') source.positions[0] = Number.POSITIVE_INFINITY;
+    const document = importedDocument();
+    const actual = kind === 'count' ? { ...document, solids: document.solids.map(feature =>
+      feature.kind === 'importedMesh' ? { ...feature, triangleCount: 11 } : feature) } : document;
+    const result = await recomputePart(actual, fakeBridge(), {
+      importedMeshes: kind === 'missing' ? new Map() : new Map([['payload', source]]),
+    });
+    expect(result.bodies).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+  });
+  it('captures values before awaiting the real recompute boundary and reserves separate main bytes', async () => {
+    const source = cube();
+    let dispatch: SolidRecomputeOutcome | undefined;
+    const bridge = fakeBridge({ recomputeSolids: (_steps, options) => {
+      expect(options?.localMesh?.maximumLiveMeshBytes).toBe(10000 - 672);
+      source.positions.fill(0);
+      dispatch = EMPTY_SOLID_OUTCOME;
+      return Promise.resolve(dispatch);
+    } });
+    const result = await recomputePart(importedDocument(), bridge, { importedMeshes: new Map([['payload', source]]),
+      localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 10000 } });
+    expect(dispatch).toBe(EMPTY_SOLID_OUTCOME);
+    expect(result.bodies[0].volume).toBe(8000);
+    expect(result.mainMeshBacking?.limitBytes).toBe(10000);
+  });
+  it('deduplicates shared input backings and repeated references before reserving copies', async () => {
+    const original = cube();
+    const backing = new ArrayBuffer(336);
+    const source = { positions: new Float32Array(backing, 0, 24), normals: new Float32Array(backing, 96, 24),
+      indices: new Uint32Array(backing, 192, 36) };
+    source.positions.set(original.positions); source.indices.set(original.indices);
+    const document = importedDocument();
+    const feature = document.solids[0];
+    const result = await recomputePart({ ...document, solids: [feature, { ...feature, id: 'mesh-2' }] },
+      fakeBridge(), { importedMeshes: new Map([['payload', source]]) });
+    expect(result.bodies.map(body => body.volume)).toEqual([8000, 8000]);
+    expect(result.mainMeshBacking?.retainedBackingBytes).toBe(672);
+    expect(result.mainMeshBacking?.buffers).toHaveLength(4);
+    expect(result.bodies[0].mesh.positions).toBe(result.bodies[1].mesh.positions);
+  });
+  it('refuses the main reservation before allocating or issuing a zero Worker allowance', async () => {
+    const result = await recomputePart(importedDocument(), fakeBridge(), {
+      importedMeshes: new Map([['payload', cube()]]),
+      localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 672 } });
+    expect(result.bodies).toEqual([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.mainMeshBacking).toBeUndefined();
+  });
+  it('keeps a separately returned native body alongside an imported mesh', async () => {
+    const native = solidBody('native', 12000);
+    const document = importedDocument();
+    const mixed: PartDocument = { ...document, solids: [...document.solids, { id: 'native', name: 'native',
+      kind: 'importedSolid', suppressed: false, shapeRef: 'brep', bodyKind: 'solid',
+      source: { format: 'step', fileName: 'native.step', unit: 'mm', byteLength: 1 } }] };
+    const result = await recomputePart(mixed, fakeBridge({ recomputeSolids: () =>
+      Promise.resolve({ ...EMPTY_SOLID_OUTCOME, bodies: [native] }) }), {
+      importedShapes: new Map([['brep', Uint8Array.of(1)]]), importedMeshes: new Map([['payload', cube()]]) });
+    expect(result.errors).toEqual([]);
+    expect(result.bodies).toHaveLength(2);
+    expect(result.bodies[0]).toBe(native);
+    expect(result.bodies[1].bodyKind).toBe('mesh');
+    expect(result.bodies[1].volume).toBe(8000);
+  });
+  it('does not publish imported geometry after cancellation', async () => {
+    let cancelled = false;
+    const result = await recomputePart(importedDocument(), fakeBridge({ recomputeSolids: () => {
+      cancelled = true; return Promise.resolve(EMPTY_SOLID_OUTCOME);
+    } }), { importedMeshes: new Map([['payload', cube()]]), shouldCancel: () => cancelled,
+      localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 10000 } });
+    expect(result.cancelled).toBe(true);
+    expect(result.bodies).toEqual([]);
+    expect(result.mainMeshBacking).toBeUndefined();
   });
 });

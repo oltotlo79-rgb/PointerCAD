@@ -53,6 +53,8 @@ export type ShapeExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
 /** 書き出しの依頼(model の言葉)。 */
 export interface ShapeExportOptions {
   readonly partId?: string;
+  /** Caller-owned cancellation only; omitted from the serializable kernel request. */
+  readonly signal?: AbortSignal;
   readonly format: ShapeExportFormat;
   /** 書き出す立体。並びがそのままファイルの中の並びになる。 */
   readonly bodies: readonly ShapeExportBody[];
@@ -118,8 +120,11 @@ export type ShapeExportOutcome =
       readonly files: readonly ExportedFile[];
       /** 面積 0 で落とした三角形の枚数。三角形を使わない形式では 0。 */
       readonly droppedTriangleCount: number;
+      /** 完成ファイルへ実際に書いた枚数。STEP や空の結果では存在しない。 */
+      readonly triangleCount?: number;
     }
   | { readonly kind: 'meshes'; readonly bodies: readonly ExportedMeshBody[] }
+  | { readonly kind: 'cancelled' }
   | { readonly kind: 'failed'; readonly message: string };
 
 /** 読み込みの依頼(model の言葉)。3MF は `packages/io` が読むのでここには入らない。 */

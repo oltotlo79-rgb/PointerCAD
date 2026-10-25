@@ -49,6 +49,7 @@ import {
   DEFAULT_CYLINDER_RADIUS_MM,
   DEFAULT_DRAFT_ANGLE_DEGREES,
   DEFAULT_EMBOSS_HEIGHT_MM,
+  DEFAULT_FACE_OFFSET_MM,
   DEFAULT_EMBOSS_RAISED,
   DEFAULT_EXTRUDE_THICKNESS_MM,
   DEFAULT_FILLET_RADIUS_END_MM,
@@ -257,7 +258,17 @@ export type NumericToggleKey =
   /** 切断で法線の反対側を残すか(FR-432、§0.a-0.57)。既定は切=法線の側を残す。 */
   | 'cutKeepOpposite'
   /** 切断で両側とも残すか(§0.a-0.58。入にすると 2 つに分かれる)。既定は切。 */
-  | 'cutKeepBoth';
+  | 'cutKeepBoth'
+  /**
+   * 切る面の点を座標の式で入れるか(EX-04 W1)。入にすると「点の X / Y / Z」の欄が出る。
+   * 入れた点は選んだ点の後ろに並ぶ(3 点・点と辺・辺を含む面・点と軸で使う)。既定は切。
+   */
+  | 'cutPointByCoordinate'
+  /**
+   * 穴を円筒の側面に、高さと角度で置くか(EX05)。既定は切=今までどおり点を中心にする。
+   * 入にすると高さと角度の欄が出る(中心の点とは同時に使えない。確定のときに断る)。
+   */
+  | 'cylinderFace';
 
 export interface NumericToggle {
   readonly key: NumericToggleKey;
@@ -274,6 +285,8 @@ export type RevolveAxisChoice = 'x' | 'y' | 'z' | 'line';
  * patternDirection は直線パターン専用(向きであって回転軸ではないので別のキーにする)。
  */
 export type NumericChoiceKey =
+  | 'extrudeOperation'
+  | 'extrudeTarget'
   | 'sweepGuide'
   | 'axis'
   | 'threadDesignation'
@@ -706,6 +719,11 @@ const HOLE_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'counterboreDepth', labelKey: 'numericInput.field.counterboreDepth', tooltipKey: 'numericInput.tooltip.counterboreDepth', unit: 'mm', defaultSource: String(DEFAULT_COUNTERBORE_DEPTH_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'counterbore') },
   { key: 'countersinkDiameter', labelKey: 'numericInput.field.countersinkDiameter', tooltipKey: 'numericInput.tooltip.countersinkDiameter', unit: 'mm', defaultSource: String(DEFAULT_COUNTERSINK_DIAMETER_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'countersink') },
   { key: 'countersinkAngle', labelKey: 'numericInput.field.countersinkAngle', tooltipKey: 'numericInput.tooltip.countersinkAngle', unit: 'degree', defaultSource: String(DEFAULT_COUNTERSINK_ANGLE_DEGREES), range: COUNTERSINK_ANGLE_RANGE, visibleWhen: whenChoiceIs('holeEntry', 'countersink') },
+  // 円筒の側面の穴(EX05)。「円筒の側面に」が入のときだけ出す。高さの既定は止まり穴の深さの
+  // 既定と同じ(確定側の DEFAULT_CYLINDER_HOLE_HEIGHT も同じ定数から作る)。範囲は付けない
+  // (面の上にあるかは kernel が実際の面の境界で決める。角度は何周しても同じ向き)。
+  { key: 'holeCylinderHeight', labelKey: 'numericInput.field.holeCylinderHeight', tooltipKey: 'numericInput.tooltip.holeCylinderHeight', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DEPTH_MM), visibleWhen: whenToggleOn('cylinderFace') },
+  { key: 'holeCylinderAngle', labelKey: 'numericInput.field.holeCylinderAngle', tooltipKey: 'numericInput.tooltip.holeCylinderAngle', unit: 'degree', defaultSource: '0', visibleWhen: whenToggleOn('cylinderFace') },
 ];
 
 const THREAD_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
@@ -713,6 +731,9 @@ const THREAD_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
   // ねじ部の長さの既定値専用の model 定数は無いため、穴の深さの既定(10)と揃える
   // (計画書タスク24 §2.11 の表がどちらも既定 10 としているのに合わせた)。
   { key: 'threadLength', labelKey: 'numericInput.field.threadLength', tooltipKey: 'numericInput.tooltip.threadLength', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DEPTH_MM), range: POSITIVE },
+  // 円筒の側面のねじ穴(EX05)。穴の欄と同じ定義で、「円筒の側面に」が入のときだけ出す。
+  { key: 'holeCylinderHeight', labelKey: 'numericInput.field.holeCylinderHeight', tooltipKey: 'numericInput.tooltip.holeCylinderHeight', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DEPTH_MM), visibleWhen: whenToggleOn('cylinderFace') },
+  { key: 'holeCylinderAngle', labelKey: 'numericInput.field.holeCylinderAngle', tooltipKey: 'numericInput.tooltip.holeCylinderAngle', unit: 'degree', defaultSource: '0', visibleWhen: whenToggleOn('cylinderFace') },
 ];
 
 /**
@@ -1066,6 +1087,20 @@ const SHELL_THICKNESS_FIELDS: readonly NumericFieldDefinition[] = [
 ];
 
 /**
+ * 平らな面の移動の距離(EX-18)。符号付き(正で外へ足し、負で内へ削る)なので範囲は付けない。
+ * 0 と数でない値は model の checkFaceOffset が理由つきで断る。動かす面は選択で決まるので欄に出さない。
+ */
+const FACE_OFFSET_DISTANCE_FIELDS: readonly NumericFieldDefinition[] = [
+  {
+    key: 'faceOffsetDistance',
+    labelKey: 'numericInput.field.distance',
+    tooltipKey: 'numericInput.tooltip.faceOffsetDistance',
+    unit: 'mm',
+    defaultSource: String(DEFAULT_FACE_OFFSET_MM),
+  },
+];
+
+/**
  * 切断面の傾き(FR-432)。**「点と軸」で決めるときだけ**出す(§0.a-0.57 の段の表)。
  * 範囲は基準ジオメトリの傾け(`TILT_RANGE`)と同じ——同じ `PlaneSpec` を組み立てるので、
  * 受け付ける範囲が道具によって違ってはならない(NFR-UX-1)。
@@ -1079,6 +1114,46 @@ const CUT_PLANE_FIELDS: readonly NumericFieldDefinition[] = [
     defaultSource: '0',
     range: TILT_RANGE,
     visibleWhen: whenChoiceIs('cutPlaneKind', 'pointAndAxis'),
+  },
+  /*
+    EX-04 W1: 「X / Y / Z 軸に垂直な面」の位置(軸の上の座標、mm)。式で書ける(`10*2` など)。
+    その 3 つの決め方のときだけ出す。
+  */
+  {
+    key: 'cutPosition',
+    labelKey: 'numericInput.field.cutPosition',
+    tooltipKey: 'numericInput.tooltip.cutPosition',
+    unit: 'mm',
+    defaultSource: '0',
+    visibleWhen: whenChoiceIs('cutPlaneKind', 'axisX', 'axisY', 'axisZ'),
+  },
+  /*
+    EX-04 W1: 切る面の点を座標の式で入れる(「点を座標で入れる」が入のときだけ)。
+    使える決め方かどうかは確定のときに確かめる(使わない決め方なら理由を出して止める)。
+  */
+  {
+    key: 'cutPointX',
+    labelKey: 'numericInput.field.cutPointX',
+    tooltipKey: 'numericInput.tooltip.cutPoint',
+    unit: 'mm',
+    defaultSource: '0',
+    visibleWhen: whenToggleOn('cutPointByCoordinate'),
+  },
+  {
+    key: 'cutPointY',
+    labelKey: 'numericInput.field.cutPointY',
+    tooltipKey: 'numericInput.tooltip.cutPoint',
+    unit: 'mm',
+    defaultSource: '0',
+    visibleWhen: whenToggleOn('cutPointByCoordinate'),
+  },
+  {
+    key: 'cutPointZ',
+    labelKey: 'numericInput.field.cutPointZ',
+    tooltipKey: 'numericInput.tooltip.cutPoint',
+    unit: 'mm',
+    defaultSource: '0',
+    visibleWhen: whenToggleOn('cutPointByCoordinate'),
   },
 ];
 
@@ -1498,6 +1573,8 @@ function solidFieldDefinitionsFor(
       return SURFACE_SHAPE_FIELDS;
     case 'shellThickness':
       return SHELL_THICKNESS_FIELDS;
+    case 'faceOffsetDistance':
+      return FACE_OFFSET_DISTANCE_FIELDS;
     case 'cutPlane':
       return CUT_PLANE_FIELDS;
     /*
@@ -1574,6 +1651,7 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   pointPattern: 'numericInput.title.pointPattern',
   surfaceShape: 'numericInput.title.surfaceShape',
   shellThickness: 'numericInput.title.shellThickness',
+  faceOffsetDistance: 'numericInput.title.faceOffsetDistance',
   cutPlane: 'numericInput.title.cutPlane',
   referencePlanePoint1: 'numericInput.title.referencePlanePoint1',
   referencePlanePoint2: 'numericInput.title.referencePlanePoint2',
@@ -1664,6 +1742,7 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'pointPattern',
   'surfaceShape',
   'shellThickness',
+  'faceOffsetDistance',
   'cutPlane',
   'referencePlanePoint1',
   'referencePlanePoint2',
@@ -1728,6 +1807,7 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
   pointPattern: 'pointPattern',
   surface: 'surfaceShape',
   shell: 'shellThickness',
+  faceOffset: 'faceOffsetDistance',
   cut: 'cutPlane',
 };
 
@@ -1916,6 +1996,7 @@ const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
   pointPattern: 'pointPattern',
   surfaceShape: 'surface',
   shellThickness: 'shell',
+  faceOffsetDistance: 'faceOffset',
   cutPlane: 'cut',
 };
 
@@ -1926,8 +2007,8 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   extrudeDistance: ['reversed', 'symmetric', 'tapered', 'taperOutward', 'thinWalled'],
   revolveAngle: ['reversed'],
   sewTolerance: [],
-  holeSize: ['through'],
-  threadSize: ['through', 'modeledThread'],
+  holeSize: ['through', 'cylinderFace'],
+  threadSize: ['through', 'modeledThread', 'cylinderFace'],
   // R 面取りは可変半径をここへ畳んだ(タスク50)。終わりの半径の欄はつまみが入のときだけ。
   filletRadius: ['variableRadius'],
   chamferSize: [],
@@ -1964,7 +2045,10 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   pointPattern: [],
   surfaceShape: ['reversed'],
   shellThickness: ['shellOutward'],
-  cutPlane: ['cutKeepOpposite', 'cutKeepBoth'],
+  // 平らな面の移動はつまみを持たない(向きは距離の符号で決まる)。
+  faceOffsetDistance: [],
+  // 「点を座標で入れる」(EX-04 W1)は残す側の 2 つの後ろに足す(既存の 2 つの並びは変えない)。
+  cutPlane: ['cutKeepOpposite', 'cutKeepBoth', 'cutPointByCoordinate'],
 };
 
 /**
@@ -2063,6 +2147,8 @@ export const TOGGLE_LABEL_KEYS: Readonly<Record<NumericToggleKey, MessageKey>> =
   variableRadius: 'numericInput.toggle.variableRadius',
   cutKeepOpposite: 'numericInput.toggle.cutKeepOpposite',
   cutKeepBoth: 'numericInput.toggle.cutKeepBoth',
+  cutPointByCoordinate: 'numericInput.toggle.cutPointByCoordinate',
+  cylinderFace: 'numericInput.toggle.cylinderFace',
 };
 
 /**
@@ -2099,6 +2185,10 @@ const TOGGLE_DEFAULT_VALUES: Readonly<Record<NumericToggleKey, boolean>> = {
   // 既定は法線の側を残す(§0.a-0.57)ので、「反対側を残す」は切から始まる。
   cutKeepOpposite: DEFAULT_CUT_KEEP === 'negative',
   cutKeepBoth: false,
+  // 切る面の点はふつう選んで決めるので、座標で入れるのは切から始める(EX-04 W1)。
+  cutPointByCoordinate: false,
+  // 円筒の側面の穴は「ふつうはしないこと」ではないが、今までの点の穴の段を変えないため切から始める。
+  cylinderFace: false,
 };
 
 export * from './numericInputPresentation.js';
@@ -2259,6 +2349,8 @@ export interface NumericInputOptions {
   readonly repeatAfterCommit?: boolean;
   readonly defaultSources?: NumericDefaultSources;
   readonly sweepGuides?: readonly NumericChoiceOption[];
+  /** 押し出しの結合・切り抜きの相手に選べる立体(履歴の順。既定は未選択で、順番から決めない)。 */
+  readonly extrudeTargets?: readonly NumericChoiceOption[];
   /**
    * 回転軸・パターンの向き・ばねの軸に選べるスケッチの線分(§0.a-0.9)。
    * 線分が選ばれているときだけタスク21 が渡し、渡されなければ軸は X / Y / Z だけになる。
@@ -2432,6 +2524,9 @@ export type NumericFocusTarget =
 
 /** Tab で巡る輪。P1 の段は欄しか無いので、輪の添字は欄の添字と一致する。 */
 export function numericToggleEnabled(state: NumericInputState, key: NumericToggleKey): boolean {
+  if (key === 'cylinderFace' && state.step === 'holeSize') {
+    return choiceValueFrom(state.choices, 'holeEntry') !== 'countersink';
+  }
   if (key !== 'sweepFrenet') return true;
   const guide = state.choices.find((choice) => choice.key === 'sweepGuide')?.value;
   return guide === undefined || guide === 'none';
@@ -2539,6 +2634,12 @@ const TOGGLE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> 
   filletRadius: true,
   // 「側面を傾ける」で傾きの欄、「薄板にする」で厚みの欄が出る(タスク50)。
   extrudeDistance: true,
+  // 「円筒の側面に」で高さ・角度の欄が出る(EX05)。表へ足し忘れると欄が出ない。
+  holeSize: true,
+  // 円筒の側面のねじ穴(EX05)。穴と同じつまみで高さ・角度の欄が出る(THREAD_SIZE_FIELDS の visibleWhen)。
+  threadSize: true,
+  // 「点を座標で入れる」で点の X / Y / Z の欄が出る(EX-04 W1、CUT_PLANE_FIELDS の visibleWhen)。
+  cutPlane: true,
 };
 
 /**
@@ -2557,6 +2658,13 @@ function applyChoiceToFields(
   }
   if (CHOICE_DEPENDENT_STEPS[state.step] !== true) {
     return { ...state, choices };
+  }
+  if (state.step === 'holeSize') {
+    const toggles = state.toggles.map((toggle): NumericToggle => toggle.key === 'cylinderFace'
+      ? { ...toggle, labelKey: choiceValueFrom(choices, 'holeEntry') === 'countersink'
+        ? 'numericInput.toggle.cylinderFaceUnavailable' : TOGGLE_LABEL_KEYS.cylinderFace }
+      : toggle);
+    return { ...rebuiltFields(state, choices, toggles), choices, toggles };
   }
   return { ...rebuiltFields(state, choices, state.toggles), choices };
 }
@@ -2606,6 +2714,14 @@ function applyToggleToFields(
 ): NumericInputState {
   if (TOGGLE_DEPENDENT_STEPS[state.step] !== true) {
     return { ...state, toggles };
+  }
+  if (state.step === 'holeSize') {
+    const cylindrical = toggles.some(toggle => toggle.key === 'cylinderFace' && toggle.value);
+    const entry = choicesFor('holeSize', {}).find(choice => choice.key === 'holeEntry');
+    const choices = state.choices.map(choice => choice.key === 'holeEntry' && entry !== undefined
+      ? { ...choice, options: entry.options.filter(option => !cylindrical || option.value !== 'countersink') }
+      : choice);
+    return { ...rebuiltFields(state, choices, toggles), choices, toggles };
   }
   return { ...rebuiltFields(state, state.choices, toggles), toggles };
 }
@@ -2949,10 +3065,24 @@ export interface SolidCommitValues {
   readonly surfaceOffset?: ExpressionValue;
   /** くり抜きの壁の厚さ(mm、FR-418)。 */
   readonly shellThickness?: ExpressionValue;
+  /** 平らな面の移動の符号付きの距離(mm、EX-18)。 */
+  readonly faceOffsetDistance?: ExpressionValue;
   /** 可変半径の R 面取りの終わり側の半径(mm、FR-426)。つまみが入のときだけ。 */
   readonly filletRadiusEnd?: ExpressionValue;
   /** 切断面の傾き(度、FR-432)。決め方が「点と軸」のときだけ。 */
   readonly cutTilt?: ExpressionValue;
+  /** 軸に垂直な切断面の位置(mm、EX-04 W1)。決め方が「X / Y / Z 軸に垂直な面」のときだけ。 */
+  readonly cutPosition?: ExpressionValue;
+  /** 座標の式で入れた切る面の点(mm、EX-04 W1)。「点を座標で入れる」が入のときだけ。 */
+  readonly cutPointX?: ExpressionValue;
+  readonly cutPointY?: ExpressionValue;
+  readonly cutPointZ?: ExpressionValue;
+  /**
+   * 円筒の側面の穴の高さ(mm)・角度(度、EX05)。「円筒の側面に」が入のときだけ。
+   * 基本形状の円柱の `cylinderHeight`(円柱そのものの高さ)とは別の欄なので名前を分ける。
+   */
+  readonly holeCylinderHeight?: ExpressionValue;
+  readonly holeCylinderAngle?: ExpressionValue;
 }
 
 /** ソリッドのつまみ。持たない道具では欄ごと現れない。 */
@@ -2991,6 +3121,10 @@ export interface SolidCommitFlags {
   readonly cutKeepOpposite?: boolean;
   /** 切断で両側とも残すか(§0.a-0.58)。 */
   readonly cutKeepBoth?: boolean;
+  /** 切る面の点を座標の式で入れるか(EX-04 W1)。 */
+  readonly cutPointByCoordinate?: boolean;
+  /** 穴を円筒の側面に高さと角度で置くか(EX05)。 */
+  readonly cylinderFace?: boolean;
 }
 
 /**
@@ -3037,6 +3171,10 @@ export interface SolidInputCommit {
 
 /** P5 の Should / Could 群の選択肢の値(タスク49)。持たない段では欄ごと入らない。 */
 export interface SolidShapeChoices {
+  /** 押し出しの結果('new' / 'join' / 'cut')。 */
+  readonly extrudeOperation?: string;
+  /** 結合・切り抜きの相手の立体の id(明示して選んだものだけ)。 */
+  readonly extrudeTarget?: string;
   readonly sweepGuide?: string;
   /** 押し出しの終わり方('distance' / 'toFace' / 'toNext')。 */
   readonly extrudeEnd?: string;
@@ -3052,7 +3190,11 @@ export interface SolidShapeChoices {
   readonly threadShaftEnd?: string;
   /** 曲面の作り方('extrude' / 'revolve' / 'planar' / 'loft' / 'face' / 'offset')。 */
   readonly surfaceOperation?: string;
-  /** 切断面の決め方('xy' / 'xz' / 'yz' / 'face' / 'threePoints' / 'pointAndEdge' / 'pointAndAxis')。 */
+  /**
+   * 切断面の決め方('xy' / 'xz' / 'yz' / 'face' / 'threePoints' / 'pointAndEdge' / 'pointAndAxis'、
+   * EX-04 W1 で足した 'axisX' / 'axisY' / 'axisZ' / 'workPlane' / 'pointAndEdgeContaining'、
+   * 閉じた輪郭で貫く 'profile')。
+   */
   readonly cutPlaneKind?: string;
 }
 
@@ -3301,9 +3443,18 @@ function solidValuesFor(
         counterboreDepth: get('counterboreDepth'),
         countersinkDiameter: get('countersinkDiameter'),
         countersinkAngle: get('countersinkAngle'),
+        // 円筒の側面の穴(EX05)。つまみが切なら欄が無いので 2 つとも入らない。
+        holeCylinderHeight: get('holeCylinderHeight'),
+        holeCylinderAngle: get('holeCylinderAngle'),
       };
     case 'threadSize':
-      return { depth: get('depth'), threadLength: get('threadLength') };
+      return {
+        depth: get('depth'),
+        threadLength: get('threadLength'),
+        // 円筒の側面のねじ穴(EX05)。つまみが切なら欄が無いので 2 つとも入らない(穴と同じ)。
+        holeCylinderHeight: get('holeCylinderHeight'),
+        holeCylinderAngle: get('holeCylinderAngle'),
+      };
     // R 面取りは可変半径をここへ畳んだ(タスク50)。一定半径なら終わりの半径は入らない。
     case 'filletRadius':
       return { radius: get('radius'), filletRadiusEnd: get('filletRadiusEnd') };
@@ -3396,8 +3547,16 @@ function solidValuesFor(
       };
     case 'shellThickness':
       return { shellThickness: get('shellThickness') };
+    case 'faceOffsetDistance':
+      return { faceOffsetDistance: get('faceOffsetDistance') };
     case 'cutPlane':
-      return { cutTilt: get('cutTilt') };
+      return {
+        cutTilt: get('cutTilt'),
+        cutPosition: get('cutPosition'),
+        cutPointX: get('cutPointX'),
+        cutPointY: get('cutPointY'),
+        cutPointZ: get('cutPointZ'),
+      };
     // 欄を 1 つも持たない段(ミラー・スイープ・点集合パターン)。
     case 'mirrorPlane':
     case 'sweepOptions':
@@ -3430,6 +3589,8 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
     variableRadius?: boolean;
     cutKeepOpposite?: boolean;
     cutKeepBoth?: boolean;
+    cutPointByCoordinate?: boolean;
+    cylinderFace?: boolean;
   } = {};
   for (const toggle of toggles) {
     switch (toggle.key) {
@@ -3484,6 +3645,12 @@ function solidFlagsFor(toggles: readonly NumericToggle[]): SolidCommitFlags {
         break;
       case 'cutKeepBoth':
         flags.cutKeepBoth = toggle.value;
+        break;
+      case 'cutPointByCoordinate':
+        flags.cutPointByCoordinate = toggle.value;
+        break;
+      case 'cylinderFace':
+        flags.cylinderFace = toggle.value;
         break;
       default:
         // スケッチのつまみ(構築線・楕円弧・閉じる)は立体の確定には入らない。
@@ -3695,6 +3862,8 @@ function buildSolidCommit(
  */
 function shapeChoicesFrom(choices: readonly NumericChoice[]): SolidShapeChoices {
   return {
+    extrudeOperation: choiceValueFrom(choices, 'extrudeOperation'),
+    extrudeTarget: choiceValueFrom(choices, 'extrudeTarget'),
     sweepGuide: choiceValueFrom(choices, 'sweepGuide'),
     extrudeEnd: choiceValueFrom(choices, 'extrudeEnd'),
     thicknessSide: choiceValueFrom(choices, 'thicknessSide'),
@@ -3950,6 +4119,22 @@ export function commitNumericInput(
 }
 
 /**
+ * いま決定したら道具へ渡る確定結果(`SolidInputCommit`)を、決定せずに求める(EX-04 W2 の切断の予告)。
+ *
+ * 中身は `commitNumericInput` そのもの(空欄の既定の埋め方・式の評価器・変数表・表示の単位・範囲)なので、
+ * 予告と確定で式を別に読まない(`15*2` もパラメータの式も、確定と同じ値になる)。文脈には確定と同じもの
+ * (`NumericInputPopover` の Enter と同じ `{ ...parameterAnalysis, lengthUnit }`)を渡す。
+ * 欄が評価できない・範囲の外(確定も断る)、2 段目を開く段、ソリッドでない段では null。
+ */
+export function previewSolidCommit(
+  state: NumericInputState,
+  context: NumericInputContext = {},
+): SolidInputCommit | null {
+  const transition = commitNumericInput(state, context);
+  return transition.kind === 'solidCommitted' ? transition.commit : null;
+}
+
+/**
  * 決めた後に続けて聞くこと(§2.9 の「確定した後」)。閉じるなら null。
  *
  * 線分・円弧・点列は 2 段階でひと組なので、前半を決めたら連続描画の入切に関わらず後半へ進む。
@@ -4107,6 +4292,7 @@ export function nextNumericInput(
     case 'pointPattern':
     case 'surfaceShape':
     case 'shellThickness':
+    case 'faceOffsetDistance':
     case 'cutPlane':
       /*
         基本形状5種(FR-429、タスク18)も、面をつなぐ・ロフト(FR-430、FR-410、タスク27)も
@@ -4218,4 +4404,30 @@ export function applyNumericInputKey(
       // 作りかけの要素は履歴に積まない。ツールは選ばれたまま残す(NFR-UX-3)。
       return { kind: 'cancelled' };
   }
+}
+
+/**
+ * 入力欄の「意味」の鍵(EX-14)。道具・段・位置の決め方・欄の式(検証済みの数式と、打ったかどうか)・
+ * つまみ・選択肢・線分の軸・持ち越した 1 段目・文字の入力を含み、焦点の位置は含まない。
+ * 焦点を動かしただけの更新では同じ鍵になり、値・選択肢・つまみ・道具・段を変えると違う鍵になる。
+ * 入力欄の通し番号(`sketchSlice.ts` の `numericInputRevision`)を進めるかどうかの判定に使う。
+ */
+export function numericInputSemanticKey(state: NumericInputState): string {
+  return JSON.stringify({
+    tool: state.toolId,
+    step: state.step,
+    mode: state.mode,
+    fields: state.fields.map((field) => [field.key, field.source, field.typed === true, field.mathValue ?? null]),
+    toggles: state.toggles.map((toggle) => [toggle.key, toggle.value]),
+    choices: state.choices.map((choice) => [choice.key, choice.value]),
+    axisLine: state.axisLine ?? null,
+    carried: state.carriedStage1 === undefined ? null : {
+      fields: state.carriedStage1.fields.map((field) => [field.key, field.source, field.typed === true, field.mathValue ?? null]),
+      choices: state.carriedStage1.choices.map((choice) => [choice.key, choice.value]),
+      axisLine: state.carriedStage1.axisLine ?? null,
+      mode: state.carriedStage1.mode ?? null,
+    },
+    text: state.textValue ?? null,
+    textOrigin: state.textOrigin ?? null,
+  }, (_key: string, value: unknown): unknown => typeof value === 'bigint' ? value.toString() : value);
 }

@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   commitDrag,
+  createDragSolveJob,
   dragRefusalMessageKey,
   dragTargetUv,
   draggableAt,
@@ -495,7 +496,7 @@ describe('commitDrag(離したときの書き戻し)', () => {
     expect([moved.x.source, moved.y.source]).toEqual(['6', '9']);
   });
 
-  it('拘束につられて動いた点は書き戻さない(引っぱった点だけ)', () => {
+  it('commits the moved free endpoint seed without adding a fixed constraint', () => {
     const document = withConstraints(oneLine(), [
       { id: 'h-1', name: '水平1', kind: 'horizontal', target: { kind: 'curve', element: { featureId: 'line-1' } } },
     ]);
@@ -506,9 +507,11 @@ describe('commitDrag(離したときの書き戻し)', () => {
     if (before?.kind !== 'line' || after?.kind !== 'line') {
       throw new Error('線分ではありません');
     }
-    // 始点は水平拘束につられて縦へ動くが、**文書は (0, 0) のまま**。
-    // 開き直せば同じ拘束から同じ形へ解き直る(rules/04「導出できるものは保存しない」)。
-    expect(after.from).toBe(before.from);
+    // Both free numeric seeds retain the chosen translation on recompute.
+    expect(after.from).not.toBe(before.from);
+    if (after.from.mode !== 'absolute') throw new Error('Expected numeric seed');
+    expect(after.from.y.value).toBeCloseTo(6, 8);
+    expect(next.constraints).toBe(document.constraints);
   });
 
   it('解の表にその点が無ければ文書をそのまま返す', () => {
@@ -535,5 +538,41 @@ describe('isDraggable', () => {
     expect(isDraggable(drag)).toBe(true);
     expect(isDraggable(null)).toBe(false);
     expect(isDraggable({ reason: 'fixed' })).toBe(false);
+  });
+});
+
+describe('createDragSolveJob (resumable drag solve)', () => {
+  /** Two lines joined at a coincident corner, one horizontal and one of fixed length 10: a connected nonlinear system. */
+  function corner(): SketchDocument {
+    const twoLines = lineFeature(oneLine(), 'line-2', absoluteCoordinate(10, 0, 0), absoluteCoordinate(10, 8, 0));
+    return withConstraints(twoLines, [
+      { id: 'h-1', name: 'h', kind: 'horizontal', target: { kind: 'curve', element: { featureId: 'line-1' } } },
+      { id: 'c-1', name: 'c', kind: 'coincident', a: atVertex('line-1', 'end'), b: atVertex('line-2', 'start') },
+      { id: 'd-1', name: 'd', kind: 'distance', a: atVertex('line-2', 'start'), b: atVertex('line-2', 'end'),
+        length: num(10) },
+    ]);
+  }
+
+  it('stepping one damping attempt at a time gives exactly the synchronous drag solve', () => {
+    const document = corner();
+    const drag = draggedOf(document, atVertex('line-2', 'end'), [10, 8]);
+    const expected = solveWithDrag(document, drag, [16, 9]);
+    const job = createDragSolveJob(document, drag, [16, 9]);
+    let result = job.step(1);
+    let steps = 1;
+    while (result === null) {
+      result = job.step(1);
+      steps += 1;
+    }
+    expect(steps).toBeGreaterThan(1);
+    expect(result.solution).toEqual(expected.solution);
+    expect(result.outcome).toEqual(expected.outcome);
+    expect(result.resolved).toEqual(expected.resolved);
+    // The connected constraints still hold at the solved state (independent of the solver's own residuals).
+    const start = result.solution.get('line-2:start');
+    const end = result.solution.get('line-2:end');
+    if (start === undefined || end === undefined) throw new Error('line-2 was not solved');
+    expect(Math.hypot(end[0] - start[0], end[1] - start[1])).toBeCloseTo(10, 6);
+    expect(job.step(1)).toBe(result);
   });
 });

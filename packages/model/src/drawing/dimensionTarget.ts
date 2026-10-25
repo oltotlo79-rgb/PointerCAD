@@ -4,7 +4,8 @@ import {
 } from '@pointercad/drawing';
 import { evaluateExpression } from '@pointercad/expression';
 import { analyzeParameters } from '../parameters/parameterTable.js';
-import { rematchSubShapeRef, type SolidBody } from '../kernelBridge.js';
+import { resolveSubShapeReference, type SolidBody } from '../kernelBridge.js';
+import { createSubShapeReference } from '../kernelBridge/createSubShapeReference.js';
 import { applyPlacementToDirection, applyPlacementToPoint, type RigidPlacement } from '../assembly/placementMath.js';
 import type { DrawingProjectionCurve, DrawingSourceResolution } from './resolveDrawing.js';
 import type { ConstructedDrawingView } from './viewConstruction.js';
@@ -42,12 +43,17 @@ export function drawingTargetFromProjection(
     && (instance.componentId ?? null) === source.occurrenceId);
   if (candidates.length !== 1) return null;
   const instance = candidates[0];
-  const edge = instance.body.edges.find((item) => item.index === source.edgeIndex);
-  if (edge === undefined) return null;
+  if (!instance.body.isValid) return null;
+  const edges = instance.body.edges.filter((item) => item.index === source.edgeIndex);
+  if (edges.length !== 1) return null;
+  const edge = edges[0];
+  const ref = instance.body.origins?.state === 'tracked' ? createSubShapeReference(instance.body, 'edge', edge.index)
+    : { bodyFeatureId: instance.body.featureId, index: edge.index, fingerprint: {
+      kind: 'edge' as const, curveKind: edge.curveKind, length: edge.length, position: edge.midpoint, axis: edge.axis, radius: edge.radius,
+    } };
+  if (ref === null) return null;
   return { kind: 'subShape', viewId, sourceRef, ...(instance.componentId === undefined ? {} : { componentId: instance.componentId }),
-    ref: { bodyFeatureId: instance.body.featureId, index: edge.index, fingerprint: {
-      kind: 'edge', curveKind: edge.curveKind, length: edge.length, position: edge.midpoint, axis: edge.axis, radius: edge.radius,
-    } } };
+    ref };
 }
 export interface DimensionResolveContext {
   readonly viewFrames?: ReadonlyMap<string, ConstructedDrawingView>;
@@ -117,7 +123,7 @@ function parallel(a: Vector3, b: Vector3): boolean {
   return first !== null && second !== null && 1 - Math.abs(dot(first, second)) <= GEOMETRY_TOLERANCE;
 }
 
-/** kernelBridgeに既存の指紋照合(しきい値0.6)を使う。同じfeatureIdでも別の部品へ逃がさない。 */
+/** 共通の参照解決で一意な候補だけを使う。同じfeatureIdでも別の部品へ逃がさない。 */
 export function resolveDimensionTarget(
   target: DimensionTarget, document: DrawingDocument, context: DimensionResolveContext,
 ): ResolvedDimensionTarget | null {
@@ -143,8 +149,9 @@ export function resolveDimensionTarget(
     && item.body.featureId === target.ref.bodyFeatureId);
   if (matches.length !== 1) return null;
   const instance = matches[0];
-  const reference = rematchSubShapeRef([instance.body], target.ref);
-  if (reference === null) return null;
+  const resolution = resolveSubShapeReference(instance.body, target.ref);
+  if (resolution.status !== 'matched') return null;
+  const reference = resolution.match.reference;
   const point = (value: Vector3) => applyPlacementToPoint(instance.placement, value);
   const direction = (value: Vector3) => applyPlacementToDirection(instance.placement, value);
   if (reference.fingerprint.kind === 'vertex') {
@@ -190,8 +197,9 @@ export function resolveDrawingAnnotationTarget(target: DimensionTarget, document
     const matches = context.instances.filter((item) => item.sourceRef === target.sourceRef && item.componentId === target.componentId
       && item.body.featureId === target.ref.bodyFeatureId);
     if (basis === null || !Number.isFinite(scale) || scale <= 0 || matches.length !== 1) return null;
-    const instance = matches[0], reference = rematchSubShapeRef([instance.body], target.ref);
-    const face = reference === null ? undefined : instance.body.faces.find((item) => item.index === reference.index);
+    const instance = matches[0], resolution = resolveSubShapeReference(instance.body, target.ref);
+    if (resolution.status !== 'matched') return null;
+    const face = instance.body.faces.find((item) => item.index === resolution.match.reference.index);
     if (face === undefined) return null;
     return drawingModelPointToPaper(applyPlacementToPoint(instance.placement, face.centroid), view, document.sheet.scale, context);
   }

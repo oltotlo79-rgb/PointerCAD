@@ -16,6 +16,8 @@
  * 次の段の係数へ渡す(段階再計算、GR-06。`recomputePart` の注釈)。
  */
 
+import { computeVolume } from '@pointercad/kernel';
+import type { EmbeddedPartMesh } from '../assembly/partLibrary.js';
 import { appearanceOf } from '../appearance/documentAppearance.js';
 import { evaluateMathGeometry } from '../measure/mathGeometry.js';
 import {
@@ -38,10 +40,12 @@ import type {
   SketchProjectionRequestItem,
   SolidBody,
   SolidRecomputeOutcome,
+  SolidRecomputeOptions,
 } from '../kernelBridge.js';
 import type { ConstraintDiagnosis } from '../sketch/constraints/diagnose.js';
 import { createOffsetCache, type OffsetCache } from '../sketch/offsetMath.js';
 import { createProjectionCache, type ProjectionCache } from '../sketch/projectionMath.js';
+import { mapSketchCoordinates } from '../sketch/mapCoordinates.js';
 import { fillOffsets } from '../sketch/recomputeSketch.js';
 import type { ResolvedCurve, ResolvedSketch, SketchError, SketchMesh } from '../sketch/types.js';
 import { projectionBodyFeatureId } from '../sketch/types.js';
@@ -59,6 +63,7 @@ import { applyParameters } from './reevaluatePart.js';
 import { evaluateDocumentMath, hasDocumentMath, type DocumentMathContext } from './evaluateDocumentMath.js';
 import type { ParameterAnalysis } from '../parameters/types.js';
 import { createSubShapeCache, type SubShapeCache } from './subShapeCache.js';
+import { readReferenceBodies, ReferenceMeshScope, type ReferenceBodyReads } from './readReferenceBodies.js';
 import { historyDependencies } from './timelineOrder.js';
 import type { PartDocument } from './types.js';
 
@@ -86,6 +91,11 @@ export interface PartSketchResult {
 }
 
 export interface PartRecomputeResult {
+  /** Actual main-realm backings, never attributed to the Worker. Includes source and owned copies. */
+  readonly mainMeshBacking?: { readonly buffers: readonly ArrayBuffer[]; readonly retainedBackingBytes: number; readonly limitBytes: number };
+  /** Actual current upstream bodies, separate from displayed final bodies and never saved. */
+  readonly referenceBodies?: readonly SolidBody[];
+  readonly referenceMeshScope?: ReferenceMeshScope;
   /** Only quantities read from this completed generation; never stored as replacement formulae. */
   readonly mathGeometry?: readonly import('../measure/mathGeometryTypes.js').MathGeometryOutcome[];
   /** Current-generation scalar mathematics, for the parameter view; absent until all formulas are verified. */
@@ -126,9 +136,14 @@ export interface PartRecomputeResult {
    * 入らないので、画面は前に受け取った量を持ち続ける(量は計算部の事実で、文書の事実ではない)。
    */
   readonly kernelMemory?: SolidRecomputeOutcome['kernelMemory'];
+  /** Only this document's final dispatch receipt; never a sum of intermediate requests. */
+  readonly meshJsAccounting?: NonNullable<SolidRecomputeOutcome['meshJsAccounting']>
+    & { readonly documentId: string };
 }
 
 export interface PartRecomputeOptions {
+  /** Internal scope; recomputePart always replaces caller-supplied values with its own owner. */
+  readonly referenceMeshScope?: ReferenceMeshScope;
   /** Typed geometry references. Missing targets remain unresolved, never replaced with saved coordinates. */
   readonly mathGeometry?: readonly import('../measure/mathGeometryTypes.js').MathGeometryRequest[];
   /** Required for new mathematical definitions; absent evaluators must never use cached coordinates. */
@@ -138,6 +153,8 @@ export interface PartRecomputeOptions {
   readonly onResolved?: (resolved: ResolvedPart) => void;
   /** 文書/session 内で安定した部品の識別子。橋へそのまま渡す。 */
   readonly partId?: string;
+  /** Explicit display-only opt-in. Production callers continue to omit this. */
+  readonly localMesh?: SolidRecomputeOptions['localMesh'];
   /** 依頼ごとに 1 つ増やす番号。省くと 0。 */
   readonly generation?: number;
   readonly onProgress?: PartProgressCallback;
@@ -179,6 +196,8 @@ export interface PartRecomputeOptions {
    * 表を組み立てるのは `packages/io`(タスク21)、ここはそのまま `resolvePart` へ渡すだけ。
    */
   readonly importedShapes?: ImportedShapeBytes;
+  /** Captured document attachments; never substitute saved volume for triangle geometry. */
+  readonly importedMeshes?: ReadonlyMap<string, EmbeddedPartMesh>;
 }
 
 /** 面を作れなかったとき(P1 の recomputeSketch と同じ文言に揃える)。 */
@@ -199,13 +218,13 @@ const MISSING_SUB_SHAPE_SUFFIX = '形が大きく変わったため、選び直�
  * 立体を作れなかったとき。段ごとの理由はカーネルが利用者向けの日本語で返すので、
  * そのまま見せる(docs/報告記録.md 2026-09-02 22:10 の②「橋渡しは失敗理由を捨てない」)。
  * `missingSubShape` かどうかは文言で見分ける(P3 タスク17。§2.2.4「選び直しはカーネルの
- * 中で行う」ため、kernel の SolidStepFailure は理由の区別を code では持たない)。
+ * 中で行う」ため)。面による切断の詳細な理由コードは reason に保持する。
  */
-function solidKernelFailed(featureId: string, message: string): PartError {
+function solidKernelFailed(featureId: string, message: string, reason?: PartError['reason']): PartError {
   const code: PartErrorCode = message.includes(MISSING_SUB_SHAPE_SUFFIX)
     ? 'missingSubShape'
     : 'kernelFailed';
-  return { featureId, code, message };
+  return { featureId, code, message, ...(reason === undefined ? {} : { reason }) };
 }
 
 /**
@@ -301,7 +320,7 @@ async function callSolids(
   options: PartRecomputeOptions,
   appearance: readonly AppearanceFaceRequest[],
 ): Promise<SolidCallOutcome> {
-  if (resolved.steps.length === 0) {
+  if (resolved.steps.length === 0 && options.localMesh === undefined) {
     return { ok: true, outcome: NO_SOLIDS };
   }
   try {
@@ -315,6 +334,7 @@ async function callSolids(
         appearance,
         // 既定は測らない(NFR-PF-2〜3。§0.a-0.67「穴 20 個の性能の余裕を削らない」)。
         measureAreas: options.measureAreas ?? false,
+        ...(options.localMesh === undefined ? {} : { localMesh: options.localMesh }),
       }),
     };
   } catch (error) {
@@ -446,7 +466,7 @@ async function fillProjections(
 /** 履歴の依存に、帯に出ない投影要素とその利用先を補う。公開の解決APIは変えない。 */
 function recomputeDependencies(document: PartDocument): ReadonlyMap<string, readonly string[]> {
   const active = { ...document, solids: document.solids.filter((feature) => !feature.suppressed) };
-  const graph = new Map(historyDependencies(active));
+  const graph = new Map(historyDependencies(active, { includeSelf: true }));
   const projectionsBySketch = new Map<string, string[]>();
   for (const sketch of active.sketches) {
     const ids: string[] = [];
@@ -650,23 +670,122 @@ function cancelledResult(
  * - 段ごとに取消を確かめ、取り消されたら途中の値も `onResolved` も残さない。`onResolved` は最後の段で
  *   1 回だけ呼ぶ。途中の段の失敗の一覧と形は捨て、結果は最後の段だけから作る。
  */
+/** Main-realm attachment and owned display copies, separate from the Worker receipt. */
+interface CapturedImportedMeshes {
+  readonly meshes: ReadonlyMap<string, EmbeddedPartMesh>;
+  readonly failures: ReadonlyMap<string, string>;
+  readonly backing: NonNullable<PartRecomputeResult['mainMeshBacking']>;
+}
+
+function captureImportedMeshes(document: PartDocument, options: PartRecomputeOptions): CapturedImportedMeshes {
+  const meshes = new Map<string, EmbeddedPartMesh>();
+  const failures = new Map<string, string>();
+  const buffers = new Set<ArrayBuffer>();
+  let retainedBackingBytes = 0;
+  const limit = options.localMesh?.maximumLiveMeshBytes ?? 512 * 1024 * 1024;
+  for (const feature of document.solids) {
+    if (feature.kind !== 'importedMesh' || feature.suppressed || meshes.has(feature.meshRef)
+      || failures.has(feature.meshRef)) continue;
+    const source = options.importedMeshes?.get(feature.meshRef);
+    const fail = (message: string): void => { failures.set(feature.meshRef, message); };
+    if (source === undefined) { fail('Imported triangle attachment is missing'); continue; }
+    const { positions, normals, indices } = source;
+    if (!(positions instanceof Float32Array) || !(normals instanceof Float32Array)
+      || !(indices instanceof Uint32Array) || positions.length === 0 || positions.length % 3 !== 0
+      || normals.length !== positions.length || indices.length === 0 || indices.length % 3 !== 0
+      || !positions.every(Number.isFinite) || !normals.every(Number.isFinite)
+      || !indices.every(index => index < positions.length / 3)) {
+      fail('Imported triangle attachment is invalid'); continue;
+    }
+    const inputBuffers = new Set<ArrayBuffer>();
+    let invalidBacking = false;
+    for (const array of [positions, normals, indices]) {
+      if (!(array.buffer instanceof ArrayBuffer)
+        || ('resizable' in array.buffer && array.buffer.resizable === true)) invalidBacking = true;
+      else inputBuffers.add(array.buffer);
+    }
+    if (invalidBacking) { fail('Imported triangle backing is not fixed'); continue; }
+    const sourceBytes = [...inputBuffers].reduce((sum, buffer) => sum + (buffers.has(buffer) ? 0 : buffer.byteLength), 0);
+    const copyBytes = positions.byteLength + normals.byteLength + indices.byteLength;
+    const next = retainedBackingBytes + sourceBytes + copyBytes;
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 512 * 1024 * 1024
+      || !Number.isSafeInteger(next) || next >= limit) {
+      fail('Imported triangle backing exceeds the display budget'); continue;
+    }
+    // Capture all values before the first await. Replacing or editing attachments cannot alter this result.
+    const owned = { positions: positions.slice(), normals: normals.slice(), indices: indices.slice() };
+    for (const buffer of inputBuffers) buffers.add(buffer);
+    buffers.add(owned.positions.buffer); buffers.add(owned.normals.buffer); buffers.add(owned.indices.buffer);
+    retainedBackingBytes = next;
+    meshes.set(feature.meshRef, owned);
+  }
+  return { meshes, failures, backing: Object.freeze({ buffers: Object.freeze([...buffers]), retainedBackingBytes, limitBytes: limit }) };
+}
+
+function importedMeshBodies(resolved: ResolvedPart, captured: CapturedImportedMeshes,
+  options: PartRecomputeOptions, errors: PartRecomputeError[]): readonly SolidBody[] {
+  const bodies: SolidBody[] = [];
+  for (const entry of resolved.meshBodies) {
+    if (!entry.visible) continue;
+    const mesh = captured.meshes.get(entry.meshRef);
+    const failure = captured.failures.get(entry.meshRef);
+    if (mesh === undefined || failure !== undefined || mesh.indices.length / 3 !== entry.triangleCount) {
+      errors.push(solidKernelFailed(entry.featureId, failure ?? 'Imported triangle count does not match its attachment'));
+      continue;
+    }
+    const volume = computeVolume(mesh.positions, mesh.indices);
+    if (!Number.isFinite(volume)) {
+      errors.push(solidKernelFailed(entry.featureId, 'Imported triangle volume is not finite')); continue;
+    }
+    // Float32 source values remain exact: origin zero introduces no conversion error.
+    bodies.push({ featureId: entry.featureId, mesh: { ...mesh, edgePositions: new Float32Array(0),
+      triangleCount: mesh.indices.length / 3 }, volume, bodyKind: 'mesh', isValid: true,
+      faces: [], edges: [], vertices: [], threadMarks: [],
+      ...(options.localMesh === undefined ? {} : { coordinateFrame: { space: 'local', origin: [0, 0, 0],
+        maximumFloat32ErrorMm: options.localMesh.maximumFloat32ErrorMm,
+        maximumLiveMeshBytes: options.localMesh.maximumLiveMeshBytes } }) });
+  }
+  return bodies;
+}
+
 export async function recomputePart(
   document: PartDocument,
   bridge: KernelBridge,
   options: PartRecomputeOptions = {},
 ): Promise<PartRecomputeResult> {
+  if (options.shouldCancel?.()) return cancelledResult(options.generation ?? 0);
+  const capturedMeshes = captureImportedMeshes(document, options);
+  const scope = new ReferenceMeshScope(document, Object.freeze({ partId: options.partId ?? 'part:current',
+    generation: options.generation ?? 0, maximumLiveMeshBytes: (options.localMesh?.maximumLiveMeshBytes ?? 512 * 1024 * 1024) - capturedMeshes.backing.retainedBackingBytes,
+    ...(options.localMesh === undefined ? {} : { localMesh: Object.freeze({ ...options.localMesh,
+      maximumLiveMeshBytes: options.localMesh.maximumLiveMeshBytes - capturedMeshes.backing.retainedBackingBytes }) }) }), bridge);
+  let handedOff = false;
+  try {
+    const run = async (): Promise<PartRecomputeResult> => {
   const generation = options.generation ?? 0;
+  const requestOptions: PartRecomputeOptions = options.localMesh === undefined ? { ...options, referenceMeshScope: scope } : {
+    ...options, referenceMeshScope: scope, partId: options.partId ?? 'part:current', localMesh: Object.freeze({
+      maximumFloat32ErrorMm: options.localMesh.maximumFloat32ErrorMm,
+      maximumLiveMeshBytes: options.localMesh.maximumLiveMeshBytes - capturedMeshes.backing.retainedBackingBytes,
+    }),
+  };
   if (options.shouldCancel?.()) {
     return cancelledResult(generation);
   }
   // 図形の測定値を使う係数がある文書だけ、途中の段で測った値を最後の段の数式へ渡す(GR-06)。
   const plan = planMathGeometryStages(document);
-  const stage = plan === null ? undefined : await measureStages(document, bridge, options, generation, plan);
+  const stage = plan === null ? undefined : await measureStages(document, bridge, requestOptions, generation, plan);
   if (stage === null) {
     return cancelledResult(generation);
   }
-  const build = await buildShapes(document, bridge, options, generation, stage);
-  return isShapeBuild(build) ? finishRecompute(document, bridge, options, generation, build) : build;
+  const build = await buildShapes(document, bridge, requestOptions, generation, stage);
+  return isShapeBuild(build) ? finishRecompute(document, bridge, requestOptions, generation, build, capturedMeshes) : build;
+    };
+    const result = await run();
+    if (!result.cancelled && result.referenceMeshScope === scope && scope.current) handedOff = true;
+    return result;
+  } finally { if (!handedOff) await scope.close(); }
+
 }
 
 /** `buildShapes` が形を作り終えたときの中身。最後の段では `finishRecompute` が結果にまとめる。 */
@@ -678,6 +797,7 @@ interface ShapeBuild {
   readonly offsetErrors: readonly SketchError[];
   readonly projectionErrors: ReadonlyMap<string, SketchError>;
   readonly dependencyErrors: ReadonlyMap<string, PartError>;
+  readonly referenceBodies: readonly SolidBody[];
 }
 
 /** 形を作る前に結果が決まった(取消・数式の前段の失敗)のではなく、形を作り終えたか。 */
@@ -766,7 +886,7 @@ async function measureStages(
       if (!build.solid.ok) {
         return giveUp(build.solid.message);
       }
-      shapes = { build, bodies: build.solid.outcome.bodies };
+      shapes = { build, bodies: build.referenceBodies };
       valueSinceBuild = false;
     }
     if (options.shouldCancel?.()) {
@@ -835,12 +955,22 @@ async function buildShapes(
   const offsets = options.offsets ?? createOffsetCache();
   const projections = options.projections ?? createProjectionCache();
   const subShapes = options.subShapes ?? createSubShapeCache();
+  const referenceReads: ReferenceBodyReads = options.referenceMeshScope?.reads ?? new Map<string, Parameters<ReferenceBodyReads['set']>[1]>();
   /** この再計算の中で埋まった投影・交差の曲線(フィーチャーの id で引く)。 */
   const projectedByFeature = new Map<string, readonly ResolvedCurve[]>();
   const askedSubShapes = new Map<
     string,
     { readonly reference: SubShapeRef; readonly value: string }
   >();
+  const schedule = dependencySchedule(recomputeDependencies(evaluated));
+  const blockedReferenceSources = new Set([...schedule.cyclicIds, ...schedule.downstream(schedule.cyclicIds)]);
+  const currentSubShape = (reference: SubShapeRef) => blockedReferenceSources.has(reference.bodyFeatureId)
+    ? null : subShapes.resolve(reference);
+  const resolveSubShape = (reference: SubShapeRef) => {
+    const value = currentSubShape(reference);
+    askedSubShapes.set(fingerprintKeyText(reference), { reference, value: JSON.stringify(value) });
+    return value;
+  };
   const resolveOptions: ResolvePartOptions = {
     invalidInputs,
     offsetCurves: (key) => offsets.get(key),
@@ -848,11 +978,7 @@ async function buildShapes(
     functionCurves: featureId => functions.curves.get(featureId) ?? null,
     functionSurfaces: featureId => surfaces.plans.get(featureId) ?? null,
     functionPoint: functionPoints.resolve,
-    subShape: (reference) => {
-      const value = subShapes.resolve(reference);
-      askedSubShapes.set(fingerprintKeyText(reference), { reference, value: JSON.stringify(value) });
-      return value;
-    },
+    subShape: resolveSubShape,
     // 読み込んだ形のバイト列(FR-802、P6 §2.8)。渡されなければ resolvePart が空として扱う。
     importedShapes: options.importedShapes,
   };
@@ -862,17 +988,26 @@ async function buildShapes(
   const dependencyErrors = new Map<string, PartError>();
   const attemptedProjections = new Set<string>();
   const settled = new Set<string>();
-  const schedule = dependencySchedule(recomputeDependencies(evaluated));
   // 外観の割り当ては解決の結果に影響しないので、巡ごとに作り直さず 1 回だけ集める。
   const appearance = toAppearanceRequests(evaluated);
   let resolved: ResolvedPart;
   let solid: SolidCallOutcome;
+  let currentReferenceBodies: readonly SolidBody[] = [];
+  // 始点などの失敗で後続の座標が未評価でも、同じ巡で全明示参照を現在bodyへ照合する。
+  const coordinateReferences: SubShapeRef[] = [];
+  for (const sketch of evaluated.sketches) for (const feature of sketch.features) {
+    mapSketchCoordinates(feature, input => {
+      if (input.mode !== 'absolute' && input.base.kind === 'subShape') coordinateReferences.push(input.base.ref);
+      return input;
+    });
+  }
   for (let pass = 0; ; pass += 1) {
     if (options.shouldCancel?.()) {
       return cancelledResult(generation);
     }
     offsetErrors.length = 0;
     askedSubShapes.clear();
+    for (const reference of coordinateReferences) resolveSubShape(reference);
     resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
     if (options.shouldCancel?.()) {
       return cancelledResult(generation);
@@ -882,16 +1017,31 @@ async function buildShapes(
       return cancelledResult(generation, solid.ok ? solid.outcome.kernelMemory : undefined);
     }
     if (!solid.ok) {
+      // 通信全体の失敗でも、保存指紋で暫定解決した作図を確定公開しない。
+      // 失敗した全段の診断を保持し、形状参照を無効化して純な解決だけを行う。
+      for (const step of resolved.steps) dependencyErrors.set(step.featureId, solidKernelFailed(step.featureId, solid.message));
+      projectedByFeature.clear();
+      subShapes.refresh([]);
+      offsetErrors.length = 0;
+      resolved = await resolveWithOffsets(evaluated, bridge, offsets, resolveOptions, offsetErrors);
+      if (options.shouldCancel?.()) return cancelledResult(generation);
       break;
     }
 
     // ①いまの形で面・辺・頂点を選び直す(上流追従)。②投影・交差の曲線を埋める。
     const countBefore = settled.size;
     const changedSources = new Set<string>();
-    if (subShapes.refresh(solid.outcome.bodies)) {
+    const referenceBodies = await readReferenceBodies({ steps: resolved.steps, bodies: solid.outcome.bodies,
+      featureIds: [...askedSubShapes.values()].map(asked => asked.reference.bodyFeatureId),
+      failedIds: new Set([...solid.outcome.failures.map(failure => failure.featureId),
+        ...resolved.errors.map(error => error.featureId)]), bridge, reads: referenceReads, scope: options.referenceMeshScope, features: evaluated.solids,
+      shouldCancel: () => options.shouldCancel?.() ?? false });
+    if (referenceBodies.cancelled) return cancelledResult(generation, solid.outcome.kernelMemory);
+    currentReferenceBodies = referenceBodies.bodies;
+    if (subShapes.refresh(referenceBodies.bodies)) {
       const bodyKeys = new Map(resolved.steps.map((step) => [step.featureId, step.key]));
       for (const [key, asked] of askedSubShapes) {
-        if (asked.value !== JSON.stringify(subShapes.resolve(asked.reference))) {
+        if (asked.value !== JSON.stringify(currentSubShape(asked.reference))) {
           const bodyId = asked.reference.bodyFeatureId;
           changedSources.add(bodyId);
           settled.add(JSON.stringify(['subShape', key, bodyKeys.get(bodyId)]));
@@ -932,7 +1082,9 @@ async function buildShapes(
     if (
       (projected || changedSources.size > 0) &&
       settled.size > countBefore &&
-      pass + 1 < schedule.maxPasses
+      // 全立体が削除され依存グラフが空でも、暫定の保存位置を null の判定へ
+      // 差し替える解決を1回は行う。現在形状の再検証前のスケッチを公開しない。
+      pass + 1 < Math.max(2, schedule.maxPasses)
     ) {
       continue;
     }
@@ -966,7 +1118,8 @@ async function buildShapes(
     }
     break;
   }
-  return { parameterAnalysis, parameterErrors, resolved, solid, offsetErrors, projectionErrors, dependencyErrors };
+  return { parameterAnalysis, parameterErrors, resolved, solid, offsetErrors, projectionErrors, dependencyErrors,
+    referenceBodies: currentReferenceBodies };
 }
 
 /**
@@ -979,6 +1132,7 @@ async function finishRecompute(
   options: PartRecomputeOptions,
   generation: number,
   build: ShapeBuild,
+  capturedMeshes: CapturedImportedMeshes,
 ): Promise<PartRecomputeResult> {
   const { parameterAnalysis, parameterErrors, resolved, solid, offsetErrors, projectionErrors, dependencyErrors } = build;
   // 上流(スケッチ)から下流(ソリッド)の順に失敗を並べる。直す順序がそのまま読めるように。
@@ -1008,7 +1162,7 @@ async function finishRecompute(
   if (!solid.ok) {
     options.onResolved?.(resolved);
     for (const step of resolved.steps) {
-      errors.push(solidKernelFailed(step.featureId, solid.message));
+      if (!dependencyErrors.has(step.featureId)) errors.push(solidKernelFailed(step.featureId, solid.message));
     }
     // 呼び出しごと失敗したときは照合も行えていない。段の失敗の警告に
     // 「色を付けた面が見つかりません」を重ねないよう空で返す(FR-504)。
@@ -1025,20 +1179,28 @@ async function finishRecompute(
   }
 
   for (const failure of solid.outcome.failures) {
-    errors.push(solidKernelFailed(failure.featureId, failure.message));
+    errors.push(solidKernelFailed(failure.featureId, failure.message, failure.code));
   }
   const geometryRequests = document.mathGeometry === undefined ? options.mathGeometry
     : [...document.mathGeometry, ...(options.mathGeometry ?? [])];
   const mathGeometry = geometryRequests === undefined ? undefined
     : await evaluateMathGeometry(geometryRequests, { documentId: document.id, generation,
-      resolved, bodies: solid.outcome.bodies, failedIds: new Set(errors.map(error => error.featureId)), bridge,
+      resolved, bodies: build.referenceBodies, failedIds: new Set(errors.map(error => error.featureId)), bridge,
       shouldCancel: () => options.shouldCancel?.() ?? false });
   if (mathGeometry === null || options.shouldCancel?.()) return cancelledResult(generation);
+  const importedBodies = importedMeshBodies(resolved, capturedMeshes, options, errors);
+  if (options.shouldCancel?.()) return cancelledResult(generation);
   options.onResolved?.(resolved);
+  // NFR-RE-1: independent successful bodies keep their certified display receipt alongside errors.
+  const meshJsAccounting = solid.outcome.meshJsAccounting;
+  const bodies = importedBodies.length === 0 ? solid.outcome.bodies : [...solid.outcome.bodies, ...importedBodies];
   return {
     ...(mathGeometry === undefined ? {} : { mathGeometry }),
     sketches,
-    bodies: solid.outcome.bodies,
+    bodies,
+    ...(capturedMeshes.backing.retainedBackingBytes === 0 ? {} : { mainMeshBacking: capturedMeshes.backing }),
+    referenceBodies: build.referenceBodies.filter(body => body.isValid && !failedIdsOf(build).has(body.featureId)),
+    ...(options.referenceMeshScope === undefined ? {} : { referenceMeshScope: options.referenceMeshScope }),
     ...(resolved.sheetMetalBodies === undefined ? {} : { sheetMetalBodies: new Map(solid.outcome.bodies.flatMap((body) => {
       const sheet = resolved.sheetMetalBodies?.get(body.featureId);
       return sheet === undefined ? [] : [[body.featureId, sheet] as const];
@@ -1050,5 +1212,12 @@ async function finishRecompute(
     appearanceMatches: solid.outcome.appearanceMatches ?? [],
     ...(parameterAnalysis === undefined ? {} : { parameterAnalysis }),
     ...(solid.outcome.kernelMemory === undefined ? {} : { kernelMemory: solid.outcome.kernelMemory }),
+    ...(meshJsAccounting?.reading.status !== 'known' || meshJsAccounting.partId !== (options.partId ?? 'part:current')
+      || meshJsAccounting.generation !== generation
+      || (errors.length !== 0 && (meshJsAccounting.final?.status !== 'known' || bodies.length === 0
+        || bodies.some(body => !body.isValid || errors.some(error => error.featureId === body.featureId))))
+      ? {} : { meshJsAccounting: Object.freeze({
+      ...meshJsAccounting, documentId: document.id,
+    }) }),
   };
 }

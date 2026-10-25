@@ -1,3 +1,4 @@
+import type { PatternPointSlots } from './patternPointSlots.js';
 import type { UnresolvedMathProblem } from './unresolvedMathProblems.js';
 import type { FeatureFolder } from '../history/featureFolders.js';
 import type { FeatureNote } from '../history/featureNotes.js';
@@ -18,6 +19,7 @@ import type { FeatureNote } from '../history/featureNotes.js';
  */
 
 import type { SolidFeatureBase } from './featureIdentity.js';
+import type { FaceOffsetFeature } from './directFaceEdit.js';
 import type { FunctionSurfaceFeature } from '../functionGeometry/functionSurfaceFeature.js';
 import type { SheetBaseFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetUnfoldDefinition } from '../sheetMetal/types.js';
 import type { SketchFaceRef, SketchCurveRef, SketchLineRef, SketchPointRef } from './featureReferences.js';
@@ -214,6 +216,8 @@ export type SolidFeatureKind =
   */
   /** 抜き勾配(FR-417)。中立面を基準に選んだ面を傾ける。対象を消費する。 */
   | 'draft'
+  /** 平らな面の移動(EX-18 の限られた一段、directFaceEdit.ts)。対象を消費する。 */
+  | 'faceOffset'
   /** ミラー(FR-419)。鏡像を 1 つ作る。**対象を消費しない**(§0.a-0.36)。 */
   | 'mirror'
   /** 移動/回転(FR-424)。剛体変換した立体を作る。対象を消費する(§0.a-0.41)。 */
@@ -244,6 +248,7 @@ export type SolidFeatureKind =
    * 2 つのボディを作る形にはしない。
    */
   | 'cut'
+  | 'surfaceCut'
   /**
    * 読み込んだ形(ベースボディ。FR-802、P6 計画書 §2.8、§0.a-0.9)。STEP から入った
    * B-rep をそのまま持つ。履歴を持たず、対象も取らない「作る」フィーチャーで、
@@ -279,7 +284,14 @@ export type ExtrudeEnd =
   | { readonly kind: 'distance' }
   | { readonly kind: 'symmetric' }
   | { readonly kind: 'toFace'; readonly face: SubShapeRef }
-  | { readonly kind: 'toNext' };
+  | { readonly kind: 'toNext' }
+  /**
+   * EX04 の輪郭による貫通切断だけが書く終端: `targetFeatureId` の立体を断面の両側へ必ず貫く。
+   * 長さは再計算のたびにカーネルが対象の厳密な境界箱から決める(`distance` は使わない。`toFace` と
+   * 同じく欄は残る)ので、上流で対象が大きくなっても途中で止まらない。対象は**消費しない**。
+   * 一般の押し出しの選択肢には出さない。
+   */
+  | { readonly kind: 'throughTarget'; readonly targetFeatureId: string };
 
 /**
  * 薄板押し出し(FR-416、§0.a-0.46)の厚みの向き。
@@ -364,6 +376,8 @@ export interface RevolveFeature extends SolidFeatureBase {
 export interface SewFeature extends SolidFeatureBase {
   readonly kind: 'sew';
   readonly faces: readonly SketchFaceRef[];
+  /** 既存の面を縫う場合の元参照。faces は空とし、両入力を混在させない。 */
+  readonly surfaceFaces?: readonly SubShapeRef[];
   /** つなぎ目とみなす許容量(mm)。既定 DEFAULT_SEW_TOLERANCE_MM。 */
   readonly tolerance: ExpressionValue;
 }
@@ -381,6 +395,26 @@ export interface BooleanFeature extends SolidFeatureBase {
   readonly targetFeatureId: string;
   /** 相手のボディを作ったフィーチャーの id。 */
   readonly toolFeatureId: string;
+  /**
+   * 「何も削れない差」を断る(EX04 の輪郭による貫通切断だけが立てる)。**true だけを書き、既定は欄なし**
+   * (従来のブーリアンはすべて欄を持たず、振る舞い・鍵・保存は以前と 1 文字も変わらない)。
+   * 立てた差は、対象と相手の共通部分に立体が無ければ理由つきで失敗し、直前の正しい形を残す。
+   * 型も true だけにして、保存の読み込みが false を壊れた欄として断ることと食い違わせない。
+   */
+  readonly requireRemoval?: true;
+  /**
+   * 閉じた輪郭の切断(EX04、`requireRemoval` を立てた差・積)の「反対側も残す」で自動追加された
+   * 2 つ目のとき、1 つ目の id(EX-04 W3)。**欄が無ければ単独**(従来のブーリアンと保存はすべてこれ)。
+   *
+   * 残す側は `operation` で表す: 差 = 輪郭の外側を残す(既定。従来の「内側を差し引く」)、
+   * 積 = 輪郭の内側を残す。両方を残すときは差と積の 2 つを積み、2 つ目がこの欄で 1 つ目を指す
+   * (平面の切断の `CutFeature.pairedWith` と同じく「1 フィーチャー = 最大 1 ボディ」のまま)。
+   *
+   * **形には影響しない**(鍵に混ぜない)。効くのは消費の数え方だけで、対で結ばれた 2 つは
+   * 対象と相手を **1 度だけ**消費したものとして扱う。相手が文書から消えた・抑制されたときは、
+   * 残ったほうが単独の切断として振る舞う(**文書は書き換えない**)。
+   */
+  readonly pairedWith?: string;
 }
 
 /**
@@ -441,6 +475,29 @@ export interface HoleFeature extends SolidFeatureBase {
    * §0.a-0.10)。同じ面なら常に同じ向きになる(決定性)。
    */
   readonly tiltAzimuth: ExpressionValue;
+  /**
+   * 円筒の側面の穴(EX05)。**省略は今までどおりの平面の穴**(古い文書はこの欄を持たない)。
+   * 入れたときは `face` は円筒の面、`centers` は空、傾きは 0、入口は `plain` でなければ断る
+   * (曲面の上の傾き・ざぐり・皿もみの意味をまだ扱わないため。黙って平面の穴にしない)。
+   */
+  readonly cylindrical?: CylindricalHolePlacement;
+}
+
+/**
+ * 円筒の側面の穴の位置 1 つ(EX05)。どちらも式で書ける(FR-202)。意味の正本は kernel の
+ * `CylindricalHoleLocation`(`packages/kernel/src/types.ts`)で、ここでは単位だけが違う。
+ * - `height`(mm): 円筒の面の軸に沿って、面の下側の境界から測る。
+ * - `angle`(度): 軸のまわり。0 は円筒の面の基準の向き、正は軸の向きを親指にした右手の回り。
+ */
+export interface CylindricalHoleLocationValue {
+  readonly height: ExpressionValue;
+  readonly angle: ExpressionValue;
+}
+
+/** 円筒の側面の穴(EX05)。位置ごとに別の放射方向へ掘る。 */
+export interface CylindricalHolePlacement {
+  readonly kind: 'cylinder-face';
+  readonly locations: readonly CylindricalHoleLocationValue[];
 }
 
 /** ねじの3D表示(FR-406)。既定は簡略表示で、実らせんはフィーチャーごとのつまみ(§0.a-0.16)。 */
@@ -471,6 +528,11 @@ export interface ThreadHoleFeature extends SolidFeatureBase {
   readonly representation: ThreadRepresentation;
   readonly tiltAngle: ExpressionValue;
   readonly tiltAzimuth: ExpressionValue;
+  /**
+   * 円筒の側面のねじ穴(EX05)。**省略は今までどおりの平面のねじ穴**(古い文書はこの欄を持たない)。
+   * 意味と断り方は穴の `HoleFeature.cylindrical` と同じ(`centers` は空、傾きは 0、入口は皿もみでない)。
+   */
+  readonly cylindrical?: CylindricalHolePlacement;
 }
 
 /**
@@ -571,7 +633,7 @@ export type PatternPlacement =
    * かどうかは解決(タスク46)が決める(直線・円形が「もとを含めた総数」なのと違い、
    * 点集合は「並べたい場所を全部書く」ものなので、点の一覧がそのまま置き場所になる)。
    */
-  | { readonly kind: 'points'; readonly points: readonly PointReference[] };
+  | PatternPointSlots;
 
 /**
  * パターン(FR-411、FR-412)。もとの加工フィーチャー(穴・ねじ穴に限る、§0.a-0.20)の
@@ -889,6 +951,25 @@ export interface ScaleFeature extends SolidFeatureBase {
   readonly factor: ScaleFactor;
 }
 
+/** Authored steel bend inputs. No resolved geometry, mesh or B-rep is stored here. */
+export interface SteelBendFeatureInput {
+  /** Stable ID of the owning (outer) sweep, in this part document. */
+  readonly id: string;
+  /** Bend recipe revision, distinct from the catalog's section generator revision. */
+  readonly generatorRevision: string;
+  /** Exact catalog row identity; never inferred from a legacy sweep. */
+  readonly productKey: string;
+  readonly stockSource: import('../assembly/resolveAssembly.js').StandardPartSource;
+  readonly radiusConvention: 'inside' | 'outside';
+  readonly legDimension: 'tangent' | 'inside' | 'outside';
+  readonly radius: ExpressionValue;
+  readonly angleDegrees: ExpressionValue;
+  /** Absence is the original default direction; explicit zero is preserved. */
+  readonly directionDegrees?: ExpressionValue;
+  readonly firstLeg: ExpressionValue;
+  readonly secondLeg: ExpressionValue;
+}
+
 /**
  * スイープ(FR-409、§0.a-0.43、§0.a-0.76)。断面を経路に沿って掃く。
  *
@@ -898,6 +979,9 @@ export interface ScaleFeature extends SolidFeatureBase {
  */
 export interface SweepFeature extends SolidFeatureBase {
   readonly kind: 'sweep';
+  /** Original bend inputs, only on the outer sweep. Absence means no original bend input.
+   * Presence alone does not prove that the sketches still match; use steelBendInputState. */
+  readonly steelBend?: SteelBendFeatureInput;
   /** 掃く断面(閉じた輪郭 1 枚)。 */
   readonly profile: SketchFaceRef;
   /** 経路。並んだ順につながっていること。 */
@@ -1095,6 +1179,26 @@ export interface ShellFeature extends SolidFeatureBase {
   readonly outward: boolean;
 }
 
+/** Typed kernel refusal facts retained for callers without parsing translated messages. */
+export type SurfaceCutFailureReason = 'non-finite-input' | 'invalid-blade' | 'non-planar-profile'
+  | 'self-intersection' | 'no-intersection' | 'touch-only' | 'incomplete-cut' | 'ambiguous-side'
+  | 'invalid-target' | 'boolean-failed' | 'volume-mismatch';
+
+/** A blade is borrowed; only the target body is consumed. Store definitions, never evaluated geometry. */
+export type SurfaceCutBlade =
+  | { readonly kind: 'plane'; readonly plane: PlaneSpec }
+  | { readonly kind: 'extrusion'; readonly profile: SketchCurveRef }
+  | { readonly kind: 'surface'; readonly surfaceFeatureId: string };
+
+/** One side per feature. Opposite sides may form one pair consuming the same target once. */
+export interface SurfaceCutFeature extends SolidFeatureBase {
+  readonly kind: 'surfaceCut';
+  readonly targetFeatureId: string;
+  readonly blade: SurfaceCutBlade;
+  readonly keep: 'positive' | 'negative';
+  readonly pairedWith: string | null;
+}
+
 /**
  * 平面による切断(FR-432、§0.a-0.56〜0.60、P5 計画書 §2.9b.2)。
  *
@@ -1258,6 +1362,8 @@ export type SolidFeature =
   | LoftFeature
   // P5 の Should 群 9 種(§2.11、タスク43)。
   | DraftFeature
+  // 平らな面の移動(EX-18 の限られた一段)。保存形は directFaceEdit.ts が持つ。
+  | FaceOffsetFeature
   | MirrorFeature
   | TransformFeature
   | ScaleFeature
@@ -1271,6 +1377,7 @@ export type SolidFeature =
   | ShellFeature
   // 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。
   | CutFeature
+  | SurfaceCutFeature
   // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。
   | ImportedSolidFeature
   | ImportedMeshFeature;
@@ -1482,6 +1589,8 @@ export interface SketchCanvas {
    * (§2.14 とタスク39 の検証表「不透明度 0.5 → 材質の `opacity` が 0.5」)。
    */
   readonly opacity: ExpressionValue;
+  /** Source image's normalized TL/TR/BR/BL corners; homography is derived. */
+  readonly rectification?: import('../sketch/canvasHomography.js').CanvasRectification;
   /** 画面に出すか(FR-332 の「入切」)。false でも文書からは消えない。 */
   readonly visible: boolean;
 }
@@ -1491,6 +1600,12 @@ export interface SketchCanvas {
  * (FR-505、FR-801)。変更のたびに新しい配列を作る(不変)。
  */
 export interface PartDocument {
+  /** Optional versioned user inputs; no solver results or derived CAD node positions. */
+  readonly beamAnalysisInputs?: import('../analysis/beamInputs.js').BeamAnalysisInputs;
+  /** Explicit purchased steel provenance; absent in legacy/non-steel documents. Never inferred from shape. */
+  readonly steelStockSource?: import('../assembly/resolveAssembly.js').StandardPartSource;
+  /** Issued point-slot high-water marks, retained across deletion and undo branches. */
+  readonly patternSlotHighWater?: Readonly<Record<string, number>>;
   /** 版17: 図形を測る定義。測定した数値・成功状態・計算世代は保存しない。 */
   readonly mathGeometry?: readonly import('../measure/mathGeometryTypes.js').MathGeometryDefinition[];
   /** 版16: 解けていない式と条件。数値・形状の代用品として使用しない。 */

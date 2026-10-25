@@ -9,6 +9,7 @@
  *  - 部品・組立・図面と、図面の後ろに残る元の部品の未保存を対象にする。
  *  - 未保存の有無が変わったときだけ本体へ知らせる(Windows の終了要求の判断に使う)。
  */
+import { encodeSaveDocument } from '@pointercad/io';
 import {
   absoluteCoordinate,
   appendFeature,
@@ -31,7 +32,8 @@ import type { FileGateway } from './fileGateway.js';
 import type { PartFileDeps } from './partFile.js';
 import { attachUnsavedChangesGuard, hasUnsavedWork, type CloseChoice, type CloseRequestTarget } from './unsavedChangesGuard.js';
 
-beforeEach(resetTestStore);
+// 保存の符号化は製品ではWorkerで行う。Workerの無い単体の環境では、同じ符号化を直接行う口を差す。
+beforeEach(() => { resetTestStore(); useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null }); });
 
 function partWithPoint(): PartDocument {
   const sketch = createEmptySketchDocument();

@@ -45,6 +45,11 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
       return {
         kind: 'sew',
         profiles: plan.profiles.map((profile) => profile.map(toKeyCurve)),
+        ...(plan.faces === undefined ? {} : {
+          faces: plan.faces.map(face => ({
+            targetKey: face.targetKey, query: fingerprintKeyText(face.query),
+          })),
+        }),
         tolerance: plan.tolerance,
       };
     case 'boolean':
@@ -54,10 +59,15 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         operation: plan.operation,
         targetKey: plan.targetKey,
         toolKey: plan.toolKey,
+        // 立てた差だけ材料に入る。欄が無ければ鍵の文字列は以前と同じ(既存のキャッシュはそのまま当たる)。
+        ...(plan.requireRemoval === true ? { requireRemoval: true } : {}),
       };
     case 'hole':
       return {
         kind: 'hole',
+        ...(plan.centerAnchors === undefined ? {} : { centerAnchors: plan.centerAnchors }),
+        ...(plan.placementRoles === undefined ? {} : { placementRoles: plan.placementRoles }),
+        ...(plan.pointPlacementReferences === undefined ? {} : { pointPlacementReferences: plan.pointPlacementReferences }),
         targetKey: plan.targetKey,
         face: fingerprintKeyText(plan.face),
         centers: plan.centers.map(toKeyVec3),
@@ -68,10 +78,15 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         transforms: plan.transforms.map(toKeyTransform),
         // 入口の形(FR-422)。省略と「広げない」は同じ鍵になる(`toKeyHoleEntry` の注釈)。
         entry: toKeyHoleEntry(plan.entry),
+        // 円筒の側面の穴(EX05)。平面の穴では欄を作らない(鍵の文字列にも出ない)。
+        ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
       };
     case 'thread':
       return {
         kind: 'thread',
+        // 下穴の面の名前は形の結果(由来)に入るので鍵に混ぜる。欄が無ければ鍵の文字列は以前と同じ。
+        ...(plan.centerAnchors === undefined ? {} : { centerAnchors: plan.centerAnchors }),
+        ...(plan.placementRoles === undefined ? {} : { placementRoles: plan.placementRoles }),
         targetKey: plan.targetKey,
         face: fingerprintKeyText(plan.face),
         centers: plan.centers.map(toKeyVec3),
@@ -88,6 +103,8 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         transforms: plan.transforms.map(toKeyTransform),
         // 入口の形(FR-422)。穴とまったく同じ扱いで、省略と「広げない」は同じ鍵になる。
         entry: toKeyHoleEntry(plan.entry),
+        // 円筒の側面のねじ穴(EX05)。平面のねじ穴では欄を作らない(鍵の文字列にも出ない)。
+        ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
       };
     case 'spring':
       // 全長(length)と derived は混ぜない(cacheKey.ts の SpringKeyMaterial の注釈、§0.a-0.30)。
@@ -231,6 +248,14 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
       };
     case 'functionSurface':
       return { kind: 'functionSurface', inputSignature: plan.inputSignature };
+    case 'faceOffset':
+      // 対象を消費する。面は指紋の鍵文字列、距離は評価済みの mm を混ぜる(式を変えれば鍵が変わる)。
+      return {
+        kind: 'faceOffset',
+        targetKey: plan.targetKey,
+        face: fingerprintKeyText(plan.face),
+        offset: plan.offset,
+      };
     case 'surface':
       // 面を借りる作り方(face / offset)でも消費しないが targetKey は必ず混ぜる
       // (混ぜないと上流を編集しても鍵が変わらず古い面の形が返る。NFR-PF-3)。
@@ -247,6 +272,16 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         openFaces: plan.openFaces.map(fingerprintKeyText),
         thickness: plan.thickness,
         outward: plan.outward,
+      };
+    case 'surfaceCut':
+      return {
+        kind: 'surfaceCut', targetKey: plan.targetKey, keepPositive: plan.keepPositive,
+        blade: plan.blade.kind === 'extrusion'
+          ? { ...plan.blade, profile: plan.blade.profile.map(toKeyCurve),
+            planeOrigin: toKeyVec3(plan.blade.planeOrigin), planeNormal: toKeyVec3(plan.blade.planeNormal) }
+          : plan.blade.kind === 'plane'
+            ? { kind: 'plane', origin: toKeyVec3(plan.blade.origin), normal: toKeyVec3(plan.blade.normal) }
+            : plan.blade,
       };
     case 'cut':
       /*

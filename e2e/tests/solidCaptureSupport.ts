@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 import { expect, type Locator, type Page } from '@playwright/test';
 import { openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
-import { waitForSettledRecompute } from './recompute.js';
+import { waitForRecompute, waitForSettledRecompute } from './recompute.js';
 
 /**
  * 立体・スケッチ系の撮影の流れ（G2・G3系の各章）で共通に使う補助。
@@ -62,10 +62,11 @@ export async function drawRectangle(
   page: Page,
   origin: readonly [string, string],
   size: readonly [string, string],
+  originZ = '0',
 ): Promise<void> {
   await sketchTool(page, '線分').click();
   await expect(popoverTitle(page)).toHaveText('線分の始点');
-  await fillFields(page, [origin[0], origin[1], '0']);
+  await fillFields(page, [origin[0], origin[1], originZ]);
   await commitPopover(page);
   await expect(popoverTitle(page)).toHaveText('線分の終点');
   await fillFields(page, [size[0], null, null]);
@@ -80,6 +81,7 @@ export async function drawRectangle(
 }
 /** 線分を順に選んでから面の道具でEnterを押し、面を張る。 */
 export async function makeFace(page: Page, lineNames: readonly string[]): Promise<void> {
+  await waitForRecompute(page);
   await treeRow(page, lineNames[0]).click();
   for (const name of lineNames.slice(1)) await treeRow(page, name).click({ modifiers: ['Shift'] });
   await sketchTool(page, '面').click();

@@ -1,6 +1,7 @@
 /** 合致を成分ごとに解く。解は文書へ書き戻さない(P7 §2.5.6、FR-603/604)。 */
 import { CONFLICT_REPORT_LIMIT, remainingMessage } from '../../sketch/constraints/diagnose.js';
-import { matrixRank, qrDecomposition } from '../../sketch/constraints/solve.js';
+import { qrDecompositionSteps } from './rigidQrSteps.js';
+import { RigidWorkSequence } from './cooperativeRigid.js';
 import { addVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import {
   exponentialMap, multiplyQuaternion, normalizeQuaternion, rotateVector, type RigidPlacement,
@@ -18,6 +19,7 @@ import {
   DEFAULT_RIGID_ANGLE_TOLERANCE, DEFAULT_RIGID_CHARACTERISTIC_LENGTH,
   rigidRowTolerance, scaledRigidJacobian, solveRigid, type RigidEvaluation, type RigidResidualRow,
   type RigidSolveInput, type RigidSolveOptions, type RigidSolveOutcome, type RigidSolveStopReason,
+  drainRigidSteps, solveRigidSteps, UNLIMITED_RIGID_WORK, type RigidWorkBudget, type RigidWorkPoint,
 } from './solveRigid.js';
 
 import type { JointFramePair } from '../joints/jointFrames.js';
@@ -32,8 +34,14 @@ import {
 import {
   finiteDragVector, hardDragSatisfied, validDragPlacement, validDragEvaluation, type PreparedMateDrag,
 } from './mateDrag.js';
+import { collapsedDiagnosisDocument, collapseSolveInput, rigidGroupDrag } from './rigidGroupSolve.js';
+import { expandRigidGroupPlacements } from '../rigidGroups.js';
 export { solveMateDrag, type MateDragOptions, type MateDragOutcome, type PreparedMateDrag } from './mateDrag.js';
-export type AssemblyConstraintRef = { readonly kind: 'mate' | 'joint'; readonly id: string };
+import { evaluateMechanismCouplings, prepareMechanismCouplings, mechanismCouplingRows, solveMechanismGroupSteps,
+  type MechanismCouplingFailure, type MechanismCouplingRow } from '../joints/mechanismCoupling.js';
+import { prepareCamFollowers, type CamFollowerFailure } from '../joints/camFollower.js';
+import { evaluateCamCouplings } from '../joints/camCouplingDocument.js';
+export type AssemblyConstraintRef = { readonly kind: 'mate' | 'joint' | 'coupling'; readonly id: string };
 /** Internal keys never escape into document IDs or user-facing diagnosis. */
 function constraintKey(ref: AssemblyConstraintRef): string { return JSON.stringify([ref.kind, ref.id]); }
 const EMPTY_JOINT_REPORT: JointResidualReport = { rows: [], skipped: [], branchViolations: [] };
@@ -73,6 +81,7 @@ export interface MateVariableLimit {
 }
 
 export interface MateComponentDiagnosis {
+  readonly couplingRows?: readonly MechanismCouplingRow[];
   readonly jointIds?: readonly string[];
   readonly jointRows?: readonly JointResidualRow[];
   /** Rigid driverの内部keyを公開しない。種類を失わない分岐の参照。 */
@@ -105,6 +114,7 @@ export interface MateLinearizationSnapshot {
 export type MateRowDependency = 'independent' | 'dependent' | 'noVariable' | 'singular' | 'unknown';
 
 export interface JointRowDiagnosis extends Omit<MateRowDiagnosis, 'mateId'> { readonly jointId: string }
+export interface CouplingRowDiagnosis extends Omit<MateRowDiagnosis, 'mateId'> { readonly couplingId: string }
 
 export interface MateRowDiagnosis {
   readonly componentIndex: number;
@@ -119,6 +129,7 @@ export interface MateRowDiagnosis {
 }
 
 export interface MateDiagnosisComponent {
+  readonly couplingRows?: readonly CouplingRowDiagnosis[];
   readonly jointIds?: readonly string[];
   readonly jointRows?: readonly JointRowDiagnosis[];
   readonly componentIds: MateComponentDiagnosis['componentIds'];
@@ -159,6 +170,8 @@ export interface ConstraintDiagnosisCandidate {
 }
 
 export interface MateDiagnosis {
+  readonly couplingRows?: readonly CouplingRowDiagnosis[];
+  readonly couplingFailure?: MechanismCouplingFailure | CamFollowerFailure;
   readonly jointRows?: readonly JointRowDiagnosis[];
   readonly redundantJointIds?: readonly string[];
   readonly provenConflictJointIds?: readonly string[];
@@ -200,6 +213,7 @@ export interface MateSolveDiagnosis {
 }
 
 export interface SolveMatesOutcome {
+  readonly couplingFailure?: MechanismCouplingFailure | CamFollowerFailure;
   readonly skippedJoints?: readonly SkippedJointResidual[];
   readonly jointBranchViolations?: readonly string[];
   readonly placements: Map<string, RigidPlacement>;
@@ -235,6 +249,33 @@ export function solveDrivenJoint(
   assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
   initial: ReadonlyMap<string, RigidPlacement>, request: JointDriveRequest, options: SolveMatesOptions = {},
 ): SolveDrivenJointOutcome {
+  return drainRigidSteps(solveDrivenJointSteps(assembly, targets, initial, request, options, UNLIMITED_RIGID_WORK));
+}
+
+/**
+ * solveDrivenJoint as cooperative steps with the same preparation, arithmetic and outcome. It yields only inside the
+ * rigid solves (normal-equation rows, Cholesky rows, before residual evaluations). Its caller owns cancellation: a
+ * generator that is not drained produced no outcome, and nothing outside it was changed.
+ */
+export function* solveDrivenJointSteps(
+  assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
+  initial: ReadonlyMap<string, RigidPlacement>, request: JointDriveRequest, options: SolveMatesOptions,
+  budget: RigidWorkBudget,
+): Generator<RigidWorkPoint, SolveDrivenJointOutcome, void> {
+  // 互いに固定した組は代表 1 つへ畳んで駆動し、成否どちらでも組の全部品の配置を返す。
+  const rigid = collapseSolveInput(assembly, initial, options);
+  if (rigid === null) return yield* solveDrivenJointUncollapsedSteps(assembly, targets, initial, request, options, budget);
+  const result = yield* solveDrivenJointUncollapsedSteps(rigid.assembly, targets, rigid.initial, request, rigid.options, budget);
+  const placements = expandRigidGroupPlacements(rigid.collapse, result.placements);
+  const outcome = result.outcome === null ? null : { ...result.outcome, placements: expandRigidGroupPlacements(rigid.collapse, result.outcome.placements) };
+  return result.ok ? { ...result, placements, outcome: outcome ?? result.outcome } : { ...result, placements, outcome };
+}
+
+function* solveDrivenJointUncollapsedSteps(
+  assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
+  initial: ReadonlyMap<string, RigidPlacement>, request: JointDriveRequest, options: SolveMatesOptions,
+  budget: RigidWorkBudget,
+): Generator<RigidWorkPoint, SolveDrivenJointOutcome, void> {
   const now = options.now ?? (() => performance.now());
   const start = options.maxTimeMs === undefined ? 0 : now();
   const failure = (reason: JointDriveFailureReason | 'solveFailed', outcome: SolveMatesOutcome | null = null): SolveDrivenJointOutcome => {
@@ -249,8 +290,8 @@ export function solveDrivenJoint(
     ...constraintExpressionContext(assembly, options) });
   if (!prepared.ok) return failure(prepared.reason);
   const remaining = options.maxTimeMs === undefined ? undefined : Math.max(0, options.maxTimeMs - (now() - start));
-  const { drivenValue, ...outcome } = solveMatesCore(assembly, targets, initial,
-    { ...options, maxTimeMs: remaining, now }, prepared.drive);
+  const { drivenValue, ...outcome } = yield* solveMatesCoreSteps(assembly, targets, initial,
+    { ...options, maxTimeMs: remaining, now }, prepared.drive, budget);
   if (!outcome.converged || drivenValue === undefined || !Number.isFinite(drivenValue)) return failure('solveFailed', outcome);
   return { ok: true, placements: outcome.placements, outcome, requested: prepared.drive.requested,
     target: prepared.drive.target, actual: drivenValue,
@@ -264,15 +305,15 @@ interface DrivenState {
 }
 
 /** unwrap参照は受理済みBaseの一部。evaluateの順序で動くクロージャ状態を持たない。 */
-function solveDrivenGroup(input: RigidSolveInput<ReadonlyMap<string, RigidPlacement>>,
-  variableSet: MateVariableSet, drive: PreparedJointDrive): {
+function* solveDrivenGroupSteps(input: RigidSolveInput<ReadonlyMap<string, RigidPlacement>>,
+  variableSet: MateVariableSet, drive: PreparedJointDrive, budget: RigidWorkBudget): Generator<RigidWorkPoint, {
     readonly result: RigidSolveOutcome<ReadonlyMap<string, RigidPlacement>>;
     readonly actual?: number;
-  } {
+  }, void> {
   const valueInput = (state: DrivenState, increments?: readonly number[]) => ({ joint: drive.joint,
     coordinate: drive.coordinate, placements: state.placements, referenceAngle: state.referenceAngle,
     variableSet, increments, characteristicLength: input.options?.characteristicLength });
-  const solved = solveRigid<DrivenState>({
+  const solved = yield* solveRigidSteps<DrivenState>({
     initial: { placements: input.initial, referenceAngle: drive.referenceAngle }, variables: input.variables,
     options: input.options,
     evaluate: (state, increments) => {
@@ -291,7 +332,7 @@ function solveDrivenGroup(input: RigidSolveInput<ReadonlyMap<string, RigidPlacem
     },
     branchCandidates: input.branchCandidates === undefined ? undefined
       : (state, violations) => input.branchCandidates?.(state.placements, violations) ?? [],
-  });
+  }, budget);
   const current = jointValue(valueInput(solved.base));
   return { result: { ...solved, base: solved.base.placements }, actual: current.ok ? current.value : undefined };
 }
@@ -341,8 +382,9 @@ function rigidEvaluation(
     const mate = mates.get(row.mateId);
     const index = indices.get(row.mateId) ?? 0;
     indices.set(row.mateId, index + 1);
-    const constant = mate !== undefined && variableSet.columnOf(mate.componentA, 'tx') === null
-      && variableSet.columnOf(mate.componentB, 'tx') === null;
+    const constant = mate !== undefined && (mate.componentA === mate.componentB
+      || (variableSet.columnOf(mate.componentA, 'tx') === null
+        && variableSet.columnOf(mate.componentB, 'tx') === null));
     if (constant) constantIds.add(constraintKey({ kind: 'mate', id: row.mateId }));
     const unit = mate === undefined ? 'length' : rowUnits(mate)[index];
     if (mate?.kind === 'angle') {
@@ -356,8 +398,9 @@ function rigidEvaluation(
   });
   for (const row of jointReport.rows) {
     const joint = joints.get(row.jointId);
-    const constant = joint !== undefined && variableSet.columnOf(joint.componentA, 'tx') === null
-      && variableSet.columnOf(joint.componentB, 'tx') === null;
+    const constant = joint !== undefined && (joint.componentA === joint.componentB
+      || (variableSet.columnOf(joint.componentA, 'tx') === null
+        && variableSet.columnOf(joint.componentB, 'tx') === null));
     if (constant) constantIds.add(constraintKey({ kind: 'joint', id: row.jointId }));
     rows.push({ ...row, unit: row.measure === 'length' ? 'length' : 'angle', constant,
       ...(row.measure === 'rotation' ? { tolerance: options.angleTolerance ?? DEFAULT_RIGID_ANGLE_TOLERANCE } : {}) });
@@ -416,6 +459,23 @@ export function prepareMateDrag(
   assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
   initial: ReadonlyMap<string, RigidPlacement>, componentId: string, options: PrepareMateDragOptions = {},
 ): PrepareMateDragOutcome {
+  // Coupled drag needs its own accepted-angle state; refuse before any pose change.
+  if (assembly.mechanismCouplings?.some(coupling => !coupling.suppressed)
+    || assembly.camCouplings?.some(coupling => !coupling.suppressed))
+    return { ok: false, reason: 'unresolvedConstraint' };
+  // 互いに固定した組の部品を引くときは、組の代表を動かして組全体を同じ剛体として動かす。
+  const rigid = collapseSolveInput(assembly, initial, options);
+  if (rigid === null) return prepareMateDragUncollapsed(assembly, targets, initial, componentId, options);
+  if (!assembly.components.some((component) => component.id === componentId)) return { ok: false, reason: 'unavailableComponent' };
+  const anchor = rigid.collapse.anchorOf.get(componentId) ?? componentId;
+  const result = prepareMateDragUncollapsed(rigid.assembly, targets, rigid.initial, anchor, rigid.options);
+  return result.ok ? { ok: true, drag: rigidGroupDrag(result.drag, rigid.collapse, componentId) } : result;
+}
+
+function prepareMateDragUncollapsed(
+  assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
+  initial: ReadonlyMap<string, RigidPlacement>, componentId: string, options: PrepareMateDragOptions,
+): PrepareMateDragOutcome {
   const positive = [options.characteristicLength, options.lengthTolerance, options.angleTolerance];
   if (positive.some((value) => value !== undefined && (!Number.isFinite(value) || value <= 0))
     || (options.maxComponentVariables !== undefined && (!Number.isInteger(options.maxComponentVariables) || options.maxComponentVariables < 0))
@@ -426,7 +486,7 @@ export function prepareMateDrag(
   const group = mateComponentGroups(allVariables, assembly.mates, assembly.joints)
     .find((entry) => entry.componentIds.includes(componentId));
   const maximum = Math.min(MAX_ASSEMBLY_VARIABLES, options.maxComponentVariables ?? MAX_ASSEMBLY_VARIABLES);
-  if (allVariables.tooMany || (group !== undefined && group.componentIds.length * 6 > maximum)) return { ok: false, reason: 'variableLimit' };
+  if (group !== undefined && group.componentIds.length * 6 > maximum) return { ok: false, reason: 'variableLimit' };
   if (group === undefined) return { ok: false, reason: 'unavailableComponent' };
   const ids = new Set(group.componentIds);
   const placements = new Map<string, RigidPlacement>();
@@ -495,14 +555,32 @@ export function solveMates(
   assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
   initial: ReadonlyMap<string, RigidPlacement>, options: SolveMatesOptions = {},
 ): SolveMatesOutcome {
-  return solveMatesCore(assembly, targets, initial, options);
+  return drainRigidSteps(solveMatesSteps(assembly, targets, initial, options, UNLIMITED_RIGID_WORK));
 }
 
-function solveMatesCore(
+/** Same solve, including rigid groups and the 600-variable cap, with cancellable work boundaries. */
+export function* solveMatesSteps(
+  assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
+  initial: ReadonlyMap<string, RigidPlacement>, options: SolveMatesOptions, budget: RigidWorkBudget,
+): Generator<RigidWorkPoint, SolveMatesOutcome, void> {
+  const work = new RigidWorkSequence(budget);
+  yield* work.boundary();
+  // 互いに固定した組は代表 1 つの剛体として解き、他の部品の配置を代表から戻す(rigidGroups.ts)。
+  const rigid = collapseSolveInput(assembly, initial, options);
+  const outcome = yield* work.forward(rigid === null
+    ? solveMatesCoreSteps(assembly, targets, initial, options, undefined, budget)
+    : solveMatesCoreSteps(rigid.assembly, targets, rigid.initial, rigid.options, undefined, budget));
+  yield* work.boundary();
+  return rigid === null ? outcome : { ...outcome, placements: expandRigidGroupPlacements(rigid.collapse, outcome.placements) };
+}
+
+function* solveMatesCoreSteps(
   assembly: AssemblyDocument, targets: ReadonlyMap<string, MateResidualTargetPair>,
   initial: ReadonlyMap<string, RigidPlacement>, options: SolveMatesOptions,
-  drive?: PreparedJointDrive,
-): SolveMatesOutcome & { readonly drivenValue?: number } {
+  drive: PreparedJointDrive | undefined, budget: RigidWorkBudget,
+): Generator<RigidWorkPoint, SolveMatesOutcome & { readonly drivenValue?: number }, void> {
+  const work = new RigidWorkSequence(budget);
+  yield* work.boundary();
   const now = options.now ?? (() => performance.now());
   const start = options.maxTimeMs === undefined ? 0 : now();
   const remainingTime = () => options.maxTimeMs === undefined ? undefined
@@ -513,12 +591,24 @@ function solveMatesCore(
   const effective = { ...assembly, components: assembly.components.map((component) => ({ ...component,
     fixed: component.fixed || options.anchors?.has(component.id) === true })) };
   const allVariables = collectMateVariables(effective);
-  const prepared = prepareMateResiduals({ mates: assembly.mates, targets, placements: activePlacements,
-    ...constraintExpressionContext(assembly, options) });
+  const context = constraintExpressionContext(assembly, options);
+  const prepared: { mates: PreparedMateResidual[]; skipped: SkippedMateResidual[] } = { mates: [], skipped: [] };
+  for (const mate of assembly.mates) {
+    const part = prepareMateResiduals({ mates: [mate], targets, placements: activePlacements, ...context });
+    prepared.mates.push(...part.mates);
+    prepared.skipped.push(...part.skipped);
+    yield* work.checkpoint('assembly');
+  }
   const preparedById = new Map(prepared.mates.map((mate) => [mate.mateId, mate]));
   const activeMates = assembly.mates.filter((mate) => preparedById.has(mate.id));
-  const preparedJoints = options.jointFrames === undefined ? { joints: [], skipped: [] }
-    : prepareJointResiduals({ joints: assembly.joints, frames: options.jointFrames, placements: activePlacements });
+  const preparedJoints: { joints: PreparedJointResidual[]; skipped: SkippedJointResidual[] } = { joints: [], skipped: [] };
+  if (options.jointFrames !== undefined) for (const joint of assembly.joints) {
+    const part = prepareJointResiduals({ joints: [joint], frames: options.jointFrames, placements: activePlacements });
+    preparedJoints.joints.push(...part.joints);
+    preparedJoints.skipped.push(...part.skipped);
+    yield* work.checkpoint('assembly');
+  }
+  yield* work.boundary();
   const jointsById = new Map(preparedJoints.joints.map((joint) => [joint.jointId, joint]));
   const activeJoints = assembly.joints.filter((joint) => jointsById.has(joint.id));
   const branchGeometry = new Map<string, BranchGeometry>(prepared.mates.map((mate) =>
@@ -528,7 +618,26 @@ function solveMatesCore(
     a: { point: joint.frames.a.origin, frame: { t: joint.frames.a.x } },
     b: { point: joint.frames.b.origin, frame: { t: joint.frames.b.x } },
   });
-  const groups = mateComponentGroups(allVariables, activeMates, activeJoints);
+  const evaluatedCouplings = evaluateMechanismCouplings(assembly);
+  const gears = evaluatedCouplings.ok ? prepareMechanismCouplings({ couplings: evaluatedCouplings.couplings,
+    joints: assembly.joints, frames: options.jointFrames ?? new Map(), placements: activePlacements }) : evaluatedCouplings;
+  // A follower may not also be a gear joint or the driven joint: one driver per follower.
+  const drivenJointIds = new Set<string>(gears.ok ? gears.prepared.couplings.flatMap(row => [row.a.jointId, row.b.jointId]) : []);
+  if (drive !== undefined) drivenJointIds.add(drive.joint.jointId);
+  const evaluatedCams = evaluateCamCouplings(assembly);
+  const cams = !gears.ok ? gears : !evaluatedCams.ok ? evaluatedCams : prepareCamFollowers({ couplings: evaluatedCams.couplings,
+    joints: assembly.joints, frames: options.jointFrames ?? new Map(), placements: activePlacements, drivenJointIds });
+  const coupled = !gears.ok ? gears : !cams.ok ? cams : { ok: true as const, prepared: {
+    couplings: gears.prepared.couplings, cams: cams.prepared,
+    references: new Map([...cams.prepared.map(c => [c.cam.jointId, c.definition.referenceAngleCam] as const),
+      ...gears.prepared.references]) } };
+  if (!coupled.ok) return { placements: new Map(initial), converged: false, iterations: 0,
+    residualNorm: 0, maxResidual: 0, couplingFailure: coupled,
+    diagnosis: { status: 'stalled', components: [], limits: [], constantConflicts: [], unsupportedJointIds: [] },
+    skipped: [], branchViolations: [], skippedJoints: [], jointBranchViolations: [] };
+  const groups = mateComponentGroups(allVariables, activeMates, activeJoints,
+    [...coupled.prepared.couplings.map(row => row.definition), ...(coupled.prepared.cams ?? []).map(c => ({
+      jointAId: c.definition.camJointId, jointBId: c.definition.followerJointId, suppressed: c.definition.suppressed }))]);
   const components: MateComponentDiagnosis[] = [];
   const limits: MateVariableLimit[] = [];
   const placements = new Map(initial);
@@ -541,8 +650,6 @@ function solveMatesCore(
   const unsupportedJointIds = options.jointFrames === undefined ? assembly.joints.filter((joint) => !joint.suppressed).map((joint) => joint.id) : [];
   const componentLimit = Math.max(0, Math.min(MAX_ASSEMBLY_VARIABLES,
     Math.trunc(options.maxComponentVariables ?? MAX_ASSEMBLY_VARIABLES)));
-  if (allVariables.tooMany) limits.push({ scope: 'assembly', componentIds: allVariables.movableComponentIds,
-    variables: allVariables.variables.length, maximum: MAX_ASSEMBLY_VARIABLES });
   const groupedMateIds = new Set(groups.flatMap((group) => group.mateIds));
   const constantMates = prepared.mates.filter((mate) => !groupedMateIds.has(mate.mateId));
   const groupedJointIds = new Set(groups.flatMap((group) => group.jointIds));
@@ -555,6 +662,7 @@ function solveMatesCore(
   let drivenValue: number | undefined;
 
   for (const group of solveGroups) {
+    yield* work.boundary();
     const groupIds = new Set(group.componentIds);
     const mates = group.mateIds.flatMap((id) => { const mate = preparedById.get(id); return mate === undefined ? [] : [mate]; });
     const joints = group.jointIds.flatMap((id) => { const joint = jointsById.get(id); return joint === undefined ? [] : [joint]; });
@@ -581,17 +689,25 @@ function solveMatesCore(
     if (tooLarge) limits.push({ scope: 'component', componentIds: group.componentIds,
       variables: group.componentIds.length * 6, maximum: componentLimit });
     // 可動側が上限でも、固定同士の診断(変数0)は計算量を増やさず証明できる。
-    const limited = group.componentIds.length > 0 && (allVariables.tooMany || tooLarge);
+    // The cap applies to each connected solver group; independent groups are never refused together.
+    const limited = group.componentIds.length > 0 && tooLarge;
     const solveInput: RigidSolveInput<ReadonlyMap<string, RigidPlacement>> | null = limited ? null : {
       initial: new Map(placements), variables, evaluate,
       retract: (base, step) => applyMateIncrements(base, variableSet, step),
       branchCandidates: (base, violations) => branchCandidates(base, violations, branchGeometry, variableSet),
       options: { ...options, maxTimeMs: remainingTime(), now },
     };
-    const driven = solveInput === null || drive === undefined || !group.jointIds.includes(drive.joint.jointId)
-      ? null : solveDrivenGroup(solveInput, variableSet, drive);
-    const result = solveInput === null ? null : driven?.result ?? solveRigid(solveInput);
-    if (driven !== null) drivenValue = driven.actual;
+    const groupCouplings = { couplings: coupled.prepared.couplings.filter(row =>
+      group.jointIds.includes(row.a.jointId) && group.jointIds.includes(row.b.jointId)), references: coupled.prepared.references,
+      cams: (coupled.prepared.cams ?? []).filter(c =>
+        group.jointIds.includes(c.cam.jointId) && group.jointIds.includes(c.follower.jointId)) };
+    const groupDrive = drive !== undefined && group.jointIds.includes(drive.joint.jointId) ? drive : undefined;
+    const mechanism = solveInput === null || (groupCouplings.couplings.length === 0 && groupCouplings.cams.length === 0) ? null
+      : yield* work.forward(solveMechanismGroupSteps(solveInput, variableSet, groupCouplings, groupDrive, budget));
+    const driven = mechanism ?? (solveInput === null || groupDrive === undefined
+      ? null : yield* work.forward(solveDrivenGroupSteps(solveInput, variableSet, groupDrive, budget)));
+    const result = solveInput === null ? null : driven?.result ?? (yield* work.forward(solveRigidSteps(solveInput, budget)));
+    if (groupDrive !== undefined && driven !== null) drivenValue = driven.actual;
     if (result !== null) {
       for (const id of group.componentIds) {
         const placement = result.base.get(id);
@@ -599,20 +715,27 @@ function solveMatesCore(
       }
       iterations = Math.max(iterations, result.iterations);
     }
+    yield* work.boundary();
     const report = evaluateReport(placements);
     const jointReport = evaluateJointReport(placements);
-    const evaluation = rigidEvaluation(report, preparedById, variableSet, options, jointReport, jointsById);
+    const permanentEvaluation = rigidEvaluation(report, preparedById, variableSet, options, jointReport, jointsById);
+    const couplingReport = mechanismCouplingRows({ prepared: groupCouplings,
+      references: mechanism?.references ?? groupCouplings.references, placements, variableSet, characteristicLength: length });
+    const couplingRows = couplingReport.ok ? couplingReport.rows : [];
+    const evaluation = { ...permanentEvaluation, valid: permanentEvaluation.valid !== false && couplingReport.ok,
+      rows: [...permanentEvaluation.rows, ...couplingRows] };
     skippedJoints.push(...jointReport.skipped);
     jointBranchViolations.push(...jointReport.branchViolations);
     skipped.push(...report.skipped);
     branchViolations.push(...report.branchViolations);
-    for (const row of [...report.rows, ...jointReport.rows]) {
+    for (const row of [...report.rows, ...jointReport.rows, ...couplingRows]) {
       residualSquare += row.value * row.value;
       maxResidual = Math.max(maxResidual, Math.abs(row.value));
     }
     if (result?.stop === 'provenConstantConflict') {
       for (const mate of mates) {
-        if (variableSet.columnOf(mate.componentA, 'tx') === null && variableSet.columnOf(mate.componentB, 'tx') === null) {
+        if (mate.componentA === mate.componentB
+          || (variableSet.columnOf(mate.componentA, 'tx') === null && variableSet.columnOf(mate.componentB, 'tx') === null)) {
           const single = solveRigid({ initial: placements, variables: [], retract: (base) => base,
             evaluate: () => rigidEvaluation({ rows: report.rows.filter((row) => row.mateId === mate.mateId),
               skipped: [], branchViolations: report.branchViolations.filter((id) => id === mate.mateId) },
@@ -623,21 +746,30 @@ function solveMatesCore(
     }
     if (result?.stop === 'provenConstantConflict') {
       for (const joint of joints) {
-        if (variableSet.columnOf(joint.componentA, 'tx') !== null || variableSet.columnOf(joint.componentB, 'tx') !== null) continue;
+        if (joint.componentA !== joint.componentB
+          && (variableSet.columnOf(joint.componentA, 'tx') !== null || variableSet.columnOf(joint.componentB, 'tx') !== null)) continue;
         if (jointReport.branchViolations.includes(joint.jointId) || evaluation.rows.some((row) =>
           'jointId' in row && row.jointId === joint.jointId && Math.abs(row.value) >= rigidRowTolerance(row, options))) {
           constantJointConflicts.push(joint.jointId);
         }
       }
     }
-    const linearization: MateLinearizationSnapshot | null = limited || remainingTime() === 0 ? null : {
-      scaledJacobian: scaledRigidJacobian(evaluation.rows, variables, options),
+    const canLinearize = !limited && remainingTime() !== 0;
+    const scaledJacobian: number[][] = [];
+    if (canLinearize) for (const row of evaluation.rows) {
+      scaledJacobian.push(scaledRigidJacobian([row], variables, options)[0]);
+      yield* work.checkpoint('assembly', variables.length + 1);
+    }
+    const linearization: MateLinearizationSnapshot | null = !canLinearize ? null : {
+      scaledJacobian,
       rowTolerances: evaluation.rows.map((row) => rigidRowTolerance(row, options)),
       constantRows: evaluation.rows.map((row) => row.constant === true),
       rowSources: [...report.rows.map((row): AssemblyConstraintRef => ({ kind: 'mate', id: row.mateId })),
-        ...jointReport.rows.map((row): AssemblyConstraintRef => ({ kind: 'joint', id: row.jointId }))],
+        ...jointReport.rows.map((row): AssemblyConstraintRef => ({ kind: 'joint', id: row.jointId })),
+        ...couplingRows.map((row): AssemblyConstraintRef => ({ kind: 'coupling', id: row.couplingId }))],
     };
-    const rank = linearization === null ? null : matrixRank(linearization.scaledJacobian, variables.length);
+    const rank = linearization === null ? null : (yield* qrDecompositionSteps(
+      linearization.scaledJacobian, variables.length, undefined, { due: cost => work.due('factorization', cost) })).rank;
     const constraintBranchViolations: AssemblyConstraintRef[] = [
       ...report.branchViolations.map((id): AssemblyConstraintRef => ({ kind: 'mate', id })),
       ...jointReport.branchViolations.map((id): AssemblyConstraintRef => ({ kind: 'joint', id })),
@@ -645,10 +777,11 @@ function solveMatesCore(
     // 旧result.evaluation.branchViolationsはmate IDだけ。jointは型付き参照で返す。
     const publicResult = result === null ? null : { ...result,
       evaluation: { ...result.evaluation, branchViolations: report.branchViolations } };
-    components.push({ componentIds: group.componentIds, mateIds: group.mateIds, rows: report.rows,
+    components.push({ componentIds: group.componentIds, mateIds: group.mateIds, rows: report.rows, couplingRows,
       jointIds: group.jointIds, jointRows: jointReport.rows, constraintBranchViolations, gauge,
       variables: variables.length, rank, remainingDegreesOfFreedom: rank === null ? null : variables.length - rank,
       status: result?.stop ?? 'variableLimit', result: publicResult, linearization });
+    yield* work.boundary();
   }
   const priority: readonly MateSolveDiagnosis['status'][] = [
     'provenConstantConflict', 'variableLimit', 'iterationLimit', 'suspectedConflict', 'stalled',
@@ -663,12 +796,15 @@ function solveMatesCore(
 }
 
 /** 転置QRは行の独立集合だけに使う。rank/gaugeはsolverの結果を上書きしない。 */
-function diagnoseMateComponent(component: MateComponentDiagnosis, componentIndex: number): MateDiagnosisComponent {
+function* diagnoseMateComponentSteps(component: MateComponentDiagnosis, componentIndex: number,
+  work: RigidWorkSequence): Generator<RigidWorkPoint, MateDiagnosisComponent, void> {
+  yield* work.boundary();
   const snapshot = component.linearization;
-  const allRows = [...component.rows, ...component.jointRows ?? []];
-  const sources: AssemblyConstraintRef[] = allRows.map((row) => 'mateId' in row
-    ? { kind: 'mate', id: row.mateId } : { kind: 'joint', id: row.jointId });
-  const sourceOrderValid = snapshot?.rowSources === undefined ? (component.jointRows?.length ?? 0) === 0
+  const allRows = [...component.rows, ...component.jointRows ?? [], ...component.couplingRows ?? []];
+  const sources: AssemblyConstraintRef[] = allRows.map((row) => 'couplingId' in row
+    ? { kind: 'coupling', id: row.couplingId } : 'mateId' in row
+      ? { kind: 'mate', id: row.mateId } : { kind: 'joint', id: row.jointId });
+  const sourceOrderValid = snapshot?.rowSources === undefined ? (component.jointRows?.length ?? 0) + (component.couplingRows?.length ?? 0) === 0
     : snapshot.rowSources.length === sources.length && snapshot.rowSources.every((ref, i) =>
       ref.kind === sources[i].kind && ref.id === sources[i].id);
   const m = allRows.length;
@@ -682,23 +818,29 @@ function diagnoseMateComponent(component: MateComponentDiagnosis, componentIndex
   let redundancyComplete = false;
   const independent = new Set<number>();
   if (valid) {
-    const transposed = Array.from({ length: n }, (_, column) => snapshot.scaledJacobian.map((row) => row[column]));
-    const qr = qrDecomposition(transposed, m);
+    const transposed: number[][] = [];
+    for (let column = 0; column < n; column += 1) {
+      transposed.push(snapshot.scaledJacobian.map(row => row[column]));
+      yield* work.checkpoint('assembly', m + 1);
+    }
+    const qr = yield* qrDecompositionSteps(transposed, m, undefined, { due: cost => work.due('factorization', cost) });
     redundancyComplete = qr.rank === component.rank;
     if (redundancyComplete) {
       // QRの交換順で完全重複の後続行を選んでも、同じ先行行へ戻す。近似判定は加えない。
       const firstRows = new Map<string, number>();
-      const canonical = snapshot.scaledJacobian.map((row, index) => {
+      const canonical: number[] = [];
+      for (const [index, row] of snapshot.scaledJacobian.entries()) {
         const key = JSON.stringify(row);
         const first = firstRows.get(key);
-        if (first !== undefined) return first;
-        firstRows.set(key, index);
-        return index;
-      });
+        if (first === undefined) firstRows.set(key, index);
+        canonical.push(first ?? index);
+        yield* work.checkpoint('assembly', n + 1);
+      }
       for (const index of qr.columnOrder.slice(0, qr.rank)) independent.add(canonical[index]);
     }
   }
-  const classified = allRows.map((row, rowIndex): MateRowDiagnosis | JointRowDiagnosis => {
+  const classified: (MateRowDiagnosis | JointRowDiagnosis | CouplingRowDiagnosis)[] = [];
+  for (const [rowIndex, row] of allRows.entries()) {
     const rawTolerance = sourceOrderValid ? snapshot?.rowTolerances[rowIndex] : undefined;
     const tolerance = rawTolerance !== undefined && Number.isFinite(rawTolerance) && rawTolerance > 0 ? rawTolerance : null;
     const residual = Number.isFinite(row.value) ? row.value : null;
@@ -711,12 +853,15 @@ function diagnoseMateComponent(component: MateComponentDiagnosis, componentIndex
       normalizedResidual: ratio !== null && Number.isFinite(ratio) ? ratio : null,
       satisfied: residual === null || tolerance === null ? null : Math.abs(residual) < tolerance,
       constant, dependency };
-    return 'mateId' in row ? { ...values, mateId: row.mateId } : { ...values, jointId: row.jointId };
-  });
+    classified.push('couplingId' in row ? { ...values, couplingId: row.couplingId }
+      : 'mateId' in row ? { ...values, mateId: row.mateId } : { ...values, jointId: row.jointId });
+    yield* work.checkpoint('residual', n + 1);
+  }
   return { componentIds: component.componentIds, mateIds: component.mateIds, gauge: component.gauge,
     variables: n, rank: component.rank, remainingDegreesOfFreedom: component.remainingDegreesOfFreedom,
     status: component.status, limit: component.result?.limit ?? null,
     rows: classified.filter((row): row is MateRowDiagnosis => 'mateId' in row),
+    couplingRows: classified.filter((row): row is CouplingRowDiagnosis => 'couplingId' in row),
     jointIds: component.jointIds ?? [], jointRows: classified.filter((row): row is JointRowDiagnosis => 'jointId' in row), redundancyComplete };
 }
 
@@ -765,18 +910,35 @@ function summarizeConstraints(documentIds: readonly string[], rows: readonly Con
  * 最終solve結果から表示用診断を作る純関数(P7訂正0.68、FR-604)。
  * 再求解・再配置・再gaugeはしない。線形従属や未収束は大域的矛盾の証明ではない。
  */
-export function diagnoseMates(assembly: AssemblyDocument, outcome: SolveMatesOutcome): MateDiagnosis {
-  const components = outcome.diagnosis.components.map(diagnoseMateComponent);
+export function diagnoseMates(document: AssemblyDocument, outcome: SolveMatesOutcome): MateDiagnosis {
+  return drainRigidSteps(diagnoseMatesSteps(document, outcome, UNLIMITED_RIGID_WORK));
+}
+
+/** Diagnosis alone never solves again or changes the supplied outcome. */
+export function* diagnoseMatesSteps(document: AssemblyDocument, outcome: SolveMatesOutcome,
+  budget: RigidWorkBudget): Generator<RigidWorkPoint, MateDiagnosis, void> {
+  const work = new RigidWorkSequence(budget);
+  yield* work.boundary();
+  // solveMates と同じく、互いに固定した組を畳んだ文書で数える(組の中どうしの合致は連立に入らない)。
+  const assembly = collapsedDiagnosisDocument(document);
+  const components: MateDiagnosisComponent[] = [];
+  for (const [index, component] of outcome.diagnosis.components.entries()) {
+    components.push(yield* diagnoseMateComponentSteps(component, index, work));
+    yield* work.boundary();
+  }
   const rows = components.flatMap((component) => component.rows);
-  const complete = components.every((component) => component.redundancyComplete)
+  const complete = outcome.couplingFailure === undefined && components.every((component) => component.redundancyComplete)
     && outcome.skipped.length === 0 && (outcome.skippedJoints?.length ?? 0) === 0 && outcome.diagnosis.unsupportedJointIds.length === 0;
   const remainingDegreesOfFreedom = components.some((component) => component.remainingDegreesOfFreedom === null)
     ? null : components.reduce((sum, component) => sum + (component.remainingDegreesOfFreedom ?? 0), 0);
   const jointRows = components.flatMap((component) => component.jointRows ?? []);
+  const couplingRows = components.flatMap((component) => component.couplingRows ?? []);
   const mateSummary = summarizeConstraints(assembly.mates.map((mate) => mate.id), rows.map((row) => ({ ...row, id: row.mateId })),
     components.map((component) => ({ ids: component.mateIds, status: component.status })), outcome.branchViolations, outcome.diagnosis.constantConflicts);
+  yield* work.boundary();
   const jointSummary = summarizeConstraints(assembly.joints.map((joint) => joint.id), jointRows.map((row) => ({ ...row, id: row.jointId })),
     components.map((component) => ({ ids: component.jointIds ?? [], status: component.status })), outcome.jointBranchViolations ?? [], outcome.diagnosis.constantJointConflicts ?? []);
+  yield* work.boundary();
   const order = new Map([...assembly.mates.map((entry): AssemblyConstraintRef => ({ kind: 'mate', id: entry.id })),
     ...assembly.joints.map((entry): AssemblyConstraintRef => ({ kind: 'joint', id: entry.id }))].map((ref, index) => [constraintKey(ref), index]));
   const candidates: ConstraintDiagnosisCandidate[] = [
@@ -831,8 +993,10 @@ export function diagnoseMates(assembly: AssemblyDocument, outcome: SolveMatesOut
   for (const skipped of outcome.skippedJoints ?? []) add('skippedTarget', 'warning', skipped.message, [], [skipped.jointId]);
   if (outcome.diagnosis.unsupportedJointIds.length > 0) add('unsupportedJoint', 'warning', 'まだ計算に対応していないジョイントがあります。');
   if (!complete) add('incompleteDiagnosis', 'warning', '診断に必要な情報が揃っていません。未確定の条件があります。');
+  yield* work.boundary();
   return { status: outcome.diagnosis.status, converged: outcome.converged, complete, remainingDegreesOfFreedom,
-    components, rows, redundantRowCount: [...rows, ...jointRows].filter((row) => row.dependency === 'dependent').length,
+    couplingRows, ...(outcome.couplingFailure === undefined ? {} : { couplingFailure: outcome.couplingFailure }),
+    components, rows, redundantRowCount: [...rows, ...jointRows, ...couplingRows].filter((row) => row.dependency === 'dependent').length,
     jointRows, redundantJointIds: jointSummary.redundantIds, provenConflictJointIds: jointSummary.provenIds,
     suspectedConflictJointIds: jointSummary.suspectedIds, unresolvedJointIds: jointSummary.unresolvedIds,
     skippedJoints: outcome.skippedJoints ?? [], jointBranchViolations: outcome.jointBranchViolations ?? [], constraintCauseCandidates,

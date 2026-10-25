@@ -1,3 +1,6 @@
+import { cameraDragAction } from './cameraControlBindings.js';
+import { readCameraControlSettings } from '../settings/cameraControlSettings.js';
+import { currentReferenceRepairPreview } from '../solid/referenceRepairPreview.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -5,13 +8,13 @@ import { evaluateExpression } from '@pointercad/expression';
 import {
   addVec3,
   appearanceOf,
-  checkCanvasImage,
   createEmptySketchDocument,
   formatDisplayLength,
   isFreeWorkPlaneId,
   parseDisplayInput,
   resolveSketch,
   scaleVec3,
+  solveCanvasHomography,
   toDisplayLength,
   worldToPlane,
   type LengthUnit,
@@ -19,23 +22,21 @@ import {
 
 import { buildAppearanceInput } from '../appearance/appearanceCommands.js';
 import { t } from '../i18n/t.js';
-import {
-  cutPlaneSpecFor,
-  cutPreviewDiagonal,
-  cutTargetOf,
-  DEFAULT_CUT_TILT,
-  resolveCutPlane,
-  type CutContext,
-} from '../solid/cutCommands.js';
+import { resolveCutPlane } from '../solid/cutCommands.js';
+import { cutPlanePreviewOf } from '../solid/cutPlanePreview.js';
 import { LENGTH_UNIT_LABEL_KEYS } from '../settings/settings.js';
 import { printabilityMatchesDisplayMeshes } from '../solid/printabilityColors.js';
+import { solidAnalysisLayersOf } from '../solidAnalysis/solidModalViewport.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
-import { decodeCanvasImage, type DecodedCanvasImage } from '../file/canvasFile.js';
+import type { DecodedCanvasImage } from '../file/canvasFile.js';
+import { createCanvasImageCache } from './createCanvasImageCache.js';
+import { createViewportMeshObservation, type ViewportMeshObservationSnapshot } from './viewportMeshObservation.js';
 import { constructionFeatureIds } from '../sketch/featureSummary.js';
 import { resolveWorkPlaneOf } from '../sketch/referenceCommands.js';
-import { canvasPlacementOf, type CanvasDraw } from './canvasLayer.js';
+import { canvasPixelPointOf, canvasPlacementOf, type CanvasDraw } from './canvasLayer.js';
+import { CanvasRectificationField } from './canvasRectificationField.js';
 import {
   buildAssemblyGeometry,
   EMPTY_ASSEMBLY_GEOMETRY,
@@ -47,16 +48,19 @@ import { activeAssemblyDocument, activePartDocument } from '../store/documentKin
 import { useAppStore } from '../store/useAppStore.js';
 import { currentMathGeometry } from '../math/mathGeometryResults.js';
 import type { AppState } from '../store/appState.js';
-import { displayedSheetBodies, isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
+import { currentAssemblyMeshAdmission, currentAssemblyMeshPublication, type AssemblyMeshOwnership } from './assemblyMeshAdmission.js';
+import { isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
-import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
+import { attachAssemblyInteraction, type AssemblyMateInputObservation } from './attachAssemblyInteraction.js';
 import { MatePopover } from '../assembly/MatePopover.js';
 import { componentDragPlacements } from '../assembly/dragComponentActions.js';
+import { shownOccurrencePlacements } from '../store/assemblyOccurrenceDriveSlice.js';
 import { assemblyTargetId } from '../assembly/mateCommands.js';
 import { HOME_ORBIT, viewDirection, type OrbitState } from './cameraMath.js';
-import { createViewportScene, type SectionViewRender } from './createViewportScene.js';
+import { createViewportScene, ViewportSceneInitializationFailure, type SectionViewRender, type ViewportMeshReservation } from './createViewportScene.js';
+import { LOCAL_DISPLAY_GPU_MESH_BUDGET, solidBodiesForAdmission, solidMeshOwnershipChanged } from './solidMeshAdmission.js';
 import type { CutPreview, PrintabilityHighlight } from './createSolidLayer.js';
 import type { SphereGridSpec } from './buildSphereGrid.js';
 import { toThreePlane } from './sectionView.js';
@@ -64,7 +68,9 @@ import { readThemeColors } from './themeColors.js';
 import { namedCameraFromOrbit, orbitFromNamedCamera, type ViewCameraController } from './namedCamera.js';
 import { attachQuadInput } from './attachQuadInput.js';
 import { quadLayout } from './quadLayout.js';
+import { createThumbnailCaptureReasonJournal, observeThumbnailCaptureReasons } from '../file/thumbnail.js';
 import { QuadPaneLabels } from './QuadPaneLabels.js';
+import { createViewportLifetime, createViewportCleanupQueue, type PendingViewportReading } from './viewportLifetime.js';
 
 /** E2Eだけが読む、実際に完了したビューポート描画の統計。製品の状態には含めない。 */
 interface ViewportRenderStats {
@@ -72,76 +78,100 @@ interface ViewportRenderStats {
   readonly lastCompletedAtMs: number;
   readonly totalSceneRenderMs: number;
   readonly totalDrawListenerMs: number;
+  readonly cleanupStatus: 'active' | 'complete' | 'pending';
 }
 
 declare global {
   interface Window {
     /** 検査専用。`scene.render` が正常に戻った回数と最後の完了時刻を読む。 */
     pcadViewportRenderStats?: () => ViewportRenderStats;
+    pcadViewportAssemblyOwner?: () => Readonly<Record<string, unknown>> | null;
     pcadViewportFramedBodies?: () => readonly string[];
+    pcadThumbnailCaptureReasons?: () => ReturnType<ReturnType<typeof createThumbnailCaptureReasonJournal>['snapshot']>;
+    /** 検査専用の表示コピー/属性予約会計。driverのGPU actualではない。 */
+    pcadViewportMemoryStats?: () => ViewportMeshReservation | null;
+    pcadViewportMeshObservation?: () => ViewportMeshObservationSnapshot;
+    /** 検査専用。scene へ渡した最後の切断の予告(EX-04 W2 の画面検査が予告の面を読む)。 */
+    pcadViewportCutPreview?: () => CutPreview | null;
+    pcadViewportRetiredCleanups?: () => { readonly pendingCount: number; readonly ownerCount: number;
+      readonly waitingCount: number; readonly scheduled: boolean; readonly sharedGpuPoolReservedBytes: number;
+      readonly owners: readonly PendingViewportReading[] };
   }
 }
 
 /** 切断の予告を組み立てる材料。ストアから読むものだけを並べる。 */
 const EMPTY_PART_SKETCH = resolveSketch(createEmptySketchDocument());
+let nextViewportOwner = 0;
+const retiredViewports = createViewportCleanupQueue((retry, delayMs) => {
+  const timer = globalThis.setTimeout(retry, delayMs);
+  return () => { globalThis.clearTimeout(timer); };
+});
+const readRetiredViewports = () => ({ pendingCount: retiredViewports.pendingCount,
+  ownerCount: retiredViewports.ownerCount, waitingCount: retiredViewports.waitingCount,
+  scheduled: retiredViewports.scheduled, sharedGpuPoolReservedBytes: LOCAL_DISPLAY_GPU_MESH_BUDGET.reservedBytes(),
+  owners: retiredViewports.snapshot() });
+
+/**
+ * 検査専用の口 `window.pcadViewportCutPreview`(EX-04 W2)を出している、生きているビューポートの読み取り。
+ * 付けた順に積み、いちばん後に付けたものを公開する。外したら 1 つ前のものへ、最後の 1 つを外したら
+ * 最初に付ける前の値へ戻す(取り付けと取り外しが対になる)。製品の経路からは読まない。
+ */
+const cutPreviewReaders: (() => CutPreview | null)[] = [];
+let cutPreviewReaderBeforeAttach: (() => CutPreview | null) | undefined;
+
+/** 読み取りを口へ付け、外す関数を返す(ビューポートの lifetime に登録する)。 */
+function attachCutPreviewReader(read: () => CutPreview | null): () => void {
+  if (cutPreviewReaders.length === 0) {
+    cutPreviewReaderBeforeAttach = window.pcadViewportCutPreview;
+  }
+  cutPreviewReaders.push(read);
+  window.pcadViewportCutPreview = read;
+  return () => {
+    const index = cutPreviewReaders.indexOf(read);
+    if (index === -1) {
+      return;
+    }
+    cutPreviewReaders.splice(index, 1);
+    const restored = cutPreviewReaders.at(-1) ?? cutPreviewReaderBeforeAttach;
+    if (restored === undefined) {
+      delete window.pcadViewportCutPreview;
+    } else {
+      window.pcadViewportCutPreview = restored;
+    }
+  };
+}
 
 interface CutPreviewSource {
   readonly numericInput: ReturnType<typeof useAppStore.getState>['numericInput'];
   readonly document: ReturnType<typeof useAppStore.getState>['document'];
   readonly bodies: ReturnType<typeof useAppStore.getState>['bodies'];
   readonly selection: readonly string[];
+  readonly parameterAnalysis: ReturnType<typeof useAppStore.getState>['parameterAnalysis'];
+  readonly displaySettings: ReturnType<typeof useAppStore.getState>['displaySettings'];
 }
 
 /**
  * 切断面の予告(FR-432、P5 タスク27e、§0.a-0.61)をストアの状態から組み立てる。
  *
- * **出す条件**は「切断の道具の段が開いていて、切る立体が決まっていること」。段を閉じれば
- * (確定でも取消でも)`numericInput` が null になるので、そのまま消える。
- * 平面が解けない(スケッチの点を材料にした等)ときと、対象の大きさが測れないときも null。
+ * **出す条件**は「切断の道具の段が開いていて、切る立体が決まっていて、いま決定すれば切れること」。
+ * 段を閉じれば(確定でも取消でも)`numericInput` が null になるので、そのまま消える。
+ * 面は確定と同じ式の評価・材料の解決で解く(`cutPlanePreviewOf`、EX-04 W2)。式の評価の文脈は
+ * 決定(`NumericInputPopover` の Enter)と同じ、パラメータの解析と表示の単位。
  */
 function cutPreviewOf(source: CutPreviewSource): CutPreview | null {
-  const input = source.numericInput;
-  if (input === null || input.toolId !== 'cut') {
-    return null;
-  }
-  const context: CutContext = {
+  return cutPlanePreviewOf({
+    numericInput: source.numericInput,
     document: source.document,
     bodies: subShapeBodiesOf(source.bodies),
     selection: source.selection,
-  };
-  const target = cutTargetOf(context);
-  if (target === null) {
-    return null;
-  }
-  const planeKind = input.choices.find((choice) => choice.key === 'cutPlaneKind')?.value;
-  const tiltField = input.fields.find((field) => field.key === 'cutTilt');
-  const tilt =
-    tiltField === undefined
-      ? DEFAULT_CUT_TILT
-      : { source: tiltField.source, value: Number(tiltField.source), display: tiltField.source };
-  const spec = cutPlaneSpecFor(
-    context,
-    planeKind,
-    Number.isFinite(tilt.value) ? tilt : DEFAULT_CUT_TILT,
-  );
-  if (spec === null) {
-    return null;
-  }
-  const plane = resolveCutPlane(spec);
-  const diagonal = cutPreviewDiagonal(context, target);
-  if (plane === null || diagonal <= 0) {
-    return null;
-  }
-  // 残す側は「反対側を残す」のつまみで決まる(§0.a-0.57)。
-  const keepOpposite =
-    input.toggles.find((toggle) => toggle.key === 'cutKeepOpposite')?.value === true;
-  return { plane, diagonal, keep: keepOpposite ? 'negative' : 'positive' };
+    evaluation: { ...source.parameterAnalysis, lengthUnit: source.displaySettings.lengthUnit },
+  });
 }
 
 /**
  * ビューの断面表示(FR-111、P6 タスク35、§2.12)を、ストアの札から描く材料へ開く。
  *
- * **カーネルへは行かない。** 切断の予告(`resolveCutPlane`)と同じく指紋だけで平面を解き、
+ * **カーネルへは行かない。** `resolveCutPlane`(指紋と基準の面だけで解く)で平面を解き、
  * `toThreePlane`(タスク34)で three.js に渡す素の数へ写す。**形は 1 つも変えない。**
  *
  * つまみの四角は**オフセットを載せた後の位置**へ置く(平面そのものを動かして見せる)。
@@ -328,12 +358,17 @@ function SectionOffsetField(): React.JSX.Element | null {
 function canvasDrawsOf(
   document: ReturnType<typeof useAppStore.getState>['document'],
   decoded: ReadonlyMap<string, DecodedCanvasImage>,
+  rectifyingCanvasId: string | null,
 ): readonly CanvasDraw[] {
   return document.canvases.flatMap((canvas) => {
     const image = decoded.get(canvas.imageId);
     if (!canvas.visible || image === undefined) {
       return [];
     }
+    const rectification = canvas.id === rectifyingCanvasId ? undefined : canvas.rectification;
+    const solved = rectification === undefined ? null : solveCanvasHomography(rectification.sourceQuad);
+    if (solved !== null && !solved.ok) return [];
+    const homography = solved?.ok === true ? solved.homography : undefined;
     return [
       {
         id: canvas.id,
@@ -342,6 +377,7 @@ function canvasDrawsOf(
         plane: resolveWorkPlaneOf(document, canvas.plane),
         placement: canvasPlacementOf(canvas),
         opacity: canvas.opacity.value,
+        ...(homography === undefined ? {} : { homography }),
       },
     ];
   });
@@ -357,6 +393,7 @@ function canvasDrawsOf(
  */
 function CanvasScaleField(): React.JSX.Element | null {
   const canvasScale = useAppStore((state) => state.canvasScale);
+  const canvasRectification = useAppStore((state) => state.canvasRectification);
   const canvasMessage = useAppStore((state) => state.canvasMessage);
   const document = useAppStore((state) => state.document);
   const lengthUnit = useAppStore((state) => state.displaySettings.lengthUnit);
@@ -366,7 +403,7 @@ function CanvasScaleField(): React.JSX.Element | null {
   /** 打ちかけの文字(rules/04: `useState` は表示専用の一時状態だけ)。 */
   const [draft, setDraft] = useState('');
 
-  if (canvasScale === null && canvasMessage === null) {
+  if (canvasScale === null && (canvasMessage === null || canvasRectification !== null)) {
     return null;
   }
   const canvas =
@@ -542,7 +579,13 @@ function assemblyBundleOf(
     return EMPTY_ASSEMBLY_GEOMETRY;
   }
   const view = state.assemblyView;
-  if (view === null) return EMPTY_ASSEMBLY_GEOMETRY;
+  // History changes retain the previous view until attachAssembly publishes its new request.
+  // Only publication identity is checked here; current receipt/accounting still belongs to Scene admission.
+  if (view === null || view.sourceDocument !== assembly
+    || state.requestedGeneration !== state.completedGeneration || state.recomputeCancelled
+    || (view.meshOwnership !== undefined && !view.meshOwnership.publicationCurrent())) {
+    return EMPTY_ASSEMBLY_GEOMETRY;
+  }
   const resolved = view.resolved;
   const flattened = flattenAssemblyGeometry(
     assembly,
@@ -550,6 +593,7 @@ function assemblyBundleOf(
     componentDragPlacements(state)
       ?? (state.assemblyMotionSourceDocument === assembly ? state.assemblyMotionPlacements : null)
       ?? resolved.placements,
+    shownOccurrencePlacements(state),
   );
   const selectedRoots = new Set([
     ...state.selection,
@@ -589,6 +633,8 @@ export function ViewportCanvas(): React.JSX.Element {
   const drawListenersRef = useRef(new Set<() => void>());
   /** 初回描画では `controlsRef` がまだ空なので、用意できてからビューキューブを出す。 */
   const [controlsReady, setControlsReady] = useState(false);
+  const [cleanupWaiting, setCleanupWaiting] = useState(false);
+  const [mountFailure, setMountFailure] = useState<Error | null>(null);
 
   const getOrbit = useCallback((): OrbitState => {
     return controlsRef.current?.getOrbit() ?? HOME_ORBIT;
@@ -612,10 +658,97 @@ export function ViewportCanvas(): React.JSX.Element {
     if (canvas === null) {
       return;
     }
-
-    const scene = createViewportScene(canvas);
-    const listeners = drawListenersRef.current;
+    const mountedCanvas = canvas;
+    const viewportOwnerId = `viewport-${++nextViewportOwner}`;
+    let mountEnded = false;
+    let disposeMounted: (() => void) | null = null;
+    const lifetime = createViewportLifetime();
+    const observation = createViewportMeshObservation(viewportOwnerId);
+    let alive = true;
+    const thumbnailReasons = createThumbnailCaptureReasonJournal();
+    const readThumbnailReasons = () => thumbnailReasons.snapshot();
     let frameId = 0;
+    let readSceneReservation: (() => ViewportMeshReservation) | null = null;
+    function disposeViewport(): void {
+      alive = false;
+      lifetime.dispose();
+      if (lifetime.pendingCount === 0) {
+        observation.close(viewportOwnerId);
+        retiredViewports.returned(viewportOwnerId);
+        if (retiredViewports.ownerCount === 0 && retiredViewports.waitingCount === 0
+          && window.pcadViewportRetiredCleanups === readRetiredViewports) delete window.pcadViewportRetiredCleanups;
+      } else {
+        retiredViewports.retain(viewportOwnerId, {
+          retry: () => { disposeViewport(); return lifetime.pendingCount === 0; },
+          read: () => {
+            const reading = readSceneReservation?.();
+            return { viewportOwnerId, pendingCount: lifetime.pendingCount, errors: lifetime.errors,
+              hostDisplayCopyBytes: reading?.displayCopyBytes ?? null, hostGpuAttributeBytes: reading?.gpuMeshBytes ?? null,
+              unknown: [...(reading?.uncovered ?? ['viewportInitializationResources']), 'viewportBindings', 'nativeMemory', 'driverGpuActual'],
+              observationActive: observation.snapshot().active };
+          },
+        });
+      }
+    }
+    function initializeViewport(): void {
+    if (mountEnded || canvasRef.current !== mountedCanvas) { retiredViewports.returned(viewportOwnerId); return; }
+    const canvas = mountedCanvas;
+    setCleanupWaiting(false);
+    lifetime.register('thumbnail reason observer', observeThumbnailCaptureReasons(thumbnailReasons.record));
+    window.pcadThumbnailCaptureReasons = readThumbnailReasons;
+    lifetime.register('thumbnail reason getter', () => {
+      if (window.pcadThumbnailCaptureReasons === readThumbnailReasons) delete window.pcadThumbnailCaptureReasons;
+    });
+    const scene = createViewportScene(canvas, { readSolidMeshState: () => useAppStore.getState(),
+      gpuMeshBudget: LOCAL_DISPLAY_GPU_MESH_BUDGET, observation, viewportOwnerId });
+    readSceneReservation = () => scene.meshReservation();
+    lifetime.register('viewport scene', () => {
+          scene.dispose();
+          const reading = scene.meshReservation();
+          if (reading.viewportCleanupStatus === 'pending' || reading.assemblyCleanupStatus === 'pending') {
+            throw new Error('Viewport resources remain pending');
+          }
+        });
+    const pendingAssemblyRefresh = new WeakMap<AssemblyMeshOwnership, Promise<boolean>>();
+    const refusedAssemblyRefresh = new WeakSet<AssemblyMeshOwnership>();
+    function assemblyReady(): boolean {
+      const state = useAppStore.getState(), owner = state.assemblyView?.meshOwnership;
+      if (activeAssemblyDocument(state) === null || owner === undefined) return true;
+      const bundle = assemblyBundleOf(state);
+      try {
+        if (currentAssemblyMeshAdmission({ bundle, ownership: owner, state }, state)) return true;
+        if (!currentAssemblyMeshPublication(owner, state) || owner.receipt.status !== 'known'
+          || owner.backingInspection.status !== 'known' || owner.refreshOwnership === undefined
+          || refusedAssemblyRefresh.has(owner) || pendingAssemblyRefresh.has(owner)) return false;
+      } catch { refusedAssemblyRefresh.add(owner); return false; }
+      const refresh = owner.refreshOwnership;
+      if (refresh === undefined) return false;
+      const pending = Promise.resolve().then(() => {
+        if (!alive || !currentAssemblyMeshPublication(owner, useAppStore.getState())) return null;
+        return refresh(owner);
+      }).then(fresh => {
+        if (!alive || fresh === null || fresh === owner) return false;
+        const current = useAppStore.getState();
+        if (current.assemblyView?.meshOwnership !== fresh || fresh.document !== owner.document
+          || fresh.library !== owner.library || fresh.activeDocumentId !== owner.activeDocumentId
+          || fresh.documentVersion !== owner.documentVersion || fresh.generation !== owner.generation
+          || fresh.cancelRequestCount !== owner.cancelRequestCount || fresh.timelineIndex !== owner.timelineIndex
+          || fresh.outcome !== owner.outcome || fresh.bodies !== owner.bodies || fresh.sources !== owner.sources
+          || !currentAssemblyMeshPublication(fresh, current)) return false;
+        const freshBundle = assemblyBundleOf(current);
+        if (!currentAssemblyMeshAdmission({ bundle: freshBundle, ownership: fresh, state: current }, current)) return false;
+        scene.setAssembly(freshBundle);
+        requestDraw();
+        return true;
+      }).catch(() => false) // Fail closed; never reoffer the rejected owner.
+        .finally(() => {
+          refusedAssemblyRefresh.add(owner);
+          if (pendingAssemblyRefresh.get(owner) === pending) pendingAssemblyRefresh.delete(owner);
+        });
+      pendingAssemblyRefresh.set(owner, pending);
+      return false;
+    }
+    const listeners = drawListenersRef.current;
     let completedRenders = 0;
     let lastCompletedAtMs = 0;
     let totalSceneRenderMs = 0;
@@ -625,11 +758,89 @@ export function ViewportCanvas(): React.JSX.Element {
       lastCompletedAtMs,
       totalSceneRenderMs,
       totalDrawListenerMs,
+      cleanupStatus: alive ? 'active' : lifetime.pendingCount === 0 ? 'complete' : 'pending',
     });
     // StrictModeや将来の複数mountでは、最後に載った生きている口だけを公開する。
+    lifetime.register('render observation', () => {
+          if (window.pcadViewportRenderStats === readRenderStats) delete window.pcadViewportRenderStats;
+        });
     window.pcadViewportRenderStats = readRenderStats;
-    const readFramedBodies = (): readonly string[] => scene.fullyFramedBodyIds();
+    const readFramedBodies = (): readonly string[] => alive ? scene.fullyFramedBodyIds() : [];
+    lifetime.register('frame observation', () => {
+          if (window.pcadViewportFramedBodies === readFramedBodies) delete window.pcadViewportFramedBodies;
+        });
     window.pcadViewportFramedBodies = readFramedBodies;
+    const readMemoryStats = (): ViewportMeshReservation | null => alive ? scene.meshReservation() : null;
+    lifetime.register('memory observation', () => {
+          if (window.pcadViewportMemoryStats === readMemoryStats) delete window.pcadViewportMemoryStats;
+        });
+    window.pcadViewportMemoryStats = readMemoryStats;
+    // 切断の予告は、scene へ渡した最後の値だけを検査専用の口から読めるようにする(製品の状態には含めない)。
+    let lastCutPreview: CutPreview | null = null;
+    const showCutPreview = (preview: CutPreview | null): void => {
+      lastCutPreview = preview;
+      scene.setCutPreview(preview);
+    };
+    const readCutPreview = (): CutPreview | null => alive ? lastCutPreview : null;
+    lifetime.register('cut preview observation', attachCutPreviewReader(readCutPreview));
+    // Diagnostic metadata only. Weak identity tags never retain documents or bodies.
+    const ownerIdentities = new WeakMap<object, number>();
+    let nextOwnerIdentity = 0;
+    const identityOf = (value: object | null): number | null => {
+      if (value === null) return null;
+      const previous = ownerIdentities.get(value);
+      if (previous !== undefined) return previous;
+      const identity = ++nextOwnerIdentity;
+      ownerIdentities.set(value, identity);
+      return identity;
+    };
+    const readOwnerCheck = (read: () => boolean): { readonly value: boolean | null; readonly error: string | null } => {
+      try { return { value: read(), error: null }; }
+      catch (error) { return { value: null, error: String(error) }; }
+    };
+    // Same publication lifetime as the existing owner getter; no per-frame observation.
+    const mateInputs: Readonly<AssemblyMateInputObservation>[] = [];
+    const observeMateInput = (input: AssemblyMateInputObservation): void => {
+      if (!alive) return;
+      Object.freeze(input.clientPoint);
+      if (input.canvasPoint !== undefined) Object.freeze(input.canvasPoint);
+      if (input.scene !== undefined) Object.freeze(input.scene);
+      if (input.hit !== undefined && input.hit !== null) Object.freeze(input.hit);
+      mateInputs.push(Object.freeze(input));
+      if (mateInputs.length > 2) mateInputs.shift();
+    };
+    const readAssemblyOwner = (): Readonly<Record<string, unknown>> | null => {
+      if (!alive) return null;
+      const state = useAppStore.getState(), view = state.assemblyView, owner = view?.meshOwnership;
+      return { viewportOwnerId, mateInputs: [...mateInputs], activeDocumentId: state.activeDocumentId,
+        documentVersion: state.documentVersion, requestedGeneration: state.requestedGeneration,
+        completedGeneration: state.completedGeneration, cancelRequestCount: state.cancelRequestCount,
+        recomputeCancelled: state.recomputeCancelled, lastOutcome: state.lastOutcome, timelineIndex: state.timelineIndex,
+        assemblyIdentity: identityOf(state.assembly), drawingIdentity: identityOf(state.drawing),
+        assemblyLibraryIdentity: identityOf(state.assemblyLibrary), assemblyViewIdentity: identityOf(view),
+        sourceDocumentIdentity: identityOf(view?.sourceDocument ?? null),
+        sourceBodiesIdentity: identityOf(view?.bodies ?? null), ownershipIdentity: identityOf(owner ?? null),
+        ownership: owner === undefined ? null : {
+          documentIdentity: identityOf(owner.document), libraryIdentity: identityOf(owner.library),
+          activeDocumentId: owner.activeDocumentId, documentVersion: owner.documentVersion,
+          generation: owner.generation, outcome: owner.outcome, timelineIndex: owner.timelineIndex,
+          cancelRequestCount: owner.cancelRequestCount, bodiesIdentity: identityOf(owner.bodies),
+          receiptStatus: owner.receipt.status, backingInspectionStatus: owner.backingInspection.status,
+          publicationCurrent: readOwnerCheck(() => owner.publicationCurrent()), receiptCurrent: readOwnerCheck(() => owner.receiptCurrent()),
+          backingInspectionCurrent: readOwnerCheck(() => owner.backingInspectionCurrent()),
+        } };
+    };
+    lifetime.register('assembly ownership observation', () => {
+      mateInputs.length = 0;
+      if (window.pcadViewportAssemblyOwner === readAssemblyOwner) delete window.pcadViewportAssemblyOwner;
+    });
+    window.pcadViewportAssemblyOwner = readAssemblyOwner;
+    const readMeshObservation = (): ViewportMeshObservationSnapshot => observation.snapshot();
+    lifetime.register('mesh observation getter', () => {
+          if (window.pcadViewportMeshObservation === readMeshObservation) delete window.pcadViewportMeshObservation;
+        });
+    window.pcadViewportMeshObservation = readMeshObservation;
+    window.pcadViewportRetiredCleanups = readRetiredViewports;
 
     /**
      * 3D の色をテーマから読み直すべきか(FR-908)。ルート要素へ `data-theme` を書くのは
@@ -641,10 +852,12 @@ export function ViewportCanvas(): React.JSX.Element {
 
     function draw(): void {
       frameId = 0;
+      if (!alive) return;
       if (themeDirty) {
         themeDirty = false;
         scene.setThemeColors(readThemeColors());
       }
+      if (!assemblyReady()) return;
       const { projection, displayStyle, showGrid, displaySettings, quadCamera } = useAppStore.getState();
       const renderStartedAt = globalThis.performance.now();
       if (quadCamera === null) scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
@@ -662,84 +875,36 @@ export function ViewportCanvas(): React.JSX.Element {
 
     /** 同じ描画機会に何度呼ばれても描画は1回にまとめる。 */
     function requestDraw(): void {
-      if (frameId === 0) {
+      if (alive && frameId === 0) {
         frameId = globalThis.requestAnimationFrame(draw);
       }
     }
 
-    /*
-      下絵の画像(FR-332、P6 タスク39)。**復号した画像を覚えているのはここ**で、
-      three.js のテクスチャは層(`canvasLayer.ts`)が作って捨てる(持ち主を分ける)。
-      文書ではなく**画面**の寿命で持つが、文書から消えた画像はその場で閉じ、画面を
-      閉じるときに残りを全部閉じるので、rules/06 10.17 のような溜め込みは起きない。
-    */
-    const decodedCanvases = new Map<string, DecodedCanvasImage>();
-    /** いま復号を頼んでいる画像。同じ画像を二重に復号しない。 */
-    const decodingCanvases = new Set<string>();
-    /** 画面を閉じた後に復号が返ってきたら、画像を閉じて捨てるための札。 */
-    let detached = false;
-
-    /** いまの文書と復号済みの画像から、下絵を描き直す。 */
-    function pushCanvases(): void {
-      const part = activePartDocument(useAppStore.getState());
-      scene.setCanvases(part === null ? [] : canvasDrawsOf(part, decodedCanvases));
-      requestDraw();
-    }
-
-    /**
-     * 下絵の画像を必要なだけ復号し、描き直す。**再計算は起こさない**(§2.14)。
-     * 復号は非同期なので、済んだものから順に画面へ出る(読み込み中でも操作は止まらない)。
-     */
-    function syncCanvases(): void {
-      const state = useAppStore.getState();
-      const alive = new Set(state.document.canvases.map((canvas) => canvas.imageId));
-      for (const [imageId, image] of decodedCanvases) {
-        if (!alive.has(imageId)) {
-          // 消した下絵の画像は記憶を返す(`ImageBitmap` は閉じないと残る)。
-          image.close?.();
-          decodedCanvases.delete(imageId);
-        }
-      }
-      for (const canvas of state.document.canvases) {
-        const bytes = state.canvases.get(canvas.imageId);
-        if (
-          bytes === undefined ||
-          decodedCanvases.has(canvas.imageId) ||
-          decodingCanvases.has(canvas.imageId)
-        ) {
-          continue;
-        }
-        // 受け付けの判定(PNG / JPEG・8MB)と断りの文言は model が持つ(§2.8)。
-        const checked = checkCanvasImage(bytes);
-        if (!checked.ok) {
-          useAppStore.getState().setCanvasMessage(checked.message);
-          continue;
-        }
-        const imageId = canvas.imageId;
-        decodingCanvases.add(imageId);
-        decodeCanvasImage(bytes, checked.format).then(
-          (image) => {
-            decodingCanvases.delete(imageId);
-            if (detached) {
-              image.close?.();
-              return;
-            }
-            decodedCanvases.set(imageId, image);
-            // 画素の大きさは 2 点の寸法合わせ(§2.14)が使うのでストアへ控える。
-            useAppStore.getState().setCanvasPixelSize(imageId, {
-              width: image.width,
-              height: image.height,
-            });
-            pushCanvases();
-          },
-          () => {
-            // 壊れた画像。**止めずに**その 1 枚だけ出さない(FR-504、NFR-RE-1)。
-            decodingCanvases.delete(imageId);
-          },
-        );
-      }
-      pushCanvases();
-    }
+    lifetime.register('animation frame', () => {
+          if (frameId !== 0) globalThis.cancelAnimationFrame(frameId);
+          frameId = 0;
+        });
+    const canvasImageCache = createCanvasImageCache({
+      readSource: () => {
+        const state = useAppStore.getState();
+        return { documentId: state.activeDocumentId,
+          canvases: activePartDocument(state)?.canvases ?? [], images: state.canvases, retries: state.canvasImageRetries };
+      },
+      publish: (images) => {
+        if (!alive) return;
+        const state = useAppStore.getState();
+        const part = activePartDocument(state);
+        scene.setCanvases(part === null ? [] : canvasDrawsOf(part, images, state.canvasRectification?.canvasId ?? null));
+        requestDraw();
+      },
+      setLoad: (id, owner, load) => { useAppStore.getState().setCanvasImageLoad(id, owner, load); },
+      reportInvalid: (message) => { if (alive) useAppStore.getState().setCanvasMessage(message); },
+      onCleanupSettled: () => { if (!alive) disposeViewport(); },
+    });
+    lifetime.register('decoded canvas images', () => {
+          canvasImageCache.dispose();
+          if (canvasImageCache.cleanupPending()) throw new Error('Image resources remain pending cleanup');
+        });
 
     /**
      * 2 点の寸法合わせ(§2.14)のあいだだけ、押した場所を作図面の点として拾う。
@@ -749,15 +914,18 @@ export function ViewportCanvas(): React.JSX.Element {
      * `stopImmediatePropagation()` を呼べば、寸法合わせの最中に線を引き始めてしまうことがない。
      */
     const onCanvasScalePointerDown = (event: PointerEvent): void => {
+      if (!alive) return;
       const state = useAppStore.getState();
+      const picking = state.canvasRectification;
       const scaling = state.canvasScale;
-      if (scaling === null) {
+      if (scaling === null && picking === null) {
         return;
       }
-      const target = state.document.canvases.find((item) => item.id === scaling.canvasId);
+      const target = state.document.canvases.find((item) => item.id === (picking?.canvasId ?? scaling?.canvasId));
       if (target === undefined) {
         return;
       }
+      if (cameraDragAction(readCameraControlSettings(state.displaySettings.cameraControls), event) !== null) return;
       if (event.button !== 0) {
         // 中ボタン・右ボタンは視点操作へそのまま通す(合わせている間も回せる)。
         return;
@@ -775,26 +943,50 @@ export function ViewportCanvas(): React.JSX.Element {
         // 作図面を真横から見ている(視線と平行)。点は決まらないので何もしない。
         return;
       }
-      state.addCanvasScalePoint(worldToPlane(plane, world));
+      const planePoint = worldToPlane(plane, world);
+      if (picking !== null) {
+        const pixel = canvasPixelPointOf(canvasPlacementOf(target), picking.size, planePoint);
+        state.addCanvasRectificationPoint([pixel[0] / picking.size.width, pixel[1] / picking.size.height]);
+      } else {
+        state.addCanvasScalePoint(planePoint);
+      }
     };
+    lifetime.register('canvas pointer input', () => { mountedCanvas.removeEventListener('pointerdown', onCanvasScalePointerDown); });
     canvas.addEventListener('pointerdown', onCanvasScalePointerDown);
 
     // 保存のときに呼ばれるサムネイルの作り手を差し出す(§0.a-0.18、FR-801)。
     // 3D 表示部は後から読み込まれるので、それまでは口が空でサムネイルなしになる。
-    useAppStore.getState().setCaptureThumbnail(() => scene.captureThumbnail());
+    const captureThumbnail = (): Uint8Array | null => {
+      if (!alive) { thumbnailReasons.record('consumer:not-alive'); return null; }
+      if (!assemblyReady()) { thumbnailReasons.record('consumer:admission'); return null; }
+      thumbnailReasons.record('consumer:admitted');
+      return scene.captureThumbnail(undefined, thumbnailReasons.record);
+    };
+    lifetime.register('thumbnail producer', () => {
+          if (useAppStore.getState().captureThumbnail === captureThumbnail) useAppStore.getState().setCaptureThumbnail(null);
+        });
+    useAppStore.getState().setCaptureThumbnail(captureThumbnail);
     // 印刷のときに呼ばれる 1 コマの作り手も同じように差し出す(FR-810、P6 タスク33)。
     // 用意できるまでは口が空で、印刷は「印刷する絵を作れませんでした。」で断られる。
-    useAppStore.getState().setCapturePrintFrame(() => scene.capturePrintFrame());
+    const capturePrintFrame = (): string | null => alive && assemblyReady() ? scene.capturePrintFrame() : null;
+    lifetime.register('print producer', () => {
+          if (useAppStore.getState().capturePrintFrame === capturePrintFrame) useAppStore.getState().setCapturePrintFrame(null);
+        });
+    useAppStore.getState().setCapturePrintFrame(capturePrintFrame);
 
     let assemblyInteraction: ReturnType<typeof attachAssemblyInteraction> | null = null;
     const detachQuadInput = attachQuadInput(canvas, () => useAppStore.getState().quadCamera !== null, (pane) => {
+      if (!alive) return;
       useAppStore.getState().setQuadActivePane(pane);
       scene.setActivePane(pane);
     });
+    lifetime.register('quad input', detachQuadInput);
     const controls = attachCameraControls(canvas, () => {
+      if (!alive) return;
       assemblyInteraction?.cancelDrag();
       requestDraw();
     }, (active) => {
+      if (!alive) return;
       scene.setInteractiveRendering(active);
       // 離したときは通常解像度の静止画を必ず1枚描く。開始時も最初の入力を待たず切り替える。
       requestDraw();
@@ -810,14 +1002,18 @@ export function ViewportCanvas(): React.JSX.Element {
         const pane = quadLayout(canvas.width, canvas.height).find((entry) => entry.id === useAppStore.getState().quadCamera?.active);
         return Math.max(1, (pane?.rectangle.height ?? canvas.height) * canvas.clientHeight / Math.max(1, canvas.height));
       },
-    });
+    }, () => readCameraControlSettings(useAppStore.getState().displaySettings.cameraControls));
+    lifetime.register('camera ref', () => { if (controlsRef.current === controls) controlsRef.current = null; });
+    lifetime.register('camera input', () => { controls.detach(); });
     controlsRef.current = controls;
     const viewCameraController: ViewCameraController = {
       capture: () => {
+        if (!alive) return namedCameraFromOrbit(HOME_ORBIT, useAppStore.getState().projection);
         const { quadCamera, projection } = useAppStore.getState();
         return namedCameraFromOrbit(controls.getOrbit(), quadCamera === null || quadCamera.active === 'isometric' ? projection : 'orthographic');
       },
       restore: (camera) => {
+        if (!alive) return false;
         const orbit = orbitFromNamedCamera(camera);
         if (orbit === null) return false;
         useAppStore.getState().setQuadViewEnabled(false);
@@ -826,6 +1022,9 @@ export function ViewportCanvas(): React.JSX.Element {
         return true;
       },
     };
+    lifetime.register('camera producer', () => {
+          if (useAppStore.getState().viewCameraController === viewCameraController) useAppStore.getState().setViewCameraController(null);
+        });
     useAppStore.getState().setViewCameraController(viewCameraController);
     // 視点操作を先に結び、その後ろでスケッチの操作を結ぶ(中ボタン・Alt の取り合いを避ける)。
     // 視点そのものを渡す。距離は方眼の刻みに、向きは 3D スケッチで押した場所に置く面に使う
@@ -833,66 +1032,94 @@ export function ViewportCanvas(): React.JSX.Element {
     // 合致の選択を先に受け、処理した左クリックは部品用の作図操作へ流さない。
     assemblyInteraction = attachAssemblyInteraction(canvas, scene, {
       viewDirection: () => viewDirection(controls.getOrbit()),
+      prepareMateInput: () => {
+        const owner = useAppStore.getState().assemblyView?.meshOwnership;
+        if (assemblyReady()) return null;
+        return (owner === undefined ? undefined : pendingAssemblyRefresh.get(owner)) ?? Promise.resolve(false);
+      },
+      observeMateInput,
     });
+    lifetime.register('assembly input', () => { assemblyInteraction?.detach(); });
     const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging());
+    lifetime.register('sketch input', () => { interaction.detach(); });
+    lifetime.register('view controls', () => { setControlsReady(false); });
     setControlsReady(true);
 
     const observer = new ResizeObserver(() => {
+      if (!alive) return;
       assemblyInteraction?.cancelDrag();
       scene.resize(canvas.clientWidth, canvas.clientHeight);
       requestDraw();
     });
+    lifetime.register('resize observation', () => { observer.disconnect(); });
     observer.observe(canvas);
 
-    scene.resize(canvas.clientWidth, canvas.clientHeight);
-    const initial = useAppStore.getState();
-    // 引っぱっている最中(FR-313、P4b タスク14)は仮の形を描く。文書どおりの形
-    // (`resolvedSketch`)は当たり判定・プロパティ・吸着がそのまま読み続ける。
-    const initialSketchHidden = activePartDocument(initial) === null || isSheetFlatDisplayed(initial);
-    scene.setSketch(initialSketchHidden ? EMPTY_PART_SKETCH : initial.dragResolved ?? initial.resolvedSketch,
-      initialSketchHidden ? null : initial.sketchMesh);
-    scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
-    scene.setBodies(activePartDocument(initial) === null ? [] : displayedSheetBodies(initial));
-    // 配置した部品(FR-605、P7 タスク10)。アセンブリを開いていないあいだは空のまま。
-    scene.setAssembly(assemblyBundleOf(initial));
-    scene.setInterference(initial.assemblyInterferenceResult, initial.assemblyInterferenceSelectedKey);
-    // 外観の割り当て(FR-1106〜1109)。文書の割り当てと、カーネルが選び直した面の対応から
-    // 組み立てる(P5 タスク10)。割り当てが 1 つも無ければ既定の外観 1 色になる。
-    scene.setAppearance(
-      buildAppearanceInput(appearanceOf(initial.document), initial.appearanceMatches),
-    );
-    scene.setBodyHighlight(initial.hoveredElementId, initial.selection);
-    scene.setSubShapeHighlight(initial.hoveredElementId, initial.selection);
-    scene.setWorkPlane(initial.workPlane);
-    // 3D スケッチ(作図面なし、FR-330)では作図面の矩形を出さない(P4 タスク33)。
-    scene.setWorkPlaneVisible(!isFreeWorkPlaneId(initial.workPlaneId));
-    // 構築線(FR-320)は履歴を見ないと分からないので、文書から引いて渡す(P4 タスク33)。
-    scene.setConstructionIds(constructionFeatureIds(initial.sketch));
-    // 完全に決まった要素(FR-313、利用者の決定②、P4b タスク22b)。判定は純関数 1 か所。
-    scene.setConstrainedFeatureIds(constrainedFeatureIdsOfStore(initial));
-    scene.setReferences(initial.resolvedReferences);
-    scene.setEditPreview(initial.editPreview);
-    scene.setTracking(initial.trackIndicator);
-    // 拘束の印(FR-313、P4b タスク13)。一覧の行(`constraintSummaries`)を印へ開く。
-    scene.setConstraintMarks(constraintMarksOf(initial.constraintSummaries));
-    scene.setSelectedConstraint(initial.selectedConstraintId);
-    // 推定した拘束の予告(FR-333、P6 タスク41)。線を引いている最中だけ出る。
-    scene.setInferredConstraintMarks(initial.inferredConstraints?.marks ?? null);
-    // 測定の結果(FR-1102、P5 タスク31)。線・弧・端の丸・値の札を出す。
-    scene.setMeasurement(initial.measurement);
-    // 切断面の予告(FR-432、P5 タスク27e)。切断の段が開いている間だけ出る。
-    scene.setCutPreview(cutPreviewOf(initial));
-    // 球面の案内線(FR-431、P5 タスク21)。球を選んでいる間(または「いつも出す」)だけ出る。
-    scene.setSphereGrid(sphereGridSpecOf(initial));
-    // ビューの断面表示(FR-111、P6 タスク35)。入れているあいだだけ平面を配る。
-    scene.setSectionView(sectionViewRenderOf(initial.sectionView));
-    // 3D プリントの点検の色(FR-815、P6 タスク46)。点検を出しているあいだだけ塗る。
-    scene.setPrintability(printabilityHighlightOf(initial));
-    // 下絵(FR-332、P6 タスク39)。復号が済んだものから順に貼られる。
-    syncCanvases();
-    requestDraw();
+    function syncRepairPreview(state: AppState): void {
+      void scene.setReferenceRepairPreview(currentReferenceRepairPreview(state)).then(() => {
+        if (alive) requestDraw();
+      }, () => {
+        // A provider/cleanup rejection leaves the preview unavailable; no document or history is changed.
+        if (alive) requestDraw();
+      });
+    }
 
-    const unsubscribe = useAppStore.subscribe((next, previous) => {
+    function syncInitialScene(): void {
+      scene.resize(mountedCanvas.clientWidth, mountedCanvas.clientHeight);
+      const initial = useAppStore.getState();
+      // 引っぱっている最中(FR-313、P4b タスク14)は仮の形を描く。文書どおりの形
+      // (`resolvedSketch`)は当たり判定・プロパティ・吸着がそのまま読み続ける。
+      const initialSketchHidden = activePartDocument(initial) === null || isSheetFlatDisplayed(initial);
+      scene.setSketch(initialSketchHidden ? EMPTY_PART_SKETCH : initial.dragResolved ?? initial.resolvedSketch,
+        initialSketchHidden ? null : initial.sketchMesh);
+      scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
+      scene.setBodies(solidBodiesForAdmission(initial));
+      // 配置した部品(FR-605、P7 タスク10)。アセンブリを開いていないあいだは空のまま。
+      if (assemblyReady()) scene.setAssembly(assemblyBundleOf(useAppStore.getState()));
+      scene.setInterference(initial.assemblyInterferenceResult, initial.assemblyInterferenceSelectedKey);
+      // 外観の割り当て(FR-1106〜1109)。文書の割り当てと、カーネルが選び直した面の対応から
+      // 組み立てる(P5 タスク10)。割り当てが 1 つも無ければ既定の外観 1 色になる。
+      scene.setAppearance(
+        buildAppearanceInput(appearanceOf(initial.document), initial.appearanceMatches),
+      );
+      scene.setBodyHighlight(initial.hoveredElementId, initial.selection);
+      scene.setSubShapeHighlight(initial.hoveredElementId, initial.selection);
+      syncRepairPreview(initial);
+      scene.setWorkPlane(initial.workPlane);
+      // 3D スケッチ(作図面なし、FR-330)では作図面の矩形を出さない(P4 タスク33)。
+      scene.setWorkPlaneVisible(!isFreeWorkPlaneId(initial.workPlaneId));
+      // 構築線(FR-320)は履歴を見ないと分からないので、文書から引いて渡す(P4 タスク33)。
+      scene.setConstructionIds(constructionFeatureIds(initial.sketch));
+      // 完全に決まった要素(FR-313、利用者の決定②、P4b タスク22b)。判定は純関数 1 か所。
+      scene.setConstrainedFeatureIds(constrainedFeatureIdsOfStore(initial));
+      scene.setReferences(initial.resolvedReferences);
+      scene.setEditPreview(initial.editPreview);
+      scene.setTracking(initial.trackIndicator);
+      // 拘束の印(FR-313、P4b タスク13)。一覧の行(`constraintSummaries`)を印へ開く。
+      scene.setConstraintMarks(constraintMarksOf(initial.constraintSummaries));
+      scene.setSelectedConstraint(initial.selectedConstraintId);
+      // 推定した拘束の予告(FR-333、P6 タスク41)。線を引いている最中だけ出る。
+      scene.setInferredConstraintMarks(initial.inferredConstraints?.marks ?? null);
+      // 測定の結果(FR-1102、P5 タスク31)。線・弧・端の丸・値の札を出す。
+      scene.setMeasurement(initial.measurement);
+      // 切断面の予告(FR-432、P5 タスク27e)。切断の段が開いている間だけ出る。
+      showCutPreview(cutPreviewOf(initial));
+      // 球面の案内線(FR-431、P5 タスク21)。球を選んでいる間(または「いつも出す」)だけ出る。
+      scene.setSphereGrid(sphereGridSpecOf(initial));
+      // ビューの断面表示(FR-111、P6 タスク35)。入れているあいだだけ平面を配る。
+      scene.setSectionView(sectionViewRenderOf(initial.sectionView));
+      // 3D プリントの点検の色(FR-815、P6 タスク46)。点検を出しているあいだだけ塗る。
+      scene.setPrintability(printabilityHighlightOf(initial));
+      // 立体解析の場(完了した現在の結果だけ)。結果が無ければ何も描かない。
+      { const layers = solidAnalysisLayersOf(initial); scene.setAnalysisField(layers.field); scene.setAnalysisMode(layers.mode); }
+      // 下絵(FR-332、P6 タスク39)。復号が済んだものから順に貼られる。
+      canvasImageCache.sync();
+      requestDraw();
+    }
+    syncInitialScene();
+
+    function syncStoreChange(next: AppState, previous: AppState): void {
+      if (!alive) return;
+      syncRepairPreview(next);
       // スケッチの形と、カーネルが返した面(FR-105、FR-310)。
       if (
         next.resolvedSketch !== previous.resolvedSketch ||
@@ -905,9 +1132,8 @@ export function ViewportCanvas(): React.JSX.Element {
         scene.setSketch(sketchHidden ? EMPTY_PART_SKETCH : next.dragResolved ?? next.resolvedSketch, sketchHidden ? null : next.sketchMesh);
       }
       // 立体(FR-105)。カーネルが返した三角形と稜線をボディごとに描く。
-      if (next.bodies !== previous.bodies || next.assembly !== previous.assembly || next.sheetMetalPreview !== previous.sheetMetalPreview
-        || next.sheetMetalTool !== previous.sheetMetalTool) {
-        scene.setBodies(activePartDocument(next) === null ? [] : displayedSheetBodies(next));
+      if (solidMeshOwnershipChanged(next, previous)) {
+        scene.setBodies(solidBodiesForAdmission(next));
       }
       // 外観(FR-1106〜1109)。**割り当ての表そのものが変わったときだけ**組み立て直す。
       // 文書が変わるたびに作り直すと、スケッチを 1 本引いただけで材質の入れ替えが起きる
@@ -939,14 +1165,18 @@ export function ViewportCanvas(): React.JSX.Element {
       if (
         next.assembly !== previous.assembly ||
         next.assemblyView !== previous.assemblyView ||
+        next.requestedGeneration !== previous.requestedGeneration ||
+        next.completedGeneration !== previous.completedGeneration ||
+        next.recomputeCancelled !== previous.recomputeCancelled ||
         next.assemblyDragOverlay !== previous.assemblyDragOverlay ||
         next.assemblyMotionPlacements !== previous.assemblyMotionPlacements ||
+        next.assemblyOccurrenceDrives !== previous.assemblyOccurrenceDrives ||
         next.assemblyMotionSourceDocument !== previous.assemblyMotionSourceDocument ||
         next.assemblyMateDraft !== previous.assemblyMateDraft ||
         next.hoveredElementId !== previous.hoveredElementId ||
         next.selection !== previous.selection
       ) {
-        scene.setAssembly(assemblyBundleOf(next));
+        if (assemblyReady()) scene.setAssembly(assemblyBundleOf(useAppStore.getState()));
       }
       if (next.assemblyInterferenceResult !== previous.assemblyInterferenceResult
         || next.assemblyInterferenceSelectedKey !== previous.assemblyInterferenceSelectedKey) {
@@ -955,15 +1185,18 @@ export function ViewportCanvas(): React.JSX.Element {
       /*
         切断面の予告(FR-432、タスク27e)。**材料が変わったときだけ**組み立て直す
         (NFR-PF-1。同じ内容を渡し直すと層は並びを触らないが、ここで毎回作り直すと
-        参照が変わってしまい、その約束が効かなくなる)。
+        参照が変わってしまい、その約束が効かなくなる)。式は確定と同じく変数表と表示の単位で
+        読むので、パラメータの解析・表示の単位が変わったときも組み立て直す(EX-04 W2)。
       */
       if (
         next.numericInput !== previous.numericInput ||
         next.selection !== previous.selection ||
         next.bodies !== previous.bodies ||
-        next.document !== previous.document
+        next.document !== previous.document ||
+        next.parameterAnalysis !== previous.parameterAnalysis ||
+        next.displaySettings.lengthUnit !== previous.displaySettings.lengthUnit
       ) {
-        scene.setCutPreview(cutPreviewOf(next));
+        showCutPreview(cutPreviewOf(next));
       }
       /*
         球面の案内線(FR-431、タスク21)。**材料が変わったときだけ**組み立て直す。
@@ -981,6 +1214,14 @@ export function ViewportCanvas(): React.JSX.Element {
       */
       if (next.sectionView !== previous.sectionView) {
         scene.setSectionView(sectionViewRenderOf(next.sectionView));
+      }
+      // 立体解析の場。失敗・取消・古い結果・文書の差し替えでは結果が消えるので、場も消える。
+      if (next.solidAnalysisSession !== previous.solidAnalysisSession || next.solidModal !== previous.solidModal
+        || next.solidBuckling !== previous.solidBuckling
+        || next.document !== previous.document || next.completedGeneration !== previous.completedGeneration) {
+        const layers = solidAnalysisLayersOf(next);
+        scene.setAnalysisField(layers.field); scene.setAnalysisMode(layers.mode);
+        requestDraw();
       }
       /*
         3D プリントの点検の色(FR-815、タスク46)。**結果が入れ替わったときだけ**渡し直す。
@@ -1003,8 +1244,12 @@ export function ViewportCanvas(): React.JSX.Element {
         入切・移動・不透明度は文書の変化として届くが、**再計算は 1 回も走らない**
         (`affectsShape` が下絵を見ないので `isComputing` も立たない。§2.14)。
       */
-      if (next.document !== previous.document || next.canvases !== previous.canvases || next.assembly !== previous.assembly) {
-        syncCanvases();
+      if (next.document !== previous.document || next.canvases !== previous.canvases
+        || next.canvasRectification !== previous.canvasRectification
+        || next.canvasImageRetries !== previous.canvasImageRetries
+        || next.assembly !== previous.assembly || next.drawing !== previous.drawing
+        || next.activeDocumentId !== previous.activeDocumentId) {
+        canvasImageCache.sync();
       }
       // 作図面が変わったら矩形の向きを変える(§0.a-0.3)。任意の作業平面(FR-328)は
       // 文書が変わっても面の位置が動くので、解いた面そのものの変化を見る(タスク13)。
@@ -1084,40 +1329,32 @@ export function ViewportCanvas(): React.JSX.Element {
         useAppStore.getState().matchWorkPlaneToView(controls.getOrbit());
       }
       requestDraw();
-    });
+    }
+    const unsubscribe = useAppStore.subscribe(syncStoreChange);
+    lifetime.register('store subscription', unsubscribe);
 
-    return () => {
-      if (window.pcadViewportRenderStats === readRenderStats) {
-        delete window.pcadViewportRenderStats;
+    disposeMounted = disposeViewport;
+    }
+    setCleanupWaiting(retiredViewports.pendingCount !== 0 || retiredViewports.ownerCount >= 16);
+    window.pcadViewportRetiredCleanups = readRetiredViewports;
+    const cancelWaiting = retiredViewports.whenAvailable(viewportOwnerId, () => {
+      try { initializeViewport(); }
+      catch (error) {
+        if (error instanceof ViewportSceneInitializationFailure) {
+          lifetime.register('scene initialization rollback', () => {
+            error.cleanup.dispose();
+            if (error.cleanup.pendingCount !== 0) throw new Error('Scene initialization cleanup remains pending');
+          });
+        }
+        disposeMounted = disposeViewport;
+        disposeViewport();
+        if (!mountEnded) setMountFailure(error instanceof Error ? error : new Error('Viewport initialization failed'));
       }
-      if (window.pcadViewportFramedBodies === readFramedBodies) delete window.pcadViewportFramedBodies;
-      if (frameId !== 0) {
-        globalThis.cancelAnimationFrame(frameId);
-      }
-      unsubscribe();
-      observer.disconnect();
-      canvas.removeEventListener('pointerdown', onCanvasScalePointerDown);
-      detachQuadInput();
-      // 下絵の画像の記憶を返す(テクスチャは `scene.dispose()` が捨てる。P5 §4)。
-      detached = true;
-      for (const image of decodedCanvases.values()) {
-        image.close?.();
-      }
-      decodedCanvases.clear();
-      // 片付けた場面をもう使えないので、サムネイルと印刷の作り手も取り下げる。
-      useAppStore.getState().setCaptureThumbnail(null);
-      useAppStore.getState().setCapturePrintFrame(null);
-      if (useAppStore.getState().viewCameraController === viewCameraController) {
-        useAppStore.getState().setViewCameraController(null);
-      }
-      interaction.detach();
-      assemblyInteraction?.detach();
-      controls.detach();
-      scene.dispose();
-      controlsRef.current = null;
-      setControlsReady(false);
-    };
+    });
+    return () => { mountEnded = true; cancelWaiting(); disposeMounted?.(); };
   }, []);
+
+  if (mountFailure !== null) throw mountFailure;
 
   return (
     <>
@@ -1127,6 +1364,14 @@ export function ViewportCanvas(): React.JSX.Element {
         tabIndex={0}
         aria-label={t('viewport.label')}
       />
+      {cleanupWaiting ? <div className="pcad-viewport__overlay" role="status">
+        <div className="pcad-card pcad-viewport__failure">
+          <p>{t('viewport.cleanupPending')}</p>
+          <p>{t('viewport.failedAdvice')}</p>
+          <button className="pcad-button" type="button" title={t('controlGuide.button.viewportRetry')}
+            onClick={() => { retiredViewports.retryNow(); }}>{t('viewport.retry')}</button>
+        </div>
+      </div> : null}
       {/*
         断面表示のその場の数値入力(FR-111、NFR-UX-2)。**区画は増やさない**——
         ビューポートの中に浮かべ、断面表示を入れているあいだだけ出す。
@@ -1138,6 +1383,7 @@ export function ViewportCanvas(): React.JSX.Element {
         断面表示の欄と同じく**区画は増やさない**。
       */}
       <CanvasScaleField />
+      <CanvasRectificationField />
       <MatePopover />
       {controlsReady && (quadActive === null || quadActive === 'isometric') ? (
         <ViewCube getOrbit={getOrbit} setOrbit={setOrbit} subscribeDraw={subscribeDraw} />

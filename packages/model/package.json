@@ -6,6 +6,10 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./desktop-occt-transport": {
+      "types": "./dist/desktopOcctTransport.d.ts",
+      "default": "./src/desktopOcctTransport.ts"
+    },
     "./scripting": {
       "types": "./dist/scripting/index.d.ts",
       "default": "./src/scripting/index.ts"
@@ -13,6 +17,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./beam-analysis": {
+      "types": "./dist/analysis/index.d.ts",
+      "default": "./src/analysis/index.ts"
     }
   },
   "scripts": {

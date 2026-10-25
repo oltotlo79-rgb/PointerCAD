@@ -25,6 +25,31 @@ import {
 
 beforeEach(resetTestStore);
 
+describe('ガイド専用の保存口と実操作の証拠', () => {
+  it('保存口が無い環境でも部品/Undoを変えず、注入した口を表示設定から分離する', () => {
+    const state = useAppStore.getState(), document = state.document, undo = state.undoStack;
+    const previousStorage = state.tutorialCheckpointStorage;
+    const entries = new Map<string, string>();
+    const storage = { getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => { entries.set(key, value); } };
+    state.setTutorialCheckpointStorage(storage);
+    state.setTutorialCheckpointFailure('missing');
+    state.setTutorialDraft({ kind: 'parameter', parameterName: '板厚', source: '3mm + ', focusedKey: 'source' });
+    state.setTutorialExports({ step: document });
+    const current = useAppStore.getState();
+    expect(current.tutorialCheckpointStorage).toBe(storage);
+    expect(current.tutorialCheckpointFailure).toBe('missing');
+    expect(current.tutorialDraft).toMatchObject({ source: '3mm + ' });
+    expect(current.tutorialExports.step).toBe(document);
+    expect(current.document).toBe(document);
+    expect(current.undoStack).toBe(undo);
+    current.setTutorialCheckpointStorage(previousStorage);
+    current.setTutorialCheckpointFailure(null);
+    current.setTutorialDraft(null);
+    current.setTutorialExports({});
+  });
+});
+
 describe('表示設定(FR-908、FR-909、計画書 P4 タスク1、§0.a-0.1〜0.3)', () => {
   it('起動時の表示設定は既定(ダーク・100%)', () => {
     expect(useAppStore.getState().displaySettings).toEqual(DEFAULT_DISPLAY_SETTINGS);

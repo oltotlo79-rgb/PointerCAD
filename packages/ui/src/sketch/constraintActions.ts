@@ -14,6 +14,7 @@
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import {
   baseWorkPlane,
+  PART_SCHEMA_VERSION,
   replaceSketch,
   type ConstraintTarget,
   type SketchConstraintKind,
@@ -122,7 +123,14 @@ export function constraintPickGuide(store: Store): string | null {
  * 1 回だけ通る)なので、取り消し 1 回で元へ戻る(NFR-UX-3)。
  */
 function applyAdded(store: Store, document: SketchDocument, firstId: string): void {
-  store.setSketch(document);
+  const added = document.constraints?.find(constraint => constraint.id === firstId);
+  if (added?.kind === 'horizontalDistance' || added?.kind === 'verticalDistance'
+    || added?.kind === 'midpoint' || added?.kind === 'pointOnCurve') {
+    store.applyDocument({ ...replaceSketch(store.document, document),
+      schemaVersion: Math.max(store.document.schemaVersion, PART_SCHEMA_VERSION) });
+  } else {
+    store.setSketch(document);
+  }
   const next = useAppStore.getState();
   next.setConstraintTargets([]);
   next.setConstraintPrompt(null);
@@ -175,7 +183,7 @@ const READY_TO_CHOOSE: EditToolReadiness = { ready: true, reasonKey: null };
 /**
  * ツールバーの「拘束」の一覧の入り切り(NFR-UX-5「実行前に理由を出す」)。
  *
- * **何も選んでいなければ 14 種すべて押せる。** 拘束の道具は「道具を選んでから要素を順に
+ * **何も選んでいなければ 18 種すべて押せる。** 拘束の道具は「道具を選んでから要素を順に
  * 押す」流儀(統括の決定 2026-09-05)なので、選択が空のときに全部を不活性にすると
  * 道具そのものを選べなくなる。何かを選んでいるときは、その選択に付けられない種類だけを
  * 不活性にして理由を吹き出しに出す(NFR-UX-1 の「対象を選んでから操作」の側)。

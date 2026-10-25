@@ -85,7 +85,7 @@ import { isRecord } from './guards.js';
  * アセンブリファイルはこの世に 1 つも存在しない(種別そのものが版 8 で生まれた)。
  */
 /** 版14: 数学定義と係数ID。旧アプリが式を落としてキャッシュだけで作図することを防ぐ。 */
-export const PCAD_SCHEMA_VERSION = 17;
+export const PCAD_SCHEMA_VERSION = 22;
 
 /** 封筒に書くアプリ名。他のアプリの JSON を取り違えて読まないための目印。 */
 export const PCAD_APP_NAME = 'PointerCAD';
@@ -457,6 +457,10 @@ function migrateAssemblyDocumentToV8(
 }
 
 export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefined>> = {
+  21: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 22, document: { ...raw['document'], schemaVersion: 22 } };
+  },
   2: (raw) => {
     if (!isRecord(raw)) {
       return raw;
@@ -643,5 +647,25 @@ export const SCHEMA_MIGRATIONS: Readonly<Record<number, SchemaMigration | undefi
   16: (raw) => {
     if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
     return { ...raw, schema: 17, document: { ...raw['document'], schemaVersion: 17 } };
+  },
+  /** 版17→18: 意味起点と下絵補正は旧文書へ捏造せず、版だけを揃える。 */
+  17: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 18, document: { ...raw['document'], schemaVersion: 18 } };
+  },
+  /** Version18 to19: retain old inputs; never fabricate purchased-steel provenance. */
+  18: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 19, document: { ...raw['document'], schemaVersion: 19 } };
+  },
+  /** Version19 to20: retain existing fields; never fabricate analysis inputs or results. */
+  19: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 20, document: { ...raw['document'], schemaVersion: 20 } };
+  },
+  /** Version20 to21: preserve legacy absence and all stored fields; never invent occurrence provenance. */
+  20: (raw) => {
+    if (!isRecord(raw) || !isRecord(raw['document'])) return raw;
+    return { ...raw, schema: 21, document: { ...raw['document'], schemaVersion: 21 } };
   },
 };

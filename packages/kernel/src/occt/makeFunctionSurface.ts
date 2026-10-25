@@ -5,6 +5,7 @@ import { makeCompound } from './transformShape.js';
 import { verifyFunctionShapeBounds, type FunctionClipResult } from './clipFunctionShape.js';
 import { checkedFunctionSurface, type FunctionSurfaceInput } from './functionSurfaceGeometrySpec.js';
 import { makeAnalyticFunctionSurface } from './makeAnalyticFunctionSurface.js';
+import { makeFunctionSurfaceSpline } from './functionSurfaceSpline.js';
 import { clipFunctionSurfaceTriangles } from './clipFunctionSurfaceTriangles.js';
 import { isValidShape } from './solidMesh.js';
 import { functionSurfacePlanarPairs } from './functionSurfacePlanarPairs.js';
@@ -31,6 +32,11 @@ export function makeUnclassifiedFunctionSurface(oc: OpenCascadeInstance, input: 
   isCancelled: () => boolean = () => false): FunctionSurfaceGeometryResult {
   if (isCancelled()) return { status: 'cancelled' };
   if('primitive' in input) return makeAnalyticFunctionSurface(oc,input,isCancelled);
+  // Exact analytic primitives first; then a certified smooth spline; otherwise the certified planar triangles.
+  if (input.spline !== undefined) {
+    checkedFunctionSurface(input);
+    return makeFunctionSurfaceSpline(oc,input.spline,input.bounds,isCancelled);
+  }
   const clipped = clipFunctionSurfaceTriangles(checkedFunctionSurface(input),isCancelled);
   if (clipped === null) return { status: 'cancelled' };
   const spec = checkedFunctionSurface(clipped);

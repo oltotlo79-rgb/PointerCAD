@@ -21,7 +21,7 @@ import { SketchTextInputHost } from '../sketch/SketchTextInputHost.js';
 import { NumericInputPopover } from '../sketch/NumericInputPopover.js';
 import { activeDocumentKind, activeFileName } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
-import type { DiscardChoice } from '../store/fileSlice.js';
+import { partSourceRequestIsCurrent, type DiscardChoice, type PartSourceConfirmRequest } from '../store/fileSlice.js';
 import { FeatureTree } from './FeatureTree.js';
 import { PlotPointIcon } from './icons.js';
 import { PropertyPanel } from './PropertyPanel.js';
@@ -172,6 +172,7 @@ export function AppShell(): React.JSX.Element {
       <KeyboardControlHint />
       <ExportHandoffPanel />
       <DiscardConfirmDialog />
+      <PartSourceConfirmDialog />
       {documentKind === 'drawing' ? <DrawingToolbar /> : <Toolbar />}
       <div className="pcad-shell__body">
         {/*
@@ -413,6 +414,114 @@ function DiscardConfirmDialog(): React.JSX.Element | null {
           title={t('file.discardConfirm.cancelHint')} onClick={() => { answer('cancel'); }}>
           {t('file.discardConfirm.cancel')}
         </button>
+      </div>
+    </dialog>
+  );
+}
+
+/** The answer and cleanup are fenced to the request that created this dialog. */
+export function PartSourceConfirmDialog(): React.JSX.Element | null {
+  const state = useAppStore();
+  const request = state.partSourceConfirm;
+  const dialog = useRef<HTMLDialogElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const messageId = useId();
+  const lifecycle = useRef(0);
+  const current = request === null ? false : partSourceRequestIsCurrent(request);
+  useEffect(() => {
+    if (request === null) return;
+    const generation = ++lifecycle.current;
+    const answer = (approved: boolean): void => {
+      useAppStore.getState().answerPartSourceConfirm(request.requestId, approved);
+    };
+    if (!current) { answer(false); return; }
+    const element = dialog.current;
+    if (element === null) { answer(false); return; }
+    const previous = globalThis.document.activeElement;
+    return mountPartSourceConfirmDialog(request.requestId, element,
+      () => { cancel.current?.focus(); },
+      () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); },
+      () => lifecycle.current !== generation);
+  }, [request, current]);
+  if (request === null) return null;
+  return partSourceConfirmDialogElement(request, dialog, cancel, titleId, messageId);
+}
+
+/** Exact native lifecycle used by the host; failures never approve a request. */
+export function mountPartSourceConfirmDialog(
+  requestId: string,
+  element: Pick<HTMLDialogElement, 'open' | 'showModal' | 'close'>,
+  focusCancel: () => void,
+  restoreFocus: () => void,
+  hasReplacementEffect: () => boolean,
+): () => void {
+  const cleanup = (): void => {
+    try {
+      if (element.open) element.close();
+    } catch {
+      // Removing the owner below also removes its dialog if native close fails.
+    } finally {
+      try { restoreFocus(); }
+      catch {
+        // Focus restoration cannot prevent exact-owner cancellation.
+      } finally {
+        cancelPartSourceConfirmAfterUnmount(requestId, hasReplacementEffect);
+      }
+    }
+  };
+  try {
+    if (!element.open) element.showModal();
+    focusCancel();
+  } catch {
+    cleanup();
+    useAppStore.getState().answerPartSourceConfirm(requestId, false);
+  }
+  return cleanup;
+}
+
+/** Deferred cleanup keeps StrictMode replay from cancelling a live owner. */
+export function cancelPartSourceConfirmAfterUnmount(requestId: string, hasReplacementEffect: () => boolean): void {
+  queueMicrotask(() => {
+    if (!hasReplacementEffect()) useAppStore.getState().answerPartSourceConfirm(requestId, false);
+  });
+}
+
+/** The host uses this exact element and its captured callbacks. */
+export function partSourceConfirmDialogElement(
+  request: PartSourceConfirmRequest,
+  dialog: React.RefObject<HTMLDialogElement | null>,
+  cancel: React.RefObject<HTMLButtonElement | null>,
+  titleId: string,
+  messageId: string,
+): React.JSX.Element {
+  const answer = (approved: boolean): void => {
+    useAppStore.getState().answerPartSourceConfirm(request.requestId, approved);
+  };
+  return (
+    <dialog ref={dialog} className="pcad-discard-confirm" role="alertdialog" aria-modal="true"
+      aria-labelledby={titleId} aria-describedby={messageId} data-help-topic="replace-subassembly"
+      onCancel={(event) => { event.preventDefault(); answer(false); }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.preventDefault(); answer(false); }
+        event.stopPropagation();
+      }}>
+      <h2 id={titleId}>{t('assembly.refresh.confirmTitle')}</h2>
+      <div id={messageId}>
+        <p>{t('assembly.refresh.legacyExplanation')}</p>
+        <p>{t('assembly.refresh.sourceName').replace('{name}', () => request.sourceName)}</p>
+        <p>{t('assembly.refresh.selectedFile').replace('{name}', () => request.fileName)}</p>
+        <p>{t(request.countComplete ? 'assembly.refresh.occurrences' : 'assembly.refresh.incompleteOccurrences')
+          .replace('{count}', String(request.occurrenceCount))}</p>
+        <p>{t('assembly.refresh.referenceImpact')}</p>
+      </div>
+      <div className="pcad-restore__actions">
+        <button type="button" className="pcad-button pcad-button--action"
+          title={t('assembly.refresh.confirmSameSourceTooltip')}
+          onClick={() => { answer(true); }}>{t('assembly.refresh.confirmSameSource')}</button>
+        <button ref={cancel} type="button" className="pcad-button pcad-button--action"
+          title={t('assembly.refresh.confirmCancelTooltip')}
+          onClick={() => { answer(false); }}>{t('assembly.refresh.confirmCancel')}</button>
       </div>
     </dialog>
   );

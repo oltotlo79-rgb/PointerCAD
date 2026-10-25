@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type {
   RigidTransformSpec,
@@ -8,12 +8,18 @@ import type {
   ThreadStepSpec,
   Vec3Tuple,
 } from '../types.js';
+import * as booleanModule from './booleanOp.js';
+import { createAllocations } from './allocations.js';
+import * as holeOriginsModule from './subShapeOrigins.js';
+import { OriginHistoryLimitError } from './subShapeHistory.js';
 import { extractEdges } from './extractEdges.js';
+import { lookupSubShapeOrigin } from './composeSubShapeOrigins.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeBox } from './makeBox.js';
 import type { HoleEntrySpec } from './makeHole.js';
 import { makePrimitive } from './makePrimitive.js';
+import { resolveFaceReference, scoreFace, SUB_SHAPE_MATCH_THRESHOLD } from './matchSubShape.js';
 import type { ThreadShaftInput } from './makeThread.js';
 import {
   makeThreadCut,
@@ -23,7 +29,7 @@ import {
 } from './makeThread.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
-import { collectSubShapes } from './subShapes.js';
+import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
@@ -110,6 +116,160 @@ describe('ねじ穴(FR-406、FR-504)', () => {
       ...overrides,
     };
   }
+
+  it.each([
+    { observer: 'rebindHoleToolFaces', reason: 'limit' },
+    { observer: 'rebindTransformedHoleFaces', reason: 'limit' },
+    { observer: 'rebindHoleToolFaces', reason: 'missing-native-map' },
+    { observer: 'rebindTransformedHoleFaces', reason: 'missing-native-map' },
+  ] as const)('Thread retains drill proof failure from $observer / $reason without anonymous rescue', ({ observer, reason }) => {
+    const { handle, faces, top } = plateWithTopFace();
+    const spec = threadSpec({ face: faceQuery(top), centers: [[10, 15, 10]],
+      transforms: [{ translation: [10, 0, 0], rotationOrigin: [0, 0, 0], rotationAxis: [0, 0, 1], rotationAngle: 0 }],
+      entry: { kind: 'counterbore', diameter: 10, depth: 3 } });
+    try {
+      const control = makeThreadHole(oc, spec, handle.shape, faces);
+      const hook = vi.spyOn(holeOriginsModule, observer).mockImplementation(() => {
+        if (reason === 'limit') throw new OriginHistoryLimitError();
+        throw new holeOriginsModule.HoleOriginMapError('Foreign drill history');
+      });
+      try {
+        const result = makeThreadHole(oc, spec, handle.shape, faces,
+          { version: 1, state: 'untracked', reason: 'legacy' }, 'thread-operation');
+        try {
+          expect(hook).toHaveBeenCalled();
+          expect(result.handle.origins).toEqual({ version: 1, state: 'untracked', reason });
+          expectVolume(measureVolume(oc, result.handle.shape), measureVolume(oc, control.handle.shape));
+          expect(isValidShape(oc, result.handle.shape)).toBe(true);
+          expectVolume(measureVolume(oc, handle.shape), 12000);
+        } finally { result.handle.delete(); }
+      } finally { hook.mockRestore(); control.handle.delete(); }
+    } finally { handle.delete(); }
+  });
+
+  it.each([false, true])('keeps target-only history and native unnamed Thread walls/rims (modeled=%s)', modeled => {
+    const target = makePrimitive(oc, { kind: 'primitive', origin: [20, 15, 5], axis: [0, 0, 1],
+      shape: { kind: 'box', sizeX: 40, sizeY: 30, sizeZ: 10 }, originQuery: null, targetKey: null }, 'thread-plate');
+    try {
+      if (target.origins?.state !== 'tracked') throw new Error('target proof missing');
+      const faces = facesOf(target.shape), top = topFaceOf(faces);
+      const binding = target.origins.bindings.find(item => item.state === 'unique'
+        && item.current.kind === 'face' && item.current.index === top.index);
+      if (binding === undefined || binding.origin.shapeKind !== 'face') throw new Error('top proof missing');
+      const spec = threadSpec({ face: { ...faceQuery(top), origin: binding.origin },
+        centers: modeled ? [[20, 15, 10]] : [[8, 15, 10], [20, 15, 10], [30, 15, 10]],
+        thread: modeled ? { majorDiameter: 6, pitch: 1, length: 2 } : null });
+      const realBoolean = booleanModule.booleanOp;
+      const historyProbe = vi.spyOn(booleanModule, 'booleanOp').mockImplementation((kernel, operation, before, tool, semantic, previousObserver) =>
+        realBoolean(kernel, operation, before, tool, semantic, (maker, output) => {
+          previousObserver?.(maker, output);
+          if (operation !== 'subtract' || semantic?.featureId !== 'thread-operation') return;
+          const owned = createAllocations();
+          try {
+            const all = owned.keep(new kernel.TopTools_IndexedMapOfShape_1());
+            const faceMap = owned.keep(new kernel.TopTools_IndexedMapOfShape_1());
+            kernel.TopExp.MapShapes_2(output, all, true, true);
+            for (let index = 1; index <= all.Size(); index += 1) {
+              const member = owned.keep(all.FindKey(index));
+              if (member.ShapeType() === kernel.TopAbs_ShapeEnum.TopAbs_FACE) faceMap.Add(member);
+            }
+            const rows = (semantic.newHoleFaces ?? []).map((producer, producerIndex) => {
+              const candidates = new Set<number>();
+              for (const list of [maker.Modified(producer.face), maker.Generated(producer.face)]) {
+                owned.keep(list);
+                const copy = owned.keep(new kernel.TopTools_ListOfShape_3(list));
+                while (copy.Size() > 0) {
+                  const member = owned.keep(copy.First_1());
+                  const index = faceMap.FindIndex(member);
+                  if (index > 0) candidates.add(index - 1);
+                  copy.RemoveFirst();
+                }
+              }
+              const unchanged = faceMap.FindIndex(producer.face);
+              if (unchanged > 0) candidates.add(unchanged - 1);
+              return { producerIndex, named: producer.origin !== undefined, candidates: [...candidates] };
+            });
+            console.log('THREAD_NATIVE_REGION_DIAG', JSON.stringify({ modeled, rows }));
+          } finally { owned.release(); }
+        }));
+      let result: ReturnType<typeof makeThreadHole>;
+      try { result = makeThreadHole(oc, spec, target.shape, faces, target.origins, 'thread-operation'); }
+      finally { historyProbe.mockRestore(); }
+
+      const control = makeThreadHole(oc, spec, target.shape, faces, target.origins);
+      try {
+        expectVolume(measureVolume(oc, result.handle.shape), measureVolume(oc, control.handle.shape));
+        if (!modeled) expectVolume(measureVolume(oc, result.handle.shape), 12000 - 3 * Math.PI * (M6_MINOR_DIAMETER / 2) ** 2 * 10);
+        if (result.handle.origins?.state !== 'tracked') throw new Error('Thread partial proof missing');
+        expect(lookupSubShapeOrigin(result.handle.origins, binding.origin).status).toBe('matched');
+        const tables = tablesOf(result.handle.shape), eligible = result.handle.origins.fingerprintFallback ?? [];
+        const walls = tables.faces.filter(face => face.surfaceKind === 'cylinder');
+        expect(walls.length).toBeGreaterThanOrEqual(modeled ? 1 : 3);
+        for (const wall of walls) expect(eligible.some(region => region.current.kind === 'face' && region.current.index === wall.index)).toBe(true);
+        expect(eligible.some(region => region.current.kind === 'edge'
+          && tables.edges.some(edge => edge.index === region.current.index && edge.curveKind === 'circle'))).toBe(true);
+        expect(result.handle.origins.bindings.some(item => item.origin.identity.featureId === 'thread-operation')).toBe(false);
+        const foreign = { ...binding.origin, identity: { ...binding.origin.identity, featureId: 'foreign' } };
+        expect(lookupSubShapeOrigin(result.handle.origins, foreign).status).toBe('missing');
+        expectVolume(measureVolume(oc, target.shape), 12000);
+      } finally { control.handle.delete(); result.handle.delete(); }
+    } finally { target.delete(); }
+  });
+
+  it('実Box保存top起点で低scoreの現面に下穴を作り、ねじmarkを維持する', () => {
+    const base = { kind: 'primitive' as const, origin: [0, 0, 0] as Vec3Tuple,
+      axis: [0, 0, 1] as Vec3Tuple, shape: { kind: 'box' as const, sizeX: 20, sizeY: 20, sizeZ: 20 },
+      originQuery: null, targetKey: null };
+    const changed = { ...base, origin: [500, 500, 0] as Vec3Tuple,
+      shape: { kind: 'box' as const, sizeX: 200, sizeY: 200, sizeZ: 30 } };
+    const old = makePrimitive(oc, base, 'thread-source');
+    const current = makePrimitive(oc, changed, 'thread-source');
+    const other = makePrimitive(oc, changed, 'other-source');
+    try {
+      if (old.origins?.state !== 'tracked' || current.origins?.state !== 'tracked'
+        || other.origins?.state !== 'tracked') throw new Error('実Box起点がありません');
+      const binding = old.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
+        && item.origin.identity.role === 'top');
+      if (binding?.state !== 'unique' || binding.current.kind !== 'face') {
+        throw new Error('旧Box topが一意でありません');
+      }
+      const oldFace = tablesOf(old.shape).faces.find(item => item.index === binding.current.index);
+      if (oldFace === undefined) throw new Error('旧Box topがありません');
+      const savedFace = { ...faceQuery(oldFace), origin: binding.origin };
+      const savedJson = JSON.stringify(savedFace);
+      const tables = tablesOf(current.shape);
+      const scale = boundingDiagonal(oc, current.shape) * 0.5;
+      const match = resolveFaceReference(tables.faces, savedFace, scale, current.origins);
+      expect(match.status).toBe('matched');
+      if (match.status !== 'matched') throw new Error('現Box topを解決できません');
+      const score = scoreFace(match.match.candidate, savedFace, scale).total;
+      expect(score).toBeLessThan(SUB_SHAPE_MATCH_THRESHOLD);
+      console.log(`ThreadHole保存topの実幾何score: ${score}`);
+      const spec = threadSpec({ face: savedFace, centers: [[500, 500, 15]], mark: {
+        majorDiameter: 6, length: 30 } });
+      const output = makeThreadHole(oc, spec, current.shape, tables.faces, current.origins);
+      try {
+        expectVolume(measureVolume(oc, output.handle.shape),
+          1_200_000 - Math.PI * (M6_MINOR_DIAMETER / 2) ** 2 * 30);
+        expect(output.marks).toHaveLength(1);
+        expect(output.marks[0]?.origin).toEqual([500, 500, 15]);
+        expect(output.marks[0]?.majorDiameter).toBe(6);
+      } finally {
+        output.handle.delete();
+      }
+      const high = { ...faceQuery(match.match.candidate), origin: savedFace.origin };
+      expect(() => makeThreadHole(oc, { ...spec, face: high }, other.shape,
+        tablesOf(other.shape).faces, other.origins)).toThrow(/もとの面が見つかりません/);
+      expect(() => makeThreadHole(oc, { ...spec, face: high }, current.shape,
+        tables.faces)).toThrow(/もとの面が見つかりません/);
+      expect(measureVolume(oc, current.shape)).toBeCloseTo(1_200_000, 6);
+      expect(JSON.stringify(savedFace)).toBe(savedJson);
+    } finally {
+      other.delete();
+      current.delete();
+      old.delete();
+    }
+  });
 
   it('簡略表示の M6 は下穴だけを掘る(12000 − π·(D1/2)²·10)', () => {
     const { handle, faces, top } = plateWithTopFace();
@@ -579,6 +739,106 @@ describe('ねじ穴(FR-406、FR-504)', () => {
         expectVolume(measureVolume(oc, handle.shape), SHAFT_VOLUME);
       } finally {
         handle.delete();
+      }
+    });
+
+    it('実円筒の保存side起点から現shaftの両端を読み、capと失効起点を拒否する', () => {
+      const primitive = (radius: number, height: number, origin: Vec3Tuple) => ({
+        kind: 'primitive' as const, origin, axis: [0, 0, 1] as Vec3Tuple,
+        shape: { kind: 'cylinder' as const, radius, height }, originQuery: null, targetKey: null,
+      });
+      const old = makePrimitive(oc, primitive(5, 20, [0, 0, 0]), 'shaft-cylinder');
+      const current = makePrimitive(oc, primitive(6, 30, [500, 500, 7]), 'shaft-cylinder');
+      const foreign = makePrimitive(oc, primitive(6, 30, [500, 500, 7]), 'foreign-shaft');
+      try {
+        if (old.origins?.state !== 'tracked' || current.origins?.state !== 'tracked'
+          || foreign.origins?.state !== 'tracked') throw new Error('実円筒起点がありません');
+        const oldOrigins = old.origins;
+        const currentOrigins = current.origins;
+        const foreignOrigins = foreign.origins;
+        const oldTables = tablesOf(old.shape);
+        const tables = { ...tablesOf(current.shape), origins: currentOrigins };
+        const foreignTables = { ...tablesOf(foreign.shape), origins: foreignOrigins };
+        const savedFace = (role: 'side' | 'start') => {
+          const found = oldOrigins.bindings.find(item => item.origin.identity.kind === 'cylinder-face'
+            && item.origin.identity.role === role);
+          if (found?.state !== 'unique' || found.current.kind !== 'face') {
+            throw new Error(`実円筒${role}起点が一意でありません`);
+          }
+          const face = oldTables.faces.find(item => item.index === found.current.index);
+          if (face === undefined) throw new Error(`実円筒${role}面がありません`);
+          return JSON.parse(JSON.stringify({ ...faceQuery(face), origin: found.origin })) as Extract<SubShapeQuery, { kind: 'face' }>;
+        };
+        const savedSide = savedFace('side');
+        const volume = Math.PI * 6 ** 2 * 30;
+        for (const fromEnd of ['first', 'last'] as const) {
+          const { handle: result, mark } = makeThreadShaft(oc, current.shape, tables,
+            shaftInput({ face: savedSide, fromEnd, majorDiameter: 12, length: 12 }));
+          try {
+            expect(mark.origin[0]).toBeCloseTo(500, 9);
+            expect(mark.origin[1]).toBeCloseTo(500, 9);
+            expect(mark.origin[2]).toBeCloseTo(fromEnd === 'first' ? 7 : 37, 9);
+            expect(mark.direction[2]).toBeCloseTo(fromEnd === 'first' ? 1 : -1, 9);
+            expect(mark.majorDiameter).toBe(12);
+            expect(mark.length).toBe(12);
+            expectVolume(measureVolume(oc, result.shape), volume);
+            expect(isValidShape(oc, result.shape)).toBe(true);
+          } finally { result.delete(); }
+          expectVolume(measureVolume(oc, current.shape), volume);
+          expect(isValidShape(oc, current.shape)).toBe(true);
+        }
+        expect(() => makeThreadShaft(oc, foreign.shape, foreignTables,
+          shaftInput({ face: savedSide }))).toThrow(/おねじを作るもとの面が見つかりません/);
+        expect(() => makeThreadShaft(oc, current.shape, { ...tables, origins: undefined },
+          shaftInput({ face: savedSide }))).toThrow(/おねじを作るもとの面が見つかりません/);
+        const sideBinding = currentOrigins.bindings.find(item => item.origin.identity.kind === 'cylinder-face'
+          && item.origin.identity.role === 'side');
+        const otherBinding = foreignOrigins.bindings.find(item => item.origin.identity.kind === 'cylinder-face'
+          && item.origin.identity.role === 'side');
+        if (sideBinding?.state !== 'unique' || sideBinding.current.kind !== 'face'
+          || otherBinding?.state !== 'unique') throw new Error('現円筒side起点が一意でありません');
+        const otherFace = tables.faces.find(item => item.index !== sideBinding.current.index);
+        if (otherFace === undefined) throw new Error('分割反例の別面がありません');
+        for (const changed of [
+          { origin: sideBinding.origin, state: 'missing' as const, reason: 'deleted' as const },
+          { origin: sideBinding.origin, state: 'split' as const,
+            candidates: [sideBinding.current, { kind: 'face' as const, index: otherFace.index }] as const },
+          { origin: sideBinding.origin, state: 'merged' as const,
+            current: sideBinding.current, coOrigins: [sideBinding.origin, otherBinding.origin] as const },
+        ]) {
+          const origins = { version: 1 as const, state: 'tracked' as const,
+            bindings: currentOrigins.bindings.map(item => item === sideBinding ? changed : item) };
+          expect(() => makeThreadShaft(oc, current.shape, { ...tables, origins },
+            shaftInput({ face: savedSide }))).toThrow(/おねじを作るもとの面が見つかりません/);
+        }
+        expect(() => makeThreadShaft(oc, current.shape, tables,
+          shaftInput({ face: savedFace('start') }))).toThrow(/おねじを作れるのは円柱の面だけです/);
+        expectVolume(measureVolume(oc, current.shape), volume);
+      } finally {
+        foreign.delete();
+        current.delete();
+        old.delete();
+      }
+    });
+
+    it('円柱producerが未追跡ならorigin付き高score面を旧指紋へfallbackしない', () => {
+      const box = makePrimitive(oc, { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1],
+        shape: { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 },
+        originQuery: null, targetKey: null }, 'tracked-box');
+      const { handle, tables, side } = shaftWithSideFace();
+      try {
+        if (box.origins?.state !== 'tracked') throw new Error('実Box起点がありません');
+        const top = box.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
+          && item.origin.identity.role === 'top');
+        if (top?.state !== 'unique') throw new Error('実Box top起点が一意でありません');
+        expect(handle.origins?.state).not.toBe('tracked');
+        const saved = { ...faceQuery(side), origin: top.origin };
+        expect(() => makeThreadShaft(oc, handle.shape, tables,
+          shaftInput({ face: saved }))).toThrow(/おねじを作るもとの面が見つかりません/);
+        expectVolume(measureVolume(oc, handle.shape), SHAFT_VOLUME);
+      } finally {
+        handle.delete();
+        box.delete();
       }
     });
 

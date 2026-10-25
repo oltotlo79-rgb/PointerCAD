@@ -21,12 +21,14 @@
  * 「消えたフィーチャーを選択から外す」掃除は 1 行も変えずにそのまま効く。
  */
 
-import type {
-  PrimitiveShapeKind,
-  SolidBody,
-  SubShapeKind,
-  SubShapeRef,
-  Vec3,
+import {
+  createSubShapeReference,
+  type CurrentOriginIndex,
+  type PrimitiveShapeKind,
+  type SolidBody,
+  type SubShapeKind,
+  type SubShapeRef,
+  type Vec3,
 } from '@pointercad/model';
 
 import type { NumericInputToolId } from '../sketch/numericInput.js';
@@ -128,10 +130,26 @@ export interface SubShapeBody {
   readonly faces: readonly SolidFaceEntry[];
   readonly edges: readonly SolidEdgeEntry[];
   readonly vertices: readonly SolidVertexEntry[];
+  /** Absent only for legacy world-space mesh arrays. */
+  readonly coordinateFrame?: SolidBody['coordinateFrame'];
+  /** 現在bodyにある場合だけ保持する。旧partial入力には要求しない。 */
+  readonly origins?: CurrentOriginIndex;
+  readonly isValid?: boolean;
+}
+
+/** Return the double-precision origin, or null for malformed local metadata. */
+export function subShapeFrameOrigin(body: SubShapeBody): Vec3 | null {
+  const frame = body.coordinateFrame;
+  if (frame === undefined) return [0, 0, 0];
+  const origin = frame.origin;
+  if (frame.space !== 'local' || !Array.isArray(origin) || origin.length !== 3
+    || ![0, 1, 2].every((axis) => Object.hasOwn(origin, axis) && Number.isFinite(origin[axis]))
+    || !Number.isFinite(frame.maximumFloat32ErrorMm) || frame.maximumFloat32ErrorMm <= 0) return null;
+  return origin;
 }
 
 /**
- * カーネルが返したボディを、部分形状を選ぶのに要る欄だけへ詰め替える。
+ * カーネルが返した現在のボディを、部分形状の選択へ渡す。
  *
  * 置き場をここにしてあるのは、作るのが `SubShapeBody`(この型の正本がここ)だからで、
  * 画面の部品(`Toolbar.tsx`)にあると画面を持たない呼び出し側(その場入力の確定を
@@ -139,13 +157,8 @@ export interface SubShapeBody {
  * DOM にも React にも触れないので、そのまま Node で検査できる。
  */
 export function subShapeBodiesOf(bodies: readonly SolidBody[]): readonly SubShapeBody[] {
-  return bodies.map((body) => ({
-    featureId: body.featureId,
-    mesh: { edgePositions: body.mesh.edgePositions },
-    faces: body.faces,
-    edges: body.edges,
-    vertices: body.vertices,
-  }));
+  // 保存参照を作るときに current.origins と isValid を失わない。
+  return bodies;
 }
 
 /** `extrude-1#face:12` の形の要素 id を作る。番号は 0 以上の整数(一覧の通し番号)。 */
@@ -234,9 +247,30 @@ export function subShapeRefOf(
   if (parsed === null) {
     return null;
   }
-  const body = bodies.find((candidate) => candidate.featureId === parsed.bodyFeatureId);
-  if (body === undefined) {
+  const matches = bodies.filter((candidate) => candidate.featureId === parsed.bodyFeatureId);
+  if (matches.length !== 1) {
     return null;
+  }
+  const body = matches[0];
+  if (body.isValid === false || subShapeFrameOrigin(body) === null) return null;
+  if (body.origins?.state === 'untracked'
+    && (body.origins.reason === 'limit' || body.origins.reason === 'missing-native-map')) return null;
+  // 押し出しのように面の起源だけを持ち、辺・頂点の起源をそもそも作らない形は、
+  // その種類に限って従来の指紋の参照へ戻す(曖昧な候補は解決側が拒否する)。
+  // 起源を作る種類(箱の辺など)で束縛が無い・曖昧なものは、下の通り参照を作らない。
+  if (body.origins?.state === 'tracked'
+    && (body.origins.fingerprintFallback !== undefined || body.origins.bindings.some(binding => binding.origin.shapeKind === parsed.kind))) {
+    // tracked の曖昧・消失を古い番号の裸指紋で救済しない。
+    const semantic = isCurrentSolidBody(body) ? createSubShapeReference(body, parsed.kind, parsed.index) : null;
+    if (semantic !== null) return semantic;
+    const occupied = body.origins.bindings.some((binding) => {
+      const addresses = binding.state === 'unique' || binding.state === 'merged' ? [binding.current]
+        : binding.state === 'split' ? binding.candidates : [];
+      return addresses.some((current) => current.kind === parsed.kind && current.index === parsed.index);
+    });
+    const eligible = body.origins.fingerprintFallback?.some(({ current }) =>
+      current.kind === parsed.kind && current.index === parsed.index) === true;
+    if (occupied || !eligible) return null;
   }
   switch (parsed.kind) {
     case 'face': {
@@ -284,6 +318,13 @@ export function subShapeRefOf(
           };
     }
   }
+}
+
+/** 古い選択専用の部分形状fixtureは完全なSolidBodyを要求しない。 */
+function isCurrentSolidBody(body: SubShapeBody): body is SolidBody {
+  return 'isValid' in body && typeof body.isValid === 'boolean'
+    && 'volume' in body && 'threadMarks' in body
+    && 'positions' in body.mesh && 'normals' in body.mesh && 'indices' in body.mesh;
 }
 
 /**
@@ -415,7 +456,9 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
       | スイープ・リブ・曲面・点パターン | 立体(既定) | スケッチの輪郭・点を選ぶので切り替えない |
       | 可変半径の R 面取り | 辺 | R 面取り(`fillet`)へ畳んだので上の行がそのまま効く |
     */
+    // 平らな面の移動(EX-18)も抜き勾配と同じく面を選ぶ。動かす平らな面を 1 枚選ぶ。
     case 'draft':
+    case 'faceOffset':
     case 'shell':
     case 'emboss':
     case 'threadShaft':
@@ -510,12 +553,22 @@ const PRIMITIVE_TOOLS: Readonly<Record<PrimitiveShapeKind, true>> = {
  * 理由**でここへ入る。測れる量は「いま選んでいるものが何か」で決まるので、決め打ちで
  * 種類を切り替えると押した瞬間に材料の選択が消えてしまう。
  *
+ * **縫合**(FR-403、EX-18 の曲面の縫合)もこれに当たる。つなぐ面にできるのは①スケッチの面
+ * (種類に関わらず選べる)と②既存の立体・曲面の面(種類が `face` のときだけ選べる)の 2 通りで、
+ * 面をつなぐ・ロフトと同じく**どの種類でも何かしら選べる**。`selectionKindForTool('sew')` は
+ * 既定の `body` を返すので、決め打ちで切り替えると、「選ぶもの」を「面」にして曲面の面を選んでから
+ * 押した瞬間にその選択が消え、確定が「つなぐ面を 2 枚以上選んでください。」で断られた
+ * (2026-10-25 の画面検査 20261025-031354。説明書 `solid-combine.md` の手順そのもの)。
+ * 切り替えないことで、スケッチの面を「立体」のまま選んでから押す従来の縫合も、曲面の面を
+ * 「面」で選んでから押す縫合も、どちらも成立する(NFR-UX-1)。
+ *
  * **この表もここ 1 か所だけに置く**(`selectionKindForTool` と同じ理由)。
  */
 export function keepsSelectionKind(tool: NumericInputToolId): boolean {
   return (
     tool === 'ruled' ||
     tool === 'loft' ||
+    tool === 'sew' ||
     tool === 'measure' ||
     tool === 'mathGeometry' ||
     tool === 'cut' ||

@@ -1,3 +1,6 @@
+import { cancelPartSourceConfirmAfterUnmount, mountPartSourceConfirmDialog, partSourceConfirmDialogElement } from './AppShell.js';
+import { AssemblyPartRefreshItem } from './AssemblyTree.js';
+import { embedPart } from '@pointercad/model';
 /**
  * ツールバーの畳んだ一覧(「作図」「編集」「拘束」「作る」「合わせる」「加工」「投影」
  * 「見た目」)の決まりごとの検査
@@ -17,6 +20,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
+import { NewFileIcon, OpenFileIcon, SaveIcon } from './icons.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -236,9 +240,10 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
 });
 
 describe('アセンブリのツールバー(P7 タスク45)', () => {
-  it('「組む」には配置・置換・固定の5項目を出す', () => {
+  it('「組む」には配置・置換・固定の5項目と、ボルト締結・締結の解除の2項目、すみ肉溶接の1項目を出す', () => {
     expect(ASSEMBLY_MENU_ITEMS.map((item) => item.id)).toEqual([
       'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
+      'boltedJoint', 'releaseFastening', 'filletWeld',
     ]);
   });
 
@@ -260,7 +265,7 @@ describe('アセンブリのツールバー(P7 タスク45)', () => {
     }
   });
 
-  it('一覧15項目のidは重複しない', () => {
+  it('一覧18項目のidは重複しない', () => {
     const ids = [...ASSEMBLY_MENU_ITEMS, ...MATE_MENU_ITEMS].map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -294,9 +299,11 @@ describe('アセンブリのツールバー(P7 タスク45)', () => {
 
   it('アセンブリのファイル一覧に組図と図面ひな形の入口を出し、部品専用操作と部品ひな形を除く', () => {
     const rows = fileMenuItems([{ id: 'template', name: 'ひな形' }], [{ id: 'recent', name: '最近' }], 'assembly');
-    expect(rows.map((item) => item.id)).toEqual(['newDrawingFromPart', 'newDrawingFromTemplate', 'newAssembly', 'saveAs', 'recentFile:recent']);
-    expect(t(rows[0].labelKey)).toBe('この組立から図面を作成');
-    expect(t(rows[1].labelKey)).toBe('図面ひな形から作成');
+    expect(rows.map((item) => item.id)).toEqual(['savePoints', 'newDrawingFromPart', 'newDrawingFromTemplate', 'newAssembly', 'saveAs', 'recentFile:recent']);
+    expect(rows.map((item) => item.label ?? t(item.labelKey))).toEqual([
+      '名前付き保存点', 'この組立から図面を作成', '図面ひな形から作成',
+      '新しいアセンブリ', '名前を付けて保存', '最近',
+    ]);
   });
 
   it('製品UIと同じ入口で部品・アセンブリの双方から空の新規アセンブリを始める', async () => {
@@ -493,7 +500,7 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
     expect(COMBINE_MENU_ITEMS.map((item) => item.id)).toEqual(['union', 'subtract', 'intersect']);
   });
 
-  it('「加工」には立体へ手を入れる 15 つが並ぶ(P5 タスク50・27e で 9 つ増えた)', () => {
+  it('「加工」は既存15項目と面の移動を、抜き勾配・面の移動の順に並べる', () => {
     expect(MACHINING_MENU_ITEMS.map((item) => item.id)).toEqual([
       'hole',
       'threadHole',
@@ -503,6 +510,7 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       'circularPattern',
       // P5 タスク50・27e。どれも「できあがった立体へ手を入れる」道具(§2.15、§0.a-0.64)。
       'draft',
+      'faceOffset',
       'shell',
       'rib',
       'emboss',
@@ -583,7 +591,7 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
       平置きにしたときの幅。タスク51 の時点(図柄 13 個)は 368 画素、タスク18 が
       基本形状 5 種を足して図柄 18 個・508 画素、タスク27 が面をつなぐ・ロフトを足して
       図柄 20 個・564 画素になり、タスク50・27e が Should 群 12 種を足して図柄 32 個・
-      900 画素、タスク22 が球面上の点を足したいまは図柄 33 個・928 画素になる。
+      900 画素、タスク22 の球面上の点で図柄33個・928画素、面の移動で34個・956画素になる。
       **畳んだ一覧のほうは 103 画素のまま 1 画素も
       増えていない**(上の行)ことがこの検査の眼目で、平置きの数はその対比として
       置いてある(§0.a-0.80、§0.a-0.64)。
@@ -593,7 +601,7 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
         CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length,
         0,
       ),
-    ).toBe(928);
+    ).toBe(956);
   });
 
   it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
@@ -733,12 +741,12 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
     'cut',
   ] as const;
 
-  it('「作る」の末尾に 3 つ、「加工」の末尾に 9 つが並ぶ', () => {
+  it('Should群の並びを保ち、加工の抜き勾配の直後に面の移動を置く', () => {
     expect(CREATE_MENU_ITEMS.slice(-CREATE_IDS.length).map((item) => item.id)).toEqual([
       ...CREATE_IDS,
     ]);
-    expect(MACHINING_MENU_ITEMS.slice(-MACHINING_IDS.length).map((item) => item.id)).toEqual([
-      ...MACHINING_IDS,
+    expect(MACHINING_MENU_ITEMS.slice(-MACHINING_IDS.length - 1).map((item) => item.id)).toEqual([
+      MACHINING_IDS[0], 'faceOffset', ...MACHINING_IDS.slice(1),
     ]);
   });
 
@@ -793,7 +801,7 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
 /* ===== P6 タスク31: 「ファイル」の畳んだ一覧(§0.57、FR-812、FR-904、要件§7.1) ===== */
 
 describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => {
-  it('文書比較と図面作成を含む10行が並ぶ(配線先のある操作しか出さない)', () => {
+  it('保存点・文書比較と図面作成を含む11行が並ぶ(配線先のある操作しか出さない)', () => {
     /*
       §0.57 の最終形は 7 項目だが、行を足すのは**その操作を作るタスク**の仕事にした。
       押しても何も起きない行を画面に出さないため(NFR-UX-5)。タスク32 が書き出す・
@@ -803,6 +811,7 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
       **期待値を緩めたのではなく、行が増えた事実を写している。**
     */
     expect(FILE_MENU_ITEMS.map((item) => item.id)).toEqual([
+      'savePoints',
       'compareDocuments',
       'newDrawingFromPart',
       'newDrawingFromTemplate',
@@ -814,6 +823,23 @@ describe('「ファイル」の畳んだ一覧(P6 §0.57、タスク31)', () => 
       'newFromTemplate',
       'print',
     ]);
+  });
+
+  it('保存点を先頭に足しても既存全項目の名前と順序を維持する', () => {
+    expect(FILE_MENU_ITEMS.map((item) => t(item.labelKey))).toEqual([
+      '名前付き保存点', '2つの保存ファイルを比較', 'この部品から図面を作成',
+      '図面ひな形から作成', '新しいアセンブリ', '名前を付けて保存',
+      '書き出す', '読み込む', 'ひな形として保存', 'ひな形から新規', '印刷',
+    ]);
+  });
+
+  it('全ファイル項目の実SVGは互いに異なり新規・開く・保存とも異なる', () => {
+    const markup = FILE_MENU_ITEMS.map((item) => renderToStaticMarkup(createElement(item.Icon)));
+    expect(new Set(markup).size).toBe(FILE_MENU_ITEMS.length);
+    const direct = [NewFileIcon, OpenFileIcon, SaveIcon]
+      .map((Icon) => renderToStaticMarkup(createElement(Icon)));
+    for (const svg of markup) expect(direct).not.toContain(svg);
+    expect(markup[0]).not.toBe(markup[5]);
   });
 
   it('書き出す・読み込むの説明には、扱える形式が書いてある(NFR-UX-7)', () => {
@@ -999,5 +1025,162 @@ describe('球面上の点を「作る」の一覧へ足す(FR-431、P5 タスク
     const flatBefore = segmentedWidthPixels(CREATE_MENU_ITEMS.length - 1, 0);
     const flatAfter = segmentedWidthPixels(CREATE_MENU_ITEMS.length, 0);
     expect(flatAfter - flatBefore).toBe(28);
+  });
+});
+
+describe('explicit source refresh row item keeps the canonical toolbar', () => {
+  it.each([false, true])('actual item is focusable and exposes shared-update or busy reason (busy=%s)', async busy => {
+    resetTestStore();
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, createEmptyPartDocument(), 'source.pcad', 'source.pcad');
+    const empty = createAssemblyDocument('Source update');
+    const document = addComponent(empty, createComponentFor(empty, { kind: 'part', partRef: embedded.partRef }));
+    useAppStore.getState().openAssembly(document, embedded.library);
+    useAppStore.setState({ isComputing: busy });
+    const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
+    try {
+      const markup = renderToStaticMarkup(createElement(AssemblyPartRefreshItem, { componentId: document.components[0].id, close: () => undefined }));
+      expect(markup).toContain(t('assembly.refresh.action'));
+      expect(markup).toContain('aria-disabled="' + String(busy) + '"');
+      expect(markup).not.toMatch(/<button[^>]* disabled(?:=|\s|>)/);
+      expect(markup).toContain('aria-describedby="assembly-refresh-source-reason"');
+      expect(markup).toContain(t(busy ? 'assembly.refresh.busy' : 'assembly.refresh.sharedSource'));
+      expect(ASSEMBLY_MENU_ITEMS.map(item => item.id)).toEqual([
+        'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
+        'boltedJoint', 'releaseFastening', 'filletWeld',
+      ]);
+    } finally { snapshot.mockRestore(); }
+    // SSR markup proves focusable semantics and actual visible text; keyboard/hover
+    // operation still needs Root's actual three-environment acceptance.
+  });
+});
+
+describe('actual legacy dialog element callbacks and deferred owner cleanup', () => {
+  const summary = (requestId: string, isCurrent: () => boolean = () => true) => ({
+    requestId, sourceName: 'Original source', fileName: 'selected.pcad',
+    occurrenceCount: 2, countComplete: true, isCurrent,
+  });
+  const actualElement = () => {
+    const request = useAppStore.getState().partSourceConfirm;
+    if (request === null) throw new Error('Actual store request required');
+    return partSourceConfirmDialogElement(request, React.createRef<HTMLDialogElement>(),
+      React.createRef<HTMLButtonElement>(), 'source-confirm-title', 'source-confirm-message');
+  };
+  function callbacks(node: React.ReactNode): readonly (() => void)[] {
+    if (!React.isValidElement<{ readonly children?: React.ReactNode; readonly onClick?: () => void }>(node)) return [];
+    if (node.type === 'button') {
+      if (typeof node.props.onClick !== 'function') throw new Error('Actual button callback required');
+      return [node.props.onClick];
+    }
+    return React.Children.toArray(node.props.children).flatMap(child => callbacks(child));
+  }
+
+  it('the actual host element shows source/file/shared impact and old button callbacks cannot close a new owner', async () => {
+    resetTestStore();
+    const old = useAppStore.getState().requestPartSourceConfirm(summary('old-dialog'));
+    const element = actualElement();
+    const markup = renderToStaticMarkup(element);
+    expect(markup).toContain('role="alertdialog"');
+    expect(markup).toContain('aria-modal="true"');
+    expect(markup).toContain('aria-labelledby="source-confirm-title"');
+    expect(markup).toContain('aria-describedby="source-confirm-message"');
+    for (const value of ['Original source', 'selected.pcad', '2', t('assembly.refresh.legacyExplanation'),
+      t('assembly.refresh.referenceImpact'), t('assembly.refresh.confirmSameSource'), t('assembly.refresh.confirmCancel')]) {
+      expect(markup).toContain(value);
+    }
+    const oldCallbacks = callbacks(element);
+    expect(oldCallbacks).toHaveLength(2);
+    const approve = oldCallbacks[0], cancel = oldCallbacks[1];
+    if (approve === undefined || cancel === undefined) throw new Error('Actual dialog buttons required');
+    const next = useAppStore.getState().requestPartSourceConfirm(summary('new-dialog'));
+    expect(await old).toBe(false);
+    const owner = useAppStore.getState().partSourceConfirm;
+    approve();
+    expect(useAppStore.getState().partSourceConfirm).toBe(owner);
+    cancel();
+    expect(useAppStore.getState().partSourceConfirm).toBe(owner);
+    const nextCancel = callbacks(actualElement())[1];
+    if (nextCancel === undefined) throw new Error('Actual new cancel button required');
+    nextCancel();
+    expect(await next).toBe(false);
+  });
+
+  it('the captured actual approval refuses a real document switch', async () => {
+    resetTestStore();
+    const owner = useAppStore.getState().activeDocumentId;
+    const pending = useAppStore.getState().requestPartSourceConfirm(summary('switched-dialog',
+      () => useAppStore.getState().activeDocumentId === owner));
+    const approve = callbacks(actualElement())[0];
+    if (approve === undefined) throw new Error('Actual approval required');
+    useAppStore.getState().resetDocument({ ...createEmptyPartDocument(), name: 'Different document' });
+    approve();
+    expect(await pending).toBe(false);
+    expect(useAppStore.getState().document.name).toBe('Different document');
+    expect(useAppStore.getState().canUndo).toBe(false);
+  });
+
+  it('the host cleanup cancels an unmounted request but ignores replay and stale cleanup for a new dialog', async () => {
+    resetTestStore();
+    const unmounted = useAppStore.getState().requestPartSourceConfirm(summary('unmounted'));
+    cancelPartSourceConfirmAfterUnmount('unmounted', () => false);
+    expect(await unmounted).toBe(false);
+    const replayed = useAppStore.getState().requestPartSourceConfirm(summary('replayed'));
+    const replayOwner = useAppStore.getState().partSourceConfirm;
+    cancelPartSourceConfirmAfterUnmount('replayed', () => true);
+    await Promise.resolve();
+    expect(useAppStore.getState().partSourceConfirm).toBe(replayOwner);
+    cancelPartSourceConfirmAfterUnmount('replayed', () => false);
+    const next = useAppStore.getState().requestPartSourceConfirm(summary('next-after-cleanup'));
+    expect(await replayed).toBe(false);
+    await Promise.resolve();
+    expect(useAppStore.getState().partSourceConfirm?.requestId).toBe('next-after-cleanup');
+    useAppStore.getState().answerPartSourceConfirm('next-after-cleanup', false);
+    expect(await next).toBe(false);
+    // This invokes the exact production cleanup helper and element callbacks.
+    // React native mounting/focus/Escape and effect replay require Root UI execution.
+  });
+});
+
+describe('actual confirmation lifecycle function exception fencing', () => {
+  const request = (requestId: string) => ({ requestId, sourceName: 'Source', fileName: 'source.pcad',
+    occurrenceCount: 1, countComplete: true, isCurrent: () => true });
+  const native = (failure: 'show' | 'focus' | 'close' | 'restore') => {
+    let open = false;
+    return {
+      element: { get open() { return open; },
+        showModal: () => { if (failure === 'show') throw new Error('Native show failure'); open = true; },
+        close: () => { if (failure === 'close') throw new Error('Native close failure'); open = false; } },
+      focus: () => { if (failure === 'focus') throw new Error('Native focus failure'); },
+      restore: () => { if (failure === 'restore') throw new Error('Native restore failure'); },
+    };
+  };
+  it('the host actual lifecycle settles only its request for setup and cleanup exceptions', async () => {
+    resetTestStore();
+    for (const failure of ['show', 'focus', 'close', 'restore'] as const) {
+      const id = `native-${failure}`;
+      const pending = useAppStore.getState().requestPartSourceConfirm(request(id));
+      const operations = native(failure);
+      const cleanup = mountPartSourceConfirmDialog(id, operations.element, operations.focus, operations.restore, () => false);
+      cleanup();
+      expect(await pending).toBe(false);
+      expect(useAppStore.getState().partSourceConfirm).toBeNull();
+    }
+  });
+  it('old failing cleanup and effect replay cannot cancel a newer actual request', async () => {
+    resetTestStore();
+    const old = useAppStore.getState().requestPartSourceConfirm(request('native-old'));
+    const operations = native('close');
+    const cleanup = mountPartSourceConfirmDialog('native-old', operations.element, operations.focus, operations.restore, () => false);
+    const next = useAppStore.getState().requestPartSourceConfirm(request('native-next'));
+    expect(await old).toBe(false);
+    cleanup();
+    await Promise.resolve();
+    expect(useAppStore.getState().partSourceConfirm?.requestId).toBe('native-next');
+    const replay = mountPartSourceConfirmDialog('native-next', operations.element, operations.focus, operations.restore, () => true);
+    replay();
+    await Promise.resolve();
+    expect(useAppStore.getState().partSourceConfirm?.requestId).toBe('native-next');
+    useAppStore.getState().answerPartSourceConfirm('native-next', false);
+    expect(await next).toBe(false);
+    // These use the exact host lifecycle with explicit fault operations, not native DOM execution.
   });
 });

@@ -15,13 +15,16 @@
  * P6 タスク28 の申し送り)。呼び出し側が今の文書・立体・選択を引数で渡す。
  */
 
-import { saveExportFile } from './saveExportFile.js';
+import { mayStartExportSave, saveExportFile, type ExportSaveControl } from './saveExportFile.js';
 import type { ExportHandoff } from './openWith.js';
 import {
   dxfFlattenedCurveMessage,
   parseDxfTags,
   readThreeMf,
   readDxf,
+  admitThreeMf,
+  THREE_MF_EXPORT_TIME_LIMIT_MS,
+  ThreeMfExportLimitError,
   writeDxfDocument,
   type DxfEntity,
   type DxfWriteResult,
@@ -58,9 +61,9 @@ import {
 
 import type { MessageKey } from '../i18n/t.js';
 import { hasSaveRecoveryCopy } from './saveFailure.js';
+import type { ThreeMfWorkControl } from './pcadSaveWorker.js';
 import {
   openFileThrough,
-  saveFileAsThrough,
   type FileGateway,
   type PickedTypedFile,
 } from './fileGateway.js';
@@ -365,6 +368,8 @@ export interface ExchangeFile {
 /** 書き出しの依頼(model の言葉。段のキャッシュの鍵への読み替えは口の実装が行う)。 */
 export interface ExchangeExportRequest {
   readonly format: ExchangeKernelExportFormat;
+  /** Caller-owned cancellation; the model bridge never serializes this signal to the Worker. */
+  readonly signal?: AbortSignal;
   /** 書き出す立体(`SolidBody.featureId`)。並びは `selectExportBodies` が決めた順。 */
   readonly featureIds: readonly string[];
   /** 三角形の細かさの対(§0.a-0.64)。三角形を使わない形式では `null`。 */
@@ -401,6 +406,8 @@ export interface ExchangeExportOutcome {
   readonly files: readonly ExchangeFile[];
   /** 面積 0 で落とした三角形の枚数。三角形を使わない形式では 0。 */
   readonly droppedTriangleCount: number;
+  /** 実出力の三角形数。未計算、STEP、空の結果には付けない。 */
+  readonly triangleCount?: number;
   /**
    * 3MF のときだけ入る三角形(§0.a-0.19)。カーネルは ZIP と XML を組まないので、
    * ここから `packages/io` の `writeThreeMf` がファイルを作る(`ExchangeDeps.buildThreeMf`)。
@@ -475,7 +482,7 @@ export interface ExchangeDeps {
    */
   readonly askImportUnit: () => Promise<LengthUnit | null>;
   /** 3MF の書き出しで、三角形から `.3mf` のバイト列を組む(`packages/io` が持つ)。 */
-  readonly buildThreeMf?: (outcome: ExchangeExportOutcome) => ExchangeFile;
+  readonly buildThreeMf?: (outcome: ExchangeExportOutcome, control: ThreeMfWorkControl) => ExchangeFile | Promise<ExchangeFile>;
   /** 「面積が 0 の三角形を n 枚除きました。」の文言(`{count}` を含む)。 */
   readonly droppedTriangleTemplate: string;
   /** 断りと警告の文言を引く(`ja.json` の `exchangeError.*`)。 */
@@ -489,6 +496,41 @@ function messageOfError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Keep the kernel wait inside the same computation deadline as 3MF serialization. */
+function awaitThreeMfWork<T>(
+  pending: Promise<T>, deadlineAt: number, control?: ExportSaveControl,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const cleanup = (): boolean => {
+      if (finished) return false;
+      finished = true;
+      clearTimeout(timeout);
+      if (freshness !== null) clearInterval(freshness);
+      control?.signal.removeEventListener('abort', cancel);
+      return true;
+    };
+    const fail = (error: unknown): void => {
+      if (cleanup()) reject(error instanceof Error ? error : new Error(String(error)));
+    };
+    const cancel = (): void => fail(control?.signal.reason ?? new DOMException('3MF export cancelled', 'AbortError'));
+    const remainingMs = deadlineAt - performance.now();
+    if (remainingMs <= 0) {
+      void pending.catch(() => undefined);
+      reject(new ThreeMfExportLimitError('deadline'));
+      return;
+    }
+    const timeout = setTimeout(() => fail(new ThreeMfExportLimitError('deadline')), remainingMs);
+    const freshness = control === undefined ? null : setInterval(() => {
+      if (!mayStartExportSave(control)) cancel();
+    }, 50);
+    control?.signal.addEventListener('abort', cancel, { once: true });
+    // Observe an already-started kernel rejection even when the request became stale synchronously.
+    void pending.then(value => { if (cleanup()) resolve(value); }, error => fail(error));
+    if (!mayStartExportSave(control)) { cancel(); return; }
+  });
+}
+
 /**
  * 書き出す(FR-803、§2.4)。流れは 4 段:
  *
@@ -497,69 +539,136 @@ function messageOfError(error: unknown): string {
  * 3. 返ってきた `files` を**全部**保存する(`.obj` と `.mtl` の 2 つ。名前は変えない)。
  * 4. 警告と「三角形を n 枚除きました」を案内として返す。
  */
+/** A single owned kernel result for one preview and, at most, one save. */
+export interface PreparedExport {
+  readonly request: ExportRequest;
+  readonly outcome: ExchangeExportOutcome;
+  readonly notices: readonly string[];
+  /** Kernel computation only; time spent reading the preview is excluded. */
+  readonly computationMs: number;
+}
+
+export type ExportPreparation =
+  | { readonly ok: true; readonly prepared: PreparedExport }
+  | Extract<ExchangeOutcome, { readonly ok: false }>;
+
+const consumedExports = new WeakSet<PreparedExport>();
+
+/** Compute without touching a file gateway; the returned bytes/meshes belong to this attempt. */
+export async function prepareExport(
+  deps: ExchangeDeps,
+  bodies: readonly SolidBody[],
+  request: ExportRequest,
+  fileName: string | null,
+  control?: ExportSaveControl,
+): Promise<ExportPreparation> {
+  if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+  const selected = selectExportBodies(bodies, request);
+  if (!selected.ok) {
+    return { ok: false, message: deps.messageOf(exportNoticeMessageKey(selected.reason)) };
+  }
+  const notices = visibleExportWarnings(request.format, selected.selection.warnings).map(
+    (warning) => deps.messageOf(exportNoticeMessageKey(warning)),
+  );
+  const startedAt = performance.now();
+  const deadlineAt = request.format === '3mf' ? startedAt + THREE_MF_EXPORT_TIME_LIMIT_MS : null;
+  let outcome: ExchangeExportOutcome;
+  try {
+    const pending = deps.kernel.exportShapes({
+      format: kernelExportFormatOf(request.format),
+      ...(control === undefined ? {} : { signal: control.signal }),
+      featureIds: selected.selection.featureIds,
+      meshQuality: selected.selection.meshQuality,
+      withColors: request.withColors,
+      ascii: request.ascii,
+      baseName: exportBaseNameOf(fileName),
+    });
+    outcome = deadlineAt === null ? await pending : await awaitThreeMfWork(pending, deadlineAt, control);
+  } catch (error) {
+    if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+    return { ok: false, message: messageOfError(error) };
+  }
+  if (request.format === '3mf' && outcome.meshes !== undefined && outcome.meshes.length > 0) {
+    try {
+      const admitted = admitThreeMf(outcome.meshes, { withColors: request.withColors, ownedCopyCount: 1 });
+      // The writer gives malformed triples its precise error; they are not an actual output count.
+      outcome = { ...outcome, triangleCount: outcome.meshes.every((mesh) => mesh.indices.length % 3 === 0)
+        ? admitted.triangleCount : undefined };
+    } catch (error) {
+      if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+      return { ok: false, message: messageOfError(error) };
+    }
+  } else if (request.format === '3mf') {
+    outcome = { ...outcome, triangleCount: undefined };
+  }
+  if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+  const computationMs = Math.max(0, performance.now() - startedAt);
+  if (request.format === '3mf' && computationMs >= THREE_MF_EXPORT_TIME_LIMIT_MS) {
+    return { ok: false, message: messageOfError(new ThreeMfExportLimitError('deadline')) };
+  }
+  return { ok: true, prepared: { request, outcome, notices, computationMs } };
+}
+
+/** Save exactly the result returned by prepareExport; never run the kernel again. */
+export async function consumePreparedExport(
+  deps: ExchangeDeps,
+  prepared: PreparedExport,
+  control?: ExportSaveControl,
+): Promise<ExchangeOutcome> {
+  if (!mayStartExportSave(control) || consumedExports.has(prepared)) return { ok: false, cancelled: true };
+  consumedExports.add(prepared);
+  const { request, outcome, notices } = prepared;
+
+  let files: readonly ExchangeFile[];
+  try {
+    if (request.format === '3mf' && deps.buildThreeMf !== undefined) {
+      const remainingMs = THREE_MF_EXPORT_TIME_LIMIT_MS - prepared.computationMs;
+      if (remainingMs <= 0) throw new ThreeMfExportLimitError('deadline');
+      const deadlineAt = performance.now() + remainingMs;
+      files = [await awaitThreeMfWork(Promise.resolve(deps.buildThreeMf(outcome, { remainingMs,
+        ...(control === undefined ? {} : { signal: control.signal, isCurrent: control.isCurrent }) })),
+      deadlineAt, control)];
+    } else files = outcome.files;
+  } catch (error) {
+    if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+    return { ok: false, message: messageOfError(error) };
+  }
+  if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+  if (files.length === 0) {
+    return { ok: false, message: deps.messageOf('exchangeError.nothingToExport') };
+  }
+
+  let handoff: ExportHandoff | undefined;
+  for (const file of files) {
+    if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+    let saved: boolean;
+    try {
+      const result = await saveExportFile(deps.gateway, file.fileName, request.format, file.bytes, control);
+      if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+      saved = result.saved;
+      if (files.length === 1) handoff = result.handoff;
+    } catch (error) {
+      if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+      return { ok: false, message: hasSaveRecoveryCopy(error) ? deps.messageOf('file.saveRecoveryCopyRetained') : messageOfError(error) };
+    }
+    if (!saved) return { ok: false, cancelled: true };
+  }
+
+  const dropped = droppedTriangleNotice(deps.droppedTriangleTemplate, outcome.droppedTriangleCount);
+  return { ok: true, notices: dropped === null ? notices : [...notices, dropped], ...(handoff === undefined ? {} : { handoff }) };
+}
+
+/** The direct-call API keeps its original compute-then-save behavior. */
 export async function runExport(
   deps: ExchangeDeps,
   bodies: readonly SolidBody[],
   request: ExportRequest,
   fileName: string | null,
+  control?: ExportSaveControl,
 ): Promise<ExchangeOutcome> {
-  const selected = selectExportBodies(bodies, request);
-  if (!selected.ok) {
-    return { ok: false, message: deps.messageOf(exportNoticeMessageKey(selected.reason)) };
-  }
-
-  // 画面に出していない欄についての警告は落とす(`visibleExportWarnings` の注釈)。
-  const notices = visibleExportWarnings(request.format, selected.selection.warnings).map(
-    (warning) => deps.messageOf(exportNoticeMessageKey(warning)),
-  );
-  const baseName = exportBaseNameOf(fileName);
-
-  let outcome: ExchangeExportOutcome;
-  try {
-    outcome = await deps.kernel.exportShapes({
-      format: kernelExportFormatOf(request.format),
-      featureIds: selected.selection.featureIds,
-      meshQuality: selected.selection.meshQuality,
-      withColors: request.withColors,
-      ascii: request.ascii,
-      baseName,
-    });
-  } catch (error) {
-    return { ok: false, message: messageOfError(error) };
-  }
-
-  // 3MF はカーネルが三角形までしか返さない(§0.a-0.19)ので、ここでファイルへ組む。
-  const files =
-    request.format === '3mf' && deps.buildThreeMf !== undefined
-      ? [deps.buildThreeMf(outcome)]
-      : outcome.files;
-  if (files.length === 0) {
-    return { ok: false, message: deps.messageOf('exchangeError.nothingToExport') };
-  }
-
-  /*
-   * **全部保存する。** OBJ は `.obj` の中の材質の行が `.mtl` の名前を指しているので、
-   * 名前を変えたり片方だけ保存したりすると色が付かない(§2.4)。場所を選べない環境では
-   * ダウンロードが 2 回起きる(§0.a-0.13 の暫定。利用者の決定が出たら 1 つにまとめる)。
-   */
-  let handoff: ExportHandoff | undefined;
-  for (const file of files) {
-    let saved: boolean;
-    try {
-      const result = await saveExportFile(deps.gateway, file.fileName, request.format, file.bytes);
-      saved = result.saved;
-      if (files.length === 1) handoff = result.handoff;
-    } catch (error) {
-      return { ok: false, message: hasSaveRecoveryCopy(error) ? deps.messageOf('file.saveRecoveryCopyRetained') : messageOfError(error) };
-    }
-    if (!saved) {
-      // 1 つ目で取り消したら 2 つ目も訊かない(訊き続けるほうが煩わしい)。
-      return { ok: false, cancelled: true };
-    }
-  }
-
-  const dropped = droppedTriangleNotice(deps.droppedTriangleTemplate, outcome.droppedTriangleCount);
-  return { ok: true, notices: dropped === null ? notices : [...notices, dropped], ...(handoff === undefined ? {} : { handoff }) };
+  const preparation = await prepareExport(deps, bodies, request, fileName, control);
+  if (preparation.ok === false) return preparation;
+  return consumePreparedExport(deps, preparation.prepared, control);
 }
 
 // ---------------------------------------------------------------------------
@@ -611,7 +720,9 @@ export async function runExportDxf(
   deps: ExchangeDeps,
   input: SketchToDxfInput,
   fileName: string | null,
+  control?: ExportSaveControl,
 ): Promise<ExchangeOutcome> {
+  if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
   const converted = sketchToDxf(input);
   if (!converted.ok) {
     return { ok: false, message: converted.reason };
@@ -624,20 +735,26 @@ export async function runExportDxf(
   try {
     written = writeDxfDocument(converted.entities);
   } catch (error) {
+    if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
     // 書けない値(有限でない座標など)は io が日本語の理由で断る。そのまま見せる。
     return { ok: false, message: messageOfError(error) };
   }
 
   const bytes = new TextEncoder().encode(written.text);
+  if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
   let saved: boolean;
   try {
-    saved = await saveFileAsThrough(
+    const result = await saveExportFile(
       deps.gateway,
       `${exportBaseNameOf(fileName)}${DXF_EXTENSION}`,
       'dxf',
       bytes,
+      control,
     );
+    if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
+    saved = result.saved;
   } catch (error) {
+    if (!mayStartExportSave(control)) return { ok: false, cancelled: true };
     return { ok: false, message: hasSaveRecoveryCopy(error) ? deps.messageOf('file.saveRecoveryCopyRetained') : messageOfError(error) };
   }
   if (!saved) {
@@ -672,9 +789,9 @@ export interface ImportedFeaturesResult {
 /**
  * 読み込んだ立体を履歴のベースボディへ積む(FR-802、§2.8、タスク20)。
  *
- * **参照(`shapeRef` / `meshRef`)はフィーチャーの id をそのまま使う。** 文書の中で
- * 一意であることが `nextSolidId` で保証されていて、`.pcad` の ZIP のエントリ名も
- * それだけで決まる(名前を別に採ると、どちらが正しいかを確かめる場所が増える)。
+ * ここでの参照(`shapeRef` / `meshRef`)は、現在文書内の仮の鍵としてfeature.idを使う。
+ * 実ストアへ入れる入口は、過去/未来の原本との衝突を新規featureだけで正規化する。
+ * feature.idと形状への参照は保ち、最終的な添付refだけを割り当て直す。
  *
  * **外観は既定のまま**にする(§0.a-0.28。ファイルの中の色の取り込みは P7 以降)。
  */

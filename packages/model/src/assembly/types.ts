@@ -57,7 +57,16 @@ export type StandardCatalogId =
   /** 溝形鋼 */
   | 'channel'
   /** H 形鋼 */
-  | 'hBeam';
+  | 'hBeam'
+  /** 平鋼・丸鋼・配管用鋼管（材質別カタログ） */
+  | 'flatBar'
+  | 'roundBar'
+  | 'steelPipe'
+  /**
+   * すみ肉溶接のビード1区間（`assembly/welding/**`）。寸法表ではなく利用者が決めた脚長・長さから組む。
+   * 規格部品の選択画面には出さない（溶接の操作だけが作る）。強度や溶加材の性質は持たない。
+   */
+  | 'filletWeld';
 
 /**
  * 部品の出どころ(FR-601、FR-613、§0.a-0.3、§0.a-0.35、§0.a-0.41)。
@@ -142,6 +151,14 @@ export interface AssemblyComponent {
    * 将来 `PartDocument` に欄ができたら、そちらを優先して読む。
    */
   readonly materialId?: string;
+  /**
+   * 互いに固定した部品の組(ボルト締結など。追加要件6)。同じ値を持つ部品どうしは、保存された
+   * 配置どうしの相対姿勢のまま 1 つの剛体として動き、合致の連立でも 1 つの剛体として解く。
+   * **全体の固定(`fixed`)とは別物**で、組は他の部品に対して動ける(組の中に固定の部品があれば
+   * 組ごと動かない)。相対姿勢は保存せず、いまの配置から毎回導く(導出できる値は保存しない)。
+   * 省略は組に属さない(旧い文書と同じ)。
+   */
+  readonly rigidGroupId?: string;
 }
 
 /**
@@ -213,6 +230,34 @@ export interface Mate {
  * 平面・剛・ピン-スロットは足さない(要件に無い。「剛」は固定 FR-602 で満たせる)。
  */
 export type JointKind = 'revolute' | 'slider' | 'cylindrical' | 'ball';
+/** Authored gear relation. Solved poses remain transient. */
+export interface MechanismGearCoupling {
+  readonly id: string;
+  readonly kind: 'gear';
+  readonly jointAId: string;
+  readonly jointBId: string;
+  readonly ratio: ExpressionValue;
+  readonly phaseDeg: ExpressionValue;
+  readonly referenceAngleA: number;
+  readonly suppressed: boolean;
+}
+/**
+ * Authored cam-follower relation (joints/camFollower.ts): eccentric circular disc cam on a revolute joint driving an
+ * in-line translating roller follower on a slider joint. Dimensions are expressions; solved poses remain transient.
+ * Contact is the closed-form kinematics of these dimensions, not a CAD solid contact or force certification.
+ */
+export interface MechanismCamCoupling {
+  readonly id: string;
+  readonly kind: 'cam';
+  readonly camJointId: string;
+  readonly followerJointId: string;
+  readonly discRadiusMm: ExpressionValue;
+  readonly eccentricityMm: ExpressionValue;
+  readonly rollerRadiusMm: ExpressionValue;
+  readonly phaseDeg: ExpressionValue;
+  readonly referenceAngleCam: number;
+  readonly suppressed: boolean;
+}
 
 /** ジョイントに残る、つまみで駆動できる自由度(P7 §0.a-0.69)。 */
 export type JointCoordinate = 'angle' | 'translation';
@@ -307,7 +352,15 @@ export interface BomSettings {
  * 名前を付けた数値から書けるようにするためである(要件§3、§0.a-0.9)。
  * **部品の側のパラメータはここからは見えない**(部品を開いて直す)。
  */
+export const MECHANISM_COUPLING_KINDS = ['gear'] as const;
+
 export interface AssemblyDocument {
+  /** Nested joint ownership; IO codec/version integration is required before public saving. */
+  readonly jointOccurrenceConnections?: readonly JointOccurrenceConnection[];
+  /** Flat bolted joints' recorded inputs for editing (EX-06): picks, user choices, generated part ids. */
+  readonly boltedJoints?: readonly import('./fastening/boltedJointEdit.js').BoltedJointRecord[];
+  /** Optional versioned user inputs; no solver results or derived CAD node positions. */
+  readonly beamAnalysisInputs?: import('../analysis/beamInputs.js').BeamAnalysisInputs;
   readonly id: string;
   readonly name: string;
   /** 保存形式の版(§0.a-0.2)。部品と同じ系列にする(`ASSEMBLY_SCHEMA_VERSION`)。 */
@@ -318,6 +371,15 @@ export interface AssemblyDocument {
   readonly mates: readonly Mate[];
   /** ジョイント(FR-618)。 */
   readonly joints: readonly Joint[];
+  readonly mechanismCouplings?: readonly MechanismGearCoupling[];
+  /** Cam-follower relations; a separate optional field so existing gear readers stay unchanged. */
+  readonly camCouplings?: readonly MechanismCamCoupling[];
+  /** Cross-level gears: a top-level revolute joint geared to a joint inside one subassembly placement (EX12). */
+  readonly crossLevelGearCouplings?: readonly import('./joints/crossLevelGearDocument.js').CrossLevelGearCouplingDefinition[];
+  /** Cross-level cams: a top-level revolute cam joint driving a slider inside one subassembly placement by an authored law (EX12). */
+  readonly crossLevelCamCouplings?: readonly import('./joints/crossLevelCamLifecycle.js').CrossLevelCamCouplingDefinition[];
+  /** 組立の文脈の参照(EX-18)。先の部品の基準点を、元の置いた部品の頂点・面の中心から決める結び付け。 */
+  readonly contextReferences?: readonly import('./contextReference.js').ContextReferenceLink[];
   /** 分解図とアニメーションのステップ(FR-617、FR-618)。 */
   readonly presentation: readonly PresentationStep[];
   /** 名前を付けた数値の表(FR-207)。部品文書のものとは別物(§0.a-0.9)。 */
@@ -325,4 +387,12 @@ export interface AssemblyDocument {
   readonly namedViews: readonly NamedView[];
   /** 部品表の並びと列(FR-611)。 */
   readonly bom: BomSettings;
+}
+
+/** User-selected leaf occurrences and generated components owned by this document. */
+export interface JointOccurrenceConnection {
+  readonly kind: 'bolt' | 'weld';
+  readonly firstPath: readonly [string, ...string[]];
+  readonly secondPath: readonly [string, ...string[]];
+  readonly componentIds: readonly string[];
 }

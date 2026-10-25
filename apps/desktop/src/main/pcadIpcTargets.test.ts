@@ -2,9 +2,11 @@ import { EventEmitter } from 'node:events';
 import { resolve } from 'node:path';
 import type { IpcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerPcadIpc, PCAD_OPEN_CHANNEL, PCAD_SAVE_CHANNEL, PCAD_CLEAR_TARGET_CHANNEL, PCAD_HAS_TARGET_CHANNEL } from './pcadDialogs.js';
+import { registerPcadIpc, PCAD_OPEN_CHANNEL, PCAD_SAVE_CHANNEL, PCAD_SAVE_AS_CHANNEL,
+  PCAD_CLEAR_TARGET_CHANNEL, PCAD_HAS_TARGET_CHANNEL } from './pcadDialogs.js';
 
 const memory = vi.hoisted(() => new Map<string, Uint8Array>());
+const fsHooks = vi.hoisted(() => ({ afterWrite: null as null | (() => Promise<void>) }));
 const electron = vi.hoisted(() => ({
   handle: vi.fn<(...args: Parameters<IpcMain['handle']>) => void>(),
   showSaveDialog: vi.fn<() => Promise<{ canceled: boolean; filePath: string }>>(),
@@ -18,7 +20,7 @@ vi.mock('./appSender.js', () => ({ validateAppSender: () => true }));
 vi.mock('node:fs', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs')>();
   return { ...original, promises: {
-    writeFile(path: string, bytes: Uint8Array) { memory.set(path, bytes.slice()); return Promise.resolve(); },
+    writeFile(path: string, bytes: Uint8Array) { memory.set(path, bytes.slice()); return fsHooks.afterWrite?.() ?? Promise.resolve(); },
     rename(from: string, to: string) {
       const bytes = memory.get(from); if (bytes === undefined) throw new Error('書込対象なし');
       memory.set(to, bytes); memory.delete(from); return Promise.resolve();
@@ -44,11 +46,53 @@ function invoke(channel: string, ...argumentsFromRenderer: unknown[]): Promise<u
 }
 
 beforeEach(() => {
-  vi.clearAllMocks(); memory.clear(); serial += 1;
+  vi.clearAllMocks(); memory.clear(); fsHooks.afterWrite = null; serial += 1;
   sender = Object.assign(new EventEmitter(), { id: serial });
   registerPcadIpc();
 });
 afterEach(() => { sender.emit('destroyed'); });
+
+describe('書き出しの取消はpickerとtempの確定前に止める', () => {
+  const firstId = '33333333-3333-4333-8333-333333333333';
+  const secondId = '44444444-4444-4444-8444-444444444444';
+  it('cancelがsaveAs invokeより先でも同じIDのpickerを開かない', async () => {
+    await invoke('pcad:cancelExportSave', firstId);
+    expect(await invoke(PCAD_SAVE_AS_CHANNEL, 'stale.stl', 'stl', Uint8Array.of(1), firstId)).toBe(false);
+    expect(electron.showSaveDialog).not.toHaveBeenCalled();
+    expect(memory.size).toBe(0);
+  });
+  it('picker待ちの取消後は選んだ先へwriteしない', async () => {
+    const choice = deferred<{ canceled: boolean; filePath: string }>();
+    const path = resolve('memory-only', 'stale.stl');
+    electron.showSaveDialog.mockReturnValueOnce(choice.promise);
+    const saving = invoke(PCAD_SAVE_AS_CHANNEL, 'stale.stl', 'stl', Uint8Array.of(1), firstId);
+    await invoke('pcad:cancelExportSave', firstId);
+    choice.resolve({ canceled: false, filePath: path });
+    expect(await saving).toBe(false);
+    expect(memory.size).toBe(0);
+  });
+  it('temp書込中の取消はcommitせず一時ファイルを回収し、次試行は成功する', async () => {
+    const delayedWrite = deferred<void>();
+    const startedWrite = deferred<void>();
+    fsHooks.afterWrite = () => { startedWrite.resolve(); return delayedWrite.promise; };
+    const stale = resolve('memory-only', 'stale.stl');
+    memory.set(stale, Uint8Array.of(9));
+    electron.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: stale });
+    const saving = invoke(PCAD_SAVE_AS_CHANNEL, 'stale.stl', 'stl', Uint8Array.of(1), firstId);
+    await startedWrite.promise;
+    expect([...memory.keys()].some(path => path.includes('.tmp-'))).toBe(true);
+    await invoke('pcad:cancelExportSave', firstId);
+    delayedWrite.resolve();
+    expect(await saving).toBe(false);
+    expect(memory.get(stale)).toEqual(Uint8Array.of(9));
+    expect(memory.size).toBe(1);
+    fsHooks.afterWrite = null;
+    const current = resolve('memory-only', 'current.stl');
+    electron.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath: current });
+    expect(await invoke(PCAD_SAVE_AS_CHANNEL, 'current.stl', 'stl', Uint8Array.of(2), secondId)).toBe(true);
+    expect(memory.get(current)).toEqual(Uint8Array.of(2));
+  });
+});
 
 describe('本体プロセスの保存先を文書切替で失効させる（レビュー R02）', () => {
   it('加工先の書き出し後もCtrl+S相当の保存は元のpcadへ向かう', async () => {

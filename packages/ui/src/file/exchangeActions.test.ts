@@ -9,10 +9,103 @@
  */
 
 import { writeThreeMf, type ThreeMfColor, type ThreeMfMeshInput } from '@pointercad/io';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { useAppStore } from '../store/useAppStore.js';
-import { answerImportUnit, createExchangeDeps } from './exchangeActions.js';
+import { resetTestStore } from '../store/testing/createTestStore.js';
+import { answerImportUnit, createExchangeDeps, importFile } from './exchangeActions.js';
+import type { ExchangeImportOutcome } from './exchangeFile.js';
+
+beforeEach(resetTestStore);
+
+function importedPair(value: number): ExchangeImportOutcome {
+  return { unit: 'mm', bodies: [
+    { bodyKind: 'solid', name: 'solid', volume: 1, triangleCount: 1, brepBytes: Uint8Array.of(value) },
+    { bodyKind: 'mesh', name: 'mesh', volume: 0, triangleCount: 1, mesh: {
+      positions: Float32Array.of(value, 0, 0, value + 1, 0, 0, value, 1, 0),
+      normals: Float32Array.of(0, 0, 1, 0, 0, 1, 0, 0, 1), indices: Uint32Array.of(0, 1, 2),
+    } },
+  ] };
+}
+
+function installImport(read: () => Promise<ExchangeImportOutcome>): void {
+  const state = useAppStore.getState();
+  useAppStore.setState({ fileGateway: { ...state.fileGateway,
+    openFile: () => Promise.resolve({ kind: 'step', fileName: 'body.step', bytes: Uint8Array.of(1) }) },
+  exchangeKernel: { importShape: read, exportShapes: () => Promise.reject(new Error('Not used')) } });
+}
+
+describe('実importFileの添付所有', () => {
+  it('削除後のfeature.id再利用でも旧原本を保ち、追加1回だけUndoへ積む', async () => {
+    installImport(() => Promise.resolve(importedPair(1))); await importFile('step');
+    const first = useAppStore.getState();
+    expect(first.document.solids.map(feature => feature.id)).toEqual(['importedSolid-1', 'importedMesh-1']);
+    first.applyDocument({ ...first.document, solids: [] });
+    const before = useAppStore.getState();
+    installImport(() => Promise.resolve(importedPair(2))); await importFile('step');
+    const next = useAppStore.getState();
+    expect(next.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+    expect(next.document.solids.map(feature => feature.id)).toEqual(first.document.solids.map(feature => feature.id));
+    const solid = next.document.solids[0], mesh = next.document.solids[1];
+    if (solid.kind !== 'importedSolid' || mesh.kind !== 'importedMesh') throw new Error('Missing imported bodies');
+    expect(solid.source.fileName).toBe('body.step'); expect(mesh.source.fileName).toBe('body.step');
+    expect(solid.shapeRef).not.toBe('importedSolid-1'); expect(mesh.meshRef).not.toBe('importedMesh-1');
+    expect(next.importedShapes.get(solid.shapeRef)).toEqual(Uint8Array.of(2));
+    expect(next.importedMeshes.get(mesh.meshRef)?.positions[0]).toBe(2);
+    expect(next.importedShapes.get('importedSolid-1')).toBe(first.importedShapes.get('importedSolid-1'));
+    expect(next.importedMeshes.get('importedMesh-1')).toBe(first.importedMeshes.get('importedMesh-1'));
+    next.undo(); next.undo(); expect(useAppStore.getState().document).toBe(first.document);
+    next.redo(); next.redo(); expect(useAppStore.getState().document).toBe(next.document);
+    expect(first.importedShapes.size).toBe(1); expect(first.importedMeshes.size).toBe(1);
+  });
+
+  it('旧featureが新featureの仮refを使っていても新規2件の参照だけを移す', async () => {
+    installImport(() => Promise.resolve(importedPair(1))); await importFile('step');
+    const first = useAppStore.getState(), solid = first.document.solids[0], mesh = first.document.solids[1];
+    if (solid.kind !== 'importedSolid' || mesh.kind !== 'importedMesh') throw new Error('Missing imported bodies');
+    const oldMesh = first.importedMeshes.get(mesh.meshRef);
+    if (oldMesh === undefined) throw new Error('Missing mesh bytes');
+    first.setImportedAttachments(new Map([...first.importedShapes, ['importedSolid-2', Uint8Array.of(1)]]),
+      new Map([...first.importedMeshes, ['importedMesh-2', oldMesh]]));
+    first.applyDocument({ ...first.document, solids: [{ ...solid, shapeRef: 'importedSolid-2' }, { ...mesh, meshRef: 'importedMesh-2' }] });
+    const existing = useAppStore.getState();
+    installImport(() => Promise.resolve(importedPair(2))); await importFile('step');
+    const next = useAppStore.getState();
+    expect(next.document.solids.slice(0, 2)).toEqual(existing.document.solids);
+    expect(next.document.solids[0]).toBe(existing.document.solids[0]);
+    expect(next.document.solids[1]).toBe(existing.document.solids[1]);
+    for (const feature of next.document.solids.slice(2)) {
+      if (feature.kind === 'importedSolid') {
+        expect(feature.id).toBe('importedSolid-2'); expect(feature.shapeRef).not.toBe('importedSolid-2');
+        expect(next.importedShapes.get(feature.shapeRef)).toEqual(Uint8Array.of(2));
+      } else if (feature.kind === 'importedMesh') {
+        expect(feature.id).toBe('importedMesh-2'); expect(feature.meshRef).not.toBe('importedMesh-2');
+        expect(next.importedMeshes.get(feature.meshRef)?.positions[0]).toBe(2);
+      } else throw new Error('Unexpected imported body');
+    }
+    expect(next.importedShapes.get('importedSolid-2')).toEqual(Uint8Array.of(1));
+    expect(next.importedMeshes.get('importedMesh-2')?.positions[0]).toBe(1);
+  });
+
+  it('待機中の文書変更とファイル取消は文書・Undo・原本Mapを変更しない', async () => {
+    let finish: (outcome: ExchangeImportOutcome) => void = () => { throw new Error('Not pending'); };
+    let started: () => void = () => { throw new Error('Not installed'); };
+    const waiting = new Promise<void>(resolve => { started = resolve; });
+    installImport(() => new Promise(resolve => { finish = resolve; started(); }));
+    const pending = importFile('step');
+    await waiting;
+    const state = useAppStore.getState(); state.applyDocument({ ...state.document, name: 'edited' });
+    const edited = useAppStore.getState(); finish(importedPair(2)); await pending;
+    function unchanged(): void {
+      const current = useAppStore.getState(); expect(current.document).toBe(edited.document);
+      expect(current.undoStack).toBe(edited.undoStack); expect(current.importedShapes).toBe(edited.importedShapes);
+      expect(current.importedMeshes).toBe(edited.importedMeshes);
+    }
+    unchanged();
+    useAppStore.setState({ fileGateway: { ...edited.fileGateway, openFile: () => Promise.resolve(null) } });
+    await importFile('step'); unchanged();
+  });
+});
 
 describe('単位を訊く(§0.a-0.6)', () => {
   it('訊いている間は印が立ち、答えると読み込みへ単位が返る', async () => {
@@ -80,15 +173,15 @@ describe('createExchangeDeps(...).buildThreeMf の面ごとの色(R04)', () => {
   }
 
   function buildThreeMfOrThrow(baseName: string) {
-    const buildThreeMf = createExchangeDeps(baseName).buildThreeMf;
+    const buildThreeMf = createExchangeDeps(baseName, meshes => Promise.resolve().then(() => writeThreeMf(meshes))).buildThreeMf;
     if (buildThreeMf === undefined) throw new Error('buildThreeMf が組まれていません');
     return buildThreeMf;
   }
 
-  it('面の色を渡すと、UI の入口を通した結果が writeThreeMf の直接呼び出しと1バイトも違わない', () => {
+  it('面の色を渡すと、UI の入口を通した結果が writeThreeMf の直接呼び出しと1バイトも違わない', async () => {
     const mesh = meshInput(true);
     const direct = writeThreeMf([mesh]);
-    const throughUi = buildThreeMfOrThrow('review')({
+    const throughUi = await buildThreeMfOrThrow('review')({
       files: [],
       droppedTriangleCount: 0,
       meshes: [
@@ -101,14 +194,14 @@ describe('createExchangeDeps(...).buildThreeMf の面ごとの色(R04)', () => {
           faceRanges: mesh.faceRanges,
         },
       ],
-    });
+    }, { remainingMs: 25_000 });
     expect(throughUi.bytes).toEqual(direct);
   });
 
-  it('面の色を持たない依頼は今までどおり立体の色だけになる(退行が無い)', () => {
+  it('面の色を持たない依頼は今までどおり立体の色だけになる(退行が無い)', async () => {
     const mesh = meshInput(false);
     const direct = writeThreeMf([mesh]);
-    const throughUi = buildThreeMfOrThrow('review')({
+    const throughUi = await buildThreeMfOrThrow('review')({
       files: [],
       droppedTriangleCount: 0,
       meshes: [
@@ -119,7 +212,7 @@ describe('createExchangeDeps(...).buildThreeMf の面ごとの色(R04)', () => {
           indices: INDICES,
         },
       ],
-    });
+    }, { remainingMs: 25_000 });
     expect(throughUi.bytes).toEqual(direct);
   });
 });

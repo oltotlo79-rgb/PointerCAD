@@ -32,7 +32,7 @@ import type { CanvasInitialState } from './canvasSlice.js';
 import type { ConstraintInitialState } from './constraintSlice.js';
 import type { DocumentInitialState } from './documentSlice.js';
 import type { ExchangeInitialState } from './exchangeSlice.js';
-import type { FileInitialState } from './fileSlice.js';
+import { createPartLineageId, type FileInitialState } from './fileSlice.js';
 import type { MeasureInitialState } from './measureSlice.js';
 import type { RecomputeInitialState } from './recomputeSlice.js';
 import type { SelectionInitialState } from './selectionSlice.js';
@@ -68,7 +68,7 @@ const DEFAULT_SPHERE_GRID_STEP: ExpressionValue = expressionValueFromNumber(
 /** テストで元へ戻せるよう、文書まわりの初期値を1箇所にまとめる。 */
 export function createInitialDocumentState(): InitialDocumentState {
   // 起動時は空のスケッチ 1 本だけを持つ部品から始める(§0.a-0.2、NFR-UX-6 の空状態ガイド)。
-  const document = createEmptyPartDocument();
+  const document = { ...createEmptyPartDocument(), id: createPartLineageId() };
   const sketch = activeSketchOf(document);
   return {
     helpTopicId: null,
@@ -84,14 +84,18 @@ export function createInitialDocumentState(): InitialDocumentState {
     sectionView: null,
     // 3D プリントの点検(FR-815、P6 タスク42・43・46)。新しい部品はまだ点検していない。
     printability: null,
+    printabilityOwner: null,
     printabilityOffsets: null,
     // 下絵(FR-332、P6 タスク39)。新しい部品は画像を 1 枚も持たない。
     canvases: new Map<string, Uint8Array>(),
     canvasMessage: null,
     canvasPixelSizes: new Map<string, CanvasPixelSize>(),
+    canvasImageLoads: new Map(),
+    canvasImageRetries: new Map(),
     // 起動時の部品は読み込んだ形を 1 つも持たない(FR-802、P6 タスク32)。
     importedShapes: new Map<string, Uint8Array>(),
     importedMeshes: new Map<string, ImportedMeshBytes>(),
+    canvasRectification: null,
     canvasScale: null,
     // 3D スケッチで押した場所の面(FR-330、タスク14)。まだ一度も押していない。
     freeSketchPlane: null,
@@ -125,6 +129,8 @@ export function createInitialDocumentState(): InitialDocumentState {
     dragResolved: null,
     dragRefusalKey: null,
     bodies: [],
+    referenceRepairBodies: null,
+    resolvedPartSketches: null,
     // 起動直後の部品には外観の割り当てが 1 つも無い(FR-1106、P5 タスク10)。
     appearanceMatches: [],
     partErrors: [],
@@ -139,6 +145,7 @@ export function createInitialDocumentState(): InitialDocumentState {
     isComputing: false,
     errorMessage: null,
     selection: [],
+    connectionSelection: null,
     hoveredElementId: null,
     snapEnabled: true,
     snapKinds: DEFAULT_SNAP_KINDS,

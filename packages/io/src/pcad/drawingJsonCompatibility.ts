@@ -45,10 +45,14 @@ export function preserveDrawingJsonFields<T>(source: unknown, clean: T, path: re
     return clean;
   }
   if (!isRecord(source) || !isRecord(clean)) return clean;
+  const subShapeRef = Object.hasOwn(clean, 'bodyFeatureId') && Object.hasOwn(clean, 'index')
+    && Object.hasOwn(clean, 'fingerprint');
   for (const key of Object.keys(clean)) {
+    if (subShapeRef && key === 'origin') continue;
     preserveDrawingJsonFields(source[key], clean[key], [...path, key]);
   }
   for (const key of Object.keys(source).sort()) {
+    if (subShapeRef && ['origins', 'currentOriginIndex', 'originIndex', 'bindings', 'nativeHistory'].includes(key)) continue;
     if (Object.hasOwn(clean, key) || derivedField(path, key, source[key])) continue;
     Object.defineProperty(clean, key, { value: structuredClone(source[key]), enumerable: true, configurable: true, writable: true });
   }

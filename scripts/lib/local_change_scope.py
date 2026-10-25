@@ -31,7 +31,7 @@ import subprocess
 import sys
 import time
 
-PACKAGE_NAMES = {'web', 'desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression'}
+PACKAGE_NAMES = {'web', 'desktop', 'drawing', 'kernel', 'model', 'io', 'ui', 'test-utils', 'help-content', 'expression', 'fem'}
 WORKSPACE_FOLDERS = {
     **{name: 'packages/' + name for name in PACKAGE_NAMES - {'desktop', 'web'}},
     'desktop': 'apps/desktop', 'web': 'apps/web',
@@ -352,6 +352,36 @@ def classify_path(path, before_attributes, after_attributes, runtime_graph, ligh
     return None
 
 
+def numstat_paths(raw):
+    """Decode no-renames --numstat -z without losing binary/mode-only or special names."""
+    if not raw:
+        return b''
+    if not raw.endswith(b'\0'):
+        raise ValueError('Unterminated numstat record')
+    names = []
+    for record in raw[:-1].split(b'\0'):
+        fields = record.split(b'\t', 2)
+        if len(fields) != 3 or not fields[2]:
+            raise ValueError('Malformed no-renames numstat record')
+        added, removed, name = fields
+        if (added, removed) != (b'-', b'-') and not (
+                added and removed and all(48 <= byte <= 57 for byte in added + removed)):
+            raise ValueError('Malformed numstat counts')
+        names.append(name)
+    return b'\0'.join(names) + b'\0'
+
+
+def changed_base_entries(git, base, names):
+    """Read the base tree once without expanding changed paths into OS argv."""
+    changed = set(names)
+    for line in git('--literal-pathspecs', 'ls-tree', '-r', '-z', base).decode('utf8').split('\0'):
+        if not line:
+            continue
+        metadata, name = line.split('\t', 1)
+        if name in changed:
+            yield metadata, name
+
+
 def inspect(root: Path, level: str, phase: str, comparison_base: str, force: bool, light: bool = False):
     if force or os.environ.get('CI', '').lower() == 'true':
         return full('CI, release or explicitly requested full validation')
@@ -362,13 +392,14 @@ def inspect(root: Path, level: str, phase: str, comparison_base: str, force: boo
         return full('The light local check is only a manual Push-level check')
 
     def git(*args):
-        return subprocess.run(['git', '-C', str(root), '-c', 'safe.directory=' + root.as_posix(),
+        return subprocess.run(['git', '--no-optional-locks', '-C', str(root), '-c', 'safe.directory=' + root.as_posix(),
+                               '-c', 'diff.autoRefreshIndex=false',
                                *args], capture_output=True, check=True, timeout=15).stdout
 
     head = git('rev-parse', '--verify', 'HEAD').decode().strip()
     if level == 'Commit':
         base = head
-        paths = git('diff', '--cached', '--no-ext-diff', '--no-renames', '--name-only', '-z', base, '--')
+        paths = numstat_paths(git('diff', '--cached', '--no-ext-diff', '--no-renames', '--numstat', '-z', base, '--'))
     else:
         if phase == 'Push' and git('status', '--porcelain', '-z'):
             return full('A targeted push requires a clean checked HEAD')
@@ -382,8 +413,8 @@ def inspect(root: Path, level: str, phase: str, comparison_base: str, force: boo
             base = git('rev-parse', '--verify', 'refs/remotes/origin/main').decode().strip()
         git('merge-base', '--is-ancestor', base, head)
         # Include both index and worktree. Restoring a working file must not hide its staged change.
-        paths = git('diff', '--no-ext-diff', '--no-renames', '--name-only', '-z', base, '--')
-        paths += git('diff', '--cached', '--no-ext-diff', '--no-renames', '--name-only', '-z', base, '--')
+        paths = numstat_paths(git('diff', '--no-ext-diff', '--no-renames', '--numstat', '-z', base, '--'))
+        paths += numstat_paths(git('diff', '--cached', '--no-ext-diff', '--no-renames', '--numstat', '-z', base, '--'))
         paths += git('ls-files', '--others', '--exclude-standard', '-z')
     names = sorted(set(paths.decode('utf8').split('\0')) - {''})
 
@@ -400,11 +431,8 @@ def inspect(root: Path, level: str, phase: str, comparison_base: str, force: boo
         metadata, name = line.split('\t', 1)
         if name in names and metadata.split()[0] not in {'100644', '100755'}:
             return unbounded('Changed links or submodules require full validation')
-    for line in git('--literal-pathspecs', 'ls-tree', '-r', '-z', base, '--', *names).decode('utf8').split('\0'):
-        if not line:
-            continue
-        metadata, name = line.split('\t', 1)
-        if name in names and metadata.split()[0] not in {'100644', '100755'}:
+    for metadata, name in changed_base_entries(git, base, names):
+        if metadata.split()[0] not in {'100644', '100755'}:
             return unbounded('Removing or replacing a link or submodule requires full validation')
     if any(has_linked_parent(root, name) for name in names):
         return unbounded('Changed filesystem links require full validation')

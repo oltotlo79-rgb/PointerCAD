@@ -18,10 +18,14 @@ import type {
   SketchFeature,
 } from '../types.js';
 import { crossVec3, distanceVec3, normalizeVec3, type Vec3 } from '../vec3.js';
+import { diagnoseConstraints } from './diagnose.js';
+import { geometryErrors, geometryOracleFactories, requiredPoint } from './independentGeometry.testSupport.js';
 import {
   CONSTRAINT_FREE_SKETCH_MESSAGE,
+  createConstrainedSketchJob,
   resolveConstrainedSketch,
   type ConstrainedSketch,
+  type ConstrainedSolveOptions,
 } from './solveSketch.js';
 import type { ConstraintTarget, SketchConstraint } from './types.js';
 import { MAX_CONSTRAINT_VARIABLES } from './variables.js';
@@ -369,7 +373,7 @@ describe('解けないときも止めずに理由を出す(FR-504、NFR-RE-1)', 
   });
 
   it('変数が上限を超えたら解かずに constraintTooMany を返し、形は拘束を無視したまま', () => {
-    // 点 1 つ = 変数 2 つ。201 点で 402 個になり、上限 400 を超える。
+    // 点 1 つ = 変数 2 つ。1001 点で 2002 個になり、上限 2000 を超える。
     const features: SketchFeature[] = [];
     for (let index = 0; index < MAX_CONSTRAINT_VARIABLES / 2 + 1; index += 1) {
       features.push(pointOf(`point-${index}`, absoluteCoordinate(index, 0, 0)));
@@ -451,5 +455,151 @@ describe('所要(NFR-PF-2 の内側であることの実測)', () => {
     // 実測値は報告へ載せる。
     console.log(`[実測] 拘束 50 件・変数 100 個の解決 1 回: ${elapsed.toFixed(1)}ms`);
     expect(Number.isFinite(elapsed)).toBe(true);
+  });
+});
+
+
+describe('public 1000-point constrained solve', () => {
+  it('solves 500 independent coincidence pairs at their Euclidean nearest midpoints', () => {
+    const features: SketchFeature[] = [];
+    const constraints: SketchConstraint[] = [];
+    for (let pair = 0; pair < 500; pair += 1) {
+      features.push(pointOf(`a-${pair}`, absoluteCoordinate(pair * 4, 0, 0)));
+      features.push(pointOf(`b-${pair}`, absoluteCoordinate(pair * 4 + 2, 0, 0)));
+      constraints.push(coincidentOf(`join-${pair}`, atPoint(`a-${pair}`), atPoint(`b-${pair}`)));
+    }
+    const document = documentOf(features, constraints);
+    const before = JSON.stringify(document);
+    const result = resolveConstrainedSketch(document);
+    expect(result.errors).toEqual([]);
+    expect(result.variableSet?.variables).toHaveLength(2000);
+    expect(result.outcome?.converged).toBe(true);
+    expect(result.diagnosis?.rank).toBe(1000);
+    expect(result.diagnosis?.degreesOfFreedom).toBe(1000);
+    expect(result.diagnosis?.satisfied).toBe(true);
+    for (let pair = 0; pair < 500; pair += 1) {
+      for (const id of [`a-${pair}`, `b-${pair}`]) {
+        const point = result.solution.get(id);
+        expect(point).toBeDefined();
+        expect(Math.abs((point?.[0] ?? Infinity) - (pair * 4 + 1))).toBeLessThan(1e-8);
+        expect(point?.[1]).toBe(0);
+        expect(point?.[2]).toBe(0);
+      }
+    }
+    expect(JSON.stringify(document)).toBe(before);
+  });
+
+  it('keeps the unconstrained fast path for 1000 actual points', () => {
+    const document = documentOf(Array.from({ length: 1000 }, (_, i) =>
+      pointOf(`capacity-${i}`, absoluteCoordinate(i, 0, 0))));
+    const result = resolveConstrainedSketch(document);
+    expect(result.errors).toEqual([]);
+    expect(result.resolved.points).toHaveLength(1000);
+    expect(result.diagnosis).toBeNull();
+    expect(result.outcome).toBeNull();
+  });
+});
+
+describe('independent nonlinear geometry oracles (EX-13 W03)', () => {
+  it.each(geometryOracleFactories.map(factory => ({ name: factory(false).name, factory })))(
+  'recovers analytic coordinates, physical lengths and DOF for $name', ({ factory }) => {
+    const fixture = factory(), before = JSON.stringify(fixture.document);
+    const anchor = requiredPoint(fixture.expected, fixture.anchor);
+    // Only fix the two translational gauge freedoms through the public drag
+    // entrance. The document still has all free variables and DOF=2.
+    const result = resolveConstrainedSketch(fixture.document, {}, {
+      pinned: new Map([[fixture.anchor, [anchor[0], anchor[1]]]]), pinnedWeight: 1,
+    });
+    const radii = new Map(result.radiusSolution);
+    for (const ellipse of result.resolved.ellipses) {
+      radii.set(`${ellipse.featureId}.rmajor`, ellipse.majorRadius);
+      radii.set(`${ellipse.featureId}.rminor`, ellipse.minorRadius);
+    }
+    const errors = geometryErrors(fixture, result.solution, radii);
+    console.log('[independent geometry]', fixture.name, JSON.stringify({
+      ...errors, stop: result.outcome?.stop, converged: result.outcome?.converged,
+      iterations: result.outcome?.iterations,
+    }));
+    expect(result.variableSet?.variables).toHaveLength(fixture.variables);
+    expect(result.solution.size).toBe(fixture.expected.size);
+    expect(result.outcome?.converged).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.resolved.errors).toEqual([]);
+    expect(errors.coordinate).toBeLessThanOrEqual(1e-6);
+    expect(errors.length).toBeLessThanOrEqual(1e-9);
+    expect(errors.direction).toBeLessThanOrEqual(1e-9);
+    if (result.variableSet === null || result.outcome === null) throw new Error('Missing real solve');
+    const diagnosis = diagnoseConstraints(fixture.document.constraints ?? [], result.variableSet, result.outcome.x);
+    expect(diagnosis.equations).toBe(fixture.equations);
+    expect(diagnosis.rank).toBe(fixture.rank);
+    expect(diagnosis.degreesOfFreedom).toBe(2);
+    expect(diagnosis.conflicting).toEqual([]);
+    expect(diagnosis.skipped).toEqual([]);
+    expect(diagnosis.satisfied).toBe(true);
+    expect(JSON.stringify(fixture.document)).toBe(before);
+    // Check the re-resolved geometry, not only the numerical override vector.
+    for (const segment of result.resolved.segments) {
+      expect(Math.hypot(...segment.from.map((v, axis) => v - requiredPoint(fixture.expected, `${segment.featureId}:start`)[axis])))
+        .toBeLessThanOrEqual(1e-6);
+      expect(Math.hypot(...segment.to.map((v, axis) => v - requiredPoint(fixture.expected, `${segment.featureId}:end`)[axis])))
+        .toBeLessThanOrEqual(1e-6);
+    }
+  });
+
+  it.each(geometryOracleFactories.map(factory => ({ name: factory(false).name, factory })))(
+  'the independent $name oracle rejects coordinate and radius perturbations', ({ factory }) => {
+    const fixture = factory(false);
+    expect(geometryErrors(fixture, fixture.expected, fixture.radii)).toEqual({ coordinate: 0, length: 0, direction: 0 });
+    const wrong = new Map(fixture.expected), [id, value] = [...wrong][1];
+    wrong.set(id, [value[0] + 2e-6, value[1], value[2]]);
+    const errors = geometryErrors(fixture, wrong, fixture.radii);
+    expect(errors.coordinate).toBeGreaterThan(1e-6);
+    expect(Math.max(errors.length, errors.direction)).toBeGreaterThan(1e-9);
+    if (fixture.radii.size > 0) {
+      const radii = new Map(fixture.radii), [key, radius] = [...radii][0];
+      radii.set(key, radius + 2e-9);
+      expect(geometryErrors(fixture, fixture.expected, radii).length).toBeGreaterThan(1e-9);
+    }
+  });
+});
+
+describe('再開できる解決: 連立を解かない場合は最初の stepWork で終わる(引っぱりの 1 フレーム。2026-10-25 の回帰)', () => {
+  // 連立を解かない場合(拘束 0 個の引っぱりなど)は、準備の 1 回で答えが決まる。`step` と同じく、その 1 回で
+  // 完了を返す。pending を返すと、引っぱりの画面が答えを次のフレームまで出さない(拘束 0 個の点が 1 フレームで動かない)。
+  const plain = documentOf([
+    lineOf('line-1', absoluteCoordinate(0, 0, 0), absoluteCoordinate(7, 4, 0)),
+    lineOf('line-2', absoluteCoordinate(7, 4, 0), absoluteCoordinate(9, 1, 0)),
+  ]);
+  const free = documentOf([
+    lineOf('line-1', absoluteCoordinate(0, 0, 0), absoluteCoordinate(10, 0, 0), FREE_WORK_PLANE_ID),
+  ]);
+  const pinned: ConstrainedSolveOptions = { pinned: new Map([['line-1:end', [4, 8] as const]]) };
+
+  it.each([
+    { name: '拘束 0 個のスケッチで点を引っぱる', document: plain, solveOptions: pinned },
+    { name: '拘束 0 個のスケッチを引っぱらずに解く', document: plain, solveOptions: undefined },
+    { name: '3D スケッチで点を引っぱる', document: free, solveOptions: pinned },
+  ])('$name: 1 回目の stepWork が同期の解決と同じ答えで完了する', ({ document, solveOptions }) => {
+    const job = createConstrainedSketchJob(document, {}, solveOptions);
+    const first = job.stepWork(4096);
+    expect(first).toMatchObject({ status: 'completed', phase: 'finalize', work: 1, totalWork: 1 });
+    expect(first.result).toEqual(resolveConstrainedSketch(document, {}, solveOptions));
+    const again = job.stepWork(4096);
+    expect(again).toMatchObject({ status: 'completed', work: 0, totalWork: 1 });
+    expect(again.result).toBe(first.result);
+  });
+
+  it('引っぱった点は、作業量 1 の 1 回目で目標へ置かれる', () => {
+    const first = createConstrainedSketchJob(plain, {}, pinned).stepWork(1);
+    if (first.status !== 'completed') throw new Error('拘束 0 個の引っぱりが 1 回目で完了しない');
+    expect([...first.result.solution.keys()]).toEqual(['line-1:end']);
+    expectVec3(segmentOf(first.result.resolved, 'line-1').to, [4, 8, 0]);
+    expectVec3(segmentOf(first.result.resolved, 'line-2').from, [7, 4, 0]);
+  });
+
+  it('連立を解く場合は従来どおり、準備の後に制御を返す', () => {
+    const constrained = documentOf(plain.features.slice(), [horizontalOn('h-1', 'line-1')]);
+    const job = createConstrainedSketchJob(constrained, {}, pinned);
+    expect(job.stepWork(4096)).toMatchObject({ status: 'pending', phase: 'solve', work: 1, totalWork: 1, result: null });
   });
 });

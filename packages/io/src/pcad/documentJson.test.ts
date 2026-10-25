@@ -1,4 +1,11 @@
-import { createDefaultConfigurations } from '@pointercad/model';
+import { expressionValueFromNumber } from '@pointercad/expression';
+import type { CutFeature } from '@pointercad/model';
+import { buildStandardPartFromSource, createStandardPartSource, steelProducts, steelProductOptions } from '@pointercad/model';
+import { addComponent, createAssemblyDocument, createComponentFor, resolveAssembly } from '@pointercad/model';
+import { buildStandardPartFromSourceWithReason } from '../../../model/src/assembly/standard/buildStandardPart.js';
+import { allocatePatternPointSlots } from '@pointercad/model';
+import { absoluteCoordinate, appendFeature, appendSolid, createDefaultConfigurations, createPointFeature, replaceSketch,
+  type CoordinateInput, type SketchLineFeature } from '@pointercad/model';
 import {
   createEmptyPartDocument,
   createPrimitiveFeature,
@@ -43,6 +50,8 @@ import {
   type ThicknessSide,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
+import { unzipSync, zipSync, strToU8 } from 'fflate';
+import { readPcadFile, writePcadFile, type PcadAttachments } from './pcadFile.js';
 
 import {
   parseDocument,
@@ -50,7 +59,7 @@ import {
   type ParseDocumentResult,
   type ParseError,
 } from './documentJson.js';
-import type { ExpressionValueJson } from './guards.js';
+import { isRecord, type ExpressionValueJson } from './guards.js';
 import {
   PCAD_APP_NAME,
   PCAD_DOCUMENT_KIND,
@@ -68,6 +77,108 @@ const SAVED_AT = '2026-09-03T01:23:45.678Z';
 function ev(source: string, value: number): ExpressionValueJson {
   return { source, value, display: String(value) };
 }
+
+describe('R29 connected point and solid vertex references', () => {
+  it.each(['point-vertex', 'vertex-vertex'] as const)('preserves %s original references and zero expressions in PCAD', kind => {
+    let document = createEmptyPartDocument();
+    const primitive = createPrimitiveFeature(document, 'box');
+    document = appendSolid(document, primitive);
+    let sketch = document.sketches[0];
+    const point = createPointFeature(sketch, absoluteCoordinate(30, 40, 50), 'free');
+    sketch = appendFeature(sketch, point);
+    const first: SubShapeRef = { bodyFeatureId: primitive.id, index: 0,
+      fingerprint: { kind: 'vertex', position: [-10, -10, -10] } };
+    const second: SubShapeRef = { bodyFeatureId: primitive.id, index: 7,
+      fingerprint: { kind: 'vertex', position: [10, 10, 10] } };
+    const at = (base: PointReference): CoordinateInput => ({ mode: 'relative', base,
+      dx: ev('0', 0), dy: ev('0', 0), dz: ev('0', 0) });
+    const line: SketchLineFeature = { id: 'line-1', name: 'line', kind: 'line', planeId: 'free', construction: false,
+      from: at(kind === 'point-vertex' ? { kind: 'point', pointId: point.id } : { kind: 'subShape', ref: first }),
+      to: at({ kind: 'subShape', ref: second }) };
+    document = replaceSketch(document, appendFeature(sketch, line));
+    const encoded = serializeDocument(document, { savedAt: SAVED_AT });
+    const reopened = expectOk(parseDocument(encoded));
+    expect(reopened.sketches[0].features).toEqual(document.sketches[0].features);
+    expect(reopened.solids).toEqual(document.solids);
+    expect(serializeDocument(reopened, { savedAt: SAVED_AT })).toBe(encoded);
+    expect(encoded).not.toContain('connectionSelection');
+    expect(encoded).not.toContain('completedGeneration');
+  });
+});
+
+describe('円筒8起点の部品文書JSON保存', () => {
+  it('同一円筒ownerのface/edge/vertex参照を8roleとも往復し、実行時表を保存しない', () => {
+    let document = createEmptyPartDocument();
+    const cylinder = { ...createPrimitiveFeature(document, 'cylinder'),
+      shape: { kind: 'cylinder' as const, radius: ev('10', 10), height: ev('20', 20) } };
+    document = appendSolid(document, cylinder);
+    const featureId = cylinder.id;
+    const refs = [
+      { bodyFeatureId: featureId, index: 2, origin: { version: 1, shapeKind: 'face',
+        identity: { kind: 'cylinder-face', featureId, role: 'side' } },
+        fingerprint: { kind: 'face', surfaceKind: 'cylinder', area: 400 * Math.PI,
+          position: [0, 0, 10], axis: [0, 0, 1], radius: 10 } },
+      { bodyFeatureId: featureId, index: 0, origin: { version: 1, shapeKind: 'face',
+        identity: { kind: 'cylinder-face', featureId, role: 'start' } },
+        fingerprint: { kind: 'face', surfaceKind: 'plane', area: 100 * Math.PI,
+          position: [0, 0, 0], axis: [0, 0, -1], radius: null } },
+      { bodyFeatureId: featureId, index: 1, origin: { version: 1, shapeKind: 'face',
+        identity: { kind: 'cylinder-face', featureId, role: 'end' } },
+        fingerprint: { kind: 'face', surfaceKind: 'plane', area: 100 * Math.PI,
+          position: [0, 0, 20], axis: [0, 0, 1], radius: null } },
+      { bodyFeatureId: featureId, index: 1, origin: { version: 1, shapeKind: 'edge',
+        identity: { kind: 'cylinder-edge', featureId, role: 'start-ring' } },
+        fingerprint: { kind: 'edge', curveKind: 'circle', length: 20 * Math.PI,
+          position: [0, 0, 0], axis: [0, 0, -1], radius: 10 } },
+      { bodyFeatureId: featureId, index: 2, origin: { version: 1, shapeKind: 'edge',
+        identity: { kind: 'cylinder-edge', featureId, role: 'end-ring' } },
+        fingerprint: { kind: 'edge', curveKind: 'circle', length: 20 * Math.PI,
+          position: [0, 0, 20], axis: [0, 0, 1], radius: 10 } },
+      { bodyFeatureId: featureId, index: 0, origin: { version: 1, shapeKind: 'edge',
+        identity: { kind: 'cylinder-edge', featureId, role: 'seam' } },
+        fingerprint: { kind: 'edge', curveKind: 'line', length: 20,
+          position: [10, 0, 10], axis: [0, 0, 1], radius: null } },
+      { bodyFeatureId: featureId, index: 1, origin: { version: 1, shapeKind: 'vertex',
+        identity: { kind: 'cylinder-vertex', featureId, role: 'seam-start' } },
+        fingerprint: { kind: 'vertex', position: [10, 0, 0] } },
+      { bodyFeatureId: featureId, index: 0, origin: { version: 1, shapeKind: 'vertex',
+        identity: { kind: 'cylinder-vertex', featureId, role: 'seam-end' } },
+        fingerprint: { kind: 'vertex', position: [10, 0, 20] } },
+    ] as const satisfies readonly SubShapeRef[];
+    const at = (ref: SubShapeRef): CoordinateInput => ({ mode: 'relative',
+      base: { kind: 'subShape', ref }, dx: ev('0', 0), dy: ev('0', 0), dz: ev('0', 0) });
+    const line = (id: string, from: SubShapeRef, to: SubShapeRef): SketchLineFeature => ({
+      id, name: id, kind: 'line', planeId: 'free', construction: false, from: at(from), to: at(to),
+    });
+    const lines = [
+      line('cylinder-ref-1', refs[0], refs[1]), line('cylinder-ref-2', refs[2], refs[3]),
+      line('cylinder-ref-3', refs[4], refs[5]), line('cylinder-ref-4', refs[6], refs[7]),
+    ];
+    let sketch = document.sketches[0];
+    for (const entry of lines) sketch = appendFeature(sketch, entry);
+    document = replaceSketch(document, sketch);
+    const encoded = serializeDocument(document, { savedAt: SAVED_AT });
+    const reopened = expectOk(parseDocument(encoded));
+    expect(reopened.solids).toEqual([cylinder]);
+    expect(reopened.sketches[0].features.slice(-4)).toEqual(lines);
+    expect(serializeDocument(reopened, { savedAt: SAVED_AT })).toBe(encoded);
+    expect(encoded).not.toContain('"bindings"');
+
+    const unknownRole = encoded.replace('"role": "side"', '"role": "unknown"');
+    expect(unknownRole).not.toBe(encoded);
+    const roleError = expectError(parseDocument(unknownRole));
+    expect(roleError.code).toBe('invalidField');
+    expect(roleError.message).toContain('document.sketches[0].features[0].from.base.ref.origin.identity.role');
+
+    const mixedKind = encoded.replace('"shapeKind": "face"', '"shapeKind": "edge"')
+      .replace('"kind": "cylinder-face"', '"kind": "cylinder-edge"')
+      .replace('"role": "side"', '"role": "seam"');
+    expect(mixedKind).not.toBe(encoded);
+    const kindError = expectError(parseDocument(mixedKind));
+    expect(kindError.code).toBe('invalidField');
+    expect(kindError.message).toContain('document.sketches[0].features[0].from.base.ref.origin.shapeKind');
+  });
+});
 
 /** 5 種類のスケッチフィーチャーと 3 種類の座標指定、4 種類の基準を全部入れたスケッチ。 */
 function richSketch(): SketchDocument {
@@ -896,7 +1007,7 @@ describe(
     'P6 タスク21・§0.a-0.55、P7 タスク3・§0.a-0.2、P8 タスク3)',
   () => {
     it('封筒の現行版は部品文書の版と同じ値である', () => {
-      expect(PCAD_SCHEMA_VERSION).toBe(17);
+      expect(PCAD_SCHEMA_VERSION).toBe(22);
       expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
     });
 
@@ -912,6 +1023,46 @@ describe(
 );
 
 describe('部品文書の書き出し(serializeDocument)', () => {
+  it('既存の部品参照familyに保存意味起点を添えて各経路から失わない', () => {
+    const document = structuredClone(richDocument());
+    const paths: string[] = [];
+    const visit = (value: unknown, path: string): void => {
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => visit(item, `${path}[${String(index)}]`));
+        return;
+      }
+      if (!isRecord(value)) return;
+      if (typeof value['bodyFeatureId'] === 'string' && typeof value['index'] === 'number'
+        && isRecord(value['fingerprint']) && typeof value['fingerprint']['kind'] === 'string') {
+        const kind = value['fingerprint']['kind'];
+        const featureId = value['bodyFeatureId'];
+        if (kind === 'face') value['origin'] = { version: 1, shapeKind: kind,
+          identity: { kind: 'box-face', featureId, role: 'top' } };
+        else if (kind === 'edge') value['origin'] = { version: 1, shapeKind: kind,
+          identity: { kind: 'box-edge', featureId, role: 'top-front' } };
+        else if (kind === 'vertex') value['origin'] = { version: 1, shapeKind: kind,
+          identity: { kind: 'box-vertex', featureId, role: 'top-front-left' } };
+        paths.push(path);
+      }
+      for (const [key, item] of Object.entries(value)) visit(item, `${path}.${key}`);
+    };
+    visit(document, 'document');
+    expect(paths.length).toBeGreaterThan(8);
+    expect(new Set(paths.map(path => path.split('.')[1])).size).toBeGreaterThanOrEqual(4);
+    const opened = parseDocument(serializeDocument(document, { savedAt: SAVED_AT }));
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    expect(opened.document).toEqual(document);
+  });
+  it('版17の従来文書は現行版へ移行し、意味起点を発明しない', () => {
+    const legacy = { ...createEmptyPartDocument(), schemaVersion: 17 };
+    const opened = parseDocument(serializeDocument(legacy, { savedAt: SAVED_AT }));
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    expect(opened.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+    expect(opened.document.selectionSets).toEqual([]);
+    expect(opened.document.canvases).toEqual([]);
+  });
   it('封筒に版・種別・アプリ名・保存時刻・文書を書く', () => {
     const text = serializeDocument(createEmptyPartDocument(), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
@@ -3298,7 +3449,7 @@ describe('3D スケッチの読み書き(FR-330、P4 タスク10)', () => {
   it('freeOrientation・subShape 参照は現在の版でも省略可能(前方互換とは無関係な理由で版が上がった)', () => {
     const text = serializeDocument(documentWith(freeSketch()), { savedAt: SAVED_AT });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(17);
+    expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
   });
 });
 
@@ -3802,7 +3953,7 @@ describe('球面上の点の読み書き(FR-431、P5 タスク19)', () => {
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
     // P6 タスク21(§0.a-0.55)が別の理由(ZIP の添付・選択セット・下絵)で 7 へ、
     // P7 タスク3(P7 §0.a-0.2)がさらに別の理由(封筒の種別 assembly)で 8 へ上げた。
-    expect(PCAD_SCHEMA_VERSION).toBe(17);
+    expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
   });
 
   it('緯度の欄が欠けていれば場所つきで断る', () => {
@@ -4152,9 +4303,7 @@ describe('Should 群の読み書き(P5 §2.11、タスク43)', () => {
       name: '点パターン1',
       suppressed: false,
       sourceFeatureId: 'hole-1',
-      placement: {
-        kind: 'points',
-        points: [
+      placement: allocatePatternPointSlots([
           { kind: 'point', pointId: 'point-1' },
           { kind: 'subShape', ref: shouldFaceRef() },
           {
@@ -4163,11 +4312,10 @@ describe('Should 群の読み書き(P5 §2.11、タスク43)', () => {
             latitude: ev('30', 30),
             longitude: ev('60', 60),
           },
-        ],
-      },
+        ]),
     });
     const parsed = roundTrip(document);
-    expect(parsed).toEqual(document);
+    expect(parsed).toEqual({ ...document, patternSlotHighWater: { 'pointPattern-1': 4 } });
     const pattern = parsed.solids[0];
     if (pattern.kind !== 'pattern' || pattern.placement.kind !== 'points') {
       throw new Error('点集合パターンのはず');
@@ -4865,7 +5013,7 @@ function allSolidFeatures(): SolidFeatureByKind {
       name: '点パターン1',
       suppressed: false,
       sourceFeatureId: 'hole-1',
-      placement: { kind: 'points', points: allPointReferences() },
+      placement: allocatePatternPointSlots(allPointReferences()),
     },
     spring: {
       id: 'spring-1',
@@ -4928,6 +5076,17 @@ function allSolidFeatures(): SolidFeatureByKind {
       neutralFace: faceRef('extrude-1', 0),
       angle: ev('1', 1),
       reversed: true,
+    },
+    // 平らな面の移動(EX-18)。保存するのは対象の id・面の指紋・符号付きの距離の式だけ。
+    // 負の式(内向き)を入れて、符号ごと往復することを確かめる。
+    faceOffset: {
+      id: 'faceOffset-1',
+      kind: 'faceOffset',
+      name: '面の移動1',
+      suppressed: false,
+      targetFeatureId: 'extrude-1',
+      face: faceRef('extrude-1', 3),
+      offset: ev('-2.5', -2.5),
     },
     mirror: {
       id: 'mirror-1',
@@ -5025,6 +5184,11 @@ function allSolidFeatures(): SolidFeatureByKind {
       thickness: ev('2', 2),
       outward: true,
     },
+    surfaceCut: {
+      id: 'surface-cut-1', kind: 'surfaceCut', name: '面による切断1', suppressed: false,
+      targetFeatureId: 'extrude-1', keep: 'positive', pairedWith: null,
+      blade: { kind: 'plane', plane: { kind: 'workPlane', planeId: 'yz', offset: ev('5', 5) } },
+    },
     cut: {
       id: 'cut-1',
       kind: 'cut',
@@ -5094,10 +5258,10 @@ function documentWithAllSolids(): PartDocument {
 }
 
 describe('26 種すべての読み書き(P5 タスク47・P6 タスク20、FR-801、FR-202)', () => {
-  it('板金と関数曲面を含む31種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
+  it('板金と関数曲面・面の移動を含む33種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
     const document = documentWithAllSolids();
-    expect(document.solids).toHaveLength(31);
-    expect(roundTrip(document)).toEqual(document);
+    expect(document.solids).toHaveLength(33);
+    expect(roundTrip(document)).toEqual({ ...document, patternSlotHighWater: { 'pattern-1': 7 } });
   });
 
   it('26 種すべての kind が書き出しに現れる(種類を取りこぼしていない)', () => {
@@ -5133,13 +5297,24 @@ describe('26 種すべての読み書き(P5 タスク47・P6 タスク20、FR-80
     expect(fillet.targets[1].fingerprint).toEqual({ kind: 'vertex', position: [4, 5, 6] });
   });
 
+  it('平らな面の移動(EX-18)は面の指紋と符号付きの距離の式をそのまま往復する', () => {
+    const restored = roundTrip(documentWithAllSolids());
+    const moved = restored.solids.find((solid) => solid.kind === 'faceOffset');
+    if (moved === undefined || moved.kind !== 'faceOffset') {
+      throw new Error('面の移動のはず');
+    }
+    expect(moved.targetFeatureId).toBe('extrude-1');
+    expect(moved.face).toEqual(faceRef('extrude-1', 3));
+    expect(moved.offset).toEqual(ev('-2.5', -2.5));
+  });
+
   it('点の指定 6 種が往復で一致する(点集合パターンの中)', () => {
     const restored = roundTrip(documentWithAllSolids());
     const pattern = restored.solids.find((solid) => solid.kind === 'pattern');
     if (pattern === undefined || pattern.kind !== 'pattern' || pattern.placement.kind !== 'points') {
       throw new Error('点集合パターンのはず');
     }
-    expect(pattern.placement.points).toEqual(allPointReferences());
+    expect(pattern.placement.points.map((slot) => slot.reference)).toEqual(allPointReferences());
     expect(pattern.placement.points).toHaveLength(6);
   });
 
@@ -5406,7 +5581,7 @@ describe('古いファイルの読み込み(NFR-RE-3、P5 タスク47)', () => {
 
   it('移行表が版2から現行版の直前まで揃う', () => {
     expect(Object.keys(SCHEMA_MIGRATIONS).sort()).toEqual(Array.from({ length: PCAD_SCHEMA_VERSION - 2 }, (_, index) => String(index + 2)).sort());
-    expect(PCAD_SCHEMA_VERSION).toBe(17);
+    expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
     expect(PART_SCHEMA_VERSION).toBe(PCAD_SCHEMA_VERSION);
   });
 });
@@ -6106,7 +6281,7 @@ describe('ひな形の封筒の任意の欄(FR-814、§2.10)', () => {
       toolDefaults: TOOL_DEFAULTS,
     });
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(17);
+    expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
   });
 });
 
@@ -6320,7 +6495,7 @@ describe('選択セットの員の 4 種類(FR-112、利用者の決定 2026-09-
       },
     ]);
     expect(text).toContain(`"schema": ${String(PCAD_SCHEMA_VERSION)}`);
-    expect(PCAD_SCHEMA_VERSION).toBe(17);
+    expect(PCAD_SCHEMA_VERSION).toBe(PART_SCHEMA_VERSION);
   });
 
   it('立体・面だけの既存の版 7 のファイルはそのまま読める(語が増えても壊さない)', () => {
@@ -6513,5 +6688,346 @@ describe('下絵の読み書き(FR-332、P6 §0.a-0.45・§2.14、タスク38)',
       parseDocument(rawFile({ document: rawDocument({ canvases: [rawCanvas({ 未知: 1 })] }) })),
     );
     expect(serializeDocument(document, { savedAt: SAVED_AT })).not.toContain('未知');
+  });
+});
+
+describe('persisted point-slot document issuance ledger', () => {
+  it('retains deleted-feature high-water marks through a cold document read', () => {
+    const document = { ...createEmptyPartDocument(), patternSlotHighWater: { removedPattern: 12 } };
+    const reopened = expectOk(parseDocument(serializeDocument(document, { savedAt: SAVED_AT })));
+    expect(reopened.solids).toEqual([]);
+    expect(reopened.patternSlotHighWater).toEqual({ removedPattern: 12 });
+    expect(allocatePatternPointSlots([{ kind: 'origin' }], undefined, undefined,
+      reopened.patternSlotHighWater?.removedPattern).points.map((slot) => slot.slotId)).toEqual(['slot-12']);
+  });
+
+  it('rejects a non-integer issuance ledger rather than discarding it', () => {
+    const document = { ...createEmptyPartDocument(), patternSlotHighWater: { removedPattern: 1.5 } };
+    expect(() => serializeDocument(document, { savedAt: SAVED_AT })).toThrow();
+  });
+});
+
+
+describe('legacy points upgrade before new save contract', () => {
+  it.each([16, 17])('reads valid schema %s points once, writes current schema with schema18 slots and cold retains identities', schema => {
+    const legacy = { ...richDocument(), schemaVersion: schema, solids: richSolids().map(feature =>
+      feature.kind === 'pattern' ? { ...feature, placement: { kind: 'points', points: [
+        { kind: 'origin' }, { kind: 'origin' },
+      ] } } : feature) };
+    const text = rawFile({ schema, document: legacy });
+    const parsed = expectOk(parseDocument(text));
+    expect(parsed.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+    const pattern = parsed.solids.find(feature => feature.kind === 'pattern');
+    if (pattern?.kind !== 'pattern' || pattern.placement.kind !== 'points') throw new Error('legacy pattern missing');
+    expect(pattern.placement.points).toEqual([
+      { slotId: 'slot-1', reference: { kind: 'origin' } },
+      { slotId: 'slot-2', reference: { kind: 'origin' } },
+    ]);
+    expect(pattern.placement.nextSlotSerial).toBe(3);
+    const cold = expectOk(parseDocument(serializeDocument(parsed)));
+    expect(cold.solids).toEqual(parsed.solids);
+    expect(cold.patternSlotHighWater).toEqual(parsed.patternSlotHighWater);
+    const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='), character => character.charCodeAt(0));
+    const attachments: PcadAttachments = { shapes: new Map<string, Uint8Array>(), meshes: new Map(),
+      canvases: new Map([['canvas-1', png], ['canvas-2', png.slice()]]) };
+    // A missing asset remains invalid; the upgrade control carries every old input asset.
+    expect(readPcadFile(zipSync({ 'document.json': strToU8(text) })).ok).toBe(false);
+    const fullArchive = unzipSync(writePcadFile(parsed, { attachments }));
+    fullArchive['document.json'] = strToU8(text);
+    const oldBytes = zipSync(fullArchive);
+    const opened = readPcadFile(oldBytes);
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) throw new Error('legacy ZIP failed');
+    expect(opened.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+    expect(opened.attachments.canvases).toEqual(attachments.canvases);
+    const saved = readPcadFile(writePcadFile(opened.document, { attachments: opened.attachments }));
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) throw new Error('saved upgraded ZIP failed');
+    expect(saved.attachments.canvases).toEqual(attachments.canvases);
+    expect(saved.document.solids).toEqual(opened.document.solids);
+    expect(saved.document.patternSlotHighWater).toEqual(opened.document.patternSlotHighWater);
+  });
+});
+
+describe('explicit purchased steel provenance persistence', () => {
+  it('preserves original source through machining-history save/reopen and leaves old documents absent', () => {
+    const product = steelProducts('SS400', 'roundBar')[0];
+    const source = createStandardPartSource(product.catalog, product.size, { ...steelProductOptions(product), length: '500*2' });
+    const part = buildStandardPartFromSource(source);
+    if (part === null) throw new Error('Missing steel fixture');
+    const edited = { ...part, name: 'Edited', solids: [] };
+    const reopened = expectOk(parseDocument(serializeDocument(edited, { savedAt: SAVED_AT })));
+    expect(reopened.steelStockSource).toEqual(source);
+    expect(reopened.solids).toEqual([]);
+    expect(expectOk(parseDocument(serializeDocument(createEmptyPartDocument()))).steelStockSource).toBeUndefined();
+    const invalid = JSON.parse(serializeDocument(edited)) as { document: { steelStockSource: unknown } };
+    invalid.document.steelStockSource = createStandardPartSource('hexBolt', 'M8');
+    expect(parseDocument(JSON.stringify(invalid)).ok).toBe(false);
+    invalid.document.steelStockSource = { ...source, options: { ...source.options, length: '0' } };
+    expect(parseDocument(JSON.stringify(invalid)).ok).toBe(false);
+  });
+});
+
+describe('steel provenance field validation independent of revisions', () => {
+  it('rejects missing and non-string source/steel fields through JSON and PCAD even with future revisions', () => {
+    const product = steelProducts('SS400', 'roundBar')[0];
+    const source = createStandardPartSource(product.catalog, product.size, steelProductOptions(product));
+    const document = buildStandardPartFromSource(source);
+    if (document === null) throw new Error('Missing steel part');
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    const before = structuredClone(document);
+    const sourceFields = ['kind', 'catalog', 'size', 'options', 'catalogRevision', 'generatorRevision'];
+    const steelFields = ['steelProduct', 'materialGrade', 'materialStandard', 'productStandard', 'condition', 'evidence'];
+    for (const revision of [{}, { catalogRevision: 'future-steel-revision' }, { generatorRevision: 'future-steel-revision' }]) {
+      for (const fields of [sourceFields, steelFields]) {
+        for (const field of fields) {
+          for (const missing of [false, true]) {
+            const options: Record<string, unknown> = { ...source.options };
+            const stock: Record<string, unknown> = { ...source, ...revision, options };
+            const target = fields === sourceFields ? stock : options;
+            if (missing) delete target[field];
+            else target[field] = 42;
+            const raw = rawFile({ document: { ...document, steelStockSource: stock } });
+            for (const result of [parseDocument(raw), readPcadFile(zipSync({ 'document.json': strToU8(raw) }))]) {
+              if (result.ok) throw new Error(`Accepted invalid steel field ${field}`);
+              const error = result.error;
+              expect(error.code).toBe(missing && fields === sourceFields ? 'missingField' : 'invalidField');
+              expect(error.message).toContain('steelStockSource');
+            }
+          }
+        }
+      }
+    }
+    expect(document).toEqual(before);
+    expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(text);
+  });
+});
+
+describe('EX03 W10 future steel provenance remains readable and rejects during resolution', () => {
+  const rows = [
+    ['SS400', 'flatBar'], ['S45C', 'roundBar'], ['SS400', 'equalAngle'],
+    ['SS400', 'channel'], ['SS400', 'hBeam'], ['SGP', 'steelPipe'],
+  ] as const;
+  const cases = rows.flatMap(([grade, catalog]) => (['catalogRevision', 'generatorRevision'] as const)
+    .flatMap(field => (['JSON', 'PCAD'] as const).map(format => ({ grade, catalog, field, format }))));
+  it.each(cases)('$grade $catalog / $field / $format preserves the source and resolves with its W9 reason', test => {
+    const product = steelProducts(test.grade, test.catalog)[0];
+    const source = createStandardPartSource(product.catalog, product.size, steelProductOptions(product));
+    const document = buildStandardPartFromSource(source);
+    if (document === null) throw new Error('Missing steel part');
+    const before = structuredClone(document);
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    const raw: unknown = JSON.parse(text);
+    if (!isRecord(raw) || !isRecord(raw.document) || !isRecord(raw.document.steelStockSource)) {
+      throw new Error('Missing serialized steel provenance');
+    }
+    raw.document.steelStockSource[test.field] = 'future-steel-revision';
+    const tampered = JSON.stringify(raw);
+    const result = test.format === 'JSON' ? parseDocument(tampered)
+      : readPcadFile(zipSync({ 'document.json': strToU8(tampered) }));
+    expect(document).toEqual(before);
+    expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(text);
+    expect(expectOk(parseDocument(text)).steelStockSource).toEqual(source);
+    if (!result.ok) throw new Error(`Future steel provenance could not reopen: ${result.error.message}`);
+    const opened = result.document;
+    const savedSource = opened.steelStockSource;
+    if (savedSource === undefined) throw new Error('Lost future steel provenance');
+    expect(opened).toEqual({ ...before, steelStockSource: { ...source, [test.field]: 'future-steel-revision' } });
+    const openedBefore = structuredClone(opened);
+    const built = buildStandardPartFromSourceWithReason(savedSource);
+    expect(built.document).toBeNull();
+    expect(built.rejection?.code).toBe(test.field === 'catalogRevision'
+      ? 'unsupported-catalog-revision' : 'unsupported-generator-revision');
+    expect(built.rejection?.message).toContain('版');
+    const empty = createAssemblyDocument('Future steel provenance');
+    const assembly = addComponent(empty, createComponentFor(empty, savedSource));
+    const assemblyBefore = structuredClone(assembly);
+    const resolved = resolveAssembly(assembly, {
+      standardPart: candidate => buildStandardPartFromSourceWithReason(candidate).document,
+    });
+    expect(resolved.parts.size).toBe(0);
+    expect(resolved.partKeys.size).toBe(0);
+    expect(resolved.errors).toHaveLength(1);
+    expect(resolved.errors[0].message).toBe(built.rejection?.message);
+    expect(assembly).toEqual(assemblyBefore);
+    expect(opened).toEqual(openedBefore);
+    expect(expectOk(parseDocument(serializeDocument(opened, { savedAt: SAVED_AT })))).toEqual(openedBefore);
+    const savedZip = readPcadFile(writePcadFile(opened, { savedAt: SAVED_AT }));
+    if (!savedZip.ok) throw new Error(`Future steel provenance could not resave: ${savedZip.error.message}`);
+    expect(savedZip.document).toEqual(openedBefore);
+    expect(document).toEqual(before);
+    expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(text);
+  });
+});
+
+describe('schema19 purchased-steel compatibility boundary', () => {
+  it.each([17, 18])('upgrades old schema%s without fabricating provenance', schemaVersion => {
+    const old = { ...createEmptyPartDocument(), schemaVersion };
+    const before = structuredClone(old);
+    const reopened = expectOk(parseDocument(serializeDocument(old)));
+    expect(reopened.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+    expect(Object.hasOwn(reopened, 'steelStockSource')).toBe(false);
+    expect(old).toEqual(before);
+  });
+  it('refuses writing provenance under an old version and rejects mismatched/future envelopes', () => {
+    const product = steelProducts('SS400', 'roundBar')[0];
+    const source = createStandardPartSource(product.catalog, product.size, { ...steelProductOptions(product), length: '1000' });
+    const part = buildStandardPartFromSource(source);
+    if (part === null) throw new Error('Missing steel fixture');
+    expect(() => serializeDocument({ ...part, schemaVersion: 18 })).toThrow('schema 19');
+    const raw: unknown = JSON.parse(serializeDocument(part));
+    if (typeof raw !== 'object' || raw === null || !('document' in raw)) throw new Error('Missing envelope');
+    expect(parseDocument(JSON.stringify({ ...raw, schema: 18 })).ok).toBe(false);
+    const future = parseDocument(JSON.stringify({ ...raw, schema: PCAD_SCHEMA_VERSION + 1 }));
+    expect(future.ok).toBe(false);
+    if (!future.ok) expect(future.error.code).toBe('unsupportedNewVersion');
+  });
+});
+
+describe('machined purchased-steel cold persistence', () => {
+  it('preserves the actual cut history and source after reopen', () => {
+    const product = steelProducts('SS400', 'roundBar')[0];
+    const source = createStandardPartSource(product.catalog, product.size, { ...steelProductOptions(product), length: '1000' });
+    const part = buildStandardPartFromSource(source);
+    if (part === null) throw new Error('Missing steel fixture');
+    const cut: CutFeature = { id: 'cut-1', name: 'cut', kind: 'cut', suppressed: false,
+      targetFeatureId: part.solids.at(-1)?.id ?? '', pairedWith: null, keep: 'negative',
+      plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(600) } };
+    const edited = { ...part, solids: [...part.solids, cut] };
+    const reopened = expectOk(parseDocument(serializeDocument(edited, { savedAt: SAVED_AT })));
+    expect(reopened.steelStockSource).toEqual(source);
+    expect(reopened.solids.at(-1)).toEqual(cut);
+  });
+});
+
+describe('円筒の側面の穴の保存と版(EX05、版20)', () => {
+  function cylindricalHoleDocument(schemaVersion: number): PartDocument {
+    return {
+      ...documentWithSolid({
+        id: 'hole-1', kind: 'hole', name: '穴1', suppressed: false, targetFeatureId: 'cylinder-1',
+        face: { bodyFeatureId: 'cylinder-1', index: 2, fingerprint: {
+          kind: 'face', surfaceKind: 'cylinder', area: 2513.2741228718346, position: [0, 0, 20], axis: [0, 0, 1], radius: 10,
+        } },
+        centers: [],
+        diameter: ev('4', 4),
+        depth: { kind: 'blind', depth: ev('3', 3) },
+        tiltAngle: ev('0', 0),
+        tiltAzimuth: ev('0', 0),
+        cylindrical: { kind: 'cylinder-face', locations: [
+          { height: ev('5+7', 12), angle: ev('0', 0) },
+          { height: ev('28', 28), angle: ev('45*2', 90) },
+        ] },
+      }),
+      schemaVersion,
+    };
+  }
+
+  it('版20では高さ・角度の式(source・value・display)を並びのまま保ち、保存し直しても同じ文字列になる', () => {
+    const document = cylindricalHoleDocument(20);
+    const text = serializeDocument(document, { savedAt: SAVED_AT });
+    const reopened = expectOk(parseDocument(text));
+    const hole = reopened.solids[0];
+    if (hole === undefined || hole.kind !== 'hole') throw new Error('穴のはず');
+    expect(hole.cylindrical).toEqual({ kind: 'cylinder-face', locations: [
+      { height: ev('5+7', 12), angle: ev('0', 0) },
+      { height: ev('28', 28), angle: ev('45*2', 90) },
+    ] });
+    expect(hole.centers).toEqual([]);
+    expect(reopened.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+    expect(reopened.solids).toEqual(document.solids);
+    const currentText = serializeDocument({ ...document, schemaVersion: PCAD_SCHEMA_VERSION }, { savedAt: SAVED_AT });
+    expect(serializeDocument(reopened, { savedAt: SAVED_AT })).toBe(currentText);
+    expect(serializeDocument(expectOk(parseDocument(currentText)), { savedAt: SAVED_AT })).toBe(currentText);
+  });
+
+  it.each([19, 17])('版%sと名乗る文書には円筒の側面の穴を書かない(古い読み手が欄を捨てるため)', (schemaVersion) => {
+    expect(() => serializeDocument(cylindricalHoleDocument(schemaVersion), { savedAt: SAVED_AT })).toThrow('版20');
+  });
+
+  it('版19の平面の穴は今までどおり書けて、読むと版20へ移る', () => {
+    const document: PartDocument = {
+      ...documentWithSolid({
+        id: 'hole-1', kind: 'hole', name: '穴1', suppressed: false, targetFeatureId: 'extrude-1',
+        face: { bodyFeatureId: 'extrude-1', index: 0, fingerprint: {
+          kind: 'face', surfaceKind: 'plane', area: 100, position: [0, 0, 0], axis: [0, 0, 1], radius: null,
+        } },
+        centers: [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }],
+        diameter: ev('6', 6), depth: { kind: 'through' }, tiltAngle: ev('0', 0), tiltAzimuth: ev('0', 0),
+      }),
+      schemaVersion: 19,
+    };
+    const reopened = expectOk(parseDocument(serializeDocument(document, { savedAt: SAVED_AT })));
+    expect(reopened.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+    const read = reopened.solids[0];
+    expect(read !== undefined && 'cylindrical' in read).toBe(false);
+  });
+
+  it('版19の封筒に円筒の穴の欄があっても読みでは断らず、移行後の版20で保存し直せる', () => {
+    const raw: unknown = JSON.parse(serializeDocument(cylindricalHoleDocument(20), { savedAt: SAVED_AT }));
+    if (!isRecord(raw) || !isRecord(raw.document)) throw new Error('封筒のはず');
+    const reopened = expectOk(parseDocument(JSON.stringify({ ...raw, schema: 19, document: { ...raw.document, schemaVersion: 19 } })));
+    expect(reopened.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
+    const hole = reopened.solids[0];
+    expect(hole?.kind === 'hole' ? hole.cylindrical?.locations.length : undefined).toBe(2);
+    expect(() => serializeDocument(reopened, { savedAt: SAVED_AT })).not.toThrow();
+  });
+});
+
+describe('schema22 signed axis constraint persistence', () => {
+  it('round-trips expressions, zero and negative axes alongside old constraints', () => {
+    const base = createEmptyPartDocument();
+    const constraints: SketchConstraint[] = [
+      { id: 'u', name: 'u', kind: 'horizontalDistance', a: { kind: 'point', pointId: 'a' },
+        b: { kind: 'point', pointId: 'b' }, length: ev('2 - 7', -5) },
+      { id: 'v', name: 'v', kind: 'verticalDistance', a: { kind: 'point', pointId: 'a' },
+        b: { kind: 'point', pointId: 'b' }, length: ev('0', 0) },
+      { id: 'f', name: 'f', kind: 'fix', target: { kind: 'point', pointId: 'a' } },
+    ];
+    const document = replaceSketch(base, { ...base.sketches[0], constraints, features: [
+      { id: 'a', name: 'a', kind: 'point', planeId: 'xy', at: absoluteCoordinate(5, 0, 0) },
+      { id: 'b', name: 'b', kind: 'point', planeId: 'xy', at: absoluteCoordinate(0, 0, 0) },
+    ] });
+    const restored = parseDocument(serializeDocument(document));
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) throw new Error('round-trip rejected');
+    expect(restored.document.sketches[0].constraints).toEqual(constraints);
+    expect(() => serializeDocument({ ...document, schemaVersion: 21 })).toThrow(/schema22/);
+    const raw: unknown = JSON.parse(serializeDocument(document));
+    if (!isRecord(raw) || !isRecord(raw['document'])) throw new Error('invalid envelope');
+    const forged = { ...raw, schema: 21, document: { ...raw['document'], schemaVersion: 21 } };
+    expect(parseDocument(JSON.stringify(forged)).ok).toBe(false);
+    expect(parseDocument(JSON.stringify({ ...raw, schema: PCAD_SCHEMA_VERSION + 1 })).ok).toBe(false);
+  });
+
+  it('migrates legacy21 without inventing new constraints', () => {
+    const base = createEmptyPartDocument();
+    const old = { ...base, schemaVersion: 21 };
+    const result = parseDocument(serializeDocument(old));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('legacy21 rejected');
+    expect(result.document.schemaVersion).toBe(22);
+    expect(result.document.sketches).toEqual(old.sketches);
+  });
+});
+
+describe('schema22 point-curve persistence', () => {
+  it.each(['midpoint', 'pointOnCurve'] as const)('retains %s typed roles and rejects its false legacy envelope', kind => {
+    const base = createEmptyPartDocument();
+    const constraint: SketchConstraint = { id: 'new', name: 'new', kind,
+      a: { kind: 'point', pointId: 'p' }, b: { kind: 'curve', element: { featureId: 'l' } } };
+    const document = replaceSketch(base, { ...base.sketches[0], constraints: [constraint], features: [
+      { id: 'p', name: 'p', kind: 'point', planeId: 'xy', at: absoluteCoordinate(1, 2, 0) },
+      { id: 'l', name: 'l', kind: 'line', planeId: 'xy', from: absoluteCoordinate(0, 0, 0),
+        to: absoluteCoordinate(2, 4, 0), construction: false },
+    ] });
+    const text = serializeDocument(document), parsed = parseDocument(text);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error('point-curve round-trip failed');
+    expect(parsed.document.sketches[0].constraints).toEqual([constraint]);
+    expect(() => serializeDocument({ ...document, schemaVersion: 21 })).toThrow(/schema22/);
+    const raw: unknown = JSON.parse(text);
+    if (!isRecord(raw) || !isRecord(raw['document'])) throw new Error('invalid envelope');
+    expect(parseDocument(JSON.stringify({ ...raw, schema: 21,
+      document: { ...raw['document'], schemaVersion: 21 } })).ok).toBe(false);
   });
 });

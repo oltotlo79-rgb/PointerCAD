@@ -1,10 +1,11 @@
 import type { OfflineAssetRecord } from '../../../../scripts/vite/offlineProtocol.mjs';
-import { OFFLINE_MAX_FILE_BYTES } from '../../../../scripts/vite/offlineProtocol.mjs';
-import { contentSecurityPolicyFor, isKernelWorkerAsset } from '@pointercad/ui/security-policy';
+import { OFFLINE_MAX_FILE_BYTES, OFFLINE_MAX_STREAM_BYTES, isOfflineStreamAsset } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { contentSecurityPolicyFor, isKernelWorkerAsset, isFemWorkerAsset } from '@pointercad/ui/security-policy';
 import { OfflineTransferError, offlineAssetRequestUrl, readBoundedOfflineBody, requestOfflineResponse, type OfflineTransferOptions } from './offlineNetwork.js';
 export { OfflineTransferError, type OfflineTransferOptions, type OfflineTransferReason } from './offlineNetwork.js';
 
-function validateResponseHeaders(assetUrl: string, response: Response): void {
+function validateResponseHeaders(asset: OfflineAssetRecord, response: Response): void {
+  const assetUrl = asset.url;
   const mime = (response.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
   const pathname = '/' + assetUrl;
   const path = pathname.toLowerCase();
@@ -13,12 +14,20 @@ function validateResponseHeaders(assetUrl: string, response: Response): void {
     : /\.m?js$/u.test(path) ? javascript : path.endsWith('.wasm') ? ['application/wasm']
       : path.endsWith('.pdf') ? ['application/pdf'] : undefined;
   if (expected !== undefined && !expected.includes(mime)) throw new OfflineTransferError('response', assetUrl);
+  if (asset.transport !== undefined) {
+    const encoding = response.headers.get('Content-Encoding');
+    const length = response.headers.get('Content-Length');
+    if (mime !== 'application/wasm' || encoding?.trim().toLowerCase() !== 'gzip'
+      || (length !== null && length !== String(asset.transport.byteLength))) {
+      throw new OfflineTransferError('response', assetUrl);
+    }
+  }
   const html = path.endsWith('.html');
   if (html && (response.headers.get('Cross-Origin-Opener-Policy')?.trim() !== 'same-origin'
     || response.headers.get('Cross-Origin-Embedder-Policy')?.trim() !== 'require-corp')) {
     throw new OfflineTransferError('response', assetUrl);
   }
-  if (html || isKernelWorkerAsset(pathname)) {
+  if (html || isKernelWorkerAsset(pathname) || isFemWorkerAsset(pathname)) {
     const normalize = (policy: string) => policy.split(';').map(part => part.trim().replace(/\s+/gu, ' '))
       .filter(part => part !== '').sort().join(';');
     if (normalize(response.headers.get('Content-Security-Policy') ?? '') !== normalize(contentSecurityPolicyFor(pathname))) {
@@ -27,7 +36,7 @@ function validateResponseHeaders(assetUrl: string, response: Response): void {
   }
 }
 
-/** Read the verification branch with a byte bound; retain the original response URL and all headers. */
+/** Verify one bounded clone while retaining the fetched response URL for the loader and cache. */
 async function verifyResponse(response: Response, asset: OfflineAssetRecord, signal: AbortSignal,
   fetchedBytes: (bytes: number) => void): Promise<void> {
   const bytes = await readBoundedOfflineBody(response.clone(), asset.byteLength, asset.url, signal, fetchedBytes);
@@ -39,8 +48,15 @@ async function verifyResponse(response: Response, asset: OfflineAssetRecord, sig
 }
 
 function validateAssetRecord(asset: OfflineAssetRecord): void {
-  if (!Number.isSafeInteger(asset.byteLength) || asset.byteLength <= 0 || asset.byteLength > OFFLINE_MAX_FILE_BYTES
-    || !/^[a-f0-9]{64}$/u.test(asset.sha256)) throw new OfflineTransferError('size', asset.url);
+  const stream = isOfflineStreamAsset(asset);
+  if (!Number.isSafeInteger(asset.byteLength) || asset.byteLength <= 0
+    || asset.byteLength > (stream ? OFFLINE_MAX_STREAM_BYTES : OFFLINE_MAX_FILE_BYTES)
+    || !/^[a-f0-9]{64}$/u.test(asset.sha256)
+    || (asset.transport !== undefined && (!stream || asset.transport.encoding !== 'gzip'
+      || !Number.isSafeInteger(asset.transport.byteLength) || asset.transport.byteLength <= 0
+      || asset.transport.byteLength > OFFLINE_MAX_FILE_BYTES
+      || !/^[a-f0-9]{64}$/u.test(asset.transport.sha256)))
+    || (stream && asset.transport === undefined)) throw new OfflineTransferError('size', asset.url);
 }
 
 /** Cached responses are checked with exactly the same bytes, origin and response requirements. */
@@ -52,7 +68,7 @@ export async function verifyOfflineAssetResponse(baseUrl: URL, asset: OfflineAss
     throw new OfflineTransferError('response', asset.url);
   }
   // Header policy follows the logical asset within the app, including deployments under a subdirectory.
-  validateResponseHeaders(asset.url, response);
+  validateResponseHeaders(asset, response);
   await verifyResponse(response, asset, signal, fetchedBytes);
   return response;
 }

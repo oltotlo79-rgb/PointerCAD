@@ -14,7 +14,13 @@ import {
   type WorkPlaneId,
 } from '@pointercad/model';
 import type { MateDiagnosis } from '@pointercad/model';
+import {
+  BOLTED_JOINT_PICK_GUIDE_KEYS, type AssemblyBoltedJointDraft, type BoltedJointDraftPreview,
+} from '../assembly/boltedJointDraft.js';
 import type { AssemblyDragNotice } from '../assembly/dragComponentActions.js';
+import {
+  FILLET_WELD_PICK_GUIDE_KEYS, type AssemblyFilletWeldDraft, type FilletWeldDraftPreview,
+} from '../assembly/filletWeldDraft.js';
 import type { AssemblyMateDraft } from '../assembly/mateCommands.js';
 
 import { t, type MessageKey } from '../i18n/t.js';
@@ -26,6 +32,8 @@ import { SELECTION_KIND_LABEL_KEYS } from '../solid/selectionFilter.js';
 import { parseSubShapeId, type SelectionKind, type SubShapeKind } from '../solid/subShapeSelection.js';
 import type { FileMessage } from '../store/fileSlice.js';
 import type { TimelineRollback } from './timelineRail.js';
+import type { NestedBoltedJointDraft } from '../assembly/nestedBoltedJointDraft.js';
+import { weldPickCount, type NestedWeldDraft } from '../assembly/nestedWeldDraft.js';
 
 /**
  * 進み具合を出すまでの待ち時間(NFR-PF-4)。進み具合が届いてからこれだけ経つまでは
@@ -160,6 +168,7 @@ const GUIDE_KEYS = {
     `mirror` を使っているため(`numericInput.ts` の `SolidToolId` の注釈)。
   */
   draft: 'statusBar.guide.draft',
+  faceOffset: 'statusBar.guide.faceOffset',
   mirrorSolid: 'statusBar.guide.mirrorSolid',
   transform: 'statusBar.guide.transform',
   scale: 'statusBar.guide.scale',
@@ -380,13 +389,16 @@ export function kernelMemoryWarningText(memory: KernelMemoryView | null | undefi
 /** ばねのその場入力の段(§2.11)。`numericInput.ts` の `SolidNumericInputStep` の部分集合。 */
 export type SpringNumericInputStep = 'springShape' | 'springLength';
 
-/** アセンブリの上部にある全18道具と、次に行う操作の文言。 */
+/** アセンブリの上部にある全21道具と、次に行う操作の文言。 */
 export const ASSEMBLY_TOOL_GUIDE_KEYS = {
   placePart: 'assembly.status.placePart',
   placeStandardPart: 'assembly.status.placeStandardPart',
   placeSubAssembly: 'assembly.status.placeSubAssembly',
   replacePart: 'assembly.status.replacePart',
   toggleFixed: 'assembly.status.toggleFixed',
+  boltedJoint: 'assembly.status.boltedJoint',
+  filletWeld: 'assembly.status.filletWeld',
+  releaseFastening: 'assembly.status.releaseFastening',
   coincident: 'assembly.status.pickMateTarget',
   concentric: 'assembly.status.pickMateTarget',
   distance: 'assembly.status.pickMateTarget',
@@ -410,6 +422,9 @@ export const ASSEMBLY_TOOL_GUIDE_IDS = [
   'placeSubAssembly',
   'replacePart',
   'toggleFixed',
+  'boltedJoint',
+  'releaseFastening',
+  'filletWeld',
   'coincident',
   'concentric',
   'distance',
@@ -455,9 +470,85 @@ export function assemblyMateStatus(
     failed: stopped || reasons.length > 0 };
 }
 
+/**
+ * ボルト締結の打ちかけの 1 文(追加要件6)。打ちかけでなければ `null`。
+ * - 4 面がそろうまでは、何面目かと次に選ぶ面。
+ * - そろったら予告の結果: 締結できる(Enter・Esc の案内)、断る理由(赤)、選択や欄の誤り(赤)、
+ *   形の計算待ち(赤くしない)。理由の文は窓と同じキーから引き、別の言い方を作らない。
+ */
+export function boltedJointStatus(
+  draft: AssemblyBoltedJointDraft | null,
+  preview: BoltedJointDraftPreview | null,
+  nested: NestedBoltedJointDraft | null = null,
+  nestedRefusalKey: MessageKey | null = null,
+): { readonly text: string; readonly failed: boolean } | null {
+  if (draft === null) return null;
+  // 入れ子の葉を選んだ締結は選んだものが入れ子の下書きにある(平らな picks は空)ので、その数で次を案内する。
+  const picked = nested !== null ? nested.picks.length : draft.picks.length;
+  // 直す時は面を選び直さない(記録した選び方を使う)ので、選ぶ段の案内は出さず予告の結果を出す。
+  const next = draft.editRecordId !== undefined ? undefined : BOLTED_JOINT_PICK_GUIDE_KEYS[picked];
+  if (next !== undefined) {
+    return { text: fill(t('assembly.status.boltedJointStep'), {
+      count: String(picked + 1), total: String(BOLTED_JOINT_PICK_GUIDE_KEYS.length), next: t(next),
+    }), failed: false };
+  }
+  // 入れ子の締結だけの断り(選ぶ順・版・経路など)は、形が古いという文ではなくその理由で出す。
+  if (nestedRefusalKey !== null) {
+    return { text: fill(t('assembly.status.boltedJointIssue'), { reason: t(nestedRefusalKey) }), failed: true };
+  }
+  if (preview === null || (preview.kind === 'issue' && preview.issue.kind === 'stale')) {
+    return { text: fill(t('assembly.status.boltedJointIssue'), { reason: t('assembly.boltedJoint.issue.stale') }), failed: false };
+  }
+  if (preview.kind === 'issue') {
+    return { text: fill(t('assembly.status.boltedJointIssue'), { reason: t(`assembly.boltedJoint.issue.${preview.issue.kind}`) }),
+      failed: true };
+  }
+  if (preview.result.ok) return { text: t('assembly.status.boltedJointReady'), failed: false };
+  const first = preview.result.rejections[0];
+  return { text: fill(t('assembly.status.boltedJointIssue'), {
+    reason: first === undefined ? t('assembly.boltedJoint.issue.needPicks') : t(`assembly.boltedJoint.reason.${first.code}`),
+  }), failed: true };
+}
+
+/**
+ * すみ肉溶接の打ちかけの 1 文。打ちかけでなければ `null`。締結の 1 文と同じ組み立て:
+ * 選び終えるまでは何番目かと次に選ぶもの、選び終えた(または直す)後は予告の結果。理由の文は窓と同じキー。
+ */
+export function filletWeldStatus(
+  draft: AssemblyFilletWeldDraft | null,
+  preview: FilletWeldDraftPreview | null,
+  nested: NestedWeldDraft | null = null,
+): { readonly text: string; readonly failed: boolean } | null {
+  if (draft === null) return null;
+  const picked = weldPickCount(draft, nested);
+  const next = draft.weldId === null ? FILLET_WELD_PICK_GUIDE_KEYS[picked] : undefined;
+  if (next !== undefined) {
+    return { text: fill(t('assembly.status.filletWeldStep'), {
+      count: String(picked + 1), total: String(FILLET_WELD_PICK_GUIDE_KEYS.length), next: t(next),
+    }), failed: false };
+  }
+  if (preview === null || (preview.kind === 'issue' && preview.issue.kind === 'stale')) {
+    return { text: fill(t('assembly.status.filletWeldIssue'), { reason: t('assembly.filletWeld.issue.stale') }), failed: false };
+  }
+  if (preview.kind === 'issue') {
+    const issue = preview.issue;
+    return { text: fill(t('assembly.status.filletWeldIssue'), { reason: issue.kind === 'value'
+      ? t(`assembly.filletWeld.issue.value.${issue.field}`)
+      : issue.kind === 'occurrence' ? t(`assembly.filletWeld.occurrence.${issue.reason}`)
+        : t(`assembly.filletWeld.issue.${issue.kind}`) }), failed: true };
+  }
+  if (preview.result.ok) return { text: t('assembly.status.filletWeldReady'), failed: false };
+  const first = preview.result.rejections[0];
+  return { text: fill(t('assembly.status.filletWeldIssue'), {
+    reason: first === undefined ? t('assembly.filletWeld.issue.needPicks') : t(`assembly.filletWeld.reason.${first.code}`),
+  }), failed: true };
+}
+
 /** 帯に出す 1 文を選ぶのに要るもの。すべてストアから読める値。 */
 export interface StatusInput {
   readonly assemblyMateStatus?: { readonly text: string; readonly failed: boolean } | null;
+  /** ボルト締結の打ちかけの 1 文(`boltedJointStatus`)。打ちかけでなければ null。 */
+  readonly assemblyBoltedJointStatus?: { readonly text: string; readonly failed: boolean } | null;
   /** 配置・規格部品・置換・干渉・分解・部品表で、いま行う次の一手。 */
   readonly assemblyOperationStatus?: string | null;
   /** 合致の対象を選んでいるか。操作後の診断と区別する。 */
@@ -774,6 +865,7 @@ export function springGuideText(
  *   `machiningGuideText`)である。一覧は単体(`statusText.test.ts`)で段ごとに固定している。
  */
 export const NUMERIC_STEP_GUIDE_KEYS: Readonly<Partial<Record<NumericInputStep, MessageKey>>> = {
+  faceOffsetDistance: 'statusBar.guide.faceOffsetDistance',
   lineEnd: 'statusBar.guide.lineEnd',
   arcShape: 'statusBar.guide.arcShape',
   pointArrayShape: 'statusBar.guide.pointArrayShape',
@@ -997,15 +1089,21 @@ function failureLine(prefixKey: MessageKey | null, text: string): StatusLineWith
  * (`[選ぶもの]` の札は状況の1文と独立、§0.a-0.6)ので、内側の `resolveLine` には含めず
  * ここで一度だけ足す。
  */
-export function describeStatus(input: StatusInput): StatusLine {
-  const line = resolveLine(input);
-  const hasToolGuide = input.activeTool !== 'select'
+/** 操作案内の有無を、計算表示と受動的な履歴ヒントで共用する。 */
+function hasActiveToolGuide(input: StatusInput): boolean {
+  return input.activeTool !== 'select'
     || input.constraintPickMessage != null
     || input.dragging === true
     || input.assemblyOperationStatus != null
     || input.assemblyMateActive === true
+    || input.assemblyBoltedJointStatus != null
     || input.assemblyDragNotice === 'dragging';
-  const showActivity = hasToolGuide && (line.kind === 'computing' || line.kind === 'progress');
+}
+
+export function describeStatus(input: StatusInput): StatusLine {
+  const line = resolveLine(input);
+
+  const showActivity = hasActiveToolGuide(input) && (line.kind === 'computing' || line.kind === 'progress');
   const guide = showActivity ? resolveGuide(input) : line;
   return {
     ...guide,
@@ -1084,6 +1182,10 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     && (input.assemblyDragNotice === undefined || input.assemblyDragNotice === null)) {
     return failureLine(null, input.assemblyMateStatus.text);
   }
+  if (input.assemblyBoltedJointStatus?.failed === true
+    && (input.assemblyDragNotice === undefined || input.assemblyDragNotice === null)) {
+    return failureLine(null, input.assemblyBoltedJointStatus.text);
+  }
   if (input.commandLineFailure !== undefined && input.commandLineFailure !== null) {
     // コマンドラインで打った 1 行への返事(FR-208)。他の断りと同じ扱いで、頭に「コマンド:」を付ける。
     return failureLine('commandLine.error', commandLineFailureText(input.commandLineFailure));
@@ -1116,7 +1218,12 @@ function resolveLine(input: StatusInput): StatusLineWithoutSelectionKind {
     // 原点を移したときの一言(FR-331)。これも断りではないので赤くしない。
     return { kind: 'saved', text: input.originNoticeMessage, hint: null, progress: null };
   }
-  if (input.timelineNoticeKey !== undefined && input.timelineNoticeKey !== null) {
+  // 初回のつまみ案内は操作結果ではないので、保存通知や操作中の次の一手を覆わない。
+  // 実際に差し込んだ通知などの優先順位は保つ。失敗・中止・進捗は既に上で選ぶ。
+  if (input.timelineNoticeKey !== undefined && input.timelineNoticeKey !== null
+    && (input.timelineNoticeKey !== 'timeline.hint'
+      || (input.fileMessage === null && !hasActiveToolGuide(input)
+        && (input.assemblyDragNotice === undefined || input.assemblyDragNotice === null)))) {
     // つまみを末尾へ戻したことの知らせ(FR-507、タスク19)。断りではないので赤くしない。
     return { kind: 'saved', text: t(input.timelineNoticeKey), hint: null, progress: null };
   }
@@ -1179,6 +1286,10 @@ function resolveGuide(input: StatusInput): StatusLineWithoutSelectionKind {
       return { kind: 'saved', text: t('assembly.drag.complete'), hint: null, progress: null };
     case 'cancelled':
       return { kind: 'cancelled', text: t('assembly.drag.cancelled'), hint: null, progress: null };
+  }
+  // 締結の打ちかけ中は、選ぶ順と予告の状態を他の組立の案内より先に出す(打ちかけ中は他の「組む」の道具を止めている)。
+  if (input.assemblyBoltedJointStatus !== undefined && input.assemblyBoltedJointStatus !== null) {
+    return { kind: 'guide', text: input.assemblyBoltedJointStatus.text, hint: null, progress: null };
   }
   if (input.assemblyOperationStatus !== undefined && input.assemblyOperationStatus !== null) {
     return { kind: 'guide', text: input.assemblyOperationStatus, hint: null, progress: null };

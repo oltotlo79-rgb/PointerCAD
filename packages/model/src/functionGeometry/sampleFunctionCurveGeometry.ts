@@ -34,7 +34,8 @@ export async function sampleFunctionCurveGeometry(featureId:string,formula:Funct
     return {featureId,components:result.components,bounds};
   }
   if(formula.kind!=='coordinate-curve' && formula.kind!=='parametric-curve') throw new Error('この曲線の関数形式を計算できません。');
-  const request=functionCurveRequest(formula,ranges,context),completion=await clients.curves.evaluate(request,5000,signal);
+  // Only this geometry route carries the original T bounds; point requests keep the previous request fields.
+  const request=functionCurveRequest(formula,ranges,context,{periodicIntent:true}),completion=await clients.curves.evaluate(request,5000,signal);
   if(!isCurrent() || completion.status==='cancelled') return null;
   if(completion.status!=='result') throw new Error('関数の計算を完了できませんでした。範囲や精度を見直してください。');
   const sampled=completion.result,bounds={minimum:request.minimum,maximum:request.maximum};
@@ -43,7 +44,10 @@ export async function sampleFunctionCurveGeometry(featureId:string,formula:Funct
   if(sampled.status!=='ready') throw new Error(sampled.status==='degenerate'
     ? '指定範囲の関数は長さのある曲線になりません。'
     : '指定した精度で曲線を計算しきれませんでした。範囲や精度を見直してください。');
-  return sampled.bezier === undefined
-    ? {featureId,components:sampled.components.map(component=>component.map(sample=>sample.point)),bounds}
-    : {featureId,components:[],bezier:sampled.bezier,bounds};
+  if(sampled.bezier!==undefined) return {featureId,components:[],bezier:sampled.bezier,bounds};
+  const components=sampled.components.map(component=>component.map(sample=>sample.point));
+  // The certified samples stay alongside their proved C1 cubic; the CAD stage checks one against the other.
+  return sampled.smooth===undefined
+    ? {featureId,components,bounds}
+    : {featureId,components,splines:sampled.smooth.splines,bounds};
 }

@@ -53,7 +53,7 @@ import type {
   SketchFeature,
 } from '../sketch/types.js';
 import { consumedTargetsOf } from './createPartDocument.js';
-import { referencedSketchIds } from './resolvePart.js';
+import { referencedSketchIds } from './solidSketchReferences.js';
 import type {
   PartDocument,
   ReferenceAxisDefinition,
@@ -414,8 +414,12 @@ function solidDependencies(
   }
   switch (feature.kind) {
     case 'sew':
+      for (const face of feature.surfaceFaces ?? []) {
+        found.push(...subShapeDependencies(context, face));
+      }
+      break;
     case 'boolean':
-      // 面の参照と対象の id だけで、上の 2 つに数え終えている。
+      // 対象の id は上の消費の一覧で数え終えている。
       break;
     case 'extrude':
       /*
@@ -427,6 +431,11 @@ function solidDependencies(
       */
       if (feature.end !== undefined && feature.end.kind === 'toFace') {
         found.push(...subShapeDependencies(context, feature.end.face));
+      }
+      // 「対象を貫く」(`end.throughTarget`、EX04)は対象の立体を名指しする。消費しないが上流を
+      // 指すので、ここで数えないと切断の押し出しを対象より前へ動かせてしまう(FR-507)。
+      if (feature.end !== undefined && feature.end.kind === 'throughTarget') {
+        found.push(...solidDependency(context, feature.end.targetFeatureId));
       }
       break;
     case 'revolve':
@@ -460,10 +469,12 @@ function solidDependencies(
       found.push(...axisSpecDependencies(context, feature.axis));
       break;
     case 'primitive':
-      // 基本形状(FR-429)。中心に立体の頂点を指したときだけ上流を指す(**消費しない**、
+      // 基本形状(FR-429)。中心の頂点指定と相対座標の参照は上流を指す(**消費しない**、
       // §0.a-0.19)。向きの軸は他の種類と同じ扱い。
       if (feature.origin.kind === 'vertex') {
         found.push(...subShapeDependencies(context, feature.origin.ref));
+      } else if (feature.origin.kind === 'coordinate') {
+        found.push(...coordinateDependencies(context, feature.origin.value));
       }
       found.push(...axisSpecDependencies(context, feature.axis));
       break;
@@ -532,12 +543,25 @@ function solidDependencies(
         found.push(...axisSpecDependencies(context, feature.operation.axis));
       }
       break;
+    case 'faceOffset':
+      // 平らな面の移動(EX-18)。対象は消費するので上で数え終えているが、面の指紋は
+      // 別のボディを指しうる(解決は断るが、並べ替えの判定は解決の成否と無関係)。
+      found.push(...subShapeDependencies(context, feature.face));
+      break;
     case 'shell':
       // くり抜き(FR-418、§2.12)。対象は消費するので上で数え終えているが、開ける面の
       // 指紋は別のボディを指しうる(解決は断るが、並べ替えの判定は解決の成否と無関係)。
       for (const face of feature.openFaces) {
         found.push(...subShapeDependencies(context, face));
       }
+      break;
+    case 'surfaceCut':
+      if (feature.blade.kind === 'plane') {
+        found.push(...planeSpecDependencies(context, feature.blade.plane));
+      } else if (feature.blade.kind === 'surface') {
+        found.push(...solidDependency(context, feature.blade.surfaceFeatureId));
+      }
+      // Extrusion sketch dependencies were collected above. Pair links are not dependencies.
       break;
     case 'cut':
       /*
@@ -689,20 +713,24 @@ function referenceDependencies(
 /**
  * 帯の全項目について「自分より前になければならない項目の id」を作る(FR-507)。
  *
- * 自分自身への辺は落とす。参照が自分へ戻ってくる文書(作業平面 → スケッチの点 →
+ * 既定では自分自身への辺は落とす。参照が自分へ戻ってくる文書(作業平面 → スケッチの点 →
  * その作業平面)は解決のときに `circularReference` として断られるもので、
  * 並べ替えの可否をここで二重に断らない(同じ規約を 2 か所に書かない)。
+ * 再計算は includeSelf を指定し、同じ走査から自己循環も検出する。
  */
 export function historyDependencies(
   document: PartDocument,
+  options: { readonly includeSelf?: boolean } = {},
 ): ReadonlyMap<string, readonly string[]> {
   const context = createContext(document);
   const graph = new Map<string, readonly string[]>();
   for (const feature of document.references) {
-    graph.set(feature.id, withoutSelf(feature.id, referenceDependencies(context, feature)));
+    const ids = referenceDependencies(context, feature);
+    graph.set(feature.id, options.includeSelf ? dedupe(ids) : withoutSelf(feature.id, ids));
   }
   for (const feature of document.solids) {
-    graph.set(feature.id, withoutSelf(feature.id, solidDependencies(context, feature)));
+    const ids = solidDependencies(context, feature);
+    graph.set(feature.id, options.includeSelf ? dedupe(ids) : withoutSelf(feature.id, ids));
   }
   return graph;
 }

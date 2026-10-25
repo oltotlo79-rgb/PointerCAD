@@ -11,6 +11,7 @@
  */
 
 import { expressionValueFromNumber } from '@pointercad/expression';
+import { THREE_MF_EXPORT_TRIANGLE_LIMIT } from '@pointercad/io';
 import {
   appearanceFromPreset,
   appearanceOf,
@@ -187,12 +188,31 @@ describe('exportBodiesFor(書き出す立体に名前と色を添える)', () =>
  * ------------------------------------------------------------------------- */
 
 describe('toExchangeExportOutcome(書き出しの結果を手続きの形へ直す)', () => {
+  it('明示取消はファイルや実枚数に読み替えない', () => {
+    expect(() => toExchangeExportOutcome({ kind: 'cancelled' }))
+      .toThrowError(DOMException);
+  });
   it('ファイルはそのまま持ち回る(名前を変えない)', () => {
     const files = [{ fileName: 'box.obj', bytes: new Uint8Array([1]) }];
     expect(toExchangeExportOutcome({ kind: 'files', files, droppedTriangleCount: 3 })).toEqual({
       files,
       droppedTriangleCount: 3,
     });
+  });
+
+  it('完成ファイルの実枚数だけを保ち、未計算・不正値・空結果には枚数を付けない', () => {
+    const files = [{ fileName: 'box.stl', bytes: Uint8Array.of(1, 2) }];
+    const counted = toExchangeExportOutcome({ kind: 'files', files, droppedTriangleCount: 1, triangleCount: 7 });
+    expect(counted).toEqual({ files, droppedTriangleCount: 1, triangleCount: 7 });
+    expect(counted.files).toBe(files);
+    for (const value of [NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(toExchangeExportOutcome({ kind: 'files', files, droppedTriangleCount: 0, triangleCount: value }))
+        .not.toHaveProperty('triangleCount');
+    }
+    expect(toExchangeExportOutcome({ kind: 'files', files, droppedTriangleCount: 0 }))
+      .not.toHaveProperty('triangleCount');
+    expect(toExchangeExportOutcome({ kind: 'files', files: [], droppedTriangleCount: 0, triangleCount: 0 }))
+      .not.toHaveProperty('triangleCount');
   });
 
   it('3MF の三角形は meshes に載り、ファイルは 0 個になる(組むのは io)', () => {
@@ -210,6 +230,32 @@ describe('toExchangeExportOutcome(書き出しの結果を手続きの形へ直�
     expect(outcome.files).toEqual([]);
     expect(outcome.droppedTriangleCount).toBe(0);
     expect(outcome.meshes?.[0].name).toBe('球1');
+    expect(outcome.triangleCount).toBe(1);
+  });
+
+  it('3MF はowned indicesの三要素を全bodyで数え、空bodyは未計算と区別する', () => {
+    const first = { name: 'A', color: null, positions: new Float32Array([0, 0, 0]),
+      indices: new Uint32Array([0, 0, 0]) };
+    const second = { name: 'B', color: null, positions: new Float32Array([0, 0, 0]),
+      indices: new Uint32Array([0, 0, 0, 0, 0, 0]) };
+    const bodies = [first, second];
+    const outcome = toExchangeExportOutcome({ kind: 'meshes', bodies });
+    expect(outcome.triangleCount).toBe(3);
+    expect(outcome.meshes).toBe(bodies);
+    expect(outcome.files).toEqual([]);
+    expect(toExchangeExportOutcome({ kind: 'meshes', bodies: [] })).not.toHaveProperty('triangleCount');
+    expect(toExchangeExportOutcome({ kind: 'meshes', bodies: [{ ...first, indices: new Uint32Array() }] })
+      .triangleCount).toBe(0);
+    expect(toExchangeExportOutcome({ kind: 'meshes', bodies: [{ ...first, indices: Uint32Array.of(0) }] }))
+      .not.toHaveProperty('triangleCount');
+  });
+
+  it('3MFは複数bodyの実indices合計が100万枚を超えれば集計時点で拒否する', () => {
+    const body = (triangles: number) => ({ name: null, color: null,
+      positions: new Float32Array([0, 0, 0]), indices: new Uint32Array(triangles * 3) });
+    expect(() => toExchangeExportOutcome({ kind: 'meshes', bodies: [
+      body(600_000), body(THREE_MF_EXPORT_TRIANGLE_LIMIT - 600_000 + 1),
+    ] })).toThrow('3MFの三角形は100万枚までです。');
   });
 
   it('断りは日本語の理由の例外で投げる(画面はそのまま帯へ出す)', () => {
@@ -266,6 +312,45 @@ describe('toExchangeImportedBody(読み込んだ立体を手続きの形へ直�
  * ------------------------------------------------------------------------- */
 
 describe('createPartExchanger(タスク32 が空けた口を埋める)', () => {
+  it('caller の同じ signal を model bridge へだけ渡し、取消は保存結果を作らない', async () => {
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    const exchanger = createPartExchanger({
+      ...caches(), snapshot: () => snapshotOf(DOCUMENT),
+      exportShapes: (_steps, options) => {
+        seen = options.signal;
+        return Promise.resolve({ kind: 'cancelled' });
+      },
+      importShape: () => Promise.reject(new Error('unused')),
+    });
+    await expect(exchanger.exportShapes({ format: 'stl', featureIds: ['sphere-1'],
+      meshQuality: { deviationMm: 0.1, angularDeflectionRad: 0.2 },
+      withColors: false, ascii: false, baseName: 'model', signal: controller.signal }))
+      .rejects.toMatchObject({ name: 'AbortError' });
+    expect(seen).toBe(controller.signal);
+  });
+
+  it('現行STLの実枚数を一度のbridge呼出しで公開結果まで渡す', async () => {
+    let calls = 0;
+    const exchanger = createPartExchanger({
+      ...caches(), snapshot: () => snapshotOf(DOCUMENT),
+      exportShapes: () => {
+        calls += 1;
+        return Promise.resolve({ kind: 'files',
+          files: [{ fileName: 'model.stl', bytes: Uint8Array.of(1) }],
+          droppedTriangleCount: 2, triangleCount: 11 });
+      },
+      importShape: () => Promise.reject(new Error('unused')),
+    });
+    const outcome = await exchanger.exportShapes({ format: 'stl', featureIds: ['sphere-1'],
+      meshQuality: { deviationMm: 0.1, angularDeflectionRad: 0.2 },
+      withColors: false, ascii: false, baseName: 'model' });
+    expect(calls).toBe(1);
+    expect(outcome.triangleCount).toBe(11);
+    expect(outcome.droppedTriangleCount).toBe(2);
+    expect(outcome.files[0]?.bytes).toEqual(Uint8Array.of(1));
+  });
+
   it('書き出しは文書を解いた段と、名前・色を添えた立体をカーネルへ渡す', async () => {
     const seen: { steps: readonly ResolvedSolidStep[]; options: ShapeExportOptions }[] = [];
     const exchanger = createPartExchanger({

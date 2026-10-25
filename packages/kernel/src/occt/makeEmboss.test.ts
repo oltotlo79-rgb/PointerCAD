@@ -5,16 +5,18 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { BoxParameters, CurveSpec, SolidFaceInfo, SubShapeQuery, Vec3Tuple } from '../types.js';
+import type { BoxParameters, CurveSpec, PrimitiveStepSpec, SolidFaceInfo, SubShapeQuery, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import type { EmbossInput } from './makeEmboss.js';
 import { makeEmboss } from './makeEmboss.js';
+import { makePrimitive } from './makePrimitive.js';
+import { resolveFaceReference, scoreFace, SUB_SHAPE_MATCH_THRESHOLD } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
-import { collectSubShapes } from './subShapes.js';
+import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 
 /**
@@ -124,7 +126,7 @@ describe('エンボス・刻印(FR-421、FR-504、NFR-RE-1)', () => {
   }
 
   /** 一覧の面 1 枚から、文書が保存するのと同じ形の指紋を作る。 */
-  function faceQuery(face: SolidFaceInfo): SubShapeQuery {
+  function faceQuery(face: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
     return {
       kind: 'face',
       index: face.index,
@@ -542,6 +544,62 @@ describe('エンボス・刻印(FR-421、FR-504、NFR-RE-1)', () => {
       expect(measureVolume(oc, prepared.shape)).toBeCloseTo(PLATE_VOLUME, 9);
     } finally {
       prepared.delete();
+    }
+  });
+
+  it('実Box保存top起点で低scoreの現面を彫り、同形の別featureと表欠落を拒否する', () => {
+    const spec: PrimitiveStepSpec = { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1],
+      shape: { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }, originQuery: null, targetKey: null };
+    const changed: PrimitiveStepSpec = { ...spec, origin: [500, 500, 0],
+      shape: { kind: 'box', sizeX: 200, sizeY: 200, sizeZ: 30 } };
+    const old = makePrimitive(oc, spec, 'emboss-source');
+    const current = makePrimitive(oc, changed, 'emboss-source');
+    const other = makePrimitive(oc, changed, 'other-source');
+    try {
+      if (old.origins?.state !== 'tracked' || current.origins?.state !== 'tracked'
+        || other.origins?.state !== 'tracked') throw new Error('実Box起点がありません');
+      const oldTables = collectTables(old.shape);
+      const binding = old.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
+        && item.origin.identity.role === 'top');
+      if (binding?.state !== 'unique' || binding.current.kind !== 'face') {
+        throw new Error('旧Box topが一意でありません');
+      }
+      const oldTop = oldTables.faces.find(item => item.index === binding.current.index);
+      if (oldTop === undefined) throw new Error('旧Box topがありません');
+      const savedFace = { ...faceQuery(oldTop), origin: binding.origin };
+      const savedJson = JSON.stringify(savedFace);
+      const tables = { ...collectTables(current.shape), origins: current.origins };
+      const scale = boundingDiagonal(oc, current.shape) * 0.5;
+      const match = resolveFaceReference(tables.faces, savedFace, scale, tables.origins);
+      expect(match.status).toBe('matched');
+      if (match.status !== 'matched') throw new Error('現Box topを解決できません');
+      const score = scoreFace(match.match.candidate, savedFace, scale).total;
+      expect(score).toBeLessThan(SUB_SHAPE_MATCH_THRESHOLD);
+      console.log(`Emboss保存topの実幾何score: ${score}`);
+      const input: EmbossInput = { face: savedFace, profiles: [squareProfile([500, 500, 15], 10)],
+        depth: 2, raised: false };
+      const result = makeEmboss(oc, current.shape, tables, input);
+      try {
+        expect(result.volume).toBeCloseTo(1_200_000 - 200, 6);
+        expect(isValidShape(oc, result.shape)).toBe(true);
+      } finally {
+        result.delete();
+      }
+      const highFace = { ...faceQuery(match.match.candidate), origin: savedFace.origin };
+      expect(() => makeEmboss(oc, other.shape,
+        { ...collectTables(other.shape), origins: other.origins }, { ...input, face: highFace }))
+        .toThrow(/もとの面が見つかりません/);
+      for (const origins of [undefined,
+        { version: 1 as const, state: 'untracked' as const, reason: 'unsupported-operation' as const }]) {
+        expect(() => makeEmboss(oc, current.shape, { ...tables, origins },
+          { ...input, face: highFace })).toThrow(/もとの面が見つかりません/);
+      }
+      expect(measureVolume(oc, current.shape)).toBeCloseTo(1_200_000, 6);
+      expect(JSON.stringify(savedFace)).toBe(savedJson);
+    } finally {
+      other.delete();
+      current.delete();
+      old.delete();
     }
   });
 

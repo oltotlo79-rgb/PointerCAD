@@ -1,3 +1,4 @@
+import { startDrawingCpuProfile } from './drawingCpuProfile.js';
 import { historyFoldersFlow } from './historyFoldersFlow.js';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
@@ -8,10 +9,13 @@ import { captureManualDetail } from './captureManualDetail.js';
 
 export async function historyNotesFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await chooseToolMenuItem(page, '作る', '箱');
-  const start = await beginRecompute(page);
-  await page.locator('.pcad-popover input.pcad-field__input').first().press('Enter');
-  await waitForRecompute(page, start);
+  const stopStartupProfile = await startDrawingCpuProfile(page, info, 'history-startup');
+  try {
+    await chooseToolMenuItem(page, '作る', '箱');
+    const start = await beginRecompute(page);
+    await page.locator('.pcad-popover input.pcad-field__input').first().press('Enter');
+    await waitForRecompute(page, start);
+  } finally { await stopStartupProfile(); }
   await chooseToolMenuItem(page, '見た目', '簡易強度計算');
   const strength = page.getByRole('form', { name: '簡易強度計算', exact: true });
   await expect(strength).toBeVisible();

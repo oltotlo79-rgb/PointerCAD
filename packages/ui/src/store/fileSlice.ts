@@ -3,10 +3,11 @@
  * 分け方の約束は `viewSlice.ts` の冒頭にある(P6 タスク52)。
  */
 
-import type { AutoSaver } from '@pointercad/io';
+import type { AutoSaver, SaveDocumentEncoder } from '@pointercad/io';
 import type { PartDocument } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { FileGateway } from '../file/fileGateway.js';
+import { encodePcadInWorker } from '../file/pcadSaveWorker.js';
 import type { MessageKey } from '../i18n/t.js';
 import type { AppState } from './appState.js';
 
@@ -21,6 +22,23 @@ import type { AppState } from './appState.js';
 export interface FileMessage {
   readonly key: MessageKey;
   readonly failed: boolean;
+  readonly detail?: string;
+}
+
+export interface DocumentSaveOperation {
+  readonly id: string;
+  readonly documentId: string;
+  readonly gateway: FileGateway;
+  readonly stage: 'preparing' | 'compressing' | 'writing' | 'settling' | 'complete' | 'cancelled';
+  readonly fileName: string | null;
+  readonly cancel: (() => void) | null;
+}
+
+export interface RecoverySaveState {
+  readonly documentId: string;
+  readonly saver: AutoSaver;
+  readonly stage: 'pending' | 'preparing' | 'compressing' | 'writing' | 'saved' | 'failed';
+  readonly detail?: string;
 }
 
 /**
@@ -58,8 +76,35 @@ export interface DiscardConfirmRequest {
   readonly resolve: (choice: DiscardChoice) => void;
 }
 
+/** A legacy ID cannot establish lineage; approval belongs to this exact request. */
+export interface PartSourceConfirmRequest {
+  readonly requestId: string;
+  readonly sourceName: string;
+  readonly fileName: string;
+  readonly occurrenceCount: number;
+  readonly countComplete: boolean;
+  readonly isCurrent: () => boolean;
+  readonly resolve: (approved: boolean) => void;
+}
+
+export { SecurePartIdentityError, createPartLineageId, createSecureUuid, PreparedDocumentSession,
+  prepareDocumentSession, documentSessionId } from './documentIdentity.js';
+
+/** An external owner predicate cannot authorize replacement by throwing. */
+export function partSourceRequestIsCurrent(request: Pick<PartSourceConfirmRequest, 'isCurrent'>): boolean {
+  try { return request.isCurrent(); } catch { return false; }
+}
+
 /** ファイルのスライスが持つ欄と操作。 */
 export interface FileSlice {
+  readonly partSourceConfirm: PartSourceConfirmRequest | null;
+  readonly requestPartSourceConfirm: (request: Omit<PartSourceConfirmRequest, 'resolve'>) => Promise<boolean>;
+  readonly answerPartSourceConfirm: (requestId: string, approved: boolean) => void;
+  /** 実行環境から注入する保存口。製品はWorker、headless単体だけ明示注入した実IOを使う。 */
+  readonly saveDocumentEncoder: SaveDocumentEncoder;
+  /** 文書へ保存しない処理の状態。表示側でも文書ID/gatewayを照合する。 */
+  readonly documentSaveOperation: DocumentSaveOperation | null;
+  readonly recoverySaveState: RecoverySaveState | null;
   /**
    * ファイルの読み書きの口(§2.10)。既定はブラウザ用で、デスクトップ版が
    * `setFileGateway` で差し替える(UI から `apps/` を import できないため)。
@@ -161,6 +206,27 @@ export const createFileSlice: StateCreator<
   [],
   Omit<FileSlice, keyof FileInitialState>
 > = (set, get) => ({
+  partSourceConfirm: null,
+  requestPartSourceConfirm: (request) => new Promise<boolean>((resolve) => {
+    const previous = get().partSourceConfirm;
+    if (previous !== null) {
+      // Clear before settlement; subscribers may synchronously install a newer owner.
+      if (get().partSourceConfirm === previous) set({ partSourceConfirm: null });
+      previous.resolve(false);
+    }
+    const current = partSourceRequestIsCurrent(request);
+    if (!current || get().partSourceConfirm !== null) { resolve(false); return; }
+    set({ partSourceConfirm: { ...request, resolve } });
+  }),
+  answerPartSourceConfirm: (requestId, approved) => {
+    const pending = get().partSourceConfirm;
+    if (pending === null || pending.requestId !== requestId) return;
+    set({ partSourceConfirm: null });
+    pending.resolve(approved && partSourceRequestIsCurrent(pending));
+  },
+  saveDocumentEncoder: encodePcadInWorker,
+  documentSaveOperation: null,
+  recoverySaveState: null,
   discardConfirm: null,
   requestDiscardConfirm: (messageKey) => new Promise<DiscardChoice>((resolve) => {
     // 同時に 2 つは出さない。前の確認を待っている手続きは「戻る」を受け取り、何も失わずに止まる。

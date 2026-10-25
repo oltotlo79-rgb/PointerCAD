@@ -73,3 +73,8 @@ export const DEFAULT_DENSITY_MATERIAL_ID = 'steel';
 export function findDensityMaterial(id: string): DensityMaterial | undefined {
   return DENSITY_MATERIALS.find((material) => material.id === id);
 }
+
+/** g/cm³ → kg/m³: 1 g = 1e-3 kg and 1 cm³ = 1e-6 m³. Analysis readers validate positivity/finite range. */
+export function densityGPerCm3ToKgM3(densityGPerCm3: number): number {
+  return densityGPerCm3 * 1000;
+}

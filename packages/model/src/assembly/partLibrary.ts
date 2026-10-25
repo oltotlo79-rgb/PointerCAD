@@ -213,7 +213,7 @@ function isArray(value: unknown): value is readonly unknown[] {
  * - `undefined` の欄は書かない(`JSON.stringify` と同じ扱い。省略できる欄がある)。
  * - 数値は `JSON.stringify` に任せる(`-0` は `0`、往復できる最短の表記で機種に依らない)。
  */
-function canonicalTextOf(value: unknown): string {
+export function canonicalTextOf(value: unknown): string {
   if (value === null) {
     return 'null';
   }

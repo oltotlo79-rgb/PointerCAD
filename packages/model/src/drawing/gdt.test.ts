@@ -47,6 +47,18 @@ const frame = (feature: GdtFeature = surface, segments = [segment()]): Geometric
 const resolve = (current = frame(), datums = [datum()], doc = document, geometry = context) => resolveGdtFrame(current, doc, geometry, resolveDrawingDatums(datums, doc, geometry));
 
 describe('幾何公差の意味と現在形状の参照', () => {
+  it('保存面が同点の2面へ分かれたときは公差・データムを正常解決せず元参照を保つ', () => {
+    const target = faceTarget(plane(99, [0, 0, 0]));
+    const feature: GdtFeature = { kind: 'surface', target };
+    const before = JSON.stringify(feature);
+    for (const faces of [[plane(7, [0, 0, 0]), plane(19, [0, 0, 0])], [plane(19, [0, 0, 0]), plane(7, [0, 0, 0])]]) {
+      const geometry = { ...context, instances: [{ ...context.instances[0], body: { ...body, faces } }] };
+      expect(resolveGdtFeature(feature, document, geometry)).toBeNull();
+      expect(resolve(frame(feature), [datum('datum-a', feature)], document, geometry).issues.length).toBeGreaterThan(0);
+    }
+    expect(JSON.stringify(feature)).toBe(before);
+  });
+
   it('公差種類を変えた初期公差域は平面・軸・線の対象に合わせる', () => {
     expect(defaultGdtToleranceZone('perpendicularity', 'plane')).toBe('betweenPlanes');
     expect(defaultGdtToleranceZone('parallelism', 'medianPlane')).toBe('betweenPlanes');

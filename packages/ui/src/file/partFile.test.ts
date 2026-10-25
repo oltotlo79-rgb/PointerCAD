@@ -1,3 +1,4 @@
+import { createThumbnailCaptureReasonJournal, observeThumbnailCaptureReasons } from './thumbnail.js';
 /**
  * 新規・開く・保存の検査(計画書 docs/plans/P2-ソリッド基礎.md タスク23 手順7、
  * 「検証」の表)。
@@ -9,12 +10,13 @@
  *  - 失うものがある操作の前に確認する(NFR-UX-3)。
  */
 
-import {
+import { encodeSaveDocument,
   DEFAULT_AUTO_SAVE_IDENTITY,
   PCAD_SCHEMA_VERSION,
   SCHEMA_MIGRATIONS,
   createAutoSaver,
   createMemoryAutoSaveStorage,
+  emptyPcadAttachments,
   readPcadFile,
   writePcadFile,
   type AutoSaver,
@@ -30,13 +32,16 @@ import {
   replaceSketch,
   type PartDocument,
 } from '@pointercad/model';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
+import { currentPcadAttachments } from '../store/attachKernel.js';
+import { newSketchCanvas } from './canvasFile.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { FileGateway, PickedFile } from './fileGateway.js';
 import {
   displayFileName,
+  createDefaultPartFileDeps,
   documentLabel,
   hasUnsavedChanges,
   newPart,
@@ -46,12 +51,262 @@ import {
   type PartFileDeps,
 } from './partFile.js';
 import { loadRecentFiles, type RecentFilesStorage } from './recentFiles.js';
+import { readTutorialCheckpoint, saveTutorialCheckpoint, TUTORIAL_CHECKPOINT_KEY } from '../tutorial/tutorialCheckpoint.js';
+import { createParameterTutorialSession } from '../tutorial/tutorialProgress.js';
 
 interface SaveCall {
   readonly suggestedName: string;
   readonly bytes: Uint8Array;
   readonly saveAs: boolean;
 }
+
+describe('部品を開くときの下絵所有と実保存往復', () => {
+  it.each(['canvas-1', 'canvas-image-550e8400-e29b-41d4-a716-446655440000'])('%sが衝突してもA→Bを開いた後のUndo・Redo・保存再開とdirty基準を保ち、前の文書へ戻らない', async imageId => {
+    const a = newSketchCanvas([], 'xy', 'A.png', { width: 2, height: 1 }, imageId);
+    const b = { ...a, name: 'B.png', visible: false };
+    const documentA = { ...createEmptyPartDocument(), name: 'A', canvases: [a] };
+    const documentB = { ...createEmptyPartDocument(), name: 'B', canvases: [b] };
+    const bytesA = Uint8Array.of(1, 2), bytesB = Uint8Array.of(3, 4);
+    const fileA = writePcadFile(documentA, { attachments: { ...emptyPcadAttachments(), canvases: new Map([[imageId, bytesA]]) } });
+    const fileB = writePcadFile(documentB, { attachments: { ...emptyPcadAttachments(), canvases: new Map([[imageId, bytesB]]) } });
+    const originalA = fileA.slice(), originalB = fileB.slice(), received: PcadAttachments[] = [];
+    const defaults = createDefaultPartFileDeps();
+    const deps: PartFileDeps = { ...defaults, captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true),
+      recentFilesStorage: null, onAttachmentsLoaded: attachments => {
+        received.push(attachments); defaults.onAttachmentsLoaded?.(attachments);
+      } };
+    async function load(name: string, bytes: Uint8Array): Promise<FakeGateway> {
+      const fake = createFakeGateway({ openName: name, openBytes: bytes });
+      useAppStore.setState({ fileGateway: fake.gateway }); await openPart(deps); return fake;
+    }
+    function expectSaved(bytes: Uint8Array, name: string, image: Uint8Array): void {
+      const result = readPcadFile(bytes); expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Saved canvas part could not be read');
+      expect(result.document.name).toBe(name); expect(result.document.canvases).toHaveLength(1);
+      expect(result.attachments.canvases.size).toBe(1);
+      expect(result.attachments.canvases.get(result.document.canvases[0].imageId)).toEqual(image);
+    }
+    await load('A.pcad', fileA);
+    const loadedA = useAppStore.getState(), captured = loadedA.canvases, capturedBytes = captured.get(imageId);
+    expect(loadedA.document.canvases).toEqual([a]); expect(capturedBytes).toEqual(bytesA);
+    const fakeB = await load('B.pcad', fileB), loadedB = useAppStore.getState();
+    const newId = loadedB.document.canvases[0].imageId;
+    // 開く時点ではAの画像が表にあるので、Bの同じ番号は新しい番号へ振り直す。
+    expect(newId).not.toBe(imageId); expect(loadedB.document.canvases).toEqual([{ ...b, imageId: newId }]);
+    // 開いた文書は新しい履歴から始まる(Undo でAへ戻らない)ので、Aの画像は表に残さない。
+    expect(loadedB.canUndo).toBe(false);
+    expect(loadedB.canvases.size).toBe(1); expect(loadedB.canvases.has(imageId)).toBe(false);
+    expect(loadedB.canvases.get(newId)).toEqual(bytesB);
+    expect(received[1].canvases.get(newId)).toBe(loadedB.canvases.get(newId));
+    expect(loadedB.savedDocument).toBe(loadedB.document);
+    expect(hasUnsavedChanges(loadedB.document, loadedB.savedDocument)).toBe(false);
+    await savePart(deps, false); expectSaved(fakeB.saveCalls[0].bytes, 'B', bytesB);
+    loadedB.undo();
+    const undone = useAppStore.getState();
+    // Undo しても開いたBのまま。上書き保存はBのファイルへBの中身を書く(Aの中身でBを壊さない)。
+    expect(undone.document).toBe(loadedB.document); expect(undone.canvases.get(newId)).toBe(loadedB.canvases.get(newId));
+    expect(hasUnsavedChanges(undone.document, undone.savedDocument)).toBe(false);
+    await savePart(deps, false); expectSaved(fakeB.saveCalls[1].bytes, 'B', bytesB);
+    undone.redo(); expect(useAppStore.getState().document).toBe(loadedB.document);
+    await savePart(deps, true); expectSaved(fakeB.saveCalls[2].bytes, 'B', bytesB);
+    const savedB = fakeB.saveCalls[2].bytes, savedBefore = savedB.slice();
+    const reopenedGateway = await load('saved-B.pcad', savedB), reopened = useAppStore.getState();
+    const reopenedId = reopened.document.canvases[0].imageId;
+    expect(reopened.document.canvases).toEqual([{ ...b, imageId: reopenedId }]); expect(reopenedId).not.toBe(newId);
+    expect(reopened.canvases.get(reopenedId)).toEqual(bytesB); expect(reopened.canvases.size).toBe(1);
+    expect(hasUnsavedChanges(reopened.document, reopened.savedDocument)).toBe(false);
+    reopened.undo(); reopened.undo();
+    expect(useAppStore.getState().document).toBe(reopened.document);
+    expect(useAppStore.getState().canvases.get(reopenedId)).toEqual(bytesB);
+    reopened.redo(); reopened.redo();
+    expect(useAppStore.getState().document.canvases[0].imageId).toBe(reopenedId);
+    await savePart(deps, false); expectSaved(reopenedGateway.saveCalls[0].bytes, 'B', bytesB);
+    expect(fileA).toEqual(originalA); expect(fileB).toEqual(originalB); expect(savedB).toEqual(savedBefore);
+    expect(captured.size).toBe(1); expect(captured.get(imageId)).toBe(capturedBytes);
+    expect(capturedBytes).toEqual(bytesA);
+  });
+});
+
+describe('5段案内は通常の部品保存と開き直しだけを証拠にする', () => {
+  it('同じ部品の板厚3→6mm保存は実成功bytesへcheckpointを進める', async () => {
+    const values = new Map<string, string>();
+    const storage = { getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); } };
+    const state = useAppStore.getState();
+    const session = createParameterTutorialSession(state.document, state.documentVersion);
+    if (session === null) throw new Error('session missing');
+    state.setTutorialSession(session);
+    state.setTutorialCheckpointStorage(storage);
+    const gateway = createFakeGateway();
+    useAppStore.setState({ fileGateway: gateway.gateway });
+    const thickness = { name: '板厚', unit: 'mm' as const, description: '',
+      value: { source: '3mm', value: 3, display: '3' } };
+    useAppStore.getState().applyDocument({ ...state.document, parameters: [thickness] });
+    const deps = createFakeDeps(true).deps;
+    await savePart(deps, false);
+    const first = values.get(TUTORIAL_CHECKPOINT_KEY);
+    expect(first).toBeDefined();
+    expect(useAppStore.getState().tutorialSession?.checkpointIdentity).toBeDefined();
+    const three = useAppStore.getState().document;
+    useAppStore.getState().applyDocument({ ...three, parameters: [{ ...thickness,
+      value: { source: '6mm', value: 6, display: '6' } }] });
+    await savePart(deps, false);
+    const saved = gateway.stored();
+    if (saved === null) throw new Error('saved file missing');
+    expect(values.get(TUTORIAL_CHECKPOINT_KEY)).not.toBe(first);
+    expect(await readTutorialCheckpoint({ part: { document: useAppStore.getState().document,
+      savedBytes: saved.bytes } }, storage)).toMatchObject({ ok: true });
+  });
+
+  it('別の新規part-1と別保存先は旧原票を上書きせず通常保存だけ成功する', async () => {
+    const oldPart = { ...createEmptyPartDocument(), name: '旧部品' };
+    const values = new Map<string, string>();
+    const storage = { getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); } };
+    expect(await saveTutorialCheckpoint({ stageHint: 'pointCoordinates', owned: { sketchId: oldPart.activeSketchId } },
+      { part: { document: oldPart, savedBytes: writePcadFile(oldPart) } }, storage)).toMatchObject({ ok: true });
+    const raw = values.get(TUTORIAL_CHECKPOINT_KEY);
+    const state = useAppStore.getState();
+    expect(state.document.id).not.toBe(oldPart.id);
+    expect(state.document.id).toMatch(/^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(state.document).not.toBe(oldPart);
+    const session = createParameterTutorialSession(state.document, state.documentVersion);
+    if (session === null) throw new Error('session missing');
+    state.setTutorialSession(session);
+    state.setTutorialCheckpointStorage(storage);
+    const gateway = createFakeGateway({ savedName: '新しい保存先.pcad' });
+    useAppStore.setState({ fileGateway: gateway.gateway });
+    const undo = useAppStore.getState().undoStack;
+    await savePart(createFakeDeps(true).deps, true);
+    expect(gateway.stored()?.name).toBe('新しい保存先.pcad');
+    expect(values.get(TUTORIAL_CHECKPOINT_KEY)).toBe(raw);
+    expect(useAppStore.getState().tutorialCheckpointFailure).toBe('storageConflict');
+    expect(useAppStore.getState().undoStack).toBe(undo);
+  });
+
+  it('先に依頼した同文書2連続保存は最後の実bytesをガイド原票に残す', async () => {
+    const values = new Map<string, string>();
+    const storage = { getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); } };
+    const state = useAppStore.getState();
+    const session = createParameterTutorialSession(state.document, state.documentVersion);
+    if (session === null) throw new Error('session missing');
+    state.setTutorialSession(session);
+    state.setTutorialCheckpointStorage(storage);
+    const gateway = createFakeGateway();
+    useAppStore.setState({ fileGateway: gateway.gateway });
+    let thumbnail = 0;
+    const deps = { ...createFakeDeps(true).deps, captureThumbnail: () => Uint8Array.of(++thumbnail) };
+    await Promise.all([savePart(deps, false), savePart(deps, false)]);
+    expect(gateway.saveCalls).toHaveLength(2);
+    expect(gateway.saveCalls[0].bytes).not.toEqual(gateway.saveCalls[1].bytes);
+    expect(await readTutorialCheckpoint({ part: { document: state.document,
+      savedBytes: gateway.saveCalls[1].bytes } }, storage)).toMatchObject({ ok: true });
+  });
+
+  it('実保存bytesと同版部品からcheckpointを作り、開き直した所有者だけ復元する', async () => {
+    const values = new Map<string, string>();
+    const storage = { getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); } };
+    const fake = createFakeGateway();
+    const state = useAppStore.getState();
+    const session = createParameterTutorialSession(state.document, state.documentVersion);
+    if (session === null) throw new Error('session missing');
+    state.setTutorialSession(session);
+    state.setTutorialCheckpointStorage(storage);
+    useAppStore.setState({ fileGateway: fake.gateway });
+    const deps = createFakeDeps(true).deps;
+    await savePart(deps, false);
+    const saved = fake.stored();
+    if (saved === null) throw new Error('save missing');
+    expect((await readTutorialCheckpoint({ part: { document: state.document, savedBytes: saved.bytes } }, storage)).ok).toBe(true);
+    const record = values.get(TUTORIAL_CHECKPOINT_KEY);
+    expect(record).toBeDefined();
+    await openPart(deps);
+    const reopened = useAppStore.getState();
+    expect(reopened.tutorialSession?.course).toBe('parameterToExport');
+    expect(reopened.tutorialSession?.paused).toBe(true);
+    expect(reopened.tutorialSession?.documentId).toBe(reopened.document.id);
+    expect(reopened.tutorialSession?.checkpointIdentity).toBeDefined();
+    expect(values.get(TUTORIAL_CHECKPOINT_KEY)).toBe(record);
+    await savePart(deps, false);
+    const continued = fake.stored();
+    if (continued === null) throw new Error('continued save missing');
+    expect(await readTutorialCheckpoint({ part: { document: useAppStore.getState().document,
+      savedBytes: continued.bytes } }, storage)).toMatchObject({ ok: true });
+  });
+
+  it('保存先の取消ではcheckpointと部品文書を変えない', async () => {
+    const fake = createFakeGateway({ saveCancels: true });
+    const values = new Map([[TUTORIAL_CHECKPOINT_KEY, 'previous checkpoint']]);
+    const state = useAppStore.getState();
+    const session = createParameterTutorialSession(state.document, state.documentVersion);
+    if (session === null) throw new Error('session missing');
+    state.setTutorialSession(session);
+    state.setTutorialCheckpointStorage({ getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => { values.set(key, value); } });
+    useAppStore.setState({ fileGateway: fake.gateway });
+    const before = useAppStore.getState();
+    await savePart(createFakeDeps(true).deps, false);
+    expect(values.get(TUTORIAL_CHECKPOINT_KEY)).toBe('previous checkpoint');
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+  });
+
+  it('開く時の添付参照衝突が保存文書を書き換えたら古いcheckpointを復帰しない', async () => {
+    const values = new Map<string, string>();
+    const storage = { getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); } };
+    const canvas = newSketchCanvas([], 'xy', 'A.png', { width: 2, height: 1 }, 'canvas-1');
+    useAppStore.getState().addCanvas(canvas, Uint8Array.of(1, 2, 3));
+    const state = useAppStore.getState();
+    const session = createParameterTutorialSession(state.document, state.documentVersion);
+    if (session === null) throw new Error('session missing');
+    state.setTutorialSession(session);
+    state.setTutorialCheckpointStorage(storage);
+    const fake = createFakeGateway();
+    useAppStore.setState({ fileGateway: fake.gateway });
+    const deps = { ...createFakeDeps(true).deps, attachmentsOf: currentPcadAttachments };
+    await savePart(deps, false);
+    const record = values.get(TUTORIAL_CHECKPOINT_KEY);
+    expect(record).toBeDefined();
+    await openPart(deps);
+    const opened = useAppStore.getState();
+    expect(opened.document.canvases[0]?.imageId).not.toBe(canvas.imageId);
+    expect(opened.tutorialSession).toBeNull();
+    expect(opened.tutorialDraft).toBeNull();
+    expect(opened.tutorialCheckpointFailure).toBe('staleContent');
+    expect(values.get(TUTORIAL_CHECKPOINT_KEY)).toBe(record);
+  });
+});
+
+describe('削除した下絵の実保存と取り消し', () => {
+  it('削除画像を ZIP に残さず、Undo 後の保存には元の画像を戻す', async () => {
+    const fake = createFakeGateway();
+    useAppStore.setState({ fileGateway: fake.gateway });
+    const canvas = newSketchCanvas([], 'xy', 'A.png', { width: 2, height: 1 }, 'canvas-1');
+    const bytes = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 17);
+    useAppStore.getState().addCanvas(canvas, bytes);
+    useAppStore.getState().removeCanvas(canvas.id);
+    const deps = { ...createDefaultPartFileDeps(), captureThumbnail: () => null, recentFilesStorage: null };
+    await savePart(deps, false);
+    const deleted = readPcadFile(fake.saveCalls[0].bytes);
+    expect(deleted.ok).toBe(true);
+    if (!deleted.ok) throw new Error('Deleted part could not be read');
+    expect(deleted.document.canvases).toEqual([]);
+    expect(deleted.attachments.canvases.size).toBe(0);
+    expect(Buffer.from(fake.saveCalls[0].bytes).includes(Buffer.from('canvases/canvas-1.png'))).toBe(false);
+    expect(useAppStore.getState().canvases.get(canvas.imageId)).toEqual(bytes);
+    useAppStore.getState().undo();
+    await savePart(deps, false);
+    const restored = readPcadFile(fake.saveCalls[1].bytes);
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) throw new Error('Restored part could not be read');
+    expect(restored.document.canvases).toEqual([canvas]);
+    expect(restored.attachments.canvases.get(canvas.imageId)).toEqual(bytes);
+  });
+});
 
 interface FakeOptions {
   /** 保存できたときに返す名前。既定は渡された候補名。 */
@@ -518,7 +773,7 @@ function crcMismatchPcad(): Uint8Array {
 }
 
 beforeEach(() => {
-  useAppStore.setState(createInitialDocumentState());
+  useAppStore.setState({ ...createInitialDocumentState(), saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null });
 });
 
 describe('表示用の名前', () => {
@@ -965,7 +1220,7 @@ describe('開く(FR-806、NFR-RE-1)', () => {
     expect(useAppStore.getState().document).toBe(before);
   });
 
-  it('開いた後は Undo で開く前へ戻れる', async () => {
+  it('開いた後は新しい履歴から始まり、Undo で開く前の文書へ戻らない', async () => {
     const fake = createFakeGateway({ savedName: '部品1.pcad' });
     useFake(fake);
     const before = partWithPoint();
@@ -975,7 +1230,12 @@ describe('開く(FR-806、NFR-RE-1)', () => {
 
     await openPart(createFakeDeps(true).deps);
 
-    expect(useAppStore.getState().canUndo).toBe(true);
+    // 開く前の文書へ戻れると、名前と上書き先は開いたファイルのまま中身だけが変わる(2026-10-05)。
+    const opened = useAppStore.getState();
+    expect(opened.canUndo).toBe(false);
+    opened.undo();
+    expect(useAppStore.getState().document).toBe(opened.document);
+    expect(useAppStore.getState().fileName).toBe('部品1.pcad');
   });
 
   it('開くと documentVersion が進む(選んでいる欄の下書きを捨てる合図、9b)', async () => {
@@ -1011,10 +1271,13 @@ describe('新規(FR-806、NFR-UX-3)', () => {
     useAppStore.getState().applyDocument(createEmptyPartDocument());
     expect(useAppStore.getState().canUndo).toBe(true);
 
+    const previousId = useAppStore.getState().document.id;
     await newPart(createFakeDeps(true).deps);
 
     const state = useAppStore.getState();
-    expect(state.document).toEqual(createEmptyPartDocument());
+    expect(state.document).toEqual({ ...createEmptyPartDocument(), id: state.document.id });
+    expect(state.document.id).toMatch(/^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(state.document.id).not.toBe(previousId);
     expect(state.fileName).toBeNull();
     expect(state.savedDocument).toBeNull();
     expect(state.undoStack.past).toEqual([]);
@@ -1026,11 +1289,15 @@ describe('新規(FR-806、NFR-UX-3)', () => {
   it('何もしていないときは確認しない(まだ失うものが無い)', async () => {
     useFake(createFakeGateway());
     const deps = createFakeDeps(false);
+    const previousId = useAppStore.getState().document.id;
 
     await newPart(deps.deps);
 
     expect(deps.confirmed).toEqual([]);
-    expect(useAppStore.getState().document).toEqual(createEmptyPartDocument());
+    const document = useAppStore.getState().document;
+    expect(document).toEqual({ ...createEmptyPartDocument(), id: document.id });
+    expect(document.id).toMatch(/^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(document.id).not.toBe(previousId);
   });
 
   it('新規にすると documentVersion が進む(選んでいる欄の下書きを捨てる合図、9b)', async () => {
@@ -1228,6 +1495,105 @@ function importedAttachments(): PcadAttachments {
   };
 }
 
+describe('BRep/meshの文書跨ぎUndoの反例', () => {
+  it.each(['same-ref', 'different-ref'] as const)('%sのA/Bを実openPartした後のUndo/Redoは前の文書へ戻らず、Bの全添付を保つ', async mode => {
+    // 形状カーネルは接続しない。既存fixtureのBRepを添付として実codecへ渡すだけ。
+    const documentA = { ...importedDocument(), name: 'A' };
+    const shapeRefB = mode === 'same-ref' ? 'importedSolid-1' : 'shape-B';
+    const meshRefB = mode === 'same-ref' ? 'importedMesh-1' : 'mesh-B';
+    const documentB: PartDocument = { ...importedDocument(), name: 'B', solids: importedDocument().solids.map(feature =>
+      feature.kind === 'importedSolid' ? { ...feature, shapeRef: shapeRefB }
+        : feature.kind === 'importedMesh' ? { ...feature, meshRef: meshRefB } : feature) };
+    const attachmentsA = importedAttachments();
+    const meshB: ImportedMeshBytes = {
+      positions: Float32Array.of(2, 3, 4, 5, 6, 7, 8, 9, 10),
+      normals: Float32Array.of(0, 1, 0, 0, 1, 0, 0, 1, 0), indices: Uint32Array.of(2, 1, 0),
+    };
+    const attachmentsB: PcadAttachments = { shapes: new Map([[shapeRefB, Uint8Array.of(9, 8, 7, 6, 5)]]),
+      meshes: new Map([[meshRefB, meshB]]), canvases: new Map() };
+    const fileA = writePcadFile(documentA, { attachments: attachmentsA });
+    const fileB = writePcadFile(documentB, { attachments: attachmentsB });
+    const originalFileA = fileA.slice(), originalFileB = fileB.slice();
+    const deps: PartFileDeps = { ...createDefaultPartFileDeps(), captureThumbnail: () => null,
+      confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null };
+    async function load(name: string, bytes: Uint8Array): Promise<FakeGateway> {
+      const fake = createFakeGateway({ openName: name, openBytes: bytes });
+      useAppStore.setState({ fileGateway: fake.gateway }); await openPart(deps); return fake;
+    }
+    function expectAttachments(document: PartDocument, actual: PcadAttachments,
+      expectedDocument: PartDocument, expected: PcadAttachments, stage: string): void {
+      expect.soft(document.name, `${stage}: document`).toBe(expectedDocument.name);
+      for (const feature of expectedDocument.solids) {
+        const current = document.solids.find(candidate => candidate.id === feature.id);
+        expect.soft(current?.kind, `${stage}: feature kind`).toBe(feature.kind);
+        if (feature.kind === 'importedSolid' && current?.kind === 'importedSolid') {
+          expect.soft(actual.shapes.get(current.shapeRef), `${stage}: ${current.shapeRef} full BRep bytes`)
+            .toEqual(expected.shapes.get(feature.shapeRef));
+        } else if (feature.kind === 'importedMesh' && current?.kind === 'importedMesh') {
+          const mesh = actual.meshes.get(current.meshRef), expectedMesh = expected.meshes.get(feature.meshRef);
+          expect.soft(mesh?.positions, `${stage}: ${current.meshRef} all positions`).toEqual(expectedMesh?.positions);
+          expect.soft(mesh?.normals, `${stage}: ${current.meshRef} all normals`).toEqual(expectedMesh?.normals);
+          expect.soft(mesh?.indices, `${stage}: ${current.meshRef} all indices`).toEqual(expectedMesh?.indices);
+        }
+      }
+    }
+    async function expectCurrentAndSaved(fake: FakeGateway, document: PartDocument, attachments: PcadAttachments, stage: string): Promise<void> {
+      const current = useAppStore.getState();
+      expectAttachments(current.document, currentPcadAttachments(current.document), document, attachments, `${stage}/current`);
+      expect(currentPcadAttachments(current.document).shapes.size).toBe(1);
+      expect(currentPcadAttachments(current.document).meshes.size).toBe(1);
+      const index = fake.saveCalls.length; await savePart(deps, false);
+      const parsed = readPcadFile(fake.saveCalls[index].bytes);
+      expect.soft(parsed.ok, `${stage}: saved ZIP readable`).toBe(true);
+      if (parsed.ok) {
+        expectAttachments(parsed.document, parsed.attachments, document, attachments, `${stage}/ZIP`);
+        expect(parsed.attachments.shapes.size).toBe(1); expect(parsed.attachments.meshes.size).toBe(1);
+      }
+    }
+    const fakeA = await load('A.pcad', fileA);
+    const oldShapes = useAppStore.getState().importedShapes, oldMeshes = useAppStore.getState().importedMeshes;
+    const oldShape = oldShapes.get('importedSolid-1'), oldMesh = oldMeshes.get('importedMesh-1');
+    await expectCurrentAndSaved(fakeA, documentA, attachmentsA, 'open A');
+    const fakeB = await load('B.pcad', fileB);
+    const loadedB = useAppStore.getState();
+    expect(loadedB.savedDocument).toBe(loadedB.document);
+    expect(hasUnsavedChanges(loadedB.document, loadedB.savedDocument)).toBe(false);
+    // 開いた文書は新しい履歴から始まる。Undo/Redo してもBのままで、未保存にもならない。
+    expect(loadedB.canUndo).toBe(false);
+    loadedB.undo();
+    expect(useAppStore.getState().document).toBe(loadedB.document);
+    expect(hasUnsavedChanges(useAppStore.getState().document, useAppStore.getState().savedDocument)).toBe(false);
+    loadedB.redo();
+    expect(useAppStore.getState().document).toBe(loadedB.document);
+    expect(hasUnsavedChanges(useAppStore.getState().document, useAppStore.getState().savedDocument)).toBe(false);
+    const newShapes = useAppStore.getState().importedShapes, newMeshes = useAppStore.getState().importedMeshes;
+    const capturedShapes = new Map([...newShapes].map(([id, bytes]) => [id, bytes.slice()]));
+    const capturedMeshes = new Map([...newMeshes].map(([id, mesh]) => [id, {
+      positions: mesh.positions.slice(), normals: mesh.normals.slice(), indices: mesh.indices.slice(),
+    }]));
+    await expectCurrentAndSaved(fakeB, documentB, attachmentsB, 'open B');
+    // Undo しても前の文書Aへ戻らないので、Bの上書き保存にAの中身・添付が入らない。
+    useAppStore.getState().undo();
+    await expectCurrentAndSaved(fakeB, documentB, attachmentsB, 'Undo stays B');
+    useAppStore.getState().redo();
+    await expectCurrentAndSaved(fakeB, documentB, attachmentsB, 'Redo stays B');
+    // soft assertionsでUndoの失敗後もRedoと原本の不変性を必ず照合する。
+    expect(oldShapes.get('importedSolid-1')).toBe(oldShape); expect(oldMeshes.get('importedMesh-1')).toBe(oldMesh);
+    expect(oldShapes).toEqual(attachmentsA.shapes); expect(oldMeshes).toEqual(attachmentsA.meshes);
+    expect(newShapes).toEqual(capturedShapes); expect(newMeshes).toEqual(capturedMeshes);
+    expect(fileA).toEqual(originalFileA); expect(fileB).toEqual(originalFileB);
+    const savedB = fakeB.saveCalls[fakeB.saveCalls.length - 1].bytes, savedCopy = savedB.slice();
+    const reopened = await load('saved-B.pcad', savedB);
+    expect(useAppStore.getState().savedDocument).toBe(useAppStore.getState().document);
+    await expectCurrentAndSaved(reopened, documentB, attachmentsB, 'reopen B');
+    useAppStore.getState().undo(); useAppStore.getState().undo();
+    expectAttachments(useAppStore.getState().document, currentPcadAttachments(), documentB, attachmentsB, 'reopen Undo stays B');
+    useAppStore.getState().redo(); useAppStore.getState().redo();
+    await expectCurrentAndSaved(reopened, documentB, attachmentsB, 'reopen Redo B');
+    expect(savedB).toEqual(savedCopy); expect(oldShapes).toEqual(attachmentsA.shapes); expect(oldMeshes).toEqual(attachmentsA.meshes);
+  });
+});
+
 describe('保存と読み込みの添付(P6 §0.a-0.9・0.24)', () => {
   it('添付を渡さないと、読み込んだ形を含む部品は開き直せない(申し送りの再現)', async () => {
     const fake = createFakeGateway();
@@ -1351,5 +1717,299 @@ describe('保存と読み込みの添付(P6 §0.a-0.9・0.24)', () => {
     expect(received[0].shapes.size).toBe(0);
     expect(received[0].meshes.size).toBe(0);
     expect(received[0].canvases.size).toBe(0);
+  });
+});
+
+
+describe('point-slot issuance save and dirty boundary', () => {
+  it('returns all-Undo to saved content while retaining issuance, then saves and cold reads that issuance', async () => {
+    const saved = partWithPoint();
+    const fake = createFakeGateway(); useFake(fake);
+    useAppStore.getState().resetDocument(saved);
+    useAppStore.getState().setFileState('part.pcad', saved);
+    useAppStore.getState().applyDocument({ ...saved, name: 'edited', patternSlotHighWater: { pattern: 9 } });
+    expect(hasUnsavedChanges(useAppStore.getState().document, saved)).toBe(true);
+    useAppStore.getState().undo();
+    const undone = useAppStore.getState();
+    expect(undone.document.name).toBe(saved.name);
+    expect(undone.document.patternSlotHighWater).toEqual({ pattern: 9 });
+    expect(undone.undoStack.present).toBe(undone.document);
+    expect(hasUnsavedChanges(undone.document, saved)).toBe(false);
+    await savePart(createFakeDeps(true).deps, false);
+    const bytes = fake.stored()?.bytes;
+    if (bytes === undefined) throw new Error('save missing');
+    const cold = readPcadFile(bytes);
+    expect(cold.ok).toBe(true);
+    if (!cold.ok) throw new Error('cold read failed');
+    expect(cold.document.patternSlotHighWater).toEqual({ pattern: 9 });
+    expect(cold.document.sketches).toEqual(saved.sketches);
+    expect(hasUnsavedChanges(cold.document, saved)).toBe(false);
+    expect(hasUnsavedChanges({ ...cold.document, name: 'authored-change' }, saved)).toBe(true);
+    await openPart(createFakeDeps(true).deps);
+    expect(useAppStore.getState().document.patternSlotHighWater).toEqual({ pattern: 9 });
+    await newPart(createFakeDeps(true).deps);
+    expect(useAppStore.getState().document.patternSlotHighWater).toBeUndefined();
+  });
+  it.each([{ saveCancels: true }, { saveThrows: true }])('does not advance savedDocument for cancelled/failed ledger save (%j)', async options => {
+    const saved = partWithPoint();
+    useAppStore.getState().resetDocument(saved);
+    useAppStore.getState().setFileState('part.pcad', saved);
+    const current = { ...saved, patternSlotHighWater: { pattern: 11 } };
+    useAppStore.getState().applyDocument(current);
+    useFake(createFakeGateway(options));
+    await savePart(createFakeDeps(true).deps, false);
+    expect(useAppStore.getState().savedDocument).toBe(saved);
+    expect(useAppStore.getState().document.patternSlotHighWater).toEqual({ pattern: 11 });
+    expect(hasUnsavedChanges(useAppStore.getState().document, saved)).toBe(false);
+  });
+});
+
+describe('new-part lineage and actual save/open stability', () => {
+  it('two actual New operations issue distinct IDs and stay untouched without discard prompts', async () => {
+    useFake(createFakeGateway());
+    const deps = createFakeDeps(false);
+    await newPart(deps.deps);
+    const first = useAppStore.getState().document;
+    expect(hasUnsavedChanges(first, null)).toBe(false);
+    await newPart(deps.deps);
+    const second = useAppStore.getState().document;
+    expect(second.id).not.toBe(first.id);
+    expect(second.id).toMatch(/^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(hasUnsavedChanges(second, null)).toBe(false);
+    expect(deps.confirmed).toEqual([]);
+    expect(useAppStore.getState().canUndo).toBe(false);
+  });
+
+  it('Save, SaveAs, actual PCAD decode and Open preserve the entire tagged document', async () => {
+    const gateway = createFakeGateway();
+    useFake(gateway);
+    const deps = createFakeDeps(true).deps;
+    await newPart(deps);
+    const original = useAppStore.getState().document;
+    useAppStore.getState().applyDocument({ ...original, name: 'Saved lineage' });
+    const source = useAppStore.getState().document;
+    expect(gateway.gateway.hasSaveTarget()).toBe(false);
+    await savePart(deps, false);
+    expect(gateway.gateway.hasSaveTarget()).toBe(true);
+    await savePart(deps, false);
+    await savePart(deps, true);
+    expect(gateway.saveCalls).toHaveLength(3);
+    expect(gateway.saveCalls.map(call => call.saveAs)).toEqual([true, false, true]);
+    for (const call of gateway.saveCalls) {
+      const parsed = readPcadFile(call.bytes);
+      if (!parsed.ok) throw new Error('Actual saved PCAD must decode');
+      expect(parsed.document).toEqual(source);
+      expect(parsed.document.id).toBe(original.id);
+    }
+    await newPart(deps);
+    expect(useAppStore.getState().document.id).not.toBe(original.id);
+    await openPart(deps);
+    expect(useAppStore.getState().document).toEqual(source);
+    expect(hasUnsavedChanges(useAppStore.getState().document, useAppStore.getState().savedDocument)).toBe(false);
+  });
+});
+
+describe('secure fallback through real New and PCAD save/open', () => {
+  it('getRandomValues-only New issues distinct IDs; real crypto SaveAs and Open preserve all saved fields', async () => {
+    const entropy = globalThis.crypto;
+    const gateway = createFakeGateway();
+    useFake(gateway);
+    const deps = createFakeDeps(true).deps;
+    vi.stubGlobal('crypto', { getRandomValues: entropy.getRandomValues.bind(entropy) });
+    try {
+      await newPart(deps);
+      const first = useAppStore.getState().document;
+      await newPart(deps);
+      const source = useAppStore.getState().document;
+      expect(source.id).not.toBe(first.id);
+      expect(source.id).toMatch(/^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+      expect(source).toEqual({ ...createEmptyPartDocument(), id: source.id });
+      expect(hasUnsavedChanges(source, null)).toBe(false);
+      // End the ID-entropy-only New phase before real codec Save/Open.
+      vi.unstubAllGlobals();
+      await savePart(deps, false);
+      await savePart(deps, true);
+      for (const call of gateway.saveCalls) {
+        const decoded = readPcadFile(call.bytes);
+        if (!decoded.ok) throw new Error('Saved fallback document must decode');
+        expect(decoded.document).toEqual(source);
+      }
+      await newPart(deps);
+      await openPart(deps);
+      expect(useAppStore.getState().document).toEqual(source);
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+describe('secure identity failure precedes New save-target release', () => {
+  it('failed New preserves actual saved target, full document/history and busy state', async () => {
+    const fake = createFakeGateway();
+    useFake(fake);
+    const deps = createFakeDeps(true).deps;
+    await savePart(deps, false);
+    expect(fake.gateway.hasSaveTarget()).toBe(true);
+    useAppStore.getState().applyDocument({ ...useAppStore.getState().document, name: 'Existing edited document' });
+    const releaseTarget = fake.gateway.clearSaveTarget?.bind(fake.gateway);
+    if (releaseTarget === undefined) throw new Error('Actual save-target release required');
+    const clears = vi.fn(() => { releaseTarget(); });
+    useAppStore.getState().setFileGateway({ ...fake.gateway, clearSaveTarget: clears });
+    const before = useAppStore.getState();
+    const stored = fake.stored();
+    vi.stubGlobal('crypto', {});
+    try {
+      await expect(newPart(deps)).resolves.toBeUndefined();
+      const after = useAppStore.getState();
+      expect(clears).not.toHaveBeenCalled();
+      expect(fake.gateway.hasSaveTarget()).toBe(true);
+      expect(fake.stored()).toBe(stored);
+      expect(after.document).toBe(before.document);
+      expect(after.undoStack).toBe(before.undoStack);
+      expect(after.documentVersion).toBe(before.documentVersion);
+      expect(after.activeDocumentId).toBe(before.activeDocumentId);
+      expect(after.fileName).toBe(before.fileName);
+      expect(after.savedDocument).toBe(before.savedDocument);
+      expect(after.fileMessage).toEqual({ key: 'command.unavailable.action', failed: true });
+      expect(after.documentSaveOperation).toBe(before.documentSaveOperation);
+      expect(after.isComputing).toBe(before.isComputing);
+      expect(after.assemblyReplacementBusy).toBe(before.assemblyReplacementBusy);
+      expect(after.canUndo).toBe(before.canUndo);
+      expect(after.canRedo).toBe(before.canRedo);
+    } finally { vi.unstubAllGlobals(); }
+    await savePart(deps, false);
+    expect(fake.saveCalls.at(-1)?.saveAs).toBe(false);
+    const saved = fake.stored();
+    if (saved === null) throw new Error('Existing target must still save');
+    const decoded = readPcadFile(saved.bytes);
+    if (!decoded.ok) throw new Error('Existing target saved bytes must decode');
+    expect(decoded.document).toEqual(before.document);
+  });
+});
+
+describe('New identity notification does not swallow unrelated errors', () => {
+  it('discard-confirmation rejection remains the original API rejection with no target/document mutation', async () => {
+    const fake = createFakeGateway();
+    useFake(fake);
+    await savePart(createFakeDeps(true).deps, false);
+    useAppStore.getState().applyDocument({ ...useAppStore.getState().document, name: 'Unsaved existing part' });
+    const before = useAppStore.getState();
+    const failure = new Error('Original confirmation failure');
+    const deps = { ...createFakeDeps(true).deps, confirmDiscard: () => Promise.reject(failure) };
+    await expect(newPart(deps)).rejects.toBe(failure);
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+    expect(useAppStore.getState().fileMessage).toBe(before.fileMessage);
+    expect(fake.gateway.hasSaveTarget()).toBe(true);
+  });
+});
+
+describe('actual part callers refuse incomplete session preparation atomically', () => {
+  it('New can obtain lineage but cannot clear a saved target when session entropy subsequently fails', async () => {
+    const fake = createFakeGateway();
+    useFake(fake);
+    const deps = createFakeDeps(true).deps;
+    await savePart(deps, false);
+    const original = globalThis.crypto;
+    let requests = 0;
+    const entropy = vi.fn(() => {
+      requests += 1;
+      if (requests > 1) throw new Error('Session entropy unavailable after lineage');
+      return original.randomUUID();
+    });
+    const before = useAppStore.getState();
+    const stored = fake.stored();
+    vi.stubGlobal('crypto', { randomUUID: entropy });
+    try {
+      await newPart(deps);
+      expect(entropy).toHaveBeenCalledTimes(2);
+      expect(useAppStore.getState()).toEqual({ ...before,
+        fileMessage: { key: 'command.unavailable.action', failed: true } });
+      expect(fake.gateway.hasSaveTarget()).toBe(true);
+      expect(fake.stored()).toBe(stored);
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it('actual PCAD Open cannot invoke attachments or confirm a new target before preparing the session', async () => {
+    const loaded = { ...createEmptyPartDocument(), id: 'part-1', name: 'Stored legacy part' };
+    const bytes = writePcadFile(loaded);
+    const fake = createFakeGateway({ openBytes: bytes, openName: 'actual-stored.pcad' });
+    useFake(fake);
+    const deps = createFakeDeps(true).deps;
+    await savePart(deps, false);
+    const onAttachmentsLoaded = vi.fn<NonNullable<PartFileDeps['onAttachmentsLoaded']>>();
+    const confirmTarget = vi.fn<NonNullable<FileGateway['confirmSaveTarget']>>();
+    const clearTarget = vi.fn();
+    useAppStore.getState().setFileGateway({ ...fake.gateway,
+      confirmSaveTarget: confirmTarget, clearSaveTarget: clearTarget });
+    const before = useAppStore.getState();
+    const stored = fake.stored();
+    vi.stubGlobal('crypto', {});
+    try {
+      await openPart({ ...deps, onAttachmentsLoaded });
+      expect(onAttachmentsLoaded).not.toHaveBeenCalled();
+      expect(confirmTarget).not.toHaveBeenCalled();
+      expect(clearTarget).not.toHaveBeenCalled();
+      expect(useAppStore.getState()).toEqual({ ...before,
+        fileMessage: { key: 'file.openFailed', failed: true } });
+      expect(fake.gateway.hasSaveTarget()).toBe(true);
+      expect(fake.stored()).toBe(stored);
+      const decoded = readPcadFile(bytes);
+      expect(decoded.ok).toBe(true);
+      if (!decoded.ok) throw new Error('Actual input must remain valid PCAD');
+      expect(decoded.document).toEqual(loaded);
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+it('session success followed by actual canvas collision entropy failure invokes no attachment commit', async () => {
+  const original = globalThis.crypto;
+  const oldCanvas = newSketchCanvas([], 'xy', 'Old.png', { width: 2, height: 1 }, 'canvas-1');
+  const incomingCanvas = newSketchCanvas([], 'xy', 'Incoming.png', { width: 2, height: 1 }, 'canvas-1');
+  const oldBytes = Uint8Array.of(1, 2, 3);
+  const incomingBytes = Uint8Array.of(4, 5, 6);
+  const incoming = { ...createEmptyPartDocument(), canvases: [incomingCanvas] };
+  const bytes = writePcadFile(incoming, { attachments: {
+    ...emptyPcadAttachments(), canvases: new Map([[incomingCanvas.imageId, incomingBytes]]) } });
+  const fake = createFakeGateway({ openBytes: bytes, openName: 'collision.pcad' });
+  useFake(fake);
+  useAppStore.getState().addCanvas(oldCanvas, oldBytes);
+  const deps = createFakeDeps(true).deps;
+  await savePart(deps, false);
+  const onAttachmentsLoaded = vi.fn<NonNullable<PartFileDeps['onAttachmentsLoaded']>>();
+  const before = useAppStore.getState();
+  const oldCanvases = new Map([...before.canvases].map(([id, value]) => [id, new Uint8Array(value)]));
+  let requests = 0;
+  const entropy = vi.fn(() => {
+    requests += 1;
+    if (requests > 1) throw new Error('Collision identity entropy unavailable after session');
+    return original.randomUUID();
+  });
+  vi.stubGlobal('crypto', { randomUUID: entropy });
+  try {
+    await openPart({ ...deps, onAttachmentsLoaded });
+    expect(entropy).toHaveBeenCalledTimes(2);
+    expect(onAttachmentsLoaded).not.toHaveBeenCalled();
+    expect(useAppStore.getState()).toEqual({ ...before,
+      fileMessage: { key: 'file.openFailed', failed: true } });
+    expect(useAppStore.getState().canvases).toEqual(oldCanvases);
+    expect(fake.gateway.hasSaveTarget()).toBe(true);
+  } finally { vi.unstubAllGlobals(); }
+});
+
+describe('actual viewport thumbnail reason-only producer boundary', () => {
+  it('preserves absent null throwing and success outcomes with exactly one call despite observer failure', () => {
+    const original = useAppStore.getState().captureThumbnail;
+    const journal = createThumbnailCaptureReasonJournal();
+    const release = observeThumbnailCaptureReasons(journal.record);
+    const releaseThrowing = observeThumbnailCaptureReasons(() => { throw new Error('observer only'); });
+    const capture = createDefaultPartFileDeps().captureThumbnail;
+    try {
+      useAppStore.getState().setCaptureThumbnail(null); expect(capture()).toBeNull();
+      const nullProducer = vi.fn(() => null); useAppStore.getState().setCaptureThumbnail(nullProducer);
+      expect(capture()).toBeNull(); expect(nullProducer).toHaveBeenCalledTimes(1);
+      const throwing = vi.fn(() => { throw new Error('actual image failure'); }); useAppStore.getState().setCaptureThumbnail(throwing);
+      expect(capture()).toBeNull(); expect(throwing).toHaveBeenCalledTimes(1);
+      const png = Uint8Array.of(1, 2, 3), success = vi.fn(() => png); useAppStore.getState().setCaptureThumbnail(success);
+      expect(capture()).toBe(png); expect(success).toHaveBeenCalledTimes(1);
+      expect(journal.snapshot().entries.map(entry => entry.reason)).toEqual(['producer:absent', 'producer:null', 'producer:throw', 'producer:success']);
+    } finally { release(); releaseThrowing(); useAppStore.getState().setCaptureThumbnail(original); }
   });
 });

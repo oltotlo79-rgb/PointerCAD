@@ -41,6 +41,7 @@ import type {
   ThreadStepSpec,
   Vec3Tuple,
 } from '../types.js';
+import type { CurrentOriginIndex, HolePlacementRole } from '../subShapeOrigin.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { BooleanResult } from './booleanOp.js';
@@ -48,9 +49,11 @@ import { booleanOp } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { helixAxisFrame, makeHelixWire } from './makeHelix.js';
 import type { HoleFrame } from './makeHole.js';
-import { holeEntryDepth, makeHoleTools, resolveHoleFrame } from './makeHole.js';
-import { matchFace } from './matchSubShape.js';
+import { hasHoleMaterialRemoval, holeEntryDepth, makeHoleTools, resolveHoleFrame } from './makeHole.js';
+import { resolveFaceReference } from './matchSubShape.js';
 import { measureVolume } from './solidMesh.js';
+import { anonymousToolFaceProducers, HoleOriginMapError, rebindThreadToolFaces, rebindTransformedOrigins, type NativeHoleToolFace } from './subShapeOrigins.js';
+import { OriginHistoryLimitError } from './subShapeHistory.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
 import {
@@ -85,7 +88,7 @@ const NOTHING_LEFT_MESSAGE =
 const NOTHING_REMOVED_MESSAGE =
   'ねじ穴が材料に当たりませんでした。中心の位置や向きを見直してください。';
 
-/** これ未満(mm³)しか削れていなければ「何も削れなかった」とみなす(makeHole.ts と同じ)。 */
+/** おねじの除去体積の下限(mm³)。ねじ穴は hasHoleMaterialRemoval で微小切削も調べる。 */
 const MIN_REMOVED_VOLUME_MM3 = 1e-9;
 
 /** おねじの面が選び直せなかったとき(FR-504、§2.2.5)。 */
@@ -345,7 +348,7 @@ export function makeThreadCut(
 function buildMarks(
   spec: ThreadStepSpec,
   origins: readonly Vec3Tuple[],
-  direction: Vec3Tuple,
+  directions: readonly Vec3Tuple[],
   placements: readonly RigidTransformSpec[],
 ): readonly ThreadMarkInfo[] {
   const mark = spec.mark;
@@ -353,7 +356,8 @@ function buildMarks(
     return [];
   }
   const marks: ThreadMarkInfo[] = [];
-  for (const origin of origins) {
+  for (const [index, origin] of origins.entries()) {
+    const direction = directionAt(directions, index);
     for (const placement of placements) {
       marks.push({
         origin: applyTransformToPoint(placement, origin),
@@ -366,32 +370,46 @@ function buildMarks(
   return marks;
 }
 
+type ThreadToolNaming = NonNullable<Parameters<typeof makeHoleTools>[6]>;
+
 /**
  * 溝(実らせん)を中心の数 × 変換の数だけ作り、控えへ積んで形の一覧を返す。
  * 恒等の変換のときは複製を作らず、もとの溝をそのまま使う(makeHole.ts と同じ決め)。
+ *
+ * 名前があるときは、各溝の実際の面に、その溝の穴(featureId・中心・配置の全て)の thread/groove を付ける。
+ * 中心 × 配置の順は makeHoleTools と同じ。1つの溝の面は1つの組(group)で、別の溝とは組が違う。
+ * 面の数が上限を超えたら名前を落とす(`limitExceeded`。形は作る)。
  */
 function buildThreadCuts(
   oc: OpenCascadeInstance,
   spec: ThreadStepSpec,
   thread: ThreadCutSpec,
   origins: readonly Vec3Tuple[],
-  direction: Vec3Tuple,
+  directions: readonly Vec3Tuple[],
   placements: readonly RigidTransformSpec[],
   keep: Allocations['keep'],
-): readonly TopoDS_Shape[] {
+  naming?: ThreadToolNaming,
+): { readonly shapes: readonly TopoDS_Shape[]; readonly grooveFaces: readonly NativeHoleToolFace[]; readonly limitExceeded: boolean } {
   const shapes: TopoDS_Shape[] = [];
-  for (const origin of origins) {
-    const cut = keep(makeThreadCut(oc, origin, direction, thread, spec.drillDiameter));
-    for (const placement of placements) {
-      if (isIdentityTransform(placement)) {
-        shapes.push(cut.shape);
-        continue;
-      }
-      const moved = keep(transformShape(oc, cut.shape, placement));
-      shapes.push(moved.shape);
+  const grooveFaces: NativeHoleToolFace[] = [];
+  let limitExceeded = false;
+  const roles: readonly HolePlacementRole[] = spec.transforms.length === 0 ? [{ kind: 'original' }] : naming?.placementRoles ?? [];
+  const named = naming !== undefined && naming.centerAnchors.length === origins.length && roles.length === placements.length;
+  for (const [centerOffset, origin] of origins.entries()) {
+    const cut = keep(makeThreadCut(oc, origin, directionAt(directions, centerOffset), thread, spec.drillDiameter));
+    for (const [placementOffset, placement] of placements.entries()) {
+      const shape = isIdentityTransform(placement) ? cut.shape : keep(transformShape(oc, cut.shape, placement)).shape;
+      shapes.push(shape);
+      const center = naming?.centerAnchors[centerOffset], role = roles[placementOffset];
+      if (naming === undefined || !named || limitExceeded || center === undefined || role === undefined) continue;
+      const faces = anonymousToolFaceProducers(oc, shape, keep);
+      if (faces.limitExceeded || grooveFaces.length + faces.faces.length > 100_000) { limitExceeded = true; continue; }
+      const group = `groove-${String(shapes.length - 1)}`;
+      for (const { face } of faces.faces) grooveFaces.push({ face, group, origin: { version: 1, shapeKind: 'face', identity: {
+        kind: 'hole-face', featureId: naming.featureId, center, placement: role, stage: 'thread', role: 'groove' } } });
     }
   }
-  return shapes;
+  return { shapes, grooveFaces: limitExceeded ? [] : grooveFaces, limitExceeded };
 }
 
 /**
@@ -411,12 +429,36 @@ function threadOrigins(frame: HoleFrame, spec: ThreadStepSpec): readonly Vec3Tup
   if (depth === 0) {
     return frame.origins;
   }
-  const { direction } = frame;
-  return frame.origins.map((origin) => [
-    origin[0] + direction[0] * depth,
-    origin[1] + direction[1] * depth,
-    origin[2] + direction[2] * depth,
-  ]);
+  const directions = holeDirections(frame);
+  return frame.origins.map((origin, index) => {
+    const direction = directionAt(directions, index);
+    const shifted: Vec3Tuple = [
+      origin[0] + direction[0] * depth,
+      origin[1] + direction[1] * depth,
+      origin[2] + direction[2] * depth,
+    ];
+    return shifted;
+  });
+}
+
+/**
+ * 位置ごとの掘る向き。円筒の側面のねじ穴(EX05)では `resolveHoleFrame` が位置ごとの向き(`frame.directions`)を
+ * 返すので、溝・切り始め・印はそれを使う(`makeHoleTools` の下穴と同じ向き)。平面のねじ穴では全て `frame.direction`
+ * (今までと同じ値)。並びが食い違えば作らない(取り違えた向きでねじを切らない)。
+ */
+function holeDirections(frame: HoleFrame): readonly Vec3Tuple[] {
+  if (frame.directions !== undefined && frame.directions.length !== frame.origins.length) {
+    throw new Error(THREAD_FAILED_MESSAGE);
+  }
+  return frame.origins.map((_, index) => frame.directions?.[index] ?? frame.direction);
+}
+
+function directionAt(directions: readonly Vec3Tuple[], index: number): Vec3Tuple {
+  const direction = directions[index];
+  if (direction === undefined) {
+    throw new Error(THREAD_FAILED_MESSAGE);
+  }
+  return direction;
 }
 
 /**
@@ -438,8 +480,10 @@ export function makeThreadHole(
   spec: ThreadStepSpec,
   target: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
-): { readonly handle: OcctShapeHandle; readonly marks: readonly ThreadMarkInfo[] } {
-  const frame = resolveHoleFrame(oc, target, faces, spec);
+  origins?: CurrentOriginIndex,
+  featureId?: string,
+): { readonly handle: BooleanResult; readonly marks: readonly ThreadMarkInfo[] } {
+  const frame = resolveHoleFrame(oc, target, faces, spec, origins);
   const placements = transformsOrIdentity(spec.transforms);
   const thread = spec.thread;
   if (thread !== null) {
@@ -447,13 +491,22 @@ export function makeThreadHole(
     checkThreadSpec(thread, spec.drillDiameter);
   }
 
-  const result = ((): OcctShapeHandle => {
+  const result = ((): BooleanResult => {
     const { keep, release } = createAllocations();
     try {
       // 入口の形(ざぐり・皿もみ)の値の検査も makeHoleTools が済ませる(穴と同じ文言で断る)。
+      // 下穴は穴と同じ手順なので、穴と同じ名前(makeHole の naming)を下穴の面に付ける。
+      const naming = featureId !== undefined && spec.centerAnchors !== undefined && spec.placementRoles !== undefined
+        ? { featureId, centerAnchors: spec.centerAnchors, placementRoles: spec.placementRoles } : undefined;
       const drills = keep(
-        makeHoleTools(oc, frame, spec.drillDiameter, spec.depth, spec.transforms, spec.entry),
+        makeHoleTools(oc, frame, spec.drillDiameter, spec.depth, spec.transforms, spec.entry, naming),
       );
+      // 名前の付いた下穴の面。実らせんでは溝との和で作り直されるので、和の履歴で付け直す。
+      // 自分の溝が分けた下穴の面は、和の履歴が示す全ての小片を1つの組で残す(rebindThreadToolFaces)。
+      // 付け直せなければ証明を落とす(形は作る)。
+      let namedFaces: readonly NativeHoleToolFace[] | undefined = naming === undefined ? undefined : drills.newHoleFaces;
+      let renameLimitExceeded = false;
+      let renameMissingNativeMap = false;
 
       let tool: TopoDS_Shape = drills.shape;
       if (thread !== null) {
@@ -463,27 +516,60 @@ export function makeThreadHole(
           thread,
           // 入口があれば、その底からねじ山を始める(`threadOrigins` の注釈)。
           threadOrigins(frame, spec),
-          frame.direction,
+          holeDirections(frame),
           placements,
           keep,
+          naming,
         );
-        const grooves = keep(makeCompound(oc, cuts));
+        if (cuts.limitExceeded) renameLimitExceeded = true;
+        const grooves = keep(makeCompound(oc, cuts.shapes));
         // 重なり合う工具はコンパウンドではなく和で 1 つにする(この節の冒頭の注釈)。
         // ここで断るのは溝と下穴を組み合わせられなかったときなので、
         // 直し方は「簡略表示に切り替える」になる。
         const fused = keep(
           toJapaneseFailure(
-            () => booleanOp(oc, 'union', drills.shape, grooves.shape),
+            () => booleanOp(oc, 'union', drills.shape, grooves.shape, undefined, namedFaces === undefined ? undefined
+              : (fuse, output) => {
+                try { namedFaces = rebindThreadToolFaces(oc, fuse, output, [...drills.newHoleFaces, ...cuts.grooveFaces], keep); }
+                catch (error) {
+                  if (error instanceof OriginHistoryLimitError) renameLimitExceeded = true;
+                  else if (error instanceof HoleOriginMapError) renameMissingNativeMap = true;
+                  else throw error;
+                  namedFaces = undefined;
+                }
+              }),
             SWEEP_FAILED_MESSAGE,
           ),
         );
         tool = fused.shape;
       }
 
-      return toJapaneseFailure(
-        () => booleanOp(oc, 'subtract', target, tool),
+      const proofFailed = drills.originProofLimitExceeded || drills.originProofMissingNativeMap
+        || renameLimitExceeded || renameMissingNativeMap;
+      const named = namedFaces;
+      const proof = featureId === undefined || origins === undefined || proofFailed ? undefined
+        // 簡略表示: 工具は下穴そのもの(穴と同じく名前の一覧をそのまま渡す)。
+        : named !== undefined && thread === null ? { faces: named, limitExceeded: false }
+          : named !== undefined ? namedToolFaces(anonymousToolFaceProducers(oc, tool, keep), named)
+            : anonymousToolFaceProducers(oc, tool, keep);
+      // A tangent/no-op cut can freeze shared input topology even in non-destructive mode.
+      // Copy geometry and mesh as well; never restore flags on the caller's borrowed shape.
+      const copier = keep(new oc.BRepBuilderAPI_Copy_2(target, true, true));
+      if (!copier.IsDone()) throw new Error(THREAD_FAILED_MESSAGE);
+      const workingTarget = keep(copier.Shape());
+      if (workingTarget.IsNull() || workingTarget.IsSame(target)) throw new Error(THREAD_FAILED_MESSAGE);
+      const workingOrigins = origins === undefined ? undefined
+        : rebindTransformedOrigins(oc, origins, target, copier, workingTarget);
+      const cut = toJapaneseFailure(
+        () => booleanOp(oc, 'subtract', workingTarget, tool,
+          featureId !== undefined && workingOrigins !== undefined && proof !== undefined
+            ? { featureId, target: workingOrigins, newHoleFaces: proof.faces } : undefined),
         THREAD_FAILED_MESSAGE,
       );
+      return drills.originProofLimitExceeded || renameLimitExceeded || proof?.limitExceeded === true
+        ? { ...cut, origins: { version: 1, state: 'untracked', reason: 'limit' } }
+        : drills.originProofMissingNativeMap || renameMissingNativeMap
+          ? { ...cut, origins: { version: 1, state: 'untracked', reason: 'missing-native-map' } } : cut;
     } finally {
       // 工具は差し引いた直後に解放してよい(makeHole.ts の実測と同じ)。
       release();
@@ -492,12 +578,12 @@ export function makeThreadHole(
 
   try {
     const removed = measureVolume(oc, target) - measureVolume(oc, result.shape);
-    if (!(removed >= MIN_REMOVED_VOLUME_MM3)) {
+    if (!hasHoleMaterialRemoval(oc, target, result.shape, removed)) {
       throw new Error(NOTHING_REMOVED_MESSAGE);
     }
     // 印は入口があっても変わらない(簡略表示の印は面の口から測る。§0.a-0.15)ので、
     // 下げる前の `frame.origins` を渡す。
-    return { handle: result, marks: buildMarks(spec, frame.origins, frame.direction, placements) };
+    return { handle: result, marks: buildMarks(spec, frame.origins, holeDirections(frame), placements) };
   } catch (error) {
     result.delete();
     throw error;
@@ -598,18 +684,18 @@ function readShaftAxis(
     throw new Error(MISSING_SHAFT_FACE_MESSAGE);
   }
   // 位置の点は「候補全体の境界箱の対角長の半分」で正規化する(§2.2.3)。
-  const match = matchFace(tables.faces, query, boundingDiagonal(oc, target) * 0.5);
-  if (match === null) {
+  const match = resolveFaceReference(tables.faces, query, boundingDiagonal(oc, target) * 0.5, tables.origins);
+  if (match.status !== 'matched') {
     throw new Error(MISSING_SHAFT_FACE_MESSAGE);
   }
-  const info = tables.faces.find((candidate) => candidate.index === match.index);
+  const info = tables.faces.find((candidate) => candidate.index === match.match.index);
   if (info === undefined) {
     throw new Error(MISSING_SHAFT_FACE_MESSAGE);
   }
   if (info.surfaceKind !== 'cylinder') {
     throw new Error(CYLINDER_ONLY_MESSAGE);
   }
-  const face = faceAt(oc, target, match.index);
+  const face = faceAt(oc, target, match.match.index);
   if (face === null) {
     // 一覧と形が食い違っている(別の形から作った一覧を渡している)合図。
     throw new Error(MISSING_SHAFT_FACE_MESSAGE);
@@ -760,4 +846,19 @@ export function makeThreadShaft(
     result.delete();
     throw error;
   }
+}
+
+/**
+ * 実らせんの工具の面の一覧(すべて名前なし)のうち、和の履歴で付け直した下穴の面と溝の面だけを名前付きに差し替える。
+ * 同じ面を指す名前が2つ以上あれば、順で選ばずに名前なしのままにする。
+ */
+function namedToolFaces(
+  anonymous: { readonly faces: readonly NativeHoleToolFace[]; readonly limitExceeded: boolean },
+  named: readonly NativeHoleToolFace[],
+): { readonly faces: readonly NativeHoleToolFace[]; readonly limitExceeded: boolean } {
+  return { limitExceeded: anonymous.limitExceeded, faces: anonymous.faces.map((entry) => {
+    const matches = named.filter((candidate) => candidate.origin !== undefined && candidate.face.IsSame(entry.face));
+    const match = matches[0];
+    return matches.length === 1 && match !== undefined ? match : entry;
+  }) };
 }

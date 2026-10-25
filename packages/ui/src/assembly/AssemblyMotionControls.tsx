@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Joint, JointCoordinate } from '@pointercad/model';
 import { saveFileAsThrough } from '../file/fileGateway.js';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import type { AssemblyJointDrive as AppStateJointDrive } from '../store/assemblySlice.js';
 import { ExportIcon } from '../shell/icons.js';
 import {
   createAnimationPlayer, exportAnimationPngSequence,
@@ -39,6 +40,13 @@ export function JointSliderControls(props: {
   const view = useAppStore((state) => state.assemblyView);
   const values = useAppStore((state) => state.assemblyMotionJointValues);
   const notice = useAppStore((state) => state.assemblyMotionNotice);
+  const pending = useAppStore((state) => state.assemblyJointDrive);
+  const requested = useRef<AppStateJointDrive | null>(null);
+  // 外す時は、この部品自身が出した要求だけを止める(後の別の要求は持ち主が違うので残る)。
+  useEffect(() => () => {
+    const owner = requested.current;
+    if (owner !== null) useAppStore.getState().cancelAssemblyJointDrive(owner);
+  }, []);
   if (document === null || view === null || view.sourceDocument !== document) return null;
   const frames = view.jointFrames?.get(props.joint.id);
   const coordinates = jointSliderCoordinates(props.joint);
@@ -53,7 +61,9 @@ export function JointSliderControls(props: {
             {t('assembly.motion.invalidRange')}
           </p>
         );
-        const value = values.get(key) ?? currentJointSliderValue({ document, joint: props.joint,
+        const waiting = pending !== null && pending.path === undefined
+          && pending.jointId === props.joint.id && pending.coordinate === coordinate;
+        const value = (waiting ? pending.value : values.get(key)) ?? currentJointSliderValue({ document, joint: props.joint,
           coordinate, placements: view.resolved.placements, frames,
           referenceAngle: coordinate === 'angle' ? jointSliderReference(bounds.bounds) : undefined }) ?? 0;
         const domain = jointSliderDomain(coordinate, value, bounds.bounds);
@@ -65,7 +75,9 @@ export function JointSliderControls(props: {
         const id = `${props.idPrefix}-${props.joint.id}-${coordinate}`;
         const apply = (source: string): void => {
           const next = Number(source);
-          if (Number.isFinite(next)) useAppStore.getState().driveAssemblyJoint(props.joint.id, coordinate, next);
+          if (!Number.isFinite(next)) return;
+          const store = useAppStore.getState();
+          if (store.requestAssemblyJointDrive(props.joint.id, coordinate, next)) requested.current = useAppStore.getState().assemblyJointDrive;
         };
         return (
           <label key={`joint-slider:${key}`} className="pcad-assembly-motion__joint" htmlFor={id}>
@@ -75,7 +87,15 @@ export function JointSliderControls(props: {
             <input type="number" aria-label={coordinateLabel(coordinate)} title={t(coordinate === 'angle' ? 'assembly.motion.angleGuide' : 'assembly.motion.translationGuide')} className="pcad-field__input" value={value} step={domain.step}
               onChange={(event) => { apply(event.currentTarget.value); }} />
             <span className="pcad-field__unit">{coordinate === 'angle' ? '°' : 'mm'}</span>
-            {notice?.kind === 'rangeEnd' ? (
+            {waiting ? (
+              <span className="pcad-field__message" role="status">
+                {t('assembly.motion.pending').replace('{coordinate}', coordinateLabel(coordinate))}
+                <button type="button" className="pcad-button" title={t('assembly.motion.cancelTooltip')}
+                  onClick={(event) => { event.preventDefault(); if (pending !== null) useAppStore.getState().cancelAssemblyJointDrive(pending); }}>
+                  {t('assembly.motion.cancel')}
+                </button>
+              </span>
+            ) : notice?.kind === 'rangeEnd' ? (
               <span className="pcad-field__message" role="status">
                 {t('assemblyError.jointRangeEnd')
                   .replace('{min}', formatBound(notice.min, coordinate, true))

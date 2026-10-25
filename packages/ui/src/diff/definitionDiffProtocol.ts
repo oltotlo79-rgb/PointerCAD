@@ -2,8 +2,11 @@ import type { DocumentDefinitionComparison, DocumentDefinitionChange, DocumentRe
 
 export const DEFINITION_DIFF_MAX_FILE_BYTES = 32 * 1024 * 1024;
 export const DEFINITION_DIFF_TIMEOUT_MS = 120_000;
+export type DefinitionDiffDocumentKind = 'part' | 'assembly' | 'drawing';
 export type DefinitionDiffRequest = { readonly kind: 'inspect'; readonly bytes: Uint8Array }
-  | { readonly kind: 'compare'; readonly before: Uint8Array; readonly after: Uint8Array; readonly relationship: DocumentRelationship };
+  | { readonly kind: 'compare'; readonly before: Uint8Array; readonly after: Uint8Array; readonly relationship: DocumentRelationship;
+    /** 省略は部品。保存点の比較が組立・図面を指す。 */
+    readonly documentKind?: DefinitionDiffDocumentKind };
 export type DefinitionDiffReply = { readonly kind: 'inspected'; readonly name: string }
   | { readonly kind: 'compared'; readonly result: DocumentDefinitionComparison }
   | { readonly kind: 'failed'; readonly message: string };
@@ -13,10 +16,13 @@ export function isDefinitionDiffRequest(value: unknown): value is DefinitionDiff
   if (!record(value)) return false;
   const bytes = (entry: unknown): boolean => entry instanceof Uint8Array && entry.byteLength <= DEFINITION_DIFF_MAX_FILE_BYTES;
   return value.kind === 'inspect' ? bytes(value.bytes) : value.kind === 'compare' && bytes(value.before) && bytes(value.after)
-    && (value.relationship === 'versions' || value.relationship === 'unrelated');
+    && (value.relationship === 'versions' || value.relationship === 'unrelated')
+    && (value.documentKind === undefined || value.documentKind === 'part' || value.documentKind === 'assembly' || value.documentKind === 'drawing');
 }
 const groups = new Set(['document', 'sketch', 'sketch-feature', 'reference', 'solid', 'parameter', 'configuration',
-  'sheet-unfold', 'named-view', 'selection-set', 'canvas', 'appearance', 'note', 'folder', 'math-problem', 'attachments']);
+  'sheet-unfold', 'named-view', 'selection-set', 'canvas', 'appearance', 'note', 'folder', 'math-problem', 'attachments',
+  'assembly-document', 'component', 'mate', 'joint', 'presentation', 'library-part', 'library-assembly', 'drawing-document',
+  'drawing-view', 'dimension', 'annotation', 'table', 'balloon', 'datum', 'gdt', 'weld', 'layer', 'drawing-parameter', 'drawing-source']);
 const differenceKinds = new Set(['value', 'expression', 'expression-and-value', 'stored-value', 'order']);
 const text = (value: unknown): value is string => typeof value === 'string' && value.length <= 131_072;
 function difference(value: unknown): value is DefinitionDifference {

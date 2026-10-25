@@ -246,6 +246,27 @@ function applied(document: PartDocument): ParameterCommandSuccess {
   };
 }
 
+/**
+ * 利用者のデータが変わらない確定(同じ中身の差し替え・同じ名前への改名・無視された並べ替え)。
+ * 解析と失敗は今までどおり `applied` から返すが、文書は**元の object のまま**返す。
+ * `applyDocument` は同じ文書を受けると何もしないので、Undo の段が増えない(数式の参照番号の
+ * 付与と構成の同期は、次の本当の編集と同じ段で行われる)。
+ */
+function unchanged(document: PartDocument): ParameterCommandSuccess {
+  return { ...applied(document), document };
+}
+
+/**
+ * 型(Parameter / ExpressionValue)の全ての欄が等しいか。数式の定義は同じ object のときだけ等しいと
+ * みなす(構造を比べる正本が無い。迷うときは変更として扱い、本当の変更を落とさない)。
+ */
+function sameStoredParameter(left: Parameter, right: Parameter): boolean {
+  return left.mathId === right.mathId && left.name === right.name && left.unit === right.unit
+    && left.description === right.description && left.value.source === right.value.source
+    && Object.is(left.value.value, right.value.value) && left.value.display === right.value.display
+    && left.value.mathDefinition === right.value.mathDefinition;
+}
+
 /* ---------------------------------------------------------------------------
  * 新しい行の下書き
  * ------------------------------------------------------------------------- */
@@ -317,8 +338,8 @@ export function commitRenameParameter(
     return notFound();
   }
   if (from === to) {
-    // 同じ名前への「改名」は書き換えるものが無い。applyParameters だけ通して整合させる。
-    return applied(document);
+    // 同じ名前への「改名」は書き換えるものが無い。元の文書のまま返し、Undo の段を作らない。
+    return unchanged(document);
   }
   const issue = checkVariableName(to);
   if (issue !== null) {
@@ -354,6 +375,10 @@ export function commitReplaceParameter(
     return notFound();
   }
   const next: Parameter = { ...current, ...patch, name: current.name };
+  if (sameStoredParameter(current, next)) {
+    // 同じ単位を選び直す・同じ式で確定するなど、保存する中身が変わらない。
+    return unchanged(document);
+  }
   return applied({ ...document, parameters: replaceParameter(document.parameters, name, next) });
 }
 
@@ -366,7 +391,12 @@ export function commitReorderParameters(
   from: number,
   to: number,
 ): ParameterCommandOutcome {
-  return applied({ ...document, parameters: reorderParameters(document.parameters, from, to) });
+  const parameters = reorderParameters(document.parameters, from, to);
+  if (parameters === document.parameters) {
+    // 範囲の外・整数でない・同じ位置は model が同じ配列を返す。文書を作り直さない。
+    return unchanged(document);
+  }
+  return applied({ ...document, parameters });
 }
 
 /* ---------------------------------------------------------------------------

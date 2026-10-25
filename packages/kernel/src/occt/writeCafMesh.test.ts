@@ -118,14 +118,16 @@ function expectedLinear(srgb: number): number {
 }
 
 describe('OBJ / glTF の書き出し(FR-803 / FR-1106、P6 タスク13)', () => {
-  it('§1.5-1 の実測: RWObj_CafWriter / RWGltf_CafWriter は実在する(記録するだけで使わない)', () => {
-    // 統括の決定(2026-09-06)により、書き出し用の三角形は `buildExportMesh` の 1 本の
-    // 経路から全形式へ配る。OCCT の XCAF の書き手は使わないが、実在は記録に残す。
-    expect(oc.RWObj_CafWriter).toBeTypeOf('function');
-    expect(oc.RWGltf_CafWriter).toBeTypeOf('function');
-    console.log(
-      `[実測] oc.RWObj_CafWriter = ${typeof oc.RWObj_CafWriter} / oc.RWGltf_CafWriter = ${typeof oc.RWGltf_CafWriter}(実在するが使わない)`,
-    );
+  it('採用した共通の三角形から OBJ と glTF の両方を書き出せる(§1.5-1)', () => {
+    // 未使用の XCAF の書き手ではなく、製品が採用した共通の網からの経路を確かめる。
+    const mesh = boxMesh();
+    expect(mesh.triangleCount).toBe(12);
+    for (const format of ['obj', 'gltf'] as const) {
+      const written = writeCafMesh([{ mesh, name: '本体', color: null }], { format });
+      expect(written.triangleCount).toBe(12);
+      expect(written.droppedTriangleCount).toBe(0);
+      expect(written.files[0].bytes.length).toBeGreaterThan(0);
+    }
   });
 
   it('20³ の箱の .glb は先頭 4 バイトが glTF・版 2・全長が書いてある(glTF の仕様)', () => {

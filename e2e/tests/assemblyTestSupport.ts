@@ -18,6 +18,7 @@ import {
   type PrimitiveShapeKind,
 } from '../../packages/model/src/index.js';
 import { expect, type Locator, type Page } from '@playwright/test';
+import type { FileGateway } from '../../packages/ui/src/file/fileGateway.js';
 
 const SAVED_AT = '2026-09-09T00:00:00.000Z';
 
@@ -46,33 +47,11 @@ export interface AssemblyBrowserStats {
 
 declare global {
   interface Window {
-    pcadSetFileGateway?: (gateway: E2eFileGateway) => void;
+    // ファイル口の形はアプリの実物(file/fileGateway.ts の FileGateway)そのもの。写しを持たない。
+    pcadSetFileGateway?: (gateway: FileGateway) => void;
     pcadResetFileGateway?: () => void;
     pcadAssemblyStats?: () => AssemblyBrowserStats;
   }
-}
-
-interface E2ePickedFile {
-  readonly name: string;
-  readonly bytes: Uint8Array;
-  readonly saveTargetToken: string | null;
-}
-
-interface E2ePickedTypedFile {
-  readonly kind: 'pcad';
-  readonly fileName: string;
-  readonly bytes: Uint8Array;
-}
-
-interface E2eFileGateway {
-  openPcad(kind?: 'part' | 'assembly' | 'all'): Promise<E2ePickedFile | null>;
-  savePcad(suggestedName: string, bytes: Uint8Array, saveAs: boolean,
-    kind?: 'part' | 'assembly'): Promise<string | null>;
-  hasSaveTarget(): boolean;
-  confirmSaveTarget?(token: string): Promise<void>;
-  clearSaveTarget?(): void;
-  openFile?(kinds: readonly string[]): Promise<E2ePickedTypedFile | null>;
-  saveFileAs?(fileName: string, kind: string, bytes: Uint8Array): Promise<boolean>;
 }
 
 interface GatewayDocument {

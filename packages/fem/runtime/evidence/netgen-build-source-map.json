@@ -1,0 +1,576 @@
+{
+  "schema": "pcad-netgen-shipped-source-map/2",
+  "wheel": {
+    "path": "scratchpad/claude/inspections/v103-netgen-r4-built-artifacts-52b1a1c5661e4a81b5e865b34cfe0e9b/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+    "sha256": "3f0d507e8daa11b5a26654d904c529d6c1338e9a3a4c7d7728152f3596954ba3",
+    "bytes": 2809006
+  },
+  "modules": [
+    {
+      "member": "libngcore.so",
+      "sha256": "13487f6088bfb26d06f6056357edac09d4f40e1586684248fcd7e84530d233a8",
+      "bytes": 367608,
+      "needed": []
+    },
+    {
+      "member": "libnglib.so",
+      "sha256": "74075bcf313fa195405005edc4041dc130b307482b092331ed5121d4ddac51af",
+      "bytes": 5483795,
+      "needed": [
+        "libngcore.so"
+      ]
+    },
+    {
+      "member": "netgen/libngpy.so",
+      "sha256": "c86246872b8815b8e8f432af5e8079f452569f9fdf460909f662931483f4225a",
+      "bytes": 89127,
+      "needed": [
+        "libnglib.so",
+        "libngcore.so"
+      ]
+    },
+    {
+      "member": "pyngcore/pyngcore.so",
+      "sha256": "f6f942536567085cc1bc6b19c974c5898d38a8b0f9ef5235ee9f3b72958abb29",
+      "bytes": 1014952,
+      "needed": [
+        "libngcore.so"
+      ]
+    }
+  ],
+  "sdkConfiguration": [
+    {
+      "input": {
+        "path": "scratchpad/claude/inspections/v103-sdk-zconf-preserved-a2aa1d6ed42f465783bb9bd340ab8f31/zconf.h",
+        "sha256": "77304005ceb5f0d03ad4c37eb8386a10866e4ceeb204f7c3b6599834c7319541",
+        "bytes": 16262
+      },
+      "bundlePath": "sources/netgen-sdk-zconf.h",
+      "components": [
+        "netgen",
+        "zlib"
+      ],
+      "kind": "exact-target-build-configuration",
+      "origin": "/home/yuya/pcad-oofem-rebuild-20261011-2136/xbuildenv/file__home_yuya_pcad-oofem-rebuild-20261011-2136_dl_xbuildenv-0_29_3_tar_bz2/emsdk/upstream/emscripten/tools/ports/zlib/zconf.h",
+      "preservationReceipt": {
+        "path": "scratchpad/claude/inspections/v103-sdk-zconf-preserved-a2aa1d6ed42f465783bb9bd340ab8f31/receipt.json",
+        "sha256": "589d05509a2afaff5a66142a40f8c83846d0855cefb7afd2f0c93bff303bab58",
+        "bytes": 671
+      }
+    }
+  ],
+  "supplementHistory": {
+    "parentPlan": {
+      "path": "scratchpad/claude/agents/cx_v103_security_inventory_sol/before/netgen-legal-package-r1/plan.json",
+      "sha256": "dcf9e6256aa54c455cb072b1abdaa43fa5b6ab3fad930ac4d6288ffc516b6627",
+      "bytes": 14078
+    },
+    "parentFreeze": {
+      "path": "scratchpad/claude/agents/cx_v103_security_inventory_sol/before/netgen-legal-package-r1/freeze.json",
+      "sha256": "01f4bb911aab33a63f434fac85243c6500c0276f63178d65369e69a5613722bb",
+      "bytes": 10752
+    },
+    "onlyResolvedGap": "Exact pinned target zconf.h bytes now retained, not portable rebuild/replacement qualification."
+  },
+  "sourceMaterials": [
+    {
+      "path": "scratchpad/claude/inspections/v103-clean-netgen-source-20261012-113821-d75fe1d38af1490da9c2a5a3bf54068b/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+      "bytes": 3337092,
+      "sha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+      "components": [
+        "netgen"
+      ],
+      "kind": "core-or-build-source",
+      "url": null,
+      "bundlePath": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-clean-netgen-source-20261012-113821-d75fe1d38af1490da9c2a5a3bf54068b/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+      "bytes": 969506,
+      "sha256": "e84c2929c340a59eef985dc31e309f290982de8617d9aeb7b77c123c4bb044a4",
+      "components": [
+        "pybind11"
+      ],
+      "kind": "core-or-build-source",
+      "url": null,
+      "bundlePath": "sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-netgen-zlib-source-0b63544be70144e9942c3e96c83bde20/zlib-v1.3.1.tar.gz",
+      "bytes": 1572744,
+      "sha256": "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c",
+      "components": [
+        "zlib"
+      ],
+      "kind": "core-or-build-source",
+      "url": null,
+      "bundlePath": "sources/zlib-v1.3.1.tar.gz"
+    },
+    {
+      "path": "sources/netgen-654ed121-build-r4-recipe.zip",
+      "bytes": 71386,
+      "sha256": "a5e6ff23a1c8f300b6955074701bc9229f5187d0fee0f09a20a165c044b2f761",
+      "components": [
+        "netgen",
+        "pybind11",
+        "zlib"
+      ],
+      "kind": "build-recipe-and-patches",
+      "url": null,
+      "bundlePath": "sources/netgen-654ed121-build-r4-recipe.zip",
+      "buildEvidence": {
+        "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/manifest.json",
+        "sha256": "abb6a5eca8b44ee8d3e8172532b4ea4fee5de030485f187f50c4916675b6e0be",
+        "bytes": 8957
+      }
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-sdk-zconf-preserved-a2aa1d6ed42f465783bb9bd340ab8f31/zconf.h",
+      "bytes": 16262,
+      "sha256": "77304005ceb5f0d03ad4c37eb8386a10866e4ceeb204f7c3b6599834c7319541",
+      "components": [
+        "netgen",
+        "zlib"
+      ],
+      "kind": "exact-target-build-configuration",
+      "url": null,
+      "bundlePath": "sources/netgen-sdk-zconf.h",
+      "origin": "/home/yuya/pcad-oofem-rebuild-20261011-2136/xbuildenv/file__home_yuya_pcad-oofem-rebuild-20261011-2136_dl_xbuildenv-0_29_3_tar_bz2/emsdk/upstream/emscripten/tools/ports/zlib/zconf.h",
+      "preservationReceipt": {
+        "path": "scratchpad/claude/inspections/v103-sdk-zconf-preserved-a2aa1d6ed42f465783bb9bd340ab8f31/receipt.json",
+        "sha256": "589d05509a2afaff5a66142a40f8c83846d0855cefb7afd2f0c93bff303bab58",
+        "bytes": 671
+      }
+    }
+  ],
+  "noticeProvenance": [
+    {
+      "input": {
+        "path": "scratchpad/claude/inspections/v103-clean-netgen-source-20261012-113821-d75fe1d38af1490da9c2a5a3bf54068b/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "sha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+        "bytes": 3337092
+      },
+      "bundlePath": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+      "components": [
+        "netgen"
+      ],
+      "url": null,
+      "notices": [
+        {
+          "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/LICENSE",
+          "bytes": 26430,
+          "sha256": "a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7",
+          "component": "netgen",
+          "basis": "Exact retained upstream source archive LICENSE member; shipped linkage is recorded separately."
+        }
+      ]
+    },
+    {
+      "input": {
+        "path": "scratchpad/claude/inspections/v103-clean-netgen-source-20261012-113821-d75fe1d38af1490da9c2a5a3bf54068b/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+        "sha256": "e84c2929c340a59eef985dc31e309f290982de8617d9aeb7b77c123c4bb044a4",
+        "bytes": 969506
+      },
+      "bundlePath": "sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+      "components": [
+        "pybind11"
+      ],
+      "url": null,
+      "notices": [
+        {
+          "member": "pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9/LICENSE",
+          "bytes": 1684,
+          "sha256": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb",
+          "component": "pybind11",
+          "basis": "Exact retained upstream source archive LICENSE member; shipped linkage is recorded separately."
+        }
+      ]
+    },
+    {
+      "input": {
+        "path": "scratchpad/claude/inspections/v103-netgen-zlib-source-0b63544be70144e9942c3e96c83bde20/zlib-v1.3.1.tar.gz",
+        "sha256": "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c",
+        "bytes": 1572744
+      },
+      "bundlePath": "sources/zlib-v1.3.1.tar.gz",
+      "components": [
+        "zlib"
+      ],
+      "url": null,
+      "notices": [
+        {
+          "member": "zlib-1.3.1/LICENSE",
+          "bytes": 1002,
+          "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243",
+          "component": "zlib",
+          "basis": "Exact retained upstream source archive LICENSE member; shipped linkage is recorded separately."
+        }
+      ]
+    }
+  ],
+  "buildRecipe": "sources/netgen-654ed121-build-r4-recipe.zip",
+  "recipeInputs": {
+    "manifest.json": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/manifest.json",
+      "sha256": "abb6a5eca8b44ee8d3e8172532b4ea4fee5de030485f187f50c4916675b6e0be",
+      "bytes": 8957
+    },
+    "actual-link-stanzas.txt": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/actual-link-stanzas.txt",
+      "sha256": "ba8aa2c79cd8e374199b3f7f74552077106988926e3bbdca0df9d2cb0e7b7fa6",
+      "bytes": 10506
+    },
+    "audit.py": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/audit.py",
+      "sha256": "c531d3d96e60f64dc934830ff9b46bb86d07d55beaaae174ab09cecda59b5f36",
+      "bytes": 19927
+    },
+    "build.sh": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/build.sh",
+      "sha256": "1ba46ae17d5356b8e08f3d00b2e9b6350e9523db0cbcb0c9afa1d078862a0fd5",
+      "bytes": 5472
+    },
+    "cached-build-tools.json": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/cached-build-tools.json",
+      "sha256": "48f9f2a861279249bd8b8e748e04c8fe4478337c26f58f05137665d63fb5aa09",
+      "bytes": 468709
+    },
+    "evidence-pins.json": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/evidence-pins.json",
+      "sha256": "aebb3d7f3290eb7e304fb54218c70c3469df71ae58ce8c543115f24e55b85fc3",
+      "bytes": 13182
+    },
+    "inputs.json": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/inputs.json",
+      "sha256": "266b1edd3dd8f353d2985a9420f5056cd70a03f835afdea014fb3194e5621121",
+      "bytes": 17172
+    },
+    "netgen-netgenpy.cpp": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/netgen-netgenpy.cpp",
+      "sha256": "2b5cec5331e70788d8aa4b236550d3df1c7116a540438fd060acfee8e82d1606",
+      "bytes": 1045
+    },
+    "netgen-nglib-CMakeLists.txt": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/netgen-nglib-CMakeLists.txt",
+      "sha256": "36ee6c0a1794cb1042c6e64745eb32614b7efc76a8a710cb7b7493852f53561e",
+      "bytes": 537
+    },
+    "packaging.diff": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/packaging.diff",
+      "sha256": "0d1f2c416fbe294f02e41652811db24c2919e4f81b1b846ef6fcddb7bfa3f4c4",
+      "bytes": 10577
+    },
+    "pristine-ng-netgenpy.cpp": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/pristine-ng-netgenpy.cpp",
+      "sha256": "cf4f7134c3d629094cea248b72e5fd87595a8af0bbc5120b674874afa9f13beb",
+      "bytes": 1075
+    },
+    "pyproject.toml": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/pyproject.toml",
+      "sha256": "9120cfdb6591788808d98b2e914becbb631d120e93d625784b4ec8613c8b92cd",
+      "bytes": 4870
+    },
+    "REPORT.md": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/REPORT.md",
+      "sha256": "9df19ac8ebbbdeb6845e3c2cddd25084f7ffd643f249be25ef32e3d555fff56e",
+      "bytes": 5668
+    },
+    "REVISION.md": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/REVISION.md",
+      "sha256": "3c79ef320f5aa4076a6170afceecfa1ab8f3e864adfd9109e86fbc8d1115dfbf",
+      "bytes": 2987
+    },
+    "source-byte-evidence.json": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/source-byte-evidence.json",
+      "sha256": "d6bb7738984a464bf6e94961b578ffa569a20713fd7c672ebae0487e31662211",
+      "bytes": 3095
+    },
+    "target_linkage.py": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/target_linkage.py",
+      "sha256": "73c1d91fdb7b371bc1dd8e15c308559b4fc824eaa90193916d67358959c89c95",
+      "bytes": 2699
+    },
+    "test_ninja_version.py": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/test_ninja_version.py",
+      "sha256": "93ecc89448849b9ed815b44809cbfe7be5f4c2e8eb41682a1c55d555a4c7f21b",
+      "bytes": 1512
+    },
+    "test_source_bytes.py": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/test_source_bytes.py",
+      "sha256": "a172cc51a32e97e2052fa41ac6226492348fcf01507ece08baa71f13413f0765",
+      "bytes": 2285
+    },
+    "test_target_linkage.py": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/test_target_linkage.py",
+      "sha256": "3df7cbf75b092013727d711c905fa22e803f58a1be6dea41d1205eb016bf7b4c",
+      "bytes": 3243
+    },
+    "upstream-ng-CMakeLists.txt": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/upstream-ng-CMakeLists.txt",
+      "sha256": "e7512177cceee339ec926c77f1d4977412e840854ab8f87c52a018ea4451b024",
+      "bytes": 3127
+    },
+    "wrapper-settings.json": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/wrapper-settings.json",
+      "sha256": "f552793d8a003669ee53ea5e11b01d31f7fed37ceca538dd40924555f71c7f9d",
+      "bytes": 690
+    },
+    "sdk/zconf.h": {
+      "path": "scratchpad/claude/inspections/v103-sdk-zconf-preserved-a2aa1d6ed42f465783bb9bd340ab8f31/zconf.h",
+      "sha256": "77304005ceb5f0d03ad4c37eb8386a10866e4ceeb204f7c3b6599834c7319541",
+      "bytes": 16262
+    },
+    "sdk/zconf-preservation-receipt.json": {
+      "path": "scratchpad/claude/inspections/v103-sdk-zconf-preserved-a2aa1d6ed42f465783bb9bd340ab8f31/receipt.json",
+      "sha256": "589d05509a2afaff5a66142a40f8c83846d0855cefb7afd2f0c93bff303bab58",
+      "bytes": 671
+    }
+  },
+  "nativeLinkGraph": {
+    "ngpy": [
+      "libnglib.so",
+      "libsrc/core/libngcore.so",
+      "-ldl"
+    ],
+    "nglib": [
+      "/home/yuya/pcad-netgen-clean-20261012-build-r4/target/lib/libz.a",
+      "libsrc/core/libngcore.so",
+      "-ldl"
+    ],
+    "zlibOwner": "libnglib.so"
+  },
+  "sourceReplacementExecuted": false,
+  "legalClearance": false,
+  "releaseAccepted": false,
+  "remaining": [
+    "Original five distribution barriers remain; no complete source or legal clearance claim.",
+    "Fourth module and shipped header byte identities are now complete for the enumerated rows; complete static/compiler-runtime closure is not thereby certified.",
+    "The bundled actual-link-stanzas.txt is historical r2; it is not relabelled as r4 compile/link evidence.",
+    "mpi4py_pycapi.h has complete normalized correspondence to the mpi4py 4.0.0 reference and its BSD-3-Clause notice is retained. A unique original header version and compiled MPI runtime inclusion are not asserted.",
+    "No Netgen modified-source replacement/portable reconstruction demonstration is supplied.",
+    "Product distribution terms remain unresolved. The specified IML source attribution and NIST notice are retained in evidence/iml-source-correspondence.json; complete product legal clearance is not asserted."
+  ],
+  "moduleEvidence": {
+    "path": "scratchpad/claude/inspections/v103-netgen-r4-built-artifacts-52b1a1c5661e4a81b5e865b34cfe0e9b/build-provenance.json",
+    "sha256": "246ecc024efdcf63d2928dffc31ce802724acbc579f9879a54173608de06cc7d",
+    "basis": "Exact retained r4 wheel binary hashes, sizes and recorded dynamic needed entries; not a complete static dependency audit."
+  },
+  "headerSourceCorrespondence": [
+    {
+      "sourceMember": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/concurrentqueue.h",
+      "wheelMember": "include/netgen/core/concurrentqueue.h",
+      "sha256": "cc8dc5c0d9c3ca1b37d4051bff9de96ceeccb53b77472b78c453da324ba0909e",
+      "bytes": 146859,
+      "byteIdentical": true,
+      "noticeExtent": "Exact source prefix before #pragma once; includes embedded Boost grant/disclaimer.",
+      "notice": "notices/a016208434ebc6a342c52fae34e7f3045d6a325089963b82cbee5bf3c8ae93cf.txt"
+    },
+    {
+      "sourceMember": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/general/gzstream.h",
+      "wheelMember": "include/netgen/general/gzstream.h",
+      "sha256": "f9555dfd54b4311a6209c35d669cad3600ac663fdc48b80e31b6dcb54e0326b9",
+      "bytes": 4762,
+      "byteIdentical": true,
+      "noticeExtent": "Exact source prefix before include guard; LGPL2.1-or-later copyright/license notice.",
+      "notice": "notices/a941f6ab8280ee0e2dae76ec0d01b3e9637749e9f445f2f1987b4761c81db70c.txt"
+    },
+    {
+      "sourceMember": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/mpi4py_pycapi.h",
+      "wheelMember": "include/netgen/core/mpi4py_pycapi.h",
+      "sha256": "022ec87d2a2dc2bcf0bc1961560477f3d532eff33df6ba2f8edd48f4abf39cb8",
+      "bytes": 7144,
+      "byteIdentical": true,
+      "permissionStatus": "Complete normalized header correspondence to mpi4py 4.0.0 reference; BSD-3-Clause notice retained; unique original version not asserted.",
+      "permissionEvidence": {
+        "referenceTag": "4.0.0",
+        "referenceIsUniqueOriginVersion": false,
+        "headerUrl": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/src/mpi4py/include/mpi4py/pycapi.h",
+        "licenseUrl": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/LICENSE.rst",
+        "observedOn": "2026-10-24",
+        "method": "UTF-8 splitlines; discard blank lines; strip leading/trailing whitespace only; retain order and every other character",
+        "nonemptyLines": 208,
+        "normalizedSha256": "1316b5a0642ce6ed627cb7d5d42f14a3c9a31c541bc8dfbbbfd59024ab220e70",
+        "localHeaderSha256": "022ec87d2a2dc2bcf0bc1961560477f3d532eff33df6ba2f8edd48f4abf39cb8",
+        "licenseExpression": "BSD-3-Clause",
+        "notice": "notices/915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6.txt",
+        "noticeSha256": "915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6",
+        "limit": "Complete normalized source correspondence to the named upstream reference, not raw upstream byte equality or proof of the original build version. No MPI runtime inclusion claim."
+      }
+    }
+  ],
+  "sourceContract": {
+    "archive": {
+      "path": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+      "sha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+      "bytes": 3337092
+    },
+    "members": [
+      {
+        "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/CMakeLists.txt",
+        "sha256": "c79b3bf392fd905d22b4a4020cf2061ff2b50188bb89bbc56ec384101602f6fd",
+        "bytes": 6755
+      },
+      {
+        "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/general/CMakeLists.txt",
+        "sha256": "1c837b2d230f7b4fc032001388195f188e43e7094f48ee56f0d52ec389090faa",
+        "bytes": 544
+      },
+      {
+        "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/python_ngcore_export.cpp",
+        "sha256": "cfc516c839449c154ba64e3a1e1f0f774f01ac8b403a8d9a669cb1f4a1f0673e",
+        "bytes": 19380
+      },
+      {
+        "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/python_ngcore.hpp",
+        "sha256": "5718c34c960b71eb87b37941a02a6aa0ef3dc29ae4f73ad42ff3240100bc8d90",
+        "bytes": 15531
+      },
+      {
+        "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/taskmanager.cpp",
+        "sha256": "5fb26ed504f2c90af57af928e6ab0acf9929dc1a37091e64dd3a08b33787b3b8",
+        "bytes": 23610
+      }
+    ],
+    "basis": "Exact source CMake declares pyngcore from python_ngcore_export.cpp linked with ngcore; ngcore taskmanager.cpp includes concurrentqueue.h; nglib includes gzstream.cpp. This is source/build-contract evidence, not a newly observed compilation."
+  },
+  "historicalPackagingPins": {
+    "baselineManifest": {
+      "path": "packages/fem/runtime/manifest.json",
+      "sha256": "48e6c61e82667efb31fd4535b8a3d0edd5fe790fe5ca273b03224b5a353b8285",
+      "bytes": 26564
+    },
+    "incomingManifest": {
+      "path": "scratchpad/claude/inspections/v103-planar-plc-package-r3-9b281c291c8c4dbe8b7260a782bc88e8/overlay/packages/fem/runtime/manifest.json",
+      "sha256": "cf8826aab631ca9ecf8fa8e04979a3d87638c3c11f6208b20675a26a93cdd918"
+    }
+  },
+  "historicalRuntimeAssets": {
+    "assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl": {
+      "path": "scratchpad/claude/inspections/v103-netgen-r4-built-artifacts-52b1a1c5661e4a81b5e865b34cfe0e9b/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "sha256": "3f0d507e8daa11b5a26654d904c529d6c1338e9a3a4c7d7728152f3596954ba3",
+      "bytes": 2809006
+    },
+    "assets/netgenMesher.py": {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/continuum-cad-general-plan-r1/phase1-r1/tree/packages/fem/src/netgenMesher.py",
+      "sha256": "ee0096e01cc26c96205a6e524fadbf77bf4eff75faa95bb1102b463d80307d60",
+      "bytes": 6348
+    }
+  },
+  "runtimeAssets": {
+    "assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl": {
+      "bytes": 2809006,
+      "sha256": "3f0d507e8daa11b5a26654d904c529d6c1338e9a3a4c7d7728152f3596954ba3"
+    }
+  },
+  "embeddedDependencies": [
+    {
+      "name": "FEM: Netgen pybind11",
+      "type": "library",
+      "version": "98e50b702d9ab784ec918399aaa20adcfd1af9a9",
+      "source": {
+        "path": "sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+        "sha256": "e84c2929c340a59eef985dc31e309f290982de8617d9aeb7b77c123c4bb044a4",
+        "bytes": 969506
+      },
+      "notices": [
+        "notices/83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb.txt"
+      ],
+      "relationship": "Binding source used by Netgen Python modules; recorded exact source revision."
+    },
+    {
+      "name": "FEM: Netgen zlib",
+      "type": "library",
+      "version": "1.3.1",
+      "source": {
+        "path": "sources/zlib-v1.3.1.tar.gz",
+        "sha256": "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c",
+        "bytes": 1572744
+      },
+      "notices": [
+        "notices/845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243.txt"
+      ],
+      "relationship": "Recorded r4 native graph identifies target libz.a owned by libnglib.so."
+    },
+    {
+      "name": "FEM: Netgen concurrentqueue",
+      "type": "library",
+      "source": {
+        "path": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "sha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+        "bytes": 3337092
+      },
+      "notices": [
+        "notices/a016208434ebc6a342c52fae34e7f3045d6a325089963b82cbee5bf3c8ae93cf.txt"
+      ],
+      "relationship": "Exact shipped/source header; included by ngcore taskmanager.cpp. Header revision is recorded by SHA, not an invented upstream version.",
+      "sourceMember": {
+        "sourceMember": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/concurrentqueue.h",
+        "wheelMember": "include/netgen/core/concurrentqueue.h",
+        "sha256": "cc8dc5c0d9c3ca1b37d4051bff9de96ceeccb53b77472b78c453da324ba0909e",
+        "bytes": 146859,
+        "byteIdentical": true,
+        "noticeExtent": "Exact source prefix before #pragma once; includes embedded Boost grant/disclaimer.",
+        "notice": "notices/a016208434ebc6a342c52fae34e7f3045d6a325089963b82cbee5bf3c8ae93cf.txt"
+      }
+    },
+    {
+      "name": "FEM: Netgen gzstream",
+      "type": "library",
+      "source": {
+        "path": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "sha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+        "bytes": 3337092
+      },
+      "notices": [
+        "notices/a941f6ab8280ee0e2dae76ec0d01b3e9637749e9f445f2f1987b4761c81db70c.txt",
+        "notices/a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7.txt"
+      ],
+      "relationship": "Exact shipped/source header; gzstream.cpp is declared in nglib; original copyright and full LGPL text retained.",
+      "sourceMember": {
+        "sourceMember": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/general/gzstream.h",
+        "wheelMember": "include/netgen/general/gzstream.h",
+        "sha256": "f9555dfd54b4311a6209c35d669cad3600ac663fdc48b80e31b6dcb54e0326b9",
+        "bytes": 4762,
+        "byteIdentical": true,
+        "noticeExtent": "Exact source prefix before include guard; LGPL2.1-or-later copyright/license notice.",
+        "notice": "notices/a941f6ab8280ee0e2dae76ec0d01b3e9637749e9f445f2f1987b4761c81db70c.txt"
+      }
+    },
+    {
+      "name": "FEM: Netgen mpi4py header",
+      "type": "file",
+      "source": {
+        "path": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "sha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+        "bytes": 3337092
+      },
+      "notices": [
+        "notices/915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6.txt"
+      ],
+      "relationship": "Exact header shipped in wheel and Netgen source. Full normalized correspondence to mpi4py 4.0.0 reference with BSD-3-Clause notice; no original-version or compiled-MPI claim.",
+      "sourceMember": {
+        "sourceMember": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/mpi4py_pycapi.h",
+        "wheelMember": "include/netgen/core/mpi4py_pycapi.h",
+        "sha256": "022ec87d2a2dc2bcf0bc1961560477f3d532eff33df6ba2f8edd48f4abf39cb8",
+        "bytes": 7144,
+        "byteIdentical": true,
+        "permissionStatus": "Complete normalized header correspondence to mpi4py 4.0.0 reference; BSD-3-Clause notice retained; unique original version not asserted.",
+        "permissionEvidence": {
+          "referenceTag": "4.0.0",
+          "referenceIsUniqueOriginVersion": false,
+          "headerUrl": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/src/mpi4py/include/mpi4py/pycapi.h",
+          "licenseUrl": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/LICENSE.rst",
+          "observedOn": "2026-10-24",
+          "method": "UTF-8 splitlines; discard blank lines; strip leading/trailing whitespace only; retain order and every other character",
+          "nonemptyLines": 208,
+          "normalizedSha256": "1316b5a0642ce6ed627cb7d5d42f14a3c9a31c541bc8dfbbbfd59024ab220e70",
+          "localHeaderSha256": "022ec87d2a2dc2bcf0bc1961560477f3d532eff33df6ba2f8edd48f4abf39cb8",
+          "licenseExpression": "BSD-3-Clause",
+          "notice": "notices/915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6.txt",
+          "noticeSha256": "915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6",
+          "limit": "Complete normalized source correspondence to the named upstream reference, not raw upstream byte equality or proof of the original build version. No MPI runtime inclusion claim."
+        }
+      }
+    }
+  ]
+}

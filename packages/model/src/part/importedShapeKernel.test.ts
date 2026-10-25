@@ -285,3 +285,30 @@ describe('読み込んだ形のベースボディ(FR-802、P6 §2.8)を実カー
     OCCT_TIMEOUT_MS,
   );
 });
+
+describe('EX18 W05 fixed ASCII STEP seeds before any direct edit', () => {
+  it.each(['A', 'B', 'C'] as const)('%s contains the independent pre-edit dimensions', async shape => {
+    const { readFileSync } = await import('node:fs');
+    const { readBrepBytes } = await import('../../../kernel/src/occt/brepBytes.js');
+    const { measureEx18Shape, compareEx18Shape } = await import('./ex18ShapeOracle.js');
+    const { EX18_ORACLE_DIRECT_SEEDS, EX18_ORACLE_EXPECTATIONS } = await import('./ex18RouteFixtures.js');
+    const bytes = readFileSync(new URL(`./fixtures/ex18/direct-seed-${shape}.step`, import.meta.url));
+    expect(bytes.byteLength).toBeGreaterThan(0); expect(bytes.byteLength).toBeLessThan(64 * 1024);
+    expect(bytes.every(byte => byte < 128)).toBe(true);
+    expect(new TextDecoder().decode(bytes).startsWith('ISO-10303-21;')).toBe(true);
+    const original = Uint8Array.from(bytes);
+    const read = await api.importShape({ format: 'step', bytes });
+    expect(read.unit).toBe('mm'); expect(read.bodies).toHaveLength(1);
+    const [body] = read.bodies;
+    if (body === undefined || body.bodyKind !== 'solid') throw new Error('EX18 STEP seed must be a single solid');
+    const oc = await loadOcctForNode(), ownedShape = readBrepBytes(oc, body.brepBytes);
+    try {
+      const measured = measureEx18Shape(oc, ownedShape);
+      expect(compareEx18Shape(measured, EX18_ORACLE_DIRECT_SEEDS[shape])).toMatchObject({ matches: true, failures: [] });
+      expect(measured.throughHoleCount).toBe(shape === 'C' ? 0 : 1);
+      // Reimporting a completed target cannot satisfy this pre-edit contract.
+      expect(compareEx18Shape(measured, EX18_ORACLE_EXPECTATIONS[shape]).matches).toBe(false);
+    } finally { ownedShape.delete(); }
+    expect(Uint8Array.from(bytes)).toEqual(original);
+  }, OCCT_TIMEOUT_MS);
+});

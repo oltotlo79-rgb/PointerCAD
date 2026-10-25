@@ -37,6 +37,7 @@
  */
 
 import * as THREE from 'three';
+import { createViewportLifetime, type ViewportLifetime } from '../viewport/viewportLifetime.js';
 
 /** タイルの一辺の画素数。§2.4.3 の決定どおり 512。 */
 export const PATTERN_TEXTURE_SIZE = 512;
@@ -423,6 +424,7 @@ export function patternRepeatFor(spacingMm: number): number {
 }
 
 const patternTextureCache = new Map<string, PatternTextureResult>();
+const pendingPatternTextures = new Map<THREE.Texture, ViewportLifetime>();
 
 /**
  * 柄の `CanvasTexture` を作る(環境に canvas があるときだけ)。同じ引数(柄の種類 +
@@ -490,9 +492,21 @@ export function createPatternTexture(kind: PatternKind, options: PatternCreateOp
 /** 使い回しの表からすべて捨てる(§4「three.js で作った…資源は必ず dispose() する」)。
  *  この後の `createPatternTexture` 呼び出しは、鍵が同じでも作り直す。 */
 export function disposePatternTextures(): void {
-  for (const result of patternTextureCache.values()) {
-    result.texture.dispose();
-    result.alphaTexture?.dispose();
-  }
+  const retired = [...patternTextureCache.values()];
   patternTextureCache.clear();
+  for (const result of retired) {
+    for (const texture of [result.texture, result.alphaTexture]) {
+      if (texture === null || pendingPatternTextures.has(texture)) continue;
+      const owner = createViewportLifetime();
+      owner.register('pattern texture', () => { texture.dispose(); });
+      pendingPatternTextures.set(texture, owner);
+    }
+  }
+  const errors: string[] = [];
+  for (const [texture, owner] of pendingPatternTextures) {
+    owner.dispose();
+    if (owner.pendingCount === 0) pendingPatternTextures.delete(texture);
+    else errors.push(...owner.errors);
+  }
+  if (errors.length !== 0) throw new Error(errors.join('; '));
 }

@@ -1,10 +1,12 @@
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { BoxParameters } from '../types.js';
+import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 
 /** OCCT の形状と、その形状を作るために確保した領域の解放手続き。 */
 export interface OcctShapeHandle {
   readonly shape: TopoDS_Shape;
+  readonly origins?: CurrentOriginIndex;
   delete(): void;
 }
 

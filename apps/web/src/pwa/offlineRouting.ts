@@ -19,12 +19,18 @@ export interface OfflineRoutingOptions {
   readonly locks: Pick<LockManager, 'request'>;
   readonly fetchResponse: typeof fetch;
 }
+interface ResponderEntry {
+  readonly promise: Promise<PreparedOfflineResponder>;
+  readonly controller?: AbortController;
+  users: number;
+  settled: boolean;
+}
 
 /** Route only app assets. Binding is committed before a document or its Worker can start.
  * There is deliberately no update of an existing client to another edition.
  */
 export class OfflineRouter {
-  private readonly responders = new Map<string, Promise<PreparedOfflineResponder>>();
+  private readonly responders = new Map<string, ResponderEntry>();
   private readonly base: URL;
   constructor(private readonly options: OfflineRoutingOptions) {
     this.base = new URL(options.baseUrl);
@@ -104,7 +110,7 @@ export class OfflineRouter {
       signal.throwIfAborted();
       try {
         const responder = await loadPreparedOfflineResponder(this.base, name, this.options.storage, signal);
-        this.responders.set(name, Promise.resolve(responder));
+        this.responders.set(name, { promise: Promise.resolve(responder), users: 0, settled: true });
         return name;
       } catch (error) {
         if (signal.aborted) throw error;
@@ -117,14 +123,36 @@ export class OfflineRouter {
   private async respondForBinding(binding: OfflineClientBinding, request: Request, assetUrl = new URL(request.url)): Promise<Response> {
     request.signal.throwIfAborted();
     if (binding.cacheName === OFFLINE_NETWORK_EDITION) return this.options.fetchResponse(request);
-    let pending = this.responders.get(binding.cacheName);
-    if (pending === undefined) {
-      pending = loadPreparedOfflineResponder(this.base, binding.cacheName, this.options.storage, request.signal);
-      this.responders.set(binding.cacheName, pending);
+    let entry = this.responders.get(binding.cacheName);
+    if (entry === undefined) {
+      const controller = new AbortController();
+      const promise = loadPreparedOfflineResponder(this.base, binding.cacheName, this.options.storage, controller.signal);
+      const created: ResponderEntry = { promise, controller, users: 0, settled: false };
+      entry = created;
+      this.responders.set(binding.cacheName, created);
+      void promise.then(() => { created.settled = true; }, () => {
+        created.settled = true;
+        if (this.responders.get(binding.cacheName) === created) this.responders.delete(binding.cacheName);
+      });
     }
+    const owned = entry;
+    owned.users += 1;
+    let rejectCancelled: (reason: unknown) => void = () => undefined;
+    const cancelled = new Promise<never>((_resolve, reject) => { rejectCancelled = reject; });
+    const abort = (): void => { rejectCancelled(request.signal.reason); };
+    request.signal.addEventListener('abort', abort, { once: true });
     let responder: PreparedOfflineResponder;
-    try { responder = await pending; }
-    catch (error) { this.responders.delete(binding.cacheName); throw error; }
+    try {
+      request.signal.throwIfAborted();
+      responder = await Promise.race([owned.promise, cancelled]);
+    } finally {
+      request.signal.removeEventListener('abort', abort);
+      owned.users -= 1;
+      if (owned.users === 0 && !owned.settled) {
+        if (this.responders.get(binding.cacheName) === owned) this.responders.delete(binding.cacheName);
+        owned.controller?.abort();
+      }
+    }
     return responder.respond(assetUrl, request.signal);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAutoSaver, createMemoryAutoSaveStorage, readDocumentBundle, type AutoSaver } from '@pointercad/io';
+import { encodeSaveDocument, createAutoSaver, createMemoryAutoSaveStorage, readDocumentBundle, type AutoSaver } from '@pointercad/io';
 import { createEmptyPartDocument } from '@pointercad/model';
 import { applyScriptCommands } from '../../../model/src/scripting/scriptCommands.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -13,7 +13,8 @@ describe('自動作図の成功だけを通常の控えへ保存して復元す�
     resetTestStore(); useAppStore.getState().cancelScript();
     const storage = createMemoryAutoSaveStorage(), pending = new Map<number, () => void>(), savers: AutoSaver[] = [];
     let serial = 0, now = Date.parse('2026-09-11T00:00:00Z');
-    const detach = startAutoSave({ storage, sessionId: 'script-recovery', createSaver: options => {
+    // WorkerのないNodeでも、控えの保存内容は実IOで検査する。
+    const detach = startAutoSave({ storage, sessionId: 'script-recovery', encodeSave: encodeSaveDocument, createSaver: options => {
       const saver = createAutoSaver({ ...options, now: () => now,
         setTimeout: callback => { const id = ++serial; pending.set(id, callback); return id; },
         clearTimeout: id => { if (typeof id === 'number') pending.delete(id); } });

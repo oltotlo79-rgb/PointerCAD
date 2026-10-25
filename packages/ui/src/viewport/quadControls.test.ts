@@ -1,3 +1,4 @@
+import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OrthographicCamera, PerspectiveCamera, Vector3 } from 'three';
 import { createAssemblyDocument } from '@pointercad/model';
@@ -7,7 +8,7 @@ import { startMate } from '../assembly/mateActions.js';
 import { FACE_REGIONS, interpolateOrbit, orbitStateForRegion } from '../viewcube/viewCubeMath.js';
 import { attachCameraControls } from './attachCameraControls.js';
 import { attachQuadInput } from './attachQuadInput.js';
-import { HOME_ORBIT, pan, type OrbitState } from './cameraMath.js';
+import { HOME_ORBIT, pan, zoom, type OrbitState } from './cameraMath.js';
 import { createQuadCameraState, resetQuadCamera, updateQuadCamera, type QuadCameraState } from './quadCamera.js';
 import { namedCameraFromOrbit, orbitFromNamedCamera } from './namedCamera.js';
 import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
@@ -20,7 +21,7 @@ function event(target: EventTarget, type: string, props: Record<string, unknown>
   }));
 }
 
-function setup() {
+function setup(readSettings: () => CameraControlSettings = () => DEFAULT_CAMERA_CONTROLS) {
   const windowTarget = new EventTarget();
   vi.stubGlobal('window', windowTarget);
   vi.stubGlobal('WheelEvent', { DOM_DELTA_LINE: 1, DOM_DELTA_PAGE: 2 });
@@ -46,7 +47,7 @@ function setup() {
     goHome: () => { if (quad !== null) quad = resetQuadCamera(quad); },
     viewportHeight: () => 300,
     canOrbit: () => quad?.active === 'isometric',
-  });
+  }, readSettings);
   return { canvas, controls, changed, interaction, captured, windowTarget,
     getQuad: () => quad!,
     enable: () => { quad = createQuadCameraState(controls.getOrbit()); },
@@ -275,5 +276,56 @@ describe('右ドラッグによる視点の平行移動', () => {
       event(app.canvas, 'keydown', { key: 'Home' });
       expect(app.controls.getOrbit()).toBe(HOME_ORBIT);
     } finally { app.detach(); }
+  });
+});
+
+describe('configured camera gestures at the actual dispatcher', () => {
+  it('normalizes wheel units and applies live sensitivity/inversion without remounting', () => {
+    let settings = DEFAULT_CAMERA_CONTROLS;
+    const app = setup(() => settings);
+    try {
+      event(app.canvas, 'wheel', { deltaMode: 1, deltaY: 2 });
+      expect(app.controls.getOrbit()).toEqual(zoom(HOME_ORBIT, 32));
+      settings = { ...settings, wheelSensitivity: 2, invertWheel: true };
+      const before = app.controls.getOrbit();
+      event(app.canvas, 'wheel', { deltaMode: 2, deltaY: 1 });
+      expect(app.controls.getOrbit()).toEqual(zoom(before, -200));
+      const after = app.controls.getOrbit();
+      event(app.canvas, 'wheel', { shiftKey: true });
+      expect(app.controls.getOrbit()).toBe(after);
+    } finally { app.detach(); }
+  });
+
+  it.each(['pointercancel', 'lostpointercapture', 'blur', 'detach'])('retains drag-start action/settings until %s and then releases ownership', end => {
+    let settings: CameraControlSettings = { ...DEFAULT_CAMERA_CONTROLS,
+      zoom: [{ input: 'left', alt: true, shift: true, ctrl: false, meta: false }], dragSensitivity: 2, invertDrag: true };
+    const app = setup(() => settings);
+    try {
+      event(app.canvas, 'pointerdown', { button: 0, buttons: 1, altKey: true, shiftKey: true });
+      expect(app.controls.isDragging()).toBe(true);
+      settings = DEFAULT_CAMERA_CONTROLS;
+      event(app.canvas, 'pointermove', { buttons: 1, clientY: 150 });
+      expect(app.controls.getOrbit()).toEqual(zoom(HOME_ORBIT, -20));
+      if (end === 'detach') app.controls.detach();
+      else event(end === 'blur' ? app.windowTarget : app.canvas, end);
+      expect(app.controls.isDragging()).toBe(false);
+      expect(app.captured.size).toBe(0);
+      const before = app.controls.getOrbit();
+      event(app.canvas, 'pointermove', { buttons: 1, clientY: 200 });
+      expect(app.controls.getOrbit()).toBe(before);
+    } finally { app.detach(); }
+  });
+
+  it('never claims Shift/Ctrl primary selection while claiming configured Alt-primary', () => {
+    const app = setup();
+    const selection = vi.fn(); app.canvas.addEventListener('pointerdown', selection);
+    try {
+      event(app.canvas, 'pointerdown', { button: 0, buttons: 1, shiftKey: true });
+      event(app.canvas, 'pointerdown', { button: 0, buttons: 1, ctrlKey: true });
+      expect(selection).toHaveBeenCalledTimes(2);
+      event(app.canvas, 'pointerdown', { button: 0, buttons: 1, altKey: true });
+      expect(selection).toHaveBeenCalledTimes(2);
+      expect(app.controls.isDragging()).toBe(true);
+    } finally { app.canvas.removeEventListener('pointerdown', selection); app.detach(); }
   });
 });

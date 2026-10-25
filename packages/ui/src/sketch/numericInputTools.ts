@@ -59,6 +59,8 @@ export type SolidToolId =
   */
   /** 抜き勾配(FR-417)。 */
   | 'draft'
+  /** 平らな面の移動(EX-18 の限られた一段)。 */
+  | 'faceOffset'
   /**
    * 立体のミラー(FR-419)。整形系の `mirror`(スケッチの鏡像複写、FR-324)と id が
    * ぶつかるので別の名前にしてある(`GUIDE_KEYS` も `isEditTool` も道具の id 1 本で
@@ -385,6 +387,8 @@ export type SolidNumericInputStep =
   */
   /** 抜き勾配の角度。 */
   | 'draftAngle'
+  /** 平らな面の移動の符号付きの距離。 */
+  | 'faceOffsetDistance'
   /** ミラーの鏡にする面。欄は持たない。 */
   | 'mirrorPlane'
   /** 移動/回転の 1 段目(X / Y / Z へ動かす量。**欄 3 つ**)。 */

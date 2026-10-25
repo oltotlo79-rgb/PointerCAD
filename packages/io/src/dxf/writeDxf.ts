@@ -54,7 +54,7 @@
  * 書かない)、レイヤーの並びは**実体に出てきた順**に固定しているため。
  */
 
-import { azimuthToEllipseParameter, sampleSpline, type Vec3 } from '@pointercad/model';
+import { azimuthToEllipseParameter, sampleSpline, splineCurveData, type ResolvedSpline, type Vec3 } from '@pointercad/model';
 
 import { dxfString, type DxfWriteEntity, type DxfWriteOptions } from './dxfDrawingTypes.js';
 
@@ -334,6 +334,26 @@ function writeEllipseEntity(entity: DxfEllipseEntity): DxfTag[] {
 }
 
 /**
+ * The sketch exporter adds `curveDegree` (1 or 3) and, for smooth function curves, `knots`. They are optional
+ * extras on the shared spline entity; malformed values are refused rather than dropped.
+ */
+function functionCurveShape(entity: DxfSplineEntity): { readonly degree?: 1 | 3; readonly knots?: readonly number[] } {
+  const degree: unknown = 'curveDegree' in entity ? entity.curveDegree : undefined;
+  const knots: unknown = 'knots' in entity ? entity.knots : undefined;
+  if (degree === undefined && knots === undefined) return {};
+  if ((degree !== 1 && degree !== 3) || (knots !== undefined && (!Array.isArray(knots) || degree !== 3))
+    || (degree === 3 && knots === undefined)) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+  const checked: number[] = [];
+  if (Array.isArray(knots)) {
+    for (const knot of knots) {
+      if (typeof knot !== 'number' || !Number.isFinite(knot)) throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+      checked.push(knot);
+    }
+  }
+  return degree === 1 ? { degree } : { degree, knots: checked };
+}
+
+/**
  * 自由曲線を折れ線へ落とす。**`sampleSpline`(`@pointercad/model`)で画面と同じ折れ線**を
  * 作る(このファイル冒頭の「評価関数を借りている理由」)。
  *
@@ -344,14 +364,20 @@ function writeEllipseEntity(entity: DxfEllipseEntity): DxfTag[] {
  *   (点が 1 つの曲線は形が決まらず、書いても読み直すと消えるため)。
  */
 function writeSplineEntity(entity: DxfSplineEntity): DxfTag[] {
-  const sampled = sampleSpline({
+  const spline: ResolvedSpline = {
     kind: 'spline',
-    // `featureId` は `sampleSpline` が見ない欄(曲線の形は点・方式・閉じかだけで決まる)。
+    // `featureId` は `sampleSpline` が見ない欄(曲線の形は点・方式・閉じか、関数曲線では次数と節点で決まる)。
     featureId: '',
     mode: entity.mode,
     points: entity.points.map((point): Vec3 => [point.x, point.y, 0]),
     closed: entity.closed,
-  });
+    ...functionCurveShape(entity),
+  };
+  // A function curve that cannot be evaluated is refused, never redrawn from its poles as a uniform spline.
+  if ((spline.degree !== undefined || spline.knots !== undefined) && splineCurveData(spline) === null) {
+    throw new Error(DXF_WRITE_INVALID_VALUE_MESSAGE);
+  }
+  const sampled = sampleSpline(spline);
   // 閉じた曲線の折れ線は先頭へ戻る点で終わるので、その 1 点を落としてから閉じる旗を立てる。
   const trimmed = entity.closed ? sampled.slice(0, -1) : sampled;
   if (trimmed.length < 2) {

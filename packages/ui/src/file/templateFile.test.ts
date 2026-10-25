@@ -1,5 +1,5 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { PCAD_TEMPLATE_KIND, readPcadFile, writePcadFile } from '@pointercad/io';
+import { encodeSaveDocument, PCAD_TEMPLATE_KIND, readPcadFile, writePcadFile, type SaveDocumentEncoder } from '@pointercad/io';
 import {
   absoluteCoordinate,
   appendFeature,
@@ -10,7 +10,7 @@ import {
   synchronizeConfigurations,
   type PartDocument,
 } from '@pointercad/model';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { FileGateway, PickedTypedFile } from './fileGateway.js';
 import {
@@ -23,6 +23,7 @@ import {
   templateIdOf,
   templateIdsToDrop,
   withTemplateExtension,
+  type StoredTemplate,
   type StoredTemplateSummary,
   type TemplateDeps,
 } from './templateFile.js';
@@ -68,7 +69,8 @@ function createFakeGateway(options: { readonly cancelSave?: boolean; readonly op
 }
 
 function createDeps(gateway: FakeGateway = createFakeGateway()): TemplateDeps {
-  return { gateway, storage: createMemoryTemplateStorage(), now: () => NOW };
+  // WorkerのないNodeでは、生成するJSON/ZIPは実IOへ明示注入する。
+  return { gateway, storage: createMemoryTemplateStorage(), now: () => NOW, encodeSave: encodeSaveDocument };
 }
 
 /** 検査で使うパラメータ 1 件(FR-207)。 */
@@ -380,5 +382,179 @@ describe('ひな形から新規(FR-814、§2.10)', () => {
     const outcome = readTemplateBytes(new Uint8Array([1, 2, 3]));
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.messageKey).toBe('file.error.corrupted');
+  });
+});
+
+describe('ひな形の非同期エンコードと保存順序', () => {
+  const request = () => ({ document: documentWithParametersAndHistory(), lengthUnit: 'inch' as const,
+    toolDefaults: DEFAULT_TOOL_DEFAULTS, name: '受け皿' });
+
+  it('実IOのJSONとZIPを待ち、棚とファイルへ同じバイトを保存する', async () => {
+    const gateway = createFakeGateway(), deps = createDeps(gateway);
+    let release: () => void = () => { throw new Error('encoding gate missing'); };
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const encode = vi.fn<SaveDocumentEncoder>(async (input, control) => { await gate; return encodeSaveDocument(input, control); });
+    const saving = saveTemplate({ ...deps, encodeSave: encode }, request());
+    expect(encode).toHaveBeenCalledOnce();
+    expect(await deps.storage.list()).toEqual([]);
+    expect(gateway.written).toEqual([]);
+    release(); expect((await saving).ok).toBe(true);
+    const input = encode.mock.calls[0][0];
+    if (input.kind !== 'part') throw new Error('not a part template');
+    expect(input.options.kind).toBe(PCAD_TEMPLATE_KIND);
+    expect(input.options.savedAt).toBe(NOW);
+    expect(input.options.attachments).toBeUndefined();
+    expect(input.options.thumbnailPng).toBeUndefined();
+    const stored = await deps.storage.get('受け皿');
+    expect(stored?.bytes).toBe(gateway.written[0].bytes);
+    expect(stored?.bytes).toEqual(writePcadFile(input.document, input.options));
+    expect(readTemplateBytes(gateway.written[0].bytes)).toMatchObject({ ok: true, lengthUnit: 'inch' });
+  });
+
+  it.each(['failure', 'cancel', 'stale'] as const)('圧縮中の%sでは正常な棚を上書きせず、ファイルを書かない', async mode => {
+    const deps = createDeps(), original = request();
+    await saveTemplate(deps, original);
+    const retained = await deps.storage.get('受け皿');
+    const gateway = createFakeGateway(), controller = new AbortController();
+    let current = true, release: () => void = () => { throw new Error('encoding gate missing'); };
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const encode: SaveDocumentEncoder = async (input, control) => {
+      await gate;
+      if (mode === 'failure') throw new Error('compression failed');
+      return encodeSaveDocument(input, control);
+    };
+    const saving = saveTemplate({ ...deps, gateway, encodeSave: encode }, { ...original, lengthUnit: 'mm' },
+      { signal: controller.signal, isCurrent: () => current });
+    if (mode === 'cancel') controller.abort();
+    if (mode === 'stale') current = false;
+    release();
+    expect((await saving).ok).toBe(false);
+    expect(await deps.storage.get('受け皿')).toBe(retained);
+    expect(gateway.written).toHaveLength(0);
+  });
+
+  it('棚へのputとpruneが完了してからファイルを書き出す', async () => {
+    const deps = createDeps(), events: string[] = [];
+    for (let index = 0; index < MAX_STORED_TEMPLATES; index++) {
+      await deps.storage.put({ id: `old-${index}`, name: `old-${index}`, savedAt: '2026-01-01T00:00:00Z',
+        bytes: writePcadFile(createEmptyPartDocument(), { kind: PCAD_TEMPLATE_KIND, savedAt: NOW }) });
+    }
+    let release: () => void = () => { throw new Error('put gate missing'); };
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const saving = saveTemplate({ ...deps,
+      storage: { ...deps.storage,
+        put: async record => { events.push('put'); await gate; await deps.storage.put(record); },
+        list: () => { events.push('list'); return deps.storage.list(); },
+        remove: id => { events.push('prune'); return deps.storage.remove(id); } },
+      gateway: { ...deps.gateway, saveFileAs: () => { events.push('file'); return Promise.resolve(true); } },
+    }, request(), { beginWriting: () => { events.push('writing'); return true; } });
+    await vi.waitFor(() => expect(events).toEqual(['writing', 'put']));
+    release(); expect((await saving).ok).toBe(true);
+    expect(events).toEqual(['writing', 'put', 'list', 'prune', 'file']);
+    expect(await deps.storage.list()).toHaveLength(MAX_STORED_TEMPLATES);
+  });
+
+  it('棚putの待ちで旧世代になったらpruneとファイル書出しへ進まない', async () => {
+    const deps = createDeps(), list = vi.fn(() => deps.storage.list()), remove = vi.fn((id: string) => deps.storage.remove(id));
+    let current = true, release: () => void = () => { throw new Error('put gate missing'); };
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const put = vi.fn(async (record: StoredTemplate) => { await gate; await deps.storage.put(record); });
+    const gateway = createFakeGateway();
+    const saving = saveTemplate({ ...deps, gateway, storage: { ...deps.storage, put, list, remove } }, request(),
+      { isCurrent: () => current });
+    await vi.waitFor(() => expect(put).toHaveBeenCalledOnce());
+    current = false; release();
+    expect(await saving).toEqual({ ok: false, cancelled: true });
+    expect(list).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled();
+    expect(gateway.written).toHaveLength(0);
+    expect(readTemplateBytes((await deps.storage.get('受け皿'))?.bytes ?? new Uint8Array()).ok).toBe(true);
+  });
+
+  it('ファイル書込失敗でも実ZIPを棚へ残し、再保存できる', async () => {
+    const deps = createDeps(), failedGateway = { ...deps.gateway, saveFileAs: () => Promise.reject(new Error('disk full')) };
+    expect(await saveTemplate({ ...deps, gateway: failedGateway }, request())).toEqual({ ok: false, messageKey: 'file.saveFailed' });
+    const stored = await deps.storage.get('受け皿');
+    expect(stored).not.toBeNull();
+    expect(readTemplateBytes(stored?.bytes ?? new Uint8Array()).ok).toBe(true);
+    expect((await saveTemplate(deps, request())).ok).toBe(true);
+  });
+
+  it('Workerのない環境で注入を省略しても同期保存へ代替しない', async () => {
+    expect(typeof Worker).toBe('undefined');
+    const deps = createDeps(), gateway = createFakeGateway();
+    expect(await saveTemplate({ gateway, storage: deps.storage }, request())).toEqual({ ok: false, messageKey: 'file.saveEncodingFailed' });
+    expect(await deps.storage.list()).toEqual([]);
+    expect(gateway.written).toHaveLength(0);
+  });
+});
+
+describe('independent template-derived lineage IDs', () => {
+  it('the same actual stored PCADT produces distinct documents without rewriting its source', async () => {
+    const gateway = createFakeGateway();
+    const deps = createDeps(gateway);
+    const original = documentWithParametersAndHistory();
+    await saveTemplate(deps, { document: original, lengthUnit: 'inch',
+      toolDefaults: DEFAULT_TOOL_DEFAULTS, name: 'Identity template' });
+    const storedBefore = await deps.storage.get('Identity template');
+    if (storedBefore === null) throw new Error('Actual template required');
+    const first = await newFromTemplate(deps, { from: 'stored', id: 'Identity template' });
+    const second = await newFromTemplate(deps, { from: 'stored', id: 'Identity template' });
+    if (!first.ok || !second.ok) throw new Error('Both actual template creations must succeed');
+    const format = /^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    expect(first.document.id).toMatch(format);
+    expect(second.document.id).toMatch(format);
+    expect(first.document.id).not.toBe(second.document.id);
+    expect(first.document.id).not.toBe(original.id);
+    expect(second.document).toEqual({ ...first.document, id: second.document.id });
+    expect(first.document.parameters).toEqual(original.parameters);
+    expect(first.lengthUnit).toBe('inch');
+    const storedAfter = await deps.storage.get('Identity template');
+    expect(storedAfter?.bytes).toEqual(storedBefore.bytes);
+    const parsed = readPcadFile(storedBefore.bytes);
+    if (!parsed.ok) throw new Error('Actual template must decode');
+    expect(parsed.document.id).toBe(original.id);
+    expect(gateway.clearCalls()).toBe(0);
+  });
+});
+
+describe('secure fallback for new documents from saved templates', () => {
+  it('real getRandomValues creates separate strict IDs without mutating saved template source identity', () => {
+    const source = { ...createEmptyPartDocument(), id: 'part-legacy-template' };
+    const bytes = writePcadFile(source, { kind: PCAD_TEMPLATE_KIND, savedAt: NOW });
+    const original = bytes.slice();
+    const entropy = globalThis.crypto;
+    vi.stubGlobal('crypto', { getRandomValues: entropy.getRandomValues.bind(entropy) });
+    try {
+      const first = readTemplateBytes(bytes);
+      const second = readTemplateBytes(bytes);
+      if (!first.ok || !second.ok) throw new Error('Actual template must decode twice');
+      expect(first.document.id).toMatch(/^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+      expect(second.document.id).not.toBe(first.document.id);
+      expect(first.document).toEqual({ ...createEmptyPartDocument(), id: first.document.id });
+      expect(bytes).toEqual(original);
+      const saved = readPcadFile(bytes);
+      if (!saved.ok) throw new Error('Original template must still decode');
+      expect(saved.document).toEqual(source);
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+describe('typed entropy refusal from actual template input', () => {
+  it('returns the existing failure outcome without changing source bytes or releasing the target', async () => {
+    const source = { ...createEmptyPartDocument(), id: 'part-legacy-notice' };
+    const bytes = writePcadFile(source, { kind: PCAD_TEMPLATE_KIND, savedAt: NOW });
+    const saved = bytes.slice();
+    const gateway = createFakeGateway({ open: bytes });
+    vi.stubGlobal('crypto', {});
+    try {
+      expect(readTemplateBytes(bytes)).toEqual({ ok: false, messageKey: 'command.unavailable.action' });
+      await expect(newFromTemplate(createDeps(gateway), { from: 'file' }))
+        .resolves.toEqual({ ok: false, messageKey: 'command.unavailable.action' });
+      expect(bytes).toEqual(saved);
+      expect(gateway.clearCalls()).toBe(0);
+      const decoded = readPcadFile(bytes);
+      if (!decoded.ok) throw new Error('Original template must still decode');
+      expect(decoded.document).toEqual(source);
+    } finally { vi.unstubAllGlobals(); }
   });
 });

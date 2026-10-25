@@ -366,11 +366,13 @@ describe('applicableConstraintKinds(ツールバーの活性)', () => {
     ]);
   });
 
-  it('線分 1 本のときは水平・垂直・固定・距離が並ぶ', () => {
+  it('線分 1 本のときは水平・垂直・固定・横距離・縦距離・距離が並ぶ', () => {
     expect(applicableConstraintKinds(oneLine(), ['line-1'])).toEqual([
       'horizontal',
       'vertical',
       'fix',
+      'horizontalDistance',
+      'verticalDistance',
       'distance',
     ]);
   });
@@ -383,10 +385,10 @@ describe('applicableConstraintKinds(ツールバーの活性)', () => {
     expect(applicableConstraintKinds(twoLines(), [])).toEqual([]);
   });
 
-  it('一覧の並びは 14 種の決め打ちの順', () => {
-    expect(CONSTRAINT_KIND_ORDER).toHaveLength(14);
+  it('一覧の並びは 18 種の決め打ちの順', () => {
+    expect(CONSTRAINT_KIND_ORDER).toHaveLength(18);
     expect(CONSTRAINT_KIND_ORDER[0]).toBe('coincident');
-    expect(CONSTRAINT_KIND_ORDER[13]).toBe('diameter');
+    expect(CONSTRAINT_KIND_ORDER[17]).toBe('diameter');
   });
 });
 

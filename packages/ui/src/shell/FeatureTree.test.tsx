@@ -1,20 +1,25 @@
 import React, { Children, isValidElement, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { addComponent, addSketch, createAssemblyDocument, createComponentFor, createFeatureFolder, createSketchFor, moveFeatureFolderMember, type PartDocument } from '@pointercad/model';
+import { absoluteCoordinate, addComponent, addSketch, appendFeature, appendSolid, createAssemblyDocument, createComponentFor, createEmptyPartDocument, createFeatureFolder, createPointFeature, createSketchFor, moveFeatureFolderMember, replaceSketch, type PartDocument } from '@pointercad/model';
 import { FeatureTree } from './FeatureTree.js';
 import { AssemblyTree } from './AssemblyTree.js';
 import { FeatureFolderTree } from '../history/FeatureFolderTree.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { partWithMixedFeatures, resetTestStore } from '../store/testing/createTestStore.js';
+import { extrudeFeature, partWithMixedFeatures, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
+import { connectSelectedPoints, selectedPointsConnection } from '../sketch/connectSelectedPoints.js';
 
 const renamedName = t('propertyPanel.sectionSelectionSets');
 const blurredName = t('featureTree.sketchGroup');
 
 // Node has no DOM. Preserve local hook state between renders and exercise the actual
 // returned controls and store actions. Native focus/Enter dispatch is covered by E2E.
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], refs: [] as { current: unknown }[], state: 0, ref: 0 }));
+const hooks = vi.hoisted(() => ({
+  values: [] as unknown[], refs: [] as { current: unknown }[], state: 0, ref: 0,
+  captureEffects: false,
+  effects: [] as Array<{ setup: () => void | (() => void); deps?: readonly unknown[] }>,
+}));
 vi.mock('react', async importOriginal => {
   const original = await importOriginal<typeof import('react')>();
   return {
@@ -31,7 +36,9 @@ vi.mock('react', async importOriginal => {
       if (index === hooks.refs.length) hooks.refs.push({ current: initial });
       return hooks.refs[index] as { current: T };
     },
-    useEffect: vi.fn(),
+    useEffect: (setup: () => void | (() => void), deps?: readonly unknown[]) => {
+      if (hooks.captureEffects) hooks.effects.push({ setup, deps });
+    },
     useLayoutEffect: vi.fn(),
   };
 });
@@ -55,10 +62,57 @@ function elements(node: ReactNode): Element[] {
 function render(component = FeatureTree): Element[] {
   hooks.state = 0;
   hooks.ref = 0;
+  hooks.effects = [];
   let tree: ReactNode = null;
   function Probe() { tree = component(); return null; }
   renderToStaticMarkup(React.createElement(Probe));
   return elements(tree);
+}
+
+/** Only the lifecycle cases opt in to the real effect setup/cleanup returned by FeatureTree. */
+function effectMount() {
+  hooks.captureEffects = true;
+  let active: Array<{ deps?: readonly unknown[]; cleanup?: void | (() => void) }> = [];
+  const rerender = () => {
+    const nodes = render();
+    const next = hooks.effects.map((effect, index) => {
+      const previous = active[index];
+      if (previous !== undefined && effect.deps !== undefined && previous.deps !== undefined &&
+        effect.deps.length === previous.deps.length && effect.deps.every((value, at) => Object.is(value, previous.deps?.[at]))) {
+        return previous;
+      }
+      previous?.cleanup?.();
+      return { deps: effect.deps, cleanup: effect.setup() };
+    });
+    active.slice(next.length).forEach(effect => effect.cleanup?.());
+    active = next;
+    return nodes;
+  };
+  const unmount = () => {
+    active.forEach(effect => effect.cleanup?.());
+    active = [];
+    hooks.captureEffects = false;
+  };
+  return { rerender, unmount };
+}
+
+function windowListeners() {
+  const listeners = new Map<string, Set<(event: never) => void>>();
+  const windowMock = {
+    innerWidth: 1440, innerHeight: 900,
+    document: { elementFromPoint: () => ({ closest: () => ({ getAttribute: () => '0' }) }) },
+    addEventListener(type: string, listener: (event: never) => void) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type)?.add(listener);
+    },
+    removeEventListener(type: string, listener: (event: never) => void) { listeners.get(type)?.delete(listener); },
+    dispatch(type: string, event: object) { for (const listener of listeners.get(type) ?? []) listener(event as never); },
+    latest(type: string) { return [...listeners.get(type) ?? []].at(-1); },
+    count() { return [...listeners.values()].reduce((total, entry) => total + entry.size, 0); },
+  };
+  vi.stubGlobal('window', windowMock);
+  vi.stubGlobal('Element', class {});
+  return windowMock;
 }
 function one(nodes: Element[], predicate: (element: Element) => boolean): Element {
   const matches = nodes.filter(predicate);
@@ -96,12 +150,160 @@ function groupedPart(): PartDocument {
 
 beforeEach(() => {
   hooks.values = []; hooks.refs = [];
+  hooks.captureEffects = false; hooks.effects = [];
   resetTestStore();
   useAppStore.getState().resetDocument(groupedPart());
   vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
   vi.stubGlobal('window', { innerWidth: 1440, innerHeight: 900 });
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); resetTestStore(); });
+
+describe('FeatureTree window listener lifetime', () => {
+  it.each(['shiftKey', 'ctrlKey'] as const)('%s selection does not start a timeline drag', modifier => {
+    const windowMock = windowListeners();
+    const mount = effectMount();
+    const nodes = mount.rerender();
+    const timelineRow = row(nodes, 'solid:extrude-1');
+    const down = timelineRow.props.onPointerDown as (event: object) => void;
+    const before = useAppStore.getState().document;
+    down({ button: 0, target: {}, clientX: 0, clientY: 0, [modifier]: true });
+    mount.rerender();
+    expect(windowMock.count()).toBe(0);
+    expect(useAppStore.getState().document).toBe(before);
+    mount.unmount();
+  });
+
+  it('attaches and cleans the real menu and drag effects for 100 mounts', () => {
+    const windowMock = windowListeners();
+    for (let iteration = 0; iteration < 100; iteration += 1) {
+      hooks.values = []; hooks.refs = [];
+      const mount = effectMount();
+      open(mount.rerender(), 'solid:extrude-1');
+      mount.rerender();
+      expect(windowMock.count()).toBe(2);
+      mount.unmount();
+      expect(windowMock.count()).toBe(0);
+    }
+  });
+
+  it('restores menu focus on Escape and ignores composition and a disposed listener', () => {
+    const windowMock = windowListeners();
+    const mount = effectMount();
+    const opener = open(mount.rerender(), 'solid:extrude-1');
+    mount.rerender();
+    const oldKeyDown = windowMock.latest('keydown');
+    windowMock.dispatch('keydown', { key: 'Escape', isComposing: true, keyCode: 229 });
+    expect(opener.focus).not.toHaveBeenCalled();
+    windowMock.dispatch('keydown', { key: 'Escape', isComposing: false, keyCode: 0 });
+    expect(opener.focus).toHaveBeenCalledOnce();
+    mount.rerender();
+    expect(windowMock.count()).toBe(0);
+    const second = open(mount.rerender(), 'solid:extrude-1');
+    mount.rerender();
+    oldKeyDown?.({ key: 'Escape', isComposing: false, keyCode: 0 } as never);
+    expect(second.focus).not.toHaveBeenCalled();
+    expect(mount.rerender().filter(element => element.props.role === 'menu')).toHaveLength(1);
+    mount.unmount();
+    expect(windowMock.count()).toBe(0);
+  });
+
+  it.each(['pointercancel', 'Escape', 'pointerup'] as const)('%s ends a drag with the expected single commit', ending => {
+    const windowMock = windowListeners();
+    const document = appendSolid(groupedPart(), extrudeFeature('extrude-2'));
+    useAppStore.getState().resetDocument(document);
+    const move = vi.spyOn(useAppStore.getState(), 'moveTimelineItem');
+    const mount = effectMount();
+    const nodes = mount.rerender();
+    const timelineRow = row(nodes, 'solid:extrude-2');
+    const down = timelineRow.props.onPointerDown as (event: object) => void;
+    down({ button: 0, target: {}, clientX: 0, clientY: 0 });
+    expect(windowMock.count()).toBe(0);
+    mount.rerender();
+    expect(windowMock.count()).toBe(4);
+    windowMock.dispatch('pointermove', { clientX: 20, clientY: 0 });
+    mount.rerender();
+    const latePointerUp = windowMock.latest('pointerup');
+    expect(useAppStore.getState().document).toBe(document);
+    if (ending === 'Escape') windowMock.dispatch('keydown', { key: 'Escape' });
+    else windowMock.dispatch(ending, {});
+    mount.rerender();
+    expect(move).toHaveBeenCalledTimes(ending === 'pointerup' ? 1 : 0);
+    const undoCount = useAppStore.getState().undoStack.past.length;
+    expect(undoCount).toBe(ending === 'pointerup' ? 1 : 0);
+    latePointerUp?.({} as never);
+    expect(move).toHaveBeenCalledTimes(ending === 'pointerup' ? 1 : 0);
+    expect(useAppStore.getState().undoStack.past).toHaveLength(undoCount);
+    mount.unmount();
+    expect(windowMock.count()).toBe(0);
+  });
+});
+
+describe('Point selection retains the actual tree sketch', () => {
+  it.each([
+    ['shiftKey', false], ['ctrlKey', false], ['shiftKey', true], ['ctrlKey', true],
+  ] as const)('%s selects two points in one sketch, foldered second point: %s', (modifier, foldered) => {
+    const empty = createEmptyPartDocument();
+    let sketch = empty.sketches[0];
+    sketch = appendFeature(sketch, createPointFeature(sketch, absoluteCoordinate(10, 20, 0)));
+    sketch = appendFeature(sketch, createPointFeature(sketch, absoluteCoordinate(30, 40, 0)));
+    let document = replaceSketch(empty, sketch);
+    if (foldered) {
+      document = createFeatureFolder(document, t('featureTree.sketchGroup'));
+      document = moveFeatureFolderMember(document,
+        { kind: 'sketch-feature', sketchId: sketch.id, id: 'point-2' }, 'folder-1');
+    }
+    const state = () => useAppStore.getState();
+    // A whole-document replacement followed by a successful recompute is the reopened-file path.
+    state().resetDocument(document);
+    state().recordRecomputeRequest(1);
+    state().applyRecompute(document, { ...resultFor(document), generation: 1 });
+    state().recordRecomputeCompletion(1, 'success');
+    const choose = (id: string, modified: boolean): void => {
+      const button = one(elements(row(render(), `sketch-feature:${sketch.id}:${id}`)),
+        element => element.props.className === 'pcad-tree__select');
+      const handler = button.props.onClick as React.MouseEventHandler<HTMLElement>;
+      const click = { shiftKey: modified && modifier === 'shiftKey', ctrlKey: modified && modifier === 'ctrlKey' } as React.MouseEvent<HTMLElement>;
+      handler(click);
+    };
+    choose('point-1', false);
+    choose('point-2', true);
+    expect(state().selection).toEqual(['point-1', 'point-2']);
+    expect(state().connectionSelection?.selection).toBe(state().selection);
+    expect([...state().connectionSelection?.endpoints.keys() ?? []]).toEqual(['point-1', 'point-2']);
+    expect(state().connectionSelection?.endpoints.get('point-1')).toMatchObject({ kind: 'point', sketchId: sketch.id });
+    expect(state().connectionSelection?.endpoints.get('point-2')).toMatchObject({ kind: 'point', sketchId: sketch.id });
+    expect(selectedPointsConnection().ready).toBe(true);
+  });
+
+  it.each(['shiftKey', 'ctrlKey'] as const)('%s does not reinterpret another sketch point with the same ID', modifier => {
+    const empty = createEmptyPartDocument();
+    let first = empty.sketches[0];
+    first = appendFeature(first, createPointFeature(first, absoluteCoordinate(10, 20, 0)));
+    first = appendFeature(first, createPointFeature(first, absoluteCoordinate(30, 40, 0)));
+    let document = replaceSketch(empty, first);
+    const second = { ...first, id: createSketchFor(document).id };
+    document = { ...addSketch(document, second), activeSketchId: first.id };
+    const state = () => useAppStore.getState();
+    state().resetDocument(document);
+    state().recordRecomputeRequest(1);
+    state().applyRecompute(document, { ...resultFor(document), generation: 1 });
+    state().recordRecomputeCompletion(1, 'success');
+    function choose(sketchId: string, pointId: string, modified: boolean) {
+      const button = one(elements(row(render(), `sketch-feature:${sketchId}:${pointId}`)),
+        element => element.props.className === 'pcad-tree__select');
+      const handler = button.props.onClick as React.MouseEventHandler<HTMLElement>;
+      handler({ shiftKey: modified && modifier === 'shiftKey', ctrlKey: modified && modifier === 'ctrlKey' } as React.MouseEvent<HTMLElement>);
+    }
+    choose(first.id, 'point-1', false);
+    choose(second.id, 'point-2', true);
+    expect(state().selection).toEqual(['point-1', 'point-2']);
+    expect(state().sketch.id).toBe(first.id);
+    const before = state();
+    expect(connectSelectedPoints().ready).toBe(false);
+    expect(state().document).toBe(before.document);
+    expect(state().undoStack).toBe(before.undoStack);
+  });
+});
 
 describe('Tree menu contents', () => {
   const common: MessageKey[] = ['featureTree.rename', 'historyNote.edit', 'historyFolder.moveTitle', 'featureTree.delete'];

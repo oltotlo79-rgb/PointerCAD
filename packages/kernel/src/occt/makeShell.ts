@@ -11,7 +11,7 @@ import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { matchFace } from './matchSubShape.js';
+import { resolveFaceReference } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, faceAt } from './subShapes.js';
@@ -146,11 +146,11 @@ function resolveOpenFaces(
       // 面以外の指紋が来るのは model 側の取り違えだが、利用者への直し方は同じ。
       throw new Error(MISSING_FACE_MESSAGE);
     }
-    const match = matchFace(tables.faces, query, scale);
-    if (match === null) {
+    const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
+    if (match.status !== 'matched') {
       throw new Error(MISSING_FACE_MESSAGE);
     }
-    found.add(match.index);
+    found.add(match.match.index);
   }
   return [...found].sort((left, right) => left - right);
 }

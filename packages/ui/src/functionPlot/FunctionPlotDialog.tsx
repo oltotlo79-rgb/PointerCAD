@@ -206,8 +206,8 @@ export function FunctionPlotDialog({ featureId, onClose }: {
         <div className="pcad-function-actions">
           <button title={t('functionPlot.control.help')} type="button" onClick={() => useAppStore.getState().openHelpTopic(surface ? 'function-surface' : 'function-curve')}>{t(surface ? 'functionPlot.surfaceHelp' : 'functionPlot.help')}</button>
           <button title={t('functionPlot.control.cancelPlot')} type="button" onClick={close}>{t('math.cancel')}</button>
-          {busy ? <button title={t('functionPlot.control.stopPlot')} type="button" onClick={() => { running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
-            : <button title={t('functionPlot.control.previewPlot')} type="submit">{t('functionPlot.preview')}</button>}
+          {busy ? <button key="stop" title={t('functionPlot.control.stopPlot')} type="button" onClick={event => { event.preventDefault(); running.current?.abort(); setBusy(false); }}>{t('functionPlot.stop')}</button>
+            : <button key="submit" title={t('functionPlot.control.previewPlot')} type="submit">{t('functionPlot.preview')}</button>}
           <button title={t('functionPlot.control.applyPlot')} type="button" disabled={busy || !displayed || preview === null || preview.draft !== draft} onClick={() => {
             if (!displayed || preview === null || preview.draft !== draft || !isCurrent()) return;
             useAppStore.getState().applyDocument(preview.document); close();

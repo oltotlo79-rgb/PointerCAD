@@ -1,12 +1,13 @@
-/** Read every surviving linear B-spline knot after actual XYZ clipping, without resampling. */
+/** Read every surviving linear knot or smooth span after actual XYZ clipping, without resampling. */
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import type { SplineCurveSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { borrowHandle } from './borrowHandle.js';
 import { makeFunctionCurve, type FunctionCurveGeometrySpec } from './makeFunctionCurve.js';
+import { readFunctionCurveSplineEdge, type FunctionCurveSplineCurve } from './functionCurveSpline.js';
 
 export type FunctionCurveSketchResult =
-  | { readonly status: 'ready'; readonly curves: readonly SplineCurveSpec[] }
+  | { readonly status: 'ready'; readonly curves: readonly (SplineCurveSpec | FunctionCurveSplineCurve)[] }
   | { readonly status: 'cancelled' }
   | { readonly status: 'failed'; readonly message: string };
 
@@ -20,7 +21,7 @@ export function functionCurvePolylines(oc: OpenCascadeInstance, spec: FunctionCu
     keep(result);
     const map = keep(new oc.TopTools_IndexedMapOfShape_1());
     oc.TopExp.MapShapes_2(result.shape, map, true, true);
-    const curves: SplineCurveSpec[] = [];
+    const curves: (SplineCurveSpec | FunctionCurveSplineCurve)[] = [];
     let total = 0;
     for (let index = 1; index <= map.Size(); index++) {
       if (isCancelled()) return { status: 'cancelled' };
@@ -45,6 +46,14 @@ export function functionCurvePolylines(oc: OpenCascadeInstance, spec: FunctionCu
         }
         if (edge.Orientation_1() === oc.TopAbs_Orientation.TopAbs_REVERSED) points.reverse();
         curves.push({ kind: 'spline', mode: 'control', closed: false, points });
+        continue;
+      }
+      if (spec.splines !== undefined && adaptor.GetType() === oc.GeomAbs_CurveType.GeomAbs_BSplineCurve && Number(adaptor.Degree()) === 3) {
+        // Only certified smooth components were built as cubics; read the clipped native curve itself.
+        const smooth = readFunctionCurveSplineEdge(oc, adaptor, first, last,
+          edge.Orientation_1() === oc.TopAbs_Orientation.TopAbs_REVERSED, keep);
+        if ((total += smooth.points.length) > 200_000) throw new Error('切断後の関数曲線の点数が上限を超えています。範囲または精度を見直してください。');
+        curves.push(smooth);
         continue;
       }
       const parameters = [first];

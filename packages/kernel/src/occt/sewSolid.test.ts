@@ -429,3 +429,203 @@ describe('面を縫い合わせて立体にする', () => {
     );
   });
 });
+
+describe('EX18 W14: borrowed curved faces', () => {
+  let oc: OpenCascadeInstance;
+  let support: typeof import('./sewSolidFaces.testSupport.js');
+  let sew: typeof import('./sewSolid.js');
+  let vi: typeof import('vitest')['vi'];
+  let stdout: typeof import('node:process')['stdout'];
+
+  beforeAll(async () => {
+    oc = await loadOcctForNode();
+    support = await import('./sewSolidFaces.testSupport.js');
+    sew = await import('./sewSolid.js');
+    ({ vi } = await import('vitest'));
+    ({ stdout } = await import('node:process'));
+  });
+
+  function input(faces: readonly ReturnType<typeof support.cylinderFaces>['faces'][number][]) {
+    return { faces: faces.map(face => ({ ownership: 'borrowed' as const, face })), tolerance: 1e-7 };
+  }
+
+  function assertBorrowed(shapes: readonly TopoDS_Shape[], name: string, operation: () => void): void {
+    const before = support.brepSnapshots(oc, shapes);
+    const deletes = shapes.map(shape => vi.spyOn(shape, 'delete'));
+    const owned = support.observeSewAllocations(oc);
+    try {
+      try { operation(); } finally { owned.stop(); }
+      expect(owned.records.length).toBeGreaterThan(0);
+      expect(owned.records.every(record => record.deletes === 1)).toBe(true);
+      expect(new Set(owned.records.map(record => record.item)).size).toBe(owned.records.length);
+      const after = support.brepSnapshots(oc, shapes);
+      expect(after).toEqual(before);
+      for (const spy of deletes) expect(spy).not.toHaveBeenCalled();
+      stdout.write(`EX18 W14 ownership: ${JSON.stringify({ name, before, after,
+        borrowedDeletes: deletes.map(spy => spy.mock.calls.length),
+        allocations: owned.records.length, released: owned.records.filter(record => record.deletes === 1).length,
+      })}${String.fromCharCode(10)}`);
+    } finally {
+      owned.stop();
+      for (const spy of deletes) spy.mockRestore();
+    }
+  }
+
+  function assertCylinder(fixture: ReturnType<typeof support.cylinderFaces>): void {
+    const result = sew.sewSolidFaces(oc, input(fixture.faces));
+    try {
+      const expected = Math.PI * fixture.radius ** 2 * fixture.height;
+      const relativeError = Math.abs(result.volume - expected) / expected;
+      expect(relativeError).toBeLessThanOrEqual(1e-9);
+      expect(Math.abs(measureVolume(oc, result.shape) - expected) / expected).toBeLessThanOrEqual(1e-9);
+      expect(result.shape.ShapeType()).toBe(oc.TopAbs_ShapeEnum.TopAbs_SOLID);
+      expect(countShells(oc, result.shape)).toBe(1);
+      expect(isValidShape(oc, result.shape)).toBe(true);
+      expect(result.freeEdgeCount).toBe(0);
+      expect(support.freeEdges(oc, result.shape)).toBe(0);
+      stdout.write(`EX18 W14 cylinder: ${JSON.stringify({ volume: result.volume, expected,
+        relativeError, solids: 1, shells: 1, freeEdges: 0 })}${String.fromCharCode(10)}`);
+    } finally { result.delete(); result.delete(); }
+  }
+
+  it('sews independent cylinder side + two ends into exactly one closed solid', () => {
+    const fixture = support.cylinderFaces(oc);
+    try {
+      // 各面は単独では自由辺を持つ。完成した solid を入口へ渡す検査ではない。
+      expect(fixture.faces.map(face => support.freeEdges(oc, face))).toEqual([2, 1, 1]);
+      assertBorrowed([...fixture.faces, fixture.source], 'closed + reuse', () => {
+        assertCylinder(fixture);
+        assertCylinder(fixture);
+      });
+    } finally { fixture.delete(); }
+  });
+
+  it.each(['open-shell', 'duplicate-face', 'multiple-shells'] as const)('rejects %s with no result, retaining all borrowed B-reps', reason => {
+    const fixture = support.cylinderFaces(oc);
+    const other = support.cylinderFaces(oc, 3, 8, [20, 0, 0]);
+    try {
+      const faces = reason === 'open-shell' ? fixture.faces.slice(0, 2)
+        : reason === 'duplicate-face' ? [...fixture.faces, fixture.faces[1]]
+          : [...fixture.faces, ...other.faces];
+      const results: import('./sewSolid.js').SewFacesResult[] = [];
+      assertBorrowed([...fixture.faces, fixture.source, ...other.faces, other.source], reason, () => {
+        try {
+          expect(() => results.push(sew.sewSolidFaces(oc, input(faces)))).toThrowError(
+            expect.objectContaining({ name: 'SewFacesError', reason }),
+          );
+          expect(results).toHaveLength(0);
+        } finally { for (const result of results) result.delete(); }
+        // 拒否した同じ入力の面を再利用でき、後続の成功でも借用元は変わらない。
+        assertCylinder(fixture);
+      });
+    } finally { other.delete(); fixture.delete(); }
+  });
+
+  it.each(['copy', 'add', 'perform', 'solid'] as const)('releases intermediates on a %s exception and can reuse the input', stage => {
+    const fixture = support.cylinderFaces(oc);
+    const failure = new Error(`injected ${stage} failure`);
+    try {
+      assertBorrowed([...fixture.faces, fixture.source], `exception:${stage}`, () => {
+        const failing = stage === 'copy' ? vi.spyOn(oc.BRepBuilderAPI_Copy.prototype, 'Shape')
+          : stage === 'add' ? vi.spyOn(oc.BRepBuilderAPI_Sewing.prototype, 'Add')
+            : stage === 'perform' ? vi.spyOn(oc.BRepBuilderAPI_Sewing.prototype, 'Perform')
+              : vi.spyOn(oc.BRepBuilderAPI_MakeSolid.prototype, 'Solid');
+        failing.mockImplementationOnce(() => { throw failure; });
+        try { expect(() => sew.sewSolidFaces(oc, input(fixture.faces))).toThrow(failure); }
+        finally { failing.mockRestore(); }
+        assertCylinder(fixture);
+      });
+    } finally { fixture.delete(); }
+  });
+
+  it('rejects an orientation-reversed alias of the same face as duplicate', async () => {
+    const { createAllocations } = await import('./allocations.js');
+    const fixture = support.cylinderFaces(oc);
+    const { keep, release } = createAllocations();
+    try {
+      const reversed = keep(oc.TopoDS.Face_1(keep(fixture.faces[1].Reversed())));
+      assertBorrowed([...fixture.faces, reversed, fixture.source], 'reversed alias', () => {
+        expect(() => sew.sewSolidFaces(oc, input([...fixture.faces, reversed]))).toThrowError(
+          expect.objectContaining({ reason: 'duplicate-face' }),
+        );
+      });
+    } finally { release(); fixture.delete(); }
+  });
+
+  it('rejects missing faces and nonfinite or nonpositive tolerances before OCCT sewing', () => {
+    const fixture = support.cylinderFaces(oc);
+    try {
+      expect(() => sew.sewSolidFaces(oc, input([]))).toThrowError(expect.objectContaining({ reason: 'insufficient-faces' }));
+      for (const tolerance of [0, -1, Infinity, NaN]) {
+        expect(() => sew.sewSolidFaces(oc, { ...input(fixture.faces), tolerance })).toThrowError(
+          expect.objectContaining({ reason: 'invalid-tolerance' }),
+        );
+      }
+    } finally { fixture.delete(); }
+  });
+
+  it('routes cached face queries through recomputeSolids and preserves the source after success and refusal', async () => {
+    const { recomputeSolids } = await import('../worker/recomputeSolids.js');
+    const { createShapeCache } = await import('../worker/shapeCache.js');
+    const cache = createShapeCache<import('../worker/recomputeSolids.js').CachedSolid>();
+    const source: import('../types.js').SolidStepRequest = {
+      id: 'source', key: 'source-key', label: '円筒の元', visible: true,
+      step: { kind: 'primitive', shape: { kind: 'cylinder', radius: 3, height: 8 },
+        origin: [0, 0, 0], axis: [0, 0, 1], originQuery: null, targetKey: null },
+    };
+    try {
+      const first = await recomputeSolids({ oc, cache }, { steps: [source], generation: 1 });
+      expect(first.failures).toEqual([]);
+      const target = cache.get(source.key);
+      if (target === undefined) throw new Error('Source cylinder is missing');
+      const faces = target.mesh.faces.map(face => ({
+        targetKey: source.key,
+        query: { kind: 'face' as const, index: face.index, surfaceKind: face.surfaceKind,
+          area: face.area, position: face.centroid, axis: face.axis, radius: face.radius },
+      }));
+      expect(faces).toHaveLength(3);
+      const before = support.brepSnapshots(oc, [target.shape]);
+      const sourceDelete = vi.spyOn(target, 'delete');
+      const shapeDelete = vi.spyOn(target.shape, 'delete');
+      try {
+        const spec: import('../types.js').SewFacesStepSpec = { kind: 'sew', faces, tolerance: 1e-7 };
+        const request: import('../types.js').SolidStepRequest = {
+          id: 'sewn', key: 'sewn-key', label: '曲面縫合', visible: true, step: spec,
+        };
+        const result = await recomputeSolids({ oc, cache }, {
+          steps: [{ ...source, visible: false }, request], generation: 2,
+        });
+        expect(result.failures).toEqual([]);
+        expect(result.bodies).toHaveLength(1);
+        expect(result.bodies[0].bodyKind).toBe('solid');
+        expect(Math.abs(result.bodies[0].volume - 72 * Math.PI) / (72 * Math.PI)).toBeLessThanOrEqual(1e-9);
+        expect(support.brepSnapshots(oc, [target.shape])).toEqual(before);
+        const sewn = cache.get(request.key);
+        if (sewn === undefined) throw new Error('Sewn cylinder is missing');
+        expect(support.freeEdges(oc, sewn.shape)).toBe(0);
+        for (const invalidFaces of [faces.slice(0, 2), [...faces, faces[1]], [
+          { targetKey: source.key, query: { kind: 'vertex' as const, index: 0, position: [0, 0, 0] as const } },
+        ]]) {
+          const invalid = await recomputeSolids({ oc, cache }, {
+            steps: [{ ...source, visible: false }, { ...request, key: 'invalid-key',
+              step: { kind: 'sew', faces: invalidFaces, tolerance: 1e-7 } }], generation: 3,
+          });
+          expect(invalid.bodies).toHaveLength(0);
+          expect(invalid.failures).toHaveLength(1);
+          expect(invalid.failures[0].message.length).toBeGreaterThan(0);
+          expect(cache.has('invalid-key')).toBe(false);
+          expect(support.brepSnapshots(oc, [target.shape])).toEqual(before);
+        }
+        const again = await recomputeSolids({ oc, cache }, {
+          steps: [{ ...source, visible: false }, { ...request, key: 'sewn-again' }], generation: 4,
+        });
+        expect(again.failures).toEqual([]);
+        expect(again.bodies).toHaveLength(1);
+        expect(again.bodies[0].volume).toBe(result.bodies[0].volume);
+        expect(support.brepSnapshots(oc, [target.shape])).toEqual(before);
+        expect(sourceDelete).not.toHaveBeenCalled();
+        expect(shapeDelete).not.toHaveBeenCalled();
+      } finally { sourceDelete.mockRestore(); shapeDelete.mockRestore(); }
+    } finally { cache.clear(); }
+  });
+});

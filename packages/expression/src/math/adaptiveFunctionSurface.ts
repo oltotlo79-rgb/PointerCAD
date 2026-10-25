@@ -43,6 +43,17 @@ export type FunctionSurfaceSamplingResult =
   | { readonly status: 'empty' | 'degenerate'; readonly stats: FunctionSurfaceStats }
   | { readonly status: 'stopped'; readonly reason: StopReason; readonly stats: FunctionSurfaceStats };
 interface Sample { readonly vertex: FunctionSurfaceVertex; readonly error: number }
+/** Read-only evidence from this completed sampler invocation; never transferred or shared between requests. */
+export type FunctionSurfaceSampleLookup = (grid: SurfaceParameter) => Readonly<Sample> | undefined;
+/**
+ * Leaves of a single conforming patch over the whole request rectangle, reported only when the surface was sampled
+ * without any condition, cut, covered omission or periodic/pole topology (nothing excluded inside the rectangle
+ * except cells proved outside the XYZ box). `parameter` is the exact grid-to-parameter map the vertices used.
+ */
+export interface FunctionSurfaceLeafObserver {
+  readonly leaves: (leaves: readonly SurfaceLeaf[], parameter: (index: number, axis: 0 | 1) => number,
+    knownSample: FunctionSurfaceSampleLookup) => void;
+}
 function budget(value: number, minimum: number, maximum: number): boolean {
   return Number.isSafeInteger(value) && value >= minimum && value <= maximum;
 }
@@ -87,7 +98,8 @@ function restrictSurface(evaluator: FunctionSurfaceEvaluator, domain: ScalarCond
 }
 
 /** No partial mesh on cancellation, unresolved domains, resource exhaustion or unverifiable precision. */
-export function sampleFunctionSurface(evaluator: FunctionSurfaceEvaluator, options: FunctionSurfaceOptions): FunctionSurfaceSamplingResult {
+export function sampleFunctionSurface(evaluator: FunctionSurfaceEvaluator, options: FunctionSurfaceOptions,
+  observer?: FunctionSurfaceLeafObserver): FunctionSurfaceSamplingResult {
   if (!validOptions(options)) throw new RangeError('有限のXYZ範囲・2つの媒介範囲・精度と分割上限を指定してください。');
   const stop = options.shouldStop?.();
   if (stop !== undefined) return { status: 'stopped', reason: stop, stats: { samples: 0, cells: 0, triangles: 0 } };
@@ -101,7 +113,11 @@ export function sampleFunctionSurface(evaluator: FunctionSurfaceEvaluator, optio
     if (conditions !== null) return sampleSurfacePatch(drawn, options, initial, true, conditions);
   }
   if (initial.every(range => range.continuous) || !initial.some(range => scalarIntervalBoundaries(range).length > 0)) {
-    return sampleSurfacePatch(drawn, options, initial, true);
+    // Only an unconditioned, uncut patch with no seam or pole topology may expose its leaves for smoothing.
+    const plain = options.domain === undefined && initial.every(range => range.continuous)
+      && (options.boundary === undefined || (!options.boundary.periodic.some(Boolean)
+        && !options.boundary.poles.some(pair => pair.some(Boolean))));
+    return sampleSurfacePatch(drawn, options, initial, true, null, plain ? observer : undefined);
   }
   const vertices: FunctionSurfaceVertex[] = [], triangles: (readonly [number, number, number])[] = [];
   let cells = 0, samples = 0, maximumInterpolationErrorBound = 0;
@@ -201,7 +217,8 @@ const COVER_RINGS = 6;
  * is part of the reported bound. Triangles never join two branches or cross outside the condition.
  */
 function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: FunctionSurfaceOptions,
-  initial: FunctionPointRanges, initialStopChecked = false, conditions: FunctionConditionDomain | null = null): FunctionSurfaceSamplingResult {
+  initial: FunctionPointRanges, initialStopChecked = false, conditions: FunctionConditionDomain | null = null,
+  observer?: FunctionSurfaceLeafObserver): FunctionSurfaceSamplingResult {
   // One extra integer bit keeps leaf centres integral at the maximum permitted depth.
   const gridSize = 2**(options.maximumDepth+1), cache = new Map<string, Sample | null>(), leaves: SurfaceLeaf[] = [];
   const vertices: FunctionSurfaceVertex[] = [], triangles: [number, number, number][] = [], vertexIndexes = new Map<string, number>();
@@ -440,6 +457,10 @@ function sampleSurfacePatch(evaluator: FunctionSurfaceEvaluator, options: Functi
       : cover.distance === 0 && vertex.error === 0 ? 0 : nextFloat(cover.distance+vertex.error, 1);
     if (total > options.tolerance) return stopped('roundoff');
     maximumInterpolationErrorBound = Math.max(maximumInterpolationErrorBound, total);
+  }
+  if (observer !== undefined && conditions === null && covers.length === 0 && options.boundary?.periodic.some(Boolean) !== true) {
+    // The patch is complete: expose only reads of its existing samples, never a sampling callback.
+    observer.leaves(leaves, (index, axis) => parameter(index, axis), grid => cache.get(key(grid)) ?? undefined);
   }
   return { status: 'ready', vertices, triangles, maximumInterpolationErrorBound, stats: stats() };
 }

@@ -1,4 +1,5 @@
 import { SectionViewSection } from '../solid/SectionViewSection.js';
+import { ReferenceRepairSection } from '../solid/referenceRepairPanel.js';
 import { SelectionSetSection } from '../solid/SelectionSetSection.js';
 import { CanvasSection } from '../sketch/CanvasSection.js';
 import { PrintCheckSection } from '../solid/PrintCheckSection.js';
@@ -2008,6 +2009,7 @@ export function PropertyPanel(): React.JSX.Element {
         </div>
       ) : (
       <div className="pcad-panel__body">
+        <ReferenceRepairSection />
         {showMathGeometry ? <MathGeometryPanel /> : null}
         {feature !== null ? (
           <FeatureProperties key={feature.id} feature={feature} />

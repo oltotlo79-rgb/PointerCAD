@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { crc32, deflateSync, inflateSync } from 'node:zlib';
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { applicationInputDigest, CAPTURE_SCREEN_REQUIREMENTS, classifyCaptureViewport } from '../../scripts/manual/captureRegistry.mjs';
 import { sourceFileHash } from '../../scripts/release/desktopFileInventory.mjs';
@@ -9,6 +10,145 @@ import { readRecomputeStats, waitForSettledRecompute } from './recompute.js';
 import { assertRenderedControlDescriptions } from './controlDescriptions.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+
+interface CaptureDiagnosticEvent {
+  readonly kind: 'render' | 'canvas-resize' | 'window-resize' | 'window-scroll' | 'panel-scroll' | 'pointer';
+  readonly atMs: number;
+  readonly before?: number | null;
+  readonly after?: number | null;
+  readonly scheduledAtMs?: number;
+  readonly scheduleStack?: string;
+  readonly executionStack?: string;
+  /** Pointer events only: the event, where it was, whether the browser marked it trusted, and the element it reached. */
+  readonly type?: string;
+  readonly clientX?: number;
+  readonly clientY?: number;
+  readonly trusted?: boolean;
+  readonly target?: string;
+  readonly canvas: {
+    readonly clientWidth: number;
+    readonly clientHeight: number;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  } | null;
+  readonly scrollX: number;
+  readonly scrollY: number;
+  readonly panelScrollTop: number | null;
+}
+
+interface CaptureDiagnosticReport {
+  readonly events: readonly CaptureDiagnosticEvent[];
+  readonly dropped: number;
+}
+
+declare global {
+  interface Window {
+    pcadCaptureDiagnostic?: { stop: () => CaptureDiagnosticReport };
+  }
+}
+
+/** Temporary observation only; it does not request a draw or alter screenshot assertions. */
+async function startCaptureDiagnostic(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    if (window.pcadCaptureDiagnostic !== undefined) throw new Error('Capture diagnostic is already active');
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const events: CaptureDiagnosticEvent[] = [];
+    let dropped = 0;
+    let active = true;
+    const panel = document.querySelector<HTMLElement>('.pcad-panel--right');
+    const canvas = document.querySelector<HTMLCanvasElement>('canvas.pcad-viewport__canvas');
+    const record = (event: Omit<CaptureDiagnosticEvent, 'atMs' | 'canvas' | 'scrollX' | 'scrollY' | 'panelScrollTop'>): void => {
+      if (events.length >= 128) { dropped += 1; return; }
+      const currentCanvas = document.querySelector<HTMLCanvasElement>('canvas.pcad-viewport__canvas');
+      const bounds = currentCanvas?.getBoundingClientRect();
+      events.push({ ...event, atMs: performance.now(),
+        canvas: currentCanvas === null || bounds === undefined ? null : {
+          clientWidth: currentCanvas.clientWidth, clientHeight: currentCanvas.clientHeight,
+          x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
+        },
+        scrollX: window.scrollX, scrollY: window.scrollY, panelScrollTop: panel?.scrollTop ?? null });
+    };
+    const tracedRequestAnimationFrame = (callback: FrameRequestCallback): number => {
+      const scheduledAtMs = performance.now();
+      const scheduleStack = new Error().stack?.slice(0, 1_600) ?? '';
+      return originalRequestAnimationFrame.call(window, timestamp => {
+        if (!active) { callback(timestamp); return; }
+        const before = window.pcadViewportRenderStats?.().completedRenders ?? null;
+        try { callback(timestamp); }
+        finally {
+          const after = window.pcadViewportRenderStats?.().completedRenders ?? null;
+          if (before !== after) record({ kind: 'render', before, after, scheduledAtMs, scheduleStack,
+            executionStack: new Error().stack?.slice(0, 1_600) ?? '' });
+        }
+      });
+    };
+    const observer = canvas === null ? null : new ResizeObserver(() => { record({ kind: 'canvas-resize' }); });
+    const onWindowResize = (): void => { record({ kind: 'window-resize' }); };
+    const onWindowScroll = (): void => { record({ kind: 'window-scroll' }); };
+    const onPanelScroll = (): void => { record({ kind: 'panel-scroll' }); };
+    // Pointer events the test never sends while capturing (e.g. from the desktop's own cursor), seen at the window first.
+    const pointerTypes = ['pointerover', 'pointerout', 'pointerleave', 'pointermove'];
+    const onPointer = (event: Event): void => {
+      if (!(event instanceof PointerEvent)) return;
+      const element = event.target instanceof Element ? event.target : null;
+      const className = element?.classList.item(0) ?? null;
+      record({ kind: 'pointer', type: event.type, clientX: event.clientX, clientY: event.clientY, trusted: event.isTrusted,
+        target: element === null ? String(event.target) : `${element.tagName.toLowerCase()}${className === null ? '' : `.${className}`}` });
+    };
+    const stop = (): CaptureDiagnosticReport => {
+      active = false;
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+      observer?.disconnect();
+      window.removeEventListener('resize', onWindowResize);
+      window.removeEventListener('scroll', onWindowScroll);
+      panel?.removeEventListener('scroll', onPanelScroll);
+      for (const type of pointerTypes) window.removeEventListener(type, onPointer, { capture: true });
+      delete window.pcadCaptureDiagnostic;
+      return { events, dropped };
+    };
+    try {
+      window.requestAnimationFrame = tracedRequestAnimationFrame;
+      if (canvas !== null) observer?.observe(canvas);
+      window.addEventListener('resize', onWindowResize);
+      window.addEventListener('scroll', onWindowScroll, { passive: true });
+      panel?.addEventListener('scroll', onPanelScroll, { passive: true });
+      for (const type of pointerTypes) window.addEventListener(type, onPointer, { capture: true, passive: true });
+      window.pcadCaptureDiagnostic = { stop };
+    } catch (error) {
+      stop();
+      throw error;
+    }
+  });
+}
+
+async function stopCaptureDiagnostic(page: Page): Promise<CaptureDiagnosticReport> {
+  return page.evaluate(() => window.pcadCaptureDiagnostic?.stop() ?? { events: [], dropped: 0 });
+}
+
+/**
+ * PCAD_CAPTURE_DIAG=1 records anywhere and =0 nowhere. Unset, it records only in the Linux CI, the one place where the
+ * 3D view has drawn while capturing (see dialogImageFromScreen), so that the next such capture leaves its cause in the
+ * log (captureDiagnosticSummary) and in the test output (`<name>-screen-diagnostic.json`; on a failure also every
+ * attempt's two images). Observing never requests a drawing and never changes what a capture must satisfy.
+ */
+function captureDiagnosticEnabled(): boolean {
+  const setting = process.env.PCAD_CAPTURE_DIAG;
+  return setting === '1' || (setting !== '0' && process.platform === 'linux' && process.env.CI === 'true');
+}
+
+/** One log line for a capture during which the 3D view drew or pointer events arrived, else null (the JSON has the rest). */
+function captureDiagnosticSummary(screenName: string, report: CaptureDiagnosticReport): string | null {
+  const notable = report.events.filter(event => event.kind === 'render' || event.kind === 'pointer');
+  if (notable.length === 0) return null;
+  const shown = notable.slice(0, 16).map(event => (event.kind === 'render'
+    ? `render ${String(event.before)}->${String(event.after)}`
+    : `${event.type ?? 'pointer'}(${String(event.clientX)},${String(event.clientY)})${event.trusted === false ? ' untrusted' : ''} ${event.target ?? ''}`));
+  const more = notable.length - shown.length;
+  return `${screenName}: ${String(notable.length)} drawings/pointer events while capturing: ${shown.join('; ')}`
+    + (more > 0 ? `; ${String(more)} more in the JSON` : '') + (report.dropped > 0 ? `; ${String(report.dropped)} events not recorded` : '');
+}
 
 /**
  * Electron's window content area is smaller than the outer window by its native chrome (title bar,
@@ -70,6 +210,122 @@ async function settledViewportRender(page: Page): Promise<{ readonly completedRe
   return latest.value === 'drawing' ? null : latest.value;
 }
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** The pixels of an 8-bit RGB or RGBA picture, row after row. */
+interface ScreenshotPixels {
+  readonly width: number;
+  readonly height: number;
+  readonly channels: 3 | 4;
+  readonly pixels: Buffer;
+}
+
+/** The Paeth predictor of the PNG specification (row filter type 4). */
+function paeth(left: number, up: number, upLeft: number): number {
+  const estimate = left + up - upLeft;
+  const toLeft = Math.abs(estimate - left), toUp = Math.abs(estimate - up), toUpLeft = Math.abs(estimate - upLeft);
+  return toLeft <= toUp && toLeft <= toUpLeft ? left : toUp <= toUpLeft ? up : upLeft;
+}
+
+/** The pixels of a screenshot PNG as browsers write it (8-bit RGB or RGBA, not interlaced); anything else is refused. */
+function decodeScreenshotPng(png: Buffer): ScreenshotPixels {
+  if (png.length < PNG_SIGNATURE.length || !png.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    throw new Error('The screen image is not a PNG');
+  }
+  let header: Buffer | null = null;
+  const compressed: Buffer[] = [];
+  for (let offset = PNG_SIGNATURE.length; ;) {
+    if (offset + 12 > png.length) throw new Error('The screen image PNG ends without IEND');
+    const length = png.readUInt32BE(offset), end = offset + 8 + length;
+    if (end + 4 > png.length) throw new Error('The screen image PNG ends inside a chunk');
+    if (crc32(png.subarray(offset + 4, end)) !== png.readUInt32BE(end)) throw new Error('The screen image PNG has a damaged chunk');
+    const type = png.toString('latin1', offset + 4, offset + 8), body = png.subarray(offset + 8, end);
+    if (type === 'IEND') break;
+    if (type === 'IHDR') header = body;
+    else if (type === 'IDAT') compressed.push(body);
+    offset = end + 4;
+  }
+  if (header === null || header.length !== 13) throw new Error('The screen image PNG has no header');
+  const width = header.readUInt32BE(0), height = header.readUInt32BE(4);
+  const [depth, colorType, compression, filter, interlace] = header.subarray(8, 13);
+  if (depth !== 8 || (colorType !== 2 && colorType !== 6) || compression !== 0 || filter !== 0 || interlace !== 0) {
+    throw new Error(`Unsupported screen image PNG (depth ${String(depth)}, color type ${String(colorType)}, interlace ${String(interlace)})`);
+  }
+  const channels = colorType === 6 ? 4 : 3, stride = width * channels;
+  const rows = inflateSync(Buffer.concat(compressed));
+  if (rows.length !== height * (stride + 1)) throw new Error('The screen image PNG has the wrong amount of pixel data');
+  const pixels = Buffer.alloc(height * stride);
+  for (let y = 0; y < height; y += 1) {
+    const kind = rows[y * (stride + 1)], source = y * (stride + 1) + 1, row = y * stride, above = row - stride;
+    if (kind > 4) throw new Error(`Unsupported PNG row filter ${String(kind)}`);
+    for (let i = 0; i < stride; i += 1) {
+      const left = i >= channels ? pixels[row + i - channels] : 0;
+      const up = y > 0 ? pixels[above + i] : 0;
+      const upLeft = y > 0 && i >= channels ? pixels[above + i - channels] : 0;
+      const predicted = kind === 0 ? 0 : kind === 1 ? left : kind === 2 ? up : kind === 3 ? (left + up) >> 1 : paeth(left, up, upLeft);
+      pixels[row + i] = (rows[source + i] + predicted) & 0xff;
+    }
+  }
+  return { width, height, channels, pixels };
+}
+
+function pngChunk(type: string, body: Buffer): Buffer {
+  const chunk = Buffer.alloc(body.length + 12);
+  chunk.writeUInt32BE(body.length, 0);
+  chunk.write(type, 4, 'latin1');
+  body.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(chunk.subarray(4, chunk.length - 4)), chunk.length - 4);
+  return chunk;
+}
+
+/** A PNG of `image` (rows unfiltered, then deflated) that any PNG reader opens. */
+function encodeScreenshotPng(image: ScreenshotPixels): Buffer {
+  const stride = image.width * image.channels, rows = Buffer.alloc(image.height * (stride + 1));
+  for (let y = 0; y < image.height; y += 1) image.pixels.copy(rows, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(image.width, 0);
+  header.writeUInt32BE(image.height, 4);
+  header[8] = 8;
+  header[9] = image.channels === 4 ? 6 : 2;
+  return Buffer.concat([PNG_SIGNATURE, pngChunk('IHDR', header), pngChunk('IDAT', deflateSync(rows)), pngChunk('IEND', Buffer.alloc(0))]);
+}
+
+/**
+ * The dialog image of a real Electron capture, cut out of the screen image just taken (the same pixels of the same
+ * picture), or null when the dialog does not lie wholly on that picture; then the element itself is photographed.
+ *
+ * Chromium photographs an element (Page.captureScreenshot with a clip) by shrinking the web view to the clip for that
+ * one picture and growing it back. In a real window the windowing system answers each change with a pointer event at
+ * the desktop's own cursor, which the test never moves. On the Linux CI (xvfb without a window manager) that cursor rests
+ * on the 3D view, near page point (640, 450): every dialog image sent the page a pointerleave and a pointermove there,
+ * and the sketch tools redrew their hover and snap marks while it was taken. CI runs 37248862600 and 39927472338 (ADD-1
+ * intersections, real Electron): settled 22/24/26 and 23/25/27, each +2 after the dialog image and never after the
+ * screen image. The Linux pictures also show what that cursor did: the line tool's 240° guide and snap mark on
+ * intersection-created-screen.png and the red trim preview gone from intersection-trim-preview-screen.png, unlike
+ * Windows and firefox. The whole-window picture never resizes the view. Headless browsers have no desktop cursor, and
+ * their dialog images supply the manual (CAPTURE_SCREEN_REQUIREMENTS), so they keep photographing the element.
+ */
+async function dialogImageFromScreen(page: Page, dialog: Locator, screen: Buffer): Promise<Buffer | null> {
+  const box = await dialog.boundingBox();
+  if (box === null) return null;
+  // The size the screen image was taken at: Playwright's emulated viewport, else the window's inner size.
+  const viewport = page.viewportSize() ?? await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  // The rectangle Playwright's element screenshot takes (its enclosingIntRect), in CSS pixels.
+  const left = Math.floor(box.x + 1e-3), top = Math.floor(box.y + 1e-3);
+  const right = Math.ceil(box.x + box.width - 1e-3), bottom = Math.ceil(box.y + box.height - 1e-3);
+  if (left < 0 || top < 0 || right > viewport.width || bottom > viewport.height || right <= left || bottom <= top) return null;
+  const image = decodeScreenshotPng(screen);
+  const scaleX = image.width / viewport.width, scaleY = image.height / viewport.height;
+  const x0 = Math.round(left * scaleX), y0 = Math.round(top * scaleY);
+  const width = Math.min(image.width, Math.round(right * scaleX)) - x0, height = Math.min(image.height, Math.round(bottom * scaleY)) - y0;
+  const stride = image.width * image.channels, rowBytes = width * image.channels, pixels = Buffer.alloc(rowBytes * height);
+  for (let y = 0; y < height; y += 1) {
+    const start = (y0 + y) * stride + x0 * image.channels;
+    image.pixels.copy(pixels, y * rowBytes, start, start + rowBytes);
+  }
+  return encodeScreenshotPng({ width, height, channels: image.channels, pixels });
+}
+
 /**
  * How many times in all one pair of images may be taken when the 3D view drew again while it was being taken.
  * CI run 36506536360 (commit eae0101, the first run with the check below): 11 captures on Linux (1 Chromium
@@ -79,6 +335,9 @@ async function settledViewportRender(page: Page): Promise<{ readonly completedRe
  * CI run 36544970638 (commit cbdc2a5): 4 real Electron captures on Linux drew exactly once more on every one of
  * the 3 attempts, always while the dialog image was taken and never while the screen image was, although other
  * Electron captures of the same size and place (e.g. loft-spline-smooth, 280x802 at the right edge) did not.
+ * The cause, found from CI runs 37248862600 and 39927472338: photographing the dialog element resized the web view,
+ * and the desktop's cursor then sent pointer events into the 3D view (see dialogImageFromScreen). Real Electron
+ * therefore cuts the dialog image out of the screen image whenever the dialog lies wholly on it.
  * The view redraws on every store change (packages/ui/src/viewport/ViewportCanvas.tsx), and on Windows the
  * same images come out byte for byte the same from run to run, so such a redraw does not have to change a
  * single pixel. What such a redraw leaves on the pictures is therefore judged by the pictures themselves: a pair
@@ -96,41 +355,81 @@ const CAPTURE_ATTEMPTS = 3;
 async function captureStillImages(page: Page, info: TestInfo, dialog: Locator, names: { readonly screen: string; readonly detail: string }) {
   const readRenders = () => page.evaluate(() => window.pcadViewportRenderStats?.().completedRenders);
   let previous: { readonly screen: Buffer; readonly detail: Buffer } | null = null;
-  for (let attempt = 1; ; attempt += 1) {
-    const viewportRender = await settledViewportRender(page);
-    // Reuse this already prepared, stable screen; do not add another operation or alter focus.
-    // The whole screen includes the toolbar and property fields surrounding the photographed dialog.
-    const controlDescriptions = await assertRenderedControlDescriptions(page.locator('body'));
-    const screen = await page.screenshot({ path: info.outputPath(names.screen), animations: 'disabled' });
-    const afterScreen = viewportRender === null ? null : await readRenders();
-    const detail = await dialog.screenshot({ path: info.outputPath(names.detail), animations: 'disabled' });
-    const images = { viewportRender, controlDescriptions, screen, detail };
-    if (viewportRender === null) return images;
-    const afterDetail = await readRenders();
-    const settled = viewportRender.completedRenders;
-    if (afterScreen === settled && afterDetail === settled) return images;
-    // Only a view that is still there and drew more is taken again; a vanished view or a lower count fails at once.
-    const drewAgain = typeof afterScreen === 'number' && typeof afterDetail === 'number' && afterScreen >= settled && afterDetail >= afterScreen;
-    const drawn = `settled ${String(settled)}, after the screen image ${String(afterScreen)}, after the dialog image ${String(afterDetail)}`;
-    if (drewAgain && previous !== null && previous.screen.equals(screen) && previous.detail.equals(detail)) {
-      // Recorded in the output and the report, never hidden: the redraw is kept only because it changed no pixel.
-      const note = `${names.screen}: the 3D view drew again while capturing (${drawn}), but both images are byte-identical `
-        + `to the pair taken before the view settled again; kept on attempt ${String(attempt)}/${String(CAPTURE_ATTEMPTS)}`;
-      console.log(`[撮影の一致] ${note}`);
-      info.annotations.push({ type: 'capture-identical-retake', description: note });
-      return images;
+  const diagnosticEnabled = captureDiagnosticEnabled();
+  // A real Electron window resizes its web view to photograph an element, and its cursor then moves the pointer (see dialogImageFromScreen).
+  const cutDialogOutOfScreen = isElectronProject(info.project.name);
+  const attempts: Array<{ readonly screen: Buffer; readonly detail: Buffer; readonly settled: number | null;
+    readonly afterScreen: number | null | undefined; readonly afterDetail: number | null | undefined;
+    readonly detailFrom: 'screen image' | 'element' }> = [];
+  if (diagnosticEnabled) await startCaptureDiagnostic(page);
+  let failed = false;
+  try {
+    for (let attempt = 1; ; attempt += 1) {
+      const viewportRender = await settledViewportRender(page);
+      // Reuse this already prepared, stable screen; do not add another operation or alter focus.
+      // The whole screen includes the toolbar and property fields surrounding the photographed dialog.
+      const controlDescriptions = await assertRenderedControlDescriptions(page.locator('body'));
+      const screen = await page.screenshot({ path: info.outputPath(names.screen), animations: 'disabled' });
+      const afterScreen = viewportRender === null ? null : await readRenders();
+      const cut = cutDialogOutOfScreen ? await dialogImageFromScreen(page, dialog, screen) : null;
+      if (cut !== null) await writeFile(info.outputPath(names.detail), cut);
+      const detail = cut ?? await dialog.screenshot({ path: info.outputPath(names.detail), animations: 'disabled' });
+      const images = { viewportRender, controlDescriptions, screen, detail };
+      const afterDetail = viewportRender === null ? null : await readRenders();
+      if (diagnosticEnabled) attempts.push({ screen, detail, settled: viewportRender?.completedRenders ?? null,
+        afterScreen, afterDetail, detailFrom: cut === null ? 'element' : 'screen image' });
+      if (viewportRender === null) return images;
+      const settled = viewportRender.completedRenders;
+      if (afterScreen === settled && afterDetail === settled) return images;
+      // Only a view that is still there and drew more is taken again; a vanished view or a lower count fails at once.
+      const drewAgain = typeof afterScreen === 'number' && typeof afterDetail === 'number' && afterScreen >= settled && afterDetail >= afterScreen;
+      const drawn = `settled ${String(settled)}, after the screen image ${String(afterScreen)}, after the dialog image ${String(afterDetail)}`;
+      if (drewAgain && previous !== null && previous.screen.equals(screen) && previous.detail.equals(detail)) {
+        // Recorded in the output and the report, never hidden: the redraw is kept only because it changed no pixel.
+        const note = `${names.screen}: the 3D view drew again while capturing (${drawn}), but both images are byte-identical `
+          + `to the pair taken before the view settled again; kept on attempt ${String(attempt)}/${String(CAPTURE_ATTEMPTS)}`;
+        console.log(`[撮影の一致] ${note}`);
+        info.annotations.push({ type: 'capture-identical-retake', description: note });
+        return images;
+      }
+      if (!drewAgain || attempt >= CAPTURE_ATTEMPTS) {
+        const changed = previous === null ? '' : `; the images differ from the pair taken before (screen ${String(!previous.screen.equals(screen))}, dialog ${String(!previous.detail.equals(detail))})`;
+        expect({ afterScreen, afterDetail }, `The 3D view must not redraw while capturing (attempt ${String(attempt)}/${String(CAPTURE_ATTEMPTS)}: ${drawn}${changed})`)
+          .toEqual({ afterScreen: settled, afterDetail: settled });
+        return images;
+      }
+      // Recorded in the output and the report, never hidden: the retaken pair replaces this one.
+      const note = `${names.screen}: the 3D view drew again while capturing (${drawn}); retaking ${String(attempt + 1)}/${String(CAPTURE_ATTEMPTS)}`;
+      console.log(`[撮影の撮り直し] ${note}`);
+      info.annotations.push({ type: 'capture-retake', description: note });
+      previous = { screen, detail };
     }
-    if (!drewAgain || attempt >= CAPTURE_ATTEMPTS) {
-      const changed = previous === null ? '' : `; the images differ from the pair taken before (screen ${String(!previous.screen.equals(screen))}, dialog ${String(!previous.detail.equals(detail))})`;
-      expect({ afterScreen, afterDetail }, `The 3D view must not redraw while capturing (attempt ${String(attempt)}/${String(CAPTURE_ATTEMPTS)}: ${drawn}${changed})`)
-        .toEqual({ afterScreen: settled, afterDetail: settled });
-      return images;
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    if (diagnosticEnabled) {
+      try {
+        const report = await stopCaptureDiagnostic(page);
+        const summary = captureDiagnosticSummary(names.screen, report);
+        if (summary !== null) console.log(`[撮影診断] ${summary} (dialog image from: ${attempts.map(attempt => attempt.detailFrom).join(', ')})`);
+        const prefix = names.screen.replace(/\.png$/u, '');
+        if (failed) {
+          for (const [index, attempt] of attempts.entries()) {
+            const number = String(index + 1);
+            await writeFile(info.outputPath(`${prefix}-diagnostic-${number}-screen.png`), attempt.screen, { flag: 'wx' });
+            await writeFile(info.outputPath(`${prefix}-diagnostic-${number}-detail.png`), attempt.detail, { flag: 'wx' });
+          }
+        }
+        await writeFile(info.outputPath(`${prefix}-diagnostic.json`), JSON.stringify({
+          format: 'pointercad-capture-diagnostic/2', failed, attempts: attempts.map(attempt => ({
+            settled: attempt.settled, afterScreen: attempt.afterScreen, afterDetail: attempt.afterDetail, detailFrom: attempt.detailFrom,
+          })), ...report,
+        }, null, 2), { flag: 'wx' });
+      } catch (error) {
+        console.error('[撮影診断] 記録または解除に失敗しました', error);
+      }
     }
-    // Recorded in the output and the report, never hidden: the retaken pair replaces this one.
-    const note = `${names.screen}: the 3D view drew again while capturing (${drawn}); retaking ${String(attempt + 1)}/${String(CAPTURE_ATTEMPTS)}`;
-    console.log(`[撮影の撮り直し] ${note}`);
-    info.annotations.push({ type: 'capture-retake', description: note });
-    previous = { screen, detail };
   }
 }
 

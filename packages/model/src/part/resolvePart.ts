@@ -1,3 +1,5 @@
+import type { ResolvedPointWithIdentity } from './resolveReferences.js';
+import type { FaceOrigin, HoleCenterAnchor, HolePlacementRole } from '../geometry/subShapeOrigin.js';
 /**
  * ソリッド履歴の解決と消費の判定(計画書 docs/plans/P2-ソリッド基礎.md タスク11、§2.2、§2.5)。
  *
@@ -61,6 +63,8 @@ import {
   type ConstrainedSketch,
 } from '../sketch/constraints/solveSketch.js';
 import {
+  NO_PART_POINT,
+  type PartPointLookup,
   resolveCoordinate,
   type ResolvedSphere,
   type ResolveContext,
@@ -94,7 +98,9 @@ import {
 } from '../sketch/vec3.js';
 import { findMetricThread } from '../thread/metricThread.js';
 import { cacheKeyFor } from './cacheKey.js';
+import { originAwareCacheKey } from './cacheKey.js';
 import { keyMaterialFor } from './solidPlanKeyMaterial.js';
+import { independentProfileOrigin, type IndependentProfileOrigin, type IndependentCurveProfileOrigin } from './profileOrigins.js';
 import {
   consumedTargetsOf,
   DEFAULT_RULED_SPHERE_SEGMENTS,
@@ -116,12 +122,21 @@ import {
   type ResolvedReferences,
 } from './resolveReferences.js';
 import { dedupeSubShapeRefs, subShapeKindOf } from './subShapeRef.js';
+import { historyDependencies } from './timelineOrder.js';
+import {
+  checkFaceOffset,
+  faceOffsetPlan,
+  type FaceOffsetFeature,
+  type FaceOffsetPlan,
+} from './directFaceEdit.js';
 import type {
   BooleanFeature,
   BooleanOperation,
   ChamferFeature,
   ChamferSize,
   CutFeature,
+  SurfaceCutFeature,
+  SurfaceCutFailureReason,
   DraftFeature,
   EmbossFeature,
   ExtrudeEnd,
@@ -234,7 +249,9 @@ export type ExtrudeEndPlan =
   | { readonly kind: 'distance'; readonly distance: number }
   | { readonly kind: 'symmetric'; readonly forward: number; readonly backward: number }
   | { readonly kind: 'toFace'; readonly distance: number }
-  | { readonly kind: 'toNext' };
+  | { readonly kind: 'toNext' }
+  /** EX04 の輪郭による貫通切断。`toNext` と同じく段の `targetKey` と組で使う(対象は名指し)。 */
+  | { readonly kind: 'throughTarget' };
 
 /** 薄板押し出し(FR-416、§0.a-0.46)。kernel の `ThinExtrudeSpec` と同じ欄名。 */
 export interface ThinExtrudePlan {
@@ -260,6 +277,16 @@ export type HoleEntryPlan =
   | { readonly kind: 'countersink'; readonly diameter: number; readonly angle: number };
 
 /**
+ * 円筒の側面の穴の位置(EX05)を解決した結果。kernel の `CylindricalHoleSpec` と同じ形なので
+ * `kernelBridge` はそのまま渡せる。高さは mm、角度は**ラジアン**(度からの換算は model の責務)。
+ * **平面の穴では段にこの欄を載せない**(省略と今までの段を同じ鍵にする)。
+ */
+export interface CylindricalHolePlan {
+  readonly kind: 'cylinder-face';
+  readonly locations: readonly { readonly height: number; readonly angle: number }[];
+}
+
+/**
  * 丸める半径(FR-407、可変半径は FR-426、§0.a-0.48)を解決した結果。
  *
  * kernel の `FilletRadiusSpec` と同じ形(`number | { start; end }`)にしてあるので、
@@ -279,6 +306,7 @@ export type SurfaceShapePlan =
   | {
       readonly kind: 'extrude';
       readonly profile: readonly ResolvedCurve[];
+      readonly profileOrigins?: readonly Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][];
       /** 掃く向き(単位ベクトル)。反転を適用した後の向き。 */
       readonly direction: Vec3;
       readonly distance: number;
@@ -305,6 +333,14 @@ export type SurfaceShapePlan =
       readonly distance: number;
     };
 
+export type SurfaceCutBladePlan =
+  | { readonly kind: 'plane'; readonly origin: Vec3; readonly normal: Vec3 }
+  | {
+      readonly kind: 'extrusion'; readonly profile: readonly ResolvedCurve[];
+      readonly planeOrigin: Vec3; readonly planeNormal: Vec3;
+    }
+  | { readonly kind: 'surface'; readonly sourceKey: string };
+
 /**
  * model 側の「1段の作り方」。kernel の SolidStepSpec とは別の型にして、
  * kernelBridge(タスク12)が詰め替える(NFR-MA-1。model は kernel の型を再輸出しない)。
@@ -313,10 +349,14 @@ export type SurfaceShapePlan =
 export type SolidStepPlan =
   | import('../functionGeometry/functionSurfaceFeature.js').FunctionSurfacePlan
   | SheetSolidPlan
+  // 平らな面の移動(EX-18 の限られた一段)。形は directFaceEdit.ts が持つ。**対象を消費する。**
+  | FaceOffsetPlan
   | {
       readonly kind: 'extrude';
       /** 断面の閉ループ。両側(symmetric)のときは平行移動した後の座標。 */
       readonly profile: readonly ResolvedCurve[];
+      /** Proven saved whole line/spline region, paired with profile curves; legacy four-line IDs are retained. */
+      readonly profileOrigin?: IndependentProfileOrigin | IndependentCurveProfileOrigin;
       /** 押し出す向き(単位ベクトル)。反転(reversed)を適用した後の向き。 */
       readonly direction: Vec3;
       /**
@@ -364,6 +404,8 @@ export type SolidStepPlan =
       readonly kind: 'sew';
       /** 殻を作る面。1枚ずつ閉ループで並べる。 */
       readonly profiles: readonly (readonly ResolvedCurve[])[];
+      /** 既存の面の入力。元参照を保持し、現在形状との照合はカーネルへ渡す。 */
+      readonly faces?: readonly { readonly targetKey: string; readonly query: SubShapeRef }[];
       /** つなぎ目とみなす許容量(mm)。正の数。 */
       readonly tolerance: number;
     }
@@ -374,9 +416,15 @@ export type SolidStepPlan =
       readonly targetKey: string;
       /** 相手(消える側)のボディの鍵。 */
       readonly toolKey: string;
+      /** 何も削れない差を断るか(`BooleanFeature.requireRemoval`)。立てたときだけ欄がある。 */
+      readonly requireRemoval?: true;
     }
   | {
       readonly kind: 'hole';
+      /** Cache input evidence, independent of eligibility for semantic naming. */
+      readonly pointPlacementReferences?: readonly { readonly slotId: string; readonly reference: PointReference }[];
+      readonly centerAnchors?: readonly HoleCenterAnchor[];
+      readonly placementRoles?: readonly HolePlacementRole[];
       /** 穴をあける対象のボディの鍵。この段が消費する(§0.a-0.5)。 */
       readonly targetKey: string;
       /** 穴をあける面。カーネルが指紋で選び直し、平面と法線を取り出す(§2.2)。 */
@@ -396,9 +444,17 @@ export type SolidStepPlan =
        * (`HoleEntryPlan` の注釈。省略と「広げない」を同じ段・同じ鍵にするため)。
        */
       readonly entry?: HoleEntryPlan;
+      /** 円筒の側面の穴(EX05)。**平面の穴では省く**(`CylindricalHolePlan` の注釈)。 */
+      readonly cylindrical?: CylindricalHolePlan;
     }
   | {
       readonly kind: 'thread';
+      /**
+       * 下穴の面の由来の材料。穴の段と同じ意味(下穴は穴と同じ手順で掘る)。中心の生成元が分かる時だけ
+       * 両方を載せる(無い時は欄ごと省き、今までの段・鍵と 1 字も変えない)。
+       */
+      readonly centerAnchors?: readonly HoleCenterAnchor[];
+      readonly placementRoles?: readonly HolePlacementRole[];
       readonly targetKey: string;
       readonly face: SubShapeQueryPlan;
       readonly centers: readonly Vec3[];
@@ -430,6 +486,8 @@ export type SolidStepPlan =
        * (`HoleEntryPlan` の注釈と同じ約束。穴の枝と1文字も違わない扱い)。
        */
       readonly entry?: HoleEntryPlan;
+      /** 円筒の側面のねじ穴(EX05)。**平面のねじ穴では省く**(穴の枝の `cylindrical` と同じ)。 */
+      readonly cylindrical?: CylindricalHolePlan;
     }
   | {
       readonly kind: 'spring';
@@ -706,6 +764,12 @@ export type SolidStepPlan =
       readonly keepPositive: boolean;
     }
   | {
+      readonly kind: 'surfaceCut';
+      readonly targetKey: string;
+      readonly blade: SurfaceCutBladePlan;
+      readonly keepPositive: boolean;
+    }
+  | {
       /**
        * 読み込んだ形(ベースボディ。FR-802、P6 §2.8、タスク20)。**対象を取らない「作る」段。**
        *
@@ -772,6 +836,7 @@ export type PartErrorCode =
 /** 解決できなかった理由。止めずに持ち回る(FR-504、NFR-RE-1)。 */
 export interface PartError {
   readonly featureId: string;
+  readonly reason?: SurfaceCutFailureReason;
   readonly code: PartErrorCode;
   readonly message: string;
 }
@@ -1016,6 +1081,7 @@ interface SolidPlanContext {
   readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
   /** 点の参照(座標の式・スケッチの点・立体の頂点ほか)を世界座標へ。 */
   readonly point: (reference: PointReference) => Vec3 | null;
+  readonly pointWithIdentity: (reference: PointReference) => ResolvedPointWithIdentity | null;
   /** 基準軸(FR-329)の解決結果。`resolveRevolveAxis` へそのまま渡す。 */
   readonly axisFrames: ReadonlyMap<string, AxisFrame>;
   /**
@@ -1061,6 +1127,15 @@ const EXTRUDE_TO_FACE_BEHIND_MESSAGE =
  * 揃える**(基本形状の断りと同じ決め。片方だけ直すと理由が食い違う)。
  */
 const EXTRUDE_TO_NEXT_MISSING_MESSAGE = '押し出す先に立体がありません。';
+
+/**
+ * 「対象を貫く」(EX04)の対象が、履歴で自分より前に無い・自分自身・すでに別のところで消費されているとき。
+ * 先にある立体(前方参照)は `bodyKeys` にまだ無いので「見つからない」に入る。
+ */
+const EXTRUDE_THROUGH_TARGET_MISSING_MESSAGE =
+  '貫いて切る対象の立体が見つかりません。切る立体を選び直してください。';
+const EXTRUDE_THROUGH_TARGET_CONSUMED_MESSAGE =
+  '貫いて切る対象の立体は、すでに別のところで使われています。切る立体を選び直してください。';
 
 /** 向きと面の法線がこれ以下しか噛み合っていなければ「平行」とみなす(平面の当てはめと同じ桁)。 */
 const EXTRUDE_TO_FACE_EPSILON = 1e-9;
@@ -1194,6 +1269,32 @@ function resolveExtrudeEnd(
       }
       return { ok: true, value: { end: { kind: 'toNext' }, distance, targetKey } };
     }
+    case 'throughTarget': {
+      // 対象は名指し。自分自身・履歴で後ろ(まだ鍵が無い)・消費済みは断る。消費はしない
+      // (長さを決めるために形を読むだけ。対象を食べるのは後ろの差 `BooleanFeature`)。
+      if (end.targetFeatureId === feature.id) {
+        return {
+          ok: false,
+          error: partError(feature.id, 'missingBody', EXTRUDE_THROUGH_TARGET_MISSING_MESSAGE),
+        };
+      }
+      if (consumed.has(end.targetFeatureId)) {
+        return {
+          ok: false,
+          error: partError(feature.id, 'consumedTwice', EXTRUDE_THROUGH_TARGET_CONSUMED_MESSAGE),
+        };
+      }
+      const targetKey = bodyKeys.get(end.targetFeatureId);
+      if (targetKey === undefined) {
+        return {
+          ok: false,
+          error: partError(feature.id, 'missingBody', EXTRUDE_THROUGH_TARGET_MISSING_MESSAGE),
+        };
+      }
+      // 長さは再計算のたびにカーネルが対象の境界箱から決める。段の `distance` は入れた値のまま
+      // (カーネルは `throughTarget` では使わない)。
+      return { ok: true, value: { end: { kind: 'throughTarget' }, distance, targetKey } };
+    }
   }
 }
 
@@ -1276,12 +1377,18 @@ function planExtrude(
           translateCurve(curve, scaleVec3(negateVec3(direction), entered / 2)),
         )
       : face.curves;
+  const profileOrigin = shaping.end.kind === 'toNext' || shaping.end.kind === 'throughTarget'
+    || taperDegrees !== 0 || thin !== null
+    ? null
+    : independentProfileOrigin(
+      context.sketchDocuments.find((entry) => entry.id === feature.profile.sketchId), face);
   const { end, distance, targetKey } = endOutcome.value;
   return {
     ok: true,
     plan: {
       kind: 'extrude',
       profile,
+      ...(profileOrigin === null ? {} : { profileOrigin }),
       direction,
       distance,
       // 既定の欄は載せない(省略と既定を同じ段・同じ鍵にするため)。
@@ -1334,7 +1441,34 @@ function planRevolve(
 }
 
 /** 縫合(FR-403、§0.a-0.7)。面を2枚以上並べ、許容量とともに渡す。 */
-function planSew(feature: SewFeature, sketches: readonly ResolvedPartSketch[]): PlanOutcome {
+function planSew(
+  feature: SewFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+): PlanOutcome {
+  if (feature.surfaceFaces !== undefined && feature.surfaceFaces.length > 0) {
+    if (feature.faces.length > 0) {
+      return fail(feature.id, 'invalidValue', 'スケッチの面と立体・曲面の面は一緒に縫い合わせられません。');
+    }
+    if (feature.surfaceFaces.length < 2) {
+      return fail(feature.id, 'degenerate', '立体にするには面が 2 枚以上必要です。');
+    }
+    const faces: { readonly targetKey: string; readonly query: SubShapeRef }[] = [];
+    for (const query of feature.surfaceFaces) {
+      if (subShapeKindOf(query) !== 'face') {
+        return fail(feature.id, 'invalidValue', '縫い合わせる面を選び直してください。');
+      }
+      const target = resolveMachiningTarget(feature.id, query.bodyFeatureId, bodyKeys, consumed);
+      if (!target.ok) return target;
+      faces.push({ targetKey: target.targetKey, query });
+    }
+    const tolerance = feature.tolerance.value;
+    if (!Number.isFinite(tolerance) || tolerance <= 0) {
+      return fail(feature.id, 'invalidValue', 'つなぎ目の許容量は 0 より大きい数にしてください。');
+    }
+    return { ok: true, plan: { kind: 'sew', profiles: [], faces, tolerance } };
+  }
   if (feature.faces.length < 2) {
     return fail(feature.id, 'degenerate', '立体にするには面が 2 枚以上必要です。');
   }
@@ -1357,13 +1491,64 @@ function planSew(feature: SewFeature, sketches: readonly ResolvedPartSketch[]): 
   return { ok: true, plan: { kind: 'sew', profiles, tolerance } };
 }
 
+/** 閉じた輪郭の切断の対(EX-04 W3)が、同じ立体・同じ輪郭・反対の残す側になっていない。 */
+const PROFILE_CUT_PAIR_MESSAGE = '対になっている切断には、同じ立体と輪郭、反対の残す側が必要です。';
+
+/** 閉じた輪郭の切断(EX04)のブーリアンか。残す側は差 = 輪郭の外側、積 = 輪郭の内側(EX-04 W3)。 */
+function isProfileCut(feature: BooleanFeature): boolean {
+  return feature.requireRemoval === true && (feature.operation === 'subtract' || feature.operation === 'intersect');
+}
+
+/** `feature` と `pairedWith` で結ばれた、抑制されていないブーリアン(どちら向きの結びも探す)。 */
+function linkedBooleans(feature: BooleanFeature, solids: readonly SolidFeature[]): readonly BooleanFeature[] {
+  return solids.filter((candidate): candidate is BooleanFeature => candidate.kind === 'boolean'
+    && candidate.id !== feature.id && !candidate.suppressed
+    && (candidate.id === feature.pairedWith || candidate.pairedWith === feature.id));
+}
+
+/** 閉じた輪郭の切断の対の引き方の結果(EX-04 W3)。 */
+type ProfileCutPair =
+  | { readonly kind: 'single' }
+  | { readonly kind: 'paired'; readonly partner: BooleanFeature }
+  | { readonly kind: 'broken' };
+
+/**
+ * 閉じた輪郭の切断の対(「反対側も残す」で積んだ差と積。EX-04 W3)を文書から引く。
+ * 考え方は平面の切断の `pairedCutOf` と同じで、**文書は書き換えない**。
+ *
+ * - 結びが無い・相手が文書に無い・抑制されている → 単独。
+ * - 相手と 1 対 1 で結ばれ(相手の結びも自分だけ)、同じ対象・同じ相手(輪郭の押し出し)を、
+ *   反対の残す側(差と積)で切る閉じた輪郭の切断どうし → 対。
+ * - それ以外(同じ側どうし・別の立体・3 つ以上の結び・閉じた輪郭の切断でない)→ 壊れた対。
+ */
+function profileCutPairOf(feature: BooleanFeature, solids: readonly SolidFeature[]): ProfileCutPair {
+  const linked = linkedBooleans(feature, solids);
+  const partner = linked[0];
+  if (partner === undefined) {
+    return { kind: 'single' };
+  }
+  const matched = linked.length === 1 && isProfileCut(feature) && isProfileCut(partner)
+    && partner.operation !== feature.operation
+    && partner.targetFeatureId === feature.targetFeatureId
+    && partner.toolFeatureId === feature.toolFeatureId
+    && linkedBooleans(partner, solids).length === 1;
+  return matched ? { kind: 'paired', partner } : { kind: 'broken' };
+}
+
 /**
  * ブーリアン(FR-404、§0.a-0.5)。対象と相手のボディを消費して1つのボディを作る。
  * 参照できるのは「履歴で自分より前にあり、抑制されておらず、作成に成功し、
  * まだ消費されていない」ボディだけ。消費そのものは呼び出し側(resolvePart)が記録する。
+ *
+ * **閉じた輪郭の切断の対だけの例外**(EX-04 W3。平面の切断の `resolveCutTarget` と同じ形):
+ * 「反対側も残す」で積んだ差と積の 2 つ目は、対象と相手(輪郭の押し出し)が 1 つ目に消費された後で
+ * 解決される。このときだけ `consumedTwice` を出さず、対象と相手を **1 度だけ**消費したものとして扱う。
+ * 例外を許すのは対の相手が段を作れた(= `bodyKeys` にいる)ときだけで、相手が段を作れていないなら
+ * 消費したのは別のフィーチャーなので通常どおり断る(対を口実に二重消費を通さない)。
  */
 function planBoolean(
   feature: BooleanFeature,
+  solids: readonly SolidFeature[],
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
 ): PlanOutcome {
@@ -1374,23 +1559,33 @@ function planBoolean(
       '同じ立体どうしは組み合わせられません。別の立体を選んでください。',
     );
   }
+  // 対は消費済みのときだけ引く(結びの無い従来のブーリアンは、文書を見ずに以前と同じ判定になる)。
+  const pair: ProfileCutPair = consumed.has(feature.targetFeatureId) || consumed.has(feature.toolFeatureId)
+    ? profileCutPairOf(feature, solids) : { kind: 'single' };
+  const sharedWithPartner = pair.kind === 'paired' && bodyKeys.has(pair.partner.id);
+  const consumedElsewhere = (): PlanOutcome => pair.kind === 'broken'
+    ? fail(feature.id, 'invalidValue', PROFILE_CUT_PAIR_MESSAGE)
+    : fail(feature.id, 'consumedTwice', 'その立体はすでに別のところで使われています。');
   const targetKey = bodyKeys.get(feature.targetFeatureId);
   if (targetKey === undefined) {
     return fail(feature.id, 'missingBody', '組み合わせるもとの立体が見つかりません。');
   }
-  if (consumed.has(feature.targetFeatureId)) {
-    return fail(feature.id, 'consumedTwice', 'その立体はすでに別のところで使われています。');
+  if (consumed.has(feature.targetFeatureId) && !sharedWithPartner) {
+    return consumedElsewhere();
   }
   const toolKey = bodyKeys.get(feature.toolFeatureId);
   if (toolKey === undefined) {
     return fail(feature.id, 'missingBody', '組み合わせるもとの立体が見つかりません。');
   }
-  if (consumed.has(feature.toolFeatureId)) {
-    return fail(feature.id, 'consumedTwice', 'その立体はすでに別のところで使われています。');
+  if (consumed.has(feature.toolFeatureId) && !sharedWithPartner) {
+    return consumedElsewhere();
   }
   return {
     ok: true,
-    plan: { kind: 'boolean', operation: feature.operation, targetKey, toolKey },
+    plan: {
+      kind: 'boolean', operation: feature.operation, targetKey, toolKey,
+      ...(feature.requireRemoval === true ? { requireRemoval: true } : {}),
+    },
   };
 }
 
@@ -1432,7 +1627,7 @@ export function resolveMachiningTarget(
 
 /** 穴の中心点を展開した結果(FR-405、FR-308)。 */
 export type HoleCentersOutcome =
-  | { readonly ok: true; readonly centers: readonly Vec3[] }
+  | { readonly ok: true; readonly centers: readonly Vec3[]; readonly centerAnchors?: readonly HoleCenterAnchor[] }
   | { readonly ok: false; readonly error: PartError };
 
 /**
@@ -1457,6 +1652,7 @@ export function resolveHoleCenters(
   sketches: readonly ResolvedPartSketch[],
 ): HoleCentersOutcome {
   const centers: Vec3[] = [];
+  const anchors: HoleCenterAnchor[] = [];
   for (const reference of references) {
     const sketch = sketches.find((entry) => entry.sketchId === reference.sketchId);
     if (sketch === undefined) {
@@ -1465,6 +1661,7 @@ export function resolveHoleCenters(
     for (const point of sketch.resolved.points) {
       if (point.featureId === reference.pointFeatureId) {
         centers.push(point.position);
+        if (point.producerAnchor !== undefined) anchors.push({ sketchId: reference.sketchId, producer: point.producerAnchor });
       }
     }
   }
@@ -1478,7 +1675,7 @@ export function resolveHoleCenters(
       ),
     };
   }
-  return { ok: true, centers };
+  return { ok: true, centers, ...(anchors.length === centers.length ? { centerAnchors: anchors } : {}) };
 }
 
 type DepthOutcome =
@@ -1631,11 +1828,64 @@ function resolveHoleEntry(
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 円筒の側面の穴(EX05)
+ * ------------------------------------------------------------------ */
+
+/**
+ * 円筒の側面の穴の断りの文言。**kernel の `makeHole.ts` と 1 字も違えずに揃える**
+ * (入口の断りと同じ扱い。model が先に断るので利用者が見るのはここの文言)。
+ */
+const NOT_CYLINDRICAL_MESSAGE = '円筒の側面の穴をあけられるのは円筒の面だけです。円筒の面を選び直してください。';
+const NO_CYLINDER_LOCATION_MESSAGE = '円筒の側面の穴の位置(高さと角度)が 1 つもありません。';
+const CYLINDER_LOCATION_NOT_FINITE_MESSAGE = '円筒の側面の穴の高さと角度は数にしてください。';
+const CYLINDER_UNSUPPORTED_MESSAGE =
+  '円筒の側面の穴では、中心の点・傾き・皿もみはまだ使えません。位置は高さと角度で指定してください。';
+
+type CylindricalOutcome =
+  | { readonly ok: true; readonly cylindrical: CylindricalHolePlan | null }
+  | { readonly ok: false; readonly error: PartError };
+
+/**
+ * 円筒の側面の位置を段の欄へ直す(EX05)。欄が無ければ null(今までの平面の穴)。
+ * 中心の点・傾き・皿もみとの組み合わせは、正しく扱えるまで断る(kernel も同じ文言で断る)。
+ * 角度は度からラジアンへ。範囲は決めない(何周しても同じ向き)。位置が面の上にあるかは kernel が
+ * 実際の面の境界で判定する(model は面の形を持たない)。
+ */
+function resolveCylindricalHole(feature: HoleLikeFeature): CylindricalOutcome {
+  const placement = feature.cylindrical;
+  if (placement === undefined) {
+    return { ok: true, cylindrical: null };
+  }
+  if (placement.kind !== 'cylinder-face' || feature.centers.length !== 0 || feature.tiltAngle.value !== 0
+    || feature.tiltAzimuth.value !== 0 || holeEntryOf(feature).kind === 'countersink') {
+    return { ok: false, error: partError(feature.id, 'invalidValue', CYLINDER_UNSUPPORTED_MESSAGE) };
+  }
+  // 面の種類は保存された指紋で分かる。円筒でなければ、平面の穴へ黙って戻さずに断る
+  // (kernel も選び直した実際の面で同じ文言で断る。辺・頂点の参照は resolveHoleBase が断る)。
+  if (feature.face.fingerprint.kind === 'face' && feature.face.fingerprint.surfaceKind !== 'cylinder') {
+    return { ok: false, error: partError(feature.id, 'invalidValue', NOT_CYLINDRICAL_MESSAGE) };
+  }
+  if (placement.locations.length === 0) {
+    return { ok: false, error: partError(feature.id, 'invalidValue', NO_CYLINDER_LOCATION_MESSAGE) };
+  }
+  const locations: { height: number; angle: number }[] = [];
+  for (const location of placement.locations) {
+    const height = location.height.value, angle = location.angle.value;
+    if (!Number.isFinite(height) || !Number.isFinite(angle)) {
+      return { ok: false, error: partError(feature.id, 'invalidValue', CYLINDER_LOCATION_NOT_FINITE_MESSAGE) };
+    }
+    locations.push({ height, angle: degreesToRadians(angle) });
+  }
+  return { ok: true, cylindrical: { kind: 'cylinder-face', locations } };
+}
+
 /** 穴とねじ穴に共通する欄。どちらも対象・面・中心・深さ・傾きを同じ意味で持つ。 */
 type HoleLikeFeature = HoleFeature | ThreadHoleFeature;
 
 /** 穴とねじ穴に共通する解決結果。 */
 interface HoleBase {
+  readonly centerAnchors?: readonly HoleCenterAnchor[];
   readonly targetKey: string;
   readonly face: SubShapeQueryPlan;
   readonly centers: readonly Vec3[];
@@ -1657,6 +1907,8 @@ function resolveHoleBase(
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
+  /** 円筒の側面の穴(EX05)。中心の点を持たないので中心の解決を飛ばす(空であることは呼び出し側が確かめ済み)。 */
+  withoutCenters = false,
 ): HoleBaseOutcome {
   const target = resolveMachiningTarget(
     feature.id,
@@ -1691,7 +1943,8 @@ function resolveHoleBase(
       ),
     };
   }
-  const centers = resolveHoleCenters(feature.id, feature.centers, sketches);
+  const noCenters: HoleCentersOutcome = { ok: true, centers: [] };
+  const centers = withoutCenters ? noCenters : resolveHoleCenters(feature.id, feature.centers, sketches);
   if (!centers.ok) {
     return centers;
   }
@@ -1709,6 +1962,7 @@ function resolveHoleBase(
       targetKey: target.targetKey,
       face: feature.face,
       centers: centers.centers,
+      ...(centers.centerAnchors === undefined ? {} : { centerAnchors: centers.centerAnchors }),
       depth: depth.depth,
       tiltAngle: tilt.tilt.tiltAngle,
       tiltAzimuth: tilt.tilt.tiltAzimuth,
@@ -1729,7 +1983,12 @@ function planHole(
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
 ): PlanOutcome {
-  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed);
+  // 円筒の側面の穴(EX05)は中心の点を持たない。組み合わせの断りを中心の解決より先に出す。
+  const cylindrical = resolveCylindricalHole(feature);
+  if (!cylindrical.ok) {
+    return cylindrical;
+  }
+  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed, cylindrical.cylindrical !== null);
   if (!outcome.ok) {
     return outcome;
   }
@@ -1750,6 +2009,8 @@ function planHole(
       targetKey: base.targetKey,
       face: base.face,
       centers: base.centers,
+      ...(base.centerAnchors === undefined ? {} : { centerAnchors: base.centerAnchors }),
+      placementRoles: [],
       diameter,
       depth: base.depth,
       tiltAngle: base.tiltAngle,
@@ -1757,6 +2018,8 @@ function planHole(
       transforms: [],
       // 広げないときは欄そのものを載せない(省略と「広げない」を同じ鍵にするため)。
       ...(entry.entry === null ? {} : { entry: entry.entry }),
+      // 平面の穴では欄を載せない(今までの段・鍵と 1 字も変えない)。
+      ...(cylindrical.cylindrical === null ? {} : { cylindrical: cylindrical.cylindrical }),
     },
   };
 }
@@ -1775,7 +2038,12 @@ function planThreadHole(
   bodyKeys: ReadonlyMap<string, string>,
   consumed: ReadonlySet<string>,
 ): PlanOutcome {
-  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed);
+  // 円筒の側面のねじ穴(EX05)。穴と同じ口で組み合わせを断り、中心の解決を飛ばす(`planHole` と同じ順)。
+  const cylindrical = resolveCylindricalHole(feature);
+  if (!cylindrical.ok) {
+    return cylindrical;
+  }
+  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed, cylindrical.cylindrical !== null);
   if (!outcome.ok) {
     return outcome;
   }
@@ -1822,6 +2090,7 @@ function planThreadHole(
       targetKey: base.targetKey,
       face: base.face,
       centers: base.centers,
+      ...(base.centerAnchors === undefined ? {} : { centerAnchors: base.centerAnchors, placementRoles: [] }),
       drillDiameter,
       pitch,
       depth: base.depth,
@@ -1834,6 +2103,8 @@ function planThreadHole(
       mark: { majorDiameter: size.diameter, length: threadLength },
       // 広げないときは欄そのものを載せない(省略と「広げない」を同じ段・同じ鍵にするため)。
       ...(entry.entry === null ? {} : { entry: entry.entry }),
+      // 平面のねじ穴では欄を載せない(今までの段・鍵と 1 字も変えない)。
+      ...(cylindrical.cylindrical === null ? {} : { cylindrical: cylindrical.cylindrical }),
     },
   };
 }
@@ -2241,8 +2512,10 @@ export function resolvePatternTransforms(
   sketches: readonly ResolvedPartSketch[],
   axisFrames: ReadonlyMap<string, AxisFrame> = new Map<string, AxisFrame>(),
   point: (reference: PointReference) => Vec3 | null = () => null,
+  pointWithIdentity: (reference: PointReference) => ResolvedPointWithIdentity | null = () => null,
 ):
-  | { readonly ok: true; readonly transforms: readonly RigidTransform[] }
+  | { readonly ok: true; readonly transforms: readonly RigidTransform[]; readonly placementRoles?: readonly HolePlacementRole[];
+      readonly pointPlacementReferences?: readonly { readonly slotId: string; readonly reference: PointReference }[] }
   | { readonly ok: false; readonly code: PartErrorCode; readonly message: string } {
   if (placement.kind === 'points') {
     /*
@@ -2262,16 +2535,21 @@ export function resolvePatternTransforms(
       return { ok: false, code: 'missingProfile', message: POINT_PATTERN_EMPTY_MESSAGE };
     }
     const positions: Vec3[] = [];
-    for (const reference of placement.points) {
-      const resolved = point(reference);
+    const placementRoles: HolePlacementRole[] = [];
+    for (const slot of placement.points) {
+      const source = pointWithIdentity(slot.reference);
+      const resolved = source?.position ?? point(slot.reference);
       if (resolved === null) {
         return { ok: false, code: 'missingProfile', message: POINT_PATTERN_MISSING_MESSAGE };
       }
       positions.push(resolved);
+      if (source?.state === 'identified') placementRoles.push({ kind: 'point-slot', slotId: slot.slotId, source: source.identity });
     }
     const base = positions[0] ?? ORIGIN;
     return {
       ok: true,
+      ...(placementRoles.length === positions.length ? { placementRoles } : {}),
+      pointPlacementReferences: placement.points.map(({ slotId, reference }) => ({ slotId, reference })),
       transforms: positions.map((position) => ({
         // 最初の点は自分自身との差なので恒等(平行移動 0)になる。
         translation: cleanZeroVec3(subVec3(position, base)),
@@ -2314,6 +2592,7 @@ export function resolvePatternTransforms(
       };
     }
     const transforms: RigidTransform[] = [];
+    const placementRoles: HolePlacementRole[] = [];
     if (placement.symmetric) {
       // n は奇数なので (n-1)/2 は整数。0(もとの位置)を除いて両側へ振る(§2.7 の刻み表)。
       const half = (n - 1) / 2;
@@ -2322,13 +2601,15 @@ export function resolvePatternTransforms(
           continue;
         }
         transforms.push(linearPatternTransform(frame.direction, spacing, k));
+        placementRoles.push({ kind: 'linear', step: k });
       }
     } else {
       for (let k = 1; k <= n - 1; k += 1) {
         transforms.push(linearPatternTransform(frame.direction, spacing, k));
+        placementRoles.push({ kind: 'linear', step: k });
       }
     }
-    return { ok: true, transforms };
+    return { ok: true, transforms, placementRoles };
   }
 
   // 円形パターン。全周なら 360/n 度刻み、そうでなければ角度を n−1 等分する(§2.7)。
@@ -2355,6 +2636,7 @@ export function resolvePatternTransforms(
     };
   }
   const transforms: RigidTransform[] = [];
+  const placementRoles: HolePlacementRole[] = [];
   for (let k = 1; k <= n - 1; k += 1) {
     transforms.push({
       translation: ORIGIN,
@@ -2362,8 +2644,13 @@ export function resolvePatternTransforms(
       rotationAxis: frame.direction,
       rotationAngle: stepAngle * k,
     });
+    let numerator = k, denominator = placement.fullCircle ? n : n - 1;
+    let a = numerator, b = denominator;
+    while (b !== 0) { const remainder = a % b; a = b; b = remainder; }
+    numerator /= a; denominator /= a;
+    placementRoles.push({ kind: 'circular', fullCircle: placement.fullCircle, numerator, denominator });
   }
-  return { ok: true, transforms };
+  return { ok: true, transforms, placementRoles };
 }
 
 /**
@@ -2400,6 +2687,7 @@ function planPattern(
     sketches,
     context.axisFrames,
     context.point,
+    context.pointWithIdentity,
   );
   if (!transformsOutcome.ok) {
     return fail(feature.id, transformsOutcome.code, transformsOutcome.message);
@@ -2427,15 +2715,24 @@ function planPattern(
   }
   const basePlan = baseOutcome.plan;
   if (basePlan.kind === 'hole') {
+    const plan = { ...basePlan, targetKey: sourceTarget.targetKey, transforms: transformsOutcome.transforms,
+      ...(transformsOutcome.pointPlacementReferences === undefined ? {} : { pointPlacementReferences: transformsOutcome.pointPlacementReferences }) };
+    if (transformsOutcome.placementRoles === undefined) delete plan.placementRoles;
+    else plan.placementRoles = transformsOutcome.placementRoles;
     return {
       ok: true,
-      plan: { ...basePlan, targetKey: sourceTarget.targetKey, transforms: transformsOutcome.transforms },
+      plan,
     };
   }
   if (basePlan.kind === 'thread') {
+    // 穴と同じく、並べ方の役割がそろわなければ欄を外す(下穴の面は名前なしのまま)。
+    // 中心の生成元が無いねじ穴には役割も載せない(今までの段・鍵と 1 字も変えない)。
+    const plan = { ...basePlan, targetKey: sourceTarget.targetKey, transforms: transformsOutcome.transforms };
+    if (transformsOutcome.placementRoles === undefined || plan.centerAnchors === undefined) delete plan.placementRoles;
+    else plan.placementRoles = transformsOutcome.placementRoles;
     return {
       ok: true,
-      plan: { ...basePlan, targetKey: sourceTarget.targetKey, transforms: transformsOutcome.transforms },
+      plan,
     };
   }
   // planHole / planThreadHole は必ず 'hole' / 'thread' の計画を返すので、ここへは来ない(型の保険)。
@@ -2458,10 +2755,9 @@ function planPattern(
  * となる。基本形状の中心を UI が作るときは絶対座標なので(`defaultPrimitiveOrigin`)、
  * ふだんは 1 つ目の道だけを通る。
  *
- * **`subShape`(いまの形での選び直し)は渡さない。** 渡さないと `resolveCoordinate` は
- * 保存された指紋の位置をそのまま使う。上流の立体に追従させたい基準点は
- * `SolidOrigin.vertex`(`originQuery` でカーネルが選び直す)で表すのが正しい道で、
- * 座標の式の基準を二重の追従の口にしない。
+ * 再計算から渡された `subShape` を座標の式へも伝え、現在の参照が未解決なら断る。
+ * 未指定の純な解決では保存指紋を内部準備に使う既定を保つ。`SolidOrigin.vertex` は
+ * 引き続き `originQuery` と現在keyを渡し、カーネルで選び直す。
  */
 const PART_COORDINATE_CONTEXT: ResolveContext = {
   plane: WORK_PLANES.xy,
@@ -2627,10 +2923,11 @@ export function resolveSolidOrigin(
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   functionPoint?: ResolvePartOptions['functionPoint'],
+  subShape?: ResolvePartOptions['subShape'],
 ): SolidOriginOutcome {
   switch (origin.kind) {
     case 'coordinate': {
-      const resolved = resolveCoordinate(origin.value, { ...PART_COORDINATE_CONTEXT, functionPoint }, featureId);
+      const resolved = resolveCoordinate(origin.value, { ...PART_COORDINATE_CONTEXT, functionPoint, subShape }, featureId);
       if (!resolved.ok) {
         // 式のエラー(値が数でない・基準が無い)をそのまま見せる(§2.7.1 の断り方の表)。
         return { ok: false, error: partError(featureId, 'invalidValue', resolved.error.message) };
@@ -2682,9 +2979,9 @@ function planPrimitive(
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
   axisFrames: ReadonlyMap<string, AxisFrame>,
-  functionPoint: ResolvePartOptions['functionPoint'],
+  context: SolidPlanContext,
 ): PlanOutcome {
-  const origin = resolveSolidOrigin(feature.id, feature.origin, sketches, bodyKeys, functionPoint);
+  const origin = resolveSolidOrigin(feature.id, feature.origin, sketches, bodyKeys, context.functionPoint, context.subShape);
   if (!origin.ok) {
     return origin;
   }
@@ -2763,6 +3060,7 @@ function resolveSphereSection(
   solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
 ): ThruSectionOutcome {
   const sphere = solids.find((candidate) => candidate.id === sphereFeatureId);
   if (
@@ -2784,7 +3082,7 @@ function resolveSphereSection(
       error: partError(featureId, 'invalidValue', positiveFieldMessage('半径')),
     };
   }
-  const origin = resolveSolidOrigin(featureId, sphere.origin, sketches, bodyKeys);
+  const origin = resolveSolidOrigin(featureId, sphere.origin, sketches, bodyKeys, undefined, context.subShape);
   if (!origin.ok) {
     return origin;
   }
@@ -2810,6 +3108,7 @@ function resolveRuledSection(
   solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
 ): ThruSectionOutcome {
   switch (section.kind) {
     case 'sketchCurves': {
@@ -2828,7 +3127,7 @@ function resolveRuledSection(
       return { ok: true, section: { kind: 'curves', curves: face.curves } };
     }
     case 'sphere':
-      return resolveSphereSection(featureId, section.sphereFeatureId, solids, sketches, bodyKeys);
+      return resolveSphereSection(featureId, section.sphereFeatureId, solids, sketches, bodyKeys, context);
     case 'solidFace': {
       /*
         立体の面(§0.a-0.73、タスク24b)。**輪郭へは直さず、指紋のまま段へ乗せる。**
@@ -2877,12 +3176,13 @@ function resolveRuledSections(
   solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
 ):
   | { readonly ok: true; readonly sections: readonly ThruSectionPlan[] }
   | { readonly ok: false; readonly error: PartError } {
   const resolved: ThruSectionPlan[] = [];
   for (const section of sections) {
-    const outcome = resolveRuledSection(featureId, section, solids, sketches, bodyKeys);
+    const outcome = resolveRuledSection(featureId, section, solids, sketches, bodyKeys, context);
     if (!outcome.ok) {
       return outcome;
     }
@@ -2902,6 +3202,7 @@ function planRuled(
   solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
 ): PlanOutcome {
   if (feature.first.kind === 'sphere' && feature.second.kind === 'sphere') {
     return fail(feature.id, 'degenerate', THRU_SECTIONS_TWO_SPHERES_MESSAGE);
@@ -2912,6 +3213,7 @@ function planRuled(
     solids,
     sketches,
     bodyKeys,
+    context,
   );
   if (!sections.ok) {
     return sections;
@@ -2943,6 +3245,7 @@ function planLoft(
   solids: readonly SolidFeature[],
   sketches: readonly ResolvedPartSketch[],
   bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
 ): PlanOutcome {
   if (feature.sections.length < MIN_THRU_SECTIONS) {
     return fail(feature.id, 'missingProfile', THRU_SECTIONS_TOO_FEW_MESSAGE);
@@ -2956,6 +3259,7 @@ function planLoft(
     solids,
     sketches,
     bodyKeys,
+    context,
   );
   if (!sections.ok) {
     return sections;
@@ -3044,6 +3348,30 @@ function planDraft(
       reversed: feature.reversed,
     },
   };
+}
+
+/**
+ * 平らな面の移動(EX-18 の限られた一段)。対象のボディを消費して 1 つの新しいボディを作る。
+ *
+ * model だけで断れるもの(面でない・別の立体の面・平らでない・距離が 0 や数でない)は
+ * `checkFaceOffset` が OCCT を呼ぶ前に赤くする(NFR-UX-5)。隣の面の幾何と、ほかの形との
+ * 衝突はカーネル(editSolidFace.ts)が断り、元の立体はそのまま残る。
+ */
+function planFaceOffset(
+  feature: FaceOffsetFeature,
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+  if (!target.ok) {
+    return target;
+  }
+  const check = checkFaceOffset(feature, context.subShape);
+  if (!check.ok) {
+    return fail(feature.id, check.code, check.message);
+  }
+  return { ok: true, plan: faceOffsetPlan(feature, target.targetKey, check.offset) };
 }
 
 /** 鏡に映すもとの立体が引けない(未作成・抑制中・上流が失敗・履歴から消えた)。 */
@@ -3658,6 +3986,22 @@ type SurfaceShapeOutcome =
  * 選び直しはカーネルが行う(罫線面の `solidFace` とまったく同じ扱い、§2.2)。
  * **どの作り方でも対象を消費しない**ので `consumed` を見ない(§0.a-0.45)。
  */
+/** Open profiles have saved line owners, never a fabricated closed-face owner. */
+function surfaceLineOrigins(sketch: SketchDocument | undefined, ids: readonly string[],
+  curves: readonly ResolvedCurve[]): Extract<SurfaceShapePlan, { kind: 'extrude' }>['profileOrigins'] {
+  if (sketch === undefined || ids.length < 1 || ids.length > 32 || curves.length !== ids.length
+    || new Set(ids).size !== ids.length) return undefined;
+  const anchors: Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][] = [];
+  for (let index = 0; index < ids.length; index++) {
+    const id = ids[index], curve = curves[index];
+    const saved = sketch.features.filter(feature => feature.id === id);
+    if (saved.length !== 1 || saved[0].kind !== 'line' || saved[0].construction
+      || curve.kind !== 'segment' || curve.featureId !== id) return undefined;
+    anchors.push({ sketchId: sketch.id, lineFeatureId: id, role: 'whole-line' });
+  }
+  return anchors;
+}
+
 function resolveSurfaceShape(
   featureId: string,
   operation: SurfaceOperation,
@@ -3689,12 +4033,16 @@ function resolveSurfaceShape(
           error: partError(featureId, 'invalidValue', positiveFieldMessage('掃く長さ')),
         };
       }
+      const profileOrigins = surfaceLineOrigins(
+        context.sketchDocuments.find(sketch => sketch.id === operation.profile.sketchId),
+        operation.profile.curveIds, profile);
       return {
         ok: true,
         value: {
           shape: {
             kind: 'extrude',
             profile,
+            ...(profileOrigins === undefined ? {} : { profileOrigins }),
             direction: operation.reversed ? negateVec3(normal) : cleanZeroVec3(normal),
             distance,
           },
@@ -3961,6 +4309,111 @@ function cutPlaneContext(
   };
 }
 
+type SurfaceCutBladeOutcome =
+  | { readonly ok: true; readonly blade: SurfaceCutBladePlan }
+  | { readonly ok: false; readonly error: PartError };
+
+function resolveSurfaceCutBlade(
+  feature: SurfaceCutFeature,
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  context: SolidPlanContext,
+): SurfaceCutBladeOutcome {
+  const blade = feature.blade;
+  switch (blade.kind) {
+    case 'plane': {
+      const outcome = resolvePlaneSpec(blade.plane, cutPlaneContext(sketches, context));
+      return outcome.ok
+        ? { ok: true, blade: { kind: 'plane', origin: outcome.plane.origin, normal: cleanZeroVec3(outcome.plane.normal) } }
+        : { ok: false, error: partError(feature.id, REFERENCE_ERROR_CODES[outcome.reason], outcome.message) };
+    }
+    case 'extrusion': {
+      const profile = findResolvedCurves(sketches, blade.profile);
+      const sketch = context.sketchDocuments.find(entry => entry.id === blade.profile.sketchId);
+      const features = blade.profile.curveIds.map(id => sketch?.features.find(entry => entry.id === id));
+      const planeId = features[0]?.planeId;
+      const plane = planeId === undefined ? null : context.workPlane(planeId);
+      if (profile === null || plane === null || features.some(entry => entry?.planeId !== planeId)) {
+        return { ok: false, error: partError(feature.id, 'missingProfile', '切断する曲線と作図面が見つかりません。') };
+      }
+      return { ok: true, blade: { kind: 'extrusion', profile, planeOrigin: plane.origin, planeNormal: plane.normal } };
+    }
+    case 'surface': {
+      const sourceKey = bodyKeys.get(blade.surfaceFeatureId);
+      return sourceKey === undefined
+        ? { ok: false, error: partError(feature.id, 'missingBody', '切断に使う上流の面が見つかりません。') }
+        : { ok: true, blade: { kind: 'surface', sourceKey } };
+    }
+  }
+}
+
+/** A pair borrows the same target twice, but consumes it only once. */
+function planSurfaceCut(
+  feature: SurfaceCutFeature,
+  solids: readonly SolidFeature[],
+  sketches: readonly ResolvedPartSketch[],
+  bodyKeys: ReadonlyMap<string, string>,
+  consumed: ReadonlySet<string>,
+  context: SolidPlanContext,
+): PlanOutcome {
+  const targetKey = bodyKeys.get(feature.targetFeatureId);
+  if (targetKey === undefined) return fail(feature.id, 'missingBody', CUT_MISSING_BODY_MESSAGE);
+  const blade = resolveSurfaceCutBlade(feature, sketches, bodyKeys, context);
+  if (!blade.ok) return blade;
+  const linked = solids.filter(candidate => candidate.kind === 'surfaceCut'
+    && (candidate.id === feature.pairedWith || candidate.pairedWith === feature.id));
+  const partner = linked[0];
+  if (feature.pairedWith !== null || linked.length > 0) {
+    if (linked.length !== 1 || partner?.kind !== 'surfaceCut' || partner.id === feature.id
+      || partner.suppressed || partner.targetFeatureId !== feature.targetFeatureId || partner.keep === feature.keep
+      || (partner.pairedWith !== null && partner.pairedWith !== feature.id)
+      || (feature.pairedWith !== null && feature.pairedWith !== partner.id)
+      || solids.some(candidate => candidate.kind === 'surfaceCut' && candidate.id !== feature.id
+        && candidate.id !== partner.id && candidate.pairedWith === partner.id)) {
+      return fail(feature.id, 'invalidValue', '対の切断には同じ対象と刃、反対の残す側が必要です。');
+    }
+    const otherBlade = resolveSurfaceCutBlade(partner, sketches, bodyKeys, context);
+    const bladeKey = (value: SurfaceCutBladePlan): string => cacheKeyFor(keyMaterialFor({
+      kind: 'surfaceCut', targetKey, blade: value, keepPositive: false,
+    }));
+    if (!otherBlade.ok || bladeKey(otherBlade.blade) !== bladeKey(blade.blade)) {
+      return fail(feature.id, 'invalidValue', '対の切断には同じ対象と刃、反対の残す側が必要です。');
+    }
+  }
+  if (consumed.has(feature.targetFeatureId) && (partner === undefined || !bodyKeys.has(partner.id))) {
+    return fail(feature.id, 'consumedTwice', CUT_CONSUMED_TWICE_MESSAGE);
+  }
+  return { ok: true, plan: { kind: 'surfaceCut', targetKey, blade: blade.blade, keepPositive: feature.keep === 'positive' } };
+}
+
+/** Reject stored coordinates that hide an indirect self/forward reference through a sketch or plane. */
+function surfaceCutDependencyError(
+  featureId: string,
+  graph: ReadonlyMap<string, readonly string[]>,
+  solidIds: ReadonlySet<string>,
+  bodyKeys: ReadonlyMap<string, string>,
+): PartError | null {
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string): PartError | null => {
+    if (visiting.has(id)) return partError(featureId, 'circularReference', '切断の参照が自分自身へ戻っています。');
+    if (visited.has(id)) return null;
+    visiting.add(id);
+    for (const dependency of graph.get(id) ?? []) {
+      if (visiting.has(dependency)) return partError(featureId, 'circularReference', '切断の参照が自分自身へ戻っています。');
+      if (solidIds.has(dependency) && !bodyKeys.has(dependency)) {
+        return partError(featureId, 'missingBody', '切断の対象と刃は、作成済みの上流の形を参照してください。');
+      }
+      const error = visit(dependency);
+      if (error !== null) return error;
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return null;
+  };
+  return visit(featureId);
+}
+
 /**
  * 平面による切断(FR-432、§2.9b)。対象を消費し、残す側 1 つのボディを作る。
  *
@@ -4081,9 +4534,9 @@ function planSolid(
     case 'revolve':
       return planRevolve(feature, sketches, axisFrames);
     case 'sew':
-      return planSew(feature, sketches);
+      return planSew(feature, sketches, bodyKeys, consumed);
     case 'boolean':
-      return planBoolean(feature, bodyKeys, consumed);
+      return planBoolean(feature, solids, bodyKeys, consumed);
     case 'hole':
       return planHole(feature, sketches, bodyKeys, consumed);
     case 'threadHole':
@@ -4097,13 +4550,15 @@ function planSolid(
     case 'pattern':
       return planPattern(feature, solids, sketches, bodyKeys, consumed, context);
     case 'primitive':
-      return planPrimitive(feature, sketches, bodyKeys, axisFrames, context.functionPoint);
+      return planPrimitive(feature, sketches, bodyKeys, axisFrames, context);
     case 'ruled':
-      return planRuled(feature, solids, sketches, bodyKeys);
+      return planRuled(feature, solids, sketches, bodyKeys, context);
     case 'loft':
-      return planLoft(feature, solids, sketches, bodyKeys);
+      return planLoft(feature, solids, sketches, bodyKeys, context);
     case 'draft':
       return planDraft(feature, bodyKeys, consumed, context);
+    case 'faceOffset':
+      return planFaceOffset(feature, bodyKeys, consumed, context);
     case 'mirror':
       return planMirror(feature, bodyKeys, context);
     case 'transform':
@@ -4128,6 +4583,8 @@ function planSolid(
     case 'shell':
       return planShell(feature, bodyKeys, consumed);
     // 平面による切断(FR-432、§2.9b、タスク27c)。
+    case 'surfaceCut':
+      return planSurfaceCut(feature, solids, sketches, bodyKeys, consumed, context);
     case 'cut':
       return planCut(feature, solids, sketches, bodyKeys, consumed, context);
     // 読み込んだ形(FR-802、P6 §2.8、タスク20)。
@@ -4210,6 +4667,7 @@ function resolveSketchesAndReferences(
   readonly workPlane: (planeId: WorkPlaneId) => WorkPlane | null;
   /** 点の参照の解決(拡大縮小の中心 FR-424 が使う。P5 タスク45)。 */
   readonly point: (reference: PointReference) => Vec3 | null;
+  readonly pointWithIdentity: (reference: PointReference) => ResolvedPointWithIdentity | null;
   readonly axisFrames: ReadonlyMap<string, AxisFrame>;
 } {
   const { offsetCurves, projectedCurves, subShape } = options;
@@ -4256,8 +4714,28 @@ function resolveSketchesAndReferences(
       knownSketches,
       new Map<string, string>(),
       options.functionPoint,
+      options.subShape,
     );
     return origin.ok ? { center: origin.value.origin, radius } : null;
+  }
+
+  /**
+   * スケッチの点の基準 'point' から部品の基準点を引く(EX-18 組立の文脈の参照)。解くのは既存の
+   * `resolver.point` だけ。座標の値(絶対)で決めた基準点だけを通す。頂点・辺・面・相対の基準点は
+   * このスケッチから作る立体やスケッチに戻って循環し得るので断る。消えた基準点は none(従来の「見つからない」)。
+   */
+  function partPointAt(pointId: string): PartPointLookup {
+    const feature = document.references.find((reference) => reference.id === pointId);
+    if (feature === undefined) return NO_PART_POINT;
+    if (feature.kind !== 'referencePoint') {
+      return { kind: 'refused', message: `基準の点 ${pointId} は基準点ではありません。` };
+    }
+    if (feature.definition.kind !== 'coordinate' || feature.definition.at.mode !== 'absolute') {
+      return { kind: 'refused', message:
+        `基準点 ${feature.name} は座標の値で決めた点ではないため、スケッチの基準にできません(循環を避けるため)。` };
+    }
+    const position = resolver.point({ kind: 'point', pointId });
+    return position === null ? { kind: 'refused', message: `基準点 ${feature.name} を解けません。` } : { kind: 'point', position };
   }
 
   const solveOne = (sketch: SketchDocument): ConstrainedSketch =>
@@ -4270,6 +4748,7 @@ function resolveSketchesAndReferences(
       functionPoint: options.functionPoint,
       subShape,
       sphere: sphereAt,
+      partPoint: partPointAt,
     });
 
   const resolver = createReferenceResolver(document, {
@@ -4318,6 +4797,7 @@ function resolveSketchesAndReferences(
     references,
     workPlane: resolver.workPlane,
     point: resolver.point,
+    pointWithIdentity: resolver.pointWithIdentity,
     axisFrames,
   };
 }
@@ -4399,7 +4879,7 @@ function noProjectedCurves(): null {
 
 /** 部品文書を解決して、カーネルへ渡す段の一覧を作る。例外を投げない(FR-504)。 */
 export function resolvePart(document: PartDocument, options: ResolvePartOptions = {}): ResolvedPart {
-  const { sketches, references, workPlane, point, axisFrames } = resolveSketchesAndReferences(
+  const { sketches, references, workPlane, point, pointWithIdentity, axisFrames } = resolveSketchesAndReferences(
     document,
     {
       invalidInputs: options.invalidInputs,
@@ -4418,6 +4898,7 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     subShape: options.subShape ?? subShapeFromFingerprint,
     workPlane,
     point,
+    pointWithIdentity,
     axisFrames,
     sketchDocuments: document.sketches,
   };
@@ -4431,9 +4912,14 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   const errors: PartError[] = references.errors.map(toPartError);
   /** 作成に成功したボディの鍵。ここに無い id は下流から参照できない。 */
   const bodyKeys = new Map<string, string>();
+  /** Keys whose producer has a real semantic source or whose supported operation inherits one. */
+  const semanticKeys = new Set<string>();
   const sheetMetalBodies = new Map<string, ResolvedSheetBody>();
   /** すでに他のフィーチャーが消費したボディ。同じものを2度は使えない(§2.2)。 */
   const consumed = new Set<string>();
+  const surfaceCutGraph = document.solids.some(feature => feature.kind === 'surfaceCut')
+    ? historyDependencies(document, { includeSelf: true }) : new Map<string, readonly string[]>();
+  const solidIds = new Set(document.solids.map(feature => feature.id));
 
   for (const feature of document.solids) {
     // 抑制は失敗ではない(FR-503)。ボディを作らず、errors にも入れない。
@@ -4442,6 +4928,10 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
     }
     const invalid = options.invalidInputs?.get(feature.id);
     if (invalid !== undefined) { errors.push(partError(feature.id, 'invalidValue', invalid)); continue; }
+    if (feature.kind === 'surfaceCut') {
+      const dependencyError = surfaceCutDependencyError(feature.id, surfaceCutGraph, solidIds, bodyKeys);
+      if (dependencyError !== null) { errors.push(dependencyError); continue; }
+    }
     if (feature.kind === 'importedMesh') {
       /*
         読み込んだ三角形の形(FR-802、§2.8、§0.a-0.23)。**カーネルの段を作らない**ので
@@ -4480,14 +4970,28 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
       errors.push(outcome.error);
       continue;
     }
-    const key = outcome.plan.kind === 'sheetBase' || outcome.plan.kind === 'sheetFlange' || outcome.plan.kind === 'sheetJoin' || outcome.plan.kind === 'sheetBody'
-      ? sheetShapeKey(outcome.plan) : cacheKeyFor(keyMaterialFor(outcome.plan));
+    const plan = outcome.plan;
+    const geometricKey = plan.kind === 'sheetBase' || plan.kind === 'sheetFlange' || plan.kind === 'sheetJoin' || plan.kind === 'sheetBody'
+      ? sheetShapeKey(plan) : cacheKeyFor(keyMaterialFor(plan));
+    const originSourceIds = plan.kind === 'extrude' ? (plan.profileOrigin === undefined ? undefined
+      : 'lineFeatureIds' in plan.profileOrigin ? plan.profileOrigin.lineFeatureIds : plan.profileOrigin.curveFeatureIds)
+      : plan.kind === 'surface' && plan.shape.kind === 'extrude' && plan.shape.profileOrigins !== undefined
+        ? plan.shape.profileOrigins.flatMap(anchor => [anchor.sketchId, anchor.lineFeatureId])
+      : plan.kind === 'primitive' && (plan.shape.kind === 'box' || plan.shape.kind === 'cylinder') ? []
+      : plan.kind === 'boolean' && (semanticKeys.has(plan.targetKey) || semanticKeys.has(plan.toolKey)) ? []
+      : (plan.kind === 'fillet' || plan.kind === 'chamfer') && semanticKeys.has(plan.targetKey) ? []
+      : undefined;
+    const key = originSourceIds === undefined ? geometricKey
+      : originAwareCacheKey(geometricKey, feature.id, originSourceIds);
+    if (originSourceIds !== undefined) semanticKeys.add(key);
     drafts.push({ featureId: feature.id, name: feature.name, key, plan: outcome.plan });
     bodyKeys.set(feature.id, key);
     // 消費するボディを記録する(ブーリアンは対象と相手、加工は対象1つ、§0.a-0.5)。
     // 種類ごとの規則は createPartDocument.ts の consumedTargetsOf が正本で、ここには書かない。
+    // 面入力の縫合が取り込む曲面は文書を見ないと決まらないので、文書の立体の一覧を渡す
+    // (文書だけの consumedBodyIds と同じ渡し方。EX-18)。
     // 段が作れなかったフィーチャーはここへ来ないので、失敗した加工は何も消費しない。
-    for (const consumedId of consumedTargetsOf(feature)) {
+    for (const consumedId of consumedTargetsOf(feature, document.solids)) {
       consumed.add(consumedId);
     }
   }

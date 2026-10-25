@@ -105,6 +105,7 @@ export function referencedSketchIds(
       §0.a-0.11 の順序の制約は解決の成否と無関係に効く判定だからである。
     */
     case 'draft':
+    case 'faceOffset':
     case 'mirror':
     case 'threadShaft':
     case 'shell':
@@ -129,6 +130,9 @@ export function referencedSketchIds(
       return surfaceSketchIds(feature.operation);
     case 'functionSurface':
       return [];
+    case 'surfaceCut':
+      return feature.blade.kind === 'extrusion' ? [feature.blade.profile.sketchId]
+        : feature.blade.kind === 'plane' ? planeSketchIds(feature.blade.plane, sketches) : [];
     case 'cut':
       // 切断(FR-432、タスク27c)。切断面の点がスケッチの点でありうるので、拡大縮小の
       // 中心とまったく同じ扱いで id から探す(スケッチの一覧を渡されたときだけ数える)。
@@ -181,7 +185,7 @@ function patternSketchIds(
       return axisSketchIds(placement.axis);
     case 'points':
       // 点集合(FR-425)。`scale` の中心とまったく同じ扱いで、id から探す(タスク46)。
-      return pointSketchIds(placement.points, sketches);
+      return pointSketchIds(placement.points.map((point) => point.reference), sketches);
   }
 }
 

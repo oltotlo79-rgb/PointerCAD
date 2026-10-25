@@ -1,4 +1,4 @@
-import { selectSubShape, type KernelBridge, type SolidRecomputeOptions } from '../kernelBridge.js';
+import { createSubShapeReferenceResolver, type KernelBridge, type SolidRecomputeOptions } from '../kernelBridge.js';
 import type { PartDocument } from '../part/types.js';
 import type { ResolvedPart } from '../part/resolvePart.js';
 import { buildHoleSchedule, type HoleScheduleFrame, type HoleScheduleResult } from './holeSchedule.js';
@@ -24,10 +24,12 @@ export async function resolveHoleSchedule(
   if (result.cancelled || options.shouldCancel?.() === true) return { ok: false, reason: 'cancelled' };
   if (result.failures.length > 0) return { ok: false, reason: 'kernelFailed', message: result.failures[0].message };
   const bodies = new Map(result.bodies.map((body) => [body.featureId, body]));
+  const resolveReference = createSubShapeReferenceResolver();
   return buildHoleSchedule(document, { sketches: resolved.sketches, frame, resolvePlane: (targetId, face) => {
     const body = bodies.get(targetId);
     if (body === undefined) return null;
-    const selected = selectSubShape(body, face);
+    const resolution = resolveReference(body, face);
+    const selected = resolution.status === 'matched' ? resolution.match.geometry : null;
     return selected?.kind === 'face' && selected.surfaceKind === 'plane' && selected.axis !== null
       ? { origin: selected.position, normal: selected.axis } : null;
   } });

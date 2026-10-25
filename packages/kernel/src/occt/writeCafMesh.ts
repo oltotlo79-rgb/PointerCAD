@@ -30,9 +30,13 @@ import {
  *    自分で組めば `asset.generator` を `PointerCAD` に固定でき、**同じ三角形からは
  *    必ず同じバイト列**になる(STEP のように 1 行落として比べる必要が無い)。
  *
- * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1):**
- * `oc.RWObj_CafWriter` / `oc.RWGltf_CafWriter` はどちらも実行時に関数として存在する
- * (`.test.ts` の 1 件目が毎回確かめる)。**実在は記録するだけで、この実装は使わない。**
+ * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1)と、
+ * 採用した closed 版での確認(2026-10-24):** 旧レジストリ版では `oc.RWObj_CafWriter` /
+ * `oc.RWGltf_CafWriter` はどちらも実行時に関数として存在したが、**closed 版 OCCT
+ * (`vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677`)には無い**(実行時に
+ * `undefined`)。この実装は元から OCCT の書き手を使わず、上の 3 つの理由で自前の純関数で
+ * 書く(統括の決定 2026-09-06 と 2026-10-24)ので、影響は無い。`.test.ts` の 1 件目は、
+ * 採用した共通の三角形から OBJ と glTF の両方を書き出せることを確かめる。
  * `Quantity_TOC_sRGB` の意味(渡した値がそのまま sRGB として書かれる)はタスク7 で
  * 実測済み(`xcafDocument.ts` の `resolveColorEnums`)。ここは OCCT を通さないので、
  * 色の解釈は**このファイルが自分で決める**(下の `srgbToLinear`)。

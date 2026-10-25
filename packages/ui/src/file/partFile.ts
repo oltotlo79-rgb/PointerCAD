@@ -1,3 +1,4 @@
+import { reportThumbnailCaptureReason } from './thumbnail.js';
 /**
  * 新規・開く・保存の手続き(計画書 docs/plans/P2-ソリッド基礎.md タスク23)。
  *
@@ -18,23 +19,31 @@ import {
   DEFAULT_AUTO_SAVE_IDENTITY,
   readPcadFile,
   serializeDocument,
-  writePcadFile,
+  type SaveDocumentEncoder,
   type PcadAttachments,
   type ReadPcadFileErrorCode,
 } from '@pointercad/io';
 import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
+import { createPartLineageId, createSecureUuid, prepareDocumentSession, SecurePartIdentityError,
+  type PreparedDocumentSession } from '../store/fileSlice.js';
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activeDocument } from '../store/documentKind.js';
 import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly } from './assemblyFile.js';
-import { beginOpenRequest, mayOpenAfterRead } from './documentOpenGuard.js';
+import { beginOpenRequest, mayOpenAfterRead, mayReportOpenFailure } from './documentOpenGuard.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
-import { completeDocumentSave, queueDocumentSave } from './documentSaveQueue.js';
+import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
+import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { applyPickedDrawing, saveDrawing } from './drawingFile.js';
+import { loadedPartAttachments } from './loadedPartAttachments.js';
+import { readTutorialCheckpoint, saveTutorialCheckpoint } from '../tutorial/tutorialCheckpoint.js';
+import { continuingParameterSession, parameterCheckpointInput, parameterCheckpointIdentity,
+  parameterCheckpointWriteGuard, parameterTutorialEvidence, parameterTutorialStep,
+  resumeParameterTutorialSession } from '../tutorial/tutorialProgress.js';
 
 /**
  * 手続きが外の世界へ触れる口(検査では偽物を差し込む)。
@@ -43,6 +52,8 @@ import { applyPickedDrawing, saveDrawing } from './drawingFile.js';
  * 既定は画面の中の日本語の 3 択(`confirmInApp`、w91a)。
  */
 export interface PartFileDeps {
+  /** headless検査用の明示注入口。製品の既定はストアが持つ同一配信元Worker。 */
+  readonly encodeSave?: SaveDocumentEncoder;
   /** サムネイルの PNG。作れなければ null(サムネイルなしで保存する、§0.a-0.18)。 */
   readonly captureThumbnail: () => Uint8Array | null;
   /** 失うものがある操作の前に確認する。「はい」なら true(NFR-UX-3)。 */
@@ -203,12 +214,16 @@ let cachedResult = false;
 
 /** 中身を比べるための文字列。保存時刻の違いは消してある。 */
 function contentOf(document: PartDocument): string {
-  return serializeDocument(document, { savedAt: COMPARISON_SAVED_AT });
+  // Issuance is retained across Undo and persisted by the real save path. It is
+  // allocator metadata, not an authored edit; compare every other saved field.
+  const { patternSlotHighWater: issuance, ...content } = document;
+  void issuance;
+  return serializeDocument(content, { savedAt: COMPARISON_SAVED_AT });
 }
 
 /** 何もかいていない、起動直後のままの部品か。 */
 function isUntouched(document: PartDocument): boolean {
-  return contentOf(document) === contentOf(createEmptyPartDocument());
+  return contentOf(document) === contentOf({ ...createEmptyPartDocument(), id: document.id });
 }
 
 /**
@@ -257,11 +272,15 @@ async function confirmInApp(messageKey: MessageKey): Promise<boolean> {
 function captureThumbnailFromViewport(): Uint8Array | null {
   const capture = useAppStore.getState().captureThumbnail;
   if (capture === null) {
+    reportThumbnailCaptureReason('producer:absent');
     return null;
   }
   try {
-    return capture();
+    const result = capture();
+    reportThumbnailCaptureReason(result === null ? 'producer:null' : 'producer:success');
+    return result;
   } catch {
+    reportThumbnailCaptureReason('producer:throw');
     // サムネイルが作れないことを保存の失敗にしない(§0.a-0.18)。
     return null;
   }
@@ -313,8 +332,18 @@ export async function newPart(deps: PartFileDeps): Promise<void> {
   }
   const store = useAppStore.getState();
   // 文書と上書き先の寿命をそろえる。前の文書の先を新しい空の部品へ持ち越さない。
+  const emptyDocument = createEmptyPartDocument();
+  let id: string;
+  let preparedSession: PreparedDocumentSession;
+  try { id = createPartLineageId(); preparedSession = prepareDocumentSession(); }
+  catch (error) {
+    if (!(error instanceof SecurePartIdentityError)) throw error;
+    store.setFileMessage({ key: 'command.unavailable.action', failed: true });
+    return;
+  }
+  const document = { ...emptyDocument, id };
   store.fileGateway.clearSaveTarget?.();
-  store.resetDocument(createEmptyPartDocument());
+  store.resetDocument(document, preparedSession);
   store.setFileState(null, null);
 }
 
@@ -340,11 +369,19 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     return;
   }
   if (picked.name.toLowerCase().endsWith('.pcada')) {
-    await applyPickedAssembly(picked, deps, request);
+    try { await applyPickedAssembly(picked, deps, request); }
+    catch (error) {
+      if (!(error instanceof SecurePartIdentityError)) throw error;
+      if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
+    }
     return;
   }
   if (picked.name.toLowerCase().endsWith('.pcadd')) {
-    await applyPickedDrawing(picked, deps, request);
+    try { await applyPickedDrawing(picked, deps, request); }
+    catch (error) {
+      if (!(error instanceof SecurePartIdentityError)) throw error;
+      if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
+    }
     return;
   }
   const result = readPartDocument(picked.bytes);
@@ -352,18 +389,47 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     useAppStore.getState().setFileMessage({ key: result.messageKey, failed: true });
     return;
   }
+  const checkpoint = await readTutorialCheckpoint(
+    { part: { document: result.document, savedBytes: picked.bytes } },
+    useAppStore.getState().tutorialCheckpointStorage,
+  );
   if (!(await mayOpenAfterRead(request, deps))) {
     return;
   }
-  // ここまで来たら中身は確かめ済み。文書を差し替え、Undo で開く前へ戻れるようにする。
+  // ここまで来たら中身は確かめ済み。開いた文書は新しい履歴から始め、前の文書の選択も
+  // 持ち越さない(`opensDocument`)。開いた直後の Undo で前の文書へ戻ると、名前と上書き先は
+  // 開いたファイルのまま中身だけが前の文書になり、上書き保存で開いたファイルを壊すため。
   // 文書まるごとの差し替えなので、プロパティ欄の打ちかけの下書きは捨てる
   // (§0.a-0.1〜、docs/報告記録.md 2026-09-04 14:05 の 9b)。
   const store = useAppStore.getState();
   // 形そのもの(読み込んだ B-rep・三角形・下絵)は文書の外にあるので、
   // 文書を差し替える前に渡す(差し替えの直後に再計算が走るため)。
-  deps.onAttachmentsLoaded?.(result.attachments);
-  store.applyDocument(result.document, { replacesDocument: true });
-  store.setFileState(picked.name, result.document);
+  let preparedSession: PreparedDocumentSession;
+  let loaded: ReturnType<typeof loadedPartAttachments>;
+  try {
+    preparedSession = prepareDocumentSession();
+    loaded = loadedPartAttachments(result.document, result.attachments,
+      { shapes: store.importedShapes, meshes: store.importedMeshes, canvases: store.canvases },
+      kind => `${kind}-asset-${createSecureUuid()}`);
+  } catch (error) {
+    if (!(error instanceof SecurePartIdentityError)) throw error;
+    if (mayReportOpenFailure(request)) store.setFileMessage({ key: 'file.openFailed', failed: true });
+    return;
+  }
+  deps.onAttachmentsLoaded?.(loaded.attachments);
+  store.applyDocument(loaded.document, { opensDocument: true, preparedSession });
+  store.setFileState(picked.name, loaded.document);
+  const opened = useAppStore.getState();
+  // Asset collision normalization can rewrite the document after the saved bytes were verified.
+  // Its old checkpoint no longer describes the document now visible in the store.
+  const sameSavedContent = loaded.document === result.document;
+  opened.setTutorialDrawingProof(null);
+  opened.setTutorialExports({});
+  opened.setTutorialDraft(checkpoint.ok && sameSavedContent ? checkpoint.checkpoint.draft ?? null : null);
+  opened.setTutorialSession(checkpoint.ok && sameSavedContent
+    ? resumeParameterTutorialSession(checkpoint.checkpoint, loaded.document, opened.documentVersion) : null);
+  opened.setTutorialCheckpointFailure(checkpoint.ok && !sameSavedContent ? 'staleContent'
+    : checkpoint.ok || checkpoint.reason === 'missing' ? null : checkpoint.reason);
   // 中身を検証して文書へ適用し終えたものだけ、開いた先をこの文書の上書き先にする。
   if (picked.saveTargetToken === null) {
     store.fileGateway.clearSaveTarget?.();
@@ -392,18 +458,25 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   // 書き出す文書はここで確定させる。待っている間に文書が変わっても、
   // 「保存した文書」と実際に書いたものを食い違わせない。
   const document = store.document;
+  const guideSession = store.tutorialSession?.course === 'parameterToExport'
+    && store.tutorialSession.documentId === document.id
+    && store.tutorialSession.documentVersion === store.documentVersion ? store.tutorialSession : null;
+  const guideVersion = store.documentVersion;
   const thumbnailPng = deps.captureThumbnail();
   /*
    * サムネイルと添付はどちらも「あれば入れる」欄なので、渡す組を 1 か所で組み立てる。
    * 添付を落とすと、読み込んだ形を含む部品が開き直せなくなる(`PartFileDeps.attachmentsOf`)。
    */
   const attachments = deps.attachmentsOf?.();
-  return queueDocumentSave(store, async (isCurrent) => {
-  try {
-    const bytes = writePcadFile(document, {
+  const snapshot = captureSaveSnapshot({ kind: 'part', document, options: {
+    savedAt: new Date().toISOString(),
     ...(thumbnailPng === null ? {} : { thumbnailPng }),
     ...(attachments === undefined ? {} : { attachments }),
-  });
+  } });
+  return queueDocumentSave(store, async (isCurrent, control) => {
+  try {
+    const bytes = await (deps.encodeSave ?? store.saveDocumentEncoder)(snapshot, control);
+    if (!control.beginWriting()) return;
   const suggestedName = withPcadExtension(displayFileName(store.fileName));
 
     const savedName = await store.fileGateway.savePcad(
@@ -418,6 +491,30 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   const after = useAppStore.getState();
   const savedFileName = withPcadExtension(savedName);
   after.setFileState(savedFileName, document);
+  if (guideSession !== null) {
+    const latest = useAppStore.getState();
+    const activeGuide = latest.tutorialSession;
+    if (continuingParameterSession(guideSession, activeGuide) && activeGuide !== null) {
+      const currentGuide = () => isCurrent() && useAppStore.getState().document === document
+        && useAppStore.getState().documentVersion === guideVersion
+        && useAppStore.getState().tutorialCheckpointStorage === latest.tutorialCheckpointStorage
+        && useAppStore.getState().tutorialSession === activeGuide;
+      const stage = parameterTutorialStep(activeGuide, document, latest.documentVersion,
+        parameterTutorialEvidence(latest));
+      const input = stage === 'differentDocument' ? null
+        : parameterCheckpointInput(activeGuide, document, stage, latest.tutorialDraft);
+      if (input !== null) {
+        const guard = parameterCheckpointWriteGuard(activeGuide, latest.tutorialCheckpointStorage, currentGuide);
+        const checkpoint = guard.ok ? await saveTutorialCheckpoint(input,
+          { part: { document, savedBytes: bytes } }, latest.tutorialCheckpointStorage, guard.isCurrent) : guard;
+        if (currentGuide()) {
+          useAppStore.getState().setTutorialCheckpointFailure(checkpoint.ok ? null : checkpoint.reason);
+          if (checkpoint.ok) useAppStore.getState().setTutorialSession({ ...activeGuide,
+            checkpointIdentity: parameterCheckpointIdentity(checkpoint.checkpoint) });
+        }
+      }
+    }
+  }
   /*
    * 保存できたものも履歴へ残す(FR-807)。別名保存で名前が変わったときは、**新しい名前**が
    * 先頭へ来る(`savedName` は口が実際に書いた先の名前で、候補名ではない)。
@@ -440,10 +537,12 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
     if (saver !== null && canDiscard()) {
       await saver.discard();
       if (canDiscard()) await saver.discard(DEFAULT_AUTO_SAVE_IDENTITY);
+      if (canDiscard()) useAppStore.setState({ recoverySaveState: null });
     }
-  });
+  }, savedFileName);
   } catch (error) {
     if (isCurrent()) useAppStore.getState().setFileMessage({ key: saveFailureMessageKey(error), failed: true });
+    reportSaveEncodingFailure(error, isCurrent);
   }
   });
 }

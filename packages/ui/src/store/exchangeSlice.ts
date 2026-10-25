@@ -4,7 +4,7 @@
  */
 
 import type { ImportedMeshBytes } from '@pointercad/io';
-import type { PrintabilityReport } from '@pointercad/model';
+import type { PartDocument, PrintabilityReport } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { ExchangeKernel } from '../file/exchangeFile.js';
 import type { ExportHandoff } from '../file/openWith.js';
@@ -14,9 +14,11 @@ import {
   type PrintCheckDraft,
   DEFAULT_PRINT_CHECK_DRAFT,
   evaluatePrintCheckDraft,
+  printCheckTargets,
   PRINT_CHECK_STALE_KEY,
   runPrintCheck,
 } from '../solid/printCheckCommands.js';
+import { printabilityMatchesDisplayMeshes } from '../solid/printabilityColors.js';
 import type { AppState } from './appState.js';
 import { pendingFieldVariables } from '../shell/propertyFieldUnits.js';
 
@@ -30,12 +32,37 @@ import { pendingFieldVariables } from '../shell/propertyFieldUnits.js';
  */
 export type { PrintabilityReport, PrintabilitySummary } from '@pointercad/model';
 
+/** A successful inspection belongs to one request and one completed shape generation. */
+export interface PrintabilityOwner {
+  readonly requestToken: object;
+  readonly document: PartDocument;
+  readonly documentId: string;
+  readonly documentVersion: number;
+  readonly generation: number;
+  readonly targets: readonly { readonly featureId: string; readonly mesh: object }[];
+}
+
+/** Both the property section and export preflight must use this same current result. */
+export function currentPrintabilityReport(state: AppState): PrintabilityReport | null {
+  const report = state.printability;
+  const owner = state.printabilityOwner;
+  if (report === null || owner === null || state.isInspectingPrint || state.printCheckRequest !== null ||
+    state.printCheckErrorMessage !== null || state.isComputing) return null;
+  if (state.document !== owner.document || state.document.id !== owner.documentId ||
+    state.documentVersion !== owner.documentVersion ||
+    state.requestedGeneration !== owner.generation || state.completedGeneration !== owner.generation) return null;
+  if (!owner.targets.every((target) => state.bodies.some((body) =>
+    body.featureId === target.featureId && body.mesh === target.mesh))) return null;
+  return printabilityMatchesDisplayMeshes(report, state.bodies) ? report : null;
+}
+
 /** 入出力と点検のスライスが持つ欄と操作。 */
 export interface ExchangeSlice {
   /** Session settings; they do not change the document or create an Undo step. */
   readonly printCheckDraft: PrintCheckDraft;
   readonly setPrintCheckDraft: (draft: PrintCheckDraft) => void;
   readonly printCheckRequest: object | null;
+  readonly printabilityOwner: PrintabilityOwner | null;
   readonly exportHandoff: ExportHandoff | null;
   readonly exportHandoffAttempt: object | null;
   readonly beginExportHandoff: () => object;
@@ -141,13 +168,15 @@ export interface ExchangeSlice {
   readonly setExchangeKernel: (kernel: ExchangeKernel | null) => void;
   /** 単位を訊く小窓を出す・しまう(`file/exchangeActions.ts` だけが呼ぶ)。 */
   readonly setImportUnitAsked: (asked: boolean) => void;
+  /** 文書と同時に正規化した全履歴poolを置く。reset後の復旧は空poolから置き直す。 */
   readonly setImportedAttachments: (
     shapes: ReadonlyMap<string, Uint8Array>,
     meshes: ReadonlyMap<string, ImportedMeshBytes>,
   ) => void;
   /**
    * 読み込んだ形を**足す**(FR-802、タスク32)。いま開いている部品へ 1 ファイルぶんを
-   * 取り込むときに使うので、前からある添付は残す(差し替えない)。
+   * 追加する参照は未使用か同じ原本に限り、既存の別原本を上書きする依頼は全体を断る。
+   * ファイル取込の衝突正規化はexchangeActionsで文書と同時に済ませる。
    */
   readonly addImportedAttachments: (
     shapes: ReadonlyMap<string, Uint8Array>,
@@ -187,6 +216,7 @@ export interface ExchangeSlice {
 export type ExchangeInitialState = Pick<
   ExchangeSlice,
   | 'printability'
+  | 'printabilityOwner'
   | 'printabilityOffsets'
   | 'isInspectingPrint'
   | 'printCheckCancelRequested'
@@ -229,6 +259,12 @@ export const createExchangeSlice: StateCreator<
     set({ importedShapes: shapes, importedMeshes: meshes });
   },
   addImportedAttachments: (shapes, meshes) => {
+    const state = get();
+    if ([...shapes].some(([ref, bytes]) => state.importedShapes.has(ref) && state.importedShapes.get(ref) !== bytes)
+      || [...meshes].some(([ref, mesh]) => state.importedMeshes.has(ref) && state.importedMeshes.get(ref) !== mesh)) {
+      state.setError(t('file.openFailed'));
+      return;
+    }
     set((state) => ({
       // 表は不変なので、足すたびに新しい `Map` を作る(rules/04。前の表は触らない)。
       importedShapes: new Map([...state.importedShapes, ...shapes]),
@@ -240,6 +276,7 @@ export const createExchangeSlice: StateCreator<
     // 出せたら前の断りは用済み(NFR-UX-5「押したら必ず何かが起きる」)。
     set({
       printability,
+      printabilityOwner: null,
       printabilityOffsets: printability === null ? null : offsets,
       printCheckErrorMessage: null,
       printCheckRequest: null,
@@ -250,6 +287,7 @@ export const createExchangeSlice: StateCreator<
   invalidatePrintability: () => {
     set({
       printability: null,
+      printabilityOwner: null,
       printabilityOffsets: null,
       printCheckErrorMessage: t(PRINT_CHECK_STALE_KEY),
       printCheckRequest: null,
@@ -276,12 +314,20 @@ export const createExchangeSlice: StateCreator<
       lengthUnit: state.displaySettings.lengthUnit,
     });
     if (evaluated.criteria === null) {
-      set({ printCheckErrorMessage: evaluated.thicknessError ?? evaluated.angleError });
+      set({ printability: null, printabilityOwner: null, printabilityOffsets: null,
+        printCheckErrorMessage: evaluated.thicknessError ?? evaluated.angleError });
+      return;
+    }
+    if (state.isComputing || state.requestedGeneration !== state.completedGeneration) {
+      state.invalidatePrintability();
       return;
     }
     const request = {};
     set({
       printCheckRequest: request,
+      printability: null,
+      printabilityOwner: null,
+      printabilityOffsets: null,
       isInspectingPrint: true,
       printCheckCancelRequested: false,
       printCheckErrorMessage: null,
@@ -300,16 +346,35 @@ export const createExchangeSlice: StateCreator<
       // 待っているあいだに文書が変わっていることがあるので、置く先は取り直す。
       const after = get();
       if (after.printCheckRequest !== request) return;
-      if (after.document !== state.document || after.bodies !== state.bodies) {
+      if (after.document !== state.document || after.documentVersion !== state.documentVersion ||
+        after.bodies !== state.bodies || after.requestedGeneration !== state.requestedGeneration ||
+        after.completedGeneration !== state.completedGeneration ||
+        after.requestedGeneration !== after.completedGeneration || after.isComputing) {
         after.invalidatePrintability();
         return;
       }
       if (outcome.ok) {
-        after.setPrintability(outcome.report, outcome.offsets);
-        set({ isInspectingPrint: false, printCheckCancelRequested: false });
+        set({
+          printability: outcome.report,
+          printabilityOwner: {
+            requestToken: request, document: state.document, documentId: state.document.id,
+            documentVersion: state.documentVersion, generation: state.completedGeneration,
+            targets: printCheckTargets(state.bodies, state.selection).map((body) => ({
+              featureId: body.featureId, mesh: body.mesh,
+            })),
+          },
+          printabilityOffsets: outcome.offsets,
+          printCheckRequest: null,
+          printCheckErrorMessage: null,
+          isInspectingPrint: false,
+          printCheckCancelRequested: false,
+        });
         return;
       }
       set({
+        printability: null,
+        printabilityOwner: null,
+        printabilityOffsets: null,
         printCheckRequest: null,
         isInspectingPrint: false,
         printCheckCancelRequested: false,

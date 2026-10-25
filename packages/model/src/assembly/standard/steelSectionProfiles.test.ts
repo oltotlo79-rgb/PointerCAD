@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { CHANNEL_BEFORE_PARAMETERIZATION } from './steelChannelRegressionOracle.fixture.js';
 import { steelSectionProfile, STEEL_PROFILE_EVIDENCE, type SteelProfileSegment } from './steelSectionProfiles.js';
 
 const cornerArea = 1 - Math.PI / 4;
@@ -39,6 +40,18 @@ function tangent(segment: SteelProfileSegment, end: boolean): readonly [number, 
 }
 
 describe('source-backed analytic steel section boundaries', () => {
+  it('keeps all three pre-change rounded point sequences and unrounded areas byte-identical', () => {
+    expect(CHANNEL_BEFORE_PARAMETERIZATION).toHaveLength(3);
+    for (const frozen of CHANNEL_BEFORE_PARAMETERIZATION) {
+      const profile = steelSectionProfile('channel', frozen.size);
+      if (profile === undefined) throw new Error('Missing original channel');
+      const serialized = JSON.stringify(profile, (_key, value: unknown) =>
+        typeof value === 'number' ? Number(value.toFixed(12)) : value);
+      expect(serialized).toBe(frozen.serialized);
+      expect(JSON.stringify(profile.areaMm2)).toBe(JSON.stringify(frozen.areaMm2));
+    }
+  });
+
   it.each(fixtures)('$size matches independent area, source radii and outer dimensions', (input) => {
     const result = steelSectionProfile(input.catalog, input.size);
     if (result === undefined) throw new Error('Missing sourced profile');
@@ -88,7 +101,12 @@ describe('source-backed analytic steel section boundaries', () => {
   });
 
   it('does not infer profiles for old-only sizes, a different family or malformed sizes', () => {
-    expect(steelSectionProfile('hBeam', 'H 100×100×6×8')).toBeUndefined();
+    // W7: table 15 now supports H100; replace only its former unsupported-size expectation.
+    const h100 = steelSectionProfile('hBeam', 'H 100×100×6×8');
+    if (h100 === undefined) throw new Error('Missing sourced H100 profile');
+    const jisArea = 6 * (100 - 2 * 8) + 2 * 100 * 8 + 0.858 * 8 ** 2;
+    expect(Math.abs(h100.areaMm2 - 2159) / 2159).toBeLessThanOrEqual(5e-4);
+    expect(Math.abs(h100.areaMm2 - jisArea) / jisArea).toBeLessThanOrEqual(5e-4);
     expect(steelSectionProfile('channel', 'L 50×50×6')).toBeUndefined();
     expect(steelSectionProfile('equalAngle', 'L -1×-1×2')).toBeUndefined();
     expect(steelSectionProfile('equalAngle', 'toString')).toBeUndefined();

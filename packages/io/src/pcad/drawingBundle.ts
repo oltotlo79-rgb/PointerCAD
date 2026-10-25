@@ -48,6 +48,15 @@ function assertReopenable(entries: PcadZipEntries, ref: string, limits: ArchiveR
  */
 export async function writeDrawingBundle(document: DrawingDocument, options: WritePcaddFileOptions,
   limits: ArchiveReadLimits = IO_LIMITS): Promise<Uint8Array> {
+  const entries = await drawingBundleEntries(document, options, limits);
+  const zipped = zipPcadEntries(entries);
+  if (zipped.length > limits.archiveCompressedBytes) throw new Error(ARCHIVE_TOO_LARGE_MESSAGE);
+  return zipped;
+}
+
+/** 同期APIと保存専用エンコーダーが共有する、圧縮前の図面一式。 */
+export async function drawingBundleEntries(document: DrawingDocument, options: WritePcaddFileOptions,
+  limits: ArchiveReadLimits = IO_LIMITS): Promise<PcadZipEntries> {
   if (document.source.sourceKind !== options.source.sourceKind) throw new Error('Drawing source kind mismatch');
   const ref = document.source.sourceRef;
   const prefix = sourcePrefix(ref);
@@ -67,9 +76,7 @@ export async function writeDrawingBundle(document: DrawingDocument, options: Wri
     entries.set(path, [bytes, { level: BUNDLE_LEVEL, mtime: FIXED_ENTRY_MTIME }]);
   }
   assertReopenable(entries, ref, limits);
-  const zipped = zipPcadEntries(entries);
-  if (zipped.length > limits.archiveCompressedBytes) throw new Error(ARCHIVE_TOO_LARGE_MESSAGE);
-  return zipped;
+  return entries;
 }
 
 /** 読み込みの資源上限。省略時は通常の上限(`IO_LIMITS`)。 */

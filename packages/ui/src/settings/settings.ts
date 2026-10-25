@@ -11,6 +11,8 @@
  * (`displaySettings` / `setDisplaySettings`)は `packages/ui/src/store/useAppStore.ts`。
  */
 
+import { DEFAULT_CAMERA_CONTROLS, isCameraControlSettings, readCameraControlSettings, type CameraControlSettings } from './cameraControlSettings.js';
+
 import { LENGTH_UNITS, type LengthUnit } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
@@ -39,6 +41,7 @@ export const THEME_IDS: readonly ThemeId[] = [
 ];
 
 export interface DisplaySettings {
+  readonly cameraControls?: CameraControlSettings;
   readonly tutorialCompleted?: boolean;
   readonly shortcutAssignments?: ShortcutAssignments;
   readonly numericToolDefaults?: NumericDefaultSources;
@@ -96,6 +99,7 @@ export interface DisplaySettings {
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  cameraControls: DEFAULT_CAMERA_CONTROLS,
   tutorialCompleted: false,
   shortcutAssignments: EMPTY_SHORTCUT_ASSIGNMENTS,
   numericToolDefaults: {},
@@ -390,6 +394,7 @@ export function loadSettings(storage: SettingsStorage | null = browserStorage())
       return DEFAULT_DISPLAY_SETTINGS;
     }
     return {
+      cameraControls: readCameraControlSettings('cameraControls' in parsed ? parsed.cameraControls : undefined),
       tutorialCompleted: 'tutorialCompleted' in parsed && parsed.tutorialCompleted === true,
       shortcutAssignments: readStoredShortcutAssignments(parsed),
       theme: parsed.theme,
@@ -415,7 +420,7 @@ export function saveSettings(
   settings: DisplaySettings,
   storage: SettingsStorage | null = browserStorage(),
 ): void {
-  if (storage === null) {
+  if (storage === null || (settings.cameraControls !== undefined && !isCameraControlSettings(settings.cameraControls))) {
     return;
   }
   try {

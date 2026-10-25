@@ -396,6 +396,29 @@ describe('形状キャッシュの使用中保護', () => {
     other.release(foreign);
   });
 
+  it('初回空・保護鍵だけ・retired形の計測能力を0 bytesと区別する', () => {
+    const unmeasured = createShapeCache<FakeHandle>(2);
+    const measured = createShapeCache<FakeHandle>(2, () => 12);
+    expect(unmeasured.stats()).toMatchObject({ shapeCount: 0, meshBytes: 0,
+      meshBytesMeasured: false });
+    expect(measured.stats()).toMatchObject({ shapeCount: 0, meshBytes: 0,
+      meshBytesMeasured: true });
+
+    const reserved = unmeasured.acquire(['future']);
+    expect(unmeasured.stats()).toMatchObject({ shapeCount: 0, protectedKeyCount: 1,
+      meshBytes: 0, meshBytesMeasured: false });
+    unmeasured.release(reserved);
+
+    unmeasured.set('a', fakeHandle('old'));
+    const held = unmeasured.acquire(['a']);
+    unmeasured.set('a', fakeHandle('new'));
+    expect(unmeasured.stats()).toMatchObject({ size: 1, shapeCount: 2,
+      meshBytes: 0, meshBytesMeasured: false });
+    unmeasured.release(held);
+    unmeasured.clear();
+    measured.clear();
+  });
+
   it('保護中の上書きは貸した旧形も保持し、最後のreleaseで一度だけ解放する', () => {
     const cache = createShapeCache<FakeHandle>(2, () => 12);
     const a = fakeHandle('a');
@@ -404,7 +427,8 @@ describe('形状キャッシュの使用中保護', () => {
     const token = cache.acquire(['a']);
     cache.set('a', b);
     expect(a.deleteCalls()).toBe(0);
-    expect(cache.stats()).toMatchObject({ size: 1, shapeCount: 2, meshBytes: 24 });
+    expect(cache.stats()).toMatchObject({ size: 1, shapeCount: 2, meshBytes: 24,
+      meshBytesMeasured: true });
     cache.release(token);
     expect(a.deleteCalls()).toBe(1);
     expect(cache.stats()).toMatchObject({ shapeCount: 1, meshBytes: 12 });
@@ -436,6 +460,161 @@ describe('形状キャッシュの使用中保護', () => {
     }
     expect(() => cache.acquire(keys())).toThrow('列挙失敗');
     expect(cache.stats().protectedKeyCount).toBe(0);
+  });
+
+  it('measured empty is known zero, but an absent callback remains unknown', () => {
+    const measured = createShapeCache<FakeHandle>(3, () => 7);
+    const absent = createShapeCache<FakeHandle>(3);
+    expect(measured.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 0,
+      retiredBytes: 0, protectedBytes: 0, totalBytes: 0 });
+    expect(absent.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'callback-missing' });
+  });
+
+  it('active, retired, and protected ownership use independent byte totals', () => {
+    const sizes = new Map([['old', 11], ['new', 13], ['hidden', 17]]);
+    const cache = createShapeCache<FakeHandle>(4, entry => sizes.get(entry.name) ?? Number.NaN);
+    const old = fakeHandle('old');
+    cache.set('a', old);
+    const held = cache.acquire(['a']);
+    cache.set('a', fakeHandle('new'));
+    cache.set('b', fakeHandle('hidden'));
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 30,
+      retiredBytes: 11, protectedBytes: 24, totalBytes: 41 });
+    expect(old.deleteCalls()).toBe(0);
+    cache.release(held);
+    expect(old.deleteCalls()).toBe(1);
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 30,
+      retiredBytes: 0, protectedBytes: 0, totalBytes: 30 });
+    cache.clear();
+  });
+
+  it('bad, throwing, and overflowing callbacks cannot become known bytes', () => {
+    const cache = createShapeCache<FakeHandle>(3, entry => {
+      if (entry.name === 'throw') throw new Error('measurement unavailable');
+      if (entry.name === 'huge') return Number.MAX_SAFE_INTEGER;
+      if (entry.name === 'bad') return -1;
+      return 1;
+    });
+    cache.set('a', fakeHandle('bad'));
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'invalid-byte-count' });
+    cache.delete('a');
+    cache.set('a', fakeHandle('throw'));
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'callback-error' });
+    cache.delete('a');
+    cache.set('a', fakeHandle('huge'));
+    cache.set('b', fakeHandle('one'));
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'overflow' });
+    cache.clear();
+  });
+});
+
+describe('explicit mesh backing buffer ownership', () => {
+  interface BufferHandle extends FakeHandle {
+    readonly views: readonly Float32Array[];
+  }
+
+  function bufferHandle(name: string, views: readonly Float32Array[]): BufferHandle {
+    return { ...fakeHandle(name), views };
+  }
+
+  function bufferCache(capacity = 4) {
+    return createShapeCache<BufferHandle>(capacity,
+      entry => entry.views.reduce((bytes, view) => bytes + view.byteLength, 0),
+      entry => entry.views.map(view => view.buffer));
+  }
+
+  it('a 12-byte subarray retains its entire 1 MiB backing buffer', () => {
+    const backing = new ArrayBuffer(1024 * 1024);
+    const positions = new Float32Array(backing, 128, 3);
+    const cache = bufferCache();
+    cache.set('body', bufferHandle('body', [positions]));
+    expect(positions.byteLength).toBe(12);
+    expect(cache.stats()).toMatchObject({ meshBytes: 12, meshBytesMeasured: true,
+      meshBackingBytesMeasured: true });
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 1048576,
+      retiredBytes: 0, protectedBytes: 0, totalBytes: 1048576 });
+    expect(cache.meshBufferSnapshot?.()).toEqual({ status: 'known', active: [backing],
+      retired: [], protected: [] });
+    cache.clear();
+  });
+
+  it('aliases in separate views and bodies count once without changing the legacy scalar', () => {
+    const backing = new ArrayBuffer(64);
+    const first = new Float32Array(backing, 0, 3);
+    const second = new Float32Array(backing, 16, 4);
+    const cache = bufferCache();
+    cache.set('a', bufferHandle('a', [first, first]));
+    cache.set('b', bufferHandle('b', [second]));
+    const token = cache.acquire(['b']);
+    expect(cache.stats().meshBytes).toBe(40);
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 64,
+      retiredBytes: 0, protectedBytes: 64, totalBytes: 64 });
+    cache.release(token);
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 64,
+      retiredBytes: 0, protectedBytes: 0, totalBytes: 64 });
+    cache.clear();
+  });
+
+  it('retired aliases are exclusive of active buffers and protection is a subset', () => {
+    const shared = new ArrayBuffer(64);
+    const oldOnly = new ArrayBuffer(20);
+    const newOnly = new ArrayBuffer(12);
+    const cache = bufferCache();
+    const old = bufferHandle('old', [new Float32Array(shared, 0, 1), new Float32Array(oldOnly)]);
+    cache.set('body', old);
+    const token = cache.acquire(['body']);
+    cache.set('body', bufferHandle('new', [new Float32Array(shared, 16, 1), new Float32Array(newOnly)]));
+    expect(cache.stats().meshBytes).toBe(40);
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 76,
+      retiredBytes: 20, protectedBytes: 96, totalBytes: 96 });
+    expect(old.deleteCalls()).toBe(0);
+    cache.release(token);
+    expect(old.deleteCalls()).toBe(1);
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 76,
+      retiredBytes: 0, protectedBytes: 0, totalBytes: 76 });
+    cache.clear();
+  });
+
+  it('numeric-only compatibility does not claim physical ownership, and measured empty differs from absent', () => {
+    const numeric = createShapeCache<FakeHandle>(2, () => 7);
+    numeric.set('a', fakeHandle('a'));
+    expect(numeric.stats()).toMatchObject({ meshBytes: 7, meshBackingBytesMeasured: false,
+      meshByteCounts: { status: 'known', activeBytes: 7, retiredBytes: 0, protectedBytes: 0, totalBytes: 7 } });
+    expect(numeric.meshBufferSnapshot?.()).toEqual({ status: 'unknown', reason: 'callback-missing' });
+    const absent = createShapeCache<FakeHandle>(2);
+    expect(absent.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'callback-missing' });
+    const emptyBuffer = new ArrayBuffer(0);
+    const empty = createShapeCache<FakeHandle>(2, undefined, () => [emptyBuffer]);
+    empty.set('empty', fakeHandle('empty'));
+    expect(empty.stats()).toMatchObject({ meshBytesMeasured: true, meshBackingBytesMeasured: true });
+    expect(empty.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: 0,
+      retiredBytes: 0, protectedBytes: 0, totalBytes: 0 });
+    numeric.clear();
+    empty.clear();
+  });
+
+  it('shared, detached, and throwing collectors remain unknown', () => {
+    const shared = createShapeCache<FakeHandle>(2, undefined, () => [new SharedArrayBuffer(16)]);
+    shared.set('a', fakeHandle('a'));
+    expect(shared.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'invalid-byte-count' });
+    const detached = new ArrayBuffer(16);
+    structuredClone(detached, { transfer: [detached] });
+    const invalid = createShapeCache<FakeHandle>(2, undefined, () => [detached]);
+    invalid.set('a', fakeHandle('a'));
+    expect(invalid.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'invalid-byte-count' });
+    const throwing = createShapeCache<FakeHandle>(2, undefined, () => { throw new Error('unavailable'); });
+    throwing.set('a', fakeHandle('a'));
+    expect(throwing.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'callback-error' });
+    shared.clear();
+    invalid.clear();
+    throwing.clear();
+  });
+
+  it('an explicit buffer collector cannot hide a failed legacy numeric measurement', () => {
+    const cache = createShapeCache<FakeHandle>(2, () => -1, () => [new ArrayBuffer(16)]);
+    cache.set('a', fakeHandle('a'));
+    expect(cache.stats().meshByteCounts).toEqual({ status: 'unknown', reason: 'invalid-byte-count' });
+    cache.clear();
   });
 });
 

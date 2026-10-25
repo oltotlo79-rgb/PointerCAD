@@ -15,12 +15,30 @@ const RADIAL_COMMANDS = {
     'toolbar.drawing.centerMark', 'toolbar.drawing.export', 'file.save', 'drawing.cancelTool', 'history.undo'],
 } as const satisfies Readonly<Record<CommandDocumentKind, EightCommands>>;
 
-export function radialCommandIds(kind: CommandDocumentKind): EightCommands {
+export function radialCommandIds(kind: CommandDocumentKind, connectPoints = false, faceFromPoints = false,
+  pointAtReference = false): EightCommands {
+  if (kind === 'part' && faceFromPoints) {
+    // Three or more selected points offer the face in the same place as the two-point connection.
+    const [select, , ...rest] = RADIAL_COMMANDS.part;
+    return [select, 'sketch.faceFromPoints', ...rest];
+  }
+  if (kind === 'part' && pointAtReference) {
+    // One selected part reference point offers a sketch point that follows it, in the same place as the point commands.
+    const [select, , ...rest] = RADIAL_COMMANDS.part;
+    return [select, 'sketch.pointAtReference', ...rest];
+  }
+  if (kind === 'part' && connectPoints) {
+    const [select, , ...rest] = RADIAL_COMMANDS.part;
+    return [select, 'sketch.connectPoints', ...rest];
+  }
   return RADIAL_COMMANDS[kind];
 }
 
 /** The same action explanation is visible with mouse movement and keyboard focus. */
 export function radialCommandDescription(id: CommandId): string {
+  if (id === 'sketch.connectPoints') return t('sketch.connect.hint');
+  if (id === 'sketch.faceFromPoints') return t('sketch.facePoints.hint');
+  if (id === 'sketch.pointAtReference') return t('radial.pointAtReferenceHint');
   const command = toolbarCommand(id);
   if (command !== null) return t(command.tooltipKey);
   if (id === 'history.undo') return t('radial.undoHint');
@@ -28,7 +46,8 @@ export function radialCommandDescription(id: CommandId): string {
   return t('radial.unavailable');
 }
 
-export function radialCommandAt(kind: CommandDocumentKind, slot: RadialMenuSlot): CommandId | null {
-  const id = RADIAL_COMMANDS[kind][slot], definition = commandDefinition(id);
+export function radialCommandAt(kind: CommandDocumentKind, slot: RadialMenuSlot, connectPoints = false,
+  faceFromPoints = false, pointAtReference = false): CommandId | null {
+  const id = radialCommandIds(kind, connectPoints, faceFromPoints, pointAtReference)[slot], definition = commandDefinition(id);
   return definition?.documentKinds.includes(kind) === true ? id : null;
 }

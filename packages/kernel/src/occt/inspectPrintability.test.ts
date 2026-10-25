@@ -155,29 +155,18 @@ describe('3D プリント向けの点検(FR-815、NFR-PF-4、タスク42)', () =
     }
   }
 
-  it('BRepIntCurveSurface_Inter に列挙を取らない版は無い(§1.5-21 の実測)', () => {
-    // 型定義にあるのは Init_1 / Init_2 / Init_3 / Load と More / Next / Point の組だけで、
-    // 「1 本の光線に対して最も近い交点を 1 つ返す」ような版は無い。実行時の姿も同じことを示す。
-    const inter = new oc.BRepIntCurveSurface_Inter();
-    try {
-      const names = new Set<string>();
-      let proto: object | null = Object.getPrototypeOf(inter) as object | null;
-      while (proto !== null && proto !== Object.prototype) {
-        for (const name of Object.getOwnPropertyNames(proto)) {
-          names.add(name);
-        }
-        proto = Object.getPrototypeOf(proto) as object | null;
-      }
-      console.log(`[実測] BRepIntCurveSurface_Inter のメソッド: ${[...names].sort().join(' ')}`);
-      // 列挙の口はある(だから列挙なしでは使えない)。
-      expect(names.has('More')).toBe(true);
-      expect(names.has('Next')).toBe(true);
-      // 「交点を 1 つ返す」形の口は無い。
-      expect(names.has('NearestPoint')).toBe(false);
-      expect(names.has('Perform')).toBe(false);
-    } finally {
-      inter.delete();
-    }
+  it('採用した三角形の経路で箱の肉厚と水密性を点検できる(§1.5-21)', async () => {
+    // 未使用の交点列挙クラスではなく、製品が使う三角形からの点検を確かめる。
+    await withMesh(
+      () => makeBox(oc, { dx: CUBE_SIZE, dy: CUBE_SIZE, dz: CUBE_SIZE }),
+      async (mesh) => {
+        expect(mesh.triangleCount).toBe(12);
+        const result = await inspectPrintability(mesh);
+        expect(result.summary.minThicknessFoundMm).toBeCloseTo(CUBE_SIZE, 6);
+        expect(result.summary.watertight).toBe(true);
+        expect(result.summary.thinCount).toBe(0);
+      },
+    );
   });
 
   it('三角形が 1 枚も無ければ「点検できる形がありません。」で断る(§2.16)', async () => {

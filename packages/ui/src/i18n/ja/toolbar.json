@@ -123,9 +123,9 @@
   "toolbar.machining.title": "加工",
   "toolbar.machining.tooltip": "立体に穴・面取り・パターンなどの加工をします",
   "toolbar.machining.hole": "穴",
-  "toolbar.machining.holeTooltip": "面と点を選んで穴をあけます",
+  "toolbar.machining.holeTooltip": "平面では面と中心の点を、円筒の外面・内面では面だけを選んで穴・ざぐりをあけます。円錐・球・自由曲面、円筒の傾斜穴・皿もみには対応していません",
   "toolbar.machining.threadHole": "ねじ穴",
-  "toolbar.machining.threadHoleTooltip": "面と点を選んでねじ穴をあけます",
+  "toolbar.machining.threadHoleTooltip": "平面では面と中心の点を、円筒の外面・内面では面だけを選んでねじ穴をあけます。円錐・球・自由曲面、円筒の傾斜穴・皿もみには対応していません",
   "toolbar.machining.fillet": "R面取り",
   "toolbar.machining.filletTooltip": "辺を選んで角を丸めます",
   "toolbar.machining.chamfer": "C面取り",
@@ -136,6 +136,7 @@
   "toolbar.machining.circularPatternTooltip": "穴を選んでまわりに並べます",
   "toolbar.machining.pointPattern": "点パターン",
   "toolbar.machining.draft": "抜き勾配",
+  "toolbar.machining.faceOffset": "面の移動",
   "toolbar.machining.rib": "リブ",
   "toolbar.machining.emboss": "エンボス",
   "toolbar.machining.threadShaft": "外ねじ",
@@ -256,6 +257,7 @@
   "toolbar.solid.sweepTooltip": "断面と経路を選んで、断面を経路に沿って掛けます",
   "toolbar.solid.surfaceTooltip": "厚みの無い面だけの形を作ります",
   "toolbar.machining.draftTooltip": "基準にする面と傾ける面を選んで、側面に傾きを付けます",
+  "toolbar.machining.faceOffsetTooltip": "平らな面を 1 枚選んで、その面を外へ足す・内へ削る向きに動かします",
   "toolbar.machining.ribTooltip": "立体と輪郭を選んで、輪郭に厚みを付けた壁を足します",
   "toolbar.machining.embossTooltip": "平らな面と輪郭を選んで、彫るか浮き出します",
   "toolbar.machining.threadShaftTooltip": "丸い軸の面を選んで、外側にねじを切ります",
@@ -287,5 +289,7 @@
   "toolbar.file.print": "印刷",
   "toolbar.file.printTooltip": "いま見えている向きのまま 1 枚に印刷します",
   "toolbar.file.recentFile": "最近使ったファイル",
-  "toolbar.file.recentFileTooltip": "この名前のファイルを選ぶ窓を開きます"
+  "toolbar.file.recentFileTooltip": "この名前のファイルを選ぶ窓を開きます",
+  "toolbar.history.savePoints": "名前付き保存点",
+  "toolbar.history.savePointsTooltip": "開いている部品・組立・図面の名前付き保存点を、残す・複製・比較・戻すための一覧を開きます"
 }

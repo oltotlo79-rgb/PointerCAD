@@ -31,6 +31,7 @@ hooks = load('receipt_hook_fixtures', HERE / 'validation-receipt.integration.sel
 # Deliberately independent from production's folder mapping and closure algorithm.
 FIXTURE_FOLDERS = {
     'expression': 'packages/expression', 'kernel': 'packages/kernel',
+    'fem': 'packages/fem',
     'model': 'packages/model', 'drawing': 'packages/drawing', 'io': 'packages/io',
     'ui': 'packages/ui', 'help-content': 'packages/help-content',
     'test-utils': 'packages/test-utils', 'desktop': 'apps/desktop', 'web': 'apps/web',
@@ -90,6 +91,21 @@ class ScopeTests(unittest.TestCase):
         self.git('commit', '-qm', 'complete dependency fixture')
         self.base = self.git('rev-parse', 'HEAD').decode().strip()
         self.git('update-ref', 'refs/remotes/origin/main', self.base)
+
+    def test_fem_runtime_reaches_declared_ui_consumers(self):
+        self.install_workspace()
+        self.write('packages/fem/package.json', json.dumps({'name': '@pointercad/fem',
+            'scripts': {'test': 'vitest run'}, 'dependencies': {'@pointercad/model': 'workspace:*'}}))
+        self.write('packages/ui/package.json', json.dumps({'name': '@pointercad/ui',
+            'scripts': {'test': 'fixture'}, 'dependencies': {'@pointercad/fem': 'workspace:*'}}))
+        self.git('add', '.')
+        self.git('commit', '-qm', 'FEM workspace dependency fixture')
+        self.base = self.git('rev-parse', 'HEAD').decode().strip()
+        self.git('update-ref', 'refs/remotes/origin/main', self.base)
+        self.write('packages/fem/src/client.ts', 'changed')
+        result = self.inspect()
+        self.assertEqual(result['mode'], 'targeted')
+        self.assertEqual(result['packages'], ['desktop', 'fem', 'test-utils', 'ui', 'web'])
 
     def test_runtime_changes_select_direct_and_indirect_consumers_with_performance_and_startup(self):
         self.install_workspace()

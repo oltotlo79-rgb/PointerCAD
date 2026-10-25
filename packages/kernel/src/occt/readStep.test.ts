@@ -2,12 +2,14 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOcctForNode } from './loadOcct.node.js';
+import { R22_CASES, r22Bounds, r22Primitive, r22Translation, r22Volume } from './geometryAcceptanceFixtures.js';
 import { makeBox } from './makeBox.js';
 import type { OcctShapeHandle } from './makeBox.js';
+import { makePrimitive } from './makePrimitive.js';
 import { STEP_NO_SOLID_MESSAGE, STEP_READ_FAILED_MESSAGE, readStep } from './readStep.js';
-import { measureVolume } from './solidMesh.js';
-import { boundingDiagonal, faceAt } from './subShapes.js';
-import { makeCompound } from './transformShape.js';
+import { isValidShape, measureVolume } from './solidMesh.js';
+import { boundingDiagonal, collectSubShapes, faceAt } from './subShapes.js';
+import { IDENTITY_TRANSFORM, makeCompound, transformShape } from './transformShape.js';
 import type { StepWriteEntry } from './writeStep.js';
 import { writeStep } from './writeStep.js';
 
@@ -374,4 +376,112 @@ describe('STEP の読み込み(P6 タスク8)', () => {
       handle.delete();
     }
   });
+});
+
+/** Read analytic B-rep features without tessellation, using zero display ranges only for metadata slots. */
+function r22Signature(shape: Parameters<typeof countSubShapes>[0]) {
+  const counts = countSubShapes(shape);
+  const faces = Array.from({ length: counts.faces }, () => ({ triangleOffset: 0, triangleCount: 0 }));
+  const edges = Array.from({ length: counts.edges }, () => ({ segmentOffset: 0, segmentCount: 0 }));
+  return collectSubShapes(oc, shape, faces, edges);
+}
+
+function r22ComponentClose(left: readonly number[], right: readonly number[]): boolean {
+  return left.every((value, index) => Math.abs(value - right[index]) <= 1e-7);
+}
+
+function r22MatchOneToOne<T>(left: readonly T[], right: readonly T[], same: (a: T, b: T) => boolean): void {
+  expect(right).toHaveLength(left.length);
+  const unmatched = [...right];
+  for (const item of left) {
+    const index = unmatched.findIndex((candidate) => same(item, candidate));
+    expect(index).toBeGreaterThanOrEqual(0);
+    if (index >= 0) unmatched.splice(index, 1);
+  }
+  expect(unmatched).toHaveLength(0);
+}
+
+describe('R22: native形状からSTEPへの27条件往復', () => {
+  it.each(R22_CASES)('$shape scale=$scale operation=$operation preserves volume, bounds and face/edge signatures',
+    ({ shape, scale, operation }) => {
+      const original = makePrimitive(oc, r22Primitive(shape, scale));
+      let transformed: ReturnType<typeof transformShape> | null = null;
+      try {
+        if (operation !== 'inch') {
+          transformed = transformShape(oc, original.shape, {
+            ...IDENTITY_TRANSFORM,
+            ...(operation === 'translate'
+              ? { translation: r22Translation(scale) }
+              : { rotationAxis: [0, 1, 0] as const, rotationAngle: Math.PI / 2 }),
+          });
+        }
+        const nativeShape = transformed?.shape ?? original.shape;
+        if (operation === 'inch') oc.Interface_Static.SetCVal('write.step.unit', 'INCH');
+        let bytes: Uint8Array;
+        try {
+          bytes = writeStep(oc, [{ shape: nativeShape, name: 'R22', color: null }]).bytes;
+        } finally {
+          oc.Interface_Static.SetCVal('write.step.unit', 'MM');
+        }
+        const read = readStep(oc, bytes);
+        try {
+          expect(read.bodies).toHaveLength(1);
+          expect(read.unit).toBe(operation === 'inch' ? 'inch' : 'mm');
+          expect(read.unitNames).toEqual(operation === 'inch' ? ['INCH'] : ['millimetre']);
+          const restored = read.bodies[0].shape;
+          const expected = r22Bounds(shape, scale, operation);
+          for (const candidate of [nativeShape, restored]) {
+            expect(isValidShape(oc, candidate)).toBe(true);
+            expect(Math.abs(measureVolume(oc, candidate) - r22Volume(shape, scale)) / r22Volume(shape, scale))
+              .toBeLessThan(1e-6);
+            const bounds = new oc.Bnd_Box_1();
+            try {
+              oc.BRepBndLib.Add(candidate, bounds, false);
+              bounds.SetGap(0);
+              const low = bounds.CornerMin();
+              const high = bounds.CornerMax();
+              try {
+                const actualLow = [low.X(), low.Y(), low.Z()];
+                const actualHigh = [high.X(), high.Y(), high.Z()];
+                for (let axis = 0; axis < 3; axis += 1) {
+                  if (shape === 'box') {
+                    expect(actualLow[axis]).toBeCloseTo(expected.low[axis], 9);
+                    expect(actualHigh[axis]).toBeCloseTo(expected.high[axis], 9);
+                  } else {
+                    expect(Math.abs(actualLow[axis] - expected.low[axis])).toBeLessThanOrEqual(1e-7);
+                    expect(Math.abs(actualHigh[axis] - expected.high[axis])).toBeLessThanOrEqual(1e-7);
+                  }
+                }
+              } finally {
+                high.delete();
+                low.delete();
+              }
+            } finally {
+              bounds.delete();
+            }
+          }
+          const before = r22Signature(nativeShape);
+          const after = r22Signature(restored);
+          if (shape === 'box') {
+            expect([before.faces.length, before.edges.length, before.vertices.length]).toEqual([6, 12, 8]);
+          }
+          r22MatchOneToOne(before.vertices, after.vertices, (a, b) =>
+            r22ComponentClose(a.position, b.position));
+          r22MatchOneToOne(before.faces, after.faces, (a, b) =>
+            a.surfaceKind === b.surfaceKind &&
+            Math.abs(a.area - b.area) / a.area < 1e-6 &&
+            r22ComponentClose(a.centroid, b.centroid));
+          r22MatchOneToOne(before.edges, after.edges, (a, b) =>
+            a.curveKind === b.curveKind &&
+            Math.abs(a.length - b.length) / a.length < 1e-6 &&
+            ((r22ComponentClose(a.start, b.start) && r22ComponentClose(a.end, b.end)) ||
+              (r22ComponentClose(a.start, b.end) && r22ComponentClose(a.end, b.start))));
+        } finally {
+          read.delete();
+        }
+      } finally {
+        transformed?.delete();
+        original.delete();
+      }
+    });
 });

@@ -17,7 +17,7 @@
  */
 
 import { expectWithinBudget } from '@pointercad/test-utils';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createPatternTexture,
@@ -260,6 +260,32 @@ describe('createPatternTexture(canvas の無い Node の環境)', () => {
 });
 
 describe('disposePatternTextures', () => {
+  it('attempts alpha and other entries after a texture failure and creates a fresh owner for the same spec', () => {
+    vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => createFakeContext() }) });
+    const first = createPatternTexture('expandedMetal');
+    const other = createPatternTexture('checkerPlate');
+    if (first === null || first.alphaTexture === null || other === null) throw new Error('pattern assets missing');
+    let fail = true;
+    const firstDisposed = vi.fn(() => { if (fail) throw new Error('pattern texture return'); });
+    const alphaDisposed = vi.fn(), otherDisposed = vi.fn();
+    first.texture.addEventListener('dispose', firstDisposed);
+    first.alphaTexture.addEventListener('dispose', alphaDisposed);
+    other.texture.addEventListener('dispose', otherDisposed);
+    try {
+      expect(() => disposePatternTextures()).toThrow('pattern texture return');
+      expect(firstDisposed).toHaveBeenCalledTimes(1);
+      expect(alphaDisposed).toHaveBeenCalledTimes(1); expect(otherDisposed).toHaveBeenCalledTimes(1);
+      const replacement = createPatternTexture('expandedMetal');
+      expect(replacement).not.toBe(first); expect(replacement?.texture).not.toBe(first.texture);
+      const replacementDisposed = vi.fn(); replacement?.texture.addEventListener('dispose', replacementDisposed);
+      fail = false; disposePatternTextures(); disposePatternTextures();
+      expect(firstDisposed).toHaveBeenCalledTimes(2);
+      expect(alphaDisposed).toHaveBeenCalledTimes(1); expect(otherDisposed).toHaveBeenCalledTimes(1);
+      expect(replacementDisposed).toHaveBeenCalledTimes(1);
+    } finally {
+      fail = false; disposePatternTextures(); vi.unstubAllGlobals();
+    }
+  });
   it('キャッシュが空でも例外を投げない(冪等)', () => {
     expect(() => {
       disposePatternTextures();

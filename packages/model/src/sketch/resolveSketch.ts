@@ -58,6 +58,7 @@ import {
   SPLINE_TOO_FEW_CLOSED_MESSAGE,
   SPLINE_TOO_FEW_OPEN_MESSAGE,
   SPLINE_TOO_MANY_MESSAGE,
+  splineCurveData,
 } from './splineMath.js';
 import type {
   FreeArcOrientation,
@@ -440,6 +441,7 @@ function resolveLinearPointArray(
     points.push({
       id: `${featureId}#${String(index)}`,
       featureId,
+      producerAnchor: { kind: 'linear-point', featureId, step: index },
       position: addVec3(base.value, scaleVec3(direction, spacing * index)),
     });
   }
@@ -451,6 +453,11 @@ function resolveLinearPointArray(
  * 第1軸(角度 0、正多角形 `resolvePolygonCurves` と同じ規約)で、利用者に開始角の
  * 指定は持たせない(計画書 §0.a-0.9 のタスク6 実装内容の型のとおり)。
  */
+function greatestCommonDivisor(a: number, b: number): number {
+  while (b !== 0) { const remainder = a % b; a = b; b = remainder; }
+  return a;
+}
+
 function resolveCircularPointArray(
   featureId: string,
   layout: Extract<PointArrayLayout, { readonly kind: 'circular' }>,
@@ -483,7 +490,9 @@ function resolveCircularPointArray(
         scaleVec3(plane.axisV, radius * Math.sin(angle)),
       ),
     );
-    points.push({ id: `${featureId}#${String(index)}`, featureId, position });
+    const divisor = greatestCommonDivisor(index, count);
+    points.push({ id: `${featureId}#${String(index)}`, featureId, position,
+      producerAnchor: { kind: 'circular-point', featureId, numerator: index / divisor, denominator: count / divisor } });
   }
   return { ok: true, points };
 }
@@ -553,7 +562,8 @@ function resolveGridPointArray(
         base.value,
         addVec3(scaleVec3(rowDirection, rowSpacing * row), scaleVec3(colDirection, colSpacing * col)),
       );
-      points.push({ id: `${featureId}#${String(index)}`, featureId, position });
+      points.push({ id: `${featureId}#${String(index)}`, featureId, position,
+        producerAnchor: { kind: 'grid-point', featureId, row, column: col } });
     }
   }
   return { ok: true, points };
@@ -813,6 +823,8 @@ export interface SketchResolveOptions {
    */
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
   readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
+  /** 部品の基準点を id から引く(EX-18)。`ResolveContext.partPoint` へそのまま渡す。部品文書の側(`resolvePart.ts`)が渡す。 */
+  readonly partPoint?: ResolveContext['partPoint'];
 }
 
 /** 円弧の面の中で、その点が中心から見て何ラジアンの向きにあるか(`arcPointAt` の逆)。 */
@@ -1017,7 +1029,8 @@ export function resolveSketch(
       );
       continue;
     }
-    const context: ResolveContext = { plane, points, previous, vertices, subShape, sphere, functionPoint:options.functionPoint };
+    const context: ResolveContext = { plane, points, previous, vertices, subShape, sphere, functionPoint:options.functionPoint,
+      partPoint: options.partPoint };
 
     if (feature.kind === 'point') {
       const at = resolveCoordinate(feature.at, context, feature.id);
@@ -1028,7 +1041,8 @@ export function resolveSketch(
       // 拘束を解いた位置があればそれを使う(タスク8)。以後の参照(相対座標の基準・
       // 面の境界)はすべてこの位置を見るので、上書きは下流へそのまま伝わる。
       const position = overridePoint(feature.id, at.value);
-      const resolved: ResolvedPoint = { id: feature.id, featureId: feature.id, position };
+      const resolved: ResolvedPoint = { id: feature.id, featureId: feature.id, position,
+        producerAnchor: { kind: 'point', featureId: feature.id } };
       points.push(resolved);
       pointsByFeature.set(feature.id, [resolved]);
       vertices.set(vertexKey(feature.id, 'start'), position);
@@ -1762,6 +1776,17 @@ function resolveFace(
   return { ok: true, value: { featureId: feature.id, color: feature.color, curves } };
 }
 
+/**
+ * 関数の閉じた輪(明示した節点の 3 次、`closed: false`)が 1 本で輪になるか。`splineCurveData` が
+ * 両端の多重度 4 の固定端として解けるときだけ、最初と最後の極が曲線の両端になる。その 2 点が同じ座標
+ * (+0 と −0 は同じ)なら輪になる。許容差では閉じたことにせず、継ぎ目の滑らかさ(周期・C2)も主張しない。
+ */
+function isClampedClosedLoop(spline: ResolvedSpline): boolean {
+  if (spline.knots === undefined || splineCurveData(spline) === null) return false;
+  const start = spline.points[0], end = spline.points[spline.points.length - 1];
+  return start[0] === end[0] && start[1] === end[1] && start[2] === end[2];
+}
+
 /** 線・円弧を端点のつながりでたどり、閉ループになっているか確かめる(FR-309)。 */
 function resolveCurveLoop(
   feature: SketchFaceFeature,
@@ -1776,7 +1801,7 @@ function resolveCurveLoop(
     if (first.kind === 'ellipse' && isFullEllipse(first)) {
       return { ok: true, value: { featureId: feature.id, color: feature.color, curves } };
     }
-    if (first.kind === 'spline' && first.closed) {
+    if (first.kind === 'spline' && (first.closed || isClampedClosedLoop(first))) {
       // 円・楕円と違い、閉じたスプラインは平面に乗るとは限らない(FR-309 は平面の面だけ)。
       if (!isPlanar(curveSamplePoints(first))) {
         return {

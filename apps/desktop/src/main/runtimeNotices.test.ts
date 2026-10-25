@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { collectRuntimeNotices, assertRuntimeNoticesPublishable } from '../../../../scripts/vite/runtimeNotices.mjs';
 import { installedRuntimeDependencies, verifyRuntimeDependencyInventory } from '../../../../scripts/vite/runtimeDependencyInventory.mjs';
+import { readFemDistributionGaps } from '../../../../scripts/vite/femRuntimeAssets.mjs';
 import { runtimeDependencySelection } from '../../../../scripts/vite/runtimeDependencySelection.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -66,10 +67,12 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
       readFileSync(new URL('../../../../docs/standards/licenses/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt', import.meta.url)),
     );
   });
-  it('未確認の部品を除いた実依存は公開可能とし、未確認が再混入した場合は公開を拒否する', () => {
+  it('既存の原文確認を保持し、FEMの未完了配布条件がある間は公開を拒否する', () => {
     const distribution = collectRuntimeNotices(root);
-    expect(distribution.unresolved).toEqual([]);
-    expect(() => assertRuntimeNoticesPublishable(distribution)).not.toThrow();
+    expect(distribution.unresolved).toEqual(readFemDistributionGaps(join(root, 'packages/fem/runtime')));
+    expect(distribution.unresolved).not.toContain('FEM: native rebuild and replacement remain unqualified');
+    expect(distribution.unresolved).toContain('FEM: corresponding source closure is incomplete');
+    expect(() => assertRuntimeNoticesPublishable(distribution)).toThrow('Unresolved runtime notices');
     expect(() => assertRuntimeNoticesPublishable({ ...distribution, unresolved: ['@arnog/colors@0.7.0'] })).toThrow('Unresolved runtime notices');
   });
   it('保存前の写しでも元のプロジェクト内の実依存を検査し', () => {

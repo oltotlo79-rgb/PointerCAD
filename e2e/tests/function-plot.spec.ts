@@ -1,3 +1,4 @@
+import { functionSplineCurveFlow } from './functionSplineSurfaceFlow.js';
 import { functionOdeCurveFlow, ODE_CURVE_SCENARIO_TIMEOUT_MS } from './functionOdeCurveFlow.js';
 import { FUNCTION_DIRECTION_SCENARIOS } from './functionDirectionScenarios.js';
 import { functionDerivativesFlow } from './functionDerivativesFlow.js';
@@ -163,4 +164,12 @@ test('ADD-26 微分方程式の解曲線・点と法線・条件の保存再編�
     for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
   });
   await page.goto('/'); await functionOdeCurveFlow(page, info); expect(errors).toEqual([]);
+});
+
+test('SMOOTH-CURVE real CAD sweep, save reopen, stale preview, update and Undo', async ({ page }, info) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) Object.defineProperty(globalThis, name, { configurable: true, value: undefined });
+  });
+  await page.goto('/'); await functionSplineCurveFlow(page, info); expect(errors).toEqual([]);
 });

@@ -6,6 +6,14 @@
  * 分ける前と 1 文字も変わらない。
  */
 import { create } from 'zustand';
+import { createBeamSlice } from './beamSlice.js';
+import { createSolidAnalysisSlice } from './solidAnalysisSlice.js';
+import { createSolidPlasticSlice } from './solidPlasticSlice.js';
+import { createPlasticBarSlice } from './plasticBarSlice.js';
+import { createFatigueSlice } from './fatigueSlice.js';
+import { createFatigueStrainSlice } from './fatigueStrainSlice.js';
+import { createFatigueLocalCycleSlice } from './fatigueLocalCycleSlice.js';
+import { createAssemblyOccurrenceDriveSlice } from './assemblyOccurrenceDriveSlice.js';
 
 import type { AppState } from './appState.js';
 import { createInitialDocumentState } from './initialDocumentState.js';
@@ -44,6 +52,14 @@ export type { DrawingSlice } from './drawingSlice.js';
 
 /** Shared with the ownership checks: a new slice cannot disappear from their registry. */
 export const STORE_SLICE_CREATORS = {
+  solidAnalysisSlice: createSolidAnalysisSlice,
+  solidPlasticSlice: createSolidPlasticSlice,
+  beamSlice: createBeamSlice,
+  plasticBarSlice: createPlasticBarSlice,
+  fatigueSlice: createFatigueSlice,
+  fatigueStrainSlice: createFatigueStrainSlice,
+  fatigueLocalCycleSlice: createFatigueLocalCycleSlice,
+  assemblyOccurrenceDriveSlice: createAssemblyOccurrenceDriveSlice,
   viewSlice: createViewSlice,
   canvasSlice: createCanvasSlice,
   exchangeSlice: createExchangeSlice,
@@ -65,6 +81,14 @@ export const STORE_SLICE_CREATORS = {
 
 export const useAppStore = create<AppState>()((...args) => ({
   ...createInitialDocumentState(),
+  ...STORE_SLICE_CREATORS.solidAnalysisSlice(...args),
+  ...STORE_SLICE_CREATORS.solidPlasticSlice(...args),
+  ...STORE_SLICE_CREATORS.beamSlice(...args),
+  ...STORE_SLICE_CREATORS.plasticBarSlice(...args),
+  ...STORE_SLICE_CREATORS.fatigueSlice(...args),
+  ...STORE_SLICE_CREATORS.fatigueStrainSlice(...args),
+  ...STORE_SLICE_CREATORS.fatigueLocalCycleSlice(...args),
+  ...STORE_SLICE_CREATORS.assemblyOccurrenceDriveSlice(...args),
   ...STORE_SLICE_CREATORS.viewSlice(...args),
   ...STORE_SLICE_CREATORS.canvasSlice(...args),
   ...STORE_SLICE_CREATORS.exchangeSlice(...args),

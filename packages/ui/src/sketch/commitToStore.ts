@@ -11,6 +11,7 @@
  */
 
 import {
+  affectsShape,
   baseWorkPlane,
   FREE_WORK_PLANE_ID,
   isFreeWorkPlaneId,
@@ -25,8 +26,17 @@ import {
   type WorkPlane,
 } from '@pointercad/model';
 
+import {
+  cancelExtrusion,
+  confirmExtrusion,
+  stageExtrusion,
+  stagedExtrusionMessageKey,
+  type ExtrudeStageCandidate,
+} from '../solid/extrudePreview.js';
 import { commitSolidInput } from '../solid/solidCommands.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
+import type { StagedConfirmation } from '../store/recomputeSlice.js';
+import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { splitLineFailureMessage } from './splitLineMessages.js';
 import { commitSketchChamfer, commitSketchFillet } from './cornerCommands.js';
@@ -192,7 +202,22 @@ function withInferredConstraints(
  * (P4b タスク18 で `AppShell.tsx` から移した。ポップアップとコマンドラインの 2 つの入口が
  * 同じ手順を通るようにするため。手順そのものは 1 行も変えていない。)
  */
+function currentCutSketches(store: ReturnType<typeof useAppStore.getState>) {
+  const snapshot = store.resolvedPartSketches;
+  if (snapshot === null || activePartDocument(store) === null || store.isComputing
+    || store.recomputeCancelled || store.timelineIndex !== null || store.lastOutcome !== 'success'
+    || snapshot.activeDocumentId !== store.activeDocumentId
+    || snapshot.generation !== store.requestedGeneration || snapshot.generation !== store.completedGeneration
+    || snapshot.document.id !== store.document.id || affectsShape(snapshot.document, store.document)) return undefined;
+  return snapshot;
+}
+
 export function applySolidCommit(commit: SolidInputCommit): boolean {
+  // 押し出しは形を計算してから確定する(文書だけ先に積まない)。同期で積む道は残さない。
+  if (commit.tool === 'extrude') return confirmExtrudeCommit(commit) === 'adopted';
+  // 計算担当が未接続なら従来の同期確定と後始末を使う。接続済みは成功した候補だけを採用する。
+  if ((commit.tool === 'hole' || commit.tool === 'threadHole')
+    && useAppStore.getState().partStager !== null) return confirmMachiningCommit(commit) === 'adopted';
   const store = useAppStore.getState();
   const base = mathCommitBase(commit);
   if (base === null) return false;
@@ -207,6 +232,7 @@ export function applySolidCommit(commit: SolidInputCommit): boolean {
     // 渡さないと、ピッチに「板厚」と書いたとき全長の読み取り専用の欄が = 0 になる。
     store.parameterAnalysis.variables,
     store.parameterAnalysis,
+    currentCutSketches(store),
   ));
   if (!calculated.ok) { store.setShapeError(calculated.message); return false; }
   const outcome = calculated.value;
@@ -217,8 +243,95 @@ export function applySolidCommit(commit: SolidInputCommit): boolean {
   }
   store.applyDocument(outcome.document);
   store.setActiveTool('select');
-  store.setSelection([outcome.featureId]);
+  store.setSelection([outcome.featureId], { kind: 'sketch', sketchId: store.sketch.id });
   return true;
+}
+
+/**
+ * 押し出しの候補(純関数 `commitSolidInput` の結果)と入力の鍵。確かめる・確定するの両方が
+ * これを通るので、同じ入力なら同じ候補(同じ id・同じ差し込み位置)になる。断りは帯へ出して null。
+ */
+function solidStageCandidateOf(commit: SolidInputCommit): ExtrudeStageCandidate | null {
+  const store = useAppStore.getState();
+  const current = store.document;
+  const base = mathCommitBase(commit);
+  if (base === null) return null;
+  const calculated = tryMathComposition(() => commitSolidInput(
+    base,
+    store.selection,
+    commit,
+    subShapeBodiesOf(store.bodies),
+    store.parameterAnalysis.variables,
+    store.parameterAnalysis,
+    currentCutSketches(store),
+  ));
+  if (!calculated.ok) { store.setShapeError(calculated.message); return null; }
+  const outcome = calculated.value;
+  if (!outcome.ok) {
+    store.setSolidError(outcome.reasonKey);
+    return null;
+  }
+  store.setSolidError(null);
+  const inputKey = JSON.stringify([commit, store.selection],
+    (_key: string, value: unknown): unknown => typeof value === 'bigint' ? value.toString() : value);
+  return { base: current, document: outcome.document, featureId: outcome.featureId, inputKey };
+}
+
+/**
+ * 押し出しを確定する(EX-14)。形の計算が成功したその文書と結果を 1 回で採用し、取り消しは
+ * 1 段だけ積む。計算中なら 'pending' を返し、入力の窓は開いたまま(終わり次第採用して閉じる)。
+ * 計算部が無い・断られた・失敗した・古くなったときは理由を帯へ出し、文書と取り消しは変えない。
+ */
+export function confirmExtrudeCommit(commit: SolidInputCommit): StagedConfirmation {
+  const store = useAppStore.getState();
+  if (store.partStager === null) {
+    store.setSolidError('solidError.extrudeUnavailable');
+    return 'refused';
+  }
+  const candidate = solidStageCandidateOf(commit);
+  if (candidate === null) return 'refused';
+  const confirmation = confirmExtrusion(candidate, () => { useAppStore.getState().closeNumericInput(); });
+  if (confirmation === 'refused') {
+    useAppStore.getState().setSolidError(stagedExtrusionMessageKey(useAppStore.getState(), true)
+      ?? 'solidError.extrudeStale');
+  }
+  return confirmation;
+}
+
+/** 穴・ねじも成功した形だけを採用する。失敗・取消・別入力は既存の所有照合で捨てる。 */
+function confirmMachiningCommit(commit: SolidInputCommit): StagedConfirmation {
+  const store = useAppStore.getState();
+  if (store.partStager === null) {
+    store.setSolidError('solidError.notYetAvailable');
+    return 'refused';
+  }
+  const candidate = solidStageCandidateOf(commit);
+  if (candidate === null) return 'refused';
+  const confirmation = confirmExtrusion(candidate, () => { useAppStore.getState().closeNumericInput(); });
+  const failed = useAppStore.getState().stagedSolid;
+  if (confirmation === 'refused' && failed?.status === 'failed' && failed.errors[0] !== undefined) {
+    useAppStore.getState().setShapeError(failed.errors[0].message);
+  }
+  return confirmation;
+}
+
+/**
+ * 「形を確かめる」(EX-14)。確定と同じ候補を段階計算に出し、成功した形を仮に表示する。
+ * 文書・取り消しには触れない。欄に誤りがあれば確定と同じく最初の誤りへ焦点を戻す。
+ */
+export function previewExtrudeTransition(transition: NumericInputTransition): void {
+  const store = useAppStore.getState();
+  if (transition.kind === 'blocked') {
+    store.updateNumericInput(transition.state);
+    return;
+  }
+  if (transition.kind !== 'solidCommitted' || transition.commit.tool !== 'extrude') return;
+  if (store.partStager === null) {
+    store.setSolidError('solidError.extrudeUnavailable');
+    return;
+  }
+  const candidate = solidStageCandidateOf(transition.commit);
+  if (candidate !== null) stageExtrusion(candidate);
 }
 
 /**
@@ -283,8 +396,25 @@ export function applyNumericTransition(transition: NumericInputTransition): void
       return;
     case 'cancelled':
       store.closeNumericInput();
+      // 押し出しの確かめていた形・計算中の確定も一緒にやめる(EX-14)。文書には触れない。
+      cancelExtrusion();
       return;
     case 'solidCommitted':
+      // 押し出しは形の計算が成功してから採用し、採用した時に窓を閉じる。計算中・断り・失敗の
+      // 間は窓を開いたままにする(EX-14。confirmExtrudeCommit の注釈)。
+      if (transition.commit.tool === 'extrude') {
+        // コマンドラインは値を流し込んだ姿で確定する。計算中・失敗のときに窓に見える値と、
+        // 計算している値を同じにするため、その姿を先に入力の窓へ残す(所有の判定は変わらない)。
+        if (store.numericInput !== transition.state) store.updateNumericInput(transition.state);
+        confirmExtrudeCommit(transition.commit);
+        return;
+      }
+      if ((transition.commit.tool === 'hole' || transition.commit.tool === 'threadHole')
+        && store.partStager !== null) {
+        if (store.numericInput !== transition.state) store.updateNumericInput(transition.state);
+        confirmMachiningCommit(transition.commit);
+        return;
+      }
       // ソリッドは(ばねの1段目を除き)1段で終わるので、決めたら必ず閉じる
       // (nextNumericInput も null を返す)。断られたときは閉じない。
       if (!applySolidCommit(transition.commit)) {
@@ -359,7 +489,7 @@ export function applyEditCommit(commit: EditInputCommit): boolean {
   store.setEditError(null);
   store.applyDocument(replaceSketch(base, outcome.document));
   store.setActiveTool('select');
-  store.setSelection([outcome.featureId]);
+  store.setSelection([outcome.featureId], { kind: 'sketch', sketchId: store.sketch.id });
   return true;
 }
 
@@ -421,7 +551,7 @@ function applyCornerCommit(commit: EditInputCommit, base: PartDocument): boolean
   store.setEditError(null);
   store.applyDocument(replaceSketch(base, outcome.document));
   // 足した円弧・線分を選んでおく(次の一手がそのまま続く、NFR-UX-1)。道具は残す。
-  store.setSelection([outcome.featureId]);
+  store.setSelection([outcome.featureId], { kind: 'sketch', sketchId: store.sketch.id });
   if (outcome.boundaryUpdated) {
     store.setEditNotice('corner.notice.faceBoundary');
   }

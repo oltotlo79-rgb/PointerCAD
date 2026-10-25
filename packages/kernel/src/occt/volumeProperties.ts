@@ -1,6 +1,7 @@
 /** 形状検査と測定表示で体積の積分方式を共用する。 */
 import type { GProp_GProps, OpenCascadeInstance, ShapeExtend_Status, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { createAllocations } from './allocations.js';
+import { ellipseExtrusionCentre } from './ellipseBoolean.js';
 import { needsPeriodicVolumeIntegration } from './periodicVolumeFace.js';
 
 /** embindの列挙型の不一致を、実際の登録値と数値の照合で扱う。 */
@@ -31,6 +32,13 @@ function containsPeriodicFace(oc: OpenCascadeInstance, shape: TopoDS_Shape): boo
 /** 周期曲線は測定用の写しだけを節点区間へ分ける。knownPlanarは認証済み直方体同士のCommon専用。 */
 export function computeVolumeProperties(oc: OpenCascadeInstance, shape: TopoDS_Shape, properties: GProp_GProps, knownPlanar = false): void {
   if (knownPlanar || !containsPeriodicFace(oc, shape)) {
+    if (!knownPlanar && ellipseExtrusionCentre(oc, shape) !== null) {
+      const error = oc.BRepGProp.VolumePropertiesGK_1(shape, properties, 1e-12, false, true, true, true, false);
+      if (!Number.isFinite(error) || error < 0 || error > 1e-12 || !Number.isFinite(properties.Mass())) {
+        throw new Error('立体の体積を必要な精度で計算できませんでした。');
+      }
+      return;
+    }
     oc.BRepGProp.VolumeProperties_1(shape, properties, false, false, false);
     return;
   }

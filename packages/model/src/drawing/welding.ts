@@ -8,7 +8,7 @@ import { resolveGdtFeature, type ResolvedGdtFeature } from './gdt.js';
 import { drawingManufacturingIds } from './gdtEdit.js';
 import { nextSerialId } from '../sketch/createSketchDocument.js';
 
-export interface WeldIssue { readonly code: 'target' | 'side' | 'size' | 'length' | 'pitch' | 'count' | 'groove' | 'finish' | 'allAround' | 'placement'; readonly message: string; readonly sideIndex?: number }
+export interface WeldIssue { readonly code: 'target' | 'side' | 'size' | 'length' | 'pitch' | 'count' | 'groove' | 'finish' | 'allAround' | 'placement' | 'linkedWeld'; readonly message: string; readonly sideIndex?: number }
 export interface ResolvedWeldSide {
   readonly spec: WeldSideSpec;
   readonly sizeMm: number | null;

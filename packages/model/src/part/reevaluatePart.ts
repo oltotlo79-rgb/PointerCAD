@@ -22,6 +22,7 @@
 
 import { evaluateExpression, renameVariable, type ExpressionValue, type EvaluateOptions } from '@pointercad/expression';
 import { mapDocumentNonScalarExpressions } from './documentFunctions.js';
+import { reevaluateFaceOffset } from './directFaceEdit.js';
 import { mapFunctionDefinition } from '../functionGeometry/mapFunctionDefinition.js';
 
 import type { PlaneSpec } from '../geometry/planeSpec.js';
@@ -38,6 +39,7 @@ import {
 } from '../sketch/mapExpressions.js';
 import type {
   ChamferSize,
+  CylindricalHolePlacement,
   HoleDepth,
   HoleEntry,
   PartDocument,
@@ -115,6 +117,23 @@ function rebuildHoleEntry(
   }
 }
 
+/**
+ * 円筒の側面の穴の位置(EX05)。高さと角度はどちらも式なので、変数や元の寸法が変われば
+ * 解き直す。位置の数と並びは変えない(並びは掘る順で、鍵にも効く)。
+ */
+function rebuildCylindricalHole(
+  placement: CylindricalHolePlacement,
+  map: ValueMapper,
+): CylindricalHolePlacement {
+  return {
+    kind: placement.kind,
+    locations: placement.locations.map((location) => ({
+      height: map(location.height),
+      angle: map(location.angle),
+    })),
+  };
+}
+
 /** C 面取りの大きさ(FR-408 の①②③)。 */
 function rebuildChamferSize(size: ChamferSize, map: ValueMapper): ChamferSize {
   switch (size.kind) {
@@ -145,7 +164,7 @@ function rebuildPatternPlacement(placement: PatternPlacement, map: ValueMapper):
     case 'points':
       return {
         ...placement,
-        points: placement.points.map((point) => mapPointReferenceExpressions(point, map)),
+        points: placement.points.map((point) => ({ ...point, reference: mapPointReferenceExpressions(point.reference, map) })),
       };
   }
 }
@@ -226,6 +245,10 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         entry: rebuildHoleEntry(feature.entry, map),
         tiltAngle: map(feature.tiltAngle),
         tiltAzimuth: map(feature.tiltAzimuth),
+        // 円筒の側面の穴(EX05)。平面の穴は欄ごと省略のまま(`undefined` の欄を作らない)。
+        ...(feature.cylindrical === undefined
+          ? {}
+          : { cylindrical: rebuildCylindricalHole(feature.cylindrical, map) }),
       };
     case 'threadHole':
       return {
@@ -237,6 +260,10 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         threadLength: map(feature.threadLength),
         tiltAngle: map(feature.tiltAngle),
         tiltAzimuth: map(feature.tiltAzimuth),
+        // 円筒の側面のねじ穴(EX05)。穴と同じく高さと角度の式を解き直す。平面のねじ穴は欄ごと省略のまま。
+        ...(feature.cylindrical === undefined
+          ? {}
+          : { cylindrical: rebuildCylindricalHole(feature.cylindrical, map) }),
       };
     case 'fillet':
       // 可変半径(FR-426、タスク46)の終点側は**省略できる欄**なので、押し出しの
@@ -282,6 +309,9 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
     */
     case 'draft':
       return { ...feature, angle: map(feature.angle) };
+    case 'faceOffset':
+      // 平らな面の移動(EX-18)。式の欄は符号付きの距離 1 つだけ(面の指紋はそのまま)。
+      return reevaluateFaceOffset(feature, map);
     case 'mirror':
       // 鏡にする平面は作業平面の id か面の指紋だけで、式を 1 つも持たない。
       return feature;
@@ -318,6 +348,10 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       // くり抜き(FR-418、§2.12、タスク46)。式の欄は壁の厚さ 1 つだけで、
       // 開ける面の指紋・向きのつまみは式ではない。
       return { ...feature, thickness: map(feature.thickness) };
+    case 'surfaceCut':
+      return feature.blade.kind === 'plane'
+        ? { ...feature, blade: { kind: 'plane', plane: rebuildPlaneSpec(feature.blade.plane, map) } }
+        : feature;
     case 'cut':
       // 平面による切断(FR-432、§2.9b、タスク27c)。式は切断面の中(`pointAndAxis` の
       // 傾き角・方位角、`face` / `workPlane` のオフセット、点の座標)にある。
@@ -579,6 +613,59 @@ export function collectExpressionOwners(document: PartDocument): readonly Expres
     return definition;
   });
   return owners;
+}
+
+/** Exact parent scope for each actual scalar or non-scalar expression in the part document. */
+export interface ParameterUsageSource extends ExpressionOwner {
+  readonly kind: 'sketchFeature' | 'constraint' | 'reference' | 'solid' | 'mathProblem';
+  readonly sketchId?: string;
+}
+
+/**
+ * Visit the existing expression mappers without rewriting any source or result. A feature and a
+ * constraint may share a display name or even an ID; sketch, kind and owner ID remain distinct.
+ * The same owner can appear more than once when it has multiple expression fields.
+ */
+export function collectParameterUsages(document: PartDocument): readonly ParameterUsageSource[] {
+  const usages: ParameterUsageSource[] = [];
+  const add = (value: Pick<ExpressionValue, 'source' | 'mathDefinition'>,
+    kind: ParameterUsageSource['kind'], ownerId: string, ownerName: string, sketchId?: string): void => {
+    usages.push({ source: value.source, ownerId, ownerName, kind,
+      ...(sketchId === undefined ? {} : { sketchId }),
+      ...(value.mathDefinition === undefined ? {} : { mathDefinition: value.mathDefinition }) });
+  };
+  for (const sketch of document.sketches) {
+    for (const feature of sketch.features) {
+      mapSketchExpressions({ ...sketch, features: [feature], constraints: [] }, (value, ownerId) => {
+        add(value, 'sketchFeature', ownerId, feature.name, sketch.id);
+        return value;
+      });
+    }
+    for (const constraint of sketch.constraints ?? []) {
+      mapSketchExpressions({ ...sketch, features: [], constraints: [constraint] }, (value, ownerId) => {
+        add(value, 'constraint', ownerId, constraint.name, sketch.id);
+        return value;
+      });
+    }
+  }
+  for (const feature of document.references) {
+    mapReferenceFeature(feature, (value, ownerId) => {
+      add(value, 'reference', ownerId, feature.name);
+      return value;
+    });
+  }
+  for (const feature of document.solids) {
+    mapSolidFeature(feature, (value, ownerId) => {
+      add(value, 'solid', ownerId, feature.name);
+      return value;
+    });
+  }
+  mapDocumentNonScalarExpressions(document, (definition, ownerId, _scope, owner) => {
+    add({ source: definition.source, mathDefinition: definition }, owner.kind,
+      ownerId, owner.ownerName, owner.kind === 'sketchFeature' ? owner.sketchId : undefined);
+    return definition;
+  });
+  return usages;
 }
 
 /**

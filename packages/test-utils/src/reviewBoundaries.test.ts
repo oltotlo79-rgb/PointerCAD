@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const examples = [
   { path: 'packages/model/src/kernelBridge/subShapeMatching.ts',
-    allowed: "import { matchFace, matchEdge, matchVertex } from '@pointercad/kernel';",
+    allowed: "import { matchFace, matchEdge, matchVertex, resolveFaceReference, resolveEdgeReference, resolveVertexReference } from '@pointercad/kernel';",
     denied: ["import { createKernelWorker } from '@pointercad/kernel';", "import * as kernel from '@pointercad/kernel';",
       "import { bridge } from '../kernelBridge.js';", "import * as Comlink from 'comlink';",
       "new Worker('worker.js');", "import('@pointercad/kernel');", "async function compute() {}"] },
@@ -159,6 +159,52 @@ describe('レビューで分離した担当へ呼出元・通信・下層への�
       }
       // Newly split modules must themselves stay within the enforced responsibilities and sizes.
       expect(lint(readFileSync(new URL(example.path, new URL('../../../', import.meta.url)), 'utf8'))).toEqual([]);
+    });
+  }
+});
+
+describe('model cannot acquire upper-layer dependencies through test or import spelling', () => {
+  for (const path of ['packages/model/src/part/createPartDocument.test.ts',
+    'packages/model/src/part/createPartDocument.ts', 'packages/model/src/part/solidSketchReferences.ts']) {
+    it(path, async () => {
+      const eslint = new ESLint({ cwd: root });
+      const denied = ["import { value } from '@pointercad/io/pcad';",
+        "export * from '@pointercad/ui/solid/subShapeSelection';",
+        "import type { Value } from '../../../ui/src/solid/subShapeSelection.js';",
+        "export { value } from '../../../io/src/pcad/pcadFile.js';",
+        "import { value } from '../../../io/dist/pcad/pcadFile.js';"];
+      for (const source of denied) {
+        const results = await eslint.lintText(source, { filePath: path });
+        expect(results.flatMap(result => result.messages).some(message => message.fatal)).toBe(false);
+        expect(results.flatMap(result => result.messages).some(message => message.ruleId === 'no-restricted-imports'), source).toBe(true);
+      }
+      const allowed = await eslint.lintText("import type { Vec3 } from '../sketch/vec3.js';", { filePath: path });
+      expect(allowed.flatMap(result => result.messages).some(message => message.ruleId === 'no-restricted-imports')).toBe(false);
+    });
+  }
+});
+
+// ESLint validates each effective rule option against the rule schema; a group listing the same member
+// twice (uniqueItems) rejects the whole configuration for every matching file, not only one import.
+describe('model layer restrictions remain an ESLint-accepted configuration', () => {
+  const cases = [
+    { path: 'packages/model/src/part/createPartDocument.ts', denied: [] as string[] },
+    { path: 'packages/model/src/part/createPartDocument.test.ts', denied: [] as string[] },
+    { path: 'packages/model/src/kernelBridge/subShapeMatching.ts',
+      denied: ["import * as Comlink from 'comlink';", "import { bridge } from '../kernelBridge.js';"] },
+    { path: 'packages/model/src/part/solidSketchReferences.ts', denied: ["import { resolve } from './resolvePart.js';"] },
+  ];
+  for (const example of cases) {
+    it(example.path, async () => {
+      const eslint = new ESLint({ cwd: root });
+      await expect(eslint.calculateConfigForFile(example.path)).resolves.toBeDefined();
+      const denied = ["import { view } from '@pointercad/ui';", "import { value } from '@pointercad/io';",
+        "import { topic } from '@pointercad/help-content';", ...example.denied];
+      for (const source of denied) {
+        const messages = (await eslint.lintText(source, { filePath: example.path })).flatMap(result => result.messages);
+        expect(messages.some(message => message.fatal), source).toBe(false);
+        expect(messages.some(message => message.ruleId === 'no-restricted-imports'), source).toBe(true);
+      }
     });
   }
 });

@@ -45,11 +45,20 @@ function Change({ change }: { readonly change: DocumentDefinitionChange }): Reac
   </li>;
 }
 
-export function DocumentDiffDialog({ onClose }: { readonly onClose: () => void }): React.JSX.Element {
+export interface DocumentDiffInitial {
+  readonly before: ComparisonFile;
+  readonly after: ComparisonFile;
+  readonly relationship: DocumentRelationship;
+}
+
+export function DocumentDiffDialog({ onClose, initial }: {
+  readonly onClose: () => void;
+  readonly initial?: DocumentDiffInitial;
+}): React.JSX.Element {
   const element = useRef<HTMLDialogElement>(null), controller = useRef<AbortController | null>(null);
   const titleId = useId(), relationId = useId();
-  const [before, setBefore] = useState<ComparisonFile | null>(null), [after, setAfter] = useState<ComparisonFile | null>(null);
-  const [relationship, setRelationship] = useState<DocumentRelationship | ''>('');
+  const [before, setBefore] = useState<ComparisonFile | null>(initial?.before ?? null), [after, setAfter] = useState<ComparisonFile | null>(initial?.after ?? null);
+  const [relationship, setRelationship] = useState<DocumentRelationship | ''>(initial?.relationship ?? '');
   const [busy, setBusy] = useState<'before' | 'after' | 'compare' | null>(null);
   const [message, setMessage] = useState<{ readonly error: boolean; readonly text: string } | null>(null);
   const [result, setResult] = useState<DocumentDefinitionComparison | null>(null), [page, setPage] = useState(0);
@@ -74,10 +83,12 @@ export function DocumentDiffDialog({ onClose }: { readonly onClose: () => void }
   };
   const compare = async (): Promise<void> => {
     if (before === null || after === null || relationship === '' || busy !== null) return;
+    const documentKind = before.documentKind ?? 'part';
+    if (documentKind !== (after.documentKind ?? 'part')) { setMessage({ error: true, text: t('documentDiff.kindMismatch') }); return; }
     const operation = new AbortController(); controller.current = operation;
     setBusy('compare'); setMessage(null); setResult(null); setPage(0);
     try {
-      const outcome = await execute({ kind: 'compare', before: before.bytes, after: after.bytes, relationship }, operation.signal);
+      const outcome = await execute({ kind: 'compare', before: before.bytes, after: after.bytes, relationship, documentKind }, operation.signal);
       if (controller.current !== operation || operation.signal.aborted) return;
       if (!outcome.ok) setMessage({ error: true, text: t(outcome.reason === 'timeout' ? 'documentDiff.timeout' : 'documentDiff.failed') });
       else if (outcome.reply.kind === 'failed') setMessage({ error: true, text: outcome.reply.message });
@@ -129,6 +140,6 @@ export function DocumentDiffDialog({ onClose }: { readonly onClose: () => void }
       </nav>}
     </section>}
     </div>
-    {result === null || before === null || after === null ? null : <MaterialDiffPanel beforeBytes={before.bytes} afterBytes={after.bytes} />}
+    {result === null || before === null || after === null || (before.documentKind ?? 'part') !== 'part' ? null : <MaterialDiffPanel beforeBytes={before.bytes} afterBytes={after.bytes} />}
   </dialog>;
 }

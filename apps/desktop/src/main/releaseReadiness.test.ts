@@ -1,3 +1,5 @@
+import { checkDedicatedPerformanceEvidence, readDedicatedPlaywrightTests } from '../../../../scripts/release/dedicatedPerformanceEvidence.mjs';
+import { createHash as performanceFixtureHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -11,7 +13,7 @@ import { desktopPackagePlan, verifyDesktopPackageArtifacts } from '../../../../s
 import { createReleaseManifest } from '../../../../scripts/release/releaseManifest.mjs';
 import type { ReleaseCandidateInput } from '../../../../scripts/release/releaseManifest.mjs';
 import {
-  DESKTOP_DEFERRED_CHECK_IDS, MANUAL_CHECK_IDS, PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES, POST_RELEASE_DESKTOP_CHECK_IDS, RELEASE_LINKS_END,
+  DEDICATED_MEASUREMENT_CHECK_IDS, DESKTOP_DEFERRED_CHECK_IDS, MANUAL_CHECK_IDS, PAGES_MAX_FILE_BYTES, PAGES_MAX_FILES, POST_RELEASE_DESKTOP_CHECK_IDS, RELEASE_LINKS_END,
   RELEASE_LINKS_START, RELEASE_READINESS_CHECK_IDS, RELEASE_READINESS_EXIT, ReleaseReadinessUsageError, WEB_DEFERRED_PHRASE,
   captureFreshnessFromRegistry, checkReadmeReleaseLinks, createReleaseDownloader, evaluateReleaseReadiness, formatReleaseReadinessReport,
   manualPdfReleaseAssetName, parseReleaseReadinessArguments, runReleaseReadiness,
@@ -251,12 +253,20 @@ const statusOf = (report: ReleaseReadinessReport, id: string) => report.checks.f
 const problemsOf = (report: ReleaseReadinessReport, id: string) => report.checks.find(check => check.id === id)?.problems.join('\n') ?? '';
 
 describe('公開前の整合検査は組み立て済みの候補を1つの入口で判定する', () => {
-  it('正しい模擬の一式では全14項目が合格し、終了コード0', async () => {
+  it('Complete ordinary candidate evidence cannot bypass mandatory dedicated acceptance', async () => {
     const report = await evaluateReleaseReadiness(await buildCandidate());
     expect(report.checks.map(check => check.id)).toEqual(RELEASE_READINESS_CHECK_IDS);
-    expect(report.checks.filter(check => check.status !== 'pass').map(check => `${check.id}: ${check.problems.join(' / ')}`)).toEqual([]);
-    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.ready);
+    expect(report.checks.filter(check => !DEDICATED_MEASUREMENT_CHECK_IDS.includes(check.id) && check.status !== 'pass')).toEqual([]);
+    expect(DEDICATED_MEASUREMENT_CHECK_IDS.map(id => statusOf(report, id))).toEqual(['pending', 'pending']);
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.pending);
     expect(report.releaseCertified).toBe(false);
+  });
+
+  it('A caller success flag cannot certify missing or failed dedicated evidence', async () => {
+    const candidate = await buildCandidate();
+    const report = await evaluateReleaseReadiness({ ...candidate, ...{ dedicatedMeasurements: { accepted: true } } });
+    expect(DEDICATED_MEASUREMENT_CHECK_IDS.map(id => statusOf(report, id))).toEqual(['pending', 'pending']);
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.pending);
   });
 
   // The candidate is regenerated from a manual that differs in one place, so every hash-level record stays
@@ -334,7 +344,7 @@ describe('公開前の整合検査は組み立て済みの候補を1つの入口
   it('撮影の登録簿が未接続なら今の版の画像は保留にし、終了コード2（ほかの13項目は合格）', async () => {
     const report = await evaluateReleaseReadiness({ ...await buildCandidate(), captureFreshness: null });
     expect(statusOf(report, 'manual-images')).toBe('pending');
-    expect(report.checks.filter(check => check.id !== 'manual-images' && check.status !== 'pass')).toEqual([]);
+    expect(report.checks.filter(check => check.id !== 'manual-images' && !DEDICATED_MEASUREMENT_CHECK_IDS.includes(check.id) && check.status !== 'pass')).toEqual([]);
     expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.pending);
   });
 
@@ -582,20 +592,22 @@ describe('デスクトップ先行（--scope desktop。2026-09-27 の利用者�
   };
   const desktopCandidateInput = async (readme = desktopReadme()): Promise<PreReleaseInput> => ({ ...await buildCandidate({ readme }), scope: 'desktop' });
 
-  it('正しい一式と Desktop 先行の README なら、Web のファイルの上限の2項目だけ後回しにして全14項目を判定し、終了コード0', async () => {
+  it('Desktop scope defers Web assets but still blocks on dedicated acceptance', async () => {
     const report = await evaluateReleaseReadiness(await desktopCandidateInput());
     expect(report.scope).toBe('desktop');
     expect(report.checks.map(check => check.id)).toEqual(RELEASE_READINESS_CHECK_IDS);
     expect(report.checks.filter(check => check.status === 'deferred').map(check => check.id)).toEqual([...DESKTOP_DEFERRED_CHECK_IDS]);
-    expect(report.checks.filter(check => check.status !== 'pass' && check.status !== 'deferred')
+    expect(report.checks.filter(check => check.status !== 'pass' && check.status !== 'deferred' && !DEDICATED_MEASUREMENT_CHECK_IDS.includes(check.id))
       .map(check => `${check.id}: ${check.problems.join(' / ')}`)).toEqual([]);
-    expect(report.summary).toEqual({ pass: 12, fail: 0, pending: 0, notImplemented: 0, deferred: 2 });
-    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.ready);
+    expect(report.summary).toEqual({ pass: 12, fail: 0, pending: 2, notImplemented: 0, deferred: 2 });
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.pending);
     expect(report.releaseCertified).toBe(false);
     const text = formatReleaseReadinessReport(report);
     expect(text).toContain('PointerCAD 公開前の整合検査（公開前モード・デスクトップ先行（Web 版の項目は後回し））');
     expect(text).toContain('[後回し] 資産 Web の各ファイルが 26,214,400 バイト以下 — Web 版の公開時に判定する');
-    expect(text).toContain('・後回し 2 → 終了コード 0（デスクトップ版の公開前の全項目を満たす（Web 版の項目は後回し））');
+    expect(text).toContain('W21');
+    expect(text).toContain('W22');
+    expect(text).toContain('Dedicated raw evidence is missing; publication blocked');
   });
 
   it('全体モード（既定と --scope all）は同じ README を今までどおり落とす: Web アプリ版と説明書の HTML を要求し、「後日公開」と Release の PDF を拒否する', async () => {
@@ -666,10 +678,10 @@ describe('デスクトップ先行（--scope desktop。2026-09-27 の利用者�
     expect([statusOf(pending, 'manual-images'), pending.exitCode]).toEqual(['pending', RELEASE_READINESS_EXIT.pending]);
   });
 
-  it('Web 版を公開した後の README（全体モードの一式）も Desktop 先行で合格する（Web の導線と説明書の目次を今までどおり照合する）', async () => {
+  it('Published Web README links remain valid while dedicated acceptance blocks Desktop publication', async () => {
     const report = await evaluateReleaseReadiness(await desktopCandidateInput(readmeFor()));
     expect(statusOf(report, 'readme-links')).toBe('pass');
-    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.ready);
+    expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.pending);
     const withoutContents = change(readmeFor(), `[HTML の目次](${SITE}/manual/) ・ `, '');
     expect(checkReadmeReleaseLinks(withoutContents, { version, volumeIds: BASE.volumes.map(volume => volume.id), scope: 'desktop' }).problems)
       .toEqual(['導線が無い: 取扱説明書の HTML（目次）（Web 版を公開したなら説明書の目次も載せる）']);
@@ -817,5 +829,221 @@ describe('公開後モードの Desktop 部分（P13-20 の Desktop 側）: GitH
     const report = await evaluateReleaseReadiness({ mode: 'post-release', releaseManifest: release.releaseManifest, webUrl: `${SITE}/`, downloadUrl: RELEASE_BASE });
     expect(report.checks.map(check => `${check.id}:${check.status}`)).toEqual(['post-release:not-implemented']);
     expect(report.exitCode).toBe(RELEASE_READINESS_EXIT.notImplemented);
+  });
+});
+
+// Constructed schema fixtures; these assertions are not product acceptance evidence.
+describe('dedicated actual-schema adapter refusal', () => {
+  it('keeps absent original thirty-pair W21 evidence pending', () => {
+    expect(checkDedicatedPerformanceEvidence('w21-dedicated', null, null).status).toBe('pending');
+  });
+  it('refuses a forged top-level W22 acceptance flag without raw records', () => {
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', { accepted: true }, null).status).toBe('fail');
+  });
+  it('refuses a failed actual Playwright JSON result rather than its expected status', () => {
+    expect(() => readDedicatedPlaywrightTests({ errors: [], suites: [{ title: 'W22', specs: [{ title: 'case', tests: [{ projectName: 'firefox', expectedStatus: 'passed', timeout: 180000, results: [{ status: 'timedOut', retry: 0, errors: [] }] }] }] }] })).toThrow();
+  });
+  it('refuses retry success in the actual Playwright result schema', () => {
+    expect(() => readDedicatedPlaywrightTests({ errors: [], suites: [{ title: 'W22', specs: [{ title: 'case', tests: [{ projectName: 'firefox', expectedStatus: 'passed', timeout: 180000, results: [{ status: 'passed', retry: 1, errors: [] }] }] }] }] })).toThrow();
+  });
+});
+
+// Reader fixtures only: one complete physical request and one normally cancelled request.
+// Slow's late old reply is intentionally absent from normal; this is not a cross-run equality condition.
+function syntheticRawWork(lateReply: boolean) {
+  const first = { documentId: 'synthetic', documentVersion: 0, editorId: 'editor', inputRevision: 0 };
+  const second = { ...first, editorId: 'cancelled-editor' };
+  const payload = (serial: number, identity: typeof first) => ['record', [
+    ['kind', ['string', 'evaluate-math']],
+    ['request', ['record', [['identity', ['record', Object.entries(identity).sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [key, [typeof value === 'string' ? 'string' : 'number', value]])]]]]],
+    ['serial', ['number', serial]],
+  ]];
+  const terminal = (serial: number, worker: number, at: number, identity: typeof first) => ({ event: 'reply', kind: 'math-result',
+    serial, worker, occurrence: 1, at, timeOrigin: 100, identity, outcomePayload: ['record', [['status', ['string', 'result']]]] });
+  const request = (serial: number, worker: number, identity: typeof first) => ({ event: 'request', kind: 'evaluate-math', serial,
+    worker, occurrence: 1, at: 10, timeOrigin: 100, identity, payload: payload(serial, identity) });
+  const transport: Record<string, unknown>[] = [request(1, 1, first),
+    { event: 'reply', kind: 'math-pace', serial: 1, worker: 1, occurrence: 1, at: 15, timeOrigin: 100, identity: first, pace: 1 },
+    terminal(1, 1, 30, first), request(2, 2, second),
+    { event: 'terminate', worker: 2, at: 20, timeOrigin: 100, pendingOccurrences: [1] }];
+  if (lateReply) transport.push(terminal(2, 2, 22, second));
+  const phase = (name: string, atMs: number) => ({ phase: name, worker: 'worker-complete', timeOrigin: 100, atMs,
+    serial: 1, identity: first, elapsedMs: atMs, pace: 1 });
+  const phases = [phase('module-ready', 0), phase('backend-ready', 5), phase('request-received', 12),
+    phase('request-start', 14), phase('reply-ready', 28), phase('request-end', 29)];
+  const client = (serial: number, identity: typeof first, cancelled: boolean) => [
+    { event: 'dispatch', at: 8 }, { event: 'dispatched', at: 10 },
+    { event: 'complete', at: cancelled ? 19 : 29, status: cancelled ? 'cancelled' : 'result', replaceWorker: cancelled },
+    { event: 'finished', at: cancelled ? 21 : 31, status: cancelled ? 'cancelled' : 'result', replaceWorker: cancelled },
+  ].map(row => ({ ...row, serial, client: serial, timeOrigin: 100, identity }));
+  const clients = [...client(1, first, false), ...client(2, second, true)];
+  const editors = [{ event: 'abort', at: 18 }, { event: 'discard', at: 22 }]
+    .map(row => ({ ...row, session: 1, timeOrigin: 100, identity: second }));
+  const stageIntervals = [
+    { classification: 'completed', complete: true, hostTimeOrigin: 100, hostWorker: 1, occurrence: 1, serial: 1, identity: first,
+      worker: 'worker-complete', key: 'complete:1', engineMatched: true, exactEngineObserved: false,
+      totalMs: 20, preparationMs: 2, calculationMs: 14, waitingAndTransportMs: 4 },
+    { classification: 'cancelled-before-adoption', complete: false, hostTimeOrigin: 100, hostWorker: 2, occurrence: 1, serial: 2, identity: second,
+      cancellation: { client: 2, status: 'cancelled', completedAt: 19, finishedAt: 21, terminationAt: 20,
+        nonAdoption: 'editor-discard', editorSession: 1, abortAt: 18, discardAt: 22 }, observedPhases: [], terminalObserved: lateReply },
+  ];
+  return { transport, phases, clients, editors, stageIntervals };
+}
+
+// Synthetic complete populations in the observed raw schemas. They certify only the reader.
+function syntheticDedicatedPopulation() {
+  const records: Record<string, { path: string; sha256: string; bytes: Buffer }> = {};
+  const hash = (bytes: Buffer) => performanceFixtureHash('sha256').update(bytes).digest('hex');
+  const put = (id: string, value: unknown, raw = false) => {
+    const bytes = Buffer.from(raw ? String(value) : JSON.stringify(value));
+    records[id] = { path: `fixture/${id}.json`, sha256: hash(bytes), bytes }; return id;
+  };
+  const productHash = 'a'.repeat(64), currentInputs: Record<string, string> = { 'pnpm-lock.yaml': productHash, 'src/product.ts': productHash };
+  put('config', 'pnpm --filter @pointercad/desktop run build && pnpm --filter @pointercad/web run build && pnpm --filter @pointercad/web run preview\nreuseExistingServer: false', true);
+  put('electronHelper', "join(root, 'apps/desktop/dist/main/main.cjs')", true);
+  put('flow', "await app?.close(); const cold = await run('cold'), warm = await run('warm'); await compareInSecondWorker(page, info, mode, app); value.toBeCloseTo(expected, 6);", true);
+  put('spec', 'W21 actual app:// OCCT online/offline', true);
+  put('browserSpec', 'W21 actual OCCT online/offline', true);
+  const files = [{ path: 'pnpm-lock.yaml', copy_sha256: productHash }, { path: 'src/product.ts', copy_sha256: productHash },
+    ...[['config', 'e2e/playwright.config.ts'], ['electronHelper', 'e2e/tests/electronAppFlow.ts'], ['flow', 'e2e/tests/occtCompileReuseFlow.ts'], ['spec', 'e2e/tests/electron-occt-compile-reuse.spec.ts'], ['browserSpec', 'e2e/tests/occt-compile-reuse-solid.spec.ts']].map(([id, path]) => ({ path, copy_sha256: records[id].sha256 }))];
+  put('manifest', { schema_version: 1, checkout: '/synthetic/q1', files });
+  const manifestSha256 = records.manifest.sha256;
+  const sourceInputs = { web: { 'src/product.ts': productHash }, desktop: { 'src/product.ts': productHash } };
+  const report = (suites: unknown[]) => ({ errors: [], suites });
+  const test = (project: string, title: string, attachments: unknown[]) => ({ title, tests: [{ projectName: project, expectedStatus: 'passed', timeout: 180000,
+    results: [{ status: 'passed', retry: 0, errors: [], attachments }] }] });
+  const body = (name: string, value: unknown) => ({ name, contentType: 'application/json', body: Buffer.from(JSON.stringify(value)).toString('base64') });
+  put('result', { exitCode: 0 });
+  put('command', { exclusive: true, manifestSha256, cpuHelperSha256: 'c627c7999e12a503594128e7a4ab1266e9e7e6282e98385c09cb15e6b389faa4' });
+  put('build', { format: 'pointercad-web-build/1', inputs: sourceInputs.web, outputs: {} });
+  const w21 = ['functional', 'firefox', 'electron'].map(project => {
+    const suites = ['online', 'offline'].map(network => {
+      const pairs = Array.from({ length: 5 }, (_, i) => ({ index: i + 1, offline: network === 'offline', profile: `${project}/${network}/${i}`,
+        cold: { startupMs: 100, sha256: productHash }, warm: { startupMs: 80, sha256: productHash } }));
+      return { title: `W21 actual ${project === 'electron' ? 'app:// ' : ''}OCCT ${network}`, specs: pairs.map(pair => {
+        const attachments = [body('actual-distribution-identity', { buildSha256: records.build.sha256, files: [] })];
+        for (const mode of ['cold', 'warm']) attachments.push(body(`${mode}-closed-profile`, []),
+          body(`${mode}-occt-observation`, { offline: network === 'offline', observation: { errors: [] }, measured: { startupMs: mode === 'cold' ? 100 : 80, sha256: productHash, stages: { workers: [{}, {}] } } }),
+          body(`${mode}-two-worker-window`, { overlap: { start: 1, end: 2 }, twoWorkerResources: { unavailable: [], frames: 2, cpuMilliseconds: 1, peakWorkingSetBytes: 1, peakPrivateBytes: 1 } }));
+        if (pair.index === 5) attachments.push(body('five-pair-raw-measurements', pairs), body('five-pair-medians', { cold: 100, warm: 80, ratio: 0.8, requiredRatio: 0.8 }));
+        return test(project, `cold/warm pair ${pair.index}/5: two UI Workers and actual geometry`, attachments);
+      }) };
+    });
+    const reportId = put(`${project}-report`, report(suites));
+    const launch = put(`${project}-launch`, { cwd: '/synthetic/q1', manifestSha256, argv: ['test:e2e', 'electron-occt-compile-reuse.spec.ts', '--project=electron'], playwrightJson: records[reportId].path });
+    const inputsAfter = put(`${project}-after`, { allManifestInputsUnchanged: true, manifestSha256, commandExitCode: 0, playwrightExitCode: 0, playwrightJson: records[reportId].path, playwrightJsonSha256: records[reportId].sha256 });
+    return { project, report: reportId, command: 'command', result: 'result', build: 'build', config: 'config', electronHelper: 'electronHelper', flow: 'flow', spec: project === 'electron' ? 'spec' : 'browserSpec', launch, inputsAfter };
+  });
+  const w22 = ['functional', 'firefox', 'electron'].flatMap(project => ['input', 'ADD-23', 'ADD-17', 'hemisphere'].map(scenario => {
+    const pair = put(`${project}-${scenario}-pair`, { project, scenario, manifestSha256, originalR26CellConfirmed: true, slowConditionConfirmed: true, completeWorkProof: { status: 'not-comparable' } });
+    const conditions = Object.fromEntries(['normal', 'slow'].map(condition => {
+      const prefix = `${project}-${scenario}-${condition}`, nonce = prefix, slow = condition === 'slow';
+      const sample = put(`${prefix}-sample`, { schema: 'pcad-w22-measurement-v1', nonce, condition, project, scenario, scenarioPassed: true,
+        scenarioTimeoutMs: 180000, recomputeTimeoutMs: 150000, overflow: false, malformed: false, errors: [], files: { 'src/product.ts': productHash }, inputSha256: productHash,
+        referenceMs: [1], paceMessageCount: 1, phaseMessageCount: 3,
+        requestIntervals: [{ waitingBeforePaceMs: 1, calculationAndTransportMs: 1 }],
+        ...syntheticRawWork(slow) });
+      const reportId = put(`${prefix}-report`, report([{ title: 'W22', specs: [test(project, `W22 ${scenario}`, [{ name: 'w22-measurement', path: records[sample].path }])] }]));
+      const attachment = put(`${prefix}-attachment`, { path: records[sample].path, sha256: records[sample].sha256, reportSha256: records[reportId].sha256 });
+      const run = put(`${prefix}-run`, { schema: 'pcad-w22-owned-run-v1', exit_code: 0, error: null, condition, project, scenario, manifestSha256, nonce, cpu_rate: slow ? 600 : 0,
+        owned_job: { nonce, assigned_before_resume: true, cleanup_complete: true, forced_owned_cleanup: false, errors: [], qualification: { descendant_identity_complete: true }, cpu_control: { flags: slow ? 5 : 0, rate: slow ? 600 : 0, readback_confirmed: true, policy_checked_before_create: true, set_before_create: slow } } });
+      const launch = put(`${prefix}-launch`, { nonce, manifestSha256, cwd: '/synthetic/q1', argv: ['test:e2e', `--project=${project}`], environment: { VITE_PCAD_E2E: '1' } });
+      const inputsAfter = put(`${prefix}-after`, { allManifestInputsUnchanged: true });
+      return [condition, { run, launch, attachment, sample, report: reportId, inputsAfter }];
+    }));
+    return { ...conditions, pair, command: 'command', result: 'result', config: 'config' };
+  }));
+  return { evidence: { records, manifest: 'manifest', currentInputs, w21, w22 }, sourceInputs };
+}
+
+describe('synthetic complete dedicated original populations', () => {
+  it('connects all thirty W21 pairs including actual-shape Electron launch and fresh build binding', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation();
+    expect(checkDedicatedPerformanceEvidence('w21-dedicated', evidence, sourceInputs).status).toBe('pass');
+  });
+  it('connects twelve W22 normal/slow pairs without requiring intermediate population equality', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation();
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('pass');
+  });
+  it('blocks the actual-shape failed Electron terminal even when ten rows say passed', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation();
+    evidence.records.result.bytes = Buffer.from('{"exitCode":1}');
+    evidence.records.result.sha256 = performanceFixtureHash('sha256').update(evidence.records.result.bytes).digest('hex');
+    expect(checkDedicatedPerformanceEvidence('w21-dedicated', evidence, sourceInputs).status).toBe('fail');
+  });
+  it('leaves a one-pair diagnostic population pending rather than accepting its success', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation(); evidence.w21 = evidence.w21.slice(0, 1);
+    expect(checkDedicatedPerformanceEvidence('w21-dedicated', evidence, sourceInputs).status).toBe('pending');
+  });
+  it('refuses changed raw bytes before considering any successful original qualification flag', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation(); evidence.records.result.bytes = Buffer.from('{"exitCode":0,"changed":true}');
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('fail');
+  });
+  it('keeps eleven W22 pairs pending without dropping the absent host/scenario cell', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation(); evidence.w22 = evidence.w22.slice(0, 11);
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('pending');
+  });
+  it('refuses a source generation mismatch while leaving unrelated metadata outside product matching', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation(); evidence.currentInputs['src/product.ts'] = 'b'.repeat(64);
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('fail');
+  });
+  it('rejects a rehashed slow receipt whose CPU rate differs from original six percent', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation();
+    const ref = evidence.records['functional-input-slow-run'];
+    const run: unknown = JSON.parse(ref.bytes.toString('utf8'));
+    if (typeof run !== 'object' || run === null || !('cpu_rate' in run) || typeof run.cpu_rate !== 'number') {
+      throw new TypeError('Synthetic owned-run receipt must contain numeric cpu_rate');
+    }
+    run.cpu_rate = 700;
+    ref.bytes = Buffer.from(JSON.stringify(run)); ref.sha256 = performanceFixtureHash('sha256').update(ref.bytes).digest('hex');
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('fail');
+  });
+});
+
+function fixtureRecord(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new TypeError('Expected fixture record');
+  return Object.fromEntries(Object.entries(value));
+}
+function fixtureRows(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) throw new TypeError('Expected fixture row array');
+  return value.map(item => fixtureRecord(item));
+}
+function mutateRehashedSample(change: (sample: Record<string, unknown>) => void) {
+  const population = syntheticDedicatedPopulation();
+  const ref = population.evidence.records['functional-input-slow-sample'];
+  const sample = fixtureRecord(JSON.parse(ref.bytes.toString('utf8')));
+  change(sample);
+  ref.bytes = Buffer.from(JSON.stringify(sample)); ref.sha256 = performanceFixtureHash('sha256').update(ref.bytes).digest('hex');
+  const attachment = population.evidence.records['functional-input-slow-attachment'];
+  const mapping = fixtureRecord(JSON.parse(attachment.bytes.toString('utf8')));
+  mapping.sha256 = ref.sha256;
+  attachment.bytes = Buffer.from(JSON.stringify(mapping)); attachment.sha256 = performanceFixtureHash('sha256').update(attachment.bytes).digest('hex');
+  return population;
+}
+describe('original r3 run-local qualification with coherent raw SHA mappings', () => {
+  const mutations: [string, (sample: Record<string, unknown>) => void][] = [
+    ['missing typed request payload', sample => {
+      sample.transport = fixtureRows(sample.transport).map(row => { if (row.event === 'request') delete row.payload; return row; });
+    }],
+    ['missing actual client/editor evidence', sample => { sample.clients = []; sample.editors = []; }],
+    ['cancelled result adopted by editor', sample => {
+      sample.editors = [...fixtureRows(sample.editors), { event: 'apply', at: 23, timeOrigin: 100, session: 1,
+        identity: { documentId: 'synthetic', documentVersion: 0, editorId: 'cancelled-editor', inputRevision: 0 } }];
+    }],
+    ['missing completed terminal reply', sample => {
+      sample.transport = fixtureRows(sample.transport).filter(row => !(row.worker === 1 && row.kind === 'math-result'));
+    }],
+    ['stage partition differs from actual clocks', sample => {
+      sample.stageIntervals = fixtureRows(sample.stageIntervals).map(row => row.complete === true ? { ...row, calculationMs: 13, waitingAndTransportMs: 5 } : row);
+    }],
+  ];
+  for (const [name, change] of mutations) it(`rejects ${name} even after every reference SHA is updated`, () => {
+    const { evidence, sourceInputs } = mutateRehashedSample(change);
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('fail');
+  });
+  it('accepts original cancellation with a late reply in only slow, without equal intermediate populations', () => {
+    const { evidence, sourceInputs } = syntheticDedicatedPopulation();
+    expect(checkDedicatedPerformanceEvidence('w22-dedicated', evidence, sourceInputs).status).toBe('pass');
   });
 });

@@ -35,8 +35,11 @@ import { withVirtualFileInput } from './virtualFile.js';
  * **実測(2026-09-06、Node の opencascade.js 2.0.0-beta.b5ff984。計画書 §1.5-1、-12、-7):**
  *
  * - `oc.RWObj_CafReader` / `oc.RWGltf_CafReader` / `oc.RWMesh_CafReader` は実行時に関数
- *   (`.test.ts` の 1 件目が毎回確かめる)。`RWObj_CafWriter` / `RWGltf_CafWriter` も同様に
- *   実在する(書き出しはタスク13 の担当)。
+ *   (`.test.ts` の 1 件目が毎回確かめる)。**`RWObj_CafWriter` / `RWGltf_CafWriter` は、採用した
+ *   closed 版 OCCT(`vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677`)には
+ *   無い**(実行時に `undefined`。2026-10-24 に確認。旧レジストリ版にはあった)。OBJ / glTF の
+ *   書き出しは OCCT の書き手を使わず、自前の純関数 `writeCafMesh.ts` で行う(統括の決定
+ *   2026-09-06 と 2026-10-24)。
  * - **§1.5-12 の答え: `SetDocument` を呼ばずに `Perform` は成功する。** 文書を渡さない
  *   まま `Perform` が `true` を返し、`SingleShape()` が中身のある形を返した。
  *   **XCAF の文書(タスク7)は読み込みには要らない。**

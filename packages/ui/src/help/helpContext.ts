@@ -25,6 +25,8 @@ export function contextualHelpTopic(state: AppState, explicit?: string | null, t
   if (kind === 'assembly') {
     if (state.assemblyMateDraft !== null) return state.assemblyMateDraft.jointKind === undefined ? 'mate' : 'joint';
     if (state.assemblyPlacement !== null) return 'assembly-place';
+    // ボルト締結の専用の章は最後の説明書の作業で足す。それまでは既存の「部品を置く」の章を開く。
+    if (state.assemblyBoltedJointDraft !== null) return 'assembly-place';
     return 'assembly';
   }
   if (state.activeConstraintKind !== null) return 'constraints';

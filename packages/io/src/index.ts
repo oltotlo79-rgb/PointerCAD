@@ -4,6 +4,8 @@
  */
 
 // 圧縮入力・展開後・メッシュ配列・DXF 本文の読み込み上限（単一正本）。
+export { encodeSaveDocument, type SaveDocumentInput, type SaveDocumentEncoder,
+  type SaveEncodingControl, type SaveEncodingStage } from './pcad/saveDocumentEncoding.js';
 export {
   IO_LIMITS,
   isMeshAllocationWithinLimit,
@@ -56,6 +58,8 @@ export {
   type ParseErrorCode,
   type SerializeOptions,
 } from './pcad/documentJson.js';
+// 通常保存ZIPの項目を検証して共有・再構築する保存点repository用。
+export { readArchive, type ArchiveReadLimits, type ReadArchiveResult } from './pcad/readArchive.js';
 // .pcad(ZIP コンテナ)の読み書き(FR-801、要件§8)。
 export {
   decodeImportedMeshBytes,
@@ -78,9 +82,14 @@ export {
   PCAD_SHAPE_ENTRY_PREFIX,
   PCAD_SHAPE_ENTRY_SUFFIX,
   PCAD_THUMBNAIL_ENTRY,
+  FIXED_ENTRY_MTIME,
+  zipPcadEntries,
+  type PcadZipEntry,
+  type PcadZipEntries,
   readPcadaFile,
   readPcaddFile,
   readPcadFile,
+  readPcadEntries,
   readDocumentBundle,
   writeDocumentBundle,
   type ReadDocumentBundleResult,
@@ -215,6 +224,17 @@ export {
   type ThreeMfMeshInput,
   type WriteThreeMfOptions,
 } from './threemf/writeThreeMf.js';
+export {
+  admitThreeMf,
+  checkThreeMfDeadline,
+  threeMfDeadline,
+  ThreeMfExportLimitError,
+  THREE_MF_EXPORT_BYTE_LIMIT,
+  THREE_MF_EXPORT_TIME_LIMIT_MS,
+  THREE_MF_EXPORT_TRIANGLE_LIMIT,
+  type ThreeMfAdmission,
+  type ThreeMfAdmissionOptions,
+} from './threemf/threeMfAdmission.js';
 export {
   readAttributes,
   readThreeMf,

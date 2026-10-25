@@ -1,12 +1,12 @@
 import { beginRadialMenuGesture, finishRadialMenuGesture, moveRadialMenuGesture, type RadialMenuGesture } from './radialMenuGesture.js';
-import { placeRadialMenu, type RadialMenuSlot, type ScreenPoint } from './radialMenuGeometry.js';
+import { placeRadialMenu, type RadialMenuSlot, type ScreenBounds, type ScreenPoint } from './radialMenuGeometry.js';
 import { exceedsRightDragThreshold, isPlainRightPointer } from '../viewport/rightPointerGesture.js';
 
 export interface RadialMenuAttachmentOptions {
   /** Reference identity of the current document; an edit or switch cancels a held gesture. */
   readonly owner: () => object;
   readonly blocked: () => boolean;
-  readonly show: (gesture: RadialMenuGesture | null, latched?: boolean) => void;
+  readonly show: (gesture: RadialMenuGesture | null, latched?: boolean, preserveFocus?: boolean) => void;
   readonly choose: (slot: RadialMenuSlot) => void;
   /** Opened buttons use their visible hit area; a held right gesture uses sectors. */
   readonly clickSlot?: (point: ScreenPoint) => RadialMenuSlot | null;
@@ -15,14 +15,16 @@ export interface RadialMenuAttachmentOptions {
   readonly scale?: () => number;
   /** In 3D, the camera owns right drags; open only after a stationary right release. */
   readonly clickOnly?: boolean;
+  readonly allowSelectionModifiers?: () => boolean;
 }
 
 /** Right drag chooses on release; a short right click leaves the menu for a subsequent left click. */
 export function attachRadialMenuGesture(
   surface: HTMLElement | SVGElement, options: RadialMenuAttachmentOptions,
-): { readonly cancel: () => void; readonly choose: (slot: RadialMenuSlot) => void; readonly detach: () => void } {
+): { readonly cancel: () => void; readonly choose: (slot: RadialMenuSlot) => void;
+  readonly fit: (bounds: ScreenBounds) => void; readonly detach: () => void } {
   const view = surface.ownerDocument.defaultView;
-  if (view === null) return { cancel: () => {}, choose: () => {}, detach: () => {} };
+  if (view === null) return { cancel: () => {}, choose: () => {}, fit: () => {}, detach: () => {} };
   // HTML and SVG share these typed DOM events; keep one registration contract.
   const surfaceEvents: GlobalEventHandlers = surface;
   const captureOptions = { capture: true };
@@ -49,7 +51,9 @@ export function attachRadialMenuGesture(
     if (allowed) options.choose(slot);
   };
   const down = (event: PointerEvent): void => {
-    if (!isPlainRightPointer(event) || options.blocked()) return;
+    const modifiedClick = options.clickOnly === true && options.allowSelectionModifiers?.() === true
+      && event.button === 2 && event.buttons === 2 && event.pointerType === 'mouse' && !event.altKey && !event.metaKey;
+    if ((!isPlainRightPointer(event) && !modifiedClick) || options.blocked()) return;
     cancel();
     const bounds = surface.getBoundingClientRect();
     const scale = options.scale?.() ?? 1;
@@ -72,7 +76,8 @@ export function attachRadialMenuGesture(
     if (pending !== null && event.pointerId === pending.gesture.pointerId) pending = null;
     if (active === null || event.pointerId !== active.gesture.pointerId) return;
     if (active.holding !== null) { cancel(); return; }
-    if (event.button !== 0 || event.buttons !== 1 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+    if (event.button !== 0 || event.buttons !== 1 || event.altKey || event.metaKey
+      || ((event.ctrlKey || event.shiftKey) && options.allowSelectionModifiers?.() !== true)) {
       cancel(); return;
     }
     if (changed()) { cancel(); return; }
@@ -150,6 +155,20 @@ export function attachRadialMenuGesture(
     if (event.pointerId === active?.gesture.pointerId && (event.type !== 'lostpointercapture' || active.holding !== null)) cancel();
   };
   const key = (event: KeyboardEvent): void => {
+    if ((event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) && event.target === surface
+      && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing && !event.repeat && !options.blocked()) {
+      cancel();
+      const bounds = surface.getBoundingClientRect(), scale = options.scale?.() ?? 1;
+      const centre = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+      const geometry = placeRadialMenu(centre,
+        { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height - 80 * scale }, 152 * scale, 32 * scale);
+      if (geometry === null) return;
+      stop(event);
+      const gesture = beginRadialMenuGesture(centre, -1, geometry);
+      active = { gesture, owner: options.owner(), start: centre, holding: null, moved: false };
+      options.show(gesture, true);
+      return;
+    }
     pending = null;
     if (active === null) return;
     // The opened menu retains ordinary keyboard navigation and activation.
@@ -159,7 +178,27 @@ export function attachRadialMenuGesture(
   };
   const wheel = (event: WheelEvent): void => { pending = null; if (active !== null) stop(event); };
   const context = (event: MouseEvent): void => {
-    if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && !options.blocked()) event.preventDefault();
+    if (!event.altKey && !event.metaKey && (!event.ctrlKey && !event.shiftKey || options.allowSelectionModifiers?.() === true)
+      && !options.blocked()) event.preventDefault();
+  };
+  // The translated hint can be taller than the initial allowance. Move both visible geometry
+  // and gesture sectors together, using the rendered menu and the actual owning surface.
+  const fit = (rendered: ScreenBounds): void => {
+    if (active === null) return;
+    const previous = active.gesture.geometry, radius = previous.outerRadius;
+    const bounds = surface.getBoundingClientRect();
+    const extraLeft = Math.max(0, previous.center.x - radius - rendered.left);
+    const extraTop = Math.max(0, previous.center.y - radius - rendered.top);
+    const extraRight = Math.max(0, rendered.left + rendered.width - previous.center.x - radius);
+    const extraBottom = Math.max(0, rendered.top + rendered.height - previous.center.y - radius);
+    const geometry = placeRadialMenu(previous.center,
+      { left: bounds.left + extraLeft, top: bounds.top + extraTop,
+        width: bounds.width - extraLeft - extraRight, height: bounds.height - extraTop - extraBottom },
+      radius, previous.cancelRadius);
+    if (geometry === null) { cancel(); return; }
+    if (Math.abs(geometry.center.x - previous.center.x) < 0.5 && Math.abs(geometry.center.y - previous.center.y) < 0.5) return;
+    active = { ...active, gesture: { ...active.gesture, geometry, selected: null } };
+    options.show(active.gesture, active.holding === null, true);
   };
 
   surfaceEvents.addEventListener('pointerdown', down, captureOptions);
@@ -173,7 +212,7 @@ export function attachRadialMenuGesture(
   view.addEventListener('wheel', wheel, wheelOptions);
   view.addEventListener('blur', cancel);
   view.addEventListener('resize', cancel);
-  return { cancel, choose, detach: () => {
+  return { cancel, choose, fit, detach: () => {
     cancel();
     surfaceEvents.removeEventListener('pointerdown', down, captureOptions);
     surfaceEvents.removeEventListener('contextmenu', context);

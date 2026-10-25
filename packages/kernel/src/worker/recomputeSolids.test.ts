@@ -1,9 +1,10 @@
 import { expectWithinBudget } from '@pointercad/test-utils';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { extractEdges } from '../occt/extractEdges.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
-import { makePrimitive } from '../occt/makePrimitive.js';
+import { resolveEdgeReference, resolveFaceReference, scoreFace, SUB_SHAPE_MATCH_THRESHOLD } from '../occt/matchSubShape.js';
+import * as primitiveModule from '../occt/makePrimitive.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { buildSolidBodyMesh } from '../occt/solidMesh.js';
@@ -29,8 +30,10 @@ import type {
   ThruSectionsStepSpec,
   Vec3Tuple,
 } from '../types.js';
-import { recomputeSolids, type CachedSolid } from './recomputeSolids.js';
+import { recomputeSolids, solidMeshBuffers, localCachedReferenceMesh, type CachedSolid } from './recomputeSolids.js';
 import { createShapeCache, type ShapeCache } from './shapeCache.js';
+
+const { makePrimitive } = primitiveModule;
 
 /** 原点を角とする長方形の閉ループ(z = 0 の XY 面)。押し出すと直方体になる。 */
 function rectangle(width: number, depth: number): readonly CurveSpec[] {
@@ -126,8 +129,12 @@ interface TestCache {
 
 const openCaches: ShapeCache<CachedSolid>[] = [];
 
-function newCache(): TestCache {
-  const inner = createShapeCache<CachedSolid>();
+function newCache(measureMeshBytes = false, measureWholeBackings = false): TestCache {
+  const inner = measureMeshBytes
+    ? createShapeCache<CachedSolid>(undefined, ({ mesh }) => mesh.positions.byteLength
+      + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength,
+      measureWholeBackings ? ({ mesh }) => solidMeshBuffers(mesh) : undefined)
+    : createShapeCache<CachedSolid>();
   let built = 0;
   const cache: ShapeCache<CachedSolid> = {
     get: (key) => inner.get(key),
@@ -148,6 +155,8 @@ function newCache(): TestCache {
       return inner.capacity;
     },
     stats: () => inner.stats(),
+    ...(measureWholeBackings ? { meshBufferSnapshot: () => inner.meshBufferSnapshot?.()
+      ?? { status: 'unknown', reason: 'callback-missing' } as const } : {}),
   };
   openCaches.push(cache);
   return { cache, built: () => built };
@@ -358,6 +367,26 @@ describe('履歴の再計算(recomputeSolids)', () => {
     return found;
   }
 
+  it('surfaceCut copies each selected piece into the cache and preserves typed refusal reasons', async () => {
+    const { cache } = newCache();
+    const target = extrudeStep('surface-cut-target', 'surface-cut-target-key', 10, 10, 10, false);
+    const cutting = (id: string, x: number, keepPositive: boolean): SolidStepRequest => ({
+      id, key: id, label: id, visible: true, step: { kind: 'surfaceCut', targetKey: target.key,
+        blade: { kind: 'plane', origin: [x, 0, 0], normal: [1, 0, 0] }, keepPositive },
+    });
+    const steps = [target, cutting('surface-positive', 5, true), cutting('surface-negative', 5, false)];
+    const first = await recomputeSolids({ oc, cache }, request(steps));
+    expect(first.failures).toEqual([]); expect(first.bodies).toHaveLength(2);
+    for (const body of first.bodies) expect(Math.abs(body.volume - 500) / 500).toBeLessThanOrEqual(1e-9);
+    const cached = await recomputeSolids({ oc, cache }, request(steps));
+    expect(cached.failures).toEqual([]); expect(cached.cacheHits).toBe(3);
+    expect(cached.bodies.map(body => body.positions)).toEqual(first.bodies.map(body => body.positions));
+    for (const [x, code] of [[11, 'no-intersection'], [10, 'touch-only']] as const) {
+      const rejected = await recomputeSolids({ oc, cache }, request([target, cutting(`reject-${code}`, x, true)]));
+      expect(rejected.failures).toEqual([expect.objectContaining({ id: `reject-${code}`, code })]);
+    }
+  });
+
   it('1 段の押し出しから体積 12000 mm³ のボディを 1 つ返す', async () => {
     const { cache, built } = newCache();
     const result = await recomputeSolids(
@@ -379,6 +408,60 @@ describe('履歴の再計算(recomputeSolids)', () => {
     expect(result.bodies[0].edgePositions).toBeInstanceOf(Float32Array);
     expect(built()).toBe(1);
     expect(cache.size).toBe(1);
+  });
+
+  it.each([
+    { directionZ: 1, minZ: 0, maxZ: 7 },
+    { directionZ: -1, minZ: -7, maxZ: 0 },
+  ])('toFace worker honors resolved distance and endpoint for direction $directionZ', async ({ directionZ, minZ, maxZ }) => {
+    const { cache, built } = newCache();
+    const result = await recomputeSolids({ oc, cache }, request([{
+      id: 'to-face', key: 'to-face-key', label: 'to-face', visible: true,
+      step: {
+        kind: 'extrude', profile: rectangle(4, 6), direction: [0, 0, directionZ],
+        // The authored fallback is deliberately different: ignoring end.distance must fail.
+        distance: 31, end: { kind: 'toFace', distance: 7 },
+      },
+    }]));
+
+    expect(result.failures).toEqual([]);
+    expect(result.cancelled).toBe(false);
+    expect(result.bodies).toHaveLength(1);
+    const body = result.bodies[0];
+    expect(body.id).toBe('to-face');
+    // Independent prism arithmetic: 4 * 6 * 7 = 168 mm^3 in either direction.
+    expect(body.volume).toBeCloseTo(168, 6);
+    expect(body.vertices).toHaveLength(8);
+    const xs = body.vertices.map(vertex => vertex.position[0]);
+    const ys = body.vertices.map(vertex => vertex.position[1]);
+    const zs = body.vertices.map(vertex => vertex.position[2]);
+    expect(Math.min(...xs)).toBeCloseTo(0, 4);
+    expect(Math.max(...xs)).toBeCloseTo(4, 4);
+    expect(Math.min(...ys)).toBeCloseTo(0, 4);
+    expect(Math.max(...ys)).toBeCloseTo(6, 4);
+    expect(Math.min(...zs)).toBeCloseTo(minZ, 4);
+    expect(Math.max(...zs)).toBeCloseTo(maxZ, 4);
+    expect(built()).toBe(1);
+    expect(cache.size).toBe(1);
+  });
+
+  it('toFace worker rejects zero resolved distance despite a positive authored fallback', async () => {
+    const { cache, built } = newCache();
+    const result = await recomputeSolids({ oc, cache }, request([{
+      id: 'to-face-zero', key: 'to-face-zero-key', label: 'to-face-zero', visible: true,
+      step: {
+        kind: 'extrude', profile: rectangle(4, 6), direction: [0, 0, 1],
+        distance: 31, end: { kind: 'toFace', distance: 0 },
+      },
+    }]));
+
+    expect(result.failures).toEqual([{
+      id: 'to-face-zero', message: '押し出す長さは 0 より大きい数にしてください。',
+    }]);
+    expect(result.bodies).toEqual([]);
+    expect(result.cancelled).toBe(false);
+    expect(built()).toBe(0);
+    expect(cache.size).toBe(0);
   });
 
   it('押し出しを 2 段続けると、履歴の順にボディが 2 つ並ぶ', async () => {
@@ -420,6 +503,622 @@ describe('履歴の再計算(recomputeSolids)', () => {
     expect(second.bodies.map((body) => body.id)).toEqual(['extrude-1', 'extrude-2']);
     expect(second.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME, 6);
     expect(second.bodies[1].volume).toBeCloseTo(SECOND_VOLUME, 6);
+  });
+
+  it('reserves native anonymous metadata and both clone copies before a local cached reply', async () => {
+    const step = primitiveStep('anonymous-budget-box', 'anonymous-budget-key', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const source = newCache(true);
+    expect((await recomputeSolids({ oc, cache: source.cache }, request([step]))).failures).toEqual([]);
+    const owned = source.cache.get(step.key);
+    if (owned === undefined) throw new Error('world cache missing');
+    const current = owned.mesh.faces[0];
+    if (current === undefined) throw new Error('actual native face missing');
+    const cache = newCache(true).cache;
+    const origins = { version: 1, state: 'tracked', bindings: [], fingerprintFallback: Array.from({ length: 64 }, () => ({
+      current: { kind: 'face', index: current.index }, reason: 'legacy',
+    } as const)) } as const;
+    cache.set(step.key, { ...owned, mesh: { ...owned.mesh, origins }, delete: () => undefined });
+    const input = { ...request([step]), localMesh: { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } };
+    const result = await recomputeSolids({ oc, cache }, input);
+    expect(result.failures).toEqual([]);
+    expect(result.bodies[0].origins).toEqual(origins);
+    expect(result.bodies[0].volume).toBe(owned.mesh.volume);
+    expect(Math.abs(result.bodies[0].volume - 8000)).toBeLessThan(1e-6);
+    if (result.meshJsAccounting?.status !== 'known') throw new Error('local accounting missing');
+    const reserved = result.meshJsAccounting.requestPeakReservedBytes;
+    expect(reserved).toBeGreaterThan(result.meshJsAccounting.cacheActiveBytes + 64 * 512);
+    const short = await recomputeSolids({ oc, cache }, { ...input, localMesh: { ...input.localMesh, maximumLiveMeshBytes: reserved - 1 } });
+    expect(short.failures).toHaveLength(1); expect(short.bodies).toEqual([]);
+    expect(cache.get(step.key)?.mesh.origins).toBe(origins);
+    const retry = await recomputeSolids({ oc, cache }, { ...input, localMesh: { ...input.localMesh, maximumLiveMeshBytes: reserved } });
+    expect(retry.failures).toEqual([]); expect(retry.bodies[0].volume).toBe(owned.mesh.volume);
+    expect(retry.bodies[0].origins).toEqual(origins);
+  });
+
+  it('hidden local conversion refuses a numeric-only cache with no whole-backing producer', async () => {
+    const { cache, built } = newCache(true);
+    const step = extrudeStep('hidden-unknown', 'hidden-unknown-key', 40, 30, 10);
+    expect((await recomputeSolids({ oc, cache }, request([step]))).failures).toEqual([]);
+    const cached = cache.get(step.key);
+    if (cached === undefined) throw new Error('Actual cached native shape required');
+    const before = cached.mesh;
+    expect(cache.meshBufferSnapshot === undefined).toBe(true);
+    expect(() => localCachedReferenceMesh(oc, cache, cached, step.id,
+      { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 512 * 1024 * 1024 },
+      () => [])).toThrow(RangeError);
+    expect(cache.get(step.key)).toBe(cached);
+    expect(cached.mesh).toBe(before);
+    expect(cached.mesh.coordinateFrame).toBeUndefined();
+    expect(built()).toBe(1);
+  });
+
+  it('hidden local conversion keeps the exact cached native shape, world buffers and custom tessellation', async () => {
+    const { cache, built } = newCache(true, true);
+    const step = { ...extrudeStep('hidden-local', 'hidden-local-key', 40, 30, 10),
+      tessellation: { linearDeflection: 0.07, angularDeflection: 0.11 } };
+    const result = await recomputeSolids({ oc, cache }, request([step]));
+    expect(result.failures).toEqual([]);
+    const cached = cache.get(step.key);
+    if (cached === undefined) throw new Error('Actual cached native shape required');
+    const before = cached.mesh;
+    const budget = { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 64 * 1024 * 1024 };
+    const local = localCachedReferenceMesh(oc, cache, cached, step.id, budget, () => []);
+    expect(local.coordinateFrame?.space).toBe('local');
+    const frame = local.coordinateFrame;
+    if (frame === undefined) throw new Error('Actual native local frame required');
+    expect(frame.origin.every(Number.isFinite)).toBe(true);
+    expect(local.positions.byteLength).toBeGreaterThan(0);
+    expect(local.edgePositions.byteLength).toBeGreaterThan(0);
+    expect(local.positions.length).toBe(before.positions.length);
+    expect(local.edgePositions.length).toBe(before.edgePositions.length);
+    for (let i = 0; i < local.positions.length; i += 1)
+      expect(local.positions[i] + frame.origin[i % 3]).toBeCloseTo(before.positions[i], 4);
+    for (let i = 0; i < local.edgePositions.length; i += 1)
+      expect(local.edgePositions[i] + frame.origin[i % 3]).toBeCloseTo(before.edgePositions[i], 4);
+    expect(local.origins).toEqual(before.origins);
+    expect(cache.get(step.key)).toBe(cached);
+    expect(cached.mesh).toBe(before);
+    expect(cached.mesh.coordinateFrame).toBeUndefined();
+    expect(cached.tessellation).toEqual(step.tessellation);
+    expect(built()).toBe(1);
+    expect(() => localCachedReferenceMesh(oc, cache, cached, step.id,
+      { ...budget, maximumLiveMeshBytes: 1 }, () => [])).toThrow();
+    expect(cache.get(step.key)).toBe(cached);
+  });
+
+  it.each([0, 1e6, 1e9])('通常表示の局所予算で10mm箱の3尺度を保持する: %s mm', async (originX) => {
+    for (const scale of [1e-3, 1, 1e3]) {
+      const size = 10 * scale;
+      const { cache } = newCache(true);
+      const step = primitiveStep('display-box', `display-box-${originX}-${scale}`,
+        { kind: 'box', sizeX: size, sizeY: size, sizeZ: size }, { origin: [originX, 0, 0] });
+      const result = await recomputeSolids({ oc, cache }, { ...request([step]), localMesh: {
+        maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 512 * 1024 * 1024,
+      } });
+      expect(result.cancelled).toBe(false);
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      const body = result.bodies[0], frame = body.coordinateFrame;
+      if (frame === undefined) throw new Error('Ordinary display requires a local frame');
+      expect(frame.maximumFloat32ErrorMm).toBe(0.005);
+      expect(frame.maximumLiveMeshBytes).toBe(512 * 1024 * 1024);
+      for (const positions of [body.positions, body.edgePositions]) {
+        const xs = Array.from(positions).filter((_value, index) => index % 3 === 0);
+        expect(xs.length).toBeGreaterThan(0);
+        expect(Math.abs(Math.max(...xs) - Math.min(...xs) - size)).toBeLessThanOrEqual(1e-6);
+        expect(Math.abs(Math.min(...xs) + frame.origin[0] - (originX - size / 2)))
+          .toBeLessThanOrEqual(1e-6);
+        expect(Math.abs(Math.max(...xs) + frame.origin[0] - (originX + size / 2)))
+          .toBeLessThanOrEqual(1e-6);
+      }
+    }
+  });
+
+  it('local opt-inは同じnative形状の面と辺を同frameで返し、cache hit後のworld値を保つ', async () => {
+    const { cache, built } = newCache(true);
+    const step = primitiveStep('large-box', 'large-box-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }, { origin: [1e9, -1e9, 1e6] });
+    const input = { ...request([step]), localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } };
+    const first = await recomputeSolids({ oc, cache }, input);
+    expect(first.failures).toEqual([]);
+    expect(first.cacheHits).toBe(0);
+    expect(first.meshJsAccounting?.status).toBe('known');
+    if (first.meshJsAccounting?.status !== 'known') throw new Error('local accounting unavailable');
+    expect(first.meshJsAccounting.limitBytes).toBe(input.localMesh.maximumLiveMeshBytes);
+    expect(first.meshJsAccounting.cacheRetiredBytes).toBe(0);
+    expect(first.meshJsAccounting.cacheProtectedBytes).toBe(0);
+    expect(first.meshJsAccounting.cacheActiveBytes).toBeGreaterThan(0);
+    expect(first.meshJsAccounting.retainedReplyBytes).toBeGreaterThan(0);
+    expect(first.meshJsAccounting.requestPeakReservedBytes).toBeGreaterThanOrEqual(
+      first.meshJsAccounting.cacheActiveBytes + first.meshJsAccounting.retainedReplyBytes);
+    const local = first.bodies[0];
+    expect(local.coordinateFrame?.space).toBe('local');
+    expect(local.coordinateFrame?.origin).toEqual([1e9, -1e9, 1e6]);
+    expect(local.coordinateFrame?.maximumLiveMeshBytes).toBe(64 * 1024 * 1024);
+    expect(Math.max(...local.positions.map(Math.abs))).toBeLessThanOrEqual(10.001);
+    expect(Math.max(...local.edgePositions.map(Math.abs))).toBeLessThanOrEqual(10.001);
+    const world = cache.get(step.key)?.mesh;
+    expect(world?.coordinateFrame).toBeUndefined();
+    expect(world?.positions).not.toBe(local.positions);
+    expect(world?.edgePositions).not.toBe(local.edgePositions);
+    const hit = await recomputeSolids({ oc, cache }, input);
+    expect(hit.failures).toEqual([]);
+    expect(hit.cacheHits).toBe(1);
+    expect(hit.bodies[0].coordinateFrame).toEqual(local.coordinateFrame);
+    const legacy = await recomputeSolids({ oc, cache }, request([step]));
+    expect(legacy.failures).toEqual([]);
+    expect(legacy.meshJsAccounting).toBeUndefined();
+    expect(legacy.bodies[0].coordinateFrame).toBeUndefined();
+    expect(legacy.bodies[0].positions).toBe(world?.positions);
+    expect(built()).toBe(1);
+  });
+
+  it('separate local bodies retain the same request limit without changing their world cache', async () => {
+    const { cache } = newCache(true);
+    const steps = [
+      primitiveStep('local-a', 'local-a-key', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 },
+        { origin: [1e9, 0, 0] }),
+      primitiveStep('local-b', 'local-b-key', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 },
+        { origin: [-1e9, 0, 0] }),
+    ];
+    const localMesh = { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 };
+    const local = await recomputeSolids({ oc, cache }, { ...request(steps), localMesh });
+    expect(local.failures).toEqual([]);
+    expect(local.bodies.map((body) => body.coordinateFrame?.maximumLiveMeshBytes)).toEqual([
+      localMesh.maximumLiveMeshBytes, localMesh.maximumLiveMeshBytes,
+    ]);
+    expect(local.bodies.map((body) => body.coordinateFrame?.origin)).toEqual([[1e9, 0, 0], [-1e9, 0, 0]]);
+    expect(local.bodies[0].coordinateFrame).not.toBe(local.bodies[1].coordinateFrame);
+    const world = await recomputeSolids({ oc, cache }, request(steps));
+    expect(world.failures).toEqual([]);
+    expect(world.bodies.map((body) => body.coordinateFrame)).toEqual([undefined, undefined]);
+    expect(cache.get(steps[0].key)?.mesh.coordinateFrame).toBeUndefined();
+    expect(cache.get(steps[1].key)?.mesh.coordinateFrame).toBeUndefined();
+  });
+
+  it('local opt-inは予算不正と1byteをbuilder前に拒否し、拒否後の正常依頼を通す', async () => {
+    const step = primitiveStep('budget-box', 'budget-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const input = request([step]);
+    const { cache: measured, built } = newCache(true);
+    for (const maximumLiveMeshBytes of [0, -1, Number.NaN, Number.POSITIVE_INFINITY,
+      512 * 1024 * 1024 + 1]) {
+      await expect(recomputeSolids({ oc, cache: measured }, { ...input, localMesh: {
+        maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes } })).rejects.toThrow(RangeError);
+    }
+    expect(built()).toBe(0);
+    const tooSmall = await recomputeSolids({ oc, cache: measured }, { ...input, localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 1 } });
+    expect(tooSmall.bodies).toEqual([]);
+    expect(tooSmall.failures).toHaveLength(1);
+    expect(built()).toBe(0);
+    expect(measured.size).toBe(0);
+    const retry = await recomputeSolids({ oc, cache: measured }, { ...input, localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } });
+    expect(retry.failures).toEqual([]);
+    expect(retry.bodies).toHaveLength(1);
+    expect(built()).toBe(1);
+    expect(measured.get(step.key)?.mesh.coordinateFrame).toBeUndefined();
+    const { cache: unmeasured, built: unmeasuredBuilt } = newCache();
+    const unknown = await recomputeSolids({ oc, cache: unmeasured }, { ...input, localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } });
+    expect(unknown.bodies).toEqual([]);
+    expect(unknown.failures).toHaveLength(1);
+    expect(unknown.meshJsAccounting).toEqual({ status: 'unknown',
+      limitBytes: 64 * 1024 * 1024, reason: 'callback-missing' });
+    expect(unmeasured.has(step.key)).toBe(false);
+    expect(unmeasuredBuilt()).toBe(0);
+  });
+
+  it('fresh builder admission rejects a one-byte short bound before native shape creation', async () => {
+    const { cache } = newCache(true);
+    const step = primitiveStep('preflight-box', 'preflight-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const build = vi.spyOn(primitiveModule, 'makePrimitive');
+    try {
+      const oneByteShort = await recomputeSolids({ oc, cache }, { ...request([step]), localMesh: {
+        maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 4096 } });
+      expect(oneByteShort.failures).toHaveLength(1);
+      expect(oneByteShort.bodies).toEqual([]);
+      expect(build).not.toHaveBeenCalled();
+      expect(cache.size).toBe(0);
+      const exactlyAdmitted = await recomputeSolids({ oc, cache }, { ...request([step]), localMesh: {
+        maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 4097 } });
+      expect(exactlyAdmitted.failures).toHaveLength(1);
+      expect(build).toHaveBeenCalled();
+      expect(cache.size).toBe(0);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  it('未計測cacheの非空と保護鍵だけの初回をlocal builder前に拒否する', async () => {
+    const step = primitiveStep('unmeasured-box', 'unmeasured-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const input = { ...request([step]), localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } };
+    const initial = newCache();
+    expect((await recomputeSolids({ oc, cache: initial.cache }, request([step]))).failures).toEqual([]);
+    expect(initial.cache.stats()).toMatchObject({ shapeCount: 1, meshBytes: 0,
+      meshBytesMeasured: false });
+    const nonempty = await recomputeSolids({ oc, cache: initial.cache }, input);
+    expect(nonempty.bodies).toEqual([]);
+    expect(nonempty.failures).toHaveLength(1);
+    expect(initial.built()).toBe(1);
+    expect(initial.cache.has(step.key)).toBe(true);
+
+    const reserved = createShapeCache<CachedSolid>();
+    const token = reserved.acquire([step.key]);
+    try {
+      expect(reserved.stats()).toMatchObject({ shapeCount: 0, protectedKeyCount: 1,
+        meshBytes: 0, meshBytesMeasured: false });
+      const protectedOnly = await recomputeSolids({ oc, cache: reserved }, input);
+      expect(protectedOnly.bodies).toEqual([]);
+      expect(protectedOnly.failures).toHaveLength(1);
+      expect(reserved.size).toBe(0);
+    } finally {
+      reserved.release(token);
+      reserved.clear();
+    }
+  });
+
+  it('未計測cacheのretired保持は非空0 bytesでありlocal返信を拒否する', async () => {
+    const source = newCache(true);
+    const step = primitiveStep('unmeasured-retired', 'unmeasured-retired-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    expect((await recomputeSolids({ oc, cache: source.cache }, request([step]))).failures).toEqual([]);
+    const entry = source.cache.get(step.key);
+    if (entry === undefined) throw new Error('world cache entry is missing');
+    const unmeasured = createShapeCache<CachedSolid>();
+    const token = unmeasured.acquire([step.key]);
+    try {
+      unmeasured.set(step.key, { ...entry, delete: () => {} });
+      unmeasured.set(step.key, { ...entry, delete: () => {} });
+      expect(unmeasured.stats()).toMatchObject({ size: 1, shapeCount: 2,
+        meshBytes: 0, meshBytesMeasured: false });
+      const refused = await recomputeSolids({ oc, cache: unmeasured }, { ...request([step]),
+        localMesh: { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } });
+      expect(refused.bodies).toEqual([]);
+      expect(refused.failures).toHaveLength(1);
+      expect(unmeasured.stats().shapeCount).toBe(2);
+    } finally {
+      unmeasured.release(token);
+      unmeasured.clear();
+    }
+  });
+
+  it('cache hitのlocal返信はlive bytesぴったりを通し、1byte不足を拒否する', async () => {
+    const { cache, built } = newCache(true);
+    const step = primitiveStep('boundary-box', 'boundary-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const world = await recomputeSolids({ oc, cache }, request([step]));
+    expect(world.failures).toEqual([]);
+    const mesh = cache.get(step.key)?.mesh;
+    if (mesh === undefined) throw new Error('world cache body is missing');
+    const arrays = mesh.positions.byteLength + mesh.normals.byteLength
+      + mesh.indices.byteLength + mesh.edgePositions.byteLength;
+    const metadata = 4096 + 512 * (mesh.faces.length + mesh.edges.length
+      + mesh.vertices.length + mesh.threadMarks.length
+      + (mesh.origins === undefined ? 0 : mesh.origins.state === 'tracked'
+        ? mesh.origins.bindings.length + (mesh.origins.fingerprintFallback?.length ?? 0) : 1))
+      + (mesh.origins === undefined ? 0 : 2 * new TextEncoder().encode(JSON.stringify(mesh.origins)).byteLength);
+    const exact = 3 * arrays + 4 * mesh.edgePositions.byteLength
+      + 2 * mesh.positions.byteLength + 2 * metadata;
+    const atLimit = await recomputeSolids({ oc, cache }, { ...request([step]), localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: exact } });
+    expect(atLimit.failures).toEqual([]);
+    expect(atLimit.cacheHits).toBe(1);
+    expect(atLimit.bodies).toHaveLength(1);
+    expect(atLimit.bodies[0].coordinateFrame?.maximumLiveMeshBytes).toBe(exact);
+    expect(atLimit.meshJsAccounting?.status).toBe('known');
+    if (atLimit.meshJsAccounting?.status !== 'known') throw new Error('exact limit accounting missing');
+    expect(atLimit.meshJsAccounting.requestPeakReservedBytes).toBe(exact);
+    const below = await recomputeSolids({ oc, cache }, { ...request([step]), localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: exact - 1 } });
+    expect(below.bodies).toEqual([]);
+    expect(below.failures).toHaveLength(1);
+    expect(cache.get(step.key)?.mesh).toBe(mesh);
+    expect(built()).toBe(1);
+    expect(below.meshJsAccounting?.status).toBe('known');
+  });
+
+  it('保護中の旧cache entryもlive bytesへ含め、現bodyだけの予算では拒否する', async () => {
+    const source = newCache(true);
+    const step = primitiveStep('retired-box', 'retired-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    expect((await recomputeSolids({ oc, cache: source.cache }, request([step]))).failures).toEqual([]);
+    const entry = source.cache.get(step.key);
+    if (entry === undefined) throw new Error('world cache entry is missing');
+    const arrays = entry.mesh.positions.byteLength + entry.mesh.normals.byteLength
+      + entry.mesh.indices.byteLength + entry.mesh.edgePositions.byteLength;
+    const metadata = 4096 + 512 * (entry.mesh.faces.length + entry.mesh.edges.length
+      + entry.mesh.vertices.length + entry.mesh.threadMarks.length
+      + (entry.mesh.origins === undefined ? 0 : entry.mesh.origins.state === 'tracked'
+        ? entry.mesh.origins.bindings.length + (entry.mesh.origins.fingerprintFallback?.length ?? 0) : 1))
+      + (entry.mesh.origins === undefined ? 0 : 2 * new TextEncoder().encode(JSON.stringify(entry.mesh.origins)).byteLength);
+    const oneWorldLimit = 3 * arrays + 4 * entry.mesh.edgePositions.byteLength
+      + 2 * entry.mesh.positions.byteLength + 2 * metadata;
+    const cache = createShapeCache<CachedSolid>(256, ({ mesh }) => mesh.positions.byteLength
+      + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength);
+    const token = cache.acquire([step.key]);
+    try {
+      cache.set(step.key, { ...entry, delete: () => {} });
+      cache.set(step.key, { ...entry, delete: () => {} });
+      expect(cache.stats().shapeCount).toBe(2);
+      expect(cache.stats().meshBytes).toBe(2 * arrays);
+      const refused = await recomputeSolids({ oc, cache }, { ...request([step]), localMesh: {
+        maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: oneWorldLimit } });
+      expect(refused.bodies).toEqual([]);
+      expect(refused.failures).toHaveLength(1);
+      expect(cache.has(step.key)).toBe(true);
+      expect(refused.meshJsAccounting?.status).toBe('known');
+      if (refused.meshJsAccounting?.status !== 'known') throw new Error('retired accounting missing');
+      expect(refused.meshJsAccounting.cacheRetiredBytes).toBe(arrays);
+      expect(refused.meshJsAccounting.cacheProtectedBytes).toBe(2 * arrays);
+    } finally {
+      cache.release(token);
+      cache.clear();
+    }
+  });
+
+  it('hidden world cacheと先のlocal返信を次のvisible段のlive予算へ累積する', async () => {
+    const { cache, built } = newCache(true);
+    const visible = primitiveStep('visible', 'visible-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const hidden = { ...primitiveStep('hidden', 'hidden-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }), visible: false };
+    const next = primitiveStep('next-visible', 'next-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const warm = await recomputeSolids({ oc, cache }, request([visible, hidden]));
+    expect(warm.failures).toEqual([]);
+    const firstMesh = cache.get(visible.key)?.mesh;
+    if (firstMesh === undefined) throw new Error('first world cache body is missing');
+    const firstArrays = firstMesh.positions.byteLength + firstMesh.normals.byteLength
+      + firstMesh.indices.byteLength + firstMesh.edgePositions.byteLength;
+    const metadata = 4096 + 512 * (firstMesh.faces.length + firstMesh.edges.length
+      + firstMesh.vertices.length + firstMesh.threadMarks.length
+      + (firstMesh.origins === undefined ? 0 : firstMesh.origins.state === 'tracked'
+        ? firstMesh.origins.bindings.length + (firstMesh.origins.fingerprintFallback?.length ?? 0) : 1))
+      + (firstMesh.origins === undefined ? 0 : 2 * new TextEncoder().encode(JSON.stringify(firstMesh.origins)).byteLength);
+    const firstReply = 2 * firstArrays + 4 * firstMesh.edgePositions.byteLength
+      + 2 * firstMesh.positions.byteLength + 2 * metadata;
+    const cap = cache.stats().meshBytes + firstReply;
+    const capped = await recomputeSolids({ oc, cache }, { ...request([visible, hidden, next]), localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: cap } });
+    expect(capped.bodies.map(body => body.id)).toEqual(['visible']);
+    expect(capped.failures.map(failure => failure.id)).toEqual(['next-visible']);
+    expect(cache.get(visible.key)?.mesh).toBe(firstMesh);
+    expect(cache.has(hidden.key)).toBe(true);
+    expect(cache.has(next.key)).toBe(false);
+    expect(built()).toBe(2);
+  });
+
+  it('empty local requests distinguish measured zero from unknown zero', async () => {
+    const localMesh = { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 };
+    const measured = newCache(true);
+    const unmeasured = newCache();
+    const known = await recomputeSolids({ oc, cache: measured.cache },
+      { ...request([]), localMesh });
+    const unknown = await recomputeSolids({ oc, cache: unmeasured.cache },
+      { ...request([]), localMesh });
+    expect(known.meshJsAccounting).toEqual({ status: 'known',
+      limitBytes: localMesh.maximumLiveMeshBytes, cacheActiveBytes: 0,
+      cacheRetiredBytes: 0, cacheProtectedBytes: 0, retainedReplyBytes: 0,
+      requestPeakReservedBytes: 0 });
+    expect(unknown.meshJsAccounting).toEqual({ status: 'unknown',
+      limitBytes: localMesh.maximumLiveMeshBytes, reason: 'callback-missing' });
+  });
+
+  it('cancellation after a local reply retains its reservation high-water and old reply', async () => {
+    const { cache } = newCache(true);
+    const steps = [
+      primitiveStep('first', 'first-key', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }),
+      primitiveStep('second', 'second-key', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }),
+    ];
+    let checks = 0;
+    const localMesh = { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 };
+    const cancelled = await recomputeSolids({ oc, cache }, { ...request(steps), localMesh },
+      {}, undefined, () => { checks += 1; return checks === 2; });
+    expect(cancelled.cancelled).toBe(true);
+    expect(cancelled.bodies.map(body => body.id)).toEqual(['first']);
+    expect(cancelled.meshJsAccounting?.status).toBe('known');
+    if (cancelled.meshJsAccounting?.status !== 'known') throw new Error('cancelled accounting missing');
+    expect(cancelled.meshJsAccounting.retainedReplyBytes).toBeGreaterThan(0);
+    expect(cancelled.meshJsAccounting.requestPeakReservedBytes).toBeGreaterThanOrEqual(
+      cancelled.meshJsAccounting.cacheActiveBytes
+        + cancelled.meshJsAccounting.retainedReplyBytes);
+    expect(cache.has('first-key')).toBe(true);
+    const next = await recomputeSolids({ oc, cache }, { ...request([steps[1]]), localMesh });
+    expect(next.failures).toEqual([]);
+    expect(next.bodies.map(body => body.id)).toEqual(['second']);
+  });
+
+  it('evicting the first world mesh does not reduce the request reservation upper bound', async () => {
+    const cache = createShapeCache<CachedSolid>(1, ({ mesh }) => mesh.positions.byteLength
+      + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength);
+    openCaches.push(cache);
+    const steps = [
+      primitiveStep('first-world', 'first-world-key',
+        { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }),
+      primitiveStep('second-world', 'second-world-key',
+        { kind: 'box', sizeX: 30, sizeY: 30, sizeZ: 30 }),
+    ];
+    const limitBytes = 64 * 1024 * 1024;
+    const result = await recomputeSolids({ oc, cache }, { ...request(steps), localMesh: {
+      maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: limitBytes } });
+    expect(result.failures).toEqual([]);
+    expect(result.bodies.map(body => body.id)).toEqual(['first-world', 'second-world']);
+    expect(cache.has('first-world-key')).toBe(false);
+    expect(cache.has('second-world-key')).toBe(true);
+    expect(result.meshJsAccounting?.status).toBe('known');
+    if (result.meshJsAccounting?.status !== 'known') throw new Error('eviction accounting missing');
+    expect(result.meshJsAccounting.cacheRetiredBytes).toBe(0);
+    expect(result.meshJsAccounting.requestPeakReservedBytes).toBe(limitBytes);
+    expect(result.meshJsAccounting.cacheActiveBytes
+      + result.meshJsAccounting.retainedReplyBytes).toBeLessThan(limitBytes);
+  });
+
+  describe('explicit whole-backing producers', () => {
+    const viewBytes = (mesh: SolidBodyMesh): number => mesh.positions.byteLength
+      + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength;
+    /** Cache-hit local reply bound for one cached world body, as in the exact-limit test above. */
+    const replyBound = (mesh: SolidBodyMesh): number => {
+      const metadata = 4096 + 512 * (mesh.faces.length + mesh.edges.length
+        + mesh.vertices.length + mesh.threadMarks.length
+        + (mesh.origins === undefined ? 0 : mesh.origins.state === 'tracked'
+        ? mesh.origins.bindings.length + (mesh.origins.fingerprintFallback?.length ?? 0) : 1))
+      + (mesh.origins === undefined ? 0 : 2 * new TextEncoder().encode(JSON.stringify(mesh.origins)).byteLength);
+      return 2 * viewBytes(mesh) + 4 * mesh.edgePositions.byteLength
+        + 2 * mesh.positions.byteLength + 2 * metadata;
+    };
+    const backingCache = (capacity = 256) => {
+      const cache = createShapeCache<CachedSolid>(capacity, ({ mesh }) => viewBytes(mesh),
+        ({ mesh }) => solidMeshBuffers(mesh));
+      openCaches.push(cache);
+      return cache;
+    };
+    const local = (maximumLiveMeshBytes: number) => ({ maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes });
+
+    async function worldEntry(id: string, key: string): Promise<CachedSolid> {
+      const source = newCache(true);
+      const step = primitiveStep(id, key, { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+      expect((await recomputeSolids({ oc, cache: source.cache }, request([step]))).failures).toEqual([]);
+      const entry = source.cache.get(key);
+      if (entry === undefined) throw new Error('world cache entry is missing');
+      return entry;
+    }
+
+    it('an aliased retired body is charged once, while a physically separate retired copy is charged in full', async () => {
+      const step = primitiveStep('alias-box', 'alias-key', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+      const entry = await worldEntry(step.id, step.key);
+      const arrays = viewBytes(entry.mesh);
+      const oneWorldLimit = arrays + replyBound(entry.mesh);
+
+      const aliased = backingCache();
+      const token = aliased.acquire([step.key]);
+      try {
+        aliased.set(step.key, { ...entry, delete: () => {} });
+        aliased.set(step.key, { ...entry, delete: () => {} });
+        // The legacy scalar keeps counting views per entry; ownership counts each buffer once.
+        expect(aliased.stats().meshBytes).toBe(2 * arrays);
+        expect(aliased.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: arrays,
+          retiredBytes: 0, protectedBytes: arrays, totalBytes: arrays });
+        const admitted = await recomputeSolids({ oc, cache: aliased }, { ...request([step]),
+          localMesh: local(oneWorldLimit) });
+        expect(admitted.failures).toEqual([]);
+        expect(admitted.bodies).toHaveLength(1);
+        expect(admitted.meshJsAccounting).toMatchObject({ status: 'known', cacheActiveBytes: arrays,
+          cacheRetiredBytes: 0, cacheProtectedBytes: arrays, requestPeakReservedBytes: oneWorldLimit });
+      } finally {
+        aliased.release(token);
+      }
+
+      const separate = backingCache();
+      const held = separate.acquire([step.key]);
+      try {
+        const copy: SolidBodyMesh = { ...entry.mesh, positions: entry.mesh.positions.slice(),
+          normals: entry.mesh.normals.slice(), indices: entry.mesh.indices.slice(),
+          edgePositions: entry.mesh.edgePositions.slice() };
+        separate.set(step.key, { ...entry, mesh: copy, delete: () => {} });
+        separate.set(step.key, { ...entry, delete: () => {} });
+        expect(separate.stats().meshByteCounts).toEqual({ status: 'known', activeBytes: arrays,
+          retiredBytes: arrays, protectedBytes: 2 * arrays, totalBytes: 2 * arrays });
+        const refused = await recomputeSolids({ oc, cache: separate }, { ...request([step]),
+          localMesh: local(oneWorldLimit) });
+        expect(refused.bodies).toEqual([]);
+        expect(refused.failures).toHaveLength(1);
+        expect(refused.meshJsAccounting).toMatchObject({ status: 'known', cacheRetiredBytes: arrays,
+          cacheProtectedBytes: 2 * arrays });
+      } finally {
+        separate.release(held);
+      }
+    });
+
+    it('a small view retains its whole backing buffer in the live budget', async () => {
+      const step = primitiveStep('view-box', 'view-key', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+      const entry = await worldEntry(step.id, step.key);
+      const slack = 4096;
+      const backing = new ArrayBuffer(entry.mesh.positions.byteLength + slack);
+      const positions = new Float32Array(backing, 0, entry.mesh.positions.length);
+      positions.set(entry.mesh.positions);
+      const exactViews = viewBytes(entry.mesh) + replyBound(entry.mesh);
+      // Control: a numeric view callback undercounts the retained allocation by `slack`.
+      const numeric = newCache(true);
+      numeric.cache.set(step.key, { ...entry, mesh: { ...entry.mesh, positions }, delete: () => {} });
+      const undercounted = await recomputeSolids({ oc, cache: numeric.cache }, { ...request([step]),
+        localMesh: local(exactViews) });
+      expect(undercounted.failures).toEqual([]);
+      expect(undercounted.meshJsAccounting).toMatchObject({ status: 'known',
+        cacheActiveBytes: viewBytes(entry.mesh), requestPeakReservedBytes: exactViews });
+      const cache = backingCache();
+      cache.set(step.key, { ...entry, mesh: { ...entry.mesh, positions }, delete: () => {} });
+      expect(cache.stats().meshBytes).toBe(viewBytes(entry.mesh));
+      expect(cache.stats().meshByteCounts).toMatchObject({ status: 'known',
+        totalBytes: viewBytes(entry.mesh) + slack });
+      const refused = await recomputeSolids({ oc, cache }, { ...request([step]),
+        localMesh: local(exactViews + slack - 1) });
+      expect(refused.bodies).toEqual([]);
+      expect(refused.failures).toHaveLength(1);
+      const admitted = await recomputeSolids({ oc, cache }, { ...request([step]),
+        localMesh: local(exactViews + slack) });
+      expect(admitted.failures).toEqual([]);
+      expect(admitted.meshJsAccounting).toMatchObject({ status: 'known',
+        cacheActiveBytes: viewBytes(entry.mesh) + slack, requestPeakReservedBytes: exactViews + slack });
+    });
+
+    it('retained display arrays outside the cache join the live budget once, and failures stay unknown', async () => {
+      const step = primitiveStep('display-box', 'display-key', { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+      const entry = await worldEntry(step.id, step.key);
+      const exact = viewBytes(entry.mesh) + replyBound(entry.mesh);
+      const cache = backingCache();
+      cache.set(step.key, { ...entry, delete: () => {} });
+      const outside = new ArrayBuffer(1000);
+      // Control: without the producer the outside display arrays were invisible to the budget.
+      const blind = await recomputeSolids({ oc, cache }, { ...request([step]), localMesh: local(exact) });
+      expect(blind.failures).toEqual([]);
+      const seen = await recomputeSolids({ oc, cache, retainedMeshBuffers: () => [outside] },
+        { ...request([step]), localMesh: local(exact) });
+      expect(seen.bodies).toEqual([]);
+      expect(seen.failures).toHaveLength(1);
+      // Display arrays which alias the cached world body add nothing.
+      const aliasing = await recomputeSolids({ oc, cache, retainedMeshBuffers: () => [
+        ...solidMeshBuffers(entry.mesh), entry.mesh.positions.buffer] },
+      { ...request([step]), localMesh: local(exact) });
+      expect(aliasing.failures).toEqual([]);
+      expect(aliasing.meshJsAccounting).toMatchObject({ status: 'known', requestPeakReservedBytes: exact });
+      const refused = await recomputeSolids({ oc, cache, retainedMeshBuffers: () => [outside, outside] },
+        { ...request([step]), localMesh: local(exact + 999) });
+      expect(refused.bodies).toEqual([]);
+      expect(refused.failures).toHaveLength(1);
+      const admitted = await recomputeSolids({ oc, cache, retainedMeshBuffers: () => [outside, outside] },
+        { ...request([step]), localMesh: local(exact + 1000) });
+      expect(admitted.failures).toEqual([]);
+      // The display baseline is inside the peak, never inside the cache fields.
+      expect(admitted.meshJsAccounting).toMatchObject({ status: 'known',
+        cacheActiveBytes: viewBytes(entry.mesh), requestPeakReservedBytes: exact + 1000 });
+      const throwing = await recomputeSolids({ oc, cache, retainedMeshBuffers: () => {
+        throw new Error('display unavailable');
+      } }, { ...request([step]), localMesh: local(64 * 1024 * 1024) });
+      expect(throwing.bodies).toEqual([]);
+      expect(throwing.failures).toHaveLength(1);
+      expect(throwing.meshJsAccounting).toEqual({ status: 'unknown', limitBytes: 64 * 1024 * 1024,
+        reason: 'callback-error' });
+      const shared = await recomputeSolids({ oc, cache, retainedMeshBuffers: () => [new SharedArrayBuffer(8)] },
+        { ...request([step]), localMesh: local(64 * 1024 * 1024) });
+      expect(shared.failures).toHaveLength(1);
+      expect(shared.meshJsAccounting).toEqual({ status: 'unknown', limitBytes: 64 * 1024 * 1024,
+        reason: 'invalid-byte-count' });
+      // A numeric-only cache cannot union display aliases, so it fails closed instead of guessing.
+      const numeric = newCache(true);
+      numeric.cache.set(step.key, { ...entry, delete: () => {} });
+      const unknown = await recomputeSolids({ oc, cache: numeric.cache, retainedMeshBuffers: () => [outside] },
+        { ...request([step]), localMesh: local(64 * 1024 * 1024) });
+      expect(unknown.bodies).toEqual([]);
+      expect(unknown.failures).toHaveLength(1);
+      expect(unknown.meshJsAccounting).toEqual({ status: 'unknown', limitBytes: 64 * 1024 * 1024,
+        reason: 'callback-missing' });
+    });
   });
 
   it('鍵が同じで id が違う段には、キャッシュのメッシュを id だけ差し替えて返す', async () => {
@@ -639,6 +1338,47 @@ describe('履歴の再計算(recomputeSolids)', () => {
 
   /** φ6 の貫通穴 1 つが 40×30×10 の板から削る体積。π·3²·10 = 282.743338823…(makeHole.test.ts と同じ)。 */
   const THROUGH_HOLE_VOLUME = Math.PI * 3 * 3 * 10;
+
+  it('実押出し上面originで穴→3穴patternを冷再計算し、同寸法別featureを拒否する', async () => {
+    const { cache } = newCache();
+    const basePlate = extrudeStep('plate-origin', 'plate-origin-key', 40, 30, 10, false);
+    if (basePlate.step.kind !== 'extrude') throw new Error('押出し対照ではありません');
+    const plate = { ...basePlate, step: { ...basePlate.step, profileOrigin: {
+      sketchId: 'pattern-sketch', faceFeatureId: 'pattern-region',
+      lineFeatureIds: ['line-0', 'line-1', 'line-2', 'line-3'] as const } } };
+    const initial = await recomputeSolids({ oc, cache }, request([{ ...plate, visible: true }]));
+    expect(initial.failures).toEqual([]);
+    const body = initial.bodies[0];
+    const top = planeFacing(body.faces, [0, 0, 1]);
+    if (body.origins?.state !== 'tracked') throw new Error('実押出しoriginがありません');
+    const binding = body.origins.bindings.find(item => item.state === 'unique'
+      && item.current.kind === 'face' && item.current.index === top.index);
+    if (binding?.state !== 'unique') throw new Error('実押出し上面originがありません');
+    const face = { ...faceQuery(top), origin: binding.origin };
+    const steps = [plate,
+      holeStep('first-hole', 'first-hole-key', plate.key, face, { centers: [[5, 15, 10]] }, false),
+      holeStep('pattern', 'pattern-key', 'first-hole-key', face, { centers: [[5, 15, 10]],
+        transforms: [{ translation: [15, 0, 0], rotationOrigin: [0, 0, 0],
+          rotationAxis: [0, 0, 1], rotationAngle: 0 },
+          { translation: [30, 0, 0], rotationOrigin: [0, 0, 0],
+            rotationAxis: [0, 0, 1], rotationAngle: 0 }] })];
+    const cold = newCache();
+    for (const currentCache of [cache, cold.cache]) {
+      const result = await recomputeSolids({ oc, cache: currentCache }, request(steps));
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      expect(result.bodies[0].volume).toBeCloseTo(EXTRUDE_VOLUME - 3 * THROUGH_HOLE_VOLUME, 6);
+      expect(result.bodies[0].origins?.state).toBe('tracked');
+      expect(resolveFaceReference(result.bodies[0].faces, face, 30, result.bodies[0].origins).status)
+        .toBe('matched');
+    }
+    expect(cold.cache.get('pattern-key')?.mesh.origins).toEqual(cache.get('pattern-key')?.mesh.origins);
+    const foreign = { ...plate, id: 'foreign-plate', key: 'foreign-key', label: 'foreign-plate' };
+    const rejected = await recomputeSolids({ oc, cache: cold.cache }, request([foreign,
+      holeStep('wrong-hole', 'wrong-key', foreign.key, face, { centers: [[5, 15, 10]] })]));
+    expect(rejected.failures).toHaveLength(1);
+    expect(rejected.bodies).toEqual([]);
+  });
 
   it('押し出し → 穴(貫通)の 2 段で、板から穴ぶんを引いた体積になる', async () => {
     const { cache, built } = newCache();
@@ -920,6 +1660,51 @@ describe('履歴の再計算(recomputeSolids)', () => {
     );
 
     expect(result.appearanceMatches).toEqual([]);
+  });
+
+  it('実OCCTの番号交換で曖昧になった加工と外観を断り、下流の明示参照と借りた形を保つ', async () => {
+    const { cache } = newCache();
+    const boxes = [primitiveStep('near', 'near-key', { kind: 'box', sizeX: 20, sizeY: 30, sizeZ: 40 }, {}, false),
+      primitiveStep('far', 'far-key', { kind: 'box', sizeX: 20, sizeY: 30, sizeZ: 40 }, { origin: [100, 0, 0] }, false)];
+    const beforeStep = booleanStep('joined-before', 'joined-before-key', 'union', 'near-key', 'far-key');
+    const afterStep = booleanStep('joined-after', 'joined-after-key', 'union', 'far-key', 'near-key');
+    const before = await recomputeSolids({ oc, cache }, request([...boxes, beforeStep]));
+    expect(before.failures).toEqual([]);
+    const topFaces = (body: SolidBodyMesh) => body.faces.filter((face) => face.surfaceKind === 'plane' && face.axis !== null && face.axis[2] > 0.999)
+      .sort((a, b) => a.centroid[0] - b.centroid[0]);
+    const top = topFaces(before.bodies[0]);
+    expect(top).toHaveLength(2);
+    const savedQuery = faceQuery(top[0]), original = JSON.stringify(savedQuery);
+    const after = await recomputeSolids({ oc, cache }, request([...boxes, afterStep]));
+    expect(after.failures).toEqual([]);
+    const currentFaces = topFaces(after.bodies[0]);
+    expect(currentFaces[1].index).toBe(savedQuery.index);
+    const currentQuery = faceQuery(currentFaces[0]);
+    const cached = cache.get('joined-after-key');
+    if (cached === undefined) throw new Error('再計算形状なし');
+    const release = vi.spyOn(cached, 'delete');
+    const result = await recomputeSolids({ oc, cache }, requestWithAppearance([...boxes, afterStep,
+      holeStep('ambiguous-hole', 'ambiguous-hole-key', 'joined-after-key', savedQuery, { centers: [currentFaces[0].centroid] }),
+      holeStep('current-hole', 'current-hole-key', 'joined-after-key', currentQuery, { centers: [currentFaces[0].centroid] })], [
+      { id: 'old-appearance', bodyKey: 'joined-after-key', query: savedQuery },
+      { id: 'current-appearance', bodyKey: 'joined-after-key', query: currentQuery },
+    ]));
+    expect(result.failures.map((failure) => failure.id)).toEqual(['ambiguous-hole']);
+    expect(result.appearanceMatches).toEqual([
+      { id: 'old-appearance', bodyId: 'joined-after', faceIndex: null },
+      { id: 'current-appearance', bodyId: 'joined-after', faceIndex: currentQuery.index },
+    ]);
+    const originalBody = result.bodies.find((body) => body.id === 'joined-after');
+    const drilled = result.bodies.find((body) => body.id === 'current-hole');
+    expect(originalBody?.volume).toBeCloseTo(48_000, 8);
+    const expected = 48_000 - Math.PI * 3 ** 2 * 40;
+    expect(Math.abs((drilled?.volume ?? NaN) - expected) / expected).toBeLessThan(1e-9);
+    expect(release).not.toHaveBeenCalled();
+    expect(JSON.stringify(savedQuery)).toBe(original);
+    cache.clear();
+    expect(release).toHaveBeenCalledTimes(1);
+    cache.clear();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   /*
@@ -2899,4 +3684,320 @@ describe('履歴の再計算(recomputeSolids)', () => {
     });
   });
 
+  it('円柱A/B同形状の後勝ちでも保存cap/sideを別ownerへ誤採用せず、現Aの穴へ再結合する', async () => {
+    const cylinderA = primitiveStep('cylinder-a', 'cylinder-a-key',
+      { kind: 'cylinder', radius: 5, height: 20 });
+    const cylinderB = primitiveStep('cylinder-b', 'cylinder-b-key',
+      { kind: 'cylinder', radius: 5, height: 20 });
+    const collisionCache = createShapeCache<CachedSolid>();
+    openCaches.push(collisionCache);
+    const initial = await recomputeSolids({ oc, cache: collisionCache }, request([cylinderA]));
+    expect(initial.failures).toEqual([]);
+    const old = initial.bodies[0];
+    if (old?.origins?.state !== 'tracked') throw new Error('実円柱Aの起点なし');
+    const topBinding = old.origins.bindings.find(binding => binding.state === 'unique'
+      && binding.origin.identity.kind === 'cylinder-face' && binding.origin.identity.role === 'end');
+    const sideBinding = old.origins.bindings.find(binding => binding.state === 'unique'
+      && binding.origin.identity.kind === 'cylinder-face' && binding.origin.identity.role === 'side');
+    if (topBinding?.state !== 'unique' || topBinding.current.kind !== 'face'
+      || sideBinding?.state !== 'unique' || sideBinding.current.kind !== 'face') {
+      throw new Error('実円柱Aのcap/side起点なし');
+    }
+    const top = old.faces.find(face => face.index === topBinding.current.index);
+    const side = old.faces.find(face => face.index === sideBinding.current.index);
+    if (top === undefined || side === undefined) throw new Error('実円柱Aの現行面なし');
+    const savedTop = { ...faceQuery(top), origin: topBinding.origin };
+    const savedSide = { ...faceQuery(side), origin: sideBinding.origin };
+    const saved = JSON.stringify([savedTop, savedSide]);
+
+    // 旧モデル鍵に相当する同keyの後勝ちを実Workerへ入力し、参照がBへ誤転用されないことを確かめる。
+    const aliasedB = { ...cylinderB, key: cylinderA.key };
+    const collision = await recomputeSolids({ oc, cache: collisionCache }, request([aliasedB,
+      holeStep('foreign-hole', 'foreign-hole-key', aliasedB.key, savedTop,
+        { centers: [[0, 0, 20]], diameter: 2 }),
+    ]));
+    expect(collision.failures.map(failure => failure.id)).toEqual(['foreign-hole']);
+    expect(collision.bodies.find(body => body.id === aliasedB.id)?.origins?.state).toBe('tracked');
+    expect(collisionCache.get(aliasedB.key)?.mesh.id).toBe(aliasedB.id);
+    expect(JSON.stringify([savedTop, savedSide])).toBe(saved);
+
+    const cache = createShapeCache<CachedSolid>();
+    openCaches.push(cache);
+    const distinct = await recomputeSolids({ oc, cache }, request([cylinderA, cylinderB]));
+    expect(distinct.failures).toEqual([]);
+    expect(distinct.cacheHits).toBe(0);
+    expect(distinct.bodies.map(body => body.id)).toEqual([cylinderA.id, cylinderB.id]);
+    const bodyA = distinct.bodies[0];
+    const bodyB = distinct.bodies[1];
+    if (bodyA?.origins?.state !== 'tracked' || bodyB?.origins?.state !== 'tracked') {
+      throw new Error('別keyの実円柱A/B起点なし');
+    }
+    expect(bodyA.origins.bindings).toHaveLength(8);
+    expect(bodyB.origins.bindings).toHaveLength(8);
+    expect(bodyA.origins.bindings.every(binding =>
+      binding.origin.identity.featureId === cylinderA.id)).toBe(true);
+    expect(bodyB.origins.bindings.every(binding =>
+      binding.origin.identity.featureId === cylinderB.id)).toBe(true);
+    const bTopBinding = bodyB.origins.bindings.find(binding => binding.state === 'unique'
+      && binding.origin.identity.kind === 'cylinder-face' && binding.origin.identity.role === 'end');
+    const bSideBinding = bodyB.origins.bindings.find(binding => binding.state === 'unique'
+      && binding.origin.identity.kind === 'cylinder-face' && binding.origin.identity.role === 'side');
+    if (bTopBinding?.state !== 'unique' || bTopBinding.current.kind !== 'face'
+      || bSideBinding?.state !== 'unique' || bSideBinding.current.kind !== 'face') {
+      throw new Error('実円柱Bのcap/side起点なし');
+    }
+    const bTop = bodyB.faces.find(face => face.index === bTopBinding.current.index);
+    const bSide = bodyB.faces.find(face => face.index === bSideBinding.current.index);
+    if (bTop === undefined || bSide === undefined) throw new Error('実円柱Bの現行面なし');
+    const foreignTop = { ...faceQuery(bTop), origin: bTopBinding.origin };
+    const foreignSide = { ...faceQuery(bSide), origin: bSideBinding.origin };
+    const borrowed = cache.get(cylinderA.key);
+    if (borrowed === undefined) throw new Error('円柱Aの借用cacheなし');
+    const dispose = vi.spyOn(borrowed, 'delete');
+    const good = await recomputeSolids({ oc, cache }, request([cylinderA, cylinderB,
+      holeStep('hole-a', 'hole-a-key', cylinderA.key, savedTop,
+        { centers: [[0, 0, 20]], diameter: 2 }),
+    ]));
+    expect(good.failures).toEqual([]);
+    expect(good.bodies.find(body => body.id === 'hole-a')?.volume)
+      .toBeCloseTo(Math.PI * (25 - 1) * 20, 5);
+    expect(dispose).not.toHaveBeenCalled();
+    const wrong = await recomputeSolids({ oc, cache }, request([cylinderA, cylinderB,
+      holeStep('wrong-owner-hole', 'wrong-owner-hole-key', cylinderA.key, foreignTop,
+        { centers: [[0, 0, 20]], diameter: 2 }),
+    ]));
+    expect(wrong.failures.map(failure => failure.id)).toEqual(['wrong-owner-hole']);
+    const sideOnA = await recomputeSolids({ oc, cache }, requestWithAppearance(
+      [cylinderA, cylinderB], [{ id: 'foreign-side', bodyKey: cylinderA.key, query: foreignSide }]));
+    expect(sideOnA.appearanceMatches).toEqual([
+      { id: 'foreign-side', bodyId: cylinderA.id, faceIndex: null },
+    ]);
+    expect(dispose).not.toHaveBeenCalled();
+
+    expect(cache.delete(cylinderA.key)).toBe(true);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    const movedA = primitiveStep(cylinderA.id, 'cylinder-a-moved-key',
+      { kind: 'cylinder', radius: 6, height: 24 }, { origin: [500, 500, 5] });
+    const moved = await recomputeSolids({ oc, cache }, request([movedA,
+      holeStep('moved-hole', 'moved-hole-key', movedA.key, savedTop,
+        { centers: [[500, 500, 29]], diameter: 2 }),
+    ]));
+    expect(moved.failures).toEqual([]);
+    expect(moved.bodies.find(body => body.id === movedA.id)?.volume)
+      .toBeCloseTo(Math.PI * 36 * 24, 5);
+    expect(moved.bodies.find(body => body.id === 'moved-hole')?.volume)
+      .toBeCloseTo(Math.PI * (36 - 1) * 24, 5);
+    expect(JSON.stringify([savedTop, savedSide])).toBe(saved);
+  }, 180_000);
+
+  it('carries Box native origins through real Boolean, fillet, and chamfer makers', async () => {
+    const boxA = primitiveStep('origin-box-a', 'origin-box-a-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const boxB = primitiveStep('origin-box-b', 'origin-box-b-key',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }, { origin: [10, 0, 0] });
+    for (const operation of ['union', 'subtract', 'intersect'] as const) {
+      const cache = createShapeCache<CachedSolid>();
+      openCaches.push(cache);
+      const output = await recomputeSolids({ oc, cache }, request([
+        boxA, boxB, booleanStep(`origin-${operation}`, `origin-${operation}-key`, operation,
+          boxA.key, boxB.key),
+      ]));
+      expect(output.failures).toEqual([]);
+      const result = output.bodies.find((body) => body.id === `origin-${operation}`);
+      expect(result?.origins?.state).toBe('tracked');
+      if (result?.origins?.state === 'tracked') {
+        expect(result.origins.bindings.length).toBeGreaterThan(0);
+      }
+    }
+
+    for (const operation of ['fillet', 'chamfer'] as const) {
+      const cache = createShapeCache<CachedSolid>();
+      openCaches.push(cache);
+      const source = await recomputeSolids({ oc, cache }, request([boxA]));
+      const edge = source.bodies[0]?.edges[0];
+      if (edge === undefined) throw new Error('Box edge missing');
+      const step: SolidStepRequest = operation === 'fillet'
+        ? filletStep('origin-fillet', 'origin-fillet-key', boxA.key, [edgeQuery(edge)], 2)
+        : { id: 'origin-chamfer', key: 'origin-chamfer-key', label: 'Chamfer', visible: true,
+          step: { kind: 'chamfer', targetKey: boxA.key, targets: [edgeQuery(edge)],
+            size: { kind: 'equal', distance: 2 }, swapReferenceFace: false } };
+      const output = await recomputeSolids({ oc, cache }, request([boxA, step]));
+      expect(output.failures).toEqual([]);
+      const result = output.bodies.find((body) => body.id === step.id);
+      expect(result?.origins?.state).toBe('tracked');
+      if (result?.origins?.state === 'tracked') {
+        expect(result.origins.bindings.some((binding) =>
+          binding.origin.identity.kind === 'blend-face')).toBe(true);
+      }
+    }
+  }, 180_000);
+
+  it('再生成 Box の保存起点が低 score の上面と R/C/可変半径の縦辺を実形状へ結ぶ', async () => {
+    const cache = createShapeCache<CachedSolid>();
+    openCaches.push(cache);
+    const small = primitiveStep('semantic-box', 'semantic-small',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const large = primitiveStep('semantic-box', 'semantic-large',
+      { kind: 'box', sizeX: 200, sizeY: 200, sizeZ: 30 }, { origin: [500, 500, 0] });
+    const original = await recomputeSolids({ oc, cache }, request([small]));
+    const source = original.bodies[0];
+    if (source?.origins?.state !== 'tracked') throw new Error('Box 起点なし');
+    const faceBinding = source.origins.bindings.find(binding =>
+      binding.state === 'unique' && binding.origin.shapeKind === 'face'
+      && binding.origin.identity.kind === 'box-face' && binding.origin.identity.role === 'top');
+    const edgeBinding = source.origins.bindings.find(binding =>
+      binding.state === 'unique' && binding.origin.shapeKind === 'edge'
+      && binding.origin.identity.kind === 'box-edge' && binding.origin.identity.role === 'front-left');
+    if (faceBinding?.state !== 'unique' || faceBinding.current.kind !== 'face'
+      || edgeBinding?.state !== 'unique' || edgeBinding.current.kind !== 'edge') {
+      throw new Error('Box 上面・縦辺の unique 起点なし');
+    }
+    const face = source.faces.find(item => item.index === faceBinding.current.index);
+    const edge = source.edges.find(item => item.index === edgeBinding.current.index);
+    if (face === undefined || edge === undefined) throw new Error('Box 面・辺の現行表なし');
+    const savedFace = { ...faceQuery(face), origin: faceBinding.origin };
+    const savedEdge = { ...edgeQuery(edge), origin: edgeBinding.origin };
+    const saved = JSON.stringify([savedFace, savedEdge]);
+
+    // 保存済み query だけを残して旧形状を退去させ、現在表を新しい形から作り直す。
+    expect(cache.delete(small.key)).toBe(true);
+    expect(cache.has(small.key)).toBe(false);
+    const current = await recomputeSolids({ oc, cache }, request([large]));
+    const body = current.bodies[0];
+    if (body?.origins?.state !== 'tracked') throw new Error('再生成 Box 起点なし');
+    const scale = Math.hypot(200, 200, 30) / 2;
+    const faceMatch = resolveFaceReference(body.faces, savedFace, scale, body.origins);
+    const edgeMatch = resolveEdgeReference(body.edges, savedEdge, scale, body.origins);
+    expect(faceMatch.status).toBe('matched');
+    expect(edgeMatch.status).toBe('matched');
+    if (faceMatch.status !== 'matched' || edgeMatch.status !== 'matched') return;
+    expect(scoreFace(faceMatch.match.candidate, savedFace, scale).total).toBeLessThan(SUB_SHAPE_MATCH_THRESHOLD);
+    expect(faceMatch.match.candidate.centroid[2]).toBeCloseTo(15, 8);
+    expect(edgeMatch.match.candidate.length).toBeCloseTo(30, 8);
+    const appearance = await recomputeSolids({ oc, cache }, requestWithAppearance([large], [
+      { id: 'top-appearance', bodyKey: large.key, query: savedFace },
+    ]));
+    expect(appearance.appearanceMatches).toEqual([
+      { id: 'top-appearance', bodyId: large.id, faceIndex: faceMatch.match.index },
+    ]);
+
+    const borrowed = cache.get(large.key);
+    if (borrowed === undefined) throw new Error('再生成 Box の cache なし');
+    const release = vi.spyOn(borrowed, 'delete');
+    const steps: readonly SolidStepRequest[] = [
+      filletStep('semantic-fillet', 'semantic-fillet-key', large.key, [savedEdge], 2),
+      { id: 'semantic-chamfer', key: 'semantic-chamfer-key', label: 'Chamfer', visible: true,
+        step: { kind: 'chamfer', targetKey: large.key, targets: [savedEdge],
+          size: { kind: 'equal', distance: 2 }, swapReferenceFace: false } },
+      { id: 'semantic-variable', key: 'semantic-variable-key', label: 'Variable', visible: true,
+        step: { kind: 'fillet', targetKey: large.key, targets: [savedEdge],
+          radius: { start: 2, end: 5 } } },
+    ];
+    for (const step of steps) {
+      const result = await recomputeSolids({ oc, cache }, request([large, step]));
+      expect(result.failures).toEqual([]);
+      const output = result.bodies.find(item => item.id === step.id);
+      expect(output?.volume).toBeGreaterThan(0);
+      expect(output?.volume).toBeLessThan(1_200_000);
+      if (step.id === 'semantic-fillet') {
+        expect(output?.volume).toBeCloseTo(1_200_000 - 30 * (4 - Math.PI), 4);
+      } else if (step.id === 'semantic-chamfer') {
+        expect(output?.volume).toBeCloseTo(1_200_000 - 60, 4);
+      }
+      expect(release).not.toHaveBeenCalled();
+    }
+    expect(JSON.stringify([savedFace, savedEdge])).toBe(saved);
+
+    const other = primitiveStep('different-feature', 'different-feature-key',
+      { kind: 'box', sizeX: 200, sizeY: 200, sizeZ: 30 }, { origin: [500, 500, 0] });
+    const wrong = await recomputeSolids({ oc, cache }, requestWithAppearance([other, filletStep(
+      'wrong-fillet', 'wrong-fillet-key', other.key, [savedEdge], 2,
+    )], [{ id: 'wrong-appearance', bodyKey: other.key, query: savedFace }]));
+    expect(wrong.appearanceMatches?.[0]?.faceIndex).toBeNull();
+    expect(wrong.failures.map(failure => failure.id)).toContain('wrong-fillet');
+    expect(release).not.toHaveBeenCalled();
+  }, 180_000);
+
+  it('公開再計算で同じ現Box起点を孔・ねじ下穴・Emboss・頂点基準へ渡す', async () => {
+    const cache = createShapeCache<CachedSolid>();
+    openCaches.push(cache);
+    const small = primitiveStep('consumer-box', 'consumer-small',
+      { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 });
+    const first = await recomputeSolids({ oc, cache }, request([small]));
+    const source = first.bodies[0];
+    if (source?.origins?.state !== 'tracked') throw new Error('実Box起点なし');
+    const faceBinding = source.origins.bindings.find(binding => binding.state === 'unique'
+      && binding.origin.identity.kind === 'box-face' && binding.origin.identity.role === 'top');
+    const vertex = vertexAtPoint(source.vertices, [10, 10, 10]);
+    const vertexBinding = source.origins.bindings.find(binding => binding.state === 'unique'
+      && binding.current.kind === 'vertex' && binding.current.index === vertex.index);
+    if (faceBinding?.state !== 'unique' || faceBinding.current.kind !== 'face'
+      || vertexBinding?.state !== 'unique' || vertexBinding.current.kind !== 'vertex') {
+      throw new Error('実Box面・頂点の一意起点なし');
+    }
+    const face = source.faces.find(item => item.index === faceBinding.current.index);
+    if (face === undefined) throw new Error('保存top面なし');
+    const savedFace = { ...faceQuery(face), origin: faceBinding.origin };
+    const savedVertex = { ...vertexQuery(vertex), origin: vertexBinding.origin };
+    const saved = JSON.stringify([savedFace, savedVertex]);
+    expect(cache.delete(small.key)).toBe(true);
+    const large = primitiveStep('consumer-box', 'consumer-large',
+      { kind: 'box', sizeX: 200, sizeY: 200, sizeZ: 30 }, { origin: [500, 500, 0] });
+    const topCenter: Vec3Tuple = [500, 500, 15];
+    const square: readonly CurveSpec[] = [
+      { kind: 'segment', from: [495, 495, 15], to: [505, 495, 15] },
+      { kind: 'segment', from: [505, 495, 15], to: [505, 505, 15] },
+      { kind: 'segment', from: [505, 505, 15], to: [495, 505, 15] },
+      { kind: 'segment', from: [495, 505, 15], to: [495, 495, 15] },
+    ];
+    const steps: readonly SolidStepRequest[] = [large,
+      holeStep('semantic-hole', 'semantic-hole-key', large.key, savedFace,
+        { centers: [topCenter] }),
+      { id: 'semantic-thread', key: 'semantic-thread-key', label: 'Thread', visible: true,
+        step: { kind: 'thread', targetKey: large.key, face: savedFace, centers: [topCenter],
+          drillDiameter: 6, depth: null, tiltAngle: 0, tiltAzimuth: 0,
+          transforms: [], thread: null, mark: { majorDiameter: 8, length: 30 } } },
+      { id: 'semantic-emboss', key: 'semantic-emboss-key', label: 'Emboss', visible: true,
+        step: { kind: 'emboss', targetKey: large.key, face: savedFace,
+          profiles: [square], depth: 2, raised: false } },
+      primitiveStep('semantic-origin', 'semantic-origin-key', { kind: 'sphere', radius: 3 },
+        { origin: [3, 4, 5], originQuery: savedVertex, targetKey: large.key }),
+    ];
+    const result = await recomputeSolids({ oc, cache }, request(steps));
+    expect(result.failures).toEqual([]);
+    const current = result.bodies.find(item => item.id === large.id);
+    const hole = result.bodies.find(item => item.id === 'semantic-hole');
+    const thread = result.bodies.find(item => item.id === 'semantic-thread');
+    const emboss = result.bodies.find(item => item.id === 'semantic-emboss');
+    const placed = result.bodies.find(item => item.id === 'semantic-origin');
+    if (current?.origins?.state !== 'tracked' || hole === undefined || thread === undefined
+      || emboss === undefined || placed === undefined) throw new Error('公開再計算のbody不足');
+    const scale = Math.hypot(200, 200, 30) / 2;
+    const match = resolveFaceReference(current.faces, savedFace, scale, current.origins);
+    expect(match.status).toBe('matched');
+    if (match.status !== 'matched') throw new Error('現Box topを解決できません');
+    expect(scoreFace(match.match.candidate, savedFace, scale).total)
+      .toBeLessThan(SUB_SHAPE_MATCH_THRESHOLD);
+    expect(hole.volume).toBeCloseTo(1_200_000 - Math.PI * 9 * 30, 5);
+    expect(thread.volume).toBeCloseTo(1_200_000 - Math.PI * 9 * 30, 5);
+    expect(thread.threadMarks[0]?.origin).toEqual(topCenter);
+    expect(emboss.volume).toBeCloseTo(1_200_000 - 200, 5);
+    expect(placed.volume).toBeCloseTo((4 / 3) * Math.PI * 27, 5);
+    const xs = Array.from(placed.positions).filter((_, index) => index % 3 === 0);
+    expect(Math.min(...xs)).toBeCloseTo(600, 1);
+    expect(Math.max(...xs)).toBeCloseTo(606, 1);
+    expect(JSON.stringify([savedFace, savedVertex])).toBe(saved);
+    expect(cache.has(large.key)).toBe(true);
+    const other = primitiveStep('different-consumer-feature', 'different-consumer-key',
+      { kind: 'box', sizeX: 200, sizeY: 200, sizeZ: 30 }, { origin: [500, 500, 0] });
+    const wrong = await recomputeSolids({ oc, cache }, request([other,
+      holeStep('wrong-hole', 'wrong-hole-key', other.key, savedFace,
+        { centers: [topCenter] }),
+      primitiveStep('wrong-origin', 'wrong-origin-key', { kind: 'sphere', radius: 3 },
+        { origin: [3, 4, 5], originQuery: savedVertex, targetKey: other.key }),
+    ]));
+    expect(wrong.failures.map(item => item.id)).toEqual(['wrong-hole', 'wrong-origin']);
+    expect(wrong.bodies.some(item => item.id === other.id)).toBe(true);
+    expect(JSON.stringify([savedFace, savedVertex])).toBe(saved);
+  }, 180_000);
 });

@@ -235,6 +235,18 @@ const FIELD_DEFINITIONS: Readonly<
     unit: 'degree',
     range: COUNTERSINK_ANGLE_RANGE,
   },
+  // 円筒の側面の穴(EX05)。範囲は付けない(面の上にあるかは kernel が実際の面の境界で決め、
+  // 外なら理由を出して断る。角度は何周しても同じ向き)。
+  holeCylinderHeight: {
+    labelKey: 'numericInput.field.holeCylinderHeight',
+    tooltipKey: 'numericInput.tooltip.holeCylinderHeight',
+    unit: 'mm',
+  },
+  holeCylinderAngle: {
+    labelKey: 'numericInput.field.holeCylinderAngle',
+    tooltipKey: 'numericInput.tooltip.holeCylinderAngle',
+    unit: 'degree',
+  },
   radiusEnd: {
     labelKey: 'propertyPanel.filletRadiusEnd',
     tooltipKey: 'numericInput.tooltip.filletRadiusEnd',
@@ -246,6 +258,12 @@ const FIELD_DEFINITIONS: Readonly<
     tooltipKey: 'numericInput.tooltip.draftAngle',
     unit: 'degree',
     range: DRAFT_ANGLE_RANGE,
+  },
+  // 符号付きなので範囲は付けない(0 と数でない値は model の checkFaceOffset が理由つきで断る)。
+  faceOffsetDistance: {
+    labelKey: 'propertyPanel.faceOffsetDistance',
+    tooltipKey: 'numericInput.tooltip.faceOffsetDistance',
+    unit: 'mm',
   },
   translationX: {
     labelKey: 'numericInput.field.x',

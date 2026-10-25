@@ -7,7 +7,7 @@ import type { UtilityPanel } from './viewSlice.js';
 beforeEach(resetTestStore);
 afterEach(resetTestStore);
 
-const panels: readonly UtilityPanel[] = ['export', 'import', 'comparison', 'functionPlot', 'drawingPrint', 'drawingExport'];
+const panels: readonly UtilityPanel[] = ['export', 'import', 'comparison', 'functionPlot', 'drawingPrint', 'drawingExport', 'savePoints'];
 
 describe('補助画面の終了通知で文書の再計算を止めない', () => {
   it.each(panels)('%sは同じ開閉要求を繰り返しても変更を通知せず、形と履歴を保つ', panel => {

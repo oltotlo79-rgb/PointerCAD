@@ -1,5 +1,6 @@
 import { createDefaultPartFileDeps, openPart, savePart } from '../file/partFile.js';
 import { t } from '../i18n/t.js';
+import { openNamedSavePoints } from '../shell/menus/fileToolbarActions.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { startDrawingAnnotation } from './annotationCommands.js';
 import { duplicateSelectedDrawingGdt, startDrawingGdt } from './gdtCommands.js';
@@ -29,6 +30,7 @@ export function updateSelectedDrawingViewLines(kind: 'hidden' | 'centers' | 'cen
 
 /** メニューと直接ボタンの配線を共有し、文書変更は既存コマンドに一度だけ渡す。 */
 export function runDrawingToolbarAction(action: DrawingToolbarAction): 'export' | 'print' | null {
+  if (action === 'savePoints') { openNamedSavePoints(); return null; }
   if (action === 'open') { void openPart(createDefaultPartFileDeps()); return null; }
   if (action === 'save' || action === 'saveAs') { void savePart(createDefaultPartFileDeps(), action === 'saveAs'); return null; }
   const state = useAppStore.getState();

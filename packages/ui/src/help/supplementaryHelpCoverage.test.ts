@@ -16,7 +16,12 @@ describe('設定・出力・道具の数値欄も実際の定義から説明先�
     expect(coverage.outputs.find(item => item.id === 'pcada')?.extensions).toEqual(['.pcada']);
     expect(coverage.outputs.find(item => item.id === 'jpg')?.extensions).toEqual(['.jpg', '.jpeg']);
     expect(coverage.outputs.find(item => item.id === 'zip')?.topicIds).toContain('joint');
+    expect(coverage.outputs.find(item => item.id === 'csv')).toMatchObject({
+      extensions: ['.csv'], topicIds: ['parameters'],
+    });
     expect(coverage.contentCertified).toBe(false);
+    expect(coverage.settings.find(item => item.id === 'cameraControls')?.topicIds)
+      .toEqual(['display-settings', 'viewport']);
   });
   it('座標方式・板金・図面を含む既定値の全欄が実際と同じ名称と説明を持つ', () => {
     const coverage = buildSupplementaryHelpCoverage(MANUAL_CHAPTERS), actual = toolDefaultEntries();
@@ -31,7 +36,7 @@ describe('設定・出力・道具の数値欄も実際の定義から説明先�
     }
   });
   it('設定または保存形式の説明章が消えたら、残りの章で成功扱いにしない', () => {
-    for (const missing of ['display-settings', 'template', 'script-tools', 'joint', 'tutorial']) {
+    for (const missing of ['display-settings', 'template', 'script-tools', 'joint', 'tutorial', 'parameters', 'viewport']) {
       expect(() => buildSupplementaryHelpCoverage(MANUAL_CHAPTERS.filter(topic => topic.id !== missing))).toThrow('Missing help chapter');
     }
     expect(() => buildSupplementaryHelpCoverage([...MANUAL_CHAPTERS, MANUAL_CHAPTERS[0]])).toThrow('Duplicate help topics');

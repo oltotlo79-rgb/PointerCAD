@@ -1,11 +1,13 @@
+import { isCompositionKey } from '../commands/compositionKey.js';
 import { DraggableWindowTitle } from './DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 
 import { isPendingFieldError, pendingFieldVariables } from '../shell/propertyFieldUnits.js';
 import { t } from '../i18n/t.js';
 import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
+import { stagedExtrusionMessageKey } from '../solid/extrudePreview.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { applyNumericTransition } from './commitToStore.js';
+import { applyNumericTransition, previewExtrudeTransition } from './commitToStore.js';
 import { ExpressionField } from './ExpressionField.js';
 import { NumericMathDialog, type NumericMathTarget } from './NumericMathDialog.js';
 import { coordinateModesFor } from './freeSketch.js';
@@ -47,6 +49,18 @@ const POPOVER_WIDTH_PIXELS = 260;
  * **見込みが小さいと下端で切れる**だけで、大きすぎても上へ寄るだけなので安全側へ倒す。
  */
 const POPOVER_HEIGHT_PIXELS = 372;
+
+/** 入力欄の高さの下限(画素)。ビューポートがこれより低くても、見出しと 1 欄は見せる。 */
+const MIN_POPOVER_HEIGHT_PIXELS = 120;
+
+/**
+ * 入力欄の高さの上限(画素)。置いた位置から下端の余白までに収め、入りきらない分は入力欄の中で
+ * 縦に送る。押し出しのように選択肢とつまみが多い段でも、低い窓で「決定」「取消」「形を確かめる」が
+ * 画面の外へ出ない(EX-14)。位置の決め方(`clampAnchor`)は他の入力欄と共有するので変えない。
+ */
+export function popoverMaxHeight(top: number, viewportHeight: number): number {
+  return Math.max(MIN_POPOVER_HEIGHT_PIXELS, viewportHeight - top - EDGE_MARGIN_PIXELS);
+}
 
 /**
  * 選択肢の一覧をこの個数を超えて持つときは、横並びのボタンではなく畳んだ一覧にする
@@ -92,7 +106,7 @@ function numericInputKeyFor(
   modes: readonly CoordinateMode[],
 ): NumericInputKey | null {
   // 日本語入力の変換中に押した Enter は確定の合図なので、こちらでは扱わない。
-  if (event.nativeEvent.isComposing) {
+  if (isCompositionKey(event.nativeEvent)) {
     return null;
   }
   if (event.key === 'Tab') {
@@ -286,6 +300,9 @@ export function NumericInputPopover({
    */
   const lengthUnit = useAppStore((store) => store.displaySettings.lengthUnit);
   const nonLengthVariables = useAppStore((store) => store.nonLengthVariables);
+  // 押し出しの段階計算の知らせ(計算中・表示中・失敗の理由・入力が変わった)。EX-14。
+  const stagedMessageKey = useAppStore((store) =>
+    store.numericInput?.step === 'extrudeDistance' ? stagedExtrusionMessageKey(store) : null);
 
   // つまみと選択肢は入力欄ではないので、焦点は状態機械の指示でこちらから移す。
   const toggleRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -349,10 +366,19 @@ export function NumericInputPopover({
     <><div
       className="pcad-popover"
       data-help-topic={toolCommandHelpTopic(state.toolId)}
-      style={{ left: `${String(position.left)}px`, top: `${String(position.top)}px` }}
+      style={{ left: `${String(position.left)}px`, top: `${String(position.top)}px`,
+        maxHeight: `${String(popoverMaxHeight(position.top, viewportHeight))}px`, overflowY: 'auto' }}
       role="dialog"
       aria-label={t(STEP_TITLE_KEYS[state.step])}
       onKeyDown={(event) => {
+        // 押し出しの「形を確かめる」は Alt+P でも押せる(欄の Tab の巡回はボタンへ移らないため)。
+        if (state.step === 'extrudeDistance' && event.altKey && event.code === 'KeyP'
+          && !isCompositionKey(event.nativeEvent)) {
+          event.preventDefault();
+          event.stopPropagation();
+          previewExtrudeTransition(applyNumericInputKey(state, 'Enter', { ...analysis, lengthUnit }));
+          return;
+        }
         const key = numericInputKeyFor(event, coordinateStep, focusKind, modes);
         if (key === null) {
           return;
@@ -481,6 +507,10 @@ export function NumericInputPopover({
       )}
 
       {state.step === 'sweepOptions' ? <p className="pcad-popover__hint">{t('numericInput.sweepGuide.hint')}</p> : null}
+      {stagedMessageKey === null ? null : (
+        <p className={stagedMessageKey.startsWith('solidError.') ? 'pcad-field__error' : 'pcad-field__message'}
+          role={stagedMessageKey.startsWith('solidError.') ? 'alert' : 'status'}>{t(stagedMessageKey)}</p>
+      )}
       <p className="pcad-popover__hint">{t('numericInput.keyHint')}</p>
 
       <div className="pcad-popover__actions">
@@ -500,6 +530,24 @@ export function NumericInputPopover({
             }}
           >
             {t('numericInput.splineFinish')}
+          </button>
+        ) : null}
+        {/*
+          押し出しだけは、確定する前に同じ候補の形を計算して表示できる(EX-14)。
+          確定(Enter・決定)と同じ入力の評価を通り、文書と取り消しには触れない。
+        */}
+        {state.step === 'extrudeDistance' ? (
+          <button
+            type="button"
+            className="pcad-button"
+            aria-disabled={!evaluation.canCommit}
+            title={t('numericInput.extrudePreviewTooltip')}
+            onMouseDown={keepFocus}
+            onClick={() => {
+              previewExtrudeTransition(applyNumericInputKey(state, 'Enter', { ...analysis, lengthUnit }));
+            }}
+          >
+            {t('numericInput.extrudePreview')}
           </button>
         ) : null}
         <button

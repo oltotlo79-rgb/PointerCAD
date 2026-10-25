@@ -5,7 +5,19 @@ import { faceIndexOfTriangle } from '../solid/pickSubShape.js';
 import type { SolidEdgeEntry, SolidFaceEntry, SolidVertexEntry } from '../solid/subShapeSelection.js';
 
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
-import { buildSubShapeGeometry, EMPTY_SUB_SHAPE_HIGHLIGHT } from './buildSubShapeGeometry.js';
+import { AllocatedBackingRegistrationError } from './buildSolidGeometry.js';
+import { AssemblyUiBackingLedger } from './assemblyMeshAdmission.js';
+import { buildSubShapeGeometry, EMPTY_SUB_SHAPE_HIGHLIGHT, subShapeOverlayBytes } from './buildSubShapeGeometry.js';
+import type { SubShapeHighlight, SubShapeHighlightBatch } from './buildSubShapeGeometry.js';
+
+const EMPTY_BATCH: SubShapeHighlightBatch = {
+  featureId: '', origin: [0, 0, 0], facePositions: new Float32Array(0),
+  faceNormals: new Float32Array(0), faceIndices: new Uint32Array(0),
+  edgePositions: new Float32Array(0), vertexPositions: new Float32Array(0),
+};
+function batch(highlight: SubShapeHighlight): SubShapeHighlightBatch {
+  return highlight.batches[0] ?? EMPTY_BATCH;
+}
 
 /**
  * 4 三角形(12 頂点、頂点は三角形どうしで共有しない)を持つボディ。
@@ -116,11 +128,78 @@ const SQUARE: SolidBodyWithSubShapes = {
 };
 
 describe('buildSubShapeGeometry(FR-105、FR-106、§0.a-0.7)', () => {
+  it('keeps the first filled batch and second constructed array when the later callback fails', () => {
+    const second: SolidBodyWithSubShapes = { ...BODY, featureId: 'second' };
+    const ledger = new AssemblyUiBackingLedger(), borrowed: ArrayBufferLike[] = [];
+    let failure: unknown;
+    try {
+      buildSubShapeGeometry([BODY, second], null, ['extrude-1#face:0', 'second#face:0'], undefined, buffer => {
+        ledger.allocated(buffer); borrowed.push(buffer);
+        if (borrowed.length === 6) throw new Error('Second actual batch observer failed');
+      });
+    } catch (error) { failure = error; }
+    if (!(failure instanceof AllocatedBackingRegistrationError)) throw new Error('Actual later allocation was not handed back');
+    expect(borrowed).toHaveLength(6); expect(failure.backing).toBe(borrowed[5]);
+    expect(ledger.bytes()).toBe(168 + 72);
+    expect(new Float32Array(borrowed[0]).slice(0, 3)).toEqual(BODY.mesh.positions.slice(0, 3));
+    expect(borrowed.every(buffer => buffer !== BODY.mesh.positions.buffer && buffer !== BODY.mesh.normals.buffer
+      && buffer !== BODY.mesh.indices.buffer && buffer !== BODY.mesh.edgePositions.buffer)).toBe(true);
+  });
+
+  it('registers face and edge arrays before a real edge fill throws', () => {
+    const ledger = new AssemblyUiBackingLedger(), borrowed: ArrayBufferLike[] = [];
+    const source = new Float32Array(BODY.mesh.edgePositions);
+    const edgePositions = new Proxy(source, { get(target, key): unknown {
+      if (key === 'subarray') return () => { throw new Error('Actual edge fill failed'); };
+      return Reflect.get(target, key, target);
+    } });
+    const body: SolidBodyWithSubShapes = { ...BODY, mesh: { ...BODY.mesh, edgePositions } };
+    expect(() => buildSubShapeGeometry([body], 'extrude-1#edge:0', [], undefined, buffer => {
+      ledger.allocated(buffer); borrowed.push(buffer);
+    })).toThrow('Actual edge fill failed');
+    expect(borrowed).toHaveLength(4); expect(ledger.bytes()).toBe(24);
+    expect(borrowed[3].byteLength).toBe(24); expect(borrowed[3]).not.toBe(source.buffer);
+  });
+
+  it('separates two identical local meshes at opposite large world origins', () => {
+    const positive: SolidBodyWithSubShapes = {
+      ...BODY, featureId: 'positive',
+      coordinateFrame: { space: 'local', origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.001 },
+      vertices: [vertex(0, [1e9 + 0.125, 0, 0])],
+    };
+    const negative: SolidBodyWithSubShapes = {
+      ...BODY, featureId: 'negative',
+      coordinateFrame: { space: 'local', origin: [-1e9, 0, 0], maximumFloat32ErrorMm: 0.001 },
+      vertices: [vertex(0, [-1e9 + 0.25, 0, 0])],
+    };
+    const result = buildSubShapeGeometry(
+      [positive, negative], null,
+      ['positive#face:0', 'negative#face:0', 'positive#vertex:0', 'negative#vertex:0'],
+    );
+    expect(result.selected.batches.map((entry) => entry.featureId)).toEqual(['positive', 'negative']);
+    expect(result.selected.batches.map((entry) => entry.origin[0])).toEqual([1e9, -1e9]);
+    expect(result.selected.batches.map((entry) => [...entry.vertexPositions])).toEqual([[0.125, 0, 0], [0.25, 0, 0]]);
+    expect(result.selected.batches.map((entry) => [...entry.facePositions.slice(0, 3)])).toEqual([[0, 0, 0], [0, 0, 0]]);
+  });
+
+  it('rejects ambiguous ids and malformed or sparse local origins', () => {
+    const framed: SolidBodyWithSubShapes = {
+      ...BODY, coordinateFrame: { space: 'local', origin: [1e6, 0, 0], maximumFloat32ErrorMm: 0.001 },
+    };
+    expect(buildSubShapeGeometry([framed, framed], null, ['extrude-1#face:0'])).toBe(EMPTY_SUB_SHAPE_HIGHLIGHT);
+    const sparse: [number, number, number] = [1e6, 0, 0];
+    Reflect.deleteProperty(sparse, '1');
+    const malformed: SolidBodyWithSubShapes = { ...framed, coordinateFrame: {
+      space: 'local', origin: sparse, maximumFloat32ErrorMm: 0.001,
+    } };
+    expect(buildSubShapeGeometry([malformed], null, ['extrude-1#face:0'])).toBe(EMPTY_SUB_SHAPE_HIGHLIGHT);
+    expect(buildSubShapeGeometry([BODY], null, ['extrude-1#vertex:0']).selected.batches[0].origin).toEqual([0, 0, 0]);
+  });
   it('ホバーも選択も無ければ空(同じ入れ物を返す)', () => {
     const bundle = buildSubShapeGeometry([BODY], null, []);
     expect(bundle).toBe(EMPTY_SUB_SHAPE_HIGHLIGHT);
-    expect(bundle.hovered.facePositions.length).toBe(0);
-    expect(bundle.selected.facePositions.length).toBe(0);
+    expect(batch(bundle.hovered).facePositions.length).toBe(0);
+    expect(batch(bundle.selected).facePositions.length).toBe(0);
     expect(bundle.faceTriangleCount).toBe(0);
     expect(bundle.edgeCount).toBe(0);
     expect(bundle.vertexCount).toBe(0);
@@ -128,21 +207,21 @@ describe('buildSubShapeGeometry(FR-105、FR-106、§0.a-0.7)', () => {
 
   it('面 1 枚を選択すると、その面の三角形数 × 9 個の位置が積まれる', () => {
     const bundle = buildSubShapeGeometry([BODY], null, ['extrude-1#face:0']);
-    expect(bundle.selected.facePositions.length).toBe(2 * 9);
-    expect(bundle.selected.faceNormals.length).toBe(2 * 9);
-    expect(bundle.selected.faceIndices.length).toBe(2 * 3);
+    expect(batch(bundle.selected).facePositions.length).toBe(2 * 9);
+    expect(batch(bundle.selected).faceNormals.length).toBe(2 * 9);
+    expect(batch(bundle.selected).faceIndices.length).toBe(2 * 3);
     expect(bundle.hovered).toBe(EMPTY_SUB_SHAPE_HIGHLIGHT.hovered);
   });
 
   it('面 1 枚をホバーすると hovered に入り、selected は空のまま', () => {
     const bundle = buildSubShapeGeometry([BODY], 'extrude-1#face:0', []);
-    expect(bundle.hovered.facePositions.length).toBe(2 * 9);
+    expect(batch(bundle.hovered).facePositions.length).toBe(2 * 9);
     expect(bundle.selected).toBe(EMPTY_SUB_SHAPE_HIGHLIGHT.selected);
   });
 
   it('同じ面をホバーかつ選択すると、selected にだけ入る(二重描きしない)', () => {
     const bundle = buildSubShapeGeometry([BODY], 'extrude-1#face:0', ['extrude-1#face:0']);
-    expect(bundle.selected.facePositions.length).toBe(2 * 9);
+    expect(batch(bundle.selected).facePositions.length).toBe(2 * 9);
     expect(bundle.hovered).toBe(EMPTY_SUB_SHAPE_HIGHLIGHT.hovered);
   });
 
@@ -152,13 +231,13 @@ describe('buildSubShapeGeometry(FR-105、FR-106、§0.a-0.7)', () => {
       null,
       ['extrude-1#edge:0', 'extrude-1#edge:1'],
     );
-    expect(bundle.selected.edgePositions.length).toBe(2 * 6);
+    expect(batch(bundle.selected).edgePositions.length).toBe(2 * 6);
   });
 
   it('頂点 1 つを選択すると 3 個の位置になる', () => {
     const bundle = buildSubShapeGeometry([BODY], null, ['extrude-1#vertex:0']);
-    expect(bundle.selected.vertexPositions.length).toBe(3);
-    expect([...bundle.selected.vertexPositions]).toEqual([0, 0, 0]);
+    expect(batch(bundle.selected).vertexPositions.length).toBe(3);
+    expect([...batch(bundle.selected).vertexPositions]).toEqual([0, 0, 0]);
   });
 
   it('番号が範囲外の参照は飛ばされ、例外にならない', () => {
@@ -189,9 +268,9 @@ describe('buildSubShapeGeometry(FR-105、FR-106、§0.a-0.7)', () => {
     const selection = ['extrude-1#face:0', 'extrude-1#edge:1'];
     const first = buildSubShapeGeometry([BODY], 'extrude-1#vertex:2', selection);
     const second = buildSubShapeGeometry([BODY], 'extrude-1#vertex:2', selection);
-    expect([...first.selected.facePositions]).toEqual([...second.selected.facePositions]);
-    expect([...first.selected.edgePositions]).toEqual([...second.selected.edgePositions]);
-    expect([...first.hovered.vertexPositions]).toEqual([...second.hovered.vertexPositions]);
+    expect([...batch(first.selected).facePositions]).toEqual([...batch(second.selected).facePositions]);
+    expect([...batch(first.selected).edgePositions]).toEqual([...batch(second.selected).edgePositions]);
+    expect([...batch(first.hovered).vertexPositions]).toEqual([...batch(second.hovered).vertexPositions]);
   });
 
   it('faceIndexOfTriangle が返す面の三角形が、選択した面の並びと一致する', () => {
@@ -205,7 +284,7 @@ describe('buildSubShapeGeometry(FR-105、FR-106、§0.a-0.7)', () => {
     for (let vertexIndex = 6; vertexIndex <= 11; vertexIndex += 1) {
       expected.push(vertexIndex, vertexIndex, vertexIndex);
     }
-    expect([...bundle.selected.facePositions]).toEqual(expected);
+    expect([...batch(bundle.selected).facePositions]).toEqual(expected);
   });
 
   it('選択した辺の端点の点が入り、共有する頂点は重複を除いて 1 点にまとめる(§0.a-0.23-⑩)', () => {
@@ -215,23 +294,78 @@ describe('buildSubShapeGeometry(FR-105、FR-106、§0.a-0.7)', () => {
       ['sketch-loop#edge:0', 'sketch-loop#edge:1', 'sketch-loop#edge:2', 'sketch-loop#edge:3'],
     );
     // 4 辺・8 個の端点の言及だが、隣どうしで共有するので実際は 4 点(重複を除く)。
-    expect(bundle.selected.vertexPositions.length).toBe(4 * 3);
+    expect(batch(bundle.selected).vertexPositions.length).toBe(4 * 3);
   });
 
   it('ホバー中の辺には端点の点を出さない(選択との差、§0.a-0.23-⑩)', () => {
     const bundle = buildSubShapeGeometry([BODY], 'extrude-1#edge:0', []);
-    expect(bundle.hovered.edgePositions.length).toBe(1 * 6);
-    expect(bundle.hovered.vertexPositions.length).toBe(0);
+    expect(batch(bundle.hovered).edgePositions.length).toBe(1 * 6);
+    expect(batch(bundle.hovered).vertexPositions.length).toBe(0);
   });
 
   it('頂点を直接ホバーすると、辺の端点とは違い hovered にも点が入る', () => {
     const bundle = buildSubShapeGeometry([BODY], 'extrude-1#vertex:1', []);
-    expect(bundle.hovered.vertexPositions.length).toBe(3);
-    expect([...bundle.hovered.vertexPositions]).toEqual([10, 0, 0]);
+    expect(batch(bundle.hovered).vertexPositions.length).toBe(3);
+    expect([...batch(bundle.hovered).vertexPositions]).toEqual([10, 0, 0]);
   });
 
   it('faceIndices は三角形どうしで頂点を共有しない連番になる(0 始まり)', () => {
     const bundle = buildSubShapeGeometry([BODY], null, ['extrude-1#face:0']);
-    expect([...bundle.selected.faceIndices]).toEqual([0, 1, 2, 3, 4, 5]);
+    expect([...batch(bundle.selected).faceIndices]).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  describe('local overlay budget: count, reserve, then fill', () => {
+    const ONE_TRIANGLE: SolidBodyWithSubShapes = { ...BODY, featureId: 'one', faces: [face(0, 0, 1), face(1, 1, 1)] };
+
+    it('reserves 84 bytes for a one-triangle face before filling and reports the exact overlay bytes', () => {
+      expect(() => buildSubShapeGeometry([ONE_TRIANGLE], null, ['one#face:0'],
+        { limitBytes: 1083, reservedBytes: 1000 })).toThrow(/overlay exceeds/);
+      const bundle = buildSubShapeGeometry([ONE_TRIANGLE], null, ['one#face:0'],
+        { limitBytes: 1084, reservedBytes: 1000 });
+      // positions 36 + normals 36 + indices 12.
+      expect(subShapeOverlayBytes(bundle)).toBe(84);
+      expect(bundle).toEqual(buildSubShapeGeometry([ONE_TRIANGLE], null, ['one#face:0']));
+    });
+
+    it('counts hovered and selected copies together: 167 refused, 168 admitted', () => {
+      expect(() => buildSubShapeGeometry([ONE_TRIANGLE], 'one#face:1', ['one#face:0'],
+        { limitBytes: 167, reservedBytes: 0 })).toThrow(/overlay exceeds/);
+      const both = buildSubShapeGeometry([ONE_TRIANGLE], 'one#face:1', ['one#face:0'],
+        { limitBytes: 168, reservedBytes: 0 });
+      expect(subShapeOverlayBytes(both)).toBe(168);
+      expect(both.hovered.batches).toHaveLength(1);
+      expect(both.selected.batches).toHaveLength(1);
+    });
+
+    it('reserves 24 bytes per edge segment and 12 per selected endpoint or vertex', () => {
+      expect(() => buildSubShapeGeometry([BODY], null, ['extrude-1#edge:0'],
+        { limitBytes: 47, reservedBytes: 0 })).toThrow(/overlay exceeds/);
+      expect(subShapeOverlayBytes(buildSubShapeGeometry([BODY], null, ['extrude-1#edge:0'],
+        { limitBytes: 48, reservedBytes: 0 }))).toBe(24 + 2 * 12);
+      expect(() => buildSubShapeGeometry([BODY], null, ['extrude-1#vertex:1'],
+        { limitBytes: 11, reservedBytes: 0 })).toThrow(/overlay exceeds/);
+      expect(subShapeOverlayBytes(buildSubShapeGeometry([BODY], null, ['extrude-1#vertex:1'],
+        { limitBytes: 12, reservedBytes: 0 }))).toBe(12);
+    });
+
+    it('applies the same finite filter in both passes, so the reservation equals the filled arrays', () => {
+      const positions = makePositions(12);
+      positions[4] = Number.NaN;
+      const body: SolidBodyWithSubShapes = { ...ONE_TRIANGLE, mesh: { ...ONE_TRIANGLE.mesh, positions } };
+      expect(() => buildSubShapeGeometry([body], null, ['one#face:0'],
+        { limitBytes: 55, reservedBytes: 0 })).toThrow(/overlay exceeds/);
+      const bundle = buildSubShapeGeometry([body], null, ['one#face:0'], { limitBytes: 56, reservedBytes: 0 });
+      expect(subShapeOverlayBytes(bundle)).toBe(2 * 28);
+      expect([...batch(bundle.selected).faceIndices]).toEqual([0, 1]);
+    });
+
+    it('refuses an invalid budget instead of treating it as unlimited; an empty overlay needs nothing', () => {
+      for (const budget of [{ limitBytes: 0, reservedBytes: 0 }, { limitBytes: Number.NaN, reservedBytes: 0 },
+        { limitBytes: 100, reservedBytes: -1 }, { limitBytes: 100, reservedBytes: 0.5 }]) {
+        expect(() => buildSubShapeGeometry([ONE_TRIANGLE], null, ['one#face:0'], budget)).toThrow(/overlay exceeds/);
+      }
+      expect(buildSubShapeGeometry([ONE_TRIANGLE], null, [], { limitBytes: 1, reservedBytes: 1 }))
+        .toBe(EMPTY_SUB_SHAPE_HIGHLIGHT);
+    });
   });
 });

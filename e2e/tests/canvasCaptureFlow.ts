@@ -6,6 +6,7 @@ import { openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
 import { captureManualDetail } from './captureManualDetail.js';
 import { waitForStartupHealth } from './startupHealth.js';
 import { clickWorldPoint } from './workPlaneCaptureSupport.js';
+import { addImage, canvasRow, expectCanvasIdentity, expectImage, open, readPart, save, sha256 } from './canvasAssetLifetimeFlow.js';
 
 /**
  * 撮影用の最小のPNGをその場で組み立てる(node:zlib だけで足りる。単色の正方形)。
@@ -86,4 +87,55 @@ export async function canvasCaptureFlow(page: Page, info: TestInfo): Promise<voi
     name: 'canvas-scale-length', dialog: scalePopover,
     fixture: { points: [[-50, 0, 0], [50, 0, 0]], realLengthMm: 150 }, script: new URL(import.meta.url),
   });
+  await scalePopover.getByRole('button', { name: '寸法を合わせる', exact: true }).click();
+  await expect(scalePopover).toHaveCount(0);
+  await canvasRow(page, 'sketch.png').getByRole('button', { name: 'sketch.png を削除', exact: true }).click();
+
+  const imageA = makeSolidSquarePng(100, [240, 80, 20]);
+  const imageB = makeSolidSquarePng(100, [20, 180, 240]);
+  await info.attach('canvas-example-A.png', { contentType: 'image/png', body: imageA });
+  await info.attach('canvas-example-B.png', { contentType: 'image/png', body: imageB });
+  await addImage(page, 'A.png', imageA);
+  await expectImage(page, 'A');
+  const originalBytes = await save(page, info, 'canvas-example-A-original.pcad');
+  const original = readPart(originalBytes);
+  expectCanvasIdentity(original, [{ name: 'A.png', width: 100, height: 100, sha: sha256(imageA) }]);
+  await canvasRow(page, 'A.png').getByRole('button', { name: 'A.png を削除', exact: true }).click();
+  await addImage(page, 'B.png', imageB);
+  await expectImage(page, 'B');
+  await page.locator('canvas.pcad-viewport__canvas').click();
+  await page.keyboard.press('Control+z');
+  await expect(canvasRow(page, 'B.png')).toHaveCount(0);
+  await page.keyboard.press('Control+z');
+  await expectImage(page, 'A');
+  const restoredBytes = await save(page, info, 'canvas-example-A-restored.pcad');
+  const restored = readPart(restoredBytes);
+  expect(restored.document).toEqual(original.document);
+  expect(restored.document.canvases[0].visible).toBe(true);
+  expectCanvasIdentity(restored, [{ name: 'A.png', width: 100, height: 100, sha: sha256(imageA) }]);
+  await captureManualDetail(page, info, {
+    name: 'canvas-delete-undo', dialog: canvasRow(page, 'A.png'),
+    fixture: { actions: ['add A', 'delete A', 'add B', 'Undo', 'Undo', 'save'], imageSha256: sha256(imageA), savedZipSha256: sha256(restoredBytes) }, script: new URL(import.meta.url),
+  });
+  await open(page, 'canvas-example-A-restored.pcad', restoredBytes);
+  await expectImage(page, 'A');
+  await canvasRow(page, 'A.png').getByRole('button', { name: 'A.png を削除', exact: true }).click();
+  await addImage(page, 'B.png', imageB);
+  await canvasRow(page, 'B.png').getByRole('button', { name: 'B.png を削除', exact: true }).click();
+  await expectImage(page, 'none');
+  const deletedBytes = await save(page, info, 'canvas-example-B-deleted.pcad');
+  const deleted = readPart(deletedBytes);
+  expect(deleted.document.canvases).toHaveLength(0);
+  expect(deleted.attachments.canvases.size).toBe(0);
+  await open(page, 'canvas-example-B-deleted.pcad', deletedBytes);
+  await expect(canvasRow(page, 'B.png')).toHaveCount(0);
+  await expectImage(page, 'none');
+  await captureManualDetail(page, info, {
+    name: 'canvas-delete-save', dialog: page.locator('.pcad-panel--right'),
+    fixture: { actions: ['add B', 'delete B', 'save', 'reopen'], savedZipSha256: sha256(deletedBytes), attachmentCount: 0, fullProcessColdCertified: false }, script: new URL(import.meta.url),
+  });
+  await info.attach('r20-canvas-materials', { contentType: 'application/json', body: JSON.stringify({
+    schema: 1, originalZipSha256: sha256(originalBytes), restoredZipSha256: sha256(restoredBytes), deletedZipSha256: sha256(deletedBytes),
+    imageASha256: sha256(imageA), imageBSha256: sha256(imageB), fullProcessColdCertified: false, publicationRegistered: false,
+  }) });
 }

@@ -9,6 +9,7 @@
     { "path": "./packages/model" },
     { "path": "./packages/drawing" },
     { "path": "./packages/io" },
+    { "path": "./packages/fem" },
     { "path": "./packages/ui" },
     { "path": "./apps/web" },
     { "path": "./apps/web/service-worker" },

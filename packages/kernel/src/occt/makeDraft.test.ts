@@ -6,16 +6,19 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { BoxParameters, SolidFaceInfo, SubShapeQuery } from '../types.js';
+import type { BoxParameters, PrimitiveStepSpec, SolidFaceInfo, SubShapeQuery } from '../types.js';
+import type { BoxFaceRole, CurrentOriginIndex, SubShapeOrigin } from '../subShapeOrigin.js';
 import { createAllocations } from './allocations.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import type { DraftInput } from './makeDraft.js';
 import { draftStatusName, makeDraft } from './makeDraft.js';
+import { makePrimitive } from './makePrimitive.js';
+import { resolveFaceReference, scoreFace, SUB_SHAPE_MATCH_THRESHOLD } from './matchSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
-import { collectSubShapes, faceAt } from './subShapes.js';
+import { boundingDiagonal, collectSubShapes, faceAt } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 
 /**
@@ -111,7 +114,7 @@ describe('抜き勾配(FR-417、FR-504、NFR-RE-1)', () => {
   }
 
   /** 一覧の面 1 枚から、文書が保存するのと同じ形の指紋を作る。 */
-  function faceQuery(face: SolidFaceInfo): SubShapeQuery {
+  function faceQuery(face: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
     return {
       kind: 'face',
       index: face.index,
@@ -689,6 +692,117 @@ describe('抜き勾配(FR-417、FR-504、NFR-RE-1)', () => {
     } finally {
       release();
       prepared.delete();
+    }
+  });
+
+  it('実Boxの保存top/側面起点で移動後も抜き勾配を作り、高scoreの曖昧・消失・別featureを拒否する', () => {
+    const spec: PrimitiveStepSpec = { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1],
+      shape: { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 }, originQuery: null, targetKey: null };
+    const old = makePrimitive(oc, spec, 'draft-feature');
+    const changedSpec: PrimitiveStepSpec = { ...spec, origin: [500, 500, 0],
+      shape: { kind: 'box', sizeX: 200, sizeY: 200, sizeZ: 30 } };
+    const current = makePrimitive(oc, changedSpec, 'draft-feature');
+    const other = makePrimitive(oc, changedSpec, 'other-feature');
+    try {
+      if (old.origins?.state !== 'tracked' || current.origins?.state !== 'tracked'
+        || other.origins?.state !== 'tracked') throw new Error('実Box起点がありません');
+      const oldTables = collectTables(old.shape);
+      const tables = { ...collectTables(current.shape), origins: current.origins };
+      const otherTables = { ...collectTables(other.shape), origins: other.origins };
+      function saved(role: BoxFaceRole): Extract<SubShapeQuery, { kind: 'face' }> {
+        if (old.origins?.state !== 'tracked') throw new Error('旧Box起点がありません');
+        const binding = old.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
+          && item.origin.identity.role === role);
+        if (binding?.state !== 'unique' || binding.current.kind !== 'face') {
+          throw new Error(`旧Boxの${role}面が一意でありません`);
+        }
+        const face = oldTables.faces.find(item => item.index === binding.current.index);
+        if (face === undefined) throw new Error('旧Boxの現面がありません');
+        return { ...faceQuery(face), origin: binding.origin };
+      }
+      const top = saved('top');
+      const front = saved('front');
+      const sides = [front, saved('back'), saved('left'), saved('right')];
+      const savedJson = JSON.stringify({ top, sides });
+      const scale = boundingDiagonal(oc, current.shape) * 0.5;
+      const topMatch = resolveFaceReference(tables.faces, top, scale, tables.origins);
+      const sideMatch = resolveFaceReference(tables.faces, front, scale, tables.origins);
+      expect(topMatch.status).toBe('matched');
+      expect(sideMatch.status).toBe('matched');
+      if (topMatch.status !== 'matched' || sideMatch.status !== 'matched') {
+        throw new Error('現Boxのtop/側面起点を解決できません');
+      }
+      const topScore = scoreFace(topMatch.match.candidate, top, scale).total;
+      const sideScore = scoreFace(sideMatch.match.candidate, front, scale).total;
+      expect(topScore).toBeLessThan(SUB_SHAPE_MATCH_THRESHOLD);
+      expect(sideScore).toBeLessThan(SUB_SHAPE_MATCH_THRESHOLD);
+      console.log(`Draft保存起点の実幾何score: top=${topScore}, front=${sideScore}`);
+      expect(topMatch.match.candidate.centroid[2]).toBeCloseTo(15, 8); // primitive Boxは中心原点
+      const input: DraftInput = { neutralFace: top, faces: sides, angle: FIVE_DEGREES, reversed: false };
+      const output = makeDraft(oc, current.shape, tables, input);
+      try {
+        const shift = 30 * Math.tan(FIVE_DEGREES);
+        const expected = 30 * (200 * 200 + (200 + 200) * shift + (4 / 3) * shift * shift);
+        expect(measureVolume(oc, output.shape)).toBeCloseTo(expected, 6);
+        expect(hasSolid(oc, output.shape)).toBe(true);
+        expect(isValidShape(oc, output.shape)).toBe(true);
+      } finally {
+        output.delete();
+      }
+      expect(measureVolume(oc, old.shape)).toBeCloseTo(8000, 6);
+      expect(measureVolume(oc, current.shape)).toBeCloseTo(1_200_000, 6);
+      expect(JSON.stringify({ top, sides })).toBe(savedJson);
+
+      const highTop = { ...faceQuery(topMatch.match.candidate), origin: top.origin };
+      const highSide = { ...faceQuery(sideMatch.match.candidate), origin: front.origin };
+      const legacyTop = faceQuery(topMatch.match.candidate);
+      const legacySide = faceQuery(sideMatch.match.candidate);
+      const wrongNeutral: DraftInput = { neutralFace: highTop, faces: [legacySide],
+        angle: FIVE_DEGREES, reversed: false };
+      const wrongTarget: DraftInput = { neutralFace: legacyTop, faces: [legacySide, highSide],
+        angle: FIVE_DEGREES, reversed: false };
+      expect(() => makeDraft(oc, other.shape, otherTables, wrongNeutral)).toThrow('基準の面が見つかりません');
+      expect(() => makeDraft(oc, other.shape, otherTables, wrongTarget)).toThrow('傾きを付ける面が見つかりません');
+
+      const topBinding = current.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
+        && item.origin.identity.role === 'top');
+      const sideBinding = current.origins.bindings.find(item => item.origin.identity.kind === 'box-face'
+        && item.origin.identity.role === 'front');
+      if (topBinding?.state !== 'unique' || sideBinding?.state !== 'unique') {
+        throw new Error('現Boxの面起点が一意でありません');
+      }
+      const otherOrigin: SubShapeOrigin = { version: 1, shapeKind: 'face',
+        identity: { kind: 'box-face', featureId: 'other-feature', role: 'top' } };
+      const blockers: readonly (CurrentOriginIndex | undefined)[] = [
+        undefined,
+        { version: 1, state: 'untracked', reason: 'unsupported-operation' },
+        { version: 1, state: 'tracked', bindings: current.origins.bindings.map(binding =>
+          binding.state === 'unique' && (binding === topBinding || binding === sideBinding)
+            ? { origin: binding.origin, state: 'split' as const,
+              candidates: [binding.current,
+                { kind: 'face', index: binding === topBinding ? legacySide.index : legacyTop.index }] as const }
+            : binding) },
+        { version: 1, state: 'tracked', bindings: current.origins.bindings.map(binding =>
+          binding.state === 'unique' && (binding === topBinding || binding === sideBinding)
+            ? { origin: binding.origin, state: 'merged' as const, current: binding.current,
+              coOrigins: [binding.origin, otherOrigin] as const }
+            : binding) },
+        { version: 1, state: 'tracked', bindings: current.origins.bindings.map(binding =>
+          binding.state === 'unique' && (binding === topBinding || binding === sideBinding)
+            ? { origin: binding.origin, state: 'missing' as const, reason: 'deleted' as const }
+            : binding) },
+      ];
+      for (const origins of blockers) {
+        const blockedTables = { ...tables, origins };
+        expect(() => makeDraft(oc, current.shape, blockedTables, wrongNeutral)).toThrow('基準の面が見つかりません');
+        expect(() => makeDraft(oc, current.shape, blockedTables, wrongTarget)).toThrow('傾きを付ける面が見つかりません');
+      }
+      expect(measureVolume(oc, current.shape)).toBeCloseTo(1_200_000, 6);
+      expect(JSON.stringify({ top, sides })).toBe(savedJson);
+    } finally {
+      other.delete();
+      current.delete();
+      old.delete();
     }
   });
 });

@@ -22,7 +22,7 @@
 import { distanceToSegment2d, PICK_RADIUS_PIXELS } from '../sketch/pickMath.js';
 import type { ProjectToScreen } from '../sketch/snapMath.js';
 
-import { subShapeElementId } from './subShapeSelection.js';
+import { subShapeElementId, subShapeFrameOrigin } from './subShapeSelection.js';
 import type { SolidFaceEntry, SubShapeBody, SubShapeKind } from './subShapeSelection.js';
 
 /** 部分形状の当たり判定の半径(px)。スケッチ要素と同じ 6px に揃える(§2.3.2)。 */
@@ -49,6 +49,7 @@ function pickVertex(
   let best: SubShapePickResult | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const body of bodies) {
+    if (subShapeFrameOrigin(body) === null) continue;
     for (const vertex of body.vertices) {
       const screen = project(vertex.position);
       // カメラの裏に回った点は写せないので飛ばす(スケッチの当たり判定と同じ扱い)。
@@ -79,6 +80,8 @@ function pickEdge(
   let best: SubShapePickResult | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const body of bodies) {
+    const origin = subShapeFrameOrigin(body);
+    if (origin === null) continue;
     const positions = body.mesh.edgePositions;
     for (const edge of body.edges) {
       // 範囲表が並びの外を指していても落ちないように、必ず配列の中へ丸める
@@ -86,8 +89,8 @@ function pickEdge(
       const begin = Math.max(0, edge.segmentOffset * 6);
       const end = Math.min(begin + Math.max(0, edge.segmentCount) * 6, positions.length);
       for (let offset = begin; offset + 5 < end; offset += 6) {
-        const from = project([positions[offset], positions[offset + 1], positions[offset + 2]]);
-        const to = project([positions[offset + 3], positions[offset + 4], positions[offset + 5]]);
+        const from = project([positions[offset] + origin[0], positions[offset + 1] + origin[1], positions[offset + 2] + origin[2]]);
+        const to = project([positions[offset + 3] + origin[0], positions[offset + 4] + origin[1], positions[offset + 5] + origin[2]]);
         if (from === null || to === null) {
           continue;
         }
@@ -132,11 +135,18 @@ export function pickSolidSubShape(
   if (kind === 'face') {
     return null;
   }
-  const vertex = pickVertex(bodies, project, pointer, radiusPixels);
+  const seen = new Set<string>();
+  const ambiguous = new Set<string>();
+  for (const body of bodies) {
+    if (seen.has(body.featureId)) ambiguous.add(body.featureId);
+    seen.add(body.featureId);
+  }
+  const uniqueBodies = bodies.filter((body) => !ambiguous.has(body.featureId));
+  const vertex = pickVertex(uniqueBodies, project, pointer, radiusPixels);
   if (kind === 'vertex' || vertex !== null) {
     return vertex;
   }
-  return pickEdge(bodies, project, pointer, radiusPixels);
+  return pickEdge(uniqueBodies, project, pointer, radiusPixels);
 }
 
 /**

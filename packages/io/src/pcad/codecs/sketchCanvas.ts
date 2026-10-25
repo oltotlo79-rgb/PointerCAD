@@ -5,6 +5,7 @@ import {
   checkRecord,
   type ExpressionValueJson,
   fieldProblem,
+  isUnknownArray,
   joinPath,
   readBoolean,
   readExpression,
@@ -19,9 +20,38 @@ import {
   serializeExpression,
 } from './fields.js';
 import {
+  solveCanvasHomography,
+  type CanvasNormalizedPoint,
+  type CanvasRectification,
+  type CanvasSourceQuad,
   type SketchCanvas,
   type WorkPlaneId,
 } from '@pointercad/model';
+
+function readRectification(value: unknown, path: string): Checked<CanvasRectification> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const sourceQuad = record.value['sourceQuad'];
+  if (!isUnknownArray(sourceQuad) || sourceQuad.length !== 4) {
+    return fieldProblem(joinPath(path, 'sourceQuad'), 'type');
+  }
+  const points: CanvasNormalizedPoint[] = [];
+  for (let index = 0; index < 4; index += 1) {
+    const point = sourceQuad[index], location = `${joinPath(path, 'sourceQuad')}[${String(index)}]`;
+    if (!isUnknownArray(point) || point.length !== 2
+      || typeof point[0] !== 'number' || typeof point[1] !== 'number') {
+      return fieldProblem(location, 'type');
+    }
+    points.push([point[0], point[1]]);
+  }
+  const [topLeft, topRight, bottomRight, bottomLeft] = points;
+  if (topLeft === undefined || topRight === undefined || bottomRight === undefined || bottomLeft === undefined) {
+    return fieldProblem(joinPath(path, 'sourceQuad'), 'type');
+  }
+  const quad: CanvasSourceQuad = [topLeft, topRight, bottomRight, bottomLeft];
+  if (!solveCanvasHomography(quad).ok) return fieldProblem(joinPath(path, 'sourceQuad'), 'type');
+  return { ok: true, value: { sourceQuad: quad } };
+}
 
 /**
  * 下絵 1 枚(FR-332、版7、P6 タスク38)。
@@ -31,6 +61,9 @@ import {
  * 寸法しか入れない(読み込んだ B-rep・三角形と同じ流儀。§2.8)。
  */
 export function serializeSketchCanvas(canvas: SketchCanvas): SketchCanvas {
+  const rectification = canvas.rectification === undefined ? null
+    : readRectification(canvas.rectification, 'canvas.rectification');
+  if (rectification !== null && !rectification.ok) throw new RangeError('Invalid canvas rectification');
   return {
     id: canvas.id,
     name: canvas.name,
@@ -42,6 +75,7 @@ export function serializeSketchCanvas(canvas: SketchCanvas): SketchCanvas {
     rotation: serializeExpression(canvas.rotation),
     opacity: serializeExpression(canvas.opacity),
     visible: canvas.visible,
+    ...(rectification === null ? {} : { rectification: rectification.value }),
   };
 }
 
@@ -120,6 +154,10 @@ function readSketchCanvasItem(value: unknown, path: string): Checked<SketchCanva
   if (!visible.ok) {
     return visible;
   }
+  const rectification = 'rectification' in record.value
+    ? readRectification(record.value['rectification'], joinPath(path, 'rectification'))
+    : null;
+  if (rectification !== null && !rectification.ok) return rectification;
   return {
     ok: true,
     value: {
@@ -133,6 +171,7 @@ function readSketchCanvasItem(value: unknown, path: string): Checked<SketchCanva
       rotation: rotation.value,
       opacity: opacity.value,
       visible: visible.value,
+      ...(rectification === null ? {} : { rectification: rectification.value }),
     },
   };
 }

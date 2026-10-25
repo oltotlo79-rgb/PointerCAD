@@ -443,7 +443,6 @@ describe('makeThruSections(立体の面を輪郭にする。§0.a-0.73、タス�
     // 同じ判定を typeof で書く(loadOcct.node.test.ts の書き方に合わせる)。
     console.log(
       `BRepTools.OuterWire: ${typeof oc.BRepTools.OuterWire} / ` +
-        `ShapeAnalysis.OuterWire: ${typeof oc.ShapeAnalysis.OuterWire} / ` +
         `BRepTools.IsReallyClosed: ${typeof oc.BRepTools.IsReallyClosed} / ` +
         `BRep_Tool.Degenerated: ${typeof oc.BRep_Tool.Degenerated}`,
     );

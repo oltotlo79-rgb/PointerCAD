@@ -20,7 +20,7 @@
  */
 
 import type {
-  OpenCascadeInstance,
+  BRepBuilderAPI_Transform, OpenCascadeInstance,
   TopoDS_Shape,
   gp_Trsf,
 } from 'opencascade.js/dist/opencascade.full.js';
@@ -253,6 +253,7 @@ export function transformShape(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   spec: RigidTransformSpec,
+  onBuilt?: (maker: BRepBuilderAPI_Transform, output: TopoDS_Shape) => void,
 ): OcctShapeHandle {
   const { keep, release } = createAllocations();
   try {
@@ -265,6 +266,7 @@ export function transformShape(
     }
     // Shape() は maker の中の実体を指すので、控えへ maker の後に積む(解放は逆順)。
     const moved = keep(maker.Shape());
+    onBuilt?.(maker, moved);
     return { shape: moved, delete: release };
   } catch (error) {
     release();
@@ -318,6 +320,7 @@ export function mirrorShape(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   plane: MirrorPlaneSpec,
+  onBuilt?: (maker: BRepBuilderAPI_Transform, output: TopoDS_Shape) => void,
 ): OcctShapeHandle {
   const { keep, release } = createAllocations();
   try {
@@ -328,6 +331,8 @@ export function mirrorShape(
       throw new Error(TRANSFORM_FAILED_MESSAGE);
     }
     const mirrored = keep(maker.Shape());
+    // 鏡像も BRepBuilderAPI_Transform の履歴なので、移動(transformShape)と同じく出どころの写しに渡す。
+    onBuilt?.(maker, mirrored);
     return { shape: mirrored, delete: release };
   } catch (error) {
     release();
@@ -368,6 +373,7 @@ export function scaleShape(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   spec: ScaleSpec,
+  onBuilt?: (maker: BRepBuilderAPI_Transform, output: TopoDS_Shape) => void,
 ): OcctShapeHandle {
   if (!isFiniteTuple(spec.origin)) {
     throw new Error(PLACE_NOT_FINITE_MESSAGE);
@@ -386,7 +392,9 @@ export function scaleShape(
       if (!maker.IsDone()) {
         throw new Error(TRANSFORM_FAILED_MESSAGE);
       }
-      return { shape: keep(maker.Shape()), delete: release };
+      const scaled = keep(maker.Shape());
+      onBuilt?.(maker, scaled);
+      return { shape: scaled, delete: release };
     }
 
     const perAxis = spec.perAxis;
@@ -412,6 +420,8 @@ export function scaleShape(
       ),
     );
     const gtrsf = keep(new oc.gp_GTrsf_3(matrix, shift));
+    // 軸ごとの倍率は onBuilt を呼ばない。BRepBuilderAPI_GTransform は解析曲面(円筒・平面など)を
+    // BSpline へ変えるので、面の種類と役割の素性を一対一とは示せない。結果は出どころ無し(untracked)のまま。
     const maker = keep(new oc.BRepBuilderAPI_GTransform_2(shape, gtrsf, true));
     if (!maker.IsDone()) {
       throw new Error(TRANSFORM_FAILED_MESSAGE);

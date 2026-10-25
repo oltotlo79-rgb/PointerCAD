@@ -17,6 +17,7 @@ import {
 import type {
   PartInspector,
 } from '../solid/printCheckCommands.js';
+import { newSketchCanvas } from '../file/canvasFile.js';
 import {
   attachExchangeKernel,
   currentPcadAttachments,
@@ -24,6 +25,7 @@ import {
 import type {
   PrintabilityReport,
 } from './exchangeSlice.js';
+import { currentPrintabilityReport } from './exchangeSlice.js';
 import {
   createInitialDocumentState,
 } from './initialDocumentState.js';
@@ -77,6 +79,17 @@ describe('読み込んだ形の添付', () => {
     expect(useAppStore.getState().importedShapes).not.toBe(before);
   });
 
+  it('正規化されていない同refの上書きを全体で拒否し、履歴・文書・原本を保つ', () => {
+    const store = useAppStore.getState(), bytes = Uint8Array.of(1);
+    store.setImportedAttachments(new Map([['shared', bytes]]), new Map());
+    const before = useAppStore.getState();
+    store.addImportedAttachments(new Map([['new', Uint8Array.of(2)], ['shared', Uint8Array.of(3)]]), new Map());
+    const after = useAppStore.getState();
+    expect(after.importedShapes).toBe(before.importedShapes); expect(after.importedMeshes).toBe(before.importedMeshes);
+    expect(after.document).toBe(before.document); expect(after.undoStack).toBe(before.undoStack);
+    expect(after.isComputing).toBe(before.isComputing); expect(after.importedShapes.get('shared')).toBe(bytes);
+  });
+
   it('新規(文書の作り直し)では持ち越さない(参照が振り直されるため)', () => {
     useAppStore
       .getState()
@@ -89,7 +102,10 @@ describe('読み込んだ形の添付', () => {
   it('保存へ渡す添付の表は、読み込んだ形と三角形と下絵の 3 つをまとめて出す', () => {
     const store = useAppStore.getState();
     store.setImportedAttachments(new Map([['shape-1', new Uint8Array([1])]]), new Map());
-    store.setCanvasImages(new Map([['canvas-1', new Uint8Array([9])]]));
+    store.applyDocument({ ...store.document, solids: [{ id: 'solid-1', kind: 'importedSolid', name: 'shape',
+      shapeRef: 'shape-1', suppressed: false, bodyKind: 'solid',
+      source: { format: 'step', fileName: 'shape.step', unit: 'mm', byteLength: 1 } }] });
+    store.addCanvas(newSketchCanvas([], 'xy', 'canvas.png', { width: 1, height: 1 }, 'canvas-1'), new Uint8Array([9]));
     const attachments = currentPcadAttachments();
     expect(attachments.shapes.get('shape-1')).toEqual(new Uint8Array([1]));
     expect(attachments.meshes.size).toBe(0);
@@ -335,5 +351,69 @@ describe('3D プリントの点検を走らせる(FR-815、P6 タスク46)', () 
     });
     // 終わったら中止の頼みは必ず下ろす(次の点検が始まった瞬間に止まらないように)。
     expect(useAppStore.getState().printCheckCancelRequested).toBe(false);
+  });
+
+  it('成功結果は元の文書・世代・表示メッシュだけに属する', async () => {
+    const body = bodyOf('box-1', 12);
+    useAppStore.setState({ bodies: [body], requestedGeneration: 0, completedGeneration: 0, partInspector: () =>
+      Promise.resolve({ kind: 'inspected', report: reportOf(12) }) });
+    useAppStore.getState().inspectPrintability();
+    await vi.waitFor(() => { expect(currentPrintabilityReport(useAppStore.getState())).not.toBeNull(); });
+    const original = useAppStore.getState();
+    expect(original.printabilityOwner?.document).toBe(original.document);
+    expect(original.printabilityOwner?.documentVersion).toBe(original.documentVersion);
+    expect(original.printabilityOwner?.generation).toBe(original.completedGeneration);
+    useAppStore.setState({ bodies: [bodyOf('box-1', 12)] });
+    expect(useAppStore.getState().printability).not.toBeNull();
+    expect(currentPrintabilityReport(useAppStore.getState())).toBeNull();
+    useAppStore.setState({ bodies: [body], documentVersion: original.documentVersion + 1 });
+    expect(currentPrintabilityReport(useAppStore.getState())).toBeNull();
+    useAppStore.setState({ documentVersion: original.documentVersion,
+      requestedGeneration: original.requestedGeneration + 1 });
+    expect(currentPrintabilityReport(useAppStore.getState())).toBeNull();
+    useAppStore.setState({ requestedGeneration: original.requestedGeneration,
+      completedGeneration: original.completedGeneration });
+  });
+
+  it('再点検の実行中と失敗後に前回の成功を表示しない', async () => {
+    useAppStore.setState({ bodies: [bodyOf('box-1', 12)], requestedGeneration: 0,
+      completedGeneration: 0, partInspector: () =>
+      Promise.resolve({ kind: 'inspected', report: reportOf(12) }) });
+    useAppStore.getState().inspectPrintability();
+    await vi.waitFor(() => { expect(currentPrintabilityReport(useAppStore.getState())).not.toBeNull(); });
+    let fail = (): void => undefined;
+    useAppStore.getState().setPartInspector(() => new Promise((resolve) => {
+      fail = () => resolve({ kind: 'failed', message: '点検に失敗しました。' });
+    }));
+    useAppStore.getState().inspectPrintability();
+    expect(useAppStore.getState().isInspectingPrint).toBe(true);
+    expect(currentPrintabilityReport(useAppStore.getState())).toBeNull();
+    fail();
+    await vi.waitFor(() => { expect(useAppStore.getState().isInspectingPrint).toBe(false); });
+    expect(useAppStore.getState().printCheckErrorMessage).toBe('点検に失敗しました。');
+    expect(currentPrintabilityReport(useAppStore.getState())).toBeNull();
+  });
+
+  it('古い依頼の遅い返答は新しい依頼の成功を上書きしない', async () => {
+    let releaseOld = (): void => undefined;
+    useAppStore.setState({ bodies: [bodyOf('box-1', 12)], requestedGeneration: 0,
+      completedGeneration: 0, partInspector: () =>
+      new Promise((resolve) => {
+        releaseOld = () => resolve({ kind: 'inspected', report: reportOf(12) });
+      }) });
+    useAppStore.getState().inspectPrintability();
+    const oldToken = useAppStore.getState().printCheckRequest;
+    expect(oldToken).not.toBeNull();
+    useAppStore.getState().invalidatePrintability();
+    useAppStore.getState().setPartInspector(() =>
+      Promise.resolve({ kind: 'inspected', report: reportOf(12) }));
+    useAppStore.getState().inspectPrintability();
+    await vi.waitFor(() => { expect(currentPrintabilityReport(useAppStore.getState())).not.toBeNull(); });
+    const current = useAppStore.getState().printability;
+    expect(useAppStore.getState().printabilityOwner?.requestToken).not.toBe(oldToken);
+    releaseOld();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(currentPrintabilityReport(useAppStore.getState())).toBe(current);
   });
 });

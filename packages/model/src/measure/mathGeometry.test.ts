@@ -2,10 +2,12 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi, SUB_SHAPE_MATCH_THRESHOLD } from '@pointercad/kernel';
 import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { createDirectKernelBridge, selectMateTargetGeometry, type KernelBridge, type MeasureOutcome, type SolidBody,
+import { createDirectKernelBridge, resolveSubShapeReference, selectMateTargetGeometry, SUB_SHAPE_AMBIGUITY_MARGIN, type KernelBridge, type MeasureOutcome, type SolidBody,
   type SolidEdgeEntry, type SolidFaceEntry, type SolidVertexEntry } from '../kernelBridge.js';
 import { scoreSubShapeMatch } from '../kernelBridge/subShapeMatching.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
+import { resolvePlaneSpec } from '../geometry/planeSpec.js';
+import { createSubShapeCache } from '../part/subShapeCache.js';
 import type { Vec3 } from '../sketch/vec3.js';
 import { evaluateMathGeometry, MATH_GEOMETRY_AMBIGUITY_MARGIN } from './mathGeometry.js';
 import { mathGeometryTargetsOf } from './mathGeometryIdentity.js';
@@ -509,6 +511,7 @@ describe('数学で使う図形量は現在の再計算から取得する', () =
     expect(far.area).toBeCloseTo(near.area, 9);
     const middle = (near.centroid[0] + far.centroid[0]) / 2;
     const reference = faceReference('joined', near);
+    const savedReference = JSON.stringify(reference);
     const area: MathGeometryQuantity = { kind: 'area', shape: { kind: 'face', reference } };
     // Before the change the saved number still names the near face, so it is measured as before.
     expect(values(await recomputePart(before, bridge, { mathGeometry: requests(before, area) }))).toEqual([near.area]);
@@ -530,7 +533,26 @@ describe('数学で使う図形量は現在の再計算から取得する', () =
     expect(measure).not.toHaveBeenCalled();
     const scores = scoreSubShapeMatch(body, reference);
     expect(scores?.runnerUpScore ?? Number.NaN).toBeCloseTo(scores?.score ?? 0, 12);
-    // The shared pick for machining, appearance and mates is unchanged and still returns one of the two faces.
+    const resolution = resolveSubShapeReference(body, reference);
+    expect(resolution.status).toBe('ambiguous');
+    expect(resolution.originalReference).toBe(reference);
+    expect(resolution.candidates).toHaveLength(2);
+    expect(JSON.stringify(reference)).toBe(savedReference);
+    expect(MATH_GEOMETRY_AMBIGUITY_MARGIN).toBe(SUB_SHAPE_AMBIGUITY_MARGIN);
+    const workPlaneReferences = createSubShapeCache();
+    workPlaneReferences.resolve(reference);
+    const plane = { kind: 'face' as const, face: reference, offset: expressionValueFromNumber(0) };
+    const planeContext = { point: () => null, axis: () => null, workPlane: () => null,
+      subShape: (saved: SubShapeRef) => workPlaneReferences.resolve(saved) };
+    workPlaneReferences.refresh(first.bodies);
+    expect(resolvePlaneSpec(plane, planeContext).ok).toBe(true);
+    expect(workPlaneReferences.refresh(changed.bodies)).toBe(true);
+    expect(resolvePlaneSpec(plane, planeContext)).toMatchObject({ ok: false, reason: 'missingSubShape' });
+    expect(workPlaneReferences.refresh(changed.bodies)).toBe(false);
+    expect(workPlaneReferences.refresh(first.bodies)).toBe(true);
+    expect(resolvePlaneSpec(plane, planeContext).ok).toBe(true);
+    expect(JSON.stringify(reference)).toBe(savedReference);
+    // The low-level compatibility selector still returns a candidate; automatic consumers use the shared resolution.
     const guessed = selectMateTargetGeometry(body, reference);
     expect(guessed === null ? null : Math.abs(guessed.position[0] - middle)).toBeCloseTo(50, 6);
   });

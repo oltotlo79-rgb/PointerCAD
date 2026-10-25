@@ -81,17 +81,16 @@ function binaryFacetNormal(bytes: Uint8Array, index: number): [number, number, n
 }
 
 describe('STL の書き出し(FR-803、P6 タスク12)', () => {
-  it('oc.StlAPI と StlAPI.Write は実在する(§1.5-1。記録するだけで使わない)', () => {
-    // 計画書 §0.a-0.14 は `StlAPI.Write` を推奨していたが、統括の決定(2026-09-06)で
-    // 「書き出し用の三角形は `buildExportMesh` の 1 本の経路から全形式へ配る」となった。
-    // 実在は記録に残すが、この実装は使わない(`writeStl.ts` 冒頭の 4 つの理由)。
-    expect(oc.StlAPI).toBeTypeOf('function');
-    // `typeof` で確かめるのは、静的メソッドを値として取り出すと `unbound-method` に触れるため。
-    expect(typeof oc.StlAPI.Write).toBe('function');
-    expect(oc.StlAPI_Writer).toBeTypeOf('function');
-    console.log(
-      `[実測] oc.StlAPI = ${typeof oc.StlAPI} / StlAPI.Write = ${typeof oc.StlAPI.Write}(実在するが使わない)`,
-    );
+  it('採用した共通の三角形から ASCII とバイナリの STL を書き出せる(§1.5-1)', () => {
+    // 未使用の StlAPI ではなく、製品が採用した共通の網からの経路を確かめる。
+    const mesh = boxMesh();
+    expect(mesh.triangleCount).toBe(12);
+    for (const ascii of [false, true]) {
+      const written = writeStl([mesh], { ascii });
+      expect(written.triangleCount).toBe(12);
+      expect(written.droppedTriangleCount).toBe(0);
+      expect(written.bytes.length).toBeGreaterThan(0);
+    }
   });
 
   it('20³ の箱をバイナリで書くと 684 バイト・三角形 12 枚になる(§2.4 の 1〜2 行目)', () => {

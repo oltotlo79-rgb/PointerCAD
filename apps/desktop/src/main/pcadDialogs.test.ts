@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_RECOVERY_COPY_MARKER } from '@pointercad/ui/save-errors';
-import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openPcadDialog, savePcadDialog } from './pcadDialogs.js';
+import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openAnyDialog, openPcadDialog, savePcadDialog } from './pcadDialogs.js';
 
 const memory = vi.hoisted(() => {
   const removed: string[] = [];
@@ -176,6 +176,31 @@ describe('デスクトップ「開く」の確保前サイズ確認（R07・P12-
     memory.openPath = null;
     expect(await openPcadDialog(null, 'part')).toBeNull();
     expect(memory.statCalls).toBe(0);
+    expect(memory.readFileCalls).toBe(0);
+  });
+});
+
+describe('パラメータCSVのデスクトップ読込', () => {
+  it('1MiBを許可し、+1バイトはstat段階と読込後の両方で拒否する', async () => {
+    memory.openPath = resolve('memory-only', '係数.csv');
+    memory.statSize = 1024 * 1024;
+    memory.readBytes = new Uint8Array(1024 * 1024);
+    expect((await openAnyDialog(null, ['csv']))?.bytes.byteLength).toBe(1024 * 1024);
+    memory.statSize += 1;
+    await expect(openAnyDialog(null, ['csv'])).rejects.toThrow(READ_TOO_LARGE_REASON_MARKER);
+    expect(memory.readFileCalls).toBe(1);
+    memory.statSize -= 1;
+    memory.readBytes = new Uint8Array(1024 * 1024 + 1);
+    await expect(openAnyDialog(null, ['csv'])).rejects.toThrow(READ_SIZE_CHANGED_REASON_MARKER);
+    expect(memory.readFileCalls).toBe(2);
+  });
+
+  it('CSV以外の選択を拒否し、取消時は一切読まない', async () => {
+    memory.openPath = resolve('memory-only', '係数.txt');
+    await expect(openAnyDialog(null, ['csv'])).rejects.toThrow();
+    expect(memory.statCalls).toBe(0);
+    memory.openPath = null;
+    expect(await openAnyDialog(null, ['csv'])).toBeNull();
     expect(memory.readFileCalls).toBe(0);
   });
 });

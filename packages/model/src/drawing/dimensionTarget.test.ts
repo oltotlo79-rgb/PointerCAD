@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Dimension, DimensionTarget, DrawingDocument, DrawingView, Vector3 } from '@pointercad/drawing';
 import { createDrawingDocument } from './createDrawingDocument.js';
-import { drawingTargetFromProjection, resolveDrawingDimensions, type DrawingDimensionInstance } from './dimensionTarget.js';
+import { drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingAnnotationTarget, resolveDrawingDimensions, type DrawingDimensionInstance } from './dimensionTarget.js';
 import { IDENTITY_PLACEMENT } from '../assembly/placementMath.js';
 import * as bridge from '../kernelBridge.js';
 import type { SolidBody, SolidEdgeEntry } from '../kernelBridge.js';
+import { scoreSubShapeMatch } from '../kernelBridge/subShapeMatching.js';
 
 const view: DrawingView = { id: 'front', name: '正面', kind: 'front', position: [100, 100], scale: null,
   direction: [0, 1, 0], xDir: [1, 0, 0], showHidden: true, showCenterLines: true, layerId: 'outlines' };
@@ -89,6 +90,57 @@ describe('元の3D形状から解決する寸法(P8-25)', () => {
   it('辺の番号が変わっても指紋照合で同じ辺へ追従する', () => {
     expect(resolve(document(), [instance(body([edge([20, 0, 0], { index: 9 })]))])[0].value).toBe(20);
   });
+  it.each([[0, 1], [1, 0]])('同点の10mmと40mmの候補（番号%s/%s）を正常寸法へ採用しない', (shortIndex, longIndex) => {
+    const original = target(edge([20, 0, 0], { index: 99, midpoint: [0, 0, 0] }));
+    if (original.kind !== 'subShape') throw new Error('対象が違います');
+    const short = edge([5, -2, 0], { index: shortIndex, length: 10, midpoint: [0, -2, 0], start: [-5, -2, 0] });
+    const long = edge([20, 2, 0], { index: longIndex, length: 40, midpoint: [0, 2, 0], start: [-20, 2, 0] });
+    const current = body([short, long]);
+    expect(scoreSubShapeMatch(current, original.ref)).toMatchObject({ score: 0.670381197846483, runnerUpScore: 0.670381197846483 });
+    const doc = document([dimension([original])]);
+    const saved = JSON.stringify(doc);
+    const result = resolve(doc, [instance(current)])[0];
+    expect(result).toMatchObject({ status: 'unresolved', value: null, text: '？', reason: 'target' });
+    expect(result.dimension).toBe(doc.dimensions[0]);
+    expect(JSON.stringify(doc)).toBe(saved);
+    const context = { instances: [instance(current)], modelCenter: [0, 0, 0] as const };
+    expect(resolveDimensionTarget(original, doc, context)).toBeNull();
+    expect(resolveDrawingAnnotationTarget(original, doc, context)).toBeNull();
+    expect(resolve(doc, [instance(body([long, short]))])[0].status).toBe('unresolved');
+    // 利用者が現在の辺を明示して記入し直した参照は、選んだ実長を測れる。
+    for (const chosen of [short, long]) expect(resolve(document([dimension([target(chosen)])]), [instance(current)])[0].value).toBe(chosen.length);
+  });
+  it.each(['plane', 'cylinder'] as const)('同点の%s面を寸法にも注記にも採用しない', (surfaceKind) => {
+    const faces = [-2, 2].map((y, index) => ({ index, surfaceKind, area: 20, centroid: [0, y, 0] as const,
+      axis: [0, 0, 1] as const, radius: surfaceKind === 'cylinder' ? 2 : null, triangleOffset: 0, triangleCount: 0 }));
+    const original: DimensionTarget = { kind: 'subShape', sourceRef: 'source', viewId: 'front', ref: {
+      bodyFeatureId: 'body', index: 99, fingerprint: { kind: 'face', surfaceKind, area: 20, position: [0, 0, 0],
+        axis: [0, 0, 1], radius: faces[0].radius },
+    } };
+    const doc = document([dimension([original])]), saved = JSON.stringify(doc);
+    for (const ordered of [faces, [...faces].reverse()]) {
+      const context = { instances: [instance(body([], { faces: ordered }))], modelCenter: [0, 0, 0] as const };
+      expect(resolveDimensionTarget(original, doc, context)).toBeNull();
+      expect(resolveDrawingAnnotationTarget(original, doc, context)).toBeNull();
+      expect(resolveDrawingDimensions(doc, context)[0]).toMatchObject({ status: 'unresolved', value: null, reason: 'target' });
+    }
+    expect(JSON.stringify(doc)).toBe(saved);
+    // 一意な現在の曲面は注記の引出点として使える。
+    expect(resolveDrawingAnnotationTarget(original, doc, { instances: [instance(body([], { faces: [faces[0]] }))], modelCenter: [0, 0, 0] })).toEqual([100, 100]);
+  });
+  it('同点で頂点番号が重複した表では寸法・注記の指示点を推測しない', () => {
+    const original: DimensionTarget = { kind: 'subShape', sourceRef: 'source', viewId: 'front', ref: {
+      bodyFeatureId: 'body', index: 0, fingerprint: { kind: 'vertex', position: [0, 0, 0] },
+    } };
+    const doc = document([dimension([original])]), saved = JSON.stringify(doc);
+    const vertices = [-2, 2].map(y => ({ index: 0, position: [0, y, 0] as const }));
+    for (const ordered of [vertices, [...vertices].reverse()]) {
+      const context = { instances: [instance(body([], { vertices: ordered }))], modelCenter: [0, 0, 0] as const };
+      expect(resolveDimensionTarget(original, doc, context)).toBeNull();
+      expect(resolveDrawingAnnotationTarget(original, doc, context)).toBeNull();
+    }
+    expect(JSON.stringify(doc)).toBe(saved);
+  });
   it('消えた辺の寸法を残し、0でなく？を表示する', () => {
     const doc = document();
     const result = resolve(doc, [instance(body([]))])[0];
@@ -124,7 +176,7 @@ describe('元の3D形状から解決する寸法(P8-25)', () => {
     expect(resolve(document([dimension(targets, { kind: 'angle', measurement: 'angle' })]), [instance(body([], { faces }))])[0].value).toBe(90);
   });
   it('同じ参照を持つ100寸法は1回の照合結果を共有する', () => {
-    const spy = vi.spyOn(bridge, 'rematchSubShapeRef');
+    const spy = vi.spyOn(bridge, 'resolveSubShapeReference');
     try {
       const result = resolve(document(Array.from({ length: 100 }, (_, index) => dimension(undefined, { id: `dim-${index}` }))));
       expect(result.every((item) => item.value === 20)).toBe(true);
@@ -152,5 +204,63 @@ describe('元の3D形状から解決する寸法(P8-25)', () => {
       provenance: { kind: 'edge', bodyId: 'worker-body', occurrenceId: 'A', edgeIndex: 0, parameterRange: [0, 20], dimensionTarget: true } };
     expect(drawingTargetFromProjection(projected, 'front', 'source', [instance(body(), { componentId: 'B' })])).toBeNull();
     expect(drawingTargetFromProjection(projected, 'front', 'source', [instance(body(), { componentId: 'A' })])).toMatchObject({ componentId: 'A' });
+  });
+  it.each(['legacy', 'imported'] as const)('履歴のない%sの失効bodyから保存参照を作らない', reason => {
+    const projected = { curve: { kind: 'segment' as const, from: [0, 0] as const, to: [20, 0] as const },
+      provenance: { kind: 'edge', bodyId: 'worker-body', occurrenceId: null, edgeIndex: 0, parameterRange: [0, 20], dimensionTarget: true } };
+    const current = body([edge()], { isValid: false, origins: { version: 1, state: 'untracked', reason } });
+    const before = JSON.stringify(current);
+    expect(drawingTargetFromProjection(projected, 'front', 'source', [instance(current)])).toBeNull();
+    expect(JSON.stringify(current)).toBe(before);
+    expect(drawingTargetFromProjection(projected, 'front', 'source', [instance({ ...current, isValid: true })])).toEqual(target());
+  });
+  it.each([false, true])('履歴のない輸入bodyの重複辺番号を列挙順%sで選ばない', reverse => {
+    const projected = { curve: { kind: 'segment' as const, from: [0, 0] as const, to: [20, 0] as const },
+      provenance: { kind: 'edge', bodyId: 'worker-body', occurrenceId: null, edgeIndex: 0, parameterRange: [0, 20], dimensionTarget: true } };
+    const edges = [edge(), edge([30, 0, 0])];
+    const current = body(reverse ? [...edges].reverse() : edges,
+      { origins: { version: 1, state: 'untracked', reason: 'imported' } });
+    const before = JSON.stringify(current);
+    expect(drawingTargetFromProjection(projected, 'front', 'source', [instance(current)])).toBeNull();
+    expect(JSON.stringify(current)).toBe(before);
+    expect(drawingTargetFromProjection(projected, 'front', 'source', [instance(body([edges[0]],
+      { origins: current.origins }))])).toEqual(target());
+  });
+  it('HLRの現辺の意味起点を保存し、番号と寸法が変わっても元参照で同じ辺を解く', () => {
+    const origin = { version: 1, shapeKind: 'edge', identity: { kind: 'box-edge', featureId: 'body', role: 'bottom-front' } } as const;
+    const projected = { curve: { kind: 'segment' as const, from: [0, 0] as const, to: [20, 0] as const },
+      provenance: { kind: 'edge', bodyId: 'worker-body', occurrenceId: null, edgeIndex: 0, parameterRange: [0, 20], dimensionTarget: true } };
+    const current = body([edge()], { origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current: { kind: 'edge', index: 0 } },
+    ] } });
+    const picked = drawingTargetFromProjection(projected, 'front', 'source', [instance(current)]);
+    expect(picked).toMatchObject({ kind: 'subShape', ref: { index: 0, origin } });
+    if (picked?.kind !== 'subShape') throw new Error('意味参照がない');
+    const saved = JSON.stringify(picked);
+    const replacement = body([edge([25, 0, 0], { index: 7 })], { origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current: { kind: 'edge', index: 7 } },
+    ] } });
+    expect(resolveDimensionTarget(picked, document([dimension([picked])]),
+      { instances: [instance(replacement)], modelCenter: [0, 0, 0] })).toMatchObject({ kind: 'line', length: 25 });
+    expect(JSON.stringify(picked)).toBe(saved);
+  });
+  it('trackedのsplit・merged・重複claim・失効辺は裸のHLR参照へ戻さない', () => {
+    const origin = { version: 1, shapeKind: 'edge', identity: { kind: 'box-edge', featureId: 'body', role: 'bottom-front' } } as const;
+    const address = { kind: 'edge', index: 0 } as const;
+    const unique = { origin, state: 'unique', current: address } as const;
+    const projected = { curve: { kind: 'segment' as const, from: [0, 0] as const, to: [20, 0] as const },
+      provenance: { kind: 'edge', bodyId: 'worker-body', occurrenceId: null, edgeIndex: 0, parameterRange: [0, 20], dimensionTarget: true } };
+    const failures: readonly SolidBody[] = [
+      body([edge()], { origins: { version: 1, state: 'tracked', bindings: [
+        { origin, state: 'split', candidates: [address, { kind: 'edge', index: 1 }] },
+      ] } }),
+      body([edge()], { origins: { version: 1, state: 'tracked', bindings: [
+        { origin, state: 'merged', current: address, coOrigins: [origin, origin] },
+      ] } }),
+      body([edge()], { origins: { version: 1, state: 'tracked', bindings: [unique, unique] } }),
+      body([edge()], { isValid: false, origins: { version: 1, state: 'tracked', bindings: [unique] } }),
+    ];
+    for (const current of failures) expect(drawingTargetFromProjection(projected, 'front', 'source', [instance(current)])).toBeNull();
+    expect(drawingTargetFromProjection(projected, 'front', 'source', [instance(body())])).toEqual(target());
   });
 });

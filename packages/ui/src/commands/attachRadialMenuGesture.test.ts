@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { attachCameraControls } from '../viewport/attachCameraControls.js';
+import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
 import { attachRadialMenuGesture, type RadialMenuAttachmentOptions } from './attachRadialMenuGesture.js';
 import type { RadialMenuGesture } from './radialMenuGesture.js';
 
 function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeClickTarget?: RadialMenuAttachmentOptions['nativeClickTarget'],
-  clickOnly = false, cameraFirst = false) {
+  clickOnly = false, cameraFirst = false, selectionModifiers = false, cameraSettings = DEFAULT_CAMERA_CONTROLS) {
   const view = new EventTarget(), captured = new Set<number>();
   let owner: object = {}, blocked = false;
   const show = vi.fn<(gesture: RadialMenuGesture | null) => void>(), choose = vi.fn();
@@ -15,11 +16,12 @@ function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeCli
     hasPointerCapture: (id: number) => captured.has(id),
     releasePointerCapture: (id: number) => { captured.delete(id); }, focus: vi.fn(),
   }) as unknown as HTMLCanvasElement;
-  const earlyCamera = cameraFirst ? attachCameraControls(surface, () => {}) : null;
+  const earlyCamera = cameraFirst ? attachCameraControls(surface, () => {}, undefined, undefined, () => cameraSettings) : null;
   const menu = attachRadialMenuGesture(surface, { owner: () => owner, blocked: () => blocked, show, choose, clickOnly,
+    allowSelectionModifiers: () => selectionModifiers,
     ...(clickSlot === undefined ? {} : { clickSlot }),
     ...(nativeClickTarget === undefined ? {} : { nativeClickTarget }) });
-  const camera = earlyCamera ?? attachCameraControls(surface, () => {});
+  const camera = earlyCamera ?? attachCameraControls(surface, () => {}, undefined, undefined, () => cameraSettings);
   const send = (type: string, values: object = {}): Event => {
     const event = Object.assign(new Event(type, { cancelable: true }), {
       pointerId: 1, pointerType: 'mouse', button: 2, buttons: 2, clientX: 400, clientY: 300,
@@ -116,7 +118,11 @@ describe('右ボタンで道具を選ぶ間の入力所有権', () => {
     { button: 0, buttons: 1, altKey: true, shiftKey: false },
     { button: 0, buttons: 1, altKey: true, shiftKey: true },
   ])('既存の視点操作$button/$altKey/$shiftKeyを奪わない', mode => {
-    const f = fixture(), before = f.camera.getOrbit();
+    const settings: CameraControlSettings = mode.altKey && mode.shiftKey ? {
+      ...DEFAULT_CAMERA_CONTROLS,
+      pan: [{ input: 'left', alt: true, shift: true, ctrl: false, meta: false }, DEFAULT_CAMERA_CONTROLS.pan[0]],
+    } : DEFAULT_CAMERA_CONTROLS;
+    const f = fixture(undefined, undefined, false, false, false, settings), before = f.camera.getOrbit();
     try {
       f.send('pointerdown', mode);
       f.send('pointermove', { ...mode, clientX: 440, clientY: 340 });
@@ -142,6 +148,53 @@ describe('右ボタンで道具を選ぶ間の入力所有権', () => {
 });
 
 describe('3Dの右クリックと右ドラッグの振り分け', () => {
+  it.each(['shiftKey', 'ctrlKey'])('%sを保持した2点選択の右クリックだけを開き、長い移動は実行しない', modifier => {
+    const f = fixture(undefined, undefined, true, true, true), before = f.camera.getOrbit();
+    try {
+      f.send('pointerdown', { [modifier]: true });
+      f.send('pointerup', { [modifier]: true, buttons: 0 });
+      expect(f.show).toHaveBeenCalledTimes(1);
+      expect(f.show.mock.lastCall?.[0]).not.toBeNull();
+      expect(f.send('contextmenu', { [modifier]: true }).defaultPrevented).toBe(true);
+      f.menu.choose(1); expect(f.choose.mock.calls).toEqual([[1]]);
+      f.show.mockClear(); f.choose.mockClear();
+      f.send('pointerdown', { [modifier]: true });
+      f.send('pointermove', { [modifier]: true, clientX: 430 });
+      f.send('pointerup', { [modifier]: true, buttons: 0 });
+      expect(f.show).not.toHaveBeenCalled(); expect(f.choose).not.toHaveBeenCalled();
+      expect(f.camera.getOrbit()).toEqual(before); expect(f.captured.size).toBe(0);
+    } finally { f.close(); }
+  });
+  it.each(['ContextMenu', 'F10'])('%sで開いた後も文書切替とEscで古い操作を捨てる', key => {
+    const f = fixture(undefined, undefined, true);
+    try {
+      const event = Object.assign(new Event('keydown', { cancelable: true }),
+        { key, shiftKey: key === 'F10', ctrlKey: false, altKey: false, metaKey: false, isComposing: false, repeat: false });
+      Object.defineProperty(event, 'target', { value: f.surface });
+      f.view.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true); expect(f.show).toHaveBeenCalledTimes(1);
+      f.changeDocument(); f.menu.choose(1); expect(f.choose).not.toHaveBeenCalled();
+      f.view.dispatchEvent(event); f.send('keydown', { key: 'Escape' }); f.menu.choose(1);
+      expect(f.choose).not.toHaveBeenCalled(); expect(f.show).toHaveBeenLastCalledWith(null);
+    } finally { f.close(); }
+  });
+  it('日本語説明の実サイズを含めて表示と選択領域を同時に画面内へ移す', () => {
+    const f = fixture(undefined, undefined, true);
+    try {
+      f.send('pointerdown', { clientX: 795, clientY: 595 });
+      f.send('pointerup', { clientX: 795, clientY: 595, buttons: 0 });
+      const original = f.show.mock.lastCall?.[0];
+      if (original == null) throw new Error('menu');
+      const { center, outerRadius: radius } = original.geometry;
+      f.menu.fit({ left: center.x - radius, top: center.y - radius, width: radius * 2, height: radius * 2 + 140 });
+      const fitted = f.show.mock.lastCall?.[0];
+      if (fitted == null) throw new Error('menu');
+      expect(f.show).toHaveBeenLastCalledWith(fitted, true, true);
+      expect(fitted.geometry.center.y + radius + 140).toBeLessThanOrEqual(600);
+      expect(fitted.geometry.center.x).toBe(center.x);
+      f.menu.choose(1); expect(f.choose.mock.calls).toEqual([[1]]);
+    } finally { f.close(); }
+  });
   it.each([false, true])('カメラの先行登録=%sでも、6px以下では離した時だけ一覧を開く', cameraFirst => {
     const f = fixture(undefined, undefined, true, cameraFirst), before = f.camera.getOrbit();
     try {

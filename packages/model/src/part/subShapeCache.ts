@@ -15,8 +15,8 @@
  * 解決(`resolvePart`)は OCCT を呼ばない純関数なので、選び直しの結果はここへ置いて
  * 解決の側からは**読むだけ**にする(オフセット・投影の覚え書きと同じ流儀)。
  * 実際の選び直しは `recomputePart` が、カーネルから返ったボディの一覧を使って
- * `refresh` で行う。採点は kernel の純関数(`matchFace` 等)が正本で、
- * `kernelBridge.ts` の `selectSubShape` 越しに呼ぶ(model から kernel を直接呼ばない)。
+ * `refresh` で行う。採点と採用可否は kernel の純関数(`resolveFaceReference` 等)が正本で、
+ * `kernelBridge.ts` の `resolveSubShapeReference` 越しに呼ぶ(model から kernel を直接呼ばない)。
  *
  * ## 覚えるのは「聞かれたもの」だけ
  *
@@ -27,14 +27,15 @@
 
 import { subShapeFromFingerprint, type ResolvedSubShape } from '../geometry/planeSpec.js';
 import { fingerprintKeyText, type SubShapeRef } from '../geometry/subShapeRef.js';
-import { selectSubShape, type SolidBody } from '../kernelBridge.js';
+import { resolveSubShapeReference, type SolidBody } from '../kernelBridge.js';
 import type { Vec3 } from '../sketch/vec3.js';
 
 /** 選び直しの結果を覚えておく入れ物。`OffsetCache` / `ProjectionCache` と同じ流儀。 */
 export interface SubShapeCache {
   /**
    * 解決の口。`ResolvePartOptions.subShape` へそのまま渡せる形。
-   * 覚えていればその値、覚えていなければ保存された指紋の位置・向きを返す。
+   * 覚えていればその値。未照合の旧参照だけは保存指紋を暫定で返し、
+   * origin付き参照は現在表で確認するまで null にする。
    * **聞かれた参照は覚えておく**(次の `refresh` の対象になる)。
    */
   resolve(reference: SubShapeRef): ResolvedSubShape | null;
@@ -42,8 +43,9 @@ export interface SubShapeCache {
    * いまのボディの一覧から選び直して覚え直す。**答えが 1 つでも変わったら true**。
    * 呼び出し側(`recomputePart`)はそのときだけ解決をやり直す。
    *
-   * 一覧に無いボディ(消費されて画面に出ない立体など)の参照はそのままにする。
-   * 選び直せないだけで、保存された指紋を使う従来の振る舞いは残る(FR-504)。
+   * 呼出元は現在キーから取得した非表示の参照ボディも一覧へ含める。
+   * 一覧に無いボディは現在形状を確認できないため null にし、保存指紋へ戻さない。
+   * ボディがあるのに参照が消失・曖昧な場合は null を覚え、古い指紋へ戻さない。
    */
   refresh(bodies: readonly SolidBody[]): boolean;
   /**
@@ -103,21 +105,29 @@ export function createSubShapeCache(): SubShapeCache {
       if (values.has(key)) {
         return values.get(key) ?? null;
       }
-      return subShapeFromFingerprint(reference);
+      return reference.origin === undefined ? subShapeFromFingerprint(reference) : null;
     },
 
     refresh(bodies): boolean {
-      const byFeature = new Map(bodies.map((body) => [body.featureId, body]));
+      const byFeature = new Map<string, SolidBody>();
+      const duplicate = new Set<string>();
+      for (const body of bodies) {
+        if (byFeature.has(body.featureId)) duplicate.add(body.featureId);
+        else byFeature.set(body.featureId, body);
+      }
       let changed = false;
       for (const [key, reference] of asked) {
-        const body = byFeature.get(reference.bodyFeatureId);
-        if (body === undefined) {
-          continue;
-        }
-        const next = selectSubShape(body, reference);
+        const body = duplicate.has(reference.bodyFeatureId) ? undefined : byFeature.get(reference.bodyFeatureId);
+        const resolution = body === undefined || !body.isValid ? null : resolveSubShapeReference(body, reference);
+        const geometry = resolution?.status === 'matched' ? resolution.match.geometry : null;
+        const next: ResolvedSubShape | null = geometry === null ? null : {
+          kind: geometry.kind, position: geometry.position, axis: geometry.kind === 'vertex' ? null : geometry.axis,
+          surfaceKind: geometry.kind === 'face' ? geometry.surfaceKind : null,
+          curveKind: geometry.kind === 'edge' ? geometry.curveKind : null,
+        };
         const previous = values.has(key)
           ? (values.get(key) ?? null)
-          : subShapeFromFingerprint(reference);
+          : reference.origin === undefined ? subShapeFromFingerprint(reference) : null;
         values.set(key, next);
         if (!sameSubShape(previous, next)) {
           changed = true;

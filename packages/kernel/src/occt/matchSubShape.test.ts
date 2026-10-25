@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { CurrentOriginIndex, SubShapeOrigin } from '../subShapeOrigin.js';
 
 import type {
   EdgeCurveKind,
@@ -26,7 +27,44 @@ import {
   scorePosition,
   scoreSize,
   scoreVertex,
+  resolveEdgeReference,
 } from './matchSubShape.js';
+
+const SEMANTIC_EDGE: SubShapeOrigin = { version: 1, shapeKind: 'edge', identity: {
+  kind: 'box-edge', featureId: 'box-a', role: 'top-front',
+} };
+
+describe('origin-v1 resolver', () => {
+  const query: Extract<SubShapeQuery, { kind: 'edge' }> = {
+    kind: 'edge', index: 99, curveKind: 'line', length: 20,
+    position: [0, 0, 0], axis: [1, 0, 0], radius: null, origin: SEMANTIC_EDGE,
+  };
+  const lookalike = edgeInfo(2, 'line', 20, [0, 0, 0], [1, 0, 0]);
+  const changed = edgeInfo(8, 'line', 200, [0, 20, 0], [-1, 0, 0]);
+  it('unique は旧scoreが閾値未満でも current address を採用し、似た指紋の別辺を採用しない', () => {
+    const origins: CurrentOriginIndex = { version: 1, state: 'tracked', bindings: [
+      { origin: SEMANTIC_EDGE, state: 'unique', current: { kind: 'edge', index: 8 } },
+    ] };
+    const result = resolveEdgeReference([lookalike, changed], query, 10, origins);
+    expect(result.status).toBe('matched');
+    if (result.status !== 'matched') return;
+    expect(result.match.index).toBe(8);
+    expect(result.match.score).toBeLessThan(0.6);
+  });
+  it('表なし・split・merged・missing・untracked から指紋へ逃がさない', () => {
+    const states: readonly (CurrentOriginIndex | undefined)[] = [undefined,
+      { version: 1, state: 'tracked', bindings: [{ origin: SEMANTIC_EDGE, state: 'split', candidates: [
+        { kind: 'edge', index: 2 }, { kind: 'edge', index: 8 },
+      ] }] },
+      { version: 1, state: 'tracked', bindings: [{ origin: SEMANTIC_EDGE, state: 'merged',
+        current: { kind: 'edge', index: 2 }, coOrigins: [SEMANTIC_EDGE, SEMANTIC_EDGE] }] },
+      { version: 1, state: 'tracked', bindings: [{ origin: SEMANTIC_EDGE, state: 'missing', reason: 'deleted' }] },
+      { version: 1, state: 'untracked', reason: 'unsupported-operation' },
+    ];
+    expect(states.map(origins => resolveEdgeReference([lookalike, changed], query, 10, origins).status))
+      .toEqual(['missing', 'ambiguous', 'ambiguous', 'missing', 'missing']);
+  });
+});
 
 /**
  * 計画書 P3 §2.2.3 の検算表をそのまま検査にする(タスク5 手順 3)。

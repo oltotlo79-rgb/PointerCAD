@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import React, { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { createAssemblyDocument } from '@pointercad/model';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { HOME_ORBIT } from './cameraMath.js';
 import { namedCameraFromOrbit } from './namedCamera.js';
 import { runNamedViewAction } from './namedViewActions.js';
+import { NamedViewsMenu } from './NamedViewsMenu.js';
 
 const state = () => useAppStore.getState();
 const captured = namedCameraFromOrbit({ ...HOME_ORBIT, zoom: 2 }, 'orthographic');
@@ -74,5 +77,38 @@ describe('名前付き視点の文書操作とUndo(FR-113)', () => {
     expect(state().assembly?.namedViews.at(-1)).toMatchObject({ name: '組立確認' });
     expect(state().document).toBe(part);
     state().undo(); expect(state().assembly?.namedViews).toHaveLength(4);
+  });
+
+  const markup = (): string => {
+    const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
+    try { return renderToStaticMarkup(createElement(NamedViewsMenu)); } finally { snapshot.mockRestore(); }
+  };
+  const button = (html: string, action: string): string => {
+    const tag = html.match(new RegExp('<button\\b[^>]*data-command-id="toolbar\\.namedView\\.' + action + '"[^>]*>', 'u'))?.[0];
+    if (tag === undefined) throw new Error('Actual named-view control missing: ' + action);
+    return tag;
+  };
+
+  it('視点未選択の3操作はnative disabledで飛ばさず具体的な理由を読める', () => {
+    const html = markup();
+    for (const action of ['restore', 'rename', 'delete']) {
+      const tag = button(html, action);
+      expect(tag).toContain('aria-disabled="true"');
+      expect(tag).toContain('保存した視点を一覧から選んでください。');
+      expect(tag).not.toMatch(/\sdisabled(?:=|\s|>)/u);
+    }
+    expect(button(html, 'save')).toContain('aria-disabled="false"');
+    expect(button(html, 'quad')).toContain('aria-disabled="false"');
+  });
+
+  it('表示準備前の保存・復元・4分割もfocus可能な理由付き操作として表示する', () => {
+    state().setViewCameraController(null);
+    const html = markup();
+    for (const action of ['save', 'restore', 'quad']) {
+      const tag = button(html, action);
+      expect(tag).toContain('aria-disabled="true"');
+      expect(tag).toContain('立体の画面が表示されてから、もう一度試してください。');
+      expect(tag).not.toMatch(/\sdisabled(?:=|\s|>)/u);
+    }
   });
 });

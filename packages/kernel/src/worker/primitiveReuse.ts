@@ -7,6 +7,7 @@ import { IDENTITY_TRANSFORM, makeTransform } from '../occt/transformShape.js';
 import type { CachedSolid } from './recomputeSolids.js';
 import type { ShapeCache } from './shapeCache.js';
 import type { KnownTriangulation } from '../occt/triangulationReuse.js';
+import { rebindCopiedBoxOrigins, rebindCopiedCylinderOrigins } from '../occt/subShapeOrigins.js';
 
 interface PrimitiveCopy extends BooleanResult { readonly triangulation?: KnownTriangulation }
 
@@ -35,7 +36,7 @@ export function createPrimitiveReuse(oc: OpenCascadeInstance, cache: ShapeCache<
       // 複製を次の複製元へ重ねず、最初の実形状を使って座標の丸めを累積させない。
       if (previous === undefined || !cache.has(previous.key)) prototypes.set(local.key, { key, origin: local.origin });
     },
-    copy(spec: SolidStepSpec): PrimitiveCopy | null {
+    copy(spec: SolidStepSpec, featureId?: string): PrimitiveCopy | null {
       const local = signature(spec);
       if (local === null) return null;
       const prototype = prototypes.get(local.key);
@@ -55,7 +56,15 @@ export function createPrimitiveReuse(oc: OpenCascadeInstance, cache: ShapeCache<
         const transform = makeTransform(oc, { ...IDENTITY_TRANSFORM, translation: delta }, owned.keep);
         const location = owned.keep(new oc.TopLoc_Location_2(transform));
         const moved = owned.keep(copied.Moved(location, true));
-        return { shape: moved, volume: source.mesh.volume, triangulation: source.triangulation, delete: owned.release };
+        const origins = spec.kind === 'primitive' && featureId !== undefined && source.mesh.origins !== undefined
+          ? spec.shape.kind === 'box'
+            ? rebindCopiedBoxOrigins(oc, source.mesh.origins, source.shape, copier, moved, featureId, location)
+            : spec.shape.kind === 'cylinder'
+              ? rebindCopiedCylinderOrigins(oc, source.mesh.origins, source.shape, copier, moved, featureId, location)
+              : undefined
+          : undefined;
+        return { shape: moved, volume: source.mesh.volume, triangulation: source.triangulation,
+          ...(origins === undefined ? {} : { origins }), delete: owned.release };
       } catch (error) { owned.release(); throw error; }
     },
   };

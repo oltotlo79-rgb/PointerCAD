@@ -5,6 +5,14 @@
  * 欄や操作を足すときはこのファイルではなく、その機能のスライスへ書く。
  * スライスは `AppState` を型としてだけ参照する(実体の輪はできない)。
  */
+import type { BeamSlice } from './beamSlice.js';
+import type { SolidAnalysisSlice } from './solidAnalysisSlice.js';
+import type { SolidPlasticSlice } from './solidPlasticSlice.js';
+import type { PlasticBarSlice } from './plasticBarSlice.js';
+import type { FatigueSlice } from './fatigueSlice.js';
+import type { FatigueStrainSlice } from './fatigueStrainSlice.js';
+import type { FatigueLocalCycleSlice } from './fatigueLocalCycleSlice.js';
+import type { AssemblyOccurrenceDriveSlice } from './assemblyOccurrenceDriveSlice.js';
 import type { ViewSlice } from './viewSlice.js';
 import type { CanvasSlice } from './canvasSlice.js';
 import type { ExchangeSlice } from './exchangeSlice.js';
@@ -40,4 +48,4 @@ export interface AppState
     FileSlice,
     AssemblySlice,
     DrawingSlice,
-    HelpSlice, SheetMetalSlice, ScriptSlice, FunctionPlotSlice {}
+    HelpSlice, SheetMetalSlice, ScriptSlice, FunctionPlotSlice, BeamSlice, PlasticBarSlice, FatigueSlice, FatigueStrainSlice, FatigueLocalCycleSlice, AssemblyOccurrenceDriveSlice, SolidAnalysisSlice, SolidPlasticSlice {}

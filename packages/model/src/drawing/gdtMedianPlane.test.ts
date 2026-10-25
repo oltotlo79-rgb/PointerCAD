@@ -36,6 +36,16 @@ function fixture() {
 }
 
 describe('二面幅を示す投影辺から実二面を選ぶ', () => {
+  it('番号を失った辺が2候補へ分かれたときは中心平面を作らず元参照を保つ', () => {
+    const { targets, document, context, body } = fixture();
+    const saved = { ...targets[0], ref: { ...targets[0].ref, index: 99 } };
+    const original = JSON.stringify(saved);
+    const edges = [body.edges[0], { ...body.edges[0], index: 19 }, body.edges[1]];
+    expect(drawingMedianPlaneFeature([saved, targets[1]], document,
+      { ...context, instances: [{ ...context.instances[0], body: { ...body, edges } }] })).toBeNull();
+    expect(JSON.stringify(saved)).toBe(original);
+  });
+
   it('表の共通面や離れた同一平面を除き、左右の実面と幅寸法を関連付ける', () => {
     const { targets, document, context } = fixture();
     const feature = drawingMedianPlaneFeature(targets, document, context);
@@ -73,6 +83,42 @@ describe('二面幅を示す投影辺から実二面を選ぶ', () => {
     for (const indices of [new Uint32Array(), new Uint32Array(body.mesh.indices.length).fill(999)]) {
       expect(drawingMedianPlaneFeature(targets, document, { ...context, instances: [{ ...context.instances[0],
         body: { ...body, mesh: { ...body.mesh, indices } } }] })).toBeNull();
+    }
+  });
+  it('元edgeでなくincident現faceそれぞれの意味起点を保存する', () => {
+    const { targets, document, context, body } = fixture();
+    const edgeOrigin = { version: 1, shapeKind: 'edge', identity: { kind: 'box-edge', featureId: 'box', role: 'bottom-front' } } as const;
+    const left = { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'box', role: 'left' } } as const;
+    const right = { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'box', role: 'right' } } as const;
+    const tracked: SolidBody = { ...body, origins: { version: 1, state: 'tracked', bindings: [
+      { origin: edgeOrigin, state: 'unique', current: { kind: 'edge', index: 0 } },
+      { origin: left, state: 'unique', current: { kind: 'face', index: 1 } },
+      { origin: right, state: 'unique', current: { kind: 'face', index: 2 } },
+    ] } };
+    const current = { ...context, instances: [{ ...context.instances[0], body: tracked }] };
+    const feature = drawingMedianPlaneFeature(targets, document, current);
+    expect(feature?.targets.map((target) => target.ref.origin)).toEqual([left, right]);
+    if (feature === null) throw new Error('現二面なし');
+    const saved = JSON.stringify(feature);
+    const reordered: SolidBody = { ...tracked, faces: tracked.faces.map((face) => face.index === 1 ? { ...face, index: 7 } : face),
+      origins: { version: 1, state: 'tracked', bindings: [
+        { origin: edgeOrigin, state: 'unique', current: { kind: 'edge', index: 0 } },
+        { origin: left, state: 'unique', current: { kind: 'face', index: 7 } },
+        { origin: right, state: 'unique', current: { kind: 'face', index: 2 } },
+      ] } };
+    expect(resolveGdtFeature(feature, document, { ...context, instances: [{ ...context.instances[0], body: reordered }] }))
+      .toMatchObject({ kind: 'medianPlane', nominalSizeMm: 20 });
+    expect(JSON.stringify(feature)).toBe(saved);
+    for (const bindings of [
+      [{ origin: left, state: 'split' as const, candidates: [{ kind: 'face' as const, index: 1 }, { kind: 'face' as const, index: 7 }] as const },
+        { origin: right, state: 'unique' as const, current: { kind: 'face' as const, index: 2 } }],
+      [{ origin: left, state: 'unique' as const, current: { kind: 'face' as const, index: 1 } },
+        { origin: left, state: 'unique' as const, current: { kind: 'face' as const, index: 1 } },
+        { origin: right, state: 'unique' as const, current: { kind: 'face' as const, index: 2 } }],
+    ]) {
+      const ambiguous: SolidBody = { ...body, origins: { version: 1, state: 'tracked', bindings } };
+      expect(drawingMedianPlaneFeature(targets, document,
+        { ...context, instances: [{ ...context.instances[0], body: ambiguous }] })).toBeNull();
     }
   });
 });

@@ -61,6 +61,23 @@ function document(target: MateTarget = faceTarget('component-1')): AssemblyDocum
 const NEXT_SOURCE = { kind: 'part', partRef: 'part-2' } as const;
 
 describe('planReplacement', () => {
+  it.each([false, true])('複数ボディの同点候補は並び=%sでも古い参照を保持して未解決にする', (reverse) => {
+    const before = document(faceTarget('component-1', faceRef(99)));
+    const candidates = [
+      { ...body(7), featureId: 'replacement-a' },
+      { ...body(19), featureId: 'replacement-b' },
+    ];
+    const original = JSON.stringify(before);
+    const plan = planReplacement(before, 'component-1', NEXT_SOURCE, {
+      bodies: reverse ? [...candidates].reverse() : candidates,
+    });
+    expect(plan?.matchedCount).toBe(0);
+    expect(plan?.unmatchedCount).toBe(1);
+    expect(plan?.unresolvedIds).toEqual(['mate-1']);
+    expect(plan?.after.mates[0].a).toBe(before.mates[0].a);
+    expect(JSON.stringify(before)).toBe(original);
+  });
+
   it('対象の部品が無ければ文書を変えずnullを返す', () => {
     expect(planReplacement(document(), 'component-9', NEXT_SOURCE, { bodies: [body()] })).toBeNull();
   });

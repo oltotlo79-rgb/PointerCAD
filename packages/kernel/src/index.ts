@@ -128,6 +128,7 @@ export type {
   DraftStepSpec,
   EmbossStepSpec,
   ExtrudeEndSpec,
+  FaceOffsetStepSpec,
   FilletRadiusSpec,
   HoleEntrySpec,
   MirrorStepSpec,
@@ -144,6 +145,13 @@ export type {
 } from './types.js';
 export { makeCut, type CutInput } from './occt/makeCut.js';
 export { makeDraft, draftStatusName, type DraftInput } from './occt/makeDraft.js';
+export {
+  editSolidFace,
+  MIN_FACE_OFFSET_MM,
+  type FaceOffsetInput,
+  type FaceOffsetResult,
+} from './occt/editSolidFace.js';
+export { moveSolidHole, type HoleMoveResult } from './occt/moveSolidHole.js';
 export { makeEmboss, type EmbossInput } from './occt/makeEmboss.js';
 export { makeRib, type RibInput } from './occt/makeRib.js';
 export { makeShell, type ShellInput } from './occt/makeShell.js';
@@ -218,6 +226,12 @@ export {
   type SketchChamferSpec,
 } from './occt/makeSketchChamfer2d.js';
 export { tessellate, type FaceTriangleRange, type SurfaceMesh } from './occt/tessellate.js';
+export {
+  ANALYSIS_NODE_EDGE, ANALYSIS_NODE_FACE, ANALYSIS_NODE_VERTEX, AnalysisBoundaryError, analysisMeshBuffers, auditBoundary,
+  buildAnalysisSurfaceMesh, type AnalysisBoundaryErrorCode, type AnalysisBoundaryMode, type AnalysisEdgeChain,
+  type AnalysisFaceSummary, type AnalysisMeshMetrics, type AnalysisSurfaceMesh, type AnalysisSurfaceMeshOptions,
+  type AnalysisSurfaceMeshRequest, type AnalysisSurfaceMeshResult,
+} from './occt/analysisSurfaceMesh.js';
 export { extractEdges, type EdgeLines, type EdgeSegmentRange } from './occt/extractEdges.js';
 export {
   buildSolidBodyMesh,
@@ -267,6 +281,11 @@ export {
   MATCH_WEIGHT_VERTEX_INDEX,
   MATCH_WEIGHT_VERTEX_POSITION,
   SUB_SHAPE_MATCH_THRESHOLD,
+  SUB_SHAPE_AMBIGUITY_MARGIN,
+  resolveSubShapeCandidates,
+  resolveFaceReference,
+  resolveEdgeReference,
+  resolveVertexReference,
   matchEdge,
   matchFace,
   matchVertex,
@@ -278,6 +297,8 @@ export {
   scoreVertex,
   type MatchScoreParts,
   type SubShapeMatch,
+  type ScoredSubShape,
+  type SubShapeCandidateResolution,
 } from './occt/matchSubShape.js';
 // 穴・ねじ穴(FR-405、FR-406、タスク6・9)。
 export { makeHole, makeHoleTools, resolveHoleFrame, type HoleFrame } from './occt/makeHole.js';
@@ -331,6 +352,8 @@ export {
   type SolidRecomputeDeps,
 } from './worker/recomputeSolids.js';
 export { createKernelApi, type KernelApi, type ManagedKernelApi, type InterferenceKernelApi, type MaterialComparisonKernelApi } from './worker/kernelApi.js';
+export type { AnalysisBoundaryKernelApi } from './worker/kernelApi.js';
+export { createRuntimePhaseJournal, type RuntimePhaseJournalSnapshot } from './worker/runtimePhaseJournal.js';
 export type { MaterialComparisonRequest } from './worker/compareCachedMaterials.js';
 export type { MaterialComparisonOutcome } from './worker/compareMaterialBodies.js';
 export type {
@@ -562,3 +585,13 @@ export {
   type BoundingBoxRange,
   type OcctBoxHandle,
 } from './occt/placeBodies.js';
+export type { SubShapeOrigin, CurrentOriginIndex, OriginBinding, OriginLookup, ShapeAddress,
+  ProfileLineAnchor, ProfileRegionAnchor } from './subShapeOrigin.js';
+
+export type { PointProducerAnchor, PointPlacementSourceAnchor, CopyPointPlacementRole, HoleCenterAnchor, HolePlacementRole, HoleFaceOrigin } from './subShapeOrigin.js';
+
+export {
+  makeSurfaceCut, SurfaceCutError,
+  type SurfaceCutInput, type SurfaceCutReason, type SurfaceCutPiece, type SurfaceCutResult,
+} from './occt/makeSurfaceCut.js';
+export { rotateSolidFace, type FaceRotationResult } from './occt/rotateSolidFace.js';

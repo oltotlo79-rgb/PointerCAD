@@ -533,3 +533,44 @@ function Remove-StagedTreeWorktree {
         Write-Host "[警告] 写しの後片付けが完了しませんでした(手動確認要): $WorktreePath" -ForegroundColor Yellow
     }
 }
+
+# 2026-10-05 15:0x 利用者の指示「検査が多過ぎるし長すぎる」: 手元の軽い検査(-Scope Local)で、品質ゲート自身の
+# 自己試験((0))を省いてよいかを決める。自己試験が守る道具(scripts/ の検査の道具・.githooks・.claude/hooks と
+# その設定)が、比較の基点($Base)から変わっていなければ、基点の時点で両OSのCIが同じ自己試験を通しているため
+# 手元では省ける。変わった・基点が無い・Gitが答えない時は、省かずに流す(失敗側に倒す)。
+# 両OSのCIは常に自己試験を流すので、この関数はCIでは使わない。
+$script:GateToolPathspecs = @('scripts', '.githooks', '.claude/hooks', '.claude/settings.json')
+
+function Test-GateToolsChanged {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [string]$Base
+    )
+    # Windows PowerShell 5.1 は、Stop のとき git の標準エラー出力(2>$null を含む)を例外にしてしまう。
+    # 失敗は終了コードで判定し、必ず「道具が変わった」側(自己試験を流す)へ倒すので、この関数の中だけ Continue にする。
+    $ErrorActionPreference = 'Continue'
+    if ([string]::IsNullOrWhiteSpace($Base) -or $Base -cnotmatch '^[0-9a-f]{40}$') {
+        return [pscustomobject]@{ Changed = $true; Reason = '比較の基点が分からない'; Paths = @() }
+    }
+    $safe = @('-C', $Root, '-c', ('safe.directory=' + $Root.Replace('\', '/')), '-c', 'core.quotepath=false')
+    $global:LASTEXITCODE = 0
+    & git @safe cat-file -e "$Base^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return [pscustomobject]@{ Changed = $true; Reason = '比較の基点のコミットが手元に無い'; Paths = @() }
+    }
+    $global:LASTEXITCODE = 0
+    $diffPaths = @(Invoke-GitUtf8Output { & git @safe diff --name-only $Base -- @($script:GateToolPathspecs) })
+    if ($LASTEXITCODE -ne 0) {
+        return [pscustomobject]@{ Changed = $true; Reason = '基点との差分をGitから取得できない'; Paths = @() }
+    }
+    $global:LASTEXITCODE = 0
+    $newPaths = @(Invoke-GitUtf8Output { & git @safe ls-files --others --exclude-standard -- @($script:GateToolPathspecs) })
+    if ($LASTEXITCODE -ne 0) {
+        return [pscustomobject]@{ Changed = $true; Reason = '未追跡の道具をGitから取得できない'; Paths = @() }
+    }
+    $changed = @(@($diffPaths) + @($newPaths) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    if ($changed.Count -gt 0) {
+        return [pscustomobject]@{ Changed = $true; Reason = "品質ゲートの道具が基点から $($changed.Count) 件変わっている"; Paths = $changed }
+    }
+    return [pscustomobject]@{ Changed = $false; Reason = '品質ゲートの道具は基点から変わっていない'; Paths = @() }
+}

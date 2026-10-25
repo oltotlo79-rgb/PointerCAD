@@ -5,6 +5,7 @@ import { resolveAuxiliaryDirection } from './viewDirection.js';
 import { validateSectionSpec, type SectionSpec } from './sectionSpec.js';
 import type { RigidPlacement } from '../assembly/placementMath.js';
 import type { DrawingDimensionInstance } from './dimensionTarget.js';
+import type { SteelStockList } from '../assembly/standard/steelStockList.js';
 import type { BomRow } from '../assembly/bom.js';
 import type { HoleScheduleResult } from './holeSchedule.js';
 import { resolveViewConstructions, type ConstructedDrawingView } from './viewConstruction.js';
@@ -36,6 +37,7 @@ export interface DrawingSourceResolution {
   readonly sheetFlat?: { readonly geometry: SheetFlatGeometry; readonly outline: SheetFlatOutline; readonly bends: readonly SheetFlatBendLine[] };
   readonly viewFrames?: ReadonlyMap<string, ConstructedDrawingView>;
   readonly bomRows?: readonly BomRow[];
+  readonly steelStockList?: SteelStockList;
   readonly holeTables?: ReadonlyMap<string, HoleScheduleResult>;
   readonly dimensionInstances?: readonly DrawingDimensionInstance[];
   readonly bodyIds: readonly string[];

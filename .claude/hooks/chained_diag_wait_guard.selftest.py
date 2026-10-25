@@ -92,6 +92,62 @@ class ChainedDiagWaitGuardTests(unittest.TestCase):
     def test_empty_command_allowed(self):
         self.assert_allowed(self.invoke(command=""))
 
+    # --- 2026-10-05 R27: 繰り返しの中の wait(本文には1回しか無い) ---
+    # 実物: 2026-10-01 10:55:26Z cl-v102-calc-deadline が実際に出した Bash の本文(省略なし)。
+    REAL_V102 = (
+        "cd C:/Users/oltot/Documents/git-projects/PointerCAD && for r in "
+        "20261001-195522-cl-v102-calc-deadline-unit 20261001-195522-cl-v102-calc-deadline-unit-2; "
+        "do python -B -X utf8 scratchpad/claude/tools/diag.py wait --run $r --timeout 540 2>&1 "
+        '| grep -E "Test Files|Tests |exit=|FAIL" | head -10; done'
+    )
+    LOOP_WAIT = "python -B -X utf8 scratchpad/claude/tools/diag.py wait --run $r --timeout 540"
+
+    def test_real_v102_for_loop_denied(self):
+        self.assert_denied(self.invoke(command=self.REAL_V102))
+
+    def test_for_loop_newline_denied(self):
+        cmd = chr(10).join(["for r in A B", "do", "  " + self.LOOP_WAIT, "done"])
+        self.assert_denied(self.invoke(command=cmd))
+
+    def test_while_loop_denied(self):
+        cmd = "while read r; do " + self.LOOP_WAIT + "; done < runs.txt"
+        self.assert_denied(self.invoke(command=cmd))
+
+    def test_powershell_foreach_denied(self):
+        cmd = "foreach ($r in $runs) { " + self.LOOP_WAIT + " }"
+        self.assert_denied(self.invoke(tool="PowerShell", command=cmd))
+
+    def test_powershell_foreach_object_pipeline_denied(self):
+        cmd = "$runs | ForEach-Object { " + self.LOOP_WAIT.replace("$r", "$_") + " }"
+        self.assert_denied(self.invoke(tool="PowerShell", command=cmd))
+
+    def test_xargs_denied(self):
+        cmd = "echo A B | xargs -n1 python -B -X utf8 scratchpad/claude/tools/diag.py wait --timeout 540 --run"
+        self.assert_denied(self.invoke(command=cmd))
+
+    def test_bash_c_quoted_two_waits_denied(self):
+        inner = ONE_WAIT + " ; " + ONE_WAIT.replace("--run A", "--run B")
+        self.assert_denied(self.invoke(command='bash -c "' + inner + '"'))
+
+    def test_bash_c_quoted_loop_denied(self):
+        inner = "for r in A B; do " + self.LOOP_WAIT + "; done"
+        self.assert_denied(self.invoke(command='bash -c "' + inner + '"'))
+
+    def test_loop_without_wait_allowed(self):
+        cmd = "for f in a b; do echo $f; done ; " + ONE_WAIT
+        self.assert_allowed(self.invoke(command=cmd))
+
+    def test_wait_before_loop_allowed(self):
+        cmd = ONE_WAIT + " ; for f in a b; do echo $f; done"
+        self.assert_allowed(self.invoke(command=cmd))
+
+    def test_loop_with_other_diag_subcommand_allowed(self):
+        cmd = "for r in A B; do python -B -X utf8 scratchpad/claude/tools/diag.py status --run $r; done"
+        self.assert_allowed(self.invoke(command=cmd))
+
+    def test_main_loop_wait_allowed(self):
+        self.assert_allowed(self.invoke(command=self.REAL_V102, transcript=MAIN))
+
 
 if __name__ == "__main__":
     unittest.main()

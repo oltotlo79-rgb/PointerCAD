@@ -2,6 +2,7 @@
 import { RECOMPUTE_TIMEOUT_MS } from '../../packages/test-utils/src/releasePerformance.js';
 import { expect, type Page } from '@playwright/test';
 import { recomputeTerminalOutcome } from '../../packages/test-utils/src/recomputeState.js';
+import type { RecomputeStats } from '../../packages/ui/src/app/PointerCadApp.js';
 
 /**
  * E2E の再計算待ちを 1 か所にまとめる(P7 タスク52、rules/06 10.18・10.19)。
@@ -13,40 +14,20 @@ import { recomputeTerminalOutcome } from '../../packages/test-utils/src/recomput
 /** 初回読み込みを含む、画面検査の再計算待ちの上限。 */
 export const KERNEL_TIMEOUT_MS = RECOMPUTE_TIMEOUT_MS;
 
-export type RecomputeOutcome =
-  | 'idle'
-  | 'success'
-  | 'failed'
-  | 'cancelled'
-  | 'workerBroken';
-
-export interface RecomputeStats {
-  readonly cacheHits: number;
-  readonly isComputing: boolean;
-  readonly requestedGeneration: number;
-  readonly completedGeneration: number;
-  readonly lastOutcome: RecomputeOutcome;
-  /**
-   * いま応答待ちの計算部呼び出し(kernelBridge の RPC)の件数(PointerCadApp.tsx の
-   * `pcadRecomputeStats` が返す実際の値には元からあったが、この型には無かった)。
-   * `isComputing`・世代は再計算スライスだけの帳簿で、ドラッグに伴う測定・印刷確認などの
-   * 個別呼び出しは数えない。撮影直前の比較が動かないことを保証するには、この件数も
-   * 0 まで落ち着くのを待つ必要がある(w94a、rules/06 記録予定)。
-   */
-  readonly pendingWaiters: number;
-}
+/*
+ * 検査専用の口 `pcadRecomputeStats` の形と結末の種類は、アプリの実物(PointerCadApp.tsx の
+ * `RecomputeStats` と recomputeSlice.ts の `RecomputeOutcome`)を型だけ import して使う。
+ * 以前はここに古い写しがあり、アプリ側に欄(`activeDocumentKind`)が増えても気付けず、
+ * 同じ `Window` の口の宣言が食い違った(TS2717)。`pendingWaiters` などの意味は正本の注釈を見る。
+ * 型だけの import なので、実行時にアプリの部品は読み込まない。
+ */
+export type { RecomputeOutcome } from '../../packages/ui/src/store/recomputeSlice.js';
+export type { RecomputeStats };
 
 /** `beginRecompute` が操作前に控える世代と時刻。 */
 export interface RecomputeToken {
   readonly requestedGeneration: number;
   readonly startedAtMs: number;
-}
-
-declare global {
-  interface Window {
-    /** `PointerCadApp.tsx` が差し出す検査専用の読み取り口。 */
-    pcadRecomputeStats?: () => RecomputeStats;
-  }
 }
 
 /** 検査専用の口から、いまの再計算の状態を読む。 */
@@ -130,7 +111,7 @@ export async function waitForRecompute(page: Page, token?: RecomputeToken): Prom
 export async function waitForRecomputeOutcome(
   page: Page,
   token: RecomputeToken | undefined,
-  outcome: 'success' | 'failed',
+  outcome: 'success' | 'failed' | 'cancelled',
 ): Promise<void> {
   const current = token === undefined ? await readRecomputeStats(page) : null;
   const baseline = token?.requestedGeneration ?? (current?.requestedGeneration ?? 0) - 1;
@@ -145,6 +126,10 @@ export async function waitForRecomputeOutcome(
           last = await readSnapshot(page);
           if (last.progress !== '') {
             lastProgress = last.progress;
+          }
+          if (outcome === 'cancelled' && last.stats !== null && isSettled(last.stats)
+            && last.stats.completedGeneration > baseline && last.stats.lastOutcome === 'cancelled') {
+            return 'cancelled';
           }
           return recomputeTerminalOutcome(last.stats, baseline);
         },

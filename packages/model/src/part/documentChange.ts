@@ -47,11 +47,13 @@ import type { PartDocument } from './types.js';
 const SHAPE_FIELDS: Readonly<
   Record<keyof PartDocument, ((document: PartDocument) => unknown) | null>
 > = {
+  steelStockSource: null,
   id: null,
   name: null,
   schemaVersion: null,
   // 発行番号は参照の再利用防止だけに使う。式や係数値を変えない限り形は同じ。
   mathParameterSerial: null,
+  patternSlotHighWater: null,
   mathGeometry: (document) => document.mathGeometry,
   unresolvedMathProblems: null,
   featureNotes: null,
@@ -69,6 +71,8 @@ const SHAPE_FIELDS: Readonly<
   namedViews: null,
   configurations: null,
   activeConfigurationId: null,
+  // Analysis supports, loads and material/section inputs do not author CAD geometry.
+  beamAnalysisInputs: null,
 };
 
 /**

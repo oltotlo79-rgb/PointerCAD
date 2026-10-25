@@ -1,0 +1,1273 @@
+{
+  "format": "pointercad-fem-source-materials/1",
+  "actualTime": "2026-10-10T22:34:54.754399+09:00",
+  "releaseAccepted": false,
+  "correspondingSourceComplete": false,
+  "relinkOrReplacementExecuted": false,
+  "components": [
+    {
+      "file": "oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "name": "oofem",
+      "version": "3.1.dev5+g214b161ed",
+      "requires": [
+        "pytest",
+        "numpy",
+        "matplotlib"
+      ],
+      "licenseExpression": null,
+      "licenseClassifiers": [],
+      "sourceDistribution": null,
+      "prebuiltRecipeInput": null,
+      "wheelNoticeCount": 2,
+      "status": "source-material-retained-not-rebuilt",
+      "rebuiltWheel": {
+        "shippedFile": "assets/oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+        "sha256": "aaff729b15e1cec2ef90c9c0bb2d3594b3997b523d35344b18ba9f64d4d1a7e4",
+        "bytes": 2620689,
+        "builtFrom": {
+          "sourceMaterial": "sources/051-oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+          "sourceSha256": "4688f06a4b0235dcb30b79e0ca086df5b271cd3206ab6dbce869ebe6b708b6c5",
+          "patches": [
+            "sources/native-rebuild/oofem-051-timer.patch",
+            "sources/native-rebuild/oofem-util.py.diff"
+          ],
+          "provenance": "sources/native-rebuild/build-provenance.json",
+          "receipt": "sources/native-rebuild/build-receipt.json"
+        },
+        "originalUpstreamWheel": {
+          "sha256": "309efbd5436fea543cdac85db92379aefea73813b1d18e06b535cfe911b6d042",
+          "bytes": 2634414,
+          "status": "historical, replaced by the rebuilt wheel and not shipped"
+        },
+        "noticeMembers": "the wheel licence members recorded in noticeEntries under this file name are byte-identical in the rebuilt wheel (checked before generation)",
+        "note": "row fields above this object are the historical record of the original wheel; nativeRebuildExecuted stays false until Root qualification and adoption"
+      },
+      "retainedIMLSourceCorrespondence": {
+        "file": "evidence/iml-source-correspondence.json",
+        "sha256": "3476986b1f9b31dffc855b4a2d4b6abe701699df580215d85db5338a9c47f7e0",
+        "scope": "Source distribution attribution/permission evidence only; actual build and release flags unchanged."
+      }
+    },
+    {
+      "file": "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "name": "numpy",
+      "version": "2.2.5",
+      "requires": [],
+      "licenseExpression": null,
+      "licenseClassifiers": [
+        "License :: OSI Approved :: BSD License"
+      ],
+      "sourceDistribution": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "prebuiltRecipeInput": {
+        "package": "numpy",
+        "version": "2.2.5",
+        "recipe": {
+          "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/native-cancel-r3/recipes-source/packages/numpy/meta.yaml",
+          "sha256": "b8603614507999bcac5fece7ab2e1a34c9d42192a900e9733506c37a25bb3152",
+          "bytes": 1319,
+          "url": "https://github.com/pyodide/pyodide-recipes/blob/c768cb28b5bf128642b9aa5aebd7114a4cfc17ce/packages/numpy/meta.yaml"
+        },
+        "url": "https://files.pythonhosted.org/packages/source/n/numpy/numpy-2.2.5.tar.gz",
+        "sha256": "a9c0d994680cd991b1cb772e8b297340085466a6fe964bc9d4e80f5e2f43c291",
+        "startedAt": "2026-10-10T22:34:48.103889+09:00",
+        "codeExecuted": false,
+        "reused": true,
+        "verified": true,
+        "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+        "bytes": 20273920,
+        "finishedAt": "2026-10-10T22:34:48.157093+09:00"
+      },
+      "wheelNoticeCount": 4,
+      "status": "source-material-retained-not-rebuilt"
+    },
+    {
+      "file": "netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "name": "netgen-mesher",
+      "version": "6.2.2606.post5.dev0",
+      "requires": [
+        "numpy",
+        "pytest; extra == \"test\""
+      ],
+      "licenseExpression": "LGPL-2.1-only",
+      "licenseClassifiers": [],
+      "sourceDistribution": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+      "prebuiltRecipeInput": "sources/netgen-654ed121-build-r4-recipe.zip",
+      "wheelNoticeCount": 2,
+      "status": "source-and-build-evidence-retained-not-replacement-qualified",
+      "rebuiltWheel": {
+        "shippedFile": "assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+        "sha256": "3f0d507e8daa11b5a26654d904c529d6c1338e9a3a4c7d7728152f3596954ba3",
+        "bytes": 2809006,
+        "builtFrom": {
+          "source": {
+            "path": "scratchpad/claude/inspections/v103-clean-netgen-source-20261012-113821-d75fe1d38af1490da9c2a5a3bf54068b/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+            "sha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+            "bytes": 3337092
+          },
+          "recipe": "sources/netgen-654ed121-build-r4-recipe.zip"
+        },
+        "noticeMembers": [
+          "netgen_mesher-6.2.2606.post5.dev0.dist-info/licenses/AUTHORS",
+          "netgen_mesher-6.2.2606.post5.dev0.dist-info/licenses/LICENSE"
+        ]
+      }
+    }
+  ],
+  "materials": [
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/Python-3.13.2.tgz",
+      "bytes": 29319380,
+      "sha256": "b8d79530e3b7c96a5cb2d40d431ddb512af4a563e863728d8713039aa50203f9",
+      "components": [
+        "Python-3.13.2.tgz"
+      ],
+      "kind": "core-or-build-source",
+      "url": "https://www.python.org/ftp/python/3.13.2/Python-3.13.2.tgz",
+      "bundlePath": "sources/001-Python-3.13.2.tgz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/bzip2-1.0.6.zip",
+      "bytes": 806648,
+      "sha256": "9628e7bc598719335ce1d1219c1a4fc241652c0a7b4d993fa82a9b98a6c5dec6",
+      "components": [
+        "bzip2"
+      ],
+      "kind": "pinned-static-port-or-binding-source",
+      "url": "https://github.com/emscripten-ports/bzip2/archive/1.0.6.zip",
+      "bundlePath": "sources/004-bzip2-1.0.6.zip"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "bytes": 33046069,
+      "sha256": "11a7d950453ee31da03ee3c3b261934ad3d7d2e470e41ea3222a13cecb9b98ef",
+      "components": [
+        "emscripten-4.0.9.tar.gz"
+      ],
+      "kind": "core-or-build-source",
+      "url": "https://codeload.github.com/emscripten-core/emscripten/tar.gz/refs/tags/4.0.9",
+      "bundlePath": "sources/007-emscripten-4.0.9.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/hiwire-6a1e67280a15d929ebeceee54a6358c9c8d5f697.tar.gz",
+      "bytes": 27264,
+      "sha256": "0d64144f149c0de3bd157551421833c6c16fdc0492c312a6325ffc25d185c93c",
+      "components": [
+        "hiwire-6a1e67280a15d929ebeceee54a6358c9c8d5f697.tar.gz"
+      ],
+      "kind": "core-or-build-source",
+      "url": "https://codeload.github.com/pyodide/hiwire/tar.gz/6a1e67280a15d929ebeceee54a6358c9c8d5f697",
+      "bundlePath": "sources/011-hiwire-6a1e67280a15d929ebeceee54a6358c9c8d5f697.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/libffi-f08493d249d2067c8b3207ba46693dd858f95db3.tar.gz",
+      "bytes": 595072,
+      "sha256": "0c4e5647b79e21b900eb872dd98a3e0a66be12b36ad89677f61fd901a2615778",
+      "components": [
+        "libffi-f08493d249d2067c8b3207ba46693dd858f95db3.tar.gz"
+      ],
+      "kind": "core-or-build-source",
+      "url": "https://codeload.github.com/libffi/libffi/tar.gz/f08493d249d2067c8b3207ba46693dd858f95db3",
+      "bundlePath": "sources/014-libffi-f08493d249d2067c8b3207ba46693dd858f95db3.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "bytes": 20273920,
+      "sha256": "a9c0d994680cd991b1cb772e8b297340085466a6fe964bc9d4e80f5e2f43c291",
+      "components": [
+        "numpy"
+      ],
+      "kind": "upstream-source-distribution",
+      "url": "https://files.pythonhosted.org/packages/dc/b2/ce4b867d8cd9c0ee84938ae1e6a6f7926ebf928c9090d036fc3c6a04f946/numpy-2.2.5.tar.gz",
+      "bundlePath": "sources/021-numpy-2.2.5.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/pybind11-d6ae0e163a6fb414c81c7f4a98291460e5a18bfe.tar.gz",
+      "bytes": 918852,
+      "sha256": "e171d6cd4f855f65e7e12129d4a594999310b7549a737d80aa1ebf3adee32e9b",
+      "components": [
+        "pybind11"
+      ],
+      "kind": "pinned-static-port-or-binding-source",
+      "url": "https://codeload.github.com/pybind/pybind11/tar.gz/d6ae0e163a6fb414c81c7f4a98291460e5a18bfe",
+      "bundlePath": "sources/026-pybind11-d6ae0e163a6fb414c81c7f4a98291460e5a18bfe.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/pyodide-build-0eb494ffb3536971da3309d98ac56f6515f985a4.tar.gz",
+      "bytes": 252249,
+      "sha256": "fa1d5dae93e997ac3f4a8659e81e94f157fbb55cbe2a43b4f9f0dec095155168",
+      "components": [
+        "pyodide-build-0eb494ffb3536971da3309d98ac56f6515f985a4.tar.gz"
+      ],
+      "kind": "core-or-build-source",
+      "url": "https://codeload.github.com/pyodide/pyodide-build/tar.gz/0eb494ffb3536971da3309d98ac56f6515f985a4",
+      "bundlePath": "sources/027-pyodide-build-0eb494ffb3536971da3309d98ac56f6515f985a4.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/zlib-v1.3.1.tar.gz",
+      "bytes": 1572744,
+      "sha256": "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c",
+      "components": [
+        "zlib"
+      ],
+      "kind": "pinned-static-port-or-binding-source",
+      "url": "https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz",
+      "bundlePath": "sources/048-zlib-v1.3.1.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/native-cancel-r3/pyodide-72e3c78d53a32a76e0aca7443ad24e5cae1042d3.tar.gz",
+      "bytes": 1547581,
+      "sha256": "9f7ca5b758eb2b4a59c087fed305b046fffafd32865783eeb1cd37f0774b3579",
+      "components": [
+        "pyodide-core"
+      ],
+      "kind": "frozen-source-and-build-scripts",
+      "url": "https://github.com/pyodide/pyodide/tree/72e3c78d53a32a76e0aca7443ad24e5cae1042d3",
+      "bundlePath": "sources/049-pyodide-72e3c78d53a32a76e0aca7443ad24e5cae1042d3.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/native-cancel-r3/recipes-c768cb28b5bf128642b9aa5aebd7114a4cfc17ce.tar.gz",
+      "bytes": 4381730,
+      "sha256": "966b5a5505af21bccbdb76cd52bec0fc27f08e9105749696f7fcc5ad64881441",
+      "components": [
+        "pyodide-prebuilt-recipes"
+      ],
+      "kind": "frozen-source-and-build-scripts",
+      "url": "https://github.com/pyodide/pyodide-recipes/tree/c768cb28b5bf128642b9aa5aebd7114a4cfc17ce",
+      "bundlePath": "sources/050-recipes-c768cb28b5bf128642b9aa5aebd7114a4cfc17ce.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/source/oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+      "bytes": 13510673,
+      "sha256": "4688f06a4b0235dcb30b79e0ca086df5b271cd3206ab6dbce869ebe6b708b6c5",
+      "components": [
+        "oofem"
+      ],
+      "kind": "frozen-source-and-build-scripts",
+      "url": "https://github.com/oofem/oofem/tree/214b161ed3acb471f2d0104b004c37fd73bafaa2",
+      "bundlePath": "sources/051-oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/dist-source/oofem-051-timer.patch",
+      "bytes": 8668,
+      "sha256": "12a365db2c908fff736f2bd6ac606bafbfdc6fd82686c3f6c9b761d533eaa2f6",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-patch",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/oofem-051-timer.patch"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/dist-source/oofem-util.py.diff",
+      "bytes": 964,
+      "sha256": "1b0cc4f061c46070f1967ef019991e96f38b2409068435365db964b2402f48fd",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-patch",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/oofem-util.py.diff"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/dist-source/build-provenance.json",
+      "bytes": 4003,
+      "sha256": "8b16eed584a19010d08bf1c99f7985543e45d40018fcb947a33c990c29e23ee2",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-provenance",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/build-provenance.json"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/dist-source/patch-provenance.json",
+      "bytes": 1640,
+      "sha256": "65b920895bf009016fdb9cd3aea6f75d166f43c5b9abc9251a9c97062b212328",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-provenance",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/patch-provenance.json"
+    },
+    {
+      "path": "scratchpad/claude/instructions/v103-root-native-build-reviewed-2206.sh",
+      "bytes": 16974,
+      "sha256": "c81700984c85fb1a54444ded5ad6bd361d84a956a0ac123ba1e6e20409afea50",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-script",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/native-build-reviewed-2206.sh"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/logs/build-r1/47-toolchain-record.stdout",
+      "bytes": 766,
+      "sha256": "58a80a6d67e1a467cf56d68d5358b846e5e276a84359184f4972446848b364ee",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-toolchain-record",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/toolchain-record.txt"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/logs/cli-compatibility-r1/02-after.stdout",
+      "bytes": 1228,
+      "sha256": "25737c373b413d5b2a7b442e495e53ff10b4a49df4eda4d0f101597680a8f772",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-toolchain-record",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/venv-freeze-after-repair.txt"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/logs/build-r1/49-constraints.stdout",
+      "bytes": 26,
+      "sha256": "aa04bdd7e5950b1320732e4c45e58723d78927b295f52b47c7cf18dea30c2504",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-build-input",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/constraints.txt"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/logs/build-r1/51-cmake-config.stdout",
+      "bytes": 327,
+      "sha256": "c3cf031b014e5cfa5831aad4a2716178cfa71469cc024fd93b545e61256cf9a2",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-build-input",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/cmake-config.txt"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/logs/build-r1/50-build.stdout",
+      "bytes": 1571483,
+      "sha256": "886446810c25f0bebb278d0536da8481b3283c6b43a24b05056dc3dcfafbd281",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-build-log",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/build-step50.stdout.txt"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/logs/build-r1/50-build.stderr",
+      "bytes": 8853,
+      "sha256": "1f48dc868c587d257bbeeda5b3b8dc7d1d649be1e99f74d105fbd3f543fd883e",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-build-log",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/build-step50.stderr.txt"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-native-rebuild-export-78d68e8700b54a1d8b5838146a082904/receipt.json",
+      "bytes": 24401,
+      "sha256": "cac9d1bdd1fab2810b40d28310a326117be8b25e047d315996035068f5a935cd",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-receipt",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/build-receipt.json"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/acquisition-request.json",
+      "bytes": 10875,
+      "sha256": "3651317c63deb56ba201d1737bc12a038e579fb6986ae619b38717fc3a23eaff",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-environment",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/acquisition-request.json"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/packet-inventory.json",
+      "bytes": 6661,
+      "sha256": "75938a9c01f8c2086b9114d4cc323faf914c105738ed8b9c0c6125e3610d7af2",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-inventory",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/packet-inventory.json"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/rebuild-oofem-pyodide.sh",
+      "bytes": 18976,
+      "sha256": "1eb34343d9d97ac5d9dab563f359d8e63f56f8ec6ef9e0b3c62ce138b81684aa",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-recipe",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/rebuild-oofem-pyodide.sh"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/replay-environment.json",
+      "bytes": 20212,
+      "sha256": "848889fd05036769ed9acc44047844cef6115f328bb4ab18d8d4b21a50ab179e",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-environment",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/replay-environment.json"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/replay-status.json",
+      "bytes": 2759,
+      "sha256": "0b9f50cd84592dbe30b86f8808a5a3d1a8d54f24b1d710d4c0cf0ddeaa6f270c",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-status",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/replay-status.json"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/replay_controls.py",
+      "bytes": 9426,
+      "sha256": "a97112c074ea011808855589170b7357bcd436536601dc91f715be7ba46d89ac",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-test",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/replay_controls.py"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/smoke_test.py",
+      "bytes": 6445,
+      "sha256": "1039fb041d58274e1095b08eb67740e597691646505c5989ed8b5caf19351a4b",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-test",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/smoke_test.py"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/step_regression.py",
+      "bytes": 4065,
+      "sha256": "2d7dbe5e79364c106d6690b492a6dc599ebfe378bdb20c636778b880d1fb524a",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-test",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/step_regression.py"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/venv-requirements.txt",
+      "bytes": 988,
+      "sha256": "08fa224c1e0b98b60743ffee62a1989e34899f4ccfa3ec739bc4cdcd9b19f528",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-requirements",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/venv-requirements.txt"
+    },
+    {
+      "path": "packages/fem/runtime/sources/native-rebuild/portable/wheelhouse-SHA256SUMS",
+      "bytes": 1375,
+      "sha256": "cb39d706813630fa34ca471525a46275f589feb2bd00e89c77a0cce0b86978dc",
+      "components": [
+        "oofem"
+      ],
+      "kind": "native-rebuild-portable-requirements",
+      "url": null,
+      "bundlePath": "sources/native-rebuild/portable/wheelhouse-SHA256SUMS"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-clean-netgen-source-20261012-113821-d75fe1d38af1490da9c2a5a3bf54068b/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+      "bytes": 3337092,
+      "sha256": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+      "components": [
+        "netgen"
+      ],
+      "kind": "core-or-build-source",
+      "url": null,
+      "bundlePath": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-clean-netgen-source-20261012-113821-d75fe1d38af1490da9c2a5a3bf54068b/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+      "bytes": 969506,
+      "sha256": "e84c2929c340a59eef985dc31e309f290982de8617d9aeb7b77c123c4bb044a4",
+      "components": [
+        "pybind11"
+      ],
+      "kind": "core-or-build-source",
+      "url": null,
+      "bundlePath": "sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz"
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-netgen-zlib-source-0b63544be70144e9942c3e96c83bde20/zlib-v1.3.1.tar.gz",
+      "bytes": 1572744,
+      "sha256": "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c",
+      "components": [
+        "zlib"
+      ],
+      "kind": "core-or-build-source",
+      "url": null,
+      "bundlePath": "sources/zlib-v1.3.1.tar.gz"
+    },
+    {
+      "path": "sources/netgen-654ed121-build-r4-recipe.zip",
+      "bytes": 71386,
+      "sha256": "a5e6ff23a1c8f300b6955074701bc9229f5187d0fee0f09a20a165c044b2f761",
+      "components": [
+        "netgen",
+        "pybind11",
+        "zlib"
+      ],
+      "kind": "build-recipe-and-patches",
+      "url": null,
+      "bundlePath": "sources/netgen-654ed121-build-r4-recipe.zip",
+      "buildEvidence": {
+        "path": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/beam-buckling-result-order-r1/continuum-capability-r1/netgen-closure-r1/build-r4/manifest.json",
+        "sha256": "abb6a5eca8b44ee8d3e8172532b4ea4fee5de030485f187f50c4916675b6e0be",
+        "bytes": 8957
+      }
+    },
+    {
+      "path": "scratchpad/claude/inspections/v103-sdk-zconf-preserved-a2aa1d6ed42f465783bb9bd340ab8f31/zconf.h",
+      "bytes": 16262,
+      "sha256": "77304005ceb5f0d03ad4c37eb8386a10866e4ceeb204f7c3b6599834c7319541",
+      "components": [
+        "netgen",
+        "zlib"
+      ],
+      "kind": "exact-target-build-configuration",
+      "url": null,
+      "bundlePath": "sources/netgen-sdk-zconf.h",
+      "origin": "/home/yuya/pcad-oofem-rebuild-20261011-2136/xbuildenv/file__home_yuya_pcad-oofem-rebuild-20261011-2136_dl_xbuildenv-0_29_3_tar_bz2/emsdk/upstream/emscripten/tools/ports/zlib/zconf.h",
+      "preservationReceipt": {
+        "path": "scratchpad/claude/inspections/v103-sdk-zconf-preserved-a2aa1d6ed42f465783bb9bd340ab8f31/receipt.json",
+        "sha256": "589d05509a2afaff5a66142a40f8c83846d0855cefb7afd2f0c93bff303bab58",
+        "bytes": 671
+      }
+    }
+  ],
+  "noticeEntries": [
+    {
+      "source": "oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "member": "oofem-3.1.dev5+g214b161ed.dist-info/licenses/COPYING.LGPLv2.1",
+      "bytes": 26530,
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "bundlePath": "notices/dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551.txt"
+    },
+    {
+      "source": "oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "member": "oofem-3.1.dev5+g214b161ed.dist-info/licenses/LICENSE",
+      "bytes": 26526,
+      "sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
+      "bundlePath": "notices/20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331.txt"
+    },
+    {
+      "source": "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "member": "numpy/_core/include/numpy/random/LICENSE.txt",
+      "bytes": 1018,
+      "sha256": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+      "bundlePath": "notices/fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec.txt"
+    },
+    {
+      "source": "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "member": "numpy/ma/LICENSE",
+      "bytes": 1593,
+      "sha256": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+      "bundlePath": "notices/05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6.txt"
+    },
+    {
+      "source": "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "member": "numpy/random/LICENSE.md",
+      "bytes": 3511,
+      "sha256": "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+      "bundlePath": "notices/103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f.txt"
+    },
+    {
+      "source": "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "member": "numpy-2.2.5.dist-info/LICENSE.txt",
+      "bytes": 1543,
+      "sha256": "01fb016849aa427edb1bbbbd55f91c26ca6cadb32a5b20e7f000655dd05b0760",
+      "bundlePath": "notices/01fb016849aa427edb1bbbbd55f91c26ca6cadb32a5b20e7f000655dd05b0760.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/.spin/LICENSE",
+      "bytes": 1539,
+      "sha256": "990e6a6dbaee82e655163c3d2a51d1002471e5c0964da4881bc193eaa6a8ee3b",
+      "bundlePath": "notices/990e6a6dbaee82e655163c3d2a51d1002471e5c0964da4881bc193eaa6a8ee3b.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/LICENSE.txt",
+      "bytes": 1543,
+      "sha256": "01fb016849aa427edb1bbbbd55f91c26ca6cadb32a5b20e7f000655dd05b0760",
+      "bundlePath": "notices/01fb016849aa427edb1bbbbd55f91c26ca6cadb32a5b20e7f000655dd05b0760.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/doc/source/_static/scipy-mathjax/LICENSE",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bundlePath": "notices/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/doc/source/license.rst",
+      "bytes": 87,
+      "sha256": "563953e4bf6aba42f430420da7494dce2747f60d56e82ca165e24dfaf766d256",
+      "bundlePath": "notices/563953e4bf6aba42f430420da7494dce2747f60d56e82ca165e24dfaf766d256.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_build_utils/tempita/LICENSE.txt",
+      "bytes": 1072,
+      "sha256": "743b0f4a0087fe3607167113fffab6f2ca069c8da321763697ab5d0d8411634a",
+      "bundlePath": "notices/743b0f4a0087fe3607167113fffab6f2ca069c8da321763697ab5d0d8411634a.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_core/include/numpy/libdivide/LICENSE.txt",
+      "bytes": 1018,
+      "sha256": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+      "bundlePath": "notices/fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_core/src/common/pythoncapi-compat/COPYING",
+      "bytes": 690,
+      "sha256": "3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98",
+      "bundlePath": "notices/3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_core/src/highway/LICENSE",
+      "bytes": 11356,
+      "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+      "bundlePath": "notices/43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_core/src/highway/LICENSE-BSD3",
+      "bytes": 1515,
+      "sha256": "d25e82e26acd42ca3ccc9993622631163425b869b9e16284226d534cff6470f2",
+      "bundlePath": "notices/d25e82e26acd42ca3ccc9993622631163425b869b9e16284226d534cff6470f2.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_core/src/highway/debian/copyright",
+      "bytes": 825,
+      "sha256": "6e4ecf1cae052b678ea3178dd4b3652d581ee66a82d58db8800dd7d80dd6de76",
+      "bundlePath": "notices/6e4ecf1cae052b678ea3178dd4b3652d581ee66a82d58db8800dd7d80dd6de76.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md",
+      "bytes": 1514,
+      "sha256": "211e7d737d6179a08f791ebb0a99897ce7cd2457410c542876d125576edfe910",
+      "bundlePath": "notices/211e7d737d6179a08f791ebb0a99897ce7cd2457410c542876d125576edfe910.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_core/src/umath/svml/LICENSE",
+      "bytes": 1543,
+      "sha256": "c17011467b4fe6e20fbfbeda4df09e58c2bca5480a063e55735a4000a379aad9",
+      "bundlePath": "notices/c17011467b4fe6e20fbfbeda4df09e58c2bca5480a063e55735a4000a379aad9.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/fft/pocketfft/LICENSE.md",
+      "bytes": 1498,
+      "sha256": "a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056",
+      "bundlePath": "notices/a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/linalg/lapack_lite/LICENSE.txt",
+      "bytes": 2266,
+      "sha256": "a14cc25e10d40a3aa705b7de2fb764a6535d8ee9b2db4e1724900585457dfd55",
+      "bundlePath": "notices/a14cc25e10d40a3aa705b7de2fb764a6535d8ee9b2db4e1724900585457dfd55.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/ma/LICENSE",
+      "bytes": 1593,
+      "sha256": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+      "bundlePath": "notices/05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/random/LICENSE.md",
+      "bytes": 3511,
+      "sha256": "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+      "bundlePath": "notices/103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/random/src/distributions/LICENSE.md",
+      "bytes": 2745,
+      "sha256": "469778be8f33d54e1bcaab28c281cc472916d2d273f835e55bc487d30503face",
+      "bundlePath": "notices/469778be8f33d54e1bcaab28c281cc472916d2d273f835e55bc487d30503face.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/random/src/mt19937/LICENSE.md",
+      "bytes": 2926,
+      "sha256": "0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156",
+      "bundlePath": "notices/0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/random/src/pcg64/LICENSE.md",
+      "bytes": 1154,
+      "sha256": "e7d4f4fb20358f314210a892ae17351e04993813646f697ec387385ca2a36918",
+      "bundlePath": "notices/e7d4f4fb20358f314210a892ae17351e04993813646f697ec387385ca2a36918.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/random/src/philox/LICENSE.md",
+      "bytes": 1509,
+      "sha256": "6f5828a57223d4cc7f8ea505a2623e7b978b242752c1515e355f46ba2cec1800",
+      "bundlePath": "notices/6f5828a57223d4cc7f8ea505a2623e7b978b242752c1515e355f46ba2cec1800.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/random/src/sfc64/LICENSE.md",
+      "bytes": 1226,
+      "sha256": "9d4098846018319cd68e228ee6220361787f73bccbf00237a85e4fc9621b998f",
+      "bundlePath": "notices/9d4098846018319cd68e228ee6220361787f73bccbf00237a85e4fc9621b998f.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/random/src/splitmix64/LICENSE.md",
+      "bytes": 332,
+      "sha256": "268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9",
+      "bundlePath": "notices/268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/tools/wheels/LICENSE_linux.txt",
+      "bytes": 45231,
+      "sha256": "2c324f77b8b88fcf4420193f45da0f3c5d75b077e8745f2cfede8ec600734c39",
+      "bundlePath": "notices/2c324f77b8b88fcf4420193f45da0f3c5d75b077e8745f2cfede8ec600734c39.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/tools/wheels/LICENSE_osx.txt",
+      "bytes": 45262,
+      "sha256": "d252b7176ffdfd0dc378b0b159d192330ed4863fd1407f44af5c3b835d34c23d",
+      "bundlePath": "notices/d252b7176ffdfd0dc378b0b159d192330ed4863fd1407f44af5c3b835d34c23d.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/tools/wheels/LICENSE_win32.txt",
+      "bytes": 44238,
+      "sha256": "ae1a2397fe278af63c029218138beae3844bcd0b9e31019cdbc3386ead311348",
+      "bundlePath": "notices/ae1a2397fe278af63c029218138beae3844bcd0b9e31019cdbc3386ead311348.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/vendored-meson/meson/COPYING",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bundlePath": "notices/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/vendored-meson/meson/docs/theme/extra/templates/license.html",
+      "bytes": 168,
+      "sha256": "15fcbcade0003df4b37350f12bea7dfeb25d4d2ac9e99d12d893773c4d5359fd",
+      "bundlePath": "notices/15fcbcade0003df4b37350f12bea7dfeb25d4d2ac9e99d12d893773c4d5359fd.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/vendored-meson/meson/packaging/License.rtf",
+      "bytes": 11098,
+      "sha256": "e3e8d7b15b2021c994047314ad0ac5e367561f64771a60a85a9c0952d8cd4c3a",
+      "bundlePath": "notices/e3e8d7b15b2021c994047314ad0ac5e367561f64771a60a85a9c0952d8cd4c3a.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/vendored-meson/meson/packaging/macpages/English.lproj/license.html",
+      "bytes": 10921,
+      "sha256": "bca11d525505d21cdfb021e634b0f1d48ece827f9bedcf8cd41356c48a09be24",
+      "bundlePath": "notices/bca11d525505d21cdfb021e634b0f1d48ece827f9bedcf8cd41356c48a09be24.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/hiwire-6a1e67280a15d929ebeceee54a6358c9c8d5f697.tar.gz",
+      "member": "hiwire-6a1e67280a15d929ebeceee54a6358c9c8d5f697/LICENSE",
+      "bytes": 16725,
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "bundlePath": "notices/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/libffi-f08493d249d2067c8b3207ba46693dd858f95db3.tar.gz",
+      "member": "libffi-f08493d249d2067c8b3207ba46693dd858f95db3/LICENSE",
+      "bytes": 1132,
+      "sha256": "2c9c2acb9743e6b007b91350475308aee44691d96aa20eacef8e199988c8c388",
+      "bundlePath": "notices/2c9c2acb9743e6b007b91350475308aee44691d96aa20eacef8e199988c8c388.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/libffi-f08493d249d2067c8b3207ba46693dd858f95db3.tar.gz",
+      "member": "libffi-f08493d249d2067c8b3207ba46693dd858f95db3/LICENSE-BUILDTOOLS",
+      "bytes": 18698,
+      "sha256": "e67978cd18816c0cb7d29aaaacde7b7447402c2fb321a051698890a8eaedda94",
+      "bundlePath": "notices/e67978cd18816c0cb7d29aaaacde7b7447402c2fb321a051698890a8eaedda94.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/pyodide-build-0eb494ffb3536971da3309d98ac56f6515f985a4.tar.gz",
+      "member": "pyodide-build-0eb494ffb3536971da3309d98ac56f6515f985a4/LICENSE",
+      "bytes": 16725,
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "bundlePath": "notices/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/Python-3.13.2.tgz",
+      "member": "Python-3.13.2/Doc/copyright.rst",
+      "bytes": 451,
+      "sha256": "2f455e3bd119869bf01369ab852d87d11c9e67e5351a7ebc64ab2c0af344aff6",
+      "bundlePath": "notices/2f455e3bd119869bf01369ab852d87d11c9e67e5351a7ebc64ab2c0af344aff6.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/Python-3.13.2.tgz",
+      "member": "Python-3.13.2/Doc/license.rst",
+      "bytes": 55737,
+      "sha256": "62f2c9c2c75d511170eb464ad5f83b78cc1f37eb2eb49c2846c9aa6c4557ee99",
+      "bundlePath": "notices/62f2c9c2c75d511170eb464ad5f83b78cc1f37eb2eb49c2846c9aa6c4557ee99.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/Python-3.13.2.tgz",
+      "member": "Python-3.13.2/LICENSE",
+      "bytes": 13809,
+      "sha256": "78b12c3a81360b357002334f0e70ea0e92eebf7a9b358805c03c48484945f3bb",
+      "bundlePath": "notices/78b12c3a81360b357002334f0e70ea0e92eebf7a9b358805c03c48484945f3bb.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/Python-3.13.2.tgz",
+      "member": "Python-3.13.2/Mac/BuildScript/resources/License.rtf",
+      "bytes": 15068,
+      "sha256": "ab6df6040a4e24babad38f98454eb3263722fa6a1c441bfaa271798efbe55f27",
+      "bundlePath": "notices/ab6df6040a4e24babad38f98454eb3263722fa6a1c441bfaa271798efbe55f27.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/Python-3.13.2.tgz",
+      "member": "Python-3.13.2/Modules/expat/COPYING",
+      "bytes": 1144,
+      "sha256": "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534",
+      "bundlePath": "notices/122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/Python-3.13.2.tgz",
+      "member": "Python-3.13.2/Tools/msi/bundle/bootstrap/LICENSE.txt",
+      "bytes": 3273,
+      "sha256": "cb95daf98edda8e08a242e1060691b6941f0911692bf468a3f9c5e4b58c09b8f",
+      "bundlePath": "notices/cb95daf98edda8e08a242e1060691b6941f0911692bf468a3f9c5e4b58c09b8f.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/AUTHORS",
+      "bytes": 28933,
+      "sha256": "56f7df65203d4858dac19cafe3a84a8c49abaff56b67d32d2d463d5fef6e440b",
+      "bundlePath": "notices/56f7df65203d4858dac19cafe3a84a8c49abaff56b67d32d2d463d5fef6e440b.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/LICENSE",
+      "bytes": 5093,
+      "sha256": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86",
+      "bundlePath": "notices/620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/site/source/_themes/emscripten_sphinx_rtd_theme/LICENSE",
+      "bytes": 1078,
+      "sha256": "f6b3bcf46d6a06da81b72230b32b22e0f418ecddce55e0501d7f54fb5aa29ba9",
+      "bundlePath": "notices/f6b3bcf46d6a06da81b72230b32b22e0f418ecddce55e0501d7f54fb5aa29ba9.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/site/source/docs/contributing/AUTHORS.rst",
+      "bytes": 516,
+      "sha256": "97db820ed7485942588cd6c129d42210366277f0398869b652d2f8e54fa3fa63",
+      "bundlePath": "notices/97db820ed7485942588cd6c129d42210366277f0398869b652d2f8e54fa3fa63.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/system/include/SDL/COPYING",
+      "bytes": 1031,
+      "sha256": "c0340bf02391530fb13cf4170c31253ecd09868fa483553652699584eb4db6ae",
+      "bundlePath": "notices/c0340bf02391530fb13cf4170c31253ecd09868fa483553652699584eb4db6ae.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/system/lib/compiler-rt/LICENSE.TXT",
+      "bytes": 16708,
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+      "bundlePath": "notices/1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/system/lib/libc/musl/COPYRIGHT",
+      "bytes": 6204,
+      "sha256": "f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af",
+      "bundlePath": "notices/f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/system/lib/libcxx/LICENSE.TXT",
+      "bytes": 16703,
+      "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b",
+      "bundlePath": "notices/539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/system/lib/libcxxabi/LICENSE.TXT",
+      "bytes": 16706,
+      "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c",
+      "bundlePath": "notices/e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/system/lib/libunwind/LICENSE.TXT",
+      "bytes": 16706,
+      "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d",
+      "bundlePath": "notices/b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/system/lib/mimalloc/LICENSE",
+      "bytes": 1096,
+      "sha256": "19c99805e7a44a34b297a75d1edea9985e300066dfc024d5c99d4236d4573b5d",
+      "bundlePath": "notices/19c99805e7a44a34b297a75d1edea9985e300066dfc024d5c99d4236d4573b5d.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/sounds/LICENSE.txt",
+      "bytes": 836,
+      "sha256": "dabb2ee881522112ee70539aec179f3a639b8fc58e6a7ca06df2791fabd51537",
+      "bundlePath": "notices/dabb2ee881522112ee70539aec179f3a639b8fc58e6a7ca06df2791fabd51537.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/box2d/License.txt",
+      "bytes": 886,
+      "sha256": "829f4dd7e3da440ed11d34ac954afc3ea90dc481a5ec6775397edf59ab41d1e5",
+      "bundlePath": "notices/829f4dd7e3da440ed11d34ac954afc3ea90dc481a5ec6775397edf59ab41d1e5.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/box2d/freeglut/COPYING",
+      "bytes": 1439,
+      "sha256": "b6593d5ec4c113a274abb85b10e8615895cb0ddb89f7912af5fe5aa8df38a275",
+      "bundlePath": "notices/b6593d5ec4c113a274abb85b10e8615895cb0ddb89f7912af5fe5aa8df38a275.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/bullet/AUTHORS",
+      "bytes": 997,
+      "sha256": "948a3920bd78a2c0b9e5c291de93386505b6f09e65a5926137ef906bee045773",
+      "bundlePath": "notices/948a3920bd78a2c0b9e5c291de93386505b6f09e65a5926137ef906bee045773.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/bullet/COPYING",
+      "bytes": 18002,
+      "sha256": "231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c",
+      "bundlePath": "notices/231f7edcc7352d7734a96eef0b8030f77982678c516876fcb81e25b32d68564c.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/bullet/LICENSE",
+      "bytes": 1337,
+      "sha256": "2a37da52f3f9134d50e5320f68854cfe2dea8708ff98336d08c60146d582eeb3",
+      "bundlePath": "notices/2a37da52f3f9134d50e5320f68854cfe2dea8708ff98336d08c60146d582eeb3.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/coremark/LICENSE.md",
+      "bytes": 18582,
+      "sha256": "9577b9c846f61fd69a0d8ac965998c6450c7d8969f71f0bb4a931b91aebad28a",
+      "bundlePath": "notices/9577b9c846f61fd69a0d8ac965998c6450c7d8969f71f0bb4a931b91aebad28a.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/enet/LICENSE",
+      "bytes": 1060,
+      "sha256": "f7295dd0e55e7df4048d0bc08e3f57af92ea03ee9e8c2d236885c29e4fcaa105",
+      "bundlePath": "notices/f7295dd0e55e7df4048d0bc08e3f57af92ea03ee9e8c2d236885c29e4fcaa105.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/enet/docs/license.dox",
+      "bytes": 1094,
+      "sha256": "9529d38e816787221d52d7fa0638d5be19390095eb1b32c0e53e979d6e4f281b",
+      "bundlePath": "notices/9529d38e816787221d52d7fa0638d5be19390095eb1b32c0e53e979d6e4f281b.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/freealut/AUTHORS",
+      "bytes": 341,
+      "sha256": "0662d3858aa345835925fe5c9eba549f229fb22c306b90a37329b3b4f972aea4",
+      "bundlePath": "notices/0662d3858aa345835925fe5c9eba549f229fb22c306b90a37329b3b4f972aea4.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/freealut/COPYING",
+      "bytes": 25268,
+      "sha256": "db6a1ddf751a4eb743d640550717fe15bb5483f5238b97aa4a0145d46dc22075",
+      "bundlePath": "notices/db6a1ddf751a4eb743d640550717fe15bb5483f5238b97aa4a0145d46dc22075.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/freetype/docs/LICENSE.TXT",
+      "bytes": 1396,
+      "sha256": "f35d115efd18ec624503129dbbcc8cd14c74140e2ecb85a3411b92e7a3901a11",
+      "bundlePath": "notices/f35d115efd18ec624503129dbbcc8cd14c74140e2ecb85a3411b92e7a3901a11.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/notofont/LICENSE_OFL.txt",
+      "bytes": 4301,
+      "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "bundlePath": "notices/6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/openjpeg/LICENSE",
+      "bytes": 1723,
+      "sha256": "db41603bdbc1a8aad4b6e51affa4357209d0e5bbafc2557ac050c62590cc800b",
+      "bundlePath": "notices/db41603bdbc1a8aad4b6e51affa4357209d0e5bbafc2557ac050c62590cc800b.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/poppler/AUTHORS",
+      "bytes": 145,
+      "sha256": "9bb2a2d73128adae6044ccbaa6a477640c4ce86e30771b0efad67ec7385588a4",
+      "bundlePath": "notices/9bb2a2d73128adae6044ccbaa6a477640c4ce86e30771b0efad67ec7385588a4.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/poppler/COPYING",
+      "bytes": 17987,
+      "sha256": "ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6",
+      "bundlePath": "notices/ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/test/third_party/poppler/cmake/modules/COPYING-CMAKE-SCRIPTS",
+      "bytes": 1327,
+      "sha256": "46cde7dc11e64c78d650b4851b88f6704b4665ff60f22a1caf68ceb15e217e5b",
+      "bundlePath": "notices/46cde7dc11e64c78d650b4851b88f6704b4665ff60f22a1caf68ceb15e217e5b.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/third_party/closure-compiler/node-externs/LICENSE",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bundlePath": "notices/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/third_party/leb128/LICENSE",
+      "bytes": 1065,
+      "sha256": "6d21d47a22d95b919ddeaf8b49a4697909b47310472cb7fe3ad14cf6810d3208",
+      "bundlePath": "notices/6d21d47a22d95b919ddeaf8b49a4697909b47310472cb7fe3ad14cf6810d3208.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/emscripten-4.0.9.tar.gz",
+      "member": "emscripten-4.0.9/third_party/terser/LICENSE",
+      "bytes": 1348,
+      "sha256": "68335488ef8f917c0feb901ace385f8c919bc81b0b60448a92928a3769fcec8f",
+      "bundlePath": "notices/68335488ef8f917c0feb901ace385f8c919bc81b0b60448a92928a3769fcec8f.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/pybind11-d6ae0e163a6fb414c81c7f4a98291460e5a18bfe.tar.gz",
+      "member": "pybind11-d6ae0e163a6fb414c81c7f4a98291460e5a18bfe/LICENSE",
+      "bytes": 1684,
+      "sha256": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb",
+      "bundlePath": "notices/83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/zlib-v1.3.1.tar.gz",
+      "member": "zlib-1.3.1/LICENSE",
+      "bytes": 1002,
+      "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243",
+      "bundlePath": "notices/845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/zlib-v1.3.1.tar.gz",
+      "member": "zlib-1.3.1/contrib/dotzlib/LICENSE_1_0.txt",
+      "bytes": 1359,
+      "sha256": "36266a8fd073568394cb81cdb2b124f7fdae2c64c1a7ed09db34b4d22efa2951",
+      "bundlePath": "notices/36266a8fd073568394cb81cdb2b124f7fdae2c64c1a7ed09db34b4d22efa2951.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/bzip2-1.0.6.zip",
+      "member": "bzip2-1.0.6/LICENSE",
+      "bytes": 1901,
+      "sha256": "4919cfb14a73cd64fcef67b107613970cf1659a09aa675dba31314f373bc7204",
+      "bundlePath": "notices/4919cfb14a73cd64fcef67b107613970cf1659a09aa675dba31314f373bc7204.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/source/oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+      "member": "oofem-oofem-214b161/COPYING.LGPLv2.1",
+      "bytes": 26530,
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "bundlePath": "notices/dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/source/oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+      "member": "oofem-oofem-214b161/LICENSE",
+      "bytes": 26526,
+      "sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
+      "bundlePath": "notices/20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/source/oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+      "member": "oofem-oofem-214b161/cmake/Modules/LICENSE",
+      "bytes": 1291,
+      "sha256": "4436752d66502a78f3de471b8305a36b88b3c99792a4907992a76898cfb23a54",
+      "bundlePath": "notices/4436752d66502a78f3de471b8305a36b88b3c99792a4907992a76898cfb23a54.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/native-cancel-r3/pyodide-72e3c78d53a32a76e0aca7443ad24e5cae1042d3.tar.gz",
+      "member": "pyodide-pyodide-72e3c78/LICENSE",
+      "bytes": 16725,
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "bundlePath": "notices/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/native-cancel-r3/pyodide-72e3c78d53a32a76e0aca7443ad24e5cae1042d3.tar.gz",
+      "member": "pyodide-pyodide-72e3c78/src/js/vendor/stackframe/LICENSE",
+      "bytes": 1080,
+      "sha256": "899da9d991cb211a3642b84e82a9ae0b4b4e44546fd207e34d7d4ec2eb40f420",
+      "bundlePath": "notices/899da9d991cb211a3642b84e82a9ae0b4b4e44546fd207e34d7d4ec2eb40f420.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/native-cancel-r3/recipes-c768cb28b5bf128642b9aa5aebd7114a4cfc17ce.tar.gz",
+      "member": "pyodide-pyodide-recipes-c768cb2/LICENSE",
+      "bytes": 16725,
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "bundlePath": "notices/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt"
+    },
+    {
+      "source": "scratchpad/claude/agents/cx_v103_fem_runtime_astra/before/distribution-r4/downloads/numpy-2.2.5.tar.gz",
+      "member": "numpy-2.2.5/numpy/_core/src/multiarray/dragon4.c",
+      "bytes": 1498,
+      "sha256": "92b12e5a8bdcd0bbf49cf7d7bb061ce3ea2d64902ea9f3c03395e5c063ed30bf",
+      "bundlePath": "notices/92b12e5a8bdcd0bbf49cf7d7bb061ce3ea2d64902ea9f3c03395e5c063ed30bf.txt",
+      "memberSha256": "e7715d267ccc42622272f371991747664a229eda24eecf42f86894df6a593c67",
+      "extent": "lines 1-31"
+    },
+    {
+      "source": "netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "member": "netgen_mesher-6.2.2606.post5.dev0.dist-info/licenses/LICENSE",
+      "bytes": 26430,
+      "sha256": "a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7",
+      "bundlePath": "notices/a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7.txt"
+    },
+    {
+      "source": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+      "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/LICENSE",
+      "bytes": 26430,
+      "sha256": "a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7",
+      "bundlePath": "notices/a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7.txt"
+    },
+    {
+      "source": "pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+      "member": "pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9/LICENSE",
+      "bytes": 1684,
+      "sha256": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb",
+      "bundlePath": "notices/83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb.txt"
+    },
+    {
+      "source": "zlib-v1.3.1.tar.gz",
+      "member": "zlib-1.3.1/LICENSE",
+      "bytes": 1002,
+      "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243",
+      "bundlePath": "notices/845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243.txt"
+    },
+    {
+      "source": "netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+      "member": "netgen_mesher-6.2.2606.post5.dev0.dist-info/licenses/AUTHORS",
+      "bytes": 51,
+      "sha256": "b1d90f091e62f5c1e59ea6db105348b20c6404c0c5ed20d91db5235b511ac288",
+      "bundlePath": "notices/b1d90f091e62f5c1e59ea6db105348b20c6404c0c5ed20d91db5235b511ac288.txt"
+    },
+    {
+      "source": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+      "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/concurrentqueue.h",
+      "bytes": 1736,
+      "sha256": "a016208434ebc6a342c52fae34e7f3045d6a325089963b82cbee5bf3c8ae93cf",
+      "bundlePath": "notices/a016208434ebc6a342c52fae34e7f3045d6a325089963b82cbee5bf3c8ae93cf.txt",
+      "extent": "Exact source prefix before #pragma once; includes embedded Boost grant/disclaimer."
+    },
+    {
+      "source": "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+      "member": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/general/gzstream.h",
+      "bytes": 1383,
+      "sha256": "a941f6ab8280ee0e2dae76ec0d01b3e9637749e9f445f2f1987b4761c81db70c",
+      "bundlePath": "notices/a941f6ab8280ee0e2dae76ec0d01b3e9637749e9f445f2f1987b4761c81db70c.txt",
+      "extent": "Exact source prefix before include guard; LGPL2.1-or-later copyright/license notice."
+    },
+    {
+      "source": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/LICENSE.rst",
+      "member": "LICENSE.rst",
+      "bundlePath": "notices/915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6.txt",
+      "bytes": 1478,
+      "sha256": "915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6",
+      "extent": "Entire primary reference license text; web-rendered lines joined with LF, not a raw HTTP byte capture.",
+      "appliesTo": "netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806/libsrc/core/mpi4py_pycapi.h",
+      "correspondence": {
+        "referenceTag": "4.0.0",
+        "referenceIsUniqueOriginVersion": false,
+        "headerUrl": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/src/mpi4py/include/mpi4py/pycapi.h",
+        "licenseUrl": "https://raw.githubusercontent.com/mpi4py/mpi4py/4.0.0/LICENSE.rst",
+        "observedOn": "2026-10-24",
+        "method": "UTF-8 splitlines; discard blank lines; strip leading/trailing whitespace only; retain order and every other character",
+        "nonemptyLines": 208,
+        "normalizedSha256": "1316b5a0642ce6ed627cb7d5d42f14a3c9a31c541bc8dfbbbfd59024ab220e70",
+        "localHeaderSha256": "022ec87d2a2dc2bcf0bc1961560477f3d532eff33df6ba2f8edd48f4abf39cb8",
+        "licenseExpression": "BSD-3-Clause",
+        "notice": "notices/915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6.txt",
+        "noticeSha256": "915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6",
+        "limit": "Complete normalized source correspondence to the named upstream reference, not raw upstream byte equality or proof of the original build version. No MPI runtime inclusion claim."
+      }
+    },
+    {
+      "source": "https://www.nist.gov/itl/math/software#software-disclaimer",
+      "member": "Software Disclaimer",
+      "bytes": 1912,
+      "sha256": "bf488b13430c036ae911f018798f4a49a28165ee7f2f487371406f11c3659b7f",
+      "bundlePath": "notices/bf488b13430c036ae911f018798f4a49a28165ee7f2f487371406f11c3659b7f.txt",
+      "extent": "Entire six-paragraph NIST Software Disclaimer; primary web-rendered paragraph text with LF separators, not a raw HTTP byte-identity claim."
+    }
+  ],
+  "noticeCoverage": "Candidate notice filenames plus original frozen wheel notices; not a completed shipped-byte license audit.",
+  "buildEvidence": {
+    "oofemScikitBuildCoreGenerator": "0.11.6",
+    "generatorEvidence": "before/wheel-metadata/oofem-3.1.dev5+g214b161ed.dist-info/WHEEL",
+    "pybind11Gitlink": "d6ae0e163a6fb414c81c7f4a98291460e5a18bfe",
+    "historicalCompleteBuildEnvironment": "UNRESOLVED"
+  },
+  "remaining": [
+    "Root review and actual source/rebuild/replacement demonstration; preserving archives is not that demonstration.",
+    "Reconcile shipped static libraries and fonts against their precise permissions and notices; source archive contents may include unused components.",
+    "Humor Sans copied by exact Matplotlib recipe has no license name-table entry in the actual TTF; retain upstream/license provenance gap explicitly.",
+    "The retained build has IML OFF. The distributed IML sources have seven byte-identical upstream headers and one completely accounted GMRES derivative; attribution and the NIST redistribution notice are retained in evidence/iml-source-correspondence.json. This is source correspondence, not a complete runtime/source or legal-clearance claim.",
+    "Select and implement LGPL source/relink or suitable replacement distribution route and product terms; technical preparation is not legal clearance.",
+    "Final product source/notice layout, installer/ASAR, browser CSP and full release gates remain outside this material bundle.",
+    "Source distributions, recipe wheels and Emscripten ports owned only by the 20 removed components, and the notices recorded only from them, were removed from the distribution (preimages kept outside it). NumPy named-licence coverage stays open: the highway and pythoncapi-compat sources' wasm32 compile status and the random/LICENSE.md NCSA/BSD wording."
+  ]
+}

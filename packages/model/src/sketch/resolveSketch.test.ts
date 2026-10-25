@@ -2812,6 +2812,29 @@ describe('ミラー・複写・配列複写(FR-324、タスク20)', () => {
     basis: { kind: 'axis', axis: { featureId: 'l9' } },
   };
 
+  it('retains circular copy fraction and actual source producer when display enumeration changes', () => {
+    const placement = (count: number): CopyPlacement => ({ kind: 'circularArray', center: vector(0, 0, 0),
+      angle: num(0), count: num(count), fullCircle: true });
+    const four = resolveSketch(documentOf(POINT, copyOf([{ featureId: 'p1' }], placement(4))));
+    const eight = resolveSketch(documentOf(POINT, copyOf([{ featureId: 'p1' }], placement(8))));
+    const expected = { kind: 'copied-point', featureId: 'cp1', source: { kind: 'point', featureId: 'p1' },
+      placement: { kind: 'circular', fullCircle: true, numerator: 1, denominator: 4 } };
+    const first = four.points.find((point) => JSON.stringify(point.producerAnchor) === JSON.stringify(expected));
+    const second = eight.points.find((point) => JSON.stringify(point.producerAnchor) === JSON.stringify(expected));
+    if (first === undefined || second === undefined) throw new Error('Missing copy quarter producer');
+    expectCloseTo(first.position, [0, 10, 0]);
+    expectCloseTo(second.position, [0, 10, 0]);
+    expect(first.id).not.toBe(second.id);
+    const other = resolveSketch(documentOf({ ...POINT, id: 'p2' }, copyOf([{ featureId: 'p2' }], placement(4))));
+    const alternate = other.points.find((point) => point.producerAnchor?.kind === 'copied-point'
+      && point.producerAnchor.placement.kind === 'circular' && point.producerAnchor.placement.numerator === 1
+      && point.producerAnchor.placement.denominator === 4);
+    if (alternate === undefined) throw new Error('Missing alternate copy quarter');
+    expectCloseTo(alternate.position, [0, 10, 0]);
+    expect(alternate.producerAnchor).toEqual({ ...expected, source: { kind: 'point', featureId: 'p2' } });
+    expect(alternate.producerAnchor).not.toEqual(first.producerAnchor);
+  });
+
   it('線分を Y 軸の線でミラーすると (0,0,0)-(-10,5,0) が 1 本増える(元は残る)', () => {
     const resolved = resolveSketch(
       documentOf(Y_AXIS, LINE, copyOf([{ featureId: 'l1' }], MIRROR_BY_Y_AXIS)),
@@ -3340,5 +3363,40 @@ describe('投影・交差(FR-325、タスク25)', () => {
     expect(resolved.errors).toEqual([]);
     // 4 本目の線分の終点(0, 0, 0)が「直前の点」になる。
     expectCloseTo(resolved.points[0].position, [0, 0, 0]);
+  });
+});
+
+describe('logical point-array producer roles survive layout enumeration changes', () => {
+  it('keeps reduced circular fractions across four to eight points and refuses removed fractions', () => {
+    const make = (count: number): SketchFeature => ({ id: 'logical-circle', name: 'circle', planeId: 'xy',
+      kind: 'pointArray', layout: { kind: 'circular', center: absoluteCoordinate(0, 0, 0), radius: num(10), count: num(count) } });
+    const four = resolveSketch(documentOf(make(4)));
+    const eight = resolveSketch(documentOf(make(8)));
+    const three = resolveSketch(documentOf(make(3)));
+    const expected = { kind: 'circular-point', featureId: 'logical-circle', numerator: 1, denominator: 4 };
+    const quarter = four.points.find((point) => JSON.stringify(point.producerAnchor) === JSON.stringify(expected));
+    const retained = eight.points.find((point) => JSON.stringify(point.producerAnchor) === JSON.stringify(expected));
+    if (quarter === undefined || retained === undefined) throw new Error('Missing logical quarter');
+    expectCloseTo(quarter.position, [0, 10, 0]);
+    expectCloseTo(retained.position, [0, 10, 0]);
+    expect(quarter.id).not.toBe(retained.id);
+    expect(three.points.some((point) => JSON.stringify(point.producerAnchor) === JSON.stringify(expected))).toBe(false);
+  });
+
+  it('keeps row and column identity when the column count changes the flattened display address', () => {
+    const make = (columns: number): SketchFeature => ({ id: 'logical-grid', name: 'grid', planeId: 'xy',
+      kind: 'pointArray', layout: { kind: 'grid', base: absoluteCoordinate(0, 0, 0),
+        rowAzimuth: num(0), rowSpacing: num(10), rowCount: num(3),
+        colAzimuth: num(90), colSpacing: num(5), colCount: num(columns) } });
+    const before = resolveSketch(documentOf(make(2)));
+    const after = resolveSketch(documentOf(make(3)));
+    const expected = { kind: 'grid-point', featureId: 'logical-grid', row: 1, column: 1 };
+    const first = before.points.find((point) => JSON.stringify(point.producerAnchor) === JSON.stringify(expected));
+    const second = after.points.find((point) => JSON.stringify(point.producerAnchor) === JSON.stringify(expected));
+    if (first === undefined || second === undefined) throw new Error('Missing logical grid cell');
+    expectCloseTo(first.position, [10, 5, 0]);
+    expectCloseTo(second.position, [10, 5, 0]);
+    expect(first.id).not.toBe(second.id);
+    expect(second.producerAnchor).toEqual(expected);
   });
 });

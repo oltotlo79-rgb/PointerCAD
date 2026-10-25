@@ -45,6 +45,10 @@ describe('閉周回のリリーフと明示継ぎ目', () => {
         const folded = await bridge.recomputeSolids([{ featureId: id, name: id, plan, key: sheetShapeKey(plan), visible: true }], { partId: id, generation: 1 });
         expect(folded.failures).toEqual([]); expect(folded.bodies).toHaveLength(1);
         expect(folded.bodies[0].volume).toBeCloseTo(3200 + 320 * Math.PI - foldedRemoved, 5);
+        const expected = 4 * 20 * 20 * 2 + 4 * 20 * 2 * Math.PI / 2 * (3 + 2 / 2) - foldedRemoved;
+        expect(expected).toBeGreaterThan(0);
+        expect(Math.abs(folded.bodies[0].volume - expected) / expected).toBeLessThanOrEqual(1e-9);
+
         const mapped = resolveSheetSeams(body, [`corner-${seam}`]); if (!mapped.ok) throw new Error(mapped.message);
         expect(mapped.value).toHaveLength(1);
       } finally { await bridge.releasePart(id); }
@@ -61,6 +65,9 @@ describe('閉周回のリリーフと明示継ぎ目', () => {
         { partId: id, generation: 1 });
       if (!flat.ok) throw new Error(flat.message);
       expect(flat.body.volume).toBeCloseTo(3200 + 304 * Math.PI - flatRemoved, 5);
+      const expected = 2 * (4 * 20 * 20 + 4 * 20 * Math.PI / 2 * (3 + 0.4 * 2)) - flatRemoved;
+      expect(Math.abs(flat.body.volume - expected) / expected).toBeLessThanOrEqual(1e-9);
+
       const outline = await resolveSheetFlatOutline(bridge, flat.bodyKey, 2); if (!outline.ok) throw new Error(outline.message);
       expect(outline.value.loops).toHaveLength(1);
       expect(outline.value.loops.reduce((area, loop) => area + sheetLoopSignedArea(loop.curves, [0,0,1]), 0))

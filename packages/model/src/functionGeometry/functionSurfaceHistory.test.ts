@@ -169,6 +169,41 @@ describe('関数曲面の原式を通常履歴から実CADまで再計算する'
       expect(body.mesh.positions[i]).toBeLessThanOrEqual(2+1e-6);
     }
   },30_000);
+  it('曲がった関数曲面は証明付きのC1双3次Bスプラインとして実CADの面・開いた殻・表示メッシュになる', async () => {
+    const input: FunctionDefinition = { ...definition(), tolerance: number(0.05),
+      formula: { kind: 'coordinate-surface', output: 'Z', expression: expression('0.25*X*Y') } };
+    const document = fixture(input), initial = options(document), functions = initial.functions;
+    if (functions?.surfaces === undefined) throw new Error('Missing surface evaluator');
+    const original = functions.surfaces;
+    const replies: Awaited<ReturnType<typeof original.evaluate>>[] = [];
+    const surfaces = { evaluate: async (...args: Parameters<typeof original.evaluate>) => {
+      const completion = await original.evaluate(...args); replies.push(completion); return completion;
+    } };
+    const result = await compute(document, { ...initial, functions: { ...functions, surfaces } });
+    expect(result.errors).toEqual([]); expect(result.bodies).toHaveLength(1);
+    // The Worker proved a spline for this surface (not a declined, mesh-only reply).
+    expect(replies).toHaveLength(1);
+    const completion = replies[0];
+    if (completion.status !== 'result' || completion.result.status !== 'ready' || completion.result.spline === undefined) {
+      throw new Error('Expected a ready, certified surface spline');
+    }
+    expect(Number.isFinite(completion.result.spline.errorBound)).toBe(true);
+    expect(completion.result.spline.errorBound).toBeGreaterThanOrEqual(0);
+    expect(completion.result.spline.errorBound).toBeLessThanOrEqual(0.05);
+    const body = result.bodies[0];
+    expect(body.isValid).toBe(true); expect(body.bodyKind).toBe('shell'); expect(body.volume).toBe(0);
+    // The native spline route: no planar triangle faces (the mesh route would give only planes).
+    expect(body.faces.length).toBeGreaterThan(0); expect(body.faces.every(face => face.surfaceKind === 'other')).toBe(true);
+    // Display vertices lie on the native spline face; X and Y are reproduced exactly, so the vertical gap to the
+    // function is bounded by the Worker's proved bound (0.05 at most). Sampled check of the displayed result.
+    const positions = body.mesh.positions;
+    expect(positions.length).toBeGreaterThan(9);
+    for (let index = 0; index < positions.length; index += 3) {
+      const [x, y, z] = positions.slice(index, index + 3);
+      expect(Math.abs(x)).toBeLessThanOrEqual(1 + 1e-6); expect(Math.abs(y)).toBeLessThanOrEqual(1 + 1e-6);
+      expect(Math.abs(z)).toBeLessThanOrEqual(0.5 + 1e-6); expect(Math.abs(z - 0.25 * x * y)).toBeLessThanOrEqual(0.05);
+    }
+  }, 30_000);
   it('全XYZ境界で切った斜面の実面積と内部頂点が元の式に一致する', async () => {
     const document = fixture(), before = JSON.stringify(document), result = await compute(document);
     expect(result.errors).toEqual([]); expect(result.bodies).toHaveLength(1);

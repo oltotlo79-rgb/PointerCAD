@@ -53,6 +53,8 @@ export function toCurveSpec(curve: ResolvedCurve): CurveSpec {
         points: curve.points,
         closed: curve.closed,
         ...(curve.degree === undefined ? {} : { degree: curve.degree }),
+        // Explicit knots travel with the poles; dropping them would rebuild a different uniform curve.
+        ...(curve.knots === undefined ? {} : { knots: curve.knots }),
       };
   }
 }
@@ -109,6 +111,7 @@ export function fromCurveSpec(spec: CurveSpec, featureId: string): ResolvedCurve
         points: spec.points,
         closed: spec.closed,
         ...(spec.degree === undefined ? {} : { degree: spec.degree }),
+        ...(spec.knots === undefined ? {} : { knots: spec.knots }),
       };
   }
 }

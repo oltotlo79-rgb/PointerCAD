@@ -56,7 +56,9 @@ describe('図面画面の5区画に入る内容', () => {
     expect(partToolbar).toContain('groupLabelKey="toolbar.fileMenu.groupLabel"');
     const inMenu: readonly string[] = fileGroup.items.map((item) => item.id);
     for (const action of DRAWING_FILE_BUTTON_ACTIONS) expect(inMenu, action).not.toContain(action);
-    expect(inMenu).toEqual(['saveAs', 'refreshSource', 'export', 'svg', 'print', 'return']);
+    expect(inMenu).toEqual(['savePoints', 'saveAs', 'refreshSource', 'export', 'svg', 'print', 'return']);
+    expect(fileGroup.items[0]).toMatchObject({ id: 'savePoints', labelKey: 'toolbar.history.savePoints',
+      tooltipKey: 'toolbar.history.savePointsTooltip' });
     const drawingToolbar = readFileSync(fileURLToPath(new URL('./DrawingToolbar.tsx', import.meta.url)), 'utf8');
     for (const action of DRAWING_FILE_BUTTON_ACTIONS) expect(drawingToolbar).toContain(`onClick={() => choose('${action}')}`);
   });

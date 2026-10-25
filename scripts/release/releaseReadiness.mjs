@@ -1,3 +1,4 @@
+import { checkDedicatedPerformanceEvidence, loadDedicatedPerformanceEvidence } from './dedicatedPerformanceEvidence.mjs';
 /**
  * Release gate (P12-20, P13-15, rules/05 §11.2): check one assembled release candidate before publication and
  * finish non-zero when any condition is not met. evaluateReleaseReadiness() is the judgement: it receives bytes that
@@ -80,6 +81,8 @@ function scopeOf(value) {
   return scope;
 }
 
+export const DEDICATED_MEASUREMENT_CHECK_IDS = Object.freeze(['w21-dedicated', 'w22-dedicated']);
+
 const CHECKS = Object.freeze([
   { id: 'manual-chapters', group: '説明書①', title: '章と題名が今のヘルプの目録と一致する' },
   { id: 'manual-controls', group: '説明書②', title: '操作名・ボタン名が今の画面の文言と一致する' },
@@ -95,9 +98,11 @@ const CHECKS = Object.freeze([
   { id: 'sbom-manifest', group: 'SBOM', title: 'SBOM の配布ファイル・版・commit が公開一覧と一致する' },
   { id: 'release-manifest', group: '公開一覧', title: 'release-manifest.json が候補の記録と実物からの再計算と一致する' },
   { id: 'readme-links', group: 'README', title: 'pointercad:release-links の導線の種類・版・未公開の案内' },
+  { id: 'w21-dedicated', group: 'W21', title: 'Original dedicated compile/restart measurements are accepted for these release inputs' },
+  { id: 'w22-dedicated', group: 'W22', title: 'Original normal/slow owned-CPU measurements are accepted for these release inputs' },
 ]);
 export const RELEASE_READINESS_CHECK_IDS = Object.freeze(CHECKS.map(check => check.id));
-/** The checks of manual mode (P12-20); pre-release mode runs them too, as the first five of its fourteen. */
+/** The checks of manual mode (P12-20); pre-release mode runs them too, before the mandatory dedicated measurements. */
 export const MANUAL_CHECK_IDS = Object.freeze(CHECKS.filter(check => check.id.startsWith('manual-')).map(check => check.id));
 
 const STATUS_LABELS = Object.freeze({ pass: '合格', fail: '不合格', pending: '保留', 'not-implemented': '未実装', deferred: '後回し' });
@@ -933,7 +938,12 @@ export async function evaluateReleaseReadiness(input) {
   const context = createContext(input), checks = [];
   for (const check of CHECKS) {
     if (input.mode === 'manual' && !MANUAL_CHECK_IDS.includes(check.id)) continue;
-    const body = () => CHECK_BODIES[check.id](context);
+    // Dedicated raw evidence remains mandatory independently of ordinary CI.
+    const body = DEDICATED_MEASUREMENT_CHECK_IDS.includes(check.id)
+      ? () => input.readErrors?.dedicatedPerformanceEvidence
+        ? ({ status: 'fail', summary: input.readErrors.dedicatedPerformanceEvidence })
+        : checkDedicatedPerformanceEvidence(check.id, input.dedicatedPerformanceEvidence, input.sourceInputs)
+      : () => CHECK_BODIES[check.id](context);
     checks.push(scope === 'desktop' && DESKTOP_DEFERRED_CHECK_IDS.includes(check.id) ? await deferredCheck(check, body) : await runCheck(check, body));
   }
   return finish(input.mode, checks, scope);
@@ -968,7 +978,7 @@ const USAGE = [
   '  説明書: node scripts/release/releaseReadiness.mjs --mode manual --manual <名前（scripts/manual/generate.mjs の出力名）> [--report <JSON の保存先>]',
 ].join('\n');
 const FLAGS = Object.freeze({ '--mode': 'mode', '--windows': 'windows', '--linux': 'linux', '--web': 'web', '--release': 'release', '--sbom': 'sbom',
-  '--web-url': 'webUrl', '--download-url': 'downloadUrl', '--manual': 'manual', '--report': 'report', '--scope': 'scope' });
+  '--web-url': 'webUrl', '--download-url': 'downloadUrl', '--manual': 'manual', '--report': 'report', '--scope': 'scope', '--performance-evidence': 'performanceEvidence', '--performance-evidence-sha256': 'performanceEvidenceSha256' });
 const MODE_KEYS = Object.freeze({ 'pre-release': ['windows', 'linux', 'web', 'release', 'sbom'], 'post-release': ['release', 'webUrl', 'downloadUrl'],
   manual: ['manual'] });
 /** The desktop-first post-release check has no Web site to visit, so it takes no --web-url. */
@@ -990,9 +1000,11 @@ export function parseReleaseReadinessArguments(args) {
   }
   if (options.mode === 'manual' && options.scope !== undefined) throw new ReleaseReadinessUsageError('manual では使わない引数: --scope');
   options.scope ??= 'all';
+  const performanceKeys = ['performanceEvidence', 'performanceEvidenceSha256'];
+  if (performanceKeys.some(key => options[key] !== undefined) && (options.mode !== 'pre-release' || performanceKeys.some(key => options[key] === undefined))) throw new ReleaseReadinessUsageError('Performance evidence path and digest require pre-release and must be supplied together');
   const keys = modeKeys(options);
   for (const key of Object.values(FLAGS)) {
-    if (key !== 'mode' && key !== 'report' && key !== 'scope' && options[key] !== undefined && !keys.includes(key)) {
+    if (key !== 'mode' && key !== 'report' && key !== 'scope' && !performanceKeys.includes(key) && options[key] !== undefined && !keys.includes(key)) {
       const where = options.mode === 'post-release' && options.scope === 'desktop' ? 'post-release --scope desktop' : options.mode;
       throw new ReleaseReadinessUsageError(`${where} では使わない引数: --${key.replace(/[A-Z]/gu, letter => `-${letter.toLowerCase()}`)}`);
     }
@@ -1190,7 +1202,8 @@ export async function readPreReleaseInput(root, options) {
   }
   if (webFiles === null) readErrors.currentHelp = 'Web の候補を読めないため読み込まない';
   else currentHelp = await attempt('currentHelp', () => loadCurrentHelp(root));
-  return { mode: 'pre-release', scope: scopeOf(options.scope), packageFiles, builderConfig, readme, releaseManifest, sbom, webFiles, candidates,
+  const dedicatedPerformanceEvidence = options.performanceEvidence === undefined ? null : await attempt('dedicatedPerformanceEvidence', () => loadDedicatedPerformanceEvidence(root, options.performanceEvidence, options.performanceEvidenceSha256, sourceInputs));
+  return { dedicatedPerformanceEvidence, mode: 'pre-release', scope: scopeOf(options.scope), packageFiles, builderConfig, readme, releaseManifest, sbom, webFiles, candidates,
     sourceCommit, sourceInputs, currentHelp, captureFreshness: loadCaptureFreshness(), readErrors: Object.freeze(readErrors) };
 }
 /** Manual mode: one generated manual, dist/<name>/, read like scripts/manual/verify.mjs, against the current help. */

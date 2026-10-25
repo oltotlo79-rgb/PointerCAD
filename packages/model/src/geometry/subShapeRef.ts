@@ -29,6 +29,17 @@
 
 import { keyNumber } from '../part/cacheKey.js';
 import type { Vec3 } from '../sketch/vec3.js';
+import type { SubShapeOrigin } from './subShapeOrigin.js';
+
+function originKey(origin: SubShapeOrigin): string {
+  return JSON.stringify(origin, (_key: string, value: unknown): unknown => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) sorted[key] = record[key];
+    return sorted;
+  });
+}
 
 /** 部分形状の種類(P3 計画書 §2.2.2)。 */
 export type SubShapeKind = 'face' | 'edge' | 'vertex';
@@ -85,6 +96,8 @@ export interface SubShapeRef {
   /** 選んだときの通し番号(`TopExp.MapShapes_2` の順で数えた 0 始まりの番号)。 */
   readonly index: number;
   readonly fingerprint: SubShapeFingerprint;
+  /** Saved feature identity; the current bodyFeatureId is a separate value. */
+  readonly origin?: SubShapeOrigin;
 }
 
 /** 参照の種類。fingerprint.kind をそのまま返す薄い口(呼び出し側の見通しのため)。 */
@@ -100,6 +113,10 @@ export function subShapeKindOf(reference: SubShapeRef): SubShapeKind {
  * 選び方が要る別の問題になる)。
  */
 export function isSameSubShape(a: SubShapeRef, b: SubShapeRef): boolean {
+  if (a.origin !== undefined || b.origin !== undefined) {
+    return a.bodyFeatureId === b.bodyFeatureId && a.origin !== undefined && b.origin !== undefined
+      && originKey(a.origin) === originKey(b.origin);
+  }
   return (
     a.bodyFeatureId === b.bodyFeatureId &&
     a.fingerprint.kind === b.fingerprint.kind &&
@@ -148,7 +165,8 @@ function keyOptionalNumberText(value: number | null): string {
  */
 export function fingerprintKeyText(reference: SubShapeRef): string {
   const { bodyFeatureId, index, fingerprint } = reference;
-  const head = `body=${bodyFeatureId};index=${index}`;
+  const head = `body=${bodyFeatureId};index=${index}`
+    + (reference.origin === undefined ? '' : `;origin=${originKey(reference.origin)}`);
   switch (fingerprint.kind) {
     case 'face':
       return (

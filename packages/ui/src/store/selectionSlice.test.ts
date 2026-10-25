@@ -19,6 +19,7 @@ import {
   resetTestStore,
   extrudeFeature,
   bodyFor,
+  resultFor,
 } from './testing/createTestStore.js';
 
 beforeEach(resetTestStore);
@@ -180,8 +181,67 @@ describe('選択セット(FR-112、P6 タスク43)', () => {
 
   /** 立体 1 つを画面に置き、指定したものを選んだ状態にする。 */
   function selectOn(selection: readonly string[]): void {
-    useAppStore.setState({ bodies: [bodyWithSubShapes('extrude-1')], selection });
+    const state = useAppStore.getState();
+    state.recordRecomputeRequest(1);
+    state.applyRecompute(state.document, { ...resultFor(state.document), generation: 1, bodies: [bodyWithSubShapes('extrude-1')] });
+    state.recordRecomputeCompletion(1, 'success');
+    state.setSelection(selection, { kind: 'pick' });
   }
+
+  it('保存した頂点の元指紋と現在のmatched参照を同時に保持し、古い結果では呼び出さない', () => {
+    selectOn(['extrude-1#vertex:0']);
+    const state = () => useAppStore.getState();
+    state().createSelectionSetFromSelection('頂点');
+    const set = state().document.selectionSets[0], member = set.members[0];
+    if (member.kind !== 'vertex') throw new Error('vertex member');
+    const document = state().document;
+    const previous = state().selection;
+    state().recordRecomputeRequest(2);
+    expect(state().selectSelectionSet(set.id)).toBe(1);
+    expect(state().selection).toBe(previous);
+    const body = bodyWithSubShapes('extrude-1');
+    state().applyRecompute(document, { ...resultFor(document), generation: 2,
+      bodies: [{ ...body, vertices: [{ index: 0, position: [0.001, 0, 0] }] }] });
+    state().recordRecomputeCompletion(2, 'success');
+    expect(state().selectSelectionSet(set.id)).toBe(0);
+    const endpoint = state().connectionSelection?.endpoints.get('extrude-1#vertex:0');
+    expect(endpoint).toMatchObject({ kind: 'vertex', originalReference: member.ref,
+      matchedReference: { fingerprint: { kind: 'vertex', position: [0.001, 0, 0] } }, owner: { completedGeneration: 2 } });
+    expect(state().document.selectionSets[0]).toBe(set);
+    state().createSelectionSetFromSelection('同じ元頂点');
+    expect(state().document.selectionSets[1].members).toEqual(set.members);
+  });
+
+  it('tracked頂点の元originを保存し、次の成功世代では現番号を選んでも元参照を書き換えない', () => {
+    const origin = { version: 1, shapeKind: 'vertex', identity: {
+      kind: 'box-vertex', featureId: 'extrude-1', role: 'top-front-left' } } as const;
+    const first: SolidBody = { ...bodyWithSubShapes('extrude-1'), origins: { version: 1, state: 'tracked', bindings: [
+      { origin, state: 'unique', current: { kind: 'vertex', index: 0 } }] } };
+    const state = () => useAppStore.getState();
+    const document = state().document;
+    state().recordRecomputeRequest(1);
+    state().applyRecompute(document, { ...resultFor(document), generation: 1, bodies: [first] });
+    state().recordRecomputeCompletion(1, 'success');
+    state().setSelection(['extrude-1#vertex:0'], { kind: 'pick' });
+    expect(state().connectionSelection?.endpoints.get('extrude-1#vertex:0')).toMatchObject({
+      originalReference: { origin }, matchedReference: { origin } });
+    expect(state().createSelectionSetFromSelection('頂点')).toBeNull();
+    const set = state().document.selectionSets[0], member = set.members[0];
+    if (member.kind !== 'vertex') throw new Error('vertex member');
+    const saved = member.ref, nextDocument = state().document;
+    state().recordRecomputeRequest(2);
+    const next: SolidBody = { ...first, vertices: [{ index: 7, position: [900, 800, 700] }],
+      origins: { version: 1, state: 'tracked', bindings: [
+        { origin, state: 'unique', current: { kind: 'vertex', index: 7 } }] } };
+    state().applyRecompute(nextDocument, { ...resultFor(nextDocument), generation: 2, bodies: [next] });
+    state().recordRecomputeCompletion(2, 'success');
+    expect(state().selectSelectionSet(set.id)).toBe(0);
+    expect(state().selection).toEqual(['extrude-1#vertex:7']);
+    expect(state().connectionSelection?.endpoints.get('extrude-1#vertex:7')).toMatchObject({
+      originalReference: saved, matchedReference: { index: 7, origin }, owner: { completedGeneration: 2 } });
+    expect(state().document.selectionSets[0].members[0]).toMatchObject({ ref: saved });
+    expect(state().document.selectionSets[0]).toBe(set);
+  });
 
   it('いま選んでいる面に名前を付けて覚え、形の計算は走らない(§0.a-0.44)', () => {
     selectOn(['extrude-1#face:0', 'extrude-1#face:1']);

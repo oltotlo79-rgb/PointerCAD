@@ -54,9 +54,6 @@ catalogs:
     mathlive:
       specifier: 0.110.0
       version: 0.110.0
-    opencascade.js:
-      specifier: 2.0.0-beta.b5ff984
-      version: 2.0.0-beta.b5ff984
     opentype.js:
       specifier: 2.0.0
       version: 2.0.0
@@ -76,8 +73,8 @@ catalogs:
       specifier: 8.69.0
       version: 8.69.0
     vite:
-      specifier: 8.2.2
-      version: 8.2.2
+      specifier: 8.2.4
+      version: 8.2.4
     vitest:
       specifier: 4.1.11
       version: 4.1.11
@@ -90,6 +87,8 @@ overrides:
   app-builder-lib@26.15.3>@electron/get: 5.1.0
   '@electron/get@5.1.0>undici': 7.29.1
   minimatch@10.2.6>brace-expansion: 5.0.12
+  ajv@8.20.0>fast-uri: 3.1.8
+  opencascade.js: file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677
 
 importers:
 
@@ -104,6 +103,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 22.20.1
+      comlink:
+        specifier: 'catalog:'
+        version: 4.4.2
       electron-builder:
         specifier: 'catalog:'
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
@@ -124,10 +126,10 @@ importers:
         version: 8.69.0(eslint@10.9.1(jiti@2.7.0)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@5.9.3)
       vite:
         specifier: 'catalog:'
-        version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+        version: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   apps/desktop:
     dependencies:
@@ -149,16 +151,16 @@ importers:
         version: 19.2.5(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: 'catalog:'
-        version: 6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 6.1.1(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
       electron:
         specifier: 'catalog:'
         version: 44.1.0(supports-color@7.2.0)
       vite:
         specifier: 'catalog:'
-        version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+        version: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   apps/web:
     dependencies:
@@ -180,10 +182,10 @@ importers:
         version: 19.2.5(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: 'catalog:'
-        version: 6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 6.1.1(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
       vite:
         specifier: 'catalog:'
-        version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+        version: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
 
   packages/drawing:
     dependencies:
@@ -196,7 +198,7 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/expression:
     dependencies:
@@ -209,7 +211,20 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
+
+  packages/fem:
+    dependencies:
+      '@pointercad/model':
+        specifier: workspace:*
+        version: link:../model
+    devDependencies:
+      '@pointercad/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/help-content:
     devDependencies:
@@ -218,7 +233,7 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/io:
     dependencies:
@@ -229,12 +244,18 @@ importers:
         specifier: 'catalog:'
         version: 0.8.3
     devDependencies:
+      '@pointercad/expression':
+        specifier: workspace:*
+        version: link:../expression
+      '@pointercad/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       '@pointercad/test-utils':
         specifier: workspace:*
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/kernel:
     dependencies:
@@ -242,18 +263,18 @@ importers:
         specifier: 'catalog:'
         version: 4.4.2
       opencascade.js:
-        specifier: 'catalog:'
-        version: 2.0.0-beta.b5ff984(ws@8.21.3)
+        specifier: file:../../vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677
+        version: file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677(ws@8.21.3)
     devDependencies:
       '@pointercad/test-utils':
         specifier: workspace:*
         version: link:../test-utils
       vite:
         specifier: 'catalog:'
-        version: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+        version: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/model:
     dependencies:
@@ -275,13 +296,13 @@ importers:
         version: link:../test-utils
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/test-utils:
     devDependencies:
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
   packages/ui:
     dependencies:
@@ -291,6 +312,9 @@ importers:
       '@pointercad/expression':
         specifier: workspace:*
         version: link:../expression
+      '@pointercad/fem':
+        specifier: workspace:*
+        version: link:../fem
       '@pointercad/help-content':
         specifier: workspace:*
         version: link:../help-content
@@ -330,7 +354,7 @@ importers:
         version: 0.185.4
       vitest:
         specifier: 'catalog:'
-        version: 4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+        version: 4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
 
 packages:
 
@@ -1196,8 +1220,8 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
-  fast-uri@3.1.7:
-    resolution: {integrity: sha512-dOvZVzjdZdz7phd9v6jCbwxrBW3fK6n8Rc0CtdmM4bumzMnxywBYhuph6J819RRw/ku+rLbelwfMunktuzVVHg==}
+  fast-uri@3.1.8:
+    resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -1631,8 +1655,8 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
-  opencascade.js@2.0.0-beta.b5ff984:
-    resolution: {integrity: sha512-4ZIrYrfrCV7SXvQFSmbHlfueSYngQNWGVrRVloVaAEZHDSY+R1k2htdY4AU5axbIGkbWVmrj+M8nmyeMLAelwA==}
+  opencascade.js@file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677:
+    resolution: {directory: vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677, type: directory}
     peerDependencies:
       ws: ^8.5.0
 
@@ -1975,8 +1999,8 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
-  vite@8.2.2:
-    resolution: {integrity: sha512-cFKLV/PRgAUlIRm5WjMjJ86jrftzpqcgH+Us+DS8mI3CDNiH30Whrz8uHL3+MOLPAgqbMBAqWdAHAphOAM+z/Q==}
+  vite@8.2.4:
+    resolution: {integrity: sha512-lfauXnrf2x0p+UoA+wXh0dgFWnUjCyG6Js95KBkgaCwUU9k0DAHI4W6Q0WCx+h+5g+Alce1y4Zi2QjjK0UvGBw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -2658,10 +2682,10 @@ snapshots:
       '@typescript-eslint/types': 8.69.0
       eslint-visitor-keys: 5.0.1
 
-  '@vitejs/plugin-react@6.1.1(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))':
+  '@vitejs/plugin-react@6.1.1(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+      vite: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
 
   '@vitest/expect@4.1.11':
     dependencies:
@@ -2672,13 +2696,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.1
 
-  '@vitest/mocker@4.1.11(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))':
+  '@vitest/mocker@4.1.11(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))':
     dependencies:
       '@vitest/spy': 4.1.11
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+      vite: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
 
   '@vitest/pretty-format@4.1.11':
     dependencies:
@@ -2726,7 +2750,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.7
+      fast-uri: 3.1.8
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -3159,7 +3183,7 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
-  fast-uri@3.1.7: {}
+  fast-uri@3.1.8: {}
 
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
@@ -3543,7 +3567,7 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  opencascade.js@2.0.0-beta.b5ff984(ws@8.21.3):
+  opencascade.js@file:vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677(ws@8.21.3):
     dependencies:
       ws: 8.21.3
 
@@ -3873,7 +3897,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0):
+  vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -3885,10 +3909,10 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitest@4.1.11(@types/node@22.20.1)(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0)):
+  vitest@4.1.11(@types/node@22.20.1)(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0)):
     dependencies:
       '@vitest/expect': 4.1.11
-      '@vitest/mocker': 4.1.11(vite@8.2.2(@types/node@22.20.1)(jiti@2.7.0))
+      '@vitest/mocker': 4.1.11(vite@8.2.4(@types/node@22.20.1)(jiti@2.7.0))
       '@vitest/pretty-format': 4.1.11
       '@vitest/runner': 4.1.11
       '@vitest/snapshot': 4.1.11
@@ -3905,7 +3929,7 @@ snapshots:
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vite: 8.2.2(@types/node@22.20.1)(jiti@2.7.0)
+      vite: 8.2.4(@types/node@22.20.1)(jiti@2.7.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.20.1

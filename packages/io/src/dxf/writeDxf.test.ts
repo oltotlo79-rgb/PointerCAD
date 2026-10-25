@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { DrawingDxfEntity } from '@pointercad/model';
 
 import { parseDxfTags, type DxfTag } from './dxfTags.js';
 import { readDxf, type DxfEntity, type DxfLineEntity } from './readDxf.js';
@@ -517,5 +518,81 @@ describe('writeDxf が断るもの', () => {
     const text = writeDxf([{ ...LINE, layer: '' }]);
     expect(valuesOf(text, 8)).toEqual(['0']);
     expect(readBack(text)[0].layer).toBe('0');
+  });
+});
+
+describe('関数曲線の書き出し(次数と明示節点を保ったまま R12 の折れ線へ落とす)', () => {
+  /** Valid export fixtures use the same spline type as the drawing writer. */
+  type FunctionSpline = Extract<DrawingDxfEntity, { readonly kind: 'spline' }>;
+  const base = { kind: 'spline' as const, layer: '0', color: null, mode: 'control' as const, closed: false, degree: 3, warnings: [] };
+  /** Vertices of the written polyline: each line's start, then the last line's end. */
+  function vertices(text: string): { x: number; y: number }[] {
+    const lines = readBack(text).filter((entity): entity is DxfLineEntity => entity.kind === 'line');
+    return [...lines.map((line) => line.start), ...lines.slice(-1).map((line) => line.end)];
+  }
+
+  it('一次の関数曲線は頂点をそのまま書き、一様な3次として丸めない', () => {
+    const points = [{ x: 0, y: 0 }, { x: 1, y: 2 }, { x: 3, y: -1 }, { x: 4, y: 0 }];
+    const entity: FunctionSpline = { ...base, points, curveDegree: 1 };
+    const result = writeDxfDocument([entity]);
+    expect(result.flattenedCurveCount).toBe(1); expect(result.text).not.toContain('SPLINE');
+    expect(vertices(result.text)).toEqual(points);
+  });
+
+  it('不等間隔の節点の3次は、独立に評価した曲線上の点を書く', () => {
+    const knots = [0, 0.3, 1.5, 1.6];
+    const points = [{ x: 0, y: 0 }, { x: 0.2, y: 0.5 }, { x: 0.6, y: 1.1 }, { x: 1, y: 1.3 }, { x: 2.2, y: 1.6 },
+      { x: 2.9, y: 0.4 }, { x: 3, y: 0.2 }, { x: 3.4, y: 0 }];
+    const result = writeDxfDocument([{ ...base, points, curveDegree: 3, knots } satisfies FunctionSpline]);
+    expect(result.flattenedCurveCount).toBe(1);
+    // Independent evaluation: span s is the Bezier (junction s, pole 2s+1, pole 2s+2, junction s+1).
+    const junction = (node: number) => {
+      if (node === 0) return points[0];
+      if (node === knots.length - 1) return points[points.length - 1];
+      const share = (knots[node] - knots[node - 1]) / (knots[node + 1] - knots[node - 1]);
+      const a = points[2 * node], b = points[2 * node + 1];
+      return { x: a.x + (b.x - a.x) * share, y: a.y + (b.y - a.y) * share };
+    };
+    const expected: { x: number; y: number }[] = [];
+    for (let span = 0; span < knots.length - 1; span++) {
+      const b = [junction(span), points[2 * span + 1], points[2 * span + 2], junction(span + 1)];
+      for (let step = span === 0 ? 0 : 1; step <= 16; step++) {
+        const u = step / 16, w = [(1 - u) ** 3, 3 * u * (1 - u) ** 2, 3 * u * u * (1 - u), u ** 3];
+        expected.push({ x: b.reduce((sum, p, k) => sum + p.x * w[k], 0), y: b.reduce((sum, p, k) => sum + p.y * w[k], 0) });
+      }
+    }
+    const written = vertices(result.text);
+    expect(written).toHaveLength(expected.length);
+    written.forEach((point, n) => {
+      expect(Math.abs(point.x - expected[n].x)).toBeLessThan(1e-8); expect(Math.abs(point.y - expected[n].y)).toBeLessThan(1e-8);
+    });
+    // Reading the same poles as a uniform spline would give a different curve.
+    const uniform = vertices(writeDxf([{ ...base, points }]));
+    expect(uniform.some((point, n) => n < written.length && Math.hypot(point.x - written[n].x, point.y - written[n].y) > 1e-3)).toBe(true);
+  });
+
+  it('端が一致する滑らかな関数の輪は、書き出した折れ線でも始点と終点が一致する', () => {
+    const knots = [0, 2, 3.5, 2 * Math.PI];
+    const points = [{ x: 1, y: 0 }, { x: 1, y: 0.7 }, { x: -0.2, y: 1.1 }, { x: -0.9, y: 0.6 }, { x: -1, y: -0.4 },
+      { x: 0.3, y: -1.1 }, { x: 1, y: -0.5 }, { x: 1, y: 0 }];
+    const written = vertices(writeDxfDocument([{ ...base, points, curveDegree: 3, knots } satisfies FunctionSpline]).text);
+    expect(written[0]).toEqual(written[written.length - 1]);
+    expect(written[0]).toEqual({ x: 1, y: 0 });
+  });
+
+  it('評価できない関数曲線の指定は断り、制御点の一様な曲線へ黙って置き換えない', () => {
+    const points = [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 0 }];
+    const malformed: readonly FunctionSpline[] = [
+      { ...base, points, curveDegree: 3 },
+      { ...base, points, curveDegree: 3, knots: [0, 0] },
+      { ...base, points, curveDegree: 3, knots: [0, 1, 2] },
+      { ...base, points, curveDegree: 1, knots: [0, 1] },
+      // Only this deliberately invalid degree crosses the static input boundary.
+      { ...base, points, curveDegree: 2, knots: [0, 1] } as unknown as FunctionSpline,
+      { ...base, points, curveDegree: 3, knots: [0, Number.NaN] },
+    ];
+    for (const entity of malformed) {
+      expect(() => writeDxfDocument([entity])).toThrow(DXF_WRITE_INVALID_VALUE_MESSAGE);
+    }
   });
 });

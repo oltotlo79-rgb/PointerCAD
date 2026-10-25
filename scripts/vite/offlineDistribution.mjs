@@ -1,7 +1,8 @@
 /** Assemble emitted Web/manual/PDF bytes, then publish one inventory. This does not certify a release. */
 import { createHash } from 'node:crypto';
 import { createOfflineAssetManifest } from './offlineAssets.mjs';
-import { OFFLINE_CONTROL_FILES, OFFLINE_DEPLOYMENT_FILES, offlineAssetUrl } from './offlineProtocol.mjs';
+import { OFFLINE_ASSET_FORMAT_V2, OFFLINE_CONTROL_FILES, OFFLINE_DEPLOYMENT_FILES,
+  OFFLINE_MAX_FILE_BYTES, OFFLINE_MAX_TOTAL_BYTES, OFFLINE_MAX_V2_FILES, offlineAssetUrl } from './offlineProtocol.mjs';
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const record = value => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -53,7 +54,21 @@ export function assembleOfflineDistribution(webFiles, manualFiles, pdfFiles) {
   const assets = [...assembled].filter(([path]) => !OFFLINE_CONTROL_FILES.includes(path) && !OFFLINE_DEPLOYMENT_FILES.includes(path))
     .map(([path, bytes]) => ({ path, bytes }));
   const manifest = createOfflineAssetManifest(assets, assets.map(file => file.path));
-  add('offline-assets.json', new globalThis.TextEncoder().encode(JSON.stringify(manifest)));
+  const inventoryBytes = new globalThis.TextEncoder().encode(JSON.stringify(manifest));
+  if (manifest.format === OFFLINE_ASSET_FORMAT_V2) {
+    let physicalBytes = inventoryBytes.byteLength;
+    if (assembled.size + 1 > OFFLINE_MAX_V2_FILES || inventoryBytes.byteLength > OFFLINE_MAX_FILE_BYTES) {
+      throw new Error('Offline distribution exceeds physical file limits');
+    }
+    for (const [path, bytes] of assembled) {
+      if (bytes.byteLength > OFFLINE_MAX_FILE_BYTES) throw new Error('Offline distribution file is too large: ' + path);
+      physicalBytes += bytes.byteLength;
+      if (!Number.isSafeInteger(physicalBytes) || physicalBytes > OFFLINE_MAX_TOTAL_BYTES) {
+        throw new Error('Offline distribution physical bytes exceed limit');
+      }
+    }
+  }
+  add('offline-assets.json', inventoryBytes);
   return { files: assembled, manifest, manualBuildId: manuals.manualBuildId,
     pdfVolumes: manuals.pdfVolumes, releaseCertified: false };
 }

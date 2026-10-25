@@ -1,7 +1,7 @@
 /** Called only with this recomputation's final geometry; saved fingerprints never supply values. */
-import { selectMateTargetGeometry, type KernelBridge, type MeasureTarget, type SolidBody } from '../kernelBridge.js';
-import { scoreSubShapeMatch } from '../kernelBridge/subShapeMatching.js';
+import { resolveSubShapeReference, type KernelBridge, type MeasureTarget, type SolidBody } from '../kernelBridge.js';
 import type { ResolvedPart } from '../part/resolvePart.js';
+import { readReferenceBodies } from '../part/readReferenceBodies.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
 import { compareMathGeometryCongruence, type MathGeometryComparisonShape } from './mathGeometryCongruence.js';
@@ -18,16 +18,8 @@ export interface MathGeometryContext {
   readonly shouldCancel: () => boolean;
 }
 
-/**
- * A face, edge or vertex is not re-selected by guesswork: when the best current candidate beats the
- * runner-up (itself at or above the kernel threshold 0.6) by less than this, the reference is
- * 'ambiguous-reference'. Only math geometry uses it; machining, appearance and mates keep the kernel pick.
- * Scores are 0..1 and an unchanged index alone is worth 0.2, so with a stable numbering a rival comes
- * this close only when the indexed candidate itself drifted far from the saved fingerprint. Without the
- * index, two faces or edges of the same orientation and size differ only by position, where 0.05 is a
- * distance difference of one eighth of the body's bounding diagonal.
- */
-export const MATH_GEOMETRY_AMBIGUITY_MARGIN = 0.05;
+/** 既存の公開名を保ち、曖昧さの基準は図面と共通の1か所から使う。 */
+export { SUB_SHAPE_AMBIGUITY_MARGIN as MATH_GEOMETRY_AMBIGUITY_MARGIN } from '../kernelBridge/referenceResolution.js';
 
 type Scalar = { readonly value: number; readonly unit: 'mm' | 'mm2' | 'mm3' | 'degree' | 'radian' };
 class GeometryProblem extends Error {
@@ -65,25 +57,11 @@ async function currentBodies(requests: readonly MathGeometryRequest[], context: 
       case 'volume': add(quantity.body); break;
     }
   }
-  const present = new Set(context.bodies.map(value => value.featureId));
-  const needed = context.resolved.steps.filter(step => !step.visible && ids.has(step.featureId)
-    && !present.has(step.featureId) && !context.failedIds.has(step.featureId)).map(step => step.featureId);
-  if (needed.length === 0 || context.bridge.readCachedBodies === undefined || context.shouldCancel()) return context;
+  const result = await readReferenceBodies({ ...context, steps: context.resolved.steps, featureIds: ids });
   const failedIds = new Set(context.failedIds);
-  try {
-    const result = await context.bridge.readCachedBodies(context.resolved.steps, needed);
-    // The outer loop checks cancellation before using any of these values.
-    if (result.cancelled) {
-      for (const id of needed) failedIds.add(id);
-      return { ...context, failedIds };
-    }
-    for (const failure of result.failures) failedIds.add(failure.featureId);
-    const requested = new Set(needed);
-    return { ...context, failedIds, bodies: [...context.bodies, ...result.bodies.filter(value => requested.has(value.featureId))] };
-  } catch {
-    for (const id of needed) failedIds.add(id);
-    return { ...context, failedIds };
-  }
+  for (const [id, reason] of result.missing) if (reason === 'failed' || reason === 'read-failed') failedIds.add(id);
+  if (result.cancelled) for (const id of ids) failedIds.add(id);
+  return { ...context, bodies: result.bodies, failedIds };
 }
 
 function body(context: MathGeometryContext, id: string): SolidBody {
@@ -95,13 +73,10 @@ function body(context: MathGeometryContext, id: string): SolidBody {
 function subShape(context: MathGeometryContext, target: Exclude<MathGeometryShape, { readonly kind: 'body' }>) {
   if (target.reference.fingerprint.kind !== target.kind) return missing();
   const current = body(context, target.reference.bodyFeatureId);
-  const found = selectMateTargetGeometry(current, target.reference);
-  if (found === null || found.kind !== target.kind) return missing();
-  // Same kernel scoring as the pick above; a near tie means the saved fingerprint no longer names one shape.
-  const scores = scoreSubShapeMatch(current, target.reference);
-  if (scores === null) return missing();
-  if (scores.runnerUpScore !== null && scores.score - scores.runnerUpScore < MATH_GEOMETRY_AMBIGUITY_MARGIN) return ambiguous();
-  return found;
+  const resolution = resolveSubShapeReference(current, target.reference);
+  if (resolution.status === 'ambiguous') return ambiguous();
+  if (resolution.status !== 'matched' || resolution.match.geometry.kind !== target.kind) return missing();
+  return resolution.match.geometry;
 }
 function point(context: MathGeometryContext, target: MathGeometryPoint): Vec3 {
   if (target.kind === 'vertex') return finitePoint(subShape(context, target).position);

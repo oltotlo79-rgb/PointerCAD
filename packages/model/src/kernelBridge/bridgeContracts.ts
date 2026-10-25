@@ -1,3 +1,6 @@
+import type { KernelApi, RuntimePhaseJournalSnapshot } from '@pointercad/kernel';
+import type { AnalysisBoundarySource } from '../geometry/analysisMesh.js';
+
 /** bridge data exchanged through the model's kernel bridge. Types only; no Worker lifetime. */
 import type {
   DrawingProjectionRequest,
@@ -47,10 +50,72 @@ import type {
 } from './exchangeContracts.js';
 
 
+export interface MeshLedgerOwner {
+  readonly dispatchId: string;
+  readonly partId: string;
+  readonly generation: number;
+  readonly kind: 'display' | 'hidden';
+  readonly steps: readonly { readonly id: string; readonly key: string }[];
+}
+/** Only capturePartReleaseClaim can issue a usable claim; copied descriptors are rejected. */
+export interface PartReleaseClaim {
+  readonly owner: MeshLedgerOwner;
+  readonly connectionEpoch: number;
+}
+export type PartReleaseDisposition =
+  | { readonly status: 'released' | 'absent' | 'closed' | 'stale-owner' }
+  | { readonly status: 'cleanup-failed' | 'unavailable'; readonly reason: string };
+export interface CurrentMeshLedgerInput {
+  readonly observationId: string;
+  readonly owners: readonly MeshLedgerOwner[];
+}
+export type CurrentMeshLedgerReceipt =
+  | { readonly status: 'unknown'; readonly observationId: string; readonly reason: string }
+  | { readonly status: 'known'; readonly observationId: string; readonly hostEpoch: number;
+      readonly workerEpochs: readonly { readonly providerId: number; readonly connectionEpoch: number; readonly cache: number; readonly owners: number }[];
+      readonly owners: readonly MeshLedgerOwner[]; readonly limitBytes: number;
+      readonly workerRetainedBackingBytes: number; readonly hostRetainedBackingBytes: number;
+      readonly pendingCloneReservedBytes: number; readonly admittedBoundBytes: number;
+      readonly coverage: 'registered-solid-mesh-backings-only';
+      readonly unobserved: readonly ['native', 'gpu', 'wasm', 'mesh-metadata', 'other-providers']; };
+export type SourceMeshBackingInspection =
+  | { readonly status: 'unknown'; readonly reason: string }
+  | { readonly status: 'known'; readonly hostEpoch: number; readonly inputBackingBytes: number;
+      readonly additionalBackingBytes: number; readonly sameSourceBackings: readonly WeakRef<ArrayBuffer>[];
+      readonly coverage: 'registered-main-solid-backings-only';
+      readonly unobserved: readonly ['native', 'gpu', 'wasm', 'mesh-metadata', 'other-providers']; };
+export interface ReferenceMeshLeaseOptions {
+  /** Main-side reservation cancellation; never serialized into the Worker owner metadata. */
+  readonly shouldCancel?: () => boolean | Promise<boolean>;
+  readonly partId: string;
+  readonly generation: number;
+  readonly maximumLiveMeshBytes: number;
+  readonly localMesh?: SolidRecomputeOptions['localMesh'];
+}
+
 /** model から幾何カーネルへの唯一の接点。ここ以外から kernel を呼ばない。 */
 export interface KernelBridge {
-  /** Read topology for current upstream steps without changing the displayed part. Older test bridges may omit it. */
-  readCachedBodies?(steps: readonly ResolvedSolidStep[], featureIds: readonly string[]): Promise<SolidRecomputeOutcome>;
+  /**
+   * Read topology by the current resolved step/key, including consumed (hidden) upstream bodies.
+   * Does not change visibility or rebuild an evicted shape; unavailable keys return failures.
+   * Callers must reject old/deleted/suppressed steps and cancellation, and may batch/deduplicate
+   * reads within one recomputation only. An omitted reader means hidden references cannot be verified.
+   */
+  readCachedBodies?(steps: readonly ResolvedSolidStep[], featureIds: readonly string[], lease?: ReferenceMeshLeaseOptions): Promise<SolidRecomputeOutcome>;
+  /** Exact bridge-issued descriptor for these result-array identities, never a caller-created assertion. */
+  meshLedgerOwner?(bodies: readonly SolidBody[]): MeshLedgerOwner | null;
+  capturePartReleaseClaim?(bodies: readonly SolidBody[]): PartReleaseClaim | null;
+  /** Actual part cache return or authoritative logical absence/closure, never a void fallback. */
+  releasePartClaim?(claim: PartReleaseClaim): Promise<PartReleaseDisposition>;
+  captureCurrentMeshLedger?(input: CurrentMeshLedgerInput): Promise<CurrentMeshLedgerReceipt>;
+  currentMeshLedgerReceipt?(receipt: CurrentMeshLedgerReceipt): boolean;
+  inspectSourceMeshBackings?(receipt: CurrentMeshLedgerReceipt, buffers: readonly ArrayBufferLike[]): Promise<SourceMeshBackingInspection>;
+  /** Synchronous managed host/provider-lifetime freshness; publication still requires the async global observation. */
+  currentSourceMeshBackingInspection?(inspection: SourceMeshBackingInspection, receipt: CurrentMeshLedgerReceipt): boolean;
+  releaseReferenceMeshLease?(owner: MeshLedgerOwner): Promise<{ readonly released: boolean; readonly absent?: boolean; readonly closed?: boolean }>;
+  /** Bridge-lifetime actual hidden-owner queue, independent of cancelled recomputation result lifetime. */
+  retryReferenceMeshCleanup?(): Promise<{ readonly released: number; readonly retained: number }>;
+  pendingReferenceMeshCleanup?(): number;
   /** 面の一覧をカーネルへ渡し、表示用の三角形を受け取る(FR-309)。 */
   tessellateSketchFaces(faces: readonly ResolvedFace[]): Promise<SketchTessellationOutcome>;
   /**
@@ -235,8 +300,13 @@ export interface InterferenceKernelBridge extends AssemblyKernelBridge {
   checkInterference(input: AssemblyInterferenceInput, options?: AssemblyInterferenceOptions): Promise<AssemblyInterferenceResult>;
 }
 
-export interface MonitoredKernelBridge extends InterferenceKernelBridge {
+export interface MonitoredKernelBridge extends InterferenceKernelBridge, AnalysisBoundarySource {
   pendingWaiters(): number;
+  /** On-demand metadata read only; not GPU/native allocation or complete transfer coverage. */
+  readRuntimePhases(): Promise<RuntimePhaseObservation>;
+  beginRuntimePhaseCapture(nonce: string): Promise<void>;
+  readRuntimePhaseCapture(nonce: string, mainAcknowledge: number | null, workerAcknowledge: number | null): Promise<RuntimePhaseCapture>;
+  endRuntimePhaseCapture(nonce: string): Promise<void>;
   operationCounts(): KernelOperationCounts;
   pendingCallbacks(): number;
   /** この橋のRPCが返した結果(または拒否理由)の分類。別の値ならundefined。 */
@@ -258,4 +328,50 @@ export interface DrawingOperationProgress {
 export interface DrawingKernelBridge {
   hiddenLineViews(request: DrawingProjectionRequest, options?: DrawingOperationOptions): Promise<DrawingProjectionResult>;
   sectionViews(request: DrawingSectionRequest, options?: DrawingOperationOptions): Promise<DrawingSectionResult>;
+}
+
+/** Primitive dispatch-time UI context; source part/library identity is not inferred from it. */
+export interface RuntimeUiContext {
+  readonly activeDocumentId: string;
+  readonly documentVersion: number;
+  readonly documentKind: 'part' | 'assembly' | 'drawing' | 'empty';
+}
+export type MainRuntimePhase = 'dispatch' | 'raw-received' | 'adopted' | 'reply-rejected'
+  | 'receiver-acknowledged' | 'receiver-absent' | 'receiver-ack-failed' | 'geometry-cancel-request'
+  | 'geometry-cancel-throw' | 'connection-interrupted' | 'connection-close-request' | 'connection-close-failed' | 'connection-closed';
+export interface MainRuntimePhaseRecord {
+  readonly seq: number;
+  readonly phase: MainRuntimePhase;
+  readonly connectionEpoch: number;
+  readonly dispatchId: string | null;
+  readonly partId: string | null;
+  readonly generation: number | null;
+  readonly kind: 'display' | 'hidden' | null;
+  readonly ui: RuntimeUiContext | null;
+  readonly epochMs: number | null;
+  readonly monoMs: number | null;
+}
+export interface RuntimePhaseObservation {
+  readonly status: 'observed' | 'unknown';
+  readonly reason: string | null;
+  readonly connectionEpoch: number;
+  readonly main: {
+    readonly capacity: 256;
+    readonly lastSeq: number;
+    readonly dropped: number;
+    readonly clockDiscontinuities: number;
+    readonly missingContexts: number;
+    readonly records: readonly MainRuntimePhaseRecord[];
+  };
+  readonly worker: Awaited<ReturnType<NonNullable<KernelApi['readRuntimePhases']>>> | null;
+  readonly coverage: 'runSolidRecompute-call-plus-admission-preclone-and-main-lifetime';
+  readonly transport: 'preclone-to-resolved-main-reply-envelope';
+  readonly unobserved: readonly string[];
+}
+
+export interface RuntimePhaseCapture {
+  readonly nonce: string;
+  readonly connectionEpoch: number;
+  readonly main: RuntimePhaseJournalSnapshot<MainRuntimePhaseRecord>;
+  readonly worker: Awaited<ReturnType<NonNullable<KernelApi['readRuntimePhaseCapture']>>>;
 }

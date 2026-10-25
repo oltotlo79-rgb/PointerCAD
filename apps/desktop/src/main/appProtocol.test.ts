@@ -2,14 +2,20 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Protocol } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { APP_ORIGIN, handleAppScheme } from './appProtocol.js';
+import { APP_ORIGIN, handleAppScheme, registerAppScheme } from './appProtocol.js';
 import { startupFailureDocument } from './startupHtml.js';
+import { DESKTOP_OCCT_TRANSPORT_ORIGIN } from '@pointercad/ui/desktop-occt-transport';
+import { desktopAppContentSecurityPolicy } from '../occtHttpPolicy.js';
 
 const electron = vi.hoisted(() => ({
+  registerSchemesAsPrivileged: vi.fn<Protocol['registerSchemesAsPrivileged']>(),
   handle: vi.fn<Protocol['handle']>(),
   fetch: vi.fn<(url: string) => Promise<Response>>(),
 }));
-vi.mock('electron', () => ({ protocol: { handle: electron.handle }, net: { fetch: electron.fetch } }));
+vi.mock('electron', () => ({
+  protocol: { handle: electron.handle, registerSchemesAsPrivileged: electron.registerSchemesAsPrivileged },
+  net: { fetch: electron.fetch },
+}));
 
 const root = join(process.cwd(), 'dist', 'renderer');
 
@@ -26,6 +32,35 @@ beforeEach(() => {
 });
 
 describe('画面の独自スキームで不正なURLを拒否する', () => {
+  it('Desktop主文書だけへ固定HTTP originを追加しmanual/Workerの権限を広げない', async () => {
+    expect((await request(APP_ORIGIN + '/index.html')).headers.get('Content-Security-Policy'))
+      .toContain("connect-src 'self' " + DESKTOP_OCCT_TRANSPORT_ORIGIN);
+    for (const path of ['/manual/index.html', '/assets/kernel.worker-test.js', '/assets/other.js']) {
+      expect((await request(APP_ORIGIN + path)).headers.get('Content-Security-Policy'))
+        .not.toContain(DESKTOP_OCCT_TRANSPORT_ORIGIN);
+    }
+    expect(desktopAppContentSecurityPolicy("default-src 'none'; connect-src 'self'; worker-src 'none'"))
+      .toContain("worker-src 'none'");
+    expect(() => desktopAppContentSecurityPolicy("connect-src 'none'")).toThrow();
+    expect(() => desktopAppContentSecurityPolicy("default-src 'none'")).toThrow();
+  });
+  it('標準appスキームでコードキャッシュを有効にし、CSPを迂回する権限を追加しない', () => {
+    registerAppScheme();
+    expect(electron.registerSchemesAsPrivileged).toHaveBeenCalledExactlyOnceWith([
+      {
+        scheme: 'app',
+        privileges: {
+          standard: true,
+          codeCache: true,
+          secure: true,
+          supportFetchAPI: true,
+          corsEnabled: true,
+          stream: true,
+        },
+      },
+    ]);
+  });
+
   it('HTML自体の読込み失敗でもJSに頼らない復旧表示と安全な読み直し先を残す', () => {
     const html = startupFailureDocument(APP_ORIGIN + '/index.html');
     expect(html).toContain('data-startup-shell data-state="failed"');

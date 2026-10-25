@@ -1,10 +1,19 @@
+import { allocatePatternPointSlots } from './patternPointSlots.js';
 import {
   evaluateExpression,
   expressionValueFromNumber,
   type ExpressionValue,
 } from '@pointercad/expression';
-import { describe, expect, it } from 'vitest';
+import { stdout } from 'node:process';
+import { createKernelApi } from '@pointercad/kernel';
+import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest';
 
+import { createAllocations } from '../../../kernel/src/occt/allocations.js';
+import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import type { CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
+import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
+import { createDirectKernelBridge } from '../kernelBridge.js';
+import { recomputePart } from './recomputePart.js';
 import {
   absoluteCoordinate,
   appendFeature,
@@ -13,7 +22,7 @@ import {
   nextFeatureId,
   nextFeatureName,
 } from '../sketch/createSketchDocument.js';
-import type { PlaneSpec } from '../geometry/planeSpec.js';
+import { subShapeFromFingerprint, type PlaneSpec } from '../geometry/planeSpec.js';
 import {
   DEFAULT_WORK_PLANE_ID,
   FREE_WORK_PLANE_ID,
@@ -41,7 +50,9 @@ import {
 } from '../thread/metricThread.js';
 // Undo / Redo(FR-505)は履歴の仕組みがそのまま効くことだけを確かめる(P6 タスク20)。
 import { createUndoStack, pushUndo, redo, undo } from '../history/undoStack.js';
-import { cacheKeyFor, type KeyCurve } from './cacheKey.js';
+import { cacheKeyFor, type BooleanKeyMaterial, type KeyCurve } from './cacheKey.js';
+import { compareDocuments } from '../diff/compareDocuments.js';
+import { toSolidStepRequest } from '../kernelBridge/solidRequests.js';
 import {
   addSketch,
   appendReference,
@@ -601,6 +612,11 @@ function coordinateOrigin(x: string, y: string, z: string): SolidOrigin {
   return { kind: 'coordinate', value };
 }
 
+function relativeVertexOrigin(bodyFeatureId: string): SolidOrigin {
+  return { kind: 'coordinate', value: { mode: 'relative', base: { kind: 'subShape', ref: vertexRef(bodyFeatureId) },
+    dx: expr('0'), dy: expr('0'), dz: expr('0') } };
+}
+
 interface FilletOptions {
   readonly radius?: string | ExpressionValue;
   readonly suppressed?: boolean;
@@ -833,6 +849,23 @@ function rectangleEnds(z: number): readonly (readonly Vec3[])[] {
     ],
   ];
 }
+
+describe('surfaceCut alongside the existing cut contract', () => {
+  it('keeps the legacy cut plan unchanged while using a distinct surface-cut key', () => {
+    const target = primitiveFeature('box', boxShape('10', '10', '10'));
+    const document = withSolids(createEmptyPartDocument(), target);
+    const plane: PlaneSpec = { kind: 'workPlane', planeId: 'yz', offset: expr('0') };
+    const legacy: CutFeature = { kind: 'cut', id: 'cut', name: 'Cut', suppressed: false,
+      targetFeatureId: target.id, plane, keep: 'positive', pairedWith: null };
+    const oldResult = resolvePart(withSolids(document, legacy));
+    const newResult = resolvePart(withSolids(document, { kind: 'surfaceCut', id: 'surface-cut', name: 'Surface cut',
+      suppressed: false, targetFeatureId: target.id, blade: { kind: 'plane', plane }, keep: 'positive', pairedWith: null }));
+    expect(oldResult.errors).toEqual([]); expect(newResult.errors).toEqual([]);
+    expect(oldResult.steps[1].plan.kind).toBe('cut');
+    expect(newResult.steps[1].plan.kind).toBe('surfaceCut');
+    expect(newResult.steps[1].key).not.toBe(oldResult.steps[1].key);
+  });
+});
 
 describe('translateCurve', () => {
   it('線分は始点と終点の両方が動き、種類と作成元は変わらない', () => {
@@ -1468,6 +1501,65 @@ describe('resolvePart 抑制', () => {
 });
 
 describe('resolvePart 鍵の性質', () => {
+  it('同形状の円柱A/Bはowner別鍵で、反復・名称・片側寸法変更を区別する', () => {
+    const empty = createEmptyPartDocument();
+    const cylinderA = primitiveFeature('cylinder-a', cylinderShape());
+    const cylinderB = primitiveFeature('cylinder-b', cylinderShape());
+    const base = resolvePart(withSolids(empty, cylinderA, cylinderB));
+    const repeated = resolvePart(withSolids(empty, cylinderA, cylinderB));
+    const renamed = resolvePart(withSolids(empty, cylinderA,
+      primitiveFeature('cylinder-b', cylinderShape(), { name: '名前のみ変更' })));
+    const resized = resolvePart(withSolids(empty, cylinderA,
+      primitiveFeature('cylinder-b', cylinderShape('11'))));
+    expect(base.errors).toEqual([]);
+    expect(base.steps).toHaveLength(2);
+    expect(base.steps[0].key).not.toBe(base.steps[1].key);
+    expect(repeated.steps.map((step) => step.key)).toEqual(base.steps.map((step) => step.key));
+    expect(renamed.steps.map((step) => step.key)).toEqual(base.steps.map((step) => step.key));
+    expect(resized.steps[0].key).toBe(base.steps[0].key);
+    expect(resized.steps[1].key).not.toBe(base.steps[1].key);
+
+    const joined = resolvePart(withSolids(empty, cylinderA, cylinderB,
+      booleanFeature('join-ab', 'union', cylinderA.id, cylinderB.id)));
+    expect(joined.errors).toEqual([]);
+    const plan = booleanPlan(joined.steps[2]);
+    expect(plan.targetKey).toBe(base.steps[0].key);
+    expect(plan.toolKey).toBe(base.steps[1].key);
+    expect(plan.targetKey).not.toBe(plan.toolKey);
+
+    const boxes = resolvePart(withSolids(empty,
+      primitiveFeature('box-a', boxShape()), primitiveFeature('box-b', boxShape())));
+    expect(boxes.steps[0].key).not.toBe(boxes.steps[1].key);
+    const spheres = resolvePart(withSolids(empty,
+      primitiveFeature('sphere-a', sphereShape()), primitiveFeature('sphere-b', sphereShape())));
+    expect(spheres.steps[0].key).toBe(spheres.steps[1].key);
+  });
+
+  it('円柱owner別鍵はR/C面取りのtargetと結果鍵へ伝わる', () => {
+    const empty = createEmptyPartDocument();
+    const cylinderA = primitiveFeature('cylinder-a', cylinderShape());
+    const cylinderB = primitiveFeature('cylinder-b', cylinderShape());
+    const filletA = resolvePart(withSolids(empty, cylinderA,
+      filletFeature('fillet', cylinderA.id, [edgeRefAt(cylinderA.id, 0)])));
+    const filletB = resolvePart(withSolids(empty, cylinderB,
+      filletFeature('fillet', cylinderB.id, [edgeRefAt(cylinderB.id, 0)])));
+    expect(filletA.errors).toEqual([]);
+    expect(filletB.errors).toEqual([]);
+    expect(filletPlan(filletA.steps[1]).targetKey).toBe(filletA.steps[0].key);
+    expect(filletPlan(filletB.steps[1]).targetKey).toBe(filletB.steps[0].key);
+    expect(filletA.steps[1].key).not.toBe(filletB.steps[1].key);
+
+    const chamferA = resolvePart(withSolids(empty, cylinderA,
+      chamferFeature('chamfer', cylinderA.id, [edgeRefAt(cylinderA.id, 0)])));
+    const chamferB = resolvePart(withSolids(empty, cylinderB,
+      chamferFeature('chamfer', cylinderB.id, [edgeRefAt(cylinderB.id, 0)])));
+    expect(chamferA.errors).toEqual([]);
+    expect(chamferB.errors).toEqual([]);
+    expect(chamferPlan(chamferA.steps[1]).targetKey).toBe(chamferA.steps[0].key);
+    expect(chamferPlan(chamferB.steps[1]).targetKey).toBe(chamferB.steps[0].key);
+    expect(chamferA.steps[1].key).not.toBe(chamferB.steps[1].key);
+  });
+
   it('同じ文書を 2 回解決すると鍵が一致する(決定性)', () => {
     const fixture = createFixture();
     const document = withSolids(
@@ -1584,7 +1676,8 @@ describe('resolveHoleCenters', () => {
   it('点フィーチャーは1点になる', () => {
     const fixture = createFixture();
     const outcome = resolveHoleCenters('hole-1', [fixture.pointA], sketchesOf(fixture.document));
-    expect(outcome).toEqual({ ok: true, centers: [[10, 10, 0]] });
+    expect(outcome).toEqual({ ok: true, centers: [[10, 10, 0]],
+      centerAnchors: [{ sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'point-9' } }] });
   });
 
   it('点列フィーチャーは全点に展開される(FR-308)', () => {
@@ -1602,6 +1695,11 @@ describe('resolveHoleCenters', () => {
         [55, 0, 0],
         [60, 0, 0],
       ],
+      centerAnchors: [
+        { sketchId: 'sketch-1', producer: { kind: 'linear-point', featureId: 'pointArray-1', step: 0 } },
+        { sketchId: 'sketch-1', producer: { kind: 'linear-point', featureId: 'pointArray-1', step: 1 } },
+        { sketchId: 'sketch-1', producer: { kind: 'linear-point', featureId: 'pointArray-1', step: 2 } },
+      ],
     });
   });
 
@@ -1617,6 +1715,10 @@ describe('resolveHoleCenters', () => {
       centers: [
         [30, 20, 0],
         [10, 10, 0],
+      ],
+      centerAnchors: [
+        { sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'point-10' } },
+        { sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'point-9' } },
       ],
     });
   });
@@ -1659,7 +1761,8 @@ describe('resolveHoleCenters', () => {
       [{ sketchId: fixture.pointA.sketchId, pointFeatureId: 'point-404' }, fixture.pointA],
       sketchesOf(fixture.document),
     );
-    expect(outcome).toEqual({ ok: true, centers: [[10, 10, 0]] });
+    expect(outcome).toEqual({ ok: true, centers: [[10, 10, 0]],
+      centerAnchors: [{ sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'point-9' } }] });
   });
 });
 
@@ -1917,6 +2020,8 @@ describe('resolvePart 穴', () => {
         targetKey: result.steps[0].key,
         face: fingerprintKeyText(topFaceRef('extrude-1')),
         centers: [[10, 10, 0]],
+        centerAnchors: [{ sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'point-9' } }],
+        placementRoles: [],
         diameter: 6,
         depth: null,
         tiltAngle: 0,
@@ -2177,6 +2282,8 @@ describe('resolvePart ねじ穴', () => {
         targetKey: result.steps[0].key,
         face: fingerprintKeyText(topFaceRef('extrude-1')),
         centers: [[10, 10, 0]],
+        centerAnchors: [{ sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'point-9' } }],
+        placementRoles: [],
         drillDiameter: M6_DRILL_DIAMETER,
         majorDiameter: 6,
         pitch: 1,
@@ -3956,6 +4063,19 @@ describe('resolvePart の拘束(FR-313、タスク8)', () => {
 });
 
 describe('resolvePart 基本形状(FR-429、P5 タスク16)', () => {
+  it('相対原点は純解決の指紋を保ち、現在resolver指定時には追従と未解決を採用する', () => {
+    const document = withSolids(createEmptyPartDocument(), primitiveFeature('source', boxShape()),
+      primitiveFeature('relative', boxShape(), { origin: relativeVertexOrigin('source') }));
+    const saved = JSON.stringify(document), position: Vec3 = [50, 30, 10];
+    expect(primitivePlan(resolvePart(document).steps[1]).origin).toEqual([40, 30, 10]);
+    const current = resolvePart(document, { subShape: ref => ({ ...subShapeFromFingerprint(ref), position }) });
+    expect(current.errors).toEqual([]);
+    expect(primitivePlan(current.steps[1]).origin).toEqual(position);
+    const missing = resolvePart(document, { subShape: () => null });
+    expect(missing.steps.map(step => step.featureId)).toEqual(['source']);
+    expect(missing.errors.some(error => error.featureId === 'relative')).toBe(true);
+    expect(JSON.stringify(document)).toBe(saved);
+  });
   it('既定の球を1段作り、中心・向き・半径をそのまま渡す', () => {
     const fixture = createFixture();
     const document = withSolids(fixture.document, primitiveFeature('sphere-1', sphereShape()));
@@ -4362,6 +4482,18 @@ describe('スケッチの球面上の点(FR-431、P5 タスク19b: resolvePart �
     return { ...replaceSketch(base, sketch), solids };
   }
 
+  it('球面上の点も球の相対原点へ現在resolverを渡し、欠落時は点を残さない', () => {
+    const document = documentWithSphereGridPoint(0, 0, [primitiveFeature('source', boxShape()),
+      primitiveFeature('sphere-1', sphereShape('10'), { origin: relativeVertexOrigin('source') })]);
+    const position: Vec3 = [50, 30, 10];
+    expect(resolvePart(document).sketches[0].resolved.points[0].position).toEqual([50, 30, 10]);
+    const current = resolvePart(document, { subShape: ref => ({ ...subShapeFromFingerprint(ref), position }) });
+    expect(current.sketches[0].resolved.points[0].position).toEqual([60, 30, 10]);
+    const missing = resolvePart(document, { subShape: () => null });
+    expect(missing.sketches[0].resolved.points).toEqual([]);
+    expect(missing.sketches[0].resolved.errors).not.toEqual([]);
+  });
+
   it('球 r10(中心原点)の球面上の点(緯度30・経度45)が resolvePart で解ける', () => {
     const document = documentWithSphereGridPoint(30, 45, [
       primitiveFeature('sphere-1', sphereShape('10'), { origin: coordinateOrigin('0', '0', '0') }),
@@ -4558,6 +4690,20 @@ describe('resolvePart 面をつなぐ・ロフト(FR-430、FR-410、P5 タスク
     const plan = thruSectionsPlan(result.steps[1]);
     expect(plan.sections[0]).toEqual({ kind: 'sphere', center: [0, 0, 30], radius: 10 });
     expect(plan.sections[1].kind).toBe('curves');
+  });
+
+  it('球断面の相対原点も現在resolverで解き、球と罫線面に保存中心を残さない', () => {
+    const fixture = createFixture(), document = withSolids(fixture.document,
+      primitiveFeature('source', boxShape()), primitiveFeature('sphere-1', sphereShape('10'), { origin: relativeVertexOrigin('source') }),
+      ruledFeature('ruled-1', sphereSection('sphere-1'), sketchSection(fixture.faceA)));
+    const position: Vec3 = [50, 30, 10];
+    expect(thruSectionsPlan(resolvePart(document).steps[2]).sections[0]).toEqual({ kind: 'sphere', center: [40, 30, 10], radius: 10 });
+    const current = resolvePart(document, { subShape: ref => ({ ...subShapeFromFingerprint(ref), position }) });
+    expect(current.errors).toEqual([]);
+    expect(thruSectionsPlan(current.steps[2]).sections[0]).toEqual({ kind: 'sphere', center: position, radius: 10 });
+    const missing = resolvePart(document, { subShape: () => null });
+    expect(missing.steps.map(step => step.featureId)).toEqual(['source']);
+    expect(missing.errors.map(error => error.featureId)).toEqual(['sphere-1', 'ruled-1']);
   });
 
   it('球どうしはつなげない(§2.9.3)', () => {
@@ -6205,7 +6351,7 @@ describe('点の集まりへ複製(FR-425、P5 タスク46)', () => {
       suppressed: false,
       kind: 'pattern',
       sourceFeatureId: 'hole-1',
-      placement: { kind: 'points', points },
+      placement: allocatePatternPointSlots(points),
     };
     return {
       document: withSolids(
@@ -6261,7 +6407,7 @@ describe('点の集まりへ複製(FR-425、P5 タスク46)', () => {
 
   it('resolvePatternTransforms は点の解決を渡さなければ断る(既定は「引けない」)', () => {
     const outcome = resolvePatternTransforms(
-      { kind: 'points', points: [{ kind: 'point', pointId: 'point-1' }] },
+      allocatePatternPointSlots([{ kind: 'point', pointId: 'point-1' }]),
       [],
     );
     expect(outcome.ok).toBe(false);
@@ -6273,13 +6419,10 @@ describe('点の集まりへ複製(FR-425、P5 タスク46)', () => {
       ['b', [4, 2, 3]],
     ]);
     const outcome = resolvePatternTransforms(
-      {
-        kind: 'points',
-        points: [
+      allocatePatternPointSlots([
           { kind: 'point', pointId: 'a' },
           { kind: 'point', pointId: 'b' },
-        ],
-      },
+        ]),
       [],
       new Map(),
       (reference) =>
@@ -7396,4 +7539,809 @@ describe('読み込んだ形の Undo / Redo(FR-505、履歴の仕組みがその
     expect(resolvePart(undo(stack).present).meshBodies).toEqual([]);
     expect(resolvePart(redo(undo(stack)).present).meshBodies).toHaveLength(1);
   });
+});
+
+describe('resolvePart 円筒の側面のねじ穴(EX05)', () => {
+  /** 半径 10 の円筒の側面の指紋(下の穴の試験と同じ値。位置の判定は kernel が実際の面で行う)。 */
+  function sideRef(bodyFeatureId: string): SubShapeRef {
+    return { bodyFeatureId, index: 2,
+      fingerprint: { kind: 'face', surfaceKind: 'cylinder', area: 2513.2741228718346, position: [0, 0, 20], axis: [0, 0, 1], radius: 10 } };
+  }
+
+  /** M6 のめねじを、円筒の側面へ深さ 8 の止まり穴で切る(ねじ部 6)。 */
+  function radialTap(locations: readonly (readonly [string, string])[], overrides: Partial<ThreadHoleFeature> = {}): ThreadHoleFeature {
+    return {
+      ...threadHoleFeature('thread-1', 'extrude-1', [], { face: sideRef('extrude-1'), depth: { kind: 'blind', depth: expr('8') }, threadLength: '6' }),
+      cylindrical: { kind: 'cylinder-face', locations: locations.map(([height, angle]) => ({ height: expr(height), angle: expr(angle) })) },
+      ...overrides,
+    };
+  }
+
+  function documentWith(tap: ThreadHoleFeature): PartDocument {
+    const fixture = createFixture();
+    return withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), tap);
+  }
+
+  it('円筒の側面・高さ・角度とタップが、位置ごとにねじ穴の段と kernel への依頼へ届く(外ねじの段ではない)', () => {
+    const result = resolvePart(documentWith(radialTap([['12', '0'], ['28', '90']])));
+    expect(result.errors).toEqual([]);
+    const step = result.steps[1];
+    if (step === undefined || step.plan.kind !== 'thread') throw new Error('ねじ穴の段がありません');
+    expect(step.plan.centers).toEqual([]);
+    expect(step.plan.face).toEqual(sideRef('extrude-1'));
+    expect(step.plan.cylindrical?.kind).toBe('cylinder-face');
+    expect(step.plan.cylindrical?.locations[0]).toEqual({ height: 12, angle: 0 });
+    expect(step.plan.cylindrical?.locations[1]?.height).toBe(28);
+    expect(step.plan.cylindrical?.locations[1]?.angle).toBeCloseTo(Math.PI / 2, 12);
+    // めねじ: 下穴(D1)は外径より細く、深さ 8 の止まり穴の中にねじ部 6 を切る。
+    expect(step.plan.drillDiameter).toBeLessThan(step.plan.mark.majorDiameter);
+    expect(step.plan.depth).toBe(8);
+    const request = toSolidStepRequest(step).step;
+    if (request.kind !== 'thread') throw new Error('ねじ穴の依頼ではありません');
+    expect(request.cylindrical).toEqual(step.plan.cylindrical);
+    expect(request.centers).toEqual([]);
+    expect(request.depth).toBe(8);
+    expect(result.liveBodyIds).toEqual(['thread-1']);
+  });
+
+  it('高さ・角度の編集は段の鍵を変え、Undo / Redo で元の鍵へ戻る。平面のねじ穴の段には欄を載せない', () => {
+    const before = documentWith(radialTap([['12', '0']]));
+    const after = documentWith(radialTap([['20', '45']]));
+    const key = (document: PartDocument) => resolvePart(document).steps[1]?.key;
+    expect(key(before)).toBeDefined();
+    expect(key(documentWith(radialTap([['12', '0']])))).toBe(key(before));
+    expect(key(after)).not.toBe(key(before));
+    expect(key(documentWith(radialTap([['12', '0'], ['28', '90']])))).not.toBe(key(before));
+    const stack = pushUndo(createUndoStack(before), after);
+    expect(key(undo(stack).present)).toBe(key(before));
+    expect(key(redo(undo(stack)).present)).toBe(key(after));
+    expect(affectsShape(before, after)).toBe(true);
+    const fixture = createFixture();
+    const plain = resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA),
+      threadHoleFeature('thread-1', 'extrude-1', [fixture.pointA])));
+    expect(plain.errors).toEqual([]);
+    const plainStep = plain.steps[1];
+    if (plainStep === undefined || plainStep.plan.kind !== 'thread') throw new Error('ねじ穴の段がありません');
+    expect('cylindrical' in plainStep.plan).toBe(false);
+    expect('cylindrical' in toSolidStepRequest(plainStep).step).toBe(false);
+  });
+
+  it('使えない組み合わせ・位置なし・円筒でない面は、穴と同じ文言で先に断る', () => {
+    const fixture = createFixture();
+    const cases: readonly [ThreadHoleFeature, string][] = [
+      [radialTap([['12', '0']], { centers: [fixture.pointA] }), '中心の点・傾き・皿もみはまだ使えません'],
+      [radialTap([['12', '0']], { tiltAngle: expr('10') }), '中心の点・傾き・皿もみはまだ使えません'],
+      [radialTap([['12', '0']], { entry: { kind: 'countersink', diameter: expr('8'), angle: expr('90') } }),
+        '中心の点・傾き・皿もみはまだ使えません'],
+      [radialTap([]), '位置(高さと角度)が 1 つもありません'],
+      [radialTap([['12', '0']], { face: topFaceRef('extrude-1') }), '円筒の面だけです'],
+    ];
+    for (const [tap, message] of cases) {
+      const result = resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), tap));
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.featureId).toBe('thread-1');
+      expect(result.errors[0]?.message).toContain(message);
+    }
+  });
+});
+
+describe('resolvePart 円筒の側面の穴(EX05)', () => {
+  /** 半径 10 の円筒の側面の指紋(面の種類だけが解決に効く。位置の判定は kernel が実際の面で行う)。 */
+  function cylinderSideRef(bodyFeatureId: string): SubShapeRef {
+    return {
+      bodyFeatureId,
+      index: 2,
+      fingerprint: { kind: 'face', surfaceKind: 'cylinder', area: 2513.2741228718346, position: [0, 0, 20], axis: [0, 0, 1], radius: 10 },
+    };
+  }
+
+  function cylindricalHole(
+    locations: readonly (readonly [string | ExpressionValue, string | ExpressionValue])[],
+    overrides: Partial<HoleFeature> = {},
+  ): HoleFeature {
+    return {
+      ...holeFeature('hole-1', 'extrude-1', [], { face: cylinderSideRef('extrude-1') }),
+      cylindrical: {
+        kind: 'cylinder-face',
+        locations: locations.map(([height, angle]) => ({ height: toExpr(height), angle: toExpr(angle) })),
+      },
+      ...overrides,
+    };
+  }
+
+  function resolveWith(hole: HoleFeature): ReturnType<typeof resolvePart> {
+    const fixture = createFixture();
+    return resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), hole));
+  }
+
+  it('高さは mm のまま、角度は度からラジアンへ直して、位置の順に段へ載せる(中心の点は空)', () => {
+    const result = resolveWith(cylindricalHole([['12', '0'], ['28', '90']]));
+    expect(result.errors).toEqual([]);
+    const plan = holePlan(result.steps[1]);
+    expect(plan.centers).toEqual([]);
+    expect(plan.face).toEqual(cylinderSideRef('extrude-1'));
+    const locations = plan.cylindrical?.locations ?? [];
+    expect(plan.cylindrical?.kind).toBe('cylinder-face');
+    expect(locations).toHaveLength(2);
+    expect(locations[0]).toEqual({ height: 12, angle: 0 });
+    expect(locations[1]?.height).toBe(28);
+    expect(locations[1]?.angle).toBeCloseTo(Math.PI / 2, 12);
+    expect(result.liveBodyIds).toEqual(['hole-1']);
+  });
+
+  it('高さ・角度が変われば段の鍵が変わり、同じ入力なら同じ鍵になる(形の作り直しの判定)', () => {
+    const key = (locations: readonly (readonly [string, string])[]) => resolveWith(cylindricalHole(locations)).steps[1]?.key;
+    const base = key([['12', '0']]);
+    expect(base).toBeDefined();
+    expect(key([['12', '0']])).toBe(base);
+    expect(key([['13', '0']])).not.toBe(base);
+    expect(key([['12', '30']])).not.toBe(base);
+    expect(key([['12', '0'], ['28', '90']])).not.toBe(base);
+    // 位置の並びは掘る順なので鍵に効く。
+    expect(key([['28', '90'], ['12', '0']])).not.toBe(key([['12', '0'], ['28', '90']]));
+  });
+
+  it('平面の穴の段には欄を載せない(今までの段と鍵の材料のまま)', () => {
+    const fixture = createFixture();
+    const result = resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA),
+      holeFeature('hole-1', 'extrude-1', [fixture.pointA])));
+    expect(result.errors).toEqual([]);
+    expect('cylindrical' in holePlan(result.steps[1])).toBe(false);
+  });
+
+  it('使えない組み合わせ・位置なし・数でない値・円筒でない面は、kernel と同じ文言で先に断る', () => {
+    const fixture = createFixture();
+    const cases: readonly [HoleFeature, string][] = [
+      [cylindricalHole([['12', '0']], { centers: [fixture.pointA] }), '中心の点・傾き・皿もみはまだ使えません'],
+      [cylindricalHole([['12', '0']], { tiltAngle: expr('10') }), '中心の点・傾き・皿もみはまだ使えません'],
+      [cylindricalHole([['12', '0']], { tiltAzimuth: expr('10') }), '中心の点・傾き・皿もみはまだ使えません'],
+      [cylindricalHole([['12', '0']], { entry: { kind: 'countersink', diameter: expr('8'), angle: expr('90') } }),
+        '中心の点・傾き・皿もみはまだ使えません'],
+      [cylindricalHole([]), '位置(高さと角度)が 1 つもありません'],
+      [cylindricalHole([[notANumber('高さ'), '0']]), '高さと角度は数にしてください'],
+      [cylindricalHole([['12', notANumber('角度')]]), '高さと角度は数にしてください'],
+      [cylindricalHole([['12', '0']], { face: topFaceRef('extrude-1') }), '円筒の面だけです'],
+    ];
+    for (const [hole, message] of cases) {
+      const result = resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), hole));
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.featureId).toBe('hole-1');
+      expect(result.errors[0]?.message).toContain(message);
+    }
+    // 「広げない」を明示した入口は断らない(省略と同じ)。
+    expect(resolveWith(cylindricalHole([['12', '0']], { entry: { kind: 'plain' } })).errors).toEqual([]);
+  });
+
+  it('円筒座ぐりの寸法と位置を同じ段へ解決し、どちらの変更も鍵へ反映する', () => {
+    const entry = { kind: 'counterbore', diameter: expr('8'), depth: expr('1') } as const;
+    const resolved = resolveWith(cylindricalHole([['12', '90']], { entry }));
+    expect(resolved.errors).toEqual([]);
+    const step = resolved.steps[1];
+    if (step === undefined) throw new Error('穴の段がありません');
+    expect(holePlan(step)).toMatchObject({ entry: { kind: 'counterbore', diameter: 8, depth: 1 },
+      cylindrical: { kind: 'cylinder-face', locations: [{ height: 12, angle: Math.PI / 2 }] } });
+    for (const changed of [
+      cylindricalHole([['12', '90']], { entry: { ...entry, diameter: expr('9') } }),
+      cylindricalHole([['12', '90']], { entry: { ...entry, depth: expr('2') } }),
+      cylindricalHole([['13', '90']], { entry }),
+      cylindricalHole([['12', '180']], { entry }),
+    ]) {
+      const next = resolveWith(changed);
+      expect(next.errors).toEqual([]);
+      expect(next.steps[1]?.key).toBeDefined();
+      expect(next.steps[1]?.key).not.toBe(step.key);
+    }
+    for (const invalid of [
+      { ...entry, diameter: expr('0') }, { ...entry, depth: expr('0') },
+    ]) {
+      expect(resolveWith(cylindricalHole([['12', '90']], { entry: invalid })).errors).toHaveLength(1);
+    }
+  });
+
+  it('円筒の側面の穴のパターンは、もとの位置(高さ・角度)を引き継ぎ、剛体の変換だけを足す', () => {
+    const fixture = createFixture();
+    const result = resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA),
+      cylindricalHole([['12', '90']]), patternFeature('pattern-1', 'hole-1', linearPlacement())));
+    expect(result.errors).toEqual([]);
+    const source = holePlan(result.steps[1]);
+    const pattern = holePlan(result.steps[2]);
+    expect(pattern.cylindrical).toEqual(source.cylindrical);
+    expect(pattern.centers).toEqual([]);
+    expect(pattern.face).toEqual(source.face);
+    expect(pattern.transforms.map((transform) => transform.translation)).toEqual([[20, 0, 0], [40, 0, 0]]);
+    expect(pattern.targetKey).toBe(result.steps[1]?.key);
+  });
+});
+
+/*
+ * EX04 requireRemoval(UNEXECUTED until Root runs it)。
+ * 期待値は「欄が無い差は以前と同じ」「立てた差だけが段・鍵・比較で区別される」から決める。
+ */
+describe('差の requireRemoval(輪郭による貫通切断だけが立てる)', () => {
+  function subtractDocument(requireRemoval: boolean): ReturnType<typeof withSolids> {
+    const fixture = createFixture();
+    const feature = booleanFeature('subtract-1', 'subtract', 'extrude-1', 'extrude-2');
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      extrudeFeature('extrude-2', fixture.faceB, { distance: '4' }),
+      requireRemoval ? { ...feature, requireRemoval: true } : feature,
+    );
+  }
+
+  it('欄が無い差は段にも鍵にも何も足さない(従来の鍵と同じ)', () => {
+    const result = resolvePart(subtractDocument(false));
+    expect(result.errors).toEqual([]);
+    const plan = booleanPlan(result.steps[2]);
+    expect('requireRemoval' in plan).toBe(false);
+    expect(result.steps[2].key).toBe(
+      cacheKeyFor({ kind: 'boolean', operation: 'subtract', targetKey: result.steps[0].key, toolKey: result.steps[1].key }),
+    );
+  });
+
+  it('立てた差は段へ requireRemoval を運び、鍵が変わる(上流の鍵は同じ)', () => {
+    const plain = resolvePart(subtractDocument(false));
+    const strict = resolvePart(subtractDocument(true));
+    expect(strict.errors).toEqual([]);
+    expect(booleanPlan(strict.steps[2]).requireRemoval).toBe(true);
+    expect(strict.steps[0].key).toBe(plain.steps[0].key);
+    expect(strict.steps[1].key).toBe(plain.steps[1].key);
+    expect(strict.steps[2].key).not.toBe(plain.steps[2].key);
+    // 欄の有無だけが違う 2 つの材料は別の鍵になる(同じ形を取り違えてキャッシュから返さない)。
+    const material = { kind: 'boolean' as const, operation: 'subtract' as const, targetKey: 'a', toolKey: 'b' };
+    expect(cacheKeyFor({ ...material, requireRemoval: true })).not.toBe(cacheKeyFor(material));
+  });
+
+  it('文書の比較は requireRemoval の違いを立体の定義の変更として示す', () => {
+    const options = { relationship: 'versions' as const, beforeAttachmentsDigest: 'same', afterAttachmentsDigest: 'same' };
+    const changed = compareDocuments(subtractDocument(false), subtractDocument(true), options)
+      .changes.filter((change) => change.group === 'solid');
+    expect(changed).toHaveLength(1);
+    expect(changed[0].status).toBe('changed');
+    expect(compareDocuments(subtractDocument(true), subtractDocument(true), options).changes).toEqual([]);
+  });
+
+  it('欄の型は true だけ(保存の読み込みが false を断ることと、定義・段・鍵の材料の型が食い違わない)', () => {
+    // 型の検査で確かめる対照。欄が boolean のままなら、この 3 行が型の誤りになる。
+    expectTypeOf<BooleanFeature['requireRemoval']>().toEqualTypeOf<true | undefined>();
+    expectTypeOf<Extract<ResolvedSolidStep['plan'], { kind: 'boolean' }>['requireRemoval']>()
+      .toEqualTypeOf<true | undefined>();
+    expectTypeOf<BooleanKeyMaterial['requireRemoval']>().toEqualTypeOf<true | undefined>();
+  });
+});
+
+/*
+ * EX04 「対象を貫く」終端(closed-profile-cut-parametric-r1。UNEXECUTED until Root runs it)。
+ * 期待値は「対象は名指しで、消費せず、鍵に混ざる」「前に無い・自分・消費済みは断る」から決める。
+ */
+describe('押し出しの「対象を貫く」終端(輪郭による貫通切断だけが書く)', () => {
+  function cutterOf(fixture: ReturnType<typeof createFixture>, targetFeatureId: string, id = 'extrude-2'): ExtrudeFeature {
+    return { ...extrudeFeature(id, fixture.faceB, { distance: '69' }), end: { kind: 'throughTarget', targetFeatureId } };
+  }
+
+  it('対象の鍵を段へ運び、対象は消費しない(後ろの差が消費する)', () => {
+    const fixture = createFixture();
+    const result = resolvePart(withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      cutterOf(fixture, 'extrude-1'),
+      { ...booleanFeature('subtract-1', 'subtract', 'extrude-1', 'extrude-2'), requireRemoval: true },
+    ));
+    expect(result.errors).toEqual([]);
+    const plan = extrudePlan(result.steps[1]);
+    expect(plan.end).toEqual({ kind: 'throughTarget' });
+    expect(plan.targetKey).toBe(result.steps[0].key);
+    // 両側の平行移動(symmetric)は載せない。長さはカーネルが対象の境界箱から決める。
+    expect(result.steps.map((step) => step.featureId)).toEqual(['extrude-1', 'extrude-2', 'subtract-1']);
+  });
+
+  it('上流の対象が変わると押し出しの鍵も変わる(旧: 距離だけの押し出しの鍵は変わらない)', () => {
+    const fixture = createFixture();
+    const keysWith = (boxDistance: string, cutter: ExtrudeFeature) => {
+      const result = resolvePart(withSolids(fixture.document,
+        extrudeFeature('extrude-1', fixture.faceA, { distance: boxDistance }), cutter));
+      expect(result.errors).toEqual([]);
+      return result.steps[1].key;
+    };
+    // 旧(freeze-3): 確定時の距離だけを持つ押し出しは、対象が伸びても鍵が同じ = 形も古い長さのまま。
+    const fixed = extrudeFeature('extrude-2', fixture.faceB, { distance: '69', symmetric: true });
+    expect(keysWith('100', fixed)).toBe(keysWith('10', fixed));
+    // 新: 対象の鍵が混ざるので、対象が伸びれば押し出しも計算し直される。
+    expect(keysWith('100', cutterOf(fixture, 'extrude-1'))).not.toBe(keysWith('10', cutterOf(fixture, 'extrude-1')));
+  });
+
+  it('鍵の文字列は「次の面まで」と同じ相手でも別になる(種類の取り違えをしない)', () => {
+    const material = { kind: 'extrude' as const, profile: [], direction: [0, 0, 1] as const, distance: 69, targetKey: 'k' };
+    expect(cacheKeyFor({ ...material, end: { kind: 'throughTarget' } }))
+      .not.toBe(cacheKeyFor({ ...material, end: { kind: 'toNext' } }));
+  });
+
+  it('対象が無い・履歴で後ろ・自分自身なら missingBody、消費済みなら consumedTwice で断る', () => {
+    const fixture = createFixture();
+    const missing = resolvePart(withSolids(fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA), cutterOf(fixture, 'nothing-here')));
+    expect(codesOf(missing)).toEqual(['missingBody']);
+    expect(missing.errors[0].featureId).toBe('extrude-2');
+
+    const forward = resolvePart(withSolids(fixture.document,
+      cutterOf(fixture, 'extrude-3', 'extrude-2'), extrudeFeature('extrude-3', fixture.faceA)));
+    expect(codesOf(forward)).toEqual(['missingBody']);
+
+    const self = resolvePart(withSolids(fixture.document, cutterOf(fixture, 'extrude-2')));
+    expect(codesOf(self)).toEqual(['missingBody']);
+
+    const consumed = resolvePart(withSolids(fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      extrudeFeature('extrude-3', fixture.faceA, { distance: '4' }),
+      booleanFeature('union-1', 'union', 'extrude-1', 'extrude-3'),
+      cutterOf(fixture, 'extrude-1')));
+    expect(codesOf(consumed)).toEqual(['consumedTwice']);
+    expect(consumed.errors[0].featureId).toBe('extrude-2');
+  });
+});
+
+
+describe('resolvePart surface-face sewing', () => {
+  function fixture() {
+    const base = createFixture();
+    const first = extrudeFeature('extrude-1', base.faceA);
+    const second = extrudeFeature('extrude-2', base.faceB);
+    const surfaceFaces = [topFaceRef(first.id), topFaceRef(second.id)];
+    const sew: SewFeature = { ...sewFeature('sew-surface', []), surfaceFaces };
+    return { base, first, second, sew, document: withSolids(base.document, first, second, sew) };
+  }
+
+  it('passes every original face reference and its upstream key without changing the document', () => {
+    const current = fixture();
+    const before = structuredClone(current.document);
+    const result = resolvePart(current.document);
+    expect(result.errors).toEqual([]);
+    const plan = sewPlan(result.steps[2]);
+    expect(plan.profiles).toEqual([]);
+    expect(plan.faces).toEqual(current.sew.surfaceFaces?.map((query, index) => ({ targetKey: result.steps[index].key, query })));
+    expect(plan.faces?.[0].query).toBe(current.sew.surfaceFaces?.[0]);
+    expect(plan.tolerance).toBe(0.01);
+    expect(current.document).toEqual(before);
+    expect(result.liveBodyIds).toEqual(['extrude-1', 'extrude-2', 'sew-surface']);
+  });
+
+  it('changes the sewing key when either the source geometry or a saved reference changes', () => {
+    const current = fixture();
+    const key = (document: PartDocument) => resolvePart(document).steps.find(step => step.featureId === current.sew.id)?.key;
+    const sourceChanged = withSolids(current.base.document, { ...current.first, distance: toExpr('12') }, current.second, current.sew);
+    const referenceChanged = withSolids(current.base.document, current.first, current.second, {
+      ...current.sew, surfaceFaces: [{ ...topFaceRef(current.first.id), index: 9 }, topFaceRef(current.second.id)],
+    });
+    expect(key(current.document)).toBeDefined();
+    expect(key(sourceChanged)).not.toBe(key(current.document));
+    expect(key(referenceChanged)).not.toBe(key(current.document));
+  });
+
+  it('refuses mixed sketch/surface inputs and non-face references', () => {
+    const current = fixture();
+    for (const sew of [
+      { ...current.sew, faces: [current.base.faceA] },
+      { ...current.sew, surfaceFaces: [edgeRef(current.first.id), topFaceRef(current.second.id)] },
+    ]) {
+      const result = resolvePart(withSolids(current.base.document, current.first, current.second, sew));
+      expect(result.errors.map(error => error.code)).toEqual(['invalidValue']);
+      expect(result.errors[0].message.length).toBeGreaterThan(0);
+      expect(result.steps.some(step => step.featureId === sew.id)).toBe(false);
+    }
+  });
+
+  it('refuses missing, forward, suppressed and consumed source bodies', () => {
+    const current = fixture();
+    const cases = [
+      { solids: [current.first, current.sew], code: 'missingBody' },
+      { solids: [current.sew, current.first, current.second], code: 'missingBody' },
+      { solids: [current.first, { ...current.second, suppressed: true }, current.sew], code: 'missingBody' },
+      { solids: [current.first, current.second, booleanFeature('union-1', 'union', current.first.id, current.second.id), current.sew], code: 'consumedTwice' },
+    ];
+    for (const entry of cases) {
+      const result = resolvePart(withSolids(current.base.document, ...entry.solids));
+      expect(result.errors.filter(error => error.featureId === current.sew.id).map(error => error.code)).toEqual([entry.code]);
+      expect(result.steps.some(step => step.featureId === current.sew.id)).toBe(false);
+    }
+  });
+
+  it('requires two surface faces and a positive finite tolerance', () => {
+    const current = fixture();
+    const single = { ...current.sew, surfaceFaces: [topFaceRef(current.first.id)] };
+    expect(resolvePart(withSolids(current.base.document, current.first, single)).errors.map(error => error.code)).toEqual(['degenerate']);
+    for (const value of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const sew = { ...current.sew, tolerance: { ...current.sew.tolerance, value } };
+      expect(resolvePart(withSolids(current.base.document, current.first, current.second, sew)).errors.map(error => error.code)).toEqual(['invalidValue']);
+    }
+  });
+});
+
+/*
+  EX-18 W15c: 曲面の面を縫った縫合は、入力の曲面の本体を取り込む(消費する)。縫合の結果は入力の面と
+  必ず重なるので、取り込まないと画面のクリックが古い曲面を拾い、縫合した立体を加工できない
+  (2026-10-25 の画面検査 20261025-031920・20261025-032503)。立体の面を縫ったときは、その立体を残す。
+*/
+describe('surface-face sewing takes in its surface bodies (EX-18 W15c)', () => {
+  function surfaceOf(id: string, profile: SketchCurveRef): SurfaceFeature {
+    return {
+      id, name: id, suppressed: false, kind: 'surface',
+      operation: { kind: 'extrude', profile, distance: toExpr('20'), reversed: false },
+    };
+  }
+  /** 曲面 1 枚だけの本体の面(通し番号 0)。解決は本体の生死と種類だけを見るので、指紋は形の代表値でよい。 */
+  function surfaceFaceRef(bodyFeatureId: string): SubShapeRef {
+    return {
+      bodyFeatureId,
+      index: 0,
+      fingerprint: { kind: 'face', surfaceKind: 'plane', area: 400, position: [20, 10, 30], axis: [0, 1, 0], radius: null },
+    };
+  }
+  function fixture() {
+    const curves = curveFixture();
+    const first = surfaceOf('surface-1', curves.flat);
+    const second = surfaceOf('surface-2', curves.upright);
+    const box = extrudeFeature('extrude-1', curves.faceA);
+    const sew: SewFeature = { ...sewFeature('sew-1', []), surfaceFaces: [surfaceFaceRef(first.id), surfaceFaceRef(second.id)] };
+    return { curves, first, second, box, sew };
+  }
+
+  it('hides both surface bodies once the sewing resolves, in the resolved and the document-only views alike', () => {
+    const current = fixture();
+    const document = withSolids(current.curves.document, current.first, current.second, current.sew);
+    const before = structuredClone(document);
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.steps.map(step => [step.featureId, step.visible])).toEqual([
+      ['surface-1', false], ['surface-2', false], ['sew-1', true],
+    ]);
+    expect(result.liveBodyIds).toEqual(['sew-1']);
+    expect([...consumedBodyIds(document)]).toEqual(['surface-1', 'surface-2']);
+    expect(liveBodyIds(document)).toEqual(['sew-1']);
+    expect(consumedTargetsOf(current.sew, document.solids)).toEqual(['surface-1', 'surface-2']);
+    // The per-kind rule alone cannot tell a surface body from a solid one, so without the document it takes nothing in.
+    expect(consumedTargetsOf(current.sew)).toEqual([]);
+    // The saved form is unchanged: the taking-in is derived on every recompute.
+    expect(document).toEqual(before);
+  });
+
+  it('keeps a solid body whose face is sewn and takes in only the surface body', () => {
+    const current = fixture();
+    const mixed: SewFeature = { ...current.sew, surfaceFaces: [surfaceFaceRef(current.first.id), topFaceRef(current.box.id)] };
+    const document = withSolids(current.curves.document, current.box, current.first, mixed);
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    expect(result.liveBodyIds).toEqual(['extrude-1', 'sew-1']);
+    expect(liveBodyIds(document)).toEqual(['extrude-1', 'sew-1']);
+    expect(consumedTargetsOf(mixed, document.solids)).toEqual(['surface-1']);
+    // Two faces of one surface body take that body in once.
+    const sameBody: SewFeature = { ...current.sew, surfaceFaces: [surfaceFaceRef(current.first.id), { ...surfaceFaceRef(current.first.id), index: 1 }] };
+    expect(consumedTargetsOf(sameBody, withSolids(current.curves.document, current.first, sameBody).solids)).toEqual(['surface-1']);
+  });
+
+  it('frees the surfaces after one undo, restores the taking-in on redo, and refuses to sew a taken-in surface again', () => {
+    const current = fixture();
+    const before = withSolids(current.curves.document, current.first, current.second);
+    const after = withSolids(before, current.sew);
+    const undone = undo(pushUndo(createUndoStack(before), after));
+    expect(undone.present).toBe(before);
+    expect(resolvePart(undone.present).liveBodyIds).toEqual(['surface-1', 'surface-2']);
+    expect(liveBodyIds(undone.present)).toEqual(['surface-1', 'surface-2']);
+    const redone = redo(undone);
+    expect(redone.present).toBe(after);
+    expect(resolvePart(redone.present).liveBodyIds).toEqual(['sew-1']);
+    const again: SewFeature = { ...current.sew, id: 'sew-2', name: 'sew-2' };
+    const twice = resolvePart(withSolids(after, again));
+    expect(twice.errors.filter(error => error.featureId === 'sew-2').map(error => error.code)).toEqual(['consumedTwice']);
+    expect(twice.liveBodyIds).toEqual(['sew-1']);
+  });
+
+  it('takes nothing in when the sewing cannot resolve', () => {
+    const current = fixture();
+    const single: SewFeature = { ...current.sew, surfaceFaces: [surfaceFaceRef(current.first.id)] };
+    const result = resolvePart(withSolids(current.curves.document, current.first, current.second, single));
+    expect(result.errors.map(error => error.code)).toEqual(['degenerate']);
+    expect(result.liveBodyIds).toEqual(['surface-1', 'surface-2']);
+    // Sketch-face sewing (the planar sewing from P2) has no body inputs and still takes nothing in.
+    const sketchSew = sewFeature('sew-sketch', [current.curves.faceA, current.curves.faceB]);
+    const planar = withSolids(current.curves.document, current.first, sketchSew);
+    expect(consumedTargetsOf(sketchSew, planar.solids)).toEqual([]);
+    expect(resolvePart(planar).liveBodyIds).toEqual(['surface-1', 'sew-sketch']);
+  });
+});
+
+/*
+ * EX-04 W3 閉じた輪郭の切断の残す側(UNEXECUTED until Root runs it)。
+ * 残す側は `operation` で表す(差 = 輪郭の外側、積 = 輪郭の内側)。両方は差と積の対で、2 つ目が
+ * `pairedWith` で 1 つ目を指す。期待値は「対は対象と相手(輪郭の押し出し)を 1 度だけ消費する」
+ * 「pairedWith は形にも鍵にも効かない」「結びの無いブーリアンは以前と同じ」から決める。
+ */
+describe('EX-04 W3 閉じた輪郭の切断の残す側(差 = 外側、積 = 内側、差と積の対 = 両方)', () => {
+  const PAIR_MESSAGE = '対になっている切断には、同じ立体と輪郭、反対の残す側が必要です。';
+
+  /** 閉じた輪郭の切断のブーリアン(輪郭の切断の入口だけが立てる requireRemoval つき)。 */
+  function profileCut(
+    id: string,
+    operation: 'subtract' | 'intersect',
+    pairedWith?: string,
+    options: { readonly suppressed?: boolean; readonly target?: string; readonly tool?: string } = {},
+  ): BooleanFeature {
+    return {
+      ...booleanFeature(id, operation, options.target ?? 'extrude-1', options.tool ?? 'extrude-2',
+        { suppressed: options.suppressed }),
+      requireRemoval: true,
+      ...(pairedWith === undefined ? {} : { pairedWith }),
+    };
+  }
+
+  /** 押し出し1(対象)・押し出し2(押し出し1 を貫く輪郭の押し出し)に、輪郭の切断を続けた文書。 */
+  function profileCutDocument(...cuts: readonly SolidFeature[]): PartDocument {
+    const fixture = createFixture();
+    return withSolids(
+      fixture.document,
+      extrudeFeature('extrude-1', fixture.faceA),
+      { ...extrudeFeature('extrude-2', fixture.faceB, { distance: '69' }),
+        end: { kind: 'throughTarget', targetFeatureId: 'extrude-1' } },
+      ...cuts,
+    );
+  }
+
+  function stepOf(result: ResolvedPart, featureId: string): ResolvedSolidStep {
+    const step = result.steps.find((candidate) => candidate.featureId === featureId);
+    if (step === undefined) throw new Error(`段がありません: ${featureId}`);
+    return step;
+  }
+
+  it('外側(差)と内側(積)は段の演算と鍵だけが違い、対象・相手の鍵は同じ。戻せば鍵も戻る', () => {
+    const outside = resolvePart(profileCutDocument(profileCut('cut-a', 'subtract')));
+    const inside = resolvePart(profileCutDocument(profileCut('cut-a', 'intersect')));
+    for (const result of [outside, inside]) {
+      expect(result.errors).toEqual([]);
+      expect(result.liveBodyIds).toEqual(['cut-a']);
+      expect(booleanPlan(stepOf(result, 'cut-a')).requireRemoval).toBe(true);
+    }
+    expect(booleanPlan(stepOf(outside, 'cut-a')).operation).toBe('subtract');
+    expect(booleanPlan(stepOf(inside, 'cut-a')).operation).toBe('intersect');
+    expect(stepOf(inside, 'extrude-1').key).toBe(stepOf(outside, 'extrude-1').key);
+    expect(stepOf(inside, 'extrude-2').key).toBe(stepOf(outside, 'extrude-2').key);
+    expect(booleanPlan(stepOf(inside, 'cut-a')).targetKey).toBe(booleanPlan(stepOf(outside, 'cut-a')).targetKey);
+    expect(booleanPlan(stepOf(inside, 'cut-a')).toolKey).toBe(booleanPlan(stepOf(outside, 'cut-a')).toolKey);
+    expect(stepOf(inside, 'cut-a').key).not.toBe(stepOf(outside, 'cut-a').key);
+    // 残す側を戻すと鍵も戻る(他の入力が同じなら同じ鍵)。
+    expect(stepOf(resolvePart(profileCutDocument(profileCut('cut-a', 'subtract'))), 'cut-a').key)
+      .toBe(stepOf(outside, 'cut-a').key);
+  });
+
+  it('両方(差と積の対)は対象と相手を 1 度だけ消費し、2 つとも生きた立体になる。鍵と依頼は単独と同じ', () => {
+    const pair = profileCutDocument(profileCut('cut-a', 'subtract'), profileCut('cut-b', 'intersect', 'cut-a'));
+    const result = resolvePart(pair);
+    expect(result.errors).toEqual([]);
+    expect(result.steps.map((step) => [step.featureId, step.visible])).toEqual([
+      ['extrude-1', false], ['extrude-2', false], ['cut-a', true], ['cut-b', true],
+    ]);
+    expect(result.liveBodyIds).toEqual(['cut-a', 'cut-b']);
+    // 文書だけの見方(ツリー・プロパティ)も同じ: 対象と相手は消費済み、対の 2 つは生きている。
+    expect([...consumedBodyIds(pair)].sort()).toEqual(['extrude-1', 'extrude-2']);
+    expect(liveBodyIds(pair)).toEqual(['cut-a', 'cut-b']);
+    // pairedWith は形にも鍵にも効かない: 対の各段の鍵は、同じ id・同じ入力の単独の切断と同じ。
+    const outsideAlone = resolvePart(profileCutDocument(profileCut('cut-a', 'subtract')));
+    const insideAlone = resolvePart(profileCutDocument(profileCut('cut-b', 'intersect')));
+    expect(stepOf(result, 'cut-a').key).toBe(stepOf(outsideAlone, 'cut-a').key);
+    expect(stepOf(result, 'cut-b').key).toBe(stepOf(insideAlone, 'cut-b').key);
+    // カーネルへの依頼の形は従来のまま(演算・対象・相手・印だけ。対の欄は載らない)。
+    const requests = ['cut-a', 'cut-b'].map((id) => toSolidStepRequest(stepOf(result, id)).step);
+    expect(requests).toEqual([
+      { kind: 'boolean', operation: 'subtract', targetKey: stepOf(result, 'extrude-1').key,
+        toolKey: stepOf(result, 'extrude-2').key, requireRemoval: true },
+      { kind: 'boolean', operation: 'intersect', targetKey: stepOf(result, 'extrude-1').key,
+        toolKey: stepOf(result, 'extrude-2').key, requireRemoval: true },
+    ]);
+  });
+
+  it('対の 2 つ目が履歴で先に来ても(並べ替え FR-507)、同じ 2 つの立体になる', () => {
+    const reversed = resolvePart(profileCutDocument(profileCut('cut-b', 'intersect', 'cut-a'),
+      profileCut('cut-a', 'subtract')));
+    expect(reversed.errors).toEqual([]);
+    expect(reversed.liveBodyIds).toEqual(['cut-b', 'cut-a']);
+  });
+
+  it('相手が抑制・削除されたら、残ったほうが単独の切断として振る舞う(文書は書き換えない)', () => {
+    const suppressed = profileCutDocument(profileCut('cut-a', 'subtract', undefined, { suppressed: true }),
+      profileCut('cut-b', 'intersect', 'cut-a'));
+    const before = structuredClone(suppressed);
+    const alone = resolvePart(suppressed);
+    expect(alone.errors).toEqual([]);
+    expect(alone.liveBodyIds).toEqual(['cut-b']);
+    expect(suppressed).toEqual(before);
+    const removed = resolvePart(profileCutDocument(profileCut('cut-b', 'intersect', 'cut-404')));
+    expect(removed.errors).toEqual([]);
+    expect(removed.liveBodyIds).toEqual(['cut-b']);
+  });
+
+  it('壊れた対(同じ側どうし・別の相手・3 つ以上の結び・印の無いブーリアン)は二重消費を通さず理由つきで断る', () => {
+    const errorsOf = (result: ResolvedPart) =>
+      result.errors.map((error) => [error.featureId, error.code, error.message]);
+    // 同じ側どうし(差と差)。
+    const sameSide = resolvePart(profileCutDocument(profileCut('cut-a', 'subtract'),
+      profileCut('cut-b', 'subtract', 'cut-a')));
+    expect(errorsOf(sameSide)).toEqual([['cut-b', 'invalidValue', PAIR_MESSAGE]]);
+    expect(sameSide.liveBodyIds).toEqual(['cut-a']);
+    // 別の相手(輪郭の押し出しが違う)。
+    const fixture = createFixture();
+    const otherTool = resolvePart(withSolids(profileCutDocument(),
+      { ...extrudeFeature('extrude-3', fixture.faceB, { distance: '69' }),
+        end: { kind: 'throughTarget', targetFeatureId: 'extrude-1' } },
+      profileCut('cut-a', 'subtract'),
+      profileCut('cut-b', 'intersect', 'cut-a', { tool: 'extrude-3' })));
+    expect(errorsOf(otherTool)).toEqual([['cut-b', 'invalidValue', PAIR_MESSAGE]]);
+    // 3 つ以上の結び(1 つ目を 2 つが指す)。
+    const triple = resolvePart(profileCutDocument(profileCut('cut-a', 'subtract'),
+      profileCut('cut-b', 'intersect', 'cut-a'), profileCut('cut-c', 'intersect', 'cut-a')));
+    expect(errorsOf(triple)).toEqual([['cut-b', 'invalidValue', PAIR_MESSAGE], ['cut-c', 'invalidValue', PAIR_MESSAGE]]);
+    expect(triple.liveBodyIds).toEqual(['cut-a']);
+    // 印の無い(手作業の)ブーリアンに結びが書かれていても対にしない。
+    const manual = resolvePart(profileCutDocument(booleanFeature('cut-a', 'subtract', 'extrude-1', 'extrude-2'),
+      { ...booleanFeature('cut-b', 'intersect', 'extrude-1', 'extrude-2'), pairedWith: 'cut-a' }));
+    expect(errorsOf(manual)).toEqual([['cut-b', 'invalidValue', PAIR_MESSAGE]]);
+    // 結びの無い 3 つ目のブーリアンは従来どおり consumedTwice(対を口実に二重消費を通さない)。
+    const third = resolvePart(profileCutDocument(profileCut('cut-a', 'subtract'),
+      profileCut('cut-b', 'intersect', 'cut-a'), booleanFeature('union-9', 'union', 'extrude-1', 'extrude-2')));
+    expect(codesOf(third)).toEqual(['consumedTwice']);
+    expect(third.errors[0]?.featureId).toBe('union-9');
+    expect(third.liveBodyIds).toEqual(['cut-a', 'cut-b']);
+  });
+
+  it('対の相手が段を作れない(対象が別のところで先に使われた)ときは、2 つとも consumedTwice', () => {
+    const fixture = createFixture();
+    const result = resolvePart(withSolids(profileCutDocument(),
+      extrudeFeature('extrude-3', fixture.faceA, { distance: '4' }),
+      booleanFeature('union-1', 'union', 'extrude-1', 'extrude-3'),
+      profileCut('cut-a', 'subtract'),
+      profileCut('cut-b', 'intersect', 'cut-a')));
+    expect(result.errors.map((error) => [error.featureId, error.code])).toEqual([
+      ['cut-a', 'consumedTwice'], ['cut-b', 'consumedTwice'],
+    ]);
+    expect(result.liveBodyIds).toEqual(['extrude-2', 'union-1']);
+  });
+
+  it('欄の型は文字列の任意欄だけ(保存の読み込みが空文字列・文字列以外を断ることと食い違わない)', () => {
+    expectTypeOf<BooleanFeature['pairedWith']>().toEqualTypeOf<string | undefined>();
+  });
+});
+
+/*
+ * EX-04 W3(EX-04.01.ORACLE の「残す側の既知の点の所属」。UNEXECUTED until Root runs it)。
+ * 実 OCCT で再計算した形を形状キャッシュから借り、OCCT の内外判定の公開 API
+ * (BRepClass3d_SolidClassifier、許容 1e-7 mm)で既知の点が残す側の立体に属するかを確かめる。
+ * 平面の切断(W1/W2 の確定が積む CutFeature の対と同じ形)と閉じた輪郭の切断(差と積の対)の各 1 件。
+ *
+ * 境界上の点の規則(実装の規則として固定する): 切り口の上の点は、切り分けた 2 つの立体の
+ * **どちらでも ON**(閉じた立体は切り口を境界として共有し、どちらの内部でもない)。切り口から離れた
+ * 点は自分の側の立体で IN、反対側の立体で OUT。対象の外の点はどちらでも OUT。
+ */
+describe('EX-04 W3 残す側の既知の点の所属(実 OCCT・内外判定の公開 API)', () => {
+  type Point = readonly [number, number, number];
+  type State = 'IN' | 'OUT' | 'ON' | 'UNKNOWN';
+  const CLASSIFY_TOLERANCE_MM = 1e-7;
+  let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
+
+  beforeAll(async () => {
+    oc = await loadOcctForNode();
+  }, 180_000);
+
+  /** 0〜10 の立方体(基本形状の箱は中心が基準点)。 */
+  function cube(): PrimitiveFeature {
+    return primitiveFeature('box-1', { kind: 'box', sizeX: expr('10'), sizeY: expr('10'), sizeZ: expr('10') },
+      { origin: { kind: 'coordinate', value: absoluteCoordinate(5, 5, 5) } });
+  }
+
+  /** 作図面 XY の中心 (5, 5)・半径 3 の全周の円と、それを境界にした閉じた面を持つ文書。 */
+  function circleDocument(): { readonly document: PartDocument; readonly profile: SketchFaceRef } {
+    const base = createEmptyPartDocument();
+    const circle: SketchArcFeature = {
+      id: 'circle-1', name: '円1', planeId: DEFAULT_WORK_PLANE_ID, kind: 'arc', center: absoluteCoordinate(5, 5, 0),
+      radius: expr('3'), startAngle: expr('0'), endAngle: expr('360'), construction: false,
+    };
+    const face: SketchFaceFeature = {
+      id: 'face-1', name: '面1', planeId: DEFAULT_WORK_PLANE_ID, kind: 'face',
+      boundary: [{ featureId: circle.id }], color: DEFAULT_FACE_COLOR,
+    };
+    const sketch = appendFeature(appendFeature(base.sketches[0], circle), face);
+    return { document: replaceSketch(base, sketch), profile: { sketchId: sketch.id, faceFeatureId: face.id } };
+  }
+
+  /**
+   * 実 OCCT で再計算し、画面に出る立体(featureId と体積)と、`featureIds` の各立体の実形(形状キャッシュから
+   * 借りる。解放しない)で `points` を内外判定した結果を返す。判定の一時物は判定ごとに解放する。
+   */
+  async function computeAndClassify(document: PartDocument, featureIds: readonly string[], points: readonly Point[]) {
+    const cache = createShapeCache<CachedSolid>(64);
+    const bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode, cache));
+    try {
+      let resolved: ResolvedPart | undefined;
+      const result = await recomputePart(document, bridge, { onResolved: (value) => { resolved = value; } });
+      const steps = resolved?.steps ?? [];
+      const states = new Map<string, readonly State[]>();
+      for (const featureId of featureIds) {
+        const step = steps.find((candidate) => candidate.featureId === featureId);
+        const cached = step === undefined ? undefined : cache.get(step.key);
+        if (cached === undefined) throw new Error(`形状キャッシュに形がありません: ${featureId}`);
+        states.set(featureId, points.map(([x, y, z]): State => {
+          const owned = createAllocations();
+          try {
+            const point = owned.keep(new oc.gp_Pnt_3(x, y, z));
+            const classifier = owned.keep(new oc.BRepClass3d_SolidClassifier_3(cached.shape, point, CLASSIFY_TOLERANCE_MM));
+            const state = classifier.State();
+            return state === oc.TopAbs_State.TopAbs_IN ? 'IN' : state === oc.TopAbs_State.TopAbs_OUT ? 'OUT'
+              : state === oc.TopAbs_State.TopAbs_ON ? 'ON' : 'UNKNOWN';
+          } finally {
+            owned.release();
+          }
+        }));
+      }
+      return { errors: result.errors, bodies: result.bodies.map((body) => ({ featureId: body.featureId,
+        volume: body.volume, isValid: body.isValid })), states };
+    } finally {
+      bridge.dispose();
+      cache.clear();
+    }
+  }
+
+  function expectRelative(actual: number | undefined, expected: number, label: string): void {
+    if (actual === undefined) throw new Error(`体積がありません: ${label}`);
+    expect(Math.abs(actual - expected) / expected, `${label}: ${String(actual)} / ${String(expected)}`)
+      .toBeLessThanOrEqual(1e-9);
+  }
+
+  /** 実測の記録(体積と点の所属)を RUN の出力へ残す(最終報告の表の原票)。 */
+  function record(label: string, computed: Awaited<ReturnType<typeof computeAndClassify>>,
+    points: readonly Point[]): void {
+    stdout.write(`EX-04 W3 点の所属 ${label}: ${JSON.stringify({ bodies: computed.bodies, points,
+      states: Object.fromEntries(computed.states) })}${String.fromCharCode(10)}`);
+  }
+
+  it('平面の切断: z = 4 で法線 +Z の側を残す 1 つ目と「反対側も残す」の 2 つ目(W1/W2 の確定と同じ対)', async () => {
+    const plane: CutFeature['plane'] = { kind: 'workPlane', planeId: DEFAULT_WORK_PLANE_ID, offset: expr('4') };
+    const first: CutFeature = { id: 'cut-1', name: '切断1', suppressed: false, kind: 'cut', targetFeatureId: 'box-1',
+      plane, keep: 'positive', pairedWith: null };
+    const second: CutFeature = { ...first, id: 'cut-2', name: '切断2', keep: 'negative', pairedWith: first.id };
+    const document = withSolids(createEmptyPartDocument(), cube(), first, second);
+    // 切り口の上(z = 4)2 点、法線の側(z > 4)2 点、反対側(z < 4)2 点、立方体の外 2 点。
+    const points: readonly Point[] = [[5, 5, 4], [2, 8, 4], [5, 5, 7], [2, 8, 9.5], [5, 5, 1], [8, 2, 0.5],
+      [5, 5, 20], [5, 5, -3]];
+    const computed = await computeAndClassify(document, ['cut-1', 'cut-2'], points);
+    record('平面の切断', computed, points);
+    expect(computed.errors).toEqual([]);
+    // 画面に出るのは 2 つの切断だけ(対象の箱は 1 度だけ消費され、表示されない)。
+    expect(computed.bodies.map((body) => [body.featureId, body.isValid])).toEqual([['cut-1', true], ['cut-2', true]]);
+    expectRelative(computed.bodies[0]?.volume, 600, '法線の側(z > 4)');
+    expectRelative(computed.bodies[1]?.volume, 400, '反対側(z < 4)');
+    expectRelative((computed.bodies[0]?.volume ?? Number.NaN) + (computed.bodies[1]?.volume ?? Number.NaN), 1000, '和');
+    expect(computed.states.get('cut-1')).toEqual(['ON', 'ON', 'IN', 'IN', 'OUT', 'OUT', 'OUT', 'OUT']);
+    expect(computed.states.get('cut-2')).toEqual(['ON', 'ON', 'OUT', 'OUT', 'IN', 'IN', 'OUT', 'OUT']);
+  }, 120_000);
+
+  it('閉じた輪郭の切断: 中心 (5, 5)・半径 3 の円で外側を残す差と、内側も残す積の対', async () => {
+    const { document: base, profile } = circleDocument();
+    const tool: ExtrudeFeature = { ...extrudeFeature('extrude-1', profile, { distance: '69' }),
+      end: { kind: 'throughTarget', targetFeatureId: 'box-1' } };
+    const document = withSolids(base, cube(), tool,
+      { ...booleanFeature('subtract-1', 'subtract', 'box-1', tool.id), requireRemoval: true },
+      { ...booleanFeature('intersect-1', 'intersect', 'box-1', tool.id), requireRemoval: true, pairedWith: 'subtract-1' });
+    // 切り口(円柱の壁、軸から 3)の上 2 点、内側 2 点(軸から 0・√2)、外側 2 点(軸から √32)、立方体の外 1 点、
+    // 内側の柱の上の面(z = 10)の上 1 点(外側の立体では穴の中なので OUT)。
+    const points: readonly Point[] = [[8, 5, 5], [5, 2, 7], [5, 5, 5], [6, 6, 2], [1, 1, 5], [9, 9, 8], [5, 5, 15],
+      [5, 5, 10]];
+    const computed = await computeAndClassify(document, ['subtract-1', 'intersect-1'], points);
+    record('閉じた輪郭の切断', computed, points);
+    expect(computed.errors).toEqual([]);
+    // 画面に出るのは対の 2 つだけ(対象の箱と輪郭の押し出しは 1 度だけ消費され、表示されない)。
+    expect(computed.bodies.map((body) => [body.featureId, body.isValid]))
+      .toEqual([['subtract-1', true], ['intersect-1', true]]);
+    const inside = 90 * Math.PI;
+    expectRelative(computed.bodies[0]?.volume, 1000 - inside, '外側(差)');
+    expectRelative(computed.bodies[1]?.volume, inside, '内側(積)');
+    expectRelative((computed.bodies[0]?.volume ?? Number.NaN) + (computed.bodies[1]?.volume ?? Number.NaN), 1000, '和');
+    expect(computed.states.get('subtract-1')).toEqual(['ON', 'ON', 'OUT', 'OUT', 'IN', 'IN', 'OUT', 'OUT']);
+    expect(computed.states.get('intersect-1')).toEqual(['ON', 'ON', 'IN', 'IN', 'OUT', 'OUT', 'OUT', 'ON']);
+  }, 120_000);
 });

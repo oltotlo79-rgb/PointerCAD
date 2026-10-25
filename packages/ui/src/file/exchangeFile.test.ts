@@ -16,9 +16,10 @@ import {
   type SolidBodyKind,
   type WorkPlane,
 } from '@pointercad/model';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { PickedFile, PickedTypedFile, FileGateway } from './fileGateway.js';
+import type { ExportSaveControl } from './saveExportFile.js';
 import {
   appendImportedBodies,
   DEFAULT_EXPORT_BASE_NAME,
@@ -36,6 +37,8 @@ import {
   importedSourceFormatOf,
   kernelExportFormatOf,
   NO_SHAPE_MESSAGE,
+  prepareExport,
+  consumePreparedExport,
   runExport,
   runExportDxf,
   runImport,
@@ -46,6 +49,7 @@ import {
   type ExchangeDeps,
   type ExchangeExportOutcome,
   type ExchangeExportRequest,
+  type ExchangeFile,
   type ExchangeImportedBody,
   type ExchangeImportOutcome,
   type ExchangeKernel,
@@ -184,6 +188,12 @@ function createDeps(
 
 function oneFileOutcome(fileName: string): ExchangeExportOutcome {
   return { files: [{ fileName, bytes: Uint8Array.from([1, 2]) }], droppedTriangleCount: 0 };
+}
+
+function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((reply) => { resolve = reply; });
+  return { promise, resolve };
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +361,96 @@ describe('落とした三角形の知らせとファイル名', () => {
 // ---------------------------------------------------------------------------
 
 describe('書き出しの流れ(§2.4、FR-803)', () => {
+  it('表示用の実枚数と保存は同じowned kernel結果を一度だけ使う', async () => {
+    const fake = createFakeGateway();
+    const bytes = Uint8Array.of(2, 3, 5);
+    const kernel = createFakeKernel({ files: [{ fileName: '部品.stl', bytes }],
+      droppedTriangleCount: 0, triangleCount: 137 });
+    const deps = createDeps(fake, kernel.kernel);
+    const prepared = await prepareExport(deps, ONE_SOLID, createExportRequest('stl'), '部品.pcad');
+    expect(prepared.ok).toBe(true);
+    expect(fake.saved).toHaveLength(0);
+    if (!prepared.ok) throw new Error('preview was not prepared');
+    expect(prepared.prepared.outcome.triangleCount).toBe(137);
+    await expect(consumePreparedExport(deps, prepared.prepared)).resolves.toMatchObject({ ok: true });
+    await expect(consumePreparedExport(deps, prepared.prepared)).resolves.toEqual({ ok: false, cancelled: true });
+    expect(kernel.exportRequests).toHaveLength(1);
+    expect(fake.saved).toEqual([{ fileName: '部品.stl', kind: 'stl', bytes }]);
+  });
+
+  it('3MF preview後の読取待ちは25秒計算へ課さず、計算済み分だけserializer予算を減らす', async () => {
+    let now = 100;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      const fake = createFakeGateway();
+      const remaining: number[] = [];
+      const kernel: ExchangeKernel = { exportShapes: () => {
+        now = 1_100;
+        return Promise.resolve({ files: [], droppedTriangleCount: 0, triangleCount: 4,
+          meshes: [{ name: null, color: null, positions: new Float32Array(9),
+            indices: Uint32Array.of(0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2) }] });
+      }, importShape: () => Promise.reject(new Error('unused')) };
+      const deps = createDeps(fake, kernel, { buildThreeMf: (_outcome, control) => {
+        remaining.push(control.remainingMs);
+        return { fileName: '部品.3mf', bytes: Uint8Array.of(80, 75) };
+      } });
+      const preparation = await prepareExport(deps, ONE_SOLID, createExportRequest('3mf'), '部品.pcad');
+      if (!preparation.ok) throw new Error('3MF preview was not prepared');
+      expect(preparation.prepared.outcome.triangleCount).toBe(4);
+      now = 100_000; // the user read the displayed count before clicking
+      await expect(consumePreparedExport(deps, preparation.prepared)).resolves.toMatchObject({ ok: true });
+      expect(remaining).toEqual([24_000]);
+      expect(fake.saved).toHaveLength(1);
+    } finally { clock.mockRestore(); }
+  });
+
+  it('3MF previewはowned indicesをcopy込みadmissionしてから実枚数を表示する', async () => {
+    const fake = createFakeGateway();
+    const kernel = createFakeKernel({ files: [], droppedTriangleCount: 0, triangleCount: 999,
+      meshes: [{ name: null, color: null, positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        indices: Uint32Array.of(0, 1, 2) }] });
+    const deps = createDeps(fake, kernel.kernel, { buildThreeMf: () =>
+      ({ fileName: '部品.3mf', bytes: Uint8Array.of(80, 75) }) });
+    const preparation = await prepareExport(deps, ONE_SOLID, createExportRequest('3mf'), '部品.pcad');
+    if (!preparation.ok) throw new Error('3MF preview was not prepared');
+    expect(preparation.prepared.outcome.triangleCount).toBe(1);
+    expect(fake.saved).toHaveLength(0);
+    await expect(consumePreparedExport(deps, preparation.prepared)).resolves.toMatchObject({ ok: true });
+    expect(kernel.exportRequests).toHaveLength(1);
+    expect(fake.saved).toHaveLength(1);
+
+    const excess = createFakeGateway();
+    const tooMany = createFakeKernel({ files: [], droppedTriangleCount: 0,
+      meshes: [{ name: null, color: null, positions: new Float32Array(9),
+        indices: new Uint32Array(3_000_003) }] });
+    const rejected = await prepareExport(createDeps(excess, tooMany.kernel, { buildThreeMf: () => {
+      throw new Error('serializer must not start');
+    } }), ONE_SOLID, createExportRequest('3mf'), '部品.pcad');
+    expect(rejected).toEqual({ ok: false, message: '3MFの三角形は100万枚までです。' });
+    expect(excess.saved).toHaveLength(0);
+
+    const empty = await prepareExport(createDeps(createFakeGateway(), createFakeKernel({
+      files: [], droppedTriangleCount: 0, triangleCount: 0, meshes: [],
+    }).kernel), ONE_SOLID, createExportRequest('3mf'), '部品.pcad');
+    if (!empty.ok) throw new Error('empty preview unexpectedly failed');
+    expect(empty.prepared.outcome.triangleCount).toBeUndefined();
+  });
+
+  it('3MF previewは512MiB超の疎なfaceRangesをserializer前に拒否する', async () => {
+    const fake = createFakeGateway();
+    const buildThreeMf = vi.fn(() => ({ fileName: 'unexpected.3mf', bytes: Uint8Array.of(1) }));
+    const kernel = createFakeKernel({ files: [], droppedTriangleCount: 0,
+      meshes: [{ name: null, color: null, positions: new Float32Array(9),
+        indices: Uint32Array.of(0, 1, 2),
+        faceColors: new Map<number, readonly [number, number, number]>(),
+        faceRanges: new Array<{ readonly triangleOffset: number; readonly triangleCount: number }>(8_388_608) }] });
+    const result = await prepareExport(createDeps(fake, kernel.kernel, { buildThreeMf }),
+      ONE_SOLID, createExportRequest('3mf'), '部品.pcad');
+    expect(result).toEqual({ ok: false, message: '3MF書き出しの追加メモリは512MiBまでです。' });
+    expect(buildThreeMf).not.toHaveBeenCalled();
+    expect(fake.saved).toHaveLength(0);
+  });
+
   it('カーネルを呼ぶ前に断る(書き出せない組み合わせでは 1 度も呼ばない)', async () => {
     const fake = createFakeGateway();
     const kernel = createFakeKernel(oneFileOutcome('model.stl'));
@@ -489,6 +589,217 @@ describe('書き出しの流れ(§2.4、FR-803)', () => {
     expect(result.ok).toBe(true);
     expect(kernel.exportRequests[0].format).toBe('mesh');
     expect(fake.saved.map((file) => file.fileName)).toEqual(['部品.3mf']);
+  });
+});
+
+describe('書き出し試行の現行性', () => {
+  it('submit の signal を一回の kernel export に渡し、現行結果だけ一回保存する', async () => {
+    const fake = createFakeGateway();
+    const controller = new AbortController();
+    let calls = 0;
+    let seen: AbortSignal | undefined;
+    const kernel: ExchangeKernel = {
+      exportShapes: (request) => {
+        calls += 1;
+        seen = request.signal;
+        return Promise.resolve(oneFileOutcome('current.stl'));
+      },
+      importShape: () => Promise.reject(new Error('unused')),
+    };
+    await expect(runExport(createDeps(fake, kernel), ONE_SOLID,
+      createExportRequest('stl'), '部品.pcad', { signal: controller.signal, isCurrent: () => true }))
+      .resolves.toMatchObject({ ok: true });
+    expect(seen).toBe(controller.signal);
+    expect(calls).toBe(1);
+    expect(fake.saved).toHaveLength(1);
+  });
+
+  it('開始前の取消は kernel 送信と保存をどちらも行わない', async () => {
+    const fake = createFakeGateway();
+    const controller = new AbortController();
+    controller.abort();
+    const exportShapes = vi.fn(() => Promise.resolve(oneFileOutcome('old.stl')));
+    const kernel: ExchangeKernel = {
+      exportShapes,
+      importShape: () => Promise.reject(new Error('unused')),
+    };
+    await expect(runExport(createDeps(fake, kernel), ONE_SOLID,
+      createExportRequest('stl'), '部品.pcad', { signal: controller.signal, isCurrent: () => true }))
+      .resolves.toEqual({ ok: false, cancelled: true });
+    expect(exportShapes).not.toHaveBeenCalled();
+    expect(fake.saved).toHaveLength(0);
+  });
+
+  it('カーネル返信待ちの取消後は保存の口を呼ばない', async () => {
+    const pending = deferred<ExchangeExportOutcome>();
+    const fake = createFakeGateway();
+    const save = vi.spyOn(fake.gateway, 'saveFileAs');
+    const controller = new AbortController();
+    const control: ExportSaveControl = { signal: controller.signal, isCurrent: () => true };
+    const deps = createDeps(fake, { exportShapes: () => pending.promise, importShape: () => Promise.reject(new Error('unused')) });
+    const result = runExport(deps, ONE_SOLID, createExportRequest('obj'), '部品.pcad', control);
+    controller.abort();
+    pending.resolve(oneFileOutcome('部品.obj'));
+    await expect(result).resolves.toEqual({ ok: false, cancelled: true });
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('3MF 組立の間に失効したら生成済バイトを保存しない', async () => {
+    const fake = createFakeGateway();
+    let current = true;
+    const control: ExportSaveControl = { signal: new AbortController().signal, isCurrent: () => current };
+    const deps = createDeps(fake, createFakeKernel({ files: [], droppedTriangleCount: 0 }).kernel, {
+      buildThreeMf: () => { current = false; return { fileName: '部品.3mf', bytes: Uint8Array.of(1) }; },
+    });
+    await expect(runExport(deps, ONE_SOLID, createExportRequest('3mf'), '部品.pcad', control))
+      .resolves.toEqual({ ok: false, cancelled: true });
+    expect(fake.saved).toHaveLength(0);
+  });
+
+  it('3MF kernel 中の同期失効でも拒否返信を観測し、次の現行依頼は保存できる', async () => {
+    const fake = createFakeGateway();
+    let current = true;
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const kernel: ExchangeKernel = {
+        exportShapes: () => { current = false; return Promise.reject(new Error('kernel rejected after stale')); },
+        importShape: () => Promise.reject(new Error('unused')),
+      };
+      const deps = createDeps(fake, kernel, { buildThreeMf: () => { throw new Error('must not build'); } });
+      await expect(runExport(deps, ONE_SOLID, createExportRequest('3mf'), '部品.pcad',
+        { signal: new AbortController().signal, isCurrent: () => current }))
+        .resolves.toEqual({ ok: false, cancelled: true });
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+      expect(fake.saved).toHaveLength(0);
+    } finally { process.off('unhandledRejection', onUnhandled); }
+    current = true;
+    const next = createDeps(fake, createFakeKernel({ files: [], droppedTriangleCount: 0 }).kernel,
+      { buildThreeMf: () => ({ fileName: 'current.3mf', bytes: Uint8Array.of(1) }) });
+    await expect(runExport(next, ONE_SOLID, createExportRequest('3mf'), '部品.pcad',
+      { signal: new AbortController().signal, isCurrent: () => current }))
+      .resolves.toMatchObject({ ok: true });
+    expect(fake.saved).toHaveLength(1);
+  });
+
+  it('3MF kernel 保留中に文字列の理由で取消しても旧結果を保存しない', async () => {
+    const pending = deferred<ExchangeExportOutcome>();
+    const fake = createFakeGateway();
+    const controller = new AbortController();
+    const deps = createDeps(fake, {
+      exportShapes: () => pending.promise,
+      importShape: () => Promise.reject(new Error('unused')),
+    }, { buildThreeMf: () => { throw new Error('取消後に組立しない'); } });
+    const running = runExport(deps, ONE_SOLID, createExportRequest('3mf'), '部品.pcad',
+      { signal: controller.signal, isCurrent: () => true });
+    controller.abort('plain reason');
+    await expect(running).resolves.toEqual({ ok: false, cancelled: true });
+    expect(fake.saved).toHaveLength(0);
+    pending.resolve({ files: [], droppedTriangleCount: 0 });
+    await Promise.resolve();
+    expect(fake.saved).toHaveLength(0);
+  });
+
+  it('3MF builder が保留中の取消は戻りを待たずに終了し、遅いZIPを保存しない', async () => {
+    const fake = createFakeGateway(), result = deferred<ExchangeFile>(), started = deferred<void>();
+    const controller = new AbortController();
+    const deps = createDeps(fake, createFakeKernel({ files: [], droppedTriangleCount: 0 }).kernel, {
+      buildThreeMf: () => { started.resolve(undefined); return result.promise; },
+    });
+    const running = runExport(deps, ONE_SOLID, createExportRequest('3mf'), '部品.pcad',
+      { signal: controller.signal, isCurrent: () => true });
+    await started.promise;
+    controller.abort();
+    await expect(running).resolves.toEqual({ ok: false, cancelled: true });
+    result.resolve({ fileName: 'late.3mf', bytes: Uint8Array.of(1) });
+    await Promise.resolve();
+    expect(fake.saved).toHaveLength(0);
+  });
+
+  it('3MF kernel と serializer は一つの25秒計算期限を使い、残りだけ渡す', async () => {
+    let now = 100;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      const fake = createFakeGateway();
+      const kernel: ExchangeKernel = { exportShapes: () => {
+        now = 25_000;
+        return Promise.resolve({ files: [], droppedTriangleCount: 0 });
+      }, importShape: () => Promise.reject(new Error('unused')) };
+      const remaining: number[] = [];
+      const deps = createDeps(fake, kernel, { buildThreeMf: (_outcome, control) => {
+        remaining.push(control.remainingMs);
+        return { fileName: 'current.3mf', bytes: Uint8Array.of(1) };
+      } });
+      await expect(runExport(deps, ONE_SOLID, createExportRequest('3mf'), '部品.pcad'))
+        .resolves.toMatchObject({ ok: true });
+      expect(remaining).toEqual([100]);
+      expect(fake.saved).toHaveLength(1);
+      now = 100;
+      const lateKernel: ExchangeKernel = { exportShapes: () => {
+        now = 25_101;
+        return Promise.resolve({ files: [], droppedTriangleCount: 0 });
+      }, importShape: () => Promise.reject(new Error('unused')) };
+      const late = createFakeGateway();
+      await expect(runExport(createDeps(late, lateKernel, { buildThreeMf: () => {
+        throw new Error('must not build');
+      } }), ONE_SOLID, createExportRequest('3mf'), '部品.pcad'))
+        .resolves.toMatchObject({ ok: false });
+      expect(late.saved).toHaveLength(0);
+    } finally { clock.mockRestore(); }
+  });
+
+  it('OBJ先頭保存中の取消は次のMTL保存と旧成功案内を止める', async () => {
+    const first = deferred<boolean>();
+    const started = deferred<void>();
+    const fake = createFakeGateway();
+    const saves = vi.fn(() => { started.resolve(undefined); return first.promise; });
+    const gateway: FileGateway = { ...fake.gateway, saveFileAs: saves };
+    const controller = new AbortController();
+    const deps = createDeps({ ...fake, gateway }, createFakeKernel({
+      files: [{ fileName: '部品.obj', bytes: Uint8Array.of(1) }, { fileName: '部品.mtl', bytes: Uint8Array.of(2) }],
+      droppedTriangleCount: 0,
+    }).kernel);
+    const result = runExport(deps, ONE_SOLID, createExportRequest('obj'), '部品.pcad', {
+      signal: controller.signal, isCurrent: () => true,
+    });
+    await started.promise;
+    expect(saves).toHaveBeenCalledTimes(1);
+    controller.abort();
+    first.resolve(true);
+    await expect(result).resolves.toEqual({ ok: false, cancelled: true });
+    expect(saves).toHaveBeenCalledTimes(1);
+  });
+
+  it('現行の依頼は従来どおり保存・成功し、DXF失効は保存前に止める', async () => {
+    const fake = createFakeGateway();
+    const controller = new AbortController();
+    const control: ExportSaveControl = { signal: controller.signal, isCurrent: () => true };
+    await expect(runExport(createDeps(fake, createFakeKernel(oneFileOutcome('部品.stl')).kernel),
+      ONE_SOLID, createExportRequest('stl'), '部品.pcad', control))
+      .resolves.toEqual({ ok: true, notices: [], handoff: { format: 'stl', token: null } });
+    expect(fake.saved).toHaveLength(1);
+    controller.abort();
+    await expect(runExportDxf(createDeps(fake, createForbiddenKernel()), dxfInputOf([DXF_LINE]), '部品.pcad', control))
+      .resolves.toEqual({ ok: false, cancelled: true });
+    expect(fake.saved).toHaveLength(1);
+  });
+
+  it('DXF保存待ちで失効した返信は旧成功案内へ進めない', async () => {
+    const pending = deferred<boolean>();
+    const fake = createFakeGateway();
+    const save = vi.fn(() => pending.promise);
+    let current = true;
+    const deps = createDeps({ ...fake, gateway: { ...fake.gateway, saveFileAs: save } }, createForbiddenKernel());
+    const result = runExportDxf(deps, dxfInputOf([DXF_LINE]), '部品.pcad', {
+      signal: new AbortController().signal, isCurrent: () => current,
+    });
+    expect(save).toHaveBeenCalledTimes(1);
+    current = false;
+    pending.resolve(true);
+    await expect(result).resolves.toEqual({ ok: false, cancelled: true });
+    expect(save).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -6,7 +6,7 @@ import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute
 import { addThirdBoxAssemblyFile, twoBoxAssemblyFile } from './assemblyTestSupport.js';
 import { configurableBoxPartFile, dimensionSeriesPartFile, offsetHolePartFile } from './drawingTestSupport.js';
 import { drawingMessage } from './drawingMessages.js';
-import { expectDrawingStroke } from './drawingManufacturingFixture.js';
+import { expectDrawingStroke, waitForDrawingReady } from './drawingManufacturingFixture.js';
 import { observeDrawingPrint } from './observeDrawingPrint.js';
 import { startDrawingCpuProfile } from './drawingCpuProfile.js';
 import { captureManualDetail } from './captureManualDetail.js';
@@ -264,6 +264,7 @@ test.describe('P8 図面の実操作', () => {
     for (const name of ['断面A', '詳細B', '補助C', '部分D', '破断E']) await expect(tree.getByRole('button', { name, exact: true })).toBeVisible();
     await tree.getByRole('button', { name: '破断E', exact: true }).click();
     await expect(properties.getByLabel(drawingMessage('drawing.advanced.gap'), { exact: true })).toHaveValue('3');
+    await waitForDrawingReady(page);
     await expectDrawingStroke(page.locator('.pcad-drawing-svg [data-owner-id="view-4"] path'));
     await expect(page.locator('.pcad-drawing-svg [data-owner-id="view-4"] [aria-label="A–A"]')).toHaveCount(1);
     await expect(page.locator('.pcad-drawing-svg [data-owner-id="view-5"] [aria-label="B (2:1)"]')).toHaveCount(1);

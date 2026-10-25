@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { expressionValueFromNumber as num, type ExpressionValue } from '@pointercad/expression';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import { describe, expect, it } from 'vitest';
@@ -14,6 +15,12 @@ import {
   type ConstraintDiagnosis,
 } from './diagnose.js';
 import { buildResiduals, type ResidualRow } from './residuals.js';
+import {
+  CONNECTED_1000_FIXTURE_SHA256, CONNECTED_1000_ORIENTATION_ID, CONNECTED_1000_PURE_FIXTURE_SHA256, CONNECTED_1000_RECIPE,
+  CONNECTED_1000_RECIPE_SHA256, connected1000Components, connected1000Constraints, connected1000Features,
+  connected1000FixtureText, connected1000Original, connected1000Sketch,
+} from './connected1000Fixture.testSupport.js';
+import { extraDimension, geometryOracleFactories, triangleFanOracle } from './independentGeometry.testSupport.js';
 import { matrixRank, solveLevenbergMarquardt } from './solve.js';
 import { sketchConstraints, type ConstraintTarget, type SketchConstraint } from './types.js';
 import { collectVariables, MAX_CONSTRAINT_VARIABLES, type VariableSet } from './variables.js';
@@ -671,13 +678,13 @@ describe('材料が足りない拘束と、要素が多すぎる場合', () => {
 
   it('変数が上限を超えたら診断せずに断る', () => {
     const features: SketchFeature[] = [];
-    for (let i = 0; i < 101; i += 1) {
+    for (let i = 0; i < 501; i += 1) {
       features.push(
         lineOf(`line-${i}`, absoluteCoordinate(i, 0, 0), absoluteCoordinate(i, 10, 0)),
       );
     }
     const set = variablesOf(documentOf(features));
-    expect(set.variables.length).toBe(404);
+    expect(set.variables.length).toBe(2004);
     expect(set.variables.length).toBeGreaterThan(MAX_CONSTRAINT_VARIABLES);
     const diagnosis = diagnoseConstraints([], set, set.initial);
     expect(diagnosis.tooMany).toBe(true);
@@ -687,7 +694,7 @@ describe('材料が足りない拘束と、要素が多すぎる場合', () => {
       { kind: 'tooMany', text: CONSTRAINT_TOO_MANY_MESSAGE, constraintIds: [] },
     ]);
     expect(CONSTRAINT_TOO_MANY_MESSAGE).toBe(
-      '拘束を付けられる要素が多すぎます(上限 200 点)。スケッチを分けてください。',
+      '拘束を付けられる要素が多すぎます(上限 1000 点)。スケッチを分けてください。',
     );
   });
 });
@@ -794,5 +801,249 @@ describe('診断の速さ(§2.9)', () => {
     expect(diagnosis.rank).toBe(200);
     expect(diagnosis.excess).toBe(200);
     expectWithinBudget(elapsedMs, 30, '変数 400・拘束 400(全部が重複)の診断');
+  });
+});
+
+
+describe('1000-point real-document diagnosis', () => {
+  function points(): SketchFeature[] {
+    return Array.from({ length: 1000 }, (_, i) => ({
+      id: `capacity-${i}`, name: `capacity-${i}`, kind: 'point', planeId: 'xy',
+      at: absoluteCoordinate(0, 0, 0),
+    }));
+  }
+
+  function chain(): SketchConstraint[] {
+    return Array.from({ length: 999 }, (_, i) => ({
+      id: `join-${i}`, name: `join-${i}`, kind: 'coincident',
+      a: atPoint(`capacity-${i}`), b: atPoint(`capacity-${i + 1}`),
+    }));
+  }
+
+  function diagnoseDocument(document: SketchDocument): ConstraintDiagnosis {
+    const set = variablesOf(document);
+    return diagnoseConstraints(sketchConstraints(document), set, set.initial);
+  }
+
+  it('admits the exact boundary with 2000 free scalar coordinates', () => {
+    const diagnosis = diagnoseDocument(documentOf(points()));
+    expect(diagnosis.tooMany).toBe(false);
+    expect(diagnosis.variables).toBe(2000);
+    expect(diagnosis.rank).toBe(0);
+    expect(diagnosis.degreesOfFreedom).toBe(2000);
+  });
+
+  it('a connected coincidence chain has only two rigid translations; its closure is redundant', () => {
+    const constraints = chain();
+    constraints.push({ id: 'closure', name: 'closure', kind: 'coincident',
+      a: atPoint('capacity-0'), b: atPoint('capacity-999') });
+    const document = documentOf(points(), constraints);
+    const first = diagnoseDocument(document);
+    expect(first.variables).toBe(2000);
+    expect(first.rank).toBe(1998);
+    expect(first.degreesOfFreedom).toBe(2);
+    expect(first.redundant).toEqual(['closure']);
+    expect(first.redundantDetails[0].dependsOn).toEqual(chain().map((entry) => entry.id));
+    expect(first.conflicting).toEqual([]);
+    expect(first.satisfied).toBe(true);
+    expect(diagnoseDocument(document)).toEqual(first);
+  });
+
+  it.each(['fixed', 'expression'] as const)('one %s anchor removes exactly the two translations', (kind) => {
+    const features = points();
+    const constraints = chain();
+    if (kind === 'fixed') {
+      constraints.unshift({ id: 'anchor', name: 'anchor', kind: 'fix', target: atPoint('capacity-0') });
+    } else {
+      features[0] = { id: 'capacity-0', name: 'capacity-0', kind: 'point', planeId: 'xy',
+        at: expressionCoordinate(0, 0) };
+    }
+    const diagnosis = diagnoseDocument(documentOf(features, constraints));
+    expect(diagnosis.variables).toBe(1998);
+    expect(diagnosis.rank).toBe(1998);
+    expect(diagnosis.degreesOfFreedom).toBe(0);
+    expect(diagnosis.frozen.get('capacity-0')).toBe(kind);
+    expect(diagnosis.satisfied).toBe(true);
+  });
+
+  it('retains duplicate-distance conflict provenance and missing targets in a 1000-point document', () => {
+    const features = points();
+    features[1] = { id: 'capacity-1', name: 'capacity-1', kind: 'point', planeId: 'xy',
+      at: absoluteCoordinate(10, 0, 0) };
+    const constraints: SketchConstraint[] = [10, 12].map((length) => ({
+      id: `length-${length}`, name: `length-${length}`, kind: 'distance',
+      a: atPoint('capacity-0'), b: atPoint('capacity-1'), length: num(length),
+    }));
+    constraints.push({ id: 'missing', name: 'missing', kind: 'coincident',
+      a: atPoint('capacity-0'), b: atPoint('removed') });
+    const diagnosis = diagnoseDocument(documentOf(features, constraints));
+    expect(diagnosis.rank).toBe(1);
+    expect(diagnosis.degreesOfFreedom).toBe(1999);
+    expect(diagnosis.redundant).toEqual(['length-12']);
+    expect(diagnosis.conflicting).toEqual(['length-12', 'length-10']);
+    expect(diagnosis.conflictDetails[0].partners).toEqual(['length-10']);
+    expect(diagnosis.dangling).toEqual(['missing']);
+    expect(diagnosis.skipped[0].constraintId).toBe('missing');
+    expect(diagnosis.satisfied).toBe(false);
+  });
+
+  it('reports non-finite large diagnosis as unknown, never as fully constrained', () => {
+    const constraints = chain();
+    const set = variablesOf(documentOf(points(), constraints));
+    const invalid = [...set.initial];
+    invalid[0] = Number.NaN;
+    const diagnosis = diagnoseConstraints(constraints, set, invalid);
+    expect(diagnosis.rank).toBeNull();
+    expect(diagnosis.degreesOfFreedom).toBeNull();
+    expect(diagnosis.messages[0].kind).toBe('incomplete');
+    expect(diagnosis.messages.some((entry) => entry.kind === 'solved')).toBe(false);
+    expect(diagnosis.satisfied).toBe(false);
+  });
+});
+
+describe('independent mixed-geometry rank and exact negative oracles (EX-13 W03)', () => {
+  it('the un-oriented 1997-distance fan has exactly three rigid freedoms', () => {
+    const fixture = triangleFanOracle(false, false), set = variablesOf(fixture.document);
+    const diagnosis = diagnoseConstraints(fixture.document.constraints ?? [], set, set.initial);
+    expect(fixture.expected.size).toBe(1000);
+    expect(fixture.document.constraints).toHaveLength(1997);
+    expect(set.variables).toHaveLength(2000);
+    expect(diagnosis.equations).toBe(1997);
+    expect(diagnosis.rank).toBe(1997);
+    expect(diagnosis.degreesOfFreedom).toBe(3);
+    expect(diagnosis.satisfied).toBe(true);
+    expect(diagnosis.conflicting).toEqual([]);
+    expect(diagnosis.skipped).toEqual([]);
+  });
+
+  describe.each(geometryOracleFactories.map(factory => ({ name: factory(false).name, factory })))('$name', ({ factory }) => {
+    it('has the independently counted equations, rank and two translations at its analytic solution', () => {
+      const fixture = factory(false), set = variablesOf(fixture.document);
+      const diagnosis = diagnoseConstraints(fixture.document.constraints ?? [], set, set.initial);
+      expect(set.variables).toHaveLength(fixture.variables);
+      expect(fixture.expected.size).toBeGreaterThanOrEqual(200);
+      expect(diagnosis.equations).toBe(fixture.equations);
+      expect(diagnosis.rank).toBe(fixture.rank);
+      expect(diagnosis.degreesOfFreedom).toBe(2);
+      expect(diagnosis.satisfied).toBe(true);
+      expect(diagnosis.conflicting).toEqual([]);
+      expect(diagnosis.skipped).toEqual([]);
+      // These are actual movable coordinate pairs, not fixed/derived filler.
+      expect(set.variables.filter(variable => variable.kind === 'u')).toHaveLength(fixture.expected.size);
+      const counts = new Map<string, number>();
+      for (const constraint of fixture.document.constraints ?? []) counts.set(constraint.kind, (counts.get(constraint.kind) ?? 0) + 1);
+      const actualCounts = Object.fromEntries(counts);
+      if (fixture.name === 'triangle fan') {
+        expect(fixture.expected.size).toBe(1000);
+        expect(actualCounts).toEqual({ distance: 1997, verticalDistance: 1 });
+      } else if (fixture.name === 'coincidence chain') {
+        expect(fixture.expected.size).toBe(1000);
+        expect(actualCounts).toEqual({ coincident: 499, distance: 500, horizontal: 125, vertical: 125, parallel: 125, perpendicular: 125 });
+      } else {
+        expect(fixture.expected.size).toBe(200);
+        expect(actualCounts).toEqual({ radius: 75, concentric: 50, tangent: 75, distance: 75, horizontalDistance: 49, verticalDistance: 74, vertical: 25 });
+      }
+    });
+
+    it('classifies a repeated dimension as duplicate and returns its exact source ID', () => {
+      const fixture = factory(false), added = extraDimension(fixture, false);
+      const document = { ...fixture.document, constraints: [...(fixture.document.constraints ?? []), added] };
+      const set = variablesOf(document), diagnosis = diagnoseConstraints(document.constraints, set, set.initial);
+      expect(diagnosis.rank).toBe(fixture.rank);
+      expect(diagnosis.degreesOfFreedom).toBe(2);
+      expect(diagnosis.satisfied).toBe(true);
+      expect(diagnosis.conflicting).toEqual([]);
+      expect(diagnosis.redundantDetails.find(entry => entry.constraintId === added.id)).toMatchObject({
+        reason: 'duplicate', dependsOn: [fixture.duplicateOf],
+      });
+    });
+
+    it('identifies an impossible pair of unequal dimensions, independently of numerical convergence', () => {
+      const fixture = factory(false), added = extraDimension(fixture, true);
+      const document = { ...fixture.document, constraints: [...(fixture.document.constraints ?? []), added] };
+      const set = variablesOf(document), diagnosis = diagnoseConstraints(document.constraints, set, set.initial);
+      // Two different lengths/radii for the identical target are impossible
+      // for every coordinate vector. No failed nonlinear solve is used as proof.
+      expect(diagnosis.rank).toBe(fixture.rank);
+      expect(diagnosis.degreesOfFreedom).toBe(2);
+      expect(diagnosis.satisfied).toBe(false);
+      expect(new Set(diagnosis.conflicting)).toEqual(new Set([added.id, fixture.duplicateOf]));
+      expect(diagnosis.conflictDetails.find(entry => entry.constraintId === added.id)).toMatchObject({
+        partners: [fixture.duplicateOf], residual: -1,
+      });
+      expect(diagnosis.redundantDetails.find(entry => entry.constraintId === added.id)?.reason).toBe('duplicate');
+      expect(diagnosis.messages.some(message => message.kind === 'incomplete')).toBe(false);
+    });
+  });
+});
+
+describe('the fixed connected 1000-point fixture of the drag session and the scripts (EX-13 W01)', () => {
+  const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
+  const kindsOf = (constraints: readonly SketchConstraint[]): Record<string, number> => {
+    const counts = new Map<string, number>();
+    for (const constraint of constraints) counts.set(constraint.kind, (counts.get(constraint.kind) ?? 0) + 1);
+    return Object.fromEntries(counts);
+  };
+
+  it('fixes the generation input (seed) and the generated bytes by SHA-256', () => {
+    // The three values were first computed by an independent regeneration outside the product
+    // (EX-13 W01 work report); the helper must reproduce them byte for byte.
+    expect(sha256(JSON.stringify(CONNECTED_1000_RECIPE))).toBe(CONNECTED_1000_RECIPE_SHA256);
+    const features = connected1000Features();
+    expect(sha256(connected1000FixtureText(features, connected1000Constraints()))).toBe(CONNECTED_1000_FIXTURE_SHA256);
+    expect(sha256(connected1000FixtureText(features, connected1000Constraints(false)))).toBe(CONNECTED_1000_PURE_FIXTURE_SHA256);
+  });
+
+  it('has 1000 distinct movable points and 1997 distances plus one vertical distance in one component', () => {
+    const document = connected1000Sketch(documentOf([])), constraints = document.constraints ?? [];
+    expect(document.features).toHaveLength(1000);
+    expect(document.features.every(feature => feature.kind === 'point')).toBe(true);
+    expect(new Set(document.features.map(feature => feature.id)).size).toBe(1000);
+    expect(new Set(document.features.map((_, index) => connected1000Original(index).join(','))).size).toBe(1000);
+    expect(constraints).toHaveLength(1998);
+    expect(kindsOf(constraints)).toEqual({ distance: 1997, verticalDistance: 1 });
+    expect(connected1000Components(document.features, constraints)).toBe(1);
+    const set = variablesOf(document);
+    expect(set.variables).toHaveLength(2000);
+    expect(set.variables.filter(variable => variable.kind === 'u')).toHaveLength(1000);
+    expect(set.variables.filter(variable => variable.kind === 'v')).toHaveLength(1000);
+    // Independent rigidity precondition: no outer point is collinear with the two anchors, so every
+    // triangle (0, 1, i) is nondegenerate (exact in binary: all coordinates are quarter millimetres).
+    const [x0, y0] = connected1000Original(0), [x1, y1] = connected1000Original(1);
+    let least = Infinity;
+    for (let index = 2; index < 1000; index += 1) {
+      const [x, y] = connected1000Original(index);
+      least = Math.min(least, (x1 - x0) * (y - y0) - (y1 - y0) * (x - x0));
+    }
+    expect(least).toBe(73.5);
+  });
+
+  it('the pure 1997-distance system keeps exactly one more freedom (the rotation) than the 1998-constraint fixture', () => {
+    const oriented = connected1000Constraints(), pure = connected1000Constraints(false);
+    expect(pure).toHaveLength(1997);
+    expect(kindsOf(pure)).toEqual({ distance: 1997 });
+    expect(pure).toEqual(oriented.filter(constraint => constraint.id !== CONNECTED_1000_ORIENTATION_ID));
+    const document = connected1000Sketch(documentOf([]), false);
+    expect(connected1000Components(document.features, pure)).toBe(1);
+    const set = variablesOf(document);
+    expect(set.variables).toHaveLength(2000);
+    // Rigid triangles leave the three planar rigid motions: 2000 - 1997 = 3. The vertical distance moves
+    // point 1 by 8 per unit rotation about point 0, so it removes the rotation: 2000 - 1998 = 2.
+    const pureDiagnosis = diagnoseConstraints(pure, set, set.initial);
+    const orientedDiagnosis = diagnoseConstraints(oriented, set, set.initial);
+    expect(pureDiagnosis.equations).toBe(1997);
+    expect(pureDiagnosis.rank).toBe(1997);
+    expect(pureDiagnosis.degreesOfFreedom).toBe(3);
+    expect(orientedDiagnosis.equations).toBe(1998);
+    expect(orientedDiagnosis.rank).toBe(1998);
+    expect(orientedDiagnosis.degreesOfFreedom).toBe(2);
+    expect((pureDiagnosis.degreesOfFreedom ?? Number.NaN) - (orientedDiagnosis.degreesOfFreedom ?? Number.NaN)).toBe(1);
+    for (const diagnosis of [pureDiagnosis, orientedDiagnosis]) {
+      expect(diagnosis.tooMany).toBe(false);
+      expect(diagnosis.satisfied).toBe(true);
+      expect(diagnosis.redundant).toEqual([]);
+      expect(diagnosis.conflicting).toEqual([]);
+      expect(diagnosis.skipped).toEqual([]);
+    }
   });
 });

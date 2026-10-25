@@ -8,6 +8,7 @@ import {
   measureKindLabel,
   measureKindLabelKey,
   measureKindUnit,
+  measurementProvenanceLabel,
   measureLocally,
   measureReadiness,
   measureRejectionMessageKey,
@@ -611,5 +612,27 @@ describe('測定の表示(小数 3 桁)', () => {
     expect(
       formatMeasure({ kind: 'faceAngle', value: -0, unit: 'degree', segment: null }, 'inch'),
     ).toBe('0.000 度');
+  });
+});
+
+
+describe('R21 local measurement provenance', () => {
+  it.each([
+    { selection: ['extrude-1#edge:0'], value: 40 },
+    { selection: ['extrude-1#face:0'], value: 1200 },
+    { selection: ['extrude-1'], value: 12000 },
+  ])('retains the B-rep source and unrounded value for $selection', ({ selection, value }) => {
+    const readiness = measureReadiness(selection, BODIES);
+    if (readiness.kind === null) throw new Error('missing measurement kind');
+    const result = measureLocally(readiness.kind, readiness.targets, BODIES.map(body => ({ ...body, bodyKind: 'solid' })));
+    expect(result?.value).toBe(value);
+    expect(result?.provenance).toBe('brep');
+  });
+
+  it('does not infer the source of an older result', () => {
+    expect(measurementProvenanceLabel()).toBe(t('measureProvenance.unknown'));
+    expect(measurementProvenanceLabel()).not.toBe(measurementProvenanceLabel('brep'));
+    expect(measurementProvenanceLabel('triangles')).toBe(t('measureProvenance.triangles'));
+    expect(measurementProvenanceLabel('triangles')).not.toBe(measurementProvenanceLabel('brep'));
   });
 });

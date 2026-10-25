@@ -1,7 +1,9 @@
+import type { HoleCenterAnchor, HolePlacementRole } from './subShapeOrigin.js';
 // 輪郭のオフセット(FR-321)の角の種類と結果の形は `occt/makeOffsetWire.ts` が正本。
 // 同じ約束を2か所に書かないため、ここでは取り込んで輸出し直すだけにする
 // (型だけの取り込みなので、実行時の読み込みは起きない)。
 import type { HoleEntrySpec } from './occt/makeHole.js';
+import type { CurrentOriginIndex, FaceOrigin, ProfileRegionAnchor, SubShapeOrigin } from './subShapeOrigin.js';
 import type { SheetMetalBaseInput } from './occt/makeSheetMetalBase.js';
 import type { SheetMetalFlangeInput } from './occt/makeSheetMetalFlange.js';
 import type { SheetMetalBodyInput } from './occt/makeSheetMetalBody.js';
@@ -11,6 +13,7 @@ import type { OffsetContour, OffsetJoinType } from './occt/makeOffsetWire.js';
 // (段の依頼が持つ値の意味は、その値を読む作り手の側が正本)。
 import type { ExtrudeEndSpec } from './occt/makeSolidSweep.js';
 import type { SurfaceInput } from './occt/makeSurface.js';
+import type { SurfaceCutInput, SurfaceCutReason } from './occt/makeSurfaceCut.js';
 import type { ThinExtrudeSide } from './occt/makeThinExtrude.js';
 // 書き出し・読み込み(FR-802、FR-803、P6 タスク10)が使う 4 つも同じ理由で取り込む。
 // 三角形の網(`ExportMesh`)は `occt/exportMesh.ts`、色(`RgbTuple`)は
@@ -123,8 +126,13 @@ export interface SplineCurveSpec {
   readonly mode: 'interpolate' | 'control';
   readonly points: readonly Vec3Tuple[];
   readonly closed: boolean;
-  /** Certified function chords must remain linear through downstream CAD operations. */
-  readonly degree?: 1;
+  /**
+   * Certified function chords must remain linear through downstream CAD operations (1). A certified smooth
+   * function curve is a C1 cubic (3) and always carries `knots`.
+   */
+  readonly degree?: 1 | 3;
+  /** Distinct increasing knots of a smooth function curve; multiplicities 4/2/4 implied, 2 * knots.length points. */
+  readonly knots?: readonly number[];
 }
 
 export type CurveSpec = SegmentSpec | ArcSpec | EllipseCurveSpec | SplineCurveSpec;
@@ -429,6 +437,8 @@ export interface ExtrudeStepSpec {
   readonly kind: 'extrude';
   /** 断面の閉ループ。makePlanarFace と同じ並び。 */
   readonly profile: readonly CurveSpec[];
+  /** Proven saved whole-curve region, paired with profile edges; legacy four-line IDs are retained. */
+  readonly profileOrigin?: ProfileRegionAnchor | Extract<FaceOrigin, { readonly kind: 'extrude-curve-cap' }>['profile'];
   /** 押し出す向き(単位ベクトル)。 */
   readonly direction: Vec3Tuple;
   /** 押し出す長さ(mm)。正の数。 */
@@ -452,6 +462,7 @@ export interface ExtrudeStepSpec {
   readonly thin?: ThinExtrudeSpec;
   /**
    * 「次の面まで」(`end.kind === 'toNext'`)の相手の立体を指すキャッシュの鍵。
+   * 「対象を貫く」(`end.kind === 'throughTarget'`、EX04)では貫く対象の立体の鍵。
    * それ以外の終端では省く(渡されても見ない)。
    *
    * **この鍵の段は消費しない**(材料の位置を読むだけで、相手の立体は画面に残る。
@@ -481,6 +492,14 @@ export interface SewStepSpec {
   readonly tolerance: number;
 }
 
+/** 既存の曲面を借りて縫い合わせる 1 手順(EX-18 W14)。保存・UI 接続は W15。 */
+export interface SewFacesStepSpec {
+  readonly kind: 'sew';
+  /** Worker のキャッシュから借りる面。実体と所有権は Worker の外へ渡さない。 */
+  readonly faces: readonly { readonly targetKey: string; readonly query: SubShapeQuery }[];
+  readonly tolerance: number;
+}
+
 /** 2 つの立体を組み合わせる 1 手順(FR-404)。 */
 export interface BooleanStepSpec {
   readonly kind: 'boolean';
@@ -488,6 +507,8 @@ export interface BooleanStepSpec {
   /** すでに作った形を指すキャッシュの鍵。 */
   readonly targetKey: string;
   readonly toolKey: string;
+  /** true なら、差で何も削れないとき理由つきで断る(EX04)。既定は欄なしで従来どおり。 */
+  readonly requireRemoval?: true;
 }
 
 /**
@@ -501,6 +522,7 @@ export type SolidStepSpec =
   | ExtrudeStepSpec
   | RevolveStepSpec
   | SewStepSpec
+  | SewFacesStepSpec
   | BooleanStepSpec
   | HoleStepSpec
   | ThreadStepSpec
@@ -515,6 +537,8 @@ export type SolidStepSpec =
   // ここから下は P5 の Should 群・Could 群(タスク42a)。定義は下の「加工の段」の節にある。
   /** 抜き勾配(FR-417)。 */
   | DraftStepSpec
+  /** 平らな面の移動(EX-18 の限られた一段。平面・隣が直角)。 */
+  | FaceOffsetStepSpec
   /** ミラー(FR-419)。対象を消費しない(§0.a-0.36)。 */
   | MirrorStepSpec
   /** 移動/回転(FR-424)。 */
@@ -533,6 +557,7 @@ export type SolidStepSpec =
   | SurfaceStepSpec
   /** 平面による切断(FR-432)。分割(FR-424)もこれで満たす(§0.a-0.60)。 */
   | CutStepSpec
+  | SurfaceCutStepSpec
   /** くり抜き(FR-418)。 */
   | ShellStepSpec
   /** 読み込んだ形のベースボディ(FR-802、P6 §2.8、タスク10)。定義は下の節にある。 */
@@ -636,6 +661,12 @@ export interface SolidRecomputeRequest {
    * その場で測って足す(段を作り直さない)。
    */
   readonly measureAreas?: boolean;
+  /** Explicit display-only opt-in. Omitted requests retain world Float32 coordinates. */
+  readonly localMesh?: {
+    readonly maximumFloat32ErrorMm: number;
+    /** Maximum simultaneous cached-world and returned-local mesh bytes. */
+    readonly maximumLiveMeshBytes: number;
+  };
 }
 
 /**
@@ -660,6 +691,14 @@ export type SolidBodyKind = 'solid' | 'shell' | 'mesh' | 'mixed';
 /** ボディ 1 つ分の表示用データ。MeshData と同じ並び方をする。 */
 export interface SolidBodyMesh {
   readonly id: string;
+  /** Present only when both positions and edgePositions are local to this same origin. */
+  readonly coordinateFrame?: {
+    readonly space: 'local';
+    readonly origin: Vec3Tuple;
+    readonly maximumFloat32ErrorMm: number;
+    /** The request's live-byte limit, present on recomputed local replies only. */
+    readonly maximumLiveMeshBytes?: number;
+  };
   /** 頂点座標。x, y, z の順に 3 個ずつ並ぶ。 */
   readonly positions: Float32Array;
   /** 頂点法線。positions と同じ長さ。 */
@@ -702,11 +741,14 @@ export interface SolidBodyMesh {
   readonly vertices: readonly SolidVertexInfo[];
   /** ねじの簡略表示の印(§0.a-0.15)。無ければ空配列。 */
   readonly threadMarks: readonly ThreadMarkInfo[];
+  /** Runtime proof table. Producers populate this in P1. */
+  readonly origins?: CurrentOriginIndex;
 }
 
 /** 立体を作れなかった段と、その理由。 */
 export interface SolidStepFailure {
   readonly id: string;
+  readonly code?: SurfaceCutReason;
   /** 利用者へそのまま見せる日本語(FR-504、NFR-RE-1)。 */
   readonly message: string;
 }
@@ -726,6 +768,81 @@ export interface KernelMemoryUsage {
   /** 確保できる上限のバイト数(約 4GB。`worker/kernelMemory.ts` の `OCCT_HEAP_LIMIT_BYTES`)。 */
   readonly wasmHeapLimitBytes: number;
 }
+
+/**
+ * Conservative request-local JS mesh accounting, created before the result is returned.
+ * Cache fields sample Worker-owned mesh arrays before kernelApi acquires the new display
+ * token and releases the old display/request tokens; they are not that final token state
+ * (see `MeshJsFinalAccounting`). When the cache supplies explicit buffer identities, cache
+ * fields count whole backing ArrayBuffers once each, so an aliased or small view cannot hide
+ * its allocation. Reply fields also reserve a potential IPC structured-clone copy. These values
+ * do not measure actual JS occupancy, true tessellation peak, WASM, native, GPU, or whole-PID
+ * usage. The peak contains the cache and reply reservations, plus Worker-retained display
+ * arrays outside the cache when the producer supplies them; do not add those fields to it again.
+ */
+export type MeshJsAccounting =
+  | {
+      readonly status: 'known';
+      readonly limitBytes: number;
+      readonly cacheActiveBytes: number;
+      readonly cacheRetiredBytes: number;
+      /** Pre-result protected subset of active plus retired, never an additional term. */
+      readonly cacheProtectedBytes: number;
+      /**
+       * Accumulated Worker reply arrays, potential IPC clone arrays, and metadata reservation.
+       * The clone is already included: do not add it again. This is not the Worker-only
+       * retained byte count after display-token rotation, nor measured main-thread retention.
+       */
+      readonly retainedReplyBytes: number;
+      /**
+       * Highest admitted conservative reservation bound, not a measured allocation high-water.
+       * Before tessellation the remaining finite allowance is reserved together with existing
+       * cache/reply/fixed terms, so this may equal limitBytes without that many bytes being used.
+       * Eviction, failure, or cancellation cannot lower an already admitted bound.
+       */
+      readonly requestPeakReservedBytes: number;
+    }
+  | {
+      readonly status: 'unknown';
+      readonly limitBytes: number;
+      readonly reason: 'callback-missing' | 'callback-error' | 'missing-counts' | 'invalid-byte-count'
+        | 'overflow';
+    };
+
+/**
+ * Post-token Worker mesh accounting for a local-mesh request, a separate contract from the
+ * pre-result `MeshJsAccounting`. kernelApi samples it after the request token was released in
+ * `finally` and the part's display token was rotated (or kept, for a cancelled or superseded
+ * job). Every whole ArrayBuffer retained by the shape cache (active and retired), by any part's
+ * adopted display meshes, or by this reply is counted once by identity. The structured-clone
+ * copy of this reply is a future owner on the receiving side and is reported beside, never
+ * inside, `retainedBackingBytes`. This is a finite JS backing-store observation, not a peak and
+ * not RSS, WASM, native, GPU, IPC or whole-PID usage; metadata objects are not measured here.
+ */
+export type MeshJsFinalAccounting =
+  | {
+      readonly status: 'known';
+      readonly limitBytes: number;
+      /** Cache entries' whole backing buffers after the request token was released. */
+      readonly cacheActiveBytes: number;
+      /** Retired cache entries' buffers which are not also active. */
+      readonly cacheRetiredBytes: number;
+      /** Subset of active plus retired still protected by live tokens; never an extra term. */
+      readonly cacheProtectedBytes: number;
+      /** Every part's adopted display meshes. May overlap the cache and the reply. */
+      readonly displayBackingBytes: number;
+      /** This reply's arrays. May overlap the cache and the display meshes. */
+      readonly replyBackingBytes: number;
+      /** Union of cache, display and reply buffers, each ArrayBuffer once. */
+      readonly retainedBackingBytes: number;
+      /** Whole reply buffers the structured clone will copy; not part of retainedBackingBytes. */
+      readonly replyCloneReservedBytes: number;
+    }
+  | {
+      readonly status: 'unknown';
+      readonly limitBytes: number;
+      readonly reason: 'callback-missing' | 'callback-error' | 'invalid-byte-count' | 'overflow';
+    };
 
 /** 履歴の再計算の結果。1 段失敗しても止めずに残りを返す(FR-504)。 */
 export interface SolidRecomputeResult {
@@ -749,6 +866,13 @@ export interface SolidRecomputeResult {
    * (偽物を使う検査など)と、計算部を読み込まない `readCachedBodies` では省く。
    */
   readonly memory?: KernelMemoryUsage;
+  /** Present for local-mesh requests only; unknown must never be interpreted as zero. */
+  readonly meshJsAccounting?: MeshJsAccounting;
+  /**
+   * kernelApi's post-token final accounting, present for local-mesh requests only (also when
+   * cancelled). Absent from direct `recomputeSolids` calls, which hold no request token.
+   */
+  readonly meshJsFinalAccounting?: MeshJsFinalAccounting;
 }
 
 /** 計算中の進み具合。段を始める前に 1 回ずつ知らせる(NFR-PF-4)。 */
@@ -788,6 +912,13 @@ export type EdgeCurveKind = 'line' | 'circle' | 'ellipse' | 'other';
  * 隣り合う面の一覧や三角形の数は、形が少し変わるだけで壊れるので持たない。
  */
 export interface SolidFaceInfo {
+  /** Native underlying primitive in part coordinates, independent of material-face orientation.
+   * Derived analysis metadata only; not a saved subshape fingerprint or a trimmed-domain certificate. */
+  readonly analyticSurface?:
+    | { readonly kind: 'cone'; readonly origin: Vec3Tuple; readonly axis: Vec3Tuple;
+        readonly referenceRadius: number; readonly semiAngle: number }
+    | { readonly kind: 'torus'; readonly origin: Vec3Tuple; readonly axis: Vec3Tuple;
+        readonly majorRadius: number; readonly minorRadius: number };
   /** TopExp.MapShapes_2 の順で数えた 0 始まりの通し番号。 */
   readonly index: number;
   readonly surfaceKind: FaceSurfaceKind;
@@ -799,6 +930,18 @@ export interface SolidFaceInfo {
   readonly axis: Vec3Tuple | null;
   /** 円筒・円錐の解析軸上点または球の解析中心(mm)。面積重心と異なる。他の面は null。 */
   readonly axisOrigin?: Vec3Tuple | null;
+  /** 全周の円筒帯だけ。axisOriginからaxisに沿う両端の距離(mm)。未確認/部分面はnullまたは省略。保存指紋には含めない。 */
+  readonly cylinderSpan?: readonly [number, number] | null;
+  /** 円筒の面(部分の面を含む)の今の軸方向範囲。axisOriginからaxisに沿う両端の距離(mm)。全周の証明ではない。保存指紋には含めない。 */
+  readonly cylinderAxialExtent?: readonly [number, number] | null;
+  /**
+   * 今の B-rep で辺を共有する他の面の通し番号(昇順・重複なし)。実行時だけで、保存指紋には含めない。
+   * 面の種類に依らず全ての面が持つ(実らせんの壁の小片と溝の閉じた鎖の確認用)。無い面は証明に使わない。
+   * 数え上げが上限を超えた形では、どの面も持たない(証明に使わない)。
+   */
+  readonly adjacentFaces?: readonly number[];
+  /** Current native material normal points away from the cylinder axis. Not a saved fingerprint. */
+  readonly cylinderExterior?: boolean;
   /** 円柱・円錐・球の半径(mm)。平面では null。 */
   readonly radius: number | null;
   /** この面の三角形が indices の何番目から何枚あるか。 */
@@ -860,8 +1003,9 @@ export type SubShapeQuery =
       readonly area: number;
       readonly position: Vec3Tuple;
       readonly axis: Vec3Tuple | null;
-      readonly radius: number | null;
-    }
+       readonly radius: number | null;
+       readonly origin?: SubShapeOrigin;
+     }
   | {
       readonly kind: 'edge';
       readonly index: number;
@@ -869,9 +1013,11 @@ export type SubShapeQuery =
       readonly length: number;
       readonly position: Vec3Tuple;
       readonly axis: Vec3Tuple | null;
-      readonly radius: number | null;
-    }
-  | { readonly kind: 'vertex'; readonly index: number; readonly position: Vec3Tuple };
+       readonly radius: number | null;
+       readonly origin?: SubShapeOrigin;
+     }
+  | { readonly kind: 'vertex'; readonly index: number; readonly position: Vec3Tuple;
+      readonly origin?: SubShapeOrigin };
 
 /**
  * 外観を割り当てた面 1 つぶんの照合の依頼(FR-1106、P5 §2.2.3)。
@@ -927,6 +1073,8 @@ export interface RigidTransformSpec {
  * 向きと投影はカーネルが面から決める(model は面の指紋しか持たないため)。
  */
 export interface HoleStepSpec {
+  readonly centerAnchors?: readonly HoleCenterAnchor[];
+  readonly placementRoles?: readonly HolePlacementRole[];
   readonly kind: 'hole';
   /** 穴をあける立体を指すキャッシュの鍵。この段が消費する(§0.a-0.5)。 */
   readonly targetKey: string;
@@ -953,6 +1101,34 @@ export interface HoleStepSpec {
    * 必須へ引き上げてよい**(`SolidBodyMesh.bodyKind` と同じ経過措置)。
    */
   readonly entry?: HoleEntrySpec;
+  /**
+   * 円筒の側面の穴(EX05)。**省くと今までどおりの平面の穴**(`centers` を面の平面へ投影する)。
+   * 入れたときは `face` が円筒面でなければ断り、`centers` は空、傾きは 0、入口は `plain` でなければ断る
+   * (曲面の上のざぐり・皿もみ・傾きの正しさをまだ扱わないため。黙って平面の穴にしない)。
+   * 位置の意味は `CylindricalHoleSpec` の注釈が正本。
+   */
+  readonly cylindrical?: CylindricalHoleSpec;
+}
+
+/**
+ * 円筒の側面の穴の位置 1 つ(EX05)。
+ *
+ * - `height`(mm): 円筒の**面自身の軸の向き**(OCCT の `gp_Cylinder.Position().Direction()`)に沿って、
+ *   選んだ面の**下側の境界**(その軸の向きで小さい側、`BRepAdaptor_Surface.FirstVParameter()`)から測る。
+ * - `angle`(ラジアン): 同じ軸のまわりの角度。**0 は `gp_Cylinder.Position().XDirection()`、
+ *   正の向きは軸の向きを親指にした右手の回り**(第 2 軸を `軸 × XDirection` で作る。OCCT の座標系が
+ *   左手系 `Direct() === false` でも、この意味は変わらない)。
+ * 位置は面の境界(トリム)の内側になければ断る。穴は位置ごとに、その点の面の法線の逆(材料の中)へ掘る。
+ */
+export interface CylindricalHoleLocation {
+  readonly height: number;
+  readonly angle: number;
+}
+
+/** 円筒の側面の穴(EX05)。位置ごとに軸の向きが違う(角度が違えば別の放射方向へ掘る)。 */
+export interface CylindricalHoleSpec {
+  readonly kind: 'cylinder-face';
+  readonly locations: readonly CylindricalHoleLocation[];
 }
 
 /** ねじの実らせん(FR-406)。簡略表示のときは ThreadStepSpec.thread を null にする。 */
@@ -972,6 +1148,9 @@ export interface ThreadMarkSpec {
 
 /** ねじ穴をあける 1 手順(FR-406)。下穴は穴と同じ手順で掘り、ねじ山だけが追加になる。 */
 export interface ThreadStepSpec {
+  /** 下穴の面の由来の材料。穴(`HoleStepSpec`)と同じ意味。両方そろう時だけ下穴の面に名前が付く。 */
+  readonly centerAnchors?: readonly HoleCenterAnchor[];
+  readonly placementRoles?: readonly HolePlacementRole[];
   readonly kind: 'thread';
   readonly targetKey: string;
   readonly face: SubShapeQuery;
@@ -999,6 +1178,12 @@ export interface ThreadStepSpec {
    * model が既定 `{ kind: 'plain' }` を必ず入れるようになったら必須へ引き上げてよい。
    */
   readonly entry?: HoleEntrySpec;
+  /**
+   * 円筒の側面のねじ穴(EX05)。**省くと今までどおりの平面のねじ穴**。意味と断り方は
+   * `HoleStepSpec.cylindrical` と同じ(下穴は穴と同じ `resolveHoleFrame` が位置ごとの向きを決め、
+   * ねじ山・切り始め・印も位置ごとの向きを使う。`occt/makeThread.ts` の `holeDirections`)。
+   */
+  readonly cylindrical?: CylindricalHoleSpec;
 }
 
 /**
@@ -1259,6 +1444,21 @@ export interface DraftStepSpec {
 }
 
 /**
+ * 平らな面の移動(EX-18 の限られた一段)。平らな面 1 枚を外向き法線の向きへ符号付きの距離だけ
+ * 平行に動かす。**対象を消費する。** 扱えるのは隣の面がすべて直角な面だけで、判定と断りの
+ * 文言は `occt/editSolidFace.ts` が持つ(欄は `FaceOffsetInput` の上位互換)。
+ */
+export interface FaceOffsetStepSpec {
+  readonly kind: 'faceOffset';
+  /** 面を持つ立体を指すキャッシュの鍵。この段が消費する。 */
+  readonly targetKey: string;
+  /** 動かす平らな面の指紋。 */
+  readonly face: SubShapeQuery;
+  /** 符号付きの距離(mm)。正で外向き(足す)、負で内向き(削る)。 */
+  readonly offset: number;
+}
+
+/**
  * ミラー(FR-419、§0.a-0.36)。平面に対する鏡像を 1 つ作る。
  *
  * **対象を消費しない。** 鏡像を作ったあと元と鏡像を「和」でつなぐのが普通の使い方で、
@@ -1425,6 +1625,14 @@ export interface SurfaceStepSpec {
    * (それ以外は null)。**消費しない。**
    */
   readonly targetKey: string | null;
+}
+
+export interface SurfaceCutStepSpec {
+  readonly kind: 'surfaceCut';
+  readonly targetKey: string;
+  readonly blade: Exclude<SurfaceCutInput, { readonly kind: 'surface' }>
+    | { readonly kind: 'surface'; readonly sourceKey: string };
+  readonly keepPositive: boolean;
 }
 
 /**

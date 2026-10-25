@@ -1,6 +1,10 @@
+import { activeAssemblyDocument } from '../store/documentKind.js';
 import { readDocumentBundle, type ReadDocumentBundleResult } from '@pointercad/io';
 import {
   embedPart,
+  MAX_SUB_ASSEMBLY_DEPTH,
+  type AssemblyDocument,
+  replacePartDocument,
   findComponent,
   type EmbedPartResult,
   type EmbeddedPartAttachments,
@@ -184,4 +188,148 @@ export function confirmReplacementPreview(): void {
 
 export function cancelReplacementPreview(): void {
   useAppStore.setState({ assemblyReplacementPreview: null });
+}
+
+/** Counts saved occurrences, including hidden and suppressed branches. */
+export function sharedPartOccurrenceCount(
+  assembly: AssemblyDocument, library: PartLibrary, partRef: string,
+): { readonly count: number; readonly complete: boolean } {
+  type Count = { readonly count: number; readonly complete: boolean };
+  const memo = new Map<string, Count>();
+  const visit = (document: AssemblyDocument, ancestors: ReadonlySet<string>, depth: number): Count => {
+    let count = 0;
+    let complete = true;
+    const add = (value: number): void => {
+      if (value > Number.MAX_SAFE_INTEGER - count) {
+        count = Number.MAX_SAFE_INTEGER;
+        complete = false;
+      } else count += value;
+    };
+    for (const component of document.components) {
+      if (component.source.kind === 'part') {
+        if (component.source.partRef === partRef) add(1);
+      } else if (component.source.kind === 'subAssembly') {
+        const ref = component.source.assemblyRef;
+        const nested = library.assemblies?.get(ref);
+        if (nested === undefined || ancestors.has(ref) || depth + 1 > MAX_SUB_ASSEMBLY_DEPTH) {
+          complete = false;
+          continue;
+        }
+        const nextAncestors = new Set([...ancestors, ref]);
+        const key = JSON.stringify([ref, depth + 1, [...nextAncestors].sort()]);
+        let result = memo.get(key);
+        if (result === undefined) {
+          result = visit(nested, nextAncestors, depth + 1);
+          memo.set(key, result);
+        }
+        add(result.count);
+        complete = complete && result.complete;
+      }
+    }
+    return { count, complete };
+  };
+  return visit(assembly, new Set(), 0);
+}
+
+/** A tagged UUID identifies lineage; it does not authenticate file contents. */
+export function hasPartLineageId(document: PartDocument): boolean {
+  return /^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(document.id);
+}
+
+export interface RefreshPartDeps {
+  readonly choose: ReplaceComponentDeps['choose'];
+  readonly read: ReplaceComponentDeps['read'];
+  readonly replace: (
+    library: PartLibrary, partRef: string, document: PartDocument,
+    attachments: EmbeddedPartAttachments,
+  ) => Promise<PartLibrary>;
+}
+
+const REFRESH_PART_DEPS: RefreshPartDeps = {
+  choose: REPLACEMENT_DEPS.choose,
+  read: REPLACEMENT_DEPS.read,
+  replace: (library, partRef, document, attachments) =>
+    replacePartDocument(library, partRef, document, { attachments }),
+};
+
+/** Updates the shared source; never rematches or rewrites saved mate targets. */
+export function refreshPartReadiness(
+  state: ReturnType<typeof useAppStore.getState>, componentId: string,
+): { readonly ready: boolean; readonly reasonKey: 'assembly.refresh.busy' | 'assembly.refresh.partOnly' | null } {
+  if (activeAssemblyDocument(state) === null) return { ready: false, reasonKey: 'assembly.refresh.partOnly' };
+  if (state.assemblyReplacementBusy || state.assemblyReplacementPreview !== null
+    || state.assemblyPlacement !== null || state.assemblyMateDraft !== null
+    || state.assemblyDrag !== null || state.isComputing) {
+    return { ready: false, reasonKey: 'assembly.refresh.busy' };
+  }
+  const component = state.assembly === null ? undefined : findComponent(state.assembly, componentId);
+  const source = component?.source;
+  if (source?.kind !== 'part'
+    || !state.assemblyLibrary.parts.has(source.partRef)
+    || !state.assemblyLibrary.partFiles.some(file => file.ref === source.partRef)) {
+    return { ready: false, reasonKey: 'assembly.refresh.partOnly' };
+  }
+  return { ready: true, reasonKey: null };
+}
+
+export async function startRefreshPartSource(
+  componentId: string, deps: RefreshPartDeps = REFRESH_PART_DEPS,
+): Promise<void> {
+  const before = useAppStore.getState();
+  if (!refreshPartReadiness(before, componentId).ready || before.assembly === null) return;
+  const assembly = before.assembly;
+  const component = findComponent(assembly, componentId);
+  if (component?.source.kind !== 'part') return;
+  const partRef = component.source.partRef;
+  const library = before.assemblyLibrary;
+  const source = library.parts.get(partRef);
+  const provenance = library.partFiles.find(file => file.ref === partRef);
+  if (source === undefined || provenance === undefined) return;
+  const documentId = before.activeDocumentId;
+  const requestId = crypto.randomUUID();
+  const ownsRequest = (): boolean => {
+    if (!currentRequest(requestId, documentId, assembly, library)) return false;
+    if (activeAssemblyDocument(useAppStore.getState()) !== assembly) return false;
+    const current = findComponent(assembly, componentId);
+    return current === component && current.source.kind === 'part'
+      && current.source.partRef === partRef && library.parts.get(partRef) === source;
+  };
+  useAppStore.setState({ assemblyReplacementBusy: true, assemblyReplacementRequestId: requestId });
+  try {
+    const picked = await deps.choose(before.fileGateway);
+    if (!ownsRequest() || picked === null || picked.kind !== 'pcad') return;
+    const read = await deps.read(picked.bytes);
+    if (!ownsRequest()) return;
+    if (!read.ok || read.bundle.kind !== 'part') {
+      useAppStore.getState().setFileMessage({
+        key: read.ok ? 'file.openFailed' : openErrorMessageKey(read.error.code), failed: true,
+      });
+      return;
+    }
+    if (read.bundle.document.id !== source.id) {
+      useAppStore.getState().setFileMessage({ key: 'assembly.refresh.foreignDocument', failed: true });
+      return;
+    }
+    const next = await deps.replace(library, partRef, read.bundle.document, read.bundle.attachments);
+    if (!ownsRequest()) return;
+    const updated = next.partFiles.find(file => file.ref === partRef);
+    if (updated === undefined || next.parts.get(partRef)?.id !== source.id) return;
+    if (updated.contentHash === provenance.contentHash
+      && updated.attachmentsDigest === provenance.attachmentsDigest) return;
+    if (!hasPartLineageId(source)) {
+      const occurrences = sharedPartOccurrenceCount(assembly, library, partRef);
+      const approved = await useAppStore.getState().requestPartSourceConfirm({
+        requestId, sourceName: source.name, fileName: picked.fileName,
+        occurrenceCount: occurrences.count, countComplete: occurrences.complete,
+        isCurrent: ownsRequest,
+      });
+      if (!approved || !ownsRequest()) return;
+    }
+    useAppStore.getState().applyAssembly(assembly, next);
+  } catch {
+    if (ownsRequest()) useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
+  } finally {
+    useAppStore.getState().answerPartSourceConfirm(requestId, false);
+    finishRequest(requestId);
+  }
 }

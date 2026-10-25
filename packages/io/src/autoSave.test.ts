@@ -16,9 +16,64 @@ import {
   type AutoSaveTimerHandle,
 } from './autoSave.js';
 import { readDocumentBundle, readPcadFile, type ImportedMeshBytes, type PcadAttachments } from './pcad/pcadFile.js';
+import { encodeSaveDocument } from './pcad/saveDocumentEncoding.js';
 
 /** 検査で保存時刻を固定する。 */
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
+
+describe('非同期エンコード中の自動保存', () => {
+  it('所有者終了では圧縮を取り消し、既存控えを上書きしない', async () => {
+    const storage = createMemoryAutoSaveStorage(), document = createEmptyPartDocument();
+    const original = { savedAt: SAVED_AT, documentName: document.name,
+      bytes: await encodeSaveDocument({ kind: 'part', document, options: { savedAt: SAVED_AT } }) };
+    await storage.write(original);
+    let finish: (bytes: Uint8Array) => void = () => undefined;
+    let signal: AbortSignal | undefined;
+    const saver = createAutoSaver({ storage, encode: (_bundle, _savedAt, abortSignal) => {
+      signal = abortSignal; return new Promise<Uint8Array>(resolve => { finish = resolve; });
+    } });
+    const saving = saver.saveNow({ ...document, name: '後の文書' });
+    saver.stop(); expect(signal?.aborted).toBe(true);
+    finish(original.bytes); await saving;
+    expect(await storage.read()).toEqual(original);
+  });
+
+  it('添付を文書と同時に固定し、圧縮失敗後の再保存で実IOの控えを作れる', async () => {
+    const document = createEmptyPartDocument(), storage = createMemoryAutoSaveStorage();
+    let calls = 0, errors = 0, successes = 0;
+    let bytes = Uint8Array.of(2, 4, 6);
+    const saver = createAutoSaver({ storage, now: () => Date.parse(SAVED_AT),
+      attachmentsOf: () => ({ shapes: new Map([['shape', bytes]]), meshes: new Map(), canvases: new Map() }),
+      encode: (bundle, savedAt) => {
+        calls++;
+        if (calls === 1) return Promise.reject(new Error('encode rejected'));
+        if (bundle.kind !== 'part') throw new Error('part expected');
+        return encodeSaveDocument({ kind: 'part', document: bundle.document, options: { savedAt, attachments: bundle.attachments } });
+      }, onError: () => { errors++; }, onSuccess: () => { successes++; } });
+    try {
+      await saver.saveNow(document); expect(await storage.read()).toBeNull();
+      const saving = saver.saveNow(document); bytes = Uint8Array.of(9);
+      await saving;
+      const record = await storage.read(); if (record === null) throw new Error('missing record');
+      const opened = readPcadFile(record.bytes); if (!opened.ok) throw new Error(opened.error.message);
+      expect(opened.attachments.shapes.get('shape')).toEqual(Uint8Array.of(2, 4, 6));
+      expect(errors).toBe(1); expect(successes).toBe(1);
+    } finally { saver.stop(); }
+  });
+
+  it('控え書込みの終了前にdiscardを完了せず、後着の控えを復活させない', async () => {
+    const storage = createMemoryAutoSaveStorage(), document = createEmptyPartDocument();
+    let release: (bytes: Uint8Array) => void = () => undefined;
+    const saver = createAutoSaver({ storage, encode: () => new Promise<Uint8Array>(resolve => { release = resolve; }) });
+    try {
+      const saving = saver.saveNow(document); let cleared = false;
+      const discarding = saver.discard().then(() => { cleared = true; });
+      await Promise.resolve(); expect(cleared).toBe(false);
+      release(await encodeSaveDocument({ kind: 'part', document, options: { savedAt: SAVED_AT } }));
+      await Promise.all([saving, discarding]); expect(await storage.read()).toBeNull();
+    } finally { saver.stop(); }
+  });
+});
 
 const originalIndexedDb = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
 
@@ -94,15 +149,15 @@ type FakeIdbOutcome = 'complete' | 'manual' | 'aborted' | 'error' | 'quota';
 interface FakeIdbRequest<T> {
   result: T;
   error: unknown;
-  onsuccess: (() => void) | null;
-  onerror: (() => void) | null;
+  onsuccess: ((event: { readonly type: string }) => void) | null;
+  onerror: ((event: { readonly type: string }) => void) | null;
 }
 
 interface FakeIdbTransaction {
   error: unknown;
-  oncomplete: (() => void) | null;
-  onabort: (() => void) | null;
-  onerror: (() => void) | null;
+  oncomplete: ((event: { readonly type: string }) => void) | null;
+  onabort: ((event: { readonly type: string }) => void) | null;
+  onerror: ((event: { readonly type: string }) => void) | null;
   objectStore(name: string): FakeIdbObjectStore;
 }
 
@@ -146,16 +201,16 @@ function installFakeIndexedDb(
     queueMicrotask(() => {
       if (outcome === 'quota') {
         request.error = { name: 'QuotaExceededError' };
-        request.onerror?.();
+        request.onerror?.({ type: 'error' });
         return;
       }
-      request.onsuccess?.();
+      request.onsuccess?.({ type: 'success' });
       if (outcome === 'complete') {
-        queueMicrotask(() => { commit(); transaction.oncomplete?.(); });
+        queueMicrotask(() => { commit(); transaction.oncomplete?.({ type: 'complete' }); });
       } else if (outcome === 'aborted') {
-        transaction.onabort?.();
+        transaction.onabort?.({ type: 'abort' });
       } else if (outcome === 'error') {
-        transaction.onerror?.();
+        transaction.onerror?.({ type: 'error' });
       }
     });
     return request;
@@ -201,7 +256,7 @@ function installFakeIndexedDb(
   const factory = {
     open: () => {
       const request: FakeIdbRequest<typeof database> & {
-        onupgradeneeded: (() => void) | null;
+        onupgradeneeded: ((event: { readonly type: string }) => void) | null;
       } = {
         result: database,
         error: null,
@@ -210,7 +265,7 @@ function installFakeIndexedDb(
         onupgradeneeded: null,
       };
       queueMicrotask(() => {
-        request.onsuccess?.();
+        request.onsuccess?.({ type: 'success' });
       });
       return request;
     },
@@ -222,7 +277,7 @@ function installFakeIndexedDb(
     closeCount: () => closes,
     completeManualTransaction: () => {
       commitManual();
-      manualTransaction?.oncomplete?.();
+      manualTransaction?.oncomplete?.({ type: 'complete' });
     },
   };
 }

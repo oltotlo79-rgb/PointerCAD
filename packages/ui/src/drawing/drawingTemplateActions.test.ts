@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDrawingDocument } from '@pointercad/model';
-import { parseDrawing, readDrawingTemplateFile, serializeDrawing } from '@pointercad/io';
+import { encodeSaveDocument, parseDrawing, readDrawingTemplateFile, serializeDrawing, type SaveDocumentEncoder } from '@pointercad/io';
+import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
+import { PcadSaveWorkerError } from '../file/pcadSaveWorker.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { commitDrawingSheet, createDrawingFromTemplateFile, parseDrawingSheetDraft, saveCurrentDrawingTemplate, type DrawingSheetDraft } from './drawingTemplateActions.js';
@@ -8,7 +10,13 @@ import { commitDrawingSheet, createDrawingFromTemplateFile, parseDrawingSheetDra
 const expressionDraft: DrawingSheetDraft = { scale: '1/2', scaleOptions: '1/2, 1, root(8, 3)', textHeight: '7/2',
   fields: [{ key: 'title', label: '図名', widthWeight: 1, widthExpression: '1+1' }] };
 
-beforeEach(resetTestStore);
+const defaultSaveEncoder = useAppStore.getState().saveDocumentEncoder;
+beforeEach(() => {
+  resetTestStore();
+  // WorkerのないNodeでは、保存するJSON/ZIPは実IOへ明示注入する。
+  useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null });
+});
+afterEach(() => { useAppStore.setState({ saveDocumentEncoder: defaultSaveEncoder, documentSaveOperation: null }); });
 function setup() {
   const document = createDrawingDocument('図面', { sourceRef: 'source-1', sourceKind: 'part', path: '', fileName: 'part.pcad', contentHash: '', importedAt: '' });
   useAppStore.getState().openDrawing(document);
@@ -129,7 +137,94 @@ describe('図面用紙の確定とひな形のファイル操作', () => {
     const { save } = setup(); let finish: (value: boolean) => void = () => {};
     save.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const saving = saveCurrentDrawingTemplate('標準');
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
     useAppStore.getState().closeDrawing(); finish(true); await saving;
     expect(useAppStore.getState().drawingMessage).toBeNull();
+  });
+});
+
+describe('図面ひな形のWorker保存境界', () => {
+  it('圧縮完了まで書かず、設定だけの実ZIPを書いて原本・Undo・dirtyを保持する', async () => {
+    const { document, save } = setup();
+    commitDrawingSheet({ ...document.sheet, scale: 0.5, scaleExpression: '1/2' });
+    let release: () => void = () => { throw new Error('encoding gate missing'); };
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const encode = vi.fn<SaveDocumentEncoder>(async (input, control) => { await gate; return encodeSaveDocument(input, control); });
+    useAppStore.setState({ saveDocumentEncoder: encode });
+    const before = useAppStore.getState(), saving = saveCurrentDrawingTemplate('設定のみ');
+    await vi.waitFor(() => expect(encode).toHaveBeenCalledOnce());
+    expect(save).not.toHaveBeenCalled();
+    const input = encode.mock.calls[0][0];
+    expect(input.kind).toBe('drawingTemplate');
+    expect(Object.keys(input).sort()).toEqual(['kind', 'savedAt', 'template']);
+    release(); expect(await saving).toBe(true);
+    const parsed = readDrawingTemplateFile(save.mock.calls[0][2]);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    expect(Object.keys(parsed.template).sort()).toEqual(['layers', 'name', 'sheet']);
+    expect(parsed.template.sheet).toEqual(before.drawing?.sheet);
+    const after = useAppStore.getState();
+    expect(after.drawing).toBe(before.drawing); expect(after.drawingUndoStack).toBe(before.drawingUndoStack);
+    expect(after.drawingSources).toBe(before.drawingSources); expect(after.savedDrawing).toBe(before.savedDrawing);
+    expect(after.drawingFileName).toBe(before.drawingFileName); expect(activeHasUnsavedChanges(after)).toBe(true);
+    after.undoDrawing(); expect(useAppStore.getState().drawing).toBe(document);
+    useAppStore.getState().redoDrawing(); expect(useAppStore.getState().drawing).toBe(before.drawing);
+  });
+
+  it.each(['edit', 'undo', 'close', 'gateway'] as const)('圧縮中の%s後には旧設定を書き出さず通知しない', async change => {
+    const { document, save } = setup();
+    commitDrawingSheet({ ...document.sheet, scale: 0.5 });
+    let release: () => void = () => { throw new Error('encoding gate missing'); };
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const encode = vi.fn<SaveDocumentEncoder>(async (input, control) => { await gate; return encodeSaveDocument(input, control); });
+    useAppStore.setState({ saveDocumentEncoder: encode });
+    const saving = saveCurrentDrawingTemplate('標準');
+    await vi.waitFor(() => expect(encode).toHaveBeenCalledOnce());
+    const before = useAppStore.getState();
+    if (change === 'edit') commitDrawingSheet({ ...document.sheet, scale: 0.25 });
+    else if (change === 'undo') before.undoDrawing();
+    else if (change === 'close') before.closeDrawing();
+    else useAppStore.setState({ fileGateway: { ...before.fileGateway } });
+    useAppStore.getState().setDrawingMessage('new owner');
+    const changed = useAppStore.getState();
+    release(); expect(await saving).toBe(false);
+    const after = useAppStore.getState();
+    expect(save).not.toHaveBeenCalled(); expect(after.drawing).toBe(changed.drawing);
+    expect(after.drawingUndoStack).toBe(changed.drawingUndoStack); expect(after.savedDrawing).toBe(changed.savedDrawing);
+    expect(after.fileGateway).toBe(changed.fileGateway); expect(after.drawingMessage).toBe(changed.drawingMessage);
+  });
+
+  it('圧縮取消で書込みを始めず、同じ図面から実IOで再保存できる', async () => {
+    const { save } = setup();
+    let release: () => void = () => { throw new Error('encoding gate missing'); };
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const encode: SaveDocumentEncoder = async (input, control) => {
+      control?.onProgress?.('compressing'); await gate; return encodeSaveDocument(input, control);
+    };
+    useAppStore.setState({ saveDocumentEncoder: encode });
+    const before = useAppStore.getState(), saving = saveCurrentDrawingTemplate('標準');
+    await vi.waitFor(() => expect(useAppStore.getState().documentSaveOperation?.stage).toBe('compressing'));
+    const cancel = useAppStore.getState().documentSaveOperation?.cancel;
+    if (cancel === null || cancel === undefined) throw new Error('cancel missing');
+    cancel(); release(); expect(await saving).toBe(false);
+    expect(save).not.toHaveBeenCalled(); expect(useAppStore.getState().drawing).toBe(before.drawing);
+    expect(useAppStore.getState().drawingUndoStack).toBe(before.drawingUndoStack);
+    expect(useAppStore.getState().savedDrawing).toBe(before.savedDrawing);
+    useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument });
+    expect(await saveCurrentDrawingTemplate('標準')).toBe(true);
+    expect(readDrawingTemplateFile(save.mock.calls[0][2]).ok).toBe(true);
+  });
+
+  it('Worker失敗を同期処理で隠さず、原図面を保ってから再保存する', async () => {
+    const { save } = setup(), before = useAppStore.getState();
+    useAppStore.setState({ saveDocumentEncoder: () => Promise.reject(new PcadSaveWorkerError('unavailable', 'unavailable')) });
+    expect(await saveCurrentDrawingTemplate('標準')).toBe(false);
+    expect(save).not.toHaveBeenCalled(); expect(useAppStore.getState().drawing).toBe(before.drawing);
+    expect(useAppStore.getState().drawingUndoStack).toBe(before.drawingUndoStack);
+    expect(useAppStore.getState().fileMessage?.key).toBe('file.saveEncodingFailed');
+    expect(useAppStore.getState().drawingMessage).toContain('保存できません');
+    useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument });
+    expect(await saveCurrentDrawingTemplate('標準')).toBe(true);
+    expect(readDrawingTemplateFile(save.mock.calls[0][2]).ok).toBe(true);
   });
 });

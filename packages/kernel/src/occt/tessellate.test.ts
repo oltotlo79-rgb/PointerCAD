@@ -26,6 +26,7 @@ import { makeBox } from './makeBox.js';
 import { makePrimitive } from './makePrimitive.js';
 import type { FaceTriangleRange, SurfaceMesh } from './tessellate.js';
 import { tessellate } from './tessellate.js';
+import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
 import { makeCompound } from './transformShape.js';
 import type { PrimitiveShapeSpec, PrimitiveStepSpec } from '../types.js';
 
@@ -317,6 +318,34 @@ describe('面の走査の高速化(P6 タスク11b、出力は 1 ビットも変
       throw error;
     }
   }
+
+  it('explicit frame preserves native-double detail in both display and fixed export paths', () => {
+    const source = makeBox(oc, { dx: 10, dy: 20, dz: 30 });
+    try {
+      const moved = movedShape(source.shape, [1e9, 0, 0], 0);
+      try {
+        const frame: MeshCoordinateFrame = { origin: [1e9, 0, 0], maximumFloat32ErrorMm: 0.01 };
+        const expected = tessellate(oc, source.shape);
+        const world = tessellate(oc, moved.shape);
+        const local = tessellate(oc, moved.shape, {}, undefined, frame);
+        const fixed = tessellate(oc, moved.shape, {
+          admission: { remainingTriangles: 100, remainingJsBytes: 1e6, checkDeadline: () => {} },
+        }, undefined, frame);
+        expect(world.positions.some((x, index) => index % 3 === 0 && x === 1e9)).toBe(true);
+        expect([...local.positions]).toEqual([...expected.positions]);
+        expect([...fixed.positions]).toEqual([...local.positions]);
+        for (const mesh of [local, fixed]) {
+          expect(mesh.normals).toEqual(world.normals);
+          expect(mesh.indices).toEqual(world.indices);
+          expect(mesh.faceRanges).toEqual(world.faceRanges);
+        }
+      } finally {
+        moved.delete();
+      }
+    } finally {
+      source.delete();
+    }
+  });
 
   /** 位置つきの面がいくつあるかを数える(道が本当に通っていることの確認に使う)。 */
   function countPlacedFaces(shape: TopoDS_Shape): { placed: number; total: number } {

@@ -5,7 +5,8 @@
  * ところが上流の押し出しの距離を 10 → 20 に変えるだけで形が作り直され、番号がずれて
  * 別の面を指しうる(トポロジカルネーミング問題)。そこで文書は番号だけでなく
  * 種類・大きさ・軸・位置も一緒に保存し(`SubShapeQuery`)、再計算のたびに
- * ここで最も点の高いものを選び直す。届かなければ「見つからない」と断る(FR-504)。
+ * ここで候補を採点する。自動採用には最高点と次点の差も調べる共通の resolve*Reference を使い、
+ * しきい値未満は「見つからない」、近点は「曖昧」と断る(FR-504)。
  *
  * **このファイルは OCCT を一切使わない。** 引数はすべて素の数値と文字列で、
  * 理由は 2 つある。①採点は幾何の生値だけで決まるので、50MB の WASM を読み込まずに
@@ -25,6 +26,8 @@ import type {
   SubShapeQuery,
   Vec3Tuple,
 } from '../types.js';
+import type { CurrentOriginIndex, OriginShapeKind, SubShapeOrigin } from '../subShapeOrigin.js';
+import { lookupSubShapeOrigin } from './composeSubShapeOrigins.js';
 
 /**
  * 採点の重み(§0.a-0.4)。合計 1。
@@ -56,15 +59,100 @@ export const MATCH_WEIGHT_VERTEX_POSITION = 0.5;
 /** これ未満の点しか取れなければ「見つからない」とする(§0.a-0.4)。 */
 export const SUB_SHAPE_MATCH_THRESHOLD = 0.6;
 
+/** しきい値以上の最高点と次点の差がこれ未満なら、自動採用せず候補を残す。 */
+export const SUB_SHAPE_AMBIGUITY_MARGIN = 0.05;
+
 /**
- * 選び直しの結果。しきい値に届かなかったときは null を返すので、
- * これが返ってきたときは必ずそのまま採用してよい。
+ * 低水準の採点結果。しきい値以上でも同一性・一意性を保証しない。
+ * 自動採用には resolveFaceReference / resolveEdgeReference / resolveVertexReference を使う。
  */
 export interface SubShapeMatch {
   /** 選ばれた部分形状の通し番号。 */
   readonly index: number;
-  /** 0〜1 の点。しきい値以上のときだけ返る。 */
+  /** 0〜1 の幾何の点。旧指紋ではしきい値以上、unique 意味起点では低い点も返る。 */
   readonly score: number;
+}
+
+/** 現在の候補と採点。scoreは同一性の手掛かりであり、測定値の精度保証ではない。 */
+export interface ScoredSubShape<T> extends SubShapeMatch {
+  readonly candidate: T;
+}
+
+export type SubShapeCandidateResolution<T> = { readonly candidates: readonly T[] } & (
+  | { readonly status: 'matched'; readonly match: T }
+  | { readonly status: 'missing' }
+  | { readonly status: 'ambiguous' }
+);
+
+/** 全bodyを集約した候補にも同じ基準を使う。元の配列・候補を変更しない。 */
+export function resolveSubShapeCandidates<T extends { readonly score: number }>(
+  candidates: readonly T[],
+): SubShapeCandidateResolution<T> {
+  const accepted = candidates.filter((candidate) => Number.isFinite(candidate.score) && candidate.score >= SUB_SHAPE_MATCH_THRESHOLD)
+    .sort((first, second) => second.score - first.score);
+  const [best, runnerUp] = accepted;
+  if (best === undefined) return { status: 'missing', candidates: accepted };
+  if (runnerUp !== undefined && best.score - runnerUp.score < SUB_SHAPE_AMBIGUITY_MARGIN) {
+    return { status: 'ambiguous', candidates: accepted };
+  }
+  return { status: 'matched', candidates: accepted, match: best };
+}
+
+function scoredCandidates<T extends { readonly index: number }>(candidates: readonly T[],
+  isCandidate: (candidate: T) => boolean, score: (candidate: T) => number): readonly ScoredSubShape<T>[] {
+  const results: ScoredSubShape<T>[] = [];
+  for (const candidate of candidates) {
+    if (!isCandidate(candidate)) continue;
+    const total = score(candidate);
+    if (Number.isFinite(total) && total >= SUB_SHAPE_MATCH_THRESHOLD) {
+      results.push({ index: candidate.index, score: total, candidate });
+    }
+  }
+  // 番号順は同点候補の表示順だけに使い、採用可否には使わない。
+  return results.sort((first, second) => second.score - first.score || first.index - second.index);
+}
+
+function semanticCandidates<T extends { readonly index: number }>(candidates: readonly T[],
+  origin: SubShapeOrigin, kind: OriginShapeKind, origins: CurrentOriginIndex | undefined,
+  score: (candidate: T) => number): SubShapeCandidateResolution<ScoredSubShape<T>> {
+  if (origin.shapeKind !== kind) return { status: 'missing', candidates: [] };
+  const lookup = lookupSubShapeOrigin(origins, origin);
+  if (lookup.status === 'missing') return { status: 'missing', candidates: [] };
+  const addresses = lookup.status === 'matched' ? [lookup.address] : lookup.candidates;
+  const selected: ScoredSubShape<T>[] = [];
+  for (const address of addresses) {
+    if (address.kind !== kind) continue;
+    const found = candidates.filter(candidate => candidate.index === address.index);
+    if (found.length !== 1) continue;
+    selected.push({ candidate: found[0], index: found[0].index, score: score(found[0]) });
+  }
+  if (lookup.status === 'ambiguous') return { status: 'ambiguous', candidates: selected };
+  return selected.length === 1
+    ? { status: 'matched', match: selected[0], candidates: selected }
+    : { status: 'missing', candidates: [] };
+}
+
+export function resolveFaceReference(faces: readonly SolidFaceInfo[], query: Extract<SubShapeQuery, { kind: 'face' }>,
+  scale: number, origins?: CurrentOriginIndex): SubShapeCandidateResolution<ScoredSubShape<SolidFaceInfo>> {
+  if (query.origin !== undefined) return semanticCandidates(faces, query.origin, 'face', origins,
+    face => scoreFace(face, query, scale).total);
+  return resolveSubShapeCandidates(scoredCandidates(faces, (face) => face.surfaceKind === query.surfaceKind,
+    (face) => scoreFace(face, query, scale).total));
+}
+
+export function resolveEdgeReference(edges: readonly SolidEdgeInfo[], query: Extract<SubShapeQuery, { kind: 'edge' }>,
+  scale: number, origins?: CurrentOriginIndex): SubShapeCandidateResolution<ScoredSubShape<SolidEdgeInfo>> {
+  if (query.origin !== undefined) return semanticCandidates(edges, query.origin, 'edge', origins,
+    edge => scoreEdge(edge, query, scale).total);
+  return resolveSubShapeCandidates(scoredCandidates(edges, (edge) => edge.curveKind === query.curveKind,
+    (edge) => scoreEdge(edge, query, scale).total));
+}
+
+export function resolveVertexReference(vertices: readonly SolidVertexInfo[], query: Extract<SubShapeQuery, { kind: 'vertex' }>,
+  scale: number, origins?: CurrentOriginIndex): SubShapeCandidateResolution<ScoredSubShape<SolidVertexInfo>> {
+  if (query.origin !== undefined) return semanticCandidates(vertices, query.origin, 'vertex', origins,
+    vertex => scoreVertex(vertex, query, scale).total);
+  return resolveSubShapeCandidates(scoredCandidates(vertices, () => true, (vertex) => scoreVertex(vertex, query, scale).total));
 }
 
 /**
@@ -290,7 +378,8 @@ function selectBest<T>(
 }
 
 /**
- * 指紋に最も近い面を選び直す(§2.2)。しきい値に届かなければ null。
+ * 指紋に最も近い面の低水準の採点結果(§2.2)。しきい値に届かなければ null。
+ * 同一性・一意性は保証しない。自動採用には resolveFaceReference を使う。
  *
  * 候補は `surfaceKind` が一致するものだけ(平面の指紋が円柱面に当たることは無い)。
  * 同点なら通し番号が小さいほう(決定性)。
@@ -310,7 +399,8 @@ export function matchFace(
 }
 
 /**
- * 指紋に最も近い辺を選び直す。候補は `curveKind` が一致するものだけ。
+ * 指紋に最も近い辺の低水準の採点結果。候補は `curveKind` が一致するものだけ。
+ * 同一性・一意性は保証しない。自動採用には resolveEdgeReference を使う。
  * 面と同じ重み・同じしきい値・同じ同点の決め方を使う。
  */
 export function matchEdge(
@@ -327,7 +417,8 @@ export function matchEdge(
 }
 
 /**
- * 指紋に最も近い頂点を選び直す。頂点には種類が無いので、候補は全部である。
+ * 指紋に最も近い頂点の低水準の採点結果。頂点には種類が無いので、候補は全部である。
+ * 同一性・一意性は保証しない。自動採用には resolveVertexReference を使う。
  * 重みだけが面・辺と違う(`MATCH_WEIGHT_VERTEX_INDEX` の説明を参照)。
  */
 export function matchVertex(

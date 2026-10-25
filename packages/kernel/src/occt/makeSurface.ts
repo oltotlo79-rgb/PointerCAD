@@ -1,3 +1,5 @@
+import type { FaceOrigin, CurrentOriginIndex } from '../subShapeOrigin.js';
+import { surfacePrismSubShapeOrigins, type NativeSurfaceLine } from './subShapeOrigins.js';
 /**
  * 曲面(面だけの形、FR-428)。計画書 P5 §0.a-0.45、タスク41。
  *
@@ -155,6 +157,7 @@ export type SurfaceInput =
   | {
       readonly kind: 'extrude';
       readonly profile: readonly CurveSpec[];
+      readonly profileOrigins?: readonly Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][];
       readonly direction: Vec3Tuple;
       readonly distance: number;
     }
@@ -224,13 +227,20 @@ function makeProfileWire(
   oc: OpenCascadeInstance,
   curves: readonly CurveSpec[],
   keep: Allocations['keep'],
+  lines?: NativeSurfaceLine[],
+  anchors?: Extract<SurfaceInput, { kind: 'extrude' }>['profileOrigins'],
 ): TopoDS_Wire {
   if (curves.length === 0) {
     throw new Error(NO_CURVE_MESSAGE);
   }
   const wireMaker = keep(new oc.BRepBuilderAPI_MakeWire_1());
+  let index = 0;
   for (const curve of continuousCurvePieces(curves)) {
     wireMaker.Add_1(keep(makeCurveEdge(oc, curve)).edge);
+    if (lines !== undefined && anchors !== undefined && wireMaker.IsDone()) {
+      lines.push({ edge: keep(wireMaker.Edge()), anchor: anchors[index] });
+    }
+    index += 1;
   }
   if (!wireMaker.IsDone()) {
     throw new Error(DISCONNECTED_MESSAGE);
@@ -248,6 +258,7 @@ function extrudeProfile(
   oc: OpenCascadeInstance,
   keep: Allocations['keep'],
   input: Extract<SurfaceInput, { kind: 'extrude' }>,
+  semantic?: { readonly featureId: string; origins?: CurrentOriginIndex },
 ): TopoDS_Shape {
   const direction = normalizeDirection(input.direction);
   if (direction === null) {
@@ -257,7 +268,10 @@ function extrudeProfile(
     throw new Error(DISTANCE_MESSAGE);
   }
 
-  const wire = makeProfileWire(oc, input.profile, keep);
+  const lines: NativeSurfaceLine[] = [];
+  const anchors = semantic !== undefined && input.profileOrigins?.length === input.profile.length
+    && input.profile.every(curve => curve.kind === 'segment') ? input.profileOrigins : undefined;
+  const wire = makeProfileWire(oc, input.profile, keep, anchors === undefined ? undefined : lines, anchors);
   const vector = keep(
     new oc.gp_Vec_4(
       direction[0] * input.distance,
@@ -270,7 +284,11 @@ function extrudeProfile(
   if (!maker.IsDone()) {
     throw new Error(SURFACE_FAILED_MESSAGE);
   }
-  return keep(maker.Shape());
+  const shape = keep(maker.Shape());
+  if (semantic !== undefined && anchors !== undefined) {
+    semantic.origins = surfacePrismSubShapeOrigins(oc, maker, wire, shape, lines, semantic.featureId);
+  }
+  return shape;
 }
 
 /**
@@ -460,10 +478,14 @@ export function makeSurface(
   target: TopoDS_Shape | null = null,
   tables: SubShapeTables | null = null,
   options: TessellationOptions = {},
+  featureId?: string,
 ): SurfaceResult {
   const { keep, release } = createAllocations();
   try {
-    const shape = buildSurfaceShape(oc, keep, input, target, tables, options);
+    const semantic: { readonly featureId: string; origins?: CurrentOriginIndex } | undefined =
+      featureId === undefined ? undefined : { featureId };
+    const shape = input.kind === 'extrude' ? extrudeProfile(oc, keep, input, semantic)
+      : buildSurfaceShape(oc, keep, input, target, tables, options);
 
     // ここが「体積 0 は失敗」の裏返しにあたる 2 つの検査(§0.a-0.45)。
     // ① 立体ができていたら断る。曲面の段はソリッドを作らないので、
@@ -478,7 +500,8 @@ export function makeSurface(
       throw new Error(SURFACE_FAILED_MESSAGE);
     }
 
-    return { shape, area: Math.abs(area), delete: release };
+    return { shape, area: Math.abs(area), delete: release,
+      ...(semantic?.origins === undefined ? {} : { origins: semantic.origins }) };
   } catch (error) {
     release();
     // OCCT の C++ 例外は数値で飛んでくる(`makeThruSections.ts` / `makeFillet.ts` と同じ)。

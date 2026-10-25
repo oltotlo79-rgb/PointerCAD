@@ -5,6 +5,7 @@
  * 判定を書かないため(rules/04「導出できるものは保存しない」)。
  */
 import {
+  retainPatternSlotHighWater,
   analyzeParameters,
   affectsShape,
   baseWorkPlane,
@@ -22,6 +23,9 @@ import {
   type PartDocument,
   type PartRecomputeError,
   type PartSketchResult,
+  pruneDocumentAppearance,
+  pruneRemovedFeatureNotes,
+  pruneRemovedFolderMembers,
   type ResolvedReferences,
   type ResolvedSketch,
   sketchConstraints,
@@ -35,12 +39,14 @@ import {
 } from '@pointercad/model';
 import type { MessageKey } from '../i18n/t.js';
 import { shouldShowTimelineHint } from '../shell/timelineHint.js';
+import { placeNewFeatures } from '../shell/timelineMove.js';
 import { type ConstraintSummary, summarizeConstraints } from '../sketch/constraintSummary.js';
 import { featureIdOf } from '../sketch/featureSummary.js';
 import { resolveReferencesOf, resolveWorkPlaneOf } from '../sketch/referenceCommands.js';
 import { type OrbitState, viewDirection } from '../viewport/cameraMath.js';
 import type { AppState } from './appState.js';
 import { emptySheetMetalTool } from './sheetMetalSlice.js';
+import { partAssetRetention } from './partAssetRetention.js';
 
 /**
  * 同点とみなす傾きの差。等角のホーム視点では 3 面が等しく傾くが、三角関数の丸めで
@@ -163,6 +169,8 @@ export type DocumentPatch = Pick<
   | 'resolvedReferences'
   | 'parameterAnalysis'
   | 'nonLengthVariables'
+  | 'canvases' | 'canvasPixelSizes' | 'canvasImageLoads' | 'canvasImageRetries' | 'canvasScale' | 'canvasRectification'
+  | 'importedShapes' | 'importedMeshes'
 >;
 
 /**
@@ -224,6 +232,20 @@ export function timelineNoticeFor(
 }
 
 /**
+ * 差し替えで実際に保存される文書(`documentPatch` が最初に行う控えの引き継ぎ)。
+ * 段階計算の候補もこれを通し、計算した文書と保存される文書を同じ実体にする。
+ */
+export function documentWithIssuanceLedger(
+  state: Pick<AppState, 'document'>,
+  next: PartDocument,
+  replacesDocument: boolean,
+): PartDocument {
+  // Undo/Redo restores history, while issued identities remain unavailable on a new branch.
+  // Opening or replacing a document never imports another document's issuance ledger.
+  return retainPatternSlotHighWater(next, !replacesDocument && next.id === state.document.id ? state.document : undefined);
+}
+
+/**
  * 文書を差し替え、派生の控えを作り直す。**`document` を書き換えるのはここだけ。**
  *
  * 文書から消えたフィーチャーは選択とホバーからも外す(消えたものを指したままだと、
@@ -252,6 +274,8 @@ export function documentPatch(
    */
   replacesDocument = false,
 ): DocumentPatch {
+  next = documentWithIssuanceLedger(state, next, replacesDocument);
+  if (stack.present !== next) stack = { ...stack, present: next };
   const sketch = activeSketchOf(next);
   const liveIds = new Set<string>(sketch.features.map((feature) => feature.id));
   for (const solid of next.solids) {
@@ -264,6 +288,7 @@ export function documentPatch(
     : DEFAULT_WORK_PLANE_ID;
   return {
     document: next,
+    ...partAssetRetention(state, next, stack, replacesDocument),
     ...emptySheetMetalTool(),
     undoStack: stack,
     canUndo: stackCanUndo(stack),
@@ -281,6 +306,142 @@ export function documentPatch(
     ...parameterPatch(next, !replacesDocument && next.id === state.document.id && !affectsShape(state.document, next)
       ? state.parameterAnalysis : undefined),
   };
+}
+
+/**
+ * 編集で届いた文書を、実際に履歴へ積んで保存する形へ整えたもの(`prepareDocumentEdit`)。
+ * `document` は差し込み・掃除の後の文書、`timelineIndex` はその後のつまみの位置。
+ */
+export interface DocumentEditPlacement {
+  readonly document: PartDocument;
+  readonly timelineIndex: number | null;
+  /** 途中へ差し込んだか(帯で一言知らせるかの判断に使う。NFR-UX-7)。 */
+  readonly inserted: boolean;
+}
+
+/**
+ * `applyDocument` が文書を差し替える前に行う整え(つまみへの差し込みと掃除)を、
+ * ストアに触れない純関数として 1 か所にまとめたもの。通常の編集と、押し出しの
+ * 確定前の計算(段階計算の候補)が**同じ整えを通る**ので、確かめた文書と保存される
+ * 文書が食い違わない。
+ *
+ * - タイムラインのつまみ(FR-507、タスク19・20)の面倒を見る。
+ *   ①文書をまるごと差し替えたとき(開く)は、つまみを末尾へ戻す。前の部品のつまみを
+ *     持ち越さないため(§0.a-0.19「開いた直後は常に末尾」)。
+ *   ②途中まで戻したまま履歴が伸びたときは、**つまみの位置へ差し込む**(タスク20)。
+ *     末尾へ積んだままだと戻した画面に作ったものが出てこないので、差し込んだうえで
+ *     つまみをその段へ進めて見せる。止めて断ることはしない
+ *     (rules/04-設計の規律.md「操作をブロックするゲートも作らない」)。
+ *   ③それ以外(名前の変更・削除・順序の入れ替え)は、つまみをそのままにする。
+ *   差し込みは `placeNewFeatures` が行い、差し込んだ後の文書を以降でそのまま使う
+ *   (Undo に積むのも保存されるのも差し込んだ後の並び)。
+ * - フィーチャーが消えたときは、そのボディを指す外観の割り当ても一緒に落とす
+ *   (FR-1106、model の `pruneDocumentAppearance`)。押し出しを消したのに色の割り当て
+ *   だけが文書に残ると、保存したファイルに行き先の無い割り当てが溜まっていく。
+ *   **履歴が短くなったときだけ掃除する。** 掃除の判定材料は「いま画面に出るボディ」
+ *   なので、抑制(一時的に外す)やブーリアンで消費された立体もそのままでは対象に
+ *   入ってしまう。どちらも元へ戻せる操作で、そこで割り当てを捨てると戻したときに
+ *   色が失われる。消えたことが確かなとき(段の数が減ったとき)だけに限る。
+ *   文書を丸ごと差し替える経路(新規・開く・復元)も対象外にする(読み込んだ文書の
+ *   割り当てを、まだ計算していない段階で削らない)。
+ *   掃除は取り消しに積む前に行うので、**取り消し 1 回で立体も色も一緒に戻る**(NFR-UX-3)。
+ */
+export function prepareDocumentEdit(
+  state: Pick<AppState, 'document' | 'timelineIndex'>,
+  incoming: PartDocument,
+  replaces: boolean,
+): DocumentEditPlacement {
+  const placement =
+    replaces
+      ? { document: incoming, timelineIndex: null, inserted: false }
+      : placeNewFeatures(state.document, incoming, state.timelineIndex);
+  const placed = replaces ? placement.document
+    : pruneRemovedFolderMembers(state.document, pruneRemovedFeatureNotes(state.document, placement.document));
+  const document =
+    !replaces && placed.solids.length < state.document.solids.length
+      ? pruneDocumentAppearance(placed)
+      : placed;
+  return { document, timelineIndex: placement.timelineIndex, inserted: placement.inserted };
+}
+
+/**
+ * 整えた文書を差し替えるときの差分(`applyDocument` の本体)。`stack` は呼び出し側が
+ * 決めた履歴(Undo に積む・積まない・作り直す)。押し出しの確定(段階計算の採用)も
+ * この同じ差分を使い、通常の編集と同じ欄を同じ値で落とす。
+ */
+export function documentEditPatch(
+  state: AppState,
+  prepared: DocumentEditPlacement,
+  stack: UndoStack<PartDocument>,
+  replaces: boolean,
+  coalesceKey: string | undefined,
+): Partial<AppState> {
+  const next = prepared.document;
+  return {
+    // 丸ごとの差し替え(開く・復元)では 3D スケッチも降ろす(タスク22b-(i))。
+    ...documentPatch(state, next, stack, replaces),
+    // 文書をまるごと差し替える呼び出し(開く等)のときだけ進める(§0.a-0.1〜)。
+    documentVersion:
+      replaces ? state.documentVersion + 1 : state.documentVersion,
+    timelineIndex: prepared.timelineIndex,
+    // 知らせは「差し込みました」か、つまみの初回の案内(タスク22b-(a))か、無しの 3 通り。
+    timelineNoticeKey: timelineNoticeFor(state, next, prepared.inserted),
+    // 順序の入れ替えの断りは、形が変われば用済み(FR-504)。
+    timelineRefusal: null,
+    // 束ねる変更(プロパティ欄の 1 文字ごと)では計算中の札を立てない。立てると
+    // 打つたびに札が点滅する。再計算は attachPartRecompute が拾い、終わり次第
+    // そのまま形が動く(NFR-PF-1)。
+    //
+    // **形に影響しない変更(外観の割り当てだけ、FR-1106〜1110)でも立てない**
+    // (P5 §2.3.2)。下の `attachPartRecompute` の購読も `affectsShape` を見て
+    // 再計算を投げないので、ここで立てると誰も下ろせない札が残る。要件§4.12の
+    // 「外観を変えても再計算は起きず、描画だけが変わる」はこの 2 か所で守られる。
+    isComputing:
+      coalesceKey === undefined && affectsShape(state.document, next)
+        ? true
+        : state.isComputing,
+    // 形が変わったら「保存しました」等の知らせは用済み(FR-806)。
+    fileMessage: null,
+    // 中止の知らせも、次の計算が始まる時点で用済み(NFR-PF-4)。
+    recomputeCancelled: false,
+    // 古い「面/立体/図形を作れませんでした」の断りも文書が変われば用済み(§0.a-0.23 ⑦)。
+    faceErrorKey: null,
+    solidErrorKey: null,
+    editErrorKey: null,
+    appearanceErrorKey: null,
+    // 「測れませんでした」の断りも、文書が変われば用済み(FR-1102、タスク32)。
+    measureErrorKey: null,
+    editNoticeKey: null,
+    shapeErrorMessage: null,
+    referenceErrorMessage: null,
+    // 拘束の断りも文書が変われば用済み(FR-504、タスク13)。
+    constraintErrorMessage: null,
+    // 引っぱれなかった理由も、形が変われば用済み(タスク14)。
+    dragRefusalKey: null,
+    // 原点を移した知らせも、次に形が変われば用済み(FR-331、タスク35b)。
+    // 原点の再設定そのものは applyDocument のあとで setOriginNotice を呼んで立て直す。
+    originNoticeMessage: null,
+    // トリム・延長の予告は「いまの形」の上の区間なので、形が変われば描き直し
+    // (次にマウスが動いたときに出し直す。タスク22)。
+    editPreview: null,
+    // 測定は**形が変わったときだけ**消す(FR-1102「モデルを変更するまで残る」、
+    // §0.a-0.29。外観だけの変更では形が 1 ミリも動かないので測った値は正しいまま)。
+    measurement: affectsShape(state.document, next) ? null : state.measurement,
+    // 質量特性も測定と同じ条件で消す(体積・重心は形そのものの値なので、
+    // 形が変われば測り直し。外観だけの変更では材料が変わっても残る)。
+    massProperties: affectsShape(state.document, next) ? null : state.massProperties,
+  };
+}
+
+/**
+ * つまみの初回の案内を出したら、二度と出さないよう端末に覚える(P4b タスク22b-(a)、
+ * 利用者の決定①)。`set` の中は副作用を持たない純粋な差分にしたいので、
+ * `localStorage` への書き込みは文書を差し替えた後にここで 1 回だけ行う。
+ */
+export function rememberTimelineHintShown(after: AppState): void {
+  if (after.timelineNoticeKey === 'timeline.hint' && !after.displaySettings.timelineHintSeen) {
+    after.setDisplaySettings({ ...after.displaySettings, timelineHintSeen: true });
+  }
 }
 
 /**

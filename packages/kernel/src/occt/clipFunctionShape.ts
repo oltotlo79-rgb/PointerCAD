@@ -3,6 +3,7 @@ import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/open
 import type { Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
 import { makeBox, type OcctShapeHandle } from './makeBox.js';
+import { certifyTrimmedCubicShapeBounds } from './functionSurfaceBounds.js';
 import { isValidShape } from './solidMesh.js';
 import { IDENTITY_TRANSFORM, makeCompound, transformShape } from './transformShape.js';
 
@@ -34,7 +35,7 @@ export function validateFunctionClipBox(box: FunctionClipBox): Vec3Tuple {
 /** BRep tolerances are independent of a display mesh. Reject a failed geometric clipping postcondition. */
 function measuredBounds(oc: OpenCascadeInstance, shape: TopoDS_Shape, allocations: Allocations): FunctionClipBox {
   const bounds = allocations.keep(new oc.Bnd_Box_1());
-  // Unlike Add, this measures trimmed spline geometry rather than a larger control-point enclosure.
+  // Geometric enclosure only: AddOptimal may retain the untrimmed UV rectangle.
   oc.BRepBndLib.AddOptimal(shape, bounds, false, false);
   if (bounds.IsVoid()) throw new Error('切り取った関数の範囲を確認できませんでした。');
   bounds.SetGap(0);
@@ -43,12 +44,17 @@ function measuredBounds(oc: OpenCascadeInstance, shape: TopoDS_Shape, allocation
   return { minimum,maximum };
 }
 export function verifyFunctionShapeBounds(oc: OpenCascadeInstance, shape: TopoDS_Shape, limits: FunctionClipBox, allocations: Allocations): void {
-  const { minimum,maximum } = measuredBounds(oc,shape,allocations);
-  for (let axis = 0; axis < 3; axis++) {
-    if (!Number.isFinite(minimum[axis]) || !Number.isFinite(maximum[axis])
-      || minimum[axis] < limits.minimum[axis] - FUNCTION_CLIP_BOUND_TOLERANCE || maximum[axis] > limits.maximum[axis] + FUNCTION_CLIP_BOUND_TOLERANCE) {
-      throw new Error('関数の形が指定したXYZ範囲に収まりませんでした。');
-    }
+  validateFunctionClipBox(limits);
+  const { minimum, maximum } = measuredBounds(oc, shape, allocations);
+  if (![...minimum, ...maximum].every(Number.isFinite)) {
+    throw new Error('切り取った関数の範囲を確認できませんでした。');
+  }
+  if (minimum.every((value, axis) => value >= limits.minimum[axis] - FUNCTION_CLIP_BOUND_TOLERANCE
+    && maximum[axis] <= limits.maximum[axis] + FUNCTION_CLIP_BOUND_TOLERANCE)) return;
+  // A loose UV enclosure does not establish an escaped trimmed face. Certify
+  // complete mapped boundaries plus all possible interior coordinate extrema.
+  if (!certifyTrimmedCubicShapeBounds(oc, shape, limits, FUNCTION_CLIP_BOUND_TOLERANCE)) {
+    throw new Error('関数の形が指定したXYZ範囲に収まりませんでした。');
   }
 }
 

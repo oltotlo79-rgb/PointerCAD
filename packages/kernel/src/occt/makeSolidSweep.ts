@@ -11,6 +11,7 @@ import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
+import { prismCurveSubShapeOrigins, prismSubShapeOrigins } from './subShapeOrigins.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
 import { computeVolumeProperties } from './volumeProperties.js';
 import { booleanMargin, boundingDiagonal } from './subShapes.js';
@@ -87,7 +88,13 @@ export type ExtrudeEndSpec =
   /** 指定の面まで(model が距離を計算済みなので distance と同じ扱いになる)。 */
   | { readonly kind: 'toFace'; readonly distance: number }
   /** 次にぶつかる面まで。対象の形が要る。 */
-  | { readonly kind: 'toNext' };
+  | { readonly kind: 'toNext' }
+  /**
+   * 対象の立体を両側へ必ず貫く(EX04 の輪郭による貫通切断)。長さは**再計算のたびに**対象の
+   * 厳密な境界箱から決める(`throughTargetRange`)ので、上流で対象が大きくなっても貫き続ける。
+   * 対象の形が要る(`toNext` と同じく `target` で渡し、消費しない)。
+   */
+  | { readonly kind: 'throughTarget' };
 
 /**
  * 押し出しに後から足した指定(FR-415、FR-401)。**すべて省略できる。**
@@ -137,7 +144,7 @@ interface ExtrudeRange {
 /** 終端の指定から、押し始めの位置と長さを決める。長さが取れないときは日本語で断る。 */
 function resolveExtrudeRange(
   oc: OpenCascadeInstance,
-  end: ExtrudeEndSpec,
+  end: Exclude<ExtrudeEndSpec, { readonly kind: 'throughTarget' }>,
   target: TopoDS_Shape | null,
 ): ExtrudeRange {
   if (end.kind === 'toNext') {
@@ -170,6 +177,64 @@ function resolveExtrudeRange(
     throw new Error('押し出す長さは 0 より大きい数にしてください。');
   }
   return { startOffset: 0, length: end.distance };
+}
+
+/**
+ * 「対象を両側へ貫く」(`throughTarget`)の押し始めの位置と長さ。断面の平面が要るので、
+ * 断面の面を作ったあとで呼ぶ(ほかの終端は `resolveExtrudeRange` が面を作る前に決める)。
+ *
+ * 対象の**厳密な面から測った**軸平行の境界箱(`BRepBndLib.Add` の第 3 引数 false。三角形分割も
+ * 表示用の頂点も使わない。`subShapes.ts` の `boundingDiagonal` と同じ測り方で、余白 gap は 0)の
+ * 8 隅を、断面の平面上の 1 点から押し出す向きへ投影する。投影の最小・最大が、対象のどの点も
+ * 入る向きの範囲の外枠になる(箱は対象を必ず含むので、斜めの断面では長めに出るが、短くはならない)。
+ * 両端に「次の面まで」と同じ余裕 `booleanMargin`(§0.a-0.12)を足し、端の面が対象の面と重ならない
+ * ようにする。断面が対象の外にあっても、その側の長さが 0 から始まるだけで同じ式で決まる。
+ */
+function throughTargetRange(
+  oc: OpenCascadeInstance,
+  keep: Allocations['keep'],
+  face: TopoDS_Face,
+  direction: Vec3Tuple,
+  target: TopoDS_Shape | null,
+): ExtrudeRange {
+  if (target === null) {
+    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+  }
+  const box = keep(new oc.Bnd_Box_1());
+  oc.BRepBndLib.Add(target, box, false);
+  if (box.IsVoid()) {
+    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+  }
+  box.SetGap(0);
+  const low = keep(box.CornerMin());
+  const high = keep(box.CornerMax());
+  const min: Vec3Tuple = [low.X(), low.Y(), low.Z()];
+  const max: Vec3Tuple = [high.X(), high.Y(), high.Z()];
+  const adaptor = keep(new oc.BRepAdaptor_Surface_2(face, true));
+  const location = keep(keep(adaptor.Plane()).Location());
+  const base: Vec3Tuple = [location.X(), location.Y(), location.Z()];
+  if (!isFinitePoint(min) || !isFinitePoint(max) || !isFinitePoint(base)) {
+    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+  }
+  const diagonal = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+  if (!(diagonal > 0)) {
+    throw new Error(NO_MATERIAL_AHEAD_MESSAGE);
+  }
+  let nearest = Number.POSITIVE_INFINITY;
+  let farthest = Number.NEGATIVE_INFINITY;
+  for (const x of [min[0], max[0]]) {
+    for (const y of [min[1], max[1]]) {
+      for (const z of [min[2], max[2]]) {
+        const along = (x - base[0]) * direction[0] + (y - base[1]) * direction[1] + (z - base[2]) * direction[2];
+        nearest = Math.min(nearest, along);
+        farthest = Math.max(farthest, along);
+      }
+    }
+  }
+  const margin = booleanMargin(diagonal);
+  const backward = Math.max(0, -nearest) + margin;
+  const forward = Math.max(0, farthest) + margin;
+  return { startOffset: backward, length: forward + backward };
 }
 
 /**
@@ -393,6 +458,7 @@ export function makeExtrudeSolid(
   spec: ExtrudeStepSpec,
   options: TessellationOptions = {},
   shaping: ExtrudeShapeOptions = {},
+  featureId?: string,
 ): OcctShapeHandle {
   const end: ExtrudeEndSpec = shaping.end ?? { kind: 'distance', distance: spec.distance };
   const taperAngle = shaping.taperAngle ?? 0;
@@ -407,12 +473,15 @@ export function makeExtrudeSolid(
     throw new Error('押し出す向きが決まりません。断面が平らかどうかを確かめてください。');
   }
 
-  const { startOffset, length } = resolveExtrudeRange(oc, end, target);
+  // 「対象を貫く」だけは断面の平面が要るので、面を作ったあとで決める(throughTargetRange)。
+  const fixedRange = end.kind === 'throughTarget' ? null : resolveExtrudeRange(oc, end, target);
 
   const { keep, release } = createAllocations();
 
   try {
-    const profileFace = keep(makePlanarFace(oc, spec.profile, options));
+    const profileFace = keep(makePlanarFace(oc, spec.profile, options, spec.profileOrigin));
+    const { startOffset, length } = fixedRange
+      ?? throughTargetRange(oc, keep, profileFace.face, direction, target);
     const baseFace = shiftFace(oc, keep, profileFace.face, direction, startOffset);
     const vector = keep(
       new oc.gp_Vec_4(direction[0] * length, direction[1] * length, direction[2] * length),
@@ -470,7 +539,17 @@ export function makeExtrudeSolid(
       throw new Error('押し出しても厚みが出ませんでした。長さを大きくしてください。');
     }
 
-    return { shape, delete: release };
+    const origins = featureId !== undefined && spec.profileOrigin !== undefined
+      && 'lineFeatureIds' in spec.profileOrigin && profileFace.nativeProfileLines !== undefined && startOffset === 0 && !reshaped
+      ? prismSubShapeOrigins(oc, maker, baseFace, shape,
+        profileFace.nativeProfileLines, spec.profileOrigin, featureId)
+      : featureId !== undefined && spec.profileOrigin !== undefined
+        && 'curveFeatureIds' in spec.profileOrigin && profileFace.nativeProfileCurves !== undefined
+        && startOffset === 0 && !reshaped
+        ? prismCurveSubShapeOrigins(oc, maker, baseFace, shape,
+          profileFace.nativeProfileCurves, spec.profileOrigin, featureId)
+        : undefined;
+    return { shape, ...(origins === undefined ? {} : { origins }), delete: release };
   } catch (error) {
     release();
     throw error;

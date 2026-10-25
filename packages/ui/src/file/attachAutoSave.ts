@@ -24,6 +24,8 @@ import {
   readDocumentBundle,
   readDrawingBundle,
   type AutoSaveDocument,
+  type SaveDocumentEncoder,
+  type SaveDocumentInput,
   type AutoSaveRecord,
   type AutoSaveIdentity,
   type AutoSaverOptions,
@@ -34,14 +36,18 @@ import { createAssemblyDocumentBundle, createPartDocumentBundle, drawingSourceIn
 
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import type { AppState } from '../store/appState.js';
-import { beginDocumentRequest } from '../store/documentRequest.js';
+import { beginDocumentRequest, captureDocumentIdentity, compareDocumentIdentity, type DocumentIdentity } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { createSecureUuid, prepareDocumentSession, SecurePartIdentityError,
+  type PreparedDocumentSession } from '../store/fileSlice.js';
 import { saveFileAsThrough, withPcadExtension, withPcadaExtension, withPcaddExtension } from './fileGateway.js';
 import { openErrorMessageKey, readPartDocument } from './partFile.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { activeDocument } from '../store/documentKind.js';
 import { hasSaveRecoveryCopy } from './saveFailure.js';
 import { readAutoSaveIntervalMs } from '../settings/autoSaveSettings.js';
+import { cancelDocumentSaves } from './documentSaveQueue.js';
+import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 
 // ---------------------------------------------------------------------------
 // 保管庫を選ぶ
@@ -165,7 +171,7 @@ function recoveryDocument(state: AppState, bundleParts: boolean): AutoSaveDocume
     return { kind: 'drawing', document: active.document, source };
   }
   return active.kind === 'assembly' ? createAssemblyDocumentBundle(active.document, active.library)
-    : bundleParts ? createPartDocumentBundle(active.document, currentPcadAttachments()) : active.document;
+    : bundleParts ? createPartDocumentBundle(active.document, currentPcadAttachments(active.document)) : active.document;
 }
 
 export interface AttachAutoSaveOptions {
@@ -203,7 +209,13 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
       return;
     }
     const document = recoveryDocument(next, options.bundleParts === true);
-    if (document !== null) saver.markDirty(document);
+    if (document !== null) {
+      saver.markDirty(document);
+      if (next.autoSaver === saver && next.recoverySaveState?.stage !== 'preparing' &&
+        next.recoverySaveState?.stage !== 'compressing' && next.recoverySaveState?.stage !== 'writing') {
+        useAppStore.setState({ recoverySaveState: { documentId: next.activeDocumentId, saver, stage: 'pending' } });
+      }
+    }
   });
 
   const visibility =
@@ -309,7 +321,15 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
     const outcome = await readDrawingBundle(record.bytes);
     if (!isCurrent()) return;
     if (!outcome.ok) { await loadAutoSavePrompt(saver, { record, shouldApply: isCurrent }); return; }
+    let preparedSession: PreparedDocumentSession;
+    try { preparedSession = prepareDocumentSession(); }
+    catch (error) {
+      if (!(error instanceof SecurePartIdentityError)) throw error;
+      reportAutoSaveFailure(error);
+      return;
+    }
     before.openDrawing(outcome.document, {
+      preparedSession,
       sources: { sources: [{ metadata: outcome.document.source, ...outcome.source }] },
       importedShapes: outcome.source.sourceKind === 'part' ? outcome.source.attachments?.shapes : undefined,
     });
@@ -328,7 +348,14 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
       return;
     }
     const state = useAppStore.getState();
-    state.openAssembly(outcome.bundle.document, partLibraryOfBundle(outcome.bundle));
+    let preparedSession: PreparedDocumentSession;
+    try { preparedSession = prepareDocumentSession(); }
+    catch (error) {
+      if (!(error instanceof SecurePartIdentityError)) throw error;
+      reportAutoSaveFailure(error);
+      return;
+    }
+    state.openAssembly(outcome.bundle.document, partLibraryOfBundle(outcome.bundle), { preparedSession });
     // 復元後は新しい窓の session で同じ文書を引き継ぐ。元の控えは消さない。
     if (record.documentId !== undefined) useAppStore.setState({ activeDocumentId: record.documentId });
     state.setRestorePrompt(null);
@@ -347,7 +374,14 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
     return;
   }
   const store = useAppStore.getState();
-  store.resetDocument(outcome.document);
+  let preparedSession: PreparedDocumentSession;
+  try { preparedSession = prepareDocumentSession(); }
+  catch (error) {
+    if (!(error instanceof SecurePartIdentityError)) throw error;
+    reportAutoSaveFailure(error);
+    return;
+  }
+  store.resetDocument(outcome.document, preparedSession);
   if (record.documentId !== undefined) useAppStore.setState({ activeDocumentId: record.documentId });
   /*
    * 形そのもの(読み込んだ B-rep・三角形・下絵)は文書の外にあるので、**文書を作り直した
@@ -420,8 +454,9 @@ export async function exportAutoSave(saver: AutoSaver): Promise<void> {
 }
 
 /** 自動保存の失敗を、通常のファイル操作と同じ状態欄へ明示する。 */
-export function reportAutoSaveFailure(): void {
-  useAppStore.getState().setFileMessage({ key: 'autoSave.failed', failed: true });
+export function reportAutoSaveFailure(error?: unknown): void {
+  useAppStore.getState().setFileMessage({ key: 'autoSave.failed', failed: true,
+    ...(error instanceof Error ? { detail: error.message } : typeof error === 'string' ? { detail: error } : {}) });
 }
 
 /** 次の自動保存が成功したら、自動保存由来の古い失敗だけを状態欄から消す。 */
@@ -437,6 +472,8 @@ export function clearAutoSaveFailure(): void {
 // ---------------------------------------------------------------------------
 
 export interface StartAutoSaveOptions {
+  /** 製品はストアのWorker口。headless検査は実IOを明示注入する。 */
+  readonly encodeSave?: SaveDocumentEncoder;
   /** 控えを書く人。既定はブラウザ用の保管庫を使うもの。検査では時計とタイマーを差し替えて渡す。 */
   readonly saver?: AutoSaver;
   readonly storage?: AutoSaveStorage;
@@ -444,12 +481,18 @@ export interface StartAutoSaveOptions {
   readonly createSaver?: (options: AutoSaverOptions) => AutoSaver;
 }
 
-const WINDOW_SESSION_ID = crypto.randomUUID();
+let windowSessionId: string | undefined;
 
 function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
+  let sessionId: string;
+  try { sessionId = options.sessionId ?? (windowSessionId ??= createSecureUuid()); }
+  catch (error) {
+    if (!(error instanceof SecurePartIdentityError)) throw error;
+    reportAutoSaveFailure(error);
+    return () => {};
+  }
   const storage = options.storage ?? createAutoSaveStorageForBrowser();
   const factory = options.createSaver ?? createAutoSaver;
-  const sessionId = options.sessionId ?? WINDOW_SESSION_ID;
   let detached = false;
   let identity = '';
   let intervalMs: number | null = null;
@@ -472,13 +515,33 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
     revision += 1;
     const currentRevision = revision;
     stopCurrent?.();
+    let encodingIdentity: DocumentIdentity | null = null;
+    const reportState = (stage: 'pending' | 'preparing' | 'compressing' | 'writing' | 'saved' | 'failed', error?: unknown): void => {
+      if (detached || currentRevision !== revision || useAppStore.getState().autoSaver !== current) return;
+      useAppStore.setState({ recoverySaveState: { documentId: active.documentId, saver: current, stage,
+        ...(error instanceof Error ? { detail: error.message } : typeof error === 'string' ? { detail: error } : {}) } });
+    };
     const current = factory({ storage: createUnsavedOnlyStorage(storage), kind: active.kind,
       documentId: active.documentId, sessionId, intervalMs: nextInterval,
-      onError: () => { if (!detached && currentRevision === revision) reportAutoSaveFailure(); },
-      onSuccess: () => { if (!detached && currentRevision === revision) clearAutoSaveFailure(); },
+      encode: (bundle, savedAt, signal) => {
+        encodingIdentity = captureDocumentIdentity(useAppStore.getState());
+        const input: SaveDocumentInput = bundle.kind === 'drawing'
+          ? { kind: 'drawing', document: bundle.document, options: { source: bundle.source, savedAt } }
+          : bundle.kind === 'assembly' ? { kind: 'assembly', bundle, options: { savedAt } }
+            : { kind: 'part', document: bundle.document, options: { attachments: bundle.attachments, savedAt } };
+        return (options.encodeSave ?? state.saveDocumentEncoder)(captureSaveSnapshot(input), { signal, onProgress: reportState });
+      },
+      onWriting: () => { reportState('writing'); },
+      onError: error => { if (!detached && currentRevision === revision) { reportAutoSaveFailure(error); reportState('failed', error); } },
+      onSuccess: () => { if (!detached && currentRevision === revision) {
+        clearAutoSaveFailure();
+        reportState(encodingIdentity !== null && compareDocumentIdentity(encodingIdentity, useAppStore.getState()) === 'current' ? 'saved' : 'pending');
+      } },
     });
     saver = current;
     state.setAutoSaver(current);
+    useAppStore.setState({ recoverySaveState: activeHasUnsavedChanges(state)
+      ? { documentId: active.documentId, saver: current, stage: 'pending' } : null });
     stopCurrent = attachAutoSave({ saver: current, bundleParts: true });
     if (activeHasUnsavedChanges(useAppStore.getState())) {
       const document = recoveryDocument(useAppStore.getState(), true);
@@ -506,6 +569,7 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
     detached = true;
     unsubscribe();
     stopCurrent?.();
+    cancelDocumentSaves(useAppStore.getState().fileGateway);
     if (useAppStore.getState().autoSaver === saver) useAppStore.getState().setAutoSaver(null);
   };
 }
@@ -529,7 +593,7 @@ export function startAutoSave(options: StartAutoSaveOptions = {}): () => void {
        * 文書が指している添付が欠けていると断るので、添付なしで書いた控えは
        * 「開けない控え」になる(`packages/io` の `findMissingAttachment`)。
        */
-      attachmentsOf: () => currentPcadAttachments(),
+      attachmentsOf: (document) => currentPcadAttachments(document),
       onError: reportAutoSaveFailure,
       onSuccess: clearAutoSaveFailure,
     });

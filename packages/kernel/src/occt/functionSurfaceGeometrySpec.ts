@@ -8,6 +8,11 @@ export interface FunctionSurfaceGeometrySpec {
   readonly vertices: readonly Vec3Tuple[];
   readonly triangles: readonly (readonly [number, number, number])[];
   readonly bounds: FunctionClipBox;
+  /**
+   * Certified C1 bicubic over the whole parameter rectangle (functionSurfaceSpline.ts). When present, CAD builds
+   * this native surface instead of the planar triangles; the triangles remain the certified mesh it was tied to.
+   */
+  readonly spline?: import('./functionSurfaceSpline.js').FunctionSurfaceSplineSpec;
 }
 export type FunctionSurfaceInput=FunctionSurfaceGeometrySpec|import('./functionSurfacePrimitiveSpec.js').FunctionSurfacePrimitiveSpec;
 function array(value: unknown): value is readonly unknown[] { return Array.isArray(value); }

@@ -1,11 +1,12 @@
 import { drawingDimensionContext } from '@pointercad/model';
-import { balloon, bomTable, createPaperFrame, holeTable, paperSizeOf, resolveStyle, revisionTable,
+import { balloon, bomTable, tableLayout, createPaperFrame, holeTable, paperSizeOf, resolveStyle, revisionTable,
   type BalloonCircle, type BomColumnId, type DrawingDocument, type DrawingRenderElement,
   type DrawingTable, type InkBounds, type OutlinedText, type TableGeometry } from '@pointercad/drawing';
 import { BOM_COLUMN_IDS, resolveDrawingAnnotationTarget, type DrawingSourceResolution } from '@pointercad/model';
+import { steelStockIssueText } from '../assembly/steelStockCsvExport.js';
 import { materialLabel } from '../assembly/BomTable.js';
 import { formatBomMass } from '../assembly/bomTableRows.js';
-import { t } from '../i18n/t.js';
+import { t, type MessageKey } from '../i18n/t.js';
 import { drawingNoteGeometryElement } from './noteDisplay.js';
 import { drawingTableRowOwner } from './drawingSelection.js';
 
@@ -47,13 +48,28 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
   const paper = paperSizeOf(document.sheet.paperSizeId);
   if (paper === undefined) return { elements, items, unresolved: document.tables.map((table) => table.id) };
   const bounds = createPaperFrame(paper).inner;
+  const steelShapes: Readonly<Record<import('@pointercad/model').SteelSectionCatalog, MessageKey>> = {
+    flatBar: 'assembly.steel.flatBar', roundBar: 'assembly.steel.roundBar', steelPipe: 'assembly.steel.steelPipe',
+    equalAngle: 'assembly.steel.equalAngle', channel: 'assembly.steel.channel', hBeam: 'assembly.steel.hBeam',
+  };
   const measureText = (text: string, size: number) => outline(text, size).metrics;
   for (const table of document.tables) {
     let geometry: TableGeometry | null = null;
     let rowComponentIds: readonly (readonly string[])[] = [];
     const common = { position: table.position, bounds, measureText,
       textHeightMm: numericOption(table, 'textHeight', document.sheet.textHeight ?? 3.5), rowHeightMm: numericOption(table, 'rowHeight', 7) };
-    if (table.kind === 'bom' && source?.bomRows !== undefined) {
+    if (table.kind === 'bom' && table.options.stockList === true && source?.steelStockList !== undefined) {
+      const stock = source.steelStockList;
+      const headings = [t('assembly.steel.shape'), t('assembly.steel.material'), t('assembly.steel.csv.productStandard'),
+        `${t('assembly.steel.stockLength')} (mm)`, t('assembly.steel.quantity'), `${t('assembly.steel.finishedLength')} (mm)`];
+      const rows = stock.rows.map((row) => [`${t(steelShapes[row.product.catalog])} ${row.product.size}`, row.product.materialGrade,
+        `${row.product.productStandard} / ${row.product.materialStandard}\n${t('assembly.steel.csv.catalogRevision')}: ${row.catalogRevision}\n${t('assembly.steel.csv.generatorRevision')}: ${row.generatorRevision}`, String(row.lengthMm), String(row.quantity),
+        row.finishedLengthMm === null ? t('assembly.steel.finishedUnknown') : String(row.finishedLengthMm)]);
+      rows.push(...stock.issues.map((issue) => [t('assembly.steel.csv.omitted'), '', '', '', '', steelStockIssueText(issue)]));
+      geometry = tableLayout({ ...common, columns: headings.map((heading, index) => ({ heading,
+        widthMm: [30, 22, 38, 24, 14, 42][index] ?? 42 })), rows });
+      rowComponentIds = stock.rows.map((row) => row.componentIds);
+    } else if (table.kind === 'bom' && table.options.stockList !== true && source?.bomRows !== undefined) {
       const columns = table.columns.filter(isBomColumn);
       const direction = table.options.direction ?? 'bottomToTop', sortBy = table.options.sortBy ?? 'number';
       if (columns.length === table.columns.length && (direction === 'bottomToTop' || direction === 'topToBottom')

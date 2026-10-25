@@ -1,8 +1,10 @@
 import { createDrawingTemplate, evaluateDrawingSheetExpression, validateDrawingTemplate } from '@pointercad/model';
 import { exactExpressionValueFromNumber } from '@pointercad/expression';
-import { readDrawingTemplateFile, writeDrawingTemplateFile } from '@pointercad/io';
+import { readDrawingTemplateFile } from '@pointercad/io';
 import type { DrawingSheet } from '@pointercad/drawing';
 import { openFileThrough, saveFileAsThrough } from '../file/fileGateway.js';
+import { queueDocumentSave, reportSaveEncodingFailure } from '../file/documentSaveQueue.js';
+import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import { createDrawingFromCurrentPart } from './createDrawingCommands.js';
@@ -85,18 +87,25 @@ export async function saveCurrentDrawingTemplate(name: string): Promise<boolean>
   if (document === null) return false;
   const created = createDrawingTemplate(document, name);
   if (!created.ok) { state.setDrawingMessage(t('drawing.template.invalid')); return false; }
-  const stillCurrent = (): boolean => useAppStore.getState().drawing === document;
-  try {
-    const bytes = writeDrawingTemplateFile(created.template, new Date().toISOString());
-    const safeName = Array.from(created.template.name, (character) =>
-      character.charCodeAt(0) < 32 || /[<>:"/\\|?*]/u.test(character) ? '_' : character).join('');
-    const saved = await saveFileAsThrough(state.fileGateway, `${safeName}.pcadt`, 'pcadt', bytes);
-    if (stillCurrent()) state.setDrawingMessage(t(saved ? 'drawing.template.saved' : 'drawing.template.cancelled'));
-    return saved;
-  } catch {
-    if (stillCurrent()) state.setDrawingMessage(t('drawing.template.saveFailed'));
-    return false;
-  }
+  const identity = captureDocumentIdentity(state), savedAt = new Date().toISOString();
+  let saved = false;
+  await queueDocumentSave(state, async (isCurrent, control) => {
+    const stillCurrent = (): boolean => isCurrent()
+      && compareDocumentIdentity(identity, useAppStore.getState()) === 'current';
+    try {
+      if (!stillCurrent()) return;
+      const bytes = await state.saveDocumentEncoder({ kind: 'drawingTemplate', template: created.template, savedAt }, control);
+      if (!stillCurrent() || !control.beginWriting()) return;
+      const safeName = Array.from(created.template.name, (character) =>
+        character.charCodeAt(0) < 32 || /[<>:"/\\|?*]/u.test(character) ? '_' : character).join('');
+      saved = await saveFileAsThrough(state.fileGateway, `${safeName}.pcadt`, 'pcadt', bytes);
+      if (stillCurrent()) state.setDrawingMessage(t(saved ? 'drawing.template.saved' : 'drawing.template.cancelled'));
+    } catch (error) {
+      if (stillCurrent()) state.setDrawingMessage(t('drawing.template.saveFailed'));
+      reportSaveEncodingFailure(error, stillCurrent);
+    }
+  });
+  return saved;
 }
 
 export async function createDrawingFromTemplateFile(): Promise<boolean> {

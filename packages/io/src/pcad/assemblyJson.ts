@@ -1,3 +1,6 @@
+import { readComponentSource } from './codecs/componentSource.js';
+import { readJointOccurrenceConnections, serializeJointOccurrenceConnections } from './codecs/jointOccurrenceConnections.js';
+import { readBoltedJointRecords, serializeBoltedJointRecords } from './codecs/boltedJointRecords.js';
 /**
  * アセンブリ文書と `.pcada` の `document.json` の相互変換
  * (計画書 docs/plans/P7-アセンブリ.md タスク3、§2.2、要件§8、FR-801)。
@@ -20,13 +23,24 @@
  * `document.json` ではなく ZIP の別エントリ(`parts/<ref>.json`、`pcadFile.ts`)に入る。
  */
 
+import { readOptionalBeamAnalysisInputs, serializeBeamAnalysisInputs } from './codecs/beamAnalysis.js';
 import { readNamedViews, serializeNamedViews } from './documentMetadataJson.js';
+import { assertReferenceOriginVersion } from './referenceOriginVersion.js';
 import {
   BOM_COLUMN_IDS,
   BOM_SORT_KEYS,
   JOINT_KINDS,
+  MECHANISM_COUPLING_KINDS,
+  CROSS_LEVEL_GEAR_KINDS,
+  CROSS_LEVEL_CAM_KINDS,
+  camDimensionFailure,
+  crossLevelGearDocumentFailure,
+  crossLevelCamDocumentFailure,
+  contextReferencesHaveCycle,
+  evaluateCamCouplings,
+  evaluateMechanismCouplings,
+  mechanismCouplingLoopFailure,
   MATE_KINDS,
-  STANDARD_CATALOG_IDS,
   type AppearanceSpec,
   type AssemblyComponent,
   type AssemblyDocument,
@@ -35,7 +49,13 @@ import {
   type BomSettings,
   type BomSortKey,
   type ComponentSource,
+  type ContextReferenceLink,
+  type CrossLevelGearCouplingDefinition,
+  type CrossLevelCamCouplingDefinition,
   type Joint,
+  type JointOccurrenceConnection,
+  type MechanismCamCoupling,
+  type MechanismGearCoupling,
   type Mate,
   type MateTarget,
   type OriginElement,
@@ -95,11 +115,6 @@ import {
  * model 側に定数の一覧があるもの(合致・ジョイント・規格部品・部品表)はそちらを正本にし、
  * ここには**型にしか無いもの**だけを並べる。
  */
-const COMPONENT_SOURCE_KINDS: readonly ComponentSource['kind'][] = [
-  'part',
-  'subAssembly',
-  'standardPart',
-];
 const MATE_TARGET_KINDS: readonly MateTarget['kind'][] = ['subShape', 'origin'];
 /**
  * 部品の基準ジオメトリのうち合致に取れるもの(原点・3 軸・3 平面。FR-329)。
@@ -204,6 +219,9 @@ function serializeComponent(component: AssemblyComponent): AssemblyComponent {
       ? {}
       : { appearance: serializeAppearanceSpec(component.appearance) }),
     ...(component.materialId === undefined ? {} : { materialId: component.materialId }),
+    // 互いに固定した組(ボルト締結)。属さない部品は欄ごと書かない(旧い文書と同じ形)。
+    ...(component.rigidGroupId === undefined || component.rigidGroupId === ''
+      ? {} : { rigidGroupId: component.rigidGroupId }),
   };
 }
 
@@ -228,6 +246,43 @@ function serializeMate(mate: Mate): Mate {
  * ジョイント 1 つ(FR-618)。可動範囲は**無制限を `null` として必ず書く**
  * (欄ごと省略しない。「まだ決めていない」と「無制限」を読む側が分けずに済む)。
  */
+function serializeMechanismCoupling(coupling: MechanismGearCoupling): MechanismGearCoupling {
+  return { id: coupling.id, kind: coupling.kind, jointAId: coupling.jointAId,
+    jointBId: coupling.jointBId, ratio: serializeExpression(coupling.ratio),
+    phaseDeg: serializeExpression(coupling.phaseDeg), referenceAngleA: coupling.referenceAngleA,
+    suppressed: coupling.suppressed };
+}
+
+/** Cam-follower relation: authored expressions and the reference angle only, never solved poses. */
+function serializeCamCoupling(coupling: MechanismCamCoupling): MechanismCamCoupling {
+  return { id: coupling.id, kind: coupling.kind, camJointId: coupling.camJointId,
+    followerJointId: coupling.followerJointId, discRadiusMm: serializeExpression(coupling.discRadiusMm),
+    eccentricityMm: serializeExpression(coupling.eccentricityMm),
+    rollerRadiusMm: serializeExpression(coupling.rollerRadiusMm), phaseDeg: serializeExpression(coupling.phaseDeg),
+    referenceAngleCam: coupling.referenceAngleCam, suppressed: coupling.suppressed };
+}
+
+/** Cross-level gear: authored expressions, ids and the typed occurrence path only, never solved angles. */
+function serializeCrossLevelGearCoupling(coupling: CrossLevelGearCouplingDefinition): CrossLevelGearCouplingDefinition {
+  return { id: coupling.id, kind: coupling.kind, parentJointId: coupling.parentJointId, childPath: [...coupling.childPath],
+    childJointId: coupling.childJointId, ratio: serializeExpression(coupling.ratio),
+    phaseDeg: serializeExpression(coupling.phaseDeg), suppressed: coupling.suppressed };
+}
+
+/** Cross-level cam: authored expressions, the direction, ids and the typed occurrence path only, never solved poses. */
+function serializeCrossLevelCamCoupling(coupling: CrossLevelCamCouplingDefinition): CrossLevelCamCouplingDefinition {
+  return { id: coupling.id, kind: coupling.kind, camJointId: coupling.camJointId, childPath: [...coupling.childPath],
+    childJointId: coupling.childJointId, discRadiusMm: serializeExpression(coupling.discRadiusMm),
+    eccentricityMm: serializeExpression(coupling.eccentricityMm), rollerRadiusMm: serializeExpression(coupling.rollerRadiusMm),
+    phaseDeg: serializeExpression(coupling.phaseDeg), offsetMm: serializeExpression(coupling.offsetMm),
+    direction: coupling.direction, suppressed: coupling.suppressed };
+}
+
+function serializeContextReference(link: ContextReferenceLink): ContextReferenceLink {
+  return { id: link.id, targetComponentId: link.targetComponentId, targetReferenceId: link.targetReferenceId,
+    sourceComponentId: link.sourceComponentId, source: serializeSubShapeRef(link.source) };
+}
+
 function serializeJoint(joint: Joint): Joint {
   return {
     id: joint.id,
@@ -281,13 +336,44 @@ function serializeBomSettings(bom: BomSettings): BomSettings {
 
 /** アセンブリ文書を決まった順で組み立てる。 */
 function serializeAssemblyDocumentBody(document: AssemblyDocument): AssemblyDocument {
+  if (document.jointOccurrenceConnections !== undefined && document.schemaVersion < 21) {
+    throw new RangeError('Persisted joint occurrence provenance requires document schema 21');
+  }
+  if (document.beamAnalysisInputs !== undefined && document.schemaVersion < 20) {
+    throw new RangeError('Persisted beam inputs require document schema 20');
+  }
   return {
+    ...(document.beamAnalysisInputs === undefined ? {} : {
+      beamAnalysisInputs: serializeBeamAnalysisInputs(document.beamAnalysisInputs, document.id, 'assembly'),
+    }),
     id: document.id,
     name: document.name,
     schemaVersion: document.schemaVersion,
+    ...(document.jointOccurrenceConnections === undefined ? {} : {
+      jointOccurrenceConnections: serializeJointOccurrenceConnections(document.jointOccurrenceConnections, document.components),
+    }),
+    // Bolted-joint edit records (EX-06). Omitted when empty so files without them keep their exact bytes.
+    ...(document.boltedJoints === undefined || document.boltedJoints.length === 0 ? {} : {
+      boltedJoints: serializeBoltedJointRecords(document.boltedJoints, document.components),
+    }),
     components: document.components.map(serializeComponent),
     mates: document.mates.map(serializeMate),
     joints: document.joints.map(serializeJoint),
+    ...(document.mechanismCouplings === undefined ? {} : {
+      mechanismCouplings: document.mechanismCouplings.map(serializeMechanismCoupling),
+    }),
+    ...(document.camCouplings === undefined ? {} : {
+      camCouplings: document.camCouplings.map(serializeCamCoupling),
+    }),
+    ...(document.crossLevelGearCouplings === undefined ? {} : {
+      crossLevelGearCouplings: document.crossLevelGearCouplings.map(serializeCrossLevelGearCoupling),
+    }),
+    ...(document.crossLevelCamCouplings === undefined ? {} : {
+      crossLevelCamCouplings: document.crossLevelCamCouplings.map(serializeCrossLevelCamCoupling),
+    }),
+    ...(document.contextReferences === undefined ? {} : {
+      contextReferences: document.contextReferences.map(serializeContextReference),
+    }),
     presentation: document.presentation.map(serializePresentationStep),
     parameters: document.parameters.map(serializeParameter),
     bom: serializeBomSettings(document.bom),
@@ -324,6 +410,7 @@ export function writeAssemblyDocument(
   document: AssemblyDocument,
   options: WriteAssemblyDocumentOptions = {},
 ): string {
+  assertReferenceOriginVersion(document, document.schemaVersion);
   const envelope: PcadAssemblyEnvelope = {
     // 封筒の版は文書の版と同じ値を書く(部品と同じ決めごと。統括の決定④)。
     schema: document.schemaVersion,
@@ -422,93 +509,6 @@ function readPlacement(
   return { ok: true, value: { position: position.value, rotation: rotation.value } };
 }
 
-/** 規格部品の追加の指定(§0.a-0.34)。値が文字列でない欄が 1 つでもあれば断る。 */
-function readStandardOptions(
-  source: Record<string, unknown>,
-  key: string,
-  parentPath: string,
-): Checked<Record<string, string>> {
-  const record = readRecord(source, key, parentPath);
-  if (!record.ok) {
-    return record;
-  }
-  const path = joinPath(parentPath, key);
-  const options: Record<string, string> = {};
-  for (const name of Object.keys(record.value)) {
-    const value = readString(record.value, name, path);
-    if (!value.ok) {
-      return value;
-    }
-    options[name] = value.value;
-  }
-  return { ok: true, value: options };
-}
-
-function readComponentSource(
-  source: Record<string, unknown>,
-  key: string,
-  parentPath: string,
-): Checked<ComponentSource> {
-  const record = readRecord(source, key, parentPath);
-  if (!record.ok) {
-    return record;
-  }
-  const path = joinPath(parentPath, key);
-  const kind = readLiteral(record.value, 'kind', path, COMPONENT_SOURCE_KINDS);
-  if (!kind.ok) {
-    return kind;
-  }
-  switch (kind.value) {
-    case 'part': {
-      const partRef = readString(record.value, 'partRef', path);
-      if (!partRef.ok) {
-        return partRef;
-      }
-      return { ok: true, value: { kind: 'part', partRef: partRef.value } };
-    }
-    case 'subAssembly': {
-      const assemblyRef = readString(record.value, 'assemblyRef', path);
-      if (!assemblyRef.ok) {
-        return assemblyRef;
-      }
-      return { ok: true, value: { kind: 'subAssembly', assemblyRef: assemblyRef.value } };
-    }
-    case 'standardPart': {
-      const catalog = readLiteral(record.value, 'catalog', path, STANDARD_CATALOG_IDS);
-      if (!catalog.ok) {
-        return catalog;
-      }
-      const size = readString(record.value, 'size', path);
-      if (!size.ok) {
-        return size;
-      }
-      const options = readStandardOptions(record.value, 'options', path);
-      if (!options.ok) {
-        return options;
-      }
-      const catalogRevision = readString(record.value, 'catalogRevision', path);
-      if (!catalogRevision.ok) {
-        return catalogRevision;
-      }
-      const generatorRevision = readString(record.value, 'generatorRevision', path);
-      if (!generatorRevision.ok) {
-        return generatorRevision;
-      }
-      return {
-        ok: true,
-        value: {
-          kind: 'standardPart',
-          catalog: catalog.value,
-          size: size.value,
-          options: options.value,
-          catalogRevision: catalogRevision.value,
-          generatorRevision: generatorRevision.value,
-        },
-      };
-    }
-  }
-}
-
 function readMateTarget(
   source: Record<string, unknown>,
   key: string,
@@ -599,6 +599,10 @@ function readComponent(value: unknown, path: string): Checked<AssemblyComponent>
   if (!materialId.ok) {
     return materialId;
   }
+  const rigidGroupId = readOptionalString(record.value, 'rigidGroupId', path);
+  if (!rigidGroupId.ok) {
+    return rigidGroupId;
+  }
   return {
     ok: true,
     value: {
@@ -611,6 +615,7 @@ function readComponent(value: unknown, path: string): Checked<AssemblyComponent>
       suppressed: suppressed.value,
       ...(appearance.value === null ? {} : { appearance: appearance.value }),
       ...(materialId.value === null ? {} : { materialId: materialId.value }),
+      ...(rigidGroupId.value === null || rigidGroupId.value === '' ? {} : { rigidGroupId: rigidGroupId.value }),
     },
   };
 }
@@ -716,6 +721,124 @@ function readMate(value: unknown, path: string): Checked<Mate> {
       suppressed: suppressed.value,
     },
   };
+}
+
+function readOccurrenceId(value: unknown, path: string): Checked<string> {
+  return typeof value === 'string' && value.length > 0 ? { ok: true, value } : fieldProblem(path, 'type');
+}
+
+function readCrossLevelGearCoupling(value: unknown, path: string): Checked<CrossLevelGearCouplingDefinition> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) return id;
+  const kind = readLiteral(record.value, 'kind', path, CROSS_LEVEL_GEAR_KINDS);
+  if (!kind.ok) return kind;
+  const parentJointId = readString(record.value, 'parentJointId', path);
+  if (!parentJointId.ok) return parentJointId;
+  const childPath = readList(record.value, 'childPath', path, readOccurrenceId);
+  if (!childPath.ok) return childPath;
+  const childJointId = readString(record.value, 'childJointId', path);
+  if (!childJointId.ok) return childJointId;
+  const ratio = readExpression(record.value, 'ratio', path);
+  if (!ratio.ok) return ratio;
+  const phaseDeg = readExpression(record.value, 'phaseDeg', path);
+  if (!phaseDeg.ok) return phaseDeg;
+  const suppressed = readBoolean(record.value, 'suppressed', path);
+  if (!suppressed.ok) return suppressed;
+  return { ok: true, value: { id: id.value, kind: kind.value, parentJointId: parentJointId.value, childPath: childPath.value,
+    childJointId: childJointId.value, ratio: ratio.value, phaseDeg: phaseDeg.value, suppressed: suppressed.value } };
+}
+
+function readCrossLevelCamCoupling(value: unknown, path: string): Checked<CrossLevelCamCouplingDefinition> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) return id;
+  const kind = readLiteral(record.value, 'kind', path, CROSS_LEVEL_CAM_KINDS);
+  if (!kind.ok) return kind;
+  const camJointId = readString(record.value, 'camJointId', path);
+  if (!camJointId.ok) return camJointId;
+  const childPath = readList(record.value, 'childPath', path, readOccurrenceId);
+  if (!childPath.ok) return childPath;
+  const childJointId = readString(record.value, 'childJointId', path);
+  if (!childJointId.ok) return childJointId;
+  const discRadiusMm = readExpression(record.value, 'discRadiusMm', path);
+  if (!discRadiusMm.ok) return discRadiusMm;
+  const eccentricityMm = readExpression(record.value, 'eccentricityMm', path);
+  if (!eccentricityMm.ok) return eccentricityMm;
+  const rollerRadiusMm = readExpression(record.value, 'rollerRadiusMm', path);
+  if (!rollerRadiusMm.ok) return rollerRadiusMm;
+  const phaseDeg = readExpression(record.value, 'phaseDeg', path);
+  if (!phaseDeg.ok) return phaseDeg;
+  const offsetMm = readExpression(record.value, 'offsetMm', path);
+  if (!offsetMm.ok) return offsetMm;
+  // The direction is the sign of the authored law: exactly +1 or -1, never another number.
+  const directionValue = readNumber(record.value, 'direction', path);
+  if (!directionValue.ok) return directionValue;
+  const direction = directionValue.value === 1 ? 1 : directionValue.value === -1 ? -1 : null;
+  if (direction === null) return fieldProblem(joinPath(path, 'direction'), 'type');
+  const suppressed = readBoolean(record.value, 'suppressed', path);
+  if (!suppressed.ok) return suppressed;
+  return { ok: true, value: { id: id.value, kind: kind.value, camJointId: camJointId.value, childPath: childPath.value,
+    childJointId: childJointId.value, discRadiusMm: discRadiusMm.value, eccentricityMm: eccentricityMm.value,
+    rollerRadiusMm: rollerRadiusMm.value, phaseDeg: phaseDeg.value, offsetMm: offsetMm.value, direction,
+    suppressed: suppressed.value } };
+}
+
+function readMechanismCoupling(value: unknown, path: string): Checked<MechanismGearCoupling> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) return id;
+  const kind = readLiteral(record.value, 'kind', path, MECHANISM_COUPLING_KINDS);
+  if (!kind.ok) return kind;
+  const jointAId = readString(record.value, 'jointAId', path);
+  if (!jointAId.ok) return jointAId;
+  const jointBId = readString(record.value, 'jointBId', path);
+  if (!jointBId.ok) return jointBId;
+  const ratio = readExpression(record.value, 'ratio', path);
+  if (!ratio.ok) return ratio;
+  const phaseDeg = readExpression(record.value, 'phaseDeg', path);
+  if (!phaseDeg.ok) return phaseDeg;
+  const referenceAngleA = readNumber(record.value, 'referenceAngleA', path);
+  if (!referenceAngleA.ok) return referenceAngleA;
+  const suppressed = readBoolean(record.value, 'suppressed', path);
+  if (!suppressed.ok) return suppressed;
+  return { ok: true, value: { id: id.value, kind: kind.value, jointAId: jointAId.value,
+    jointBId: jointBId.value, ratio: ratio.value, phaseDeg: phaseDeg.value,
+    referenceAngleA: referenceAngleA.value, suppressed: suppressed.value } };
+}
+
+const CAM_COUPLING_KINDS = ['cam'] as const;
+
+function readCamCoupling(value: unknown, path: string): Checked<MechanismCamCoupling> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) return id;
+  const kind = readLiteral(record.value, 'kind', path, CAM_COUPLING_KINDS);
+  if (!kind.ok) return kind;
+  const camJointId = readString(record.value, 'camJointId', path);
+  if (!camJointId.ok) return camJointId;
+  const followerJointId = readString(record.value, 'followerJointId', path);
+  if (!followerJointId.ok) return followerJointId;
+  const discRadiusMm = readExpression(record.value, 'discRadiusMm', path);
+  if (!discRadiusMm.ok) return discRadiusMm;
+  const eccentricityMm = readExpression(record.value, 'eccentricityMm', path);
+  if (!eccentricityMm.ok) return eccentricityMm;
+  const rollerRadiusMm = readExpression(record.value, 'rollerRadiusMm', path);
+  if (!rollerRadiusMm.ok) return rollerRadiusMm;
+  const phaseDeg = readExpression(record.value, 'phaseDeg', path);
+  if (!phaseDeg.ok) return phaseDeg;
+  const referenceAngleCam = readNumber(record.value, 'referenceAngleCam', path);
+  if (!referenceAngleCam.ok) return referenceAngleCam;
+  const suppressed = readBoolean(record.value, 'suppressed', path);
+  if (!suppressed.ok) return suppressed;
+  return { ok: true, value: { id: id.value, kind: kind.value, camJointId: camJointId.value,
+    followerJointId: followerJointId.value, discRadiusMm: discRadiusMm.value, eccentricityMm: eccentricityMm.value,
+    rollerRadiusMm: rollerRadiusMm.value, phaseDeg: phaseDeg.value, referenceAngleCam: referenceAngleCam.value,
+    suppressed: suppressed.value } };
 }
 
 function readJoint(value: unknown, path: string): Checked<Joint> {
@@ -941,6 +1064,32 @@ function readBomSettings(
   };
 }
 
+/** 結び付けの先の鍵(部品の ref と基準点 id)。先が抱き込んだ部品でなければ null。 */
+function contextTargetKey(document: AssemblyDocument, link: ContextReferenceLink): string | null {
+  const component = document.components.find((candidate) => candidate.id === link.targetComponentId);
+  return component === undefined || component.source.kind !== 'part' ? null
+    : JSON.stringify([component.source.partRef, link.targetReferenceId]);
+}
+
+function readContextReference(value: unknown, path: string): Checked<ContextReferenceLink> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  const id = readString(record.value, 'id', path);
+  if (!id.ok) return id;
+  const targetComponentId = readString(record.value, 'targetComponentId', path);
+  if (!targetComponentId.ok) return targetComponentId;
+  const targetReferenceId = readString(record.value, 'targetReferenceId', path);
+  if (!targetReferenceId.ok) return targetReferenceId;
+  const sourceComponentId = readString(record.value, 'sourceComponentId', path);
+  if (!sourceComponentId.ok) return sourceComponentId;
+  const found = readValue(record.value, 'source', path);
+  if (!found.ok) return found;
+  const source = readSubShapeRef(found.value, joinPath(path, 'source'));
+  if (!source.ok) return source;
+  return { ok: true, value: { id: id.value, targetComponentId: targetComponentId.value,
+    targetReferenceId: targetReferenceId.value, sourceComponentId: sourceComponentId.value, source: source.value } };
+}
+
 function readAssemblyDocumentBody(value: unknown, path: string): Checked<AssemblyDocument> {
   const record = checkRecord(value, path);
   if (!record.ok) {
@@ -970,6 +1119,36 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
   if (!joints.ok) {
     return joints;
   }
+  const occurrenceConnections: Checked<readonly JointOccurrenceConnection[] | undefined> = Object.hasOwn(record.value, 'jointOccurrenceConnections')
+    ? readJointOccurrenceConnections(record.value['jointOccurrenceConnections'], components.value,
+      joinPath(path, 'jointOccurrenceConnections'))
+    : { ok: true, value: undefined };
+  if (!occurrenceConnections.ok) return occurrenceConnections;
+  const boltedJoints: Checked<readonly import('@pointercad/model').BoltedJointRecord[] | undefined> =
+    Object.hasOwn(record.value, 'boltedJoints')
+      ? readBoltedJointRecords(record.value['boltedJoints'], components.value, joinPath(path, 'boltedJoints'))
+      : { ok: true, value: undefined };
+  if (!boltedJoints.ok) return boltedJoints;
+  const mechanismCouplings: Checked<readonly MechanismGearCoupling[] | undefined> =
+    record.value['mechanismCouplings'] === undefined ? { ok: true, value: undefined }
+      : readList(record.value, 'mechanismCouplings', path, readMechanismCoupling);
+  if (!mechanismCouplings.ok) return mechanismCouplings;
+  const camCouplings: Checked<readonly MechanismCamCoupling[] | undefined> =
+    record.value['camCouplings'] === undefined ? { ok: true, value: undefined }
+      : readList(record.value, 'camCouplings', path, readCamCoupling);
+  if (!camCouplings.ok) return camCouplings;
+  const crossLevelGearCouplings: Checked<readonly CrossLevelGearCouplingDefinition[] | undefined> =
+    record.value['crossLevelGearCouplings'] === undefined ? { ok: true, value: undefined }
+      : readList(record.value, 'crossLevelGearCouplings', path, readCrossLevelGearCoupling);
+  if (!crossLevelGearCouplings.ok) return crossLevelGearCouplings;
+  const crossLevelCamCouplings: Checked<readonly CrossLevelCamCouplingDefinition[] | undefined> =
+    record.value['crossLevelCamCouplings'] === undefined ? { ok: true, value: undefined }
+      : readList(record.value, 'crossLevelCamCouplings', path, readCrossLevelCamCoupling);
+  if (!crossLevelCamCouplings.ok) return crossLevelCamCouplings;
+  const contextReferences: Checked<readonly ContextReferenceLink[] | undefined> =
+    record.value['contextReferences'] === undefined ? { ok: true, value: undefined }
+      : readList(record.value, 'contextReferences', path, readContextReference);
+  if (!contextReferences.ok) return contextReferences;
   const presentation = readList(record.value, 'presentation', path, readPresentationStep);
   if (!presentation.ok) {
     return presentation;
@@ -987,23 +1166,87 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
   if (!bom.ok) {
     return bom;
   }
+  const beamAnalysisInputs = readOptionalBeamAnalysisInputs(record.value, id.value, 'assembly', path);
+  if (!beamAnalysisInputs.ok) return beamAnalysisInputs;
   const namedViews = readNamedViews(record.value, path);
   if (!namedViews.ok) return namedViews;
-  return {
-    ok: true,
-    value: {
+  const document: AssemblyDocument = {
       id: id.value,
       name: name.value,
       schemaVersion: schemaVersion.value,
+      ...(occurrenceConnections.value === undefined ? {} : { jointOccurrenceConnections: occurrenceConnections.value }),
+      ...(boltedJoints.value === undefined ? {} : { boltedJoints: boltedJoints.value }),
+      ...(beamAnalysisInputs.value === undefined ? {} : { beamAnalysisInputs: beamAnalysisInputs.value }),
       components: components.value,
       mates: mates.value,
       joints: joints.value,
+      ...(mechanismCouplings.value === undefined ? {} : { mechanismCouplings: mechanismCouplings.value }),
+      ...(camCouplings.value === undefined ? {} : { camCouplings: camCouplings.value }),
+      ...(crossLevelGearCouplings.value === undefined ? {} : { crossLevelGearCouplings: crossLevelGearCouplings.value }),
+      ...(crossLevelCamCouplings.value === undefined ? {} : { crossLevelCamCouplings: crossLevelCamCouplings.value }),
+      ...(contextReferences.value === undefined ? {} : { contextReferences: contextReferences.value }),
       presentation: presentation.value,
       parameters: parameters.value,
       bom: bom.value,
       namedViews: namedViews.value,
-    },
   };
+  const evaluated = evaluateMechanismCouplings(document);
+  if (!evaluated.ok) return fieldProblem(joinPath(path, 'mechanismCouplings'), 'type');
+  const ids = new Set<string>(), pairs = new Set<string>();
+  for (const c of evaluated.couplings) {
+    const couplingPath = joinPath(path, 'mechanismCouplings');
+    if (c.id.length === 0 || ids.has(c.id) || c.ratio === 0 || !Number.isFinite(1 / c.ratio)
+        || !Number.isFinite(-c.phaseDeg / c.ratio)
+        || !Number.isFinite(c.ratio * c.referenceAngleA + c.phaseDeg))
+      return fieldProblem(couplingPath, 'type');
+    ids.add(c.id);
+    const a = document.joints.filter(j => j.id === c.jointAId);
+    const b = document.joints.filter(j => j.id === c.jointBId);
+    const pair = JSON.stringify([c.jointAId, c.jointBId].sort());
+    if (c.jointAId === c.jointBId || a.length !== 1 || b.length !== 1
+        || a[0]?.kind !== 'revolute' || b[0]?.kind !== 'revolute'
+        || (!c.suppressed && (a[0]?.suppressed === true || b[0]?.suppressed === true || pairs.has(pair))))
+      return fieldProblem(couplingPath, 'type');
+    if (!c.suppressed) pairs.add(pair);
+  }
+  if (mechanismCouplingLoopFailure(evaluated.couplings) !== null)
+    return fieldProblem(joinPath(path, 'mechanismCouplings'), 'type');
+  // Cam relations: structural admission only (frames/in-line geometry are checked by the solver, which keeps the
+  // original scene on refusal). One cam per follower; a follower may not also be an active gear joint.
+  const cams = evaluateCamCouplings(document), camPath = joinPath(path, 'camCouplings');
+  if (!cams.ok) return fieldProblem(camPath, 'type');
+  const gearJointIds = new Set(evaluated.couplings.filter(c => !c.suppressed).flatMap(c => [c.jointAId, c.jointBId]));
+  const followers = new Set<string>();
+  for (const c of cams.couplings) {
+    const cam = document.joints.filter(j => j.id === c.camJointId);
+    const follower = document.joints.filter(j => j.id === c.followerJointId);
+    if (c.id.length === 0 || ids.has(c.id) || camDimensionFailure(c) !== null || c.camJointId === c.followerJointId
+        || cam.length !== 1 || follower.length !== 1 || cam[0]?.kind !== 'revolute' || follower[0]?.kind !== 'slider'
+        || (!c.suppressed && (cam[0]?.suppressed === true || follower[0]?.suppressed === true
+          || followers.has(c.followerJointId) || gearJointIds.has(c.followerJointId))))
+      return fieldProblem(camPath, 'type');
+    ids.add(c.id);
+    if (!c.suppressed) followers.add(c.followerJointId);
+  }
+  // Cross-level gears: what this document can check alone; the subassembly tree is checked by the .pcada reader.
+  if (crossLevelGearDocumentFailure(document) !== null) return fieldProblem(joinPath(path, 'crossLevelGearCouplings'), 'type');
+  // Cross-level cams likewise (together with the gears: one relation per placement and per parent joint).
+  if (crossLevelCamDocumentFailure(document) !== null) return fieldProblem(joinPath(path, 'crossLevelCamCouplings'), 'type');
+  const contextIds = new Set<string>(), contextTargets = new Set<string>();
+  for (const link of document.contextReferences ?? []) {
+    const target = contextTargetKey(document, link);
+    if (link.id.length === 0 || contextIds.has(link.id) || target === null || contextTargets.has(target)
+        || link.targetComponentId === link.sourceComponentId
+        || !document.components.some((component) => component.id === link.sourceComponentId))
+      return fieldProblem(joinPath(path, 'contextReferences'), 'type');
+    contextIds.add(link.id);
+    contextTargets.add(target);
+  }
+  // 部品の単位の循環(同じ部品の別の配置を通るものも)は、確定の時と同じ判定で開かずに断る。形は計算しない。
+  if (contextReferencesHaveCycle(document, document.contextReferences ?? [])) {
+    return fieldProblem(joinPath(path, 'contextReferences'), 'type');
+  }
+  return { ok: true, value: document };
 }
 
 /** 抱き込んだ部品 1 つの素性。5 欄すべてを厳密に検査する。 */

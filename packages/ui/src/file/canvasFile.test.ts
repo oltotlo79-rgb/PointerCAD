@@ -226,11 +226,11 @@ describe('画像を描ける形へ復号する(§0.a-0.46)', () => {
 });
 
 describe('読み込んだ画像を下絵 1 枚にする(§0.a-0.45)', () => {
-  it('幅 100mm と画像の縦横比で置き、名前はファイル名、id と画像の鍵は同じ', () => {
-    const canvas = newSketchCanvas([], 'xy', '間取り.png', { width: 800, height: 600 });
+  it('幅 100mm と画像の縦横比で置き、名前と明示した画像の鍵を保つ', () => {
+    const canvas = newSketchCanvas([], 'xy', '間取り.png', { width: 800, height: 600 }, 'canvas-image-original');
     expect(canvas.id).toBe('canvas-1');
     // ZIP のエントリ `canvases/<imageId>.png` と 1 対 1 にする。
-    expect(canvas.imageId).toBe('canvas-1');
+    expect(canvas.imageId).toBe('canvas-image-original');
     expect(canvas.name).toBe('間取り.png');
     expect(canvas.plane).toBe('xy');
     expect(canvas.width.value).toBe(DEFAULT_CANVAS_WIDTH_MM);
@@ -242,14 +242,14 @@ describe('読み込んだ画像を下絵 1 枚にする(§0.a-0.45)', () => {
   });
 
   it('id は既存の下絵から続けて採番する', () => {
-    const first = newSketchCanvas([], 'xy', 'a.png', { width: 10, height: 10 });
-    const second = newSketchCanvas([first], 'xz', 'b.png', { width: 10, height: 10 });
+    const first = newSketchCanvas([], 'xy', 'a.png', { width: 10, height: 10 }, 'canvas-1');
+    const second = newSketchCanvas([first], 'xz', 'b.png', { width: 10, height: 10 }, 'canvas-image-second');
     expect(second.id).toBe('canvas-2');
     expect(second.plane).toBe('xz');
   });
 
   it('画素の幅が 0(壊れた画像)でも高さを 0 にしない(掴めなくなるため)', () => {
-    const canvas = newSketchCanvas([], 'xy', 'こわれ.png', { width: 0, height: 0 });
+    const canvas = newSketchCanvas([], 'xy', 'こわれ.png', { width: 0, height: 0 }, 'canvas-1');
     expect(canvas.height.value).toBe(DEFAULT_CANVAS_WIDTH_MM);
   });
 });

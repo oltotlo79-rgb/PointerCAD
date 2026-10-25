@@ -46,7 +46,12 @@ function setHoleEntryField(
   return null;
 }
 
-export function setHoleField(feature: HoleFeature, key: SolidFieldKey, value: ExpressionValue): SolidFeature {
+export function setHoleField(
+  feature: HoleFeature,
+  key: SolidFieldKey,
+  value: ExpressionValue,
+  locationIndex?: number,
+): SolidFeature {
   switch (key) {
     case 'diameter':
       return { ...feature, diameter: value };
@@ -55,9 +60,12 @@ export function setHoleField(feature: HoleFeature, key: SolidFieldKey, value: Ex
         ? { ...feature, depth: { kind: 'blind', depth: value } }
         : feature;
     case 'tiltAngle':
-      return { ...feature, tiltAngle: value };
+      return feature.cylindrical === undefined ? { ...feature, tiltAngle: value } : feature;
     case 'tiltAzimuth':
-      return { ...feature, tiltAzimuth: value };
+      return feature.cylindrical === undefined ? { ...feature, tiltAzimuth: value } : feature;
+    case 'holeCylinderHeight':
+    case 'holeCylinderAngle':
+      return setCylindricalHoleField(feature, key, value, locationIndex);
     default: {
       const entry = setHoleEntryField(holeEntryOf(feature), key, value);
       return entry === null ? feature : { ...feature, entry };
@@ -65,10 +73,33 @@ export function setHoleField(feature: HoleFeature, key: SolidFieldKey, value: Ex
   }
 }
 
+/**
+ * 円筒の側面の穴(EX05)の指定位置だけを書き戻す。位置の指定を省略できるのは 1 件のときだけ。
+ */
+function setCylindricalHoleField(
+  feature: HoleFeature | ThreadHoleFeature,
+  key: 'holeCylinderHeight' | 'holeCylinderAngle',
+  value: ExpressionValue,
+  locationIndex?: number,
+): SolidFeature {
+  const placement = feature.cylindrical;
+  const index = locationIndex ?? (placement?.locations.length === 1 ? 0 : -1);
+  const location = Number.isInteger(index) ? placement?.locations[index] : undefined;
+  if (placement === undefined || location === undefined || !Number.isFinite(value.value)) {
+    return feature;
+  }
+  const next = key === 'holeCylinderHeight' ? { ...location, height: value } : { ...location, angle: value };
+  return {
+    ...feature,
+    cylindrical: { ...placement, locations: placement.locations.map((item, i) => i === index ? next : item) },
+  };
+}
+
 export function setThreadHoleField(
   feature: ThreadHoleFeature,
   key: SolidFieldKey,
   value: ExpressionValue,
+  locationIndex?: number,
 ): SolidFeature {
   switch (key) {
     case 'pitch':
@@ -82,9 +113,12 @@ export function setThreadHoleField(
         ? { ...feature, depth: { kind: 'blind', depth: value } }
         : feature;
     case 'tiltAngle':
-      return { ...feature, tiltAngle: value };
+      return feature.cylindrical === undefined ? { ...feature, tiltAngle: value } : feature;
     case 'tiltAzimuth':
-      return { ...feature, tiltAzimuth: value };
+      return feature.cylindrical === undefined ? { ...feature, tiltAzimuth: value } : feature;
+    case 'holeCylinderHeight':
+    case 'holeCylinderAngle':
+      return setCylindricalHoleField(feature, key, value, locationIndex);
     default: {
       const entry = setHoleEntryField(holeEntryOf(feature), key, value);
       return entry === null ? feature : { ...feature, entry };
@@ -166,6 +200,9 @@ export function setThreadRepresentation(
  */
 export function setHoleEntryKind(feature: SolidFeature, kind: HoleEntry['kind']): SolidFeature {
   if (feature.kind !== 'hole' && feature.kind !== 'threadHole') {
+    return feature;
+  }
+  if (feature.cylindrical !== undefined && kind === 'countersink') {
     return feature;
   }
   if (holeEntryOf(feature).kind === kind) {

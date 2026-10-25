@@ -10,7 +10,7 @@ import { createAllocations } from './allocations.js';
 import type { BooleanResult } from './booleanOp.js';
 import { booleanOp } from './booleanOp.js';
 import { makePlanarFace } from './makePlanarFace.js';
-import { matchFace } from './matchSubShape.js';
+import { resolveFaceReference } from './matchSubShape.js';
 import { measureArea, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
@@ -251,19 +251,19 @@ function resolvePlanarFaceIndex(
     // 利用者への直し方は同じ(面を選び直す)なので言い分けない。
     throw new Error(MISSING_FACE_MESSAGE);
   }
-  const match = matchFace(tables.faces, query, scale);
-  if (match === null) {
+  const match = resolveFaceReference(tables.faces, query, scale, tables.origins);
+  if (match.status !== 'matched') {
     throw new Error(MISSING_FACE_MESSAGE);
   }
   // 一覧は通し番号の順で来る約束だが、番号で引き直して並びに依存しないようにする。
-  const info = tables.faces.find((candidate) => candidate.index === match.index);
+  const info = tables.faces.find((candidate) => candidate.index === match.match.index);
   if (info === undefined) {
     throw new Error(MISSING_FACE_MESSAGE);
   }
   if (info.surfaceKind !== 'plane') {
     throw new Error(NOT_PLANAR_MESSAGE);
   }
-  return match.index;
+  return match.match.index;
 }
 
 /**

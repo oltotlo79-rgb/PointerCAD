@@ -1,0 +1,128 @@
+{
+  "schema": "pcad-iml-source-correspondence/1",
+  "observedOn": "2026-10-24",
+  "sourceArchive": {
+    "file": "sources/051-oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+    "sha256": "4688f06a4b0235dcb30b79e0ca086df5b271cd3206ab6dbce869ebe6b708b6c5"
+  },
+  "upstream": {
+    "url": "https://math.nist.gov/pub/pozo/src/iml.shar",
+    "sha256": "bc105c65b1baf77710738ce36513a4ade113f76c3ee62dd02e42fcaa596cada8",
+    "bytes": 23259,
+    "capturedAt": "2026-10-24T10:06:38.168938+09:00",
+    "rawHttpReceiptSha256": "20eaa01c5c9c93228f02c1ba7b210f5a3d3aebe81c43ae94d74131a8567d7b16",
+    "execution": false
+  },
+  "comparisonPolicy": "All eight references must come from the same pinned SHAR byte stream. Individual header web pages are not interchangeable distribution members.",
+  "headers": [
+    {
+      "member": "oofem-oofem-214b161/iml/bicg.h",
+      "bytes": 2037,
+      "sha256": "f133e11b927009a9c518e243a05a486fff1761138e003bd343a456e5d29b4a80",
+      "referenceMember": "bicg.h",
+      "referenceBytes": 2037,
+      "referenceSha256": "f133e11b927009a9c518e243a05a486fff1761138e003bd343a456e5d29b4a80",
+      "byteIdentical": true
+    },
+    {
+      "member": "oofem-oofem-214b161/iml/bicgstab.h",
+      "bytes": 2227,
+      "sha256": "d0f99cbeb944b487785cbdb197da2d714531398bde0e58bdee33e9ff83b0b56e",
+      "referenceMember": "bicgstab.h",
+      "referenceBytes": 2227,
+      "referenceSha256": "d0f99cbeb944b487785cbdb197da2d714531398bde0e58bdee33e9ff83b0b56e",
+      "byteIdentical": true
+    },
+    {
+      "member": "oofem-oofem-214b161/iml/cg.h",
+      "bytes": 1711,
+      "sha256": "bd4d7e5d0a72c1576744f4c50edff8378469c8e87259a76d211b4aad3dd5ca16",
+      "referenceMember": "cg.h",
+      "referenceBytes": 1711,
+      "referenceSha256": "bd4d7e5d0a72c1576744f4c50edff8378469c8e87259a76d211b4aad3dd5ca16",
+      "byteIdentical": true
+    },
+    {
+      "member": "oofem-oofem-214b161/iml/cgs.h",
+      "bytes": 1978,
+      "sha256": "eb8dad3fd62a32250e276c61a6ad0215694729c6f4cb6a856086d50ec0e9882c",
+      "referenceMember": "cgs.h",
+      "referenceBytes": 1978,
+      "referenceSha256": "eb8dad3fd62a32250e276c61a6ad0215694729c6f4cb6a856086d50ec0e9882c",
+      "byteIdentical": true
+    },
+    {
+      "member": "oofem-oofem-214b161/iml/cheby.h",
+      "bytes": 2092,
+      "sha256": "a3391503884e28a58191e015dc1ae962e4c2b280c2f323d3eb0399f03ecd68e9",
+      "referenceMember": "cheby.h",
+      "referenceBytes": 2092,
+      "referenceSha256": "a3391503884e28a58191e015dc1ae962e4c2b280c2f323d3eb0399f03ecd68e9",
+      "byteIdentical": true
+    },
+    {
+      "member": "oofem-oofem-214b161/iml/gmres.h",
+      "bytes": 3324,
+      "sha256": "fe0afc0a721fce574efb3de052c687fe9556dad8722d96c3bc6d11634838f02c",
+      "referenceMember": "gmres.h",
+      "referenceBytes": 3400,
+      "referenceSha256": "61b5e7315379a74fb9738abd2150f89dc4924914472598b365521f0a544941e4",
+      "byteIdentical": false
+    },
+    {
+      "member": "oofem-oofem-214b161/iml/ir.h",
+      "bytes": 1379,
+      "sha256": "6402748d2780f83ca4f59125b615b44eb11c1f66c8b938ef6a5f10ba022d0d91",
+      "referenceMember": "ir.h",
+      "referenceBytes": 1379,
+      "referenceSha256": "6402748d2780f83ca4f59125b615b44eb11c1f66c8b938ef6a5f10ba022d0d91",
+      "byteIdentical": true
+    },
+    {
+      "member": "oofem-oofem-214b161/iml/qmr.h",
+      "bytes": 4089,
+      "sha256": "4f14d4e4e469c7b69ed7ced5a7e2f2dd5d56bff6f89dea6d67d0a055a54ee34d",
+      "referenceMember": "qmr.h",
+      "referenceBytes": 4089,
+      "referenceSha256": "4f14d4e4e469c7b69ed7ced5a7e2f2dd5d56bff6f89dea6d67d0a055a54ee34d",
+      "byteIdentical": true
+    }
+  ],
+  "gmres": {
+    "completeDifferenceVerified": true,
+    "changes": [
+      "Relocate math include and rotation helper definitions before their use.",
+      "Remove local absolute-value template and replace its two calls with fabs."
+    ],
+    "restartUpdateExpressionUnchanged": "Update(x, m - 1, H, s, v);",
+    "diffSha256": "e3b444cf609b891f1bfc8b3f1316451146e9f0e2aad17bc0019e46ff4b376d1d",
+    "historicalModificationDate": null
+  },
+  "permission": {
+    "provider": "NIST",
+    "indexUrl": "https://math.nist.gov/iml%2B%2B/",
+    "disclaimerUrl": "https://www.nist.gov/itl/math/software#software-disclaimer",
+    "notice": "notices/bf488b13430c036ae911f018798f4a49a28165ee7f2f487371406f11c3659b7f.txt",
+    "scope": "Specific upstream IML distribution: seven exact original members and one fully accounted derivative. NIST text expressly permits source redistribution and modifications subject to retaining its full notice and attribution/modification information.",
+    "oofemPackageStatements": [
+      {
+        "member": "oofem-oofem-214b161/README",
+        "sha256": "dd23f5301c956f398f555840850a62f4355114d0057e863a80e110a5390eaf09"
+      },
+      {
+        "member": "oofem-oofem-214b161/README.md",
+        "sha256": "7e24b017be8decdaab871c8eea204d086eb5bc3f20b389fcec49709c61c1ff94"
+      },
+      {
+        "member": "oofem-oofem-214b161/LICENSE",
+        "sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331"
+      }
+    ],
+    "packageStatementContext": "README.md grants LGPL-2.1-or-later for OOFEM and attributes IML to Roldan Pozo; LICENSE is LGPL2.1. The old README also retains GPL2-or-later wording. Preserve all; no blanket reassignment of NIST code or invented unique modification author/date.",
+    "separateRightsHolderAuthorizationProvenNecessary": false,
+    "legalClearance": false
+  },
+  "noticeDate": "2026-10-24",
+  "noticeDateMeaning": "Date of this correspondence/redistribution notice, not an invented date of the historical GMRES modifications.",
+  "runtimeScope": "IML OFF in the retained recorded build; source headers remain distributed. This record neither removes them nor asserts a new compile/link result."
+}

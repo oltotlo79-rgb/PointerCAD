@@ -1,4 +1,4 @@
-import { sheetFlatReferenceIssue, canonicalDrawingSourceText } from '@pointercad/model';
+import { sheetFlatReferenceIssue, canonicalDrawingSourceText, crossLevelGearTreeFailure, crossLevelCamTreeFailure } from '@pointercad/model';
 /**
  * `.pcad` / `.pcada` の ZIP コンテナの読み書き
  * (計画書 docs/plans/P2-ソリッド基礎.md タスク15、P7 §2.2 タスク3、要件§8、FR-801)。
@@ -57,6 +57,7 @@ import {
   type PartLibrary,
 } from '@pointercad/model';
 import { strFromU8, strToU8, zipSync, type ZipOptions, type Zippable } from 'fflate';
+import { hasSteppedZipEntry, zipEntriesAsync, zipEntriesSync, type ZipStepsControl } from './zipSteps.js';
 
 import {
   IO_LIMITS,
@@ -162,6 +163,8 @@ function zipEntry(bytes: Uint8Array, level: 0 | 6): PcadZipEntry {
  * `zipSync` を呼ぶのはここだけにする(`zipPasses.test.ts` が回数と置き場所を照合する)。
  */
 export function zipPcadEntries(entries: ReadonlyMap<string, PcadZipEntry>): Uint8Array {
+  // 1MiB を超える項目は保存 Worker と同じ区切りで圧縮する(`zipSteps.ts`。取消を1秒以内に効かせる)。
+  if (hasSteppedZipEntry(entries)) return zipEntriesSync(entries);
   const zippable: Zippable = {};
   for (const [name, [bytes, options]] of entries) {
     Object.defineProperty(zippable, name, {
@@ -172,6 +175,16 @@ export function zipPcadEntries(entries: ReadonlyMap<string, PcadZipEntry>): Uint
     });
   }
   return zipSync(zippable);
+}
+
+/**
+ * 保存 Worker の圧縮。`zipPcadEntries` と同じバイト列を作り、1MiB を超える項目は 1MiB ごとに
+ * 処理を返す(Worker の終了要求と取消をその間に受け付ける。レビュー R06)。
+ */
+export async function zipPcadEntriesAsync(entries: ReadonlyMap<string, PcadZipEntry>,
+  control: ZipStepsControl = {}): Promise<Uint8Array> {
+  control.signal?.throwIfAborted();
+  return hasSteppedZipEntry(entries) ? zipEntriesAsync(entries, control) : zipPcadEntries(entries);
 }
 
 /**
@@ -567,7 +580,7 @@ export function writePcadFile(
 }
 
 /** `writePcadFile` の圧縮前の項目(並びと圧縮の指定は `writePcadFile` の説明のとおり)。 */
-function pcadEntries(document: PartDocument, options: WritePcadFileOptions): PcadZipEntries {
+export function pcadEntries(document: PartDocument, options: WritePcadFileOptions): PcadZipEntries {
   const text = serializeDocument(document, {
     savedAt: options.savedAt,
     kind: options.kind,
@@ -806,8 +819,12 @@ function archiveFailureMessage(error: ArchiveReadError): string {
     : NOT_ZIP_MESSAGE;
 }
 
-/** 取り出し済みの項目から部品文書と添付を読む(`readPcadFile` の ZIP を開いた後の段)。 */
-function readPcadEntries(entries: ReadonlyMap<string, Uint8Array>): ReadPcadFileResult {
+/**
+ * Read document and attachments after bounded readArchive validation.
+ * This parses entries only: callers must validate ZIP names, CRC and resource
+ * limits with readArchive before calling. The envelope kind is preserved.
+ */
+export function readPcadEntries(entries: ReadonlyMap<string, Uint8Array>): ReadPcadFileResult {
   const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentEntry === null) {
     return fail('missingDocument', MISSING_DOCUMENT_MESSAGE);
@@ -1275,6 +1292,13 @@ async function readPcadaEntries(
   const subAssemblyProblem = detectSubAssemblyProblem(parsed.document, collected.assemblies);
   if (subAssemblyProblem !== null) {
     return failPcada('invalidField', subAssemblyProblem.message);
+  }
+  // Cross-level gears and cams point into the embedded subassemblies, so they are checked once all of them are read.
+  for (const document of [parsed.document, ...collected.assemblies.values()]) {
+    const crossLevel = crossLevelGearTreeFailure(document, collected.assemblies) ?? crossLevelCamTreeFailure(document, collected.assemblies);
+    if (crossLevel !== null) {
+      return failPcada('invalidField', `段をまたぐ連動 ${crossLevel.couplingId} の参照が組の中で成り立ちません(${crossLevel.code})。`);
+    }
   }
   const missing = findMissingPart(parsed.document, collected.parts, collected.assemblies);
   if (missing !== null) {

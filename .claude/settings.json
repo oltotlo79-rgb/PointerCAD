@@ -1,4 +1,7 @@
 {
+  "env": {
+    "GIT_OPTIONAL_LOCKS": "0"
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -110,6 +113,17 @@
             "type": "command",
             "command": "python",
             "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/heredoc_backslash_guard.py"],
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/git_optional_locks_guard.py"],
             "timeout": 5
           }
         ]

@@ -1,7 +1,10 @@
+import type { SolidBody } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
 import { featureIdOf } from '../sketch/featureSummary.js';
 import type { NumericInputToolId } from '../sketch/numericInput.js';
+import { bodyFor, resetTestStore } from '../store/testing/createTestStore.js';
+import { useAppStore } from '../store/useAppStore.js';
 
 import {
   commonBodyIdOf,
@@ -12,7 +15,9 @@ import {
   keepsSelectionKind,
   selectionKindForTool,
   subShapeElementId,
+  subShapeBodiesOf,
   subShapeRefOf,
+  subShapeFrameOrigin,
   SUB_SHAPE_SEPARATOR,
   type SelectionKind,
   type SubShapeBody,
@@ -168,6 +173,203 @@ describe('部分形状の要素 id の規約(FR-106、§0.a-0.8)', () => {
 });
 
 describe('要素 id から文書へ保存する参照を作る(FR-502、§2.2.2)', () => {
+  it('keeps world-double fingerprints and rejects sparse local metadata', () => {
+    const origin: [number, number, number] = [1e9, 0, 0];
+    const framed: SubShapeBody = {
+      ...BOX, coordinateFrame: { space: 'local', origin, maximumFloat32ErrorMm: 0.001 },
+    };
+    expect(subShapeFrameOrigin(framed)).toEqual(origin);
+    expect(subShapeRefOf([framed], 'extrude-1#vertex:1')).toEqual(subShapeRefOf([BOX], 'extrude-1#vertex:1'));
+    Reflect.deleteProperty(origin, '1');
+    expect(subShapeFrameOrigin(framed)).toBeNull();
+    expect(subShapeRefOf([framed], 'extrude-1#vertex:1')).toBeNull();
+  });
+  const top = { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'extrude-1', role: 'top' } } as const;
+  const front = { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'extrude-1', role: 'front' } } as const;
+  const current: SolidBody = { ...bodyFor('extrude-1'), faces: BOX.faces, edges: BOX.edges, vertices: BOX.vertices,
+    origins: { version: 1, state: 'tracked', bindings: [{ origin: top, state: 'unique', current: { kind: 'face', index: 1 } }] } };
+
+  it('does not create a fresh fingerprint after native proof failure or origin budget exhaustion', () => {
+    for (const reason of ['limit', 'missing-native-map'] as const) {
+      const body: SolidBody = { ...current, origins: { version: 1, state: 'untracked', reason } };
+      expect(subShapeRefOf([body], 'extrude-1#face:0')).toBeNull();
+      expect(subShapeRefOf([body], 'extrude-1#edge:0')).toBeNull();
+    }
+    const imported: SolidBody = { ...current, origins: { version: 1, state: 'untracked', reason: 'imported' } };
+    expect(subShapeRefOf([imported], 'extrude-1#face:0')?.fingerprint.kind).toBe('face');
+  });
+
+  it('creates a fresh fingerprint only for a native-proved unnamed address, excluding every semantic claim', () => {
+    const fallback = { current: { kind: 'face', index: 0 }, reason: 'unsupported-producer' } as const;
+    const allowed: SolidBody = { ...current, origins: { version: 1, state: 'tracked', bindings: [
+      { origin: top, state: 'unique', current: { kind: 'face', index: 1 } },
+    ], fingerprintFallback: [fallback] } };
+    const selected = subShapeRefOf([allowed], 'extrude-1#face:0');
+    expect(selected).toMatchObject({ index: 0, fingerprint: { kind: 'face' } });
+    expect(selected?.origin).toBeUndefined();
+    expect(subShapeRefOf([{ ...allowed, origins: { version: 1, state: 'tracked', bindings: [
+      { origin: top, state: 'unique', current: { kind: 'face', index: 1 } },
+    ], fingerprintFallback: [] } }], 'extrude-1#face:0')).toBeNull();
+    const address = fallback.current;
+    const conflicts: NonNullable<SolidBody['origins']>[] = [
+      { version: 1, state: 'tracked', fingerprintFallback: [fallback], bindings: [
+        { origin: top, state: 'split', candidates: [address, { kind: 'face', index: 1 }] },
+      ] },
+      { version: 1, state: 'tracked', fingerprintFallback: [fallback], bindings: [
+        { origin: top, state: 'merged', current: address, coOrigins: [top, front] },
+      ] },
+      { version: 1, state: 'tracked', fingerprintFallback: [fallback], bindings: [
+        { origin: top, state: 'unique', current: address }, { origin: front, state: 'unique', current: address },
+      ] },
+    ];
+    for (const origins of conflicts) expect(subShapeRefOf([{ ...current, origins }], 'extrude-1#face:0')).toBeNull();
+    expect(subShapeRefOf([allowed], 'extrude-1#face:1')?.origin).toEqual(top);
+  });
+
+  it('現在bodyの同kind/indexの一意な起点だけを保存し、元bodyを変えない', () => {
+    const before = current.origins;
+    const [passed] = subShapeBodiesOf([current]);
+    expect(passed).toBe(current);
+    expect(subShapeRefOf([passed], 'extrude-1#face:1')).toMatchObject({ bodyFeatureId: 'extrude-1', index: 1,
+      origin: top, fingerprint: { kind: 'face', area: 62.5 } });
+    expect(current.origins).toBe(before);
+    expect(subShapeRefOf([passed], 'extrude-1#face:0')).toBeNull();
+  });
+
+  it('閉じた円筒8 roleの現DTOからface/edge/vertexの意味起点と独立指紋を保存する', () => {
+    const featureId = 'cylinder-ui';
+    const face = (role: 'side' | 'start' | 'end') => ({
+      version: 1 as const, shapeKind: 'face' as const,
+      identity: { kind: 'cylinder-face' as const, featureId, role },
+    });
+    const edge = (role: 'start-ring' | 'end-ring' | 'seam') => ({
+      version: 1 as const, shapeKind: 'edge' as const,
+      identity: { kind: 'cylinder-edge' as const, featureId, role },
+    });
+    const vertex = (role: 'seam-start' | 'seam-end') => ({
+      version: 1 as const, shapeKind: 'vertex' as const,
+      identity: { kind: 'cylinder-vertex' as const, featureId, role },
+    });
+    const cylinder: SolidBody = {
+      ...bodyFor(featureId), volume: 500 * Math.PI,
+      faces: [
+        { index: 0, surfaceKind: 'plane', area: 25 * Math.PI, centroid: [0, 0, 0],
+          axis: [0, 0, -1], radius: null, triangleOffset: 0, triangleCount: 2 },
+        { index: 1, surfaceKind: 'plane', area: 25 * Math.PI, centroid: [0, 0, 20],
+          axis: [0, 0, 1], radius: null, triangleOffset: 2, triangleCount: 2 },
+        { index: 2, surfaceKind: 'cylinder', area: 200 * Math.PI, centroid: [0, 0, 10],
+          axis: [0, 0, 1], radius: 5, triangleOffset: 4, triangleCount: 4 },
+      ],
+      edges: [
+        { index: 0, curveKind: 'line', length: 20, midpoint: [5, 0, 10],
+          start: [5, 0, 0], end: [5, 0, 20], axis: [0, 0, 1], radius: null,
+          segmentOffset: 2, segmentCount: 1 },
+        { index: 1, curveKind: 'circle', length: 10 * Math.PI, midpoint: [0, 0, 0],
+          start: [5, 0, 0], end: [5, 0, 0], axis: [0, 0, -1], radius: 5,
+          segmentOffset: 0, segmentCount: 1 },
+        { index: 2, curveKind: 'circle', length: 10 * Math.PI, midpoint: [0, 0, 20],
+          start: [5, 0, 20], end: [5, 0, 20], axis: [0, 0, 1], radius: 5,
+          segmentOffset: 1, segmentCount: 1 },
+      ],
+      vertices: [{ index: 0, position: [5, 0, 20] }, { index: 1, position: [5, 0, 0] }],
+      origins: { version: 1, state: 'tracked', bindings: [
+        { origin: face('side'), state: 'unique', current: { kind: 'face', index: 2 } },
+        { origin: face('start'), state: 'unique', current: { kind: 'face', index: 0 } },
+        { origin: face('end'), state: 'unique', current: { kind: 'face', index: 1 } },
+        { origin: edge('start-ring'), state: 'unique', current: { kind: 'edge', index: 1 } },
+        { origin: edge('end-ring'), state: 'unique', current: { kind: 'edge', index: 2 } },
+        { origin: edge('seam'), state: 'unique', current: { kind: 'edge', index: 0 } },
+        { origin: vertex('seam-start'), state: 'unique', current: { kind: 'vertex', index: 1 } },
+        { origin: vertex('seam-end'), state: 'unique', current: { kind: 'vertex', index: 0 } },
+      ] },
+    };
+    const expected = [
+      ['face', 2, 'cylinder-face', 'side', { surfaceKind: 'cylinder', area: 200 * Math.PI,
+        position: [0, 0, 10], axis: [0, 0, 1], radius: 5 }],
+      ['face', 0, 'cylinder-face', 'start', { surfaceKind: 'plane', area: 25 * Math.PI,
+        position: [0, 0, 0], axis: [0, 0, -1], radius: null }],
+      ['face', 1, 'cylinder-face', 'end', { surfaceKind: 'plane', area: 25 * Math.PI,
+        position: [0, 0, 20], axis: [0, 0, 1], radius: null }],
+      ['edge', 1, 'cylinder-edge', 'start-ring', { curveKind: 'circle', length: 10 * Math.PI,
+        position: [0, 0, 0], axis: [0, 0, -1], radius: 5 }],
+      ['edge', 2, 'cylinder-edge', 'end-ring', { curveKind: 'circle', length: 10 * Math.PI,
+        position: [0, 0, 20], axis: [0, 0, 1], radius: 5 }],
+      ['edge', 0, 'cylinder-edge', 'seam', { curveKind: 'line', length: 20,
+        position: [5, 0, 10], axis: [0, 0, 1], radius: null }],
+      ['vertex', 1, 'cylinder-vertex', 'seam-start', { position: [5, 0, 0] }],
+      ['vertex', 0, 'cylinder-vertex', 'seam-end', { position: [5, 0, 20] }],
+    ] as const;
+    for (const [kind, index, identityKind, role, fingerprint] of expected) {
+      const id = subShapeElementId(featureId, kind, index);
+      expect(subShapeRefOf([cylinder], id)).toEqual({ bodyFeatureId: featureId, index,
+        origin: { version: 1, shapeKind: kind, identity: { kind: identityKind, featureId, role } },
+        fingerprint: { kind, ...fingerprint } });
+    }
+    const sideId = subShapeElementId(featureId, 'face', 2);
+    expect(subShapeRefOf([cylinder], subShapeElementId('foreign-body', 'face', 2))).toBeNull();
+    expect(subShapeRefOf([cylinder, { ...cylinder }], sideId)).toBeNull();
+    expect(subShapeRefOf([{ ...cylinder, isValid: false }], sideId)).toBeNull();
+    const sparse: [number, number, number] = [0, 0, 0];
+    Reflect.deleteProperty(sparse, '1');
+    expect(subShapeRefOf([{ ...cylinder, coordinateFrame: {
+      space: 'local', origin: sparse, maximumFloat32ErrorMm: 0.001 } }], sideId)).toBeNull();
+    if (cylinder.origins?.state !== 'tracked') throw new Error('円筒起点がありません');
+    const [claim] = cylinder.origins.bindings;
+    if (claim?.state !== 'unique') throw new Error('円筒side起点が一意でありません');
+    const address = { kind: 'face', index: 2 } as const;
+    const sameAddress = { ...cylinder.origins, bindings: [
+      ...cylinder.origins.bindings, { origin: face('start'), state: 'unique' as const, current: address },
+    ] };
+    expect(subShapeRefOf([{ ...cylinder, origins: sameAddress }], sideId)).toBeNull();
+    for (const changed of [
+      { origin: claim.origin, state: 'split' as const,
+        candidates: [address, { kind: 'face' as const, index: 0 }] as const },
+      { origin: claim.origin, state: 'merged' as const, current: address,
+        coOrigins: [claim.origin, face('start')] as const },
+      { origin: claim.origin, state: 'missing' as const, reason: 'deleted' as const },
+    ]) {
+      const origins = { ...cylinder.origins,
+        bindings: cylinder.origins.bindings.map(item => item === claim ? changed : item) };
+      expect(subShapeRefOf([{ ...cylinder, origins }], sideId)).toBeNull();
+    }
+    const legacy = { ...cylinder, origins: { version: 1, state: 'untracked', reason: 'legacy' } as const };
+    expect(subShapeRefOf([legacy], sideId)).toMatchObject({ bodyFeatureId: featureId, index: 2,
+      fingerprint: { kind: 'face', surfaceKind: 'cylinder', area: 200 * Math.PI, radius: 5 } });
+    expect(subShapeRefOf([legacy], sideId)?.origin).toBeUndefined();
+  });
+
+  it('trackedのsplit/merged/多重claim/消失を裸の番号で救済しない', () => {
+    const address = { kind: 'face', index: 1 } as const;
+    const cases: SolidBody['origins'][] = [
+      { version: 1, state: 'tracked', bindings: [{ origin: top, state: 'split', candidates: [address, { kind: 'face', index: 0 }] }] },
+      { version: 1, state: 'tracked', bindings: [{ origin: top, state: 'merged', current: address, coOrigins: [top, front] }] },
+      { version: 1, state: 'tracked', bindings: [
+        { origin: top, state: 'unique', current: address }, { origin: front, state: 'unique', current: address }] },
+      { version: 1, state: 'tracked', bindings: [{ origin: top, state: 'missing', reason: 'deleted' }] },
+    ];
+    for (const origins of cases) expect(subShapeRefOf([{ ...current, origins }], 'extrude-1#face:1')).toBeNull();
+  });
+
+  it('面の起点だけを持つtracked形(押し出し)の辺・頂点は指紋の参照になり、起点のある種類の未束縛は拒否する', () => {
+    // 押し出しは面の起点だけを作る。辺の起点が無い種類まで拒否すると、辺の加工が選べなくなる。
+    const edge = subShapeRefOf([current], 'extrude-1#edge:0');
+    expect(edge).toMatchObject({ bodyFeatureId: 'extrude-1', index: 0, fingerprint: { kind: 'edge' } });
+    expect(edge?.origin).toBeUndefined();
+    expect(subShapeRefOf([current], 'extrude-1#vertex:0')?.origin).toBeUndefined();
+    expect(subShapeRefOf([current], 'extrude-1#vertex:0')).not.toBeNull();
+    // 面は起点のある種類なので、束縛の無い面は旧指紋へ戻さない。
+    expect(subShapeRefOf([current], 'extrude-1#face:0')).toBeNull();
+  });
+
+  it('無効bodyと同featureId重複を拒否し、旧untrackedとpartial fixtureの指紋は保つ', () => {
+    expect(subShapeRefOf([{ ...current, isValid: false }], 'extrude-1#face:1')).toBeNull();
+    expect(subShapeRefOf([current, { ...current }], 'extrude-1#face:1')).toBeNull();
+    expect(subShapeRefOf([current], 'other#face:1')).toBeNull();
+    const legacy = { ...current, origins: { version: 1, state: 'untracked', reason: 'legacy' } as const };
+    expect(subShapeRefOf([legacy], 'extrude-1#face:1')).toEqual(subShapeRefOf([BOX], 'extrude-1#face:1'));
+    expect(subShapeRefOf([BOX], 'extrude-1#face:1')).not.toBeNull();
+  });
+
   it('面の指紋が一覧の値と一致する', () => {
     expect(subShapeRefOf(BODIES, 'extrude-1#face:1')).toEqual({
       bodyFeatureId: 'extrude-1',
@@ -439,5 +641,43 @@ describe('面を選ぶ 4 つの道具と、押したときの選択の行方(P5 
       expect(pressed.kind, tool).toBe('face');
       expect(pressed.selection, tool).toEqual(['extrude-1#face:0', 'extrude-1#face:1']);
     }
+  });
+});
+
+/* ===== EX-18 W15c: 面を選んでから「縫合」を押しても選んだ面が残る(画面検査 20261025-031354) ===== */
+
+describe('縫合は選ぶ種類を切り替えない(FR-403、EX-18 の曲面の縫合)', () => {
+  /*
+    説明書 solid-combine.md の手順(「選ぶもの」を「面」にして曲面の面を選び、「縫合」を押して
+    Enter)で、押した瞬間に種類が「立体」へ変わって選択が空になり、確定が「つなぐ面を 2 枚以上
+    選んでください。」で断られていた(2026-10-25 の画面検査 20261025-031354)。
+  */
+  const surfaceFaces = ['surface-1#face:0', 'surface-2#face:0', 'surface-3#face:0'] as const;
+
+  it('曲面の面を「面」で選んでから押しても、その面が選ばれたまま残る', () => {
+    expect(keepsSelectionKind('sew')).toBe(true);
+    const pressed = afterPressingTool('face', surfaceFaces, 'sew');
+    expect(pressed.kind).toBe('face');
+    expect(pressed.selection).toEqual(surfaceFaces);
+  });
+
+  it('スケッチの面を「立体」のまま選んでから押す従来の縫合も、選択がそのまま残る', () => {
+    const pressed = afterPressingTool('body', ['face-1', 'face-2'], 'sew');
+    expect(pressed.kind).toBe('body');
+    expect(pressed.selection).toEqual(['face-1', 'face-2']);
+    // 何も切り替えない道具になっただけで、既定の種類(何も選ばずに押した時の出発点)は立体のまま。
+    expect(selectionKindForTool('sew')).toBe('body');
+  });
+
+  it('ストアの setActiveTool でも、面を選んでから縫合を押すと種類と選択が残る', () => {
+    resetTestStore();
+    const store = useAppStore.getState();
+    store.setSelectionKind('face');
+    store.setSelection(surfaceFaces);
+    store.setActiveTool('sew');
+    const after = useAppStore.getState();
+    expect(after.activeTool).toBe('sew');
+    expect(after.selectionKind).toBe('face');
+    expect(after.selection).toEqual(surfaceFaces);
   });
 });

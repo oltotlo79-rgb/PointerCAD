@@ -1,3 +1,6 @@
+import type { PointReference } from '../sketch/types.js';
+import type { HoleCenterAnchor, HolePlacementRole } from '../geometry/subShapeOrigin.js';
+import type { FaceOffsetKeyMaterial } from './directFaceEdit.js';
 /**
  * ソリッドの計算結果を覚えておく形状キャッシュの鍵(計画書 docs/plans/P2-ソリッド基礎.md
  * §2.5、§0.a-0.20)。
@@ -96,7 +99,9 @@ export interface KeySpline {
   readonly mode: 'interpolate' | 'control';
   readonly points: readonly KeyVec3[];
   readonly closed: boolean;
-  readonly degree?: 1;
+  readonly degree?: 1 | 3;
+  /** Smooth function curves only: the explicit knots are part of the shape, so they are part of the key. */
+  readonly knots?: readonly number[];
 }
 
 /** 断面・面を作る曲線(kernel の `CurveSpec` と同じ形)。 */
@@ -112,7 +117,12 @@ export type ExtrudeEndKeyMaterial =
   | { readonly kind: 'symmetric'; readonly forward: number; readonly backward: number }
   | { readonly kind: 'toFace'; readonly distance: number }
   /** 次にぶつかる面まで。長さは相手の形で決まるので、`ExtrudeKeyMaterial.targetKey` が要る。 */
-  | { readonly kind: 'toNext' };
+  | { readonly kind: 'toNext' }
+  /**
+   * 対象を両側へ貫く(EX04)。長さは対象の形で決まるので `ExtrudeKeyMaterial.targetKey` が要る
+   * (`keyExtrudeExtras` が必ず混ぜる。上流で対象が変われば鍵も変わる)。
+   */
+  | { readonly kind: 'throughTarget' };
 
 /**
  * 薄板押し出し(FR-416)の鍵の材料。kernel の `ThinExtrudeSpec` と同じ欄名。
@@ -173,6 +183,7 @@ export interface RevolveKeyMaterial {
 export interface SewKeyMaterial {
   readonly kind: 'sew';
   readonly profiles: readonly (readonly KeyCurve[])[];
+  readonly faces?: readonly { readonly targetKey: string; readonly query: KeySubShape }[];
   readonly tolerance: number;
 }
 
@@ -186,6 +197,8 @@ export interface BooleanKeyMaterial {
   readonly operation: 'union' | 'subtract' | 'intersect';
   readonly targetKey: string;
   readonly toolKey: string;
+  /** 何も削れない差を断るか。立てたときだけ鍵の文字列へ `;requireRemoval=true` を足す。 */
+  readonly requireRemoval?: true;
 }
 
 /**
@@ -239,6 +252,9 @@ export type HoleEntryKeyMaterial =
  * したがって **model は必ずどちらかに揃える**(パターンでない穴は必ず空にする)。
  */
 export interface HoleKeyMaterial {
+  readonly pointPlacementReferences?: readonly { readonly slotId: string; readonly reference: PointReference }[];
+  readonly centerAnchors?: readonly HoleCenterAnchor[];
+  readonly placementRoles?: readonly HolePlacementRole[];
   readonly kind: 'hole';
   /** 対象のボディの鍵。上流が変われば必ず変わる(鍵の連鎖、NFR-PF-3)。 */
   readonly targetKey: string;
@@ -267,6 +283,17 @@ export interface HoleKeyMaterial {
    * (このファイル冒頭の決め 3)。
    */
   readonly entry?: HoleEntryKeyMaterial;
+  /**
+   * 円筒の側面の穴(EX05)。高さ(mm)と角度(**ラジアン**)を位置の順に混ぜる。
+   * **平面の穴では省き、鍵の文字列にも出さない**(今までの穴の鍵を 1 字も変えないため)。
+   */
+  readonly cylindrical?: CylindricalHoleKeyMaterial;
+}
+
+/** 円筒の側面の穴の位置(EX05)の鍵の材料。段の `CylindricalHolePlan` と同じ形。 */
+export interface CylindricalHoleKeyMaterial {
+  readonly kind: 'cylinder-face';
+  readonly locations: readonly { readonly height: number; readonly angle: number }[];
 }
 
 /**
@@ -275,6 +302,9 @@ export interface HoleKeyMaterial {
  * (簡略表示は下穴だけを掘り、実らせんはさらにらせんを差し引く。§0.a-0.15、§0.a-0.16)。
  */
 export interface ThreadKeyMaterial {
+  /** 下穴の面の名前の材料(`HoleKeyMaterial` と同じ)。**欄が無ければ鍵の文字列にも出さない。** */
+  readonly centerAnchors?: readonly HoleCenterAnchor[];
+  readonly placementRoles?: readonly HolePlacementRole[];
   readonly kind: 'thread';
   readonly targetKey: string;
   readonly face: KeySubShape;
@@ -295,6 +325,8 @@ export interface ThreadKeyMaterial {
   readonly transforms: readonly KeyTransform[];
   /** 入口の形(FR-422)。穴とまったく同じ扱いで、省略と `plain` は同じ鍵になる。 */
   readonly entry?: HoleEntryKeyMaterial;
+  /** 円筒の側面のねじ穴(EX05)。穴の `cylindrical` と同じで、平面のねじ穴では省く(鍵の文字列にも出ない)。 */
+  readonly cylindrical?: CylindricalHoleKeyMaterial;
 }
 
 /**
@@ -658,6 +690,19 @@ export interface SurfaceKeyMaterial {
   readonly targetKey: string | null;
 }
 
+export type SurfaceCutBladeKeyMaterial =
+  | { readonly kind: 'plane'; readonly origin: KeyVec3; readonly normal: KeyVec3 }
+  | { readonly kind: 'extrusion'; readonly profile: readonly KeyCurve[];
+      readonly planeOrigin: KeyVec3; readonly planeNormal: KeyVec3 }
+  | { readonly kind: 'surface'; readonly sourceKey: string };
+
+export interface SurfaceCutKeyMaterial {
+  readonly kind: 'surfaceCut';
+  readonly targetKey: string;
+  readonly blade: SurfaceCutBladeKeyMaterial;
+  readonly keepPositive: boolean;
+}
+
 /**
  * 平面による切断(FR-432、§2.9b。分割 FR-424 もこれで満たす、§0.a-0.60)の鍵の材料。
  * **対象を消費する。**
@@ -732,6 +777,8 @@ export type SolidStepKeyMaterial =
   | ThruSectionsKeyMaterial
   // ここから下は P5 の Should 群・Could 群(§2.11、タスク44)。
   | DraftKeyMaterial
+  // 平らな面の移動(EX-18)。材料の形は directFaceEdit.ts が持つ。
+  | FaceOffsetKeyMaterial
   | MirrorKeyMaterial
   | TransformKeyMaterial
   | ScaleKeyMaterial
@@ -741,6 +788,7 @@ export type SolidStepKeyMaterial =
   | ThreadShaftKeyMaterial
   | SurfaceKeyMaterial
   | CutKeyMaterial
+  | SurfaceCutKeyMaterial
   | ShellKeyMaterial
   // 読み込んだ形(FR-802、P6 §2.8、タスク20)。
   | ImportedSolidKeyMaterial;
@@ -759,6 +807,18 @@ export function keyNumber(value: number): string {
   }
   const normalized = value === 0 ? 0 : value;
   return normalized.toFixed(KEY_DECIMALS);
+}
+
+/**
+ * Exact key text for a parameter knot: the shortest round-trip decimal of the double (ASCII digits, '.', '-', 'e',
+ * '+'), so two different knots never share a key. Rounding like `keyNumber` would let close knots of different
+ * curves collide and return another curve's cached shape. `-0` is the same knot as `0`.
+ */
+export function keyExactNumber(value: number): string {
+  if (!Number.isFinite(value)) {
+    return 'x';
+  }
+  return String(value === 0 ? 0 : value);
 }
 
 const FNV_PRIME_32 = 0x01000193;
@@ -812,8 +872,10 @@ function keyCurve(curve: KeyCurve): string {
       );
     case 'spline':
       // 点の並びは順序が意味を持つので、長さも混ぜる(曲線の並びと同じ衝突対策)。
+      // Old uniform and degree-1 keys stay byte-identical; smooth curves add their degree and knots.
       return (
-        `spline(${curve.mode}|${keyBoolean(curve.closed)}${curve.degree === undefined ? '' : '|degree:1'}` +
+        `spline(${curve.mode}|${keyBoolean(curve.closed)}${curve.degree === undefined ? '' : `|degree:${String(curve.degree)}`}` +
+        `${curve.knots === undefined ? '' : `|knots:${String(curve.knots.length)}:[${curve.knots.map(keyExactNumber).join(',')}]`}` +
         `|${String(curve.points.length)}:[${curve.points.map(keyVec3).join(',')}])`
       );
   }
@@ -949,6 +1011,8 @@ function keyExtrudeEnd(end: ExtrudeEndKeyMaterial): string {
       return `toFace(${keyNumber(end.distance)})`;
     case 'toNext':
       return 'toNext';
+    case 'throughTarget':
+      return 'throughTarget';
   }
 }
 
@@ -1016,6 +1080,20 @@ function keyHoleEntry(entry: HoleEntryKeyMaterial): string {
  * 穴・ねじ穴の入口の文字列。**広げない(省略・`plain`)ときは空文字列**を返す。
  * 理由は `keyExtrudeExtras` と同じで、省略と既定を同じ鍵にし、P3 の鍵も壊さないため。
  */
+/**
+ * 円筒の側面の穴の位置(EX05)。省略は空文字(平面の穴の鍵を変えない)。
+ * 個数を前に付けるので、位置の数が違う入力が同じ文字列になることはない。
+ */
+function keyCylindricalHoleExtra(placement: CylindricalHoleKeyMaterial | undefined): string {
+  if (placement === undefined) {
+    return '';
+  }
+  const locations = placement.locations.map(
+    (location) => `(${keyNumber(location.height)},${keyNumber(location.angle)})`,
+  );
+  return `;cylindrical=${placement.kind}:${locations.length}:[${locations.join(',')}]`;
+}
+
 function keyHoleEntryExtra(entry: HoleEntryKeyMaterial | undefined): string {
   if (entry === undefined || entry.kind === 'plain') {
     return '';
@@ -1081,6 +1159,10 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;angle=${keyNumber(material.angle)}}`
       );
     case 'sew':
+      if (material.faces !== undefined) {
+        return `sew{faces=${JSON.stringify(material.faces.map(face => [face.targetKey, face.query]))}`
+          + `;tolerance=${keyNumber(material.tolerance)}}`;
+      }
       return (
         `sew{profiles=${keyCurveListGroup(material.profiles)}` +
         `;tolerance=${keyNumber(material.tolerance)}}`
@@ -1089,25 +1171,33 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
       return (
         `boolean{operation=${material.operation}` +
         `;targetKey=${material.targetKey}` +
-        `;toolKey=${material.toolKey}}`
+        `;toolKey=${material.toolKey}` +
+        (material.requireRemoval === true ? ';requireRemoval=true' : '') +
+        '}'
       );
     case 'hole':
       return (
         `hole{targetKey=${material.targetKey}` +
         `;face=${material.face}` +
         `;centers=${keyVec3List(material.centers)}` +
+        (material.centerAnchors === undefined ? '' : `;centerAnchors=${keyLogicalValue(material.centerAnchors)}`) +
+        (material.placementRoles === undefined ? '' : `;placementRoles=${keyLogicalValue(material.placementRoles)}`) +
+        (material.pointPlacementReferences === undefined ? '' : `;pointPlacementReferences=${keyLogicalValue(material.pointPlacementReferences)}`) +
         `;diameter=${keyNumber(material.diameter)}` +
         `;depth=${keyOptionalNumber(material.depth)}` +
         `;tiltAngle=${keyNumber(material.tiltAngle)}` +
         `;tiltAzimuth=${keyNumber(material.tiltAzimuth)}` +
         `;transforms=${keyTransformList(material.transforms)}` +
-        `${keyHoleEntryExtra(material.entry)}}`
+        `${keyHoleEntryExtra(material.entry)}` +
+        `${keyCylindricalHoleExtra(material.cylindrical)}}`
       );
     case 'thread':
       return (
         `thread{targetKey=${material.targetKey}` +
         `;face=${material.face}` +
         `;centers=${keyVec3List(material.centers)}` +
+        (material.centerAnchors === undefined ? '' : `;centerAnchors=${keyLogicalValue(material.centerAnchors)}`) +
+        (material.placementRoles === undefined ? '' : `;placementRoles=${keyLogicalValue(material.placementRoles)}`) +
         `;drillDiameter=${keyNumber(material.drillDiameter)}` +
         `;majorDiameter=${keyNumber(material.majorDiameter)}` +
         `;pitch=${keyNumber(material.pitch)}` +
@@ -1117,7 +1207,8 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;tiltAngle=${keyNumber(material.tiltAngle)}` +
         `;tiltAzimuth=${keyNumber(material.tiltAzimuth)}` +
         `;transforms=${keyTransformList(material.transforms)}` +
-        `${keyHoleEntryExtra(material.entry)}}`
+        `${keyHoleEntryExtra(material.entry)}` +
+        `${keyCylindricalHoleExtra(material.cylindrical)}}`
       );
     case 'fillet':
       return (
@@ -1172,6 +1263,12 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;neutralFace=${material.neutralFace}` +
         `;angle=${keyNumber(material.angle)}` +
         `;reversed=${keyBoolean(material.reversed)}}`
+      );
+    case 'faceOffset':
+      return (
+        `faceOffset{targetKey=${material.targetKey}` +
+        `;face=${material.face}` +
+        `;offset=${keyNumber(material.offset)}}`
       );
     case 'mirror':
       // 対象を消費しないが targetKey を混ぜる(MirrorKeyMaterial の注釈、NFR-PF-3)。
@@ -1240,6 +1337,15 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `surface{shape=${keySurfaceShape(material.shape)}` +
         `;targetKey=${keyOptionalText(material.targetKey)}}`
       );
+    case 'surfaceCut': {
+      const blade = material.blade;
+      const bladeKey = blade.kind === 'plane'
+        ? `plane(${keyVec3(blade.origin)}|${keyVec3(blade.normal)})`
+        : blade.kind === 'extrusion'
+          ? `extrusion(${keyCurveList(blade.profile)}|${keyVec3(blade.planeOrigin)}|${keyVec3(blade.planeNormal)})`
+          : `surface(${blade.sourceKey})`;
+      return `surfaceCut{targetKey=${material.targetKey};blade=${bladeKey};keepPositive=${keyBoolean(material.keepPositive)}}`;
+    }
     case 'cut':
       return (
         `cut{targetKey=${material.targetKey}` +
@@ -1276,4 +1382,20 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
  */
 export function cacheKeyFor(step: SolidStepKeyMaterial): string {
   return hash64(keyMaterialText(step));
+}
+
+/** Separate semantic producers by current feature and independently saved source IDs. */
+export function originAwareCacheKey(
+  geometricKey: string,
+  featureId: string,
+  sourceIds: readonly string[],
+): string {
+  return hash64(JSON.stringify(['origin-v1', geometricKey, featureId, sourceIds]));
+}
+
+/** Object member order cannot change an authored reference or logical producer's cache meaning. */
+function keyLogicalValue(value: unknown): string {
+  return JSON.stringify(value, (_key: string, item: unknown): unknown =>
+    item !== null && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) : item);
 }

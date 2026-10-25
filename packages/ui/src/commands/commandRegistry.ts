@@ -7,6 +7,9 @@ import { createDefaultPartFileDeps, newPart, openPart, savePart } from '../file/
 import type { SelectionKind } from '../solid/subShapeSelection.js';
 import { activeDocumentKind } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { connectSelectedPoints, selectedPointsConnection } from '../sketch/connectSelectedPoints.js';
+import { faceFromSelectedPoints, selectedPointsFace } from '../sketch/faceSelectedPoints.js';
+import { placePointAtReferencePoint, pointAtReferenceDecision } from '../sketch/pointAtReferencePoint.js';
 import {
   commandDefinition,
   type CommandId,
@@ -32,10 +35,16 @@ export interface CommandRuntimeState {
   readonly strengthOpen: boolean;
   readonly measurementOpen: boolean;
   readonly drawingTool: string;
+  readonly connectPointsReason?: MessageKey | null;
+  readonly faceFromPointsReason?: MessageKey | null;
+  readonly pointAtReferenceReason?: MessageKey | null;
 }
 
 export interface CommandActions {
   readonly toolbarCommand?: (id: string) => ToolbarCommandExecutionResult;
+  readonly connectPoints?: () => ToolbarCommandExecutionResult;
+  readonly faceFromPoints?: () => ToolbarCommandExecutionResult;
+  readonly pointAtReference?: () => ToolbarCommandExecutionResult;
   /** Null starts a new command; a reason replaces its notice without touching input or computation. */
   readonly commandFeedback?: (reasonKey: MessageKey | null) => void;
   readonly newFile: () => void;
@@ -70,10 +79,16 @@ function browserRuntimeState(): CommandRuntimeState {
     strengthOpen: state.strengthSession !== null,
     measurementOpen: state.measurement !== null || state.massProperties !== null || state.measurementRequest !== null,
     drawingTool: state.drawingTool,
+    connectPointsReason: selectedPointsConnection(state).reasonKey,
+    faceFromPointsReason: selectedPointsFace(state).reasonKey,
+    pointAtReferenceReason: pointAtReferenceDecision(state).reasonKey,
   };
 }
 
 const browserActions: CommandActions = {
+  connectPoints: connectSelectedPoints,
+  faceFromPoints: faceFromSelectedPoints,
+  pointAtReference: placePointAtReferencePoint,
   toolbarCommand: executeToolbarCommand,
   commandFeedback: (reasonKey) => {
     const state = useAppStore.getState();
@@ -115,12 +130,21 @@ function disabledReason(id: string, runtime: CommandRuntimeState): MessageKey | 
     case 'redo': return runtime.canRedo ? null : 'command.unavailable.redo';
     case 'strength': return runtime.strengthOpen ? null : 'command.unavailable.strength';
     case 'measurement': return runtime.measurementOpen ? null : 'command.unavailable.measurement';
+    case 'connectPoints': return runtime.connectPointsReason === null ? null
+      : runtime.connectPointsReason ?? 'sketch.connect.selectTwo';
+    case 'faceFromPoints': return runtime.faceFromPointsReason === null ? null
+      : runtime.faceFromPointsReason ?? 'sketch.facePoints.selectThree';
+    case 'pointAtReference': return runtime.pointAtReferenceReason === null ? null
+      : runtime.pointAtReferenceReason ?? 'sketch.referencePoint.selectOne';
   }
 }
 
 function run(id: CommandId, environment: CommandEnvironment, runtime: CommandRuntimeState): ToolbarCommandExecutionResult {
   const action = environment.actions;
   switch (id) {
+    case 'sketch.connectPoints': return action.connectPoints?.() ?? { ready: false, reasonKey: 'command.unavailable.action' };
+    case 'sketch.faceFromPoints': return action.faceFromPoints?.() ?? { ready: false, reasonKey: 'command.unavailable.action' };
+    case 'sketch.pointAtReference': return action.pointAtReference?.() ?? { ready: false, reasonKey: 'command.unavailable.action' };
     case 'file.new': action.newFile(); break;
     case 'file.open': action.openFile(); break;
     case 'file.save': action.saveFile(false); break;

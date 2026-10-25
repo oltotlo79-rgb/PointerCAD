@@ -23,7 +23,8 @@ import {
   isTemplateKind,
   PCAD_TEMPLATE_KIND,
   readPcadFile,
-  writePcadFile,
+  type SaveDocumentEncoder,
+  type SaveEncodingControl,
 } from '@pointercad/io';
 import {
   documentFromTemplate,
@@ -37,6 +38,7 @@ import {
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
+import { createPartLineageId, SecurePartIdentityError } from '../store/fileSlice.js';
 
 import {
   extensionsOf,
@@ -46,6 +48,7 @@ import {
 } from './fileGateway.js';
 import { openErrorMessageKey } from './partFile.js';
 import { saveFailureMessageKey } from './saveFailure.js';
+import { encodePcadInWorker, PcadSaveWorkerError } from './pcadSaveWorker.js';
 
 // ---------------------------------------------------------------------------
 // 置き場(list / get / put / remove の 4 つだけ)
@@ -389,9 +392,16 @@ export function readTemplateBytes(bytes: Uint8Array): ReadTemplateOutcome {
   if (!opened.ok) {
     return { ok: false, messageKey: TEMPLATE_REFUSAL_KEYS[opened.reason] };
   }
+  const document = documentFromTemplate(opened.template);
+  let id: string;
+  try { id = createPartLineageId(); }
+  catch (error) {
+    if (!(error instanceof SecurePartIdentityError)) throw error;
+    return { ok: false, messageKey: 'command.unavailable.action' };
+  }
   return {
     ok: true,
-    document: documentFromTemplate(opened.template),
+    document: { ...document, id },
     lengthUnit: opened.template.lengthUnit,
     toolDefaults: opened.template.toolDefaults,
     notice: opened.notice,
@@ -410,6 +420,14 @@ export interface TemplateDeps {
   readonly storage: TemplateStorage;
   /** 保存する時刻(ISO 8601)。検査では固定した値を渡す。 */
   readonly now?: () => string;
+  /** Workerのない検査だけ実IOを明示注入する。製品の既定はWorker。 */
+  readonly encodeSave?: SaveDocumentEncoder;
+}
+
+export interface TemplateSaveControl extends SaveEncodingControl {
+  readonly isCurrent?: () => boolean;
+  /** 棚への書込みを始める前に取消を閉じる。 */
+  readonly beginWriting?: () => boolean;
 }
 
 /** 「ひな形として保存」に渡すもの。 */
@@ -433,7 +451,8 @@ export type SaveTemplateOutcome =
       /** ファイルにも書いたか(窓を取り消したら false。置き場へは残っている)。 */
       readonly wroteFile: boolean;
     }
-  | { readonly ok: false; readonly messageKey: MessageKey };
+  | { readonly ok: false; readonly messageKey: MessageKey }
+  | { readonly ok: false; readonly cancelled: true };
 
 /**
  * いまの部品をひな形として保存する(FR-814、§2.10)。
@@ -448,6 +467,7 @@ export type SaveTemplateOutcome =
 export async function saveTemplate(
   deps: TemplateDeps,
   request: SaveTemplateRequest,
+  control: TemplateSaveControl = {},
 ): Promise<SaveTemplateOutcome> {
   const name = request.name.trim().length > 0 ? request.name.trim() : request.document.name;
   const template = templateFromDocument(request.document, {
@@ -456,33 +476,35 @@ export async function saveTemplate(
     name,
   });
   const savedAt = deps.now?.() ?? new Date().toISOString();
-  const bytes = writePcadFile(template.document, {
-    // 封筒の種別だけがひな形と部品を分ける(§0.a-0.35)。ZIP の作りは 1 文字も変わらない。
-    kind: PCAD_TEMPLATE_KIND,
-    lengthUnit: template.lengthUnit,
-    toolDefaults: template.toolDefaults,
-    savedAt,
-  });
-  const record: StoredTemplate = { id: templateIdOf(name), name, savedAt, bytes };
-  await deps.storage.put(record);
-  // 上限を超えたぶんを古いほうから落とす(消す入口を画面に作らないため。§0.a-0.36)。
-  for (const id of templateIdsToDrop(await deps.storage.list())) {
-    await deps.storage.remove(id);
-  }
-
-  let wroteFile: boolean;
+  const isCurrent = (): boolean => control.signal?.aborted !== true && (control.isCurrent?.() ?? true);
   try {
-    wroteFile = await saveFileAsThrough(
-      deps.gateway,
-      withTemplateExtension(name),
-      'pcadt',
-      bytes,
-    );
+    if (!isCurrent()) return { ok: false, cancelled: true };
+    const bytes = await (deps.encodeSave ?? encodePcadInWorker)({ kind: 'part', document: template.document, options: {
+      // 通常部品の添付・下絵は渡さず、ひな形の内容だけをWorkerへ送る。
+      kind: PCAD_TEMPLATE_KIND,
+      lengthUnit: template.lengthUnit,
+      toolDefaults: template.toolDefaults,
+      savedAt,
+    } }, control);
+    if (!isCurrent() || control.beginWriting?.() === false) return { ok: false, cancelled: true };
+    const record: StoredTemplate = { id: templateIdOf(name), name, savedAt, bytes };
+    await deps.storage.put(record);
+    if (!isCurrent()) return { ok: false, cancelled: true };
+    // 棚への保存を確定してから古いひな形を間引き、最後にファイルを書き出す。
+    const obsolete = templateIdsToDrop(await deps.storage.list());
+    for (const id of obsolete) {
+      if (!isCurrent()) return { ok: false, cancelled: true };
+      await deps.storage.remove(id);
+    }
+    if (!isCurrent()) return { ok: false, cancelled: true };
+    const wroteFile = await saveFileAsThrough(deps.gateway, withTemplateExtension(name), 'pcadt', bytes);
+    if (!isCurrent()) return { ok: false, cancelled: true };
+    return { ok: true, saved: summaryOf(record), wroteFile };
   } catch (error) {
-    // ファイルへは書けなかったが、置き場には残っている。理由だけを伝える(NFR-UX-5)。
-    return { ok: false, messageKey: saveFailureMessageKey(error) };
+    if (!isCurrent()) return { ok: false, cancelled: true };
+    // ファイルへの書出しだけが失敗した場合にも、先行して入れた棚の記録は残す。
+    return { ok: false, messageKey: error instanceof PcadSaveWorkerError ? 'file.saveEncodingFailed' : saveFailureMessageKey(error) };
   }
-  return { ok: true, saved: summaryOf(record), wroteFile };
 }
 
 /** どのひな形から始めるか。 */

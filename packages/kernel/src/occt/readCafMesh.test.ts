@@ -260,9 +260,6 @@ describe('OBJ / glTF の読み込み(P6 タスク18)', () => {
     expect(oc.RWObj_CafReader).toBeTypeOf('function');
     expect(oc.RWGltf_CafReader).toBeTypeOf('function');
     expect(oc.RWMesh_CafReader).toBeTypeOf('function');
-    // 書き出し(タスク13)の相手も同じ実測でまとめて確かめておく。
-    expect(oc.RWObj_CafWriter).toBeTypeOf('function');
-    expect(oc.RWGltf_CafWriter).toBeTypeOf('function');
   });
 
   it('§1.5-12 の実測: SetDocument なしで Perform が成功し、三角形分割が最初から付いている', () => {
@@ -277,11 +274,15 @@ describe('OBJ / glTF の読み込み(P6 タスク18)', () => {
         expect(reader.HasSystemCoordinateSystem()).toBe(false);
 
         const range = keep(new oc.Message_ProgressRange_1());
-        // 型定義の XCAFDoc_PartId は any だが、実行時の束縛は TCollection_AsciiString。
         // 素の文字列を渡すと embind が断る(この落とし穴を検査で固定する)。
+        // 意図的な型違反は unknown から呼び、正しい型の呼び出しも続けて確かめる。
+        const perform: unknown = Reflect.get(reader, 'Perform');
+        if (typeof perform !== 'function') {
+          throw new Error('OBJ reader Perform is not bound');
+        }
         let bindingError: unknown = undefined;
         try {
-          reader.Perform(path, range);
+          Reflect.apply(perform, reader, [path, range]);
         } catch (error) {
           bindingError = error;
         }

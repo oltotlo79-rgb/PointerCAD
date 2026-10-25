@@ -1,5 +1,5 @@
 /** アセンブリの文書・添付・保存先を一緒に開閉する。 */
-import { readDocumentBundle, writeAssemblyDocument, writeDocumentBundle } from '@pointercad/io';
+import { readDocumentBundle, writeAssemblyDocument } from '@pointercad/io';
 import { createAssemblyDocument, createAssemblyDocumentBundle, partLibraryOfBundle,
   type AssemblyDocument, type PartLibrary } from '@pointercad/model';
 import { activeDocument } from '../store/documentKind.js';
@@ -7,13 +7,15 @@ import type { AppState } from '../store/appState.js';
 import type { AssemblySnapshot } from '../store/assemblySlice.js';
 import type { DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { prepareDocumentSession, SecurePartIdentityError, type PreparedDocumentSession } from '../store/fileSlice.js';
 import { t } from '../i18n/t.js';
 import { beginOpenRequest, mayOpenAfterRead, mayReportOpenFailure } from './documentOpenGuard.js';
 import { withPcadaExtension, type PickedFile } from './fileGateway.js';
 import { hasUnsavedChanges, openErrorMessageKey, type PartFileDeps } from './partFile.js';
 import { recordRecentFile } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
-import { completeDocumentSave, queueDocumentSave } from './documentSaveQueue.js';
+import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
+import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 
 const contentCache = new WeakMap<AssemblyDocument, WeakMap<PartLibrary, string>>();
 
@@ -53,7 +55,15 @@ export function activeHasUnsavedChanges(state: AppState): boolean {
 
 export async function newAssembly(deps: PartFileDeps): Promise<void> {
   if (activeHasUnsavedChanges(useAppStore.getState()) && !(await deps.confirmDiscard('file.discardConfirm'))) return;
-  useAppStore.getState().openAssembly(createAssemblyDocument(t('assembly.untitled')));
+  const store = useAppStore.getState();
+  let preparedSession: PreparedDocumentSession;
+  try { preparedSession = prepareDocumentSession(); }
+  catch (error) {
+    if (!(error instanceof SecurePartIdentityError)) throw error;
+    store.setFileMessage({ key: 'command.unavailable.action', failed: true });
+    return;
+  }
+  store.openAssembly(createAssemblyDocument(t('assembly.untitled')), undefined, { preparedSession });
 }
 
 /**
@@ -111,12 +121,13 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
   const active = activeDocument(before);
   if (active.kind !== 'assembly') return;
   const snapshot = { document: active.document, library: active.library };
-  return queueDocumentSave(before, async (isCurrent) => {
+  const thumbnailPng = deps.captureThumbnail();
+  const encoding = captureSaveSnapshot({ kind: 'assembly', bundle: createAssemblyDocumentBundle(active.document, active.library),
+    options: { savedAt: new Date().toISOString(), ...(thumbnailPng === null ? {} : { thumbnailPng }) } });
+  return queueDocumentSave(before, async (isCurrent, control) => {
   try {
-    const thumbnailPng = deps.captureThumbnail();
-    const bytes = await writeDocumentBundle(createAssemblyDocumentBundle(active.document, active.library),
-      thumbnailPng === null ? {} : { thumbnailPng });
-    if (!isCurrent()) return;
+    const bytes = await (deps.encodeSave ?? before.saveDocumentEncoder)(encoding, control);
+    if (!control.beginWriting()) return;
     const saved = await before.fileGateway.savePcad(
       withPcadaExtension(active.fileName ?? active.document.name ?? t('assembly.untitled')),
       bytes, saveAs || !before.fileGateway.hasSaveTarget(), 'assembly');
@@ -127,11 +138,15 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
     await completeDocumentSave(isCurrent, async () => {
       if (useAppStore.getState().autoSaver === before.autoSaver && !activeHasUnsavedChanges(useAppStore.getState())) {
         await before.autoSaver?.discard();
+        if (isCurrent() && useAppStore.getState().autoSaver === before.autoSaver && !activeHasUnsavedChanges(useAppStore.getState())) {
+          useAppStore.setState({ recoverySaveState: null });
+        }
       }
-    });
+    }, name);
   } catch (error) {
     if (isCurrent()) {
       before.setFileMessage({ key: saveFailureMessageKey(error), failed: true });
+      reportSaveEncodingFailure(error, isCurrent);
     }
   }
   });

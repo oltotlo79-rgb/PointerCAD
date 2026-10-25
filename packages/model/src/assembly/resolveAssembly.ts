@@ -38,6 +38,7 @@ import {
   type RigidPlacement,
 } from './placementMath.js';
 import type { AssemblyComponent, AssemblyDocument, ComponentSource } from './types.js';
+import { standardPartRejection } from './standard/buildStandardPart.js';
 
 /** 規格部品の出どころ(`ComponentSource` の 1 枝)。台本(タスク29)へ渡す形。 */
 export type StandardPartSource = Extract<ComponentSource, { readonly kind: 'standardPart' }>;
@@ -256,6 +257,8 @@ function partDocumentOf(
 ): { readonly document: PartDocument } | { readonly message: string } {
   const source = component.source;
   if (source.kind === 'standardPart') {
+    const rejection = standardPartRejection(source);
+    if (rejection !== null) return { message: rejection.message };
     const built = options.standardPart?.(source) ?? null;
     return built === null ? { message: MISSING_STANDARD_SIZE_MESSAGE } : { document: built };
   }

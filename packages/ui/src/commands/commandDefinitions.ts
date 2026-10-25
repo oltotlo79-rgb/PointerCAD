@@ -51,7 +51,7 @@ export interface CommandDefinition {
   readonly documentKinds: readonly CommandDocumentKind[];
   readonly labelKey: MessageKey;
   readonly helpTopic: string;
-  readonly enabledBy: 'always' | 'undo' | 'redo' | 'strength' | 'measurement';
+  readonly enabledBy: 'always' | 'undo' | 'redo' | 'strength' | 'measurement' | 'connectPoints' | 'faceFromPoints' | 'pointAtReference';
   readonly shortcuts: readonly ShortcutBinding[];
 }
 
@@ -60,6 +60,18 @@ const EVERY_DOCUMENT: readonly CommandDocumentKind[] = ['part', 'assembly', 'dra
 const DRAWING_ONLY: readonly CommandDocumentKind[] = ['drawing'];
 
 export const CORE_COMMAND_DEFINITIONS = [
+  {
+    id: 'sketch.connectPoints', documentKinds: ['part'], labelKey: 'command.sketch.connectPoints',
+    helpTopic: 'sketch-tools', enabledBy: 'connectPoints', shortcuts: [],
+  },
+  {
+    id: 'sketch.faceFromPoints', documentKinds: ['part'], labelKey: 'command.sketch.faceFromPoints',
+    helpTopic: 'sketch-tools', enabledBy: 'faceFromPoints', shortcuts: [],
+  },
+  {
+    id: 'sketch.pointAtReference', documentKinds: ['part'], labelKey: 'command.sketch.pointAtReference',
+    helpTopic: 'sketch-tools', enabledBy: 'pointAtReference', shortcuts: [],
+  },
   {
     id: 'help.contextual', documentKinds: EVERY_DOCUMENT, labelKey: 'command.help.contextual', helpTopic: 'help-reader', enabledBy: 'always',
     shortcuts: [{ key: 'f1', display: 'F1', contextLabelKey: 'command.context.all', phase: 'capture',
@@ -139,9 +151,9 @@ export const CORE_COMMAND_DEFINITIONS = [
     id: 'drawing.deleteSelection', documentKinds: DRAWING_ONLY, labelKey: 'command.drawing.deleteSelection', helpTopic: 'drawing', enabledBy: 'always',
     shortcuts: [
       { key: 'delete', display: 'Delete', contextLabelKey: 'command.context.drawing', phase: 'bubble', primary: 'none',
-        shift: 'either', documentKinds: DRAWING_ONLY, preventDefault: true },
+        shift: 'either', documentKinds: DRAWING_ONLY, allowInMenu: false, preventDefault: true },
       { key: 'backspace', display: 'Backspace', contextLabelKey: 'command.context.drawing', phase: 'bubble', primary: 'none',
-        shift: 'either', documentKinds: DRAWING_ONLY, preventDefault: true },
+        shift: 'either', documentKinds: DRAWING_ONLY, allowInMenu: false, preventDefault: true },
     ],
   },
   {

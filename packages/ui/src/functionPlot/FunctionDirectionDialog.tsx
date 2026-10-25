@@ -67,7 +67,7 @@ export function FunctionDirectionDialog({pointId,reference,onClose,lineId}:{read
       </dl>{prepared!==owner.document?<p>{t('functionDirection.lineOnly')}</p>:null}<FunctionPointPreview minimum={preview.minimum} maximum={preview.maximum} body={parentBody} curves={parentCurves}
         candidates={[]} selected={null} onSelect={()=>undefined} direction={preview}/></section>:null}
       <div className="pcad-function-actions"><button title={t('functionPlot.control.cancelDirection')} type="button" onClick={close}>{t('math.cancel')}</button>
-        {busy?<button title={t('functionPlot.control.stopDirection')} type="button" onClick={invalidate}>{t('functionPlot.stop')}</button>:<button title={t('functionPlot.control.previewDirection')} type="submit">{t('functionDirection.preview')}</button>}
+        {busy?<button key="stop" title={t('functionPlot.control.stopDirection')} type="button" onClick={event=>{event.preventDefault();invalidate();}}>{t('functionPlot.stop')}</button>:<button key="submit" title={t('functionPlot.control.previewDirection')} type="submit">{t('functionDirection.preview')}</button>}
         <button title={t('functionPlot.control.applyDirection')} type="button" disabled={busy||!preview} onClick={()=>{if(isCurrent()&&!busy&&preview){useAppStore.getState().applyDocument(preview.document);close();}}}>{t(lineId?'functionDirection.update':'functionDirection.apply')}</button>
       </div>
     </form>

@@ -35,6 +35,7 @@ import {
   type SkippedResidual,
 } from './residuals.js';
 import { CONSTRAINT_TOLERANCE, RANK_RELATIVE_TOLERANCE } from './solve.js';
+import { analyzeSparseRows } from './sparseRank.js';
 import type { SketchConstraint } from './types.js';
 import {
   countDegreesOfFreedom,
@@ -92,7 +93,9 @@ export type ConstraintDiagnosisMessageKind =
   /** 材料が足りない・縮退などで式を作れなかった拘束 1 つぶん(タスク5 の文をそのまま)。 */
   | 'skipped'
   /** 変数が上限を超えた。 */
-  | 'tooMany';
+  | 'tooMany'
+  /** 数値または計算資源の限界で階数を確定できなかった。 */
+  | 'incomplete';
 
 /** 診断の 1 文。 */
 export interface ConstraintDiagnosisMessage {
@@ -107,13 +110,14 @@ export interface ConstraintDiagnosis {
   readonly variables: number;
   /** 立った式の本数(利用者の拘束+円弧の暗黙の式)。 */
   readonly equations: number;
-  /** ヤコビアンの階数。重なっている拘束を差し引いた「効いている式の本数」。 */
-  readonly rank: number;
+  /** ヤコビアンの階数。null は未確定で、完全拘束を意味しない。 */
+  readonly rank: number | null;
   /**
+   * null は診断未完。0 として完全拘束に見せない。
    * 残った自由度(= 変数の数 − 階数)。0 なら完全に決まっている
    * (FR-313 の「足りない拘束の数を示し」の N)。
    */
-  readonly degreesOfFreedom: number;
+  readonly degreesOfFreedom: number | null;
   /** 足しすぎの件数(= `redundantDetails.length`)。「あと N か所」とは別に数える。 */
   readonly excess: number;
   /** 冗長(階数を増やさない)な拘束の id。 */
@@ -136,7 +140,7 @@ export interface ConstraintDiagnosis {
   readonly maxResidual: number;
   /** 残差が許容量に収まっているか。 */
   readonly satisfied: boolean;
-  /** 画面へそのまま出せる日本語の一覧(先頭は必ず自由度の 1 文)。 */
+  /** 画面へそのまま出せる日本語の一覧(先頭は自由度、または診断未完の 1 文)。 */
   readonly messages: readonly ConstraintDiagnosisMessage[];
   /** 帯に出す 1 文(`messages` の要約)。 */
   readonly summary: string;
@@ -407,7 +411,12 @@ export function diagnoseConstraints(
 
   const report = buildResidualReport(constraints, variableSet, x);
   const rows = report.rows;
-  const analysis = analyzeRows(rows, variables);
+  // 既存 400 変数の診断・性能経路はそのまま保つ。
+  const analysis = variables <= 400
+    ? analyzeRows(rows, variables)
+    : analyzeSparseRows(rows, variables, RANK_RELATIVE_TOLERANCE);
+  const incomplete = analysis.rank === null;
+  const incompleteMessage = '拘束の階数を確定できませんでした。診断は未完了です';
 
   const nameById = new Map<string, string>();
   for (const constraint of constraints) {
@@ -501,7 +510,7 @@ export function diagnoseConstraints(
     }
   }
 
-  const satisfied = maxResidual <= tolerance;
+  const satisfied = !incomplete && maxResidual <= tolerance;
   if (!satisfied && conflictDetails.length === 0) {
     // 線形化では捕まらない矛盾(階数は満ちているのに解が無い非線形の組)。
     // 残差の大きい順に上位 3 つを原因として挙げる(計画書 §2.2 の表)。
@@ -538,13 +547,15 @@ export function diagnoseConstraints(
     variableSet,
     constraints.filter((constraint) => visible(constraint.id)),
   ).dangling;
-  const degreesOfFreedom = Math.max(0, variables - analysis.rank);
+  const degreesOfFreedom = analysis.rank === null ? null : Math.max(0, variables - analysis.rank);
 
   const messages: ConstraintDiagnosisMessage[] = [];
   messages.push(
-    degreesOfFreedom > 0
-      ? { kind: 'remaining', text: remainingMessage(degreesOfFreedom), constraintIds: [] }
-      : { kind: 'solved', text: remainingMessage(0), constraintIds: [] },
+    degreesOfFreedom === null
+      ? { kind: 'incomplete', text: incompleteMessage, constraintIds: [] }
+      : degreesOfFreedom > 0
+        ? { kind: 'remaining', text: remainingMessage(degreesOfFreedom), constraintIds: [] }
+        : { kind: 'solved', text: remainingMessage(0), constraintIds: [] },
   );
   if (redundantDetails.length > 0) {
     messages.push({
@@ -582,10 +593,11 @@ export function diagnoseConstraints(
   }
 
   const parts: string[] = [];
+  if (incomplete && conflictDetails.length > 0) parts.push(incompleteMessage);
   parts.push(
     conflictDetails.length > 0
       ? `同時に成り立たない拘束が ${conflictDetails.length} 件あります`
-      : remainingMessage(degreesOfFreedom),
+      : degreesOfFreedom === null ? incompleteMessage : remainingMessage(degreesOfFreedom),
   );
   if (redundantDetails.length > 0) {
     parts.push(`付けすぎの拘束が ${redundantDetails.length} 件あります`);

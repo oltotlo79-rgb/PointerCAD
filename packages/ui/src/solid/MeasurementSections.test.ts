@@ -6,7 +6,7 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { MassPropertiesSection, MeasureSection } from './MeasurementSections.js';
-import { formatMoments, massPropertiesView } from './measureCommands.js';
+import { formatMoments, massPropertiesView, runMeasure } from './measureCommands.js';
 
 beforeEach(() => { resetTestStore(); useAppStore.setState({ massDensityDraft: null, measurementRequest: null }); });
 afterEach(() => { vi.restoreAllMocks(); resetTestStore(); useAppStore.setState({ massDensityDraft: null, measurementRequest: null }); });
@@ -53,6 +53,71 @@ describe('P102: 測定の見出しと長い値を共通のプロパティ列へ�
     expect(markup).toContain(`<dt class="pcad-properties__key">${t('propertyPanel.measureTargets')}</dt>`);
     expect(markup).toContain(`<dd class="pcad-properties__value">${message}</dd>`);
     expect(markup).toContain(t('propertyPanel.measureNotYet'));
+    expect(markup).toContain(t('propertyPanel.measurePrecisionSource'));
+    expect(markup).toContain(t('propertyPanel.measurePrecisionLimits'));
+    expect(markup).toContain('0.01 mm');
+    expect(markup).toContain('1e-7 mm');
+    expect(markup).toContain('1e-6 mm');
+  });
+});
+
+describe('R21 result-bound measurement provenance', () => {
+  it('shows the triangle source from a mesh body through runMeasure without changing its volume', async () => {
+    const volume = 16387.064;
+    const outcome = await runMeasure({ document: useAppStore.getState().document,
+      selection: ['mesh-1'], measurer: null,
+      bodies: [{ featureId: 'mesh-1', bodyKind: 'mesh', volume,
+        mesh: { edgePositions: new Float32Array() }, faces: [], edges: [], vertices: [] }] });
+    if (!outcome.ok) throw new Error('mesh measurement refused');
+    useAppStore.setState({ measurement: outcome.measurement });
+    expect(section()).toContain(t('measureProvenance.triangles'));
+    expect(section()).not.toContain(t('measureProvenance.brep'));
+    useAppStore.setState({ selection: ['unrelated-solid'] });
+    useAppStore.getState().setDisplaySettings({ ...useAppStore.getState().displaySettings, lengthUnit: 'inch' });
+    expect(section()).toContain(t('measureProvenance.triangles'));
+    expect(section()).toContain('1.000 in');
+    expect(useAppStore.getState().measurement?.result.value).toBe(volume);
+  });
+  const readiness = { ready: false, message: 'Another selection', kinds: [], kind: null, targets: [], reason: null } as const;
+  const section = (): string => render(createElement(MeasureSection, { readiness }));
+
+  it.each([
+    ['brep', 'measureProvenance.brep'],
+    ['sketch', 'measureProvenance.sketch'],
+    ['sketch-brep', 'measureProvenance.sketchBrep'],
+    ['triangles', 'measureProvenance.triangles'],
+    [undefined, 'measureProvenance.unknown'],
+  ] as const)('retains %s provenance when selection and display units change', (provenance, key) => {
+    useAppStore.setState({ measurement: {
+      result: { kind: 'pointDistance', value: 25.4, unit: 'mm', segment: null,
+        ...(provenance === undefined ? {} : { provenance }) },
+      text: '25.400 mm', angle: null, anchor: null, targetNames: ['Captured A', 'Captured B'],
+    } });
+    expect(section()).toContain(t(key));
+    useAppStore.setState({ selection: ['unrelated-body'] });
+    useAppStore.getState().setDisplaySettings({ ...useAppStore.getState().displaySettings, lengthUnit: 'inch' });
+    const markup = section();
+    expect(markup).toContain(t(key));
+    expect(markup).toContain('1.000 in');
+    expect(markup).toContain('Captured A / Captured B');
+    expect(markup).toContain(t('propertyPanel.measurePrecisionLimits'));
+    expect(useAppStore.getState().measurement?.result.value).toBe(25.4);
+    expect(useAppStore.getState().measurement?.result.provenance).toBe(provenance);
+  });
+
+  it('distinguishes kernel mass properties from legacy results without changing values', () => {
+    const mass = { bodyFeatureId: 'box', volume: 1000, area: 600,
+      centreOfMass: [0, 0, 0] as const, principalMoments: [1, 2, 3] as const };
+    const renderMass = (): string => render(createElement(MassPropertiesSection, { spec: appearanceFromPreset('steel') }));
+    useAppStore.setState({ massProperties: mass });
+    expect(renderMass()).toContain(t('measureProvenance.unknown'));
+    useAppStore.setState({ massProperties: { ...mass, provenance: 'brep' } });
+    const markup = renderMass();
+    expect(markup).toContain(t('measureProvenance.brep'));
+    expect(markup).not.toContain(t('measureProvenance.unknown'));
+    expect(markup).toContain('1000 mm');
+    expect([...markup.matchAll(/<dd class="pcad-properties__value">/g)]).toHaveLength(5);
+    expect(useAppStore.getState().massProperties?.volume).toBe(1000);
   });
 });
 

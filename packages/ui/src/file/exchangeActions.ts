@@ -11,12 +11,14 @@
  * つなぎ目はこのファイルの中だけにある。
  */
 
-import { writeThreeMf, type ThreeMfMeshInput } from '@pointercad/io';
+import type { ThreeMfMeshInput } from '@pointercad/io';
 import type { LengthUnit } from '@pointercad/model';
 
 import { beginDocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
+import { loadedPartAttachments } from './loadedPartAttachments.js';
+import { encodeThreeMfInWorker } from './pcadSaveWorker.js';
 import {
   runImport,
   type ExchangeDeps,
@@ -47,20 +49,13 @@ function missingKernel(): ExchangeKernel {
  * 3MF を組む(§0.a-0.19)。カーネルは三角形までしか返さないので、ZIP と XML は
  * `packages/io` が組む。**この 1 行が「io は幾何カーネルを呼べない」という約束の接ぎ目**である。
  */
-function buildThreeMf(baseName: string) {
-  return (outcome: ExchangeExportOutcome): ExchangeFile => {
-    const meshes: ThreeMfMeshInput[] = (outcome.meshes ?? []).map((mesh) => ({
-      name: mesh.name,
-      color: mesh.color,
-      positions: mesh.positions,
-      indices: mesh.indices,
-      // 面ごとの色と面ごとの三角形の範囲(R04)。片方だけ渡しても
-      // `writeThreeMf` は立体の色にしか使わないので、対で渡す。
-      ...(mesh.faceColors === undefined
-        ? {}
-        : { faceColors: mesh.faceColors, faceRanges: mesh.faceRanges }),
-    }));
-    return { fileName: `${baseName}.3mf`, bytes: writeThreeMf(meshes) };
+function buildThreeMf(baseName: string, encodeThreeMf: typeof encodeThreeMfInWorker) {
+  return async (outcome: ExchangeExportOutcome,
+    control: Parameters<typeof encodeThreeMfInWorker>[1] = { remainingMs: 25_000 }): Promise<ExchangeFile> => {
+    // ExchangeExportMesh is structurally compatible, including face color/ranges.
+    // Admission must happen before constructing an additional bulk mesh array.
+    const meshes: readonly ThreeMfMeshInput[] = outcome.meshes ?? [];
+    return { fileName: `${baseName}.3mf`, bytes: await encodeThreeMf(meshes, control) };
   };
 }
 
@@ -104,13 +99,15 @@ export function answerImportUnit(unit: LengthUnit | null): void {
 }
 
 /** ストアの持ち物から、手続きが要る口一式を組み立てる。 */
-export function createExchangeDeps(baseName: string): ExchangeDeps {
+export function createExchangeDeps(
+  baseName: string, encodeThreeMf: typeof encodeThreeMfInWorker = encodeThreeMfInWorker,
+): ExchangeDeps {
   const state = useAppStore.getState();
   return {
     gateway: state.fileGateway,
     kernel: state.exchangeKernel ?? missingKernel(),
     askImportUnit,
-    buildThreeMf: buildThreeMf(baseName),
+    buildThreeMf: buildThreeMf(baseName, encodeThreeMf),
     droppedTriangleTemplate: t('exchange.droppedTriangles'),
     messageOf: t,
     now: () => new Date().toISOString(),
@@ -169,7 +166,13 @@ export async function importFile(format?: ImportFileKind): Promise<void> {
     return;
   }
   // 形を先に入れてから文書を差し替える(差し替えの直後に再計算が走るため)。
-  after.addImportedAttachments(outcome.shapes, outcome.meshes);
-  after.applyDocument(outcome.document);
+  const existingIds = new Set(after.document.solids.map(feature => feature.id));
+  const newIds = new Set(outcome.document.solids.filter(feature => !existingIds.has(feature.id)).map(feature => feature.id));
+  const loaded = loadedPartAttachments(outcome.document,
+    { shapes: outcome.shapes, meshes: outcome.meshes, canvases: new Map() },
+    { shapes: after.importedShapes, meshes: after.importedMeshes, canvases: after.canvases },
+    kind => `${kind}-asset-${crypto.randomUUID()}`, newIds);
+  after.setImportedAttachments(loaded.attachments.shapes, loaded.attachments.meshes);
+  after.applyDocument(loaded.document);
   showNotices(outcome.notices);
 }

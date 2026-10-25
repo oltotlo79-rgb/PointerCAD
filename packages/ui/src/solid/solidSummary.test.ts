@@ -1,3 +1,15 @@
+import { allocatePatternPointSlots } from '@pointercad/model';
+import type { SurfaceCutFeature } from '@pointercad/model';
+
+it('surfaceCut has a read-only minimal summary until W12 connects its editor', () => {
+  const feature: SurfaceCutFeature = { kind: 'surfaceCut', id: 'surface-cut', name: 'Surface cut', suppressed: false,
+    targetFeatureId: 'target', blade: { kind: 'plane', plane: { kind: 'workPlane', planeId: 'yz',
+      offset: expressionValueFromNumber(5) } }, keep: 'positive', pairedWith: null };
+  const summary = summarizeSolid(appendSolid(createEmptyPartDocument(), feature), feature);
+  expect(summary.fields).toEqual([]); expect(summary.choices).toEqual([]); expect(summary.toggles).toEqual([]);
+  expect(summary.references).toHaveLength(1);
+  expect(setSolidField(feature, 'shellThickness', expressionValueFromNumber(2))).toBe(feature);
+});
 /**
  * 立体の要約と書き戻し(計画書 docs/plans/P2-ソリッド基礎.md タスク22 手順2)。
  *
@@ -10,6 +22,7 @@ import {
   appendFeature,
   appendSolid,
   createEmptyPartDocument,
+  createUndoStack,
   DEFAULT_COUNTERBORE_DEPTH_MM,
   DEFAULT_COUNTERBORE_DIAMETER_MM,
   DEFAULT_COUNTERSINK_ANGLE_DEGREES,
@@ -23,8 +36,11 @@ import {
   MAX_SCALE,
   MAX_TAPER_ANGLE_DEGREES,
   MIN_SCALE,
+  pushUndo,
+  redo,
   replaceSketch,
   SOLID_LABELS,
+  undo,
   type BooleanFeature,
   type ChamferFeature,
   // 平面による切断(FR-432、P5 タスク27c)。
@@ -1797,13 +1813,10 @@ const POINT_PATTERN: PatternFeature = {
   suppressed: false,
   kind: 'pattern',
   sourceFeatureId: 'hole-1',
-  placement: {
-    kind: 'points',
-    points: [
+  placement: allocatePatternPointSlots([
       { kind: 'point', pointId: 'point-1' },
       { kind: 'point', pointId: 'point-2' },
-    ],
-  },
+    ]),
 };
 
 describe('Should 群の要約(P5 §2.11、タスク43)', () => {
@@ -2612,6 +2625,58 @@ describe('切断のプロパティ(FR-432。タスク27f)', () => {
   });
 });
 
+/*
+ * EX-04 W3 閉じた輪郭の切断の残す側のプロパティ(UNEXECUTED until Root runs it)。
+ * 輪郭の切断(requireRemoval を立てた差・積)だけが「輪郭の内側を残す」のつまみを持ち、差 ⇔ 積を替える。
+ * 対(両方)の間はつまみを出さず、2 つ目に相手への案内を出す。手作業の和・差・積は従来どおりつまみ無し。
+ */
+describe('閉じた輪郭の切断の残す側のプロパティ(EX-04 W3)', () => {
+  const PROFILE_OUTSIDE: BooleanFeature = { ...SUBTRACT, requireRemoval: true };
+  const PROFILE_INSIDE: BooleanFeature = {
+    ...SUBTRACT, id: 'intersect-1', name: '積1', operation: 'intersect', requireRemoval: true,
+  };
+
+  it('単独の輪郭の切断は「輪郭の内側を残す」のつまみを持ち、差(外側)は切・積(内側)は入', () => {
+    const outside = appendSolid(documentWith(EXTRUDE), PROFILE_OUTSIDE);
+    expect(summarizeSolid(outside, PROFILE_OUTSIDE).toggles).toEqual([
+      { key: 'cutKeepOpposite', labelKey: 'numericInput.toggle.profileKeepInside', value: false },
+    ]);
+    const inside = appendSolid(documentWith(EXTRUDE), PROFILE_INSIDE);
+    expect(summarizeSolid(inside, PROFILE_INSIDE).toggles).toEqual([
+      { key: 'cutKeepOpposite', labelKey: 'numericInput.toggle.profileKeepInside', value: true },
+    ]);
+  });
+
+  it('つまみを入れると積、切ると差になり、対象・相手・印・名前は変わらない(元のフィーチャーも変えない)', () => {
+    const flipped = setSolidToggle(PROFILE_OUTSIDE, 'cutKeepOpposite', true);
+    expect(flipped).toEqual({ ...PROFILE_OUTSIDE, operation: 'intersect' });
+    expect(setSolidToggle(flipped, 'cutKeepOpposite', false)).toEqual(PROFILE_OUTSIDE);
+    expect(PROFILE_OUTSIDE.operation).toBe('subtract');
+  });
+
+  it('手作業の和・差・積はつまみを持たず、輪郭の切断のつまみを渡されても変わらない', () => {
+    const document = appendSolid(documentWith(EXTRUDE), SUBTRACT);
+    expect(summarizeSolid(document, SUBTRACT).toggles).toEqual([]);
+    expect(setSolidToggle(SUBTRACT, 'cutKeepOpposite', true)).toBe(SUBTRACT);
+  });
+
+  it('対(両方)の間はつまみを出さず、2 つ目は相手への案内を出す。相手を抑制すると単独に戻りつまみが出る', () => {
+    const paired: BooleanFeature = { ...PROFILE_INSIDE, pairedWith: PROFILE_OUTSIDE.id };
+    const document = appendSolid(appendSolid(documentWith(EXTRUDE), PROFILE_OUTSIDE), paired);
+    expect(summarizeSolid(document, PROFILE_OUTSIDE).toggles).toEqual([]);
+    const second = summarizeSolid(document, paired);
+    expect(second.toggles).toEqual([]);
+    expect(second.references.map((reference) => reference.labelKey)).toEqual([
+      'propertyPanel.target',
+      'propertyPanel.tool',
+      'propertyPanel.cutPaired',
+    ]);
+    expect(second.references[2]).toEqual({ labelKey: 'propertyPanel.cutPaired', name: '差1', elementId: 'subtract-1' });
+    const suppressed = appendSolid(appendSolid(documentWith(EXTRUDE), { ...PROFILE_OUTSIDE, suppressed: true }), paired);
+    expect(summarizeSolid(suppressed, paired).toggles.map((toggle) => toggle.value)).toEqual([true]);
+  });
+});
+
 describe('読み込んだ形の要約(FR-802、P6 §2.8、タスク20)', () => {
   const IMPORTED_SOLID: ImportedSolidFeature = {
     id: 'imported-solid-1',
@@ -2783,5 +2848,207 @@ describe('プロパティの節の鍵(タスク52・27f・55)', () => {
     for (const key of Object.values(PLANE_SPEC_LABEL_KEYS)) {
       expect(MESSAGE_KEYS).toContain(key);
     }
+  });
+});
+
+describe('円筒の側面の穴のプロパティ(EX05)', () => {
+  const ONE_LOCATION: HoleFeature = {
+    ...HOLE_BLIND,
+    centers: [],
+    cylindrical: {
+      kind: 'cylinder-face',
+      locations: [{ height: expressionValueFromNumber(12), angle: expressionValueFromNumber(30) }],
+    },
+  };
+
+  it('位置が 1 つなら高さ(mm)・角度(度)の行を出し、平面の穴の行は今までのまま', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, ONE_LOCATION), ONE_LOCATION);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'diameter', 'depth', 'tiltAngle', 'tiltAzimuth', 'holeCylinderHeight', 'holeCylinderAngle',
+    ]);
+    const height = summary.fields.find((field) => field.key === 'holeCylinderHeight');
+    const angle = summary.fields.find((field) => field.key === 'holeCylinderAngle');
+    expect(height?.unit).toBe('mm');
+    expect(height?.value.value).toBe(12);
+    expect(height?.labelKey).toBe('numericInput.field.holeCylinderHeight');
+    expect(angle?.unit).toBe('degree');
+    expect(angle?.value.value).toBe(30);
+    expect(angle?.tooltipKey).toBe('numericInput.tooltip.holeCylinderAngle');
+    const planar = summarizeSolid(documentWith(EXTRUDE, HOLE_BLIND), HOLE_BLIND);
+    expect(planar.fields.map((field) => field.key)).toEqual(['diameter', 'depth', 'tiltAngle', 'tiltAzimuth']);
+  });
+
+  it('出した行の鍵で書き戻すと、その位置の高さ・角度だけが式のまま変わる', () => {
+    const height = setSolidField(ONE_LOCATION, 'holeCylinderHeight', expressionValueFromNumber(18));
+    const angle = setSolidField(height, 'holeCylinderAngle', expressionValueFromNumber(-45));
+    if (angle.kind !== 'hole') {
+      throw new Error('穴のはず');
+    }
+    expect(angle.cylindrical).toEqual({
+      kind: 'cylinder-face',
+      locations: [{ height: expressionValueFromNumber(18), angle: expressionValueFromNumber(-45) }],
+    });
+    expect(angle.diameter).toEqual(ONE_LOCATION.diameter);
+  });
+
+  it('位置が 2 つの穴と平面の穴には行を出さず、書き戻しも形を変えない', () => {
+    const two: HoleFeature = {
+      ...ONE_LOCATION,
+      cylindrical: {
+        kind: 'cylinder-face',
+        locations: [
+          { height: expressionValueFromNumber(12), angle: expressionValueFromNumber(0) },
+          { height: expressionValueFromNumber(28), angle: expressionValueFromNumber(90) },
+        ],
+      },
+    };
+    const summary = summarizeSolid(documentWith(EXTRUDE, two), two);
+    expect(summary.fields.some((field) => field.key === 'holeCylinderHeight' || field.key === 'holeCylinderAngle')).toBe(false);
+    expect(setSolidField(two, 'holeCylinderHeight', expressionValueFromNumber(5))).toEqual(two);
+    expect(setSolidField(HOLE_BLIND, 'holeCylinderAngle', expressionValueFromNumber(5))).toEqual(HOLE_BLIND);
+  });
+});
+
+describe('円筒の側面のねじ穴のプロパティ(EX05)', () => {
+  const RADIAL_TAP: ThreadHoleFeature = {
+    ...THREAD_HOLE,
+    centers: [],
+    depth: { kind: 'blind', depth: expressionValueFromNumber(8) },
+    cylindrical: {
+      kind: 'cylinder-face',
+      locations: [{ height: expressionValueFromNumber(12), angle: expressionValueFromNumber(30) }],
+    },
+  };
+
+  it('位置が 1 つなら高さ・角度の行を出し、書き戻すとその位置だけが式のまま変わる(呼び・ピッチ・下穴径は保つ)', () => {
+    const summary = summarizeSolid(documentWith(EXTRUDE, RADIAL_TAP), RADIAL_TAP);
+    expect(summary.fields.map((field) => field.key)).toEqual([
+      'pitch', 'drillDiameter', 'threadLength', 'depth', 'tiltAngle', 'tiltAzimuth', 'holeCylinderHeight', 'holeCylinderAngle',
+    ]);
+    expect(summary.fields.find((field) => field.key === 'holeCylinderHeight')?.value.value).toBe(12);
+    expect(summary.fields.find((field) => field.key === 'holeCylinderAngle')?.unit).toBe('degree');
+    const planar = summarizeSolid(documentWith(EXTRUDE, THREAD_HOLE), THREAD_HOLE);
+    expect(planar.fields.some((field) => field.key === 'holeCylinderHeight' || field.key === 'holeCylinderAngle')).toBe(false);
+    const height = setSolidField(RADIAL_TAP, 'holeCylinderHeight', expressionValueFromNumber(18));
+    const edited = setSolidField(height, 'holeCylinderAngle', expressionValueFromNumber(-45));
+    if (edited.kind !== 'threadHole') throw new Error('ねじ穴のはず');
+    expect(edited.cylindrical).toEqual({
+      kind: 'cylinder-face',
+      locations: [{ height: expressionValueFromNumber(18), angle: expressionValueFromNumber(-45) }],
+    });
+    expect([edited.designation, edited.pitch, edited.drillDiameter, edited.depth])
+      .toEqual([RADIAL_TAP.designation, RADIAL_TAP.pitch, RADIAL_TAP.drillDiameter, RADIAL_TAP.depth]);
+    expect(setSolidField(THREAD_HOLE, 'holeCylinderHeight', expressionValueFromNumber(5))).toEqual(THREAD_HOLE);
+  });
+
+  it('高さの書き戻しを Undo すると前のねじ穴へ正確に戻り、Redo で書き戻した値へ戻る', () => {
+    const before = documentWith(EXTRUDE, RADIAL_TAP);
+    const edited = setSolidField(RADIAL_TAP, 'holeCylinderHeight', expressionValueFromNumber(18));
+    const after = documentWith(EXTRUDE, edited);
+    const stack = pushUndo(createUndoStack(before), after);
+    const tapOf = (document: PartDocument) => document.solids.find((feature) => feature.id === RADIAL_TAP.id);
+    expect(tapOf(undo(stack).present)).toEqual(RADIAL_TAP);
+    expect(tapOf(redo(undo(stack)).present)).toEqual(edited);
+  });
+});
+
+
+import { beforeAll, beforeEach } from 'vitest';
+import { replaceSolid } from '@pointercad/model';
+import { initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { resetTestStore } from '../store/testing/createTestStore.js';
+import { useAppStore } from '../store/useAppStore.js';
+import { documentSha, historyFormula, holeWallCount, nativeHistoryHarness, shapeSha } from './holeThreadHistory.testSupport.js';
+
+describe('EX-05 property formula edits through the store and native regeneration', () => {
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
+  beforeEach(resetTestStore);
+  it.each(['blind', 'thread'] as const)('%s: one property edit, one Undo and one Redo retain source formula and feature identity', async operation => {
+    const harness = await nativeHistoryHarness(operation === 'blind' ? 'plane' : 'cylinder');
+    try {
+      harness.confirm(harness.begin(operation));
+      await harness.committed();
+      const before = useAppStore.getState(), feature = before.document.solids.at(-1);
+      if (feature?.kind !== 'hole' && feature?.kind !== 'threadHole') throw new Error('Missing machining feature');
+      const key = operation === 'blind' ? 'depth' : 'threadLength';
+      const formula = historyFormula(operation === 'blind' ? '3*4' : '3+3', operation === 'blind' ? 12 : 6);
+      const beforeDefinitions = structuredClone(before.document), beforeSha = documentSha(before.document);
+      const beforeShape = shapeSha(), radius = feature.kind === 'hole' ? feature.diameter.value / 2 : feature.drillDiameter.value / 2;
+      const walls = holeWallCount(before.bodies[0], radius);
+      expect(walls).toBe(1);
+      // PropertyPanel writes setSolidField's result through applyDocument/replaceSolid.
+      const edited = setSolidField(feature, key, formula);
+      expect(edited.id).toBe(feature.id);
+      useAppStore.getState().applyDocument(replaceSolid(before.document, feature.id, edited));
+      expect(useAppStore.getState().undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      await harness.settled();
+      const after = useAppStore.getState(), afterDefinitions = structuredClone(after.document), afterShape = shapeSha();
+      const summary = summarizeSolid(after.document, edited);
+      expect(summary.fields.find(field => field.key === key)?.value).toEqual(formula);
+      expect(holeWallCount(after.bodies[0], radius)).toBe(walls);
+      if (operation === 'blind') expect(after.bodies[0].volume).toBeLessThan(before.bodies[0].volume);
+      else {
+        // A simplified thread changes native thread marks, while the drilled B-rep stays the same size.
+        expect(after.bodies[0].volume).toBeCloseTo(before.bodies[0].volume, 7);
+        expect(after.bodies[0].threadMarks).not.toEqual(before.bodies[0].threadMarks);
+      }
+      after.undo();
+      expect(useAppStore.getState().document).toEqual(beforeDefinitions);
+      expect(documentSha(useAppStore.getState().document)).toBe(beforeSha);
+      await harness.settled();
+      expect(shapeSha()).toBe(beforeShape);
+      useAppStore.getState().redo();
+      expect(useAppStore.getState().document).toEqual(afterDefinitions);
+      await harness.settled();
+      expect(shapeSha()).toBe(afterShape);
+      expect(useAppStore.getState().bodies[0].volume).toBeCloseTo(after.bodies[0].volume, 7);
+      expect(holeWallCount(useAppStore.getState().bodies[0], radius)).toBe(walls);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+    } finally { harness.dispose(); }
+  }, 180_000);
+});
+
+
+describe('EX05 indexed property display and supported edits', () => {
+  it.each([HOLE_BLIND, THREAD_HOLE])('$kind: explicit location indices show and update only the selected source', base => {
+    const locations = [
+      { height: historyFormula('8 + 4', 12), angle: historyFormula('-45 * 2', -90) },
+      { height: historyFormula('7 * 3', 21), angle: historyFormula('360 + 15', 375) },
+    ];
+    const feature = { ...base, centers: [], cylindrical: { kind: 'cylinder-face' as const, locations } };
+    for (const index of [0, 1]) {
+      const summary = summarizeSolid(documentWith(EXTRUDE, feature), feature, [], index);
+      for (const [key, member] of [['holeCylinderHeight', 'height'], ['holeCylinderAngle', 'angle']] as const) {
+        expect(summary.fields.find(field => field.key === key)?.value).toBe(locations[index][member]);
+        const value = historyFormula(member === 'height' ? '30 / 2' : '720 - 37', member === 'height' ? 15 : 683);
+        const changed = setSolidField(feature, key, value, undefined, { cylindricalLocationIndex: index });
+        expect(changed).toEqual({ ...feature, cylindrical: { kind: 'cylinder-face', locations:
+          locations.map((location, slot) => slot === index ? { ...location, [member]: value } : location) } });
+      }
+    }
+    for (const index of [-1, 2, 0.5, Infinity]) {
+      const summary = summarizeSolid(documentWith(EXTRUDE, feature), feature, [], index);
+      expect(summary.fields.some(field => field.key === 'holeCylinderHeight' || field.key === 'holeCylinderAngle')).toBe(false);
+    }
+  });
+
+  it.each([HOLE_BLIND, THREAD_HOLE])('$kind: cylinder tilt is read-only with a reason and countersink is rejected', base => {
+    const feature = { ...base, centers: [], cylindrical: { kind: 'cylinder-face' as const,
+      locations: [{ height: expressionValueFromNumber(12), angle: expressionValueFromNumber(30) }] } };
+    const summary = summarizeSolid(documentWith(EXTRUDE, feature), feature);
+    for (const key of ['tiltAngle', 'tiltAzimuth'] as const) {
+      const field = summary.fields.find(item => item.key === key);
+      expect(field?.readOnly).toBe(true);
+      if (field === undefined) throw new Error('Missing tilt field');
+      expect(t(field.tooltipKey)).toContain('対応していません');
+      expect(setSolidField(feature, key, expressionValueFromNumber(15))).toBe(feature);
+    }
+    expect(summary.choices.find(choice => choice.key === 'holeEntry')?.options.map(option => option.value))
+      .toEqual(['plain', 'counterbore']);
+    expect(setSolidChoice(feature, 'holeEntry', 'countersink')).toBe(feature);
+    const counterbore = setSolidChoice(feature, 'holeEntry', 'counterbore');
+    expect(counterbore).toEqual({ ...feature, entry: { kind: 'counterbore',
+      diameter: expressionValueFromNumber(DEFAULT_COUNTERBORE_DIAMETER_MM),
+      depth: expressionValueFromNumber(DEFAULT_COUNTERBORE_DEPTH_MM) } });
   });
 });

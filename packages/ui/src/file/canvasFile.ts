@@ -314,9 +314,9 @@ export const DEFAULT_CANVAS_OPACITY = 0.5;
 /**
  * 読み込んだ画像から下絵 1 枚(文書の `SketchCanvas`)を作る(FR-332、§0.a-0.45)。
  *
- * - id は既存の下絵から続けて採番する(`nextCanvasId`)。**画像の鍵(`imageId`)も同じ値**に
- *   して、`.pcad` の ZIP のエントリ `canvases/<imageId>.png` と 1 対 1 にする。
- * - 名前はファイル名をそのまま使う(FR-501。利用者が付け直せる)。
+ * - id は既存の下絵から続けて採番する(`nextCanvasId`)。画像の鍵は呼出側が発行し、
+ *   削除済みの下絵を Undo する際にも同じバイト列を参照できるよう再利用しない。
+ * - 名前はファイル名をそのまま使う(FR-501)。
  * - 中心は作図面の原点、向きは 0、大きさは幅 100mm と画像の縦横比(上の定数)。
  * - 画素の大きさは**保存しない**(復号した画像がいつでも答える。`rules/04`)。
  */
@@ -325,6 +325,7 @@ export function newSketchCanvas(
   plane: WorkPlaneId,
   fileName: string,
   image: DecodedCanvasImage,
+  imageId: string,
 ): SketchCanvas {
   const id = nextCanvasId(existing);
   // 画素の幅が 0(壊れた画像)でも高さを 0 にしない。0 だと面が消えて掴めなくなる。
@@ -333,7 +334,7 @@ export function newSketchCanvas(
     id,
     name: fileName,
     plane,
-    imageId: id,
+    imageId,
     width: expressionValueFromNumber(DEFAULT_CANVAS_WIDTH_MM),
     height: expressionValueFromNumber(DEFAULT_CANVAS_WIDTH_MM * aspect),
     origin: {

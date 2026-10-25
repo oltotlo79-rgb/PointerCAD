@@ -1,3 +1,5 @@
+import type { FemDistributionAssets } from '../vite/femRuntimeAssets.mjs';
+
 // CycloneDX 1.6 `licenses[]` entries are either a single license id/name, or (for a
 // combination the original notice text itself states - "A OR B", "A AND B", "A WITH B")
 // a full SPDX license expression string; the two shapes are alternatives, never combined.
@@ -92,6 +94,7 @@ export interface SbomManifestMatch {
 export function deterministicUuid(seed: string): string;
 export function verifyFontAssetParity(root: string): Map<string, string>;
 export function collectSbomComponents(root?: string): SbomComponents;
+export function femComponentsFromDistribution(distribution: FemDistributionAssets): SbomComponent[];
 export function assembleSbomDocument(collected: SbomComponentsInput, options: SbomAssembleOptions): SbomDocument;
 export function buildSbom(root?: string, options?: SbomBuildOptions): SbomDocument;
 // The four functions below validate a JSON-like document at runtime (a saved sbom.json or

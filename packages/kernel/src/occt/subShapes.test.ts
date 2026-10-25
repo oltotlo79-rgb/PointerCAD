@@ -2,8 +2,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { SolidFaceInfo, Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations, type OcctDeletable } from './allocations.js';
+import { buildAnalysisSurfaceMesh, type AnalysisSurfaceMesh } from './analysisSurfaceMesh.js';
 import { extractEdges } from './extractEdges.js';
+import { cylindricalFaceSpan } from './cylindricalFaceSpan.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { readLegacyOcctFixture } from './legacyOcctFixtureLoader.js';
 import type { OcctShapeHandle } from './makeBox.js';
 import { makeBox } from './makeBox.js';
 import { makeExtrudeSolid, makeRevolveSolid } from './makeSolidSweep.js';
@@ -42,6 +45,172 @@ describe('解析軸上点の収集(P7-14b)', () => {
     const edges = extractEdges(oc, shape);
     return collectSubShapes(oc, shape, mesh.faceRanges, edges.edgeRanges, factory);
   }
+
+  it('distinguishes exterior cylindrical material normals from bore, reversed and placed faces', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const outerMaker = keep(new oc.BRepPrimAPI_MakeCylinder_1(5, 10));
+      const outer = keep(outerMaker.Shape());
+      const innerMaker = keep(new oc.BRepPrimAPI_MakeCylinder_1(2, 10));
+      const inner = keep(innerMaker.Shape());
+      const progress = keep(new oc.Message_ProgressRange_1());
+      const cut = keep(new oc.BRepAlgoAPI_Cut_3(outer, inner, progress));
+      expect(cut.IsDone()).toBe(true);
+      const tube = keep(cut.Shape());
+      const rows = collect(tube).faces.filter(face => face.surfaceKind === 'cylinder');
+      expect(rows).toHaveLength(2);
+      expect(rows.find(face => face.radius === 5)?.cylinderExterior).toBe(true);
+      expect(rows.find(face => face.radius === 2)?.cylinderExterior).toBe(false);
+      const reversed = collect(keep(tube.Reversed())).faces.filter(face => face.surfaceKind === 'cylinder');
+      expect(reversed.find(face => face.radius === 5)?.cylinderExterior).toBe(false);
+      expect(reversed.find(face => face.radius === 2)?.cylinderExterior).toBe(true);
+      const moved = placeShape(oc, tube, { position: [11, 13, 17], rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2] });
+      try {
+        const placed = collect(moved.shape).faces.filter(face => face.surfaceKind === 'cylinder');
+        for (const face of placed) {
+          expect(face.cylinderExterior).toBe(face.radius === 5);
+          closePoint(face.axisOrigin, [11, 13, 17]);
+          expect(face.cylinderSpan).not.toBeNull();
+        }
+      } finally { moved.delete(); }
+      const partial = halfShape('cylinder');
+      try {
+        const face = collect(partial.shape).faces.find(row => row.surfaceKind === 'cylinder');
+        expect(face?.cylinderExterior).toBe(true);
+        // Material side is not a proof of full trimmed coverage.
+        expect(face?.cylinderSpan).toBeNull();
+      } finally { partial.delete(); }
+    } finally { release(); }
+  });
+
+  it('keeps native cone parameters separate from material orientation through a placed, trimmed apex face', () => {
+    const handle = halfShape('cone');
+    const allocations = createAllocations();
+    try {
+      const normal = collect(handle.shape).faces.find(face => face.surfaceKind === 'cone');
+      const reversed = collect(allocations.keep(handle.shape.Reversed())).faces.find(face => face.surfaceKind === 'cone');
+      if (normal === undefined || reversed === undefined) throw new Error('Missing native cone face');
+      const primitive = normal.analyticSurface;
+      if (primitive?.kind !== 'cone') throw new Error('Missing native cone parameters');
+      expect(reversed.analyticSurface).toEqual(primitive);
+      expect(reversed.axis?.map(value => value === 0 ? 0 : -value)).toEqual(normal.axis);
+      expect(primitive.referenceRadius).toBeCloseTo(5, 12);
+      expect(primitive.semiAngle).toBeCloseTo(-Math.atan(0.5), 12);
+      closePoint(primitive.origin, [0, 0, 0]);
+      closePoint(primitive.axis, [0, 0, 1]);
+      const moved = placeShape(oc, handle.shape, { position: [11, 13, 17], rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2] });
+      try {
+        const placed = collect(moved.shape).faces.find(face => face.surfaceKind === 'cone')?.analyticSurface;
+        if (placed?.kind !== 'cone') throw new Error('Missing placed cone parameters');
+        closePoint(placed.origin, [11, 13, 17]);
+        closePoint(placed.axis, [0, -1, 0]);
+        expect(placed.semiAngle).toBeCloseTo(primitive.semiAngle, 12);
+        expect(placed.referenceRadius).toBeCloseTo(5, 12);
+      } finally { moved.delete(); }
+    } finally { allocations.release(); handle.delete(); }
+  });
+
+  it('exports a trimmed ring torus center and both radii while retaining legacy null radius identity', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const center = keep(new oc.gp_Pnt_3(11, 13, 17));
+      const direction = keep(new oc.gp_Dir_4(1, 0, 0));
+      const axes = keep(new oc.gp_Ax2_3(center, direction));
+      const maker = keep(new oc.BRepPrimAPI_MakeTorus_6(axes, 7, 2, Math.PI));
+      const original = keep(maker.Shape());
+      for (const shape of [original, keep(original.Reversed())]) {
+        const torus = collect(shape).faces.find(face => face.surfaceKind === 'torus');
+        if (torus?.analyticSurface?.kind !== 'torus') throw new Error('Missing native torus parameters');
+        closePoint(torus.analyticSurface.origin, [11, 13, 17]);
+        closePoint(torus.analyticSurface.axis, [1, 0, 0]);
+        expect(torus.analyticSurface.majorRadius).toBe(7);
+        expect(torus.analyticSurface.minorRadius).toBe(2);
+        expect(torus.radius).toBeNull();
+        expect(torus.axisOrigin).toBeNull();
+      }
+    } finally { release(); }
+  });
+
+  function checkClosedMesh(mesh: AnalysisSurfaceMesh, analyticVolume: number): void {
+    const edges = new Map<string, { count: number; sign: number }>();
+    for (let t = 0; t < mesh.triangles.length; t += 3) {
+      const triangle = [mesh.triangles[t], mesh.triangles[t + 1], mesh.triangles[t + 2]];
+      for (let j = 0; j < 3; j += 1) {
+        const a = triangle[j], b = triangle[(j + 1) % 3];
+        const key = `${String(Math.min(a, b))}:${String(Math.max(a, b))}`;
+        const use = edges.get(key) ?? { count: 0, sign: 0 };
+        use.count += 1; use.sign += a < b ? 1 : -1; edges.set(key, use);
+      }
+    }
+    expect(edges.size).toBeGreaterThan(0);
+    for (const use of edges.values()) expect(use).toEqual({ count: 2, sign: 0 });
+    expect(mesh.metrics.freeEdges).toBe(0);
+    expect(mesh.metrics.components).toBe(1);
+    expect(mesh.metrics.signedVolumeMm3).toBeGreaterThan(0);
+    expect(Math.abs(mesh.metrics.signedVolumeMm3 - analyticVolume) / analyticVolume).toBeLessThan(0.02);
+    expect(mesh.triangleFaces.length).toBe(mesh.triangleCount);
+  }
+
+  it.each([false, true])('meshes the native cone apex and trimmed/full seam without a crack (half=%s)', half => {
+    const { keep, release } = createAllocations();
+    try {
+      const maker = half ? keep(new oc.BRepPrimAPI_MakeCone_2(5, 0, 10, Math.PI))
+        : keep(new oc.BRepPrimAPI_MakeCone_1(5, 0, 10));
+      const shape = keep(maker.Shape());
+      const face = collect(shape).faces.find(row => row.surfaceKind === 'cone');
+      if (face?.analyticSurface?.kind !== 'cone') throw new Error('Missing cone parameters');
+      let checkpoints = 0;
+      const mesh = buildAnalysisSurfaceMesh(oc, shape, { boundary: 'closed', linearDeflection: 0.02,
+        angularDeflection: 0.15, maximumTriangles: 100_000, materialValidation: 'native-solid' }, () => { checkpoints += 1; });
+      expect(checkpoints).toBeGreaterThan(0);
+      checkClosedMesh(mesh, (Math.PI * 25 * 10 / 3) * (half ? 0.5 : 1));
+      const nodes = new Set<number>();
+      mesh.triangleFaces.forEach((tag, index) => {
+        if (tag === face.index) for (let j = 0; j < 3; j += 1) nodes.add(mesh.triangles[3 * index + j]);
+      });
+      expect(nodes.size).toBeGreaterThan(3);
+      let apexNodes = 0;
+      for (const index of nodes) {
+        const x = mesh.coordinates[3 * index], y = mesh.coordinates[3 * index + 1], z = mesh.coordinates[3 * index + 2];
+        expect(Math.abs(Math.hypot(x, y) - 5 * (1 - z / 10)) / Math.sqrt(1.25)).toBeLessThan(1e-7);
+        expect(z).toBeGreaterThanOrEqual(-1e-7); expect(z).toBeLessThanOrEqual(10 + 1e-7);
+        if (half) expect(y).toBeGreaterThanOrEqual(-1e-7);
+        if (Math.hypot(x, y, z - 10) < 1e-9) { apexNodes += 1; expect(mesh.nodeKinds[index]).toBe(0); }
+      }
+      expect(apexNodes).toBe(1);
+    } finally { release(); }
+  });
+
+  it.each([false, true])('preserves both torus periodic directions and native trim caps (half=%s)', half => {
+    const { keep, release } = createAllocations();
+    try {
+      const maker = half ? keep(new oc.BRepPrimAPI_MakeTorus_2(7, 2, Math.PI))
+        : keep(new oc.BRepPrimAPI_MakeTorus_1(7, 2));
+      const shape = keep(maker.Shape());
+      const face = collect(shape).faces.find(row => row.surfaceKind === 'torus');
+      if (face?.analyticSurface?.kind !== 'torus') throw new Error('Missing torus parameters');
+      const mesh = buildAnalysisSurfaceMesh(oc, shape, { boundary: 'closed', linearDeflection: 0.02,
+        angularDeflection: 0.15, maximumTriangles: 100_000, materialValidation: 'native-solid' }, () => undefined);
+      checkClosedMesh(mesh, 2 * Math.PI * Math.PI * 7 * 4 * (half ? 0.5 : 1));
+      const summary = mesh.faces.find(row => row.index === face.index);
+      if (summary === undefined) throw new Error('Missing torus face origin');
+      expect(summary.seamEdges).toBeGreaterThan(0);
+      const nodes = new Set<number>();
+      mesh.triangleFaces.forEach((tag, index) => {
+        if (tag === face.index) for (let j = 0; j < 3; j += 1) nodes.add(mesh.triangles[3 * index + j]);
+      });
+      expect(nodes.size).toBeGreaterThan(3);
+      for (const index of nodes) {
+        const x = mesh.coordinates[3 * index], y = mesh.coordinates[3 * index + 1], z = mesh.coordinates[3 * index + 2];
+        expect(Math.abs(Math.hypot(Math.hypot(x, y) - 7, z) - 2)).toBeLessThan(1e-7);
+        if (half) expect(y).toBeGreaterThanOrEqual(-1e-7);
+      }
+      // The central void cannot be filled by an axis fan: every node stays outside radius R-r.
+      for (let index = 0; index < mesh.nodeCount; index += 1) {
+        expect(Math.hypot(mesh.coordinates[3 * index], mesh.coordinates[3 * index + 1])).toBeGreaterThanOrEqual(5 - 1e-7);
+      }
+    } finally { release(); }
+  });
 
   function closePoint(actual: Vec3Tuple | null | undefined, expected: Vec3Tuple): void {
     if (actual == null) throw new Error('解析点または軸がない');
@@ -113,6 +282,129 @@ describe('解析軸上点の収集(P7-14b)', () => {
       expect(Math.abs(Math.hypot(face.centroid[0], face.centroid[1]) - 10 / Math.PI)).toBeLessThanOrEqual(1e-9);
       expect(face.radius).toBe(5);
     } finally { handle.delete(); }
+  });
+
+  it('半円筒は解析円筒でも全周の軸方向範囲を発行しない', () => {
+    const handle = halfShape('cylinder');
+    try { expect(analyticFace(collect(handle.shape), 'cylinder').cylinderSpan).toBeNull(); }
+    finally { handle.delete(); }
+  });
+
+  it('全周円筒の範囲は面の向き・移動・回転後も同じ物理的な両端を表す', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const maker = keep(new oc.BRepPrimAPI_MakeCylinder_1(5, 10));
+      const original = keep(maker.Shape());
+      for (const shape of [original, keep(original.Reversed())]) {
+        const moved = placeShape(oc, shape, {
+          position: [11, 13, 17], rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+        });
+        try {
+          const face = analyticFace(collect(moved.shape), 'cylinder');
+          const span = face.cylinderSpan, axis = face.axis, origin = face.axisOrigin;
+          if (span == null || axis == null || origin == null) throw new Error('全周の証拠がない');
+          expect(span[1] - span[0]).toBeCloseTo(10, 9);
+          const ends = span.map((offset) => origin.map((value, index) => value + offset * axis[index]));
+          ends.sort((first, second) => second[1] - first[1]);
+          expect(ends[0][0]).toBeCloseTo(11, 9);
+          expect(ends[0][1]).toBeCloseTo(13, 9);
+          expect(ends[0][2]).toBeCloseTo(17, 9);
+          expect(ends[1][0]).toBeCloseTo(11, 9);
+          expect(ends[1][1]).toBeCloseTo(3, 9);
+          expect(ends[1][2]).toBeCloseTo(17, 9);
+        } finally { moved.delete(); }
+      }
+    } finally { release(); }
+  });
+
+  it('両端の境界円が複数の円弧へ分割されても全周円筒を保持する', () => {
+    const { keep, release } = createAllocations();
+    try {
+      // Exact radius-5, height-10 cylinder after the original native two-point edge split.
+      const divided = keep(readLegacyOcctFixture(oc, 'splitCylinder'));
+      const table = collect(divided);
+      expect(table.edges.filter((edge) => edge.curveKind === 'circle').length).toBeGreaterThan(2);
+      expect(analyticFace(table, 'cylinder').cylinderSpan).toEqual([0, 10]);
+    } finally { release(); }
+  });
+
+  it('対称な二つの窓は重心が軸上でUV箱が全周でも拒否する', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const maker = keep(new oc.BRepPrimAPI_MakeCylinder_1(5, 10));
+      const cylinder = keep(maker.Shape());
+      const corner = keep(new oc.gp_Pnt_3(-6, -1, 4));
+      const slotMaker = keep(new oc.BRepPrimAPI_MakeBox_3(corner, 12, 2, 2));
+      const slot = keep(slotMaker.Shape());
+      const progress = keep(new oc.Message_ProgressRange_1());
+      const cut = keep(new oc.BRepAlgoAPI_Cut_3(cylinder, slot, progress));
+      const result = keep(cut.Shape());
+      const cylinders = collect(result).faces.filter((face) => face.surfaceKind === 'cylinder');
+      expect(cylinders).toHaveLength(1);
+      const face = cylinders[0];
+      closePoint(face.centroid, [0, 0, 5]);
+      expect(face.area).toBeLessThan(2 * Math.PI * 5 * 10);
+      expect(face.cylinderSpan).toBeNull();
+    } finally { release(); }
+  });
+
+  it('穴の内面は反転した解析軸に沿う範囲を返す', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const corner = keep(new oc.gp_Pnt_3(-10, -10, 0));
+      const boxMaker = keep(new oc.BRepPrimAPI_MakeBox_3(corner, 20, 20, 10));
+      const box = keep(boxMaker.Shape());
+      const cylinderMaker = keep(new oc.BRepPrimAPI_MakeCylinder_1(5, 10));
+      const cylinder = keep(cylinderMaker.Shape());
+      const progress = keep(new oc.Message_ProgressRange_1());
+      const cut = keep(new oc.BRepAlgoAPI_Cut_3(box, cylinder, progress));
+      const result = keep(cut.Shape());
+      const face = analyticFace(collect(result), 'cylinder');
+      closePoint(face.axis, [0, 0, -1]);
+      expect(face.cylinderSpan).toEqual([-10, 0]);
+    } finally { release(); }
+  });
+
+  it('締結の許容差を超えるnative面公差を範囲確認で隠さない', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const maker = keep(new oc.BRepPrimAPI_MakeCylinder_1(5, 10));
+      const shape = keep(maker.Shape());
+      const index = analyticFace(collect(shape), 'cylinder').index;
+      const face = faceAt(oc, shape, index);
+      if (face === null) throw new Error('円筒面がない');
+      keep(face);
+      const builder = keep(new oc.BRep_Builder());
+      builder.UpdateFace_3(face, 5e-6);
+      const allocations = createAllocations();
+      try { expect(cylindricalFaceSpan(oc, face, [0, 0, 0], [0, 0, 1], 5, allocations)).toBeNull(); }
+      finally { allocations.release(); }
+      expect(oc.BRep_Tool.Tolerance_1(face)).toBe(5e-6);
+    } finally { release(); }
+  });
+
+  it('範囲のnativeハンドルを成功時と全確保位置での失敗時に各1回解放する', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const maker = keep(new oc.BRepPrimAPI_MakeCylinder_1(5, 10));
+      const shape = keep(maker.Shape());
+      const table = collect(shape);
+      const face = faceAt(oc, shape, analyticFace(table, 'cylinder').index);
+      if (face === null) throw new Error('円筒面がない');
+      keep(face);
+      const counter = counted(), allocations = counter.factory();
+      try { expect(cylindricalFaceSpan(oc, face, [0, 0, 0], [0, 0, 1], 5, allocations)).toEqual([0, 10]); }
+      finally { allocations.release(); }
+      const total = counter.counts().kept;
+      expect(total).toBeGreaterThan(10);
+      expect(counter.counts()).toEqual({ kept: total, deleted: total, duplicates: 0 });
+      for (let failure = 1; failure <= total; failure += 1) {
+        const forced = counted(failure), owned = forced.factory();
+        try { expect(() => cylindricalFaceSpan(oc, face, [0, 0, 0], [0, 0, 1], 5, owned)).toThrow('軸情報の読取検査'); }
+        finally { owned.release(); }
+        expect(forced.counts()).toEqual({ kept: failure, deleted: failure, duplicates: 0 });
+      }
+    } finally { release(); }
   });
 
   it('半円錐の軸上点は基準断面の中心で、面重心を代用しない', () => {
@@ -207,6 +499,20 @@ describe('解析軸上点の収集(P7-14b)', () => {
       // 失敗後も貸した形は有効。
       closePoint(analyticFace(collect(handle.shape), 'cylinder').axisOrigin, [0, 0, 0]);
     } finally { handle.delete(); }
+  });
+
+  it('releases the added torus location on collection failure without changing the retained shape', () => {
+    const { keep, release } = createAllocations();
+    try {
+      const maker = keep(new oc.BRepPrimAPI_MakeTorus_1(7, 2));
+      const shape = keep(maker.Shape());
+      const before = collect(shape);
+      // map, subshape, face, adaptor, torus, axis, direction, then the newly owned Location.
+      const forced = counted(8);
+      expect(() => collect(shape, forced.factory)).toThrow('軸情報の読取検査');
+      expect(forced.counts()).toEqual({ kept: 8, deleted: 8, duplicates: 0 });
+      expect(collect(shape)).toEqual(before);
+    } finally { release(); }
   });
 
   it('収集後に同じ形を再収集・移動しても元の面情報を壊さない', () => {
@@ -770,6 +1076,26 @@ describe('ソリッドの面・辺・頂点の一覧と素性(FR-106、FR-405〜
       // 面の一覧は index の昇順で、抜けも重なりも無い。
       const indices = first.faces.map((face: SolidFaceInfo) => face.index);
       expect(indices).toEqual([...indices].sort((a, b) => a - b));
+    } finally {
+      handle.delete();
+    }
+  });
+
+  it('一覧の伸長前に入場判定し、拒否した形を次の依頼で再利用できる', () => {
+    const handle = makeBox(oc, BOX);
+    try {
+      const mesh = tessellate(oc, handle.shape);
+      const lines = extractEdges(oc, handle.shape);
+      const seen: number[] = [];
+      expect(() => collectSubShapes(oc, handle.shape, mesh.faceRanges, lines.edgeRanges,
+        undefined, (count) => {
+          seen.push(count);
+          if (count === 1) throw new RangeError('sub-shape budget');
+        })).toThrow('sub-shape budget');
+      expect(seen).toEqual([0, 1]);
+      const retry = collectSubShapes(oc, handle.shape, mesh.faceRanges, lines.edgeRanges);
+      expect(retry.faces).toHaveLength(mesh.faceRanges.length);
+      expect(retry.edges).toHaveLength(lines.edgeRanges.length);
     } finally {
       handle.delete();
     }

@@ -8,6 +8,7 @@
 
 import {
   createKernelWorker,
+  createRuntimePhaseJournal,
   DEFAULT_ANGULAR_DEFLECTION,
   DEFAULT_LINEAR_DEFLECTION,
   makeSketchChamfer,
@@ -27,6 +28,8 @@ import {
   type SolidRecomputeRequest,
 } from '@pointercad/kernel';
 import * as Comlink from 'comlink';
+import type { AnalysisBoundaryReply } from './geometry/analysisMesh.js';
+import { HOST_RECORD_BYTES, MeshHostRetention } from './kernelBridge/meshHostRetention.js';
 import type { MaterialComparisonBridge, MaterialComparisonResult } from './kernelBridge/materialComparisonContracts.js';
 import { readMaterialComparison } from './kernelBridge/readMaterialComparison.js';
 export type { MaterialComparisonBridge, MaterialComparisonResult, MaterialComparisonGeometry, MaterialDifferenceRegion } from './kernelBridge/materialComparisonContracts.js';
@@ -53,7 +56,7 @@ import { toMeasureRequest, toMeasureOutcome } from './kernelBridge/measureConver
 import { toShapeInspectRequest, toShapeInspectItems, printabilityProgressOf, toPrintabilityOutcome } from './kernelBridge/inspectionConversions.js';
 export { toPrintabilityOutcome } from './kernelBridge/inspectionConversions.js';
 import { toShapeExportItems, toShapeExportRequest, toShapeExportOutcome, toShapeImportRequest, toShapeImportOutcome } from './kernelBridge/exchangeConversions.js';
-import { toSolidRecomputeRequest, toSolidOutcome } from './kernelBridge/solidConversions.js';
+import { captureSolidRecomputeContext, toSolidRecomputeRequest, toSolidOutcome } from './kernelBridge/solidConversions.js';
 export { toAppearanceQueries, toAppearanceMatches, toSolidOutcome } from './kernelBridge/solidConversions.js';
 import type {
   SketchFaceFailure,
@@ -139,6 +142,7 @@ export type {
 } from './kernelBridge/exchangeContracts.js';
 import type {
   KernelBridge,
+  MeshLedgerOwner, CurrentMeshLedgerInput, CurrentMeshLedgerReceipt, ReferenceMeshLeaseOptions, PartReleaseClaim, PartReleaseDisposition, SourceMeshBackingInspection,
   KernelHealth,
   KernelOperationStatus,
   ShapeAvailability,
@@ -152,11 +156,17 @@ import type {
   AssemblyInterferenceResult,
   InterferenceKernelBridge,
   MonitoredKernelBridge,
+  RuntimeUiContext,
+  RuntimePhaseObservation,
+  RuntimePhaseCapture,
+  MainRuntimePhase,
+  MainRuntimePhaseRecord,
   DrawingOperationProgress,
   DrawingKernelBridge,
 } from './kernelBridge/bridgeContracts.js';
 export type {
   KernelBridge,
+  MeshLedgerOwner, CurrentMeshLedgerInput, CurrentMeshLedgerReceipt, ReferenceMeshLeaseOptions, PartReleaseClaim, PartReleaseDisposition, SourceMeshBackingInspection,
   KernelHealth,
   KernelOperationStatus,
   KernelOperationCounts,
@@ -174,6 +184,10 @@ export type {
   AssemblyInterferenceResult,
   InterferenceKernelBridge,
   MonitoredKernelBridge,
+  RuntimeUiContext,
+  RuntimePhaseObservation,
+  MainRuntimePhase,
+  MainRuntimePhaseRecord,
   DrawingOperationOptions,
   DrawingOperationProgress,
   DrawingKernelBridge,
@@ -300,6 +314,8 @@ const PRINTABILITY_NO_BODY_MESSAGE = '点検できる形がありません。';
  * ------------------------------------------------------------------ */
 
 export { selectSubShape, selectMateTargetGeometry, rematchSubShapeRef } from './kernelBridge/subShapeMatching.js';
+export { resolveSubShapeReference, resolveReplacementSubShapeReference, createSubShapeReferenceResolver, SUB_SHAPE_AMBIGUITY_MARGIN, type SubShapeReferenceResolution } from './kernelBridge/referenceResolution.js';
+export type { SubShapeMatchCandidate } from './kernelBridge/subShapeMatching.js';
 
 /** 1ジョブが貸すcallbackと、その輸送に使ったportの所有者。 */
 interface KernelCallbackScope {
@@ -533,6 +549,10 @@ function toOutcome(
 export const KERNEL_BROKEN_MESSAGE =
   'カーネルが止まりました。値を元に戻してから、もう一度お試しください。';
 
+/** Export meshing runs in a Worker; the bridge can stop even a synchronous native call. */
+export const EXPORT_TIMEOUT_MS = 25_000;
+export const EXPORT_TIMEOUT_MESSAGE = '書き出しが25秒を超えたため中止しました。形を確認してから、もう一度お試しください。';
+
 function cachedBodySteps(steps: readonly ResolvedSolidStep[], ids: readonly string[]): readonly ResolvedSolidStep[] | null {
   if (new Set(ids).size !== ids.length) return null;
   const result: ResolvedSolidStep[] = [];
@@ -565,7 +585,20 @@ export function createKernelHealth(): KernelHealth {
 type InterruptedStatus = 'cancelled' | 'workerBroken';
 type BrokenRace<T> =
   | { readonly kind: 'response'; readonly result: T }
-  | { readonly kind: InterruptedStatus };
+  | { readonly kind: InterruptedStatus }
+  | { readonly kind: 'aborted' }
+  | { readonly kind: 'timeout' };
+
+interface WorkerTimeout<T> {
+  readonly milliseconds: number;
+  readonly refuse: () => T;
+  readonly terminateAndRestart: () => void;
+}
+
+interface WorkerCancellation<T> {
+  readonly signal: AbortSignal;
+  readonly refuse: () => T;
+}
 
 interface KernelConnection {
   readonly worker: Worker;
@@ -577,6 +610,8 @@ interface KernelConnection {
   readonly closeTransport: () => void;
   interruption: InterruptedStatus | null;
   closed: boolean;
+  terminationReturned: boolean;
+  readonly beforeRequest: () => void;
 }
 
 function interruptKernelConnection(connection: KernelConnection, kind: InterruptedStatus): void {
@@ -590,10 +625,23 @@ function createKernelConnection(
   onBroken: () => void,
   counts: Record<KernelOperationStatus, number>,
   results: WeakMap<object, KernelOperationStatus>,
+  beforeRequest: () => void = () => undefined,
 ): KernelConnection {
   const worker = createKernelWorker();
   const localReplies = new EventTarget();
   const listeners = new Set<EventListenerOrEventListenerObject>();
+  const unresolvedTransportReplies = new Set<string>();
+  const handleTransportReply = (event: MessageEvent<unknown>): void => {
+    if (typeof event.data === 'object' && event.data !== null && 'id' in event.data
+      && typeof event.data.id === 'string') unresolvedTransportReplies.delete(event.data.id);
+  };
+  worker.addEventListener('message', handleTransportReply);
+  function rejectClosedReply(id: string): void {
+    localReplies.dispatchEvent(new MessageEvent('message', { data: {
+      id, type: 'HANDLER', name: 'throw', value: { isError: true,
+        value: { name: 'Error', message: 'Kernel transport closed before its reply was received', stack: '' } },
+    } }));
+  }
   const endpoint: Comlink.Endpoint = {
     postMessage(message: unknown, transfer?: Transferable[]) {
       // Comlink 4のreleaseProxyはvoidを返し、内部Promiseを呼出側ではcatchできない。
@@ -603,6 +651,10 @@ function createKernelConnection(
         localReplies.dispatchEvent(new MessageEvent('message', { data: { id: message.id, type: 'RAW', value: undefined } }));
         return;
       }
+      const id = typeof message === 'object' && message !== null && 'id' in message
+        && typeof message.id === 'string' ? message.id : null;
+      if (connection.closed) { if (id !== null) rejectClosedReply(id); return; }
+      if (id !== null) unresolvedTransportReplies.add(id);
       worker.postMessage(message, transfer ?? []);
     },
     addEventListener(type, listener) { listeners.add(listener); worker.addEventListener(type, listener); localReplies.addEventListener(type, listener); },
@@ -610,15 +662,22 @@ function createKernelConnection(
   };
   const connection: KernelConnection = {
     worker,
+    beforeRequest,
     remote: Comlink.wrap<ReturnType<typeof createKernelApi>>(endpoint),
     waiters: new Set(),
     counts,
     results,
     interruption: null,
     closed: false,
+    terminationReturned: false,
     closeTransport() {
+      // Received replies have already left this set and retain their real raw adoption continuation.
+      // Only calls with no received reply get a synthetic transport error, never a fabricated mesh.
+      for (const id of unresolvedTransportReplies) rejectClosedReply(id);
+      unresolvedTransportReplies.clear();
       for (const listener of listeners) { worker.removeEventListener('message', listener); localReplies.removeEventListener('message', listener); }
       listeners.clear();
+      worker.removeEventListener('message', handleTransportReply);
     },
     handleBroken: () => {
       if (connection.closed) return;
@@ -662,9 +721,26 @@ async function raceWithBroken<T>(
   request: () => Promise<T>,
   refuse: () => T,
   callbacks?: KernelCallbackScope,
+  timeout?: WorkerTimeout<T>,
+  cancellation?: WorkerCancellation<T>,
+  meshEffect: 'may-change-owned-mesh' | 'readonly-mesh-observation' = 'may-change-owned-mesh',
 ): Promise<T> {
   let notify: () => void = () => undefined;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  let abort: (() => void) | undefined;
+  let orphaned = false;
+  let orphanReleased = false;
+  let requestSettled = false;
+  const releaseOrphan = (): void => {
+    if (!orphaned || orphanReleased) return;
+    orphanReleased = true;
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    connection.waiters.delete(notify);
+  };
   try {
+    if (cancellation?.signal.aborted) {
+      return rememberOperation(connection, 'cancelled', cancellation.refuse());
+    }
     if (connection.interruption !== null) {
       return rememberOperation(connection, connection.interruption, refuse());
     }
@@ -672,11 +748,49 @@ async function raceWithBroken<T>(
       notify = () => resolve({ kind: connection.interruption ?? 'workerBroken' });
       connection.waiters.add(notify);
     });
-    const race = await Promise.race<BrokenRace<T>>([
-      request().then((result) => ({ kind: 'response', result })),
-      interrupted,
-    ]);
+    // An abandoned export still owns its native job and original deadline. Keep its
+    // waiter until the underlying RPC finishes, the Worker closes, or time expires.
+    void interrupted.then(releaseOrphan);
+    const cancelled = cancellation === undefined ? null : new Promise<BrokenRace<T>>((resolve) => {
+      abort = () => {
+        if (requestSettled || connection.interruption !== null) return;
+        orphaned = connection.waiters.size > 1;
+        resolve({ kind: 'aborted' });
+        if (!orphaned) timeout?.terminateAndRestart();
+      };
+      cancellation.signal.addEventListener('abort', abort, { once: true });
+    });
+    const pending: Promise<BrokenRace<T>>[] = [interrupted];
+    if (timeout !== undefined) {
+      pending.push(new Promise<BrokenRace<T>>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+          if (orphaned) {
+            if (!requestSettled && connection.interruption === null) timeout.terminateAndRestart();
+            releaseOrphan();
+          } else resolve({ kind: 'timeout' });
+        }, timeout.milliseconds);
+      }));
+    }
+    // Readonly membership must validate the issued epoch, not invalidate it itself.
+    // Every mutating RPC keeps the default invalidation before dispatch.
+    if (meshEffect === 'may-change-owned-mesh') connection.beforeRequest();
+    pending.push(request().then(
+      (result) => { requestSettled = true; releaseOrphan(); return { kind: 'response' as const, result }; },
+      (error: unknown) => { requestSettled = true; releaseOrphan(); throw error; },
+    ));
+    if (cancelled !== null) pending.push(cancelled);
+    if (cancellation?.signal.aborted) abort?.();
+    const race = await Promise.race(pending);
+    if (race.kind === 'timeout') {
+      if (timeout === undefined) throw new Error('Export timeout configuration is missing');
+      timeout.terminateAndRestart();
+      return rememberOperation(connection, 'failed', timeout.refuse());
+    }
     if (race.kind !== 'response') {
+      if (race.kind === 'aborted') {
+        if (cancellation === undefined) throw new Error('Export cancellation configuration is missing');
+        return rememberOperation(connection, 'cancelled', cancellation.refuse());
+      }
       return rememberOperation(connection, race.kind, refuse());
     }
     return rememberOperation(connection, operationStatus(race.result), race.result);
@@ -684,7 +798,11 @@ async function raceWithBroken<T>(
     rememberOperation(connection, 'failed', error);
     throw error;
   } finally {
-    connection.waiters.delete(notify);
+    if (abort !== undefined) cancellation?.signal.removeEventListener('abort', abort);
+    if (!orphaned || orphanReleased) {
+      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+      connection.waiters.delete(notify);
+    }
     callbacks?.close();
   }
 }
@@ -702,19 +820,23 @@ function brokenFailures(
 
 /** 接続を締める。壊れた Worker への解放要求が失敗しても、後始末は続ける(NFR-RE-1)。 */
 function closeKernelConnection(connection: KernelConnection): void {
-  if (connection.closed) return;
+  if (connection.terminationReturned) return;
   connection.closed = true;
   interruptKernelConnection(connection, 'cancelled');
   connection.worker.removeEventListener('error', connection.handleBroken);
   connection.worker.removeEventListener('messageerror', connection.handleBroken);
+  // Comlink.releaseProxy synchronously clears its resolver Map. Settle actual
+  // unreceived transport requests first, while those exact resolvers still exist.
+  // Received replies already left this set and keep their raw adoption continuation.
+  connection.closeTransport();
   try {
     connection.remote[Comlink.releaseProxy]();
   } catch {
     // Worker がすでに応答しない状態では解放の要求自体が失敗しうるが、
     // 呼び出し側は必ず worker.terminate() へ進むので実害は無い。
   }
-  connection.closeTransport();
   connection.worker.terminate();
+  connection.terminationReturned = true;
 }
 
 /** 保存配置へ後退せず、現在表示されている世界配置と完了body群をawait前に写す。 */
@@ -788,34 +910,673 @@ function refusedInterference(request: InterferenceRequest, failure: AssemblyInte
   return cancelled ? { ...report, kind: 'checked', failure: null } : { ...report, kind: 'failed', failure };
 }
 
-export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridge & FunctionKernelBridge & MaterialComparisonBridge {
+
+const MESH_LEDGER_LIMIT_BYTES = 512 * 1024 * 1024;
+/** One actual bridge instance owns this registered main-realm ledger, across Worker restarts. */
+type CurrentWorkerMeshQuery = NonNullable<KernelApi['readCurrentMeshAccounting']>;
+type CurrentWorkerMeshObservation = Awaited<ReturnType<CurrentWorkerMeshQuery>>;
+type ReferenceMeshLeaseDisposition = Awaited<ReturnType<NonNullable<KernelApi['releaseReferenceMeshLease']>>>;
+// Record bounds follow the 512 MiB capacity (one per HOST_RECORD_BYTES = 131,072), not a fixed 128 owners (EX12).
+const realmMeshHost = MeshHostRetention.forCapacity(MESH_LEDGER_LIMIT_BYTES);
+let nextMeshProvider = 0;
+const realmMeshProviders = new Map<number, {
+  readonly connectionEpoch: number;
+  readonly query: CurrentWorkerMeshQuery;
+  readonly issued: WeakSet<MeshLedgerOwner>;
+  readonly ownerCoverageReason: () => string | null;
+}>();
+interface MeshLedgerValidationEvent {
+  readonly seq: number;
+  readonly providerId: number;
+  readonly reason: string | null;
+  readonly issuedHostEpoch: number | null;
+  readonly beforeObservationHostEpoch: number;
+  readonly observedHostEpoch: number | null;
+  readonly pendingCloneBytes: number | null;
+  readonly issuedProviderCount: number | null;
+  readonly actualProviderCount: number;
+}
+const meshLedgerValidations: MeshLedgerValidationEvent[] = [];
+let meshLedgerValidationSequence = 0, meshLedgerValidationDropped = 0, meshLedgerValidationFailures = 0;
+function recordMeshLedgerValidation(value: Omit<MeshLedgerValidationEvent, 'seq'>): void {
+  try {
+    if (!Number.isSafeInteger(meshLedgerValidationSequence + 1)) throw new RangeError('Diagnostic sequence overflow');
+    if (meshLedgerValidations.length === 128) { meshLedgerValidations.shift(); meshLedgerValidationDropped += 1; }
+    meshLedgerValidations.push(Object.freeze({ seq: ++meshLedgerValidationSequence, ...value }));
+  } catch { meshLedgerValidationFailures += 1; }
+}
+/** No census/query/prune: snapshots only primitive observations already made by ordinary guards. */
+export function readMeshLedgerDiagnostics() {
+  return Object.freeze({ host: realmMeshHost.readDiagnostics(), validations: Object.freeze(meshLedgerValidations.slice()),
+    dropped: meshLedgerValidationDropped, failures: meshLedgerValidationFailures,
+    coverage: 'existing-main-ledger-validation-and-host-epoch-mutations-only', acceptanceComplete: false });
+}
+declare global { interface Window { pcadMeshLedgerDiagnostics?: typeof readMeshLedgerDiagnostics } }
+
+function createBridgeMeshLedger(sameRealm: boolean) {
+  const host = realmMeshHost;
+  if (!Number.isSafeInteger(nextMeshProvider + 1)) throw new RangeError('Mesh provider ID overflow');
+  const providerId = ++nextMeshProvider;
+  let connectionEpoch = 0;
+  const ownerCoverageReasons = new Set<string>();
+  const ownerCoverageReason = (): string | null => ownerCoverageReasons.values().next().value ?? null;
+  const logicalDisplayOwners = new Map<string, MeshLedgerOwner>();
+  const bodyOwners = new WeakMap<readonly import('./kernelBridge/solidContracts.js').SolidBody[], MeshLedgerOwner>();
+  const issued = new WeakSet<MeshLedgerOwner>();
+  const backingInspections = new WeakMap<SourceMeshBackingInspection, CurrentMeshLedgerReceipt>();
+  const receipts = new WeakSet<CurrentMeshLedgerReceipt>();
+  let nextDispatch = 0;
+  function dispatch(partId: string, generation: number, kind: 'display' | 'hidden', steps: readonly ResolvedSolidStep[]): MeshLedgerOwner {
+    if (!Number.isSafeInteger(nextDispatch + 1)) throw new RangeError('Mesh dispatch ID overflow');
+    const owner: MeshLedgerOwner = Object.freeze({ dispatchId: `mesh-${providerId}-${connectionEpoch}-${++nextDispatch}`, partId, generation, kind,
+      steps: Object.freeze(steps.map(step => Object.freeze({ id: step.featureId, key: step.key }))) });
+    issued.add(owner); return owner;
+  }
+  async function reserve(owner: MeshLedgerOwner, requested: number,
+    shouldCancel: () => boolean | Promise<boolean>, alive: () => boolean) {
+    return host.reserveReplyWhenReady(owner.dispatchId, requested, shouldCancel, alive);
+  }
+  async function admitReply(owner: MeshLedgerOwner, metadata: {
+    readonly owner: MeshLedgerOwner; readonly replyBackingBytes: number; readonly workerRetainedBackingBytes: number;
+  }, alive: () => boolean): Promise<boolean> {
+    if (!alive() || metadata.owner.dispatchId !== owner.dispatchId || metadata.owner.partId !== owner.partId
+      || metadata.owner.generation !== owner.generation || metadata.owner.kind !== owner.kind
+      || metadata.owner.steps.length !== owner.steps.length || !metadata.owner.steps.every((step, index) =>
+        step.id === owner.steps[index]?.id && step.key === owner.steps[index]?.key)
+      || !Number.isSafeInteger(metadata.replyBackingBytes) || metadata.replyBackingBytes < 0
+      || !Number.isSafeInteger(metadata.workerRetainedBackingBytes) || metadata.workerRetainedBackingBytes < 0) return false;
+    const reservation = host.replyReservation(owner.dispatchId);
+    if (reservation === null || metadata.replyBackingBytes > reservation) return false;
+    const before = host.observe();
+    if (before.status !== 'known') return false;
+    const others = [...realmMeshProviders.entries()].filter(([id]) => id !== providerId);
+    const snapshots = await Promise.all(others.map(async ([id, provider]) => ({ id, provider,
+      reading: await provider.query({ observationId: `pre-clone:${owner.dispatchId}`, limitBytes: MESH_LEDGER_LIMIT_BYTES, expectedOwners: [] }) })));
+    let workerBytes = metadata.workerRetainedBackingBytes;
+    for (const snapshot of snapshots) {
+      const reading = snapshot.reading;
+      if (realmMeshProviders.get(snapshot.id) !== snapshot.provider || reading.status !== 'known'
+        || !Number.isSafeInteger(reading.reading.retainedBackingBytes) || reading.reading.retainedBackingBytes < 0) return false;
+      workerBytes += reading.reading.retainedBackingBytes;
+    }
+    const after = host.observe();
+    return alive() && after.status === 'known' && after.epoch === before.epoch
+      && realmMeshProviders.size === others.length + 1
+      && Number.isSafeInteger(workerBytes + after.retainedBackingBytes + after.pendingCloneBytes - reservation + metadata.replyBackingBytes)
+      && workerBytes + after.retainedBackingBytes + after.pendingCloneBytes - reservation + metadata.replyBackingBytes <= MESH_LEDGER_LIMIT_BYTES;
+  }
+  function adopt(owner: MeshLedgerOwner, raw: import('@pointercad/kernel').SolidRecomputeResult): void {
+    const buffers: ArrayBuffer[] = [];
+    for (const body of raw.bodies) {
+      for (const buffer of [body.positions.buffer, body.normals.buffer, body.indices.buffer, body.edgePositions.buffer]) {
+        if (!(buffer instanceof ArrayBuffer)) {
+          // Shared backing is outside this Weak ArrayBuffer registry; retain pending reservation and unknown.
+          host.markCoverageUnknown('unsupported-reply-backing');
+          throw new RangeError('Host mesh adoption unavailable: unsupported-reply-backing');
+        }
+        buffers.push(buffer);
+      }
+    }
+    // Register the raw clone even when conversion later rejects/cancels it.
+    const reading = host.adoptReply(owner.dispatchId, owner.dispatchId, buffers);
+    if (reading.status !== 'known') throw new RangeError(`Host mesh adoption unavailable: ${reading.reason}`);
+  }
+  function bind(owner: MeshLedgerOwner, result: SolidRecomputeOutcome): SolidRecomputeOutcome {
+    bodyOwners.set(result.bodies, owner);
+    if (owner.kind === 'display') {
+      const previous = logicalDisplayOwners.get(owner.partId);
+      // Dispatch-order logical supersession is metadata retirement only, never a UI/native release claim.
+      if (previous === undefined || previous.generation <= owner.generation) {
+        if (previous !== undefined) host.revokeOwner(previous.dispatchId);
+        logicalDisplayOwners.set(owner.partId, owner);
+      } else host.revokeOwner(owner.dispatchId);
+    }
+    return result;
+  }
+  async function capture(input: CurrentMeshLedgerInput,
+    _query?: NonNullable<KernelApi['readCurrentMeshAccounting']>): Promise<CurrentMeshLedgerReceipt> {
+    void _query; // Historical callback parameter; real registered providers supply the global observations.
+    input = { observationId: input.observationId, owners: Object.freeze([...input.owners]) };
+    const refused = (reason: string): CurrentMeshLedgerReceipt => ({ status: 'unknown', observationId: input.observationId, reason });
+    if (sameRealm) return refused('direct-realm-union-unavailable');
+    const providers = [...realmMeshProviders.entries()];
+    if (providers.length === 0 || providers.length > 128) return refused('provider-capacity');
+    for (const [, provider] of providers) {
+      const reason = provider.ownerCoverageReason();
+      if (reason !== null) return refused(reason);
+    }
+    if (input.owners.some(owner => providers.filter(([, provider]) => provider.issued.has(owner)).length !== 1))
+      return refused('unissued-owner');
+    const before = host.observe();
+    if (before.status !== 'known') return refused(before.reason);
+    if (before.pendingCloneBytes !== 0) return refused('pending-reply');
+    const snapshots = await Promise.all(providers.map(async ([id, provider]) => ({
+      id, provider, reading: await provider.query({ observationId: input.observationId, limitBytes: MESH_LEDGER_LIMIT_BYTES,
+        expectedOwners: input.owners.filter(owner => provider.issued.has(owner)) })
+    })));
+    const unknownSnapshot = snapshots.find(snapshot => snapshot.reading.status !== 'known');
+    if (unknownSnapshot !== undefined && unknownSnapshot.reading.status === 'unknown') return refused(unknownSnapshot.reading.reason);
+    const confirmations = await Promise.all(snapshots.map(async snapshot => ({
+      id: snapshot.id, provider: snapshot.provider,
+      reading: await snapshot.provider.query({ observationId: input.observationId, limitBytes: MESH_LEDGER_LIMIT_BYTES,
+        expectedOwners: input.owners.filter(owner => snapshot.provider.issued.has(owner)),
+        expectedEpoch: snapshot.reading.status === 'known' ? snapshot.reading.epoch : undefined })
+    })));
+    const after = host.observe();
+    let workerRetainedBackingBytes = 0;
+    const workerEpochs: { providerId: number; connectionEpoch: number; cache: number; owners: number }[] = [];
+    for (const confirmation of confirmations) {
+      const current = realmMeshProviders.get(confirmation.id);
+      if (current !== confirmation.provider) return refused('worker-connection-changed');
+      const value = confirmation.reading;
+      if (value.status !== 'known') return refused(value.reason);
+      const first = snapshots.find(snapshot => snapshot.id === confirmation.id)?.reading;
+      if (first === undefined || first.status !== 'known' || value.observationId !== input.observationId
+        || value.epoch.cache !== first.epoch.cache || value.epoch.owners !== first.epoch.owners
+        || ![value.epoch.cache, value.epoch.owners, value.hiddenBackingBytes,
+          value.reading.retainedBackingBytes, value.reading.cacheActiveBytes,
+          value.reading.cacheRetiredBytes, value.reading.cacheProtectedBytes,
+          value.reading.displayBackingBytes].every(number => Number.isSafeInteger(number) && number >= 0)
+        || value.reading.limitBytes !== MESH_LEDGER_LIMIT_BYTES
+        || value.reading.replyBackingBytes !== 0 || value.reading.replyCloneReservedBytes !== 0
+        || value.reading.displayBackingBytes > value.reading.retainedBackingBytes
+        || value.hiddenBackingBytes > value.reading.retainedBackingBytes
+        || value.reading.cacheActiveBytes + value.reading.cacheRetiredBytes > value.reading.retainedBackingBytes)
+        return refused('invalid-worker-snapshot');
+      workerRetainedBackingBytes += value.reading.retainedBackingBytes;
+      workerEpochs.push({ providerId: confirmation.id, connectionEpoch: current.connectionEpoch, ...value.epoch });
+    }
+    if (providers.length !== realmMeshProviders.size) return refused('worker-provider-changed');
+    if (after.status !== 'known') return refused(after.reason);
+    if (after.epoch !== before.epoch || after.pendingCloneBytes !== 0) return refused('host-epoch-changed');
+    const admittedBoundBytes = workerRetainedBackingBytes + after.retainedBackingBytes;
+    if (!Number.isSafeInteger(admittedBoundBytes)) return refused('overflow');
+    if (admittedBoundBytes > MESH_LEDGER_LIMIT_BYTES) return refused('budget-exceeded');
+    if (workerEpochs.length === 0) return refused('worker-epoch-missing');
+    const receipt: CurrentMeshLedgerReceipt = Object.freeze({ status: 'known', observationId: input.observationId, hostEpoch: after.epoch,
+      workerEpochs: Object.freeze(workerEpochs.map(epoch => Object.freeze(epoch))),
+      owners: input.owners, limitBytes: MESH_LEDGER_LIMIT_BYTES,
+      workerRetainedBackingBytes,
+      hostRetainedBackingBytes: after.retainedBackingBytes, pendingCloneReservedBytes: 0,
+      admittedBoundBytes, coverage: 'registered-solid-mesh-backings-only',
+      unobserved: ['native', 'gpu', 'wasm', 'mesh-metadata', 'other-providers'] as const });
+    receipts.add(receipt); return receipt;
+  }
+  function current(receipt: CurrentMeshLedgerReceipt): boolean {
+    const beforeObservationHostEpoch = host.diagnosticEpoch();
+    const reading = host.observe(); // The original single observation; diagnostics never add one.
+    const issuedKnown = receipts.has(receipt) && receipt.status === 'known';
+    const reason = !issuedKnown ? 'unissued-or-unknown-receipt'
+      : reading.status !== 'known' ? reading.reason
+      : receipt.hostEpoch !== reading.epoch ? 'host-epoch-changed'
+      : reading.pendingCloneBytes !== 0 ? 'pending-reply'
+      : receipt.workerEpochs.length !== realmMeshProviders.size ? 'worker-provider-count-changed'
+      : !receipt.workerEpochs.every(epoch => realmMeshProviders.get(epoch.providerId)?.connectionEpoch === epoch.connectionEpoch)
+        ? 'worker-connection-changed' : null;
+    recordMeshLedgerValidation({ providerId, reason,
+      issuedHostEpoch: issuedKnown ? receipt.hostEpoch : null, beforeObservationHostEpoch,
+      observedHostEpoch: reading.status === 'known' ? reading.epoch : null,
+      pendingCloneBytes: reading.pendingCloneBytes,
+      issuedProviderCount: issuedKnown ? receipt.workerEpochs.length : null, actualProviderCount: realmMeshProviders.size });
+    return reason === null;
+  }
+  async function inspectSourceMeshBackings(receipt: CurrentMeshLedgerReceipt, buffers: readonly ArrayBufferLike[]): Promise<SourceMeshBackingInspection> {
+    const unknown = (reason: string): SourceMeshBackingInspection => ({ status: 'unknown', reason });
+    if (!current(receipt) || receipt.status !== 'known') return unknown('unissued-or-stale-receipt');
+    // Same capacity-derived record bound as the realm ledger (512 MiB / 4 KiB), not a fixed 4,096 UI backings.
+    if (buffers.length > MESH_LEDGER_LIMIT_BYTES / HOST_RECORD_BYTES) return unknown('input-capacity');
+    buffers = Object.freeze([...buffers]);
+    const fresh = await capture({ observationId: `${receipt.observationId}:backing-membership`, owners: receipt.owners });
+    if (fresh.status !== 'known') return unknown(fresh.reason);
+    if (!current(receipt) || fresh.hostEpoch !== receipt.hostEpoch
+      || fresh.workerRetainedBackingBytes !== receipt.workerRetainedBackingBytes
+      || fresh.hostRetainedBackingBytes !== receipt.hostRetainedBackingBytes
+      || fresh.workerEpochs.length !== receipt.workerEpochs.length
+      || fresh.workerEpochs.some((epoch, index) => {
+        const old = receipt.workerEpochs[index];
+        return old === undefined || old.providerId !== epoch.providerId || old.connectionEpoch !== epoch.connectionEpoch
+          || old.cache !== epoch.cache || old.owners !== epoch.owners;
+      })) return unknown('global-epoch-changed');
+    const membership = host.inspectBackings(receipt.hostEpoch, buffers);
+    if (membership.status !== 'known') return unknown(membership.reason);
+    const inspection: SourceMeshBackingInspection = Object.freeze({ status: 'known', hostEpoch: membership.epoch,
+      inputBackingBytes: membership.inputBackingBytes, additionalBackingBytes: membership.additionalBackingBytes,
+      sameSourceBackings: membership.sameSourceBackings, coverage: 'registered-main-solid-backings-only',
+      unobserved: ['native', 'gpu', 'wasm', 'mesh-metadata', 'other-providers'] as const });
+    backingInspections.set(inspection, receipt); return inspection;
+  }
+  function attachWorker(query: CurrentWorkerMeshQuery | null): void {
+    host.advanceEpoch();
+    for (const owner of logicalDisplayOwners.values()) host.revokeOwner(owner.dispatchId);
+    logicalDisplayOwners.clear();
+    connectionEpoch += 1;
+    ownerCoverageReasons.clear();
+    if (!Number.isSafeInteger(connectionEpoch)) { host.markCoverageUnknown('connection-epoch-overflow'); return; }
+    if (query === null) realmMeshProviders.delete(providerId);
+    else realmMeshProviders.set(providerId, { connectionEpoch, query, issued, ownerCoverageReason });
+  }
+  /** Short-circuit refusal metadata: no observation or inspection of an unissued receipt. */
+  function refuse(reason: string): false {
+    recordMeshLedgerValidation({ providerId, reason, issuedHostEpoch: null,
+      beforeObservationHostEpoch: host.diagnosticEpoch(), observedHostEpoch: null, pendingCloneBytes: null,
+      issuedProviderCount: null, actualProviderCount: realmMeshProviders.size });
+    return false;
+  }
+  return { host, dispatch, reserve, admitReply, adopt, bind, capture, issued, attachWorker, refuse,
+    ownerCoverageReason,
+    retire: (owner: MeshLedgerOwner) => {
+      host.revokeOwner(owner.dispatchId);
+      if (logicalDisplayOwners.get(owner.partId) === owner) logicalDisplayOwners.delete(owner.partId);
+    },
+    connectionEpoch: () => connectionEpoch,
+    markOwnerCoverageUnknown: (reason: string) => { ownerCoverageReasons.add(reason); host.advanceEpoch(); },
+    clearOwnerCoverageReason: (reason: string) => { if (ownerCoverageReasons.delete(reason)) host.advanceEpoch(); },
+    current, inspectSourceMeshBackings,
+    currentSourceMeshBackingInspection: (inspection: SourceMeshBackingInspection, receipt: CurrentMeshLedgerReceipt) => {
+      if (inspection.status !== 'known') return refuse('backing-inspection-unknown');
+      if (backingInspections.get(inspection) !== receipt) return refuse('unissued-or-different-receipt-inspection');
+      return current(receipt);
+    },
+    owner: (bodies: readonly import('./kernelBridge/solidContracts.js').SolidBody[]) => bodyOwners.get(bodies) ?? null };
+}
+
+/** Metadata only. Recording never owns a mesh, callback proxy, document or native resource. */
+export function createMainPhaseObserver(readUi?: () => RuntimeUiContext) {
+  const records: MainRuntimePhaseRecord[] = [];
+  const journal = createRuntimePhaseJournal<MainRuntimePhaseRecord>();
+  let lastSeq = 0, dropped = 0, clockDiscontinuities = 0, missingContexts = 0;
+  let previous: { epochMs: number; monoMs: number } | null = null;
+  const contexts = new Map<string, RuntimeUiContext | null>();
+  function record(phase: MainRuntimePhase, epoch: number, owner: MeshLedgerOwner | null): void {
+    let ui: RuntimeUiContext | null = null;
+    if (owner !== null) {
+      if (phase === 'dispatch') {
+        try {
+          const input = readUi?.();
+          if (input !== undefined && typeof input.activeDocumentId === 'string' && input.activeDocumentId.length <= 512
+            && input.activeDocumentId.length > 0 && Number.isSafeInteger(input.documentVersion) && input.documentVersion >= 0
+            && ['part', 'assembly', 'drawing', 'empty'].includes(input.documentKind)) {
+            ui = Object.freeze({ activeDocumentId: input.activeDocumentId,
+              documentVersion: input.documentVersion, documentKind: input.documentKind });
+          }
+        } catch { /* A diagnostic getter cannot change dispatch/geometry/cleanup. */ }
+        if (ui === null) missingContexts += 1;
+        contexts.set(owner.dispatchId, ui);
+        if (contexts.size > 256) {
+          const oldest = contexts.keys().next().value;
+          if (oldest !== undefined) contexts.delete(oldest);
+        }
+      } else ui = contexts.get(owner.dispatchId) ?? null;
+    }
+    let epochMs: number | null = null, monoMs: number | null = null;
+    try {
+      const wall = Date.now(), mono = performance.now();
+      if (Number.isFinite(wall) && wall >= 0 && Number.isFinite(mono) && mono >= 0) {
+        epochMs = wall; monoMs = mono;
+        if (previous !== null && (mono < previous.monoMs
+          || Math.abs((wall - previous.epochMs) - (mono - previous.monoMs)) > 1000)) clockDiscontinuities += 1;
+        previous = { epochMs: wall, monoMs: mono };
+      } else clockDiscontinuities += 1;
+    } catch { clockDiscontinuities += 1; }
+    if (!Number.isSafeInteger(lastSeq + 1)) { dropped += 1; return; }
+    records.push(Object.freeze({ seq: ++lastSeq, phase, connectionEpoch: epoch,
+      dispatchId: owner?.dispatchId ?? null, partId: owner?.partId ?? null,
+      generation: owner?.generation ?? null, kind: owner?.kind ?? null, ui, epochMs, monoMs }));
+    const recorded = records.at(-1);
+    if (recorded !== undefined) journal.record(recorded);
+    if (records.length > 256) { records.shift(); dropped += 1; }
+  }
+  return { record, beginCapture: (nonce: string): void => { journal.begin(nonce, lastSeq); },
+    readCapture: (nonce: string, acknowledge: number | null) => journal.read(nonce, acknowledge),
+    endCapture: (nonce: string): void => { journal.end(nonce); }, snapshot(): RuntimePhaseObservation['main'] {
+    return Object.freeze({ capacity: 256, lastSeq, dropped, clockDiscontinuities, missingContexts,
+      records: Object.freeze([...records]) });
+  } };
+}
+
+export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKernelBridge & DrawingKernelBridge & FunctionKernelBridge & MaterialComparisonBridge {
   const health = createKernelHealth();
+  const ledger = createBridgeMeshLedger(false);
+  try { if (typeof window !== 'undefined') window.pcadMeshLedgerDiagnostics = readMeshLedgerDiagnostics; }
+  catch { meshLedgerValidationFailures += 1; }
+  const phases = createMainPhaseObserver(readUi);
+  const phaseEpochs = new WeakMap<MeshLedgerOwner, number>();
+  const connectionEpochs = new WeakMap<KernelConnection, number>();
+  let phaseCapture: { readonly nonce: string; readonly active: KernelConnection; readonly epoch: number } | null = null;
+  const observe = (phase: MainRuntimePhase, owner: MeshLedgerOwner, active: KernelConnection): void =>
+    phases.record(phase, phaseEpochs.get(owner) ?? connectionEpochs.get(active) ?? 0, owner);
+  const partClaims = new WeakSet<PartReleaseClaim>();
+  const displayConnections = new WeakMap<MeshLedgerOwner, number>();
+  let closedThroughEpoch = 0;
+  const hiddenCleanup = new Map<string, { readonly owner: MeshLedgerOwner; readonly active: KernelConnection }>();
+  const failedHiddenCleanup = new Set<string>();
+  const returnedHiddenOwners = new WeakSet<MeshLedgerOwner>();
+  const closedHiddenOwners = new WeakSet<MeshLedgerOwner>();
+  const pendingReplyCleanup = new Map<string, { readonly owner: MeshLedgerOwner; readonly active: KernelConnection }>();
   const counts: Record<KernelOperationStatus, number> = {
     success: 0, failed: 0, cancelled: 0, workerBroken: 0,
   };
   const callbackScopes = new Set<KernelCallbackScope>();
   const results = new WeakMap<object, KernelOperationStatus>();
   let disposed = false;
-  let connection = createKernelConnection(() => health.markBroken(), counts, results);
+  let connection = createKernelConnection(() => { phases.record('connection-interrupted', ledger.connectionEpoch(), null); health.markBroken(); ledger.host.advanceEpoch(); }, counts, results, () => ledger.host.advanceEpoch());
+  function attachCurrentWorker(): void {
+    const active = connection;
+    ledger.attachWorker(query => {
+      if (connection !== active || active.closed || active.interruption !== null) return Promise.resolve({
+        status: 'unknown', observationId: query.observationId, reason: 'connection-changed' });
+      const read = active.remote.readCurrentMeshAccounting;
+      if (typeof read !== 'function') return Promise.resolve({ status: 'unknown', observationId: query.observationId, reason: 'unsupported-provider' });
+      // Comlink creates a callable proxy even for absent remote properties. Only a received reply proves capability.
+      return read(query).catch((): CurrentWorkerMeshObservation => ({
+        status: 'unknown', observationId: query.observationId, reason: 'provider-reply-unavailable' }));
+    });
+  }
+  attachCurrentWorker();
+  connectionEpochs.set(connection, ledger.connectionEpoch());
+  async function acknowledgeReceived(owner: MeshLedgerOwner, active: KernelConnection): Promise<void> {
+    if (active.closed) { ledger.host.revokeOwner(owner.dispatchId); return; }
+    const reason = `receiver-acknowledgement:${owner.dispatchId}`;
+    try {
+      const acknowledge = active.remote.acknowledgeMeshReply;
+      if (typeof acknowledge === 'function') {
+        const result = await acknowledge(owner);
+        if (result.acknowledged || result.absent === true) {
+          observe(result.acknowledged ? 'receiver-acknowledged' : 'receiver-absent', owner, active);
+          pendingReplyCleanup.delete(owner.dispatchId); ledger.clearOwnerCoverageReason(reason); return;
+        }
+      }
+    } catch { /* An unacknowledged real Worker reply must remain reachable. */ }
+    observe('receiver-ack-failed', owner, active);
+    if (active.closed) ledger.host.revokeOwner(owner.dispatchId);
+    else {
+      pendingReplyCleanup.set(owner.dispatchId, { owner, active });
+      ledger.markOwnerCoverageUnknown(reason);
+    }
+  }
+  function retireTerminatedOwnerMetadata(active: KernelConnection): void {
+    if (!active.terminationReturned) return;
+    closedThroughEpoch = Math.max(closedThroughEpoch, ledger.connectionEpoch());
+    // Worker.terminate returned after transport/proxy cleanup. This is a logical worker
+    // lifetime receipt only; native/physical collection and main-thread weak buffers remain unobserved.
+    for (const [id, held] of hiddenCleanup) {
+      if (held.active !== active) continue;
+      hiddenCleanup.delete(id); failedHiddenCleanup.delete(id); closedHiddenOwners.add(held.owner);
+      ledger.clearOwnerCoverageReason(`uncertified-hidden-cleanup:${id}`); ledger.host.revokeOwner(id);
+    }
+    for (const [id, held] of pendingReplyCleanup) {
+      if (held.active !== active) continue;
+      pendingReplyCleanup.delete(id); ledger.clearOwnerCoverageReason(`receiver-acknowledgement:${id}`);
+    }
+  }
   function callbackScope(): KernelCallbackScope {
     const scope = createKernelCallbackScope(() => callbackScopes.delete(scope));
     callbackScopes.add(scope);
     return scope;
   }
 
+  function closeObservedConnection(active: KernelConnection): void {
+    const epoch = connectionEpochs.get(active) ?? ledger.connectionEpoch();
+    phases.record('connection-close-request', epoch, null);
+    try { closeKernelConnection(active); }
+    catch (error) { phases.record('connection-close-failed', epoch, null); throw error; }
+    phases.record('connection-closed', epoch, null);
+  }
   /**
    * 壊れた Worker を締めて作り直す(§2.9、§0.a-0.19)。形状キャッシュは Worker の中にあるので
    * 作り直すと空になり、次の再計算は全段作り直しになる(遅くなるが落ちない、この限界は
    * `KernelBridge.recomputeSolids` の doc comment にも書いた)。
    */
   function restart(): void {
-    closeKernelConnection(connection);
+    closeObservedConnection(connection);
+    retireTerminatedOwnerMetadata(connection);
+    ledger.attachWorker(null);
     health.reset();
-    connection = createKernelConnection(() => health.markBroken(), counts, results);
+    connection = createKernelConnection(() => { phases.record('connection-interrupted', ledger.connectionEpoch(), null); health.markBroken(); ledger.host.advanceEpoch(); }, counts, results, () => ledger.host.advanceEpoch());
+    attachCurrentWorker();
+    connectionEpochs.set(connection, ledger.connectionEpoch());
   }
 
   return {
+    readRuntimePhases(): Promise<RuntimePhaseObservation> {
+      const active = connection, epoch = ledger.connectionEpoch();
+      const initial = phases.snapshot();
+      const observation = (worker: RuntimePhaseObservation['worker'], reason: string | null): RuntimePhaseObservation => ({
+        status: reason === null ? 'observed' : 'unknown', reason, connectionEpoch: epoch,
+        main: phases.snapshot(), worker,
+        coverage: 'runSolidRecompute-call-plus-admission-preclone-and-main-lifetime',
+        transport: 'preclone-to-resolved-main-reply-envelope',
+        unobserved: ['internal-native-subcalls', 'exact-serialization', 'driver-upload', 'physical-resident',
+          'continuous-highwater', 'assembly-source-library-mapping'],
+      });
+      if (disposed || active.closed || active.interruption !== null) return Promise.resolve(observation(null, 'transport-unavailable'));
+      return raceWithBroken<RuntimePhaseObservation>(active, async () => {
+        try {
+          const read = active.remote.readRuntimePhases;
+          if (typeof read !== 'function') return observation(null, 'unsupported-provider');
+          const worker = await read();
+          const isArray = (value: unknown): boolean => Array.isArray(value);
+          if (worker === undefined || worker.capacity !== 256 || !isArray(worker.records)
+            || worker.records.length > 256 || worker.coverage !== 'runSolidRecompute-call-plus-admission-preclone'
+            || ![worker.lastSeq, worker.dropped, worker.clockDiscontinuities, worker.missingOwners, worker.ownerConflicts]
+              .every(value => Number.isSafeInteger(value) && value >= 0)) return observation(null, 'provider-reply-unavailable');
+          const workerKeys = ['capacity', 'lastSeq', 'dropped', 'clockDiscontinuities', 'missingOwners',
+            'ownerConflicts', 'records', 'coverage', 'unobserved'];
+          const recordKeys = ['seq', 'phase', 'dispatchId', 'partId', 'generation', 'kind', 'epochMs', 'monoMs'];
+          if (Object.keys(worker).length !== workerKeys.length || !Object.keys(worker).every(key => workerKeys.includes(key))
+            || !isArray(worker.unobserved) || !['internal-native-subcalls', 'exact-serialization', 'driver-upload', 'physical-resident']
+              .every(value => worker.unobserved.some(item => item === value))
+            || !worker.records.every(record => record !== null && typeof record === 'object'
+              && Object.keys(record).length === recordKeys.length && Object.keys(record).every(key => recordKeys.includes(key))))
+            return observation(null, 'non-metadata-worker-reply');
+          const current = phases.snapshot();
+          const allowedPhases = ['native-build-start', 'native-build-return', 'native-build-throw', 'native-build-cancelled',
+            'geometry-cancel-check', 'geometry-cancel-request', 'geometry-cancel-check-throw', 'reply-preclone',
+            'reply-admission-rejected', 'owner-rejected'];
+          if (!worker.records.every(record => Number.isSafeInteger(record.seq) && record.seq > 0
+            && record.seq <= worker.lastSeq && allowedPhases.includes(record.phase)
+            && (record.epochMs === null || Number.isFinite(record.epochMs) && record.epochMs >= 0)
+            && (record.monoMs === null || Number.isFinite(record.monoMs) && record.monoMs >= 0)))
+            return observation(null, 'invalid-worker-record');
+          if (!worker.records.every((record, index) => index === 0 || record.seq > (worker.records[index - 1]?.seq ?? Infinity)))
+            return observation(null, 'invalid-worker-sequence');
+          if (!worker.records.every(record => typeof record.dispatchId === 'string' && record.dispatchId.length > 0
+            && record.dispatchId.length <= 512 && typeof record.partId === 'string' && record.partId.length > 0
+            && record.partId.length <= 512 && typeof record.generation === 'number'
+            && Number.isSafeInteger(record.generation) && record.generation >= 0
+            && (record.kind === 'display' || record.kind === 'hidden')
+            && current.records.some(main => main.phase === 'dispatch'
+            && main.connectionEpoch === epoch && main.dispatchId === record.dispatchId && main.partId === record.partId
+            && main.generation === record.generation && main.kind === record.kind)))
+            return observation(worker, 'unmatched-worker-owner');
+          if (disposed || connection !== active || active.closed || active.interruption !== null || ledger.connectionEpoch() !== epoch)
+            return observation(worker, 'connection-changed');
+          if (current.lastSeq !== initial.lastSeq) return observation(worker, 'main-changed-during-read');
+          if (pendingReplyCleanup.size > 0) return observation(worker, 'receiver-ack-unsettled');
+          if (failedHiddenCleanup.size > 0) return observation(worker, 'hidden-cleanup-unsettled');
+          const incomplete = current.dropped + current.clockDiscontinuities + current.missingContexts
+            + worker.dropped + worker.clockDiscontinuities + worker.missingOwners + worker.ownerConflicts;
+          return observation(worker, incomplete > 0 ? 'metadata-incomplete' : worker.records.length === 0 ? 'no-worker-phases' : null);
+        } catch { return observation(null, 'provider-reply-unavailable'); }
+      }, () => observation(null, 'transport-unavailable'), undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+    async beginRuntimePhaseCapture(nonce): Promise<void> {
+      if (phaseCapture !== null || disposed || connection.closed || connection.interruption !== null)
+        throw new Error('Runtime phase capture unavailable');
+      const active = connection;
+      phases.beginCapture(nonce);
+      phaseCapture = { nonce, active, epoch: ledger.connectionEpoch() };
+      try {
+        await raceWithBroken(active, async () => {
+          const begin = active.remote.beginRuntimePhaseCapture;
+          if (typeof begin !== 'function') throw new Error('Runtime phase capture unsupported');
+          await begin(nonce);
+          if (connection !== active || active.closed || active.interruption !== null)
+            throw new Error('Runtime phase capture connection changed');
+        }, () => { throw new Error('Runtime phase capture transport unavailable'); },
+        undefined, undefined, undefined, 'readonly-mesh-observation');
+      } catch (error) {
+        if (phaseCapture?.nonce === nonce) { phases.endCapture(nonce); phaseCapture = null; }
+        if (!active.closed && active.interruption === null) {
+          try {
+            await raceWithBroken(active, async () => {
+              const end = active.remote.endRuntimePhaseCapture;
+              if (typeof end !== 'function') throw new Error('Phase capture rollback unsupported');
+              await end(nonce);
+            }, () => { throw new Error('Phase capture rollback transport unavailable'); },
+            undefined, undefined, undefined, 'readonly-mesh-observation');
+          } catch (cleanupError) {
+            throw new AggregateError([error, cleanupError], 'Runtime phase capture start and rollback failed', { cause: cleanupError });
+          }
+        }
+        throw new Error('Runtime phase capture start failed', { cause: error });
+      }
+    },
+    readRuntimePhaseCapture(nonce, mainAcknowledge, workerAcknowledge): Promise<RuntimePhaseCapture> {
+      const capture = phaseCapture;
+      if (capture === null || capture.nonce !== nonce || capture.active !== connection
+        || disposed || connection.closed || connection.interruption !== null || capture.epoch !== ledger.connectionEpoch())
+        return Promise.reject(new Error('Runtime phase capture owner/connection differs'));
+      return raceWithBroken(capture.active, async () => {
+        const read = capture.active.remote.readRuntimePhaseCapture;
+        if (typeof read !== 'function') throw new Error('Runtime phase journal unsupported');
+        const worker = await read(nonce, workerAcknowledge);
+        if (phaseCapture !== capture || connection !== capture.active || capture.active.closed
+          || capture.active.interruption !== null || capture.epoch !== ledger.connectionEpoch())
+          throw new Error('Runtime phase capture changed during read');
+        return { nonce, connectionEpoch: capture.epoch, main: phases.readCapture(nonce, mainAcknowledge), worker };
+      }, () => { throw new Error('Runtime phase capture transport unavailable'); },
+      undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+    async endRuntimePhaseCapture(nonce): Promise<void> {
+      const capture = phaseCapture;
+      if (capture === null || capture.nonce !== nonce) throw new Error('Runtime phase capture owner differs');
+      try {
+        await raceWithBroken(capture.active, async () => {
+          const end = capture.active.remote.endRuntimePhaseCapture;
+          if (typeof end !== 'function') throw new Error('Runtime phase journal unsupported');
+          await end(nonce);
+        }, () => { throw new Error('Runtime phase capture transport unavailable'); },
+        undefined, undefined, undefined, 'readonly-mesh-observation');
+      } finally {
+        if (phaseCapture === capture) { phases.endCapture(nonce); phaseCapture = null; }
+      }
+    },
     pendingWaiters: () => connection.waiters.size,
+    meshLedgerOwner: ledger.owner,
+    inspectSourceMeshBackings: async (receipt, buffers) => {
+      const unknown = (): SourceMeshBackingInspection => ({ status: 'unknown', reason: 'transport-unavailable' });
+      const active = connection;
+      if (disposed || active.closed || active.interruption !== null) return unknown();
+      return raceWithBroken<SourceMeshBackingInspection>(active, async () => {
+        try { return await ledger.inspectSourceMeshBackings(receipt, buffers); }
+        catch { return { status: 'unknown', reason: 'membership-provider-unavailable' }; }
+      }, unknown, undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+    currentSourceMeshBackingInspection: (inspection, receipt) => {
+      if (disposed) return ledger.refuse('bridge-disposed');
+      if (connection.interruption !== null) return ledger.refuse('transport-interrupted');
+      return ledger.currentSourceMeshBackingInspection(inspection, receipt);
+    },
+    capturePartReleaseClaim(bodies) {
+      const owner = ledger.owner(bodies);
+      if (owner === null || owner.kind !== 'display' || !ledger.issued.has(owner)) return null;
+      const epoch = displayConnections.get(owner);
+      if (epoch === undefined) return null;
+      const claim: PartReleaseClaim = Object.freeze({ owner, connectionEpoch: epoch });
+      partClaims.add(claim); return claim;
+    },
+    async releasePartClaim(claim): Promise<PartReleaseDisposition> {
+      if (!partClaims.has(claim) || claim.owner.kind !== 'display') return { status: 'unavailable', reason: 'unissued-claim' };
+      if (claim.connectionEpoch <= closedThroughEpoch) { ledger.retire(claim.owner); return { status: 'closed' }; }
+      const active = connection;
+      if (disposed || claim.connectionEpoch !== ledger.connectionEpoch() || active.closed || active.interruption !== null)
+        return { status: 'unavailable', reason: 'transport-unavailable' };
+      const unavailable = (): PartReleaseDisposition => ({ status: 'unavailable', reason: 'transport-unavailable' });
+      return raceWithBroken<PartReleaseDisposition>(active, async () => {
+        try {
+        const read = active.remote.readPartOwnership, release = active.remote.releaseOwnedPart;
+        if (typeof read !== 'function' || typeof release !== 'function') return { status: 'unavailable', reason: 'unsupported-part-provider' };
+        const current = await read(claim.owner);
+        if (connection !== active || active.closed || active.interruption !== null) return unavailable();
+        if (current.status !== 'current') {
+          if (current.status === 'absent') ledger.retire(claim.owner);
+          return current;
+        }
+        const returned = await release(claim.owner, current.epoch);
+        // A received actual return remains proof even if the transport subsequently breaks;
+        // closure of an unreceived operation returns unavailable instead.
+        if (returned.status === 'released' || returned.status === 'absent') ledger.retire(claim.owner);
+        return returned;
+        } catch { return { status: 'unavailable', reason: 'part-release-reply-unavailable' }; }
+      }, unavailable);
+    },
+    currentMeshLedgerReceipt: receipt => {
+      if (disposed) return ledger.refuse('bridge-disposed');
+      if (connection.interruption !== null) return ledger.refuse('transport-interrupted');
+      return ledger.current(receipt);
+    },
+    async captureCurrentMeshLedger(input) {
+      const active = connection;
+      const unknown = (): CurrentMeshLedgerReceipt => ({ status: 'unknown', observationId: input.observationId, reason: 'transport-unavailable' });
+      return raceWithBroken(active, () => ledger.capture(input, query => {
+        if (connection !== active || active.closed || active.interruption !== null) return Promise.resolve({
+          status: 'unknown', observationId: query.observationId, reason: 'connection-changed' });
+        const read = active.remote.readCurrentMeshAccounting;
+        if (typeof read !== 'function') return Promise.resolve({ status: 'unknown', observationId: query.observationId, reason: 'unsupported-provider' });
+        return read(query).catch((): CurrentWorkerMeshObservation => ({
+          status: 'unknown', observationId: query.observationId, reason: 'provider-reply-unavailable' }));
+      }), unknown, undefined, undefined, undefined, 'readonly-mesh-observation');
+    },
+    async releaseReferenceMeshLease(owner) {
+      if (!ledger.issued.has(owner) || owner.kind !== 'hidden') return { released: false };
+      const held = hiddenCleanup.get(owner.dispatchId);
+      if (held === undefined) {
+        if (returnedHiddenOwners.has(owner)) return { released: false, absent: true };
+        if (closedHiddenOwners.has(owner)) return { released: false, closed: true };
+        return { released: false };
+      }
+      if (held.owner !== owner) return { released: false };
+      const active = held.active;
+      if (active.closed || active !== connection) { failedHiddenCleanup.add(owner.dispatchId); return { released: false }; }
+      const release = active.remote.releaseReferenceMeshLease;
+      if (typeof release !== 'function') { failedHiddenCleanup.add(owner.dispatchId); return { released: false }; }
+      try {
+        const result = await raceWithBroken<ReferenceMeshLeaseDisposition>(active, () => release(owner), () => ({ released: false }));
+        if (result.released || result.absent === true) {
+          hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId); returnedHiddenOwners.add(owner);
+          ledger.clearOwnerCoverageReason(`uncertified-hidden-cleanup:${owner.dispatchId}`);
+          ledger.host.revokeOwner(owner.dispatchId);
+        } else failedHiddenCleanup.add(owner.dispatchId);
+        return result;
+      } catch (error) { failedHiddenCleanup.add(owner.dispatchId); throw error; }
+    },
+    pendingReferenceMeshCleanup: () => failedHiddenCleanup.size + pendingReplyCleanup.size,
+    async retryReferenceMeshCleanup() {
+      let released = 0;
+      for (const id of failedHiddenCleanup) {
+        const held = hiddenCleanup.get(id);
+        if (held === undefined) continue;
+        // A transport closure is not a measured native free or successful owner ACK.
+        if (held.active.closed || held.active !== connection) continue;
+        try {
+          const release = held.active.remote.releaseReferenceMeshLease;
+          if (typeof release === 'function') {
+            const result = await release(held.owner);
+            if (result.released || result.absent === true) {
+              hiddenCleanup.delete(id); failedHiddenCleanup.delete(id); returnedHiddenOwners.add(held.owner); ledger.clearOwnerCoverageReason(`uncertified-hidden-cleanup:${id}`);
+              ledger.host.revokeOwner(id); released += 1;
+            }
+          }
+        } catch { /* Retain the real failed owner for the bridge/application lifetime. */ }
+      }
+      for (const [id, held] of pendingReplyCleanup) {
+        if (held.active.closed || held.active !== connection) continue;
+        await acknowledgeReceived(held.owner, held.active);
+        if (!pendingReplyCleanup.has(id)) released += 1;
+      }
+      return { released, retained: failedHiddenCleanup.size + pendingReplyCleanup.size };
+    },
     async compareMaterials(beforeKeys, afterKeys, shouldCancel): Promise<MaterialComparisonResult> {
       const active = connection, callbacks = callbackScope();
       const failed = (): MaterialComparisonResult => active.interruption === 'cancelled'
@@ -871,6 +1632,20 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
       }, () => refusedInterference(request, { code: 'workerBroken', message: KERNEL_BROKEN_MESSAGE },
         active.interruption === 'cancelled'), callbacks);
     },
+    async buildAnalysisSurfaceMesh(request): Promise<AnalysisBoundaryReply> {
+      if (health.broken && !disposed) restart();
+      const active = connection;
+      const captured = structuredClone(request);
+      return raceWithBroken<AnalysisBoundaryReply>(active, async () => {
+        try {
+          return await active.remote.buildAnalysisSurfaceMesh(captured);
+        } catch (error) {
+          return { kind: 'failed', bodyKey: captured.bodyKey, code: 'rpc-failed',
+            message: toFailureMessage(error), faceIndex: null };
+        }
+      }, () => ({ kind: 'failed', bodyKey: captured.bodyKey, code: 'worker-broken',
+        message: KERNEL_BROKEN_MESSAGE, faceIndex: null }));
+    },
     async releasePart(partId): Promise<void> {
       const active = connection;
       return raceWithBroken(active, () => active.remote.releasePart(partId), () => undefined);
@@ -908,7 +1683,7 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
     },
 
     async recomputeSolids(steps, options = {}): Promise<SolidRecomputeOutcome> {
-      if (steps.length === 0) {
+      if (steps.length === 0 && options.localMesh === undefined) {
         return { bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] };
       }
       // 前の依頼の途中で Worker が壊れていたら、今回の依頼を出す前に作り直す(§2.9)。
@@ -916,20 +1691,71 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
         restart();
       }
       const active = connection;
-      const request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
+      let request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
+      const owner = ledger.dispatch(request.partId ?? 'part:current', request.generation ?? 0, 'display', steps);
+      displayConnections.set(owner, ledger.connectionEpoch());
+      phaseEpochs.set(owner, ledger.connectionEpoch());
+      const reservation = await ledger.reserve(owner, request.localMesh?.maximumLiveMeshBytes ?? MESH_LEDGER_LIMIT_BYTES,
+        options.shouldCancel ?? (() => false), () => connection === active && !active.closed && active.interruption === null);
+      if (reservation.status === 'stopped' && active.interruption === 'workerBroken')
+        return rememberOperation(active, 'workerBroken', { bodies: [], failures: brokenFailures(steps.filter(step => step.visible)),
+          cacheHits: 0, cancelled: false, appearanceMatches: [] });
+      if (reservation.status !== 'reserved') return rememberOperation(active,
+        reservation.status === 'cancelled' || reservation.status === 'stopped' ? 'cancelled' : 'failed', { bodies: [],
+        failures: reservation.status === 'cancelled' || reservation.status === 'stopped' ? []
+          : steps.filter(step => step.visible).map(step => ({ featureId: step.featureId,
+            message: reservation.status === 'timeout' ? '表示メッシュの空きを待つ時間が上限を超えました。再度操作してください。'
+              : '表示メッシュの空き容量を確認できません。' })),
+        cacheHits: 0, cancelled: reservation.status === 'cancelled' || reservation.status === 'stopped', appearanceMatches: [] });
+      // The await above can yield after this exact slot was reserved but before any RPC was sent.
+      // Only this definitely unsent slot may settle here; received/in-flight replies keep their own continuation.
+      if (connection !== active || active.closed || active.interruption !== null) {
+        ledger.host.settleWithoutReply(owner.dispatchId);
+        return rememberOperation(active, active.interruption ?? 'cancelled', { bodies: [],
+          failures: active.interruption === 'workerBroken' ? brokenFailures(steps.filter(step => step.visible)) : [],
+          cacheHits: 0, cancelled: active.interruption !== 'workerBroken', appearanceMatches: [] });
+      }
+      const granted = reservation.bytes;
+      if (request.localMesh !== undefined) request = { ...request, localMesh: { ...request.localMesh, maximumLiveMeshBytes: granted } };
+      const context = captureSolidRecomputeContext(request);
+      const shouldCancel = options.shouldCancel;
       const callbacks = callbackScope();
       // 第 2 引数は全体のテッセレーションの粗さ。段の種類ごとの既定はカーネルが持っており
       // (toSolidRecomputeRequest の注釈)、ここで値を渡すとその既定が負けるので undefined。
       return raceWithBroken(
         active,
-        () => active.remote
+        () => {
+          observe('dispatch', owner, active);
+          return active.remote
           .recomputeSolids(
             request,
             undefined,
             toProgressProxy(options.onProgress, callbacks),
-            toCancelProxy(options.shouldCancel, callbacks),
+            toCancelProxy(shouldCancel === undefined ? undefined : () => {
+              try {
+                const cancelled = shouldCancel();
+                if (cancelled) observe('geometry-cancel-request', owner, active);
+                return cancelled;
+              } catch (error) { observe('geometry-cancel-throw', owner, active); throw error; }
+            }, callbacks),
+            owner,
+            callbacks.proxy((metadata: Parameters<NonNullable<Parameters<KernelApi['recomputeSolids']>[5]>>[0]) => ledger.admitReply(owner, metadata,
+              () => connection === active && !active.closed && active.interruption === null)),
           )
-          .then((result) => toSolidOutcome(steps, result, options.appearance ?? [])),
+          .then(async (result) => {
+            observe('raw-received', owner, active);
+            ledger.adopt(owner, result);
+            observe('adopted', owner, active);
+            await acknowledgeReceived(owner, active);
+            return ledger.bind(owner, toSolidOutcome(steps, result, options.appearance ?? [], context));
+          }, async (error: unknown) => {
+            observe('reply-rejected', owner, active);
+            // Actual RPC rejection or closed endpoint: this call has delivered no raw result to this continuation.
+            try { if (!active.closed) await acknowledgeReceived(owner, active); }
+            finally { ledger.host.settleWithoutReply(owner.dispatchId); }
+            throw error;
+          });
+        },
         // Worker がこの依頼の途中で壊れた。拒否せずに理由つきの失敗として解決する
         // (recomputePart.ts が kernelFailed として拾う。§0.a-0.19「拒否しない」)。
         // 消費されて画面に出ないはずの段(visible: false)は、成功しても失敗しても
@@ -970,7 +1796,9 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
       const active = connection;
       return raceWithBroken(active,
         () => active.remote.functionSketchCurves({ components: input.components, bounds: input.bounds,
-          ...(input.bezier === undefined ? {} : { bezier: input.bezier }) })
+          ...(input.bezier === undefined ? {} : { bezier: input.bezier }),
+          // Certified smooth components must reach the kernel, or it would build the polyline instead.
+          ...(input.splines === undefined ? {} : { splines: input.splines }) })
           .then((outcome) => readFunctionCurveGeometry(outcome, input)),
         () => ({ status: 'failed', message: KERNEL_BROKEN_MESSAGE }),
       );
@@ -1010,15 +1838,91 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
       );
     },
 
-    async readCachedBodies(steps, ids): Promise<SolidRecomputeOutcome> {
+    async readCachedBodies(steps, ids, lease): Promise<SolidRecomputeOutcome> {
       const selected = cachedBodySteps(steps, ids);
       if (selected === null) return cachedBodyFailure(ids, MEASURE_MISSING_SHAPE_MESSAGE);
       if (health.broken && !disposed) restart();
       const active = connection;
+      const uncertified = lease === undefined;
+      if (uncertified) ledger.markOwnerCoverageUnknown('uncertified-hidden-read');
+      const context: ReferenceMeshLeaseOptions = lease ?? { partId: 'reference:legacy', generation: 0, maximumLiveMeshBytes: MESH_LEDGER_LIMIT_BYTES };
+      const owner = ledger.dispatch(context.partId, context.generation, 'hidden', selected);
+      phaseEpochs.set(owner, ledger.connectionEpoch());
+      const reservation = await ledger.reserve(owner, context.maximumLiveMeshBytes,
+        context.shouldCancel ?? (() => false), () => connection === active && !active.closed && active.interruption === null);
+      if (reservation.status !== 'reserved') {
+        if (reservation.status === 'stopped' && active.interruption === 'workerBroken')
+          return rememberOperation(active, 'workerBroken', cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE));
+        if (reservation.status === 'cancelled' || reservation.status === 'stopped') return rememberOperation(active, 'cancelled', {
+          bodies: [], failures: [], cacheHits: 0, cancelled: true });
+        return rememberOperation(active, 'failed', cachedBodyFailure(ids, reservation.status === 'timeout'
+          ? '表示メッシュの空きを待つ時間が上限を超えました。再度操作してください。' : '表示メッシュの空き容量を確認できません。'));
+      }
+      // A hidden read has the same reserve-before-dispatch window; no Worker token exists yet.
+      if (connection !== active || active.closed || active.interruption !== null) {
+        ledger.host.settleWithoutReply(owner.dispatchId);
+        return rememberOperation(active, active.interruption ?? 'cancelled', active.interruption === 'workerBroken'
+          ? cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE) : { bodies: [], failures: [], cacheHits: 0, cancelled: true });
+      }
+      const granted = reservation.bytes;
+      const callbacks = callbackScope();
+      hiddenCleanup.set(owner.dispatchId, { owner, active });
       return raceWithBroken(active,
-        () => active.remote.readCachedBodies(selected.map(step => ({ id: step.featureId, key: step.key })))
-          .then(result => toSolidOutcome(selected, result)),
-        () => cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE));
+        () => {
+          observe('dispatch', owner, active);
+          return active.remote.readCachedBodies(selected.map(step => ({ id: step.featureId, key: step.key })),
+          { owner, limitBytes: granted, ...(context.localMesh === undefined ? {} : { localMesh: { ...context.localMesh, maximumLiveMeshBytes: granted } }) },
+          callbacks.proxy((metadata: Parameters<NonNullable<Parameters<KernelApi['recomputeSolids']>[5]>>[0]) => ledger.admitReply(owner, metadata,
+            () => connection === active && !active.closed && active.interruption === null)))
+          .then(async result => {
+            observe('raw-received', owner, active);
+            ledger.adopt(owner, result);
+            observe('adopted', owner, active);
+            await acknowledgeReceived(owner, active);
+            if (uncertified && !active.closed) {
+              const reason = `uncertified-hidden-cleanup:${owner.dispatchId}`;
+              let returned = false;
+              try {
+                const release = active.remote.releaseReferenceMeshLease;
+                if (typeof release === 'function') {
+                  const disposition = await release(owner);
+                  returned = disposition.released || disposition.absent === true;
+                }
+              } catch { /* Real reply already adopted; preserve functional result plus failed owner. */ }
+              if (returned) {
+                hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId);
+                returnedHiddenOwners.add(owner); ledger.host.revokeOwner(owner.dispatchId);
+                ledger.clearOwnerCoverageReason(reason);
+              } else {
+                failedHiddenCleanup.add(owner.dispatchId); ledger.markOwnerCoverageUnknown(reason);
+              }
+            }
+            const converted = toSolidOutcome(selected, result);
+            return uncertified ? converted : ledger.bind(owner, converted);
+          }, async (error: unknown) => {
+            observe('reply-rejected', owner, active);
+            if (owner !== undefined) {
+              try { if (!active.closed) await acknowledgeReceived(owner, active); }
+              finally { ledger.host.settleWithoutReply(owner.dispatchId); }
+            }
+            throw error;
+          }).catch(async (error: unknown) => {
+            if (!active.closed) {
+              try {
+                const release = active.remote.releaseReferenceMeshLease;
+                if (typeof release === 'function') {
+                  const result = await release(owner);
+                  if (result.released || result.absent === true) {
+                    hiddenCleanup.delete(owner.dispatchId); failedHiddenCleanup.delete(owner.dispatchId);
+                    returnedHiddenOwners.add(owner); ledger.host.revokeOwner(owner.dispatchId);
+                  } else failedHiddenCleanup.add(owner.dispatchId);
+                } else failedHiddenCleanup.add(owner.dispatchId);
+              } catch { failedHiddenCleanup.add(owner.dispatchId); }
+            }
+            throw error;
+          });
+        },
+        () => cachedBodyFailure(ids, KERNEL_BROKEN_MESSAGE), callbacks);
     },
 
     async measure(steps, targets, kind): Promise<MeasureOutcome> {
@@ -1042,6 +1946,7 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
     },
 
     async exportShapes(steps, options): Promise<ShapeExportOutcome> {
+      if (options.signal?.aborted) return { kind: 'cancelled' };
       const items = toShapeExportItems(steps, options.bodies);
       if (items === null) {
         // 鍵が引けない立体があるので、Worker を起こさずここで断る(NFR-UX-5)。
@@ -1063,6 +1968,16 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
         // 書き出しの結果には「壊れた」を表す種類が無いので、呼び手が既に扱っている断り
         // (`kind: 'failed'`。理由の文はそのまま画面へ出る)で解決する。
         () => ({ kind: 'failed', message: KERNEL_BROKEN_MESSAGE }),
+        undefined,
+        {
+          milliseconds: EXPORT_TIMEOUT_MS,
+          refuse: () => ({ kind: 'failed', message: EXPORT_TIMEOUT_MESSAGE }),
+          terminateAndRestart: () => { if (!disposed && connection === active) restart(); },
+        },
+        options.signal === undefined ? undefined : {
+          signal: options.signal,
+          refuse: (): ShapeExportOutcome => ({ kind: 'cancelled' }),
+        },
       );
     },
 
@@ -1121,7 +2036,10 @@ export function createKernelBridge(): MonitoredKernelBridge & DrawingKernelBridg
 
     dispose(): void {
       disposed = true;
-      closeKernelConnection(connection);
+      if (phaseCapture !== null) { phases.endCapture(phaseCapture.nonce); phaseCapture = null; }
+      closeObservedConnection(connection);
+      retireTerminatedOwnerMetadata(connection);
+      ledger.attachWorker(null);
       for (const scope of callbackScopes) scope.close();
     },
   };
@@ -1185,7 +2103,8 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
   return {
     async functionSketchCurves(input) {
       return readFunctionCurveGeometry(await api.functionSketchCurves({ components: input.components, bounds: input.bounds,
-        ...(input.bezier === undefined ? {} : { bezier: input.bezier }) }), input);
+        ...(input.bezier === undefined ? {} : { bezier: input.bezier }),
+        ...(input.splines === undefined ? {} : { splines: input.splines }) }), input);
     },
     hiddenLineViews: (request, options = {}) => api.hiddenLineViews(request, options.onProgress, options.shouldCancel),
     sectionViews: (request, options = {}) => api.sectionViews(request, options.onProgress, options.shouldCancel),
@@ -1206,10 +2125,11 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
     },
 
     async recomputeSolids(steps, options = {}): Promise<SolidRecomputeOutcome> {
-      if (steps.length === 0) {
+      if (steps.length === 0 && options.localMesh === undefined) {
         return { bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] };
       }
       const request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
+      const context = captureSolidRecomputeContext(request);
       // Comlink を通らないので、進捗・中止の関数は proxy で包まずそのまま渡せる。
       const result = await api.recomputeSolids(
         request,
@@ -1225,7 +2145,7 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
               }),
         options.shouldCancel,
       );
-      return toSolidOutcome(steps, result, options.appearance ?? []);
+      return toSolidOutcome(steps, result, options.appearance ?? [], context);
     },
 
     async offsetSketchCurves(requests): Promise<SketchOffsetResult> {
@@ -1275,17 +2195,17 @@ export function createDirectKernelBridge(api: KernelApi): KernelBridge & Drawing
     },
 
     async exportShapes(steps, options): Promise<ShapeExportOutcome> {
+      if (options.signal?.aborted) return { kind: 'cancelled' };
       const items = toShapeExportItems(steps, options.bodies);
       if (items === null) {
         // 鍵が引けない立体があるので、カーネルを呼ばずここで断る(NFR-UX-5)。
         return { kind: 'failed', message: EXPORT_MISSING_SHAPE_MESSAGE };
       }
       try {
-        return toShapeExportOutcome(
-          await api.exportShapes(toShapeExportRequest(items, options)),
-          options,
-        );
+        const result = await api.exportShapes(toShapeExportRequest(items, options));
+        return options.signal?.aborted ? { kind: 'cancelled' } : toShapeExportOutcome(result, options);
       } catch (error) {
+        if (options.signal?.aborted) return { kind: 'cancelled' };
         // Worker 版と同じく、断りは投げずに理由つきの失敗で返す(NFR-RE-1)。
         return { kind: 'failed', message: toFailureMessage(error) };
       }

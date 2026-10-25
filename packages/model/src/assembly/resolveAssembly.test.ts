@@ -30,9 +30,66 @@ import {
   resolveAssembly,
 } from './resolveAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, ComponentSource, Placement } from './types.js';
+import { buildStandardPartFromSource, createStandardPartSource } from './standard/buildStandardPart.js';
+import { STEEL_PRODUCTS, steelProductOptions } from './standard/steelCatalog.js';
 
 /** 取り込みの時刻を固定して、抱き込みの結果を決定的にする。 */
 const IMPORTED_AT = '2026-09-06T00:00:00.000Z';
+
+describe('鋼材の解決は規格の拒否と保存値の食い違いを区別する', () => {
+  it.each([
+    ['SS400', 'steelPipe', 'JIS G 3101', '表1'],
+    ['S45C', 'equalAngle', 'JIS G 4051', '7.5'],
+    ['S45C', 'channel', 'JIS G 4051', '7.5'],
+    ['S45C', 'hBeam', 'JIS G 4051', '7.5'],
+    ['S45C', 'steelPipe', 'JIS G 4051', '適用範囲'],
+    ['SGP', 'flatBar', 'JIS G 3452', '適用範囲'],
+    ['SGP', 'roundBar', 'JIS G 3452', '適用範囲'],
+    ['SGP', 'equalAngle', 'JIS G 3452', '適用範囲'],
+    ['SGP', 'channel', 'JIS G 3452', '適用範囲'],
+    ['SGP', 'hBeam', 'JIS G 3452', '適用範囲'],
+  ] as const)('%s / %s の理由に規格 %s と条項 %s が出る', (grade, catalog, standard, clause) => {
+    const representative = STEEL_PRODUCTS.find((row) => row.materialGrade === grade);
+    if (representative === undefined) throw new Error('Missing steel grade');
+    const source = createStandardPartSource(catalog, 'size-not-existing', {
+      ...steelProductOptions(representative), steelProduct: `${grade}:${catalog}:size-not-existing`,
+    });
+    const result = resolveAssembly(assemblyWith([componentOf('steel-1', source)]), { standardPart: buildStandardPartFromSource });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({ componentId: 'steel-1', code: 'missingPart' });
+    expect(result.errors[0]?.message).toContain(standard);
+    expect(result.errors[0]?.message).toContain(clause);
+    expect(result.errors[0]?.message).not.toBe(MISSING_STANDARD_SIZE_MESSAGE);
+    expect(result.parts.size).toBe(0);
+  });
+
+  it('保存項目の改ざんと呼び寸法の不在を別々の日本語で表示する', () => {
+    const row = STEEL_PRODUCTS[0];
+    if (row === undefined) throw new Error('Missing steel row');
+    const source = createStandardPartSource(row.catalog, row.size, steelProductOptions(row));
+    const tampered = { ...source, options: { ...source.options, evidence: 'tampered' } };
+    const missing = { ...source, size: 'size-not-existing' };
+    const result = resolveAssembly(assemblyWith([componentOf('changed', tampered), componentOf('missing', missing)]),
+      { standardPart: buildStandardPartFromSource });
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]?.message).toBe('保存した鋼材の指定が寸法表と一致しません（evidence）。');
+    expect(result.errors[1]?.message).toContain('この鋼種・断面の呼び寸法はカタログにありません。');
+    expect(result.errors[1]?.message).toContain('JIS G 3194');
+  });
+
+  it('旧版と鋼材指定の混在を解決で拒否し、鋼材以外の一般文は維持する', () => {
+    const legacy = createStandardPartSource('equalAngle', 'L 50×50×6');
+    const mixed = { ...legacy, options: { ...legacy.options, materialGrade: 'S45C' } };
+    expect(buildStandardPartFromSource(mixed)).not.toBeNull();
+    const result = resolveAssembly(assemblyWith([componentOf('mixed', mixed),
+      componentOf('bolt', createStandardPartSource('hexBolt', 'size-not-existing'))]),
+    { standardPart: buildStandardPartFromSource });
+    expect(result.errors.map((error) => error.message)).toEqual([
+      '従来カタログの部品には鋼材の指定を組み合わせられません。材質別カタログから選び直してください。',
+      MISSING_STANDARD_SIZE_MESSAGE,
+    ]);
+  });
+});
 
 function expr(source: string): ExpressionValue {
   const result = evaluateExpression(source);

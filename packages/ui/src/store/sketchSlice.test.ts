@@ -14,6 +14,7 @@ import {
 import {
   expressionValueFromNumber,
 } from '@pointercad/expression';
+import { createNumericInput, reduceNumericInput } from '../sketch/numericInput.js';
 import {
   beforeEach,
   describe,
@@ -261,5 +262,33 @@ describe('3D スケッチのまま文書を差し替えたときの作図面(P4b
 
     useAppStore.getState().undo();
     expect(useAppStore.getState().workPlaneId).toBe(FREE_WORK_PLANE_ID);
+  });
+});
+
+describe('入力欄の通し番号(numericInputRevision、EX-14)', () => {
+  it('開く・閉じる・意味の変わる更新で進み、焦点だけの更新では進まない', () => {
+    const store = () => useAppStore.getState();
+    const input = createNumericInput('extrude', 'extrudeDistance');
+    const start = store().numericInputRevision;
+    store().openNumericInput(input, [10, 10]);
+    const opened = store().numericInputRevision;
+    expect(opened).toBeGreaterThan(start);
+    store().updateNumericInput(reduceNumericInput(input, { type: 'focus', index: 1 }));
+    expect(store().numericInputRevision).toBe(opened);
+    store().updateNumericInput(reduceNumericInput(input, { type: 'edit', index: 0, source: '12' }));
+    const edited = store().numericInputRevision;
+    expect(edited).toBeGreaterThan(opened);
+    const current = store().numericInput;
+    if (current === null) throw new Error('input open');
+    store().updateNumericInput(reduceNumericInput(current, { type: 'choose', key: 'extrudeEnd', value: 'toNext' }));
+    const chosen = store().numericInputRevision;
+    expect(chosen).toBeGreaterThan(edited);
+    // Re-opening an input with identical meaning is a new session.
+    store().openNumericInput(createNumericInput('extrude', 'extrudeDistance'), [10, 10]);
+    const reopened = store().numericInputRevision;
+    expect(reopened).toBeGreaterThan(chosen);
+    store().closeNumericInput();
+    expect(store().numericInputRevision).toBeGreaterThan(reopened);
+    expect(store().numericInput).toBeNull();
   });
 });

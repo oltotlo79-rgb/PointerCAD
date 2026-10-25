@@ -48,6 +48,8 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   surface: 'toolbar.solid.surface',
   functionSurface: 'functionSurface.name',
   draft: 'toolbar.machining.draft',
+  // 平らな面の移動(EX-18 の限られた一段)。「加工」の仲間なので toolbar.machining.*。
+  faceOffset: 'toolbar.machining.faceOffset',
   rib: 'toolbar.machining.rib',
   emboss: 'toolbar.machining.emboss',
   threadShaft: 'toolbar.machining.threadShaft',
@@ -60,6 +62,7 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   // 平面による切断(FR-432、§2.9b。P5 タスク27c)。「加工」の畳んだ一覧に入る
   // (§0.a-0.64)ので `toolbar.machining.*`。道具のボタン・案内・説明は **タスク27f**。
   cut: 'toolbar.machining.cut',
+  surfaceCut: 'toolbar.machining.cut',
   // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。対象を取らず新しい
   // ボディを作る「作る」の仲間(基本形状・ばねと同じ)なので `toolbar.solid.*`。
   // 道具のボタン(File > 読み込み)はこのタスクの範囲外。

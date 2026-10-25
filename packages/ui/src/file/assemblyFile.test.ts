@@ -1,5 +1,8 @@
+import { writeAssemblyDocument } from '@pointercad/io';
+import { startRefreshPartSource } from '../assembly/replaceActions.js';
+import { createPartDocumentBundle } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
+import { encodeSaveDocument, createAutoSaver, createMemoryAutoSaveStorage, readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
 import {
   addComponent, createAssemblyDocument, createAssemblyDocumentBundle, createComponentFor,
   createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY, emptyEmbeddedPartAttachments,
@@ -13,8 +16,11 @@ import { activeHasUnsavedChanges, newAssembly, openAssembly, saveAssembly } from
 import { newPart, openPart, savePart, windowTitle, type PartFileDeps } from './partFile.js';
 import { type FileGateway, type PickedFile } from './fileGateway.js';
 import { beginComponentDrag, finishComponentDrag, moveComponentDrag } from '../assembly/dragComponentActions.js';
+import { currentPcadAttachments } from '../store/attachKernel.js';
+import { newSketchCanvas } from './canvasFile.js';
+import { startAutoSave } from './attachAutoSave.js';
 
-beforeEach(resetTestStore);
+beforeEach(() => { resetTestStore(); useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null }); });
 
 const deps: PartFileDeps = { captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null };
 
@@ -54,6 +60,53 @@ async function fixture() {
 }
 
 describe('アセンブリの文書ファイル', () => {
+  it('削除した下絵を組立へ同梱せず、部品のUndo後には元画像を同梱する', async () => {
+    for (const restore of [false, true]) {
+      resetTestStore();
+      const g = gateway();
+      const canvas = newSketchCanvas([], 'xy', 'A.png', { width: 2, height: 1 }, 'canvas-1');
+      const bytes = Uint8Array.of(1, 2, 3);
+      useAppStore.getState().addCanvas(canvas, bytes);
+      useAppStore.getState().removeCanvas(canvas.id);
+      if (restore) useAppStore.getState().undo();
+      const embedded = await embedPart(EMPTY_PART_LIBRARY, useAppStore.getState().document, 'a.pcad', '', {
+        attachments: currentPcadAttachments(),
+      });
+      const otherBytes = Uint8Array.of(8, 9);
+      const other = await embedPart(embedded.library,
+        { ...createEmptyPartDocument(), name: 'Other', canvases: [canvas] }, 'other.pcad', '', {
+          attachments: { ...emptyEmbeddedPartAttachments(), canvases: new Map([[canvas.imageId, otherBytes]]) },
+        });
+      const empty = createAssemblyDocument('assembly');
+      const first = addComponent(empty, createComponentFor(empty, { kind: 'part', partRef: embedded.partRef }));
+      const document = addComponent(first, createComponentFor(first, { kind: 'part', partRef: other.partRef }));
+      useAppStore.getState().openAssembly(document, other.library);
+      const storage = createMemoryAutoSaveStorage();
+      let timer: (() => void) | undefined;
+      const stop = startAutoSave({ storage, createSaver: (options) => createAutoSaver({ ...options,
+        setTimeout: (callback) => { timer = callback; return 1; }, clearTimeout: () => { timer = undefined; } }) });
+      try {
+        timer?.();
+        await vi.waitFor(async () => { expect(await storage.listRecords()).toHaveLength(1); });
+        const recovery = await readDocumentBundle((await storage.listRecords())[0].bytes, 'assembly');
+        expect(recovery.ok).toBe(true);
+        if (!recovery.ok || recovery.bundle.kind !== 'assembly') throw new Error('Missing assembly recovery');
+        expect(recovery.bundle.embeddedDocuments.get(embedded.partRef)?.attachments.canvases.size).toBe(restore ? 1 : 0);
+        expect(recovery.bundle.embeddedDocuments.get(other.partRef)?.attachments.canvases.get(canvas.imageId)).toEqual(otherBytes);
+      } finally { stop(); }
+      await savePart(deps, false);
+      const saved = g.saved(); if (saved === null) throw new Error('Missing assembly');
+      const read = await readDocumentBundle(saved.bytes, 'assembly');
+      expect(read.ok).toBe(true);
+      if (!read.ok || read.bundle.kind !== 'assembly') throw new Error('Missing assembly bundle');
+      const attachments = read.bundle.embeddedDocuments.get(embedded.partRef)?.attachments;
+      expect(attachments?.canvases.size).toBe(restore ? 1 : 0);
+      expect(read.bundle.embeddedDocuments.get(other.partRef)?.attachments.canvases.get(canvas.imageId)).toEqual(otherBytes);
+      if (restore) expect(attachments?.canvases.get(canvas.imageId)).toEqual(bytes);
+      else expect(Buffer.from(saved.bytes).includes(Buffer.from(`parts/${embedded.partRef}/canvases/canvas-1.png`))).toBe(false);
+    }
+  });
+
   it('配置→変更→Undo→保存→開き直し→部品更新が成立し、3種類の添付を保持する', async () => {
     const g = gateway();
     const f = await fixture();
@@ -218,5 +271,119 @@ describe('アセンブリの文書ファイル', () => {
     expect(g.openPcad).toHaveBeenCalledExactlyOnceWith('all');
     expect(activeDocument(useAppStore.getState()).kind).toBe('assembly');
     expect(activeFileName(useAppStore.getState())).toBe('opened.pcada');
+  });
+});
+
+describe('same-source action through actual PCAD/PCADA codecs', () => {
+  it('saves updated shared source with exact component/mate/joint references and restores library Undo/Redo', async () => {
+    const g = gateway();
+    const f = await fixture();
+    const source = f.library.parts.get(f.partRef);
+    if (source === undefined) throw new Error('Source part required');
+    let document = addComponent(f.document, createComponentFor(f.document, { kind: 'part', partRef: f.partRef }));
+    const a = { kind: 'origin', componentId: document.components[0].id, element: 'origin' } as const;
+    const b = { kind: 'origin', componentId: document.components[1].id, element: 'origin' } as const;
+    document = { ...document, mates: [{ id: 'saved-mate', name: 'Saved', kind: 'coincident', a, b,
+      suppressed: false, flipped: false }], joints: [{ id: 'saved-joint', name: 'Joint', kind: 'ball',
+      a, b, minValue: null, maxValue: null, suppressed: false }] };
+    useAppStore.getState().openAssembly(document, f.library);
+    await saveAssembly(deps, false);
+    const beforeReferences = JSON.stringify(document);
+    const canonicalOptions = { savedAt: '2026-01-01T00:00:00.000Z' };
+    const canonicalBefore = writeAssemblyDocument(document, canonicalOptions);
+    const updated = { ...source, name: 'Edited original part' };
+    const bytes = await writeDocumentBundle(createPartDocumentBundle(updated, f.attachments));
+    useAppStore.setState({ isComputing: false });
+    let approvals = 0;
+    const unsubscribe = useAppStore.subscribe((state) => {
+      const request = state.partSourceConfirm;
+      if (request === null) return;
+      expect(request.sourceName).toBe(source.name);
+      expect(request.fileName).toBe('source-renamed.pcad');
+      expect(request.occurrenceCount).toBe(2);
+      expect(request.countComplete).toBe(true);
+      approvals += 1;
+      state.answerPartSourceConfirm(request.requestId, true);
+    });
+    try { await startRefreshPartSource(document.components[0].id, {
+      choose: () => Promise.resolve({ kind: 'pcad', fileName: 'source-renamed.pcad', bytes }),
+      read: value => readDocumentBundle(value, 'part'),
+      replace: (library, ref, part, attachments) => replacePartDocument(library, ref, part, { attachments }),
+    }); }
+    finally { unsubscribe(); }
+    expect(approvals).toBe(1);
+    expect(JSON.stringify(useAppStore.getState().assembly)).toBe(beforeReferences);
+    expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(true);
+    const refreshed = useAppStore.getState().assemblyLibrary;
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().assemblyLibrary).toBe(f.library);
+    expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(false);
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().assemblyLibrary).toBe(refreshed);
+    await saveAssembly(deps, false);
+    const saved = g.saved();
+    if (saved === null) throw new Error('Actual saved PCADA required');
+    const parsed = await readDocumentBundle(saved.bytes, 'assembly');
+    if (!parsed.ok || parsed.bundle.kind !== 'assembly') throw new Error('Actual PCADA decode required');
+    expect(parsed.bundle.document).toEqual(document);
+    expect(writeAssemblyDocument(parsed.bundle.document, canonicalOptions)).toBe(canonicalBefore);
+    const embedded = parsed.bundle.embeddedDocuments.get(f.partRef);
+    expect(embedded?.document).toEqual(updated);
+    expect(embedded?.attachments.shapes).toEqual(f.attachments.shapes);
+    expect(embedded?.attachments.meshes).toEqual(f.attachments.meshes);
+    expect(embedded?.attachments.canvases).toEqual(f.attachments.canvases);
+    await openAssembly(deps);
+    const reopened = useAppStore.getState().assembly;
+    if (reopened === null) throw new Error('Reopened assembly required');
+    expect(reopened).toEqual(document);
+    expect(writeAssemblyDocument(reopened, canonicalOptions)).toBe(canonicalBefore);
+    expect(useAppStore.getState().assemblyLibrary.parts.get(f.partRef)).toEqual(updated);
+    expect(activeHasUnsavedChanges(useAppStore.getState())).toBe(false);
+    // Codec reopen only. Actual process cold restart belongs to the held E2E packet.
+  });
+});
+
+describe('actual assembly file callers reject missing session entropy atomically', () => {
+  it('New keeps the whole old authored/runtime state and actual saved target except typed notice', async () => {
+    const g = gateway();
+    await fixture();
+    await saveAssembly(deps, false);
+    const before = useAppStore.getState();
+    const stored = g.saved();
+    g.clearSaveTarget.mockClear();
+    // Retain real attachment hashing while removing only ID entropy.
+    vi.stubGlobal('crypto', { subtle: globalThis.crypto.subtle });
+    try {
+      await newAssembly(deps);
+      expect(g.clearSaveTarget).not.toHaveBeenCalled();
+      expect(useAppStore.getState().fileGateway.hasSaveTarget()).toBe(true);
+      expect(g.saved()).toBe(stored);
+      expect(useAppStore.getState()).toEqual({ ...before,
+        fileMessage: { key: 'command.unavailable.action', failed: true } });
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it('Open parses a real saved assembly but cannot replace the old owner or confirm its target', async () => {
+    const g = gateway();
+    await fixture();
+    await saveAssembly(deps, false);
+    const before = useAppStore.getState();
+    const stored = g.saved();
+    if (stored === null) throw new Error('Actual saved assembly required');
+    g.clearSaveTarget.mockClear();
+    g.confirmSaveTarget.mockClear();
+    // Retain real attachment hashing while removing only ID entropy.
+    vi.stubGlobal('crypto', { subtle: globalThis.crypto.subtle });
+    try {
+      await openAssembly(deps);
+      expect(g.openPcad).toHaveBeenCalledTimes(1);
+      expect(g.confirmSaveTarget).not.toHaveBeenCalled();
+      expect(g.clearSaveTarget).not.toHaveBeenCalled();
+      expect(useAppStore.getState().fileGateway.hasSaveTarget()).toBe(true);
+      expect(g.saved()).toBe(stored);
+      expect(useAppStore.getState()).toEqual({ ...before,
+        fileMessage: { key: 'file.openFailed', failed: true } });
+      const parsed = await readDocumentBundle(stored.bytes, 'assembly');
+      expect(parsed.ok).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
   });
 });

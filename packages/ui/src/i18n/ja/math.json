@@ -285,5 +285,8 @@
   "math.declaration.type.vector": "ベクトル",
   "math.declaration.type.matrix": "行列",
   "math.declaration.type.function": "写像",
-  "math.declaration.type.symbolic": "その他の記号"
+  "math.declaration.type.symbolic": "その他の記号",
+  "math.inspection.angleContext": "角度の読み方",
+  "inspection.listSeparator": "、",
+  "inspection.positionSeparator": "："
 }

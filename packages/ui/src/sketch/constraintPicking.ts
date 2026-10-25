@@ -161,6 +161,8 @@ export function pickConstraintTarget(
  */
 export const CONSTRAINT_TARGET_COUNTS: Readonly<Record<SketchConstraintKind, number>> = {
   coincident: 2,
+  midpoint: 2,
+  pointOnCurve: 2,
   horizontal: 1,
   vertical: 1,
   parallel: 2,
@@ -170,6 +172,8 @@ export const CONSTRAINT_TARGET_COUNTS: Readonly<Record<SketchConstraintKind, num
   equal: 2,
   symmetric: 3,
   fix: 1,
+  horizontalDistance: 2,
+  verticalDistance: 2,
   distance: 2,
   angle: 2,
   radius: 1,
@@ -211,6 +215,9 @@ export function orderConstraintTargets(
   targets: readonly ConstraintTarget[],
   resolved: ResolvedSketch,
 ): readonly ConstraintTarget[] {
+  if ((kind === 'midpoint' || kind === 'pointOnCurve') && targets.length === 2) {
+    return targets[0].kind === 'curve' ? [targets[1], targets[0]] : targets;
+  }
   if (kind === 'tangent' && targets.length === 2) {
     const lineFirst = isSegmentTarget(resolved, targets[0]);
     return lineFirst ? targets : [targets[1], targets[0]];

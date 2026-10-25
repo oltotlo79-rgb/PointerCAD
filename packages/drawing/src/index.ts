@@ -238,3 +238,7 @@ export { drawingPrintOptions, readDrawingPrintOptions, type DrawingPrintOptions 
 export * from './table/balloon.js';
 export * from './table/holeTable.js';
 export * from './table/revisionTable.js';
+export type { SubShapeOrigin, CurrentOriginIndex, OriginBinding, OriginLookup, ShapeAddress,
+  ProfileLineAnchor, ProfileRegionAnchor } from './subShapeOrigin.js';
+
+export type { PointProducerAnchor, PointPlacementSourceAnchor, CopyPointPlacementRole, HoleCenterAnchor, HolePlacementRole, HoleFaceOrigin } from './subShapeOrigin.js';

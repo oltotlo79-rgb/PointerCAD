@@ -26,6 +26,7 @@
  * すべて純関数で、DOM にもカーネルにも触れない。
  */
 
+import type { CopyPointPlacementRole } from '../geometry/subShapeOrigin.js';
 import {
   baseWorkPlane,
   degreesToRadians,
@@ -108,8 +109,18 @@ export type CopyOutcome =
   | { readonly ok: false; readonly error: SketchError };
 
 type TransformsOutcome =
-  | { readonly ok: true; readonly transforms: readonly SketchTransform[] }
+  | { readonly ok: true; readonly transforms: readonly SketchTransform[];
+      readonly instances: readonly { readonly transform: SketchTransform; readonly role: CopyPointPlacementRole }[] }
   | { readonly ok: false; readonly error: SketchError };
+
+function namedSingleTransform(transform: SketchTransform, role: CopyPointPlacementRole): TransformsOutcome {
+  return { ok: true, transforms: [transform], instances: [{ transform, role }] };
+}
+
+function greatestCommonDivisor(a: number, b: number): number {
+  while (b !== 0) { const remainder = a % b; a = b; b = remainder; }
+  return a;
+}
 
 type SourceOutcome =
   | {
@@ -265,6 +276,8 @@ export function transformCurve(
         points: curve.points.map((point) => transformPoint(transform, point)),
         closed: curve.closed,
         ...(curve.degree === undefined ? {} : { degree: curve.degree }),
+        // An affine map moves only the poles; the parameter knots are unchanged and must be kept.
+        ...(curve.knots === undefined ? {} : { knots: curve.knots }),
       };
   }
 }
@@ -393,7 +406,7 @@ function resolveMirrorTransform(
     if (mirrorPlane === null) {
       return fail(featureId, 'missingBase', `鏡にする平面が見つかりません: ${basis.planeId}`);
     }
-    return { ok: true, transforms: [mirrorTransform(mirrorPlane.origin, mirrorPlane.normal)] };
+    return namedSingleTransform(mirrorTransform(mirrorPlane.origin, mirrorPlane.normal), { kind: 'mirror' });
   }
   // 線を軸にした鏡像は「その線を含み作図面に垂直な平面」で折り返すので、作図面が要る。
   if (plane === null) {
@@ -420,7 +433,7 @@ function resolveMirrorTransform(
   if (lengthVec3(normal) <= SKETCH_TOLERANCE_MM) {
     return fail(featureId, 'degenerate', '鏡にする軸の向きが定まりません。');
   }
-  return { ok: true, transforms: [mirrorTransform(axis.from, normalizeVec3(normal))] };
+  return namedSingleTransform(mirrorTransform(axis.from, normalizeVec3(normal)), { kind: 'mirror' });
 }
 
 /**
@@ -448,7 +461,7 @@ export function resolveCopyTransforms(
       if (lengthVec3(delta.value) <= SKETCH_TOLERANCE_MM) {
         return fail(featureId, 'degenerate', '移動量が 0 です。動かす向きと距離を入れてください。');
       }
-      return { ok: true, transforms: [translateTransform(delta.value)] };
+      return namedSingleTransform(translateTransform(delta.value), { kind: 'translate' });
     }
     case 'linearArray': {
       const direction = resolveCoordinate(placement.direction, context, featureId);
@@ -466,14 +479,13 @@ export function resolveCopyTransforms(
       if (!Number.isFinite(spacing) || spacing <= 0) {
         return fail(featureId, 'invalidValue', '並べる間隔は 0 より大きい数にしてください。');
       }
-      return {
-        ok: true,
-        transforms: linearArrayTransforms(
-          normalizeVec3(direction.value),
-          spacing,
-          placement.count.value,
-        ),
-      };
+      const instances: { transform: SketchTransform; role: CopyPointPlacementRole }[] = [];
+      const unitDirection = normalizeVec3(direction.value);
+      for (let step = 1; step < placement.count.value; step += 1) {
+        instances.push({ transform: translateTransform(scaleVec3(unitDirection, spacing * step)),
+          role: { kind: 'linear', step } });
+      }
+      return { ok: true, transforms: instances.map((instance) => instance.transform), instances };
     }
     case 'circularArray': {
       // 回す軸が作図面の法線なので、円形の配列は作図面のあるスケッチだけで作れる。
@@ -504,15 +516,17 @@ export function resolveCopyTransforms(
         // 全周でないときは、指定した角度を「もとを含めた個数 − 1」で等分する(P3 と同じ)。
         stepDegrees = angle / (count - 1);
       }
-      return {
-        ok: true,
-        transforms: circularArrayTransforms(
-          center.value,
-          plane.normal,
-          degreesToRadians(stepDegrees),
-          count,
-        ),
-      };
+      const instances: { transform: SketchTransform; role: CopyPointPlacementRole }[] = [];
+      const denominator = placement.fullCircle ? count : count - 1;
+      for (let step = 1; step < count; step += 1) {
+        const divisor = greatestCommonDivisor(step, denominator);
+        instances.push({ transform: { kind: 'rigid', translation: ORIGIN,
+          rotationOrigin: center.value, rotationAxis: plane.normal,
+          rotationAngle: degreesToRadians(stepDegrees) * step },
+          role: { kind: 'circular', fullCircle: placement.fullCircle,
+            numerator: step / divisor, denominator: denominator / divisor } });
+      }
+      return { ok: true, transforms: instances.map((instance) => instance.transform), instances };
     }
   }
 }
@@ -545,12 +559,15 @@ export function resolveCopyFeature(
   }
   const points: ResolvedPoint[] = [];
   const curves: ResolvedCurve[] = [];
-  for (const transform of transforms.transforms) {
+  for (const { transform, role } of transforms.instances) {
     for (const point of source.points) {
       points.push({
         id: `${feature.id}#${String(points.length)}`,
         featureId: feature.id,
         position: transformPoint(transform, point.position),
+        ...(point.producerAnchor === undefined ? {} : { producerAnchor: {
+          kind: 'copied-point', featureId: feature.id, source: point.producerAnchor, placement: role,
+        } as const }),
       });
     }
     for (const curve of source.curves) {

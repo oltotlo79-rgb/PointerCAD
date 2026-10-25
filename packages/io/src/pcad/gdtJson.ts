@@ -58,7 +58,8 @@ export function isWeldSymbol(value: unknown, checks: Checks): value is WeldSymbo
     && isUnknownArray(value['sides']) && value['sides'].length >= 1 && value['sides'].length <= 2 && value['sides'].every(weldSide)
     && typeof value['allAround'] === 'boolean' && typeof value['fieldWeld'] === 'boolean' && text(value['tail'], 2000)
     && (value['closedTail'] === undefined || typeof value['closedTail'] === 'boolean')
-    && (value['arrowBendOffset'] === undefined || point(value['arrowBendOffset']));
+    && (value['arrowBendOffset'] === undefined || point(value['arrowBendOffset']))
+    && (value['weldId'] === undefined || (text(value['weldId']) && value['weldId'] !== ''));
 }
 
 interface Cleaners {
@@ -104,5 +105,6 @@ export function cleanWeldSymbol(value: WeldSymbol, cleaners: Cleaners, cleanTarg
   })), allAround: value.allAround, fieldWeld: value.fieldWeld, tail: value.tail, position: [...value.position], height: value.height, layerId: value.layerId,
   ...(value.closedTail === undefined ? {} : { closedTail: value.closedTail }),
   ...(value.arrowBendOffset === undefined ? {} : { arrowBendOffset: [...value.arrowBendOffset] }),
+  ...(value.weldId === undefined ? {} : { weldId: value.weldId }),
   ...(value.style === undefined ? {} : { style: cleaners.style(value.style) }) };
 }

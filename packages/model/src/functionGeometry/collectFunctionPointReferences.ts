@@ -40,12 +40,13 @@ function solidPoints(feature: SolidFeature): readonly PointReference[] {
   switch (feature.kind) {
     case 'primitive': return feature.origin.kind === 'coordinate' ? coordinateReferences(feature.origin.value) : [];
     case 'scale': return [feature.origin];
-    case 'pattern': return feature.placement.kind === 'points' ? feature.placement.points : [];
+    case 'pattern': return feature.placement.kind === 'points' ? feature.placement.points.map(slot => slot.reference) : [];
+    case 'surfaceCut': return feature.blade.kind === 'plane' ? planeReferences(feature.blade.plane) : [];
     case 'cut': return planeReferences(feature.plane);
     case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief':
     case 'extrude': case 'revolve': case 'sew': case 'boolean': case 'hole':
     case 'threadHole': case 'fillet': case 'chamfer': case 'spring': case 'ruled':
-    case 'loft': case 'draft': case 'mirror': case 'transform': case 'sweep':
+    case 'loft': case 'draft': case 'faceOffset': case 'mirror': case 'transform': case 'sweep':
     case 'rib': case 'emboss': case 'threadShaft': case 'surface': case 'functionSurface':
     case 'shell': case 'importedSolid': case 'importedMesh': return [];
   }

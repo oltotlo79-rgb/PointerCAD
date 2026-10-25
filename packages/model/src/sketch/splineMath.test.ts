@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   hasDuplicateSplinePoint,
   MAX_SPLINE_POINTS,
+  reverseSpline,
   sampleSpline,
   sampleSplineCurve,
   splineCurveData,
@@ -252,5 +253,51 @@ describe('表示用の折れ線(sampleSpline)', () => {
       true,
     );
     expect(sampleSpline(brokenClosed)).toEqual([...brokenClosed.points, brokenClosed.points[0]]);
+  });
+});
+
+describe('明示節点の関数曲線（3次・C1）の形・描画点・反転', () => {
+  const knots = [0, 0.3, 1.5, 1.6];
+  const points: Vec3[] = [[0, 0, 0], [0.2, 0.5, 0], [0.6, 1.1, 0], [1, 1.3, 0], [2.2, 1.6, 0], [2.9, 0.4, 0], [3, 0.2, 0], [3.4, 0, 0]];
+  const curve: ResolvedSpline = { kind: 'spline', featureId: 'f', mode: 'control', closed: false, degree: 3, knots, points };
+  /** The curve point at interior knot i lies between poles 2i and 2i+1 at the share h_{i-1}/(h_{i-1}+h_i). */
+  const junction = (node: number): Vec3 => {
+    const share = (knots[node] - knots[node - 1]) / (knots[node + 1] - knots[node - 1]);
+    const a = points[2 * node], b = points[2 * node + 1];
+    return [a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share, a[2] + (b[2] - a[2]) * share];
+  };
+
+  it('節点と極の数・単調性・有限性・方式・閉じかの崩れた記録は解かない', () => {
+    expect(splineCurveData(curve)).toEqual({ poles: points, knots, multiplicities: [4, 2, 2, 4], degree: 3, periodic: false });
+    for (const bad of [
+      { ...curve, points: points.slice(1) },
+      { ...curve, knots: [0, 0.3, 0.3, 1.6] },
+      { ...curve, knots: [0, 0.3, Number.POSITIVE_INFINITY, 1.6] },
+      { ...curve, points: points.map((point, n): Vec3 => (n === 3 ? [Number.NaN, 1, 0] : point)) },
+      { ...curve, closed: true },
+      { ...curve, mode: 'interpolate' as const },
+      { ...curve, knots: undefined },
+      { ...curve, degree: undefined },
+    ]) expect(splineCurveData(bad)).toBeNull();
+  });
+
+  it('描画点は節点区間ごとに等分し、端は極・区間の境は接合点そのものになる', () => {
+    const sampled = sampleSpline(curve, 4);
+    expect(sampled).toHaveLength(3 * 4 + 1);
+    sampled[0].forEach((value, axis) => expect(value).toBeCloseTo(points[0][axis], 12));
+    sampled[sampled.length - 1].forEach((value, axis) => expect(value).toBeCloseTo(points[points.length - 1][axis], 12));
+    for (const node of [1, 2]) {
+      sampled[4 * node].forEach((value, axis) => expect(value).toBeCloseTo(junction(node)[axis], 12));
+    }
+  });
+
+  it('反転は節点を写して並べ替え、同じ形を逆にたどる。一様な曲線は点だけを逆にする', () => {
+    const reversed = reverseSpline(curve);
+    expect(reversed.points).toEqual([...points].reverse());
+    expect(reversed.knots?.map((knot) => Number(knot.toFixed(12)))).toEqual([0, 0.1, 1.3, 1.6]);
+    const forward = sampleSpline(curve, 8), backward = sampleSpline(reversed, 8).reverse();
+    backward.forEach((point, n) => point.forEach((value, axis) => expect(value).toBeCloseTo(forward[n][axis], 12)));
+    const uniform = splineOf(points, 'control');
+    expect(reverseSpline(uniform)).toEqual({ ...uniform, points: [...points].reverse() });
   });
 });

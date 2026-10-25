@@ -43,6 +43,8 @@
   "sheetMetal.computing": "板金の形を計算しています。取消で中止できます。",
   "sheetMetal.computeUnavailable": "形状計算の準備ができていません。少し待ってから再実行してください。",
   "sheetMetal.computeFailed": "板金の形を作れませんでした。輪郭と曲げの条件を確認してください。",
+  "sheetMetal.flangeOverlap": "フランジが既存の板に食い込んでいます。角度・長さ・端の位置を変更してください。",
+  "sheetMetal.missingFlangePanel": "フランジの元のパネルが見つかりません。板金の縁を選び直してください。",
   "sheetMetal.cancel": "取消",
   "sheetMetal.unitError": "曲げ角とK係数には長さの単位を付けないでください。",
   "sheetMetal.base": "板金基板",

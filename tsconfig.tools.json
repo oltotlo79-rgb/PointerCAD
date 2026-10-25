@@ -13,6 +13,7 @@
   "references": [
     { "path": "./packages/test-utils" },
     { "path": "./packages/expression" },
+    { "path": "./packages/kernel" },
     { "path": "./packages/model" },
     { "path": "./packages/help-content" },
     { "path": "./packages/ui" },
@@ -22,8 +23,10 @@
   "include": [
     "*.config.ts",
     "packages/*/*.config.ts",
+    "packages/ui/integration/**/*.ts",
     "apps/*/*.config.ts",
     "apps/*/build/**/*.ts",
+    "apps/desktop/src/occtHttpPolicy.ts",
     "e2e/**/*.ts",
     "packages/ui/src/i18n/ja/*.json"
   ]

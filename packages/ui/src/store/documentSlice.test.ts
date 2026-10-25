@@ -1,14 +1,24 @@
+import { prepareDocumentSession, SecurePartIdentityError } from './fileSlice.js';
 /** 文書・履歴・Undo。useAppStore.test.ts から責務単位で移した回帰テスト。 */
 
 import {
+  allocatePatternPointSlots,
+  patternSlotHighWater,
+  type PatternFeature,
   appearanceFromPreset,
   appearanceOf,
   appendSolid,
   createAssemblyDocument,
   createEmptyPartDocument,
   createEmptySketchDocument,
+  createDrawingDocument,
+  embedDrawingSource,
+  embedPart,
+  emptyDrawingSourceLibrary,
+  emptyEmbeddedPartAttachments,
   EMPTY_PART_LIBRARY,
   removeSolid,
+  UNDO_LIMIT,
 } from '@pointercad/model';
 import {
   expressionValueFromNumber,
@@ -33,6 +43,10 @@ import {
   useAppStore,
 } from './useAppStore.js';
 import { activeDocument } from './documentKind.js';
+import { newSketchCanvas } from '../file/canvasFile.js';
+import { captureSaveSnapshot, copySaveSnapshot } from '../file/pcadSaveSnapshot.js';
+import { encodeSaveDocument, readPcadFile } from '@pointercad/io';
+import { documentPatch } from './documentDerived.js';
 import {
   resetTestStore,
   createFakeRecompute,
@@ -46,6 +60,138 @@ import {
 } from './testing/createTestStore.js';
 
 beforeEach(resetTestStore);
+
+describe('下絵資産の実履歴による保持と回収', () => {
+  function expectAssets(count: number): void {
+    const state = useAppStore.getState();
+    expect(state.canvases.size).toBe(count);
+    expect([...state.canvases.values()].reduce((sum, bytes) => sum + bytes.byteLength, 0)).toBe(count * 2);
+    for (const document of [state.document, ...state.undoStack.past, state.undoStack.present, ...state.undoStack.future]) {
+      for (const canvas of document.canvases) expect(state.canvases.has(canvas.imageId)).toBe(true);
+    }
+    expect(state.isComputing).toBe(false);
+  }
+
+  it('追加→削除→Undo→Redoを100回行い、実履歴の上限を越えた画像だけを順に回収する', async () => {
+    const fake = createFakeRecompute(), detach = attachPartRecompute(fake.recompute);
+    fake.calls[0].settle(resultFor(fake.calls[0].document)); await tick();
+    expect(fake.calls).toHaveLength(1);
+    const originals = new Map<string, Uint8Array>();
+    for (let cycle = 1; cycle <= 100; cycle += 1) {
+      const state = useAppStore.getState();
+      const canvas = newSketchCanvas(state.document.canvases, 'xy', `${cycle}.png`, { width: 2, height: 1 }, `asset-${cycle}`);
+      const bytes = Uint8Array.of(cycle, 255 - cycle); originals.set(canvas.imageId, bytes);
+      state.addCanvas(canvas, bytes); expectAssets(cycle);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(cycle * 2 - 1);
+      state.removeCanvas(canvas.id); expectAssets(cycle);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(cycle * 2);
+      state.undo(); expectAssets(cycle);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(cycle * 2 - 1);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(1);
+      expect(useAppStore.getState().document.canvases).toEqual([canvas]);
+      expect(useAppStore.getState().canvases.get(canvas.imageId)).toBe(bytes);
+      state.redo(); expectAssets(cycle);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(cycle * 2);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(0);
+      expect(useAppStore.getState().document.canvases).toEqual([]);
+    }
+    expect(useAppStore.getState().undoStack.past).toHaveLength(UNDO_LIMIT);
+    const captured = useAppStore.getState().canvases;
+    for (let edit = 1; edit <= UNDO_LIMIT; edit += 1) {
+      const state = useAppStore.getState();
+      state.applyDocument({ ...state.document, name: `later-${edit}` });
+      // 各画像を参照する過去の文書は、追加直後の1段だけ。2段ごとに1枚退去する。
+      expectAssets(100 - Math.floor(edit / 2));
+      expect(useAppStore.getState().undoStack.past).toHaveLength(UNDO_LIMIT);
+    }
+    expect(captured.size).toBe(100);
+    for (const [id, bytes] of originals) expect(captured.get(id)).toBe(bytes);
+    const final = useAppStore.getState();
+    final.applyDocument({ ...final.document, name: 'after-empty' });
+    expect(useAppStore.getState().canvases).toBe(final.canvases);
+    expectAssets(0);
+    expect(fake.calls).toHaveLength(1); detach();
+  });
+
+  it('futureだけが参照する画像をRedoまで保ち、新しい分岐を作った時だけ回収する', () => {
+    useAppStore.setState({ isComputing: false });
+    const store = useAppStore.getState();
+    const a = newSketchCanvas([], 'xy', 'A.png', { width: 2, height: 1 }, 'A');
+    const b = newSketchCanvas([], 'xy', 'B.png', { width: 2, height: 1 }, 'B');
+    const bytesA = Uint8Array.of(1, 2), bytesB = Uint8Array.of(3, 4);
+    store.addCanvas(a, bytesA); store.removeCanvas(a.id);
+    store.addCanvas(b, bytesB); store.undo(); expectAssets(2);
+    expect(useAppStore.getState().undoStack.future[0].canvases).toEqual([b]);
+    store.redo(); expect(useAppStore.getState().canvases.get(b.imageId)).toBe(bytesB);
+    store.undo();
+    const captured = useAppStore.getState().canvases;
+    const c = newSketchCanvas([], 'xy', 'C.png', { width: 2, height: 1 }, 'C');
+    const bytesC = Uint8Array.of(5, 6);
+    store.addCanvas(c, bytesC); expectAssets(2);
+    expect([...useAppStore.getState().canvases.keys()]).toEqual(['A', 'C']);
+    expect(useAppStore.getState().undoStack.future).toEqual([]);
+    expect(captured.get('B')).toBe(bytesB);
+    store.undo(); store.undo(); expectAssets(2);
+    expect(useAppStore.getState().document.canvases).toEqual([a]);
+    expect(useAppStore.getState().canvases.get('A')).toBe(bytesA);
+    store.redo(); store.redo(); expectAssets(2);
+    expect(useAppStore.getState().document.canvases).toEqual([c]);
+    expect(useAppStore.getState().canvases.get('C')).toBe(bytesC);
+  });
+
+  it('回収中も保存が捕捉した旧Mapと原本を保ち、開始済みの保存コピーを実ZIPへ復元できる', async () => {
+    const store = useAppStore.getState(), bytes = Uint8Array.of(1, 2);
+    const canvas = newSketchCanvas([], 'xy', 'saved.png', { width: 2, height: 1 }, 'saved');
+    store.addCanvas(canvas, bytes); store.setCanvasPixelSize(canvas.imageId, { width: 2, height: 1 });
+    const before = useAppStore.getState();
+    const captured = before.canvases;
+    const snapshot = captureSaveSnapshot({ kind: 'part', document: before.document,
+      options: { attachments: { ...emptyEmbeddedPartAttachments(), canvases: captured } } });
+    const copying = copySaveSnapshot(snapshot);
+    store.removeCanvas(canvas.id);
+    for (let edit = 0; edit < UNDO_LIMIT; edit += 1) {
+      store.applyDocument({ ...useAppStore.getState().document, name: `empty-${edit}` });
+    }
+    expect(useAppStore.getState().canvases.size).toBe(0);
+    expect(useAppStore.getState().canvasImageLoads.size).toBe(0);
+    expect(useAppStore.getState().canvasPixelSizes.size).toBe(0);
+    expect(captured.get(canvas.imageId)).toBe(bytes);
+    const owned = await copying;
+    const saved = readPcadFile(await encodeSaveDocument(owned.input));
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) throw new Error('Captured save was not readable');
+    expect(saved.document.canvases).toEqual([canvas]);
+    expect(saved.attachments.canvases.get(canvas.imageId)).toEqual(bytes);
+    expect(captured.get(canvas.imageId)).toBe(bytes);
+    expect(bytes).toEqual(Uint8Array.of(1, 2));
+  });
+
+  it.each(['assembly', 'drawing'] as const)('%sの埋込み所有者を仮部品で回収せず、先行添付後の部品差替えも保つ', async mode => {
+    const store = useAppStore.getState();
+    const canvas = newSketchCanvas([], 'xy', 'embedded.png', { width: 2, height: 1 }, 'canvas-1');
+    const oldBytes = Uint8Array.of(1, 2), newBytes = Uint8Array.of(3, 4);
+    const embeddedPart = { ...createEmptyPartDocument(), canvases: [canvas] };
+    const attachments = { ...emptyEmbeddedPartAttachments(), canvases: new Map([[canvas.imageId, oldBytes]]) };
+    const embedded = await embedPart(EMPTY_PART_LIBRARY, embeddedPart, 'embedded.pcad', '', { attachments });
+    const source = await embedDrawingSource(emptyDrawingSourceLibrary(), {
+      sourceKind: 'part', document: embeddedPart, attachments,
+    }, 'embedded.pcad', '');
+    if (mode === 'assembly') store.openAssembly(createAssemblyDocument('assembly'), embedded.library);
+    else store.openDrawing(createDrawingDocument('drawing', source.source), { sources: source.library });
+    store.setCanvasImages(new Map([[canvas.imageId, newBytes]]));
+    const before = useAppStore.getState();
+    const placeholder = createEmptyPartDocument();
+    const patch = documentPatch(before, placeholder, before.undoStack);
+    expect(patch.canvases).toBe(before.canvases);
+    // 本番の読込順と同じく、添付を先に置き、後から新しいpartを適用する。
+    store.applyDocument({ ...placeholder, canvases: [canvas] }, { replacesDocument: true });
+    expect(useAppStore.getState().canvases.get(canvas.imageId)).toBe(newBytes);
+    expect(embedded.library.attachments.get(embedded.partRef)?.canvases.get(canvas.imageId)).toBe(oldBytes);
+    const ownedSource = source.library.sources[0];
+    expect(ownedSource.attachments?.canvases.get(canvas.imageId)).toBe(oldBytes);
+    expect(before.canvases.get(canvas.imageId)).toBe(newBytes);
+  });
+});
 
 describe('文書種別による共通入口(P7 タスク11a)', () => {
   it('共通 Undo/Redo はアセンブリだけを戻し、裏の部品履歴と文書IDは保つ', () => {
@@ -475,5 +621,124 @@ describe('外観の口(FR-1106〜1110、P5 タスク11)', () => {
     useAppStore.getState().applyDocument(suppressed);
 
     expect(appearanceOf(useAppStore.getState().document).entries).toHaveLength(1);
+  });
+});
+
+describe('point-pattern issuance survives actual store Undo and branch changes', () => {
+  it('restores history without reissuing deleted slots on the new branch', () => {
+    const initial = useAppStore.getState().document;
+    useAppStore.getState().applyDocument({ ...initial, name: 'issued', patternSlotHighWater: { pattern: 5 } });
+    useAppStore.getState().undo();
+    const undone = useAppStore.getState();
+    expect(undone.document.name).toBe(initial.name);
+    expect(undone.document.patternSlotHighWater?.pattern).toBe(5);
+    expect(undone.undoStack.present).toBe(undone.document);
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().document.name).toBe('issued');
+    useAppStore.getState().undo();
+    const restored = useAppStore.getState().document;
+    const feature: PatternFeature = { id: 'pattern', name: 'branch pattern', kind: 'pattern', suppressed: false,
+      sourceFeatureId: 'source-hole', placement: allocatePatternPointSlots([{ kind: 'origin' }],
+        undefined, undefined, patternSlotHighWater(restored, 'pattern')) };
+    useAppStore.getState().applyDocument(appendSolid(restored, feature));
+    const branch = useAppStore.getState();
+    const pattern = branch.document.solids.find((solid) => solid.id === 'pattern');
+    if (pattern?.kind !== 'pattern' || pattern.placement.kind !== 'points') throw new Error('Missing branch pattern');
+    expect(pattern.placement.points.map((slot) => slot.slotId)).toEqual(['slot-5']);
+    expect(branch.document.patternSlotHighWater?.pattern).toBe(6);
+    expect(branch.undoStack.present).toBe(branch.document);
+    expect(branch.canRedo).toBe(false);
+  });
+
+  it('does not transfer a ledger through the explicit new/open document boundary', () => {
+    const document = useAppStore.getState().document;
+    useAppStore.getState().applyDocument({ ...document, patternSlotHighWater: { removed: 12 } });
+    const fresh = createEmptyPartDocument();
+    useAppStore.getState().applyDocument(fresh, { replacesDocument: true });
+    expect(useAppStore.getState().document.patternSlotHighWater).toBeUndefined();
+    expect(useAppStore.getState().undoStack.present).toBe(useAppStore.getState().document);
+  });
+});
+
+describe('persisted lineage identity at actual startup', () => {
+  it('independent startup documents have unique tagged IDs and unchanged empty content', () => {
+    const first = createInitialDocumentState().document;
+    const second = createInitialDocumentState().document;
+    const format = /^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    expect(first.id).toMatch(format);
+    expect(second.id).toMatch(format);
+    expect(second.id).not.toBe(first.id);
+    expect(first).toEqual({ ...createEmptyPartDocument(), id: first.id });
+    expect(second).toEqual({ ...createEmptyPartDocument(), id: second.id });
+  });
+
+  it('actual load/reset and edit Undo/Redo retain both legacy and tagged IDs', () => {
+    for (const id of ['part-1', 'part-uuid:086963bc-1dbd-4a51-a603-ae34317c05c3']) {
+      const source = { ...createEmptyPartDocument(), id, name: 'Opened source' };
+      useAppStore.getState().resetDocument(source);
+      expect(useAppStore.getState().document).toBe(source);
+      useAppStore.getState().applyDocument({ ...source, name: 'Edited source' });
+      expect(useAppStore.getState().document.id).toBe(id);
+      useAppStore.getState().undo();
+      expect(useAppStore.getState().document).toEqual(source);
+      useAppStore.getState().redo();
+      expect(useAppStore.getState().document).toEqual({ ...source, name: 'Edited source' });
+    }
+  });
+});
+
+describe('secure entropy fallback at actual startup', () => {
+  it('missing randomUUID uses real getRandomValues and preserves full empty documents', () => {
+    const entropy = globalThis.crypto;
+    vi.stubGlobal('crypto', { getRandomValues: entropy.getRandomValues.bind(entropy) });
+    try {
+      const first = createInitialDocumentState().document;
+      const second = createInitialDocumentState().document;
+      const format = /^part-uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      expect(first.id).toMatch(format);
+      expect(second.id).toMatch(format);
+      expect(second.id).not.toBe(first.id);
+      expect(first).toEqual({ ...createEmptyPartDocument(), id: first.id });
+      expect(second).toEqual({ ...createEmptyPartDocument(), id: second.id });
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it('missing secure entropy fails explicitly and cannot replace the current document', () => {
+    const before = useAppStore.getState().document;
+    vi.stubGlobal('crypto', {});
+    try {
+      expect(() => createInitialDocumentState()).toThrow('Secure document identity is unavailable');
+      expect(useAppStore.getState().document).toBe(before);
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+describe('atomic part session before real reset', () => {
+  it('missing entropy leaves the complete old assembly owner, history, target and runtime untouched', () => {
+    useAppStore.getState().openAssembly(createAssemblyDocument('Old assembly'));
+    const next = createEmptyPartDocument();
+    const clearSaveTarget = vi.fn();
+    useAppStore.setState({ fileGateway: { ...useAppStore.getState().fileGateway,
+      hasSaveTarget: () => true, clearSaveTarget } });
+    const before = useAppStore.getState();
+    vi.stubGlobal('crypto', {});
+    try {
+      expect(() => before.resetDocument(next)).toThrow(SecurePartIdentityError);
+      expect(clearSaveTarget).not.toHaveBeenCalled();
+      expect(useAppStore.getState()).toBe(before);
+      expect(useAppStore.getState()).toEqual(before);
+      expect(useAppStore.getState().fileGateway.hasSaveTarget()).toBe(true);
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it('prepared reset keeps loaded legacy lineage and commits the exact prepared session without entropy', () => {
+    const next = { ...createEmptyPartDocument(), id: 'part-1', name: 'Actual loaded lineage' };
+    const session = prepareDocumentSession();
+    vi.stubGlobal('crypto', {});
+    try {
+      useAppStore.getState().resetDocument(next, session);
+      expect(useAppStore.getState().document).toBe(next);
+      expect(useAppStore.getState().document).toEqual(next);
+      expect(useAppStore.getState().activeDocumentId).toBe(session.id);
+      expect(useAppStore.getState().undoStack.present).toBe(next);
+    } finally { vi.unstubAllGlobals(); }
   });
 });

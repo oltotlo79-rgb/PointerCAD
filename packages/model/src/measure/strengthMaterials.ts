@@ -14,6 +14,15 @@ export const STRENGTH_SOURCES: Readonly<Record<string, StrengthSource>> = {
     checkedDate: '2026-09-11', standard: 'JIS G 3101', standardEdition: null, evidence: 'supplier-excerpt',
     sha256: 'aa11597e13f303f2fbe0b7b401906d9834ed8e80ce9e15b9f5fcc0b268d56a13',
   },
+  'jisf-g3101-draft': {
+    url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3101_20230726.pdf',
+    publisher: '日本鉄鋼連盟',
+    locator: 'PDF7ページ・印刷3ページ、表3（鋼板）。注記: 1 N/mm2 = 1 MPa。注a: 上降伏点ReH、現れない場合は0.2%耐力Rp0.2。最終規格票との差は未確認',
+    checkedDate: '2026-10-25', standard: 'JIS G 3101',
+    standardEdition: 'JIS G 3101:9999（案）、JISF 2022年度第2回鋼材規格三者委員会 資料4、ファイル日付2023-07-26、更新2024-02-19',
+    evidence: 'standard-draft',
+    sha256: '797fe421e44bfce54f53b6b89073e4ce488343f59d733288ca9996a26db44893',
+  },
   'nippon-sus304': {
     url: 'https://www.nipponsteel.com/product/catalog_download/pdf/S008.pdf',
     publisher: '日本製鉄', locator: 'ステンレス冷延鋼板S008、PDF4ページ、SUS304の機械的性質と物理的性質',
@@ -43,12 +52,16 @@ const steelElastic = {
 /** Each ID denotes material plus condition, not the body appearance/density selection. */
 export const STRENGTH_MATERIALS: readonly StrengthMaterialPreset[] = [
   ...([
-    ['ss400-plate-0-16', 0, 16, '245'], ['ss400-plate-16-40', 16, 40, '235'],
-    ['ss400-plate-40-100', 40, 100, '215'],
-  ] satisfies readonly (readonly [string, number, number, string])[]).map(([id, greaterThan, atMost, yieldStress]): StrengthMaterialPreset => ({
+    ['ss400-plate-0-16', 0, 16, '245', '16 以下', '245 以上', 'G3101-T3-SS400-Y1'],
+    ['ss400-plate-16-40', 16, 40, '235', '16 超え40 以下', '235 以上', 'G3101-T3-SS400-Y2'],
+    ['ss400-plate-40-100', 40, 100, '215', '40 超え100 以下', '215 以上', 'G3101-T3-SS400-Y3'],
+  ] satisfies readonly (readonly [string, number, number, string, string, string, string])[]).map(([id, greaterThan, atMost, yieldStress, thicknessPrinted, yieldPrinted, yieldRowId]): StrengthMaterialPreset => ({
     id, densityMaterialId: 'steel', grade: 'SS400', condition: '圧延鋼板（熱処理の指定なし）', product: 'plate',
-    thicknessMm: { greaterThan, atMost }, temperature: 'not-specified',
-    yieldStress: property(yieldStress, 'nippon-ss400', 'minimum'), tensileStrength: property('400', 'nippon-ss400', 'minimum'),
+    thicknessMm: { greaterThan, atMost }, thicknessPrinted, temperature: 'not-specified',
+    yieldStress: { ...property(yieldStress, 'jisf-g3101-draft', 'minimum'),
+      sourceValue: { printed: yieldPrinted, unit: 'N/mm2', rowId: yieldRowId } },
+    tensileStrength: { ...property('400', 'jisf-g3101-draft', 'minimum'), maximumMpa: '510',
+      sourceValue: { printed: '400～510', unit: 'N/mm2', rowId: 'G3101-T3-SS400-T1' } },
     ...steelElastic,
   })),
   {

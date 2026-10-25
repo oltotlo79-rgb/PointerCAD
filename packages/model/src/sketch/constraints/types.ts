@@ -1,8 +1,8 @@
 /**
  * 拘束の保存形(FR-313、計画書 docs/plans/P4b-スケッチの仕上げ.md §0.a-0.5・§2.2、タスク4)。
  *
- * 寸法拘束 4 種(距離・角度・半径・直径)と幾何拘束 9 種(一致・水平・垂直・平行・直角・
- * 接線・同心・等しい・対称)に、ソルバーの基準になる「固定」を足した 14 種を判別共用体で持つ。
+ * 寸法拘束 6 種(横距離・縦距離・距離・角度・半径・直径)と幾何拘束 11 種(一致・中点・
+ * 曲線上・水平・垂直・平行・直角・接線・同心・等しい・対称)に「固定」を足した18種を持つ。
  * 「固定」を足したのは、動かない点が 1 つも無いと解が一意に決まらないため(§0.a-0.2)。
  *
  * **拘束は順序を持たない**ので、フィーチャーの履歴(`SketchDocument.features`)とは
@@ -36,6 +36,8 @@ export type ConstraintTarget =
 
 export type SketchConstraintKind =
   | 'coincident'
+  | 'midpoint'
+  | 'pointOnCurve'
   | 'horizontal'
   | 'vertical'
   | 'parallel'
@@ -45,6 +47,8 @@ export type SketchConstraintKind =
   | 'equal'
   | 'symmetric'
   | 'fix'
+  | 'horizontalDistance'
+  | 'verticalDistance'
   | 'distance'
   | 'angle'
   | 'radius'
@@ -57,6 +61,8 @@ export type SketchConstraintKind =
  */
 export const SKETCH_CONSTRAINT_KINDS: readonly SketchConstraintKind[] = [
   'coincident',
+  'midpoint',
+  'pointOnCurve',
   'horizontal',
   'vertical',
   'parallel',
@@ -66,6 +72,8 @@ export const SKETCH_CONSTRAINT_KINDS: readonly SketchConstraintKind[] = [
   'equal',
   'symmetric',
   'fix',
+  'horizontalDistance',
+  'verticalDistance',
   'distance',
   'angle',
   'radius',
@@ -80,7 +88,7 @@ interface ConstraintBase {
 
 export type SketchConstraint =
   | (ConstraintBase & {
-      readonly kind: 'coincident';
+      readonly kind: 'coincident' | 'midpoint' | 'pointOnCurve';
       readonly a: ConstraintTarget;
       readonly b: ConstraintTarget;
     })
@@ -111,7 +119,7 @@ export type SketchConstraint =
     })
   | (ConstraintBase & { readonly kind: 'fix'; readonly target: ConstraintTarget })
   | (ConstraintBase & {
-      readonly kind: 'distance';
+      readonly kind: 'distance' | 'horizontalDistance' | 'verticalDistance';
       readonly a: ConstraintTarget;
       readonly b: ConstraintTarget;
       readonly length: ExpressionValue;
@@ -138,6 +146,8 @@ export type SketchConstraint =
  */
 export const CONSTRAINT_EQUATION_COUNTS: Readonly<Record<SketchConstraintKind, number>> = {
   coincident: 2,
+  midpoint: 2,
+  pointOnCurve: 1,
   horizontal: 1,
   vertical: 1,
   parallel: 1,
@@ -147,6 +157,8 @@ export const CONSTRAINT_EQUATION_COUNTS: Readonly<Record<SketchConstraintKind, n
   equal: 1,
   symmetric: 2,
   fix: 0,
+  horizontalDistance: 1,
+  verticalDistance: 1,
   distance: 1,
   angle: 1,
   radius: 1,
@@ -176,10 +188,14 @@ export function constraintTargets(constraint: SketchConstraint): readonly Constr
     case 'symmetric':
       return [constraint.a, constraint.b, { kind: 'curve', element: constraint.axis }];
     case 'coincident':
+    case 'midpoint':
+    case 'pointOnCurve':
     case 'parallel':
     case 'perpendicular':
     case 'equal':
     case 'concentric':
+    case 'horizontalDistance':
+    case 'verticalDistance':
     case 'distance':
     case 'angle':
       return [constraint.a, constraint.b];

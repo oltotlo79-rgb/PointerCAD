@@ -16,6 +16,7 @@ import {
 } from '../types.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
+import { localFloat32Coordinates, writeLocalFloat32, type MeshCoordinateFrame } from './meshCoordinateFrame.js';
 import { matchesTriangulation, type KnownTriangulation } from './triangulationReuse.js';
 
 /**
@@ -51,6 +52,58 @@ export interface SurfaceMesh {
   readonly faceRanges: readonly FaceTriangleRange[];
 }
 
+/** Per-body remaining export budget; this is an internal Worker-to-OCCT callback. */
+export interface TessellationAdmission {
+  readonly remainingTriangles: number;
+  readonly remainingJsBytes: number;
+  readonly checkDeadline: () => void;
+}
+
+export const TESSELLATION_ADMISSION_MESSAGE = '書き出しの三角形または追加メモリが上限を超えました。';
+
+function checkedMeshSize(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(TESSELLATION_ADMISSION_MESSAGE);
+  return value;
+}
+
+/** Export-only exact-size writer; avoids retaining number[] beside final TypedArrays. */
+class FixedTriples<T extends Float32Array | Uint32Array> {
+  private used = 0;
+  constructor(readonly data: T, private readonly frame?: MeshCoordinateFrame) {}
+  get length(): number { return this.used; }
+  push(x: number, y: number, z: number): void {
+    if (this.used + 3 > this.data.length) throw new Error(TESSELLATION_ADMISSION_MESSAGE);
+    if (this.frame !== undefined && this.data instanceof Float32Array) {
+      writeLocalFloat32(this.data, this.used, [x, y, z], this.frame);
+      this.used += 3;
+      return;
+    }
+    this.data[this.used] = x;
+    this.data[this.used + 1] = y;
+    this.data[this.used + 2] = z;
+    this.used += 3;
+  }
+}
+
+type Triples = { readonly length: number; push(x: number, y: number, z: number): void };
+
+function admitMeshCounts(
+  admission: TessellationAdmission,
+  nodes: number,
+  triangles: number,
+  faces: number,
+): void {
+  admission.checkDeadline();
+  const nodeCount = checkedMeshSize(nodes);
+  const triangleCount = checkedMeshSize(triangles);
+  const faceCount = checkedMeshSize(faces);
+  const bytes = checkedMeshSize(checkedMeshSize(nodeCount * 24) +
+    checkedMeshSize(triangleCount * 12) + checkedMeshSize(faceCount * 64));
+  if (triangleCount > admission.remainingTriangles || bytes > admission.remainingJsBytes) {
+    throw new Error(TESSELLATION_ADMISSION_MESSAGE);
+  }
+}
+
 /**
  * 面に付いた位置(`TopLoc_Location`)を、節点と法線へどう掛けるか。
  *
@@ -71,9 +124,10 @@ export interface SurfaceMesh {
  * 採らなかった手も残しておく。①`Poly_Triangulation.MapNodeArray()` と
  * `InternalNodes()` で節点をまとめて取り出す道は、opencascade.js が中身の型
  * (`TColgp_HArray1OfPnt` / `NCollection_AliasedArray`)を結んでいないため
- * **呼ぶと例外**になる(2026-09-06 実測)。②出力を `number[]` ではなく先に数えた
- * 長さの `Float32Array` へ直接書く道は、同じ形で 297 / 285 / 291 ms と 2〜5% しか
- * 変わらず、面を 2 度走査する複雑さに見合わないので採らない。
+ * **呼ぶと例外**になる(2026-09-06 実測)。②先に数えた長さの `Float32Array` へ
+ * 直接書く道は、表示用では 2〜5% の利得しかなかったので従来採らなかった。
+ * 出力用は一時 `number[]` と最終配列の同時生存を避け、メモリ枠を検査するために
+ * admission があるときだけこの二度走査を使う。
  *
  * ## 出力を 1 ビットも変えないための場合分け
  *
@@ -180,22 +234,24 @@ function appendPlacedNodes(
   placement: NodePlacement,
   triangulation: Poly_Triangulation,
   nodeCount: number,
-  positions: number[],
+  positions: Triples,
 ): void {
   switch (placement.kind) {
     case 'keep':
       for (let i = 1; i <= nodeCount; i += 1) {
         const node = triangulation.Node(i);
-        positions.push(node.X(), node.Y(), node.Z());
+        const x = node.X(), y = node.Y(), z = node.Z();
         node.delete();
+        positions.push(x, y, z);
       }
       return;
     case 'translate': {
       const { tx, ty, tz } = placement;
       for (let i = 1; i <= nodeCount; i += 1) {
         const node = triangulation.Node(i);
-        positions.push(node.X() + tx, node.Y() + ty, node.Z() + tz);
+        const x = node.X() + tx, y = node.Y() + ty, z = node.Z() + tz;
         node.delete();
+        positions.push(x, y, z);
       }
       return;
     }
@@ -220,9 +276,10 @@ function appendPlacedNodes(
       for (let i = 1; i <= nodeCount; i += 1) {
         const node = triangulation.Node(i);
         const moved = node.Transformed(transformation);
-        positions.push(moved.X(), moved.Y(), moved.Z());
+        const x = moved.X(), y = moved.Y(), z = moved.Z();
         node.delete();
         moved.delete();
+        positions.push(x, y, z);
       }
       return;
     }
@@ -239,7 +296,7 @@ function appendPlacedNodes(
 function appendPlacedNormals(
   placement: NodePlacement,
   nodeNormals: TColgp_Array1OfDir,
-  normals: number[],
+  normals: Triples,
 ): void {
   const lower = nodeNormals.Lower();
   const upper = nodeNormals.Upper();
@@ -294,9 +351,11 @@ function appendFaceMesh(
   face: TopoDS_Face,
   triangulationHandle: Handle_Poly_Triangulation,
   location: TopLoc_Location,
-  positions: number[],
-  normals: number[],
-  indices: number[],
+  positions: Triples,
+  normals: Triples,
+  indices: Triples,
+  admission?: TessellationAdmission,
+  nextFaceCount = 0,
 ): void {
   const { keep, release } = createAllocations();
 
@@ -306,6 +365,11 @@ function appendFaceMesh(
     // どこにも定義していない。型が付かない値のまま使うと下流で型が崩れるため、
     // 実体である整数へ明示的に直してから使う(強制変換ではなく実行時の変換)。
     const nodeCount = Number(triangulation.NbNodes());
+    const triangleCount = Number(triangulation.NbTriangles());
+    if (admission !== undefined) {
+      admitMeshCounts(admission, positions.length / 3 + nodeCount,
+        indices.length / 3 + triangleCount, nextFaceCount);
+    }
     const nodeOffset = positions.length / 3;
     const placement = readNodePlacement(oc, location, keep);
 
@@ -319,7 +383,6 @@ function appendFaceMesh(
     // 面の向きが反転している場合は、三角形の頂点順を入れ替えて表を外向きに揃える。
     const reversed = face.Orientation_1() !== oc.TopAbs_Orientation.TopAbs_FORWARD;
     const triangles = keep(triangulation.Triangles());
-    const triangleCount = Number(triangulation.NbTriangles());
     for (let i = 1; i <= triangleCount; i += 1) {
       const triangle = triangles.Value(i);
       const a = nodeOffset + triangle.Value(1) - 1;
@@ -357,15 +420,30 @@ function appendFaceMesh(
 export function tessellate(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
-  options: TessellationOptions = {},
+  options: TessellationOptions & { readonly admission?: TessellationAdmission } = {},
   copiedTriangulation?: KnownTriangulation,
+  frame?: MeshCoordinateFrame,
 ): SurfaceMesh {
   const linearDeflection = options.linearDeflection ?? DEFAULT_LINEAR_DEFLECTION;
   const angularDeflection = options.angularDeflection ?? DEFAULT_ANGULAR_DEFLECTION;
+  const admission = options.admission;
+  if (admission !== undefined) {
+    if (checkedMeshSize(admission.remainingTriangles) === 0 ||
+      checkedMeshSize(admission.remainingJsBytes) === 0) {
+      throw new Error(TESSELLATION_ADMISSION_MESSAGE);
+    }
+    admitMeshCounts(admission, 0, 0, 0);
+  }
 
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const indices: number[] = [];
+  const positionNumbers: number[] = [];
+  const normalNumbers: number[] = [];
+  const indexNumbers: number[] = [];
+  let positions: Triples = positionNumbers;
+  let normals: Triples = normalNumbers;
+  let indices: Triples = indexNumbers;
+  let fixedPositions: FixedTriples<Float32Array> | null = null;
+  let fixedNormals: FixedTriples<Float32Array> | null = null;
+  let fixedIndices: FixedTriples<Uint32Array> | null = null;
   const faceRanges: FaceTriangleRange[] = [];
   let missingTriangulationFaces = 0;
   let mesherDone: boolean;
@@ -381,6 +459,7 @@ export function tessellate(
       mesherDone = copiedTriangulation.mesherDone;
       mesherStatus = copiedTriangulation.mesherStatus;
     } else {
+      admission?.checkDeadline();
       const mesher = shared.keep(
         new oc.BRepMesh_IncrementalMesh_2(shape, linearDeflection, false, angularDeflection, false),
       );
@@ -388,6 +467,7 @@ export function tessellate(
       // opencascade.jsの未定義な戻り型を、実体の整数へ変換する。
       mesherStatus = Number(mesher.GetStatusFlags());
     }
+    admission?.checkDeadline();
 
     // 第3・第4引数は「向きと位置を親からたどって積み上げる」指定で、
     // TopExp_Explorer と同じ結果になる既定値。
@@ -395,6 +475,45 @@ export function tessellate(
     oc.TopExp.MapShapes_2(shape, subShapes, true, true);
     const faceType = oc.TopAbs_ShapeEnum.TopAbs_FACE;
     const subShapeCount = subShapes.Size();
+
+    if (admission !== undefined) {
+      // Native triangulation now carries exact node/triangle counts. Count once,
+      // admit the complete arrays, then allocate only their final TypedArrays.
+      let nodes = 0;
+      let triangles = 0;
+      let faces = 0;
+      for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
+        admission.checkDeadline();
+        const subShape = subShapes.FindKey(subShapeIndex);
+        try {
+          if (subShape.ShapeType() !== faceType) continue;
+          faces = checkedMeshSize(faces + 1);
+          const perFace = createAllocations();
+          try {
+            const face = perFace.keep(oc.TopoDS.Face_1(subShape));
+            const location = perFace.keep(new oc.TopLoc_Location_1());
+            const handle = perFace.keep(oc.BRep_Tool.Triangulation(face, location, 0));
+            if (!handle.IsNull()) {
+              const triangulation = handle.get();
+              nodes = checkedMeshSize(nodes + checkedMeshSize(Number(triangulation.NbNodes())));
+              triangles = checkedMeshSize(triangles + checkedMeshSize(Number(triangulation.NbTriangles())));
+            }
+          } finally {
+            perFace.release();
+          }
+          admitMeshCounts(admission, nodes, triangles, faces);
+        } finally {
+          subShape.delete();
+        }
+      }
+      admitMeshCounts(admission, nodes, triangles, faces);
+      fixedPositions = new FixedTriples(new Float32Array(checkedMeshSize(nodes * 3)), frame);
+      fixedNormals = new FixedTriples(new Float32Array(checkedMeshSize(nodes * 3)));
+      fixedIndices = new FixedTriples(new Uint32Array(checkedMeshSize(triangles * 3)));
+      positions = fixedPositions;
+      normals = fixedNormals;
+      indices = fixedIndices;
+    }
 
     for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
       const subShape = subShapes.FindKey(subShapeIndex);
@@ -415,7 +534,8 @@ export function tessellate(
           // 三角形分割が付かなかった面(細すぎる面など)は三角形を 1 枚も積まないが、
           // 範囲表には 0 枚として積む(下の push)。飛ばすと以降の面の通し番号がずれる。
           if (!triangulationHandle.IsNull()) {
-            appendFaceMesh(oc, face, triangulationHandle, location, positions, normals, indices);
+            appendFaceMesh(oc, face, triangulationHandle, location, positions, normals, indices,
+              admission, faceRanges.length + 1);
           }
         } finally {
           perFace.release();
@@ -437,10 +557,20 @@ export function tessellate(
     shared.release();
   }
 
+  if (admission !== undefined) {
+    admitMeshCounts(admission, positions.length / 3, indices.length / 3, faceRanges.length);
+    if (fixedPositions?.length !== fixedPositions?.data.length ||
+      fixedNormals?.length !== fixedNormals?.data.length ||
+      fixedIndices?.length !== fixedIndices?.data.length) {
+      throw new Error(TESSELLATION_ADMISSION_MESSAGE);
+    }
+  }
+
   return {
-    positions: new Float32Array(positions),
-    normals: new Float32Array(normals),
-    indices: new Uint32Array(indices),
+    positions: fixedPositions?.data ?? (frame === undefined
+      ? new Float32Array(positionNumbers) : localFloat32Coordinates(positionNumbers, frame)),
+    normals: fixedNormals?.data ?? new Float32Array(normalNumbers),
+    indices: fixedIndices?.data ?? new Uint32Array(indexNumbers),
     triangleCount: indices.length / 3,
     faceCount: faceRanges.length,
     missingTriangulationFaces,

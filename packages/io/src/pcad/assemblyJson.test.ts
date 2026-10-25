@@ -1,6 +1,9 @@
+import { withBeamAnalysisInputs, type BeamAnalysisInputs } from '@pointercad/model/beam-analysis';
+import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
 import {
   ASSEMBLY_SCHEMA_VERSION,
-  createAssemblyDocument,
+  createAssemblyDocument, createStandardPartSource, buildStandardPartFromSource,
+  STEEL_PRODUCTS, steelProductOptions,
   DEFAULT_BOM_SETTINGS,
   PART_SCHEMA_VERSION,
   type AppearanceSpec,
@@ -12,6 +15,7 @@ import {
   type SubShapeRef,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
+import { buildStandardPartFromSourceWithReason } from '../../../model/src/assembly/standard/buildStandardPart.js';
 
 import {
   readAssemblyDocument,
@@ -202,7 +206,105 @@ function roundTrip(document: AssemblyDocument, partFiles?: readonly PcadPartFile
     .document;
 }
 
+describe('EX12 persistent expression gear relations', () => {
+  function gears(): AssemblyDocument {
+    const base = richAssembly();
+    return { ...base, parameters: [{ name: 'gearPhase', value: ev('10', 10), unit: 'degree', description: '' }],
+      joints: [joint(), { ...joint(), id: 'joint-2' }],
+      mechanismCouplings: [{ id: 'gear-1', kind: 'gear', jointAId: 'joint-1', jointBId: 'joint-2',
+        ratio: ev('-2', 999), phaseDeg: ev('gearPhase*2', 888), referenceAngleA: 179, suppressed: false }] };
+  }
+  it('preserves source expressions and branch datum through deterministic reopen', () => {
+    const document = gears();
+    const text = writeAssemblyDocument(document, { savedAt: SAVED_AT });
+    const restored = expectOk(readAssemblyDocument(text)).document;
+    expect(restored.mechanismCouplings).toEqual(document.mechanismCouplings);
+    expect(restored.mechanismCouplings?.[0].ratio.source).toBe('-2');
+    expect(restored.mechanismCouplings?.[0].phaseDeg.source).toBe('gearPhase*2');
+    expect(writeAssemblyDocument(restored, { savedAt: SAVED_AT })).toBe(text);
+    expect(roundTrip(richAssembly()).mechanismCouplings).toBeUndefined();
+  });
+  it.each(['missingParameter', '0', '1/0'])('refuses invalid ratio source%s despite cached finite value', source => {
+    const document = gears(), coupling = document.mechanismCouplings?.[0];
+    if (coupling === undefined) throw new Error('fixture');
+    const invalid = { ...document, mechanismCouplings: [{ ...coupling, ratio: ev(source, -2) }] };
+    expect(readAssemblyDocument(writeAssemblyDocument(invalid, { savedAt: SAVED_AT })).ok).toBe(false);
+    expect(document.mechanismCouplings?.[0].ratio.source).toBe('-2');
+  });
+  it('refuses a contradictory three-joint affine loop at file admission', () => {
+    const document = gears(), coupling = document.mechanismCouplings?.[0];
+    if (coupling === undefined) throw new Error('fixture');
+    const ab = { ...coupling, ratio: ev('1', 1), phaseDeg: ev('0', 0) };
+    const invalid = { ...document, joints: [...document.joints, { ...joint(), id: 'joint-3' }],
+      mechanismCouplings: [ab,
+        { ...ab, id: 'bc', jointAId: 'joint-2', jointBId: 'joint-3' },
+        { ...ab, id: 'ac', jointBId: 'joint-3', phaseDeg: ev('10', 10) }] };
+    expect(readAssemblyDocument(writeAssemblyDocument(invalid, { savedAt: SAVED_AT })).ok).toBe(false);
+    expect(roundTrip(document).mechanismCouplings).toEqual(document.mechanismCouplings);
+  });
+  it('refuses duplicate, missing, self and suppressed joint references', () => {
+    const document = gears(), coupling = document.mechanismCouplings?.[0];
+    if (coupling === undefined) throw new Error('fixture');
+    for (const invalid of [
+      { ...document, mechanismCouplings: [coupling, coupling] },
+      { ...document, mechanismCouplings: [{ ...coupling, jointBId: 'absent' }] },
+      { ...document, mechanismCouplings: [{ ...coupling, jointBId: 'joint-1' }] },
+      { ...document, joints: document.joints.map(j => ({ ...j, suppressed: true })) },
+    ]) expect(readAssemblyDocument(writeAssemblyDocument(invalid, { savedAt: SAVED_AT })).ok).toBe(false);
+  });
+});
+
+describe('EX12 persistent expression cam-follower relations', () => {
+  function cams(): AssemblyDocument {
+    const base = richAssembly();
+    return { ...base, parameters: [{ name: 'camPhase', value: ev('15', 15), unit: 'degree', description: '' }],
+      joints: [joint(), { ...joint(), id: 'joint-2', kind: 'slider', minValue: null, maxValue: null }],
+      camCouplings: [{ id: 'cam-1', kind: 'cam', camJointId: 'joint-1', followerJointId: 'joint-2',
+        discRadiusMm: ev('20', 999), eccentricityMm: ev('5', 999), rollerRadiusMm: ev('4', 999),
+        phaseDeg: ev('camPhase*2', 888), referenceAngleCam: 179, suppressed: false }] };
+  }
+  it('preserves dimension and phase sources and the cam angle datum through deterministic reopen', () => {
+    const document = cams();
+    const text = writeAssemblyDocument(document, { savedAt: SAVED_AT });
+    const restored = expectOk(readAssemblyDocument(text)).document;
+    expect(restored.camCouplings).toEqual(document.camCouplings);
+    expect(restored.camCouplings?.[0].phaseDeg.source).toBe('camPhase*2');
+    expect(restored.camCouplings?.[0].referenceAngleCam).toBe(179);
+    expect(writeAssemblyDocument(restored, { savedAt: SAVED_AT })).toBe(text);
+    // Files without cams keep the field absent; gears are not touched by the separate cam field.
+    expect(roundTrip(richAssembly()).camCouplings).toBeUndefined();
+    expect(restored.mechanismCouplings).toBeUndefined();
+  });
+  it('refuses dimensions without contact at every angle, invalid sources, wrong kinds and duplicate drivers', () => {
+    const document = cams(), coupling = document.camCouplings?.[0];
+    if (coupling === undefined) throw new Error('fixture');
+    for (const invalid of [
+      { ...document, camCouplings: [{ ...coupling, eccentricityMm: ev('24', 1) }] },
+      { ...document, camCouplings: [{ ...coupling, discRadiusMm: ev('0', 20) }] },
+      { ...document, camCouplings: [{ ...coupling, rollerRadiusMm: ev('-1', 4) }] },
+      { ...document, camCouplings: [{ ...coupling, phaseDeg: ev('missingParameter', 0) }] },
+      { ...document, camCouplings: [{ ...coupling, phaseDeg: ev('1/0', 0) }] },
+      { ...document, camCouplings: [{ ...coupling, camJointId: 'joint-2', followerJointId: 'joint-1' }] },
+      { ...document, camCouplings: [{ ...coupling, followerJointId: 'absent' }] },
+      { ...document, camCouplings: [{ ...coupling, followerJointId: 'joint-1' }] },
+      { ...document, camCouplings: [coupling, coupling] },
+      { ...document, camCouplings: [coupling, { ...coupling, id: 'cam-2' }] },
+    ]) expect(readAssemblyDocument(writeAssemblyDocument(invalid, { savedAt: SAVED_AT })).ok).toBe(false);
+    expect(document.camCouplings?.[0].eccentricityMm.source).toBe('5');
+  });
+});
+
 describe('アセンブリの封筒と版(P7 タスク3、§0.a-0.1、§0.a-0.2)', () => {
+  it('合致・ジョイントの保存参照に意味起点を保つ', () => {
+    const base = richAssembly();
+    const ref = { ...faceRef('box-1', 3), origin: { version: 1 as const, shapeKind: 'face' as const,
+      identity: { kind: 'box-face' as const, featureId: 'box-1', role: 'top' as const } } };
+    const document: AssemblyDocument = { ...base,
+      mates: [{ ...base.mates[0], a: { kind: 'subShape', componentId: 'component-1', ref } }],
+      joints: [{ ...base.joints[0], a: { kind: 'subShape', componentId: 'component-1', ref } }],
+    };
+    expect(roundTrip(document)).toEqual(document);
+  });
   it('封筒の種別は assembly で、版は部品と同じ系列', () => {
     expect(PCAD_ASSEMBLY_KIND).toBe('assembly');
     // 現行版の数値はschemaVersion.test.tsで固定し、ここでは文書種別の一致を守る。
@@ -598,5 +700,107 @@ describe('版 7 → 版 8 の移行(P7 §0.a-0.2)', () => {
     const result = expectOk(readAssemblyDocument(text));
     expect(result.document.schemaVersion).toBe(PCAD_SCHEMA_VERSION);
     expect(result.document.bom).toEqual(DEFAULT_BOM_SETTINGS);
+  });
+});
+
+describe('material-aware steel sources through the public assembly serializer', () => {
+  it.each(STEEL_PRODUCTS)('$key preserves grade, condition, source versions and expression across save/reload', (row) => {
+    const source = createStandardPartSource(row.catalog, row.size,
+      { ...steelProductOptions(row), length: '500*2' });
+    const document: AssemblyDocument = { ...createAssemblyDocument('鋼材'), components: [
+      { ...component('component-1', 'unused'), source },
+    ] };
+    const reloaded = roundTrip(document);
+    expect(reloaded).toEqual(document);
+    const savedSource = reloaded.components[0].source;
+    expect(savedSource.kind).toBe('standardPart');
+    if (savedSource.kind === 'standardPart') {
+      expect(buildStandardPartFromSource(savedSource)).toEqual(buildStandardPartFromSource(source));
+      expect(savedSource.options.length).toBe('500*2');
+    }
+  });
+  it('preserves an unknown generation version for an explicit unavailable result after reload', () => {
+    const row = STEEL_PRODUCTS[0];
+    const source = { ...createStandardPartSource(row.catalog, row.size, steelProductOptions(row)),
+      generatorRevision: 'future-steel-generator' };
+    const document = { ...createAssemblyDocument('鋼材'), components: [
+      { ...component('component-1', 'unused'), source },
+    ] };
+    const reloaded = roundTrip(document).components[0].source;
+    expect(reloaded).toEqual(source);
+    expect(reloaded.kind === 'standardPart' ? buildStandardPartFromSource(reloaded) : 'wrong-kind').toBeNull();
+  });
+  it('does not upgrade a prior section source or assign SS400 during reload', () => {
+    const source = createStandardPartSource('equalAngle', 'L 50×50×6', { length: '0.5' });
+    const document = { ...createAssemblyDocument('旧鋼材'), components: [
+      { ...component('component-1', 'unused'), source },
+    ] };
+    expect(roundTrip(document).components[0].source).toEqual(source);
+    expect(source.options.materialGrade).toBeUndefined();
+  });
+});
+
+describe('saved steel polygon and analytic profile versions', () => {
+  it.each(STEEL_PRODUCTS.filter((row) => row.geometry === 'profileSection'))('$key preserves old and new generation together without upgrade', (row) => {
+    const current = createStandardPartSource(row.catalog, row.size, { ...steelProductOptions(row), length: '500*2' });
+    const previous = { ...current, generatorRevision: '2-steel-1' };
+    const document: AssemblyDocument = { ...createAssemblyDocument('Both profiles'), components: [
+      { ...component('old', 'unused'), source: previous },
+      { ...component('new', 'unused'), source: current },
+    ] };
+    const loaded = roundTrip(document);
+    expect(loaded).toEqual(document);
+    for (const item of loaded.components) {
+      if (item.source.kind !== 'standardPart') throw new Error('Lost standard source');
+      const part = buildStandardPartFromSource(item.source);
+      expect(part).not.toBeNull();
+      expect(part?.sketches[0].features.some((feature) => feature.kind === 'arc')).toBe(item.id === 'new');
+      expect(item.source.options.length).toBe('500*2');
+    }
+  });
+});
+
+describe('saved beam inputs through the public assembly serializer', () => {
+  it('preserves sourced input definitions without solved world nodes or results', () => {
+    const fixture = beamCadFixture();
+    const inputs: BeamAnalysisInputs = {
+      schema: 'pointercad-beam-inputs/1',
+      analyses: [{ kind: 'standard-members', definition: fixture.definition }],
+    };
+    const edited = withBeamAnalysisInputs(fixture.document, inputs);
+    const serialized = writeAssemblyDocument(edited, { savedAt: SAVED_AT });
+    const restored = expectOk(readAssemblyDocument(serialized));
+    expect(restored.document.beamAnalysisInputs).toEqual(inputs);
+    expect(writeAssemblyDocument(restored.document, { savedAt: SAVED_AT })).toBe(serialized);
+    const cad = restored.document.beamAnalysisInputs?.analyses.find(input => input.kind === 'standard-members');
+    expect(cad).toBeDefined();
+    expect(JSON.stringify(cad)).not.toMatch(/"(?:nodes|results|displacementM|worldPlacement)"/u);
+  });
+});
+
+describe('EX03 W10 unknown steel revisions through assembly JSON', () => {
+  const rows = [
+    ['SS400', 'flatBar'], ['S45C', 'roundBar'], ['SS400', 'equalAngle'],
+    ['SS400', 'channel'], ['SS400', 'hBeam'], ['SGP', 'steelPipe'],
+  ] as const;
+  it.each(rows.flatMap(([grade, catalog]) => (['catalogRevision', 'generatorRevision'] as const)
+    .map(field => ({ grade, catalog, field }))))('$grade $catalog / $field keeps a typed unavailable result', test => {
+    const row = STEEL_PRODUCTS.find(candidate => candidate.materialGrade === test.grade && candidate.catalog === test.catalog);
+    if (row === undefined) throw new Error('Missing steel family');
+    const source = { ...createStandardPartSource(row.catalog, row.size, steelProductOptions(row)), [test.field]: 'future-revision' };
+    const document: AssemblyDocument = { ...createAssemblyDocument('Future steel'), components: [
+      { ...component('component-1', 'unused'), source },
+    ] };
+    const before = structuredClone(document);
+    const opened = roundTrip(document);
+    const restored = opened.components[0].source;
+    if (restored.kind !== 'standardPart') throw new Error('Lost steel source');
+    expect(restored).toEqual(source);
+    const result = buildStandardPartFromSourceWithReason(restored);
+    expect(result.document).toBeNull();
+    expect(result.rejection?.code).toBe(test.field === 'catalogRevision'
+      ? 'unsupported-catalog-revision' : 'unsupported-generator-revision');
+    expect(opened).toEqual(before);
+    expect(document).toEqual(before);
   });
 });

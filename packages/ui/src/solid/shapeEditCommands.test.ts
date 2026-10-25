@@ -11,6 +11,7 @@ import {
   absoluteCoordinate,
   appendFeature,
   appendSolid,
+  checkFaceOffset,
   createEmptyPartDocument,
   createPointFeature,
   DEFAULT_FACE_COLOR,
@@ -28,6 +29,7 @@ import {
   chooseNumericInput,
   commitNumericInput,
   createNumericInput,
+  reduceNumericInput,
   type SolidInputCommit,
 } from '../sketch/numericInput.js';
 
@@ -734,9 +736,9 @@ describe('Should 群の確定(タスク50)', () => {
     }
     expect(feature.sourceFeatureId).toBe('hole-1');
     expect(feature.placement.points).toHaveLength(3);
-    expect(feature.placement.points[0]).toEqual({ kind: 'point', pointId: p1.id });
+    expect(feature.placement.points[0]?.reference).toEqual({ kind: 'point', pointId: p1.id });
     // 立体の頂点も置き場所にできる(座標を写さず参照で持つ)。
-    expect(feature.placement.points[2]?.kind).toBe('subShape');
+    expect(feature.placement.points[2]?.reference.kind).toBe('subShape');
   });
 
   it('くり抜き: 開ける面 0 枚でも作れる(§2.12、タスク53 の実測)', () => {
@@ -824,5 +826,122 @@ describe('Should 群の確定(タスク50)', () => {
     }
     const feature = findSolid(outcome.document, outcome.featureId);
     expect(feature?.kind === 'transform' ? feature.targetFeatureId : null).toBe('extrude-1');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 平らな面の移動(EX-18 の限られた一段)。押せる条件と確定を、実際の振り分けで確かめる。
+ * 形そのもの(隣の面が直角か・ほかの形に当たらないか)はカーネルの editSolidFace.test.ts が持つ。
+ * ------------------------------------------------------------------ */
+
+describe('平らな面の移動の道具(EX-18)', () => {
+  const faceOffsetCommit = (overrides: Partial<SolidInputCommit> = {}): SolidInputCommit =>
+    commitOf({ tool: 'faceOffset', step: 'faceOffsetDistance', ...overrides });
+
+  it('平らな面ちょうど 1 枚で押せる。ツールバーからも同じ判定が引ける', () => {
+    const base = fixture();
+    expect(shapeEditReadiness(contextOf([FACE_0], base), 'faceOffset')).toEqual({ ready: true, reasonKey: null });
+    expect(solidToolReadiness(base.document, [FACE_0], 'faceOffset', base.bodies)).toEqual({
+      ready: true,
+      reasonKey: null,
+    });
+    expect(shapeEditToolOf('faceOffset')).toBe('faceOffset');
+  });
+
+  it('何も選ばない・円柱の面・面 2 枚は、平らな面 1 枚を求めて断る', () => {
+    for (const selection of [[], [CYLINDER_FACE], [FACE_0, FACE_1]]) {
+      expect(shapeEditReadiness(contextOf(selection), 'faceOffset').reasonKey, selection.join(',')).toBe(
+        'shapeError.noFlatFace',
+      );
+    }
+  });
+
+  it('別の立体を一緒に選んでいると、その面の立体ではないので断る', () => {
+    const base = fixture();
+    const two = appendSolid(base.document, extrudeFeature('extrude-2'));
+    const context: MachiningContext = {
+      document: two,
+      bodies: [...base.bodies, makeBody('extrude-2')],
+      selection: ['extrude-2', FACE_0],
+    };
+    expect(shapeEditReadiness(context, 'faceOffset').reasonKey).toBe('shapeError.noTargetBody');
+    const outcome = commitShapeEdit(context, faceOffsetCommit(), 'faceOffset');
+    expect(outcome).toEqual({ ok: false, reasonKey: 'shapeError.noTargetBody' });
+    expect(two.solids).toHaveLength(2);
+  });
+
+  it('断ったときは元の文書を 1 か所も書き換えない', () => {
+    const base = fixture();
+    const before = JSON.stringify(base.document);
+    for (const selection of [[], [CYLINDER_FACE], [FACE_0, FACE_1]]) {
+      const outcome = commitShapeEdit(contextOf(selection, base), faceOffsetCommit(), 'faceOffset');
+      expect(outcome.ok, selection.join(',')).toBe(false);
+    }
+    expect(JSON.stringify(base.document)).toBe(before);
+  });
+
+  it('欄が空なら既定の外向き 1mm で作り、選んだ面と面を持つ立体を参照する', () => {
+    const base = fixture();
+    const before = JSON.stringify(base.document);
+    const outcome = commitShapeEdit(contextOf([FACE_1], base), faceOffsetCommit(), 'faceOffset');
+    if (!outcome.ok) {
+      throw new Error(`expected a committed face offset, got ${outcome.reasonKey}`);
+    }
+    expect(outcome.featureId).toBe('faceOffset-1');
+    const feature = findSolid(outcome.document, outcome.featureId);
+    if (feature?.kind !== 'faceOffset') {
+      throw new Error(`expected faceOffset, got ${String(feature?.kind)}`);
+    }
+    expect(feature.name).toBe('面の移動1');
+    expect(feature.targetFeatureId).toBe('extrude-1');
+    expect(feature.face.bodyFeatureId).toBe('extrude-1');
+    expect(feature.face.index).toBe(1);
+    expect(feature.offset.value).toBe(1);
+    // 履歴は 1 段だけ積まれ、元の文書は変わらない(取り消しは前の文書へ戻すだけで済む)。
+    expect(outcome.document.solids).toHaveLength(2);
+    expect(JSON.stringify(base.document)).toBe(before);
+  });
+
+  it('入力の窓で -2.5 と打って決めると、符号付きの式のまま積まれる(実際の窓の確定から)', () => {
+    const opened = createNumericInput('faceOffset', 'faceOffsetDistance');
+    expect(opened.fields.map((field) => field.key)).toEqual(['faceOffsetDistance']);
+    expect(opened.fields.map((field) => field.source)).toEqual(['1']);
+    const edited = reduceNumericInput(opened, { type: 'edit', index: 0, source: '-2.5' });
+    const transition = commitNumericInput(edited);
+    if (transition.kind !== 'solidCommitted') {
+      throw new Error(`expected solidCommitted transition, got ${transition.kind}`);
+    }
+    expect(transition.commit.tool).toBe('faceOffset');
+    const outcome = commitShapeEdit(contextOf([FACE_0]), transition.commit, 'faceOffset');
+    if (!outcome.ok) {
+      throw new Error(`expected a committed face offset, got ${outcome.reasonKey}`);
+    }
+    const feature = findSolid(outcome.document, outcome.featureId);
+    if (feature?.kind !== 'faceOffset') {
+      throw new Error(`expected faceOffset, got ${String(feature?.kind)}`);
+    }
+    expect(feature.offset.value).toBe(-2.5);
+    expect(feature.offset.source).toBe('-2.5');
+    expect(checkFaceOffset(feature, () => null)).toEqual({ ok: true, offset: -2.5 });
+  });
+
+  it('距離 0 は既存の流儀どおり履歴には積まれ、解決の検査が理由つきで赤くする', () => {
+    // 欄は符号付きなので範囲を持たない(既存の範囲は 0 だけを除けない)。式の欄は確定で積み、
+    // 解決(resolvePart の planFaceOffset → checkFaceOffset)が断って木で赤くする。
+    const outcome = commitShapeEdit(
+      contextOf([FACE_0]),
+      faceOffsetCommit({ values: { faceOffsetDistance: expressionValueFromNumber(0) } }),
+      'faceOffset',
+    );
+    if (!outcome.ok) {
+      throw new Error(`expected a committed face offset, got ${outcome.reasonKey}`);
+    }
+    const feature = findSolid(outcome.document, outcome.featureId);
+    if (feature?.kind !== 'faceOffset') {
+      throw new Error(`expected faceOffset, got ${String(feature?.kind)}`);
+    }
+    const check = checkFaceOffset(feature, () => null);
+    expect(check.ok).toBe(false);
+    expect(check.ok ? null : check.code).toBe('invalidValue');
   });
 });

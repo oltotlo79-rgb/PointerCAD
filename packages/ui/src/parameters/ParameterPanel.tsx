@@ -19,10 +19,12 @@ import { UnresolvedMathPanel } from './UnresolvedMathPanel.js';
  * 14:05 の 9b。同じ不具合をこの表でも起こさないため)。
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { updateTutorialCheckpointDraft } from '../tutorial/tutorialCheckpoint.js';
+import { parameterCheckpointWriteGuard } from '../tutorial/tutorialProgress.js';
 
 import { evaluateExpression } from '@pointercad/expression';
-import { PARAMETER_UNITS, type ParameterUnit } from '@pointercad/model';
+import { PARAMETER_UNITS, parseParameterCsv, type ParameterUnit, type PartDocument } from '@pointercad/model';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { currentMathGeometry } from '../math/mathGeometryResults.js';
@@ -43,6 +45,12 @@ import {
 } from './parameterCommands.js';
 import { runMathParameterRename } from './mathParameterActions.js';
 import { ParameterMathDialog, type ParameterMathTarget } from './ParameterMathDialog.js';
+import { filterParameterRows, parameterUsageSites, ParameterRowIdentity,
+  type ParameterFilter, type ParameterUsageSite } from './parameterSearch.js';
+import { openParameterCsvThrough } from '../file/fileGateway.js';
+import { exportParameterCsv } from './parameterCsvExport.js';
+import { focusByAriaLabelIn } from './focusRestore.js';
+import { applyParameterCsvPreview,prepareParameterCsvForStore, type ParameterCsvPreview } from './parameterCsvActions.js';
 
 /** 表の中で打ちかけになっている欄の種類。 */
 type ParameterFieldKind = 'name' | 'source' | 'description';
@@ -72,15 +80,100 @@ const PARAMETER_UNIT_KEYS: Readonly<Record<ParameterUnit, MessageKey>> = {
   none: 'parameterPanel.unit.none',
 };
 
+const PARAMETER_FILTER_HINT_KEYS: Readonly<Record<ParameterFilter, MessageKey>> = {
+  all: 'controlGuide.parameter.filterAll',
+  unused: 'controlGuide.parameter.filterUnused',
+  circular: 'controlGuide.parameter.filterCircular',
+  referenced: 'controlGuide.parameter.filterReferenced',
+};
+
+const PARAMETER_FILTER_KEYS: Readonly<Record<ParameterFilter, MessageKey>> = {
+  all: 'parameterPanel.filter.all',
+  unused: 'parameterPanel.filter.unused',
+  circular: 'parameterPanel.filter.circular',
+  referenced: 'parameterPanel.filter.referenced',
+};
+
+const PARAMETER_USAGE_KIND_KEYS: Readonly<Record<ParameterUsageSite['kind'], MessageKey>> = {
+  parameter: 'parameterPanel.usageKind.parameter',
+  sketchFeature: 'parameterPanel.usageKind.sketchFeature',
+  constraint: 'parameterPanel.usageKind.constraint',
+  reference: 'parameterPanel.usageKind.reference',
+  solid: 'parameterPanel.usageKind.solid',
+  mathProblem: 'parameterPanel.usageKind.mathProblem',
+  configuration: 'parameterPanel.usageKind.configuration',
+};
+
+/** Keep the panel's unfinished source tied to the checkpoint accepted by this guide session. */
+export function persistParameterPanelGuideDraft(next: ParameterDraft | null, document: PartDocument): void {
+  const state = useAppStore.getState();
+  const session = state.tutorialSession;
+  if (session?.course !== 'parameterToExport' || session.documentId !== document.id
+    || state.document !== document) return;
+  if (next !== null && (next.field !== 'source' || next.name !== session.parameterName)) return;
+  if (next === null && state.tutorialDraft?.kind !== 'parameter') return;
+  const guideDraft = next === null ? null : { kind: 'parameter' as const,
+    parameterName: next.name, source: next.text, focusedKey: 'source' as const };
+  state.setTutorialDraft(guideDraft);
+  const saved = state.savedDocument;
+  if (saved === null || saved.id !== session.documentId) return;
+  const current = () => {
+    const latest = useAppStore.getState();
+    return latest.tutorialSession === session && latest.document === document
+      && latest.savedDocument === saved && latest.tutorialDraft === guideDraft;
+  };
+  const guard = parameterCheckpointWriteGuard(session, state.tutorialCheckpointStorage, current);
+  if (!guard.ok) {
+    if (current()) useAppStore.getState().setTutorialCheckpointFailure(guard.reason);
+    return;
+  }
+  void updateTutorialCheckpointDraft(guideDraft, saved, state.tutorialCheckpointStorage, guard.isCurrent).then(result => {
+    if (current() && !result.ok && result.reason !== 'missing') {
+      useAppStore.getState().setTutorialCheckpointFailure(result.reason);
+    }
+  });
+}
+
 export function ParameterPanel(): React.JSX.Element {
   const document = useAppStore((state) => state.document);
   const analysis = useAppStore((state) => state.parameterAnalysis);
   const geometry = useAppStore(currentMathGeometry);
   const documentVersion = useAppStore((state) => state.documentVersion);
+  const tutorialDraft = useAppStore((state) => state.tutorialDraft);
   const pendingRename = useRef<AbortController | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
   const [mathTarget, setMathTarget] = useState<ParameterMathTarget | null>(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<ParameterFilter>('all');
+  const [usageOpenName, setUsageOpenName] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const focusSearchAfterRename = useRef(false);
+  /** 改名しても検索結果に残る行は、改名した名前の欄へ焦点を戻す(欄を無効にする間に焦点が文書の外へ落ちるため)。 */
+  const focusNameAfterRename = useRef<string | null>(null);
+  const rowIdentity = useRef(new ParameterRowIdentity());
+  const pendingCsv = useRef<AbortController | null>(null);
+  const [csvOperation, setCsvOperation] = useState<'import' | 'export' | null>(null);
+  const csvBusy = csvOperation !== null;
+  const [csvPreview, setCsvPreview] = useState<Extract<ParameterCsvPreview, { ok: true }> | null>(null);
+  const [csvIssues, setCsvIssues] = useState<readonly string[]>([]);
+  const [csvStatus, setCsvStatus] = useState('');
   useEffect(() => () => { pendingRename.current?.abort(); pendingRename.current = null; }, []);
+  useEffect(() => () => {
+    const pending = pendingCsv.current;
+    pendingCsv.current = null;
+    pending?.abort();
+  }, []);
+  useEffect(() => {
+    if (!renameBusy && focusSearchAfterRename.current) {
+      focusSearchAfterRename.current = false;
+      searchRef.current?.focus();
+    }
+    const target = focusNameAfterRename.current;
+    if (!renameBusy && target !== null) {
+      const label = `${t('parameterPanel.nameLabel')} ${target}`;
+      if (focusByAriaLabelIn(searchRef.current?.closest('.pcad-parameters'), label)) focusNameAfterRename.current = null;
+    }
+  }, [renameBusy, document]);
   /*
    * 表示の単位と「長さでないパラメータの名前」(FR-811、P6 タスク3b、§0.a-0.63)。
    *
@@ -94,19 +187,78 @@ export function ParameterPanel(): React.JSX.Element {
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<ParameterDraft>(documentVersion),
   );
+  useEffect(() => {
+    if (tutorialDraft?.kind !== 'parameter' || draftState.draft !== null
+        || !document.parameters.some(item => item.name === tutorialDraft.parameterName)) return;
+    const session = useAppStore.getState().tutorialSession;
+    if (session?.course !== 'parameterToExport' || session.documentId !== document.id
+        || session.parameterName !== tutorialDraft.parameterName) return;
+    setDraftState({ draft: { name: tutorialDraft.parameterName, field: 'source',
+      text: tutorialDraft.source, message: null }, seenVersion: documentVersion });
+  }, [tutorialDraft, document, documentVersion, draftState.draft]);
+  const draftOwner = useRef(document);
+  const parameterOwnerChanged = draftOwner.current !== document
+    && (draftOwner.current.parameters !== document.parameters
+      || draftOwner.current.activeConfigurationId !== document.activeConfigurationId);
+  draftOwner.current = document;
   // 文書が丸ごと差し替わっていたら、この描画のうちに下書きを捨てて文書の値を出す。
   const reconciled = reconcileDraftVersion(draftState, documentVersion);
-  if (reconciled !== draftState) {
-    setDraftState(reconciled);
+  if (reconciled !== draftState || (parameterOwnerChanged && reconciled.draft !== null)) {
+    setDraftState(parameterOwnerChanged ? { draft: null, seenVersion: documentVersion } : reconciled);
   }
-  const draft = reconciled.draft;
+  const draft = parameterOwnerChanged ? null : reconciled.draft;
 
-  const rows = parameterRowsOf(document, analysis, geometry);
-  const usage = parameterUsageCounts(document);
+  const rows = useMemo(() => parameterRowsOf(document, analysis, geometry), [document, analysis, geometry]);
+  const usage = useMemo(() => parameterUsageCounts(document), [document]);
+  const usageSites = useMemo(() => parameterUsageSites(document), [document]);
+  const visibleRows = filterParameterRows(rows, query, filter, usageSites);
+  const activeCsvPreview = csvPreview?.owner === document && csvPreview.documentVersion === documentVersion
+    ? csvPreview : null;
+  const editingRow = draft === null || visibleRows.some(row => row.name === draft.name)
+    ? null : rows.find(row => row.name === draft.name) ?? null;
+  const renderedRows = editingRow === null ? visibleRows : [editingRow, ...visibleRows];
+
+  const importCsv = async (): Promise<void> => {
+    pendingCsv.current?.abort();
+    const controller = new AbortController();
+    pendingCsv.current = controller;
+    setCsvOperation('import');
+    setCsvPreview(null);
+    setCsvIssues([]);
+    setCsvStatus('');
+    try {
+      const picked = await openParameterCsvThrough(useAppStore.getState().fileGateway);
+      if (controller.signal.aborted || pendingCsv.current !== controller || picked === null) return;
+      const latest = useAppStore.getState();
+      if (latest.document !== document || latest.documentVersion !== documentVersion) {
+        setCsvIssues([t('parameter.csv.stale')]);
+        return;
+      }
+      const parsed = parseParameterCsv(picked.bytes);
+      if (!parsed.ok) {
+        setCsvIssues(parsed.diagnostics.map(item => `${t('parameter.csv.issueRow')} ${String(item.recordNumber)} ${item.column}: ${item.reason}`));
+        return;
+      }
+      const preview = await prepareParameterCsvForStore(parsed.records, { signal: controller.signal });
+      if (controller.signal.aborted || pendingCsv.current !== controller) return;
+      if (preview.ok) setCsvPreview(preview);
+      else setCsvIssues(preview.issues.map(item => `${t('parameter.csv.issueRow')} ${String(item.recordNumber)} ${item.column}: ${item.reason}`));
+    } catch (error) {
+      if (!controller.signal.aborted) setCsvIssues([error instanceof Error ? error.message : t('parameter.csv.mathCheckFailed')]);
+    } finally {
+      if (pendingCsv.current === controller) { pendingCsv.current = null; setCsvOperation(null); }
+    }
+  };
+
+  const exportCsv = (): Promise<void> => exportParameterCsv({
+    pending: pendingCsv, document, documentVersion,
+    busy: (busy) => setCsvOperation(busy ? 'export' : null), issues: setCsvIssues, status: setCsvStatus,
+  });
 
   /** 打ちかけを覚える。まだ文書は変えない(確定は Enter / blur、タスク10 の落とし穴)。 */
   const setDraft = (next: ParameterDraft | null): void => {
     setDraftState({ draft: next, seenVersion: documentVersion });
+    persistParameterPanelGuideDraft(next, document);
   };
 
   /**
@@ -118,6 +270,11 @@ export function ParameterPanel(): React.JSX.Element {
     rejected: Omit<ParameterDraft, 'message'>,
     coalesceKey?: string,
   ): void => {
+    if (useAppStore.getState().document !== document) {
+      setDraft(null);
+      searchRef.current?.focus();
+      return;
+    }
     if (!outcome.ok) {
       setDraft({ ...rejected, message: outcome.message });
       return;
@@ -153,9 +310,15 @@ export function ParameterPanel(): React.JSX.Element {
    * (窓の showModal が奪う焦点で blur が走り、改名の途中で文書が差し替わって窓がすぐ
    * 閉じる不具合の対策。窓を開く前に改名を終わらせてから開く)。
    */
-  const commitNameDraft = (row: ParameterRow): { readonly to: string; readonly done: Promise<void> } | null => {
+  const commitNameDraft = (row: ParameterRow): { readonly to: string; readonly done: Promise<boolean> } | null => {
     const current = draftOf(row, 'name');
     if (current === null || pendingRename.current !== null) {
+      return null;
+    }
+    const owner = useAppStore.getState();
+    if (owner.document !== document || owner.documentVersion !== documentVersion) {
+      setDraft(null);
+      searchRef.current?.focus();
       return null;
     }
     const text = current.text;
@@ -163,13 +326,27 @@ export function ParameterPanel(): React.JSX.Element {
     const rejected = { name: row.name, field: 'name' as const, text };
     const controller = new AbortController();
     pendingRename.current = controller;
+    rowIdentity.current.beginRename(document, row.name, to);
     setRenameBusy(true);
     setDraft(null);
     const done = runMathParameterRename(row.name, to, { signal: controller.signal }).then(outcome => {
-      if (pendingRename.current !== controller) return;
+      if (pendingRename.current !== controller) return false;
       pendingRename.current = null;
       setRenameBusy(false);
-      if (!outcome.ok && useAppStore.getState().document === document) setDraft({ ...rejected, message: outcome.message });
+      if (!outcome.ok) {
+        rowIdentity.current.cancelRename();
+        if (useAppStore.getState().document === document) setDraft({ ...rejected, message: outcome.message });
+        return false;
+      }
+      if (usageOpenName === row.name) setUsageOpenName(to);
+      const latest = useAppStore.getState();
+      if (to === row.name) rowIdentity.current.cancelRename();
+      else rowIdentity.current.token(latest.document, to);
+      const nowRows = parameterRowsOf(latest.document, latest.parameterAnalysis, currentMathGeometry(latest));
+      if (!filterParameterRows(nowRows, query, filter, parameterUsageSites(latest.document))
+        .some(entry => entry.name === to)) focusSearchAfterRename.current = true;
+      else focusNameAfterRename.current = to;
+      return true;
     });
     return { to, done };
   };
@@ -309,7 +486,7 @@ export function ParameterPanel(): React.JSX.Element {
     return (
       <li
         className={row.circular ? 'pcad-parameter pcad-parameter--circular' : 'pcad-parameter'}
-        key={row.name}
+        key={rowIdentity.current.token(document, row.name)}
       >
         <div className="pcad-parameter__head">
           <span className="pcad-parameter__marks">
@@ -381,6 +558,25 @@ export function ParameterPanel(): React.JSX.Element {
             </button>
           </span>
         </div>
+        <button type="button" className="pcad-button" title={t('controlGuide.parameter.usageSites')}
+          aria-expanded={usageOpenName === row.name}
+          onClick={() => setUsageOpenName(usageOpenName === row.name ? null : row.name)}>
+          {t('parameterPanel.usageSitesLabel')} {String(usageSites.get(row.name)?.length ?? 0)}
+        </button>
+        {usageOpenName === row.name ? (
+          <div>
+            <p>{t('parameterPanel.usageScopeNote')}</p>
+            {(usageSites.get(row.name)?.length ?? 0) === 0 ? <p>{t('parameterPanel.noUsageSites')}</p> : (
+              <ul>{usageSites.get(row.name)?.map((site, siteIndex) => (
+                <li key={`${site.kind}:${site.sketchId ?? site.configurationId ?? ''}:${site.ownerId}:${siteIndex}`}>
+                  {t(PARAMETER_USAGE_KIND_KEYS[site.kind])} — {site.kind === 'configuration'
+                    ? `${site.configurationName ?? site.configurationId}: ${site.ownerName}`
+                    : `${site.sketchId === undefined ? '' : `${site.sketchName ?? site.sketchId} (${site.sketchId}) / `}${site.ownerName} (${site.ownerId})`}
+                </li>
+              ))}</ul>
+            )}
+          </div>
+        ) : null}
 
         {renderTextField(
           row,
@@ -406,22 +602,25 @@ export function ParameterPanel(): React.JSX.Element {
              * blur を起こし、改名の途中で文書が差し替わって窓がすぐ閉じる(w104a)。
              * 窓を開く前に名前の下書きを確定させ、改名が終わってから開く。
              */
-            const openWith = (name: string): void => {
-              const latest = useAppStore.getState();
-              const parameter = latest.document.parameters.find(parameter => parameter.name === name)
-                ?? latest.document.parameters.find(parameter => parameter.name === row.name);
+             const openWith = (name: string, afterRename: boolean): void => {
+               const latest = useAppStore.getState();
+               if (latest.document.id !== document.id) return;
+               if (!afterRename && latest.document !== document) return;
+               const original = document.parameters.find(parameter => parameter.name === row.name);
+               const parameter = latest.document.parameters.find(parameter => parameter.name === name
+                 && (original?.mathId === undefined || parameter.mathId === original.mathId));
               if (parameter === undefined) return;
               const sourceDraft = draftOf(row, 'source');
               setMathTarget({ document: latest.document, documentVersion: latest.documentVersion,
                 parameter: sourceDraft === null ? parameter : { ...parameter,
                   value: { source: parameterExpression(row, sourceDraft.text), value: row.value, display: String(row.value) } } });
             };
-            const pendingName = commitNameDraft(row);
-            if (pendingName === null) {
-              openWith(row.name);
-              return;
-            }
-            void pendingName.done.then(() => openWith(pendingName.to));
+             const pendingName = commitNameDraft(row);
+             if (pendingName === null) {
+               openWith(row.name, false);
+               return;
+             }
+             void pendingName.done.then(ok => { if (ok) openWith(pendingName.to, true); });
           }}>{t('math.open')}</button>
 
         <div className="pcad-choice pcad-parameter__units">
@@ -465,7 +664,21 @@ export function ParameterPanel(): React.JSX.Element {
         <button title={t('controlGuide.parameter.stopRename')} type="button" className="pcad-button" onClick={() => pendingRename.current?.abort()}>{t('math.cancel')}</button>
       </p> : null}
       <fieldset className="pcad-parameters__fields" disabled={renameBusy}>
-      <ConfigurationPanel key={documentVersion} />
+       <ConfigurationPanel key={documentVersion} />
+       <div className="pcad-field">
+         <label className="pcad-field__label" htmlFor="parameter-search">{t('parameterPanel.searchLabel')}</label>
+         <input id="parameter-search" ref={searchRef} className="pcad-field__input" type="search"
+           title={t('controlGuide.parameter.search')}
+           value={query} onChange={event => setQuery(event.target.value)} />
+       </div>
+       <div role="group" aria-label={t('parameterPanel.filterLabel')}>
+         {(['all', 'unused', 'circular', 'referenced'] as const).map(choice => (
+           <button key={choice} type="button" className="pcad-button" aria-pressed={filter === choice}
+              title={t(PARAMETER_FILTER_HINT_KEYS[choice])}
+              onClick={() => setFilter(choice)}>{t(PARAMETER_FILTER_KEYS[choice])}</button>
+         ))}
+       </div>
+       <p role="status">{t('parameterPanel.resultCount')} {String(visibleRows.length)} / {String(rows.length)}</p>
       {/* 循環しているときの 1 文(FR-207、FR-504)。行の赤い印だけでは理由が分からない。 */}
       {analysis.circular.length === 0 ? null : (
         <p className="pcad-panel__error">{t('parameterPanel.circularNote')}</p>
@@ -476,10 +689,60 @@ export function ParameterPanel(): React.JSX.Element {
           <p className="pcad-panel__empty-text">{t('parameterPanel.empty')}</p>
           <p className="pcad-panel__empty-text">{t('parameterPanel.emptyHint')}</p>
         </div>
+      ) : renderedRows.length === 0 ? (
+        <p className="pcad-panel__empty-text">{t('parameterPanel.noSearchResults')}</p>
       ) : (
-        <ol className="pcad-parameters__list">{rows.map(renderRow)}</ol>
+        <>
+        {editingRow === null ? null : <p>{t('parameterPanel.editingOutsideSearch')}</p>}
+        <ol className="pcad-parameters__list">{renderedRows.map(row => renderRow(row,
+          rows.findIndex(entry => entry.name === row.name)))}</ol>
+        </>
       )}
 
+      <div className="pcad-parameters__csv">
+        <button type="button" className="pcad-button" disabled={csvBusy || renameBusy}
+          title={t('controlGuide.parameter.csvImport')}
+          onClick={() => { void importCsv(); }}>{t('parameter.csv.import')}</button>
+        <button type="button" className="pcad-button" disabled={csvBusy || renameBusy}
+          title={t('controlGuide.parameter.csvExport')}
+          onClick={() => { void exportCsv(); }}>{t('parameter.csv.export')}</button>
+        {csvBusy ? <p role="status">{t(csvOperation === 'export' ? 'parameter.csv.exportBusy' : 'parameter.csv.busy')}
+          <button type="button" className="pcad-button" title={t('controlGuide.parameter.csvStop')}
+            onClick={() => pendingCsv.current?.abort()}>
+            {t('parameter.csv.cancel')}</button></p> : null}
+        {csvIssues.length > 0 ? <ul role="alert">{csvIssues.map((message, index) =>
+          <li key={index}>{message}</li>)}</ul> : null}
+        {csvStatus === '' ? null : <p role="status">{csvStatus}</p>}
+        {activeCsvPreview === null ? null : <section aria-label={t('parameter.csv.preview')}>
+          <h3>{t('parameter.csv.preview')}</h3>
+          <ul>{activeCsvPreview.changes.map(change => <li key={change.name}>
+            <strong>{change.name}</strong> — {t(`parameter.csv.${change.kind}`)}
+            {change.before === undefined ? null : <span> {change.before.expression} / {change.before.unit}
+              {' / '}{change.before.description}
+              {' → '}</span>}
+            <span>{change.after.expression} / {change.after.unit} / {change.after.description}</span>
+            {change.beforeMathId === undefined && change.afterMathId === undefined ? null :
+              <span> {t('parameter.csv.mathId')}: {change.beforeMathId ?? ''} → {change.afterMathId ?? ''}</span>}
+            {change.mathDefinitionChanged ? <span> {t('parameter.csv.mathChanged')}</span> : null}
+            <span> ({t('parameterPanel.usageSitesLabel')} {String(change.usageSiteCount)})</span>
+          </li>)}</ul>
+          <button type="button" className="pcad-button" title={t('controlGuide.parameter.csvDiscard')}
+            onClick={() => setCsvPreview(null)}>
+            {t('parameter.csv.cancel')}</button>
+          <button type="button" className="pcad-button pcad-button--action" title={t('controlGuide.parameter.csvApply')} onClick={() => {
+            pendingRename.current?.abort();
+            setMathTarget(null);
+            setDraft(null);
+            const latest = useAppStore.getState();
+            const applied = applyParameterCsvPreview(activeCsvPreview,
+              { document: latest.document, documentVersion: latest.documentVersion },
+              candidate => useAppStore.getState().applyDocument(candidate));
+            setCsvPreview(null);
+            if (applied) setCsvStatus(t('parameter.csv.imported'));
+            else setCsvIssues([t('parameter.csv.stale')]);
+          }}>{t('parameter.csv.apply')}</button>
+        </section>}
+      </div>
       <div className="pcad-parameters__footer">
         <button
           type="button"

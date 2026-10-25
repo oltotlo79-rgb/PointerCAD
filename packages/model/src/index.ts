@@ -9,6 +9,8 @@ export { resolveFunctionRanges, type FunctionRangeContext, type FunctionRangeRes
 export { functionCurveRequest, type ExplicitFunctionCurveFormula, type FunctionCurveRequestContext } from './functionGeometry/functionCurveRequest.js';
 export { createFunctionSurface, type FunctionSurfaceFeature, type FunctionSurfacePlan } from './functionGeometry/functionSurfaceFeature.js';
 export { functionSurfaceRequest, type ExplicitFunctionSurfaceFormula } from './functionGeometry/functionSurfaceRequest.js';
+export { allocatePatternPointSlots, patternPointReference, isPatternPointSlot, patternSlotHighWater, retainPatternSlotHighWater, readPatternSlotHighWater } from './part/patternPointSlots.js';
+export type { PatternPointSlot, PatternPointSlots } from './part/patternPointSlots.js';
 export type { FunctionRequestContext } from './functionGeometry/functionRequestInputs.js';
 export { mapFunctionDefinition } from './functionGeometry/mapFunctionDefinition.js';
 export { createFunctionCurve } from './functionGeometry/createFunctionCurve.js';
@@ -25,6 +27,13 @@ export type { SheetMetalRule, SheetBaseFeature, SheetPanelBoundaryRef, SheetBend
 export { evaluateSheetField, resolveSheetRule, mapSheetMetalExpressions, sheetFeatureDependencies, sheetPanelId,
   type SheetFieldDimension, type SheetFieldResult, type SheetRuleValues, type SheetFeatureDependencies } from './sheetMetal/featureInputs.js';
 export { resolveGdtFeature, type ResolvedGdtFeature } from './drawing/gdt.js';
+export { createSubShapeReference, resolveCurrentOrigin } from './kernelBridge/createSubShapeReference.js';
+export {
+  analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryFailureCode,
+  type AnalysisBoundaryMesh, type AnalysisBoundaryMode, type AnalysisBoundaryOptions, type AnalysisBoundaryOutcome,
+  type AnalysisBoundaryReply, type AnalysisBoundaryRequest, type AnalysisBoundarySource, type AnalysisRegion,
+  type AnalysisRegionLookup,
+} from './geometry/analysisMesh.js';
 export { compatibleGdtSizeDimensions } from './drawing/gdtAttachment.js';
 export { drawingMedianPlaneFeature } from './drawing/gdtMedianPlane.js';
 export { dimensionAngleDirections } from './drawing/dimensionAngle.js';
@@ -36,6 +45,11 @@ export { drawingManufacturingIds, nextDatumLabel, putDrawingDatum, putDrawingGdt
 export { duplicateDrawingGdt, type DrawingGdtCopyResult } from './drawing/gdtCopy.js';
 export { resolveWeldSymbol, resolveDrawingWelds, putDrawingWeld, type WeldIssue, type ResolvedWeldSide, type ResolvedWeldSymbol } from './drawing/welding.js';
 export { weldDisplaySides } from './drawing/weldDisplay.js';
+export {
+  linkableWeldIds, linkedWeldIssues, linkedWeldOf, linkedWeldSymbolValues, resolveLinkedWeld,
+  type LinkedWeldBead, type LinkedWeldData, type LinkedWeldLimitation, type LinkedWeldMissingReason, type LinkedWeldResolution,
+  type LinkedWeldSymbolValues,
+} from './drawing/linkedWeld.js';
 export type { DatumDefinition, DatumId, DatumReference, GdtFrameSegment, GdtFeature, GeometricToleranceFrame,
   MaterialRequirement, ToleranceCharacteristic, ToleranceZone } from './drawing/gdt.js';
 export type { GdtShapeTarget, GdtToleranceValue, WeldKind, WeldLengthValue, WeldSideSpec, WeldSymbol } from '@pointercad/drawing';
@@ -64,6 +78,12 @@ export {
   rematchSubShapeRef,
   selectSubShape,
   selectMateTargetGeometry,
+  resolveSubShapeReference,
+  resolveReplacementSubShapeReference,
+  createSubShapeReferenceResolver,
+  SUB_SHAPE_AMBIGUITY_MARGIN,
+  type SubShapeReferenceResolution,
+  type SubShapeMatchCandidate,
   // 角の丸め・面取りの形を求める同期の純関数(FR-323、P4 タスク18・19)。ui の予告表示
   // (`cornerCommands.ts`)が、確定に使うのとまったく同じ式で形を先に見せるために使う。
   // 式の正本は kernel 側の 1 か所だけなので、写して 2 か所に持つことはしない。
@@ -198,10 +218,10 @@ export {
 } from './sketch/constraints/diagnose.js';
 /** 3 段の解決への差し込み(FR-313、FR-504、P4b タスク8)。拘束を解いてから解決し直す。 */
 export type {
-  ConstrainedSketch, ConstrainedSolveOptions,
+  ConstrainedSketch, ConstrainedSketchJob, ConstrainedSolveOptions,
 } from './sketch/constraints/solveSketch.js';
 export {
-  CONSTRAINT_FREE_SKETCH_MESSAGE, CONSTRAINT_UNSOLVED_MESSAGE, DRAG_PIN_WEIGHT,
+  CONSTRAINT_FREE_SKETCH_MESSAGE, CONSTRAINT_UNSOLVED_MESSAGE, createConstrainedSketchJob, DRAG_PIN_WEIGHT,
   resolveConstrainedSketch,
 } from './sketch/constraints/solveSketch.js';
 export {
@@ -469,7 +489,7 @@ export {
   templateFromDocument, TOOL_DEFAULT_KEYS,
 } from './part/templates.js';
 export type {
-  ReferenceError, ReferenceErrorCode, ReferenceResolveDeps, ReferenceResolver,
+  ReferenceError, ReferenceErrorCode, ReferenceResolveDeps, ReferenceResolver, ResolvedPointWithIdentity,
   ResolvedReferenceAxis, ResolvedReferenceCoordinateSystem, ResolvedReferencePlane,
   ResolvedReferencePoint, ResolvedReferences,
 } from './part/resolveReferences.js';
@@ -566,12 +586,18 @@ export { drawingSourceCenter } from './drawing/sourceCenter.js';
  * パラメータ表の値を 1 か所変えると、参照している全ての欄が追従する仕組みの入口。
  */
 export type {
-  AppliedParameters, ExpressionOwner, PartReevaluation, ReevaluationFailure,
+  AppliedParameters, ExpressionOwner, ParameterUsageSource, PartReevaluation, ReevaluationFailure,
 } from './part/reevaluatePart.js';
 export {
-  applyParameters, collectExpressionOwners, collectExpressionSources, reevaluatePartDocument,
-  renameVariableInPartDocument,
+  applyParameters, collectExpressionOwners, collectExpressionSources, collectParameterUsages,
+  reevaluatePartDocument, renameVariableInPartDocument,
 } from './part/reevaluatePart.js';
+export {
+  parseParameterCsv, serializeParameterCsv, PARAMETER_CSV_MAX_BYTES, PARAMETER_CSV_MAX_ROWS,
+} from './parameters/parameterCsv.js';
+export type {
+  ParameterCsvRecord, ParameterCsvDiagnostic, ParameterCsvParseResult,
+} from './parameters/parameterCsv.js';
 export type { PushUndoOptions, UndoStack } from './history/undoStack.js';
 export {
   canRedo, canUndo, createUndoStack, pushUndo, redo, undo, UNDO_COALESCE_MS, UNDO_LIMIT,
@@ -698,6 +724,19 @@ export type {
   SweepKeyMaterial, ThinExtrudeKeyMaterial, ThreadShaftKeyMaterial, TransformKeyMaterial,
 } from './part/cacheKey.js';
 export type { ExtrudeEndPlan, ThinExtrudePlan } from './part/resolvePart.js';
+/** 平らな面の移動(EX-18 の限られた一段。平面・隣が直角)。保存形・検査・作成・寸法の差し替え。 */
+export {
+  checkFaceOffset,
+  createFaceOffsetFeature,
+  DEFAULT_FACE_OFFSET_MM,
+  FACE_OFFSET_KIND,
+  MIN_FACE_OFFSET_MM,
+  withFaceOffsetDistance,
+  withFaceOffsetFace,
+  type FaceOffsetFeature,
+  type FaceOffsetKeyMaterial,
+  type FaceOffsetPlan,
+} from './part/directFaceEdit.js';
 /**
  * P5 タスク46: スイープ・リブ・エンボス・ざぐり/皿もみ・外ねじ・点集合パターン・曲面
  * (FR-409、FR-420〜423、FR-425、FR-428)と、Could 群から前倒しした
@@ -741,6 +780,9 @@ export { sketchIdOfPointReference } from './part/resolvePart.js';
  * (`SolidStepPlan`)は P2 から輸出していないので、切断でも出さない。
  */
 export type { CutFeature } from './part/types.js';
+export type { SurfaceCutFeature, SurfaceCutBlade, SurfaceCutFailureReason } from './part/types.js';
+export type { SurfaceCutBladePlan } from './part/resolvePart.js';
+export type { SurfaceCutKeyMaterial, SurfaceCutBladeKeyMaterial } from './part/cacheKey.js';
 export { DEFAULT_CUT_KEEP } from './part/createPartDocument.js';
 /**
  * `SolidFeatureKind` の実行時の一覧(P5 仕上げ (h)、`docs/報告記録.md` 2026-09-05 23:08 の
@@ -918,6 +960,11 @@ export {
   CANVAS_UNSUPPORTED_FORMAT_MESSAGE, canvasSizeFromScale, checkCanvasImage, detectImageFormat,
   MAX_CANVAS_IMAGE_BYTES, nextCanvasId, removeCanvas, scaleFromTwoPoints, setCanvasVisible,
 } from './sketch/canvas.js';
+export type {
+  CanvasNormalizedPoint, CanvasSourceQuad, CanvasRectification, CanvasHomography,
+  CanvasHomographyResult, CanvasHomographyRefusal,
+} from './sketch/canvasHomography.js';
+export { solveCanvasHomography, projectCanvasHomography } from './sketch/canvasHomography.js';
 
 /**
  * 拘束の自動推定(FR-333、FR-313、計画書 P6 §0.a-0.48〜0.50・§2.15、タスク40)。
@@ -953,7 +1000,7 @@ export type { AxisAngle, Quaternion, RigidPlacement } from './assembly/placement
 export {
   applyPlacementToDirection, applyPlacementToPoint, composePlacement, exponentialMap,
   IDENTITY_PLACEMENT, IDENTITY_QUATERNION, multiplyQuaternion, normalizeQuaternion,
-  placementToRigidTransform, QUATERNION_TOLERANCE, quaternionFromAxisAngle, quaternionToAxisAngle,
+  placementToRigidTransform, QUATERNION_TOLERANCE, quaternionFromAxisAngle, quaternionFromBasis, quaternionToAxisAngle,
   rotateVector,
 } from './assembly/placementMath.js';
 
@@ -971,9 +1018,13 @@ export {
  */
 export type {
   AssemblyComponent, AssemblyDocument, BomColumnId, BomSettings, BomSortKey, ComponentSource,
-  Joint, JointKind, Mate, MateKind, MateTarget, OriginElement, Placement, PresentationStep,
+  Joint, JointKind, MechanismCamCoupling, MechanismGearCoupling, Mate, MateKind, MateTarget, OriginElement, Placement, PresentationStep,
   StandardCatalogId,
 } from './assembly/types.js';
+export { MECHANISM_COUPLING_KINDS } from './assembly/types.js';
+export * from './assembly/joints/mechanismCoupling.js';
+export * from './assembly/joints/camFollower.js';
+export * from './assembly/joints/camCouplingDocument.js';
 export {
   ASSEMBLY_SCHEMA_VERSION, BOM_COLUMN_IDS, BOM_SORT_KEYS, createAssemblyDocument,
   DEFAULT_ASSEMBLY_NAME, DEFAULT_BOM_SETTINGS, DEFAULT_COMPONENT_PLACEMENT, JOINT_KINDS,
@@ -1048,7 +1099,7 @@ export type {
   StandardDimensionRow, StandardTableSource,
 } from './assembly/standard/types.js';
 export {
-  STANDARD_CATALOG_REVISION, STANDARD_PART_GENERATOR_REVISION,
+  HEX_BOLT_LENGTH_THREAD_GENERATOR_REVISION, STANDARD_CATALOG_REVISION, STANDARD_PART_GENERATOR_REVISION,
 } from './assembly/standard/types.js';
 export {
   findHexBolt, findHexNut, findPanHeadScrew, findPlainWasher, findSocketHeadCapScrew,
@@ -1071,6 +1122,20 @@ export {
   DEFAULT_STANDARD_FASTENER_LENGTH, DEFAULT_STANDARD_SECTION_LENGTH,
   STANDARD_PART_UNAVAILABLE_MESSAGE, standardPartNominalVolume,
 } from './assembly/standard/buildStandardPart.js';
+export type {
+  SteelCondition, SteelEvidence, SteelMaterialGrade, SteelProduct, SteelSectionCatalog,
+} from './assembly/standard/steelCatalog.js';
+export {
+  findSteelProduct, hasSteelOptions, STEEL_CATALOG_REVISION, STEEL_EVIDENCE,
+  STEEL_GENERATOR_REVISION, STEEL_LENGTH_LIMITS_MM, STEEL_MATERIAL_GRADES, STEEL_PRODUCTS,
+  steelLength, steelProductFromSource, steelProductOptions, steelProducts, steelSectionCatalogs,
+} from './assembly/standard/steelCatalog.js';
+export type { SteelStockList, SteelStockRow } from './assembly/standard/steelStockList.js';
+export { buildSteelStockList } from './assembly/standard/steelStockList.js';
+export { createSteelBend } from './assembly/standard/steelBend.js';
+export type { SteelBendResult } from './assembly/standard/steelBend.js';
+export { planSteelBend, steelBendSection } from './assembly/standard/steelBendGeometry.js';
+export type { SteelBendDimensions, SteelBendGeometry, SteelBendGeometryResult, SteelBendSection } from './assembly/standard/steelBendGeometry.js';
 
 /**
  * 部品を置く・消す・固定・表示の履歴操作(FR-601、FR-602、FR-505、FR-605、FR-606。
@@ -1141,11 +1206,18 @@ export {
 } from './assembly/documentBundle.js';
 export * from './assembly/constraints/mateResiduals.js';
 export * from './assembly/constraints/solveRigid.js';
+export { runCooperative, type CooperativeResult, type CooperativeRun, type CooperativeSchedule } from './assembly/constraints/cooperativeRigid.js';
 export * from './assembly/constraints/solveMates.js';
 
 export * from './assembly/joints/jointFrames.js';
 export * from './assembly/joints/jointResiduals.js';
 export * from './assembly/joints/driveJoint.js';
+export * from './assembly/joints/subAssemblyJointDrive.js';
+export * from './assembly/joints/crossLevelGear.js';
+export * from './assembly/joints/crossLevelGearDocument.js';
+export * from './assembly/joints/crossLevelGearFollow.js';
+export * from './assembly/joints/crossLevelCam.js';
+export * from './assembly/joints/crossLevelCamLifecycle.js';
 export * from './assembly/presentation.js';
 
 export { drawingDimensionContext, drawingModelPointToPaper, resolvedDimensionView, drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingDimensions,
@@ -1195,6 +1267,117 @@ export { checkFeatureFolders, featureFolderMemberKey, createFeatureFolder, moveF
 export type { FeatureFolder, FeatureFolderMember, FeatureFolderProblem, FeatureFolderCheck } from './history/featureFolders.js';
 
 export { compareDocuments, DocumentComparisonLimit, type DocumentRelationship, type DocumentDefinitionComparison, type DocumentDefinitionChange, type DocumentDefinitionEntry, type DefinitionGroup } from './diff/compareDocuments.js';
+export { compareAssemblyDocuments, compareDrawingDocuments, type AssemblyLibraryDigest, type LibraryItemDigest } from './diff/compareAssemblyDrawing.js';
 export type { DefinitionDifference } from './diff/definitionValues.js';
 export { readUnresolvedMathProblems, setUnresolvedMathProblem, removeUnresolvedMathProblem,
   UNRESOLVED_MATH_PROBLEM_LIMIT, type UnresolvedMathProblem } from './part/unresolvedMathProblems.js';
+export type { SubShapeOrigin, CurrentOriginIndex, OriginBinding, OriginLookup, ShapeAddress,
+  ProfileLineAnchor, ProfileRegionAnchor } from './geometry/subShapeOrigin.js';
+
+export type { PointProducerAnchor, PointPlacementSourceAnchor, CopyPointPlacementRole, HoleCenterAnchor, HolePlacementRole, HoleFaceOrigin } from './geometry/subShapeOrigin.js';
+
+// 互いに固定した部品の組とボルト締結(追加要件6)。
+export {
+  collapseRigidGroups, expandRigidGroupPlacements, joinRigidGroup, nextRigidGroupId, relativePlacement,
+  releaseRigidGroup, rigidGroupMemberIds, rigidGroupsOf, RIGID_GROUP_ID_PREFIX, type RigidGroupCollapse,
+} from './assembly/rigidGroups.js';
+export {
+  bindHoleSelection, faceResolverFromBodies, type FaceResolution, type FasteningGeometryContext, type FasteningHolePick,
+  modeledThreadGroupPickAt, modeledThreadResolverFromBodies, type ModeledThreadGroupPick, type ModeledThreadResolution,
+} from './assembly/fastening/bindHoleSelection.js';
+export { commitBoltedJoint, previewBoltedJoint, type BoltedJointChoices } from './assembly/fastening/boltedJointCommand.js';
+export { applyBoltedJoint, type ApplyBoltedJointResult } from './assembly/fastening/applyBoltedJoint.js';
+export {
+  boltedJointRecordForComponent, boltedJointRecords, boltedJointUserChoices, commitBoltedJointEdit, findBoltedJointRecord,
+  previewBoltedJointEdit, withBoltedJointRecord,
+  type BoltedJointCatalogChoices, type BoltedJointEditFailure, type BoltedJointEditPreview, type BoltedJointEditResult,
+  type BoltedJointRecord, type BoltedJointRecordedPick, type BoltedJointUserChoices,
+} from './assembly/fastening/boltedJointEdit.js';
+export { globalUnverifiedLengthAvailability } from './assembly/fastening/selectFastener.js';
+export type {
+  BoltedJointConfiguration, BoltedJointPlan, BoltedJointPlanResult, BoltedJointRejection, BoltedJointRejectionCode,
+  BoltLengthAvailability, ClearanceEvidenceRow, FastenerOperation, FasteningMissingFact, FasteningWasherKind,
+} from './assembly/fastening/types.js';
+export {
+  CLEARANCE_EVIDENCE, CLEARANCE_EVIDENCE_SOURCE, NBK_CLEARANCE_GRADES,
+} from './assembly/fastening/clearanceEvidence.js';
+export { holeFeatureForSelection, holeWallOriginAt, type HoleWallOrigin } from './assembly/fastening/bindHoleSelection.js';
+export {
+  applyContextReference, commitContextReference, contextPointResolverFromBodies, contextReferencesHaveCycle,
+  type ContextReferenceCommit, type ContextReferenceContext, type ContextReferenceLink, type ContextReferenceRejection,
+  type ContextReferenceRejectionCode, type ContextReferenceUpdate,
+} from './assembly/contextReference.js';
+export { boltThreadLength, verifiedMainLengthAvailability } from './assembly/fastening/selectFastener.js';
+
+// アセンブリのすみ肉溶接のビード(直線の当たり、連続・断続)。強度・溶加材の性質は持たない。
+export {
+  nextWeldId, planFilletWeld, planFilletWeldEdit, weldSegmentsOf, type FilletWeldEditRequest, type WeldBodyLookup,
+} from './assembly/welding/planFilletWeld.js';
+export {
+  applyFilletWeld, removeFilletWeld, weldSegmentPlacement, type ApplyFilletWeldResult,
+} from './assembly/welding/applyFilletWeld.js';
+export {
+  intermittentSegments, MAX_WELD_SEGMENTS, occupiedLength, segmentsFromLengthsAndGaps, segmentWithinContact, stationRejections,
+} from './assembly/welding/stationing.js';
+export {
+  COVERED_RATIO, footprintContact, UNCOVERED_RATIO, type WeldContactCode, type WeldContactReason, type WeldContactResult,
+  type WeldFootprint,
+} from './assembly/welding/weldContact.js';
+export {
+  buildFilletWeldPart, createFilletWeldSource, filletWeldLegs, filletWeldNominalVolume, filletWeldOptionAngle,
+  filletWeldSegmentOptions, type FilletWeldSegmentOptions,
+} from './assembly/welding/filletWeldPart.js';
+export {
+  bindFilletWeldSelection, type BoundFilletWeldSelection, type FilletWeldPick, type FilletWeldPicks, type WeldGeometryResolver,
+} from './assembly/welding/bindWeldSelection.js';
+export {
+  FILLET_WELD_CATALOG_REVISION, FILLET_WELD_GENERATOR_REVISION, FILLET_WELD_OBLIQUE_GENERATOR_REVISION,
+  FILLET_WELD_REJECTION_CODES, WELD_DIRECTION_TOLERANCE, WELD_ID_PREFIX, WELD_LENGTH_TOLERANCE_MM,
+  weldAngleConditioned, weldAngleRangeDegrees, weldAngleSinFloor, weldCrossSection, weldCrossSectionIssue, weldInteriorAngle,
+} from './assembly/welding/types.js';
+export type {
+  FilletWeldPlan, FilletWeldPlanResult, FilletWeldRejection, FilletWeldRejectionCode, FilletWeldRequest,
+  WeldContactEvidence, WeldCrossSection, WeldEdgeSelection, WeldFaceSelection, WeldFrame, WeldInteriorAngle, WeldSegmentSpec,
+} from './assembly/welding/types.js';
+export {
+  hexBoltMainEvidence, hexBoltMainThreadLength, MISUMI_HEX_BOLT_MAIN_EVIDENCE, MISUMI_HEX_BOLT_SOURCE, type HexBoltMainEvidenceRow,
+} from './assembly/standard/hexBoltEvidence.js';
+export { standardMembersToBeamAnalysis, BEAM_CONNECTION_TOLERANCE_MM } from './analysis/standardBeamAdapter.js';
+export type { StandardBeamAdapterContext } from './analysis/standardBeamAdapter.js';
+export { prepareCadAxialBolts, type PreparedCadAxialBolt } from './analysis/cadAxialBolt.js';
+
+export { prepareCadWeldLayers, type PreparedCadWeldLayer } from './analysis/cadWeldLayer.js';
+export { readCadWeldLayerInputs, type CadWeldLayerInputs, type CadWeldLayer } from './analysis/weldLayerInput.js';
+
+export { placementFingerprint as weldPlacementFingerprint } from './assembly/fastening/frames.js';
+
+export { jointOccurrencePath, resolveJointOccurrence } from './assembly/jointOccurrence.js';
+export type {
+  JointOccurrenceFailureCode, JointOccurrenceInputs, JointOccurrencePath, JointOccurrenceResult,
+  JointOccurrenceView, ResolvedJointOccurrence,
+} from './assembly/jointOccurrence.js';
+export type { JointOccurrenceConnection } from './assembly/types.js';
+export type {
+  CommitJointOccurrenceResult, JointOccurrenceCommandContext, JointOccurrenceCommandFailure,
+  JointOccurrencePreviewStamp,
+} from './assembly/jointOccurrenceSelection.js';
+export {
+  commitOccurrenceBoltedJoint, previewOccurrenceBoltedJoint,
+  type OccurrenceBoltedJointPreview, type OccurrenceHolePick,
+} from './assembly/fastening/boltedJointCommand.js';
+export {
+  commitOccurrenceFilletWeld, previewOccurrenceFilletWeld,
+  type OccurrenceWeldChoices, type OccurrenceWeldPick, type OccurrenceWeldPicks, type OccurrenceWeldPreview,
+} from './assembly/welding/bindWeldSelection.js';
+
+export { previewOccurrenceFilletWeldEdit, commitOccurrenceFilletWeldEdit,
+  type OccurrenceWeldEditFailure, type OccurrenceWeldEditPreview, type CommitOccurrenceWeldEditResult,
+} from './assembly/welding/bindWeldSelection.js';
+
+export { STEEL_STANDARDS } from './assembly/standard/steelStandards.js';
+export type {
+  SteelProductStandardReferences, SteelStandard, SteelStandardDraft, SteelStandardId,
+  SteelStandardReference, SteelStandardVerification,
+} from './assembly/standard/steelStandards.js';
+export { STEEL_GRADE_RULES, STEEL_SECTION_CATALOGS, steelGradeRule } from './assembly/standard/steelGradeRules.js';
+export type { SteelGradeRejectionCode, SteelGradeRule } from './assembly/standard/steelGradeRules.js';

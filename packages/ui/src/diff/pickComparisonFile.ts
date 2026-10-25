@@ -3,7 +3,9 @@ import { t } from '../i18n/t.js';
 import { DEFINITION_DIFF_MAX_FILE_BYTES, type DefinitionDiffRequest } from './definitionDiffProtocol.js';
 import type { DefinitionDiffExecution } from './definitionDiffClient.js';
 
-export interface ComparisonFile { readonly fileName: string; readonly documentName: string; readonly bytes: Uint8Array }
+/** 文書の種類。省略は部品(ファイル選択で開くのは部品だけ。組立・図面は保存点の比較が渡す)。 */
+export interface ComparisonFile { readonly fileName: string; readonly documentName: string; readonly bytes: Uint8Array;
+  readonly documentKind?: 'part' | 'assembly' | 'drawing' }
 export type PickComparisonResult = { readonly status: 'ready'; readonly file: ComparisonFile }
   | { readonly status: 'cancelled' } | { readonly status: 'failed'; readonly message: string };
 export type DefinitionDiffExecutor = (request: DefinitionDiffRequest, signal: AbortSignal) => Promise<DefinitionDiffExecution>;

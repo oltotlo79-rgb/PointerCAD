@@ -1,9 +1,11 @@
 import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { R22_SHAPES, r22Primitive, r22Volume } from './geometryAcceptanceFixtures.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import type { OcctShapeHandle } from './makeBox.js';
+import { makePrimitive } from './makePrimitive.js';
 import { readStep } from './readStep.js';
 import { measureVolume } from './solidMesh.js';
 import type { StepWriteEntry } from './writeStep.js';
@@ -476,6 +478,36 @@ describe('STEP の面ごとの色(P6 タスク7b、§2.5.1・§1.5-29)', () => {
         expect(read.bodies[0].color).not.toBeNull();
       } finally {
         read.delete();
+      }
+    } finally {
+      handle.delete();
+    }
+  });
+});
+
+describe('R22: STEP writer unit isolation', () => {
+  it.each(R22_SHAPES)('%s writes INCH header, preserves native mm shape and restores MM', (shape) => {
+    const scale = 1;
+    const handle = makePrimitive(oc, r22Primitive(shape, scale));
+    try {
+      oc.Interface_Static.SetCVal('write.step.unit', 'INCH');
+      let inchBytes: Uint8Array;
+      try {
+        inchBytes = writeStep(oc, [{ shape: handle.shape, name: 'R22 inch', color: null }]).bytes;
+      } finally {
+        oc.Interface_Static.SetCVal('write.step.unit', 'MM');
+      }
+      expect(decode(inchBytes)).toContain("CONVERSION_BASED_UNIT('INCH'");
+      expect(Math.abs(measureVolume(oc, handle.shape) - r22Volume(shape, scale)) / r22Volume(shape, scale))
+        .toBeLessThan(1e-6);
+      const millimetreBytes = writeStep(oc, [{ shape: handle.shape, name: 'R22 mm', color: null }]).bytes;
+      const restored = readStep(oc, millimetreBytes);
+      try {
+        expect(restored.unit).toBe('mm');
+        expect(Math.abs(measureVolume(oc, restored.bodies[0].shape) - r22Volume(shape, scale)) / r22Volume(shape, scale))
+          .toBeLessThan(1e-6);
+      } finally {
+        restored.delete();
       }
     } finally {
       handle.delete();

@@ -8,6 +8,7 @@
  * part/resolvePart.ts の担当にする。
  */
 
+import { allocatePatternPointSlots, patternSlotHighWater, retainPatternSlotHighWater } from './patternPointSlots.js';
 import { createDefaultConfigurations } from './configurationDefaults.js';
 import { createDefaultNamedViews } from './namedViews.js';
 import { type ExpressionValue, expressionValueFromNumber } from '@pointercad/expression';
@@ -37,6 +38,7 @@ import type {
   ReferenceFeatureKind,
   RibSide,
   RuledSphereSegments,
+  SewFeature,
   SolidFeature,
   SolidFeatureKind,
   SolidOrigin,
@@ -72,7 +74,7 @@ import type {
  * `SCHEMA_MIGRATIONS[6]` がこの 2 欄の省略を空配列で補って読み込む。
  */
 // 版17は図形を測る定義を保持し、旧版による無言の読み捨てを防ぐ。
-export const PART_SCHEMA_VERSION = 17;
+export const PART_SCHEMA_VERSION = 22;
 
 /** 縫合のつなぎ目の既定の許容量(mm、§0.a-0.7)。 */
 export const DEFAULT_SEW_TOLERANCE_MM = 0.01;
@@ -453,6 +455,8 @@ export type SolidLabelKey =
     (曲面 5 種は「押し出し面1」ではなく「曲面1」で数える。利用者から見て道具が 1 つだから)。
   */
   | 'draft'
+  /** 平らな面の移動(EX-18 の限られた一段)。フィーチャーの種類と 1 対 1。 */
+  | 'faceOffset'
   | 'mirror'
   | 'transform'
   | 'scale'
@@ -471,6 +475,7 @@ export type SolidLabelKey =
   | 'shell'
   /** 平面による切断(FR-432、§2.9b、タスク27c)。分割(FR-424)もこれで満たす。 */
   | 'cut'
+  | 'surfaceCut'
   /*
     読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8、タスク20)。B-rep(STEP)と
     三角形(STL / OBJ / 3MF / glTF)は利用者から見て別のもの——**三角形の形は加工できない**
@@ -515,6 +520,7 @@ const SOLID_FEATURE_KIND_TABLE = {
   ruled: true,
   loft: true,
   draft: true,
+  faceOffset: true,
   mirror: true,
   transform: true,
   scale: true,
@@ -526,6 +532,7 @@ const SOLID_FEATURE_KIND_TABLE = {
   functionSurface: true,
   shell: true,
   cut: true,
+  surfaceCut: true,
   importedSolid: true,
   importedMesh: true,
 } satisfies Record<SolidFeatureKind, true>;
@@ -579,6 +586,8 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   // P5 の Should 群(§2.11、タスク43)。ツールバーの道具の名前(タスク48 の ja.json)と
   // 同じ言葉にする(FR-501「木の名前と道具の名前が食い違わない」)。
   draft: '抜き勾配',
+  // 平らな面の移動(EX-18)。ツールバーの道具の名前(ja の solid.faceOffset)と同じ言葉にする。
+  faceOffset: '面の移動',
   mirror: 'ミラー',
   transform: '移動・回転',
   scale: '拡大縮小',
@@ -594,6 +603,7 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   // 平面による切断(FR-432、§2.9b、タスク27c)。「反対側も残す」で 2 つ積んだときは
   // 「切断1」「切断2」と連番が並ぶ(同じ種類なので分けない)。
   cut: '切断',
+  surfaceCut: '面による切断',
   // 読み込んだ形のベースボディ 2 種(FR-802、P6 §2.8)。利用者の言葉で「読み込んだ形」と
   // 「読み込んだ三角形の形」に分ける(断りの文言(§2.8 の表)と同じ言い回しにそろえる)。
   importedSolid: '読み込んだ形',
@@ -814,7 +824,10 @@ export function appendSolid(document: PartDocument, feature: SolidFeature): Part
   if (findSolid(document, feature.id) !== undefined) {
     return document;
   }
-  return { ...document, solids: [...document.solids, feature] };
+  const normalized = feature.kind === 'pattern' && feature.placement.kind === 'points'
+    ? { ...feature, placement: allocatePatternPointSlots(feature.placement.points, undefined, feature.placement.nextSlotSerial, patternSlotHighWater(document, feature.id)) }
+    : feature;
+  return retainPatternSlotHighWater({ ...document, solids: [...document.solids, normalized] }, document);
 }
 
 /**
@@ -826,13 +839,19 @@ export function replaceSolid(
   featureId: string,
   next: SolidFeature,
 ): PartDocument {
-  if (findSolid(document, featureId) === undefined) {
+  const previous = findSolid(document, featureId);
+  if (previous === undefined) {
     return document;
   }
-  return {
+  const normalized = next.kind === 'pattern' && next.placement.kind === 'points'
+    ? { ...next, placement: allocatePatternPointSlots(next.placement.points,
+      previous.kind === 'pattern' && previous.placement.kind === 'points' ? previous.placement : undefined,
+      next.placement.nextSlotSerial, patternSlotHighWater(document, featureId)) }
+    : next;
+  return retainPatternSlotHighWater({
     ...document,
-    solids: document.solids.map((feature) => (feature.id === featureId ? next : feature)),
-  };
+    solids: document.solids.map((feature) => (feature.id === featureId ? normalized : feature)),
+  }, document);
 }
 
 /**
@@ -948,7 +967,14 @@ export function createPrimitiveFeature(
  * - ブーリアンは対象と相手の2つ。
  * - 加工(穴・ねじ穴・R 面取り・C 面取り)は対象のボディ1つを消費して新しいボディを1つ作る。
  * - パターンは繰り返しのもとにした加工フィーチャーのボディ1つを消費する(§0.a-0.20)。
- * - 押し出し・回転・縫合・**ばね**は何も消費しない(ばねは §0.a-0.36 で「作る」フィーチャー)。
+ * - 押し出し・回転・**ばね**は何も消費しない(ばねは §0.a-0.36 で「作る」フィーチャー)。
+ * - **縫合**はスケッチの面を縫うときは何も消費しない。既にある面を縫うとき(`surfaceFaces`、
+ *   EX-18)は、縫った面のうち**曲面**(`surface`・`functionSurface`。閉じた立体でない面だけの
+ *   本体)の本体を取り込む(消費する。商用 CAD の縫い合わせと同じ)。縫合の結果は入力の面と
+ *   必ず重なるので、残すと画面のクリックが古い曲面を拾い、縫った立体を加工できない。
+ *   **立体の本体の面を縫ったときは、その立体を残す**(面を読むだけ)。どの本体が曲面かは
+ *   文書を見ないと決まらないので、`solids`(文書の立体の一覧)を渡されたときだけ数える。
+ *   渡さない呼び出し(履歴の依存・三角形の形の断り)では今までどおり何も返さない。
  * - **基本形状**も何も消費しない(P5 §0.a-0.19)。基準点に立体の頂点を指したときも
  *   消費しない: 頂点の座標を読むだけなので、貸した立体はそのまま画面に残る。
  * - **面をつなぐ(罫線面)・ロフト**も何も消費しない(P5 §0.a-0.27)。立体の面や球を
@@ -967,15 +993,17 @@ export function createPrimitiveFeature(
  *
 
  * 順序は文書に書かれた順のまま返す(重複の除去はしない。同じ id を2度指すブーリアンは
- * 解決のときに `consumedTwice` で断る)。
+ * 解決のときに `consumedTwice` で断る)。縫合だけは同じ曲面の面を何枚縫っても、その曲面を
+ * 1 度だけ返す(1 つの縫合が同じ本体を 2 度消費するわけではないため)。
  */
-export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
+export function consumedTargetsOf(feature: SolidFeature, solids?: readonly SolidFeature[]): readonly string[] {
   switch (feature.kind) {
     case 'sheetBase': return [];
     case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return [feature.targetFeatureId];
+    case 'sew':
+      return solids === undefined ? [] : sewnSurfaceBodyIds(feature, solids);
     case 'extrude':
     case 'revolve':
-    case 'sew':
     case 'spring':
     case 'primitive':
     case 'ruled':
@@ -995,6 +1023,7 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'fillet':
     case 'chamfer':
     case 'draft':
+    case 'faceOffset':
     case 'transform':
     case 'scale':
     case 'rib':
@@ -1002,6 +1031,7 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
     case 'threadShaft':
     case 'shell':
     case 'cut':
+    case 'surfaceCut':
       // 加工4種、P5 の Should 群のうち対象1つを消費するもの(§2.11 の表)、そして
       // くり抜き(FR-418、§2.12。中身を抜いた立体 1 つだけが残る)と
       // 平面による切断(FR-432、§2.9b。残す側 1 つだけが残る)。
@@ -1018,6 +1048,21 @@ export function consumedTargetsOf(feature: SolidFeature): readonly string[] {
       // 厚み付け(消費しうる種類)が後で足されたときにここを直すと分かるようにするため。
       return [];
   }
+}
+
+/**
+ * 面入力の縫合(EX-18)が取り込む曲面の本体の id。縫った面の順に、重複なしで返す。
+ * 曲面(`surface`・`functionSurface`)だけを数え、立体の本体・見つからない本体は数えない
+ * (見つからない参照は解決が `missingBody` で断る。`consumedBodyIds` も履歴で前にあるものだけを数える)。
+ */
+function sewnSurfaceBodyIds(feature: SewFeature, solids: readonly SolidFeature[]): readonly string[] {
+  const ids: string[] = [];
+  for (const face of feature.surfaceFaces ?? []) {
+    const source = solids.find((candidate) => candidate.id === face.bodyFeatureId);
+    if (source === undefined || ids.includes(source.id)) continue;
+    if (source.kind === 'surface' || source.kind === 'functionSurface') ids.push(source.id);
+  }
+  return ids;
 }
 
 /**
@@ -1043,13 +1088,16 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'chamfer':
     case 'pattern':
     case 'draft':
+    case 'faceOffset':
     case 'rib':
     case 'emboss':
     case 'threadShaft':
     case 'shell':
     case 'cut':
+    case 'surfaceCut':
       // くり抜き(FR-418、§2.12)と切断(FR-432、§2.9b)も対象 1 つを取って形を変えるので
       // 加工に数える(ツールバーでも「加工」の畳んだ一覧に入る。§0.a-0.64)。
+      // 平らな面の移動(EX-18)も対象 1 つを取って形を変えるので加工に数える。
       return true;
     case 'extrude':
     case 'revolve':
@@ -1113,7 +1161,7 @@ export function consumedBodyIds(document: PartDocument): ReadonlySet<string> {
     if (feature.suppressed) {
       continue;
     }
-    for (const id of consumedTargetsOf(feature)) {
+    for (const id of consumedTargetsOf(feature, document.solids)) {
       if (available.has(id)) {
         consumed.add(id);
       }

@@ -1,5 +1,6 @@
 /** 板金の平面輪郭から矩形/長穴を引く。外周・穴を向き付きの解析曲線としてつなぎ直す。 */
 import { curveEnd, curvePointAt, curveStart } from '../sketch/intersectionMath.js';
+import { reverseSpline } from '../sketch/splineMath.js';
 import type { ResolvedCurve } from '../sketch/types.js';
 import { crossVec3, dotVec3, normalizeVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 import { groupClippedPanels, sheetLoopContains } from './groupClippedPanels.js';
@@ -10,7 +11,7 @@ import { sliceSheetCurve } from './sliceSheetCurve.js';
 
 function reverse(curve: ResolvedCurve): ResolvedCurve {
   if (curve.kind === 'segment') return { ...curve, from: curve.to, to: curve.from };
-  if (curve.kind === 'spline') return { ...curve, points: [...curve.points].reverse() };
+  if (curve.kind === 'spline') return reverseSpline(curve);
   return { ...curve, startAngle: curve.endAngle, endAngle: curve.startAngle };
 }
 function orderedCuts(cuts: readonly number[]): readonly number[] {

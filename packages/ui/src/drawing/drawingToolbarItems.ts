@@ -30,6 +30,7 @@ export const DRAWING_TOOL_GROUPS = [
    * 部品の▾と同じ「ファイルのほかの操作」。部品と図面で同じ役目のボタンを別の名前で呼ばない。
    */
   { label: 'toolbar.file.title', menuLabel: 'toolbar.fileMenu.groupLabel', helpTopic: 'drawing-export', tooltip: 'drawing.toolbar.fileHint', Icon: FileMenuIcon, items: [
+    { id: 'savePoints', labelKey: 'toolbar.history.savePoints', tooltipKey: 'toolbar.history.savePointsTooltip', Icon: SaveAsIcon },
     { id: 'saveAs', labelKey: 'toolbar.file.saveAs', tooltipKey: 'toolbar.file.saveAsTooltip', Icon: SaveAsIcon },
     { id: 'refreshSource', labelKey: 'drawing.sourceRefresh.title', tooltipKey: 'drawing.sourceRefresh.hint', Icon: OpenFileIcon },
     { id: 'export', labelKey: 'drawing.export.title', tooltipKey: 'drawing.toolbar.exportHint', Icon: DrawingSheetIcon },

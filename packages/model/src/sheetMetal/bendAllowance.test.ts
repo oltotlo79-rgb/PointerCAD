@@ -46,4 +46,20 @@ describe('板金の曲げ長と寸法の基準（P10-2）', () => {
     expect(sheetDevelopedLength(input, 4, 30, 'outer')).toEqual({ ok: false, error: 'legTooShort' });
     expect(sheetDevelopedLength(input, Infinity, 30, 'tangent')).toEqual({ ok: false, error: 'legTooShort' });
   });
+
+  it.each([60, -120].flatMap((angle) => [0, 0.4, 0.5].map((kFactor) => ({ angle, kFactor }))))(
+    '$angle度・K=$kFactorのBAと内外控えを独立三角式から1e-9mmで照合する', ({ angle, kFactor }) => {
+      const rule = { ...input, angle, kFactor }, before = JSON.stringify(rule);
+      const theta = Math.abs(angle) * Math.PI / 180, allowance = theta * (3 + kFactor * 2);
+      for (const [basis, setback] of [['tangent', 0], ['outer', (3 + 2) * Math.tan(theta / 2)],
+        ['inner', 3 * Math.tan(theta / 2)]] as const) {
+        const result = sheetDevelopedLength(rule, 50, 30, basis); if (!result.ok) throw new Error(result.error);
+        expect(Math.abs(result.metrics.bendAllowance - allowance)).toBeLessThanOrEqual(1e-9);
+        expect(Math.abs(result.metrics.bendDeduction - (2 * (3 + 2) * Math.tan(theta / 2) - allowance))).toBeLessThanOrEqual(1e-9);
+        expect(Math.abs(result.straightLengths[0] - (50 - setback))).toBeLessThanOrEqual(1e-9);
+        expect(Math.abs(result.straightLengths[1] - (30 - setback))).toBeLessThanOrEqual(1e-9);
+        expect(Math.abs(result.length - (50 + 30 - 2 * setback + allowance))).toBeLessThanOrEqual(1e-9);
+      }
+      expect(JSON.stringify(rule)).toBe(before);
+  });
 });

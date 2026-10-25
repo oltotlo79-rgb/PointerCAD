@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { readFile, lstat } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import { offlineAssetRoute, offlineAssetUrl, readOfflineAssetManifest } from '../../scripts/vite/offlineProtocol.mjs';
 import { captureWebBuildSources } from '../../scripts/vite/webBuildSources.mjs';
 import { sourceFileHash } from '../../scripts/release/desktopFileInventory.mjs';
@@ -33,11 +34,25 @@ export async function serveOfflineCandidate() {
     }
     assert.equal(sourceFileHash(await readFile(path)), expected, 'Manual source changed: ' + name);
   }
-  const files = new Map<string, { bytes: Buffer; file: string }>();
+  const files = new Map<string, { bytes: Buffer; file: string; etag: string }>();
   for (const asset of [...manifest.assets, { url: 'offline-assets.json' }, { url: 'service-worker.js' }]) {
-    const file = decodeURIComponent(asset.url), bytes = await readFile(join(folder, file));
-    if ('sha256' in asset) assert.equal(createHash('sha256').update(bytes).digest('hex'), asset.sha256, file);
-    const value = { bytes, file };
+    const file = decodeURIComponent(asset.url), path = join(folder, file);
+    if ('sha256' in asset) {
+      const physical = asset.transport ?? asset;
+      assert.equal((await lstat(path)).size, physical.byteLength, 'Physical asset size differs: ' + file);
+    }
+    const bytes = await readFile(path);
+    if ('sha256' in asset) {
+      const physical = asset.transport ?? asset;
+      assert.equal(bytes.byteLength, physical.byteLength, 'Physical asset changed while reading: ' + file);
+      assert.equal(createHash('sha256').update(bytes).digest('hex'), physical.sha256, 'Physical asset hash differs: ' + file);
+      if (asset.transport !== undefined) {
+        const decoded = gunzipSync(bytes, { maxOutputLength: asset.byteLength + 1 });
+        assert.equal(decoded.byteLength, asset.byteLength, 'Decoded asset size differs: ' + file);
+        assert.equal(createHash('sha256').update(decoded).digest('hex'), asset.sha256, 'Decoded asset hash differs: ' + file);
+      }
+    }
+    const value = { bytes, file, etag: '"' + createHash('sha256').update(bytes).digest('hex') + '"' };
     files.set('/' + asset.url, value); files.set('/' + offlineAssetRoute(asset.url), value);
   }
   // Match the host's checked-in header rules; do not invent headers that could hide a deployment omission.
@@ -69,8 +84,10 @@ export async function serveOfflineCandidate() {
       response.writeHead(503); response.end('Network disconnected'); return;
     }
     const pathname = new URL(request.url ?? '/', 'http://localhost').pathname, file = files.get(pathname);
+    // The host's own default for a file without a Cache-Control rule is ETag revalidation, not no-store:
+    // https://developers.cloudflare.com/workers/static-assets/headers/
     const headers: Record<string, string> = { 'Content-Type': mime[extname(file?.file ?? '')] ?? 'application/octet-stream',
-      'Cache-Control': 'no-store' };
+      ...(file === undefined ? { 'Cache-Control': 'no-store' } : { 'Cache-Control': 'public, max-age=0, must-revalidate', ETag: file.etag }) };
     for (const rule of rules) if (rule.pattern.test(pathname)) Object.assign(headers, rule.headers);
     let bytes = file?.bytes;
     if (file !== undefined && bytes !== undefined && request.headers['x-pointercad-offline-prepare'] === '1'
@@ -87,6 +104,9 @@ export async function serveOfflineCandidate() {
         injected.push({ path: file.file, fault: 'corrupt' });
         bytes = Buffer.from(bytes); bytes[0] ^= 0x20;
       }
+    } else if (file !== undefined && request.headers['if-none-match'] === file.etag) {
+      // Preparation downloads never revalidate, so a fault above cannot be answered from the browser cache.
+      response.writeHead(304, headers); response.end(); return;
     }
     response.writeHead(file === undefined ? 404 : 200, headers); response.end(bytes ?? 'Missing candidate asset');
   });

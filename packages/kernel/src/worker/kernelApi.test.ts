@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { expose, releaseProxy, wrap } from 'comlink';
 
 import type {
@@ -22,8 +22,11 @@ import type {
   SolidProgress,
   SolidStepRequest,
   SubShapeQuery,
+  Vec3Tuple,
 } from '../types.js';
-import { createKernelApi, type KernelApi } from './kernelApi.js';
+import { createKernelApi, createKernelPhaseObserver, type KernelApi } from './kernelApi.js';
+import { recomputeEmptySolids, type CachedSolid } from './recomputeSolids.js';
+import { createShapeCache } from './shapeCache.js';
 import { stepBytesForComparison } from './stepBytesForComparison.testSupport.js';
 
 /**
@@ -125,7 +128,184 @@ function perimeterOf(curves: readonly CurveSpec[]): number {
 }
 
 describe('KernelApiの使用中保護', () => {
+  it('default worker cache advertises measurement from the first empty state', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const partId = 'measured-cache-capability';
+    expect(await target.getShapeCacheStats()).toMatchObject({ shapeCount: 0,
+      meshBytes: 0, meshBytesMeasured: true });
+    try {
+      const result = await target.recomputeSolids({ partId, generation: 1,
+        steps: [extrudeStep('capability-body', 'capability-key', 10)] });
+      expect(result.failures).toEqual([]);
+      expect(result.bodies).toHaveLength(1);
+      const stats = await target.getShapeCacheStats();
+      expect(stats.meshBytesMeasured).toBe(true);
+      expect(stats.shapeCount).toBeGreaterThan(0);
+      expect(stats.meshBytes).toBeGreaterThan(0);
+    } finally {
+      await target.releasePart(partId);
+    }
+  });
+
   const item = (bodyKey: string): ShapeExportItem => ({ bodyKey, name: null, color: null });
+
+  it('forwards refinement limits and keeps its deadline inside the one acquired native request', async () => {
+    const target = createKernelApi(loadOcctForNode), partId = 'analysis-refinement-budget';
+    try {
+      const built = await target.recomputeSolids({ partId, generation: 1,
+        steps: [extrudeStep('refinement-box', 'refinement-key', 10)] });
+      expect(built.failures).toEqual([]);
+      const before = await target.getShapeCacheStats();
+      const request = { bodyKey: 'refinement-key', boundary: 'closed' as const,
+        linearDeflection: 0.1, angularDeflection: 0.2, materialValidation: 'native-solid' as const,
+        freeformRefinement: { maximumChordDeviationMm: 0.01, maximumVolumeDeviationMm3: 0.01,
+          maximumNodes: 1, maximumTriangles: 2048 } };
+      // A box needs eight nodes. A dropped opt-in would incorrectly return the ordinary successful box mesh.
+      expect(await target.buildAnalysisSurfaceMesh(request)).toMatchObject({ kind: 'failed', code: 'limit' });
+      let clock = 0;
+      const spy = vi.spyOn(performance, 'now').mockImplementation(() => { clock += 25_000; return clock; });
+      try {
+        await expect(target.buildAnalysisSurfaceMesh({ ...request,
+          freeformRefinement: { ...request.freeformRefinement, maximumNodes: 1024 } }))
+          .rejects.toMatchObject({ name: 'ExportWorkLimitError' });
+      } finally { spy.mockRestore(); }
+      expect(await target.getShapeCacheStats()).toEqual(before);
+      const ordinary = await target.buildAnalysisSurfaceMesh({ bodyKey: 'refinement-key', boundary: 'closed',
+        linearDeflection: 0.1, angularDeflection: 0.2 });
+      expect(ordinary.kind).toBe('mesh');
+    } finally { await target.releasePart(partId); }
+  });
+
+  it('tracked key collision never returns another current feature owner', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const box: SolidStepRequest = { id: 'first', key: 'semantic-collision-key', label: 'First',
+      visible: true, step: { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1],
+        shape: { kind: 'box', sizeX: 20, sizeY: 20, sizeZ: 20 },
+        originQuery: null, targetKey: null } };
+    try {
+      const first = await target.recomputeSolids({ partId: 'origin-a', generation: 1, steps: [box] });
+      expect(first.failures).toEqual([]);
+      const denied = await target.readCachedBodies([{ id: 'second', key: box.key }]);
+      expect(denied.bodies).toEqual([]);
+      expect(denied.failures).toHaveLength(1);
+      const second = await target.recomputeSolids({ partId: 'origin-b', generation: 1,
+        steps: [{ ...box, id: 'second', label: 'Second' }] });
+      expect(second.failures).toEqual([]);
+      expect(second.cacheHits).toBe(0);
+      const origins = second.bodies[0]?.origins;
+      expect(origins?.state).toBe('tracked');
+      if (origins?.state === 'tracked') expect(origins.bindings.every((binding) =>
+        binding.origin.identity.featureId === 'second')).toBe(true);
+    } finally { await target.releasePart('origin-a'); await target.releasePart('origin-b'); }
+  });
+
+  it('real Box origin query picks its current face despite a misleading fingerprint and rejects another feature', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const box = (id: string, key: string, sizeZ = 20): SolidStepRequest => ({ id, key, label: id, visible: true,
+      step: { kind: 'primitive', origin: [0, 0, 0], axis: [0, 0, 1],
+        shape: { kind: 'box', sizeX: 40, sizeY: 30, sizeZ },
+        originQuery: null, targetKey: null } });
+    const partId = 'semantic-native-query';
+    try {
+      const built = await target.recomputeSolids({ partId, generation: 1,
+        steps: [box('semantic-box-a', 'semantic-box-key-a'), box('semantic-box-b', 'semantic-box-key-b')] });
+      expect(built.failures).toEqual([]);
+      const first = built.bodies.find(body => body.id === 'semantic-box-a');
+      if (first?.origins?.state !== 'tracked') throw new Error('Box origin table is required');
+      const faceQuery = (role: 'top' | 'bottom' | 'front'): Extract<SubShapeQuery, { kind: 'face' }> => {
+        const binding = first.origins?.state === 'tracked' ? first.origins.bindings.find(item =>
+          item.origin.shapeKind === 'face' && item.origin.identity.kind === 'box-face'
+          && item.origin.identity.role === role) : undefined;
+        if (binding?.state !== 'unique') throw new Error(`Box ${role} origin is not unique`);
+        const face = first.faces.find(item => item.index === binding.current.index);
+        if (face === undefined) throw new Error(`Box ${role} face is missing`);
+        return { kind: 'face', index: face.index, surfaceKind: face.surfaceKind,
+          area: face.area, position: face.centroid, axis: face.axis, radius: face.radius,
+          origin: binding.origin };
+      };
+      const top = faceQuery('top'), bottom = faceQuery('bottom'), front = faceQuery('front');
+      const misleading = { ...front, origin: top.origin };
+      const measured = await target.measure({ kind: 'distance', targets: [
+        { bodyKey: 'semantic-box-key-a', subShape: misleading },
+        { bodyKey: 'semantic-box-key-a', subShape: bottom },
+      ] });
+      expect(measured.kind).toBe('distance');
+      if (measured.kind === 'distance') expect(measured.distance).toBeCloseTo(20, 6);
+      const wrongBody = await target.measure({ kind: 'distance', targets: [
+        { bodyKey: 'semantic-box-key-b', subShape: misleading },
+        { bodyKey: 'semantic-box-key-a', subShape: bottom },
+      ] });
+      expect(wrongBody).toMatchObject({ kind: 'failed', message: '選んだ面(辺)が見つかりません。形が大きく変わったため、選び直してください。' });
+      const changed = await target.recomputeSolids({ partId, generation: 2, steps: [
+        box('semantic-box-b', 'semantic-box-key-b'),
+        box('semantic-box-a', 'semantic-box-key-a-taller', 30),
+      ] });
+      expect(changed.failures).toEqual([]);
+      const taller = await target.measure({ kind: 'distance', targets: [
+        { bodyKey: 'semantic-box-key-a-taller', subShape: misleading },
+        { bodyKey: 'semantic-box-key-a-taller', subShape: bottom },
+      ] });
+      expect(taller.kind).toBe('distance');
+      if (taller.kind === 'distance') expect(taller.distance).toBeCloseTo(30, 6);
+    } finally { await target.releasePart(partId); }
+  });
+
+  it('export deadline rejection returns no partial files and preserves cached shapes', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const partId = 'export-deadline';
+    await target.recomputeSolids({ partId, generation: 1,
+      steps: [extrudeStep('deadline-body', 'deadline-key', 10)] });
+    const before = await target.getShapeCacheStats();
+    let clock = 0;
+    const clockSpy = vi.spyOn(performance, 'now').mockImplementation(() => {
+      clock += 25_000;
+      return clock;
+    });
+    try {
+      await expect(target.exportShapes({ partId, format: 'stl',
+        bodies: [item('deadline-key')], deviationMm: 0.1 }))
+        .rejects.toMatchObject({ name: 'ExportWorkLimitError' });
+    } finally {
+      clockSpy.mockRestore();
+    }
+    expect(await target.getShapeCacheStats()).toEqual(before);
+    const after = await target.exportShapes({ partId, format: 'stl',
+      bodies: [item('deadline-key')], deviationMm: 0.1 });
+    expect(after.format).toBe('stl');
+    await target.releasePart(partId);
+  });
+
+  it('two real twelve-triangle bodies refuse a smaller internal aggregate quota without partial files', async () => {
+    const target = createKernelApi(loadOcctForNode, undefined, 20);
+    const partId = 'export-two-body-quota';
+    const built = await target.recomputeSolids({ partId, generation: 1,
+      steps: [extrudeStep('quota-a', 'quota-a', 10), extrudeStep('quota-b', 'quota-b', 20)] });
+    expect(built.failures).toEqual([]);
+    expect(built.bodies.map((body) => body.triangleCount)).toEqual([12, 12]);
+    const before = await target.getShapeCacheStats();
+    let returnedFiles = 0;
+    let rejected = false;
+    try {
+      const result = await target.exportShapes({ partId, format: 'stl',
+        bodies: [item('quota-a'), item('quota-b')], deviationMm: 0.1 });
+      if (result.format === 'stl') returnedFiles = result.files.length;
+    } catch (error) {
+      rejected = true;
+      expect(error).toBeInstanceOf(Error);
+      expect(String(error)).toMatch(/上限/);
+    }
+    expect(rejected).toBe(true);
+    expect(returnedFiles).toBe(0);
+    expect(await target.getShapeCacheStats()).toEqual(before);
+    const one = await target.exportShapes({ partId, format: 'stl',
+      bodies: [item('quota-a')], deviationMm: 0.1 });
+    expect(one.format).toBe('stl');
+    if (one.format === 'stl') {
+      expect(one.triangleCount).toBe(12);
+      expect(one.files).toHaveLength(1);
+    }
+    await target.releasePart(partId);
+  });
 
   it('寸法の異なる50部品の最終bodyすべてを測定・STEP書き出しでき、他部品の表示世代も残る', async () => {
     const target = createKernelApi(loadOcctForNode);
@@ -326,6 +506,307 @@ describe('KernelApiの使用中保護', () => {
   });
 });
 
+describe('KernelApiの表示メッシュ保持量(実体の会計と要求の確保を外した後の最終会計)', () => {
+  const LOCAL = { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 };
+  const boxStep = (id: string, key: string, size = 20, origin: Vec3Tuple = [0, 0, 0],
+    visible = true): SolidStepRequest => ({ id, key, label: id, visible,
+    step: { kind: 'primitive', origin, axis: [0, 0, 1],
+      shape: { kind: 'box', sizeX: size, sizeY: size, sizeZ: size }, originQuery: null, targetKey: null } });
+  const buffersOf = (bodies: readonly SolidBodyMesh[]): ReadonlySet<ArrayBufferLike> => new Set(bodies.flatMap(
+    (body) => [body.positions.buffer, body.normals.buffer, body.indices.buffer, body.edgePositions.buffer]));
+  const bytesOf = (buffers: Iterable<ArrayBufferLike>): number => {
+    let bytes = 0;
+    for (const buffer of new Set(buffers)) bytes += buffer.byteLength;
+    return bytes;
+  };
+  const viewBytes = (bodies: readonly SolidBodyMesh[]): number => bodies.reduce((sum, body) => sum
+    + body.positions.byteLength + body.normals.byteLength + body.indices.byteLength
+    + body.edgePositions.byteLength, 0);
+
+  it('refuses nonempty geometry at the empty-only entry before reading cache accounting', () => {
+    const cache = createShapeCache<CachedSolid>();
+    const stats = vi.spyOn(cache, 'stats');
+    expect(() => recomputeEmptySolids({ cache }, { generation: 1, steps: [boxStep('real', 'real')],
+      localMesh: LOCAL })).toThrow('Empty recompute requires no solid steps');
+    expect(stats).not.toHaveBeenCalled();
+    cache.clear();
+  });
+
+  it('certifies the first empty local request without loading OCCT or inventing WASM memory', async () => {
+    const load = vi.fn(() => Promise.reject(new Error('Empty work must not load OCCT')));
+    const target = createKernelApi(load);
+    try {
+      const empty = await target.recomputeSolids({ partId: 'cold-empty', generation: 1,
+        steps: [], localMesh: LOCAL });
+      expect(load).not.toHaveBeenCalled();
+      expect(empty).toMatchObject({ bodies: [], failures: [], cacheHits: 0, cancelled: false, appearanceMatches: [] });
+      expect(empty.memory).toBeUndefined();
+      expect(await target.getShapeCacheStats()).toMatchObject({ shapeCount: 0,
+        meshByteCounts: { status: 'known', activeBytes: 0, retiredBytes: 0, protectedBytes: 0, totalBytes: 0 } });
+      expect(empty.meshJsAccounting).toEqual({ status: 'known', limitBytes: LOCAL.maximumLiveMeshBytes,
+        cacheActiveBytes: 0, cacheRetiredBytes: 0, cacheProtectedBytes: 0,
+        retainedReplyBytes: 0, requestPeakReservedBytes: 0 });
+      expect(empty.meshJsFinalAccounting).toEqual({ status: 'known', limitBytes: LOCAL.maximumLiveMeshBytes,
+        cacheActiveBytes: 0, cacheRetiredBytes: 0, cacheProtectedBytes: 0,
+        displayBackingBytes: 0, replyBackingBytes: 0, retainedBackingBytes: 0, replyCloneReservedBytes: 0 });
+      const world = await target.recomputeSolids({ partId: 'cold-empty', generation: 2, steps: [] });
+      expect(world.meshJsAccounting).toBeUndefined();
+      expect(world.meshJsFinalAccounting).toBeUndefined();
+      expect(load).not.toHaveBeenCalled();
+    } finally { await target.releasePart('cold-empty'); }
+  });
+
+  it('clears an old local display without another load while preserving other parts and real cache bytes', async () => {
+    const load = vi.fn(loadOcctForNode), target = createKernelApi(load);
+    try {
+      const first = await target.recomputeSolids({ partId: 'empty-after-solid', generation: 1,
+        localMesh: LOCAL, steps: [boxStep('old-local', 'old-local', 20, [1e9, 0, 0])] });
+      const other = await target.recomputeSolids({ partId: 'kept-other-part', generation: 1,
+        localMesh: LOCAL, steps: [boxStep('other-local', 'other-local', 30)] });
+      expect(first.failures).toEqual([]); expect(other.failures).toEqual([]);
+      expect(first.bodies[0].volume).toBeCloseTo(8000, 6);
+      expect(other.bodies[0].volume).toBeCloseTo(27000, 6);
+      expect(load).toHaveBeenCalledTimes(2);
+      const before = await target.getShapeCacheStats();
+      expect(before.protectedKeyCount).toBe(2);
+      const empty = await target.recomputeSolids({ partId: 'empty-after-solid', generation: 2,
+        localMesh: LOCAL, steps: [] });
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(empty.bodies).toEqual([]); expect(empty.failures).toEqual([]);
+      expect(empty.cancelled).toBe(false);
+      expect(other.memory?.wasmHeapBytes).toBeGreaterThan(0);
+      expect(empty.memory).toEqual(other.memory);
+      const after = await target.getShapeCacheStats();
+      if (before.meshByteCounts.status !== 'known' || after.meshByteCounts.status !== 'known') {
+        throw new Error('Default cache must provide actual byte counts');
+      }
+      expect(after.protectedKeyCount).toBe(1);
+      expect(after.meshByteCounts.activeBytes).toBeGreaterThan(0);
+      expect(after.meshByteCounts.protectedBytes).toBeLessThan(before.meshByteCounts.protectedBytes);
+      expect(empty.meshJsAccounting).toMatchObject({ status: 'known',
+        cacheProtectedBytes: before.meshByteCounts.protectedBytes, retainedReplyBytes: 0 });
+      const otherDisplay = bytesOf(buffersOf(other.bodies));
+      expect(empty.meshJsFinalAccounting).toEqual({ status: 'known', limitBytes: LOCAL.maximumLiveMeshBytes,
+        cacheActiveBytes: after.meshByteCounts.activeBytes, cacheRetiredBytes: after.meshByteCounts.retiredBytes,
+        cacheProtectedBytes: after.meshByteCounts.protectedBytes, displayBackingBytes: otherDisplay,
+        replyBackingBytes: 0, retainedBackingBytes: after.meshByteCounts.totalBytes + otherDisplay,
+        replyCloneReservedBytes: 0 });
+      const rebuilt = await target.recomputeSolids({ partId: 'empty-after-solid', generation: 3,
+        localMesh: LOCAL, steps: [boxStep('new-local', 'new-local', 10)] });
+      expect(load).toHaveBeenCalledTimes(3);
+      expect(rebuilt.failures).toEqual([]); expect(rebuilt.bodies[0].volume).toBeCloseTo(1000, 6);
+    } finally {
+      await target.releasePart('empty-after-solid'); await target.releasePart('kept-other-part');
+    }
+  });
+
+  it.each([0, -1, Number.NaN, 512 * 1024 * 1024 + 1])('rejects empty invalid budget %s before OCCT load', async maximumLiveMeshBytes => {
+    const load = vi.fn(() => Promise.reject(new Error('Invalid empty work must not load OCCT')));
+    const target = createKernelApi(load);
+    try {
+      await expect(target.recomputeSolids({ partId: 'bad-empty-budget', generation: 1,
+        steps: [], localMesh: { ...LOCAL, maximumLiveMeshBytes } })).rejects.toThrow(
+        'Local mesh requires finite positive display and memory budgets');
+      expect(load).not.toHaveBeenCalled();
+    } finally { await target.releasePart('bad-empty-budget'); }
+  });
+
+  it('keeps missing backing identities unknown even for an empty request without OCCT', async () => {
+    const cache = createShapeCache<CachedSolid>(undefined, ({ mesh }) => mesh.positions.byteLength
+      + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength);
+    const load = vi.fn(() => Promise.reject(new Error('Empty work must not load OCCT')));
+    const target = createKernelApi(load, cache);
+    try {
+      const empty = await target.recomputeSolids({ partId: 'unknown-empty', generation: 1,
+        steps: [], localMesh: LOCAL });
+      expect(empty.meshJsAccounting).toEqual({ status: 'unknown', limitBytes: LOCAL.maximumLiveMeshBytes,
+        reason: 'callback-missing' });
+      expect(empty.meshJsFinalAccounting).toEqual({ status: 'unknown', limitBytes: LOCAL.maximumLiveMeshBytes,
+        reason: 'callback-missing' });
+      expect(load).not.toHaveBeenCalled();
+    } finally { await target.releasePart('unknown-empty'); cache.clear(); }
+  });
+
+  it('keeps real empty ownership, preclone admission refusal and receiver acknowledgement without OCCT', async () => {
+    const load = vi.fn(() => Promise.reject(new Error('Empty work must not load OCCT')));
+    const target = createKernelApi(load);
+    const owner = { dispatchId: 'managed-empty', partId: 'managed-empty-part', generation: 1,
+      kind: 'display' as const, steps: [] };
+    const request = { partId: owner.partId, generation: owner.generation, steps: [], localMesh: LOCAL };
+    try {
+      await expect(target.recomputeSolids({ ...request, generation: 2 }, {}, undefined, undefined, owner, () => true))
+        .rejects.toThrow('Dispatch mesh owner mismatch');
+      await expect(target.recomputeSolids(request, {}, undefined, undefined, owner, () => false))
+        .rejects.toThrow('Global pre-clone mesh reply admission refused');
+      expect(await target.acknowledgeMeshReply?.(owner)).toEqual({ acknowledged: false, absent: true });
+      const admitted = vi.fn(() => true);
+      const empty = await target.recomputeSolids(request, {}, undefined, undefined, owner, admitted);
+      expect(admitted).toHaveBeenCalledExactlyOnceWith({ owner, replyBackingBytes: 0, workerRetainedBackingBytes: 0 });
+      expect(empty.meshJsFinalAccounting?.status).toBe('known');
+      expect(await target.readPartOwnership?.(owner)).toMatchObject({ status: 'current', owner });
+      expect(await target.acknowledgeMeshReply?.(owner)).toEqual({ acknowledged: true });
+      expect(load).not.toHaveBeenCalled();
+    } finally { await target.acknowledgeMeshReply?.(owner); await target.releasePart(owner.partId); }
+  });
+
+  it('the default worker cache counts each body buffer once and keeps the legacy view scalar', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const partId = 'backing-producer';
+    try {
+      const built = await target.recomputeSolids({ partId, generation: 1,
+        steps: [boxStep('backing-a', 'backing-a'), boxStep('backing-b', 'backing-b', 30)] });
+      expect(built.failures).toEqual([]);
+      const whole = bytesOf(buffersOf(built.bodies));
+      expect(whole).toBeGreaterThan(0);
+      expect(await target.getShapeCacheStats()).toMatchObject({ meshBytes: viewBytes(built.bodies),
+        meshBytesMeasured: true, meshBackingBytesMeasured: true, meshByteCounts: { status: 'known',
+          activeBytes: whole, retiredBytes: 0, protectedBytes: whole, totalBytes: whole } });
+      expect('meshJsFinalAccounting' in built).toBe(false);
+    } finally {
+      await target.releasePart(partId);
+    }
+    expect((await target.getShapeCacheStats()).meshByteCounts).toMatchObject({ protectedBytes: 0 });
+  });
+
+  it('final accounting is sampled after the request token, so a request-only retired body is gone', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const partId = 'post-token';
+    try {
+      const first = await target.recomputeSolids({ partId, generation: 1,
+        steps: [boxStep('original', 'shared-box')] });
+      expect(first.failures).toEqual([]);
+      const originalBytes = bytesOf(buffersOf(first.bodies));
+      // A different tracked owner rebuilds the same key while the old display and this request
+      // protect it. Only the request protects it after the display moves to the scaled body.
+      const second = await target.recomputeSolids({ partId, generation: 2, localMesh: LOCAL, steps: [
+        boxStep('replacement', 'shared-box', 20, [0, 0, 0], false),
+        { id: 'scaled', key: 'scaled-box', label: 'scaled', visible: true,
+          step: { kind: 'scale', targetKey: 'shared-box', origin: [0, 0, 0], uniform: 2, perAxis: null } },
+      ] });
+      expect(second.failures).toEqual([]);
+      expect(second.meshJsAccounting).toMatchObject({ status: 'known', cacheRetiredBytes: originalBytes });
+      const after = await target.getShapeCacheStats();
+      if (after.meshByteCounts.status !== 'known') throw new Error('default cache must be measured');
+      const reply = bytesOf(buffersOf(second.bodies));
+      expect(second.meshJsFinalAccounting).toEqual({ status: 'known', limitBytes: LOCAL.maximumLiveMeshBytes,
+        cacheActiveBytes: after.meshByteCounts.activeBytes, cacheRetiredBytes: 0,
+        cacheProtectedBytes: after.meshByteCounts.protectedBytes, displayBackingBytes: reply,
+        replyBackingBytes: reply, retainedBackingBytes: after.meshByteCounts.activeBytes + reply,
+        replyCloneReservedBytes: reply });
+      expect(after.meshByteCounts.protectedBytes).toBeLessThan(after.meshByteCounts.activeBytes);
+      expect(after.protectedKeyCount).toBe(1);
+    } finally {
+      await target.releasePart(partId);
+    }
+  });
+
+  it("another part's local display counts in the live budget and in the final union", async () => {
+    const target = createKernelApi(loadOcctForNode);
+    try {
+      const a = await target.recomputeSolids({ partId: 'display-a', generation: 1, localMesh: LOCAL,
+        steps: [boxStep('far-a', 'far-a', 20, [1e9, 0, 0])] });
+      expect(a.failures).toEqual([]);
+      const aLocal = bytesOf(buffersOf(a.bodies));
+      expect(a.meshJsFinalAccounting).toMatchObject({ status: 'known', displayBackingBytes: aLocal,
+        replyBackingBytes: aLocal, replyCloneReservedBytes: aLocal });
+      const bWorld = await target.recomputeSolids({ partId: 'display-b', generation: 1,
+        steps: [boxStep('near-b', 'near-b')] });
+      expect(bWorld.failures).toEqual([]);
+      const cached = await target.getShapeCacheStats();
+      if (cached.meshByteCounts.status !== 'known') throw new Error('default cache must be measured');
+      const mesh = bWorld.bodies[0];
+      const origins = mesh.origins;
+      const originRows = origins === undefined ? 0 : origins.state === 'tracked'
+        ? origins.bindings.length + (origins.fingerprintFallback?.length ?? 0) : 1;
+      const originUtf8Bytes = origins === undefined ? 0 : new TextEncoder().encode(JSON.stringify(origins)).byteLength;
+      expect(origins).toBeDefined();
+      expect(originRows).toBeGreaterThan(0);
+      expect(originUtf8Bytes).toBeGreaterThan(0);
+      const metadata = 4096 + 512 * (mesh.faces.length + mesh.edges.length + mesh.vertices.length
+        + mesh.threadMarks.length + originRows) + 2 * originUtf8Bytes;
+      const exact = cached.meshByteCounts.totalBytes + aLocal + 2 * viewBytes([mesh])
+        + 4 * mesh.edgePositions.byteLength + 2 * mesh.positions.byteLength + 2 * metadata;
+      // A cache-only budget, which omitted part A's live display arrays, would admit exact - 1.
+      expect(exact - 1).toBeGreaterThanOrEqual(exact - aLocal);
+      expect(aLocal).toBeGreaterThan(0);
+      const refused = await target.recomputeSolids({ partId: 'display-b', generation: 2,
+        steps: [boxStep('near-b', 'near-b')], localMesh: { ...LOCAL, maximumLiveMeshBytes: exact - 1 } });
+      expect(refused.bodies).toEqual([]);
+      expect(refused.failures).toHaveLength(1);
+      const admitted = await target.recomputeSolids({ partId: 'display-b', generation: 3,
+        steps: [boxStep('near-b', 'near-b')], localMesh: { ...LOCAL, maximumLiveMeshBytes: exact } });
+      expect(admitted.failures).toEqual([]);
+      expect(admitted.cacheHits).toBe(1);
+      expect(admitted.meshJsAccounting).toMatchObject({ status: 'known',
+        cacheActiveBytes: cached.meshByteCounts.totalBytes, requestPeakReservedBytes: exact });
+      const bLocal = bytesOf(buffersOf(admitted.bodies));
+      const after = await target.getShapeCacheStats();
+      if (after.meshByteCounts.status !== 'known') throw new Error('default cache must be measured');
+      expect(admitted.meshJsFinalAccounting).toEqual({ status: 'known', limitBytes: exact,
+        cacheActiveBytes: cached.meshByteCounts.totalBytes, cacheRetiredBytes: 0,
+        cacheProtectedBytes: after.meshByteCounts.protectedBytes, displayBackingBytes: aLocal + bLocal,
+        replyBackingBytes: bLocal, retainedBackingBytes: cached.meshByteCounts.totalBytes + aLocal + bLocal,
+        replyCloneReservedBytes: bLocal });
+    } finally {
+      await target.releasePart('display-a');
+      await target.releasePart('display-b');
+    }
+  });
+
+  it('a cancelled local job keeps the old display and counts its partial reply after the request token', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const partId = 'cancel-final';
+    try {
+      const first = await target.recomputeSolids({ partId, generation: 1, localMesh: LOCAL,
+        steps: [boxStep('kept', 'kept', 20, [0, 1e9, 0])] });
+      expect(first.failures).toEqual([]);
+      const kept = bytesOf(buffersOf(first.bodies));
+      let checks = 0;
+      const cancelled = await target.recomputeSolids({ partId, generation: 2, localMesh: LOCAL,
+        steps: [boxStep('partial', 'partial', 30), boxStep('never', 'never', 40)] }, {}, undefined,
+      () => { checks += 1; return checks === 2; });
+      expect(cancelled.cancelled).toBe(true);
+      expect(cancelled.bodies.map((body) => body.id)).toEqual(['partial']);
+      const partial = bytesOf(buffersOf(cancelled.bodies));
+      const after = await target.getShapeCacheStats();
+      if (after.meshByteCounts.status !== 'known') throw new Error('default cache must be measured');
+      expect(after.protectedKeyCount).toBe(1);
+      expect(cancelled.meshJsFinalAccounting).toEqual({ status: 'known', limitBytes: LOCAL.maximumLiveMeshBytes,
+        cacheActiveBytes: after.meshByteCounts.activeBytes, cacheRetiredBytes: 0,
+        cacheProtectedBytes: after.meshByteCounts.protectedBytes, displayBackingBytes: kept,
+        replyBackingBytes: partial, retainedBackingBytes: after.meshByteCounts.activeBytes + kept + partial,
+        replyCloneReservedBytes: partial });
+      expect((await target.inspectPrintability({ partId, bodies: [{ bodyKey: 'kept', name: null, color: null }],
+        deviationMm: 0.1 })).meshes[0].meshRevision).toBe(1);
+    } finally {
+      await target.releasePart(partId);
+    }
+  });
+
+  it('an injected cache without buffer identities fails closed and never reports zero', async () => {
+    const numeric = createShapeCache<CachedSolid>(undefined, ({ mesh }) => mesh.positions.byteLength
+      + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength);
+    const target = createKernelApi(loadOcctForNode, numeric);
+    try {
+      const result = await target.recomputeSolids({ partId: 'numeric-only', generation: 1, localMesh: LOCAL,
+        steps: [boxStep('numeric', 'numeric')] });
+      expect(result.bodies).toEqual([]);
+      expect(result.failures).toHaveLength(1);
+      expect(result.meshJsAccounting).toEqual({ status: 'unknown', limitBytes: LOCAL.maximumLiveMeshBytes,
+        reason: 'callback-missing' });
+      expect(result.meshJsFinalAccounting).toEqual({ status: 'unknown',
+        limitBytes: LOCAL.maximumLiveMeshBytes, reason: 'callback-missing' });
+      const world = await target.recomputeSolids({ partId: 'numeric-only', generation: 2,
+        steps: [boxStep('numeric', 'numeric')] });
+      expect(world.failures).toEqual([]);
+      expect('meshJsFinalAccounting' in world).toBe(false);
+    } finally {
+      await target.releasePart('numeric-only');
+      numeric.clear();
+    }
+  });
+});
+
 describe('KernelApi', () => {
   const api = createKernelApi(loadOcctForNode);
 
@@ -387,6 +868,95 @@ describe('KernelApi', () => {
     const second = await api.recomputeSolids(request);
     expect(second.cacheHits).toBe(1);
     expect(second.bodies[0].volume).toBeCloseTo(RECTANGLE_EXTRUDE_VOLUME, 6);
+  });
+
+  it('hidden local admission refusal plus cleanup throw preserves the actual lease for retry', async () => {
+    const cache = createShapeCache<CachedSolid>(undefined,
+      ({ mesh }) => mesh.positions.byteLength + mesh.normals.byteLength + mesh.indices.byteLength + mesh.edgePositions.byteLength,
+      ({ mesh }) => [mesh.positions.buffer, mesh.normals.buffer, mesh.indices.buffer, mesh.edgePositions.buffer]);
+    const target = createKernelApi(loadOcctForNode, cache), step = extrudeStep('cleanup-source', 'cleanup-source-key', 10);
+    const limitBytes = 64 * 1024 * 1024;
+    const owner = { dispatchId: 'hidden-cleanup-local', partId: 'hidden-cleanup-part', generation: 1,
+      kind: 'hidden' as const, steps: [{ id: step.id, key: step.key }] };
+    let restoreRelease: (() => void) | undefined;
+    try {
+      expect((await target.recomputeSolids({ partId: owner.partId, generation: 1, steps: [step] })).failures).toEqual([]);
+      const cached = cache.get(step.key);
+      const releaseFailure = vi.spyOn(cache, 'release').mockImplementationOnce(() => { throw new Error('external release failure'); });
+      restoreRelease = () => { releaseFailure.mockRestore(); };
+      await expect(target.readCachedBodies(owner.steps, { owner, limitBytes,
+        localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: limitBytes } }, () => false))
+        .rejects.toThrow('Reference mesh lease cleanup failed');
+      expect(cache.get(step.key)).toBe(cached);
+      expect(cache.stats().protectedKeyCount).toBe(1);
+      restoreRelease(); restoreRelease = undefined;
+      expect(await target.releaseReferenceMeshLease?.(owner)).toEqual({ released: true });
+      expect(await target.releaseReferenceMeshLease?.(owner)).toEqual({ released: false, absent: true });
+      expect(cache.get(step.key)).toBe(cached);
+    } finally { restoreRelease?.(); await target.releaseReferenceMeshLease?.(owner); await target.releasePart(owner.partId); cache.clear(); }
+  });
+
+  it('hidden local reply has actual native geometry, retained owner, receiver ACK and legacy world compatibility', async () => {
+    const target = createKernelApi(loadOcctForNode), step = extrudeStep('hidden-source', 'hidden-source-key', 10);
+    const limitBytes = 64 * 1024 * 1024;
+    const owner = { dispatchId: 'hidden-local-lease', partId: 'hidden-local-part', generation: 1,
+      kind: 'hidden' as const, steps: [{ id: step.id, key: step.key }] };
+    try {
+      const displayed = await target.recomputeSolids({ partId: owner.partId, generation: 1, steps: [step] });
+      expect(displayed.failures).toEqual([]);
+      const legacy = await target.readCachedBodies(owner.steps);
+      expect(legacy.bodies[0].coordinateFrame).toBeUndefined();
+      const calls: number[] = [];
+      const local = await target.readCachedBodies(owner.steps, { owner, limitBytes,
+        localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: limitBytes } }, metadata => {
+          expect(metadata.owner).toEqual(owner); calls.push(metadata.replyBackingBytes); return true;
+        });
+      expect(calls).toHaveLength(1); expect(calls[0]).toBeGreaterThan(0);
+      expect(local.bodies[0].coordinateFrame?.space).toBe('local');
+      expect(local.bodies[0].coordinateFrame?.origin.every(Number.isFinite)).toBe(true);
+      expect(local.bodies[0].positions.byteLength).toBeGreaterThan(0);
+      expect(local.bodies[0].edgePositions.byteLength).toBeGreaterThan(0);
+      expect(local.bodies[0].origins).toEqual(legacy.bodies[0].origins);
+      expect(local.bodies[0].positions).not.toBe(legacy.bodies[0].positions);
+      expect(await target.acknowledgeMeshReply?.({ ...owner, generation: 2 })).toEqual({ acknowledged: false });
+      expect(await target.acknowledgeMeshReply?.(owner)).toEqual({ acknowledged: true });
+      expect(await target.releaseReferenceMeshLease?.({ ...owner, generation: 2 })).toEqual({ released: false });
+      expect(await target.releaseReferenceMeshLease?.(owner)).toEqual({ released: true });
+      expect(local.bodies[0].positions.byteLength).toBeGreaterThan(0);
+      const after = await target.readCachedBodies(owner.steps);
+      expect(after.bodies[0].positions).toBe(legacy.bodies[0].positions);
+      expect(after.bodies[0].coordinateFrame).toBeUndefined();
+      const refusedOwner = { ...owner, dispatchId: 'hidden-local-budget-refusal' };
+      await expect(target.readCachedBodies(owner.steps, { owner: refusedOwner, limitBytes: 1,
+        localMesh: { maximumFloat32ErrorMm: 0.005, maximumLiveMeshBytes: 1 } })).rejects.toThrow();
+      expect(await target.releaseReferenceMeshLease?.(refusedOwner)).toEqual({ released: false, absent: true });
+      expect((await target.readCachedBodies(owner.steps)).bodies[0].positions).toBe(legacy.bodies[0].positions);
+    } finally { await target.acknowledgeMeshReply?.(owner); await target.releaseReferenceMeshLease?.(owner); await target.releasePart(owner.partId); }
+  });
+
+  it('public recompute requestのlocal opt-in後もcacheはworldを返し計測値を保持する', async () => {
+    const target = createKernelApi(loadOcctForNode);
+    const partId = 'local-frame-api';
+    const steps = [extrudeStep('local-body', 'local-body-key', 10)];
+    try {
+      const first = await target.recomputeSolids({ partId, generation: 1, steps,
+        localMesh: { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } });
+      expect(first.failures).toEqual([]);
+      expect(first.bodies[0].coordinateFrame?.space).toBe('local');
+      expect((await target.getShapeCacheStats()).meshBytes).toBeGreaterThan(0);
+      const world = await target.recomputeSolids({ partId, generation: 2, steps });
+      expect(world.failures).toEqual([]);
+      expect(world.cacheHits).toBe(1);
+      expect(world.bodies[0].coordinateFrame).toBeUndefined();
+      const localHit = await target.recomputeSolids({ partId, generation: 3, steps,
+        localMesh: { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 } });
+      expect(localHit.failures).toEqual([]);
+      expect(localHit.cacheHits).toBe(1);
+      expect(localHit.bodies[0].coordinateFrame?.space).toBe('local');
+      expect(localHit.bodies[0].positions).not.toBe(world.bodies[0].positions);
+    } finally {
+      await target.releasePart(partId);
+    }
   });
 
   it('作れない段は例外にせず、理由つきの失敗として返す(FR-504)', async () => {
@@ -2105,5 +2675,157 @@ describe('KernelApi', () => {
       expect(progress[index]).toBeGreaterThanOrEqual(progress[index - 1] - MONOTONIC_EPSILON);
     }
     expect(progress[progress.length - 1]).toBeCloseTo(1, 6);
+  });
+});
+
+describe('owned runSolidRecompute call envelope metadata', () => {
+  function measuredPhaseCache() {
+    return createShapeCache<CachedSolid>(16,
+      entry => entry.mesh.positions.byteLength + entry.mesh.normals.byteLength + entry.mesh.indices.byteLength + entry.mesh.edgePositions.byteLength,
+      entry => [entry.mesh.positions.buffer, entry.mesh.normals.buffer, entry.mesh.indices.buffer, entry.mesh.edgePositions.buffer]);
+  }
+  async function completePhaseCleanup(actions: readonly (() => void | Promise<void>)[], bodyFailed: boolean, bodyFailure: unknown) {
+    const failures: unknown[] = [];
+    for (const action of actions) { try { await action(); } catch (error) { failures.push(error); } }
+    if (failures.length > 0) throw new AggregateError(bodyFailed ? [bodyFailure, ...failures] : failures, 'Actual native phase cleanup failed');
+  }
+  it('bounds primitive records and retains loss, missing owner, conflicts and discontinuous clocks', () => {
+    let time = 100;
+    const observer = createKernelPhaseObserver(() => ({ epochMs: time, monoMs: time }));
+    const owner = { dispatchId: 'observer-only', partId: 'part', generation: 1, kind: 'display' as const, steps: [] };
+    observer.record('native-build-start', undefined);
+    observer.record('native-build-return', owner);
+    observer.record('native-build-return', { ...owner, generation: 2 });
+    time = 50;
+    observer.record('native-build-return', owner);
+    for (let index = 0; index < 257; index += 1) observer.record('reply-preclone', owner);
+    const snapshot = observer.snapshot();
+    expect(snapshot.records).toHaveLength(256); expect(snapshot.lastSeq).toBe(261); expect(snapshot.dropped).toBe(5);
+    expect(snapshot.missingOwners).toBe(1); expect(snapshot.ownerConflicts).toBeGreaterThan(0);
+    expect(snapshot.clockDiscontinuities).toBe(1);
+    expect(Object.isFrozen(snapshot.records)).toBe(true);
+    expect(snapshot.records.every(record => Object.isFrozen(record) && !('steps' in record) && !('body' in record))).toBe(true);
+    expect(snapshot.coverage).toBe('runSolidRecompute-call-plus-admission-preclone');
+    expect(snapshot.unobserved).toContain('internal-native-subcalls'); expect(snapshot.unobserved).toContain('physical-resident');
+    const failed = createKernelPhaseObserver(() => { throw new Error('diagnostic clock unavailable'); });
+    expect(() => failed.record('native-build-start', owner)).not.toThrow();
+    expect(failed.snapshot()).toMatchObject({ clockDiscontinuities: 1, records: [{ epochMs: null, monoMs: null }] });
+  });
+  it.each(['sync-false', 'async-false', 'sync-true', 'async-true', 'sync-throw', 'async-throw'] as const)(
+    'observes actual %s cancellation without an extra token invocation or detaching an old borrower', async mode => {
+      const cache = measuredPhaseCache(), api = createKernelApi(loadOcctForNode, cache);
+      const firstSteps = [extrudeStep('phase-old', 'phase-old', 10)];
+      const firstOwner = { dispatchId: 'phase-first', partId: 'phase-part', generation: 1, kind: 'display' as const,
+        steps: firstSteps.map(step => ({ id: step.id, key: step.key })) };
+      const steps = [extrudeStep('phase-a', 'phase-a', 11), extrudeStep('phase-b', 'phase-b', 12)];
+      const owner = { dispatchId: 'phase-next', partId: 'phase-part', generation: 2, kind: 'display' as const,
+        steps: steps.map(step => ({ id: step.id, key: step.key })) };
+      let checks = 0, bodyFailed = false;
+      let bodyFailure: unknown;
+      expect(cache.meshBufferSnapshot?.().status).toBe('known');
+      const cancel = () => {
+        checks += 1;
+        if (mode === 'sync-throw') throw new Error('actual cancel failure');
+        if (mode === 'async-throw') return Promise.reject(new Error('actual cancel failure'));
+        const value = mode === 'sync-true' || mode === 'async-true';
+        return mode.startsWith('async') ? Promise.resolve(value) : value;
+      };
+      try {
+        const first = await api.recomputeSolids({ partId: 'phase-part', generation: 1, steps: firstSteps }, {}, undefined,
+          undefined, firstOwner, () => true);
+        const borrower = first.bodies[0]?.positions;
+        if (borrower === undefined || borrower.byteLength === 0) throw new Error('Actual native first mesh required');
+        const originalBuffer = borrower.buffer, originalBytes = borrower.byteLength;
+        await api.acknowledgeMeshReply?.(firstOwner);
+        const pending = api.recomputeSolids({ partId: 'phase-part', generation: 2, steps }, {}, undefined, cancel, owner, () => true);
+        if (mode.endsWith('throw')) await expect(pending).rejects.toThrow('actual cancel failure');
+        else {
+          const result = await pending;
+          expect(result.cancelled).toBe(mode.endsWith('true'));
+          expect(result.bodies).toHaveLength(mode.endsWith('true') ? 0 : 2);
+        }
+        expect(checks).toBe(mode.endsWith('false') ? 2 : 1);
+        if (api.readRuntimePhases === undefined) throw new Error('Actual phase observer required');
+        const snapshot = await api.readRuntimePhases();
+        const records = snapshot.records.filter(record => record.dispatchId === owner.dispatchId);
+        expect(records.filter(record => record.phase === 'geometry-cancel-check')).toHaveLength(checks);
+        expect(records.filter(record => record.phase === 'geometry-cancel-request')).toHaveLength(mode.endsWith('true') ? 1 : 0);
+        expect(records.filter(record => record.phase === 'geometry-cancel-check-throw')).toHaveLength(mode.endsWith('throw') ? 1 : 0);
+        expect(records.some(record => record.phase === (mode.endsWith('throw') ? 'native-build-throw'
+          : mode.endsWith('true') ? 'native-build-cancelled' : 'native-build-return'))).toBe(true);
+        expect(borrower.buffer).toBe(originalBuffer); expect(borrower.byteLength).toBe(originalBytes);
+        expect(snapshot.unobserved).toContain('physical-resident');
+      } catch (error) { bodyFailed = true; bodyFailure = error; throw error; }
+      finally {
+        await completePhaseCleanup([
+          async () => { await api.acknowledgeMeshReply?.(owner); },
+          async () => { await api.acknowledgeMeshReply?.(firstOwner); },
+          () => api.releasePart('phase-part'), () => cache.clear(),
+        ], bodyFailed, bodyFailure);
+      }
+    },
+  );
+  it('keeps rejected actual owner and preclone admission distinct from successful reply publication', async () => {
+    const api = createKernelApi(loadOcctForNode), steps = [extrudeStep('admission', 'admission', 10)];
+    const owner = { dispatchId: 'admission-owner', partId: 'phase-admission', generation: 1, kind: 'display' as const,
+      steps: steps.map(step => ({ id: step.id, key: step.key })) };
+    try {
+      await expect(api.recomputeSolids({ partId: owner.partId, generation: 2, steps }, {}, undefined, undefined, owner, () => true))
+        .rejects.toThrow('Dispatch mesh owner mismatch');
+      await expect(api.recomputeSolids({ partId: owner.partId, generation: 1, steps }, {}, undefined, undefined, owner, () => false))
+        .rejects.toThrow('Global pre-clone mesh reply admission refused');
+      if (api.readRuntimePhases === undefined) throw new Error('Actual phase observer required');
+      const snapshot = await api.readRuntimePhases();
+      expect(snapshot.records.filter(record => record.phase === 'owner-rejected')).toHaveLength(1);
+      expect(snapshot.records.filter(record => record.phase === 'reply-admission-rejected')).toHaveLength(1);
+      expect(snapshot.records.filter(record => record.phase === 'reply-preclone')).toEqual([]);
+    } finally { await api.acknowledgeMeshReply?.(owner); await api.releasePart(owner.partId); }
+  });
+});
+
+describe('EX12 current mesh accounting: records follow the capacity (1,000 distinct parts)', () => {
+  const CAPACITY = 512 * 1024 * 1024;
+  const BUDGET = { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 };
+  const ownerOf = (index: number) => ({ dispatchId: `ex12-display-${String(index)}`, partId: `ex12-part-${String(index)}`,
+    generation: 1, kind: 'display' as const, steps: [] });
+  /** Empty managed recomputes rotate real display ownership without OCCT (one current owner per distinct part). */
+  async function holdParts(target: ReturnType<typeof createKernelApi>, count: number): Promise<ReturnType<typeof ownerOf>[]> {
+    const owners: ReturnType<typeof ownerOf>[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const owner = ownerOf(index);
+      await target.recomputeSolids({ partId: owner.partId, generation: owner.generation, steps: [], localMesh: BUDGET },
+        {}, undefined, undefined, owner, () => true);
+      expect(await target.acknowledgeMeshReply?.(owner)).toEqual({ acknowledged: true });
+      owners.push(owner);
+    }
+    return owners;
+  }
+
+  it('one reading of the 512 MiB capacity enumerates 1,000 display parts and expected owners (the fixed 128 refused them)', async () => {
+    const target = createKernelApi(() => Promise.reject(new Error('Empty work must not load OCCT')));
+    const owners = await holdParts(target, 1_000);
+    try {
+      const reading = await target.readCurrentMeshAccounting?.({ observationId: 'ex12-1000', limitBytes: CAPACITY, expectedOwners: owners });
+      if (reading?.status !== 'known') throw new Error(`Known 1,000-part reading: ${reading?.status === 'unknown' ? reading.reason : 'missing'}`);
+      expect(reading.owners).toHaveLength(1_000);
+      expect(reading.owners.map(owner => owner.partId)).toEqual(owners.map(owner => owner.partId));
+    } finally { for (const owner of owners) await target.releasePart(owner.partId); }
+  });
+
+  it('the record bound is one per 4 KiB of the reading capacity: refused with its reason above it, read again below it', async () => {
+    const target = createKernelApi(() => Promise.reject(new Error('Empty work must not load OCCT')));
+    const owners = await holdParts(target, 130);
+    const limitBytes = 129 * 4096; // 129 records of capacity.
+    try {
+      expect(await target.readCurrentMeshAccounting?.({ observationId: 'ex12-parts-over', limitBytes, expectedOwners: [] }))
+        .toEqual({ status: 'unknown', observationId: 'ex12-parts-over', reason: 'metadata-capacity' });
+      await target.releasePart(owners[129]?.partId ?? '');
+      expect(await target.readCurrentMeshAccounting?.({ observationId: 'ex12-parts-below', limitBytes, expectedOwners: owners.slice(0, 129) }))
+        .toMatchObject({ status: 'known', observationId: 'ex12-parts-below' });
+      expect(await target.readCurrentMeshAccounting?.({ observationId: 'ex12-owners-over', limitBytes, expectedOwners: owners }))
+        .toEqual({ status: 'unknown', observationId: 'ex12-owners-over', reason: 'metadata-capacity' });
+      expect(await target.readCurrentMeshAccounting?.({ observationId: 'ex12-full-capacity', limitBytes: CAPACITY, expectedOwners: owners.slice(0, 129) }))
+        .toMatchObject({ status: 'known' });
+    } finally { for (const owner of owners) await target.releasePart(owner.partId); }
   });
 });

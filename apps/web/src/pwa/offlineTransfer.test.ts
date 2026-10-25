@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { APP_CONTENT_SECURITY_POLICY, KERNEL_CONTENT_SECURITY_POLICY, MANUAL_CONTENT_SECURITY_POLICY } from '@pointercad/ui/security-policy';
-import { fetchVerifiedOfflineAsset } from './offlineTransfer.js';
+import { fetchVerifiedOfflineAsset, verifyOfflineAssetResponse } from './offlineTransfer.js';
 import { OFFLINE_PREPARATION_HEADER } from './offlineNetwork.js';
 
 const base = new URL('https://pointercad.test/');
@@ -8,6 +8,8 @@ const bytes = new TextEncoder().encode('hello');
 // Independent known SHA-256 for the UTF-8 bytes of "hello"; no server-only API in browser tests.
 const asset = { url: 'assets/code.js', byteLength: 5,
   sha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824' };
+const streamAsset = { url: `occt/stream/opencascade.full-${asset.sha256}.wasm`, byteLength: 5,
+  sha256: asset.sha256, transport: { encoding: 'gzip' as const, byteLength: 3, sha256: 'b'.repeat(64) } };
 function network(body: BodyInit | null, input: {
   url?: string; type?: ResponseType; status?: number; redirected?: boolean; headers?: HeadersInit;
 } = {}): Response {
@@ -29,6 +31,57 @@ function start(response: Response, controller = new AbortController(), fetchedBy
 afterEach(() => { vi.useRealTimers(); });
 
 describe('通信なし用の取得では実際の内容と応答条件を確認する', () => {
+  it('v2 streamのFetch復号本文だけを照合し、保存用応答のURLとgzip条件を保つ', async () => {
+    const response = network(bytes, { url: new URL(streamAsset.url, base).href,
+      headers: { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip', 'Content-Length': '3' } });
+    const fetchResponse = vi.fn<typeof fetch>(() => Promise.resolve(response));
+    const saved = await fetchVerifiedOfflineAsset(base, streamAsset, {
+      signal: new AbortController().signal, fetchedBytes: () => undefined, fetchResponse,
+    });
+    expect(saved).toBe(response);
+    expect(saved.headers.get('Content-Encoding')).toBe('gzip');
+    expect(saved.headers.get('Content-Length')).toBe('3');
+    expect(await saved.clone().text()).toBe('hello');
+    await expect(verifyOfflineAssetResponse(base, streamAsset, saved, new AbortController().signal,
+      () => undefined)).resolves.toBe(saved);
+  });
+  it('streamの欠損・二重encodingと復号後改変を拒否する', async () => {
+    for (const encoding of [undefined, 'gzip, gzip', 'br']) {
+      const headers = new Headers({ 'Content-Type': 'application/wasm' });
+      if (encoding !== undefined) headers.set('Content-Encoding', encoding);
+      await expect(fetchVerifiedOfflineAsset(base, streamAsset, {
+        signal: new AbortController().signal, fetchedBytes: () => undefined,
+        fetchResponse: () => Promise.resolve(network(bytes, { url: new URL(streamAsset.url, base).href, headers })),
+      })).rejects.toMatchObject({ reason: 'response' });
+    }
+    const changed = network('HELLO', { url: new URL(streamAsset.url, base).href,
+      headers: { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip' } });
+    await expect(verifyOfflineAssetResponse(base, streamAsset, changed, new AbortController().signal,
+      () => undefined)).rejects.toMatchObject({ reason: 'hash' });
+  });
+  it('虚偽Content-Lengthを信じて巨大領域を確保せず、stream復号64MiB超も拒否する', async () => {
+    const response = network(bytes, { url: new URL(streamAsset.url, base).href,
+      headers: { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip',
+        'Content-Length': String(Number.MAX_SAFE_INTEGER) } });
+    await expect(fetchVerifiedOfflineAsset(base, streamAsset, {
+      signal: new AbortController().signal, fetchedBytes: () => undefined,
+      fetchResponse: () => Promise.resolve(response),
+    })).rejects.toMatchObject({ reason: 'response' });
+    const general = await fetchVerifiedOfflineAsset(base, asset, {
+      signal: new AbortController().signal, fetchedBytes: () => undefined,
+      fetchResponse: () => Promise.resolve(network(bytes, { headers: { 'Content-Type': 'text/javascript',
+        'Content-Length': String(Number.MAX_SAFE_INTEGER) } })),
+    });
+    expect(await general.text()).toBe('hello');
+    await expect(fetchVerifiedOfflineAsset(base, { ...streamAsset, byteLength: 67_108_865 }, {
+      signal: new AbortController().signal, fetchedBytes: () => undefined,
+      fetchResponse: () => Promise.resolve(response),
+    })).rejects.toMatchObject({ reason: 'size' });
+    await expect(fetchVerifiedOfflineAsset(base, { ...asset, byteLength: 26_214_401 }, {
+      signal: new AbortController().signal, fetchedBytes: () => undefined,
+      fetchResponse: () => Promise.resolve(network(bytes)),
+    })).rejects.toMatchObject({ reason: 'size' });
+  });
   it('分割して届く全内容を照合し、URL・応答条件と本文を持つ元の応答を返す', async () => {
     const response = network(new ReadableStream<Uint8Array>({ start(controller) {
       controller.enqueue(bytes.slice(0, 2)); controller.enqueue(bytes.slice(2)); controller.close();

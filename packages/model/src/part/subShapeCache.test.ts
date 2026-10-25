@@ -50,6 +50,42 @@ const CORNER: SubShapeRef = {
 };
 
 describe('部分形状の選び直しの覚え書き(FR-330 の上流追従、タスク25)', () => {
+  it('origin付き参照は未refreshで旧指紋を返さず、現bodyの一意表だけを採用する', () => {
+    const cache = createSubShapeCache();
+    const origin = { version: 1 as const, shapeKind: 'vertex' as const, identity: {
+      kind: 'box-vertex' as const, featureId: 'extrude-1', role: 'top-back-right' as const,
+    } };
+    const saved: SubShapeRef = { ...CORNER, origin };
+    const current: SolidBody = { ...boxBody('extrude-1', 20), origins: { version: 1, state: 'tracked',
+      bindings: [{ origin, state: 'unique', current: { kind: 'vertex', index: 6 } }] } };
+    expect(cache.resolve(saved)).toBeNull();
+    expect(cache.refresh([current])).toBe(true);
+    expect(cache.resolve(saved)?.position).toEqual([40, 30, 20]);
+    expect(cache.refresh([current, current])).toBe(true);
+    expect(cache.resolve(saved)).toBeNull();
+    expect(cache.refresh([{ ...current, origins: { version: 1, state: 'untracked',
+      reason: 'unsupported-operation' } }])).toBe(false);
+    expect(cache.resolve(saved)).toBeNull();
+    expect(cache.refresh([])).toBe(false);
+  });
+  it('曖昧な面は未解決にし、同じ結果の通知を繰り返さず、一意に戻ると復旧する', () => {
+    const cache = createSubShapeCache();
+    const reference: SubShapeRef = { bodyFeatureId: 'extrude-1', index: 99, fingerprint: {
+      kind: 'face', surfaceKind: 'plane', area: 100, position: [0, 0, 10], axis: [0, 0, 1], radius: null,
+    } };
+    const faces = [7, 19].map((index) => ({ index, surfaceKind: 'plane' as const, area: 100,
+      centroid: [0, 0, 10] as const, axis: [0, 0, 1] as const, radius: null, triangleOffset: 0, triangleCount: 0 }));
+    const body = { ...boxBody('extrude-1', 10), faces };
+    const saved = JSON.stringify(reference);
+    expect(cache.resolve(reference)).not.toBeNull();
+    expect(cache.refresh([body])).toBe(true);
+    expect(cache.resolve(reference)).toBeNull();
+    expect(cache.refresh([body])).toBe(false);
+    expect(cache.refresh([{ ...body, faces: [faces[1]] }])).toBe(true);
+    expect(cache.resolve(reference)?.position).toEqual([0, 0, 10]);
+    expect(JSON.stringify(reference)).toBe(saved);
+  });
+
   it('覚えていないうちは、保存された指紋の位置をそのまま返す', () => {
     const cache = createSubShapeCache();
 
@@ -88,13 +124,17 @@ describe('部分形状の選び直しの覚え書き(FR-330 の上流追従、�
     expect(cache.refresh([boxBody('extrude-1', 20)])).toBe(false);
   });
 
-  it('一覧に無いボディの参照はそのままにする(指紋を使う従来の振る舞いが残る)', () => {
+  it('現在形状を取得できないボディは保存指紋で代用せず、復旧時に現在形状から解決する', () => {
     const cache = createSubShapeCache();
     cache.resolve(CORNER);
 
-    // 消費されて画面に出ない立体などは bodies に入らない。
-    expect(cache.refresh([boxBody('extrude-9', 20)])).toBe(false);
-    expect(cache.resolve(CORNER)?.position).toEqual([40, 30, 10]);
+    // 消費された上流は readReferenceBodies が現キャッシュから一覧へ含める。
+    // 一覧へ含められなかったときは、保存指紋を現在の形として公開できない。
+    expect(cache.refresh([boxBody('extrude-9', 20)])).toBe(true);
+    expect(cache.resolve(CORNER)).toBeNull();
+    expect(cache.refresh([])).toBe(false);
+    expect(cache.refresh([boxBody('extrude-1', 20)])).toBe(true);
+    expect(cache.resolve(CORNER)?.position).toEqual([40, 30, 20]);
   });
 
   /*

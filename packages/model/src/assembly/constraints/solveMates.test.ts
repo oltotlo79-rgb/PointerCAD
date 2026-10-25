@@ -597,14 +597,17 @@ describe('P7-19 jointとmateの同一ソルバー・同一診断', () => {
     expect(diagnoseMates(data.assembly, result).jointRows?.every((row) => row.dependency === 'unknown')).toBe(true);
     expect(result.placements).toEqual(data.placements);
   });
-  it.each([100, 101])('%d可動部品の600/606全体上限をjoint追加でも変えない', (count) => {
+  // 上限はつながった群ごと。固定のgroundだけを共有する独立部品は、全体で600変数を超えても拒否しない。
+  it.each([100, 101])('%d可動部品の独立群はjoint追加でも全体上限で拒否しない', (count) => {
     const data = jointFixture();
     const assembly = { ...data.assembly, components: [component('ground', true), ...Array.from({ length: count }, (_, i) => component(String(i)))],
       joints: [jointEntry('j', 'ball', '0')] };
     const placements = new Map(assembly.components.map((c) => [c.id, IDENTITY_PLACEMENT]));
     const result = solveMates(assembly, data.targets, placements, { jointFrames: data.frames });
-    expect(result.diagnosis.limits.some((l) => l.scope === 'assembly')).toBe(count === 101);
-    expect(result.converged).toBe(count === 100);
+    expect(result.diagnosis.limits).toEqual([]);
+    expect(result.diagnosis.components.map((c) => c.componentIds)).toEqual(Array.from({ length: count }, (_, i) => [String(i)]));
+    expect(result.converged).toBe(true);
+    expect(result.placements).toEqual(placements);
   });
   it.each(['missing', 'swapped'] as const)('混在snapshotのrowSourcesが%sなら分類を不明にする', (damage) => {
     const data = jointFixture();
@@ -1063,8 +1066,9 @@ describe('P7タスク16の合致診断', () => {
       data.placements.set(`extra${i}`, IDENTITY_PLACEMENT);
     }
     const { outcome, diagnosis } = diagnoseFixture(data);
-    expect(diagnosis.limits[0]).toMatchObject({ scope: 'assembly', variables: 606, maximum: 600 });
-    expect(diagnosis.remainingDegreesOfFreedom).toBeNull();
+    // 旧: 全体上限で可動群を解かずrank不明(null)。群ごとの上限では101個の単独群はgauge固定で0変数、固定同士も0変数。
+    expect(diagnosis.limits).toEqual([]);
+    expect(diagnosis.remainingDegreesOfFreedom).toBe(0);
     expect(diagnosis.provenConflictMateIds).toEqual(['m']);
     expect(outcome.placements).toEqual(data.placements);
   });
@@ -1184,14 +1188,15 @@ describe('成分・gauge・上限・診断', () => {
     expect(result.placements.get('ground')).toEqual(placements.get('ground'));
     expect(result.converged).toBe(true);
   });
-  it('全体606変数は解かず全配置を返す', () => {
+  it('全体606変数でも独立した101部品は群ごとに扱い全配置を返す', () => {
     const components = Array.from({ length: 101 }, (_, i) => component(String(i)));
     const assembly = { ...createAssemblyDocument('上限'), components };
     const placements = new Map(components.map((c) => [c.id, at([Number(c.id), 0, 0])]));
     const result = solveMates(assembly, new Map(), placements);
-    expect(result.converged).toBe(false);
-    expect(result.diagnosis.status).toBe('variableLimit');
-    expect(result.diagnosis.limits[0]).toMatchObject({ scope: 'assembly', variables: 606, maximum: 600 });
+    expect(result.converged).toBe(true);
+    expect(result.diagnosis.status).toBe('converged');
+    expect(result.diagnosis.limits).toEqual([]);
+    expect(result.diagnosis.components.map((c) => c.componentIds)).toEqual(components.map((c) => [c.id]));
     expect(result.placements).toEqual(placements);
     expect(result.iterations).toBe(0);
   });
@@ -1208,9 +1213,24 @@ describe('成分・gauge・上限・診断', () => {
     const result = solveMates({ ...assembly, components: [
       ...assembly.components.map((c) => ({ ...c, fixed: true })), ...extra,
     ] }, targets, new Map([...placements, ...extra.map((c) => [c.id, IDENTITY_PLACEMENT] as const)]));
-    expect(result.diagnosis.limits[0].scope).toBe('assembly');
+    expect(result.diagnosis.limits).toEqual([]);
     expect(result.diagnosis.constantConflicts).toEqual(['m']);
     expect(result.diagnosis.status).toBe('provenConstantConflict');
+    expect(result.iterations).toBe(0);
+  });
+  it('つながった101可動部品のjoint鎖は606変数を群の上限600で解かない', () => {
+    const chain = Array.from({ length: 101 }, (_, i) => component(`c${i}`));
+    const joints = chain.map((c, i) => jointEntry(`j${i}`, 'revolute', c.id, i === 0 ? 'ground' : `c${i - 1}`));
+    const assembly = { ...createAssemblyDocument('鎖'), components: [component('ground', true), ...chain], joints };
+    // 原点をずらしてjointを満たさない。解かれていれば配置が動く。
+    const placements = new Map(assembly.components.map((c, i) => [c.id, at([i, 2 * i, 0])]));
+    const frames = new Map(joints.map((j): [string, JointFramePair] => [j.id, { a: JOINT_FRAME, b: JOINT_FRAME }]));
+    const result = solveMates(assembly, new Map(), placements, { jointFrames: frames });
+    expect(result.converged).toBe(false);
+    expect(result.diagnosis.status).toBe('variableLimit');
+    expect(result.diagnosis.limits).toEqual([{ scope: 'component', componentIds: chain.map((c) => c.id), variables: 606, maximum: 600 }]);
+    expect(result.diagnosis.components.map((c) => c.componentIds)).toEqual([chain.map((c) => c.id)]);
+    expect(result.placements).toEqual(placements);
     expect(result.iterations).toBe(0);
   });
   it('成分別上限は全体の上限とは別に判定し超過成分を保持する', () => {

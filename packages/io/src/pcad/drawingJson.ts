@@ -17,11 +17,13 @@ import type {
 } from '@pointercad/model';
 
 import { drawingNumberIssue, drawingSheetExpressionMatches } from '@pointercad/model';
+import { isSubShapeOrigin, serializeSubShapeOrigin } from './codecs/subShapeOrigin.js';
 import { cleanDrawingFlatReference, isDrawingFlatReference } from './drawingFlatJson.js';
 import { isRecord, isUnknownArray } from './guards.js';
 import { cleanDrawingConstruction, isDrawingConstruction } from './drawingConstructionJson.js';
 import { cleanDatum, cleanGdtFrame, cleanWeldSymbol, isDatumDefinition, isGdtFrame, isWeldSymbol } from './gdtJson.js';
 import { hasOnlyFiniteJsonNumbers, preserveDrawingJsonFields } from './drawingJsonCompatibility.js';
+import { assertReferenceOriginVersion } from './referenceOriginVersion.js';
 import { migrateToCurrentSchema, type ParseError } from './documentJson.js';
 import {
   PCAD_APP_NAME,
@@ -82,10 +84,14 @@ function cleanFingerprint(fingerprint: DrawingSubShapeFingerprint): DrawingSubSh
 }
 
 function cleanSubShapeRef(ref: DrawingSubShapeRef): DrawingSubShapeRef {
+  if (ref.origin !== undefined && ref.origin.shapeKind !== ref.fingerprint.kind) {
+    throw new RangeError('Drawing subshape origin kind differs from its fingerprint');
+  }
   return {
     bodyFeatureId: ref.bodyFeatureId,
     index: ref.index,
     fingerprint: cleanFingerprint(ref.fingerprint),
+    ...(ref.origin === undefined ? {} : { origin: serializeSubShapeOrigin(ref.origin) }),
   };
 }
 
@@ -306,6 +312,10 @@ export function serializeDrawing(
   document: DrawingDocument,
   options: SerializeDrawingOptions = {},
 ): string {
+  assertReferenceOriginVersion(document, document.schemaVersion);
+  if (document.schemaVersion < 19 && document.tables.some((table) => table.options.stockList === true)) {
+    throw new RangeError('Steel stock drawing tables require schema19');
+  }
   if (!hasOnlyFiniteJsonNumbers(document)) throw new Error('図面に有限でない数値が含まれるため保存できません。');
   const envelope: PcadDrawingEnvelope = {
     schema: document.schemaVersion,
@@ -386,7 +396,9 @@ function isSubShapeRef(value: unknown): value is DrawingSubShapeRef {
   return isRecord(value)
     && hasString(value, 'bodyFeatureId')
     && hasNumber(value, 'index')
-    && isFingerprint(value['fingerprint']);
+    && isFingerprint(value['fingerprint'])
+    && (!Object.hasOwn(value, 'origin') || (isSubShapeOrigin(value['origin'])
+      && value['origin'].shapeKind === value['fingerprint'].kind));
 }
 
 function isSource(value: unknown): value is DrawingSource {
@@ -564,6 +576,8 @@ function isTable(value: unknown): value is DrawingTable {
     || (value['rows'] !== undefined
       && (!isUnknownArray(value['rows']) || !value['rows'].every(isStringArray)))
     || !isRecord(value['options'])
+    || (value['options']['stockList'] !== undefined
+      && (typeof value['options']['stockList'] !== 'boolean' || value['kind'] !== 'bom'))
     || !hasString(value, 'layerId')
     || !hasOptionalStyle(value)) return false;
   return Object.values(value['options']).every(
@@ -682,6 +696,10 @@ export function parseDrawing(text: string): ParseDrawingResult {
       'versionMismatch',
       `ファイルの版の記録が食い違っています(封筒 ${String(schema)} / 文書 ${String(parsed['document']['schemaVersion'])})。`,
     );
+  }
+  if (schema < 19 && isRecord(parsed['document']) && isUnknownArray(parsed['document']['tables'])
+    && parsed['document']['tables'].some((table) => isRecord(table) && isRecord(table['options']) && table['options']['stockList'] === true)) {
+    return failure('invalidField', 'Steel stock drawing tables require schema19');
   }
   if (schema < PCAD_SCHEMA_VERSION) {
     const migrated = migrateToCurrentSchema(parsed, schema);

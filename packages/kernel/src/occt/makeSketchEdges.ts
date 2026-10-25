@@ -9,6 +9,7 @@ import {
 import { makeEllipseEdge } from './makeEllipseEdge.js';
 import { makeSplineEdge } from './makeSplineEdge.js';
 import { curveSampleCoordinates } from './curveSampleCoordinates.js';
+import { localFloat32Coordinates, type MeshCoordinateFrame } from './meshCoordinateFrame.js';
 
 /** OCCT の稜線と、そのために確保した領域の解放手続き。 */
 export interface OcctEdgeHandle {
@@ -122,6 +123,8 @@ export function discretizeEdge(
   oc: OpenCascadeInstance,
   edge: TopoDS_Edge,
   options: TessellationOptions = {},
+  frame?: MeshCoordinateFrame,
 ): Float32Array {
-  return new Float32Array(curveSampleCoordinates(oc, edge, options));
+  const coordinates = curveSampleCoordinates(oc, edge, options);
+  return frame === undefined ? new Float32Array(coordinates) : localFloat32Coordinates(coordinates, frame);
 }

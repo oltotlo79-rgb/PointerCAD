@@ -285,7 +285,80 @@ export async function cameraControlsRestoredFlow(page: Page, info: TestInfo, con
   const zoomed = await remember(page, info, 'defaults-wheel', app);
   expect(cameraDistance(zoomed.view) / cameraDistance(defaults.view)).toBeCloseTo(Math.pow(1.1, defaultNotches), 9);
   await customOrbitAndZoom(page, info, app);
+  await heldModifierRelease(page, info, app);
 }
+
+/** Passive evidence only: ordinary Playwright input is still handled by the product. */
+export async function observeControlsInput(page: Page) {
+  return canvas(page).evaluateHandle(element => {
+    const events: { type: string; isTrusted: boolean; key: string | null; x: number | null; y: number | null;
+      button: number | null; buttons: number | null; deltaX: number | null; deltaY: number | null; deltaMode: number | null;
+      alt: boolean; shift: boolean; ctrl: boolean; meta: boolean }[] = [];
+    const types = ['pointerdown', 'pointermove', 'pointerup', 'keydown', 'keyup', 'wheel'];
+    const record = (event: Event) => {
+      if (!(event instanceof MouseEvent) && !(event instanceof KeyboardEvent)) return;
+      events.push({ type: event.type, isTrusted: event.isTrusted,
+        key: event instanceof KeyboardEvent ? event.key : null,
+        x: event instanceof MouseEvent ? event.clientX : null, y: event instanceof MouseEvent ? event.clientY : null,
+        button: event instanceof MouseEvent ? event.button : null, buttons: event instanceof MouseEvent ? event.buttons : null,
+        deltaX: event instanceof WheelEvent ? event.deltaX : null, deltaY: event instanceof WheelEvent ? event.deltaY : null,
+        deltaMode: event instanceof WheelEvent ? event.deltaMode : null,
+        alt: event.altKey, shift: event.shiftKey, ctrl: event.ctrlKey, meta: event.metaKey });
+    };
+    for (const type of types) element.addEventListener(type, record, { capture: true, passive: true });
+    return { events, stop: () => {
+      for (const type of types) element.removeEventListener(type, record, { capture: true });
+    } };
+  });
+}
+
+async function heldModifierRelease(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  await home(page);
+  const before = await remember(page, info, 'held-alt-home', app);
+  const start = await centre(page);
+  await canvas(page).focus(); await page.mouse.move(start.x, start.y);
+  const observation = await observeControlsInput(page);
+  try {
+    await page.keyboard.down('Alt'); await page.mouse.down({ button: 'left' });
+    await page.mouse.move(start.x + 24, start.y + 12, { steps: 3 });
+    await page.keyboard.up('Alt');
+    await page.mouse.move(start.x + 48, start.y + 24, { steps: 3 });
+    // An otherwise assigned wheel must not zoom while the pointer owns orbit.
+    await page.mouse.wheel(0, 100);
+    await expect.poll(() => observation.evaluate(value => value.events.filter(event => event.type === 'wheel').length)).toBe(1);
+    await page.mouse.up({ button: 'left' });
+    const events = await observation.evaluate(value => value.events);
+    await info.attach('controls-held-alt-release-native', { body: JSON.stringify({ requested: { dx: 48, dy: 24, wheel: 100 }, events }), contentType: 'application/json' });
+    expect(events.length).toBeGreaterThan(0); expect(events.every(event => event.isTrusted)).toBe(true);
+    const downs = events.filter(event => event.type === 'pointerdown');
+    expect(downs).toHaveLength(1); expect(downs[0]).toMatchObject({ buttons: 1, alt: true, ctrl: false, shift: false, meta: false });
+    const released = events.findIndex(event => event.type === 'keyup' && event.key === 'Alt');
+    expect(released).toBeGreaterThan(0); expect(events[released].alt).toBe(false);
+    const moves = events.slice(released + 1).filter(event => event.type === 'pointermove' && event.buttons === 1);
+    expect(moves.length).toBeGreaterThan(0); expect(moves.every(event => !event.alt)).toBe(true);
+    const wheels = events.filter(event => event.type === 'wheel');
+    expect(wheels).toHaveLength(1); expect(wheels[0].deltaY).toBeGreaterThan(0);
+    const first = downs[0], last = moves.at(-1);
+    const held = events.slice(0, released).filter(event => event.type === 'pointermove' && event.buttons === 1).at(-1);
+    if (first.x === null || first.y === null || last?.x == null || last.y === null || held?.x == null || held.y === null) throw new Error('Native held-drag coordinates missing');
+    const dx = last.x - first.x, dy = last.y - first.y;
+    expect(last.x).toBeGreaterThan(held.x); expect(last.y).toBeGreaterThan(held.y);
+    const after = await remember(page, info, 'held-alt-released-orbit', app);
+    const azimuth = -Math.PI / 4 - dx * 0.008, elevation = Math.atan(Math.SQRT1_2) + dy * 0.008;
+    const expected = [Math.cos(elevation) * Math.cos(azimuth), Math.cos(elevation) * Math.sin(azimuth), Math.sin(elevation)];
+    for (const axis of [0, 1, 2]) expect(after.view.position[axis]).toBeCloseTo(200 * expected[axis], 9);
+    expect(cameraDistance(after.view)).toBeCloseTo(200, 9);
+    expect(after.view.target).toEqual(before.view.target); expect(after.view.up).toEqual(before.view.up);
+    expect(after.view.zoom).toBe(before.view.zoom); expect(after.view.projection).toBe(before.view.projection);
+    expect(after.document.sketches).toEqual(before.document.sketches); expect(after.document.solids).toEqual(before.document.solids);
+  } finally {
+    await page.mouse.up({ button: 'left' }); await page.keyboard.up('Alt');
+    await observation.evaluate(value => value.stop()); await observation.dispose();
+  }
+}
+
+// Reuse the established named-view/real-pcad oracle in the two controls-only flows.
+export { remember as rememberCamera, sameCamera as expectSameCamera, cameraDistance };
 
 /** Record the actual trusted pointer stream, rather than assume host movement scaling. */
 async function observedDrag(page: Page, keys: readonly string[], input: 'left' | 'middle', cancelWithExtraButton = false) {
@@ -374,7 +447,8 @@ async function customOrbitAndZoom(page: Page, info: TestInfo, app?: ElectronAppl
   for (const item of cases) {
     await home(page);
     const before = await remember(page, info, `${item.name}-home`, app);
-    await observedDrag(page, item.rejected, item.input);
+    const rejected = await observedDrag(page, item.rejected, item.input);
+    await info.attach(`controls-${item.name}-rejected-native`, { body: JSON.stringify(rejected), contentType: 'application/json' });
     const ignored = await remember(page, info, `${item.name}-rejected`, app);
     sameCamera(ignored.view, before.view);
     // Adding a second physical button cancels ownership. Later middle-only

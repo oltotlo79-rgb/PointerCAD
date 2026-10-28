@@ -9,13 +9,20 @@
 import { stdout } from 'node:process';
 
 import { expressionValueFromNumber } from '@pointercad/expression';
+import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRequest,
+  executeFunctionSurfaceWorkRequest, executeMathWorkRequest } from '@pointercad/expression/math/worker';
+import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expression/math/contracts';
+import { FunctionSurfaceWorkerClient, type MathWorkerPort } from '@pointercad/expression/math/client';
 import { parseDocument, readPcadFile, serializeDocument, writePcadFile } from '@pointercad/io';
 import {
   absoluteCoordinate,
   appendSolid,
   createEmptyPartDocument,
+  createFunctionCurve,
+  createFunctionSurface,
   DEFAULT_CUT_KEEP,
   DEFAULT_PRIMITIVE_AXIS,
+  FunctionSurfacePlanCache,
   findSolid,
   appendFeature,
   findSketch,
@@ -26,18 +33,23 @@ import {
   type BooleanFeature,
   type ExtrudeFeature,
   type PartDocument,
+  type PartRecomputeOptions,
   type PrimitiveFeature,
+  type ResolvedPart,
   type SolidBody,
 } from '@pointercad/model';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createNativeKernelBridgeForNodeTests,
+  createInspectableNativeKernelForNodeTests,
   initializeNativeKernelForNodeTests,
 } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { inspectNativeCutShape } from '../../../model/src/testing/inspectNativeCutShape.node.js';
 import { applySolidCommit } from '../sketch/commitToStore.js';
-import { chooseNumericInput, createNumericInput, type SolidInputCommit } from '../sketch/numericInput.js';
-import { bodyFor, resetTestStore } from '../store/testing/createTestStore.js';
+import { chooseNumericInput, createNumericInput, toggleNumericInput, type SolidInputCommit } from '../sketch/numericInput.js';
+import { attachPartRecompute } from '../store/attachKernel.js';
+import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 
 import {
@@ -888,9 +900,9 @@ function w3Document(curve: W3Curve): PartDocument {
 }
 
 const W3_PROFILES = [
-  { profile: '円 r = 2', curve: () => w3Circle(2), area: Math.PI * 2 * 2 },
-  { profile: '円 r = 3', curve: () => w3Circle(3), area: Math.PI * 3 * 3 },
-  { profile: '30 度回した楕円 a = 4・b = 2', curve: () => w3Ellipse(), area: Math.PI * 4 * 2 },
+  { profile: '円 r = 2', curve: () => w3Circle(2), area: Math.PI * 2 * 2, major: 2, minor: 2, rotation: 0 },
+  { profile: '円 r = 3', curve: () => w3Circle(3), area: Math.PI * 3 * 3, major: 3, minor: 3, rotation: 0 },
+  { profile: '30 度回した楕円 a = 4・b = 2', curve: () => w3Ellipse(), area: Math.PI * 4 * 2, major: 4, minor: 2, rotation: Math.PI / 6 },
 ];
 
 /**
@@ -903,6 +915,10 @@ const W3_MODES = [
   { mode: '外側', flags: {}, sides: ['outside'] },
   { mode: '内側', flags: { cutKeepOpposite: true }, sides: ['inside'] },
 ] as const;
+
+// A serial native recompute plus its independent oracle uses the existing finite functional-test allowance.
+// This bounds verification work; it is not a product speed target. No cancellation deadline is changed.
+const CUT_WORKFLOW_STEP_TIMEOUT_MS = 60_000;
 
 const W3_SAVED_AT = '2026-10-25T00:00:00.000Z';
 
@@ -930,6 +946,87 @@ function expectKeptSides(bodies: readonly SolidBody[], booleans: readonly Boolea
   }
 }
 
+type CutPoint = readonly [number, number, number];
+type NativeCutFixture = Awaited<ReturnType<typeof createInspectableNativeKernelForNodeTests>>;
+
+/** Analytic local coordinates, transformed by the fixture's centre/rotation; no measured input. */
+function conicOraclePoints(major: number, minor: number, full = false, rotation = 0): readonly CutPoint[] {
+  const local: readonly CutPoint[] = full
+    ? [[major, 0, 5], [0, minor, 7], [0, 0, 2], [major / 4, minor / 4, 8],
+      [0, minor + 1, 5], [-major - 0.5, 0, 3]]
+    : [[0, minor, 5], [major / Math.sqrt(2), minor / Math.sqrt(2), 7],
+      [0, minor / 2, 2], [major / 4, minor / 4, 8], [0, minor + 1, 5], [-4, 5, 3]];
+  const c = Math.cos(rotation), s = Math.sin(rotation), cy = full ? 5 : 0;
+  return [...local.map(([x, y, z]): CutPoint => [5 + c * x - s * y, cy + s * x + c * y, z]),
+    [5, full ? 5 : minor / 2, 11], [-1, 1, 5]];
+}
+
+async function recomputeInspectableCut(document: PartDocument, fixture: NativeCutFixture) {
+  let resolved: ResolvedPart | undefined;
+  const result = await recomputePart(document, fixture.bridge, { partId: document.id,
+    onResolved: value => { resolved = value; } });
+  return { ...result, inspect: async (points: readonly CutPoint[]) => Promise.all(result.bodies.map(body => {
+    const step = resolved?.steps.find(candidate => candidate.featureId === body.featureId);
+    if (step === undefined) throw new Error(`Missing resolved cut ${body.featureId}`);
+    return inspectNativeCutShape(fixture.inspectShape(step.key).readBrepBytes(), points);
+  })) };
+}
+
+async function expectNativeCut(result: Awaited<ReturnType<typeof recomputeInspectableCut>>, points: readonly CutPoint[],
+  inside: readonly boolean[], label: string, chord = false) {
+  const measurements = await result.inspect(points);
+  expect(measurements, label).toHaveLength(inside.length);
+  measurements.forEach((measurement, index) => {
+    const core = inside[index];
+    const expected = ['ON', 'ON', core ? 'IN' : 'OUT', core ? 'IN' : 'OUT',
+      core ? 'OUT' : 'IN', core ? 'OUT' : 'IN', 'OUT', 'OUT'];
+    // The diameter y=0 lies on the original box, not on a shared cut wall.
+    if (chord) expected.push(core ? 'ON' : 'OUT', 'OUT');
+    expect(measurement.states, label).toEqual(expected);
+    expect(measurement.valid, label).toBe(true);
+    expect(measurement.topology.solids, label).toBe(1);
+    expect(measurement.topology.faces, label).toBe(result.bodies[index].faces.length);
+    expect(measurement.topology.edges, label).toBe(result.bodies[index].edges.length);
+    expect(measurement.topology.vertices, label).toBe(result.bodies[index].vertices.length);
+    expect(measurement.signedVolume, label).toBeGreaterThan(0);
+    expect(Number.isFinite(measurement.integrationError), label).toBe(true);
+    expect(measurement.integrationError, label).toBeGreaterThanOrEqual(0);
+    expect(measurement.integrationError, label).toBeLessThanOrEqual(1e-12);
+    w3ExpectRelative(measurement.signedVolume, result.bodies[index].volume, `${label} native signed`);
+  });
+  stdout.write(`EX-04 independent native ${label}: ${JSON.stringify({ points, measurements })}${String.fromCharCode(10)}`);
+  return measurements;
+}
+
+async function expectCutSaveReopen(document: PartDocument, original: Awaited<ReturnType<typeof recomputeInspectableCut>>,
+  points: readonly CutPoint[], inside: readonly boolean[], label: string, chord = false): Promise<void> {
+  const measurements = await expectNativeCut(original, points, inside, label, chord);
+  const keys = resolvePart(document).steps.map(step => step.key);
+  const json = parseDocument(serializeDocument(document, { savedAt: W3_SAVED_AT }));
+  if (!json.ok) throw new Error(`JSON: ${json.error.code}`);
+  const pcad = readPcadFile(writePcadFile(document, { savedAt: W3_SAVED_AT }));
+  if (!pcad.ok) throw new Error(`.pcad: ${pcad.error.code}`);
+  for (const [format, reopened] of [['JSON', json.document], ['.pcad', pcad.document]] as const) {
+    expect(reopened.solids, format).toEqual(document.solids);
+    expect(reopened.sketches, format).toEqual(document.sketches);
+    expect(resolvePart(reopened).steps.map(step => step.key), format).toEqual(keys);
+    // A fresh cache forces the reopened definition through native computation again.
+    const fixture = await createInspectableNativeKernelForNodeTests();
+    try {
+      const restored = await recomputeInspectableCut(reopened, fixture);
+      expect(restored.errors, format).toEqual([]);
+      expect(restored.bodies.map(body => [body.featureId, body.volume, body.isValid]), format)
+        .toEqual(original.bodies.map(body => [body.featureId, body.volume, body.isValid]));
+      const after = await expectNativeCut(restored, points, inside, `${label} ${format}`, chord);
+      after.forEach((measurement, index) => {
+        expect(measurement.topology, format).toEqual(measurements[index].topology);
+        expect(measurement.states, format).toEqual(measurements[index].states);
+        w3ExpectRelative(measurement.signedVolume, measurements[index].signedVolume, `${format} signed volume`);
+      });
+    } finally { fixture.dispose(); }
+  }
+}
+
 describe('EX-04 W3 残す側の体積が解析値と相対 1e-9 で一致し、有効な立体が 1 個・2 個できる(実カーネル)', () => {
   beforeAll(async () => {
     await initializeNativeKernelForNodeTests();
@@ -940,8 +1037,9 @@ describe('EX-04 W3 残す側の体積が解析値と相対 1e-9 で一致し、�
    * (`commitCutInput`)で積み、実カーネルで再計算する。保存・読み直しは定義・作図・鍵が同じことと、
    * 読み直した文書の再計算が同じ立体・同じ体積になることを確かめる。
    */
-  it.each(W3_PROFILES)('$profile: 両方は 2 個・外側と内側は各 1 個の有効な立体、保存・読み直しでも同じ', async ({ curve, area, profile }) => {
-    const bridge = createNativeKernelBridgeForNodeTests();
+  it.each(W3_PROFILES)('$profile: 両方は 2 個・外側と内側は各 1 個の有効な立体、保存・読み直しでも同じ', async ({ curve, area, profile, major, minor, rotation }) => {
+    const fixture = await createInspectableNativeKernelForNodeTests(), { bridge } = fixture;
+    const points = conicOraclePoints(major, minor, true, rotation);
     const document = w3Document(curve());
     try {
       const before = await recomputePart(document, bridge, { partId: document.id });
@@ -953,7 +1051,7 @@ describe('EX-04 W3 残す側の体積が解析値と相対 1e-9 で一致し、�
         const outcome = commitCutInput(context, cutCommit({ ...PROFILE_COMMIT, flags }));
         if (!outcome.ok) throw new Error(`${label}: 断られました: ${outcome.reasonKey}`);
         const booleans = outcome.document.solids.filter((feature): feature is BooleanFeature => feature.kind === 'boolean');
-        const after = await recomputePart(outcome.document, bridge, { partId: document.id });
+        const after = await recomputeInspectableCut(outcome.document, fixture);
         // 実測の記録(最終報告の幾何の表の原票)。期待値は形だけから決めた解析値。
         stdout.write(`EX-04 W3 体積 ${label}: ${JSON.stringify(after.bodies.map((body, index) => {
           const expected = sides[index] === 'outside' ? 1000 - area * 10 : area * 10;
@@ -962,61 +1060,536 @@ describe('EX-04 W3 残す側の体積が解析値と相対 1e-9 で一致し、�
         }))}${String.fromCharCode(10)}`);
         expect(after.errors, label).toEqual([]);
         expectKeptSides(after.bodies, booleans, sides, area, label);
-        if (sides.length !== 2) continue;
-        // 保存して読み直す(新しい欄 pairedWith を含む)。定義・作図・鍵が同じで、再計算も同じ立体・同じ体積。
-        const keys = resolvePart(outcome.document).steps.map((step) => step.key);
-        const json = parseDocument(serializeDocument(outcome.document, { savedAt: W3_SAVED_AT }));
-        if (!json.ok) throw new Error(`JSON を読めませんでした: ${json.error.code}`);
-        const pcad = readPcadFile(writePcadFile(outcome.document, { savedAt: W3_SAVED_AT }));
-        if (!pcad.ok) throw new Error(`.pcad を読めませんでした: ${pcad.error.code}`);
-        for (const [format, reopened] of [['JSON', json.document], ['.pcad', pcad.document]] as const) {
-          expect(reopened.solids, format).toEqual(outcome.document.solids);
-          expect(reopened.sketches, format).toEqual(outcome.document.sketches);
-          expect(resolvePart(reopened).steps.map((step) => step.key), format).toEqual(keys);
-          const recomputed = await recomputePart(reopened, bridge, { partId: document.id });
-          expect(recomputed.errors, format).toEqual([]);
-          expect(recomputed.bodies.map((body) => [body.featureId, body.volume]), format)
-            .toEqual(after.bodies.map((body) => [body.featureId, body.volume]));
+        if (sides.length === 2) {
+          await expectCutSaveReopen(outcome.document, after, points, sides.map(side => side === 'inside'), label);
+        } else {
+          await expectNativeCut(after, points, sides.map(side => side === 'inside'), label);
         }
       }
     } finally {
-      bridge.dispose();
+      fixture.dispose();
     }
   }, 300_000);
 });
 
 /* 元に戻す 1 回で全結果(両方の 2 個を含む)が戻る(EX-04 W3 の合格条件 3)。ストアの確定の道筋で確かめる。 */
 
-/** 検査の立方体をストアのボディ(カーネルが返す形)へ写す。 */
-function w3StoreBody(body: SubShapeBody): SolidBody {
-  const base = bodyFor(body.featureId);
-  return { ...base, mesh: { ...base.mesh, edgePositions: body.mesh.edgePositions }, faces: body.faces,
-    edges: body.edges, vertices: body.vertices };
-}
-
 describe('EX-04 W3 閉じた輪郭の切断は元に戻す 1 回で全結果が戻る(ストア)', () => {
   beforeEach(resetTestStore);
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
 
   it.each([
     ['外側', {}, ['extrude', 'subtract']],
     ['内側', { cutKeepOpposite: true }, ['extrude', 'intersect']],
     ['両方', { cutKeepBoth: true }, ['extrude', 'subtract', 'intersect']],
-  ] as const)('%s: 確定は 1 段、元に戻す 1 回で全て消え、やり直しで全て戻る', (_mode, flags, expected) => {
-    const before = documentWithCircle(3);
+  ] as const)('%s: 確定は 1 段、元に戻す 1 回で全て消え、やり直しで全て戻る', async (_mode, flags, expected) => {
+    const before = w3Document(w3Circle(3));
+    const bridge = createNativeKernelBridgeForNodeTests();
     useAppStore.getState().applyDocument(before);
-    useAppStore.setState({ bodies: [w3StoreBody(cubeBody())] });
-    useAppStore.getState().setSelection([BODY, PROFILE_FACE]);
-    const opened = useAppStore.getState();
-    const pastBefore = opened.undoStack.past.length;
-    expect(applySolidCommit(cutCommit({ ...PROFILE_COMMIT, flags }))).toBe(true);
-    const committed = useAppStore.getState();
-    const after = committed.document;
-    expect(committed.undoStack.past).toHaveLength(pastBefore + 1);
-    expect(addedSteps(before, after).map((step) => step.kind === 'boolean' ? step.operation : step.kind)).toEqual(expected);
-    committed.undo();
-    expect(useAppStore.getState().document).toBe(before);
-    expect(useAppStore.getState().undoStack.past).toHaveLength(pastBefore);
-    useAppStore.getState().redo();
-    expect(useAppStore.getState().document).toBe(after);
+    const detach = attachPartRecompute((document, options) => recomputePart(document, bridge, options));
+    try {
+      await vi.waitFor(() => {
+        const state = useAppStore.getState();
+        expect(state.isComputing).toBe(false);
+        expect(state.lastOutcome).toBe('success');
+        expect(state.completedGeneration).toBe(state.requestedGeneration);
+      }, { timeout: 60_000 });
+      useAppStore.getState().setSelection([W3_BOX, W3_FACE]);
+      let input = chooseNumericInput(createNumericInput('cut', 'cutPlane'), 'cutPlaneKind', 'profile');
+      if ('cutKeepOpposite' in flags && flags.cutKeepOpposite) input = toggleNumericInput(input, 'cutKeepOpposite');
+      if ('cutKeepBoth' in flags && flags.cutKeepBoth) input = toggleNumericInput(input, 'cutKeepBoth');
+      useAppStore.getState().updateNumericInput(input);
+      const opened = useAppStore.getState();
+      const pastBefore = opened.undoStack.past.length;
+      expect(applySolidCommit(cutCommit({ ...PROFILE_COMMIT, flags }))).toBe(false);
+      expect(useAppStore.getState().document).toBe(before);
+      expect(useAppStore.getState().undoStack).toBe(opened.undoStack);
+      await vi.waitFor(() => { expect(useAppStore.getState().numericInput).toBeNull(); }, { timeout: 60_000 });
+      const committed = useAppStore.getState();
+      const after = committed.document;
+      expect(committed.undoStack.past).toHaveLength(pastBefore + 1);
+      expect(addedSteps(before, after).map((step) => step.kind === 'boolean' ? step.operation : step.kind)).toEqual(expected);
+      expect(committed.bodies).toHaveLength(expected.length - 1);
+      expect(committed.bodies.every(body => body.isValid)).toBe(true);
+      committed.undo();
+      expect(useAppStore.getState().document).toBe(before);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(pastBefore);
+      useAppStore.getState().redo();
+      expect(useAppStore.getState().document).toBe(after);
+    } finally { detach(); bridge.dispose(); }
+  }, 90_000);
+});
+
+function openConicDocument(kind: 'arc' | 'ellipse', reverse = false, full = false): PartDocument {
+  const document = createEmptyPartDocument(), sketch = document.sketches[0];
+  const common = { id: 'open-blade', name: '刃', planeId: 'xy', center: at(5, 0), construction: false,
+    startAngle: expressionValueFromNumber(reverse ? 180 : 0), endAngle: expressionValueFromNumber(full ? 360 : reverse ? 0 : 180) };
+  const curve: W3Curve = kind === 'arc' ? { ...common, kind, radius: expressionValueFromNumber(3) }
+    : { ...common, kind, majorRadius: expressionValueFromNumber(4), minorRadius: expressionValueFromNumber(2), rotation: ZERO_VALUE };
+  return appendSolid(replaceSketch(document, appendFeature(sketch, curve)), w3Box());
+}
+
+function openConicContext(document: PartDocument): CutContext {
+  return { document, bodies: [{ ...cubeBody(), featureId: W3_BOX }], selection: [W3_BOX, 'open-blade'],
+    resolvedSketches: { document, sketches: resolvePart(document).sketches } };
+}
+
+describe('EX-04.02 開いた刃の選択は現在の作図と計算結果だけを使う', () => {
+  it('参照を保存し、反対側の対を1回の候補へまとめ、入力と元の参照を変えない', () => {
+    const document = openConicDocument('arc'), context = openConicContext(document);
+    const serialized = serializeDocument(document, { savedAt: W3_SAVED_AT }), selection = [...context.selection];
+    const outcome = commitCutInput(context, cutCommit({ ...PROFILE_COMMIT, flags: { cutKeepBoth: true } }));
+    if (!outcome.ok) throw new Error(outcome.reasonKey);
+    const cuts = outcome.document.solids.filter(feature => feature.kind === 'surfaceCut');
+    expect(cuts).toHaveLength(2);
+    expect(cuts.map(feature => feature.keep)).toEqual(['positive', 'negative']);
+    expect(cuts[1].pairedWith).toBe(cuts[0].id);
+    expect(cuts[0].blade).toEqual({ kind: 'extrusion', profile: { sketchId: document.activeSketchId, curveIds: ['open-blade'] } });
+    expect(outcome.document.sketches).toBe(document.sketches);
+    expect(serializeDocument(document, { savedAt: W3_SAVED_AT })).toBe(serialized);
+    expect(context.selection).toEqual(selection);
   });
+
+  it('欠落・旧計算・別作図・混在・全周・不連続の選択を候補採用前に断る', () => {
+    const document = openConicDocument('arc'), context = openConicContext(document);
+    expect(commitCutInput({ ...context, resolvedSketches: undefined }, cutCommit(PROFILE_COMMIT)))
+      .toEqual({ ok: false, reasonKey: 'cutError.bladeNotCurrent' });
+    expect(commitCutInput({ ...context, selection: [W3_BOX, 'missing'] }, cutCommit(PROFILE_COMMIT)))
+      .toEqual({ ok: false, reasonKey: 'cutError.bladeSelectionAmbiguous' });
+    const changed = { ...document, solids: [w3Box(), { ...w3Box(), id: 'other-box' }] };
+    expect(commitCutInput({ ...context, document: changed }, cutCommit(PROFILE_COMMIT)))
+      .toEqual({ ok: false, reasonKey: 'cutError.bladeNotCurrent' });
+    const sketch = document.sketches[0];
+    const otherSketch = { ...sketch, id: 'other-sketch' };
+    const ambiguous = { ...document, sketches: [...document.sketches, otherSketch] };
+    expect(commitCutInput(openConicContext(ambiguous), cutCommit(PROFILE_COMMIT)))
+      .toEqual({ ok: false, reasonKey: 'cutError.bladeSelectionAmbiguous' });
+    const onlyOther = { ...document, activeSketchId: otherSketch.id, sketches: [sketch, { ...otherSketch, features: [] }] };
+    expect(commitCutInput(openConicContext(onlyOther), cutCommit(PROFILE_COMMIT)))
+      .toEqual({ ok: false, reasonKey: 'cutError.bladeSelectionAmbiguous' });
+    const closed = w3Document(w3Circle(3));
+    expect(commitCutInput({ ...openConicContext(closed), selection: [W3_BOX, W3_FACE, 'curve-w3'] }, cutCommit(PROFILE_COMMIT)))
+      .toEqual({ ok: false, reasonKey: 'cutError.bladeSelectionAmbiguous' });
+    expect(commitCutInput(openConicContext(openConicDocument('ellipse', false, true)), cutCommit(PROFILE_COMMIT)))
+      .toEqual({ ok: false, reasonKey: 'cutError.bladeMustBeOpen' });
+    const original = sketch.features[0];
+    const disconnected = replaceSketch(document, appendFeature(sketch, { ...original, id: 'separate-blade' }));
+    expect(commitCutInput({ ...openConicContext(disconnected), selection: [W3_BOX, 'open-blade', 'separate-blade'] }, cutCommit(PROFILE_COMMIT)))
+      .toEqual({ ok: false, reasonKey: 'cutError.bladeDisconnected' });
+  });
+});
+
+describe('EX-04.02 実callerから開いた円弧・楕円弧を切り、保存と方向を解析値で照合する', () => {
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
+  it.each(['arc', 'ellipse'] as const)('%s: 片側・両側・反転と保存再開', async kind => {
+    const fixture = await createInspectableNativeKernelForNodeTests(), { bridge } = fixture;
+    const inside = (kind === 'arc' ? 45 : 40) * Math.PI;
+    const points = conicOraclePoints(kind === 'arc' ? 3 : 4, kind === 'arc' ? 3 : 2);
+    try {
+      for (const reverse of [false, true]) {
+        const document = openConicDocument(kind, reverse), baseline = await recomputePart(document, bridge, { partId: document.id });
+        expect(baseline.errors).toEqual([]);
+        const context: CutContext = { document, bodies: subShapeBodiesOf(baseline.bodies), selection: [W3_BOX, 'open-blade'],
+          resolvedSketches: { document, sketches: baseline.sketches } };
+        const before = serializeDocument(document, { savedAt: W3_SAVED_AT });
+        for (const flags of [{ cutKeepBoth: true }, {}, { cutKeepOpposite: true }]) {
+          const outcome = commitCutInput(context, cutCommit({ ...PROFILE_COMMIT, flags }));
+          if (!outcome.ok) throw new Error(outcome.reasonKey);
+          const result = await recomputeInspectableCut(outcome.document, fixture);
+          expect(result.errors).toEqual([]);
+          const cuts = outcome.document.solids.filter(feature => feature.kind === 'surfaceCut');
+          const expectedKeeps = 'cutKeepBoth' in flags && flags.cutKeepBoth ? ['positive', 'negative']
+            : ['cutKeepOpposite' in flags && flags.cutKeepOpposite ? 'negative' : 'positive'];
+          expect(cuts.map(cut => cut.keep)).toEqual(expectedKeeps);
+          const keptInside = expectedKeeps.map(keep => (keep === 'negative') !== reverse);
+          expect(result.bodies.map(body => body.featureId)).toEqual(cuts.map(feature => feature.id));
+          for (const [index, body] of result.bodies.entries()) {
+            const negative = cuts[index].keep === 'negative';
+            w3ExpectRelative(body.volume, negative !== reverse ? inside : 1000 - inside, '開いた刃');
+            expect(body.isValid).toBe(true); expect(body.bodyKind).toBe('solid');
+          }
+          if (result.bodies.length === 2) {
+            w3ExpectRelative(result.bodies.reduce((sum, body) => sum + (body.volume ?? 0), 0), 1000, '両側の和');
+            await expectCutSaveReopen(outcome.document, result, points,
+              keptInside, `${kind} reverse=${String(reverse)}`);
+          } else {
+            await expectNativeCut(result, points, keptInside, kind);
+          }
+        }
+        expect(serializeDocument(document, { savedAt: W3_SAVED_AT })).toBe(before);
+      }
+    } finally { fixture.dispose(); }
+  }, 180_000);
+
+  it.each([
+    { kind: 'arc', keepInside: false, inside: 45 * Math.PI, from: 2, to: 8 },
+    { kind: 'arc', keepInside: true, inside: 45 * Math.PI, from: 2, to: 8 },
+    { kind: 'ellipse', keepInside: false, inside: 40 * Math.PI, from: 1, to: 9 },
+    { kind: 'ellipse', keepInside: true, inside: 40 * Math.PI, from: 1, to: 9 },
+  ] as const)('閉じた半円・半楕円＋閉じ線: $kind / inside=$keepInside は独立体積と一致する', async ({ kind, keepInside, inside, from, to }) => {
+    const fixture = await createInspectableNativeKernelForNodeTests(), { bridge } = fixture;
+    const base = openConicDocument(kind);
+    const points: readonly CutPoint[] = [...conicOraclePoints(kind === 'arc' ? 3 : 4, kind === 'arc' ? 3 : 2),
+      [5, 0, 5], [5, -1, 5]];
+    const sketch = base.sketches[0];
+    const closed = appendFeature(appendFeature(sketch, line('diameter', [from, 0], [to, 0])), {
+      id: W3_FACE, name: '半円', kind: 'face', planeId: 'xy', color: '#6699aa',
+      boundary: [{ featureId: 'open-blade' }, { featureId: 'diameter' }],
+    });
+    const document = replaceSketch(base, closed);
+    try {
+      const before = await recomputePart(document, bridge, { partId: document.id });
+      const context: CutContext = { document, bodies: subShapeBodiesOf(before.bodies), selection: [W3_BOX, W3_FACE] };
+      const outcome = commitCutInput(context, cutCommit({ ...PROFILE_COMMIT, flags: { cutKeepOpposite: keepInside } }));
+      if (!outcome.ok) throw new Error(outcome.reasonKey);
+      expect(outcome.document.solids.at(-1)?.kind).toBe('boolean');
+      const result = await recomputeInspectableCut(outcome.document, fixture);
+      expect(result.errors).toEqual([]); expect(result.bodies).toHaveLength(1); expect(result.bodies[0].isValid).toBe(true);
+      w3ExpectRelative(result.bodies[0].volume, keepInside ? inside : 1000 - inside, '閉じた部分弧＋閉じ線');
+      await expectNativeCut(result, points, [keepInside], `closed ${kind} inside=${String(keepInside)}`, true);
+      if (!keepInside) {
+        const paired = commitCutInput(context, cutCommit({ ...PROFILE_COMMIT, flags: { cutKeepBoth: true } }));
+        if (!paired.ok) throw new Error(paired.reasonKey);
+        const both = await recomputeInspectableCut(paired.document, fixture);
+        expect(both.errors).toEqual([]);
+        expect(both.bodies).toHaveLength(2);
+        const cuts = paired.document.solids.filter((feature): feature is BooleanFeature => feature.kind === 'boolean');
+        expectKeptSides(both.bodies, cuts, ['outside', 'inside'], inside / 10, `closed ${kind} both`);
+        await expectCutSaveReopen(paired.document, both, points, [false, true], `closed ${kind} both`, true);
+      }
+    } finally { fixture.dispose(); }
+  // Baseline, single side, both sides, fresh JSON, fresh PCAD: five serial native passes, unchanged.
+  }, 5 * CUT_WORKFLOW_STEP_TIMEOUT_MS);
+});
+
+describe('EX-04.03 数式面・閉輪郭の独立体積と式編集後の別セッション位相', () => {
+  let backend: ReturnType<typeof createMathBackend>;
+  beforeAll(async () => { backend = createMathBackend(); await initializeNativeKernelForNodeTests(); }, 180_000);
+  const value = expressionValueFromNumber;
+  function surfaceDefinition(constant: number) {
+    return { format: 'pointercad-function/1' as const,
+      bounds: { X: { min: value(-1), max: value(11) }, Y: { min: value(-1), max: value(11) },
+        Z: { min: value(-1), max: value(11) } }, tolerance: value(0.01),
+      formula: { kind: 'coordinate-surface' as const, output: 'Z' as const,
+        expression: createFunctionMathSource(`${constant}+0.01*X*Y`, 'text', 'radian',
+          { axes: ['X', 'Y'], parameters: [], coefficients: [] }, backend) } };
+  }
+  function profileDefinition(constant: number) {
+    const source = (text: string) => createFunctionMathSource(text, 'text', 'radian',
+      { axes: ['X'], parameters: [], coefficients: [] }, backend);
+    return { format: 'pointercad-function/1' as const,
+      bounds: { X: { min: value(0), max: value(10) }, Y: { min: value(0), max: value(12) },
+        Z: { min: value(-1), max: value(3) } }, tolerance: value(0.001),
+      formula: { kind: 'coordinate-curve' as const, independent: 'X' as const,
+        outputs: { Y: source(`X^2/10+${constant}`), Z: source('0') } } };
+  }
+  function profileLines(constant: number) {
+    return [line('formula-right', [10, 10 + constant], [10, 0]), line('formula-bottom', [10, 0], [0, 0]),
+      line('formula-left', [0, 0], [0, constant])];
+  }
+  function documentFor(kind: 'surface' | 'profile', constant: number): PartDocument {
+    const document = appendSolid(createEmptyPartDocument(), kind === 'surface' ? w3Box() : {
+      ...w3Box(), origin: { kind: 'coordinate', value: absoluteCoordinate(20, 15, 5) },
+      shape: { kind: 'box', sizeX: value(40), sizeY: value(30), sizeZ: value(10) },
+    });
+    if (kind === 'surface') return appendSolid(document, createFunctionSurface(document, surfaceDefinition(constant)));
+    const sketch = document.sketches[0], curve = createFunctionCurve(sketch, profileDefinition(constant));
+    let closed = appendFeature(sketch, curve);
+    for (const segment of profileLines(constant)) closed = appendFeature(closed, segment);
+    closed = appendFeature(closed, { id: 'formula-face', name: '式の輪郭', kind: 'face', planeId: 'xy', color: '#6699aa',
+      boundary: [curve.id, 'formula-right', 'formula-bottom', 'formula-left'].map(featureId => ({ featureId })) });
+    return replaceSketch(document, closed);
+  }
+  function editFormula(document: PartDocument, kind: 'surface' | 'profile', constant: number): PartDocument {
+    if (kind === 'surface') return { ...document, solids: document.solids.map(feature => feature.kind === 'functionSurface'
+      ? { ...feature, definition: surfaceDefinition(constant) } : feature) };
+    const replacements = profileLines(constant);
+    return { ...document, sketches: document.sketches.map(sketch => ({ ...sketch, features: sketch.features.map(feature =>
+      feature.kind === 'functionCurve' ? { ...feature, definition: profileDefinition(constant) }
+        : replacements.find(line => line.id === feature.id) ?? feature) })) };
+  }
+  class SurfacePort implements MathWorkerPort {
+    onmessage: MathWorkerPort['onmessage'] = null;
+    onerror: MathWorkerPort['onerror'] = null;
+    onmessageerror: MathWorkerPort['onmessageerror'] = null;
+    postMessage(input: unknown): void {
+      queueMicrotask(() => this.onmessage?.({ data: executeFunctionSurfaceWorkRequest(input, backend) }));
+    }
+    terminate(): void { this.onmessage = null; }
+  }
+  function options(document: PartDocument, revision: number, surfaces: FunctionSurfaceWorkerClient): PartRecomputeOptions {
+    return { generation: revision, math: { identity: { documentId: document.id, documentVersion: revision }, isCurrent: () => true,
+      client: { evaluate: request => Promise.resolve({ status: 'result', identity: request.identity,
+        result: decodeMathWorkReply(executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request }, backend), request,
+          { operationsById: CANDIDATE_MATH_BY_ID, coefficientIds: new Set(request.coefficients.map(item => item.id)),
+            declaredIds: new Set() }).result }) } }, functions: {
+      curves: { evaluate: request => Promise.resolve({ status: 'result', identity: request.identity,
+        result: executeFunctionCurveWorkRequest({ kind: 'sample-function-curve', serial: 1, request }, backend).result }) }, surfaces } };
+  }
+  // Match the application cache lifetime; reopened native sessions always start with an empty plan cache.
+  const surfacePlans = new WeakMap<NativeCutFixture, FunctionSurfacePlanCache>();
+  async function compute(document: PartDocument, fixture: NativeCutFixture, revision: number, surfaces: FunctionSurfaceWorkerClient) {
+    const started = performance.now();
+    let plans = surfacePlans.get(fixture);
+    if (plans === undefined) { plans = new FunctionSurfacePlanCache(); surfacePlans.set(fixture, plans); }
+    const evaluated = options(document, revision, surfaces);
+    if (evaluated.functions === undefined) throw new Error('Missing formula evaluators');
+    let resolved: ResolvedPart | undefined;
+    const result = await recomputePart(document, fixture.bridge, { ...evaluated,
+      functions: { ...evaluated.functions, surfacePlans: plans }, partId: document.id,
+      onResolved: current => { resolved = current; } });
+    // The authored finite blade remains a shell. Only cut solids enter volume/topology assertions.
+    stdout.write(`EX-04.03 timing compute revision=${revision} features=${document.solids.length}: ${performance.now() - started}ms${String.fromCharCode(10)}`);
+    const bodies = result.bodies.filter(body => body.bodyKind === 'solid');
+    return { ...result, bodies, allBodies: result.bodies, keys: resolved?.steps.map(step => [step.featureId, step.key]) ?? [],
+      inspect: (points: readonly CutPoint[]) => Promise.all(bodies.map(body => {
+        const step = resolved?.steps.find(candidate => candidate.featureId === body.featureId);
+        if (step === undefined) throw new Error(`Missing formula shape ${body.featureId}`);
+        return inspectNativeCutShape(fixture.inspectShape(step.key).readBrepBytes(), points);
+      })) };
+  }
+  function pointsFor(kind: 'surface' | 'profile', constant: number): readonly CutPoint[] {
+    return kind === 'surface'
+      ? [[2, 3, constant + 0.06], [8, 7, constant + 0.56], [2, 3, constant - 0.44], [8, 7, constant + 0.06],
+        [2, 3, constant + 0.56], [8, 7, constant + 1.06], [11, 5, 5], [5, 5, 11]]
+      // An exact closing wall and the analytic endpoint are ON; no approximate curve midpoint is claimed exact.
+      : [[10, 2, 5], [10, 10 + constant, 7], [5, 1, 2], [8, 2, 8], [5, 10, 5], [20, 15, 3], [-1, 2, 5], [5, 5, 11]];
+  }
+  async function check(result: Awaited<ReturnType<typeof compute>>, kind: 'surface' | 'profile', constant: number,
+    inside: readonly boolean[], label: string) {
+    expect(result.errors, label).toEqual([]); expect(result.cancelled, label).toBe(false);
+    expect(result.bodies, label).toHaveLength(inside.length);
+    const started = performance.now();
+    const points = pointsFor(kind, constant), measurements = await result.inspect(points);
+    stdout.write(`EX-04.03 timing inspect ${label}: ${performance.now() - started}ms${String.fromCharCode(10)}`);
+    const total = kind === 'surface' ? 1000 : 12000;
+    const core = kind === 'surface' ? 100 * constant + 25 : 10 * (100 / 3 + 10 * constant);
+    measurements.forEach((measurement, index) => {
+      const low = inside[index], body = result.bodies[index], expected = low ? core : total - core;
+      expect(measurement.states, label).toEqual(['ON', 'ON', low ? 'IN' : 'OUT', low ? 'IN' : 'OUT',
+        low ? 'OUT' : 'IN', low ? 'OUT' : 'IN', 'OUT', 'OUT']);
+      expect(body.isValid, label).toBe(true); expect(body.bodyKind, label).toBe('solid');
+      expect(body.volume, label).toBeGreaterThan(0); expect(measurement.valid, label).toBe(true);
+      expect(measurement.signedVolume, label).toBeGreaterThan(0); expect(measurement.topology.solids, label).toBe(1);
+      expect([measurement.topology.faces, measurement.topology.edges, measurement.topology.vertices], label)
+        .toEqual([body.faces.length, body.edges.length, body.vertices.length]);
+      expect(Number.isFinite(measurement.integrationError), label).toBe(true);
+      expect(measurement.integrationError, label).toBeGreaterThanOrEqual(0);
+      expect(measurement.integrationError, label).toBeLessThanOrEqual(1e-12);
+      w3ExpectRelative(measurement.signedVolume, body.volume, `${label} native/body`);
+      if (kind === 'surface') {
+        w3ExpectRelative(body.volume, expected, label); w3ExpectRelative(measurement.signedVolume, expected, label);
+      } else {
+        // Preserve the existing formula-profile acceptance; this is not an analytic relative 1e-9 assertion.
+        expect(Math.abs(body.volume - expected), label).toBeLessThan(0.1);
+        expect(Math.abs(measurement.signedVolume - expected), label).toBeLessThan(0.1);
+      }
+    });
+    if (inside.length === 2) w3ExpectRelative(result.bodies.reduce((sum, body) => sum + body.volume, 0), total, `${label} sum`);
+    stdout.write(`EX-04.03 formula ${label}: ${JSON.stringify({ kind, constant, points, measurements,
+      analyticCore: core, analyticAcceptance: kind === 'surface' ? { relative: 1e-9 } : { absoluteMm3: 0.1 },
+      // A radius-delta tube of the analytic arc: H*(2*L*delta+pi*delta^2), L<=10*sqrt(5).
+      // This conservative bound is separate from the stricter existing empirical 0.1 mm3 guard.
+      profileGeometricBudgetMm3: kind === 'profile' ? 10 * (2 * 10 * Math.sqrt(5) * 0.001 + Math.PI * 0.001 ** 2) : 0 })}${String.fromCharCode(10)}`);
+    return measurements;
+  }
+
+  it('数式面の複数刃・混合選択・古い評価・抑制・無効bodyを文書不変で断る', async () => {
+    const fixture = await createInspectableNativeKernelForNodeTests(), surfaces = new FunctionSurfaceWorkerClient({ createWorker: () => new SurfacePort() });
+    const document = documentFor('surface', 2);
+    try {
+      const baseline = await compute(document, fixture, 1, surfaces);
+      expect(baseline.errors).toEqual([]);
+      const blade = document.solids.find(feature => feature.kind === 'functionSurface');
+      if (blade === undefined) throw new Error('Missing formula blade');
+      const context: CutContext = { document, bodies: subShapeBodiesOf(baseline.allBodies), selection: [W3_BOX, blade.id],
+        resolvedSketches: { document, sketches: baseline.sketches } };
+      expect(cutTargetOf(context)).toBe(W3_BOX);
+      expect(cutToolReadiness(context)).toEqual({ ready: true, reasonKey: null });
+      const duplicate = appendSolid(document, { ...blade, id: 'second-formula-blade' });
+      const cases: readonly (readonly [CutContext, string])[] = [
+        [{ ...context, selection: [W3_BOX, blade.id, blade.id] }, 'cutError.bladeSelectionAmbiguous'],
+        [{ ...context, document: duplicate, selection: [W3_BOX, blade.id, 'second-formula-blade'] }, 'cutError.bladeSelectionAmbiguous'],
+        [{ ...context, selection: [W3_BOX, blade.id, 'formula-face'] }, 'cutError.bladeSelectionAmbiguous'],
+        [{ ...context, resolvedSketches: undefined }, 'cutError.bladeNotCurrent'],
+        [{ ...context, document: editFormula(document, 'surface', 3) }, 'cutError.bladeNotCurrent'],
+        [{ ...context, document: { ...document, solids: document.solids.map(feature => feature.id === blade.id
+          ? { ...feature, suppressed: true } : feature) } }, 'cutError.bladeNotCurrent'],
+        [{ ...context, bodies: context.bodies.map(body => body.featureId === blade.id ? { ...body, isValid: false } : body) }, 'cutError.bladeNotCurrent'],
+        [{ ...context, bodies: context.bodies.filter(body => body.featureId !== blade.id) }, 'cutError.bladeNotCurrent'],
+      ];
+      for (const [current, reasonKey] of cases) {
+        const before = serializeDocument(current.document, { savedAt: W3_SAVED_AT });
+        expect(commitCutInput(current, cutCommit(PROFILE_COMMIT))).toEqual({ ok: false, reasonKey });
+        expect(serializeDocument(current.document, { savedAt: W3_SAVED_AT })).toBe(before);
+      }
+    } finally { surfaces.dispose(); fixture.dispose(); }
+  }, 60_000);
+
+  function geometryOf(bodies: readonly SolidBody[]) {
+    return bodies.map(body => ({ featureId: body.featureId, volume: body.volume, bodyKind: body.bodyKind,
+      isValid: body.isValid, coordinateFrame: body.coordinateFrame,
+      positions: Array.from(body.mesh.positions), normals: Array.from(body.mesh.normals),
+      indices: Array.from(body.mesh.indices), edgePositions: Array.from(body.mesh.edgePositions),
+      triangleCount: body.mesh.triangleCount, faces: body.faces, edges: body.edges, vertices: body.vertices }));
+  }
+  async function settledAfter(generation: number) {
+    await vi.waitFor(() => {
+      const state = useAppStore.getState();
+      expect(state.requestedGeneration).toBeGreaterThan(generation);
+      expect(state.isComputing).toBe(false); expect(state.lastOutcome).toBe('success');
+      expect(state.completedGeneration).toBe(state.requestedGeneration);
+    }, { timeout: 60_000 });
+  }
+
+  it.each([
+    { outcome: 'success', keepBoth: false }, { outcome: 'success', keepBoth: true },
+    { outcome: 'cancelled', keepBoth: true }, { outcome: 'incomplete-cut', keepBoth: true },
+  ] as const)('数式面の公開確定 $outcome (both=$keepBoth): 実形状Undo/Redo・取消/途中停止は履歴不変', async ({ outcome, keepBoth }) => {
+    resetTestStore();
+    const fixture = await createInspectableNativeKernelForNodeTests(), surfaces = new FunctionSurfaceWorkerClient({ createWorker: () => new SurfacePort() });
+    const full = documentFor('surface', 2);
+    const document = outcome !== 'incomplete-cut' ? full : { ...full, solids: full.solids.map(feature => feature.kind === 'functionSurface'
+      ? { ...feature, definition: { ...feature.definition, bounds: { ...feature.definition.bounds,
+        X: { min: value(-1), max: value(5) } } } } : feature) };
+    let release: (() => void) | undefined, started = false, finished = false;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    useAppStore.getState().applyDocument(document);
+    const detach = attachPartRecompute(async (current, attached) => {
+      if (outcome === 'cancelled' && current.solids.some(feature => feature.kind === 'surfaceCut')) {
+        started = true; await barrier;
+      }
+      try {
+        return await recomputePart(current, fixture.bridge, { ...options(current, attached.generation ?? 1, surfaces), ...attached });
+      } finally { if (started) finished = true; }
+    });
+    try {
+      await vi.waitFor(() => {
+        const state = useAppStore.getState();
+        expect(state.isComputing).toBe(false); expect(state.lastOutcome).toBe('success');
+        expect(state.completedGeneration).toBe(state.requestedGeneration);
+      }, { timeout: 60_000 });
+      const blade = document.solids.find(feature => feature.kind === 'functionSurface');
+      if (blade === undefined) throw new Error('Missing formula blade');
+      useAppStore.getState().setSelection([W3_BOX, blade.id]);
+      const baseInput = chooseNumericInput(createNumericInput('cut', 'cutPlane'), 'cutPlaneKind', PROFILE_CUT_KIND);
+      const input = keepBoth ? toggleNumericInput(baseInput, 'cutKeepBoth') : baseInput;
+      useAppStore.getState().updateNumericInput(input);
+      const before = useAppStore.getState(), saved = serializeDocument(document, { savedAt: W3_SAVED_AT });
+      const geometry = geometryOf(before.bodies);
+      expect(applySolidCommit(cutCommit({ ...PROFILE_COMMIT, flags: { cutKeepBoth: keepBoth } }))).toBe(false);
+      expect(useAppStore.getState().document).toBe(document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      if (outcome === 'cancelled') {
+        await vi.waitUntil(() => started, { timeout: 60_000 });
+        useAppStore.getState().cancelRecompute(); release?.();
+        await vi.waitUntil(() => finished, { timeout: 60_000 });
+        expect(useAppStore.getState().stagedSolid?.status).not.toBe('pending');
+      } else if (outcome === 'incomplete-cut') {
+        await vi.waitFor(() => { expect(useAppStore.getState().stagedSolid?.status).toBe('failed'); }, { timeout: 60_000 });
+        const failed = useAppStore.getState().stagedSolid;
+        expect(failed?.status).toBe('failed');
+        expect(failed?.errors).toEqual(expect.arrayContaining([
+          expect.objectContaining({ code: 'kernelFailed', reason: 'incomplete-cut' })]));
+      } else {
+        await vi.waitFor(() => { expect(useAppStore.getState().numericInput).toBeNull(); }, { timeout: 60_000 });
+        const state = useAppStore.getState(), after = state.document;
+        expect(state.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+        expect(after.solids.slice(document.solids.length)).toEqual([
+          expect.objectContaining({ kind: 'surfaceCut', targetFeatureId: W3_BOX,
+            blade: { kind: 'surface', surfaceFeatureId: blade.id }, keep: 'positive', pairedWith: null }),
+          expect.objectContaining({ kind: 'surfaceCut', targetFeatureId: W3_BOX,
+            blade: { kind: 'surface', surfaceFeatureId: blade.id }, keep: 'negative', pairedWith: after.solids[document.solids.length].id }),
+        ].slice(0, keepBoth ? 2 : 1));
+        expect(state.undoStack.present).toBe(after); expect(state.undoStack.future).toEqual([]);
+        const afterGeometry = geometryOf(state.bodies), afterIds = state.bodies.map(body => body.featureId);
+        const result = await compute(after, fixture, 2, surfaces);
+        await check(result, 'surface', 2, keepBoth ? [false, true] : [false], 'public stage');
+        const beforeUndoGeneration = useAppStore.getState().requestedGeneration;
+        state.undo();
+        await settledAfter(beforeUndoGeneration);
+        const undone = useAppStore.getState();
+        expect(undone.document).toBe(document); expect(undone.undoStack.present).toBe(document);
+        expect(undone.undoStack.past).toEqual(before.undoStack.past);
+        expect(undone.undoStack.future).toEqual([after]);
+        expect(undone.bodies.map(body => body.featureId)).toEqual(before.bodies.map(body => body.featureId));
+        expect(geometryOf(undone.bodies)).toEqual(geometry);
+        const beforeRedoGeneration = undone.requestedGeneration;
+        undone.redo();
+        await settledAfter(beforeRedoGeneration);
+        const redone = useAppStore.getState();
+        expect(redone.document).toBe(after); expect(redone.undoStack.present).toBe(after);
+        expect(redone.undoStack.past).toEqual(state.undoStack.past); expect(redone.undoStack.future).toEqual([]);
+        expect(redone.bodies.map(body => body.featureId)).toEqual(afterIds);
+        expect(geometryOf(redone.bodies)).toEqual(afterGeometry);
+        const redoneVolumes = redone.bodies.filter(body => body.bodyKind === 'solid').map(body => body.volume);
+        expect(redoneVolumes).toHaveLength(keepBoth ? 2 : 1);
+        redoneVolumes.forEach((volume, index) => { expect(volume).toBeCloseTo([775, 225][index], 8); });
+      }
+      if (outcome !== 'success') {
+        const state = useAppStore.getState();
+        expect(state.document).toBe(document); expect(state.undoStack).toBe(before.undoStack);
+        expect(state.numericInput).toBe(input); expect(state.selection).toEqual(before.selection);
+        expect(geometryOf(state.bodies)).toEqual(geometry);
+      }
+      expect(serializeDocument(document, { savedAt: W3_SAVED_AT })).toBe(saved);
+    } finally {
+      detach(); release?.();
+      if (started && !finished) await vi.waitUntil(() => finished, { timeout: 60_000 });
+      surfaces.dispose(); fixture.dispose();
+    }
+  }, 90_000);
+
+  it.each(['surface', 'profile'] as const)('%s: 両側/片側・式編集・独立分類とJSON/PCAD別セッション再開', async kind => {
+    const fixture = await createInspectableNativeKernelForNodeTests(), surfaces = new FunctionSurfaceWorkerClient({ createWorker: () => new SurfacePort() });
+    const constant = kind === 'surface' ? 2 : 1, document = documentFor(kind, constant);
+    try {
+      const baseline = await compute(document, fixture, 1, surfaces);
+      expect(baseline.errors).toEqual([]);
+      const bladeId = kind === 'surface' ? document.solids.find(feature => feature.kind === 'functionSurface')?.id : 'formula-face';
+      if (bladeId === undefined) throw new Error('Missing formula blade');
+      const context: CutContext = { document, bodies: subShapeBodiesOf(baseline.allBodies), selection: [W3_BOX, bladeId],
+        resolvedSketches: { document, sketches: baseline.sketches } };
+      for (const mode of ['both', 'outside', 'inside'] as const) {
+        const kept = mode === 'both' ? [false, true] : [mode === 'inside'];
+        const outcome = commitCutInput(context, cutCommit({ ...PROFILE_COMMIT,
+          flags: { cutKeepBoth: mode === 'both', cutKeepOpposite: mode === 'inside' } }));
+        if (!outcome.ok) throw new Error(outcome.reasonKey);
+        const authored = outcome.document;
+        let originalKeys: readonly (readonly string[])[] | undefined;
+        for (const revision of [1, 2]) {
+          const current = revision === 1 ? authored : editFormula(authored, kind, constant + 1);
+          const currentConstant = constant + revision - 1, label = `${kind}/${mode}/revision=${revision}`;
+          const result = await compute(current, fixture, revision, surfaces);
+          const cutIds = current.solids.filter(feature => feature.kind === 'surfaceCut' || feature.kind === 'boolean').map(feature => feature.id);
+          expect(result.bodies.map(body => body.featureId), label).toEqual(cutIds);
+          const keys = result.keys.filter(entry => cutIds.includes(entry[0]));
+          if (revision === 1) originalKeys = keys;
+          else { expect(current.solids.filter(feature => feature.kind === 'surfaceCut' || feature.kind === 'boolean'))
+            .toEqual(authored.solids.filter(feature => feature.kind === 'surfaceCut' || feature.kind === 'boolean'));
+            expect(keys, label).not.toEqual(originalKeys); }
+          const measurements = await check(result, kind, currentConstant, kept, label);
+          if (mode !== 'both') continue;
+          const json = parseDocument(serializeDocument(current, { savedAt: W3_SAVED_AT }));
+          const pcad = readPcadFile(writePcadFile(current, { savedAt: W3_SAVED_AT }));
+          if (!json.ok || !pcad.ok) throw new Error('Formula save did not reopen');
+          for (const [format, reopened] of [['JSON', json.document], ['PCAD', pcad.document]] as const) {
+            expect(reopened.sketches).toEqual(current.sketches); expect(reopened.solids).toEqual(current.solids);
+            const session = await createInspectableNativeKernelForNodeTests();
+            try {
+              const restored = await compute(reopened, session, revision, surfaces);
+              expect(restored.keys, format).toEqual(result.keys);
+              const after = await check(restored, kind, currentConstant, kept, `${label}/${format}`);
+              after.forEach((measurement, index) => {
+                expect(measurement.topology, format).toEqual(measurements[index].topology);
+                expect(measurement.states, format).toEqual(measurements[index].states);
+                w3ExpectRelative(measurement.signedVolume, measurements[index].signedVolume, `${label}/${format} signed`);
+              });
+            } finally { session.dispose(); }
+          }
+        }
+      }
+    } finally { surfaces.dispose(); fixture.dispose(); }
+  // Baseline1 + both/revision2 + JSON2 + PCAD2 + outside2 + inside2: eleven unchanged serial passes.
+  }, 11 * CUT_WORKFLOW_STEP_TIMEOUT_MS);
 });

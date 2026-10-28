@@ -1,0 +1,285 @@
+{
+  "schema": "pointercad-native-bolt-preload-plan/1",
+  "boltPlan": {
+    "schema": "pointercad-bolt-contact-plan/1",
+    "contact": {
+      "schema": "pointercad-oofem-contact-plan/1",
+      "nodes": [
+        {
+          "number": 1,
+          "positionM": [
+            0,
+            0,
+            0
+          ],
+          "restrained": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "load": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 2,
+          "positionM": [
+            0.05,
+            0,
+            0
+          ],
+          "restrained": [
+            false,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "load": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 3,
+          "positionM": [
+            0.05,
+            0,
+            0
+          ],
+          "restrained": [
+            false,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "load": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 4,
+          "positionM": [
+            0.1,
+            0,
+            0
+          ],
+          "restrained": [
+            false,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "load": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "materials": [
+        {
+          "number": 1,
+          "youngPa": 200000000000.0,
+          "poisson": 0.3,
+          "densityKgM3": 7850
+        }
+      ],
+      "sections": [
+        {
+          "number": 1,
+          "areaM2": 0.0002,
+          "iyM4": 1.666666666666667e-09,
+          "izM4": 6.666666666666668e-09,
+          "torsionM4": 4.5e-09,
+          "shearFactor": 0.8333333333333334
+        }
+      ],
+      "members": [
+        {
+          "number": 1,
+          "nodes": [
+            1,
+            2
+          ],
+          "material": 1,
+          "section": 1,
+          "frame": {
+            "x": [
+              1,
+              0,
+              0
+            ],
+            "y": [
+              0,
+              1,
+              0
+            ],
+            "z": [
+              0,
+              0,
+              1
+            ],
+            "lengthM": 0.05
+          }
+        },
+        {
+          "number": 2,
+          "nodes": [
+            3,
+            4
+          ],
+          "material": 1,
+          "section": 1,
+          "frame": {
+            "x": [
+              1,
+              0,
+              0
+            ],
+            "y": [
+              0,
+              1,
+              0
+            ],
+            "z": [
+              0,
+              0,
+              1
+            ],
+            "lengthM": 0.05
+          }
+        }
+      ],
+      "originalNodeCount": 4,
+      "contacts": [
+        {
+          "id": "interface",
+          "kind": "node-pair",
+          "nodeA": 2,
+          "nodeB": 3,
+          "normal": [
+            1,
+            0,
+            0
+          ],
+          "gapM": 0
+        }
+      ],
+      "loadFactors": [
+        0,
+        1000,
+        4999,
+        5000,
+        5001,
+        0
+      ]
+    },
+    "bolts": [
+      {
+        "id": "bolt",
+        "nodeA": 1,
+        "nodeB": 4,
+        "youngPa": 200000000000.0,
+        "areaM2": 0.0001
+      }
+    ]
+  },
+  "shorteningM": 5e-05,
+  "declaration": {
+    "boltId": "bolt",
+    "model": "coaxial-outer-planes-series-bearing",
+    "modelSource": {
+      "kind": "user-supplied",
+      "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+      "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+    },
+    "shankSource": {
+      "kind": "user-supplied",
+      "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+      "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+    },
+    "shorteningSource": {
+      "kind": "user-supplied",
+      "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+      "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+    },
+    "preloadN": {
+      "value": 4000,
+      "source": {
+        "kind": "user-supplied",
+        "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+        "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+      }
+    },
+    "threadCompliance": {
+      "value": 2e-09,
+      "source": {
+        "kind": "user-supplied",
+        "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+        "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+      }
+    },
+    "headCompliance": {
+      "value": 1e-09,
+      "source": {
+        "kind": "user-supplied",
+        "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+        "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+      }
+    },
+    "bearingCompliance": {
+      "value": 2e-09,
+      "source": {
+        "kind": "user-supplied",
+        "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+        "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+      }
+    },
+    "memberCompliance": {
+      "value": 2.5e-09,
+      "source": {
+        "kind": "user-supplied",
+        "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+        "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+      }
+    },
+    "externalLoadsN": [
+      1000,
+      4999,
+      5000,
+      5001,
+      0
+    ],
+    "loadSource": {
+      "kind": "user-supplied",
+      "reference": "Independent two-collinear-member synthetic oracle; E=200 GPa, A=200 mm2, L=50 mm each",
+      "condition": "Linear elastic axial only; disjoint member and bolt series compliances"
+    }
+  }
+}

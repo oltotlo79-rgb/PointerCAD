@@ -3,7 +3,7 @@ import { launchDesktop } from './electronAppFlow.js';
 import { sketchConnected1000Flow } from './sketchConnected1000Flow.js';
 
 /** The same fixed 1000-point sketch and drag in the desktop app (files through the app's own open/save targets). */
-test('EX-13 W01 the fixed connected 1000-point sketch is opened and one dragged point is committed in the desktop app', async ({ playwright }, info) => {
+test('EX-13 W01 the fixed connected 1000-point sketch is opened and one dragged point is committed in the desktop app after an unfinished Escape cancels without document or history change', async ({ playwright }, info) => {
   const { app } = await launchDesktop(playwright, info);
   try {
     const page = await app.firstWindow();

@@ -12,6 +12,8 @@ import type { Camera, Scene } from 'three';
 import * as THREE from 'three';
 import { describe, expect, it, vi } from 'vitest';
 
+import { cylinderBasisGuide } from './cylinderBasisGuide.js';
+import { planarBasisGuide } from './planarBasisGuide.js';
 import { HOME_ORBIT } from './cameraMath.js';
 import * as thumbnail from '../file/thumbnail.js';
 import type { AppearanceInput } from './buildSolidGeometry.js';
@@ -40,8 +42,10 @@ function createViewportScene(canvas: HTMLCanvasElement, options: ViewportSceneOp
 }
 
 const boundary = vi.hoisted((): { overlayFailure: boolean; solidBuildCalls: number;
-  beforeBuild: (() => void) | null; afterLayerUpdate: (() => void) | null } => ({
+  beforeBuild: (() => void) | null; afterLayerUpdate: (() => void) | null;
+  environmentBuilds: number; environmentRenderFailure: boolean; afterEnvironmentCreate: (() => void) | null } => ({
   overlayFailure: false, solidBuildCalls: 0, beforeBuild: null, afterLayerUpdate: null,
+  environmentBuilds: 0, environmentRenderFailure: false, afterEnvironmentCreate: null,
 }));
 vi.mock('./buildSolidGeometry.js', async importOriginal => {
   const actual = await importOriginal<typeof import('./buildSolidGeometry.js')>();
@@ -151,8 +155,22 @@ vi.mock('three', async (importOriginal) => {
     },
     WebGLRenderer: class {
       readonly state = { renderCalls: 0, disposeCalls: 0, renderedScene: null as Scene | null,
-        modelViewTranslations: [] as number[][], disposeFailure: false };
+        modelViewTranslations: [] as number[][], disposeFailure: false,
+        buffers: { depth: { getReversed: () => false } } };
       private pixelRatio = 1;
+      private target: THREE.WebGLRenderTarget | null = null;
+      private face = 0;
+      private mip = 0;
+      xr = { enabled: false };
+      autoClear = true;
+      toneMapping = actual.NoToneMapping;
+      getRenderTarget() { return this.target; }
+      getActiveCubeFace() { return this.face; }
+      getActiveMipmapLevel() { return this.mip; }
+      getClearColor(color: THREE.Color) { return color.set(0); }
+      setRenderTarget(target: THREE.WebGLRenderTarget | null, face = 0, mip = 0) {
+        this.target = target; this.face = face; this.mip = mip;
+      }
 
       constructor() { this.state.disposeFailure = lifecycle.initializationCleanupFailure; lifecycle.instances.push(this.state); }
       setPixelRatio(ratio: number): void { this.pixelRatio = ratio; }
@@ -163,6 +181,10 @@ vi.mock('three', async (importOriginal) => {
       setViewport(): void { /* Single-pane rendering in this test. */ }
       setScissor(): void { /* Single-pane rendering in this test. */ }
       render(scene: Scene, camera: Camera): void {
+        if (this.target !== null) {
+          if (boundary.environmentRenderFailure) throw new Error('Environment render failed');
+          return; // Real PMREM objects; no GPU measurement is simulated.
+        }
         this.state.renderCalls += 1;
         this.state.renderedScene = scene;
         scene.updateMatrixWorld(true);
@@ -188,6 +210,11 @@ vi.mock('./createEnvironment.js', async importOriginal => {
   return { ...actual, createEnvironmentStore: (...args: Parameters<typeof actual.createEnvironmentStore>) => {
     if (lifecycle.lateInitializationFailure) throw new Error('Environment acquisition after initial grid failed');
     return actual.createEnvironmentStore(...args);
+  }, createEnvironmentTarget: (...args: Parameters<typeof actual.createEnvironmentTarget>) => {
+    boundary.environmentBuilds++;
+    const target = actual.createEnvironmentTarget(...args);
+    boundary.afterEnvironmentCreate?.();
+    return target;
   } };
 });
 
@@ -949,27 +976,153 @@ describe('createViewportScene の描画・解放寿命(R07)', () => {
     } finally { viewport.dispose(); }
   });
 
-  it('refuses a local display that needs an environment map with no known reservation; world keeps it', () => {
+  it('reserves a local environment, reuses it across appearances and releases it when no longer needed', () => {
     const orbit = { ...HOME_ORBIT, target: [0.25, 0.25, 0] as const, distance: 20 };
     const mirror = (id: string): AppearanceInput => ({ defaultAppearance: DEFAULT_APPEARANCE,
       byBody: new Map([[id, { bodyAppearance: appearanceFromPreset('mirror'), faceAppearances: new Map() }]]) });
-    const local = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement);
+    const pool = createGpuMeshBudget(20000000);
+    const local = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement, pool);
+    boundary.environmentBuilds = 0;
     try {
       local.adopt([localFace(0)]);
       local.viewport.render(orbit, 'perspective', 'shadedWithEdges', false, 100);
-      expect(() => local.viewport.setAppearance(mirror('face'))).toThrow(/environment map/);
+      expect(boundary.environmentBuilds).toBe(0);
+      expect(() => local.viewport.setAppearance(mirror('face'))).not.toThrow();
       expect(local.viewport.pickFaceAt(320, 240)).toEqual({ featureId: 'face', faceIndex: 0 });
       expect(local.viewport.meshReservation()).toMatchObject({ displayCopyBytes: 24, gpuMeshBytes: 132 });
+      expect(local.viewport.meshReservation().environmentReservedBytes).toBe(9437184);
+      expect(pool.reservedBytes()).toBe(132);
+      local.viewport.setAppearance(mirror('face'));
+      local.viewport.renderQuad(createQuadCameraState(orbit), 'perspective', 'shadedWithEdges', false, 100);
+      expect(boundary.environmentBuilds).toBe(1);
+      local.viewport.setAppearance({ defaultAppearance: DEFAULT_APPEARANCE, byBody: new Map() });
+      expect(pool.environmentReservedBytes()).toBe(0);
+      expect(pool.reservedBytes()).toBe(132);
     } finally { local.viewport.dispose(); }
     const world = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement);
     try {
       world.adopt([{ ...localFace(0), coordinateFrame: undefined }]);
-      // A world display goes on to create its environment map (this test renderer has no PMREM
-      // support and may fail there); it is never refused by the local reservation rule.
-      let thrown: unknown;
-      try { world.viewport.setAppearance(mirror('face')); } catch (error) { thrown = error; }
-      expect(String(thrown)).not.toMatch(/GPU reservation is unknown/);
+      expect(() => world.viewport.setAppearance(mirror('face'))).not.toThrow();
+      expect(world.viewport.meshReservation().environmentReservedBytes).toBe(9437184);
     } finally { world.viewport.dispose(); }
+  });
+
+  it('keeps existing pickable geometry and other owners on environment budget refusal or generation failure', () => {
+    for (const failure of ['budget', 'generation'] as const) {
+      const pool = createGpuMeshBudget(failure === 'budget' ? 15740016 : 20000000), other = Symbol('other');
+      pool.reserve(other, 24);
+      const local = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement, pool);
+      const orbit = { ...HOME_ORBIT, target: [0.25, 0.25, 0] as const, distance: 20 };
+      try {
+        local.adopt([localFace(0)]);
+        local.viewport.render(orbit, 'perspective', 'shadedWithEdges', false, 100);
+        const before = local.viewport.meshReservation();
+        boundary.environmentRenderFailure = failure === 'generation';
+        expect(() => local.viewport.setAppearance({ defaultAppearance: appearanceFromPreset('mirror'), byBody: new Map() }))
+          .toThrow(failure === 'budget' ? /shared GPU budget/ : /Environment render failed/);
+        expect(local.viewport.meshReservation()).toEqual(before);
+        expect(local.viewport.pickFaceAt(320, 240)).toEqual({ featureId: 'face', faceIndex: 0 });
+        expect(pool.reservedBytes(other)).toBe(24); expect(pool.environmentReservedBytes()).toBe(0);
+      } finally { boundary.environmentRenderFailure = false; local.viewport.dispose(); }
+      expect(pool.totalReservedBytes()).toBe(24);
+    }
+  });
+
+  it.each([15740147, 15740148])('checks the mesh plus environment peak at the exact shared boundary %i', limit => {
+    const pool = createGpuMeshBudget(limit), local = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement, pool);
+    boundary.environmentBuilds = 0;
+    try {
+      local.adopt([localFace(0)]);
+      expect(pool.reservedBytes()).toBe(132);
+      const change = () => local.viewport.setAppearance({ defaultAppearance: appearanceFromPreset('mirror'), byBody: new Map() });
+      if (limit === 15740147) {
+        expect(change).toThrow(/shared GPU budget/); expect(boundary.environmentBuilds).toBe(0);
+        expect(pool.totalReservedBytes()).toBe(132);
+      } else {
+        expect(change).not.toThrow(); expect(boundary.environmentBuilds).toBe(1);
+        expect(pool.totalReservedBytes()).toBe(9437184 + 132);
+      }
+    } finally { local.viewport.dispose(); }
+    expect(pool.totalReservedBytes()).toBe(0);
+  });
+
+  it('keeps the old environment and drawing when a later candidate layer fails', () => {
+    const pool = createGpuMeshBudget(20000000), local = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement, pool);
+    const orbit = { ...HOME_ORBIT, target: [0.25, 0.25, 0] as const, distance: 20 };
+    try {
+      local.adopt([localFace(0)]);
+      local.viewport.setAppearance({ defaultAppearance: appearanceFromPreset('mirror'), byBody: new Map() });
+      local.viewport.render(orbit, 'perspective', 'shadedWithEdges', false, 100);
+      const scene = lifecycle.instances.at(-1)?.renderedScene;
+      if (scene === null || scene === undefined) throw new Error('missing scene');
+      const texture = scene.environment, before = local.viewport.meshReservation();
+      boundary.afterLayerUpdate = () => { boundary.afterLayerUpdate = null; throw new Error('candidate layer failure'); };
+      expect(() => local.viewport.setAppearance({ defaultAppearance: DEFAULT_APPEARANCE, byBody: new Map() })).toThrow(/candidate layer failure/);
+      expect(scene.environment).toBe(texture); expect(texture).not.toBeNull();
+      expect(local.viewport.meshReservation()).toEqual(before);
+      expect(local.viewport.pickFaceAt(320, 240)).toEqual({ featureId: 'face', faceIndex: 0 });
+    } finally { boundary.afterLayerUpdate = null; local.viewport.dispose(); }
+  });
+
+  it('shares one map across solid and assembly materials and releases it when their last visible use disappears', () => {
+    const pool = createGpuMeshBudget(20000000);
+    const viewport = createViewportScene({ width: 640, height: 480 } as HTMLCanvasElement, { gpuMeshBudget: pool });
+    const body = worldAssemblyFace();
+    const bundle = { parts: [{ partKey: 'part', bodies: [body] }], instances: [
+      { componentId: 'glass', partKey: 'part', placement: IDENTITY_PLACEMENT, visible: true,
+        emphasis: 'none' as const, appearance: appearanceFromPreset('glass') },
+      { componentId: 'mirror', partKey: 'part', placement: IDENTITY_PLACEMENT, visible: true,
+        emphasis: 'none' as const, appearance: appearanceFromPreset('mirror') },
+    ] };
+    boundary.environmentBuilds = 0;
+    try {
+      viewport.setBodies([body]);
+      viewport.setAppearance({ defaultAppearance: appearanceFromPreset('mirror'), byBody: new Map() });
+      viewport.setAssembly(bundle);
+      viewport.setBodies([]);
+      expect(boundary.environmentBuilds).toBe(1); expect(pool.environmentReservedBytes()).toBe(9437184);
+      viewport.setAssembly({ ...bundle, instances: bundle.instances.map(instance => ({ ...instance, visible: false })) });
+      expect(pool.environmentReservedBytes()).toBe(0);
+    } finally { viewport.dispose(); }
+  });
+
+  it('retains failed environment output cleanup in the viewport lifetime and releases it on retry', () => {
+    const pool = createGpuMeshBudget(20000000), other = Symbol('other'); pool.reserve(other, 42);
+    const local = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement, pool);
+    local.adopt([localFace(0)]);
+    local.viewport.setAppearance({ defaultAppearance: appearanceFromPreset('mirror'), byBody: new Map() });
+    const spy = vi.spyOn(THREE.WebGLRenderTarget.prototype, 'dispose');
+    let fail = true;
+    spy.mockImplementation(function (this: THREE.WebGLRenderTarget) {
+      if (fail && this.depthBuffer && this.texture.mapping === THREE.CubeUVReflectionMapping) throw new Error('output cleanup');
+      THREE.RenderTarget.prototype.dispose.call(this);
+    });
+    try {
+      local.viewport.dispose();
+      expect(local.viewport.meshReservation().viewportCleanupStatus).toBe('pending');
+      expect(pool.environmentReservedBytes()).toBe(9437184); expect(pool.reservedBytes(other)).toBe(42);
+      fail = false; local.viewport.dispose(); local.viewport.dispose();
+      expect(local.viewport.meshReservation().viewportCleanupStatus).toBe('complete');
+      expect(pool.totalReservedBytes()).toBe(42);
+    } finally { spy.mockRestore(); local.viewport.dispose(); }
+  });
+
+  it('returns unpublished environments on generation changes and reentrant viewport disposal', () => {
+    for (const action of ['generation', 'dispose'] as const) {
+      const pool = createGpuMeshBudget(20000000), local = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement, pool);
+      try {
+        local.adopt([localFace(0)]);
+        boundary.afterEnvironmentCreate = () => {
+          if (action === 'dispose') local.viewport.dispose();
+          else local.replace({ ...local.read(), cancelRequestCount: local.read().cancelRequestCount + 1 });
+        };
+        const appearance = { defaultAppearance: appearanceFromPreset('mirror'), byBody: new Map() };
+        if (action === 'dispose') expect(() => local.viewport.setAppearance(appearance)).toThrow(/owner changed/);
+        else local.viewport.setAppearance(appearance);
+        expect(pool.environmentReservedBytes()).toBe(0);
+      } finally { boundary.afterEnvironmentCreate = null; local.viewport.dispose(); }
+      expect(pool.totalReservedBytes()).toBe(0);
+    }
   });
 
   it.each([1e9 + 1, -1e9 - 1])('draws a far sphere grid around its double center at x=%s', (x) => {
@@ -1842,5 +1995,234 @@ describe('solid analysis field overlay ownership', () => {
       expect(() => { viewport.setAnalysisField(field); }).not.toThrow();
       expect(materialDisposed).toHaveBeenCalledTimes(1);
     } finally { viewport.dispose(); }
+  });
+});
+
+describe('native cylinder basis display ownership', () => {
+  it('clears stale guide lines, admits a reselection, and disposes the reused renderer once', () => {
+    const base = localFace(0);
+    const body: SolidBody = { ...base, faces: [{ index: 0, surfaceKind: 'cylinder', area: 100 * Math.PI,
+      centroid: [0, 0, 5], axis: [0, 0, -1], radius: 5, triangleOffset: 0, triangleCount: 1,
+      cylinderBasis: { origin: [0, 0, 0], axis: [0, 0, 1], zeroDirection: [1, 0, 0], axialRange: [0, 10] } }] };
+    let state: AppState = stateWithBodies(useAppStore.getState(), [body]);
+    state = { ...state, selection: ['face#face:0'], isComputing: false, stagedSolid: null,
+      mathGeometryResult: { document: state.document, generation: 7, evaluated: true, outcomes: new Map() } };
+    const viewport = createViewportScene(mockRendererCanvas(640, 480), { readSolidMeshState: () => state });
+    const render = () => viewport.render(HOME_ORBIT, 'perspective', 'shadedWithEdges', false, 100);
+    try {
+      viewport.resize(640, 480); viewport.setBodies(state.bodies);
+      const guide = cylinderBasisGuide(state, '0°');
+      expect(guide).not.toBeNull(); viewport.setCylinderBasisGuide(guide); render();
+      const group = lifecycle.instances.at(-1)?.renderedScene?.getObjectByName('cylinder-basis-guide');
+      if (!(group instanceof THREE.Group)) throw new Error('Missing basis group');
+      const line = group.children.find(object => object instanceof THREE.LineSegments);
+      if (!(line instanceof THREE.LineSegments)) throw new Error('Missing guide line');
+      const lineGeometry: unknown = line.geometry;
+      if (!(lineGeometry instanceof THREE.BufferGeometry)) throw new Error('Missing typed guide geometry');
+      expect(group.visible).toBe(true); expect(line.visible).toBe(true); expect(lineGeometry.drawRange.count).toBe(2);
+      const positionAttribute: unknown = lineGeometry.getAttribute('position');
+      if (!(positionAttribute instanceof THREE.BufferAttribute)) throw new Error('Missing typed guide position attribute');
+      expect(Array.from(positionAttribute.array).slice(0, 6)).toEqual([0, 0, 5, 5, 0, 5]);
+      const resources = new Set<{ dispose(): void }>();
+      group.traverse(object => {
+        if (object instanceof THREE.Line || object instanceof THREE.Points) {
+          const geometry: unknown = object.geometry;
+          if (!(geometry instanceof THREE.BufferGeometry)) throw new Error('Missing guide resource geometry');
+          resources.add(geometry);
+        }
+        if (object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
+          const value: unknown = object.material;
+          for (const material of Array.isArray(value) ? value : [value]) {
+            if (!(material instanceof THREE.Material)) throw new Error('Missing guide resource material');
+            resources.add(material);
+          }
+        }
+      });
+      const disposed = [...resources].map(resource => vi.spyOn(resource, 'dispose'));
+      const document = state.document, undo = state.undoStack, redo = state.undoStack.future;
+      // Change selection without notifying the setter: the render boundary must independently clear old lines.
+      state = { ...state, selection: [] }; render();
+      expect(group.visible).toBe(false); expect(line.visible).toBe(false); expect(lineGeometry.drawRange.count).toBe(0);
+      state = { ...state, selection: ['face#face:0'] };
+      viewport.setCylinderBasisGuide(cylinderBasisGuide(state, '0°')); render();
+      expect(group.visible).toBe(true); expect(line.visible).toBe(true);
+      state = { ...state, meshJsAccounting: null }; render();
+      expect(group.visible).toBe(false); expect(lineGeometry.drawRange.count).toBe(0);
+      expect(state.document).toBe(document); expect(state.undoStack).toBe(undo); expect(state.undoStack.future).toBe(redo);
+      viewport.dispose(); viewport.dispose();
+      expect(disposed.length).toBeGreaterThan(3);
+      for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1);
+      viewport.setCylinderBasisGuide(guide); render();
+      for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1);
+    } finally { viewport.dispose(); }
+  });
+
+  it('returns all acquired resources if construction fails after acquiring the basis layer', () => {
+    lifecycle.geometries = []; lifecycle.recordGeometry = true;
+    const add = vi.spyOn(THREE.Scene.prototype, 'add').mockImplementation(function(this: THREE.Scene, ...objects: THREE.Object3D[]) {
+      if (objects.some(object => object.name === 'cylinder-basis-guide')) throw new Error('Basis scene attachment failed');
+      THREE.Object3D.prototype.add.call(this, ...objects);
+      return this;
+    });
+    try {
+      let failure: ViewportSceneInitializationFailure | null = null;
+      try { createViewportScene(mockRendererCanvas(640, 480)); }
+      catch (error) { if (error instanceof ViewportSceneInitializationFailure) failure = error; else throw error; }
+      if (failure === null) throw new Error('Expected basis constructor failure');
+      expect(failure.cleanup.pendingCount).toBe(0);
+      expect(lifecycle.geometries.length).toBeGreaterThan(6);
+      expect(lifecycle.geometries.every(entry => entry.attempts === 1 && entry.returned === 1)).toBe(true);
+      failure.cleanup.dispose();
+      expect(lifecycle.geometries.every(entry => entry.attempts === 1)).toBe(true);
+    } finally { add.mockRestore(); lifecycle.recordGeometry = false; }
+  });
+});
+
+describe('部品pickの実分岐を観測する', () => {
+  it.each(['owner', 'camera', 'empty', 'hit'] as const)('%sの判定を推測せず記録し文書を変えない', reason => {
+    const controlled = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement);
+    const fixture = assemblyFixture(controlled.read(), worldAssemblyFace());
+    controlled.replace(fixture.state);
+    const observation: import('./createViewportScene.js').AssemblyComponentPickObservation = {};
+    try {
+      controlled.viewport.setAssembly(fixture.bundle);
+      if (reason !== 'camera') controlled.viewport.render(
+        { ...HOME_ORBIT, target: [0.25, 0.25, 0], distance: 20 }, 'perspective', 'shadedWithEdges', false, 100);
+      if (reason === 'owner') controlled.replace({ ...fixture.state, requestedGeneration: fixture.state.requestedGeneration + 1 });
+      const before = controlled.read();
+      const hit = controlled.viewport.pickComponent(reason === 'empty' ? 0 : 320, reason === 'empty' ? 0 : 240, observation);
+      if (reason === 'owner') expect(observation).toEqual({ ownerAccepted: false });
+      if (reason === 'camera') expect(observation).toEqual({ ownerAccepted: true, cameraReady: false });
+      if (reason === 'empty') expect(observation).toEqual({ ownerAccepted: true, cameraReady: true, hitComponentId: null });
+      if (reason === 'hit') expect(observation).toEqual({ ownerAccepted: true, cameraReady: true, hitComponentId: 'component-1' });
+      expect(hit).toBe(reason === 'hit' ? 'component-1' : null);
+      expect(controlled.read().assembly).toBe(before.assembly);
+      expect(controlled.read().document).toBe(before.document);
+      expect(controlled.read().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { controlled.viewport.dispose(); }
+  });
+
+  it('実レイの例外を記録し同じ例外を呼出し側へ返す', () => {
+    const controlled = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement);
+    const fixture = assemblyFixture(controlled.read(), worldAssemblyFace());
+    controlled.replace(fixture.state);
+    const observation: import('./createViewportScene.js').AssemblyComponentPickObservation = {};
+    const failure = new Error('検査用レイ失敗');
+    let restore = (): void => {};
+    try {
+      controlled.viewport.setAssembly(fixture.bundle);
+      controlled.viewport.render({ ...HOME_ORBIT, target: [0.25, 0.25, 0], distance: 20 },
+        'perspective', 'shadedWithEdges', false, 100);
+      const spy = vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects').mockImplementation(() => { throw failure; });
+      restore = () => { spy.mockRestore(); };
+      expect(() => controlled.viewport.pickComponent(320, 240, observation)).toThrow(failure);
+      expect(observation).toEqual({ ownerAccepted: true, cameraReady: true, failed: true });
+    } finally { restore(); controlled.viewport.dispose(); }
+  });
+});
+
+describe('native planar basis display ownership', () => {
+  it('keeps measurement/cylinder instances separate, clears stale axes, and releases every planar resource once', () => {
+    const base = localFace(0);
+    const body: SolidBody = { ...base, faces: [{ index: 0, surfaceKind: 'plane', area: 100,
+      centroid: [0, 0, 0], axis: [0, 0, 1], radius: null, triangleOffset: 0, triangleCount: 1,
+      planarBasis: { origin: [0, 0, 0], xAxis: [1, 0, 0], yAxis: [0, 1, 0], normal: [0, 0, 1] } }] };
+    let state: AppState = stateWithBodies(useAppStore.getState(), [body]);
+    state = { ...state, selection: ['face#face:0'], isComputing: false, stagedSolid: null,
+      mathGeometryResult: { document: state.document, generation: 7, evaluated: true, outcomes: new Map() } };
+    const labels = { origin: 'O', x: '+X', y: '+Y' };
+    const viewport = createViewportScene(mockRendererCanvas(640, 480), { readSolidMeshState: () => state });
+    const render = () => viewport.render(HOME_ORBIT, 'perspective', 'shadedWithEdges', false, 100);
+    try {
+      viewport.resize(640, 480); viewport.setBodies(state.bodies);
+      viewport.setMeasurement({ result: { kind: 'pointDistance', value: 5, unit: 'mm',
+        segment: [[100, 0, 0], [105, 0, 0]] }, text: '測定5mm', angle: null, anchor: null });
+      const guide = planarBasisGuide(state, labels);
+      expect(guide).not.toBeNull(); viewport.setPlanarBasisGuide(guide); render();
+      const scene = lifecycle.instances.at(-1)?.renderedScene;
+      if (scene == null) throw new Error('Missing scene');
+      const groups = ['origin', 'x', 'y'].map(member => {
+        const group = scene.getObjectByName(`planar-basis-${member}`);
+        if (!(group instanceof THREE.Group)) throw new Error('Missing planar group');
+        return group;
+      });
+      expect(new Set(groups).size).toBe(3);
+      expect(groups).not.toContain(scene.getObjectByName('cylinder-basis-guide'));
+      const geometries = groups.map((group, index) => {
+        expect(group.visible).toBe(true);
+        const line = group.children.find(object => object instanceof THREE.LineSegments);
+        if (!(line instanceof THREE.LineSegments)) throw new Error('Missing planar line');
+        const geometry: unknown = line.geometry;
+        if (!(geometry instanceof THREE.BufferGeometry)) throw new Error('Missing planar geometry');
+        const attribute: unknown = geometry.getAttribute('position');
+        if (!(attribute instanceof THREE.BufferAttribute)) throw new Error('Missing planar positions');
+        expect(Array.from(attribute.array).slice(0, 6)).toEqual([
+          [0, 0, 0, 0, 0, 0], [0, 0, 0, 2.5, 0, 0], [0, 0, 0, 0, 2.5, 0],
+        ][index]);
+        return geometry;
+      });
+      let measurement: THREE.BufferGeometry | undefined;
+      scene.traverse(object => {
+        if (!(object instanceof THREE.LineSegments)) return;
+        const geometry: unknown = object.geometry;
+        if (!(geometry instanceof THREE.BufferGeometry)) return;
+        const attribute: unknown = geometry.getAttribute('position');
+        if (attribute instanceof THREE.BufferAttribute && attribute.getX(0) === 100) measurement = geometry;
+      });
+      if (measurement === undefined) throw new Error('Missing independent measurement');
+      expect(geometries).not.toContain(measurement);
+      const resources = new Set<{ dispose(): void }>();
+      for (const group of groups) group.traverse(object => {
+        if (object instanceof THREE.Line || object instanceof THREE.Points) {
+          const geometry: unknown = object.geometry;
+          if (!(geometry instanceof THREE.BufferGeometry)) throw new Error('Missing geometry');
+          resources.add(geometry);
+        }
+        if (object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
+          const material: unknown = object.material;
+          for (const entry of Array.isArray(material) ? material : [material]) {
+            if (!(entry instanceof THREE.Material)) throw new Error('Missing material');
+            resources.add(entry);
+          }
+        }
+      });
+      const disposed = [...resources].map(resource => vi.spyOn(resource, 'dispose'));
+      const document = state.document, history = state.undoStack;
+      state = { ...state, selection: [] }; render();
+      for (const group of groups) expect(group.visible).toBe(false);
+      for (const geometry of geometries) expect(geometry.drawRange.count).toBe(0);
+      expect(measurement.drawRange.count).toBe(2);
+      state = { ...state, selection: ['face#face:0'] };
+      viewport.setPlanarBasisGuide(planarBasisGuide(state, labels)); render();
+      for (const group of groups) expect(group.visible).toBe(true);
+      state = { ...state, meshJsAccounting: null }; render();
+      for (const geometry of geometries) expect(geometry.drawRange.count).toBe(0);
+      expect(measurement.drawRange.count).toBe(2);
+      expect(state.document).toBe(document); expect(state.undoStack).toBe(history);
+      viewport.dispose(); viewport.dispose();
+      expect(disposed.length).toBeGreaterThan(9);
+      for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1);
+      viewport.setPlanarBasisGuide(guide); render();
+      for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1);
+    } finally { viewport.dispose(); }
+  });
+
+  it.each(['origin', 'x', 'y'])('returns all acquired resources if attaching planar %s fails', member => {
+    lifecycle.geometries = []; lifecycle.recordGeometry = true;
+    const add = vi.spyOn(THREE.Scene.prototype, 'add').mockImplementation(function(this: THREE.Scene, ...objects: THREE.Object3D[]) {
+      if (objects.some(object => object.name === `planar-basis-${member}`)) throw new Error('Planar attachment failure');
+      THREE.Object3D.prototype.add.call(this, ...objects); return this;
+    });
+    try {
+      let failure: ViewportSceneInitializationFailure | null = null;
+      try { createViewportScene(mockRendererCanvas(640, 480)); }
+      catch (error) { if (error instanceof ViewportSceneInitializationFailure) failure = error; else throw error; }
+      if (failure === null) throw new Error('Expected planar constructor failure');
+      expect(failure.cleanup.pendingCount).toBe(0);
+      expect(lifecycle.geometries.length).toBeGreaterThan(6);
+      expect(lifecycle.geometries.every(entry => entry.attempts === 1 && entry.returned === 1)).toBe(true);
+      failure.cleanup.dispose();
+      expect(lifecycle.geometries.every(entry => entry.attempts === 1)).toBe(true);
+    } finally { add.mockRestore(); lifecycle.recordGeometry = false; }
   });
 });

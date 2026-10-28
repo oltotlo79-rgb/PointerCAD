@@ -557,7 +557,9 @@ describe('ViewportCanvas effect の所有と破棄', () => {
 });
 
 // Issued UI metadata fixture only: actual Store/RAF consumer paths, not Worker/native/DOM proof.
-function refreshableAssemblyFixture(sourceBody: SolidBody = bodyFor('body-1'), part?: PartDocument) {
+function refreshableAssemblyFixture(
+  sourceBody: SolidBody = bodyFor('body-1'), part?: PartDocument, componentId = 'component-1',
+) {
   const before = useAppStore.getState();
   const sourceDocument = part ?? before.document;
   const library = part === undefined ? before.assemblyLibrary
@@ -565,7 +567,7 @@ function refreshableAssemblyFixture(sourceBody: SolidBody = bodyFor('body-1'), p
   const resolvedParts = part === undefined ? new Map<string, ReturnType<typeof resolvePart>>()
     : new Map([['part-1', resolvePart(part, { importedShapes: new Map([['body-shape', Uint8Array.of(1)]]) })]]);
   const assembly = { ...createAssemblyDocument('fresh publication'), components: [{
-    id: 'component-1', name: 'part', source: { kind: 'part' as const, partRef: 'part-1' },
+    id: componentId, name: 'part', source: { kind: 'part' as const, partRef: 'part-1' },
     placement: DEFAULT_COMPONENT_PLACEMENT, fixed: true, visible: true, suppressed: false,
   }] };
   const sourceBodies = [sourceBody], bodies = new Map([['part-1', sourceBodies]]);
@@ -594,7 +596,7 @@ function refreshableAssemblyFixture(sourceBody: SolidBody = bodyFor('body-1'), p
   };
   const view = { sourceDocument: assembly, bodies, appearances: new Map(), diagnosis: null,
     mateTargetErrors: new Map(), meshOwnership: owner, resolved: { parts: resolvedParts,
-      placements: new Map([['component-1', IDENTITY_PLACEMENT]]), partKeys: new Map([['component-1', 'part-1']]), errors: [] } };
+      placements: new Map([[componentId, IDENTITY_PLACEMENT]]), partKeys: new Map([[componentId, 'part-1']]), errors: [] } };
   useAppStore.setState({ assembly, assemblyLibrary: library, drawing: null, activeDocumentId: assembly.id,
     documentVersion: owner.documentVersion, requestedGeneration: 7, completedGeneration: 7,
     lastOutcome: 'success', timelineIndex: null, recomputeCancelled: false, assemblyView: view });
@@ -613,7 +615,9 @@ describe('exact published Assembly receipt recovery consumer', () => {
       expect(current.scene.setAssembly).not.toHaveBeenCalled();
       current.scene.setAssembly.mockClear(); current.scene.render.mockClear();
       useAppStore.setState({ selection: ['component-1'] });
-      expect(useAppStore.getState().captureThumbnail?.()).toBeNull();
+      const pendingCapture = useAppStore.getState().captureThumbnail?.();
+      expect(pendingCapture).toBeInstanceOf(Promise);
+      expect(current.scene.captureThumbnail).not.toHaveBeenCalled();
       fixture.frames.at(-1)?.draw(1);
       expect(current.scene.render).not.toHaveBeenCalled();
       expect(window.pcadViewportRenderStats?.()?.completedRenders).toBe(0);
@@ -621,6 +625,7 @@ describe('exact published Assembly receipt recovery consumer', () => {
       expect(source.refresh).toHaveBeenCalledTimes(1);
       expect(source.refresh).toHaveBeenCalledWith(source.owner);
       source.publish(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      expect(await pendingCapture).toEqual(Uint8Array.of(1, 2, 3));
       expect(useAppStore.getState().assemblyView?.meshOwnership).toBe(source.fresh);
       expect(current.scene.setAssembly).toHaveBeenLastCalledWith(expect.objectContaining({ sourceBodies: source.bodies }));
       const after = useAppStore.getState();
@@ -860,5 +865,273 @@ describe('waiting thumbnail diagnostic acquisition', () => {
       fail = false; waiting?.cleanup(); current?.cleanup(); previous.cleanup(); vi.advanceTimersByTime(250);
     }
     expect(window.pcadThumbnailCaptureReasons).toBeUndefined();
+  });
+});
+
+describe('thumbnail capture waits for the same publication without borrowing a stale frame', () => {
+  it('joins one pending receipt refresh and captures only after the fresh same-generation publication', async () => {
+    const source = refreshableAssemblyFixture(), current = mount();
+    try {
+      const capture = useAppStore.getState().captureThumbnail;
+      if (capture === null) throw new Error('viewport capture not installed');
+      const first = capture(), second = capture();
+      expect(first).toBeInstanceOf(Promise);
+      expect(second).toBeInstanceOf(Promise);
+      expect(current.scene.captureThumbnail).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(source.refresh).toHaveBeenCalledExactlyOnceWith(source.owner);
+      source.publish();
+      expect(await first).toEqual(Uint8Array.of(1, 2, 3));
+      expect(await second).toEqual(Uint8Array.of(1, 2, 3));
+      expect(current.scene.captureThumbnail).toHaveBeenCalledTimes(2);
+      expect(useAppStore.getState().assemblyView?.meshOwnership).toBe(source.fresh);
+      expect(useAppStore.getState().documentVersion).toBe(source.snapshot.documentVersion);
+      expect(useAppStore.getState().cancelRequestCount).toBe(source.snapshot.cancelRequestCount);
+    } finally { source.settle(null); current.cleanup(); }
+  });
+
+  it.each(['null', 'throw', 'unmount', 'document', 'assembly', 'library', 'active-id', 'version',
+    'requested', 'completed', 'cancel', 'cancelled', 'outcome', 'timeline', 'computing', 'resolved', 'bodies'] as const)(
+    'rejects %s during preparation, including change-and-return, without ever capturing', async change => {
+      const source = refreshableAssemblyFixture(), current = mount();
+      try {
+        const capture = useAppStore.getState().captureThumbnail;
+        if (capture === null) throw new Error('viewport capture not installed');
+        const pending = capture();
+        expect(pending).toBeInstanceOf(Promise);
+        await Promise.resolve();
+        expect(source.refresh).toHaveBeenCalledTimes(1);
+        const before = useAppStore.getState(), view = before.assemblyView;
+        if (view === null) throw new Error('fixture view missing');
+        switch (change) {
+          case 'null': source.settle(null); break;
+          case 'throw': source.reject(new Error('source refused receipt')); break;
+          case 'unmount': current.cleanup(); break;
+          case 'document': useAppStore.setState({ document: { ...before.document } }); break;
+          case 'assembly': useAppStore.setState({ assembly: { ...source.owner.document } }); break;
+          case 'library': useAppStore.setState({ assemblyLibrary: { ...before.assemblyLibrary } }); break;
+          case 'active-id': useAppStore.setState({ activeDocumentId: 'new-document' }); break;
+          case 'version': useAppStore.setState({ documentVersion: before.documentVersion + 1 }); break;
+          case 'requested': useAppStore.setState({ requestedGeneration: 8 }); break;
+          case 'completed': useAppStore.setState({ completedGeneration: 8 }); break;
+          case 'cancel': useAppStore.setState({ cancelRequestCount: before.cancelRequestCount + 1 }); break;
+          case 'cancelled': useAppStore.setState({ recomputeCancelled: true }); break;
+          case 'outcome': useAppStore.setState({ lastOutcome: 'idle' }); break;
+          case 'timeline': useAppStore.setState({ timelineIndex: 0 }); break;
+          case 'computing': useAppStore.setState({ isComputing: true }); break;
+          case 'resolved': useAppStore.setState({ assemblyView: { ...view, resolved: { ...view.resolved } } }); break;
+          case 'bodies': useAppStore.setState({ assemblyView: { ...view, bodies: new Map(view.bodies) } }); break;
+        }
+        if (change !== 'unmount' && change !== 'null' && change !== 'throw') useAppStore.setState(before);
+        if (change !== 'null' && change !== 'throw') source.publish();
+        expect(await pending).toBeNull();
+        expect(current.scene.captureThumbnail).not.toHaveBeenCalled();
+      } finally { source.settle(null); current.cleanup(); }
+    });
+});
+
+/** 原台本の脚6/8、始点20、長さ18.5から独立に作る第2ビードの斜面。 */
+function deferredBeadBodyViewport() {
+  const positions = Float32Array.of(21.5, 8, 20, 40, 8, 20, 40, 14, 28, 21.5, 14, 28);
+  const template = bodyFor('bead-body');
+  const body: SolidBody = { ...template, mesh: { ...template.mesh, positions,
+    normals: Float32Array.of(0, -0.8, 0.6, 0, -0.8, 0.6, 0, -0.8, 0.6, 0, -0.8, 0.6),
+    indices: Uint32Array.of(0, 1, 2, 0, 2, 3), triangleCount: 2,
+  }, faces: [{ index: 0, surfaceKind: 'plane', area: 185, centroid: [30.75, 11, 24],
+    axis: [0, -0.8, 0.6], radius: null, triangleOffset: 0, triangleCount: 2 }] };
+  const part: PartDocument = { ...createEmptyPartDocument(), solids: [{
+    id: body.featureId, name: '第2ビードの独立斜面', kind: 'importedSolid', suppressed: false,
+    shapeRef: 'body-shape', bodyKind: 'solid',
+    source: { format: 'step', fileName: 'bead-face.step', unit: 'mm', byteLength: 1 },
+  }] };
+  const source = refreshableAssemblyFixture(body, part, 'component-4');
+  useAppStore.setState({ selectionKind: 'body', selection: [] });
+  fixture.realAssemblyInput = true;
+  const current = mount();
+  const layer = createAssemblyLayer(undefined, { uiBackings: new AssemblyUiBackingLedger() });
+  current.scene.setAssembly.mockImplementation((bundle: AssemblyGeometryBundle) => layer.update(bundle, 'shadedWithEdges'));
+  // 入力のx/yはこの検査では世界座標。ブラウザーの投影やGPU描画を通した証拠ではない。
+  current.scene.pickComponent.mockImplementation((x: number, y: number) => {
+    const eye = new Vector3(200 / Math.sqrt(3), -200 / Math.sqrt(3), 200 / Math.sqrt(3));
+    return layer.pickComponent(new Raycaster(eye, new Vector3(x, y, 24).sub(eye).normalize()));
+  });
+  current.scene.screenToPlanePoint.mockReturnValue(null);
+  const send = (type = 'pointerdown', properties: object = {}) => {
+    fixture.events.dispatchEvent(Object.assign(new Event(type, { cancelable: true }), {
+      clientX: 30.75, clientY: 11, button: 0, buttons: type === 'pointerup' ? 0 : 1,
+      altKey: false, shiftKey: false, pointerId: 1, ...properties,
+    }));
+  };
+  return { ...current, source, positions, send,
+    close: () => { source.settle(null); current.cleanup(); layer.dispose(); } };
+}
+
+describe('部品の所有更新中も第2ビードの1クリックを保つ', () => {
+  it('斜面内の固定点を更新後に1回だけ選び、解放後のドラッグと文書・履歴変更は起こさない', async () => {
+    const f = deferredBeadBodyViewport();
+    try {
+      const before = useAppStore.getState();
+      f.send(); f.send('pointerup');
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+      expect(useAppStore.getState().selection).toEqual([]);
+      await Promise.resolve();
+      expect(f.source.refresh).toHaveBeenCalledExactlyOnceWith(f.source.owner);
+      f.source.publish(); await finishOwnershipMicrotasks();
+      expect(f.scene.pickComponent).toHaveBeenCalledExactlyOnceWith(30.75, 11, expect.any(Object));
+      expect(f.scene.pickComponent).toHaveReturnedWith('component-4');
+      expect(useAppStore.getState().selection).toEqual(['component-4']);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+      expect(fixture.canvas.setPointerCapture).not.toHaveBeenCalled();
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      await finishOwnershipMicrotasks();
+      expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
+    } finally { f.close(); }
+  });
+
+  it('用意済みの部品は面フィルターが無効でも同期で1回だけ選ぶ', async () => {
+    const f = deferredBeadBodyViewport();
+    try {
+      const state = useAppStore.getState();
+      useAppStore.setState({ displaySettings: { ...state.displaySettings,
+        selectionFilter: { ...state.displaySettings.selectionFilter, face: false } } });
+      await Promise.resolve(); f.source.publish(); await finishOwnershipMicrotasks();
+      f.scene.pickComponent.mockClear();
+      f.send();
+      expect(f.scene.pickComponent).toHaveBeenCalledExactlyOnceWith(30.75, 11, expect.any(Object));
+      expect(useAppStore.getState().selection).toEqual(['component-4']);
+    } finally { f.close(); }
+  });
+
+  it.each(['document', 'active-id', 'bodies', 'placement', 'target', 'selection', 'camera', 'move',
+    'pointercancel', 'escape', 'unmount', 'detached-mesh'] as const)(
+    '%sで失効した入力は更新が戻っても採用しない', async change => {
+      const f = deferredBeadBodyViewport();
+      try {
+        f.send(); await Promise.resolve();
+        const before = useAppStore.getState();
+        const view = before.assemblyView;
+        if (view === null || before.assembly === null) throw new Error('検査用表示がありません。');
+        switch (change) {
+          case 'document': useAppStore.setState({ assembly: { ...before.assembly } }); break;
+          case 'active-id': useAppStore.setState({ activeDocumentId: '別の文書' }); break;
+          case 'bodies': useAppStore.setState({ assemblyView: { ...view, bodies: new Map(view.bodies) } }); break;
+          case 'placement': useAppStore.setState({ assemblyMotionPlacements: new Map() }); break;
+          case 'target': useAppStore.setState({ selectionKind: 'face' }); break;
+          case 'selection': useAppStore.setState({ selection: ['component-1'] }); break;
+          case 'camera': f.controls.changed(); break;
+          case 'move': f.send('pointermove', { clientX: 56 }); break;
+          case 'pointercancel': f.send('pointercancel'); break;
+          case 'escape': f.send('keydown', { key: 'Escape', isComposing: false }); break;
+          case 'unmount': f.cleanup(); break;
+          case 'detached-mesh': {
+            const buffer = f.positions.buffer;
+            if (!(buffer instanceof ArrayBuffer)) throw new Error('専用の配列で検査します。');
+            structuredClone(buffer, { transfer: [buffer] });
+            break;
+          }
+        }
+        if (change !== 'unmount') useAppStore.setState(before);
+        f.source.publish(); await finishOwnershipMicrotasks();
+        expect(f.scene.pickComponent).not.toHaveBeenCalled();
+        expect(useAppStore.getState().selection).toEqual([]);
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      } finally { f.close(); }
+    });
+
+  it.each(['null', 'reject'] as const)('更新の%sを再試行や空選択に変えない', async result => {
+    const f = deferredBeadBodyViewport();
+    try {
+      useAppStore.setState({ selection: ['component-1'] });
+      f.send(); await Promise.resolve();
+      if (result === 'reject') f.source.reject(new Error('所有証明の取得失敗'));
+      else f.source.settle(null);
+      await finishOwnershipMicrotasks();
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+      expect(useAppStore.getState().selection).toEqual(['component-1']);
+      expect(f.source.refresh).toHaveBeenCalledTimes(1);
+    } finally { f.close(); }
+  });
+});
+
+/** 公開口から取り出すだけで、製品Storeや入力には書かない。 */
+function observedPickInputs(): readonly unknown[] {
+  const read = window.pcadViewportAssemblyOwner;
+  if (read === undefined) throw new Error('部品選択の観測口がありません。');
+  const inputs: unknown = read()?.mateInputs;
+  if (!Array.isArray(inputs)) throw new Error('入力の観測が配列ではありません。');
+  return inputs;
+}
+
+describe('部品pick観測の保留・上限・破棄', () => {
+  it('同じ保留入力を更新し2回分として数えず、bodyには座標や文書を記録しない', async () => {
+    const f = deferredBeadBodyViewport();
+    try {
+      const before = useAppStore.getState();
+      f.send(); f.send('pointerup');
+      expect(observedPickInputs()).toEqual([{ inputGate: undefined, deferred: undefined, waiting: true, componentPick: {} }]);
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(f.source.refresh).toHaveBeenCalledExactlyOnceWith(f.source.owner);
+      f.source.publish(); await finishOwnershipMicrotasks();
+      expect(observedPickInputs()).toEqual([{ inputGate: 'accepted', deferred: 'applied', waiting: false, componentPick: {} }]);
+      expect(useAppStore.getState().selection).toEqual(['component-4']);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+    } finally { f.close(); }
+  });
+
+  it('同期入力の記録は最後2件だけで、読み出しても入力・文書・履歴を変えない', async () => {
+    const f = deferredBeadBodyViewport();
+    try {
+      f.source.publish(); await finishOwnershipMicrotasks();
+      const before = useAppStore.getState();
+      f.send(); f.send('pointerup'); f.send(); f.send('pointerup'); f.send(); f.send('pointerup');
+      expect(observedPickInputs()).toHaveLength(2);
+      const record = observedPickInputs()[0];
+      expect(record).toEqual({ inputGate: 'accepted', deferred: undefined, waiting: undefined, componentPick: {} });
+      const calls = f.scene.pickComponent.mock.calls.length;
+      observedPickInputs(); observedPickInputs();
+      expect(f.scene.pickComponent).toHaveBeenCalledTimes(calls);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { f.close(); }
+  });
+
+  it('文書切替後の保留完了とdisposeは旧記録を復活させない', async () => {
+    const f = deferredBeadBodyViewport();
+    const retained = window.pcadViewportAssemblyOwner;
+    try {
+      f.send(); await Promise.resolve();
+      expect(observedPickInputs()).toHaveLength(1);
+      useAppStore.setState({ activeDocumentId: '別の文書' });
+      expect(observedPickInputs()).toEqual([]);
+      f.source.settle(null); await finishOwnershipMicrotasks();
+      expect(observedPickInputs()).toEqual([]);
+    } finally { f.close(); }
+    expect(window.pcadViewportAssemblyOwner).toBeUndefined();
+    expect(retained?.()).toBeNull();
+  });
+});
+
+describe('部品pickの未実行と失効を混同しない', () => {
+  it.each(['null', 'reject', 'target'] as const)('%sではowner/camera/hitを捏造しない', async reason => {
+    const f = deferredBeadBodyViewport();
+    try {
+      const before = useAppStore.getState();
+      f.send(); await Promise.resolve();
+      if (reason === 'target') useAppStore.setState({ selectionKind: 'face' });
+      else if (reason === 'reject') f.source.reject(new Error('検査用の所有取得拒否'));
+      else f.source.settle(null);
+      await finishOwnershipMicrotasks();
+      expect(observedPickInputs()).toEqual([{ inputGate: undefined,
+        deferred: reason === 'target' ? 'discarded' : 'refused', waiting: false, componentPick: {} }]);
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { f.close(); }
   });
 });

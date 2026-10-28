@@ -15,7 +15,8 @@
  * 立体の一覧)に載っているかで判定する。`solidCommands.ts` の `faceRefById` と同じ書き方を使う。
  */
 
-import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
+import { planarBasisForReference } from './planarHoleInput.js';
+import { exactExpressionValueFromNumber, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   appendSolid,
   DEFAULT_CHAMFER_ANGLE_DEGREES,
@@ -242,11 +243,18 @@ function holeInputError(params: {
   readonly tiltAzimuth: ExpressionValue;
   readonly entry?: HoleEntry;
   readonly cylindrical?: { readonly height: ExpressionValue; readonly angle: ExpressionValue };
+  /** 明示した選択平面の面内座標。元の長さの式を保持する。 */
+  readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
 }, size: ExpressionValue): MessageKey | null {
   if (params.cylindrical !== undefined && (params.tiltAngle.value !== 0 || params.tiltAzimuth.value !== 0)) {
     return 'numericInput.error.cylinderHoleTilt';
   }
+  if (params.planar !== undefined && (params.cylindrical !== undefined
+    || [params.planar.x, params.planar.y].some(value => value.source.trim() === ''))) {
+    return 'numericInput.error.planarHoleInput';
+  }
   const values = [size, params.tiltAngle, params.tiltAzimuth,
+    ...(params.planar === undefined ? [] : [params.planar.x, params.planar.y]),
     ...(params.depth.kind === 'blind' ? [params.depth.depth] : []),
     ...(params.cylindrical === undefined ? [] : [params.cylindrical.height, params.cylindrical.angle]),
     ...(params.entry?.kind === 'counterbore' ? [params.entry.diameter, params.entry.depth] : []),
@@ -393,6 +401,8 @@ export function commitHole(
      * 文書も 1 ドットも違わない。入れたときは中心の点を使わない。
      */
     readonly cylindrical?: { readonly height: ExpressionValue; readonly angle: ExpressionValue };
+    /** 点選択/円筒とは排他の、選択平面内の符号付き長さ。 */
+    readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
   },
 ): SolidCommandOutcome {
   const face = resolveMachiningFace(context);
@@ -400,7 +410,15 @@ export function commitHole(
     return { ok: false, reasonKey: face.reasonKey };
   }
   const centers = selectedCenterPoints(context.document, context.selection);
-  if (params.cylindrical !== undefined) {
+  if (params.planar !== undefined) {
+    if (params.cylindrical !== undefined || centers.length !== 0
+      || selectedSubShapeRefs(context.bodies, context.selection, 'face').length !== 1) {
+      return { ok: false, reasonKey: 'numericInput.error.planarHoleConflict' };
+    }
+    if (!isPlaneFace(face.ref) || planarBasisForReference(context.bodies, face.ref) === null) {
+      return { ok: false, reasonKey: 'numericInput.error.planarHoleBasis' };
+    }
+  } else if (params.cylindrical !== undefined) {
     // 黙って平面の穴にしない。円筒の面でない・点も選んでいる・皿もみとの組み合わせは断る。
     if (!isCylinderFace(face.ref)) {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleNotCylinder' };
@@ -442,6 +460,7 @@ export function commitHole(
     tiltAngle: params.tiltAngle,
     tiltAzimuth: params.tiltAzimuth,
     ...(cylindrical === undefined ? {} : { cylindrical }),
+    ...(params.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [params.planar] } }),
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -499,6 +518,8 @@ export function commitThreadHole(
     readonly tiltAzimuth: ExpressionValue;
     /** 円筒の側面のねじ穴(EX05)の位置(高さ mm・角度 度)。**省略すると今までどおりの平面のねじ穴**。 */
     readonly cylindrical?: { readonly height: ExpressionValue; readonly angle: ExpressionValue };
+    /** 点選択/円筒とは排他の、選択平面内の符号付き長さ。 */
+    readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
     readonly entry?: HoleEntry;
   },
 ): SolidCommandOutcome {
@@ -507,7 +528,15 @@ export function commitThreadHole(
     return { ok: false, reasonKey: face.reasonKey };
   }
   const centers = selectedCenterPoints(context.document, context.selection);
-  if (params.cylindrical !== undefined) {
+  if (params.planar !== undefined) {
+    if (params.cylindrical !== undefined || centers.length !== 0
+      || selectedSubShapeRefs(context.bodies, context.selection, 'face').length !== 1) {
+      return { ok: false, reasonKey: 'numericInput.error.planarHoleConflict' };
+    }
+    if (!isPlaneFace(face.ref) || planarBasisForReference(context.bodies, face.ref) === null) {
+      return { ok: false, reasonKey: 'numericInput.error.planarHoleBasis' };
+    }
+  } else if (params.cylindrical !== undefined) {
     // 穴と同じ断り(EX05)。円筒の面でない・点も選んでいるときは、黙って平面のねじ穴にしない。
     if (!isCylinderFace(face.ref)) {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleNotCylinder' };
@@ -556,7 +585,7 @@ export function commitThreadHole(
     designation: size.designation,
     series: params.series,
     pitch: expressionValueFromNumber(pitch),
-    drillDiameter: expressionValueFromNumber(drillDiameter),
+    drillDiameter: exactExpressionValueFromNumber(drillDiameter),
     depth: params.depth,
     threadLength: params.threadLength,
     representation: params.representation,
@@ -564,6 +593,7 @@ export function commitThreadHole(
     tiltAngle: params.tiltAngle,
     tiltAzimuth: params.tiltAzimuth,
     ...(cylindrical === undefined ? {} : { cylindrical }),
+    ...(params.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [params.planar] } }),
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -695,6 +725,19 @@ export function commitPattern(
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
 
+/** 明示した配置方法だけを運ぶ。欄不足や円筒との競合は既定値で埋めない。 */
+function planarInputFromCommit(commit: SolidInputCommit):
+  { readonly ok: true; readonly value?: { readonly x: ExpressionValue; readonly y: ExpressionValue } }
+  | { readonly ok: false; readonly reasonKey: MessageKey } {
+  const mode = commit.shapeChoices?.holePlacement;
+  if (mode === undefined || mode === 'points') return { ok: true };
+  if (mode !== 'plane-face') return { ok: false, reasonKey: 'shapeError.unknownChoice' };
+  if (commit.flags.cylinderFace === true) return { ok: false, reasonKey: 'numericInput.error.planarHoleConflict' };
+  const x = commit.values.holePlanarX, y = commit.values.holePlanarY;
+  return x === undefined || y === undefined ? { ok: false, reasonKey: 'numericInput.error.planarHoleInput' }
+    : { ok: true, value: { x, y } };
+}
+
 /**
  * その場入力の確定結果(タスク24 の `SolidInputCommit`)から加工を 1 つ作る。
  * 押し出し・回転・縫合・ばねはここでは扱わない(それぞれ `solidCommands.ts` /
@@ -712,6 +755,8 @@ export function commitMachiningInput(
         commit.flags.through === true
           ? { kind: 'through' }
           : { kind: 'blind', depth: commit.values.depth ?? DEFAULT_HOLE_DEPTH };
+      const planar = planarInputFromCommit(commit);
+      if (!planar.ok) return { ok: false, reasonKey: planar.reasonKey };
       const entry = holeEntryFromCommit(commit);
       if (!entry.ok) {
         return { ok: false, reasonKey: entry.reasonKey };
@@ -720,6 +765,7 @@ export function commitMachiningInput(
         diameter: commit.values.diameter ?? DEFAULT_HOLE_DIAMETER,
         depth,
         ...(entry.entry === undefined ? {} : { entry: entry.entry }),
+        ...(planar.value === undefined ? {} : { planar: planar.value }),
         tiltAngle: DEFAULT_TILT_ANGLE,
         tiltAzimuth: DEFAULT_TILT_AZIMUTH,
         // 「円筒の側面に」を入れたときだけ、高さと角度で位置を決める(EX05)。
@@ -738,6 +784,8 @@ export function commitMachiningInput(
         commit.flags.through === true
           ? { kind: 'through' }
           : { kind: 'blind', depth: commit.values.depth ?? DEFAULT_HOLE_DEPTH };
+      const planar = planarInputFromCommit(commit);
+      if (!planar.ok) return { ok: false, reasonKey: planar.reasonKey };
       const entry = holeEntryFromCommit(commit);
       if (!entry.ok) {
         return { ok: false, reasonKey: entry.reasonKey };
@@ -747,6 +795,7 @@ export function commitMachiningInput(
         series: commit.threadSeries ?? 'coarse',
         depth,
         ...(entry.entry === undefined ? {} : { entry: entry.entry }),
+        ...(planar.value === undefined ? {} : { planar: planar.value }),
         threadLength: commit.values.threadLength ?? DEFAULT_THREAD_LENGTH,
         representation: commit.flags.modeledThread === true ? 'modeled' : 'simplified',
         tiltAngle: DEFAULT_TILT_ANGLE,
@@ -835,6 +884,8 @@ export function commitMachiningInput(
     case 'loft':
     case 'draft':
     case 'faceOffset':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
@@ -865,8 +916,8 @@ export function commitMachiningInput(
 /**
  * その道具がいま押せるか(NFR-UX-5)。`solidToolReadiness`(solidCommands.ts)と同じ形で返す。
  * 判定は実際に作るときと同じ関数(`resolveMachiningFace` / `gatherFilletTargets` /
- * `machiningTargetOf` / `selectedPatternSource`)を使うので、「押せるのに断られる」
- * 「押せないのに作れる」が起きない。
+ * `machiningTargetOf` / `selectedPatternSource`)を使うので、対象面の判定を共有する。平面だけでも配置方法を選ぶ入力を開けるが、
+ * 点モードの確定には中心点が必要である。
  */
 export function machiningToolReadiness(
   context: MachiningContext,
@@ -881,15 +932,12 @@ export function machiningToolReadiness(
       }
       const centers = selectedCenterPoints(context.document, context.selection);
       // 穴もねじ穴も円筒の面だけで押せる(EX05。その場入力で「円筒の側面に」と高さ・角度を入れる)。
-      // 平面の面だけのときは、今までどおり中心の点が要る。
+      // 平面だけでも入力を開ける。既定の点モードの確定には引き続き中心点が必要。
       if (isCylinderFace(face.ref)) {
         return centers.length === 0 ? READY : { ready: false, reasonKey: 'machiningError.cylinderHoleWithPoints' };
       }
       if (!isPlaneFace(face.ref)) {
         return { ready: false, reasonKey: 'numericInput.error.holeUnsupportedSurface' };
-      }
-      if (centers.length === 0) {
-        return { ready: false, reasonKey: 'machiningError.noCenterPoint' };
       }
       return READY;
     }

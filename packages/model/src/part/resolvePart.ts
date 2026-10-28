@@ -123,6 +123,7 @@ import {
 } from './resolveReferences.js';
 import { dedupeSubShapeRefs, subShapeKindOf } from './subShapeRef.js';
 import { historyDependencies } from './timelineOrder.js';
+import { directEditPlan, type HoleTranslatePlan, type FaceRotatePlan } from './directEditOperations.js';
 import {
   checkFaceOffset,
   faceOffsetPlan,
@@ -179,6 +180,9 @@ import type {
   ThreadShaftFeature,
   TransformFeature,
 } from './types.js';
+import type { FunctionSurfacePlan as TypeFunctionSurfacePlan } from '../functionGeometry/functionSurfaceFeature.js';
+import type { FunctionPointResolver as TypeFunctionPointResolver } from '../functionGeometry/functionPointReference.js';
+
 
 /**
  * 工具全体にかける剛体変換(パターン、FR-411 / FR-412、§0.a-0.20)。
@@ -276,6 +280,12 @@ export type HoleEntryPlan =
   /** `angle` は**ラジアン**。 */
   | { readonly kind: 'countersink'; readonly diameter: number; readonly angle: number };
 
+/** 面内X・Yをmmへ解決した配置。面の再照合と世界座標への変換はkernelが行う。 */
+export interface PlanarHolePlan {
+  readonly kind: 'plane-face';
+  readonly locations: readonly { readonly x: number; readonly y: number }[];
+}
+
 /**
  * 円筒の側面の穴の位置(EX05)を解決した結果。kernel の `CylindricalHoleSpec` と同じ形なので
  * `kernelBridge` はそのまま渡せる。高さは mm、角度は**ラジアン**(度からの換算は model の責務)。
@@ -347,10 +357,12 @@ export type SurfaceCutBladePlan =
  * 向き・反転・両側の平行移動はここまでで済ませてあり、kernel へは断面・向き・長さだけが渡る。
  */
 export type SolidStepPlan =
-  | import('../functionGeometry/functionSurfaceFeature.js').FunctionSurfacePlan
+  | TypeFunctionSurfacePlan
   | SheetSolidPlan
   // 平らな面の移動(EX-18 の限られた一段)。形は directFaceEdit.ts が持つ。**対象を消費する。**
   | FaceOffsetPlan
+  | HoleTranslatePlan
+  | FaceRotatePlan
   | {
       readonly kind: 'extrude';
       /** 断面の閉ループ。両側(symmetric)のときは平行移動した後の座標。 */
@@ -446,6 +458,7 @@ export type SolidStepPlan =
       readonly entry?: HoleEntryPlan;
       /** 円筒の側面の穴(EX05)。**平面の穴では省く**(`CylindricalHolePlan` の注釈)。 */
       readonly cylindrical?: CylindricalHolePlan;
+      readonly planar?: PlanarHolePlan;
     }
   | {
       readonly kind: 'thread';
@@ -488,6 +501,7 @@ export type SolidStepPlan =
       readonly entry?: HoleEntryPlan;
       /** 円筒の側面のねじ穴(EX05)。**平面のねじ穴では省く**(穴の枝の `cylindrical` と同じ)。 */
       readonly cylindrical?: CylindricalHolePlan;
+      readonly planar?: PlanarHolePlan;
     }
   | {
       readonly kind: 'spring';
@@ -1070,7 +1084,7 @@ type PlanOutcome =
  */
 interface SolidPlanContext {
   readonly functionPoint: ResolvePartOptions['functionPoint'];
-  readonly functionSurfaces: (featureId: string) => import('../functionGeometry/functionSurfaceFeature.js').FunctionSurfacePlan | null;
+  readonly functionSurfaces: (featureId: string) => TypeFunctionSurfacePlan | null;
   /**
    * 面・辺・頂点の位置と向き。`resolvePart` の `options.subShape` が渡されていれば
    * 「いまの形」で選び直した値、渡されていなければ保存された指紋の値になる
@@ -1842,6 +1856,24 @@ const CYLINDER_LOCATION_NOT_FINITE_MESSAGE = '円筒の側面の穴の高さと�
 const CYLINDER_UNSUPPORTED_MESSAGE =
   '円筒の側面の穴では、中心の点・傾き・皿もみはまだ使えません。位置は高さと角度で指定してください。';
 
+type PlanarOutcome =
+  | { readonly ok: true; readonly planar: PlanarHolePlan | null }
+  | { readonly ok: false; readonly error: PartError };
+function resolvePlanarHole(feature: HoleLikeFeature): PlanarOutcome {
+  const placement = feature.planar;
+  if (placement === undefined) return { ok: true, planar: null };
+  if (placement.kind !== 'plane-face' || feature.centers.length !== 0 || feature.cylindrical !== undefined) {
+    return { ok: false, error: partError(feature.id, 'invalidValue', '面内X・Yと中心点・円筒配置は同時に指定できません。') };
+  }
+  if (feature.face.fingerprint.kind !== 'face' || feature.face.fingerprint.surfaceKind !== 'plane') {
+    return { ok: false, error: partError(feature.id, 'invalidValue', '面内X・Yには平らな面を選んでください。') };
+  }
+  if (placement.locations.length === 0 || placement.locations.some(p => !Number.isFinite(p.x.value) || !Number.isFinite(p.y.value))) {
+    return { ok: false, error: partError(feature.id, 'invalidValue', '面内X・Yには1つ以上の有限な位置を指定してください。') };
+  }
+  return { ok: true, planar: { kind: 'plane-face', locations: placement.locations.map(p => ({ x: p.x.value, y: p.y.value })) } };
+}
+
 type CylindricalOutcome =
   | { readonly ok: true; readonly cylindrical: CylindricalHolePlan | null }
   | { readonly ok: false; readonly error: PartError };
@@ -1984,11 +2016,13 @@ function planHole(
   consumed: ReadonlySet<string>,
 ): PlanOutcome {
   // 円筒の側面の穴(EX05)は中心の点を持たない。組み合わせの断りを中心の解決より先に出す。
+  const planar = resolvePlanarHole(feature);
+  if (!planar.ok) return planar;
   const cylindrical = resolveCylindricalHole(feature);
   if (!cylindrical.ok) {
     return cylindrical;
   }
-  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed, cylindrical.cylindrical !== null);
+  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed, cylindrical.cylindrical !== null || planar.planar !== null);
   if (!outcome.ok) {
     return outcome;
   }
@@ -2020,6 +2054,7 @@ function planHole(
       ...(entry.entry === null ? {} : { entry: entry.entry }),
       // 平面の穴では欄を載せない(今までの段・鍵と 1 字も変えない)。
       ...(cylindrical.cylindrical === null ? {} : { cylindrical: cylindrical.cylindrical }),
+      ...(planar.planar === null ? {} : { planar: planar.planar }),
     },
   };
 }
@@ -2039,11 +2074,13 @@ function planThreadHole(
   consumed: ReadonlySet<string>,
 ): PlanOutcome {
   // 円筒の側面のねじ穴(EX05)。穴と同じ口で組み合わせを断り、中心の解決を飛ばす(`planHole` と同じ順)。
+  const planar = resolvePlanarHole(feature);
+  if (!planar.ok) return planar;
   const cylindrical = resolveCylindricalHole(feature);
   if (!cylindrical.ok) {
     return cylindrical;
   }
-  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed, cylindrical.cylindrical !== null);
+  const outcome = resolveHoleBase(feature, sketches, bodyKeys, consumed, cylindrical.cylindrical !== null || planar.planar !== null);
   if (!outcome.ok) {
     return outcome;
   }
@@ -2105,6 +2142,7 @@ function planThreadHole(
       ...(entry.entry === null ? {} : { entry: entry.entry }),
       // 平面のねじ穴では欄を載せない(今までの段・鍵と 1 字も変えない)。
       ...(cylindrical.cylindrical === null ? {} : { cylindrical: cylindrical.cylindrical }),
+      ...(planar.planar === null ? {} : { planar: planar.planar }),
     },
   };
 }
@@ -4557,6 +4595,13 @@ function planSolid(
       return planLoft(feature, solids, sketches, bodyKeys, context);
     case 'draft':
       return planDraft(feature, bodyKeys, consumed, context);
+    case 'holeTranslate':
+    case 'faceRotate': {
+      const target = resolveMachiningTarget(feature.id, feature.targetFeatureId, bodyKeys, consumed);
+      if (!target.ok) return target;
+      const checked = directEditPlan(feature, target.targetKey);
+      return checked.ok ? checked : fail(feature.id, 'invalidValue', checked.message);
+    }
     case 'faceOffset':
       return planFaceOffset(feature, bodyKeys, consumed, context);
     case 'mirror':
@@ -4833,8 +4878,8 @@ export interface ResolvePartOptions {
   /** 計算済みの投影・交差の曲線をフィーチャーの id で引く(タスク25)。 */
   readonly projectedCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
   readonly functionCurves?: (featureId: string) => readonly ResolvedCurve[] | null;
-  readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
-  readonly functionSurfaces?: (featureId: string) => import('../functionGeometry/functionSurfaceFeature.js').FunctionSurfacePlan | null;
+  readonly functionPoint?: TypeFunctionPointResolver;
+  readonly functionSurfaces?: (featureId: string) => TypeFunctionSurfacePlan | null;
   /**
    * 立体の面・辺・頂点の選び直し(FR-325、FR-328〜330 の上流追従、タスク25)。
    *
@@ -4914,6 +4959,8 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
   const bodyKeys = new Map<string, string>();
   /** Keys whose producer has a real semantic source or whose supported operation inherits one. */
   const semanticKeys = new Set<string>();
+  // Shared BRep bytes may belong to distinct input bodies; keep later imports independently consumable.
+  const importedShapeRefs = new Set<string>();
   const sheetMetalBodies = new Map<string, ResolvedSheetBody>();
   /** すでに他のフィーチャーが消費したボディ。同じものを2度は使えない(§2.2)。 */
   const consumed = new Set<string>();
@@ -4980,10 +5027,12 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
       : plan.kind === 'primitive' && (plan.shape.kind === 'box' || plan.shape.kind === 'cylinder') ? []
       : plan.kind === 'boolean' && (semanticKeys.has(plan.targetKey) || semanticKeys.has(plan.toolKey)) ? []
       : (plan.kind === 'fillet' || plan.kind === 'chamfer') && semanticKeys.has(plan.targetKey) ? []
+      : plan.kind === 'importedSolid' && importedShapeRefs.has(plan.shapeRef) ? []
       : undefined;
     const key = originSourceIds === undefined ? geometricKey
       : originAwareCacheKey(geometricKey, feature.id, originSourceIds);
     if (originSourceIds !== undefined) semanticKeys.add(key);
+    if (plan.kind === 'importedSolid') importedShapeRefs.add(plan.shapeRef);
     drafts.push({ featureId: feature.id, name: feature.name, key, plan: outcome.plan });
     bodyKeys.set(feature.id, key);
     // 消費するボディを記録する(ブーリアンは対象と相手、加工は対象1つ、§0.a-0.5)。

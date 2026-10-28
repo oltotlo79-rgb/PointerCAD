@@ -107,6 +107,24 @@ describe('段階計算の所有と、1回きりの採用の札', () => {
     expect(currentStagedSolid(changed)).toBeNull();
   });
 
+  it.each(['pending', 'ready', 'failed'] as const)('中止は公開された %s の段階計算も消し、文書・履歴・形・入力を保つ', status => {
+    const { stager, staged } = stagedFixture(status);
+    const before = useAppStore.getState();
+    expect(before.stagedSolid).toBe(staged);
+    before.cancelRecompute();
+    const after = useAppStore.getState();
+    expect(after.cancelRequestCount).toBe(before.cancelRequestCount + 1);
+    expect(after.stagedSolid).toBeNull();
+    expect(currentStagedSolid(after)).toBeNull();
+    expect(after.adoptStagedSolid({ stager, staged })).toBe(false);
+    expect(after.document).toBe(before.document);
+    expect(after.undoStack).toBe(before.undoStack);
+    expect(after.bodies).toBe(before.bodies);
+    expect(after.numericInput).toBe(before.numericInput);
+    expect(after.selection).toBe(before.selection);
+    expect(after.requestedGeneration).toBe(before.requestedGeneration);
+  });
+
   it('手立てが手放した段階計算は、所有の欄が同じでも今のものではない', () => {
     const { staged } = stagedFixture();
     const state = useAppStore.getState();

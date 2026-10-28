@@ -1,3 +1,5 @@
+import { MathInputProblem } from '@pointercad/expression/math/contracts';
+import { PlanarHoleBasisInfo, currentPlanarHoleBasis } from '../sketch/PlanarHoleBasisInfo.js';
 import { SectionViewSection } from '../solid/SectionViewSection.js';
 import { ReferenceRepairSection } from '../solid/referenceRepairPanel.js';
 import { SelectionSetSection } from '../solid/SelectionSetSection.js';
@@ -6,7 +8,7 @@ import { PrintCheckSection } from '../solid/PrintCheckSection.js';
 import { InferConstraintsSection } from '../sketch/InferConstraintsSection.js';
 import { AppearanceSection } from '../appearance/AppearanceSection.js';
 import { FACE_COLORS } from '../appearance/appearancePropertyValues.js';
-import { useFieldUnits, evaluateFieldSource, committedFieldSource, isPendingFieldError } from './propertyFieldUnits.js';
+import { useFieldUnits, evaluateFieldSource, committedFieldSource, isPendingFieldError, type FieldUnits } from './propertyFieldUnits.js';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { FunctionCurveProperties } from '../functionPlot/FunctionCurveProperties.js';
 import { FunctionSurfaceProperties } from '../functionPlot/FunctionSurfaceProperties.js';
@@ -34,6 +36,7 @@ import {
   type CutFeature,
   type ReferenceFeature,
   type LoftFeature,
+  type PartDocument,
   type PrimitiveFeature,
   type RuledFeature,
   type SketchFeature,
@@ -753,8 +756,63 @@ function ChoiceButtons({
 
 /** 打っている途中の立体の欄。式として読めるようになるまで履歴へは書き戻さない。 */
 interface SolidFieldDraft {
-  readonly key: SolidFieldKey;
+  readonly key: string;
   readonly source: string;
+}
+
+export interface CylindricalPropertySelection {
+  readonly featureId: string;
+  readonly locationCount: number;
+  readonly placementKind?: 'plane-face';
+  readonly index: number;
+}
+
+function cylindricalPropertyLocationCount(feature: SolidFeature): number {
+  return feature.kind === 'hole' || feature.kind === 'threadHole'
+    ? feature.planar?.locations.length ?? feature.cylindrical?.locations.length ?? 0 : 0;
+}
+
+function planarPropertyPlacement(feature: SolidFeature): 'plane-face' | undefined {
+  return (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar !== undefined
+    ? 'plane-face' : undefined;
+}
+
+/** The active property position is local UI state, never a document/history edit. */
+export function reconcileCylindricalPropertySelection(
+  feature: SolidFeature, previous: CylindricalPropertySelection | null,
+): CylindricalPropertySelection {
+  const locationCount = cylindricalPropertyLocationCount(feature);
+  const placementKind = planarPropertyPlacement(feature);
+  return previous !== null && previous.featureId === feature.id && previous.locationCount === locationCount
+    && previous.placementKind === placementKind
+    && Number.isInteger(previous.index) && previous.index >= 0 && previous.index < Math.max(1, locationCount)
+    ? previous : {
+      featureId: feature.id, locationCount, index: 0,
+      ...(placementKind === undefined ? {} : { placementKind }),
+    };
+}
+
+/** Both immediate input and the math dialog use this exact indexed replacement. */
+export function createSolidPropertyFieldEdit(
+  feature: SolidFeature, key: SolidFieldKey, selection: CylindricalPropertySelection, units: FieldUnits,
+) {
+  const count = cylindricalPropertyLocationCount(feature);
+  const valid = reconcileCylindricalPropertySelection(feature, selection) === selection;
+  const placementKind = planarPropertyPlacement(feature);
+  const face = feature.kind === 'hole' || feature.kind === 'threadHole' ? feature.face : undefined;
+  const fieldKey = `field:${feature.id}:${key}${placementKind === undefined ? '' : ':plane-face'}${count > 1 ? `:location:${count}:${selection.index}` : ''}`;
+  return { key: fieldKey, replaceValue: (document: PartDocument, value: ExpressionValue): PartDocument => {
+    const current = findSolid(document, feature.id);
+    if (!valid || current === undefined || current.kind !== feature.kind || cylindricalPropertyLocationCount(current) !== count
+      || planarPropertyPlacement(current) !== placementKind
+      || (placementKind === 'plane-face' && (
+        (current.kind !== 'hole' && current.kind !== 'threadHole') || current.face !== face
+      ))) return document;
+    const options = count === 0 ? units : placementKind === 'plane-face'
+      ? { ...units, planarLocationIndex: selection.index } : { ...units, cylindricalLocationIndex: selection.index };
+    const next = setSolidField(current, key, value, units.variables, options);
+    return next === current ? document : replaceSolid(document, feature.id, next);
+  } };
 }
 
 /**
@@ -781,6 +839,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   // タイムラインのつまみ(FR-507)。つまみより後ろの段はまだ作られていないだけで、
   // 失敗ではない(P4b タスク22a-(2)、docs/報告記録.md 2026-09-05 実時計 01:05 の申し送り①)。
   const timelineIndex = useAppStore((state) => state.timelineIndex);
+  const [locationState, setLocationState] = useState(() => reconcileCylindricalPropertySelection(feature, null));
+  const location = reconcileCylindricalPropertySelection(feature, locationState);
+  if (location !== locationState) setLocationState(location);
   const [draftState, setDraftState] = useState(() =>
     initialDraftVersionState<SolidFieldDraft>(documentVersion),
   );
@@ -790,7 +851,7 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
   }
   const draft = reconciled.draft;
 
-  const summary = summarizeSolid(part, feature, partErrors);
+  const summary = summarizeSolid(part, feature, partErrors, location.locationCount === 0 ? undefined : location.index);
   const errorMessage = partErrorMessage(partErrors, feature.id);
   const body = bodies.find((candidate) => candidate.featureId === feature.id);
   const isAhead = isFeatureAheadOfTimeline(part, timelineIndex, feature.id);
@@ -813,7 +874,17 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
    * 範囲を持たない P1〜P4 からの欄のふるまいは 1 つも変わらない。
    */
   const renderField = (item: SolidFieldSummary): React.JSX.Element => {
-    const drafted = draft !== null && draft.key === item.key;
+    const edit = createSolidPropertyFieldEdit(feature, item.key, location, units);
+    const replaceValue = (document: PartDocument, value: ExpressionValue): PartDocument => {
+      if (item.key === 'holePlanarX' || item.key === 'holePlanarY') {
+        const current = useAppStore.getState();
+        if (currentPlanarHoleBasis(current, feature) === null) {
+          throw new MathInputProblem('domain', t('numericInput.error.planarHoleBasis'));
+        }
+      }
+      return edit.replaceValue(document, value);
+    };
+    const drafted = draft !== null && draft.key === edit.key;
     const source = drafted ? draft.source : item.value.source;
     const unitError = sheetFieldUnitError(item.key, source);
     const evaluated = evaluateFieldSource(source, item.unit, drafted, units);
@@ -829,9 +900,9 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
     const rangeError = evaluated.ok ? rangeErrorFor(numericField, evaluated.value) : null;
     return (
       <PropertyMathField
-        key={item.key}
+        key={edit.key}
         storedValue={item.value}
-        replaceValue={(document, value) => replaceSolid(document, feature.id, setSolidField(feature, item.key, value, units.variables, units))}
+        replaceValue={replaceValue}
         field={numericField}
         lengthUnit={units.lengthUnit}
         result={
@@ -845,15 +916,16 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
         focused={false}
         onFocus={() => undefined}
         onChange={(next) => {
-          setDraftState({ draft: { key: item.key, source: next }, seenVersion: documentVersion });
+          setDraftState({ draft: { key: edit.key, source: next }, seenVersion: documentVersion });
           if (sheetFieldUnitError(item.key, next) !== null) return;
           const parsed = evaluateExpression(committedFieldSource(next, item.unit, units), units);
           if (!parsed.ok || rangeErrorFor({ ...numericField, source: next }, parsed.value) !== null) {
             return;
           }
-          const calculated = tryMathComposition(() => setSolidField(feature, item.key, parsed.value, units.variables, units));
+          const store = useAppStore.getState();
+          const calculated = tryMathComposition(() => replaceValue(store.document, parsed.value));
           if (!calculated.ok) { useAppStore.getState().setShapeError(calculated.message); return; }
-          apply(calculated.value, `field:${feature.id}:${item.key}`);
+          if (calculated.value !== store.document) store.applyDocument(calculated.value, { coalesceKey: edit.key });
         }}
       />
     );
@@ -920,6 +992,24 @@ function SolidProperties({ feature }: { readonly feature: SolidFeature }): React
       axis === null ? null : (
         <div className="pcad-section" data-help-topic={toolCommandHelpTopic(feature.kind)}>
           <h3 className="pcad-section__title">{t('propertyPanel.sectionSketch')}</h3>
+          <PlanarHoleBasisInfo feature={feature} />
+          {location.locationCount <= 1 ? null : (
+            <div className="pcad-choice">
+              <span className="pcad-choice__label">{t('propertyPanel.holeLocation')}</span>
+              <div className="pcad-segmented pcad-choice__options" role="group" aria-label={t('propertyPanel.holeLocation')}>
+                {Array.from({ length: location.locationCount }, (_, index) => (
+                  <button key={index} type="button" className="pcad-button"
+                    title={t('propertyPanel.holeLocationTooltip')} aria-pressed={location.index === index}
+                    onClick={() => {
+                      setLocationState({ ...location, index });
+                      setDraftState(initialDraftVersionState<SolidFieldDraft>(documentVersion));
+                    }}>
+                    {t('propertyPanel.holeLocationNumber').replace('{index}', String(index + 1))}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {summary.fields.length === 0 ? null : (
             <div className="pcad-coordinate__fields">
               {summary.fields.map((item) => (item.readOnly ? renderReadOnlyField(item) : renderField(item)))}

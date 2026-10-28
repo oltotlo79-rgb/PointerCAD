@@ -1,3 +1,4 @@
+import { readNativeBoltPreloadWireInput, prepareNativeBoltPreloadJob, nativeBoltPreloadOwnedMatches, type NativeBoltPreloadOwnedResult } from './nativeBoltPreloadBinding.js';
 import { FEM_PROTOCOL, isBeamProof, isIdentity, isReply, sameIdentity, type BeamProofResult,
   type FemFailure, type FemIdentity, type FemPhase, type FemRequest, type FemResult } from './protocol.js';
 import type { BeamAnalysisResult, BeamModalResult } from './analysisModel.js';
@@ -13,6 +14,8 @@ import { contactInputSha256, translateBeamContact } from './contactTranslation.j
 import { contactResultMatches, type BeamContactAnalysisResult } from './contactResults.js';
 import { beamBoltContactInputSha256, translateBeamBoltContact, type BeamBoltContactResult } from './beamBoltContact.js';
 import { beamBoltContactResultMatches } from './beamBoltContactBinding.js';
+import { readFrameBoltContact, frameBoltContactInputSha256 } from './beamBoltContact.js';
+import { frameBoltContactResultMatches, type FrameBoltContactResult } from './frameBoltContactBinding.js';
 import { beamWeldContactInputSha256, translateBeamWeldContact, type BeamWeldContactResult } from './beamWeldContact.js';
 import { beamWeldContactResultMatches } from './beamWeldContactBinding.js';
 import { beamJointContactInputSha256, translateBeamJointContact, type BeamJointContactResult } from './beamJointContact.js';
@@ -340,6 +343,21 @@ export class FemClient {
         return hash !== null && beamWeldContactResultMatches(result, input, hash) ? result : null;
       });
   }
+  /** 専用frame入力を先に所有し、既存executeの取消・期限・4値identity照合を共有する。 */
+  analyzeFrameBoltContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<FrameBoltContactResult>> {
+    let prepared: ReturnType<typeof readFrameBoltContact>;
+    try { prepared = readFrameBoltContact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid frame-bolt input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.contact.geometry.source.documentId, input.contact.geometry.revision);
+    const expectedHash = frameBoltContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-frame-bolt-contact', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && frameBoltContactResultMatches(result, input, hash) ? result : null;
+      });
+  }
   /** Both connector families share this one request, input digest, owner and cancellation lifecycle. */
   analyzeJointContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamJointContactResult>> {
     let prepared: ReturnType<typeof translateBeamJointContact>;
@@ -354,6 +372,23 @@ export class FemClient {
         const hash = await expectedHash;
         return hash !== null && beamJointContactResultMatches(result, input, hash) ? result : null;
       });
+  }
+  /** Explicit numeric-plan source ownership; no CAD provenance is inferred by this low-level entry. */
+  analyzeNativeBoltPreload(value: unknown, options: FemOptions = {}): Promise<FemCompletion<NativeBoltPreloadOwnedResult>> {
+    let wire: ReturnType<typeof readNativeBoltPreloadWireInput>;
+    try { wire = readNativeBoltPreloadWireInput(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error ? error : new Error('Invalid native preload input', { cause: error })); }
+    // Reserve this generation before asynchronous hashing, so older preparation cannot supersede a newer request.
+    const identity = this.nextIdentity(wire.source.documentId, wire.source.revision);
+    return prepareNativeBoltPreloadJob(wire).then<FemCompletion<NativeBoltPreloadOwnedResult>>(job => {
+      if (this.disposed || options.signal?.aborted || identity.generation !== this.generation) {
+        return { kind: 'cancelled', identity, reason: this.disposed ? 'disposed' : options.signal?.aborted ? 'abort' : 'superseded' };
+      }
+      // Only plain source/plan data crosses the Worker boundary; no prepared/verified WeakSet token.
+      return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-native-bolt-preload', identity,
+        input: { source: job.source, plan: job.prepared.plan } }, options,
+        result => Promise.resolve(nativeBoltPreloadOwnedMatches(result, job)));
+    });
   }
   /** Initial strain is part of the same owned request and digest, independent of the external load factor. */
   analyzeJointInitialStrain(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamJointInitialStrainResult>> {

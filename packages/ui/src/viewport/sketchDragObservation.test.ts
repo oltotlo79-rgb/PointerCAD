@@ -8,6 +8,7 @@ import { constraintResolveOptions } from '../sketch/constraintActions.js';
 import { orbitFrom, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { createDragSolveJob } from './dragSketch.js';
+import { createSketchDragTiming, sketchDragTimingOwnerChanged, type SketchDragTiming, type SketchTimingContext } from './sketchDragTiming.js';
 import { exposeSketchDragObservation, type SketchDragObservation, type SketchDragObservationHost } from './sketchDragObservation.js';
 import { createSketchDragSession, type SketchDragSession } from './sketchDragSession.js';
 import type { SketchInteractionIndicators } from './sketchInteractionIndicators.js';
@@ -62,10 +63,10 @@ const indicators: SketchInteractionIndicators = {
   showSnap: noop, showTrack: noop, showInferred: noop, showEdit: noop, hideEdit: noop, clearSnapIndicators: noop,
   clearInferredConstraints: noop, clearOwnedIndicators: noop, clearOwnedEdit: noop,
 };
-function newSession(): SketchDragSession {
+function newSession(timing?: SketchDragTiming): SketchDragSession {
   return createSketchDragSession({
     scene: { screenToPlanePoint: (x, y) => [x, y, 0] }, project: (point) => [point[0], point[1]],
-    getOrbit: () => orbitFrom(0, 0), indicators, releaseCapture: noop, disposed: () => false,
+    getOrbit: () => orbitFrom(0, 0), indicators, releaseCapture: noop, disposed: () => false, timing,
   });
 }
 /** Precondition: the final target needs more attempts than one frame runs, so its solve is really pending. */
@@ -157,4 +158,79 @@ describe('sketch drag observation (read only)', () => {
     expect(later.lastCancelled?.session).toBe(2);
     expect(later.lastCommitted).toEqual(record);
   });
+});
+
+it('実sessionの採用resolvedと取消後baselineだけが同じcollectorで描画済みになる', () => {
+  const canvas = {};
+  let clock = 1000;
+  const timing = createSketchDragTiming(canvas, () => clock, 1_700_000_000_000);
+  const session = newSession(timing);
+  const before = useAppStore.getState();
+  const read = (): SketchTimingContext => {
+    const state = useAppStore.getState();
+    return { canvas, document: state.document, documentVersion: state.documentVersion,
+      owner: state.sketchDrag, resolved: state.dragResolved ?? state.resolvedSketch, hidden: false };
+  };
+  try {
+    expect(session.begin([10, 8])).toBe(true);
+    session.schedule(FINAL, 900); runAllFrames();
+    const preview = useAppStore.getState().dragResolved;
+    if (preview === null) throw new Error('Real public job did not adopt a preview');
+    timing.setSketch(preview, noop, read); clock = 1100; timing.render(noop, read);
+    expect(session.observe().timing?.records[0]).toMatchObject({ eventAtMs: 900, adoptedAtMs: 1000,
+      renderedAtMs: 1100, status: 'drawn', kind: 'pointermove' });
+    clock = 1200; session.stop(false, 1150, 'escape');
+    expect(useAppStore.getState().resolvedSketch).toBe(before.resolvedSketch);
+    expect(session.observe().timing?.records[1].renderedAtMs).toBeNull();
+    timing.setSketch(before.resolvedSketch, noop, read); clock = 1300; timing.render(noop, read);
+    expect(session.observe().timing?.records[1]).toMatchObject({ kind: 'escape', eventAtMs: 1150,
+      cancelledAtMs: 1200, renderedAtMs: 1300, status: 'drawn' });
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+  } finally { session.stop(false); timing.dispose(); }
+});
+
+it('最初のpreview前の取消もownerだけの実store遷移からbaselineを再結合し、render後だけ完了する', () => {
+  const canvas = {};
+  let clock = 1000, writes = 0;
+  const timing = createSketchDragTiming(canvas, () => clock, 1_700_000_000_000);
+  const session = newSession(timing), before = useAppStore.getState();
+  const read = (): SketchTimingContext => {
+    const state = useAppStore.getState();
+    return { canvas, document: state.document, documentVersion: state.documentVersion,
+      owner: state.sketchDrag, resolved: state.dragResolved ?? state.resolvedSketch, hidden: false };
+  };
+  const unsubscribe = useAppStore.subscribe((next, previous) => {
+    if (next.sketchDrag !== previous.sketchDrag) timing.invalidateScene();
+    // Canvasと同じ実判定。sceneの境界callbackを通すが、WebGL/画面成功とは数えない。
+    if (sketchDragTimingOwnerChanged(timing, next.sketchDrag, previous.sketchDrag)) {
+      timing.setSketch(next.dragResolved ?? next.resolvedSketch, () => { writes += 1; }, read);
+    }
+  });
+  try {
+    expect(session.begin([10, 8])).toBe(true);
+    session.schedule(FINAL, 900);
+    expect(session.observe().solvePending).toBe(true);
+    expect(useAppStore.getState().dragResolved).toBeNull();
+    expect(useAppStore.getState().resolvedSketch).toBe(before.resolvedSketch);
+    const active = useAppStore.getState(), writesBeforeCancel = writes;
+    timing.render(noop, read);
+    expect(timing.snapshot().records[0].renderedAtMs).toBeNull();
+    clock = 1200; session.stop(false, 1150, 'escape');
+    const cancelled = useAppStore.getState();
+    expect(active.sketchDrag).not.toBeNull();
+    expect(cancelled.sketchDrag).toBeNull();
+    expect(cancelled.dragResolved).toBe(active.dragResolved);
+    expect(cancelled.resolvedSketch).toBe(active.resolvedSketch);
+    expect(cancelled.document).toBe(before.document);
+    expect(cancelled.documentVersion).toBe(before.documentVersion);
+    expect(cancelled.undoStack).toBe(before.undoStack);
+    expect(writes).toBe(writesBeforeCancel + 1);
+    expect(timing.snapshot().records[1]).toMatchObject({ kind: 'escape', cancelledAtMs: 1200, renderedAtMs: null });
+    clock = 1300; timing.render(noop, read);
+    expect(timing.snapshot().records[1]).toMatchObject({ status: 'drawn', renderedAtMs: 1300 });
+    clock = 1400; timing.render(noop, read);
+    expect(timing.snapshot().records[1].renderedAtMs).toBe(1300);
+    expect(runAllFrames()).toBe(0);
+  } finally { unsubscribe(); if (session.active()) session.stop(false); timing.dispose(); }
 });

@@ -163,6 +163,7 @@ function holeFields(feature: HoleFeature, locationIndex?: number): SolidFieldSum
       fieldSummary('holeCylinderAngle', location.angle),
     );
   }
+  fields.push(...planarHoleFields(feature, locationIndex));
   return fields;
 }
 
@@ -193,7 +194,17 @@ function threadHoleFields(feature: ThreadHoleFeature, locationIndex?: number): S
       fieldSummary('holeCylinderAngle', location.angle),
     );
   }
+  fields.push(...planarHoleFields(feature, locationIndex));
   return fields;
+}
+
+function planarHoleFields(feature: HoleFeature | ThreadHoleFeature, index?: number): SolidFieldSummary[] {
+  const placement = feature.planar;
+  const slot = index ?? (placement?.locations.length === 1 ? 0 : -1);
+  const location = Number.isInteger(slot) ? placement?.locations[slot] : undefined;
+  return location === undefined || feature.cylindrical !== undefined ? [] : [
+    fieldSummary('holePlanarX', location.x), fieldSummary('holePlanarY', location.y),
+  ];
 }
 
 function holeTiltField(
@@ -1034,6 +1045,14 @@ export function summarizeSolid(
           { labelKey: 'propertyPanel.draftFaces', count: feature.faces.length },
         ],
       };
+    case 'holeTranslate':
+    case 'faceRotate':
+      return { ...base, fields: feature.kind === 'holeTranslate'
+        ? [fieldSummary('translationX', feature.translation[0]), fieldSummary('translationY', feature.translation[1]),
+          fieldSummary('translationZ', feature.translation[2])] : [fieldSummary('rotationAngle', feature.angle)],
+        toggles: [], choices: [], references: [bodyReference(document, 'propertyPanel.targetBody', feature.targetFeatureId)],
+        subShapeCounts: [{ labelKey: 'propertyPanel.selectedFaces', count: 1 },
+          ...(feature.kind === 'faceRotate' ? [{ labelKey: 'propertyPanel.selectedEdges' as const, count: 1 }] : [])] };
     case 'faceOffset':
       // 平らな面の移動(EX-18)。直せるのは符号付きの距離 1 つ。動かす面は画面で指すものなので
       // 欄にせず枚数だけを出す(抜き勾配の面と同じ切り分け)。
@@ -1247,7 +1266,7 @@ export function setSolidField(
   key: SolidFieldKey,
   value: ExpressionValue,
   variables?: ReadonlyMap<string, number>,
-  options: Omit<EvaluateOptions, 'variables'> & { readonly cylindricalLocationIndex?: number } = {},
+  options: Omit<EvaluateOptions, 'variables'> & { readonly cylindricalLocationIndex?: number; readonly planarLocationIndex?: number } = {},
 ): SolidFeature {
   switch (feature.kind) {
     case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief': return setSheetField(feature, key, value);
@@ -1258,9 +1277,9 @@ export function setSolidField(
     case 'sew':
       return key === 'tolerance' ? { ...feature, tolerance: value } : feature;
     case 'hole':
-      return setHoleField(feature, key, value, options.cylindricalLocationIndex);
+      return setHoleField(feature, key, value, options.cylindricalLocationIndex, options.planarLocationIndex);
     case 'threadHole':
-      return setThreadHoleField(feature, key, value, options.cylindricalLocationIndex);
+      return setThreadHoleField(feature, key, value, options.cylindricalLocationIndex, options.planarLocationIndex);
     case 'fillet':
       if (key === 'radius') {
         return { ...feature, radius: value };
@@ -1292,6 +1311,15 @@ export function setSolidField(
       return key === 'ruledTwist' ? { ...feature, twist: value } : feature;
     case 'draft':
       return key === 'draftAngle' ? { ...feature, angle: value } : feature;
+    case 'faceRotate':
+      return key === 'rotationAngle' ? { ...feature, angle: value } : feature;
+    case 'holeTranslate': {
+      const [x, y, z] = feature.translation;
+      if (key === 'translationX') return { ...feature, translation: [value, y, z] };
+      if (key === 'translationY') return { ...feature, translation: [x, value, z] };
+      if (key === 'translationZ') return { ...feature, translation: [x, y, value] };
+      return feature;
+    }
     case 'faceOffset':
       return key === 'faceOffsetDistance' ? withFaceOffsetDistance(feature, value) : feature;
     case 'transform':

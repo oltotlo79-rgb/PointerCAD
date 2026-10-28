@@ -249,6 +249,8 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         ...(feature.cylindrical === undefined
           ? {}
           : { cylindrical: rebuildCylindricalHole(feature.cylindrical, map) }),
+        ...(feature.planar === undefined ? {} : { planar: { kind: feature.planar.kind,
+          locations: feature.planar.locations.map(p => ({ x: map(p.x), y: map(p.y) })) } }),
       };
     case 'threadHole':
       return {
@@ -264,6 +266,8 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
         ...(feature.cylindrical === undefined
           ? {}
           : { cylindrical: rebuildCylindricalHole(feature.cylindrical, map) }),
+        ...(feature.planar === undefined ? {} : { planar: { kind: feature.planar.kind,
+          locations: feature.planar.locations.map(p => ({ x: map(p.x), y: map(p.y) })) } }),
       };
     case 'fillet':
       // 可変半径(FR-426、タスク46)の終点側は**省略できる欄**なので、押し出しの
@@ -308,6 +312,10 @@ function rebuildSolidFeature(feature: SolidFeature, map: ValueMapper): SolidFeat
       そのまま残る(`...feature` が持ち回る)。
     */
     case 'draft':
+      return { ...feature, angle: map(feature.angle) };
+    case 'holeTranslate':
+      return { ...feature, translation: [map(feature.translation[0]), map(feature.translation[1]), map(feature.translation[2])] };
+    case 'faceRotate':
       return { ...feature, angle: map(feature.angle) };
     case 'faceOffset':
       // 平らな面の移動(EX-18)。式の欄は符号付きの距離 1 つだけ(面の指紋はそのまま)。

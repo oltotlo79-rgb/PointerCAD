@@ -9,6 +9,8 @@ import { formatBomMass } from '../assembly/bomTableRows.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { drawingNoteGeometryElement } from './noteDisplay.js';
 import { drawingTableRowOwner } from './drawingSelection.js';
+import type { SteelSectionCatalog as TypeSteelSectionCatalog } from '@pointercad/model';
+
 
 export interface DrawingTableDisplay {
   readonly id: string;
@@ -48,7 +50,7 @@ export function displayDrawingTables(document: DrawingDocument, source: DrawingS
   const paper = paperSizeOf(document.sheet.paperSizeId);
   if (paper === undefined) return { elements, items, unresolved: document.tables.map((table) => table.id) };
   const bounds = createPaperFrame(paper).inner;
-  const steelShapes: Readonly<Record<import('@pointercad/model').SteelSectionCatalog, MessageKey>> = {
+  const steelShapes: Readonly<Record<TypeSteelSectionCatalog, MessageKey>> = {
     flatBar: 'assembly.steel.flatBar', roundBar: 'assembly.steel.roundBar', steelPipe: 'assembly.steel.steelPipe',
     equalAngle: 'assembly.steel.equalAngle', channel: 'assembly.steel.channel', hBeam: 'assembly.steel.hBeam',
   };

@@ -119,6 +119,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         ...(plan.entry === undefined ? {} : { entry: plan.entry }),
         // 円筒の側面の穴(EX05)。**平面の穴では段にも載せない**(`HoleStepSpec.cylindrical` の注釈)。
         ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
+        ...(plan.planar === undefined ? {} : { planar: plan.planar }),
       };
     case 'thread':
       return {
@@ -140,6 +141,7 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         ...(plan.entry === undefined ? {} : { entry: plan.entry }),
         // 円筒の側面のねじ穴(EX05)。**平面のねじ穴では段にも載せない**。位置ごとの向きは kernel が面から決める。
         ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
+        ...(plan.planar === undefined ? {} : { planar: plan.planar }),
       };
     case 'fillet':
       return {
@@ -294,6 +296,11 @@ function toSolidStepSpec(plan: SolidStepPlan): SolidStepSpec {
         shape: toSurfaceInput(plan.shape),
         targetKey: plan.targetKey,
       };
+    case 'holeTranslate':
+      return { kind: plan.kind, targetKey: plan.targetKey, face: toSubShapeQuery(plan.face), translation: plan.translation };
+    case 'faceRotate':
+      return { kind: plan.kind, targetKey: plan.targetKey, face: toSubShapeQuery(plan.face),
+        hinge: toSubShapeQuery(plan.hinge), angle: plan.angle };
     case 'faceOffset':
       // 平らな面の移動(EX-18)。指紋の詰め替えだけで、距離は解決済みの mm をそのまま渡す。
       return {

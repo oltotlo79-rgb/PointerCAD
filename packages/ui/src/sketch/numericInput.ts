@@ -101,6 +101,7 @@ import {
   type ThreadSeries,
 } from '@pointercad/model';
 
+import { DEFAULT_HOLE_TRANSLATION_MM, DEFAULT_FACE_ROTATION_DEGREES } from '../solid/directEditCommands.js';
 import { t, type MessageKey } from '../i18n/t.js';
 
 // 道具と入力段の契約は状態機械から独立した定義を参照する。
@@ -341,6 +342,8 @@ export type NumericChoiceKey =
   | 'mirrorPlane'
   /** リブの厚みを付ける側(両側 / 表 / 裏。FR-420)。 */
   | 'ribSide'
+  /** 平面の穴位置を点選択か面内X・Yで明示的に指定する。 */
+  | 'holePlacement'
   /** 穴の入口の広げ方(広げない / ざぐり / 皿もみ。FR-422)。 */
   | 'holeEntry'
   /** 外ねじを切り始める端(手前 / 奥。FR-423)。 */
@@ -703,6 +706,28 @@ const SEW_TOLERANCE_FIELDS: readonly NumericFieldDefinition[] = [
   { key: 'tolerance', labelKey: 'numericInput.field.tolerance', tooltipKey: 'numericInput.tooltip.tolerance', unit: 'mm', defaultSource: '0.01', range: POSITIVE },
 ];
 
+/** 平面の面内座標。空欄を既定にし、点モードへ暗黙変換しない。 */
+const PLANAR_LOCATION_FIELDS: readonly NumericFieldDefinition[] = [
+  {
+    key: 'holePlanarX',
+    labelKey: 'numericInput.field.holePlanarX',
+    tooltipKey: 'numericInput.tooltip.holePlanarX',
+    unit: 'mm',
+    defaultSource: '',
+    visibleWhen: visibility => whenChoiceIs('holePlacement', 'plane-face')(visibility)
+      && !whenToggleOn('cylinderFace')(visibility),
+  },
+  {
+    key: 'holePlanarY',
+    labelKey: 'numericInput.field.holePlanarY',
+    tooltipKey: 'numericInput.tooltip.holePlanarY',
+    unit: 'mm',
+    defaultSource: '',
+    visibleWhen: visibility => whenChoiceIs('holePlacement', 'plane-face')(visibility)
+      && !whenToggleOn('cylinderFace')(visibility),
+  },
+];
+
 /**
  * 穴の欄(FR-405、FR-422)。
  *
@@ -713,6 +738,7 @@ const SEW_TOLERANCE_FIELDS: readonly NumericFieldDefinition[] = [
  * **段を開いた直後に出る欄は直径と深さの 2 つだけ**(入口の既定は「広げない」)。
  */
 const HOLE_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
+  ...PLANAR_LOCATION_FIELDS,
   { key: 'diameter', labelKey: 'numericInput.field.diameter', tooltipKey: 'numericInput.tooltip.diameter', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DIAMETER_MM), range: POSITIVE },
   { key: 'depth', labelKey: 'numericInput.field.depth', tooltipKey: 'numericInput.tooltip.depth', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DEPTH_MM), range: POSITIVE },
   { key: 'counterboreDiameter', labelKey: 'numericInput.field.counterboreDiameter', tooltipKey: 'numericInput.tooltip.counterboreDiameter', unit: 'mm', defaultSource: String(DEFAULT_COUNTERBORE_DIAMETER_MM), range: POSITIVE, visibleWhen: whenChoiceIs('holeEntry', 'counterbore') },
@@ -727,6 +753,7 @@ const HOLE_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
 ];
 
 const THREAD_SIZE_FIELDS: readonly NumericFieldDefinition[] = [
+  ...PLANAR_LOCATION_FIELDS,
   { key: 'depth', labelKey: 'numericInput.field.depth', tooltipKey: 'numericInput.tooltip.depth', unit: 'mm', defaultSource: String(DEFAULT_HOLE_DEPTH_MM), range: POSITIVE },
   // ねじ部の長さの既定値専用の model 定数は無いため、穴の深さの既定(10)と揃える
   // (計画書タスク24 §2.11 の表がどちらも既定 10 としているのに合わせた)。
@@ -1090,6 +1117,14 @@ const SHELL_THICKNESS_FIELDS: readonly NumericFieldDefinition[] = [
  * 平らな面の移動の距離(EX-18)。符号付き(正で外へ足し、負で内へ削る)なので範囲は付けない。
  * 0 と数でない値は model の checkFaceOffset が理由つきで断る。動かす面は選択で決まるので欄に出さない。
  */
+const HOLE_TRANSLATE_FIELDS: readonly NumericFieldDefinition[] = TRANSFORM_TRANSLATION_FIELDS.map((field, index) => ({
+  ...field, defaultSource: String(index === 0 ? DEFAULT_HOLE_TRANSLATION_MM : 0),
+}));
+const FACE_ROTATE_FIELDS: readonly NumericFieldDefinition[] = [{
+  key: 'rotationAngle', labelKey: 'numericInput.field.angle', tooltipKey: 'numericInput.tooltip.faceRotateAngle',
+  unit: 'degree', defaultSource: String(DEFAULT_FACE_ROTATION_DEGREES),
+}];
+
 const FACE_OFFSET_DISTANCE_FIELDS: readonly NumericFieldDefinition[] = [
   {
     key: 'faceOffsetDistance',
@@ -1573,6 +1608,10 @@ function solidFieldDefinitionsFor(
       return SURFACE_SHAPE_FIELDS;
     case 'shellThickness':
       return SHELL_THICKNESS_FIELDS;
+    case 'holeTranslateVector':
+      return HOLE_TRANSLATE_FIELDS;
+    case 'faceRotateAngle':
+      return FACE_ROTATE_FIELDS;
     case 'faceOffsetDistance':
       return FACE_OFFSET_DISTANCE_FIELDS;
     case 'cutPlane':
@@ -1652,6 +1691,8 @@ export const STEP_TITLE_KEYS: Readonly<Record<NumericInputStep, MessageKey>> = {
   surfaceShape: 'numericInput.title.surfaceShape',
   shellThickness: 'numericInput.title.shellThickness',
   faceOffsetDistance: 'numericInput.title.faceOffsetDistance',
+  holeTranslateVector: 'numericInput.title.holeTranslateVector',
+  faceRotateAngle: 'numericInput.title.faceRotateAngle',
   cutPlane: 'numericInput.title.cutPlane',
   referencePlanePoint1: 'numericInput.title.referencePlanePoint1',
   referencePlanePoint2: 'numericInput.title.referencePlanePoint2',
@@ -1743,6 +1784,8 @@ export const NUMERIC_INPUT_STEPS: readonly NumericInputStep[] = [
   'surfaceShape',
   'shellThickness',
   'faceOffsetDistance',
+  'holeTranslateVector',
+  'faceRotateAngle',
   'cutPlane',
   'referencePlanePoint1',
   'referencePlanePoint2',
@@ -1808,6 +1851,8 @@ export const SOLID_TOOL_STEPS: Readonly<Record<SolidToolId, SolidNumericInputSte
   surface: 'surfaceShape',
   shell: 'shellThickness',
   faceOffset: 'faceOffsetDistance',
+  holeTranslate: 'holeTranslateVector',
+  faceRotate: 'faceRotateAngle',
   cut: 'cutPlane',
 };
 
@@ -1997,6 +2042,8 @@ const SOLID_STEP_TOOLS: Readonly<Record<SolidNumericInputStep, SolidToolId>> = {
   surfaceShape: 'surface',
   shellThickness: 'shell',
   faceOffsetDistance: 'faceOffset',
+  holeTranslateVector: 'holeTranslate',
+  faceRotateAngle: 'faceRotate',
   cutPlane: 'cut',
 };
 
@@ -2047,6 +2094,8 @@ const STEP_TOGGLE_KEYS: Readonly<Record<SolidNumericInputStep, readonly NumericT
   shellThickness: ['shellOutward'],
   // 平らな面の移動はつまみを持たない(向きは距離の符号で決まる)。
   faceOffsetDistance: [],
+  holeTranslateVector: [],
+  faceRotateAngle: [],
   // 「点を座標で入れる」(EX-04 W1)は残す側の 2 つの後ろに足す(既存の 2 つの並びは変えない)。
   cutPlane: ['cutKeepOpposite', 'cutKeepBoth', 'cutPointByCoordinate'],
 };
@@ -2524,8 +2573,9 @@ export type NumericFocusTarget =
 
 /** Tab で巡る輪。P1 の段は欄しか無いので、輪の添字は欄の添字と一致する。 */
 export function numericToggleEnabled(state: NumericInputState, key: NumericToggleKey): boolean {
-  if (key === 'cylinderFace' && state.step === 'holeSize') {
-    return choiceValueFrom(state.choices, 'holeEntry') !== 'countersink';
+  if (key === 'cylinderFace' && (state.step === 'holeSize' || state.step === 'threadSize')) {
+    return choiceValueFrom(state.choices, 'holePlacement') !== 'plane-face'
+      && choiceValueFrom(state.choices, 'holeEntry') !== 'countersink';
   }
   if (key !== 'sweepFrenet') return true;
   const guide = state.choices.find((choice) => choice.key === 'sweepGuide')?.value;
@@ -2619,6 +2669,7 @@ const CHOICE_DEPENDENT_STEPS: Readonly<Partial<Record<NumericInputStep, true>>> 
   */
   extrudeDistance: true,
   holeSize: true,
+  threadSize: true,
   surfaceShape: true,
   cutPlane: true,
 };
@@ -2715,12 +2766,15 @@ function applyToggleToFields(
   if (TOGGLE_DEPENDENT_STEPS[state.step] !== true) {
     return { ...state, toggles };
   }
-  if (state.step === 'holeSize') {
+  if (state.step === 'holeSize' || state.step === 'threadSize') {
     const cylindrical = toggles.some(toggle => toggle.key === 'cylinderFace' && toggle.value);
     const entry = choicesFor('holeSize', {}).find(choice => choice.key === 'holeEntry');
+    const placement = choicesFor(state.step, {}).find(choice => choice.key === 'holePlacement');
     const choices = state.choices.map(choice => choice.key === 'holeEntry' && entry !== undefined
       ? { ...choice, options: entry.options.filter(option => !cylindrical || option.value !== 'countersink') }
-      : choice);
+      : choice.key === 'holePlacement' && placement !== undefined
+        ? { ...choice, options: placement.options.filter(option => !cylindrical || option.value === 'points') }
+        : choice);
     return { ...rebuiltFields(state, choices, toggles), choices, toggles };
   }
   return { ...rebuiltFields(state, state.choices, toggles), toggles };
@@ -3083,6 +3137,9 @@ export interface SolidCommitValues {
    */
   readonly holeCylinderHeight?: ExpressionValue;
   readonly holeCylinderAngle?: ExpressionValue;
+  /** 明示した平面内のX・Y。元式を保持する符号付き長さ(mm)。 */
+  readonly holePlanarX?: ExpressionValue;
+  readonly holePlanarY?: ExpressionValue;
 }
 
 /** ソリッドのつまみ。持たない道具では欄ごと現れない。 */
@@ -3184,6 +3241,8 @@ export interface SolidShapeChoices {
   readonly mirrorPlane?: string;
   /** リブの厚みを付ける側('both' / 'positive' / 'negative')。 */
   readonly ribSide?: string;
+  /** 平面の穴位置('points' / 'plane-face')。未知の値は確定側で拒否する。 */
+  readonly holePlacement?: string;
   /** 穴の入口('plain' / 'counterbore' / 'countersink')。 */
   readonly holeEntry?: string;
   /** 外ねじを切り始める端('first' / 'last')。 */
@@ -3444,6 +3503,8 @@ function solidValuesFor(
         countersinkDiameter: get('countersinkDiameter'),
         countersinkAngle: get('countersinkAngle'),
         // 円筒の側面の穴(EX05)。つまみが切なら欄が無いので 2 つとも入らない。
+        holePlanarX: get('holePlanarX'),
+        holePlanarY: get('holePlanarY'),
         holeCylinderHeight: get('holeCylinderHeight'),
         holeCylinderAngle: get('holeCylinderAngle'),
       };
@@ -3452,6 +3513,8 @@ function solidValuesFor(
         depth: get('depth'),
         threadLength: get('threadLength'),
         // 円筒の側面のねじ穴(EX05)。つまみが切なら欄が無いので 2 つとも入らない(穴と同じ)。
+        holePlanarX: get('holePlanarX'),
+        holePlanarY: get('holePlanarY'),
         holeCylinderHeight: get('holeCylinderHeight'),
         holeCylinderAngle: get('holeCylinderAngle'),
       };
@@ -3509,6 +3572,7 @@ function solidValuesFor(
     */
     case 'draftAngle':
       return { draftAngle: get('draftAngle') };
+    case 'holeTranslateVector':
     case 'transformTranslation':
       return {
         translationX: get('translationX'),
@@ -3547,6 +3611,8 @@ function solidValuesFor(
       };
     case 'shellThickness':
       return { shellThickness: get('shellThickness') };
+    case 'faceRotateAngle':
+      return { rotationAngle: get('rotationAngle') };
     case 'faceOffsetDistance':
       return { faceOffsetDistance: get('faceOffsetDistance') };
     case 'cutPlane':
@@ -3869,6 +3935,7 @@ function shapeChoicesFrom(choices: readonly NumericChoice[]): SolidShapeChoices 
     thicknessSide: choiceValueFrom(choices, 'thicknessSide'),
     mirrorPlane: choiceValueFrom(choices, 'mirrorPlane'),
     ribSide: choiceValueFrom(choices, 'ribSide'),
+    holePlacement: choiceValueFrom(choices, 'holePlacement'),
     holeEntry: choiceValueFrom(choices, 'holeEntry'),
     threadShaftEnd: choiceValueFrom(choices, 'threadShaftEnd'),
     surfaceOperation: choiceValueFrom(choices, 'surfaceOperation'),
@@ -4293,6 +4360,8 @@ export function nextNumericInput(
     case 'surfaceShape':
     case 'shellThickness':
     case 'faceOffsetDistance':
+    case 'holeTranslateVector':
+    case 'faceRotateAngle':
     case 'cutPlane':
       /*
         基本形状5種(FR-429、タスク18)も、面をつなぐ・ロフト(FR-430、FR-410、タスク27)も

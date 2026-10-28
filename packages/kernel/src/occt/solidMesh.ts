@@ -40,7 +40,8 @@ import { computeVolumeProperties } from './volumeProperties.js';
 export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape, knownPlanar = false): number {
   const properties = new oc.GProp_GProps_1();
   try {
-    computeVolumeProperties(oc, shape, properties, knownPlanar);
+    // この口はMassだけを返す。重心/慣性のcallerは従来の完全測定を使う。
+    computeVolumeProperties(oc, shape, properties, knownPlanar, true);
     return properties.Mass();
   } finally {
     properties.delete();

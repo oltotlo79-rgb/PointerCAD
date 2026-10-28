@@ -22,6 +22,8 @@ import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { degreesToRadians, polarOffset, type WorkPlane } from './planeMath.js';
 import type { CoordinateInput, PointReference, ResolvedPoint, SketchError } from './types.js';
 import { addVec3, ORIGIN, type Vec3 } from './vec3.js';
+import type { FunctionPointResolver as TypeFunctionPointResolver } from '../functionGeometry/functionPointReference.js';
+
 
 /**
  * 球面上の点(FR-431)の土台になる球。**中心と半径だけ**を見る。
@@ -122,7 +124,7 @@ export interface ResolveContext {
    * ここは「球が見つかりません」になる(履歴の順序を知っているのは部品文書の側だから)。
    */
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
-  readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
+  readonly functionPoint?: TypeFunctionPointResolver;
   /**
    * 部品の基準点を id から引く(EX-18)。スケッチ 1 本は部品を知らないので、`sphere` と同じく
    * 部品文書の側(`resolvePart.ts`)が渡す。渡されなければ部品の基準点は無い扱い(従来どおり)。

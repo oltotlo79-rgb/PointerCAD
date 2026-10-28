@@ -15,6 +15,7 @@ import {
   type HoleFeature,
   type PartDocument,
   type ReferenceFeature,
+  type SolidFeature,
   type SubShapeRef,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
@@ -245,6 +246,37 @@ describe('タイムラインのつまみ(FR-507、FR-506)', () => {
     // 穴1 まで戻すと、押し出し1 だけが消費されている(R面取り1 はまだ無い)。
     expect(consumedIdsUpToTimeline(part, 2)).toEqual(new Set(['extrude-1']));
   });
+
+  it.each(['faceOffset', 'holeTranslate', 'faceRotate', 'boolean'] as const)(
+    '%s の失敗とタイムライン位置を同じ消費判定へ渡す', kind => {
+      const common = { id: 'edit-1', name: 'Edit', suppressed: false, targetFeatureId: HOLE.id };
+      const face = subShapeRef(HOLE.id, 'face');
+      const edit: SolidFeature = kind === 'boolean'
+        ? { ...common, kind, operation: 'subtract', toolFeatureId: 'tool-1' }
+        : kind === 'faceOffset' ? { ...common, kind, face, offset: ev(-28) }
+        : kind === 'holeTranslate' ? { ...common, kind, face, translation: [ev(100), ev(0), ev(0)] }
+        : { ...common, kind, face, hinge: subShapeRef(HOLE.id, 'edge'), angle: ev(90) };
+      const part: PartDocument = { ...fixture(), solids: [extrude('extrude-1', 'Base', 'face-a'),
+        HOLE, extrude('tool-1', 'Tool', 'face-b'), edit] };
+      const errors = [{ featureId: edit.id, code: 'missingBody' as const, message: 'Edit failed' }];
+      for (const index of [null, 4, 3, 2, 1, 0] as const) {
+        const expected = index === 0 || index === 1 ? [] : ['extrude-1'];
+        expect(consumedIdsUpToTimeline(part, index, errors)).toEqual(new Set(expected));
+      }
+      // Existing callers without errors retain the document-only result.
+      const successful = kind === 'boolean' ? ['extrude-1', 'hole-1', 'tool-1'] : ['extrude-1', 'hole-1'];
+      expect(consumedIdsUpToTimeline(part, null)).toEqual(new Set(successful));
+      expect(consumedIdsUpToTimeline(part, 4, [])).toEqual(new Set(successful));
+      expect(consumedIdsUpToTimeline({ ...part, solids: [...part.solids.slice(0, -1), { ...edit, suppressed: true }] }, null))
+        .toEqual(new Set(['extrude-1']));
+      // Another successful consumer still consumes the input of the failed edit.
+      const later: SolidFeature = { ...common, id: 'later-1', kind: 'boolean', operation: 'union', toolFeatureId: 'tool-1' };
+      expect(consumedIdsUpToTimeline({ ...part, solids: [...part.solids, later] }, null, errors))
+        .toEqual(new Set(['extrude-1', 'hole-1', 'tool-1']));
+      expect(consumedIdsUpToTimeline({ ...part, solids: [...part.solids, later] }, 4, errors))
+        .toEqual(new Set(['extrude-1']));
+    },
+  );
 
   it('つまみより後ろの段は「まだ作られていない」(プロパティの言い回し、P4b タスク22a-(2))', () => {
     const part = fixture();

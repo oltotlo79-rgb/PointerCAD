@@ -106,7 +106,11 @@
   "cutError.collinear": "3 つの点が一直線に並んでいます。別の点を選んでください。",
   "cutError.notStraightEdge": "まっすぐでない辺は切る面の基準にできません。直線の辺を選んでください。",
   "cutError.curvedFace": "平らでない面は切る面の基準にできません。平らな面を選んでください。",
-  "cutError.noProfile": "切る輪郭がありません。作図の閉じた面(円・楕円・閉じた曲線で囲んだ面)を、切る立体と一緒に選んでください。",
+  "cutError.noProfile": "切る曲線・輪郭がありません。作図の開いた円弧・楕円弧、または閉じた面を、切る立体と一緒に選んでください。",
+  "cutError.bladeNotCurrent": "選んだ曲線の計算が完了していません。計算が終わってから、編集中の作図の曲線を選び直してください。",
+  "cutError.bladeSelectionAmbiguous": "編集中の作図から、切る曲線だけを選び直してください。閉じた面と曲線を同時に選ばないでください。",
+  "cutError.bladeMustBeOpen": "全周や閉じた曲線は、その曲線で囲んだ面を選んでください。開いた円弧・楕円弧で切るときは端の異なる曲線を選んでください。",
+  "cutError.bladeDisconnected": "選んだ曲線の端がつながっていません。始点から終点へつながる順に選んでください。",
   "cutError.profileInvalid": "選んだ輪郭を閉じた面として解決できません。作図の誤りを直してから選び直してください。",
   "cutError.profileNotPlanar": "選んだ輪郭が 1 つの平面に乗っていません。平らな輪郭を選んでください。",
   "cutError.profileSelfIntersects": "選んだ輪郭が自分自身と交わっています。交わらない閉じた輪郭にしてください。",
@@ -120,5 +124,13 @@
   "cutError.coordinatePointUnused": "この決め方では、座標で入れた点を使いません。決め方を「3 点」「点と辺」「辺を含む面(辺と点)」「点と軸」のどれかにするか、「点を座標で入れる」を切ってください。",
   "cutError.tooManyPoints": "選んだ点と座標で入れた点を合わせると、この決め方に要る点の数より多くなります。点の選択を減らすか、「点を座標で入れる」を切ってください。",
   "solidError.sphereGridMissingSphere": "球を選んでから押してください。",
-  "solidError.sphereGridNoSketch": "点を置くスケッチがありません。"
+  "solidError.sphereGridNoSketch": "点を置くスケッチがありません。",
+  "directEditError.oneCylinder": "移動する穴の円筒面を 1 枚だけ選んでください。",
+  "directEditError.faceAndEdge": "回転する平らな面と、その面の直線辺を 1 つずつ選んでください。",
+  "directEditError.sameBody": "面と回転軸の辺は同じ立体から選んでください。",
+  "directEditError.straightHinge": "回転軸には曲線でなく直線の辺を選んでください。",
+  "directEditError.hingeOnFace": "回転する面の外周にある辺を選んでください。",
+  "directEditError.translation": "穴の移動量には、0 でない有限のベクトルを指定してください。",
+  "directEditError.angle": "面の回転角度には、0 でない有限の数を指定してください。",
+  "directEditError.failed": "形を変更できませんでした。選ぶ面・辺と入力値を見直してください。"
 }

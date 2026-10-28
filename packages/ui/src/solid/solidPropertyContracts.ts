@@ -52,6 +52,9 @@ export type SolidFieldKey =
   | 'counterboreDepth'
   | 'countersinkDiameter'
   | 'countersinkAngle'
+  /** 平面の選択位置の面内X・Y(mm)。複数位置ではindexを明示する。 */
+  | 'holePlanarX'
+  | 'holePlanarY'
   /*
     円筒の側面の穴(EX05)の位置。高さ(mm)は円筒の面の下側の端から軸に沿って、角度(度)は軸の
     まわり。位置が 1 つの穴にだけ出す(欄の種類は 1 つずつしか持てないため)。

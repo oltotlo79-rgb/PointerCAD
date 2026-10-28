@@ -811,6 +811,8 @@ describe('選択の種類の札と加工の案内(§0.a-0.6、タスク28)', () 
     loftTwist: 'window',
     draftAngle: 'window',
     faceOffsetDistance: 'statusBar.guide.faceOffsetDistance',
+    holeTranslateVector: 'statusBar.guide.holeTranslate',
+    faceRotateAngle: 'statusBar.guide.faceRotate',
     mirrorPlane: 'window',
     transformTranslation: 'statusBar.guide.transformTranslation',
     transformRotation: 'statusBar.guide.transformRotation',

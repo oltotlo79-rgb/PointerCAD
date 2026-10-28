@@ -1,3 +1,5 @@
+import type { SketchTimingSnapshot } from './sketchDragTiming.js';
+
 /**
  * Read-only observation of the sketch drag session for E2E only (FR-313, NFR-PF-1 timing evidence).
  *
@@ -12,6 +14,8 @@ export interface SketchDragEndRecord {
 }
 
 export interface SketchDragObservation {
+  /** E2E collectorがある場合だけ。既存getterの欄は互換維持する。 */
+  readonly timing?: SketchTimingSnapshot;
   /** Ordinal of the latest successful grab; 0 before the first grab. */
   readonly session: number;
   /** A grab of this session is in progress. */

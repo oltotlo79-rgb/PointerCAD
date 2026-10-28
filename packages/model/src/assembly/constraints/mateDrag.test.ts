@@ -416,3 +416,56 @@ describe('P7-18 境界と準備snapshot', () => {
     }
   });
 });
+
+describe('締結した自由組のドラッグは全員同じ並進', () => {
+  function freeBoltedGroup() {
+    const ids = ['plateA', 'plateB', 'bolt', 'nut'];
+    // 40×30×10 の二枚の板、中心 (20,15) の通し穴、M8×40 の締結後配置。
+    const points: readonly Vec3[] = [[0, 0, 0], [40, 0, 20], [20, 15, 0], [20, 15, 20]];
+    const initial = new Map<string, RigidPlacement>(ids.map((id, index) => [id, {
+      position: points[index], rotation: index === 1 ? [0, 1, 0, 0] : [0, 0, 0, 1],
+    }]));
+    const assembly = joinRigidGroup({ ...createAssemblyDocument('free bolted group'), components: ids.map(id => component(id)) }, ids);
+    return { assembly, initial, ids };
+  }
+  it.each(['plateA', 'plateB', 'bolt', 'nut'])('%sを引いても向きと相対配置を保つ', (selected) => {
+    const { assembly, initial, ids } = freeBoltedGroup();
+    const before = structuredClone({ assembly, initial });
+    const ready = prepareMateDrag(assembly, new Map(), initial, selected);
+    if (!ready.ok) throw new Error(ready.reason);
+    const origin = initial.get(selected);
+    if (origin === undefined) throw new Error('fixture origin');
+    let warm = ready.drag.initial;
+    // 実画面の位置を期待に写さず、固定入力 (10,10,0) とその反対を用いる。
+    for (const sign of [1, -1]) {
+      for (let step = 1; step <= 8; step += 1) {
+        const delta: Vec3 = [sign * 10 * step / 8, sign * 10 * step / 8, 0];
+        const target: Vec3 = [origin.position[0] + delta[0], origin.position[1] + delta[1], origin.position[2]];
+        const frame = solveMateDrag(ready.drag, target, { phase: 'frame', placements: warm });
+        expect(frame.hardSatisfied).toBe(true);
+        expect(frame.counts.totalIterations).toBeLessThanOrEqual(5);
+        warm = frame.placements;
+        const result = step === 8 ? solveMateDrag(ready.drag, target, { phase: 'release', placements: warm }) : frame;
+        if (step === 8) expect(result.committable).toBe(true);
+        expect(result.driverError).toBeLessThan(1e-9);
+        for (const id of ids) {
+          const start = initial.get(id), moved = result.placements.get(id);
+          if (start === undefined || moved === undefined) throw new Error('fixture placement');
+          moved.position.forEach((value, axis) => expect(value - start.position[axis]).toBeCloseTo(delta[axis], 4));
+          moved.rotation.forEach((value, axis) => expect(value).toBeCloseTo(start.rotation[axis], 6));
+        }
+      }
+    }
+    expect({ assembly, initial }).toEqual(before);
+    const cancelled = solveMateDrag(ready.drag, [50, 10, 20], { phase: 'release', shouldCancel: () => true });
+    expect(cancelled.stop).toBe('cancelled');
+    expect(cancelled.committable).toBe(false);
+    expect(cancelled.placements).toEqual(ready.drag.initial);
+    expect(cancelled.counts.totalIterations).toBe(0);
+  });
+  it('一人でも固定なら自由組として準備しない', () => {
+    const { assembly, initial } = freeBoltedGroup();
+    const fixed = { ...assembly, components: assembly.components.map(c => c.id === 'plateA' ? { ...c, fixed: true } : c) };
+    expect(prepareMateDrag(fixed, new Map(), initial, 'plateB')).toEqual({ ok: false, reason: 'unavailableComponent' });
+  });
+});

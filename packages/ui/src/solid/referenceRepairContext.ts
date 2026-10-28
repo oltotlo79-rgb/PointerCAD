@@ -33,16 +33,24 @@ export function repairContextReady(state: AppState): boolean {
     && (state.lastOutcome === 'success' || state.lastOutcome === 'failed');
 }
 
+/** 現文書・同世代の表示bodyと、実scopeが所有する中間bodyだけを借りる。保存参照は変更しない。 */
+export function currentPartReferenceBodies(state: AppState): readonly SolidBody[] {
+  const active = activeDocument(state);
+  if (active.kind !== 'part') return [];
+  const snapshot = state.referenceRepairBodies;
+  const upstream = snapshot !== null && snapshot.scope.current && snapshot.document === active.document
+    && snapshot.scope.document === active.document && snapshot.scope.context.generation === snapshot.generation
+    && snapshot.activeDocumentId === state.activeDocumentId && snapshot.generation === state.completedGeneration
+    && snapshot.generation === state.requestedGeneration && snapshot.displayBodies === state.bodies
+    ? snapshot.bodies.filter(body => state.bodies.includes(body) || snapshot.scope.referenceBodyCurrent(body)) : [];
+  return [...new Set([...state.bodies, ...upstream])];
+}
+
 export function currentRepairSlots(state: AppState): readonly CurrentRepairSlot[] {
   const active = activeDocument(state);
   const hoverId = (ref: SubShapeRef): string => subShapeElementId(ref.bodyFeatureId, ref.fingerprint.kind, ref.index);
   if (active.kind === 'part') {
-    const snapshot = state.referenceRepairBodies;
-    const upstream = snapshot !== null && snapshot.scope.current && snapshot.document === active.document
-      && snapshot.activeDocumentId === state.activeDocumentId && snapshot.generation === state.completedGeneration
-      && snapshot.generation === state.requestedGeneration && snapshot.displayBodies === state.bodies
-      ? snapshot.bodies.filter(body => state.bodies.includes(body) || snapshot.scope.referenceBodyCurrent?.(body) === true) : [];
-    const currentBodies = [...new Set([...state.bodies, ...upstream])];
+    const currentBodies = currentPartReferenceBodies(state);
     return partRepairSlots(active.document).map(slot => ({ ...slot,
     bodies: currentBodies.filter(body => !state.partErrors.some(error => error.featureId === body.featureId)), hoverId,
     available: currentBodies.some(body => body.featureId === slot.reference.bodyFeatureId)

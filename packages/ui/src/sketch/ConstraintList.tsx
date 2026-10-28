@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 
 import { evaluateFieldSource, isPendingFieldError, useFieldUnits } from '../shell/propertyFieldUnits.js';
 
@@ -75,7 +75,7 @@ function ConstraintValueField({ summary }: ConstraintValueFieldProps): React.JSX
   );
 }
 
-export function ConstraintList(): React.JSX.Element | null {
+const MemoizedConstraintList = memo(function ConstraintListContent(): React.JSX.Element | null {
   const summaries = useAppStore((state) => state.constraintSummaries);
   const selectedConstraintId = useAppStore((state) => state.selectedConstraintId);
   const setSelectedConstraint = useAppStore((state) => state.setSelectedConstraint);
@@ -129,4 +129,9 @@ export function ConstraintList(): React.JSX.Element | null {
       </ul>
     </div>
   );
+});
+
+/** Parent-only selection renders do not revisit every dimension input. Own store/units still subscribe. */
+export function ConstraintList(): React.JSX.Element | null {
+  return <MemoizedConstraintList />;
 }

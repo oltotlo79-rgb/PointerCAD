@@ -141,7 +141,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
   },
   saveSolidAnalysis: () => {
     const state = get(), session = state.solidAnalysisSession;
-    if (!session || state.assembly !== null || state.drawing !== null) return;
+    if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
     try {
       if (!state.solidAnalysisRunner) throw new Error(t('solidAnalysis.failed'));
       state.solidAnalysisRunner.validate();
@@ -172,7 +172,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
   setSolidModalView: (view, amplitudeText) => { set({ solidModal: setSolidModalView(get().solidModal, view, amplitudeText) }); },
   saveSolidModal: () => {
     const state = get(), session = state.solidAnalysisSession;
-    if (!session || state.assembly !== null || state.drawing !== null) return;
+    if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
     try {
       const definition = solidModalSavedInput(session, state.solidModal, state.solidModalShared, state.document.id, state.document.parameters, state.bodies);
       const others = state.document.beamAnalysisInputs?.analyses.filter(value => value.kind !== 'solid-modal-cad') ?? [];
@@ -203,7 +203,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
   },
   saveSolidBuckling: () => {
     const state = get(), session = state.solidAnalysisSession;
-    if (!session || state.assembly !== null || state.drawing !== null) return;
+    if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
     try {
       const definition = solidBucklingSavedInput(session, state.solidBuckling, state.solidBucklingReference, state.document.id,
         state.document.parameters);

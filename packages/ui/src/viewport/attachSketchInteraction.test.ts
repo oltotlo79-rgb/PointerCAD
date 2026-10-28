@@ -31,6 +31,7 @@ import { accountingSnapshot, captureStagedSolidOwnership, currentStagedSolid, ty
   type StagedSolidState } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachCameraControls } from './attachCameraControls.js';
+import { createSketchDragTiming, type SketchDragTiming } from './sketchDragTiming.js';
 import type { ViewportScene } from './createViewportScene.js';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -54,12 +55,12 @@ function interactionCanvas(): { canvas: HTMLCanvasElement; captured: Set<number>
   } };
 }
 
-function attachPointInteraction(canvas: HTMLCanvasElement): ReturnType<typeof attachSketchInteraction> {
+function attachPointInteraction(canvas: HTMLCanvasElement, timing?: SketchDragTiming): ReturnType<typeof attachSketchInteraction> {
   const projection: Pick<ViewportScene, 'worldToScreen' | 'screenToPlanePoint' | 'pointerRay'> = {
     worldToScreen: point => [point[0], point[1]], screenToPlanePoint: (x, y) => [x, y, 0],
     pointerRay: () => null,
   };
-  return attachSketchInteraction(canvas, projection as ViewportScene, () => orbitFrom(0, 0), () => false);
+  return attachSketchInteraction(canvas, projection as ViewportScene, () => orbitFrom(0, 0), () => false, timing);
 }
 
 function resetPointDocument(): void {
@@ -745,4 +746,32 @@ describe('drag release uses the actual canvas pointerup coordinates', () => {
       expect(captured.size).toBe(0);
     } finally { attached.detach(); resetTestStore(); }
   });
+});
+
+it.each(['Escape', 'pointercancel'] as const)('実handlerの%sは元event.timeStampをcollectorへ渡す', ending => {
+  resetPointDocument();
+  vi.stubGlobal('requestAnimationFrame', () => 1);
+  vi.stubGlobal('cancelAnimationFrame', () => undefined);
+  const { canvas, send } = interactionCanvas();
+  const timing = createSketchDragTiming(canvas);
+  const attached = attachPointInteraction(canvas, timing);
+  let moveAt = -1, cancelAt = -1;
+  canvas.addEventListener('pointermove', event => { moveAt = event.timeStamp; });
+  canvas.addEventListener('pointercancel', event => { cancelAt = event.timeStamp; });
+  try {
+    const before = useAppStore.getState();
+    send('pointerdown', 40, 50); send('pointermove', 60, 70);
+    if (ending === 'Escape') {
+      const event = Object.assign(new Event('keydown', { cancelable: true }), { key: 'Escape' });
+      cancelAt = event.timeStamp; canvas.dispatchEvent(event);
+    } else send('pointercancel', 60, 70);
+    const records = timing.snapshot().records;
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({ kind: 'pointermove', rawEventAtMs: moveAt, eventAtMs: moveAt, status: 'cancelled' });
+    expect(records[1]).toMatchObject({ kind: ending === 'Escape' ? 'escape' : 'pointercancel',
+      rawEventAtMs: cancelAt, eventAtMs: cancelAt, renderedAtMs: null });
+    expect(records[1].cancelledAtMs).not.toBeNull();
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+  } finally { attached.detach(); timing.dispose(); resetTestStore(); }
 });

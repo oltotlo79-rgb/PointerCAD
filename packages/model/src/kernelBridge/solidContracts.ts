@@ -17,12 +17,25 @@ import type {
 } from './sketchContracts.js';
 
 
+/** 現在のnative面から導く基準。保存する指紋には含めない。 */
+export interface NativePlanarBasis {
+  readonly origin: Vec3;
+  readonly xAxis: Vec3;
+  readonly yAxis: Vec3;
+  readonly normal: Vec3;
+}
 /**
  * 面 1 枚の素性(計画書 P3 §2.2、§2.8)。部分形状の当たり判定・強調・指紋の材料になる。
  * kernel の `SolidFaceInfo` と同じ形だが、model は kernel の型を再輸出しないので
  * この場に自分の型として持つ(P0 §0.11)。
  */
 export interface SolidFaceEntry {
+  readonly planarBasis?: NativePlanarBasis;
+  /** Current native cylindrical placement basis, display only; never a saved fingerprint.
+   * axis = Position.Direction (not flipped by face Orientation); zeroDirection = Position.XDirection.
+   * Height h is origin + (axialRange[0] + h) * axis. Positive angles turn about axis by the right-hand rule. */
+  readonly cylinderBasis?: { readonly origin: Vec3; readonly axis: Vec3;
+    readonly zeroDirection: Vec3; readonly axialRange: readonly [number, number] };
   /** Derived native primitive; its axis is not reversed with the material face. Not saved identity or trim evidence. */
   readonly analyticSurface?:
     | { readonly kind: 'cone'; readonly origin: Vec3; readonly axis: Vec3;
@@ -376,6 +389,7 @@ export interface SolidRecomputeOptions {
  * SubShapeRef・schema・鍵には足さず、古い文書も現在の面・辺から解析点を取り直す。
  */
 export type MateSubShapeGeometry = SubShapeFingerprint & {
+  readonly planarBasis?: NativePlanarBasis;
   readonly axisOrigin?: Vec3;
   /** 現在の全周円筒面だけが持つ軸方向範囲。保存指紋から復元しない。 */
   readonly cylinderSpan?: readonly [number, number];

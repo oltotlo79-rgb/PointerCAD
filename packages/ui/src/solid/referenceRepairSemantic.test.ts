@@ -152,3 +152,21 @@ describe('番号交換と意味参照', () => {
     expect(impacts.find(item => item.ownerId === 'volume')).toMatchObject({ status: 'missing', issue: '後続加工が未解決' });
   });
 });
+
+describe('repair summary rounds display values without rewriting saved fingerprints', () => {
+  it.each([
+    [5999.999999999999, '6000'], [-1.23456789123, '-1.23456789'],
+    [0.00000000000123456789123, '1.23456789e-12'], [123456789123000000000, '123456789000000000000'],
+    [-0, '0'],
+  ] as const)('uses nine significant digits for position, area and length: %s', (value, shown) => {
+    const face: SubShapeRef = { bodyFeatureId: 'saved', index: 7, fingerprint: { kind: 'face',
+      surfaceKind: 'plane', area: value, position: [value, 0, 0], axis: [0, 1, 0], radius: null } };
+    const edge: SubShapeRef = { bodyFeatureId: 'saved', index: 3, fingerprint: { kind: 'edge',
+      curveKind: 'line', length: value, position: [value, 0, 0], axis: [1, 0, 0], radius: null } };
+    const before = structuredClone([face, edge]);
+    expect(summarizeRepairReference(face)).toContain(`(${shown}, 0, 0) mm / 面積 ${shown} mm²`);
+    expect(summarizeRepairReference(edge)).toContain(`(${shown}, 0, 0) mm / 長さ ${shown} mm`);
+    expect([face, edge]).toEqual(before);
+    expect(Object.is(face.fingerprint.kind === 'face' ? face.fingerprint.area : NaN, value)).toBe(true);
+  });
+});

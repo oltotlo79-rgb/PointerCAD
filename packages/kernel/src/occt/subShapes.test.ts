@@ -46,6 +46,19 @@ describe('解析軸上点の収集(P7-14b)', () => {
     return collectSubShapes(oc, shape, mesh.faceRanges, edges.edgeRanges, factory);
   }
 
+  it('collects native cylinder display basis independently of material orientation and trimmed coverage', () => {
+    const handle = halfShape('cylinder'), allocations = createAllocations();
+    try {
+      const normal = collect(handle.shape).faces.find(face => face.surfaceKind === 'cylinder');
+      const reversed = collect(allocations.keep(handle.shape.Reversed())).faces.find(face => face.surfaceKind === 'cylinder');
+      expect(normal?.cylinderBasis).toEqual({ origin: [0, 0, 0], axis: [0, 0, 1], zeroDirection: [1, 0, 0], axialRange: [0, 10] });
+      expect(reversed?.cylinderBasis).toEqual(normal?.cylinderBasis);
+      expect(reversed?.axis).toEqual([0, 0, -1]);
+      expect(normal?.cylinderSpan).toBeNull();
+      expect(collect(handle.shape).faces.filter(face => face.surfaceKind !== 'cylinder').every(face => face.cylinderBasis === undefined)).toBe(true);
+    } finally { allocations.release(); handle.delete(); }
+  });
+
   it('distinguishes exterior cylindrical material normals from bore, reversed and placed faces', () => {
     const { keep, release } = createAllocations();
     try {

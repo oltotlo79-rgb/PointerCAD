@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { createFunctionSurfaceEvaluator } from './functionSurfaceEvaluation.js';
@@ -100,4 +100,104 @@ describe('XYZ範囲内の関数曲面を適応分割し、つながる三角形�
       expect(values.every(value => value > 0) || values.every(value => value < 0)).toBe(true);
     }
   });
+});
+
+describe('曲面の二階微分で値域だけを共有する', () => {
+  it('枝の境界・方向の所有・別入力の結果を混ぜず、未知の曲率を零にしない', async () => {
+    const { compileFunctionScalar } = await import('./compileFunctionScalar.js');
+    const { createScalarDirectionalJet, createScalarDirectionalJets } = await import('./scalarCurveCurvature.js');
+    const definition = createFunctionMathSource('which(U<0,3*U^2+5*U*V+7*V^2,true,U^3)','text','radian',
+      {axes:[],parameters:['U','V'],coefficients:[]},backend);
+    const tape = compileFunctionScalar(definition,['U','V'],[],{backend,shouldStop:()=>undefined});
+    const directions = [[1,0],[0,1],[1,1]], evaluate = createScalarDirectionalJets(tape,directions);
+    const reference = directions.map(direction=>createScalarDirectionalJet(tape,direction));
+    directions[0][0] = 100;
+    const boxes = [[{lower:-2,upper:-1},{lower:1,upper:2}], [{lower:-1,upper:1},{lower:1,upper:2}],
+      [{lower:1,upper:2},{lower:1,upper:2}]];
+    const original = evaluate(boxes[0]), snapshot = structuredClone(original);
+    for (let direction = 0; direction < 3; direction++) {
+      const second = original[direction].second, exact = [6,14,30][direction];
+      expect(second?.lower).toBeLessThanOrEqual(exact); expect(second?.upper).toBeGreaterThanOrEqual(exact);
+    }
+    for (const box of boxes) expect(evaluate(box)).toEqual(reference.map(value=>value(box)));
+    expect(evaluate(boxes[1])).toEqual(Array.from({length:3},()=>({first:null,second:null,reason:'piecewise-boundary'})));
+    expect(original).toEqual(snapshot); expect(evaluate(boxes[0])).toEqual(original);
+    expect(()=>createScalarDirectionalJets(tape,[])).toThrow(RangeError);
+    expect(()=>createScalarDirectionalJets(tape,[[1,0],[0,1],[1,1],[1,-1]])).toThrow(RangeError);
+    expect(()=>createScalarDirectionalJets(tape,[[NaN,0]])).toThrow(RangeError);
+    expect(()=>createScalarDirectionalJets(tape,[[1]])).toThrow(RangeError);
+  });
+
+  it('区間端点・無効領域・再評価は独立した3方向評価と一致し、値域は座標ごとに1回だけ評価する', async () => {
+    const { compileFunctionScalar } = await import('./compileFunctionScalar.js');
+    const { createScalarDirectionalJet, createScalarDirectionalJets } = await import('./scalarCurveCurvature.js');
+    const intervals = await import('./scalarMathIntervals.js');
+    const { vi } = await import('vitest');
+    const original = intervals.createScalarIntervalEvaluation;
+    let calls = 0;
+    const spy = vi.spyOn(intervals, 'createScalarIntervalEvaluation').mockImplementation((...args) => {
+      const value = original(...args);
+      return { ...value, evaluate: inputs => { calls++; return value.evaluate(inputs); } };
+    });
+    const directions = [[1,0],[0,1],[1,1]];
+    const boxes = [[{lower:-1,upper:1},{lower:-1,upper:1}], [{lower:0.2,upper:0.8},{lower:1,upper:2}],
+      [{lower:0,upper:NaN},{lower:1,upper:1}], [{lower:-2,upper:-1},{lower:-1,upper:0}]];
+    try {
+      for (const source of ['1','U','-V','U+V','U-V','U*V','U/(V+3)','(U+3)^-3','(U^2+V^2)/10',
+        'U^4+V^3','sqrt(U)','abs(U)','sin(U+V)','cos(U)','tan(U)','ln(U)','exp(V)','floor(U)','min(U,V)','1/U']) {
+        const definition = createFunctionMathSource(source,'text','radian',{axes:[],parameters:['U','V'],coefficients:[]},backend);
+        const tape = compileFunctionScalar(definition,['U','V'],[],{backend,shouldStop:()=>undefined});
+        const shared = createScalarDirectionalJets(tape,directions), reference = directions.map(direction=>createScalarDirectionalJet(tape,direction));
+        for (const box of boxes) {
+          const expected = reference.map(evaluate=>evaluate(box));
+          calls = 0;
+          const actual = shared(box), snapshot = structuredClone(actual);
+          expect(actual).toEqual(expected); expect(calls).toBe(1);
+          shared(boxes[1]); expect(actual).toEqual(snapshot);
+        }
+      }
+      const surface = evaluator(['U','V','(U^2+V^2)/10']); calls = 0;
+      const bound = surface.interpolationErrorBound?.([-1,-1],[1,1]);
+      expect(calls).toBe(3); expect(bound).toBeGreaterThanOrEqual(0.2); expect(bound).toBeLessThan(0.20000000001);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('時計を注入した実入力の放物面で平滑面の完成・独立解析値・全数値予算を検査する', async () => {
+    const { executeFunctionSurfaceWorkRequest } = await import('./functionSurfaceWorkExecution.js');
+    const { decodeFunctionSurfaceWorkRequest, createFunctionSurfaceWorkEnvelope } = await import('./functionSurfaceWorkRequest.js');
+    const { warmMathBackend } = await import('./createMathBackend.js');
+    const { GEOMETRY_CALCULATION_MS } = await import('./mathWorkExecution.js');
+    const { pacedCalculationMs } = await import('./mathInputContract.js');
+    warmMathBackend(backend);
+    const source = (text: string) => createFunctionMathSource(text,'text','radian',{axes:['X','Y'],parameters:[],coefficients:[]},backend);
+    const input = decodeFunctionSurfaceWorkRequest({identity:{documentId:'surface-deadline',documentVersion:1,editorId:'surface',inputRevision:1},
+      independent:['X','Y'],outputs:[source('X'),source('Y'),source('(X^2+Y^2)/10')],lower:[-4,-4],upper:[4,4],
+      minimum:[-4,-4,-1],maximum:[4,4,4],tolerance:0.001,coefficients:[],
+      budget:{maximumSamples:100_000,maximumCells:400_000,maximumTriangles:100_000,maximumDepth:24}});
+    // Deterministic geometry proof, not a claim that this input completes within the real product deadline.
+    // geometryCalculationDeadline.test.ts retains the real clock consumer's stop/budget boundary tests.
+    const realNow = performance.now.bind(performance), started = realNow();
+    const result = (() => {
+      const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+      try { return executeFunctionSurfaceWorkRequest(createFunctionSurfaceWorkEnvelope(1,input),backend).result; }
+      finally { clock.mockRestore(); }
+    })();
+    const elapsedMs = realNow()-started, limitMs = pacedCalculationMs(GEOMETRY_CALCULATION_MS);
+    process.stdout.write('[pcad:surface-functional-geometry] '+JSON.stringify({clock:'injected-frozen',
+      performanceQualified:false,elapsedMs,referenceLimitMs:limitMs,withinReference:elapsedMs<=limitMs,
+      status:result.status,stats:'stats' in result?result.stats:null,reason:'reason' in result?result.reason:null})+String.fromCharCode(10));
+    expect(GEOMETRY_CALCULATION_MS).toBe(2000); expect(Number.isFinite(elapsedMs) && elapsedMs >= 0).toBe(true);
+    if (result.status !== 'ready') throw new Error(JSON.stringify(result));
+    expect(result.spline).toBeDefined(); expect(result.stats).toEqual({samples:49666,cells:38229,triangles:32768});
+    expect(result.maximumInterpolationErrorBound).toBeLessThanOrEqual(0.0005);
+    expect(result.spline?.errorBound).toBeLessThanOrEqual(0.001);
+    let residual = 0;
+    for (const [a,b,c] of result.triangles) {
+      const vertices = [result.vertices[a],result.vertices[b],result.vertices[c]];
+      const x = vertices.reduce((sum,vertex)=>sum+vertex.point[0]/3,0), y = vertices.reduce((sum,vertex)=>sum+vertex.point[1]/3,0);
+      const z = vertices.reduce((sum,vertex)=>sum+vertex.point[2]/3,0);
+      residual = Math.max(residual,Math.abs(z-(x*x+y*y)/10));
+    }
+    expect(residual).toBeLessThanOrEqual(result.maximumInterpolationErrorBound);
+  }, 30_000);
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_FACE_COLOR, type ResolvedSketch, type Vec3 } from '@pointercad/model';
 
 import {
-  distanceToSegment2d, isInsidePolygon2d, PICK_RADIUS_PIXELS, pickSketchElement,
+  distanceToSegment2d, isInsidePolygon2d, PICK_RADIUS_PIXELS, pickSketchElement, sketchForSelection,
 } from './pickMath.js';
 
 const project = (point: Vec3): readonly [number, number] => [point[0], point[1]];
@@ -41,6 +41,23 @@ const SKETCH: ResolvedSketch = {
 };
 
 describe('選択の当たり判定(FR-106)', () => {
+  it('selection filtering preserves the original all-on sketch and independently excludes each sketch kind', () => {
+    const all = { vertex: true, edge: true, face: true, body: true };
+    expect(sketchForSelection(SKETCH, all)).toBe(SKETCH);
+    expect(sketchForSelection(SKETCH, { ...all, body: false })).toBe(SKETCH);
+    const pointsOff = sketchForSelection(SKETCH, { ...all, vertex: false });
+    expect(pickSketchElement(pointsOff, project, [1, 1])?.elementId).toBe('l0');
+    expect(pointsOff.points).toEqual([]);
+    expect(pointsOff.segments).toBe(SKETCH.segments);
+    const edgesOff = sketchForSelection(SKETCH, { ...all, edge: false });
+    expect(pickSketchElement(edgesOff, project, [22, 10])).toBeNull();
+    expect([edgesOff.segments, edgesOff.arcs, edgesOff.ellipses, edgesOff.splines]).toEqual([[], [], [], []]);
+    expect(edgesOff.points).toBe(SKETCH.points);
+    expect(pickSketchElement(sketchForSelection(SKETCH, { ...all, face: false }), project, [60, 10])).toBeNull();
+    expect(SKETCH.points).toHaveLength(1);
+    expect(SKETCH.faces).toHaveLength(1);
+  });
+
   it('画面座標での点と線分の距離', () => {
     // 垂線の足が線分の内側(比 0.5)に落ちるので、そのまま垂線の長さ。
     expect(distanceToSegment2d([5, 5], [0, 0], [10, 0])).toBe(5);

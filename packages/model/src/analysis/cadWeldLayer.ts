@@ -12,6 +12,7 @@ import type { BeamAnalysisDocument, Vector3 } from './analysisModel.js';
 import { InputIssue } from './analysisValidation.js';
 import { readBeamAnalysisInputs, type StandardBeamContactDefinition } from './beamInputs.js';
 import { readCadWeldLayerInputs } from './weldLayerInput.js';
+import { cadWeldThroatFrame } from './cadWeldThroatFrame.js';
 import { BEAM_CONNECTION_TOLERANCE_MM, standardMembersToBeamAnalysis, type StandardBeamAdapterContext } from './standardBeamAdapter.js';
 
 export interface PreparedCadWeldLayer {
@@ -32,7 +33,7 @@ interface WeldScope {
   readonly solved: ResolvedAssembly;
 }
 
-/** Complete straight right-angle bead groups, each interval linked to owned endpoint sections. */
+/** 保存した全直線押出しビードの実のどを、所有する端部断面へ結ぶ。 */
 export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue: unknown, value: unknown,
   context: StandardBeamAdapterContext): { readonly geometry: BeamAnalysisDocument;
     readonly contact: StandardBeamContactDefinition; readonly welds: readonly PreparedCadWeldLayer[] } {
@@ -132,8 +133,8 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
       throw new InputIssue('stale-weld', weld.id, 'Weld source, material or placement changed');
     }
     const options = filletWeldSegmentOptions(source.options), legs = filletWeldLegs(source.size);
-    if (options === null || legs === null || options.interiorAngleDegrees !== undefined || options.cylindricalRadius !== undefined) {
-      throw new InputIssue('weld-scope', weld.id, 'Straight right-angle bead groups required');
+    if (options === null || legs === null) {
+      throw new InputIssue('weld-scope', weld.id, 'Valid saved straight-extruded bead groups required');
     }
     const rootConnected = childPrefix === null && (first.path !== null || second.path !== null);
     if (childPrefix !== null) {
@@ -173,7 +174,8 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
           || member.rigidGroupId !== bead.rigidGroupId || member.materialId !== weld.expectedMaterialId
           || association.expectedMaterialId !== weld.expectedMaterialId
           || memberLegs.legOnFirst !== legs.legOnFirst || memberLegs.legOnSecond !== legs.legOnSecond
-          || memberOptions.interiorAngleDegrees !== undefined || memberOptions.cylindricalRadius !== undefined
+          || memberOptions.interiorAngleDegrees !== options.interiorAngleDegrees
+          || memberOptions.cylindricalRadius !== options.cylindricalRadius || memberOptions.cylindricalSide !== options.cylindricalSide
           || association.first.memberId !== weld.first.memberId || association.first.nodeId !== weld.first.nodeId
           || association.second.memberId !== weld.second.memberId || association.second.nodeId !== weld.second.nodeId
           || association.effectiveThroatMm !== weld.effectiveThroatMm
@@ -213,6 +215,19 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
     for (const end of [first, second]) for (const root of [rootStart, rootEnd]) {
       const axial = end.axis.reduce((sum, v, i) => sum + v*(root[i]-end.point[i]), 0);
       if (Math.abs(axial) > BEAM_CONNECTION_TOLERANCE_MM) throw new InputIssue('weld-section', weld.id, 'Weld root must lie at the selected member endpoint section, not a remote span');
+    }
+    if (options.interiorAngleDegrees !== undefined || options.cylindricalRadius !== undefined) {
+      const frame = cadWeldThroatFrame(legs.legOnSecond, legs.legOnFirst, options);
+      if (frame === null || weld.effectiveThroatMm > frame.heightMm) {
+        throw new InputIssue('weld-throat', weld.id, 'Effective throat must remain inside the actual saved section');
+      }
+      const [dx, dy] = frame.direction;
+      const c = applyPlacementToPoint(pose, [dx*weld.effectiveThroatMm/2, dy*weld.effectiveThroatMm/2, options.length/2]);
+      return { id: weld.id, nodeIdA: weld.first.nodeId, nodeIdB: weld.second.nodeId,
+        centerM: [c[0]/1000, c[1]/1000, c[2]/1000] as Vector3,
+        normal: applyPlacementToDirection(pose, [dy, -dx, 0]), along: applyPlacementToDirection(pose, [0, 0, 1]),
+        widthM: options.length/1000, lengthM: weld.effectiveThroatMm/1000, thicknessM: weld.complianceLengthMm/1000,
+        youngPa: weld.youngMPa*1e6, poisson: weld.poisson };
     }
     const a = legs.legOnSecond, b = legs.legOnFirst, hypotenuse = Math.hypot(a, b), throat = a*b/hypotenuse;
     if (weld.effectiveThroatMm > throat) throw new InputIssue('weld-throat', weld.id, 'Effective throat exceeds actual triangular altitude');

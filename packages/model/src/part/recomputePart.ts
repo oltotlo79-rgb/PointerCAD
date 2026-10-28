@@ -66,6 +66,8 @@ import { createSubShapeCache, type SubShapeCache } from './subShapeCache.js';
 import { readReferenceBodies, ReferenceMeshScope, type ReferenceBodyReads } from './readReferenceBodies.js';
 import { historyDependencies } from './timelineOrder.js';
 import type { PartDocument } from './types.js';
+import type { MathGeometryOutcome as TypeMathGeometryOutcome, MathGeometryRequest as TypeMathGeometryRequest } from '../measure/mathGeometryTypes.js';
+
 
 /**
  * 再計算で集めた失敗(FR-504)。ソリッド側は PartError、スケッチ側は SketchError。
@@ -97,7 +99,7 @@ export interface PartRecomputeResult {
   readonly referenceBodies?: readonly SolidBody[];
   readonly referenceMeshScope?: ReferenceMeshScope;
   /** Only quantities read from this completed generation; never stored as replacement formulae. */
-  readonly mathGeometry?: readonly import('../measure/mathGeometryTypes.js').MathGeometryOutcome[];
+  readonly mathGeometry?: readonly TypeMathGeometryOutcome[];
   /** Current-generation scalar mathematics, for the parameter view; absent until all formulas are verified. */
   readonly parameterAnalysis?: ParameterAnalysis;
   /** 実カーネルで成功し表示される板金のパネル。失敗段や消費済みボディは貸さない。 */
@@ -145,7 +147,7 @@ export interface PartRecomputeOptions {
   /** Internal scope; recomputePart always replaces caller-supplied values with its own owner. */
   readonly referenceMeshScope?: ReferenceMeshScope;
   /** Typed geometry references. Missing targets remain unresolved, never replaced with saved coordinates. */
-  readonly mathGeometry?: readonly import('../measure/mathGeometryTypes.js').MathGeometryRequest[];
+  readonly mathGeometry?: readonly TypeMathGeometryRequest[];
   /** Required for new mathematical definitions; absent evaluators must never use cached coordinates. */
   readonly math?: DocumentMathContext;
   readonly functions?: FunctionRecomputeContext;
@@ -1032,7 +1034,12 @@ async function buildShapes(
     const countBefore = settled.size;
     const changedSources = new Set<string>();
     const referenceBodies = await readReferenceBodies({ steps: resolved.steps, bodies: solid.outcome.bodies,
-      featureIds: [...askedSubShapes.values()].map(asked => asked.reference.bodyFeatureId),
+      // 平面穴の面参照はkernelで解決するため、作図のaskedSubShapesには入らない。
+      // 編集用の現在基準も同じ世代のhidden leaseで読み、表示bodyへは混ぜない。
+      featureIds: [...askedSubShapes.values()].map(asked => asked.reference.bodyFeatureId).concat(
+        resolved.steps.flatMap(step => (step.plan.kind === 'hole' || step.plan.kind === 'thread')
+          && step.plan.planar !== undefined ? [step.plan.face.bodyFeatureId] : []),
+      ),
       failedIds: new Set([...solid.outcome.failures.map(failure => failure.featureId),
         ...resolved.errors.map(error => error.featureId)]), bridge, reads: referenceReads, scope: options.referenceMeshScope, features: evaluated.solids,
       shouldCancel: () => options.shouldCancel?.() ?? false });

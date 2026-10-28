@@ -1,3 +1,10 @@
+import type { MathDeclaration as TypeMathDeclaration } from './mathDeclarations.js';
+import type { OdeSolutions as TypeOdeSolutions } from './differentialEquations.js';
+import type { NumericalRootIntervals as TypeNumericalRootIntervals } from './numericalRootResult.js';
+import type { EquationSystemSolutions as TypeEquationSystemSolutions } from './equationSystems.js';
+import type { FourierSeries as TypeFourierSeries } from './fourierSeries.js';
+import type { IntegralTransform as TypeIntegralTransform } from './integralTransforms.js';
+import type { TaylorExpansion as TypeTaylorExpansion } from './taylorExpansion.js';
 /** Shared numerical-input contract. Isolated implementation pending integration and canonical tests. */
 export const MATH_INPUT_FORMAT = 'pointercad-math/1' as const;
 export const MATH_INPUT_LIMITS = Object.freeze({
@@ -164,7 +171,7 @@ export interface StoredMathExpression {
   readonly angleUnit: 'degree' | 'radian';
   readonly expression: MathNode;
   /** Local definitions travel with the original formula, including their stable IDs and meanings. */
-  readonly declarations?: readonly import('./mathDeclarations.js').MathDeclaration[];
+  readonly declarations?: readonly TypeMathDeclaration[];
 }
 
 export type MathEvaluation =
@@ -176,17 +183,17 @@ export type MathEvaluation =
         readonly estimatedAbsoluteError?: number } | null }
   | { readonly status: 'value'; readonly kind: Exclude<MathValueKind, 'real' | 'series' | 'transform' | 'fourier-series' | 'equation-system' | 'root-intervals' | 'ode-solutions'>; readonly expression: MathNode }
   | { readonly status: 'value'; readonly kind: 'ode-solutions'; readonly expression: MathNode;
-      readonly solutions: import('./differentialEquations.js').OdeSolutions }
+      readonly solutions: TypeOdeSolutions }
   | { readonly status: 'value'; readonly kind: 'root-intervals'; readonly expression: MathNode;
-      readonly intervals: import('./numericalRootResult.js').NumericalRootIntervals }
+      readonly intervals: TypeNumericalRootIntervals }
   | { readonly status: 'value'; readonly kind: 'equation-system'; readonly expression: MathNode;
-      readonly solutions: import('./equationSystems.js').EquationSystemSolutions }
+      readonly solutions: TypeEquationSystemSolutions }
   | { readonly status: 'value'; readonly kind: 'fourier-series'; readonly expression: MathNode;
-      readonly series: import('./fourierSeries.js').FourierSeries }
+      readonly series: TypeFourierSeries }
   | { readonly status: 'value'; readonly kind: 'transform'; readonly expression: MathNode;
-      readonly transform: import('./integralTransforms.js').IntegralTransform }
+      readonly transform: TypeIntegralTransform }
   | { readonly status: 'value'; readonly kind: 'series'; readonly expression: MathNode;
-      readonly expansion: import('./taylorExpansion.js').TaylorExpansion }
+      readonly expansion: TypeTaylorExpansion }
   | { readonly status: 'unresolved'; readonly reason: 'unknown-symbol' | 'missing-condition' | 'unevaluated'; readonly names: readonly string[] }
   | { readonly status: 'invalid'; readonly reason: 'syntax' | 'domain' | 'non-finite' | 'dimension' | 'unit' | 'unsupported' | 'divergent' | 'no-limit' | 'empty-set' | 'no-extremum'; readonly detail: string }
   | { readonly status: 'multiple'; readonly candidates: readonly MathNode[]; readonly exhaustive: boolean }

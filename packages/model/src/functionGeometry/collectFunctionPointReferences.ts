@@ -46,7 +46,7 @@ function solidPoints(feature: SolidFeature): readonly PointReference[] {
     case 'sheetBase': case 'sheetFlange': case 'sheetBend': case 'sheetRelief':
     case 'extrude': case 'revolve': case 'sew': case 'boolean': case 'hole':
     case 'threadHole': case 'fillet': case 'chamfer': case 'spring': case 'ruled':
-    case 'loft': case 'draft': case 'faceOffset': case 'mirror': case 'transform': case 'sweep':
+    case 'loft': case 'draft': case 'faceOffset': case 'holeTranslate': case 'faceRotate': case 'mirror': case 'transform': case 'sweep':
     case 'rib': case 'emboss': case 'threadShaft': case 'surface': case 'functionSurface':
     case 'shell': case 'importedSolid': case 'importedMesh': return [];
   }

@@ -1,6 +1,5 @@
-import { absoluteCoordinate, createEmptyPartDocument, replaceSketch, createSheetBaseFeature, createSheetFlangeFeature, resolvePart, sheetBoundaryEdges, createDirectKernelBridge, recomputePart } from '@pointercad/model';
-import { createKernelApi } from '../../../kernel/src/index.js';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { absoluteCoordinate, createEmptyPartDocument, replaceSketch, createSheetBaseFeature, createSheetFlangeFeature, resolvePart, sheetBoundaryEdges, recomputePart } from '@pointercad/model';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { t } from '../i18n/t.js';
 import { bodyFor, createFakeRecompute, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
@@ -31,8 +30,8 @@ beforeEach(() => { resetTestStore(); useAppStore.getState().setSheetMetalCompute
 afterEach(() => { useAppStore.getState().closeSheetMetalTool(); useAppStore.getState().setSheetMetalComputer(null); });
 
 describe('W05 creation action against actual kernel refusals', () => {
-  const bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode));
-  beforeAll(async () => { await loadOcctForNode(); }, 180_000);
+  const bridge = createNativeKernelBridgeForNodeTests();
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
   afterAll(() => { bridge.dispose(); });
 
   it.each(['overlap', 'disconnected'] as const)('%s keeps document, draft and complete Undo/Redo state and recovers with valid geometry', async (kind) => {

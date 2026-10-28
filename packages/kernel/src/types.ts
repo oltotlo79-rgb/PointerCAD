@@ -36,6 +36,9 @@ import type {
   SketchPlaneFrame,
   Vec2Tuple,
 } from './occt/makeProjection.js';
+import type { FunctionSurfaceInput as TypeFunctionSurfaceInput } from './occt/functionSurfaceGeometrySpec.js';
+import type { IntersectionVolumeFailure as TypeIntersectionVolumeFailure } from './occt/intersectionVolume.js';
+
 
 /** 表示用の三角形メッシュ。内部単位は mm(NFR-RE-3)。 */
 export interface MeshData {
@@ -539,6 +542,8 @@ export type SolidStepSpec =
   | DraftStepSpec
   /** 平らな面の移動(EX-18 の限られた一段。平面・隣が直角)。 */
   | FaceOffsetStepSpec
+  | HoleTranslateStepSpec
+  | FaceRotateStepSpec
   /** ミラー(FR-419)。対象を消費しない(§0.a-0.36)。 */
   | MirrorStepSpec
   /** 移動/回転(FR-424)。 */
@@ -570,7 +575,7 @@ export type SolidStepSpec =
 /** 関数の近似面をXYZの指定範囲で切り、閉面・開面・空洞を判定して保持する。 */
 export interface FunctionSurfaceStepSpec {
   readonly kind: 'functionSurface';
-  readonly geometry: import('./occt/functionSurfaceGeometrySpec.js').FunctionSurfaceInput;
+  readonly geometry: TypeFunctionSurfaceInput;
 }
 
 /** 指定線やリリーフで分割された平面/円筒領域から1つの板金を再構築する。 */
@@ -912,6 +917,12 @@ export type EdgeCurveKind = 'line' | 'circle' | 'ellipse' | 'other';
  * 隣り合う面の一覧や三角形の数は、形が少し変わるだけで壊れるので持たない。
  */
 export interface SolidFaceInfo {
+  /** Current native cylindrical placement basis, display only; never a saved fingerprint.
+   * axis = Position.Direction (not flipped by face Orientation); zeroDirection = Position.XDirection.
+   * Height h is origin + (axialRange[0] + h) * axis. Positive angles turn about axis by the right-hand rule. */
+  readonly cylinderBasis?: { readonly origin: Vec3Tuple; readonly axis: Vec3Tuple;
+    readonly zeroDirection: Vec3Tuple; readonly axialRange: readonly [number, number] };
+  readonly planarBasis?: PlanarFaceBasis;
   /** Native underlying primitive in part coordinates, independent of material-face orientation.
    * Derived analysis metadata only; not a saved subshape fingerprint or a trimmed-domain certificate. */
   readonly analyticSurface?:
@@ -1108,6 +1119,7 @@ export interface HoleStepSpec {
    * 位置の意味は `CylindricalHoleSpec` の注釈が正本。
    */
   readonly cylindrical?: CylindricalHoleSpec;
+  readonly planar?: PlanarHoleSpec;
 }
 
 /**
@@ -1123,6 +1135,19 @@ export interface HoleStepSpec {
 export interface CylindricalHoleLocation {
   readonly height: number;
   readonly angle: number;
+}
+
+/** 面内原点はPlane.Location、XはPlane.XAxis、Yは外向き法線×X。符号付きmm。中心点・円筒配置とは排他的。 */
+export interface PlanarHoleSpec {
+  readonly kind: 'plane-face';
+  readonly locations: readonly { readonly x: number; readonly y: number }[];
+}
+/** 現在の平面から導く基準。保存指紋や面の再照合の代用にはしない。 */
+export interface PlanarFaceBasis {
+  readonly origin: Vec3Tuple;
+  readonly xAxis: Vec3Tuple;
+  readonly yAxis: Vec3Tuple;
+  readonly normal: Vec3Tuple;
 }
 
 /** 円筒の側面の穴(EX05)。位置ごとに軸の向きが違う(角度が違えば別の放射方向へ掘る)。 */
@@ -1184,6 +1209,7 @@ export interface ThreadStepSpec {
    * ねじ山・切り始め・印も位置ごとの向きを使う。`occt/makeThread.ts` の `holeDirections`)。
    */
   readonly cylindrical?: CylindricalHoleSpec;
+  readonly planar?: PlanarHoleSpec;
 }
 
 /**
@@ -1441,6 +1467,23 @@ export interface DraftStepSpec {
   readonly angle: number;
   /** 抜き方向を反転する(内側へ狭める)。 */
   readonly reversed: boolean;
+}
+
+/** 貫通1穴の長方形板の穴を、世界座標のmmベクトルで移動する。対象を消費する。 */
+export interface HoleTranslateStepSpec {
+  readonly kind: 'holeTranslate';
+  readonly targetKey: string;
+  readonly face: SubShapeQuery;
+  readonly translation: Vec3Tuple;
+}
+
+/** 箱の支持平面を所属直線辺まわりに回す。角度はrad。対象を消費する。 */
+export interface FaceRotateStepSpec {
+  readonly kind: 'faceRotate';
+  readonly targetKey: string;
+  readonly face: SubShapeQuery;
+  readonly hinge: SubShapeQuery;
+  readonly angle: number;
 }
 
 /**
@@ -2224,7 +2267,7 @@ export interface PlacementSpec {
 export type InterferencePairId = readonly [string, string];
 export type InterferenceInputCode = 'unresolvedPart' | 'missingBody' | 'unsupportedBody' | 'invalidPlacement';
 export type InterferenceFailureCode = InterferenceInputCode | 'boundsFailed' | 'unionFailed' | 'meshFailed'
-  | import('./occt/intersectionVolume.js').IntersectionVolumeFailure['code'];
+  | TypeIntersectionVolumeFailure['code'];
 export type InterferenceComponentSpec =
   | { readonly kind: 'ready'; readonly componentId: string; readonly bodyKeys: readonly string[];
       readonly placement: PlacementSpec }

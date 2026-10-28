@@ -925,9 +925,9 @@ describe('平らな面の移動の道具(EX-18)', () => {
     expect(checkFaceOffset(feature, () => null)).toEqual({ ok: true, offset: -2.5 });
   });
 
-  it('距離 0 は既存の流儀どおり履歴には積まれ、解決の検査が理由つきで赤くする', () => {
-    // 欄は符号付きなので範囲を持たない(既存の範囲は 0 だけを除けない)。式の欄は確定で積み、
-    // 解決(resolvePart の planFaceOffset → checkFaceOffset)が断って木で赤くする。
+  it('距離 0 の候補は生成できるが、解決の検査が拒否して確定させない', () => {
+    // 欄は符号付きなので範囲を持たない(既存の範囲は 0 だけを除けない)。候補の意味は保ち、
+    // 解決(resolvePart の planFaceOffset → checkFaceOffset)で断った候補をstagerは採用しない。
     const outcome = commitShapeEdit(
       contextOf([FACE_0]),
       faceOffsetCommit({ values: { faceOffsetDistance: expressionValueFromNumber(0) } }),

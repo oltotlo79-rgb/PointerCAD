@@ -5,19 +5,24 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { SolidFaceInfo, Vec3Tuple } from '../types.js';
 import * as allocationModule from './allocations.js';
-import type { Allocations, OcctDeletable } from './allocations.js';
+import type { Allocations } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { writeBrepBytes } from './brepBytes.js';
+import {
+  auditDirectEdit, boundaryBox, observeDirectEditOwnership as observeOwnership, drillBoundaryHole, throwNativeDirectionError,
+} from './directEditBoundary.testSupport.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import {
   HOLE_MOVE_DELTA_MESSAGE, HOLE_MOVE_FAILED_MESSAGE, HOLE_MOVE_MISSING_FACE_MESSAGE,
-  HOLE_MOVE_NOT_HOLE_MESSAGE, HOLE_MOVE_PARTIAL_MESSAGE, moveSolidHole,
+  HOLE_MOVE_NOT_HOLE_MESSAGE, HOLE_MOVE_PARTIAL_MESSAGE, HOLE_MOVE_PLATE_MESSAGE,
+  HOLE_MOVE_COLLISION_MESSAGE, moveSolidHole,
 } from './moveSolidHole.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
 import { countSolidShapes } from './solidTopology.js';
 import { collectSubShapes, faceAt } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { IDENTITY_TRANSFORM, transformShape } from './transformShape.js';
 
 const EXPECTED_VOLUME = 40 * 30 * 8 - Math.PI * 3 ** 2 * 8;
 const ROTATION = Math.PI / 5;
@@ -78,33 +83,6 @@ describe('moveSolidHole: W16 plate, real OCCT geometry and borrowed ownership', 
     const face = faceAt(oc, shape, matches[0].index);
     if (face === null) throw new Error('Test fixture face is absent');
     return owned.keep(face);
-  }
-
-  /** Observe actual allocations; all constructors/Boolean operations still run in the real kernel. */
-  function observeOwnership() {
-    const actualCreate = allocationModule.createAllocations;
-    const entries = new Map<OcctDeletable, { calls: number }>();
-    const spy = vi.spyOn(allocationModule, 'createAllocations').mockImplementation(() => {
-      const actual = actualCreate();
-      const keep: Allocations['keep'] = item => {
-        expect(entries.has(item)).toBe(false);
-        const entry = { calls: 0 }, original = item.delete.bind(item);
-        entries.set(item, entry);
-        item.delete = () => { entry.calls++; original(); };
-        return actual.keep(item);
-      };
-      return { keep, release: actual.release };
-    });
-    return {
-      stop: () => { spy.mockRestore(); },
-      verify: () => {
-        const counts = [...entries.values()].map(entry => entry.calls);
-        expect(counts.length).toBeGreaterThan(0);
-        expect(counts.every(count => count === 1)).toBe(true);
-        return { ownedWrappers: counts.length, ownedDeletes: counts.reduce((sum, count) => sum + count, 0),
-          remaining: counts.filter(count => count === 0).length };
-      },
-    };
   }
 
   function planeWithNormal(faces: readonly SolidFaceInfo[], normal: Vec3Tuple): SolidFaceInfo {
@@ -183,6 +161,7 @@ describe('moveSolidHole: W16 plate, real OCCT geometry and borrowed ownership', 
               radius: hole.radius, sideErrors, resultSha });
           } finally { result.delete(); result.delete(); }
           const counts = ownership.verify();
+          expect(counts.ownedWrappers).toBeGreaterThan(0);
           expect(digest(source)).toBe(sourceSha);
           expect(digest(selected)).toBe(faceSha);
           expect(digest(unrelated)).toBe(otherSha);
@@ -210,8 +189,10 @@ describe('moveSolidHole: W16 plate, real OCCT geometry and borrowed ownership', 
         const face = selectedFace(other, fixtures, kind === 'plane' ? 'plane' : 'cylinder');
         // Complete all tessellation/selection before the SHA baseline: tessellation itself changes B-rep bytes.
         const correctFace = kind === 'plane' || kind === 'foreign identical hole' ? selectedFace(source, fixtures) : null;
-        const before = digest(source), faceBefore = digest(face), otherBefore = digest(other);
+        const unrelated = boundaryBox(oc, fixtures, [60, 0, 0]);
+        const before = digest(source), faceBefore = digest(face), otherBefore = digest(other), unrelatedBefore = digest(unrelated);
         const sourceDelete = vi.spyOn(source, 'delete'), faceDelete = vi.spyOn(face, 'delete');
+        const unrelatedDelete = vi.spyOn(unrelated, 'delete');
         const message = kind === 'partial cylinder' ? HOLE_MOVE_PARTIAL_MESSAGE
           : kind === 'foreign identical hole' ? HOLE_MOVE_MISSING_FACE_MESSAGE : HOLE_MOVE_NOT_HOLE_MESSAGE;
         const ownership = observeOwnership();
@@ -220,17 +201,25 @@ describe('moveSolidHole: W16 plate, real OCCT geometry and borrowed ownership', 
         } finally { ownership.stop(); }
         try {
           const counts = ownership.verify();
+          expect(counts.ownedWrappers).toBeGreaterThan(0);
           expect(digest(source)).toBe(before); expect(digest(face)).toBe(faceBefore); expect(digest(other)).toBe(otherBefore);
+          expect(digest(unrelated)).toBe(unrelatedBefore); expect(unrelatedDelete).not.toHaveBeenCalled();
           expect(sourceDelete).not.toHaveBeenCalled(); expect(faceDelete).not.toHaveBeenCalled();
           if (correctFace !== null) {
             const later = moveSolidHole(oc, source, correctFace, [2, 0, 0]);
             try { expect(Math.abs(later.volume - EXPECTED_VOLUME) / EXPECTED_VOLUME).toBeLessThanOrEqual(1e-9); }
-            finally { later.delete(); }
+            finally { later.delete(); later.delete(); }
             expect(digest(source)).toBe(before);
+          } else {
+            auditDirectEdit(oc, `H2 reuse ${kind}`, [source, face, unrelated], () => {
+              const later = transformShape(oc, source, { ...IDENTITY_TRANSFORM, translation: [1, 2, 3] });
+              try { expect(isValidShape(oc, later.shape)).toBe(true); }
+              finally { later.delete(); later.delete(); }
+            });
           }
           record('refusal', { kind, message, before, after: digest(source), ...counts,
             sourceDeletes: sourceDelete.mock.calls.length, faceDeletes: faceDelete.mock.calls.length });
-        } finally { sourceDelete.mockRestore(); faceDelete.mockRestore(); }
+        } finally { sourceDelete.mockRestore(); faceDelete.mockRestore(); unrelatedDelete.mockRestore(); }
       } finally { fixtures.release(); }
     },
   );
@@ -239,13 +228,13 @@ describe('moveSolidHole: W16 plate, real OCCT geometry and borrowed ownership', 
     'rejects invalid displacement %j without modifying the borrowed body', delta => {
       const fixtures = allocationModule.createAllocations();
       try {
-        const source = plate(fixtures), face = selectedFace(source, fixtures), before = digest(source);
-        const sourceDelete = vi.spyOn(source, 'delete'), faceDelete = vi.spyOn(face, 'delete');
-        try {
+        const source = plate(fixtures), face = selectedFace(source, fixtures), unrelated = boundaryBox(oc, fixtures, [60, 0, 0]);
+        auditDirectEdit(oc, `H2 invalid delta ${String(delta)}`, [source, face, unrelated], () => {
           expect(() => moveSolidHole(oc, source, face, delta)).toThrow(HOLE_MOVE_DELTA_MESSAGE);
-          expect(digest(source)).toBe(before);
-          expect(sourceDelete).not.toHaveBeenCalled(); expect(faceDelete).not.toHaveBeenCalled();
-        } finally { sourceDelete.mockRestore(); faceDelete.mockRestore(); }
+          const later = moveSolidHole(oc, source, face, [2, 0, 0]);
+          try { expect(Math.abs(later.volume - EXPECTED_VOLUME) / EXPECTED_VOLUME).toBeLessThanOrEqual(1e-9); }
+          finally { later.delete(); later.delete(); }
+        });
       } finally { fixtures.release(); }
     },
   );
@@ -265,6 +254,7 @@ describe('moveSolidHole: W16 plate, real OCCT geometry and borrowed ownership', 
       } finally { fail.mockRestore(); ownership.stop(); }
       try {
         const counts = ownership.verify();
+        expect(counts.ownedWrappers).toBeGreaterThan(0);
         expect(digest(source)).toBe(before);
         const later = moveSolidHole(oc, source, face, [2, 0, 0]);
         try { expect(Math.abs(later.volume - EXPECTED_VOLUME) / EXPECTED_VOLUME).toBeLessThanOrEqual(1e-9); }
@@ -274,5 +264,106 @@ describe('moveSolidHole: W16 plate, real OCCT geometry and borrowed ownership', 
         record('late-exception', { ...counts, before, after: digest(source), sourceDeletes: 0, faceDeletes: 0 });
       } finally { sourceDelete.mockRestore(); faceDelete.mockRestore(); }
     } finally { fixtures.release(); }
+  });
+
+  it.each(['two holes', 'blind hole', 'stepped hole', 'stepped plate', 'L plate'] as const)(
+    'H2 refuses %s as unsupported without consuming any borrowed geometry', kind => {
+      const owned = allocationModule.createAllocations();
+      try {
+        let source = boundaryBox(oc, owned);
+        if (kind === 'stepped plate' || kind === 'L plate') {
+          const notch = boundaryBox(oc, owned, [20, 20, kind === 'L plate' ? -1 : 4], [21, 11, 10]);
+          source = owned.keep(booleanOp(oc, 'subtract', source, notch)).shape;
+        }
+        source = drillBoundaryHole(oc, owned, source, [10, 15, kind === 'blind hole' ? 4 : -1]);
+        if (kind === 'two holes') source = drillBoundaryHole(oc, owned, source, [30, 15, -1]);
+        if (kind === 'stepped hole') source = drillBoundaryHole(oc, owned, source, [10, 15, 4], 5);
+        expect(isValidShape(oc, source)).toBe(true);
+        expect(countSolidShapes(oc, source, 2)).toBe(1);
+        const cylinders = tablesOf(source).faces.filter(face => face.surfaceKind === 'cylinder' && face.radius === 3);
+        expect(cylinders.length).toBeGreaterThan(0);
+        const face = faceAt(oc, source, cylinders[0].index);
+        if (face === null) throw new Error('Missing H2 hole');
+        owned.keep(face);
+        const unrelated = boundaryBox(oc, owned, [60, 0, 0]);
+        auditDirectEdit(oc, `H2 ${kind}`, [source, face, unrelated], () => {
+          expect(() => moveSolidHole(oc, source, face, [2, 0, 0])).toThrow(HOLE_MOVE_PLATE_MESSAGE);
+          // This unsupported shape must remain usable by an operation that supports it.
+          const later = transformShape(oc, source, { ...IDENTITY_TRANSFORM, translation: [1, 2, 3] });
+          try {
+            expect(isValidShape(oc, later.shape)).toBe(true);
+            expect(Math.abs(measureVolume(oc, later.shape) - measureVolume(oc, source)) / measureVolume(oc, source))
+              .toBeLessThanOrEqual(1e-9);
+          } finally { later.delete(); later.delete(); }
+        });
+      } finally { owned.release(); }
+    },
+  );
+
+  it.each([
+    { name: 'left contact', delta: [-7, 0, 0] }, { name: 'left crossing', delta: [-7.001, 0, 0] },
+    { name: 'right contact', delta: [27, 0, 0] }, { name: 'right crossing', delta: [27.001, 0, 0] },
+    { name: 'upper contact', delta: [0, 12, 0] }, { name: 'lower contact', delta: [0, -12, 0] },
+    { name: 'positive infinity', delta: [Infinity, 0, 0] }, { name: 'negative infinity', delta: [0, -Infinity, 0] },
+  ] satisfies readonly { name: string; delta: Vec3Tuple }[])(
+    'H2 $name refuses then the same plate succeeds', ({ name, delta }) => {
+      const owned = allocationModule.createAllocations();
+      try {
+        const source = plate(owned), face = selectedFace(source, owned), unrelated = boundaryBox(oc, owned, [60, 0, 0]);
+        auditDirectEdit(oc, `H2 ${name}`, [source, face, unrelated], () => {
+          expect(() => moveSolidHole(oc, source, face, delta)).toThrow(
+            delta.every(Number.isFinite) ? HOLE_MOVE_COLLISION_MESSAGE : HOLE_MOVE_DELTA_MESSAGE);
+          const later = moveSolidHole(oc, source, face, [2, 0, 0]);
+          try { expect(Math.abs(later.volume - EXPECTED_VOLUME) / EXPECTED_VOLUME).toBeLessThanOrEqual(1e-9); }
+          finally { later.delete(); later.delete(); }
+        });
+      } finally { owned.release(); }
+    },
+  );
+
+  it.each([-6.999, 26.999])('H2 near the outer boundary dx=%s keeps the cylinder axis and analytic volume', dx => {
+    const owned = allocationModule.createAllocations();
+    try {
+      const source = plate(owned), face = selectedFace(source, owned), unrelated = boundaryBox(oc, owned, [60, 0, 0]);
+      auditDirectEdit(oc, `H2 clearance 0.001 dx=${dx}`, [source, face, unrelated], () => {
+        const result = moveSolidHole(oc, source, face, [dx, 0, 0]);
+        try {
+          const cylinder = tablesOf(result.shape).faces.find(candidate => candidate.surfaceKind === 'cylinder');
+          if (cylinder?.axisOrigin == null) throw new Error('Missing moved cylinder');
+          const axisError = Math.hypot(cylinder.axisOrigin[0] - (10 + dx), cylinder.axisOrigin[1] - 15);
+          const volumeError = Math.abs(result.volume - EXPECTED_VOLUME) / EXPECTED_VOLUME;
+          expect(axisError).toBeLessThanOrEqual(1e-6);
+          expect(volumeError).toBeLessThanOrEqual(1e-9);
+          expect(isValidShape(oc, result.shape)).toBe(true);
+          record('H2 boundary geometry', { dx, clearance: 0.001, axisError, volumeError });
+        } finally { result.delete(); result.delete(); }
+      });
+    } finally { owned.release(); }
+  });
+
+  it('H2 translates a TopLoc_Location plate in world coordinates and survives a numeric C++ exception', () => {
+    const owned = allocationModule.createAllocations();
+    try {
+      const raw = plate(owned), transform = owned.keep(new oc.gp_Trsf_1());
+      transform.SetRotation_1(owned.keep(new oc.gp_Ax1_2(owned.keep(new oc.gp_Pnt_3(0, 0, 0)),
+        owned.keep(new oc.gp_Dir_4(1, 2, 3)))), ROTATION);
+      transform.SetTranslationPart(owned.keep(new oc.gp_Vec_4(...TRANSLATION)));
+      const source = owned.keep(raw.Located(owned.keep(new oc.TopLoc_Location_2(transform)), false));
+      expect(owned.keep(source.Location_1()).IsIdentity()).toBe(false);
+      const face = selectedFace(source, owned), unrelated = boundaryBox(oc, owned, [60, 0, 0]);
+      auditDirectEdit(oc, 'H2 located, numeric native exception and recovery', [source, raw, face, unrelated], () => {
+        const fail = vi.spyOn(oc.ShapeUpgrade_UnifySameDomain.prototype, 'Build')
+          .mockImplementationOnce(() => throwNativeDirectionError(oc));
+        try { expect(() => moveSolidHole(oc, source, face, rotated([2, 0, 0]))).toThrow(HOLE_MOVE_FAILED_MESSAGE); }
+        finally { fail.mockRestore(); }
+        const result = moveSolidHole(oc, source, face, rotated([2, 0, 0]));
+        try {
+          const cylinder = tablesOf(result.shape).faces.find(candidate => candidate.surfaceKind === 'cylinder');
+          if (cylinder === undefined) throw new Error('Missing located cylinder');
+          expect(separation(cylinder.centroid, pointInFrame([12, 15, 4], true))).toBeLessThanOrEqual(1e-6);
+          expect(Math.abs(result.volume - EXPECTED_VOLUME) / EXPECTED_VOLUME).toBeLessThanOrEqual(1e-9);
+        } finally { result.delete(); result.delete(); }
+      });
+    } finally { owned.release(); }
   });
 });

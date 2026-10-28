@@ -44,6 +44,7 @@ import { resolveFaceReference } from './matchSubShape.js';
 import { hasSolid, measureVolume } from './solidMesh.js';
 import { buildBooleanShape } from './buildBooleanShape.js';
 import { booleanMargin, boundingDiagonal, faceAt } from './subShapes.js';
+import { readNativePlanarBasis } from './planarFaceBasis.js';
 import { isIdentityTransform, transformShape, transformsOrIdentity } from './transformShape.js';
 
 /** 面が選び直せなかったとき(FR-504、§2.2.5)。 */
@@ -268,37 +269,9 @@ function readPlaneFrame(
   face: TopoDS_Face,
   keep: Allocations['keep'],
 ): PlaneFrame {
-  // 第 2 引数 false は「面の境界(トリム)を読み込まない」指定(subShapes.ts と同じ)。
-  const adaptor = keep(new oc.BRepAdaptor_Surface_2(face, false));
-  const plane = keep(adaptor.Plane());
-  const axis = keep(plane.Axis());
-  const normalDirection = keep(axis.Direction());
-  const reversed = face.Orientation_1() !== oc.TopAbs_Orientation.TopAbs_FORWARD;
-  const sign = reversed ? -1 : 1;
-  const normal = toUnit([
-    normalDirection.X() * sign,
-    normalDirection.Y() * sign,
-    normalDirection.Z() * sign,
-  ]);
-
-  const xAxisLine = keep(plane.XAxis());
-  const xDirection = keep(xAxisLine.Direction());
-  const xAxis = toUnit([xDirection.X(), xDirection.Y(), xDirection.Z()]);
-
-  const location = keep(plane.Location());
-
-  // gp_Dir は構築時に長さ 1 へ揃うので、ここが null になるのは下地の平面が壊れている場合だけ。
-  // 起きたときは利用者に見せられる理由へ変えて止める(NFR-RE-1: 落とさない)。
-  if (normal === null || xAxis === null) {
-    throw new Error(HOLE_FAILED_MESSAGE);
-  }
-
-  return {
-    normal,
-    xAxis,
-    yAxis: cross(normal, xAxis),
-    pointOnPlane: [location.X(), location.Y(), location.Z()],
-  };
+  const basis = readNativePlanarBasis(oc, face, keep);
+  if (basis === null) throw new Error('平面の外向きを決定できません。');
+  return { normal: basis.normal, xAxis: basis.xAxis, yAxis: basis.yAxis, pointOnPlane: basis.origin };
 }
 
 /**
@@ -589,13 +562,20 @@ export function resolveHoleFrame(
   oc: OpenCascadeInstance,
   shape: TopoDS_Shape,
   faces: readonly SolidFaceInfo[],
-  spec: Pick<HoleStepSpec, 'face' | 'centers' | 'tiltAngle' | 'tiltAzimuth' | 'cylindrical'>,
+  spec: Pick<HoleStepSpec, 'face' | 'centers' | 'tiltAngle' | 'tiltAzimuth' | 'cylindrical' | 'planar'>,
   origins?: CurrentOriginIndex,
 ): HoleFrame {
+  if (spec.planar !== undefined && (spec.planar.kind !== 'plane-face' || spec.cylindrical !== undefined || spec.centers.length !== 0)) {
+    throw new Error('面内X・Yと中心点・円筒配置は同時に指定できません。');
+  }
+  if (spec.planar !== undefined && (spec.planar.locations.length === 0
+    || spec.planar.locations.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y)))) {
+    throw new Error('面内X・Yには1つ以上の有限な位置を指定してください。');
+  }
   if (spec.cylindrical !== undefined) {
     return resolveCylindricalHoleFrame(oc, shape, faces, { ...spec, cylindrical: spec.cylindrical }, origins);
   }
-  if (spec.centers.length === 0) {
+  if (spec.planar === undefined && spec.centers.length === 0) {
     throw new Error(NO_CENTER_MESSAGE);
   }
   for (const center of spec.centers) {
@@ -626,7 +606,16 @@ export function resolveHoleFrame(
     }
     return {
       direction,
-      origins: spec.centers.map((center) => projectOntoPlane(center, planeFrame)),
+      origins: spec.planar === undefined ? spec.centers.map((center) => projectOntoPlane(center, planeFrame))
+        : spec.planar.locations.map(({ x, y }): Vec3Tuple => {
+          const o = planeFrame.pointOnPlane, u = planeFrame.xAxis, v = planeFrame.yAxis;
+          const point: Vec3Tuple = [o[0] + x * u[0] + y * v[0], o[1] + x * u[1] + y * v[1], o[2] + x * u[2] + y * v[2]];
+          if (!isFiniteTuple(point)) throw new Error(CENTER_NOT_FINITE_MESSAGE);
+          const native = keep(new oc.gp_Pnt_3(point[0], point[1], point[2]));
+          const classifier = keep(new oc.BRepClass_FaceClassifier_4(face, native, 1e-7, false, 1e-7));
+          if (classifier.State() !== oc.TopAbs_State.TopAbs_IN) throw new Error('面内X・Yの位置が選択面の内側にありません。');
+          return point;
+        }),
       diagonal,
     };
   } finally {

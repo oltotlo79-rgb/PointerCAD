@@ -1,4 +1,7 @@
 /// <reference lib="dom" />
+import { recomputePart } from '../../packages/model/src/part/recomputePart.js';
+import { createInspectableNativeKernelForNodeTests } from '../../packages/model/src/testing/createNativeKernelBridge.node.js';
+import { waitForStartupReady } from './startupHealth.js';
 import { readFile } from 'node:fs/promises';
 import { expect, test as baseTest, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { readDocumentBundle } from '../../packages/io/src/index.js';
@@ -440,5 +443,169 @@ export function registerSteelEditableStockTests(
       await expectDrawingStockTable(page, cutRows);
       expect(errors).toEqual([]);
     });
+  });
+}
+
+
+/** 同じ既存specでWebの別pageとElectronの別processを確認するための検査内契約。 */
+type SteelColdReopen = (page: Page, info: TestInfo) => Promise<{
+  readonly page: Page; readonly app: ElectronApplication;
+}>;
+
+async function steelAssemblySnapshot(page: Page, path: string, app: ElectronApplication | undefined) {
+  const result = await readDocumentBundle(await saveFlowFile(page, path, app), 'assembly');
+  if (!result.ok || result.bundle.kind !== 'assembly') throw new Error('鋼材の組立保存を読めません');
+  return result.bundle.document;
+}
+
+/** 寸法50×6、長さ1000は入力値から導く。native出力を期待値へ転記しない。 */
+async function expectStraightSteelNative(part: PartDocument, info: TestInfo, grade: Product['grade']): Promise<void> {
+  const native = await createInspectableNativeKernelForNodeTests();
+  try {
+    let key: string | undefined;
+    const result = await recomputePart(part, native.bridge, { onResolved: resolved => { key = resolved.steps.at(-1)?.key; } });
+    expect(result.errors).toEqual([]); expect(result.cancelled).toBe(false);
+    expect(result.bodies).toHaveLength(1);
+    if (key === undefined) throw new Error('実再計算の鋼材キーがありません');
+    const measured = native.inspectShape(key).measure();
+    await info.attach(`steel-${grade}-native`, { body: JSON.stringify(measured), contentType: 'application/json' });
+    expect(measured.validity).toMatchObject({ valid: true, solidCount: 1, closed: true });
+    expect(measured.meshApproximation).toBeNull();
+    expect(Math.abs(measured.volume - 50 * 6 * STOCK_MM) / (50 * 6 * STOCK_MM)).toBeLessThanOrEqual(1e-9);
+    if (measured.bounds === null) throw new Error('鋼材のnative境界がありません');
+    expect(Math.hypot(...measured.bounds.low)).toBeLessThanOrEqual(1e-7);
+    expect(Math.hypot(measured.bounds.high[0] - 50, measured.bounds.high[1] - 6,
+      measured.bounds.high[2] - STOCK_MM)).toBeLessThanOrEqual(1e-7);
+  } finally { native.dispose(); }
+}
+
+async function expectTwoSteelCsv(page: Page, path: string, ids: readonly string[], app?: ElectronApplication): Promise<Buffer> {
+  const dialog = await openPicker(page), details = stockDetails(page);
+  if (await details.getAttribute('open') === null) await details.locator('summary').click();
+  await expectSteelStockTableHeader(details);
+  await expect(details.locator('tbody tr')).toHaveCount(2);
+  await expect(details.locator('tfoot td')).toHaveText(['2', '2000']);
+  const bytes = await exportCsv(page, path, app), records = expectSteelStockCsv(bytes);
+  const cut = records.filter(record => record[COLUMN.kind] === '切断明細');
+  expect(cut).toHaveLength(2);
+  for (const [index, product] of [SS400_FLAT, S45C_FLAT].entries()) {
+    const row = cut.find(record => record[COLUMN.grade] === product.grade);
+    if (row === undefined) throw new Error('指定鋼種のCSV行がありません');
+    expect(row.slice(1, 10)).toEqual([...product.columns, '1000', '1', '1000']);
+    expect(row[COLUMN.finished]).toBe('1000');
+    const paths: unknown = JSON.parse(row[COLUMN.paths]);
+    expect(paths).toEqual([[ids[index]]]);
+    expectSteelStockCsvProvenance(row, product);
+  }
+  expect(records.filter(row => row[COLUMN.kind] === '集計対象外')).toHaveLength(0);
+  expect(records.filter(row => row[COLUMN.kind] === '集計できた鋼材の合計')
+    .map(row => [row[COLUMN.quantity], row[COLUMN.totalLength], row[COLUMN.notice]])).toEqual([['2', '2000', '']]);
+  expect(records).toHaveLength(5);
+  await closePicker(dialog);
+  return bytes;
+}
+
+/** 旧caseを置換しない。原保存の型判別を通し、UI取消と実native・冷再開だけを補う。 */
+export function registerSteelUiAcceptanceTests(test: typeof baseTest,
+  appForPage: (page: Page) => ElectronApplication | undefined = () => undefined,
+  coldElectron?: SteelColdReopen): void {
+  test('EX03.UI 平鋼SS400/S45Cの取消0配置・通常配置1UndoRedo・実native寸法・冷再開', async ({ page }, info) => {
+    let app = appForPage(page);
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    if (app === undefined) { await disableFilePickers(page); await page.goto('/'); }
+    else expect(page.url()).toBe('app://pointercad/index.html');
+    await waitForStartupReady(page);
+    let token = await beginRecompute(page);
+    await chooseToolMenuItem(page, 'ファイルのほかの操作', '新しいアセンブリ');
+    await waitForRecompute(page, token);
+    const baseline = await steelAssemblySnapshot(page, info.outputPath('steel-ui-empty.pcada'), app);
+    await expect(componentRows(page)).toHaveCount(0);
+    const undo = () => page.getByRole('button', { name: '元に戻す', exact: true });
+    await expect(undo()).toHaveAttribute('aria-disabled', 'true');
+    let dialog = await openPicker(page);
+    await chooseBar(dialog, SS400_FLAT, 0);
+    await editableBox(page).uncheck();
+    await dialog.getByRole('button', { name: '置く', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toBeVisible();
+    await expect(componentRows(page)).toHaveCount(0);
+    await chooseBar(dialog, S45C_FLAT, STOCK_MM);
+    await dialog.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    expect(await steelAssemblySnapshot(page, info.outputPath('steel-ui-picker-cancel.pcada'), app)).toEqual(baseline);
+    await expect(undo()).toHaveAttribute('aria-disabled', 'true');
+
+    const savedParts: { product: Product; path: string; part: PartDocument }[] = [];
+    for (const product of [SS400_FLAT, S45C_FLAT]) {
+      dialog = await openPicker(page); await chooseBar(dialog, product, STOCK_MM);
+      const note = dialog.getByRole('status').filter({ hasText: product.columns[5] });
+      for (const index of [12, 13, 14, 15]) {
+        await expect(note).toContainText(product.additionalCsvColumns[index]);
+      }
+      await editableBox(page).check();
+      const path = info.outputPath(`steel-ui-${product.grade}.pcad`);
+      const bytes = await savedThrough(page, dialog.getByRole('button', { name: '部品ファイルを保存して配置へ', exact: true }), path, app);
+      const read = await readDocumentBundle(new Uint8Array(bytes), 'part');
+      if (!read.ok || read.bundle.kind !== 'part') throw new Error('UIで保存した鋼材を読めません');
+      const part = read.bundle.document;
+      expect(part.steelStockSource).toMatchObject({ kind: 'standardPart', catalog: 'flatBar', size: 'FB 50×6',
+        catalogRevision: product.additionalCsvColumns[0], generatorRevision: product.additionalCsvColumns[1],
+        options: { steelProduct: `${product.grade}:flatBar:FB 50×6`, materialGrade: product.grade,
+          materialStandard: product.columns[1], productStandard: product.columns[2], length: '1000',
+          condition: product.grade === 'SS400' ? 'hotRolled-heatTreatmentUnspecified' : 'brightBar-heatTreatmentUnspecified' } });
+      savedParts.push({ product, path, part });
+      const placement = page.getByRole('dialog', { name: '部品を置く位置', exact: true });
+      await expect(placement).toBeVisible();
+      await placement.getByRole('button', { name: '取り消す', exact: true }).click();
+      await expect(placement).toHaveCount(0); await expect(componentRows(page)).toHaveCount(0);
+      expect(await steelAssemblySnapshot(page, info.outputPath(`steel-ui-${product.grade}-cancel.pcada`), app)).toEqual(baseline);
+      await expect(undo()).toHaveAttribute('aria-disabled', 'true');
+    }
+
+    let previous = baseline;
+    for (const [index, product] of [SS400_FLAT, S45C_FLAT].entries()) {
+      dialog = await openPicker(page); await editableBox(page).uncheck();
+      await placeBar(page, dialog, product, STOCK_MM); await closePicker(dialog);
+      await expect(componentRows(page)).toHaveCount(index + 1);
+      const placed = await steelAssemblySnapshot(page, info.outputPath(`steel-ui-${product.grade}-placed.pcada`), app);
+      token = await beginRecompute(page); await undo().click(); await waitForRecompute(page, token);
+      expect(await steelAssemblySnapshot(page, info.outputPath(`steel-ui-${product.grade}-undo.pcada`), app)).toEqual(previous);
+      token = await beginRecompute(page);
+      await page.getByRole('button', { name: 'やり直す', exact: true }).click(); await waitForRecompute(page, token);
+      expect(await steelAssemblySnapshot(page, info.outputPath(`steel-ui-${product.grade}-redo.pcada`), app)).toEqual(placed);
+      previous = placed;
+    }
+    expect(previous.components.map(component => component.source.kind)).toEqual(['standardPart', 'standardPart']);
+    const ids = previous.components.map(component => component.id);
+    const csv = await expectTwoSteelCsv(page, info.outputPath('steel-ui-before-cold.csv'), ids, app);
+    const assemblyPath = info.outputPath('steel-ui-final.pcada');
+    const savedAssembly = await steelAssemblySnapshot(page, assemblyPath, app);
+    for (const saved of savedParts) {
+      await openSaveFlowFile(page, saved.path, app);
+      const name = saved.part.solids.at(-1)?.name;
+      if (name === undefined) throw new Error('鋼材の実solid名がありません');
+      await solidRow(page, name).click();
+      await expect.poll(() => volumeOf(page), { timeout: KERNEL_TIMEOUT_MS }).toBe(50 * 6 * STOCK_MM);
+      await expectStraightSteelNative(saved.part, info, saved.product.grade);
+    }
+
+    if (app === undefined) {
+      const previousPage = page;
+      page = await previousPage.context().newPage();
+      page.on('pageerror', error => errors.push(error.message));
+      await disableFilePickers(page); await page.goto('/'); await waitForStartupReady(page);
+      await previousPage.close();
+    } else {
+      if (coldElectron === undefined) throw new Error('Electronの実process再起動が未接続です');
+      const reopened = await coldElectron(page, info); page = reopened.page; app = reopened.app;
+      page.on('pageerror', error => errors.push(error.message));
+      expect(page.url()).toBe('app://pointercad/index.html');
+    }
+    await openSaveFlowFile(page, assemblyPath, app);
+    await expect(componentRows(page)).toHaveCount(2);
+    expect(await steelAssemblySnapshot(page, info.outputPath('steel-ui-cold.pcada'), app)).toEqual(savedAssembly);
+    const coldCsv = await expectTwoSteelCsv(page, info.outputPath('steel-ui-after-cold.csv'), ids, app);
+    expect(coldCsv.equals(csv)).toBe(true);
+    expect(errors).toEqual([]);
   });
 }

@@ -672,6 +672,19 @@
   box-shadow: var(--pcad-shadow-soft);
 }
 
+/* Keep drawing reasons readable beside the controls without a forced extra row. */
+.pcad-toolbar--drawing {
+  align-items: center;
+  padding-block: var(--pcad-space-1);
+}
+
+.pcad-drawing-toolbar__reasons {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .pcad-toolbar__brand {
   display: flex;
   gap: var(--pcad-space-2);
@@ -2697,7 +2710,7 @@ button.pcad-tree__row:focus-visible {
   inset: 0;
   display: grid;
   place-items: center;
-  overflow: auto;
+  overflow: hidden;
   background: var(--pcad-color-canvas, #d9dde3);
 }
 
@@ -2711,6 +2724,7 @@ button.pcad-tree__row:focus-visible {
   border: 1px solid #727984;
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
   touch-action: none;
+  transform-origin: 0 0;
 }
 
 .pcad-drawing-svg { width: 100%; }

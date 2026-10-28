@@ -269,6 +269,7 @@
   "drag.error.derived": "この点は決まりから作られています(点列・複製・オフセットなど)。もとの数値を書き換えてください。",
   "drag.error.arcEndpoint": "円弧の端は中心と半径から決まります。中心を引っぱってください。",
   "drag.error.freeSketch": "3D スケッチでは引っぱって形を変えられません。作図面の上のスケッチで使ってください。",
+  "drag.error.solveFailed": "移動の計算を完了できませんでした。元の位置に戻しました。移動量を小さくするか、拘束を確認してください。",
   "shapeError.noTargetBody": "対象になる立体が選ばれていません。",
   "shapeError.noNeutralFace": "基準にする平らな面が選ばれていません。",
   "shapeError.noDraftFace": "傾ける面が選ばれていません。基準の面のほかに、傾けたい側面も選んでください。",

@@ -7,6 +7,7 @@ import type { AutoSaver, SaveDocumentEncoder } from '@pointercad/io';
 import type { PartDocument } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
 import type { FileGateway } from '../file/fileGateway.js';
+import type { ThumbnailCapture } from '../file/thumbnail.js';
 import { encodePcadInWorker } from '../file/pcadSaveWorker.js';
 import type { MessageKey } from '../i18n/t.js';
 import type { AppState } from './appState.js';
@@ -121,7 +122,7 @@ export interface FileSlice {
    * いまの絵をサムネイルの PNG にする手立て(§0.a-0.18)。ビューポートが自分を
    * 差し出し、片付けで null へ戻す。用意できていなければサムネイルなしで保存する。
    */
-  readonly captureThumbnail: (() => Uint8Array | null) | null;
+  readonly captureThumbnail: ThumbnailCapture | null;
   /**
    * いまの絵を**印刷用の 1 コマ**(PNG の data URL)にする手立て(FR-810、FR-908、
    * P6 §2.11、タスク33)。`captureThumbnail` と同じくビューポートが差し出し、
@@ -159,7 +160,7 @@ export interface FileSlice {
   /** 開いているファイルの名前と、最後に保存した文書を差し替える。 */
   readonly setFileState: (fileName: string | null, savedDocument: PartDocument | null) => void;
   /** サムネイルの作り手を差し出す・取り下げる(ビューポートが呼ぶ)。 */
-  readonly setCaptureThumbnail: (capture: (() => Uint8Array | null) | null) => void;
+  readonly setCaptureThumbnail: (capture: ThumbnailCapture | null) => void;
   /** 印刷用の 1 コマの作り手を差し出す・取り下げる(FR-810。ビューポートが呼ぶ)。 */
   readonly setCapturePrintFrame: (capture: (() => string | null) | null) => void;
   /** ファイル操作の結果を帯へ出す・消す。 */

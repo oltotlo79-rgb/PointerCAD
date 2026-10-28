@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { appendSolid, type SolidBody } from '@pointercad/model';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { expressionValueFromNumber } from '@pointercad/expression';
+import { absoluteCoordinate, appendSolid, DEFAULT_PRIMITIVE_AXIS, recomputePart, type SolidBody } from '@pointercad/model';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { attachPartRecompute } from '../store/attachKernel.js';
 import { executeCommand } from './commandRegistry.js';
 import { toolbarCommandId } from './toolbarCommandCatalog.js';
 import { toolCommandHelpTopic } from './toolCommandHelp.js';
@@ -12,7 +15,12 @@ import { bodyFor, extrudeFeature, holeFeature, partWithPoint, resetTestStore } f
 import { useAppStore } from '../store/useAppStore.js';
 
 beforeEach(resetTestStore);
-afterEach(resetTestStore);
+let releaseCutKernel: (() => void) | undefined;
+afterEach(() => {
+  releaseCutKernel?.();
+  releaseCutKernel = undefined;
+  resetTestStore();
+});
 
 function helpText(topic: string): string {
   return readFileSync(new URL(`../../../help-content/docs/ja/${topic}.md`, import.meta.url), 'utf8');
@@ -30,9 +38,16 @@ const TOOL_CASES = [
   { tool: 'threadShaft', group: 'solidMachining', topic: 'thread', target: 'cylinder' },
 ] as const;
 
-/** Geometry is supplied here only for picking; real shape generation is checked in the screen tests. */
-function prepareTargets(target: typeof TOOL_CASES[number]['target']): readonly string[] {
-  const base = appendSolid(partWithPoint(), extrudeFeature('extrude-1'));
+/** Picking uses supplied geometry; cut additionally verifies real staged shape generation below. */
+function prepareTargets(target: typeof TOOL_CASES[number]['target'], cut = false): readonly string[] {
+  // 切断は実形状の段階計算を経て確定する。参照先のない押し出しの代わりに実在する箱を用いる。
+  const base = appendSolid(partWithPoint(), cut ? {
+    id: 'extrude-1', name: '切断対象の箱', kind: 'primitive', suppressed: false,
+    origin: { kind: 'coordinate', value: absoluteCoordinate(0, 0, 0) },
+    axis: DEFAULT_PRIMITIVE_AXIS,
+    shape: { kind: 'box', sizeX: expressionValueFromNumber(10),
+      sizeY: expressionValueFromNumber(10), sizeZ: expressionValueFromNumber(10) },
+  } : extrudeFeature('extrude-1'));
   const patterned = target === 'pattern';
   const document = patterned ? appendSolid(base, holeFeature('hole-1', 'extrude-1')) : base;
   const bodyId = patterned ? 'hole-1' : 'extrude-1';
@@ -56,8 +71,21 @@ function prepareTargets(target: typeof TOOL_CASES[number]['target']): readonly s
 }
 
 describe('説明書どおり対象を選ぶ前に加工の道具を始める', () => {
-  it.each(TOOL_CASES)('$tool は案内後に対象を選び、同じ道具から入力して履歴を確定できる', ({ tool, group, topic, target }) => {
-    const selection = prepareTargets(target);
+  it.each(TOOL_CASES)('$tool は案内後に対象を選び、同じ道具から入力して履歴を確定できる', async ({ tool, group, topic, target }) => {
+    const selection = prepareTargets(target, tool === 'cut');
+    if (tool === 'cut') {
+      await initializeNativeKernelForNodeTests();
+      const bridge = createNativeKernelBridgeForNodeTests();
+      const detach = attachPartRecompute((document, options) => recomputePart(document, bridge, options));
+      releaseCutKernel = () => { detach(); bridge.dispose(); };
+      await vi.waitFor(() => {
+        const state = useAppStore.getState();
+        expect(state.completedGeneration).toBe(state.requestedGeneration);
+        expect(state.isComputing).toBe(false);
+      });
+      expect(useAppStore.getState().partErrors).toEqual([]);
+      expect(useAppStore.getState().bodies[0]?.volume).toBeCloseTo(1000, 8);
+    }
     const initial = useAppStore.getState();
     const commandId = toolbarCommandId(group, tool);
     expect(executeCommand(commandId).status).toBe('executed');
@@ -88,6 +116,15 @@ describe('説明書どおり対象を選ぶ前に加工の道具を始める', (
     }
     expect(transition.kind).toBe('solidCommitted');
     applyNumericTransition(transition);
+    if (tool === 'cut') {
+      expect(useAppStore.getState().document).toBe(initial.document);
+      expect(useAppStore.getState().undoStack).toBe(initial.undoStack);
+      await vi.waitFor(() => expect(useAppStore.getState().numericInput).toBeNull());
+      expect(useAppStore.getState().partErrors).toEqual([]);
+      // 原点を中心とする 10 mm 角の箱を XY 面で半分残す。
+      expect(useAppStore.getState().bodies[0]?.volume).toBeCloseTo(500, 8);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(initial.undoStack.past.length + 1);
+    }
     const committed = useAppStore.getState();
     expect(committed.numericInput).toBeNull();
     expect(committed.activeTool).toBe('select');
@@ -108,6 +145,15 @@ describe('説明書どおり対象を選ぶ前に加工の道具を始める', (
     expect(helpText(topic)).not.toContain('ボタンは薄いままで押せません');
     committed.undo();
     expect(useAppStore.getState().document).toEqual(initial.document);
+    if (tool === 'cut') {
+      await vi.waitFor(() => {
+        const state = useAppStore.getState();
+        expect(state.completedGeneration).toBe(state.requestedGeneration);
+        expect(state.isComputing).toBe(false);
+      });
+      expect(useAppStore.getState().partErrors).toEqual([]);
+      expect(useAppStore.getState().bodies[0]?.volume).toBeCloseTo(1000, 8);
+    }
   });
 });
 

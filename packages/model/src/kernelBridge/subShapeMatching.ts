@@ -118,6 +118,7 @@ function faceGeometry(face: SolidFaceEntry): MateSubShapeGeometry {
     axis: face.axis,
     radius: face.radius,
     ...(face.axisOrigin == null ? {} : { axisOrigin: face.axisOrigin }),
+    ...(face.planarBasis === undefined ? {} : { planarBasis: face.planarBasis }),
     ...(face.cylinderSpan == null ? {} : { cylinderSpan: face.cylinderSpan }),
     ...(face.cylinderAxialExtent == null ? {} : { cylinderAxialExtent: face.cylinderAxialExtent }),
     ...(face.cylinderExterior === undefined ? {} : { cylinderExterior: face.cylinderExterior }),

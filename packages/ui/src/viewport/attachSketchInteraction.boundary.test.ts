@@ -4,10 +4,10 @@
  * its drag session, section handle and transient indicators were split into their own modules;
  * the split must produce exactly the same updates in the same order.
  */
-import { absoluteCoordinate, appendFeature, createEmptyPartDocument, createPointFeature, replaceSketch } from '@pointercad/model';
+import { absoluteCoordinate, appendFeature, createEmptyPartDocument, createPointFeature, DEFAULT_FACE_COLOR, replaceSketch } from '@pointercad/model';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppState } from '../store/appState.js';
-import { orbitFrom, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
+import { bodyFor, orbitFrom, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import type { ViewportScene } from './createViewportScene.js';
@@ -29,7 +29,7 @@ interface Harness {
   readonly listeners: () => { readonly added: readonly string[]; readonly removed: readonly string[] };
 }
 
-function harness(): Harness {
+function harness(pickBody: () => string | null = () => null): Harness {
   const frames = new Map<number, FrameRequestCallback>();
   let nextFrame = 1;
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -53,8 +53,9 @@ function harness(): Harness {
     releasePointerCapture: (id: number): void => { captured.delete(id); },
     focus: (): void => {},
   }) as HTMLCanvasElement;
-  const projection: Pick<ViewportScene, 'worldToScreen' | 'screenToPlanePoint' | 'pointerRay'> = {
+  const projection: Pick<ViewportScene, 'worldToScreen' | 'screenToPlanePoint' | 'pointerRay' | 'pickBody'> = {
     worldToScreen: point => [point[0], point[1]], screenToPlanePoint: (x, y) => [x, y, 0], pointerRay: () => null,
+    pickBody,
   };
   const attached = attachSketchInteraction(canvas, projection as ViewportScene, () => orbitFrom(0, 0), () => false);
   return {
@@ -216,6 +217,102 @@ describe('attachSketchInteraction の100回の装着と破棄(R07)', () => {
     expect(subscribe).toHaveBeenCalledTimes(100 + 200);
     expect(useAppStore.getState().document).toBe(before.document);
     expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+  });
+});
+
+describe('selection filters at the actual pointer boundary', () => {
+  function overlappingSketch(): string {
+    resetPointDocument();
+    const state = useAppStore.getState();
+    const pointId = state.resolvedSketch.points[0].id;
+    useAppStore.setState({ bodies: [bodyFor('body')], resolvedSketch: { ...state.resolvedSketch,
+      segments: [{ kind: 'segment', featureId: 'curve', from: [20, 50, 0], to: [60, 50, 0] }],
+      faces: [{ featureId: 'face', color: DEFAULT_FACE_COLOR, curves: [
+        { kind: 'segment', featureId: 'face', from: [20, 30, 0], to: [60, 30, 0] },
+        { kind: 'segment', featureId: 'face', from: [60, 30, 0], to: [60, 70, 0] },
+        { kind: 'segment', featureId: 'face', from: [60, 70, 0], to: [20, 70, 0] },
+        { kind: 'segment', featureId: 'face', from: [20, 70, 0], to: [20, 30, 0] },
+      ] }],
+    } });
+    return pointId;
+  }
+
+  it('all 16 independent filter combinations preserve priority among enabled candidates for click and hover', () => {
+    const pointId = overlappingSketch();
+    const h = harness(() => 'body');
+    try {
+      for (let mask = 0; mask < 16; mask++) {
+        const filter = { vertex: (mask & 1) !== 0, edge: (mask & 2) !== 0, face: (mask & 4) !== 0, body: (mask & 8) !== 0 };
+        const expected = filter.vertex ? pointId : filter.edge ? 'curve' : filter.face ? 'face' : filter.body ? 'body' : null;
+        const state = useAppStore.getState();
+        state.setDisplaySettings({ ...state.displaySettings, selectionFilter: filter });
+        state.setSelection([]);
+        h.send('pointermove');
+        expect(useAppStore.getState().hoveredElementId).toBe(expected);
+        h.send('pointerdown', 40, 50, { shiftKey: true });
+        expect(useAppStore.getState().selection).toEqual(expected === null ? [] : [expected]);
+        h.send('pointerup');
+      }
+    } finally { h.detach(); }
+  });
+
+  it.each([
+    { filter: { vertex: false, edge: true, face: true, body: true }, expected: 'curve' },
+    { filter: { vertex: false, edge: false, face: true, body: true }, expected: 'face' },
+    { filter: { vertex: false, edge: false, face: false, body: true }, expected: 'body' },
+  ])('a normal click reaches $expected behind a disabled point without starting a sketch drag', ({ filter, expected }) => {
+    overlappingSketch();
+    const state = useAppStore.getState();
+    state.setDisplaySettings({ ...state.displaySettings, selectionFilter: filter });
+    const pickBody = vi.fn(() => 'body');
+    const h = harness(pickBody);
+    try {
+      h.send('pointermove');
+      expect(useAppStore.getState().hoveredElementId).toBe(expected);
+      h.send('pointerdown');
+      expect(useAppStore.getState().selection).toEqual([expected]);
+      expect(useAppStore.getState().sketchDrag).toBeNull();
+      expect(h.captured.size).toBe(0);
+      expect(pickBody).toHaveBeenCalledTimes(expected === 'body' ? 2 : 0);
+    } finally { h.detach(); }
+  });
+
+  it('disabled snap candidates cannot restore selection hover, while coordinate drawing retains snapping', () => {
+    resetPointDocument();
+    const state = useAppStore.getState();
+    const pointId = state.resolvedSketch.points[0].id;
+    state.setDisplaySettings({ ...state.displaySettings, selectionFilter: { vertex: false, edge: false, face: false, body: false } });
+    useAppStore.setState({ snapEnabled: true });
+    const h = harness();
+    try {
+      // Outside the six-pixel pick radius, inside the twelve-pixel snap radius.
+      h.send('pointermove', 49, 50);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      h.send('pointerdown', 40, 50);
+      expect(useAppStore.getState().selection).toEqual([]);
+      expect(useAppStore.getState().sketchDrag).toBeNull();
+      h.send('pointerup');
+      state.setActiveTool('point');
+      h.send('pointermove', 49, 50);
+      expect(useAppStore.getState().hoveredElementId).toBe(pointId);
+      expect(useAppStore.getState().snapIndicator?.elementId).toBe(pointId);
+    } finally { h.detach(); }
+  });
+
+  it.each(['trim', 'extend'] as const)('%s cannot hover or edit a disabled sketch curve', tool => {
+    overlappingSketch();
+    const state = useAppStore.getState();
+    state.setDisplaySettings({ ...state.displaySettings, selectionFilter: { vertex: true, edge: false, face: true, body: true } });
+    state.setActiveTool(tool);
+    const document = useAppStore.getState().document;
+    const h = harness();
+    try {
+      h.send('pointermove', 50, 50);
+      expect(useAppStore.getState().hoveredElementId).toBeNull();
+      h.send('pointerdown', 50, 50);
+      expect(useAppStore.getState().document).toBe(document);
+      expect(useAppStore.getState().selection).toEqual([]);
+    } finally { h.detach(); }
   });
 });
 

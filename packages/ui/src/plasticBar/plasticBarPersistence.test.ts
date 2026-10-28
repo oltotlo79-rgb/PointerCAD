@@ -93,12 +93,12 @@ describe('plastic-bar configuration persistence', () => {
   it('saves into the part document when no assembly is open and refuses an unsavable draft without editing it', () => {
     const fixture = bucklingUiFixture();
     useAppStore.setState({ strengthSession: fixture.state.strengthSession, assembly: null,
-      plasticBarSession: edited(BENCHMARK_EDITS.filter(edit => edit.kind !== 'reference')) });
+      plasticBarSession: edited(BENCHMARK_EDITS.filter(edit => edit.kind !== 'reference'), useAppStore.getState().activeDocumentId) });
     const before = useAppStore.getState().document;
     useAppStore.getState().savePlasticBar();
     expect(session().errorKey).toBe('plasticBar.error.source');
     expect(useAppStore.getState().document).toBe(before);
-    useAppStore.setState({ plasticBarSession: edited(BENCHMARK_EDITS) });
+    useAppStore.setState({ plasticBarSession: edited(BENCHMARK_EDITS, useAppStore.getState().activeDocumentId) });
     useAppStore.getState().savePlasticBar();
     const part = useAppStore.getState().document;
     expect(savedPlasticBarInput(part)?.source.documentId).toBe(part.id);

@@ -1,16 +1,13 @@
 /**
- * 道具「図形の測定値」を先に押したときの段階の案内(ADD-23、利用者の回答 Q11=P2、
- * 計画書 scratchpad/claude/plans/geomref-plan.md §4(a)・§5.2 GR-26)。
+ * 道具「図形の測定値」を先に押したときの段階の案内(FR-210/FR-211)。
+ * 対象を先に選んでも道具を先に押してもよい。道具が先なら次に選ぶ対象を状態欄で示し、
+ * 選択で段を進め、解除で戻す(NFR-UX-1、NFR-UX-7)。一覧の節と状態欄は同じ判断で案内する。
  *
- * この道具は、対象を先に選んでも道具を先に押してもよい(P2)。道具が先なら、何を選べば
- * よいかを状態欄で案内し、選ぶたびに段を進め、選択を外せば戻す(NFR-UX-1、NFR-UX-7)。
- * 節の先頭の文(GR-19a・GR-19b)も同じここの判断を使い、状態欄と節で違う文を出さない。
- *
- * 判断はこの純関数 1 か所に置く。材料は GR-15 の候補と理由コード(`mathGeometrySelection`)と
- * GR-14 の現在性(`currentMathGeometry`)だけで、文言は持たずに鍵と差し込み値を返す
- * (i18n の鍵は `i18n/ja/mathGeometry.json`)。`shell/statusText.ts` は画面側の最下層の
- * 純関数なのでここを読み込まない。`StatusBar.tsx` が道具の有効なときだけここを呼び、
- * 組み立てた 1 文を `StatusInput.mathGeometryGuide` で渡す。
+ * 判断はこの純関数に集め、`mathGeometrySelection` の候補・理由コードと
+ * `currentMathGeometry` の現在性から文の鍵と差し込み値だけを返す。
+ * 文言は `i18n/ja/mathGeometry.json` に置く。画面側の最下層の純関数 `shell/statusText.ts`
+ * からここを読み込まず、`StatusBar.tsx` が道具の有効時だけ呼び、組み立てた1文を
+ * `StatusInput.mathGeometryGuide` へ渡す。
  */
 import { t, type MessageKey } from '../i18n/t.js';
 import type { MathGeometryToolId } from '../sketch/numericInputTools.js';

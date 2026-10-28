@@ -1,13 +1,14 @@
 import React, { Children, isValidElement, type ReactElement, type ReactNode, type SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { absoluteCoordinate, addComponent, addSketch, appendFeature, appendSolid, createAssemblyDocument, createComponentFor, createEmptyPartDocument, createFeatureFolder, createPointFeature, createSketchFor, moveFeatureFolderMember, replaceSketch, type PartDocument } from '@pointercad/model';
+import { absoluteCoordinate, addComponent, addSketch, appendFeature, appendSolid, createAssemblyDocument, createComponentFor, createEmptyPartDocument, createFeatureFolder, createPointFeature, createSketchFor, moveFeatureFolderMember, replaceSketch, type PartDocument, type SolidFeature } from '@pointercad/model';
+import { expressionValueFromNumber } from '@pointercad/expression';
 import { FeatureTree } from './FeatureTree.js';
 import { AssemblyTree } from './AssemblyTree.js';
 import { FeatureFolderTree } from '../history/FeatureFolderTree.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { extrudeFeature, partWithMixedFeatures, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
+import { extrudeFeature, holeFeature, partWithMixedFeatures, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { connectSelectedPoints, selectedPointsConnection } from '../sketch/connectSelectedPoints.js';
 
 const renamedName = t('propertyPanel.sectionSelectionSets');
@@ -157,6 +158,52 @@ beforeEach(() => {
   vi.stubGlobal('window', { innerWidth: 1440, innerHeight: 900 });
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); resetTestStore(); });
+
+describe('FeatureTree failed edit consumption at the actual render boundary', () => {
+  const editKinds = ['faceOffset', 'holeTranslate', 'faceRotate', 'boolean'] as const;
+  function fixture(kind: typeof editKinds[number]): PartDocument {
+    const hole = holeFeature('hole-1', 'extrude-1');
+    const common = { id: 'edit-1', name: 'Edit', suppressed: false, targetFeatureId: hole.id };
+    const face = { ...hole.face, bodyFeatureId: hole.id };
+    const value = expressionValueFromNumber;
+    const edit: SolidFeature = kind === 'boolean'
+      ? { ...common, kind, operation: 'subtract', toolFeatureId: 'tool-1' }
+      : kind === 'faceOffset' ? { ...common, kind, face, offset: value(-28) }
+      : kind === 'holeTranslate' ? { ...common, kind, face, translation: [value(100), value(0), value(0)] }
+      : { ...common, kind, face, hinge: { bodyFeatureId: hole.id, index: 0,
+          fingerprint: { kind: 'edge', curveKind: 'line', length: 20, position: [0, 0, 0], axis: [0, 1, 0], radius: null } }, angle: value(90) };
+    return { ...createEmptyPartDocument(), solids: [extrudeFeature('extrude-1'), hole,
+      extrudeFeature('tool-1'), edit, extrudeFeature('tail-1')] };
+  }
+  function consumed(nodes: Element[], id: string): boolean {
+    return elements(row(nodes, `solid:${id}`)).some(element =>
+      element.props.title === t('featureTree.consumedTooltip') && element.props.children === t('featureTree.consumed'));
+  }
+
+  it.each(editKinds)('%s failure leaves its input selectable and unconsumed at every timeline position', kind => {
+    const document = fixture(kind);
+    useAppStore.getState().resetDocument(document);
+    const errors = [{ featureId: 'edit-1', code: 'missingBody' as const, message: 'Edit failed' }];
+    for (const timelineIndex of [null, 4, 0, 1, 2, 3] as const) {
+      useAppStore.setState({ partErrors: errors, timelineIndex });
+      const nodes = render();
+      expect(consumed(nodes, 'hole-1')).toBe(false);
+      expect(consumed(nodes, 'tool-1')).toBe(false);
+      expect(consumed(nodes, 'extrude-1')).toBe(timelineIndex !== 0);
+      expect(elements(row(nodes, 'solid:hole-1')).some(element =>
+        element.props.className === 'pcad-tree__select' && element.props.disabled !== true)).toBe(true);
+      expect(useAppStore.getState().document).toBe(document);
+    }
+    // Clearing the actual error after correction restores the normal consuming relation.
+    useAppStore.setState({ partErrors: [], timelineIndex: null });
+    expect(consumed(render(), 'hole-1')).toBe(true);
+    expect(consumed(render(), 'tool-1')).toBe(kind === 'boolean');
+    // A later successful step still does not consume while rolled back before it.
+    useAppStore.setState({ timelineIndex: 2 });
+    expect(consumed(render(), 'hole-1')).toBe(false);
+    expect(consumed(render(), 'extrude-1')).toBe(true);
+  });
+});
 
 describe('FeatureTree window listener lifetime', () => {
   it.each(['shiftKey', 'ctrlKey'] as const)('%s selection does not start a timeline drag', modifier => {

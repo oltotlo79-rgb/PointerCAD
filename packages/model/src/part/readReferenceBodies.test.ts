@@ -1,3 +1,7 @@
+import { createAllocations } from '../../../kernel/src/occt/allocations.js';
+import { writeBrepBytes } from '../../../kernel/src/occt/brepBytes.js';
+import { createSubShapeReference } from '../kernelBridge/createSubShapeReference.js';
+import type { HoleFeature, ThreadHoleFeature } from './types.js';
 import * as Comlink from 'comlink';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber } from '@pointercad/expression';
@@ -441,5 +445,140 @@ describe('reference capture refusal evidence', () => {
     });
     expect(capture).toHaveBeenCalledTimes(1);
     expect(current).not.toHaveBeenCalled();
+  });
+});
+
+
+/** 面の原点と軸は固定入力で構成し、得られたmetadataを期待値へ転記しない。 */
+async function planarLeaseFixture(operation: 'hole' | 'threadHole') {
+  const owned = createAllocations(), bridge = managedPreviewKernel();
+  let brep: Uint8Array;
+  try {
+    const axes = owned.keep(new oc.gp_Ax3_3(
+      owned.keep(new oc.gp_Pnt_3(0, 0, 10)),
+      owned.keep(new oc.gp_Dir_4(0, 0, 1)), owned.keep(new oc.gp_Dir_4(1, 0, 0)),
+    ));
+    const plane = owned.keep(new oc.gp_Pln_2(axes));
+    const maker = owned.keep(new oc.BRepBuilderAPI_MakeFace_9(plane, -20, 20, -15, 15));
+    const prism = owned.keep(new oc.BRepPrimAPI_MakePrism_1(
+      owned.keep(maker.Face()), owned.keep(new oc.gp_Vec_4(0, 0, -10)), true, true,
+    ));
+    brep = writeBrepBytes(oc, owned.keep(prism.Shape()));
+  } finally { owned.release(); }
+  const shapes = new Map([['planar-lease-stock', brep]]);
+  const document = appendSolid(createEmptyPartDocument(), {
+    id: 'planar-lease-stock', name: '基準素材', kind: 'importedSolid', suppressed: false,
+    shapeRef: 'planar-lease-stock', bodyKind: 'solid',
+    source: { format: 'step', fileName: 'fixed-stock.step', unit: 'mm', byteLength: brep.byteLength },
+  });
+  const options = { importedShapes: shapes, partId: 'planar-lease-regression', generation: 41,
+    localMesh: { maximumFloat32ErrorMm: .005, maximumLiveMeshBytes: 512 * 1024 * 1024 } };
+  const initial = await recomputePart(document, bridge, options);
+  expect(initial.errors).toEqual([]);
+  const stock = initial.bodies[0];
+  const top = stock.faces.find(face => face.surfaceKind === 'plane' && face.axis !== null
+    && Math.hypot(face.axis[0], face.axis[1], face.axis[2] - 1) <= 1e-9);
+  if (top === undefined) throw new Error('固定素材の上面がありません');
+  // imported素材はsemantic originを持たない。元保存と同じ旧参照を固定寸法から構成する。
+  expect(createSubShapeReference(stock, 'face', top.index)).toBeNull();
+  const face: SubShapeRef = { bodyFeatureId: stock.featureId, index: top.index, fingerprint: {
+    kind: 'face', surfaceKind: 'plane', area: 1200, position: [0, 0, 10], axis: [0, 0, 1], radius: null,
+  } };
+  await initial.referenceMeshScope?.close();
+  const n = expressionValueFromNumber;
+  const common = { id: 'planar-lease-hole', name: '基準を保持する穴', suppressed: false,
+    targetFeatureId: stock.featureId, face, centers: [], tiltAngle: n(0), tiltAzimuth: n(0) };
+  const planar: NonNullable<HoleFeature['planar']> = { kind: 'plane-face', locations: [
+    { x: { ...n(6), source: '2*3' }, y: { ...n(-4), source: '-2*2' } },
+  ] };
+  const feature: HoleFeature | ThreadHoleFeature = operation === 'hole'
+    ? { ...common, kind: 'hole', planar, diameter: n(6), depth: { kind: 'through' } }
+    : { ...common, kind: 'threadHole', planar, designation: 'M6', series: 'coarse', pitch: n(1),
+      drillDiameter: n(6 - 1.0825317547305482), threadLength: n(1), representation: 'simplified',
+      depth: { kind: 'through' } };
+  return { bridge, document, feature, options };
+}
+
+describe('平面編集基準の実producerとhidden lease', () => {
+  it.each(['hole', 'threadHole'] as const)('作図参照の無い%sでも現在の元素材基準を保持する', async operation => {
+    const f = await planarLeaseFixture(operation);
+    const document = appendSolid(f.document, f.feature), before = JSON.stringify(document);
+    const read = vi.spyOn(f.bridge, 'readCachedBodies');
+    for (const y of [-4, -5]) {
+      const changed = { ...f.feature, planar: { kind: 'plane-face' as const, locations: [
+        { x: { ...expressionValueFromNumber(6), source: '2*3' },
+          y: { ...expressionValueFromNumber(y), source: y === -4 ? '-2*2' : '-(1+4)' } },
+      ] } };
+      const current = y === -4 ? document : appendSolid(f.document, changed);
+      const result = await recomputePart(current, f.bridge, { ...f.options, generation: y === -4 ? 42 : 43 });
+      try {
+        expect(result.errors).toEqual([]);
+        expect(result.cancelled).toBe(false);
+        expect(result.bodies.map(body => body.featureId)).toEqual([f.feature.id]);
+        const hidden = result.referenceBodies?.find(body => body.featureId === f.feature.face.bodyFeatureId);
+        if (hidden === undefined || result.referenceMeshScope === undefined) throw new Error('元素材の実所有がありません');
+        const scope = result.referenceMeshScope;
+        expect(scope.document).toBe(current);
+        expect(scope.current).toBe(true);
+        expect(scope.referenceBodyCurrent(hidden)).toBe(true);
+        expect(scope.referenceBodyCurrent({ ...hidden })).toBe(false);
+        const matched = hidden.faces.find(face => face.index === f.feature.face.index)?.planarBasis;
+        if (matched === undefined) throw new Error('現在のnative基準がありません');
+        expect(Math.hypot(...matched.origin.map((v, i) => v - [0, 0, 10][i]))).toBeLessThanOrEqual(1e-7);
+        for (const [actual, expected] of [[matched.xAxis, [1, 0, 0]], [matched.yAxis, [0, 1, 0]],
+          [matched.normal, [0, 0, 1]]]) {
+          expect(Math.hypot(...actual.map((v, i) => v - expected[i]))).toBeLessThanOrEqual(1e-9);
+        }
+        const radius = operation === 'hole' ? 3 : (6 - 1.0825317547305482) / 2;
+        const expectedVolume = 12000 - Math.PI * radius ** 2 * 10;
+        expect(Math.abs(result.bodies[0].volume - expectedVolume) / expectedVolume).toBeLessThanOrEqual(1e-9);
+        const bore = result.bodies[0].faces.find(face => face.surfaceKind === 'cylinder');
+        if (bore?.axisOrigin === undefined || bore.axisOrigin === null || bore.axis === null || bore.radius === null) {
+          throw new Error('実穴の円筒軸がありません');
+        }
+        expect(Math.hypot(bore.axisOrigin[0] - 6, bore.axisOrigin[1] - y)).toBeLessThanOrEqual(1e-7);
+        expect(Math.abs(2 * bore.radius - 2 * radius)).toBeLessThanOrEqual(1e-7);
+        expect(Math.hypot(bore.axis[0], bore.axis[1], Math.abs(bore.axis[2]) - 1)).toBeLessThanOrEqual(1e-9);
+        expect(JSON.stringify(document)).toBe(before);
+        expect(await scope.close()).toBe(true);
+        expect(scope.referenceBodyCurrent(hidden)).toBe(false);
+      } finally { await result.referenceMeshScope?.close(); }
+    }
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(read.mock.calls.map(call => call[1])).toEqual([['planar-lease-stock'], ['planar-lease-stock']]);
+  });
+
+  it('抑制又は未知の元参照を持つ穴からhidden読取りを捏造しない', async () => {
+    const f = await planarLeaseFixture('hole'), read = vi.spyOn(f.bridge, 'readCachedBodies');
+    for (const feature of [{ ...f.feature, suppressed: true },
+      { ...f.feature, face: { ...f.feature.face, bodyFeatureId: 'missing-stock' } }]) {
+      const result = await recomputePart(appendSolid(f.document, feature), f.bridge, { ...f.options, generation: 44 });
+      try {
+        expect(result.bodies.map(body => body.featureId)).toEqual(['planar-lease-stock']);
+        expect(result.referenceBodies?.some(body => body.featureId === 'missing-stock')).toBe(false);
+        if (!feature.suppressed) expect(result.errors.some(error => error.featureId === feature.id)).toBe(true);
+      } finally { await result.referenceMeshScope?.close(); }
+    }
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('hidden返信中の取消では現在基準を公開せず所有を解放する', async () => {
+    const f = await planarLeaseFixture('hole'), original = f.bridge.readCachedBodies?.bind(f.bridge);
+    if (original === undefined) throw new Error('実hidden読取APIがありません');
+    let cancelled = false;
+    vi.spyOn(f.bridge, 'readCachedBodies').mockImplementation(async (...args) => {
+      const reply = await original(...args);
+      cancelled = true;
+      return reply;
+    });
+    const release = vi.spyOn(f.bridge, 'releaseReferenceMeshLease');
+    const document = appendSolid(f.document, f.feature), before = JSON.stringify(document);
+    const result = await recomputePart(document, f.bridge, { ...f.options, generation: 45, shouldCancel: () => cancelled });
+    expect(result.cancelled).toBe(true);
+    expect(result.bodies).toEqual([]);
+    expect(result.referenceBodies).toBeUndefined();
+    expect(result.referenceMeshScope).toBeUndefined();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(document)).toBe(before);
   });
 });

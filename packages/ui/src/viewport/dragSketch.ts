@@ -26,7 +26,6 @@ import {
   ORIGIN,
   pointValueAt,
   radiansToDegrees,
-  replaceFeature,
   subShapeFromFingerprint,
   subVec3,
   vertexKey,
@@ -512,11 +511,17 @@ export function commitDrag(
   plane: WorkPlane | null = null,
 ): SketchDocument {
   if (!solution.has(drag.pointKey) || findFeature(document, drag.featureId) === undefined) return document;
-  let next = document;
+  // 同じ要素の複数欄は順に更新するが、全要素配列の作り直しは最後の一度にする。
+  const features = new Map<string, SketchFeature>();
+  for (const feature of document.features) {
+    // 既存findFeatureと同じく、重複idでも先頭の定義を材料にする。
+    if (!features.has(feature.id)) features.set(feature.id, feature);
+  }
+  const updates = new Map<string, SketchFeature>();
   for (const [pointKey, position] of solution) {
     if (!position.every(Number.isFinite)) return document;
     const featureId = featureIdOfPointKey(pointKey);
-    const feature = findFeature(next, featureId);
+    const feature = updates.get(featureId) ?? features.get(featureId);
     if (feature === undefined) continue;
     const field = fieldOf(feature, pointKey);
     if ('reason' in field) continue;
@@ -531,7 +536,10 @@ export function commitDrag(
     const coordinate = commitInput(stored, member, position, resolved, plane);
     if (sameCoordinate(stored, coordinate)) continue;
     const updated = withDraggedField(feature, member, coordinate);
-    if (updated !== feature) next = replaceFeature(next, featureId, updated);
+    if (updated !== feature) updates.set(featureId, updated);
   }
-  return next;
+  return updates.size === 0 ? document : {
+    ...document,
+    features: document.features.map(feature => updates.get(feature.id) ?? feature),
+  };
 }

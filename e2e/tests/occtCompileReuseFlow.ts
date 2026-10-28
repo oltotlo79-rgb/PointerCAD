@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type BrowserContext, type ConsoleMessage, type ElectronApplication, type Page, type PlaywrightWorkerArgs, type TestInfo, type Worker } from '@playwright/test';
+import { observeStartupReuse } from '../../packages/test-utils/src/releasePerformance.js';
 import { expressionValueFromNumber as value } from '../../packages/expression/src/index.js';
 import { absoluteCoordinate, createEmptyPartDocument, createPrimitiveFeature, type BooleanFeature, type PrimitiveFeature } from '../../packages/model/src/index.js';
 import { writePcadFile } from '../../packages/io/src/index.js';
@@ -498,8 +499,86 @@ export async function browserOcctPair(playwright: Playwright, browserName: 'chro
   finally { await distribution.close(); }
 }
 
+/** Root-only causal diagnostic. Its timings are not W21 acceptance measurements. */
+async function beginCodeCacheDiagnostic(context: BrowserContext, page: Page, info: TestInfo, mode: Mode): Promise<(() => Promise<void>) | undefined> {
+  const enabled = process.env['PCAD_W21_CODE_CACHE_DIAGNOSTIC'];
+  if (enabled === undefined) return undefined;
+  if (enabled !== '1') throw new Error('Unknown W21 code-cache diagnostic mode');
+  const session = await context.newCDPSession(page);
+  try {
+  const version = await session.send('Browser.getVersion');
+  const categories = await session.send('Tracing.getCategories');
+  const required = ['v8.wasm', 'disabled-by-default-devtools.timeline'];
+  if (!required.every(name => categories.categories.includes(name))) {
+    throw new Error('Required native Wasm tracing categories unavailable; do not infer cache misses');
+  }
+  const histogram = async () => {
+    try { return { value: await session.send('Browser.getHistogram', { name: 'V8.WasmCodeCaching', delta: false }), error: null }; }
+    catch (error) { return { value: null, error: String(error) }; }
+  };
+  const before = await histogram();
+  const chunks: Buffer[] = [];
+  let bytes = 0, exceeded = false, dataLoss: boolean | null = null;
+  const collect = (event: { value: unknown[] }): void => {
+    if (exceeded) return;
+    const chunk = Buffer.from(JSON.stringify(event.value) + '\n');
+    if (bytes + chunk.length >= 31_000_000) { exceeded = true; return; }
+    chunks.push(chunk); bytes += chunk.length;
+  };
+  session.on('Tracing.dataCollected', collect);
+  try {
+    await session.send('Tracing.start', { transferMode: 'ReportEvents', traceConfig: {
+      recordMode: 'recordUntilFull', traceBufferSizeInKb: 16_384,
+      includedCategories: required, excludedCategories: ['*'],
+      enableSampling: false, enableSystrace: false,
+    } });
+  } catch (error) {
+    session.off('Tracing.dataCollected', collect); throw error;
+  }
+  return async () => {
+    const closeIntentEpochMs = Date.now();
+    let closeIntentMarkerRecorded = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let finish: ((event: { dataLossOccurred: boolean }) => void) | undefined;
+    let stopFailure: unknown;
+    try {
+      await session.send('Tracing.recordClockSyncMarker', { syncId: `${mode}-original-close-intent` });
+      closeIntentMarkerRecorded = true;
+      const done = new Promise<void>((resolve, reject) => {
+        finish = event => { dataLoss = event.dataLossOccurred; resolve(); };
+        session.on('Tracing.tracingComplete', finish);
+        timer = setTimeout(() => reject(new Error('Native trace did not flush within 10 seconds')), 10_000);
+      });
+      // Attach a rejection consumer before sending end; an end error must not leak a late timeout.
+      void done.catch(() => undefined);
+      await session.send('Tracing.end');
+      await done;
+    } catch (error) { stopFailure = error; }
+    finally {
+      if (timer !== undefined) clearTimeout(timer);
+      if (finish !== undefined) session.off('Tracing.tracingComplete', finish);
+      session.off('Tracing.dataCollected', collect);
+      try {
+        const after = await histogram();
+        await info.attach(`${mode}-native-wasm-events`, { body: Buffer.concat(chunks), contentType: 'application/x-ndjson' });
+        await info.attach(`${mode}-native-wasm-diagnostic`, { body: JSON.stringify({ version,
+          requestedCategories: required, before, after, bytes, exceeded, dataLoss, closeIntentEpochMs, closeIntentMarkerRecorded,
+          stopError: stopFailure === undefined ? null : String(stopFailure),
+          note: 'No CPU profiler, forced tier-up, sleep, cache priming or acceptance timing. Histogram may omit renderer samples; absent is unknown. Trace drain delays close; cache activity after original-close-intent cannot prove original lifecycle reuse.' }), contentType: 'application/json' });
+      } finally { await session.detach(); }
+    }
+    if (stopFailure !== undefined) throw stopFailure;
+    if (exceeded || dataLoss !== false) throw new Error('Incomplete native trace; retain raw and do not classify cache absence');
+  };
+  } catch (error) { await session.detach(); throw error; }
+}
+
 async function browserOcctPairOn(baseURL: string, playwright: Playwright, browserName: 'chromium' | 'firefox' | 'webkit',
   info: TestInfo, offline: boolean, index: number): Promise<OcctPair> {
+  if (process.env['PCAD_W21_CODE_CACHE_DIAGNOSTIC'] !== undefined &&
+      (process.env['PCAD_W21_CODE_CACHE_DIAGNOSTIC'] !== '1' || browserName !== 'chromium' || offline || index !== 1)) {
+    throw new Error('Code-cache diagnostic permits only online Chromium pair 1; no median acceptance');
+  }
   const parent = join(root, 'scratchpad/temp/b'); await mkdir(parent, { recursive: true });
   const profile = await mkdtemp(join(parent, 'w'));
   expect(profile.length).toBeLessThanOrEqual(90);
@@ -532,10 +611,12 @@ async function browserOcctPairOn(baseURL: string, playwright: Playwright, browse
   }
   const run = async (mode: Mode) => {
     const launchStartedAtEpochMs = Date.now(); let sampler: Sampler | undefined, context: BrowserContext | undefined, observation: Observation | undefined;
+    let stopCodeCacheDiagnostic: (() => Promise<void>) | undefined;
     try {
       context = await launch(offline);
       context.setDefaultTimeout(info.project.use.actionTimeout ?? 15_000);
       const page = context.pages()[0] ?? await context.newPage(); observation = observe(page);
+      stopCodeCacheDiagnostic = await beginCodeCacheDiagnostic(context, page, info, mode);
       await page.goto(baseURL);
       const uiReadyAtEpochMs = await prepareOcctMeasurement(page, offline, observation);
       const started = Date.now(); sampler = startSampler();
@@ -549,7 +630,10 @@ async function browserOcctPairOn(baseURL: string, playwright: Playwright, browse
       try {
         await info.attach(`${mode}-raw-occt`, { body: JSON.stringify(observation ?? null), contentType: 'application/json' });
         await info.attach(`${mode}-raw-processes`, { body: JSON.stringify({ launchStartedAtEpochMs, samplingStarted: sampler !== undefined, frames: sampler?.frames ?? [], failures: sampler?.failures ?? [] }), contentType: 'application/json' });
-      } finally { await context?.close(); }
+      } finally {
+        try { await stopCodeCacheDiagnostic?.(); }
+        finally { await context?.close(); }
+      }
       await info.attach(`${mode}-closed-profile`, { body: JSON.stringify(await profileInventory(profile)), contentType: 'application/json' });
     }
   };
@@ -565,8 +649,15 @@ export async function electronOcctPair(playwright: Playwright, info: TestInfo, o
   expect(await readdir(profile)).toEqual([]);
   const run = async (mode: Mode) => {
     const launchStartedAtEpochMs = Date.now(); let sampler: Sampler | undefined, app: ElectronApplication | undefined, observation: Observation | undefined;
+    // 実mainの記録を原文で残し、既存の時間・形状の判定には使わない。
+    const transportTrace: string[] = [];
+    const recordTransport = (message: ConsoleMessage): void => {
+      const text = message.text();
+      if (text.startsWith('[pcad:occt-http-phases] ')) transportTrace.push(text);
+    };
     try {
       ({ app } = await launchDesktop(playwright, info, { waitForStartup: false }));
+      app.on('console', recordTransport);
       app.context().setDefaultTimeout(info.project.use.actionTimeout ?? 15_000);
       const page = await app.firstWindow(); observation = observe(page);
       await app.context().setOffline(offline);
@@ -581,9 +672,15 @@ export async function electronOcctPair(playwright: Playwright, info: TestInfo, o
     } finally {
       await sampler?.stop();
       try {
+        await info.attach(`${mode}-raw-main-transport`, { body: JSON.stringify({
+          requested: process.env['PCAD_OCCT_TRANSPORT_TRACE'] === '1', records: transportTrace,
+        }), contentType: 'application/json' });
         await info.attach(`${mode}-raw-occt`, { body: JSON.stringify(observation ?? null), contentType: 'application/json' });
         await info.attach(`${mode}-raw-processes`, { body: JSON.stringify({ launchStartedAtEpochMs, samplingStarted: sampler !== undefined, frames: sampler?.frames ?? [], failures: sampler?.failures ?? [] }), contentType: 'application/json' });
-      } finally { await app?.close(); }
+      } finally {
+        app?.off('console', recordTransport);
+        await app?.close();
+      }
       await info.attach(`${mode}-closed-profile`, { body: JSON.stringify(await profileInventory(profile)), contentType: 'application/json' });
     }
   };
@@ -591,12 +688,20 @@ export async function electronOcctPair(playwright: Playwright, info: TestInfo, o
   return { index, offline, profile, cold, warm };
 }
 
+/** 成功時にも生JSON実体を残し、添付の表示だけへ依存しない。 */
+async function persistOcctEvidence(info: TestInfo, name: string, value: unknown): Promise<void> {
+  const path = info.outputPath(`${name}.json`);
+  await writeFile(path, JSON.stringify(value, null, 2), { flag: 'wx' });
+  await info.attach(name, { path, contentType: 'application/json' });
+}
+
 export async function assertFiveOcctPairs(pairs: readonly OcctPair[], info: TestInfo): Promise<void> {
-  const median = (values: number[]) => { const sorted = values.sort((a, b) => a - b); const value = sorted[2]; if (value === undefined) throw new Error('Five samples missing'); return value; };
-  await info.attach('five-pair-raw-measurements', { body: JSON.stringify(pairs, null, 2), contentType: 'application/json' });
+  await persistOcctEvidence(info, 'five-pair-raw-measurements', pairs);
   expect(pairs).toHaveLength(5); expect(new Set(pairs.map(pair => pair.profile)).size).toBe(5);
   expect(pairs.map(pair => pair.index).sort()).toEqual([1, 2, 3, 4, 5]);
-  const cold = median(pairs.map(pair => pair.cold.startupMs)), warm = median(pairs.map(pair => pair.warm.startupMs));
-  await info.attach('five-pair-medians', { body: JSON.stringify({ cold, warm, ratio: warm / cold, requiredRatio: 0.8 }), contentType: 'application/json' });
-  expect(cold).toBeGreaterThan(0); expect(warm).toBeLessThanOrEqual(cold * 0.8);
+  expect(new Set(pairs.map(pair => pair.offline)).size).toBe(1);
+  const observation = observeStartupReuse(pairs.map(pair => pair.cold.startupMs),
+    pairs.map(pair => pair.warm.startupMs), 'OCCT cold/warm 5組');
+  // requiredRatioは旧添付consumer互換の欄名。参考値であり合否には使わない。
+  await persistOcctEvidence(info, 'five-pair-medians', { ...observation, requiredRatio: observation.referenceRatio });
 }

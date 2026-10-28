@@ -109,6 +109,8 @@ import {
   type PcadAssemblyKind,
   type PcadPartFile,
 } from './schema.js';
+import type { BoltedJointRecord as TypeBoltedJointRecord } from '@pointercad/model';
+
 
 /**
  * 判別に使う文字列の一覧。`as` を使わずに型から取り出す(`documentJson.ts` と同じ流儀)。
@@ -1124,7 +1126,7 @@ function readAssemblyDocumentBody(value: unknown, path: string): Checked<Assembl
       joinPath(path, 'jointOccurrenceConnections'))
     : { ok: true, value: undefined };
   if (!occurrenceConnections.ok) return occurrenceConnections;
-  const boltedJoints: Checked<readonly import('@pointercad/model').BoltedJointRecord[] | undefined> =
+  const boltedJoints: Checked<readonly TypeBoltedJointRecord[] | undefined> =
     Object.hasOwn(record.value, 'boltedJoints')
       ? readBoltedJointRecords(record.value['boltedJoints'], components.value, joinPath(path, 'boltedJoints'))
       : { ok: true, value: undefined };

@@ -1,22 +1,14 @@
 /**
- * Definition-editing commands for math geometry (GR-03, `scratchpad/claude/plans/geomref-plan.md`
- * §5.2 GR-03, plus wave2's "GR-03 への追加"): the pure functions behind "選択から追加" / "選び直す" /
- * the angle-unit toggle / "削除" / the per-definition tolerance edit (Q5=T3) in §4(a)'s row operations.
- * Every function takes a `PartDocument` and returns a new one (or, when nothing actually changes, the
- * same document by reference — `part/documentChange.ts`'s `affectsShape` relies on that to skip
- * unnecessary recomputation). Nothing here touches the kernel, a Worker, or evaluates a value; the
- * identity rules (name collisions, the coefficient-ID namespace, the default tolerance, usage lookup)
- * all come from GR-01 (`mathGeometryIdentity.ts`) and are never re-derived here.
+ * 図形の測定値の追加・選び直し・角度単位・削除・定義ごとの比較幅編集を行う純関数。
+ * 利用者仕様の比較幅編集は docs/requirements.md の FR-210/FR-211 注記に対応する。
+ * `PartDocument` から新しい文書を返し、変更がない場合は同じ参照を返す。
+ * `part/documentChange.ts` の `affectsShape` はこの同一性で不要な再計算を避ける。
+ * 形の計算部やWorkerを呼ばず、測定もしない。名前衝突・係数IDの名前空間・既定比較幅・使用先は
+ * `mathGeometryIdentity.ts` に集約し、ここで規則を作り直さない。
  *
- * GR-03b (plan §5.2 GR-03b) added `validateMathGeometryTolerance`, the exported per-field form of the
- * tolerance rule, so the screen's two tolerance fields (Q5=T3) can each show their own error, and split
- * the tolerance refusal into one sentence per field (Appendix C).
- *
- * A rejection carries both a machine-checkable `reason` (for callers/tests that want their own wording)
- * and a ready Japanese `message`. This package cannot import `packages/ui`'s i18n JSON (dependency
- * direction, rules/04-設計の規律.md), so — like `measure/mathGeometry.ts`'s `GeometryProblem` and
- * `part/timelineOrder.ts`'s `ReorderRefusal` — a model-layer refusal must carry its own text rather than
- * a bare code the UI resolves.
+ * `validateMathGeometryTolerance` は画面の長さ・角度の各欄に対応した検査と理由を返す。
+ * 拒否は機械判定用の `reason` と日本語の `message` を持つ。modelはUIのi18nを参照できないため、
+ * `GeometryProblem` や `ReorderRefusal` と同様に、表示できる理由の文もこの層で保持する。
  */
 import type { PartDocument } from '../part/types.js';
 import {

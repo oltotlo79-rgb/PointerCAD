@@ -24,6 +24,7 @@
  * `commitFillet` が受け持つ(統括の決定 2026-09-06)。
  */
 
+import { commitDirectEdit, directEditRejection } from './directEditCommands.js';
 import { allocatePatternPointSlots, patternSlotHighWater } from '@pointercad/model';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { selectedSweepGuide } from './sweepGuideChoices.js';
@@ -110,6 +111,8 @@ import {
 export type ShapeEditToolId =
   | 'draft'
   | 'faceOffset'
+  | 'holeTranslate'
+  | 'faceRotate'
   | 'mirrorSolid'
   | 'transform'
   | 'scale'
@@ -541,6 +544,9 @@ function shapeEditRejection(
       return draftRejection(context);
     case 'faceOffset':
       return faceOffsetRejection(context);
+    case 'holeTranslate':
+    case 'faceRotate':
+      return directEditRejection(context, tool);
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
@@ -570,6 +576,8 @@ export function shapeEditToolOf(tool: string): ShapeEditToolId | null {
   switch (tool) {
     case 'draft':
     case 'faceOffset':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
@@ -1023,6 +1031,9 @@ export function commitShapeEdit(
       return commitDraft(context, commit);
     case 'faceOffset':
       return commitFaceOffset(context, commit);
+    case 'holeTranslate':
+    case 'faceRotate':
+      return commitDirectEdit(context, commit, tool);
     case 'mirrorSolid':
       return commitMirror(context, commit);
     case 'transform':

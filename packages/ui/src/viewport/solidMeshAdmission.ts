@@ -218,31 +218,39 @@ export function displayCopyBaseline(accounting: MeshJsAccountingState):
  * two canvases hold two even for the same CPU arrays. A new reservation replaces the owner's
  * previous one, a refused reservation leaves it unchanged, and releasing one owner never
  * touches another. The value is an attribute byte count, not a measured driver high-water;
- * textures, PMREM, materials and the non-mesh helper lines stay outside it.
+ * textures, PMREM, materials and the non-mesh helper lines stay outside that reading.
+ * Known environment allocations have separate owners/readouts but share the same ceiling.
  */
 export interface GpuMeshBudget {
   readonly limitBytes: number;
   reserve(owner: symbol, bytes: number): boolean;
   release(owner: symbol): void;
   reservedBytes(owner?: symbol): number;
+  reserveEnvironment(owner: symbol, bytes: number): boolean;
+  releaseEnvironment(owner: symbol): void;
+  environmentReservedBytes(owner?: symbol): number;
+  totalReservedBytes(): number;
 }
 
 /**
  * The process-wide pool every viewport canvas shares for local displays (each canvas is one
- * renderer owner). 512 MiB matches the local live-mesh ceiling; world displays do not reserve.
+ * renderer owner). 512 MiB matches the local live-mesh ceiling; world mesh attributes do not
+ * reserve, while the known environment payload is reserved for either coordinate space.
  */
 export const LOCAL_DISPLAY_GPU_MESH_BUDGET: GpuMeshBudget = createGpuMeshBudget(512 * 1024 * 1024);
 
 export function createGpuMeshBudget(limitBytes: number): GpuMeshBudget {
   if (!byteCount(limitBytes) || limitBytes === 0) throw new RangeError('GPU mesh budget must be a positive safe integer');
   const owners = new Map<symbol, number>();
+  const environments = new Map<symbol, number>();
   let total = 0;
+  let environmentTotal = 0;
   return {
     limitBytes,
     reserve(owner, bytes): boolean {
       if (!byteCount(bytes)) return false;
       const next = total - (owners.get(owner) ?? 0) + bytes;
-      if (!byteCount(next) || next > limitBytes) return false;
+      if (!byteCount(next) || !byteCount(next + environmentTotal) || next + environmentTotal > limitBytes) return false;
       owners.set(owner, bytes);
       total = next;
       return true;
@@ -254,5 +262,21 @@ export function createGpuMeshBudget(limitBytes: number): GpuMeshBudget {
     reservedBytes(owner): number {
       return owner === undefined ? total : owners.get(owner) ?? 0;
     },
+    reserveEnvironment(owner, bytes): boolean {
+      if (!byteCount(bytes)) return false;
+      const next = environmentTotal - (environments.get(owner) ?? 0) + bytes;
+      if (!byteCount(next) || !byteCount(total + next) || total + next > limitBytes) return false;
+      environments.set(owner, bytes);
+      environmentTotal = next;
+      return true;
+    },
+    releaseEnvironment(owner): void {
+      environmentTotal -= environments.get(owner) ?? 0;
+      environments.delete(owner);
+    },
+    environmentReservedBytes(owner): number {
+      return owner === undefined ? environmentTotal : environments.get(owner) ?? 0;
+    },
+    totalReservedBytes(): number { return total + environmentTotal; },
   };
 }

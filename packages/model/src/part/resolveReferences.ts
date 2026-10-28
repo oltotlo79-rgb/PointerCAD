@@ -70,6 +70,8 @@ import type {
   ReferencePointFeature,
   SolidOrigin,
 } from './types.js';
+import type { FunctionPointResolver as TypeFunctionPointResolver } from '../functionGeometry/functionPointReference.js';
+
 
 /** 基準ジオメトリが解決できなかった理由。平面の理由(`PlaneErrorKey`)に循環を足したもの。 */
 export type ReferenceErrorCode = PlaneErrorKey | 'circularReference';
@@ -125,7 +127,7 @@ export interface ResolvedReferences {
 
 /** 基準ジオメトリを解くのに要る、外から渡す手掛かり。 */
 export interface ReferenceResolveDeps {
-  readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
+  readonly functionPoint?: TypeFunctionPointResolver;
   readonly invalidInputs?: ReadonlyMap<string, string>;
   /**
    * スケッチ 1 本の解決結果。まだ解けない(循環している)ときは null を返す。

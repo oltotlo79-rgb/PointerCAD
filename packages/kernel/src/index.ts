@@ -595,3 +595,5 @@ export {
   type SurfaceCutInput, type SurfaceCutReason, type SurfaceCutPiece, type SurfaceCutResult,
 } from './occt/makeSurfaceCut.js';
 export { rotateSolidFace, type FaceRotationResult } from './occt/rotateSolidFace.js';
+
+export type { HoleTranslateStepSpec, FaceRotateStepSpec } from './types.js';

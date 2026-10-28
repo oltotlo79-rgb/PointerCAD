@@ -115,6 +115,7 @@ export { translateBeamJointInitialStrain, beamJointInitialStrainInputSha256, dec
   type BeamJointInitialStrainInput, type BeamJointInitialStrainPlan, type BeamJointInitialStrainResult,
   type InitialStrainBoltForce, type ShankShortening } from './beamJointInitialStrain.js';
 export { analyzeBeamJointInitialStrain } from './beamJointInitialStrainRuntime.js';
+export { calculateBoltPreloadStages, type BoltPreloadDeclaration, type BoltPreloadState } from './boltPreloadStages.js';
 export { prepareCadBeamJointInitialStrain } from './cadBeamJointInitialStrain.js';
 export { translateBeamImpact, impactInputSha256, impactRefinementMap, type OofemImpactPlan } from './beamImpactTranslation.js';
 export { decodeBeamImpact, impactOutputSteps } from './beamImpactResults.js';
@@ -128,3 +129,14 @@ export { decodeImpactInterior, impactElementEndForces, type BeamImpactElement, t
 export { checkFibreSection, compareWithYield, elementFibreStresses, fibreExtremes, fibreStress, type AnalysedSection,
   type BeamFibreSection, type ElementFibreStress, type FibreExtreme, type FibreSectionCheck, type SourcedYield,
   type YieldComparison } from './beamFibreStress.js';
+
+// Internal numeric entry only; CAD persistence and UI remain separate, unimplemented integration.
+export type { NativeBoltPreloadPlan, NativeBoltPreloadResult } from './nativeBoltPreload.js';
+export type { NativeBoltPreloadWireInput, NativeBoltPreloadOwnedResult } from './nativeBoltPreloadBinding.js';
+export { prepareCadNativeBoltPreload, type CadNativeBoltPreloadInput } from './cadNativeBoltPreload.js';
+
+export { recoverWeldThroatStress, recoverJointWeldThroatStress, recoverInitialStrainWeldThroatStress } from './weldThroatStress.js';
+
+export { analyzeFrameBoltContact } from './frameBoltContactRuntime.js';
+export { isFrameBoltContactResult, frameBoltContactResultMatches, type FrameBoltContactResult } from './frameBoltContactBinding.js';
+export type { FrameBoltContactInput } from './beamBoltContact.js';

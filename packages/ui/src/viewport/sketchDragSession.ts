@@ -28,9 +28,12 @@ import { commitDrag, createDragSolveJob, dragRefusalMessageKey, dragTargetUv, dr
 import { gridSpacing } from './gridMath.js';
 import { pickSketchDragTarget } from './pickSketchDragTarget.js';
 import type { SketchDragEndRecord, SketchDragObservation } from './sketchDragObservation.js';
+import type { SketchDragTiming } from './sketchDragTiming.js';
 import type { SketchInteractionIndicators } from './sketchInteractionIndicators.js';
 
 export interface SketchDragSessionDeps {
+  /** E2E時だけ渡す描画時刻collector。通常経路では生成しない。 */
+  readonly timing?: SketchDragTiming;
   readonly scene: Pick<ViewportScene, 'screenToPlanePoint'>;
   readonly project: ProjectToScreen;
   readonly getOrbit: () => OrbitState;
@@ -51,11 +54,11 @@ export interface SketchDragSession {
   /** Grabs the draggable point under the pointer. False when there is nothing to grab. */
   readonly begin: (pointer: readonly [number, number]) => boolean;
   /** Solves the latest pointer position once per animation frame. */
-  readonly schedule: (pointer: readonly [number, number]) => void;
+  readonly schedule: (pointer: readonly [number, number], eventAtMs?: number) => void;
   /** Pointer release: commits a moved drag once, or selects the constraint mark under an unmoved grab. */
-  readonly finish: (pointer?: readonly [number, number]) => void;
+  readonly finish: (pointer?: readonly [number, number], eventAtMs?: number) => void;
   /** Ends the drag. `keepShape` keeps the solved shape displayed until the next recompute. */
-  readonly stop: (keepShape: boolean) => void;
+  readonly stop: (keepShape: boolean, eventAtMs?: number, kind?: 'escape' | 'pointercancel') => void;
   /** Read-only frozen snapshot for E2E timing evidence; never changes the session. */
   readonly observe: () => SketchDragObservation;
 }
@@ -98,6 +101,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
   let generation = 0;
   let jobGeneration = -1;
   let solutionGeneration = -1;
+  let timingTarget: number | null = null, timingJobTarget: number | null = null;
   /** Observation only (never read by the drag logic): grab ordinal and the latest recorded ends. */
   let session = 0;
   let committing = false;
@@ -146,8 +150,9 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
     return chooseSnap(candidates, project, pointer, SNAP_RADIUS_PIXELS, new Set(state.snapKinds));
   }
 
-  function stop(keepShape: boolean): void {
-    if (dragOwner !== null && !committing) lastCancelled = Object.freeze({ session, atMs: globalThis.performance.now() });
+  function stop(keepShape: boolean, eventAtMs?: number, kind?: 'escape' | 'pointercancel'): void {
+    if (dragOwner !== null && !committing) deps.timing?.cancel(eventAtMs, kind);
+    const cancelledSession = dragOwner !== null && !committing ? session : null;
     generation += 1;
     if (dragFrameId !== 0) {
       globalThis.cancelAnimationFrame(dragFrameId);
@@ -170,10 +175,17 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
     dragOwner = null;
     dragDocument = null;
     indicators.clearOwnedIndicators();
+    deps.timing?.end(committing);
+    // 中断の完了時刻。job/capture/store/表示の所有を手放す前の時刻で完了を装わない。
+    if (cancelledSession !== null) {
+      lastCancelled = Object.freeze({ session: cancelledSession, atMs: globalThis.performance.now() });
+    }
   }
 
   /** Starts the job for one pointer target (replacing the previous job). Snapping is decided here. */
   function startJob(pointer: readonly [number, number], drag: SketchDrag, state: AppState): void {
+    deps.timing?.solving();
+    timingJobTarget = timingTarget;
     // Invalidate both a pending job and a completed preview before resolving a newer target.
     dragJob?.cancel();
     dragJob = null;
@@ -263,9 +275,19 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
         return;
       }
       const solved = progress.result;
+      const outcome = solved.outcome;
+      // 処理の終了と数値的成功は別。上限/特異/非有限の結果をpreviewや確定へ流さない。
+      // 到達不能なsoft pinのstep/dampingは既存契約を保ち、別の採用判断を必要とする。
+      if (outcome !== null && (!outcome.x.every(Number.isFinite)
+        || (!outcome.converged && (outcome.stop === 'maxIterations' || outcome.stop === 'singular')))) {
+        stop(false);
+        useAppStore.getState().setDragRefusal('drag.error.solveFailed');
+        return;
+      }
       dragJob = null;
       dragSolution = solved.solution;
       solutionGeneration = ownerGeneration;
+      if (timingJobTarget !== null) deps.timing?.adopt(solved.resolved, timingJobTarget);
       useAppStore.getState().setDragResolved(solved.resolved);
     }
     if (releasePending) commit();
@@ -330,6 +352,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
       dragOwner = outcome;
       session += 1;
       dragDocument = state.document;
+      deps.timing?.begin(outcome, state.document, state.documentVersion, session, state.resolvedSketch, outcome.pointKey);
       latestPointer = pointer;
       dragHasMoved = false;
       dragMarkId = constraintMarkAt(constraintMarksOf(state.constraintSummaries), project, pointer);
@@ -338,10 +361,11 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
       state.setPickAnchor(pointer);
       return true;
     },
-    schedule: (pointer) => {
+    schedule: (pointer, eventAtMs) => {
       // After the release the final target is fixed; later moves do not change what is committed.
       if (releasePending) return;
       invalidateTarget();
+      timingTarget = deps.timing?.target(pointer, eventAtMs) ?? null;
       latestPointer = pointer;
       dragHasMoved = true;
       dragPointer = pointer;
@@ -351,7 +375,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
      * The release (§0.a-0.4). Only the dragged point's coordinate is rewritten, as one Undo step.
      * A grab without a move does not change the document.
      */
-    finish: (pointer) => {
+    finish: (pointer, eventAtMs) => {
       const state = useAppStore.getState();
       const drag = state.sketchDrag;
       if (drag === null || drag !== dragOwner || state.document !== dragDocument) {
@@ -363,6 +387,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
       if (pointer !== undefined && (latestPointer === null
         || pointer[0] !== latestPointer[0] || pointer[1] !== latestPointer[1])) {
         invalidateTarget();
+        timingTarget = deps.timing?.target(pointer, eventAtMs, 'pointerup') ?? null;
         latestPointer = pointer;
         dragHasMoved = true;
         dragPointer = pointer;
@@ -394,6 +419,7 @@ export function createSketchDragSession(deps: SketchDragSessionDeps): SketchDrag
       releasePending,
       lastCancelled,
       lastCommitted,
+      ...(deps.timing === undefined ? {} : { timing: deps.timing.snapshot() }),
     }),
   };
 }

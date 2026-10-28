@@ -21,7 +21,7 @@ export interface MathGeometryContext {
 /** 既存の公開名を保ち、曖昧さの基準は図面と共通の1か所から使う。 */
 export { SUB_SHAPE_AMBIGUITY_MARGIN as MATH_GEOMETRY_AMBIGUITY_MARGIN } from '../kernelBridge/referenceResolution.js';
 
-type Scalar = { readonly value: number; readonly unit: 'mm' | 'mm2' | 'mm3' | 'degree' | 'radian' };
+interface Scalar { readonly value: number; readonly unit: 'mm' | 'mm2' | 'mm3' | 'degree' | 'radian' }
 class GeometryProblem extends Error {
   constructor(readonly reason: Extract<MathGeometryOutcome, { readonly status: 'unresolved' }>['reason'], message: string) {
     super(message);

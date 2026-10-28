@@ -1,4 +1,6 @@
 import { test } from '@playwright/test';
-import { registerSteelEditableStockTests } from './steelEditableStockFlow.js';
+import { registerSteelEditableStockTests, registerSteelUiAcceptanceTests } from './steelEditableStockFlow.js';
 
 registerSteelEditableStockTests(test);
+
+registerSteelUiAcceptanceTests(test);

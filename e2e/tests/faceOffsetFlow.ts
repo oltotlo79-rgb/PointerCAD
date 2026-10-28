@@ -1,7 +1,9 @@
 import { statSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
+
+import { beginRecompute, waitForRecompute } from './recompute.js';
 
 /**
  * EX-18 の限られた一段「平らな面の移動」を、実際のブラウザで通しで確かめる。**ヘッドレスで実行する。**
@@ -288,6 +290,16 @@ async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
   await page.mouse.click(box.x + x, box.y + y);
 }
 
+async function selectBodiesOnly(page: Page): Promise<void> {
+  const status = page.locator('.pcad-statusbar');
+  for (const [name, enabled] of [['頂点', false], ['辺', false], ['面', false], ['立体', true]] as const) {
+    const button = status.getByRole('button', { name, exact: true });
+    if ((await button.getAttribute('aria-pressed')) !== String(enabled)) await button.click();
+    await expect(button).toHaveAttribute('aria-pressed', String(enabled));
+  }
+  await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
+}
+
 async function volumeNumber(page: Page): Promise<number> {
   const cell = propertyValue(page, '体積');
   if ((await cell.count()) === 0) {
@@ -363,13 +375,17 @@ export async function faceOffsetFlow(page: Page, info: TestInfo, entry: string):
   // 2) 関係のない貫通穴 φ6 を (10, 15) にあける(solid.spec.ts の穴の手順と同じ)。
   await sketchTool(page, '点').click();
   await fillFields(page, [...HOLE_CENTER]);
+  const beforeHoleCenter = await beginRecompute(page);
   await commitPopover(page);
   await cancelPopover(page);
+  // 点の作成も再計算を起こす。古い体積や入力欄の消失だけでは立体の面を拾えない。
+  await waitForRecompute(page, beforeHoleCenter);
   await openToolMenu(page, '加工');
   const holeButton = machiningTool(page, '穴');
   await holeButton.click({ force: true });
   await expect(selectionKindLabel(page)).toHaveText('選ぶもの 面');
   await clickWorldPoint(page, [20, 15, 10]);
+  await expect(solidRowBox(page, '押し出し1')).toHaveClass(/pcad-tree__row--selected/);
   await treeRow(page, '点1').click({ modifiers: ['Shift'] });
   await openToolMenu(page, '加工');
   await holeButton.click();
@@ -393,6 +409,14 @@ export async function faceOffsetFlow(page: Page, info: TestInfo, entry: string):
   // 4) 距離の既定は 1(directFaceEdit.ts の DEFAULT_FACE_OFFSET_MM)。+5 で外へ足す。
   await expect(popoverTitle(page)).toHaveText('面を動かす');
   await expect(popoverInputs(page).first()).toHaveValue('1');
+  // W07: a rejected candidate keeps the existing two bodies and the input; correction commits once.
+  await fillFields(page, ['-28']);
+  await commitPopover(page);
+  await expect(popover(page).getByRole('alert')).toHaveText(COLLISION_REASON, { timeout: KERNEL_TIMEOUT_MS });
+  await expect(popoverInputs(page).first()).toHaveValue('-28');
+  await expect(solidRows(page)).toHaveCount(2);
+  await expect(solidRow(page, '面の移動1')).toHaveCount(0);
+  await expect(solidRowBox(page, '穴1')).not.toContainText('統合済み');
   await fillFields(page, ['5']);
   await commitPopover(page);
   await expect(popover(page)).toHaveCount(0);
@@ -403,6 +427,17 @@ export async function faceOffsetFlow(page: Page, info: TestInfo, entry: string):
   await expectVolume(page, BOARD_VOLUME + 5 * END_FACE_AREA - HOLE_6_THROUGH);
   await expect(propertyField(page, '動かす距離')).toHaveValue('5');
   await expect(solidRowBox(page, '穴1')).toContainText('統合済み');
+
+  // W07: rejection added no history; one Undo removes the sole successful creation.
+  await sketchTool(page, '選択').click();
+  await page.keyboard.press('Control+z');
+  await expect(solidRows(page)).toHaveCount(2);
+  await expect(solidRow(page, '面の移動1')).toHaveCount(0);
+  await solidRow(page, '穴1').click();
+  await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+  await page.keyboard.press('Control+y');
+  await solidRow(page, '面の移動1').click();
+  await expectVolume(page, BOARD_VOLUME + 5 * END_FACE_AREA - HOLE_6_THROUGH);
 
   // 6) 寸法を変える: 負の距離で内へ削る(式の欄から作り直される)。
   await propertyField(page, '動かす距離').fill('-5');
@@ -460,12 +495,60 @@ export async function faceOffsetFlow(page: Page, info: TestInfo, entry: string):
   // 断っても立体の数は増えも減りもしない(押し出し1・穴1・面の移動1)。
   await expect(solidRows(page)).toHaveCount(3);
 
+  // EX-18.16: the failed edit consumes nothing; its successful input still consumes the original extrusion.
+  await expect(solidRowBox(page, '穴1')).not.toContainText('統合済み');
+  await expect(solidRowBox(page, '押し出し1')).toContainText('統合済み');
+  await solidRow(page, '穴1').click();
+  await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+  // Pick the restored input through the viewport, rather than relying only on the history row.
+  await solidRow(page, '面の移動1').click();
+  // The home camera is unchanged; exclude overlapping sketch geometry through the ordinary selection filters.
+  await selectBodiesOnly(page);
+  await clickWorldPoint(page, [40, 15, 5]);
+  await expect(solidRowBox(page, '穴1')).toHaveClass(/pcad-tree__row--selected/);
+  await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+  await expect(propertyPanel(page)).not.toContainText(COLLISION_REASON);
+
+  // Save the actual failed feature and reopen through the normal file gateway.
+  await page.evaluate(() => { delete window.faceProofSaved; });
+  await fileAction(page, '保存').click();
+  await expect.poll(() => page.evaluate(() => window.faceProofSaved?.length ?? 0)).toBeGreaterThan(0);
+  const failedBytes = await page.evaluate(() => window.faceProofSaved ?? []);
+  const failedPath = info.outputPath('face-offset-failed.pcad');
+  await writeFile(failedPath, Uint8Array.from(failedBytes));
+  expect(statSync(failedPath).size).toBe(failedBytes.length);
+  const failedSavedBytes = [...(await readFile(failedPath))];
+  expect(failedSavedBytes).toEqual(failedBytes);
+  // statusText.ts:1197-1198 keeps the recompute error ahead of the save notice (1238-1239).
+  await expect(statusText(page)).toHaveText(`計算に失敗しました: ${COLLISION_REASON}`);
+  await fileAction(page, '新規').click();
+  await expect(featureTree(page)).toContainText('まだ何もありません。');
+  await page.evaluate((bytes) => { window.faceProofOpen = bytes; }, failedSavedBytes);
+  await fileAction(page, '開く').click();
+  await expect(solidRowBox(page, '面の移動1').locator('.pcad-tree__alert')).toHaveAttribute(
+    'title', new RegExp(COLLISION_REASON.replace(/[()]/g, '\\$&')), { timeout: KERNEL_TIMEOUT_MS },
+  );
+  expect(await page.evaluate(() => window.faceProofOpen ?? null)).toBeNull();
+  await expect(solidRowBox(page, '穴1')).not.toContainText('統合済み');
+  await expect(solidRowBox(page, '押し出し1')).toContainText('統合済み');
+  await solidRow(page, '穴1').click();
+  await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+  await solidRow(page, '面の移動1').click();
+  await expect(propertyField(page, '動かす距離')).toHaveValue('-28');
+  await expect(propertyPanel(page).locator('.pcad-panel__error')).toHaveText(COLLISION_REASON);
+  await selectBodiesOnly(page);
+  await clickWorldPoint(page, [40, 15, 5]);
+  await expect(solidRowBox(page, '穴1')).toHaveClass(/pcad-tree__row--selected/);
+  await expectVolume(page, BOARD_VOLUME - HOLE_6_THROUGH);
+  await solidRow(page, '面の移動1').click();
+
   // 10) 値を戻すと形も戻る(断りで画面が固まっていない証拠。solid.spec.ts の R 面取りと同じ確かめ方)。
   await propertyField(page, '動かす距離').fill('-5');
   await expect(solidRowBox(page, '面の移動1').locator('.pcad-tree__alert')).toHaveCount(0, {
     timeout: KERNEL_TIMEOUT_MS,
   });
   await expectVolume(page, BOARD_VOLUME - 5 * END_FACE_AREA - HOLE_6_THROUGH);
+  await expect(solidRowBox(page, '穴1')).toContainText('統合済み');
 
   expect(confirms).toEqual([]);
   expect(errors).toEqual([]);

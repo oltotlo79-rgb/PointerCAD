@@ -12,8 +12,8 @@
       "bytes": 55527
     },
     "assets/beamContact.py": {
-      "sha256": "68ea5e683181f631c6c295cb85a4d5fccddf257bfebc3bdcab2f985c9470189c",
-      "bytes": 33179
+      "sha256": "2bdf6b14dcf4c076a8a23f14d31a53be933c3bc7f9ce3433593acdaffe4a43e0",
+      "bytes": 33736
     },
     "assets/beamProof.py": {
       "bytes": 3012,
@@ -384,12 +384,12 @@
       "sha256": "9eee0266fb68942775cebe7e34cf35b24455926539cd4f46e6d1808146aa66fd"
     },
     "sources/pointercad-beam-application-source.zip": {
-      "sha256": "9b8aca8d5e7f3c70aadbb5d215368b98c0be763abaa18dac519eed3286436409",
-      "bytes": 12646052
+      "sha256": "382f3bd735dcd21f44aa3f088e9e1e1005db7074c93d871e5116704e0710080f",
+      "bytes": 13089448
     },
     "evidence/application-source-index.json": {
-      "sha256": "16bb4c5d74b836ae00ad63b2d0087720f7305d9e200556cbb88aec34e0e05135",
-      "bytes": 905457
+      "sha256": "91ab8aa82484d4e83a1f287a66e6100c9268ac6cef708d80d87098e014115f7a",
+      "bytes": 933090
     },
     "sources/native-rebuild/oofem-051-timer.patch": {
       "bytes": 8668,
@@ -496,16 +496,16 @@
       "bytes": 10460
     },
     "assets/solidAnalysis.py": {
-      "sha256": "7400849514b0dbf35b16bd124339fd400facf08f214a1f6946007c0219f91e69",
-      "bytes": 12908
+      "sha256": "72681567864f65f0f59bc3b3f332b84a937ddd0827fef4daf8a3345c4eeac9e3",
+      "bytes": 15770
     },
     "assets/solidPlasticAnalysis.py": {
       "sha256": "809621c9b6aac03647fc090ec1d05c20336174385d3f3acfceb7bf9b7c764438",
       "bytes": 19110
     },
     "assets/beamBoltContact.py": {
-      "sha256": "be2860fbb93c06e0a0b7da78bf04b22cea109644a424db2584cb5395fbf7f83c",
-      "bytes": 4895
+      "sha256": "d58a66b03e25a3daa30df6320136221c599dddecdcfcda39a90ec1bc6f9be2ba",
+      "bytes": 15396
     },
     "assets/beamWeldContact.py": {
       "sha256": "75a15004511cd2b87933ae6061a6068a268e29ba1bedc9f89931a14b32c7049b",
@@ -516,8 +516,8 @@
       "bytes": 3460
     },
     "assets/beamJointInitialStrain.py": {
-      "sha256": "54d658eb738e195156ab6342ac4331872519cdb5673aee718f2e528a184433ea",
-      "bytes": 4469
+      "sha256": "1f785c81477dadfa2047cd51a9aa09972b67f6e17ff00cfdd5b6af45804ad8a3",
+      "bytes": 13564
     },
     "assets/beamImpact.py": {
       "sha256": "25aa6572c4dcd9891f5321151e02bc05c8eb2132e3233872f093cdf6fa6254a4",

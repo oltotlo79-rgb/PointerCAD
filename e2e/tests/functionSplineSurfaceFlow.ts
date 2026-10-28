@@ -13,6 +13,8 @@ interface Traffic {
   serial?: number;
   kind?: string;
   vertices?: number;
+  wire?: 'legacy-array' | 'packed-v1' | 'invalid-packed';
+  vertexBufferBytes?: number;
   spline?: boolean;
   status?: unknown;
   reason?: unknown;
@@ -36,10 +38,22 @@ function installTraffic(): void {
       this.addEventListener('message', event => {
         const reply = object(event.data), result = object(reply?.result), value = object(reply?.value);
         if (typeof reply?.kind === 'string' && reply.kind.includes('function-')) {
+          let vertices: number | undefined, wire: Traffic['wire'], vertexBufferBytes: number | undefined;
+          if (result !== undefined && 'wireVersion' in result) {
+            wire = 'invalid-packed';
+            if (result.wireVersion === 1 && result.vertices instanceof ArrayBuffer) {
+              vertexBufferBytes = result.vertices.byteLength;
+              // Independent wire observation: two parameters + XYZ, each an eight-byte double.
+              // An incomplete row or detached/empty buffer must never create a successful vertex count.
+              if (vertexBufferBytes >= 3 * 40 && vertexBufferBytes % 40 === 0) {
+                vertices = vertexBufferBytes / 40; wire = 'packed-v1';
+              }
+            }
+          } else if (Array.isArray(result?.vertices)) { vertices = result.vertices.length; wire = 'legacy-array'; }
           record({ event: 'math-reply', at: performance.now(), kind: reply.kind,
             serial: typeof reply.serial === 'number' ? reply.serial : undefined,
             status: result?.status, reason: result?.reason, stats: result?.stats,
-            vertices: Array.isArray(result?.vertices) ? result.vertices.length : undefined, spline: object(result?.spline) !== undefined });
+            vertices, wire, vertexBufferBytes, spline: object(result?.spline) !== undefined });
         }
         if (Array.isArray(value?.bodies)) {
           record({ event: 'cad-reply', at: performance.now(), bodies: value.bodies.map(body => {
@@ -104,8 +118,10 @@ async function beginFrames(page: Page): Promise<void> { await page.evaluate(coll
 async function endFrames(page: Page, info: TestInfo): Promise<void> {
   const observation = await page.evaluate(finishSurfaceFrames);
   const gaps = observation.gaps;
+  const replyWire = (await records(page)).filter(row => row.event === 'math-reply' && row.kind === 'function-surface-result')
+    .map(({ at, serial, wire, vertexBufferBytes, vertices }) => ({ at, serial, wire, vertexBufferBytes, vertices }));
   await info.attach('large-reply-frame-observation', { body: JSON.stringify({
-    observationOnly: true, inputLatencyNotMeasured: true, transferListImplemented: false,
+    observationOnly: true, inputLatencyNotMeasured: true, replyWire, senderDetachmentObserved: false,
     ...observation, gapsMs: gaps, maximumGapMs: Math.max(...gaps),
   }, null, 2), contentType: 'application/json' });
   expect(gaps.length).toBeGreaterThan(0);

@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { applyCameraSettings } from './cameraSettingsApply.js';
 import { CAMERA_ACTIONS, CAMERA_CONTROL_PRESETS, DEFAULT_CAMERA_CONTROLS, cameraSettingsError, readCameraControlSettings,
   withCameraControlPreset, type CameraControlPreset,
   type CameraAction, type CameraBinding, type CameraControlSettings, type CameraSettingsError } from './cameraControlSettings.js';
@@ -32,23 +33,28 @@ function bindingGuide(key: MessageKey, action: CameraAction, index: number, modi
 export function CameraControlSettingsForm(): React.JSX.Element {
   const id = useId();
   const saved = useAppStore(state => state.displaySettings.cameraControls);
-  const [draft, setDraft] = useState<CameraControlSettings | null>(null);
-  const value = draft ?? readCameraControlSettings(saved);
+  const [draft, setDraft] = useState<{ value: CameraControlSettings; expected: CameraControlSettings } | null>(null);
+  const [applyRefused, setApplyRefused] = useState(false);
+  const value = draft?.value ?? readCameraControlSettings(saved);
   const error = cameraSettingsError(value);
   const bindingError = error !== null && BINDING_ERRORS.has(error);
+  function updateDraft(value: CameraControlSettings): void {
+    setDraft(previous => ({ value, expected: previous?.expected ?? readCameraControlSettings(saved) }));
+    setApplyRefused(false);
+  }
   function replaceBinding(action: CameraAction, index: number, binding: CameraBinding | null): void {
     const bindings = [...value[action]];
     if (binding === null) bindings.splice(index, 1);
     else bindings[index] = binding;
-    setDraft({ ...value, [action]: bindings });
+    updateDraft({ ...value, [action]: bindings });
   }
   return <form className="pcad-settings__group pcad-camera-settings" aria-label={t('settings.camera.title')}
     aria-describedby={`${id}-hint`} onSubmit={event => {
       event.preventDefault();
       if (error !== null || draft === null) return;
-      const state = useAppStore.getState();
-      state.setDisplaySettings({ ...state.displaySettings, cameraControls: value });
+      if (!applyCameraSettings(value, draft.expected)) { setApplyRefused(true); return; }
       setDraft(null);
+      setApplyRefused(false);
     }}>
     <h3>{t('settings.camera.title')}</h3>
     {CAMERA_ACTIONS.map(action => <fieldset key={action}>
@@ -87,27 +93,28 @@ export function CameraControlSettingsForm(): React.JSX.Element {
       <input type="number" min="0.1" max="10" step="0.1" value={Number.isFinite(value[key]) ? value[key] : ''}
         title={t(`settings.camera.${key}Guide`)}
         aria-invalid={error === 'sensitivity'} aria-describedby={error === 'sensitivity' ? `${id}-error` : undefined}
-        onChange={event => setDraft({ ...value, [key]: event.currentTarget.valueAsNumber })} />
+        onChange={event => updateDraft({ ...value, [key]: event.currentTarget.valueAsNumber })} />
     </label>)}
     {(['invertWheel', 'invertDrag'] as const).map(key => <label key={key}>
       <input type="checkbox" checked={value[key]} title={t(`settings.camera.${key}Guide`)}
-        onChange={event => setDraft({ ...value, [key]: event.currentTarget.checked })} />
+        onChange={event => updateDraft({ ...value, [key]: event.currentTarget.checked })} />
       {t(`settings.camera.${key}`)}
     </label>)}
     {error === null ? null : <p role="alert" id={`${id}-error`}>{t(ERROR_KEYS[error])}</p>}
+    {applyRefused ? <p role="alert">{t('settings.camera.applyStale')}</p> : null}
     <div role="group" aria-label={t('settings.camera.presets')} aria-describedby={`${id}-preset-hint`} className="pcad-camera-settings__actions">
       {CAMERA_CONTROL_PRESETS.map(preset => <button key={preset} type="button" className="pcad-button"
         title={t('settings.camera.presetGuide').replace('{preset}', t(PRESET_KEYS[preset]))}
-        onClick={() => setDraft(withCameraControlPreset(value, preset))}>{t(PRESET_KEYS[preset])}</button>)}
+        onClick={() => updateDraft(withCameraControlPreset(value, preset))}>{t(PRESET_KEYS[preset])}</button>)}
     </div>
     <p id={`${id}-preset-hint`}>{t('settings.camera.presetHint')}</p>
     <div className="pcad-camera-settings__actions">
       <button type="submit" className="pcad-button" title={t('settings.camera.applyGuide')}
         disabled={draft === null || error !== null}>{t('settings.camera.apply')}</button>
       <button type="button" className="pcad-button" title={t('settings.camera.cancelGuide')} disabled={draft === null}
-        onClick={() => setDraft(null)}>{t('settings.camera.cancel')}</button>
+        onClick={() => { setDraft(null); setApplyRefused(false); }}>{t('settings.camera.cancel')}</button>
       <button type="button" className="pcad-button" title={t('settings.camera.defaultsGuide')}
-        onClick={() => setDraft(DEFAULT_CAMERA_CONTROLS)}>{t('settings.camera.defaults')}</button>
+        onClick={() => updateDraft(DEFAULT_CAMERA_CONTROLS)}>{t('settings.camera.defaults')}</button>
     </div>
     <p id={`${id}-hint`}>{t('settings.camera.hint')}</p>
   </form>;

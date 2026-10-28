@@ -1,24 +1,24 @@
 /**
- * 図形の測定値の依存解析(GR-02。計画書 `scratchpad/claude/plans/geomref-plan.md` §4(d)、
- * 利用者の回答 Q7=O1「測る形は、その値を係数経由で使う形より履歴の前。連なりは最大8段」)。
+ * 図形の測定値の依存解析。利用者仕様では、測る形を係数経由で使う形より履歴の前に置き、
+ * 連なりを最大8段とする（docs/requirements.md の FR-210/FR-211 注記）。
  *
  * OCCT を呼ばない純関数だけを置く。形を作る前に、文書の式と参照だけから次を求める。
  *
- * 1. 係数 → 図形の測定値: GR-04 の `mathGeometryDerivedParameters`(係数の数式の `coef` 参照のうち
+ * 1. 係数 → 図形の測定値: `mathGeometryDerivedParameters`(係数の数式の `coef` 参照のうち
  *    `math-geometry:` の識別番号を、係数どうしの依存 `parameterDependencies` をたどって推移的に集める)を
  *    そのまま使う。形の依存に数えるのは、そのうち `resolvableMathGeometryDefinitions` で 1 つに決まる
  *    定義だけ。構成は選んだものだけが `document.parameters` に写っているので、選んでいない構成の式は
  *    数えない。
  * 2. 式の持ち主 → 係数: `collectExpressionOwners`(立体・基準ジオメトリ・スケッチ要素・拘束の欄と、
  *    `mapDocumentNonScalarExpressions` が歩く関数作図・未解決の式)が使う係数を
- *    `expressionParameterNames` で引く。図形の値が形へ入る道は係数だけ(Q2=U3)。欄の式に直接書いた
- *    `math-geometry:` の参照は評価(GR-04)が「係数の式の中でだけ使えます」で断るので、依存に数えない。
+ *    `expressionParameterNames` で引く。図形の値が形へ入る道は係数だけ。欄の式に直接書いた
+ *    `math-geometry:` の参照は数式の評価が「係数の式の中でだけ使えます」で断るので、依存に数えない。
  * 3. 図形の測定値 → 形: 参照先(`mathGeometryTargetsOf` の立体の `featureId`・部分形状の
  *    `bodyFeatureId`・スケッチの `sketchId`)と、その上流(帯の依存 `historyDependencies` の
  *    推移閉包と、途中で通るスケッチ)。量の種類では分岐しない。
  * 4. 循環: 定義 G の測る形の上流にある持ち主が、G を(他の係数・他の図形の測定値を通して)使う
  *    係数を使っていれば循環。形を作る前に見つけ、古い値で回さない。
- * 5. 順序(Q7=O1): 図形由来の係数を使う帯の項目 F は、G が測る帯の項目 T より後ろ。ただし基準
+ * 5. 順序: 図形由来の係数を使う帯の項目 F は、G が測る帯の項目 T より後ろ。ただし基準
  *    ジオメトリは常に立体より前の区間に並ぶ(`buildTimeline`)ので、立体を測った値を使う基準ジオメトリは
  *    並べ替えで後ろへ移せない。その組は順序違反にも並べ替えの辺にもせず、計算は段階再計算に任せる
  *    (立体の面に載せた作業平面を、再計算が立体の後で解くのと同じ扱い)。

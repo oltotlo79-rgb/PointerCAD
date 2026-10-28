@@ -58,7 +58,7 @@ export class MathDeadlineExceeded extends MathInputProblem {
  * Ordinary expressions in the input fields keep their 200ms. Both are stated for a machine at its usual speed and
  * stretch with the machine's current pace (v1.0.2, `pacedCalculationMs`). */
 export const GEOMETRY_CALCULATION_MS=2000;
-type GeometryStop={readonly status:'stopped';readonly reason:'deadline'|'budget'};
+interface GeometryStop {readonly status:'stopped';readonly reason:'deadline'|'budget'}
 /** The clock of one such calculation, started when its request was decoded. Every block of the calculation (given
  * this clock's backend) may use the time left until the same moment as `shouldStop`, never a fresh 200ms. A stop by
  * the wall clock is the time limit ('deadline'); a step or size limit stays 'budget'. */

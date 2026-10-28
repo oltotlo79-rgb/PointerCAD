@@ -1,27 +1,19 @@
 /**
- * GR-18b (`scratchpad/claude/plans/geomref-plan.md` §5.2 GR-18b, and the lead's addendum in
- * `scratchpad/claude/instructions/w8-claude-wave.md`): two independent checks inside the function-plot draft
- * editor (`evaluateFunctionPlotDraft`).
+ * 関数作図の下書き(`evaluateFunctionPlotDraft`)で、入力形式と演算制限を独立に検査する。
  *
- * 1. rules/06 §10.317: an implicit curve/surface written with "=" at its root (`X^2+Y^2=1`) can never be
- *    sampled (the calculation tape has no `equal` outside a `which` condition; only F in "F=0" is drawable,
- *    per the explanation `function-curve.md`/`function-surface.md`). This is refused before confirming, with
- *    the same guidance text `resolveFunctionInputs.ts` now shows for an older saved file (model test:
- *    `mathGeometryFunctionOperations.test.ts`). No `coef()` is involved, so the real math backend parses
- *    every case here exactly as a user's keystrokes would.
+ * 1. 陰関数の根の「=」(`X^2+Y^2=1`)は確定前に理由付きで拒否する。計算表には `which` の
+ *    条件以外で `equal` がなく、「F=0」のFだけを描くため。`function-curve.md` /
+ *    `function-surface.md` の説明と同じ意味で、黙って差へ変換しない。旧保存式を読む
+ *    `resolveFunctionInputs.ts` と同じ案内を返す(`mathGeometryFunctionOperations.test.ts`)。
+ *    `coef()` を使わないこの入力は、全て実際の数学計算部で解析する。
+ * 2. 図形由来の係数を境界で値が跳ぶ演算に渡す場合は、確定前に
+ *    `checkGeometryDerivedFunctionOperations` が拒否する。係数Rは実際の係数作成と同じ
+ *    `mathGeometryParameterDraft` で `coef("G")` から作る。
  *
- * 2. GR-06b's rule (a geometry-derived coefficient may not feed an operation that jumps at a value boundary)
- *    is applied to the plot's own formula before confirming, via `checkGeometryDerivedFunctionOperations`.
- *    Wiring this requires a document whose coefficient R is geometry-derived (GR-04: R's own formula is
- *    `coef("G")`, built with `mathGeometryParameterDraft` exactly as the real "この値の係数を作る" command
- *    does). `evaluateFunctionPlotDraft` never receives live geometry (`prepareDocumentMathEnvironment`'s
- *    internal context has no `geometry`; unlike `ParameterMathDialog.tsx`, GR-17, which fetches it itself via
- *    `mathGeometryInputsFor`, this file never does), so R's own formula can never resolve through the real
- *    parser here and `coef("R")` cannot be declared for parsing (a pre-existing gap outside GR-18b's stated
- *    scope: `functionPlotDraft.ts` is absent from both GR-17's and GR-18's file lists). To test the check
- *    itself in isolation from that gap, only the one formula field under test is intercepted with a hand-built
- *    parse result (`withFormulaOverride`); every other field (the six XYZ bounds, tolerance, the untouched
- *    output) still goes through the real backend exactly as a user's input would.
+ * この検査を追加した当時、下書きの数学環境には現在の `geometry` が渡らず、Rの式を実際の
+ * 解析で解決できなかった。その配線修正後の実計算は `functionPlotDraftGeometry.test.ts` が検査する。
+ * ここでは演算の配線を独立に保つため、対象の式欄だけ `withFormulaOverride` で手組みの解析結果を
+ * 返す。XYZの範囲6欄、許容誤差、変更しない出力欄は全て実際の数学計算部を通す。
  */
 import type { StoredMathExpression } from '@pointercad/expression';
 import { CANDIDATE_MATH_BY_ID, MATH_INPUT_FORMAT, decodeMathWorkReply } from '@pointercad/expression/math/contracts';

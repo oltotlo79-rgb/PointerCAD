@@ -97,7 +97,7 @@ import {
   type SolidToolId,
 } from '../sketch/numericInput.js';
 import { inferredConstraintPreview } from '../sketch/inferredConstraints.js';
-import { pickSketchElement } from '../sketch/pickMath.js';
+import { pickSketchElement, sketchForSelection } from '../sketch/pickMath.js';
 import { pickConnectionPoint } from '../sketch/connectionSelection.js';
 import {
   projectionSourceOf,
@@ -133,6 +133,7 @@ import {
   type SubShapeBody,
 } from '../solid/subShapeSelection.js';
 import type { SnapIndicator } from '../store/sketchSlice.js';
+import { pickSketchDragTarget } from './pickSketchDragTarget.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { stagedPreviewOf } from './solidMeshAdmission.js';
 import type { SolidBodyWithSubShapes } from './buildSolidGeometry.js';
@@ -140,6 +141,7 @@ import { viewDirection, type OrbitState } from './cameraMath.js';
 import type { ViewportScene } from './createViewportScene.js';
 import { gridSpacing } from './gridMath.js';
 import { createSectionHandleDrag } from './sectionHandleDrag.js';
+import type { SketchDragTiming } from './sketchDragTiming.js';
 import { exposeSketchDragObservation } from './sketchDragObservation.js';
 import { createSketchDragSession } from './sketchDragSession.js';
 import { createSketchInteractionIndicators } from './sketchInteractionIndicators.js';
@@ -352,6 +354,7 @@ export function attachSketchInteraction(
   scene: ViewportScene,
   getOrbit: () => OrbitState,
   isCameraDragging: () => boolean,
+  timing?: SketchDragTiming,
 ): SketchInteraction {
   let disposed = false;
   let activePointerId: number | null = null;
@@ -361,7 +364,7 @@ export function attachSketchInteraction(
   const indicators = createSketchInteractionIndicators();
   const section = createSectionHandleDrag(scene, project);
   const drag = createSketchDragSession({ scene, project, getOrbit, indicators,
-    releaseCapture: releaseActiveCapture, disposed: () => disposed });
+    releaseCapture: releaseActiveCapture, disposed: () => disposed, timing });
   const unexposeDrag = typeof window === 'undefined'
     ? () => undefined
     : exposeSketchDragObservation(window, import.meta.env.VITE_PCAD_E2E === '1', () => drag.observe());
@@ -394,7 +397,7 @@ export function attachSketchInteraction(
   }
 
   /** いま吸い付いている候補。吸着が切なら null(FR-107)。 */
-  function findSnap(pointer: readonly [number, number]): SnapCandidate | null {
+  function findSnap(pointer: readonly [number, number], sketch?: ResolvedSketch): SnapCandidate | null {
     const state = useAppStore.getState();
     if (!state.snapEnabled) {
       return null;
@@ -402,7 +405,7 @@ export function attachSketchInteraction(
     const plane = interactionPlane(state.workPlaneId);
     const onPlane = scene.screenToPlanePoint(pointer[0], pointer[1], plane);
     const candidates = collectSnapCandidates(
-      state.resolvedSketch,
+      sketch ?? state.resolvedSketch,
       plane,
       gridSpacing(getOrbit().distance),
       onPlane,
@@ -730,7 +733,9 @@ export function attachSketchInteraction(
     pointer: readonly [number, number],
   ): { readonly elementId: string; readonly at: Vec3 } | null {
     const state = useAppStore.getState();
-    const picked = pickSketchElement(state.resolvedSketch, project, pointer);
+    const picked = pickSketchElement(
+      sketchForSelection(state.resolvedSketch, state.displaySettings.selectionFilter), project, pointer,
+    );
     if (picked === null || picked.kind !== 'curve') {
       return null;
     }
@@ -1004,7 +1009,7 @@ export function attachSketchInteraction(
         引っぱっている最中(FR-313、タスク14)。ホバーも当たり判定も要らない
         (掴む相手はもう決まっている)ので、解き直しだけをコマごとに予約する。
       */
-      drag.schedule(pointer);
+      drag.schedule(pointer, event.timeStamp);
       return;
     }
 
@@ -1055,7 +1060,10 @@ export function attachSketchInteraction(
       return;
     }
 
-    const snap = findSnap(pointer);
+    // Selection filters also govern snap-backed hover. Coordinate drawing keeps every snap candidate.
+    const hoverSketch = tracksDirection(state.activeTool) ? state.resolvedSketch
+      : sketchForSelection(state.resolvedSketch, state.displaySettings.selectionFilter);
+    const snap = findSnap(pointer, hoverSketch);
     // 点に吸い付いていないときだけ向きを見る(§0.13 の優先順位)。
     const track = findTrack(pointer, snap);
 
@@ -1063,7 +1071,7 @@ export function attachSketchInteraction(
     // 「どこへ吸い付くのか」を見せる(FR-106、FR-107)。
     // スケッチにも吸着にも当たらなかったときだけ、3D スケッチの頂点(タスク14)、
     // 続いて奥にある立体を拾う。頂点は既存の強調(setSubShapeHighlight)でそのまま光る。
-    const picked = pickSketchElement(state.resolvedSketch, project, pointer);
+    const picked = pickSketchElement(hoverSketch, project, pointer);
     const nextHovered =
       picked !== null
         ? picked.elementId
@@ -1109,7 +1117,7 @@ export function attachSketchInteraction(
       return;
     }
     if (!drag.active()) { releaseActiveCapture(); return; }
-    drag.finish(pointerPosition(event));
+    drag.finish(pointerPosition(event), event.timeStamp);
   }
 
   /** OSが操作を取り消したときは、解けた仮形があっても文書へ書き込まない。 */
@@ -1117,7 +1125,7 @@ export function attachSketchInteraction(
     if (disposed || activePointerId !== event.pointerId) return;
     // 断面オフセットは従来どおり移動時に表示状態へ反映済み。文書/Undoは変更しない。
     section.end();
-    if (drag.active()) drag.stop(false);
+    if (drag.active()) drag.stop(false, event.timeStamp, 'pointercancel');
     else releaseActiveCapture();
   }
 
@@ -1162,7 +1170,9 @@ export function attachSketchInteraction(
       } else elementId = pickSubShapeAt(pointer);
     } else {
       // 選択の種類が body のときは従来の順序(要素 → 吸着 → 立体、P1・P2 のまま)。
-      const picked = pickSketchElement(state.resolvedSketch, project, pointer);
+      const picked = pickSketchElement(
+        sketchForSelection(state.resolvedSketch, state.displaySettings.selectionFilter), project, pointer,
+      );
       elementId = picked !== null ? picked.elementId : pickBodyAt(pointer);
     }
     if (elementId === null) {
@@ -1387,7 +1397,14 @@ export function attachSketchInteraction(
 
   function startSketchDragInput(event: PointerEvent, pointer: readonly [number, number], tool: NumericInputToolId): boolean {
     const state = useAppStore.getState();
-    if (tool !== 'select' || addsToSketchSelection(event) || skipsSketchElements(state.selectionKind) || !drag.begin(pointer)) return false;
+    if (tool !== 'select' || addsToSketchSelection(event) || skipsSketchElements(state.selectionKind)) return false;
+    const filter = state.displaySettings.selectionFilter;
+    if (!filter.vertex || !filter.edge) {
+      const target = pickSketchDragTarget(state.resolvedSketch, project, pointer);
+      // Drag starts before ordinary selection; a disabled point/curve must fall through to filtered picking.
+      if (target === null || !(target.kind === 'point' ? filter.vertex : filter.edge)) return false;
+    }
+    if (!drag.begin(pointer)) return false;
     canvas.setPointerCapture(event.pointerId);
     activePointerId = event.pointerId;
     return true;
@@ -1621,7 +1638,7 @@ export function attachSketchInteraction(
           仮の形を捨てるだけで押す前の形へ戻る。選択も取りかけも巻き込まないよう、
           ここで返して他の Esc の後始末はしない。
         */
-        drag.stop(false);
+        drag.stop(false, event.timeStamp, 'escape');
         return;
       }
       state.setSelection([]);

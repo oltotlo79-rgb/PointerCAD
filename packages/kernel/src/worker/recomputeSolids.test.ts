@@ -2,9 +2,11 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { extractEdges } from '../occt/extractEdges.js';
+import { writeBrepBytes } from '../occt/brepBytes.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import { resolveEdgeReference, resolveFaceReference, scoreFace, SUB_SHAPE_MATCH_THRESHOLD } from '../occt/matchSubShape.js';
 import * as primitiveModule from '../occt/makePrimitive.js';
+import { createKernelApi } from './kernelApi.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { makeSpring } from '../occt/makeSpring.js';
 import { buildSolidBodyMesh } from '../occt/solidMesh.js';
@@ -198,6 +200,123 @@ describe('履歴の再計算(recomputeSolids)', () => {
       radius: info.radius,
     };
   }
+
+  describe('failed direct-edit visibility', () => {
+    async function fixture(cache: ShapeCache<CachedSolid>) {
+      const source = extrudeStep('source', 'source-key', 20, 20, 20, false);
+      const initial = await recomputeSolids({ oc, cache }, request([{ ...source, visible: true }]));
+      expect(initial.failures).toEqual([]);
+      const face = initial.bodies[0].faces.find(item => item.axis?.[2] === 1);
+      if (face === undefined) throw new Error('Missing top face');
+      const query = faceQuery(face);
+      const failed: SolidStepRequest = { id: 'failed', key: 'failed-key', label: 'Failed offset', visible: true,
+        step: { kind: 'faceOffset', targetKey: source.key, face: query, offset: -50 } };
+      return { source, failed, query, initial };
+    }
+
+    it.each(['none', 'boolean-target', 'boolean-tool', 'mirror', 'surface', 'chain'] as const)(
+      '%s restores only inputs not consumed by another successful operation', async mode => {
+        const { cache } = newCache();
+        const { source, failed, query } = await fixture(cache);
+        const steps = [source, failed];
+        if (mode === 'boolean-target' || mode === 'boolean-tool') {
+          const tool = extrudeStep('tool', 'tool-key', 10, 10, 10, false);
+          steps.push(tool, booleanStep('success', 'success-key', 'union',
+            mode === 'boolean-target' ? source.key : tool.key,
+            mode === 'boolean-target' ? tool.key : source.key));
+        } else if (mode === 'mirror') {
+          steps.push({ id: 'reader', key: 'reader-key', label: 'Mirror', visible: true,
+            step: { kind: 'mirror', targetKey: source.key, origin: [50, 0, 0], normal: [1, 0, 0] } });
+        } else if (mode === 'surface') {
+          steps.push({ id: 'reader', key: 'reader-key', label: 'Surface', visible: true,
+            step: { kind: 'surface', targetKey: source.key, shape: { kind: 'face', face: query } } });
+        } else if (mode === 'chain') {
+          steps.push({ ...failed, id: 'downstream', key: 'downstream-key',
+            step: { kind: 'faceOffset', targetKey: failed.key, face: query, offset: 1 } });
+        }
+        const result = await recomputeSolids({ oc, cache }, request(steps));
+        expect(result.failures.map(item => item.id)).toEqual(mode === 'chain' ? ['failed', 'downstream'] : ['failed']);
+        const expected = mode.startsWith('boolean') ? ['success'] : mode === 'mirror' || mode === 'surface'
+          ? ['source', 'reader'] : ['source'];
+        expect(result.bodies.map(body => body.id)).toEqual(expected);
+        expect(new Set(result.bodies.map(body => body.id)).size).toBe(result.bodies.length);
+      },
+    );
+
+    it('cancellation does not resurrect inputs or count an unexecuted consumer as success', async () => {
+      const { cache } = newCache();
+      const { source, failed } = await fixture(cache);
+      let checks = 0;
+      const result = await recomputeSolids({ oc, cache }, request([source, failed,
+        extrudeStep('later', 'later-key', 10, 10, 10)]), {}, undefined, () => ++checks === 3);
+      expect(result.cancelled).toBe(true);
+      expect(result.failures.map(item => item.id)).toEqual(['failed']);
+      expect(result.bodies).toEqual([]);
+      expect(cache.has('later-key')).toBe(false);
+    });
+
+    it.each([false, true])('restored local meshes use real final accounting and current generation leases (shared import=%s)', async sharedImport => {
+      const cache = createShapeCache<CachedSolid>(1, undefined, entry => solidMeshBuffers(entry.mesh));
+      const api = createKernelApi(loadOcctForNode, cache);
+      const partId = 'failed-input-lease';
+      const localMesh = { maximumFloat32ErrorMm: 1e-4, maximumLiveMeshBytes: 64 * 1024 * 1024 };
+      const buffers = (bodies: readonly SolidBodyMesh[]) => [...new Set(bodies.flatMap(body => solidMeshBuffers(body)))];
+      const bytes = (values: readonly ArrayBufferLike[]) => values.reduce((sum, buffer) => sum + buffer.byteLength, 0);
+      try {
+        const base = await fixture(cache);
+        let { source, failed } = base;
+        const extra: SolidStepRequest[] = [];
+        if (sharedImport) {
+          const shape = cache.get(source.key)?.shape;
+          if (shape === undefined) throw new Error('Missing BRep source');
+          const brep = writeBrepBytes(oc, shape);
+          source = { ...source, key: 'imported-twin-key', step: { kind: 'importedSolid', bytes: brep } };
+          extra.push({ ...source, id: 'imported-first', key: 'imported-first-key', visible: true });
+          failed = { ...failed, step: { kind: 'faceOffset', targetKey: source.key, face: base.query, offset: -50 } };
+          await recomputeSolids({ oc, cache }, request([source]));
+        }
+        const borrowed = cache.get(source.key);
+        if (borrowed === undefined) throw new Error('Missing source cache entry');
+        const released = vi.spyOn(borrowed, 'delete');
+        const steps = [...extra, source, failed];
+        const owner = { dispatchId: 'failed-display-17', partId, generation: 17,
+          kind: 'display' as const, steps: steps.map(step => ({ id: step.id, key: step.key })) };
+        const result = await api.recomputeSolids({ steps, partId, generation: 17, localMesh },
+          {}, undefined, undefined, owner, () => true);
+        expect(result.failures.map(item => item.id)).toEqual(['failed']);
+        expect(result.bodies.map(body => body.id)).toEqual(sharedImport ? ['imported-first', 'source'] : ['source']);
+        expect(result.bodies[0].coordinateFrame?.space).toBe('local');
+        expect(released).not.toHaveBeenCalled();
+        const snapshot = cache.meshBufferSnapshot?.();
+        if (snapshot?.status !== 'known') throw new Error('Missing real cache buffers');
+        const reply = buffers(result.bodies), replyBytes = bytes(reply);
+        const activeBytes = bytes([...new Set(snapshot.active)]);
+        console.info('EX18 restored mesh accounting', JSON.stringify({ sharedImport, generation: owner.generation,
+          sourceDeleteCalls: released.mock.calls.length, actualReplyBytes: replyBytes,
+          actualCacheActiveBytes: activeBytes, accounting: result.meshJsAccounting,
+          finalAccounting: result.meshJsFinalAccounting }));
+        expect(replyBytes).toBeGreaterThan(0);
+        expect(result.meshJsFinalAccounting).toEqual({ status: 'known', limitBytes: localMesh.maximumLiveMeshBytes,
+          cacheActiveBytes: activeBytes, cacheRetiredBytes: bytes(snapshot.retired),
+          cacheProtectedBytes: bytes(snapshot.protected), displayBackingBytes: replyBytes,
+          replyBackingBytes: replyBytes, retainedBackingBytes: bytes([...new Set([...snapshot.active, ...snapshot.retired, ...reply])]),
+          replyCloneReservedBytes: replyBytes });
+        expect(result.meshJsAccounting?.status).toBe('known');
+        if (result.meshJsAccounting?.status !== 'known') throw new Error('Missing live accounting');
+        expect(result.meshJsAccounting.retainedReplyBytes).toBeGreaterThanOrEqual(replyBytes);
+        expect(result.meshJsAccounting.requestPeakReservedBytes).toBeGreaterThanOrEqual(activeBytes + replyBytes);
+        expect(result.meshJsAccounting.requestPeakReservedBytes).toBeLessThanOrEqual(localMesh.maximumLiveMeshBytes);
+        expect(await api.readPartOwnership?.(owner)).toMatchObject({ status: 'current', owner });
+        expect(await api.readPartOwnership?.({ ...owner, generation: 16 })).toEqual({ status: 'stale-owner' });
+        expect(await api.acknowledgeMeshReply?.(owner)).toEqual({ acknowledged: true });
+        expect((await api.getShapeCacheStats()).protectedKeyCount).toBe(sharedImport ? 2 : 1);
+        await api.releasePart(partId);
+        expect((await api.getShapeCacheStats()).protectedKeyCount).toBe(0);
+        cache.clear();
+        expect(released).toHaveBeenCalledTimes(1);
+      } finally { await api.releasePart(partId); cache.clear(); }
+    });
+  });
 
   function edgeQuery(info: SolidEdgeInfo): Extract<SubShapeQuery, { kind: 'edge' }> {
     return {

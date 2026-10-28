@@ -1,10 +1,11 @@
 /**
- * GR-06 段階再計算(`scratchpad/claude/plans/geomref-plan.md` §4(d)、§5.2 GR-06、付録C・付録D、利用者の回答 Q7=O1)。
- *
- * 形は実際の OCCT(`loadOcctForNode`)、係数の式は実際の数学の計算部で計算する。測った値で係数を決め、その係数で
- * 別の形を作る流れ(付録D)、深さ2と上限8段の連なり、循環・順序違反の理由、段の中の取消、`recomputeSolids` の
- * 呼出し回数、参照先を切った文書、途中の段の失敗、関数作図の係数を確かめる。段取り(`planMathGeometryStages`)は
- * OCCT を使わない純関数として確かめる。
+ * 測定値を係数へ渡して別の形を作る段階再計算の検査。
+ * 測る形を使う形より履歴の前に置き、連なりを最大8段とする利用者仕様を確かめる
+ * （docs/requirements.md の FR-210/FR-211 注記）。
+ * 形は実際のOCCT（`loadOcctForNode`）、係数の式は実際の数学の計算部で計算する。
+ * 測定→係数→次の形、深さ2と上限8段、循環・順序違反の理由、途中の取消、`recomputeSolids` の
+ * 呼出し回数、参照先を切った文書、途中段の失敗、関数作図の係数を検査する。
+ * 段取りの `planMathGeometryStages` はOCCTを使わない純関数として検査する。
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber, mathScalarExpression, type ExpressionValue } from '@pointercad/expression';

@@ -1,3 +1,5 @@
+import { awaitThumbnailCapture } from './thumbnail.js';
+import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 /** アセンブリの文書・添付・保存先を一緒に開閉する。 */
 import { readDocumentBundle, writeAssemblyDocument } from '@pointercad/io';
 import { createAssemblyDocument, createAssemblyDocumentBundle, partLibraryOfBundle,
@@ -121,12 +123,21 @@ export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise
   const active = activeDocument(before);
   if (active.kind !== 'assembly') return;
   const snapshot = { document: active.document, library: active.library };
-  const thumbnailPng = deps.captureThumbnail();
+  const thumbnailIdentity = captureDocumentIdentity(before);
+  const thumbnail = Promise.resolve(deps.captureThumbnail()).catch(() => null);
   const encoding = captureSaveSnapshot({ kind: 'assembly', bundle: createAssemblyDocumentBundle(active.document, active.library),
-    options: { savedAt: new Date().toISOString(), ...(thumbnailPng === null ? {} : { thumbnailPng }) } });
+    options: { savedAt: new Date().toISOString() } });
   return queueDocumentSave(before, async (isCurrent, control) => {
   try {
-    const bytes = await (deps.encodeSave ?? before.saveDocumentEncoder)(encoding, control);
+    const captured = await awaitThumbnailCapture(thumbnail, control.signal);
+    if (!isCurrent()) return;
+    const current = useAppStore.getState();
+    const thumbnailPng = compareDocumentIdentity(thumbnailIdentity, current) === 'current'
+      && current.requestedGeneration === before.requestedGeneration && current.completedGeneration === before.completedGeneration
+      && current.cancelRequestCount === before.cancelRequestCount && current.recomputeCancelled === before.recomputeCancelled ? captured : null;
+    const withThumbnail = encoding.kind === 'assembly' && thumbnailPng !== null
+      ? { ...encoding, options: { ...encoding.options, thumbnailPng } } : encoding;
+    const bytes = await (deps.encodeSave ?? before.saveDocumentEncoder)(withThumbnail, control);
     if (!control.beginWriting()) return;
     const saved = await before.fileGateway.savePcad(
       withPcadaExtension(active.fileName ?? active.document.name ?? t('assembly.untitled')),

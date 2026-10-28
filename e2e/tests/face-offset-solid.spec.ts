@@ -7,7 +7,7 @@ import { faceOffsetFlow } from './faceOffsetFlow.js';
  * electron-face-offset.spec.ts。
  */
 test.describe('EX-18 平らな面の移動', () => {
-  test('穴のある板の端面を符号付きで動かし、寸法の変更・元に戻す・保存と開き直し・衝突の断りが実物で通る', async ({ page }, info) => {
+  test('穴のある板の端面を符号付きで動かし、寸法の変更・元に戻す・保存と開き直し・衝突の断りと修正後の1回確定・失敗履歴の元形状が実物で通る', async ({ page }, info) => {
     await faceOffsetFlow(page, info, '/');
   });
 });

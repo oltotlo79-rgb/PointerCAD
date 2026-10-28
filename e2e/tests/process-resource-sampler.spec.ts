@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect, test } from '@playwright/test';
@@ -40,14 +41,15 @@ function startOwnedChild(): { readonly pid: number; stop(): Promise<{ code: numb
 // task227: on Windows the synchronous CIM discovery stopped the 100ms reads for about 360ms
 // every 2.2s (20261021-124241, 24 sample gaps). Several discoveries must pass under the
 // unchanged criterion: no gap over 2x100ms, no discovery older than 2000ms, actual times.
-test('process sampler keeps the 100ms cadence through repeated discoveries', async () => {
+for (const includeRoot of [false, true]) {
+test(`process sampler keeps the 100ms cadence through repeated discoveries (includeRoot=${String(includeRoot)})`, async () => {
   test.skip(platform() !== 'win32' && platform() !== 'linux', 'Windows and Linux samplers only');
   const owned = startOwnedChild();
   let sampler: Sampler | undefined;
   let primary: { readonly error: unknown } | undefined;
   const cleanupErrors: unknown[] = [];
   try {
-    sampler = platform() === 'win32' ? windowsSampler(process.pid, false) : linuxSampler(process.pid, false, async () => undefined);
+    sampler = platform() === 'win32' ? windowsSampler(process.pid, includeRoot) : linuxSampler(process.pid, includeRoot, async () => undefined);
     const started = sampler;
     await expect.poll(() => started.frames.length, { timeout: 30_000 }).toBeGreaterThan(0);
     await delay(DISCOVERY_INTERVAL_MS * 3);
@@ -57,6 +59,12 @@ test('process sampler keeps the 100ms cadence through repeated discoveries', asy
     // Each owned stop runs even when the sampler start, the wait or the other stop failed.
     if (sampler !== undefined) await within(sampler.stop(), 'Sampler stop').catch((error: unknown) => { cleanupErrors.push(error); });
     await owned.stop().catch((error: unknown) => { cleanupErrors.push(error); });
+    // Preserve the first failing run too, including discovery stages and actual read costs.
+    if (sampler !== undefined) {
+      const path = test.info().outputPath('process-sampler-raw.json');
+      await writeFile(path, JSON.stringify({ includeRoot, frames: sampler.frames, failures: sampler.failures }, null, 2), { flag: 'wx' });
+      await test.info().attach('process-sampler-raw', { path, contentType: 'application/json' });
+    }
   }
   if (primary !== undefined) {
     throw cleanupErrors.length === 0 ? primary.error : new AggregateError([primary.error, ...cleanupErrors], 'Sampler regression and owned cleanup failed');
@@ -67,9 +75,36 @@ test('process sampler keeps the 100ms cadence through repeated discoveries', asy
   expect(sampler.failures).toEqual([]);
   expect(frames.length).toBeGreaterThanOrEqual((DISCOVERY_INTERVAL_MS * 3) / (INTERVAL_MS * 2));
   const ownedIdentities = new Set<string>();
-  for (const frame of frames) {
+  for (const [frameIndex, frame] of frames.entries()) {
     expect(frame.discoveryError).toBeNull();
     expect(frame.discoveredAtEpochMs).toBeLessThanOrEqual(frame.readStartedAtEpochMs);
+    // A read can itself cross the age limit even if discovery was fresh when it began
+    // (20261026-041057, orphan 32MiB frame 35: 1807ms read, 3130ms final age).
+    expect(frame.atEpochMs - frame.readStartedAtEpochMs).toBeLessThanOrEqual(INTERVAL_MS * 2);
+    expect(frame.atEpochMs - frame.discoveredAtEpochMs).toBeLessThanOrEqual(DISCOVERY_INTERVAL_MS);
+    expect(frame.processes.filter(sample => sample.pid === process.pid)).toHaveLength(includeRoot ? 1 : 0);
+    if (platform() === 'win32') {
+      const timing = frame.windowsTiming;
+      expect(timing).toBeDefined();
+      if (timing === undefined) throw new Error('Windows acquisition timing is missing');
+      expect(timing.serializerReadyAtEpochMs).toBeLessThanOrEqual(timing.discoveryStartedAtEpochMs);
+      expect(timing.discoveryStartedAtEpochMs).toBeLessThanOrEqual(timing.discoveryWorkerEnteredAtEpochMs);
+      expect(timing.discoveryWorkerEnteredAtEpochMs).toBeLessThanOrEqual(frame.discoveredAtEpochMs);
+      expect(timing.discoveryStartedAtEpochMs).toBeLessThanOrEqual(frame.discoveredAtEpochMs);
+      expect(frame.discoveredAtEpochMs).toBeLessThanOrEqual(timing.discoveryAdoptedAtEpochMs);
+      expect(timing.discoveryAdoptedAtEpochMs).toBeLessThanOrEqual(frame.readStartedAtEpochMs);
+      // Epoch clocks have integer milliseconds; the stage stopwatch has sub-ms precision.
+      expect(Math.floor(timing.processSnapshotMs)).toBeLessThanOrEqual(frame.atEpochMs - frame.readStartedAtEpochMs);
+      expect(Math.floor(timing.nativeCallMs)).toBeLessThanOrEqual(frame.atEpochMs - frame.readStartedAtEpochMs);
+      expect(timing.readElapsedMs).toBeLessThanOrEqual(INTERVAL_MS * 2);
+      expect(timing.processSnapshotMs).toBeLessThanOrEqual(timing.readElapsedMs);
+      expect(timing.nativeCallMs).toBeLessThanOrEqual(timing.readElapsedMs);
+      expect(timing.nativeIdentityReadMs + timing.nativeMetricsReadMs + timing.nativeHandleCloseMs).toBeLessThanOrEqual(timing.nativeCallMs);
+      expect(timing.nativeHandleOpenMs + timing.nativeCreationQueryMs).toBeLessThanOrEqual(timing.nativeIdentityReadMs);
+      expect(Math.floor(timing.discoveryExecutionMs)).toBeLessThanOrEqual(frame.discoveredAtEpochMs - timing.discoveryWorkerEnteredAtEpochMs + 1);
+      if (frameIndex === 0) expect(timing.outputOfPreviousFrame).toBeUndefined();
+      else expect(timing.outputOfPreviousFrame?.atEpochMs).toBe(frames[frameIndex - 1]?.atEpochMs);
+    }
     const rows = frame.processes.filter(sample => sample.pid === owned.pid);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.error).toBeNull();
@@ -83,3 +118,4 @@ test('process sampler keeps the 100ms cadence through repeated discoveries', asy
   const summary = summarizeProcessMemory(frames, { intervalMs: INTERVAL_MS, discoveryIntervalMs: DISCOVERY_INTERVAL_MS, requiredPhases: ['baseline'] });
   expect(summary.problems).toEqual([]);
 });
+}

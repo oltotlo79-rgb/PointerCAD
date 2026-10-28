@@ -3,6 +3,7 @@ import {
   createCalculationPaceMeter,
   createMathBackend,
   executePreparedFunctionWork,
+  packFunctionSurfaceWorkReply,
   executeExactMathWorkRequest,
   decodeMathWorkEnvelope,
   setCalculationPace,
@@ -69,7 +70,8 @@ async function runRequest(value: unknown, kind: unknown): Promise<void> {
     }
     if (retire) self.postMessage({ kind: 'math-worker-retire' });
     if (diagnose) trace('reply-ready', { ...diagnosticEnvelope, kind });
-    self.postMessage(result);
+    const packed = packFunctionSurfaceWorkReply(result);
+    self.postMessage(packed.message, { transfer: packed.transfer });
   } catch {
     if (diagnose) trace('reply-ready', { ...diagnosticEnvelope, kind, failed: true });
     self.postMessage({ kind: 'math-failed' });

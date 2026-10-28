@@ -79,22 +79,9 @@ export function markColorField(mark: ConstraintMark, fixedSymbol: string): keyof
   return STATE_COLOR_FIELDS[mark.state];
 }
 
-/**
- * まとめて描く単位の鍵(記号 + 色 + 強調 + ずらし量)。
- *
- * ずらし量(P4b タスク22b)を鍵に含めるのは、**ずらしを記号の絵の中に焼き込む**ため。
- * `PointsMaterial` は点 1 つずつに画面上のずれを持たせられないので、四角を
- * 「表示の大きさ + ずらし量の 2 倍」まで広げ、その中で記号を中心からずらして描く。
- * 四角の大きさは画素で決まる(`sizeAttenuation: false`)ので、ずれも画素で正確に効く。
- * ずらし量の種類は実際には数種類しか出ないので、描画の呼び出しはほとんど増えない。
- */
-function batchKey(
-  symbol: string,
-  color: number,
-  selected: boolean,
-  offset: readonly [number, number],
-): string {
-  return `${symbol}|${color.toString(16)}|${selected ? 's' : 'n'}|${String(offset[0])},${String(offset[1])}`;
+/** ずらし量は頂点属性へ渡し、記号・色・強調だけでまとめる。 */
+function batchKey(symbol: string, color: number, selected: boolean): string {
+  return `${symbol}|${color.toString(16)}|${selected ? 's' : 'n'}`;
 }
 
 /** ずらし量まで含めた四角の 1 辺(画素)。中心から `offset` だけ動かしても入る大きさ。 */
@@ -114,10 +101,8 @@ function createSymbolTexture(
   symbol: string,
   color: number,
   markPixels: number,
-  offset: readonly [number, number],
 ): THREE.CanvasTexture | null {
-  const quadPixels = quadPixelsFor(markPixels, offset);
-  const size = Math.round(quadPixels * TEXTURE_SCALE);
+  const size = Math.round(markPixels * TEXTURE_SCALE);
   const canvas = globalThis.document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -135,10 +120,9 @@ function createSymbolTexture(
   context.strokeStyle = fill;
   context.lineWidth = markPixels * GLYPH_STROKE_RATIO * TEXTURE_SCALE;
   context.lineJoin = 'round';
-  // 四角の中心から、画面上のずらし量ぶんだけ動かして描く(y は下が正で画面と同じ向き)。
-  const centre = size / 2;
-  const x = centre + offset[0] * TEXTURE_SCALE;
-  const y = centre + offset[1] * TEXTURE_SCALE;
+  // 文字だけの小さい絵を共有する。画面上のずれは頂点の射影後に適用する。
+  const x = size / 2;
+  const y = size / 2;
   context.strokeText(symbol, x, y);
   context.fillText(symbol, x, y);
   const texture = new THREE.CanvasTexture(canvas);
@@ -148,6 +132,36 @@ function createSymbolTexture(
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
   return texture;
+}
+
+/**
+ * CSS画素のずれを透視除算後の位置へ足す。offsetは画面と同じく下が正。
+ * clip.xy += (2*dx/W, -2*dy/H)*clip.w なので、投影法・zoom・DPRに依存しない。
+ * 既存PointsMaterialの色/透過/深度と選択サイズはそのまま使う。
+ */
+function attachMarkOffsets(points: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>): void {
+  const pixelToClip = { value: new THREE.Vector2() };
+  const viewport = new THREE.Vector4();
+  points.material.onBeforeCompile = shader => {
+    const common = '#include <common>';
+    const project = '#include <project_vertex>';
+    if (!shader.vertexShader.includes(common) || !shader.vertexShader.includes(project)) {
+      throw new Error('Three.js constraint mark shader chunks changed');
+    }
+    shader.uniforms['markPixelToClip'] = pixelToClip;
+    shader.vertexShader = shader.vertexShader
+      .replace(common, `${common}\nattribute vec2 markOffset;\nuniform vec2 markPixelToClip;`)
+      .replace(project, `${project}\ngl_Position.xy += markOffset * markPixelToClip * gl_Position.w;`);
+  };
+  points.material.customProgramCacheKey = () => 'pointercad-constraint-mark-offset-v1';
+  points.onBeforeRender = renderer => {
+    renderer.getCurrentViewport(viewport);
+    const ratio = renderer.getPixelRatio();
+    pixelToClip.value.set(2 * ratio / viewport.z, -2 * ratio / viewport.w);
+  };
+  // CPU側のworld包囲球には画面上のずれが含まれない。全頂点をGPUへ送り、
+  // 通常のclip判定を移動後の位置へ適用する(印の数/対象を間引かない)。
+  points.frustumCulled = false;
 }
 
 /** まとめて描く単位 1 つ(同じ記号・同じ色・同じ強調)。 */
@@ -199,26 +213,27 @@ export function createConstraintLayer(fixedSymbol: string): ConstraintLayer {
         color: number;
         symbol: string;
         selected: boolean;
-        offset: readonly [number, number];
         positions: number[];
+        offsets: number[];
       }
     >();
     for (const mark of marks) {
       const color = colors[markColorField(mark, fixedSymbol)];
       const selected = mark.constraintId === selectedId;
-      const key = batchKey(mark.symbol, color, selected, mark.offset);
+      const key = batchKey(mark.symbol, color, selected);
       const found = grouped.get(key);
       if (found === undefined) {
         grouped.set(key, {
           color,
           symbol: mark.symbol,
           selected,
-          offset: mark.offset,
           positions: [mark.position[0], mark.position[1], mark.position[2]],
+          offsets: [mark.offset[0], mark.offset[1]],
         });
         continue;
       }
       found.positions.push(mark.position[0], mark.position[1], mark.position[2]);
+      found.offsets.push(mark.offset[0], mark.offset[1]);
     }
 
     // 使わなくなった単位を片付ける(記号が消えた・色が変わった)。
@@ -230,29 +245,27 @@ export function createConstraintLayer(fixedSymbol: string): ConstraintLayer {
     }
 
     for (const [key, entry] of grouped) {
-      const values = new Float32Array(entry.positions);
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(entry.positions, 3));
+      geometry.setAttribute('markOffset', new THREE.Float32BufferAttribute(entry.offsets, 2));
+      geometry.computeBoundingSphere();
       const existing = batches.get(key);
       if (existing !== undefined) {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(values, 3));
-        geometry.computeBoundingSphere();
         existing.points.geometry.dispose();
         existing.points.geometry = geometry;
         continue;
       }
       const markPixels = MARK_SIZE_PIXELS * (entry.selected ? SELECTED_SCALE : 1);
-      const texture = createSymbolTexture(entry.symbol, entry.color, markPixels, entry.offset);
+      const texture = createSymbolTexture(entry.symbol, entry.color, markPixels);
       if (texture === null) {
         // 絵を描けない場面。印は出さないが、線と点はそのまま出る。
+        geometry.dispose();
         continue;
       }
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(values, 3));
-      geometry.computeBoundingSphere();
       const material = new THREE.PointsMaterial({
         map: texture,
-        // ずらしを絵の中に焼き込むぶん、四角そのものは広く取る(`batchKey` の注釈)。
-        size: quadPixelsFor(markPixels, entry.offset),
+        // ずらし量に比例した透明領域を描かず、記号の大きさだけを確保する。
+        size: markPixels,
         // 大きさを画素で決める(定数サイズ)。寄っても引いても同じ大きさで読める。
         sizeAttenuation: false,
         transparent: true,
@@ -263,6 +276,7 @@ export function createConstraintLayer(fixedSymbol: string): ConstraintLayer {
       });
       const points = new THREE.Points(geometry, material);
       points.renderOrder = MARK_RENDER_ORDER;
+      attachMarkOffsets(points);
       group.add(points);
       batches.set(key, { points, texture });
     }

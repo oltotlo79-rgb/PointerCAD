@@ -218,9 +218,9 @@ describe('EX18 direct edit rejects invalid candidates without mutating input doc
     expect(rejected.result.bodies.some(body => body.featureId === 'direct-edit')).toBe(false);
     const beforeBodyIds = before.result.bodies.map(body => body.featureId);
     const afterBodyIds = rejected.result.bodies.map(body => body.featureId);
-    // 統括の判断(W05b): 拒否後の返却body一覧は、計画時の対象消費・非表示に従う。
-    // 失敗した対象の表示は EX-18 W07 / EX-04 W12 の設計残件なので、一覧の不変は要求しない。
-    // この4件では、理由付き拒否と入力文書・借用形状・キャッシュの不変を引き続き検査する。
+    // EX-18.16: a rejected direct edit must not consume its input or publish an old edited result.
+    expect(afterBodyIds).toEqual(beforeBodyIds);
+    expect(rejected.result.bodies).toEqual(before.result.bodies);
     expect(JSON.stringify(seed.part)).toBe(originalDocument); expect(JSON.stringify(candidate)).toBe(candidateBefore);
     snapshot.assertUntouched(); otherSnapshot.assertUntouched();
     record(`rejected ${spec.name}`, { errors: rejected.result.errors, beforeBodyIds, afterBodyIds, targetSha256: snapshot.digest,

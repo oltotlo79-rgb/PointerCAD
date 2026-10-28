@@ -1,13 +1,12 @@
 /** Additional EX18 persistence cases only; frozen route 1/2/3/4 tests remain unchanged. */
 import { evaluateExpression } from '@pointercad/expression';
-import { createKernelApi, type KernelApi } from '../../kernel/src/index.js';
+import { createNativeKernelBridgeWithIoForNodeTests, initializeNativeKernelForNodeTests, type NativeKernelIoForNodeTests } from '../../model/src/testing/createNativeKernelBridge.node.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { emptyPcadAttachments, readPcadFile, writePcadFile } from '../../io/src/pcad/pcadFile.js';
-import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
 import { subShapeElementId, subShapeRefOf } from '../src/solid/subShapeSelection.js';
 import { createUndoStack, pushUndo, redo, undo } from '../../model/src/history/undoStack.js';
-import { createDirectKernelBridge, type KernelBridge, type SolidBody } from '../../model/src/kernelBridge.js';
+import { type KernelBridge, type SolidBody } from '../../model/src/kernelBridge.js';
 import { absoluteCoordinate, appendFeature, createPointFeature, DEFAULT_FACE_COLOR } from '../../model/src/sketch/createSketchDocument.js';
 import { createOffsetCache } from '../../model/src/sketch/offsetMath.js';
 import { DEFAULT_WORK_PLANE_ID } from '../../model/src/sketch/planeMath.js';
@@ -22,12 +21,13 @@ import type { HoleFeature, ImportedSolidFeature, PartDocument, SewFeature } from
 
 const NATIVE_TIMEOUT = 180_000;
 const SAVED_AT = '2026-10-16T00:00:00.000Z';
-let api: KernelApi;
+let api: NativeKernelIoForNodeTests;
 let bridge: KernelBridge;
 beforeAll(async () => {
-  await loadOcctForNode();
-  api = createKernelApi(loadOcctForNode);
-  bridge = createDirectKernelBridge(api);
+  await initializeNativeKernelForNodeTests();
+  const native = createNativeKernelBridgeWithIoForNodeTests();
+  api = native.shapeIo;
+  bridge = native.bridge;
 }, NATIVE_TIMEOUT);
 
 function expr(source: string) {

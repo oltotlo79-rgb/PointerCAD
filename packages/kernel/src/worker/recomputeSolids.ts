@@ -7,6 +7,9 @@ import type {
 import { createAllocations } from '../occt/allocations.js';
 import { booleanOp, type BooleanResult } from '../occt/booleanOp.js';
 import { readBrepBytes } from '../occt/brepBytes.js';
+import { moveSolidHole } from '../occt/moveSolidHole.js';
+import { rotateSolidFace } from '../occt/rotateSolidFace.js';
+import { pickSubShape, MISSING_SUB_SHAPE_MESSAGE } from '../occt/pickSubShape.js';
 import { editSolidFace } from '../occt/editSolidFace.js';
 import type { OcctShapeHandle } from '../occt/makeBox.js';
 import { makeChamfer } from '../occt/makeChamfer.js';
@@ -784,6 +787,32 @@ function createStepSolid(
       const target = findStepInput(cache, failedLabels, spec.targetKey);
       return noMarks(makeDraft(oc, target.shape, target.mesh, spec));
     }
+    case 'holeTranslate':
+    case 'faceRotate': {
+      const target = findStepInput(cache, failedLabels, spec.targetKey);
+      if (spec.face.kind !== 'face' || (spec.kind === 'faceRotate' && spec.hinge.kind !== 'edge')) {
+        throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+      }
+      const owned = createAllocations();
+      try {
+        const pickedFace = pickSubShape(oc, target.shape, target.mesh, spec.face);
+        if (pickedFace === null) throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+        owned.keep(pickedFace);
+        const face = owned.keep(oc.TopoDS.Face_1(pickedFace));
+        if (spec.kind === 'holeTranslate') {
+          const moved = moveSolidHole(oc, target.shape, face, spec.translation);
+          return noMarks(moved, moved.volume);
+        }
+        const pickedHinge = pickSubShape(oc, target.shape, target.mesh, spec.hinge);
+        if (pickedHinge === null) throw new Error(MISSING_SUB_SHAPE_MESSAGE);
+        owned.keep(pickedHinge);
+        const hinge = owned.keep(oc.TopoDS.Edge_1(pickedHinge));
+        const rotated = rotateSolidFace(oc, target.shape, face, hinge, spec.angle);
+        return noMarks(rotated, rotated.volume);
+      } finally {
+        owned.release();
+      }
+    }
     case 'faceOffset': {
       // 平らな面の移動(EX-18)。段の型は作り手の依頼の上位互換なので詰め替えない。
       // 対象の形は借りるだけで、断ったときも元の形はキャッシュに残る(editSolidFace の約束)。
@@ -1340,6 +1369,23 @@ export function recomputeEmptySolids(
     ...(meshJsAccounting === undefined ? {} : { meshJsAccounting }) };
 }
 
+/** Only material-consuming references suppress a failed direct edit's input. */
+function consumesBody(candidate: SolidStepSpec, source: SolidStepRequest): boolean {
+  switch (candidate.kind) {
+    case 'boolean':
+    case 'sheetJoin': return candidate.targetKey === source.key || candidate.toolKey === source.key;
+    case 'hole': case 'thread': case 'fillet': case 'chamfer': case 'draft':
+    case 'holeTranslate': case 'faceRotate': case 'faceOffset': case 'transform': case 'scale':
+    case 'rib': case 'emboss': case 'threadShaft': case 'shell': case 'cut': case 'surfaceCut':
+    case 'sheetFlange': return candidate.targetKey === source.key;
+    case 'sew': return 'faces' in candidate
+      && (source.step.kind === 'surface' || source.step.kind === 'functionSurface')
+      && candidate.faces.some(face => face.targetKey === source.key);
+    // Mirrors and surface/primitive/section references borrow their input without consuming it.
+    default: return false;
+  }
+}
+
 /**
  * 履歴の段を先頭から順に計算し直す(要件§6.3、NFR-PF-3、NFR-PF-4、FR-504)。
  *
@@ -1350,8 +1396,8 @@ export function recomputeEmptySolids(
  *   段の数が容量を超える依頼では、先頭に近い段から追い出されることになる。
  * - **止めずに理由を出す.** 作れなかった段は failures に積んで次の段へ進む。
  *   その段を入力にするブーリアンも、上流の名前を添えた理由で失敗させて続ける(FR-504)。
- * - **消費されたボディは返さない.** visible が false の段はキャッシュには残るが bodies に入らない
- *   (ブーリアンに食べられた対象と相手。§0.a-0.5)。
+ * - **消費されたボディは返さない.** visible が false の段はキャッシュに残す。
+ *   直接編集が失敗した入力は、別の成功した加工に消費されていなければ表示へ戻す。
  * - **外観の面を選び直す.** 全段を計算し終えたあと、`appearanceQueries` の指紋を
  *   できたボディの面へ照合し直して `appearanceMatches` で返す(FR-1106、P5 §2.2.3)。
  *   依頼が無ければこの段は何もせず、OCCT を 1 回も呼ばない。
@@ -1393,6 +1439,7 @@ export async function recomputeSolids(
   const total = request.steps.length;
   const bodies: SolidBodyMesh[] = [];
   const failures: SolidStepFailure[] = [];
+  const attempted = new Set<string>();
   /** 作れなかった段の鍵 → その段の表示名。下流の理由に使う。 */
   const failedLabels = new Map<string, string>();
   let cacheHits = 0;
@@ -1440,6 +1487,7 @@ export async function recomputeSolids(
     }
 
     onProgress?.({ stepId: step.id, index, total, label: step.label });
+    attempted.add(step.id);
 
     const cached = cache.get(step.key);
     if (cached !== undefined && (cached.mesh.origins?.state !== 'tracked' || cached.mesh.id === step.id)) {
@@ -1523,6 +1571,39 @@ export async function recomputeSolids(
       failures.push({ id: step.id, message: toFailureMessage(error),
             ...(error instanceof SurfaceCutError ? { code: error.code } : {}) });
       failedLabels.set(step.key, step.label);
+    }
+  }
+
+  const failedIds = new Set(failures.map(failure => failure.id));
+  const succeeded = new Set([...attempted].filter(id => !failedIds.has(id)));
+  for (const step of request.steps) {
+    if (cancelled) break;
+    if ((step.step.kind !== 'holeTranslate' && step.step.kind !== 'faceRotate' && step.step.kind !== 'faceOffset')
+      || !failedIds.has(step.id)) continue;
+    const targetKey = step.step.targetKey;
+    const source = request.steps.find(candidate => candidate.key === targetKey);
+    const cached = cache.get(targetKey);
+    if (source === undefined || cached === undefined || !succeeded.has(source.id)
+      || bodies.some(body => body.id === source.id)) continue;
+    // Another successful consumer still owns this input; never duplicate it.
+    if (request.steps.some(candidate => succeeded.has(candidate.id)
+      && consumesBody(candidate.step, source))) continue;
+    try {
+      const world = withMeasuredArea(oc, cached.mesh, cached.shape, measureAreas);
+      if (localBudget === undefined) bodies.push({ ...world, id: source.id });
+      else {
+        const local = localReplyFromWorld(oc, () => liveBytes(world), world, cached.shape, source.id,
+          resolveTessellationOptions(options, source), localBudget, retainedReplyBytes, reservePeak);
+        retainedReplyBytes = checkedLocalBytes(retainedReplyBytes, local.retainedBytes);
+        bodies.push(local.mesh);
+      }
+      rememberBodyForAppearance(targetKey, source.id, cached.shape);
+      // Keep the original document order when restoring an upstream body.
+      const order = new Map(request.steps.map((item, position) => [item.id, position]));
+      bodies.sort((left, right) => (order.get(left.id) ?? total) - (order.get(right.id) ?? total));
+    } catch (error) {
+      if (error instanceof LocalMeshAccountingOverflow) accountingOverflow = true;
+      failures.push({ id: source.id, message: toFailureMessage(error) });
     }
   }
 

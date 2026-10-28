@@ -174,3 +174,101 @@ describe('品質ゲートのテスト実行順', () => {
     expect(policy).not.toMatch(/process\.env|import\.meta\.env/u);
   });
 });
+
+describe('1000点スケッチの機能優先と時間観測の境界', () => {
+  it('100msは全描画と最終previewの参考値とし、取消・有限待機・幾何・保存の判定は保持する', () => {
+    const source = readRootFile('e2e/tests/sketchConnected1000Flow.ts');
+    expect(source).toContain("import { observeDuration } from '../../packages/test-utils/src/releasePerformance.js'");
+    expect(source).toContain('observeDuration(row.renderedAtMs - row.eventAtMs, 100,');
+    expect(source).toContain('observeDuration(finalPreview.renderedAtMs - finalPreview.eventAtMs, 100,');
+    expect(source).not.toMatch(/expect\((?:row|finalPreview)\.renderedAtMs\s*-\s*(?:row|finalPreview)\.eventAtMs\)\.toBeLessThan/u);
+    expect(source).toContain('durationObservations.push(observeDuration(');
+    expect(source).toContain("attachJsonEvidence(info, 'sketch-duration-observations.json'");
+    expect(source).toContain("decisionUse: 'observation', samples: durationObservations");
+    expect(source).toContain("await writeFile(path, JSON.stringify(value), { flag: 'wx' })");
+    expect(source).toContain("await info.attach(name, { path, contentType: 'application/json' })");
+    expect(source).toContain("attachJsonEvidence(info, 'sketch-input-scene-render.json'");
+    expect(source).toContain('expect(cancelTiming.renderedAtMs - cancelTiming.eventAtMs).toBeLessThanOrEqual(1000)');
+    expect(source).toContain("{ polling: 'raf', timeout: 30_000 }");
+    expect(source).toContain("expect(timing.boundary).toBe('scene-render-return')");
+    expect(source).toContain('expect(timing.clockValid).toBe(true)');
+    expect(source).toContain('expect(timing.overflow).toBe(0)');
+    expect(source).toContain('!Number.isFinite(row.eventAtMs) || !Number.isFinite(row.renderedAtMs)');
+    expect(source).toContain('row.eventAtMs < 0 || row.renderedAtMs < 0');
+    expect(source).toContain('expect(position,');
+    expect(source).toContain('.toBeLessThanOrEqual(SKETCH_TOLERANCE_MM)');
+    expect(source).toContain('.toBeLessThanOrEqual(CONSTRAINT_TOLERANCE)');
+    expect(source).toContain('const TARGET_TOLERANCE_MM = 1');
+    expect(source).toContain('expect(afterCancel.document).toEqual(beforeCancel.document)');
+    expect(source).toContain('await waitForRecompute(page, commit)');
+    expect(source).toContain('expect(sketch.constraints).toEqual(writtenConstraints)');
+    expect(source).toContain('const translation = expectRigidTranslation(sketch)');
+    expect(source).toContain('await expect(undoButton(page)).toBeEnabled()');
+    expect(source).toContain("attachJsonEvidence(info, 'sketch-connected-1000-final-observation.json'");
+  });
+});
+
+describe('OCCT起動の機能優先と比較観測の境界', () => {
+  it('比率だけのhard assertionを拒否し、5組・実形状・cleanupと生JSON保存を保持する', () => {
+    const source = readRootFile('e2e/tests/occtCompileReuseFlow.ts');
+    const start = source.indexOf('export async function assertFiveOcctPairs(');
+    expect(start).toBeGreaterThan(0);
+    const judge = source.slice(start);
+    const hardComparison = /expect\s*\([^;]*?\)\s*\.\s*(?:toBeLessThan(?:OrEqual)?|toBeGreaterThan(?:OrEqual)?|toBeCloseTo)\s*\(/u;
+    expect(judge).not.toMatch(hardComparison);
+    expect(judge).not.toMatch(/expect\s*\([^;]*(?:cold|warm|ratio|meetsTarget|referenceRatio)[^;]*?\)\s*\.\s*(?:toBe|toEqual|toBeTruthy)\s*\(/u);
+    expect('expect(warm).toBeLessThanOrEqual(cold * 0.8);').toMatch(hardComparison);
+    expect('expect(observation.ratio).toBeLessThanOrEqual(0.8);').toMatch(hardComparison);
+    expect(judge).not.toMatch(/\b(?:if|throw)\b[^;]*(?:ratio|meetsTarget|referenceRatio|0\.8)/u);
+    expect(judge).toContain('observeStartupReuse(');
+    expect(judge).toContain('pairs.map(pair => pair.cold.startupMs)');
+    expect(judge).toContain('pairs.map(pair => pair.warm.startupMs)');
+    expect(judge).toContain('expect(pairs).toHaveLength(5)');
+    expect(judge).toContain('new Set(pairs.map(pair => pair.profile)).size).toBe(5)');
+    expect(judge).toContain('toEqual([1, 2, 3, 4, 5])');
+    expect(judge).toContain("persistOcctEvidence(info, 'five-pair-raw-measurements'");
+    expect(judge).toContain("persistOcctEvidence(info, 'five-pair-medians'");
+    expect(source).toContain("await writeFile(path, JSON.stringify(value, null, 2), { flag: 'wx' })");
+    expect(source).toContain("await info.attach(name, { path, contentType: 'application/json' })");
+    for (const kept of ['expect(warm.sha256).toBe(cold.sha256)', 'await sampler?.stop()',
+      'await context?.close()', 'await app?.close()', 'expect(starts).toHaveLength(2)',
+      'expect(ready).toHaveLength(2)', "waitForRecompute(page, token)"]) expect(source).toContain(kept);
+    for (const path of ['e2e/tests/occt-compile-reuse-solid.spec.ts', 'e2e/tests/electron-occt-compile-reuse.spec.ts']) {
+      const spec = readRootFile(path);
+      expect(spec).toContain('for (const offline of [false, true])');
+      expect(spec).toContain('index <= 5');
+      expect(spec).toContain('if (index === 5) await assertFiveOcctPairs(pairs, info)');
+    }
+  });
+});
+
+describe('1000部品の参考4観測と安全・機能条件の境界', () => {
+  it('open/save/reopen/FPSだけのhard再混入を拒否し、有限待機と全機能を維持する', () => {
+    const source = readRootFile('e2e/tests/assembly1000HostFlow.ts');
+    expect(source).toContain('observePositiveDuration(actualMs, targetMs, label)');
+    expect(source).toContain('observeViewportRate(fps,');
+    expect(source).not.toMatch(/judge\('(open|save|reopen|fps)'/u);
+    expect(source).not.toMatch(/reportViewportRate\(/u);
+    expect(source).not.toMatch(/expect\([^;]*(?:openToDrawnMs|reopenToDrawnMs|saveMs|fps\.fps)[^;]*\)\.toBe(?:LessThan|GreaterThan)/u);
+    expect(source).not.toMatch(/expect\([^;]*(?:meetsTarget|referenceTargetFps)[^;]*\)\.(?:toBe|toEqual)/u);
+    expect("judge('open', () => reportDuration(openToDrawnMs, HOST_LOAD_TARGET_MS, 'open'));").toMatch(/judge\('(open|save|reopen|fps)'/u);
+    for (const name of ['open', 'save', 'reopen']) expect(source).toContain(`'${name}',`);
+    expect(source).toContain('const HOST_LOAD_TARGET_MS = 5_000');
+    expect(source).toContain('const HOST_SAVE_TARGET_MS = 5_000');
+    expect(source).toContain("attachHostObservation(info, `assembly-1000-${name}-duration.json`");
+    expect(source).toContain("attachHostObservation(info, 'assembly-1000-fps-raw.json', fps)");
+    expect(source).toContain("attachHostObservation(info, 'assembly-1000-observations.json'");
+    expect(source).toContain("await writeFile(path, JSON.stringify(value, null, 2), { flag: 'wx' })");
+    expect(source).toContain("await info.attach(name, { path, contentType: 'application/json' })");
+    for (const token of ['const INTERFERENCE_RUNS = 5', 'const INTERFERENCE_FOLLOW_MS = 60_000',
+      'const HOST_CANCEL_TARGET_MS = 200', "judge('cancel', () => reportDuration(cancelMs, HOST_CANCEL_TARGET_MS,",
+      "'異なる1,000定義の組立の干渉（全経路）', 'interference'", 'expectSavedFile(new Uint8Array(savedBytes), shown)',
+      'await expectLoaded(page,', 'driveTwoGroups(page, initial)', 'HOST_TOTAL - driven.size',
+      'RING_VOLUME_MM3.toFixed(3)', "expect(runs.some((run) => run.progressSeen)", 'expect(errors).toEqual([])',
+      "expect(judgements,"]) expect(source).toContain(token);
+    for (const spec of ['assembly-1000-host.spec.ts', 'electron-assembly-1000-host.spec.ts']) {
+      expect(readRootFile(`e2e/tests/${spec}`)).toContain('const HOST_1000_TEST_TIMEOUT_MS = 900_000');
+    }
+    expect(readRootFile('e2e/tests/recompute.ts')).toContain('export const KERNEL_TIMEOUT_MS = RECOMPUTE_TIMEOUT_MS');
+  });
+});

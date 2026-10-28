@@ -4,10 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { currentStagedSolid } from '../store/recomputeSlice.js';
 import { clampAnchor, NumericInputPopover, popoverMaxHeight } from './NumericInputPopover.js';
-import { createNumericInput, reduceNumericInput } from './numericInput.js';
+import { chooseNumericInput, createNumericInput, reduceNumericInput } from './numericInput.js';
 import { exactExpressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
-import type { PartDocument } from '@pointercad/model';
+import { appendSolid, type PartDocument } from '@pointercad/model';
+import { attachPartRecompute } from '../store/attachKernel.js';
+import { extrudeFeature, resultFor, tick } from '../store/testing/createTestStore.js';
+import { confirmExtrusion } from '../solid/extrudePreview.js';
 import { NumericMathDialog } from './NumericMathDialog.js';
 
 interface KeyInput {
@@ -163,5 +167,78 @@ describe('Extrusion input commits through geometry calculation (EX-14)', () => {
     expect(after.undoStack).toBe(before.undoStack);
     expect(after.solidErrorKey).toBe('solidError.extrudeUnavailable');
     expect(t('solidError.extrudeUnavailable')).toContain(t('numericInput.commit'));
+  });
+});
+
+describe('staged direct-edit notices follow the current input owner', () => {
+  it.each([
+    ['holeTranslate', 'holeTranslateVector'], ['faceRotate', 'faceRotateAngle'], ['faceOffset', 'faceOffsetDistance'],
+    ['cut', 'cutPlane'],
+    ['extrude', 'extrudeDistance'],
+  ] as const)('%s displays pending then asynchronous refusal without committing', async (tool, step) => {
+    useAppStore.getState().setActiveTool(tool);
+    useAppStore.getState().openNumericInput(createNumericInput(tool, step), [100, 100]);
+    const failures: ((error: Error) => void)[] = [];
+    let initial = true;
+    const detach = attachPartRecompute((document, options) => {
+      if (initial) {
+        initial = false;
+        return Promise.resolve({ ...resultFor(document), generation: options.generation ?? 0 });
+      }
+      return new Promise((_resolve, reject) => { failures.push(reject); });
+    });
+    try {
+      await vi.waitFor(() => { expect(useAppStore.getState().isComputing).toBe(false); });
+      const before = useAppStore.getState();
+      const candidate = appendSolid(before.document, extrudeFeature('candidate'));
+      expect(confirmExtrusion({ base: before.document, document: candidate, featureId: 'candidate', inputKey: 'render' })).toBe('pending');
+      const markup = () => renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />);
+      expect(markup()).toContain(t(tool === 'extrude' ? 'numericInput.extrudeConfirming' : 'numericInput.directEditConfirming'));
+      expect(markup()).toContain('role="status"');
+      expect(failures).toHaveLength(1);
+      failures[0](new Error('Native refusal detail'));
+      await vi.waitFor(() => { expect(useAppStore.getState().stagedSolid?.status).toBe('failed'); });
+      expect(markup()).toContain(tool === 'extrude' ? t('solidError.extrudeWorkerBroken') : 'Native refusal detail');
+      expect(markup()).toContain('role="alert"');
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      const input = useAppStore.getState().numericInput;
+      if (input === null) throw new Error('Input must remain open');
+      useAppStore.getState().updateNumericInput(tool === 'cut' ? chooseNumericInput(input, 'cutPlaneKind', 'yz')
+        : reduceNumericInput(input, { type: 'edit', index: 0, source: '2' }));
+      expect(markup()).not.toContain('Native refusal detail');
+    } finally { detach(); }
+  });
+
+  it('cut ignores a late refusal owned by the preceding document and clears its pending notice', async () => {
+    useAppStore.getState().setActiveTool('cut');
+    useAppStore.getState().openNumericInput(createNumericInput('cut', 'cutPlane'), [100, 100]);
+    const failures: ((error: Error) => void)[] = [];
+    let initial = true;
+    const detach = attachPartRecompute((document, options) => {
+      if (initial) { initial = false; return Promise.resolve({ ...resultFor(document), generation: options.generation ?? 0 }); }
+      return new Promise((_resolve, reject) => { failures.push(reject); });
+    });
+    try {
+      await vi.waitFor(() => { expect(useAppStore.getState().isComputing).toBe(false); });
+      const before = useAppStore.getState();
+      const candidate = appendSolid(before.document, extrudeFeature('candidate'));
+      expect(confirmExtrusion({ base: before.document, document: candidate, featureId: 'candidate', inputKey: 'cut-owner' })).toBe('pending');
+      const markup = () => renderToStaticMarkup(<NumericInputPopover viewportWidth={800} viewportHeight={600} />);
+      expect(markup()).toContain(t('numericInput.directEditConfirming'));
+      expect(failures).toHaveLength(1);
+      useAppStore.getState().applyDocument({ ...before.document, name: 'new cut owner' }, { opensDocument: true });
+      useAppStore.getState().openNumericInput(createNumericInput('cut', 'cutPlane'), [100, 100]);
+      const retained = useAppStore.getState();
+      expect(retained.activeDocumentId).not.toBe(before.activeDocumentId);
+      expect(markup()).not.toContain(t('numericInput.directEditConfirming'));
+      failures[0](new Error('Obsolete cut refusal'));
+      await tick();
+      expect(currentStagedSolid(useAppStore.getState())).toBeNull();
+      if (retained.stagedSolid !== null) expect(retained.partStager?.owns(retained.stagedSolid)).toBe(false);
+      expect(markup()).not.toContain('Obsolete cut refusal');
+      expect(useAppStore.getState().document).toBe(retained.document);
+      expect(useAppStore.getState().undoStack).toBe(retained.undoStack);
+    } finally { detach(); }
   });
 });

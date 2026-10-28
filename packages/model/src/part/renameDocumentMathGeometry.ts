@@ -1,24 +1,17 @@
 /**
- * Renaming a math-geometry definition (GR-08, `scratchpad/claude/plans/geomref-plan.md` §4(b) and §5.2 GR-08).
+ * 図形の測定値の改名。定義の名前と、係数IDを持つ全 `coef` 節の表示ラベルを一括更新する。
+ * IDは `math-geometry:` + 定義IDのまま保ち、どの式も同じ測定値を参照し続ける。
+ * 文書全体を検証してから呼出し側が一度だけ公開し、1回のUndoで戻せるようにする。
  *
- * One transaction: the definition's `name` and the label of every `coef` node that carries its coefficient
- * ID (`math-geometry:` + definition ID) change together, the result is validated as a whole document, and
- * the caller publishes it once (one Undo step, §4(b)). IDs never change, so every formula keeps pointing at
- * the same measurement (R23); only the label it displays follows the new name.
- *
- * - Names share one `coef` label space with coefficients (GR-01): the new name goes through
- *   `checkMathGeometryName` with this definition excluded from the duplicate check.
- * - Labels are rewritten by the math engine's `renameCoefficient` request, the protocol the coefficient
- *   rename (`renameDocumentMathParameter`) uses: it re-formats a formula in its own notation and proves that
- *   the meaning and every other reference stay the same. The walk visits every stored formula that rename
- *   visits (coefficients, fields, function formulas, unresolved problems, configurations). Q2=U1 lets only
- *   coefficient formulas, configurations and unresolved problems read a measured value, but no stale label
- *   may survive wherever a node with this ID exists.
- * - Validation: `evaluateDocumentMath` with the caller's `context` unchanged, so `context.geometry` (GR-04:
- *   the measured values of this document's current recomputation, keyed by definition ID) resolves the
- *   relabelled formulas. A rename changes no shape and no value (rules §10.303); as an edit of
- *   `mathGeometry` it still triggers one recomputation (`affectsShape`, §4(b)).
- * - Cancellation or a document change returns no document at all; nothing partial is ever published.
+ * - 係数と測定値は名前空間を共有する。`checkMathGeometryName` は自分自身を重複検査から除く。
+ * - 数学計算部の `renameCoefficient` は、原式の表記を保ってラベルを書き換え、意味と他の参照の
+ *   不変を確認する。通常の係数改名(`renameDocumentMathParameter`)と同じ依頼を使う。
+ * - 測定値を直接読むのは係数の式と、それを保持する構成・未解決の式に限る(FR-210/FR-211)。
+ *   ただし保存された係数・寸法欄・関数式・未解決の式・構成を全て巡り、該当IDの旧ラベルを残さない。
+ * - `evaluateDocumentMath` へ呼出し元の `context` をそのまま渡す。`context.geometry` は
+ *   現在の再計算の測定値を定義IDで解決する。改名自体は形も値も変えないが、
+ *   `mathGeometry` の編集なので `affectsShape` により一度再計算する。
+ * - 取消や文書変更では文書を返さず、途中の変更を公開しない。
  */
 import { collectMathCoefficients, type ExpressionValue, type StoredMathExpression } from '@pointercad/expression';
 import type { FunctionExpressionScope } from '../functionGeometry/readFunctionDefinition.js';

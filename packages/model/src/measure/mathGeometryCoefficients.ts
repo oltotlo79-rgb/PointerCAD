@@ -1,16 +1,12 @@
 /**
- * How a measured math-geometry value enters a coefficient formula (GR-04,
- * `scratchpad/claude/plans/geomref-plan.md` §4(e) and §5.2 GR-04).
+ * 図形の測定値を係数の式へ渡し、その由来と許可する演算を管理する。
+ * 利用者仕様（docs/requirements.md の FR-210/FR-211 注記）により、図形由来の値からは
+ * 連続な演算だけを計算できる。係数を経由する間接的な利用にも同じ制限を適用する。
  *
- * A measured value is the shape kernel's own double. It is handed to the math engine exactly like a
- * coefficient (`MathCoefficientValue`), but only as its shortest round-trip decimal — never with an
- * `exactExpression`, never re-read as an exact rational, never memoized with the parameter table — and
- * every formula computed from it (directly, or through other coefficients) may only use operations that
- * are continuous in their inputs (Q4=S1). The comparison tolerance of a definition stays a comparison
- * margin; nothing here turns it into an error bound (R70).
- *
- * Kept free of evaluation state so the same contract serves `evaluateDocumentMath` (GR-04), the stage
- * recomputation (GR-06) and the coefficient editor (GR-17).
+ * 測定値は形の計算部の倍精度値。`MathCoefficientValue` として同じ倍精度へ往復する最短の
+ * 十進文字列だけを渡し、`exactExpression` を付けず、厳密な有理数へ読み替えず、係数表にも
+ * キャッシュしない。定義の比較幅は判定用の幅であり、計算の誤差保証へ変換しない。
+ * 評価状態を持たず、`evaluateDocumentMath`・段階再計算・係数編集で同じ契約を使う。
  */
 import type { MathCoefficientValue } from '@pointercad/expression';
 import { CANDIDATE_MATH_BY_ID, type MathNode } from '@pointercad/expression/math/contracts';

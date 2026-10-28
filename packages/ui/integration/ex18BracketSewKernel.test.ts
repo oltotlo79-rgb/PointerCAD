@@ -8,13 +8,12 @@
  */
 
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
-import { createKernelApi } from '../../kernel/src/index.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../model/src/testing/createNativeKernelBridge.node.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { readPcadFile, writePcadFile } from '../../io/src/pcad/pcadFile.js';
-import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
 import { subShapeElementId, subShapeRefOf } from '../src/solid/subShapeSelection.js';
-import { createDirectKernelBridge, type KernelBridge, type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
+import { type KernelBridge, type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
 import { absoluteCoordinate, appendFeature, createPointFeature, DEFAULT_FACE_COLOR } from '../../model/src/sketch/createSketchDocument.js';
 import { DEFAULT_WORK_PLANE_ID } from '../../model/src/sketch/planeMath.js';
 import type { SketchDocument, SketchFaceFeature } from '../../model/src/sketch/types.js';
@@ -26,8 +25,8 @@ import type { HoleFeature, SewFeature, SubShapeRef } from '../../model/src/part/
 const OCCT_TIMEOUT_MS = 180_000;
 let bridge: KernelBridge;
 beforeAll(async () => {
-  await loadOcctForNode();
-  bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode));
+  await initializeNativeKernelForNodeTests();
+  bridge = createNativeKernelBridgeForNodeTests();
 }, OCCT_TIMEOUT_MS);
 
 function expr(source: string): ExpressionValue {

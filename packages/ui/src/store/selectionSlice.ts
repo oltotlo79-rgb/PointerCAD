@@ -115,7 +115,11 @@ export const createSelectionSlice: StateCreator<
   setSelectionKind: (selectionKind) => {
     // 変わらないときは選択を残す(手動切替でも自動切替と同じ規約、§0.a-0.6)。
     set((state) =>
-      state.selectionKind === selectionKind ? state : { selectionKind, selection: [], connectionSelection: null },
+      state.selectionKind === selectionKind ? state
+        : state.activeTool === 'faceRotate' && (state.selectionKind === 'face' || state.selectionKind === 'edge')
+          && (selectionKind === 'face' || selectionKind === 'edge')
+          ? { selectionKind, connectionSelection: null }
+          : { selectionKind, selection: [], connectionSelection: null },
     );
   },
   createSelectionSetFromSelection: (name) => {

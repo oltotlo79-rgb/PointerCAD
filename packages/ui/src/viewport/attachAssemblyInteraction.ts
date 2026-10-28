@@ -14,7 +14,7 @@ import { subShapeElementId, subShapeRefOf, type SelectionKind } from '../solid/s
 import type { AssemblyView } from '../store/assemblySlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { flattenAssemblyGeometry } from './createAssemblyLayer.js';
-import type { AssemblyFacePickObservation, ViewportScene } from './createViewportScene.js';
+import type { AssemblyComponentPickObservation, AssemblyFacePickObservation, ViewportScene } from './createViewportScene.js';
 import { componentDragPlane } from './dragComponent.js';
 import { jointOccurrenceInputsOf, pickJointOccurrenceTarget, resolveJointOccurrencePick } from './pickJointOccurrence.js';
 
@@ -32,6 +32,8 @@ export interface AssemblyMateInputObservation {
   readonly altKey: boolean;
   readonly draftBefore: number | null;
   deferred?: 'applied' | 'discarded' | 'refused';
+  waiting?: boolean;
+  componentPick?: AssemblyComponentPickObservation;
   /** 入れ子の葉の部品を接合で選んだ時の結果(解けない理由、または model の口が無いための断り)。 */
   jointOccurrenceIssue?: string;
   canvasPoint?: readonly [number, number];
@@ -144,7 +146,8 @@ function awaitMateRefresh(waiting: Promise<boolean>, target: WeakRef<{ readonly 
 /** Assemblyの入力をpart用listenerから分離する。視点操作は先に登録されたcameraが所有する。 */
 export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: AssemblyPickScene, dragInput?: AssemblyDragInput): AssemblyInteraction {
   let detached = false;
-  let pendingMate: { readonly valid: () => boolean; readonly finish: (ready: boolean) => void } | null = null;
+  let pendingMate: { readonly valid: () => boolean; readonly finish: (ready: boolean) => void;
+    readonly bodyPoint: readonly [number, number] | null } | null = null;
   const cancelMate = (): void => { const previous = pendingMate; pendingMate = null; previous?.finish(false); };
   let captured: number | null = null;
   let frame: number | null = null;
@@ -184,7 +187,13 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     // 合致・ボルト締結・溶接の打ちかけでは、部品ではなく面(溶接は面と辺)を選ぶ。
     if (state.selectionKind === 'body' && state.assemblyMateDraft === null && state.assemblyBoltedJointDraft === null
       && state.assemblyFilletWeldDraft === null) {
-      return scene.pickComponent(at[0], at[1]);
+      try {
+        return observation?.componentPick === undefined ? scene.pickComponent(at[0], at[1])
+          : scene.pickComponent(at[0], at[1], observation.componentPick);
+      } catch (error) {
+        reportInput(observation);
+        throw error;
+      }
     }
     const kind = subShapePickKind(state);
     if (!state.displaySettings.selectionFilter[kind]) {
@@ -255,7 +264,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const target = childWeldDefinitionTarget(state.assembly, state.assemblyLibrary, hit.occurrencePath);
     return 'refusal' in target ? null : target.path;
   };
-  const applyPointerDown = (event: PointerEvent, observation?: AssemblyMateInputObservation): void => {
+  const applyPointerDown = (event: PointerEvent, observation?: AssemblyMateInputObservation, allowDrag = true): void => {
     const childBead = idleWeldChildBeadPath(event);
     if (childBead !== null) {
       // 確定はしない。定義の範囲と影響する配置の数を窓で確かめてから commitChildFilletWeldEdit が確定する。
@@ -271,7 +280,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       if (event.shiftKey) state.toggleSelection(target);
       else {
         state.setSelection([target]);
-        if (captured !== null || dragInput === undefined || scene.screenToPlanePoint === undefined
+        if (!allowDrag || captured !== null || dragInput === undefined || scene.screenToPlanePoint === undefined
           || !Number.isInteger(event.pointerId)) return;
         const origin = state.assemblyView?.resolved.placements.get(target)?.position;
         if (origin === undefined) return;
@@ -326,6 +335,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const observation: AssemblyMateInputObservation | undefined = dragInput?.observeMateInput === undefined ? undefined : {
       eventTimeMs: event.timeStamp, clientPoint: [event.clientX, event.clientY], button: event.button, altKey: event.altKey,
       draftBefore: before.assemblyMateDraft?.targets.length ?? null,
+      ...(before.selectionKind === 'body' && before.assemblyMateDraft === null
+        && before.assemblyBoltedJointDraft === null && before.assemblyFilletWeldDraft === null
+        ? { componentPick: {} } : {}),
     };
     event.stopImmediatePropagation();
     if (event.button !== 0 || event.altKey) {
@@ -336,11 +348,12 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     event.preventDefault();
     canvas.focus({ preventScroll: true });
     const state = useAppStore.getState();
+    const bodySelection = state.selectionKind === 'body' && state.assemblyMateDraft === null
+      && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null;
+    // 部品の選択も同じ公開形状の所有証明が戻るまで保留し、失効した表示で空選択にしない。
     if (dragInput?.prepareMateInput !== undefined && state.assemblyView !== null
       && state.assemblyPlacement === null && !state.isComputing
-      && (state.assemblyMateDraft !== null || state.assemblyBoltedJointDraft !== null
-        || state.assemblyFilletWeldDraft !== null || state.selectionKind !== 'body')
-      && state.displaySettings.selectionFilter[subShapePickKind(state)]) {
+      && (bodySelection || state.displaySettings.selectionFilter[subShapePickKind(state)])) {
       const rect = canvas.getBoundingClientRect();
       const valid = (): boolean => {
         const current = useAppStore.getState(), view = current.assemblyView;
@@ -358,6 +371,10 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
           && current.assemblyNestedWeldDraft === state.assemblyNestedWeldDraft
           && current.assemblyPlacement === state.assemblyPlacement && current.selectionKind === state.selectionKind
           && current.selection === state.selection && current.displaySettings.selectionFilter === state.displaySettings.selectionFilter
+          && current.assemblyDragOverlay === state.assemblyDragOverlay
+          && current.assemblyMotionPlacements === state.assemblyMotionPlacements
+          && current.assemblyOccurrenceDrives === state.assemblyOccurrenceDrives
+          && current.assemblyMotionSourceDocument === state.assemblyMotionSourceDocument
           && current.projection === state.projection && current.quadCamera === state.quadCamera
           && now.left === rect.left && now.top === rect.top && now.width === rect.width && now.height === rect.height;
       };
@@ -368,9 +385,10 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       }
       if (waiting !== null) {
         let finished = false;
-        const input = { valid, finish: (ready: boolean): void => {
+        const input = { valid, bodyPoint: bodySelection ? pointer(event) : null, finish: (ready: boolean): void => {
           if (finished) return;
           finished = true;
+          if (observation !== undefined) observation.waiting = false;
           const owned = pendingMate === input;
           if (owned) pendingMate = null;
           if (!owned || !ready || !valid()) {
@@ -378,9 +396,12 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
             reportInput(observation); return;
           }
           if (observation !== undefined) observation.deferred = 'applied';
-          applyPointerDown(event, observation);
+          // 解放済みの pointerdown を再生してドラッグを始めない。保留した部品入力は選択だけを行う。
+          applyPointerDown(event, observation, !bodySelection);
         } };
         pendingMate = input;
+        if (observation !== undefined) observation.waiting = true;
+        reportInput(observation);
         // Cancellation drops the strong event/state references even if refresh never settles.
         awaitMateRefresh(waiting, new WeakRef(input));
         return;
@@ -389,6 +410,12 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     applyPointerDown(event, observation);
   };
   const onPointerMove = (event: PointerEvent): void => {
+    const waitingPoint = pendingMate?.bodyPoint;
+    if (waitingPoint !== undefined && waitingPoint !== null) {
+      const at = pointer(event);
+      // 待っている間に別の場所へ動いた入力を、元の部品の選択として採用しない。
+      if (at[0] !== waitingPoint[0] || at[1] !== waitingPoint[1]) cancelMate();
+    }
     const state = useAppStore.getState();
     if (state.assembly === null) return;
     event.stopImmediatePropagation();

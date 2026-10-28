@@ -37,6 +37,26 @@ describe('確保前のDEFLATE長検査', () => {
       expect(() => deflateExpandedSize(Uint8Array.of(3, 0), maximum)).toThrow('expandedLimit');
     }
   });
+  it('keeps zero-padded Huffman lookahead inside the actual view boundary', () => {
+    // Fixed Huffman: final empty block and final literal A followed by end-of-block.
+    for (const compressed of [Uint8Array.of(3, 0), Uint8Array.of(0x73, 4, 0)]) {
+      const length = compressed.length === 2 ? 0 : 1;
+      const backing = new Uint8Array(compressed.length + 8).fill(255);
+      backing.set(compressed, 3);
+      const view = backing.subarray(3, 3 + compressed.length);
+      expect(deflateExpandedSize(view, length)).toBe(length);
+      expect(inflateSync(view).length).toBe(length);
+      // The hidden backing bytes must not satisfy a truncated Huffman symbol.
+      expect(() => deflateExpandedSize(view.subarray(0, view.length - 1), length)).toThrow('invalidDeflate');
+    }
+  });
+  it('counts stored and Huffman literals against one exact output budget', () => {
+    // Non-final stored A, then final fixed-Huffman A: the second block has prior output.
+    const compressed = Uint8Array.of(0, 1, 0, 0xfe, 0xff, 65, 0x73, 4, 0);
+    expect(inflateSync(compressed)).toEqual(Uint8Array.of(65, 65));
+    expect(deflateExpandedSize(compressed, 2)).toBe(2);
+    expect(() => deflateExpandedSize(compressed, 1)).toThrow('expandedLimit');
+  });
   it('CRC32の既知値、空、1バイト違いを確認する', () => {
     expect(zipCrc32(strToU8('123456789'))).toBe(0xcbf43926);
     expect(zipCrc32(new Uint8Array())).toBe(0);

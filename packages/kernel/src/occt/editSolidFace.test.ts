@@ -327,7 +327,7 @@ describe('EX18 W05 direct-edit borrowed shape ownership', () => {
   });
 });
 
-it('EX18 W05b releases the copied shape and copier once on success and collision refusal, retaining both borrows', async () => {
+it('EX18 W05b releases every copied shape and copier once on success and collision refusal, retaining both borrows', async () => {
   const { createHash } = await import('node:crypto');
   const { stdout } = await import('node:process');
   const { vi } = await import('vitest');
@@ -384,14 +384,18 @@ it('EX18 W05b releases the copied shape and copier once on success and collision
           // The real kernel constructs the slab and Boolean result before rejecting the hole collision.
           expect(() => editSolidFace(oc, target, tables, { face: query, offset })).toThrow(FACE_OFFSET_COLLISION_MESSAGE);
         }
-        expect(copies).toHaveLength(copyCount + 1);
-        const copy = copies[copyCount];
-        expect(copy.shapeDeletes).toBe(1); expect(copy.makerDeletes).toBe(1);
+        // Face editing owns one copy. Strict subtraction additionally probes material
+        // removal on two disposable copies in booleanOp.assertSolidRemains.
+        const editCopyCount = offset > 0 ? 1 : 3;
+        expect(copies).toHaveLength(copyCount + editCopyCount);
+        for (const copy of copies.slice(copyCount)) {
+          expect(copy.shapeDeletes).toBe(1); expect(copy.makerDeletes).toBe(1);
+        }
         const after = snapshot(target);
         expect(after).toEqual(before); expect(snapshot(unselected)).toEqual(otherBefore);
         const followup = editSolidFace(oc, target, tables, { face: query, offset: 1 });
         try { expect(isValidShape(oc, followup.shape)).toBe(true); } finally { followup.delete(); }
-        expect(copies).toHaveLength(copyCount + 2);
+        expect(copies).toHaveLength(copyCount + editCopyCount + 1);
         expect(copies.every(entry => entry.shapeDeletes === 1 && entry.makerDeletes === 1)).toBe(true);
         const afterFollowup = snapshot(target);
         expect(afterFollowup).toEqual(before); expect(snapshot(unselected)).toEqual(otherBefore);

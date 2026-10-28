@@ -383,7 +383,6 @@ def _solve_contact_system(np, plan, stiffness, moment_length_m, max_pivots=None,
         if not _vector(constant_force, size) or any(abs(value) > MAX_LOAD_COMPONENT for value in constant_force):
             raise ValueError('contact-initial-force: bounded full nodal force vector required')
         initial_force = np.array(constant_force, dtype=float)[free]
-        free_initial = solve(initial_force)
     initial_gaps = np.array([contact['gapM'] for contact in contacts], dtype=float)
     budget = max_pivots if max_pivots is not None else pivot_limit(len(contacts))
     states = []
@@ -392,7 +391,8 @@ def _solve_contact_system(np, plan, stiffness, moment_length_m, max_pivots=None,
         unconstrained = factor_value * free_reference
         if constant_force is not None:
             force = force + initial_force
-            unconstrained = unconstrained + free_initial
+            if np.any(initial_force):
+                unconstrained = solve(force)
         gaps = initial_gaps + rows @ unconstrained
         force_scale, gap_scale = _scales(np, flexibility, gaps, to_newton * force)
         lam, _, active, pivots = solve_complementarity(np, flexibility, gaps, force_scale, gap_scale, budget)
@@ -446,7 +446,7 @@ def validate_contact_plan(plan):
     return moment_length
 
 
-def run_beam_contact(plan=None, solve_system=None):
+def run_beam_contact(plan=None, solve_system=None, *, solve_with_elements=None):
     """Native Beam3d K (as run_beam_transient) with the explicit contact solve above; no OOFEM contact engine."""
     import numpy as np
     import oofem as fem
@@ -457,6 +457,8 @@ def run_beam_contact(plan=None, solve_system=None):
     if plan is None:
         with open('/pcad_fem/analysis-input.json', encoding='utf-8') as stream:
             plan = json.load(stream)
+    if solve_with_elements is not None and solve_system is not None:
+        raise ValueError('contact-callback: choose one solver callback')
     if solve_system is None:
         solve_system = _solve_contact_system
     moment_length = validate_contact_plan(plan)
@@ -488,6 +490,7 @@ def run_beam_contact(plan=None, solve_system=None):
         step = problem.giveNextStep()
         size = 6 * len(nodes)
         stiffness = np.zeros((size, size))
+        element_matrices = [] if solve_with_elements is not None else None
         for row, element in zip(plan['members'], elements, strict=True):
             native_k = fem.FloatMatrix()
             element.giveCharacteristicMatrix(native_k, fem.CharType.TangentStiffnessMatrix, step)
@@ -499,6 +502,10 @@ def run_beam_contact(plan=None, solve_system=None):
             transform = np.kron(np.eye(4), frame)
             indices = [6 * (number - 1) + axis for number in row['nodes'] for axis in range(6)]
             stiffness[np.ix_(indices, indices)] += transform.T @ local_k @ transform
+            if element_matrices is not None:
+                element_matrices.append({'number': row['number'], 'indices': indices, 'localMatrix': local_k.copy()})
+        if solve_with_elements is not None:
+            return json.dumps(solve_with_elements(np, plan, stiffness, moment_length, element_matrices), allow_nan=False)
         return json.dumps(solve_system(np, plan, stiffness, moment_length), allow_nan=False)
     except BaseException as error:
         primary_error = error

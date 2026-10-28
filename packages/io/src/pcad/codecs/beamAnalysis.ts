@@ -25,7 +25,7 @@ export function readOptionalBeamAnalysisInputs(
   if (!checked.ok) {
     return fieldProblem(`${path}.beamAnalysisInputs.${checked.issue.path}`, 'type');
   }
-  if (ownerKind === 'part' && checked.value.analyses.some(input => input.kind === 'standard-members')) {
+  if (ownerKind === 'part' && checked.value.analyses.some(input => (input.kind === 'standard-members' || input.kind === 'native-bolt-preload'))) {
     return fieldProblem(`${path}.beamAnalysisInputs.analyses`, 'type');
   }
   if (ownerKind === 'assembly' && checked.value.analyses.some(requiresPartDocument)) {
@@ -43,7 +43,7 @@ export function serializeBeamAnalysisInputs(
   if (!checked.ok) {
     throw new RangeError(`${checked.issue.code}: beamAnalysisInputs.${checked.issue.path}: ${checked.issue.message}`);
   }
-  if (ownerKind === 'part' && checked.value.analyses.some(input => input.kind === 'standard-members')) {
+  if (ownerKind === 'part' && checked.value.analyses.some(input => (input.kind === 'standard-members' || input.kind === 'native-bolt-preload'))) {
     throw new RangeError('Standard member occurrence inputs require an assembly document');
   }
   if (ownerKind === 'assembly' && checked.value.analyses.some(requiresPartDocument)) {

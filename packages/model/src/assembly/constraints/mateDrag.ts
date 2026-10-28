@@ -256,6 +256,29 @@ function tangentDragTarget(drag: PreparedMateDrag, evaluation: RigidEvaluation, 
 
 /** Pure synchronous request. Nothing is saved; rejected candidates never become warm starts. */
 export function solveMateDrag(drag: PreparedMateDrag, target: Vec3, request: MateDragOptions): MateDragOutcome {
+  const representative = drag.variableComponentId;
+  const base = request.placements ?? drag.initial;
+  const member = base.get(drag.componentId), anchor = representative === undefined ? undefined : base.get(representative);
+  // 外部拘束のない組は並進で引く。代表から離れた部品の腕を回して位置目標を満たさない。
+  // 合致・ジョイントの行がある組は、回転追従に必要な従来の腕とその微分を使う。
+  if (representative !== undefined && representative !== drag.componentId && drag.initialEvaluation.rows.length === 0
+    && member !== undefined && anchor !== undefined && validDragPlacement(member) && validDragPlacement(anchor)
+    && finiteDragVector(target, 3)) {
+    const translated: Vec3 = [anchor.position[0] + (target[0] - member.position[0]),
+      anchor.position[1] + (target[1] - member.position[1]), anchor.position[2] + (target[2] - member.position[2])];
+    const outcome = solveMateDragWithDriver({ ...drag, componentId: representative }, translated, request);
+    // 丸め誤差を含め、最後は選ばれた部品と元の目標で同じ許容を検査する。
+    const error = errorAt(outcome.placements, drag.componentId, target);
+    const missed = outcome.stop === 'targetReached'
+      && !(error.max < (drag.options.lengthTolerance ?? DEFAULT_RIGID_LENGTH_TOLERANCE));
+    return { ...outcome, driverError: error.max, driverSquaredError: error.squared,
+      stop: missed ? 'numericalFailure' : outcome.stop, committable: outcome.committable && !missed };
+  }
+  return solveMateDragWithDriver(drag, target, request);
+}
+
+/** 入力検証、反復予算、取消、hard 射影はすべての位置目標で共通にする。 */
+function solveMateDragWithDriver(drag: PreparedMateDrag, target: Vec3, request: MateDragOptions): MateDragOutcome {
   const counts: MateDragCounts = { softIterations: 0, projectionIterations: 0, totalIterations: 0,
     linearTrials: 0, qrFallbacks: 0, evaluations: 0, retractions: 0, rejectedCandidates: 0 };
   const trace: MateDragTrace[] = [];

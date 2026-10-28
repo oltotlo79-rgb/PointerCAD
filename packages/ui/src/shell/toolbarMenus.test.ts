@@ -510,6 +510,8 @@ describe('ソリッド側の畳んだ一覧(P5 タスク51、§0.a-0.51)', () =>
       'circularPattern',
       // P5 タスク50・27e。どれも「できあがった立体へ手を入れる」道具(§2.15、§0.a-0.64)。
       'draft',
+      'holeTranslate',
+      'faceRotate',
       'faceOffset',
       'shell',
       'rib',
@@ -598,10 +600,13 @@ describe('組み替え後のツールバーの幅の予算(P5 タスク51、§0.
     */
     expect(
       segmentedWidthPixels(
-        CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length,
+        CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length
+          + MACHINING_MENU_ITEMS.filter(item => item.id !== 'holeTranslate' && item.id !== 'faceRotate').length,
         0,
       ),
     ).toBe(956);
+    expect(segmentedWidthPixels(CREATE_MENU_ITEMS.length + COMBINE_MENU_ITEMS.length + MACHINING_MENU_ITEMS.length, 0))
+      .toBe(1012);
   });
 
   it('一覧の中に道具を足してもツールバーの幅は変わらない(前倒しの理由)', () => {
@@ -745,8 +750,8 @@ describe('Should 群をツールバーの畳んだ一覧へ足す(P5 タスク50
     expect(CREATE_MENU_ITEMS.slice(-CREATE_IDS.length).map((item) => item.id)).toEqual([
       ...CREATE_IDS,
     ]);
-    expect(MACHINING_MENU_ITEMS.slice(-MACHINING_IDS.length - 1).map((item) => item.id)).toEqual([
-      MACHINING_IDS[0], 'faceOffset', ...MACHINING_IDS.slice(1),
+    expect(MACHINING_MENU_ITEMS.slice(-MACHINING_IDS.length - 3).map((item) => item.id)).toEqual([
+      MACHINING_IDS[0], 'holeTranslate', 'faceRotate', 'faceOffset', ...MACHINING_IDS.slice(1),
     ]);
   });
 

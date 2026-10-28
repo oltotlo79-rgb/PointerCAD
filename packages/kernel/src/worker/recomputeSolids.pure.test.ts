@@ -365,6 +365,8 @@ describe('段の種類(SolidStepSpec の union)', () => {
     draft: true,
     // EX-18 の限られた一段(平らな面の移動)。
     faceOffset: true,
+    holeTranslate: true,
+    faceRotate: true,
     mirror: true,
     transform: true,
     scale: true,
@@ -386,8 +388,10 @@ describe('段の種類(SolidStepSpec の union)', () => {
     functionSurface: true,
   };
 
-  it('段の種類は30種で、既存の形状・板金・関数曲面・面の移動を含む', () => {
-    expect(Object.keys(STEP_KINDS)).toHaveLength(30);
+  it('段の種類は32種で、既存の形状・板金・関数曲面・面の移動を含む', () => {
+    expect(Object.keys(STEP_KINDS)).toHaveLength(32);
+    expect(Object.keys(STEP_KINDS)).toContain('holeTranslate');
+    expect(Object.keys(STEP_KINDS)).toContain('faceRotate');
     expect(Object.keys(STEP_KINDS)).toContain('functionSurface');
     expect(Object.keys(STEP_KINDS)).toContain('primitive');
     expect(Object.keys(STEP_KINDS)).toContain('thruSections');

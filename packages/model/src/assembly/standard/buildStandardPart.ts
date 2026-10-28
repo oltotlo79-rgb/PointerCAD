@@ -1,5 +1,5 @@
 import {
-  evaluateExpression, expressionValueFromNumber, type ExpressionValue,
+  evaluateExpression, exactExpressionValueFromNumber, expressionValueFromNumber, type ExpressionValue,
 } from '@pointercad/expression';
 
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
@@ -379,7 +379,7 @@ function buildHexNut(size: string, options: Readonly<Record<string, string>>): P
     designation: row.size,
     series: thread.series,
     pitch: expressionValueFromNumber(thread.pitch),
-    drillDiameter: expressionValueFromNumber(threadMinorDiameter(row.d, thread.pitch)),
+    drillDiameter: exactExpressionValueFromNumber(threadMinorDiameter(row.d, thread.pitch)),
     depth: { kind: 'through' },
     threadLength: expressionValueFromNumber(row.mMax),
     representation: 'simplified',

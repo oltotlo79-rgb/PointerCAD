@@ -1,10 +1,9 @@
 /**
- * GR-06b (`scratchpad/claude/plans/geomref-plan.md` §4(e)「関数作図の式」, §5.2 GR-06b; the lead's decision of
- * 2026-09-24): a function-plot formula may use a geometry-derived coefficient, but never as an operand of an operation
- * whose result jumps at a value boundary. The implicit `=` that defines a curve or surface is not refused. Every formula
- * is parsed by the real math engine, and the recompute paths run the real function workers (and OCCT for sketch curves).
- *
- * R is geometry-derived (its formula is `coef("G")`, G the measured length of a 2 mm sketch line); A (2.5) is not.
+ * 関数作図では図形由来の係数を使えるが、その係数を引数に取る不連続な演算は断る。
+ * 曲線・曲面を定義する陰関数の `=` は許す（docs/requirements.md の FR-210/FR-211 注記）。
+ * 式は実際の数学の計算部で解析し、再計算は実際の関数Workerとスケッチ曲線用のOCCTにつなぐ。
+ * Rは `coef("G")` を式に持つ図形由来の係数で、Gは長さ2mmのスケッチ線分の測定値。
+ * A（2.5）は図形由来ではない。
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expressionValueFromNumber as number, mathScalarExpression, type ExpressionValue, type StoredMathExpression,

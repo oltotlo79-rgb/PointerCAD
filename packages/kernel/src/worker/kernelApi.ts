@@ -376,7 +376,7 @@ function displayMeshesOf(
   const bodyById = new Map(result.bodies.map((body) => [body.id, body]));
   const displayMeshes = new Map<string, DisplayMeshEntry>();
   for (const step of request.steps) {
-    if (!step.visible || displayMeshes.has(step.key)) {
+    if (displayMeshes.has(step.key)) {
       continue;
     }
     const body = bodyById.get(step.id);

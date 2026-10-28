@@ -557,6 +557,19 @@ function cutPlaneKindChoice(): NumericChoice {
   };
 }
 
+/** 従来の点選択を既定にし、平面内指定への切替を明示する。 */
+function holePlacementChoice(): NumericChoice {
+  return {
+    key: 'holePlacement',
+    labelKey: 'numericInput.choice.holePlacement',
+    value: 'points',
+    options: [
+      { value: 'points', labelKey: 'numericInput.holePlacement.points' },
+      { value: 'plane-face', labelKey: 'numericInput.holePlacement.planeFace' },
+    ],
+  };
+}
+
 /** 段階ごとの選択肢の並び。持たない段は空配列。 */
 export function choicesFor(step: NumericInputStep, options: NumericInputOptions): readonly NumericChoice[] {
   switch (step) {
@@ -620,7 +633,7 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
     case 'revolveAngle':
       return [axisChoice(options.axisLine, DEFAULT_REVOLVE_AXIS)];
     case 'threadSize':
-      return [threadDesignationChoice(), threadSeriesChoice()];
+      return [threadDesignationChoice(), threadSeriesChoice(), holePlacementChoice()];
     case 'chamferSize':
       return [chamferModeChoice()];
     case 'linearPattern':
@@ -687,7 +700,7 @@ export function choicesFor(step: NumericInputStep, options: NumericInputOptions)
       return [ribSideChoice()];
     // 穴(FR-405、FR-422)。タスク50 で入口の広げ方をここへ畳んだ。
     case 'holeSize':
-      return [holeEntryChoice()];
+      return [holeEntryChoice(), holePlacementChoice()];
     // 呼びと系列はねじ穴とまったく同じ表を使う(規格表を 2 か所に持たない、FR-406)。
     case 'threadShaftSize':
       return [threadDesignationChoice(), threadSeriesChoice(), threadShaftEndChoice()];

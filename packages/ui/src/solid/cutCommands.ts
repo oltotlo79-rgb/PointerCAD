@@ -39,7 +39,9 @@ import {
   type ResolvedFace,
   type ResolvedSketch,
   type SketchFaceRef,
+  type SketchCurveRef,
   type SketchFeature,
+  type SurfaceCutFeature,
   type PartDocument,
   type PlaneResolveContext,
   type PlaneSpec,
@@ -325,7 +327,10 @@ function pointPositionOf(reference: PointReference): Vec3 | null {
 
 /** 切る対象の立体を 1 つ決める。ちょうど 1 つでなければ null。 */
 export function cutTargetOf(context: CutContext): string | null {
-  const bodyIds = selectedBodyIds(context.selection, liveBodyIds(context.document));
+  // Authored open surfaces are borrowed blades, never the solid being cut.
+  const surfaceIds = new Set(context.document.solids
+    .filter(feature => feature.kind === 'surface' || feature.kind === 'functionSurface').map(feature => feature.id));
+  const bodyIds = selectedBodyIds(context.selection, liveBodyIds(context.document).filter(id => !surfaceIds.has(id)));
   if (bodyIds.length === 1) {
     return bodyIds[0];
   }
@@ -341,6 +346,10 @@ export function cutTargetOf(context: CutContext): string | null {
 export function cutToolReadiness(context: CutContext): SolidToolReadiness {
   if (cutTargetOf(context) === null) {
     return { ready: false, reasonKey: 'shapeError.noTargetBody' };
+  }
+  if (selectedSurfaceBlades(context).length > 0) {
+    const rejection = surfaceBladeRejection(context, false);
+    return rejection === null ? READY : { ready: false, reasonKey: rejection };
   }
   // 選んだスケッチの点が使えない(別のスケッチに同じ名前の点がある等)ときは、その理由で止める。
   const collected = collectCutMaterials(context);
@@ -767,6 +776,117 @@ export function commitProfileCut(
   return { ok: true, document: appendSolid(withFirst, second), featureId: first.id };
 }
 
+/** Existing authored surface bodies can serve as finite, borrowed cut blades. */
+function selectedSurfaceBlades(context: CutContext): readonly string[] {
+  return context.selection.filter(id => context.document.solids.some(feature => feature.id === id
+    && (feature.kind === 'surface' || feature.kind === 'functionSurface')));
+}
+
+function surfaceBladeRejection(context: CutContext, requireCurrent: boolean): MessageKey | null {
+  const target = cutTargetOf(context), blades = selectedSurfaceBlades(context), blade = blades[0];
+  if (blades.length !== 1 || blade === undefined || context.selection.length !== 2
+    || new Set(context.selection).size !== 2 || !context.selection.includes(target ?? '')) {
+    return 'cutError.bladeSelectionAmbiguous';
+  }
+  const body = context.bodies.find(candidate => candidate.featureId === blade);
+  if (!liveBodyIds(context.document).includes(blade) || body?.isValid !== true || body.faces.length === 0) {
+    return 'cutError.bladeNotCurrent';
+  }
+  const snapshot = context.resolvedSketches;
+  if (requireCurrent && (snapshot === undefined || snapshot.document.id !== context.document.id
+    || affectsShape(snapshot.document, context.document))) return 'cutError.bladeNotCurrent';
+  return null;
+}
+
+function commitSurfaceBladeCut(context: CutContext, keep: CutKeep, keepBoth: boolean): SolidCommandOutcome {
+  const target = cutTargetOf(context);
+  if (target === null) return { ok: false, reasonKey: 'shapeError.noTargetBody' };
+  const rejection = surfaceBladeRejection(context, true);
+  if (rejection !== null) return { ok: false, reasonKey: rejection };
+  const surfaceFeatureId = selectedSurfaceBlades(context)[0];
+  if (surfaceFeatureId === undefined) return { ok: false, reasonKey: 'cutError.noProfile' };
+  const first: SurfaceCutFeature = { kind: 'surfaceCut', id: nextSolidId(context.document, 'surfaceCut'),
+    name: nextSolidName(context.document, 'surfaceCut'), suppressed: false, targetFeatureId: target,
+    blade: { kind: 'surface', surfaceFeatureId }, keep, pairedWith: null };
+  const document = appendSolid(context.document, first);
+  if (!keepBoth) return { ok: true, document, featureId: first.id };
+  const second: SurfaceCutFeature = { ...first, id: nextSolidId(document, 'surfaceCut'),
+    name: nextSolidName(document, 'surfaceCut'), keep: opposite(keep), pairedWith: first.id };
+  return { ok: true, document: appendSolid(document, second), featureId: first.id };
+}
+
+/** Resolve only the current sketch's selected open conics, keeping their drawn direction. */
+function commitOpenCurveCut(context: CutContext, keep: CutKeep, keepBoth: boolean): SolidCommandOutcome {
+  const target = cutTargetOf(context);
+  if (target === null) return { ok: false, reasonKey: 'shapeError.noTargetBody' };
+  const selected = context.selection.filter(id => id !== target);
+  if (selected.length === 0) return { ok: false, reasonKey: 'cutError.noProfile' };
+  const sketch = context.document.sketches.find(entry => entry.id === context.document.activeSketchId);
+  const snapshot = context.resolvedSketches;
+  if (sketch === undefined || snapshot === undefined || snapshot.document.id !== context.document.id
+    || affectsShape(snapshot.document, context.document)) {
+    return { ok: false, reasonKey: 'cutError.bladeNotCurrent' };
+  }
+  const resolved = snapshot.sketches.find(entry => entry.sketchId === sketch.id)?.resolved;
+  if (resolved === undefined) return { ok: false, reasonKey: 'cutError.bladeNotCurrent' };
+  if (new Set(selected).size !== selected.length || selected.some(id => context.document.sketches
+    .some(other => other.id !== sketch.id && other.features.some(feature => feature.id === id)))) {
+    return { ok: false, reasonKey: 'cutError.bladeSelectionAmbiguous' };
+  }
+  const curves: (Extract<ResolvedCurve, { readonly kind: 'arc' | 'ellipse' }>)[] = [];
+  let planeId: string | undefined;
+  for (const id of selected) {
+    const feature = sketch.features.find(entry => entry.id === id);
+    if (feature === undefined || (feature.kind !== 'arc' && feature.kind !== 'ellipse') || feature.construction
+      || resolved.errors.some(error => error.featureId === id)) {
+      return { ok: false, reasonKey: 'cutError.bladeSelectionAmbiguous' };
+    }
+    if (planeId !== undefined && feature.planeId !== planeId) {
+      return { ok: false, reasonKey: 'cutError.profileNotPlanar' };
+    }
+    planeId = feature.planeId;
+    const matches = [...resolved.arcs, ...resolved.ellipses].filter(curve => curve.featureId === id);
+    const curve = matches[0];
+    if (matches.length !== 1 || curve === undefined) return { ok: false, reasonKey: 'cutError.profileInvalid' };
+    const span = Math.abs(curve.endAngle - curve.startAngle);
+    if (!Number.isFinite(span) || span <= 1e-12 || span >= 2 * Math.PI - 1e-12) {
+      return { ok: false, reasonKey: 'cutError.bladeMustBeOpen' };
+    }
+    curves.push(curve);
+  }
+  const endpoints = curves.map(curve => {
+    const axis = curve.kind === 'arc' ? curve.xAxis : curve.majorAxis;
+    const a = curve.kind === 'arc' ? curve.radius : curve.majorRadius;
+    const b = curve.kind === 'arc' ? curve.radius : curve.minorRadius;
+    return [conicPoint(curve.center, curve.normal, axis, a, b, curve.startAngle),
+      conicPoint(curve.center, curve.normal, axis, a, b, curve.endAngle)] as const;
+  });
+  const first = endpoints[0], last = endpoints.at(-1);
+  if (endpoints.some(ends => ends.some(point => !point.every(Number.isFinite)))) {
+    return { ok: false, reasonKey: 'cutError.profileInvalid' };
+  }
+  if (first === undefined || last === undefined || endpoints.some((ends, index) => {
+    const previous = endpoints[index - 1];
+    return previous !== undefined && lengthVec3(subVec3(previous[1], ends[0])) > SKETCH_TOLERANCE_MM;
+  })) {
+    return { ok: false, reasonKey: 'cutError.bladeDisconnected' };
+  }
+  if (lengthVec3(subVec3(last[1], first[0])) <= SKETCH_TOLERANCE_MM) {
+    return { ok: false, reasonKey: 'cutError.bladeMustBeOpen' };
+  }
+  const profile: SketchCurveRef = { sketchId: sketch.id, curveIds: selected };
+  const firstCut: SurfaceCutFeature = {
+    kind: 'surfaceCut', id: nextSolidId(context.document, 'surfaceCut'),
+    name: nextSolidName(context.document, 'surfaceCut'), suppressed: false,
+    targetFeatureId: target, blade: { kind: 'extrusion', profile }, keep, pairedWith: null,
+  };
+  const withFirst = appendSolid(context.document, firstCut);
+  if (!keepBoth) return { ok: true, document: withFirst, featureId: firstCut.id };
+  const second: SurfaceCutFeature = { ...firstCut, id: nextSolidId(withFirst, 'surfaceCut'),
+    name: nextSolidName(withFirst, 'surfaceCut'), keep: opposite(keep), pairedWith: firstCut.id };
+  return { ok: true, document: appendSolid(withFirst, second), featureId: firstCut.id };
+}
+
 /* ------------------------------------------------------------------ *
  * 確定(§0.a-0.58「反対側も残す」は履歴を 2 段積む)
  * ------------------------------------------------------------------ */
@@ -844,10 +964,26 @@ export function commitCutInput(
   if (planeKind === PROFILE_CUT_KIND) {
     // 閉じた輪郭で貫いて切る(EX04)。平面の決め方・傾きは使わない。残す側は平面の切断と同じ
     // つまみで選ぶ(EX-04 W3): 「反対側を残す」で輪郭の内側、「反対側も残す」で両方。
-    return commit.flags.cutPointByCoordinate === true
-      ? { ok: false, reasonKey: 'cutError.coordinatePointUnused' }
-      : commitProfileCut(context, commit.flags.cutKeepOpposite === true ? 'inside' : 'outside',
+    if (commit.flags.cutPointByCoordinate === true) return { ok: false, reasonKey: 'cutError.coordinatePointUnused' };
+    if (selectedSurfaceBlades(context).length > 0) {
+      return commitSurfaceBladeCut(context, commit.flags.cutKeepOpposite === true ? 'negative' : 'positive',
         commit.flags.cutKeepBoth === true);
+    }
+    const face = cutProfileOf(context);
+    if (face !== null) {
+      const target = cutTargetOf(context);
+      if (context.selection.some(id => {
+        if (id === target || id === face.faceFeatureId) return false;
+        const selected = findSketchFeatureAt(context.document, id)?.feature;
+        return selected?.kind === 'arc' || selected?.kind === 'ellipse' || selected?.kind === 'face';
+      })) {
+        return { ok: false, reasonKey: 'cutError.bladeSelectionAmbiguous' };
+      }
+      return commitProfileCut(context, commit.flags.cutKeepOpposite === true ? 'inside' : 'outside',
+        commit.flags.cutKeepBoth === true);
+    }
+    return commitOpenCurveCut(context, commit.flags.cutKeepOpposite === true ? 'negative' : 'positive',
+      commit.flags.cutKeepBoth === true);
   }
   const prepared = prepareCutPlane(context, commit);
   if (!prepared.ok) {

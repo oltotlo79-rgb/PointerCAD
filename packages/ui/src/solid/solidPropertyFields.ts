@@ -235,6 +235,17 @@ const FIELD_DEFINITIONS: Readonly<
     unit: 'degree',
     range: COUNTERSINK_ANGLE_RANGE,
   },
+  // 平面の面内座標は符号付き長さ。面の境界はnative計算が判定する。
+  holePlanarX: {
+    labelKey: 'numericInput.field.holePlanarX',
+    tooltipKey: 'numericInput.tooltip.holePlanarX',
+    unit: 'mm',
+  },
+  holePlanarY: {
+    labelKey: 'numericInput.field.holePlanarY',
+    tooltipKey: 'numericInput.tooltip.holePlanarY',
+    unit: 'mm',
+  },
   // 円筒の側面の穴(EX05)。範囲は付けない(面の上にあるかは kernel が実際の面の境界で決め、
   // 外なら理由を出して断る。角度は何周しても同じ向き)。
   holeCylinderHeight: {

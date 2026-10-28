@@ -1,7 +1,9 @@
-import { expressionValueFromNumber } from '@pointercad/expression';
+import { evaluateExpression, expressionValueFromNumber } from '@pointercad/expression';
 import type { HoleFeature, ThreadHoleFeature } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
-import { setHoleField, setThreadHoleField } from './holeThreadPropertyUpdates.js';
+import {
+  setHoleField, setThreadDesignation, setThreadHoleField, setThreadSeries,
+} from './holeThreadPropertyUpdates.js';
 
 const formula = (source: string, value: number) => ({ ...expressionValueFromNumber(value), source });
 const positions = [
@@ -64,4 +66,80 @@ describe('EX05 indexed cylindrical property updates', () => {
       expect(next).toEqual({ ...single, cylindrical: { kind: 'cylinder-face', locations: [{ ...positions[0], angle: value }] } });
     });
   }
+});
+
+describe('EX05 planar indexed expression updates', () => {
+  const planar: HoleFeature = { ...hole, cylindrical: undefined,
+    face: { bodyFeatureId: 'body-1', index: 2, fingerprint: { kind: 'face', surfaceKind: 'plane',
+      area: 1000, position: [11, -7, 5], axis: [-0.48, 0.36, 0.8], radius: null } },
+    planar: { kind: 'plane-face', locations: [
+      { x: formula('2 * 3', 6), y: formula('-2 * 2', -4) },
+      { x: formula('-6 / 2', -3), y: formula('10 / 2', 5) },
+    ] } };
+  const planarThread: ThreadHoleFeature = { ...thread, cylindrical: undefined, face: planar.face, planar: planar.planar };
+  it.each([planar, planarThread])('$kind: selected XY preserves other source, reference and entry', feature => {
+    const value = formula('-12 / 2', -6);
+    const update = (index?: number, next = value) => feature.kind === 'hole'
+      ? setHoleField(feature, 'holePlanarX', next, undefined, index)
+      : setThreadHoleField(feature, 'holePlanarX', next, undefined, index);
+    const changed = update(1);
+    if (changed.kind !== 'hole' && changed.kind !== 'threadHole') throw new Error('Expected hole');
+    expect(changed.planar?.locations[0]).toBe(feature.planar?.locations[0]);
+    expect(changed.planar?.locations[1]?.x).toBe(value);
+    expect(changed.planar?.locations[1]?.y).toBe(feature.planar?.locations[1]?.y);
+    expect(changed.face).toBe(feature.face);
+    expect(changed.entry).toBe(feature.entry);
+    for (const index of [undefined, -1, 2, 0.5, NaN, Infinity]) expect(update(index)).toBe(feature);
+    for (const invalid of [formula('', 0), formula('bad', NaN), formula('bad', Infinity)]) expect(update(1, invalid)).toBe(feature);
+    expect(feature.planar?.locations[1]?.x.source).toBe('-6 / 2');
+  });
+  it('one planar location permits omitted index without changing the original expression', () => {
+    const feature: HoleFeature = { ...planar, planar: { kind: 'plane-face', locations: [{ x: formula('6', 6), y: formula('-4', -4) }] } };
+    const value = formula('10 - 17', -7);
+    const changed = setHoleField(feature, 'holePlanarY', value);
+    if (changed.kind !== 'hole') throw new Error('Expected hole');
+    expect(changed.planar?.locations[0]?.y).toBe(value);
+    expect(changed.planar?.locations[0]?.x).toBe(feature.planar?.locations[0]?.x);
+  });
+});
+
+describe('自動計算する下穴径の厳密な式を保つ', () => {
+  it.each([
+    { designation: 'M6', diameter: 6, series: 'coarse', pitch: 1, display: '4.91746824527' },
+    { designation: 'M6', diameter: 6, series: 'fine', pitch: 0.75, display: '5.18810118395' },
+    { designation: 'M8', diameter: 8, series: 'coarse', pitch: 1.25, display: '6.64683530659' },
+    { designation: 'M8', diameter: 8, series: 'fine', pitch: 1, display: '6.91746824527' },
+  ] as const)('$designation $series は呼びと系列の両入口で丸めない', row => {
+    // ISO基本三角形から D1 = D - 5√3P/8 を独立に求める。
+    const expected = row.diameter - (5 * Math.sqrt(3) / 8) * row.pitch;
+    const byDesignation: ThreadHoleFeature = { ...thread, series: row.series };
+    const bySeries: ThreadHoleFeature = { ...thread, designation: row.designation };
+    for (const [input, update] of [
+      [byDesignation, () => setThreadDesignation(byDesignation, row.designation)],
+      [bySeries, () => setThreadSeries(bySeries, row.series)],
+    ] as const) {
+      const before = structuredClone(input);
+      const result = update();
+      if (result.kind !== 'threadHole') throw new Error('Expected thread hole');
+      expect(result.drillDiameter.value).toBe(expected);
+      expect(result.drillDiameter.source).toBe(String(expected));
+      expect(result.drillDiameter.display).toBe(row.display);
+      const evaluated = evaluateExpression(result.drillDiameter.source);
+      if (!evaluated.ok) throw new Error('Expected valid drill diameter');
+      expect(evaluated.value.value).toBe(expected);
+      expect(result).toEqual({ ...before, designation: row.designation, series: row.series,
+        pitch: expressionValueFromNumber(row.pitch), drillDiameter: result.drillDiameter });
+      expect(input).toEqual(before);
+    }
+  });
+
+  it('下穴径の手入力式は自動計算で置き換えない', () => {
+    const manual = formula('6 - 1 / 3', 6 - 1 / 3);
+    const before = structuredClone(thread);
+    const result = setThreadHoleField(thread, 'drillDiameter', manual);
+    if (result.kind !== 'threadHole') throw new Error('Expected thread hole');
+    expect(result.drillDiameter).toBe(manual);
+    expect(result).toEqual({ ...before, drillDiameter: manual });
+    expect(thread).toEqual(before);
+  });
 });

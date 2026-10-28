@@ -211,3 +211,38 @@ describe('solid J2 plasticity on the actual packaged OOFEM runtime', () => {
     expect(loads.length).toBe(before);
   });
 });
+
+
+describe('外力を除いた後の自由な残留変位の独立照合', () => {
+  // V=L^3/6、u_x=eps*xより、自由なnode1-xの力はsigma*V/L=sigma*L^2/6。
+  // 塑性例: sigma=260MPa、eps_p=(260-250)/2000=0.005、eps=0.005+260/200000=0.0063。
+  // 力を0へ戻す除荷は弾性で、u_x(L)=L*eps_p=0.05mm。端変位を0に固定しない。
+  it.each([
+    { name: '降伏後は0.05mmが残る', peakStressMPa: 260, plasticStrain: 0.005,
+      peakStrain: 0.0063, residualDisplacementMm: 0.05, yielded: true },
+    { name: '降伏前は残らない', peakStressMPa: 200, plasticStrain: 0,
+      peakStrain: 0.001, residualDisplacementMm: 0, yielded: false },
+  ] as const)('$name', async ({ peakStressMPa, plasticStrain, peakStrain, residualDisplacementMm, yielded }) => {
+    const base = input({ knots: [0, 1, 0], steps: 10 });
+    const value: SolidPlasticInput = { ...base, plan: { ...base.plan,
+      prescribedMm: base.plan.prescribedMm.filter(p => !(p.node === 1 && p.dof === 'x')),
+      forcesN: [{ node: 1, dof: 'x', forceN: peakStressMPa * L * L / 6 }] } };
+    expect(value.plan.prescribedMm.some(p => p.node === 1 && p.dof === 'x')).toBe(false);
+    const result = await solve(value);
+    expect(result.yielded).toBe(yielded);
+    expectUniaxial(result, [
+      { stress: peakStressMPa, plastic: plasticStrain, lateral: -NU * peakStressMPa / E - plasticStrain / 2 },
+      { stress: 0, plastic: plasticStrain, lateral: -plasticStrain / 2 },
+    ]);
+    const [peak, unloaded] = result.records;
+    expect(unloaded.loadFactor).toBe(0);
+    near(peak.displacementMm[1][0], peakStrain * L, SIGMA0 / E * L);
+    near(unloaded.displacementMm[1][0], residualDisplacementMm, SIGMA0 / E * L);
+    // 全節点の軸変位も独立な一様場で照合する。残留の符号や局所節点だけを見落とさない。
+    for (const [index, strain] of [peakStrain, plasticStrain].entries()) {
+      result.records[index].displacementMm.forEach((u, node) => {
+        near(u[0], strain * ONE_NODES[node][0], SIGMA0 / E * L);
+      });
+    }
+  }, FUNCTIONAL_TEST_TIMEOUT_MS);
+});

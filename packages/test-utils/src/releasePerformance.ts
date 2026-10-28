@@ -56,3 +56,92 @@ export function reportViewportRate(actualFps: number, label: string): Performanc
     practicalLimit: MIN_PRACTICAL_VIEWPORT_FPS, unit: 'fps',
     meetsTarget: actualFps >= SOFTWARE_VIEWPORT_TARGET_FPS, usable: actualFps >= MIN_PRACTICAL_VIEWPORT_FPS });
 }
+
+/** 試験専用の時間観測。参考目標の未達だけでは機能検査を中断しない。 */
+export interface DurationObservation {
+  readonly label: string;
+  readonly actualMs: number;
+  readonly referenceTargetMs: number;
+  readonly meetsTarget: boolean;
+  readonly decisionUse: 'observation';
+}
+
+/** 2026-10-27利用者指示: 根拠のない速度境界を機能の合否へ転用せず、実測と目標達否を残す。 */
+export function observeDuration(actualMs: number, referenceTargetMs: number, label: string): DurationObservation {
+  if (label.trim() === '' || !Number.isFinite(actualMs) || actualMs < 0
+    || !Number.isFinite(referenceTargetMs) || referenceTargetMs <= 0) {
+    throw new Error('時間観測の名前・実測値・参考目標が不正です');
+  }
+  const observation: DurationObservation = { label, actualMs, referenceTargetMs,
+    meetsTarget: actualMs <= referenceTargetMs, decisionUse: 'observation' };
+  console.log('[性能観測]', JSON.stringify(observation));
+  return observation;
+}
+
+/** 試験専用のcold/warm比較。元0.8は参考値であり、時間待機や機能失敗を受け取らない。 */
+export interface StartupReuseObservation {
+  readonly label: string;
+  readonly cold: number;
+  readonly warm: number;
+  readonly ratio: number;
+  readonly referenceRatio: number;
+  readonly meetsTarget: boolean;
+  readonly decisionUse: 'observation';
+}
+
+/** 5組すべての有限な正値を確認し、中央値と元の比較目標を記録する。 */
+export function observeStartupReuse(coldMs: readonly number[], warmMs: readonly number[], label: string): StartupReuseObservation {
+  const valid = (values: readonly number[]): boolean => Array.isArray(values) && values.length === 5
+    && Array.from({ length: 5 }, (_, i) => Object.hasOwn(values, i)
+      && typeof values[i] === 'number' && Number.isFinite(values[i]) && values[i] > 0).every(Boolean);
+  if (label.trim() === '' || !valid(coldMs) || !valid(warmMs)) {
+    throw new Error('起動比較には名前とcold/warm各5件の有限な正値が必要です');
+  }
+  const median = (values: readonly number[]): number => {
+    const value = [...values].sort((a, b) => a - b)[2];
+    if (value === undefined) throw new Error('起動比較の標本が欠けています');
+    return value;
+  };
+  const cold = median(coldMs), warm = median(warmMs), ratio = warm/cold;
+  if (!Number.isFinite(ratio) || ratio <= 0) throw new Error('起動比較の比率が不正です');
+  const referenceRatio = 0.8;
+  const observation: StartupReuseObservation = { label, cold, warm, ratio, referenceRatio,
+    meetsTarget: ratio <= referenceRatio, decisionUse: 'observation' };
+  console.log('[性能観測]', JSON.stringify(observation));
+  return observation;
+}
+
+/** 正の経過時間を要するホスト操作だけを確認し、既存の参考時間観測へ渡す。 */
+export function observePositiveDuration(actualMs: number, referenceTargetMs: number, label: string): DurationObservation {
+  if (!Number.isFinite(actualMs) || actualMs <= 0) throw new Error('操作の時間観測には有限な正値が必要です');
+  return observeDuration(actualMs, referenceTargetMs, label);
+}
+
+/** 実描画から得た参考FPS。ほかの操作の実用FPS判定は変更しない。 */
+export interface ViewportRateObservation {
+  readonly label: string;
+  readonly actualFps: number;
+  readonly completedRenders: number;
+  readonly elapsedMs: number;
+  readonly referenceTargetFps: number;
+  readonly meetsTarget: boolean;
+  readonly decisionUse: 'observation';
+}
+
+/** 完了描画回数と同じ実測窓のFPSだけを記録し、低い参考達否だけでは停止しない。 */
+export function observeViewportRate(value: unknown, label: string): ViewportRateObservation {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('実描画の観測がありません');
+  const fps: unknown = Reflect.get(value, 'fps');
+  const completedRenders: unknown = Reflect.get(value, 'completedRenders');
+  const elapsedMs: unknown = Reflect.get(value, 'elapsedMs');
+  if (label.trim() === '' || typeof fps !== 'number' || !Number.isFinite(fps) || fps <= 0
+    || typeof completedRenders !== 'number' || !Number.isSafeInteger(completedRenders) || completedRenders <= 0
+    || typeof elapsedMs !== 'number' || !Number.isFinite(elapsedMs) || elapsedMs <= 0
+    || fps !== completedRenders*1_000/elapsedMs) {
+    throw new Error('実描画のFPS・完了回数・計測窓には整合した有限な正値が必要です');
+  }
+  const observation: ViewportRateObservation = { label, actualFps: fps, completedRenders, elapsedMs,
+    referenceTargetFps: SOFTWARE_VIEWPORT_TARGET_FPS, meetsTarget: fps >= SOFTWARE_VIEWPORT_TARGET_FPS, decisionUse: 'observation' };
+  console.log('[性能観測]', JSON.stringify(observation));
+  return observation;
+}

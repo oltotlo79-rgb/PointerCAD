@@ -667,7 +667,7 @@ export const createRecomputeSlice: StateCreator<
     set({ recomputeProgress });
   },
   cancelRecompute: () => {
-    set((state) => ({ cancelRequestCount: state.cancelRequestCount + 1, meshJsAccounting: null, resolvedPartSketches: null, referenceRepairBodies: null }));
+    set((state) => ({ cancelRequestCount: state.cancelRequestCount + 1, meshJsAccounting: null, resolvedPartSketches: null, referenceRepairBodies: null, stagedSolid: null }));
   },
   recordKernelMemory: (memory) => {
     if (memory !== undefined) {

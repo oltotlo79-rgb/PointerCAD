@@ -30,6 +30,7 @@ vi.mock('./MathExpressionDialog.js', () => ({
 }));
 
 const backend = createMathBackend();
+let now = 0;
 const clients: MathWorkerClient[] = [];
 const geometryId = 'measured-x';
 const geometryName = '測定X';
@@ -83,6 +84,10 @@ function publishMeasurement(document = useAppStore.getState().document, value = 
 }
 
 beforeEach(() => {
+  // These tests verify values and freshness through the real engine, independently of host scheduling.
+  // Deadline rejection is exercised below by advancing this same clock inside the real calculation.
+  now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
   useAppStore.setState({ ...createInitialDocumentState(), requestedGeneration: 0, completedGeneration: 0, lastOutcome: 'idle' });
   useAppStore.getState().applyDocument(fixture());
   publishMeasurement();
@@ -90,6 +95,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const client of clients.splice(0)) client.dispose();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -169,6 +175,37 @@ function invalidate(kind: typeof unavailable[number]): void {
 }
 
 describe('図形値を使う既存の評価入口（GR-18）', () => {
+  it('実計算が期限を超えた欄の適用は停止を返し、文書とUndoを変えない', async () => {
+    const before = useAppStore.getState(), dialog = propertyDialog(), channel = transport();
+    const evaluate = vi.spyOn(channel.client, 'evaluate'), box = backend.box;
+    vi.spyOn(backend, 'box').mockImplementation(expression => {
+      const result = box(expression);
+      now += 201;
+      return result;
+    });
+    // mathScalarExpression.ts reports a stopped calculation separately from an aborted editor operation.
+    expect(await applyProperty(dialog, channel)).toEqual({ ok: false, message: '数式の計算が中止されました。' });
+    expect(await evaluate.mock.results[0].value).toMatchObject({ status: 'result', result: {
+      evaluation: { status: 'stopped', reason: 'budget' },
+    } });
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+  });
+
+  it('Workerの返信が依頼の期限へ達した欄の適用は文書とUndoを変えない', async () => {
+    const before = useAppStore.getState(), channel = transport(true);
+    const evaluate = vi.spyOn(channel.client, 'evaluate');
+    const pending = applyProperty(propertyDialog(), channel);
+    await channel.firstRequest;
+    now = 5_000;
+    channel.release();
+    expect((await pending).ok).toBe(false);
+    expect(await evaluate.mock.results[0].value).toMatchObject({ status: 'deadline' });
+    expect(channel.terminated()).toBe(1);
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+  });
+
   it('欄の数式を現在の図形値で適用し、元文書へUndo1回で戻す', async () => {
     const before = useAppStore.getState(), dialog = propertyDialog(), channel = transport();
     const evaluate = vi.spyOn(channel.client, 'evaluate');

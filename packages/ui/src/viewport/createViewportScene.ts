@@ -10,8 +10,10 @@ import {
   type WorkPlane,
 } from '@pointercad/model';
 import * as THREE from 'three';
-import { recordReferenceRepairRejection, readReferenceRepairRejections, borrowReferenceRepairPreview, type ReferenceRepairPreview, type ReferenceRepairPreviewBorrow,
-  type RepairPreviewReceipt, type RepairPreviewInspection } from '../solid/referenceRepairPreview.js';
+import { isCylinderBasisGuideCurrent, type CylinderBasisGuide } from './cylinderBasisGuide.js';
+import { isPlanarBasisGuideCurrent, type PlanarBasisGuide } from './planarBasisGuide.js';
+import { readReferenceRepairRejections, type ReferenceRepairPreview } from '../solid/referenceRepairPreview.js';
+import { createViewportRepairPreview } from './viewportRepairPreview.js';
 
 import { viewportPixelRatio } from './viewportRenderScale.js';
 
@@ -41,7 +43,7 @@ import {
   type AppearanceInput,
   type SolidGeometryBundle,
 } from './buildSolidGeometry.js';
-import { createEnvironmentStore, createEnvironmentTarget } from './createEnvironment.js';
+import { createEnvironmentStore, createEnvironmentTarget, type EnvironmentCandidate } from './createEnvironment.js';
 import {
   buildSubShapeGeometry, EMPTY_SUB_SHAPE_HIGHLIGHT, subShapeOverlayBytes, type SubShapeHighlightBundle,
 } from './buildSubShapeGeometry.js';
@@ -94,6 +96,8 @@ import {
   captureSolidMeshAdmission, captureWorldMeshAdmission, displayCopyBaseline, isSolidMeshAdmissionCurrent,
   meshLayoutsUnchanged, type GpuMeshBudget, type SolidMeshAdmission, type SolidMeshAdmissionState,
 } from './solidMeshAdmission.js';
+import type { AssemblyMateFaceHit as TypeAssemblyMateFaceHit } from './createAssemblyLayer.js';
+
 
 /** Host acquisitions remain retryable; constructor-internal native resources are unobserved. */
 export class ViewportSceneInitializationFailure extends Error {
@@ -126,6 +130,9 @@ export interface ViewportMeshReservation {
   readonly registeredUiPendingBytes?: number;
   readonly displayCopyBytes: number;
   readonly gpuMeshBytes: number;
+  /** Known PMREM payload reservation; separate from mesh attributes and OS GPU measurements. */
+  readonly environmentReservedBytes: number;
+  readonly environmentCleanupStatus: 'complete' | 'pending';
   readonly assemblySourceBackingBytes: number;
   readonly assemblyInstanceBytes: number;
   readonly assemblyCleanupReservedCpuBytes: number;
@@ -138,7 +145,6 @@ export interface ViewportMeshReservation {
 const UNCOVERED_MESH_RESOURCES: readonly string[] = Object.freeze(['textures', 'pmrem', 'materials',
   'threadMarks', 'sphereGrid', 'cutPreview', 'sectionHandle', 'printOpenEdges', 'jsObjectOverhead']);
 const GPU_MESH_BUDGET_MESSAGE = 'Local display mesh buffers exceed the GPU budget';
-const LOCAL_ENVIRONMENT_MESSAGE = 'Local display needs an environment map whose GPU reservation is unknown';
 
 /**
  * 1 枚描くときの見せ方。視点はここでも持たず、呼び出しごとに渡されたものを控えるだけ
@@ -178,6 +184,14 @@ export interface AssemblyFacePickObservation {
   partCount?: number;
   ownerAccepted?: boolean;
   cameraReady?: boolean;
+}
+
+/** 部品pickが実際に通った判定だけを書く。未実行の判定は未設定のまま。 */
+export interface AssemblyComponentPickObservation {
+  ownerAccepted?: boolean;
+  cameraReady?: boolean;
+  hitComponentId?: string | null;
+  failed?: boolean;
 }
 
 /** ビューポートの描画一式。視点は持たず、呼ばれるたびに渡された視点で描く。 */
@@ -245,6 +259,10 @@ export interface ViewportScene {
    * (スケッチの要素 id・ボディの id が混ざっていても部分形状の id だけを拾う)。
    */
   setSubShapeHighlight(hoveredElementId: string | null, selection: readonly string[]): void;
+  /** Selected current cylinder's native zero direction. Derived display only. */
+  setCylinderBasisGuide(guide: CylinderBasisGuide | null): void;
+  /** 現在選択した平面の実原点と正のX/Y方向。表示専用。 */
+  setPlanarBasisGuide(guide: PlanarBasisGuide | null): void;
   setReferenceRepairPreview(preview: ReferenceRepairPreview | null): Promise<void>;
   /**
    * 切断面の予告表示を差し替える(FR-432、P5 タスク27e、§0.a-0.61)。
@@ -303,8 +321,8 @@ export interface ViewportScene {
    * 画面座標にある部品(アセンブリのインスタンス)の id。無ければ null(FR-106)。
    * **非表示にした部品には当たらない**(`createAssemblyLayer.ts` の `pickComponent`)。
    */
-  pickComponent(screenX: number, screenY: number): string | null;
-  pickAssemblyFace(screenX: number, screenY: number, observation?: AssemblyFacePickObservation): import('./createAssemblyLayer.js').AssemblyMateFaceHit | null;
+  pickComponent(screenX: number, screenY: number, observation?: AssemblyComponentPickObservation): string | null;
+  pickAssemblyFace(screenX: number, screenY: number, observation?: AssemblyFacePickObservation): TypeAssemblyMateFaceHit | null;
   /**
    * 画面座標のところにある面。当たった三角形の番号を、そのボディの面ごとの範囲表で
    * 面の通し番号へ直して返す(`pickSubShape.ts` の `faceIndexOfTriangle`)。当たらなければ
@@ -751,6 +769,18 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
   // 測定の結果(FR-1102、P5 タスク31)。線・弧・端の丸・値の札を、他の重ね描きより手前に出す。
   const measureLayer = acquired('measureLayer', createMeasureLayer());
   scene.add(measureLayer.group);
+  const cylinderBasisLayer = acquired('cylinderBasisLayer', createMeasureLayer());
+  cylinderBasisLayer.group.name = 'cylinder-basis-guide';
+  let cylinderGuide: CylinderBasisGuide | null = null;
+  scene.add(cylinderBasisLayer.group);
+  // 測定と円筒表示のinstanceを共有せず、同じ描画/解放機構を使う。
+  const planarBasisLayers = ['origin', 'x', 'y'].map(member => {
+    const layer = acquired(`planar basis ${member}`, createMeasureLayer());
+    layer.group.name = `planar-basis-${member}`;
+    return layer;
+  });
+  for (const layer of planarBasisLayers) scene.add(layer.group);
+  let planarGuide: PlanarBasisGuide | null = null;
 
   let currentSpacing = 0;
 
@@ -882,6 +912,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     assemblyOwner = null; assemblyCandidateOwner = null;
     assemblyBundle = EMPTY_ASSEMBLY_GEOMETRY;
     assemblyLayer.update(EMPTY_ASSEMBLY_GEOMETRY, lastRender?.displayStyle ?? 'shadedWithEdges', environments.texture);
+    refreshEnvironment();
   }
 
   function ensureCurrentAssemblyOwner(): boolean {
@@ -901,22 +932,27 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     }
     assemblyCandidateOwner = owner;
     const previousBundle = assemblyBundle;
+    let environmentCandidate: EnvironmentCandidate | null = null;
     try {
       if (!assemblyOwnerCurrent(owner)) return;
       // Environment preparation sees candidate appearances without exposing candidate mesh geometry.
       const environmentSpecs = [...solidBundle.entries.flatMap(entry => entry.appearances),
         ...assemblyAppearanceSpecs(bundle)];
-      if (anyNeedsEnvironment(environmentSpecs)) environments.ensureEnvironment(scene);
-      if (!assemblyOwnerCurrent(owner)) { refreshEnvironment(); ensureCurrentAssemblyOwner(); return; }
-      assemblyLayer.update(bundle, lastRender?.displayStyle ?? 'shadedWithEdges', environments.texture);
+      environmentCandidate = environments.prepareEnvironment(anyNeedsEnvironment(environmentSpecs));
+      if (!assemblyOwnerCurrent(owner)) { ensureCurrentAssemblyOwner(); return; }
+      assemblyLayer.update(bundle, lastRender?.displayStyle ?? 'shadedWithEdges', environmentCandidate.texture);
       if (!assemblyOwnerCurrent(owner)) { clearAssemblyDisplay(); return; }
+      environmentCandidate.commit(scene);
       assemblyBundle = bundle; assemblyOwner = owner; assemblyLayer.group.visible = true;
       assemblyDisplayInvalidated = false;
     } catch (error) {
       assemblyBundle = previousBundle;
       refreshEnvironment(); ensureCurrentAssemblyOwner();
       throw error;
-    } finally { assemblyCandidateOwner = null; }
+    } finally {
+      assemblyCandidateOwner = null;
+      try { environmentCandidate?.rollback(); } catch { /* Failed cleanup stays reserved by the environment store. */ }
+    }
     refreshEnvironment();
   }
 
@@ -925,7 +961,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
    * 作り、使わなくなったら捨てる**(NFR-PF-5)。レンダラを持っているのはここだけなので、
    * 作る・捨てるの判断もここで行い、`createSolidLayer` へはできあがったものを渡す。
    */
-  const environments = acquired('environments', createEnvironmentStore(() => createEnvironmentTarget(renderer)));
+  const environments = acquired('environments', createEnvironmentStore(() => createEnvironmentTarget(renderer), options.gpuMeshBudget));
 
   /**
    * いまの外観で環境マップが要るかを見直す。**組み立て直したときにだけ呼ぶ**
@@ -936,11 +972,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
       ...bundle.entries.flatMap((entry) => entry.appearances),
       ...assemblyAppearanceSpecs(assembly),
     ];
-    if (anyNeedsEnvironment(used)) {
-      environments.ensureEnvironment(scene);
-      return;
-    }
-    environments.releaseEnvironment(scene);
+    environments.prepareEnvironment(anyNeedsEnvironment(used)).commit(scene);
   }
 
   /** ボディ・強調・外観のどれかが変わったときに、描画用の並びを作り直す。 */
@@ -1019,6 +1051,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     solidLayer.updateCutPreview(null);
     solidLayer.updateSphereGrid(null);
     solidLayer.updateSectionHandle(null);
+    refreshEnvironment();
   }
 
   function ensureCurrentSolidOwner(): boolean {
@@ -1085,6 +1118,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     observeMesh(observedOwner, 'build-start');
     const restoreCopies = displayCopies.checkpoint();
     let published = false;
+    let environmentCandidate: EnvironmentCandidate | null = null;
     try {
       // No published input, bundle or layer changes until every CPU candidate exists.
       // The published bundle is a pure function of the published bodies and highlights, so an
@@ -1126,19 +1160,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
       uiBackings.adopt(liveDisplayCopies(candidate, overlay));
       const marks = reusable && next.bodies === bodies ? threadMarks : collectThreadMarks(next.bodies);
       observeMesh(observedOwner, 'build-complete', 'completed');
-      // Environment maps (PMREM, render targets) have no known reservation, so a local display
-      // that would need one is refused before any environment is created for it.
-      if (baseline !== null && anyNeedsEnvironment(candidate.entries.flatMap((entry) => entry.appearances))) {
-        throw new RangeError(LOCAL_ENVIRONMENT_MESSAGE);
-      }
       if (!ownerIsCurrent(owner)) {
-        ensureCurrentSolidOwner();
-        return;
-      }
-      refreshEnvironment(candidate);
-      // Recheck immediately before the public layer boundary, including environment callbacks.
-      if (!ownerIsCurrent(owner)) {
-        refreshEnvironment();
         ensureCurrentSolidOwner();
         return;
       }
@@ -1152,10 +1174,19 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
         && !options.gpuMeshBudget.reserve(gpuOwner, publishedGpuBytes + addedGpuBytes)) {
         throw new RangeError(GPU_MESH_BUDGET_MESSAGE);
       }
+      // Reserve old + candidate mesh attributes BEFORE PMREM's output and temporary peak.
+      // Preparing does not retire the published environment or mutate scene.environment.
+      environmentCandidate = environments.prepareEnvironment(anyNeedsEnvironment([
+        ...candidate.entries.flatMap(entry => entry.appearances), ...assemblyAppearanceSpecs(assemblyBundle),
+      ]));
+      if (!ownerIsCurrent(owner)) {
+        ensureCurrentSolidOwner();
+        return;
+      }
       observeMesh(observedOwner, 'publish-start');
       if (lastRender !== null) {
         try {
-          solidLayer.update(candidate, lastRender.displayStyle, environments.texture);
+          solidLayer.update(candidate, lastRender.displayStyle, environmentCandidate.texture);
           solidLayer.updateSubShapes(overlay);
           solidLayer.updateThreadMarks(marks);
         } catch (error) {
@@ -1167,6 +1198,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
         restorePublishedSolidLayers();
         return;
       }
+      environmentCandidate.commit(scene);
       bodies = next.bodies;
       hoveredBodyId = next.hovered;
       selectedBodyIds = next.selected;
@@ -1205,6 +1237,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
       }
       uiBackings.retire(solidCpuOwner);
       if (!published) {
+        try { environmentCandidate?.rollback(); } catch { /* Retain failed cleanup and its reservation for retry. */ }
         observeMesh(observedOwner, 'operation-aborted', 'rejected');
         observeMesh(observedOwner, 'candidate-return-start', 'rejected');
         returnUnpublishedReservations(restoreCopies);
@@ -1280,6 +1313,19 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     solidLayer.updateThreadMarks(currentSolid ? threadMarks : []);
     solidLayer.updateCutPreview(currentSolid ? cutPreview : null);
     solidLayer.updateSphereGrid(currentSolid ? sphereGridPositions : null, sphereGridSpec?.center);
+    const basisState = options.readSolidMeshState?.();
+    const basisCurrent = currentSolid && cylinderGuide !== null && basisState !== undefined
+      && isCylinderBasisGuideCurrent(cylinderGuide, basisState);
+    cylinderBasisLayer.update(basisCurrent ? cylinderGuide?.drawing ?? null : null);
+    cylinderBasisLayer.group.visible = basisCurrent;
+    const planarCurrent = currentSolid && planarGuide !== null && basisState !== undefined
+      && isPlanarBasisGuideCurrent(planarGuide, basisState);
+    const planarDrawings = planarGuide === null ? []
+      : [planarGuide.drawing, planarGuide.xDrawing, planarGuide.yDrawing];
+    planarBasisLayers.forEach((layer, index) => {
+      layer.update(planarCurrent ? planarDrawings[index] ?? null : null);
+      layer.group.visible = planarCurrent;
+    });
     // 配置した部品(FR-605)。同じ一式を渡し直したときは並びを触らない(NFR-PF-1)。
     assemblyLayer.update(assemblyBundle, displayStyle, environments.texture);
     sketchLayer.update(sketchBundle, displayStyle);
@@ -1288,6 +1334,10 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     referenceLayer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangle.height, uiScale);
     // 測定の値の札も同じ大きさ(約 13px)にそろえる(P5 タスク31)。
     measureLayer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangle.height, uiScale);
+    cylinderBasisLayer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangle.height, uiScale);
+    for (const layer of planarBasisLayers) {
+      layer.updateScreenScale(orbit.distance / (orbit.zoom ?? 1), rectangle.height, uiScale);
+    }
   }
 
   /** 1 枚描く。層の同期後、同じカメラで光源と renderer を更新する。 */
@@ -1296,7 +1346,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     // Layer disposal callbacks may change the live owner before the renderer consumes it.
     ensureCurrentSolidOwner();
     ensureCurrentAssemblyOwner();
-    currentRepairPreviewResource();
+    repairPreviews.ensureCurrent();
     const { orbit, projection } = settings;
     updateKeyLight(orbit);
     // Each quad pane uses this camera with the same world-space solid origins.
@@ -1432,249 +1482,15 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     return captureOwnersCurrent(reasonSink) ? result : null;
   }
 
-  /** 子層を既存順で解放する。renderer はこの呼出しの後に最後に解放する。 */
-  let repairPreviewRequest = 0;
-  let requestedRepairPreview: ReferenceRepairPreview | null = null;
-  let repairPreviewPending: Promise<void> | null = null;
-  let completedRepairPreviewRequest = -1;
-  const returnedRepairPreviews = new WeakSet<ReferenceRepairPreview>();
-  interface RepairPreviewResource {
-    readonly descriptor: ReferenceRepairPreview;
-    readonly gpuOwner: symbol;
-    readonly gpuBytes: number;
-    readonly cpuBytes: number;
-    readonly layer: ReturnType<typeof createSolidLayer> | null;
-    readonly cleanup: ViewportLifetime | null;
-    readonly proof: () => boolean;
-    retiring: boolean;
-    published: boolean;
-    cleanupError: string | null;
-  }
-  let repairPreviewResource: RepairPreviewResource | null = null;
+  const repairPreviews = createViewportRepairPreview(scene, uiBackings, options, () => lastRender?.displayStyle);
 
-  function observeRepairPreview(descriptor: ReferenceRepairPreview,
-    phase: Parameters<NonNullable<ViewportSceneOptions['observation']>['record']>[1],
-    reason: Parameters<NonNullable<ViewportSceneOptions['observation']>['record']>[2],
-    copies: number, attributes: number, reserved: number | null = null): void {
-    const viewportOwnerId = options.viewportOwnerId ?? 'unobserved';
-    options.observation?.record({ documentId: descriptor.documentId, generation: descriptor.generation, preview: true,
-      viewportOwnerId, resourceOwnerId: `${viewportOwnerId}:repair-preview:${descriptor.operationId}`,
-      operationId: `repair-preview-operation-${descriptor.operationId}`, publicationId: `repair-preview-publication-${descriptor.operationId}` },
-      phase, reason, { hostDisplayCopyBytes: copies, hostGpuAttributeBytes: attributes, hostGpuReservedBytes: reserved });
-  }
-
-  function repairPreviewProof(scope: WeakRef<ReferenceRepairPreviewBorrow['scope']>, receipt: RepairPreviewReceipt,
-    inspection: RepairPreviewInspection, input: WeakSet<ArrayBufferLike>, epoch: number): () => boolean {
-    return () => {
-      if (receipt.status !== 'known' || inspection.status !== 'known'
-        || scope.deref()?.currentInspection(inspection, receipt) !== true || !uiBackings.known()) return false;
-      const source = new Set<ArrayBufferLike>();
-      for (const reference of inspection.sameSourceBackings) {
-        const buffer = reference.deref(); if (buffer !== undefined) source.add(buffer);
-      }
-      let total = receipt.admittedBoundBytes + uiBackings.pending();
-      for (const buffer of uiBackings.buffers()) {
-        if (!(buffer instanceof ArrayBuffer) || !input.has(buffer) && !uiBackings.allocatedAfter(buffer, epoch)) return false;
-        try { new Uint8Array(buffer); } catch { return false; }
-        if (!source.has(buffer)) total += buffer.byteLength;
-      }
-      return Number.isSafeInteger(total) && total <= receipt.limitBytes;
-    };
-  }
-
-  function returnRepairPreview(): boolean {
-    const resource = repairPreviewResource;
-    if (resource === null) return true;
-    if (!resource.retiring) observeRepairPreview(resource.descriptor, resource.published ? 'release-start' : 'candidate-return-start',
-      disposed ? 'disposed' : resource.published ? 'superseded' : 'rejected', resource.cpuBytes, resource.gpuBytes);
-    resource.retiring = true;
-    if (resource.layer !== null) resource.layer.group.visible = false;
-    try {
-      if (resource.layer !== null) resource.layer.dispose();
-      if (resource.cleanup !== null) {
-        resource.cleanup.dispose();
-        if (resource.cleanup.pendingCount !== 0) { resource.cleanupError = resource.cleanup.errors.join('; '); return false; }
-      }
-    } catch (error) {
-      resource.cleanupError = error instanceof Error ? error.message : 'Reference repair preview return failed';
-      return false;
-    }
-    if (resource.layer !== null) scene.remove(resource.layer.group);
-    options.gpuMeshBudget?.release(resource.gpuOwner);
-    repairPreviewResource = null;
-    returnedRepairPreviews.add(resource.descriptor);
-    observeRepairPreview(resource.descriptor, resource.published ? 'release-complete' : 'candidate-return-complete',
-      disposed ? 'disposed' : resource.published ? 'superseded' : 'rejected', 0, 0, 0);
-    return true;
-  }
-
-  function currentRepairPreviewResource(): boolean {
-    const resource = repairPreviewResource;
-    if (resource === null) return true;
-    const state = options.readSolidMeshState?.();
-    if (!disposed && !resource.retiring && requestedRepairPreview === resource.descriptor && state !== undefined
-      && borrowReferenceRepairPreview(resource.descriptor, state) !== null && resource.proof()) return true;
-    returnRepairPreview();
-    return false;
-  }
-
-  async function observeRepairPreviewBudget(descriptor: ReferenceRepairPreview) {
-    const state = options.readSolidMeshState?.();
-    const borrowed = state === undefined ? null : borrowReferenceRepairPreview(descriptor, state);
-    if (borrowed === null || disposed || requestedRepairPreview !== descriptor || !uiBackings.known()) return recordReferenceRepairRejection('scene-budget:1');
-    // This is a fresh asynchronous provider observation, not a reused display receipt.
-    const receipt = await borrowed.scope.capture(`repair-preview:${descriptor.operationId}`, borrowed.displayBodies, borrowed.additionalOwners);
-    const after = options.readSolidMeshState?.();
-    if (after === undefined) return recordReferenceRepairRejection('scene-budget:2:after-unavailable');
-    if (borrowReferenceRepairPreview(descriptor, after)?.scope !== borrowed.scope) return recordReferenceRepairRejection('scene-budget:2:scope-changed');
-    if (disposed) return recordReferenceRepairRejection('scene-budget:2:disposed');
-    if (requestedRepairPreview !== descriptor) return recordReferenceRepairRejection('scene-budget:2:descriptor-changed');
-    if (receipt.status !== 'known') return recordReferenceRepairRejection(`scene-budget:2:receipt-unknown:${receipt.reason}`.slice(0, 120));
-    const numbers = [receipt.limitBytes, receipt.admittedBoundBytes, receipt.workerRetainedBackingBytes,
-      receipt.hostRetainedBackingBytes, receipt.pendingCloneReservedBytes];
-    if (!numbers.every(value => Number.isSafeInteger(value) && value >= 0)
-      || receipt.limitBytes <= 0 || receipt.limitBytes > 512 * 1024 * 1024
-      || receipt.admittedBoundBytes !== receipt.workerRetainedBackingBytes + receipt.hostRetainedBackingBytes + receipt.pendingCloneReservedBytes
-      || receipt.coverage !== 'registered-solid-mesh-backings-only' || !borrowed.scope.currentReceipt(receipt)) return recordReferenceRepairRejection('scene-budget:3');
-    const buffers = uiBackings.buffers(), epoch = uiBackings.epoch();
-    const inspection = await borrowed.scope.inspectBackings(receipt, buffers);
-    const latest = options.readSolidMeshState?.();
-    if (latest === undefined || borrowReferenceRepairPreview(descriptor, latest)?.scope !== borrowed.scope
-      || disposed || requestedRepairPreview !== descriptor || inspection.status !== 'known'
-      || inspection.coverage !== 'registered-main-solid-backings-only' || uiBackings.epoch() !== epoch
-      || !uiBackings.known() || !borrowed.scope.currentInspection(inspection, receipt)) return recordReferenceRepairRejection('scene-budget:4');
-    const input = new WeakSet<ArrayBufferLike>(buffers);
-    const sourceBackings = new Set<ArrayBufferLike>();
-    for (const reference of inspection.sameSourceBackings) {
-      const buffer = reference.deref();
-      if (buffer !== undefined) {
-        if (!input.has(buffer)) return recordReferenceRepairRejection('scene-budget:5');
-        sourceBackings.add(buffer);
-      }
-    }
-    const current = repairPreviewProof(new WeakRef(borrowed.scope), receipt, inspection, input, epoch);
-    const baseline = receipt.admittedBoundBytes;
-    const union = baseline + buffers.filter(buffer => !sourceBackings.has(buffer)).reduce((sum, buffer) => sum + buffer.byteLength, 0)
-      + uiBackings.pending();
-    if (!Number.isSafeInteger(union) || union > receipt.limitBytes || !current()) return recordReferenceRepairRejection('scene-budget:6');
-    return { borrowed, receipt, sourceBackings, baseline, union, current };
-  }
-
-  function setReferenceRepairPreview(descriptor: ReferenceRepairPreview | null): Promise<void> {
-    if (disposed) return Promise.resolve();
-    if (descriptor !== requestedRepairPreview) {
-      requestedRepairPreview = descriptor; repairPreviewRequest++;
-      returnRepairPreview(); // Hide immediately, even while a provider query is pending.
-    } else if (repairPreviewResource !== null && currentRepairPreviewResource()) return Promise.resolve();
-    if (repairPreviewPending !== null) return repairPreviewPending;
-    const pending = drainRepairPreview();
-    repairPreviewPending = pending;
-    const completed = () => {
-      if (repairPreviewPending !== pending) return;
-      repairPreviewPending = null;
-      if (!disposed && completedRepairPreviewRequest !== repairPreviewRequest) {
-        void setReferenceRepairPreview(requestedRepairPreview).catch(() => { returnRepairPreview(); });
-      }
-    };
-    void pending.then(completed, () => { returnRepairPreview(); completed(); });
-    return pending;
-  }
-
-  async function drainRepairPreview(): Promise<void> {
-    // One provider transaction at a time; repeated hover retains only the newest metadata.
-    let completed = -1;
-    while (!disposed && completed !== repairPreviewRequest) {
-      completed = repairPreviewRequest;
-      completedRepairPreviewRequest = completed;
-      const descriptor = requestedRepairPreview;
-      if (!returnRepairPreview() || descriptor === null) return;
-      await buildRepairPreview(descriptor, completed);
-    }
-  }
-
-  async function buildRepairPreview(descriptor: ReferenceRepairPreview, request: number): Promise<void> {
-    const alive = () => !disposed && request === repairPreviewRequest && requestedRepairPreview === descriptor;
-    const cpuOwner = {};
-    let gpuOwner: symbol | null = null;
-    let buildStarted = false, published = false, allocatedBytes = 0;
-    try {
-      const before = await observeRepairPreviewBudget(descriptor);
-      if (!alive() || before === null || options.gpuMeshBudget === undefined) return;
-      buildStarted = true;
-      observeRepairPreview(descriptor, 'build-start', null, 0, 0);
-      // The reservation lasts only through the synchronous count/fill transaction.
-      uiBackings.reserve(cpuOwner, before.receipt.limitBytes - before.union, before.baseline,
-        before.receipt.limitBytes, before.sourceBackings);
-      let overlays: SubShapeHighlightBundle;
-      try {
-        overlays = buildSubShapeGeometry([before.borrowed.body], descriptor.elementId, [],
-          { limitBytes: before.receipt.limitBytes, reservedBytes: before.union }, buffer => {
-            allocatedBytes += buffer.byteLength; uiBackings.allocated(buffer);
-          });
-      } finally { uiBackings.retire(cpuOwner); }
-      const bytes = subShapeOverlayBytes(overlays);
-      observeRepairPreview(descriptor, 'build-complete', 'completed', allocatedBytes, 0);
-      if (bytes === 0 || !alive()) return;
-      // Actual copies have now been registered. Observe all providers again before native publication.
-      const publication = await observeRepairPreviewBudget(descriptor);
-      if (!alive() || publication === null || !publication.current()) return;
-      gpuOwner = Symbol(`repair-preview:${descriptor.operationId}`);
-      if (!options.gpuMeshBudget.reserve(gpuOwner, bytes)) { gpuOwner = null; return; }
-      observeRepairPreview(descriptor, 'publish-start', null, allocatedBytes, 0,
-        options.gpuMeshBudget.reservedBytes?.(gpuOwner) ?? null);
-      let candidateLayer: ReturnType<typeof createSolidLayer>;
-      try { candidateLayer = createSolidLayer(); }
-      catch (error) {
-        if (error instanceof ViewportResourceInitializationFailure && error.cleanup.pendingCount !== 0) {
-          repairPreviewResource = { descriptor, gpuOwner, gpuBytes: 0, cpuBytes: 0,
-            layer: null, cleanup: error.cleanup, proof: () => false, retiring: false, published: false, cleanupError: null };
-          gpuOwner = null;
-        }
-        throw error;
-      }
-      repairPreviewResource = { descriptor, gpuOwner, gpuBytes: bytes, cpuBytes: bytes,
-        layer: candidateLayer, cleanup: null, proof: publication.current, retiring: false, published: false, cleanupError: null };
-      gpuOwner = null;
-      candidateLayer.group.visible = false;
-      candidateLayer.update(EMPTY_SOLID_GEOMETRY, lastRender?.displayStyle ?? 'shadedWithEdges', null);
-      candidateLayer.updateSubShapes(overlays);
-      const placement = publication.borrowed.placement;
-      if (placement !== null) {
-        candidateLayer.group.position.set(...placement.position);
-        candidateLayer.group.quaternion.set(...placement.rotation);
-      }
-      candidateLayer.group.updateMatrix();
-      // Batch origins stay local Double transforms beneath the actual Assembly placement.
-      if (!alive() || !currentRepairPreviewResource()) { returnRepairPreview(); return; }
-      scene.add(candidateLayer.group);
-      candidateLayer.group.visible = true;
-      published = true;
-      if (repairPreviewResource !== null) repairPreviewResource.published = true;
-      observeRepairPreview(descriptor, 'publish-complete', 'completed', allocatedBytes, bytes);
-    } catch (error) {
-      if (error instanceof AllocatedBackingRegistrationError) uiBackings.retainUnregistered(error.backing);
-      returnRepairPreview();
-      // Unavailable/unknown is a hidden preview, never a success proof or a document mutation.
-    } finally {
-      uiBackings.retire(cpuOwner);
-      if (gpuOwner !== null) options.gpuMeshBudget?.release(gpuOwner);
-      if (buildStarted && !published) {
-        observeRepairPreview(descriptor, 'operation-aborted', 'rejected', allocatedBytes, 0);
-        if (repairPreviewResource?.descriptor !== descriptor && !returnedRepairPreviews.has(descriptor)) {
-          observeRepairPreview(descriptor, 'candidate-return-start', 'rejected', allocatedBytes, 0);
-          observeRepairPreview(descriptor, 'candidate-return-complete', 'rejected', 0, 0, 0);
-          returnedRepairPreviews.add(descriptor);
-        }
-      }
-    }
-  }
   function disposeOwnedLayers(): void {
     if (ownedCleanup === null) {
       if (observedPublishedOwner !== null) observeMesh(observedPublishedOwner, 'release-start', 'disposed');
       ownedCleanup = createViewportLifetime();
       ownedCleanup.register('environment', () => { environments.dispose(); });
       ownedCleanup.register('reference repair preview', () => {
-        if (!returnRepairPreview()) throw new Error('Reference repair preview resources remain pending');
+        if (!repairPreviews.returnResources()) throw new Error('Reference repair preview resources remain pending');
       });
       ownedCleanup.register('solid layer', () => { solidLayer.dispose(); });
       ownedCleanup.register('assembly layer', () => {
@@ -1691,6 +1507,10 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
       ownedCleanup.register('constraint layer', () => { constraintLayer.dispose(); });
       ownedCleanup.register('inference layer', () => { inferenceLayer.dispose(); });
       ownedCleanup.register('measure layer', () => { measureLayer.dispose(); });
+      ownedCleanup.register('cylinder basis layer', () => { cylinderBasisLayer.dispose(); });
+      for (const [index, layer] of planarBasisLayers.entries()) {
+        ownedCleanup.register(`planar basis layer ${index}`, () => { layer.dispose(); });
+      }
       const gridGeometry = grid.geometry, axisGeometry = axisLines.geometry;
       ownedCleanup.register('grid geometry', () => { gridGeometry.dispose(); });
       ownedCleanup.register('axis geometry', () => { axisGeometry.dispose(); });
@@ -1759,7 +1579,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     },
 
     setAssembly: rebuildAssembly,
-    setReferenceRepairPreview,
+    setReferenceRepairPreview: repairPreviews.setReferenceRepairPreview,
 
     setInterference(result, selectedKey): void {
       interferenceLayer.update(result, selectedKey);
@@ -1847,6 +1667,21 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
       canvasLayer.update(draws);
     },
 
+    setCylinderBasisGuide(guide): void {
+      if (disposed) return;
+      cylinderGuide = guide;
+      if (guide === null) cylinderBasisLayer.update(null);
+    },
+
+    setPlanarBasisGuide(guide): void {
+      if (disposed) return;
+      planarGuide = guide;
+      for (const layer of planarBasisLayers) {
+        layer.update(null);
+        layer.group.visible = false;
+      }
+    },
+
     setSphereGrid(spec): void {
       if (sameSphereGridSpec(sphereGridSpec, spec)) {
         return;
@@ -1863,9 +1698,21 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
       return solidLayer.pickBody(raycaster);
     },
 
-    pickComponent(screenX, screenY): string | null {
-      if (!ensureCurrentAssemblyOwner() || !prepareCameraRay(screenX, screenY)) return null;
-      return assemblyLayer.pickComponent(raycaster);
+    pickComponent(screenX, screenY, observation): string | null {
+      try {
+        const ownerAccepted = ensureCurrentAssemblyOwner();
+        if (observation !== undefined) observation.ownerAccepted = ownerAccepted;
+        if (!ownerAccepted) return null;
+        const cameraReady = prepareCameraRay(screenX, screenY);
+        if (observation !== undefined) observation.cameraReady = cameraReady;
+        if (!cameraReady) return null;
+        const hit = assemblyLayer.pickComponent(raycaster);
+        if (observation !== undefined) observation.hitComponentId = hit;
+        return hit;
+      } catch (error) {
+        if (observation !== undefined) observation.failed = true;
+        throw error;
+      }
     },
 
     pickAssemblyFace(screenX, screenY, observation) {
@@ -1920,6 +1767,8 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
       constraintLayer.setThemeColors(colors);
       inferenceLayer.setThemeColors(colors);
       measureLayer.setThemeColors(colors);
+      cylinderBasisLayer.setThemeColors(colors);
+      for (const layer of planarBasisLayers) layer.setThemeColors(colors);
     },
 
     setWorkPlaneVisible(visible): void {
@@ -1960,19 +1809,23 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
 
     meshReservation(): ViewportMeshReservation {
       const assembly = assemblyLayer.meshReservation();
+      const repair = repairPreviews.meshReservation();
       return { repairPreviewRejections: readReferenceRepairRejections(), registeredUiBackingBytes: uiBackings.known() ? uiBackings.bytes() : null,
         registeredUiPendingBytes: uiBackings.pending(),
         displayCopyBytes: Math.max(disposalDisplayCopyBytes, distinctBackingBytes([...liveDisplayCopies(solidBundle, subShapeBundle),
-        ...displayCopies.buffers()])) + assembly.displayCopyBytes + (repairPreviewResource?.cpuBytes ?? 0),
-        gpuMeshBytes: publishedGpuBytes + assembly.gpuMeshBytes + (repairPreviewResource?.gpuBytes ?? 0),
+        ...displayCopies.buffers()])) + assembly.displayCopyBytes + repair.displayCopyBytes,
+        gpuMeshBytes: publishedGpuBytes + assembly.gpuMeshBytes + repair.gpuMeshBytes,
+        environmentReservedBytes: environments.reservedBytes,
+        environmentCleanupStatus: environments.cleanupPending ? 'pending' : 'complete',
         assemblySourceBackingBytes: assembly.sourceBackingBytes, assemblyInstanceBytes: assembly.instanceBytes,
         assemblyCleanupReservedCpuBytes: assembly.cleanupReservedCpuBytes,
         assemblyCleanupStatus: assembly.cleanupStatus,
-        viewportCleanupStatus: repairPreviewResource?.retiring === true || ownedCleanup !== null && ownedCleanup.pendingCount !== 0 ? 'pending' : 'complete',
+        viewportCleanupStatus: environments.cleanupPending || repair.cleanupPending
+          || ownedCleanup !== null && ownedCleanup.pendingCount !== 0 ? 'pending' : 'complete',
         viewportCleanupErrors: Object.freeze([...(ownedCleanup?.errors ?? []),
-          ...(repairPreviewResource?.cleanupError === null || repairPreviewResource?.cleanupError === undefined ? [] : [repairPreviewResource.cleanupError])]),
+          ...repair.cleanupErrors]),
         uncovered: Object.freeze([...new Set([...UNCOVERED_MESH_RESOURCES, ...assembly.uncovered,
-          ...(repairPreviewResource !== null && (repairPreviewResource.retiring || !repairPreviewResource.proof()) ? ['referenceRepairPreviewCleanup'] : []),
+          ...repair.uncovered,
           ...(ownedCleanup !== null && ownedCleanup.pendingCount !== 0 ? ['retiredViewportResources'] : [])])]) };
     },
 
@@ -2066,7 +1919,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     dispose(): void {
       if (disposed) { disposeOwnedLayers(); return; }
       disposed = true;
-      repairPreviewRequest++; requestedRepairPreview = null;
+      repairPreviews.retire();
       disposalDisplayCopyBytes = distinctBackingBytes([...liveDisplayCopies(solidBundle, subShapeBundle), ...displayCopies.buffers()]);
       assemblyOwner = null; assemblyCandidateOwner = null; assemblyBundle = EMPTY_ASSEMBLY_GEOMETRY;
       solidOwner = null;

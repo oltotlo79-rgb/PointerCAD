@@ -5079,6 +5079,17 @@ function allSolidFeatures(): SolidFeatureByKind {
     },
     // 平らな面の移動(EX-18)。保存するのは対象の id・面の指紋・符号付きの距離の式だけ。
     // 負の式(内向き)を入れて、符号ごと往復することを確かめる。
+    holeTranslate: {
+      id: 'holeTranslate-1', kind: 'holeTranslate', name: '穴の移動1', suppressed: false,
+      targetFeatureId: 'extrude-1', face: faceRef('extrude-1', 3),
+      translation: [ev('2', 2), ev('0', 0), ev('0', 0)],
+    },
+    faceRotate: {
+      id: 'faceRotate-1', kind: 'faceRotate', name: '面の回転1', suppressed: false,
+      targetFeatureId: 'extrude-1', face: faceRef('extrude-1', 3),
+      hinge: { bodyFeatureId: 'extrude-1', index: 0, fingerprint: { kind: 'edge', curveKind: 'line',
+        length: 40, position: [20, 0, 8], axis: [1, 0, 0], radius: null } }, angle: ev('5', 5),
+    },
     faceOffset: {
       id: 'faceOffset-1',
       kind: 'faceOffset',
@@ -5258,9 +5269,9 @@ function documentWithAllSolids(): PartDocument {
 }
 
 describe('26 種すべての読み書き(P5 タスク47・P6 タスク20、FR-801、FR-202)', () => {
-  it('板金と関数曲面・面の移動を含む33種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
+  it('板金と関数曲面・直接編集を含む35種のソリッドフィーチャーが1つの文書で往復しても一致する', () => {
     const document = documentWithAllSolids();
-    expect(document.solids).toHaveLength(33);
+    expect(document.solids).toHaveLength(35);
     expect(roundTrip(document)).toEqual({ ...document, patternSlotHighWater: { 'pattern-1': 7 } });
   });
 

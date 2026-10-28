@@ -169,6 +169,8 @@ const GUIDE_KEYS = {
   */
   draft: 'statusBar.guide.draft',
   faceOffset: 'statusBar.guide.faceOffset',
+  holeTranslate: 'statusBar.guide.holeTranslate',
+  faceRotate: 'statusBar.guide.faceRotate',
   mirrorSolid: 'statusBar.guide.mirrorSolid',
   transform: 'statusBar.guide.transform',
   scale: 'statusBar.guide.scale',
@@ -866,6 +868,8 @@ export function springGuideText(
  */
 export const NUMERIC_STEP_GUIDE_KEYS: Readonly<Partial<Record<NumericInputStep, MessageKey>>> = {
   faceOffsetDistance: 'statusBar.guide.faceOffsetDistance',
+  holeTranslateVector: 'statusBar.guide.holeTranslate',
+  faceRotateAngle: 'statusBar.guide.faceRotate',
   lineEnd: 'statusBar.guide.lineEnd',
   arcShape: 'statusBar.guide.arcShape',
   pointArrayShape: 'statusBar.guide.pointArrayShape',

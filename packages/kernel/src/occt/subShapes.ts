@@ -1,3 +1,4 @@
+import { readNativePlanarBasis } from './planarFaceBasis.js';
 import type {
   OpenCascadeInstance,
   TopoDS_Edge,
@@ -20,6 +21,7 @@ import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 import type { Allocations } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { cylindricalFaceAxialExtent, cylindricalFaceSpan } from './cylindricalFaceSpan.js';
+import { readCylinderDisplayBasis } from './cylinderDisplayBasis.js';
 import type { EdgeSegmentRange } from './extractEdges.js';
 import type { FaceTriangleRange } from './tessellate.js';
 
@@ -76,6 +78,8 @@ function directionToTuple(direction: gp_Dir, reverse: boolean): Vec3Tuple | null
 
 /** 面の下地の曲面から取れる素性(種類・軸・半径)。 */
 interface FaceGeometry {
+  readonly planarBasis?: SolidFaceInfo['planarBasis'];
+  readonly cylinderBasis?: SolidFaceInfo['cylinderBasis'];
   readonly analyticSurface?: SolidFaceInfo['analyticSurface'];
   readonly cylinderSpan?: readonly [number, number] | null;
   readonly cylinderAxialExtent?: readonly [number, number] | null;
@@ -125,7 +129,9 @@ function readFaceGeometry(
     const plane = keep(adaptor.Plane());
     const axis = keep(plane.Axis());
     const direction = keep(axis.Direction());
-    return { surfaceKind: 'plane', axis: directionToTuple(direction, reversed), axisOrigin: null, radius: null };
+    const planarBasis = readNativePlanarBasis(oc, face, keep);
+    return { surfaceKind: 'plane', axis: directionToTuple(direction, reversed), axisOrigin: null, radius: null,
+      ...(planarBasis === null ? {} : { planarBasis }) };
   }
   if (surfaceType === kinds.GeomAbs_Cylinder) {
     const cylinder = keep(adaptor.Cylinder());
@@ -140,6 +146,7 @@ function readFaceGeometry(
     return {
       surfaceKind: 'cylinder',
       axis: orientedAxis,
+      cylinderBasis: readCylinderDisplayBasis(oc, face, allocations),
       axisOrigin,
       radius,
       cylinderSpan: cylindricalFaceSpan(oc, face, axisOrigin, orientedAxis, radius, allocations),
@@ -322,6 +329,8 @@ function buildFaceInfo(
   return {
     index,
     surfaceKind: geometry.surfaceKind,
+    ...(geometry.planarBasis === undefined ? {} : { planarBasis: geometry.planarBasis }),
+    ...(geometry.cylinderBasis === undefined ? {} : { cylinderBasis: geometry.cylinderBasis }),
     ...(geometry.analyticSurface === undefined ? {} : { analyticSurface: geometry.analyticSurface }),
     area: normalizeZero(properties.Mass()),
     centroid: pointToTuple(centre),

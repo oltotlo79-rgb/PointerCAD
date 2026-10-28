@@ -19,6 +19,7 @@ import type { FeatureNote } from '../history/featureNotes.js';
  */
 
 import type { SolidFeatureBase } from './featureIdentity.js';
+import type { HoleTranslateFeature, FaceRotateFeature } from './directEditOperations.js';
 import type { FaceOffsetFeature } from './directFaceEdit.js';
 import type { FunctionSurfaceFeature } from '../functionGeometry/functionSurfaceFeature.js';
 import type { SheetBaseFeature, SheetFlangeFeature, SheetBendFeature, SheetReliefFeature, SheetUnfoldDefinition } from '../sheetMetal/types.js';
@@ -48,6 +49,11 @@ import type { ThreadSeries } from '../thread/metricThread.js';
 // 読み込んだ形の素性(`ImportedSource.unit`、FR-811)が使う長さの単位。正本は
 // `units/length.ts`(P6 タスク1)で、ここは型だけを借りる。
 import type { LengthUnit } from '../units/length.js';
+import type { StandardPartSource as TypeStandardPartSource } from '../assembly/resolveAssembly.js';
+import type { CanvasRectification as TypeCanvasRectification } from '../sketch/canvasHomography.js';
+import type { BeamAnalysisInputs as TypeBeamAnalysisInputs } from '../analysis/beamInputs.js';
+import type { MathGeometryDefinition as TypeMathGeometryDefinition } from '../measure/mathGeometryTypes.js';
+
 
 /** 読み込んだ原本と、その内容の SHA-256。文書の JSON へは保存しない。 */
 export interface ImportedShape {
@@ -218,6 +224,8 @@ export type SolidFeatureKind =
   | 'draft'
   /** 平らな面の移動(EX-18 の限られた一段、directFaceEdit.ts)。対象を消費する。 */
   | 'faceOffset'
+  | 'holeTranslate'
+  | 'faceRotate'
   /** ミラー(FR-419)。鏡像を 1 つ作る。**対象を消費しない**(§0.a-0.36)。 */
   | 'mirror'
   /** 移動/回転(FR-424)。剛体変換した立体を作る。対象を消費する(§0.a-0.41)。 */
@@ -481,6 +489,8 @@ export interface HoleFeature extends SolidFeatureBase {
    * (曲面の上の傾き・ざぐり・皿もみの意味をまだ扱わないため。黙って平面の穴にしない)。
    */
   readonly cylindrical?: CylindricalHolePlacement;
+  /** 面内の符号付きmm座標。centers・cylindricalとは同時に指定しない。 */
+  readonly planar?: PlanarHolePlacement;
 }
 
 /**
@@ -492,6 +502,12 @@ export interface HoleFeature extends SolidFeatureBase {
 export interface CylindricalHoleLocationValue {
   readonly height: ExpressionValue;
   readonly angle: ExpressionValue;
+}
+
+/** 面内X・Yの元式。現在の面の基準で毎回評価し、世界点は保存しない。 */
+export interface PlanarHolePlacement {
+  readonly kind: 'plane-face';
+  readonly locations: readonly { readonly x: ExpressionValue; readonly y: ExpressionValue }[];
 }
 
 /** 円筒の側面の穴(EX05)。位置ごとに別の放射方向へ掘る。 */
@@ -533,6 +549,8 @@ export interface ThreadHoleFeature extends SolidFeatureBase {
    * 意味と断り方は穴の `HoleFeature.cylindrical` と同じ(`centers` は空、傾きは 0、入口は皿もみでない)。
    */
   readonly cylindrical?: CylindricalHolePlacement;
+  /** 面内の符号付きmm座標。centers・cylindricalとは同時に指定しない。 */
+  readonly planar?: PlanarHolePlacement;
 }
 
 /**
@@ -959,7 +977,7 @@ export interface SteelBendFeatureInput {
   readonly generatorRevision: string;
   /** Exact catalog row identity; never inferred from a legacy sweep. */
   readonly productKey: string;
-  readonly stockSource: import('../assembly/resolveAssembly.js').StandardPartSource;
+  readonly stockSource: TypeStandardPartSource;
   readonly radiusConvention: 'inside' | 'outside';
   readonly legDimension: 'tangent' | 'inside' | 'outside';
   readonly radius: ExpressionValue;
@@ -1364,6 +1382,8 @@ export type SolidFeature =
   | DraftFeature
   // 平らな面の移動(EX-18 の限られた一段)。保存形は directFaceEdit.ts が持つ。
   | FaceOffsetFeature
+  | HoleTranslateFeature
+  | FaceRotateFeature
   | MirrorFeature
   | TransformFeature
   | ScaleFeature
@@ -1590,7 +1610,7 @@ export interface SketchCanvas {
    */
   readonly opacity: ExpressionValue;
   /** Source image's normalized TL/TR/BR/BL corners; homography is derived. */
-  readonly rectification?: import('../sketch/canvasHomography.js').CanvasRectification;
+  readonly rectification?: TypeCanvasRectification;
   /** 画面に出すか(FR-332 の「入切」)。false でも文書からは消えない。 */
   readonly visible: boolean;
 }
@@ -1601,13 +1621,13 @@ export interface SketchCanvas {
  */
 export interface PartDocument {
   /** Optional versioned user inputs; no solver results or derived CAD node positions. */
-  readonly beamAnalysisInputs?: import('../analysis/beamInputs.js').BeamAnalysisInputs;
+  readonly beamAnalysisInputs?: TypeBeamAnalysisInputs;
   /** Explicit purchased steel provenance; absent in legacy/non-steel documents. Never inferred from shape. */
-  readonly steelStockSource?: import('../assembly/resolveAssembly.js').StandardPartSource;
+  readonly steelStockSource?: TypeStandardPartSource;
   /** Issued point-slot high-water marks, retained across deletion and undo branches. */
   readonly patternSlotHighWater?: Readonly<Record<string, number>>;
   /** 版17: 図形を測る定義。測定した数値・成功状態・計算世代は保存しない。 */
-  readonly mathGeometry?: readonly import('../measure/mathGeometryTypes.js').MathGeometryDefinition[];
+  readonly mathGeometry?: readonly TypeMathGeometryDefinition[];
   /** 版16: 解けていない式と条件。数値・形状の代用品として使用しない。 */
   readonly unresolvedMathProblems?: readonly UnresolvedMathProblem[];
   /** 版15: 設計メモは付加情報であり、形状と履歴の順序には影響しない。 */

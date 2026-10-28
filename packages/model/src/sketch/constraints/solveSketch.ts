@@ -32,6 +32,7 @@ import type { ResolvedSketch, SketchDocument, SketchError } from '../types.js';
 import type { Vec3 } from '../vec3.js';
 import { diagnoseConstraints, type ConstraintDiagnosis } from './diagnose.js';
 import { buildResiduals } from './residuals.js';
+import { dragTranslationSeed } from './dragTranslationSeed.js';
 import {
   CONSTRAINT_TOLERANCE,
   createLevenbergMarquardtJob,
@@ -456,7 +457,32 @@ function prepareConstrainedSketch(
     }
     return withPins;
   };
-  const solver = createLevenbergMarquardtJob(variableSet.initial, evaluate, solveOptions);
+  // A certified translation is only a better initial vector. The same evaluator/LM,
+  // soft pin, cancellation stages and pin-free commit recalculation remain authoritative.
+  // Explicit numerical overrides keep their original path (including a zero iteration budget).
+  const defaultNumerics = solveOptions?.maxIterations === undefined && solveOptions?.tolerance === undefined
+    && solveOptions?.initialDamping === undefined && solveOptions?.stepTolerance === undefined;
+  const weight = solveOptions?.pinnedWeight ?? DRAG_PIN_WEIGHT;
+  // Retain only the candidate just verified by the seed's unchanged evaluator.
+  // This state belongs to this synchronous setup, never another document/job.
+  const seedEvaluation: { x: readonly number[] | null; rows: readonly LinearizedRow[] | null } = { x: null, rows: null };
+  const evaluateSeed = (x: readonly number[]): readonly LinearizedRow[] => {
+    const rows = evaluate(x);
+    seedEvaluation.x = x; seedEvaluation.rows = rows;
+    return rows;
+  };
+  const seed = defaultNumerics && pinned !== undefined && pins.length === 1 && base.errors.length === 0
+    && constraintInputErrors.length === 0 && Number.isFinite(weight) && weight > 0
+    ? dragTranslationSeed(document, variableSet, constraints, pinned, evaluateSeed, CONSTRAINT_TOLERANCE) : null;
+  let verifiedRows = seed !== null && seedEvaluation.x === seed ? seedEvaluation.rows : null;
+  const solverEvaluate = verifiedRows === null ? evaluate : (x: readonly number[]): readonly LinearizedRow[] => {
+    const rows = verifiedRows;
+    verifiedRows = null;
+    // LM copies the initial vector. Check every coordinate before one-use reuse.
+    return rows !== null && seed !== null && x.length === seed.length && x.every((value, i) => Object.is(value, seed[i]))
+      ? rows : evaluate(x);
+  };
+  const solver = createLevenbergMarquardtJob(seed ?? variableSet.initial, solverEvaluate, solveOptions);
   const complete = (outcome: SolveOutcome): ConstrainedSketch => {
 
     /*

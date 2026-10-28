@@ -5,20 +5,27 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { SolidEdgeInfo, SolidFaceInfo, Vec3Tuple } from '../types.js';
 import * as allocationModule from './allocations.js';
-import type { Allocations, OcctDeletable } from './allocations.js';
+import type { Allocations } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { writeBrepBytes } from './brepBytes.js';
+import {
+  auditDirectEdit, boundaryBox, observeDirectEditOwnership as observeOwnership, reverseCurveBox, throwNativeDirectionError,
+} from './directEditBoundary.testSupport.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import {
   FACE_ROTATION_ANGLE_MESSAGE, FACE_ROTATION_COLLISION_MESSAGE, FACE_ROTATION_CURVED_EDGE_MESSAGE,
   FACE_ROTATION_EDGE_NOT_ON_FACE_MESSAGE, FACE_ROTATION_FOREIGN_EDGE_MESSAGE, FACE_ROTATION_FOREIGN_FACE_MESSAGE,
+  FACE_ROTATION_INVALID_BODY_MESSAGE, FACE_ROTATION_NOT_PLANAR_MESSAGE, FACE_ROTATION_BOX_MESSAGE,
+  FACE_ROTATION_FAILED_MESSAGE,
   rotateSolidFace, type FaceRotationResult,
 } from './rotateSolidFace.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
+import * as solidMeshModule from './solidMesh.js';
 import { countSolidShapes } from './solidTopology.js';
 import { collectSubShapes, edgeAt, faceAt, type SubShapeTables } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { IDENTITY_TRANSFORM, transformShape } from './transformShape.js';
 
 /**
  * EX-18 W16 R1: the W16 box (0<=x<=40, 0<=y<=30, 0<=z<=8, MakeBox_2(40, 30, 8)) with one planar face
@@ -36,7 +43,7 @@ const ROTATION = Math.PI / 5;
 const TRANSLATION: Vec3Tuple = [7, -4, 11];
 const CORNERS: readonly Vec3Tuple[] = [0, 40].flatMap(x => [0, 30].flatMap(y => [0, 8].map((z): Vec3Tuple => [x, y, z])));
 
-type Build = 'plain' | 'turned' | 'halfTurned';
+type Build = 'plain' | 'turned' | 'halfTurned' | 'located' | 'reverseCurve';
 
 function separation(a: Vec3Tuple, b: Vec3Tuple): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -62,11 +69,11 @@ function turnedVector(v: Vec3Tuple): Vec3Tuple {
 
 /** The half turn about the vertical line (20, 15) maps the box region onto itself, so its specs stay in world terms. */
 function placePoint(v: Vec3Tuple, build: Build): Vec3Tuple {
-  return build === 'turned' ? add(turnedVector(v), TRANSLATION) : v;
+  return build === 'turned' || build === 'located' ? add(turnedVector(v), TRANSLATION) : v;
 }
 
 function placeDirection(v: Vec3Tuple, build: Build): Vec3Tuple {
-  return build === 'turned' ? turnedVector(v) : v;
+  return build === 'turned' || build === 'located' ? turnedVector(v) : v;
 }
 
 function record(label: string, data: object): void {
@@ -93,6 +100,22 @@ const W16_HINGE = { faceNormal: [0, 0, 1], hingeMidpoint: [20, 0, 8], hingeLengt
 const FAR_FROM_Y0 = (v: Vec3Tuple): boolean => v[1] === 30 && v[2] === 8;
 
 const CASES: readonly RotationCase[] = [
+  { name: 'R2 TopLoc_Location: world-space normal and hinge direction', build: 'located', ...W16_HINGE,
+    angle: THETA, isFar: FAR_FROM_Y0, lift: [0, 0, 30 * T], turnedNormal: [0, -S, C], volume: 9600 + 18000 * T },
+  { name: 'R2 curve constructed from (40,0) to (0,0), not edge.Reversed()', build: 'reverseCurve',
+    ...W16_HINGE, hingeAxis: [-1, 0, 0], angle: THETA, isFar: FAR_FROM_Y0,
+    lift: [0, 0, -30 * T], turnedNormal: [0, S, C], volume: 9600 - 18000 * T },
+  ...[60.01, 75, 85, 89].map((degrees): RotationCase => {
+    const angle = degrees * Math.PI / 180;
+    return { name: `R2 outward ${degrees} degrees`, build: 'plain', ...W16_HINGE, angle,
+      isFar: FAR_FROM_Y0, lift: [0, 0, 30 * Math.tan(angle)],
+      turnedNormal: [0, -Math.sin(angle), Math.cos(angle)], volume: 9600 + 18000 * Math.tan(angle) };
+  }),
+  { name: 'R2 just inside collapse boundary (-atan(8/30) + 1e-6 rad)', build: 'plain', ...W16_HINGE,
+    angle: -Math.atan(8 / 30) + 1e-6, isFar: FAR_FROM_Y0,
+    lift: [0, 0, 30 * Math.tan(-Math.atan(8 / 30) + 1e-6)],
+    turnedNormal: [0, -Math.sin(-Math.atan(8 / 30) + 1e-6), Math.cos(-Math.atan(8 / 30) + 1e-6)],
+    volume: 9600 + 18000 * Math.tan(-Math.atan(8 / 30) + 1e-6) },
   { name: '+5 deg about the W16 hinge y=0 (runs +X): the top rises to z = 8 + 30 tan 5', build: 'plain', ...W16_HINGE,
     angle: THETA, isFar: FAR_FROM_Y0, lift: [0, 0, 30 * T], turnedNormal: [0, -S, C], volume: 9600 + 18000 * T },
   { name: '-5 deg about the same hinge: the top falls to z = 8 - 30 tan 5', build: 'plain', ...W16_HINGE,
@@ -123,6 +146,11 @@ const REFUSALS = [
 ] as const;
 
 const LIMITS = [
+  { name: 'R2 collapse boundary exactly -atan(8/30)', angle: -Math.atan(8 / 30), message: FACE_ROTATION_COLLISION_MESSAGE },
+  { name: 'R2 beyond collapse boundary by 1e-6 rad', angle: -Math.atan(8 / 30) - 1e-6,
+    message: FACE_ROTATION_COLLISION_MESSAGE },
+  { name: 'R2 inside but remaining height below 1e-6 mm', angle: -Math.atan(8 / 30) + 1e-9,
+    message: FACE_ROTATION_COLLISION_MESSAGE },
   { name: '-15 deg about the W16 hinge (the far edge would pass the bottom)', angle: -15 * Math.PI / 180,
     message: FACE_ROTATION_COLLISION_MESSAGE },
   { name: '1e-12 rad (the far edge would move less than 1e-6 mm)', angle: 1e-12, message: FACE_ROTATION_ANGLE_MESSAGE },
@@ -143,14 +171,20 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
 
   function boxOf(owned: Allocations, build: Build): TopoDS_Shape {
     const { keep } = owned;
+    if (build === 'reverseCurve') return reverseCurveBox(oc, owned);
     const box = keep(keep(new oc.BRepPrimAPI_MakeBox_2(40, 30, 8)).Shape());
     if (build === 'plain') return box;
     const transform = keep(new oc.gp_Trsf_1());
-    if (build === 'turned') {
+    if (build === 'turned' || build === 'located') {
       transform.SetRotation_1(keep(new oc.gp_Ax1_2(keep(new oc.gp_Pnt_3(0, 0, 0)), keep(new oc.gp_Dir_4(1, 2, 3)))), ROTATION);
       transform.SetTranslationPart(keep(new oc.gp_Vec_4(...TRANSLATION)));
     } else {
       transform.SetRotation_1(keep(new oc.gp_Ax1_2(keep(new oc.gp_Pnt_3(20, 15, 0)), keep(new oc.gp_Dir_4(0, 0, 1)))), Math.PI);
+    }
+    if (build === 'located') {
+      const located = keep(box.Located(keep(new oc.TopLoc_Location_2(transform)), false));
+      expect(keep(located.Location_1()).IsIdentity()).toBe(false);
+      return located;
     }
     return keep(keep(new oc.BRepBuilderAPI_Transform_2(box, transform, true)).Shape());
   }
@@ -189,32 +223,6 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
     return owned.keep(edge);
   }
 
-  /** Observe actual allocations (as in H1); every OCCT constructor and algorithm still runs in the real kernel. */
-  function observeOwnership() {
-    const actualCreate = allocationModule.createAllocations;
-    const entries = new Map<OcctDeletable, { calls: number }>();
-    const spy = vi.spyOn(allocationModule, 'createAllocations').mockImplementation(() => {
-      const actual = actualCreate();
-      const keep: Allocations['keep'] = item => {
-        expect(entries.has(item)).toBe(false);
-        const entry = { calls: 0 }, original = item.delete.bind(item);
-        entries.set(item, entry);
-        item.delete = () => { entry.calls++; original(); };
-        return actual.keep(item);
-      };
-      return { keep, release: actual.release };
-    });
-    return {
-      stop: () => { spy.mockRestore(); },
-      verify: () => {
-        const counts = [...entries.values()].map(entry => entry.calls);
-        expect(counts.every(count => count === 1)).toBe(true);
-        return { ownedWrappers: counts.length, ownedDeletes: counts.reduce((sum, count) => sum + count, 0),
-          remaining: counts.filter(count => count === 0).length };
-      },
-    };
-  }
-
   it.each(CASES)('$name', ({ name, build, faceNormal, hingeMidpoint, hingeLength, hingeAxis, angle, isFar, lift,
     turnedNormal, volume }) => {
     const fixtures = allocationModule.createAllocations();
@@ -228,9 +236,12 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
       const face = borrowFace(fixtures, source, faceInfo), edge = borrowEdge(fixtures, source, hingeInfo);
       const reversed = fixtures.keep(oc.TopoDS.Edge_1(fixtures.keep(edge.Reversed())));
       // Tessellation above changes B-rep bytes, so every baseline is taken after it (as in H1).
-      const before = { source: digest(source), face: digest(face), edge: digest(edge), reversed: digest(reversed) };
+      const unrelated = boundaryBox(oc, fixtures, [60, 0, 0]);
+      const before = { source: digest(source), face: digest(face), edge: digest(edge), reversed: digest(reversed),
+        unrelated: digest(unrelated) };
       const sourceDelete = vi.spyOn(source, 'delete'), faceDelete = vi.spyOn(face, 'delete');
       const edgeDelete = vi.spyOn(edge, 'delete'), reversedDelete = vi.spyOn(reversed, 'delete');
+      const unrelatedDelete = vi.spyOn(unrelated, 'delete');
       const expectedVertices = CORNERS.map(corner => placePoint(isFar(corner) ? add(corner, lift) : corner, build));
       const expectedNormal = placeDirection(turnedNormal, build);
       let firstSha: string | undefined;
@@ -289,13 +300,15 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
           expect(digest(face)).toBe(before.face);
           expect(digest(edge)).toBe(before.edge);
           expect(digest(reversed)).toBe(before.reversed);
-          for (const spy of [sourceDelete, faceDelete, edgeDelete, reversedDelete]) expect(spy).not.toHaveBeenCalled();
+          expect(digest(unrelated)).toBe(before.unrelated);
+          for (const spy of [sourceDelete, faceDelete, edgeDelete, reversedDelete, unrelatedDelete]) expect(spy).not.toHaveBeenCalled();
           record('ownership', { name, repeat, ...counts, sourceSha: before.source, sourceShaAfter: digest(source),
             sourceDeletes: sourceDelete.mock.calls.length, faceDeletes: faceDelete.mock.calls.length,
             edgeDeletes: edgeDelete.mock.calls.length + reversedDelete.mock.calls.length });
         }
       } finally {
         sourceDelete.mockRestore(); faceDelete.mockRestore(); edgeDelete.mockRestore(); reversedDelete.mockRestore();
+        unrelatedDelete.mockRestore();
       }
     } finally { fixtures.release(); }
   });
@@ -306,6 +319,7 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
     try {
       const source = kind === 'curved-edge' ? drilledPlate(fixtures) : boxOf(fixtures, 'plain');
       const other = kind === 'foreign-face' || kind === 'foreign-edge' ? boxOf(fixtures, 'plain') : null;
+      const unrelated = boundaryBox(oc, fixtures, [60, 0, 0]);
       const tables = tablesOf(source), otherTables = other === null ? null : tablesOf(other);
       const top = borrowFace(fixtures, source, oneFace(tables, [0, 0, 1]));
       const hinge = borrowEdge(fixtures, source, oneLineEdge(tables, [20, 0, 8], 40));
@@ -322,9 +336,10 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
         else edge = borrowEdge(fixtures, other, oneLineEdge(otherTables, [20, 0, 8], 40));
       }
       const before = { source: digest(source), face: digest(face), edge: digest(edge),
-        other: other === null ? null : digest(other) };
+        other: other === null ? null : digest(other), unrelated: digest(unrelated) };
       const sourceDelete = vi.spyOn(source, 'delete'), faceDelete = vi.spyOn(face, 'delete');
       const edgeDelete = vi.spyOn(edge, 'delete');
+      const unrelatedDelete = vi.spyOn(unrelated, 'delete');
       try {
         const ownership = observeOwnership();
         try {
@@ -336,6 +351,7 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
         expect(digest(face)).toBe(before.face);
         expect(digest(edge)).toBe(before.edge);
         if (other !== null) expect(digest(other)).toBe(before.other);
+        expect(digest(unrelated)).toBe(before.unrelated); expect(unrelatedDelete).not.toHaveBeenCalled();
         expect(sourceDelete).not.toHaveBeenCalled(); expect(faceDelete).not.toHaveBeenCalled();
         expect(edgeDelete).not.toHaveBeenCalled();
         let followupVolume: number | null = null;
@@ -345,34 +361,39 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
           try {
             followupVolume = later.volume;
             expect(Math.abs(later.volume - (9600 + 18000 * T)) / (9600 + 18000 * T)).toBeLessThanOrEqual(1e-9);
-          } finally { later.delete(); }
+          } finally { later.delete(); later.delete(); }
           expect(digest(source)).toBe(before.source);
+        } else {
+          auditDirectEdit(oc, 'R2 curved edge recovery', [source, face, edge, unrelated], () => {
+            const later = transformShape(oc, source, { ...IDENTITY_TRANSFORM, translation: [1, 2, 3] });
+            try { expect(isValidShape(oc, later.shape)).toBe(true); }
+            finally { later.delete(); later.delete(); }
+          });
         }
         record('refusal', { kind, name, message, ...counts, sourceSha: before.source, sourceShaAfter: digest(source),
           sourceDeletes: sourceDelete.mock.calls.length, faceDeletes: faceDelete.mock.calls.length,
           edgeDeletes: edgeDelete.mock.calls.length, followupVolume });
-      } finally { sourceDelete.mockRestore(); faceDelete.mockRestore(); edgeDelete.mockRestore(); }
+      } finally { sourceDelete.mockRestore(); faceDelete.mockRestore(); edgeDelete.mockRestore(); unrelatedDelete.mockRestore(); }
     } finally { fixtures.release(); }
   });
 
-  it.each([0, Number.NaN, Number.POSITIVE_INFINITY, Math.PI / 2, -Math.PI / 2])(
+  it.each([0, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Math.PI / 2, -Math.PI / 2])(
     'refuses the angle %s before any OCCT work', angle => {
       const fixtures = allocationModule.createAllocations();
       try {
         const source = boxOf(fixtures, 'plain'), tables = tablesOf(source);
         const face = borrowFace(fixtures, source, oneFace(tables, [0, 0, 1]));
         const edge = borrowEdge(fixtures, source, oneLineEdge(tables, [20, 0, 8], 40));
-        const before = digest(source);
-        const sourceDelete = vi.spyOn(source, 'delete');
-        try {
-          const ownership = observeOwnership();
-          try {
+        const unrelated = boundaryBox(oc, fixtures, [60, 0, 0]);
+        const allocations = auditDirectEdit(oc, `R2 invalid angle ${String(angle)}`, [source, face, edge, unrelated], () => {
             expect(() => rotateSolidFace(oc, source, face, edge, angle)).toThrow(FACE_ROTATION_ANGLE_MESSAGE);
-          } finally { ownership.stop(); }
-          expect(ownership.verify().ownedWrappers).toBe(0);
-          expect(digest(source)).toBe(before);
-          expect(sourceDelete).not.toHaveBeenCalled();
-        } finally { sourceDelete.mockRestore(); }
+        });
+        expect(allocations.ownedWrappers).toBe(0);
+        auditDirectEdit(oc, `R2 recovery from ${String(angle)}`, [source, face, edge, unrelated], () => {
+          const later = rotateSolidFace(oc, source, face, edge, THETA);
+          try { expect(Math.abs(later.volume - (9600 + 18000 * T)) / (9600 + 18000 * T)).toBeLessThanOrEqual(1e-9); }
+          finally { later.delete(); later.delete(); }
+        });
       } finally { fixtures.release(); }
     },
   );
@@ -383,24 +404,172 @@ describe('rotateSolidFace: W16 box, planar face about a straight hinge (EX-18 W1
       const source = boxOf(fixtures, 'plain'), tables = tablesOf(source);
       const face = borrowFace(fixtures, source, oneFace(tables, [0, 0, 1]));
       const edge = borrowEdge(fixtures, source, oneLineEdge(tables, [20, 0, 8], 40));
-      const before = digest(source);
-      const sourceDelete = vi.spyOn(source, 'delete');
-      try {
-        const ownership = observeOwnership();
-        try {
+      const unrelated = boundaryBox(oc, fixtures, [60, 0, 0]);
+      auditDirectEdit(oc, `R2 limit ${name}`, [source, face, edge, unrelated], () => {
           expect(() => rotateSolidFace(oc, source, face, edge, angle)).toThrow(message);
-        } finally { ownership.stop(); }
-        const counts = ownership.verify();
-        expect(counts.ownedWrappers).toBeGreaterThan(0);
-        expect(digest(source)).toBe(before);
         const later = rotateSolidFace(oc, source, face, edge, -THETA);
         try {
           expect(Math.abs(later.volume - (9600 - 18000 * T)) / (9600 - 18000 * T)).toBeLessThanOrEqual(1e-9);
-        } finally { later.delete(); }
-        expect(digest(source)).toBe(before);
-        expect(sourceDelete).not.toHaveBeenCalled();
-        record('limit', { name, angle, message, ...counts, sourceSha: before, sourceShaAfter: digest(source) });
-      } finally { sourceDelete.mockRestore(); }
+        } finally { later.delete(); later.delete(); }
+        record('limit', { name, angle, remainingHeight: 8 + 30 * Math.tan(angle), message });
+      });
     } finally { fixtures.release(); }
+  });
+
+  it.each(['multiple solids', 'open solid', 'curved face', 'drilled plate', 'L shape', 'inner straight wire'] as const)(
+    'R2 refuses %s at the real entry, preserving selection and unrelated body', kind => {
+      const owned = allocationModule.createAllocations(), { keep } = owned;
+      try {
+        let source = kind === 'drilled plate' ? drilledPlate(owned) : boxOf(owned, 'plain');
+        const unrelated = boundaryBox(oc, owned, [60, 0, 0]);
+        if (kind === 'multiple solids') {
+          const compound = keep(new oc.TopoDS_Compound()), builder = keep(new oc.BRep_Builder());
+          builder.MakeCompound(compound); builder.Add(compound, source); builder.Add(compound, unrelated);
+          source = compound;
+          expect(countSolidShapes(oc, source, 3)).toBe(2);
+        }
+        if (kind === 'open solid') {
+          const builder = keep(new oc.BRep_Builder()), shell = keep(new oc.TopoDS_Shell()), solid = keep(new oc.TopoDS_Solid());
+          builder.MakeShell(shell); builder.MakeSolid(solid);
+          const map = keep(new oc.TopTools_IndexedMapOfShape_1());
+          oc.TopExp.MapShapes_1(source, oc.TopAbs.ShapeTypeFromString_1('FACE'), map);
+          // Leave out one actual face; the result still has a solid tag but is not closed/valid.
+          for (let i = 2; i <= map.Size(); i++) builder.Add(shell, keep(map.FindKey(i)));
+          builder.Add(solid, shell); source = solid;
+          expect(countSolidShapes(oc, source, 2)).toBe(1);
+          expect(isValidShape(oc, source)).toBe(false);
+        }
+        if (kind === 'curved face') source = keep(keep(new oc.BRepPrimAPI_MakeCylinder_1(3, 8)).Shape());
+        if (kind === 'L shape' || kind === 'inner straight wire') {
+          const cutter = kind === 'L shape' ? boundaryBox(oc, owned, [20, 20, -1], [21, 11, 10])
+            : boundaryBox(oc, owned, [10, 10, -1], [10, 10, 10]);
+          source = keep(booleanOp(oc, 'subtract', source, cutter)).shape;
+        }
+        const tables = tablesOf(source);
+        const faceInfo = kind === 'curved face' ? tables.faces.find(face => face.surfaceKind === 'cylinder')
+          : tables.faces.find(face => face.surfaceKind === 'plane' && face.axis !== null && separation(face.axis, [0, 0, 1]) <= 1e-9);
+        if (faceInfo === undefined) throw new Error('Missing R2 selected face');
+        const face = borrowFace(owned, source, faceInfo);
+        const faceTables = tablesOf(face);
+        const candidate = kind === 'inner straight wire'
+          ? oneLineEdge(tables, [15, 10, 8], 10)
+          : tables.edges.find(edge => edge.curveKind === 'line' && faceTables.edges.some(onFace =>
+            separation(edge.midpoint, onFace.midpoint) <= 1e-7));
+        if (candidate === undefined) throw new Error('Missing R2 selected hinge');
+        const edge = borrowEdge(owned, source, candidate);
+        const expected = kind === 'multiple solids' || kind === 'open solid' ? FACE_ROTATION_INVALID_BODY_MESSAGE
+          : kind === 'curved face' ? FACE_ROTATION_NOT_PLANAR_MESSAGE : FACE_ROTATION_BOX_MESSAGE;
+        auditDirectEdit(oc, `R2 unsupported ${kind}`, [source, face, edge, unrelated], () => {
+          expect(() => rotateSolidFace(oc, source, face, edge, THETA)).toThrow(expected);
+          // Reuse the exact shape, including the invalid one. Copying must not pretend to repair it.
+          {
+            const later = transformShape(oc, source, { ...IDENTITY_TRANSFORM, translation: [1, 2, 3] });
+            try {
+              expect(isValidShape(oc, later.shape)).toBe(kind !== 'open solid');
+              expect(Math.abs(measureVolume(oc, later.shape) - measureVolume(oc, source)) / measureVolume(oc, source))
+                .toBeLessThanOrEqual(1e-9);
+            } finally { later.delete(); later.delete(); }
+          }
+        });
+      } finally { owned.release(); }
+    },
+  );
+
+  it.each(['copy', 'draft-add', 'draft-build', 'result-validity', 'result-geometry', 'result-volume', 'native-build'] as const)(
+    'R2 %s failure releases registered wrappers, then the identical input succeeds', stage => {
+      const owned = allocationModule.createAllocations();
+      try {
+        const source = boxOf(owned, 'plain'), tables = tablesOf(source);
+        const face = borrowFace(owned, source, oneFace(tables, [0, 0, 1]));
+        const edge = borrowEdge(owned, source, oneLineEdge(tables, [20, 0, 8], 40));
+        const unrelated = boundaryBox(oc, owned, [60, 0, 0]);
+        // A separate real copy is used only to simulate a malformed builder result.
+        const unchanged = owned.keep(new oc.BRepBuilderAPI_Copy_2(source, true, false));
+        auditDirectEdit(oc, `R2 injected ${stage}`, [source, face, edge, unrelated], () => {
+          const restore: (() => void)[] = [];
+          if (stage === 'copy') {
+            const spy = vi.spyOn(oc.BRepBuilderAPI_Copy.prototype, 'ModifiedShape')
+              .mockImplementationOnce(() => new oc.TopoDS_Shape());
+            restore.push(() => { spy.mockRestore(); });
+          } else if (stage === 'draft-add') {
+            const spy = vi.spyOn(oc.BRepOffsetAPI_DraftAngle.prototype, 'AddDone').mockReturnValueOnce(false);
+            restore.push(() => { spy.mockRestore(); });
+          } else if (stage === 'draft-build') {
+            const spy = vi.spyOn(oc.BRepOffsetAPI_DraftAngle.prototype, 'IsDone').mockReturnValueOnce(false);
+            restore.push(() => { spy.mockRestore(); });
+          } else if (stage === 'native-build') {
+            const spy = vi.spyOn(oc.BRepOffsetAPI_DraftAngle.prototype, 'Build')
+              .mockImplementationOnce(() => throwNativeDirectionError(oc));
+            restore.push(() => { spy.mockRestore(); });
+          } else if (stage === 'result-validity') {
+            const actual = solidMeshModule.isValidShape;
+            const spy = vi.spyOn(solidMeshModule, 'isValidShape').mockImplementation((kernel, shape) =>
+              shape.IsSame(source) ? actual(kernel, shape) : false);
+            restore.push(() => { spy.mockRestore(); });
+          } else if (stage === 'result-geometry') {
+            const spy = vi.spyOn(oc.BRepOffsetAPI_DraftAngle.prototype, 'Shape').mockImplementationOnce(() => unchanged.Shape());
+            restore.push(() => { spy.mockRestore(); });
+          } else {
+            const actual = solidMeshModule.measureVolume;
+            let signedReads = 0;
+            const spy = vi.spyOn(solidMeshModule, 'measureVolume').mockImplementation((kernel, shape, signed) =>
+              actual(kernel, shape, signed) + (signed === true && ++signedReads === 2 ? 1 : 0));
+            restore.push(() => { spy.mockRestore(); });
+          }
+          try {
+            let failure: unknown;
+            try {
+              const unexpected = rotateSolidFace(oc, source, face, edge, THETA);
+              unexpected.delete();
+            } catch (error) { failure = error; }
+            expect(failure).toBeInstanceOf(Error);
+            if (!(failure instanceof Error)) throw new Error('Expected rotation refusal');
+            expect(failure.message).toBe(FACE_ROTATION_FAILED_MESSAGE);
+            if (stage !== 'native-build') expect(failure.cause).toMatchObject({ stage });
+            record('R2 failure stage', { stage, cause: failure.cause });
+          } finally { for (const reset of restore) reset(); }
+          const later = rotateSolidFace(oc, source, face, edge, THETA);
+          try { expect(Math.abs(later.volume - (9600 + 18000 * T)) / (9600 + 18000 * T)).toBeLessThanOrEqual(1e-9); }
+          finally { later.delete(); later.delete(); }
+        });
+      } finally { owned.release(); }
+    },
+  );
+
+  it.each([89.9, 89.99])('R2 outward %s degrees refuses the actual invalid draft, then reuses the source', degrees => {
+    const owned = allocationModule.createAllocations();
+    try {
+      const source = boxOf(owned, 'plain'), tables = tablesOf(source);
+      const face = borrowFace(owned, source, oneFace(tables, [0, 0, 1]));
+      const edge = borrowEdge(owned, source, oneLineEdge(tables, [20, 0, 8], 40));
+      const unrelated = boundaryBox(oc, owned, [60, 0, 0]), angle = degrees * Math.PI / 180;
+      auditDirectEdit(oc, `R2 native invalid ${degrees} deg`, [source, face, edge, unrelated], () => {
+        const actual = solidMeshModule.isValidShape;
+        const observations: { valid: boolean; solids: number; volume: number }[] = [];
+        const probe = vi.spyOn(solidMeshModule, 'isValidShape').mockImplementation((kernel, shape) => {
+          const valid = actual(kernel, shape);
+          if (!shape.IsSame(source)) observations.push({ valid, solids: countSolidShapes(kernel, shape, 2),
+            volume: measureVolume(kernel, shape, true) });
+          return valid;
+        });
+        try {
+          let failure: unknown;
+          try {
+            const unexpected = rotateSolidFace(oc, source, face, edge, angle);
+            unexpected.delete();
+          } catch (error) { failure = error; }
+          expect(failure).toBeInstanceOf(Error);
+          if (!(failure instanceof Error)) throw new Error('Expected invalid draft refusal');
+          expect(failure.message).toBe(FACE_ROTATION_FAILED_MESSAGE);
+          expect(failure.cause).toEqual({ stage: 'result-validity' });
+          expect(observations).toHaveLength(1);
+          expect(observations[0].valid).toBe(false);
+          record('R2 native invalid draft', { degrees, angle, analyticVolume: 9600 + 18000 * Math.tan(angle), observations });
+        } finally { probe.mockRestore(); }
+        const later = rotateSolidFace(oc, source, face, edge, THETA);
+        try { expect(Math.abs(later.volume - (9600 + 18000 * T)) / (9600 + 18000 * T)).toBeLessThanOrEqual(1e-9); }
+        finally { later.delete(); later.delete(); }
+      });
+    } finally { owned.release(); }
   });
 });

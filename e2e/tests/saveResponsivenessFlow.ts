@@ -58,9 +58,11 @@ function referencedMeshFixture(mib: 32 | 128): ImportedMeshBytes {
     const vx = positions[c] - positions[a], vy = positions[c + 1] - positions[a + 1], vz = positions[c + 2] - positions[a + 2];
     const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, length = Math.hypot(nx, ny, nz);
     if (!Number.isFinite(length) || length <= 1e-6) throw new Error('Fixture contains a degenerate triangle');
-    for (const offset of [a, b, c]) {
-      normals[offset] = nx / length; normals[offset + 1] = ny / length; normals[offset + 2] = nz / length;
-    }
+    // All three vertices have the same face normal; preserve each division and Float32 rounding.
+    const normalX = nx / length, normalY = ny / length, normalZ = nz / length;
+    normals[a] = normalX; normals[a + 1] = normalY; normals[a + 2] = normalZ;
+    normals[b] = normalX; normals[b + 1] = normalY; normals[b + 2] = normalZ;
+    normals[c] = normalX; normals[c + 1] = normalY; normals[c + 2] = normalZ;
     if (Math.abs(Math.hypot(normals[a], normals[a + 1], normals[a + 2]) - 1) > 1e-6) throw new Error('Fixture normal is not unit length');
   }
   return { positions, normals, indices };

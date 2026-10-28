@@ -164,6 +164,9 @@ import type {
   DrawingOperationProgress,
   DrawingKernelBridge,
 } from './kernelBridge/bridgeContracts.js';
+import type { SolidBody as TypeSolidBody } from './kernelBridge/solidContracts.js';
+import type { SolidRecomputeResult as TypeSolidRecomputeResult } from '@pointercad/kernel';
+
 export type {
   KernelBridge,
   MeshLedgerOwner, CurrentMeshLedgerInput, CurrentMeshLedgerReceipt, ReferenceMeshLeaseOptions, PartReleaseClaim, PartReleaseDisposition, SourceMeshBackingInspection,
@@ -963,7 +966,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
   const ownerCoverageReasons = new Set<string>();
   const ownerCoverageReason = (): string | null => ownerCoverageReasons.values().next().value ?? null;
   const logicalDisplayOwners = new Map<string, MeshLedgerOwner>();
-  const bodyOwners = new WeakMap<readonly import('./kernelBridge/solidContracts.js').SolidBody[], MeshLedgerOwner>();
+  const bodyOwners = new WeakMap<readonly TypeSolidBody[], MeshLedgerOwner>();
   const issued = new WeakSet<MeshLedgerOwner>();
   const backingInspections = new WeakMap<SourceMeshBackingInspection, CurrentMeshLedgerReceipt>();
   const receipts = new WeakSet<CurrentMeshLedgerReceipt>();
@@ -1007,7 +1010,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
       && Number.isSafeInteger(workerBytes + after.retainedBackingBytes + after.pendingCloneBytes - reservation + metadata.replyBackingBytes)
       && workerBytes + after.retainedBackingBytes + after.pendingCloneBytes - reservation + metadata.replyBackingBytes <= MESH_LEDGER_LIMIT_BYTES;
   }
-  function adopt(owner: MeshLedgerOwner, raw: import('@pointercad/kernel').SolidRecomputeResult): void {
+  function adopt(owner: MeshLedgerOwner, raw: TypeSolidRecomputeResult): void {
     const buffers: ArrayBuffer[] = [];
     for (const body of raw.bodies) {
       for (const buffer of [body.positions.buffer, body.normals.buffer, body.indices.buffer, body.edgePositions.buffer]) {
@@ -1180,7 +1183,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
       if (backingInspections.get(inspection) !== receipt) return refuse('unissued-or-different-receipt-inspection');
       return current(receipt);
     },
-    owner: (bodies: readonly import('./kernelBridge/solidContracts.js').SolidBody[]) => bodyOwners.get(bodies) ?? null };
+    owner: (bodies: readonly TypeSolidBody[]) => bodyOwners.get(bodies) ?? null };
 }
 
 /** Metadata only. Recording never owns a mesh, callback proxy, document or native resource. */

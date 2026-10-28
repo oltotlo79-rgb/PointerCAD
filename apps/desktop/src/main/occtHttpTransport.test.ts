@@ -82,7 +82,8 @@ const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes)
 const bytes = Buffer.from('verified OCCT test payload');
 const gzip = gzipSync(bytes);
 const asset = { sha256: digest(bytes), byteLength: bytes.length, gzip, transportSha256: digest(gzip) };
-type Mode = 'hit' | 'miss' | 'failure' | 'incomplete' | 'aborted' | 'close-first' | 'corrupt' | 'stall';
+type Mode = 'hit' | 'miss' | 'failure' | 'incomplete' | 'aborted' | 'close-first' | 'corrupt' | 'stall'
+  | 'same-length-corrupt' | 'oversized' | 'response-miss';
 function requests(mode: Mode): void {
   native.request.mockImplementation(() => {
     const request = new EventEmitter();
@@ -98,8 +99,12 @@ function requests(mode: Mode): void {
           'content-type': ['application/wasm'], 'content-encoding': ['gzip'], 'content-length': [String(gzip.length)],
         } });
         request.emit('response', response);
+        if (mode === 'response-miss') { request.emit('error', new Error('net::ERR_CACHE_MISS')); return; }
         if (mode === 'aborted') { response.emit('aborted'); return; }
-        response.emit('data', mode === 'corrupt' ? Buffer.from('invalid') : bytes);
+        const body = mode === 'same-length-corrupt' ? Buffer.alloc(bytes.length, 120)
+          : mode === 'oversized' ? Buffer.concat([bytes, Buffer.from([0])])
+            : mode === 'corrupt' ? Buffer.from('invalid') : bytes;
+        response.emit('data', body);
         if (mode !== 'incomplete') response.emit('end');
         response.emit('close');
       }); },
@@ -111,6 +116,7 @@ const transports: ReturnType<typeof createOcctHttpTransport>[] = [];
 const listeners: Server[] = [];
 afterEach(async () => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   for (const transport of transports.splice(0)) await transport.close();
   const remaining = ownedServers.filter(server => server.listening);
   for (const server of remaining) await closeListener(server);
@@ -290,5 +296,159 @@ describe('fixed owned Desktop OCCT HTTP transport', () => {
     expect(close).not.toHaveBeenCalled();
     expect(physicalListens).toEqual([]);
     expect(native.request).not.toHaveBeenCalled(); expect(native.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('OCCT取得の段階記録', () => {
+  // matcherの戻り値をunknownへ限定し、検査対象への型の流入を防ぐ。
+  const numberMatcher: unknown = expect.any(Number);
+  const signalMatcher: unknown = expect.any(AbortSignal);
+  function objectContaining(value: Record<string, unknown>): unknown {
+    return expect.objectContaining(value);
+  }
+  function arrayContaining(value: unknown[]): unknown {
+    return expect.arrayContaining(value);
+  }
+
+  function evidence(log: MockInstance<typeof console.info>): unknown {
+    const messages = log.mock.calls.filter(([message]) =>
+      typeof message === 'string' && message.startsWith('[pcad:occt-http-phases] '));
+    expect(messages).toHaveLength(1);
+    const text: unknown = messages[0]?.[0];
+    if (typeof text !== 'string') throw new Error('取得の段階記録がありません');
+    const parsed: unknown = JSON.parse(text.slice('[pcad:occt-http-phases] '.length));
+    return parsed;
+  }
+
+  it('独立した本文長と全照合の順序を記録し、同じ準備を共有する', async () => {
+    vi.stubEnv('PCAD_OCCT_TRANSPORT_TRACE', '1');
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    requests('close-first');
+    const value = transport(await fixture());
+    const first = value.prepare();
+    expect(value.prepare()).toBe(first);
+    await expect(first).resolves.toEqual({ kind: 'http', url: desktopOcctTransportUrl(digest(bytes)),
+      sha256: digest(bytes), byteLength: bytes.length });
+    const phases = ['prepare-start', 'manifest-start', 'manifest-validated', 'gzip-read', 'transport-verified',
+      'decoded-inflated', 'decoded-verified', 'listener-start', 'listener-ready', 'cache-start',
+      'cache-headers', 'cache-body-end', 'cache-hit', 'prepare-http', 'prepare-settled'];
+    expect(evidence(log)).toEqual({ version: 1, pid: process.pid, startedAtEpochMs: numberMatcher,
+      events: phases.map(phase => objectContaining({ phase, elapsedMs: numberMatcher,
+        userCpuUs: numberMatcher, systemCpuUs: numberMatcher })) });
+    expect(evidence(log)).toMatchObject({ events: arrayContaining([
+      objectContaining({ phase: 'gzip-read', byteLength: gzipSync(bytes).length }),
+      objectContaining({ phase: 'cache-body-end', byteLength: bytes.length }),
+    ]) });
+    expect(native.fetch).not.toHaveBeenCalled();
+  });
+
+  it('cache missと照合済み補充を区別し、取得条件を保つ', async () => {
+    vi.stubEnv('PCAD_OCCT_TRANSPORT_TRACE', '1');
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    requests('miss');
+    native.fetch.mockResolvedValueOnce(new Response(bytes.toString(), { headers: {
+      'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip', 'Content-Length': String(gzip.length),
+    } }));
+    await expect(transport(await fixture()).prepare()).resolves.toMatchObject({ kind: 'http' });
+    expect(evidence(log)).toMatchObject({ events: arrayContaining([
+      objectContaining({ phase: 'cache-miss' }),
+      objectContaining({ phase: 'fill-body-end', byteLength: bytes.length }),
+      objectContaining({ phase: 'fill-verified', byteLength: bytes.length }),
+    ]) });
+    expect(native.fetch).toHaveBeenCalledExactlyOnceWith(desktopOcctTransportUrl(digest(bytes)),
+      objectContaining({ credentials: 'include', redirect: 'error', signal: signalMatcher }));
+  });
+
+  it.each(['same-length-corrupt', 'oversized', 'response-miss'] as const)(
+    '%sをmissへ変えず拒否し、所有listenerを閉じる', async mode => {
+      vi.stubEnv('PCAD_OCCT_TRANSPORT_TRACE', '1');
+      const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+      requests(mode);
+      await expect(transport(await fixture()).prepare()).rejects.toThrow();
+      const result = evidence(log);
+      expect(result).toMatchObject({ events: arrayContaining([
+        objectContaining({ phase: 'cache-rejected' }),
+        objectContaining({ phase: 'prepare-rejected' }),
+      ]) });
+      expect(result).not.toMatchObject({ events: arrayContaining([
+        objectContaining({ phase: 'cache-miss' }),
+      ]) });
+      expect(native.fetch).not.toHaveBeenCalled();
+      expect(ownedServers.every(server => !server.listening)).toBe(true);
+    },
+  );
+
+  it('headersとrequest closeだけでは本文終端前に完了しない', async () => {
+    vi.stubEnv('PCAD_OCCT_TRANSPORT_TRACE', '1');
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    let release = (): void => undefined;
+    let notifyHeaders = (): void => undefined;
+    const headersReceived = new Promise<void>(resolve => { notifyHeaders = resolve; });
+    native.request.mockImplementation(() => {
+      const request = new EventEmitter();
+      return Object.assign(request, {
+        abort: () => { request.emit('abort'); },
+        end: () => { queueMicrotask(() => {
+          const response = Object.assign(new EventEmitter(), { statusCode: 200, headers: {
+            'content-type': ['application/wasm'], 'content-encoding': ['gzip'],
+            'content-length': [String(gzip.length)],
+          } });
+          request.emit('response', response);
+          response.emit('data', bytes);
+          request.emit('close');
+          release = () => { response.emit('end'); response.emit('close'); };
+          notifyHeaders();
+        }); },
+      });
+    });
+    const prepared = transport(await fixture()).prepare();
+    let settled = false;
+    void prepared.then(() => { settled = true; }, () => { settled = true; });
+    await headersReceived;
+    try {
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(log.mock.calls.filter(([message]) => typeof message === 'string'
+        && message.startsWith('[pcad:occt-http-phases] '))).toEqual([]);
+    } finally { release(); }
+    await expect(prepared).resolves.toMatchObject({ kind: 'http' });
+    expect(evidence(log)).toMatchObject({ events: arrayContaining([
+      objectContaining({ phase: 'cache-body-end', byteLength: bytes.length }),
+      objectContaining({ phase: 'cache-hit' }),
+    ]) });
+    expect(native.fetch).not.toHaveBeenCalled();
+  });
+
+  it('markとflushの失敗が本来の成功と拒否を変えない', async () => {
+    vi.stubEnv('PCAD_OCCT_TRANSPORT_TRACE', '1');
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {
+      throw new Error('診断の出力に失敗しました');
+    });
+    const originalCpuUsage = process.cpuUsage.bind(process);
+    for (const mode of ['hit', 'same-length-corrupt'] as const) {
+      // 初期値の取得後はmarkを失敗させ、flushの失敗も同時に確認する。
+      const cpu = vi.spyOn(process, 'cpuUsage')
+        .mockImplementationOnce(() => originalCpuUsage())
+        .mockImplementation(() => { throw new Error('診断のCPU記録に失敗しました'); });
+      requests(mode);
+      const value = transport(await fixture());
+      const prepared = value.prepare();
+      if (mode === 'hit') {
+        await expect(prepared).resolves.toMatchObject({ kind: 'http' });
+      } else {
+        await expect(prepared).rejects.toThrow('Cached OCCT response integrity mismatch');
+      }
+      await value.close();
+      cpu.mockRestore();
+    }
+    expect(log).toHaveBeenCalledTimes(2);
+  });
+
+  it('診断が無効なら段階記録を出力しない', async () => {
+    vi.stubEnv('PCAD_OCCT_TRANSPORT_TRACE', '0');
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    requests('hit');
+    await expect(transport(await fixture()).prepare()).resolves.toMatchObject({ kind: 'http' });
+    expect(log).not.toHaveBeenCalled();
   });
 });

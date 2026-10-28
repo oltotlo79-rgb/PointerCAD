@@ -9,6 +9,8 @@ export function repairSolid(feature: SolidFeature, map: RepairMapper): SolidFeat
       ? { ...feature, end: { ...feature.end, face: map(feature.end.face, 'end', 'plane') } } : feature;
     case 'hole': case 'threadHole': case 'emboss': return { ...feature, face: map(feature.face, 'face', 'plane') };
     case 'threadShaft': return { ...feature, face: map(feature.face, 'face', 'cylinder') };
+    case 'holeTranslate': return { ...feature, face: map(feature.face, 'face', 'cylinder') };
+    case 'faceRotate': return { ...feature, face: map(feature.face, 'face', 'plane'), hinge: map(feature.hinge, 'hinge', 'line') };
     case 'faceOffset': return { ...feature, face: map(feature.face, 'face', 'plane') };
     case 'fillet': case 'chamfer': return { ...feature, targets: feature.targets.map((ref, index) => map(ref, `targets:${index}`)) };
     case 'draft': return { ...feature, neutralFace: map(feature.neutralFace, 'neutralFace', 'plane'),

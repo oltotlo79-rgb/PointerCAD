@@ -167,11 +167,14 @@ export function attachCameraControls(
   }
 
   function onWheel(event: WheelEvent): void {
+    if (dragMode !== null) return;
     const settings = readSettings();
     if (!cameraWheelMatches(settings, event)) return;
     // Ctrl + ホイールでの頁全体の拡大や、タッチパッドの慣性スクロールを止める。
     event.preventDefault();
-    setOrbit(zoom(getOrbit(), wheelDeltaInPixels(event) * settings.wheelSensitivity * (settings.invertWheel ? -1 : 1)));
+    const delta = wheelDeltaInPixels(event) * settings.wheelSensitivity * (settings.invertWheel ? -1 : 1);
+    if (!Number.isFinite(delta) || delta === 0) return;
+    setOrbit(zoom(getOrbit(), delta));
   }
 
   function onKeyDown(event: KeyboardEvent): void {

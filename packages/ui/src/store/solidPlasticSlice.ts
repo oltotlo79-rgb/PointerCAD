@@ -54,7 +54,7 @@ export const createSolidPlasticSlice: StateCreator<AppState, [], [], SolidPlasti
   /** Saved through the existing document contract (applyDocument), so Undo/Redo and save/reopen cover it. */
   saveSolidPlastic: () => {
     const state = get(), session = state.solidPlasticSession;
-    if (!session || state.assembly !== null || state.drawing !== null) return;
+    if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
     try {
       if (!state.solidPlasticRunner) throw new Error(t('solidPlastic.failed'));
       state.solidPlasticRunner.validate();

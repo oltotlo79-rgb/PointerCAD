@@ -1,10 +1,12 @@
+import { createHash } from 'node:crypto';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PrimitiveShapeSpec, SolidFaceInfo, SubShapeQuery, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
-import { booleanOp } from './booleanOp.js';
+import { booleanOp, NOTHING_INSIDE_MESSAGE, NOTHING_REMOVED_MESSAGE } from './booleanOp.js';
+import { writeBrepBytes } from './brepBytes.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox, type OcctShapeHandle } from './makeBox.js';
@@ -388,6 +390,7 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
     it('z=100 の面の正側は「切った先に立体が残りません」で断る', () => {
       const plate = makeBox(oc, PLATE);
       try {
+        const beforeBytes = writeBrepBytes(oc, plate.shape);
         expect(() =>
           makeCut(oc, plate.shape, {
             origin: [20, 15, 100],
@@ -395,6 +398,13 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
             keepPositive: true,
           }),
         ).toThrow('切った先に立体が残りません');
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
+        expect(isValidShape(oc, plate.shape)).toBe(true);
+        expect(measureVolume(oc, plate.shape)).toBeCloseTo(PLATE_VOLUME, 6);
+        const recovered = cutAndMeasure(plate.shape, { origin: [20, 15, 5], normal: [0, 0, 1], keepPositive: true });
+        expect(recovered.volume).toBeCloseTo(PLATE_VOLUME / 2, 6);
+        expect(recovered.solid).toBe(true);
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
       } finally {
         plate.delete();
       }
@@ -403,6 +413,7 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
     it('上面にちょうど接する面(z=10)の正側も断る(厚み 0 の板を作らない)', () => {
       const plate = makeBox(oc, PLATE);
       try {
+        const beforeBytes = writeBrepBytes(oc, plate.shape);
         expect(() =>
           makeCut(oc, plate.shape, {
             origin: [20, 15, 10],
@@ -410,6 +421,13 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
             keepPositive: true,
           }),
         ).toThrow('切った先に立体が残りません');
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
+        expect(isValidShape(oc, plate.shape)).toBe(true);
+        expect(measureVolume(oc, plate.shape)).toBeCloseTo(PLATE_VOLUME, 6);
+        const recovered = cutAndMeasure(plate.shape, { origin: [20, 15, 5], normal: [0, 0, 1], keepPositive: true });
+        expect(recovered.volume).toBeCloseTo(PLATE_VOLUME / 2, 6);
+        expect(recovered.solid).toBe(true);
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
       } finally {
         plate.delete();
       }
@@ -435,9 +453,17 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
     it('法線の長さが 0 なら「切断面の向きを決められません。」', () => {
       const plate = makeBox(oc, PLATE);
       try {
+        const beforeBytes = writeBrepBytes(oc, plate.shape);
         expect(() =>
           makeCut(oc, plate.shape, { origin: [20, 15, 5], normal: [0, 0, 0], keepPositive: true }),
         ).toThrow('切断面の向きを決められません。');
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
+        expect(isValidShape(oc, plate.shape)).toBe(true);
+        expect(measureVolume(oc, plate.shape)).toBeCloseTo(PLATE_VOLUME, 6);
+        const recovered = cutAndMeasure(plate.shape, { origin: [20, 15, 5], normal: [0, 0, 1], keepPositive: true });
+        expect(recovered.volume).toBeCloseTo(PLATE_VOLUME / 2, 6);
+        expect(recovered.solid).toBe(true);
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
       } finally {
         plate.delete();
       }
@@ -446,6 +472,7 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
     it('法線が NaN なら日本語で断る', () => {
       const plate = makeBox(oc, PLATE);
       try {
+        const beforeBytes = writeBrepBytes(oc, plate.shape);
         expect(() =>
           makeCut(oc, plate.shape, {
             origin: [20, 15, 5],
@@ -453,6 +480,13 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
             keepPositive: true,
           }),
         ).toThrow('切断面の向きを決められません。');
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
+        expect(isValidShape(oc, plate.shape)).toBe(true);
+        expect(measureVolume(oc, plate.shape)).toBeCloseTo(PLATE_VOLUME, 6);
+        const recovered = cutAndMeasure(plate.shape, { origin: [20, 15, 5], normal: [0, 0, 1], keepPositive: true });
+        expect(recovered.volume).toBeCloseTo(PLATE_VOLUME / 2, 6);
+        expect(recovered.solid).toBe(true);
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
       } finally {
         plate.delete();
       }
@@ -461,6 +495,7 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
     it('通る点が NaN なら日本語で断る', () => {
       const plate = makeBox(oc, PLATE);
       try {
+        const beforeBytes = writeBrepBytes(oc, plate.shape);
         expect(() =>
           makeCut(oc, plate.shape, {
             origin: [Number.NaN, 15, 5],
@@ -468,6 +503,13 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
             keepPositive: true,
           }),
         ).toThrow('切断面の位置を決められません。');
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
+        expect(isValidShape(oc, plate.shape)).toBe(true);
+        expect(measureVolume(oc, plate.shape)).toBeCloseTo(PLATE_VOLUME, 6);
+        const recovered = cutAndMeasure(plate.shape, { origin: [20, 15, 5], normal: [0, 0, 1], keepPositive: true });
+        expect(recovered.volume).toBeCloseTo(PLATE_VOLUME / 2, 6);
+        expect(recovered.solid).toBe(true);
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
       } finally {
         plate.delete();
       }
@@ -476,6 +518,7 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
     it('通る点が ∞ でも日本語で断る', () => {
       const plate = makeBox(oc, PLATE);
       try {
+        const beforeBytes = writeBrepBytes(oc, plate.shape);
         expect(() =>
           makeCut(oc, plate.shape, {
             origin: [20, 15, Number.POSITIVE_INFINITY],
@@ -483,10 +526,72 @@ describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {
             keepPositive: true,
           }),
         ).toThrow('切断面の位置を決められません。');
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
+        expect(isValidShape(oc, plate.shape)).toBe(true);
+        expect(measureVolume(oc, plate.shape)).toBeCloseTo(PLATE_VOLUME, 6);
+        const recovered = cutAndMeasure(plate.shape, { origin: [20, 15, 5], normal: [0, 0, 1], keepPositive: true });
+        expect(recovered.volume).toBeCloseTo(PLATE_VOLUME / 2, 6);
+        expect(recovered.solid).toBe(true);
+        expect(writeBrepBytes(oc, plate.shape)).toEqual(beforeBytes);
       } finally {
         plate.delete();
       }
     });
+  });
+
+  it('EX-04.04 穴内工具を公開Booleanが拒否しても借用B-repと状態を変えない', () => {
+    const source = createAllocations();
+    const fixture = () => {
+      const box = source.keep(makeBox(oc, { dx: 10, dy: 10, dz: 10 }));
+      const drill = source.keep(primitive([5, 5, -1], [0, 0, 1], { kind: 'cylinder', radius: 2, height: 12 }));
+      const target = source.keep(booleanOp(oc, 'subtract', box.shape, drill.shape));
+      // Match the published target's tessellated state before taking its baseline.
+      collectTables(target.shape);
+      const tool = source.keep(primitive([5, 5, -1], [0, 0, 1], { kind: 'cylinder', radius: 1, height: 12 }));
+      expect(measureVolume(oc, target.shape)).toBeCloseTo(1000 - 40 * Math.PI, 6);
+      return { target: target.shape, tool: tool.shape };
+    };
+    function flagsOf(target: TopoDS_Shape) {
+      const observed = createAllocations();
+      try {
+        const map = observed.keep(new oc.TopTools_IndexedMapOfShape_1());
+        oc.TopExp.MapShapes_2(target, map, true, true);
+        const flags = [];
+        for (let index = 1; index <= map.Size(); index++) {
+          const part = observed.keep(map.FindKey(index));
+          flags.push({ index, root: part.IsSame(target), free: part.Free_1(), locked: part.Locked_1(),
+            modified: part.Modified_1(), checked: part.Checked_1(), orientable: part.Orientable_1(),
+            closed: part.Closed_1(), infinite: part.Infinite_1(), convex: part.Convex_1() });
+        }
+        return flags;
+      } finally { observed.release(); }
+    }
+    try {
+      for (const operation of ['subtract', 'intersect'] as const) {
+        const publicGuard = fixture(), publicBytes = writeBrepBytes(oc, publicGuard.target);
+        const publicToolBytes = writeBrepBytes(oc, publicGuard.tool);
+        expect(writeBrepBytes(oc, publicGuard.target)).toEqual(publicBytes);
+        expect(writeBrepBytes(oc, publicGuard.tool)).toEqual(publicToolBytes);
+        const flagsBefore = flagsOf(publicGuard.target), toolFlagsBefore = flagsOf(publicGuard.tool);
+        expect(() => booleanOp(oc, operation, publicGuard.target, publicGuard.tool,
+          undefined, undefined, { requireRemoval: true }))
+          .toThrow(operation === 'subtract' ? NOTHING_REMOVED_MESSAGE : NOTHING_INSIDE_MESSAGE);
+        const afterBytes = writeBrepBytes(oc, publicGuard.target), differences = [];
+        const flagsAfter = flagsOf(publicGuard.target), toolFlagsAfter = flagsOf(publicGuard.tool);
+        for (let offset = 0; offset < Math.max(afterBytes.length, publicBytes.length); offset++) {
+          if (afterBytes[offset] !== publicBytes[offset]) differences.push({ offset, before: publicBytes[offset], after: afterBytes[offset] });
+        }
+        console.log('EX04 native borrowed probe ' + JSON.stringify({ operation, differences, flagsBefore, flagsAfter,
+          beforeSha256: createHash('sha256').update(publicBytes).digest('hex'),
+          afterSha256: createHash('sha256').update(afterBytes).digest('hex') }));
+        expect(afterBytes).toEqual(publicBytes);
+        expect(writeBrepBytes(oc, publicGuard.tool)).toEqual(publicToolBytes);
+        expect(flagsAfter).toEqual(flagsBefore);
+        expect(toolFlagsAfter).toEqual(toolFlagsBefore);
+        expect(isValidShape(oc, publicGuard.target)).toBe(true);
+        expect(measureVolume(oc, publicGuard.target)).toBeCloseTo(1000 - 40 * Math.PI, 6);
+      }
+    } finally { source.release(); }
   });
 
   describe('指紋の引き継ぎ(§0.a-0.62 / §0.a-0.63)', () => {

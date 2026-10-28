@@ -132,7 +132,7 @@ function cutVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
   try {
     if (!hasGeneralSurface(oc, shape, owned)) return measureVolume(oc, shape);
     const properties = owned.keep(new oc.GProp_GProps_1());
-    const error = oc.BRepGProp.VolumePropertiesGK_1(shape, properties, 1e-12, false, true, true, true, false);
+    const error = oc.BRepGProp.VolumePropertiesGK_1(shape, properties, 1e-12, false, true, false, false, false);
     const volume = properties.Mass();
     if (!Number.isFinite(error) || error < 0 || error > 1e-12 || !Number.isFinite(volume)) fail('volume-mismatch');
     return volume;

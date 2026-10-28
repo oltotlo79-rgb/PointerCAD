@@ -1,5 +1,6 @@
 import type { PointReference } from '../sketch/types.js';
 import type { HoleCenterAnchor, HolePlacementRole } from '../geometry/subShapeOrigin.js';
+import type { HoleTranslateKeyMaterial, FaceRotateKeyMaterial } from './directEditOperations.js';
 import type { FaceOffsetKeyMaterial } from './directFaceEdit.js';
 /**
  * ソリッドの計算結果を覚えておく形状キャッシュの鍵(計画書 docs/plans/P2-ソリッド基礎.md
@@ -288,6 +289,13 @@ export interface HoleKeyMaterial {
    * **平面の穴では省き、鍵の文字列にも出さない**(今までの穴の鍵を 1 字も変えないため)。
    */
   readonly cylindrical?: CylindricalHoleKeyMaterial;
+  readonly planar?: PlanarHoleKeyMaterial;
+}
+
+/** 面内X・Yの配置を区別する鍵の材料。 */
+export interface PlanarHoleKeyMaterial {
+  readonly kind: 'plane-face';
+  readonly locations: readonly { readonly x: number; readonly y: number }[];
 }
 
 /** 円筒の側面の穴の位置(EX05)の鍵の材料。段の `CylindricalHolePlan` と同じ形。 */
@@ -327,6 +335,7 @@ export interface ThreadKeyMaterial {
   readonly entry?: HoleEntryKeyMaterial;
   /** 円筒の側面のねじ穴(EX05)。穴の `cylindrical` と同じで、平面のねじ穴では省く(鍵の文字列にも出ない)。 */
   readonly cylindrical?: CylindricalHoleKeyMaterial;
+  readonly planar?: PlanarHoleKeyMaterial;
 }
 
 /**
@@ -779,6 +788,8 @@ export type SolidStepKeyMaterial =
   | DraftKeyMaterial
   // 平らな面の移動(EX-18)。材料の形は directFaceEdit.ts が持つ。
   | FaceOffsetKeyMaterial
+  | HoleTranslateKeyMaterial
+  | FaceRotateKeyMaterial
   | MirrorKeyMaterial
   | TransformKeyMaterial
   | ScaleKeyMaterial
@@ -1076,10 +1087,13 @@ function keyHoleEntry(entry: HoleEntryKeyMaterial): string {
   }
 }
 
-/**
- * 穴・ねじ穴の入口の文字列。**広げない(省略・`plain`)ときは空文字列**を返す。
- * 理由は `keyExtrudeExtras` と同じで、省略と既定を同じ鍵にし、P3 の鍵も壊さないため。
- */
+/** 面内配置は指定時だけ鍵へ含め、省略時の旧形式の鍵を保つ。 */
+function keyPlanarHoleExtra(placement: PlanarHoleKeyMaterial | undefined): string {
+  if (placement === undefined) return '';
+  const locations = placement.locations.map(p => `(${keyNumber(p.x)},${keyNumber(p.y)})`);
+  return `;planar=${placement.kind}:${locations.length}:[${locations.join(',')}]`;
+}
+
 /**
  * 円筒の側面の穴の位置(EX05)。省略は空文字(平面の穴の鍵を変えない)。
  * 個数を前に付けるので、位置の数が違う入力が同じ文字列になることはない。
@@ -1094,6 +1108,10 @@ function keyCylindricalHoleExtra(placement: CylindricalHoleKeyMaterial | undefin
   return `;cylindrical=${placement.kind}:${locations.length}:[${locations.join(',')}]`;
 }
 
+/**
+ * 穴・ねじ穴の入口の文字列。**広げない(省略・`plain`)ときは空文字列**を返す。
+ * 理由は `keyExtrudeExtras` と同じで、省略と既定を同じ鍵にし、P3 の鍵も壊さないため。
+ */
 function keyHoleEntryExtra(entry: HoleEntryKeyMaterial | undefined): string {
   if (entry === undefined || entry.kind === 'plain') {
     return '';
@@ -1189,7 +1207,7 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;tiltAzimuth=${keyNumber(material.tiltAzimuth)}` +
         `;transforms=${keyTransformList(material.transforms)}` +
         `${keyHoleEntryExtra(material.entry)}` +
-        `${keyCylindricalHoleExtra(material.cylindrical)}}`
+        `${keyCylindricalHoleExtra(material.cylindrical)}${keyPlanarHoleExtra(material.planar)}}`
       );
     case 'thread':
       return (
@@ -1208,7 +1226,7 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;tiltAzimuth=${keyNumber(material.tiltAzimuth)}` +
         `;transforms=${keyTransformList(material.transforms)}` +
         `${keyHoleEntryExtra(material.entry)}` +
-        `${keyCylindricalHoleExtra(material.cylindrical)}}`
+        `${keyCylindricalHoleExtra(material.cylindrical)}${keyPlanarHoleExtra(material.planar)}}`
       );
     case 'fillet':
       return (
@@ -1264,6 +1282,10 @@ export function keyMaterialText(material: SolidStepKeyMaterial): string {
         `;angle=${keyNumber(material.angle)}` +
         `;reversed=${keyBoolean(material.reversed)}}`
       );
+    case 'holeTranslate':
+      return `holeTranslate{targetKey=${material.targetKey};face=${material.face};translation=${material.translation.map(keyNumber).join(',')}}`;
+    case 'faceRotate':
+      return `faceRotate{targetKey=${material.targetKey};face=${material.face};hinge=${material.hinge};angle=${keyNumber(material.angle)}}`;
     case 'faceOffset':
       return (
         `faceOffset{targetKey=${material.targetKey}` +

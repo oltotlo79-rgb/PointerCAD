@@ -123,6 +123,33 @@ function extrusion(profile: readonly CurveSpec[]): SurfaceCutInput {
   return { kind: 'extrusion', profile, planeOrigin: [0, 0, 0], planeNormal: [0, 0, 1] };
 }
 
+/** Independent native membership: no production side classifier or measured coordinates. */
+function expectConicMembership(result: SurfaceCutResult, major: number, minor: number, reversed = false): void {
+  // p(t)=(5+a*cos(t), b*sin(t), z), 0<=t<=pi. The box is [0,10]^3.
+  // The first two points are on that surface; the next two have ellipse value <1,
+  // then two >1, followed by two points outside the box.
+  const points: readonly Vec3Tuple[] = [[5, minor, 5], [5 + major / Math.sqrt(2), minor / Math.sqrt(2), 7],
+    [5, minor / 2, 2], [5 + major / 4, minor / 4, 8], [5, minor + 1, 5], [1, 5, 3],
+    [5, minor / 2, 11], [-1, 1, 5]];
+  for (const piece of result.pieces) {
+    const inside = (piece.side === -1) !== reversed;
+    const expected = ['ON', 'ON', inside ? 'IN' : 'OUT', inside ? 'IN' : 'OUT',
+      inside ? 'OUT' : 'IN', inside ? 'OUT' : 'IN', 'OUT', 'OUT'];
+    const states = points.map(point => {
+      const owned = createAllocations();
+      try {
+        const classifier = owned.keep(new oc.BRepClass3d_SolidClassifier_3(piece.shape,
+          owned.keep(new oc.gp_Pnt_3(...point)), 1e-7));
+        const state = classifier.State();
+        return state === oc.TopAbs_State.TopAbs_IN ? 'IN' : state === oc.TopAbs_State.TopAbs_OUT ? 'OUT'
+          : state === oc.TopAbs_State.TopAbs_ON ? 'ON' : 'UNKNOWN';
+      } finally { owned.release(); }
+    });
+    expect(states, `native conic a=${major}, b=${minor}, reversed=${reversed}, side=${piece.side}`).toEqual(expected);
+    console.info('surface-cut-native-membership', { major, minor, reversed, side: piece.side, points, states });
+  }
+}
+
 describe('makeSurfaceCut の独立体積と所有', () => {
   it.each(['box', 'cylinder'] as const)('平面 × %s', targetKind => {
     const owned = createAllocations();
@@ -162,6 +189,7 @@ describe('makeSurfaceCut の独立体積と所有', () => {
           if (targetKind === 'box') {
             relative(result.pieces[0].volume, inside);
             relative(result.pieces[1].volume, 1000 - inside);
+            expectConicMembership(result, name === '円弧' ? 3 : 4, name === '円弧' ? 3 : 2);
           }
           console.info('surface-cut-volume', { name, targetKind, volumes: result.pieces.map(p => p.volume),
             conservation: result.relativeVolumeError, analyticRelativeErrors: targetKind === 'box'
@@ -306,13 +334,13 @@ describe('理由付き拒否と有限面の範囲', () => {
     } finally { owned.release(); }
   });
 
-  it('有限の関数曲面 z=2+0.01xy をそのまま刃にし、XYZ範囲の途中停止を拒否する', () => {
+  it.each([2, 3])('有限の関数曲面 z=%s+0.01xy をそのまま刃にし、XYZ範囲の途中停止を拒否する', constant => {
     const owned = createAllocations();
     try {
       const box = owned.keep(makeBox(oc, { dx: 10, dy: 10, dz: 10 }));
       // Exact tensor-product cubic representation of the bilinear graph, independent of the cut.
       const poles: Vec3Tuple[] = [];
-      for (const x of [-1, 3, 7, 11]) for (const y of [-1, 3, 7, 11]) poles.push([x, y, 2 + 0.01 * x * y]);
+      for (const x of [-1, 3, 7, 11]) for (const y of [-1, 3, 7, 11]) poles.push([x, y, constant + 0.01 * x * y]);
       const spec = { uKnots: [-1, 11], vKnots: [-1, 11], poles, errorBound: 0 };
       const full = makeFunctionSurfaceSpline(oc, spec, { minimum: [-1, -1, -1], maximum: [11, 11, 11] }, () => false);
       if (full.status !== 'shape') throw new Error(`Unexpected surface status: ${full.status}`);
@@ -321,10 +349,31 @@ describe('理由付き拒否と有限面の範囲', () => {
       try {
         const result = owned.keep(makeSurfaceCut(oc, box.shape, { kind: 'surface', shape: full.shape }));
         verify(result, 1000, owned);
-        // Integral over [0,10]^2: 2*100 + 0.01*50*50 = 225 mm³ below the +Z-oriented graph.
-        relative(result.pieces[0].volume, 225); relative(result.pieces[1].volume, 775);
+        // Integral over [0,10]^2: c*100 + 0.01*50*50 = 100c+25 below the +Z-oriented graph.
+        const below = 100 * constant + 25;
+        relative(result.pieces[0].volume, below); relative(result.pieces[1].volume, 1000 - below);
+        const points: readonly Vec3Tuple[] = [[2, 3, constant + 0.06], [8, 7, constant + 0.56],
+          [2, 3, constant - 0.44], [8, 7, constant + 0.06],
+          [2, 3, constant + 0.56], [8, 7, constant + 1.06], [11, 5, 5], [5, 5, 11]];
+        for (const piece of result.pieces) {
+          const low = piece.side === -1;
+          const expected = ['ON', 'ON', low ? 'IN' : 'OUT', low ? 'IN' : 'OUT',
+            low ? 'OUT' : 'IN', low ? 'OUT' : 'IN', 'OUT', 'OUT'];
+          const states = points.map(point => {
+            const local = createAllocations();
+            try {
+              const classifier = local.keep(new oc.BRepClass3d_SolidClassifier_3(piece.shape,
+                local.keep(new oc.gp_Pnt_3(...point)), 1e-7));
+              const state = classifier.State();
+              return state === oc.TopAbs_State.TopAbs_IN ? 'IN' : state === oc.TopAbs_State.TopAbs_OUT ? 'OUT'
+                : state === oc.TopAbs_State.TopAbs_ON ? 'ON' : 'UNKNOWN';
+            } finally { local.release(); }
+          });
+          expect(states, `formula c=${constant} side=${piece.side}`).toEqual(expected);
+          console.info('surface-cut-formula-membership', { constant, side: piece.side, points, states });
+        }
         console.info('surface-cut-function-surface', { volumes: result.pieces.map(p => p.volume),
-          analyticRelativeErrors: [relative(result.pieces[0].volume, 225), relative(result.pieces[1].volume, 775)],
+          analyticRelativeErrors: [relative(result.pieces[0].volume, below), relative(result.pieces[1].volume, 1000 - below)],
           conservation: result.relativeVolumeError });
         expect(sha(full.shape)).toBe(before); expect(sha(box.shape)).toBe(targetBefore);
         result.delete(); expect(deletion).not.toHaveBeenCalled();
@@ -355,13 +404,19 @@ describe('向き・曲線の連続性・複数成分の境界', () => {
     } finally { owned.release(); }
   });
 
-  it('逆向きの円弧でも同じ幾何を切り、側だけを反転する', () => {
+  it.each([
+    { name: '円弧', curve: ARC, major: 3, minor: 3, inside: 45 * Math.PI },
+    { name: '楕円弧', curve: ELLIPSE, major: 4, minor: 2, inside: 40 * Math.PI },
+  ])('逆向きの$nameでも同じ幾何を切り、側だけを反転する', ({ curve, major, minor, inside }) => {
     const owned = createAllocations();
     try {
       const target = owned.keep(makeBox(oc, { dx: 10, dy: 10, dz: 10 }));
-      const result = owned.keep(makeSurfaceCut(oc, target.shape, extrusion([{ ...ARC, startAngle: Math.PI, endAngle: 0 }])));
+      const before = sha(target.shape);
+      const result = owned.keep(makeSurfaceCut(oc, target.shape, extrusion([{ ...curve, startAngle: Math.PI, endAngle: 0 }])));
       verify(result, 1000, owned);
-      relative(result.pieces[0].volume, 1000 - 45 * Math.PI); relative(result.pieces[1].volume, 45 * Math.PI);
+      relative(result.pieces[0].volume, 1000 - inside); relative(result.pieces[1].volume, inside);
+      expectConicMembership(result, major, minor, true);
+      expect(sha(target.shape)).toBe(before);
     } finally { owned.release(); }
   });
 

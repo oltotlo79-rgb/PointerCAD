@@ -13,6 +13,7 @@ import { BeamContactDefinitions } from './BeamContactDefinitions.js';
 import { BeamContactResults } from './BeamContactResults.js';
 import { BeamAxialBoltDefinitions, BeamAxialBoltResults } from './BeamAxialBolts.js';
 import { BeamWeldLayerDefinitions, BeamWeldLayerResults } from './BeamWeldLayers.js';
+import { BeamWeldThroatStressResults, prepareCombinedWeldStressInput, prepareWeldStressRequest } from './BeamWeldThroatStressResults.js';
 import { BeamJointResults } from './BeamJointResults.js';
 import { BeamJointInitialStrainDefinitions, BeamJointInitialStrainResults } from './BeamJointInitialStrain.js';
 import { BeamImpactDefinitions } from './BeamImpactDefinitions.js';
@@ -67,6 +68,10 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
   const selected = new Set(session.members.map(member => JSON.stringify(member.occurrence.path)));
   const reviewed = session.reviewed !== null && beamSourceIsCurrent(session.reviewed, state);
   const running = session.status === 'running';
+  const weldStressInput = useMemo(() => reviewed && (session.result?.kind === 'oofem-beam-weld-layer-contact'
+    || session.result?.kind === 'oofem-beam-joint-contact' || session.result?.kind === 'oofem-beam-joint-initial-strain')
+    ? prepareCombinedWeldStressInput(session) : null, [reviewed, session]);
+  const weldStressOwner = JSON.stringify([session.ownerId, session.analysisId, session.revision]);
   return <form className="pcad-panel__body pcad-beam" aria-label={t('beam.title')} data-testid="beam-panel"
     ref={form}
     // Keep the store and unit preview stable during pointer departure; the ref is view-only.
@@ -173,11 +178,17 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
     {reviewed && session.result !== null ? session.result.kind === 'oofem-beam-impact-3d'
       ? <BeamImpactResults result={session.result} members={matchedImpactMembers} outlines={fibreOutlines} />
       : session.result.kind === 'oofem-beam-joint-initial-strain'
-      ? <BeamJointInitialStrainResults result={session.result} view={session.contactView} />
+      ? <><BeamJointInitialStrainResults result={session.result} view={session.contactView} />
+        <BeamWeldThroatStressResults {...prepareWeldStressRequest(weldStressInput, session.result, weldStressOwner)}
+          state={session.contactView.state} /></>
       : session.result.kind === 'oofem-beam-joint-contact'
-      ? <BeamJointResults result={session.result} view={session.contactView} />
+      ? <><BeamJointResults result={session.result} view={session.contactView} />
+        <BeamWeldThroatStressResults {...prepareWeldStressRequest(weldStressInput, session.result, weldStressOwner)}
+          state={session.contactView.state} /></>
       : session.result.kind === 'oofem-beam-weld-layer-contact'
-      ? <BeamWeldLayerResults result={session.result} view={session.contactView} />
+      ? <><BeamWeldLayerResults result={session.result} view={session.contactView} />
+        <BeamWeldThroatStressResults {...prepareWeldStressRequest(weldStressInput, session.result, weldStressOwner)}
+          state={session.contactView.state} /></>
       : session.result.kind === 'oofem-beam-axial-bolt-contact'
       ? <BeamAxialBoltResults result={session.result} view={session.contactView} />
       : session.result.kind === 'oofem-beam-contact-3d'

@@ -38,7 +38,7 @@ export const createPlasticBarSlice: StateCreator<AppState, [], [], PlasticBarSli
   },
   savePlasticBar: () => {
     const state = get(), session = state.plasticBarSession;
-    if (session === null) return;
+    if (session === null || session.ownerId !== state.activeDocumentId) return;
     const owner = state.assembly ?? state.document;
     const checked = plasticBarSavedInput(session, owner.parameters, owner.id);
     if (!checked.ok) {

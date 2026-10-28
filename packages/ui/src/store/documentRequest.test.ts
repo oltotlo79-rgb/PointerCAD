@@ -139,8 +139,8 @@ const REVIEWED_WITHOUT_SHARED_GUARD: Readonly<Record<string, string>> = {
   'sheetMetal/sheetCreationActions.ts': '道具の状態・activeDocumentId・document の参照で照合',
   'sheetMetal/sheetUnfoldActions.ts': '道具の状態・activeDocumentId・document の参照で照合',
   'sketch/textCommands.ts': '字体の待ちの後に document・sketch の参照で照合',
-  'viewport/createViewportScene.ts': 'setSketch updates scene geometry only; asynchronous repair previews do not replace documents or history',
   'viewport/ViewportCanvas.tsx': 'scene.setSketch is synchronous display work; repair preview completion only requests a redraw',
+  'store/beamSlice.ts': '待ちの後は提案・確認状態だけ更新。文書反映は別の同期操作で、文書・library・開く単位・計算世代をbeamSourceIsCurrentで照合',
   'store/assemblySlice.ts': '待ち(干渉の解析)の後は結果の表示だけを更新し、文書は差し替えない',
 };
 

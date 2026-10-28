@@ -457,6 +457,8 @@ export type SolidLabelKey =
   | 'draft'
   /** 平らな面の移動(EX-18 の限られた一段)。フィーチャーの種類と 1 対 1。 */
   | 'faceOffset'
+  | 'holeTranslate'
+  | 'faceRotate'
   | 'mirror'
   | 'transform'
   | 'scale'
@@ -521,6 +523,8 @@ const SOLID_FEATURE_KIND_TABLE = {
   loft: true,
   draft: true,
   faceOffset: true,
+  holeTranslate: true,
+  faceRotate: true,
   mirror: true,
   transform: true,
   scale: true,
@@ -588,6 +592,8 @@ export const SOLID_LABELS: Readonly<Record<SolidLabelKey, string>> = {
   draft: '抜き勾配',
   // 平らな面の移動(EX-18)。ツールバーの道具の名前(ja の solid.faceOffset)と同じ言葉にする。
   faceOffset: '面の移動',
+  holeTranslate: '穴の移動',
+  faceRotate: '面の回転',
   mirror: 'ミラー',
   transform: '移動・回転',
   scale: '拡大縮小',
@@ -1023,6 +1029,8 @@ export function consumedTargetsOf(feature: SolidFeature, solids?: readonly Solid
     case 'fillet':
     case 'chamfer':
     case 'draft':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'faceOffset':
     case 'transform':
     case 'scale':
@@ -1088,6 +1096,8 @@ export function isMachiningFeature(feature: SolidFeature): boolean {
     case 'chamfer':
     case 'pattern':
     case 'draft':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'faceOffset':
     case 'rib':
     case 'emboss':

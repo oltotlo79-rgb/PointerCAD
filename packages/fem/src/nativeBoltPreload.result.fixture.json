@@ -1,0 +1,1801 @@
+{
+  "result": {
+    "schema": "pointercad-native-bolt-preload-result/1",
+    "method": "native-beam3d-plus-series-bolt-and-existing-lcp",
+    "nativeContactSolver": false,
+    "structuralCertification": false,
+    "lockedShorteningM": 0.00005,
+    "lockAfterState": 0,
+    "boltComplianceMPerN": 1e-8,
+    "memberComplianceMPerN": 2.5e-9,
+    "contact": {
+      "schema": "pointercad-oofem-contact-result/1",
+      "method": "murty-least-index-lcp-on-native-beam3d-stiffness",
+      "freeDofs": 3,
+      "meshNodes": 4,
+      "meshElements": 2,
+      "momentLengthM": 0.05,
+      "pivotLimit": 20,
+      "states": [
+        {
+          "loadFactor": 0,
+          "pivots": 1,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                -0.0000050000000000000055,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 3,
+              "displacementM": [
+                -0.000005000000000000006,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 4,
+              "displacementM": [
+                -0.000010000000000000013,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "interface",
+              "state": "closed",
+              "normalReactionN": 4000,
+              "gapM": -8.470329472543003e-22
+            }
+          ],
+          "forceScaleN": 5000,
+          "gapScaleM": 0.00006250000000000015,
+          "equilibriumResidual": 1.3450493236482182e-16,
+          "penetration": 1.3552527156068773e-17,
+          "tension": 0,
+          "complementarity": 1.0842021724855018e-17
+        },
+        {
+          "loadFactor": 1000,
+          "pivots": 1,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                -0.000004000000000000005,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 3,
+              "displacementM": [
+                -0.000004000000000000002,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 4,
+              "displacementM": [
+                -0.000008000000000000005,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "interface",
+              "state": "closed",
+              "normalReactionN": 3200.0000000000005,
+              "gapM": 2.541098841762901e-21
+            }
+          ],
+          "forceScaleN": 4000,
+          "gapScaleM": 0.000050000000000000124,
+          "equilibriumResidual": 1.1681893492693318e-16,
+          "penetration": 0,
+          "tension": 0,
+          "complementarity": 4.065758146820632e-17
+        },
+        {
+          "loadFactor": 4999,
+          "pivots": 1,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                -1.0000000000000013e-9,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 3,
+              "displacementM": [
+                -1.0000000000000007e-9,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 4,
+              "displacementM": [
+                -2.000000000000003e-9,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "interface",
+              "state": "closed",
+              "normalReactionN": 0.8,
+              "gapM": 6.203854594147708e-25
+            }
+          ],
+          "forceScaleN": 1,
+          "gapScaleM": 1.2500000000000031e-8,
+          "equilibriumResidual": 5.324749574603647e-16,
+          "penetration": 0,
+          "tension": 0,
+          "complementarity": 3.9704669402545236e-17
+        },
+        {
+          "loadFactor": 5000,
+          "pivots": 0,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 3,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 4,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "interface",
+              "state": "open",
+              "normalReactionN": 0,
+              "gapM": 0
+            }
+          ],
+          "forceScaleN": 1,
+          "gapScaleM": 1.2500000000000031e-8,
+          "equilibriumResidual": 0,
+          "penetration": 0,
+          "tension": 0,
+          "complementarity": 0
+        },
+        {
+          "loadFactor": 5001,
+          "pivots": 0,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 3,
+              "displacementM": [
+                1.0000000000000025e-8,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 4,
+              "displacementM": [
+                1.0000000000000023e-8,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "interface",
+              "state": "open",
+              "normalReactionN": 0,
+              "gapM": 1.0000000000000025e-8
+            }
+          ],
+          "forceScaleN": 1,
+          "gapScaleM": 1.2500000000000031e-8,
+          "equilibriumResidual": 1.256073966947019e-15,
+          "penetration": 0,
+          "tension": 0,
+          "complementarity": 0
+        },
+        {
+          "loadFactor": 0,
+          "pivots": 1,
+          "nodes": [
+            {
+              "number": 1,
+              "displacementM": [
+                0,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 2,
+              "displacementM": [
+                -0.0000050000000000000055,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 3,
+              "displacementM": [
+                -0.000005000000000000006,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": 4,
+              "displacementM": [
+                -0.000010000000000000013,
+                0,
+                0
+              ],
+              "rotationRad": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "contacts": [
+            {
+              "id": "interface",
+              "state": "closed",
+              "normalReactionN": 4000,
+              "gapM": -8.470329472543003e-22
+            }
+          ],
+          "forceScaleN": 5000,
+          "gapScaleM": 0.00006250000000000015,
+          "equilibriumResidual": 1.3450493236482182e-16,
+          "penetration": 1.3552527156068773e-17,
+          "tension": 0,
+          "complementarity": 1.0842021724855018e-17
+        }
+      ]
+    },
+    "states": [
+      {
+        "stage": "tightening",
+        "externalLoadN": 0,
+        "boltId": "bolt",
+        "extensionM": -0.000010000000000000013,
+        "elasticExtensionM": 0.00003999999999999999,
+        "boltTensionN": 3999.999999999999,
+        "memberCompressionN": 4000,
+        "gapM": -8.470329472543003e-22,
+        "boltEnergyJ": 0.07999999999999996,
+        "memberEnergyJ": 0.02000000000000003,
+        "supportReactions": [
+          {
+            "number": 1,
+            "forceN": [
+              1.8189894035458565e-12,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 2,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 3,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 4,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "stage": "external",
+        "externalLoadN": 1000,
+        "boltId": "bolt",
+        "extensionM": -0.000008000000000000005,
+        "elasticExtensionM": 0.000042,
+        "boltTensionN": 4200,
+        "memberCompressionN": 3200.0000000000005,
+        "gapM": 2.541098841762901e-21,
+        "boltEnergyJ": 0.0882,
+        "memberEnergyJ": 0.012800000000000013,
+        "supportReactions": [
+          {
+            "number": 1,
+            "forceN": [
+              -999.9999999999986,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 2,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 3,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 4,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "stage": "external",
+        "externalLoadN": 4999,
+        "boltId": "bolt",
+        "extensionM": -2.000000000000003e-9,
+        "elasticExtensionM": 0.000049998000000000005,
+        "boltTensionN": 4999.8,
+        "memberCompressionN": 0.8,
+        "gapM": 6.203854594147708e-25,
+        "boltEnergyJ": 0.12499000020000002,
+        "memberEnergyJ": 8.000000000000022e-10,
+        "supportReactions": [
+          {
+            "number": 1,
+            "forceN": [
+              -4999,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 2,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 3,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 4,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "stage": "external",
+        "externalLoadN": 5000,
+        "boltId": "bolt",
+        "extensionM": 0,
+        "elasticExtensionM": 0.00005,
+        "boltTensionN": 5000,
+        "memberCompressionN": 0,
+        "gapM": 0,
+        "boltEnergyJ": 0.125,
+        "memberEnergyJ": 0,
+        "supportReactions": [
+          {
+            "number": 1,
+            "forceN": [
+              -5000,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 2,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 3,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 4,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "stage": "external",
+        "externalLoadN": 5001,
+        "boltId": "bolt",
+        "extensionM": 1.0000000000000023e-8,
+        "elasticExtensionM": 0.000050010000000000004,
+        "boltTensionN": 5001,
+        "memberCompressionN": 0,
+        "gapM": 1.0000000000000025e-8,
+        "boltEnergyJ": 0.12505000500000002,
+        "memberEnergyJ": 1.4693679385278594e-39,
+        "supportReactions": [
+          {
+            "number": 1,
+            "forceN": [
+              -5001,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 2,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 3,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 4,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      },
+      {
+        "stage": "external",
+        "externalLoadN": 0,
+        "boltId": "bolt",
+        "extensionM": -0.000010000000000000013,
+        "elasticExtensionM": 0.00003999999999999999,
+        "boltTensionN": 3999.999999999999,
+        "memberCompressionN": 4000,
+        "gapM": -8.470329472543003e-22,
+        "boltEnergyJ": 0.07999999999999996,
+        "memberEnergyJ": 0.02000000000000003,
+        "supportReactions": [
+          {
+            "number": 1,
+            "forceN": [
+              1.8189894035458565e-12,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 2,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 3,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            "number": 4,
+            "forceN": [
+              0,
+              0,
+              0
+            ]
+          }
+        ]
+      }
+    ],
+    "planSha256": "704aec1afdbdf7f5b4c486d4058a57b293608aa26af3b9dc5ad36b3a9f43785a"
+  },
+  "nativeCalls": [
+    {
+      "matrix": [
+        [
+          799999999.9999993,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -799999999.9999993,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          85378868.72998914,
+          0,
+          0,
+          0,
+          2134471.7182497294,
+          0,
+          -85378868.72998914,
+          0,
+          0,
+          0,
+          2134471.7182497294,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          28449502.133712605,
+          0,
+          -711237.5533428153,
+          0,
+          0,
+          0,
+          -28449502.133712605,
+          0,
+          -711237.5533428151,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          6923.0769230769165,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -6923.0769230769165,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          -711237.5533428153,
+          0,
+          24447.605500237038,
+          0,
+          0,
+          0,
+          711237.5533428153,
+          0,
+          11114.272166903724,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2134471.7182497294,
+          0,
+          0,
+          0,
+          80028.45962290987,
+          0,
+          -2134471.718249729,
+          0,
+          0,
+          0,
+          26695.126289576598,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          -799999999.9999993,
+          0,
+          0,
+          0,
+          0,
+          0,
+          799999999.9999993,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          -85378868.72998914,
+          0,
+          0,
+          0,
+          -2134471.718249729,
+          0,
+          85378868.72998914,
+          0,
+          0,
+          0,
+          -2134471.7182497294,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          -28449502.133712605,
+          0,
+          711237.5533428153,
+          0,
+          0,
+          0,
+          28449502.133712605,
+          0,
+          711237.5533428151,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          -6923.0769230769165,
+          0,
+          0,
+          0,
+          0,
+          0,
+          6923.0769230769165,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          -711237.5533428151,
+          0,
+          11114.272166903724,
+          0,
+          0,
+          0,
+          711237.5533428151,
+          0,
+          24447.60550023705,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          2134471.7182497294,
+          0,
+          0,
+          0,
+          26695.126289576598,
+          0,
+          -2134471.7182497294,
+          0,
+          0,
+          0,
+          80028.45962290987,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          799999999.9999993,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -799999999.9999993,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          85378868.72998914,
+          0,
+          0,
+          0,
+          2134471.7182497294,
+          0,
+          -85378868.72998914,
+          0,
+          0,
+          0,
+          2134471.7182497294
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          28449502.133712605,
+          0,
+          -711237.5533428153,
+          0,
+          0,
+          0,
+          -28449502.133712605,
+          0,
+          -711237.5533428151,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          6923.0769230769165,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -6923.0769230769165,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -711237.5533428153,
+          0,
+          24447.605500237038,
+          0,
+          0,
+          0,
+          711237.5533428153,
+          0,
+          11114.272166903724,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2134471.7182497294,
+          0,
+          0,
+          0,
+          80028.45962290987,
+          0,
+          -2134471.718249729,
+          0,
+          0,
+          0,
+          26695.126289576598
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -799999999.9999993,
+          0,
+          0,
+          0,
+          0,
+          0,
+          799999999.9999993,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -85378868.72998914,
+          0,
+          0,
+          0,
+          -2134471.718249729,
+          0,
+          85378868.72998914,
+          0,
+          0,
+          0,
+          -2134471.7182497294
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -28449502.133712605,
+          0,
+          711237.5533428153,
+          0,
+          0,
+          0,
+          28449502.133712605,
+          0,
+          711237.5533428151,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -6923.0769230769165,
+          0,
+          0,
+          0,
+          0,
+          0,
+          6923.0769230769165,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          -711237.5533428151,
+          0,
+          11114.272166903724,
+          0,
+          0,
+          0,
+          711237.5533428151,
+          0,
+          24447.60550023705,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2134471.7182497294,
+          0,
+          0,
+          0,
+          26695.126289576598,
+          0,
+          -2134471.7182497294,
+          0,
+          0,
+          0,
+          80028.45962290987
+        ]
+      ],
+      "momentLengthM": 0.05
+    }
+  ],
+  "completedSolverStages": [
+    {
+      "loadFactor": 0,
+      "pivots": 1,
+      "nodes": [
+        {
+          "number": 1,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 2,
+          "displacementM": [
+            -0.0000050000000000000055,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 3,
+          "displacementM": [
+            -0.000005000000000000006,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 4,
+          "displacementM": [
+            -0.000010000000000000013,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "contacts": [
+        {
+          "id": "interface",
+          "state": "closed",
+          "normalReactionN": 4000,
+          "gapM": -8.470329472543003e-22
+        }
+      ],
+      "forceScaleN": 5000,
+      "gapScaleM": 0.00006250000000000015,
+      "equilibriumResidual": 1.3450493236482182e-16,
+      "penetration": 1.3552527156068773e-17,
+      "tension": 0,
+      "complementarity": 1.0842021724855018e-17
+    },
+    {
+      "loadFactor": 1000,
+      "pivots": 1,
+      "nodes": [
+        {
+          "number": 1,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 2,
+          "displacementM": [
+            -0.000004000000000000005,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 3,
+          "displacementM": [
+            -0.000004000000000000002,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 4,
+          "displacementM": [
+            -0.000008000000000000005,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "contacts": [
+        {
+          "id": "interface",
+          "state": "closed",
+          "normalReactionN": 3200.0000000000005,
+          "gapM": 2.541098841762901e-21
+        }
+      ],
+      "forceScaleN": 4000,
+      "gapScaleM": 0.000050000000000000124,
+      "equilibriumResidual": 1.1681893492693318e-16,
+      "penetration": 0,
+      "tension": 0,
+      "complementarity": 4.065758146820632e-17
+    },
+    {
+      "loadFactor": 4999,
+      "pivots": 1,
+      "nodes": [
+        {
+          "number": 1,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 2,
+          "displacementM": [
+            -1.0000000000000013e-9,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 3,
+          "displacementM": [
+            -1.0000000000000007e-9,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 4,
+          "displacementM": [
+            -2.000000000000003e-9,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "contacts": [
+        {
+          "id": "interface",
+          "state": "closed",
+          "normalReactionN": 0.8,
+          "gapM": 6.203854594147708e-25
+        }
+      ],
+      "forceScaleN": 1,
+      "gapScaleM": 1.2500000000000031e-8,
+      "equilibriumResidual": 5.324749574603647e-16,
+      "penetration": 0,
+      "tension": 0,
+      "complementarity": 3.9704669402545236e-17
+    },
+    {
+      "loadFactor": 5000,
+      "pivots": 0,
+      "nodes": [
+        {
+          "number": 1,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 2,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 3,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 4,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "contacts": [
+        {
+          "id": "interface",
+          "state": "open",
+          "normalReactionN": 0,
+          "gapM": 0
+        }
+      ],
+      "forceScaleN": 1,
+      "gapScaleM": 1.2500000000000031e-8,
+      "equilibriumResidual": 0,
+      "penetration": 0,
+      "tension": 0,
+      "complementarity": 0
+    },
+    {
+      "loadFactor": 5001,
+      "pivots": 0,
+      "nodes": [
+        {
+          "number": 1,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 2,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 3,
+          "displacementM": [
+            1.0000000000000025e-8,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 4,
+          "displacementM": [
+            1.0000000000000023e-8,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "contacts": [
+        {
+          "id": "interface",
+          "state": "open",
+          "normalReactionN": 0,
+          "gapM": 1.0000000000000025e-8
+        }
+      ],
+      "forceScaleN": 1,
+      "gapScaleM": 1.2500000000000031e-8,
+      "equilibriumResidual": 1.256073966947019e-15,
+      "penetration": 0,
+      "tension": 0,
+      "complementarity": 0
+    },
+    {
+      "loadFactor": 0,
+      "pivots": 1,
+      "nodes": [
+        {
+          "number": 1,
+          "displacementM": [
+            0,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 2,
+          "displacementM": [
+            -0.0000050000000000000055,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 3,
+          "displacementM": [
+            -0.000005000000000000006,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "number": 4,
+          "displacementM": [
+            -0.000010000000000000013,
+            0,
+            0
+          ],
+          "rotationRad": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "contacts": [
+        {
+          "id": "interface",
+          "state": "closed",
+          "normalReactionN": 4000,
+          "gapM": -8.470329472543003e-22
+        }
+      ],
+      "forceScaleN": 5000,
+      "gapScaleM": 0.00006250000000000015,
+      "equilibriumResidual": 1.3450493236482182e-16,
+      "penetration": 1.3552527156068773e-17,
+      "tension": 0,
+      "complementarity": 1.0842021724855018e-17
+    }
+  ],
+  "failureLocals": [],
+  "failure": null
+}

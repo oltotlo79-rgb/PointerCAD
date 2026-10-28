@@ -10,10 +10,9 @@ import { useAppStore } from '../store/useAppStore.js';
 import { cancelPlaceComponent, commitPlaceComponent } from './placeComponentActions.js';
 import { beginSteelBendPlacement, buildSteelBendChoice, DEFAULT_STEEL_BEND_SOURCES } from './steelBendPicker.js';
 import { SteelBendFields } from './SteelBendFields.js';
-import { createDirectKernelBridge, recomputePart, type PartDocument } from '@pointercad/model';
+import { recomputePart, type PartDocument } from '@pointercad/model';
 import { afterAll, beforeAll, vi } from 'vitest';
-import { createKernelApi } from '../../../kernel/src/index.js';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
 import { buildSteelBendEdit, commitSteelBendEdit, readSteelBendEditInput,
   selectedSteelBendEditTarget, type SteelBendSources } from './steelBendPicker.js';
 
@@ -249,8 +248,8 @@ function expectUnchangedEdit(before: ReturnType<typeof useAppStore.getState>): v
 }
 
 describe('W04 saved bend edit, one Undo and one Redo with independent W01 geometry', () => {
-  const bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode));
-  beforeAll(async () => { await loadOcctForNode(); }, 180_000);
+  const bridge = createNativeKernelBridgeForNodeTests();
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
   afterAll(() => { bridge.dispose(); });
   // W01 section oracles: rectangle, rolled angle with corner/root radii, and hollow pipe.
   const angleArea = 564 + (1 - Math.PI / 4) * (6.5 ** 2 - 2 * 4.5 ** 2);

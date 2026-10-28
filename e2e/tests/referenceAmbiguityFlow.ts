@@ -9,8 +9,9 @@ import { treeRow } from './solidCaptureSupport.js';
 import { uiMessage } from './uiMessages.js';
 import {
   AMBIGUITY_HOLE_NAME, ambiguousAppearancePart, ambiguousDimensionDrawing, ambiguousHolePart, ambiguousMateAssembly,
-  buildReferenceAmbiguityScenario, nativeRepairPreviewFixture, referenceRepairFaceChoice, referenceRepairDrawingFixture, type ReferenceAmbiguityScenario,
+  buildReferenceAmbiguityScenario, nativeRepairPreviewFixture, referenceRepairDrawingFixture, type ReferenceAmbiguityScenario,
 } from './referenceAmbiguityFixture.js';
+import { referenceRepairAppearanceFixture } from './referenceRepairAppearanceFixture.js';
 
 /**
  * R01: 参照が曖昧(ambiguous)・消失(missing)になった時、寸法・合致・加工面・外観のどれも正常な値として採らず、
@@ -345,11 +346,24 @@ export async function referenceRepairAppearanceFlow(page: Page, info: TestInfo,
   options: { readonly app?: ElectronApplication } = {}): Promise<void> {
   const app = options.app;
   await page.setViewportSize({ width: 1440, height: 900 });
-  const scenario = await buildReferenceAmbiguityScenario();
+  const { scenario, chosen } = await referenceRepairAppearanceFixture();
   const fixture = ambiguousAppearancePart(scenario);
-  const chosen = referenceRepairFaceChoice(scenario);
   const input = await writeFixture(info, 'repair-appearance-input.pcad', fixture.bytes);
   await openAndWait(page, input, 'success', app);
+  // The independently chosen +Y face is behind the home camera (-Y), and the
+  // original 300 mm tall body exceeds its initial frame. Use actual camera input
+  // before either screenshot; all hover/cancel comparisons then share this view.
+  const viewport = canvas(page), bounds = await viewport.boundingBox();
+  if (bounds === null) throw new Error('Actual appearance viewport missing');
+  await viewport.focus(); await page.keyboard.press('Home');
+  const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(x - 200, y);
+  await page.mouse.up({ button: 'middle' });
+  await page.mouse.wheel(0, 1800);
+  await expect.poll(() => page.evaluate(() => window.pcadViewportFramedBodies?.() ?? []),
+    { message: 'Actual U body must be fully framed before the appearance comparison' }).toContain(scenario.body.featureId);
   await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', 'part');
   await expectAppearanceUnresolved(page);
   const baseline = await savedPart(page, info, 'repair-appearance-baseline.pcad', app);
@@ -359,6 +373,11 @@ export async function referenceRepairAppearanceFlow(page: Page, info: TestInfo,
   const entry = baseline.appearance.entries[0];
   if (entry === undefined || entry.target.kind !== 'face') throw new Error('曖昧な外観の面がありません。');
   expect(entry.target.ref).toEqual(scenario.refs.ambiguousFace);
+  const savedFingerprint = entry.target.ref.fingerprint;
+  if (savedFingerprint.kind !== 'face' || chosen.fingerprint.kind !== 'face') throw new Error('Independent face fingerprints required');
+  expect(Math.abs(savedFingerprint.area - 6000)).toBeLessThan(1e-6);
+  expect(Math.abs(chosen.fingerprint.area - 3000)).toBeLessThan(1e-6);
+  for (const [axis, coordinate] of [5, 40, 150].entries()) expect(Math.abs(chosen.fingerprint.position[axis] - coordinate)).toBeLessThan(1e-6);
   const repair = page.getByTestId('reference-repair');
   const open = async (): Promise<Locator> => {
     await expect(repair).toBeVisible();
@@ -373,7 +392,8 @@ export async function referenceRepairAppearanceFlow(page: Page, info: TestInfo,
     await expect(detail).toContainText('面積 6000 mm²');
     return detail;
   };
-  const choice = (detail: Locator): Locator => detail.getByRole('button').filter({ hasText: `面積 ${String(chosen.fingerprint.kind === 'face' ? chosen.fingerprint.area : NaN)} mm²` });
+  const choice = (detail: Locator): Locator => detail.getByRole('button')
+    .filter({ hasText: '面積 3000 mm²' }).filter({ hasText: '(5, 40, 150) mm' });
   const paint = async (): Promise<void> => {
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   };
@@ -490,6 +510,22 @@ async function nativePreviewObservation(page: Page) {
     });
     return { events, actualReadMonotonicMs: performance.now(), raw: JSON.stringify(value) };
   });
+}
+
+/** Cached metadata only; diagnostic failure must never replace an assertion failure. */
+async function attachNativePreviewObservation(page: Page, info: TestInfo, label: string): Promise<void> {
+  try {
+    const observed = await nativePreviewObservation(page);
+    const path = info.outputPath(`${label}-preview-events.json`);
+    await writeFile(path, observed.raw, 'utf8');
+    await info.attach(`${label}-preview-events.json`, { path, contentType: 'application/json' });
+  } catch (error) {
+    try {
+      await info.attach(`${label}-preview-observation-error.json`, {
+        body: Buffer.from(JSON.stringify({ error: String(error) })), contentType: 'application/json',
+      });
+    } catch { /* Keep the original test outcome. */ }
+  }
 }
 
 /** Read the already-open Part session independently of preview publication and saved lineage ID. */
@@ -624,6 +660,7 @@ export async function referenceRepairNativePreviewFlow(page: Page, info: TestInf
   try {
     await expect.poll(async () => (await nativePreviewObservation(page)).events.filter(event => event.sequence > sequence && event.kind === 'publish-complete').length).toBe(1);
   } catch (originalError) {
+    await attachNativePreviewObservation(page, info, `native-${use}-publish-failed`);
     // Failure-only metadata: existing memory getter, no new capture or retry.
     try {
       const rejection = await page.evaluate(() => {
@@ -685,15 +722,34 @@ export async function referenceRepairNativePreviewFlow(page: Page, info: TestInf
   expect(highlighted.rgba.equals(original.rgba), 'Actual decoded viewport pixels must change').toBe(false);
   expect(highlighted.outlinePixels, 'Actual hover blue pixels must increase').toBeGreaterThan(original.outlinePixels);
   await info.attach(`native-${use}-outline.png`, { body: hoverPNG, contentType: 'image/png' });
-  expect(await saved(`native-${use}-hover`)).toEqual(baseline);
+  await attachNativePreviewObservation(page, info, `native-${use}-before-hover-save`);
+  try { expect(await saved(`native-${use}-hover`)).toEqual(baseline); }
+  finally { await attachNativePreviewObservation(page, info, `native-${use}-after-hover-save`); }
   await expect(undoButton(page)).toBeDisabled(); await expect(redoButton(page)).toBeDisabled();
   // Actual pointer leave independently clears the separate preview owner.
   await detail.getByRole('heading', { name: '元の参照（保存時の情報）', exact: true }).hover();
-  await expect.poll(async () => (await nativePreviewObservation(page)).events.filter(event => event.operationId === published.operationId && event.kind === 'release-complete').length).toBe(1);
+  try {
+    await expect.poll(async () => (await nativePreviewObservation(page)).events.filter(event => event.operationId === published.operationId && event.kind === 'release-complete').length).toBe(1);
+  } finally { await attachNativePreviewObservation(page, info, `native-${use}-after-pointer-leave`); }
   const clear = await nativePreviewObservation(page), returned = clear.events.find(event => event.operationId === published.operationId && event.kind === 'release-complete');
   if (returned === undefined) throw new Error('Actual preview return required');
   expect(returned.sequence).toBeGreaterThan(published.sequence);
   expect([returned.hostDisplayCopyBytes, returned.hostGpuAttributeBytes, returned.hostGpuReservedBytes]).toEqual([0, 0, 0]);
+  // A save can invalidate a proof and republish the same hovered descriptor.
+  // Every actual publication must have its own owner and exactly one return.
+  const publications = clear.events.filter(event => event.sequence > sequence && event.kind === 'publish-complete');
+  for (const key of ['operationId', 'publicationId', 'resourceOwnerId'] as const)
+    expect(new Set(publications.map(event => event[key])).size).toBe(publications.length);
+  for (const publication of publications) {
+    assertNativePublication(clear.events, publication, generation);
+    const cycle = clear.events.filter(event => event.operationId === publication.operationId);
+    expect(cycle.filter(event => event.kind === 'release-start')).toHaveLength(1);
+    const terminals = cycle.filter(event => event.kind === 'release-complete' || event.kind === 'candidate-return-complete');
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0].kind).toBe('release-complete');
+    expect(terminals[0].sequence).toBeGreaterThan(publication.sequence);
+    expect([terminals[0].hostDisplayCopyBytes, terminals[0].hostGpuAttributeBytes, terminals[0].hostGpuReservedBytes]).toEqual([0, 0, 0]);
+  }
   await paint(); expect((await nativePreviewPixels(page, await canvas(page).screenshot())).rgba.equals(original.rgba)).toBe(true);
   await candidate.click(); await expect(candidate).toHaveAttribute('aria-pressed', 'true');
   await detail.getByRole('button', { name: '修復を取り消す', exact: true }).click();

@@ -359,3 +359,19 @@ describe('選択セット(FR-112、P6 タスク43)', () => {
  * 3D プリントの点検の結果の置き場(FR-815、P6 §0.53。タスク42・43)。
  * **43b が置くのは欄と口だけ**で、中身を入れるのは 43a。
  */
+
+describe('faceRotate mixed face/edge selection', () => {
+  it.each([['face', 'edge'], ['edge', 'face']] as const)('retains both materials across %s to %s only for rotation', (first, second) => {
+    useAppStore.getState().setActiveTool('faceRotate');
+    useAppStore.getState().setSelectionKind(first);
+    const selected = [`box#${first}:0`];
+    useAppStore.getState().setSelection(selected);
+    useAppStore.getState().setSelectionKind(second);
+    expect(useAppStore.getState().selection).toEqual(selected);
+    useAppStore.getState().setSelection([...selected, `box#${second}:0`]);
+    useAppStore.getState().setSelectionKind(first);
+    expect(useAppStore.getState().selection).toEqual([...selected, `box#${second}:0`]);
+    useAppStore.getState().setSelectionKind('body');
+    expect(useAppStore.getState().selection).toEqual([]);
+  });
+});

@@ -1,5 +1,10 @@
+import { analyzeNativeBoltPreload, verifyNativeBoltPrograms } from './nativeBoltPreloadRuntime.js';
+import { prepareNativeBoltPreloadJob, NATIVE_BOLT_KIND, type NativeBoltPreloadOwnedResult, type PreparedNativeBoltPreloadJob } from './nativeBoltPreloadBinding.js';
 import { FEM_ASSETS, NETGEN_ASSETS, SOLID_ASSETS, SOLID_PLASTIC_ASSETS, BOLT_CONTACT_ASSETS, SOLID_MODAL_ASSETS, SOLID_BUCKLING_ASSETS } from './assets.js';
 import { analyzeBeamBoltContact } from './beamBoltContactRuntime.js';
+import { analyzeFrameBoltContact } from './frameBoltContactRuntime.js';
+import { readFrameBoltContact, type FrameBoltContactInput } from './beamBoltContact.js';
+import type { FrameBoltContactResult } from './frameBoltContactBinding.js';
 import type { BeamBoltContactInput, BeamBoltContactResult } from './beamBoltContact.js';
 import { WELD_CONTACT_ASSETS } from './beamWeldAssets.js';
 import { analyzeBeamWeldContact } from './beamWeldContactRuntime.js';
@@ -51,7 +56,7 @@ export async function analyzeInBrowser(document:BeamAnalysisDocument,onPhase:(ph
 async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysisDocument, buckling?:BeamBucklingInput,
   transient?:BeamTransientInput, plasticBar?:PlasticBarInput, contact?:BeamContactInput, tetra?:TetraMeshInput,
   solid?:SolidAnalysisInput, solidPlastic?:SolidPlasticInput, boltContact?:BeamBoltContactInput, weldContact?:BeamWeldContactInput,
-  jointContact?:BeamJointContactInput, initialStrain?:BeamJointInitialStrainInput, impact?:BeamImpactInput, solidModal?:SolidModalInput, solidBuckling?:SolidBucklingInput):Promise<FemResult>{
+  jointContact?:BeamJointContactInput, initialStrain?:BeamJointInitialStrainInput, impact?:BeamImpactInput, solidModal?:SolidModalInput, solidBuckling?:SolidBucklingInput, nativeBolt?:PreparedNativeBoltPreloadJob, frameBoltContact?:FrameBoltContactInput):Promise<FemResult>{
   const base = new URL('./assets/', self.location.href);
   const localApp = base.protocol === 'app:' && base.host === 'pointercad';
   const web = (base.protocol === 'http:' || base.protocol === 'https:') && base.origin === self.location.origin;
@@ -68,11 +73,12 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
   // be reached while establishing integrity either.
   // Mesh-only native assets do not change the beam/bar asset requirements.
   // Impact needs only the pinned runtime, the extracted beamAnalysis.py (FEM_ASSETS) and beamImpact.py.
-  const pins = impact !== undefined ? [...FEM_ASSETS, ...BEAM_IMPACT_ASSETS]
+  const pins = nativeBolt !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS, ...JOINT_INITIAL_STRAIN_ASSETS]
+    : impact !== undefined ? [...FEM_ASSETS, ...BEAM_IMPACT_ASSETS]
     : initialStrain !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS, ...JOINT_INITIAL_STRAIN_ASSETS]
     : jointContact !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS]
     : weldContact !== undefined ? [...FEM_ASSETS, ...WELD_CONTACT_ASSETS]
-    : boltContact !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS]
+    : boltContact !== undefined || frameBoltContact !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS]
     : solidPlastic !== undefined ? [...FEM_ASSETS, ...SOLID_PLASTIC_ASSETS]
     : solidBuckling !== undefined ? [...FEM_ASSETS, ...SOLID_BUCKLING_ASSETS]
     : solidModal !== undefined ? [...FEM_ASSETS, ...SOLID_MODAL_ASSETS]
@@ -129,7 +135,14 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
     // plasticBarAnalysis.py must be a pinned FEM_ASSETS entry (generated assets.ts); until then asset() reports
     // asset-missing instead of running unverified code.
     // beamContact.py is a pinned FEM_ASSETS entry; a missing or changed file stops before any code runs.
-    const result = impact !== undefined
+    const result = nativeBolt !== undefined
+      ? { ...await analyzeNativeBoltPreload(runtime, nativeBolt.prepared.plan, await verifyNativeBoltPrograms({
+          contactWrapper: new Uint8Array(asset('beamContact.py')), boltWrapper: new Uint8Array(asset('beamBoltContact.py')),
+          weldWrapper: new Uint8Array(asset('beamWeldContact.py')), jointWrapper: new Uint8Array(asset('beamJointContact.py')),
+          initialStrainWrapper: new Uint8Array(asset('beamJointInitialStrain.py')),
+          wheelBytes: new Uint8Array(asset('oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl')), wheelLocation,
+        }), onPhase), kind: NATIVE_BOLT_KIND, source: nativeBolt.source }
+      : impact !== undefined
       ? await analyzeBeamImpact(runtime, impact, { analysisWrapper: new Uint8Array(asset('beamAnalysis.py')),
         impactWrapper: new Uint8Array(asset('beamImpact.py')), wheelLocation }, onPhase)
       : initialStrain !== undefined
@@ -144,6 +157,9 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
       : weldContact !== undefined
       ? await analyzeBeamWeldContact(runtime, weldContact, { contactWrapper: new Uint8Array(asset('beamContact.py')),
         weldWrapper: new Uint8Array(asset('beamWeldContact.py')), wheelLocation }, onPhase)
+      : frameBoltContact !== undefined
+      ? await analyzeFrameBoltContact(runtime, frameBoltContact, { contactWrapper: new Uint8Array(asset('beamContact.py')),
+        boltWrapper: new Uint8Array(asset('beamBoltContact.py')), wheelLocation }, onPhase)
       : boltContact !== undefined
       ? await analyzeBeamBoltContact(runtime, boltContact, { contactWrapper: new Uint8Array(asset('beamContact.py')),
         boltWrapper: new Uint8Array(asset('beamBoltContact.py')), wheelLocation }, onPhase)
@@ -271,5 +287,23 @@ export async function analyzeSolidBucklingInBrowser(input: SolidBucklingInput, o
   const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
     undefined, undefined, undefined, undefined, undefined, undefined, input);
   if (result.kind !== 'oofem-solid-tet4-buckling') throw new Error('Unexpected solid buckling result');
+  return result;
+}
+
+/** Full untrusted numeric-plan validation and local preparation complete before runInBrowser reads assets. */
+export async function analyzeNativeBoltPreloadInBrowser(value: unknown, onPhase: (phase: FemPhase) => void): Promise<NativeBoltPreloadOwnedResult> {
+  let job: PreparedNativeBoltPreloadJob;
+  try { job = await prepareNativeBoltPreloadJob(value); }
+  catch (error) { throw new Error('native-preload-input: '+(error instanceof Error ? error.message : 'invalid plan'), { cause: error }); }
+  const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, job);
+  if (result.kind !== NATIVE_BOLT_KIND) throw new Error('Unexpected native preload result');
+  return result;
+}
+
+/** 正規入力の所有を確定するまで、資産取得もinterpreterの作成もしない。 */
+export async function analyzeFrameBoltContactInBrowser(value: unknown, onPhase: (phase: FemPhase) => void): Promise<FrameBoltContactResult> {
+  const input = readFrameBoltContact(value).input;
+  const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, input);
+  if (result.kind !== 'frame-bolt-contact') throw new Error('Unexpected frame-bolt-contact result');
   return result;
 }

@@ -1249,3 +1249,26 @@ describe('円筒の側面の穴の高さ・角度の評価し直し(EX05)', () =
     expect(solid !== undefined && 'cylindrical' in solid).toBe(false);
   });
 });
+
+
+describe('planar XY expression dependencies candidate', () => {
+  it('reevaluates both signs without replacing source and exposes both expressions to dependency collection', () => {
+    const base = hole('hole-1', expr('6'), expr('4'));
+    if (base.kind !== 'hole') throw new Error('Not a hole');
+    const feature: SolidFeature = { ...base, centers: [], planar: { kind: 'plane-face',
+      locations: [{ x: pending('位置 * 2'), y: pending('-位置 - 1') }] } };
+    const doc = buildDocument({ solids: [feature] });
+    expect(collectParameterUsages(doc).map(item => item.source)).toContain('位置 * 2');
+    expect(collectParameterUsages(doc).map(item => item.source)).toContain('-位置 - 1');
+    for (const [value, x, y] of [[3, 6, -4], [-2, -4, 1]]) {
+      const next = reevaluatePartDocument(doc, variables({ 位置: value })).document.solids[0];
+      if (next?.kind !== 'hole') throw new Error('Missing hole');
+      expect(next.planar?.locations[0]?.x).toMatchObject({ source: '位置 * 2', value: x });
+      expect(next.planar?.locations[0]?.y).toMatchObject({ source: '-位置 - 1', value: y });
+    }
+    const renamed = renameVariableInPartDocument(doc, '位置', '距離').solids[0];
+    if (renamed?.kind !== 'hole') throw new Error('Missing hole');
+    expect(renamed.planar?.locations[0]?.x.source).toContain('距離');
+    expect(renamed.planar?.locations[0]?.y.source).toContain('距離');
+  });
+});

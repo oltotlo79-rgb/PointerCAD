@@ -1,8 +1,9 @@
+import { invalidateBoltPreloadDraft, reviewedBoltPreloadWire, type BoltPreloadDraft } from './boltPreloadDraft.js';
 import { FemClient, createProductFemWorker, impactMemberResponse, transientAxialResponse, translateBeamBuckling,
   type FemOptions, type FemWorkerPort } from '@pointercad/fem';
 import type { StoreApi } from 'zustand';
 import type { AppState } from '../store/appState.js';
-import type { BeamRunner } from '../store/beamSlice.js';
+import type { BeamRunner, BoltPreloadRunner } from '../store/beamSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { beamDefinition, invalidateBeamSession, type BeamSession } from './beamSession.js';
 import { beamSourceIsCurrent, type BeamSourceSnapshot } from './beamSource.js';
@@ -41,16 +42,19 @@ export function attachBeamAnalysis(
       get onmessageerror() { return worker.onmessageerror; }, set onmessageerror(value) { worker.onmessageerror = value; },
     };
   });
-  let active: { readonly token: object; readonly controller: AbortController } | null = null;
+  let active: { readonly kind: 'standard' | 'preload'; readonly token: object; readonly controller: AbortController } | null = null;
   let disposed = false;
   const cancel = (): void => {
     const previous = active;
     active = null;
     previous?.controller.abort();
+    const state = store.getState();
+    if (previous?.kind === 'standard' && state.beamSession?.status === 'running') store.setState({ beamSession: { ...state.beamSession, status: 'cancelled', phase: null, result: null } });
+    if (previous?.kind === 'preload' && state.boltPreloadStatus === 'running') store.setState({ boltPreloadStatus: 'cancelled', boltPreloadPhase: null });
   };
   const current = (token: object, session: BeamSession, source: BeamSourceSnapshot): boolean => {
     const state = store.getState(), next = state.beamSession;
-    return !disposed && active?.token === token && state.strengthSession !== null && next !== null
+    return !disposed && active?.kind === 'standard' && active.token === token && state.strengthSession !== null && next !== null
       && next.ownerId === session.ownerId && next.analysisId === session.analysisId
       && next.revision === session.revision && next.reviewed === source && beamSourceIsCurrent(source, state);
   };
@@ -64,7 +68,7 @@ export function attachBeamAnalysis(
       return;
     }
     const token = {}, controller = new AbortController();
-    active = { token, controller };
+    active = { kind: 'standard', token, controller };
     store.setState({ beamSession: { ...session, result: null, bucklingEdges: [], transientAxial: null, impactMembers: null, status: 'running', phase: null, errorKey: null, diagnostic: null } });
     const options: FemOptions = {
       signal: controller.signal,
@@ -119,16 +123,54 @@ export function attachBeamAnalysis(
         errorKey: 'beam.error.runtime', diagnostic: error instanceof Error ? error.message : 'FEM request failed' } });
     });
   };
+  const preloadCurrent = (token: object, draft: BoltPreloadDraft, owner: { readonly id: string; readonly revision: number; readonly reviewed: BoltPreloadDraft['reviewed'] }): boolean => {
+    const state = store.getState(), next = state.boltPreloadDraft;
+    return !disposed && active?.kind === 'preload' && active.token === token && next === draft
+      && next.saved.id === owner.id && next.revision === owner.revision && next.reviewed === owner.reviewed
+      && state.strengthSession !== null && state.assembly?.id === draft.saved.source.documentId
+      && draft.reviewed !== null && beamSourceIsCurrent(draft.reviewed.source, state);
+  };
+  const runPreload = (draft: BoltPreloadDraft): void => {
+    cancel();
+    if (disposed || store.getState().boltPreloadDraft !== draft) return;
+    let wire;
+    try { wire = reviewedBoltPreloadWire(draft, store.getState()); }
+    catch (error) { store.setState({ boltPreloadStatus: 'failed', boltPreloadPhase: null, boltPreloadError: error instanceof Error ? error.message : 'Preload review required' }); return; }
+    const owner = { id: draft.saved.id, revision: draft.revision, reviewed: draft.reviewed };
+    const token = {}, controller = new AbortController(), runningDraft = { ...draft, result: null }; active = { kind: 'preload', token, controller };
+    store.setState({ boltPreloadDraft: runningDraft, boltPreloadStatus: 'running', boltPreloadPhase: null, boltPreloadError: null });
+    void client.analyzeNativeBoltPreload(wire, { signal: controller.signal, onPhase: phase => {
+      if (preloadCurrent(token, runningDraft, owner)) store.setState({ boltPreloadPhase: phase });
+    } }).then(completion => {
+      if (!preloadCurrent(token, runningDraft, owner)) return;
+      active = null;
+      if (completion.kind === 'result') store.setState({ boltPreloadDraft: { ...runningDraft, result: completion.result }, boltPreloadStatus: 'complete', boltPreloadPhase: null });
+      else store.setState({ boltPreloadStatus: completion.kind === 'cancelled' ? 'cancelled' : 'failed', boltPreloadPhase: null,
+        boltPreloadError: completion.kind === 'failed' ? `${completion.failure.code}: ${completion.failure.message}` : null });
+    }).catch((error: unknown) => {
+      if (!preloadCurrent(token, runningDraft, owner)) return;
+      active = null; store.setState({ boltPreloadStatus: 'failed', boltPreloadPhase: null, boltPreloadError: error instanceof Error ? error.message : 'Preload run failed' });
+    });
+  };
+  const preloadRunner: BoltPreloadRunner = { run: runPreload, cancel };
+  store.getState().setBoltPreloadRunner(preloadRunner);
   const runner: BeamRunner = { run, cancel };
   store.getState().setBeamRunner(runner);
   const unsubscribe = store.subscribe(state => {
+    const draft = state.boltPreloadDraft;
+    const invalidOwner = state.strengthSession === null || state.assembly === null || (draft !== null && state.assembly.id !== draft.saved.source.documentId);
+    const stale = draft?.reviewed !== null && draft?.reviewed !== undefined && !beamSourceIsCurrent(draft.reviewed.source, state);
+    if (draft !== null && (invalidOwner || stale)) {
+      if (active?.kind === 'preload') cancel();
+      store.setState({ boltPreloadDraft: invalidOwner ? null : invalidateBoltPreloadDraft(draft), boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: 'Preload source changed' });
+    }
     const session = state.beamSession;
-    if (session === null) { cancel(); return; }
+    if (session === null) { if (active?.kind === 'standard') cancel(); return; }
     if (state.strengthSession === null || session.ownerId !== state.activeDocumentId || state.assembly === null) {
-      cancel();
+      if (active?.kind === 'standard') cancel();
       store.setState({ beamSession: null });
     } else if (session.reviewed !== null && !beamSourceIsCurrent(session.reviewed, state)) {
-      cancel();
+      if (active?.kind === 'standard') cancel();
       store.setState({ beamSession: invalidateBeamSession(session, 'beam.error.changed') });
     }
   });
@@ -140,6 +182,7 @@ export function attachBeamAnalysis(
       unsubscribe();
       cancel();
       client.dispose();
+      if (store.getState().boltPreloadRunner === preloadRunner) store.setState({ boltPreloadRunner: null, boltPreloadDraft: null, boltPreloadStatus: 'editing', boltPreloadPhase: null, boltPreloadError: null });
       if (store.getState().beamRunner === runner) store.setState({ beamRunner: null, beamSession: null });
     },
   };

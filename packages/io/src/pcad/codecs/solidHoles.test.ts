@@ -160,3 +160,109 @@ describe('ねじ穴の保存(EX05 の円筒の側面)', () => {
     }
   });
 });
+
+import { appendSolid, createEmptyPartDocument } from '@pointercad/model';
+import { reopenBoth } from '../cylindricalMachiningRoundtrip.testSupport.js';
+
+describe('EX-05.PERSIST: exact machining codec roundtrips', () => {
+  const locations = [
+    { height: expression('13', 13), angle: expression('-413', -413) },
+    { height: expression('27', 27), angle: expression('397', 397) },
+    { height: expression('13 + 7', 20), angle: expression('720 + 37', 757) },
+  ];
+  const counterbore = { kind: 'counterbore', diameter: expression('6 + 2', 8), depth: expression('4 / 2', 2) } as const;
+  for (const representation of ['simplified', 'modeled'] as const) {
+    for (const depth of [{ kind: 'blind', depth: expression('4 + 4', 8) }, { kind: 'through' }] as const) {
+      for (const placement of ['planar', 'cylindrical'] as const) {
+        it(`${representation}/${depth.kind}/${placement}: preserves counterbore, expressions, order, IDs and references`, () => {
+          const feature: ThreadHoleFeature = {
+            ...base, kind: 'threadHole', targetFeatureId: 'cylinder-1', face: sideFace,
+            centers: placement === 'planar' ? [{ sketchId: 'sketch-1', pointFeatureId: 'point-1' }] : [],
+            designation: 'M6', series: 'coarse', pitch: expression('1', 1), drillDiameter: expression('4.917', 4.917),
+            depth, threadLength: expression('2 * 3', 6), representation, entry: counterbore,
+            tiltAngle: expression('0', 0), tiltAzimuth: expression('0', 0),
+            ...(placement === 'cylindrical' ? { cylindrical: { kind: 'cylinder-face', locations } as const } : {}),
+          };
+          const saved = JSON.stringify(serializeThreadHoleFeature(feature));
+          const record: unknown = JSON.parse(saved);
+          if (typeof record !== 'object' || record === null || Array.isArray(record)) throw new Error('Missing saved object');
+          const reopened = readThreadHoleFeature(Object.fromEntries(Object.entries(record)), 'solids.0', base);
+          expect(reopened).toEqual({ ok: true, value: feature });
+          if (!reopened.ok || reopened.value.kind !== 'threadHole') throw new Error('Thread codec rejected valid feature');
+          expect(JSON.stringify(serializeThreadHoleFeature(reopened.value))).toBe(saved);
+          reopenBoth(appendSolid(createEmptyPartDocument(), feature));
+        });
+      }
+    }
+  }
+  for (const placement of ['planar', 'cylindrical'] as const) {
+    it(`plain/${placement}: counterbore and unnormalised expressions survive both document codecs`, () => {
+      const { cylindrical: dropped, ...legacy } = cylindrical;
+      expect(dropped).toBeDefined();
+      const feature: HoleFeature = { ...(placement === 'planar' ? { ...legacy, centers: planar.centers } : { ...cylindrical, cylindrical: { kind: 'cylinder-face', locations } }), entry: counterbore };
+      const saved = JSON.stringify(serializeHoleFeature(feature));
+      const reopened = reopen(feature);
+      expect(reopened).toEqual({ ok: true, value: feature });
+      if (!reopened.ok || reopened.value.kind !== 'hole') throw new Error('Hole codec rejected valid feature');
+      expect(JSON.stringify(serializeHoleFeature(reopened.value))).toBe(saved);
+      reopenBoth(appendSolid(createEmptyPartDocument(), feature));
+    });
+  }
+  it('keeps an explicitly empty cylindrical location list for model validation', () => {
+    const feature: HoleFeature = { ...cylindrical, cylindrical: { kind: 'cylinder-face', locations: [] } };
+    expect(reopen(feature)).toEqual({ ok: true, value: feature });
+    reopenBoth(appendSolid(createEmptyPartDocument(), feature));
+  });
+});
+
+it('EX-05.PERSIST: thread codec keeps an empty location list for model rejection', () => {
+  const feature: ThreadHoleFeature = { ...base, kind: 'threadHole', targetFeatureId: 'cylinder-1', face: sideFace,
+    centers: [], designation: 'M6', series: 'coarse', pitch: expression('1', 1), drillDiameter: expression('4.917', 4.917),
+    depth: { kind: 'blind', depth: expression('8', 8) }, threadLength: expression('6', 6), representation: 'simplified',
+    tiltAngle: expression('0', 0), tiltAzimuth: expression('0', 0), cylindrical: { kind: 'cylinder-face', locations: [] } };
+  const record = Object.fromEntries(Object.entries(serializeThreadHoleFeature(feature)));
+  expect(readThreadHoleFeature(record, 'solids.0', base)).toEqual({ ok: true, value: feature });
+  reopenBoth(appendSolid(createEmptyPartDocument(), feature));
+});
+
+
+describe('native planar XY persistence candidate', () => {
+  const feature: HoleFeature = { ...planar, centers: [],
+    face: { ...sideFace, fingerprint: { ...sideFace.fingerprint, surfaceKind: 'plane', radius: null } },
+    planar: { kind: 'plane-face', locations: [
+      { x: expression('a * 2', 6), y: expression('-a - 1', -4) },
+      { x: expression('-3', -3), y: expression('5', 5) },
+    ] } };
+  it('roundtrips original expressions, order and face reference; never synthesizes a world point', () => {
+    expect(reopen(feature)).toEqual({ ok: true, value: feature });
+    expect(savedRecord(feature).centers).toEqual([]);
+    expect('planar' in savedRecord(planar)).toBe(false);
+    expect(reopen(planar)).toEqual({ ok: true, value: planar });
+  });
+  it('rejects malformed placement, conflicts, nonfinite values and nonplane references', () => {
+    const saved = savedRecord(feature);
+    const invalid: Record<string, unknown>[] = [
+      { ...saved, centers: planar.centers }, { ...saved, cylindrical: cylindrical.cylindrical },
+      { ...saved, planar: null }, { ...saved, planar: { kind: 'world', locations: [] } },
+      { ...saved, planar: { kind: 'plane-face', locations: [] } },
+      { ...saved, planar: { kind: 'plane-face', locations: [{ x: expression('0', 0) }] } },
+      { ...saved, planar: { kind: 'plane-face', locations: [{ x: expression('0', Infinity), y: expression('0', 0) }] } },
+      { ...saved, planar: { kind: 'plane-face', locations: [{ x: expression('0', 0), y: expression('0', 0), z: 0 }] } },
+      { ...saved, face: sideFace },
+    ];
+    for (const record of invalid) expect(readHoleFeature(record, 'solids.0', base).ok).toBe(false);
+    expect(() => serializeHoleFeature({ ...feature, centers: planar.centers })).toThrow();
+  });
+});
+
+it('planar thread original XY expressions persist through both document containers', () => {
+  const feature: ThreadHoleFeature = { ...base, kind: 'threadHole', targetFeatureId: 'cylinder-1',
+    face: { ...sideFace, fingerprint: { ...sideFace.fingerprint, surfaceKind: 'plane', radius: null } },
+    centers: [], designation: 'M6', series: 'coarse', pitch: expression('1', 1), drillDiameter: expression('4.917', 4.917),
+    depth: { kind: 'blind', depth: expression('8', 8) }, threadLength: expression('6', 6), representation: 'simplified',
+    tiltAngle: expression('0', 0), tiltAzimuth: expression('0', 0),
+    planar: { kind: 'plane-face', locations: [{ x: expression('a + 1', 6), y: expression('-4', -4) }] } };
+  const record = Object.fromEntries(Object.entries(serializeThreadHoleFeature(feature)));
+  expect(readThreadHoleFeature(record, 'solids.0', base)).toEqual({ ok: true, value: feature });
+  reopenBoth(appendSolid(createEmptyPartDocument(), feature));
+});

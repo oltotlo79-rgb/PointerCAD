@@ -459,6 +459,8 @@ export function selectionKindForTool(tool: NumericInputToolId): SelectionKind {
     // 平らな面の移動(EX-18)も抜き勾配と同じく面を選ぶ。動かす平らな面を 1 枚選ぶ。
     case 'draft':
     case 'faceOffset':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'shell':
     case 'emboss':
     case 'threadShaft':
@@ -569,6 +571,8 @@ export function keepsSelectionKind(tool: NumericInputToolId): boolean {
     tool === 'ruled' ||
     tool === 'loft' ||
     tool === 'sew' ||
+    tool === 'holeTranslate' ||
+    tool === 'faceRotate' ||
     tool === 'measure' ||
     tool === 'mathGeometry' ||
     tool === 'cut' ||

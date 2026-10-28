@@ -157,6 +157,26 @@ export function dataUrlToBytes(dataUrl: string): Uint8Array | null {
  * その間に描画バッファが捨てられてしまうため、canvas から canvas へ直接写す。
  * 用意ができていない・2D の下地が作れない・書き出しに失敗したときは null を返す。
  */
+export type ThumbnailCaptureResult = Uint8Array | null | Promise<Uint8Array | null>;
+export type ThumbnailCapture = () => ThumbnailCaptureResult;
+
+/** Await only the already-started capture. Cancellation releases the save queue even if its provider stalls. */
+export function awaitThumbnailCapture(result: Promise<Uint8Array | null>, signal: AbortSignal): Promise<Uint8Array | null> {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (value: Uint8Array | null): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', abort);
+      resolve(value);
+    };
+    const abort = (): void => { finish(null); };
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) abort();
+    void result.then(value => { finish(signal.aborted ? null : value); }, () => { finish(null); });
+  });
+}
+
 export type ThumbnailCaptureReasonSink = (reason: string) => void;
 const thumbnailCaptureObservers = new Map<object, ThumbnailCaptureReasonSink>();
 /** Diagnostic callbacks cannot affect capture results or exceptions. */

@@ -215,6 +215,8 @@ function currentCutSketches(store: ReturnType<typeof useAppStore.getState>) {
 export function applySolidCommit(commit: SolidInputCommit): boolean {
   // 押し出しは形を計算してから確定する(文書だけ先に積まない)。同期で積む道は残さない。
   if (commit.tool === 'extrude') return confirmExtrudeCommit(commit) === 'adopted';
+  if (commit.tool === 'cut') return confirmMachiningCommit(commit) === 'adopted';
+  if (commit.tool === 'faceOffset' || commit.tool === 'holeTranslate' || commit.tool === 'faceRotate') return confirmMachiningCommit(commit) === 'adopted';
   // 計算担当が未接続なら従来の同期確定と後始末を使う。接続済みは成功した候補だけを採用する。
   if ((commit.tool === 'hole' || commit.tool === 'threadHole')
     && useAppStore.getState().partStager !== null) return confirmMachiningCommit(commit) === 'adopted';
@@ -301,11 +303,14 @@ export function confirmExtrudeCommit(commit: SolidInputCommit): StagedConfirmati
 /** 穴・ねじも成功した形だけを採用する。失敗・取消・別入力は既存の所有照合で捨てる。 */
 function confirmMachiningCommit(commit: SolidInputCommit): StagedConfirmation {
   const store = useAppStore.getState();
+  // Keep the cut's existing input refusals specific, including a retired formula snapshot.
+  const cutCandidate = commit.tool === 'cut' ? solidStageCandidateOf(commit) : null;
+  if (commit.tool === 'cut' && cutCandidate === null) return 'refused';
   if (store.partStager === null) {
     store.setSolidError('solidError.notYetAvailable');
     return 'refused';
   }
-  const candidate = solidStageCandidateOf(commit);
+  const candidate = cutCandidate ?? solidStageCandidateOf(commit);
   if (candidate === null) return 'refused';
   const confirmation = confirmExtrusion(candidate, () => { useAppStore.getState().closeNumericInput(); });
   const failed = useAppStore.getState().stagedSolid;
@@ -409,8 +414,8 @@ export function applyNumericTransition(transition: NumericInputTransition): void
         confirmExtrudeCommit(transition.commit);
         return;
       }
-      if ((transition.commit.tool === 'hole' || transition.commit.tool === 'threadHole')
-        && store.partStager !== null) {
+      if (transition.commit.tool === 'cut' || transition.commit.tool === 'faceOffset' || transition.commit.tool === 'holeTranslate' || transition.commit.tool === 'faceRotate'
+        || ((transition.commit.tool === 'hole' || transition.commit.tool === 'threadHole') && store.partStager !== null)) {
         if (store.numericInput !== transition.state) store.updateNumericInput(transition.state);
         confirmMachiningCommit(transition.commit);
         return;

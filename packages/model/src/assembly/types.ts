@@ -27,6 +27,12 @@ import type { AppearanceSpec } from '../appearance/types.js';
 import type { AxisSpec } from '../geometry/planeSpec.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import type { Parameter } from '../parameters/types.js';
+import type { BoltedJointRecord as TypeBoltedJointRecord } from './fastening/boltedJointEdit.js';
+import type { BeamAnalysisInputs as TypeBeamAnalysisInputs } from '../analysis/beamInputs.js';
+import type { CrossLevelGearCouplingDefinition as TypeCrossLevelGearCouplingDefinition } from './joints/crossLevelGearDocument.js';
+import type { CrossLevelCamCouplingDefinition as TypeCrossLevelCamCouplingDefinition } from './joints/crossLevelCamLifecycle.js';
+import type { ContextReferenceLink as TypeContextReferenceLink } from './contextReference.js';
+
 
 /**
  * 規格部品の種類(FR-612、FR-616、§0.a-0.30〜0.35)。
@@ -358,9 +364,9 @@ export interface AssemblyDocument {
   /** Nested joint ownership; IO codec/version integration is required before public saving. */
   readonly jointOccurrenceConnections?: readonly JointOccurrenceConnection[];
   /** Flat bolted joints' recorded inputs for editing (EX-06): picks, user choices, generated part ids. */
-  readonly boltedJoints?: readonly import('./fastening/boltedJointEdit.js').BoltedJointRecord[];
+  readonly boltedJoints?: readonly TypeBoltedJointRecord[];
   /** Optional versioned user inputs; no solver results or derived CAD node positions. */
-  readonly beamAnalysisInputs?: import('../analysis/beamInputs.js').BeamAnalysisInputs;
+  readonly beamAnalysisInputs?: TypeBeamAnalysisInputs;
   readonly id: string;
   readonly name: string;
   /** 保存形式の版(§0.a-0.2)。部品と同じ系列にする(`ASSEMBLY_SCHEMA_VERSION`)。 */
@@ -375,11 +381,11 @@ export interface AssemblyDocument {
   /** Cam-follower relations; a separate optional field so existing gear readers stay unchanged. */
   readonly camCouplings?: readonly MechanismCamCoupling[];
   /** Cross-level gears: a top-level revolute joint geared to a joint inside one subassembly placement (EX12). */
-  readonly crossLevelGearCouplings?: readonly import('./joints/crossLevelGearDocument.js').CrossLevelGearCouplingDefinition[];
+  readonly crossLevelGearCouplings?: readonly TypeCrossLevelGearCouplingDefinition[];
   /** Cross-level cams: a top-level revolute cam joint driving a slider inside one subassembly placement by an authored law (EX12). */
-  readonly crossLevelCamCouplings?: readonly import('./joints/crossLevelCamLifecycle.js').CrossLevelCamCouplingDefinition[];
+  readonly crossLevelCamCouplings?: readonly TypeCrossLevelCamCouplingDefinition[];
   /** 組立の文脈の参照(EX-18)。先の部品の基準点を、元の置いた部品の頂点・面の中心から決める結び付け。 */
-  readonly contextReferences?: readonly import('./contextReference.js').ContextReferenceLink[];
+  readonly contextReferences?: readonly TypeContextReferenceLink[];
   /** 分解図とアニメーションのステップ(FR-617、FR-618)。 */
   readonly presentation: readonly PresentationStep[];
   /** 名前を付けた数値の表(FR-207)。部品文書のものとは別物(§0.a-0.9)。 */

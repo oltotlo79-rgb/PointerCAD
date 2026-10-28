@@ -1,5 +1,5 @@
 /** 穴・内外ねじの寸法と選択肢を、元の式を保持して書き戻す。 */
-import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
+import { exactExpressionValueFromNumber, expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   DEFAULT_COUNTERBORE_DEPTH_MM,
   DEFAULT_COUNTERBORE_DIAMETER_MM,
@@ -51,6 +51,7 @@ export function setHoleField(
   key: SolidFieldKey,
   value: ExpressionValue,
   locationIndex?: number,
+  planarLocationIndex?: number,
 ): SolidFeature {
   switch (key) {
     case 'diameter':
@@ -63,6 +64,9 @@ export function setHoleField(
       return feature.cylindrical === undefined ? { ...feature, tiltAngle: value } : feature;
     case 'tiltAzimuth':
       return feature.cylindrical === undefined ? { ...feature, tiltAzimuth: value } : feature;
+    case 'holePlanarX':
+    case 'holePlanarY':
+      return setPlanarHoleField(feature, key, value, planarLocationIndex);
     case 'holeCylinderHeight':
     case 'holeCylinderAngle':
       return setCylindricalHoleField(feature, key, value, locationIndex);
@@ -95,11 +99,26 @@ function setCylindricalHoleField(
   };
 }
 
+function setPlanarHoleField(
+  feature: HoleFeature | ThreadHoleFeature,
+  key: 'holePlanarX' | 'holePlanarY', value: ExpressionValue, index?: number,
+): SolidFeature {
+  const placement = feature.planar;
+  const slot = index ?? (placement?.locations.length === 1 ? 0 : -1);
+  const location = Number.isInteger(slot) ? placement?.locations[slot] : undefined;
+  if (placement === undefined || feature.cylindrical !== undefined || location === undefined
+    || !Number.isFinite(value.value) || value.source.trim() === '') return feature;
+  const next = key === 'holePlanarX' ? { ...location, x: value } : { ...location, y: value };
+  return { ...feature, planar: { ...placement,
+    locations: placement.locations.map((item, i) => i === slot ? next : item) } };
+}
+
 export function setThreadHoleField(
   feature: ThreadHoleFeature,
   key: SolidFieldKey,
   value: ExpressionValue,
   locationIndex?: number,
+  planarLocationIndex?: number,
 ): SolidFeature {
   switch (key) {
     case 'pitch':
@@ -116,6 +135,9 @@ export function setThreadHoleField(
       return feature.cylindrical === undefined ? { ...feature, tiltAngle: value } : feature;
     case 'tiltAzimuth':
       return feature.cylindrical === undefined ? { ...feature, tiltAzimuth: value } : feature;
+    case 'holePlanarX':
+    case 'holePlanarY':
+      return setPlanarHoleField(feature, key, value, planarLocationIndex);
     case 'holeCylinderHeight':
     case 'holeCylinderAngle':
       return setCylindricalHoleField(feature, key, value, locationIndex);
@@ -157,7 +179,7 @@ function applyThreadSize(
     designation: size.designation,
     series,
     pitch: expressionValueFromNumber(pitch),
-    drillDiameter: expressionValueFromNumber(threadMinorDiameter(size.diameter, pitch)),
+    drillDiameter: exactExpressionValueFromNumber(threadMinorDiameter(size.diameter, pitch)),
   };
 }
 

@@ -17,6 +17,8 @@ import { appendJointOccurrenceComponents, jointOccurrenceStamp, occurrenceForGeo
   prepareJointOccurrencePair, sameJointOccurrencePreview, type CommitJointOccurrenceResult,
   type JointOccurrenceCommandContext, type JointOccurrenceCommandFailure,
   type JointOccurrencePreviewStamp } from '../jointOccurrenceSelection.js';
+import type { BoltedJointRejection as TypeBoltedJointRejection } from './types.js';
+
 
 /** 穴の選択以外の指定(呼び・座金・ねじ込み長さ・底のすきま・突き出し・長さの候補)。 */
 export type BoltedJointChoices = Omit<BoltedJointRequest, 'first' | 'second'>;
@@ -57,7 +59,7 @@ export interface OccurrenceHolePick {
 export type OccurrenceBoltedJointPreview =
   | { readonly ok: true; readonly plan: BoltedJointPlan; readonly stamp: JointOccurrencePreviewStamp }
   | { readonly ok: false; readonly reason: JointOccurrenceCommandFailure | 'invalid-pick' | 'geometry-rejected';
-      readonly rejections: readonly import('./types.js').BoltedJointRejection[] };
+      readonly rejections: readonly TypeBoltedJointRejection[] };
 
 /** Nested zero-motion route. The existing flat alignment command above is unchanged. */
 export function previewOccurrenceBoltedJoint(context: JointOccurrenceCommandContext,

@@ -50,6 +50,8 @@ export const SOLID_KIND_LABEL_KEYS: Readonly<Record<SolidLabelKey, MessageKey>> 
   draft: 'toolbar.machining.draft',
   // 平らな面の移動(EX-18 の限られた一段)。「加工」の仲間なので toolbar.machining.*。
   faceOffset: 'toolbar.machining.faceOffset',
+  holeTranslate: 'toolbar.machining.holeTranslate',
+  faceRotate: 'toolbar.machining.faceRotate',
   rib: 'toolbar.machining.rib',
   emboss: 'toolbar.machining.emboss',
   threadShaft: 'toolbar.machining.threadShaft',

@@ -93,6 +93,8 @@ import {
   subVec3,
   type Vec3,
 } from './vec3.js';
+import type { FunctionPointResolver as TypeFunctionPointResolver } from '../functionGeometry/functionPointReference.js';
+
 
 /** 点列で一度に作れる点の上限。打ち間違いで莫大な数を作らないための歯止め。 */
 export const MAX_POINT_ARRAY_COUNT = 1000;
@@ -822,7 +824,7 @@ export interface SketchResolveOptions {
    * 球を引くのは部品文書の側(`resolvePart.ts`)の役目である。
    */
   readonly sphere?: (sphereFeatureId: string) => ResolvedSphere | null;
-  readonly functionPoint?: import('../functionGeometry/functionPointReference.js').FunctionPointResolver;
+  readonly functionPoint?: TypeFunctionPointResolver;
   /** 部品の基準点を id から引く(EX-18)。`ResolveContext.partPoint` へそのまま渡す。部品文書の側(`resolvePart.ts`)が渡す。 */
   readonly partPoint?: ResolveContext['partPoint'];
 }

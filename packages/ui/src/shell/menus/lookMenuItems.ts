@@ -92,13 +92,12 @@ export const LOOK_MENU_ITEMS: readonly ToolMenuItem<LookToolId>[] = [
     tooltipKey: 'toolbar.measure.tooltip',
     Icon: MeasureIcon,
   },
-  /*
-    図形の測定値(GR-30。Q1=A4「ツールバーの新しい道具」、
-    scratchpad/claude/plans/geomref-plan.md §4(a))。「測る」の次に置く。選んだ点・辺・面・
-    立体の測定値に名前を付けて文書に保存し、係数の式から使える点が「測る」(その場で見る
-    だけで保存しない)との違い。この 1 行を足してもツールバーの幅は 1 画素も増えない
-    (`segmentedWidthPixels` は溝に並ぶボタンの個数しか見ない。§0.a-0.80)。
-  */
+  /**
+   * 図形の測定値はツールバーの道具とし、「測る」の次に置く(FR-210/FR-211)。
+   * 選んだ点・辺・面・立体の測定値に名前を付け、文書に保存して係数の式から使える。
+   * その場で見るだけで保存しない「測る」とは用途が異なる。一覧に1行足しても
+   * `segmentedWidthPixels` は溝に並ぶボタン数しか見ないため、ツールバーの幅は1画素も増えない。
+   */
   {
     id: 'mathGeometry',
     labelKey: 'toolbar.look.mathGeometry',

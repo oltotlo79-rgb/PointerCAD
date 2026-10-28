@@ -1,16 +1,12 @@
 /**
- * The coefficient behind "この値の係数を作る" (Q2=U3; GR-03b, `scratchpad/claude/plans/geomref-plan.md`
- * §4(a) and §5.2 GR-03b): one pure function that turns a math-geometry definition into a draft coefficient
- * (`Parameter`) whose formula is exactly `coef("<definition name>")`. It neither adds the coefficient nor
- * checks its name: the caller (GR-31) passes the draft to the existing `commitAddParameter`, which owns the
- * name rule, the duplicate check, the coefficient IDs and the single Undo step. The document is never
- * changed here.
+ * 「この値の係数を作る」のため、測定値の定義を `coef("<定義名>")` の式を持つ
+ * `Parameter` の下書きへ変換する純関数（docs/requirements.md の FR-210/FR-211 注記）。
+ * 文書への追加や名前検査は行わない。呼出し側が既存の `commitAddParameter` に渡し、
+ * 名前・重複・係数IDの検査と1回のUndoをその手順に任せる。ここでは文書を変更しない。
  *
- * The formula refers to the definition by its coefficient ID (`math-geometry:` + definition ID, GR-01), so a
- * later rename of the measurement rewrites the label inside the formula and the coefficient keeps
- * following it (plan §7 #20). The value stored with the draft is only the caller's current measured value,
- * for display until the next recomputation replaces it (GR-04, GR-06). Like every geometry-derived value it
- * is the shape kernel's double: never an exact original and never an error bound (§4(e)).
+ * 式は `math-geometry:` と定義IDからなる係数IDで参照する。測定値の改名時はラベルを書き換え、
+ * 作成した係数は同じ定義を指し続ける。下書きの値は呼出し側が渡す現在の測定値で、
+ * 次の再計算までの表示用にすぎない。形の計算部の倍精度値を厳密な原値や誤差保証へ読み替えない。
  */
 import { exactExpressionValueFromNumber } from '@pointercad/expression';
 import { CANDIDATE_MATH_BY_ID, formatMathText, MATH_INPUT_FORMAT, type MathNode,

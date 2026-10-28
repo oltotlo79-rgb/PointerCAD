@@ -1,8 +1,8 @@
 /**
- * GR-03b (`scratchpad/claude/plans/geomref-plan.md` §5.2 GR-03b, Q2=U3): the draft coefficient behind
- * "この値の係数を作る". Its stored formula must be exactly what the math editor saves for
- * `coef("<name>")`, so the file boundary accepts it, the real math engine re-parses its source to the same
- * expression, and a recomputation with the measured value evaluates it (GR-04).
+ * 「この値の係数を作る」で渡す係数の下書きを検査する。
+ * 保存式は数式編集と同じ `coef("<名前>")` とし、保存境界で受理され、実際の数学の計算部で
+ * 原文を再解析して同じ式に戻り、再計算では測定値を使って評価されることを確かめる。
+ * 係数の式だけで測定値を直接使う利用者仕様は docs/requirements.md の FR-210/FR-211 注記に対応する。
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { decodeMathExpressionStorage } from '@pointercad/expression';

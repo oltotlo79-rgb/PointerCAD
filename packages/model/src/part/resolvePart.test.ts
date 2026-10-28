@@ -1,4 +1,5 @@
 import { allocatePatternPointSlots } from './patternPointSlots.js';
+import { buildHoleSchedule } from '../drawing/holeSchedule.js';
 import {
   evaluateExpression,
   expressionValueFromNumber,
@@ -8344,4 +8345,79 @@ describe('EX-04 W3 残す側の既知の点の所属(実 OCCT・内外判定の�
     expect(computed.states.get('subtract-1')).toEqual(['ON', 'ON', 'OUT', 'OUT', 'IN', 'IN', 'OUT', 'OUT']);
     expect(computed.states.get('intersect-1')).toEqual(['ON', 'ON', 'IN', 'IN', 'OUT', 'OUT', 'OUT', 'ON']);
   }, 120_000);
+});
+
+
+describe('native planar XY candidate contract', () => {
+  function planarHole(x = '6', y = '-4'): HoleFeature {
+    return { ...holeFeature('hole-1', 'extrude-1', []),
+      planar: { kind: 'plane-face', locations: [{ x: expr(x), y: expr(y) }] } };
+  }
+  function documentWith(hole: HoleFeature): PartDocument {
+    const fixture = createFixture();
+    return withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), hole);
+  }
+  it('retains signed mm, original reference and empty centers through model and kernel request', () => {
+    const feature = planarHole(); const result = resolvePart(documentWith(feature));
+    expect(result.errors).toEqual([]);
+    const step = result.steps[1]; if (step === undefined) throw new Error('Missing hole');
+    expect(holePlan(step).planar).toEqual({ kind: 'plane-face', locations: [{ x: 6, y: -4 }] });
+    const request = toSolidStepRequest(step).step;
+    if (request.kind !== 'hole') throw new Error('Not a hole request');
+    expect(request.planar).toEqual(holePlan(step).planar);
+    expect(request.face).toMatchObject({ kind: 'face' }); expect(request.centers).toEqual([]);
+  });
+  it('a single expression edit changes the key and one Undo/Redo restores each document and key', () => {
+    const before = documentWith(planarHole()), after = documentWith(planarHole('-3', '5'));
+    const key = (doc: PartDocument) => resolvePart(doc).steps[1]?.key;
+    expect(key(before)).toBeDefined(); expect(key(after)).not.toBe(key(before));
+    const stack = pushUndo(createUndoStack(before), after);
+    expect(undo(stack).present).toEqual(before); expect(redo(undo(stack)).present).toEqual(after);
+    expect(key(undo(stack).present)).toBe(key(before)); expect(key(redo(undo(stack)).present)).toBe(key(after));
+    expect(affectsShape(before, after)).toBe(true);
+  });
+  it('rejects competing centers/cylinder, empty locations, nonfinite coordinates and nonplane reference', () => {
+    const good = planarHole(); const fixture = createFixture();
+    const invalid: HoleFeature[] = [
+      { ...good, centers: [fixture.pointA] },
+      { ...good, cylindrical: { kind: 'cylinder-face', locations: [{ height: expr('1'), angle: expr('0') }] } },
+      { ...good, planar: { kind: 'plane-face', locations: [] } },
+      { ...good, planar: { kind: 'plane-face', locations: [{ x: notANumber('X'), y: expr('0') }] } },
+      { ...good, face: { ...good.face, fingerprint: { kind: 'face', surfaceKind: 'cylinder',
+        area: 100, position: [0,0,0], axis: [0,0,1], radius: 10 } } },
+    ];
+    for (const feature of invalid) expect(resolvePart(documentWith(feature)).errors).toHaveLength(1);
+    const old = resolvePart(documentWith(holeFeature('hole-1', 'extrude-1', [fixture.pointA])));
+    expect(old.errors).toEqual([]); expect('planar' in holePlan(old.steps[1])).toBe(false);
+  });
+});
+
+it('planar XY thread hole reaches the shared kernel placement path', () => {
+  const fixture = createFixture();
+  const thread: ThreadHoleFeature = { ...threadHoleFeature('thread-1', 'extrude-1', []),
+    planar: { kind: 'plane-face', locations: [{ x: expr('6'), y: expr('-4') }] } };
+  const result = resolvePart(withSolids(fixture.document, extrudeFeature('extrude-1', fixture.faceA), thread));
+  expect(result.errors).toEqual([]);
+  const step = result.steps[1]; if (step === undefined || step.plan.kind !== 'thread') throw new Error('Missing thread');
+  expect(step.plan.planar).toEqual({ kind: 'plane-face', locations: [{ x: 6, y: -4 }] });
+  const request = toSolidStepRequest(step).step; if (request.kind !== 'thread') throw new Error('Missing thread request');
+  expect(request.planar).toEqual(step.plan.planar); expect(request.centers).toEqual([]);
+});
+
+it('planar XY hole schedule uses the native basis rather than the centroid plane', () => {
+  const feature: HoleFeature = { ...holeFeature('hole-1', 'extrude-1', []),
+    planar: { kind: 'plane-face', locations: [{ x: expr('6'), y: expr('-4') }] } };
+  const document = withSolids(createEmptyPartDocument(), feature);
+  const frame = { datum: [0,0,0] as Vec3, x: [1,0,0] as Vec3, y: [0,1,0] as Vec3 };
+  const plane = { origin: [100,200,300] as Vec3, normal: [-12/25,9/25,4/5] as Vec3 };
+  const result = buildHoleSchedule(document, { sketches: [], frame, resolvePlane: () => ({ ...plane,
+    planarBasis: { origin: [11,-7,5], xAxis: [3/5,4/5,0], yAxis: [-16/25,12/25,-3/5], normal: plane.normal } }) });
+  if (!result.ok) throw new Error(result.reason);
+  expect(result.rows).toHaveLength(1);
+  const center = result.rows[0].center;
+  expect(Math.hypot(center[0]-17.16, center[1]+4.12, center[2]-7.4)).toBeLessThanOrEqual(1e-7);
+  expect(Math.abs(result.rows[0].x-17.16)).toBeLessThanOrEqual(1e-7);
+  expect(Math.abs(result.rows[0].y+4.12)).toBeLessThanOrEqual(1e-7);
+  expect(buildHoleSchedule(document, { sketches: [], frame, resolvePlane: () => plane }))
+    .toEqual({ ok: false, reason: 'missingFace', featureId: feature.id });
 });

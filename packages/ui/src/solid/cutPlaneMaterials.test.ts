@@ -44,7 +44,7 @@ import {
   type SolidBody,
   type Vec3,
 } from '@pointercad/model';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createNativeKernelBridgeForNodeTests,
@@ -64,6 +64,7 @@ import {
   type SolidInputCommit,
 } from '../sketch/numericInput.js';
 import { appendCoordinatePoints, commitWorkPlane } from '../sketch/referenceCommands.js';
+import { attachPartRecompute } from '../store/attachKernel.js';
 import { bodyFor, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 
@@ -1108,7 +1109,7 @@ describe('予告の表示・切替・取消は文書も元に戻す履歴も変�
     expect(cutsOf(after.document)).toHaveLength(0);
   });
 
-  it('予告の表示・反対側/両側の切替・道具を替えて閉じる、のどの段でも文書の SHA-256 と履歴が変わらない', () => {
+  it('予告の表示・反対側/両側の切替・道具を替えて閉じる、のどの段でも文書の SHA-256 と履歴が変わらない', async () => {
     openCutOnPoint();
     const before = useAppStore.getState();
     const sha = documentSha();
@@ -1141,17 +1142,39 @@ describe('予告の表示・切替・取消は文書も元に戻す履歴も変�
     expect(after.document).toBe(before.document);
     expect(after.undoStack).toBe(before.undoStack);
     expect(documentSha()).toBe(sha);
-    // 対照: 同じ材料で決定(Enter)すれば、文書が変わり(SHA-256 が変わる)、元に戻す履歴が 1 段増える。
-    useAppStore.getState().setSelection([BODY, 'point-1']);
-    useAppStore.getState().openNumericInput(createNumericInput('cut', 'cutPlane'), [0, 0]);
-    const reopened = useAppStore.getState();
-    if (reopened.numericInput === null) throw new Error('入力欄が開いていません');
-    applyNumericTransition(applyNumericInputKey(reopened.numericInput, 'Enter', { ...reopened.parameterAnalysis,
-      lengthUnit: reopened.displaySettings.lengthUnit }));
-    const committed = useAppStore.getState();
-    expect(committed.numericInput).toBeNull();
-    expect(cutsOf(committed.document)).toHaveLength(1);
-    expect(committed.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
-    expect(documentSha()).not.toBe(sha);
+    await initializeNativeKernelForNodeTests();
+    const bridge = createNativeKernelBridgeForNodeTests();
+    const detach = attachPartRecompute((document, options) => recomputePart(document, bridge, options));
+    try {
+      await vi.waitFor(() => {
+        const state = useAppStore.getState();
+        expect(state.completedGeneration).toBe(state.requestedGeneration);
+        expect(state.isComputing).toBe(false);
+      });
+      expect(useAppStore.getState().partErrors).toEqual([]);
+      // 対照: 同じ材料で決定(Enter)すれば、文書が変わり(SHA-256 が変わる)、元に戻す履歴が 1 段増える。
+      useAppStore.getState().setSelection([BODY, 'point-1']);
+      useAppStore.getState().openNumericInput(createNumericInput('cut', 'cutPlane'), [0, 0]);
+      const reopened = useAppStore.getState();
+      if (reopened.numericInput === null) throw new Error('入力欄が開いていません');
+      applyNumericTransition(applyNumericInputKey(reopened.numericInput, 'Enter', { ...reopened.parameterAnalysis,
+        lengthUnit: reopened.displaySettings.lengthUnit }));
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(documentSha()).toBe(sha);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      await vi.waitFor(() => expect(useAppStore.getState().numericInput).toBeNull());
+      const committed = useAppStore.getState();
+      expect(committed.partErrors).toEqual([]);
+      expect(committed.bodies).toHaveLength(1);
+      // z=6 から z=8 を残すので、40*30*2 = 2400 mm3。
+      expect(committed.bodies[0]?.volume).toBeCloseTo(2400, 8);
+      expect(committed.numericInput).toBeNull();
+      expect(cutsOf(committed.document)).toHaveLength(1);
+      expect(committed.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      expect(documentSha()).not.toBe(sha);
+    } finally {
+      detach();
+      bridge.dispose();
+    }
   });
 });

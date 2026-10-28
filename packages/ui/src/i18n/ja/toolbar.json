@@ -137,6 +137,8 @@
   "toolbar.machining.pointPattern": "点パターン",
   "toolbar.machining.draft": "抜き勾配",
   "toolbar.machining.faceOffset": "面の移動",
+  "toolbar.machining.holeTranslate": "穴の移動",
+  "toolbar.machining.faceRotate": "面の回転",
   "toolbar.machining.rib": "リブ",
   "toolbar.machining.emboss": "エンボス",
   "toolbar.machining.threadShaft": "外ねじ",
@@ -291,5 +293,9 @@
   "toolbar.file.recentFile": "最近使ったファイル",
   "toolbar.file.recentFileTooltip": "この名前のファイルを選ぶ窓を開きます",
   "toolbar.history.savePoints": "名前付き保存点",
-  "toolbar.history.savePointsTooltip": "開いている部品・組立・図面の名前付き保存点を、残す・複製・比較・戻すための一覧を開きます"
+  "toolbar.history.savePointsTooltip": "開いている部品・組立・図面の名前付き保存点を、残す・複製・比較・戻すための一覧を開きます",
+  "toolbar.machining.holeTranslate": "穴の移動",
+  "toolbar.machining.holeTranslateTooltip": "長方形板の貫通穴を世界座標の X・Y・Z 方向へ移動します。",
+  "toolbar.machining.faceRotate": "面の回転",
+  "toolbar.machining.faceRotateTooltip": "箱の平らな面を、その面の直線辺を軸に傾けます。"
 }

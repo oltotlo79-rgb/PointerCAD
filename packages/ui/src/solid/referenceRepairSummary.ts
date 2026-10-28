@@ -29,9 +29,10 @@ export function summarizeRepairReference(reference: SubShapeRef): string {
     const key = roleLabels[part]; return key === undefined ? part : t(key);
   }).join(t('display.listSeparator')) : origin !== undefined && 'end' in origin ? t(roleLabels[origin.end]) : '';
   const meaning = origin === undefined ? t('propertyPanel.repair.geometryIdentity') : `${t(originLabels[origin.kind])} ${role}`;
-  const position = fp.position.map(value => String(Number(value.toPrecision(9)))).join(', ');
-  const size = fp.kind === 'face' ? t('propertyPanel.repair.area').replace('{value}', String(fp.area))
-    : fp.kind === 'edge' ? t('propertyPanel.repair.length').replace('{value}', String(fp.length)) : '';
+  const displayNumber = (value: number): string => String(Number(value.toPrecision(9)));
+  const position = fp.position.map(displayNumber).join(', ');
+  const size = fp.kind === 'face' ? t('propertyPanel.repair.area').replace('{value}', displayNumber(fp.area))
+    : fp.kind === 'edge' ? t('propertyPanel.repair.length').replace('{value}', displayNumber(fp.length)) : '';
   const source = origin?.kind === 'extrude-side' || origin?.kind === 'surface-side' ? ` / ${origin.profile.sketchId} / ${origin.profile.lineFeatureId}`
     : origin?.kind === 'extrude-curve-side' ? ` / ${origin.profile.sketchId} / ${origin.profile.curveFeatureId}` : '';
   return `${meaning}${source} / ${reference.bodyFeatureId} / ${kind} ${reference.index} / (${position}) mm${size.length === 0 ? '' : ` / ${size}`}`;

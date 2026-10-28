@@ -1,3 +1,5 @@
+import { createRegistrationImportProbe } from './occtRegistrationImportProbe.js';
+
 /** A response whose decoded bytes passed the manifest length and SHA-256 checks. */
 export interface VerifiedOcctResponse {
   readonly response: Response;
@@ -194,6 +196,7 @@ export function createOcctInstantiationHook(
   };
   let resolveCompletion: () => void = () => undefined;
   let rejectCompletion: (error: Error) => void = () => undefined;
+  let registrationProbe: ReturnType<typeof createRegistrationImportProbe> | undefined;
   let finished = false;
   let called = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -207,6 +210,7 @@ export function createOcctInstantiationHook(
   const finish = (error?: Error): void => {
     if (finished) return;
     finished = true;
+    registrationProbe?.finish(error === undefined);
     signal?.removeEventListener('abort', onAbort);
     if (timer !== undefined) clearTimeout(timer);
     if (error === undefined) resolveCompletion();
@@ -224,14 +228,18 @@ export function createOcctInstantiationHook(
       }
       called = true;
       if (finished) return {};
+      const probe = createRegistrationImportProbe(imports,
+        import.meta.env?.VITE_PCAD_E2E === '1' && import.meta.env?.VITE_PCAD_OCCT_REGISTRATION_PROBE === '1', observe);
+      registrationProbe = probe;
       // The model bridge has a finite Worker deadline. Bound this local hook too.
       timer = setTimeout(() => { finish(new Error('OCCT instantiateWasm が期限切れです。')); }, 150_000);
       void Promise.resolve().then(async () => {
         if (finished) return;
         observe('native-instantiate-start');
-        const instance = await WebAssembly.instantiate(module, imports);
+        const instance = await WebAssembly.instantiate(module, probe.imports);
         observe('native-instantiate-end');
         if (finished) return;
+        probe.begin();
         observe('receive-instance-start');
         receiveInstance(instance, module);
         observe('receive-instance-end');

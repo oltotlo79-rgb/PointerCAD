@@ -49,5 +49,14 @@ packages/help-content/docs/ja/math-symbols.md text eol=lf
 /packages/fem/src/buckling.package.test.ts text eol=lf
 /packages/fem/vitest.config.ts text eol=lf
 
+# Native impact fixtures pin these source, harness and capture bytes by SHA-256.
+# Keep their canonical LF bytes on Windows even with core.autocrlf=true.
+/packages/fem/src/beamImpact.py text eol=lf
+/packages/fem/src/beamImpactRuntime.ts text eol=lf
+/packages/fem/src/beamImpactNativeInterior.harness.mjs text eol=lf
+/packages/fem/src/beamImpactNativeInterior.test.py text eol=lf
+/packages/fem/src/fixtures/beamImpactNativeCurrentFixture.json text eol=lf
+/packages/fem/src/fixtures/beamImpactNativeFixture.json text eol=lf
+
 # Preserve every pinned runtime asset, generated inventory and upstream notice verbatim.
 /packages/fem/runtime/** -text

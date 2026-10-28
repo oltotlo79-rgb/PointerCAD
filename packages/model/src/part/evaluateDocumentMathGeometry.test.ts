@@ -1,7 +1,6 @@
 /**
- * GR-04 (`scratchpad/claude/plans/geomref-plan.md` §4(e), §5.2): measured math-geometry values enter
- * `evaluateDocumentMath` through the real math engine, as decimal-only coefficients, without disturbing
- * the exact originals of every other coefficient.
+ * 図形の倍精度測定値は、実際の数学計算部を通して `evaluateDocumentMath` へ渡す。
+ * 図形由来の係数は小数として扱い、他の係数の厳密な原式は変えない(FR-210/FR-211)。
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { evaluateExpression, evaluateExpressionExact, mathScalarExpression, type ExpressionValue } from '@pointercad/expression';

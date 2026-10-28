@@ -41,3 +41,7 @@ export { readSolidPlasticCadSavedInput, SOLID_PLASTIC_CAD_LIMITS, SOLID_PLASTIC_
 export { readCadWeldLayerInputs, type CadWeldLayerInputs, type CadWeldLayer } from './weldLayerInput.js';
 export { readCadJointInitialStrain, type CadJointInitialStrain, type CadShankShortening } from './jointInitialStrainInput.js';
 export * from './analysisPropertyEvidence.js';
+
+export type { BoltPreloadDeclaration, CadNativeBoltPreloadInput, CadNativeBoltPreloadSavedInput } from './cadNativeBoltPreloadInput.js';
+export { readCadNativeBoltPreloadInput } from './cadNativeBoltPreloadInput.js';
+export { readCadNativeBoltPreloadSavedInput } from './beamInputs.js';

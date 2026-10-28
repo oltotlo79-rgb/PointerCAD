@@ -20,14 +20,13 @@
  */
 
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
-import { createKernelApi, type KernelApi } from '../../kernel/src/index.js';
+import { createNativeKernelBridgeWithIoForNodeTests, initializeNativeKernelForNodeTests, type NativeKernelIoForNodeTests } from '../../model/src/testing/createNativeKernelBridge.node.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { readPcadFile, writePcadFile } from '../../io/src/pcad/pcadFile.js';
-import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
 import { subShapeElementId, subShapeRefOf } from '../src/solid/subShapeSelection.js';
 import { createUndoStack, pushUndo, redo, undo } from '../../model/src/history/undoStack.js';
-import { createDirectKernelBridge, type KernelBridge, type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
+import { type KernelBridge, type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
 import { absoluteCoordinate, appendFeature, createPointFeature, DEFAULT_FACE_COLOR } from '../../model/src/sketch/createSketchDocument.js';
 import { createOffsetCache } from '../../model/src/sketch/offsetMath.js';
 import { DEFAULT_WORK_PLANE_ID } from '../../model/src/sketch/planeMath.js';
@@ -45,12 +44,13 @@ import type {
 
 const OCCT_TIMEOUT_MS = 180_000;
 const SAVED_AT = '2026-10-16T00:00:00.000Z';
-let api: KernelApi;
+let api: NativeKernelIoForNodeTests;
 let bridge: KernelBridge;
 beforeAll(async () => {
-  await loadOcctForNode();
-  api = createKernelApi(loadOcctForNode);
-  bridge = createDirectKernelBridge(api);
+  await initializeNativeKernelForNodeTests();
+  const native = createNativeKernelBridgeWithIoForNodeTests();
+  api = native.shapeIo;
+  bridge = native.bridge;
 }, OCCT_TIMEOUT_MS);
 
 /** The same cache set importedShapeKernel.test.ts passes, plus the imported B-rep bytes. */

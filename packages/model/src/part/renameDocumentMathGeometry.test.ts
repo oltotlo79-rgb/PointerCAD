@@ -1,8 +1,7 @@
 /**
- * GR-08 (`scratchpad/claude/plans/geomref-plan.md` §4(b), §5.2 GR-08): renaming a math-geometry definition
- * relabels every formula that reads it, with its ID unchanged, as one validated document; a coefficient
- * rename accepts formulas that read measured values and refuses a measured value's name. The real math
- * engine runs every request; no shape kernel is needed because a rename never changes a shape (§10.303).
+ * 図形の測定値の改名は参照IDを保ち、それを読む全式のラベルを変えて文書全体を検証する。
+ * 係数の改名は測定値を読む式も受理するが、測定値と同名になる変更は拒否する。
+ * 全依頼を実際の数学計算部で検査する。改名は形状を変えないため、形状計算部は不要。
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { collectMathCoefficients, evaluateExpression, mathScalarExpression, type ExpressionValue,

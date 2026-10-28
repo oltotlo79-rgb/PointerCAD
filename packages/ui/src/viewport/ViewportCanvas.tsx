@@ -1,3 +1,5 @@
+import { cylinderBasisGuide } from './cylinderBasisGuide.js';
+import { planarBasisGuide } from './planarBasisGuide.js';
 import { cameraDragAction } from './cameraControlBindings.js';
 import { readCameraControlSettings } from '../settings/cameraControlSettings.js';
 import { currentReferenceRepairPreview } from '../solid/referenceRepairPreview.js';
@@ -52,6 +54,7 @@ import { currentAssemblyMeshAdmission, currentAssemblyMeshPublication, type Asse
 import { isSheetFlatDisplayed } from '../sheetMetal/sheetCreationActions.js';
 import { ViewCube } from '../viewcube/ViewCube.js';
 import { attachCameraControls, type CameraControls } from './attachCameraControls.js';
+import { sketchDragTimingForE2E, sketchDragTimingOwnerChanged, type SketchTimingContext } from './sketchDragTiming.js';
 import { attachSketchInteraction } from './attachSketchInteraction.js';
 import { attachAssemblyInteraction, type AssemblyMateInputObservation } from './attachAssemblyInteraction.js';
 import { MatePopover } from '../assembly/MatePopover.js';
@@ -665,6 +668,8 @@ export function ViewportCanvas(): React.JSX.Element {
     const lifetime = createViewportLifetime();
     const observation = createViewportMeshObservation(viewportOwnerId);
     let alive = true;
+    const sketchTiming = sketchDragTimingForE2E(import.meta.env.VITE_PCAD_E2E === '1', mountedCanvas);
+    if (sketchTiming !== undefined) lifetime.register('sketch timing', () => { sketchTiming.dispose(); });
     const thumbnailReasons = createThumbnailCaptureReasonJournal();
     const readThumbnailReasons = () => thumbnailReasons.snapshot();
     let frameId = 0;
@@ -709,6 +714,7 @@ export function ViewportCanvas(): React.JSX.Element {
             throw new Error('Viewport resources remain pending');
           }
         });
+    let thumbnailPublicationEpoch = 0;
     const pendingAssemblyRefresh = new WeakMap<AssemblyMeshOwnership, Promise<boolean>>();
     const refusedAssemblyRefresh = new WeakSet<AssemblyMeshOwnership>();
     function assemblyReady(): boolean {
@@ -799,15 +805,32 @@ export function ViewportCanvas(): React.JSX.Element {
       catch (error) { return { value: null, error: String(error) }; }
     };
     // Same publication lifetime as the existing owner getter; no per-frame observation.
-    const mateInputs: Readonly<AssemblyMateInputObservation>[] = [];
+    const mateInputs: Readonly<Partial<AssemblyMateInputObservation>>[] = [];
+    let inputDocumentEpoch = 0;
+    const inputSnapshots = new WeakMap<AssemblyMateInputObservation, {
+      readonly epoch: number; readonly snapshot: Readonly<Partial<AssemblyMateInputObservation>>;
+    }>();
     const observeMateInput = (input: AssemblyMateInputObservation): void => {
       if (!alive) return;
-      Object.freeze(input.clientPoint);
-      if (input.canvasPoint !== undefined) Object.freeze(input.canvasPoint);
-      if (input.scene !== undefined) Object.freeze(input.scene);
-      if (input.hit !== undefined && input.hit !== null) Object.freeze(input.hit);
-      mateInputs.push(Object.freeze(input));
-      if (mateInputs.length > 2) mateInputs.shift();
+      const previous = inputSnapshots.get(input);
+      if (previous !== undefined && previous.epoch !== inputDocumentEpoch) return;
+      // 部品の記録は判定・保留・内部idだけ。座標、文書、例外の文言は保持しない。
+      const snapshot: Readonly<Partial<AssemblyMateInputObservation>> = input.componentPick !== undefined
+        ? Object.freeze({ inputGate: input.inputGate, deferred: input.deferred, waiting: input.waiting,
+          componentPick: Object.freeze({ ...input.componentPick }) })
+        : Object.freeze({ ...input, clientPoint: Object.freeze([...input.clientPoint] as const),
+          ...(input.canvasPoint === undefined ? {} : { canvasPoint: Object.freeze([...input.canvasPoint] as const) }),
+          ...(input.scene === undefined ? {} : { scene: Object.freeze({ ...input.scene }) }),
+          ...(input.hit === undefined || input.hit === null ? {} : { hit: Object.freeze({ ...input.hit }) }) });
+      if (previous !== undefined) {
+        const index = mateInputs.indexOf(previous.snapshot);
+        if (index < 0) return;
+        mateInputs[index] = snapshot;
+      } else {
+        mateInputs.push(snapshot);
+        if (mateInputs.length > 2) mateInputs.shift();
+      }
+      inputSnapshots.set(input, { epoch: inputDocumentEpoch, snapshot });
     };
     const readAssemblyOwner = (): Readonly<Record<string, unknown>> | null => {
       if (!alive) return null;
@@ -850,6 +873,18 @@ export function ViewportCanvas(): React.JSX.Element {
      */
     let themeDirty = true;
 
+    // 全setSketch入口を通し、成功した実resolved参照だけを記録する。
+    function sketchTimingContext(): SketchTimingContext {
+      const state = useAppStore.getState();
+      return { canvas: mountedCanvas, document: state.document, documentVersion: state.documentVersion,
+        owner: state.sketchDrag, resolved: state.dragResolved ?? state.resolvedSketch,
+        hidden: !alive || activePartDocument(state) === null || isSheetFlatDisplayed(state) };
+    }
+    function setObservedSketch(state: AppState, hidden: boolean): void {
+      const resolved = hidden ? EMPTY_PART_SKETCH : state.dragResolved ?? state.resolvedSketch;
+      if (sketchTiming === undefined) scene.setSketch(resolved, hidden ? null : state.sketchMesh);
+      else sketchTiming.setSketch(resolved, () => { scene.setSketch(resolved, hidden ? null : state.sketchMesh); }, sketchTimingContext);
+    }
     function draw(): void {
       frameId = 0;
       if (!alive) return;
@@ -860,8 +895,13 @@ export function ViewportCanvas(): React.JSX.Element {
       if (!assemblyReady()) return;
       const { projection, displayStyle, showGrid, displaySettings, quadCamera } = useAppStore.getState();
       const renderStartedAt = globalThis.performance.now();
-      if (quadCamera === null) scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
-      else scene.renderQuad(quadCamera, projection, displayStyle, showGrid, displaySettings.uiScale);
+      if (sketchTiming === undefined) {
+        if (quadCamera === null) scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
+        else scene.renderQuad(quadCamera, projection, displayStyle, showGrid, displaySettings.uiScale);
+      } else sketchTiming.render(() => {
+        if (quadCamera === null) scene.render(controls.getOrbit(), projection, displayStyle, showGrid, displaySettings.uiScale);
+        else scene.renderQuad(quadCamera, projection, displayStyle, showGrid, displaySettings.uiScale);
+      }, sketchTimingContext);
       // `scene.render` が例外なく戻った実描画だけを、1回につきちょうど1つ数える。
       completedRenders += 1;
       lastCompletedAtMs = globalThis.performance.now();
@@ -956,11 +996,28 @@ export function ViewportCanvas(): React.JSX.Element {
 
     // 保存のときに呼ばれるサムネイルの作り手を差し出す(§0.a-0.18、FR-801)。
     // 3D 表示部は後から読み込まれるので、それまでは口が空でサムネイルなしになる。
-    const captureThumbnail = (): Uint8Array | null => {
+    const captureThumbnail = (): Uint8Array | null | Promise<Uint8Array | null> => {
       if (!alive) { thumbnailReasons.record('consumer:not-alive'); return null; }
-      if (!assemblyReady()) { thumbnailReasons.record('consumer:admission'); return null; }
-      thumbnailReasons.record('consumer:admitted');
-      return scene.captureThumbnail(undefined, thumbnailReasons.record);
+      const owner = useAppStore.getState().assemblyView?.meshOwnership;
+      const capture = (): Uint8Array | null => {
+        thumbnailReasons.record('consumer:admitted');
+        return scene.captureThumbnail(undefined, thumbnailReasons.record);
+      };
+      if (assemblyReady()) return capture();
+      const pending = owner === undefined ? undefined : pendingAssemblyRefresh.get(owner);
+      if (pending === undefined) { thumbnailReasons.record('consumer:admission'); return null; }
+      const epoch = thumbnailPublicationEpoch;
+      thumbnailReasons.record('consumer:admission-wait');
+      return pending.then(ready => {
+        if (!alive || !ready || epoch !== thumbnailPublicationEpoch) {
+          thumbnailReasons.record('consumer:admission-obsolete'); return null;
+        }
+        const state = useAppStore.getState(), fresh = state.assemblyView?.meshOwnership;
+        if (fresh === undefined || !currentAssemblyMeshAdmission({ bundle: assemblyBundleOf(state), ownership: fresh, state }, state)) {
+          thumbnailReasons.record('consumer:admission'); return null;
+        }
+        return capture();
+      }).catch(() => { thumbnailReasons.record('consumer:admission'); return null; });
     };
     lifetime.register('thumbnail producer', () => {
           if (useAppStore.getState().captureThumbnail === captureThumbnail) useAppStore.getState().setCaptureThumbnail(null);
@@ -1040,7 +1097,7 @@ export function ViewportCanvas(): React.JSX.Element {
       observeMateInput,
     });
     lifetime.register('assembly input', () => { assemblyInteraction?.detach(); });
-    const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging());
+    const interaction = attachSketchInteraction(canvas, scene, () => controls.getOrbit(), () => controls.isDragging(), sketchTiming);
     lifetime.register('sketch input', () => { interaction.detach(); });
     lifetime.register('view controls', () => { setControlsReady(false); });
     setControlsReady(true);
@@ -1069,8 +1126,7 @@ export function ViewportCanvas(): React.JSX.Element {
       // 引っぱっている最中(FR-313、P4b タスク14)は仮の形を描く。文書どおりの形
       // (`resolvedSketch`)は当たり判定・プロパティ・吸着がそのまま読み続ける。
       const initialSketchHidden = activePartDocument(initial) === null || isSheetFlatDisplayed(initial);
-      scene.setSketch(initialSketchHidden ? EMPTY_PART_SKETCH : initial.dragResolved ?? initial.resolvedSketch,
-        initialSketchHidden ? null : initial.sketchMesh);
+      setObservedSketch(initial, initialSketchHidden);
       scene.setSketchHighlight(initial.hoveredElementId, initial.selection);
       scene.setBodies(solidBodiesForAdmission(initial));
       // 配置した部品(FR-605、P7 タスク10)。アセンブリを開いていないあいだは空のまま。
@@ -1105,6 +1161,10 @@ export function ViewportCanvas(): React.JSX.Element {
       showCutPreview(cutPreviewOf(initial));
       // 球面の案内線(FR-431、P5 タスク21)。球を選んでいる間(または「いつも出す」)だけ出る。
       scene.setSphereGrid(sphereGridSpecOf(initial));
+      scene.setCylinderBasisGuide(cylinderBasisGuide(initial, t('viewport.cylinderZeroDirection')));
+      scene.setPlanarBasisGuide(planarBasisGuide(initial, {
+        origin: t('viewport.planarOrigin'), x: t('viewport.planarPositiveX'), y: t('viewport.planarPositiveY'),
+      }));
       // ビューの断面表示(FR-111、P6 タスク35)。入れているあいだだけ平面を配る。
       scene.setSectionView(sectionViewRenderOf(initial.sectionView));
       // 3D プリントの点検の色(FR-815、P6 タスク46)。点検を出しているあいだだけ塗る。
@@ -1118,10 +1178,33 @@ export function ViewportCanvas(): React.JSX.Element {
     syncInitialScene();
 
     function syncStoreChange(next: AppState, previous: AppState): void {
+      // render中に所有が変わって元へ戻る場合も、旧receiptを再利用しない。
+      if (sketchTiming !== undefined && (next.sketchDrag !== previous.sketchDrag || next.document !== previous.document
+        || next.documentVersion !== previous.documentVersion
+        || activePartDocument(next) !== activePartDocument(previous)
+        || isSheetFlatDisplayed(next) !== isSheetFlatDisplayed(previous))) sketchTiming.invalidateScene();
       if (!alive) return;
+      if (next.activeDocumentId !== previous.activeDocumentId || next.assembly !== previous.assembly
+        || next.document !== previous.document) {
+        inputDocumentEpoch += 1;
+        mateInputs.length = 0;
+      }
+      // Remember invalidation even if a document/cancel/generation changes and returns
+      // while a same-publication receipt refresh is pending. Owner-only refresh is allowed.
+      if (solidMeshOwnershipChanged(next, previous) || next.documentVersion !== previous.documentVersion
+        || next.assemblyLibrary !== previous.assemblyLibrary || next.isComputing !== previous.isComputing
+        || next.assemblyView?.sourceDocument !== previous.assemblyView?.sourceDocument
+        || next.assemblyView?.bodies !== previous.assemblyView?.bodies
+        || next.assemblyView?.resolved !== previous.assemblyView?.resolved
+        || next.assemblyView?.appearances !== previous.assemblyView?.appearances
+        || next.documentSaveOperation !== previous.documentSaveOperation && next.documentSaveOperation?.stage === 'cancelled') {
+        thumbnailPublicationEpoch++;
+      }
       syncRepairPreview(next);
       // スケッチの形と、カーネルが返した面(FR-105、FR-310)。
       if (
+        // 最初のpreview前は形の参照が同じでも、取消後のbaselineを観測へ再結合する。
+        sketchDragTimingOwnerChanged(sketchTiming, next.sketchDrag, previous.sketchDrag) ||
         next.resolvedSketch !== previous.resolvedSketch ||
         next.sketchMesh !== previous.sketchMesh ||
         // 引っぱっている最中の仮の形(FR-313、タスク14)。1 コマに 1 回だけ差し替わる。
@@ -1129,7 +1212,7 @@ export function ViewportCanvas(): React.JSX.Element {
         isSheetFlatDisplayed(next) !== isSheetFlatDisplayed(previous)
       ) {
         const sketchHidden = activePartDocument(next) === null || isSheetFlatDisplayed(next);
-        scene.setSketch(sketchHidden ? EMPTY_PART_SKETCH : next.dragResolved ?? next.resolvedSketch, sketchHidden ? null : next.sketchMesh);
+        setObservedSketch(next, sketchHidden);
       }
       // 立体(FR-105)。カーネルが返した三角形と稜線をボディごとに描く。
       if (solidMeshOwnershipChanged(next, previous)) {
@@ -1204,6 +1287,13 @@ export function ViewportCanvas(): React.JSX.Element {
         世代・履歴位置・計算状態だけの変更でも古い線を消し、現在値へ戻ったら描き直す。
         中身が同じなら `setSphereGrid` が線分の組み立てそのものを省く(NFR-PF-1)。
       */
+      if (sphereGridNeedsUpdate(next, previous) || solidMeshOwnershipChanged(next, previous)
+        || next.assembly !== previous.assembly || next.drawing !== previous.drawing) {
+        scene.setCylinderBasisGuide(cylinderBasisGuide(next, t('viewport.cylinderZeroDirection')));
+        scene.setPlanarBasisGuide(planarBasisGuide(next, {
+          origin: t('viewport.planarOrigin'), x: t('viewport.planarPositiveX'), y: t('viewport.planarPositiveY'),
+        }));
+      }
       if (sphereGridNeedsUpdate(next, previous)) {
         scene.setSphereGrid(sphereGridSpecOf(next));
       }

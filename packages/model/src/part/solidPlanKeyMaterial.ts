@@ -2,6 +2,7 @@
 import type { SheetSolidPlan } from '../sheetMetal/resolveSheetGeometry.js';
 import type { SolidStepKeyMaterial } from './cacheKey.js';
 import type { SolidStepPlan } from './resolvePart.js';
+import { directEditKeyMaterial } from './directEditOperations.js';
 import { fingerprintKeyText } from './subShapeRef.js';
 import { importedShapeOf } from './types.js';
 import {
@@ -9,6 +10,15 @@ import {
   toKeyPrimitiveShape, toKeySurfaceShape, toKeyThruSection,
   toKeyTransform, toKeyVec3,
 } from './solidPlanKeyGeometry.js';
+
+/** 穴・ねじ穴で共通の配置材料。省略された配置は鍵にも載せない。 */
+function holePlacementKeyMaterial(plan: Extract<SolidStepPlan, { readonly kind: 'hole' | 'thread' }>) {
+  return {
+    centers: plan.centers.map(toKeyVec3),
+    ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
+    ...(plan.planar === undefined ? {} : { planar: plan.planar }),
+  };
+}
 
 /** 1段ぶんの鍵の材料(§0.a-0.20)。名前・抑制・色は混ぜない(形が変わらないため)。 */
 export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): SolidStepKeyMaterial {
@@ -70,7 +80,7 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         ...(plan.pointPlacementReferences === undefined ? {} : { pointPlacementReferences: plan.pointPlacementReferences }),
         targetKey: plan.targetKey,
         face: fingerprintKeyText(plan.face),
-        centers: plan.centers.map(toKeyVec3),
+        ...holePlacementKeyMaterial(plan),
         diameter: plan.diameter,
         depth: plan.depth,
         tiltAngle: plan.tiltAngle,
@@ -78,8 +88,6 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         transforms: plan.transforms.map(toKeyTransform),
         // 入口の形(FR-422)。省略と「広げない」は同じ鍵になる(`toKeyHoleEntry` の注釈)。
         entry: toKeyHoleEntry(plan.entry),
-        // 円筒の側面の穴(EX05)。平面の穴では欄を作らない(鍵の文字列にも出ない)。
-        ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
       };
     case 'thread':
       return {
@@ -89,7 +97,7 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         ...(plan.placementRoles === undefined ? {} : { placementRoles: plan.placementRoles }),
         targetKey: plan.targetKey,
         face: fingerprintKeyText(plan.face),
-        centers: plan.centers.map(toKeyVec3),
+        ...holePlacementKeyMaterial(plan),
         drillDiameter: plan.drillDiameter,
         // 外径とねじ部の長さは印(必ず作る)から取る。実らせんの有無で欠けることがない。
         majorDiameter: plan.mark.majorDiameter,
@@ -103,8 +111,6 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
         transforms: plan.transforms.map(toKeyTransform),
         // 入口の形(FR-422)。穴とまったく同じ扱いで、省略と「広げない」は同じ鍵になる。
         entry: toKeyHoleEntry(plan.entry),
-        // 円筒の側面のねじ穴(EX05)。平面のねじ穴では欄を作らない(鍵の文字列にも出ない)。
-        ...(plan.cylindrical === undefined ? {} : { cylindrical: plan.cylindrical }),
       };
     case 'spring':
       // 全長(length)と derived は混ぜない(cacheKey.ts の SpringKeyMaterial の注釈、§0.a-0.30)。
@@ -248,6 +254,8 @@ export function keyMaterialFor(plan: Exclude<SolidStepPlan, SheetSolidPlan>): So
       };
     case 'functionSurface':
       return { kind: 'functionSurface', inputSignature: plan.inputSignature };
+    case 'holeTranslate': case 'faceRotate':
+      return directEditKeyMaterial(plan);
     case 'faceOffset':
       // 対象を消費する。面は指紋の鍵文字列、距離は評価済みの mm を混ぜる(式を変えれば鍵が変わる)。
       return {

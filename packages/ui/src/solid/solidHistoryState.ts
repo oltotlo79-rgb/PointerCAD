@@ -18,7 +18,8 @@ export function consumedIds(
   }
   const failed = new Set(errors.map((error) => error.featureId));
   const survivors = document.solids.filter(
-    (feature) => feature.kind !== 'boolean' || !failed.has(feature.id),
+    (feature) => (feature.kind !== 'boolean' && feature.kind !== 'holeTranslate' && feature.kind !== 'faceRotate' && feature.kind !== 'faceOffset')
+      || !failed.has(feature.id),
   );
   return consumedBodyIds({ ...document, solids: survivors });
 }

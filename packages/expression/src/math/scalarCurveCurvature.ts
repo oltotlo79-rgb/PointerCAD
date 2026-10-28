@@ -268,6 +268,17 @@ export function createScalarDirectionalJet(tape: ScalarTape, direction: readonly
   return inputs => evaluate(intervals.evaluate(inputs), inputs);
 }
 
+/** Up to three second-order directions share one value evaluation; derivative arithmetic stays independent. */
+export function createScalarDirectionalJets(tape: ScalarTape, directions: readonly (readonly number[])[]): (inputs: readonly MathInterval[]) => readonly ScalarIntervalJet[] {
+  if (directions.length < 1 || directions.length > 3) throw new RangeError('二次微分には1つから3つの方向を指定してください。');
+  const intervals = createScalarIntervalEvaluation(tape);
+  const derivatives = directions.map(direction => directionalJet(tape, direction, intervals, true));
+  return inputs => {
+    const result = intervals.evaluate(inputs);
+    return derivatives.map(evaluate => evaluate(result, inputs));
+  };
+}
+
 /** Up to three coordinate directions share one value evaluation and do not calculate unused second derivatives. */
 export function createScalarFirstDerivatives(tape: ScalarTape, directions: readonly (readonly number[])[]): (inputs: readonly MathInterval[]) => readonly Range[] {
   if (directions.length < 1 || directions.length > 3) throw new RangeError('一次微分には1つから3つの方向を指定してください。');

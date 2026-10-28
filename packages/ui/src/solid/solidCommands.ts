@@ -779,6 +779,8 @@ export function solidToolReadiness(
     */
     case 'draft':
     case 'faceOffset':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'mirrorSolid':
     case 'transform':
     case 'scale':
@@ -995,6 +997,8 @@ export function commitSolidInput(
     */
     case 'draft':
     case 'faceOffset':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'mirrorSolid':
     case 'transform':
     case 'scale':

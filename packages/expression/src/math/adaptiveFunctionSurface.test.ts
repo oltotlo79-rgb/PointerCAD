@@ -36,3 +36,12 @@ describe('曲面生成のXYZ必須と資源・中止の境界', () => {
     expect(sampleFunctionSurface(plane,options).status).toBe('ready');
   });
 });
+
+it('細分中の取消で部分形を公開せず、次の独立した依頼を汚さない', () => {
+  let checks = 0;
+  const result = sampleFunctionSurface({...plane,interpolationErrorBound:()=>0.02},
+    {...options,shouldStop:()=>++checks >= 5?'cancelled':undefined});
+  expect(checks).toBe(5); expect(result).toMatchObject({status:'stopped',reason:'cancelled'});
+  expect(result).not.toHaveProperty('vertices'); expect(result).not.toHaveProperty('triangles');
+  expect(sampleFunctionSurface(plane,options).status).toBe('ready');
+});

@@ -1381,3 +1381,6 @@ export type {
 } from './assembly/standard/steelStandards.js';
 export { STEEL_GRADE_RULES, STEEL_SECTION_CATALOGS, steelGradeRule } from './assembly/standard/steelGradeRules.js';
 export type { SteelGradeRejectionCode, SteelGradeRule } from './assembly/standard/steelGradeRules.js';
+
+export { createHoleTranslateFeature, createFaceRotateFeature, directEditPlan } from './part/directEditOperations.js';
+export type { HoleTranslateFeature, FaceRotateFeature, HoleTranslatePlan, FaceRotatePlan, HoleTranslateKeyMaterial, FaceRotateKeyMaterial } from './part/directEditOperations.js';

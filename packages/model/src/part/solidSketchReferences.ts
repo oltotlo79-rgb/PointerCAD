@@ -105,6 +105,8 @@ export function referencedSketchIds(
       §0.a-0.11 の順序の制約は解決の成否と無関係に効く判定だからである。
     */
     case 'draft':
+    case 'holeTranslate':
+    case 'faceRotate':
     case 'faceOffset':
     case 'mirror':
     case 'threadShaft':

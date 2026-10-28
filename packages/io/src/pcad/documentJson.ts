@@ -153,6 +153,11 @@ function serializePartDocument(document: PartDocument): PartDocument {
     && document.solids.some((feature) => (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.cylindrical !== undefined)) {
     throw new RangeError('円筒の側面の穴を保存するには保存形式の版20が必要です。');
   }
+  // 新しい任意配置を、対応前の文書版を名乗って書き出さない。
+  if (document.schemaVersion < 22 && document.solids.some(feature =>
+    (feature.kind === 'hole' || feature.kind === 'threadHole') && feature.planar !== undefined)) {
+    throw new RangeError('面内X・Yの穴を保存するには保存形式の版22が必要です。');
+  }
   const normalizedIssuance = retainPatternSlotHighWater(document).patternSlotHighWater;
   const serialized: PartDocument = {
     ...(document.beamAnalysisInputs === undefined ? {} : {
@@ -273,6 +278,14 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   if (!sketches.ok) {
     return sketches;
   }
+  if (findDuplicateId(sketches.value.map((sketch) => sketch.id)) !== null) {
+    return fieldProblem(`${path}.sketches`, 'type');
+  }
+  for (const [index, sketch] of sketches.value.entries()) {
+    if (findDuplicateId(sketch.features.map((feature) => feature.id)) !== null) {
+      return fieldProblem(`${path}.sketches[${String(index)}].features`, 'type');
+    }
+  }
   const activeSketchId = readString(record.value, 'activeSketchId', path);
   if (!activeSketchId.ok) {
     return activeSketchId;
@@ -284,6 +297,9 @@ function readPartDocument(value: unknown, path: string): Checked<PartDocument> {
   const solids = readList(record.value, 'solids', path, readSolidFeature);
   if (!solids.ok) {
     return solids;
+  }
+  if (findDuplicateId(solids.value.map((feature) => feature.id)) !== null) {
+    return fieldProblem(`${path}.solids`, 'type');
   }
   const parameters = readParameters(record.value, path);
   if (!parameters.ok) {

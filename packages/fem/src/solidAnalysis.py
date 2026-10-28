@@ -16,19 +16,77 @@ def _finite(value):
     return float(value)
 
 
-def _deck(plan):
+def _node_order(plan):
+    """Deterministic RCM of tet adjacency; retain natural order if profile is smaller.
+
+    Only native node numbers change. Input identity and element/local-node order
+    stay original; forces and decoded displacement remain indexed by original ID.
+    """
+    count = len(plan['input']['nodes'])
+    adjacency = [set() for _ in range(count)]
+    for element in plan['input']['elements']:
+        for node in element['nodes']:
+            adjacency[node].update(other for other in element['nodes'] if other != node)
+    degree = [len(row) for row in adjacency]
+    seen = [False] * count
+    order = []
+    for root in sorted(range(count), key=lambda node: (degree[node], node)):
+        if seen[root]:
+            continue
+        queue = [root]
+        seen[root] = True
+        cursor = 0
+        while cursor < len(queue):
+            node = queue[cursor]
+            cursor += 1
+            for other in sorted(adjacency[node], key=lambda item: (degree[item], item)):
+                if not seen[other]:
+                    seen[other] = True
+                    queue.append(other)
+        order.extend(reversed(queue))
+
+    def profile(candidate):
+        equations = [[0, 0, 0] for _ in range(count)]
+        number = 0
+        for node in candidate:
+            for axis in range(3):
+                if not plan['fixed'][node][axis]:
+                    number += 1
+                    equations[node][axis] = number
+        minima = list(range(1, number + 1))
+        for element in plan['input']['elements']:
+            location = [eq for node in element['nodes'] for eq in equations[node] if eq]
+            if location:
+                first = min(location)
+                for eq in location:
+                    minima[eq - 1] = min(minima[eq - 1], first)
+        return 0 if not number else 1 + sum(i + 2 - start for i, start in enumerate(minima))
+
+    natural = list(range(count))
+    if profile(natural) <= profile(order):
+        order = natural
+    if sorted(order) != natural:
+        raise ValueError('solid-native: node permutation is not bijective')
+    native_numbers = [0] * count
+    for number, original in enumerate(order, 1):
+        native_numbers[original] = number
+    return order, native_numbers
+
+
+def _deck(plan, node_order, native_numbers):
     data = plan['input']
     materials = {row['id']: i + 1 for i, row in enumerate(data['materials'])}
     lines = ['/pcad_fem/solid.out', 'PointerCAD tet4; coherent N, mm, MPa',
              'LinearStatic nsteps 1 nmodules 0', 'domain 3d', 'OutputManager',
              f"ndofman {len(data['nodes'])} nelem {len(data['elements'])} "
              f"ncrosssect {len(materials)} nmat {len(materials)} nbc 1 nltf 1 nic 0"]
-    for number, (point, fixed) in enumerate(zip(data['nodes'], plan['fixed'], strict=True), 1):
+    for number, original in enumerate(node_order, 1):
+        point, fixed = data['nodes'][original], plan['fixed'][original]
         lines.append(f'node {number} coords 3 ' + ' '.join(str(_finite(v)) for v in point)
                      + ' bc 3 ' + ' '.join('1' if v else '0' for v in fixed))
     for number, element in enumerate(data['elements'], 1):
         material = materials[element['materialId']]
-        lines.append(f'ltrspace {number} nodes 4 ' + ' '.join(str(i + 1) for i in element['nodes'])
+        lines.append(f'ltrspace {number} nodes 4 ' + ' '.join(str(native_numbers[i]) for i in element['nodes'])
                      + f' mat {material} crosssect {material}')
     for number in range(1, len(materials) + 1):
         lines.append(f'SimpleCS {number} material {number}')
@@ -82,8 +140,15 @@ def run_solid_analysis():
     if any(len(row) != 3 for row in forces) or any(len(row) != 3 or any(type(v) is not bool for v in row)
                                                   for row in plan['fixed']):
         raise ValueError('solid-input: exactly three translations required')
+    # Adjacency <=12 indices/tet; bounded traversal/profile temporaries <=32/node.
+    # Check before constructing the ordering workspace; no global matrix yet.
+    if (base_numbers + 12 * element_count + 32 * count) * 8 > budget:
+        raise ValueError('solid-budget: node ordering workspace exceeds reservation')
+    node_order, native_numbers = _node_order(plan)
+    # The graph/profile workspace has been released; two bijection arrays persist.
+    base_numbers += 2 * count
     with open('/pcad_fem/solid.in', 'w', encoding='utf-8') as stream:
-        stream.write(_deck(plan))
+        stream.write(_deck(plan, node_order, native_numbers))
     problem = None
     primary = None
     try:
@@ -103,7 +168,7 @@ def run_solid_analysis():
         if not 0 <= equations <= count * 3:
             raise ValueError('solid-native: invalid equation count')
         ids = (fem.DofIDItem.D_u, fem.DofIDItem.D_v, fem.DofIDItem.D_w)
-        node_equations = [[int(numbering.giveDofEquationNumber(domain.giveDofManager(i + 1).giveDofWithID(dof)))
+        node_equations = [[int(numbering.giveDofEquationNumber(domain.giveDofManager(native_numbers[i]).giveDofWithID(dof)))
                            for dof in ids] for i in range(count)]
         observed = []
         for i, row in enumerate(node_equations):
@@ -136,7 +201,7 @@ def run_solid_analysis():
             if list(mask) != expected_mask:
                 raise ValueError('solid-native: unexpected tet4 DOF order')
             for local, node in enumerate(row['nodes'], 1):
-                if element.giveDofManagerNumber(local) != node + 1:
+                if element.giveDofManagerNumber(local) != native_numbers[node]:
                     raise ValueError('solid-native: element/node association changed')
             _, values = _native_matrix(fem, element, step)
             location = [eq for node in row['nodes'] for eq in node_equations[node]]

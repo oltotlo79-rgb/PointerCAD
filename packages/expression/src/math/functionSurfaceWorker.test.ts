@@ -5,7 +5,8 @@ import { createFunctionMathSource } from './functionMathSource.js';
 import { decodeFunctionSurfaceWorkRequest, createFunctionSurfaceWorkEnvelope, type FunctionSurfaceWorkRequest } from './functionSurfaceWorkRequest.js';
 import { executeFunctionSurfaceWorkRequest } from './functionSurfaceWorkExecution.js';
 import { beginFunctionSurfaceWorkReply, decodeFunctionSurfaceWorkReply } from './functionSurfaceWorkReply.js';
-import { completeSteps, smoothFunctionSurface } from './smoothFunctionSurface.js';
+import { certifySplineAgainstMesh, certifySplineAgainstMeshSteps, completeSteps, smoothFunctionSurface,
+  type FunctionSurfaceSpline, type SurfaceMeshEvidence } from './smoothFunctionSurface.js';
 import { sampleFunctionSurface, type FunctionSurfaceLeafObserver } from './adaptiveFunctionSurface.js';
 import { createFunctionSurfaceEvaluator } from './functionSurfaceEvaluation.js';
 import { FunctionSurfaceWorkerClient } from './functionSurfaceWorkerClient.js';
@@ -370,5 +371,77 @@ describe('曲面の返信は封筒を先に照合し、結果の検査は区切�
       }
       expect(await client.evaluate(input,5000)).toMatchObject({status:'result',result:{status:'ready'}});
     } finally {client.dispose();}
+  });
+});
+
+describe('surface certificate preparation is resumable before inspecting triangles', () => {
+  const box = { minimum: [-1, -1, -1] as const, maximum: [1, 1, 1] as const };
+  function outsideSpline(): Pick<FunctionSurfaceSpline, 'uKnots' | 'vKnots' | 'poles'> {
+    const uKnots = Array.from({ length: 513 }, (_, index) => index), vKnots = [0, 1];
+    return { uKnots, vKnots, poles: Array.from({ length: 4 * uKnots.length * vKnots.length }, () => [2, 2, 2] as const) };
+  }
+  const emptyMesh: SurfaceMeshEvidence = { vertices: [], triangles: [], bound: 0 };
+
+  it('yields during knot checks, pole checks and cell initialization before reading the mesh', () => {
+    const plain = outsideSpline();
+    let knotReads = 0, poleReads = 0, meshReads = 0;
+    const uKnots = plain.uKnots.map((value, index, knots) => {
+      Object.defineProperty(knots, index, { get: () => { knotReads++; return value; } });
+      return value;
+    });
+    // The accessors belong to plain.uKnots; use that array, keeping the independent values for the oracle.
+    const poles = plain.poles.map((value, index, entries) => {
+      Object.defineProperty(entries, index, { get: () => { poleReads++; return value; } });
+      return value;
+    });
+    const mesh: SurfaceMeshEvidence = { vertices: [], bound: 0, get triangles() { meshReads++; return []; } };
+    const steps = certifySplineAgainstMeshSteps(plain, mesh, box);
+    let knotPauses = 0, polePauses = 0, initializationPauses = 0;
+    let previousKnots = 0, previousPoles = 0, step = steps.next();
+    while (step.done !== true) {
+      if (meshReads === 0) {
+        expect(knotReads - previousKnots).toBeLessThanOrEqual(512);
+        expect(poleReads - previousPoles).toBeLessThanOrEqual(256);
+        if (knotReads > 0 && poleReads === 0) knotPauses++;
+        if (poleReads > 0 && poleReads < poles.length) polePauses++;
+        if (poleReads === poles.length) initializationPauses++;
+      }
+      previousKnots = knotReads; previousPoles = poleReads;
+      step = steps.next();
+    }
+    expect(knotPauses).toBeGreaterThan(1);
+    expect(polePauses).toBeGreaterThan(1);
+    expect(initializationPauses).toBeGreaterThanOrEqual(2);
+    expect(poleReads).toBeGreaterThanOrEqual(poles.length);
+    expect(step.value).toEqual({ status: 'certified', splineToMesh: 0, coveredCells: 0, outsideCells: 512,
+      curved: false, visitedCells: 512, work: 0 });
+    expect(step.value).toEqual(certifySplineAgainstMesh({ ...plain, uKnots, poles }, emptyMesh, box));
+  });
+
+  it('rejects invalid entries after preparation pauses without touching triangle geometry', () => {
+    const base = outsideSpline();
+    const nonfinite = base.poles.map((pole, index) => index === base.poles.length - 1 ? [2, NaN, 2] as const : pole);
+    // Array.every skips holes; the late nonfinite pole still determines the rejection.
+    const sparse = nonfinite.slice(0, 1);
+    for (let index = 2; index < nonfinite.length; index++) sparse[index] = nonfinite[index];
+    const malformed = base.poles.map((pole): [number, number, number] => [pole[0], pole[1], pole[2]]);
+    Object.defineProperty(malformed[malformed.length - 1], 'length', { value: 2 });
+    const descending = base.uKnots.map((knot, index) => index === base.uKnots.length - 1 ? 0 : knot);
+    const infinite = base.uKnots.map((knot, index) => index === base.uKnots.length - 1 ? Infinity : knot);
+    for (const [spline, reason] of [
+      [{ ...base, poles: nonfinite }, 'nonfinite'], [{ ...base, uKnots: descending }, 'structure'],
+      [{ ...base, uKnots: infinite }, 'structure'],
+      [{ ...base, poles: sparse }, 'nonfinite'], [{ ...base, poles: malformed }, 'nonfinite'],
+    ] as const) {
+      let meshReads = 0, pauses = 0;
+      const mesh: SurfaceMeshEvidence = { vertices: [], bound: 0, get triangles() { meshReads++; return []; } };
+      const steps = certifySplineAgainstMeshSteps(spline, mesh, box);
+      let step = steps.next();
+      while (step.done !== true) { pauses++; step = steps.next(); }
+      expect(pauses).toBeGreaterThan(1);
+      expect(meshReads).toBe(0);
+      expect(step.value).toEqual({ status: 'rejected', reason, visitedCells: 0 });
+      expect(completeSteps(certifySplineAgainstMeshSteps(spline, emptyMesh, box))).toEqual(step.value);
+    }
   });
 });

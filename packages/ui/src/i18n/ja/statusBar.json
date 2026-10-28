@@ -177,5 +177,7 @@
   "statusBar.selectionFilterNone": "選べるものがありません",
   "statusBar.unitHint": "押すと mm と inch を切り替えます",
   "statusBar.inferConstraints": "拘束の推定",
-  "statusBar.inferConstraintsHint": "線を引くときに、水平・垂直・一致・接線・平行を推定して小さな印で予告し、引き終わると拘束を付けます。Shift を押している間は止まります。"
+  "statusBar.inferConstraintsHint": "線を引くときに、水平・垂直・一致・接線・平行を推定して小さな印で予告し、引き終わると拘束を付けます。Shift を押している間は止まります。",
+  "statusBar.guide.holeTranslate": "貫通穴の円筒面を 1 枚選び、世界座標の X・Y・Z の移動量（mm）を入力します。",
+  "statusBar.guide.faceRotate": "平らな面とその外周の直線辺を 1 つずつ選び、回転角度（度）を入力します。"
 }

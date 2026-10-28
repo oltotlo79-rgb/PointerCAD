@@ -142,12 +142,16 @@ function controls(knots: readonly number[], s: number, r: number): readonly (rea
 /** The 4 x 4 Bezier net of grid cell (i, j), indexed [u control][v control]. */
 function cellNet(spline: Pick<FunctionSurfaceSpline, 'uKnots' | 'vKnots' | 'poles'>, i: number, j: number): Vector[][] {
   const columns = 2 * spline.vKnots.length;
-  return [0, 1, 2, 3].map(r => [0, 1, 2, 3].map(s => {
-    let point: Vector = [0, 0, 0];
-    for (const [p, a] of controls(spline.uKnots, i, r)) {
-      for (const [q, b] of controls(spline.vKnots, j, s)) point = add(point, scale(spline.poles[p * columns + q], a * b));
+  const u = [0, 1, 2, 3].map(r => controls(spline.uKnots, i, r));
+  const v = [0, 1, 2, 3].map(s => controls(spline.vKnots, j, s));
+  return u.map(uc => v.map(vc => {
+    // Same pole order and multiply/add grouping, without intermediate scaled vectors.
+    let x = 0, y = 0, z = 0;
+    for (const [p, a] of uc) for (const [q, b] of vc) {
+      const pole = spline.poles[p * columns + q], weight = a * b;
+      x += pole[0] * weight; y += pole[1] * weight; z += pole[2] * weight;
     }
-    return point;
+    return [x, y, z] as Vector;
   }));
 }
 
@@ -157,35 +161,89 @@ function bilinearGap(net: readonly (readonly Vector[])[]): number {
   let gap = 0;
   for (let r = 0; r < 4; r++) for (let s = 0; s < 4; s++) {
     const a = r / 3, b = s / 3;
-    const bilinear = add(add(scale(c00, (1 - a) * (1 - b)), scale(c10, a * (1 - b))), add(scale(c01, (1 - a) * b), scale(c11, a * b)));
-    gap = Math.max(gap, length(subtract(net[r][s], bilinear)));
+    const w00 = (1 - a) * (1 - b), w10 = a * (1 - b), w01 = (1 - a) * b, w11 = a * b;
+    const point = net[r][s];
+    const dx = point[0] - ((c00[0] * w00 + c10[0] * w10) + (c01[0] * w01 + c11[0] * w11));
+    const dy = point[1] - ((c00[1] * w00 + c10[1] * w10) + (c01[1] * w01 + c11[1] * w11));
+    const dz = point[2] - ((c00[2] * w00 + c10[2] * w10) + (c01[2] * w01 + c11[2] * w11));
+    gap = Math.max(gap, Math.hypot(dx, dy, dz));
   }
   return gap;
 }
 
-/** The part of a convex polygon where `inside` is non-negative (one Sutherland-Hodgman step). */
-function clipHalfPlane(polygon: readonly Planar[], inside: (point: Planar) => number): Planar[] {
-  const next: Planar[] = [];
-  for (let index = 0; index < polygon.length; index++) {
-    const a = polygon[index], b = polygon[(index + 1) % polygon.length], da = inside(a), db = inside(b);
-    if (da >= 0) next.push(a);
-    if ((da >= 0) !== (db >= 0)) {
-      const t = da / (da - db);
-      next.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+/**
+ * Per-certificate scratch storage for Sutherland-Hodgman clipping. The millions of area-only clips and
+ * intersections must not allocate a polygon/point array at every edge. Only cell members retained for
+ * the later error proof are copied out. Each generator owns its workspace; input points never alias it.
+ */
+class PolygonWorkspace {
+  private points: [number, number][] = [];
+  private spare: [number, number][] = [];
+  private count = 0;
+
+  private put(target: [number, number][], index: number, x: number, y: number): void {
+    const point = target[index];
+    if (point === undefined) target.push([x, y]);
+    else { point[0] = x; point[1] = y; }
+  }
+
+  /** Same edge order, signed distances, interpolation and >= 0 boundary rule as the allocating clip. */
+  private clip(axis: 0 | 1 | null, limit: number, orientation: number, ax = 0, ay = 0, bx = 0, by = 0): void {
+    let count = 0;
+    for (let index = 0; index < this.count; index++) {
+      const a = this.points[index], b = this.points[(index + 1) % this.count];
+      const da = axis === null ? orientation * ((bx - ax) * (a[1] - ay) - (by - ay) * (a[0] - ax))
+        : orientation === 1 ? a[axis] : limit - a[axis];
+      const db = axis === null ? orientation * ((bx - ax) * (b[1] - ay) - (by - ay) * (b[0] - ax))
+        : orientation === 1 ? b[axis] : limit - b[axis];
+      if (da >= 0) this.put(this.spare, count++, a[0], a[1]);
+      if ((da >= 0) !== (db >= 0)) {
+        const t = da / (da - db);
+        this.put(this.spare, count++, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+      }
     }
+    const previous = this.points; this.points = this.spare; this.spare = previous; this.count = count;
   }
-  return next;
-}
-/** A triangle clipped to an axis-aligned rectangle, in rectangle-local coordinates (empty below three vertices). */
-function clippedPolygon(triangle: readonly Planar[], low: Planar, high: Planar): Planar[] {
-  const width = high[0] - low[0], height = high[1] - low[1];
-  let polygon: Planar[] = triangle.map(point => [point[0] - low[0], point[1] - low[1]]);
-  const edges: readonly ((point: Planar) => number)[] = [p => p[0], p => width - p[0], p => p[1], p => height - p[1]];
-  for (const inside of edges) {
-    polygon = clipHalfPlane(polygon, inside);
-    if (polygon.length < 3) return [];
+
+  private area(): number {
+    let twice = 0;
+    for (let index = 0; index < this.count; index++) {
+      const a = this.points[index], b = this.points[(index + 1) % this.count];
+      twice += a[0] * b[1] - b[0] * a[1];
+    }
+    return Math.abs(twice / 2);
   }
-  return polygon;
+
+  rectangleArea(triangle: readonly Planar[], u0: number, v0: number, u1: number, v1: number): number {
+    this.count = triangle.length;
+    for (let index = 0; index < triangle.length; index++) {
+      const point = triangle[index]; this.put(this.points, index, point[0] - u0, point[1] - v0);
+    }
+    for (let edge = 0; edge < 4; edge++) {
+      this.clip(edge < 2 ? 0 : 1, edge < 2 ? u1 - u0 : v1 - v0, edge % 2 === 0 ? 1 : -1);
+      if (this.count < 3) { this.count = 0; return 0; }
+    }
+    return this.area();
+  }
+
+  /** Retained clips own their points, including across subsequent calls and generator resumptions. */
+  copy(): Planar[] {
+    const polygon: Planar[] = [];
+    for (let index = 0; index < this.count; index++) polygon.push([this.points[index][0], this.points[index][1]]);
+    return polygon;
+  }
+
+  intersectionArea(subject: readonly Planar[], clipper: readonly Planar[]): number {
+    const orientation = Math.sign(signedArea(clipper));
+    if (orientation === 0) return 0;
+    this.count = subject.length;
+    for (let index = 0; index < subject.length; index++) this.put(this.points, index, subject[index][0], subject[index][1]);
+    for (let index = 0; index < clipper.length && this.count >= 3; index++) {
+      const a = clipper[index], b = clipper[(index + 1) % clipper.length];
+      this.clip(null, 0, orientation, a[0], a[1], b[0], b[1]);
+    }
+    return this.count >= 3 ? this.area() : 0;
+  }
 }
 function signedArea(polygon: readonly Planar[]): number {
   let twice = 0;
@@ -196,17 +254,6 @@ function signedArea(polygon: readonly Planar[]): number {
   return twice / 2;
 }
 const polygonArea = (polygon: readonly Planar[]): number => Math.abs(signedArea(polygon));
-/** Intersection of two convex polygons of either winding (empty below three vertices). */
-function convexIntersection(subject: readonly Planar[], clipper: readonly Planar[]): Planar[] {
-  const orientation = Math.sign(signedArea(clipper));
-  if (orientation === 0) return [];
-  let polygon: Planar[] = [...subject];
-  for (let index = 0; index < clipper.length && polygon.length >= 3; index++) {
-    const a = clipper[index], b = clipper[(index + 1) % clipper.length];
-    polygon = clipHalfPlane(polygon, p => orientation * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])));
-  }
-  return polygon.length >= 3 ? polygon : [];
-}
 /** Largest |q(t)| on [0, 1] of the quadratic through q(0), q(1/2), q(1). */
 function quadraticMaximum(start: number, middle: number, end: number): number {
   const linear = -3 * start + 4 * middle - end, square = 2 * start - 4 * middle + 2 * end;
@@ -227,6 +274,20 @@ function firstCell(knots: readonly number[], value: number): number {
 
 /** Proof work units between two resumption points of the stepped certificate. */
 const STEP_UNITS = 256;
+/** Like Array.every, including its length snapshot and skipped holes, with bounded preparation steps. */
+function* everySteps<T>(values: readonly T[], check: (value: T, index: number) => boolean): Generator<void, boolean, void> {
+  const count = values.length;
+  for (let index = 0; index < count; index++) {
+    if (index % STEP_UNITS === 0) yield;
+    if (index in values && !check(values[index], index)) return false;
+  }
+  return true;
+}
+function* increasingSteps(knots: readonly number[]): Generator<void, boolean, void> {
+  return knots.length >= 2 && (yield* everySteps(knots, Number.isFinite))
+    && (yield* everySteps(knots, (knot, index) => index === 0 || knot > knots[index - 1]));
+}
+
 /** Run stepped work to its end on the current thread (the Worker and every synchronous caller). */
 export function completeSteps<T>(steps: Generator<void, T, void>): T {
   for (;;) { const step = steps.next(); if (step.done === true) return step.value; }
@@ -239,7 +300,7 @@ export function certifySplineAgainstMesh(spline: Pick<FunctionSurfaceSpline, 'uK
 }
 
 /**
- * The same certificate as resumable steps: it pauses (yields) at least every STEP_UNITS work units, every 256
+ * The same certificate as resumable steps: preparation also pauses every STEP_UNITS entries. Proof work pauses every STEP_UNITS work units, every 256
  * triangles, every STEP_UNITS member geometry checks and before every cell, so a receiving thread can return to its event loop between slices. Pausing never
  * changes a check, a count or the result; abandoning the steps simply produces no result.
  */
@@ -254,14 +315,18 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
     if (++pairs > FUNCTION_SURFACE_SPLINE_PAIR_LIMIT) return rejected('budget');
     return pairs % 1024 === 0 && stop() ? stopped() : null;
   };
-  const increasing = (knots: readonly number[]) => knots.length >= 2 && finite(knots) && knots.every((knot, n) => n === 0 || knot > knots[n - 1]);
-  if (!increasing(uKnots) || !increasing(vKnots) || poles.length !== 4 * nu * nv || 4 * nu * nv > FUNCTION_SURFACE_SPLINE_POLE_LIMIT) {
+  if (!(yield* increasingSteps(uKnots)) || !(yield* increasingSteps(vKnots))
+    || poles.length !== 4 * nu * nv || 4 * nu * nv > FUNCTION_SURFACE_SPLINE_POLE_LIMIT) {
     return rejected('structure');
   }
-  if (!poles.every(pole => pole.length === 3 && finite(pole))) return rejected('nonfinite');
+  if (!(yield* everySteps(poles, pole => pole.length === 3 && finite(pole)))) return rejected('nonfinite');
   const cells = (nu - 1) * (nv - 1);
   // Triangles of positive parameter area meeting each cell, with their clipped areas.
-  const area = new Float64Array(cells), members: number[][] = Array.from({ length: cells }, () => []);
+  const area = new Float64Array(cells), members: number[][] = [], polygon = new PolygonWorkspace();
+  for (let cell = 0; cell < cells; cell++) {
+    if (cell % STEP_UNITS === 0) yield;
+    members.push([]);
+  }
   const corners = (t: number): readonly Planar[] => mesh.triangles[t].map(index => mesh.vertices[index].parameters);
   for (let t = 0; t < mesh.triangles.length; t++) {
     if (t % 256 === 0) { if (stop()) return stopped(); yield; }
@@ -274,7 +339,7 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
       for (let j = firstCell(vKnots, vMin); j < nv - 1 && vKnots[j] < vMax; j++) {
         const halt = work(); if (halt !== null) return halt;
         if (pairs % STEP_UNITS === 0) yield;
-        const piece = polygonArea(clippedPolygon(planar, [uKnots[i], vKnots[j]], [uKnots[i + 1], vKnots[j + 1]]));
+        const piece = polygon.rectangleArea(planar, uKnots[i], vKnots[j], uKnots[i + 1], vKnots[j + 1]);
         if (piece > 0) { area[i * (nv - 1) + j] += piece; members[i * (nv - 1) + j].push(t); pieces += piece; }
       }
     }
@@ -291,7 +356,10 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
       const cell = i * (nv - 1) + j, full = (uKnots[i + 1] - uKnots[i]) * (vKnots[j + 1] - vKnots[j]);
       const c00 = net[0][0], c10 = net[3][0], c01 = net[0][3], c11 = net[3][3];
       const netDiff = bilinearGap(net);
-      let magnitude = Math.max(...net.flatMap(row => row.flatMap(point => point.map(Math.abs))));
+      let magnitude = 0;
+      for (const row of net) for (const point of row) {
+        magnitude = Math.max(magnitude, Math.abs(point[0]), Math.abs(point[1]), Math.abs(point[2]));
+      }
       // Planarity of the same net: its own bilinear net with zero corner twist, up to rounding.
       if (netDiff + length(add(subtract(subtract(c11, c10), c01), c00)) > ROUNDING * (1 + magnitude)) curved = true;
       if (members[cell].length === 0) {
@@ -309,14 +377,15 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
       for (const t of members[cell]) {
         const halt = work(); if (halt !== null) return halt;
         if (pairs % STEP_UNITS === 0) yield;
-        clips.push(clippedPolygon(corners(t), low, high));
+        polygon.rectangleArea(corners(t), low[0], low[1], high[0], high[1]);
+        clips.push(polygon.copy());
       }
       let overlap = 0;
       for (let x = 0; x < clips.length; x++) {
         for (let y = x + 1; y < clips.length; y++) {
           const halt = work(); if (halt !== null) return halt;
           if (pairs % STEP_UNITS === 0) yield;
-          overlap += polygonArea(convexIntersection(clips[x], clips[y]));
+          overlap += polygon.intersectionArea(clips[x], clips[y]);
         }
       }
       if (!(overlap <= full * AREA_TOLERANCE) || area[cell] > full * (1 + AREA_TOLERANCE)) return rejected('overlap');
@@ -326,7 +395,11 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
       /** B at a cell-local parameter point. */
       const bilinear = (point: Planar): Vector => {
         const a = point[0] / width, b = point[1] / height;
-        return add(add(scale(c00, (1 - a) * (1 - b)), scale(c10, a * (1 - b))), add(scale(c01, (1 - a) * b), scale(c11, a * b)));
+        const w00 = (1 - a) * (1 - b), w10 = a * (1 - b), w01 = (1 - a) * b, w11 = a * b;
+        // Preserve the grouped scalar operations without six temporary vector arrays per evaluation.
+        return [(c00[0] * w00 + c10[0] * w10) + (c01[0] * w01 + c11[0] * w11),
+          (c00[1] * w00 + c10[1] * w10) + (c01[1] * w01 + c11[1] * w11),
+          (c00[2] * w00 + c10[2] * w10) + (c01[2] * w01 + c11[2] * w11)];
       };
       let meshGap = 0;
       for (const [member, t] of members[cell].entries()) {
@@ -336,11 +409,13 @@ export function* certifySplineAgainstMeshSteps(spline: Pick<FunctionSurfaceSplin
         const e1: Planar = [b.parameters[0] - a.parameters[0], b.parameters[1] - a.parameters[1]];
         const e2: Planar = [c.parameters[0] - a.parameters[0], c.parameters[1] - a.parameters[1]];
         const determinant = e1[0] * e2[1] - e1[1] * e2[0];
+        const d1 = subtract(b.point, a.point), d2 = subtract(c.point, a.point);
         /** L_T at a cell-local point of the clip (inside T: barycentric weights in [0, 1] up to rounding). */
         const affine = (point: Planar): Vector => {
-          const d0 = point[0] + low[0] - a.parameters[0], d1 = point[1] + low[1] - a.parameters[1];
-          const alpha = (d0 * e2[1] - d1 * e2[0]) / determinant, beta = (e1[0] * d1 - e1[1] * d0) / determinant;
-          return add(a.point, add(scale(subtract(b.point, a.point), alpha), scale(subtract(c.point, a.point), beta)));
+          const du = point[0] + low[0] - a.parameters[0], dv = point[1] + low[1] - a.parameters[1];
+          const alpha = (du * e2[1] - dv * e2[0]) / determinant, beta = (e1[0] * dv - e1[1] * du) / determinant;
+          return [a.point[0] + (d1[0] * alpha + d2[0] * beta), a.point[1] + (d1[1] * alpha + d2[1] * beta),
+            a.point[2] + (d1[2] * alpha + d2[2] * beta)];
         };
         const clip = clips[member];
         const extreme = [0, 0, 0];

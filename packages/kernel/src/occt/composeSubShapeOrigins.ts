@@ -61,8 +61,8 @@ export function composeSubShapeOrigins(context: SemanticStepContext,
     if (historyBySource.has(addressKey)) return { version: 1, state: 'untracked', reason: 'missing-native-map' };
     historyBySource.set(addressKey, entry);
   }
-  type Carried = { origin: SubShapeOrigin; addresses: ShapeAddress[]; ambiguity: 'split' | 'merged' | null;
-    coOrigins: SubShapeOrigin[]; source: string; terminal?: OriginBinding };
+  interface Carried { origin: SubShapeOrigin; addresses: ShapeAddress[]; ambiguity: 'split' | 'merged' | null;
+    coOrigins: SubShapeOrigin[]; source: string; terminal?: OriginBinding }
   const carried: Carried[] = [];
   type Region = NonNullable<Extract<CurrentOriginIndex, { state: 'tracked' }>['fingerprintFallback']>[number];
   const anonymousPaths: { source: string; input: ShapeAddress; addresses: ShapeAddress[]; reason: Region['reason'] }[] = [];
@@ -191,7 +191,7 @@ export function composeSubShapeOrigins(context: SemanticStepContext,
     for (const current of path.addresses) source.addresses.set(key(current), current);
     source.ambiguous ||= source.addresses.size !== 1;
   }
-  type AnonymousClaim = { path: typeof anonymousPaths[number]; current: ShapeAddress; ambiguous: boolean };
+  interface AnonymousClaim { path: typeof anonymousPaths[number]; current: ShapeAddress; ambiguous: boolean }
   const byOutput = new Map<string, Map<string, AnonymousClaim>>();
   for (const [sourceKey, source] of anonymousSources) for (const current of source.addresses.values()) {
     const destinations = byOutput.get(key(current)) ?? new Map<string, AnonymousClaim>();

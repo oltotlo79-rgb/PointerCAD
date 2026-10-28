@@ -1,21 +1,17 @@
 /**
- * Geometry-derived coefficients inside function-plot formulas (GR-06b, `scratchpad/claude/plans/geomref-plan.md`
- * §4(e)「関数作図の式」and §5.2 GR-06b; the lead's decision of 2026-09-24).
+ * 関数作図の式に図形由来の係数を渡すときの演算制限。
+ * 利用者仕様（docs/requirements.md の FR-210/FR-211 注記）に従い、測定値を引数に取る
+ * 不連続な演算を断る。測定値は形の計算部の倍精度値なので、切り捨て等の境界で結果が飛び得る。
  *
- * A geometry-derived coefficient carries the shape kernel's double (GR-04). A coefficient formula computed from one
- * may only use continuous operations (Q4=S1, `GEOMETRY_DERIVED_OPERATIONS`). A function plot (a curve, a surface and
- * the points placed on them) also contains its own axes and parameters, so the rule is applied per operation: an
- * operation outside the Q4=S1 list, or a binder (sum, integrate, …), is refused only when its own operands read a
- * geometry-derived coefficient. `floor(X)+coef("R")` is accepted (the floor jumps with X, which the plot samples on
- * purpose); `floor(coef("R"))` is refused (a measured 2.9999999999999996 would silently become 2). The one exception
- * is the `=` at the root of an implicit curve or surface: it defines the geometry (F = G) and is not a comparison;
- * both of its sides are checked by the same rule. Q10's explicit geometric integrals admit their field/map local
- * functions, but check the entire integral: measured coordinates can also affect bound variables in its field.
+ * 曲線・曲面・その上の点には座標軸や作図パラメータもあるため、演算ごとに被演算子を調べる。
+ * `floor(X)+coef("R")` は受け入れ、`floor(coef("R"))` は断る。許可一覧外の演算や束縛子も
+ * 図形由来の係数を読む場合だけ断る。陰関数の根の `=` は形の定義なので許し、両辺の中は検査する。
+ * 既存の幾何積分では場・座標写像のローカル関数を認めるが、測定座標が場の束縛変数へ渡るため、
+ * 上下限を含む積分全体を調べる。一般の関数リテラルを許可する例外にはしない。
  *
- * Scalar fields of a plot (bounds, tolerance, T/U/V ranges, the fixed coordinate) are not formulas here:
- * `evaluateDocumentMath` already applies GR-04's stricter whole-formula check to them. Kept pure so the
- * recomputation (`resolveFunctionInputs`, every recompute path including an opened file) and the plot editor
- * (GR-18b) share this one rule.
+ * 範囲・精度・T/U/Vの区間・固定座標などのスカラー欄は `evaluateDocumentMath` が式全体を
+ * より厳しく検査する。ここは純関数とし、`resolveFunctionInputs` を通る全再計算（保存再開を含む）
+ * と作図編集で同じ規則を使う。
  */
 import type { StoredMathExpression } from '@pointercad/expression';
 import type { MathNode } from '@pointercad/expression/math/contracts';

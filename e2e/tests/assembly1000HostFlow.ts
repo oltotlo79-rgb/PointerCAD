@@ -6,7 +6,7 @@ import {
   hostStoredRotationOf, oracleSignature, shapeOracleOf,
 } from '../../packages/io/src/pcad/assemblyDistinctPartsFixture.testSupport.js';
 import { partLibraryOfBundle } from '../../packages/model/src/index.js';
-import { reportDuration, reportViewportRate } from '../../packages/test-utils/src/releasePerformance.js';
+import { observePositiveDuration, observeViewportRate, reportDuration, type DurationObservation } from '../../packages/test-utils/src/releasePerformance.js';
 import { assembly1000HostFile, HOST_JOINT_IDS, HOST_NAMES } from './assembly1000HostFixture.js';
 import { readAssemblyStats, type AssemblyBrowserStats } from './assemblyTestSupport.js';
 import { openTarget } from './electronAppFlow.js';
@@ -40,11 +40,11 @@ const DRIVES: readonly (readonly [group: number, travel: number])[] = [[0, 25], 
 const POSITION_MM = 1e-6;
 const ROTATION = 1e-9;
 /*
- * EX12 W02 judgements, requirements §5.2 『1,000 部品の組立』 (Root's adoption 2026-10-24 18:4x, the 50-part judgement
- * extended): reportDuration (releasePerformance.ts) keeps each original target and fails above five times it.
+ * 最新利用者指示により、転用したopen/reopen/saveとFPSの目標は参考観測へ分ける。
+ * 実描画・全形状・保存、取消1秒と干渉5回の判定、既存の有限待機は保持する。
  */
-const HOST_LOAD_TARGET_MS = 5_000; // open or reopen until drawn: 25 s
-const HOST_SAVE_TARGET_MS = 5_000; // save: 25 s
+const HOST_LOAD_TARGET_MS = 5_000; // 開いて描画する改善目標。有限待機の上限とは別。
+const HOST_SAVE_TARGET_MS = 5_000; // 保存の改善目標。未達だけで停止しない。
 const HOST_CANCEL_TARGET_MS = 200; // cancel shown: 1,000 ms
 const HOST_INTERFERENCE_TARGET_MS = 2_000; // all-path interference, the 50-part target: 10 s ('interference' profile)
 
@@ -462,12 +462,29 @@ async function cancelDisplayMs(page: Page, path: string, app: ElectronApplicatio
   return ms;
 }
 
+/** 成功時もraw JSON実体を保持し、古い実行の証拠を上書きしない。 */
+async function attachHostObservation(info: TestInfo, name: string, value: unknown): Promise<void> {
+  const path = info.outputPath(name);
+  await writeFile(path, JSON.stringify(value, null, 2), { flag: 'wx' });
+  await info.attach(name, { path, contentType: 'application/json' });
+}
+
+/** ホスト操作は正の時間を必須とし、既存observeDurationへ渡す薄い正値確認を使う。 */
+async function observeHostDuration(info: TestInfo, name: string, actualMs: number, targetMs: number,
+  label: string): Promise<DurationObservation> {
+  await attachHostObservation(info, `assembly-1000-${name}-duration-raw.json`, { actualMs,
+    referenceTargetMs: targetMs, finitePositive: Number.isFinite(actualMs) && actualMs > 0 });
+  const observation = observePositiveDuration(actualMs, targetMs, label);
+  await attachHostObservation(info, `assembly-1000-${name}-duration.json`, observation);
+  return observation;
+}
+
 export async function assembly1000HostFlow(page: Page, info: TestInfo, app: ElectronApplication | undefined): Promise<void> {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const stages: Record<string, number> = {};
-  // Performance judgements are collected and asserted once at the end, so one slow stage still lets every later stage
-  // be measured; each threshold and count is the one of requirements §5.2 and a miss still fails this test.
+  // 取消と干渉の失敗は従来どおり最後に判定する。参考4観測は実測と達否を別に保存する。
+  const durationObservations: DurationObservation[] = [];
   const judgements: string[] = [];
   const judge = (label: string, check: () => unknown): void => {
     try { check(); } catch (error: unknown) { judgements.push(`${label}: ${error instanceof Error ? error.message : String(error)}`); }
@@ -479,13 +496,15 @@ export async function assembly1000HostFlow(page: Page, info: TestInfo, app: Elec
 
   // 1. Open: 1000 components on 1000 own definitions, all generated and admitted, at their written placements, drawn.
   const openToDrawnMs = await openAndDraw(page, source, app, 'open', stages);
-  judge('open', () => reportDuration(openToDrawnMs, HOST_LOAD_TARGET_MS, '異なる1,000定義の組立を開いて描画（初回）'));
+  durationObservations.push(await observeHostDuration(info, 'open', openToDrawnMs, HOST_LOAD_TARGET_MS, '異なる1,000定義の組立を開いて描画（初回）'));
   const initial = await expectLoaded(page, 'open');
   const shown = sourcesByName(initial);
   // Real drawing of the 1000 shapes under real mouse input (viewportRenderStats.ts, about 2 s of orbit and hover).
   const fps = await measureViewportFps(page);
   console.log(`[実測] 異なる1,000定義の組立の実描画: ${fps.fps.toFixed(1)} fps (${String(fps.completedRenders)}描画/${fps.elapsedMs.toFixed(1)}ms)`);
-  judge('fps', () => reportViewportRate(fps.fps, '異なる1,000定義の組立（1,000部品）'));
+  await attachHostObservation(info, 'assembly-1000-fps-raw.json', fps);
+  const viewportObservation = observeViewportRate(fps, '異なる1,000定義の組立（1,000部品）');
+  await attachHostObservation(info, 'assembly-1000-fps-observation.json', viewportObservation);
 
   // 2. Drive the two slider groups separately; the other 998 never move.
   await stage(stages, 'driveTwoGroupsMs', () => driveTwoGroups(page, initial));
@@ -493,7 +512,7 @@ export async function assembly1000HostFlow(page: Page, info: TestInfo, app: Elec
   // 3. Save: the file holds the written definitions and placements.
   const saved = info.outputPath('host1000-saved.pcada');
   const savedBytes = await stage(stages, 'saveMs', () => saveFlowFile(page, saved, app));
-  judge('save', () => reportDuration(stages.saveMs ?? Number.NaN, HOST_SAVE_TARGET_MS, '異なる1,000定義の組立を保存'));
+  durationObservations.push(await observeHostDuration(info, 'save', stages.saveMs ?? Number.NaN, HOST_SAVE_TARGET_MS, '異なる1,000定義の組立を保存'));
   await expectSavedFile(new Uint8Array(savedBytes), shown);
 
   // 4. Interference of the opened 1000 parts, 5 times: same result each time, progress shown, the ring volume exact
@@ -527,7 +546,7 @@ export async function assembly1000HostFlow(page: Page, info: TestInfo, app: Elec
 
   // 6. Reopen: the same 1000 definitions, generated and drawn again, at the written placements (no drive restored).
   const reopenToDrawnMs = await openAndDraw(page, saved, app, 'reopen', stages);
-  judge('reopen', () => reportDuration(reopenToDrawnMs, HOST_LOAD_TARGET_MS, '異なる1,000定義の組立を開き直して描画（再開）'));
+  durationObservations.push(await observeHostDuration(info, 'reopen', reopenToDrawnMs, HOST_LOAD_TARGET_MS, '異なる1,000定義の組立を開き直して描画（再開）'));
   const reopened = await expectLoaded(page, 'reopen');
   expect(sourcesByName(reopened), 'reopened definitions are the saved ones').toEqual(shown);
   await info.attach('assembly-1000-host-reopened', { body: await page.screenshot(), contentType: 'image/png' });
@@ -535,6 +554,9 @@ export async function assembly1000HostFlow(page: Page, info: TestInfo, app: Elec
   console.log(`[区間の実測] ${JSON.stringify({ host: app === undefined ? 'web' : 'electron', ...stages,
     fps: Math.round(fps.fps * 10) / 10, interferenceMs: runs.map((run) => Math.round(run.ms)), cancelMs: Math.round(cancelMs),
     savedBytes: savedBytes.length })}`);
+  await attachHostObservation(info, 'assembly-1000-observations.json', { host: app === undefined ? 'web' : 'electron',
+    stages, fps, interferenceRuns: runs, cancelMs, savedBytes: savedBytes.length,
+    durationObservations, viewportObservation, errors, judgements });
   expect(errors).toEqual([]);
   expect(judgements, '1,000 部品の組立の性能の判定（要件 §5.2）').toEqual([]);
 }

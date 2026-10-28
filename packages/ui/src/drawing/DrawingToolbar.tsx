@@ -30,7 +30,7 @@ export function DrawingToolbar(): React.JSX.Element {
   const tool = useAppStore((state) => state.drawingTool);
   const choose = (action: DrawingToolbarAction): void => { executeCommand(toolbarCommandId('drawing', action)); };
   return <>
-    <header className="pcad-toolbar" data-testid="drawing-toolbar">
+    <header className="pcad-toolbar pcad-toolbar--drawing" data-testid="drawing-toolbar">
       <div className="pcad-toolbar__brand">
         <CubeIcon size={18} className="pcad-toolbar__mark" />
         <span className="pcad-toolbar__wordmark">{t('app.title')}</span>
@@ -69,7 +69,7 @@ export function DrawingToolbar(): React.JSX.Element {
         <SettingsPanel />
         <HelpButton />
       </div>
-      <aside className="pcad-toolbar__group-label" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', flexBasis: '100%' }} aria-label={t('drawing.mode')}>
+      <aside className="pcad-toolbar__group-label pcad-drawing-toolbar__reasons" aria-label={t('drawing.mode')}>
         {!canUndo ? <span id="drawing-undo-unavailable" role="note" tabIndex={0}>{t('toolbar.history.undoUnavailable')}</span> : null}
         {!canRedo ? <span id="drawing-redo-unavailable" role="note" tabIndex={0}>{t('toolbar.history.redoUnavailable')}</span> : null}
         {busy ? <span id="drawing-busy-unavailable" role="note" tabIndex={0}>{t('drawing.status.computing')}</span> : null}

@@ -1,3 +1,4 @@
+import { readCadNativeBoltPreloadSavedWithContactReader, type CadNativeBoltPreloadSavedInput } from './cadNativeBoltPreloadInput.js';
 import type {
   AnalysisIssue, AnalysisSource, BeamAnalysisDocument, BeamClamp, BeamMaterial,
   BeamModalSettings, BeamNodalLoad, BeamSection, PropertySource, Vector3,
@@ -133,6 +134,7 @@ export type StandardBeamAnyDefinition = StandardBeamDefinition | StandardBeamBuc
   | StandardBeamTransientDefinition | StandardBeamContactDefinition | StandardBeamImpactDefinition;
 
 export type BeamAnalysisInput =
+  | { readonly kind: 'native-bolt-preload'; readonly definition: CadNativeBoltPreloadSavedInput }
   | { readonly kind: 'manual'; readonly document: BeamAnalysisDocument }
   | { readonly kind: 'standard-members'; readonly definition: StandardBeamAnyDefinition }
   /** Saved elasto-plastic bar inputs (at most one per document); never a result. */
@@ -467,6 +469,11 @@ function readImpactDefinition(value: unknown, path: string): StandardBeamImpactD
   };
 }
 
+/** Canonical public composition; no caller can substitute the CAD definition parser. */
+export function readCadNativeBoltPreloadSavedInput(value: unknown, path = 'native-bolt-preload'): CadNativeBoltPreloadSavedInput {
+  return readCadNativeBoltPreloadSavedWithContactReader(value, readContactDefinition, path);
+}
+
 function readInput(value: unknown, path: string): BeamAnalysisInput {
   if (value !== null && typeof value === 'object' && 'kind' in value && value.kind === 'manual') {
     const row = fields(value, ['kind', 'document'], path);
@@ -477,6 +484,9 @@ function readInput(value: unknown, path: string): BeamAnalysisInput {
     return { kind: 'manual', document: checked.document };
   }
   const row = fields(value, ['kind', 'definition'], path);
+  if (row.kind === 'native-bolt-preload') {
+    return { kind: 'native-bolt-preload', definition: readCadNativeBoltPreloadSavedInput(row.definition, `${path}.definition`) };
+  }
   if (row.kind === 'solid-cad') {
     return { kind: 'solid-cad', definition: readSolidCadSavedInput(row.definition, `${path}.definition`) };
   }

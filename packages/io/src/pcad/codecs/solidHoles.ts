@@ -3,6 +3,7 @@
 import {
   type Checked,
   checkRecord,
+  fieldProblem,
   joinPath,
   readBoolean,
   readExpression,
@@ -68,6 +69,41 @@ function readCylindricalHoleLocation(
     return angle;
   }
   return { ok: true, value: { height: height.value, angle: angle.value } };
+}
+
+type PlanarHolePlacement = NonNullable<Extract<SolidFeature, { readonly kind: 'hole' }>['planar']>;
+function readPlanarHoleLocation(value: unknown, path: string): Checked<PlanarHolePlacement['locations'][number]> {
+  const record = checkRecord(value, path);
+  if (!record.ok) return record;
+  if (Object.keys(record.value).some(key => key !== 'x' && key !== 'y')) return fieldProblem(path, 'type');
+  const x = readExpression(record.value, 'x', path);
+  if (!x.ok) return x;
+  const y = readExpression(record.value, 'y', path);
+  if (!y.ok) return y;
+  if (!Number.isFinite(x.value.value) || !Number.isFinite(y.value.value)) return fieldProblem(path, 'type');
+  return { ok: true, value: { x: x.value, y: y.value } };
+}
+function readPlanarHole(record: Record<string, unknown>, path: string): Checked<PlanarHolePlacement | undefined> {
+  if (!('planar' in record)) return { ok: true, value: undefined };
+  if ('cylindrical' in record || !Array.isArray(record.centers) || record.centers.length !== 0) return fieldProblem(joinPath(path, 'planar'), 'type');
+  const found = readRecord(record, 'planar', path);
+  if (!found.ok) return found;
+  const placementPath = joinPath(path, 'planar');
+  if (Object.keys(found.value).some(key => key !== 'kind' && key !== 'locations')) return fieldProblem(placementPath, 'type');
+  const kind = readLiteral(found.value, 'kind', placementPath, ['plane-face'] as const);
+  if (!kind.ok) return kind;
+  const locations = readList(found.value, 'locations', placementPath, readPlanarHoleLocation);
+  if (!locations.ok) return locations;
+  if (locations.value.length === 0) return fieldProblem(joinPath(placementPath, 'locations'), 'type');
+  return { ok: true, value: { kind: kind.value, locations: locations.value } };
+}
+function serializePlanarHole(feature: Extract<SolidFeature, { readonly kind: 'hole' | 'threadHole' }>): { readonly planar?: PlanarHolePlacement } {
+  const placement = feature.planar;
+  if (placement === undefined) return {};
+  if (feature.cylindrical !== undefined || feature.centers.length !== 0 || placement.kind !== 'plane-face' || placement.locations.length === 0
+    || placement.locations.some(p => !Number.isFinite(p.x.value) || !Number.isFinite(p.y.value))) throw new Error('Invalid planar hole placement');
+  return { planar: { kind: placement.kind,
+    locations: placement.locations.map(p => ({ x: serializeExpression(p.x), y: serializeExpression(p.y) })) } };
 }
 
 function serializeHoleDepth(depth: HoleDepth): HoleDepth {
@@ -259,6 +295,11 @@ export function readHoleFeature(
     return tiltAzimuth;
   }
   // 円筒の側面の穴(EX05)。欄が無ければ省略のまま(= 今までの平面の穴)。
+  const planar = readPlanarHole(record, path);
+  if (!planar.ok) return planar;
+  if (planar.value !== undefined && (face.value.fingerprint.kind !== 'face' || face.value.fingerprint.surfaceKind !== 'plane')) {
+    return fieldProblem(joinPath(path, 'face'), 'type');
+  }
   const cylindrical = readCylindricalHole(record, path);
   if (!cylindrical.ok) {
     return cylindrical;
@@ -278,6 +319,7 @@ export function readHoleFeature(
       tiltAngle: tiltAngle.value,
       tiltAzimuth: tiltAzimuth.value,
       ...(cylindrical.value === undefined ? {} : { cylindrical: cylindrical.value }),
+      ...(planar.value === undefined ? {} : { planar: planar.value }),
     },
   };
 }
@@ -342,6 +384,11 @@ export function readThreadHoleFeature(
     return tiltAzimuth;
   }
   // 円筒の側面のねじ穴(EX05)。穴と同じ読み方で、欄が無ければ省略のまま(= 今までの平面のねじ穴)。
+  const planar = readPlanarHole(record, path);
+  if (!planar.ok) return planar;
+  if (planar.value !== undefined && (face.value.fingerprint.kind !== 'face' || face.value.fingerprint.surfaceKind !== 'plane')) {
+    return fieldProblem(joinPath(path, 'face'), 'type');
+  }
   const cylindrical = readCylindricalHole(record, path);
   if (!cylindrical.ok) {
     return cylindrical;
@@ -365,6 +412,7 @@ export function readThreadHoleFeature(
       tiltAngle: tiltAngle.value,
       tiltAzimuth: tiltAzimuth.value,
       ...(cylindrical.value === undefined ? {} : { cylindrical: cylindrical.value }),
+      ...(planar.value === undefined ? {} : { planar: planar.value }),
     },
   };
 }
@@ -434,6 +482,7 @@ export function serializeHoleFeature(feature: Extract<SolidFeature, { readonly k
     targetFeatureId: feature.targetFeatureId,
     face: serializeSubShapeRef(feature.face),
     centers: feature.centers.map(serializePointRef),
+    ...serializePlanarHole(feature),
     diameter: serializeExpression(feature.diameter),
     depth: serializeHoleDepth(feature.depth),
     // 入口(ざぐり・皿もみ。FR-422、P5 タスク43)。省略は欄ごと省略のまま。
@@ -463,6 +512,7 @@ export function serializeThreadHoleFeature(feature: Extract<SolidFeature, { read
     targetFeatureId: feature.targetFeatureId,
     face: serializeSubShapeRef(feature.face),
     centers: feature.centers.map(serializePointRef),
+    ...serializePlanarHole(feature),
     designation: feature.designation,
     series: feature.series,
     pitch: serializeExpression(feature.pitch),

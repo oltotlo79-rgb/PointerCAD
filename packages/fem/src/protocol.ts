@@ -1,3 +1,4 @@
+import { isNativeBoltPreloadWireInput, isNativeBoltPreloadOwnedResult, type NativeBoltPreloadWireInput, type NativeBoltPreloadOwnedResult } from './nativeBoltPreloadBinding.js';
 import type { BeamAnalysisDocument, BeamAnalysisResult, BeamModalResult } from './analysisModel.js';
 import { isBeamAnalysisResult } from './analysisResults.js';
 import { isBeamModalResult } from './modalResults.js';
@@ -14,6 +15,8 @@ import { isBeamContactResult, type BeamContactAnalysisResult } from './contactRe
 import { translateBeamContact } from './contactTranslation.js';
 import { translateBeamBoltContact, type BeamBoltContactInput, type BeamBoltContactResult } from './beamBoltContact.js';
 import { isBeamBoltContactResult } from './beamBoltContactBinding.js';
+import { readFrameBoltContact, type FrameBoltContactInput } from './beamBoltContact.js';
+import { isFrameBoltContactResult, type FrameBoltContactResult } from './frameBoltContactBinding.js';
 import { translateBeamWeldContact, type BeamWeldContactInput, type BeamWeldContactResult } from './beamWeldContact.js';
 import { isBeamWeldContactResult } from './beamWeldContactBinding.js';
 import { translateBeamJointContact, type BeamJointContactInput, type BeamJointContactResult } from './beamJointContact.js';
@@ -54,6 +57,11 @@ export interface QualificationRequest {
 }
 export type FemRequest = QualificationRequest | {
   readonly protocol: typeof FEM_PROTOCOL;
+  readonly kind: 'analyze-native-bolt-preload';
+  readonly identity: FemIdentity;
+  readonly input: NativeBoltPreloadWireInput;
+} | {
+  readonly protocol: typeof FEM_PROTOCOL;
   readonly kind: 'analyze-beam-impact-3d';
   readonly identity: FemIdentity;
   readonly input: BeamImpactInput;
@@ -72,6 +80,11 @@ export type FemRequest = QualificationRequest | {
   readonly kind: 'analyze-beam-weld-contact';
   readonly identity: FemIdentity;
   readonly input: BeamWeldContactInput;
+} | {
+  readonly protocol: typeof FEM_PROTOCOL;
+  readonly kind: 'analyze-frame-bolt-contact';
+  readonly identity: FemIdentity;
+  readonly input: FrameBoltContactInput;
 } | {
   readonly protocol: typeof FEM_PROTOCOL;
   readonly kind: 'analyze-beam-bolt-contact';
@@ -147,7 +160,7 @@ export interface FemFailure {
   readonly message: string;
 }
 export type FemResult = BeamProofResult | BeamAnalysisResult | BeamModalResult | BeamBucklingResult
-  | BeamTransientResult | PlasticBarResult | BeamContactAnalysisResult | BeamBoltContactResult | BeamWeldContactResult | BeamJointContactResult | BeamJointInitialStrainResult | BeamImpactResult | TetraMeshResult | SolidAnalysisResult | SolidPlasticResult | SolidModalResult | SolidBucklingResult;
+  | BeamTransientResult | PlasticBarResult | BeamContactAnalysisResult | FrameBoltContactResult | BeamBoltContactResult | BeamWeldContactResult | BeamJointContactResult | BeamJointInitialStrainResult | BeamImpactResult | TetraMeshResult | SolidAnalysisResult | SolidPlasticResult | SolidModalResult | SolidBucklingResult | NativeBoltPreloadOwnedResult;
 export type FemReply =
   | { readonly protocol: typeof FEM_PROTOCOL; readonly kind: 'phase'; readonly identity: FemIdentity; readonly phase: FemPhase }
   | { readonly protocol: typeof FEM_PROTOCOL; readonly kind: 'result'; readonly identity: FemIdentity; readonly result: FemResult }
@@ -172,6 +185,11 @@ export function sameIdentity(left: FemIdentity, right: FemIdentity): boolean {
 }
 export function isRequest(value: unknown): value is FemRequest {
   if (!isRecord(value) || value.protocol !== FEM_PROTOCOL || !isIdentity(value.identity)) return false;
+  if (value.kind === 'analyze-native-bolt-preload') {
+    if (Reflect.ownKeys(value).length !== 4 || Reflect.ownKeys(value.identity).length !== 4 || !isNativeBoltPreloadWireInput(value.input)) return false;
+    // Wire admission only: the Worker asynchronously validates the unknown numeric plan before assets.
+    return value.input.source.documentId === value.identity.documentId && value.input.source.revision === value.identity.revision;
+  }
   if (value.kind === 'qualify-oofem-beam') return Object.keys(value).length === 3;
   if (value.kind === 'analyze-solid-plastic-tet4') {
     if (Object.keys(value).length !== 4) return false;
@@ -264,6 +282,14 @@ export function isRequest(value: unknown): value is FemRequest {
         && input.contact.geometry.revision === value.identity.revision;
     } catch { return false; }
   }
+  if (value.kind === 'analyze-frame-bolt-contact') {
+    if (Reflect.ownKeys(value).length !== 4 || Reflect.ownKeys(value.identity).length !== 4) return false;
+    try {
+      const input = readFrameBoltContact(value.input).input;
+      return input.contact.geometry.source.documentId === value.identity.documentId
+        && input.contact.geometry.revision === value.identity.revision;
+    } catch { return false; }
+  }
   if (value.kind === 'analyze-beam-bolt-contact') {
     if (Object.keys(value).length !== 4) return false;
     try {
@@ -308,10 +334,12 @@ export function isReply(value: unknown): value is FemReply {
   if (value.kind === 'phase') return typeof value.phase === 'string' && phases.includes(value.phase);
   if (value.kind === 'result') return isBeamProof(value.result) || isBeamAnalysisResult(value.result) || isBeamModalResult(value.result) || isBeamBucklingResult(value.result)
     || isBeamTransientResult(value.result) || isPlasticBarResult(value.result) || isBeamContactResult(value.result)
+    || isFrameBoltContactResult(value.result)
     || isBeamBoltContactResult(value.result)
     || isBeamWeldContactResult(value.result)
     || isBeamJointContactResult(value.result)
     || isBeamJointInitialStrainResult(value.result)
+    || isNativeBoltPreloadOwnedResult(value.result)
     || isBeamImpactResult(value.result)
     || isTetraMeshResult(value.result) || isSolidAnalysisResult(value.result) || isSolidPlasticResult(value.result) || isSolidModalResult(value.result) || isSolidBucklingResult(value.result);
   return value.kind === 'failure' && isRecord(value.failure) && typeof value.failure.code === 'string'

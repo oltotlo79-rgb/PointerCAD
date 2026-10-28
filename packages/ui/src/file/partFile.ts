@@ -1,4 +1,5 @@
-import { reportThumbnailCaptureReason } from './thumbnail.js';
+import { awaitThumbnailCapture, reportThumbnailCaptureReason, type ThumbnailCapture, type ThumbnailCaptureResult } from './thumbnail.js';
+import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 /**
  * 新規・開く・保存の手続き(計画書 docs/plans/P2-ソリッド基礎.md タスク23)。
  *
@@ -55,7 +56,7 @@ export interface PartFileDeps {
   /** headless検査用の明示注入口。製品の既定はストアが持つ同一配信元Worker。 */
   readonly encodeSave?: SaveDocumentEncoder;
   /** サムネイルの PNG。作れなければ null(サムネイルなしで保存する、§0.a-0.18)。 */
-  readonly captureThumbnail: () => Uint8Array | null;
+  readonly captureThumbnail: ThumbnailCapture;
   /** 失うものがある操作の前に確認する。「はい」なら true(NFR-UX-3)。 */
   readonly confirmDiscard: (messageKey: MessageKey) => Promise<boolean>;
   /**
@@ -269,7 +270,7 @@ async function confirmInApp(messageKey: MessageKey): Promise<boolean> {
 }
 
 /** ビューポートが差し出したサムネイルの作り手を呼ぶ。無ければ・失敗すれば null。 */
-function captureThumbnailFromViewport(): Uint8Array | null {
+function captureThumbnailFromViewport(): ThumbnailCaptureResult {
   const capture = useAppStore.getState().captureThumbnail;
   if (capture === null) {
     reportThumbnailCaptureReason('producer:absent');
@@ -277,6 +278,9 @@ function captureThumbnailFromViewport(): Uint8Array | null {
   }
   try {
     const result = capture();
+    if (result instanceof Promise) return result.then(value => {
+      reportThumbnailCaptureReason(value === null ? 'producer:null' : 'producer:success'); return value;
+    }, () => { reportThumbnailCaptureReason('producer:throw'); return null; });
     reportThumbnailCaptureReason(result === null ? 'producer:null' : 'producer:success');
     return result;
   } catch {
@@ -462,7 +466,8 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
     && store.tutorialSession.documentId === document.id
     && store.tutorialSession.documentVersion === store.documentVersion ? store.tutorialSession : null;
   const guideVersion = store.documentVersion;
-  const thumbnailPng = deps.captureThumbnail();
+  const thumbnailIdentity = captureDocumentIdentity(store);
+  const thumbnail = Promise.resolve(deps.captureThumbnail()).catch(() => null);
   /*
    * サムネイルと添付はどちらも「あれば入れる」欄なので、渡す組を 1 か所で組み立てる。
    * 添付を落とすと、読み込んだ形を含む部品が開き直せなくなる(`PartFileDeps.attachmentsOf`)。
@@ -470,12 +475,19 @@ export async function savePart(deps: PartFileDeps, saveAs: boolean): Promise<voi
   const attachments = deps.attachmentsOf?.();
   const snapshot = captureSaveSnapshot({ kind: 'part', document, options: {
     savedAt: new Date().toISOString(),
-    ...(thumbnailPng === null ? {} : { thumbnailPng }),
     ...(attachments === undefined ? {} : { attachments }),
   } });
   return queueDocumentSave(store, async (isCurrent, control) => {
   try {
-    const bytes = await (deps.encodeSave ?? store.saveDocumentEncoder)(snapshot, control);
+    const captured = await awaitThumbnailCapture(thumbnail, control.signal);
+    if (!isCurrent()) return;
+    const current = useAppStore.getState();
+    const thumbnailPng = compareDocumentIdentity(thumbnailIdentity, current) === 'current'
+      && current.requestedGeneration === store.requestedGeneration && current.completedGeneration === store.completedGeneration
+      && current.cancelRequestCount === store.cancelRequestCount && current.recomputeCancelled === store.recomputeCancelled ? captured : null;
+    const encoding = snapshot.kind === 'part' && thumbnailPng !== null
+      ? { ...snapshot, options: { ...snapshot.options, thumbnailPng } } : snapshot;
+    const bytes = await (deps.encodeSave ?? store.saveDocumentEncoder)(encoding, control);
     if (!control.beginWriting()) return;
   const suggestedName = withPcadExtension(displayFileName(store.fileName));
 

@@ -13,13 +13,19 @@ describe('toolbar command catalog', () => {
     // 面の移動は加工へ1項目だけ追加し、既存114項目を保つ。
     // EX-13 adds midpoint, point-on-curve and the two signed axis distances: 115 -> 119.
     const addedConstraints = ['midpoint', 'pointOnCurve', 'horizontalDistance', 'verticalDistance'];
-    expect(originalGroups).toHaveLength(119);
+    expect(originalGroups).toHaveLength(121);
+    const directEdits = ['holeTranslate', 'faceRotate'];
+    expect(originalGroups.filter(entry => directEdits.includes(entry.sourceId))).toMatchObject(directEdits.map(sourceId =>
+      ({ id: toolbarCommandId('solidMachining', sourceId), sourceId, group: 'solidMachining',
+        labelKey: `toolbar.machining.${sourceId}`, helpTopic: 'shape-edit' })));
+    expect(originalGroups.filter(entry => !directEdits.includes(entry.sourceId))).toHaveLength(119);
     expect(originalGroups.filter(entry => entry.group === 'constraint' && addedConstraints.includes(entry.sourceId)))
       .toMatchObject(addedConstraints.map(sourceId => ({
         id: toolbarCommandId('constraint', sourceId), group: 'constraint', sourceId,
         labelKey: `constraint.kind.${sourceId}`, tooltipKey: `toolbar.constraint.${sourceId}Tooltip`, helpTopic: 'constraints',
       })));
-    const previousGroups = originalGroups.filter(entry => entry.group !== 'constraint' || !addedConstraints.includes(entry.sourceId));
+    const previousGroups = originalGroups.filter(entry => !directEdits.includes(entry.sourceId)
+      && (entry.group !== 'constraint' || !addedConstraints.includes(entry.sourceId)));
     expect(previousGroups).toHaveLength(115);
     expect(previousGroups.filter(entry => entry.sourceId !== 'faceOffset')).toHaveLength(114);
     expect(originalGroups.filter(entry => entry.sourceId === 'faceOffset')).toEqual([

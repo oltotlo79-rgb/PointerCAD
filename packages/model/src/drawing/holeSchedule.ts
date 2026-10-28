@@ -1,9 +1,11 @@
+import type { NativePlanarBasis } from '../kernelBridge/solidContracts.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { resolveHoleCenters, type ResolvedPartSketch } from '../part/resolvePart.js';
 import type { PartDocument } from '../part/types.js';
 import { crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 
 export interface HoleSchedulePlane {
+  readonly planarBasis?: NativePlanarBasis;
   readonly origin: Vec3;
   readonly normal: Vec3;
 }
@@ -64,6 +66,7 @@ export function buildHoleSchedule(document: PartDocument, context: HoleScheduleC
     if (feature.suppressed || (feature.kind !== 'hole' && feature.kind !== 'threadHole')) continue;
     // 円筒の側面の穴・ねじ穴(EX05)は軸が位置ごとに放射方向を向き、穴表の平面上の X・Y を持たない。
     // 平面の表には載せない(面を平面として解決しない。中心の点が無いことで表全体を断らない)。
+    if (feature.planar !== undefined && (feature.cylindrical !== undefined || feature.centers.length !== 0)) return { ok: false, reason: 'invalidValue', featureId: feature.id };
     if (feature.cylindrical !== undefined) continue;
     const diameter = feature.kind === 'hole' ? feature.diameter.value : feature.drillDiameter.value;
     const depth = feature.depth.kind === 'through' ? null : feature.depth.depth.value;
@@ -73,8 +76,21 @@ export function buildHoleSchedule(document: PartDocument, context: HoleScheduleC
       return { ok: false, reason: 'missingFace', featureId: feature.id };
     }
     const normal = scaleVec3(plane.normal, 1 / lengthVec3(plane.normal));
-    if (feature.centers.length === 0) return { ok: false, reason: 'missingCenter', featureId: feature.id };
+    if (feature.planar === undefined && feature.centers.length === 0) return { ok: false, reason: 'missingCenter', featureId: feature.id };
     const centers: Vec3[] = [];
+    if (feature.planar !== undefined) {
+      const basis = plane.planarBasis;
+      if (basis === undefined || !isValidHoleScheduleFrame({ datum: basis.origin, x: basis.xAxis, y: basis.yAxis })
+        || !finite(basis.normal) || Math.abs(dotVec3(crossVec3(basis.xAxis, basis.yAxis), basis.normal) - 1) > 1e-9) {
+        return { ok: false, reason: 'missingFace', featureId: feature.id };
+      }
+      if (feature.planar.kind !== 'plane-face' || feature.planar.locations.length === 0) return { ok: false, reason: 'invalidValue', featureId: feature.id };
+      for (const p of feature.planar.locations) {
+        const x = p.x.value, y = p.y.value, o = basis.origin, u = basis.xAxis, v = basis.yAxis;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, reason: 'invalidValue', featureId: feature.id };
+        centers.push([o[0] + x*u[0] + y*v[0], o[1] + x*u[1] + y*v[1], o[2] + x*u[2] + y*v[2]]);
+      }
+    }
     for (const reference of feature.centers) {
       const resolved = resolveHoleCenters(feature.id, [reference], context.sketches);
       if (!resolved.ok) return { ok: false, reason: 'missingCenter', featureId: feature.id };
@@ -82,7 +98,7 @@ export function buildHoleSchedule(document: PartDocument, context: HoleScheduleC
     }
     for (let index = 0; index < centers.length; index += 1) {
       const input = centers[index];
-      const center = subVec3(input, scaleVec3(normal, dotVec3(subVec3(input, plane.origin), normal)));
+      const center = feature.planar === undefined ? subVec3(input, scaleVec3(normal, dotVec3(subVec3(input, plane.origin), normal))) : input;
       const relative = subVec3(center, context.frame.datum);
       const x = dotVec3(relative, context.frame.x);
       const y = dotVec3(relative, context.frame.y);

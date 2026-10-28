@@ -8,7 +8,7 @@ import { startMate } from '../assembly/mateActions.js';
 import { FACE_REGIONS, interpolateOrbit, orbitStateForRegion } from '../viewcube/viewCubeMath.js';
 import { attachCameraControls } from './attachCameraControls.js';
 import { attachQuadInput } from './attachQuadInput.js';
-import { HOME_ORBIT, pan, zoom, type OrbitState } from './cameraMath.js';
+import { HOME_ORBIT, pan, type OrbitState } from './cameraMath.js';
 import { createQuadCameraState, resetQuadCamera, updateQuadCamera, type QuadCameraState } from './quadCamera.js';
 import { namedCameraFromOrbit, orbitFromNamedCamera } from './namedCamera.js';
 import { attachAssemblyInteraction } from './attachAssemblyInteraction.js';
@@ -285,11 +285,11 @@ describe('configured camera gestures at the actual dispatcher', () => {
     const app = setup(() => settings);
     try {
       event(app.canvas, 'wheel', { deltaMode: 1, deltaY: 2 });
-      expect(app.controls.getOrbit()).toEqual(zoom(HOME_ORBIT, 32));
+      expect(app.controls.getOrbit()).toEqual({ ...HOME_ORBIT, distance: HOME_ORBIT.distance * 1.1 ** (2 * 16 / 100) });
       settings = { ...settings, wheelSensitivity: 2, invertWheel: true };
       const before = app.controls.getOrbit();
       event(app.canvas, 'wheel', { deltaMode: 2, deltaY: 1 });
-      expect(app.controls.getOrbit()).toEqual(zoom(before, -200));
+      expect(app.controls.getOrbit()).toEqual({ ...before, distance: before.distance * 1.1 ** (1 * 100 * 2 * -1 / 100) });
       const after = app.controls.getOrbit();
       event(app.canvas, 'wheel', { shiftKey: true });
       expect(app.controls.getOrbit()).toBe(after);
@@ -305,7 +305,7 @@ describe('configured camera gestures at the actual dispatcher', () => {
       expect(app.controls.isDragging()).toBe(true);
       settings = DEFAULT_CAMERA_CONTROLS;
       event(app.canvas, 'pointermove', { buttons: 1, clientY: 150 });
-      expect(app.controls.getOrbit()).toEqual(zoom(HOME_ORBIT, -20));
+      expect(app.controls.getOrbit()).toEqual({ ...HOME_ORBIT, distance: HOME_ORBIT.distance * 1.1 ** (10 * 2 * -1 / 100) });
       if (end === 'detach') app.controls.detach();
       else event(end === 'blur' ? app.windowTarget : app.canvas, end);
       expect(app.controls.isDragging()).toBe(false);

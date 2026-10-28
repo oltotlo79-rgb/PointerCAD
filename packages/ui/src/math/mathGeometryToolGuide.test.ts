@@ -1,12 +1,11 @@
 /**
- * 道具「図形の測定値」を先に押したときの段階の案内(GR-26、利用者の回答 Q11=P2、
- * 計画書 scratchpad/claude/plans/geomref-plan.md §4(a)・§5.2 GR-26)。
+ * 道具「図形の測定値」は対象が先でも道具が先でもよい(FR-210/FR-211)。
+ * 道具を先に押した場合、選択に応じて案内が進み、選択を外すと戻ることを検査する。
  *
- * 再計算は偽物(`createFakeRecompute`)を本物の `attachPartRecompute` へつなぎ、世代・ボディ・
- * 解決済みスケッチは製品と同じ経路でストアへ入れる。選ぶたびに段が進み・外すと戻ること、
- * 形の計算中、部品以外では出ないこと、状態欄の 1 文での優先順位(加工の道具の案内と同じ高さで
- * 重ならない)を確かめる。描画(`StatusBar.tsx`)は Node で検査できないので、状態欄へ渡す
- * 1 文は `StatusBar.tsx` と同じ組み立て(`mathGeometryToolGuide` → `mathGeometryToolGuideText`)で作る。
+ * 再計算は `createFakeRecompute` を実際の `attachPartRecompute` へつなぎ、世代・ボディ・
+ * 解決済みスケッチを製品と同じ経路でストアへ入れる。計算中と部品以外の表示、加工の案内と
+ * 重ならない状態欄の優先順位も確認する。Nodeでは `StatusBar.tsx` を描画できないため、
+ * 同じ `mathGeometryToolGuide` → `mathGeometryToolGuideText` で状態欄の1文を組み立てる。
  */
 import {
   appendSolid,

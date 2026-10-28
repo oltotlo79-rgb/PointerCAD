@@ -61,6 +61,8 @@ export type SolidToolId =
   | 'draft'
   /** 平らな面の移動(EX-18 の限られた一段)。 */
   | 'faceOffset'
+  | 'holeTranslate'
+  | 'faceRotate'
   /**
    * 立体のミラー(FR-419)。整形系の `mirror`(スケッチの鏡像複写、FR-324)と id が
    * ぶつかるので別の名前にしてある(`GUIDE_KEYS` も `isEditTool` も道具の id 1 本で
@@ -250,14 +252,12 @@ export type AppearanceToolId = 'appearance';
 export type MeasureToolId = 'measure';
 
 /**
- * 図形の測定値の道具(GR-30。Q1=A4「ツールバーの新しい道具」、
- * scratchpad/claude/plans/geomref-plan.md §4(a))。
+ * 図形の測定値は、保存して係数の式で使うツールバーの道具(FR-210/FR-211)。
  *
- * 測ると同じく数値を1つも聞かない(選んだ点・辺・面・立体から作れる量は選択そのものから
- * 決まる)ので段の表には入れず、別の型にする。**選ぶ種類を切り替えない**唯一でない道具に
- * なる(`solid/subShapeSelection.ts` の `keepsSelectionKind`。測ると同じ理由 — いま
- * 選んでいるものをそのまま測るので、押した瞬間に選択が消えては何も測れない)。
- * 「測る」との違いは、名前を付けて文書に保存し、係数の式から使えること(§4(a))。
+ * 選んだ点・辺・面・立体から測れる量が決まるため、数値入力の段の表には入れず別の型にする。
+ * 「測る」と同じく `solid/subShapeSelection.ts` の `keepsSelectionKind` で選択の種類を保つ。
+ * 道具を押した瞬間に選択を消すと、先に選んだものを測れなくなるため。
+ * 名前を付けて文書に保存し、係数の式から使えることが、その場で見るだけの「測る」との違い。
  */
 export type MathGeometryToolId = 'mathGeometry';
 
@@ -389,6 +389,8 @@ export type SolidNumericInputStep =
   | 'draftAngle'
   /** 平らな面の移動の符号付きの距離。 */
   | 'faceOffsetDistance'
+  | 'holeTranslateVector'
+  | 'faceRotateAngle'
   /** ミラーの鏡にする面。欄は持たない。 */
   | 'mirrorPlane'
   /** 移動/回転の 1 段目(X / Y / Z へ動かす量。**欄 3 つ**)。 */

@@ -147,6 +147,33 @@ describe('solid mesh admission ownership', () => {
 });
 
 describe('display copy baseline and shared GPU mesh budget', () => {
+  it('shares the ceiling while preserving separate mesh and environment readings and atomic refusal', () => {
+    const pool = createGpuMeshBudget(100), a = Symbol('mesh'), b = Symbol('environment'), other = Symbol('other');
+    expect(pool.reserve(a, 30)).toBe(true);
+    expect(pool.reserveEnvironment(b, 70)).toBe(true);
+    expect(pool.reservedBytes()).toBe(30);
+    expect(pool.environmentReservedBytes()).toBe(70);
+    expect(pool.totalReservedBytes()).toBe(100);
+    expect(pool.reserve(a, 31)).toBe(false);
+    expect(pool.reserveEnvironment(b, 71)).toBe(false);
+    expect(pool.reserve(other, 1)).toBe(false);
+    expect(pool.reserveEnvironment(other, 1)).toBe(false);
+    for (const bad of [-1, 0.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(pool.reserveEnvironment(b, bad)).toBe(false);
+    }
+    expect(pool.environmentReservedBytes(b)).toBe(70);
+    expect(pool.totalReservedBytes()).toBe(100);
+    pool.release(b); // A mesh release cannot retire an environment owner with the same symbol.
+    expect(pool.totalReservedBytes()).toBe(100);
+    expect(pool.reserveEnvironment(b, 40)).toBe(true);
+    expect(pool.reserve(other, 30)).toBe(true);
+    pool.releaseEnvironment(b); pool.releaseEnvironment(b);
+    expect(pool.totalReservedBytes()).toBe(60);
+    expect(pool.reservedBytes(a)).toBe(30);
+    expect(pool.reservedBytes(other)).toBe(30);
+    expect(pool.environmentReservedBytes()).toBe(0);
+  });
+
   it('takes the baseline from the post-token union plus the reply clone, never from a missing union', () => {
     const accounting = fixture().meshJsAccounting;
     if (accounting === null) throw new Error('missing receipt');

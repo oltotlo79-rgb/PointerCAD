@@ -1,4 +1,5 @@
 /** 部品 JSON: 立体フィーチャーの振り分け。documentJson.ts への逆向きの依存を持たない。 */
+import { readDirectEditFeature, serializeDirectEditFeature } from './directEditOperations.js';
 import { readSheetBaseFeature, readSheetFlangeFeature, readSheetBendFeature, readSheetReliefFeature, serializeSheetMetalFeature } from './sheetMetal.js';
 import { readFunctionSurfaceFeature, serializeFunctionSurfaceFeature } from './functionSurface.js';
 
@@ -104,6 +105,7 @@ export function serializeSolidFeature(feature: SolidFeature): SolidFeature {
     case 'ruled': return serializeRuledFeature(feature);
     case 'loft': return serializeLoftFeature(feature);
     case 'draft': return serializeDraftFeature(feature);
+    case 'holeTranslate': case 'faceRotate': return serializeDirectEditFeature(feature);
     case 'faceOffset': return serializeFaceOffsetFeature(feature);
     case 'mirror': return serializeMirrorFeature(feature);
     case 'transform': return serializeTransformFeature(feature);
@@ -169,6 +171,8 @@ export function readSolidFeature(value: unknown, path: string): Checked<SolidFea
     // P5 の Should 群 9 種(§2.11、タスク43)。
     case 'draft':
       return readDraftFeature(record.value, path, base.value);
+    case 'holeTranslate': case 'faceRotate':
+      return readDirectEditFeature(record.value, path, base.value, kind.value);
     // 平らな面の移動(EX-18 の限られた一段)。保存の版は上げない(種類の追加だけ)。
     case 'faceOffset':
       return readFaceOffsetFeature(record.value, path, base.value);

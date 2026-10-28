@@ -92,7 +92,16 @@ function assertSolidRemains(oc: OpenCascadeInstance, operation: BooleanOperation
   const owned = createAllocations();
   try {
     const range = owned.keep(new oc.Message_ProgressRange_1());
-    const result = buildBooleanShape(oc, operation, target, [tool], range, owned);
+    // Even a no-op native Boolean can freeze shared input TShapes in non-destructive mode.
+    // This is only a disposable material-presence probe; it needs no borrowed topology/history.
+    const copy = (shape: TopoDS_Shape): TopoDS_Shape => {
+      const copier = owned.keep(new oc.BRepBuilderAPI_Copy_2(shape, true, true));
+      if (!copier.IsDone()) throw new Error(COMBINE_FAILED_MESSAGE);
+      const copied = owned.keep(copier.Shape());
+      if (copied.IsNull() || copied.IsSame(shape)) throw new Error(COMBINE_FAILED_MESSAGE);
+      return copied;
+    };
+    const result = buildBooleanShape(oc, operation, copy(target), [copy(tool)], range, owned);
     if (!hasResultSolid(oc, result) || measureVolume(oc, result) < MIN_SOLID_VOLUME_MM3) {
       throw new Error(message);
     }
@@ -239,6 +248,8 @@ export function booleanOp(
     if (options?.requireRemoval === true && operation === 'intersect') {
       // 輪郭の内側を残す(EX-04 W3)。外側に削るものが無い(輪郭が立体をまるごと囲む)なら断る。
       assertKeepsOutside(oc, target, tool);
+      // Refuse an empty inside on copied topology before the real Common touches borrowed inputs.
+      assertSolidRemains(oc, 'intersect', target, tool, NOTHING_INSIDE_MESSAGE);
       return buildInsideResult(() => buildBooleanResult(oc, operation, target, [tool], range, allocations, semantic, onBuilt));
     }
     return buildBooleanResult(oc, operation, target, [tool], range, allocations, semantic, onBuilt);

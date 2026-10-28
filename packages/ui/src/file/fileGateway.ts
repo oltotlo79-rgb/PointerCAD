@@ -38,6 +38,8 @@ export { PCAD_EXTENSION, PCADA_EXTENSION, PCADD_EXTENSION, type SaveFileKind } f
 
 import { t } from '../i18n/t.js';
 import { readBrowserFile, type BrowserReadableFile } from './readBrowserFile.js';
+import type { DrawingPrintOptions as TypeDrawingPrintOptions } from '@pointercad/drawing';
+
 
 /** 開いたファイル 1 つぶん(§2.10)。 */
 export interface PickedFile {
@@ -124,7 +126,7 @@ export interface FileGateway {
    * ここへ実装を置かない(口があるかどうかが「デスクトップ版か」の判断になる。
    * 使い分けは `printView.ts` の `desktopPrintOf`)。
    */
-  print?(bytes: Uint8Array, options?: import('@pointercad/drawing').DrawingPrintOptions): Promise<boolean>;
+  print?(bytes: Uint8Array, options?: TypeDrawingPrintOptions): Promise<boolean>;
 }
 
 export function withPcaddExtension(name: string): string {

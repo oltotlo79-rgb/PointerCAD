@@ -72,9 +72,10 @@ beforeAll(async () => {
   const started = performance.now(); let batches = 0;
   try {
     // Every request still runs through the real runtime and the public reply decoder.
-    // Eight requests amortize imports while retaining the existing 30-second subprocess bound.
-    for (let start = 0; start < queue.length; start += 8) {
-      const batch = queue.slice(start, start + 8);
+    // Share runtime imports across 32 requests (below the runner's 100-request bound).
+    // Keep every real calculation and the existing 30-second subprocess bound.
+    for (let start = 0; start < queue.length; start += 32) {
+      const batch = queue.slice(start, start + 32);
       const script = fileURLToPath(new URL('../../../expression/src/math/exactRuntime/cas_probability_test.py', import.meta.url));
       const result = spawnSync('python', ['-B', '-X', 'utf8', script, '--batch'], {
         input: JSON.stringify(batch.map(({ expression, angleUnit }) => ({ expression, angleUnit }))),

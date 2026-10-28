@@ -4,8 +4,9 @@ import { savePart } from './scriptsFlow.js';
 import { waitForStartupHealth } from './startupHealth.js';
 import { uiMessage } from './uiMessages.js';
 import { chooseToolMenuItem } from './assemblyTestSupport.js';
-import { beginRecompute, waitForRecompute } from './recompute.js';
+import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
 import { captureManualDetail } from './captureManualDetail.js';
+import { expectSameCamera, observeControlsInput, rememberCamera } from './cameraControlsSettingsFlow.js';
 
 const settings = (page: Page) => page.getByRole('form', { name: 'キーの割当', exact: true });
 async function openSettings(page: Page): Promise<void> {
@@ -47,8 +48,15 @@ export async function shortcutSettingsFlow(page: Page, info: TestInfo, app?: Ele
   if (settingBounds === null || panelBounds === null) throw new Error('キー設定の画面がありません。');
   expect(settingBounds.y).toBeGreaterThanOrEqual(panelBounds.y);
   expect(settingBounds.y + settingBounds.height).toBeLessThanOrEqual(panelBounds.y + panelBounds.height);
-  await captureManualDetail(page, info, { name: 'shortcut-settings', dialog: settings(page), fixture: before,
-    script: new URL(import.meta.url) });
+  const settled = await waitForSettledRecompute(page);
+  expect(settled.isComputing).toBe(false);
+  expect(settled.lastOutcome).toBe('success');
+  expect(settled.completedGeneration).toBe(settled.requestedGeneration);
+  expect(settled.pendingWaiters).toBe(0);
+  if (process.env.PCAD_MANUAL_CAPTURE === '1') {
+    await captureManualDetail(page, info, { name: 'shortcut-settings', dialog: settings(page), fixture: before,
+      script: new URL(import.meta.url) });
+  }
   await closeSettings(page);
   await expect(page.getByRole('button', { name: '元に戻す', exact: true })).toHaveAttribute('title', '元に戻す (F2)');
   expect(await savePart(page, info, 'shortcut-after.pcad', app)).toEqual(before);
@@ -111,6 +119,7 @@ export async function shortcutToolFlow(page: Page, info: TestInfo, app?: Electro
   for (const [id, key] of [
     ['toolbar.shape.circle', 'F2'], ['toolbar.view.grid', 'F3'], ['toolbar.solidCreate.extrude', 'F4'],
     ['toolbar.sheetMetal.sheetBase', 'F7'], ['toolbar.drawing.note', 'F2'],
+    ['toolbar.view.home', 'F8'],
   ] as const) await assign(page, id, key);
   // The same chord in part-only and drawing-only commands is unambiguous.
   await expect(settings(page).getByRole('alert')).toHaveCount(0);
@@ -147,4 +156,44 @@ export async function shortcutToolFlow(page: Page, info: TestInfo, app?: Electro
   await sheet.getByRole('button', { name: uiMessage('sheetMetal', 'sheetMetal.cancel'), exact: true }).click();
   expect(await savePart(page, info, 'shortcut-tools-after.pcad', app)).toEqual(before);
   await keyInViewport(page, 'Control+z'); await expect(tree(page, '点1')).toHaveCount(0);
+  await additionalHomeKey(page, info, app);
+}
+
+async function additionalHomeKey(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
+  // Restore the real model after the existing atomic Undo assertion above.
+  const generation = await beginRecompute(page);
+  await keyInViewport(page, 'Control+y'); await waitForRecompute(page, generation);
+  await expect(tree(page, '点1')).toBeVisible();
+  await keyInViewport(page, 'Home');
+  const before = await rememberCamera(page, info, 'shortcut-home-default', app);
+  const canvas = page.locator('canvas.pcad-viewport__canvas');
+  const bounds = await canvas.boundingBox();
+  if (bounds === null) throw new Error('Home shortcut viewport missing');
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  const observation = await observeControlsInput(page);
+  try {
+    await page.mouse.down({ button: 'middle' });
+    await page.mouse.move(bounds.x + bounds.width / 2 + 48, bounds.y + bounds.height / 2 + 24, { steps: 6 });
+    await page.mouse.up({ button: 'middle' });
+    const rotated = await rememberCamera(page, info, 'shortcut-home-rotated', app);
+    expect(rotated.view.position).not.toEqual(before.view.position);
+    await keyInViewport(page, 'Control+F8');
+    const refused = await rememberCamera(page, info, 'shortcut-home-extra-ctrl', app);
+    expectSameCamera(refused.view, rotated.view);
+    await keyInViewport(page, 'F8');
+    const restored = await rememberCamera(page, info, 'shortcut-home-added-key', app);
+    expectSameCamera(restored.view, before.view);
+    expect(restored.document.sketches).toEqual(before.document.sketches);
+    expect(restored.document.solids).toEqual(before.document.solids);
+    expect(restored.document.id).toBe(before.document.id);
+    const events = await observation.evaluate(value => value.events);
+    await info.attach('shortcut-home-added-key-native', { body: JSON.stringify(events), contentType: 'application/json' });
+    expect(events.length).toBeGreaterThan(0); expect(events.every(event => event.isTrusted)).toBe(true);
+    const added = events.filter(event => event.type === 'keydown' && event.key === 'F8' && !event.ctrl);
+    expect(added).toHaveLength(1); expect(added[0]).toMatchObject({ alt: false, shift: false, ctrl: false, meta: false });
+    expect(events.filter(event => event.type === 'keydown' && event.key === 'F8' && event.ctrl)).toHaveLength(1);
+  } finally {
+    await page.mouse.up({ button: 'middle' });
+    await observation.evaluate(value => value.stop()); await observation.dispose();
+  }
 }

@@ -543,6 +543,11 @@ function solidDependencies(
         found.push(...axisSpecDependencies(context, feature.operation.axis));
       }
       break;
+    case 'faceRotate':
+      found.push(...subShapeDependencies(context, feature.hinge));
+      found.push(...subShapeDependencies(context, feature.face));
+      break;
+    case 'holeTranslate':
     case 'faceOffset':
       // 平らな面の移動(EX-18)。対象は消費するので上で数え終えているが、面の指紋は
       // 別のボディを指しうる(解決は断るが、並べ替えの判定は解決の成否と無関係)。

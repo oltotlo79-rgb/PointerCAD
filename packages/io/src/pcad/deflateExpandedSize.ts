@@ -8,8 +8,10 @@ class Bits {
   position = 0;
   constructor(readonly bytes: Uint8Array) {}
   peek(count: number): number {
-    const offset = Math.floor(this.position / 8), shift = this.position % 8;
-    const word = (this.bytes[offset] ?? 0) | ((this.bytes[offset + 1] ?? 0) << 8) | ((this.bytes[offset + 2] ?? 0) << 16);
+    // Keep the byte offset as a number: shifting the full position would wrap large inputs.
+    const shift = this.position & 7, offset = (this.position - shift) / 8;
+    // Bitwise conversion pads a missing lookahead byte with zero; consumption still checks the real boundary.
+    const word = this.bytes[offset] | (this.bytes[offset + 1] << 8) | (this.bytes[offset + 2] << 16);
     return (word >>> shift) & ((1 << count) - 1);
   }
   read(count: number): number {
@@ -55,7 +57,9 @@ function huffman(lengths: readonly number[], mode: 'codes' | 'literals' | 'dista
 function symbol(bits: Bits, table: Huffman): number {
   const entry = table.lookup[bits.peek(table.width)], length = entry & 15;
   if (length === 0) throw new DeflateSizeError('invalidDeflate');
-  bits.read(length); return entry >>> 4;
+  // The lookup already read these bits; only consume them after checking the actual input boundary.
+  if (bits.position + length > bits.bytes.length * 8) throw new DeflateSizeError('invalidDeflate');
+  bits.position += length; return entry >>> 4;
 }
 const FIXED_LITERALS = huffman(Array.from({ length: 288 }, (_, index) => index < 144 ? 8 : index < 256 ? 9 : index < 280 ? 7 : 8), 'literals');
 const FIXED_DISTANCES = huffman(Array<number>(32).fill(5), 'distances');

@@ -1,7 +1,7 @@
 // Generated from preserved official artifacts and fixed developer wrappers.
 // Bolt-only developer wrapper; all shared native dependency pins remain unchanged.
-export const BOLT_CONTACT_ASSETS = [{ file: 'beamBoltContact.py', bytes: 4895,
-  sha256: 'be2860fbb93c06e0a0b7da78bf04b22cea109644a424db2584cb5395fbf7f83c' }] as const;
+export const BOLT_CONTACT_ASSETS = [{ file: 'beamBoltContact.py', bytes: 15396,
+  sha256: 'd58a66b03e25a3daa30df6320136221c599dddecdcfcda39a90ec1bc6f9be2ba' }] as const;
 export const FEM_ASSETS = [
   {
     "file": "pyodide.mjs",
@@ -65,8 +65,8 @@ export const FEM_ASSETS = [
   },
   {
     "file": "beamContact.py",
-    "bytes": 33179,
-    "sha256": "68ea5e683181f631c6c295cb85a4d5fccddf257bfebc3bdcab2f985c9470189c"
+    "bytes": 33736,
+    "sha256": "2bdf6b14dcf4c076a8a23f14d31a53be933c3bc7f9ce3433593acdaffe4a43e0"
   }
 ] as const;
 
@@ -85,8 +85,8 @@ export const NETGEN_ASSETS = [
 ] as const;
 
 // Solid mode only; Root must generate the identical runtime asset and closure.
-export const SOLID_ASSETS = [{ file: 'solidAnalysis.py', bytes: 12908,
-  sha256: '7400849514b0dbf35b16bd124339fd400facf08f214a1f6946007c0219f91e69' }] as const;
+export const SOLID_ASSETS = [{ file: 'solidAnalysis.py', bytes: 15770,
+  sha256: '72681567864f65f0f59bc3b3f332b84a937ddd0827fef4daf8a3345c4eeac9e3' }] as const;
 
 // Plastic solid mode only; Root generates this exact freeze-c3 wrapper and the runtime source closure.
 export const SOLID_PLASTIC_ASSETS = [{ file: 'solidPlasticAnalysis.py', bytes: 19110,

@@ -31,6 +31,7 @@ export async function resolveHoleSchedule(
     const resolution = resolveReference(body, face);
     const selected = resolution.status === 'matched' ? resolution.match.geometry : null;
     return selected?.kind === 'face' && selected.surfaceKind === 'plane' && selected.axis !== null
-      ? { origin: selected.position, normal: selected.axis } : null;
+      ? { origin: selected.position, normal: selected.axis,
+          ...(selected.planarBasis === undefined ? {} : { planarBasis: selected.planarBasis }) } : null;
   } });
 }

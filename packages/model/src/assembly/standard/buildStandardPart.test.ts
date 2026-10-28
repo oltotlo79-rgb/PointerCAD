@@ -1,3 +1,4 @@
+import { evaluateExpression } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { canonicalPartDocumentText } from '../partLibrary.js';
@@ -410,5 +411,43 @@ describe('inner cylindrical weld public standard source', () => {
     expect(standardPartNominalVolume('filletWeld', '2x3', withoutRadius)).toBeNull();
     expect(standardPartNominalVolume('filletWeld', '2x20', options)).toBeNull();
     expect(buildStandardPartFromSource({ ...source, size: '2x20' })).toBeNull();
+  });
+});
+
+describe('六角ナットの下穴径の厳密な式を保つ', () => {
+  it.each([
+    { designation: 'M6', diameter: 6, series: 'coarse', pitch: 1, display: '4.91746824527' },
+    { designation: 'M6', diameter: 6, series: 'fine', pitch: 0.75, display: '5.18810118395' },
+    { designation: 'M8', diameter: 8, series: 'coarse', pitch: 1.25, display: '6.64683530659' },
+    { designation: 'M8', diameter: 8, series: 'fine', pitch: 1, display: '6.91746824527' },
+  ] as const)('$designation $series の計算値と保存式を丸めない', row => {
+    const options = { dimensionSeries: 'main', threadSeries: row.series };
+    const before = structuredClone(options);
+    const source = createStandardPartSource('hexNut', row.designation, options);
+    const sourceBefore = structuredClone(source);
+    const document = buildStandardPart('hexNut', row.designation, options);
+    const rebuilt = buildStandardPartFromSource(source);
+    const expected = row.diameter - (5 * Math.sqrt(3) / 8) * row.pitch;
+    expect(document).not.toBeNull();
+    expect(rebuilt).toEqual(document);
+    expect(document?.solids.map(feature => feature.kind)).toEqual(['extrude', 'threadHole']);
+    const feature = document?.solids.at(-1);
+    if (feature?.kind !== 'threadHole') throw new Error('Expected thread hole');
+    expect(feature.drillDiameter.value).toBe(expected);
+    expect(feature.drillDiameter.source).toBe(String(expected));
+    expect(feature.drillDiameter.display).toBe(row.display);
+    const evaluated = evaluateExpression(feature.drillDiameter.source);
+    if (!evaluated.ok) throw new Error('Expected valid drill diameter');
+    expect(evaluated.value.value).toBe(expected);
+    // 本体規格表のM6/M8高さを固定値で照合し、他のねじ欄も維持する。
+    const height = row.diameter === 6 ? 5.2 : 6.8;
+    expect(feature).toMatchObject({ designation: row.designation, series: row.series,
+      pitch: { source: String(row.pitch), value: row.pitch, display: String(row.pitch) },
+      depth: { kind: 'through' }, representation: 'simplified',
+      threadLength: { source: String(height), value: height, display: String(height) },
+      tiltAngle: { source: '0', value: 0, display: '0' },
+      tiltAzimuth: { source: '0', value: 0, display: '0' } });
+    expect(options).toEqual(before);
+    expect(source).toEqual(sourceBefore);
   });
 });

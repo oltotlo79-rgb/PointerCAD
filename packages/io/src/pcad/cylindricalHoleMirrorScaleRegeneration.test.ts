@@ -260,3 +260,13 @@ describe('height/angle holes on a mirrored or uniformly scaled cylinder survive 
     }
   }, 180_000);
 });
+
+import { runMachiningRoundtrip } from './cylindricalMachiningRoundtrip.testSupport.js';
+
+describe('EX-05.PERSIST: plain holes after reflection and uniform scale', () => {
+  for (const transformation of ['mirrorXY', 'scalePlain'] as const) {
+    it.each(['blind', 'through'] as const)(`${transformation}: %s survives JSON and ZIP with fresh native regeneration`, async (kind) => {
+      await runMachiningRoundtrip(transformation, kind);
+    }, 180_000);
+  }
+});

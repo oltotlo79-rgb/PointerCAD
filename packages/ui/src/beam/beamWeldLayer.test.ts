@@ -1,3 +1,5 @@
+import { cadJointContactFixture } from '../../../model/src/analysis/cadJointContact.testSupport.js';
+import { prepareCombinedWeldStressInput } from './BeamWeldThroatStressResults.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React, { Children, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -13,12 +15,14 @@ import { captureBeamSource } from './beamSource.js';
 import { beamDefinition, editBeamSession, restoreBeamSession } from './beamSession.js';
 import { attachBeamAnalysis } from './attachBeamAnalysis.js';
 import { BeamWeldLayerDefinitions } from './BeamWeldLayers.js';
+import { prepareWeldStressInput } from './BeamWeldThroatStressResults.js';
+import { prepareBeamAnalysis } from './prepareBeamAnalysis.js';
 import { selectWeldGroup, updateWeldGroup } from './weldGroupAssociations.js';
 
 beforeEach(resetTestStore);
 
-function fixture(segments?: readonly { readonly start: number; readonly length: number }[]) {
-  const ui = beamUiFixture(), cad = cadWeldLayerFixture(segments);
+function fixture(segments?: readonly { readonly start: number; readonly length: number }[], mode: 'weld' | 'joint' | 'initial' = 'weld') {
+  const ui = beamUiFixture(), cad = mode === 'weld' ? { ...cadWeldLayerFixture(segments), axialBolts: undefined } : cadJointContactFixture();
   const document = cad.document;
   // Metadata-only publication fixture using the actual analytic CAD bodies.
   // Every body-map entry has its exact result/layout owner; this is not a bridge-issued receipt.
@@ -37,7 +41,11 @@ function fixture(segments?: readonly { readonly start: number; readonly length: 
   const source = captureBeamSource(state);
   if (source === null) throw new Error('Expected current owned publication');
   const definition = { ...cad.definition, source: source.source,
-    weldLayers: { ...cad.associations, source: source.source } };
+    weldLayers: { ...cad.associations, source: source.source },
+    ...(cad.axialBolts === undefined ? {} : { axialBolts: { ...cad.axialBolts, source: source.source } }),
+    ...(mode === 'initial' ? { initialStrain: { schema: 'pointercad-cad-joint-initial-strain/1' as const,
+      shortenings: [{ boltId: 'mixed-shank', shorteningMm: .001, source: { kind: 'user-supplied' as const,
+        reference: 'prescribed stress-free shortening', condition: 'small-strain elastic' } }] } } : {}) };
   const restored = restoreBeamSession(document.id, definition, document.components.map(component => ({
     path: [component.id], partKey: partKeyOf(component.source), label: component.name })));
   const session = { ...restored, members: restored.members.map(member => ({ ...member, confirmed: true })) };
@@ -274,5 +282,37 @@ describe('CAD effective weld layer ownership in the real beam store and client a
     expect(beamDefinition(editBeamSession(f.session, { kind: 'analysis-type', value: 'static' }), f.source, []).ok).toBe(false);
     const changed = editBeamSession(f.session, { kind: 'connection', id: 'a-beam', end: 'start', nodeId: 'replacement' });
     expect(beamDefinition(changed, f.source, []).ok).toBe(false);
+  });
+});
+
+describe('weld stress display preparation on the current CAD ownership route', () => {
+  it('reconstructs the weld-only input using the same reviewed source and draft as execution', () => {
+    const f = fixture(), session = { ...f.session, reviewed: f.source };
+    const draft = beamDefinition(session, f.source, f.source.document.parameters);
+    if (!draft.ok) throw new Error('Actual restored weld draft refused');
+    const prepared = prepareBeamAnalysis(f.source, draft.definition);
+    if (!prepared.ok || prepared.kind !== 'weld-contact') throw new Error('Actual CAD weld preparation refused');
+    expect(prepareWeldStressInput(session)).toEqual(prepared.input);
+    expect(prepareWeldStressInput({ ...session, reviewed: null })).toBeNull();
+  });
+  it('does not reinterpret a changed/invalid draft as the old weld input', () => {
+    const f = fixture(), session = { ...f.session, reviewed: f.source };
+    const changed = editBeamSession(session, { kind: 'weld-layers', welds: [{ ...session.weldLayers[0], effectiveThroatMm: NaN }] });
+    expect(prepareWeldStressInput(changed)).toBeNull();
+  });
+});
+
+describe('current CAD preparation keeps the three real stress input variants', () => {
+  it.each(['weld', 'joint', 'initial'] as const)('prepares %s without rewriting any protocol kind or input', mode => {
+    const f = fixture(undefined, mode), session = { ...f.session, reviewed: f.source };
+    const draft = beamDefinition(session, f.source, f.source.document.parameters);
+    if (!draft.ok) throw new Error('Current combined CAD draft refused');
+    const prepared = prepareBeamAnalysis(f.source, draft.definition);
+    if (!prepared.ok) throw new Error('Current combined CAD preparation refused');
+    expect(prepared.kind).toBe(mode === 'weld' ? 'weld-contact' : mode === 'joint' ? 'joint-contact' : 'joint-initial-strain');
+    expect(prepareCombinedWeldStressInput(session)).toEqual(prepared);
+    expect(prepareCombinedWeldStressInput({ ...session, reviewed: null })).toBeNull();
+    const changed = editBeamSession(session, { kind: 'weld-layers', welds: [{ ...session.weldLayers[0], effectiveThroatMm: NaN }] });
+    expect(prepareCombinedWeldStressInput(changed)).toBeNull();
   });
 });

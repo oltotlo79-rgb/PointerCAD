@@ -288,3 +288,14 @@ describe('a drag that needs no nonlinear solve is shown after one frame (2026-10
       expect(session.active()).toBe(false);
     });
 });
+
+it('既存の内部schedule/stopは観測collectorなしで互換のまま動く', () => {
+  const session = newSession(), before = useAppStore.getState();
+  try {
+    expect(session.begin([10, 8])).toBe(true);
+    session.schedule([40, 30]); session.stop(false);
+    expect(Object.hasOwn(session.observe(), 'timing')).toBe(false);
+    expect(useAppStore.getState().document).toBe(before.document);
+    expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+  } finally { session.stop(false); }
+});

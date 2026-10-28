@@ -1,5 +1,5 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { createKernelApi } from '../../kernel/src/index.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../model/src/testing/createNativeKernelBridge.node.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { readPcadFile, writePcadFile } from '../../io/src/pcad/pcadFile.js';
@@ -7,8 +7,7 @@ import {
   commitBoltedJointDraft, createBoltedJointDraft, previewBoltedJointDraft, type BoltedJointThreadGroupTarget,
 } from '../src/assembly/boltedJointDraft.js';
 import type { AssemblyView } from '../src/store/assemblySlice.js';
-import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
-import { createDirectKernelBridge, type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
+import { type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
 import { createSubShapeReference } from '../../model/src/kernelBridge/createSubShapeReference.js';
 import { resolveSubShapeReference } from '../../model/src/kernelBridge/referenceResolution.js';
 import { appendSolid, createEmptyPartDocument, replaceSketch } from '../../model/src/part/createPartDocument.js';
@@ -32,8 +31,8 @@ import {
  * 部品の経路は primitiveKernel.test.ts、組立の文脈は filletWeldKernel.test.ts と同じ。
  */
 
-const bridge = createDirectKernelBridge(createKernelApi(loadOcctForNode));
-beforeAll(async () => { await loadOcctForNode(); }, 180_000);
+const bridge = createNativeKernelBridgeForNodeTests();
+beforeAll(async () => { await initializeNativeKernelForNodeTests(); }, 180_000);
 afterAll(() => { bridge.dispose(); });
 
 const value = (n: number) => expressionValueFromNumber(n);

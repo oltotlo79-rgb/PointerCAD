@@ -272,3 +272,16 @@ describe('explicit tetrahedral quality client connection', () => {
     }
   });
 });
+
+describe('frame client input admission', () => {
+  it('新frameも不正入力をPromise拒否し、Workerを作らず旧入力を採用しない', async () => {
+    let created = 0;
+    const client = new FemClient(() => { created += 1; return port(); });
+    try {
+      let rejected: ReturnType<FemClient['analyzeFrameBoltContact']> | undefined;
+      expect(() => { rejected = client.analyzeFrameBoltContact({ schema: 'pointercad-bolt-contact/1' }); }).not.toThrow();
+      if (rejected === undefined) throw new Error('Frame client did not return Promise');
+      await expect(rejected).rejects.toBeInstanceOf(Error); expect(created).toBe(0);
+    } finally { client.dispose(); }
+  });
+});

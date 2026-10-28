@@ -166,3 +166,69 @@ describe('LM shared work budget and cancellation', () => {
     expect(job.stepWork(1).totalWork).toBe(1);
   });
 });
+
+describe('already-converged sparse input keeps validation before its zero-work exit', () => {
+  it('returns the unchanged root after one evaluation without preparing a sparse normal system', () => {
+    const spy = vi.spyOn(sparse, 'prepareSparseNormalSystem');
+    try {
+      const initial = new Array<number>(129).fill(42);
+      const evaluate = vi.fn((x: readonly number[]): readonly LinearizedRow[] =>
+        x.map((value, i) => ({ value: value - 42, gradient: new Map([[i, 1]]) })));
+      const job = createLevenbergMarquardtJob(initial, evaluate);
+      const progress = job.stepWork(1), outcome = completed(progress);
+      expect(outcome).toMatchObject({ x: initial, converged: true, iterations: 0, maxResidual: 0, stop: 'converged', trace: [] });
+      expect(progress).toMatchObject({ work: 0, totalWork: 0, linearWork: 0, productEntries: 0, attemptsStarted: 0 });
+      expect(evaluate).toHaveBeenCalledTimes(1);
+      expect(spy).not.toHaveBeenCalled();
+      job.cancel();
+      expect(job.step(1)).toBe(outcome);
+      expect(initial).toEqual(new Array<number>(129).fill(42));
+    } finally { spy.mockRestore(); }
+  });
+
+  it('retains rejection of nonfinite initial/rows/gradients, invalid zero-coefficient columns and overflow', () => {
+    const invalidRows: readonly (readonly LinearizedRow[])[] = [
+      ...[NaN, Infinity, -Infinity].map(value => [{ value, gradient: new Map([[0, 1]]) }]),
+      ...[NaN, Infinity, -Infinity, 1e200].map(value => [{ value: 0, gradient: new Map([[0, value]]) }]),
+      ...[-1, 0.5, 129, NaN, Infinity].map(column => [{ value: 0, gradient: new Map([[column, 0]]) }]),
+      [{ value: 0, gradient: new Map([[0, 1e154]]) }, { value: 0, gradient: new Map([[0, 1e154]]) }],
+    ];
+    for (const rows of invalidRows) {
+      const outcome = completed(createLevenbergMarquardtJob(new Array<number>(129).fill(0), () => rows).stepWork(1));
+      expect(outcome).toMatchObject({ converged: false, stop: 'singular', iterations: 0, trace: [] });
+    }
+    for (const value of [NaN, Infinity, -Infinity]) {
+      const initial = new Array<number>(129).fill(0); initial[0] = value;
+      expect(completed(createLevenbergMarquardtJob(initial, () => [{ value: 0, gradient: new Map([[0, 1]]) }]).stepWork(1)))
+        .toMatchObject({ converged: false, stop: 'singular', iterations: 0, trace: [] });
+    }
+  });
+
+  it('retains original preparation for valid larger coefficients and nonconverged input', () => {
+    const spy = vi.spyOn(sparse, 'prepareSparseNormalSystem');
+    try {
+      const initial = new Array<number>(129).fill(0);
+      expect(completed(createLevenbergMarquardtJob(initial, () => [{ value: 0, gradient: new Map([[0, 2]]) }]).stepWork(1)).converged).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(1);
+      const input = fixture();
+      const outcome = completed(finish(createLevenbergMarquardtJob(input.initial, input.evaluate), [4096]));
+      expect(outcome.converged).toBe(true);
+      expect(outcome.iterations).toBeGreaterThan(0);
+      expect(spy.mock.calls.length).toBeGreaterThan(1);
+      for (const value of outcome.x) expect(Math.abs(value - 2)).toBeLessThan(1e-9);
+    } finally { spy.mockRestore(); }
+  });
+
+  it('excludes a nonstandard duplicate-column iterator from the fast path without changing the old preparation', () => {
+    class RepeatedColumn extends Map<number, number> {
+      override *[Symbol.iterator](): MapIterator<[number, number]> {
+        yield [0, 1]; yield [0, 1];
+      }
+    }
+    const spy = vi.spyOn(sparse, 'prepareSparseNormalSystem');
+    try {
+      createLevenbergMarquardtJob(new Array<number>(129).fill(0), () => [{ value: 0, gradient: new RepeatedColumn() }]);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally { spy.mockRestore(); }
+  });
+});

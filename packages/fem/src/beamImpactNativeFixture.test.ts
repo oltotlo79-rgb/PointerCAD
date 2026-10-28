@@ -231,3 +231,73 @@ describe('actual native Beam3d K and M against beam formulas (oblique cantilever
     for (const sample of result.samples) expect(Math.abs((sample.contacts[0]?.gapM ?? Number.NaN) - 1e-3)).toBeLessThanOrEqual(1e-12);
   });
 });
+
+describe('current native nonzero axial contact (independent midpoint oracle)', () => {
+  it('requires positive force and impulse from current runtime, and rejects altered balances', async () => {
+    // 旧fixtureから採るのはplanの物理入力だけ。旧raw結果を期待値に使用しない。
+    const input = inputFor(record(fixture.plan));
+    const prepared = translateBeamImpact(input);
+    const stdout = execFileSync(process.execPath,
+      [fileURLToPath(new URL('./beamImpactNativeAxial.harness.mjs', import.meta.url))], {
+        encoding: 'utf8', timeout: 55_000, maxBuffer: 16 * 1024 * 1024,
+        input: JSON.stringify(prepared.plan),
+      });
+    const reply = record(JSON.parse(stdout.trim().split('\n').at(-1) ?? ''));
+    const hash = await impactInputSha256(prepared.input);
+    const result = decodeBeamImpact(reply.raw, prepared.input, hash);
+    const peak = result.contactPeaks[0];
+    expect(peak.intervalForceN).toBeGreaterThan(0);
+    expect(peak.totalImpulseNs).toBeGreaterThan(0);
+
+    // E/rho/A/L/v0/kcだけから、接触中の1自由度midpoint閉形式を導く。
+    const mass = 7850 * 1e-4 / 3, stiffness = 210e9 * 1e-4, contactStiffness = 21e6;
+    const speed = 0.01, h = input.history.timeStepS;
+    const omega = Math.sqrt((stiffness + contactStiffness) / mass);
+    const theta = 2 * Math.atan(omega * h / 2), scaleU = speed / omega;
+    const energy = mass * speed * speed / 2;
+    const near = (actual: number, expected: number, tolerance: number, scale: number): void => {
+      expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance * Math.max(Math.abs(expected), scale));
+    };
+    expect(input.contacts[0].gapM).toBe(0);
+    expect(input.history.stepCount).toBe(30);
+    expect(input.history.outputEvery).toBe(1);
+    expect(result.samples).toHaveLength(31);
+    let expectedImpulse = 0, expectedPeak = 0, expectedPeakStep = 0;
+    for (const sample of result.samples) {
+      const n = sample.step, u = scaleU * Math.sin(n * theta), v = speed * Math.cos(n * theta);
+      expect(u).toBeGreaterThanOrEqual(0);
+      const tip = sample.nodes.find(node => node.nodeId === 'native-2');
+      if (tip === undefined) throw new Error('Current native axial tip is missing');
+      near(tip.displacementM[0], u, 1e-9, scaleU);
+      near(tip.velocityMPerS[0], v, 1e-9, speed);
+      near(sample.energyJ, energy, 1e-10, energy);
+      near(sample.contacts[0].gapM, -u, 1e-9, scaleU);
+      near(mass * tip.velocityMPerS[0] ** 2 / 2
+        + (stiffness + contactStiffness) * tip.displacementM[0] ** 2 / 2, energy, 1e-10, energy);
+      if (n === 0) continue;
+      const prior = scaleU * Math.sin((n - 1) * theta);
+      const force = contactStiffness * (prior + u) / 2;
+      const contact = sample.contacts[0];
+      if (contact.intervalForceN === null || contact.impulseNs === null) throw new Error('Current interval force is missing');
+      near(contact.intervalForceN, force, 1e-9, contactStiffness * scaleU);
+      near(contact.impulseNs, h * force, 1e-9, h * contactStiffness * scaleU);
+      const priorTip = result.samples[n - 1].nodes.find(node => node.nodeId === 'native-2');
+      if (priorTip === undefined) throw new Error('Prior native axial tip is missing');
+      const terms = [mass * (tip.velocityMPerS[0] - priorTip.velocityMPerS[0]) / h,
+        stiffness * (tip.displacementM[0] + priorTip.displacementM[0]) / 2, contact.intervalForceN];
+      expect(Math.abs(terms.reduce((sum, value) => sum + value, 0)))
+        .toBeLessThanOrEqual(1e-8 * terms.reduce((sum, value) => sum + Math.abs(value), 0));
+      expectedImpulse += h * force;
+      if (force > expectedPeak) { expectedPeak = force; expectedPeakStep = n; }
+    }
+    near(peak.intervalForceN, expectedPeak, 1e-9, expectedPeak);
+    near(peak.totalImpulseNs, expectedImpulse, 1e-9, expectedImpulse);
+    expect(peak.timeS).toBe(expectedPeakStep * h);
+    const badEnergy = structuredClone(record(reply.raw));
+    record(array(badEnergy.samples)[2]).energyJ = energy * (1 + 3e-8);
+    expect(() => decodeBeamImpact(badEnergy, input, hash)).toThrow();
+    const badMomentum = structuredClone(record(reply.raw));
+    badMomentum.maximumMomentumResidual = 2e-8;
+    expect(() => decodeBeamImpact(badMomentum, input, hash)).toThrow();
+  });
+});

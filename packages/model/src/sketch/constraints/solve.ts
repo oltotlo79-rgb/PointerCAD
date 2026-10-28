@@ -564,6 +564,29 @@ export type LevenbergMarquardtProgress = {
   | { readonly status: 'completed'; readonly outcome: SolveOutcome }
 );
 
+/**
+ * A sufficient screen for already-converged sparse input, not a replacement validator.
+ * |f| and |J| <= 1 and unique valid columns bound each accumulated rhs/diagonal
+ * by the finite JS array row count. No normal-system sum can overflow. All other
+ * input (including nonstandard duplicate iterators) uses the original preparation.
+ */
+function isGradientMap(value: ReadonlyMap<number, number>): value is Map<number, number> {
+  return value instanceof Map;
+}
+
+function boundedConvergedRows(rows: readonly LinearizedRow[], columns: number): boolean {
+  for (const row of rows) {
+    if (!Number.isFinite(row.value) || Math.abs(row.value) > 1 || !isGradientMap(row.gradient)) return false;
+    const seen = new Set<number>();
+    for (const [column, value] of row.gradient) {
+      if (!Number.isInteger(column) || column < 0 || column >= columns || seen.has(column)
+        || !Number.isFinite(value) || Math.abs(value) > 1) return false;
+      seen.add(column);
+    }
+  }
+  return true;
+}
+
 export function createLevenbergMarquardtJob(
   initial: readonly number[],
   evaluate: (x: readonly number[]) => readonly LinearizedRow[],
@@ -580,7 +603,9 @@ export function createLevenbergMarquardtJob(
   let current = measure(rows);
   const trace: SolveIterationRecord[] = [];
   const useSparse = n > DENSE_VARIABLE_LIMIT;
-  let sparseSystem = useSparse ? prepareSparseNormalSystem(rows, n) : null;
+  const finiteInitial = !useSparse || initial.every(Number.isFinite);
+  const preparedNotNeeded = useSparse && finiteInitial && current.max < tolerance && boundedConvergedRows(rows, n);
+  let sparseSystem = useSparse && !preparedNotNeeded ? prepareSparseNormalSystem(rows, n) : null;
 
   const finish = (stop: SolveStopReason, iterations: number): SolveOutcome => ({
     x: Array.from(x),
@@ -594,7 +619,7 @@ export function createLevenbergMarquardtJob(
 
   let outcome: SolveOutcome | null = null;
   // 変数が 1 つも無い、拘束が 1 つも無い、すでに解 — どれも計算せずに返す。
-  if (useSparse && (sparseSystem === null || !initial.every(Number.isFinite))) {
+  if (useSparse && ((!preparedNotNeeded && sparseSystem === null) || !finiteInitial)) {
     outcome = { ...finish('singular', 0), converged: false };
   } else if (n === 0 || rows.length === 0 || current.max < tolerance) {
     outcome = finish('converged', 0);

@@ -186,3 +186,124 @@ describe('height/angle holes on a rigidly moved cylinder survive save, reopen an
     expect(editedReopened.volume).toBe(editedDirect.volume);
   }, 180_000);
 });
+
+import { runMachiningRoundtrip } from './cylindricalMachiningRoundtrip.testSupport.js';
+
+describe('EX-05.PERSIST: plain holes after rotation about two axes and translation', () => {
+  it.each(['blind', 'through'] as const)('%s survives JSON and ZIP with fresh native regeneration', async (kind) => {
+    await runMachiningRoundtrip('rigid', kind);
+  }, 180_000);
+});
+
+import { removeSolid, resolveMachiningTarget, type ThreadHoleFeature } from '@pointercad/model';
+import {
+  expectedPlacements, expectPlane, expectVolume, machining as persistedMachining, numeric,
+  onlyBody as persistedBody, primitive, regenerateFresh, removal, reopenBoth, SAVED_AT,
+  sideReference as persistedSide,
+} from './cylindricalMachiningRoundtrip.testSupport.js';
+
+describe('EX-05.PERSIST: target identity, missing sources and invalid faces', () => {
+  it.each(['present', 'suppressed', 'removed'] as const)('%s: never substitutes an identical body after either codec', async (state) => {
+    const a = primitive('cylinder-a'), b = primitive('cylinder-b');
+    const base = appendSolid(appendSolid(createEmptyPartDocument(), a), b);
+    const initial = await regenerateFresh(base);
+    expect(initial.errors).toEqual([]);
+    const face = persistedSide(persistedBody(initial, a.id));
+    expect(face.fingerprint).toEqual(persistedSide(persistedBody(initial, b.id)).fingerprint);
+    const feature = persistedMachining('blind', a.id, face);
+    if (feature.kind !== 'hole') throw new Error('Expected plain hole');
+    const hole: HoleFeature = { ...feature, cylindrical: { kind: 'cylinder-face', locations: [{ height: numeric(20), angle: numeric(37) }] } };
+    const original = appendSolid(base, hole);
+    const document = state === 'suppressed' ? replaceSolid(original, a.id, { ...a, suppressed: true })
+      : state === 'removed' ? removeSolid(original, a.id) : original;
+    const before = serializeDocument(document, { savedAt: SAVED_AT });
+    for (const reopened of reopenBoth(document)) {
+      const savedHole = reopened.solids.find((s) => s.id === hole.id);
+      if (savedHole?.kind !== 'hole') throw new Error('Saved hole missing');
+      expect(savedHole.targetFeatureId).toBe(a.id); expect(savedHole.face.bodyFeatureId).toBe(a.id);
+      const result = await regenerateFresh(reopened);
+      expect(persistedBody(result, b.id).volume).toBe(persistedBody(initial, b.id).volume);
+      expectVolume(persistedBody(result, b.id), Math.PI * 10 ** 2 * 40);
+      if (state === 'present') {
+        expect(result.errors).toEqual([]);
+        expect(result.bodies.map((body) => body.featureId).sort()).toEqual(['cylinder-b', 'hole-1']);
+        const body = persistedBody(result, hole.id);
+        expectVolume(body, Math.PI * 10 ** 2 * 40 - removal('blind', 10));
+        const p = expectedPlacements({ location: [0, 0, 0], x: [1, 0, 0], z: [0, 0, 1], radius: 10, height: 40 }, [{ height: 20, angle: 37 }])[0];
+        if (p === undefined) throw new Error('Oracle placement missing');
+        expectPlane(body, p, 4, Math.PI * 4);
+      } else {
+        const missing = resolveMachiningTarget(hole.id, a.id, new Map(), new Set());
+        if (missing.ok) throw new Error('Expected missingBody oracle');
+        expect(result.errors).toEqual([missing.error]);
+        expect(result.errors.map((error) => error.code)).toEqual(['missingBody']);
+        expect(result.bodies.map((body) => body.featureId)).toEqual(['cylinder-b']);
+      }
+    }
+    expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(before);
+  }, 180_000);
+
+  it.each(['blind', 'simplified'] as const)('%s: rejects a planar fingerprint with the existing model reason', async (kind) => {
+    const base = appendSolid(createEmptyPartDocument(), primitive());
+    const initial = await regenerateFresh(base);
+    expect(initial.errors).toEqual([]);
+    const target = persistedBody(initial, 'cylinder-1');
+    const top = target.faces.find((f) => f.surfaceKind === 'plane' && f.axis !== null && f.axis[2] > 0.99);
+    if (top === undefined) throw new Error('Top plane missing');
+    const face = createSubShapeReference(target, 'face', top.index);
+    if (face === null) throw new Error('Top reference missing');
+    const feature: HoleFeature | ThreadHoleFeature = persistedMachining(kind, target.featureId, face);
+    const document = appendSolid(base, feature);
+    const before = serializeDocument(document, { savedAt: SAVED_AT });
+    for (const reopened of reopenBoth(document)) {
+      const result = await regenerateFresh(reopened);
+      expect(result.errors).toEqual([{ featureId: feature.id, code: 'invalidValue',
+        message: '円筒の側面の穴をあけられるのは円筒の面だけです。円筒の面を選び直してください。' }]);
+      expect(result.bodies.some((body) => body.featureId === feature.id)).toBe(false);
+      // EX-18.16.DESIGN owns failed-target visibility. Record the current result without rescuing or deleting it.
+      stdout.write(JSON.stringify({ evidence: 'EX-05 invalid cylindrical target visibility', kind, bodyIds: result.bodies.map((body) => body.featureId) }) + String.fromCharCode(10));
+    }
+    expect(serializeDocument(document, { savedAt: SAVED_AT })).toBe(before);
+  }, 180_000);
+});
+
+import { stdout } from 'node:process';
+import { addSketch, appendFeature, createEmptySketchDocument, createPointFeature } from '@pointercad/model';
+
+describe('EX-05.PERSIST: legacy planar holes without cylindrical placement', () => {
+  it.each(['blind', 'simplified'] as const)('%s keeps the omitted field and regenerates through both codecs', async (kind) => {
+    const empty = createEmptySketchDocument();
+    const point = createPointFeature(empty, absoluteCoordinate(0, 0, 40));
+    const sketch = { ...appendFeature(empty, point), id: 'legacy-centers' };
+    const base = appendSolid(addSketch(createEmptyPartDocument(), sketch), primitive());
+    const initial = await regenerateFresh(base);
+    expect(initial.errors).toEqual([]);
+    const target = persistedBody(initial, 'cylinder-1');
+    const top = target.faces.find((f) => f.surfaceKind === 'plane' && f.axis !== null && f.axis[2] > 0.99);
+    if (top === undefined) throw new Error('Top plane missing');
+    const face = createSubShapeReference(target, 'face', top.index);
+    if (face === null) throw new Error('Top reference missing');
+    const radial = persistedMachining(kind, target.featureId, face);
+    const { cylindrical: dropped, ...legacy } = radial;
+    expect(dropped).toBeDefined();
+    const feature = { ...legacy, centers: [{ sketchId: sketch.id, pointFeatureId: point.id }] };
+    const document = appendSolid(base, feature);
+    const directResult = await regenerateFresh(document);
+    expect(directResult.errors).toEqual([]);
+    const direct = persistedBody(directResult, feature.id);
+    const radius = kind === 'blind' ? 2 : 4.917 / 2;
+    const depth = kind === 'blind' ? 4 : 8;
+    expectVolume(direct, Math.PI * 100 * 40 - Math.PI * radius ** 2 * depth);
+    expectPlane(direct, { entry: [0, 0, 40], drill: [0, 0, -1], radial: [0, 0, 1] }, depth, Math.PI * radius ** 2);
+    for (const reopened of reopenBoth(document)) {
+      const saved = reopened.solids.find((solid) => solid.id === feature.id);
+      expect(saved).toBeDefined();
+      if (saved === undefined) throw new Error('Legacy machining missing');
+      expect('cylindrical' in saved).toBe(false);
+      const result = await regenerateFresh(reopened);
+      expect(result.errors).toEqual([]);
+      const body = persistedBody(result, feature.id);
+      expect(body.volume).toBe(direct.volume); expect(body.faces).toEqual(direct.faces); expect(body.threadMarks).toEqual(direct.threadMarks);
+    }
+  }, 180_000);
+});

@@ -1,9 +1,9 @@
 import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRequest,
   executeMathWorkRequest } from '@pointercad/expression/math/worker';
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expression/math/contracts';
-import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { createInspectableNativeKernelForNodeTests, createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { parseDocument, serializeDocument } from '@pointercad/io';
+import { parseDocument, readPcadFile, serializeDocument, writePcadFile } from '@pointercad/io';
 import {
   absoluteCoordinate, appendFeature, appendReference, appendSolid, createEmptyPartDocument, createEmptySketchDocument,
   DEFAULT_FACE_COLOR, replaceSketch, resolvePart, createFunctionCurve, recomputePart,
@@ -14,8 +14,10 @@ import { t } from '../i18n/t.js';
 import { attachPartRecompute, type PartRecomputer } from '../store/attachKernel.js';
 import { bodyFor, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { currentStagedSolid } from '../store/recomputeSlice.js';
 import { applyEditCommit, applyNumericTransition, applySolidCommit, previewExtrudeTransition } from './commitToStore.js';
-import { createNumericInput, reduceNumericInput, type EditInputCommit, type SolidInputCommit } from './numericInput.js';
+import { chooseNumericInput, createNumericInput, reduceNumericInput, toggleNumericInput,
+  type EditInputCommit, type SolidInputCommit } from './numericInput.js';
 
 beforeEach(resetTestStore);
 
@@ -309,6 +311,13 @@ describe('数式の閉じた輪郭を実際の切削確定まで渡す(EX-04.03)
       functions: { curves: { evaluate: request => Promise.resolve({ status: 'result', identity: request.identity,
         result: executeFunctionCurveWorkRequest({ kind: 'sample-function-curve', serial: 1, request }, backend).result }) } } };
   }
+  async function formulaSettled(): Promise<void> {
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().isComputing).toBe(false);
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      expect(useAppStore.getState().completedGeneration).toBe(useAppStore.getState().requestedGeneration);
+    }, { timeout: 60_000 });
+  }
   const commit: SolidInputCommit = { kind: 'solid', tool: 'cut', step: 'cutPlane', values: {}, flags: {},
     shapeChoices: { cutPlaneKind: 'profile' } };
   function publish(document: PartDocument, result: PartRecomputeResult): void {
@@ -322,6 +331,7 @@ describe('数式の閉じた輪郭を実際の切削確定まで渡す(EX-04.03)
 
   it.each([false, true])('実評価した放物線の切削は独立積分の体積となり保存再計算と1回のUndo/Redoを保つ(customPlane=%s)', async (customPlane) => {
     const bridge = createNativeKernelBridgeForNodeTests();
+    let detach = (): void => {};
     try {
       const before = formulaPart('X^2/10+1', customPlane);
       const computed = await recomputePart(before, bridge, options(before));
@@ -334,7 +344,24 @@ describe('数式の閉じた輪郭を実際の切削確定まで渡す(EX-04.03)
       if (closing?.kind !== 'segment') throw new Error('Closing edge is missing');
       expect(closing.from[2]).toBe(customPlane ? 2 : 0);
       publish(before, computed);
-      expect(applySolidCommit(commit)).toBe(true);
+      detach = attachPartRecompute((document, scheduled) => recomputePart(document, bridge, { ...options(document), ...scheduled }));
+      await vi.waitFor(() => { expect(useAppStore.getState().isComputing).toBe(false);
+        expect(useAppStore.getState().lastOutcome).toBe('success');
+        expect(useAppStore.getState().completedGeneration).toBe(useAppStore.getState().requestedGeneration);
+      }, { timeout: 60_000 });
+      useAppStore.getState().setActiveTool('cut');
+      useAppStore.getState().setSelection(['extrude', 'formula-face']);
+      useAppStore.getState().updateNumericInput(chooseNumericInput(createNumericInput('cut', 'cutPlane'), 'cutPlaneKind', 'profile'));
+      const pending = useAppStore.getState(), originalShape = shapeSha();
+      expect(applySolidCommit(commit)).toBe(false);
+      expect(useAppStore.getState().document).toBe(before);
+      expect(useAppStore.getState().undoStack).toBe(pending.undoStack);
+      expect(useAppStore.getState().solidErrorKey).toBeNull();
+      expect(currentStagedSolid(useAppStore.getState())).toMatchObject({ status: 'pending', confirmRequested: true });
+      await vi.waitUntil(() => useAppStore.getState().numericInput === null
+        || currentStagedSolid(useAppStore.getState())?.status === 'failed', { timeout: 60_000 });
+      expect(currentStagedSolid(useAppStore.getState())).not.toMatchObject({ status: 'failed' });
+      await vi.waitFor(() => { expect(useAppStore.getState().numericInput).toBeNull(); }, { timeout: 60_000 });
       const after = useAppStore.getState().document;
       expect(after.sketches).toBe(before.sketches);
       expect(after.solids.slice(before.solids.length).map(feature => feature.kind)).toEqual(['extrude', 'boolean']);
@@ -344,8 +371,20 @@ describe('数式の閉じた輪郭を実際の切削確定まで渡す(EX-04.03)
       // Integral_0^10 (X^2/10 + 1) dX = 130/3 mm², through a 10 mm plate.
       const expected = 12000 - 10 * 130 / 3;
       expect(Math.abs(result.bodies[0].volume - expected)).toBeLessThan(0.1);
-      useAppStore.getState().undo(); expect(useAppStore.getState().document).toBe(before);
+      await formulaSettled();
+      const accepted = useAppStore.getState(), finalShape = shapeSha();
+      expect(accepted.undoStack.past).toHaveLength(pending.undoStack.past.length + 1);
+      expect(accepted.undoStack.future).toHaveLength(0);
+      accepted.undo(); expect(useAppStore.getState().document).toBe(before);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(pending.undoStack.past.length);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(1);
+      await formulaSettled(); expect(shapeSha()).toBe(originalShape);
       useAppStore.getState().redo(); expect(useAppStore.getState().document).toBe(after);
+      expect(useAppStore.getState().document.solids).toBe(after.solids);
+      expect(useAppStore.getState().document.sketches).toBe(after.sketches);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(pending.undoStack.past.length + 1);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(0);
+      await formulaSettled(); expect(shapeSha()).toBe(finalShape);
       const reopened = parseDocument(serializeDocument(after));
       if (!reopened.ok) throw new Error('Formula cut did not reopen');
       expect(reopened.document.sketches).toEqual(after.sketches);
@@ -354,7 +393,98 @@ describe('数式の閉じた輪郭を実際の切削確定まで渡す(EX-04.03)
       expect(regenerated.errors).toEqual([]); expect(regenerated.bodies).toHaveLength(1);
       expect(regenerated.bodies[0].isValid).toBe(true); expect(regenerated.bodies[0].bodyKind).toBe('solid');
       expect(Math.abs(regenerated.bodies[0].volume - expected)).toBeLessThan(0.1);
-    } finally { bridge.dispose(); }
+    } finally { detach(); bridge.dispose(); }
+  }, 60_000);
+
+  it('EX-04.UNDO 式の両側を1回で戻し、PCAD再開後の式編集も元ID・参照・実形状へ戻す', async () => {
+    const bridge = createNativeKernelBridgeForNodeTests();
+    let detach = (): void => {};
+    try {
+      const before = formulaPart(), computed = await recomputePart(before, bridge, options(before));
+      expect(computed.errors).toEqual([]); expect(computed.cancelled).toBe(false);
+      publish(before, computed);
+      detach = attachPartRecompute((document, scheduled) => recomputePart(document, bridge, { ...options(document), ...scheduled }));
+      await formulaSettled();
+      useAppStore.getState().setActiveTool('cut');
+      useAppStore.getState().setSelection(['extrude', 'formula-face']);
+      useAppStore.getState().updateNumericInput(toggleNumericInput(
+        chooseNumericInput(createNumericInput('cut', 'cutPlane'), 'cutPlaneKind', 'profile'), 'cutKeepBoth'));
+      const pending = useAppStore.getState(), originalShape = shapeSha();
+      expect(applySolidCommit({ ...commit, flags: { cutKeepBoth: true } })).toBe(false);
+      expect(useAppStore.getState().document).toBe(before);
+      expect(useAppStore.getState().undoStack).toBe(pending.undoStack);
+      await vi.waitFor(() => { expect(useAppStore.getState().numericInput).toBeNull(); }, { timeout: 60_000 });
+      await formulaSettled();
+      const accepted = useAppStore.getState(), after = accepted.document;
+      const cuts = after.solids.filter(feature => feature.kind === 'boolean');
+      expect(cuts).toHaveLength(2); expect(cuts[1].pairedWith).toBe(cuts[0].id);
+      expect(accepted.bodies.map(body => body.featureId)).toEqual(cuts.map(feature => feature.id));
+      expect(accepted.undoStack.past).toHaveLength(pending.undoStack.past.length + 1);
+      expect(accepted.undoStack.future).toHaveLength(0);
+      const volumes = (outside: number, inside: number): void => {
+        const bodies = useAppStore.getState().bodies;
+        expect(bodies).toHaveLength(2);
+        for (const [index, body] of bodies.entries()) {
+          expect(body.isValid).toBe(true); expect(body.bodyKind).toBe('solid');
+          expect(Math.abs((body.volume ?? Number.NaN) - [outside, inside][index])).toBeLessThan(0.1);
+        }
+        expect(Math.abs(bodies.reduce((sum, body) => sum + (body.volume ?? Number.NaN), 0) - 12000)).toBeLessThan(0.1);
+      };
+      volumes(12000 - 10 * 130 / 3, 10 * 130 / 3);
+      const cutShape = shapeSha(), cutIds = cuts.map(feature => feature.id);
+      accepted.undo(); expect(useAppStore.getState().document).toBe(before);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(pending.undoStack.past.length);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(1);
+      await formulaSettled(); expect(shapeSha()).toBe(originalShape);
+      useAppStore.getState().redo(); expect(useAppStore.getState().document).toBe(after);
+      expect(useAppStore.getState().document.solids).toBe(after.solids);
+      expect(useAppStore.getState().document.sketches).toBe(after.sketches);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(pending.undoStack.past.length + 1);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(0);
+      await formulaSettled(); expect(shapeSha()).toBe(cutShape);
+
+      const reopened = readPcadFile(writePcadFile(after, { savedAt: '2026-10-26T00:00:00.000Z' }));
+      if (!reopened.ok) throw new Error(reopened.error.code);
+      expect(reopened.document).toEqual(after);
+      useAppStore.getState().applyDocument(reopened.document, { opensDocument: true });
+      await formulaSettled();
+      const opened = useAppStore.getState().document, openedShape = shapeSha();
+      expect(openedShape).toBe(cutShape);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(0);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(0);
+      useAppStore.getState().undo(); expect(useAppStore.getState().document).toBe(opened);
+      expect(shapeSha()).toBe(openedShape);
+      const sketch = opened.sketches[0];
+      const features = sketch.features.map(feature => {
+        if (feature.kind !== 'functionCurve') return feature;
+        const definition = feature.definition;
+        if (definition.formula.kind !== 'coordinate-curve' || definition.formula.independent !== 'X') throw new Error('Expected X coordinate curve');
+        return { ...feature, definition: { ...definition, formula: { ...definition.formula,
+          outputs: { ...definition.formula.outputs, Y: createFunctionMathSource('X^2/20+X/2+1', 'text', 'radian',
+            { axes: ['X'], parameters: [], coefficients: [] }, backend) } } } };
+      });
+      // Endpoint values remain 1 and 11; integral_0^10 (X²/20+X/2+1) = 155/3.
+      const edited = replaceSketch(opened, { ...sketch, features });
+      useAppStore.getState().applyDocument(edited);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(1);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(0);
+      expect(edited.solids).toBe(opened.solids);
+      expect(edited.solids.filter(feature => feature.kind === 'boolean').map(feature => feature.id)).toEqual(cutIds);
+      await formulaSettled(); volumes(12000 - 10 * 155 / 3, 10 * 155 / 3);
+      const editedShape = shapeSha(); expect(editedShape).not.toBe(openedShape);
+      useAppStore.getState().undo(); expect(useAppStore.getState().document).toBe(opened);
+      expect(useAppStore.getState().document.solids).toBe(opened.solids);
+      expect(useAppStore.getState().document.sketches).toBe(opened.sketches);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(0);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(1);
+      await formulaSettled(); expect(shapeSha()).toBe(openedShape);
+      useAppStore.getState().redo(); expect(useAppStore.getState().document).toBe(edited);
+      expect(useAppStore.getState().document.solids).toBe(edited.solids);
+      expect(useAppStore.getState().document.sketches).toBe(edited.sketches);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(1);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(0);
+      await formulaSettled(); expect(shapeSha()).toBe(editedShape);
+    } finally { detach(); bridge.dispose(); }
   }, 60_000);
 
   it('計算中・取消・古い世代・別所有者・履歴途中・形の変更・失敗結果では式の切削を積まない', async () => {
@@ -423,6 +553,331 @@ describe('数式の閉じた輪郭を実際の切削確定まで渡す(EX-04.03)
 
 import { documentSha, nativeHistoryHarness, shapeSha, holeWallCount,
   type HistoryOperation, type HistorySurface } from '../solid/holeThreadHistory.testSupport.js';
+
+/** This uses the actual scheduler and native kernel; only delivery of a late reply is controlled. */
+async function nativeCutHarness(kind: 'arc' | 'ellipse', scenario: 'intersecting' | 'separated' | 'touch-only' | 'inside-hole' = 'intersecting') {
+  const native = await createInspectableNativeKernelForNodeTests(), bridge = native.bridge, value = expressionValueFromNumber;
+  const empty = createEmptyPartDocument(), sketch = empty.sketches[0];
+  const common = { id: 'cut-blade', name: '切る曲線', planeId: 'xy', construction: false,
+    center: absoluteCoordinate(scenario === 'separated' ? 50 : 5,
+      scenario === 'separated' ? 50 : scenario === 'touch-only' ? -3 : scenario === 'inside-hole' ? 5 : 0, 0),
+    startAngle: value(0), endAngle: value(scenario === 'inside-hole' ? 360 : 180) };
+  const conic = kind === 'arc' ? { ...common, kind, radius: value(scenario === 'inside-hole' ? 1 : 3) }
+    : { ...common, kind, majorRadius: value(4), minorRadius: value(2), rotation: value(0) };
+  let document = appendSolid(replaceSketch(empty, appendFeature(sketch, conic)), {
+    id: 'cut-stock', name: '箱', kind: 'primitive', suppressed: false,
+    origin: { kind: 'coordinate', value: absoluteCoordinate(5, 5, 5) }, axis: { kind: 'world', axis: 'z' },
+    shape: { kind: 'box', sizeX: value(10), sizeY: value(10), sizeZ: value(10) },
+  });
+  if (scenario === 'inside-hole') {
+    document = replaceSketch(document, appendFeature(document.sketches[0], {
+      id: 'cut-face', name: '穴内の輪郭', kind: 'face', planeId: 'xy', color: DEFAULT_FACE_COLOR,
+      boundary: [{ featureId: 'cut-blade' }],
+    }));
+    document = appendSolid(appendSolid(document, {
+      id: 'existing-hole-tool', name: '既存穴の工具', kind: 'primitive', suppressed: false,
+      origin: { kind: 'coordinate', value: absoluteCoordinate(5, 5, -1) }, axis: { kind: 'world', axis: 'z' },
+      shape: { kind: 'cylinder', radius: value(2), height: value(12) },
+    }), { id: 'cut-stock-hole', name: '穴のある箱', kind: 'boolean', suppressed: false,
+      operation: 'subtract', targetFeatureId: 'cut-stock', toolFeatureId: 'existing-hole-tool' });
+  }
+  const targetId = scenario === 'inside-hole' ? 'cut-stock-hole' : 'cut-stock';
+  useAppStore.getState().applyDocument(document, { opensDocument: true });
+  let holdNext = false;
+  const held: { readonly result: Promise<PartRecomputeResult>; readonly release: () => Promise<void> }[] = [];
+  const results: PartRecomputeResult[] = [];
+  const detach = attachPartRecompute((candidate, options) => {
+    const delayed = holdNext; holdNext = false;
+    // A successful native answer must still be discarded after cancellation or a new owner.
+    const result = recomputePart(candidate, bridge, delayed ? { ...options, shouldCancel: () => false } : options)
+      .then(computed => { results.push(computed); return computed; });
+    if (!delayed) return result;
+    return new Promise<PartRecomputeResult>(resolve => {
+      held.push({ result, release: async () => { resolve(await result); } });
+    });
+  });
+  async function settled(): Promise<void> {
+    await vi.waitFor(() => {
+      expect(useAppStore.getState().isComputing).toBe(false);
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      expect(useAppStore.getState().requestedGeneration).toBe(useAppStore.getState().completedGeneration);
+    }, { timeout: 60_000 });
+  }
+  try { await settled(); } catch (error: unknown) { detach(); native.dispose(); throw error; }
+  const targetKey = resolvePart(document).steps.find(step => step.featureId === targetId)?.key;
+  if (targetKey === undefined) { detach(); native.dispose(); throw new Error('Missing cut target key'); }
+  const borrowed = native.inspectShape(targetKey);
+  function begin(bladeId = scenario === 'inside-hole' ? 'cut-face' : 'cut-blade'): SolidInputCommit {
+    useAppStore.getState().setActiveTool('cut');
+    useAppStore.getState().setSelection([targetId, bladeId]);
+    const input = toggleNumericInput(chooseNumericInput(createNumericInput('cut', 'cutPlane'), 'cutPlaneKind', 'profile'), 'cutKeepBoth');
+    useAppStore.getState().updateNumericInput(input);
+    return { kind: 'solid', tool: 'cut', step: 'cutPlane', values: {}, flags: { cutKeepBoth: true },
+      shapeChoices: { cutPlaneKind: 'profile' } };
+  }
+  return { document, borrowed, results, held, begin, settled, holdNext: () => { holdNext = true; },
+    dispose: () => { detach(); native.dispose(); } };
+}
+
+describe('EX-04.UNDO 不足する片側と斜め平面の実形状履歴', () => {
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
+  it.each([
+    { kind: 'plane', both: false, inside: 500 },
+    { kind: 'plane', both: true, inside: 500 },
+    { kind: 'arc', both: false, inside: 45 * Math.PI },
+    { kind: 'ellipse', both: false, inside: 40 * Math.PI },
+  ] as const)('$kind both=$both: 1回のUndo/Redoで元ID・参照・shape bytesを復帰する', async ({ kind, both, inside }) => {
+    // Plane cuts reuse the same real stock; its unselected curve is not the blade.
+    const harness = await nativeCutHarness(kind === 'plane' ? 'arc' : kind);
+    try {
+      let commit: SolidInputCommit;
+      if (kind === 'plane') {
+        useAppStore.getState().setActiveTool('cut');
+        useAppStore.getState().setSelection(['cut-stock']);
+        let input = toggleNumericInput(chooseNumericInput(createNumericInput('cut', 'cutPlane'),
+          'cutPlaneKind', 'pointAndAxis'), 'cutPointByCoordinate');
+        if (both) input = toggleNumericInput(input, 'cutKeepBoth');
+        useAppStore.getState().updateNumericInput(input);
+        commit = { kind: 'solid', tool: 'cut', step: 'cutPlane',
+          values: { cutPointX: expressionValueFromNumber(5), cutPointY: expressionValueFromNumber(5),
+            cutPointZ: expressionValueFromNumber(5), cutTilt: { source: '15*2', value: 30, display: '30' } },
+          flags: { cutPointByCoordinate: true, cutKeepBoth: both }, shapeChoices: { cutPlaneKind: 'pointAndAxis' } };
+      } else {
+        const drafted = harness.begin();
+        const input = useAppStore.getState().numericInput;
+        if (input === null) throw new Error('Missing cut input');
+        useAppStore.getState().updateNumericInput(toggleNumericInput(input, 'cutKeepBoth'));
+        commit = { ...drafted, flags: { cutKeepBoth: false } };
+      }
+      const before = useAppStore.getState(), originalShape = shapeSha();
+      expect(applySolidCommit(commit)).toBe(false);
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack).toBe(before.undoStack);
+      await vi.waitFor(() => { expect(useAppStore.getState().numericInput).toBeNull(); }, { timeout: 60_000 });
+      await harness.settled();
+      const after = useAppStore.getState();
+      const cuts = after.document.solids.filter(feature => feature.kind === 'cut' || feature.kind === 'surfaceCut');
+      expect(cuts).toHaveLength(both ? 2 : 1);
+      expect(cuts.every(feature => feature.kind === (kind === 'plane' ? 'cut' : 'surfaceCut'))).toBe(true);
+      expect(after.bodies.map(body => body.featureId)).toEqual(cuts.map(feature => feature.id));
+      expect(after.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      expect(after.undoStack.future).toHaveLength(0);
+      expect(after.selection).toEqual([cuts[0].id]);
+      if (kind === 'plane') {
+        const planeCut = cuts[0];
+        if (planeCut.kind !== 'cut' || planeCut.plane.kind !== 'pointAndAxis') throw new Error('Expected tilted plane');
+        expect(planeCut.plane.tilt).toEqual({ source: '15*2', value: 30, display: '30' });
+        expect(after.document.references.length).toBe(before.document.references.length + 1);
+      }
+      for (const [index, body] of after.bodies.entries()) {
+        const expected = cuts[index].keep === 'negative' ? inside : 1000 - inside;
+        expect(body.isValid).toBe(true); expect(body.bodyKind).toBe('solid');
+        expect(Math.abs((body.volume ?? Number.NaN) - expected) / expected).toBeLessThanOrEqual(1e-9);
+      }
+      if (both) expect(Math.abs(after.bodies.reduce((sum, body) => sum + (body.volume ?? Number.NaN), 0) - 1000) / 1000).toBeLessThanOrEqual(1e-9);
+      const acceptedShape = shapeSha(), ids = cuts.map(feature => feature.id);
+      after.undo(); expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().document.references).toBe(before.document.references);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(before.undoStack.past.length);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(1);
+      await harness.settled(); expect(shapeSha()).toBe(originalShape);
+      useAppStore.getState().redo(); expect(useAppStore.getState().document).toBe(after.document);
+      expect(useAppStore.getState().document.references).toBe(after.document.references);
+      expect(useAppStore.getState().document.sketches).toBe(after.document.sketches);
+      expect(useAppStore.getState().document.solids).toBe(after.document.solids);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(0);
+      await harness.settled(); expect(shapeSha()).toBe(acceptedShape);
+      expect(useAppStore.getState().bodies.map(body => body.featureId)).toEqual(ids);
+    } finally { harness.dispose(); }
+  }, 180_000);
+});
+
+describe('EX-04.02 切断の実stagerは成功した形を1回だけ採用する', () => {
+  beforeAll(initializeNativeKernelForNodeTests, 180_000);
+  it.each([
+    { kind: 'arc', caller: 'transition', inside: 45 * Math.PI },
+    { kind: 'ellipse', caller: 'direct', inside: 40 * Math.PI },
+  ] as const)('$kind / $caller: 計算中の保持と成功・保存・Undo/Redo', async ({ kind, caller, inside }) => {
+    const harness = await nativeCutHarness(kind);
+    try {
+      const commit = harness.begin(), before = useAppStore.getState(), originalShape = shapeSha();
+      if (caller === 'direct') expect(applySolidCommit(commit)).toBe(false);
+      else {
+        if (before.numericInput === null) throw new Error('Missing cut input');
+        applyNumericTransition({ kind: 'solidCommitted', state: before.numericInput, commit });
+      }
+      const pending = useAppStore.getState();
+      expect(pending.document).toBe(before.document); expect(pending.undoStack).toBe(before.undoStack);
+      expect(pending.selection).toBe(before.selection); expect(pending.numericInput).toBe(before.numericInput);
+      await vi.waitFor(() => { expect(useAppStore.getState().numericInput).toBeNull(); }, { timeout: 60_000 });
+      await harness.settled();
+      const after = useAppStore.getState(), cuts = after.document.solids.filter(feature => feature.kind === 'surfaceCut');
+      expect(cuts).toHaveLength(2); expect(after.bodies.map(body => body.featureId)).toEqual(cuts.map(cut => cut.id));
+      expect(after.document.sketches).toBe(before.document.sketches);
+      expect(after.undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+      expect(after.selection).toEqual([cuts[0].id]); expect(after.activeTool).toBe('select');
+      for (const [index, body] of after.bodies.entries()) {
+        const expected = cuts[index].keep === 'negative' ? inside : 1000 - inside;
+        expect(body.volume).toBeDefined();
+        expect(Math.abs((body.volume ?? Number.NaN) - expected) / expected).toBeLessThanOrEqual(1e-9);
+        expect(body.isValid).toBe(true); expect(body.bodyKind).toBe('solid');
+      }
+      const reopened = parseDocument(serializeDocument(after.document));
+      if (!reopened.ok) throw new Error(reopened.error.code);
+      expect(reopened.document.solids).toEqual(after.document.solids);
+      expect(reopened.document.sketches).toEqual(after.document.sketches);
+      const finalShape = shapeSha();
+      after.undo(); expect(useAppStore.getState().document).toBe(before.document);
+      await harness.settled(); expect(shapeSha()).toBe(originalShape);
+      useAppStore.getState().redo(); expect(useAppStore.getState().document).toBe(after.document);
+      await harness.settled(); expect(shapeSha()).toBe(finalShape);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(before.undoStack.past.length + 1);
+    } finally { harness.dispose(); }
+  }, 180_000);
+
+  it.each([
+    { scenario: 'separated', reason: 'no-intersection' },
+    { scenario: 'touch-only', reason: 'touch-only' },
+    { scenario: 'inside-hole', reason: null },
+  ] as const)('$scenario: 実native拒否で文書・履歴・選択・借用形を保ち、Undo/Redo各1回も保つ', async ({ scenario, reason }) => {
+    const harness = await nativeCutHarness('arc', scenario);
+    try {
+      // Give rejection a real pre-existing history step; an empty Undo stack would hide corruption.
+      useAppStore.getState().applyDocument({ ...harness.document, name: '拒否前の正常な変更' });
+      await harness.settled();
+      const commit = harness.begin(), before = useAppStore.getState(), shape = shapeSha(), sha = documentSha(before.document);
+      const borrowedBytes = harness.borrowed.readBrepBytes();
+      expect(before.undoStack.past).toHaveLength(1);
+      expect(before.undoStack.future).toHaveLength(0);
+      if (scenario === 'inside-hole') {
+        expect(before.bodies).toHaveLength(1);
+        expect(before.bodies[0].volume).toBeCloseTo(1000 - 40 * Math.PI, 6);
+      }
+      expect(applySolidCommit(commit)).toBe(false);
+      await vi.waitFor(() => { expect(useAppStore.getState().stagedSolid?.status).toBe('failed'); }, { timeout: 60_000 });
+      const after = useAppStore.getState(), errors = harness.results.at(-1)?.errors;
+      if (reason !== null) expect(errors?.some(error => 'reason' in error && error.reason === reason)).toBe(true);
+      else expect(errors?.some(error => error.message ===
+        '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。')).toBe(true);
+      expect(after.document).toBe(before.document);
+      expect(documentSha(after.document)).toBe(sha);
+      expect(after.undoStack).toBe(before.undoStack);
+      expect(after.undoStack.past).toHaveLength(before.undoStack.past.length);
+      expect(after.undoStack.future).toHaveLength(before.undoStack.future.length);
+      expect(after.selection).toBe(before.selection);
+      expect(after.bodies).toBe(before.bodies);
+      expect(shapeSha()).toBe(shape);
+      expect(harness.borrowed.readBrepBytes()).toEqual(borrowedBytes);
+      expect(after.numericInput).toBe(before.numericInput);
+      expect(after.stagedSolid?.errors[0]?.message.length).toBeGreaterThan(0);
+      after.undo();
+      expect(useAppStore.getState().document).toBe(harness.document);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(0);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(1);
+      await harness.settled();
+      expect(shapeSha()).toBe(shape);
+      expect(harness.borrowed.readBrepBytes()).toEqual(borrowedBytes);
+      useAppStore.getState().redo();
+      expect(useAppStore.getState().document).toBe(before.document);
+      expect(useAppStore.getState().undoStack.past).toHaveLength(1);
+      expect(useAppStore.getState().undoStack.future).toHaveLength(0);
+      await harness.settled();
+      expect(shapeSha()).toBe(shape);
+      expect(harness.borrowed.readBrepBytes()).toEqual(borrowedBytes);
+    } finally { harness.dispose(); }
+  }, 90_000);
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    '公開cutPositionが%sなら確定せず、文書・履歴・選択・借用形を変えない', async position => {
+      const harness = await nativeCutHarness('arc');
+      try {
+        harness.begin();
+        useAppStore.getState().setSelection(['cut-stock']);
+        useAppStore.getState().updateNumericInput(chooseNumericInput(createNumericInput('cut', 'cutPlane'), 'cutPlaneKind', 'axisZ'));
+        const before = useAppStore.getState(), sha = documentSha(before.document), shape = shapeSha();
+        const borrowedBytes = harness.borrowed.readBrepBytes();
+        const commit: SolidInputCommit = { kind: 'solid', tool: 'cut', step: 'cutPlane',
+          values: { cutPosition: expressionValueFromNumber(position) }, flags: {}, shapeChoices: { cutPlaneKind: 'axisZ' } };
+        expect(applySolidCommit(commit)).toBe(false);
+        const after = useAppStore.getState();
+        expect(after.solidErrorKey).toBe('cutError.expressionInvalid');
+        expect(after.document).toBe(before.document);
+        expect(documentSha(after.document)).toBe(sha);
+        expect(after.undoStack).toBe(before.undoStack);
+        expect(after.undoStack.past).toHaveLength(before.undoStack.past.length);
+        expect(after.undoStack.future).toHaveLength(before.undoStack.future.length);
+        expect(after.selection).toBe(before.selection);
+        expect(after.numericInput).toBe(before.numericInput);
+        expect(shapeSha()).toBe(shape);
+        expect(harness.borrowed.readBrepBytes()).toEqual(borrowedBytes);
+      } finally { harness.dispose(); }
+    }, 90_000);
+
+  it('公開モデルの自己交差輪郭を確定しても、文書・履歴・選択・借用形を変えない', async () => {
+    const harness = await nativeCutHarness('arc');
+    try {
+      const points = [[1, 1], [9, 9], [9, 1], [1, 9]] as const;
+      let sketch = harness.document.sketches[0];
+      for (const [index, point] of points.entries()) {
+        const next = points[(index + 1) % points.length];
+        sketch = appendFeature(sketch, { id: `bow-${index}`, name: '交差線', kind: 'line', planeId: 'xy', construction: false,
+          from: absoluteCoordinate(point[0], point[1], 0), to: absoluteCoordinate(next[0], next[1], 0) });
+      }
+      sketch = appendFeature(sketch, { id: 'bow-face', name: '自己交差輪郭', kind: 'face', planeId: 'xy',
+        color: DEFAULT_FACE_COLOR, boundary: points.map((_, index) => ({ featureId: `bow-${index}` })) });
+      useAppStore.getState().applyDocument(replaceSketch(harness.document, sketch));
+      await vi.waitFor(() => {
+        expect(useAppStore.getState().isComputing).toBe(false);
+        expect(useAppStore.getState().requestedGeneration).toBe(useAppStore.getState().completedGeneration);
+      }, { timeout: 60_000 });
+      const commit = harness.begin('bow-face'), before = useAppStore.getState();
+      const sha = documentSha(before.document), shape = shapeSha(), borrowedBytes = harness.borrowed.readBrepBytes();
+      expect(before.bodies).toHaveLength(1);
+      expect(applySolidCommit(commit)).toBe(false);
+      const after = useAppStore.getState();
+      expect(after.solidErrorKey).toBe('cutError.profileSelfIntersects');
+      expect(after.document).toBe(before.document);
+      expect(documentSha(after.document)).toBe(sha);
+      expect(after.undoStack).toBe(before.undoStack);
+      expect(after.undoStack.past).toHaveLength(before.undoStack.past.length);
+      expect(after.undoStack.future).toHaveLength(before.undoStack.future.length);
+      expect(after.selection).toBe(before.selection);
+      expect(after.numericInput).toBe(before.numericInput);
+      expect(shapeSha()).toBe(shape);
+      expect(harness.borrowed.readBrepBytes()).toEqual(borrowedBytes);
+    } finally { harness.dispose(); }
+  }, 90_000);
+
+  it.each(['cancelled', 'new-owner'] as const)('%s: 遅れたnative成功を採用しない', async scenario => {
+    const harness = await nativeCutHarness('arc');
+    try {
+      const commit = harness.begin(), before = useAppStore.getState();
+      harness.holdNext();
+      if (before.numericInput === null) throw new Error('Missing cut input');
+      applyNumericTransition({ kind: 'solidCommitted', state: before.numericInput, commit });
+      expect(harness.held).toHaveLength(1);
+      const late = await harness.held[0].result;
+      expect(late.errors).toEqual([]); expect(late.cancelled).toBe(false); expect(late.bodies).toHaveLength(2);
+      if (scenario === 'cancelled') applyNumericTransition({ kind: 'cancelled' });
+      else useAppStore.getState().applyDocument({ ...before.document, name: '別の所有者' }, { opensDocument: true });
+      const retained = useAppStore.getState();
+      await harness.held[0].release();
+      await harness.settled();
+      const after = useAppStore.getState();
+      expect(currentStagedSolid(after)).toBeNull();
+      if (scenario === 'cancelled') expect(after.stagedSolid).toBeNull();
+      else if (after.stagedSolid !== null) expect(after.partStager?.owns(after.stagedSolid)).toBe(false);
+      expect(after.document).toBe(retained.document); expect(after.undoStack).toBe(retained.undoStack);
+      expect(after.selection).toEqual(retained.selection);
+      expect(after.document.solids.some(feature => feature.kind === 'surfaceCut')).toBe(false);
+      if (scenario === 'cancelled') {
+        expect(after.document).toBe(before.document); expect(after.undoStack).toBe(before.undoStack);
+        expect(after.selection).toBe(before.selection); expect(shapeSha()).toBe(shapeSha(before.bodies));
+      } else expect(after.activeDocumentId).not.toBe(before.activeDocumentId);
+    } finally { harness.dispose(); }
+  }, 90_000);
+});
 
 describe('EX-05 machining creation uses native results and one store history step', () => {
   beforeAll(initializeNativeKernelForNodeTests, 180_000);

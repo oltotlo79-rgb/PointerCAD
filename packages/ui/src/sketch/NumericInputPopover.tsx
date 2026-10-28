@@ -1,4 +1,5 @@
 import { isCompositionKey } from '../commands/compositionKey.js';
+import { PlanarHoleBasisInfo } from './PlanarHoleBasisInfo.js';
 import { DraggableWindowTitle } from './DraggableWindowTitle.js';
 import { useEffect, useRef, useState } from 'react';
 
@@ -6,6 +7,7 @@ import { isPendingFieldError, pendingFieldVariables } from '../shell/propertyFie
 import { t } from '../i18n/t.js';
 import { toolCommandHelpTopic } from '../commands/toolCommandHelp.js';
 import { stagedExtrusionMessageKey } from '../solid/extrudePreview.js';
+import { currentStagedSolid } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { applyNumericTransition, previewExtrudeTransition } from './commitToStore.js';
 import { ExpressionField } from './ExpressionField.js';
@@ -303,6 +305,14 @@ export function NumericInputPopover({
   // 押し出しの段階計算の知らせ(計算中・表示中・失敗の理由・入力が変わった)。EX-14。
   const stagedMessageKey = useAppStore((store) =>
     store.numericInput?.step === 'extrudeDistance' ? stagedExtrusionMessageKey(store) : null);
+  const directStage = useAppStore((store) => store.numericInput?.step === 'holeTranslateVector'
+    || store.numericInput?.step === 'faceRotateAngle' || store.numericInput?.step === 'faceOffsetDistance'
+    || store.numericInput?.step === 'cutPlane'
+    ? currentStagedSolid(store) : null);
+  const directMessage = directStage?.status === 'pending' ? t('numericInput.directEditConfirming')
+    : directStage?.status === 'failed' ? directStage.errors[0]?.message ?? directStage.errorMessage
+      ?? t('directEditError.failed') : null;
+
 
   // つまみと選択肢は入力欄ではないので、焦点は状態機械の指示でこちらから移す。
   const toggleRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -391,6 +401,9 @@ export function NumericInputPopover({
       }}
     >
       <DraggableWindowTitle className="pcad-popover__title">{t(STEP_TITLE_KEYS[state.step])}</DraggableWindowTitle>
+      {(state.step === 'holeSize' || state.step === 'threadSize')
+        && state.choices.some(choice => choice.key === 'holePlacement' && choice.value === 'plane-face')
+        ? <PlanarHoleBasisInfo /> : null}
       {evaluation.carriedError === undefined ? null : (
         <p className={isPendingFieldError(evaluation.carriedError) ? 'pcad-field__message' : 'pcad-field__error'}
           role={isPendingFieldError(evaluation.carriedError) ? 'status' : 'alert'}>{evaluation.carriedError.message}</p>
@@ -510,6 +523,10 @@ export function NumericInputPopover({
       {stagedMessageKey === null ? null : (
         <p className={stagedMessageKey.startsWith('solidError.') ? 'pcad-field__error' : 'pcad-field__message'}
           role={stagedMessageKey.startsWith('solidError.') ? 'alert' : 'status'}>{t(stagedMessageKey)}</p>
+      )}
+      {directMessage === null ? null : (
+        <p className={directStage?.status === 'failed' ? 'pcad-field__error' : 'pcad-field__message'}
+          role={directStage?.status === 'failed' ? 'alert' : 'status'}>{directMessage}</p>
       )}
       <p className="pcad-popover__hint">{t('numericInput.keyHint')}</p>
 

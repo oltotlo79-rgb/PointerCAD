@@ -1,4 +1,6 @@
 // @ts-check
+import { posix } from 'node:path';
+import { isBuiltin } from 'node:module';
 import js from '@eslint/js';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -63,11 +65,11 @@ const layerRules = [
     forbidden: ['@pointercad/ui', '@pointercad/drawing', '**/documentJson.js', '**/documentJson'],
   },
   // UI から幾何カーネルへ直接依存しない(ドキュメントモデル経由)
-  { files: ['packages/ui/**/*.{ts,tsx}'], forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*'] },
+  { files: ['packages/ui/**/*.{ts,tsx}'], forbidden: ['@pointercad/kernel', '**/kernel/src/**', 'opencascade.js', 'opencascade.js/*'] },
   // 分割した表示・参照の処理を巨大な呼出元へ依存させない。既存の層制約も維持する。
   {
     files: reviewModuleFiles,
-    forbidden: ['@pointercad/kernel', 'opencascade.js', 'opencascade.js/*', '**/solidSummary.js', '**/solidSummary'],
+    forbidden: ['@pointercad/kernel', '**/kernel/src/**', 'opencascade.js', 'opencascade.js/*', '**/solidSummary.js', '**/solidSummary'],
   },
     {
       files: ['packages/model/src/part/solidSketchReferences.ts'],
@@ -166,6 +168,70 @@ const femUpperImportGuards = [{
   selector: ':matches(ImportExpression, TSImportType)[source.value=/(^@pointercad\\/(ui|io|help-content|web|desktop|apps)($|\\/)|(^|\\/)(ui|io|help-content)\\/(src|dist)\\/|(^|\\/)apps\\/)/]',
   message: 'FEMはmodelを使う計算層です。画面・アプリ・保存・ヘルプへの依存は型だけでも禁止です（rules/04）。',
 }];
+
+/** Node組込みへのliteral参照だけをnode:表記へ統一する。非literalやrequireは判定しない。 */
+/** @type {import('eslint').Rule.RuleModule} */
+const nodeBuiltinPrefixRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { nodePrefix: 'Node組込み「{{name}}」はnode:前置で参照してください。' },
+  },
+  create(context) {
+    return {
+      ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression, TSImportType) > Literal.source'(node) {
+        if (node.type !== 'Literal' || typeof node.value !== 'string') return;
+        const name = node.value;
+        if (!name.startsWith('node:') && isBuiltin(name)) {
+          context.report({ node, messageId: 'nodePrefix', data: { name } });
+        }
+      },
+    };
+  },
+};
+
+/** 相対コード参照は.jsへ揃える。明示的な非JS資産とViteの資産queryは保つ。 */
+/** @type {import('eslint').Rule.RuleModule} */
+const relativeJavaScriptImportRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { jsExtension: '相対JavaScriptモジュール参照「{{name}}」は.js付きにしてください（明示.mjs/.cjsと非JS資産は対象外）。' },
+  },
+  create(context) {
+    return {
+      ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression, TSImportType) > Literal.source'(node) {
+        if (node.type !== 'Literal' || typeof node.value !== 'string') return;
+        const name = node.value;
+        if (!/^\.{1,2}(?:\/|$)/.test(name)) return;
+        const query = name.split('#')[0].split('?')[1];
+        if (query && /(?:^|&)(?:raw|url|worker)(?:=[^&]*)?(?:&|$)/.test(query)) return;
+        const pathname = name.split(/[?#]/)[0];
+        const extension = posix.extname(pathname);
+        if (!extension || /\.(?:ts|tsx|mts|cts|jsx)$/.test(extension) || pathname.endsWith('/')) {
+          context.report({ node, messageId: 'jsExtension', data: { name } });
+        }
+      },
+    };
+  },
+};
+
+/** Vitestのnamed testだけを拒否し、別名でもitを読み込む形へ統一する。 */
+/** @type {import('eslint').Rule.RuleModule} */
+const vitestItImportRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { useIt: 'Vitestではtestではなくitをimportしてください。' },
+  },
+  create(context) {
+    return {
+      "ImportDeclaration[source.value='vitest'] > ImportSpecifier[imported.name='test'], ImportDeclaration[source.value='vitest'] > ImportSpecifier[imported.value='test']"(node) {
+        context.report({ node, messageId: 'useIt' });
+      },
+    };
+  },
+};
 
 export default tseslint.config(
   {
@@ -575,4 +641,24 @@ export default tseslint.config(
       },
     }];
   }),
+  {
+    // 製品の公開名を明示する。検査と設定ファイルのdefault exportは対象外にする（CODE.CONSISTENCY P02）。
+    files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.config.{ts,tsx}'],
+    rules: {
+      'no-restricted-exports': ['error', {
+        restrictDefaultExports: {
+          direct: true, named: true, defaultFrom: true, namedFrom: true, namespaceFrom: true,
+        },
+      }],
+    },
+  },
+  {
+    // 狭いoverrideの既存規則を置き換えない独立した表記規則。
+    files: ['**/*.{ts,tsx,js,mjs}'],
+    plugins: { 'module-style': { rules: { 'node-prefix': nodeBuiltinPrefixRule,
+      'relative-js-extension': relativeJavaScriptImportRule, 'vitest-it': vitestItImportRule } } },
+    rules: { 'module-style/node-prefix': 'error',
+      'module-style/relative-js-extension': 'error', 'module-style/vitest-it': 'error' },
+  },
 );

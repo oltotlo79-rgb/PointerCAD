@@ -28,6 +28,7 @@ import {
   findReference,
   findSolid,
   type PartDocument,
+  type PartRecomputeError,
   type ReferenceFeatureKind,
   type SolidLabelKey,
 } from '@pointercad/model';
@@ -218,6 +219,8 @@ const KIND_ICONS: Readonly<
   // 平らな面の移動(EX-18 の限られた一段)。面を押し出して足す / 削る操作なので、
   // 専用の図柄ができるまで押し出しの絵を借りる(木の名前は「面の移動」で見分けられる)。
   faceOffset: ExtrudeIcon,
+  holeTranslate: TransformIcon,
+  faceRotate: DraftIcon,
   transform: TransformIcon,
   scale: ScaleIcon,
   sweep: SweepIcon,
@@ -287,8 +290,9 @@ function withTimelineConsumed(
   sections: readonly TreeSection[],
   part: PartDocument,
   timelineIndex: number | null,
+  partErrors: readonly PartRecomputeError[],
 ): readonly TreeSection[] {
-  const consumed = consumedIdsUpToTimeline(part, timelineIndex);
+  const consumed = consumedIdsUpToTimeline(part, timelineIndex, partErrors);
   return sections.map((section) =>
     section.key === 'solid'
       ? { ...section, rows: section.rows.map((row) => ({ ...row, consumed: consumed.has(row.id) })) }
@@ -346,6 +350,7 @@ export function FeatureTree(): React.JSX.Element {
       buildTreeSections(part, part.activeSketchId, sketchErrors, partErrors),
       part,
       timelineIndex,
+      partErrors,
     ),
   ];
   /*

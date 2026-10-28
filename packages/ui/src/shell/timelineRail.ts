@@ -16,14 +16,15 @@
 
 import {
   buildTimeline,
-  consumedBodyIds,
   documentUpTo,
   timelineIndexOf,
   type PartDocument,
+  type PartRecomputeError,
   type TimelineEntry,
 } from '@pointercad/model';
 
 import type { MessageKey } from '../i18n/t.js';
+import { consumedIds } from '../solid/solidHistoryState.js';
 
 /** 帯の 1 段が、つまみに対してどこにいるか。 */
 export type TimelineStopState =
@@ -172,14 +173,15 @@ export function timelineStopTooltipKey(state: TimelineStopState, atEnd: boolean)
  * `solidSummary.ts` の「統合済み」の札は文書全体から `consumedBodyIds` を導くため、
  * 途中まで戻しても後ろの段(穴・パターン等)の消費がそのまま残って見える(表示上の
  * 既知差、`docs/報告記録.md` 2026-09-05 実時計 01:05 の申し送り②)。
- * `documentUpTo` で切った文書をそのまま model の `consumedBodyIds` へ渡すだけで、
- * 消費の判定そのものを 2 か所に書かずに済む。
+ * `documentUpTo` で切った文書にも、ツリーと同じ失敗を考慮した消費判定を使う。
+ * 失敗した加工で残った入力を「統合済み」に戻さず、後ろの段の消費も数えない。
  */
 export function consumedIdsUpToTimeline(
   part: PartDocument,
   index: number | null,
+  errors: readonly PartRecomputeError[] = [],
 ): ReadonlySet<string> {
-  return consumedBodyIds(documentUpTo(part, index));
+  return consumedIds(documentUpTo(part, index), errors);
 }
 
 /**

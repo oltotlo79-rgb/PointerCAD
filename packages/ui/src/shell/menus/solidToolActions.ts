@@ -49,7 +49,7 @@ function solidAnchor(): readonly [number, number] {
 function openSolidInput(tool: SolidToolId): void {
   const store = useAppStore.getState();
   // 前の押し出しの確かめた形・古い確定の知らせを、新しい入力の窓へ持ち越さない(EX-14)。
-  if (tool === 'extrude') cancelExtrusion();
+  if (tool === 'extrude' || tool === 'holeTranslate' || tool === 'faceRotate') cancelExtrusion();
   store.setActiveTool(tool);
   const axisLine = tool === 'revolve' ? selectedLineRef(store.document, store.selection) : undefined;
   /*
@@ -107,6 +107,9 @@ export function runSolidTool(id: SolidToolId, readiness: SolidToolReadiness): vo
   }
   const store = useAppStore.getState();
   store.setActiveTool(id);
+  // Start by picking a face, while retaining an already chosen face/hinge pair.
+  if (id === 'holeTranslate' || (id === 'faceRotate'
+    && store.selectionKind !== 'face' && store.selectionKind !== 'edge')) store.setSelectionKind('face');
   store.setSolidError(readiness.reasonKey);
 }
 

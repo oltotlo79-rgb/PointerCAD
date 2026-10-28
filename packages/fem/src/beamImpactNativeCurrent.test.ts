@@ -18,7 +18,7 @@ import { impactInputSha256, translateBeamImpact } from './beamImpactTranslation.
 // is then required. The earlier producer's record (beamImpactNativeFixture.json, program 5ba11f6e) is separate and
 // unchanged. Every expectation comes from the explicit SI input numbers in `constants` and closed-form mechanics
 // derived here (N, m, Pa), never from the functions under test.
-const FIXTURE_SHA256 = 'bb1c7a3b6ba09f457e614651411421f4473c6bc3af81b4a03dd5c6aaff963ba6';
+const FIXTURE_SHA256 = '773e3d0877b9d3ba643d4707f6bcf8ed913ca3f86414eb62588cb1bb68aacc4b';
 const fixtureBytes = readFileSync(new URL('./fixtures/beamImpactNativeCurrentFixture.json', import.meta.url));
 const parsedFixture: unknown = JSON.parse(fixtureBytes.toString('utf8'));
 
@@ -128,7 +128,7 @@ describe('current generated impact producer, captured natively: statics, extrema
       oracle: '0727673850881217d48ceb2bdce1d4ae1a75dc036c91d0cf81381e8d1c2ac34c',
     });
     expect(provenance.generationReceiptSha256).toBe('086f86b103755f52d7756e641c50ff1bf7546af1382de37211db2157b19d8d81');
-    expect(provenance.runtimeManifestSha256).toBe('4b01e36bce7024253dc009a70b07e5ada6f05e206d3606011d27b3c3c387e6d6');
+    expect(provenance.runtimeManifestSha256).toBe('89efa2401e62c5c2c09d49d501bd0421e08a139a64ff54ec12b0f7c402af74ac');
     for (const key of ['nodeSha256', 'captureReceiptSha256', 'captureInputSha256', 'stdoutSha256']) {
       expect(provenance[key]).toMatch(/^[0-9a-f]{64}$/u);
     }

@@ -1,25 +1,19 @@
 /**
- * GR-18c (`scratchpad/claude/plans/geomref-plan.md` §5.2 GR-18b's report to GR-18c;
- * `scratchpad/claude/instructions/w16a-gr18c-functionplot-geometry.md`): `evaluateFunctionPlotDraft`'s own
- * `prepareDocumentMathEnvironment` context carried no `geometry` (`DocumentMathContext.geometry`, GR-04), so
- * `evaluateDocumentMath` treated the document's geometry-derived coefficient as still 計算待ち and returned
- * `ok:false` for the WHOLE document, leaving `environment.coefficients` empty. Reproduced before the fix
- * (`scratchpad/claude/agents/w16a-gr18c-functionplot-geometry/progress.md`, 09:06): `coef("A")+X`, `coef("R")+X`
- * and `floor(coef("R"))+X` all failed identically with the generic
- * "数式の長さや使えない文字を確認してください。" parser message — an ordinary coefficient (A) sharing the
- * document with an unresolved geometry-derived one (R) failed exactly like R itself, and GR-06b's own check
- * (`checkGeometryDerivedFunctionOperations`) never even ran because the field failed to parse first.
+ * 関数作図の下書きにも現在の図形測定値を渡し、普通の係数を巻き添えにしない。
+ * 修正前は `prepareDocumentMathEnvironment` に `DocumentMathContext.geometry` が渡らず、
+ * 図形由来の係数が「計算待ち」となって `evaluateDocumentMath` が文書全体を `ok:false` にし、
+ * `environment.coefficients` が空になった。普通の係数Aと図形由来の係数Rを持つ文書で、
+ * `coef("A")+X`・`coef("R")+X`・`floor(coef("R"))+X` は全て
+ * 「数式の長さや使えない文字を確認してください。」となり、不連続演算の検査にも届かなかった。
  *
- * The fix: `evaluateFunctionPlotDraft` takes an optional resolved `geometry` (the same
- * `ReadonlyMap<string, MathGeometryOutcome>` `MathExpressionDialog.tsx` obtains via `mathGeometryInputsFor` /
- * `waitForMathEditorGeometry`) and threads it into `prepareDocumentMathEnvironment`'s context. Every caller
- * (`FunctionPlotDialog.tsx`, `functionPointDraft.ts`, `functionSectionDraft.ts`) now waits for it first, the
- * same way `MathExpressionDialog.tsx` already does for the structured math editor.
+ * `evaluateFunctionPlotDraft` は解決済み `geometry` (`ReadonlyMap<string, MathGeometryOutcome>`)
+ * を任意で受け取り、数学環境の文脈へ渡す。`FunctionPlotDialog.tsx`・`functionPointDraft.ts`・
+ * `functionSectionDraft.ts` は、構造入力の `MathExpressionDialog.tsx` と同じく
+ * `mathGeometryInputsFor` / `waitForMathEditorGeometry` で現在の値を待つ。
  *
- * This file evaluates real formulas through the real math backend (`realClient`, no hand-built AST like
- * `functionPlotGeometryDerived.test.ts` was forced to use before this fix) for a document holding both a
- * geometry-derived coefficient R (built with `mathGeometryParameterDraft`, exactly as "この値の係数を作る"
- * does) and an ordinary coefficient A, proving the fix end to end.
+ * この検査は手組みのASTではなく実際の数学計算部(`realClient`)を使う。Rは実際の
+ * 「この値の係数を作る」と同じ `mathGeometryParameterDraft` で作り、普通の係数Aと併存させる。
+ * 演算制限だけの独立した配線検査は `functionPlotGeometryDerived.test.ts` に残す。
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expression/math/contracts';

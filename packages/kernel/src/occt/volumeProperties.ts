@@ -29,17 +29,98 @@ function containsPeriodicFace(oc: OpenCascadeInstance, shape: TopoDS_Shape): boo
   } finally { release(); }
 }
 
-/** 周期曲線は測定用の写しだけを節点区間へ分ける。knownPlanarは認証済み直方体同士のCommon専用。 */
-export function computeVolumeProperties(oc: OpenCascadeInstance, shape: TopoDS_Shape, properties: GProp_GProps, knownPlanar = false): void {
-  if (knownPlanar || !containsPeriodicFace(oc, shape)) {
-    if (!knownPlanar && ellipseExtrusionCentre(oc, shape) !== null) {
-      const error = oc.BRepGProp.VolumePropertiesGK_1(shape, properties, 1e-12, false, true, true, true, false);
-      if (!Number.isFinite(error) || error < 0 || error > 1e-12 || !Number.isFinite(properties.Mass())) {
-        throw new Error('立体の体積を必要な精度で計算できませんでした。');
-      }
+/** 非周期スプラインの押出面。母線の節点区間を使う積分が必要な形だけを選ぶ。 */
+function hasSplineExtrusion(oc: OpenCascadeInstance, shape: TopoDS_Shape, closedOnly = false): boolean {
+  const { keep, release } = createAllocations();
+  try {
+    const faces = keep(new oc.TopTools_IndexedMapOfShape_1());
+    oc.TopExp.MapShapes_2(shape, faces, true, true);
+    for (let index = 1; index <= faces.Size(); index++) {
+      const owned = createAllocations();
+      try {
+        const current = owned.keep(faces.FindKey(index));
+        if (current.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_FACE) continue;
+        const face = owned.keep(oc.TopoDS.Face_1(current));
+        const surface = owned.keep(new oc.BRepAdaptor_Surface_2(face, false));
+        if (surface.GetType() !== oc.GeomAbs_SurfaceType.GeomAbs_SurfaceOfExtrusion) continue;
+        const basis = owned.keep(surface.BasisCurve());
+        if (basis.get().GetType() === oc.GeomAbs_CurveType.GeomAbs_BSplineCurve && !basis.get().IsPeriodic()
+          && (!closedOnly || basis.get().IsClosed())) return true;
+      } finally { owned.release(); }
+    }
+    return false;
+  } finally { release(); }
+}
+
+
+/** 円筒同士などの交線で切られた円筒面を、平面・円筒面だけの立体で検出する。 */
+function hasCurvedCylinderBoundary(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
+  const { keep, release } = createAllocations();
+  let curved = false;
+  try {
+    const faces = keep(new oc.TopTools_IndexedMapOfShape_1());
+    oc.TopExp.MapShapes_2(shape, faces, true, true);
+    for (let index = 1; index <= faces.Size(); index++) {
+      const owned = createAllocations();
+      try {
+        const current = owned.keep(faces.FindKey(index));
+        if (current.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_FACE) continue;
+        const face = owned.keep(oc.TopoDS.Face_1(current));
+        const surface = owned.keep(new oc.BRepAdaptor_Surface_2(face, false));
+        const kind = surface.GetType();
+        if (kind === oc.GeomAbs_SurfaceType.GeomAbs_Plane) continue;
+        if (kind !== oc.GeomAbs_SurfaceType.GeomAbs_Cylinder) return false;
+        if (curved) continue;
+        const edges = owned.keep(new oc.TopTools_IndexedMapOfShape_1());
+        oc.TopExp.MapShapes_2(face, edges, true, true);
+        for (let edgeIndex = 1; edgeIndex <= edges.Size(); edgeIndex++) {
+          const boundary = createAllocations();
+          try {
+            const item = boundary.keep(edges.FindKey(edgeIndex));
+            if (item.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_EDGE) continue;
+            const edge = boundary.keep(oc.TopoDS.Edge_1(item));
+            const curve = boundary.keep(new oc.BRepAdaptor_Curve2d_2(edge, face));
+            if (curve.GetType() !== oc.GeomAbs_CurveType.GeomAbs_Line) { curved = true; break; }
+          } finally { boundary.release(); }
+        }
+      } finally { owned.release(); }
+    }
+    return curved;
+  } finally { release(); }
+}
+
+/** 節点区間を使うGK積分。失敗値や非有限の体積は呼出し元へ返さない。 */
+function computeGkProperties(oc: OpenCascadeInstance, shape: TopoDS_Shape, properties: GProp_GProps, massOnly: boolean): void {
+  const error = oc.BRepGProp.VolumePropertiesGK_1(shape, properties, 1e-12, false, true, !massOnly, !massOnly, false);
+  if (!Number.isFinite(error) || error < 0 || error > 1e-12 || !Number.isFinite(properties.Mass())) {
+    throw new Error('立体の体積を必要な精度で計算できませんでした。');
+  }
+}
+
+/** 周期曲線と閉じた非周期スプラインは測定用の写しだけを節点区間へ分ける。knownPlanarは認証済み直方体同士のCommon専用。
+ * massOnlyは体積だけを読む内部caller専用。省略時は従来どおり重心と慣性も求める。 */
+export function computeVolumeProperties(oc: OpenCascadeInstance, shape: TopoDS_Shape, properties: GProp_GProps, knownPlanar = false, massOnly = false): void {
+  if (knownPlanar) {
+    oc.BRepGProp.VolumeProperties_1(shape, properties, false, false, false);
+    return;
+  }
+  const periodic = containsPeriodicFace(oc, shape);
+  // 閉じた非周期母線は一枚の面のGK誤差見積りが不安定になるため、測定用コピーを分割する。
+  const closedSpline = !periodic && hasSplineExtrusion(oc, shape, true);
+  if (!periodic && !closedSpline) {
+    if (ellipseExtrusionCentre(oc, shape) !== null || hasSplineExtrusion(oc, shape)) {
+      computeGkProperties(oc, shape, properties, massOnly);
       return;
     }
-    oc.BRepGProp.VolumeProperties_1(shape, properties, false, false, false);
+    if (hasCurvedCylinderBoundary(oc, shape)) {
+      // 円筒の曲線境界は固定次数では配置により誤差が変わる。同じ面を適応積分する。
+      const error = oc.BRepGProp.VolumeProperties_2(shape, properties, 1e-9, false, false);
+      if (!Number.isFinite(error) || error < 0 || error > 1e-9) {
+        throw new Error('立体の体積を必要な精度で計算できませんでした。');
+      }
+    } else {
+      oc.BRepGProp.VolumeProperties_1(shape, properties, false, false, false);
+    }
     return;
   }
   const { keep, release } = createAllocations();
@@ -63,7 +144,8 @@ export function computeVolumeProperties(oc: OpenCascadeInstance, shape: TopoDS_S
     if (!isFailureStatus(failed, oc.ShapeExtend_Status) || divided.IsNull() || converter.Status(failed)) {
       throw new Error('立体の体積を必要な精度で計算できませんでした。');
     }
-    oc.BRepGProp.VolumeProperties_1(divided, properties, false, false, false);
+    if (closedSpline) computeGkProperties(oc, divided, properties, massOnly);
+    else oc.BRepGProp.VolumeProperties_1(divided, properties, false, false, false);
     if (!Number.isFinite(properties.Mass())) throw new Error('立体の体積を必要な精度で計算できませんでした。');
   } finally { release(); }
 }

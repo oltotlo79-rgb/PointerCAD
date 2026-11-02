@@ -62,7 +62,7 @@ ${execution.stderr}`);
   };
 }
 
-type ExactRuntimeRequest = { readonly expression: MathNode; readonly angleUnit: 'degree' | 'radian' };
+interface ExactRuntimeRequest { readonly expression: MathNode; readonly angleUnit: 'degree' | 'radian' }
 
 /**
  * Like the product engine, one prepared runtime serves every real calculation requested in the

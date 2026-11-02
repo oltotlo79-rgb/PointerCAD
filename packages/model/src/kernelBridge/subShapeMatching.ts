@@ -109,14 +109,14 @@ export function selectSubShape(body: SolidBody, reference: SubShapeRef): Resolve
 }
 
 /** 現在の面の表から合致用の幾何を作る。二つの照合の道で同じ欄を運び、保存の指紋には使わない。 */
-function faceGeometry(face: SolidFaceEntry): MateSubShapeGeometry {
+function faceGeometry(body: SolidBody, face: SolidFaceEntry): MateSubShapeGeometry {
+  const boundary = face.boundaryEdgeIndices;
+  const completeBoundary = boundary !== undefined && boundary.length > 0 && new Set(boundary).size === boundary.length
+    && Array.from(boundary).every(index => Number.isSafeInteger(index) && index >= 0 && body.edges.filter(edge => edge.index === index).length === 1);
   return {
-    kind: 'face',
-    surfaceKind: face.surfaceKind,
-    area: face.area,
-    position: face.centroid,
-    axis: face.axis,
-    radius: face.radius,
+    kind: 'face', ...(completeBoundary ? { boundaryEdgeIndices: Object.freeze([...boundary]) } : {}),
+    surfaceKind: face.surfaceKind, area: face.area,
+    position: face.centroid, axis: face.axis, radius: face.radius,
     ...(face.axisOrigin == null ? {} : { axisOrigin: face.axisOrigin }),
     ...(face.planarBasis === undefined ? {} : { planarBasis: face.planarBasis }),
     ...(face.cylinderSpan == null ? {} : { cylinderSpan: face.cylinderSpan }),
@@ -143,7 +143,7 @@ export function selectMateTargetGeometry(
     case 'face': {
       const match = matchFace(body.faces, query, scale);
       const found = match === null ? undefined : body.faces.find((face) => face.index === match.index);
-      return found === undefined ? null : faceGeometry(found);
+      return found === undefined ? null : faceGeometry(body, found);
     }
     case 'edge': {
       const match = matchEdge(body.edges, query, scale);
@@ -156,7 +156,7 @@ export function selectMateTargetGeometry(
         position: found.midpoint,
         axis: found.axis,
         radius: found.radius,
-        ...(found.axisOrigin == null ? {} : { axisOrigin: found.axisOrigin }),
+        ...(found.axisOrigin == null ? {} : { axisOrigin: found.axisOrigin }), ...(found.curveKind !== 'circle' || found.circleBasis === undefined ? {} : { circleBasis: found.circleBasis }),
       };
     }
     case 'vertex': {
@@ -207,7 +207,7 @@ export function subShapeMatchCandidates(body: SolidBody, reference: SubShapeRef)
             ...(reference.origin === undefined ? {} : { origin: reference.origin }), fingerprint: {
             kind: 'face', surfaceKind: face.surfaceKind, area: face.area, position: face.centroid, axis: face.axis, radius: face.radius,
           } },
-          geometry: faceGeometry(face),
+          geometry: faceGeometry(body, face),
         };
       });
       break;
@@ -220,7 +220,7 @@ export function subShapeMatchCandidates(body: SolidBody, reference: SubShapeRef)
             kind: 'edge', curveKind: edge.curveKind, length: edge.length, position: edge.midpoint, axis: edge.axis, radius: edge.radius,
           } },
           geometry: { kind: 'edge', curveKind: edge.curveKind, length: edge.length, position: edge.midpoint,
-            axis: edge.axis, radius: edge.radius, ...(edge.axisOrigin == null ? {} : { axisOrigin: edge.axisOrigin }) },
+            axis: edge.axis, radius: edge.radius, ...(edge.axisOrigin == null ? {} : { axisOrigin: edge.axisOrigin }), ...(edge.curveKind !== 'circle' || edge.circleBasis === undefined ? {} : { circleBasis: edge.circleBasis }) },
         };
       });
       break;

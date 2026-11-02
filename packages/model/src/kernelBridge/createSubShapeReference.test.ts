@@ -18,7 +18,7 @@ function body(featureId: string, semanticId = featureId): SolidBody {
       state: 'unique', current: { kind: 'face', index: 7 } }] },
   };
 }
-type UniqueBinding = { readonly origin: SubShapeOrigin; readonly state: 'unique'; readonly current: ShapeAddress };
+interface UniqueBinding { readonly origin: SubShapeOrigin; readonly state: 'unique'; readonly current: ShapeAddress }
 const cylinderClaims: readonly UniqueBinding[] = [
   ...(['side', 'start', 'end'] as const).map((role, index): UniqueBinding => ({
     origin: { version: 1, shapeKind: 'face', identity: { kind: 'cylinder-face', featureId: 'cylinder-1', role } },

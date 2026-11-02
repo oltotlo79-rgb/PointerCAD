@@ -15,7 +15,7 @@
  * 文言は §2.12 の表から 1 字も変えずに使う。
  *
  * **カーネルを呼ばない純関数。** 合致を解く呼び出し側は `ResolveMateTargetOptions.subShape`
- * に、再計算済みの部品の形から `selectMateTargetGeometry` で選び直す関数を渡す。
+ * に、`createSubShapeReferenceResolver` の一意一致した `match.geometry` だけを返す関数を渡す。
  * 解析軸上点は保存指紋に無いので、この経路で取り直す(P7-14b)。旧指紋だけでも従来の
  * 代表点は返すが、円筒・円錐の重心から解析軸上点を捏造しない。解析軸が無い合致は
  * 残差準備側で missingAxis になる。
@@ -98,7 +98,7 @@ export interface ResolveMateTargetOptions {
    * 鍵で渡すのはインスタンスの id ではない——同じ部品を 5 個置いても形は 1 つ(§0.a-0.4)で、
    * 選び直しの答えも 1 つだからである(インスタンスごとに呼ぶと同じ照合を 5 回することになる)。
    *
-   * kernelBridge の `selectMateTargetGeometry` を使う。ResolvedSubShape は半径・面積・
+   * `createSubShapeReferenceResolver` の一意一致だけを使う。ResolvedSubShape は半径・面積・
    * 長さを落とすので使わない。旧callbackの普通の指紋も受け付けるが、解析軸上点の無い
    * 円筒・円錐・円辺は残差の準備で断られる。解析点を文書や指紋の鍵へ保存しない。
    */

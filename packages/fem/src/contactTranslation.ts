@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import { translateBeamBuckling, type OofemBucklingPlan } from './bucklingTranslation.js';
 import { contactPlanContacts, validateBeamContacts, type BeamContactDefinition, type BeamContactInput,
   type ContactPlanContact } from './contactModel.js';
@@ -104,6 +105,5 @@ export function translateBeamContact(value: unknown): {
 
 export async function contactInputSha256(value: unknown): Promise<string> {
   const input = translateBeamContact(value).input;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(new TextEncoder().encode(JSON.stringify(input)));
 }

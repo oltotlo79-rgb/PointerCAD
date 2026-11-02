@@ -1,3 +1,4 @@
+import { crossVec3 as cross, dotVec3 as dot } from '@pointercad/model/vec3';
 import { TETRA_LIMITS } from './tetraMesh.js';
 import { exactTetrahedronOrientation } from './plcTopology.js';
 
@@ -46,9 +47,6 @@ function denseNumbers(value: unknown, maximum: number, stride: number): asserts 
   }
 }
 type V3 = readonly [number, number, number];
-const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1],
-  a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /** Geometric diagnostics only. This does not certify a CAD boundary, material or solver.
  * Coordinates are millimetres. Positive orientation is never silently repaired.

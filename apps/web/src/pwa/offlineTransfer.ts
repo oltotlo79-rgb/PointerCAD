@@ -1,5 +1,5 @@
-import type { OfflineAssetRecord } from '../../../../scripts/vite/offlineProtocol.mjs';
-import { OFFLINE_MAX_FILE_BYTES, OFFLINE_MAX_STREAM_BYTES, isOfflineStreamAsset } from '../../../../scripts/vite/offlineProtocol.mjs';
+import type { OfflineAssetRecord } from '@pointercad/ui/offline-protocol';
+import { OFFLINE_MAX_FILE_BYTES, OFFLINE_MAX_STREAM_BYTES, isOfflineStreamAsset } from '@pointercad/ui/offline-protocol';
 import { contentSecurityPolicyFor, isKernelWorkerAsset, isFemWorkerAsset } from '@pointercad/ui/security-policy';
 import { OfflineTransferError, offlineAssetRequestUrl, readBoundedOfflineBody, requestOfflineResponse, type OfflineTransferOptions } from './offlineNetwork.js';
 export { OfflineTransferError, type OfflineTransferOptions, type OfflineTransferReason } from './offlineNetwork.js';

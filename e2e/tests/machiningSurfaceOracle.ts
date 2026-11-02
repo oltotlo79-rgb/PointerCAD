@@ -5,7 +5,7 @@ import { ex18ReadPart } from './ex18RoutesOracle.js';
 import { recomputePart } from '../../packages/model/src/part/recomputePart.js';
 import type { ResolvedPart } from '../../packages/model/src/part/resolvePart.js';
 import type { PartDocument } from '../../packages/model/src/part/types.js';
-import type { Ex18ShapeMeasurement } from '../../packages/model/src/part/ex18ShapeOracle.js';
+import type { Ex18ShapeMeasurement } from '../../packages/model/src/part/ex18ShapeOracle.testSupport.js';
 import type { SolidBody } from '../../packages/model/src/kernelBridge/solidContracts.js';
 import { createInspectableNativeKernelForNodeTests } from '../../packages/model/src/testing/createNativeKernelBridge.node.js';
 import { toSolidStepRequest } from '../../packages/model/src/kernelBridge/solidRequests.js';

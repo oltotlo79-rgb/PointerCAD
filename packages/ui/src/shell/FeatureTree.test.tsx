@@ -10,6 +10,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { extrudeFeature, holeFeature, partWithMixedFeatures, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { connectSelectedPoints, selectedPointsConnection } from '../sketch/connectSelectedPoints.js';
+import type * as ImportedReactTypes from 'react';
 
 const renamedName = t('propertyPanel.sectionSelectionSets');
 const blurredName = t('featureTree.sketchGroup');
@@ -22,7 +23,7 @@ const hooks = vi.hoisted(() => ({
   effects: [] as Array<{ setup: () => void | (() => void); deps?: readonly unknown[] }>,
 }));
 vi.mock('react', async importOriginal => {
-  const original = await importOriginal<typeof import('react')>();
+  const original = await importOriginal<typeof ImportedReactTypes>();
   return {
     ...original,
     useState: <S,>(initial: S | (() => S)) => {

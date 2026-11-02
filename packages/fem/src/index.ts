@@ -42,6 +42,8 @@ export { FATIGUE_INPUT_SCHEMA, FATIGUE_RESULT_SCHEMA, MAX_FATIGUE_HISTORIES, MAX
 export { analyzeFatigue, curveStressMpa, rainflowCycles } from './fatigue.js';
 export { analyzeFatigueWithMeanStressCorrection } from './fatigue.js';
 export { FATIGUE_PIECEWISE_CONTINUITY_TOLERANCE, FATIGUE_PIECEWISE_INPUT_SCHEMA, FATIGUE_PIECEWISE_RESULT_SCHEMA, MAX_FATIGUE_PIECEWISE_SEGMENTS, analyzeFatiguePiecewise, piecewiseEndStressMpa, piecewiseInverseLife, validateFatiguePiecewiseInput, type FatiguePiecewiseAnalysis, type FatiguePiecewiseApplicability, type FatiguePiecewiseCurve, type FatiguePiecewiseEnd, type FatiguePiecewiseError, type FatiguePiecewiseErrorCode, type FatiguePiecewiseInput, type FatiguePiecewiseResult, type FatiguePiecewiseSegment, type FatiguePiecewiseValidation } from './fatiguePiecewise.js';
+export { analyzeFatigueDetail, FATIGUE_DETAIL_INPUT_SCHEMA, validateFatigueDetailInput, type FatigueDetailErrorCode,
+  type FatigueDetailInput, type FatigueDetailQuantity, type FatigueDetailResult, type FatigueDetailStress } from './fatigueDetail.js';
 export { FATIGUE_PROPORTIONAL_TENSOR_METHOD, FATIGUE_PROPORTIONAL_TENSOR_SCHEMA, FATIGUE_TENSOR_COMPONENT_KEYS, FATIGUE_TENSOR_COMPONENTS, analyzeProportionalTensorFatigue, proportionalTensorFatigueInput, validateProportionalTensorFatigueInput, type FatigueReferenceTensor, type FatigueTensorAnalysis, type FatigueTensorComponent, type FatigueTensorConversion, type FatigueTensorConversionResult, type FatigueTensorError, type FatigueTensorErrorCode } from './fatigueTensor.js';
 export { FATIGUE_GOODMAN_SCHEMA, FATIGUE_CORRECTED_RESULT_SCHEMA, GOODMAN_MINIMUM_CYCLES_EXCLUSIVE,
   validateFatigueMeanStressCorrection, type FatigueMeanStressCorrection, type FatigueCorrectionError,
@@ -90,6 +92,11 @@ export { analyzeCadSolidPlastic, cadSolidPlasticInput, type CadSolidPlasticSetti
   type CadSolidPlasticOutcome } from './cadSolidPlastic.js';
 export { SOLID_PLASTIC_PLAN_SCHEMA, SOLID_PLASTIC_LIMITS, readSolidPlasticPlan,
   type SolidPlasticPlan, type SolidPlasticMaterial, type SolidPlasticDof } from './solidPlastic.js';
+export { prepareCadSolidContact, analyzeCadSolidContact,
+  type CadSolidContactBody, type CadSolidContactPrepared, type CadSolidContactOutcome } from './cadSolidContact.js';
+export { bindSolidContactInput, readSolidContactAnalysisInput,
+  type SolidContactInput, type SolidContactResult, type SolidContactSolveSettings, type SolidContactPatchChoice,
+  type SolidContactHistory, type SolidContactFailureDiagnostics } from './solidContactBinding.js';
 export { SOLID_PLASTIC_INPUT_SCHEMA, translateSolidPlastic, solidPlasticInputSha256,
   type SolidPlasticInput, type SolidPlasticSource } from './solidPlasticTranslation.js';
 export { SOLID_PLASTIC_METHOD, SOLID_PLASTIC_SCOPE, SOLID_PLASTIC_RESIDUAL_BOUND,
@@ -140,3 +147,19 @@ export { recoverWeldThroatStress, recoverJointWeldThroatStress, recoverInitialSt
 export { analyzeFrameBoltContact } from './frameBoltContactRuntime.js';
 export { isFrameBoltContactResult, frameBoltContactResultMatches, type FrameBoltContactResult } from './frameBoltContactBinding.js';
 export type { FrameBoltContactInput } from './beamBoltContact.js';
+
+export { translateBeamWeldSpanContact, beamWeldSpanContactInputSha256, decodeBeamWeldSpanContact,
+  type BeamWeldSpanContactInput, type BeamWeldSpanContactPlan, type BeamWeldSpanPatch, type BeamWeldSpanSide } from './beamWeldSpanContact.js';
+export { analyzeBeamWeldSpanContact } from './beamWeldSpanContactRuntime.js';
+export { isBeamWeldSpanContactResult, beamWeldSpanContactResultMatches, type BeamWeldSpanContactResult } from './beamWeldSpanContactBinding.js';
+
+export { prepareCadBeamWeldSpanContact } from './cadBeamWeldSpanContact.js';
+export { recoverBeamWeldSpanStress, type BeamWeldSpanStressResult } from './beamWeldSpanStress.js';
+export { translateBeamFrictionContact, type BeamFrictionContactInput } from './frictionContactTranslation.js';
+export { decodeFrictionContact, frictionContactResultMatches, type FrictionContactResult, type FrictionSolveOptions } from './frictionContactResults.js';
+export { frictionContactInputSha256, isFrictionContactResult } from './frictionContactBinding.js';
+
+export { summarizeSolidYield, type SolidYieldSummary } from './solidYieldSummary.js';
+
+export { prepareCadBeamFrictionContact } from './cadBeamFrictionContact.js';
+export * from './staticCapacity.js';

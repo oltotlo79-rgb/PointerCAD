@@ -1,3 +1,4 @@
+import { nextSerialId, nextSerialName } from '@pointercad/model/sketch-document';
 /**
  * 拘束を付ける・消す・値を書き換える純関数と、いま選んでいる要素に付けられる拘束の下見
  * (FR-313、FR-504、NFR-UX-1、NFR-UX-5、計画書 docs/plans/P4b-スケッチの仕上げ.md
@@ -925,48 +926,17 @@ function newTargetSets(
   return groups.filter((group) => !hasSameConstraint(document, kind, group));
 }
 
-/** その名前の連番(「直角1」の 1)。見出しで始まらない名前は 0 とみなす。 */
-function nameSerial(name: string, label: string): number {
-  if (!name.startsWith(label)) {
-    return 0;
-  }
-  const rest = name.slice(label.length);
-  if (!/^[0-9]+$/.test(rest)) {
-    return 0;
-  }
-  const parsed = Number(rest);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-/**
- * 同じ見出しの既存の名前の最大連番 + 1(「直角1」「直角2」)。
- *
- * model の `nextSerialName`(`createSketchDocument.ts`)と同じ方式だが、あちらは
- * `@pointercad/model` の公開口に並んでいない。統括の指示で model のファイルは触らないので、
- * 同じ 3 行をここへ置く。**輸出が増えたら model 側へ寄せる**(タスク13 への申し送り)。
- */
+/** 同じ見出しの最大連番はmodelへ委譲する。名前の取得順も元の走査に合わせる。 */
 function nextConstraintName(document: SketchDocument, kind: SketchConstraintKind): string {
   const label = constraintKindLabel(kind);
-  let max = 0;
-  for (const constraint of sketchConstraints(document)) {
-    const serial = nameSerial(constraint.name, label);
-    if (serial > max) {
-      max = serial;
-    }
-  }
-  return `${label}${String(max + 1)}`;
+  return nextSerialName((function* () {
+    for (const constraint of sketchConstraints(document)) yield constraint.name;
+  })(), label);
 }
 
-/** 拘束の id。`constraint-1`、`constraint-2`(フィーチャーの id と同じ連番の方式)。 */
+/** 拘束のidもmodelの既存連番規則へ委譲する。 */
 function nextConstraintId(usedIds: ReadonlySet<string>): string {
-  let max = 0;
-  for (const id of usedIds) {
-    const serial = nameSerial(id, 'constraint-');
-    if (serial > max) {
-      max = serial;
-    }
-  }
-  return `constraint-${String(max + 1)}`;
+  return nextSerialId(usedIds, 'constraint-');
 }
 
 /** 1 つの拘束を組み立てる。指し先の形が合わなければ null(呼ぶ前に検査済み)。 */

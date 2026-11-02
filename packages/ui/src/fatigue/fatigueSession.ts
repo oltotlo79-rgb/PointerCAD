@@ -17,6 +17,10 @@ import type { FatiguePiecewiseSavedInput, FatigueSavedPiecewiseProblem } from '@
 import type { FatiguePiecewiseDraft } from './fatiguePiecewiseDraft.js';
 import type { FatigueSolidSavedInput } from '@pointercad/model/beam-analysis';
 import type { FatigueSolidBinding, FatigueSolidAnalyzed } from './fatigueSolidSession.js';
+import type { FatigueDetailInput, FatigueDetailResult } from '@pointercad/fem';
+import type { FatigueDetailSavedInput } from '@pointercad/model/beam-analysis';
+// Type-only for the same reason as the piecewise draft (fatigueDetailDraft.ts imports this module's values).
+import type { FatigueDetailDraft } from './fatigueDetailDraft.js';
 import { t, type MessageKey } from '../i18n/t.js';
 import { readFatigueField, type FatigueFieldName } from '../beam/beamFields.js';
 import type { BeamSourceSnapshot } from '../beam/beamSource.js';
@@ -67,7 +71,7 @@ export interface FatigueHistoryDraft {
 }
 /** How the histories give their stresses: the one-direction stress list (the existing input), or one reference stress
  * tensor times signed load factors (proportional loading, converted by the core to the signed von Mises equivalent). */
-export type FatigueInputMode = 'stress' | 'proportional-tensor' | 'piecewise' | 'solid-proportional';
+export type FatigueInputMode = 'stress' | 'proportional-tensor' | 'piecewise' | 'solid-proportional' | 'detail';
 /** One history's tensor input as typed: the six reference components (MPa) and the ordered signed load factors. */
 export interface FatigueTensorRowDraft {
   readonly components: Readonly<Record<FatigueTensorComponent, string>>;
@@ -113,6 +117,9 @@ export interface FatigueDraft {
   /** The user's piecewise S-N calibration of the 'piecewise' mode (stress-list histories, fatiguePiecewiseSession.ts);
    * absent until that mode is first chosen. */
   readonly piecewise?: FatiguePiecewiseDraft;
+  /** The joint (weld or bolt) of the 'detail' mode (fatigueDetailSession.ts), which uses the piecewise calibration and the
+   * histories above; absent until that mode is first chosen. */
+  readonly detail?: FatigueDetailDraft;
   readonly solid?: FatigueSolidBinding;
   readonly solidElement?: string;
   readonly solidCurveId?: string;
@@ -134,6 +141,8 @@ export interface FatigueSession {
   /** The piecewise input and the core result it produced (the 'piecewise' mode); cleared by every input edit, never saved. */
   readonly piecewiseAnalyzed?: { readonly problem: FatigueSavedPiecewiseProblem; readonly result: FatiguePiecewiseResult } | null;
   readonly solidAnalyzed?: FatigueSolidAnalyzed | null;
+  /** The joint input and the core result it produced (the 'detail' mode); cleared by every input edit, never saved. */
+  readonly detailAnalyzed?: { readonly input: FatigueDetailInput; readonly result: FatigueDetailResult } | null;
 }
 export type FatigueEdit =
   | { readonly kind: 'correction-mode'; readonly value: FatigueCorrectionDraft['mode'] }
@@ -163,7 +172,9 @@ export type FatigueEdit =
   | { readonly kind: 'tensor-component'; readonly index: number; readonly component: FatigueTensorComponent; readonly source: string }
   | { readonly kind: 'tensor-factors'; readonly index: number; readonly source: string }
   /** The whole edited piecewise draft (built by fatiguePiecewiseSession.ts editFatigueSessionWithPiecewise). */
-  | { readonly kind: 'piecewise-draft'; readonly draft: FatiguePiecewiseDraft };
+  | { readonly kind: 'piecewise-draft'; readonly draft: FatiguePiecewiseDraft }
+  /** The whole edited joint draft (built by fatiguePiecewiseSession.ts editFatigueSessionWithPiecewise). */
+  | { readonly kind: 'detail-draft'; readonly draft: FatigueDetailDraft };
 type AxialFormEdit = Extract<FatigueEdit, { readonly kind: 'axial-member' | 'axial-sequence' | 'axial-repeats' | 'axial-reference' }>;
 
 export const FATIGUE_CURVE_ID = 'curve';
@@ -275,6 +286,7 @@ function nextDraft(draft: FatigueDraft, edit: Exclude<FatigueEdit, { readonly ki
       components: { ...row.components, [edit.component]: edit.source } }));
     case 'tensor-factors': return editTensor(draft, edit.index, row => ({ ...row, loadFactors: edit.source }));
     case 'piecewise-draft': return { ...draft, piecewise: edit.draft };
+    case 'detail-draft': return { ...draft, detail: edit.draft };
     default: {
       const exhaustiveCheck: never = edit;
       return exhaustiveCheck;
@@ -293,10 +305,13 @@ export function editFatigueSession(session: FatigueSession, edit: FatigueEdit): 
   const draft = nextDraft(session.draft, edit);
   if (draft === null) return session;
   const added = draft.histories.length - 1;
+  // The joint mode's force quantities keep their N lists in their own field (never the MPa stress list).
+  const forceField = draft.inputMode === 'detail' && draft.detail !== undefined && draft.detail.quantity !== ''
+    && draft.detail.quantity !== 'detail-stress';
   const focusedField = edit.kind !== 'history-add' ? session.focusedField
-    : draft.inputMode === 'proportional-tensor' ? `tensor:${added}:xx` : `history:${added}:stress`;
-  return { ...session, draft, focusedField, revision: session.revision + 1, analyzed: null, piecewiseAnalyzed: null, solidAnalyzed: null, errorKey: null,
-    diagnostic: null };
+    : draft.inputMode === 'proportional-tensor' ? `tensor:${added}:xx` : forceField ? `history:${added}:force` : `history:${added}:stress`;
+  return { ...session, draft, focusedField, revision: session.revision + 1, analyzed: null, piecewiseAnalyzed: null, solidAnalyzed: null,
+    detailAnalyzed: null, errorKey: null, diagnostic: null };
 }
 
 /** A plain decimal number with an optional exponent (no units, no expressions: the list is a measured or computed record). */
@@ -743,7 +758,8 @@ export function fatigueDraftIsSaved(session: FatigueSession, parameters: readonl
 export type FatigueSavedEntry = { readonly kind: 'fatigue'; readonly definition: FatigueSavedInput }
   | { readonly kind: 'fatigue-proportional-tensor'; readonly definition: FatigueTensorSavedInput }
   | { readonly kind: 'fatigue-piecewise'; readonly definition: FatiguePiecewiseSavedInput }
-  | { readonly kind: 'fatigue-solid-proportional'; readonly definition: FatigueSolidSavedInput };
+  | { readonly kind: 'fatigue-solid-proportional'; readonly definition: FatigueSolidSavedInput }
+  | { readonly kind: 'fatigue-detail'; readonly definition: FatigueDetailSavedInput };
 export type FatigueSavedEntryCheck = { readonly ok: true; readonly entry: FatigueSavedEntry }
   | { readonly ok: false; readonly key: MessageKey; readonly field: string | null; readonly diagnostic: string | null };
 
@@ -764,8 +780,9 @@ export function fatigueSavedEntry(session: FatigueSession, parameters: readonly 
  * withBeamAnalysisInputs). */
 export function savedFatigueEntry(document: { readonly beamAnalysisInputs?: BeamAnalysisInputs }): FatigueSavedEntry | null {
   const saved = document.beamAnalysisInputs?.analyses.find(input => input.kind === 'fatigue' || input.kind === 'fatigue-proportional-tensor'
-    || input.kind === 'fatigue-piecewise' || input.kind === 'fatigue-solid-proportional');
-  return saved?.kind === 'fatigue' || saved?.kind === 'fatigue-proportional-tensor' || saved?.kind === 'fatigue-piecewise' || saved?.kind === 'fatigue-solid-proportional' ? saved : null;
+    || input.kind === 'fatigue-piecewise' || input.kind === 'fatigue-solid-proportional' || input.kind === 'fatigue-detail');
+  return saved?.kind === 'fatigue' || saved?.kind === 'fatigue-proportional-tensor' || saved?.kind === 'fatigue-piecewise' || saved?.kind === 'fatigue-solid-proportional'
+    || saved?.kind === 'fatigue-detail' ? saved : null;
 }
 
 /** Equal saved tensor problems: every curve value and source, record id, sequence, repeats and source, every reference
@@ -793,8 +810,9 @@ function sameSavedTensorProblem(left: FatigueSavedTensorProblem, right: FatigueS
 export function fatigueEntryIsSaved(session: FatigueSession, parameters: readonly Parameter[], saved: FatigueSavedEntry | null): boolean {
   if (saved === null) return false;
   if (saved.kind === 'fatigue') return fatigueDraftIsSaved(session, parameters, saved.definition);
-  // The piecewise comparison is fatiguePiecewiseSession.ts fatigueEntryIsSavedWithPiecewise (it needs the draft module).
-  if (saved.kind === 'fatigue-piecewise' || saved.kind === 'fatigue-solid-proportional') return false;
+  // The piecewise and joint comparisons are fatiguePiecewiseSession.ts fatigueEntryIsSavedWithPiecewise (they need the
+  // draft modules).
+  if (saved.kind === 'fatigue-piecewise' || saved.kind === 'fatigue-solid-proportional' || saved.kind === 'fatigue-detail') return false;
   if (session.draft.inputMode !== 'proportional-tensor') return false;
   const current = fatigueTensorInput(session, parameters);
   return current.ok && sameSavedTensorProblem(current.problem, saved.definition.input);

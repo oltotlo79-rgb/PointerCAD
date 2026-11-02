@@ -4,8 +4,8 @@ import { nextSolidId, nextSolidName, recomputePart, resolvePart,
   type PartDocument, type PartRecomputeResult } from '@pointercad/model';
 import { createInspectableNativeKernelForNodeTests, initializeNativeKernelForNodeTests }
   from '../../../model/src/testing/createNativeKernelBridge.node.js';
-import { buildEx18DirectSeed, withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.js';
-import { compareEx18Shape } from '../../../model/src/part/ex18ShapeOracle.js';
+import { buildEx18DirectSeed, withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
+import { compareEx18Shape } from '../../../model/src/part/ex18ShapeOracle.testSupport.js';
 import { applyNumericTransition, applySolidCommit } from '../sketch/commitToStore.js';
 import { commitNumericInput, createNumericInput, reduceNumericInput } from '../sketch/numericInput.js';
 import { attachPartRecompute } from '../store/attachKernel.js';

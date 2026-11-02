@@ -14,6 +14,10 @@
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
     },
+    "./offline-protocol": { "types": "./src/settings/offlineProtocol.d.mts", "default": "./src/settings/offlineProtocol.mjs" },
+    "./startup-presentation": { "types": "./dist/shell/startupPresentation.d.ts", "default": "./src/shell/startupPresentation.ts" },
+    "./startup-markup": { "types": "./dist/shell/startupMarkup.d.ts", "default": "./src/shell/startupMarkup.ts" },
+    "./startup-recovery": { "types": "./dist/shell/startupRecovery.d.ts", "default": "./src/shell/startupRecovery.ts" },
     "./security-policy": { "types": "./dist/security/contentSecurityPolicy.d.ts", "default": "./src/security/contentSecurityPolicy.ts" },
     "./offline-contracts": { "types": "./dist/settings/offlineGateway.d.ts", "default": "./src/settings/offlineGateway.ts" },
     "./offline-navigation": { "types": "./dist/help/offlineManualNavigation.d.ts", "default": "./src/help/offlineManualNavigation.ts" },

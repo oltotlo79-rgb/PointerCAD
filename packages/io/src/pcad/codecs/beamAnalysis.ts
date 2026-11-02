@@ -7,6 +7,7 @@ import { fieldProblem, type Checked } from '../guards.js';
 /** Single-solid definitions refer to a part's feature/face identities. Keep both codec boundaries identical. */
 function requiresPartDocument(input: BeamAnalysisInputs['analyses'][number]): boolean {
   return input.kind === 'fatigue-solid-proportional' || input.kind === 'solid-cad' || input.kind === 'solid-plastic-cad'
+    || input.kind === 'shell-cad'
     || input.kind === 'solid-modal-cad' || input.kind === 'solid-buckling-cad';
 }
 

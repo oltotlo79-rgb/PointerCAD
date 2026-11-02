@@ -1,3 +1,4 @@
+import { isRecord as record } from '../valueGuards.js';
 /** Plain model data crossing the geometry Worker. No OCCT handles or UI-only clipping. */
 import type { ResolvedSpline } from '../sketch/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
@@ -23,7 +24,6 @@ export interface FunctionKernelBridge {
   functionSketchCurves(input: FunctionCurveGeometryInput): Promise<FunctionCurveGeometryOutcome>;
 }
 
-function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
 function array(value: unknown): value is readonly unknown[] { return Array.isArray(value); }
 const invalid = (): FunctionCurveGeometryOutcome => ({ status: 'failed', message: '関数曲線の計算結果を確認できませんでした。' });
 const CURVE_FIELDS = ['kind', 'mode', 'degree', 'closed', 'points'];

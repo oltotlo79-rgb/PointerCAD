@@ -159,7 +159,7 @@ function manualChunks(id: string): string | undefined {
 
 export default defineConfig({
   plugins: [react(), occtAssets(), startupPage(), startupGuard(),
-    { name: 'pointercad-deferred-help-chunks', generateBundle(_options, bundle) { assertDeferredSmallHelp(bundle); } }, webSecurityPolicy(), occtPreviewHeaders(), mathNotices(), runtimeNotices(), exactMathAssets(), femRuntimeAssets(FEM_WORKER_CONTENT_SECURITY_POLICY), offlineServiceWorker()],
+    { name: 'pointercad-deferred-help-chunks', generateBundle(_options, bundle) { assertDeferredSmallHelp(bundle, true); } }, webSecurityPolicy(), occtPreviewHeaders(), mathNotices(), runtimeNotices(), exactMathAssets(), femRuntimeAssets(FEM_WORKER_CONTENT_SECURITY_POLICY), offlineServiceWorker()],
   // Emscripten のグルーコードを事前バンドルさせない。Node 専用の分岐が含まれるため。
   optimizeDeps: { exclude: ['opencascade.js'] },
   // 幾何カーネルの Worker は ES モジュールとして出力する。

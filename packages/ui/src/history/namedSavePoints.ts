@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import {
   IO_LIMITS, readArchive, readDrawingBundle, readPcadaFile, readPcadEntries,
 } from '@pointercad/io';
@@ -125,7 +126,7 @@ export function createNamedSavePoints(storage: SavePointStorage) {
     const state = await verifySavePointState(storage, signal);
     checkedUsage(state.points.length + 1, state.usedBytes, 0);
     const captured = await capturePcadSavePoint(bytes, kind, signal);
-    const id = `point:${crypto.randomUUID()}`;
+    const id = createDocumentElementId('point:');
     const point: NamedSavePoint = { version: 1, id, originId: id, name: named(name),
       createdAt: new Date().toISOString(), kind, sourceSha256: captured.sourceSha256,
       sourceByteLength: captured.sourceByteLength, entries: captured.entries.map(entry => ({ ...entry })) };
@@ -154,7 +155,7 @@ export function createNamedSavePoints(storage: SavePointStorage) {
     async clone(id: string, name: string, signal?: AbortSignal): Promise<NamedSavePoint> {
       const state = await verifySavePointState(storage, signal), source = findPoint(state, id);
       checkedUsage(state.points.length + 1, state.usedBytes, 0);
-      const point: NamedSavePoint = { ...source, id: `point:${crypto.randomUUID()}`, name: named(name),
+      const point: NamedSavePoint = { ...source, id: createDocumentElementId('point:'), name: named(name),
         createdAt: new Date().toISOString(), entries: source.entries.map(entry => ({ ...entry })) };
       cancelled(signal); await storage.commit(state.revision, { pointPut: point }, signal);
       return publicPoint(point);

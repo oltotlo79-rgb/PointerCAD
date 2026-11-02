@@ -1,3 +1,5 @@
+import { isRecord } from './valueGuards.js';
+import { sha256Hex } from './sha256.js';
 import type { PropertySource, Vector3 } from './analysisModel.js';
 import type { BeamBoltContactPlan } from './beamBoltContact.js';
 import type { BoltPreloadDeclaration } from './boltPreloadStages.js';
@@ -33,9 +35,6 @@ export interface NativeBoltPreloadResult {
 }
 const preparedRecords = new WeakSet<object>();
 function fail(): never { throw new Error('native-preload-boundary'); }
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 function fields(v: unknown, keys: readonly string[]): Record<string, unknown> {
   if (!isRecord(v) || Reflect.ownKeys(v).length !== keys.length
     || keys.some(k => !Object.hasOwn(v, k))) fail();
@@ -140,7 +139,7 @@ export async function prepareNativeBoltPreload(value: unknown, exactJson?: strin
   const required = positive(plan.declaration.preloadN.value*(cb+cm)); if (required >= length || plan.shorteningM >= length) fail(); near(plan.shorteningM, required);
   const factors = [0, ...plan.declaration.externalLoadsN]; if (c.loadFactors.length !== factors.length || c.loadFactors.some((v, i) => v !== factors[i])) fail();
   const encoded = exactJson ?? JSON.stringify(plan); if (typeof encoded !== 'string' || new TextEncoder().encode(encoded).length > 4_000_000 || JSON.stringify(readPlan(JSON.parse(encoded))) !== JSON.stringify(plan)) fail();
-  const inputSha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encoded))), b => b.toString(16).padStart(2, '0')).join('');
+  const inputSha256 = await sha256Hex(new TextEncoder().encode(encoded));
   const prepared = { plan, encoded, inputSha256, cb, cm, normal, momentLengthM: Math.max(...c.members.map(m => m.frame.lengthM)) };
   freeze(prepared); preparedRecords.add(prepared); return prepared;
 }

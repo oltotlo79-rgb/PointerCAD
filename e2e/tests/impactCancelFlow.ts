@@ -1,4 +1,5 @@
-import { expect, type JSHandle, type Locator, type Page } from '@playwright/test';
+import { expect, type JSHandle, type Locator, type Page, type Worker } from '@playwright/test';
+import { IMPACT_RESULT_TIMEOUT_MS } from './impactFlow.js';
 
 /*
  * 衝撃の結果が出た後の、範囲の表示・入力の編集による結果の無効化・公開の「取消し」(task175。task174 の後継で、
@@ -36,7 +37,7 @@ interface ArmedCancel {
  * 「取消し」が押せるようになった瞬間に押す見張りを付ける。押した時の data-status(押せるようになった描画の状態)を返す。
  * 付けた時に「取消し」が無い、または既に押せる場合は前提の誤りとして断る。
  */
-async function armCancelOnEnable(page: Page): Promise<JSHandle<ArmedCancel>> {
+export async function armCancelOnEnable(page: Page): Promise<JSHandle<ArmedCancel>> {
   return page.evaluateHandle(() => {
     const panel = document.querySelector('[data-testid="beam-panel"]');
     const button = panel?.querySelector('[data-testid="beam-cancel"]');
@@ -59,7 +60,36 @@ async function armCancelOnEnable(page: Page): Promise<JSHandle<ArmedCancel>> {
   });
 }
 
+/** Observe only the product owner's fixed same-origin Worker; never replace its constructor or messages. */
+export function observeOwnedFemWorkers(page: Page): { live: () => number; started: () => number; disconnect: () => void } {
+  const active = new Set<Worker>();
+  const listeners = new Map<Worker, () => void>();
+  const matches = (worker: Worker): boolean => {
+    const actual = new URL(worker.url(), page.url()), owner = new URL(page.url());
+    return actual.protocol === owner.protocol && actual.host === owner.host && actual.pathname === '/fem/worker.js'
+      && actual.search === '' && actual.hash === '';
+  };
+  const track = (worker: Worker): void => {
+    if (!matches(worker) || listeners.has(worker)) return;
+    active.add(worker);
+    const closed = (): void => { active.delete(worker); };
+    listeners.set(worker, closed); worker.once('close', closed);
+  };
+  page.on('worker', track); page.workers().forEach(track);
+  return {
+    live: () => Math.max(active.size, page.workers().filter(matches).length),
+    started: () => listeners.size,
+    disconnect: () => {
+      page.off('worker', track);
+      for (const [worker, closed] of listeners) worker.off('close', closed);
+    },
+  };
+}
+
 export async function impactCancelAndInvalidationFlow(page: Page): Promise<void> {
+  const workerObservation = observeOwnedFemWorkers(page);
+  try {
+  await expect.poll(workerObservation.live).toBe(0);
   const panel = beamPanel(page), status = panel.getByTestId('beam-status');
   const results = panel.getByTestId('beam-impact-results');
   // 前提: impactLifecycleFlow の実計算 2 回目の結果が出ている。
@@ -100,10 +130,32 @@ export async function impactCancelAndInvalidationFlow(page: Page): Promise<void>
     await armed.dispose();
   }
   await expect(status).toHaveAttribute('data-status', 'cancelled');
+  await expect.poll(workerObservation.live).toBe(0);
   await expect(panel.getByTestId('beam-cancel')).toBeDisabled();
   await expect(results).toHaveCount(0);
   await expect(outputEveryInput(page)).toHaveValue('4');
   // 確かめは残るので、取消しの後はすぐ計算し直せる(取消しは確かめを消さない。beamSlice.ts 84-85)。
   await expect(panel.getByTestId('beam-run')).toBeEnabled();
   await expect(status).toHaveAttribute('data-status', 'cancelled');
+  // Root explicitly permits one additional real Run after cancellation, preserving both original successful solves.
+  // Do not review again: the existing reviewed input must remain runnable after Cancel.
+  const beforeRestart = workerObservation.started();
+  await panel.getByTestId('beam-run').click();
+  await expect(results).toBeVisible({ timeout: IMPACT_RESULT_TIMEOUT_MS });
+  await expect(status).toHaveAttribute('data-status', 'complete');
+  await expect(results.getByTestId('beam-impact-not-certified')).toBeVisible();
+  const duration = Number((await results.locator('[data-beam-impact-value="duration"]').textContent() ?? 'NaN').replaceAll(',', ''));
+  expect(duration).toBeCloseTo(2, 9);
+  const contact = results.locator('tr[data-beam-impact-contact="a-tip"]').locator('td');
+  await expect(contact).toHaveCount(5);
+  expect(Number((await contact.nth(1).textContent() ?? 'NaN').replaceAll(',', ''))).toBeGreaterThan(0);
+  expect(Number((await contact.nth(3).textContent() ?? 'NaN').replaceAll(',', ''))).toBeGreaterThan(0);
+  expect(Number((await contact.nth(4).textContent() ?? 'NaN').replaceAll(',', ''))).toBeLessThan(0);
+  await expect(outputEveryInput(page)).toHaveValue('4');
+  await expect(panel.getByTestId('beam-cancel')).toBeDisabled();
+  await expect.poll(workerObservation.live).toBe(0);
+  expect(workerObservation.started()).toBe(beforeRestart + 1);
+  } finally {
+    workerObservation.disconnect();
+  }
 }

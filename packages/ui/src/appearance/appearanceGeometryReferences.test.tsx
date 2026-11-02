@@ -15,14 +15,17 @@ import { appearanceExpressionRefusalFor, assignAppearanceToSelection, buildAppea
 import type { AppearanceFieldDraft } from './appearancePropertyValues.js';
 import { buildFaceGroups } from './buildFaceGroups.js';
 import { createAppearanceMaterialStore } from './createAppearanceMaterial.js';
+import type * as ImportedReactTypes from 'react';
+import type * as ImportedJsxRuntimeTypes from 'react/jsx-runtime';
+import type * as ImportedJsxDevRuntimeTypes from 'react/jsx-dev-runtime';
 
 vi.mock('react', async importOriginal => {
-  const react = await importOriginal<typeof import('react')>();
+  const react = await importOriginal<typeof ImportedReactTypes>();
   return { ...react, useState: vi.fn(react.useState) };
 });
 const rendered = vi.hoisted(() => ({ inputs: [] as React.InputHTMLAttributes<HTMLInputElement>[] }));
 vi.mock('react/jsx-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxRuntimeTypes>();
   const capture = (factory: typeof runtime.jsx): typeof runtime.jsx => (type, props, key) => {
     if (type === 'input') rendered.inputs.push(props as React.InputHTMLAttributes<HTMLInputElement>);
     return factory(type, props, key);
@@ -30,7 +33,7 @@ vi.mock('react/jsx-runtime', async importOriginal => {
   return { ...runtime, jsx: capture(runtime.jsx), jsxs: capture(runtime.jsxs) };
 });
 vi.mock('react/jsx-dev-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-dev-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxDevRuntimeTypes>();
   const jsxDEV: typeof runtime.jsxDEV = (type, props, key, isStatic, source, self) => {
     if (type === 'input') rendered.inputs.push(props as React.InputHTMLAttributes<HTMLInputElement>);
     return runtime.jsxDEV(type, props, key, isStatic, source, self);

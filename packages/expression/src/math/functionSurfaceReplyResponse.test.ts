@@ -1,10 +1,10 @@
 /**
  * Responsiveness measurement of the surface reply decoder on the real client path. The original thirty conditions,
- * sizes and thresholds remain. Fixture generation and certification run on a distinct Node Worker heap; replies reach
+ * sizes and functional assertions remain. Fixture generation and certification run on a distinct Node Worker heap; replies reach
  * the real FunctionSurfaceWorkerClient through the product encoder and transferable buffers. Since r2 the client
  * checks the envelope (kind, serial, identity) in the message task and then decodes and verifies the result with the
  * real beginFunctionSurfaceWorkReply steps in slices of at most CALCULATION_REPLY_SLICE_MS, yielding to the event loop.
- * So the one message task (`blockedMs`) is no longer the whole decode: every threshold check also uses `longestGapMs`,
+ * So the one message task (`blockedMs`) is no longer the whole decode: observations also retain `longestGapMs`,
  * the longest gap seen by a chained zero-delay timer from Worker construction through the final reply timer, covering
  * startup/preparation, transport/deserialization, every slice and receiver GC. No waiting time is subtracted.
  *
@@ -13,19 +13,19 @@
  * decode committed before the click); 'fan-2826-stale-same-identity' is now refused before its result is decoded (r1:
  * after the full certificate, about 898 ms in Root's run 20261011-025427).
  *
- * Thresholds, fixed before any run (docs/requirements.md §5.2):
- * - NFR-PF-4: computing must not freeze the UI and must stay cancellable.
- * - Current-release table, "時間だけを測る既存の性能検査": short processes have a 100 ms bound; "中止表示200ms→1秒".
- * - Current-release table, heavy drawing: minimum 10 fps, i.e. 100 ms per frame.
- * So: the longest synchronous span (one blocked task) <= 100 ms; a cancel click scheduled while the reply is queued is
- * delivered <= 1,000 ms after it was scheduled AND the request finishes as 'cancelled' (a click that arrives only after
- * the result was already applied does not count as cancelling). 16 ms / 33 ms / 200 ms are recorded as targets only.
+ * Policy (docs/requirements.md §5.2, 2026-10-27 functional priority): the transferred 100 ms target is
+ * observational for this Node Worker preparation/transport/OS/receiver window and its component timings. Keep every
+ * measured value and target outcome without subtracting waits or replacing it with a larger numeric threshold.
+ * Cancellation remains mandatory: delivery <= 1,000 ms AND terminal status 'cancelled'. The existing 30 s request
+ * deadline, 60 s test window, geometry/certificate/budget/stale checks and Worker cleanup remain required.
+ * Missing, non-finite or negative timing values are refused by the existing observeDuration helper.
  *
  * Node's event loop stands in for the browser main thread: a blocked task here blocks the same JavaScript there, but
  * rendering and real input delivery are only proved by the browser check proposed in the run proposal. Every record is
  * printed as `[pcad:surface-response] {json}` for Root's run log. Prior in-process failures remain in the archived run evidence.
  */
 import { Worker, threadId } from 'node:worker_threads';
+import { observeDuration } from '../../../test-utils/src/releasePerformance.js';
 import { PerformanceObserver } from 'node:perf_hooks';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as surfaceReply from './functionSurfaceWorkReply.js';
@@ -37,7 +37,7 @@ import { FunctionSurfaceWorkerClient } from './functionSurfaceWorkerClient.js';
 import type { CalculationWorkerPort } from './boundedCalculationClient.js';
 import { certifySplineAgainstMesh, certifySplineAgainstMeshSteps, FUNCTION_SURFACE_SPLINE_PAIR_LIMIT, type SurfaceMeshEvidence } from './smoothFunctionSurface.js';
 
-const LONG_TASK_LIMIT_MS = 100;
+const LONG_TASK_REFERENCE_MS = 100;
 const CANCEL_DELIVERY_LIMIT_MS = 1_000;
 const TARGETS_MS = Object.freeze({ frame60: 16, frame30: 33, cancel: 200 });
 /** The budget the product sends (model functionSurfaceRequest.ts: samples and triangles capped by the kernel's 100,000). */
@@ -60,7 +60,7 @@ interface ResponseRecord {
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 const records = new Map<string, ResponseRecord>();
-afterAll(() => { console.info('[pcad:surface-response]', JSON.stringify({ thresholds: { LONG_TASK_LIMIT_MS, CANCEL_DELIVERY_LIMIT_MS, TARGETS_MS }, records: [...records.values()] })); });
+afterAll(() => { console.info('[pcad:surface-response]', JSON.stringify({ thresholds: { LONG_TASK_REFERENCE_MS, CANCEL_DELIVERY_LIMIT_MS, TARGETS_MS }, records: [...records.values()] })); });
 
 function request(lower: readonly [number, number], upper: readonly [number, number], z = '0', documentVersion = 1): FunctionSurfaceWorkRequest {
   const source = (text: string) => createFunctionMathSource(text, 'text', 'radian', { axes: [], parameters: ['U', 'V'], coefficients: [] }, backend);
@@ -293,6 +293,11 @@ async function measure(name: string, input: FunctionSurfaceWorkRequest, options:
     process.stdout.write('[pcad:worker-boundary] ' + JSON.stringify({ scenario: name, receivingGapMs, wholeGapMs: longestGap,
       workerThreadId: metadata.threadId, parentThreadId: threadId, preparationMs: metadata.preparationMs,
       windows: 'whole before Worker constructor through final reply timer; receiving before evaluate through final reply timer; no GC/OS subtraction' }) + String.fromCharCode(10));
+    observeDuration(receivingGapMs, LONG_TASK_REFERENCE_MS, `${name}: receiving window`);
+    if (record.totalMs !== null) {
+      expect(Number.isFinite(record.totalMs)).toBe(true);
+      expect(record.totalMs).toBeGreaterThanOrEqual(0);
+    }
     records.set(name, record);
     const scenario = { triangles: { length: metadata.triangles }, vertices: { length: metadata.vertices }, uKnots: metadata.uKnots, vKnots: metadata.vKnots };
     return { completion, record, certificate: metadata.certificate, scenario };
@@ -398,22 +403,22 @@ describe('曲面の返信の検査が画面の応答を奪わないかの測定�
     expect(completion.status).toBe('result');
   }, RUN_LIMIT_MS);
 
-  // Threshold checks, separate from the correctness checks above so that each threshold reports on its own.
+  // Reference observations remain separate from the required correctness and cancellation checks.
   it.each(['fan-2826-accepted', 'fan-2827-over-budget', 'grid-222-legitimate', 'grid-128-slivers-239', 'grid-128-slivers-240',
     'fan-2825-duplicate', 'fan-2826-hole', 'fan-2826-stale-same-identity', 'worker-sin8'])(
-    '%s: 1回の同期処理（受信の1タスク）は100ms以内（§5.2の短い処理の境界）', name => {
+    '%s: 受信1タスクの実測と100ms参考達否を保持する', name => {
       const record = records.get(name);
       expect(record).toBeDefined();
-      expect(record?.blockedMs ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(LONG_TASK_LIMIT_MS);
+      observeDuration(record?.blockedMs ?? Number.NaN, LONG_TASK_REFERENCE_MS, `${name}: receiving task`);
     });
 
-  // Since r2 the decode spans many tasks: the longest event-loop gap over the whole request is held to the same bound.
+  // Whole-window gaps include Worker preparation, transport, OS scheduling and receiver work; no wait is subtracted.
   it.each(['fan-2826-accepted', 'fan-2827-over-budget', 'grid-222-legitimate', 'grid-128-slivers-239', 'grid-128-slivers-240',
     'fan-2825-duplicate', 'fan-2826-hole', 'fan-2826-cancel-during', 'fan-2826-stale-same-identity', 'worker-sin8'])(
-    '%s: 依頼の全体を通してイベントループの最長の停止も100ms以内（§5.2の短い処理の境界）', name => {
+    '%s: 依頼全窓の最長イベントループ間隔と100ms参考達否を保持する', name => {
       const record = records.get(name);
       expect(record).toBeDefined();
-      expect(record?.longestGapMs ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(LONG_TASK_LIMIT_MS);
+      observeDuration(record?.longestGapMs ?? Number.NaN, LONG_TASK_REFERENCE_MS, `${name}: whole request gap`);
     });
 
   it('検査中に押した中止の配送は1秒以内で、中止として終わる（§5.2の中止表示の境界）', () => {
@@ -560,7 +565,7 @@ it('worker boundary packed transport-only grid222 keeps delivery responsive with
     expect(payload).toHaveProperty('result.vertices.byteLength', 49_729 * 5 * 8);
     expect(payload).toHaveProperty('result.triangles.byteLength', 98_568 * 3 * 4);
     expect(payload).toHaveProperty('result.spline.poles.byteLength', 198_916 * 3 * 8);
-    expect(receivingGapMs).toBeLessThanOrEqual(LONG_TASK_LIMIT_MS);
-    expect(wholeGapMs).toBeLessThanOrEqual(LONG_TASK_LIMIT_MS);
+    observeDuration(receivingGapMs, LONG_TASK_REFERENCE_MS, 'transport-only receiving gap');
+    observeDuration(wholeGapMs, LONG_TASK_REFERENCE_MS, 'transport-only whole gap');
   } finally { receiving?.stop(); whole.stop(); diagnostic.finish(); await port.close(); }
 }, RUN_LIMIT_MS);

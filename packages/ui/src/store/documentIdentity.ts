@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 /** Typed failure is handled only at document-creation boundaries. */
 export class SecurePartIdentityError extends Error {
   constructor(cause?: unknown) {
@@ -8,7 +9,7 @@ export class SecurePartIdentityError extends Error {
 
 /** Fresh lineage uses secure entropy only; persisted documents never call this helper. */
 export function createPartLineageId(): string {
-  return `part-uuid:${createSecureUuid()}`;
+  return createDocumentElementId('part-uuid:', createSecureUuid);
 }
 
 /** Secure UUID for transient session and asset identity; never rewrites saved lineage. */

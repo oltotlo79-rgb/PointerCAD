@@ -316,7 +316,6 @@ const PRINTABILITY_NO_BODY_MESSAGE = '点検できる形がありません。';
  * 部分形状の選び直し(FR-325・FR-328〜330 の上流追従、P4 タスク25)— 同期の純関数
  * ------------------------------------------------------------------ */
 
-export { selectSubShape, selectMateTargetGeometry, rematchSubShapeRef } from './kernelBridge/subShapeMatching.js';
 export { resolveSubShapeReference, resolveReplacementSubShapeReference, createSubShapeReferenceResolver, SUB_SHAPE_AMBIGUITY_MARGIN, type SubShapeReferenceResolution } from './kernelBridge/referenceResolution.js';
 export type { SubShapeMatchCandidate } from './kernelBridge/subShapeMatching.js';
 
@@ -492,9 +491,10 @@ function toCancelProxy(
     if (delayMs === 0) {
       return shouldCancel();
     }
-    return new Promise<boolean>((resolve) => {
+    return new Promise<boolean>((resolve, reject) => {
       setTimeout(() => {
-        resolve(!scope.active || shouldCancel());
+        try { resolve(!scope.active || shouldCancel()); }
+        catch (error) { reject(error instanceof Error ? error : new Error(String(error))); }
       }, delayMs);
     });
   });
@@ -1252,6 +1252,8 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
   const observe = (phase: MainRuntimePhase, owner: MeshLedgerOwner, active: KernelConnection): void =>
     phases.record(phase, phaseEpochs.get(owner) ?? connectionEpochs.get(active) ?? 0, owner);
   const partClaims = new WeakSet<PartReleaseClaim>();
+  // Actual RPCs remain pending until their own continuation settles.
+  const inFlightParts = new Map<MeshLedgerOwner, KernelConnection>();
   const displayConnections = new WeakMap<MeshLedgerOwner, number>();
   let closedThroughEpoch = 0;
   const hiddenCleanup = new Map<string, { readonly owner: MeshLedgerOwner; readonly active: KernelConnection }>();
@@ -1303,6 +1305,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
   function retireTerminatedOwnerMetadata(active: KernelConnection): void {
     if (!active.terminationReturned) return;
     closedThroughEpoch = Math.max(closedThroughEpoch, ledger.connectionEpoch());
+    for (const [owner, held] of inFlightParts) if (held === active) inFlightParts.delete(owner);
     // Worker.terminate returned after transport/proxy cleanup. This is a logical worker
     // lifetime receipt only; native/physical collection and main-thread weak buffers remain unobserved.
     for (const [id, held] of hiddenCleanup) {
@@ -1498,6 +1501,8 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       const active = connection;
       if (disposed || claim.connectionEpoch !== ledger.connectionEpoch() || active.closed || active.interruption !== null)
         return { status: 'unavailable', reason: 'transport-unavailable' };
+      if ([...inFlightParts].some(([owner, held]) => held === active && owner.partId === claim.owner.partId))
+        return { status: 'unavailable', reason: 'part-dispatch-pending' };
       const unavailable = (): PartReleaseDisposition => ({ status: 'unavailable', reason: 'transport-unavailable' });
       return raceWithBroken<PartReleaseDisposition>(active, async () => {
         try {
@@ -1625,13 +1630,19 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       const active = connection;
       const callbacks = callbackScope();
       const onProgress = options.onProgress;
-      const progress = onProgress === undefined ? undefined : callbacks.proxy((value: InterferenceProgress) => {
-        if (callbacks.active) onProgress(interferenceProgressOf(value));
+      // Mark the local cancel function with the existing scope, but transfer only the combined callback.
+      const cancel = toCancelProxy(options.shouldCancel ?? (() => false), callbacks);
+      const checkpoint = callbacks.proxy(async (value: InterferenceProgress): Promise<boolean> => {
+        if (!callbacks.active || await cancel?.()) return true;
+        if (!callbacks.active) return true;
+        if (onProgress !== undefined) onProgress(interferenceProgressOf(value));
+        if (!callbacks.active) return true;
+        const cancelled = await cancel?.();
+        return !callbacks.active || (cancelled ?? false);
       });
       return raceWithBroken(active, async () => {
         try {
-          return toInterferenceResult(await active.remote.checkInterference(request, progress,
-            toCancelProxy(options.shouldCancel ?? (() => false), callbacks), 'message'));
+          return toInterferenceResult(await active.remote.checkInterference(request, undefined, undefined, 'message', checkpoint));
         } catch (error) {
           return refusedInterference(request, { code: 'rpcFailed', message: toFailureMessage(error) });
         }
@@ -1730,9 +1741,11 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       // (toSolidRecomputeRequest の注釈)、ここで値を渡すとその既定が負けるので undefined。
       return raceWithBroken(
         active,
-        () => {
+        async () => {
+          inFlightParts.set(owner, active);
+          try {
           observe('dispatch', owner, active);
-          return active.remote
+          return await active.remote
           .recomputeSolids(
             request,
             undefined,
@@ -1761,6 +1774,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
             finally { ledger.host.settleWithoutReply(owner.dispatchId); }
             throw error;
           });
+          } finally { inFlightParts.delete(owner); }
         },
         // Worker がこの依頼の途中で壊れた。拒否せずに理由つきの失敗として解決する
         // (recomputePart.ts が kernelFailed として拾う。§0.a-0.19「拒否しない」)。

@@ -17,6 +17,12 @@ export type SaveEncodingStage = 'preparing' | 'compressing';
 export interface SaveEncodingControl {
   readonly signal?: AbortSignal;
   readonly onProgress?: (stage: SaveEncodingStage) => void;
+  /**
+   * 全項目を作り終えた直後・圧縮の前に1回だけ呼ぶ(取消済みなら呼ばない)。入力を自分で所有する呼び出し側
+   * (保存 Worker)は、項目へ写し終えた入力の写しをここで手放せる。三角形は項目用の新しいバイト列へ
+   * 符号化済みなので、この時点の後は入力の三角形の配列を読まない。入力の原本を持つ呼び出し側は使わない。
+   */
+  readonly onEntriesBuilt?: () => void;
 }
 export type SaveDocumentEncoder = (input: SaveDocumentInput, control?: SaveEncodingControl) => Promise<Uint8Array>;
 
@@ -29,6 +35,7 @@ export const encodeSaveDocument: SaveDocumentEncoder = async (input, control = {
       : input.kind === 'drawingTemplate' ? drawingTemplateEntries(input.template, input.savedAt)
         : await drawingBundleEntries(input.document, input.options);
   control.signal?.throwIfAborted();
+  control.onEntriesBuilt?.();
   control.onProgress?.('compressing');
   // 大きい項目は区切って圧縮し、区切りごとに Worker の終了要求・取消を受け付ける(取消を1秒以内に)。
   const bytes = await zipPcadEntriesAsync(entries, { signal: control.signal });

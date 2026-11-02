@@ -5,7 +5,7 @@ import { absoluteCoordinate, collectVariables, CONSTRAINT_TOLERANCE, createEmpty
   type PartDocument, type SketchDocument, type Vec3 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 import { commitDrag, draggableAt, isDraggable, solveWithDrag } from './dragSketch.js';
-import { recomputeRetention } from './dragSketch.retentionSupport.js';
+import { recomputeRetention } from './dragSketch.retentionSupport.testSupport.js';
 
 const num = expressionValueFromNumber;
 function linePart(from: CoordinateInput = absoluteCoordinate(0, 0, 0),

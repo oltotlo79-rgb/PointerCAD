@@ -5,7 +5,7 @@ import { createDirectKernelBridge } from '../kernelBridge.js';
 import { writeBrepBytes } from '../../../kernel/src/occt/brepBytes.js';
 import { solidMeshBuffers, type CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
 import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
-import { measureEx18Shape, type Ex18ShapeMeasurement } from '../part/ex18ShapeOracle.js';
+import { measureEx18Shape, type Ex18ShapeMeasurement } from '../part/ex18ShapeOracle.testSupport.js';
 
 export function createNativeKernelBridgeForNodeTests() {
   return createDirectKernelBridge(createKernelApi(loadOcctForNode));

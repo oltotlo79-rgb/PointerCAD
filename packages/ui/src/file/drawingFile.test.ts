@@ -12,6 +12,7 @@ import { currentPcadAttachments } from '../store/attachKernel.js';
 import { startAutoSave } from './attachAutoSave.js';
 import { readTutorialCheckpoint, TUTORIAL_CHECKPOINT_KEY } from '../tutorial/tutorialCheckpoint.js';
 import { createParameterTutorialSession } from '../tutorial/tutorialProgress.js';
+import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
 
 beforeEach(() => { resetTestStore(); useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null }); });
 const deps: PartFileDeps = { captureThumbnail: () => null, confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null };
@@ -271,4 +272,13 @@ describe('図面の実保存入口と文書の寿命(P8-64、R02)', () => {
     expect(g.savePcad).not.toHaveBeenCalled();
     expect(useAppStore.getState().fileMessage).toEqual({ key: 'drawing.error.selectSource', failed: true });
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

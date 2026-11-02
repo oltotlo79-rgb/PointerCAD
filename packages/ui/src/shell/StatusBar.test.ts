@@ -6,10 +6,11 @@ import { createNumericInput } from '../sketch/numericInput.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { StatusBar } from './StatusBar.js';
+import type * as ImportedReactTypes from 'react';
 
 // Nodeで進捗表示までの待ち時間だけを進める。描画とストアの読み取りは本物を使う。
 vi.mock('react', async importOriginal => {
-  const react = await importOriginal<typeof import('react')>();
+  const react = await importOriginal<typeof ImportedReactTypes>();
   return { ...react, useState: vi.fn(react.useState) };
 });
 

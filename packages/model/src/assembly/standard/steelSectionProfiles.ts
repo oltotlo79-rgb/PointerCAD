@@ -43,7 +43,7 @@ const angles: Readonly<Record<string, readonly [number, number, number, number]>
   'L 40×40×5': [40, 5, 4.5, 3],
   'L 50×50×6': [50, 6, 6.5, 4.5],
   'L 65×65×6': [65, 6, 8.5, 4],
-  // JISF G 3192 原案 表8; scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json.
+  // JISF G 3192 原案 表8; steelCatalog.ts の出典locator（最終規格票は未確認）。
   'L 120×120×8': [120, 8, 12, 5],
   'L 130×130×9': [130, 9, 12, 6],
   'L 130×130×12': [130, 12, 12, 8.5],
@@ -77,7 +77,7 @@ const beams: Readonly<Record<string, readonly [number, number, number, number, n
   'H 150×150×7×10': [150, 150, 7, 10, 8],
   'H 200×200×8×12': [200, 200, 8, 12, 13],
   'H 300×300×10×15': [300, 300, 10, 15, 13],
-  // W7 JISF G 3192 原案 表15; scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json.
+  // W7 JISF G 3192 原案 表15; steelCatalog.ts の出典locator（最終規格票は未確認）。
   'H 100×100×6×8': [100, 100, 6, 8, 8],
   'H 125×125×6.5×9': [125, 125, 6.5, 9, 8],
   'H 175×175×7.5×11': [175, 175, 7.5, 11, 13],

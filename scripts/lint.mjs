@@ -15,6 +15,7 @@
 // 使い方: `node scripts/lint.mjs`(全体。分割して流す)
 //         `node scripts/lint.mjs <eslintの引数...>`(引数があれば分割せず、そのまま eslint へ渡す)
 import { ESLint } from 'eslint';
+import { inspectRuntimeCycles, formatRuntimeCycleDiagnostics } from './lib/runtimeCycles.mjs';
 import { Buffer } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
 import console from 'node:console';
@@ -179,6 +180,12 @@ async function main(argv) {
   if (argv.length > 0) {
     const direct = spawnSync(process.execPath, [eslintBin, ...argv], { cwd: root, stdio: 'inherit', env: process.env });
     process.exit(direct.status ?? 1);
+  }
+  const runtime = inspectRuntimeCycles(root);
+  console.log(`[lint] runtime graph: ${runtime.files.length} files, ${runtime.edges.length} edges, ${runtime.cycles.length} cycles, ${runtime.diagnostics.length} unresolved`);
+  if (!runtime.ok) {
+    console.error(formatRuntimeCycleDiagnostics(runtime));
+    process.exit(1);
   }
   const startedAll = Date.now();
   const parallelism = lintParallelism();

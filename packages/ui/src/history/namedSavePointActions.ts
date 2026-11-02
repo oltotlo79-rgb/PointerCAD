@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import {
   emptyPcadAttachments, readDocumentBundle, readDrawingBundle, readPcadFile, type SaveDocumentInput,
 } from '@pointercad/io';
@@ -152,7 +153,7 @@ export function createNamedSavePointActions(repository: Repository = createPcadS
         const retained = { ...emptyPcadAttachments(), shapes: state.importedShapes,
           meshes: state.importedMeshes, canvases: state.canvases };
         const loaded = loadedPartAttachments(opened.document, opened.attachments, retained,
-          kind => `${kind}-asset-${crypto.randomUUID()}`);
+          kind => createDocumentElementId(`${kind}-asset-`));
         if (!operation.current()) cancelled();
         // No await after this check: asset registry and one Undo step are applied together.
         operation.finish();

@@ -25,25 +25,39 @@ export async function samplePng(page: Page, color: string, width: number): Promi
 }
 
 /** 実際に描かれた画素を照合する。表示キャッシュやストアの内部値を合格根拠にしない。 */
-export async function expectImage(page: Page, expected: 'A' | 'B' | 'none'): Promise<void> {
+export async function expectImage(page: Page, expected: 'A' | 'B' | 'none', background?: Buffer): Promise<void> {
   await expect.poll(async () => {
     const screenshot = await page.locator('canvas.pcad-viewport__canvas').screenshot();
-    return page.evaluate(async (base64) => {
+    return page.evaluate(async ({ base64, backgroundBase64 }) => {
       const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
       const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
       const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
       const context = canvas.getContext('2d'); if (context === null) throw new Error('Missing pixel context');
       context.drawImage(image, 0, 0); image.close();
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      let backgroundPixels: Uint8ClampedArray | undefined;
+      if (backgroundBase64 !== undefined) {
+        const backgroundBytes = Uint8Array.from(atob(backgroundBase64), (character) => character.charCodeAt(0));
+        const backgroundImage = await createImageBitmap(new Blob([backgroundBytes], { type: 'image/png' }));
+        const dimensionsMatch = backgroundImage.width === canvas.width && backgroundImage.height === canvas.height;
+        if (!dimensionsMatch) { backgroundImage.close(); throw new Error('Canvas background dimensions changed'); }
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(backgroundImage, 0, 0); backgroundImage.close();
+        backgroundPixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      }
       let a = 0, b = 0;
       for (let index = 0; index < pixels.length; index += 4) {
-        const red = pixels[index], green = pixels[index + 1], blue = pixels[index + 2];
+        // At low opacity, compare with the actual image-free background so the
+        // viewport's blue tint cannot obscure A's hue. Keep the same thresholds.
+        const red = pixels[index] - (backgroundPixels?.[index] ?? 0);
+        const green = pixels[index + 1] - (backgroundPixels?.[index + 1] ?? 0);
+        const blue = pixels[index + 2] - (backgroundPixels?.[index + 2] ?? 0);
         // Orange A has green above blue; the red X axis has blue above green.
         if (red > green + 40 && red > blue + 40 && green > blue + 4) a += 1;
         if (blue > red + 40 && green > red + 40) b += 1;
       }
       return a > 500 && a > b * 3 ? 'A' : b > 500 && b > a * 3 ? 'B' : 'none';
-    }, screenshot.toString('base64'));
+    }, { base64: screenshot.toString('base64'), backgroundBase64: background?.toString('base64') });
   }, { message: `下絵 ${expected} の実画素が表示されること` }).toBe(expected);
 }
 

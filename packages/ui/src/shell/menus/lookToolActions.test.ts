@@ -17,6 +17,7 @@ import { useAppStore } from '../../store/useAppStore.js';
 import { currentPcadAttachments } from '../../store/attachKernel.js';
 import { createCanvasImageCache } from '../../viewport/createCanvasImageCache.js';
 import { addCanvasFromFile } from './lookToolActions.js';
+import type * as ImportedCanvasFileTypes from '../../file/canvasFile.js';
 
 const dom = vi.hoisted(() => ({
   picks: [] as { resolve: (value: PickedCanvasImage | null) => void }[],
@@ -24,7 +25,7 @@ const dom = vi.hoisted(() => ({
 }));
 
 vi.mock('../../file/canvasFile.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../file/canvasFile.js')>();
+  const actual = await importOriginal<typeof ImportedCanvasFileTypes>();
   return {
     ...actual,
     pickCanvasImage: () => new Promise<PickedCanvasImage | null>((resolve) => { dom.picks.push({ resolve }); }),

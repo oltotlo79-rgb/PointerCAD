@@ -539,6 +539,10 @@ class NewChecksBase(unittest.TestCase):
         self.root, created_dirs = make_root()
         self.addCleanup(cleanup_root, self.root, created_dirs)
         self.now = datetime(2026, 9, 24, 10, 30, 0)
+        # 既存の検査1〜8・共通workerの期待を保つため、説明書の時期だけ成立する試験用の根にする。
+        # 新しい時期の試験はこの印を消してから始める。本物の印には触れない。
+        self.write('scratchpad/claude/root-runtime/docs-phase-open.json', json.dumps({
+            'openedBy': '統括', 'reason': '既存検査を独立して確かめる', 'openedAt': '2026-09-24T10:00:00'}))
 
     def write(self, relative: str, content: str = "x") -> Path:
         path = self.root / relative
@@ -2126,6 +2130,305 @@ class ReportContractTests(NewChecksBase):
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
             "prompt": "`scratchpad/claude/instructions/crlf.md` を読む。", "description": "t"}}
         self.assertIsNone(guard.hook(payload, self.now, root=self.root))
+
+
+# ---------------------------------------------------------------------------
+# 2026-10-30 cl-v103-worker-consumer-guard: 検査 9(共通 worker の直接の消費先)。③が packages/fem/src/worker.ts の変更を許す
+# 指示書は、今その worker を直接 import する試験の全ての実パスを合格条件に挙げる(全体検査 20261029-233928 の
+# frameBoltClient.test.ts:173)。一時の根に worker と消費先・紛らわしい囮を作って試す。
+# ---------------------------------------------------------------------------
+
+
+class WorkerConsumerTests(NewChecksBase):
+    """検査9: 共通 worker の直接の消費先。"""
+
+    MARK = "共通 worker の消費先: ③が"
+    WORKER = "packages/fem/src/worker.ts"
+    FRAME = "packages/fem/src/frameBoltClient.test.ts"
+    FRICTION = "packages/fem/src/frictionContactWorker.test.ts"
+    NATIVE = "packages/fem/src/nativeBoltPreloadWorker.test.ts"
+    ALL = (FRAME, FRICTION, NATIVE)
+
+    def setUp(self):
+        super().setUp()
+        self.write(self.WORKER, "export {};\n")
+        self.write(self.FRAME, "it('x', async () => {\n    await import('./worker.js');\n});\n")
+        self.write(self.FRICTION, "    await import('./worker.js'); g.worker.onmessage?.(x);\n")
+        self.write(self.NATIVE, "  location: new URL('https://pointercad.invalid/fem/worker.js'),\n"
+                                "  await import(\n    './worker.js'\n  );\n")
+        # 囮: URL の文字列だけ・似た名前・試験でない読込み・同名の別の worker を読む試験は消費先に数えない。
+        self.write("packages/fem/src/offlineBrowser.contract.test.ts",
+                   "vi.stubGlobal('self', { location: new URL('https://pointercad.invalid/fem/worker.js') });\n")
+        self.write("packages/fem/src/workerUtil.ts", "export const a = 1;\n")
+        self.write("packages/fem/src/workerUtil.test.ts", "import { a } from './workerUtil.js';\n")
+        self.write("packages/fem/src/productWorker.ts", "import './worker.js';\n")
+        self.write("packages/fem/src/sub/worker.ts", "export {};\n")
+        self.write("packages/fem/src/sub/local.test.ts", "import './worker.js';\n")
+
+    def instruction(self, scope: str, accept: str | None, body: str = "") -> str:
+        text = ("① 子エージェントを起こさない。\n② git への書き込み禁止。\n"
+                f"③ 編集してよい範囲: {scope}\n\n{body}")
+        if accept is not None:
+            text += f"合格条件: {accept}\n"
+        return text
+
+    def consumer_errors(self, text: str) -> list[str]:
+        return [message for message in self.errors(text) if self.MARK in message]
+
+    def missing(self, message: str) -> list[str]:
+        return message.split("実パスで無い: ", 1)[1].split("(今の消費先", 1)[0].split("、")
+
+    # ①: 変更を許すのに消費先が 1 本抜けていれば外れ
+
+    def test_editable_worker_with_one_consumer_missing_is_rejected(self):
+        accepts = (
+            "`diag.py unit --package fem src/frameBoltClient.test.ts src/frictionContactWorker.test.ts` を1回流す。",
+            f"{self.FRICTION}・nativeBoltPreloadWorker.test.ts を流し全件合格。",  # gate 233928 の形(frame が抜けた)
+        )
+        for accept, absent in zip(accepts, (self.NATIVE, self.FRAME)):
+            with self.subTest(accept=accept):
+                errors = self.consumer_errors(self.instruction(f"既存 {self.WORKER} を編集可。", accept))
+                self.assertEqual(len(errors), 1, errors)
+                self.assertEqual(self.missing(errors[0]), [absent])
+                self.assertIn("x.md 行3:", errors[0])
+                self.assertIn("全 3 本", errors[0])
+                self.assertIn("試験を③へ入れる必要は無い", errors[0])
+                self.assertIn("合格と認定しない", errors[0])
+
+    def test_missing_acceptance_rejects_every_consumer(self):
+        errors = self.consumer_errors(self.instruction(f"{self.WORKER} を変更してよい。", None))
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(self.missing(errors[0]), list(self.ALL))
+        self.assertIn("合格条件の段落・節が見つからない", errors[0])
+
+    def test_folder_or_glob_scope_covering_the_worker_also_requires_consumers(self):
+        for scope in ("packages/fem/src/ 配下を編集可。", "packages/fem/src/*.ts を編集可。"):
+            with self.subTest(scope=scope):
+                errors = self.consumer_errors(self.instruction(scope, f"{self.FRAME} を流す。"))
+                self.assertEqual(len(errors), 1, errors)
+                self.assertEqual(self.missing(errors[0]), [self.FRICTION, self.NATIVE])
+
+    # ②: 全ての消費先を挙げれば通る(試験は③に無くてよい)
+
+    def test_all_consumers_listed_passes(self):
+        accepts = (
+            f"{self.FRAME}・frictionContactWorker.test.ts・nativeBoltPreloadWorker.test.ts を同じ RUN で流し全件合格。",
+            "`diag.py unit --package fem src/frameBoltClient.test.ts src/frictionContactWorker.test.ts "
+            "src/nativeBoltPreloadWorker.test.ts` を1回。",
+        )
+        for accept in accepts:
+            with self.subTest(accept=accept):
+                text = self.instruction(f"既存 {self.WORKER} の自己candidate だけ。", accept)
+                self.assertEqual(self.errors(text), [])
+
+    def test_heading_acceptance_section_is_read(self):
+        body = "## 2. 合格条件\n\n" + "".join(f"- {path} を流す\n" for path in self.ALL)
+        text = self.instruction(f"{self.WORKER} を編集可。", None, "# 指示書 w\n\n" + body)
+        self.assertEqual(self.errors(text), [])
+        missing_one = body.replace(f"- {self.NATIVE} を流す\n", "")
+        errors = self.consumer_errors(self.instruction(f"{self.WORKER} を編集可。", None, "# 指示書 w\n\n" + missing_one))
+        self.assertEqual([self.missing(message) for message in errors], [[self.NATIVE]])
+
+    # ③: 同名の別ファイル・読取だけ・③の外の言及は外れにしない
+
+    def test_read_only_other_file_or_mention_outside_scope_is_allowed(self):
+        accept = f"{self.FRAME} を流す。"
+        scopes = (
+            # 前担当 cl-v103-frame-worker-once-20261030 の③の形(worker.ts は読取専用)
+            "新規 scratchpad/claude/agents/w/ 配下のみ。製品候補は既存 packages/fem/src/frameBoltClient.test.ts の自己candidate/"
+            "への控え1本だけ。既存worker.ts、frictionContactWorker.test.ts、nativeBoltPreloadWorker.test.ts、旧成果は読取専用。",
+            f"{self.WORKER} は読取専用。{self.FRAME} を編集可。",
+            f"{self.FRAME} を編集可、{self.WORKER} は変更禁止。",
+            f"{self.WORKER}（読取）と {self.FRAME}（編集可）。",
+            f"{self.WORKER} は候補外。{self.FRAME} の候補1本。",
+            f"{self.WORKER} を read-only で読む。{self.FRAME} を編集可。",
+            "packages/fem/src/sub/worker.ts を編集可。",
+            "packages/ui/src/worker.ts を編集可。",
+            "packages/fem/src/worker.tsx を編集可。",
+            "packages/fem/src/workerUtil.ts を編集可。",
+            "scratchpad/claude/agents/w/candidate/packages/fem/src/worker.ts を編集可。",
+        )
+        for scope in scopes:
+            with self.subTest(scope=scope):
+                self.assertEqual(self.consumer_errors(self.instruction(scope, accept)), [])
+        body = f"背景: {self.WORKER} を変更した包みで frame が漏れた。\n\n"
+        self.assertEqual(self.errors(self.instruction(f"{self.FRAME} を編集可。", accept, body)), [])
+
+    # ④: 新しい直接の消費先を足せば、その不足も外れ(固定の 3 本に取り残さない)
+
+    def test_new_direct_consumer_is_required_too(self):
+        accept = "、".join(self.ALL) + " を流す。"
+        text = self.instruction(f"{self.WORKER} を編集可。", accept)
+        self.assertEqual(self.consumer_errors(text), [])
+        self.write("packages/fem/src/beamWeldSpanClient.test.ts", "    await import('./worker.js');\n")
+        self.write("packages/fem/src/nested/deep.test.ts", "import { run } from \"../worker\";\n")
+        errors = self.consumer_errors(text)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(self.missing(errors[0]),
+                         ["packages/fem/src/beamWeldSpanClient.test.ts", "packages/fem/src/nested/deep.test.ts"])
+        self.assertIn("全 5 本", errors[0])
+        fuller = self.instruction(
+            f"{self.WORKER} を編集可。",
+            accept + " packages/fem/src/beamWeldSpanClient.test.ts と packages/fem/src/nested/deep.test.ts も。")
+        self.assertEqual(self.errors(fuller), [])
+
+    # ⑤: パスの表記の差では誤らず、部分一致は列挙に数えない
+
+    def test_notation_differences_are_normalized(self):
+        accept = (f"./{self.FRAME}、`packages\\fem\\src\\frictionContactWorker.test.ts`、"
+                  "packages/fem/src/./nativeBoltPreloadWorker.test.ts を流す。")
+        for scope in (f"./{self.WORKER} を編集可。", "`packages\\fem\\src\\worker.ts` を編集可。",
+                      f"`{self.WORKER}` を編集可。", "packages/fem/src/./worker.ts を編集可。"):
+            with self.subTest(scope=scope):
+                self.assertEqual(self.consumer_errors(self.instruction(scope, accept)), [])
+                errors = self.consumer_errors(self.instruction(scope, f"{self.FRAME} を流す。"))
+                self.assertEqual([self.missing(message) for message in errors], [[self.FRICTION, self.NATIVE]])
+
+    def test_partial_matches_folders_and_globs_do_not_count_as_listed(self):
+        accept = ("packages/fem/src/frameBoltClient.test.tsx、packages/fem/src/xframeBoltClient.test.ts、"
+                  "packages/fem/src/frameBoltClient.test.ts.bak、packages/fem/src/frameBoltClient を見る。"
+                  "frameBoltClient.test.ts も流す。packages/fem/src/ と packages/fem/src/*.test.ts も流す。"
+                  f"{self.FRICTION}・nativeBoltPreloadWorker.test.ts を流す。")
+        errors = self.consumer_errors(self.instruction(f"{self.WORKER} を編集可。", accept))
+        self.assertEqual([self.missing(message) for message in errors], [[self.FRAME]])
+
+    def test_decoys_are_not_consumers(self):
+        consumers, complete = guard.worker_consumers(self.root, self.WORKER, "packages/fem/src", time.monotonic() + 30)
+        self.assertTrue(complete)
+        self.assertEqual(consumers, sorted(self.ALL))
+
+    def test_scan_over_budget_is_a_warning_not_a_rejection(self):
+        consumers, complete = guard.worker_consumers(self.root, self.WORKER, "packages/fem/src", time.monotonic() - 1)
+        self.assertFalse(complete)
+        self.assertEqual(consumers, [])
+        original = guard.worker_consumers
+        guard.worker_consumers = lambda root, worker, source, deadline: ([], False)
+        try:
+            errors, warnings = self.report(self.instruction(f"{self.WORKER} を編集可。", f"{self.FRAME} を流す。"))
+        finally:
+            guard.worker_consumers = original
+        self.assertEqual([m for m in errors if self.MARK in m], [])
+        self.assertIn("一部未確認", self.joined(warnings))
+
+    def test_hook_denies_and_names_the_missing_consumer(self):
+        content = self.instruction(f"{self.WORKER} を編集可。", f"{self.FRICTION}・nativeBoltPreloadWorker.test.ts を流す。")
+        self.materialize(content)
+        self.write("scratchpad/claude/instructions/worker.md", content)
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
+            "prompt": "`scratchpad/claude/instructions/worker.md` を読む。", "description": "t"}}
+        result = guard.hook(payload, self.now, root=self.root)
+        self.assertIsNotNone(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn(self.MARK, reason)
+        self.assertIn(self.FRAME, reason)
+
+
+class TextTransportTests(NewChecksBase):
+    def test_lost_unicode_is_refused_before_scope_classification(self):
+        for text in ("? " + "?" * 20 + "\n? git " + "?" * 8, "a\ufffdb"):
+            with self.subTest(text=text):
+                errors, warnings = self.report(text)
+                self.assertEqual(len(errors), 1)
+                self.assertIn("text transport corruption", errors[0])
+                self.assertEqual(warnings, [])
+
+    def test_actual_agent_hook_denies_a_corrupt_instruction(self):
+        self.write("scratchpad/claude/instructions/transport.md", "? " + "?" * 20)
+        result = guard.hook({"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
+            "prompt": "Read scratchpad/claude/instructions/transport.md"}}, self.now, root=self.root)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("text transport corruption", result["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_cli_rejects_corruption_but_keeps_real_unicode_and_ordinary_question_marks(self):
+        target = self.write("transport.md", "? " + "?" * 20)
+        failed = subprocess.run([sys.executable, "-B", "-X", "utf8", str(HOOK), "--check", str(target)],
+                                capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertIn("text transport corruption", failed.stdout)
+        target.write_text("\u65e5\u672c\u8a9e: one? two??", encoding="utf-8")
+        passed = subprocess.run([sys.executable, "-B", "-X", "utf8", str(HOOK), "--check", str(target)],
+                                capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+
+
+class DocsPhaseTests(NewChecksBase):
+    def setUp(self):
+        super().setUp()
+        self.marker = self.root / 'scratchpad/claude/root-runtime/docs-phase-open.json'
+        self.marker.unlink()
+
+    def phase_errors(self, scope):
+        return [m for m in self.errors('③ ' + scope) if '説明書の包みの時期' in m]
+
+    def open_phase(self):
+        self.marker.write_text(json.dumps({'openedBy': '統括', 'reason': '実装と検査が確定',
+                                           'openedAt': '2026-11-01T20:00:00+09:00'}), encoding='utf-8')
+
+    def test_valid_marker_allows_docs(self):
+        self.open_phase()
+        self.assertEqual(self.phase_errors('packages/help-content/docs/ja/cut.md'), [])
+
+    def test_missing_marker_denies_docs(self):
+        errors = self.phase_errors('packages/help-content/docs/ja/cut.md')
+        self.assertEqual(len(errors), 1)
+        self.assertIn('利用者の指示 2026-11-01 19:2x: 取扱説明書は最後', errors[0])
+
+    def test_missing_marker_denies_src(self):
+        self.assertEqual(len(self.phase_errors('packages/help-content/src/topics.ts')), 1)
+
+    def test_unrelated_path_is_unchanged(self):
+        self.assertEqual(self.phase_errors('packages/ui/src/a.ts'), [])
+
+    def test_broken_marker_denies(self):
+        for value in ('{', '[]', '{}', 'null'):
+            with self.subTest(value=value):
+                self.marker.write_text(value, encoding='utf-8')
+                self.assertEqual(len(self.phase_errors('packages/help-content/docs/ja/a.md')), 1)
+
+    def test_marker_requires_supervisor_reason_and_time(self):
+        valid = {'openedBy': '統括', 'reason': '確定', 'openedAt': '2026-11-01T20:00:00'}
+        for field, value in [('openedBy', '担当'), ('reason', ''), ('reason', None),
+                             ('openedAt', ''), ('openedAt', '壊れた日時'), ('openedAt', 123)]:
+            with self.subTest(field=field, value=value):
+                self.marker.write_text(json.dumps(valid | {field: value}), encoding='utf-8')
+                self.assertEqual(len(self.phase_errors('EX-14.DOC')), 1)
+
+    def test_doc_ledger_id_denies(self):
+        self.assertEqual(len(self.phase_errors('台帳 EX-14.DOC の行だけ')), 1)
+
+    def test_wm_ledger_id_denies(self):
+        self.assertEqual(len(self.phase_errors('台帳 WM.01 の行だけ')), 1)
+
+    def test_body_reference_outside_scope_is_unchanged(self):
+        errors = self.errors('③ packages/ui/src/a.ts\n\n本文 packages/help-content/docs/ja/a.md EX-14.DOC WM.01')
+        self.assertFalse([m for m in errors if '説明書の包みの時期' in m])
+
+    def test_nearby_names_do_not_match(self):
+        for scope in ('packages/help-content/docs-other/a.md', 'packages/help-content/src-other/a.ts',
+                      'EX-14.DOCTOR', 'AWM.01'):
+            with self.subTest(scope=scope):
+                self.assertEqual(self.phase_errors(scope), [])
+
+    def test_cli_and_hook_exit_two_without_marker_then_allow(self):
+        hook_copy = self.root / '.claude/hooks/instruction_check_guard.py'
+        hook_copy.parent.mkdir(parents=True)
+        shutil.copyfile(HOOK, hook_copy)
+        instruction = write_instruction(self.root, 'docs.md', '③ 台帳 EX-14.DOC の行だけ')
+        payload = {'hook_event_name': 'PreToolUse', 'tool_name': 'Agent', 'tool_input': {
+            'prompt': 'scratchpad/claude/instructions/docs.md を読む'}}
+        for marker in (False, True):
+            if marker:
+                self.open_phase()
+            for args in ([], ['--check', str(instruction)]):
+                with self.subTest(marker=marker, args=args):
+                    result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(hook_copy), *args],
+                                            input=json.dumps(payload), capture_output=True,
+                                            text=True, encoding='utf-8', cwd=self.root)
+                    self.assertEqual(result.returncode, 0 if marker else 2, result.stdout + result.stderr)
+                    if not marker:
+                        self.assertEqual(len(result.stderr.splitlines()), 1)
+                        self.assertIn('取扱説明書は最後', result.stderr)
 
 
 if __name__ == "__main__":

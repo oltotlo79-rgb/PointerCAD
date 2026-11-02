@@ -19,6 +19,7 @@
  */
 
 import { isSameSubShape } from '../geometry/subShapeRef.js';
+import { integerSerial, nextSerialValue } from '../serialValue.js';
 
 import type { SelectionMember, SelectionSet } from './types.js';
 
@@ -82,17 +83,7 @@ function normalizeName(name: string): string | null {
  * 最大連番 + 1 を採る。
  */
 export function nextSelectionSetId(sets: readonly SelectionSet[]): string {
-  let max = 0;
-  for (const set of sets) {
-    if (!set.id.startsWith(SELECTION_SET_ID_PREFIX)) {
-      continue;
-    }
-    const serial = Number(set.id.slice(SELECTION_SET_ID_PREFIX.length));
-    if (Number.isInteger(serial) && serial > max) {
-      max = serial;
-    }
-  }
-  return `${SELECTION_SET_ID_PREFIX}${String(max + 1)}`;
+  return nextSerialValue(sets.map((set) => set.id), SELECTION_SET_ID_PREFIX, integerSerial);
 }
 
 /** id からセットを引く。無ければ `undefined`。 */

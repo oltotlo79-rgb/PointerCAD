@@ -1139,3 +1139,132 @@ it('actual autosave restore failure retains old authored/runtime owner, recovery
     expect(useAppStore.getState().recoveryRecord).toBe(owner.recoveryRecord);
   } finally { vi.unstubAllGlobals(); }
 });
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof recoveryReadHost>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
+});
+
+import * as recoveryReadHost from './pcadReadWorker.js';
+import type { PcadReadRequest } from './pcadReadProtocol.js';
+
+function recoveryReadHarness() {
+  const probes: { port: recoveryReadHost.PcadReadWorkerPort; request: PcadReadRequest | null;
+    late: recoveryReadHost.PcadReadWorkerPort['onmessage']; terminate: ReturnType<typeof vi.fn> }[] = [];
+  const read = recoveryReadHost.createPcadFileReader(() => {
+    const terminate = vi.fn();
+    const probe: (typeof probes)[number] = { request: null, late: null, terminate,
+      port: { onmessage: null, onerror: null, onmessageerror: null, terminate, postMessage: (request, transfer) => {
+        probe.request = structuredClone(request, { transfer }); probe.late = probe.port.onmessage;
+      } } };
+    probes.push(probe); return probe.port;
+  });
+  const spy = vi.spyOn(recoveryReadHost, 'readPcadInWorker').mockImplementation(read);
+  return { spy, async posted(index = 0) {
+    await vi.waitFor(() => { expect(probes[index]?.request).toBeTruthy(); });
+    return probes[index];
+  } };
+}
+function retainedRecoveryState() {
+  const s = useAppStore.getState();
+  return [s.activeDocumentId, s.document, s.undoStack, s.assembly, s.assemblyLibrary, s.assemblyUndoStack,
+    s.drawing, s.drawingSources, s.drawingUndoStack, s.importedShapes, s.importedMeshes, s.canvases, s.drawingImportedShapes,
+    s.fileName, s.savedDocument, s.assemblyFileName, s.savedAssembly, s.drawingFileName, s.savedDrawing, s.fileGateway];
+}
+function expectRetainedRecoveryState(expected: ReturnType<typeof retainedRecoveryState>): void {
+  retainedRecoveryState().forEach((value, index) => expect(value).toBe(expected[index]));
+}
+async function lifecycleRecoveryRecord(kind: 'part' | 'assembly' | 'drawing'): Promise<AutoSaveRecord> {
+  const io = await import('@pointercad/io'), model = await import('@pointercad/model');
+  const part = { ...model.createEmptyPartDocument(), name: 'recovered' };
+  if (kind === 'part') return { kind, savedAt: SAVED_AT, documentName: 'recovered', bytes: io.writePcadFile(part) };
+  if (kind === 'assembly') return { kind, savedAt: SAVED_AT, documentName: 'recovered', bytes:
+    await io.writeDocumentBundle(model.createAssemblyDocumentBundle(model.createAssemblyDocument('recovered'))) };
+  const source = { sourceKind: 'part' as const, document: part };
+  const embedded = await model.embedDrawingSource(model.emptyDrawingSourceLibrary(), source, 'source.pcad', '');
+  return { kind, savedAt: SAVED_AT, documentName: 'recovered', bytes: await io.writeDrawingBundle(
+    model.createDrawingDocument('recovered', embedded.source), { source }) };
+}
+async function recoveryLifecycleReply(request: PcadReadRequest) {
+  const io = await import('@pointercad/io');
+  return { id: request.id, kind: request.kind, result: request.kind === 'part' ? io.readPcadFile(request.bytes)
+    : request.kind === 'assembly' ? await io.readDocumentBundle(request.bytes, 'assembly') : await io.readDrawingBundle(request.bytes) };
+}
+
+describe('E04 recovery lifecycle through the real asynchronous host', () => {
+  for (const kind of ['part', 'assembly', 'drawing'] as const) {
+    for (const event of ['normal', 'edit', 'switch', 'discard', 'dispose', 'newRead', 'error', 'failure', 'terminate'] as const) {
+      it(`${kind}: ${event} owns prompt/restore reads and never applies a cancelled or late result`, async () => {
+        const record = await lifecycleRecoveryRecord(kind), original = record.bytes.slice(), harness = recoveryReadHarness();
+        const clearSaveTarget = vi.fn(), confirmSaveTarget = vi.fn(() => Promise.resolve());
+        useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(null), savePcad: () => Promise.resolve(null),
+          hasSaveTarget: () => true, clearSaveTarget, confirmSaveTarget } });
+        useAppStore.getState().applyDocument({ ...useAppStore.getState().document, name: 'old' });
+        useAppStore.getState().addImportedAttachments(new Map([['old-shape', Uint8Array.of(7, 8)]]), new Map());
+        const discard = vi.fn(() => Promise.resolve());
+        const saver: AutoSaver = { markDirty: () => undefined, saveNow: () => Promise.resolve(), stop: () => undefined,
+          readLatest: () => Promise.resolve(record), discard };
+        let stop: (() => void) | null = null;
+        try {
+          const prompting = event === 'dispose' ? null : loadAutoSavePrompt(saver, { record });
+          if (event === 'dispose') stop = startAutoSave({ saver });
+          const prompt = await harness.posted();
+          if (prompt.request === null) throw new Error('Prompt read missing');
+          prompt.port.onmessage?.(new MessageEvent('message', { data: await recoveryLifecycleReply(prompt.request) }));
+          if (prompting !== null) await prompting;
+          else await vi.waitFor(() => { expect(useAppStore.getState().restorePrompt).not.toBeNull(); });
+          expect(prompt.terminate).toHaveBeenCalledTimes(1);
+          let applications = 0;
+          const unsubscribe = useAppStore.subscribe((next, previous) => {
+            if (kind === 'part' ? next.document !== previous.document : kind === 'assembly'
+              ? next.assembly !== previous.assembly : next.drawing !== previous.drawing) applications += 1;
+          });
+          try {
+            const restoring = restoreAutoSave(saver), probe = await harness.posted(1);
+            if (probe.request === null) throw new Error('Restore read missing');
+            const reply = await recoveryLifecycleReply(probe.request);
+            let expected = retainedRecoveryState();
+            if (event === 'edit') {
+              useAppStore.getState().applyDocument({ ...useAppStore.getState().document, name: 'edited while restoring' });
+              expected = retainedRecoveryState(); applications = 0;
+            } else if (event === 'switch') {
+              useAppStore.getState().resetDocument(createEmptyPartDocument()); expected = retainedRecoveryState(); applications = 0;
+            } else if (event === 'discard') { await discardAutoSave(saver); expected = retainedRecoveryState(); }
+            else if (event === 'dispose') { stop?.(); stop = null; }
+            else if (event === 'newRead') {
+              const nextRestoring = restoreAutoSave(saver), next = await harness.posted(2);
+              if (next.request === null) throw new Error('Next restore read missing');
+              next.port.onmessage?.(new MessageEvent('message', { data: await recoveryLifecycleReply(next.request) }));
+              await nextRestoring; expected = retainedRecoveryState();
+              expect(next.terminate).toHaveBeenCalledTimes(1);
+            } else if (event === 'error') probe.port.onmessageerror?.(new MessageEvent('messageerror'));
+            else if (event === 'failure') probe.port.onmessage?.(new MessageEvent('message', { data: {
+              id: probe.request.id, kind, result: { ok: false, error: { code: 'notZip', message: 'bad recovery ZIP' } },
+            } }));
+            else {
+              if (event === 'terminate') probe.terminate.mockImplementation(() => { throw new Error('termination failed'); });
+              probe.port.onmessage?.(new MessageEvent('message', { data: reply }));
+            }
+            await restoring;
+            if (event === 'normal') expected = retainedRecoveryState();
+            expect(probe.terminate).toHaveBeenCalledTimes(1);
+            const promptAfter = useAppStore.getState().restorePrompt, recordAfter = useAppStore.getState().recoveryRecord;
+            probe.late?.(new MessageEvent('message', { data: reply }));
+            expectRetainedRecoveryState(expected);
+            expect(useAppStore.getState().restorePrompt).toBe(promptAfter); expect(useAppStore.getState().recoveryRecord).toBe(recordAfter);
+            expect(applications).toBe(event === 'normal' || event === 'newRead' ? 1 : 0);
+            expect(confirmSaveTarget).not.toHaveBeenCalled();
+            if (event !== 'normal' && event !== 'newRead' && event !== 'switch') expect(clearSaveTarget).not.toHaveBeenCalled();
+            if (event === 'failure') expect(promptAfter?.unrecoverable).toBe(true);
+            if (event === 'discard') { expect(discard).toHaveBeenCalledOnce(); expect(promptAfter).toBeNull(); }
+            expect(record.bytes.byteLength).toBe(original.length); expect(record.bytes).toEqual(original);
+          } finally { unsubscribe(); }
+        } finally { stop?.(); harness.spy.mockRestore(); }
+      });
+    }
+  }
+});

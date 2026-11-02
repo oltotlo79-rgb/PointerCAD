@@ -5,6 +5,9 @@ import { resetTestStore, tick } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FunctionPlotDialog } from './FunctionPlotDialog.js';
 import { FunctionSectionDialog } from './FunctionSectionDialog.js';
+import type * as ImportedReactTypes from 'react';
+import type * as ImportedPrepareDocumentMathEditorTypes from '../math/prepareDocumentMathEditor.js';
+import type * as ImportedFunctionSectionDraftTypes from './functionSectionDraft.js';
 
 // Existing Node SSR/handler convention: real dialog handlers and document ownership,
 // controlled asynchronous work. Browser activation itself is covered by the trusted-click E2E.
@@ -14,7 +17,7 @@ const harness = vi.hoisted(() => ({
   dispose: vi.fn(),
 }));
 vi.mock('react', async importOriginal => {
-  const original = await importOriginal<typeof import('react')>();
+  const original = await importOriginal<typeof ImportedReactTypes>();
   return {
     ...original,
     useState: <S,>(initial: S | (() => S)) => {
@@ -34,14 +37,14 @@ vi.mock('react', async importOriginal => {
 vi.mock('../math/MathExpressionDialog.js', () => ({ MathExpressionDialog: () => null }));
 vi.mock('../math/createBrowserMathClient.js', () => ({ createBrowserMathClient: () => ({ dispose: harness.dispose }) }));
 vi.mock('../math/prepareDocumentMathEditor.js', async importOriginal => ({
-  ...await importOriginal<typeof import('../math/prepareDocumentMathEditor.js')>(),
+  ...await importOriginal<typeof ImportedPrepareDocumentMathEditorTypes>(),
   waitForMathEditorGeometry: (_document: unknown, signal: AbortSignal) => new Promise<never>((_resolve, reject) => {
     harness.pending.push({ signal, reject });
   }),
 }));
 vi.mock('./functionSectionDraft.js', async importOriginal => ({
-  ...await importOriginal<typeof import('./functionSectionDraft.js')>(),
-  prepareFunctionSection: (...args: Parameters<typeof import('./functionSectionDraft.js').prepareFunctionSection>) =>
+  ...await importOriginal<typeof ImportedFunctionSectionDraftTypes>(),
+  prepareFunctionSection: (...args: Parameters<typeof ImportedFunctionSectionDraftTypes.prepareFunctionSection>) =>
     new Promise<never>((_resolve, reject) => { harness.pending.push({ signal: args[6], reject }); }),
 }));
 

@@ -1,3 +1,4 @@
+import { isRecord } from './valueGuards.js';
 /**
  * STATUS: PROVISIONAL (unexecuted; native support unproven until Root runs proof-r2). Strict reader of the
  * solidPlasticAnalysis.py encoding. It validates shape and consistency only; it is not exported from the package
@@ -32,9 +33,6 @@ export interface SolidPlasticNative {
 
 function fail(detail: string): never {
   throw new Error(`solid-plastic-result: ${detail}`);
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 function exact(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);

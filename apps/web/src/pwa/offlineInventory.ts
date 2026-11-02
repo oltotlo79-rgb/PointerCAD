@@ -1,4 +1,4 @@
-import { OFFLINE_MAX_MANIFEST_BYTES, readOfflineAssetManifest, type OfflineAssetManifest } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { OFFLINE_MAX_MANIFEST_BYTES, readOfflineAssetManifest, type OfflineAssetManifest } from '@pointercad/ui/offline-protocol';
 import { OfflineTransferError, readBoundedOfflineBody, requestOfflineResponse, type OfflineTransferOptions } from './offlineNetwork.js';
 
 /** Read bounded network bytes before parsing unknown JSON. No asset is downloaded on a bad inventory. */

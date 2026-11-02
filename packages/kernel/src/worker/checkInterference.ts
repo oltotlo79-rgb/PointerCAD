@@ -12,8 +12,11 @@ import type {
   InterferenceRootFailure, InterferenceSkip, PlacementSpec, Vec3Tuple,
 } from '../types.js';
 import type { CachedSolid, SolidCancelToken } from './recomputeSolids.js';
+import { createInterferenceCheckpointPacing } from './interferenceCheckpointPacing.js';
 
 export type InterferenceProgressCallback = (progress: InterferenceProgress) => void | Promise<void>;
+/** Internal message checkpoint; true means cancellation, not successful completion. */
+export type InterferenceCheckpointCallback = (progress: InterferenceProgress) => boolean | Promise<boolean>;
 export const INTERFERENCE_AABB_PADDING_MM = 1e-6;
 
 interface ReferencedMessagePort extends MessagePort {
@@ -431,6 +434,7 @@ export async function checkInterference(
   onProgress?: InterferenceProgressCallback,
   shouldCancel?: SolidCancelToken,
   callbackDelivery?: 'message',
+  onCheckpoint?: InterferenceCheckpointCallback,
 ): Promise<InterferenceResult> {
   const snapshot = snapshotInterferenceRequest(request);
   const preparation = prepareInterference(snapshot);
@@ -454,6 +458,9 @@ export async function checkInterference(
   let taskQueue: MessageChannel | undefined;
   let pendingTask: { resolve(): void; reject(error: Error): void } | undefined;
   let taskRelayed = false;
+  // Only the combined message callback may be coalesced; direct/legacy callback order stays unchanged.
+  const candidatePacing = callbackDelivery === 'message' && onCheckpoint !== undefined
+    ? createInterferenceCheckpointPacing() : undefined;
   async function queueMacrotask(): Promise<void> {
     if (typeof MessageChannel === 'undefined') return new Promise<void>((resolve) => setTimeout(resolve, 0));
     if (taskQueue === undefined) {
@@ -503,17 +510,25 @@ export async function checkInterference(
   }
   const report = (): InterferenceReport => ({ ...result, pairs, failures, checkedPairCount: checked,
     pendingPairCount: preparation.jobs.length - checked - failures.length, cancelled });
-  async function checkpoint(phase: InterferenceProgress['phase'], currentPair?: InterferencePairId, afterCommon = false): Promise<boolean> {
+  async function checkpoint(phase: InterferenceProgress['phase'], currentPair?: InterferencePairId, afterCommon = false, forceCandidate = false): Promise<boolean> {
+    if (candidatePacing !== undefined && !candidatePacing.shouldDeliver(phase, afterCommon || forceCandidate)) return true;
     try {
       // 同期nativeの間にWorkerの取消messageを配送する。microtaskだけでは届かない。
       // 実Comlink callbackはこの後のawait自体がMessagePort往復。directだけtimerを補う。
-      if (shouldCancel !== undefined && (callbackDelivery !== 'message' || afterCommon)) await queueMacrotask();
+      if ((shouldCancel !== undefined || callbackDelivery === 'message' && onCheckpoint !== undefined)
+        && (callbackDelivery !== 'message' || afterCommon)) await queueMacrotask();
     } catch (error) { checkpointFailureCode = 'unexpectedFailure'; throw error; }
     try {
-      if (await shouldCancel?.()) { cancelled = true; return false; }
-      await onProgress?.({ requestId: snapshot.requestId, phase, completedPairs: checked + failures.length + preparation.skips.length,
+      const progress: InterferenceProgress = { requestId: snapshot.requestId, phase,
+        completedPairs: checked + failures.length + preparation.skips.length,
         totalPairs: preparation.total, completedComponents, totalComponents: snapshot.components.length,
-        ...(currentPair === undefined ? {} : { currentPair }) });
+        ...(currentPair === undefined ? {} : { currentPair }) };
+      if (callbackDelivery === 'message' && onCheckpoint !== undefined) {
+        if (await onCheckpoint(progress)) { cancelled = true; return false; }
+        return true;
+      }
+      if (await shouldCancel?.()) { cancelled = true; return false; }
+      await onProgress?.(progress);
       if (await shouldCancel?.()) { cancelled = true; return false; }
       return true;
     } catch (error) { checkpointFailureCode = 'callbackFailed'; throw error; }
@@ -600,7 +615,7 @@ export async function checkInterference(
     const candidates: PairJob[] = [];
     if (!cancelled) for (let index = 0; index < preparation.jobs.length; index += 1) {
       const job = preparation.jobs[index];
-      if (index % 64 === 0 && !await checkpoint('candidates', job.pair)) break;
+      if (index % 64 === 0 && !await checkpoint('candidates', job.pair, false, index === 0)) break;
       const a = components.get(job.pair[0]); const b = components.get(job.pair[1]);
       if (a === undefined || b === undefined) throw new Error('部品の準備が完了していません。');
       if (!('shapes' in a) || !('shapes' in b)) { failures.push({ ...(!('shapes' in a) ? a : !('shapes' in b) ? b : { stage: 'input', code: 'invalidInput', message: '' }), pair: job.pair }); continue; }
@@ -609,11 +624,13 @@ export async function checkInterference(
         candidates.push(job);
       } catch (error) { failures.push({ pair: job.pair, stage: 'bounds', code: 'boundsFailed', message: detail(error) }); }
     }
+    // End of broad-phase scan: flush progress/cancellation before cleanup or any Common, including an empty candidate set.
+    if (!cancelled && candidatePacing !== undefined) await checkpoint('candidates', undefined, false, true);
     // 箱の解放失敗で候補を陰性に見せない。既確定結果を保ったroot failureへ送る。
     const boundsCleanup = releaseAll(boxes);
     if (boundsCleanup.length > 0) result = interferenceRootFailure(result, { code: 'cleanupFailed', message: '境界箱の片付けに失敗しました。', cleanupMessages: boundsCleanup });
     if (!cancelled && result.kind !== 'failed') for (const [candidateIndex, job] of candidates.entries()) {
-      if (candidateIndex % 64 === 0 && !await checkpoint('candidates', job.pair)) break;
+      if (candidateIndex % 64 === 0 && !await checkpoint('candidates', job.pair, false, candidateIndex === 0)) break;
       const a = components.get(job.pair[0]); const b = components.get(job.pair[1]);
       if (a === undefined || b === undefined || !('shapes' in a) || !('shapes' in b)) throw new Error('部品の準備がありません。');
       const signature = translationSignature(a, b);
@@ -632,7 +649,7 @@ export async function checkInterference(
         }
       }
       if (shared !== undefined) {
-        // nativeを始めないJS複写は64組ずつ配送する。取消後にCommonを始めない。
+        // nativeを始めないJS複写も64組境界で配送期限を確認する。取消後にCommonを始めない。
         pairs.push(translatedPair(shared, a, job.pair));
         checked += 1;
         continue;

@@ -706,3 +706,61 @@ describe('部品単位の非破壊干渉解析', () => {
     expect(checks).toHaveLength(1); checks.forEach((check) => { check(); });
   });
 });
+
+
+describe('interference checkpoint-combined native Root review', () => {
+  it('KCP1 combined cancellation after Common still waits for its real timer before mesh', async () => {
+    let cancelled = false; const native = commonModule.intersectionVolume;
+    const common = vi.spyOn(commonModule, 'intersectionVolume').mockImplementation((...args) => {
+      const result = native(...args); setTimeout(() => { cancelled = true; }, 0); return result;
+    });
+    const mesh = vi.spyOn(meshModule, 'buildExportMesh');
+    const result = await checkInterference(request(), oc, bodies, undefined, undefined, 'message', () => cancelled);
+    expect(result).toMatchObject({ cancelled: true, checkedPairCount: 0, pendingPairCount: 1 });
+    expect(common).toHaveBeenCalledTimes(1); expect(mesh).not.toHaveBeenCalled(); accounting(result);
+  });
+  it('KCP2 combined callback refusal keeps callbackFailed and native cleanup ownership', async () => {
+    const observer = observe(); const common = vi.spyOn(commonModule, 'intersectionVolume');
+    const result = await checkInterference(request(), oc, bodies, undefined, undefined, 'message', progress => {
+      if (progress.completedComponents > 0) throw new Error('combined progress failure'); return false;
+    });
+    expect(result).toMatchObject({ kind: 'failed', failure: { code: 'callbackFailed', message: 'combined progress failure' } });
+    expect(common).not.toHaveBeenCalled(); observer.expectReleased(); accounting(result);
+  });
+  it('KCP3 direct ignores optional combined callback and keeps legacy cancellation order', async () => {
+    const events: string[] = [], combined = vi.fn(() => { throw new Error('direct must not invoke combined'); });
+    const result = await checkInterference(request(), oc, bodies, () => { events.push('progress'); },
+      () => { events.push('cancel'); return true; }, undefined, combined);
+    expect(result.cancelled).toBe(true); expect(events).toEqual(['cancel']); expect(combined).not.toHaveBeenCalled(); accounting(result);
+  });
+});
+
+
+describe('candidate checkpoint pacing native Root-only regression', () => {
+  it('KPACE1 message scan keeps every pair and final progress while bounding repeated delivery', async () => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const common = vi.spyOn(commonModule, 'intersectionVolume'), observer = observe();
+    const progress: number[] = [];
+    const input = request(Array.from({ length: 96 }, (_, i) => ready(`part:${i}`, ['box'], i * 30)));
+    const result = await checkInterference(input, oc, bodies, undefined, undefined, 'message', p => {
+      if (p.phase === 'candidates') progress.push(p.completedPairs); return false;
+    });
+    expect(result).toMatchObject({ kind: 'checked', cancelled: false, totalPairCount: 4560, checkedPairCount: 4560, pendingPairCount: 0 });
+    expect(result.pairs).toEqual([]); expect(result.failures).toEqual([]); expect(common).not.toHaveBeenCalled();
+    expect(progress[0]).toBe(0); expect(progress.at(-1)).toBe(4560); expect(progress.length).toBeLessThan(72);
+    observer.expectReleased(); accounting(result);
+  });
+  it.each(['cancel', 'throw'] as const)('KPACE2 message scan %s stops before Common and releases native bounds', async mode => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+    const common = vi.spyOn(commonModule, 'intersectionVolume'), observer = observe(); let calls = 0;
+    const result = await checkInterference(request(Array.from({ length: 96 }, (_, i) => ready(`part:${i}`, ['box'], i * 30))),
+      oc, bodies, undefined, undefined, 'message', p => {
+        if (p.phase !== 'candidates' || ++calls < 2) return false;
+        if (mode === 'throw') throw new Error('paced callback'); return true;
+      });
+    expect(calls).toBe(2); expect(result.checkedPairCount).toBeGreaterThan(0); expect(result.pendingPairCount).toBeGreaterThan(0);
+    if (mode === 'cancel') expect(result.cancelled).toBe(true);
+    else expect(result).toMatchObject({ kind:'failed', failure:{code:'callbackFailed',message:'paced callback'} });
+    expect(common).not.toHaveBeenCalled(); observer.expectReleased(); accounting(result);
+  });
+});

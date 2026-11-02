@@ -64,7 +64,7 @@ import { evaluateDocumentMath, hasDocumentMath, type DocumentMathContext } from 
 import type { ParameterAnalysis } from '../parameters/types.js';
 import { createSubShapeCache, type SubShapeCache } from './subShapeCache.js';
 import { readReferenceBodies, ReferenceMeshScope, type ReferenceBodyReads } from './readReferenceBodies.js';
-import { historyDependencies } from './timelineOrder.js';
+import { recomputeHistoryDependencies } from './timelineOrder.js';
 import type { PartDocument } from './types.js';
 import type { MathGeometryOutcome as TypeMathGeometryOutcome, MathGeometryRequest as TypeMathGeometryRequest } from '../measure/mathGeometryTypes.js';
 
@@ -468,7 +468,7 @@ async function fillProjections(
 /** 履歴の依存に、帯に出ない投影要素とその利用先を補う。公開の解決APIは変えない。 */
 function recomputeDependencies(document: PartDocument): ReadonlyMap<string, readonly string[]> {
   const active = { ...document, solids: document.solids.filter((feature) => !feature.suppressed) };
-  const graph = new Map(historyDependencies(active, { includeSelf: true }));
+  const graph = new Map(recomputeHistoryDependencies(active));
   const projectionsBySketch = new Map<string, string[]>();
   for (const sketch of active.sketches) {
     const ids: string[] = [];
@@ -488,9 +488,9 @@ function recomputeDependencies(document: PartDocument): ReadonlyMap<string, read
   for (const feature of active.solids) {
     graph.set(feature.id, [
       ...(graph.get(feature.id) ?? []),
-      ...referencedSketchIds(feature, active.sketches).flatMap(
+      ...((feature.kind === 'extrude' || feature.kind === 'revolve') ? [] : referencedSketchIds(feature, active.sketches).flatMap(
         (id) => projectionsBySketch.get(id) ?? [],
-      ),
+      )),
     ]);
   }
   return graph;

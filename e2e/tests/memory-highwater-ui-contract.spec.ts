@@ -2,9 +2,12 @@ import { expect, test, type Page } from '@playwright/test';
 import { expectMemoryEmptyDocument, memorySolidDimensionField } from './memoryHighwaterFlow.js';
 
 async function emptyFixture(page: Page, kind: 'solid' | 'assembly'): Promise<void> {
-  const labels = kind === 'assembly' ? ['部品', '合致', 'ジョイント', '分解ステップ'] : ['ソリッド', 'スケッチ'];
-  await page.setContent('<section class="pcad-panel--left">' + labels.map(label =>
-    `<button>${label} <span>0</span></button>`).join('') + '</section>');
+  const labels = ['部品', '合致', 'ジョイント', '分解ステップ'];
+  const tree = kind === 'assembly' ? labels.map(label => `<button>${label} <span>0</span></button>`).join('')
+    : '<p class="pcad-panel__empty-text">まだ何もありません。</p>';
+  await page.setContent('<title>PointerCAD</title><div class="pcad-shell" data-document-kind="'
+    + (kind === 'solid' ? 'part' : 'assembly') + '"><section class="pcad-panel--left">' + tree
+    + '</section><span class="pcad-statusbar__file">名称未設定</span></div>');
   await page.evaluate(() => {
     // Only this isolated DOM fixture supplies observers. Production flow never writes them.
     window.pcadViewportFramedBodies = () => [];
@@ -32,7 +35,7 @@ test('a centre-X field or another dimension cannot substitute for the missing bo
   await expect(memorySolidDimensionField(page)).toHaveCount(0);
 });
 
-test('both actual document kinds require their complete empty sections and released viewport', async ({ page }) => {
+test('both actual document kinds require their actual empty UI and released viewport', async ({ page }) => {
   for (const kind of ['solid', 'assembly'] as const) {
     await emptyFixture(page, kind);
     await expectMemoryEmptyDocument(page, kind);
@@ -53,7 +56,7 @@ test('empty-looking assembly UI cannot hide a retained component or relation in 
   }
 });
 
-test('empty document sections do not qualify retained viewport geometry as released', async ({ page }) => {
+test('empty document UI does not qualify retained viewport geometry as released', async ({ page }) => {
   test.setTimeout(45_000);
   await emptyFixture(page, 'solid');
   await page.evaluate(() => { window.pcadViewportFramedBodies = () => ['retained-body']; });

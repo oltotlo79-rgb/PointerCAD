@@ -7,6 +7,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { attachAutoSave, exportAutoSave, loadAutoSavePrompt, restoreAutoSave, startAutoSave } from './attachAutoSave.js';
 import { savePart, type PartFileDeps } from './partFile.js';
+import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
 
 const cleanup: (() => void)[] = [];
 beforeEach(resetTestStore);
@@ -114,4 +115,13 @@ describe('製作指示を含む図面の自動保存・異常終了からの復�
     const restoring = restoreAutoSave(saver); const next = await fixture(); resolve(record); await restoring;
     expect(useAppStore.getState().drawing).toBe(next.document);
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

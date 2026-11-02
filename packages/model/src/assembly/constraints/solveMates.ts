@@ -41,7 +41,7 @@ import { evaluateMechanismCouplings, prepareMechanismCouplings, mechanismCouplin
   type MechanismCouplingFailure, type MechanismCouplingRow } from '../joints/mechanismCoupling.js';
 import { prepareCamFollowers, type CamFollowerFailure } from '../joints/camFollower.js';
 import { evaluateCamCouplings } from '../joints/camCouplingDocument.js';
-export type AssemblyConstraintRef = { readonly kind: 'mate' | 'joint' | 'coupling'; readonly id: string };
+export interface AssemblyConstraintRef { readonly kind: 'mate' | 'joint' | 'coupling'; readonly id: string }
 /** Internal keys never escape into document IDs or user-facing diagnosis. */
 function constraintKey(ref: AssemblyConstraintRef): string { return JSON.stringify([ref.kind, ref.id]); }
 const EMPTY_JOINT_REPORT: JointResidualReport = { rows: [], skipped: [], branchViolations: [] };

@@ -43,6 +43,7 @@ import { STEEL_SECTION_CATALOGS, steelGradeRule, type SteelGradeRejectionCode } 
 import { STEEL_STANDARDS, type SteelStandardReference } from './steelStandards.js';
 import { steelSectionProfile, type SteelSectionProfile } from './steelSectionProfiles.js';
 import { buildFilletWeldPart, filletWeldLegs, filletWeldNominalVolume, filletWeldOptionAngle } from '../welding/filletWeldPart.js';
+import { buildCircularFilletWeldPartFromSource, CIRCULAR_FILLET_WELD_GENERATOR_REVISION } from '../welding/circularFilletWeldSource.js';
 import { cylindricalWeldSection } from '../welding/cylindricalWeld.js';
 import {
   FILLET_WELD_CATALOG_REVISION, FILLET_WELD_CYLINDRICAL_GENERATOR_REVISION, FILLET_WELD_INNER_CYLINDRICAL_GENERATOR_REVISION, FILLET_WELD_GENERATOR_REVISION, FILLET_WELD_OBLIQUE_GENERATOR_REVISION, weldCrossSectionIssue,
@@ -710,7 +711,8 @@ export function buildStandardPart(
 /** 保存された版を必ず確かめてから組む。未知の旧版を現在表で代用しない。 */
 export function buildStandardPartFromSource(source: StandardPartSource): PartDocument | null {
   // 溶接のビードは保存した自分の版を確かめる(知らない版からは何も組まない)。
-  if (source.catalog === 'filletWeld') return buildFilletWeldPart(source);
+  if (source.catalog === 'filletWeld') return source.generatorRevision === CIRCULAR_FILLET_WELD_GENERATOR_REVISION
+    ? buildCircularFilletWeldPartFromSource(source) : buildFilletWeldPart(source);
   if (source.catalogRevision === STEEL_CATALOG_REVISION
     && (source.generatorRevision === STEEL_GENERATOR_REVISION
       || source.generatorRevision === LEGACY_STEEL_GENERATOR_REVISION)) {
@@ -921,6 +923,7 @@ export function standardPartNominalVolume(
   const length = positiveExpression(options.length ?? DEFAULT_STANDARD_FASTENER_LENGTH)?.value ?? null;
   switch (catalog) {
     case 'filletWeld': {
+      if (Object.hasOwn(options, 'weldCircular')) return null;
       const legs = filletWeldLegs(size);
       const beadLength = options.length === undefined ? null : positiveExpression(options.length)?.value ?? null;
       const angle = filletWeldOptionAngle(options);

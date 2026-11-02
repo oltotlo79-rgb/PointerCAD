@@ -12,6 +12,7 @@ import {
   type BeamBucklingInput, type BeamBucklingResult, type BucklingRestraints, type FemWorkerPort,
 } from './index.js';
 import { FEM_ASSETS } from './assets.js';
+import { WELD_SPAN_CONTACT_ASSETS } from './beamWeldSpanAssets.js';
 import { bucklingFixture } from './buckling.testSupport.js';
 
 function bytes(name: string): Buffer {
@@ -38,6 +39,19 @@ const indexedSources = [
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const runtimePrefix = 'packages/fem/runtime/';
 
+// Existing fixed program descriptors and captured fixture hashes remain the byte oracles.
+const pinnedProgramSources = new Map(WELD_SPAN_CONTACT_ASSETS.map(asset => [
+  'packages/fem/src/' + (asset.file === 'beamWeldSpanBase.py' ? 'beamContact.py' : asset.file), asset,
+] as const));
+const lfSourcePaths = [...indexedSources, ...pinnedProgramSources.keys()];
+const pinnedRawSources = new Map([
+  ['packages/fem/src/fixtures/friction-native/input.json', '54738dd57ca9580d096cbc35aa0d70debaf2a526795d496ce9055b07b72a1432'],
+  ['packages/fem/src/fixtures/friction-native/newton-raw.json', '89cb51b614ae667c0ac349f2595661acc3a0ed4e754197c95d7fd5dd8ac2a003'],
+  ['packages/fem/src/fixtures/friction-native/nsgs-raw.json', '43cb660f39ebcbf7d93bbf5e27f4d6a8788274962cbb25ee0dab677bf2bb06d2'],
+  ['packages/fem/src/nativeBoltPreload.input.fixture.json', '704aec1afdbdf7f5b4c486d4058a57b293608aa26af3b9dc5ad36b3a9f43785a'],
+  ['packages/fem/src/nativeBoltPreload.result.fixture.json', '20f16f8df73e0c5352e0eb8f2cb5741ad3d07baf07b02c27750885400a406c66'],
+]);
+
 function runtimePaths(): string[] {
   const manifest = json('../runtime/manifest.json');
   const stored = record(manifest.storedParts);
@@ -57,12 +71,15 @@ function gitByteRoundTrip(autocrlf: 'false' | 'true' | 'input', omit?: 'lf' | 'r
   // No inherited index/worktree/config, global attributes, hooks or templates may reach the real repository.
   const tempRoot = join(root, 'scratchpad/temp');
   mkdirSync(tempRoot, { recursive: true });
-  const fixture = mkdtempSync(join(tempRoot, 'fem-source-bytes-'));
+  const fixtureParent = mkdtempSync(join(tempRoot, 'fem-source-bytes-'));
+  // Exercise the long-path boundary even when this test starts in a short checkout.
+  const fixture = join(fixtureParent, 'deep-checkout-' + 'x'.repeat(120));
+  mkdirSync(fixture);
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith('GIT_')));
   Object.assign(env, { GIT_OPTIONAL_LOCKS: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_ATTR_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: join(fixture, 'empty-config') });
   const git = (args: string[], input?: string) => execFileSync('git', ['--no-optional-locks',
-    '-c', 'core.autocrlf=' + autocrlf, '-c', 'core.safecrlf=false', '-c', 'core.eol=crlf',
+    '-c', 'core.longpaths=true', '-c', 'core.autocrlf=' + autocrlf, '-c', 'core.safecrlf=false', '-c', 'core.eol=crlf',
     '-c', 'core.attributesFile=' + join(fixture, 'empty-config'), ...args],
   { cwd: fixture, env, input, maxBuffer: 4 * 1024 * 1024, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   try {
@@ -78,8 +95,10 @@ function gitByteRoundTrip(autocrlf: 'false' | 'true' | 'input', omit?: 'lf' | 'r
     const rawPaths = [runtimePrefix + lfNotice.name, runtimePrefix + crlfNotice.name,
       runtimePrefix + 'assets/beamAnalysis.py', runtimePrefix + 'manifest.json',
       runtimePrefix + 'evidence/application-source-index.json', 'LICENSE',
-      'vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/LICENSE'];
-    const originals = new Map([...indexedSources, ...rawPaths].map(name => [name, readFileSync(join(root, name))]));
+      'vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/LICENSE', ...pinnedRawSources.keys()];
+    const originals = new Map([...lfSourcePaths, ...rawPaths].map(name => [name, readFileSync(join(root, name))]));
+    const longestCheckoutPath = Math.max(...[...originals.keys()].map(name => join(fixture, name).length));
+    expect(longestCheckoutPath).toBeGreaterThan(260);
     for (const name of ['.gitattributes', runtimePrefix + '.gitattributes']) {
       const lines = readFileSync(join(root, name), 'utf8').split(/(?<=\n)/u);
       const attributes = lines.filter(line => !(omit === 'lf' && line.includes(' text eol=lf'))
@@ -108,12 +127,18 @@ function gitByteRoundTrip(autocrlf: 'false' | 'true' | 'input', omit?: 'lf' | 'r
           expect(restored.includes(13), name + ' must remain LF').toBe(false);
           const row = record(sourcePins[name]);
           expect(pin(restored), name).toEqual({ sha256: row.sha256, bytes: row.bytes });
+        } else if (pinnedProgramSources.has(name)) {
+          const asset = pinnedProgramSources.get(name);
+          expect(restored.includes(13), name + ' must remain LF').toBe(false);
+          expect(pin(restored), name).toEqual({ sha256: asset?.sha256, bytes: asset?.bytes });
+        } else if (pinnedRawSources.has(name)) {
+          expect(pin(restored).sha256, name).toBe(pinnedRawSources.get(name));
         } else if (name.startsWith(runtimePrefix) && name !== runtimePrefix + 'manifest.json') {
           expect(pin(restored), name).toEqual(manifestFiles[name.slice(runtimePrefix.length)]);
         }
       }
     }
-    const paths = [...new Set([...indexedSources, ...rawPaths, ...runtimePaths()])];
+    const paths = [...new Set([...lfSourcePaths, ...rawPaths, ...runtimePaths()])];
     const attributes = git(['check-attr', '-z', '--stdin', 'text', 'eol'], paths.join('\0') + '\0')
       .toString('utf8').split('\0');
     const attrs = new Map<string, Record<string, string>>();
@@ -122,12 +147,12 @@ function gitByteRoundTrip(autocrlf: 'false' | 'true' | 'input', omit?: 'lf' | 'r
       attrs.set(name, { ...attrs.get(name), [attribute]: value });
     }
     return { savedDifferences, checkoutDifferences, attrs, rawPaths,
-      measured: { autocrlf, sourceFiles: indexedSources.length, rawFiles: rawPaths.length,
+      measured: { autocrlf, sourceFiles: lfSourcePaths.length, rawFiles: rawPaths.length, longestCheckoutPath,
         inputBytes: [...originals.values()].reduce((sum, data) => sum + data.length, 0),
         runtimeAttributePaths: runtimePaths().length, durationMs: Math.round(performance.now() - started) } };
   } finally {
     // fixture is created under PointerCAD and contains no symlinks or worktrees.
-    rmSync(fixture, { recursive: true, force: true });
+    rmSync(fixtureParent, { recursive: true, force: true });
   }
 }
 
@@ -213,7 +238,7 @@ describe('buckling public package and shipped source contract', () => {
     const result = gitByteRoundTrip(mode);
     expect(result.savedDifferences).toEqual([]);
     expect(result.checkoutDifferences).toEqual([]);
-    for (const name of indexedSources) expect(result.attrs.get(name), name).toEqual({ text: 'set', eol: 'lf' });
+    for (const name of lfSourcePaths) expect(result.attrs.get(name), name).toEqual({ text: 'set', eol: 'lf' });
     for (const name of new Set([...runtimePaths(), ...result.rawPaths])) {
       expect(result.attrs.get(name)?.text, name).toBe('unset');
     }
@@ -223,8 +248,15 @@ describe('buckling public package and shipped source contract', () => {
   it.each(['lf', 'raw'] as const)('detects real byte corruption when %s attributes are removed in the isolated fixture', omit => {
     const result = gitByteRoundTrip('true', omit);
     const differences = [...result.savedDifferences, ...result.checkoutDifferences];
-    if (omit === 'lf') expect(differences).toEqual(expect.arrayContaining(indexedSources));
+    if (omit === 'lf') expect(differences).toEqual(expect.arrayContaining(lfSourcePaths));
     else {
+      const convertibleRawPaths = [...pinnedRawSources.keys()].filter(name => {
+        const data = readFileSync(join(root, name));
+        return data.includes(10) || data.includes(13);
+      });
+      expect(differences).toEqual(expect.arrayContaining(convertibleRawPaths));
+      // Two captured JSON originals have no line endings: bytes cannot change, but the attribute contract must fail.
+      for (const name of pinnedRawSources.keys()) expect(result.attrs.get(name)?.text, name).not.toBe('unset');
       expect(differences).toContain(runtimePrefix + 'assets/beamAnalysis.py');
       expect(differences).toContain(runtimePrefix + 'evidence/application-source-index.json');
       expect(differences.some(name => name.startsWith(runtimePrefix + 'notices/'))).toBe(true);

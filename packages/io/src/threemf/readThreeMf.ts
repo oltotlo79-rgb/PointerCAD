@@ -38,7 +38,7 @@
  * 検査で固定する**(`readThreeMf.test.ts` に正本の文字列を書き写した検査がある)。
  */
 
-import { strFromU8 } from 'fflate';
+import { decodeUtf8 } from '../decodeUtf8.js';
 
 import { IO_LIMITS, meshAllocationByteLength } from '../limits.js';
 import { ARCHIVE_TOO_LARGE_MESSAGE, readArchive } from '../pcad/readArchive.js';
@@ -788,14 +788,6 @@ function colorOf(object: RawObject, materials: ParsedModel['materials']): ThreeM
  * 入口
  * ------------------------------------------------------------------ */
 
-/** UTF-8 として読む。読めない並びは置き換え文字になるだけだが、念のため受け止める。 */
-function decodeUtf8(bytes: Uint8Array): string | null {
-  try {
-    return strFromU8(bytes);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * XML を読む前に `<triangle` の数を数える(§0.a-0.27 の 3 段構えの ①)。

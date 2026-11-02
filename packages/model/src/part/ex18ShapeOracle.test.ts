@@ -5,10 +5,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createAllocations, type Allocations } from '../../../kernel/src/occt/allocations.js';
 import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
 import { placeShape } from '../../../kernel/src/occt/placeBodies.js';
-import { measureVolume } from '../../../kernel/src/occt/solidMesh.js';
+import '../../../kernel/src/occt/solidMesh.js';
+import type { measureVolume } from '../../../kernel/src/occt/solidMesh.js';
 import { faceAt } from '../../../kernel/src/occt/subShapes.js';
-import { EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.js';
-import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation, type Ex18ShapeMeasurement } from './ex18ShapeOracle.js';
+import { EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.testSupport.js';
+import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation, type Ex18ShapeMeasurement } from './ex18ShapeOracle.testSupport.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
 type Shape = Parameters<typeof measureVolume>[1];

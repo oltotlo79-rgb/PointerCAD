@@ -5,12 +5,15 @@ import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { BeamMemberFields } from './BeamMemberFields.js';
 import { BeamResults } from './BeamResults.js';
+import { BeamWeldSpanResults } from './BeamWeldSpanResults.js';
 import { BeamModalResults } from './BeamModalResults.js';
 import { BeamBucklingResults } from './BeamBucklingResults.js';
 import { BeamTransientHistory } from './BeamTransientHistory.js';
 import { BeamTransientResults } from './BeamTransientResults.js';
 import { BeamContactDefinitions } from './BeamContactDefinitions.js';
 import { BeamContactResults } from './BeamContactResults.js';
+import { BeamFrictionDefinitions } from './BeamFrictionDefinitions.js';
+import { BeamFrictionResults } from './BeamFrictionResults.js';
 import { BeamAxialBoltDefinitions, BeamAxialBoltResults } from './BeamAxialBolts.js';
 import { BeamWeldLayerDefinitions, BeamWeldLayerResults } from './BeamWeldLayers.js';
 import { BeamWeldThroatStressResults, prepareCombinedWeldStressInput, prepareWeldStressRequest } from './BeamWeldThroatStressResults.js';
@@ -96,7 +99,7 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
         onChange={event => {
           const value = event.target.value;
           if (value === 'static' || value === 'modal' || value === 'buckling' || value === 'transient' || value === 'contact'
-            || value === 'impact') {
+            || value === 'impact' || value === 'friction') {
             state.editBeam({ kind: 'analysis-type', value });
           }
         }} title={t('beam.guide.analysisType')}>
@@ -105,17 +108,18 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
         <option value="buckling">{t('beam.buckling')}</option>
         <option value="transient">{t('beam.transient')}</option>
         <option value="contact">{t('beam.contact')}</option>
+        <option value="friction">{t('beam.friction')}</option>
         <option value="impact">{t('beam.impact')}</option>
       </select></label>
-      {session.analysisType === 'transient' || session.analysisType === 'contact' || session.analysisType === 'impact' ? <>
-        <p>{t(session.analysisType === 'contact' ? 'beam.contactScope'
+      {session.analysisType === 'transient' || session.analysisType === 'contact' || session.analysisType === 'friction' || session.analysisType === 'impact' ? <>
+        <p>{t(session.analysisType === 'friction' ? 'beam.frictionScope' : session.analysisType === 'contact' ? 'beam.contactScope'
           : session.analysisType === 'impact' ? 'beam.impactScope' : 'beam.transientScope')}</p>
         <label>{t('beam.segments')}<select data-testid="beam-segments" value={session.segmentsPerMember}
           onChange={event => state.editBeam({ kind: 'modal-settings', modeCount: session.modeCount,
             segmentsPerMember: Number(event.target.value) })} title={t('beam.guide.segments')}>
           {Array.from({ length: 32 }, (_, index) => index + 1).map(count => <option key={count} value={count}>{count}</option>)}
         </select></label>
-        <p>{t(session.analysisType === 'contact' ? 'beam.contactRefinement'
+        <p>{t(session.analysisType === 'contact' || session.analysisType === 'friction' ? 'beam.contactRefinement'
           : session.analysisType === 'impact' ? 'beam.impactRefinement' : 'beam.transientRefinement')}</p>
       </> : null}
       {session.analysisType === 'modal' || session.analysisType === 'buckling' ? <>
@@ -146,10 +150,11 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
     </fieldset>
     <p>{t(session.analysisType === 'buckling' ? 'beam.bucklingSupportHelp'
       : session.analysisType === 'transient' ? 'beam.transientSupportHelp'
-      : session.analysisType === 'contact' ? 'beam.contactSupportHelp'
+      : session.analysisType === 'contact' || session.analysisType === 'friction' ? 'beam.contactSupportHelp'
       : session.analysisType === 'impact' ? 'beam.impactSupportHelp' : 'beam.supportHelp')}</p>
     {session.members.map(member => <BeamMemberFields key={member.id} member={member} session={session} />)}
-    {session.analysisType === 'contact' ? <BeamContactDefinitions session={session} /> : null}
+    {session.analysisType === 'contact' || session.analysisType === 'friction' ? <BeamContactDefinitions session={session} /> : null}
+    {session.analysisType === 'friction' ? <BeamFrictionDefinitions session={session} /> : null}
     {session.analysisType === 'contact' ? <BeamAxialBoltDefinitions session={session} /> : null}
     {session.analysisType === 'contact' ? <BeamWeldLayerDefinitions session={session} /> : null}
     {session.analysisType === 'contact' ? <BeamJointInitialStrainDefinitions session={session} /> : null}
@@ -166,6 +171,7 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
     </div>
     <p role="status" data-testid="beam-status" data-status={session.status} data-phase={session.phase ?? ''}>
       {running ? t(session.analysisType === 'impact' && session.phase === 'solving' ? 'beam.phase.impact'
+        : session.analysisType === 'friction' && session.phase === 'solving' ? 'beam.phase.friction'
         : session.analysisType === 'contact' && session.phase === 'solving' ? 'beam.phase.contact'
         : session.analysisType === 'transient' && session.phase === 'solving' ? 'beam.phase.transient'
         : session.analysisType === 'buckling' && session.phase === 'solving' ? 'beam.phase.buckling'
@@ -175,8 +181,12 @@ export function BeamPanel({ session }: { readonly session: BeamSession }): React
     </p>
     {session.errorKey === null ? null : <p role="alert">{t(session.errorKey)}</p>}
     {session.diagnostic === null ? null : <details><summary>{t('beam.details')}</summary><p>{session.diagnostic}</p></details>}
-    {reviewed && session.result !== null ? session.result.kind === 'oofem-beam-impact-3d'
+    {reviewed && session.result !== null ? session.result.kind === 'pointercad-internal-friction-contact-candidate'
+      ? <BeamFrictionResults result={session.result} />
+      : session.result.kind === 'oofem-beam-impact-3d'
       ? <BeamImpactResults result={session.result} members={matchedImpactMembers} outlines={fibreOutlines} />
+      : session.result.kind === 'oofem-beam-weld-span-contact'
+      ? <BeamWeldSpanResults session={session} result={session.result} />
       : session.result.kind === 'oofem-beam-joint-initial-strain'
       ? <><BeamJointInitialStrainResults result={session.result} view={session.contactView} />
         <BeamWeldThroatStressResults {...prepareWeldStressRequest(weldStressInput, session.result, weldStressOwner)}

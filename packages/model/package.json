@@ -14,6 +14,10 @@
       "types": "./dist/scripting/index.d.ts",
       "default": "./src/scripting/index.ts"
     },
+    "./vec3": {
+      "types": "./dist/sketch/vec3.d.ts",
+      "default": "./src/sketch/vec3.ts"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
@@ -21,6 +25,14 @@
     "./beam-analysis": {
       "types": "./dist/analysis/index.d.ts",
       "default": "./src/analysis/index.ts"
+    },
+    "./document-identity": {
+      "types": "./dist/documentIdentity.d.ts",
+      "default": "./src/documentIdentity.ts"
+    },
+    "./sketch-document": {
+      "types": "./dist/sketch/createSketchDocument.d.ts",
+      "default": "./src/sketch/createSketchDocument.ts"
     }
   },
   "scripts": {

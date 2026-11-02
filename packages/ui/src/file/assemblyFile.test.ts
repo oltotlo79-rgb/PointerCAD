@@ -19,6 +19,7 @@ import { beginComponentDrag, finishComponentDrag, moveComponentDrag } from '../a
 import { currentPcadAttachments } from '../store/attachKernel.js';
 import { newSketchCanvas } from './canvasFile.js';
 import { startAutoSave } from './attachAutoSave.js';
+import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
 
 beforeEach(() => { resetTestStore(); useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null }); });
 
@@ -386,4 +387,13 @@ describe('actual assembly file callers reject missing session entropy atomically
       expect(parsed.ok).toBe(true);
     } finally { vi.unstubAllGlobals(); }
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

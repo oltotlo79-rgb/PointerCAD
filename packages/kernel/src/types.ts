@@ -917,6 +917,9 @@ export type EdgeCurveKind = 'line' | 'circle' | 'ellipse' | 'other';
  * 隣り合う面の一覧や三角形の数は、形が少し変わるだけで壊れるので持たない。
  */
 export interface SolidFaceInfo {
+  /** Complete nonempty current native face boundary, including inner wires; seam edges occur once.
+   * Omitted on incomplete mapping or the adjacency limit. Runtime only, never saved identity. */
+  readonly boundaryEdgeIndices?: readonly number[];
   /** Current native cylindrical placement basis, display only; never a saved fingerprint.
    * axis = Position.Direction (not flipped by face Orientation); zeroDirection = Position.XDirection.
    * Height h is origin + (axialRange[0] + h) * axis. Positive angles turn about axis by the right-hand rule. */
@@ -962,6 +965,17 @@ export interface SolidFaceInfo {
 
 /** 辺 1 本の素性。並びは面と同じく TopExp.MapShapes_2 の順。 */
 export interface SolidEdgeInfo {
+  /** Current native circle parameter basis in part coordinates, not a saved fingerprint.
+   * Original increasing range (radians); orientation does not swap legacy start/end.
+   * Omitted for non-circles, unknown orientation or invalid/degenerate geometry. */
+  readonly circleBasis?: {
+    readonly origin: Vec3Tuple;
+    readonly xAxis: Vec3Tuple;
+    readonly yAxis: Vec3Tuple;
+    readonly normal: Vec3Tuple;
+    readonly parameterRange: readonly [number, number];
+    readonly orientation: 1 | -1;
+  };
   readonly index: number;
   readonly curveKind: EdgeCurveKind;
   /** 長さ(mm)。 */

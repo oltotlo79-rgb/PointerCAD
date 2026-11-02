@@ -1,4 +1,4 @@
-import { OFFLINE_CONTROL_FILES, OFFLINE_MANUAL_EDITION_QUERY, isPreparedOfflineCacheName } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { OFFLINE_CONTROL_FILES, OFFLINE_MANUAL_EDITION_QUERY, isPreparedOfflineCacheName } from '@pointercad/ui/offline-protocol';
 import { bindOfflineClient, inheritOfflineClient, readOfflineClientBinding, OFFLINE_NETWORK_EDITION,
   OfflineBindingError, type OfflineBindingStorage, type OfflineClientBinding } from './offlineClientBindings.js';
 import { OFFLINE_PREPARATION_HEADER, offlineAssetRequestUrl } from './offlineNetwork.js';

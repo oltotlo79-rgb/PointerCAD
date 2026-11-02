@@ -86,9 +86,11 @@ export function attachBeamAnalysis(
     // earlier revision, another reviewed source or a cancelled request is still dropped by current() below.
     // FemClient.analyzeBeamImpact also accepts only a result re-decoded for this exact input and digest; the same
     // current() ownership check below drops cancelled, superseded and wrong-revision replies.
-    const work = checked.kind === 'impact' ? client.analyzeBeamImpact(checked.input, options)
+    const work = checked.kind === 'friction' ? client.analyzeFrictionContact(checked.input, checked.solverOptions, options)
+      : checked.kind === 'impact' ? client.analyzeBeamImpact(checked.input, options)
       : checked.kind === 'joint-initial-strain' ? client.analyzeJointInitialStrain(checked.input, options)
       : checked.kind === 'joint-contact' ? client.analyzeJointContact(checked.input, options)
+      : checked.kind === 'weld-span-contact' ? client.analyzeWeldSpanContact(checked.input, options)
       : checked.kind === 'weld-contact' ? client.analyzeWeldContact(checked.input, options)
       : checked.kind === 'bolt-contact' ? client.analyzeBoltContact(checked.input, options)
       : checked.kind === 'contact' ? client.analyzeContact(checked.input, options)

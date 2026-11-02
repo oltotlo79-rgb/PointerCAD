@@ -1,3 +1,4 @@
+import { locallyGradedPlateBoundary } from './solidMeshConvergenceFixture.js';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeSync } from 'node:fs';
 import { join, sep } from 'node:path';
@@ -7,6 +8,7 @@ import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerforma
 import { countTetraMeshVolumes } from './assemblyTetraMesh.js';
 import { boundCurvedPlc, type CurvedSurface } from './curvedPlcBound.js';
 import { analyzeSolid, isLoader, isRuntime, meshTetrahedra, type PyodideRuntime } from './runtime.js';
+import { SOLID_LIMITS } from './solidAnalysisTranslation.js';
 import type { SolidAnalysisInput, SolidAnalysisResult, SolidVector3 } from './solidAnalysisModel.js';
 import { solidResultMatches } from './solidAnalysisResults.js';
 import { solidInputSha256, solidTetGeometry, translateSolidAnalysis } from './solidAnalysisTranslation.js';
@@ -39,7 +41,7 @@ beforeAll(async () => {
   if (!isLoader(loader)) throw new Error('Invalid packaged Pyodide loader');
   const loaded = await loader.loadPyodide({ indexURL: assets + sep, packageBaseUrl: assets + sep, packageCacheDir: assets,
     lockFileContents: readFileSync(join(assets, 'pyodide-lock.json'), 'utf8'), stdLibURL: join(assets, 'python_stdlib.zip'),
-    packages: ['numpy'], fullStdLib: false, stdout: () => undefined, stderr: () => undefined });
+    packages: ['numpy'], fullStdLib: false, stdout: line => { if (process.env.PCAD_MESH_PLATEAU_OBSERVATION === '1') admissionEvidence('PCAD_NATIVE_TRACE', line); }, stderr: () => undefined });
   if (!isRuntime(loaded)) throw new Error('Invalid packaged Pyodide runtime');
   runtime = loaded;
 }, FUNCTIONAL_TEST_TIMEOUT_MS);
@@ -169,6 +171,9 @@ function solidInput(shape: Shape, mesh: TetraMeshResult): SolidAnalysisInput {
  */
 function sample(input: SolidAnalysisInput, result: SolidAnalysisResult, at: SolidVector3): { displacementMm: number; stressMPa: number } {
   let displacementMm = 0, stressMPa = 0, hits = 0;
+  const selection: { element: number; nodeIds: readonly number[]; nodes: readonly SolidVector3[];
+    weights: number[]; centroid: number[]; volumeMm3: number; stressMPa: number;
+    displacementMm: number; pointResidualMm: number }[] = [];
   input.elements.forEach((element, index) => {
     const nodes = element.nodes.map(node => input.nodes[node]), { gradients } = solidTetGeometry(nodes);
     const offset = at.map((value, axis) => value - nodes[0][axis]);
@@ -176,8 +181,16 @@ function sample(input: SolidAnalysisInput, result: SolidAnalysisResult, at: Soli
     if (weights.some(weight => weight < -1e-10 || weight > 1 + 1e-10)) return;
     displacementMm += weights.reduce((sum, weight, i) => sum + weight * result.displacementMm[element.nodes[i]][0], 0);
     stressMPa += result.elements[index].stressMPa[0]; hits++;
+    selection.push({ element: index, nodeIds: element.nodes, nodes, weights,
+      centroid: at.map((_, axis) => nodes.reduce((sum, node) => sum + node[axis], 0) / 4),
+      volumeMm3: solidTetGeometry(nodes).volumeMm3, stressMPa: result.elements[index].stressMPa[0],
+      displacementMm: weights.reduce((sum, weight, i) => sum + weight * result.displacementMm[element.nodes[i]][0], 0),
+      pointResidualMm: Math.hypot(...at.map((coordinate, axis) =>
+        weights.reduce((sum, weight, i) => sum + weight * nodes[i][axis], 0) - coordinate)) });
   });
   expect(hits, `fixed probe outside mesh: ${at.join(',')}`).toBeGreaterThan(0);
+  writeSync(1, 'SOLID_FIXED_POINT_SELECTION ' + JSON.stringify({ source: input.source, at, hits, selection })
+    + String.fromCharCode(10));
   return { displacementMm: displacementMm / hits, stressMPa: stressMPa / hits };
 }
 interface Observation {
@@ -215,12 +228,74 @@ describe('fixed convergence criteria', () => {
 });
 
 const observations = new Map<Shape, Observation[]>();
+// One previously observed input. No size search, local field change or retry.
+const admissionTargets = [1 / 5] as const;
+interface AdmissionCounts { readonly nodes: number; readonly elements: number }
+interface AdmittedMesh extends AdmissionCounts {
+  readonly input: TetraMeshInput; readonly mesh: TetraMeshResult;
+  readonly candidateIndex: number; readonly meshElapsedMs: number; readonly meshSha256: string;
+}
+function withinAdmission(counts: AdmissionCounts, previousElements: number): boolean {
+  return Number.isSafeInteger(counts.nodes) && counts.nodes >= 4 && counts.nodes <= 5000
+    && Number.isSafeInteger(counts.elements) && counts.elements >= Math.max(11640, 2 * previousElements)
+    && counts.elements <= SOLID_LIMITS.elements;
+}
+function cheaperAdmission(a: AdmissionCounts, b: AdmissionCounts): boolean {
+  return a.nodes < b.nodes || (a.nodes === b.nodes && a.elements < b.elements);
+}
+let selectedMesh: AdmittedMesh | undefined;
+let admissionCompleted = 0, admissionAborted = false, admissionEvidenceBytes = 0;
+function admissionEvidence(prefix: string, value: unknown): void {
+  const encoded = prefix + ' ' + JSON.stringify(value) + String.fromCharCode(10);
+  admissionEvidenceBytes += Buffer.byteLength(encoded, 'utf8');
+  if (admissionEvidenceBytes > 16_000_000) throw new Error('Bounded admission evidence exceeded 16000000 bytes');
+  writeSync(1, encoded);
+}
+function meshContentSha256(mesh: TetraMeshResult): string {
+  return createHash('sha256').update(JSON.stringify({ coordinates: mesh.coordinates,
+    tetrahedra: mesh.tetrahedra, boundaryTriangles: mesh.boundaryTriangles, boundaryTags: mesh.boundaryTags })).digest('hex');
+}
 describe('real offline solid mesh convergence (unconverged is reported, never relabelled as a pass)', () => {
   for (const shape of ['beam', 'perforated-plate', 'cylinder'] as const) {
-    it.each(levels)(`${shape}: refinement %i`, async level => {
-      const start = performance.now(), input = shape === 'cylinder' ? cylindricalPlc(level) : rectangularPlc(shape, level);
-      const mesh = await meshTetrahedra(runtime, input, { wrapper: verified('netgenMesher.py'),
+    // Baseline stages are unchanged; the continuation uses the admitted mesh itself.
+    const runLevel = async (level: number): Promise<void> => {
+      const continuation = shape === 'perforated-plate' && level === 4;
+      if (continuation) expect(observations.get(shape), 'all three baseline stages must have completed').toHaveLength(3);
+      const selected = continuation ? selectedMesh : undefined;
+      if (continuation && (admissionAborted || admissionCompleted !== admissionTargets.length || selected === undefined)) {
+        throw new Error('No admissible mesh from the completed fixed batch; solver not started');
+      }
+      // Carry selected meshing time into the original 60s continuation limit.
+      const start = performance.now() - (selected?.meshElapsedMs ?? 0), boundaryLevel = continuation ? 3 : level;
+      const boundary = selected?.input ?? (shape === 'cylinder' ? cylindricalPlc(boundaryLevel) : rectangularPlc(shape, boundaryLevel));
+      const meshing = boundary.meshing;
+      if (meshing === undefined) throw new Error('Fixture requires explicit meshing controls');
+      const input = selected?.input ?? boundary;
+      const targetSizeMm = selected === undefined ? meshing.targetSizeMm : admissionTargets[selected.candidateIndex];
+      const mesh = selected?.mesh ?? await meshTetrahedra(runtime, input, { wrapper: verified('netgenMesher.py'),
         wheelLocation: join(assets, NETGEN_WHEEL).split(sep).join('/') }, () => undefined);
+      if (selected !== undefined) {
+        expect(meshContentSha256(mesh)).toBe(selected.meshSha256);
+        expect(selected.meshSha256).toBe('50c2678d61d2df27635b885123312bc599e7d3cae8035f0631d74de228b0358e');
+        admissionEvidence('SOLID_MESH_SELECTED', { candidateIndex: selected.candidateIndex, targetSizeMm,
+          nodes: selected.nodes, elements: selected.elements, meshSha256: selected.meshSha256,
+          selectionRule: 'fewest nodes, then fewest elements, then fixed input order; no solve values used' });
+      }
+      const meshedAt = performance.now();
+      if (continuation) {
+        const previous = observations.get(shape)?.[2];
+        if (previous === undefined) throw new Error('Missing completed baseline');
+        expect(deniedRequests).toBe(0);
+        writeSync(1, 'SOLID_CONTINUATION_ADMISSION ' + JSON.stringify({ shape, level, boundaryLevel,
+          targetSizeMm, nodes: mesh.coordinates.length / 3,
+          elements: mesh.tetrahedra.length / 4, previousElements: previous.elements,
+          meshingElapsedMs: meshedAt - start }) + String.fromCharCode(10));
+        // Stop before OOFEM on insufficient refinement or the predeclared work cap.
+        expect(mesh.coordinates.length / 3).toBeLessThanOrEqual(5000);
+        expect(mesh.tetrahedra.length / 4).toBeLessThanOrEqual(SOLID_LIMITS.elements);
+        expect(mesh.tetrahedra.length / 4).toBeGreaterThanOrEqual(2 * previous.elements);
+        expect(meshedAt - start).toBeLessThan(FUNCTIONAL_TEST_TIMEOUT_MS);
+      }
       const quality = countTetraMeshVolumes(mesh);
       expect(quality).toEqual({ total: mesh.tetrahedra.length / 4, positive: mesh.tetrahedra.length / 4,
         inverted: 0, zero: 0, allPositive: true });
@@ -231,6 +306,18 @@ describe('real offline solid mesh convergence (unconverged is reported, never re
       const before = JSON.stringify(solid);
       const result = await analyzeSolid(runtime, solid, { wrapper: verified('solidAnalysis.py'),
         wheelLocation: join(assets, wheel).split(sep).join('/') }, () => undefined);
+      const solvedAt = performance.now();
+      if (shape === 'perforated-plate' && (level === 3 || continuation)) {
+        // Enough primitive data for independent volume/reaction/work recovery.
+        admissionEvidence('SOLID_EQUILIBRIUM_RAW', { level, inputSha256: mesh.inputSha256,
+          meshSha256: meshContentSha256(mesh), nodes: solid.nodes,
+          tetrahedra: solid.elements.map(element => element.nodes), material: MATERIAL,
+          constraints: solid.constraints, surfaceLoads: solid.surfaceLoads,
+          forcesN: translateSolidAnalysis(solid).plan.forcesN, displacementMm: result.displacementMm,
+          reactionN: result.reactionN, reservedNumericBytes: result.reservedNumericBytes,
+          maximumRelativeEquilibriumResidual: result.maximumRelativeEquilibriumResidual,
+          minimumScaledPivot: result.minimumScaledPivot, strainEnergyNmm: result.strainEnergyNmm, reportedVolumeMm3: mesh.volumeMm3 });
+      }
       expect(JSON.stringify(solid)).toBe(before);
       expect(solidResultMatches(result, solid, await solidInputSha256(solid))).toBe(true);
       expect(result.method).toBe('oofem-ltrspace-isole-native-ldlt/1');
@@ -249,12 +336,146 @@ describe('real offline solid mesh convergence (unconverged is reported, never re
       const change = rows.length > 0 ? difference(rows[rows.length - 1], row) : null;
       // Write the evidence to the RUN stream even when the reporter hides console output from passing tests.
       writeSync(1, 'SOLID_MESH_CONVERGENCE ' + JSON.stringify({ shape, level, nodes: solid.nodes.length, ...quality, ...row,
-        change, final: level === 3, elapsedMs: performance.now() - start }) + String.fromCharCode(10));
+        change, final: level === (shape === 'perforated-plate' ? 4 : 3), boundaryLevel,
+        targetSizeMm, meshingElapsedMs: meshedAt - start,
+        solveAndValidationElapsedMs: solvedAt - meshedAt, elapsedMs: performance.now() - start }) + String.fromCharCode(10));
+      if (continuation) expect(performance.now() - start).toBeLessThanOrEqual(FUNCTIONAL_TEST_TIMEOUT_MS);
       if (change !== null) expect(change.refined, 'at least twice as many elements at each level').toBe(true);
       rows.push(row); observations.set(shape, rows);
+      // This fixed global mesh was measured to be insufficient. Keep it as a counterexample:
+      // the mandatory local series below must satisfy the same original accuracy limits.
+      if (continuation) expect(change?.status, 'fixed global mesh must report its insufficient accuracy').toBe('未収束');
       expect(deniedRequests).toBe(0);
       // Numerical thresholds are fixed above. A successful reporting test does NOT
       // claim all three geometries converged; the final printed status is authoritative.
-    }, FUNCTIONAL_TEST_TIMEOUT_MS);
+    };
+    it.each(levels)(`${shape}: refinement %i`, runLevel, FUNCTIONAL_TEST_TIMEOUT_MS);
+    if (shape === 'perforated-plate') {
+      it.each(admissionTargets)('perforated-plate: mesh-only admission target %s', async targetSizeMm => {
+        if (admissionAborted) throw new Error('Earlier fixed-batch mesh failed; no further native call');
+        try {
+          const rows = observations.get(shape);
+          if (rows === undefined || rows.length !== 3) throw new Error('Completed same-RUN baseline required');
+          const start = performance.now(), boundary = rectangularPlc(shape, 3), controls = boundary.meshing;
+          if (controls === undefined) throw new Error('Fixture requires explicit meshing controls');
+          const input = { ...boundary, meshing: { ...controls, targetSizeMm } };
+          const mesh = await meshTetrahedra(runtime, input, { wrapper: verified('netgenMesher.py'),
+            wheelLocation: join(assets, NETGEN_WHEEL).split(sep).join('/') }, () => undefined);
+          const counts = { nodes: mesh.coordinates.length / 3, elements: mesh.tetrahedra.length / 4 };
+          const quality = countTetraMeshVolumes(mesh), candidateIndex = admissionTargets.indexOf(targetSizeMm);
+          const meshSha256 = meshContentSha256(mesh), meshElapsedMs = performance.now() - start;
+          const eligible = withinAdmission(counts, rows[2].elements);
+          admissionEvidence('SOLID_MESH_ADMISSION_BATCH', { candidateIndex, targetSizeMm, previousElements: rows[2].elements,
+            ...counts, eligible, meshSha256, inputSha256: mesh.inputSha256, meshElapsedMs,
+            quality, volumeMm3: mesh.volumeMm3, input,
+            coordinates: mesh.coordinates, tetrahedra: mesh.tetrahedra,
+            boundaryTriangles: mesh.boundaryTriangles, boundaryTags: mesh.boundaryTags });
+          expect(quality).toEqual({ total: counts.elements, positive: counts.elements, inverted: 0, zero: 0, allPositive: true });
+          expect(Math.abs(mesh.volumeMm3 - 28) / 28).toBeLessThanOrEqual(1e-10);
+          const candidateElapsedMs = performance.now() - start;
+          expect(candidateElapsedMs).toBeLessThan(FUNCTIONAL_TEST_TIMEOUT_MS);
+          expect(deniedRequests).toBe(0);
+          // Count rejection is recorded data; no solve or regenerated candidate.
+          if (eligible && (selectedMesh === undefined || cheaperAdmission(counts, selectedMesh))) {
+            selectedMesh = { ...counts, candidateIndex, meshElapsedMs: candidateElapsedMs, meshSha256, input, mesh };
+          }
+          admissionCompleted++;
+        } catch (error) {
+          admissionAborted = true;
+          throw error;
+        }
+      }, FUNCTIONAL_TEST_TIMEOUT_MS);
+      it('perforated-plate: global refinement 4 reports insufficient accuracy', () => runLevel(4), FUNCTIONAL_TEST_TIMEOUT_MS);
+    }
   }
+});
+
+// Diagnostic candidate only; Root must authorize this temporary test adapter.
+// Select ONLY these two names. No baseline solve, no admitted solve, no target search.
+let plateauObservationFailed = false;
+describe.skipIf(process.env.PCAD_MESH_PLATEAU_OBSERVATION !== '1')('fixed known-input plateau observation', () => {
+  it.each([13 / 60, 1 / 5])('plateau-observation: native target %s', async targetSizeMm => {
+    if (plateauObservationFailed) throw new Error('Earlier observation failed; no further native call');
+    try {
+      const start = performance.now();
+      if (process.env.PCAD_MESH_PLATEAU_OBSERVATION !== '1') throw new Error('Explicit diagnostic mode required');
+      const wrapperPath = process.env.PCAD_MESH_PLATEAU_WRAPPER;
+      if (wrapperPath === undefined) throw new Error('Explicit pinned observation wrapper required');
+      const diagnostic = new Uint8Array(readFileSync(wrapperPath));
+      expect(createHash('sha256').update(diagnostic).digest('hex')).toBe('663ceb5c731f73997e8e8220668e4379a32554b1f86f521789a118f6e89b62db');
+      const boundary = rectangularPlc('perforated-plate', 3), controls = boundary.meshing;
+      if (controls === undefined) throw new Error('Explicit controls required');
+      const input = { ...boundary, meshing: { ...controls, targetSizeMm } };
+      admissionEvidence('PCAD_PLATEAU_INPUT', input);
+      const mesh = await meshTetrahedra(runtime, input, { wrapper: diagnostic,
+        wheelLocation: join(assets, NETGEN_WHEEL).split(sep).join('/') }, () => undefined);
+      const counts = { nodes: mesh.coordinates.length / 3, elements: mesh.tetrahedra.length / 4 };
+      admissionEvidence('PCAD_PLATEAU_RESULT', { targetSizeMm, ...counts,
+        inputSHA256: mesh.inputSha256, contentSHA256: meshContentSha256(mesh),
+        admission: withinAdmission(counts, 5820), elapsedMs: performance.now() - start,
+        solverCalls: 0, numericalConvergence: 'not evaluated' });
+      expect(countTetraMeshVolumes(mesh).allPositive).toBe(true);
+      expect(Math.abs(mesh.volumeMm3 - 28) / 28).toBeLessThanOrEqual(1e-10);
+      expect(mesh.boundaryTriangles).toEqual(input.triangles);
+      expect(mesh.boundaryTags).toEqual(input.tags);
+      expect(mesh.coordinates.slice(0, input.coordinates.length)).toEqual(input.coordinates);
+      expect(deniedRequests).toBe(0);
+      expect(performance.now() - start).toBeLessThan(FUNCTIONAL_TEST_TIMEOUT_MS);
+      // Diagnostic execution success does not accept an out-of-window mesh.
+      // There is deliberately no solver or automatic refinement in this path.
+    } catch (error) { plateauObservationFailed = true; throw error; }
+  }, FUNCTIONAL_TEST_TIMEOUT_MS);
+});
+
+// A new, explicitly fixed local series. Historical global levels and failed raw
+// results remain separate: a different coarse mesh is never silently substituted.
+const localPlateObservations: Observation[] = [];
+describe('fixed local perforated-plate refinement', () => {
+  it.each([1, 2, 3] as const)('local perforated-plate: stage %i', async stage => {
+    expect(localPlateObservations).toHaveLength(stage - 1);
+    const start = performance.now(), input = locallyGradedPlateBoundary(stage);
+    const mesh = await meshTetrahedra(runtime, input, { wrapper: verified('netgenMesher.py'),
+      wheelLocation: join(assets, NETGEN_WHEEL).split(sep).join('/') }, () => undefined);
+    const meshedAt = performance.now(), quality = countTetraMeshVolumes(mesh);
+    const nodes = mesh.coordinates.length / 3, elements = mesh.tetrahedra.length / 4;
+    admissionEvidence('SOLID_LOCAL_MESH_INPUT', { series: 'local-perforated-plate/1', stage,
+      input, inputSha256: mesh.inputSha256, meshSha256: meshContentSha256(mesh), nodes, elements,
+      meshingElapsedMs: meshedAt - start, quality, volumeMm3: mesh.volumeMm3 });
+    expect(nodes).toBeLessThanOrEqual(5000);
+    expect(elements).toBeLessThanOrEqual(SOLID_LIMITS.elements);
+    if (stage > 1) expect(elements).toBeGreaterThanOrEqual(2 * localPlateObservations[stage - 2].elements);
+    expect(meshedAt - start).toBeLessThan(FUNCTIONAL_TEST_TIMEOUT_MS);
+    expect(quality).toEqual({ total: elements, positive: elements, inverted: 0, zero: 0, allPositive: true });
+    expect(mesh.volumeMm3).toBeCloseTo(28, 10);
+    expect(mesh.boundaryTriangles).toEqual(input.triangles);
+    expect(mesh.boundaryTags).toEqual(input.tags);
+    expect(mesh.coordinates.slice(0, input.coordinates.length)).toEqual(input.coordinates);
+    const solid = solidInput('perforated-plate', mesh), before = JSON.stringify(solid);
+    const result = await analyzeSolid(runtime, solid, { wrapper: verified('solidAnalysis.py'),
+      wheelLocation: join(assets, wheel).split(sep).join('/') }, () => undefined);
+    expect(JSON.stringify(solid)).toBe(before);
+    expect(solidResultMatches(result, solid, await solidInputSha256(solid))).toBe(true);
+    expect(result.method).toBe('oofem-ltrspace-isole-native-ldlt/1');
+    expect(result.reactionN.reduce((sum, force) => sum + force[0], 0)).toBeCloseTo(-FORCE_N, 7);
+    const forcesN = translateSolidAnalysis(solid).plan.forcesN;
+    const externalWork = forcesN.reduce((sum, force, node) => sum
+      + force.reduce((work, component, axis) => work + component * result.displacementMm[node][axis], 0), 0);
+    expect(Math.abs(result.strainEnergyNmm - externalWork / 2) / result.strainEnergyNmm).toBeLessThanOrEqual(1e-8);
+    const row: Observation = { elements,
+      displacementMm: sample(solid, result, [8, 0, .5]).displacementMm,
+      energyNmm: result.strainEnergyNmm, stressMPa: sample(solid, result, [6.37, 1.42, .43]).stressMPa };
+    const change = stage > 1 ? difference(localPlateObservations[stage - 2], row) : null;
+    admissionEvidence('SOLID_LOCAL_EQUILIBRIUM_RAW', { series: 'local-perforated-plate/1', stage,
+      inputSha256: mesh.inputSha256, meshSha256: meshContentSha256(mesh), nodes: solid.nodes,
+      tetrahedra: solid.elements.map(element => element.nodes), material: MATERIAL,
+      constraints: solid.constraints, surfaceLoads: solid.surfaceLoads, forcesN,
+      displacementMm: result.displacementMm, reactionN: result.reactionN,
+      reservedNumericBytes: result.reservedNumericBytes, strainEnergyNmm: result.strainEnergyNmm });
+    admissionEvidence('SOLID_LOCAL_CONVERGENCE', { series: 'local-perforated-plate/1', stage,
+      nodes, ...row, change, meshingElapsedMs: meshedAt - start, elapsedMs: performance.now() - start });
+    expect(performance.now() - start).toBeLessThanOrEqual(FUNCTIONAL_TEST_TIMEOUT_MS);
+    expect(deniedRequests).toBe(0);
+    localPlateObservations.push(row);
+    if (stage === 3) expect(change?.status, 'same physical probes; original 1%/1%/5% and twofold element count').toBe('収束');
+  }, FUNCTIONAL_TEST_TIMEOUT_MS);
 });

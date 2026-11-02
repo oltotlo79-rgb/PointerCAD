@@ -42,7 +42,7 @@ it('rejects an actual form submit after another camera setting was committed', (
 });
 
 it('captures the expected setting on the first real form edit and keeps it through later edits', () => {
-  type Draft = { value: CameraControlSettings; expected: CameraControlSettings };
+  interface Draft { value: CameraControlSettings; expected: CameraControlSettings }
   vi.spyOn(React, 'useId').mockReturnValue('camera-draft');
   vi.spyOn(ReactHooks, 'useCallback').mockImplementation(callback => callback);
   vi.spyOn(ReactHooks, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());

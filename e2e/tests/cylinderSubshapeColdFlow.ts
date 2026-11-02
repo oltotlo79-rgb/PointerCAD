@@ -145,6 +145,31 @@ function assertAttachmentBinary(actual: ReadonlyMap<string, PcadAttachments>,
   }
 }
 
+/** Existing bounded journals/getters only: no capture, provider inspection or retries. */
+async function saveObservedHoleWallAssembly(page: Page, info: TestInfo, path: string,
+  label: string, app?: ElectronApplication): Promise<Uint8Array> {
+  const record = async (boundary: string): Promise<void> => {
+    try {
+      const observed = await page.evaluate(() => {
+        const entries = ['pcadThumbnailCaptureReasons', 'pcadViewportAssemblyOwner',
+          'pcadViewportMeshObservation', 'pcadViewportMemoryStats', 'pcadViewportRenderStats', 'pcadMeshLedgerDiagnostics'];
+        return Object.fromEntries(entries.map(name => {
+          const reader: unknown = Reflect.get(window, name);
+          if (typeof reader !== 'function') return [name, { available: false }];
+          try { return [name, { available: true, value: Reflect.apply(reader, window, []) }]; }
+          catch (error) { return [name, { available: true, error: String(error) }]; }
+        }));
+      });
+      const capturePath = info.outputPath(`r18-${label}-${boundary}-capture.json`);
+      await writeFile(capturePath, JSON.stringify(observed), 'utf8');
+      await info.attach(`r18-${label}-${boundary}-capture.json`, { path: capturePath, contentType: 'application/json' });
+    } catch { /* Preserve the original save/assertion result. */ }
+  };
+  await record('before-save');
+  try { return await saveUiPart(page, path, app); }
+  finally { await record('after-save'); }
+}
+
 async function saveUiPart(page: Page, path: string, app?: ElectronApplication): Promise<Uint8Array> {
   if (app !== undefined) await saveTarget(app, path);
   const download = app === undefined ? page.waitForEvent('download') : undefined;
@@ -761,7 +786,7 @@ export async function createHoleWallMateScenario(page: Page, info: TestInfo,
   await info.attach('hole-wall-mate-live', { body: await page.screenshot(), contentType: 'image/png' });
   const path = info.outputPath('actual-hole-wall-mate.pcada');
   const saveStarted = Date.now();
-  const rawBytes = await saveUiPart(page, path, app);
+  const rawBytes = await saveObservedHoleWallAssembly(page, info, path, 'baseline', app);
   const saveFinished = Date.now();
   const bundle = await readWallMateBundle(rawBytes);
   for (const component of bundle.document.components) {
@@ -1304,7 +1329,7 @@ export async function updateHoleWallMatePhi8Scenario(page: Page, info: TestInfo,
   expect(solved.diagnosis?.unresolvedMateIds).toEqual([]);
   const saveStarted = Date.now();
   const path = info.outputPath('actual-hole-wall-mate-phi8.pcada');
-  const rawBytes = await saveUiPart(page, path, app);
+  const rawBytes = await saveObservedHoleWallAssembly(page, info, path, 'phi8', app);
   const saveFinished = Date.now();
   const bundle = await readWallMateBundle(rawBytes);
   expect(bundle.document).toEqual(scenario.bundle.document);
@@ -1354,7 +1379,7 @@ export async function updateHoleWallMatePhi8Scenario(page: Page, info: TestInfo,
   expect(await wallMateStats(page)).toEqual(scenario.solved);
   await expect.poll(completedRenders).toBeGreaterThan(beforeRender);
   const undoStarted = Date.now();
-  const undoneBytes = await saveUiPart(page, info.outputPath('actual-hole-wall-mate-one-undo.pcada'), app);
+  const undoneBytes = await saveObservedHoleWallAssembly(page, info, info.outputPath('actual-hole-wall-mate-one-undo.pcada'), 'one-undo', app);
   const undoFinished = Date.now();
   const undone = await readWallMateBundle(undoneBytes);
   expect(undone.document).toEqual(scenario.bundle.document);

@@ -1,4 +1,7 @@
+import { analyzeFrictionContactInBrowser, analyzeWeldSpanContactInBrowser } from './offlineBrowser.js';
 import { analyzeNativeBoltPreloadInBrowser } from './offlineBrowser.js';
+import { analyzeSolidContactInBrowser } from './offlineBrowser.js';
+import { SolidContactRuntimeError } from './solidContactRuntime.js';
 import { analyzeInBrowser, analyzeModalInBrowser, analyzeBucklingInBrowser, analyzeTransientInBrowser,
   analyzePlasticBarInBrowser, analyzeContactInBrowser, analyzeBoltContactInBrowser, analyzeWeldContactInBrowser, analyzeJointContactInBrowser, analyzeSolidInBrowser, analyzeSolidPlasticInBrowser,
   meshTetrahedraInBrowser, qualifyInBrowser } from './offlineBrowser.js';
@@ -11,17 +14,21 @@ import { analyzeFrameBoltContactInBrowser } from './offlineBrowser.js';
 
 declare const self: DedicatedWorkerGlobalScope;
 let used = false;
+let closed = false;
+const closeOnce = (): void => { if (!closed) { closed = true; self.close(); } };
 self.onmessage = (event: MessageEvent<unknown>): void => {
-  if (used || !isRequest(event.data)) { self.close(); return; }
+  if (closed || used || !isRequest(event.data)) { closeOnce(); return; }
   used = true;
   const request = event.data;
   let phase: FemPhase = 'loading-assets';
-  const send = (reply: FemReply): void => self.postMessage(reply);
+  const send = (reply: FemReply): void => { if (!closed) self.postMessage(reply); };
   const notify=(next:FemPhase):void=>{
     phase = next;
     send({ protocol: FEM_PROTOCOL, kind: 'phase', identity: request.identity, phase });
   };
-  const work = request.kind === 'analyze-native-bolt-preload' ? analyzeNativeBoltPreloadInBrowser(request.input, notify)
+  const work = request.kind === 'analyze-beam-friction-contact' ? analyzeFrictionContactInBrowser(request.input, request.solverOptions, notify)
+    : request.kind === 'analyze-solid-contact' ? analyzeSolidContactInBrowser(request.input, notify)
+    : request.kind === 'analyze-native-bolt-preload' ? analyzeNativeBoltPreloadInBrowser(request.input, notify)
     : request.kind === 'qualify-oofem-beam' ? qualifyInBrowser(notify)
     : request.kind === 'analyze-solid-plastic-tet4' ? analyzeSolidPlasticInBrowser(request.input, notify)
     : request.kind === 'analyze-solid-buckling-tet4' ? analyzeSolidBucklingInBrowser(request.input, notify)
@@ -33,6 +40,7 @@ self.onmessage = (event: MessageEvent<unknown>): void => {
     : request.kind === 'analyze-plastic-bar-1d' ? analyzePlasticBarInBrowser(request.input, notify)
     : request.kind === 'analyze-frame-bolt-contact' ? analyzeFrameBoltContactInBrowser(request.input, notify)
     : request.kind === 'analyze-beam-bolt-contact' ? analyzeBoltContactInBrowser(request.input, notify)
+    : request.kind === 'analyze-beam-weld-span-contact' ? analyzeWeldSpanContactInBrowser(request.input, notify)
     : request.kind === 'analyze-beam-weld-contact' ? analyzeWeldContactInBrowser(request.input, notify)
     : request.kind === 'analyze-beam-joint-contact' ? analyzeJointContactInBrowser(request.input, notify)
     : request.kind === 'analyze-beam-impact-3d' ? analyzeImpactInBrowser(request.input, notify)
@@ -50,6 +58,7 @@ self.onmessage = (event: MessageEvent<unknown>): void => {
     if (message.startsWith('asset-corrupt:')) code = 'asset-corrupt';
     if (message.includes('offline-request-denied:')) code = 'offline-request-denied';
     send({ protocol: FEM_PROTOCOL, kind: 'failure', identity: request.identity,
-      failure: { code, message: message.slice(0, 4096) || 'FEM runtime failed' } });
-  }).finally(() => self.close());
+      failure: { code, message: message.slice(0, 4096) || 'FEM runtime failed',
+        ...(error instanceof SolidContactRuntimeError ? { contactDiagnostics: error.contactDiagnostics } : {}) } });
+  }).finally(closeOnce);
 };

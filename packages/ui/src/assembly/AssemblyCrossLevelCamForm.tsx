@@ -20,7 +20,7 @@ export function crossLevelCamRefusal(code: CrossLevelNoticeCode): string {
 }
 
 const targetKey = (path: readonly string[], jointId: string): string => JSON.stringify([path, jointId]);
-type Sources = { readonly disc: string; readonly eccentricity: string; readonly roller: string; readonly phase: string; readonly offset: string };
+interface Sources { readonly disc: string; readonly eccentricity: string; readonly roller: string; readonly phase: string; readonly offset: string }
 const CAM_FIELD_GUIDES: Readonly<Record<keyof Sources, MessageKey>> = { disc: 'assembly.guide.crossCamDisc',
   eccentricity: 'assembly.guide.crossCamEccentricity', roller: 'assembly.guide.crossCamRoller', phase: 'assembly.guide.crossCamPhase',
   offset: 'assembly.guide.crossCamOffset' };

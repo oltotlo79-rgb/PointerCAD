@@ -278,6 +278,9 @@ describe('アセンブリ道具の次の一手(P7タスク47)', () => {
   it.each(ASSEMBLY_TOOL_GUIDE_IDS)('%sに空でない案内がある', (id) => {
     expect(assemblyToolGuide(id)).not.toBe('');
     expect(assemblyToolGuide(id)).not.toBe(ASSEMBLY_TOOL_GUIDE_KEYS[id]);
+    if (id === 'circularFilletWeld') {
+      expect(assemblyToolGuide(id)).toBe('接合する板の平らな面を選んでください。');
+    }
   });
 
   it('調べる前は干渉件数を表示しない', () => {

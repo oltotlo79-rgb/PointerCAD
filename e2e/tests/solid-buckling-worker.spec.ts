@@ -1,5 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { FemClient, type FemWorkerPort } from '../../packages/fem/src/client.js';
+import { FEM_ASSETS, SOLID_BUCKLING_ASSETS } from '../../packages/fem/src/assets.js';
 import type { FemPhase, FemRequest } from '../../packages/fem/src/protocol.js';
 import type { SolidBucklingInput } from '../../packages/fem/src/solidBucklingModel.js';
 
@@ -45,7 +48,9 @@ function closedForm(options: Partial<Corner> = {}): [number, number] {
 async function browserWorkers(page: Page) {
   const ports = new Map<number, BrowserWorker>();
   const errors: string[] = [];
+  const raw: { id: number; kind: string; data: unknown }[] = [];
   await page.exposeFunction('pcadFemReply', (id: number, kind: 'message' | 'error' | 'messageerror', data: unknown) => {
+    raw.push({ id, kind, data });
     if (kind === 'error') errors.push(String(data));
     ports.get(id)?.deliver(kind, data);
   });
@@ -86,25 +91,58 @@ async function browserWorkers(page: Page) {
   }
   let next = 0;
   return {
-    errors,
+    errors, raw,
     create: (): FemWorkerPort => new BrowserWorker(++next),
     live: (): Promise<number> => page.evaluate(() => window.pcadFemWorkers?.size ?? -1),
   };
 }
 
+/** Observe the bytes actually delivered by the existing runtime asset requests; never replace or inject responses. */
+function observeAssets(page: Page) {
+  const names = [...FEM_ASSETS, ...SOLID_BUCKLING_ASSETS].map(asset => asset.file);
+  const responses: { url: string; status: number; bytes: number; sha256: string }[] = [];
+  const errors: string[] = [], pending: Promise<void>[] = [];
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname;
+    if (!path.endsWith('/fem/worker.js') && !names.some(name => path.endsWith('/fem/assets/' + name))) return;
+    pending.push(response.body().then(bytes => { responses.push({ url: response.url(), status: response.status(),
+      bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') }); }, (error: unknown) => { errors.push(String(error)); }));
+  });
+  return { responses, errors, pending };
+}
+async function attachJson(info: TestInfo, name: string, value: unknown): Promise<void> {
+  const file = info.outputPath(name);
+  await writeFile(file, JSON.stringify(value) + '\n', { encoding: 'utf8', flag: 'wx' });
+  await info.attach(name, { path: file, contentType: 'application/json' });
+}
+async function finishEvidence(info: TestInfo, bridge: Awaited<ReturnType<typeof browserWorkers>>, client: FemClient,
+  assets: ReturnType<typeof observeAssets>, pageErrors: readonly string[]): Promise<void> {
+  client.dispose();
+  let cleanupError: string | null = null, live: number | null = null;
+  try { await expect.poll(bridge.live).toBe(0); live = await bridge.live(); } catch (error) { cleanupError = String(error); }
+  await Promise.all(assets.pending);
+  await attachJson(info, 'buckling-actual-evidence.json', { rawReplies: bridge.raw, workerErrors: bridge.errors,
+    pageErrors, assets: assets.responses, assetReadErrors: assets.errors,
+    expectedAssetPins: [...FEM_ASSETS, ...SOLID_BUCKLING_ASSETS], cleanup: { live, cleanupError } });
+  if (cleanupError !== null) throw new Error(cleanupError);
+}
+
 test.describe('solid prestress buckling on the actual browser Worker and packaged OOFEM', () => {
-  test('the production client reproduces the closed-form load factors, their 1/P and E scaling, offline', async ({ page }) => {
+  test('the production client reproduces the closed-form load factors, their 1/P and E scaling, offline', async ({ page }, info) => {
     const pageErrors: string[] = [], requests: string[] = [];
+    const assets = observeAssets(page);
     page.on('pageerror', error => { pageErrors.push(error.message); });
     page.on('request', request => { requests.push(request.url()); });
     await page.goto('/');
     const origin = new URL(page.url()).origin;
     const bridge = await browserWorkers(page);
     const client = new FemClient(bridge.create);
+    try {
     const phases: FemPhase[] = [];
     const first: number[] = [];
     for (const options of [{}, { loadN: 2000 }, { youngMPa: 410000 }] as const) {
       const completion = await client.analyzeSolidBuckling(corner(options), { onPhase: phase => { phases.push(phase); } });
+      await attachJson(info, `buckling-completion-${first.length}.json`, { input: corner(options), completion, phases });
       expect(completion.kind, completion.kind === 'failed' ? completion.failure.message : '').toBe('result');
       if (completion.kind !== 'result') throw new Error('No actual native buckling result');
       const result = completion.result;
@@ -135,15 +173,19 @@ test.describe('solid prestress buckling on the actual browser Worker and package
     expect(bridge.errors).toEqual([]);
     expect(pageErrors).toEqual([]);
     client.dispose();
+    } finally { await finishEvidence(info, bridge, client, assets, pageErrors); }
   });
 
-  test('a tension reference state is refused natively and never reported as a load factor', async ({ page }) => {
+  test('a tension reference state is refused natively and never reported as a load factor', async ({ page }, info) => {
     const pageErrors: string[] = [];
+    const assets = observeAssets(page);
     page.on('pageerror', error => { pageErrors.push(error.message); });
     await page.goto('/');
     const bridge = await browserWorkers(page);
     const client = new FemClient(bridge.create);
+    try {
     const completion = await client.analyzeSolidBuckling(corner({ loadN: -1000 }));
+    await attachJson(info, 'buckling-tension-completion.json', { input: corner({ loadN: -1000 }), completion });
     expect(completion.kind).toBe('failed');
     if (completion.kind !== 'failed') throw new Error('A tension reference state returned a result');
     expect(completion.failure.message).toContain('solid-buckling-no-positive-mode');
@@ -151,25 +193,32 @@ test.describe('solid prestress buckling on the actual browser Worker and package
     expect(bridge.errors).toEqual([]);
     expect(pageErrors).toEqual([]);
     client.dispose();
+    } finally { await finishEvidence(info, bridge, client, assets, pageErrors); }
   });
 
-  test('abort during the native solve terminates the real Worker; supersession and a restarted request still solve', async ({ page }) => {
+  test('abort during the native solve terminates the real Worker; supersession and a restarted request still solve', async ({ page }, info) => {
     const pageErrors: string[] = [];
+    const assets = observeAssets(page);
     page.on('pageerror', error => { pageErrors.push(error.message); });
     let closed = 0;
     page.on('worker', worker => { if (/\/fem\/worker\.js$/u.test(worker.url())) worker.once('close', () => { closed += 1; }); });
     await page.goto('/');
     const bridge = await browserWorkers(page);
     const client = new FemClient(bridge.create);
+    try {
     const controller = new AbortController();
     const aborted = await client.analyzeSolidBuckling(corner(), { signal: controller.signal,
       onPhase: phase => { if (phase === 'solving') controller.abort(); } });
+    await attachJson(info, 'buckling-aborted-completion.json', { input: corner(), completion: aborted });
     expect(aborted).toMatchObject({ kind: 'cancelled', reason: 'abort' });
     await expect.poll(() => closed).toBe(1);
     const superseded = client.analyzeSolidBuckling(corner());
     const current = client.analyzeSolidBuckling(corner({ loadN: 2000 }));
-    expect(await superseded).toMatchObject({ kind: 'cancelled', reason: 'superseded' });
+    const supersededCompletion = await superseded;
+    await attachJson(info, 'buckling-superseded-completion.json', { completion: supersededCompletion });
+    expect(supersededCompletion).toMatchObject({ kind: 'cancelled', reason: 'superseded' });
     const completion = await current;
+    await attachJson(info, 'buckling-restarted-completion.json', { input: corner({ loadN: 2000 }), completion });
     expect(completion.kind, completion.kind === 'failed' ? completion.failure.message : '').toBe('result');
     if (completion.kind !== 'result') throw new Error('No actual native buckling result after restart');
     // The restarted request is the P = 2000 one, not a stale reply of the superseded P = 1000 request.
@@ -182,5 +231,6 @@ test.describe('solid prestress buckling on the actual browser Worker and package
     expect(bridge.errors).toEqual([]);
     expect(pageErrors).toEqual([]);
     client.dispose();
+    } finally { await finishEvidence(info, bridge, client, assets, pageErrors); }
   });
 });

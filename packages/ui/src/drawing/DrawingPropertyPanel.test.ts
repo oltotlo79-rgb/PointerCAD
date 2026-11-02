@@ -9,9 +9,10 @@ import { repairFixture } from '../solid/referenceRepairFixture.js';
 import { beginReferenceRepair, cancelReferenceRepair } from '../solid/referenceRepair.js';
 import { currentRepairSlots } from '../solid/referenceRepairContext.js';
 import { DrawingPropertyPanel } from './DrawingPropertyPanel.js';
+import type * as ImportedReactTypes from 'react';
 
 vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
+  const actual = await importOriginal<typeof ImportedReactTypes>();
   return { ...actual, useState: vi.fn(actual.useState) };
 });
 
@@ -32,7 +33,7 @@ beforeEach(() => {
   vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
 });
 afterEach(async () => {
-  const actual = await vi.importActual<typeof import('react')>('react');
+  const actual = await vi.importActual<typeof ImportedReactTypes>('react');
   vi.mocked(useState).mockImplementation(actual.useState);
   vi.restoreAllMocks(); resetTestStore();
 });
@@ -51,7 +52,7 @@ describe('Drawing repair entry in the actual property panel', () => {
   it('renders original, current candidates and both source impacts together without committing', async () => {
     const session = beginReferenceRepair(currentRepairSlots(useAppStore.getState())[0].key);
     if (session === null) throw new Error('Current drawing repair session required');
-    const actual = await vi.importActual<typeof import('react')>('react');
+    const actual = await vi.importActual<typeof ImportedReactTypes>('react');
     let selectorReady = false, injected = 0;
     vi.mocked(useState).mockImplementation((initial?: unknown): [unknown, React.Dispatch<React.SetStateAction<unknown>>] => {
       const state = actual.useState(initial);

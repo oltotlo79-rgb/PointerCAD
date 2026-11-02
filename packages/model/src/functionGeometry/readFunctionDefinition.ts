@@ -1,3 +1,4 @@
+import { isRecord } from '../valueGuards.js';
 /** Reconstruct a function DTO through the same expression readers used for normal CAD fields. */
 import type { ExpressionValue, StoredMathExpression } from '@pointercad/expression';
 import type { MathNode, MathParameter } from '@pointercad/expression/math/contracts';
@@ -16,9 +17,6 @@ export interface FunctionDefinitionReader {
 }
 export class FunctionDefinitionProblem extends Error {
   constructor(readonly field: string, message: string) { super(message); this.name = 'FunctionDefinitionProblem'; }
-}
-function isRecord(input: unknown): input is Record<string, unknown> {
-  return input !== null && typeof input === 'object' && !Array.isArray(input);
 }
 function record(input: unknown, field: string): Record<string, unknown> {
   if (!isRecord(input)) {

@@ -1,5 +1,5 @@
 import { test } from '@playwright/test';
-import { assembly1000HostFlow } from './assembly1000HostFlow.js';
+import { ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS, assembly1000CancelReopenFlow, assembly1000HostFlow, assembly1000InterferenceDiagnosticFlow } from './assembly1000HostFlow.js';
 import { disableFilePickers } from './boltedJointTestSupport.js';
 
 /**
@@ -19,8 +19,24 @@ test.use({ trace: 'off', launchOptions: { args: ['--use-gl=angle', '--use-angle=
 test.describe('EX12 W01 host: 1000 distinct real shapes in one assembly', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('opens and draws 1000 distinct definitions, drives two slider groups without moving the other 998, saves and reopens', async ({ page }, info) => {
+  test('observes one actual interference callback reply without granting five-run acceptance', async ({ page }, info) => {
     test.setTimeout(HOST_1000_TEST_TIMEOUT_MS);
+    await disableFilePickers(page);
+    await page.goto('/');
+    await assembly1000InterferenceDiagnosticFlow(page, info);
+  });
+
+  test('retains the same 1000 Part owners through reload cancellation and reopen', async ({ page }, info) => {
+    test.setTimeout(HOST_1000_TEST_TIMEOUT_MS);
+    await disableFilePickers(page);
+    await page.goto('/');
+    await assembly1000CancelReopenFlow(page, info);
+  });
+
+  test('opens and draws 1000 distinct definitions, drives two slider groups without moving the other 998, saves and reopens', async ({ page }, info) => {
+    // Share the finite 600 s + five 300 s observation budget with the flow.
+    // Diagnostic/cancel-only tests keep their existing 900 s ceiling.
+    test.setTimeout(ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS);
     await disableFilePickers(page);
     await page.goto('/');
     await assembly1000HostFlow(page, info, undefined);

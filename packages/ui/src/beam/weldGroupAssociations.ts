@@ -1,6 +1,8 @@
 import { filletWeldSegmentOptions, partKeyOf, weldPlacementFingerprint, weldSegmentsOf, type AssemblyDocument } from '@pointercad/model';
 import type { CadWeldLayer } from '@pointercad/model/beam-analysis';
 
+type WeldGroupIdentity = Pick<CadWeldLayer, 'id' | 'beadComponentId' | 'expectedPartKey' | 'expectedPlacementKey' | 'expectedMaterialId'>;
+
 /** Keep the original CAD group's identity domain; numerical/CAD review still verifies its physical validity. */
 export function weldGroupBeadIds(document: AssemblyDocument, beadId: string): ReadonlySet<string> {
   if (beadId === '') return new Set();
@@ -12,8 +14,8 @@ export function weldGroupBeadIds(document: AssemblyDocument, beadId: string): Re
 }
 
 /** Selecting a physical interval associates its entire group in one cancellable session edit. */
-export function selectWeldGroup(document: AssemblyDocument, rows: readonly CadWeldLayer[], rowId: string,
-  beadId: string, newId: () => string): readonly CadWeldLayer[] | null {
+export function selectWeldGroup<T extends WeldGroupIdentity>(document: AssemblyDocument, rows: readonly T[], rowId: string,
+  beadId: string, newId: () => string): readonly T[] | null {
   const selected = rows.find(row => row.id === rowId);
   const bead = document.components.find(component => component.id === beadId);
   if (selected === undefined || bead === undefined || bead.source.kind !== 'standardPart' || bead.source.catalog !== 'filletWeld') return null;
@@ -31,9 +33,9 @@ export function selectWeldGroup(document: AssemblyDocument, rows: readonly CadWe
   return [...retained.slice(0, insertion), ...replacements, ...retained.slice(insertion)];
 }
 
-/** All intervals share the explicitly declared endpoint/material assumptions. */
-export function updateWeldGroup(document: AssemblyDocument, rows: readonly CadWeldLayer[], rowId: string,
-  change: (row: CadWeldLayer) => CadWeldLayer): readonly CadWeldLayer[] {
+/** All intervals share the explicitly declared side/material assumptions without inspecting either side. */
+export function updateWeldGroup<T extends WeldGroupIdentity>(document: AssemblyDocument, rows: readonly T[], rowId: string,
+  change: (row: T) => T): readonly T[] {
   const selected = rows.find(row => row.id === rowId);
   if (selected === undefined) return rows;
   const ids = weldGroupBeadIds(document, selected.beadComponentId);

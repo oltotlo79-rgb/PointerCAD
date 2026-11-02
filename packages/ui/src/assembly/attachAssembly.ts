@@ -110,6 +110,7 @@ interface AssemblyPartResources {
   readonly ref: string;
   readonly attachment: object;
   claim: PartClaim | null;
+  cancelledPriorClaim: PartClaim | null;
   scope: PartRecomputeResult['referenceMeshScope'];
   partDispatched: boolean;
   retired: boolean;
@@ -129,10 +130,16 @@ async function returnAssemblyPart(owner: AssemblyPartResources): Promise<boolean
       try {
         const result = await owner.bridge.releasePartClaim?.(owner.claim);
         partReturned = result?.status === 'released' || result?.status === 'absent' || result?.status === 'closed';
+        // A cancelled display reply need not have replaced the actual worker Part owner.
+        // Only an already-issued predecessor claim may be checked, through the same exact RPC.
+        if (result?.status === 'stale-owner' && owner.cancelledPriorClaim !== null) {
+          const prior = await owner.bridge.releasePartClaim?.(owner.cancelledPriorClaim);
+          partReturned = prior?.status === 'released' || prior?.status === 'absent' || prior?.status === 'closed';
+        }
       } catch { /* Exact claim retained; no legacy void proof. */ }
     }
     if (scopeReturned) owner.scope = undefined;
-    if (partReturned) { owner.claim = null; owner.partDispatched = false; }
+    if (partReturned) { owner.claim = null; owner.cancelledPriorClaim = null; owner.partDispatched = false; }
     if (!scopeReturned || !partReturned) return false;
     const claims = assemblyPartResources.get(owner.bridge);
     if (claims?.get(owner.ref) === owner) claims.delete(owner.ref);
@@ -327,10 +334,21 @@ export function attachAssembly(
       if (previous.attachment === attachmentOwner && !previous.retired) return previous;
       if (!previous.retired || !(await returnAssemblyPart(previous))) throw new Error(t('assembly.recomputeFailed'));
     }
-    const owner: AssemblyPartResources = { bridge, ref, attachment: attachmentOwner, claim: null,
+    const owner: AssemblyPartResources = { bridge, ref, attachment: attachmentOwner, claim: null, cancelledPriorClaim: null,
       scope: undefined, partDispatched: false, retired: false, cleanup: null };
     claims.set(ref, owner); retained.set(ref, owner);
     return owner;
+  }
+
+  function captureReplyClaim(owner: AssemblyPartResources, bodies: PartRecomputeResult['bodies'], cancelled: boolean): void {
+    const claim = bridge.capturePartReleaseClaim?.(bodies);
+    if (claim === undefined || claim === null) return;
+    if (!cancelled) owner.cancelledPriorClaim = null;
+    else if (owner.claim !== null && owner.cancelledPriorClaim === null
+      && (owner.claim.owner.dispatchId !== claim.owner.dispatchId || owner.claim.connectionEpoch !== claim.connectionEpoch)) {
+      owner.cancelledPriorClaim = owner.claim;
+    }
+    owner.claim = claim; owner.partDispatched = true;
   }
 
   async function recomputeOwned(document: PartDocument, options: Parameters<PartRecomputer>[1], owner: AssemblyPartResources,
@@ -344,14 +362,15 @@ export function attachAssembly(
         if (timing.kernelMs === 0) timing.firstKernelMs = kernelMs;
         timing.kernelMs += kernelMs;
       }
-      owner.claim = bridge.capturePartReleaseClaim?.(outcome.bodies) ?? null;
+      // A reservation refusal has no issued reply owner. Retain the still-held exact claim;
+      // releasePartClaim must prove its current/absent/closed disposition, never infer release here.
+      captureReplyClaim(owner, outcome.bodies, outcome.cancelled);
       return outcome;
     } };
     const displayOptions = { ...options, localMesh: { ...LOCAL_DISPLAY_MESH_BUDGET } };
     const result = await (recompute === undefined ? recomputePart(document, actualBridge, displayOptions) : recompute(document, displayOptions));
     owner.scope = result.referenceMeshScope;
-    const claim = bridge.capturePartReleaseClaim?.(result.bodies);
-    if (claim !== undefined && claim !== null) { owner.claim = claim; owner.partDispatched = true; }
+    captureReplyClaim(owner, result.bodies, result.cancelled);
     return result;
   }
   let lastGoodPlacements = new Map<string, RigidPlacement>();

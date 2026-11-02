@@ -9,7 +9,7 @@ import { exactDouble } from './exactDoubleInterval.js';
 import { rationalOfExpression } from './exactRational.js';
 import { mathScalarValue } from './mathScalarExpression.js';
 import { prepareMathCalculation } from './prepareMathCalculation.js';
-import { evaluatePreparedScalarMath, type PreparedScalarMathContext } from './evaluatePreparedScalarMath.js';
+import type { PreparedScalarMathContext } from './evaluatePreparedScalarMath.js';
 import type { MathInterval } from './mathInterval.js';
 
 type Resolution = { readonly expression: MathNode; readonly evaluation?: never }
@@ -24,7 +24,8 @@ function doubleNode(value: number): MathNode {
   return exact.denominator === 1n ? number(String(exact.numerator))
     : { kind: 'operation', operation: 'divide', operands: [number(String(exact.numerator)), number(String(exact.denominator))] };
 }
-export function resolveNumericalRoots(source: MathNode, original: MathNode, context: PreparedScalarMathContext): Resolution {
+export function resolveNumericalRoots(source: MathNode, original: MathNode, context: PreparedScalarMathContext,
+  evaluateScalar: (expression: MathNode, original: MathNode, context: PreparedScalarMathContext) => MathEvaluation): Resolution {
   const pending = [source]; let scan = 4096, found = false;
   while (pending.length > 0) {
     if (--scan < 0) throw new MathInputProblem('budget', '解探索の構造が複雑すぎます。');
@@ -49,7 +50,7 @@ export function resolveNumericalRoots(source: MathNode, original: MathNode, cont
     check();
     const prepared = prepareMathCalculation(node, { angleUnit: context.angleUnit, resolve: () => null });
     if (prepared.status !== 'ready') throw new MathInputProblem('domain', '解を探す式の定数を確定してください。');
-    const result = mathScalarValue(evaluatePreparedScalarMath(prepared.expression, node, context));
+    const result = mathScalarValue(evaluateScalar(prepared.expression, node, context));
     if (!result.ok) throw new MathInputProblem('domain', result.message);
     return result.value;
   };

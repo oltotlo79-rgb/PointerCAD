@@ -46,7 +46,7 @@ import type { GpuMeshBudget } from './solidMeshAdmission.js';
 import { DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 import { faceIndexOfTriangle } from '../solid/pickSubShape.js';
 import { parseAssemblyTargetId } from '../assembly/mateCommands.js';
-import { buildSubShapeGeometry, type SubShapeEmphasis } from './buildSubShapeGeometry.js';
+import { syncAssemblyHighlights, type AssemblyHighlight } from './assemblyLayerResources.js';
 import { createViewportConstructionOwner } from './viewportLifetime.js';
 import { assemblyUiBackings, type AssemblyUiBackingLedger } from './assemblyMeshAdmission.js';
 
@@ -818,13 +818,7 @@ export function createAssemblyLayer(patterns?: PatternTextureSource, options: As
   const shapeByObject = new Map<THREE.Object3D, { readonly partKey: string; readonly bodyFeatureId: string;
     readonly faces: SolidBody['faces'] }>();
   const pickOrder = new Map<string, number>();
-  let highlights = new Map<string, {
-    readonly object: THREE.Group;
-    readonly geometries: THREE.BufferGeometry[];
-    readonly materials: { readonly material: THREE.MeshBasicMaterial | THREE.LineBasicMaterial | THREE.PointsMaterial; readonly emphasis: SubShapeEmphasis }[];
-    readonly bodies: readonly SolidBody[];
-    readonly key: string;
-  }>();
+  let highlights = new Map<string, AssemblyHighlight>();
   let lastBundle: AssemblyGeometryBundle | null = null;
   let appearanceDirty = true;
   let publishedMaterialSpecs: readonly AppearanceSpec[] = [];
@@ -847,81 +841,6 @@ export function createAssemblyLayer(patterns?: PatternTextureSource, options: As
     for (const geometry of overlay.geometries) retire(() => geometry.dispose());
     for (const { material } of overlay.materials) retire(() => material.dispose());
     highlights.delete(id);
-  }
-
-  /** 局所座標の強調だけを小さな独立overlayへ作る。共有形・batchを組み替えない。 */
-  function syncHighlights(bundle: AssemblyGeometryBundle): void {
-    const alive = new Set<string>();
-    for (const draw of bundle.instances) {
-      if (!draw.visible || draw.subShapes === undefined) continue;
-      const bodies = partShapes.get(draw.partKey)?.bodies;
-      if (bodies === undefined) continue;
-      alive.add(draw.componentId);
-      const key = JSON.stringify(draw.subShapes);
-      let overlay = highlights.get(draw.componentId);
-      if (overlay?.key !== key || overlay.bodies !== bodies) {
-        removeHighlight(draw.componentId);
-        const object = new THREE.Group();
-        object.name = `assembly-mate-highlight:${draw.componentId}`;
-        object.matrixAutoUpdate = false;
-        const geometries: THREE.BufferGeometry[] = [];
-        const materials: { material: THREE.MeshBasicMaterial | THREE.LineBasicMaterial | THREE.PointsMaterial; emphasis: SubShapeEmphasis }[] = [];
-        const built = buildSubShapeGeometry(bodies, draw.subShapes.hovered, draw.subShapes.selected,
-          { limitBytes, reservedBytes: baselineBytes + pendingCpuBytes + copyBytes() },
-          buffer => uiBackings.allocated(buffer));
-        const overlayBuffers = [...built.hovered.batches, ...built.selected.batches].flatMap(batch =>
-          [batch.facePositions.buffer, batch.faceNormals.buffer, batch.faceIndices.buffer,
-            batch.edgePositions.buffer, batch.vertexPositions.buffer]);
-        admitCpu(assemblyBackingBytes(overlayBuffers));
-        for (const highlight of [built.hovered, built.selected]) {
-          for (const batch of highlight.batches) {
-            const bodyGroup = new THREE.Group();
-            bodyGroup.name = `assembly-mate-body:${batch.featureId}`;
-            bodyGroup.position.set(batch.origin[0], batch.origin[1], batch.origin[2]);
-            object.add(bodyGroup);
-            for (const kind of ['face', 'edge', 'vertex'] as const) {
-              const positions = kind === 'face' ? batch.facePositions : kind === 'edge' ? batch.edgePositions : batch.vertexPositions;
-              if (positions.length === 0) continue;
-              const geometry = keepGeometry(new THREE.BufferGeometry());
-              geometry.setAttribute('position', attribute(positions, 3));
-              geometries.push(geometry);
-              const color = colors[highlight.emphasis];
-              if (kind === 'face') {
-                geometry.setIndex(attribute(batch.faceIndices, 1));
-                const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false });
-                material.clippingPlanes = sectionPlanes;
-                transaction?.materials.add(material);
-                const mesh = new THREE.Mesh(geometry, material);
-                mesh.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
-                bodyGroup.add(mesh); materials.push({ material, emphasis: highlight.emphasis }); transaction?.materials.add(material);
-              } else if (kind === 'edge') {
-                const material = new THREE.LineBasicMaterial({ color, depthTest: false, depthWrite: false });
-                material.clippingPlanes = sectionPlanes;
-                transaction?.materials.add(material);
-                const lines = new THREE.LineSegments(geometry, material);
-                lines.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
-                bodyGroup.add(lines); materials.push({ material, emphasis: highlight.emphasis }); transaction?.materials.add(material);
-              } else {
-                const material = new THREE.PointsMaterial({ color, size: 7, sizeAttenuation: false, depthTest: false, depthWrite: false });
-                material.clippingPlanes = sectionPlanes;
-                transaction?.materials.add(material);
-                const points = new THREE.Points(geometry, material);
-                points.renderOrder = ASSEMBLY_EDGE_RENDER_ORDER + 1;
-                bodyGroup.add(points); materials.push({ material, emphasis: highlight.emphasis }); transaction?.materials.add(material);
-              }
-            }
-          }
-        }
-        overlay = { object, geometries, materials, bodies, key };
-        highlights.set(draw.componentId, overlay);
-        group.add(object);
-      }
-      // modelView行列でカメラからの差をdoubleで求める、個別描画と同じ精度契約。
-      overlay.object.matrix.compose(position.fromArray(draw.placement.position), rotation.fromArray(draw.placement.rotation), scale);
-      overlay.object.matrixWorldNeedsUpdate = true;
-      for (const { material, emphasis } of overlay.materials) material.color.setHex(colors[emphasis]);
-    }
-    for (const id of highlights.keys()) if (!alive.has(id)) removeHighlight(id);
   }
 
   function removeFaceBatch(key: string, batch: FaceBatch): void {
@@ -1505,7 +1424,13 @@ export function createAssemblyLayer(patterns?: PatternTextureSource, options: As
     let reservedCpuPeak = 0;
     try {
       syncBundle(bundle, displayStyle);
-      syncHighlights(bundle);
+      syncAssemblyHighlights(bundle, { highlights, group, removeHighlight,
+        bodiesFor: key => partShapes.get(key)?.bodies, limitBytes,
+        reservedBytes: () => baselineBytes + pendingCpuBytes + copyBytes(),
+        allocated: buffer => uiBackings.allocated(buffer), backingBytes: assemblyBackingBytes,
+        admitCpu, keepGeometry, attribute, colors, sectionPlanes,
+        trackMaterial: material => { transaction?.materials.add(material); },
+        position, rotation, scale, renderOrder: ASSEMBLY_EDGE_RENDER_ORDER + 1 });
       // Acquire rollback storage before first publication, without overwriting this transaction's old snapshots.
       for (const value of instanceAttributes()) rollbackBacking(value);
       checkCandidateBudget();

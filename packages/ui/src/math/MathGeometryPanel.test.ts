@@ -9,6 +9,8 @@ import { useAppStore } from '../store/useAppStore.js';
 import { bodyFor, extrudeFeature, partWithPoint, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { MathGeometryPanel } from './MathGeometryPanel.js';
 import { mathGeometryPanelGuideText, mathGeometryRows } from './mathGeometryRows.js';
+import type * as ImportedJsxRuntimeTypes from 'react/jsx-runtime';
+import type * as ImportedJsxDevRuntimeTypes from 'react/jsx-dev-runtime';
 
 interface Control {
   readonly title?: string;
@@ -18,7 +20,7 @@ interface Control {
 }
 const rendered = vi.hoisted(() => ({ controls: [] as Control[] }));
 vi.mock('react/jsx-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxRuntimeTypes>();
   const capture = (factory: typeof runtime.jsx): typeof runtime.jsx => (type, props, key) => {
     if (type === 'button' && props !== null && typeof props === 'object') rendered.controls.push(props);
     return factory(type, props, key);
@@ -26,7 +28,7 @@ vi.mock('react/jsx-runtime', async importOriginal => {
   return { ...runtime, jsx: capture(runtime.jsx), jsxs: capture(runtime.jsxs) };
 });
 vi.mock('react/jsx-dev-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-dev-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxDevRuntimeTypes>();
   const jsxDEV: typeof runtime.jsxDEV = (type, props, key, isStatic, source, self) => {
     if (type === 'button' && props !== null && typeof props === 'object') rendered.controls.push(props);
     return runtime.jsxDEV(type, props, key, isStatic, source, self);

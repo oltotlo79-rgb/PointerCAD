@@ -23,6 +23,16 @@ function solidFixture(): SolidAnalysisInput {
     nodalLoads: [{ node: 1, forceN: [1, 0, 0] }], surfaceLoads: [] };
 }
 describe('public solid solver ownership and strict reply contract', () => {
+  it('invalid solid contact input supersedes the prior request without creating another Worker', async () => {
+    let created = 0;
+    const worker = port(), client = new FemClient(() => { created++; return worker; });
+    try {
+      const previous = client.analyze(cantilever());
+      await expect(client.analyzeSolidContact({})).rejects.toThrow();
+      await expect(previous).resolves.toMatchObject({ kind: 'cancelled', reason: 'superseded' });
+      expect(created).toBe(1); expect(worker.terminations).toBe(1);
+    } finally { client.dispose(); }
+  });
   it('accepts only the captured physical input and current native reply', async () => {
     const worker = port(), requests: FemRequest[] = [];
     worker.postMessage = request => { requests.push(request); };

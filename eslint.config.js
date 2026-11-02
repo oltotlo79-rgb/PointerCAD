@@ -1,10 +1,11 @@
 // @ts-check
-import { posix } from 'node:path';
+import { posix, relative, resolve } from 'node:path';
 import { isBuiltin } from 'node:module';
 import js from '@eslint/js';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
+import { FUNCTION_SIZE_BASELINE, FUNCTION_SIZE_CAP } from './eslint.functionSizeBaseline.js';
 
 /**
  * 検査専用のパッケージだけは層の外側に置く。
@@ -233,6 +234,55 @@ const vitestItImportRule = {
   },
 };
 
+/** Resolve cross-package paths before applying the existing layer direction table. */
+/** @type {import('eslint').Rule.RuleModule} */
+const normalizedLayerImportRule = {
+  meta: {
+    type: 'problem',
+    schema: [{ type: 'array', items: { type: 'string' }, uniqueItems: true }],
+    messages: { direction: '参照「{{name}}」は正規化後の依存方向に違反しています（rules/04-設計の規律.md）。' },
+  },
+  create(context) {
+    const file = relative(context.cwd, resolve(context.cwd, context.filename)).replaceAll('\\', '/');
+    const sourcePackage = /^packages\/([^/]+)\//.exec(file)?.[1];
+    const forbidden = context.options[0];
+    return {
+      ':matches(ImportDeclaration, ExportNamedDeclaration, ExportAllDeclaration, ImportExpression, TSImportType) > Literal.source'(node) {
+        if (node.type !== 'Literal' || typeof node.value !== 'string') return;
+        const name = node.value;
+        let target = /^@pointercad\/([^/]+)(?:\/|$)/.exec(name)?.[1];
+        if (/^\.{1,2}\//.test(name)) {
+          const path = posix.normalize(posix.join(posix.dirname(file), name.split(/[?#]/)[0]));
+          target = /^packages\/([^/]+)(?:\/|$)/.exec(path)?.[1];
+          // Relative imports within the same package remain permitted.
+          if (target === sourcePackage) return;
+        }
+        if (!target || target === 'test-utils') return;
+        if (forbidden.includes('*') || forbidden.includes(target)) {
+          context.report({ node, messageId: 'direction', data: { name } });
+        }
+      },
+    };
+  },
+};
+
+/** Prevent a second implementation of the adopted record predicate (CODE.CONSISTENCY P14). */
+/** @type {import('eslint').Rule.RuleModule} */
+const canonicalRecordPredicateRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: { useCanonical: 'isRecordを再定義せず、このパッケージのvalueGuards.tsから参照してください。' },
+  },
+  create(context) {
+    return {
+      ':matches(FunctionDeclaration, FunctionExpression, VariableDeclarator)[id.name="isRecord"]'(node) {
+        context.report({ node, messageId: 'useCanonical' });
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -286,13 +336,19 @@ export default tseslint.config(
   ...[
     { files: ['packages/model/**/*.ts'], guards: modelFemImportGuards },
     { files: ['packages/fem/**/*.{ts,tsx}'], guards: femUpperImportGuards },
-  ].flatMap(({ files, guards }) => [{
+  ].flatMap(/** @returns {import('typescript-eslint').FlatConfig.Config[]} */ ({ files, guards }) => [{
     files,
     rules: { 'no-restricted-syntax': ['error', ...guards] },
   }, {
     files: files.map(file => file.replace('**/*.', '**/*.test.')),
     rules: { 'no-restricted-syntax': ['error', ...testSyntaxGuards, ...guards] },
   }]),
+  {
+    // E09: 製品の全関数は200行まで。後に続く狭い対象の厳しい上限（30〜120）はflat configの後勝ちで残る。
+    files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.testSupport.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+    rules: { 'max-lines-per-function': ['error', { max: FUNCTION_SIZE_CAP, skipBlankLines: true, skipComments: true }] },
+  },
   {
     files: ['packages/io/src/pcad/documentJson.ts', 'packages/io/src/pcad/codecs/**/*.ts'],
     rules: {
@@ -377,7 +433,7 @@ export default tseslint.config(
       files: ['packages/model/src/part/solidPlanKey*.ts'],
       rules: {
         'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
-        'max-lines-per-function': ['error', { max: 260, skipBlankLines: true, skipComments: true }],
+        'max-lines-per-function': ['error', { max: FUNCTION_SIZE_CAP, skipBlankLines: true, skipComments: true }],
         'no-multiple-empty-lines': ['error', { max: 2, maxEOF: 0 }],
         'no-restricted-syntax': ['error', ...modelFemImportGuards, {
           selector: ":matches(ImportDeclaration[importKind!='type'], ExportNamedDeclaration[exportKind!='type'], ExportAllDeclaration[exportKind!='type'])[source.value=/resolvePart/]",
@@ -454,7 +510,7 @@ export default tseslint.config(
     ],
     rules: {
       'max-lines': ['error', { max: 350, skipBlankLines: true, skipComments: true }],
-      'max-lines-per-function': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
+      'max-lines-per-function': ['error', { max: FUNCTION_SIZE_CAP, skipBlankLines: true, skipComments: true }],
       'no-restricted-syntax': ['error', ...uiRuntimeImportGuards, propertyPanelImportGuard],
     },
   },
@@ -551,6 +607,13 @@ export default tseslint.config(
       }],
     },
   },
+  // E09: 上限を超える既存の関数を持つファイルは、そのファイルで最大の実測値まで（既存の上限より緩めない）。
+  // 同じファイルの小さい関数の増加は functionSizePolicy.test.ts が関数ごとの値で拒否する。
+  ...FUNCTION_SIZE_BASELINE.map(/** @returns {import('typescript-eslint').FlatConfig.Config} */ ({ file, functions }) => ({
+    files: [file],
+    rules: { 'max-lines-per-function': ['error', {
+      max: Math.max(...functions.map(([, lines]) => lines)), skipBlankLines: true, skipComments: true }] },
+  })),
   {
     files: ['packages/ui/src/solid/solidReferenceNames.ts'],
     rules: {
@@ -593,6 +656,8 @@ export default tseslint.config(
     // 設定ファイル(*.config.ts)は projectService の対象外なので型情報なしのルールだけが効く。
     files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
     extends: [...tseslint.configs.recommendedTypeChecked],
+    rules: { '@typescript-eslint/consistent-type-definitions': ['error', 'interface'],
+      '@typescript-eslint/consistent-type-imports': 'error' },
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -613,7 +678,7 @@ export default tseslint.config(
     // 個別の層制約がない製品パッケージにもfixtureの禁止を適用する。
     { files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'], forbidden: [] },
     ...layerRules,
-  ].flatMap(({ files, forbidden }) => {
+  ].flatMap(/** @returns {import('typescript-eslint').FlatConfig.Config[]} */ ({ files, forbidden }) => {
     // Keep upper-layer guards even when a narrower model rule overrides this group; the rule schema requires unique group members.
     const restricted = files.every(file => file.startsWith('packages/model/'))
       ? [...new Set([...forbidden, '@pointercad/ui', '@pointercad/ui/**', '@pointercad/io', '@pointercad/io/**',
@@ -660,5 +725,26 @@ export default tseslint.config(
       'relative-js-extension': relativeJavaScriptImportRule, 'vitest-it': vitestItImportRule } } },
     rules: { 'module-style/node-prefix': 'error',
       'module-style/relative-js-extension': 'error', 'module-style/vitest-it': 'error' },
+  },
+  // A separate rule preserves narrower no-restricted-imports overrides.
+  ...layerRules.filter(({ files }) => files.length === 1 &&
+    /^packages\/(expression|kernel|drawing|model)\/[*]/.test(files[0])).map(/** @returns {import('typescript-eslint').FlatConfig.Config} */ ({ files, forbidden }) => ({
+    files,
+    plugins: { 'layer-boundary': { rules: { normalized: normalizedLayerImportRule } } },
+    rules: { 'layer-boundary/normalized': ['error', [...new Set(forbidden
+      .filter(name => name.startsWith('@pointercad/'))
+      .map(name => name.slice('@pointercad/'.length).split('/')[0]))]] },
+  })),
+  {
+    // Use a separate rule so narrower syntax overrides cannot remove this guard.
+    files: ['packages/model/src/**/*.{ts,tsx}'],
+    ignores: ['packages/model/src/valueGuards.ts', '**/*.test.{ts,tsx}', '**/*.testSupport.{ts,tsx}'],
+    plugins: { 'record-guard': { rules: { canonical: canonicalRecordPredicateRule } } },
+    rules: { 'record-guard/canonical': 'error' },
+  },
+  {
+    // P01: 配布されない作業資料へのコメント依存を再混入させない。
+    files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}', 'e2e/tests/**/*.ts'],
+    rules: { 'no-warning-comments': ['error', { terms: ['scratchpad/claude'], location: 'anywhere' }] },
   },
 );

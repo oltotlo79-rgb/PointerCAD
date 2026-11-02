@@ -61,6 +61,34 @@ describe('保存専用エンコーダーと従来のIOの一致', () => {
     expect(attachments.meshes.get('mesh')?.positions.byteLength).toBe(36);
   });
 
+  it('項目ができた後・圧縮の前に onEntriesBuilt を1回だけ呼び、そこで入力の三角形を手放しても全バイトが同じ', async () => {
+    const mesh = () => ({ positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      normals: new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), indices: new Uint32Array([0, 1, 2]) });
+    const owned = mesh(), shapes = new Map([['shape', Uint8Array.of(9, 8, 7)]]);
+    const document = { ...createEmptyPartDocument(), name: '項目の後' };
+    const expected = writePcadFile(document, { savedAt, attachments: { ...emptyEmbeddedPartAttachments(), shapes, meshes: new Map([['mesh', mesh()]]) } });
+    const events: string[] = [];
+    const bytes = await encodeSaveDocument({ kind: 'part', document,
+      options: { savedAt, attachments: { ...emptyEmbeddedPartAttachments(), shapes, meshes: new Map([['mesh', owned]]) } } },
+    { onProgress: stage => events.push(stage), onEntriesBuilt: () => {
+      events.push('entries');
+      // The caller owns this copy: detach it as the save Worker does; the entry already holds its own encoded bytes.
+      for (const array of [owned.positions, owned.normals, owned.indices]) structuredClone(array.buffer, { transfer: [array.buffer] });
+    } });
+    expect(events).toEqual(['preparing', 'entries', 'compressing']);
+    expect(owned.positions.byteLength + owned.normals.byteLength + owned.indices.byteLength).toBe(0);
+    expect(bytes).toEqual(expected);
+    expect(shapes.get('shape')).toEqual(Uint8Array.of(9, 8, 7));
+  });
+
+  it('準備中に取消されたら onEntriesBuilt も圧縮も呼ばない', async () => {
+    const controller = new AbortController(), events: string[] = [];
+    await expect(encodeSaveDocument({ kind: 'part', document: createEmptyPartDocument(), options: { savedAt } },
+      { signal: controller.signal, onProgress: stage => { events.push(stage); controller.abort(); },
+        onEntriesBuilt: () => events.push('entries') })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(events).toEqual(['preparing']);
+  });
+
   it('取消済みの依頼では圧縮を始めない', async () => {
     const controller = new AbortController();
     controller.abort();

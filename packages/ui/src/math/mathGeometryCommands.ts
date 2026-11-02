@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 /** GR-16: definition edits publish one immutable document, hence one Undo entry. */
 import {
   addMathGeometryDefinition,
@@ -75,7 +76,7 @@ export function createMathGeometryFromSelection(state: MathGeometryCommandState,
   quantity: MathGeometryQuantity, name: string = defaultMathGeometryName(owner, quantity)): MathGeometryCommandResult {
   const refusal = ownerRefusal(state, owner);
   if (refusal !== null) return refusal;
-  return publish(state, owner, addMathGeometryDefinition(owner, { name, quantity }, crypto.randomUUID()));
+  return publish(state, owner, addMathGeometryDefinition(owner, { name, quantity }, createDocumentElementId()));
 }
 
 /** Keep the definition's identity/name/tolerance, replacing it with a GR-15 candidate of the same kind/unit. */

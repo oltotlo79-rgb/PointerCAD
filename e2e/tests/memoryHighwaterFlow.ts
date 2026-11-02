@@ -9,11 +9,11 @@ import { gpuPostTraceDelivery, gpuOwnedStopReceipt, gpuPostTraceWaitBudget, cons
   type GpuMemorySample, type MemoryPhase, type ProcessMemoryFrame }
   from '../../packages/test-utils/src/processMemorySamples.js';
 import { boxPartFile, twoBoxAssemblyFile, chooseToolMenuItem, readAssemblyStats } from './assemblyTestSupport.js';
-import { openSaveFlowFile, saveCancelFlow, saveDocumentSwitchFlow } from './saveResponsivenessFlow.js';
+import { openSaveFlowFile, saveFlowFile, saveCancelFlow, saveDocumentSwitchFlow } from './saveResponsivenessFlow.js';
 import { beginRecompute, readRecomputeStats, waitForRecompute, waitForRecomputeOutcome } from './recompute.js';
 import { readViewportRenderStats } from './viewportRenderStats.js';
 import { waitForStartupHealth } from './startupHealth.js';
-import { writePcadFile } from '../../packages/io/src/index.js';
+import { readDocumentBundle, readPcadFile, writePcadFile } from '../../packages/io/src/index.js';
 import { absoluteCoordinate, appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '../../packages/model/src/index.js';
 import { openTarget } from './electronAppFlow.js';
 import { fileAction } from './fileCaptureSupport.js';
@@ -330,25 +330,50 @@ export function memorySolidDimensionField(page: Page) {
   return page.locator('.pcad-panel--right').getByRole('textbox', { name: 'X の長さ', exact: true });
 }
 
-/** New preserves document kind. Empty tree text alone does not prove geometry release. */
+/** AppShell exposes the active kind; StatusBar and the window title expose the
+ * content-based unsaved flag. Callers also compare UI values with saved bytes. */
+async function expectMemoryDocumentState(page: Page, kind: 'solid' | 'assembly', unsaved: boolean): Promise<void> {
+  await expect(page.locator('.pcad-shell')).toHaveAttribute('data-document-kind', kind === 'solid' ? 'part' : 'assembly');
+  const file = page.locator('.pcad-statusbar__file');
+  await expect(file).toBeVisible();
+  if (unsaved) {
+    await expect(file).toContainText('*');
+    await expect(page).toHaveTitle(/\*/u);
+  } else {
+    await expect(file).not.toContainText('*');
+    await expect(page).not.toHaveTitle(/\*/u);
+  }
+}
+
+/** newPart delegates active assemblies to newAssembly. FeatureTree renders only
+ * its empty message when rowCount/folders are zero; AssemblyTree keeps sections.
+ * Empty tree text alone does not prove geometry release. */
 export async function expectMemoryEmptyDocument(page: Page, kind: 'solid' | 'assembly'): Promise<void> {
+  await expectMemoryDocumentState(page, kind, false);
   const tree = page.locator('.pcad-panel--left');
   await expect(tree.locator('.pcad-tree__select')).toHaveCount(0);
-  const labels = kind === 'assembly' ? ['部品', '合致', 'ジョイント', '分解ステップ'] : ['ソリッド', 'スケッチ'];
-  for (const label of labels) await expect(tree.getByRole('button', { name: `${label} 0`, exact: true })).toBeVisible();
   if (kind === 'assembly') {
+    for (const label of ['部品', '合致', 'ジョイント', '分解ステップ'])
+      await expect(tree.getByRole('button', { name: `${label} 0`, exact: true })).toBeVisible();
     const stats = await readAssemblyStats(page);
     expect(stats.components).toEqual([]); expect(stats.mateIds).toEqual([]);
     expect(stats.jointIds).toEqual([]); expect(stats.stepIds).toEqual([]);
+  } else {
+    await expect(tree.locator('.pcad-panel__empty-text')).toHaveText('まだ何もありません。');
+    await expect(tree.locator('.pcad-tree__sections')).toHaveCount(0);
   }
   await expect.poll(() => page.evaluate(() => window.pcadViewportFramedBodies?.() ?? null)).toEqual([]);
 }
 
-async function discardToNewDocument(page: Page, kind: 'solid' | 'assembly'): Promise<void> {
-  await page.getByRole('group', { name: 'ファイル' }).getByRole('button', { name: '新規', exact: true }).click();
+async function discardToNewDocument(page: Page, kind: 'solid' | 'assembly', unsaved: boolean): Promise<void> {
+  await expectMemoryDocumentState(page, kind, unsaved);
   const confirm = page.getByRole('alertdialog', { name: '保存していない変更があります' });
-  await expect(confirm).toBeVisible();
-  await confirm.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
+  await expect(confirm).toHaveCount(0);
+  await page.getByRole('group', { name: 'ファイル' }).getByRole('button', { name: '新規', exact: true }).click();
+  if (unsaved) {
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
+  }
   await expect(confirm).toHaveCount(0);
   await expectMemoryEmptyDocument(page, kind);
 }
@@ -475,11 +500,21 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
     mark('baseline', 'before real file open'); await waitSamples(); await observeDisplay();
     mark('transfer', 'UI file open requested; internal transfer unobserved');
     await openSaveFlowFile(page, inputPath, app);
+    await expectMemoryDocumentState(page, kind, false);
     mark('publish', 'recompute settled after open; internal publication unobserved'); await waitSamples(); await observeDisplay();
     if (kind === 'solid') {
-      await page.locator('.pcad-tree__select').filter({ hasText: '箱1' }).click();
+      const saved = readPcadFile(await readFile(inputPath));
+      if (!saved.ok) throw new Error(saved.error.message);
+      expect(saved.document.solids).toHaveLength(1);
+      const box = saved.document.solids[0];
+      if (box?.kind !== 'primitive' || box.shape.kind !== 'box') throw new Error('Saved highwater box unavailable');
+      expect([box.shape.sizeX.value, box.shape.sizeY.value, box.shape.sizeZ.value]).toEqual([20, 20, 20]);
+      const selected = page.locator('.pcad-tree__select').filter({ hasText: /^箱1$/u });
+      await expect(selected).toHaveCount(1);
+      await selected.click(); await expect(selected).toHaveAttribute('aria-pressed', 'true');
       const field = memorySolidDimensionField(page);
       await expect(field).toBeVisible();
+      await expect(field).toHaveValue(String(box.shape.sizeX.value));
       for (let index = 0; index < 100; index++) {
         const token = await beginRecompute(page); mark('build', `solid update ${index + 1} requested`);
         await field.fill(String(index % 2 === 0 ? 21 : 20)); await field.press('Tab');
@@ -491,7 +526,17 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
         await observeDisplay();
         await readViewportRenderStats(page);
       }
+      // All 100 edits return to the saved 20mm box. Prove clean UI BEFORE a real
+      // save, then compare the entire saved document independently of that flag.
+      await expectMemoryDocumentState(page, 'solid', false);
+      const returned = readPcadFile(await saveFlowFile(page, info.outputPath('solid-returned.pcad'), app));
+      if (!returned.ok) throw new Error(returned.error.message);
+      expect(returned.document).toEqual(saved.document);
     } else {
+      const saved = await readDocumentBundle(await readFile(inputPath), 'assembly');
+      if (!saved.ok) throw new Error(saved.error.message);
+      if (saved.bundle.kind !== 'assembly') throw new Error('Saved highwater assembly unavailable');
+      expect(saved.bundle.document.components).toHaveLength(2);
       const rows = page.locator('.pcad-tree__sections > li').filter({
         has: page.locator('.pcad-tree__section .pcad-tree__label', { hasText: '部品' }) })
         .locator(':scope > .pcad-tree__children > li > .pcad-tree__row');
@@ -507,11 +552,14 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
         await waitForRecompute(page, token); updates++;
         mark('publish', `assembly update ${updates} settled`);
         await rows.first().locator('.pcad-tree__select').click();
+        await expect(rows.first().locator('.pcad-tree__select')).toHaveAttribute('aria-pressed', 'true');
         await observeDisplay();
         expect((await readAssemblyStats(page)).components).toHaveLength(undo ? 2 : 1);
       }
+      expect((await readAssemblyStats(page)).components.map(component => component.id))
+        .toEqual(saved.bundle.document.components.slice(0, 1).map(component => component.id));
     }
-    mark('released', 'discard updated document through real confirmation'); await discardToNewDocument(page, kind); await waitSamples(); await observeDisplay();
+    mark('released', 'discard updated document through real confirmation'); await discardToNewDocument(page, kind, kind === 'assembly'); await waitSamples(); await observeDisplay();
     const failureInput = info.outputPath('conflicting-assembly.pcada');
     await writeFile(failureInput, await twoBoxAssemblyFile(40));
     mark('transfer', 'real assembly input for failure recovery'); await openSaveFlowFile(page, failureInput, app);
@@ -523,15 +571,32 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
     await page.getByRole('button', { name: '元に戻す', exact: true }).click();
     await waitForRecompute(page, recovery);
     failureRecovered = true; mark('publish', 'failure recovery settled'); await observeDisplay();
-    mark('released', 'discard recovered assembly before save cancellation scenario'); await discardToNewDocument(page, 'assembly'); await waitSamples(); await observeDisplay();
+    const savedRecovery = await readDocumentBundle(await readFile(failureInput), 'assembly');
+    if (!savedRecovery.ok) throw new Error(savedRecovery.error.message);
+    if (savedRecovery.bundle.kind !== 'assembly') throw new Error('Saved recovery assembly unavailable');
+    expect(savedRecovery.bundle.document.mates).toEqual([]);
+    expect((await readAssemblyStats(page)).mateIds).toHaveLength(1);
+    mark('released', 'discard recovered assembly before save cancellation scenario'); await discardToNewDocument(page, 'assembly', true); await waitSamples(); await observeDisplay();
     mark('cancel', 'cancel actual 100-feature geometry through its visible progress button');
     geometryCancellation = await cancelGeometry(page, info, app); await observeDisplay();
-    await page.locator('.pcad-tree__select').filter({ hasText: /^箱1$/u }).click();
+    // Opening the cancellation .pcad replaces the empty assembly with a part.
+    await expectMemoryDocumentState(page, 'solid', false);
+    const savedGeometry = readPcadFile(await readFile(geometryCancellation.inputPath));
+    if (!savedGeometry.ok) throw new Error(savedGeometry.error.message);
+    expect(savedGeometry.document.solids).toHaveLength(100);
+    const savedFirst = savedGeometry.document.solids[0];
+    if (savedFirst?.kind !== 'primitive' || savedFirst.shape.kind !== 'box') throw new Error('Saved cancellation box unavailable');
+    expect(savedFirst.shape.sizeX.value).toBe(20);
+    const retryBox = page.locator('.pcad-tree__select').filter({ hasText: /^箱1$/u });
+    await expect(retryBox).toHaveCount(1);
+    await retryBox.click(); await expect(retryBox).toHaveAttribute('aria-pressed', 'true');
     const retryField = memorySolidDimensionField(page);
+    await expect(retryField).toHaveValue(String(savedFirst.shape.sizeX.value));
     const retry = await beginRecompute(page); mark('build', 'retry cancelled geometry by real property edit');
     await retryField.fill('21'); await retryField.press('Tab'); await waitForRecompute(page, retry);
+    await expect(retryField).toHaveValue('21');
     mark('publish', 'geometry retry published'); await observeDisplay();
-    mark('released', 'discard retried geometry'); await discardToNewDocument(page, 'solid'); await waitSamples(); await observeDisplay();
+    mark('released', 'discard retried geometry'); await discardToNewDocument(page, 'solid', true); await waitSamples(); await observeDisplay();
     geometryRelease = await page.evaluate(() => {
       const read: unknown = Reflect.get(window, 'pcadViewportRetiredCleanups');
       const retired: unknown = typeof read === 'function' ? read() : null;

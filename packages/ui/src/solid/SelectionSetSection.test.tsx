@@ -5,6 +5,7 @@ import { SelectionSetSection } from './SelectionSetSection.js';
 import { bodyFor, partWithMixedFeatures, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
+import type * as ImportedReactTypes from 'react';
 
 const renamedName = t('propertyPanel.sectionSelectionSets');
 const originalName = t('featureTree.solidGroup');
@@ -13,7 +14,7 @@ const cancelledName = t('featureTree.sketchGroup');
 // Retain only the component's local draft state. The controls and store actions are real.
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock('react', async importOriginal => {
-  const original = await importOriginal<typeof import('react')>();
+  const original = await importOriginal<typeof ImportedReactTypes>();
   return { ...original, useState: <S,>(initial: S) => {
     const index = hooks.cursor++;
     if (index === hooks.values.length) hooks.values.push(initial);

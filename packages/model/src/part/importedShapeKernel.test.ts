@@ -290,8 +290,8 @@ describe('EX18 W05 fixed ASCII STEP seeds before any direct edit', () => {
   it.each(['A', 'B', 'C'] as const)('%s contains the independent pre-edit dimensions', async shape => {
     const { readFileSync } = await import('node:fs');
     const { readBrepBytes } = await import('../../../kernel/src/occt/brepBytes.js');
-    const { measureEx18Shape, compareEx18Shape } = await import('./ex18ShapeOracle.js');
-    const { EX18_ORACLE_DIRECT_SEEDS, EX18_ORACLE_EXPECTATIONS } = await import('./ex18RouteFixtures.js');
+    const { measureEx18Shape, compareEx18Shape } = await import('./ex18ShapeOracle.testSupport.js');
+    const { EX18_ORACLE_DIRECT_SEEDS, EX18_ORACLE_EXPECTATIONS } = await import('./ex18RouteFixtures.testSupport.js');
     const bytes = readFileSync(new URL(`./fixtures/ex18/direct-seed-${shape}.step`, import.meta.url));
     expect(bytes.byteLength).toBeGreaterThan(0); expect(bytes.byteLength).toBeLessThan(64 * 1024);
     expect(bytes.every(byte => byte < 128)).toBe(true);

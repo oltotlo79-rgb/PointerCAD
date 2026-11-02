@@ -8,20 +8,22 @@ import { t } from '../i18n/t.js';
 import * as fieldUnits from '../shell/propertyFieldUnits.js';
 import { resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
+import type * as ImportedJsxRuntimeTypes from 'react/jsx-runtime';
+import type * as ImportedJsxDevRuntimeTypes from 'react/jsx-dev-runtime';
 
 // The normal node test environment has no browser DOM. Capture the real React
 // host elements while SSR renders the actual memo boundary; invoke their actual
 // handlers against the real store. This is behavioral evidence, not paint timing.
 const rendered = vi.hoisted(() => { const elements: unknown[] = []; return { elements }; });
 vi.mock('react/jsx-runtime', async importOriginal => {
-  const actual = await importOriginal<typeof import('react/jsx-runtime')>();
+  const actual = await importOriginal<typeof ImportedJsxRuntimeTypes>();
   return { ...actual,
     jsx: (...args: Parameters<typeof actual.jsx>) => { const element = actual.jsx(...args); rendered.elements.push(element); return element; },
     jsxs: (...args: Parameters<typeof actual.jsxs>) => { const element = actual.jsxs(...args); rendered.elements.push(element); return element; },
   };
 });
 vi.mock('react/jsx-dev-runtime', async importOriginal => {
-  const actual = await importOriginal<typeof import('react/jsx-dev-runtime')>();
+  const actual = await importOriginal<typeof ImportedJsxDevRuntimeTypes>();
   return { ...actual,
     jsxDEV: (...args: Parameters<typeof actual.jsxDEV>) => { const element = actual.jsxDEV(...args); rendered.elements.push(element); return element; },
   };

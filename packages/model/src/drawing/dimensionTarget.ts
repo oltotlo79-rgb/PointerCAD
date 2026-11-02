@@ -3,6 +3,7 @@ import {
   type Dimension, type DimensionSeriesResult, type DimensionTarget, type DimensionTolerance, type DrawingDocument, type DrawingView, type DrawingViewBasis, type Point2, type Vector3,
 } from '@pointercad/drawing';
 import { evaluateExpression } from '@pointercad/expression';
+import { dotVec3, subVec3 } from '../sketch/vec3.js';
 import { analyzeParameters } from '../parameters/parameterTable.js';
 import { resolveSubShapeReference, type SolidBody } from '../kernelBridge.js';
 import { createSubShapeReference } from '../kernelBridge/createSubShapeReference.js';
@@ -77,8 +78,8 @@ export function drawingModelPointToPaper(point: Vector3, view: DrawingView, shee
   const scale = view.scale ?? sheetScale;
   if (basis === null || !Number.isFinite(scale) || scale <= 0) return null;
   const frame = context.viewFrames?.get(view.id);
-  const relative = delta(point, frame?.modelCenter ?? context.modelCenter);
-  const paper: Point2 = [view.position[0] + dot(relative, basis.x) * scale, view.position[1] + dot(relative, basis.y) * scale];
+  const relative = subVec3(point, frame?.modelCenter ?? context.modelCenter);
+  const paper: Point2 = [view.position[0] + dotVec3(relative, basis.x) * scale, view.position[1] + dotVec3(relative, basis.y) * scale];
   return frame?.breakSpec === undefined ? paper : movePointAcrossBreak(paper, frame.breakSpec);
 }
 export interface ResolvedDrawingDimension {
@@ -112,15 +113,13 @@ export function drawingDimensionPaperEnds(targets: readonly ResolvedDimensionTar
 }
 
 const GEOMETRY_TOLERANCE = 1e-7;
-function delta(a: Vector3, b: Vector3): Vector3 { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
-function dot(a: Vector3, b: Vector3): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 function unit(vector: Vector3): Vector3 | null {
   const length = Math.hypot(...vector);
   return length > 0 && Number.isFinite(length) ? [vector[0] / length, vector[1] / length, vector[2] / length] : null;
 }
 function parallel(a: Vector3, b: Vector3): boolean {
   const first = unit(a), second = unit(b);
-  return first !== null && second !== null && 1 - Math.abs(dot(first, second)) <= GEOMETRY_TOLERANCE;
+  return first !== null && second !== null && 1 - Math.abs(dotVec3(first, second)) <= GEOMETRY_TOLERANCE;
 }
 
 /** 共通の参照解決で一意な候補だけを使う。同じfeatureIdでも別の部品へ逃がさない。 */
@@ -135,8 +134,8 @@ export function resolveDimensionTarget(
   const paper = (point: Vector3): Point2 => {
     // 向きと縮尺は上で検証済み。同じ変換を注記と面選択にも使う。
     const frame = context.viewFrames?.get(view.id);
-    const relative = delta(point, frame?.modelCenter ?? context.modelCenter);
-    const mapped: Point2 = [view.position[0] + dot(relative, basis.x) * scale, view.position[1] + dot(relative, basis.y) * scale];
+    const relative = subVec3(point, frame?.modelCenter ?? context.modelCenter);
+    const mapped: Point2 = [view.position[0] + dotVec3(relative, basis.x) * scale, view.position[1] + dotVec3(relative, basis.y) * scale];
     return frame?.breakSpec === undefined ? mapped : movePointAcrossBreak(mapped, frame.breakSpec);
   };
   if (target.kind === 'point') {
@@ -168,7 +167,7 @@ export function resolveDimensionTarget(
     if (edge.curveKind !== 'circle' || edge.axisOrigin == null || edge.axis === null || edge.radius === null || edge.radius <= 0) return null;
     const center = point(edge.axisOrigin);
     const full = Math.abs(edge.length - 2 * Math.PI * edge.radius) <= GEOMETRY_TOLERANCE * Math.max(1, edge.length)
-      && Math.hypot(...delta(from, to)) <= GEOMETRY_TOLERANCE;
+      && Math.hypot(...subVec3(from, to)) <= GEOMETRY_TOLERANCE;
     return { kind: full ? 'circle' : 'arc', center, centroid: point(edge.midpoint), axis: direction(edge.axis), radius: edge.radius, length: edge.length,
       from, to, paperCenter: paper(center), paperFrom: paper(from), paperTo: paper(to) };
   }
@@ -224,7 +223,7 @@ function measurementEnds(targets: readonly ResolvedDimensionTarget[]): readonly 
   return first === null || second === null ? null : [first, second];
 }
 function directionOf(target: ResolvedDimensionTarget): Vector3 | null {
-  return target.kind === 'line' ? unit(delta(target.to, target.from)) : target.kind === 'plane' ? unit(target.normal) : null;
+  return target.kind === 'line' ? unit(subVec3(target.to, target.from)) : target.kind === 'plane' ? unit(target.normal) : null;
 }
 function measure(dimension: Dimension, targets: readonly ResolvedDimensionTarget[], basis: DrawingViewBasis): number | null {
   const first = targets[0];
@@ -242,16 +241,16 @@ function measure(dimension: Dimension, targets: readonly ResolvedDimensionTarget
       const rays = dimensionAngleDirections(first, targets[1]);
       if (rays === null) return null;
       const a = unit(rays.first), b = unit(rays.second);
-      return a === null || b === null ? null : Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * 180 / Math.PI;
+      return a === null || b === null ? null : Math.acos(Math.max(-1, Math.min(1, dotVec3(a, b)))) * 180 / Math.PI;
     }
     const a = directionOf(first), b = directionOf(targets[1]);
-    return a === null || b === null ? null : Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * 180 / Math.PI;
+    return a === null || b === null ? null : Math.acos(Math.max(-1, Math.min(1, dotVec3(a, b)))) * 180 / Math.PI;
   }
   const ends = measurementEnds(targets);
   if (ends !== null) {
-    const vector = delta(ends[1], ends[0]);
-    if (dimension.measurement === 'horizontal') return Math.abs(dot(vector, basis.x));
-    if (dimension.measurement === 'vertical') return Math.abs(dot(vector, basis.y));
+    const vector = subVec3(ends[1], ends[0]);
+    if (dimension.measurement === 'horizontal') return Math.abs(dotVec3(vector, basis.x));
+    if (dimension.measurement === 'vertical') return Math.abs(dotVec3(vector, basis.y));
     if (dimension.measurement === 'trueDistance') return Math.hypot(...vector);
     return null;
   }
@@ -259,13 +258,13 @@ function measure(dimension: Dimension, targets: readonly ResolvedDimensionTarget
     const second = targets[1];
     if (first.kind === 'plane' && second.kind === 'plane' && parallel(first.normal, second.normal)) {
       const normal = unit(first.normal);
-      return normal === null ? null : Math.abs(dot(delta(second.point, first.point), normal));
+      return normal === null ? null : Math.abs(dotVec3(subVec3(second.point, first.point), normal));
     }
-    if (first.kind === 'line' && second.kind === 'line' && parallel(delta(first.to, first.from), delta(second.to, second.from))) {
-      const direction = unit(delta(first.to, first.from));
+    if (first.kind === 'line' && second.kind === 'line' && parallel(subVec3(first.to, first.from), subVec3(second.to, second.from))) {
+      const direction = unit(subVec3(first.to, first.from));
       if (direction === null) return null;
-      const offset = delta(second.from, first.from);
-      const along = dot(offset, direction);
+      const offset = subVec3(second.from, first.from);
+      const along = dotVec3(offset, direction);
       return Math.hypot(offset[0] - along * direction[0], offset[1] - along * direction[1], offset[2] - along * direction[2]);
     }
   }
@@ -302,8 +301,8 @@ export function resolveDrawingDimensions(document: DrawingDocument, context: Dim
       if (dimension.kind !== 'coordinate') return unresolved('measurement', targets);
       const ends = measurementEnds(targets);
       if (ends === null) return unresolved('measurement', targets);
-      const vector = delta(ends[1], ends[0]);
-      coordinates = [dot(vector, basis.x), dot(vector, basis.y)];
+      const vector = subVec3(ends[1], ends[0]);
+      coordinates = [dotVec3(vector, basis.x), dotVec3(vector, basis.y)];
       if (!coordinates.every(Number.isFinite)) return unresolved('measurement', targets);
     }
     let progressive: ResolvedDrawingDimension['progressive'];

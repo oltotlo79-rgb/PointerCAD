@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import type { PyodideRuntime } from './runtime.js';
 import type { FemPhase } from './protocol.js';
 import { FEM_ASSETS, BOLT_CONTACT_ASSETS } from './assets.js';
@@ -25,7 +26,7 @@ async function verify(bytes: Uint8Array, name: string): Promise<Uint8Array> {
   const pin = [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS, ...JOINT_INITIAL_STRAIN_ASSETS].find(p => p.file === name);
   if (!(bytes instanceof Uint8Array) || !pin || bytes.byteLength !== pin.bytes) throw new Error('native-preload-asset-size');
   const copy = new Uint8Array(bytes);
-  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', copy)), b => b.toString(16).padStart(2, '0')).join('');
+  const digest = await sha256Hex(copy);
   if (digest !== pin.sha256) throw new Error('native-preload-asset-sha');
   return copy;
 }

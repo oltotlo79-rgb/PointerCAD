@@ -1,3 +1,5 @@
+import { sha256Hex } from './sha256.js';
+import { addVec3 as add, scaleVec3 as scale, crossVec3 as cross } from '@pointercad/model/vec3';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamContactInput, BeamContactNumericResult } from './contactModel.js';
 import { translateBeamContact, type OofemContactPlan } from './contactTranslation.js';
@@ -74,13 +76,8 @@ function vector(value: unknown): Vector3 {
   if (!dense(value) || value.length !== 3) throw new Error('weld-vector');
   return [finite(value[0]), finite(value[1]), finite(value[2])];
 }
-function add(a: Vector3, b: Vector3): Vector3 { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
-function scale(a: Vector3, k: number): Vector3 { return [a[0] * k, a[1] * k, a[2] * k]; }
 function sub(a: Vector3, b: Vector3): Vector3 { return add(a, scale(b, -1)); }
 function dot(a: Vector3, b: Vector3): number { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
-function cross(a: Vector3, b: Vector3): Vector3 {
-  return [a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]];
-}
 function geometry(row: Record<string, unknown>): WeldLayerGeometry {
   if (typeof row.id !== 'string' || row.id.length < 1 || row.id.length > 64) throw new Error('weld-id');
   const centerM = vector(row.centerM), normal = vector(row.normal), along = vector(row.along);
@@ -137,7 +134,7 @@ export function translateBeamWeldContact(value: unknown): { input: BeamWeldConta
 }
 export async function beamWeldContactInputSha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(translateBeamWeldContact(value).input));
-  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+  return await sha256Hex(bytes);
 }
 
 /** Reconstruct the physical nodal wrench from the decoded section motion, not from reported joint forces. */

@@ -8,6 +8,8 @@ import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import { FunctionDirectionDialog } from './FunctionDirectionDialog.js';
 import type { FunctionDirectionPreview } from './functionDirectionDraft.js';
+import type * as ImportedReactTypes from 'react';
+import type * as ImportedFunctionDirectionDraftTypes from './functionDirectionDraft.js';
 
 // Node SSR/handler convention from FunctionPlotDialog.test.tsx. Reconciliation slots,
 // cancellation and ownership are checked here; actual focus/F1 needs the browser flow.
@@ -18,7 +20,7 @@ const harness = vi.hoisted(() => ({
   dispose: vi.fn(), close: vi.fn(), apply: vi.fn(),
 }));
 vi.mock('react', async importOriginal => {
-  const original = await importOriginal<typeof import('react')>();
+  const original = await importOriginal<typeof ImportedReactTypes>();
   return {
     ...original,
     useState: <S,>(initial: S | (() => S)) => {
@@ -41,15 +43,15 @@ vi.mock('react', async importOriginal => {
 vi.mock('../math/MathExpressionDialog.js', () => ({ MathExpressionDialog: () => null }));
 vi.mock('../math/createBrowserMathClient.js', () => ({ createBrowserMathClient: () => ({ dispose: harness.dispose }) }));
 vi.mock('./functionDirectionDraft.js', async importOriginal => ({
-  ...await importOriginal<typeof import('./functionDirectionDraft.js')>(),
-  evaluateFunctionDirection: (...args: Parameters<typeof import('./functionDirectionDraft.js').evaluateFunctionDirection>) =>
+  ...await importOriginal<typeof ImportedFunctionDirectionDraftTypes>(),
+  evaluateFunctionDirection: (...args: Parameters<typeof ImportedFunctionDirectionDraftTypes.evaluateFunctionDirection>) =>
     new Promise<FunctionDirectionPreview | null>(resolve => {
       harness.pending.push({ signal: args[9], isCurrent: args[10], resolve });
     }),
 }));
 
 type Element = ReactElement<Record<string, unknown>>;
-type Preventable = { preventDefault: () => void };
+interface Preventable { preventDefault: () => void }
 const applyDocument = useAppStore.getState().applyDocument;
 let reference: FunctionPointReference;
 let cleanup: (() => void) | undefined;

@@ -75,9 +75,6 @@ export {
   createKernelBridge,
   createKernelHealth,
   KERNEL_BROKEN_MESSAGE,
-  rematchSubShapeRef,
-  selectSubShape,
-  selectMateTargetGeometry,
   resolveSubShapeReference,
   resolveReplacementSubShapeReference,
   createSubShapeReferenceResolver,
@@ -1132,7 +1129,7 @@ export {
 } from './assembly/standard/steelCatalog.js';
 export type { SteelStockList, SteelStockRow } from './assembly/standard/steelStockList.js';
 export { buildSteelStockList } from './assembly/standard/steelStockList.js';
-export { createSteelBend } from './assembly/standard/steelBend.js';
+export { createSteelBend, steelBendInputState } from './assembly/standard/steelBend.js';
 export type { SteelBendResult } from './assembly/standard/steelBend.js';
 export { planSteelBend, steelBendSection } from './assembly/standard/steelBendGeometry.js';
 export type { SteelBendDimensions, SteelBendGeometry, SteelBendGeometryResult, SteelBendSection } from './assembly/standard/steelBendGeometry.js';
@@ -1348,6 +1345,7 @@ export { prepareCadAxialBolts, type PreparedCadAxialBolt } from './analysis/cadA
 
 export { prepareCadWeldLayers, type PreparedCadWeldLayer } from './analysis/cadWeldLayer.js';
 export { readCadWeldLayerInputs, type CadWeldLayerInputs, type CadWeldLayer } from './analysis/weldLayerInput.js';
+export { readCadWeldSpanInputs, readSavedCadWeldInputs, type CadWeldSpanInputs, type CadWeldSpanLayer, type CadWeldSpanSide, type SavedCadWeldInputs } from './analysis/weldSpanInput.js';
 
 export { placementFingerprint as weldPlacementFingerprint } from './assembly/fastening/frames.js';
 
@@ -1384,3 +1382,14 @@ export type { SteelGradeRejectionCode, SteelGradeRule } from './assembly/standar
 
 export { createHoleTranslateFeature, createFaceRotateFeature, directEditPlan } from './part/directEditOperations.js';
 export type { HoleTranslateFeature, FaceRotateFeature, HoleTranslatePlan, FaceRotatePlan, HoleTranslateKeyMaterial, FaceRotateKeyMaterial } from './part/directEditOperations.js';
+
+export { prepareCadWeldSpanLayers, type PreparedCadWeldSpanLayer } from './analysis/cadWeldLayer.js';
+
+export { resolveCircularWeldSelection } from './assembly/welding/circularWeldSelection.js';
+export type { CircularWeldSelectionContext } from './assembly/welding/circularWeldSelection.js';
+export type { CircularWeldPathEvidence } from './assembly/welding/curvedWeldPath.js';
+export { readCircularFilletWeldSource } from './assembly/welding/circularFilletWeldSource.js';
+export { planCircularFilletWeld } from './assembly/welding/planCircularFilletWeld.js';
+export type { CircularFilletWeldRequest, CircularFilletWeldPreview, CircularFilletWeldFailure, CircularFilletWeldPlan } from './assembly/welding/planCircularFilletWeld.js';
+export { applyCircularFilletWeld } from './assembly/welding/applyCircularFilletWeld.js';
+export type { ApplyCircularFilletWeldResult } from './assembly/welding/applyCircularFilletWeld.js';

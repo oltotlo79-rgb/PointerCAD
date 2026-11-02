@@ -15,7 +15,7 @@ import { decodeMathWorkReply } from './mathWorkReply.js';
 // right set might coincide with it. {1, k} minus {k} silently became {1}, which is
 // wrong when k = 1 (the true difference is then empty); a sum over k = 1..3 of
 // "is 1 in {1,k} minus {k}" wrongly totalled 3 instead of 2
-// (scratchpad/claude/agents/w14b-mc12-cardinality/probe_setminus.py). The fix lives in
+// (see the unknown-element regression in cas_sets_test.py). The fix lives in
 // cas_sets.py (set-minus) and cas_set_relations.py (complement, the same construction
 // under an explicit universe); see cas_sets_test.py/cas_set_relations_test.py for the
 // Python-level cases.

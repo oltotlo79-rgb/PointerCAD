@@ -16,6 +16,7 @@ import {
 import { createAssemblyDocument } from './createAssemblyDocument.js';
 import { embedPart, type PartLibrary } from './partLibrary.js';
 import type { AssemblyComponent, AssemblyDocument, Placement } from './types.js';
+import type { EmbeddedPartAttachments } from './partLibrary.js';
 
 const HALF = Math.SQRT1_2;
 
@@ -279,7 +280,7 @@ describe('EX18 rejected commits preserve the complete assembly inputs', () => {
       if (code === 'targetPartShared') document = addComponent(document,
         createComponentFor(document, { kind: 'part', partRef: 'bracket' }));
       const preservedBytes = new Uint8Array([10, 20, 30]);
-      const preservedAttachments: import('./partLibrary.js').EmbeddedPartAttachments = {
+      const preservedAttachments: EmbeddedPartAttachments = {
         shapes: new Map([['preserved.brep', preservedBytes]]), meshes: new Map(), canvases: new Map(),
       };
       const library: PartLibrary = { partFiles: [], parts: s.parts,

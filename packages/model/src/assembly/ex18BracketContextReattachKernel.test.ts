@@ -16,7 +16,7 @@ import { createSubShapeReference } from '../kernelBridge/createSubShapeReference
 import { createDirectKernelBridge, type KernelBridge, type SolidBody, type SolidFaceEntry } from '../kernelBridge.js';
 import { resolveSubShapeReference } from '../kernelBridge/referenceResolution.js';
 import { appendReference, appendSolid, createEmptyPartDocument, replaceSketch } from '../part/createPartDocument.js';
-import { EX18_BRACKET, EX18_BRACKET_HOLE_MOVED, expectEx18Bracket } from '../part/ex18RouteFixtures.js';
+import { EX18_BRACKET, EX18_BRACKET_HOLE_MOVED, expectEx18Bracket } from '../part/ex18RouteFixtures.testSupport.js';
 import { recomputePart } from '../part/recomputePart.js';
 import type { HoleFeature, PartDocument, PrimitiveFeature, ReferencePointFeature, SubShapeRef } from '../part/types.js';
 import { absoluteCoordinate, appendFeature, createPointFeature } from '../sketch/createSketchDocument.js';

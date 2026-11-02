@@ -1,3 +1,4 @@
+import { sha256Hex } from '../sha256.js';
 import { FIXED_ENTRY_MTIME, IO_LIMITS, zipPcadEntries, type PcadZipEntries } from '@pointercad/io';
 import type {
   NamedSavePoint, SavePointBlob, SavePointEntry, SavePointErrorCode, SavePointStorage,
@@ -82,8 +83,7 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
   if (!(buffer instanceof ArrayBuffer) || bytes.byteOffset !== 0 || bytes.byteLength !== buffer.byteLength)
     refuse('invalid', 'SHA-256の入力byte境界が不正です。');
   if (!globalThis.crypto?.subtle) refuse('unavailable', 'この端末ではSHA-256を利用できません。');
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', buffer);
-  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(globalThis.crypto.subtle, buffer);
 }
 export function archiveOf(entriesToWrite: readonly SavePointEntry[], blobs: ReadonlyMap<string, Uint8Array>): Uint8Array {
   const entries: PcadZipEntries = new Map();

@@ -200,9 +200,12 @@ async function confirmMembers(page: Page): Promise<void> {
   for (let index = 0; index < 2; index += 1) await boxes.nth(index).check();
 }
 
-interface WeldState { readonly forceA: readonly number[]; readonly forceB: readonly number[]; readonly energy: number }
+interface WeldState {
+  readonly forceA: readonly number[]; readonly forceB: readonly number[]; readonly energy: number;
+  readonly stressMPa: readonly number[];
+}
 
-async function readState(page: Page): Promise<WeldState> {
+async function readState(page: Page, loadFactor: number): Promise<WeldState> {
   const results = beamPanel(page).getByTestId('beam-weld-layer-results');
   const values = async (key: string): Promise<number[]> =>
     (await results.locator(`td[data-quantity="${key}"]`).evaluateAll(cells =>
@@ -210,7 +213,21 @@ async function readState(page: Page): Promise<WeldState> {
   const energies = (await results.locator('p[data-unit="J"]').evaluateAll(rows =>
     rows.map(row => row.getAttribute('data-value') ?? 'NaN'))).map(Number);
   expect(energies).toHaveLength(1);
-  return { forceA: await values('forceOnAN'), forceB: await values('forceOnBN'), energy: energies[0] ?? Number.NaN };
+  const stress = beamPanel(page).getByTestId('beam-weld-throat-stress');
+  await expect(stress).toBeVisible({ timeout: RESULT_TIMEOUT_MS });
+  const corners = stress.locator('tbody tr[data-weld-stress-patch]');
+  await expect(corners).toHaveCount(4);
+  for (let index = 0; index < 4; index += 1) {
+    await expect(corners.nth(index)).toHaveAttribute('data-load-factor', String(loadFactor));
+    await expect(corners.nth(index)).toHaveAttribute('data-corner', String(index));
+  }
+  await expect(stress.locator('td[data-unit="mm"]')).toHaveCount(8);
+  await expect(stress.locator('td[data-stress][data-unit="MPa"]')).toHaveCount(12);
+  const stressMPa = (await stress.locator('td[data-stress]').evaluateAll(cells =>
+    cells.map(cell => cell.getAttribute('data-value') ?? 'NaN'))).map(Number);
+  expect(stressMPa.every(Number.isFinite)).toBe(true);
+  return { forceA: await values('forceOnAN'), forceB: await values('forceOnBN'),
+    energy: energies[0] ?? Number.NaN, stressMPa };
 }
 
 function expectRelative(actual: number, expected: number, scale: number): void {
@@ -227,9 +244,9 @@ async function runAndCheck(page: Page): Promise<void> {
   await expect(results).toBeVisible({ timeout: RESULT_TIMEOUT_MS });
   const stateSelect = results.locator('select').first();
   await expect(stateSelect.locator('option')).toHaveCount(2);
-  const first = await readState(page);
+  const first = await readState(page, 1);
   await stateSelect.selectOption({ index: 1 });
-  const second = await readState(page);
+  const second = await readState(page, -1);
   for (const state of [first, second]) {
     expect(state.forceA).toHaveLength(3);
     expect(state.forceB).toHaveLength(3);
@@ -242,6 +259,11 @@ async function runAndCheck(page: Page): Promise<void> {
   first.forceA.forEach((value, axis) => expectRelative(second.forceA[axis] ?? Number.NaN, -value, scale));
   expect(first.energy).toBeGreaterThan(0);
   expectRelative(second.energy, first.energy, first.energy);
+  // Linear elastic input with opposite load factors: all12 corner stresses reverse,
+  // while the original force/energy checks above remain independent and unchanged.
+  const stressScale = Math.max(...first.stressMPa.map(Math.abs));
+  expect(stressScale).toBeGreaterThan(0);
+  first.stressMPa.forEach((value, index) => expectRelative(second.stressMPa[index] ?? Number.NaN, -value, stressScale));
 }
 
 /** 製品の保存で落としたファイルの溶接の層の行。 */
@@ -306,6 +328,7 @@ test.describe('溶接の層: 規格の平鋼の実形とすみ肉溶接の窓', 
     // 4) のど厚を変えると結果が消える。元の値に戻して計算し直すと同じ期待を満たす。
     await throatInput(page).fill('1.5');
     await expect(beamPanel(page).getByTestId('beam-weld-layer-results')).toHaveCount(0);
+    await expect(beamPanel(page).getByTestId('beam-weld-throat-stress')).toHaveCount(0);
     await throatInput(page).fill(LAYER.throat);
     await runAndCheck(page);
 
@@ -345,6 +368,7 @@ test.describe('溶接の層: 規格の平鋼の実形とすみ肉溶接の窓', 
     await expect(weldRow(page)).toHaveCount(1);
     await expect(throatInput(page)).toHaveValue(LAYER.throat);
     await expect(beamPanel(page).getByTestId('beam-weld-layer-results')).toHaveCount(0);
+    await expect(beamPanel(page).getByTestId('beam-weld-throat-stress')).toHaveCount(0);
     await confirmMembers(page);
     await runAndCheck(page);
 

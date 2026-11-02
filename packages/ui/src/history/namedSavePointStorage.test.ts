@@ -13,12 +13,12 @@ const hash = (bytes: Uint8Array): string => createHash('sha256').update(bytes).d
 const tick = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
 afterEach(() => vi.unstubAllGlobals());
 
-type Request<T> = { result: T; error: { name: string } | null; onsuccess: (() => void) | null; onerror: (() => void) | null };
-type Transaction = { error: { name: string } | null; oncomplete: (() => void) | null;
+interface Request<T> { result: T; error: { name: string } | null; onsuccess: (() => void) | null; onerror: (() => void) | null }
+interface Transaction { error: { name: string } | null; oncomplete: (() => void) | null;
   onabort: (() => void) | null; onerror: (() => void) | null; abort: () => void;
-  objectStore: (name: string) => Store };
-type Store = { get: (key: string) => Request<unknown>; getAll: () => Request<unknown[]>;
-  getAllKeys: () => Request<string[]>; put: (value: unknown) => Request<unknown>; delete: (key: string) => Request<unknown> };
+  objectStore: (name: string) => Store }
+interface Store { get: (key: string) => Request<unknown>; getAll: () => Request<unknown[]>;
+  getAllKeys: () => Request<string[]>; put: (value: unknown) => Request<unknown>; delete: (key: string) => Request<unknown> }
 
 /** autoSave.test.tsと同じくrequest成功とtransaction完了を分離し、変更はcomplete時だけ反映する。 */
 function fakeIndexedDb() {

@@ -9,7 +9,7 @@ export type MathGeometryComparisonShape =
   | { readonly kind: 'circular'; readonly radius: number; readonly sweep: number }
   | { readonly kind: 'polygon'; readonly curves: readonly ResolvedCurve[] };
 
-type Problem = { readonly ok: false; readonly reason: 'unsupported' | 'failed-geometry' | 'invalid-request'; readonly message: string };
+interface Problem { readonly ok: false; readonly reason: 'unsupported' | 'failed-geometry' | 'invalid-request'; readonly message: string }
 type Result<T> = { readonly ok: true; readonly value: T } | Problem;
 const unsupported = (message: string): Problem => ({ ok: false, reason: 'unsupported', message });
 const invalidGeometry = (): Problem => ({ ok: false, reason: 'failed-geometry', message: '合同・相似を比べる図形の寸法を正しく取得できませんでした。' });

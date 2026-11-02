@@ -1,13 +1,13 @@
 /** 図面と参照元一式を、文書ごとの保存キューを通して開く・保存する。 */
-import { readDrawingBundle } from '@pointercad/io';
 import { drawingSourceInputHash, drawingSourceInputOf } from '@pointercad/model';
 import type { DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { beginOpenRequest, mayOpenAfterRead, mayReportOpenFailure } from './documentOpenGuard.js';
+import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, readForOpen } from './documentOpenGuard.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
 import { captureSaveSnapshot } from './pcadSaveSnapshot.js';
 import { withPcaddExtension, type PickedFile } from './fileGateway.js';
-import { openErrorMessageKey, type PartFileDeps } from './partFile.js';
+import type { PartFileDeps } from './partFile.js';
+import { openErrorMessageKey } from './documentReadError.js';
 import { recordRecentFile } from './recentFiles.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { saveFailureMessageKey } from './saveFailure.js';
@@ -24,7 +24,9 @@ export async function applyPickedDrawing(
   deps: PartFileDeps,
   request: DocumentRequest = beginOpenRequest(),
 ): Promise<void> {
-  const result = await readDrawingBundle(picked.bytes);
+  try {
+  const result = await readForOpen(request, 'drawing', picked.bytes);
+  if (result === null) return;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {
       useAppStore.getState().setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
@@ -63,6 +65,7 @@ export async function applyPickedDrawing(
     if (useAppStore.getState().activeDocumentId === openedId) before.fileGateway.clearSaveTarget?.();
   }
   if (useAppStore.getState().activeDocumentId === openedId) recordRecentFile(picked.name, { storage: deps.recentFilesStorage });
+  } finally { finishOpenRequest(request); }
 }
 
 export async function saveDrawing(deps: PartFileDeps, saveAs: boolean): Promise<void> {

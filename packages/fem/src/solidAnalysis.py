@@ -73,17 +73,42 @@ def _node_order(plan):
     return order, native_numbers
 
 
+def _prescribed(plan):
+    count = len(plan['input']['nodes'])
+    if 'prescribedMm' not in plan:
+        return [[0.0, 0.0, 0.0] for _ in range(count)]
+    rows = plan['prescribedMm']
+    if not isinstance(rows, list) or len(rows) != count:
+        raise ValueError('solid-input: inconsistent prescribed translations')
+    values = []
+    for node, row in enumerate(rows):
+        if not isinstance(row, list) or len(row) != 3:
+            raise ValueError('solid-input: exactly three prescribed translations required')
+        vector = [_finite(value) for value in row]
+        if any(value != 0 and not plan['fixed'][node][axis] for axis, value in enumerate(vector)):
+            raise ValueError('solid-input: prescribed translation on an unrestrained axis')
+        values.append(vector)
+    return values
+
+
 def _deck(plan, node_order, native_numbers):
     data = plan['input']
     materials = {row['id']: i + 1 for i, row in enumerate(data['materials'])}
+    prescribed = _prescribed(plan)
+    boundary_values = {0.0: 1}
+    for row in prescribed:
+        for value in row:
+            if value not in boundary_values:
+                boundary_values[value] = len(boundary_values) + 1
     lines = ['/pcad_fem/solid.out', 'PointerCAD tet4; coherent N, mm, MPa',
              'LinearStatic nsteps 1 nmodules 0', 'domain 3d', 'OutputManager',
              f"ndofman {len(data['nodes'])} nelem {len(data['elements'])} "
-             f"ncrosssect {len(materials)} nmat {len(materials)} nbc 1 nltf 1 nic 0"]
+             f"ncrosssect {len(materials)} nmat {len(materials)} nbc {len(boundary_values)} nltf 1 nic 0"]
     for number, original in enumerate(node_order, 1):
         point, fixed = data['nodes'][original], plan['fixed'][original]
         lines.append(f'node {number} coords 3 ' + ' '.join(str(_finite(v)) for v in point)
-                     + ' bc 3 ' + ' '.join('1' if v else '0' for v in fixed))
+                     + ' bc 3 ' + ' '.join(str(boundary_values[prescribed[original][axis]]) if v else '0'
+                                          for axis, v in enumerate(fixed)))
     for number, element in enumerate(data['elements'], 1):
         material = materials[element['materialId']]
         lines.append(f'ltrspace {number} nodes 4 ' + ' '.join(str(native_numbers[i]) for i in element['nodes'])
@@ -95,8 +120,9 @@ def _deck(plan, node_order, native_numbers):
         # physical density and must never be reported as a mass prediction.
         lines.append(f"IsoLE {number} d 0 E {_finite(material['youngMPa'])} "
                      f"n {_finite(material['poisson'])} tAlpha 0.0")
-    lines += ['BoundaryCondition 1 loadTimeFunction 1 prescribedValue 0.0',
-              'PeakFunction 1 t 1.0 f(t) 1.0', '']
+    lines += [f'BoundaryCondition {number} loadTimeFunction 1 prescribedValue {value}'
+              for value, number in boundary_values.items()]
+    lines += ['PeakFunction 1 t 1.0 f(t) 1.0', '']
     return '\n'.join(lines)
 
 
@@ -211,13 +237,18 @@ def run_solid_analysis():
         if any(not math.isfinite(v) or v <= 0 for v in diagonal):
             raise ValueError('solid-mechanism: nonpositive restrained diagonal')
         scaling = [1 / math.sqrt(v) for v in diagonal]
-        displacement = [[0.0, 0.0, 0.0] for _ in range(count)]
+        displacement = _prescribed(plan)
         minimum_pivot = 1.0
         if equations:
             matrix = fem.skyline()
             matrix.buildInternalStructure(problem, 1, numbering)
             if matrix.giveNumberOfRows() != equations:
                 raise ValueError('solid-native: matrix extent mismatch')
+            rhs = [0.0] * equations
+            for node, row in enumerate(node_equations):
+                for axis, eq in enumerate(row):
+                    if eq:
+                        rhs[eq - 1] = _finite(forces[node][axis] * scaling[eq - 1])
             for i, row in enumerate(data['elements']):
                 element = domain.giveElement(i + 1)
                 native, values = _native_matrix(fem, element, step)
@@ -226,15 +257,18 @@ def run_solid_analysis():
                 expected = [eq for node in row['nodes'] for eq in node_equations[node]]
                 if list(location) != expected:
                     raise ValueError('solid-native: native location differs from reserved profile')
+                # The reduced native solve needs K_ff*u_f = f_f - K_fc*u_c.
+                # Keep constrained values exact; equation/node numbering is unchanged.
+                if 'prescribedMm' in plan:
+                    local_u = [value for node in row['nodes'] for value in displacement[node]]
+                    for a, eq_a in enumerate(expected):
+                        if eq_a:
+                            shift = math.fsum(values[a][b] * local_u[b] for b, eq_b in enumerate(expected) if not eq_b)
+                            rhs[eq_a - 1] = _finite(rhs[eq_a - 1] - shift * scaling[eq_a - 1])
                 for a, eq_a in enumerate(expected):
                     for b, eq_b in enumerate(expected):
                         native[a, b] = values[a][b] * (scaling[eq_a - 1] if eq_a else 0) * (scaling[eq_b - 1] if eq_b else 0)
                 matrix.assemble(location, native)
-            rhs = [0.0] * equations
-            for node, row in enumerate(node_equations):
-                for axis, eq in enumerate(row):
-                    if eq:
-                        rhs[eq - 1] = _finite(forces[node][axis] * scaling[eq - 1])
             right, solved = fem.FloatArray(tuple(rhs)), fem.FloatArray()
             solver = fem.ldltfactorization(domain, problem)
             reason = solver.solve(matrix, right, solved)
@@ -266,8 +300,11 @@ def run_solid_analysis():
                         for node in range(count) for axis in range(3) if not plan['fixed'][node][axis]), default=0.0)
         if not math.isfinite(residual) or residual > 1e-8:
             raise ValueError('solid-equilibrium: native sparse residual exceeds 1e-8')
+        reactions = [[_finite(internal[node][axis] - forces[node][axis]) if plan['fixed'][node][axis] else 0.0
+                      for axis in range(3)] for node in range(count)]
         return json.dumps({'schema': 'pointercad-solid-tet4-native/1', 'source': data['source'],
                            'displacementMm': displacement, 'elementForcesN': actions,
+                           'reactionsN': reactions,
                            'reservedNumericBytes': reserved, 'minimumScaledPivot': minimum_pivot}, allow_nan=False)
     except BaseException as error:
         primary = error

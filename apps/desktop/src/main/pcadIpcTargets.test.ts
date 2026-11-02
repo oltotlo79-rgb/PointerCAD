@@ -4,6 +4,7 @@ import type { IpcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerPcadIpc, PCAD_OPEN_CHANNEL, PCAD_SAVE_CHANNEL, PCAD_SAVE_AS_CHANNEL,
   PCAD_CLEAR_TARGET_CHANNEL, PCAD_HAS_TARGET_CHANNEL } from './pcadDialogs.js';
+import type * as ImportedNodeFsTypes from 'node:fs';
 
 const memory = vi.hoisted(() => new Map<string, Uint8Array>());
 const fsHooks = vi.hoisted(() => ({ afterWrite: null as null | (() => Promise<void>) }));
@@ -18,7 +19,7 @@ vi.mock('electron', () => ({
 }));
 vi.mock('./appSender.js', () => ({ validateAppSender: () => true }));
 vi.mock('node:fs', async (importOriginal) => {
-  const original = await importOriginal<typeof import('node:fs')>();
+  const original = await importOriginal<typeof ImportedNodeFsTypes>();
   return { ...original, promises: {
     writeFile(path: string, bytes: Uint8Array) { memory.set(path, bytes.slice()); return fsHooks.afterWrite?.() ?? Promise.resolve(); },
     rename(from: string, to: string) {

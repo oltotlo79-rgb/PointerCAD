@@ -151,3 +151,54 @@ describe('Whole-application shared compiler runtime preserves deferred help', ()
         imports: ['help.js'], modules: {} } })).toThrow('initial static dependency');
   });
 });
+
+// 独立した17本文の実一覧。元の16本文/全expectは変更しない。
+const additionalTopics = ['dimension-tolerance', 'component-licenses', 'work-plane', 'ellipse', 'spline', 'snap', 'section-view', 'print-save-as', 'help-reader', 'web-version', 'dimension-series', 'face-and-color', 'edit-sketch', 'drawing-export', 'mate', 'drawing-scale', 'spring'];
+function twoGroups() {
+  return { ...fixture(), 'additional.js': {
+    type: 'chunk' as const, name: 'help-small-topics-additional', imports: [] as string[],
+    modules: Object.fromEntries(additionalTopics.map(topic => [moduleId(topic), {}])),
+  } };
+}
+describe('追加の小本文も内容を欠かさず遅延した一群にする', () => {
+  it('実17本文を別のchunkへまとめ、元の16本文と選択を混同しない', () => {
+    expect(additionalTopics).toHaveLength(17);
+    expect(new Set([...topics, ...additionalTopics]).size).toBe(33);
+    for (const topic of additionalTopics) {
+      expect(readFileSync(new URL(`../../../packages/help-content/docs/ja/${topic}.md`, import.meta.url), 'utf8').length).toBeGreaterThan(0);
+      expect(smallHelpChunk(moduleId(topic))).toBe('help-small-topics-additional');
+      expect(smallHelpChunk(moduleId(topic).replaceAll('/', '\\'))).toBe('help-small-topics-additional');
+    }
+    expect(() => assertDeferredSmallHelp(twoGroups(), true)).not.toThrow();
+  });
+  it('実Webで追加群の全欠落・部分欠落・余分本文・元群との混在を拒否する', () => {
+    expect(() => assertDeferredSmallHelp(fixture(), true)).toThrow('one deferred chunk');
+    const missing = twoGroups(); delete missing['additional.js'].modules[moduleId('spring')];
+    expect(() => assertDeferredSmallHelp(missing, true)).toThrow('exactly');
+    const extra = twoGroups(); extra['additional.js'].modules[moduleId('assembly')] = {};
+    expect(() => assertDeferredSmallHelp(extra, true)).toThrow('exactly');
+    const mixed = twoGroups(); mixed['additional.js'].modules[moduleId('bom')] = {};
+    expect(() => assertDeferredSmallHelp(mixed, true)).toThrow('one deferred chunk');
+    const partial = twoGroups(); delete partial['additional.js'].modules[moduleId('spring')];
+    expect(() => assertDeferredSmallHelp(partial)).toThrow('exactly');
+  });
+  it('追加群も初期/間接/アプリfacadeの静的依存とUI/Worker吸収を拒否する', () => {
+    for (const entry of ['index.js', 'main.js'] as const) {
+      const eager = twoGroups(); eager[entry].imports.push('additional.js');
+      expect(() => assertDeferredSmallHelp(eager, true)).toThrow('initial static dependency');
+    }
+    const absorbed = twoGroups(); absorbed['additional.js'].modules['/packages/ui/src/help/HelpHost.tsx'] = {};
+    expect(() => assertDeferredSmallHelp(absorbed, true)).toThrow('exactly');
+    const worker = twoGroups(); worker['additional.js'].modules['/packages/kernel/src/kernel.worker.ts'] = {};
+    expect(() => assertDeferredSmallHelp(worker, true)).toThrow('exactly');
+    const dynamic = twoGroups(); dynamic['additional.js'].imports.push('main.js');
+    expect(() => assertDeferredSmallHelp(dynamic, true)).toThrow('no dependencies');
+  });
+  it('追加群のisolated compiler runtimeだけを許し、偽物を拒否する', () => {
+    const base = sharedRuntimeFixture();
+    const extra = twoGroups()['additional.js']; extra.imports.push('assets/rolldown-runtime-hePW80VL.js');
+    expect(() => assertDeferredSmallHelp({ ...base.emitted, 'additional.js': extra }, true)).not.toThrow();
+    const fake = { ...base.runtime, modules: { '/packages/ui/src/help/HelpHost.tsx': {} } };
+    expect(() => assertDeferredSmallHelp({ ...base.emitted, 'assets/rolldown-runtime-hePW80VL.js': fake, 'additional.js': extra }, true)).toThrow('no dependencies');
+  });
+});

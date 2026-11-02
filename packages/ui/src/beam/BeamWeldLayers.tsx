@@ -2,12 +2,14 @@ import type { CadWeldLayer } from '@pointercad/model/beam-analysis';
 import type { BeamWeldContactResult } from '@pointercad/fem';
 import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { BeamWeldSpanDefinitions } from './BeamWeldSpanDefinitions.js';
 import { beamDisplayNumber } from './BeamResults.js';
 import type { BeamSession } from './beamSession.js';
 import { selectWeldGroup, updateWeldGroup, weldGroupBeadIds } from './weldGroupAssociations.js';
 
 export function BeamWeldLayerDefinitions({ session }: { readonly session: BeamSession }): React.JSX.Element {
   const state = useAppStore();
+  if (session.weldSpanLayers !== null) return <BeamWeldSpanDefinitions session={session} />;
   const beads = state.assembly?.components.filter(c => !c.suppressed && c.source.kind === 'standardPart'
     && c.source.catalog === 'filletWeld') ?? [];
   const edit = (welds: readonly CadWeldLayer[]): void => state.editBeam({ kind: 'weld-layers', welds });
@@ -55,6 +57,7 @@ export function BeamWeldLayerDefinitions({ session }: { readonly session: BeamSe
         youngMPa: NaN, poisson: NaN, effectiveThroatMm: NaN, complianceLengthMm: NaN,
         propertySource: { kind: 'user-supplied', reference: '', condition: '' }, idealization: 'rectangular-effective-elastic-throat' }])} title={t('beam.guide.weldAdd')}>
       {t('beam.weldAdd')}</button>
+    <BeamWeldSpanDefinitions session={session} />
   </fieldset>;
 }
 

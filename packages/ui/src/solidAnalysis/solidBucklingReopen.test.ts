@@ -7,9 +7,10 @@ import { useAppStore } from '../store/useAppStore.js';
 import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { attachSolidAnalysis } from './attachSolidAnalysis.js';
 import { boundaryMesh, context } from './solidAnalysis.testSupport.js';
-import type { SolidField } from './solidAnalysisSession.js';
+import { solidSavedInput, type SolidField } from './solidAnalysisSession.js';
 import { initialSolidModalState } from './solidModalState.js';
 import { initialSolidBucklingState } from './solidBucklingState.js';
+import { t } from '../i18n/t.js';
 
 /**
  * The buckling run, save and reopen through the actual runner (attachSolidAnalysis), the actual FemClient and a fake
@@ -115,6 +116,44 @@ function savedKeyPaths(value: unknown, path: readonly string[] = []): readonly (
 }
 
 describe('solid buckling through the actual runner', () => {
+  it.each(['gravity', 'displacement'] as const)('keeps a saved %s reference after cold reopen and refuses it before starting a worker', async kind => {
+    const rig = install(); live.push(rig); enterStaticA(rig);
+    const state = useAppStore.getState();
+    if (kind === 'gravity') {
+      state.setSolidGravityEnabled(true); state.editSolidGravity('density', '7800');
+    } else {
+      const face = state.solidAnalysisSession?.fixedFaces[0];
+      if (!face) throw new Error('Missing clamp');
+      state.convertSolidFixedFace(face); state.editSolidSupport(face, 'z', { displacement: '0.125' });
+    }
+    state.saveSolidBuckling();
+    const before = definitionOf('solid-buckling-cad');
+    if (before.kind !== 'solid-buckling-cad') throw new Error('Missing buckling definition');
+    coldReopen(rig, 10);
+    const reopened = useAppStore.getState(), session = reopened.solidAnalysisSession;
+    if (!session) throw new Error('Missing reopened session');
+    expect(solidSavedInput(session, reopened.document.id, reopened.document.parameters)).toEqual(before.definition.reference);
+    expect(reopened.solidBucklingReference).toBeNull();
+    runBuckling();
+    await vi.waitFor(() => expect(useAppStore.getState().solidBuckling.status).toBe('failed'));
+    expect(useAppStore.getState().solidBuckling.error)
+      .toBe(t(kind === 'gravity' ? 'solidAnalysis.bucklingGravityUnsupported' : 'solidAnalysis.bucklingDisplacementUnsupported'));
+    expect(rig.ports).toHaveLength(0);
+    expect(definitionOf('solid-buckling-cad')).toEqual(before);
+    expect(solidSavedInput(useAppStore.getState().solidAnalysisSession ?? session, reopened.document.id, [])).toEqual(before.definition.reference);
+  });
+  it('holds a new gravity reference separately from a saved legacy static definition', () => {
+    const rig = install(); live.push(rig); enterStaticA(rig);
+    useAppStore.getState().saveSolidAnalysis(); const staticInput = definitionOf('solid-cad');
+    useAppStore.getState().setSolidGravityEnabled(true); useAppStore.getState().editSolidGravity('density', '7800');
+    useAppStore.getState().saveSolidBuckling(); const bucklingInput = definitionOf('solid-buckling-cad');
+    if (bucklingInput.kind !== 'solid-buckling-cad') throw new Error('Missing buckling reference');
+    coldReopen(rig, 11);
+    expect(useAppStore.getState().solidAnalysisSession?.gravity?.enabled).toBe(false);
+    expect(useAppStore.getState().solidBucklingReference).toEqual(bucklingInput.definition.reference);
+    expect(definitionOf('solid-cad')).toEqual(staticInput);
+    expect(definitionOf('solid-buckling-cad')).toEqual(bucklingInput);
+  });
   it('posts the static panel problem as the reference with the requested count', async () => {
     const rig = install(); live.push(rig);
     enterStaticA(rig);

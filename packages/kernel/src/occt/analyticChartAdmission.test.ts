@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { validateAnalyticUvComplex as originalUvComplex } from './analysisSurfaceCertificate.js';
+import { validateAnalyticUvComplex as leafUvComplex } from './analyticUvComplex.js';
 import { createAnalyticCellBudget, type AnalyticPlcFaceBinding } from './analysisSurfaceCertificate.js';
 import { analyticChartAdmission, bindPoleOccurrences, type AdmissionChart, type NativeEdgeRecord } from './analyticChartAdmission.js';
 import type { B08WireChain } from './boundary08Adapter.js';
@@ -46,5 +48,14 @@ describe('composed admission: validateAnalyticUvComplex runs first on the same a
     expect(() => analyticChartAdmission(chart, wires, new Map(), { faceIndex: 0, localToGlobal: [0, 1, 2, 3, 4, 5], plcTriangles: [0, 1] },
       budget, tick)).toThrow('analytic-certificate');
     expect(budget.used()).toBe(0);
+  });
+});
+
+describe('UV validator export continuity', () => {
+  it('reexports the identical leaf function and preserves its two checkpoints for one triangle', () => {
+    expect(originalUvComplex).toBe(leafUvComplex);
+    let count = 0;
+    originalUvComplex([[0, 0], [2, 0], [0, 2]], [[0, 1, 2]], [[0, 1, 2, 0]], () => { count += 1; });
+    expect(count).toBe(2);
   });
 });

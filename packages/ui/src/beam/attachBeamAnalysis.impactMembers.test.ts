@@ -208,7 +208,9 @@ describe('impact member-mean resultants in the session lifecycle', () => {
     port.onmessage?.(resultEvent(request, await impactResultFor(other, 2e-6, 0)));
     await vi.waitFor(() => expect(requireBeamSession().status).toBe('failed'));
     const session = requireBeamSession();
-    expect([session.errorKey, session.result, session.impactMembers]).toEqual(['beam.error.runtime', null, null]);
+    expect(session.errorKey).toBe('beam.error.runtime');
+    expect(session.result).toBeNull();
+    expect(session.impactMembers).toBeNull();
   });
 
   it('a non-finite derived value fails the run instead of publishing the result', async () => {
@@ -217,7 +219,9 @@ describe('impact member-mean resultants in the session lifecycle', () => {
     port.onmessage?.(resultEvent(request, await impactResultFor(input, 1e300, 0)));
     await vi.waitFor(() => expect(requireBeamSession().status).toBe('failed'));
     const session = requireBeamSession();
-    expect([session.errorKey, session.result, session.impactMembers]).toEqual(['beam.error.runtime', null, null]);
+    expect(session.errorKey).toBe('beam.error.runtime');
+    expect(session.result).toBeNull();
+    expect(session.impactMembers).toBeNull();
     expect(session.diagnostic).toContain('impact-member: non-finite');
   });
 });

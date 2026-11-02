@@ -20,6 +20,7 @@ export interface SolidModalSharedInput {
 }
 
 export function solidModalSharedOf(saved: SolidModalCadSavedInput | SolidCadSavedInput): SolidModalSharedInput {
+  if ('supports' in saved && saved.supports !== undefined) throw new Error(t('solidAnalysis.modalSupportsUnsupported'));
   return { bodyFeatureId: saved.bodyFeatureId, fixedFaces: [...saved.fixedFaces], youngMPa: saved.youngMPa, poisson: saved.poisson,
     linearDeflectionMm: saved.linearDeflectionMm, angularDeflectionRad: saved.angularDeflectionRad,
     maximumChordDeviationMm: saved.maximumChordDeviationMm, maximumVolumeDeviationMm3: saved.maximumVolumeDeviationMm3 };
@@ -35,6 +36,7 @@ export function sameSolidModalShared(left: SolidModalSharedInput, right: SolidMo
 
 /** The shared fields as the static panel currently shows them (evaluated with the document parameters). */
 export function solidPanelShared(session: SolidAnalysisSession, parameters: readonly Parameter[], bodies: readonly SolidBody[]): SolidModalSharedInput {
+  if ((session.supports?.length ?? 0) > 0) throw new Error(t('solidAnalysis.modalSupportsUnsupported'));
   const evaluated = (name: 'young' | 'poisson' | 'linear' | 'angular' | 'chord' | 'volume'): number => {
     const result = solidExpressionField(name, session.values[name], parameters).result;
     if (result.value === null) throw new Error(result.error?.message ?? t('solidAnalysis.failed'));

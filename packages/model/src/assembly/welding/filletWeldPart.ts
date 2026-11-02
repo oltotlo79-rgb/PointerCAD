@@ -152,6 +152,8 @@ function distinctParts(first: string | undefined, second: string | undefined): r
  * 溶接した2部品は別々の id、始点と長さは計画と同じ `segmentWithinContact` の規則で当たりの辺の内側。
  */
 export function filletWeldSegmentOptions(options: Readonly<Record<string, string>>): FilletWeldSegmentOptions | null {
+  // Circular paths are a separate saved generator, never a straight extrusion.
+  if (Object.hasOwn(options, 'weldCircular')) return null;
   const length = positiveNumber(options.length);
   const station = nonNegativeNumber(options.weldStation);
   const contactLength = positiveNumber(options.contactLength);

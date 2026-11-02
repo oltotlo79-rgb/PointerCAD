@@ -1,4 +1,7 @@
 {
+  "toolbar.analysis.groupLabel": "解析",
+  "toolbar.analysis.tooltip": "梁・立体・棒の解析や疲労の見積もりを選びます。各項目の説明で使える条件を確認できます。",
+  "toolbar.analysis.closeCurrent": "開いている解析やボルト締付けの入力を閉じてから、別の解析を選んでください。入力は変更していません。",
   "nameSearch.label": "名前で探す",
   "nameSearch.hint": "名前や所属を入力。下矢印で候補へ移動、Escで検索を解除します",
   "nameSearch.clear": "解除",

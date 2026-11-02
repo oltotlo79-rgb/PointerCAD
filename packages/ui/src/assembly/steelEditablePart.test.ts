@@ -9,6 +9,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { cancelPlaceComponent, commitPlaceComponent } from './placeComponentActions.js';
 import { buildEditableSteelPart, placeEditableSteelPart } from './steelEditablePart.js';
 import { commitStandardPartChoice, standardPartChoices } from './standardPartPicker.js';
+import type { CutFeature } from '@pointercad/model';
 
 const LINEAGE = 'part-uuid:3f2b8c1e-6a4d-4e2f-9b1c-0d5e7a9c2b41';
 const lineage = (): string => LINEAGE;
@@ -187,7 +188,7 @@ describe('stock edit atomic history and cancellation', () => {
     expect(stockRows()).toEqual([['SS400', 'φ25', 1000, 1000, 1]]);
     const oldHash = await contentHashOf(original);
     expect(await contentHashOf(reopened.bundle.document)).toBe(oldHash);
-    const cut: import('@pointercad/model').CutFeature = { id: 'history-cut', name: 'cut', kind: 'cut', suppressed: false,
+    const cut: CutFeature = { id: 'history-cut', name: 'cut', kind: 'cut', suppressed: false,
       targetFeatureId: original.solids.at(-1)?.id ?? '', pairedWith: null, keep: 'negative',
       plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(600) } };
     const edited = { ...original, solids: [...original.solids, cut] };

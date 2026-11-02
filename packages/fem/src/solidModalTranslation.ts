@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import { solidArray, solidNumber, solidRecord, solidTetGeometry, solidVector } from './solidAnalysisTranslation.js';
 import type { SolidModalApplicability, SolidModalInput, SolidModalMaterial, SolidModalPlan } from './solidModalModel.js';
 
@@ -159,6 +160,5 @@ function densityOf(densities: ReadonlyMap<string, number>, id: string): number {
 
 export async function solidModalInputSha256(input: SolidModalInput): Promise<string> {
   const owned = translateSolidModal(input).input;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(owned)));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(new TextEncoder().encode(JSON.stringify(owned)));
 }

@@ -4,7 +4,7 @@ import type { FemClient, FemOptions } from './client.js';
 import { meshCadBoundary, type CadTetraContext, type CadTetraRegion } from './cadTetraMesh.js';
 import { meshCadCurvedBoundary, type CurvedCadTetraOptions } from './cadCurvedTetraMesh.js';
 import { isTetraMeshResult, type TetraMeshResult, type TetraMeshingControls } from './tetraMesh.js';
-import { translateSolidAnalysis } from './solidAnalysisTranslation.js';
+import { solidArray, solidVector, translateSolidAnalysis } from './solidAnalysisTranslation.js';
 import type { SolidAnalysisInput, SolidAnalysisResult, SolidMaterial, SolidVector3 } from './solidAnalysisModel.js';
 
 /** One current solid. Surface traction is a global vector in N/mm^2, not a resultant force. */
@@ -12,6 +12,15 @@ export interface CadSolidSettings {
   readonly material: SolidMaterial;
   readonly fixedFaces: readonly SubShapeRef[];
   readonly loadedFaces: readonly SubShapeRef[];
+  readonly supports?: readonly {
+    readonly face: SubShapeRef;
+    readonly fixed: readonly [boolean, boolean, boolean];
+    readonly prescribedMm?: SolidVector3;
+  }[];
+  readonly gravity?: {
+    readonly accelerationMps2: SolidVector3;
+    readonly densityKgM3: number;
+  };
   readonly tractionMPa: SolidVector3;
   readonly numericBudgetBytes: number;
   readonly meshing?: TetraMeshingControls;
@@ -38,6 +47,11 @@ export type CadSolidOutcome =
 function requireInput(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+function requireFields(value: unknown, names: readonly string[], message: string): void {
+  requireInput(value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Reflect.ownKeys(value).length === names.length && names.every(name => Object.hasOwn(value, name)), message);
+}
+interface MergedSupport { node: number; fixed: [boolean, boolean, boolean]; prescribedMm?: [number, number, number] }
 function sourceKey(context: CadTetraContext): string {
   requireInput(context.body.isValid && context.body.bodyKind === 'solid', 'A current valid solid is required');
   const steps = context.steps.filter(step => step.featureId === context.body.featureId);
@@ -54,6 +68,9 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
   const pressure = 'pressureMPa' in settings;
   requireInput('pressureMPa' in settings ? Number.isFinite(settings.pressureMPa) && !('tractionMPa' in settings)
     : 'tractionMPa' in settings, 'Supply either a finite signed pressure or a global traction');
+  if (Object.hasOwn(settings, 'supports')) solidArray(settings.supports, 2048, 1);
+  if (Object.hasOwn(settings, 'gravity')) requireFields(settings.gravity, ['accelerationMps2', 'densityKgM3'],
+    'Explicit gravity acceleration and density are required');
   requireInput(isTetraMeshResult(mesh), 'Invalid tetra mesh');
   const step = context.steps.find(value => value.featureId === context.body.featureId);
   requireInput(mesh.input.source.documentId === context.documentId && mesh.input.source.revision === context.revision
@@ -76,9 +93,8 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
     }
   }
   requireInput(covered.size === mesh.boundaryTags.length, 'Missing boundary triangles');
-  const selected = (references: readonly SubShapeRef[]): number[] => {
-    requireInput(references.length > 0 && references.length <= regions.length, 'Select current CAD faces');
-    const selectedFaces = new Set<number>();
+  const selected = (references: readonly SubShapeRef[], allowEmpty = false, selectedFaces = new Set<number>()): number[] => {
+    requireInput((allowEmpty || references.length > 0) && references.length <= regions.length, 'Select current CAD faces');
     const indices: number[] = [];
     for (const reference of references) {
       const lookup = resolveCurrentOrigin(context.body, reference);
@@ -91,13 +107,40 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
     }
     return indices;
   };
-  const fixedTriangles = selected(settings.fixedFaces), loadedTriangles = selected(settings.loadedFaces);
+  const supportFaces = new Set<number>();
+  const fixedTriangles = selected(settings.fixedFaces, settings.supports !== undefined, supportFaces);
+  const loadedTriangles = selected(settings.loadedFaces, settings.gravity !== undefined);
   const nodes: SolidVector3[] = [];
   for (let i = 0; i < mesh.coordinates.length; i += 3)
     nodes.push([mesh.coordinates[i], mesh.coordinates[i + 1], mesh.coordinates[i + 2]]);
   const triangle = (index: number): [number, number, number] => [mesh.boundaryTriangles[3 * index],
     mesh.boundaryTriangles[3 * index + 1], mesh.boundaryTriangles[3 * index + 2]];
   const fixed = new Set(fixedTriangles.flatMap(triangle));
+  const constraints = new Map<number, MergedSupport>();
+  for (const node of fixed) constraints.set(node, { node, fixed: [true, true, true] });
+  for (const support of settings.supports ?? []) {
+    const hasPrescribed = Object.hasOwn(support, 'prescribedMm');
+    requireFields(support, ['face', 'fixed', ...(hasPrescribed ? ['prescribedMm'] : [])], 'Unsupported CAD support fields');
+    const flags = solidArray(support.fixed, 3, 3);
+    requireInput(flags.every(flag => typeof flag === 'boolean') && flags.some(flag => flag === true), 'Invalid translation restraints');
+    const prescribed = hasPrescribed ? solidVector(support.prescribedMm) : undefined;
+    requireInput(prescribed === undefined || prescribed.every((value, axis) => flags[axis] || value === 0),
+      'Prescribed displacement on an unrestrained axis');
+    const supportNodes = new Set(selected([support.face], false, supportFaces).flatMap(triangle));
+    for (const node of supportNodes) {
+      const merged: MergedSupport = constraints.get(node) ?? { node, fixed: [false, false, false] };
+      for (let axis = 0; axis < 3; axis += 1) {
+        if (!flags[axis]) continue;
+        const displacement = prescribed?.[axis] ?? 0;
+        requireInput(!merged.fixed[axis] || (merged.prescribedMm?.[axis] ?? 0) === displacement,
+          'Conflicting prescribed displacement on a shared node');
+        merged.fixed[axis] = true;
+        if (prescribed !== undefined) merged.prescribedMm ??= [0, 0, 0];
+        if (merged.prescribedMm !== undefined) merged.prescribedMm[axis] = displacement;
+      }
+      constraints.set(node, merged);
+    }
+  }
   let area = 0;
   const pressureForce: [number, number, number] = [0, 0, 0];
   const surfaceLoads = loadedTriangles.map(index => {
@@ -118,14 +161,25 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
   const elements: SolidAnalysisInput['elements'][number][] = [];
   for (let i = 0; i < mesh.tetrahedra.length; i += 4) elements.push({ materialId: settings.material.id,
     nodes: [mesh.tetrahedra[i], mesh.tetrahedra[i + 1], mesh.tetrahedra[i + 2], mesh.tetrahedra[i + 3]] });
-  const totalForceN: SolidVector3 = 'pressureMPa' in settings ? pressureForce
+  const surfaceForceN: SolidVector3 = 'pressureMPa' in settings ? pressureForce
     : [area * settings.tractionMPa[0], area * settings.tractionMPa[1], area * settings.tractionMPa[2]];
-  requireInput(Number.isFinite(area) && totalForceN.every(Number.isFinite), 'Surface load overflow');
-  const input = translateSolidAnalysis({ schema: 'pointercad-solid-tet4/1', units: 'N-mm-MPa',
+  requireInput(Number.isFinite(area) && surfaceForceN.every(Number.isFinite), 'Surface load overflow');
+  const translated = translateSolidAnalysis({ schema: 'pointercad-solid-tet4/1', units: 'N-mm-MPa',
     source: { documentId: context.documentId, revision: context.revision, meshKey: mesh.inputSha256 },
     numericBudgetBytes: settings.numericBudgetBytes, nodes, elements, materials: [settings.material],
-    constraints: [...fixed].map(node => ({ node, fixed: [true, true, true] })), nodalLoads: [], surfaceLoads }).input;
-  return { input, loadedAreaMm2: area, totalForceN };
+    constraints: [...constraints.values()],
+    nodalLoads: [], surfaceLoads,
+    ...(settings.gravity === undefined ? {} : { gravity: { accelerationMps2: settings.gravity.accelerationMps2,
+      densities: [{ materialId: settings.material.id, densityKgM3: settings.gravity.densityKgM3 }] } }) });
+  // With gravity, use the same integrated tet4 forces that the solver receives.
+  // Leave legacy surface-only totals and their arithmetic unchanged.
+  const totalForceN: SolidVector3 = settings.gravity === undefined ? surfaceForceN : [
+    translated.plan.forcesN.reduce((sum, force) => sum + force[0], 0),
+    translated.plan.forcesN.reduce((sum, force) => sum + force[1], 0),
+    translated.plan.forcesN.reduce((sum, force) => sum + force[2], 0),
+  ];
+  requireInput(totalForceN.every(Number.isFinite), 'Combined surface and gravity load overflow');
+  return { input: translated.input, loadedAreaMm2: area, totalForceN };
 }
 
 const owners = new WeakMap<object, AbortController>();

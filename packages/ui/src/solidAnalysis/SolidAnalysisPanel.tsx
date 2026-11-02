@@ -1,5 +1,7 @@
-import { useRef, useState } from 'react';
-import { t } from '../i18n/t.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { summarizeSolidYield, type SolidYieldSummary } from '@pointercad/fem';
+import { t, type MessageKey } from '../i18n/t.js';
+import type { AnalysisMaterialCapacity } from '@pointercad/model/beam-analysis';
 import { ExpressionField } from '../sketch/ExpressionField.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { solidExpressionField, solidFieldsFor, type SolidAnalysisSession } from './solidAnalysisSession.js';
@@ -8,6 +10,9 @@ import { solidAnalysisFieldOf } from './solidFieldState.js';
 import { SOLID_FIELD_QUANTITIES, type SolidFieldQuantity } from './solidFieldView.js';
 import { SolidModalSection } from './SolidModalSection.js';
 import { SolidBucklingSection } from './SolidBucklingSection.js';
+import { SolidAnalysisMaterialFields } from './SolidAnalysisMaterialFields.js';
+import { SolidBoundaryFields } from './SolidBoundaryFields.js';
+import { solidBoundarySaved } from './solidBoundaryDraft.js';
 
 const QUANTITY_LABELS = { vonMises: 'solidAnalysis.fieldVonMises', xx: 'solidAnalysis.fieldXx', yy: 'solidAnalysis.fieldYy',
   zz: 'solidAnalysis.fieldZz', yz: 'solidAnalysis.fieldYz', xz: 'solidAnalysis.fieldXz', xy: 'solidAnalysis.fieldXy' } as const;
@@ -19,11 +24,14 @@ function validScale(text: string): boolean {
 }
 
 export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysisSession }): React.JSX.Element {
+  const activeOwner = useAppStore(state => state.activeDocumentId);
+  const documentId = useAppStore(state => state.document.id);
   const openSolidFatigue = useAppStore(state => state.openSolidFatigue);
   const parameters = useAppStore(state => state.document.parameters);
   const runner = useAppStore(state => state.solidAnalysisRunner);
   const edit = useAppStore(state => state.editSolidAnalysis);
   const setLoadMode = useAppStore(state => state.setSolidAnalysisLoadMode);
+  const setMaterial = useAppStore(state => state.setSolidAnalysisMaterial);
   const focus = useAppStore(state => state.focusSolidAnalysis);
   const close = useAppStore(state => state.closeSolidAnalysis);
   const cancel = useAppStore(state => state.cancelSolidAnalysis);
@@ -37,6 +45,8 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
   const field = solidAnalysisFieldOf(session);
   const composing = useRef(false);
   const result = session.result;
+  let boundaryValid = true;
+  try { solidBoundarySaved(session, parameters); } catch { boundaryValid = false; }
   const maximumDisplacement = result?.result.displacementMm.reduce((maximum, vector) => Math.max(maximum, Math.hypot(...vector)), 0);
   const maximumVonMises = result?.result.elements.reduce((maximum, element) => {
     const [x, y, z, yz, xz, xy] = element.stressMPa;
@@ -54,10 +64,13 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
     <p>{t('solidAnalysis.assumptions')}</p>
     <p>{t('solidAnalysis.selectionHelp')}</p>
     <p>{t('solidAnalysis.body')}: {session.bodyFeatureId ?? t('solidAnalysis.none')}</p>
+    <SolidAnalysisMaterialFields value={session.capacity ?? null} onChange={setMaterial}
+      selectionKey={JSON.stringify([activeOwner, documentId, session.materialSelectionKey ?? session.ownerId])} />
     <button type="button" className="pcad-button" data-testid="solid-fixed" onClick={() => runner?.captureFaces('fixed')} title={t('solidAnalysis.guide.fixed')}>
       {t('solidAnalysis.fixed')} ({session.fixedFaces.length})</button>
     <button type="button" className="pcad-button" data-testid="solid-loaded" onClick={() => runner?.captureFaces('loaded')} title={t('solidAnalysis.guide.loaded')}>
       {t('solidAnalysis.loaded')} ({session.loadedFaces.length})</button>
+    <SolidBoundaryFields session={session} />
     <fieldset data-testid="solid-load-mode">
       <legend>{t('solidAnalysis.loadMode')}</legend>
       {(['traction', 'pressure'] as const).map(mode => <label key={mode}>
@@ -71,10 +84,11 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
     <p>{t('solidAnalysis.accuracyHelp')}</p>
     {session.error === null ? null : <p role="alert">{session.error}</p>}
     {session.status === 'running' ? <p role="status">{t('solidAnalysis.running')}</p> : null}
-    <button type="button" className="pcad-button pcad-button--primary" data-testid="solid-run" onClick={() => { if (!composing.current) runner?.run(); }}
-      disabled={runner === null || session.status === 'running'} title={t('solidAnalysis.guide.run')}>{t('solidAnalysis.run')}</button>
+    <button type="button" className="pcad-button pcad-button--primary" data-testid="solid-run" onClick={() => { if (!composing.current && session.materialInputValid !== false && boundaryValid) runner?.run(); }}
+      disabled={runner === null || session.status === 'running' || session.materialInputValid === false || !boundaryValid} title={t('solidAnalysis.guide.run')}>{t('solidAnalysis.run')}</button>
     <button type="button" className="pcad-button" onClick={cancel} disabled={session.status !== 'running'} title={t('solidAnalysis.guide.cancel')}>{t('solidAnalysis.cancel')}</button>
-    <button type="button" className="pcad-button" data-testid="solid-save" onClick={save} title={t('solidAnalysis.guide.save')}>{t('solidAnalysis.save')}</button>
+    <button type="button" className="pcad-button" data-testid="solid-save" onClick={() => { if (session.materialInputValid !== false && boundaryValid) save(); }}
+      disabled={session.materialInputValid === false || !boundaryValid} title={t('solidAnalysis.guide.save')}>{t('solidAnalysis.save')}</button>
     <button type="button" className="pcad-button" onClick={close} title={t('solidAnalysis.guide.close')}>{t('solidAnalysis.close')}</button>
     {result === null ? null : <section aria-label={t('solidAnalysis.results')} data-testid="solid-results">
       <h4>{t('solidAnalysis.results')}</h4>
@@ -88,6 +102,9 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
         <dt>{t('solidAnalysis.residual')}</dt><dd>{result.result.maximumRelativeEquilibriumResidual}</dd>
       </dl>
       <p>{t('solidAnalysis.resultLimit')}</p>
+      {session.status === 'complete' && session.ownerId === activeOwner && result.prepared.input.source.documentId === documentId
+        ? <SolidYieldResults input={result.prepared.input} result={result.result}
+          owner={JSON.stringify([session.ownerId, session.revision, activeOwner])} /> : null}
       <fieldset data-testid="solid-field-view">
         <legend>{t('solidAnalysis.fieldView')}</legend>
         <label>{t('solidAnalysis.fieldQuantity')}
@@ -128,4 +145,67 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
     <SolidModalSection />
     <SolidBucklingSection />
   </form>;
+}
+
+const YIELD_EVIDENCE_LABELS: Readonly<Record<AnalysisMaterialCapacity['evidence'], MessageKey>> = {
+  'supplier-excerpt': 'solidAnalysis.yieldEvidenceSupplier', 'manufacturer-reference': 'solidAnalysis.yieldEvidenceManufacturer',
+  'measured-reference': 'solidAnalysis.yieldEvidenceMeasured', 'standard-draft': 'solidAnalysis.yieldEvidenceDraft',
+};
+const YIELD_BASIS_LABELS: Readonly<Record<AnalysisMaterialCapacity['basis'], MessageKey>> = {
+  minimum: 'solidAnalysis.yieldBasisMinimum', reference: 'solidAnalysis.yieldBasisReference',
+};
+export function solidYieldEvidenceLabel(value: AnalysisMaterialCapacity['evidence']): string { return t(YIELD_EVIDENCE_LABELS[value]); }
+export function solidYieldBasisLabel(value: AnalysisMaterialCapacity['basis']): string { return t(YIELD_BASIS_LABELS[value]); }
+
+interface SolidYieldRequest {
+  readonly input: Parameters<typeof summarizeSolidYield>[0];
+  readonly result: unknown;
+  readonly owner: string;
+}
+interface SolidYieldCompletion extends SolidYieldRequest { readonly summary: SolidYieldSummary | null }
+export function startSolidYieldSummary(request: SolidYieldRequest, publish: (value: SolidYieldCompletion) => void,
+  recover = summarizeSolidYield): () => void {
+  let active = true;
+  void recover(request.input, request.result).then(summary => { if (active) publish({ ...request, summary }); },
+    () => { if (active) publish({ ...request, summary: null }); });
+  return () => { active = false; };
+}
+export function currentSolidYieldSummary(value: SolidYieldCompletion | null, request: SolidYieldRequest): SolidYieldCompletion | null {
+  return value?.input === request.input && value.result === request.result && value.owner === request.owner ? value : null;
+}
+export function SolidYieldSummaryView({ completion, request }: {
+  readonly completion: SolidYieldCompletion | null; readonly request: SolidYieldRequest;
+}): React.JSX.Element {
+  const current = currentSolidYieldSummary(completion, request);
+  if (current === null) return <p role="status">{t('solidAnalysis.yieldPending')}</p>;
+  if (current.summary === null) return <p role="alert">{t('solidAnalysis.changed')}</p>;
+  const summary = current.summary;
+  return <section data-testid="solid-yield-summary" data-input-sha256={summary.inputSha256} data-structural-certification="false">
+    <h5>{t('solidAnalysis.yieldTitle')}</h5><p>{t('solidAnalysis.yieldScope')}</p>
+    <p>{t('solidAnalysis.yieldRatio')}: <span data-testid="solid-yield-minimum" data-unit="1" data-value={summary.minimumYieldRatio ?? undefined}>
+      {summary.minimumYieldRatio === null ? t('solidAnalysis.yieldUnavailable') : summary.minimumYieldRatio}</span></p>
+    {summary.missingMaterialIds.length === 0 ? null : <p>{t('solidAnalysis.yieldMissing')} {summary.missingMaterialIds.join(', ')}</p>}
+    <details><summary>{t('solidAnalysis.yieldSource')}</summary>
+      <table><caption>{t('solidAnalysis.yieldTitle')}</caption><thead><tr>
+        <th>{t('solidAnalysis.yieldElement')}</th><th>{t('solidAnalysis.yieldMaterial')}</th>
+        <th>{t('solidAnalysis.stress')}</th><th>{t('solidAnalysis.yieldValue')}</th>
+        <th>{t('solidAnalysis.yieldRatio')}</th><th>{t('solidAnalysis.yieldSource')}</th><th>{t('solidAnalysis.yieldBasis')}</th>
+      </tr></thead><tbody>{summary.elements.map(row => <tr key={row.elementIndex} data-element={row.elementIndex}>
+        <td>{row.elementIndex + 1}</td><td>{row.materialId}</td><td data-unit="MPa" data-value={row.vonMisesMPa}>{row.vonMisesMPa}</td>
+        <td data-unit="MPa" data-value={row.capacity?.yieldMPa}>{row.capacity?.yieldMPa ?? t('solidAnalysis.yieldUnavailable')}</td>
+        <td data-unit="1" data-value={row.yieldRatio ?? undefined}>{row.zeroStress ? t('solidAnalysis.yieldZero')
+          : row.yieldRatio ?? t('solidAnalysis.yieldUnavailable')}</td>
+        <td>{row.capacity === null ? t('solidAnalysis.yieldUnavailable')
+          : `${row.capacity.sourceId} / ${row.capacity.materialConditionId} / ${row.capacity.condition} / ${row.capacity.thicknessMm === null ? '—' : `${row.capacity.thicknessMm} mm`}`}</td>
+        <td>{row.capacity === null ? t('solidAnalysis.yieldUnavailable') : `${solidYieldEvidenceLabel(row.capacity.evidence)} / ${solidYieldBasisLabel(row.capacity.basis)}`}</td>
+      </tr>)}</tbody></table>
+    </details>
+  </section>;
+}
+function SolidYieldResults(request: SolidYieldRequest): React.JSX.Element {
+  const { input, result, owner } = request;
+  const stable = useMemo(() => ({ input, result, owner }), [input, result, owner]);
+  const [completion, setCompletion] = useState<SolidYieldCompletion | null>(null);
+  useEffect(() => startSolidYieldSummary(stable, setCompletion), [stable]);
+  return <SolidYieldSummaryView completion={completion} request={stable} />;
 }

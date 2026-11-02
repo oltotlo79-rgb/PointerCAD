@@ -1,5 +1,18 @@
 /// <reference lib="dom" />
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { readPcadFile } from '../../packages/io/src/index.js';
+import { machiningOracleMath } from './machiningSurfaceOracle.js';
+import { createMathBackend, executeFunctionCurveWorkRequest } from '../../packages/expression/src/math/publicWorker.js';
+import { createFunctionCurveWorkEnvelope, decodeFunctionCurveWorkReply } from '../../packages/expression/src/math/publicContracts.js';
+import { nextFeatureId, type PartDocument } from '../../packages/model/src/index.js';
+import { recomputePart } from '../../packages/model/src/part/recomputePart.js';
+import { createInspectableNativeKernelForNodeTests } from '../../packages/model/src/testing/createNativeKernelBridge.node.js';
+import { drawRectangle, extrudeFace, makeFace } from './solidCaptureSupport.js';
+import { chooseShapeTool, drawLine } from './sketchDrawCaptureSupport.js';
+import { chooseToolMenuItem } from './assemblyTestSupport.js';
+import { functionPlotMessage } from './functionMessages.js';
+import { saveFlowFile, openSaveFlowFile } from './saveResponsivenessFlow.js';
+import { waitForStartupReady } from './startupHealth.js';
 
 import type { CutPreview } from '../../packages/ui/src/viewport/createSolidLayer.js';
 
@@ -630,5 +643,287 @@ export async function cutPlaneMaterialsFlow(page: Page, entry: string): Promise<
   await expect(solidRow(page, '切断1')).toHaveCount(0);
   await expectVolume(page, '箱1', BOX_VOLUME);
 
+  expect(errors).toEqual([]);
+}
+
+
+/** 寸法由来の6代表。既存の平面材料1件は再実行せず、この不足分を別grepで選べる。 */
+export const CUT_LIFECYCLE_CASES = ['plane', 'circle', 'arc', 'ellipse', 'ellipseArc', 'formula'] as const;
+type CutLifecycleCase = typeof CUT_LIFECYCLE_CASES[number];
+
+async function cutSavedPart(page: Page, info: TestInfo, name: string, app?: ElectronApplication): Promise<PartDocument> {
+  const saved = readPcadFile(await saveFlowFile(page, info.outputPath(`${name}.pcad`), app));
+  if (!saved.ok) throw new Error(saved.error.message);
+  return saved.document;
+}
+
+/** UIで作った保存文書を既存の実native検査口へ渡す。形を差し込まず、期待体積は独立式だけ。 */
+async function cutNativeVolume(part: PartDocument, expected: number, info: TestInfo, approximate: boolean): Promise<void> {
+  // 開始/例外終了を直ちにstdoutへ残す。未到達の段階を0秒として記録しない。
+  const startedAt = performance.now();
+  const mark = (stage: string, outcome?: 'returned' | 'threw'): void => {
+    const atMs = performance.now();
+    console.log('[cut-lifecycle-native-phase]', JSON.stringify({
+      stage, outcome, expected, timeOrigin: performance.timeOrigin, atMs,
+      elapsedMs: atMs - startedAt,
+    }));
+  };
+  // 引数の値、NODE_OPTIONS本文、個人の絶対パスは出さない。実loaderの可視範囲を明示する。
+  const visibleFlags = new Set(['--require', '--import', '--loader', '--experimental-loader',
+    '--conditions', '--enable-source-maps', '--input-type', '--eval', '--inspect', '--inspect-brk']);
+  const loaderPattern = /(?:^|\/)(playwright\/lib\/(?:transform|common)\/[^/]+\.js|opencascade\.js\/dist\/node\.js)$/u;
+  const loaderModules = typeof require === 'function'
+    ? Object.keys(require.cache).flatMap(file => {
+      const match = file.replaceAll('\\', '/').match(loaderPattern);
+      return match === null ? [] : [match[1]];
+    }).sort()
+    : null;
+  const nodeOptions = process.env.NODE_OPTIONS;
+  console.log('[cut-lifecycle-native-runtime]', JSON.stringify({
+    nodeVersion: process.version,
+    execArgv: process.execArgv.slice(0, 16).map(arg => {
+      const flag = arg.split('=')[0];
+      return visibleFlags.has(flag) ? { flag, valueRedacted: arg.includes('=') } : { redacted: true };
+    }),
+    execArgvTruncated: process.execArgv.length > 16,
+    nodeOptionsPresent: nodeOptions !== undefined,
+    nodeOptionsLoaderFlags: nodeOptions?.slice(0, 2048).match(/--(?:require|import|loader|experimental-loader)(?==|\s|$)/gu)?.slice(0, 16) ?? [],
+    requireCacheAvailable: loaderModules !== null,
+    loaderModules: loaderModules?.slice(0, 16) ?? null,
+    loaderModulesTruncated: loaderModules === null ? null : loaderModules.length > 16,
+    loaderVisibility: 'require.cache only; ESM loader registry and pre-test transform time are not observed',
+  }));
+  const observeAsync = async <T>(stage: string, task: () => Promise<T>): Promise<T> => {
+    mark(`${stage}-start`);
+    let outcome: 'returned' | 'threw' = 'threw';
+    try {
+      const value = await task();
+      outcome = 'returned';
+      return value;
+    } finally { mark(`${stage}-end`, outcome); }
+  };
+  const observeSync = <T>(stage: string, task: () => T): T => {
+    mark(`${stage}-start`);
+    let outcome: 'returned' | 'threw' = 'threw';
+    try {
+      const value = task();
+      outcome = 'returned';
+      return value;
+    } finally { mark(`${stage}-end`, outcome); }
+  };
+  const native = await observeAsync('initialize', () => createInspectableNativeKernelForNodeTests());
+  try {
+    const keys = new Map<string, string>();
+    const functionBackend = createMathBackend();
+    const result = await observeAsync('recompute', () => recomputePart(part, native.bridge, {
+      math: machiningOracleMath(part),
+      functions: { curves: { evaluate: request => {
+        const reply = decodeFunctionCurveWorkReply(
+          executeFunctionCurveWorkRequest(createFunctionCurveWorkEnvelope(1, request), functionBackend), request);
+        return Promise.resolve({ status: 'result', identity: reply.identity, result: reply.result });
+      } } },
+      onResolved: resolved => { for (const step of resolved.steps) keys.set(step.featureId, step.key); },
+    }));
+    expect(result.errors).toEqual([]);
+    expect(result.cancelled).toBe(false);
+    expect(result.bodies).toHaveLength(1);
+    const key = keys.get(result.bodies[0].featureId);
+    if (key === undefined) throw new Error('切断の実nativeキーがありません');
+    const measured = observeSync('measure', () => native.inspectShape(key).measure());
+    await info.attach('cut-lifecycle-native', { body: JSON.stringify({ expected, measured }), contentType: 'application/json' });
+    expect(measured.validity).toMatchObject({ valid: true, solidCount: 1, closed: true });
+    expect(measured.volume).toBeGreaterThan(0);
+    if (approximate) expect(Math.abs(measured.volume - expected)).toBeLessThanOrEqual(0.1);
+    else expect(Math.abs(measured.volume - expected) / expected).toBeLessThanOrEqual(1e-9);
+  } finally { observeSync('dispose', () => native.dispose()); }
+}
+
+async function cutCurve(page: Page, kind: Exclude<CutLifecycleCase, 'plane'>, info: TestInfo,
+  profileIds: string[], app?: ElectronApplication): Promise<void> {
+  if (kind === 'formula') {
+    await chooseToolMenuItem(page, '作図', functionPlotMessage('menuTitle'));
+    const dialog = page.locator('.pcad-function-dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('textbox', { name: 'Y =', exact: true }).fill('X^2/10+1');
+    for (const [axis, min, max] of [['X', '0', '10'], ['Y', '0', '12'], ['Z', '0', '1']] as const) {
+      await dialog.getByRole('textbox', { name: `${axis} ${functionPlotMessage('minimum')}`, exact: true }).fill(min);
+      await dialog.getByRole('textbox', { name: `${axis} ${functionPlotMessage('maximum')}`, exact: true }).fill(max);
+    }
+    await dialog.getByRole('button', { name: functionPlotMessage('preview'), exact: true }).click();
+    await expect(dialog.getByRole('button', { name: functionPlotMessage('apply'), exact: true })).toBeEnabled({ timeout: 60_000 });
+    await dialog.getByRole('button', { name: functionPlotMessage('apply'), exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    // 数式の適用と交点分割は補助点や素材の分割線も作る。「新ID全部」は輪郭ではない。
+    let source = await cutSavedPart(page, info, 'formula-profile-source', app);
+    const curves = source.sketches.flatMap(sketch => sketch.features).filter(feature => feature.kind === 'functionCurve');
+    expect(curves).toHaveLength(1);
+    profileIds.push(curves[0].id);
+    const sides = [
+      { from: ['10', '11'], to: ['10', '0'] },
+      { from: ['10', '0'], to: ['0', '0'] },
+      { from: ['0', '0'], to: ['0', '1'] },
+    ] as const;
+    for (const [index, side] of sides.entries()) {
+      expect(source.sketches).toHaveLength(1);
+      // 同じ公開producerの次IDを操作前に固定。交点分割で後から増える線を拾わない。
+      const expectedId = nextFeatureId(source.sketches[0], 'line');
+      await drawLine(page, side.from, side.to);
+      source = await cutSavedPart(page, info, `formula-profile-side-${index + 1}`, app);
+      const made = source.sketches[0].features.find(feature => feature.id === expectedId);
+      if (made?.kind !== 'line') throw new Error('実入力で作った閉じ線がありません');
+      profileIds.push(made.id);
+    }
+    return;
+  }
+  if (kind === 'circle' || kind === 'arc') {
+    if (kind === 'circle') await chooseShapeTool(page, '円');
+    else { await sketchTool(page, '選択').click(); await sketchTool(page, '円弧').click(); }
+    await fillFields(page, ['10', '10', '0']);
+    await popoverInputs(page).first().press('Enter');
+    await fillFields(page, kind === 'circle' ? ['3'] : ['3', '0', '180']);
+    await popoverInputs(page).first().press('Enter');
+    await cancelPopover(page);
+    if (kind === 'arc') await drawLine(page, ['7', '10'], ['13', '10']);
+    return;
+  }
+  await chooseShapeTool(page, '楕円');
+  await fillFields(page, ['10', '10', '0']); await popoverInputs(page).first().press('Enter');
+  await fillFields(page, ['4', '2']); await popoverInputs(page).first().press('Enter');
+  await fillFields(page, ['0']);
+  if (kind === 'ellipseArc') await popoverToggle(page, '一部だけ(楕円弧)').click();
+  await popoverInputs(page).first().press('Enter');
+  if (kind === 'ellipseArc') {
+    await fillFields(page, ['0', '180']); await popoverInputs(page).first().press('Enter');
+  }
+  await cancelPopover(page);
+  if (kind === 'ellipseArc') await drawLine(page, ['6', '10'], ['14', '10']);
+}
+
+/** 通常UIだけで作成・取消・確定・1UndoRedo・保存再開まで通す。 */
+export async function cutLifecycleFlow(page: Page, info: TestInfo, kind: CutLifecycleCase,
+  app?: ElectronApplication): Promise<void> {
+  const errors = collectErrors(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  if (app === undefined) { await disableFilePickers(page); await page.goto('/'); }
+  await waitForStartupReady(page);
+  await drawRectangle(page, ['0', '0'], ['20', '20']);
+  await makeFace(page, ['線分1', '線分2', '線分3', '線分4']);
+  await extrudeFace(page, '面1', '10');
+  await expectVolume(page, '押し出し1', 4000);
+  const base = await cutSavedPart(page, info, `${kind}-base`, app);
+  const baseIds = new Set(base.sketches.flatMap(sketch => sketch.features.map(feature => feature.id)));
+  if (kind !== 'plane') {
+    const profileIds: string[] = [];
+    await cutCurve(page, kind, info, profileIds, app);
+    const drawn = await cutSavedPart(page, info, `${kind}-curves`, app);
+    let boundaries = drawn.sketches.flatMap(sketch => sketch.features).filter(feature => !baseIds.has(feature.id));
+    if (kind === 'formula') {
+      expect(profileIds).toHaveLength(4);
+      expect(new Set(profileIds).size).toBe(4);
+      boundaries = profileIds.map(id => {
+        const feature = drawn.sketches[0].features.find(candidate => candidate.id === id);
+        if (feature === undefined) throw new Error('閉輪郭の実入力IDが保存文書にありません');
+        return feature;
+      });
+      expect(boundaries.map(feature => feature.kind)).toEqual(['functionCurve', 'line', 'line', 'line']);
+    }
+    // 現cutProfileOfは選択したfaceを必要とする。生のarc/ellipseを開いた刃へ誤配送しない。
+    await makeFace(page, boundaries.map(feature => feature.name));
+  }
+  await waitForRecompute(page);
+  const before = await cutSavedPart(page, info, `${kind}-before`, app);
+  const profileFaces = before.sketches.flatMap(sketch => sketch.features)
+    .filter(feature => feature.kind === 'face' && !baseIds.has(feature.id));
+  expect(profileFaces).toHaveLength(kind === 'plane' ? 0 : 1);
+  const select = async (): Promise<void> => {
+    await sketchTool(page, '選択').click(); await solidRow(page, '押し出し1').click();
+    for (const face of profileFaces) await treeRow(page, face.name).click({ modifiers: ['Shift'] });
+    await openCut(page);
+    await chooseCutPlaneKind(page, kind === 'plane' ? 'Z 軸に垂直な面' : '選んだ面・曲線・閉じた輪郭で切る');
+    if (kind === 'plane') await popoverField(page, '位置').fill('4');
+  };
+  for (const cancel of ['escape', 'button'] as const) {
+    await select();
+    if (kind === 'plane') await waitForCutPreview(page, '平面取消の前', preview => previewPlaneIs(preview, [0, 0, 1], [0, 0, 4]));
+    if (cancel === 'escape') await page.locator('canvas.pcad-viewport__canvas').press('Escape');
+    else await popover(page).getByRole('button', { name: '取消', exact: true }).click();
+    await expect(popover(page)).toHaveCount(0); await expectNoCutPreview(page);
+    expect(await cutSavedPart(page, info, `${kind}-cancel-${cancel}`, app)).toEqual(before);
+  }
+  // 取消による履歴増分0。直前の実作図/押し出しを1Undoし、1Redoで完全復元する。
+  let token = await beginRecompute(page); await page.keyboard.press('Control+z'); await waitForRecompute(page, token);
+  const undoneCancel = await cutSavedPart(page, info, `${kind}-cancel-undo`, app);
+  expect(undoneCancel).not.toEqual(before);
+  token = await beginRecompute(page); await page.keyboard.press('Control+y'); await waitForRecompute(page, token);
+  expect(await cutSavedPart(page, info, `${kind}-cancel-redo`, app)).toEqual(before);
+  await select(); token = await beginRecompute(page); await commitPopover(page); await waitForRecompute(page, token);
+  const committed = await cutSavedPart(page, info, `${kind}-committed`, app);
+  expect(committed.id).toBe(before.id);
+  expect(committed.solids.slice(0, before.solids.length)).toEqual(before.solids);
+  const added = committed.solids.slice(before.solids.length);
+  expect(added.map(feature => feature.kind)).toEqual(kind === 'plane' ? ['cut'] : ['extrude', 'boolean']);
+  const area = kind === 'circle' ? 9 * Math.PI : kind === 'arc' ? 9 * Math.PI / 2
+    : kind === 'ellipse' ? 8 * Math.PI : kind === 'ellipseArc' ? 4 * Math.PI : 130 / 3;
+  const expected = kind === 'plane' ? 20 * 20 * 6 : 4000 - 10 * area;
+  const visible = committed.solids.at(-1);
+  if (visible === undefined) throw new Error('画面の切断結果がありません');
+  const displayed = await volumeOf(page, visible.name);
+  if (kind === 'formula') expect(Math.abs(displayed - expected)).toBeLessThanOrEqual(0.1);
+  else expect(Math.abs(displayed - expected) / expected).toBeLessThanOrEqual(1e-9);
+  await cutNativeVolume(committed, expected, info, kind === 'formula');
+  token = await beginRecompute(page); await page.keyboard.press('Control+z'); await waitForRecompute(page, token);
+  expect(await cutSavedPart(page, info, `${kind}-one-undo`, app)).toEqual(before);
+  token = await beginRecompute(page); await page.keyboard.press('Control+y'); await waitForRecompute(page, token);
+  expect(await cutSavedPart(page, info, `${kind}-redo`, app)).toEqual(committed);
+  await openSaveFlowFile(page, info.outputPath(`${kind}-committed.pcad`), app);
+  const reopened = await cutSavedPart(page, info, `${kind}-reopened`, app);
+  expect(reopened).toEqual(committed);
+  await cutNativeVolume(reopened, expected, info, kind === 'formula');
+  const resultFeature = committed.solids.at(-1);
+  if (resultFeature === undefined) throw new Error('保存した切断結果がありません');
+  await solidRow(page, resultFeature.name).click();
+  token = await beginRecompute(page);
+  await propertyPanel(page).getByRole('switch', {
+    name: kind === 'plane' ? '反対側を残す' : '輪郭の内側を残す', exact: true,
+  }).click();
+  await waitForRecompute(page, token);
+  const edited = await cutSavedPart(page, info, `${kind}-edited`, app);
+  expect(edited.sketches).toEqual(committed.sketches);
+  expect(edited.solids.map(feature => feature.id)).toEqual(committed.solids.map(feature => feature.id));
+  await cutNativeVolume(edited, 4000 - expected, info, kind === 'formula');
+  token = await beginRecompute(page); await page.keyboard.press('Control+z'); await waitForRecompute(page, token);
+  expect(await cutSavedPart(page, info, `${kind}-edit-undo`, app)).toEqual(committed);
+  token = await beginRecompute(page); await page.keyboard.press('Control+y'); await waitForRecompute(page, token);
+  expect(await cutSavedPart(page, info, `${kind}-edit-redo`, app)).toEqual(edited);
+  await openSaveFlowFile(page, info.outputPath(`${kind}-edited.pcad`), app);
+  expect(await cutSavedPart(page, info, `${kind}-edit-reopened`, app)).toEqual(edited);
+  if (kind === 'formula') {
+    const curve = edited.sketches.flatMap(sketch => sketch.features).find(feature => feature.kind === 'functionCurve');
+    if (curve?.kind !== 'functionCurve') throw new Error('切断に使った元の関数がありません');
+    await treeRow(page, curve.name).click();
+    await page.getByRole('button', { name: functionPlotMessage('edit'), exact: true }).click();
+    const dialog = page.locator('.pcad-function-dialog');
+    await expect(dialog.getByRole('textbox', { name: 'Y =', exact: true })).toHaveValue('X^2/10+1');
+    // 両端を保つ独立な式変更。加算面積∫[0,10]X(10-X)/100 dX=5/3、全面積45。
+    await dialog.getByRole('textbox', { name: 'Y =', exact: true }).fill('X^2/10+1+X*(10-X)/100');
+    await dialog.getByRole('button', { name: functionPlotMessage('preview'), exact: true }).click();
+    await expect(dialog.getByRole('button', { name: functionPlotMessage('apply'), exact: true })).toBeEnabled({ timeout: 60_000 });
+    token = await beginRecompute(page);
+    await dialog.getByRole('button', { name: functionPlotMessage('apply'), exact: true }).click();
+    await expect(dialog).toHaveCount(0); await waitForRecompute(page, token);
+    const formulaEdited = await cutSavedPart(page, info, 'formula-source-edited', app);
+    expect(formulaEdited.solids).toEqual(edited.solids);
+    await cutNativeVolume(formulaEdited, 45 * 10, info, true);
+    token = await beginRecompute(page); await page.keyboard.press('Control+z'); await waitForRecompute(page, token);
+    expect(await cutSavedPart(page, info, 'formula-source-undo', app)).toEqual(edited);
+    token = await beginRecompute(page); await page.keyboard.press('Control+y'); await waitForRecompute(page, token);
+    expect(await cutSavedPart(page, info, 'formula-source-redo', app)).toEqual(formulaEdited);
+    await openSaveFlowFile(page, info.outputPath('formula-source-edited.pcad'), app);
+    expect(await cutSavedPart(page, info, 'formula-source-reopened', app)).toEqual(formulaEdited);
+    await treeRow(page, curve.name).click();
+    await page.getByRole('button', { name: functionPlotMessage('edit'), exact: true }).click();
+    await expect(dialog.getByRole('textbox', { name: 'Y =', exact: true })).toHaveValue('X^2/10+1+X*(10-X)/100');
+    await page.keyboard.press('Escape'); await expect(dialog).toHaveCount(0);
+  }
   expect(errors).toEqual([]);
 }

@@ -4,6 +4,107 @@ import { solidStrainStress, solidTetGeometry, translateSolidAnalysis } from './s
 import { solidInputSha256 } from './solidAnalysisTranslation.js';
 import { findStrengthMaterial, STRENGTH_SOURCES } from '../../model/src/measure/strengthMaterials.js';
 
+describe('W12 prescribed translations, gravity and rigid modes', () => {
+  it('owns prescribed vectors, defaults omitted nodes to zero, and hashes the new values', async () => {
+    const base = fixture(), prescribedMm: [number, number, number] = [0.1, -0.2, 0.3];
+    const supplied = { ...base, constraints: base.constraints.map(row => row.node === 0 ? { ...row, prescribedMm } : row) };
+    const { input, plan } = translateSolidAnalysis(supplied);
+    expect(plan.prescribedMm).toEqual([[0.1, -0.2, 0.3], [0, 0, 0], [0, 0, 0], [0, 0, 0]]);
+    expect(input.constraints[0].prescribedMm).not.toBe(prescribedMm);
+    expect(plan.prescribedMm?.[0]).not.toBe(input.constraints[0].prescribedMm);
+    prescribedMm[0] = 10;
+    expect(plan.prescribedMm?.[0][0]).toBe(0.1);
+    expect(await solidInputSha256(input)).not.toBe(await solidInputSha256(base));
+    expect(translateSolidAnalysis(JSON.parse(JSON.stringify(input)))).toEqual({ input, plan });
+    expect(Object.hasOwn(translateSolidAnalysis(base).plan, 'prescribedMm')).toBe(false);
+    expect(translateSolidAnalysis({ ...base, constraints: base.constraints.map(row => ({ ...row, prescribedMm: [0, 0, 0] })) })
+      .plan.prescribedMm).toEqual(base.nodes.map(() => [0, 0, 0]));
+  });
+  it.each([undefined, [0, 0], [0, 0, 0, 0], [NaN, 0, 0], [0, Infinity, 0], [0, 0, '1'], new Array<unknown>(3)]
+    .map(prescribedMm => ({ prescribedMm })))(
+    'rejects malformed prescribed translations $prescribedMm without changing input', ({ prescribedMm }) => {
+      const base = fixture(), input = { ...base, constraints: [{ ...base.constraints[0], prescribedMm }, ...base.constraints.slice(1)] };
+      const before = structuredClone(input);
+      expect(() => translateSolidAnalysis(input)).toThrow();
+      expect(input).toEqual(before);
+    });
+  it('rejects a nonzero prescription on a free axis and unexpected constraint fields', () => {
+    const base = fixture();
+    expect(() => translateSolidAnalysis({ ...base, constraints: base.constraints.map(row => row.node === 1
+      ? { ...row, prescribedMm: [0.1, 0, 0] } : row) })).toThrow('unrestrained axis');
+    expect(() => translateSolidAnalysis({ ...base, constraints: base.constraints.map(row => ({ ...row, displacement: 1 })) }))
+      .toThrow('unexpected fields');
+  });
+  it('lumps an independently known tetrahedron mass and adds it to nodal and surface forces', async () => {
+    const base = fixture(), gravity = { accelerationMps2: [3, -4, -9.80665], densities: [{ materialId: 'steel', densityKgM3: 7850 }] };
+    const supplied = { ...base, gravity, surfaceLoads: [{ nodes: [0, 1, 2] as const, tractionMPa: [0, 0, 6] as const }] };
+    const { input, plan } = translateSolidAnalysis(supplied);
+    const without = translateSolidAnalysis({ ...base, surfaceLoads: supplied.surfaceLoads }).plan;
+    const massKg = (1 / 6) * 1e-9 * 7850;
+    for (let node = 0; node < 4; node += 1) for (let axis = 0; axis < 3; axis += 1) {
+      expect(Math.abs(plan.forcesN[node][axis] - without.forcesN[node][axis] - massKg * gravity.accelerationMps2[axis] / 4)
+        / (massKg * Math.abs(gravity.accelerationMps2[axis]))).toBeLessThanOrEqual(1e-9);
+    }
+    expect(input.gravity).not.toBe(gravity);
+    expect(input.gravity?.densities[0]).not.toBe(gravity.densities[0]);
+    expect(input.gravity?.accelerationMps2).not.toBe(gravity.accelerationMps2);
+    expect(await solidInputSha256(input)).not.toBe(await solidInputSha256({ ...base, surfaceLoads: supplied.surfaceLoads }));
+    expect(translateSolidAnalysis(JSON.parse(JSON.stringify(input)))).toEqual({ input, plan });
+    gravity.accelerationMps2[0] = 100;
+    gravity.densities[0].densityKgM3 = 1;
+    expect(input.gravity?.accelerationMps2[0]).toBe(3);
+    expect(input.gravity?.densities[0].densityKgM3).toBe(7850);
+  });
+  it('uses each element material density and requires density for every used material', () => {
+    const base = fixture(), input = { ...base, nodes: [...base.nodes, [1, 1, 1]],
+      elements: [...base.elements, { nodes: [1, 2, 3, 4], materialId: 'other' }],
+      materials: [...base.materials, { id: 'other', youngMPa: 200, poisson: 0 }], nodalLoads: [],
+      gravity: { accelerationMps2: [0, 0, -10], densities: [{ materialId: 'steel', densityKgM3: 6000 },
+        { materialId: 'other', densityKgM3: 3000 }] } };
+    const { plan } = translateSolidAnalysis(input);
+    // Independent volumes 1/6 and 1/3 mm^3 give masses 1e-6 kg each.
+    expect(Math.abs(plan.forcesN.reduce((sum, force) => sum + force[2], 0) + 2e-5) / 2e-5).toBeLessThanOrEqual(1e-9);
+    expect(() => translateSolidAnalysis({ ...input, gravity: { ...input.gravity, densities: input.gravity.densities.slice(0, 1) } }))
+      .toThrow('missing gravity material density');
+  });
+  it('rejects invalid gravity data without defaults or non-finite accumulation', () => {
+    const base = fixture(), valid = { accelerationMps2: [0, 0, -10], densities: [{ materialId: 'steel', densityKgM3: 7850 }] };
+    for (const gravity of [undefined, {}, { ...valid, extra: 0 }, { ...valid, accelerationMps2: [0, NaN, 0] },
+      { ...valid, accelerationMps2: [0, 0] }, { ...valid, densities: [] },
+      ...[0, -1, NaN, Infinity].map(densityKgM3 => ({ ...valid, densities: [{ materialId: 'steel', densityKgM3 }] })),
+      { ...valid, densities: [{ materialId: 'unknown', densityKgM3: 1 }] },
+      { ...valid, densities: [valid.densities[0], valid.densities[0]] },
+      { ...valid, accelerationMps2: [Number.MAX_VALUE, 0, 0], densities: [{ materialId: 'steel', densityKgM3: Number.MAX_VALUE }] },
+      { ...valid, densities: [{ materialId: 'steel', densityKgM3: Number.MIN_VALUE }] }]) {
+      const input = { ...base, gravity }, before = structuredClone(input);
+      expect(() => translateSolidAnalysis(input)).toThrow();
+      expect(input).toEqual(before);
+    }
+    expect(translateSolidAnalysis({ ...base, gravity: { ...valid, accelerationMps2: [0, 0, 0] } }).plan.forcesN)
+      .toEqual(translateSolidAnalysis(base).plan.forcesN);
+  });
+  it.each([
+    ['no restraints', []],
+    ['one fixed point', [{ node: 0, fixed: [true, true, true] }]],
+    ['two fixed points on a line', [{ node: 0, fixed: [true, true, true] }, { node: 1, fixed: [true, true, true] }]],
+    ['unrestrained z translation', [0, 1, 2, 3].map(node => ({ node, fixed: [true, true, false] }))],
+  ])('rejects %s with a rigid-body reason and preserves input', (_, constraints) => {
+    const input = { ...fixture(), constraints }, before = structuredClone(input);
+    expect(() => translateSolidAnalysis(input)).toThrow('rigid-body');
+    expect(input).toEqual(before);
+  });
+});
+
+describe('W12 legacy plan bytes', () => {
+  it('keeps the pre-extension JSON including key order and omitted optional fields', () => {
+    const input = fixture();
+    const expected = JSON.stringify({ schema: 'pointercad-solid-tet4-plan/1', input,
+      forcesN: [[0, 0, 0], [1, 0, 0], [0, 0, 0], [0, 0, 0]],
+      fixed: [[true, true, true], [false, true, true], [true, true, true], [true, true, true]] });
+    expect(JSON.stringify(translateSolidAnalysis(input).plan)).toBe(expected);
+  });
+});
+
 function fixture(): SolidAnalysisInput {
   return { schema: 'pointercad-solid-tet4/1', source: { documentId: 'part', revision: 4, meshKey: 'mesh-4' },
     units: 'N-mm-MPa', numericBudgetBytes: 16 * 1024 * 1024,

@@ -1,3 +1,8 @@
+import * as specialKinds from './specialFunctionKinds.js';
+import { airyFunction } from './airyFunctions.js';
+import { besselKind } from './besselFunctions.js';
+import { realLambertBranch } from './lambertWFunctions.js';
+import { zetaOrder, zetaDerivativeOrder } from './zetaFunctions.js';
 import Decimal from 'decimal.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -28,6 +33,13 @@ const references = [...BESSEL_INTEGER_REFERENCES, ...BESSEL_SECOND_REFERENCES]
   .filter(([, , , text]) => Number.isFinite(Number(text)) && Number(text) !== 0);
 
 describe('四種類のBesselの次数と引数を通常入力へ接続する', () => {
+  it('reexports the same special function classifiers', () => {
+    expect(airyFunction).toBe(specialKinds.airyFunction);
+    expect(besselKind).toBe(specialKinds.besselKind);
+    expect(realLambertBranch).toBe(specialKinds.realLambertBranch);
+    expect(zetaOrder).toBe(specialKinds.zetaOrder);
+    expect(zetaDerivativeOrder).toBe(specialKinds.zetaDerivativeOrder);
+  });
   it.each(references)('%s_%s(%s)を独立した確認値へ渡す', (kind, n, x, expected) => {
     const source = `bessel${kind.toLowerCase()}(${n},${x})`;
     expect(Math.abs(value(source)/Number(expected)-1)).toBeLessThan(5e-14);

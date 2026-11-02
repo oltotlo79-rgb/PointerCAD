@@ -65,8 +65,8 @@ export const FEM_ASSETS = [
   },
   {
     "file": "beamContact.py",
-    "bytes": 33736,
-    "sha256": "2bdf6b14dcf4c076a8a23f14d31a53be933c3bc7f9ce3433593acdaffe4a43e0"
+    "bytes": 34386,
+    "sha256": "917def52a0b14e620ba497bb56eaa28e2ba546b664429bfb0c4704d71cb00562"
   }
 ] as const;
 
@@ -79,14 +79,14 @@ export const NETGEN_ASSETS = [
     },
     {
         "file":  "netgenMesher.py",
-        "bytes":  10460,
-        "sha256":  "1732266925f862c83d096648c659179ea381e69fb0e0c2e55731ec67620bd0b0"
+        "bytes":  12269,
+        "sha256":  "73e1ba496853d9c1a984aed8fb78cb9bf16f1a3170737ed3c0cf7d2e90fbf76b"
     }
 ] as const;
 
 // Solid mode only; Root must generate the identical runtime asset and closure.
-export const SOLID_ASSETS = [{ file: 'solidAnalysis.py', bytes: 15770,
-  sha256: '72681567864f65f0f59bc3b3f332b84a937ddd0827fef4daf8a3345c4eeac9e3' }] as const;
+export const SOLID_ASSETS = [{ file: 'solidAnalysis.py', bytes: 17825,
+  sha256: 'a7abbe97e562a6655f6b3ee60ae1cabf52877a793722bfe5694715d5c4a721ea' }] as const;
 
 // Plastic solid mode only; Root generates this exact freeze-c3 wrapper and the runtime source closure.
 export const SOLID_PLASTIC_ASSETS = [{ file: 'solidPlasticAnalysis.py', bytes: 19110,

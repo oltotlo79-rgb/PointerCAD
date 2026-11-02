@@ -7,13 +7,21 @@
   "oofemSourceCommit": "214b161ed3acb471f2d0104b004c37fd73bafaa2",
   "abi": "cp313-cp313-pyodide_2025_0_wasm32",
   "files": {
+    "assets/beamFrictionContact.py": {
+      "bytes": 39720,
+      "sha256": "d21581ea5eb16b2cb587000c19db91479cc8cbba5d2314cfcc9d0abe0190d803"
+    },
+    "assets/beamFrictionRuntime.py": {
+      "bytes": 2257,
+      "sha256": "88d9e94bdd3512a0f31769a6fce2730e23b4eacafc084edc14f29edb647b4cdb"
+    },
     "assets/beamAnalysis.py": {
       "sha256": "9593ec530550d81c5ee46a824cafc9a3dedd0e68114c8371a0013e30ceec3a38",
       "bytes": 55527
     },
     "assets/beamContact.py": {
-      "sha256": "2bdf6b14dcf4c076a8a23f14d31a53be933c3bc7f9ce3433593acdaffe4a43e0",
-      "bytes": 33736
+      "sha256": "917def52a0b14e620ba497bb56eaa28e2ba546b664429bfb0c4704d71cb00562",
+      "bytes": 34386
     },
     "assets/beamProof.py": {
       "bytes": 3012,
@@ -384,12 +392,12 @@
       "sha256": "9eee0266fb68942775cebe7e34cf35b24455926539cd4f46e6d1808146aa66fd"
     },
     "sources/pointercad-beam-application-source.zip": {
-      "sha256": "382f3bd735dcd21f44aa3f088e9e1e1005db7074c93d871e5116704e0710080f",
-      "bytes": 13089448
+      "sha256": "23e9cf95f2051f4f38cd22fa2e18da687ea943aa53a3185a06e1cfbf8d3a9bbd",
+      "bytes": 13878136
     },
     "evidence/application-source-index.json": {
-      "sha256": "91ab8aa82484d4e83a1f287a66e6100c9268ac6cef708d80d87098e014115f7a",
-      "bytes": 933090
+      "sha256": "2e9c6857ce1c9f99f20b9c6dbbb7eb365fb619f67c48ec699ce7b2ef1ec56eb6",
+      "bytes": 984630
     },
     "sources/native-rebuild/oofem-051-timer.patch": {
       "bytes": 8668,
@@ -492,12 +500,12 @@
       "sha256": "3f0d507e8daa11b5a26654d904c529d6c1338e9a3a4c7d7728152f3596954ba3"
     },
     "assets/netgenMesher.py": {
-      "sha256": "1732266925f862c83d096648c659179ea381e69fb0e0c2e55731ec67620bd0b0",
-      "bytes": 10460
+      "sha256": "73e1ba496853d9c1a984aed8fb78cb9bf16f1a3170737ed3c0cf7d2e90fbf76b",
+      "bytes": 12269
     },
     "assets/solidAnalysis.py": {
-      "sha256": "72681567864f65f0f59bc3b3f332b84a937ddd0827fef4daf8a3345c4eeac9e3",
-      "bytes": 15770
+      "sha256": "a7abbe97e562a6655f6b3ee60ae1cabf52877a793722bfe5694715d5c4a721ea",
+      "bytes": 17825
     },
     "assets/solidPlasticAnalysis.py": {
       "sha256": "809621c9b6aac03647fc090ec1d05c20336174385d3f3acfceb7bf9b7c764438",
@@ -590,6 +598,34 @@
     "evidence/iml-source-correspondence.json": {
       "bytes": 5823,
       "sha256": "3476986b1f9b31dffc855b4a2d4b6abe701699df580215d85db5338a9c47f7e0"
+    },
+    "assets/beamWeldSpanBase.py": {
+      "sha256": "917def52a0b14e620ba497bb56eaa28e2ba546b664429bfb0c4704d71cb00562",
+      "bytes": 34386
+    },
+    "assets/beamWeldSpan.py": {
+      "sha256": "7ff11d7154c67200d4635adfbfb19145d0312ab726b178cceb5a3e3a161cd326",
+      "bytes": 15620
+    },
+    "assets/beamWeldSpanContact.py": {
+      "sha256": "b2e0af35d952ed84d122dc0f5fc2c7d7fc429816c0bdf213978f97c2792f33d1",
+      "bytes": 4911
+    },
+    "assets/solidContact.py": {
+      "bytes": 13997,
+      "sha256": "a70a46c199b5d0f79bce375375ed3d383b91a7042510842a6b3320a8bc91cc26"
+    },
+    "assets/solidContactFriction.py": {
+      "bytes": 7235,
+      "sha256": "9c54924a10cd02f56dcbca27a7abe076714bd494168184dbef810a11ad388755"
+    },
+    "assets/solidContactSolver.py": {
+      "bytes": 32936,
+      "sha256": "0536fd884bab04e63d9434baf9a03206940cefa1bfd17b2af648eb5ed31570a6"
+    },
+    "assets/solidContactDriver.py": {
+      "bytes": 15407,
+      "sha256": "7d1acc882e3fc38efeeead53c1b2a61fbb9bcfff024cdec096f78bc6796b4575"
     }
   },
   "components": [

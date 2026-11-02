@@ -3,6 +3,7 @@ import { planarBasisGuide } from './planarBasisGuide.js';
 import { cameraDragAction } from './cameraControlBindings.js';
 import { readCameraControlSettings } from '../settings/cameraControlSettings.js';
 import { currentReferenceRepairPreview } from '../solid/referenceRepairPreview.js';
+import { referenceRepairPreviewChangesDisplay } from './viewportRepairPreview.js';
 import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -1112,8 +1113,10 @@ export function ViewportCanvas(): React.JSX.Element {
     observer.observe(canvas);
 
     function syncRepairPreview(state: AppState): void {
-      void scene.setReferenceRepairPreview(currentReferenceRepairPreview(state)).then(() => {
-        if (alive) requestDraw();
+      const update = scene.setReferenceRepairPreview(currentReferenceRepairPreview(state));
+      if (alive && referenceRepairPreviewChangesDisplay(update)) requestDraw();
+      void update.then(() => {
+        if (alive && referenceRepairPreviewChangesDisplay(update)) requestDraw();
       }, () => {
         // A provider/cleanup rejection leaves the preview unavailable; no document or history is changed.
         if (alive) requestDraw();
@@ -1178,6 +1181,11 @@ export function ViewportCanvas(): React.JSX.Element {
     syncInitialScene();
 
     function syncStoreChange(next: AppState, previous: AppState): void {
+      // Do not skip subscribers or admission checks: only the final draw request is conditional.
+      const progressOnly = next.assemblyInterferenceProgress !== previous.assemblyInterferenceProgress
+        && Object.keys(next).length === Object.keys(previous).length
+        && Object.keys(next).every(key => key === 'assemblyInterferenceProgress'
+          || Object.is(Reflect.get(next, key), Reflect.get(previous, key)));
       // render中に所有が変わって元へ戻る場合も、旧receiptを再利用しない。
       if (sketchTiming !== undefined && (next.sketchDrag !== previous.sketchDrag || next.document !== previous.document
         || next.documentVersion !== previous.documentVersion
@@ -1418,7 +1426,8 @@ export function ViewportCanvas(): React.JSX.Element {
       if (next.matchWorkPlaneRequestCount !== previous.matchWorkPlaneRequestCount) {
         useAppStore.getState().matchWorkPlaneToView(controls.getOrbit());
       }
-      requestDraw();
+      // Still inspect exact current source/receipt/backings; invalid ownership keeps its old draw/refresh path.
+      if (!progressOnly || !assemblyReady()) requestDraw();
     }
     const unsubscribe = useAppStore.subscribe(syncStoreChange);
     lifetime.register('store subscription', unsubscribe);

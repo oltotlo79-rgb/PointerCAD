@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HOME_ORBIT, type OrbitState } from '../viewport/cameraMath.js';
 import { ViewCube } from './ViewCube.js';
 import type { ViewCubeRegion } from './viewCubeMath.js';
+import type * as ImportedReactTypes from 'react';
 
 const harness = vi.hoisted(() => ({
   effect: null as EffectCallback | null,
@@ -14,7 +15,7 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock('react', async importOriginal => ({
-  ...await importOriginal<typeof import('react')>(),
+  ...await importOriginal<typeof ImportedReactTypes>(),
   useRef: () => ({ current: harness.canvas }),
   useEffect: (effect: EffectCallback) => { harness.effect = effect; },
 }));

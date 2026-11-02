@@ -66,7 +66,7 @@ export {
   toLengthUnit,
   type ExpressionLengthUnit,
 } from './lengthUnits.js';
-export { containsLengthUnit } from './tokenize.js';
+export { containsLengthUnit, normalizeExpressionSource } from './tokenize.js';
 export {
   inspectExpression,
   type ExpressionInspection,

@@ -218,7 +218,25 @@ export function registerFilletWeldAcceptTests(
 ): void {
   test.describe('すみ肉溶接の受入(EX-08 保存・Undo・画面)', () => {
     test.use({ viewport: { width: 1440, height: 900 } });
-    test.afterEach(async ({ page }) => { await resetAssemblyFileGateway(page); });
+    test.afterEach(async ({ page }, info) => {
+      try {
+        // 失敗した元操作の後だけ取得する。クリックやassertの測定窓は変えない。
+        if (info.status !== info.expectedStatus) {
+          const observation = await page.evaluate(() => {
+            const read: unknown = Reflect.get(window, 'pcadViewportAssemblyOwner');
+            if (typeof read !== 'function') return { available: false };
+            const value: unknown = read();
+            if (value === null || typeof value !== 'object') return { available: false };
+            const inputs: unknown = Reflect.get(value, 'mateInputs');
+            return { available: true, mateInputs: Array.isArray(inputs)
+              ? inputs.slice(-2).filter(value => value !== null && typeof value === 'object' && 'componentPick' in value) : [] };
+          });
+          await info.attach('viewport-pick-last-inputs', {
+            body: JSON.stringify(observation), contentType: 'application/json',
+          });
+        }
+      } finally { await resetAssemblyFileGateway(page); }
+    });
 
     test('溶接する・溶接を消す: 断った予告と取消は保存した文書を 1 バイトも変えず、予告の値は保存した実モデルと実カーネルの値に一致し、1 回の Undo/Redo で全バイトと id へ戻る', async ({ page }, info) => {
       const seen = watch(page);

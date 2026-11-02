@@ -34,7 +34,9 @@ function same(left: unknown, right: unknown): boolean {
 export function decodeSolidAnalysis(raw: unknown, value: SolidAnalysisInput, inputSha256: string): SolidAnalysisResult {
   if (!/^[a-f0-9]{64}$/u.test(inputSha256)) fail('invalid digest');
   const { input, plan } = translateSolidAnalysis(value);
-  const row = solidRecord(raw, ['schema', 'source', 'displacementMm', 'elementForcesN', 'reservedNumericBytes', 'minimumScaledPivot']);
+  const hasReactions = raw !== null && typeof raw === 'object' && Object.hasOwn(raw, 'reactionsN');
+  const row = solidRecord(raw, ['schema', 'source', 'displacementMm', 'elementForcesN', 'reservedNumericBytes', 'minimumScaledPivot',
+    ...(hasReactions ? ['reactionsN'] : [])]);
   if (row.schema !== 'pointercad-solid-tet4-native/1' || !same(row.source, input.source)) fail('native source/schema changed');
   const reservedNumericBytes = solidNumber(row.reservedNumericBytes), minimumScaledPivot = solidNumber(row.minimumScaledPivot);
   if (!Number.isSafeInteger(reservedNumericBytes) || reservedNumericBytes <= 0 || reservedNumericBytes > input.numericBudgetBytes
@@ -74,7 +76,7 @@ export function decodeSolidAnalysis(raw: unknown, value: SolidAnalysisInput, inp
     const reaction: [number, number, number] = [0, 0, 0];
     for (let axis = 0; axis < 3; axis += 1) {
       if (plan.fixed[node][axis]) {
-        if (displacementMm[node][axis] !== 0) fail('nonzero fixed translation');
+        if (displacementMm[node][axis] !== (plan.prescribedMm?.[node][axis] ?? 0)) fail('fixed translation differs from prescribed value');
         reaction[axis] = solidNumber(internal[node][axis] - plan.forcesN[node][axis]);
       } else maximumRelativeEquilibriumResidual = Math.max(maximumRelativeEquilibriumResidual,
         Math.abs(internal[node][axis] - plan.forcesN[node][axis]) / forceScale);
@@ -82,8 +84,15 @@ export function decodeSolidAnalysis(raw: unknown, value: SolidAnalysisInput, inp
     return reaction;
   });
   if (!(maximumRelativeEquilibriumResidual <= tolerance)) fail('free-DOF equilibrium');
+  const reactionsN = hasReactions
+    ? solidArray(row.reactionsN, input.nodes.length, input.nodes.length).map(solidVector) : undefined;
+  if (reactionsN !== undefined) for (let node = 0; node < input.nodes.length; node += 1) for (let axis = 0; axis < 3; axis += 1) {
+    if (!plan.fixed[node][axis] && reactionsN[node][axis] !== 0) fail('reaction on an unrestrained axis');
+    near(reactionsN[node][axis], reactionN[node][axis], forceScale, 'native reaction differs from recovered action');
+  }
   const total: [number, number, number] = [0, 0, 0], moment: [number, number, number] = [0, 0, 0];
   const origin = input.nodes[0];
+  const displacementOrigin = displacementMm[0];
   let absoluteForce = 0, absoluteMoment = 0, work = 0;
   for (let node = 0; node < input.nodes.length; node += 1) {
     const force = solidVector(plan.forcesN[node].map((v, axis) => v + reactionN[node][axis]));
@@ -92,7 +101,12 @@ export function decodeSolidAnalysis(raw: unknown, value: SolidAnalysisInput, inp
     for (let axis = 0; axis < 3; axis += 1) {
       total[axis] += force[axis]; moment[axis] += torque[axis];
       absoluteForce += Math.abs(force[axis]); absoluteMoment += Math.abs(torque[axis]);
-      work += plan.forcesN[node][axis] * displacementMm[node][axis];
+      // Sum(f + R) = 0, checked independently below, makes total work
+      // invariant under common translation. Remove it BEFORE multiplication:
+      // otherwise its product with roundoff in force balance can dwarf 2*U.
+      // Include support work even for zero prescribed values, since relative
+      // support displacement need not be zero in this translated frame.
+      work += force[axis] * (displacementMm[node][axis] - displacementOrigin[axis]);
     }
   }
   for (let axis = 0; axis < 3; axis += 1) {
@@ -102,15 +116,17 @@ export function decodeSolidAnalysis(raw: unknown, value: SolidAnalysisInput, inp
   near(2 * strainEnergyNmm, work, Math.max(Math.abs(work), 2 * strainEnergyNmm), 'strain energy/external work');
   return { kind: 'oofem-linear-solid-tet4', method: SOLID_METHOD, units: 'N-mm-MPa', structuralCertification: false,
     source: input.source, inputSha256, displacementMm, reactionN, elements, strainEnergyNmm,
-    maximumRelativeEquilibriumResidual, reservedNumericBytes, nativeElementForcesN: nativeActions, minimumScaledPivot };
+    maximumRelativeEquilibriumResidual, reservedNumericBytes, nativeElementForcesN: nativeActions, minimumScaledPivot,
+    ...(reactionsN === undefined ? {} : { reactionsN }) };
 }
 
 /** Shape gate only; the client additionally recomputes the complete association. */
 export function isSolidAnalysisResult(value: unknown): value is SolidAnalysisResult {
   try {
+    const hasReactions = value !== null && typeof value === 'object' && Object.hasOwn(value, 'reactionsN');
     const row = solidRecord(value, ['kind', 'source', 'inputSha256', 'method', 'units', 'structuralCertification',
       'displacementMm', 'reactionN', 'elements', 'strainEnergyNmm', 'maximumRelativeEquilibriumResidual', 'reservedNumericBytes',
-      'nativeElementForcesN', 'minimumScaledPivot']);
+      'nativeElementForcesN', 'minimumScaledPivot', ...(hasReactions ? ['reactionsN'] : [])]);
     if (row.kind !== 'oofem-linear-solid-tet4' || row.method !== SOLID_METHOD || row.units !== 'N-mm-MPa'
       || row.structuralCertification !== false || typeof row.inputSha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(row.inputSha256)) return false;
     const source = solidRecord(row.source, ['documentId', 'revision', 'meshKey']);
@@ -118,6 +134,7 @@ export function isSolidAnalysisResult(value: unknown): value is SolidAnalysisRes
       || typeof source.revision !== 'number' || !Number.isSafeInteger(source.revision) || source.revision < 0) return false;
     const displacements = solidArray(row.displacementMm, SOLID_LIMITS.nodes, 4).map(solidVector);
     solidArray(row.reactionN, displacements.length, displacements.length).map(solidVector);
+    if (hasReactions) solidArray(row.reactionsN, displacements.length, displacements.length).map(solidVector);
     for (const value of solidArray(row.elements, SOLID_LIMITS.elements, 1)) {
       const element = solidRecord(value, ['strain', 'stressMPa']); vector6(element.strain); vector6(element.stressMPa);
     }
@@ -136,7 +153,8 @@ export function solidResultMatches(value: unknown, input: SolidAnalysisInput, ha
   try {
     const decoded = decodeSolidAnalysis({ schema: 'pointercad-solid-tet4-native/1', source: value.source,
       displacementMm: value.displacementMm, elementForcesN: value.nativeElementForcesN,
-      reservedNumericBytes: value.reservedNumericBytes, minimumScaledPivot: value.minimumScaledPivot }, input, hash);
+      reservedNumericBytes: value.reservedNumericBytes, minimumScaledPivot: value.minimumScaledPivot,
+      ...(value.reactionsN === undefined ? {} : { reactionsN: value.reactionsN }) }, input, hash);
     return same(value, decoded);
   } catch { return false; }
 }

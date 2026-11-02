@@ -32,7 +32,8 @@ function putDraft(draft: AssemblyMateDraft): void {
   const state = useAppStore.getState();
   const next = state.assembly !== null && state.assemblyView !== null
     ? refreshMateDraft(state.assembly, state.assemblyView, draft) : draft;
-  useAppStore.setState({ assemblyMateDraft: next, selection: next.targets.map(assemblyTargetId) });
+  useAppStore.setState({ assemblyMateDraft: next, selection: next.targets.map(assemblyTargetId),
+    assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null });
 }
 
 /** 対象先行でもコマンド先行でも同じdraftを使う。種類変更では対象を捨てない。 */

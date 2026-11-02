@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import type { SolidBucklingInput, SolidBucklingPlan } from './solidBucklingModel.js';
 import { solidNumber, solidRecord, translateSolidAnalysis } from './solidAnalysisTranslation.js';
 
@@ -26,6 +27,5 @@ export function translateSolidBuckling(value: unknown): { input: SolidBucklingIn
 
 export async function solidBucklingInputSha256(value: unknown): Promise<string> {
   const owned = translateSolidBuckling(value).input;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(owned)));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(new TextEncoder().encode(JSON.stringify(owned)));
 }

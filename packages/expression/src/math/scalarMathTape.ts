@@ -1,7 +1,5 @@
-import { besselKind, type BesselKind } from './besselFunctions.js';
+import { airyFunction, besselKind, type BesselKind, realLambertBranch, zetaOrder, zetaDerivativeOrder } from './specialFunctionKinds.js';
 import { besselSample } from './besselScalar.js';
-import { airyFunction } from './airyFunctions.js';
-import { zetaOrder,zetaDerivativeOrder } from './zetaFunctions.js';
 import { zetaSample } from './zetaIntervals.js';
 import type { AiryKind } from './airyNumeric.js';
 import { airySample } from './airyIntervals.js';
@@ -9,7 +7,6 @@ import { lambertWSample } from './lambertWIntervals.js';
 import type { EllipticKind } from './ellipticNumeric.js';
 import { ellipticMidpoint } from './ellipticIntervals.js';
 import { ellipticOperation,ellipticPartialValue } from './ellipticPartials.js';
-import { realLambertBranch } from './lambertWFunctions.js';
 import type { RealLambertBranch } from './lambertWNumeric.js';
 /** Compile a scalar geometry expression once. This VM never generates JavaScript source. */
 import { MathInputProblem, type MathNode, type MathSymbolReference } from './mathInputContract.js';

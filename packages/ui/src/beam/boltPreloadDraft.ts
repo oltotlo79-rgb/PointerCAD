@@ -2,6 +2,7 @@ import { readCadNativeBoltPreloadSavedInput, type BoltPreloadDeclaration,
   type CadNativeBoltPreloadSavedInput, type PropertySource } from '@pointercad/model/beam-analysis';
 import { prepareCadNativeBoltPreload, type NativeBoltPreloadOwnedResult,
   type NativeBoltPreloadWireInput } from '@pointercad/fem';
+import { normalizeExpressionSource } from '@pointercad/expression';
 import type { AppState } from '../store/appState.js';
 import { beamSourceIsCurrent, type BeamSourceSnapshot } from './beamSource.js';
 
@@ -47,8 +48,9 @@ export function editBoltPreloadDraft(session: BoltPreloadDraft, edit: BoltDraftE
   }
 }
 function number(text: string): number {
-  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/iu.test(text.trim())) throw new Error('bolt-draft-number');
-  const value = Number(text);
+  const normalized = normalizeExpressionSource(text).trim();
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/iu.test(normalized)) throw new Error('bolt-draft-number');
+  const value = Number(normalized);
   if (!Number.isFinite(value) || value < 0) throw new Error('bolt-draft-number');
   return value;
 }

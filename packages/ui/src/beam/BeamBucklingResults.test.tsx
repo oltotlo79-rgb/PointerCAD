@@ -33,6 +33,13 @@ describe('buckling result presentation (relative shapes, not numerical qualifica
     expect(html).not.toContain('12.5 N');
   });
 
+  it('states in the result block itself that the factor is a linear buckling value, not a collapse load', () => {
+    const html = renderToStaticMarkup(<BeamBucklingResults result={result} edges={[[1, 2]]} />);
+    const scope = t('beam.bucklingResultScope');
+    expect(html).toContain(`<p>${scope}</p>`);
+    for (const word of ['線形座屈', '初期不整', '塑性', '大変形', '崩壊荷重ではありません']) expect(scope).toContain(word);
+  });
+
   it('draws actual element pairs in all three projections using solver identities, independent of node-array order', () => {
     const html = renderToStaticMarkup(<BeamBucklingResults result={result} edges={[[1, 2]]} />);
     expect(html.match(/<svg /gu)).toHaveLength(3);

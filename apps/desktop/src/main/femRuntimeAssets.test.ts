@@ -60,17 +60,22 @@ describe('FEM application source versus explicit build inputs', () => {
 });
 
 describe('fixed local FEM distribution proposal', () => {
-  it('ships the exact 24 pinned runtime asset files and preserves unresolved publication conditions', () => {
+  it('ships the exact 33 pinned runtime asset files and preserves unresolved publication conditions', () => {
     const distribution = collectFemRuntimeAssets(join(root, 'packages/fem/runtime'));
     expect([...distribution.assets.keys()].filter(name => name.startsWith('fem/assets/')).sort()).toEqual([
       'fem/assets/beamAnalysis.py',
       'fem/assets/beamBoltContact.py',
       'fem/assets/beamContact.py',
+      'fem/assets/beamFrictionContact.py',
+      'fem/assets/beamFrictionRuntime.py',
       'fem/assets/beamImpact.py',
       'fem/assets/beamJointContact.py',
       'fem/assets/beamJointInitialStrain.py',
       'fem/assets/beamProof.py',
       'fem/assets/beamWeldContact.py',
+      'fem/assets/beamWeldSpan.py',
+      'fem/assets/beamWeldSpanBase.py',
+      'fem/assets/beamWeldSpanContact.py',
       'fem/assets/netgenMesher.py',
       'fem/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl',
       'fem/assets/numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl',
@@ -84,10 +89,31 @@ describe('fixed local FEM distribution proposal', () => {
       'fem/assets/python_stdlib.zip',
       'fem/assets/solidAnalysis.py',
       'fem/assets/solidBuckling.py',
+      'fem/assets/solidContact.py',
+      'fem/assets/solidContactDriver.py',
+      'fem/assets/solidContactFriction.py',
+      'fem/assets/solidContactSolver.py',
       'fem/assets/solidModal.py',
       'fem/assets/solidPlasticAnalysis.py',
       'fem/assets/test_2.py',
     ]);
+    // The span runtime has a dedicated base. The legacy beamContact asset remains
+    // independently pinned for existing impact calculations and must not replace it.
+    for (const [asset, source] of [
+      ['beamWeldSpan.py', 'beamWeldSpan.py'],
+      ['beamWeldSpanBase.py', 'beamContact.py'],
+      ['beamWeldSpanContact.py', 'beamWeldSpanContact.py'],
+      ['beamFrictionContact.py', 'beamFrictionContact.py'],
+      ['beamFrictionRuntime.py', 'beamFrictionRuntime.py'],
+      ['solidContact.py', 'solidContact.py'],
+      ['solidContactDriver.py', 'solidContactDriver.py'],
+      ['solidContactFriction.py', 'solidContactFriction.py'],
+      ['solidContactSolver.py', 'solidContactSolver.py'],
+    ] as const) {
+      const bytes = distribution.assets.get('fem/assets/' + asset);
+      if (bytes === undefined) throw new Error('Missing span runtime asset: ' + asset);
+      expect(bytes.equals(readFileSync(join(root, 'packages/fem/src', source))), asset).toBe(true);
+    }
     // Exactly the pinned notice set is emitted: no notice is dropped or added by the collector.
     const emitted = distribution.assets.get('licenses/fem/manifest.json');
     if (emitted === undefined) throw new Error('Missing distribution manifest');
@@ -267,7 +293,7 @@ describe('nativeRebuildExecuted counts only with pinned rebuild and replacement 
 
 describe('oversized source material stored in the repository as pinned parts', () => {
   const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
-  type StoredPart = { file: string; bytes: number; sha256: string };
+  interface StoredPart { file: string; bytes: number; sha256: string }
   function stored(sizes: number[]) {
     const { files, manifest } = fixture();
     const total = sizes.reduce((sum, size) => sum + size, 0);

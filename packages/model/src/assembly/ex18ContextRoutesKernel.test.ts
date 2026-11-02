@@ -10,15 +10,15 @@ import { createDirectKernelBridge, type SolidBody } from '../kernelBridge.js';
 import { resolveSubShapeReference } from '../kernelBridge/referenceResolution.js';
 import { findReference } from '../part/createPartDocument.js';
 import { EX18_ORACLE_A_HOLE_X_TWELVE, EX18_ORACLE_B_CONTEXT_MOVED, EX18_ORACLE_C_CONTEXT_MOVED,
-  EX18_ORACLE_EXPECTATIONS } from '../part/ex18RouteFixtures.js';
-import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation } from '../part/ex18ShapeOracle.js';
+  EX18_ORACLE_EXPECTATIONS } from '../part/ex18RouteFixtures.testSupport.js';
+import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation } from '../part/ex18ShapeOracle.testSupport.js';
 import { recomputePart } from '../part/recomputePart.js';
 import type { ResolvedPart } from '../part/resolvePart.js';
 import type { PartDocument } from '../part/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
 import { commitContextReference, contextPointResolverFromBodies, type ContextReferenceCommit } from './contextReference.js';
 import { buildEx18ContextAssembly, buildEx18ContextPart, buildEx18ContextSource, contextPlacement,
-  EX18_CONTEXT_POINT_ID, ex18ContextSourceFace, type Ex18ContextShape } from './ex18ContextRouteBuilders.js';
+  EX18_CONTEXT_POINT_ID, ex18ContextSourceFace, type Ex18ContextShape } from './ex18ContextRouteBuilders.testSupport.js';
 import { embedPart, type PartLibrary } from './partLibrary.js';
 import { applyPlacementToPoint } from './placementMath.js';
 import type { AssemblyDocument, Placement } from './types.js';

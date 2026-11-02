@@ -38,7 +38,7 @@ export function solidFatigueSnapshotMatches(snapshot: FatigueSolidSnapshot, curr
 export function selectFatigueSolidElement(session: FatigueSession, source: FatigueSolidSource, elementIndex: number, documentId = session.ownerId): FatigueSession {
   if (source.result.source.documentId !== documentId || !Number.isSafeInteger(elementIndex)
     || elementIndex < 0 || elementIndex >= source.prepared.input.elements.length) return session;
-  return { ...session, revision: session.revision + 1, analyzed: null, piecewiseAnalyzed: null, solidAnalyzed: null,
+  return { ...session, revision: session.revision + 1, analyzed: null, piecewiseAnalyzed: null, solidAnalyzed: null, detailAnalyzed: null,
     draft: { ...session.draft, inputMode: 'solid-proportional', solidElement: String(elementIndex + 1), solid: {
       source: { ...source.result.source }, inputSha256: source.result.inputSha256, elementIndex } },
     errorKey: null, diagnostic: null };

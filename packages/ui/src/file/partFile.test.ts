@@ -46,6 +46,7 @@ import {
   hasUnsavedChanges,
   newPart,
   openPart,
+  readPartDocument,
   savePart,
   windowTitle,
   type PartFileDeps,
@@ -2012,4 +2013,179 @@ describe('actual viewport thumbnail reason-only producer boundary', () => {
       expect(journal.snapshot().entries.map(entry => entry.reason)).toEqual(['producer:absent', 'producer:null', 'producer:throw', 'producer:success']);
     } finally { release(); releaseThrowing(); useAppStore.getState().setCaptureThumbnail(original); }
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof pcadReadHost>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
+});
+
+import * as pcadReadHost from './pcadReadWorker.js';
+import type { PcadReadRequest } from './pcadReadProtocol.js';
+import { cancelOpenReads } from './documentOpenGuard.js';
+
+function readLifecycleHarness() {
+  const probes: { port: pcadReadHost.PcadReadWorkerPort; request: PcadReadRequest | null;
+    late: pcadReadHost.PcadReadWorkerPort['onmessage']; terminate: ReturnType<typeof vi.fn> }[] = [];
+  const factory = () => {
+    const terminate = vi.fn();
+    const probe: (typeof probes)[number] = { request: null, late: null, terminate,
+      port: { onmessage: null, onerror: null, onmessageerror: null, terminate,
+        postMessage: (request, transfer) => {
+          probe.request = structuredClone(request, { transfer }); probe.late = probe.port.onmessage;
+        } } };
+    probes.push(probe);
+    return probe.port;
+  };
+  const spy = vi.spyOn(pcadReadHost, 'readPcadInWorker').mockImplementation(pcadReadHost.createPcadFileReader(factory));
+  return { probes, spy, async posted(index = 0) {
+    await vi.waitFor(() => { expect(probes[index]?.request).toBeTruthy(); });
+    return probes[index];
+  } };
+}
+
+function retainedOpenState() {
+  const state = useAppStore.getState();
+  return [state.activeDocumentId, state.document, state.undoStack, state.assembly, state.assemblyLibrary,
+    state.assemblyUndoStack, state.drawing, state.drawingSources, state.drawingUndoStack,
+    state.importedShapes, state.importedMeshes, state.canvases, state.drawingImportedShapes,
+    state.fileName, state.savedDocument, state.assemblyFileName, state.savedAssembly,
+    state.drawingFileName, state.savedDrawing, state.fileGateway];
+}
+function expectRetainedOpenState(expected: ReturnType<typeof retainedOpenState>): void {
+  retainedOpenState().forEach((value, index) => expect(value).toBe(expected[index]));
+}
+
+async function lifecyclePicked(kind: 'part' | 'assembly' | 'drawing'): Promise<PickedFile> {
+  const io = await import('@pointercad/io'), model = await import('@pointercad/model');
+  const part = { ...model.createEmptyPartDocument(), name: 'incoming' };
+  if (kind === 'part') return { name: 'incoming.pcad', bytes: io.writePcadFile(part), saveTargetToken: 'new-target' };
+  if (kind === 'assembly') return { name: 'incoming.pcada', bytes: await io.writeDocumentBundle(
+    model.createAssemblyDocumentBundle(model.createAssemblyDocument('incoming'))), saveTargetToken: 'new-target' };
+  const source = { sourceKind: 'part' as const, document: part };
+  const embedded = await model.embedDrawingSource(model.emptyDrawingSourceLibrary(), source, 'source.pcad', '');
+  return { name: 'incoming.pcadd', bytes: await io.writeDrawingBundle(model.createDrawingDocument('incoming', embedded.source),
+    { source }), saveTargetToken: 'new-target' };
+}
+
+async function lifecycleReply(request: PcadReadRequest) {
+  const io = await import('@pointercad/io');
+  return { id: request.id, kind: request.kind, result: request.kind === 'part' ? io.readPcadFile(request.bytes)
+    : request.kind === 'assembly' ? await io.readDocumentBundle(request.bytes, 'assembly') : await io.readDrawingBundle(request.bytes) };
+}
+
+describe('E04 open lifecycle through the real asynchronous host', () => {
+  it('retains the pure synchronous readPartDocument API and its existing error translation', () => {
+    const bytes = writePcadFile({ ...createEmptyPartDocument(), name: 'synchronous API' }), original = bytes.slice();
+    const expected = readPcadFile(bytes), result = readPartDocument(bytes);
+    expect(result).not.toBeInstanceOf(Promise);
+    expect(expected.ok).toBe(true);
+    if (!expected.ok) throw new Error('Valid synchronous fixture refused');
+    expect(result).toEqual({ ok: true, document: expected.document, attachments: expected.attachments });
+    expect(readPartDocument(Uint8Array.of(1, 2, 3))).toEqual({ ok: false, messageKey: 'file.error.corrupted' });
+    expect(bytes).toEqual(original);
+  });
+  for (const kind of ['part', 'assembly', 'drawing'] as const) {
+    it(`${kind}: normal result applies once, keeps borrowed bytes and ignores duplicate/late delivery`, async () => {
+      const picked = await lifecyclePicked(kind), original = picked.bytes.slice();
+      const harness = readLifecycleHarness();
+      const confirmSaveTarget = vi.fn(() => Promise.resolve()), clearSaveTarget = vi.fn();
+      useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(picked),
+        savePcad: () => Promise.resolve(null), hasSaveTarget: () => true, confirmSaveTarget, clearSaveTarget } });
+      let applications = 0;
+      const unsubscribe = useAppStore.subscribe((next, previous) => {
+        if (kind === 'part' ? next.document !== previous.document : kind === 'assembly'
+          ? next.assembly !== previous.assembly : next.drawing !== previous.drawing) applications += 1;
+      });
+      try {
+        const opening = openPart({ ...createDefaultPartFileDeps(), confirmDiscard: () => Promise.resolve(true), recentFilesStorage: null });
+        const probe = await harness.posted();
+        if (probe.request === null) throw new Error('Read request missing');
+        const reply = await lifecycleReply(probe.request);
+        probe.port.onmessage?.(new MessageEvent('message', { data: reply }));
+        await opening;
+        expect(applications).toBe(1); expect(confirmSaveTarget).toHaveBeenCalledExactlyOnceWith('new-target');
+        const accepted = retainedOpenState();
+        probe.late?.(new MessageEvent('message', { data: reply }));
+        probe.late?.(new MessageEvent('message', { data: { id: probe.request.id, kind: 'failure', message: 'late' } }));
+        expectRetainedOpenState(accepted); expect(applications).toBe(1);
+        expect(picked.bytes.byteLength).toBe(original.length); expect(picked.bytes).toEqual(original);
+        expect(probe.terminate).toHaveBeenCalledTimes(1); expect(probe.port.onmessage).toBeNull();
+      } finally { unsubscribe(); harness.spy.mockRestore(); cancelOpenReads(); }
+    });
+
+    for (const event of ['cancel', 'switch', 'edit', 'error', 'failure', 'terminate', 'dispose', 'newRead'] as const) {
+      it(`${kind}: ${event} rejects the old reply with zero changes to document/history/attachments/target`, async () => {
+        const picked = await lifecyclePicked(kind), original = picked.bytes.slice();
+        const harness = readLifecycleHarness();
+        const state = useAppStore.getState();
+        state.applyDocument({ ...state.document, name: 'old edit' });
+        useAppStore.getState().addImportedAttachments(new Map([['old-shape', Uint8Array.of(4, 5)]]), new Map());
+        const confirmSaveTarget = vi.fn(() => Promise.resolve()), clearSaveTarget = vi.fn();
+        useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(picked),
+          savePcad: () => Promise.resolve(null), hasSaveTarget: () => true, confirmSaveTarget, clearSaveTarget } });
+        const confirmDiscard = vi.fn(() => Promise.resolve(true));
+        const deps = { ...createDefaultPartFileDeps(), confirmDiscard, recentFilesStorage: null };
+        try {
+          const opening = openPart(deps), probe = await harness.posted();
+          if (probe.request === null) throw new Error('Read request missing');
+          const reply = await lifecycleReply(probe.request);
+          let expected = retainedOpenState();
+          if (event === 'cancel') cancelOpenReads();
+          if (event === 'switch') { useAppStore.getState().resetDocument(createEmptyPartDocument()); expected = retainedOpenState(); }
+          if (event === 'edit') {
+            const current = useAppStore.getState(); current.applyDocument({ ...current.document, name: 'while reading' });
+            expected = retainedOpenState(); confirmDiscard.mockResolvedValue(false);
+          }
+          if (event === 'dispose') {
+            const { startAutoSave } = await import('./attachAutoSave.js');
+            const saver: AutoSaver = { markDirty: () => undefined, saveNow: () => Promise.resolve(), stop: () => undefined,
+              readLatest: () => Promise.resolve(null), discard: () => Promise.resolve() };
+            const stop = startAutoSave({ saver }); stop();
+          }
+          if (event === 'newRead') {
+            const nextOpening = openPart(deps), next = await harness.posted(1);
+            if (next.request === null) throw new Error('Next read request missing');
+            next.port.onmessage?.(new MessageEvent('message', { data: await lifecycleReply(next.request) }));
+            await nextOpening; expected = retainedOpenState();
+            expect(next.terminate).toHaveBeenCalledTimes(1);
+          }
+          if (event === 'error') probe.port.onmessageerror?.(new MessageEvent('messageerror'));
+          else if (event === 'failure') probe.port.onmessage?.(new MessageEvent('message', { data: {
+            id: probe.request.id, kind, result: { ok: false, error: { code: 'notZip', message: 'broken ZIP' } },
+          } }));
+          else if (event === 'terminate') {
+            probe.terminate.mockImplementation(() => { throw new Error('termination failed'); });
+            probe.port.onmessage?.(new MessageEvent('message', { data: reply }));
+          } else if (event === 'edit') probe.port.onmessage?.(new MessageEvent('message', { data: reply }));
+          await opening;
+          expect(probe.terminate).toHaveBeenCalledTimes(1);
+          probe.late?.(new MessageEvent('message', { data: reply }));
+          expectRetainedOpenState(expected);
+          expect(confirmSaveTarget).toHaveBeenCalledTimes(event === 'newRead' ? 1 : 0);
+          expect(clearSaveTarget).not.toHaveBeenCalled();
+          expect(picked.bytes.byteLength).toBe(original.length); expect(picked.bytes).toEqual(original);
+          if (event === 'edit') expect(confirmDiscard).toHaveBeenCalledTimes(2);
+        } finally { harness.spy.mockRestore(); cancelOpenReads(); }
+      });
+    }
+  }
+});
+
+it('awaits the actual asynchronous viewport producer once and reports its final outcome', async () => {
+  const original = useAppStore.getState().captureThumbnail;
+  const journal = createThumbnailCaptureReasonJournal(), release = observeThumbnailCaptureReasons(journal.record);
+  const capture = createDefaultPartFileDeps().captureThumbnail;
+  try {
+    const bytes = Uint8Array.of(137, 80, 78, 71), producer = vi.fn(() => Promise.resolve(bytes));
+    useAppStore.getState().setCaptureThumbnail(producer);
+    expect(await capture()).toBe(bytes); expect(producer).toHaveBeenCalledTimes(1);
+    useAppStore.getState().setCaptureThumbnail(() => Promise.reject(new Error('async PNG failure')));
+    expect(await capture()).toBeNull();
+    expect(journal.snapshot().entries.map(entry => entry.reason)).toEqual(['producer:success', 'producer:throw']);
+  } finally { release(); useAppStore.getState().setCaptureThumbnail(original); }
 });

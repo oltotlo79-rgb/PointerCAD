@@ -12,7 +12,7 @@ import { savePart } from './scriptsFlow.js';
 import { uiMessage } from './uiMessages.js';
 
 /*
- * GR-24 (scratchpad/claude/plans/geomref-plan.md §4(h)): the tool "図形の測定値" on the real screen, the real
+ * GR-24 (mathGeometryFixture.ts): the tool "図形の測定値" on the real screen, the real
  * kernel and the real calculation Worker. Every flow takes the page and, for real Electron (GR-24e), the
  * application, so the same steps run in Chromium, Firefox and Electron. Values, labels and saved documents are
  * compared with what the product shows and stores; labels come from the product catalogs (uiMessage). The

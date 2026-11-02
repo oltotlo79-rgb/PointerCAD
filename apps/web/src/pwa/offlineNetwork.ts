@@ -1,4 +1,4 @@
-import { OFFLINE_MAX_STREAM_BYTES, offlineAssetRoute } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { OFFLINE_MAX_STREAM_BYTES, offlineAssetRoute } from '@pointercad/ui/offline-protocol';
 
 export type OfflineTransferReason = 'cancelled' | 'timeout' | 'network' | 'response' | 'size' | 'hash' | 'inventory';
 export class OfflineTransferError extends Error {

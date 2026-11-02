@@ -326,12 +326,14 @@ def solve_complementarity(np, flexibility, gaps, force_scale, gap_scale, max_piv
                      'within the limit (this does not mean that no solution exists)')
 
 
-def _solve_contact_system(np, plan, stiffness, moment_length_m, max_pivots=None, *, constant_force=None):
+def _solve_contact_system(np, plan, stiffness, moment_length_m, max_pivots=None, *, constant_force=None, capture_full_state=None):
     """Static frictionless unilateral contact on the given global stiffness (N/m, N, N m units, 6 DOF per node).
     moment_length_m (m, > 0) converts rotational components (N m) to N for every norm.
     Internal constant_force is an optional full nodal force vector (N, N m), e.g. the
     negative initial resisting force of prescribed shank strain. It is never scaled
     by the external load factor. Public contact plans and the default route are unchanged."""
+    if capture_full_state is not None and not callable(capture_full_state):
+        raise ValueError('contact-capture: callable required')
     nodes, contacts, factors = plan['nodes'], plan['contacts'], plan['loadFactors']
     positions = validate_nodes(nodes)
     validate_contacts(contacts, positions)
@@ -416,6 +418,13 @@ def _solve_contact_system(np, plan, stiffness, moment_length_m, max_pivots=None,
             raise ValueError('contact-complementarity: lambda * gap exceeded 1e-9 of the force x gap scale')
         full = np.zeros(size)
         full[free] = displacement
+        if capture_full_state is not None:
+            if not np.isfinite(full).all() or any(
+                    fixed and full[6*i+axis] != 0 for i, node in enumerate(nodes)
+                    for axis, fixed in enumerate(node['restrained'])):
+                raise ValueError('contact-capture: invalid full displacement or support')
+            # Never expose the solver vector, its view, or the input plan to the callback.
+            capture_full_state(factor_value, full.copy())
         records = []
         for index, node in enumerate(nodes[:plan['originalNodeCount']]):
             block = full[6 * index:6 * index + 6]

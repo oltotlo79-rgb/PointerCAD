@@ -75,9 +75,11 @@ describe('exhaustive static adapter routing over the saved standard-member schem
 
   it('refuses an unrecognized schema before any static solve', () => {
     // The strict field reader precedes schema routing: distinguish a valid static shape from an impact shape.
+    // Schema 7 is supported frictional contact, not an unknown version. 999 is deliberately fictitious.
+    const unknownStandardBeamSchema = 'pointercad-standard-beam/999';
     const staticFixture = beamCadFixture();
     const staticResult = route(staticFixture.document,
-      { ...staticFixture.definition, schema: 'pointercad-standard-beam/7' }, staticFixture.stamp);
+      { ...staticFixture.definition, schema: unknownStandardBeamSchema }, staticFixture.stamp);
     expect(staticResult.ok).toBe(false);
     if (!staticResult.ok) {
       expect(staticResult.issue.code).toBe('unsupported-model');
@@ -85,7 +87,7 @@ describe('exhaustive static adapter routing over the saved standard-member schem
       expect(staticResult.issue.message).toBe('Expected standard beam schema 1 or 2 in N-mm units');
     }
     const { fixture, definition } = impactFixture();
-    const impactResult = route(fixture.document, { ...definition, schema: 'pointercad-standard-beam/7' }, fixture.stamp);
+    const impactResult = route(fixture.document, { ...definition, schema: unknownStandardBeamSchema }, fixture.stamp);
     expect(impactResult.ok).toBe(false);
     if (!impactResult.ok) {
       expect(impactResult.issue.code).toBe('shape');

@@ -18,10 +18,10 @@ import { decodeTetraMesh, readTetraMeshInput, tetraMeshInputSha256, TETRA_LIMITS
  * Origin identities are fixture data (cylinder-face roles); only uniqueness and resolution matter here.
  */
 const ROOT3 = Math.sqrt(3);
-type FaceSpec = { readonly kind: 'plane' | 'cylinder' | 'sphere' | 'cone' | 'torus' | 'other'; readonly axisOrigin?: readonly [number, number, number] | null;
+interface FaceSpec { readonly kind: 'plane' | 'cylinder' | 'sphere' | 'cone' | 'torus' | 'other'; readonly axisOrigin?: readonly [number, number, number] | null;
   readonly axis?: readonly [number, number, number] | null; readonly radius?: number | null;
   readonly cylinderSpan?: readonly [number, number] | null;
-  readonly analyticSurface?: SolidBody['faces'][number]['analyticSurface'] };
+  readonly analyticSurface?: SolidBody['faces'][number]['analyticSurface'] }
 const roles = ['side', 'start', 'end'] as const;
 function context(faces: readonly FaceSpec[], volume: number): CadTetraContext {
   const origins: readonly SubShapeOrigin[] = faces.map((_, index) => ({ version: 1, shapeKind: 'face',

@@ -1,3 +1,16 @@
+import { sha256Hex } from './sha256.js';
+import { SOLID_CONTACT_ASSETS } from './solidContactAssets.js';
+import { analyzeSolidContact } from './solidContactRuntime.js';
+import { verifySolidContactInput, type SolidContactInput, type SolidContactResult } from './solidContactBinding.js';
+import { FRICTION_CONTACT_ASSETS } from './frictionContactAssets.js';
+import { analyzeBeamFrictionContact, readFrictionSolveOptions } from './frictionContactRuntime.js';
+import { translateBeamFrictionContact, type BeamFrictionContactInput } from './frictionContactTranslation.js';
+import type { FrictionContactResult, FrictionSolveOptions } from './frictionContactResults.js';
+
+import { WELD_SPAN_CONTACT_ASSETS } from './beamWeldSpanAssets.js';
+import { analyzeBeamWeldSpanContact } from './beamWeldSpanContactRuntime.js';
+import { translateBeamWeldSpanContact, type BeamWeldSpanContactInput } from './beamWeldSpanContact.js';
+import type { BeamWeldSpanContactResult } from './beamWeldSpanContactBinding.js';
 import { analyzeNativeBoltPreload, verifyNativeBoltPrograms } from './nativeBoltPreloadRuntime.js';
 import { prepareNativeBoltPreloadJob, NATIVE_BOLT_KIND, type NativeBoltPreloadOwnedResult, type PreparedNativeBoltPreloadJob } from './nativeBoltPreloadBinding.js';
 import { FEM_ASSETS, NETGEN_ASSETS, SOLID_ASSETS, SOLID_PLASTIC_ASSETS, BOLT_CONTACT_ASSETS, SOLID_MODAL_ASSETS, SOLID_BUCKLING_ASSETS } from './assets.js';
@@ -56,7 +69,7 @@ export async function analyzeInBrowser(document:BeamAnalysisDocument,onPhase:(ph
 async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysisDocument, buckling?:BeamBucklingInput,
   transient?:BeamTransientInput, plasticBar?:PlasticBarInput, contact?:BeamContactInput, tetra?:TetraMeshInput,
   solid?:SolidAnalysisInput, solidPlastic?:SolidPlasticInput, boltContact?:BeamBoltContactInput, weldContact?:BeamWeldContactInput,
-  jointContact?:BeamJointContactInput, initialStrain?:BeamJointInitialStrainInput, impact?:BeamImpactInput, solidModal?:SolidModalInput, solidBuckling?:SolidBucklingInput, nativeBolt?:PreparedNativeBoltPreloadJob, frameBoltContact?:FrameBoltContactInput):Promise<FemResult>{
+  jointContact?:BeamJointContactInput, initialStrain?:BeamJointInitialStrainInput, impact?:BeamImpactInput, solidModal?:SolidModalInput, solidBuckling?:SolidBucklingInput, nativeBolt?:PreparedNativeBoltPreloadJob, frameBoltContact?:FrameBoltContactInput, spanContact?:BeamWeldSpanContactInput, frictionJob?:{ readonly input:BeamFrictionContactInput; readonly options:FrictionSolveOptions }, solidContact?:SolidContactInput):Promise<FemResult | FrictionContactResult>{
   const base = new URL('./assets/', self.location.href);
   const localApp = base.protocol === 'app:' && base.host === 'pointercad';
   const web = (base.protocol === 'http:' || base.protocol === 'https:') && base.origin === self.location.origin;
@@ -73,7 +86,10 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
   // be reached while establishing integrity either.
   // Mesh-only native assets do not change the beam/bar asset requirements.
   // Impact needs only the pinned runtime, the extracted beamAnalysis.py (FEM_ASSETS) and beamImpact.py.
-  const pins = nativeBolt !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS, ...JOINT_INITIAL_STRAIN_ASSETS]
+  const pins = solidContact !== undefined ? [...FEM_ASSETS, ...SOLID_CONTACT_ASSETS]
+    : frictionJob !== undefined ? [...FEM_ASSETS, ...FRICTION_CONTACT_ASSETS]
+    : spanContact !== undefined ? [...FEM_ASSETS.filter(pin => pin.file !== 'beamContact.py'), ...WELD_SPAN_CONTACT_ASSETS]
+    : nativeBolt !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS, ...JOINT_INITIAL_STRAIN_ASSETS]
     : impact !== undefined ? [...FEM_ASSETS, ...BEAM_IMPACT_ASSETS]
     : initialStrain !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS, ...JOINT_INITIAL_STRAIN_ASSETS]
     : jointContact !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS]
@@ -91,7 +107,7 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
       if (!response.ok) throw new Error(`asset-missing: ${pin.file} (HTTP ${response.status})`);
       const buffer = await response.arrayBuffer();
       if (buffer.byteLength !== pin.bytes) throw new Error(`asset-corrupt: ${pin.file} (size)`);
-      const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', buffer)), byte => byte.toString(16).padStart(2, '0')).join('');
+      const digest = await sha256Hex(buffer);
       if (digest !== pin.sha256) throw new Error(`asset-corrupt: ${pin.file} (SHA-256)`);
       verified.set(pin.file, buffer); urls.set(url, pin.file);
     }));
@@ -135,7 +151,17 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
     // plasticBarAnalysis.py must be a pinned FEM_ASSETS entry (generated assets.ts); until then asset() reports
     // asset-missing instead of running unverified code.
     // beamContact.py is a pinned FEM_ASSETS entry; a missing or changed file stops before any code runs.
-    const result = nativeBolt !== undefined
+    const result = solidContact !== undefined
+      ? await analyzeSolidContact(runtime, solidContact, { normal: new Uint8Array(asset('solidContact.py')),
+        friction: new Uint8Array(asset('solidContactFriction.py')), solver: new Uint8Array(asset('solidContactSolver.py')),
+        driver: new Uint8Array(asset('solidContactDriver.py')), wheelLocation }, onPhase)
+      : frictionJob !== undefined
+      ? await analyzeBeamFrictionContact(runtime, frictionJob.input, { contactWrapper: new Uint8Array(asset('beamContact.py')),
+        coreWrapper: new Uint8Array(asset('beamFrictionContact.py')), runtimeWrapper: new Uint8Array(asset('beamFrictionRuntime.py')), wheelLocation }, frictionJob.options, onPhase)
+      : spanContact !== undefined
+      ? await analyzeBeamWeldSpanContact(runtime, spanContact, { contactWrapper: new Uint8Array(asset('beamWeldSpanBase.py')),
+        spanWrapper: new Uint8Array(asset('beamWeldSpan.py')), spanContactWrapper: new Uint8Array(asset('beamWeldSpanContact.py')), wheelLocation }, onPhase)
+      : nativeBolt !== undefined
       ? { ...await analyzeNativeBoltPreload(runtime, nativeBolt.prepared.plan, await verifyNativeBoltPrograms({
           contactWrapper: new Uint8Array(asset('beamContact.py')), boltWrapper: new Uint8Array(asset('beamBoltContact.py')),
           weldWrapper: new Uint8Array(asset('beamWeldContact.py')), jointWrapper: new Uint8Array(asset('beamJointContact.py')),
@@ -199,6 +225,17 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
 export async function analyzeModalInBrowser(document: BeamAnalysisDocument, onPhase: (phase: FemPhase) => void): Promise<BeamModalResult> {
   const result = await runInBrowser(onPhase, document);
   if (result.kind !== 'oofem-beam-modal-3d') throw new Error('Unexpected modal result');
+  return result;
+}
+
+/** Validate actual preparation and mesh digests before reading any runtime asset. */
+export async function analyzeSolidContactInBrowser(value: unknown,
+  onPhase: (phase: FemPhase) => void): Promise<SolidContactResult> {
+  const input = await verifySolidContactInput(value);
+  const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined, undefined, input);
+  if (result.kind !== 'solid-contact-analysis') throw new Error('Unexpected solid contact result');
   return result;
 }
 
@@ -305,5 +342,24 @@ export async function analyzeFrameBoltContactInBrowser(value: unknown, onPhase: 
   const input = readFrameBoltContact(value).input;
   const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, input);
   if (result.kind !== 'frame-bolt-contact') throw new Error('Unexpected frame-bolt-contact result');
+  return result;
+}
+
+/** Admission and snapshot precede origin/asset/interpreter access. Physical span assets are a separate Root delivery. */
+export async function analyzeWeldSpanContactInBrowser(value: unknown, onPhase: (phase: FemPhase) => void): Promise<BeamWeldSpanContactResult> {
+  const input = translateBeamWeldSpanContact(value).input;
+  const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, input);
+  if (result.kind !== 'oofem-beam-weld-span-contact') throw new Error('Unexpected weld-span-contact result');
+  return result;
+}
+
+
+/** Own and validate both input and solver options before origin, fetch or interpreter access. */
+export async function analyzeFrictionContactInBrowser(value: unknown, options: FrictionSolveOptions,
+  onPhase: (phase: FemPhase) => void): Promise<FrictionContactResult> {
+  const input = translateBeamFrictionContact(value).input;
+  const ownedOptions = readFrictionSolveOptions(options);
+  const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { input, options: ownedOptions });
+  if (result.kind !== 'pointercad-internal-friction-contact-candidate') throw new Error('Unexpected friction-contact result');
   return result;
 }

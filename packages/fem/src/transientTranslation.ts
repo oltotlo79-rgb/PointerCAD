@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import { readBeamTransientHistory } from '@pointercad/model/beam-analysis';
 import { translateBeamBuckling, type OofemBucklingPlan } from './bucklingTranslation.js';
 import type { BeamTransientInput, TransientHistory, TransientLoadFactorSample } from './transientModel.js';
@@ -78,6 +79,5 @@ export function translateBeamTransient(value: unknown): {
 
 export async function transientInputSha256(value: unknown): Promise<string> {
   const input = translateBeamTransient(value).input;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(new TextEncoder().encode(JSON.stringify(input)));
 }

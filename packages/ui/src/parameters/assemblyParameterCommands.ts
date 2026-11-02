@@ -1,6 +1,6 @@
 /**
  * Assembly parameter table commands (FR-207 for `AssemblyDocument.parameters`, §0.a-0.9). The CORE half of
- * scratchpad/claude/instructions/v103-root-assembly-parameter-contract-r1.md; the panel lives elsewhere.
+ * Pure command boundary for the assembly parameter table; the panel lives elsewhere.
  *
  * Pure functions with the argument conventions of the part commands (parameterCommands.ts): documents are immutable,
  * a refusal returns a reason and a translated message, every success returns the re-evaluated document, which the

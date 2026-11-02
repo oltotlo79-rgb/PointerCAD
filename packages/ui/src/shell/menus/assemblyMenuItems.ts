@@ -10,7 +10,8 @@ export type AssemblyMenuActionId =
   | 'toggleFixed'
   | 'boltedJoint'
   | 'releaseFastening'
-  | 'filletWeld';
+  | 'filletWeld'
+  | 'circularFilletWeld';
 
 /**
  * 「組む」の正本。計画書 §0.43 の5項目をこの順に保ち、ボルト締結(追加要件6)の2項目、すみ肉溶接の1項目を
@@ -25,6 +26,7 @@ export const ASSEMBLY_MENU_ITEMS: readonly ToolMenuItem<AssemblyMenuActionId>[] 
   { id: 'boltedJoint', labelKey: 'assembly.boltedJoint.tool', tooltipKey: 'assembly.boltedJoint.toolTooltip', Icon: ThreadShaftIcon },
   { id: 'releaseFastening', labelKey: 'assembly.boltedJoint.release', tooltipKey: 'assembly.boltedJoint.releaseTooltip', Icon: TransformIcon },
   { id: 'filletWeld', labelKey: 'assembly.filletWeld.tool', tooltipKey: 'assembly.filletWeld.toolTooltip', Icon: ChamferIcon },
+  { id: 'circularFilletWeld', labelKey: 'assembly.circularFilletWeld.title', tooltipKey: 'assembly.circularFilletWeld.pickPlane', Icon: ChamferIcon },
 ];
 
 /** 操作対象と同じ部品の固定状態から、次に行う操作の名前を決める。 */

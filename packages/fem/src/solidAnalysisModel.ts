@@ -32,9 +32,17 @@ export interface SolidAnalysisInput {
   readonly materials: readonly SolidMaterial[];
   readonly constraints: readonly {
     readonly node: number;
-    /** Exactly three translations; true prescribes zero displacement. */
+    /** Exactly three translations; true prescribes prescribedMm or zero. */
     readonly fixed: readonly [boolean, boolean, boolean];
+    /** Finite displacement in mm. Non-fixed components must be zero. */
+    readonly prescribedMm?: SolidVector3;
   }[];
+  /** Uniform global acceleration. Every used material needs an explicit positive
+   * density; no density is inferred from its name or elastic properties. */
+  readonly gravity?: {
+    readonly accelerationMps2: SolidVector3;
+    readonly densities: readonly { readonly materialId: string; readonly densityKgM3: number }[];
+  };
   readonly nodalLoads: readonly { readonly node: number; readonly forceN: SolidVector3 }[];
   /** A boundary triangle of exactly one element. The supplied global traction
    * acts on the material, independent of triangle winding; consistent nodal
@@ -49,6 +57,8 @@ export interface SolidAnalysisPlan {
   readonly input: SolidAnalysisInput;
   readonly forcesN: readonly SolidVector3[];
   readonly fixed: readonly (readonly [boolean, boolean, boolean])[];
+  /** Original node order. Omitted unless a constraint supplies prescribedMm. */
+  readonly prescribedMm?: readonly SolidVector3[];
 }
 export interface SolidElementResult {
   /** Engineering strains: xx, yy, zz, yz, xz, xy. */
@@ -67,6 +77,9 @@ export interface SolidAnalysisResult {
   /** Support force on material; internal force minus applied force. Zero on
    * unrestrained DOFs. No beam rotations, reactions or moments are invented. */
   readonly reactionN: readonly SolidVector3[];
+  /** Optional native support forces, independently checked against reactionN.
+   * Sum with all applied forces (including gravity) to obtain zero. */
+  readonly reactionsN?: readonly SolidVector3[];
   readonly elements: readonly SolidElementResult[];
   readonly strainEnergyNmm: number;
   readonly maximumRelativeEquilibriumResidual: number;

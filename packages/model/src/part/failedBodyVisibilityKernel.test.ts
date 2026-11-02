@@ -4,9 +4,9 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createInspectableNativeKernelForNodeTests, initializeNativeKernelForNodeTests }
   from '../testing/createNativeKernelBridge.node.js';
 import { appendEx18DirectEdit, buildEx18DirectSeed, directFaceReference, directPlanarFace,
-  directImportedBrep, withEx18UnselectedBody } from './ex18RouteBuildersDirect.js';
-import { EX18_ORACLE_DIRECT_SEEDS } from './ex18RouteFixtures.js';
-import { compareEx18Shape } from './ex18ShapeOracle.js';
+  directImportedBrep, withEx18UnselectedBody } from './ex18RouteBuildersDirect.testSupport.js';
+import { EX18_ORACLE_DIRECT_SEEDS } from './ex18RouteFixtures.testSupport.js';
+import { compareEx18Shape } from './ex18ShapeOracle.testSupport.js';
 import { recomputePart } from './recomputePart.js';
 import { resolvePart } from './resolvePart.js';
 import { appendSolid } from './createPartDocument.js';

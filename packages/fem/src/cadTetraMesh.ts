@@ -1,7 +1,7 @@
 import { analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryOptions,
   type AnalysisBoundarySource, type SolidBody, type SubShapeRef } from '@pointercad/model';
 import type { FemClient, FemOptions } from './client.js';
-import { readSolidCadSavedInput, solidCadFaceKey, type SolidCadSavedInput } from '../../model/src/analysis/solidCadInput.js';
+import { readSolidCadSavedInput, solidCadFaceKey, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { diagnoseTetraMeshQuality, readTetraMeshQualityLimits, type TetraMeshQuality, type TetraMeshQualityLimits } from './tetraMeshQuality.js';
 import { claimCadMeshRequest, isCurrentCadMeshRequest, releaseCadMeshRequest } from './cadMeshRequestOwner.js';
 import { readTetraMeshInput, readTetraMeshingControls, type TetraMeshingControls, PLANAR_TETRA_MESH_SCHEMA, TETRA_LIMITS, type TetraMeshInput, type TetraMeshResult } from './tetraMesh.js';

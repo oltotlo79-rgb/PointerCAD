@@ -53,6 +53,8 @@ import { DEFAULT_APPEARANCE } from '../appearance/materialPresets.js';
 import { affectsShape } from './documentChange.js';
 import { recomputePart, type PartRecomputeOptions } from './recomputePart.js';
 import { createSubShapeCache } from './subShapeCache.js';
+import { historyDependencies, recomputeHistoryDependencies } from './timelineOrder.js';
+import { sketchProfileFeatureIds } from './solidSketchReferences.js';
 import { resolvePart, type ResolvedSolidStep, type SubShapeQueryPlan } from './resolvePart.js';
 import type {
   BooleanFeature,
@@ -2816,5 +2818,243 @@ describe('imported triangle display bodies', () => {
     expect(result.cancelled).toBe(true);
     expect(result.bodies).toEqual([]);
     expect(result.mainMeshBacking).toBeUndefined();
+  });
+});
+
+describe('FR330 same-sketch current-body dependency closure', () => {
+  const top = [[0, 0, 10], [40, 0, 10], [40, 30, 10]] as const;
+  function fixture() {
+    const original = createFixture();
+    const sketch = original.document.sketches[0];
+    const faceIndex = sketch.features.findIndex(feature => feature.id === original.faceA.faceFeatureId);
+    const points: SketchFeature[] = top.map((position, index) => ({
+      id: `top-point-${String(index)}`, name: `top-point-${String(index)}`, kind: 'point', planeId: 'free',
+      at: { mode: 'relative', base: { kind: 'subShape', ref: { bodyFeatureId: 'extrude-1', index,
+        fingerprint: { kind: 'vertex', position } } }, dx: expr('0'), dy: expr('0'), dz: expr('0') },
+    }));
+    const face: SketchFaceFeature = { id: 'top-face', name: 'top-face', kind: 'face', planeId: 'free',
+      boundary: points.map(point => ({ featureId: point.id })), color: DEFAULT_FACE_COLOR };
+    const document = withSolids(replaceSketch(original.document, { ...sketch,
+      features: [...sketch.features.slice(0, faceIndex + 1), ...points, face] }),
+    extrudeFeature('extrude-1', original.faceA),
+    extrudeFeature('extrude-2', { sketchId: sketch.id, faceFeatureId: face.id }, { distance: '5' }));
+    return { document, original };
+  }
+  function bridge(mode: 'current' | 'missing' | 'ambiguous' = 'current') {
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(steps => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, bodies: steps.map(step => ({ ...solidBody(step.featureId,
+        step.featureId === 'extrude-1' ? 12000 : 3000), vertices: step.featureId !== 'extrude-1' || mode === 'missing' ? []
+          : [...top.map((position, index) => ({ index, position: mode === 'ambiguous' && index === 0 ? [0, -1, 10] as const : position })),
+            ...(mode === 'ambiguous' ? [{ index: 0, position: [0, 1, 10] as const }] : [])] })),
+    }));
+    return { kernel: fakeBridge({ recomputeSolids }), recomputeSolids };
+  }
+  it('does not make an unused later section a dependency of the original profile', async () => {
+    const { document } = fixture(), sketch = document.sketches[0], b = bridge();
+    const changed = replaceSketch(document, { ...sketch, features: [...sketch.features,
+      { id: 'unused-section', name: 'section', kind: 'planeSection', planeId: 'xy',
+        targetFeatureId: 'extrude-1', construction: false }] });
+    const result = await recomputePart(changed, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference')).toEqual([]);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['extrude-1', 'extrude-2']);
+    expect(historyDependencies(changed, { includeSelf: true }).get('extrude-1')).toContain('extrude-1');
+    expect(recomputeHistoryDependencies(changed).get('extrude-1')).toEqual([]);
+  });
+  it('retains offset, copy and constraint-connected construction dependencies transitively', () => {
+    const { document } = fixture(), sketch = document.sketches[0];
+    const features: SketchFeature[] = [
+      { id: 'section', name: 'section', kind: 'planeSection', planeId: 'xy', targetFeatureId: 'extrude-1', construction: false },
+      { id: 'offset', name: 'offset', kind: 'offset', planeId: 'xy', source: [{ featureId: 'section' }],
+        distance: expr('1'), side: 'outside', corner: 'sharp', construction: false },
+      { id: 'copy', name: 'copy', kind: 'copy', planeId: 'xy', source: [{ featureId: 'offset' }],
+        placement: { kind: 'translate', delta: absoluteCoordinate(1, 0, 0) }, construction: false },
+      { id: 'face', name: 'face', kind: 'face', planeId: 'xy', boundary: [{ featureId: 'copy' }], color: DEFAULT_FACE_COLOR },
+      { id: 'connected', name: 'connected', kind: 'point', planeId: 'xy', at: absoluteCoordinate(0, 0, 0) },
+      { id: 'unrelated', name: 'unrelated', kind: 'point', planeId: 'xy', at: absoluteCoordinate(9, 9, 0) },
+    ];
+    const linked = { ...sketch, features, constraints: [{ id: 'link', name: 'link', kind: 'pointOnCurve' as const,
+      a: { kind: 'point' as const, pointId: 'connected' }, b: { kind: 'curve' as const, element: { featureId: 'copy' } } }] };
+    expect([...sketchProfileFeatureIds(linked, 'face')].sort()).toEqual(['connected', 'copy', 'face', 'offset', 'section']);
+    const changed = withSolids(replaceSketch({ ...document, solids: [] }, linked), extrudeFeature('extrude-1', { sketchId: sketch.id, faceFeatureId: 'face' }));
+    expect(recomputeHistoryDependencies(changed).get('extrude-1')).toEqual(['section', 'extrude-1']);
+  });
+  it('retains an external previous base but not the internal second coordinate of a line', () => {
+    const { document } = fixture(), sketch = document.sketches[0];
+    const previous = { mode: 'relative' as const, base: { kind: 'previous' as const }, dx: expr('1'), dy: expr('0'), dz: expr('0') };
+    const features: SketchFeature[] = [
+      { id: 'prior', name: 'prior', kind: 'point', planeId: 'free', at: absoluteCoordinate(0, 0, 0) },
+      { id: 'line', name: 'line', kind: 'line', planeId: 'free', from: absoluteCoordinate(0, 0, 0), to: previous, construction: false },
+      { id: 'point', name: 'point', kind: 'point', planeId: 'free', at: previous },
+    ];
+    expect([...sketchProfileFeatureIds({ ...sketch, features }, 'line')]).toEqual(['line']);
+    expect([...sketchProfileFeatureIds({ ...sketch, features }, 'point')].sort()).toEqual(['line', 'point', 'prior']);
+  });
+  it('keeps the original 40x30x10 body and resolves three current top vertices into the 5mm triangular extrusion', async () => {
+    const { document } = fixture(), original = JSON.stringify(document), b = bridge();
+    const result = await recomputePart(document, b.kernel);
+    expect(result.errors).toEqual([]);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['extrude-1', 'extrude-2']);
+    const steps = b.recomputeSolids.mock.calls.at(-1)?.[0];
+    expect(steps?.map(step => step.featureId)).toEqual(['extrude-1', 'extrude-2']);
+    const first = steps?.[0].plan, second = steps?.[1].plan;
+    if (first?.kind !== 'extrude' || second?.kind !== 'extrude') throw new Error('missing extrusion plans');
+    expect(first.distance).toBe(10); expect(second.distance).toBe(5);
+    expect(first.profile).toHaveLength(4); expect(second.profile).toHaveLength(3);
+    expect(first.profile.map(curve => curve.kind === 'segment' ? curve.from : null))
+      .toEqual([[0, 0, 0], [40, 0, 0], [40, 30, 0], [0, 30, 0]]);
+    expect(second.profile.map(curve => curve.kind === 'segment' ? curve.from : null)).toEqual(top);
+    // Analytic plan expectations; the fake bridge is not evidence of native volume.
+    expect(40 * 30 * first.distance).toBe(12000);
+    expect(40 * 30 / 2 * second.distance).toBe(3000);
+    expect(JSON.stringify(document)).toBe(original);
+  });
+  it.each(['missing', 'ambiguous'] as const)('does not substitute saved coordinates for a %s current vertex', async mode => {
+    const b = bridge(mode), result = await recomputePart(fixture().document, b.kernel);
+    expect(result.errors.some(error => error.featureId === 'top-point-0')).toBe(true);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['extrude-1']);
+    expect(b.recomputeSolids.mock.calls.at(-1)?.[0].map(step => step.featureId)).toEqual(['extrude-1']);
+  });
+  it.each(['self', 'mutual'] as const)('still blocks a real %s cycle and its downstream body', async mode => {
+    const { document } = fixture(), sketch = document.sketches[0];
+    const changed = replaceSketch(document, { ...sketch, features: sketch.features.map((feature, index) =>
+      index === 0 && feature.kind === 'point' ? { ...feature, at: { mode: 'relative',
+        base: { kind: 'subShape', ref: { bodyFeatureId: mode === 'self' ? 'extrude-1' : 'extrude-2', index: 0,
+          fingerprint: { kind: 'vertex', position: [0, 0, 0] } } }, dx: expr('0'), dy: expr('0'), dz: expr('0') } } : feature) });
+    const downstream = appendSolid(changed, extrudeFeature('extrude-3', { sketchId: sketch.id, faceFeatureId: 'top-face' }));
+    const b = bridge(), result = await recomputePart(downstream, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference').map(error => error.featureId))
+      .toEqual(expect.arrayContaining(mode === 'self' ? ['extrude-1'] : ['extrude-1', 'extrude-2']));
+    expect(result.bodies).toEqual([]);
+    expect(b.recomputeSolids.mock.calls.every(([steps]) => steps.length === 0)).toBe(true);
+  });
+});
+
+describe('revolve profile current-body dependency closure', () => {
+  function unusedFixture(kind: 'point' | 'section') {
+    const fixture = createFixture();
+    const sketch = fixture.document.sketches[0];
+    const unused: SketchFeature = kind === 'point'
+      ? { id: 'later-point', name: 'later-point', kind: 'point', planeId: 'free',
+        at: { mode: 'relative', base: { kind: 'subShape', ref: { bodyFeatureId: 'revolve-1', index: 0,
+          fingerprint: { kind: 'vertex', position: [1, 2, 3] } } }, dx: expr('0'), dy: expr('0'), dz: expr('0') } }
+      : { id: 'later-section', name: 'later-section', kind: 'planeSection', planeId: 'xy',
+        targetFeatureId: 'revolve-1', construction: false };
+    const document = withSolids(replaceSketch(fixture.document, { ...sketch, features: [...sketch.features, unused] }),
+      revolveFeature('revolve-1', fixture.faceA, fixture.axisLine));
+    return { document, fixture };
+  }
+  function fakeCurrentBridge() {
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(steps => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, bodies: steps.map(step => ({ ...solidBody(step.featureId),
+        vertices: [{ index: 0, position: [1, 2, 3] as const }] })),
+    }));
+    return { kernel: fakeBridge({ recomputeSolids }), recomputeSolids };
+  }
+  it.each(['point', 'section'] as const)('does not cycle the existing revolve on a later unused %s', async kind => {
+    const { document } = unusedFixture(kind), before = JSON.stringify(document), b = fakeCurrentBridge();
+    const result = await recomputePart(document, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference')).toEqual([]);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['revolve-1']);
+    expect(recomputeHistoryDependencies(document).get('revolve-1')).not.toContain('revolve-1');
+    expect(historyDependencies(document, { includeSelf: true }).get('revolve-1')).toContain('revolve-1');
+    expect(JSON.stringify(document)).toBe(before);
+  });
+  const SOURCE_FACE: SubShapeRef = { bodyFeatureId: 'source-body', index: 4,
+    fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1200, position: [20, 15, 10], axis: [0, 0, 1], radius: null } };
+  it('preserves the exact profile and axis plan with a separate axis sketch and unused later references', async () => {
+    const { document, fixture } = unusedFixture('point');
+    const sketch = document.sketches[0];
+    const axis = sketch.features.find(feature => feature.id === fixture.axisLine.lineFeatureId);
+    if (axis?.kind !== 'line') throw new Error('axis fixture is missing');
+    const axisSketch: SketchDocument = { ...sketch, id: 'axis-sketch', name: 'axis-sketch',
+      features: [{ ...axis, id: 'axis-other' }, { id: 'axis-unused', name: 'axis-unused', kind: 'planeSection',
+        planeId: 'xy', targetFeatureId: 'revolve-1', construction: false }], constraints: [] };
+    const feature = revolveFeature('revolve-1', fixture.faceA, { sketchId: 'axis-sketch', lineFeatureId: 'axis-other' });
+    const changed = withSolids(addSketch({ ...document, solids: [] }, axisSketch), feature), b = fakeCurrentBridge();
+    const result = await recomputePart(changed, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference')).toEqual([]);
+    expect(result.bodies.map(body => body.featureId)).toEqual(['revolve-1']);
+    const plan = b.recomputeSolids.mock.calls.at(-1)?.[0].find(step => step.featureId === 'revolve-1')?.plan;
+    if (plan?.kind !== 'revolve') throw new Error('missing revolve plan');
+    expect(plan.profile).toHaveLength(4);
+    expect(plan.axisOrigin).toEqual([1, 2, 3]);
+    expect(plan.axisDirection[0]).toBeCloseTo(0.6, 12);
+    expect(plan.axisDirection[1]).toBeCloseTo(0.8, 12);
+    expect(plan.angle).toBeCloseTo(Math.PI, 12);
+  });
+  it.each(['same', 'separate'] as const)('tracks a used projected curve in the %s sketch axis closure', mode => {
+    const fixture = createFixture(), sketch = fixture.document.sketches[0];
+    const axis = sketch.features.find(feature => feature.id === fixture.axisLine.lineFeatureId);
+    if (axis?.kind !== 'line') throw new Error('axis fixture is missing');
+    const projection: SketchFeature = { id: 'axis-projection', name: 'axis-projection', kind: 'projectedCurve',
+      planeId: 'xy', construction: false, source: SOURCE_FACE };
+    const axisLine: SketchLineFeature = { ...axis, id: 'selected-axis', from: { mode: 'relative',
+      base: { kind: 'vertex', featureId: projection.id, vertex: 'start' }, dx: expr('0'), dy: expr('0'), dz: expr('0') } };
+    const extra = [projection, axisLine];
+    const axisSketch = mode === 'same' ? { ...sketch, features: [...sketch.features, ...extra] }
+      : { ...sketch, id: 'axis-sketch', name: 'axis-sketch', features: extra, constraints: [] };
+    const document = mode === 'same' ? replaceSketch(fixture.document, axisSketch) : addSketch(fixture.document, axisSketch);
+    const feature = revolveFeature('revolve-1', fixture.faceA, { sketchId: axisSketch.id, lineFeatureId: axisLine.id });
+    const changed = withSolids(document, extrudeFeature('source-body', fixture.faceB), feature);
+    expect(recomputeHistoryDependencies(changed).get('revolve-1')).toEqual(expect.arrayContaining(['axis-projection', 'source-body']));
+  });
+  it('tracks a used projected curve in the profile closure', () => {
+    const fixture = createFixture(), sketch = fixture.document.sketches[0];
+    const projection: SketchFeature = { id: 'profile-projection', name: 'profile-projection', kind: 'projectedCurve',
+      planeId: 'xy', construction: false, source: SOURCE_FACE };
+    const face: SketchFaceFeature = { id: 'projected-face', name: 'projected-face', kind: 'face', planeId: 'xy',
+      boundary: [{ featureId: projection.id }], color: DEFAULT_FACE_COLOR };
+    const changed = withSolids(replaceSketch(fixture.document, { ...sketch, features: [...sketch.features, projection, face] }),
+      extrudeFeature('source-body', fixture.faceB), revolveFeature('revolve-1', { sketchId: sketch.id, faceFeatureId: face.id }, fixture.axisLine));
+    expect(recomputeHistoryDependencies(changed).get('revolve-1')).toEqual(expect.arrayContaining(['profile-projection', 'source-body']));
+  });
+  it.each(['current', 'missing', 'ambiguous'] as const)('resolves the axis from the %s current body without saved-coordinate fallback', async mode => {
+    const fixture = createFixture(), sketch = fixture.document.sketches[0];
+    const features = sketch.features.map(feature => feature.id === fixture.axisLine.lineFeatureId && feature.kind === 'line'
+      ? { ...feature, from: { mode: 'relative' as const, base: { kind: 'subShape' as const,
+        ref: { bodyFeatureId: 'source-body', index: 0,
+          fingerprint: { kind: 'vertex' as const, position: [0, 0, 10] as const } } },
+        dx: expr('0'), dy: expr('0'), dz: expr('0') } } : feature);
+    const document = withSolids(replaceSketch(fixture.document, { ...sketch, features }),
+      extrudeFeature('source-body', fixture.faceB), revolveFeature('revolve-1', fixture.faceA, fixture.axisLine));
+    const recomputeSolids = vi.fn<KernelBridge['recomputeSolids']>(steps => Promise.resolve({
+      ...EMPTY_SOLID_OUTCOME, bodies: steps.map(step => ({ ...solidBody(step.featureId),
+        vertices: step.featureId !== 'source-body' || mode === 'missing' ? []
+          : mode === 'current' ? [{ index: 0, position: [0, 0, 10] as const }]
+            : [{ index: 0, position: [0, -1, 10] as const }, { index: 0, position: [0, 1, 10] as const }] })),
+    }));
+    const result = await recomputePart(document, fakeBridge({ recomputeSolids }));
+    if (mode === 'current') {
+      expect(result.bodies.map(body => body.featureId)).toEqual(['source-body', 'revolve-1']);
+      const plan = recomputeSolids.mock.calls.at(-1)?.[0].find(step => step.featureId === 'revolve-1')?.plan;
+      if (plan?.kind !== 'revolve') throw new Error('missing revolve plan');
+      expect(plan.axisOrigin).toEqual([0, 0, 10]);
+    } else {
+      expect(result.errors.some(error => error.featureId === fixture.axisLine.lineFeatureId)).toBe(true);
+      expect(result.bodies.map(body => body.featureId)).toEqual(['source-body']);
+    }
+  });
+  it.each(['self', 'mutual'] as const)('still rejects a real %s cycle', async mode => {
+    const fixture = createFixture(), sketch = fixture.document.sketches[0];
+    const firstFace = sketch.features.find(feature => feature.id === fixture.faceA.faceFeatureId);
+    if (firstFace?.kind !== 'face') throw new Error('face fixture is missing');
+    const pointId = firstFace.boundary[0].featureId;
+    const features = sketch.features.map(feature => feature.id === pointId && feature.kind === 'point'
+      ? { ...feature, at: { mode: 'relative' as const, base: { kind: 'subShape' as const,
+        ref: { bodyFeatureId: mode === 'self' ? 'revolve-1' : 'extrude-2', index: 0,
+          fingerprint: { kind: 'vertex' as const, position: [1, 2, 3] as const } } },
+        dx: expr('0'), dy: expr('0'), dz: expr('0') } } : feature);
+    const axis = revolveFeature('revolve-1', fixture.faceA, fixture.axisLine);
+    const point: SketchFeature = { id: 'dependent-point', name: 'dependent-point', kind: 'point', planeId: 'free',
+      at: { mode: 'relative', base: { kind: 'subShape', ref: { bodyFeatureId: 'revolve-1', index: 0,
+        fingerprint: { kind: 'vertex', position: [1, 2, 3] } } }, dx: expr('0'), dy: expr('0'), dz: expr('0') } };
+    const face: SketchFaceFeature = { id: 'dependent-face', name: 'dependent-face', kind: 'face', planeId: 'free',
+      boundary: [{ featureId: point.id }], color: DEFAULT_FACE_COLOR };
+    const document = withSolids(replaceSketch(fixture.document, { ...sketch, features: [...features, point, face] }),
+      axis, extrudeFeature('extrude-2', { sketchId: sketch.id, faceFeatureId: face.id }));
+    const b = fakeCurrentBridge(), result = await recomputePart(document, b.kernel);
+    expect(result.errors.filter(error => error.code === 'circularReference').map(error => error.featureId))
+      .toEqual(expect.arrayContaining(mode === 'self' ? ['revolve-1'] : ['revolve-1', 'extrude-2']));
+    expect(result.bodies).toEqual([]);
   });
 });

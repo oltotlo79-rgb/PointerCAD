@@ -6,6 +6,7 @@ import { cancelMate, jointKindReadiness, mateKindReadiness, startJoint, startMat
 import { startPlaceSubAssembly, startReplaceSelectedComponent } from '../../assembly/replaceActions.js';
 import { startPlaceComponent, toggleSelectedFixed } from '../../assembly/placeComponentActions.js';
 import { selectedWeldId } from '../../assembly/filletWeldDraft.js';
+import { selectedCircularWeldId } from '../../store/circularWeldActions.js';
 import type { AssemblyMenuActionId, MateMenuAction } from './assemblyMenuItems.js';
 
 export function isMateMenuAction(id: MateMenuAction): id is MateKind {
@@ -26,6 +27,7 @@ export function isMateMenuAction(id: MateMenuAction): id is MateKind {
 }
 
 export function startAssemblyPartPlacement(deps?: Parameters<typeof startPlaceComponent>[0]): Promise<void> {
+  useAppStore.getState().cancelCircularWeld();
   cancelMate();
   return startPlaceComponent(deps);
 }
@@ -52,7 +54,7 @@ export function explodeActionReadiness(
 export function assemblyToolbarIdle(state: AppState): boolean {
   return state.assemblyPlacement === null && state.assemblyMateDraft === null && state.assemblyDrag === null
     && !state.isComputing && !state.assemblyReplacementBusy && state.assemblyReplacementPreview === null
-    && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null;
+    && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null;
 }
 
 export function assemblyBuildReadiness(state: AppState, id: AssemblyMenuActionId): EditToolReadiness {
@@ -74,10 +76,11 @@ export function assemblyBuildReadiness(state: AppState, id: AssemblyMenuActionId
     return selectedFastening(state.assembly, state.selection) !== null
       ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.boltedJoint.selectFastened' };
   }
-  if (id === 'filletWeld') {
+  if (id === 'filletWeld' || id === 'circularFilletWeld') {
     if (!idle) return { ready: false, reasonKey: 'assembly.tool.placementBusy' };
     // ビードを1つ選んでいれば、その溶接を直す。それ以外は新しい溶接(抑制していない部品が2つ要る)。
-    if (selectedWeldId(state.assembly, state.selection) !== null) return { ready: true, reasonKey: null };
+    if (selectedCircularWeldId(state.assembly, state.selection) !== null
+      || (id === 'filletWeld' && selectedWeldId(state.assembly, state.selection) !== null)) return { ready: true, reasonKey: null };
     return state.assembly.components.filter((component) => !component.suppressed).length >= 2
       ? { ready: true, reasonKey: null } : { ready: false, reasonKey: 'assembly.filletWeld.needTwoComponents' };
   }
@@ -112,6 +115,8 @@ export function chooseAssemblyBuild(id: AssemblyMenuActionId): void {
     const group = state.assembly === null ? null : selectedFastening(state.assembly, state.selection);
     // 解除は組の印を外すだけで配置は変えない。1 回が Undo の 1 段。
     if (state.assembly !== null && group !== null) state.applyAssembly(releaseRigidGroup(state.assembly, group));
+  } else if (id === 'circularFilletWeld') {
+    if (state.beginCircularWeld()) cancelMate();
   } else if (id === 'filletWeld') {
     // 選んでいるビードから直す下書きを作るので、選択を消す cancelMate より先に始める(合致の打ちかけが無いことは
     // 上の準備の判定 idle で確かめ済み)。始めた後は他の道具と同じく選択と強調を消す。

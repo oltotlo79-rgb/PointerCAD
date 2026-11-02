@@ -1,8 +1,9 @@
-import { encodeSaveDocument, writeThreeMf } from '@pointercad/io';
+import { writeThreeMf } from '@pointercad/io';
 import { createNamedSavePoints, SavePointError } from '../history/namedSavePoints.js';
 import { createIndexedDbSavePointStorage } from '../history/namedSavePointStorage.js';
 import { isPcadSavePointRequest, isPcadThreeMfRequest, type PcadSavePointReply, type PcadSavePointRequest,
   type PcadSaveReply, type PcadWorkerRequest } from './pcadSaveProtocol.js';
+import { encodeOwnedSaveInput } from './pcadSaveWorkerEncoding.js';
 
 let activePoint: { readonly id: string; readonly controller: AbortController } | null = null;
 const points = createNamedSavePoints(createIndexedDbSavePointStorage());
@@ -82,7 +83,8 @@ self.onmessage = (event: MessageEvent<PcadWorkerRequest>): void => {
   const send = (reply: PcadSaveReply, transfer: Transferable[] = []): void => {
     self.postMessage(reply, { transfer });
   };
-  void encodeSaveDocument(input, { onProgress: stage => send({ id, kind: 'progress', stage }) }).then(bytes => {
+  // 入力はこのWorkerの写しだけ。項目ができた時点で三角形の写しを手放してから圧縮する(E24)。
+  void encodeOwnedSaveInput(input, stage => send({ id, kind: 'progress', stage })).then(({ bytes }) => {
     // エンコーダーが所有する出力だけを渡す。入力の原本はこのWorkerには存在しない。
     if (!(bytes.buffer instanceof ArrayBuffer)) throw new Error('Unexpected shared save output');
     send({ id, kind: 'success', bytes }, [bytes.buffer]);

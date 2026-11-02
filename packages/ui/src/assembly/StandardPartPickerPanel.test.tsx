@@ -19,12 +19,13 @@ import { SteelBendEditForm } from './SteelBendFields.js';
 import { beginSteelBendPlacement, buildSteelBendChoice, commitSteelBendEdit,
   readSteelBendEditInput, type SteelBendEditTarget } from './steelBendPicker.js';
 import { commitPlaceComponent } from './placeComponentActions.js';
+import type * as ImportedReactTypes from 'react';
 
 // Follow the existing FeatureTree boundary harness: retain local state, invoke the real
 // React handlers, and inspect actual store commits. This is a Node test, not browser/layout QA.
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], state: 0 }));
 vi.mock('react', async (importOriginal) => {
-  const original = await importOriginal<typeof import('react')>();
+  const original = await importOriginal<typeof ImportedReactTypes>();
   return { ...original, useState: <S,>(initial: S | (() => S)) => {
     const index = hooks.state++;
     if (index === hooks.values.length) hooks.values.push(typeof initial === 'function' ? (initial as () => S)() : initial);

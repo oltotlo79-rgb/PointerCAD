@@ -1,6 +1,7 @@
 import { readNativePlanarBasis } from './planarFaceBasis.js';
 import type {
   OpenCascadeInstance,
+  gp_Circ,
   TopoDS_Edge,
   TopoDS_Face,
   TopoDS_Shape,
@@ -200,12 +201,35 @@ function readFaceGeometry(
 
 /** 辺の下地の曲線から取れる素性(種類・軸・半径・両端)。 */
 interface EdgeGeometry {
+  readonly circleBasis?: SolidEdgeInfo['circleBasis'];
   readonly curveKind: EdgeCurveKind;
   readonly axis: Vec3Tuple | null;
   readonly axisOrigin: Vec3Tuple | null;
   readonly radius: number | null;
   readonly start: Vec3Tuple;
   readonly end: Vec3Tuple;
+}
+
+/** Native parameter basis, with owned OCCT copies and no inferred or normalized axes. */
+function readCircleBasis(oc: OpenCascadeInstance, edge: TopoDS_Edge, circle: gp_Circ,
+  parameterRange: readonly [number, number], origin: Vec3Tuple, allocations: Allocations): SolidEdgeInfo['circleBasis'] {
+  const orientation = edge.Orientation_1();
+  if (orientation !== oc.TopAbs_Orientation.TopAbs_FORWARD && orientation !== oc.TopAbs_Orientation.TopAbs_REVERSED) return undefined;
+  const [first, last] = parameterRange, radius = circle.Radius();
+  if (![...origin, first, last, radius].every(Number.isFinite) || radius <= 0 || !(last > first)
+    || !Number.isFinite((last - first) * radius)) return undefined;
+  const { keep } = allocations;
+  const position = keep(circle.Position()), x = keep(position.XDirection()), y = keep(position.YDirection()), z = keep(position.Direction());
+  const xAxis: Vec3Tuple = [x.X(), x.Y(), x.Z()], yAxis: Vec3Tuple = [y.X(), y.Y(), y.Z()], normal: Vec3Tuple = [z.X(), z.Y(), z.Z()];
+  const dot = (a: Vec3Tuple, b: Vec3Tuple): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross: Vec3Tuple = [xAxis[1] * yAxis[2] - xAxis[2] * yAxis[1],
+    xAxis[2] * yAxis[0] - xAxis[0] * yAxis[2], xAxis[0] * yAxis[1] - xAxis[1] * yAxis[0]];
+  if (![...xAxis, ...yAxis, ...normal].every(Number.isFinite)
+    || [xAxis, yAxis, normal].some(axis => Math.abs(Math.hypot(...axis) - 1) > 1e-9)
+    || Math.abs(dot(xAxis, yAxis)) > 1e-9 || Math.abs(dot(xAxis, normal)) > 1e-9 || Math.abs(dot(yAxis, normal)) > 1e-9
+    || Math.hypot(cross[0] - normal[0], cross[1] - normal[1], cross[2] - normal[2]) > 1e-9) return undefined;
+  return { origin, xAxis, yAxis, normal, parameterRange: [first, last],
+    orientation: orientation === oc.TopAbs_Orientation.TopAbs_FORWARD ? 1 : -1 };
 }
 
 /**
@@ -249,7 +273,9 @@ function readEdgeGeometry(
     // 全周でない円弧も中心は Location() から取れる。戻りは複製なので keep する。
     // 2026-09-07 実測: 点を書き換えても円へ波及せず、配置済みの中心を返す。
     const origin = keep(circle.Location());
+    const circleBasis = readCircleBasis(oc, edge, circle, [curve.FirstParameter(), curve.LastParameter()], pointToTuple(origin), allocations);
     return {
+      ...(circleBasis === undefined ? {} : { circleBasis }),
       curveKind: 'circle',
       axis: directionToTuple(direction, false),
       axisOrigin: pointToTuple(origin),
@@ -279,17 +305,22 @@ function faceEdgeIndices(
   subShapes: { FindIndex(shape: TopoDS_Shape): number },
   edgeIndexByPosition: ReadonlyMap<number, number>,
   allocations: Allocations,
-): readonly number[] {
+): { readonly indices: readonly number[]; readonly complete: boolean } {
   const own = allocations.keep(new oc.TopTools_IndexedMapOfShape_1());
   oc.TopExp.MapShapes_2(face, own, true, true);
   const result: number[] = [];
+  let complete = true;
   for (let position = 1; position <= own.Size(); position += 1) {
     const member = allocations.keep(own.FindKey(position));
     if (member.ShapeType() !== oc.TopAbs_ShapeEnum.TopAbs_EDGE) continue;
     const edge = edgeIndexByPosition.get(subShapes.FindIndex(member));
     if (edge !== undefined) result.push(edge);
+    else complete = false;
   }
-  return result;
+  // Do not promote a partial map or an unproved empty boundary to complete evidence.
+  return { indices: result, complete: complete && result.length > 0
+    && result.every(edge => Number.isSafeInteger(edge) && edge >= 0 && edge < edgeIndexByPosition.size)
+    && new Set(result).size === result.length };
 }
 
 /** 全ての面へ、今の辺を共有する他の面を付ける(実行時だけ。溝の平面の端も鎖の証拠に使うため種類で選ばない)。 */
@@ -374,6 +405,7 @@ function buildEdgeInfo(
   return {
     index,
     curveKind: geometry.curveKind,
+    ...(geometry.circleBasis === undefined || !(Number.isFinite(length) && length > 0) ? {} : { circleBasis: geometry.circleBasis }),
     length,
     midpoint,
     start: geometry.start,
@@ -472,6 +504,7 @@ export function collectSubShapes(
     // 面が数百枚ある形でも控えが伸び続けないようにする。
     const edgeIndexByPosition = new Map<number, number>(edgePositions.map((position, index) => [position, index]));
     const faceEdges: (readonly number[])[] = [];
+    const completeBoundaries: boolean[] = [];
     let adjacencyLinks = 0;
     for (const [index, position] of facePositions.entries()) {
       const perItem = allocationsFactory();
@@ -481,14 +514,21 @@ export function collectSubShapes(
         faces.push(buildFaceInfo(oc, face, index, faceRanges[index], perItem));
         if (adjacencyLinks <= ADJACENCY_LINK_LIMIT) {
           const edgesOfFace = faceEdgeIndices(oc, face, subShapes, edgeIndexByPosition, perItem);
-          adjacencyLinks += edgesOfFace.length;
-          faceEdges.push(edgesOfFace);
+          adjacencyLinks += edgesOfFace.indices.length;
+          faceEdges.push(edgesOfFace.indices);
+          completeBoundaries.push(edgesOfFace.complete);
         }
       } finally {
         perItem.release();
       }
     }
-    if (adjacencyLinks <= ADJACENCY_LINK_LIMIT) attachAdjacency(faces, faceEdges);
+    if (adjacencyLinks <= ADJACENCY_LINK_LIMIT) {
+      attachAdjacency(faces, faceEdges);
+      for (const [index, face] of faces.entries()) {
+        if (completeBoundaries[index]) faces[index] = { ...face,
+          boundaryEdgeIndices: Object.freeze([...faceEdges[index]]) };
+      }
+    }
 
     for (const [index, position] of edgePositions.entries()) {
       const perItem = allocationsFactory();

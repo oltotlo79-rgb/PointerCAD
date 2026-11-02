@@ -194,7 +194,7 @@ export function cancelReplacementPreview(): void {
 export function sharedPartOccurrenceCount(
   assembly: AssemblyDocument, library: PartLibrary, partRef: string,
 ): { readonly count: number; readonly complete: boolean } {
-  type Count = { readonly count: number; readonly complete: boolean };
+  interface Count { readonly count: number; readonly complete: boolean }
   const memo = new Map<string, Count>();
   const visit = (document: AssemblyDocument, ancestors: ReadonlySet<string>, depth: number): Count => {
     let count = 0;

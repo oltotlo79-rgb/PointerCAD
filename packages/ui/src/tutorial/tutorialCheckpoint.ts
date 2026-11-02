@@ -1,3 +1,4 @@
+import { sha256Hex } from '../sha256.js';
 import { contentHashOf, drawingSourceInputHash, type DrawingSourceInput, type PartDocument } from '@pointercad/model';
 import type { DrawingDocument } from '@pointercad/drawing';
 
@@ -190,8 +191,7 @@ async function sha256(bytes: Uint8Array): Promise<string> {
     input = new Uint8Array(new ArrayBuffer(bytes.byteLength));
     input.set(bytes);
   }
-  const digest = await crypto.subtle.digest('SHA-256', input);
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(crypto.subtle, input);
 }
 
 async function observed(evidence: TutorialSavedEvidence): Promise<TutorialCheckpointResult> {

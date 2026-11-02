@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 export interface OcctAssetManifestPart {
   readonly order: number;
   readonly file: string;
@@ -155,11 +156,6 @@ async function gunzip(data: ArrayBuffer, order: number, maxBytes: number): Promi
       cause: error,
     });
   }
-}
-
-async function sha256Hex(data: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /** 順序・各片の圧縮長・復元長・SHA-256 を照合してから、Emscripten 用のバイト列を返す。 */

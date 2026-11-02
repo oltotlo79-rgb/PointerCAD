@@ -7,8 +7,9 @@ import { useAppStore } from '../store/useAppStore.js';
 import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { attachSolidAnalysis } from './attachSolidAnalysis.js';
 import { boundaryMesh, context } from './solidAnalysis.testSupport.js';
-import type { SolidField } from './solidAnalysisSession.js';
+import { solidSavedInput, type SolidField } from './solidAnalysisSession.js';
 import { initialSolidModalState } from './solidModalState.js';
+import { t } from '../i18n/t.js';
 
 /**
  * Behavioral regression for Root review finding v103-root-modal-reopen-review-r1.md: static input A and an
@@ -112,6 +113,39 @@ async function solveRequestAfterMesh(rig: ReturnType<typeof install>, run: () =>
 }
 
 describe('independently saved static and modal inputs after a cold reopen (review r1)', () => {
+  it('keeps independent free-free modal conditions when static supports have an empty legacy clamp list', async () => {
+    const rig = install(); live.push(rig);
+    rig.pick(0, 'fixed'); rig.pick(1, 'loaded');
+    const state = useAppStore.getState();
+    for (const [field, value] of [['young', '210000'], ['poisson', '0'], ['tz', '2'], ['volume', '0.1']] as const)
+      state.editSolidAnalysis(field, value);
+    state.saveSolidAnalysis();
+    const face = useAppStore.getState().solidAnalysisSession?.fixedFaces[0];
+    if (!face) throw new Error('Missing clamp');
+    state.removeSolidFixedFace(face);
+    state.editSolidModalInput('density', '7800'); state.editSolidModalInput('modeCount', '3'); state.saveSolidModal();
+    const independent = saved('solid-modal-cad'); expect(independent.fixedFaces).toEqual([]);
+    rig.pick(0, 'fixed'); state.convertSolidFixedFace(face); state.saveSolidAnalysis();
+    const staticInput = saved('solid-cad');
+    coldReopen(rig, 12);
+    const reopened = useAppStore.getState(), session = reopened.solidAnalysisSession;
+    if (!session) throw new Error('Missing restored static input');
+    expect(session.fixedFaces).toEqual([]); expect(session.supports).toHaveLength(1);
+    expect(solidSavedInput(session, reopened.document.id, [])).toEqual(staticInput);
+    expect(reopened.solidModalShared).toMatchObject({ fixedFaces: [], youngMPa: 210000 });
+    reopened.editSolidAnalysis('young', '350000');
+    const request = await solveRequestAfterMesh(rig, () => { useAppStore.getState().solidAnalysisRunner?.runModal?.(); }, 'analyze-solid-modal-tet4');
+    expect(request).toContain('"youngMPa":210000'); expect(request).not.toContain('"youngMPa":350000');
+    expect(request).toContain('"constraints":[]');
+    reopened.cancelSolidModal(); reopened.adoptPanelForSolidModal();
+    const count = rig.ports.length;
+    reopened.solidAnalysisRunner?.runModal?.();
+    await vi.waitFor(() => expect(useAppStore.getState().solidModal.status).toBe('failed'));
+    expect(useAppStore.getState().solidModal.error).toBe(t('solidAnalysis.modalSupportsUnsupported'));
+    reopened.saveSolidModal(); expect(useAppStore.getState().solidModal.error).toBe(t('solidAnalysis.modalSupportsUnsupported'));
+    expect(rig.ports).toHaveLength(count); expect(saved('solid-modal-cad')).toEqual(independent);
+    expect(useAppStore.getState().solidAnalysisSession?.supports).toHaveLength(1);
+  });
   it('reopens static A for the static run and modal B for the modal run, each from its own saved definition', async () => {
     const rig = install(); live.push(rig);
     const { staticA, modalB } = saveStaticAThenModalB(rig);

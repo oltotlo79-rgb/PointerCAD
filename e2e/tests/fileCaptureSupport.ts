@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 /**
  * ファイル操作系の撮影の流れ(G1系の各章)で共通に使う補助。
@@ -32,6 +32,9 @@ export function restoreCard(page: Page): Locator {
 
 /** 自動保存の控えを1件、頁のIndexedDBへ直に書く(`e2e/tests/solid.spec.ts` の同名補助と同じ作り)。 */
 export async function writeAutoSaveRecord(page: Page, base64: string, savedAt: string): Promise<void> {
+  // A download can precede completeDocumentSave's legacy-current cleanup.
+  // Wait for the real successful save boundary before planting crash recovery.
+  await expect(page.locator('[data-save-stage="complete"]')).toBeVisible();
   await page.evaluate(async (record) => {
     const binary = atob(record.base64);
     const bytes = new Uint8Array(binary.length);

@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand';
-import { withBeamAnalysisInputs, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
+import { withBeamAnalysisInputs, type AnalysisMaterialCapacity, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { createSolidAnalysisSession, solidSavedInput, type SolidAnalysisSession, type SolidField,
   type SolidLoadMode } from '../solidAnalysis/solidAnalysisSession.js';
 import type { AppState } from './appState.js';
@@ -14,11 +14,13 @@ import { cancelSolidBuckling, editSolidBucklingCount, initialSolidBucklingState,
   setSolidBucklingView, startSolidBuckling, type SolidBucklingReply, type SolidBucklingRunState }
   from '../solidAnalysis/solidBucklingState.js';
 import { solidBucklingSavedInput, withSolidBucklingSaved } from '../solidAnalysis/solidBucklingSaved.js';
+import { createSolidBoundaryDraft, createSolidSupport, SOLID_BOUNDARY_INDEX,
+  type SolidBoundaryAxis, type SolidGravityField } from '../solidAnalysis/solidBoundaryDraft.js';
 
 export interface SolidAnalysisRunner {
   run(): void;
   cancel(): void;
-  captureFaces(role: 'fixed' | 'loaded'): void;
+  captureFaces(role: 'fixed' | 'loaded' | 'support'): void;
   validate(): void;
   /** Modal run of the same session (attachSolidAnalysis); optional so other runners stay valid. */
   runModal?(): void;
@@ -35,7 +37,17 @@ export interface SolidAnalysisSlice {
   readonly editSolidAnalysis: (field: SolidField, source: string) => void;
   /** Switches the single surface load. Like an edit it cancels a pending run and drops the stale result. */
   readonly setSolidAnalysisLoadMode: (mode: SolidLoadMode) => void;
+  /** Atomic material/value validity edit; null,true explicitly keeps elastic analysis without yield evidence. */
+  readonly setSolidAnalysisMaterial: (capacity: AnalysisMaterialCapacity | null, valid: boolean) => void;
   readonly focusSolidAnalysis: (field: SolidField) => void;
+  readonly editSolidSupport: (face: string, axis: SolidBoundaryAxis, change: { readonly fixed: boolean } | { readonly displacement: string }) => void;
+  readonly removeSolidSupport: (face: string) => void;
+  readonly convertSolidFixedFace: (face: string) => void;
+  readonly removeSolidFixedFace: (face: string) => void;
+  readonly clearSolidLoadedFaces: () => void;
+  readonly setSolidGravityEnabled: (enabled: boolean) => void;
+  readonly editSolidGravity: (field: SolidGravityField, source: string) => void;
+  readonly focusSolidBoundary: (field: string) => void;
   readonly saveSolidAnalysis: () => void;
   readonly cancelSolidAnalysis: () => void;
   /** Changes only how the current result is shown; never cancels, re-runs or saves. Non-finite or negative scales are refused. */
@@ -72,6 +84,22 @@ export interface SolidAnalysisSlice {
   readonly adoptPanelForSolidBuckling: () => void;
   /** Display only (drawn mode, amplitude, phase, shown or not): never cancels, re-runs, saves or changes the request. */
   readonly setSolidBucklingView: (view: SolidModeDisplay, amplitudeText: string, showShape: boolean) => void;
+}
+function boundarySession(state: AppState): SolidAnalysisSession | null {
+  const session = state.solidAnalysisSession;
+  return session?.ownerId === state.activeDocumentId && state.assembly === null && state.drawing === null ? session : null;
+}
+function boundaryEdit(state: AppState, session: SolidAnalysisSession, change: Partial<SolidAnalysisSession>) {
+  state.solidAnalysisRunner?.cancel(); state.solidAnalysisRunner?.cancelModal?.(); state.solidAnalysisRunner?.cancelBuckling?.();
+  return { solidAnalysisSession: { ...session, ...change, revision: session.revision + 1,
+    status: 'editing' as const, result: null, error: null }, solidModal: invalidateSolidModal(state.solidModal),
+  solidBuckling: invalidateSolidBuckling(state.solidBuckling) };
+}
+function zeroEmptySurfaceDraft(session: SolidAnalysisSession): SolidAnalysisSession['values'] {
+  const values = { ...session.values };
+  const fields = session.loadMode === 'pressure' ? ['pressure'] as const : ['tx', 'ty', 'tz'] as const;
+  for (const field of fields) if (values[field].trim() === '') values[field] = '0';
+  return values;
 }
 export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnalysisSlice> = (set, get) => ({
   solidAnalysisSession: null, solidAnalysisRunner: null,
@@ -123,6 +151,20 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
       result: null, error: null, status: 'editing' }, solidModal: invalidateSolidModal(state.solidModal),
       solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
   },
+  setSolidAnalysisMaterial: (capacity, valid) => {
+    const state = get(), session = state.solidAnalysisSession;
+    if (!session || session.ownerId !== state.activeDocumentId || state.assembly !== null || state.drawing !== null) return;
+    const next = valid ? capacity : null;
+    if ((session.capacity ?? null) === next && (session.materialInputValid ?? true) === valid) return;
+    state.solidAnalysisRunner?.cancel(); state.solidAnalysisRunner?.cancelModal?.(); state.solidAnalysisRunner?.cancelBuckling?.();
+    const { capacity: previousCapacity, ...remaining } = session;
+    void previousCapacity;
+    // Do not retain the previous material behind a null/invalid draft. Saving revalidates authored capacity.
+    set({ solidAnalysisSession: { ...remaining, ...(next === null ? {} : { capacity: next }),
+      materialInputValid: valid, revision: session.revision + 1, result: null,
+      error: valid ? null : t('solidAnalysis.material.stale'), status: 'editing' },
+      solidModal: invalidateSolidModal(state.solidModal), solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
+  },
   setSolidAnalysisFieldView: change => {
     const session = get().solidAnalysisSession;
     if (!session) return;
@@ -132,7 +174,65 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
   },
   focusSolidAnalysis: focused => {
     const session = get().solidAnalysisSession;
-    if (session) set({ solidAnalysisSession: { ...session, focused } });
+    if (session) set({ solidAnalysisSession: { ...session, focused, boundaryFocused: null } });
+  },
+  focusSolidBoundary: boundaryFocused => {
+    const session = boundarySession(get());
+    if (session) set({ solidAnalysisSession: { ...session, focused: null, boundaryFocused } });
+  },
+  editSolidSupport: (face, axis, change) => {
+    const state = get(), session = boundarySession(state);
+    if (!session) return;
+    const index = SOLID_BOUNDARY_INDEX[axis], rows = session.supports ?? [], row = rows.find(value => value.face === face);
+    if (!row || ('fixed' in change ? row.fixed[index] === change.fixed
+      : !row.fixed[index] || row.displacement[index] === change.displacement)) return;
+    const fixed: [boolean, boolean, boolean] = [...row.fixed], displacement: [string, string, string] = [...row.displacement];
+    if ('fixed' in change) { fixed[index] = change.fixed; if (!change.fixed) displacement[index] = '0'; }
+    else displacement[index] = change.displacement;
+    const next = { ...row, fixed, displacement, prescribed: row.prescribed || 'displacement' in change };
+    set(boundaryEdit(state, session, { supports: rows.map(value => value === row ? next : value) }));
+  },
+  removeSolidSupport: face => {
+    const state = get(), session = boundarySession(state);
+    if (!session || !(session.supports ?? []).some(row => row.face === face)) return;
+    set(boundaryEdit(state, session, { supports: session.supports?.filter(row => row.face !== face) ?? [], boundaryFocused: null }));
+  },
+  convertSolidFixedFace: face => {
+    const state = get(), session = boundarySession(state);
+    if (!session || !session.fixedFaces.includes(face) || session.supports?.some(row => row.face === face)) return;
+    set(boundaryEdit(state, session, { fixedFaces: session.fixedFaces.filter(value => value !== face),
+      supports: [...(session.supports ?? []), createSolidSupport(face)], boundaryFocused: null }));
+  },
+  removeSolidFixedFace: face => {
+    const state = get(), session = boundarySession(state);
+    if (!session || !session.fixedFaces.includes(face)) return;
+    set(boundaryEdit(state, session, { fixedFaces: session.fixedFaces.filter(value => value !== face), boundaryFocused: null }));
+  },
+  clearSolidLoadedFaces: () => {
+    const state = get(), session = boundarySession(state);
+    if (!session || session.loadedFaces.length === 0) return;
+    set(boundaryEdit(state, session, { loadedFaces: [], values: zeroEmptySurfaceDraft(session) }));
+  },
+  setSolidGravityEnabled: enabled => {
+    const state = get(), session = boundarySession(state);
+    if (!session) return;
+    const gravity = session.gravity ?? createSolidBoundaryDraft().gravity;
+    if (gravity.enabled === enabled) return;
+    set(boundaryEdit(state, session, { gravity: { ...gravity, enabled }, boundaryFocused: null,
+      ...(enabled && session.loadedFaces.length === 0 ? { values: zeroEmptySurfaceDraft(session) } : {}) }));
+  },
+  editSolidGravity: (field, source) => {
+    const state = get(), session = boundarySession(state);
+    if (!session) return;
+    const gravity = session.gravity ?? createSolidBoundaryDraft().gravity;
+    if (field === 'density') {
+      if (gravity.density !== source) set(boundaryEdit(state, session, { gravity: { ...gravity, density: source } }));
+    } else {
+      const index = SOLID_BOUNDARY_INDEX[field];
+      if (gravity.acceleration[index] === source) return;
+      const acceleration: [string, string, string] = [...gravity.acceleration]; acceleration[index] = source;
+      set(boundaryEdit(state, session, { gravity: { ...gravity, acceleration } }));
+    }
   },
   cancelSolidAnalysis: () => {
     get().solidAnalysisRunner?.cancel();

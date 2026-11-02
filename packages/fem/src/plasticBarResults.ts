@@ -1,3 +1,4 @@
+import { isRecord } from './valueGuards.js';
 import { comparePlasticBar, plasticBarReference, plasticBarSchedule, PLASTIC_BAR_LIMITS, PLASTIC_BAR_RESULT_SCHEMA,
   type PlasticBarPlan, type PlasticBarSample } from './plasticBar.js';
 import { translatePlasticBar, type PlasticBarInput, type PlasticBarSource } from './plasticBarTranslation.js';
@@ -46,9 +47,6 @@ export interface PlasticBarResult {
 
 function fail(detail: string): never {
   throw new Error(`plastic-bar-result: ${detail}`);
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 function exactFields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);

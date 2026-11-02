@@ -11,7 +11,9 @@ import { AssemblyUiBackingLedger } from './assemblyMeshAdmission.js';
 import { createGpuMeshBudget, type SolidMeshAdmissionState } from './solidMeshAdmission.js';
 import { createViewportMeshObservation } from './viewportMeshObservation.js';
 import { createViewportLifetime, ViewportResourceInitializationFailure } from './viewportLifetime.js';
-import { createViewportRepairPreview } from './viewportRepairPreview.js';
+import { createViewportRepairPreview, referenceRepairPreviewChangesDisplay } from './viewportRepairPreview.js';
+import type * as ImportedBuildSubShapeGeometryTypes from './buildSubShapeGeometry.js';
+import type * as ImportedCreateSolidLayerTypes from './createSolidLayer.js';
 
 const fault = vi.hoisted((): {
   build: 'before' | 'after' | null;
@@ -20,7 +22,7 @@ const fault = vi.hoisted((): {
 } => ({ build: null, construct: null, update: null }));
 
 vi.mock('./buildSubShapeGeometry.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./buildSubShapeGeometry.js')>();
+  const actual = await importOriginal<typeof ImportedBuildSubShapeGeometryTypes>();
   return { ...actual, buildSubShapeGeometry: (...args: Parameters<typeof actual.buildSubShapeGeometry>) => {
     if (fault.build === 'before') throw new Error('before overlay allocation');
     const overlays = actual.buildSubShapeGeometry(...args);
@@ -29,7 +31,7 @@ vi.mock('./buildSubShapeGeometry.js', async importOriginal => {
   } };
 });
 vi.mock('./createSolidLayer.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./createSolidLayer.js')>();
+  const actual = await importOriginal<typeof ImportedCreateSolidLayerTypes>();
   return { ...actual, createSolidLayer: () => {
     fault.construct?.();
     const layer = actual.createSolidLayer();
@@ -42,6 +44,20 @@ vi.mock('./createSolidLayer.js', async importOriginal => {
 afterEach(() => {
   fault.build = null; fault.construct = null; fault.update = null;
   vi.restoreAllMocks();
+});
+
+it('reports no display change for an empty preview update and conservatively handles an unissued update', async () => {
+  const owner = createViewportRepairPreview(new THREE.Scene(), new AssemblyUiBackingLedger(), {}, () => undefined);
+  const first = owner.setReferenceRepairPreview(null);
+  expect(referenceRepairPreviewChangesDisplay(first)).toBe(false);
+  await first;
+  expect(referenceRepairPreviewChangesDisplay(first)).toBe(false);
+  const next = owner.setReferenceRepairPreview(null);
+  await next;
+  expect(referenceRepairPreviewChangesDisplay(next)).toBe(false);
+  expect(referenceRepairPreviewChangesDisplay(Promise.resolve())).toBe(true);
+  owner.retire();
+  expect(owner.returnResources()).toBe(true);
 });
 
 // The provider fixture matches the existing scene integration fixture. Tests stay in both boundaries.
@@ -168,7 +184,14 @@ describe('repair preview owns candidates and reservations independently of the s
     const fixture = await previewOwner();
     try {
       const state = useAppStore.getState(), saved = JSON.stringify(state.document);
-      await fixture.owner.setReferenceRepairPreview(fixture.hover());
+      const descriptor = fixture.hover();
+      const shown = fixture.owner.setReferenceRepairPreview(descriptor);
+      expect(referenceRepairPreviewChangesDisplay(shown)).toBe(false);
+      await shown;
+      expect(referenceRepairPreviewChangesDisplay(shown)).toBe(true);
+      const unchanged = fixture.owner.setReferenceRepairPreview(descriptor);
+      await unchanged;
+      expect(referenceRepairPreviewChangesDisplay(unchanged)).toBe(false);
       const geometry = overlayGeometry(fixture.scene), attribute = geometry.getAttribute('position');
       expect(fixture.observations()).toBe(2);
       expect(attribute.array).toBeInstanceOf(Float32Array);
@@ -180,7 +203,10 @@ describe('repair preview owns candidates and reservations independently of the s
       expect(useAppStore.getState().bodies).toBe(state.bodies);
       expect(useAppStore.getState().undoStack).toBe(state.undoStack);
       expect(JSON.stringify(useAppStore.getState().document)).toBe(saved);
-      await fixture.owner.setReferenceRepairPreview(null);
+      const hidden = fixture.owner.setReferenceRepairPreview(null);
+      expect(referenceRepairPreviewChangesDisplay(hidden)).toBe(true);
+      await hidden;
+      expect(referenceRepairPreviewChangesDisplay(hidden)).toBe(true);
       expect(fixture.scene.children).toHaveLength(0);
       expect(fixture.gpu.reservedBytes()).toBe(0);
       expect(fixture.scope.current).toBe(true);

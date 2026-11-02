@@ -33,6 +33,11 @@ import { buildAssemblyGeometry, EMPTY_ASSEMBLY_GEOMETRY } from './createAssembly
 import { createViewportMeshObservation } from './viewportMeshObservation.js';
 import { createViewportCleanupQueue } from './viewportLifetime.js';
 import type { SolidFieldMesh } from '../solidAnalysis/solidFieldView.js';
+import type * as BuildSolidGeometryModule from './buildSolidGeometry.js';
+import type * as BuildSubShapeGeometryModule from './buildSubShapeGeometry.js';
+import type * as SolidLayerModule from './createSolidLayer.js';
+import type * as EnvironmentModule from './createEnvironment.js';
+import type { AssemblyComponentPickObservation } from './createViewportScene.js';
 
 /** Each historical single-Scene fixture owns an independent host lifetime; shared tests pass one ledger explicitly. */
 function createViewportScene(canvas: HTMLCanvasElement, options: ViewportSceneOptions = {}): ViewportScene {
@@ -48,7 +53,7 @@ const boundary = vi.hoisted((): { overlayFailure: boolean; solidBuildCalls: numb
   environmentBuilds: 0, environmentRenderFailure: false, afterEnvironmentCreate: null,
 }));
 vi.mock('./buildSolidGeometry.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./buildSolidGeometry.js')>();
+  const actual = await importOriginal<typeof BuildSolidGeometryModule>();
   return { ...actual, buildSolidGeometry: (...args: Parameters<typeof actual.buildSolidGeometry>) => {
     boundary.solidBuildCalls += 1;
     boundary.beforeBuild?.();
@@ -56,14 +61,14 @@ vi.mock('./buildSolidGeometry.js', async importOriginal => {
   } };
 });
 vi.mock('./buildSubShapeGeometry.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./buildSubShapeGeometry.js')>();
+  const actual = await importOriginal<typeof BuildSubShapeGeometryModule>();
   return { ...actual, buildSubShapeGeometry: (...args: Parameters<typeof actual.buildSubShapeGeometry>) => {
     if (boundary.overlayFailure) throw new Error('overlay candidate failed');
     return actual.buildSubShapeGeometry(...args);
   } };
 });
 vi.mock('./createSolidLayer.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./createSolidLayer.js')>();
+  const actual = await importOriginal<typeof SolidLayerModule>();
   return { ...actual, createSolidLayer: () => {
     const layer = actual.createSolidLayer();
     return { ...layer, update: (...args: Parameters<typeof layer.update>) => {
@@ -133,7 +138,7 @@ const lifecycle = vi.hoisted(() => ({
 }));
 
 vi.mock('three', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('three')>();
+  const actual = await importOriginal<typeof THREE>();
   return {
     ...actual,
     BufferGeometry: class extends actual.BufferGeometry {
@@ -206,7 +211,7 @@ vi.mock('three', async (importOriginal) => {
 });
 
 vi.mock('./createEnvironment.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./createEnvironment.js')>();
+  const actual = await importOriginal<typeof EnvironmentModule>();
   return { ...actual, createEnvironmentStore: (...args: Parameters<typeof actual.createEnvironmentStore>) => {
     if (lifecycle.lateInitializationFailure) throw new Error('Environment acquisition after initial grid failed');
     return actual.createEnvironmentStore(...args);
@@ -2083,7 +2088,7 @@ describe('部品pickの実分岐を観測する', () => {
     const controlled = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement);
     const fixture = assemblyFixture(controlled.read(), worldAssemblyFace());
     controlled.replace(fixture.state);
-    const observation: import('./createViewportScene.js').AssemblyComponentPickObservation = {};
+    const observation: AssemblyComponentPickObservation = {};
     try {
       controlled.viewport.setAssembly(fixture.bundle);
       if (reason !== 'camera') controlled.viewport.render(
@@ -2106,7 +2111,7 @@ describe('部品pickの実分岐を観測する', () => {
     const controlled = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement);
     const fixture = assemblyFixture(controlled.read(), worldAssemblyFace());
     controlled.replace(fixture.state);
-    const observation: import('./createViewportScene.js').AssemblyComponentPickObservation = {};
+    const observation: AssemblyComponentPickObservation = {};
     const failure = new Error('検査用レイ失敗');
     let restore = (): void => {};
     try {

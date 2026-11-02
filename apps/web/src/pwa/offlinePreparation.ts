@@ -1,5 +1,5 @@
-import { readOfflineAssetManifest } from '../../../../scripts/vite/offlineProtocol.mjs';
-import type { OfflineAssetManifest } from '../../../../scripts/vite/offlineProtocol.mjs';
+import { readOfflineAssetManifest } from '@pointercad/ui/offline-protocol';
+import type { OfflineAssetManifest } from '@pointercad/ui/offline-protocol';
 import { fetchVerifiedOfflineAsset, OfflineTransferError } from './offlineTransfer.js';
 
 export const OFFLINE_CACHE_PREFIX = 'pointercad-offline-edition-v1-';

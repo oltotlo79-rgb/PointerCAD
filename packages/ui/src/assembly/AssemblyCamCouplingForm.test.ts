@@ -7,9 +7,10 @@ import { t } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { AssemblyCamCouplingForm, ignoreComposingEnter } from './AssemblyCamCouplingForm.js';
+import type * as ImportedReactTypes from 'react';
 
 vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
+  const actual = await importOriginal<typeof ImportedReactTypes>();
   return { ...actual, useState: vi.fn(actual.useState) };
 });
 
@@ -18,7 +19,7 @@ beforeEach(() => {
   vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
 });
 afterEach(async () => {
-  const actual = await vi.importActual<typeof import('react')>('react');
+  const actual = await vi.importActual<typeof ImportedReactTypes>('react');
   vi.mocked(useState).mockImplementation(actual.useState);
   vi.restoreAllMocks(); resetTestStore();
 });
@@ -53,7 +54,7 @@ function removeCam(form: CamFormHandlers): void {
   remove();
 }
 async function replaceInitial(from: string, to: string): Promise<void> {
-  const actual = await vi.importActual<typeof import('react')>('react');
+  const actual = await vi.importActual<typeof ImportedReactTypes>('react');
   vi.mocked(useState).mockImplementation((initial?: unknown): [unknown, React.Dispatch<React.SetStateAction<unknown>>] => {
     const state = actual.useState(initial);
     return initial === from ? [to, state[1]] : state;

@@ -241,7 +241,11 @@ function appearanceChoiceValue(page: Page, label: string): Locator {
 /** 選択肢を開いて 1 つ選ぶ。 */
 async function chooseAppearance(page: Page, label: string, option: string): Promise<void> {
   const choice = appearanceChoice(page, label);
-  await choice.locator('.pcad-menu__trigger').click();
+  const trigger = choice.locator('.pcad-menu__trigger');
+  const expanded = await trigger.getAttribute('aria-expanded');
+  if (expanded === 'false') await trigger.click();
+  else expect(expanded).toBe('true');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
   await choice.getByRole('menuitem', { name: option, exact: true }).click();
   await expect(appearanceChoiceValue(page, label)).toHaveText(option);
 }

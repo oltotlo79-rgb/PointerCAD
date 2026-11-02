@@ -16,6 +16,8 @@ import {
   appendSolid,
   assignBodyAppearance,
   findSketch,
+  replaceSketch,
+  type SketchFeature,
   type AppearanceMatchEntry,
 } from '@pointercad/model';
 import {
@@ -597,4 +599,202 @@ describe('EX-05 cancelled and superseded native machining results', () => {
       expect(shapeSha()).toBe(shape);
     } finally { harness.dispose(); }
   }, 180_000);
+});
+
+
+it('面の道具へ切り替えても実失敗入力の関数曲線を保ち、面・立体だけを除外し文書と履歴を変えない', () => {
+  resetTestStore();
+  const part = partWithMixedFeatures();
+  const curve: SketchFeature = {
+    id: 'functionCurve-1',
+    kind: 'functionCurve',
+    name: '関数曲線1',
+    planeId: 'free',
+    construction: false,
+    definition: {
+      format: 'pointercad-function/1',
+      bounds: {
+        X: {
+          min: {
+            source: '0',
+            value: 0,
+            display: '0',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '0',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '0',
+              },
+            },
+          },
+          max: {
+            source: '10',
+            value: 10,
+            display: '10',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '10',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '10',
+              },
+            },
+          },
+        },
+        Y: {
+          min: {
+            source: '0',
+            value: 0,
+            display: '0',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '0',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '0',
+              },
+            },
+          },
+          max: {
+            source: '12',
+            value: 12,
+            display: '12',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '12',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '12',
+              },
+            },
+          },
+        },
+        Z: {
+          min: {
+            source: '0',
+            value: 0,
+            display: '0',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '0',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '0',
+              },
+            },
+          },
+          max: {
+            source: '1',
+            value: 1,
+            display: '1',
+            mathDefinition: {
+              format: 'pointercad-math/1',
+              source: '1',
+              inputNotation: 'text',
+              angleUnit: 'degree',
+              expression: {
+                kind: 'number',
+                decimal: '1',
+              },
+            },
+          },
+        },
+      },
+      formula: {
+        kind: 'coordinate-curve',
+        independent: 'X',
+        outputs: {
+          Y: {
+            format: 'pointercad-math/1',
+            source: 'X^2/10+1',
+            inputNotation: 'text',
+            angleUnit: 'degree',
+            expression: {
+              kind: 'operation',
+              operation: 'add',
+              operands: [
+                {
+                  kind: 'operation',
+                  operation: 'divide',
+                  operands: [
+                    {
+                      kind: 'operation',
+                      operation: 'power',
+                      operands: [
+                        {
+                          kind: 'symbol',
+                          reference: {
+                            role: 'axis',
+                            name: 'X',
+                          },
+                        },
+                        {
+                          kind: 'number',
+                          decimal: '2',
+                        },
+                      ],
+                    },
+                    {
+                      kind: 'number',
+                      decimal: '10',
+                    },
+                  ],
+                },
+                {
+                  kind: 'number',
+                  decimal: '1',
+                },
+              ],
+            },
+          },
+          Z: {
+            format: 'pointercad-math/1',
+            source: '0',
+            inputNotation: 'text',
+            angleUnit: 'degree',
+            expression: {
+              kind: 'number',
+              decimal: '0',
+            },
+          },
+        },
+      },
+      tolerance: {
+        source: '0.01',
+        value: 0.01,
+        display: '0.01',
+        mathDefinition: {
+          format: 'pointercad-math/1',
+          source: '0.01',
+          inputNotation: 'text',
+          angleUnit: 'degree',
+          expression: {
+            kind: 'number',
+            decimal: '0.01',
+          },
+        },
+      },
+    },
+  };
+  const document = replaceSketch(part, { ...part.sketches[0], features: [...part.sketches[0].features, curve] });
+  useAppStore.getState().applyDocument(document, { undoable: false });
+  useAppStore.getState().setSelection([curve.id, 'line-1', 'face-1', 'extrude-1']);
+  const before = useAppStore.getState();
+  useAppStore.getState().setActiveTool('face');
+  const after = useAppStore.getState();
+  expect(after.selection).toEqual([curve.id, 'line-1']);
+  expect(after.document).toBe(before.document);
+  expect(after.undoStack).toBe(before.undoStack);
+  resetTestStore();
 });

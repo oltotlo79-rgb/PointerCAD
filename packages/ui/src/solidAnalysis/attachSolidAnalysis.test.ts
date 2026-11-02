@@ -8,7 +8,8 @@ import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { t } from '../i18n/t.js';
 import { attachSolidAnalysis } from './attachSolidAnalysis.js';
 import { boundaryMesh, context } from './solidAnalysis.testSupport.js';
-import type { SolidField } from './solidAnalysisSession.js';
+import { solidSavedInput, type SolidField } from './solidAnalysisSession.js';
+import { SOLID_BOUNDARY_AXES, type SolidBoundaryAxis } from './solidBoundaryDraft.js';
 
 type Request = Parameters<FemWorkerPort['postMessage']>[0];
 function port() {
@@ -55,7 +56,7 @@ function install() {
   const attachment = attachSolidAnalysis(kernel, useAppStore, () => { const value = port(); ports.push(value); return value.worker; });
   attachment.captureResolved(document, 7, { errors: [], steps: [{ featureId: 'box', key: 'box:7' }] });
   useAppStore.getState().toggleStrength(); useAppStore.getState().openSolidAnalysis();
-  const pick = (index: number, role: 'fixed' | 'loaded') => {
+  const pick = (index: number, role: 'fixed' | 'loaded' | 'support') => {
     useAppStore.getState().setSelection([subShapeElementId('box', 'face', index)], { kind: 'pick' });
     useAppStore.getState().solidAnalysisRunner?.captureFaces(role);
   };
@@ -67,6 +68,118 @@ function install() {
 const live: ReturnType<typeof install>[] = [];
 beforeEach(() => { resetTestStore(); useAppStore.setState({ solidAnalysisSession: null, solidAnalysisRunner: null }); });
 afterEach(() => { for (const value of live.splice(0)) value.attachment.dispose(); resetTestStore(); });
+
+function enterBoundary(rig: ReturnType<typeof install>, kind: 'supports' | 'gravity' | 'both'): void {
+  const state = useAppStore.getState();
+  if (kind !== 'gravity') {
+    const fixed = state.solidAnalysisSession?.fixedFaces[0];
+    if (!fixed) throw new Error('Missing initial clamp');
+    state.removeSolidFixedFace(fixed);
+    const faces: readonly (readonly [number, SolidBoundaryAxis, string])[] = [[5, 'x', '0.125'], [2, 'y', '-0.25'], [0, 'z', '0.5']];
+    for (const [index, axis, value] of faces) {
+      rig.pick(index, 'support');
+      const row = useAppStore.getState().solidAnalysisSession?.supports?.at(-1);
+      if (!row) throw new Error('Missing captured support');
+      for (const other of SOLID_BOUNDARY_AXES) if (other !== axis) state.editSolidSupport(row.face, other, { fixed: false });
+      state.editSolidSupport(row.face, axis, { displacement: value });
+    }
+  }
+  if (kind !== 'supports') {
+    state.setSolidGravityEnabled(true);
+    state.editSolidGravity('x', '1.25'); state.editSolidGravity('y', '-9.81'); state.editSolidGravity('z', '2.5');
+    state.editSolidGravity('density', '7800'); state.clearSolidLoadedFaces();
+  }
+}
+function currentDefinition() {
+  const state = useAppStore.getState(), session = state.solidAnalysisSession;
+  if (!session) throw new Error('Missing boundary session');
+  return solidSavedInput(session, state.document.id, state.document.parameters);
+}
+describe('authored boundary definitions through the real attachment (input transport, not native solve evidence)', () => {
+  it.each(['supports', 'gravity', 'both'] as const)('keeps %s through save, reopen, Undo/Redo and the public solver request', async kind => {
+    const rig = install(); live.push(rig); enterBoundary(rig, kind);
+    const state = useAppStore.getState();
+    state.saveSolidAnalysis();
+    const first = currentDefinition();
+    expect(useAppStore.getState().document.beamAnalysisInputs?.analyses.find(row => row.kind === 'solid-cad'))
+      .toEqual({ kind: 'solid-cad', definition: first });
+    state.closeSolidAnalysis(); state.openSolidAnalysis(); expect(currentDefinition()).toEqual(first);
+    if (kind === 'gravity') state.editSolidGravity('density', '7900');
+    else {
+      const face = useAppStore.getState().solidAnalysisSession?.supports?.[0].face;
+      if (!face) throw new Error('Missing support');
+      state.editSolidSupport(face, 'x', { displacement: '0.25' });
+    }
+    state.saveSolidAnalysis(); const second = currentDefinition(); expect(second).not.toEqual(first);
+    state.undo(); expect(currentDefinition()).toEqual(first);
+    state.redo(); expect(currentDefinition()).toEqual(second);
+    state.solidAnalysisRunner?.run();
+    await vi.waitFor(() => expect(rig.ports[0]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
+    await rig.ports[0].reply();
+    await vi.waitFor(() => expect(rig.ports[1]?.request()?.kind).toBe('analyze-solid-tet4'));
+    const request = rig.ports[1].request();
+    if (request?.kind !== 'analyze-solid-tet4') throw new Error('Missing solid solver request');
+    expect(request.input.source.documentId).toBe(state.document.id);
+    expect(request.input.units).toBe('N-mm-MPa');
+    if (kind !== 'gravity') expect(request.input.constraints.find(row => row.node === 0))
+      .toEqual({ node: 0, fixed: [true, true, true], prescribedMm: [0.25, -0.25, 0.5] });
+    else expect(request.input.constraints.every(row => row.prescribedMm === undefined)).toBe(true);
+    if (kind !== 'supports') {
+      expect(request.input.gravity).toEqual({ accelerationMps2: [1.25, -9.81, 2.5],
+        densities: [{ materialId: 'material', densityKgM3: kind === 'gravity' ? 7900 : 7800 }] });
+      expect(request.input.surfaceLoads).toEqual([]);
+    } else {
+      expect(request.input.gravity).toBeUndefined();
+      expect(request.input.surfaceLoads.map(row => row.tractionMPa)).toEqual([[0, 0, 2], [0, 0, 2]]);
+    }
+    // No invented native answer: the new physical conditions are inspected at the real public request boundary.
+    expect(useAppStore.getState().solidAnalysisSession?.status).toBe('running');
+    state.cancelSolidAnalysis(); expect(useAppStore.getState().solidAnalysisSession?.result).toBeNull();
+  });
+  it.each(['support', 'gravity'] as const)('rejects a late mesh after a %s edit', async kind => {
+    const rig = install(); live.push(rig); enterBoundary(rig, 'both');
+    const state = useAppStore.getState(); state.solidAnalysisRunner?.run();
+    await vi.waitFor(() => expect(rig.ports[0]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
+    if (kind === 'gravity') state.editSolidGravity('density', '7900');
+    else {
+      const face = state.solidAnalysisSession?.supports?.[0].face;
+      if (!face) throw new Error('Missing support');
+      state.editSolidSupport(face, 'x', { displacement: '0.75' });
+    }
+    await rig.ports[0].reply(); await Promise.resolve();
+    expect(rig.ports).toHaveLength(1);
+    expect(useAppStore.getState().solidAnalysisSession).toMatchObject({ status: 'editing', result: null });
+    expect(rig.attachment.statistics().live).toBe(0);
+  });
+  it.each(['conflict', 'rigid'] as const)('shows the %s refusal from the actual W12 translation without posting a solve', async kind => {
+    const rig = install(); live.push(rig); enterBoundary(rig, 'supports');
+    const state = useAppStore.getState(), rows = state.solidAnalysisSession?.supports;
+    if (!rows || rows.length !== 3) throw new Error('Missing support fixture');
+    if (kind === 'conflict') state.editSolidSupport(rows[1].face, 'x', { fixed: true });
+    else for (const row of rows) {
+      state.editSolidSupport(row.face, 'x', { fixed: true }); state.editSolidSupport(row.face, 'x', { displacement: '0' });
+      state.editSolidSupport(row.face, 'y', { fixed: false }); state.editSolidSupport(row.face, 'z', { fixed: false });
+    }
+    state.solidAnalysisRunner?.run();
+    await vi.waitFor(() => expect(rig.ports[0]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
+    await rig.ports[0].reply();
+    await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.status).toBe('failed'));
+    expect(useAppStore.getState().solidAnalysisSession?.error)
+      .toBe(t(kind === 'conflict' ? 'solidAnalysis.supportConflict' : 'solidAnalysis.supportRigid'));
+    expect(rig.ports).toHaveLength(1); expect(useAppStore.getState().solidAnalysisSession?.result).toBeNull();
+  });
+  it('refuses duplicate or unresolved support faces before a worker can run', () => {
+    const rig = install(); live.push(rig); rig.pick(0, 'support');
+    expect(useAppStore.getState().solidAnalysisSession?.error).toBe(t('solidAnalysis.supportDuplicate'));
+    enterBoundary(rig, 'supports');
+    const state = useAppStore.getState(), session = state.solidAnalysisSession;
+    if (!session?.supports) throw new Error('Missing supports');
+    useAppStore.setState({ solidAnalysisSession: { ...session,
+      supports: session.supports.map((row, index) => index === 0 ? { ...row, face: 'unresolved-native-origin' } : row) } });
+    expect(() => state.solidAnalysisRunner?.validate()).toThrow(t('solidAnalysis.changed'));
+    expect(rig.ports).toHaveLength(0);
+  });
+});
 describe('actual UI attachment and public client, analytic Worker replies (not native execution)', () => {
   it('connects current CAD faces through both public requests to accepted stress, force and reaction', async () => {
     const rig = install(); live.push(rig);

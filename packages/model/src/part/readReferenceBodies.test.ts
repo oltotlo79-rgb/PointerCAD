@@ -18,6 +18,7 @@ import { createSubShapeCache } from './subShapeCache.js';
 import { readReferenceBodies, type ReferenceBodyReads } from './readReferenceBodies.js';
 import { resolvePart } from './resolvePart.js';
 import type { PartDocument } from './types.js';
+import type * as ImportedKernelTypes from '@pointercad/kernel';
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 const bridges: KernelBridge[] = [];
@@ -293,7 +294,7 @@ const nativePreviewTransport = vi.hoisted(() => {
   };
 });
 vi.mock('@pointercad/kernel', async importOriginal => {
-  const actual = await importOriginal<typeof import('@pointercad/kernel')>();
+  const actual = await importOriginal<typeof ImportedKernelTypes>();
   return { ...actual, createKernelWorker: () => nativePreviewTransport.create() };
 });
 const managedPreviewCleanup: (() => void)[] = [];

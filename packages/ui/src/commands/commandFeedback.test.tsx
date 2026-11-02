@@ -16,6 +16,9 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { dispatchCommandKey, executeCommand } from './commandRegistry.js';
 import { validateShortcutAssignments } from './shortcutAssignments.js';
+import type * as ImportedReactTypes from 'react';
+import type * as ImportedJsxRuntimeTypes from 'react/jsx-runtime';
+import type * as ImportedJsxDevRuntimeTypes from 'react/jsx-dev-runtime';
 
 interface ButtonProps {
   readonly 'data-command-id'?: string;
@@ -23,11 +26,11 @@ interface ButtonProps {
 }
 const rendered = vi.hoisted(() => ({ buttons: [] as ButtonProps[] }));
 vi.mock('react', async importOriginal => {
-  const react = await importOriginal<typeof import('react')>();
+  const react = await importOriginal<typeof ImportedReactTypes>();
   return { ...react, useState: vi.fn(react.useState) };
 });
 vi.mock('react/jsx-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxRuntimeTypes>();
   const capture = (factory: typeof runtime.jsx): typeof runtime.jsx => (type, props, key) => {
     if (type === 'button') rendered.buttons.push(props as ButtonProps);
     return factory(type, props, key);
@@ -35,7 +38,7 @@ vi.mock('react/jsx-runtime', async importOriginal => {
   return { ...runtime, jsx: capture(runtime.jsx), jsxs: capture(runtime.jsxs) };
 });
 vi.mock('react/jsx-dev-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-dev-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxDevRuntimeTypes>();
   const jsxDEV: typeof runtime.jsxDEV = (type, props, key, isStatic, source, self) => {
     if (type === 'button') rendered.buttons.push(props as ButtonProps);
     return runtime.jsxDEV(type, props, key, isStatic, source, self);

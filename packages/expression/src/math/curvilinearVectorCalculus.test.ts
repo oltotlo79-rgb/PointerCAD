@@ -12,7 +12,7 @@ import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
 
-type Example = {
+interface Example {
   readonly operation: 'gradient' | 'divergence' | 'curl' | 'laplacian';
   readonly body: string;
   readonly system: 0 | 1 | 2;
@@ -21,7 +21,7 @@ type Example = {
   readonly pointText: string;
   readonly point: readonly [number, number, number];
   readonly angleUnit?: 'degree' | 'radian';
-};
+}
 const cylindrical = { system: 1, pointText: '[2,3,4]', point: [2, 3, 4] } as const;
 const spherical = { system: 2, pointText: '[2,π/2,π/4]', point: [2, Math.PI / 2, Math.PI / 4] } as const;
 const sphericalField = { system: 2, pointText: '[2,π/2,1]', point: [2, Math.PI / 2, 1] } as const;

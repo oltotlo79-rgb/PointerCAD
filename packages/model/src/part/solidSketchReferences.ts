@@ -1,6 +1,8 @@
 /** 立体が参照するスケッチと履歴上の初回使用を集め、投影の解決順序へ渡す。 */
 import type { AxisSpec, PlaneSpec } from '../geometry/planeSpec.js';
 import type { PointReference, SketchDocument } from '../sketch/types.js';
+import { constraintTargets, sketchConstraints } from '../sketch/constraints/types.js';
+import { mapSketchCoordinates } from '../sketch/mapCoordinates.js';
 import { sheetFeatureDependencies } from '../sheetMetal/featureInputs.js';
 import type { PatternPlacement, RuledSection, SolidFeature, SurfaceOperation } from './types.js';
 
@@ -236,4 +238,53 @@ export function firstSketchUseIndexes(
     }
   });
   return first;
+}
+
+/** Elements needed by one profile, including intra-sketch construction and constraints. */
+export function sketchProfileFeatureIds(sketch: SketchDocument, rootId: string): ReadonlySet<string> {
+  const ownerId = (id: string): string => id.split('#')[0];
+  const features = new Map(sketch.features.map((feature) => [feature.id, feature]));
+  const found = new Set<string>();
+  const queue: string[] = [];
+  const add = (id: string): void => {
+    const owner = ownerId(id);
+    if (features.has(owner) && !found.has(owner)) { found.add(owner); queue.push(owner); }
+  };
+  const constraints = sketchConstraints(sketch).map((constraint) => constraintTargets(constraint).map((target) =>
+    ownerId(target.kind === 'point' ? target.pointId : target.kind === 'vertex' ? target.featureId : target.element.featureId)));
+  add(rootId);
+  for (let at = 0; at < queue.length; at += 1) {
+    const id = queue[at], feature = features.get(id);
+    if (feature === undefined) continue;
+    if (feature.kind === 'face') feature.boundary.forEach((item) => add(item.featureId));
+    if (feature.kind === 'copy' || feature.kind === 'offset') feature.source.forEach((item) => add(item.featureId));
+    if (feature.kind === 'copy' && feature.placement.kind === 'mirror' && feature.placement.basis.kind === 'axis') {
+      add(feature.placement.basis.axis.featureId);
+    }
+    let coordinateIndex = 0;
+    mapSketchCoordinates(feature, (input) => {
+      const first = coordinateIndex++ === 0;
+      if (input.mode === 'absolute') return input;
+      const base = input.base;
+      if (base.kind === 'point') add(base.pointId);
+      if (base.kind === 'vertex') add(base.featureId);
+      if (base.kind === 'functionPoint') {
+        if (base.parent.kind === 'curve' && base.parent.sketchId === sketch.id) add(base.parent.featureId);
+        if (base.direction?.sourcePointId !== undefined) add(base.direction.sourcePointId);
+      }
+      // Later line/rectangle/slot/spline coordinates use their own preceding point.
+      // Other previous bases may use any earlier successful non-face feature.
+      const localPrevious = !first && (feature.kind === 'line' || feature.kind === 'rectangle'
+        || feature.kind === 'slot' || feature.kind === 'spline');
+      if (base.kind === 'previous' && !localPrevious) {
+        for (const earlier of sketch.features) {
+          if (earlier.id === id) break;
+          if (earlier.kind !== 'face') add(earlier.id);
+        }
+      }
+      return input;
+    });
+    for (const targets of constraints) if (targets.includes(id)) targets.forEach(add);
+  }
+  return found;
 }

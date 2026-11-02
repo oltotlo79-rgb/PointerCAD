@@ -10,9 +10,16 @@ import { bodyFor, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { captureMeshBodyLayout } from '../store/recomputeSlice.js';
 import { ViewportCanvas } from './ViewportCanvas.js';
+import { createViewportRepairPreview } from './viewportRepairPreview.js';
 import { createViewportLifetime } from './viewportLifetime.js';
 import { createAssemblyLayer, EMPTY_ASSEMBLY_GEOMETRY, type AssemblyGeometryBundle } from './createAssemblyLayer.js';
 import { AssemblyUiBackingLedger, type AssemblyMeshOwnership } from './assemblyMeshAdmission.js';
+import type * as ImportedReactTypes from 'react';
+import type * as ImportedUseAppStoreTypes from '../store/useAppStore.js';
+import type * as ImportedCreateViewportSceneTypes from './createViewportScene.js';
+import type * as ImportedAttachCameraControlsTypes from './attachCameraControls.js';
+import type * as ImportedAttachAssemblyInteractionTypes from './attachAssemblyInteraction.js';
+import type * as ImportedThemeColorsTypes from './themeColors.js';
 
 type Effect = () => void | (() => void);
 type SceneCalls = Record<string, ReturnType<typeof vi.fn>>;
@@ -45,7 +52,7 @@ const fixture = vi.hoisted(() => ({
 }));
 
 vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
+  const actual = await importOriginal<typeof ImportedReactTypes>();
   return { ...actual,
     useCallback: (callback: (...args: never[]) => unknown) => callback,
     useEffect: (effect: Effect) => { fixture.effects.push(effect); },
@@ -58,7 +65,7 @@ vi.mock('react', async (importOriginal) => {
 });
 
 vi.mock('../store/useAppStore.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../store/useAppStore.js')>();
+  const actual = await importOriginal<typeof ImportedUseAppStoreTypes>();
   const store = actual.useAppStore;
   const hook = Object.assign((selector: (state: AppState) => unknown) => selector(store.getState()), {
     getState: store.getState,
@@ -76,7 +83,7 @@ vi.mock('../store/useAppStore.js', async (importOriginal) => {
 });
 
 vi.mock('./createViewportScene.js', async importOriginal => {
-  const { ViewportSceneInitializationFailure } = await importOriginal<typeof import('./createViewportScene.js')>();
+  const { ViewportSceneInitializationFailure } = await importOriginal<typeof ImportedCreateViewportSceneTypes>();
   return { ViewportSceneInitializationFailure,
   createViewportScene: (_canvas: unknown, options?: { readSolidMeshState: () => AppState }) => {
     if (fixture.initializationFailure === 'scene') throw new Error('Scene constructor failure');
@@ -87,11 +94,12 @@ vi.mock('./createViewportScene.js', async importOriginal => {
       throw new ViewportSceneInitializationFailure(new Error('Factory configuration failure'), acquired);
     }
     if (options !== undefined) fixture.stateReaders.push(options.readSolidMeshState);
+    const repair = createViewportRepairPreview({ add: vi.fn(), remove: vi.fn() }, new AssemblyUiBackingLedger(), {}, () => undefined);
     const calls: SceneCalls = {};
     const scene = new Proxy(calls, { get(target, property) {
       if (typeof property !== 'string') return undefined;
       if (property === 'setReferenceRepairPreview') {
-        target[property] ??= vi.fn<ViewportScene['setReferenceRepairPreview']>(() => Promise.resolve());
+        target[property] ??= vi.fn<ViewportScene['setReferenceRepairPreview']>(repair.setReferenceRepairPreview);
         return target[property];
       }
       target[property] ??= vi.fn(() => {
@@ -122,7 +130,7 @@ vi.mock('./createCanvasImageCache.js', () => ({
 }));
 
 vi.mock('./attachCameraControls.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./attachCameraControls.js')>();
+  const actual = await importOriginal<typeof ImportedAttachCameraControlsTypes>();
   return { attachCameraControls: (...args: Parameters<typeof actual.attachCameraControls>) => {
     const [, changed, interactive = () => {}] = args;
     const real = fixture.realAssemblyInput ? actual.attachCameraControls(...args) : undefined;
@@ -136,7 +144,7 @@ vi.mock('./attachCameraControls.js', async importOriginal => {
   } };
 });
 vi.mock('./attachAssemblyInteraction.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./attachAssemblyInteraction.js')>();
+  const actual = await importOriginal<typeof ImportedAttachAssemblyInteractionTypes>();
   return { ...actual, attachAssemblyInteraction: (...args: Parameters<typeof actual.attachAssemblyInteraction>) => {
     const real = fixture.realAssemblyInput ? actual.attachAssemblyInteraction(...args) : undefined;
     const interaction = { detach: vi.fn(() => real?.detach()), cancelDrag: vi.fn(() => real?.cancelDrag()) };
@@ -160,7 +168,7 @@ vi.mock('./attachQuadInput.js', () => ({
   },
 }));
 vi.mock('./themeColors.js', async importOriginal => ({
-  ...await importOriginal<typeof import('./themeColors.js')>(), readThemeColors: () => ({}),
+  ...await importOriginal<typeof ImportedThemeColorsTypes>(), readThemeColors: () => ({}),
 }));
 
 function mount() {
@@ -216,6 +224,25 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); resetTestStore(); });
 
 describe('ViewportCanvas effect の所有と破棄', () => {
+  it('interference progress-only updates do not request a frame for an unchanged display', async () => {
+    const current = mount();
+    try {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      const frame = fixture.frames.at(-1);
+      if (frame === undefined) throw new Error('Initial frame missing');
+      frame.draw(0);
+      const count = fixture.frames.length;
+      useAppStore.setState({ assemblyInterferenceProgress: { requestId: 'progress-only', phase: 'prepare',
+        completedPairs: 0, totalPairs: 499500, completedComponents: 1, totalComponents: 1000 } });
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      expect(fixture.frames).toHaveLength(count);
+      expect(useAppStore.getState().assemblyInterferenceProgress?.completedComponents).toBe(1);
+      useAppStore.setState({ assemblyInterferenceProgress: null, selection: ['changed-selection'] });
+      expect(fixture.frames).toHaveLength(count + 1);
+      expect(current.scene.setBodyHighlight).toHaveBeenLastCalledWith(null, ['changed-selection']);
+    } finally { current.cleanup(); }
+  });
+
   it('offers no stale history meshes while awaiting a new assembly publication, then uses the exact new body map', () => {
     const assembly: ReturnType<typeof createAssemblyDocument> = { ...createAssemblyDocument('first'), components: [{
       id: 'component-1', name: 'part', source: { kind: 'part', partRef: 'part-1' },
@@ -609,6 +636,29 @@ function refreshableAssemblyFixture(
 }
 
 describe('exact published Assembly receipt recovery consumer', () => {
+  it('keeps receipt invalidation checks on interference progress-only notifications', async () => {
+    const source = refreshableAssemblyFixture();
+    source.publish();
+    const current = mount();
+    try {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      const frame = fixture.frames.at(-1);
+      if (frame === undefined) throw new Error('Initial frame missing');
+      frame.draw(0);
+      const count = fixture.frames.length;
+      const progress = { requestId: 'progress-receipt', phase: 'prepare' as const,
+        completedPairs: 0, totalPairs: 499500, completedComponents: 1, totalComponents: 1000 };
+      useAppStore.setState({ assemblyInterferenceProgress: progress });
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      expect(fixture.frames).toHaveLength(count);
+      const receipt = vi.spyOn(source.fresh, 'receiptCurrent').mockReturnValue(false);
+      useAppStore.setState({ assemblyInterferenceProgress: { ...progress, completedComponents: 2 } });
+      expect(receipt).toHaveBeenCalled();
+      expect(fixture.frames).toHaveLength(count + 1);
+      expect(useAppStore.getState().assemblyInterferenceProgress?.completedComponents).toBe(2);
+    } finally { current.cleanup(); }
+  });
+
   it('deduplicates pending Store/draw/save entrances and redraws only the freshly published same bodies', async () => {
     const source = refreshableAssemblyFixture(), current = mount();
     try {

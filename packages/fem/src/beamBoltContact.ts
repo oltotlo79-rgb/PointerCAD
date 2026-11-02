@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamContactInput, BeamContactNumericResult } from './contactModel.js';
 import { translateBeamContact, type OofemContactPlan } from './contactTranslation.js';
@@ -96,7 +97,7 @@ export function translateBeamBoltContact(value: unknown): { input: BeamBoltConta
 }
 export async function beamBoltContactInputSha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(translateBeamBoltContact(value).input));
-  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+  return await sha256Hex(bytes);
 }
 function close(actual: unknown, expected: number): boolean {
   return typeof actual === 'number' && Number.isFinite(actual) && Number.isFinite(expected)
@@ -244,7 +245,7 @@ export function readFrameBoltContact(value: unknown): { readonly input: FrameBol
 }
 export async function frameBoltContactInputSha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(readFrameBoltContact(value).input));
-  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), x => x.toString(16).padStart(2, '0')).join('');
+  return await sha256Hex(bytes);
 }
 function fbVector(v: unknown): Vector3 {
   if (!dense(v) || v.length !== 3 || !v.every(x => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= 1e30)) throw new Error('frame-vector');

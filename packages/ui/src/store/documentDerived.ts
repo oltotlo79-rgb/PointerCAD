@@ -122,6 +122,8 @@ const FACE_BOUNDARY_KINDS: ReadonlySet<SketchFeatureKind> = new Set([
   'slot',
   'ellipse',
   'spline',
+  // 関数曲線も解決後は通常の曲線。面を選ぶ瞬間に境界から落とさない。
+  'functionCurve',
   'offset',
   // P4 タスク20 で複製(ミラー・複写・配列複写)を足した。複製の結果は元と同じ形の
   // 曲線・点なので、面の囲みにもそのまま使える(FR-324)。

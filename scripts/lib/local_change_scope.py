@@ -510,19 +510,22 @@ def operate_light(vr, action: str, root: Path, tools: dict, phase: str, token: s
     if len(key) != 32:
         raise ValueError('Invalid local receipt key')
     reuse_receipt = vr.read_record(receipt_path, key) if action == 'reuse' else None
-    current = vr.capture(root, tools)
+    environment_keys = {}
+    current = vr.capture(root, tools, environment_keys)
     if action == 'start':
         token = secrets.token_hex(24)
-        vr.write_record(running_path, {'kind': LIGHT_KIND, 'state': current, 'token': token, 'base': base}, key)
+        vr.write_record(running_path, {'kind': LIGHT_KIND, 'state': current, 'token': token, 'base': base,
+                                       'environmentKeys': environment_keys}, key)
         return {'ok': True, 'token': token}
     if action == 'finish':
         before = vr.read_record(running_path, key)
         changed = [name for name in current if name != 'outputs' and before['state'].get(name) != current[name]]
         if before.get('kind') != LIGHT_KIND or before['token'] != token or changed:
-            raise ValueError('The light check no longer matches its starting inputs; changed: ' + ', '.join(changed))
+            detail = vr.environment_change_reason(before, environment_keys) if 'environment' in changed else ''
+            raise ValueError('The light check no longer matches its starting inputs; changed: ' + ', '.join(changed) + detail)
         vr.write_record(receipt_path, {'version': LIGHT_VERSION, 'kind': LIGHT_KIND, 'state': current,
                                        'at': time.time(), 'monotonic': time.monotonic(), 'phase': 'prepared',
-                                       'token': token, 'base': before['base']}, key)
+                                       'token': token, 'base': before['base'], 'environmentKeys': environment_keys}, key)
         running_path.unlink()
         return {'ok': True}
     if action != 'reuse':
@@ -530,7 +533,7 @@ def operate_light(vr, action: str, root: Path, tools: dict, phase: str, token: s
     receipt = vr.read_record(receipt_path, key)
     if receipt != reuse_receipt:
         raise ValueError('Light receipt changed during input scan')
-    if set(receipt) != LIGHT_KEYS or receipt['version'] != LIGHT_VERSION or receipt['kind'] != LIGHT_KIND:
+    if set(vr.receipt_for_comparison(receipt)) != LIGHT_KEYS or receipt['version'] != LIGHT_VERSION or receipt['kind'] != LIGHT_KIND:
         raise ValueError('Unsupported light receipt')
     ancestry = vr.git(root, 'rev-list', '--parents', '-n', '1', 'HEAD').decode().split() if phase == 'Push' else []
     parent = ancestry[1] if len(ancestry) >= 2 else ''
@@ -550,8 +553,9 @@ def operate_light(vr, action: str, root: Path, tools: dict, phase: str, token: s
     if not vr.eligible(shaped, current, phase, parent, time.time(), time.monotonic(), 1):
         before = receipt.get('state', {})
         changed = [name for name in current if name != 'head' and before.get(name) != current[name]]
+        detail = vr.environment_change_reason(receipt, environment_keys) if 'environment' in changed else ''
         raise ValueError('Light receipt is stale or belongs to different inputs or an already used operation; changed: '
-                         + ', '.join(changed))
+                         + ', '.join(changed) + detail)
     if phase == 'Commit':
         receipt['phase'] = 'commit'
         vr.write_record(receipt_path, receipt, key)

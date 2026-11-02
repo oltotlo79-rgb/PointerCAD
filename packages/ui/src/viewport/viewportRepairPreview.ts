@@ -12,6 +12,12 @@ import { ViewportResourceInitializationFailure, type ViewportLifetime } from './
 import type { createViewportMeshObservation, ViewportMeshOwner } from './viewportMeshObservation.js';
 import type { GpuMeshBudget, SolidMeshAdmissionState } from './solidMeshAdmission.js';
 
+// Promise<void> stays compatible with ViewportScene. Only issued updates can suppress a draw.
+const displayUpdates = new WeakMap<Promise<void>, () => boolean>();
+export function referenceRepairPreviewChangesDisplay(update: Promise<void>): boolean {
+  return displayUpdates.get(update)?.() ?? true;
+}
+
 interface RepairPreviewServices {
   readonly readSolidMeshState?: () => SolidMeshAdmissionState;
   readonly gpuMeshBudget?: GpuMeshBudget;
@@ -32,6 +38,7 @@ export function createViewportRepairPreview(
   readDisplayStyle: () => DisplayStyle | undefined,
 ) {
   let disposed = false;
+  let displayRevision = 0;
   let repairPreviewRequest = 0;
   let requestedRepairPreview: ReferenceRepairPreview | null = null;
   let repairPreviewPending: Promise<void> | null = null;
@@ -98,7 +105,10 @@ export function createViewportRepairPreview(
     if (!resource.retiring) observeRepairPreview(resource.observedOwner, resource.published ? 'release-start' : 'candidate-return-start',
       disposed ? 'disposed' : resource.published ? 'superseded' : 'rejected', resource.cpuBytes, resource.gpuBytes);
     resource.retiring = true;
-    if (resource.layer !== null) resource.layer.group.visible = false;
+    if (resource.layer !== null && resource.layer.group.visible) {
+      resource.layer.group.visible = false;
+      displayRevision++;
+    }
     try {
       if (resource.layer !== null) resource.layer.dispose();
       if (resource.cleanup !== null) {
@@ -171,6 +181,13 @@ export function createViewportRepairPreview(
   }
 
   function setReferenceRepairPreview(descriptor: ReferenceRepairPreview | null): Promise<void> {
+    const before = displayRevision;
+    const update = updateReferenceRepairPreview(descriptor);
+    if (!displayUpdates.has(update)) displayUpdates.set(update, () => displayRevision !== before);
+    return update;
+  }
+
+  function updateReferenceRepairPreview(descriptor: ReferenceRepairPreview | null): Promise<void> {
     if (disposed) return Promise.resolve();
     if (descriptor !== requestedRepairPreview) {
       requestedRepairPreview = descriptor; repairPreviewRequest++;
@@ -259,6 +276,7 @@ export function createViewportRepairPreview(
       if (!alive() || !currentRepairPreviewResource()) { returnRepairPreview(); return; }
       scene.add(candidateLayer.group);
       candidateLayer.group.visible = true;
+      displayRevision++;
       published = true;
       if (repairPreviewResource !== null) repairPreviewResource.published = true;
       observeRepairPreview(observedOwner, 'publish-complete', 'completed', allocatedBytes, bytes);

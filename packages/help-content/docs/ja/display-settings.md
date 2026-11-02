@@ -30,25 +30,54 @@
 
 ## 視点の操作を変える
 
-「{{ui:settings.camera.title}}」では、回転・平行移動・拡大縮小に、それぞれ1つか2つの操作を割り当てられます。各枠でマウスのボタンまたはホイールを選び、Alt・Shift・Ctrl・Metaの組合せを指定します。ホイールは拡大縮小だけに使えます。左ボタンにはAltが必要です。通常の左クリックによる選択や作図と重ならないようにしてください。
+「{{ui:settings.camera.title}}」では、「{{ui:settings.camera.orbit}}」「{{ui:settings.camera.pan}}」「{{ui:settings.camera.zoom}}」のそれぞれに、割当を1つか2つ指定できます。欄は「割当 1」と「割当 2」の2つで、3つ目はありません。各欄で「{{ui:settings.camera.left}}」「{{ui:settings.camera.middle}}」「{{ui:settings.camera.right}}」「{{ui:settings.camera.wheel}}」のどれかを選び、Alt・Shift・Ctrl・「{{ui:settings.camera.meta}}」のチェックで修飾キーの組合せを指定します。使わない欄は「{{ui:settings.camera.none}}」にできますが、各操作に少なくとも1つの割当が必要です。
 
-最初の割当は次のとおりです。
+最初の割当と、他のCADに近づけた割当は次の表のとおりです。「{{ui:settings.camera.presets}}」の4つのボタンを押すと、押したボタンと同じ名前の3行の割当が入力欄に入ります。入れ替わるのは割当だけで、感度と反転は変わりません。「{{ui:settings.camera.preset.pointercad}}」が最初の割当です。
 
-| 操作 | 1つ目 | 2つ目 |
-|---|---|---|
-| 回転 | 中ボタンのドラッグ | Alt＋左ボタンのドラッグ |
-| 平行移動 | 右ボタンのドラッグ | Shift＋中ボタンのドラッグ |
-| 拡大縮小 | ホイール | Ctrl＋ホイール |
+| 画面のボタン | 操作 | 割当 1 | 割当 2 |
+|---|---|---|---|
+| {{ui:settings.camera.preset.pointercad}} | {{ui:settings.camera.orbit}} | {{ui:settings.camera.middle}} | Alt＋{{ui:settings.camera.left}} |
+| {{ui:settings.camera.preset.pointercad}} | {{ui:settings.camera.pan}} | {{ui:settings.camera.right}} | Shift＋{{ui:settings.camera.middle}} |
+| {{ui:settings.camera.preset.pointercad}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | Ctrl＋{{ui:settings.camera.wheel}} |
+| {{ui:settings.camera.preset.solidworks}} | {{ui:settings.camera.orbit}} | {{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.solidworks}} | {{ui:settings.camera.pan}} | Ctrl＋{{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.solidworks}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | Shift＋{{ui:settings.camera.middle}} |
+| {{ui:settings.camera.preset.fusion}} | {{ui:settings.camera.orbit}} | Shift＋{{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.fusion}} | {{ui:settings.camera.pan}} | {{ui:settings.camera.middle}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.fusion}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.onshape}} | {{ui:settings.camera.orbit}} | {{ui:settings.camera.right}} | {{ui:settings.camera.none}} |
+| {{ui:settings.camera.preset.onshape}} | {{ui:settings.camera.pan}} | {{ui:settings.camera.middle}} | Ctrl＋{{ui:settings.camera.right}} |
+| {{ui:settings.camera.preset.onshape}} | {{ui:settings.camera.zoom}} | {{ui:settings.camera.wheel}} | {{ui:settings.camera.none}} |
 
-指定した修飾キーだけを押したときに一致します。たとえばAlt＋左の割当にShiftも押すと一致しません。以前のAlt＋Shift＋左による平行移動は、最初の割当には含まれません。使う場合は平行移動のどちらかの枠をその組合せへ変更してください。割当にない修飾キー付きホイールも視点を拡大縮小しません。同じ組合せの重複、各操作の割当が0個になる設定、範囲外の感度では適用できません。
+他のCADの名前がついた3つの割当は、そのCADの主なマウス操作に近づけたもので、キーボード操作や回転の中心など、そのCADの動きをすべて再現するものではありません。3Dの拡大・縮小は画面の中心を基準に行い、マウスの位置へ寄っていく動きはしません。ボタンで入れた割当は「{{ui:settings.camera.apply}}」を押すまで保存されません。保存されるのは割当で、どのボタンから入れたかは残りません。
 
-ホイールとドラッグによる拡大縮小の感度は別々に0.1～10で指定でき、それぞれ方向も反転できます。回転・平行移動の感度を変える設定ではありません。
+修飾キーは、指定したものだけを押したときに一致します。たとえばAlt＋{{ui:settings.camera.left}}の割当にShiftも押すと一致しません。以前のAlt＋Shift＋{{ui:settings.camera.left}}による平行移動は、最初の割当に含まれません。使う場合は「{{ui:settings.camera.pan}}」のどちらかの欄をその組合せへ変更してください。割当にない修飾キー付きホイールは、視点を拡大・縮小しません。
 
-「{{ui:settings.camera.apply}}」で反映し、「{{ui:settings.camera.cancel}}」で適用前の編集を捨てます。「{{ui:settings.camera.defaults}}」は初期値へ戻す準備なので、続けて適用してください。次に始める視点操作から使われ、進行中のドラッグは開始時の設定を保ちます。4分割表示にも同じ設定を使いますが、平面・正面・右側面の向きは回転しません。右クリックの道具一覧とドラッグの区別は保ちます。
+次の設定は適用できません。理由が画面に表示されます。
 
-適用した操作設定は端末の表示設定へ保存され、部品ファイルには入りません。保存領域が使えない場合も現在の画面には反映されますが、アプリを開き直した後の保持は保証されません。詳しい視点操作は[画面を回す・動かす・拡大する](./viewport.md)を見てください。
+- 同じ入力と修飾キーの組合せを、2か所に割り当てる設定
+- 各操作の割当が0個になる設定
+- Altを含まない「{{ui:settings.camera.left}}」(左ボタンと、ShiftやCtrlを加えた左ボタンは、選択や作図に使います。割り当てるにはAltが必要です)
+- 「{{ui:settings.camera.wheel}}」を「{{ui:settings.camera.orbit}}」や「{{ui:settings.camera.pan}}」に割り当てる設定(ホイールは「{{ui:settings.camera.zoom}}」だけに使えます)
+- 0.1〜10倍の範囲を外れた感度
 
-入力中に別の操作で視点の操作設定が変更された場合、古い入力で上書きせず理由を表示します。「{{ui:settings.camera.cancel}}」で下書きを捨て、最新の設定を確認して入力し直してください。他の設定で選んだ配色などはそのまま保ちます。操作設定の適用や取消は、部品・組立・図面の内容や、それぞれのUndoの履歴を変えません。
+次の操作には対応していません。設定する欄がなく、視点の操作になりません。2つ以上のボタンを組み合わせたドラッグと、画面を指で直接触れて行う操作(タッチ画面)です。「{{ui:settings.camera.meta}}」を含む割当は選べますが、WindowsキーやCommandキーなど、OSが先に受け取るキーはPointerCADへ届かないことがあり、その場合は働きません。キーの割当で使えないキーは[変更できないキー](./shortcuts.md#変更できないキー)を見てください。
+
+拡大・縮小の速さは「{{ui:settings.camera.wheelSensitivity}}」と「{{ui:settings.camera.dragSensitivity}}」で別々に指定でき、「{{ui:settings.camera.invertWheel}}」「{{ui:settings.camera.invertDrag}}」で向きも反転できます。回転・平行移動の速さを変える設定ではありません。タッチパッドの2本指スクロールはホイールと同じ入力として扱い、指を離した後にOSが送り続ける動き(慣性)も止めません。速すぎるときは「{{ui:settings.camera.wheelSensitivity}}」を下げてください。
+
+視点をドラッグしている間にホイールを回しても、拡大・縮小はせず、ドラッグを優先します。マウスのボタンを押している間は、ホイールによる拡大・縮小も働きません。ドラッグは、ボタンを離したとき、押しているボタンの組合せが変わったとき、ウィンドウが別のものに切り替わったときに終わります。始めた後で修飾キーを離しても、始めた操作を続けます。割当は重複できないので、1回の入力で働く視点の操作は1つに決まります。
+
+「{{ui:settings.camera.apply}}」で反映します。「{{ui:settings.camera.defaults}}」は割当・感度・反転を初期値へ戻す準備なので、続けて適用してください。次に始める視点操作から使われ、進行中のドラッグは開始時の設定を保ちます。4分割表示にも同じ設定を使いますが、平面・正面・右側面の向きは回転しません。右クリックの道具一覧とドラッグの区別は保ちます。
+
+操作設定には「元に戻す」がありません。適用や取消は部品・組立・図面の内容にも、それぞれの「元に戻す」の履歴にも入らないので、文書の「元に戻す」は設定を戻さず、直前の文書の編集だけを戻します。適用した設定を戻したいときは、割当を入れ直すか「{{ui:settings.camera.defaults}}」や他のボタンで入れ直して、もう一度「{{ui:settings.camera.apply}}」を押してください。適用していない編集は、「{{ui:settings.camera.cancel}}」を押すか設定を閉じると捨てられます。
+
+適用した操作設定は、使っている端末の表示設定へ保存され、部品ファイルには入りません。保存できなかったとき(保存領域が使えないときなど)はお知らせが出ず、開いている間は適用した設定で操作できますが、アプリを開き直すと前回保存できた設定(保存できたことがなければ初期の割当)に戻ります。保存された視点の操作設定だけが読み取れないときは、視点の操作だけが初期の割当に戻り、配色などほかの設定は保たれます。
+
+入力中に別の操作で視点の操作設定が変更された場合、古い入力で上書きせず理由を表示します。「{{ui:settings.camera.cancel}}」で下書きを捨て、最新の設定を確認して入力し直してください。他の設定で選んだ配色などはそのまま保ちます。
+
+図面を開いているときは、同じ設定の「{{ui:settings.camera.pan}}」と「{{ui:settings.camera.zoom}}」が図面の表示の移動と拡大・縮小に使われます。ホイールではマウスのある位置、ドラッグでは押し始めた位置を中心に拡大・縮小します。紙の上に奥行きはないので、「{{ui:settings.camera.orbit}}」の割当は図面では働きません。表示を動かしても、図面の内容、紙の上の位置、元に戻す履歴、書き出した結果は変わりません。表示の位置と大きさは図面に保存されず、図面を開き直すと最初の状態に戻ります。通常の左ボタンによる選択と、注記・寸法・投影図の移動はこれまでどおりです。
+
+詳しい視点操作は[画面を回す・動かす・拡大する](./viewport.md)を見てください。
 
 ## 道具の初期値を変える
 

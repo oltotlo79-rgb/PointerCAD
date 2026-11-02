@@ -1,8 +1,13 @@
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+import netgenMesherSource from './netgenMesher.py?raw';
 import { describe, expect, it } from 'vitest';
 import { FemClient, type FemWorkerPort } from './client.js';
 import { FEM_PROTOCOL, type FemRequest } from './protocol.js';
 import { decodeTetraMesh, readTetraMeshInput, tetraMeshInputSha256, tetraMeshResultMatches,
-  TETRA_MESH_SCHEMA, PLANAR_TETRA_MESH_SCHEMA, type PlanarTetraMeshInput, type TetraMeshInput } from './tetraMesh.js';
+  readTetraMeshingControls, TETRA_LIMITS, TETRA_MESH_SCHEMA, PLANAR_TETRA_MESH_SCHEMA, type PlanarTetraMeshInput, type TetraMeshInput } from './tetraMesh.js';
 
 const source = { documentId: 'part', revision: 4, featureId: 'solid', bodyKey: 'solid:4' };
 const tetra = (): TetraMeshInput => ({ schema: TETRA_MESH_SCHEMA, source, units: 'mm',
@@ -286,5 +291,125 @@ describe('actual FemClient mesh route ownership', () => {
       await expect(client.meshTetrahedra({})).rejects.toBeInstanceOf(Error);
       expect(created).toBe(2);
     } finally { client.dispose(); }
+  });
+});
+
+// One independent case table drives the actual TypeScript and pure Python decoders.
+const localControls = () => ({ targetSizeMm: 0.75, grading: 0.2, maximumOptimizationPasses: 2,
+  quality: { minimumMeanRatio: 0.2, maximumEdgeRatio: 10 } });
+const localEntry = () => ({ positionMm: [0.25, -0.5, 1.5], targetSizeMm: 0.125 });
+const localCases: { name: string; accepted: boolean; controls: unknown }[] = [
+  { name: 'omitted', accepted: true, controls: localControls() },
+  ...[
+    { name: 'one owned position', value: [localEntry()] },
+    { name: 'upper global size bound', value: [{ ...localEntry(), targetSizeMm: 1e9 }] },
+    { name: 'positive size has no new arbitrary lower bound', value: [{ ...localEntry(), targetSizeMm: Number.MIN_VALUE }] },
+    { name: 'signed position coordinates', value: [{ positionMm: [-10, 0, 10], targetSizeMm: 0.5 }] },
+    { name: 'full existing boundary-point budget', value: Array.from({ length: TETRA_LIMITS.boundaryNodes }, (_, i) =>
+      ({ positionMm: [i, 0, 0], targetSizeMm: 0.25 })) },
+  ].map(({ name, value }) => ({ name, accepted: true, controls: { ...localControls(), localSizeConstraints: value } })),
+  ...[
+    { name: 'explicit undefined', value: undefined }, { name: 'null list', value: null },
+    { name: 'object list', value: {} }, { name: 'empty list', value: [] },
+    { name: 'overflow list', value: Array.from({ length: TETRA_LIMITS.boundaryNodes + 1 }, (_, i) =>
+      ({ positionMm: [i, 0, 0], targetSizeMm: 0.25 })) },
+    { name: 'null entry', value: [null] }, { name: 'array entry', value: [[]] },
+    { name: 'missing position', value: [{ targetSizeMm: 0.25 }] },
+    { name: 'missing size', value: [{ positionMm: [0, 0, 0] }] },
+    { name: 'extra entry key', value: [{ ...localEntry(), executable: true }] },
+    ...[null, {}, [0, 0], [0, 0, 0, 0], [NaN, 0, 0], [Infinity, 0, 0], [-Infinity, 0, 0],
+      ['0', 0, 0], [true, 0, 0]].map((positionMm, i) => ({ name: `invalid position ${i}`,
+      value: [{ ...localEntry(), positionMm }] })),
+    ...[0, -1, 1e9 + 1, NaN, Infinity, -Infinity, null, '0.1', true].map((targetSizeMm, i) =>
+      ({ name: `invalid size ${i}`, value: [{ ...localEntry(), targetSizeMm }] })),
+    { name: 'duplicate position with different size', value: [localEntry(), { ...localEntry(), targetSizeMm: 0.5 }] },
+    { name: 'negative zero is the same geometric position', value: [
+      { positionMm: [0, 0, 0], targetSizeMm: 0.25 }, { positionMm: [-0, 0, 0], targetSizeMm: 0.125 }] },
+  ].map(({ name, value }) => ({ name, accepted: false, controls: { ...localControls(), localSizeConstraints: value } })),
+];
+describe('owned local native size constraints', () => {
+  it.each(localCases)('$name uses the strict independent acceptance case', ({ accepted, controls }) => {
+    if (accepted) expect(readTetraMeshingControls(controls)).toEqual(controls);
+    else expect(() => readTetraMeshingControls(controls)).toThrow('tetra-mesh:');
+  });
+  it('retains exact legacy canonical bytes and digest, and hashes every local coordinate and size', async () => {
+    const legacy = tetra(), global = { ...legacy, meshing: localControls() };
+    for (const input of [legacy, global]) {
+      expect(JSON.stringify(readTetraMeshInput(input))).toBe(JSON.stringify(input));
+      expect(await tetraMeshInputSha256(input)).toBe(createHash('sha256').update(JSON.stringify(input)).digest('hex'));
+    }
+    const controlled = readTetraMeshInput({ ...global, meshing: { ...localControls(), localSizeConstraints: [localEntry()] } });
+    const digest = await tetraMeshInputSha256(controlled);
+    expect(digest).not.toBe(await tetraMeshInputSha256(global));
+    for (const entry of [{ ...localEntry(), targetSizeMm: 0.25 },
+      ...[0, 1, 2].map(axis => ({ ...localEntry(), positionMm: localEntry().positionMm.map((x, i) => i === axis ? x + 0.1 : x) }))]) {
+      expect(await tetraMeshInputSha256({ ...global, meshing: { ...localControls(), localSizeConstraints: [entry] } })).not.toBe(digest);
+    }
+    const result = decodeTetraMesh(raw(controlled, [0, 1, 2, 3]), controlled, digest);
+    expect(tetraMeshResultMatches(result, controlled, digest)).toBe(true);
+    expect(tetraMeshResultMatches(result, global, await tetraMeshInputSha256(global))).toBe(false);
+  });
+  it('owns nested local arrays and refuses sparse or decorated records', async () => {
+    const entry = localEntry(), localSizeConstraints = [entry];
+    const decoded = readTetraMeshInput({ ...tetra(), meshing: { ...localControls(), localSizeConstraints } });
+    const digest = await tetraMeshInputSha256(decoded);
+    entry.positionMm[0] = 99; entry.targetSizeMm = 2; localSizeConstraints.push(localEntry());
+    expect(decoded.meshing?.localSizeConstraints).toEqual([localEntry()]);
+    expect(await tetraMeshInputSha256(decoded)).toBe(digest);
+    const sparse = new Array<unknown>(1), decorated = [localEntry()];
+    Object.defineProperty(decorated, 'extra', { value: 1 });
+    const position = new Array<number>(3); position[0] = 0; position[2] = 0;
+    const symbolic = { ...localEntry(), [Symbol('extra')]: true };
+    for (const entries of [sparse, decorated, [{ ...localEntry(), positionMm: position }], [symbolic]]) {
+      expect(() => readTetraMeshingControls({ ...localControls(), localSizeConstraints: entries })).toThrow('tetra-mesh:');
+    }
+  });
+  it('runs the same cases through the real pure Python reader without loading Netgen', () => {
+    const script = `import json,sys,math
+value=json.load(sys.stdin)
+ns={}
+exec(compile(value['source'],'netgenMesher.py','exec'),ns)
+def decode(v):
+    if type(v) is dict and set(v)=={'nonFiniteForTest'}:
+        return float(v['nonFiniteForTest'])
+    if type(v) is dict:
+        return {k:decode(x) for k,x in v.items()}
+    if type(v) is list:
+        return [decode(x) for x in v]
+    return v
+rows=[]
+for case in value['cases']:
+    data=decode(case['controls'])
+    try:
+        size,grading,passes,minimum,maximum,local=ns['read_meshing_controls'](data)
+        normalized={'targetSizeMm':size,'grading':grading,'maximumOptimizationPasses':passes,'quality':{'minimumMeanRatio':minimum,'maximumEdgeRatio':maximum}}
+        if local is not None:
+            normalized['localSizeConstraints']=local
+            original=json.dumps(normalized,sort_keys=True)
+            data['localSizeConstraints'][0]['positionMm'][0]=123
+            if json.dumps(normalized,sort_keys=True)!=original:
+                raise RuntimeError('Python local data alias')
+        rows.append({'name':case['name'],'accepted':True,'normalized':normalized})
+    except ValueError:
+        rows.append({'name':case['name'],'accepted':False})
+assert 'netgen' not in sys.modules
+print(json.dumps(rows,allow_nan=False))`;
+    // JSON cannot encode NaN/Infinity: transport an explicit token, then restore only in this test process.
+    const input = JSON.stringify({ source: netgenMesherSource, cases: localCases }, (_key, value: unknown) =>
+      value === undefined ? null : typeof value === 'number' && !Number.isFinite(value)
+        ? { nonFiniteForTest: Number.isNaN(value) ? 'nan' : value > 0 ? 'inf' : '-inf' } : value);
+    const result = spawnSync('python', ['-B', '-X', 'utf8', '-c', script], {
+      cwd: fileURLToPath(new URL('./', import.meta.url)), input, encoding: 'utf8',
+      timeout: 60_000, maxBuffer: 2_000_000, windowsHide: true,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },
+    });
+    const detail = `Python pure decoder exit=${String(result.status)} signal=${String(result.signal)}\n`
+      + `${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`;
+    expect(result.error, detail).toBeUndefined(); expect(result.signal, detail).toBeNull();
+    expect(result.status, detail).toBe(0);
+    const rows: unknown = JSON.parse(result.stdout);
+    expect(rows).toEqual(localCases.map(({ name, accepted, controls }) => ({ name, accepted,
+      ...(accepted ? { normalized: readTetraMeshingControls(controls) } : {}) })));
+    console.info(`Pure Python reader: ${localCases.length} shared cases; Netgen not imported.`);
   });
 });

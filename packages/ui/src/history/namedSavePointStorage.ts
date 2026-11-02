@@ -7,7 +7,7 @@ const DB_NAME = 'pointercad-save-points';
 const DB_VERSION = 1;
 const POINTS = 'points', BLOBS = 'blobs', CHUNKS = 'chunks';
 const META_ID = '__meta__';
-type RevisionRecord = { id: typeof META_ID; version: 1; revision: number };
+interface RevisionRecord { id: typeof META_ID; version: 1; revision: number }
 
 function error(reason: ConstructorParameters<typeof SavePointError>[0], message: string): SavePointError {
   return new SavePointError(reason, message);

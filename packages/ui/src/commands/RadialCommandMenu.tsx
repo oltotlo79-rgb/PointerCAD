@@ -51,9 +51,11 @@ export function RadialCommandMenu({ viewport }: { readonly viewport: RefObject<H
       if (surface === next) return;
       control.current?.detach(); control.current = null; surface = next;
       if (next === null) return;
+      const drawingSurface = next.matches('.pcad-drawing-svg');
       control.current = attachRadialMenuGesture(next, {
         owner: documentOwner, blocked,
-        clickOnly: next.matches('.pcad-viewport__canvas'),
+        clickOnly: drawingSurface || next.matches('.pcad-viewport__canvas'),
+        observeDrawingDown: drawingSurface,
         allowSelectionModifiers: () => selectedPointsConnection().ready || selectedPointsFace().ready,
         scale: () => useAppStore.getState().displaySettings.uiScale / 100,
         nativeClickTarget: target => target instanceof Node && menu.current?.contains(target) === true,

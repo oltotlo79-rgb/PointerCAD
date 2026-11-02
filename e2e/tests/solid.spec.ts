@@ -1715,16 +1715,24 @@ test.describe('P3 加工フィーチャー', () => {
     );
     await expect(solidRows(page)).toHaveCount(1);
 
-    // 2) 立体の上面の中央を押す(押し出したもとのスケッチ面より立体の面が優先して当たる、
-    //    タスク30 不具合(c) の修正)。今度は中心の点が無いという理由に変わる。
+    // 2) 面だけでも位置の指定方法を選ぶために入力を開ける。
+    //    既定の「点を選ぶ」のまま確定すると、中心の点が無い理由で作成を断る。
     await clickWorldPoint(page, topFaceCenter(10));
     await openToolMenu(page, '加工');
-    await expect(holeButton).toHaveAttribute('title', '穴: 穴の中心にする点が選ばれていません。');
-    await holeButton.click({ force: true });
+    await expect(holeButton).toBeEnabled();
+    await expect(holeButton).toHaveAttribute('title',
+      '穴: 平面では面と中心の点を、円筒の外面・内面では面だけを選んで穴・ざぐりをあけます。円錐・球・自由曲面、円筒の傾斜穴・皿もみには対応していません');
+    await holeButton.click();
+    await expect(popoverTitle(page)).toHaveText('穴をあける');
+    await expect(popover(page).getByRole('group', { name: '平面での穴の位置の指定' })
+      .getByRole('button', { name: '点を選ぶ', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await commitPopover(page);
     await expect(statusText(page)).toHaveText(
       `${SOLID_ERROR_PREFIX} 穴の中心にする点が選ばれていません。`,
     );
     await expect(solidRows(page)).toHaveCount(1);
+    await expect(popover(page)).toBeVisible();
+    await cancelPopover(page);
 
     // 3) 穴でない立体を選んで「直線パターン」(§0.a-0.20 の「対象は穴とねじ穴だけ」)。
     await page.keyboard.press('4');

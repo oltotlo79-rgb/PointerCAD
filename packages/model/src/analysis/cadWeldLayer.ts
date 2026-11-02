@@ -12,6 +12,7 @@ import type { BeamAnalysisDocument, Vector3 } from './analysisModel.js';
 import { InputIssue } from './analysisValidation.js';
 import { readBeamAnalysisInputs, type StandardBeamContactDefinition } from './beamInputs.js';
 import { readCadWeldLayerInputs } from './weldLayerInput.js';
+import { readCadWeldSpanInputs, type CadWeldSpanSide, type SavedCadWeldInputs } from './weldSpanInput.js';
 import { cadWeldThroatFrame } from './cadWeldThroatFrame.js';
 import { BEAM_CONNECTION_TOLERANCE_MM, standardMembersToBeamAnalysis, type StandardBeamAdapterContext } from './standardBeamAdapter.js';
 
@@ -33,16 +34,51 @@ interface WeldScope {
   readonly solved: ResolvedAssembly;
 }
 
-/** 保存した全直線押出しビードの実のどを、所有する端部断面へ結ぶ。 */
+export interface PreparedCadWeldSpanLayer extends Omit<PreparedCadWeldLayer, 'nodeIdA' | 'nodeIdB'> {
+  readonly first: CadWeldSpanSide; readonly second: CadWeldSpanSide;
+}
+
+/** Legacy endpoint-only entry: no version coercion and no output-shape change. */
 export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue: unknown, value: unknown,
   context: StandardBeamAdapterContext): { readonly geometry: BeamAnalysisDocument;
     readonly contact: StandardBeamContactDefinition; readonly welds: readonly PreparedCadWeldLayer[] } {
-  const saved = readCadWeldLayerInputs(value);
+  const prepared = prepareCadWeldLayersOwned(document, definitionValue, readCadWeldLayerInputs(value), context);
+  return { ...prepared, welds: prepared.welds.map(w => {
+    const { id, first, second, ...geometry } = w;
+    if (first.kind !== 'section-node' || second.kind !== 'section-node') throw new InputIssue('weld-owner', id, 'Original endpoint sections required');
+    return { id, nodeIdA: first.nodeId, nodeIdB: second.nodeId, ...geometry };
+  }) };
+}
+
+/** Explicit saved /2 sides; a span is never represented by an invented endpoint. */
+export function prepareCadWeldSpanLayers(document: AssemblyDocument, definitionValue: unknown, value: unknown,
+  context: StandardBeamAdapterContext): { readonly geometry: BeamAnalysisDocument;
+    readonly contact: StandardBeamContactDefinition; readonly welds: readonly PreparedCadWeldSpanLayer[] } {
+  return prepareCadWeldLayersOwned(document, definitionValue, readCadWeldSpanInputs(value), context);
+}
+
+function prepareCadWeldLayersOwned(document: AssemblyDocument, definitionValue: unknown, saved: SavedCadWeldInputs,
+  context: StandardBeamAdapterContext): { readonly geometry: BeamAnalysisDocument;
+    readonly contact: StandardBeamContactDefinition; readonly welds: readonly PreparedCadWeldSpanLayer[] } {
+  const spanRoute = saved.schema === 'pointercad-cad-weld-layers/2';
+  if (spanRoute && definitionValue !== null && typeof definitionValue === 'object'
+    && (Object.hasOwn(definitionValue, 'axialBolts') || Object.hasOwn(definitionValue, 'initialStrain'))) {
+    throw new InputIssue('weld-span-unsupported', '$', 'Span solver does not support bolt or initial-strain combinations');
+  }
+  type SavedSide = SavedCadWeldInputs['welds'][number]['first'];
+  const explicitSide = (side: SavedSide): CadWeldSpanSide => 'kind' in side ? side : { kind: 'section-node', ...side };
+  const sideKey = (side: SavedSide): string => {
+    const s = explicitSide(side);
+    return JSON.stringify(s.kind === 'section-node' ? [s.kind, s.memberId, s.nodeId] : [s.kind, s.memberId]);
+  };
   const read = readBeamAnalysisInputs({ schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'standard-members', definition: definitionValue }] }, document.id);
   if (!read.ok) throw new InputIssue(read.issue.code, read.issue.path, read.issue.message);
   const item = read.value.analyses[0];
   if (item?.kind !== 'standard-members' || item.definition.schema !== 'pointercad-standard-beam/5') throw new InputIssue('weld-contact', '$', 'Current CAD contact definition required');
   const definition = item.definition;
+  if (!spanRoute && definition.weldLayers?.schema === 'pointercad-cad-weld-layers/2') throw new InputIssue('weld-span-unsupported', 'weldLayers', 'Span weld requires its own solver route');
+  if (spanRoute && definition.weldLayers !== undefined && (definition.weldLayers.schema !== 'pointercad-cad-weld-layers/2'
+    || JSON.stringify(definition.weldLayers) !== JSON.stringify(saved))) throw new InputIssue('weld-association', 'weldLayers', 'Saved span input must match the current definition');
   const checked = standardMembersToBeamAnalysis(document, { schema: 'pointercad-standard-beam/2',
     modal: { modeCount: 1, segmentsPerMember: definition.contact.segmentsPerMember },
     id: definition.id, revision: definition.revision, source: definition.source, units: definition.units,
@@ -86,11 +122,13 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
     const matches = geometry.members.filter(m => m.id === memberId);
     return matches.length === 1 && matches[0] !== undefined ? matches[0].occurrencePath : null;
   };
-  const endpoint = (memberId: string, nodeId: string) => {
+  const endpoint = (side: SavedSide) => {
+    const ownedSide = explicitSide(side), memberId = ownedSide.memberId;
+    const nodeId = ownedSide.kind === 'section-node' ? ownedSide.nodeId : undefined;
     const matches = geometry.members.filter(m => m.id === memberId), m = matches[0];
     if (matches.length !== 1 || m === undefined || m.occurrencePath.length < 1
       || m.occurrencePath[m.occurrencePath.length - 1] !== m.componentId
-      || ![m.startNodeId, m.endNodeId].includes(nodeId) || m.cadSource === undefined) throw new InputIssue('weld-owner', memberId, 'Owned original member endpoint required');
+      || (nodeId !== undefined && ![m.startNodeId, m.endNodeId].includes(nodeId)) || m.cadSource === undefined) throw new InputIssue('weld-owner', memberId, 'Owned original member endpoint required');
     // Nested leaf: path, ancestors, suppression and solved part key were validated by standardMembersToBeamAnalysis and
     // its node positions are solved WORLD positions (no second parent composition). Owner = exact leaf path.
     const nestedPath = m.occurrencePath.length > 1 ? m.occurrencePath : null;
@@ -98,12 +136,13 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
     if (owner !== null && (m.cadSource.expectedPartKey !== partKeyOf(owner.source)
       || solved.resolved.partKeys.get(owner.id) !== m.cadSource.expectedPartKey)) throw new InputIssue('stale-source', memberId, 'Member source changed');
     const a = geometry.nodes.find(n => n.id === m.startNodeId), b = geometry.nodes.find(n => n.id === m.endNodeId);
-    if (a === undefined || b === undefined) throw new InputIssue('weld-endpoint', nodeId, 'Missing endpoint');
+    if (a === undefined || b === undefined) throw new InputIssue('weld-endpoint', nodeId ?? memberId, 'Missing endpoint');
     const span: Vector3 = [b.position[0]-a.position[0], b.position[1]-a.position[1], b.position[2]-a.position[2]];
     const length = Math.hypot(...span);
-    if (!(length > BEAM_CONNECTION_TOLERANCE_MM)) throw new InputIssue('weld-endpoint', nodeId, 'Degenerate member');
+    if (!(length > BEAM_CONNECTION_TOLERANCE_MM)) throw new InputIssue('weld-endpoint', nodeId ?? memberId, 'Degenerate member');
     return { owner: owner === null ? JSON.stringify(nestedPath) : owner.id, path: nestedPath,
-      point: nodeId === a.id ? a.position : b.position,
+      kind: ownedSide.kind, length,
+      point: ownedSide.kind === 'member-span' || nodeId === a.id ? a.position : b.position,
       axis: [span[0]/length, span[1]/length, span[2]/length] as Vector3 };
   };
   /** A child-owned group: both endpoint members are leaves of the SAME occurrence prefix. */
@@ -123,7 +162,7 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
   const verifiedGroups = new Set<string>();
   const pairGroups = new Map<string, string>();
   const welds = saved.welds.map(weld => {
-    const first = endpoint(weld.first.memberId, weld.first.nodeId), second = endpoint(weld.second.memberId, weld.second.nodeId);
+    const first = endpoint(weld.first), second = endpoint(weld.second);
     const childPrefix = sharedPrefix(first.path, second.path);
     const scope = childPrefix === null ? rootScope : childScope(childPrefix, weld.id);
     const bead = component(scope, weld.beadComponentId), source = bead.source;
@@ -156,7 +195,8 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
         throw new InputIssue('weld-association', weld.id, 'Nested weld endpoints require exactly one saved weld connection on the selected leaf paths in order');
       }
     }
-    const pair = JSON.stringify([weld.first.nodeId, weld.second.nodeId].sort());
+    const pair = JSON.stringify(spanRoute ? [sideKey(weld.first), sideKey(weld.second)].sort()
+      : [explicitSide(weld.first), explicitSide(weld.second)].map(s => s.kind === 'section-node' ? s.nodeId : '').sort());
     const groupKey = JSON.stringify([scope.key, options.weldId]);
     const previousGroup = pairGroups.get(pair);
     if (previousGroup !== undefined && previousGroup !== groupKey) {
@@ -176,8 +216,8 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
           || memberLegs.legOnFirst !== legs.legOnFirst || memberLegs.legOnSecond !== legs.legOnSecond
           || memberOptions.interiorAngleDegrees !== options.interiorAngleDegrees
           || memberOptions.cylindricalRadius !== options.cylindricalRadius || memberOptions.cylindricalSide !== options.cylindricalSide
-          || association.first.memberId !== weld.first.memberId || association.first.nodeId !== weld.first.nodeId
-          || association.second.memberId !== weld.second.memberId || association.second.nodeId !== weld.second.nodeId
+          || sideKey(association.first) !== sideKey(weld.first)
+          || sideKey(association.second) !== sideKey(weld.second)
           || association.effectiveThroatMm !== weld.effectiveThroatMm
           || association.complianceLengthMm !== weld.complianceLengthMm
           || association.youngMPa !== weld.youngMPa || association.poisson !== weld.poisson) {
@@ -214,7 +254,8 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
     const rootStart = applyPlacementToPoint(pose, [0, 0, 0]), rootEnd = applyPlacementToPoint(pose, [0, 0, options.length]);
     for (const end of [first, second]) for (const root of [rootStart, rootEnd]) {
       const axial = end.axis.reduce((sum, v, i) => sum + v*(root[i]-end.point[i]), 0);
-      if (Math.abs(axial) > BEAM_CONNECTION_TOLERANCE_MM) throw new InputIssue('weld-section', weld.id, 'Weld root must lie at the selected member endpoint section, not a remote span');
+      if (end.kind === 'section-node' && Math.abs(axial) > BEAM_CONNECTION_TOLERANCE_MM) throw new InputIssue('weld-section', weld.id, 'Weld root must lie at the selected member endpoint section, not a remote span');
+      if (end.kind === 'member-span' && (axial < -BEAM_CONNECTION_TOLERANCE_MM || axial > end.length + BEAM_CONNECTION_TOLERANCE_MM)) throw new InputIssue('weld-span', weld.id, 'Both bead ends must lie inside the owned finite member span');
     }
     if (options.interiorAngleDegrees !== undefined || options.cylindricalRadius !== undefined) {
       const frame = cadWeldThroatFrame(legs.legOnSecond, legs.legOnFirst, options);
@@ -223,7 +264,7 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
       }
       const [dx, dy] = frame.direction;
       const c = applyPlacementToPoint(pose, [dx*weld.effectiveThroatMm/2, dy*weld.effectiveThroatMm/2, options.length/2]);
-      return { id: weld.id, nodeIdA: weld.first.nodeId, nodeIdB: weld.second.nodeId,
+      return { id: weld.id, first: explicitSide(weld.first), second: explicitSide(weld.second),
         centerM: [c[0]/1000, c[1]/1000, c[2]/1000] as Vector3,
         normal: applyPlacementToDirection(pose, [dy, -dx, 0]), along: applyPlacementToDirection(pose, [0, 0, 1]),
         widthM: options.length/1000, lengthM: weld.effectiveThroatMm/1000, thicknessM: weld.complianceLengthMm/1000,
@@ -232,7 +273,7 @@ export function prepareCadWeldLayers(document: AssemblyDocument, definitionValue
     const a = legs.legOnSecond, b = legs.legOnFirst, hypotenuse = Math.hypot(a, b), throat = a*b/hypotenuse;
     if (weld.effectiveThroatMm > throat) throw new InputIssue('weld-throat', weld.id, 'Effective throat exceeds actual triangular altitude');
     const c = applyPlacementToPoint(pose, [b/hypotenuse*weld.effectiveThroatMm/2, a/hypotenuse*weld.effectiveThroatMm/2, options.length/2]);
-    return { id: weld.id, nodeIdA: weld.first.nodeId, nodeIdB: weld.second.nodeId,
+    return { id: weld.id, first: explicitSide(weld.first), second: explicitSide(weld.second),
       centerM: [c[0]/1000, c[1]/1000, c[2]/1000] as Vector3,
       normal: applyPlacementToDirection(pose, [a/hypotenuse, -b/hypotenuse, 0]), along: applyPlacementToDirection(pose, [0, 0, 1]),
       widthM: options.length/1000, lengthM: weld.effectiveThroatMm/1000, thicknessM: weld.complianceLengthMm/1000,

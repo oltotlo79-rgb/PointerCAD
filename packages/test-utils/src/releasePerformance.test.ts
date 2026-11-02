@@ -190,3 +190,21 @@ describe('1000部品の根拠なし速度境界と機能条件を分離する', 
     expect(() => reportDuration(Number.NaN, 2000, '未完の干渉', 'interference')).toThrow('不正');
   });
 });
+
+describe('曲面返信の複合窓は既存の参考時間観測へ渡す', () => {
+  it('120.5381msの未達と元100msを保持し、別の数値境界で合格を作らない', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    expect(observeDuration(120.53810000000158, 100, 'surface whole window')).toEqual({
+      label: 'surface whole window', actualMs: 120.53810000000158, referenceTargetMs: 100,
+      meetsTarget: false, decisionUse: 'observation',
+    });
+    expect(log).toHaveBeenCalledOnce();
+  });
+
+  it.each([undefined, null, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1])(
+    '欠測または不正な複合窓の実測%sを成功として記録しない', actual => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      expect(() => { Reflect.apply(observeDuration, undefined, [actual, 100, 'surface whole window']); }).toThrow('不正');
+      expect(log).not.toHaveBeenCalled();
+    });
+});

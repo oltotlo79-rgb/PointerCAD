@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest';
 import { createAllocations, createKernelApi, functionCurvePolylines, makePlanarFace, measureArea, makeSplineEdge } from '@pointercad/kernel';
 import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { borrowHandle } from '../../../kernel/src/occt/borrowHandle.js';
+import '../../../kernel/src/occt/borrowHandle.js';
+import type { borrowHandle } from '../../../kernel/src/occt/borrowHandle.js';
 import { createDirectKernelBridge, toCurveSpec, fromCurveSpec } from '../kernelBridge.js';
 import { keyCurveList } from '../part/cacheKey.js';
 import { mirrorTransform, transformCurve } from '../sketch/copyMath.js';

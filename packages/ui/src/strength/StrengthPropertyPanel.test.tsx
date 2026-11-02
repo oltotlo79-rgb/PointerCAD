@@ -9,12 +9,13 @@ import { useAppStore } from '../store/useAppStore.js';
 import { attachBeamAnalysis, type BeamAttachment } from '../beam/attachBeamAnalysis.js';
 import { StrengthPropertyPanel } from './StrengthPropertyPanel.js';
 import { BoltPreloadPanel } from '../beam/BoltPreloadPanel.js';
+import type * as ImportedReactTypes from 'react';
 
 interface Control { readonly children?: ReactNode; readonly 'data-testid'?: string; readonly 'data-preload-open'?: string; readonly onClick?: () => void }
 const captured = { buttons: [] as ReactElement<Control>[] };
 const lifecycle = vi.hoisted(() => ({ pending: [] as { readonly callback: EffectCallback; readonly deps: DependencyList | undefined }[] }));
 vi.mock('react', async importOriginal => {
-  const actual = await importOriginal<typeof import('react')>();
+  const actual = await importOriginal<typeof ImportedReactTypes>();
   return { ...actual, useEffect: (callback: EffectCallback, deps?: DependencyList) => { lifecycle.pending.push({ callback, deps }); } };
 });
 function walk(node: ReactNode): void {

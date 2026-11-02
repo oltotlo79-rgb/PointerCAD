@@ -19,8 +19,8 @@ import { t } from '../i18n/t.js';
  * reply, not from a hand-written node, so the display is checked on what the runtime actually returns.
  */
 const script = fileURLToPath(new URL('../../../expression/src/math/exactRuntime/cas_integrals_test.py', import.meta.url));
-type Pending = { readonly input: { readonly expression: MathNode; readonly angleUnit: 'degree' | 'radian' };
-  readonly resolve: (value: unknown) => void; readonly reject: (reason: Error) => void };
+interface Pending { readonly input: { readonly expression: MathNode; readonly angleUnit: 'degree' | 'radian' };
+  readonly resolve: (value: unknown) => void; readonly reject: (reason: Error) => void }
 /** Like the product engine, one prepared runtime serves every request made in the same turn. */
 function batchEngine(): { readonly evaluate: (expression: MathNode, angleUnit: 'degree' | 'radian') => Promise<unknown> } {
   let pending: Pending[] = [];

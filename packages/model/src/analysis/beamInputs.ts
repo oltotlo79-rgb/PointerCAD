@@ -9,7 +9,7 @@ import {
   readBeamModalSettings, readBeamSections, revision, text, unique, vector,
 } from './analysisValidation.js';
 import { readCadAxialBoltInputs, type CadAxialBoltInputs } from './axialBoltInput.js';
-import { readCadWeldLayerInputs, type CadWeldLayerInputs } from './weldLayerInput.js';
+import { readSavedCadWeldInputs, type SavedCadWeldInputs } from './weldSpanInput.js';
 import { readCadJointInitialStrain, type CadJointInitialStrain } from './jointInitialStrainInput.js';
 import { readBeamTransientHistory, type BeamTransientHistory } from './beamTransientHistory.js';
 import { readPlasticBarSavedInput, type PlasticBarSavedInput } from './plasticBarInput.js';
@@ -17,12 +17,14 @@ import { readFatigueSavedInput, type FatigueSavedInput } from './fatigueInput.js
 import { readFatigueTensorSavedInput, type FatigueTensorSavedInput } from './fatigueTensorInput.js';
 import { readFatigueSolidSavedInput, type FatigueSolidSavedInput } from './fatigueSolidInput.js';
 import { readFatiguePiecewiseSavedInput, type FatiguePiecewiseSavedInput } from './fatiguePiecewiseInput.js';
+import { readFatigueDetailSavedInput, type FatigueDetailSavedInput } from './fatigueDetailInput.js';
 import { readFatigueStrainSavedConfiguration, type FatigueStrainSavedConfiguration } from './fatigueStrainInput.js';
 import { readFatigueLocalCycleSavedInput, type FatigueLocalCycleSavedInput } from './fatigueLocalCycleInput.js';
 import { readSolidCadSavedInput, type SolidCadSavedInput } from './solidCadInput.js';
 import { readSolidPlasticCadSavedInput, type SolidPlasticCadSavedInput } from './solidPlasticCadInput.js';
 import { readSolidModalCadSavedInput, type SolidModalCadSavedInput } from './solidModalCadInput.js';
 import { readSolidBucklingCadSavedInput, type SolidBucklingCadSavedInput } from './solidBucklingCadInput.js';
+import { readShellCadInput, type ShellCadSavedInput } from './shellCadInput.js';
 import { readStandardBeamImpactSettings, type StandardBeamImpactSettings } from './beamImpactInput.js';
 
 export type { StandardBeamFibreOutline, StandardBeamFibreSection, StandardBeamImpactPlane, StandardBeamImpactSettings,
@@ -106,7 +108,7 @@ export interface StandardBeamContactDefinition
   /** Optional explicit bilateral axial shanks; absence preserves the contact-only model. */
   readonly axialBolts?: CadAxialBoltInputs;
   /** Effective elastic throat layers; both present requires the simultaneous joint-contact execution route. */
-  readonly weldLayers?: CadWeldLayerInputs;
+  readonly weldLayers?: SavedCadWeldInputs;
   /** Explicit stress-free shank shortening; only the simultaneous joint route consumes this input. */
   readonly initialStrain?: CadJointInitialStrain;
   readonly contact: {
@@ -124,14 +126,31 @@ export interface StandardBeamImpactDefinition
   readonly impact: StandardBeamImpactSettings;
 }
 
+/** Saved frictional contact inputs (schema 7): the explicit six-DOF supports, mesh refinement and the schema 5 contact
+ * rows, an explicit Coulomb coefficient for exactly every contact, the complete nodal loads of each step (solved in
+ * order; all-zero unloading steps are kept) and the explicit solver choice. Bolts, welds, initial strain, results and
+ * world geometry are never stored; physical checks and convergence belong to the solver, not to this reader. */
+export interface StandardBeamFrictionDefinition
+  extends Omit<StandardBeamBucklingDefinition, 'schema' | 'buckling' | 'referenceLoads'> {
+  readonly schema: 'pointercad-standard-beam/7';
+  readonly contact: { readonly segmentsPerMember: number; readonly contacts: readonly StandardBeamContactInput[] };
+  /** Coulomb coefficient mu >= 0 keyed by contact id; the keys are exactly the contact ids. */
+  readonly friction: Readonly<Record<string, number>>;
+  /** Total (not incremental) loads per step; every step lists the same load ids on the same nodes in the same order. */
+  readonly stepLoads: readonly (readonly BeamNodalLoad[])[];
+  readonly solverOptions: { readonly solver: 'newton' | 'nsgs'; readonly iterationLimit: number };
+}
+
 /** Same bounds as the contact solver input: 64 contacts, 32 factors, gap up to 1000 m, |factor| up to 1e6. */
 const STANDARD_BEAM_MAX_CONTACTS = 64;
 const STANDARD_BEAM_MAX_CONTACT_FACTORS = 32;
 const STANDARD_BEAM_MAX_CONTACT_GAP_MM = 1e6;
 const MAX_CONTACT_FACTOR = 1e6;
+const STANDARD_BEAM_MAX_FRICTION_STEPS = 32;
 
 export type StandardBeamAnyDefinition = StandardBeamDefinition | StandardBeamBucklingDefinition
-  | StandardBeamTransientDefinition | StandardBeamContactDefinition | StandardBeamImpactDefinition;
+  | StandardBeamTransientDefinition | StandardBeamContactDefinition | StandardBeamImpactDefinition
+  | StandardBeamFrictionDefinition;
 
 export type BeamAnalysisInput =
   | { readonly kind: 'native-bolt-preload'; readonly definition: CadNativeBoltPreloadSavedInput }
@@ -148,6 +167,7 @@ export type BeamAnalysisInput =
   /** Saved piecewise S-N fatigue input (version 5): the same single fatigue configuration with a sourced multi-slope
    * user calibration; never a result. */
   | { readonly kind: 'fatigue-piecewise'; readonly definition: FatiguePiecewiseSavedInput }
+  | { readonly kind: 'fatigue-detail'; readonly definition: FatigueDetailSavedInput }
   /** Saved strain-life fatigue inputs (at most one per document): user coefficients and local total strains; never a result. */
   | { readonly kind: 'fatigue-strain-life'; readonly definition: FatigueStrainSavedConfiguration }
   /** Saved Morrow/SWT local-cycle fatigue input (at most one per document): user coefficients and one local cycle; never a result. */
@@ -156,6 +176,8 @@ export type BeamAnalysisInput =
   | { readonly kind: 'solid-plastic-cad'; readonly definition: SolidPlasticCadSavedInput }
   /** Saved free-vibration input (at most one per document); never a mode, a shape or a display choice. */
   | { readonly kind: 'solid-modal-cad'; readonly definition: SolidModalCadSavedInput }
+  /** Saved thin-sheet shell idealization (at most one per document): midsurface faces, thickness, offset; never a mesh. */
+  | { readonly kind: 'shell-cad'; readonly definition: ShellCadSavedInput }
   /** Saved linear prestress buckling input (at most one per document): count and static reference; never a factor. */
   | { readonly kind: 'solid-buckling-cad'; readonly definition: SolidBucklingCadSavedInput };
 
@@ -409,7 +431,7 @@ function readContactDefinition(value: unknown, path: string): StandardBeamContac
       }
     }
   }
-  const weldLayers = hasWelds ? readCadWeldLayerInputs(row.weldLayers) : undefined;
+  const weldLayers = hasWelds ? readSavedCadWeldInputs(row.weldLayers) : undefined;
   if (weldLayers !== undefined) {
     if (weldLayers.analysisId !== structure.id || weldLayers.analysisRevision !== structure.revision
       || weldLayers.source.documentId !== structure.source.documentId
@@ -419,7 +441,7 @@ function readContactDefinition(value: unknown, path: string): StandardBeamContac
     }
     for (const weld of weldLayers.welds) for (const end of [weld.first, weld.second]) {
       const member = structure.members.find(candidate => candidate.id === end.memberId);
-      if (member === undefined || ![member.startNodeId, member.endNodeId].includes(end.nodeId)) {
+      if (member === undefined || (('nodeId' in end) && ![member.startNodeId, member.endNodeId].includes(end.nodeId))) {
         throw new InputIssue('weld-owner', `${path}.weldLayers`, 'Weld endpoint does not belong to the declared member');
       }
     }
@@ -469,6 +491,129 @@ function readImpactDefinition(value: unknown, path: string): StandardBeamImpactD
   };
 }
 
+/** Schema 7 is plain JSON data: descriptors are inspected before any value is read, so accessors, symbol or hidden
+ * keys, other prototypes and sparse lists can neither run nor be normalized away by a save. */
+function frictionData(value: unknown, path: string, depth = 0): void {
+  if (depth > 64) throw new InputIssue('friction-data', path, 'Input is too deeply nested');
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return;
+  if (typeof value !== 'object') throw new InputIssue('friction-data', path, 'Expected JSON data');
+  const keys = Reflect.ownKeys(value);
+  let names: readonly (string | symbol)[] = keys;
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype || value.length > 4096 || keys.length !== value.length + 1) {
+      throw new InputIssue('friction-data', path, 'Expected a bounded plain list without holes or extra properties');
+    }
+    names = Array.from({ length: value.length }, (_, index) => String(index));
+  } else if (Object.getPrototypeOf(value) !== Object.prototype) {
+    throw new InputIssue('friction-data', path, 'Expected a plain object');
+  }
+  for (const key of names) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (typeof key !== 'string' || descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
+      throw new InputIssue('friction-data', path, 'Expected own enumerable data fields');
+    }
+    frictionData(descriptor.value, Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`, depth + 1);
+  }
+}
+
+function readFrictionCoefficients(value: unknown, path: string, contacts: readonly StandardBeamContactInput[]): Record<string, number> {
+  const ids = new Set(contacts.map(contact => contact.id));
+  const keys = value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : null;
+  if (keys === null || keys.length !== ids.size || keys.some(key => !ids.has(key))) {
+    throw new InputIssue('friction-map', path, 'Expected exactly one coefficient for every contact id');
+  }
+  const row = fields(value, keys, path);
+  return Object.fromEntries(keys.map(key => {
+    const mu = number(row[key], `${path}.${key}`);
+    if (mu < 0) throw new InputIssue('friction-coefficient', `${path}.${key}`, 'Expected a friction coefficient of at least 0');
+    return [key, mu];
+  }));
+}
+
+function readFrictionSteps(value: unknown, path: string, nodeIds: ReadonlySet<string>): BeamNodalLoad[][] {
+  const steps = list(value, path, STANDARD_BEAM_MAX_FRICTION_STEPS, (item, itemPath) => {
+    let loads: BeamNodalLoad[];
+    try {
+      loads = readBeamLoads(item);
+    } catch (error) {
+      // readBeamLoads reports from a fixed 'loads' root; keep the step index in the issue path.
+      if (error instanceof InputIssue) throw new InputIssue(error.code, `${itemPath}${error.path.slice('loads'.length)}`, error.message);
+      throw error;
+    }
+    if (loads.length === 0) throw new InputIssue('friction-steps', itemPath, 'Every step lists its complete loads');
+    unique(loads, itemPath);
+    for (const load of loads) {
+      if (!nodeIds.has(load.nodeId)) throw new InputIssue('friction-load-node', itemPath, 'Step load node is absent');
+    }
+    return loads;
+  });
+  if (steps.length === 0) throw new InputIssue('friction-steps', path, 'Expected 1 to 32 load steps');
+  const first = steps[0];
+  steps.forEach((loads, index) => {
+    if (loads.length !== first.length || loads.some((load, row) => load.id !== first[row].id || load.nodeId !== first[row].nodeId)) {
+      throw new InputIssue('friction-steps', `${path}[${index}]`, 'Every step lists the same loads on the same nodes in the same order');
+    }
+  });
+  if (steps.every(loads => loads.every(load => [...load.force, ...load.moment].every(component => component === 0)))) {
+    throw new InputIssue('friction-steps', path, 'At least one step needs a nonzero load');
+  }
+  return steps;
+}
+
+function readFrictionSolver(value: unknown, path: string): StandardBeamFrictionDefinition['solverOptions'] {
+  const row = fields(value, ['solver', 'iterationLimit'], path);
+  if (row.solver !== 'newton' && row.solver !== 'nsgs') {
+    throw new InputIssue('friction-solver', `${path}.solver`, 'Expected the newton or nsgs solver');
+  }
+  const iterationLimit = row.iterationLimit;
+  if (typeof iterationLimit !== 'number' || !Number.isSafeInteger(iterationLimit) || iterationLimit < 1) {
+    throw new InputIssue('friction-solver', `${path}.iterationLimit`, 'Expected a positive integer iteration limit');
+  }
+  return { solver: row.solver, iterationLimit };
+}
+
+function readFrictionDefinition(value: unknown, path: string): StandardBeamFrictionDefinition {
+  frictionData(value, path);
+  for (const name of ['axialBolts', 'weldLayers', 'initialStrain']) {
+    if (value !== null && typeof value === 'object' && Object.hasOwn(value, name)) {
+      throw new InputIssue('friction-unsupported-joint', `${path}.${name}`, 'Frictional contact is not combined with bolts, welds or initial strain');
+    }
+  }
+  const row = fields(value, [
+    'schema', 'id', 'revision', 'source', 'units', 'members', 'materials', 'sections',
+    'contact', 'supports', 'friction', 'stepLoads', 'solverOptions',
+  ], path);
+  if (row.schema !== 'pointercad-standard-beam/7') {
+    throw new InputIssue('unsupported-model', path, 'Expected standard beam friction schema 7');
+  }
+  const settings = fields(row.contact, ['segmentsPerMember', 'contacts'], `${path}.contact`);
+  // Same strict structure decoder and unloaded mesh placeholder as schema 6 (the mode count 1 is not stored). The
+  // step loads are checked below and are never passed through the reference-load validator.
+  const geometry = readStandardDefinition({
+    schema: 'pointercad-standard-beam/2', id: row.id, revision: row.revision,
+    source: row.source, units: row.units, members: row.members,
+    materials: row.materials, sections: row.sections, modal: { modeCount: 1, segmentsPerMember: settings.segmentsPerMember },
+    constraints: [], loads: [],
+  }, path);
+  if (geometry.modal === undefined) throw new InputIssue('friction-settings', path, 'Missing contact mesh settings');
+  const nodeIds = new Set(geometry.members.flatMap(member => [member.startNodeId, member.endNodeId]));
+  const supports = readSixDofSupports(row.supports, path, nodeIds);
+  const contacts = list(settings.contacts, `${path}.contact.contacts`, STANDARD_BEAM_MAX_CONTACTS,
+    (item, itemPath) => readContactRow(item, itemPath, nodeIds));
+  if (contacts.length === 0) throw new InputIssue('contact-count', `${path}.contact.contacts`, 'At least one contact is required');
+  unique(contacts, `${path}.contact.contacts`);
+  return {
+    schema: 'pointercad-standard-beam/7', id: geometry.id, revision: geometry.revision,
+    source: geometry.source, units: geometry.units, members: geometry.members,
+    materials: geometry.materials, sections: geometry.sections,
+    contact: { segmentsPerMember: geometry.modal.segmentsPerMember, contacts },
+    supports,
+    friction: readFrictionCoefficients(row.friction, `${path}.friction`, contacts),
+    stepLoads: readFrictionSteps(row.stepLoads, `${path}.stepLoads`, nodeIds),
+    solverOptions: readFrictionSolver(row.solverOptions, `${path}.solverOptions`),
+  };
+}
+
 /** Canonical public composition; no caller can substitute the CAD definition parser. */
 export function readCadNativeBoltPreloadSavedInput(value: unknown, path = 'native-bolt-preload'): CadNativeBoltPreloadSavedInput {
   return readCadNativeBoltPreloadSavedWithContactReader(value, readContactDefinition, path);
@@ -499,6 +644,9 @@ function readInput(value: unknown, path: string): BeamAnalysisInput {
   if (row.kind === 'solid-buckling-cad') {
     return { kind: 'solid-buckling-cad', definition: readSolidBucklingCadSavedInput(row.definition, `${path}.definition`) };
   }
+  if (row.kind === 'shell-cad') {
+    return { kind: 'shell-cad', definition: readShellCadInput(row.definition, `${path}.definition`) };
+  }
   if (row.kind === 'plastic-bar') {
     return { kind: 'plastic-bar', definition: readPlasticBarSavedInput(row.definition, `${path}.definition`) };
   }
@@ -514,6 +662,9 @@ function readInput(value: unknown, path: string): BeamAnalysisInput {
   if (row.kind === 'fatigue-piecewise') {
     return { kind: 'fatigue-piecewise', definition: readFatiguePiecewiseSavedInput(row.definition, `${path}.definition`) };
   }
+  if (row.kind === 'fatigue-detail') {
+    return { kind: 'fatigue-detail', definition: readFatigueDetailSavedInput(row.definition, `${path}.definition`) };
+  }
   if (row.kind === 'fatigue-strain-life') {
     return { kind: 'fatigue-strain-life', definition: readFatigueStrainSavedConfiguration(row.definition, `${path}.definition`) };
   }
@@ -526,7 +677,9 @@ function readInput(value: unknown, path: string): BeamAnalysisInput {
   const definition = row.definition;
   const schema = definition !== null && typeof definition === 'object' && 'schema' in definition
     ? definition.schema : null;
-  return { kind: 'standard-members', definition: schema === 'pointercad-standard-beam/6'
+  return { kind: 'standard-members', definition: schema === 'pointercad-standard-beam/7'
+    ? readFrictionDefinition(definition, `${path}.definition`)
+    : schema === 'pointercad-standard-beam/6'
     ? readImpactDefinition(definition, `${path}.definition`)
     : schema === 'pointercad-standard-beam/5'
     ? readContactDefinition(definition, `${path}.definition`)
@@ -556,12 +709,15 @@ export function readBeamAnalysisInputs(value: unknown, ownerId: string): BeamInp
     if (analyses.filter(input => input.kind === 'solid-buckling-cad').length > 1) {
       throw new InputIssue('duplicate-id', 'analyses', 'At most one solid buckling configuration per document');
     }
+    if (analyses.filter(input => input.kind === 'shell-cad').length > 1) {
+      throw new InputIssue('duplicate-id', 'analyses', 'At most one shell CAD configuration per document');
+    }
     const documents = analyses.map(input => input.kind === 'manual' ? input.document : input.definition);
     unique(documents, 'analyses');
     if (analyses.filter(input => input.kind === 'plastic-bar').length > 1) {
       throw new InputIssue('duplicate-id', 'analyses', 'At most one plastic-bar configuration per document');
     }
-    if (analyses.filter(input => input.kind === 'fatigue' || input.kind === 'fatigue-proportional-tensor' || input.kind === 'fatigue-solid-proportional' || input.kind === 'fatigue-piecewise').length > 1) {
+    if (analyses.filter(input => input.kind === 'fatigue' || input.kind === 'fatigue-proportional-tensor' || input.kind === 'fatigue-solid-proportional' || input.kind === 'fatigue-piecewise' || input.kind === 'fatigue-detail').length > 1) {
       throw new InputIssue('duplicate-id', 'analyses', 'At most one fatigue configuration per document');
     }
     for (const document of documents) {

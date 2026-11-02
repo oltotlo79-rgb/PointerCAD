@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SAVE_RECOVERY_COPY_MARKER } from '@pointercad/ui/save-errors';
 import { READ_SIZE_CHANGED_REASON_MARKER, READ_TOO_LARGE_REASON_MARKER, openAnyDialog, openPcadDialog, savePcadDialog } from './pcadDialogs.js';
+import type * as ImportedNodeFsTypes from 'node:fs';
 
 const memory = vi.hoisted(() => {
   const removed: string[] = [];
@@ -30,7 +31,7 @@ vi.mock('electron', () => ({
 }));
 vi.mock('./appSender.js', () => ({ validateAppSender: () => true }));
 vi.mock('node:fs', async (importOriginal) => {
-  const original = await importOriginal<typeof import('node:fs')>();
+  const original = await importOriginal<typeof ImportedNodeFsTypes>();
   return { ...original, promises: {
     writeFile(path: string, bytes: Uint8Array) { memory.files.set(path, bytes.slice()); return Promise.resolve(); },
     rename(source: string, destination: string) {

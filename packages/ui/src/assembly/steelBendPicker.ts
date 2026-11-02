@@ -1,11 +1,10 @@
 import { evaluateExpression } from '@pointercad/expression';
 import {
   createStandardPartSource, createSteelBend, emptyEmbeddedPartAttachments, findComponent,
-  planSteelBend, replacePartDocument, steelBendSection, steelProductFromSource, steelProductOptions,
+  planSteelBend, replacePartDocument, steelBendInputState, steelBendSection, steelProductFromSource, steelProductOptions,
   type PartDocument, type StandardPartSource, type SteelBendDimensions, type SteelBendResult, type SteelProduct,
 } from '@pointercad/model';
 
-import { steelBendInputState } from '../../../model/src/assembly/standard/steelBend.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { beginDocumentRequest } from '../store/documentRequest.js';
 

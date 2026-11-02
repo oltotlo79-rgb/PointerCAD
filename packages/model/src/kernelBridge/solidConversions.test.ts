@@ -353,3 +353,42 @@ it('carries authored hole producer proof into both actual kernel request and cac
   expect(material.pointPlacementReferences).toEqual([{ slotId: 'slot-7', reference: { kind: 'point', pointId: 'source-A' } }]);
   expect('pointPlacementReferences' in request.step).toBe(false);
 });
+
+describe('circle runtime basis conversion', () => {
+  it.each([1, -1] as const)('preserves original basis/range and orientation %s through the mesh bridge', orientation => {
+    const circleBasis: NonNullable<SolidBodyMesh['edges'][number]['circleBasis']> = { origin: [11, 13, 17],
+      xAxis: [0, 1, 0], yAxis: [0, 0, 1], normal: [1, 0, 0], parameterRange: [Math.PI / 2, Math.PI], orientation };
+    const mesh: SolidBodyMesh = { ...kernelBody(), edgeCount: 1, edges: [{ index: 0, curveKind: 'circle', length: Math.PI,
+      midpoint: [11, 13 - 4 / Math.PI, 17 + 4 / Math.PI], start: [11, 13, 19], end: [11, 11, 17],
+      axis: [1, 0, 0], axisOrigin: [11, 13, 17], radius: 2, circleBasis, segmentOffset: 0, segmentCount: 1 }] };
+    const before = JSON.stringify(mesh.edges), outcome = toSolidOutcome([], result(mesh));
+    expect(outcome.bodies[0].edges).toBe(mesh.edges);
+    expect(outcome.bodies[0].edges[0].circleBasis).toBe(circleBasis);
+    expect(outcome.bodies[0].edges[0]).toMatchObject({ start: [11, 13, 19], end: [11, 11, 17], radius: 2 });
+    expect(JSON.stringify(mesh.edges)).toBe(before);
+    expect(toSolidRecomputeRequest([], {})).not.toHaveProperty('circleBasis');
+  });
+  it('does not invent metadata for a legacy circle without a parameter basis', () => {
+    const mesh: SolidBodyMesh = { ...kernelBody(), edgeCount: 1, edges: [{ index: 0, curveKind: 'circle', length: 4 * Math.PI,
+      midpoint: [0, 0, 0], start: [2, 0, 0], end: [2, 0, 0], axis: [0, 0, 1], axisOrigin: [0, 0, 0], radius: 2,
+      segmentOffset: 0, segmentCount: 1 }] };
+    expect(toSolidOutcome([], result(mesh)).bodies[0].edges[0]).not.toHaveProperty('circleBasis');
+  });
+});
+
+describe('complete face boundary conversion', () => {
+  it('preserves current native face evidence and keeps old omitted fixtures omitted', () => {
+    const mesh = kernelBody();
+    const face = { index: 0, surfaceKind: 'plane' as const, area: 2, centroid: [0, 0, 0] as const,
+      axis: [0, 0, 1] as const, radius: null, triangleOffset: 0, triangleCount: 1,
+      boundaryEdgeIndices: Object.freeze([0, 1, 2, 3]) };
+    const actual = toSolidOutcome([], result({ ...mesh, faces: [face] })).bodies[0];
+    expect(actual.faces[0].boundaryEdgeIndices).toEqual([0, 1, 2, 3]);
+    expect(actual.faces[0].boundaryEdgeIndices).toBe(face.boundaryEdgeIndices);
+    expect(Object.isFrozen(actual.faces[0].boundaryEdgeIndices)).toBe(true);
+    const { boundaryEdgeIndices: omitted, ...legacy } = face;
+    expect(omitted).toHaveLength(4);
+    expect(toSolidOutcome([], result({ ...mesh, faces: [legacy] })).bodies[0].faces[0])
+      .not.toHaveProperty('boundaryEdgeIndices');
+  });
+});

@@ -3,6 +3,7 @@ import { FemClient, type FemWorkerPort } from './client.js';
 import { FEM_PROTOCOL, isRequest, isReply, type FemRequest } from './protocol.js';
 import { decodeFrameBoltContact, frameBoltContactInputSha256, type FrameBoltContactInput } from './beamBoltContact.js';
 import { axialOscillator, transientHistory } from './transient.testSupport.js';
+import type * as ImportedOfflineBrowserTypes from './offlineBrowser.js';
 const source = { kind: 'user-supplied', reference: 'Independent synthetic frame fixture', condition: 'Linear centroidal Timoshenko shank only' } as const;
 const quantity = (role: string, value: number) => ({ role, value, source });
 function input(): FrameBoltContactInput {
@@ -149,12 +150,12 @@ describe('frame boltの専用requestと既存所有client', () => {
       expect(w.terminated).toBe(1);
     } finally { client.dispose(); vi.useRealTimers(); }
   });
-  it('実Worker dispatchが専用offline入口へ1回だけ渡し、phase/result/closeを返す（fake）', async () => {
+  it('実Worker dispatchが専用offline入口へ1回だけ渡し、phase/result/closeを返し、完了後の再requestは何も増やさない（fake）', async () => {
     const value = input(), result = await response(value);
     const dispatch = vi.fn((v: FrameBoltContactInput, notify: (phase: 'solving') => void) => {
       expect(v).toEqual(value); notify('solving'); return Promise.resolve(result);
     });
-    vi.doMock('./offlineBrowser.js', async importOriginal => ({ ...await importOriginal<typeof import('./offlineBrowser.js')>(),
+    vi.doMock('./offlineBrowser.js', async importOriginal => ({ ...await importOriginal<typeof ImportedOfflineBrowserTypes>(),
       analyzeFrameBoltContactInBrowser: dispatch }));
     const posted: unknown[] = [], close = vi.fn();
     const worker: { onmessage: ((event: MessageEvent<unknown>) => void) | null; postMessage: (value: unknown) => void; close: () => void }
@@ -165,10 +166,12 @@ describe('frame boltの専用requestと既存所有client', () => {
     const request = { protocol: FEM_PROTOCOL, kind: 'analyze-frame-bolt-contact', identity, input: value };
     worker.onmessage?.(new MessageEvent('message', { data: request }));
     await vi.waitFor(() => { expect(close).toHaveBeenCalledTimes(1); });
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(posted).toEqual([{ protocol: FEM_PROTOCOL, kind: 'phase', identity, phase: 'solving' },
-      { protocol: FEM_PROTOCOL, kind: 'result', identity, result }]);
+    const replies = [{ protocol: FEM_PROTOCOL, kind: 'phase', identity, phase: 'solving' },
+      { protocol: FEM_PROTOCOL, kind: 'result', identity, result }];
+    expect(dispatch).toHaveBeenCalledTimes(1); expect(posted).toEqual(replies);
+    // worker.tsのcloseOnceは終了済みなら何もしないため、完了後の同じrequestはdispatch・通知・closeのどれも増やさない。
     worker.onmessage?.(new MessageEvent('message', { data: request }));
-    expect(dispatch).toHaveBeenCalledTimes(1); expect(close).toHaveBeenCalledTimes(2);
+    await Promise.resolve(); await Promise.resolve();
+    expect(dispatch).toHaveBeenCalledTimes(1); expect(close).toHaveBeenCalledTimes(1); expect(posted).toEqual(replies);
   });
 });

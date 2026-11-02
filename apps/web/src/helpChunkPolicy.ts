@@ -6,17 +6,22 @@ export const SMALL_HELP_TOPICS = [
 ] as const;
 const CHUNK = 'help-small-topics';
 
-function selectedTopic(id: string): string | undefined {
+// 既存の本文・遅延入口を保ち、配布時の物理ファイルだけをもう一群へまとめる。
+const ADDITIONAL_HELP_TOPICS = ['dimension-tolerance', 'component-licenses', 'work-plane', 'ellipse', 'spline', 'snap', 'section-view', 'print-save-as', 'help-reader', 'web-version', 'dimension-series', 'face-and-color', 'edit-sketch', 'drawing-export', 'mate', 'drawing-scale', 'spring'] as const;
+const ADDITIONAL_CHUNK = 'help-small-topics-additional';
+
+function selectedTopic(id: string, topics: readonly string[] = SMALL_HELP_TOPICS): string | undefined {
   const path = id.replaceAll('\\', '/');
   const marker = '/packages/help-content/docs/ja/';
   const position = path.lastIndexOf(marker);
   if (position < 0) return undefined;
   const suffix = path.slice(position + marker.length);
-  return SMALL_HELP_TOPICS.find(topic => suffix === `${topic}.md?raw`);
+  return topics.find(topic => suffix === `${topic}.md?raw`);
 }
 
 export function smallHelpChunk(id: string): string | undefined {
-  return selectedTopic(id) === undefined ? undefined : CHUNK;
+  if (selectedTopic(id) !== undefined) return CHUNK;
+  return selectedTopic(id, ADDITIONAL_HELP_TOPICS) === undefined ? undefined : ADDITIONAL_CHUNK;
 }
 
 interface ChunkEntry {
@@ -30,9 +35,10 @@ interface ChunkEntry {
 }
 
 /** Check the emitted graph: no dependency absorption or eager entry edge is allowed. */
-export function assertDeferredSmallHelp(bundle: Readonly<Record<string, ChunkEntry>>): void {
+function assertDeferredHelpGroup(bundle: Readonly<Record<string, ChunkEntry>>, topics: readonly string[], chunkName: string): void {
+  const topicOf = (id: string): string | undefined => selectedTopic(id, topics);
   const selected = Object.entries(bundle).filter(([, chunk]) => chunk.type === 'chunk'
-    && Object.keys(chunk.modules ?? {}).some(id => selectedTopic(id) !== undefined));
+    && Object.keys(chunk.modules ?? {}).some(id => topicOf(id) !== undefined));
   if (selected.length !== 1) throw new Error('Small help documents must share one deferred chunk');
   const selectedChunk = selected[0];
   if (selectedChunk === undefined) throw new Error('Missing small help chunk');
@@ -49,9 +55,9 @@ export function assertDeferredSmallHelp(bundle: Readonly<Record<string, ChunkEnt
       && modules.length === 1 && modules[0] === '\0rolldown/runtime.js'
       && dependency.imports?.length === 0 && dependency.dynamicImports?.length === 0;
   });
-  if (chunk.name !== CHUNK || rawIds.length !== SMALL_HELP_TOPICS.length
-    || new Set(rawIds.map(selectedTopic)).size !== SMALL_HELP_TOPICS.length
-    || rawIds.some(id => selectedTopic(id) === undefined) || !compilerOnlyImports
+  if (chunk.name !== chunkName || rawIds.length !== topics.length
+    || new Set(rawIds.map(topicOf)).size !== topics.length
+    || rawIds.some(id => topicOf(id) === undefined) || !compilerOnlyImports
     || (chunk.dynamicImports?.length ?? 0) !== 0) {
     throw new Error('Small help chunk must contain exactly the selected raw documents and no dependencies other than the isolated compiler runtime');
   }
@@ -68,4 +74,12 @@ export function assertDeferredSmallHelp(bundle: Readonly<Record<string, ChunkEnt
     && (entry.isEntry === true || /\/apps\/web\/src\/main\.tsx?$/u.test(entry.facadeModuleId?.replaceAll('\\', '/') ?? '')));
   if (entries.length === 0) throw new Error('Missing initial entry');
   for (const [file] of entries) visit(file);
+}
+
+/** 実Webビルドは追加群も必須。従来の単群fixtureでも元の厳密条件を維持する。 */
+export function assertDeferredSmallHelp(bundle: Readonly<Record<string, ChunkEntry>>, requireAdditional = false): void {
+  assertDeferredHelpGroup(bundle, SMALL_HELP_TOPICS, CHUNK);
+  const hasAdditional = Object.values(bundle).some(chunk => chunk.type === 'chunk'
+    && Object.keys(chunk.modules ?? {}).some(id => selectedTopic(id, ADDITIONAL_HELP_TOPICS) !== undefined));
+  if (requireAdditional || hasAdditional) assertDeferredHelpGroup(bundle, ADDITIONAL_HELP_TOPICS, ADDITIONAL_CHUNK);
 }

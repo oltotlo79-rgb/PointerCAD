@@ -16,9 +16,9 @@ import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { createDirectKernelBridge, type SolidBody, type SolidFaceEntry } from '../kernelBridge.js';
 import { appendEx18DirectEdit, buildEx18DirectSeed, directFaceReference, directImportedBrep,
   directPlanarFace, importEx18DirectSeed, withEx18UnselectedBody, type Ex18DirectSeed,
-  type Ex18DirectShape } from './ex18RouteBuildersDirect.js';
-import { EX18_ORACLE_DIRECT_SEEDS, EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.js';
-import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation } from './ex18ShapeOracle.js';
+  type Ex18DirectShape } from './ex18RouteBuildersDirect.testSupport.js';
+import { EX18_ORACLE_DIRECT_SEEDS, EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.testSupport.js';
+import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation } from './ex18ShapeOracle.testSupport.js';
 import { recomputePart } from './recomputePart.js';
 import type { ResolvedPart } from './resolvePart.js';
 

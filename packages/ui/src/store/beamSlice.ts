@@ -4,12 +4,13 @@ import { prepareCadNativeBoltPreload } from '@pointercad/fem';
 import type { FemPhase } from '@pointercad/fem';
 import { restoreBoltPreloadDraft, editBoltPreloadDraft, confirmBoltPreloadDraft, invalidateBoltPreloadDraft, reviewBoltPreloadDraft, reviewedBoltPreloadWire, boltPreloadDraftSavedInput, type BoltPreloadDraft, type BoltDraftEdit } from '../beam/boltPreloadDraft.js';
 import type { StateCreator } from 'zustand';
-import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
+import { readBeamAnalysisInputs, withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import { beamDefinition, createBeamSession, editBeamSession, invalidateBeamSession, restoreBeamSession,
   type BeamEdit, type BeamSession } from '../beam/beamSession.js';
 import { beamOccurrences, beamSourceIsCurrent, captureBeamSource, type BeamSourceSnapshot } from '../beam/beamSource.js';
 import type { AppState } from './appState.js';
 import { prepareBeamAnalysis } from '../beam/prepareBeamAnalysis.js';
+import { reassociateBeamWeldSpan } from '../beam/beamWeldSpanReassociation.js';
 
 export interface BeamRunner {
   run(session: BeamSession, source: BeamSourceSnapshot): void;
@@ -161,6 +162,26 @@ function refuseSavedNativePreload(state: AppState): boolean {
   return true;
 }
 
+/** Saved span inputs require their own editing and solver route. Preserve the persisted /2 association. */
+function refuseSavedWeldSpan(state: AppState): boolean {
+  if (!state.assembly?.beamAnalysisInputs?.analyses.some(input => input.kind === 'standard-members'
+    && input.definition.schema === 'pointercad-standard-beam/5'
+    && input.definition.weldLayers?.schema === 'pointercad-cad-weld-layers/2')) return false;
+  const source = captureBeamSource(state);
+  const inputs = state.assembly?.beamAnalysisInputs;
+  const checked = source === null ? null : readBeamAnalysisInputs(inputs, source.document.id);
+  if (source !== null && checked?.ok && checked.value.analyses.every(input => {
+    if (input.kind !== 'standard-members' || input.definition.schema !== 'pointercad-standard-beam/5'
+      || input.definition.weldLayers?.schema !== 'pointercad-cad-weld-layers/2') return true;
+    // Opening only admits a strict, untrusted draft. Physical reassociation belongs to explicit review.
+    return input.definition.axialBolts === undefined && input.definition.initialStrain === undefined;
+  })) return false;
+  state.closeBeam();
+  state.setFileMessage({ key: 'beam.error.model', failed: true,
+    detail: '保存済みの長手溶接入力の所有・版・参照を確認できません。保存内容は保持されています。' });
+  return true;
+}
+
 export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, get, store) => {
   // 保存文書idと、開く単位のidは別。開いた時の所有を保持して失効させる。
   let preloadOpeningId: string | null = null;
@@ -308,13 +329,13 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
   openBeam: () => {
     const state = get();
     if (state.assembly === null || state.strengthSession === null) return;
-    if (refuseSavedNativePreload(state)) return;
+    if (refuseSavedNativePreload(state) || refuseSavedWeldSpan(state)) return;
     state.beamRunner?.cancel();
     const saved = state.assembly.beamAnalysisInputs?.analyses.find(input => input.kind === 'standard-members');
     const occurrences = state.assemblyView?.sourceDocument === state.assembly
       ? beamOccurrences(state.assembly, state.assemblyView.resolved) : [];
     set({ beamSession: saved?.kind === 'standard-members'
-      ? restoreBeamSession(state.activeDocumentId, saved.definition, occurrences)
+      ? restoreBeamSession(state.activeDocumentId, saved.definition, occurrences, captureBeamSource(state)?.source)
       : createBeamSession(state.activeDocumentId, crypto.randomUUID()) });
   },
   closeBeam: () => {
@@ -323,20 +344,30 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
   },
   editBeam: edit => {
     const state = get();
+    if (refuseSavedWeldSpan(state)) return;
     if (state.beamSession === null) return;
     // Focus and the transient/contact result views are view-only: they neither cancel a run nor invalidate a result.
     if (edit.kind !== 'focus' && edit.kind !== 'transient-view' && edit.kind !== 'contact-view') state.beamRunner?.cancel();
     set({ beamSession: editBeamSession(state.beamSession, edit) });
   },
   reviewBeam: () => {
-    const state = get(), session = state.beamSession;
-    if (refuseSavedNativePreload(state)) return;
+    const state = get();
+    let session = state.beamSession;
+    if (refuseSavedNativePreload(state) || refuseSavedWeldSpan(state)) return;
     if (session === null) return;
     state.beamRunner?.cancel();
     const source = captureBeamSource(state);
     if (source === null) {
       set({ beamSession: { ...session, reviewed: null, result: null, bucklingEdges: [], transientAxial: null, impactMembers: null, status: 'editing', errorKey: 'beam.error.geometry', diagnostic: null } });
       return;
+    }
+    if (session.weldSpanLayers !== null) {
+      const association = reassociateBeamWeldSpan(session, source);
+      if (!association.ok) {
+        set({ beamSession: { ...invalidateBeamSession(session, 'beam.error.model'), diagnostic: association.reason } });
+        return;
+      }
+      session = association.session;
     }
     const draft = beamDefinition(session, source, source.document.parameters);
     if (!draft.ok) {
@@ -351,7 +382,7 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
   },
   runBeam: () => {
     const state = get(), session = state.beamSession;
-    if (refuseSavedNativePreload(state)) return;
+    if (refuseSavedNativePreload(state) || refuseSavedWeldSpan(state)) return;
     if (session === null) return;
     if (session.reviewed === null || !beamSourceIsCurrent(session.reviewed, state) || state.beamRunner === null) {
       set({ beamSession: { ...session, result: null, bucklingEdges: [], transientAxial: null, impactMembers: null, status: 'editing', errorKey: 'beam.error.review' } });
@@ -367,7 +398,7 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
   },
   applyBeamInputs: () => {
     const state = get(), session = state.beamSession;
-    if (refuseSavedNativePreload(state)) return;
+    if (refuseSavedNativePreload(state) || refuseSavedWeldSpan(state)) return;
     if (session === null || session.reviewed === null || !beamSourceIsCurrent(session.reviewed, state)) return;
     const source = session.reviewed;
     const draft = beamDefinition(session, source, source.document.parameters);

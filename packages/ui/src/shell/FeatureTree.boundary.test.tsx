@@ -15,6 +15,7 @@ import { t, type MessageKey } from '../i18n/t.js';
 import type { AppState } from '../store/appState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { extrudeFeature, partWithMixedFeatures, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
+import type * as ImportedReactTypes from 'react';
 
 // Node has no DOM. Keep local hook state between renders and run the real effects only when a
 // case mounts the tree (same harness as FeatureTree.test.tsx).
@@ -24,7 +25,7 @@ const hooks = vi.hoisted(() => ({
   effects: [] as Array<{ setup: () => void | (() => void); deps?: readonly unknown[] }>,
 }));
 vi.mock('react', async importOriginal => {
-  const original = await importOriginal<typeof import('react')>();
+  const original = await importOriginal<typeof ImportedReactTypes>();
   return {
     ...original,
     useState: <S,>(initial: S | (() => S)) => {

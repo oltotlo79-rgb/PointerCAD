@@ -1,4 +1,5 @@
 import { createMainPhaseObserver, readMeshLedgerDiagnostics } from './kernelBridge.js';
+import { selectMateTargetGeometry } from './kernelBridge/subShapeMatching.js';
 /**
  * Worker 版の橋(`createKernelBridge`)が、**Worker が黙ったまま壊れたとき**に
  * 待っている呼び出しを必ず終わらせることの検査(§2.9、§0.a-0.19、FR-504、NFR-RE-1)。
@@ -40,7 +41,6 @@ import {
   EXPORT_TIMEOUT_MESSAGE,
   type ShapeExportOptions,
   toPrintabilityOutcome,
-  selectMateTargetGeometry,
   type SolidBody,
   type SketchOffsetRequestItem,
   type SketchProjectionRequestItem,
@@ -62,6 +62,7 @@ import type { AssemblyComponent, Mate, MateKind } from './assembly/types.js';
 import { resolveMateTarget } from './assembly/constraints/mateTargets.js';
 import { prepareMateResiduals, buildMateResidualReport, type MateResidualInput } from './assembly/constraints/mateResiduals.js';
 import { collectMateVariables } from './assembly/constraints/mateVariables.js';
+import type * as ImportedKernelTypes from '@pointercad/kernel';
 
 const silentWorkers = vi.hoisted(() => {
   let reply: { readonly value: unknown } | undefined;
@@ -423,7 +424,7 @@ describe.each([false, true])('G2 terminal facts through actual conversion, Worke
 });
 
 vi.mock('@pointercad/kernel', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@pointercad/kernel')>();
+  const actual = await importOriginal<typeof ImportedKernelTypes>();
   // 差し替えるのは Worker の起動だけ。詰め替えの純関数(matchFace 等)は本物のまま使う。
   return { ...actual, createKernelWorker: () => silentWorkers.create() };
 });
@@ -3349,4 +3350,168 @@ describe('actual managed runtime metadata envelope', () => {
     const snapshot = observer.snapshot(); expect(snapshot.records).toHaveLength(256); expect(snapshot.dropped).toBe(4);
     expect(snapshot.records.every(record => !('steps' in record) && Object.isFrozen(record))).toBe(true);
   });
+});
+
+
+describe('cancel-reopen pure dispatch ownership', () => {
+  beforeEach(() => silentWorkers.clear());
+  it('holds old claims until the actual same-part RPC settles and preserves exact return refusals', async () => {
+    const bridge = createKernelBridge();
+    let current: MeshLedgerOwner | undefined;
+    let finish: (() => void) | undefined;
+    let hold = false, cleanupFailed = false;
+    const releases: string[] = [];
+    const api = {
+      recomputeSolids(...args: Parameters<ReturnType<typeof createKernelApi>['recomputeSolids']>) {
+        const owner = args[4];
+        if (owner === undefined) throw new Error('Actual dispatch identity');
+        const reply = () => { current = owner; return { bodies: [], failures: [], cacheHits: 0, cancelled: hold }; };
+        if (!hold) return Promise.resolve(reply());
+        return new Promise<SolidRecomputeResult>(resolve => { finish = () => { resolve(reply()); }; });
+      },
+      readPartOwnership(owner: MeshLedgerOwner) {
+        return Promise.resolve(current === undefined ? { status: 'absent' as const }
+          : current.dispatchId !== owner.dispatchId ? { status: 'stale-owner' as const }
+            : { status: 'current' as const, owner, epoch: { cache: 1, owners: 1 } });
+      },
+      releaseOwnedPart(owner: MeshLedgerOwner) {
+        if (current?.dispatchId !== owner.dispatchId) throw new Error('Wrong owner released');
+        if (cleanupFailed) return Promise.resolve({ status: 'cleanup-failed' as const, reason: 'retained-cleanup' });
+        releases.push(owner.dispatchId); current = undefined; return Promise.resolve({ status: 'released' as const });
+      },
+      acknowledgeMeshReply: () => Promise.resolve({ acknowledged: true }),
+    };
+    Comlink.expose(api, silentWorkers.serverEndpoint());
+    try {
+      const steps = [{ ...fakeStep('body-1', 'same-key'), visible: false }];
+      const first = await bridge.recomputeSolids(steps, { partId: 'same-ref', generation: 1 });
+      const old = bridge.capturePartReleaseClaim?.(first.bodies);
+      if (old === undefined || old === null) throw new Error('Issued old claim');
+      hold = true;
+      const pending = bridge.recomputeSolids(steps, { partId: 'same-ref', generation: 2 });
+      await vi.waitFor(() => expect(finish).toBeDefined());
+      expect(await bridge.releasePartClaim?.(old)).toEqual({ status: 'unavailable', reason: 'part-dispatch-pending' });
+      expect(releases).toEqual([]);
+      if (finish === undefined) throw new Error('Late actual callback');
+      finish();
+      const reply = await pending;
+      expect(reply.cancelled).toBe(true);
+      const exact = bridge.capturePartReleaseClaim?.(reply.bodies);
+      if (exact === undefined || exact === null) throw new Error('Issued late empty claim');
+      expect(await bridge.releasePartClaim?.(old)).toEqual({ status: 'stale-owner' });
+      expect(await bridge.releasePartClaim?.({ ...exact })).toMatchObject({ status: 'unavailable', reason: 'unissued-claim' });
+      cleanupFailed = true;
+      expect(await bridge.releasePartClaim?.(exact)).toMatchObject({ status: 'cleanup-failed' });
+      expect(releases).toEqual([]);
+      cleanupFailed = false;
+      expect(await bridge.releasePartClaim?.(exact)).toEqual({ status: 'released' });
+      expect(releases).toEqual([exact.owner.dispatchId]);
+      expect(await bridge.releasePartClaim?.(exact)).toEqual({ status: 'absent' });
+      expect(releases).toHaveLength(1);
+      bridge.dispose();
+      expect(await bridge.releasePartClaim?.(exact)).toEqual({ status: 'closed' });
+    } finally { finish?.(); bridge.dispose(); }
+  });
+});
+
+
+describe('interference checkpoint-combined pure Comlink', () => {
+  beforeEach(() => silentWorkers.clear());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+  function input(): AssemblyInterferenceInput {
+    return { requestId: 'combined-source:7', components: ['a', 'b'].map(id => ({
+      id, name: id, source: { kind: 'part' as const, partRef: 'part' }, placement: DEFAULT_COMPONENT_PLACEMENT,
+      fixed: true, suppressed: false, visible: true })),
+      resolved: { parts: new Map(), partKeys: new Map(), placements: new Map(), errors: [] },
+      bodies: new Map(), placements: new Map() };
+  }
+  it.each(['normal', 'no-progress', 'before-cancel', 'progress-cancel', 'cancel-throw-before',
+    'progress-throw', 'cancel-throw-after', 'debug-promise', 'debug-throw', 'close-in-progress', 'rpc-reject'] as const)(
+    'one remote callback keeps local order and ownership: %s', async mode => {
+      const events: string[] = [];
+      const channels: { channel: MessageChannel; listener: (event: MessageEvent<unknown>) => void;
+        check(): void }[] = [];
+      let remoteCalls = 0, cancelCalls = 0, cancelled = mode === 'before-cancel';
+      const Original = MessageChannel;
+      vi.spyOn(globalThis, 'MessageChannel').mockImplementation(function () {
+        const channel = new Original();
+        const listener = (event: MessageEvent<unknown>) => {
+          const value: unknown = event.data;
+          if (value !== null && typeof value === 'object' && Reflect.get(value, 'type') === 'APPLY') remoteCalls += 1;
+        };
+        channel.port1.addEventListener('message', listener);
+        const first = vi.spyOn(channel.port1, 'close'), second = vi.spyOn(channel.port2, 'close');
+        channels.push({ channel, listener, check() { expect(first).toHaveBeenCalledTimes(1); expect(second).toHaveBeenCalledTimes(1); } });
+        return channel;
+      });
+      if (mode === 'debug-promise' || mode === 'debug-throw') {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        vi.stubGlobal('window', { pcadDebugStepDelayMs: 17 });
+      }
+      const timers = vi.spyOn(globalThis, 'setTimeout');
+      const bridge = createKernelBridge();
+      const api = {
+        async checkInterference(...args: Parameters<ReturnType<typeof createKernelApi>['checkInterference']>) {
+          const [request, progress, cancel, delivery, checkpoint] = args;
+          expect(progress).toBeUndefined(); expect(cancel).toBeUndefined(); expect(delivery).toBe('message');
+          if (mode === 'rpc-reject') throw new Error('controlled RPC failure');
+          if (checkpoint === undefined) throw new Error('Combined callback missing');
+          const base = { requestId: request.requestId, pairs: [], totalPairCount: 1, checkedPairCount: 0,
+            skippedPairCount: 0, pendingPairCount: 1, failures: [], skips: [], cancelled: false };
+          try {
+            const stop = await checkpoint({ requestId: request.requestId, phase: 'prepare', completedPairs: 0,
+              totalPairs: 1, completedComponents: 0, totalComponents: 2 });
+            return { ...base, kind: 'checked' as const, failure: null, cancelled: stop,
+              checkedPairCount: stop ? 0 : 1, pendingPairCount: stop ? 1 : 0 };
+          } catch (error) {
+            return { ...base, kind: 'failed' as const, failure: { code: 'callbackFailed' as const,
+              message: error instanceof Error ? error.message : String(error) } };
+          }
+        },
+      };
+      Comlink.expose(api, silentWorkers.serverEndpoint());
+      try {
+        const running = bridge.checkInterference(input(), {
+          shouldCancel: () => {
+            events.push('cancel'); cancelCalls += 1;
+            if (mode === 'cancel-throw-before' || mode === 'debug-throw'
+              || mode === 'cancel-throw-after' && cancelCalls === 2) throw new Error('controlled cancel failure');
+            return cancelled;
+          },
+          ...(mode === 'no-progress' ? {} : { onProgress: (progress: AssemblyInterferenceProgress) => {
+            events.push('progress'); expect(progress.requestId).toBe('combined-source:7');
+            if (mode === 'progress-throw') throw new Error('controlled progress failure');
+            if (mode === 'progress-cancel') cancelled = true;
+            if (mode === 'close-in-progress') bridge.dispose();
+          } }),
+        });
+        let done = false;
+        void running.then(() => { done = true; });
+        if (mode === 'debug-promise' || mode === 'debug-throw') await vi.waitFor(() => expect(done).toBe(true));
+        const result = await running;
+        if (mode === 'rpc-reject') {
+          expect(result).toMatchObject({ kind: 'failed', failure: { code: 'rpcFailed', message: 'controlled RPC failure' } });
+          expect(events).toEqual([]); expect(remoteCalls).toBe(0);
+        } else {
+          expect(remoteCalls).toBe(1);
+          const expected = mode === 'before-cancel' || mode === 'cancel-throw-before' || mode === 'debug-throw' ? ['cancel']
+            : mode === 'no-progress' ? ['cancel', 'cancel']
+              : mode === 'progress-throw' || mode === 'close-in-progress' ? ['cancel', 'progress']
+                : ['cancel', 'progress', 'cancel'];
+          expect(events).toEqual(expected);
+          if (mode.includes('throw')) expect(result).toMatchObject({ kind: 'failed', failure: { code: 'callbackFailed' } });
+          else expect(result.cancelled).toBe(['before-cancel', 'progress-cancel', 'close-in-progress'].includes(mode));
+        }
+        if (mode === 'debug-promise' || mode === 'debug-throw') {
+          expect(timers.mock.calls.filter(call => call[1] === 17)).toHaveLength(mode === 'debug-promise' ? 2 : 1);
+        }
+        expect(bridge.pendingCallbacks()).toBe(0); expect(bridge.pendingWaiters()).toBe(0);
+        expect(channels).toHaveLength(1);
+        for (const item of channels) {
+          item.check();
+          item.channel.port1.removeEventListener('message', item.listener);
+        }
+      } finally { bridge.dispose(); }
+    },
+  );
 });

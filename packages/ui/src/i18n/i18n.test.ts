@@ -54,6 +54,11 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
+/** 検査の独立した期待文字列は翻訳対象ではない。製品の .tsx だけを点検する。 */
+function hasHardcodedComponentJapanese(file: string, source: string): boolean {
+  return !file.endsWith('.test.tsx') && containsJapanese(stripComments(source));
+}
+
 describe('UI 文字列リソース(NFR-MA-5)', () => {
   it('キーが 1 件以上あり、すべて空でない文字列を返す', () => {
     expect(MESSAGE_KEYS.length).toBeGreaterThan(0);
@@ -235,11 +240,21 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
   it('コンポーネント(.tsx)へ日本語を直書きしていない', () => {
     const offenders: string[] = [];
     for (const file of listFiles(sourceRoot, '.tsx')) {
-      if (containsJapanese(stripComments(readFileSync(file, 'utf8')))) {
+      if (hasHardcodedComponentJapanese(file, readFileSync(file, 'utf8'))) {
         offenders.push(file);
       }
     }
     expect(offenders, 'ja.json へ移してください').toEqual([]);
+  });
+
+  it.each([
+    ['MaterialPanel.tsx', 'const label = "規格の原案";', true],
+    ['MaterialPanel.tsx', 'const value = <span>参考値</span>;', true],
+    ['MaterialPanel.tsx', '// 表示は翻訳を参照\nconst label = t("material.label");', false],
+    ['MaterialPanel.test.tsx', 'expect(label).toBe("規格の原案");', false],
+    ['MaterialPanel.test.tsx', 'input.onChange({ value: "１６" });', false],
+  ])('製品と試験の翻訳対象を分ける: %s / %s', (file, source, expected) => {
+    expect(hasHardcodedComponentJapanese(file, source)).toBe(expected);
   });
 });
 

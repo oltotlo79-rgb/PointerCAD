@@ -162,6 +162,19 @@ test.describe('P8 図面の実操作', () => {
     await page.keyboard.press('End'); await expect(toolbar.getByRole('button', { name: '自動寸法', exact: true })).toBeFocused();
     await page.keyboard.press('Escape'); await expect(dimensions).toBeFocused();
     await expect(toolbar.getByRole('group', { name: '寸法', exact: true })).toHaveCount(0);
+    for (const [name, last] of [
+      ['ファイルのほかの操作', '部品へ戻る'],
+      ['図', '破断図'],
+      ['記入', '中心マーク'],
+      ['見た目', '中心線を表示'],
+    ] as const) {
+      const trigger = toolbar.getByRole('button', { name: new RegExp(`^${name}(?::|$)`, 'u') });
+      await trigger.focus(); await page.keyboard.press('ArrowDown');
+      const menu = toolbar.getByRole('group', { name, exact: true });
+      await expect(menu).toBeVisible();
+      await page.keyboard.press('End'); await expect(menu.getByRole('button', { name: last, exact: true })).toBeFocused();
+      await page.keyboard.press('Escape'); await expect(trigger).toBeFocused(); await expect(menu).toHaveCount(0);
+    }
     await page.screenshot({ path: testInfo.outputPath('drawing-toolbar-1280.png'), fullPage: true });
   });
   test('F1で操作のヘルプを開き、本文検索と章移動後に元の編集へ戻る(P8-68・69)', async ({ page }, testInfo) => {

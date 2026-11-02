@@ -30,6 +30,9 @@ export interface NativePlanarBasis {
  * この場に自分の型として持つ(P0 §0.11)。
  */
 export interface SolidFaceEntry {
+  /** Complete nonempty current native face boundary, including inner wires; seam edges occur once.
+   * Omitted on incomplete mapping or the adjacency limit. Runtime only, never saved identity. */
+  readonly boundaryEdgeIndices?: readonly number[];
   readonly planarBasis?: NativePlanarBasis;
   /** Current native cylindrical placement basis, display only; never a saved fingerprint.
    * axis = Position.Direction (not flipped by face Orientation); zeroDirection = Position.XDirection.
@@ -74,6 +77,17 @@ export interface SolidFaceEntry {
 
 /** 辺 1 本の素性。並びは面と同じく通し番号の順(計画書 P3 §2.2、§2.8)。 */
 export interface SolidEdgeEntry {
+  /** Current native circle parameter basis in part coordinates, not a saved fingerprint.
+   * Original increasing range (radians); orientation does not swap legacy start/end.
+   * Omitted for non-circles, unknown orientation or invalid/degenerate geometry. */
+  readonly circleBasis?: {
+    readonly origin: Vec3;
+    readonly xAxis: Vec3;
+    readonly yAxis: Vec3;
+    readonly normal: Vec3;
+    readonly parameterRange: readonly [number, number];
+    readonly orientation: 1 | -1;
+  };
   readonly index: number;
   readonly curveKind: EdgeCurveKind;
   /** 長さ(mm)。 */
@@ -389,6 +403,11 @@ export interface SolidRecomputeOptions {
  * SubShapeRef・schema・鍵には足さず、古い文書も現在の面・辺から解析点を取り直す。
  */
 export type MateSubShapeGeometry = SubShapeFingerprint & {
+  /** Complete nonempty current native face boundary, including inner wires; seam edges occur once.
+   * Omitted on incomplete mapping or the adjacency limit. Runtime only, never saved identity. */
+  readonly boundaryEdgeIndices?: readonly number[];
+  /** Current circle only; never populated from the saved fingerprint. */
+  readonly circleBasis?: SolidEdgeEntry['circleBasis'];
   readonly planarBasis?: NativePlanarBasis;
   readonly axisOrigin?: Vec3;
   /** 現在の全周円筒面だけが持つ軸方向範囲。保存指紋から復元しない。 */

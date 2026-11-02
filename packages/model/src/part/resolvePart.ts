@@ -4887,7 +4887,7 @@ export interface ResolvePartOptions {
    * (`geometry/planeSpec.ts` の `subShapeFromFingerprint`)。**渡すと、3D スケッチの
    * 頂点参照・任意の作業平面・基準ジオメトリが「いまの形」を見るようになる**
    * (指紋の位置に固定されなくなる)。選び直しの採点はカーネル側の純関数が正本で、
-   * この関数を作るのは `recomputePart`(`kernelBridge.ts` の `selectSubShape`)である。
+   * `recomputePart` が `createSubShapeCache` から受け取り、`resolveSubShapeReference` の一意一致で更新する。
    */
   readonly subShape?: (reference: SubShapeRef) => ResolvedSubShape | null;
   /**

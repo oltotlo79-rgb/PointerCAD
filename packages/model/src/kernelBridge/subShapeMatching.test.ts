@@ -104,3 +104,80 @@ describe('既存の部分形状選択APIと共通判定の境界', () => {
     expect(scoreSubShapeMatch(current, reference)?.runnerUpScore).toBeNull();
   });
 });
+
+describe('circle runtime basis matching', () => {
+  function circleEdge(): SolidEdgeEntry {
+    return { index: 7, curveKind: 'circle', length: Math.PI, midpoint: [-4 / Math.PI, 4 / Math.PI, 0],
+      start: [0, 2, 0], end: [-2, 0, 0], axis: [0, 0, 1], axisOrigin: [0, 0, 0], radius: 2,
+      segmentOffset: 0, segmentCount: 1 };
+  }
+  const saved: SubShapeRef = { bodyFeatureId: 'body', index: 7, fingerprint: { kind: 'edge', curveKind: 'circle',
+    length: Math.PI, position: [-4 / Math.PI, 4 / Math.PI, 0], axis: [0, 0, 1], radius: 2 } };
+  it.each([1, -1] as const)('carries current orientation %s to both lookup paths, without saving it or changing the score', orientation => {
+    const circleBasis: NonNullable<SolidEdgeEntry['circleBasis']> = { origin: [0, 0, 0], xAxis: [1, 0, 0],
+      yAxis: [0, 1, 0], normal: [0, 0, 1], parameterRange: [Math.PI / 2, Math.PI], orientation };
+    const legacy = body([circleEdge()]), current = body([{ ...circleEdge(), circleBasis }]), before = JSON.stringify(saved);
+    expect(selectMateTargetGeometry(current, saved)).toMatchObject({ circleBasis });
+    const [candidate] = subShapeMatchCandidates(current, saved);
+    expect(candidate.geometry).toEqual(selectMateTargetGeometry(current, saved));
+    expect(candidate.reference).toEqual(saved); expect(candidate.reference.fingerprint).not.toHaveProperty('circleBasis');
+    expect(scoreSubShapeMatch(current, saved)).toEqual(scoreSubShapeMatch(legacy, saved));
+    expect(rematchSubShapeRef([current], saved)).toEqual(rematchSubShapeRef([legacy], saved));
+    const resolved = resolveSubShapeReference(current, saved);
+    expect(resolved.status).toBe('matched');
+    if (resolved.status !== 'matched') throw new Error('Expected a uniquely matched current circle');
+    expect(resolved.match.geometry).toMatchObject({ circleBasis }); expect(JSON.stringify(saved)).toBe(before);
+  });
+  it('omits absent legacy metadata and cannot leak circle evidence from a non-circle fixture', () => {
+    const current = body([circleEdge()]);
+    expect(selectMateTargetGeometry(current, saved)).not.toHaveProperty('circleBasis');
+    expect(subShapeMatchCandidates(current, saved)[0].geometry).not.toHaveProperty('circleBasis');
+    const circleBasis: NonNullable<SolidEdgeEntry['circleBasis']> = { origin: [0, 0, 0], xAxis: [1, 0, 0], yAxis: [0, 1, 0],
+      normal: [0, 0, 1], parameterRange: [0, 1], orientation: 1 };
+    const line = body([{ ...edge(0, 20, 0), circleBasis }]);
+    expect(selectMateTargetGeometry(line, reference)).not.toHaveProperty('circleBasis');
+    expect(subShapeMatchCandidates(line, reference)[0].geometry).not.toHaveProperty('circleBasis');
+  });
+});
+
+describe('complete face boundary runtime evidence', () => {
+  function current(boundaryEdgeIndices?: readonly number[]) {
+    const face: SolidFaceEntry = { index: 0, surfaceKind: 'plane', area: 4,
+      centroid: [0, 0, 0], axis: [0, 0, 1], radius: null, triangleOffset: 0, triangleCount: 0,
+      ...(boundaryEdgeIndices === undefined ? {} : { boundaryEdgeIndices }) };
+    const saved: SubShapeRef = { bodyFeatureId: 'body', index: 0, fingerprint: {
+      kind: 'face', surfaceKind: 'plane', area: 4, position: [0, 0, 0], axis: [0, 0, 1], radius: null } };
+    return { body: { ...body([edge(3, 2, 0), edge(7, 2, 2)]), faces: [face] }, saved };
+  }
+  it('owns the complete current set in both paths and matched geometry without saving it', () => {
+    const indices = [3, 7], fixture = current(indices), before = JSON.stringify(fixture.saved);
+    const selected = selectMateTargetGeometry(fixture.body, fixture.saved);
+    const [candidate] = subShapeMatchCandidates(fixture.body, fixture.saved);
+    const resolved = resolveSubShapeReference(fixture.body, fixture.saved);
+    expect(selected?.boundaryEdgeIndices).toEqual([3, 7]);
+    expect(candidate.geometry.boundaryEdgeIndices).toEqual([3, 7]);
+    expect(resolved.status).toBe('matched');
+    if (resolved.status !== 'matched') throw new Error('Expected current face');
+    expect(resolved.match.geometry.boundaryEdgeIndices).toEqual([3, 7]);
+    expect(selected?.boundaryEdgeIndices).not.toBe(indices);
+    expect(Object.isFrozen(selected?.boundaryEdgeIndices)).toBe(true);
+    indices[0] = 99;
+    expect(selected?.boundaryEdgeIndices).toEqual([3, 7]);
+    expect(candidate.geometry.boundaryEdgeIndices).toEqual([3, 7]);
+    expect(candidate.reference.fingerprint).not.toHaveProperty('boundaryEdgeIndices');
+    expect(JSON.stringify(fixture.saved)).toBe(before);
+  });
+  it.each([undefined, [], [3, 3], [-1], [0.5], [Number.NaN], [Number.POSITIVE_INFINITY], [3, 99]])(
+    'does not promote absent or invalid boundary evidence %s', boundary => {
+      const fixture = current(boundary);
+      expect(selectMateTargetGeometry(fixture.body, fixture.saved)).not.toHaveProperty('boundaryEdgeIndices');
+      expect(subShapeMatchCandidates(fixture.body, fixture.saved)[0].geometry).not.toHaveProperty('boundaryEdgeIndices');
+    });
+  it('rejects an ambiguous actual edge table without changing face matching or the saved reference', () => {
+    const fixture = current([3, 7]);
+    const ambiguous = { ...fixture.body, edges: [...fixture.body.edges, edge(3, 2, 9)] };
+    expect(selectMateTargetGeometry(ambiguous, fixture.saved)).not.toHaveProperty('boundaryEdgeIndices');
+    expect(resolveSubShapeReference(ambiguous, fixture.saved).status).toBe('matched');
+    expect(rematchSubShapeRef([ambiguous], fixture.saved)).toEqual(fixture.saved);
+  });
+});

@@ -398,7 +398,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     '[ 380×100×13×16.5',
     '[ 380×100×13×20',
   ].map((size) => ss400SectionStandard('channel', size)),
-  // W7: JISF G 3192 draft table 15; scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json.
+  // W7: JISF G 3192 draft 2024-07-24, table 15, PDF p21–22; final standard and supply lengths unverified.
   ...[
     'H 100×50×5×7',
     'H 125×60×6×8',

@@ -7,13 +7,16 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { CanvasImageLoad } from './canvasActionState.js';
 import { CanvasSection } from './CanvasSection.js';
+import type * as ImportedReactTypes from 'react';
+import type * as ImportedJsxRuntimeTypes from 'react/jsx-runtime';
+import type * as ImportedJsxDevRuntimeTypes from 'react/jsx-dev-runtime';
 
 // Keep the real component, store, JSX and event handlers; Node supplies no DOM.
 // Native focus/caret and keyboard dispatch are covered by canvasStateFlow.
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], refs: [] as { current: unknown }[], state: 0, ref: 0 }));
 const rendered = vi.hoisted(() => ({ tags: [] as { tag: string; props: Record<string, unknown> }[] }));
 vi.mock('react', async importOriginal => {
-  const original = await importOriginal<typeof import('react')>();
+  const original = await importOriginal<typeof ImportedReactTypes>();
   return { ...original,
     useState: <S,>(initial: S | (() => S)) => {
       const index = hooks.state++;
@@ -30,7 +33,7 @@ vi.mock('react', async importOriginal => {
   };
 });
 vi.mock('react/jsx-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxRuntimeTypes>();
   const capture = (factory: typeof runtime.jsx): typeof runtime.jsx => (type, props, key) => {
     if (typeof type === 'string' && props !== null && typeof props === 'object') rendered.tags.push({ tag: type, props: props as Record<string, unknown> });
     return factory(type, props, key);
@@ -38,7 +41,7 @@ vi.mock('react/jsx-runtime', async importOriginal => {
   return { ...runtime, jsx: capture(runtime.jsx), jsxs: capture(runtime.jsxs) };
 });
 vi.mock('react/jsx-dev-runtime', async importOriginal => {
-  const runtime = await importOriginal<typeof import('react/jsx-dev-runtime')>();
+  const runtime = await importOriginal<typeof ImportedJsxDevRuntimeTypes>();
   const jsxDEV: typeof runtime.jsxDEV = (type, props, key, isStatic, source, self) => {
     if (typeof type === 'string' && props !== null && typeof props === 'object') rendered.tags.push({ tag: type, props: props as Record<string, unknown> });
     return runtime.jsxDEV(type, props, key, isStatic, source, self);

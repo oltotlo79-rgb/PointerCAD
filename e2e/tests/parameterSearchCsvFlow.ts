@@ -1,6 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 
 /**
@@ -124,7 +123,6 @@ async function timedSearch(page: Page, query: string, total: number, expectedCou
  * パラメータ表へ入る。Web は呼び出し側で起動を済ませておくこと。
  */
 export async function parameterSearchCsvFlow(page: Page, info: TestInfo, io: ParameterCsvIo): Promise<void> {
-  const evidenceDir = fileURLToPath(new URL('../../scratchpad/claude/agents/cl-v103-w16-params', import.meta.url));
   await page.setViewportSize({ width: 1440, height: 900 });
   const rows = hundredRows();
   const originalPath = info.outputPath('parameters-100.csv');
@@ -167,9 +165,11 @@ export async function parameterSearchCsvFlow(page: Page, info: TestInfo, io: Par
     await expectNames(page, expected, `検索「${query}」の行の集合`);
     if (expected.length === 0) await expect(panel(page)).toContainText('一致する係数がありません。検索語または表示条件を変えてください。');
   }
-  await mkdir(evidenceDir, { recursive: true });
-  await writeFile(`${evidenceDir}/search-timing-${info.project.name}.json`,
+  const timingPath = info.outputPath('search-timing.json');
+  await mkdir(dirname(timingPath), { recursive: true });
+  await writeFile(timingPath,
     JSON.stringify({ project: info.project.name, limitMs: SEARCH_LIMIT_MS, timings }, null, 2));
+  await info.attach('search-timing', { path: timingPath, contentType: 'application/json' });
   for (const timing of timings) {
     expect(timing.ms, `検索「${timing.query}」は ${String(SEARCH_LIMIT_MS)}ms 未満`).toBeLessThan(SEARCH_LIMIT_MS);
   }

@@ -101,7 +101,10 @@ export async function boltPreloadFlow(page: Page, info: TestInfo, app?: Electron
   expect((await saved(page, info, 'no-consent', app)).canonical).toBe(before.canonical);
   await panel.getByTestId('preload-adopt').click(); await expect(panel.getByTestId('preload-confirm')).not.toBeChecked();
   await assertRenderedControlDescriptions(panel);
+  const preloadDraft = panel.locator('[data-preload-draft-number="preloadN"]');
+  await preloadDraft.fill('４０００'); await expect(preloadDraft).toHaveValue('４０００');
   await expect(panel.getByTestId('preload-run')).toBeDisabled(); await confirmReview(page);
+  await expect(preloadDraft).toHaveValue('４０００');
   const initialWorkers = await workers(page); await panel.getByTestId('preload-run').click();
   await expect.poll(async () => (await workers(page)).created, { timeout: KERNEL_TIMEOUT_MS }).toBeGreaterThan(initialWorkers.created);
   await panel.getByTestId('preload-cancel').click(); await expect(panel.getByTestId('preload-status')).toHaveText('解析を中止しました。結果はありません。');

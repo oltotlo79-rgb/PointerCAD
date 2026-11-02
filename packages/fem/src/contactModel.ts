@@ -1,3 +1,4 @@
+import { isRecord } from './valueGuards.js';
 import type { AnalysisSource, BeamAnalysisDocument, BeamNodalLoad, Vector3 } from './analysisModel.js';
 import type { BucklingRestraints } from './bucklingModel.js';
 
@@ -187,8 +188,6 @@ export interface ContactResultExpectation {
 /** beamContact.pivot_limit: a practical bound, not a proof that no solution exists. */
 export const contactPivotLimit = (contactCount: number): number => 4 * contactCount * contactCount + 16;
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
-  && !Array.isArray(value);
 /** All three own indices must hold finite numbers: `every` skips holes, so a sparse array must be refused here. */
 const vector = (value: unknown): value is Vector3 => Array.isArray(value) && value.length === 3
   && [0, 1, 2].every(index => Object.hasOwn(value, index) && finite(value[index]));

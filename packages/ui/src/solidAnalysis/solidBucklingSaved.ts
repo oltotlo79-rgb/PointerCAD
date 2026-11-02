@@ -4,6 +4,7 @@ import { readSolidBucklingCadSavedInput, readSolidCadSavedInput, SOLID_BUCKLING_
 import { t } from '../i18n/t.js';
 import { createSolidAnalysisSession, solidSavedInput, type SolidAnalysisSession } from './solidAnalysisSession.js';
 import { solidBucklingModeCount, type SolidBucklingRunState } from './solidBucklingState.js';
+import { createSolidBoundaryDraft } from './solidBoundaryDraft.js';
 
 /**
  * Saved buckling input and reopen, with the same rule as the modal input (solidModalSaved.ts): the reference load state is
@@ -45,5 +46,6 @@ export function withSolidBucklingSaved(session: SolidAnalysisSession, buckling: 
   if (staticSaved !== undefined) return { session, buckling: next, reference: sameSolidCadSaved(saved.reference, staticSaved) ? null : saved.reference };
   const filled = createSolidAnalysisSession(session.ownerId, saved.reference);
   return { buckling: next, reference: null, session: { ...session, bodyFeatureId: filled.bodyFeatureId, fixedFaces: filled.fixedFaces,
-    loadedFaces: filled.loadedFaces, loadMode: filled.loadMode, values: filled.values } };
+    loadedFaces: filled.loadedFaces, loadMode: filled.loadMode, values: filled.values,
+    ...createSolidBoundaryDraft(saved.reference), boundaryFocused: null } };
 }

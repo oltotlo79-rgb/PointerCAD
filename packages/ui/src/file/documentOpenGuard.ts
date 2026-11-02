@@ -13,16 +13,83 @@
 import type { MessageKey } from '../i18n/t.js';
 import { beginDocumentRequest, type DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
+import { readPcadInWorker } from './pcadReadWorker.js';
+import type { PcadReadKind, PcadReadResults } from './pcadReadProtocol.js';
+
+const openOwners = new Map<DocumentRequest, { readonly controller: AbortController; readonly unsubscribe: () => void }>();
+const cancelledOpenRequests = new WeakSet<DocumentRequest>();
+
+/** App disposal or a newer open cancels the complete operation, including picker/checkpoint waits. */
+export function cancelOpenReads(): void {
+  for (const [request, owner] of openOwners) {
+    cancelledOpenRequests.add(request);
+    openOwners.delete(request);
+    owner.unsubscribe();
+    owner.controller.abort();
+  }
+}
+
+function ownOpenRequest(request: DocumentRequest) {
+  const existing = openOwners.get(request);
+  if (existing !== undefined) return existing;
+  const controller = new AbortController();
+  const unsubscribe = useAppStore.subscribe(() => {
+    const status = request.status();
+    if (status === 'switched' || status === 'superseded') finishOpenRequest(request);
+  });
+  const owner = { controller, unsubscribe };
+  openOwners.set(request, owner);
+  return owner;
+}
+
+/** The caller that finishes the open owns subscription release; nested dispatch is idempotent. */
+export function finishOpenRequest(request: DocumentRequest): void {
+  const owner = openOwners.get(request);
+  if (owner === undefined) return;
+  openOwners.delete(request);
+  owner.unsubscribe();
+  owner.controller.abort();
+}
+
+/** Read only; document/history/attachments/save target are committed by the existing caller after its guard. */
+export async function readForOpen<K extends PcadReadKind>(
+  request: DocumentRequest, kind: K, bytes: Uint8Array,
+): Promise<PcadReadResults[K] | null> {
+  const mayRead = () => !cancelledOpenRequests.has(request)
+    && (request.status() === 'current' || request.status() === 'changed');
+  if (!mayRead()) {
+    if (request.status() === 'switched') reportStopped();
+    return null;
+  }
+  const owner = ownOpenRequest(request);
+  try {
+    const result = await readPcadInWorker(kind, bytes, { signal: owner.controller.signal, isCurrent: mayRead });
+    if (!mayRead() || owner.controller.signal.aborted) {
+      if (request.status() === 'switched') reportStopped();
+      return null;
+    }
+    return result;
+  } catch {
+    if (request.status() === 'switched') reportStopped();
+    else if (!owner.controller.signal.aborted && mayReportOpenFailure(request)) {
+      useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
+    }
+    return null;
+  }
+}
 
 /** 開く操作の札を始める。破棄の確認に答えた直後(失ってよいと認めた状態)で呼ぶ。 */
 export function beginOpenRequest(): DocumentRequest {
-  return beginDocumentRequest('open');
+  cancelOpenReads();
+  const request = beginDocumentRequest('open');
+  ownOpenRequest(request);
+  return request;
 }
 
 /** 読込に失敗したとき、その理由を今の画面へ出してよいか(別の文書・後の依頼には出さない)。 */
 export function mayReportOpenFailure(request: DocumentRequest): boolean {
   const status = request.status();
-  return status === 'current' || status === 'changed';
+  return !cancelledOpenRequests.has(request) && (status === 'current' || status === 'changed');
 }
 
 function reportStopped(): void {
@@ -37,6 +104,7 @@ export async function mayOpenAfterRead(
   request: DocumentRequest,
   deps: { readonly confirmDiscard: (messageKey: MessageKey) => Promise<boolean> },
 ): Promise<boolean> {
+  if (cancelledOpenRequests.has(request)) return false;
   const status = request.status();
   if (status === 'current') return true;
   if (status === 'superseded') return false;
@@ -46,6 +114,7 @@ export async function mayOpenAfterRead(
   }
   request.accept();
   if (!(await deps.confirmDiscard('file.openChangedWhileReading'))) return false;
+  if (cancelledOpenRequests.has(request)) return false;
   const answered = request.status();
   if (answered === 'current') return true;
   if (answered !== 'superseded') reportStopped();

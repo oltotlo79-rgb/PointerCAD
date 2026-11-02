@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   EX18_BRACKET_WIDE,
   expectEx18Bracket,
-} from '../../../../model/src/part/ex18RouteFixtures.js';
+} from '../../../../model/src/part/ex18RouteFixtures.testSupport.js';
 import { readPcadFile, writePcadFile } from '../pcadFile.js';
 import { parseDocument, serializeDocument } from '../documentJson.js';
 import { DEFAULT_PRIMITIVE_AXIS, type PartDocument, type PrimitiveFeature, type SurfaceFeature } from '@pointercad/model';

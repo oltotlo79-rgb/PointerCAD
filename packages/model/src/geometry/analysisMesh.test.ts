@@ -15,7 +15,7 @@ import type { SubShapeRef } from './subShapeRef.js';
 
 // Authored UNEXECUTED (Root runs it). Fixture: a cylinder body whose face addresses 0/1/2 are proved by unique
 // cylinder-face origins (side/start/end), as in createSubShapeReference.test.ts.
-type UniqueBinding = { readonly origin: SubShapeOrigin; readonly state: 'unique'; readonly current: ShapeAddress };
+interface UniqueBinding { readonly origin: SubShapeOrigin; readonly state: 'unique'; readonly current: ShapeAddress }
 const roles = ['side', 'start', 'end'] as const;
 const faceClaims: readonly UniqueBinding[] = roles.map((role, index): UniqueBinding => ({
   origin: { version: 1, shapeKind: 'face', identity: { kind: 'cylinder-face', featureId: 'cylinder-1', role } },

@@ -1,6 +1,7 @@
 import { meshCadBoundary, meshCadCurvedBoundary, prepareCadSolidAnalysis, type CadSolidPressureSettings, type CadSolidSettings,
   type CadTetraContext, type FemClient, type FemOptions, type SolidBucklingInput, type SolidBucklingResult } from '@pointercad/fem';
 import type { AnalysisBoundarySource } from '@pointercad/model';
+import { t } from '../i18n/t.js';
 
 /**
  * UI adapter (no FEM runtime of its own) for linear prestress buckling of one CAD solid. The reference state is EXACTLY the
@@ -21,11 +22,17 @@ type CadSolidPrepared = ReturnType<typeof prepareCadSolidAnalysis>;
 
 function need(condition: boolean, message: string): asserts condition {  if (!condition) throw new Error(message);
 }
+function supportedBoundary(hasGravity: boolean, hasPrescribedDisplacement: boolean): void {
+  if (hasGravity) throw new Error(t('solidAnalysis.bucklingGravityUnsupported'));
+  if (hasPrescribedDisplacement) throw new Error(t('solidAnalysis.bucklingDisplacementUnsupported'));
+}
 
 /** The buckling request of one prepared static input. Independently re-checks the units and that the reported total force
  * is the sum of traction x area over the actual loaded boundary triangles, so a stale or mismatched preparation is refused. */
 export function cadSolidBucklingInput(prepared: CadSolidPrepared, modeCount: number): SolidBucklingInput {
   const { input } = prepared;
+  supportedBoundary(input.gravity !== undefined,
+    input.constraints.some(row => row.prescribedMm?.some(value => value !== 0) === true));
   need(input.units === 'N-mm-MPa', 'solid-buckling-units: the static reference must be N-mm-MPa');
   need(input.nodalLoads.length === 0 && input.surfaceLoads.length > 0, 'solid-buckling-load: CAD reference loads are boundary tractions');
   const sum: [number, number, number] = [0, 0, 0];
@@ -47,6 +54,8 @@ export function cadSolidBucklingInput(prepared: CadSolidPrepared, modeCount: num
 
 /** Native refusal text (solidBuckling.py prefixes) to a user-facing category; the message itself is kept verbatim. */
 export function cadSolidBucklingFailureCode(message: string): CadSolidBucklingFailureCode {
+  if (message === t('solidAnalysis.bucklingGravityUnsupported') || message === t('solidAnalysis.bucklingDisplacementUnsupported'))
+    return 'buckling-unsupported';
   if (message.includes('solid-buckling-no-positive-mode')) return 'buckling-no-compression';
   if (message.includes('solid-buckling-mechanism') || message.includes('unrestrained component rigid-body motion')) return 'buckling-mechanism';
   if (message.includes('CAD source changed during analysis') || message.includes('Mesh belongs to another CAD revision')) return 'buckling-stale';
@@ -77,6 +86,8 @@ export async function analyzeCadSolidBuckling(client: Pick<FemClient, 'meshTetra
     ? { kind: 'cancelled', reason: 'superseded' } : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : null;
   try {
     const { modeCount, ...settings } = structuredClone(requested);
+    supportedBoundary(settings.gravity !== undefined,
+      settings.supports?.some(row => row.prescribedMm?.some(value => value !== 0) === true) === true);
     const signature = sourceKey(readCurrent());
     const current = (): CadTetraContext => {
       const value = readCurrent();

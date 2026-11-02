@@ -10,8 +10,9 @@ import { createFatigueSession, fatigueCorrection, fatigueInput, fatigueRefusal,
   type FatigueSession } from '../fatigue/fatigueSession.js';
 import { editFatigueSessionWithPiecewise, fatigueEntryIsSavedWithPiecewise, fatigueSavedEntryWithPiecewise, restoreSavedFatigueEntry,
   runPiecewiseFatigue, type FatigueAnyEdit } from '../fatigue/fatiguePiecewiseSession.js';
+import { runDetailFatigue } from '../fatigue/fatigueDetailSession.js';
 import type { AppState } from './appState.js';
-import { beginDocumentRequest } from './documentRequest.js';
+import { beginDocumentRequest } from './documentRequestCore.js';
 
 export interface FatigueSlice {
   readonly fatigueSession: FatigueSession | null;
@@ -49,7 +50,7 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
       if (selected !== session) { set({ fatigueSession: selected }); return; }
     }
     set({ fatigueSession: { ...session, revision: session.revision + 1, analyzed: null, piecewiseAnalyzed: null,
-      solidAnalyzed: null, draft: { ...session.draft, solidElement: value }, errorKey: null, diagnostic: null } });
+      solidAnalyzed: null, detailAnalyzed: null, draft: { ...session.draft, solidElement: value }, errorKey: null, diagnostic: null } });
   },
   openSolidFatigue: () => {
     const state = get(), solid = state.solidAnalysisSession;
@@ -116,7 +117,7 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
         set({ fatigueSession: { ...session, solidAnalyzed: null, errorKey: 'fatigue.error.solidUnavailable', diagnostic: null } });
         return;
       }
-      const request = beginDocumentRequest('fatigue.solid', state);
+      const request = beginDocumentRequest('fatigue.solid', get, state);
       const definition = checked.entry.definition;
       set({ fatigueSession: { ...session, analyzed: null, solidAnalyzed: null, errorKey: null, diagnostic: null } });
       const current = (): boolean => {
@@ -158,6 +159,12 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
       // The user's sourced multi-slope calibration on the panel's stress histories (the core's existing rainflow and
       // Miner path); every refusal names its row or field. The result is derived only and never saved.
       set({ fatigueSession: runPiecewiseFatigue(session, state.assembly?.parameters ?? state.document.parameters) });
+      return;
+    }
+    if (session.draft.inputMode === 'detail') {
+      // A weld or bolt: the user's joint, area, quantity and its location, and a calibration bound to the same stress
+      // definition; the actual core converts a joint force on the joint's area and runs the piecewise path. Derived only.
+      set({ fatigueSession: runDetailFatigue(session, state.assembly?.parameters ?? state.document.parameters) });
       return;
     }
     if (session.draft.inputMode === 'proportional-tensor') {
@@ -227,7 +234,8 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
     }
     // Keep every other analysis input of the document; replace only the single fatigue configuration (either form).
     const others = owner.beamAnalysisInputs?.analyses
-      .filter(input => input.kind !== 'fatigue' && input.kind !== 'fatigue-proportional-tensor' && input.kind !== 'fatigue-piecewise' && input.kind !== 'fatigue-solid-proportional') ?? [];
+      .filter(input => input.kind !== 'fatigue' && input.kind !== 'fatigue-proportional-tensor' && input.kind !== 'fatigue-piecewise' && input.kind !== 'fatigue-solid-proportional'
+        && input.kind !== 'fatigue-detail') ?? [];
     const attachment = { schema: 'pointercad-beam-inputs/1', analyses: [...others, checked.entry] };
     try {
       if (state.assembly !== null) state.applyAssembly(withBeamAnalysisInputs(state.assembly, attachment));

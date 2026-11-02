@@ -19,6 +19,8 @@ import type { AppState } from '../store/appState.js';
 import { ExchangePanel, ExportPrintPreflight, selectedBodyFeatureIds } from './ExchangePanel.js';
 import type { ExchangeDeps, ExchangeExportOutcome, ExchangeExportRequest } from './exchangeFile.js';
 import type { FileGateway, SaveFileKind } from './fileGateway.js';
+import type * as ImportedReactTypes from 'react';
+import type * as ImportedUseAppStoreTypes from '../store/useAppStore.js';
 
 interface PanelHookRuntime {
   slots: unknown[];
@@ -31,7 +33,7 @@ const panelHooks = vi.hoisted(() => ({ active: null as PanelHookRuntime | null }
 
 // Node の単体検査にDOMは無い。Reactのhookを実行し、effectとcleanupを順に発火させる。
 vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
+  const actual = await importOriginal<typeof ImportedReactTypes>();
   return { ...actual,
     useCallback: <T extends (...args: never[]) => unknown>(callback: T, deps: readonly unknown[]): T => {
       const runtime = panelHooks.active;
@@ -78,7 +80,7 @@ vi.mock('react', async (importOriginal) => {
 });
 
 vi.mock('../store/useAppStore.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../store/useAppStore.js')>();
+  const actual = await importOriginal<typeof ImportedUseAppStoreTypes>();
   const original = actual.useAppStore;
   const hook = Object.assign(
     <T,>(selector: (state: AppState) => T): T => panelHooks.active === null

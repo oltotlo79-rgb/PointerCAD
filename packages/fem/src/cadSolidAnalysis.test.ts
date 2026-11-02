@@ -253,3 +253,146 @@ describe('CAD faces to public solid solver', () => {
   });
 });
 
+describe('explicit CAD gravity to tet4 input', () => {
+  const gravity = { accelerationMps2: [1.25, -9.81, 2.5] as const, densityKgM3: 7800 };
+  // The rectangular fixture is 2 x 3 x 4 mm, independently of translated element forces.
+  const expectedMassKg = 2 * 3 * 4 * 1e-9 * 7800;
+  const expectedBodyN = gravity.accelerationMps2.map(acceleration => expectedMassKg * acceleration);
+  it.each(['traction', 'pressure'] as const)('adds the analytic body force to %s and preserves its material identity', async load => {
+    const value = await preparedMesh(), base = load === 'traction' ? settings() : pressureSettings();
+    const prepared = prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5], { ...base, gravity });
+    expect(prepared.input.gravity).toEqual({ accelerationMps2: gravity.accelerationMps2,
+      densities: [{ materialId: 'steel', densityKgM3: 7800 }] });
+    expect(prepared.loadedAreaMm2).toBe(6);
+    const expected = expectedBodyN.map((force, axis) => force + (axis === 2 ? (load === 'traction' ? 12 : -12) : 0));
+    const forces = translateSolidAnalysis(prepared.input).plan.forcesN, tolerance = Math.hypot(...expected) * 1e-8;
+    for (let axis = 0; axis < 3; axis += 1) {
+      expect(Math.abs(prepared.totalForceN[axis] - expected[axis])).toBeLessThanOrEqual(tolerance);
+      expect(Math.abs(forces.reduce((sum, force) => sum + force[axis], 0) - expected[axis])).toBeLessThanOrEqual(tolerance);
+    }
+  });
+  it.each(['traction', 'pressure'] as const)('allows gravity alone for %s and checks its smaller physical force scale', async load => {
+    const value = await preparedMesh(), base = load === 'traction' ? settings() : pressureSettings();
+    const prepared = prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...base, loadedFaces: [], gravity });
+    expect(prepared.loadedAreaMm2).toBe(0);
+    expect(prepared.input.surfaceLoads).toEqual([]);
+    const forces = translateSolidAnalysis(prepared.input).plan.forcesN, tolerance = Math.hypot(...expectedBodyN) * 1e-8;
+    for (let axis = 0; axis < 3; axis += 1) {
+      expect(Math.abs(prepared.totalForceN[axis] - expectedBodyN[axis])).toBeLessThanOrEqual(tolerance);
+      expect(Math.abs(forces.reduce((sum, force) => sum + force[axis], 0) - expectedBodyN[axis])).toBeLessThanOrEqual(tolerance);
+    }
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...base, loadedFaces: [] })).toThrow(/Select current CAD faces/u);
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...base, fixedFaces: [], loadedFaces: [], gravity })).toThrow(/Select current CAD faces/u);
+  });
+  it.each([
+    ['zero density', { accelerationMps2: [0, -9.81, 0], densityKgM3: 0 }],
+    ['negative density', { accelerationMps2: [0, -9.81, 0], densityKgM3: -1 }],
+    ['nonfinite acceleration', { accelerationMps2: [0, Infinity, 0], densityKgM3: 7800 }],
+    ['sparse acceleration', { accelerationMps2: new Array<number>(3), densityKgM3: 7800 }],
+    ['unknown field', { accelerationMps2: [0, -9.81, 0], densityKgM3: 7800, inferred: true }],
+  ])('rejects %s without silently omitting gravity', async (_label, malformed) => {
+    const value = await preparedMesh(), requested = settings();
+    Reflect.set(requested, 'gravity', malformed);
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5], requested)).toThrow();
+  });
+});
+
+describe('independent current-face supports', () => {
+  function orthogonal(current = context()): NonNullable<CadSolidSettings['supports']> {
+    const faces = [5, 2, 0].map(index => createSubShapeReference(current.body, 'face', index));
+    const [left, front, bottom] = faces;
+    if (!left || !front || !bottom) throw new Error('Missing orthogonal face origins');
+    return [
+      { face: left, fixed: [true, false, false], prescribedMm: [0.125, 0, 0] },
+      { face: front, fixed: [false, true, false], prescribedMm: [0, -0.25, 0] },
+      { face: bottom, fixed: [false, false, true], prescribedMm: [0, 0, 0.5] },
+    ];
+  }
+  it.each(['traction', 'pressure'] as const)('passes real rigid-mode validation for %s with X/Y/Z faces and exact shared DOFs', async load => {
+    const value = await preparedMesh();
+    const prepared = prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...(load === 'traction' ? settings() : pressureSettings()), fixedFaces: [], supports: orthogonal() });
+    const expected = [
+      { node: 0, fixed: [true, true, true], prescribedMm: [0.125, -0.25, 0.5] },
+      { node: 1, fixed: [false, true, true], prescribedMm: [0, -0.25, 0.5] },
+      { node: 2, fixed: [false, false, true], prescribedMm: [0, 0, 0.5] },
+      { node: 3, fixed: [true, false, true], prescribedMm: [0.125, 0, 0.5] },
+      { node: 4, fixed: [true, true, false], prescribedMm: [0.125, -0.25, 0] },
+      { node: 5, fixed: [false, true, false], prescribedMm: [0, -0.25, 0] },
+      { node: 7, fixed: [true, false, false], prescribedMm: [0.125, 0, 0] },
+    ];
+    expect([...prepared.input.constraints].sort((a, b) => a.node - b.node)).toEqual(expected);
+    expect(prepared.input.units).toBe('N-mm-MPa');
+    const { plan } = translateSolidAnalysis(prepared.input);
+    for (const row of expected) {
+      expect(plan.fixed[row.node]).toEqual(row.fixed);
+      expect(plan.prescribedMm?.[row.node]).toEqual(row.prescribedMm);
+    }
+    expect(plan.fixed[6]).toEqual([false, false, false]);
+    expect(plan.fixed[8]).toEqual([false, false, false]);
+    expect(prepared.totalForceN).toEqual([0, 0, load === 'traction' ? 12 : -12]);
+  });
+  it('rejects three X-only supports instead of silently fixing free translations', async () => {
+    const value = await preparedMesh();
+    const supports = orthogonal().map(row => ({ face: row.face, fixed: [true, false, false] as const }));
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), fixedFaces: [], supports })).toThrow(/rigid/u);
+  });
+  it('refuses conflicting shared DOFs, duplicate support faces and overlap with legacy clamps', async () => {
+    const value = await preparedMesh(), [left, front, bottom] = orthogonal();
+    for (const supports of [
+      [left, { ...front, fixed: [true, true, false] as const, prescribedMm: [0.25, -0.25, 0] as const }, bottom],
+      [left, front, bottom, left],
+    ]) expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), fixedFaces: [], supports })).toThrow();
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), supports: [bottom] })).toThrow(/repeated/u);
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), supports: [left] })).toThrow(/Conflicting/u);
+  });
+  it('retains zero clamps and permits equal shared DOFs without duplicate node constraints', async () => {
+    const value = await preparedMesh(), [left] = orthogonal();
+    const prepared = prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), supports: [{ face: left.face, fixed: [true, false, false] }] });
+    expect(prepared.input.constraints).toHaveLength(6);
+    expect(new Set(prepared.input.constraints.map(row => row.node)).size).toBe(6);
+    for (const node of [0, 1, 2, 3])
+      expect(prepared.input.constraints.find(row => row.node === node)).toEqual({ node, fixed: [true, true, true] });
+    expect(prepared.input.constraints.find(row => row.node === 7)).toEqual({ node: 7, fixed: [true, false, false] });
+  });
+  it('captures support faces, flags, prescribed values and gravity before awaiting CAD meshing', async () => {
+    const supports = structuredClone(orthogonal());
+    const gravity = { accelerationMps2: [1.25, -9.81, 2.5] as const, densityKgM3: 7800 };
+    const requested: CadSolidSettings = { ...settings(), fixedFaces: [], supports, gravity };
+    const calls: unknown[] = [];
+    const client: Pick<FemClient, 'meshTetrahedra' | 'analyzeSolid'> = { ...nativeFixture(), analyzeSolid: value => {
+      calls.push(value); return Promise.resolve({ kind: 'failed', identity: { documentId: 'part', revision: 7,
+        generation: 1, requestId: 'solid' }, failure: { code: 'solver-failed', message: 'preserved refusal' } });
+    } };
+    // Mutations are intentional caller races; none may alter the captured request.
+    const beforeReply = (): void => {
+      const row = supports[0];
+      Reflect.set(row, 'face', { ...row.face, bodyFeatureId: 'foreign' });
+      Reflect.set(row, 'fixed', [false, false, false]);
+      Reflect.set(row, 'prescribedMm', [99, 99, 99]);
+      Reflect.set(gravity, 'accelerationMps2', [0, 0, 0]); gravity.densityKgM3 = 1;
+    };
+    expect(await analyzeCadSolid(client, kernel(beforeReply), context, requested)).toMatchObject({ kind: 'failed', code: 'solver-failed' });
+    expect(calls).toHaveLength(1);
+    const input = translateSolidAnalysis(calls[0]).input;
+    expect(input.constraints.find(row => row.node === 0)).toEqual({ node: 0,
+      fixed: [true, true, true], prescribedMm: [0.125, -0.25, 0.5] });
+    expect(input.gravity).toEqual({ accelerationMps2: [1.25, -9.81, 2.5], densities: [{ materialId: 'steel', densityKgM3: 7800 }] });
+  });
+  it('rejects a foreign support face and an empty support list without a numeric fallback', async () => {
+    const value = await preparedMesh(), supports = orthogonal();
+    const foreign = supports.map((row, index) => index === 0 ? { ...row, face: { ...row.face, bodyFeatureId: 'foreign' } } : row);
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), fixedFaces: [], supports: foreign })).toThrow(/Missing/u);
+    expect(() => prepareCadSolidAnalysis(value.current, value.mesh, value.regions, [0, 1, 2, 3, 4, 5],
+      { ...settings(), supports: [] })).toThrow(/dense/u);
+  });
+});

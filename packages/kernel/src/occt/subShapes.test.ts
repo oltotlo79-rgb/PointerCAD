@@ -559,6 +559,101 @@ describe('解析軸上点の収集(P7-14b)', () => {
       expect(points.every((value) => Number.isFinite(value) && !Object.is(value, -0))).toBe(true);
     } finally { handle.delete(); }
   });
+  // Root-only native execution. Never replace raw circle parameters by chord endpoints.
+  function parameterCircle(first = 0, last = 2 * Math.PI): OcctShapeHandle {
+    const { keep, release } = createAllocations();
+    try {
+      const origin = keep(new oc.gp_Pnt_3(0, 0, 0)), normal = keep(new oc.gp_Dir_4(0, 0, 1)), x = keep(new oc.gp_Dir_4(1, 0, 0));
+      const axes = keep(new oc.gp_Ax2_2(origin, normal, x)), circle = keep(new oc.gp_Circ_2(axes, 2));
+      const maker = keep(new oc.BRepBuilderAPI_MakeEdge_9(circle, first, last));
+      expect(maker.IsDone()).toBe(true);
+      return { shape: keep(maker.Edge()), delete: release };
+    } catch (error) { release(); throw error; }
+  }
+  function collectCircle(shape: OcctShapeHandle['shape'], factory?: () => Allocations) {
+    const lines = extractEdges(oc, shape);
+    const edges = collectSubShapes(oc, shape, [], lines.edgeRanges, factory).edges;
+    expect(edges).toHaveLength(1);
+    return edges[0];
+  }
+  it.each([[0, 2 * Math.PI, 4 * Math.PI], [Math.PI / 2, Math.PI, Math.PI]])(
+    'circle runtime basis preserves native parameter [%s,%s] and independent length', (first, last, length) => {
+      const handle = parameterCircle(first, last);
+      try {
+        const edge = collectCircle(handle.shape), basis = edge.circleBasis;
+        expect(basis).toBeDefined();
+        if (basis === undefined) throw new Error('Native circle parameter basis missing');
+        closePoint(basis.origin, [0, 0, 0]); closePoint(basis.xAxis, [1, 0, 0]); closePoint(basis.yAxis, [0, 1, 0]); closePoint(basis.normal, [0, 0, 1]);
+        expect(basis.parameterRange).toEqual([first, last]); expect(basis.orientation).toBe(1);
+        expect(Math.abs(edge.length - length)).toBeLessThanOrEqual(1e-9);
+        closePoint(edge.start, [2 * Math.cos(first), 2 * Math.sin(first), 0]);
+        closePoint(edge.end, [2 * Math.cos(last), 2 * Math.sin(last), 0]);
+        expect(edge.radius).toBe(2); closePoint(edge.axis, [0, 0, 1]);
+      } finally { handle.delete(); }
+    });
+  it('circle runtime basis reverses only traversal, retaining original range and legacy endpoints', () => {
+    const handle = parameterCircle(Math.PI / 2, Math.PI), owned = createAllocations();
+    try {
+      const original = collectCircle(handle.shape), reversed = collectCircle(owned.keep(handle.shape.Reversed()));
+      expect(reversed.circleBasis).toEqual({ ...original.circleBasis, orientation: -1 });
+      expect(reversed.start).toEqual(original.start); expect(reversed.end).toEqual(original.end);
+      expect(reversed.axis).toEqual(original.axis); expect(reversed.radius).toBe(original.radius);
+      const basis = reversed.circleBasis;
+      if (basis === undefined) throw new Error('Reversed circle metadata missing');
+      const u = Math.PI / 2;
+      const tangent = basis.xAxis.map((x, axis) => basis.orientation * (-x * Math.sin(u) + basis.yAxis[axis] * Math.cos(u)));
+      tangent.forEach((value, axis) => expect(value).toBeCloseTo([1, 0, 0][axis], 12));
+    } finally { owned.release(); handle.delete(); }
+  });
+  it('circle runtime basis follows the actual rigid Location once, with no reference-point reconstruction', () => {
+    const handle = parameterCircle(Math.PI / 2, Math.PI), owned = createAllocations();
+    try {
+      const original = collectCircle(handle.shape), transform = owned.keep(new oc.gp_Trsf_1());
+      transform.SetValues(0, 0, 1, 11, 1, 0, 0, 13, 0, 1, 0, 17);
+      const moved = owned.keep(handle.shape.Located(owned.keep(new oc.TopLoc_Location_2(transform)), true));
+      const edge = collectCircle(moved), basis = edge.circleBasis;
+      if (basis === undefined) throw new Error('Placed circle metadata missing');
+      closePoint(basis.origin, [11, 13, 17]); closePoint(basis.xAxis, [0, 1, 0]); closePoint(basis.yAxis, [0, 0, 1]); closePoint(basis.normal, [1, 0, 0]);
+      expect(basis.parameterRange).toEqual([Math.PI / 2, Math.PI]); expect(basis.orientation).toBe(1);
+      closePoint(edge.start, [11, 13, 19]); closePoint(edge.end, [11, 11, 17]);
+      expect(collectCircle(handle.shape)).toEqual(original);
+    } finally { owned.release(); handle.delete(); }
+  });
+  it.each(['TopAbs_INTERNAL', 'TopAbs_EXTERNAL'] as const)('circle runtime basis omits unsupported orientation %s', orientation => {
+    const handle = parameterCircle(), owned = createAllocations();
+    try {
+      // Generated enum constants are typed as {}; obtain the real type from native getters.
+      const empty = owned.keep(new oc.TopoDS_Face());
+      const nativeOrientation = orientation === 'TopAbs_INTERNAL'
+        ? owned.keep(empty.Complemented()).Orientation_1() : empty.Orientation_1();
+      expect(nativeOrientation).toBe(oc.TopAbs_Orientation[orientation]);
+      const unknown = owned.keep(handle.shape.Oriented(nativeOrientation));
+      expect(collectCircle(unknown)).not.toHaveProperty('circleBasis');
+      expect(collectCircle(handle.shape).circleBasis?.orientation).toBe(1);
+    } finally { owned.release(); handle.delete(); }
+  });
+  it('circle runtime basis allocates and releases owned native copies exactly once', () => {
+    const handle = parameterCircle(), counter = counted();
+    try {
+      expect(collectCircle(handle.shape, counter.factory).circleBasis).toBeDefined();
+      const counts = counter.counts(); expect(counts.kept).toBeGreaterThan(5);
+      expect(counts.deleted).toBe(counts.kept); expect(counts.duplicates).toBe(0);
+      const forced = counted(counts.kept - 1);
+      expect(() => collectCircle(handle.shape, forced.factory)).toThrow('軸情報の読取検査');
+      expect(forced.counts()).toEqual({ kept: counts.kept - 1, deleted: counts.kept - 1, duplicates: 0 });
+      expect(collectCircle(handle.shape).radius).toBe(2);
+    } finally { handle.delete(); }
+  });
+  it('circle runtime basis is absent on line and ellipse edges', () => {
+    const box = makeBox(oc, { dx: 1, dy: 2, dz: 3 }), owned = createAllocations();
+    try {
+      expect(collect(box.shape).edges.every(edge => edge.circleBasis === undefined)).toBe(true);
+      const axes = owned.keep(new oc.gp_Ax2_1()), ellipse = owned.keep(new oc.gp_Elips_2(axes, 3, 2));
+      const maker = owned.keep(new oc.BRepBuilderAPI_MakeEdge_12(ellipse));
+      expect(collectCircle(owned.keep(maker.Edge()))).not.toHaveProperty('circleBasis');
+    } finally { owned.release(); box.delete(); }
+  });
+
 });
 
 /** 計画書 タスク4 の検証表が使う箱。頂点は (0,0,0)〜(10,20,30)。 */
@@ -1112,5 +1207,88 @@ describe('ソリッドの面・辺・頂点の一覧と素性(FR-106、FR-405〜
     } finally {
       handle.delete();
     }
+  });
+});
+
+describe('complete native face boundary', () => {
+  let oc: Occt;
+  beforeAll(async () => { oc = await loadOcctForNode(); });
+  function tables(shape: OcctShapeHandle['shape'], factory?: () => Allocations) {
+    return collectSubShapes(oc, shape, tessellate(oc, shape).faceRanges, extractEdges(oc, shape).edgeRanges, factory);
+  }
+  it('maps each box face to its four actual straight edges on that face plane', () => {
+    const handle = makeBox(oc, { dx: 10, dy: 20, dz: 30 });
+    try {
+      const data = tables(handle.shape);
+      expect(data.faces).toHaveLength(6); expect(data.edges).toHaveLength(12);
+      const uses = new Map<number, number>();
+      for (const face of data.faces) {
+        const indices = face.boundaryEdgeIndices;
+        expect(indices).toHaveLength(4);
+        if (indices === undefined || face.axis === null) throw new Error('Missing box boundary');
+        expect(new Set(indices).size).toBe(4);
+        for (const index of indices) {
+          const edge = data.edges.find(row => row.index === index);
+          if (edge === undefined) throw new Error('Boundary references another body');
+          expect(edge.curveKind).toBe('line');
+          for (const p of [edge.start, edge.end]) {
+            const distance = p.reduce((sum, value, axis) => sum + (value - face.centroid[axis]) * (face.axis?.[axis] ?? 0), 0);
+            expect(Math.abs(distance)).toBeLessThanOrEqual(1e-9);
+          }
+          uses.set(index, (uses.get(index) ?? 0) + 1);
+        }
+      }
+      expect([...uses.values()]).toEqual(Array.from({ length: 12 }, () => 2));
+    } finally { handle.delete(); }
+  });
+  it('counts the full cylinder seam once and keeps each cap circle on its own face', () => {
+    const owned = createAllocations();
+    try {
+      const maker = owned.keep(new oc.BRepPrimAPI_MakeCylinder_1(5, 10));
+      const data = tables(owned.keep(maker.Shape()));
+      expect(data.faces).toHaveLength(3); expect(data.edges).toHaveLength(3);
+      const wall = data.faces.find(face => face.surfaceKind === 'cylinder');
+      expect(wall?.boundaryEdgeIndices).toHaveLength(3);
+      expect(new Set(wall?.boundaryEdgeIndices).size).toBe(3);
+      const wallEdges = data.edges.filter(edge => wall?.boundaryEdgeIndices?.includes(edge.index));
+      expect(wallEdges.filter(edge => edge.curveKind === 'circle')).toHaveLength(2);
+      expect(wallEdges.filter(edge => edge.curveKind === 'line')).toHaveLength(1);
+      for (const cap of data.faces.filter(face => face.surfaceKind === 'plane')) {
+        expect(cap.boundaryEdgeIndices).toHaveLength(1);
+        const edge = data.edges.find(row => row.index === cap.boundaryEdgeIndices?.[0]);
+        expect(edge?.curveKind).toBe('circle');
+        expect(edge?.axisOrigin?.[2]).toBeCloseTo(cap.centroid[2], 9);
+      }
+    } finally { owned.release(); }
+  });
+  it('omits completeness for a partial native map while retaining the existing mapped adjacency data', () => {
+    const handle = makeBox(oc, { dx: 10, dy: 20, dz: 30 });
+    let firstMap = true, missing = false;
+    try {
+      const data = tables(handle.shape, () => {
+        const allocations = createAllocations();
+        return { ...allocations, keep: value => {
+          const kept = allocations.keep(value);
+          const method: unknown = Reflect.get(kept, 'FindIndex');
+          if (firstMap && typeof method === 'function') {
+            firstMap = false;
+            const find = (shape: OcctShapeHandle['shape']): number => {
+              const index: unknown = Reflect.apply(method, kept, [shape]);
+              if (typeof index !== 'number') throw new Error('Invalid native index');
+              return index;
+            };
+            Reflect.set(kept, 'FindIndex', (shape: OcctShapeHandle['shape']) => {
+              if (!missing) { missing = true; return 0; }
+              return find(shape);
+            });
+          }
+          return kept;
+        } };
+      });
+      expect(missing).toBe(true);
+      expect(data.faces.filter(face => face.boundaryEdgeIndices === undefined)).toHaveLength(1);
+      expect(data.faces.filter(face => face.boundaryEdgeIndices !== undefined)).toHaveLength(5);
+      expect(data.faces.every(face => face.adjacentFaces !== undefined)).toBe(true);
+    } finally { handle.delete(); }
   });
 });

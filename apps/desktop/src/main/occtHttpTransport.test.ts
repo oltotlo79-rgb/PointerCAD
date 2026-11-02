@@ -11,13 +11,31 @@ import type { MockInstance } from 'vitest';
 import { session } from 'electron';
 import { createOcctHttpTransport, readOcctHttpAsset, readSessionOcctCache } from './occtHttpTransport.js';
 import { desktopOcctTransportUrl } from '@pointercad/ui/desktop-occt-transport';
+import type * as ImportedNodeZlibTypes from 'node:zlib';
+import type * as ImportedNodeHttpTypes from 'node:http';
 
 const native = vi.hoisted(() => ({
+  holdDecode: false, throwDecode: false, pendingDecodes: new Set<() => void>(),
+  decodeOptions: new Array<{ maxOutputLength?: number; chunkSize?: number }>(),
+  decodeQueued: (): void => undefined, decodeCompleted: (): void => undefined,
   request: vi.fn(), fetch: vi.fn<(url: string, options: RequestInit) => Promise<Response>>(),
 }));
 vi.mock('electron', () => ({ net: { request: native.request }, session: { defaultSession: { fetch: native.fetch } } }));
+vi.mock('node:zlib', async importOriginal => {
+  const zlib = await importOriginal<typeof ImportedNodeZlibTypes>();
+  return { ...zlib, gunzip: (...args: Parameters<typeof zlib.gunzip>) => {
+    if (native.throwDecode) throw new Error('Synchronous gunzip failure');
+    const [input, options, callback] = args;
+    native.decodeOptions.push(options);
+    const run = (): void => { zlib.gunzip(input, options, (error, result) => {
+      callback(error, result); native.decodeCompleted();
+    }); };
+    if (native.holdDecode) { native.pendingDecodes.add(run); native.decodeQueued(); }
+    else run();
+  } };
+});
 vi.mock('node:http', async importOriginal => {
-  const http = await importOriginal<typeof import('node:http')>();
+  const http = await importOriginal<typeof ImportedNodeHttpTypes>();
   return { ...http, createServer: (...args: Parameters<typeof http.createServer>) => isolateListener(http.createServer(...args)) };
 });
 
@@ -116,6 +134,11 @@ const transports: ReturnType<typeof createOcctHttpTransport>[] = [];
 const listeners: Server[] = [];
 afterEach(async () => {
   vi.useRealTimers();
+  native.holdDecode = false; native.throwDecode = false;
+  for (const release of native.pendingDecodes) release();
+  native.pendingDecodes.clear();
+  native.decodeOptions.splice(0);
+  native.decodeQueued = () => undefined; native.decodeCompleted = () => undefined;
   vi.unstubAllEnvs();
   for (const transport of transports.splice(0)) await transport.close();
   const remaining = ownedServers.filter(server => server.listening);
@@ -129,7 +152,7 @@ afterEach(async () => {
   expect(remaining).toEqual([]);
   expect(physical.every(options => options.port !== 49721 && options.host === '127.0.0.1')).toBe(true);
 });
-async function fixture(corrupt = false): Promise<string> {
+async function fixture(corrupt = false, compressed = gzip): Promise<string> {
   const parent = join(process.cwd(), 'scratchpad/temp');
   await mkdir(parent, { recursive: true });
   const folder = await mkdtemp(join(parent, 'occt-http-unit-'));
@@ -137,12 +160,12 @@ async function fixture(corrupt = false): Promise<string> {
   await mkdir(join(folder, 'occt/stream'), { recursive: true });
   await writeFile(join(folder, 'occt/manifest.json'), JSON.stringify({ compression: 'gzip',
     sha256: asset.sha256, byteLength: bytes.length,
-    parts: [{ order: 0, file: `opencascade.full-${asset.sha256.slice(0, 16)}.bin`, byteLength: gzip.length }], stream: {
+    parts: [{ order: 0, file: `opencascade.full-${asset.sha256.slice(0, 16)}.bin`, byteLength: compressed.length }], stream: {
       compression: 'gzip', file: `stream/opencascade.full-${asset.sha256}.wasm`,
-      transportByteLength: gzip.length, transportSha256: asset.transportSha256,
+      transportByteLength: compressed.length, transportSha256: digest(compressed),
       decodedByteLength: bytes.length, decodedSha256: asset.sha256,
     } }));
-  await writeFile(join(folder, 'occt/stream', `opencascade.full-${asset.sha256}.wasm`), corrupt ? bytes : gzip);
+  await writeFile(join(folder, 'occt/stream', `opencascade.full-${asset.sha256}.wasm`), corrupt ? bytes : compressed);
   return folder;
 }
 function transport(folder: string): ReturnType<typeof createOcctHttpTransport> {
@@ -240,7 +263,7 @@ describe('fixed owned Desktop OCCT HTTP transport', () => {
     await vi.advanceTimersByTimeAsync(25000); await rejected;
   });
   it('an occupied fixed port returns direct without contacting its owner', async () => {
-    const { createServer } = await vi.importActual<typeof import('node:http')>('node:http');
+    const { createServer } = await vi.importActual<typeof ImportedNodeHttpTypes>('node:http');
     const foreign = createServer((_request, response) => { response.end('foreign'); });
     listeners.push(foreign);
     do {
@@ -302,6 +325,7 @@ describe('fixed owned Desktop OCCT HTTP transport', () => {
 describe('OCCT取得の段階記録', () => {
   // matcherの戻り値をunknownへ限定し、検査対象への型の流入を防ぐ。
   const numberMatcher: unknown = expect.any(Number);
+  const stringMatcher: unknown = expect.any(String);
   const signalMatcher: unknown = expect.any(AbortSignal);
   function objectContaining(value: Record<string, unknown>): unknown {
     return expect.objectContaining(value);
@@ -332,9 +356,26 @@ describe('OCCT取得の段階記録', () => {
     const phases = ['prepare-start', 'manifest-start', 'manifest-validated', 'gzip-read', 'transport-verified',
       'decoded-inflated', 'decoded-verified', 'listener-start', 'listener-ready', 'cache-start',
       'cache-headers', 'cache-body-end', 'cache-hit', 'prepare-http', 'prepare-settled'];
-    expect(evidence(log)).toEqual({ version: 1, pid: process.pid, startedAtEpochMs: numberMatcher,
-      events: phases.map(phase => objectContaining({ phase, elapsedMs: numberMatcher,
-        userCpuUs: numberMatcher, systemCpuUs: numberMatcher })) });
+    const recorded = evidence(log);
+    expect(recorded).toMatchObject({ version: 1, pid: process.pid, startedAtEpochMs: numberMatcher });
+    if (typeof recorded !== 'object' || recorded === null || !('events' in recorded)
+        || !Array.isArray(recorded.events)) throw new Error('段階配列がありません');
+    expect(Object.keys(recorded).sort()).toEqual(['events', 'pid', 'startedAtEpochMs', 'version']);
+    const actualPhases = recorded.events.map((event: unknown) => {
+      expect(event).toEqual(objectContaining({ phase: stringMatcher, elapsedMs: numberMatcher,
+        userCpuUs: numberMatcher, systemCpuUs: numberMatcher }));
+      if (typeof event !== 'object' || event === null || !('phase' in event)
+          || typeof event.phase !== 'string') throw new Error('段階名がありません');
+      return event.phase;
+    });
+    expect([...actualPhases].sort()).toEqual([...phases].sort());
+    const assertOrder = (order: string[]): void => {
+      const positions = order.map(phase => actualPhases.indexOf(phase));
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    };
+    assertOrder(['prepare-start', 'manifest-start', 'manifest-validated', 'gzip-read', 'transport-verified',
+      'listener-start', 'listener-ready', 'decoded-inflated', 'decoded-verified', 'prepare-http', 'prepare-settled']);
+    assertOrder(['listener-ready', 'cache-start', 'cache-headers', 'cache-body-end', 'cache-hit', 'prepare-http']);
     expect(evidence(log)).toMatchObject({ events: arrayContaining([
       objectContaining({ phase: 'gzip-read', byteLength: gzipSync(bytes).length }),
       objectContaining({ phase: 'cache-body-end', byteLength: bytes.length }),
@@ -450,5 +491,137 @@ describe('OCCT取得の段階記録', () => {
     requests('hit');
     await expect(transport(await fixture()).prepare()).resolves.toMatchObject({ kind: 'http' });
     expect(log).not.toHaveBeenCalled();
+  });
+});
+
+
+/** Control event order, never wall-clock sleeps or a different production asset policy. */
+function pausedDecode(): { queued: Promise<void>; completed: Promise<void>; release: () => void } {
+  native.holdDecode = true;
+  const queued = new Promise<void>(resolve => { native.decodeQueued = resolve; });
+  const completed = new Promise<void>(resolve => { native.decodeCompleted = resolve; });
+  return { queued, completed, release: () => {
+    expect(native.pendingDecodes.size).toBe(1);
+    for (const run of native.pendingDecodes) run();
+    native.pendingDecodes.clear();
+  } };
+}
+
+function pausedCache(encodedLength = gzip.length): { started: Promise<void>; release: () => void } {
+  let release = (): void => { throw new Error('Cache request not started'); };
+  const started = new Promise<void>(resolve => {
+    native.request.mockImplementation(() => {
+      const request = new EventEmitter();
+      return Object.assign(request, {
+        abort: () => { request.emit('abort'); },
+        end: () => {
+          release = () => {
+            const response = Object.assign(new EventEmitter(), { statusCode: 200, headers: {
+              'content-type': ['application/wasm'], 'content-encoding': ['gzip'],
+              'content-length': [String(encodedLength)],
+            } });
+            request.emit('response', response); response.emit('data', bytes);
+            request.emit('close'); response.emit('end'); response.emit('close');
+          };
+          resolve();
+        },
+      });
+    });
+  });
+  return { started, release: () => { release(); } };
+}
+
+describe('独立したlocal/cache検証の並行境界', () => {
+  it.each(['cache-first', 'local-first'] as const)('%sでも片方だけでは配信も準備も完了しない', async order => {
+    const decoded = pausedDecode(), cache = pausedCache();
+    const value = transport(await fixture()); const prepared = value.prepare();
+    let settled = false;
+    void prepared.then(() => { settled = true; }, () => { settled = true; });
+    await Promise.all([decoded.queued, cache.started]);
+    const pending = await raw(`/occt/${asset.sha256}.wasm`);
+    expect(pending.status).toBe(503); expect(pending.body).toEqual(Buffer.alloc(0));
+    expect(pending.headers['cache-control']).toBe('no-store'); expect(settled).toBe(false);
+    if (order === 'cache-first') cache.release();
+    else { decoded.release(); await decoded.completed; }
+    const half = await raw(`/occt/${asset.sha256}.wasm`);
+    expect(half.status).toBe(503); expect(half.body).toEqual(Buffer.alloc(0));
+    expect(half.headers['cache-control']).toBe('no-store'); expect(settled).toBe(false);
+    if (order === 'cache-first') { decoded.release(); await decoded.completed; } else cache.release();
+    await expect(prepared).resolves.toEqual({ kind: 'http', url: desktopOcctTransportUrl(asset.sha256),
+      sha256: digest(bytes), byteLength: bytes.length });
+    expect(native.fetch).not.toHaveBeenCalled();
+    const accepted = await raw(`/occt/${asset.sha256}.wasm`);
+    expect(accepted.status).toBe(200); expect(accepted.body).toEqual(gzip);
+  });
+
+  it.each(['same-length', 'oversized', 'truncated'] as const)(
+    '正しいcacheでもlocal decodedの%s不正を拒否する', async mode => {
+      const compressed = mode === 'same-length' ? gzipSync(Buffer.alloc(bytes.length, 120))
+        : mode === 'oversized' ? gzipSync(Buffer.alloc(bytes.length + 1)) : gzip.subarray(0, -3);
+      const decoded = pausedDecode(), cache = pausedCache(compressed.length);
+      const value = transport(await fixture(false, compressed)); const prepared = value.prepare();
+      const rejected = expect(prepared).rejects.toThrow();
+      await Promise.all([decoded.queued, cache.started]); cache.release(); decoded.release();
+      await rejected; await decoded.completed;
+      expect(native.fetch).not.toHaveBeenCalled(); expect(ownedServers.every(server => !server.listening)).toBe(true);
+    },
+  );
+
+  it('close後の遅いlocal完了から成功せずcache待ちとlistenerを閉じる', async () => {
+    const decoded = pausedDecode(), cache = pausedCache();
+    const value = transport(await fixture()); const prepared = value.prepare();
+    const rejected = expect(prepared).rejects.toThrow('aborted');
+    let successful = false; void prepared.then(() => { successful = true; }, () => undefined);
+    await Promise.all([decoded.queued, cache.started]); await value.close(); await rejected;
+    decoded.release(); await decoded.completed;
+    expect(successful).toBe(false); expect(native.fetch).not.toHaveBeenCalled();
+    expect(ownedServers.every(server => !server.listening)).toBe(true);
+    await expect(value.prepare()).rejects.toThrow('closed');
+  });
+
+  it('decodeの25000ms期限を延ばさず拒否しtimerとlistenerを残さない', async () => {
+    vi.useFakeTimers();
+    const decoded = pausedDecode(), cache = pausedCache();
+    const value = transport(await fixture()); const prepared = value.prepare();
+    const rejected = expect(prepared).rejects.toThrow('OCCT decode timeout');
+    await Promise.all([decoded.queued, cache.started]); cache.release();
+    await vi.advanceTimersByTimeAsync(24999);
+    expect(ownedServers.some(server => server.listening)).toBe(true);
+    await vi.advanceTimersByTimeAsync(1); await rejected;
+    expect(vi.getTimerCount()).toBe(0);
+    decoded.release(); await decoded.completed;
+    expect(native.fetch).not.toHaveBeenCalled(); expect(ownedServers.every(server => !server.listening)).toBe(true);
+  });
+
+  it('gunzipの同期throwでもtimeout/abort listenerを残さず元の拒否を保つ', async () => {
+    vi.useFakeTimers(); native.throwDecode = true; requests('stall');
+    const removed = vi.spyOn(AbortSignal.prototype, 'removeEventListener');
+    const value = transport(await fixture());
+    await expect(value.prepare()).rejects.toThrow('Synchronous gunzip failure');
+    expect(vi.getTimerCount()).toBe(0);
+    expect(removed.mock.calls.filter(([name]) => name === 'abort').length).toBeGreaterThanOrEqual(2);
+    expect(native.fetch).not.toHaveBeenCalled(); expect(ownedServers.every(server => !server.listening)).toBe(true);
+  });
+});
+
+
+describe('固定decoded長を使う復号bufferの境界', () => {
+  it('小さい資産でもzlibの最小容量を守り、出力上限は増やさない', async () => {
+    requests('hit');
+    await expect(transport(await fixture()).prepare()).resolves.toMatchObject({ kind: 'http' });
+    expect(native.decodeOptions).toEqual([{ maxOutputLength: bytes.length,
+      chunkSize: Math.max(64, bytes.length + 1) }]);
+  });
+
+  it('上限を1byte超えるlocal本文を正しいcacheで正当化しない', async () => {
+    const compressed = gzipSync(Buffer.concat([bytes, Buffer.from([0])]));
+    const cache = pausedCache(compressed.length);
+    const prepared = transport(await fixture(false, compressed)).prepare();
+    const rejected = expect(prepared).rejects.toMatchObject({ code: 'ERR_BUFFER_TOO_LARGE' });
+    await cache.started; cache.release(); await rejected;
+    expect(native.decodeOptions).toEqual([{ maxOutputLength: bytes.length,
+      chunkSize: Math.max(64, bytes.length + 1) }]);
+    expect(native.fetch).not.toHaveBeenCalled();
+    expect(ownedServers.every(server => !server.listening)).toBe(true);
   });
 });

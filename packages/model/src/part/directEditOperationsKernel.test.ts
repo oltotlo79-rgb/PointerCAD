@@ -13,7 +13,7 @@ import { absoluteCoordinate } from '../sketch/createSketchDocument.js';
 import { appendSolid, createEmptyPartDocument } from './createPartDocument.js';
 import { createHoleTranslateFeature, createFaceRotateFeature } from './directEditOperations.js';
 import { buildEx18DirectSeed, directExpression as ev, directFaceReference, directPlanarFace,
-  directImportedBrep, withEx18UnselectedBody, type Ex18DirectSeed } from './ex18RouteBuildersDirect.js';
+  directImportedBrep, withEx18UnselectedBody, type Ex18DirectSeed } from './ex18RouteBuildersDirect.testSupport.js';
 import { resolvePart } from './resolvePart.js';
 import { recomputePart } from './recomputePart.js';
 import type { PrimitiveFeature } from './types.js';

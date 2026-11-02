@@ -3,11 +3,15 @@ import type { AnalysisIssue, BeamAnalysisDocument, StandardBeamContactDefinition
   StandardBeamDefinition } from '@pointercad/model/beam-analysis';
 import { prepareCadBeamJointContact, type BeamJointContactInput, prepareCadBeamWeldContact, type BeamWeldContactInput, prepareCadBeamBoltContact, type BeamBoltContactInput, standardMembersToBeamBuckling, standardMembersToBeamTransient, translateBeamContact, type BeamBucklingInput,
   type BeamContactInput, type BeamTransientInput, translateBeamImpact, type BeamImpactInput } from '@pointercad/fem';
+import { prepareCadBeamWeldSpanContact, type BeamWeldSpanContactInput } from '@pointercad/fem';
 import type { BeamDefinition } from './beamSession.js';
 import type { BeamSourceSnapshot } from './beamSource.js';
 import { prepareCadBeamJointInitialStrain, type BeamJointInitialStrainInput } from '@pointercad/fem';
+import { prepareCadBeamFrictionContact, type BeamFrictionContactInput, type FrictionSolveOptions } from '@pointercad/fem';
 
 export type PreparedBeamAnalysis =
+  | { readonly ok: true; readonly kind: 'friction'; readonly input: BeamFrictionContactInput; readonly solverOptions: FrictionSolveOptions }
+  | { readonly ok: true; readonly kind: 'weld-span-contact'; readonly input: BeamWeldSpanContactInput }
   | { readonly ok: true; readonly kind: 'joint-initial-strain'; readonly input: BeamJointInitialStrainInput }
   | { readonly ok: true; readonly kind: 'joint-contact'; readonly input: BeamJointContactInput }
   | { readonly ok: true; readonly kind: 'weld-contact'; readonly input: BeamWeldContactInput }
@@ -25,6 +29,17 @@ export type PreparedBeamAnalysis =
  * translation refuses wrong pair orientation, duplicates and two-sided stops against the current positions. */
 function prepareContact(source: BeamSourceSnapshot, definition: StandardBeamContactDefinition,
   context: StandardBeamAdapterContext): PreparedBeamAnalysis {
+  if (definition.weldLayers?.schema === 'pointercad-cad-weld-layers/2') {
+    if (definition.axialBolts !== undefined || definition.initialStrain !== undefined) return {
+      ok: false, issue: { code: 'weld-span-mixed', path: 'weldLayers', message: 'Span weld combinations are unsupported' } };
+    try {
+      return { ok: true, kind: 'weld-span-contact', input: prepareCadBeamWeldSpanContact(source.document,
+        definition, definition.weldLayers, context) };
+    } catch (error) {
+      return { ok: false, issue: { code: 'weld-span-input', path: 'weldLayers',
+        message: error instanceof Error ? error.message : 'Weld span input could not be prepared' } };
+    }
+  }
   if (definition.initialStrain !== undefined) {
     try {
       return { ok: true, kind: 'joint-initial-strain', input: prepareCadBeamJointInitialStrain(source.document, definition, context) };
@@ -124,6 +139,10 @@ export function prepareBeamAnalysis(source: BeamSourceSnapshot, definition: Beam
   const context = { currentSource: source.source, bodies: source.ownership.bodies,
     assemblyOptions: { library: source.library, subAssemblies: source.library.assemblies },
     ...(source.jointOccurrence === undefined ? {} : { jointOccurrence: source.jointOccurrence }) };
+  if (definition.schema === 'pointercad-standard-beam/7') {
+    try { return { ok: true, kind: 'friction', input: prepareCadBeamFrictionContact(source.document, definition, context), solverOptions: { ...definition.solverOptions } }; }
+    catch (error) { return { ok: false, issue: { code: 'invalid-input', path: 'definition', message: error instanceof Error ? error.message : String(error) } }; }
+  }
   // Impact (schema 6) has its own route and is never prepared as another analysis.
   if (definition.schema === 'pointercad-standard-beam/6') return prepareImpact(source, definition, context);
   if (definition.schema === 'pointercad-standard-beam/5') return prepareContact(source, definition, context);

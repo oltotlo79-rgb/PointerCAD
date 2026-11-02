@@ -18,10 +18,11 @@ import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { MathExpressionDialogProps } from './MathExpressionDialog.js';
 import { PropertyMathField, replacePropertySketchFeature } from './PropertyMathField.js';
+import type * as ImportedReactTypes from 'react';
 
 // Seed only the open-dialog UI state. The field's actual onApply, store, model and math engine run unchanged.
 vi.mock('react', async importOriginal => {
-  const react = await importOriginal<typeof import('react')>();
+  const react = await importOriginal<typeof ImportedReactTypes>();
   return { ...react, useState: vi.fn(react.useState) };
 });
 const view = vi.hoisted(() => ({ dialog: null as MathExpressionDialogProps | null }));

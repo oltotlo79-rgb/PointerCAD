@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 /**
  * 書き出し・読み込みの 1 手(計画書 docs/plans/P6-入出力.md §2.2・§2.8、タスク32)。
  *
@@ -171,7 +172,7 @@ export async function importFile(format?: ImportFileKind): Promise<void> {
   const loaded = loadedPartAttachments(outcome.document,
     { shapes: outcome.shapes, meshes: outcome.meshes, canvases: new Map() },
     { shapes: after.importedShapes, meshes: after.importedMeshes, canvases: after.canvases },
-    kind => `${kind}-asset-${crypto.randomUUID()}`, newIds);
+    kind => createDocumentElementId(`${kind}-asset-`), newIds);
   after.setImportedAttachments(loaded.attachments.shapes, loaded.attachments.meshes);
   after.applyDocument(loaded.document);
   showNotices(outcome.notices);

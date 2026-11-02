@@ -1,4 +1,4 @@
-import type { OfflineAssetManifest, OfflineAssetRecord } from '../../../../scripts/vite/offlineProtocol.mjs';
+import type { OfflineAssetManifest, OfflineAssetRecord } from '@pointercad/ui/offline-protocol';
 import { offlineAssetRequestUrl } from './offlineNetwork.js';
 import { inspectPreparedOfflineEdition, type OfflineReadStoragePort } from './offlineReady.js';
 import { verifyOfflineAssetResponse } from './offlineTransfer.js';

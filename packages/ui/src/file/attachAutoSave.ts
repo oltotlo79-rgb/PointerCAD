@@ -21,8 +21,6 @@ import {
   DEFAULT_AUTO_SAVE_IDENTITY,
   createAutoSaver,
   createIndexedDbAutoSaveStorage,
-  readDocumentBundle,
-  readDrawingBundle,
   type AutoSaveDocument,
   type SaveDocumentEncoder,
   type SaveDocumentInput,
@@ -41,7 +39,9 @@ import { useAppStore } from '../store/useAppStore.js';
 import { createSecureUuid, prepareDocumentSession, SecurePartIdentityError,
   type PreparedDocumentSession } from '../store/fileSlice.js';
 import { saveFileAsThrough, withPcadExtension, withPcadaExtension, withPcaddExtension } from './fileGateway.js';
-import { openErrorMessageKey, readPartDocument } from './partFile.js';
+import { openErrorMessageKey } from './partFile.js';
+import { readPcadInWorker } from './pcadReadWorker.js';
+import { cancelOpenReads } from './documentOpenGuard.js';
 import { activeHasUnsavedChanges } from './assemblyFile.js';
 import { activeDocument } from '../store/documentKind.js';
 import { hasSaveRecoveryCopy } from './saveFailure.js';
@@ -248,6 +248,37 @@ export function attachAutoSave(options: AttachAutoSaveOptions): () => void {
 // 起動時の案内と、その返事
 // ---------------------------------------------------------------------------
 
+const recoveryReaders = new Map<string, { readonly saver: AutoSaver; readonly cancel: () => void }>();
+
+function cancelRecoveryReads(saver?: AutoSaver): void {
+  for (const owner of recoveryReaders.values()) {
+    if (saver === undefined || owner.saver === saver) owner.cancel();
+  }
+}
+
+function beginRecoveryRead(channel: 'restore' | 'restorePrompt', saver: AutoSaver, shouldApply?: () => boolean) {
+  cancelRecoveryReads();
+  const request = beginDocumentRequest(channel);
+  const controller = new AbortController();
+  let finished = false, unsubscribe = (): void => undefined;
+  const finish = (): void => {
+    if (finished) return;
+    finished = true;
+    unsubscribe();
+    if (recoveryReaders.get(channel) === owner) recoveryReaders.delete(channel);
+    controller.abort();
+  };
+  const owner = { saver, cancel: finish };
+  recoveryReaders.set(channel, owner);
+  const isCurrent = () => !finished && request.isCurrent() && shouldApply?.() !== false;
+  unsubscribe = useAppStore.subscribe(() => { if (!isCurrent()) finish(); });
+  return {
+    isCurrent,
+    control: { signal: controller.signal, isCurrent },
+    finish,
+  };
+}
+
 export interface LoadAutoSavePromptOptions {
   readonly record?: AutoSaveRecord | null;
   /**
@@ -266,8 +297,10 @@ export async function loadAutoSavePrompt(
   saver: AutoSaver,
   options: LoadAutoSavePromptOptions = {},
 ): Promise<void> {
+  const read = beginRecoveryRead('restorePrompt', saver, options.shouldApply);
+  try {
   const record = options.record === undefined ? await saver.readLatest() : options.record;
-  const mayApply = (): boolean => options.shouldApply?.() !== false;
+  const mayApply = read.isCurrent;
   if (!mayApply()) return;
   useAppStore.setState({ recoveryRecord: record });
 
@@ -277,15 +310,15 @@ export async function loadAutoSavePrompt(
     }
     return;
   }
-  const outcome = record.kind === 'drawing' ? await readDrawingRecovery(record)
-    : record.kind === 'assembly' ? await readAssemblyRecovery(record) : readPartDocument(record.bytes);
+  const outcome = await readPcadInWorker(record.kind ?? 'part', record.bytes, read.control);
+  if (!mayApply()) return;
   if (!outcome.ok) {
     if (mayApply()) {
       useAppStore.getState().setRestorePrompt({
         savedAt: record.savedAt,
         documentName: record.documentName,
         unrecoverable: true,
-        reasonKey: outcome.messageKey,
+        reasonKey: openErrorMessageKey(outcome.error.code),
       });
     }
     return;
@@ -295,6 +328,8 @@ export async function loadAutoSavePrompt(
       .getState()
       .setRestorePrompt({ savedAt: record.savedAt, documentName: record.documentName });
   }
+  } catch (error) { if (read.isCurrent()) reportAutoSaveFailure(error); }
+  finally { read.finish(); }
 }
 
 /**
@@ -309,8 +344,9 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   const before = useAppStore.getState();
   // 押した時点の文書と比べる。版の番号は通常の編集で増えないので、参照で調べる共通の判定を使う
   // (docs/review-2026-09-28-codex.md R01 の注意)。変わっていたら何もせず、案内を残す。
-  const request = beginDocumentRequest('restore', before);
-  const isCurrent = (): boolean => request.isCurrent();
+  const read = beginRecoveryRead('restore', saver);
+  const isCurrent = read.isCurrent;
+  try {
   const record = await recoveryRecordOf(saver);
   if (!isCurrent()) return;
   if (record === null) {
@@ -318,9 +354,9 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
     return;
   }
   if (record.kind === 'drawing') {
-    const outcome = await readDrawingBundle(record.bytes);
+    const outcome = await readPcadInWorker('drawing', record.bytes, read.control);
     if (!isCurrent()) return;
-    if (!outcome.ok) { await loadAutoSavePrompt(saver, { record, shouldApply: isCurrent }); return; }
+    if (!outcome.ok) { showRecoveryReadFailure(record, outcome.error.code); return; }
     let preparedSession: PreparedDocumentSession;
     try { preparedSession = prepareDocumentSession(); }
     catch (error) {
@@ -341,12 +377,10 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
     return;
   }
   if (record.kind === 'assembly') {
-    const outcome = await readDocumentBundle(record.bytes, 'assembly');
+    const outcome = await readPcadInWorker('assembly', record.bytes, read.control);
     if (!isCurrent()) return;
-    if (!outcome.ok || outcome.bundle.kind !== 'assembly') {
-      await loadAutoSavePrompt(saver, { record, shouldApply: isCurrent });
-      return;
-    }
+    if (!outcome.ok) { showRecoveryReadFailure(record, outcome.error.code); return; }
+    if (outcome.bundle.kind !== 'assembly') return;
     const state = useAppStore.getState();
     let preparedSession: PreparedDocumentSession;
     try { preparedSession = prepareDocumentSession(); }
@@ -362,14 +396,15 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
     useAppStore.setState({ recoveryRecord: null });
     return;
   }
-  const outcome = readPartDocument(record.bytes);
+  const outcome = await readPcadInWorker('part', record.bytes, read.control);
+  if (!isCurrent()) return;
   if (!outcome.ok) {
     // 読めない控えは消さない。版を更新して復元するか、元のバイト列を書き出せるよう案内を保つ。
     useAppStore.getState().setRestorePrompt({
       savedAt: record.savedAt,
       documentName: record.documentName,
       unrecoverable: true,
-      reasonKey: outcome.messageKey,
+      reasonKey: openErrorMessageKey(outcome.error.code),
     });
     return;
   }
@@ -394,18 +429,13 @@ export async function restoreAutoSave(saver: AutoSaver): Promise<void> {
   store.fileGateway.clearSaveTarget?.();
   store.setRestorePrompt(null);
   useAppStore.setState({ recoveryRecord: null });
+  } catch (error) { if (isCurrent()) reportAutoSaveFailure(error); }
+  finally { read.finish(); }
 }
 
-async function readDrawingRecovery(record: AutoSaveRecord) {
-  const result = await readDrawingBundle(record.bytes);
-  return result.ok ? { ok: true as const } :
-    { ok: false as const, messageKey: openErrorMessageKey(result.error.code) };
-}
-
-async function readAssemblyRecovery(record: AutoSaveRecord) {
-  const result = await readDocumentBundle(record.bytes, 'assembly');
-  return result.ok ? { ok: true as const } :
-    { ok: false as const, messageKey: openErrorMessageKey(result.error.code) };
+function showRecoveryReadFailure(record: AutoSaveRecord, code: Parameters<typeof openErrorMessageKey>[0]): void {
+  useAppStore.getState().setRestorePrompt({ savedAt: record.savedAt, documentName: record.documentName,
+    unrecoverable: true, reasonKey: openErrorMessageKey(code) });
 }
 
 function identityOfRecord(record: AutoSaveRecord): AutoSaveIdentity {
@@ -423,8 +453,12 @@ function recoveryRecordOf(saver: AutoSaver): Promise<AutoSaveRecord | null> {
 
 /** 案内の「破棄する」。控えを消して案内を閉じる。 */
 export async function discardAutoSave(saver: AutoSaver): Promise<void> {
+  cancelRecoveryReads(saver);
+  const request = beginDocumentRequest('restore');
   const record = await recoveryRecordOf(saver);
+  if (!request.isCurrent()) return;
   await saver.discard(record === null ? undefined : identityOfRecord(record));
+  if (!request.isCurrent()) return;
   useAppStore.getState().setRestorePrompt(null);
   useAppStore.setState({ recoveryRecord: null });
 }
@@ -515,6 +549,7 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
     revision += 1;
     const currentRevision = revision;
     stopCurrent?.();
+    if (saver !== null) cancelRecoveryReads(saver);
     let encodingIdentity: DocumentIdentity | null = null;
     const reportState = (stage: 'pending' | 'preparing' | 'compressing' | 'writing' | 'saved' | 'failed', error?: unknown): void => {
       if (detached || currentRevision !== revision || useAppStore.getState().autoSaver !== current) return;
@@ -569,6 +604,8 @@ function startDocumentAutoSave(options: StartAutoSaveOptions): () => void {
     detached = true;
     unsubscribe();
     stopCurrent?.();
+    if (saver !== null) cancelRecoveryReads(saver);
+    cancelOpenReads();
     cancelDocumentSaves(useAppStore.getState().fileGateway);
     if (useAppStore.getState().autoSaver === saver) useAppStore.getState().setAutoSaver(null);
   };
@@ -605,6 +642,8 @@ export function startAutoSave(options: StartAutoSaveOptions = {}): () => void {
 
   return () => {
     detached = true;
+    cancelRecoveryReads(saver);
+    cancelOpenReads();
     detach();
     if (useAppStore.getState().autoSaver === saver) {
       useAppStore.getState().setAutoSaver(null);

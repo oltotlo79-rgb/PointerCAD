@@ -7,6 +7,7 @@ import {
 } from '../../packages/io/src/pcad/assemblyDistinctPartsFixture.testSupport.js';
 import { partLibraryOfBundle } from '../../packages/model/src/index.js';
 import { observePositiveDuration, observeViewportRate, reportDuration, type DurationObservation } from '../../packages/test-utils/src/releasePerformance.js';
+import { requireCompletedInterferenceRuns } from '../../packages/test-utils/src/interferenceCompletion.js';
 import { assembly1000HostFile, HOST_JOINT_IDS, HOST_NAMES } from './assembly1000HostFixture.js';
 import { readAssemblyStats, type AssemblyBrowserStats } from './assemblyTestSupport.js';
 import { openTarget } from './electronAppFlow.js';
@@ -46,7 +47,7 @@ const ROTATION = 1e-9;
 const HOST_LOAD_TARGET_MS = 5_000; // 開いて描画する改善目標。有限待機の上限とは別。
 const HOST_SAVE_TARGET_MS = 5_000; // 保存の改善目標。未達だけで停止しない。
 const HOST_CANCEL_TARGET_MS = 200; // cancel shown: 1,000 ms
-const HOST_INTERFERENCE_TARGET_MS = 2_000; // all-path interference, the 50-part target: 10 s ('interference' profile)
+const HOST_INTERFERENCE_TARGET_MS = 2_000; // Reference observation; the finite functional window is INTERFERENCE_FOLLOW_MS.
 
 interface GateEvent {
   readonly attachment: number;
@@ -367,13 +368,174 @@ const RING_VOLUME_MM3 = 4 * Math.PI * (1.2 ** 2 - 0.625 ** 2);
 
 /*
  * How long one run is followed before it is recorded as unfinished and stopped through the panel's close (the store
- * then answers the running request's cancel check). Six times the 10 s limit: an unfinished run already fails the
- * judgement, and stopping it keeps the later stages (cancel display, reopen) measurable within the test's own limit.
+ * then answers the running request's cancel check). This finite observation bound is distinct from a speed target.
+ * An unfinished run fails completion; stopping it keeps cancel display and reopen observable within the test limit.
  */
-const INTERFERENCE_FOLLOW_MS = 60_000;
+// Finite functional observation; previous partial progress does not establish remaining processing time.
+// Actual 150 s observations remained active at pairs 498861/498961/499039 of 499500.
+// Root approved twice that observation window; this does not predict completion time or certify speed.
+const INTERFERENCE_FOLLOW_MS = 300_000;
+
+// Root-approved finite functional budget: other operations 600 s plus all five observation windows.
+export const ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS = 600_000 + INTERFERENCE_RUNS * INTERFERENCE_FOLLOW_MS;
 
 interface InterferenceRun { readonly ms: number; readonly completed: boolean; readonly progressSeen: boolean;
   readonly rows: readonly string[]; readonly summary: string; readonly error: string | null }
+
+/** 今回の実入力が作るComlink callback portを読むだけの有限診断。時間判定は変更しない。 */
+async function beginInterferenceProgressObservation(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const key = 'pcadEx12InterferenceTransport';
+    if (Reflect.has(window, key)) throw new Error('Previous interference observation remains active');
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'MessageChannel');
+    const Original = window.MessageChannel, started = performance.now();
+    if (descriptor === undefined || descriptor.configurable !== true || !Object.hasOwn(descriptor, 'value') || typeof Original !== 'function') {
+      throw new Error('MessageChannel cannot be observed and restored safely');
+    }
+    const listeners: { readonly port: MessagePort; readonly listener: (event: MessageEvent<unknown>) => void }[] = [];
+    type Row = { phase: string; calls: number; firstMs: number; lastMs: number;
+      firstPairs: number; lastPairs: number; firstComponents: number; lastComponents: number;
+      replies: number; replyTotalMs: number; replyMaxMs: number; replySamplesMs: number[] };
+    const phases = new Map<string, Row>();
+    const pending = new Map<MessagePort, Map<string, { readonly phase: string; readonly at: number }>>();
+    const restorations: (() => void)[] = [];
+    const delay: unknown = Reflect.get(window, 'pcadDebugStepDelayMs');
+    const debugStepDelay = delay === undefined ? { kind: 'undefined' }
+      : typeof delay === 'number' && Number.isFinite(delay) ? { kind: 'number', value: delay } : { kind: typeof delay };
+    let requestId: string | null = null, channels = 0, bounded = false, invalid = false, lastMs = 0;
+    const inspect = (port: MessagePort, event: MessageEvent<unknown>): void => {
+      try {
+        const data: unknown = event.data;
+        if (data === null || typeof data !== 'object' || Reflect.get(data, 'type') !== 'APPLY') return;
+        const args: unknown = Reflect.get(data, 'argumentList');
+        if (!Array.isArray(args) || args.length !== 1) return;
+        const wire: unknown = args[0];
+        if (wire === null || typeof wire !== 'object' || Reflect.get(wire, 'type') !== 'RAW') return;
+        const value: unknown = Reflect.get(wire, 'value');
+        if (value === null || typeof value !== 'object') return;
+        const totalPairs: unknown = Reflect.get(value, 'totalPairs'), totalComponents: unknown = Reflect.get(value, 'totalComponents');
+        if (totalPairs !== 499500 || totalComponents !== 1000) return;
+        const phase: unknown = Reflect.get(value, 'phase'), id: unknown = Reflect.get(value, 'requestId');
+        const messageId: unknown = Reflect.get(data, 'id');
+        const pairs: unknown = Reflect.get(value, 'completedPairs'), components: unknown = Reflect.get(value, 'completedComponents');
+        if (typeof phase !== 'string' || !['prepare', 'candidates', 'common', 'mesh'].includes(phase)
+          || typeof id !== 'string' || id.length === 0 || id.length > 128
+          || typeof messageId !== 'string' || messageId.length === 0 || messageId.length > 128
+          || typeof pairs !== 'number' || !Number.isSafeInteger(pairs) || pairs < 0 || pairs > totalPairs
+          || typeof components !== 'number' || !Number.isSafeInteger(components) || components < 0 || components > totalComponents) {
+          invalid = true; return;
+        }
+        if (requestId !== null && requestId !== id) { invalid = true; return; }
+        requestId = id;
+        const ms = performance.now() - started;
+        if (!Number.isFinite(ms) || ms < lastMs || ms < 0) { invalid = true; return; }
+        lastMs = ms;
+        const outstanding = pending.get(port);
+        if (outstanding === undefined || outstanding.has(messageId)) { invalid = true; return; }
+        if (outstanding.size >= 64) { bounded = true; return; }
+        outstanding.set(messageId, { phase, at: performance.now() });
+        const row = phases.get(phase);
+        if (row === undefined) phases.set(phase, { phase, calls: 1, firstMs: ms, lastMs: ms,
+          firstPairs: pairs, lastPairs: pairs, firstComponents: components, lastComponents: components,
+          replies: 0, replyTotalMs: 0, replyMaxMs: 0, replySamplesMs: [] });
+        else {
+          if (row.calls >= 1_000_000) { bounded = true; return; }
+          row.calls += 1; row.lastMs = ms; row.lastPairs = pairs; row.lastComponents = components;
+        }
+      } catch { invalid = true; }
+    };
+    const Observed = new Proxy(Original, {
+      construct(target, args, newTarget) {
+        // 元constructorを一度だけ実行し、同じinstance/portを返す。listenerは配送を消費しない。
+        const channel: unknown = Reflect.construct(target, args, newTarget);
+        if (channel === null || typeof channel !== 'object') throw new Error('MessageChannel returned no object');
+        try {
+          if (channel instanceof Original) {
+            channels = Math.min(channels + 1, 9);
+            if (channels > 8) bounded = true;
+            else for (const port of [channel.port1, channel.port2]) {
+              const listener = (event: MessageEvent<unknown>): void => { inspect(port, event); };
+              const originalPost = port.postMessage;
+              const ownPost = Object.getOwnPropertyDescriptor(port, 'postMessage');
+              const outstanding = new Map<string, { readonly phase: string; readonly at: number }>();
+              pending.set(port, outstanding);
+              const observedPost = function (this: unknown, ...arguments_: unknown[]): unknown {
+                // Forward the exact receiver and arguments once; transport errors keep their original semantics.
+                const result: unknown = Reflect.apply(originalPost, this, arguments_);
+                try {
+                  const reply: unknown = arguments_[0];
+                  const id: unknown = reply !== null && typeof reply === 'object' ? Reflect.get(reply, 'id') : undefined;
+                  const held = typeof id === 'string' ? outstanding.get(id) : undefined;
+                  if (held !== undefined && typeof id === 'string') {
+                    const row = phases.get(held.phase), ms = performance.now() - held.at;
+                    outstanding.delete(id);
+                    if (row === undefined || !Number.isFinite(ms) || ms < 0) invalid = true;
+                    else {
+                      row.replies += 1; row.replyTotalMs += ms; row.replyMaxMs = Math.max(row.replyMaxMs, ms);
+                      if (row.replySamplesMs.length < 8) row.replySamplesMs.push(ms);
+                    }
+                  }
+                } catch { invalid = true; }
+                return result;
+              };
+              Object.defineProperty(port, 'postMessage', { configurable: true, writable: true, value: observedPost });
+              restorations.push(() => {
+                if (Object.getOwnPropertyDescriptor(port, 'postMessage')?.value !== observedPost) { invalid = true; return; }
+                if (ownPost === undefined) { if (!Reflect.deleteProperty(port, 'postMessage')) invalid = true; }
+                else Object.defineProperty(port, 'postMessage', ownPost);
+              });
+              port.addEventListener('message', listener);
+              listeners.push({ port, listener });
+            }
+          } else invalid = true;
+        } catch { invalid = true; }
+        return channel;
+      },
+    });
+    Object.defineProperty(window, 'MessageChannel', { ...descriptor, value: Observed });
+    Reflect.set(window, key, () => {
+      for (const { port, listener } of listeners) {
+        try { port.removeEventListener('message', listener); } catch { invalid = true; }
+      }
+      for (const restore of restorations) { try { restore(); } catch { invalid = true; } }
+      if (window.MessageChannel === Observed && descriptor !== undefined) Object.defineProperty(window, 'MessageChannel', descriptor);
+      else invalid = true;
+      Reflect.deleteProperty(window, key);
+      return { diagnosticOnly: true, performanceQualified: false, observed: requestId !== null,
+        valid: !invalid && !bounded && requestId !== null, bounded, requestId, channels, debugStepDelay,
+        pendingReplies: [...pending.values()].flatMap(value => [...value.values()].map(row => ({
+          phase: row.phase, waitedMs: performance.now() - row.at,
+        }))),
+        phases: [...phases.values()], unobservedPhases: ['prepare', 'candidates', 'common', 'mesh'].filter(phase => !phases.has(phase)) };
+    });
+  });
+}
+
+/** 全phase原票を閉じる。元flowの例外がある時は添付の失敗で置き換えない。 */
+async function observedInterferenceRun(page: Page, info: TestInfo, run: number): Promise<InterferenceRun> {
+  await beginInterferenceProgressObservation(page);
+  let failed = false, observationFailed = false;
+  let result: InterferenceRun;
+  let observationError: unknown;
+  try { result = await runInterference(page); }
+  catch (error) { failed = true; throw error; }
+  finally {
+    try {
+      const observation: unknown = await page.evaluate(() => {
+        const stop: unknown = Reflect.get(window, 'pcadEx12InterferenceTransport');
+        if (typeof stop !== 'function') throw new Error('Interference observation cleanup missing');
+        const result: unknown = stop();
+        return result;
+      });
+      await attachHostObservation(info, `assembly-1000-interference-progress-${String(run + 1)}.json`, observation);
+    } catch (error) {
+      if (failed) console.error('Interference diagnostic attachment failed', error);
+      else { observationFailed = true; observationError = error; }
+    }
+  }
+  if (observationFailed) throw observationError;
+  return result;
+}
 
 /** One run from the press (pointerdown, page clock) to the painted result summary, with the rows it shows. */
 async function runInterference(page: Page): Promise<InterferenceRun> {
@@ -479,11 +641,60 @@ async function observeHostDuration(info: TestInfo, name: string, actualMs: numbe
   return observation;
 }
 
+/** One actual interference observation; never substitutes for the full five-run acceptance. */
+export async function assembly1000InterferenceDiagnosticFlow(page: Page, info: TestInfo): Promise<void> {
+  const errors: string[] = [];
+  const onError = (error: Error): void => { errors.push(error.message); };
+  page.on('pageerror', onError);
+  const stages: Record<string, number> = {};
+  const source = info.outputPath('interference-diagnostic1000.pcada');
+  try {
+    await writeFile(source, await assembly1000HostFile(), { flag: 'wx' });
+    await page.waitForFunction(() => typeof Reflect.get(window, 'pcadViewportRenderStats') === 'function');
+    await openAndDraw(page, source, undefined, 'diagnostic-open', stages);
+    const initial = await expectLoaded(page, 'diagnostic-open');
+    await driveTwoGroups(page, initial);
+    const measured = await observedInterferenceRun(page, info, 0);
+    await attachHostObservation(info, 'assembly-1000-interference-diagnostic.json', {
+      diagnosticOnly: true, fullFiveRunAcceptance: false, stages, measured, errors,
+    });
+    expect(errors).toEqual([]);
+  } finally {
+    page.off('pageerror', onError);
+  }
+}
+
+/** Focused ownership regression; it does not replace the full five-run interference acceptance below. */
+export async function assembly1000CancelReopenFlow(page: Page, info: TestInfo): Promise<void> {
+  const errors: string[] = [];
+  const onError = (error: Error): void => { errors.push(error.message); };
+  page.on('pageerror', onError);
+  const stages: Record<string, number> = {};
+  const source = info.outputPath('cancel-reopen1000.pcada');
+  try {
+    await writeFile(source, await assembly1000HostFile(), { flag: 'wx' });
+    await page.waitForFunction(() => typeof Reflect.get(window, 'pcadViewportRenderStats') === 'function');
+    await openAndDraw(page, source, undefined, 'before-cancel', stages);
+    const before = sourcesByName(await expectLoaded(page, 'before-cancel'));
+    const cancelMs = await cancelDisplayMs(page, source, undefined);
+    expect(Number.isFinite(cancelMs) && cancelMs > 0).toBe(true);
+    await openAndDraw(page, source, undefined, 'after-cancel', stages);
+    const after = sourcesByName(await expectLoaded(page, 'after-cancel'));
+    expect(after, 'same 1000 source references remain usable after cancellation').toEqual(before);
+    expect(errors).toEqual([]);
+  } finally {
+    page.off('pageerror', onError);
+    await attachHostObservation(info, 'assembly-1000-cancel-reopen.json', {
+      stages, errors, gates: await readGateEvents(page), interferenceRuns: 0,
+    });
+  }
+}
+
 export async function assembly1000HostFlow(page: Page, info: TestInfo, app: ElectronApplication | undefined): Promise<void> {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const stages: Record<string, number> = {};
-  // 取消と干渉の失敗は従来どおり最後に判定する。参考4観測は実測と達否を別に保存する。
+  // 干渉は観測の保存後に即判定する。取消の判定と参考観測の保存は保持する。
   const durationObservations: DurationObservation[] = [];
   const judgements: string[] = [];
   const judge = (label: string, check: () => unknown): void => {
@@ -519,14 +730,35 @@ export async function assembly1000HostFlow(page: Page, info: TestInfo, app: Elec
   //    (the drive moved groups 0 and 1 only; the ring pair is group 2).
   const runs: InterferenceRun[] = [];
   for (let run = 0; run < INTERFERENCE_RUNS; run += 1) {
-    const measured = await runInterference(page);
+    const measured = await observedInterferenceRun(page, info, run);
     runs.push(measured);
+    // observedInterferenceRun has restored the transport and attached progress before these checks.
+    await attachHostObservation(info, `assembly-1000-interference-result-${String(run + 1)}.json`, measured);
+    requireCompletedInterferenceRuns([measured], 1);
+    const expectedRun = runs[0];
+    if (expectedRun === undefined) throw new Error('First interference result is missing');
+    expect([measured.rows, measured.summary], 'same interference result before starting the next run')
+      .toEqual([expectedRun.rows, expectedRun.summary]);
+    const currentRingRow = measured.rows.find((row) => row.startsWith(`${RING_PAIR[0]} × ${RING_PAIR[1]} |`)
+      || row.startsWith(`${RING_PAIR[1]} × ${RING_PAIR[0]} |`));
+    expect(currentRingRow?.split(' | ')[1], 'independent ring volume before starting the next run')
+      .toBe(`${RING_VOLUME_MM3.toFixed(3)} mm³`);
+    expect(errors, 'page errors before starting the next interference run').toEqual([]);
     console.log(`[実測] 干渉 ${String(run + 1)}/${String(INTERFERENCE_RUNS)}: ${measured.ms.toFixed(1)} ms${measured.completed ? ''
       : `（${String(INTERFERENCE_FOLLOW_MS)}ms までに終わらず中止した）`}、組 ${String(measured.rows.length)}、${measured.summary}${measured.error === null ? '' : `、${measured.error}`}`);
-    judge(`interference ${String(run + 1)}`, () => reportDuration(measured.ms, HOST_INTERFERENCE_TARGET_MS,
-      '異なる1,000定義の組立の干渉（全経路）', 'interference'));
+    // Incomplete runs remain in raw runs/completion evidence, never in completed-duration observations.
+    if (measured.completed) {
+      durationObservations.push(await observeHostDuration(info, `interference-${String(run + 1)}`, measured.ms,
+        HOST_INTERFERENCE_TARGET_MS, '異なる1,000定義の組立の干渉（全経路）'));
+    }
   }
-  // Result checks over the runs that finished (an unfinished run already failed its time judgement above).
+  // Completion is a functional condition even when the elapsed-time observation is advisory.
+  // Retain the final all-five check in addition to the immediate per-run checks.
+  judge('interference completion', () => requireCompletedInterferenceRuns(runs, INTERFERENCE_RUNS));
+  await attachHostObservation(info, 'assembly-1000-interference-completion.json', {
+    expected: INTERFERENCE_RUNS, completed: runs.filter((run) => run.completed).length,
+    runs: runs.map((run) => ({ completed: run.completed, error: run.error })),
+  });
   const finished = runs.filter((run) => run.completed), firstRun = finished[0];
   if (firstRun !== undefined) {
     expect(firstRun.error, 'interference error').toBeNull();
@@ -558,5 +790,5 @@ export async function assembly1000HostFlow(page: Page, info: TestInfo, app: Elec
     stages, fps, interferenceRuns: runs, cancelMs, savedBytes: savedBytes.length,
     durationObservations, viewportObservation, errors, judgements });
   expect(errors).toEqual([]);
-  expect(judgements, '1,000 部品の組立の性能の判定（要件 §5.2）').toEqual([]);
+  expect(judgements, '1,000 部品の組立の完了と取消の判定').toEqual([]);
 }

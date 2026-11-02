@@ -1266,6 +1266,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import {
   chooseNumericInput, commitNumericInput, createNumericInput, reduceNumericInput, toggleNumericInput,
 } from '../sketch/numericInput.js';
+import type { SolidFaceEntry as ModelSolidFaceEntry } from '@pointercad/model';
 
 describe('EX05 creation boundary and unchanged history', () => {
   beforeAll(initializeNativeKernelForNodeTests, 180_000);
@@ -1382,7 +1383,7 @@ describe('EX05 creation boundary and unchanged history', () => {
 });
 
 describe('EX05 explicit planar creation adapter', () => {
-  const basis: NonNullable<import('@pointercad/model').SolidFaceEntry['planarBasis']> = {
+  const basis: NonNullable<ModelSolidFaceEntry['planarBasis']> = {
     origin: [11, -7, 5], xAxis: [0.6, 0.8, 0], normal: [-0.48, 0.36, 0.8], yAxis: [-0.64, 0.48, -0.6],
   };
   function planarContext(): MachiningContext {
@@ -1427,7 +1428,7 @@ describe('EX05 explicit planar creation adapter', () => {
 describe('EX05 numeric planar commit producer/consumer', () => {
   it.each(['hole', 'threadHole'])('%s: explicit choice reaches planar expression fields; unknown/missing/conflicting choice refuses', tool => {
     if (tool !== 'hole' && tool !== 'threadHole') throw new Error('Unexpected tool');
-    const planarBasis: NonNullable<import('@pointercad/model').SolidFaceEntry['planarBasis']> = {
+    const planarBasis: NonNullable<ModelSolidFaceEntry['planarBasis']> = {
       origin: [11, -7, 5], xAxis: [0.6, 0.8, 0], yAxis: [-0.64, 0.48, -0.6], normal: [-0.48, 0.36, 0.8],
     };
     const face = { ...makeFace(0), planarBasis };

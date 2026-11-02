@@ -6,6 +6,14 @@ import { loadOcctForNode } from './loadOcct.node.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { sewSolid } from './sewSolid.js';
 import { buildSolidBodyMesh, hasSolid, isValidShape, measureVolume } from './solidMesh.js';
+import type * as SewSolidSupportModule from './sewSolidFaces.testSupport.js';
+import type * as SewSolidModule from './sewSolid.js';
+import type * as VitestModule from 'vitest';
+import type * as ProcessModule from 'node:process';
+import type { SewFacesResult } from './sewSolid.js';
+import type { CachedSolid } from '../worker/recomputeSolids.js';
+import type { SolidStepRequest } from '../types.js';
+import type { SewFacesStepSpec } from '../types.js';
 
 /** 4 頂点を順に結んだ閉ループを作る。最後の点から最初の点へも 1 本引く。 */
 function loop(points: readonly Vec3Tuple[]): readonly CurveSpec[] {
@@ -432,10 +440,10 @@ describe('面を縫い合わせて立体にする', () => {
 
 describe('EX18 W14: borrowed curved faces', () => {
   let oc: OpenCascadeInstance;
-  let support: typeof import('./sewSolidFaces.testSupport.js');
-  let sew: typeof import('./sewSolid.js');
-  let vi: typeof import('vitest')['vi'];
-  let stdout: typeof import('node:process')['stdout'];
+  let support: typeof SewSolidSupportModule;
+  let sew: typeof SewSolidModule;
+  let vi: typeof VitestModule['vi'];
+  let stdout: typeof ProcessModule['stdout'];
 
   beforeAll(async () => {
     oc = await loadOcctForNode();
@@ -507,7 +515,7 @@ describe('EX18 W14: borrowed curved faces', () => {
       const faces = reason === 'open-shell' ? fixture.faces.slice(0, 2)
         : reason === 'duplicate-face' ? [...fixture.faces, fixture.faces[1]]
           : [...fixture.faces, ...other.faces];
-      const results: import('./sewSolid.js').SewFacesResult[] = [];
+      const results: SewFacesResult[] = [];
       assertBorrowed([...fixture.faces, fixture.source, ...other.faces, other.source], reason, () => {
         try {
           expect(() => results.push(sew.sewSolidFaces(oc, input(faces)))).toThrowError(
@@ -567,8 +575,8 @@ describe('EX18 W14: borrowed curved faces', () => {
   it('routes cached face queries through recomputeSolids and preserves the source after success and refusal', async () => {
     const { recomputeSolids } = await import('../worker/recomputeSolids.js');
     const { createShapeCache } = await import('../worker/shapeCache.js');
-    const cache = createShapeCache<import('../worker/recomputeSolids.js').CachedSolid>();
-    const source: import('../types.js').SolidStepRequest = {
+    const cache = createShapeCache<CachedSolid>();
+    const source: SolidStepRequest = {
       id: 'source', key: 'source-key', label: '円筒の元', visible: true,
       step: { kind: 'primitive', shape: { kind: 'cylinder', radius: 3, height: 8 },
         origin: [0, 0, 0], axis: [0, 0, 1], originQuery: null, targetKey: null },
@@ -588,8 +596,8 @@ describe('EX18 W14: borrowed curved faces', () => {
       const sourceDelete = vi.spyOn(target, 'delete');
       const shapeDelete = vi.spyOn(target.shape, 'delete');
       try {
-        const spec: import('../types.js').SewFacesStepSpec = { kind: 'sew', faces, tolerance: 1e-7 };
-        const request: import('../types.js').SolidStepRequest = {
+        const spec: SewFacesStepSpec = { kind: 'sew', faces, tolerance: 1e-7 };
+        const request: SolidStepRequest = {
           id: 'sewn', key: 'sewn-key', label: '曲面縫合', visible: true, step: spec,
         };
         const result = await recomputeSolids({ oc, cache }, {

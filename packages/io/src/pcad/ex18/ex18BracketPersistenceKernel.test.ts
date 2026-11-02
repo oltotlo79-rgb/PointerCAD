@@ -7,7 +7,7 @@ import {
   EX18_BRACKET_RADIUS_FOUR,
   EX18_BRACKET_WIDE,
   expectEx18Bracket,
-} from '../../../../model/src/part/ex18RouteFixtures.js';
+} from '../../../../model/src/part/ex18RouteFixtures.testSupport.js';
 import { emptyPcadAttachments, readPcadFile, writePcadFile } from '../pcadFile.js';
 import {
   DEFAULT_FACE_COLOR,

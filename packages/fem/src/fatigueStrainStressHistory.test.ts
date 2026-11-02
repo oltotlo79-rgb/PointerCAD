@@ -25,7 +25,7 @@ const curve = (cycles: number, meanStressMpa: number): number => {
   return (MATERIAL.fatigueStrengthCoefficientMpa - meanStressMpa) / MATERIAL.elasticModulusMpa * reversals ** MATERIAL.fatigueStrengthExponent
     + MATERIAL.fatigueDuctilityCoefficient * reversals ** MATERIAL.fatigueDuctilityExponent;
 };
-type Sample = { timeSeconds: number; strain: number; stressMpa: number };
+interface Sample { timeSeconds: number; strain: number; stressMpa: number }
 const samples = (strain: readonly number[], stress: readonly number[], times?: readonly number[]): Sample[] =>
   strain.map((value, index) => ({ timeSeconds: times?.[index] ?? index, strain: value, stressMpa: stress[index] ?? Number.NaN }));
 function history(points: readonly Sample[], sequence: 'once' | 'repeated-periodic' = 'once', repeats = 1, id = 'h1') {

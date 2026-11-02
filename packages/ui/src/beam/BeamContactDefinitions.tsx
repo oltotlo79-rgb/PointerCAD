@@ -66,7 +66,7 @@ export function BeamContactDefinitions({ session }: { readonly session: BeamSess
     <button ref={addContact} type="button" className="pcad-button" data-testid="beam-contact-add"
       disabled={draft.rows.length >= MAX_BEAM_CONTACTS}
       onClick={() => edit({ kind: 'contact-add' })} title={t('beam.guide.contactAdd')}>{t('beam.contactAdd')}</button>
-    <fieldset data-testid="beam-contact-factors">
+    {session.analysisType !== 'friction' ? <fieldset data-testid="beam-contact-factors">
       <legend>{t('beam.contactLoadFactors')}</legend>
       <p>{t('beam.contactLoadFactorsHelp')}</p>
       {draft.loadFactors.map((source, index) => <div key={index} data-beam-contact-factor={index}>
@@ -78,6 +78,6 @@ export function BeamContactDefinitions({ session }: { readonly session: BeamSess
       <button ref={addFactor} type="button" className="pcad-button" data-testid="beam-contact-factor-add"
         disabled={draft.loadFactors.length >= MAX_CONTACT_LOAD_FACTORS}
         onClick={() => edit({ kind: 'contact-factor-add' })} title={t('beam.guide.contactAddFactor')}>{t('beam.contactAddFactor')}</button>
-    </fieldset>
+    </fieldset> : null}
   </fieldset>;
 }

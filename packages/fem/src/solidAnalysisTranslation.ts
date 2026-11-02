@@ -1,5 +1,6 @@
+import { sha256Hex } from './sha256.js';
 import type { SolidAnalysisInput, SolidAnalysisPlan, SolidMaterial, SolidVector3, SolidVector6 } from './solidAnalysisModel.js';
-import { readOptionalMaterialCapacity } from '../../model/src/analysis/analysisValidation.js';
+import { readOptionalMaterialCapacity } from '@pointercad/model/beam-analysis';
 
 /** Same node/element capacity as the existing tet4 mesh contract. */
 export const SOLID_LIMITS = { nodes: 10000, elements: 50000, materials: 50000, loads: 200000 } as const;
@@ -56,7 +57,9 @@ export function solidStrainStress(gradients: readonly SolidVector3[], displaceme
   strain: SolidVector6; stressMPa: SolidVector6;
 } {
   const derivative = (component: number, axis: number): number => gradients.reduce(
-    (sum, gradient, node) => sum + gradient[axis] * displacement[node][component], 0);
+    // The gradient of a common translation is exactly zero. Subtract it before
+    // multiplying so rigid motion cannot cancel small elastic deformation.
+    (sum, gradient, node) => sum + gradient[axis] * (displacement[node][component] - displacement[0][component]), 0);
   const strain: SolidVector6 = [derivative(0, 0), derivative(1, 1), derivative(2, 2),
     derivative(1, 2) + derivative(2, 1), derivative(0, 2) + derivative(2, 0), derivative(0, 1) + derivative(1, 0)];
   const shear = material.youngMPa / (2 * (1 + material.poisson));
@@ -70,7 +73,9 @@ export function solidStrainStress(gradients: readonly SolidVector3[], displaceme
 
 /** Fresh ownership, strict fields, explicit boundary-face loads, no geometry ties. */
 export function translateSolidAnalysis(value: unknown): { input: SolidAnalysisInput; plan: SolidAnalysisPlan } {
-  const row = solidRecord(value, ['schema', 'source', 'units', 'numericBudgetBytes', 'nodes', 'elements', 'materials', 'constraints', 'nodalLoads', 'surfaceLoads']);
+  const hasGravity = value !== null && typeof value === 'object' && Object.hasOwn(value, 'gravity');
+  const row = solidRecord(value, ['schema', 'source', 'units', 'numericBudgetBytes', 'nodes', 'elements', 'materials',
+    'constraints', 'nodalLoads', 'surfaceLoads', ...(hasGravity ? ['gravity'] : [])]);
   if (row.schema !== 'pointercad-solid-tet4/1' || row.units !== 'N-mm-MPa') fail('unsupported schema or units');
   const numericBudgetBytes = solidNumber(row.numericBudgetBytes);
   if (!Number.isSafeInteger(numericBudgetBytes) || numericBudgetBytes <= 0) fail('explicit numeric budget required');
@@ -129,9 +134,11 @@ export function translateSolidAnalysis(value: unknown): { input: SolidAnalysisIn
   });
   if (used.size !== nodes.length) fail('unused unconstrained node');
   const fixed: [boolean, boolean, boolean][] = nodes.map(() => [false, false, false]);
+  let prescribedMm: [number, number, number][] | undefined;
   const constrained = new Set<number>();
-  const constraints = solidArray(row.constraints, nodes.length, 1).map(value => {
-    const item = solidRecord(value, ['node', 'fixed']);
+  const constraints = solidArray(row.constraints, nodes.length).map(value => {
+    const hasPrescribed = value !== null && typeof value === 'object' && Object.hasOwn(value, 'prescribedMm');
+    const item = solidRecord(value, ['node', 'fixed', ...(hasPrescribed ? ['prescribedMm'] : [])]);
     const node = index(item.node, nodes.length);
     if (constrained.has(node)) fail('duplicate constraint node');
     constrained.add(node);
@@ -139,6 +146,13 @@ export function translateSolidAnalysis(value: unknown): { input: SolidAnalysisIn
     if (flags.some(flag => typeof flag !== 'boolean') || !flags.some(flag => flag === true)) fail('invalid translation restraints');
     const tuple: [boolean, boolean, boolean] = [flags[0] === true, flags[1] === true, flags[2] === true];
     fixed[node] = tuple;
+    if (hasPrescribed) {
+      const displacement = solidVector(item.prescribedMm);
+      if (displacement.some((v, axis) => !tuple[axis] && v !== 0)) fail('prescribed displacement on an unrestrained axis');
+      prescribedMm ??= nodes.map(() => [0, 0, 0]);
+      prescribedMm[node] = [...displacement];
+      return { node, fixed: tuple, prescribedMm: displacement };
+    }
     return { node, fixed: tuple };
   });
   // A positive-volume tet has exactly six rigid modes. A full shared triangular
@@ -195,13 +209,40 @@ export function translateSolidAnalysis(value: unknown): { input: SolidAnalysisIn
     for (const node of ids) add(node, force);
     return { nodes: [ids[0], ids[1], ids[2]] as const, tractionMPa };
   });
+  let gravity: SolidAnalysisInput['gravity'];
+  if (hasGravity) {
+    const item = solidRecord(row.gravity, ['accelerationMps2', 'densities']);
+    const accelerationMps2 = solidVector(item.accelerationMps2), densityByMaterial = new Map<string, number>();
+    const densities = solidArray(item.densities, materials.length, 1).map(value => {
+      const density = solidRecord(value, ['materialId', 'densityKgM3']);
+      const materialId = text(density.materialId), densityKgM3 = solidNumber(density.densityKgM3);
+      if (!materialIds.has(materialId)) fail('unknown gravity material');
+      if (densityByMaterial.has(materialId)) fail('duplicate gravity material');
+      if (!(densityKgM3 > 0)) fail('gravity density must be positive');
+      densityByMaterial.set(materialId, densityKgM3);
+      return { materialId, densityKgM3 };
+    });
+    for (const element of elements) {
+      const density = densityByMaterial.get(element.materialId);
+      if (density === undefined) fail('missing gravity material density');
+      // Linear tet4 lumping: integral(N_a dV) = V_e / 4. In N-mm-MPa,
+      // f_a[N] += V_e[mm^3] * 1e-9[m^3/mm^3] * rho[kg/m^3] * g[m/s^2] / 4.
+      const { volumeMm3 } = solidTetGeometry(element.nodes.map(node => nodes[node]));
+      const massKg = solidNumber(volumeMm3 * 1e-9 * density);
+      if (!(massKg > 0)) fail('unresolved gravity mass');
+      const force = solidVector(accelerationMps2.map(g => massKg * g / 4));
+      if (force.some((v, axis) => v === 0 && accelerationMps2[axis] !== 0)) fail('unresolved gravity force');
+      for (const node of element.nodes) add(node, force);
+    }
+    gravity = { accelerationMps2, densities };
+  }
   const input: SolidAnalysisInput = { schema: 'pointercad-solid-tet4/1', source, units: 'N-mm-MPa', numericBudgetBytes, nodes,
-    elements, materials, constraints, nodalLoads, surfaceLoads };
-  return { input, plan: { schema: 'pointercad-solid-tet4-plan/1', input, forcesN, fixed } };
+    elements, materials, constraints, nodalLoads, surfaceLoads, ...(gravity === undefined ? {} : { gravity }) };
+  return { input, plan: { schema: 'pointercad-solid-tet4-plan/1', input, forcesN, fixed,
+    ...(prescribedMm === undefined ? {} : { prescribedMm }) } };
 }
 
 export async function solidInputSha256(input: SolidAnalysisInput): Promise<string> {
   const owned = translateSolidAnalysis(input).input;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(owned)));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(new TextEncoder().encode(JSON.stringify(owned)));
 }

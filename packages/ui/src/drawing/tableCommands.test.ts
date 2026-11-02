@@ -14,6 +14,8 @@ import { displayDrawingTables } from './tableDisplay.js';
 import { drawingTableRowOwner } from './drawingSelection.js';
 import { beginDrawingTableDrag, commitDrawingTable, deleteDrawingTables, finishDrawingTableDrag,
   previewDrawingTableDrag, startDrawingBalloon } from './tableCommands.js';
+import type { CutFeature } from '@pointercad/model';
+import type { PartDocument } from '@pointercad/model';
 
 beforeEach(resetTestStore);
 function outline(text: string, sizeMm: number): OutlinedText {
@@ -190,7 +192,7 @@ describe('machined steel source to drawing table equality', () => {
     const current = createStandardPartSource(product.catalog, product.size, { ...steelProductOptions(product), length: '1000' });
     const original = buildStandardPartFromSource(current);
     if (original === null) throw new Error('Missing generated stock');
-    const cut: import('@pointercad/model').CutFeature = { id: 'cut', name: 'cut', kind: 'cut', suppressed: false,
+    const cut: CutFeature = { id: 'cut', name: 'cut', kind: 'cut', suppressed: false,
       targetFeatureId: original.solids.at(-1)?.id ?? '', pairedWith: null, keep: 'negative',
       plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(600) } };
     const edited = { ...original, solids: [...original.solids, cut] };
@@ -268,7 +270,7 @@ describe('machined steel source to drawing table equality', () => {
     const purchased = createStandardPartSource(product.catalog, product.size, { ...steelProductOptions(product), length: '1000' });
     const part = buildStandardPartFromSource(purchased);
     if (part === null) throw new Error('Missing generated stock');
-    const cut: import('@pointercad/model').CutFeature = { id: 'cut', name: 'cut', kind: 'cut', suppressed: false,
+    const cut: CutFeature = { id: 'cut', name: 'cut', kind: 'cut', suppressed: false,
       targetFeatureId: part.solids.at(-1)?.id ?? '', pairedWith: null, keep: 'negative',
       plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(600) } };
     const edited = { ...part, solids: [...part.solids, cut] };
@@ -277,7 +279,7 @@ describe('machined steel source to drawing table equality', () => {
       fixed: false, visible: true, suppressed: false })) };
     const definition = { ...document, tables: [{ id: 'stock', kind: 'bom' as const, position: [20, 250] as const,
       columns: ['number', 'name'], options: { stockList: true, textHeight: 2 }, layerId: document.layers[0].id }] };
-    const render = (current: import('@pointercad/model').PartDocument) => {
+    const render = (current: PartDocument) => {
       const stock = buildSteelStockList(assembly, new Map(), new Map([['stock', current]]));
       const display = displayDrawingTables(definition, { ...source, steelStockList: stock }, outline);
       expect(display.unresolved).toEqual([]);
@@ -315,7 +317,7 @@ describe('steel authored persistence and input fingerprints', () => {
     const oldHash = await contentHashOf(original);
     const capturedOld = captureSaveSnapshot({ kind: 'assembly',
       bundle: createAssemblyDocumentBundle(assembly, embedded.library), options: {} });
-    const cut: import('@pointercad/model').CutFeature = { id: 'persist-cut', name: 'cut', kind: 'cut', suppressed: false,
+    const cut: CutFeature = { id: 'persist-cut', name: 'cut', kind: 'cut', suppressed: false,
       targetFeatureId: original.solids.at(-1)?.id ?? '', pairedWith: null, keep: 'negative',
       plane: { kind: 'workPlane', planeId: 'xy', offset: expressionValueFromNumber(600) } };
     const edited = { ...original, solids: [...original.solids, cut] };

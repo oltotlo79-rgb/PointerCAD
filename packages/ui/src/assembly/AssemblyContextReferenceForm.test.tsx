@@ -13,6 +13,7 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { AssemblyContextReferenceForm, contextLinkToCommit } from './AssemblyContextReferenceForm.js';
 import { AssemblyPropertyPanel } from './AssemblyPropertyPanel.js';
+import type { ContextReferenceRejectionCode } from '@pointercad/model';
 
 function point(id: string, name: string): ReferencePointFeature {
   return { id, name, visible: true, kind: 'referencePoint', definition: { kind: 'coordinate', at: { mode: 'absolute',
@@ -164,7 +165,7 @@ describe('EX18 context refusal translations', () => {
       unsupportedSource: messages['assembly.context.reason.unsupportedSource'],
       targetPartShared: messages['assembly.context.reason.targetPartShared'],
       duplicateTarget: messages['assembly.context.reason.duplicateTarget'],
-    } satisfies Record<import('@pointercad/model').ContextReferenceRejectionCode, string>;
+    } satisfies Record<ContextReferenceRejectionCode, string>;
     const keys = Object.values(CONTEXT_REFERENCE_REJECTION_MESSAGES);
     expect(Object.keys(CONTEXT_REFERENCE_REJECTION_MESSAGES).sort()).toEqual(Object.keys(expected).sort());
     expect(Object.keys(messages).filter(key => key.startsWith('assembly.context.reason.')).sort()).toEqual([...keys].sort());

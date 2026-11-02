@@ -5,7 +5,7 @@ import type { Server, IncomingMessage, ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { gunzip, gunzipSync } from 'node:zlib';
 import { DESKTOP_OCCT_TRANSPORT_ORIGIN, desktopOcctTransportUrl,
   type DesktopOcctTransportReply } from '@pointercad/ui/desktop-occt-transport';
 
@@ -77,7 +77,9 @@ export async function readOcctHttpAsset(rendererRoot: string): Promise<OcctHttpA
 }
 
 /** 元の資産検証を保ち、読取り・復号・照合の区間だけを記録する。 */
-async function readObservedOcctHttpAsset(rendererRoot: string, mark: TransportMark): Promise<OcctHttpAsset> {
+async function readObservedOcctHttpAsset(
+  rendererRoot: string, mark: TransportMark, verifyDecoded = true,
+): Promise<OcctHttpAsset> {
   mark('manifest-start');
   const manifest = record(JSON.parse(await readFile(join(rendererRoot, 'occt/manifest.json'), 'utf8')));
   const stream = record(manifest['stream']);
@@ -100,11 +102,48 @@ async function readObservedOcctHttpAsset(rendererRoot: string, mark: TransportMa
   mark('gzip-read', gzip.length);
   if (gzip.length !== transportLength || sha(gzip) !== transportSha256) throw new Error('Corrupt OCCT gzip asset');
   mark('transport-verified', gzip.length);
+  if (!verifyDecoded) return { sha256, byteLength, gzip, transportSha256 };
   const decoded = gunzipSync(gzip, { maxOutputLength: byteLength });
   mark('decoded-inflated', decoded.length);
   if (decoded.length !== byteLength || sha(decoded) !== sha256) throw new Error('Corrupt decoded OCCT asset');
   mark('decoded-verified', decoded.length);
   return { sha256, byteLength, gzip, transportSha256 };
+}
+
+/** The cache is not evidence about bundled gzip. Both independent checks must finish. */
+function verifyBundledDecodedAsset(asset: OcctHttpAsset, mark: TransportMark, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      if (error === undefined) resolve(); else reject(error);
+    };
+    const onAbort = (): void => { finish(new Error('OCCT decode aborted')); };
+    const timer = setTimeout(() => { finish(new Error('OCCT decode timeout')); }, TIMEOUT_MS);
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) { onAbort(); return; }
+    try {
+      // 検証済みの長さ+1を出力容量にして、正常時の分割往復と連結コピーを避ける。
+      // 上限超過は従来どおりmaxOutputLengthで拒否し、余分な1byteを許容しない。
+      gunzip(asset.gzip, {
+        maxOutputLength: asset.byteLength, chunkSize: Math.max(64, asset.byteLength + 1),
+      }, (error, decoded) => {
+        if (settled) return;
+        if (error !== null) { finish(error); return; }
+        mark('decoded-inflated', decoded.length);
+        if (decoded.length !== asset.byteLength || sha(decoded) !== asset.sha256) {
+          finish(new Error('Corrupt decoded OCCT asset')); return;
+        }
+        mark('decoded-verified', decoded.length);
+        finish();
+      });
+    } catch (error: unknown) {
+      finish(error instanceof Error ? error : new Error('OCCT decode failed', { cause: error }));
+    }
+  });
 }
 
 export function serveOcctHttpAsset(asset: OcctHttpAsset, request: IncomingMessage, response: ServerResponse): void {
@@ -138,7 +177,7 @@ export function readSessionOcctCache(targetSession: Session, url: string, asset:
 
 /** 本文終端までの照合とmiss・破損の区別を保って記録する。 */
 function readObservedSessionOcctCache(
-  targetSession: Session, url: string, asset: OcctHttpAsset, mark: TransportMark,
+  targetSession: Session, url: string, asset: OcctHttpAsset, mark: TransportMark, signal?: AbortSignal,
 ): Promise<'hit' | 'miss'> {
   mark('cache-start');
   return new Promise((resolve, reject) => {
@@ -151,6 +190,7 @@ function readObservedSessionOcctCache(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       if (error !== undefined) {
         mark('cache-rejected');
         reject(error);
@@ -159,6 +199,7 @@ function readObservedSessionOcctCache(
         resolve(result);
       }
     };
+    const onAbort = (): void => { finish(new Error('OCCT cache-only aborted')); request.abort(); };
     const timer = setTimeout(() => { finish(new Error('OCCT cache-only timeout')); request.abort(); }, TIMEOUT_MS);
     request.on('error', error => {
       if (!receivedResponse && /(?:^|\s|:)net::ERR_CACHE_MISS(?:\s|$)/.test(error.message)) finish(undefined, 'miss');
@@ -192,7 +233,8 @@ function readObservedSessionOcctCache(
         } else finish(undefined, 'hit');
       });
     });
-    request.end();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort(); else request.end();
   });
 }
 
@@ -202,12 +244,18 @@ export function createOcctHttpTransport(rendererRoot: string, targetSession: Ses
   let owned: Server | undefined;
   let pending: Promise<DesktopOcctTransportReply> | undefined;
   let closed = false;
+  const preparationAbort = new AbortController();
   async function prepare(mark: TransportMark): Promise<DesktopOcctTransportReply> {
     mark('prepare-start');
     if (closed) throw new Error('OCCT transport closed');
-    const asset = await readObservedOcctHttpAsset(rendererRoot, mark);
+    const asset = await readObservedOcctHttpAsset(rendererRoot, mark, false);
     if (closed) throw new Error('OCCT transport closed');
-    const server = createServer((request, response) => { serveOcctHttpAsset(asset, request, response); });
+    // Binding is ownership only. No asset is served until both verifications succeed.
+    let ready = false;
+    const server = createServer((request, response) => {
+      if (!ready || closed) { response.writeHead(503, { 'Cache-Control': 'no-store' }); response.end(); return; }
+      serveOcctHttpAsset(asset, request, response);
+    });
     server.requestTimeout = TIMEOUT_MS;
     server.headersTimeout = TIMEOUT_MS;
     server.setTimeout(TIMEOUT_MS, socket => { socket.destroy(); });
@@ -224,6 +272,8 @@ export function createOcctHttpTransport(rendererRoot: string, targetSession: Ses
         () => { clearTimeout(timer); resolve(true); });
     });
     if (!listening) {
+      await verifyBundledDecodedAsset(asset, mark, preparationAbort.signal);
+      if (closed) throw new Error('OCCT transport closed');
       mark('prepare-direct-port-unavailable');
       return { kind: 'direct', reason: 'port-unavailable' };
     }
@@ -232,7 +282,13 @@ export function createOcctHttpTransport(rendererRoot: string, targetSession: Ses
     server.unref();
     if (closed) { await close(); throw new Error('OCCT transport closed'); }
     const url = desktopOcctTransportUrl(asset.sha256);
-    if (await readObservedSessionOcctCache(targetSession, url, asset, mark) === 'miss') {
+    const [, cache] = await Promise.all([
+      verifyBundledDecodedAsset(asset, mark, preparationAbort.signal),
+      readObservedSessionOcctCache(targetSession, url, asset, mark, preparationAbort.signal),
+    ]);
+    if (closed) throw new Error('OCCT transport closed');
+    ready = true;
+    if (cache === 'miss') {
       mark('fill-start');
       const response = await targetSession.fetch(url, { credentials: 'include', redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) });
       mark('fill-headers');
@@ -248,11 +304,13 @@ export function createOcctHttpTransport(rendererRoot: string, targetSession: Ses
       if (bytes.length !== asset.byteLength || sha(bytes) !== asset.sha256) throw new Error('OCCT HTTP body mismatch');
       mark('fill-verified', bytes.length);
     }
+    if (closed) throw new Error('OCCT transport closed');
     mark('prepare-http');
     return { kind: 'http', url, sha256: asset.sha256, byteLength: asset.byteLength };
   }
   async function close(): Promise<void> {
     closed = true;
+    preparationAbort.abort();
     const server = owned;
     owned = undefined;
     if (server === undefined) return;

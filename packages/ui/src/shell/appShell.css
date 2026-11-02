@@ -817,7 +817,7 @@
 
 /* 1280pxではF1も同じ段へ置く。26pxの押下領域を保ち、区画間の余白だけを詰める。 */
 @media (min-width: 1200px) and (max-width: 1299px) {
-  .pcad-toolbar { --pcad-toolbar-gap: calc(2px * var(--pcad-scale, 1)); }
+  .pcad-toolbar { --pcad-toolbar-gap: calc(1px * var(--pcad-scale, 1)); }
 }
 
 /*

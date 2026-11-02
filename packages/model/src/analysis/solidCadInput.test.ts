@@ -82,6 +82,12 @@ describe('strict signed pressure input beside the legacy traction schema', () =>
     expect(input).toEqual(saved());
     expect('pressureMPa' in input).toBe(false);
   });
+  it('keeps legacy pressure bytes and optional-field omission unchanged', () => {
+    const raw = pressure(), input = readSolidCadSavedInput(raw);
+    expect(new TextEncoder().encode(JSON.stringify(input))).toEqual(new TextEncoder().encode(JSON.stringify(raw)));
+    expect(Object.hasOwn(input, 'supports')).toBe(false);
+    expect(Object.hasOwn(input, 'gravity')).toBe(false);
+  });
   // Explicit labels: %j would print NaN, Infinity and -Infinity all as null and give three identical test titles.
   it.each([
     ['pressure NaN', { pressureMPa: Number.NaN }], ['pressure +Infinity', { pressureMPa: Infinity }],
@@ -99,5 +105,76 @@ describe('strict signed pressure input beside the legacy traction schema', () =>
     const withoutLoad = pressure();
     Reflect.deleteProperty(withoutLoad, 'load');
     expect(() => readSolidCadSavedInput(withoutLoad)).toThrow();
+  });
+});
+
+describe('explicit CAD gravity definitions', () => {
+  it.each(['traction', 'pressure'] as const)('owns a gravity-only %s definition without inventing loaded faces', load => {
+    const { tractionMPa, ...common } = saved();
+    const base = load === 'traction' ? saved()
+      : { ...common, schema: SOLID_CAD_PRESSURE_SCHEMA, load, pressureMPa: tractionMPa[2] };
+    const gravity = { accelerationMps2: [1.25, -9.81, 2.5], densityKgM3: 7800 };
+    const raw = { ...base, loadedFaces: [], gravity }, input = readSolidCadSavedInput(raw);
+    gravity.accelerationMps2[1] = 0; gravity.densityKgM3 = 1;
+    expect(input.gravity).toEqual({ accelerationMps2: [1.25, -9.81, 2.5], densityKgM3: 7800 });
+    expect(input.loadedFaces).toEqual([]);
+    expect(input.fixedFaces).toEqual(['fixed-origin']);
+    expect(readSolidCadSavedInput(JSON.parse(JSON.stringify(input)))).toEqual(input);
+    expect(() => readSolidCadSavedInput({ ...base, loadedFaces: [] })).toThrow();
+    expect(() => readSolidCadSavedInput({ ...base, fixedFaces: [], gravity: input.gravity })).toThrow();
+  });
+  it.each([
+    ['missing', undefined], ['null', null], ['zero density', { accelerationMps2: [0, -9.81, 0], densityKgM3: 0 }],
+    ['negative density', { accelerationMps2: [0, -9.81, 0], densityKgM3: -1 }],
+    ['infinite density', { accelerationMps2: [0, -9.81, 0], densityKgM3: Infinity }],
+    ['NaN acceleration', { accelerationMps2: [0, Number.NaN, 0], densityKgM3: 7800 }],
+    ['short acceleration', { accelerationMps2: [0, -9.81], densityKgM3: 7800 }],
+    ['sparse acceleration', { accelerationMps2: new Array<number>(3), densityKgM3: 7800 }],
+    ['unknown gravity field', { accelerationMps2: [0, -9.81, 0], densityKgM3: 7800, inferred: true }],
+    ['extra acceleration property', { accelerationMps2: Object.assign([0, -9.81, 0], { extra: 0 }), densityKgM3: 7800 }],
+    ['symbol gravity field', { accelerationMps2: [0, -9.81, 0], densityKgM3: 7800, [Symbol('extra')]: 0 }],
+  ])('refuses %s instead of accepting an empty loaded-face selection', (_label, gravity) => {
+    expect(() => readSolidCadSavedInput({ ...saved(), loadedFaces: [], gravity })).toThrow();
+  });
+});
+
+describe('persistent per-face CAD supports', () => {
+  const support = { face: 'left-origin', fixed: [true, false, false], prescribedMm: [0.125, 0, 0] };
+  it('owns face keys, flags and nonzero millimetre values without filling omitted values', () => {
+    const rows = [structuredClone(support), { face: 'front-origin', fixed: [false, true, false] }];
+    const input = readSolidCadSavedInput({ ...saved(), fixedFaces: [], supports: rows });
+    rows[0].face = 'changed'; rows[0].fixed[0] = false;
+    if ('prescribedMm' in rows[0]) rows[0].prescribedMm[0] = 99;
+    expect(input.fixedFaces).toEqual([]);
+    expect(input.supports).toEqual([support, { face: 'front-origin', fixed: [false, true, false] }]);
+    expect(Object.hasOwn(input.supports?.[1] ?? {}, 'prescribedMm')).toBe(false);
+    expect(readSolidCadSavedInput(JSON.parse(JSON.stringify(input)))).toEqual(input);
+  });
+  it('bounds the support collection at 2048 and preserves distinct legacy clamps', () => {
+    const supports = Array.from({ length: 2048 }, (_, index) => ({ face: `support-${index}`, fixed: [true, true, true] }));
+    expect(readSolidCadSavedInput({ ...saved(), supports }).supports).toHaveLength(2048);
+    expect(() => readSolidCadSavedInput({ ...saved(), supports: [...supports, { ...support }] })).toThrow();
+    expect(() => readSolidCadSavedInput({ ...saved(), supports: [{ ...support, face: 'fixed-origin' }] })).toThrow();
+    expect(() => readSolidCadSavedInput({ ...saved(), support })).toThrow();
+  });
+  it.each([
+    ['missing', undefined], ['null', null], ['empty', []], ['sparse rows', new Array<unknown>(1)],
+    ['duplicate face', [support, { ...support }]], ['numeric face', [{ ...support, face: 5 }]],
+    ['empty face', [{ ...support, face: '' }]], ['null row', [null]],
+    ['all free', [{ ...support, fixed: [false, false, false] }]],
+    ['nonboolean flags', [{ ...support, fixed: [1, false, false] }]],
+    ['short flags', [{ ...support, fixed: [true, false] }]],
+    ['sparse flags', [{ ...support, fixed: new Array<boolean>(3) }]],
+    ['extra flag property', [{ ...support, fixed: Object.assign([true, false, false], { extra: true }) }]],
+    ['free-axis displacement', [{ ...support, prescribedMm: [0.125, 0.5, 0] }]],
+    ['infinite displacement', [{ ...support, prescribedMm: [Infinity, 0, 0] }]],
+    ['short displacement', [{ ...support, prescribedMm: [0.125, 0] }]],
+    ['sparse displacement', [{ ...support, prescribedMm: new Array<number>(3) }]],
+    ['explicit missing displacement', [{ ...support, prescribedMm: undefined }]],
+    ['unknown support field', [{ ...support, node: 0 }]],
+    ['symbol support field', [{ ...support, [Symbol('extra')]: 0 }]],
+    ['extra row property', Object.assign([support], { extra: true })],
+  ])('rejects %s before allowing empty legacy clamps', (_label, supports) => {
+    expect(() => readSolidCadSavedInput({ ...saved(), fixedFaces: [], supports })).toThrow();
   });
 });

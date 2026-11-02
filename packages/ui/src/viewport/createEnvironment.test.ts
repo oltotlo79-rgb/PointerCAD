@@ -18,7 +18,7 @@ const rendering = vi.hoisted(() => ({ beforeRender: null as ((object: THREE.Obje
 // Execute the real PMREM/Room code and public renderer calls with no GL context.
 // These tests verify ownership and metadata, never pretend to measure GPU storage.
 vi.mock('three', async importOriginal => {
-  const actual = await importOriginal<typeof import('three')>();
+  const actual = await importOriginal<typeof THREE>();
   return { ...actual, WebGLRenderer: class {
     xr = { enabled: true };
     autoClear = true;

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile, lstat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type BrowserContext, type ConsoleMessage, type ElectronApplication, type Page, type PlaywrightWorkerArgs, type TestInfo, type Worker } from '@playwright/test';
@@ -55,11 +55,18 @@ interface ServedDistribution {
  * (e2e/release/offlineCandidateServer.ts: the same _headers, MIME, ETag and source checks) serves
  * that folder inside this test on 127.0.0.1, and the caller closes it when the pair ends.
  */
-async function serveWebDistribution(): Promise<ServedDistribution> {
+async function serveWebDistribution(info: TestInfo): Promise<ServedDistribution> {
   const address = process.env['PCAD_W21_WEB_URL'], directory = process.env['PCAD_W21_WEB_ROOT'];
   if (directory === undefined) throw new Error('W21 needs PCAD_W21_WEB_ROOT (and PCAD_W21_WEB_URL for a Root-owned server) for a real, current assembled offline distribution.');
   const folder = resolve(root, directory), local = relative(root, folder);
   if (local === '' || isAbsolute(local) || local === '..' || local.startsWith('..' + sep)) throw new Error('W21 distribution must stay inside this checkout.');
+  const receipt = process.env['PCAD_W21_TEST_FIXTURE_RECEIPT'], receiptSha = process.env['PCAD_W21_TEST_FIXTURE_SHA256'];
+  if ((receipt === undefined) !== (receiptSha === undefined)) throw new Error('W21 fixture requires both explicit receipt and SHA');
+  let testFixtureMarked = false;
+  try { await lstat(join(folder, 'w21-test-fixture.json')); testFixtureMarked = true; }
+  catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
+  if (testFixtureMarked && receipt === undefined) throw new Error('Test fixture needs an explicit W21 receipt and SHA');
+  if (receipt !== undefined && address !== undefined) throw new Error('W21 fixture forbids an external URL');
   if (address !== undefined) return { url: address, folder, server: 'root-owned', close: () => Promise.resolve() };
   const name = relative(join(root, 'dist'), folder);
   if (!/^[a-z0-9][a-z0-9-]*$/u.test(name)) throw new Error('Without PCAD_W21_WEB_URL, PCAD_W21_WEB_ROOT must be dist/<candidate> for the in-test offline candidate server.');
@@ -67,7 +74,12 @@ async function serveWebDistribution(): Promise<ServedDistribution> {
   if (requested !== undefined && requested !== name) throw new Error('PCAD_OFFLINE_CANDIDATE and PCAD_W21_WEB_ROOT name different candidates.');
   // serveOfflineCandidate() takes the candidate name from this test process's environment.
   process.env['PCAD_OFFLINE_CANDIDATE'] = name;
-  const candidate = await serveOfflineCandidate();
+  const candidate = receipt !== undefined && receiptSha !== undefined
+    ? await serveOfflineCandidate({ receipt, sha256: receiptSha, specFile: info.file, project: info.project.name })
+    : await serveOfflineCandidate();
+  if (receipt !== undefined) await info.attach('w21-test-fixture-historical-manual', {
+    body: JSON.stringify({ receipt, sha256: receiptSha, manualCurrentCertified: false, releaseCertified: false,
+      differences: candidate.historicalManualDifferences }), contentType: 'application/json' });
   if (resolve(candidate.folder) !== folder) {
     await candidate.close();
     throw new Error('The in-test server folder differs from PCAD_W21_WEB_ROOT.');
@@ -77,7 +89,7 @@ async function serveWebDistribution(): Promise<ServedDistribution> {
 
 /** Read the real assembled release; never synthesize an offline manifest for a test. */
 async function actualWebDistribution(playwright: Playwright, info: TestInfo): Promise<ServedDistribution> {
-  const served = await serveWebDistribution();
+  const served = await serveWebDistribution(info);
   try { return { ...served, url: await verifyServedDistribution(playwright, info, served) }; }
   catch (error) { await served.close(); throw error; }
 }
@@ -482,8 +494,72 @@ async function prepareOffline(page: Page, info: TestInfo): Promise<void> {
   expect(manifest.assets.length).toBeLessThanOrEqual(1000);
   for (const asset of manifest.assets) expect(asset.transport?.byteLength ?? asset.byteLength).toBeLessThanOrEqual(25 * 1024 * 1024);
   await page.getByRole('button', { name: '設定', exact: true }).click();
+  // The product allows60s for registration and180s per response, not30s
+  // for the entire preparation. Keep the original test deadline; reserve one
+  // existing action-timeout for cancellation and one for caller-owned cleanup.
+  const actionTimeoutMs = info.project.use.actionTimeout ?? 15_000;
+  // TestInfo has no public startTime (duration stays0 while running). Read
+  // the installed Playwright's actual constructor clock, fail closed if absent.
+  // Do not substitute now: doing so would silently discard elapsed test work.
+  const testStartedAtEpochMs: unknown = Reflect.get(info, '_startWallTime');
+  if (typeof testStartedAtEpochMs !== 'number' || !Number.isFinite(testStartedAtEpochMs)
+    || testStartedAtEpochMs <= 0 || testStartedAtEpochMs > Date.now() || !Number.isFinite(info.timeout) || info.timeout <= 0) {
+    throw new Error('Actual Playwright test start/deadline is unavailable');
+  }
+  const waitMs = testStartedAtEpochMs + info.timeout - Date.now() - 2 * actionTimeoutMs;
+  if (!Number.isFinite(waitMs) || !Number.isFinite(actionTimeoutMs) || actionTimeoutMs <= 0 || waitMs <= 0) {
+    throw new Error('Offline preparation has no finite test budget left after cancellation/cleanup reserve');
+  }
+  const settings = page.locator('section[data-help-topic="offline-use"]');
+  const readyMessage = 'この端末で通信なしの利用を準備できました。';
+  const pendingMessages = ['この端末ではまだ準備していません。', '保存されたアプリを確認しています…',
+    'アプリと説明書をこの端末へ保存しています…'];
+  const startedAtEpochMs = Date.now();
+  const progress: { readonly atEpochMs: number; readonly message: string | null;
+    readonly receivedBytes: number | null; readonly totalBytes: number | null; readonly text: string }[] = [];
+  let terminalMessage: string | null = null, lastChangeAtEpochMs: number | null = null;
+  let preparationSucceeded = false;
+  let progressChanges = 0, cancellation: 'not-needed' | 'requested' | 'not-available' | 'request-failed' = 'not-needed';
+  try {
   await page.getByRole('button', { name: '通信なしで使う準備', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'この端末で通信なしの利用を準備できました。' })).toBeVisible();
+    await expect.poll(async () => {
+      const snapshot = await settings.evaluate(element => {
+        const bar = element.querySelector('progress');
+        return { message: element.querySelector('[role="status"]')?.textContent?.trim() ?? null,
+          receivedBytes: bar?.value ?? null, totalBytes: bar?.max ?? null, text: element.textContent ?? '' };
+      });
+      terminalMessage = snapshot.message;
+      const previous = progress.at(-1);
+      if (previous === undefined || previous.message !== snapshot.message || previous.receivedBytes !== snapshot.receivedBytes
+        || previous.totalBytes !== snapshot.totalBytes) {
+        lastChangeAtEpochMs = Date.now(); progressChanges += 1;
+        progress.push({ atEpochMs: lastChangeAtEpochMs, ...snapshot });
+        if (progress.length > 16) progress.shift();
+      }
+      return snapshot.message === null || snapshot.message === '' || pendingMessages.includes(snapshot.message) ? 'pending' : 'terminal';
+    }, { timeout: waitMs, intervals: [250, 500, 1000], message: 'Offline preparation must finish within the remaining test budget' }).toBe('terminal');
+    // Any actual download/storage/registration failure or cancellation is terminal
+    // immediately, but only the original ready message is success.
+    expect(terminalMessage, 'Actual offline preparation result').toBe(readyMessage);
+    await expect(page.getByRole('status').filter({ hasText: 'この端末で通信なしの利用を準備できました。' })).toBeVisible();
+    preparationSucceeded = true;
+  } catch (error) {
+    const cancel = settings.getByRole('button', { name: '準備を取り消す', exact: true });
+    try {
+      if (await cancel.isVisible()) { await cancel.click({ timeout: actionTimeoutMs }); cancellation = 'requested'; }
+      else cancellation = 'not-available';
+    } catch { cancellation = 'request-failed'; }
+    // Requesting cancellation is not proof of its completion. The caller's
+    // original finally still closes this owned preparation context on failure.
+    throw error;
+  } finally {
+    const path = info.outputPath('offline-preparation-wait.json');
+    await writeFile(path, JSON.stringify({ startedAtEpochMs, endedAtEpochMs: Date.now(), waitMs,
+      testTimeoutMs: info.timeout, cleanupReserveMs: 2 * actionTimeoutMs, terminalMessage, cancellation,
+      progressChanges, lastChangeAtEpochMs, progress, readyStatusVerified: preparationSucceeded,
+      scope: 'UI wait only; the original complete cache SHA/bytes verification follows' }, null, 2), { flag: 'wx' });
+    await info.attach('offline-preparation-wait', { path, contentType: 'application/json' });
+  }
   const cache = await cacheInventory(page);
   for (const asset of manifest.assets) {
     expect(cache.entries.some(entry => entry.sha256 === asset.sha256 && entry.bytes === asset.byteLength), asset.url).toBe(true);

@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamContactNumericResult } from './contactModel.js';
 import type { AxialBoltForce } from './beamBoltContact.js';
@@ -64,7 +65,7 @@ export function translateBeamJointInitialStrain(value: unknown): { input: BeamJo
 }
 export async function beamJointInitialStrainInputSha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(translateBeamJointInitialStrain(value).input));
-  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+  return await sha256Hex(bytes);
 }
 function close(actual: unknown, expected: number): boolean {
   return typeof actual === 'number' && Number.isFinite(actual) && Number.isFinite(expected)

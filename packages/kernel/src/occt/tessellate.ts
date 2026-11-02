@@ -85,7 +85,7 @@ class FixedTriples<T extends Float32Array | Uint32Array> {
   }
 }
 
-type Triples = { readonly length: number; push(x: number, y: number, z: number): void };
+interface Triples { readonly length: number; push(x: number, y: number, z: number): void }
 
 function admitMeshCounts(
   admission: TessellationAdmission,

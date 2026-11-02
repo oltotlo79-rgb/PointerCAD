@@ -4,7 +4,7 @@ import { createUndoStack, pushUndo, undo, redo, contentHashOf, replaceSolid, PAR
 import { loadOcctForNode } from '../../../../kernel/src/occt/loadOcct.node.js';
 import { emptyPcadAttachments, readPcadFile, writePcadFile } from '../pcadFile.js';
 import { W08_CASES, W08_TIMEOUT, W08_SAVED_AT, W08_CHANGED, W08_DIRECT_CHANGED,
-  EX18_ORACLE_EXPECTATIONS, w08Build, w08Session, w08Compute, w08Expect } from './ex18PersistenceSupport.js';
+  EX18_ORACLE_EXPECTATIONS, w08Build, w08Session, w08Compute, w08Expect } from './ex18PersistenceSupport.testSupport.js';
 
 beforeAll(loadOcctForNode, W08_TIMEOUT);
 

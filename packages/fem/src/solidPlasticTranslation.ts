@@ -1,3 +1,5 @@
+import { isRecord } from './valueGuards.js';
+import { sha256Hex } from './sha256.js';
 import { readSolidPlasticPlan, type SolidPlasticPlan } from './solidPlastic.js';
 
 /**
@@ -16,9 +18,6 @@ export interface SolidPlasticInput {
   readonly plan: SolidPlasticPlan;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 function exactFields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) throw new Error(`solid-plastic-input: ${path} must be an object`);
   const row = value;
@@ -46,6 +45,5 @@ export function translateSolidPlastic(value: unknown): { readonly input: SolidPl
 
 export async function solidPlasticInputSha256(value: unknown): Promise<string> {
   const input = translateSolidPlastic(value).input;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(new TextEncoder().encode(JSON.stringify(input)));
 }

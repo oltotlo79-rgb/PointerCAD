@@ -1,6 +1,7 @@
 import type { prepareCadSolidAnalysis } from '@pointercad/fem';
 import { describe, expect, it } from 'vitest';
 import { cadSolidBucklingFailureCode, cadSolidBucklingInput } from './cadSolidBuckling.js';
+import { t } from '../i18n/t.js';
 
 type Prepared = ReturnType<typeof prepareCadSolidAnalysis>;
 /** Unit corner tet, z = 0 face (nodes 0, 2, 1; area L^2 / 2 = 50 mm^2) loaded by +z traction 1 MPa: 50 N into the
@@ -46,6 +47,23 @@ describe('cadSolidBucklingInput', () => {
     const before = JSON.stringify(value);
     cadSolidBucklingInput(value, 2);
     expect(JSON.stringify(value)).toBe(before);
+  });
+  it('refuses gravity and prescribed deformation with specific unsupported reasons while preserving the reference', () => {
+    const base = prepared();
+    const cases = [
+      { input: { ...base.input, gravity: { accelerationMps2: [0, 0, -9.81] as const,
+        densities: [{ materialId: 'material', densityKgM3: 7800 }] } }, message: t('solidAnalysis.bucklingGravityUnsupported') },
+      { input: { ...base.input, constraints: [{ node: 3, fixed: [true, true, true] as const, prescribedMm: [0.125, 0, 0] as const }] },
+        message: t('solidAnalysis.bucklingDisplacementUnsupported') },
+    ];
+    for (const { input, message } of cases) {
+      const bytes = JSON.stringify(input);
+      expect(() => cadSolidBucklingInput({ ...base, input }, 1)).toThrow(message);
+      expect(cadSolidBucklingFailureCode(message)).toBe('buckling-unsupported');
+      expect(JSON.stringify(input)).toBe(bytes);
+    }
+    const zero = { ...base.input, constraints: [{ node: 3, fixed: [true, true, true] as const, prescribedMm: [0, 0, 0] as const }] };
+    expect(cadSolidBucklingInput({ ...base, input: zero }, 1).reference).toBe(zero);
   });
 });
 

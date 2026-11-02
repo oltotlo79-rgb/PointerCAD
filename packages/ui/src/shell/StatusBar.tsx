@@ -118,6 +118,7 @@ export function StatusBar(): React.JSX.Element {
   const boltedJointPreview = useAppStore((state) => state.assemblyBoltedJointPreview);
   // すみ肉溶接の打ちかけ。締結の打ちかけとは同時に開かない(「組む」の道具が互いを止める)ので、同じ欄で出す。
   const filletWeldDraft = useAppStore((state) => state.assemblyFilletWeldDraft);
+  const circularWeldDraft = useAppStore((state) => state.assemblyCircularWeldDraft);
   const filletWeldPreview = useAppStore((state) => state.assemblyFilletWeldPreview);
   const nestedWeldDraft = useAppStore((state) => state.assemblyNestedWeldDraft);
   const nestedBoltDraft = useAppStore((state) => state.assemblyNestedBoltDraft);
@@ -342,11 +343,15 @@ export function StatusBar(): React.JSX.Element {
                 ? assemblyToolGuide('bom')
                 : null;
 
+  const circularWeldGuide: ReturnType<typeof filletWeldStatus> = circularWeldDraft === null ? null
+    : { text: t(circularWeldDraft.picks.length === 0 ? 'assembly.circularFilletWeld.pickPlane'
+      : circularWeldDraft.picks.length === 1 ? 'assembly.circularFilletWeld.pickEdge'
+        : circularWeldDraft.picks.length === 2 ? 'assembly.circularFilletWeld.pickCylinder' : 'assembly.circularFilletWeld.picked'), failed: false };
   const line = describeStatus({
     assemblyMateStatus: assemblyMateStatus(mateDraft, mateDiagnosis, mateTargetErrors ?? new Map()),
     assemblyMateActive: mateDraft !== null,
     assemblyBoltedJointStatus: boltedJointStatus(boltedJointDraft, boltedJointPreview, nestedBoltDraft, nestedBoltRefusal)
-      ?? filletWeldStatus(filletWeldDraft, filletWeldPreview, nestedWeldDraft),
+      ?? circularWeldGuide ?? filletWeldStatus(filletWeldDraft, filletWeldPreview, nestedWeldDraft),
     assemblyOperationStatus,
     assemblyInterferenceCount,
     assemblyDragNotice,

@@ -1,7 +1,7 @@
 import { awaitThumbnailCapture } from './thumbnail.js';
 import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 /** アセンブリの文書・添付・保存先を一緒に開閉する。 */
-import { readDocumentBundle, writeAssemblyDocument } from '@pointercad/io';
+import { writeAssemblyDocument } from '@pointercad/io';
 import { createAssemblyDocument, createAssemblyDocumentBundle, partLibraryOfBundle,
   type AssemblyDocument, type PartLibrary } from '@pointercad/model';
 import { activeDocument } from '../store/documentKind.js';
@@ -11,9 +11,11 @@ import type { DocumentRequest } from '../store/documentRequest.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { prepareDocumentSession, SecurePartIdentityError, type PreparedDocumentSession } from '../store/fileSlice.js';
 import { t } from '../i18n/t.js';
-import { beginOpenRequest, mayOpenAfterRead, mayReportOpenFailure } from './documentOpenGuard.js';
+import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, readForOpen } from './documentOpenGuard.js';
 import { withPcadaExtension, type PickedFile } from './fileGateway.js';
-import { hasUnsavedChanges, openErrorMessageKey, type PartFileDeps } from './partFile.js';
+import type { PartFileDeps } from './partFile.js';
+import { openErrorMessageKey } from './documentReadError.js';
+import { hasUnsavedChanges } from './partDocumentDirty.js';
 import { recordRecentFile } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
 import { completeDocumentSave, queueDocumentSave, reportSaveEncodingFailure } from './documentSaveQueue.js';
@@ -80,7 +82,9 @@ export async function applyPickedAssembly(
   deps: PartFileDeps,
   request: DocumentRequest = beginOpenRequest(),
 ): Promise<void> {
-  const result = await readDocumentBundle(picked.bytes, 'assembly');
+  try {
+  const result = await readForOpen(request, 'assembly', picked.bytes);
+  if (result === null) return;
   if (!result.ok) {
     if (mayReportOpenFailure(request)) {
       useAppStore.getState().setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
@@ -104,6 +108,7 @@ export async function applyPickedAssembly(
   if (useAppStore.getState().activeDocumentId === openedId) {
     recordRecentFile(picked.name, { storage: deps.recentFilesStorage });
   }
+  } finally { finishOpenRequest(request); }
 }
 
 export async function openAssembly(deps: PartFileDeps): Promise<void> {
@@ -114,8 +119,8 @@ export async function openAssembly(deps: PartFileDeps): Promise<void> {
     const picked = await useAppStore.getState().fileGateway.openPcad('assembly');
     if (picked !== null) await applyPickedAssembly(picked, deps, request);
   } catch {
-    useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
-  }
+    if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
+  } finally { finishOpenRequest(request); }
 }
 
 export async function saveAssembly(deps: PartFileDeps, saveAs: boolean): Promise<void> {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { openAnyDialog, openPcadDialog, saveAsDialog } from './pcadDialogs.js';
+import type * as ImportedNodeFsTypes from 'node:fs';
 
 const calls = vi.hoisted(() => ({
   open: vi.fn(() => Promise.resolve({ canceled: false, filePaths: ['C:/input/図面.DWG'] })),
@@ -7,7 +8,7 @@ const calls = vi.hoisted(() => ({
 }));
 vi.mock('electron', () => ({ BrowserWindow: {}, dialog: { showOpenDialog: calls.open, showSaveDialog: calls.save }, ipcMain: {} }));
 vi.mock('./appSender.js', () => ({ validateAppSender: () => true }));
-vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>(),
+vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof ImportedNodeFsTypes>(),
   promises: { stat: calls.stat, readFile: calls.read, writeFile: calls.write } }));
 beforeEach(() => { vi.clearAllMocks(); });
 

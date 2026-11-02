@@ -56,7 +56,8 @@ import {
   type PartDocument,
   type PartLibrary,
 } from '@pointercad/model';
-import { strFromU8, strToU8, zipSync, type ZipOptions, type Zippable } from 'fflate';
+import { strToU8, zipSync, type ZipOptions, type Zippable } from 'fflate';
+import { decodeUtf8 } from '../decodeUtf8.js';
 import { hasSteppedZipEntry, zipEntriesAsync, zipEntriesSync, type ZipStepsControl } from './zipSteps.js';
 
 import {
@@ -651,14 +652,6 @@ function findEntry(entries: ReadonlyMap<string, Uint8Array>, name: string): Uint
   return entries.get(name) ?? null;
 }
 
-/** UTF-8 として読む。読めない並びは置き換え文字になるだけで例外にはならないが、念のため受け止める。 */
-function decodeUtf8(bytes: Uint8Array): string | null {
-  try {
-    return strFromU8(bytes);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * エントリ名が添付のものなら、その参照の文字列を返す(違えば null)。

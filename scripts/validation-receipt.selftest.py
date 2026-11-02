@@ -12,7 +12,7 @@ import unittest
 from lib.task_workspace import configure_project_temp
 
 configure_project_temp(Path(__file__).resolve().parents[1])
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location('validation_receipt', Path(__file__).parent / 'lib/validation_receipt.py')
@@ -148,7 +148,7 @@ class ReceiptTests(unittest.TestCase):
         self.complete()
         with patch.object(receipt, 'capture', wraps=receipt.capture) as capture:
             self.assertTrue(self.run_action('reuse', 'Commit')['used'])
-            capture.assert_called_once_with(self.root, self.tools)
+            capture.assert_called_once_with(self.root, self.tools, ANY)
 
     def test_receipt_changed_or_removed_during_input_scan_is_rejected(self):
         original_capture = receipt.capture
@@ -157,8 +157,8 @@ class ReceiptTests(unittest.TestCase):
                 self.complete()
                 path = self.folder / 'validation-receipt.json'
 
-                def capture_then_change(root, tools):
-                    state = original_capture(root, tools)
+                def capture_then_change(root, tools, environment_keys=None):
+                    state = original_capture(root, tools, environment_keys)
                     if mutation == 'removed':
                         path.unlink()
                     else:
@@ -447,6 +447,15 @@ class ReceiptTests(unittest.TestCase):
             firefox.unlink()
             with self.assertRaises(OSError):
                 receipt.browser_roots(self.root, sys.executable)
+
+
+def load_tests(loader, tests, pattern):
+    environment_spec = importlib.util.spec_from_file_location(
+        'receipt_environment_tests', Path(__file__).with_name('receipt-environment.selftest.py'))
+    environment_tests = importlib.util.module_from_spec(environment_spec)
+    environment_spec.loader.exec_module(environment_tests)
+    tests.addTests(loader.loadTestsFromModule(environment_tests))
+    return tests
 
 
 if __name__ == '__main__':

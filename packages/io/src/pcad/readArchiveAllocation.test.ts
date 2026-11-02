@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { inflateSync, strToU8, zipSync } from 'fflate';
 import { readArchive } from './readArchive.js';
 import type { ArchiveReadLimits } from './readArchive.js';
+import type * as ImportedFflateTypes from 'fflate';
 
 vi.mock('fflate', async (importOriginal) => {
-  const original = await importOriginal<typeof import('fflate')>();
+  const original = await importOriginal<typeof ImportedFflateTypes>();
   return { ...original, inflateSync: vi.fn((...args: Parameters<typeof original.inflateSync>) => original.inflateSync(...args)) };
 });
 

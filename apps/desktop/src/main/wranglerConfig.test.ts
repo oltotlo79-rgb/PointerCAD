@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 // Cloudflare Workers Builds が根で `npx wrangler deploy` を実行するため、根の wrangler.jsonc の
-// 内容がサービス名・資産の場所・SPA の扱いを決める(2026-09-28 のログ:
-// scratchpad/claude/ci-logs/cloudflare-build-20260928-0212.txt)。
+// 内容がサービス名・資産の場所・SPA の扱いを決める(2026-09-28 のWorkers Buildsで
+// 根の npx wrangler deploy が実行された記録に基づく)。
 // 参照: https://developers.cloudflare.com/workers/wrangler/configuration/
 //       https://developers.cloudflare.com/workers/static-assets/
 

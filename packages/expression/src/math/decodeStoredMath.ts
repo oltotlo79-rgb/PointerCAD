@@ -3,6 +3,7 @@ import { MATH_INPUT_FORMAT, MATH_INPUT_LIMITS, MathInputProblem, validateMathDec
   type MathBinding, type MathNode, type MathOperationDefinition, type MathSymbolReference,
   type StoredMathExpression } from './mathInputContract.js';
 import { decodeMathDeclarations, referencedMathDeclarations } from './mathDeclarations.js';
+import { isRecord } from './mathRecord.js';
 
 export interface StoredMathContext {
   readonly operationsById: ReadonlyMap<string, MathOperationDefinition>;
@@ -14,9 +15,6 @@ export interface StoredMathContext {
   readonly allowStoredDeclarations?: true;
   /** Parse the visible source under the same name/type choices, without canonicalizing or evaluating it. */
   readonly parseSource: (source: string, notation: 'text' | 'latex') => MathNode;
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 function object(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new MathInputProblem('syntax', '数式の保存データを読み取れません。');

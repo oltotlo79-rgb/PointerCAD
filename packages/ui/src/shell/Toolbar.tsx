@@ -59,6 +59,7 @@ import {
   runFileMenuAction,
 } from './menus/fileToolbarActions.js';
 import { LookGroup } from './menus/LookGroup.js';
+import { AnalysisGroup } from './menus/AnalysisGroup.js';
 import { ImportFormatPanel } from '../file/ImportFormatPanel.js';
 import { AssemblyGroup } from './menus/AssemblyGroup.js';
 import { PlaneMenu } from './menus/PlaneMenu.js';
@@ -443,6 +444,8 @@ export function Toolbar(): React.JSX.Element {
       </div>
       </> : <><AssemblyGroup /><LookGroup document={partDocument} bodies={subShapeBodies}
         selection={selection} selectionKind={selectionKind} matches={appearanceMatches} activeTool={activeTool} /></>}
+
+      <AnalysisGroup />
 
       <span className="pcad-toolbar__spacer" />
 

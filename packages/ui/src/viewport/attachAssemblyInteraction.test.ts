@@ -468,3 +468,55 @@ describe('締結の穴の枠だけで、実らせんの壁の当たりを組の�
     } finally { f.interaction.detach(); }
   });
 });
+
+describe('deferred component input keeps its owning pointer', () => {
+  function deferredBodyInput() {
+    const f = interactionFixture();
+    f.interaction.detach();
+    useAppStore.setState({ selectionKind: 'body', selection: [] });
+    let settle: (ready: boolean) => void = () => { throw new Error('pending refresh missing'); };
+    const ready = new Promise<boolean>(resolve => { settle = resolve; });
+    const interaction = attachAssemblyInteraction(f.canvas, f.scene, {
+      viewDirection: () => [0, 0, 1], prepareMateInput: () => ready,
+    });
+    const send = (type: string, properties: object = {}) => f.send(type,
+      { pointerId: 7, buttons: type === 'pointerup' ? 0 : 1, ...properties });
+    return { ...f, interaction, send, settle };
+  }
+
+  it.each(['pointercancel', 'lostpointercapture', 'pointermove'] as const)(
+    'a different pointer %s cannot discard the original click', async kind => {
+      const f = deferredBodyInput();
+      try {
+        const before = useAppStore.getState();
+        f.send('pointerdown');
+        f.send(kind, { pointerId: 8, clientX: 100 });
+        f.send('pointerup'); f.send('pointerup');
+        expect(useAppStore.getState().selection).toEqual([]);
+        f.scene.pickComponent.mockClear();
+        f.settle(true); await Promise.resolve(); await Promise.resolve();
+        expect(useAppStore.getState().selection).toEqual(['component-1']);
+        expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+        expect(useAppStore.getState().assemblyDrag).toBeNull();
+        await Promise.resolve(); f.send('pointerup');
+        expect(f.scene.pickComponent).toHaveBeenCalledTimes(1);
+      } finally { f.interaction.detach(); }
+    });
+
+  it.each(['pointercancel', 'lostpointercapture', 'pointermove'] as const)(
+    'the owning pointer %s still discards the pending input', async kind => {
+      const f = deferredBodyInput();
+      try {
+        const before = useAppStore.getState();
+        f.send('pointerdown'); f.send(kind, { clientX: 100 });
+        f.scene.pickComponent.mockClear();
+        f.settle(true); await Promise.resolve(); await Promise.resolve();
+        expect(useAppStore.getState().selection).toEqual([]);
+        expect(f.scene.pickComponent).not.toHaveBeenCalled();
+        expect(useAppStore.getState().assembly).toBe(before.assembly);
+        expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      } finally { f.interaction.detach(); }
+    });
+});

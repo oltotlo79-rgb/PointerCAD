@@ -49,6 +49,12 @@ whose keys are exactly the values -- found by a value scan, because such tables 
 even if it is written under "触らない:". A worker stopped on 2026-10-25 03:19 (SteelCondition, TS7053 in two UI tables).
 The scan result of check 1 is reused; the value scan is one more find_references call, only when a union is found.
 
+2026-10-30 cl-v103-worker-consumer-guard adds check 9: when the "③" paragraph allows changing the shared worker
+packages/fem/src/worker.ts, every test file that directly imports that worker now (found locally in packages/fem/src on
+each run, not a fixed list) must be named by its real path in the acceptance ("合格条件") text. Gate 20261029-233928 failed
+because frameBoltClient.test.ts, which imports the real worker, was missing from the focused RUN of a worker change.
+The check only prevents that omission before launch; it never runs the tests and never certifies any result.
+
 Everything the check needs lives in this one file (no import of anything under scratchpad/, which
 is gitignored and absent from CI and from any hermetic checkout -- rules/06 §10.336). Only
 scratchpad/claude/instructions/*.md content is inspected; unrelated prompts, or prompts that name
@@ -1530,11 +1536,257 @@ def union_table_findings(root: Path, display: str, lines: list[str], scope_entri
     return errors, warnings
 
 
+# --- 検査9: 共通 worker の直接の消費先 ---
+# 2026-10-30 cl-v103-worker-consumer-guard。friction の導入で共通の packages/fem/src/worker.ts の終了を 1 回に統一した包みの
+# 確認の RUN に、同じ worker を `import('./worker.js')` で読み込む frameBoltClient.test.ts が入っておらず、全体検査
+# 20261029-233928 で frameBoltClient.test.ts:173 の古い期待(close 2 回)だけが落ちた。③が共通の worker の変更を許す指示書では、
+# 今その worker を直接 import する試験の全ての実パスが、合格条件の検査の対象に挙がっていることを起動の前に確かめる。
+#   対象 = WORKER_CONSUMER_TARGETS の worker(今は packages/fem/src/worker.ts だけ)。③の経路の語(検査 1・7 と同じ
+#          _path_entry_spans。フルパス・フォルダー・glob が worker を覆えば変更を許すとみなす)のうち、同じ文(「。」か改行まで)の
+#          語の後に、編集を許す語より先に読取専用・変更禁止・候補外などの語があるもの(後に無ければ前の最後の語で決める)は除く。
+#          同名の別のファイル(packages/fem/src/sub/worker.ts 等)や worker.tsx は覆わない。
+#   消費先 = worker のパッケージの src の中の試験ファイル(*.test.* / *.spec.*)のうち、import 文・`import(…)`・export … from の
+#          相対の指定子を解決すると worker そのもの(拡張子なし・.js・.ts)になるもの。固定の一覧ではなく毎回その場で探す(新しい
+#          消費先も取り残さない)。URL の文字列('…/fem/worker.js')や似た名前('./workerUtil.js')は数えない。
+#   列挙 = 合格条件(「合格条件」で始まる段落、または §2 / 合格条件の見出しの節)の経路の語。./・逆斜線・バッククォート・
+#          `--package fem src/…` の表記の差は同じパスに直し、パス全体の一致で比べる(部分一致・フォルダー・glob は列挙に数えない)。
+#   外れ = 列挙に無い消費先がある。試験を③へ入れることは求めない(読取の既存試験を同じ RUN で流せばよい)。
+# この検査は起動の前の列挙漏れを防ぐだけで、試験を実行せず、その結果を合格と認定しない。
+
+WORKER_CONSUMER_TARGETS = (("packages/fem/src/worker.ts", "packages/fem/src"),)
+WORKER_CONSUMER_SECONDS = 1.0
+WORKER_TEST_NAME_PATTERN = r"\.(?:test|spec)\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$"
+WORKER_IMPORT_PATTERN = r"(?<![\w$.])(?:import[ \t\r\n]*\([ \t\r\n]*|from[ \t\r\n]*|import[ \t\r\n]*)(['\"])([^'\"\r\n]+)\1"
+WORKER_SPECIFIER_SUFFIXES = ("", ".js", ".ts")
+WORKER_READ_ONLY_PATTERN = (
+    r"読(?:取|み取|む)|参照(?:のみ|だけ)|read[ _\-]?only|(?:変更|編集|修正)(?:禁止|しない|不可)|変えない|触らない"
+    r"|候補外|対象外|範囲外|禁止")
+WORKER_EDITABLE_PATTERN = r"(?:編集|変更|修正)(?:可|して(?:も)?よい|する(?!な))|変えて(?:も)?よい|候補(?!外)"
+ACCEPT_PARAGRAPH_PATTERN = r"^[ \t>*\-]*(?:[0-9０-９]+[.．)）]?[ \t]*)?(?:\*\*)?合格条件"
+PACKAGE_OPTION_PATTERN = r"--package[ \t=]+([A-Za-z0-9_\-]+)"
+WORKER_CONSUMER_MESSAGE = (
+    "{display} 行{line}: 共通 worker の消費先: ③が {worker} の変更を許すのに、今その worker を直接 import する試験 {count} 本が"
+    "合格条件の検査の対象に実パスで無い: {missing}(今の消費先 全 {total} 本: {consumers}){note}。合格条件にこれらの実パスを書き、"
+    "同じ RUN で流す(試験を③へ入れる必要は無い。読取の既存試験でよい)。この検査は起動の前の列挙漏れを防ぐだけで、"
+    "実行の結果を合格と認定しない(全体検査 20261029-233928 の frameBoltClient.test.ts:173)")
+
+
+def _clean_relative(path: str) -> str | None:
+    """逆斜線を / にそろえ、./ と a/../ を畳んだ根からの相対(根の外へ出る・空なら None)。"""
+    import posixpath
+    body = path.replace("\\", "/").strip()
+    if not body:
+        return None
+    cleaned = posixpath.normpath(body)
+    if cleaned in (".", "..") or cleaned.startswith("../") or cleaned.startswith("/"):
+        return None
+    return cleaned
+
+
+def _sentence_bounds(text: str, start: int, end: int) -> tuple[int, int]:
+    left = max(text.rfind("。", 0, start), text.rfind("\n", 0, start)) + 1
+    rights = [position for position in (text.find("。", end), text.find("\n", end)) if position != -1]
+    return left, (min(rights) if rights else len(text))
+
+
+def _worker_read_only(text: str, start: int, end: int) -> bool:
+    """③の語 text[start:end] が、同じ文の中で読取専用・変更禁止・候補外などとされているか。語の後で先に出る語(読取の側か
+    編集を許す側か)で決め、後に無ければ語の前の最後の語で決める(どちらも無ければ③の語どおり変更を許す)。"""
+    left, right = _sentence_bounds(text, start, end)
+    tail = text[end:right]
+    read_only = re.search(WORKER_READ_ONLY_PATTERN, tail, re.IGNORECASE)
+    editable = re.search(WORKER_EDITABLE_PATTERN, tail)
+    if read_only or editable:
+        return read_only is not None and (editable is None or read_only.start() < editable.start())
+    head = text[left:start]
+    read_only_ends = [match.end() for match in re.finditer(WORKER_READ_ONLY_PATTERN, head, re.IGNORECASE)]
+    editable_ends = [match.end() for match in re.finditer(WORKER_EDITABLE_PATTERN, head)]
+    return bool(read_only_ends) and (not editable_ends or read_only_ends[-1] > editable_ends[-1])
+
+
+def _worker_edit_positions(scope_text: str, worker: str) -> list[int]:
+    """③の中で worker の変更を許す語の位置(③の文の中の位置)。読取専用などとされた語・別のファイルの語は含めない。"""
+    text = scope_text.replace("\\", "/")
+    positions: list[int] = []
+    for entry, _token, start, end, _bare in _path_entry_spans(text):
+        body = _clean_relative(entry.rstrip("/"))
+        if body is None or not _entry_covers(body, worker):
+            continue
+        if not _worker_read_only(text, start, end):
+            positions.append(start)
+    return positions
+
+
+def worker_consumers(root: Path, worker: str, source_dir: str, deadline: float) -> tuple[list[str], bool]:
+    """source_dir の中で worker を直接 import する試験ファイル(根からの相対・昇順)と、枠の中で探し終えたか。"""
+    import os
+    import posixpath
+    import time
+    stem = worker.rsplit(".", 1)[0]
+    wanted = {stem + suffix for suffix in WORKER_SPECIFIER_SUFFIXES}
+    needle = posixpath.basename(stem).encode("utf-8")
+    found: list[str] = []
+    stack = [source_dir]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(root / current) as entries:
+                items = sorted(entries, key=lambda item: item.name)
+        except OSError:
+            continue
+        for item in items:
+            relative = f"{current}/{item.name}"
+            if item.is_dir(follow_symlinks=False):
+                if item.name not in SCAN_SKIP_DIRS:
+                    stack.append(relative)
+                continue
+            if not item.is_file(follow_symlinks=False) or not re.search(WORKER_TEST_NAME_PATTERN, item.name):
+                continue
+            if time.monotonic() > deadline:
+                return sorted(found), False
+            try:
+                if item.stat().st_size > SCAN_MAX_FILE_BYTES:
+                    continue
+                with open(item.path, "rb") as handle:
+                    data = handle.read()
+            except OSError:
+                continue
+            if needle not in data:
+                continue
+            for match in re.finditer(WORKER_IMPORT_PATTERN, data.decode("utf-8", errors="replace")):
+                specifier = match.group(2)
+                if not specifier.startswith(("./", "../")):
+                    continue
+                resolved = _clean_relative(posixpath.join(current, specifier))
+                if resolved in wanted:
+                    found.append(relative)
+                    break
+    return sorted(found), True
+
+
+def _acceptance_blocks(lines: list[str]) -> list[str]:
+    """合格条件の文: §2 / 合格条件の見出しの節と、「合格条件」で始まる段落(空行か見出しの手前まで)。"""
+    blocks: list[str] = []
+    bounds = _acceptance_range(lines)
+    if bounds is not None:
+        blocks.append("\n".join(lines[bounds[0]:bounds[1]]))
+    for index, line in enumerate(lines):
+        if re.match(HEADING_PATTERN, line) or not re.match(ACCEPT_PARAGRAPH_PATTERN, line):
+            continue
+        collected = [line]
+        for follow in lines[index + 1:]:
+            if not follow.strip() or re.match(HEADING_PATTERN, follow):
+                break
+            collected.append(follow)
+        blocks.append("\n".join(collected))
+    return blocks
+
+
+def _listed_paths(text: str) -> set[str]:
+    """合格条件の文に実パスで書かれたファイル(根からの相対)。コマンドの中も数える(`diag.py unit --package fem src/a.test.ts` の
+    src/… は同じ行の --package で補う)。裸の名前は、直前の語に「・」「、」でつながる時だけそのフォルダーで補う(検査 7 と同じ)。"""
+    text = text.replace("\\", "/")
+    listed: set[str] = set()
+    anchor: tuple[str, int] | None = None
+    for match in re.finditer(SCOPE_TOKEN_PATTERN, text):
+        written = match.group(0).rstrip(".")
+        end = match.start() + len(written)
+        token = written
+        while token.startswith("./"):
+            token = token[2:]
+        if not token:
+            continue
+        if "/" in token:
+            if token.startswith("src/"):
+                line_start = text.rfind("\n", 0, match.start()) + 1
+                packages = re.findall(PACKAGE_OPTION_PATTERN, text[line_start:match.start()])
+                if packages:
+                    token = f"packages/{packages[-1]}/{token}"
+            entry = _clean_relative(token)
+        elif anchor is not None and _list_joint(text, anchor[1], match.start()) is not None:
+            entry = _clean_relative(f"{_entry_folder(anchor[0])}/{token}")
+        else:
+            continue
+        if entry is None:
+            continue
+        listed.add(entry)
+        anchor = (entry, end)
+    return listed
+
+
+def worker_consumer_findings(root: Path, display: str, lines: list[str], scope_text: str,
+                             seconds: float) -> tuple[list[str], list[str]]:
+    import time
+    errors: list[str] = []
+    warnings: list[str] = []
+    block = _scope_block(lines)
+    if block is None or not scope_text.strip():
+        return errors, warnings
+    deadline = time.monotonic() + seconds
+    for worker, source_dir in WORKER_CONSUMER_TARGETS:
+        positions = _worker_edit_positions(scope_text, worker)
+        if not positions or not (root / worker).is_file():
+            continue
+        consumers, complete = worker_consumers(root, worker, source_dir, deadline)
+        if not complete:
+            warnings.append(
+                f"{display}: 共通 worker の消費先: {source_dir} の走査が {seconds:g} 秒の枠を超えたため一部未確認"
+                "(--check なら長い枠で走査する)")
+        if not consumers:
+            if complete:
+                warnings.append(f"{display}: 共通 worker の消費先: {worker} を直接 import する試験が {source_dir} に 0 本")
+            continue
+        blocks = _acceptance_blocks(lines)
+        listed: set[str] = set()
+        for text in blocks:
+            listed |= _listed_paths(text)
+        missing = [path for path in consumers if path not in listed]
+        if not missing:
+            continue
+        line = block[0] + scope_text.count("\n", 0, positions[0]) + 1
+        errors.append(WORKER_CONSUMER_MESSAGE.format(
+            display=display, line=line, worker=worker, count=len(missing), missing="、".join(missing),
+            total=len(consumers), consumers="、".join(consumers),
+            note="" if blocks else "。合格条件の段落・節が見つからない"))
+    return errors, warnings
+
+
+DOCS_PHASE_REASON = '利用者の指示 2026-11-01 19:2x: 取扱説明書は最後'
+DOCS_PHASE_MARKER = 'scratchpad/claude/root-runtime/docs-phase-open.json'
+
+
+def docs_phase_findings(root: Path, display: str, scope_text: str) -> list[str]:
+    """検査9(説明書の包みの時期)。既存の共通worker検査9とは独立して適用する。"""
+    target = re.search(
+        r'(?<![A-Za-z0-9_-])packages/help-content/(?:docs|src)(?=/|[^A-Za-z0-9_.-]|$)'
+        r'|(?<![A-Za-z0-9_])EX-[A-Za-z0-9_.-]*DOC(?![A-Za-z0-9_-])'
+        r'|(?<![A-Za-z0-9_])WM\.', scope_text)
+    if not target:
+        return []
+    try:
+        data = json.loads((root / DOCS_PHASE_MARKER).read_text(encoding='utf-8-sig'))
+        if not isinstance(data, dict) or data.get('openedBy') != '統括':
+            raise ValueError('openedBy は統括でなければなりません')
+        if not isinstance(data.get('reason'), str) or not data['reason'].strip():
+            raise ValueError('reason が空です')
+        if not isinstance(data.get('openedAt'), str) or not data['openedAt'].strip():
+            raise ValueError('openedAt が空です')
+        datetime.fromisoformat(data['openedAt'])
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        detail = ' '.join(str(exc).split())
+        return [f'{display}: 説明書の包みの時期: {DOCS_PHASE_REASON}。'
+                f'{target.group()} を含む③には、統括の有効な {DOCS_PHASE_MARKER} が必要です({detail})']
+    return []
+
+
 def check_instruction_report(root: Path, display_path: str, text: str, now: datetime, *,
                              full_lists: bool = False, scan_seconds: float = HOOK_SCAN_SECONDS,
                              invocation="auto") -> tuple[list[str], list[str]]:
     """(外れの一覧, 警告の一覧)。外れは起動を止め、警告は --check の出力にだけ出す。
     既存の3検査((a) 新規・(b) SHA-256・(c) 先の時刻)の後に、新しい検査を順に行う。"""
+    # Validate transport before classifying instructions; a lost scope marker must not bypass checks.
+    if "\ufffd" in text or re.search(r"\?{5,}", text):
+        return [f"{display_path}: text transport corruption; rewrite as UTF-8 before launch"], []
     messages: list[str] = []
     for line_number, candidate in new_path_findings(text):
         if _exists_under(root, candidate):
@@ -1565,6 +1817,7 @@ def check_instruction_report(root: Path, display_path: str, text: str, now: date
     except Exception as exc:
         scope_text, scope_entries = "", []
         warnings.append(f"{display_path}: ③の読取りが内部の例外で実行できなかった: {exc!r}")
+    messages[0:0] = docs_phase_findings(root, display_path, scope_text)
     steps = (
         ("影響の列挙", lambda: impact_findings(
             root, display_path, lines, scope_entries, scan_seconds, full_lists, invocation, scan_sink)),
@@ -1576,6 +1829,9 @@ def check_instruction_report(root: Path, display_path: str, text: str, now: date
         ("union 型の固定の表", lambda: union_table_findings(
             root, display_path, lines, scope_entries, scan_sink,
             max(0.25, scan_seconds - (time.monotonic() - checks_started)), invocation)),
+        ("共通 worker の消費先", lambda: worker_consumer_findings(
+            root, display_path, lines, scope_text,
+            max(WORKER_CONSUMER_SECONDS, scan_seconds - (time.monotonic() - checks_started)))),
     )
     for name, step in steps:
         try:
@@ -1689,10 +1945,18 @@ def main() -> int:
             for warning in warnings:
                 print(f"警告: {warning}")
             print(f"警告: {len(warnings)} 件")
+            phase_errors = [message for message in messages if DOCS_PHASE_REASON in message]
+            if phase_errors:
+                print(' / '.join(phase_errors), file=sys.stderr)
+                return 2
             return 1 if messages else 0
         payload = json.load(sys.stdin)
         output = hook(payload, now)
         if output is not None:
+            reason = output['hookSpecificOutput']['permissionDecisionReason']
+            if DOCS_PHASE_REASON in reason:
+                print(' '.join(reason.split()), file=sys.stderr)
+                return 2
             print(json.dumps(output, ensure_ascii=False))
         return 0
     except Exception as exc:

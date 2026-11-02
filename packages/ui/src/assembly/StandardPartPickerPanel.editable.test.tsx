@@ -9,11 +9,12 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { StandardPartPicker } from './StandardPartPickerPanel.js';
+import type * as ImportedReactTypes from 'react';
 
 // Same boundary harness as StandardPartPickerPanel.test.tsx: real handlers, real store, Node rendering only.
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], state: 0 }));
 vi.mock('react', async (importOriginal) => {
-  const original = await importOriginal<typeof import('react')>();
+  const original = await importOriginal<typeof ImportedReactTypes>();
   return { ...original, useState: <S,>(initial: S | (() => S)) => {
     const index = hooks.state++;
     if (index === hooks.values.length) hooks.values.push(typeof initial === 'function' ? (initial as () => S)() : initial);

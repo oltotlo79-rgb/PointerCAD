@@ -90,6 +90,12 @@
           {
             "type": "command",
             "command": "python",
+            "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/sonnet_launch_guard.py"],
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python",
             "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/instruction_check_guard.py"],
             "timeout": 5
           }

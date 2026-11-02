@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import type { BeamContactInput, BeamContactNumericResult } from './contactModel.js';
 import type { OofemContactPlan } from './contactTranslation.js';
 import { translateBeamBoltContact, decodeBeamBoltContact, type AxialBoltDefinition, type AxialBoltPlan, type AxialBoltForce } from './beamBoltContact.js';
@@ -49,7 +50,7 @@ export function translateBeamJointContact(value: unknown): { input: BeamJointCon
 }
 export async function beamJointContactInputSha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(translateBeamJointContact(value).input));
-  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), byte => byte.toString(16).padStart(2, '0')).join('');
+  return await sha256Hex(bytes);
 }
 /** Both existing constitutive decoders consume the exact same coupled contact response. */
 export function decodeBeamJointContact(raw: unknown, value: BeamJointContactInput, hash: string): BeamJointContactResult {

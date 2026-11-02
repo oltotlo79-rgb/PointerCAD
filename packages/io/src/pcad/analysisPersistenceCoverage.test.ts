@@ -78,6 +78,16 @@ const cases: Readonly<Record<BeamAnalysisInput['kind'], PersistenceCase>> = {
       meanStressAssumption: 'fully-reversed-only', segments: [{ fromStressMpa: 400, fromCycles: 1e5, slope: 3 },
         { fromStressMpa: 200, fromCycles: 8e5, slope: 5 }], endCycles: 1e8, end: 'cutoff-at-end',
       applicability: { material: 'synthetic', detail: 'synthetic', scope: 'unit test only' }, source }, histories } } }) },
+  'fatigue-detail': { owners: ['part', 'assembly'], make: documentId => ({ kind: 'fatigue-detail', definition: {
+    schema: 'pointercad-fatigue-saved/6', id: 'fatigue', source: { documentId }, input: {
+      schema: 'pointercad-fatigue-detail/1', detail: { id: 'joint', kind: 'weld', method: 'fillet-weld-nominal-shear/1',
+        loadPath: 'concentric-in-plane-shear', geometry: { kind: 'fillet-throat-area', throatMm: 4, effectiveLengthMm: 10, lines: 2 } },
+      loading: { detailId: 'joint', location: 'joint centroid', quantity: 'weld-group-concentric-shear-force',
+        histories: [{ id: 'h', unit: 'N', forceN: [100, -100, 0], sequence: 'once', repeats: 1, source }] },
+      curve: { detailStress: 'weld-fillet-throat-nominal-shear', calibration: { id: 'two-slope', unit: 'MPa', stressDefinition: 'range',
+        meanStressAssumption: 'fully-reversed-only', segments: [{ fromStressMpa: 400, fromCycles: 1e5, slope: 3 },
+          { fromStressMpa: 200, fromCycles: 8e5, slope: 5 }], endCycles: 1e8, end: 'none',
+        applicability: { material: 'synthetic', detail: 'synthetic', scope: 'unit test only' }, source } } } } }) },
   'fatigue-strain-life': { owners: ['part', 'assembly'], make: documentId => ({ kind: 'fatigue-strain-life', definition: {
     schema: 'pointercad-fatigue-strain-saved/1', id: 'fatigue-strain-life', source: { documentId },
     input: { schema: 'pointercad-strain-history/1', meanStress: 'assumed-zero', material,
@@ -100,6 +110,9 @@ const cases: Readonly<Record<BeamAnalysisInput['kind'], PersistenceCase>> = {
   'solid-buckling-cad': { owners: ['part'], make: documentId => ({ kind: 'solid-buckling-cad', definition: {
     schema: 'pointercad-solid-buckling-cad-input/1', id: 'solid-buckling-cad', source: { documentId }, modeCount: 3,
     reference: solid(documentId) } }) },
+  'shell-cad': { owners: ['part'], make: documentId => ({ kind: 'shell-cad', definition: {
+    schema: 'pointercad-shell-cad-input/1', id: 'shell-cad', source: { documentId }, bodyFeatureId: 'sheet',
+    midsurfaceFaces: ['midsurface-origin'], thicknessMm: 2, offsetMm: -0.5 } }) },
 };
 
 function attachment(row: unknown) {

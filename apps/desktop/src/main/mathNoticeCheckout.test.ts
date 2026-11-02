@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const notices = 'docs/standards/licenses';
-type Notice = { notice: string; sha256: string };
+interface Notice { notice: string; sha256: string }
 const manifest = JSON.parse(readFileSync(join(root, notices, 'math-notices.json'), 'utf8')) as {
   packages: Notice[]; additionalNotices: Notice[];
 };

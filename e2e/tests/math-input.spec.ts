@@ -34,8 +34,8 @@ test.use({ viewport: { width: 1440, height: 900 } });
 // どの組に入る想定か: 2組目(単独)。a-math-input.spec.ts(1組目、function-plot.spec.ts
 // と合わせて約43.1分)・z-math-input.spec.ts(3組目、約43.2分)と合わせて3組が
 // ほぼ均等になる。
-// 根拠の実測: scratchpad/claude/agents/w95a-split-slow-specs/mi_times.txt と
-// plan_chunks2.py(w95a)。
+// 根拠の実測: CI run 36346675432 の job-108697069540.log（各テストの秒数）と
+// 実測秒数で所要を均等化するduration-balanced 3分割の計算。
 test.describe.configure({ mode: 'parallel' });
 test('ADD-24 Gamma・Beta分布の入力準備失敗を表示された理由で直ちに検出する', async ({ page }) => {
   test.setTimeout(10_000);

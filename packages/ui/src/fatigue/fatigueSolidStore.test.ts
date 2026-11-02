@@ -1,3 +1,5 @@
+import { create } from 'zustand';
+import { createFatigueSlice } from '../store/fatigueSlice.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -127,5 +129,45 @@ describe('solid fatigue through actual UI store actions', () => {
       expectDocumentHistoryUnchanged(before);
       expect(useAppStore.getState().fatigueSession?.solidAnalyzed ?? null).toBeNull();
     }
+  });
+});
+
+describe('別storeのsolid fatigue所有', () => {
+  it('singletonの変更と独立に自身のgetで採用し、別storeへ結果を混ぜない', async () => {
+    const source = await analyticalSolid(useAppStore.getState().document.id, useAppStore.getState().completedGeneration);
+    installSolid(source);
+    const seed = useAppStore.getState();
+    const local = create<typeof seed>()((...args) => ({ ...seed, ...createFatigueSlice(...args) }));
+    local.setState({ fatigueSession: seed.fatigueSession });
+    const pending = local.getState().runFatigue();
+    const foreignDocument = { ...seed.document, name: 'foreign singleton edit' };
+    useAppStore.setState({ document: foreignDocument });
+    await pending;
+    const session = local.getState().fatigueSession;
+    if (session === null) throw new Error('No local fatigue session');
+    expect(currentSolidFatigueResult(session, [], source)?.result.damage).toBeGreaterThan(0);
+    expect(local.getState().document).toBe(seed.document);
+    expect(local.getState().undoStack).toBe(seed.undoStack);
+    expect(useAppStore.getState().document).toBe(foreignDocument);
+    expect(useAppStore.getState().fatigueSession).toBe(seed.fatigueSession);
+    expect(useAppStore.getState().fatigueSession?.solidAnalyzed).toBeNull();
+  });
+
+  it('自身のdocumentが待機中に変われば結果を捨て、singletonにも後着させない', async () => {
+    const source = await analyticalSolid(useAppStore.getState().document.id, useAppStore.getState().completedGeneration);
+    installSolid(source);
+    const seed = useAppStore.getState();
+    const local = create<typeof seed>()((...args) => ({ ...seed, ...createFatigueSlice(...args) }));
+    local.setState({ fatigueSession: seed.fatigueSession });
+    const pending = local.getState().runFatigue();
+    const changedDocument = { ...seed.document, name: 'local edit while pending' };
+    local.setState({ document: changedDocument });
+    await pending;
+    expect(local.getState().fatigueSession?.solidAnalyzed ?? null).toBeNull();
+    expect(local.getState().document).toBe(changedDocument);
+    expect(local.getState().undoStack).toBe(seed.undoStack);
+    expect(useAppStore.getState().document).toBe(seed.document);
+    expect(useAppStore.getState().fatigueSession).toBe(seed.fatigueSession);
+    expect(useAppStore.getState().fatigueSession?.solidAnalyzed).toBeNull();
   });
 });

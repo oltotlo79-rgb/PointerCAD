@@ -1,5 +1,5 @@
 import { test } from '@playwright/test';
-import { cutPlaneMaterialsFlow } from './cutPlaneMaterialsFlow.js';
+import { CUT_LIFECYCLE_CASES, cutLifecycleFlow, cutPlaneMaterialsFlow } from './cutPlaneMaterialsFlow.js';
 
 /*
  * EX-04 W1 切る面の材料(ブラウザー)。functional の枠に入る(firefox の許可名簿には入らない)。
@@ -10,3 +10,9 @@ test.describe('EX-04 切る面の材料', () => {
     await cutPlaneMaterialsFlow(page, '/');
   });
 });
+
+for (const kind of CUT_LIFECYCLE_CASES) {
+  test(`EX-04 current lifecycle ${kind}`, async ({ page }, info) => {
+    await cutLifecycleFlow(page, info, kind);
+  });
+}

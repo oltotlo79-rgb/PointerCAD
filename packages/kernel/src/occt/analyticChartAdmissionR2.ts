@@ -10,12 +10,12 @@
  * cover R3; (6) trim corridors R4 with endpoints read from the one canonical chart.uvNodes table; all work charged to the
  * ONE caller-provided AnalyticCellBudget. The result is a partial obligation record: every global flag is literal false.
  */
-import {
-  validateAnalyticUvComplex,
-  type AnalyticCellBudget,
-  type AnalyticFaceChart,
-  type AnalyticPlcFaceBinding,
-  type AnalyticSurfaceGeometry,
+import { validateAnalyticUvComplex } from './analyticUvComplex.js';
+import type {
+  AnalyticCellBudget,
+  AnalyticFaceChart,
+  AnalyticPlcFaceBinding,
+  AnalyticSurfaceGeometry,
 } from './analysisSurfaceCertificate.js';
 import { buildTrimIntervalInventory, nativePrimitiveForInjectivity, sharedTake, type B08WireChain } from './boundary08Adapter.js';
 

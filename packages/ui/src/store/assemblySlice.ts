@@ -22,6 +22,7 @@ import {
   type ResolvedAssembly, type RigidPlacement, type SolidBody, type UndoStack,
 } from '@pointercad/model';
 import type { StateCreator } from 'zustand';
+import { createCircularWeldActions, selectedCircularWeldId, type CircularWeldSlice } from './circularWeldActions.js';
 import type { AutoSaveRecord } from '@pointercad/io';
 import type { AppState, DocumentStateUpdate } from './appState.js';
 import { emptySheetMetalTool } from './sheetMetalSlice.js';
@@ -123,7 +124,7 @@ export type AssemblyMotionNotice =
   | { readonly kind: 'failed' };
 
 /** アセンブリのスライスが持つ欄と操作。 */
-export interface AssemblySlice {
+export interface AssemblySlice extends CircularWeldSlice {
   /**
    * 開いているアセンブリ文書(FR-601)。**開いていなければ null**(= 部品を開いている)。
    *
@@ -295,6 +296,7 @@ export type AssemblyOwnedInitialState = Pick<AssemblySlice,
   | 'assemblyReplacementPreview' | 'assemblyReplacementBusy' | 'assemblyReplacementRequestId'
   | 'assemblyBoltedJointDraft' | 'assemblyBoltedJointPreview' | 'assemblyNestedBoltDraft' | 'assemblyNestedBoltPreview'
   | 'assemblyFilletWeldDraft' | 'assemblyFilletWeldPreview'
+  | 'assemblyCircularWeldDraft' | 'assemblyCircularWeldPreview'
   | 'assemblyNestedWeldDraft' | 'assemblyNestedWeldPreview' | 'assemblyChildWeldEdit' | 'assemblyJointDrive'>;
 
 /** 協調の関節の駆動の持ち主。この記録そのものがストアに残っている間だけ結果を反映できる。 */
@@ -415,6 +417,8 @@ export function createAssemblyInitialState(session?: PreparedDocumentSession): A
     assemblyNestedBoltPreview: null,
     assemblyFilletWeldDraft: null,
     assemblyFilletWeldPreview: null,
+    assemblyCircularWeldDraft: null,
+    assemblyCircularWeldPreview: null,
     assemblyNestedWeldDraft: null,
     assemblyNestedWeldPreview: null,
     assemblyChildWeldEdit: null,
@@ -492,13 +496,14 @@ export const createAssemblySlice: StateCreator<
       standardPartPickerOpen: false,
       assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
       assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
-      assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
+      assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
       assemblyJointDrive: null,
       ...emptyInterferenceState(), ...endedDragDrives(state),
     }));
   }
   return {
     ...empty(),
+    ...createCircularWeldActions(set, get),
     recoveryRecord: null,
     resetAssembly: (update, session) => {
       const initial = empty(session);
@@ -550,7 +555,7 @@ export const createAssemblySlice: StateCreator<
           standardPartPickerOpen: false,
           assemblyReplacementPreview: null, assemblyReplacementBusy: false, assemblyReplacementRequestId: null,
           assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
-          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
+          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null,
           assemblyJointDrive: null,
           assemblyCrossLevelGearRepairs: repaired.repairs,
           ...emptyInterferenceState(), ...endedDragDrives(current) };
@@ -723,7 +728,7 @@ export const createAssemblySlice: StateCreator<
         && ['hexBolt', 'hexNut', 'plainWasher', 'springWasher'].includes(selectedPart.source.catalog);
       const draft = record === undefined ? createBoltedJointDraft(state.activeDocumentId)
         : createBoltedJointEditDraft(state.activeDocumentId, record);
-      set({ assemblyBoltedJointDraft: draft,
+      set({ assemblyBoltedJointDraft: draft, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null,
         assemblyBoltedJointPreview: record !== undefined ? boltedJointPreviewFor(state, draft)
           : recordless ? { kind: 'issue', issue: { kind: 'jointRecordMissing' } } : null,
         assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
@@ -816,6 +821,7 @@ export const createAssemblySlice: StateCreator<
       const state = get();
       if (state.assembly === null || state.assemblyPlacement !== null || state.assemblyMateDraft !== null
         || state.assemblyDrag !== null || state.isComputing) return false;
+      if (selectedCircularWeldId(state.assembly, state.selection) !== null) return state.beginCircularWeld();
       const weldId = selectedWeldId(state.assembly, state.selection);
       const draft = weldId === null ? createFilletWeldDraft(state.activeDocumentId)
         : createFilletWeldEditDraft(state.activeDocumentId, state.assembly, weldId);
@@ -825,7 +831,7 @@ export const createAssemblySlice: StateCreator<
       const nestedEdit = weldId !== null && isOccurrenceWeld(state.assembly, weldId) && state.assemblyView !== null
         ? nestedWeldEditPreviewFor(state.assembly, state.assemblyLibrary, state.assemblyView, draft) : null;
       const nestedEditRoute = weldId !== null && isOccurrenceWeld(state.assembly, weldId);
-      set({ assemblyFilletWeldDraft: draft, assemblyChildWeldEdit: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: nestedEdit,
+      set({ assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyFilletWeldDraft: draft, assemblyChildWeldEdit: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: nestedEdit,
         assemblyFilletWeldPreview: weldId === null ? null : nestedEditRoute
           ? nestedWeldEditDisplayPreview(nestedEdit, draft, state.assembly) : filletWeldPreviewFor(state, draft),
         assemblyDragNotice: null,
@@ -873,7 +879,7 @@ export const createAssemblySlice: StateCreator<
     },
     cancelFilletWeld: () => {
       // 取消は文書も履歴も変えない。下書きと予告だけを消す。
-      set({ assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null });
+      set({ assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null });
     },
     pickNestedFilletWeldTarget: (pick) => {
       const state = get();
@@ -1136,12 +1142,12 @@ export const createAssemblySlice: StateCreator<
       else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
         || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen
         || get().assemblyReplacementPreview !== null || get().assemblyReplacementBusy
-        || get().assemblyBoltedJointDraft !== null || get().assemblyFilletWeldDraft !== null) {
+        || get().assemblyBoltedJointDraft !== null || get().assemblyFilletWeldDraft !== null || get().assemblyCircularWeldDraft !== null) {
         set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
           assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null,
           standardPartPickerOpen: false, assemblyReplacementPreview: null, assemblyReplacementBusy: false,
           assemblyReplacementRequestId: null, assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
-          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null, ...endedDragDrives(get()) });
+          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null, ...endedDragDrives(get()) });
       }
     },
     redoAssembly: () => {
@@ -1150,12 +1156,12 @@ export const createAssemblySlice: StateCreator<
       else if (get().assemblyPlacement !== null || get().assemblyMateDraft !== null || get().assemblyDrag !== null
         || get().assemblyExplodeDraft !== null || get().standardPartPickerOpen
         || get().assemblyReplacementPreview !== null || get().assemblyReplacementBusy
-        || get().assemblyBoltedJointDraft !== null || get().assemblyFilletWeldDraft !== null) {
+        || get().assemblyBoltedJointDraft !== null || get().assemblyFilletWeldDraft !== null || get().assemblyCircularWeldDraft !== null) {
         set({ assemblyPlacement: null, assemblyMateDraft: null, assemblyDrag: null, assemblyDragOverlay: null,
           assemblyDragNotice: null, assemblyExplodeDraft: null, assemblyExplodeError: null,
           standardPartPickerOpen: false, assemblyReplacementPreview: null, assemblyReplacementBusy: false,
           assemblyReplacementRequestId: null, assemblyBoltedJointDraft: null, assemblyBoltedJointPreview: null, assemblyNestedBoltDraft: null, assemblyNestedBoltPreview: null,
-          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null, ...endedDragDrives(get()) });
+          assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyCircularWeldDraft: null, assemblyCircularWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null, assemblyChildWeldEdit: null, ...endedDragDrives(get()) });
       }
     },
   };

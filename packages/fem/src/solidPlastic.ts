@@ -1,3 +1,4 @@
+import { isRecord } from './valueGuards.js';
 /**
  * PROVISIONAL (unexecuted; native support unproven until Root runs proof-r2): small-strain J2 plasticity of tet4
  * solids through OOFEM ltrspace + MisesMat htype 0 + StaticStructural. This module is the plan contract and its strict
@@ -54,9 +55,6 @@ export interface SolidPlasticPlan {
 
 function fail(detail: string): never {
   throw new Error(`solid-plastic: ${detail}`);
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 function record(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);

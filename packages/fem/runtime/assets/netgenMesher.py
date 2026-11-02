@@ -9,8 +9,10 @@ import math
 
 
 def read_meshing_controls(value):
-    if (type(value) is not dict
-            or set(value) != {'targetSizeMm', 'grading', 'maximumOptimizationPasses', 'quality'}):
+    fields = {'targetSizeMm', 'grading', 'maximumOptimizationPasses', 'quality'}
+    if type(value) is dict and 'localSizeConstraints' in value:
+        fields.add('localSizeConstraints')
+    if type(value) is not dict or set(value) != fields:
         raise ValueError('tetra-mesh: meshing controls schema')
     size, grading, passes = value['targetSizeMm'], value['grading'], value['maximumOptimizationPasses']
     quality = value['quality']
@@ -24,7 +26,28 @@ def read_meshing_controls(value):
     if (type(minimum) not in (int, float) or not math.isfinite(minimum) or not 0 <= minimum <= 1
             or type(maximum) not in (int, float) or not math.isfinite(maximum) or maximum < 1):
         raise ValueError('tetra-mesh: meshing quality limits')
-    return size, grading, passes, minimum, maximum
+    local = None
+    if 'localSizeConstraints' in value:
+        entries = value['localSizeConstraints']
+        # Same 1024-point input budget as the PLC boundary; never an output-count guarantee.
+        if type(entries) is not list or not 1 <= len(entries) <= 1024:
+            raise ValueError('tetra-mesh: bounded local size constraints')
+        local, seen = [], set()
+        for entry in entries:
+            if type(entry) is not dict or set(entry) != {'positionMm', 'targetSizeMm'}:
+                raise ValueError('tetra-mesh: local size constraint schema')
+            point, target = entry['positionMm'], entry['targetSizeMm']
+            if (type(point) is not list or len(point) != 3
+                    or any(type(x) not in (int, float) or not math.isfinite(x) for x in point)):
+                raise ValueError('tetra-mesh: finite local size position')
+            if type(target) not in (int, float) or not math.isfinite(target) or not 0 < target <= 1e9:
+                raise ValueError('tetra-mesh: bounded local target size')
+            identity = tuple(point)
+            if identity in seen:
+                raise ValueError('tetra-mesh: duplicate local size position')
+            seen.add(identity)
+            local.append({'positionMm': list(point), 'targetSizeMm': target})
+    return size, grading, passes, minimum, maximum, local
 
 
 def meets_quality(result, minimum, maximum):
@@ -155,7 +178,13 @@ def run_tetra_mesh():
             # Preserve Netgen's actual default generation and optimization sequence.
             mesh.GenerateVolumeMesh()
             return json.dumps(snapshot(), allow_nan=False, separators=(',', ':'))
-        size, grading, passes, minimum, maximum = controls
+        size, grading, passes, minimum, maximum, local = controls
+        if local is not None:
+            # Fixed Netgen: CalcLocalH initializes SetLocalH with the requested grading;
+            # MeshVolume only initializes a missing field, so these restrictions survive.
+            mesh.CalcLocalH(grading, 1)
+            for entry in local:
+                mesh.RestrictLocalH(Pnt(*entry['positionMm']), entry['targetSizeMm'], layer=1)
         mesh.GenerateVolumeMesh(maxh=size, grading=grading, optsteps3d=0)
         for attempt in range(passes + 1):
             result = snapshot()

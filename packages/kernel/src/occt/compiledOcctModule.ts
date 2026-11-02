@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import { createRegistrationImportProbe } from './occtRegistrationImportProbe.js';
 
 /** A response whose decoded bytes passed the manifest length and SHA-256 checks. */
@@ -30,10 +31,6 @@ function requireNotAborted(signal?: AbortSignal): void {
 
 function mediaType(header: string | null): string {
   return (header ?? '').split(';', 1)[0]?.trim().toLowerCase() ?? '';
-}
-
-function hex(bytes: ArrayBuffer): string {
-  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -141,7 +138,7 @@ async function verifyOcctResponse(
   notify('downloaded');
   requireNotAborted(signal);
   notify('verify-start');
-  const sha256 = hex(await crypto.subtle.digest('SHA-256', bytes));
+  const sha256 = await sha256Hex(bytes);
   requireNotAborted(signal);
   if (sha256 !== expected.sha256) {
     throw new Error(`OCCT streaming 資産の SHA-256 が一致しません(expected ${expected.sha256}, actual ${sha256})。`);
@@ -162,7 +159,7 @@ export async function compileVerifiedOcctResponse(
     // A caller can mutate an ArrayBuffer after verification. Compile a stable
     // copy only if its digest still matches the verified HTTP response.
     const bytes = verified.bytes.slice(0);
-    const sha256 = hex(await crypto.subtle.digest('SHA-256', bytes));
+    const sha256 = await sha256Hex(bytes);
     if (sha256 !== verified.sha256) {
       throw new Error('OCCT streaming fallback の SHA-256 が一致しません。');
     }

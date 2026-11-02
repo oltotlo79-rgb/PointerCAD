@@ -10,6 +10,7 @@ import { IO_LIMITS, readDocumentBundle, readDrawingBundle, readPcadFile, seriali
   writeDocumentBundle, writeDrawingBundle, writePcadFile } from '@pointercad/io';
 import { createPcadFileReader, type PcadReadWorkerPort } from './pcadReadWorker.js';
 import type { PcadReadRequest } from './pcadReadProtocol.js';
+import type * as ImportedIoTypes from '@pointercad/io';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 const savedAt = '2026-10-25T00:00:00.000Z';
@@ -156,7 +157,7 @@ describe('actual read Worker entry and strict IO parity', () => {
 
   it('returns an actual Worker reader exception as transport failure, with no output buffers', async () => {
     vi.doMock('@pointercad/io', async importOriginal => ({
-      ...await importOriginal<typeof import('@pointercad/io')>(),
+      ...await importOriginal<typeof ImportedIoTypes>(),
       readPcadFile: () => { throw new Error('reader exception'); },
     }));
     try {

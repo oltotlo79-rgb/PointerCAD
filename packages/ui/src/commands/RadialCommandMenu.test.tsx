@@ -1,5 +1,5 @@
 import React from 'react';
-import { absoluteCoordinate, appendReference, appendSolid, createEmptyPartDocument } from '@pointercad/model';
+import { absoluteCoordinate, appendReference, appendSolid, createDrawingDocument, createEmptyPartDocument } from '@pointercad/model';
 import { t } from '../i18n/t.js';
 import { pointReferenceCoordinate } from '../sketch/selectedPointEnds.js';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -8,6 +8,7 @@ import { bodyFor, extrudeFeature, resetTestStore, resultFor } from '../store/tes
 import { useAppStore } from '../store/useAppStore.js';
 import { RadialCommandMenu } from './RadialCommandMenu.js';
 import type { RadialMenuAttachmentOptions } from './attachRadialMenuGesture.js';
+import type * as ImportedReactTypes from 'react';
 
 const effects: Array<() => void | (() => void)> = [];
 let onChoose: RadialMenuAttachmentOptions['choose'] | null = null;
@@ -15,7 +16,7 @@ let attachment: RadialMenuAttachmentOptions | null = null;
 let menuRender: { shown: unknown; states: number; refs: number; cells: Array<{ current: unknown }> } | null = null;
 
 vi.mock('react', async importOriginal => {
-  const react = await importOriginal<typeof import('react')>();
+  const react = await importOriginal<typeof ImportedReactTypes>();
   return { ...react,
     useEffect: vi.fn((effect: () => void | (() => void)) => { effects.push(effect); }),
     useState: (initial: unknown) => {
@@ -51,6 +52,40 @@ afterEach(() => {
 });
 
 describe('Choosing an unavailable radial command', () => {
+  it('connects the drawing-only observer and renders its eight existing commands', () => {
+    resetTestStore();
+    useAppStore.getState().openDrawing(createDrawingDocument('radial drawing', {
+      sourceRef: 'source', sourceKind: 'part', fileName: 'box.pcad', path: '', contentHash: 'hash', importedAt: '',
+    }));
+    class Surface { matches(selector: string): boolean { return selector === '.pcad-drawing-svg'; } }
+    vi.stubGlobal('HTMLElement', class {}); vi.stubGlobal('SVGElement', Surface);
+    vi.stubGlobal('MutationObserver', class { observe(): void {} disconnect(): void {} });
+    vi.stubGlobal('document', { querySelector: () => null });
+    const surface = new Surface();
+    class Viewport { querySelector(): Surface { return surface; } }
+    vi.stubGlobal('HTMLDivElement', Viewport);
+    const parent = new Viewport();
+    if (!(parent instanceof HTMLDivElement)) throw new Error('viewport element');
+    menuRender = { shown: null, states: 0, refs: 0, cells: [] };
+    const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
+    let dispose: ReturnType<(typeof effects)[number]> = undefined;
+    try {
+      renderToStaticMarkup(<RadialCommandMenu viewport={{ current: parent }} />);
+      dispose = effects[0]?.();
+      expect(attachment?.clickOnly).toBe(true); expect(attachment?.observeDrawingDown).toBe(true);
+      attachment?.show({ pointerId: 1, armed: true, selected: null,
+        geometry: { center: { x: 200, y: 200 }, outerRadius: 152, cancelRadius: 32 } }, true);
+      expect(menuRender.shown).not.toBeNull(); menuRender.states = 0; menuRender.refs = 0;
+      const markup = renderToStaticMarkup(<RadialCommandMenu viewport={{ current: parent }} />);
+      expect([...markup.matchAll(/data-command-id="([^"]+)"/g)].map(match => match[1])).toEqual([
+        'toolbar.drawing.baseView', 'toolbar.drawing.dimension', 'toolbar.drawing.note', 'toolbar.drawing.centerMark',
+        'toolbar.drawing.export', 'file.save', 'drawing.cancelTool', 'history.undo',
+      ]);
+    } finally {
+      if (typeof dispose === 'function') dispose();
+      snapshot.mockRestore(); menuRender = null;
+    }
+  });
   it.each([false, true])('vertex-only menu uses the shared execution decision, stale=%s', stale => {
     resetTestStore();
     const state = () => useAppStore.getState();
@@ -77,6 +112,8 @@ describe('Choosing an unavailable radial command', () => {
     const dispose = effects[0]?.();
     try {
       expect(attachment?.allowSelectionModifiers?.()).toBe(true);
+      expect(attachment?.clickOnly).toBe(true);
+      expect(attachment?.observeDrawingDown).toBe(false);
       attachment?.show({ pointerId: 1, armed: true, selected: 1,
         geometry: { center: { x: 200, y: 200 }, outerRadius: 152, cancelRadius: 32 } }, true);
       const before = state();

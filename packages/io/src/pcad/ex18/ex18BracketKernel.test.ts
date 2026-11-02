@@ -28,7 +28,7 @@ import {
   EX18_BRACKET_WIDE,
   expectEx18Bracket,
   type Ex18BracketExpectation,
-} from '../../../../model/src/part/ex18RouteFixtures.js';
+} from '../../../../model/src/part/ex18RouteFixtures.testSupport.js';
 import { readPcadFile, writePcadFile } from '../pcadFile.js';
 import {
   DEFAULT_FACE_COLOR,

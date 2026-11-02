@@ -55,7 +55,7 @@ export function BeamMemberFields({ member, session }: {
     return <fieldset data-beam-end={end}>
       <legend>{t(end === 'start' ? 'beam.start' : 'beam.end')}</legend>
       {session.analysisType === 'buckling' || session.analysisType === 'transient' || session.analysisType === 'contact'
-        || session.analysisType === 'impact'
+        || session.analysisType === 'impact' || session.analysisType === 'friction'
         ? <BeamBucklingSupports member={member} end={end} />
         : <label><input type="checkbox" checked={fixed} data-beam-fixed={end}
           onChange={event => edit({ kind: 'fixed', id: member.id, end, fixed: event.target.checked })} title={t('beam.guide.fixedEnd')} />{t('beam.fixed')}</label>}
@@ -66,6 +66,7 @@ export function BeamMemberFields({ member, session }: {
       {session.analysisType === 'buckling' ? <p>{t('beam.referenceLoads')}</p>
         : session.analysisType === 'transient' ? <p>{t('beam.transientReferenceLoads')}</p>
         : session.analysisType === 'contact' ? <p>{t('beam.contactReferenceLoads')}</p>
+        : session.analysisType === 'friction' ? <p>{t('beam.frictionMemberLoadsHelp')}</p>
         : session.analysisType === 'impact' ? <p>{t('beam.impactNoLoads')}</p> : null}
       <p>{t('beam.globalLoads')}</p>
       <div className="pcad-beam__numbers">{names.map(numeric)}</div>

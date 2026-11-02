@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BucklingRestraints } from './bucklingModel.js';
 import { translateBeamModal, type OofemModalPlan } from './modalTranslation.js';
@@ -237,6 +238,5 @@ export function translateBeamImpact(value: unknown): { readonly input: BeamImpac
 
 export async function impactInputSha256(value: unknown): Promise<string> {
   const input = translateBeamImpact(value).input;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(input)));
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(new TextEncoder().encode(JSON.stringify(input)));
 }

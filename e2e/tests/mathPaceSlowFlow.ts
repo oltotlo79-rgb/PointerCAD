@@ -6,6 +6,7 @@ import { mathInputFlow } from './mathInputFlow.js';
 import { functionVectorCalculusFlow } from './functionVectorCalculusFlow.js';
 import { functionHyperbolicFlow } from './functionHyperbolicFlow.js';
 import { functionDomainSurfaceFlow } from './functionPiecewiseDomainFlow.js';
+import { waitForStartupReady } from './startupHealth.js';
 
 export const W22_SCENARIOS = [
   { id: 'input', run: mathInputFlow },
@@ -433,7 +434,7 @@ async function inputFingerprint(): Promise<{ inputSha256: string; files: Record<
   const files: Record<string, string> = {};
   for (const name of ['mathPaceSlowFlow.ts', 'mathInputFlow.ts', 'mathCoordinateFlow.ts', 'mathStatisticsFlow.ts', 'mathBinomialFlow.ts',
     'functionVectorCalculusFlow.ts', 'functionHyperbolicFlow.ts', 'functionPiecewiseDomainFlow.ts',
-    'mathEditorReady.ts', 'waitForFunctionPreview.ts', 'recompute.ts', 'scriptsFlow.ts', 'reopenPart.ts']) {
+    'mathEditorReady.ts', 'startupHealth.ts', 'waitForFunctionPreview.ts', 'recompute.ts', 'scriptsFlow.ts', 'reopenPart.ts']) {
     files[name] = createHash('sha256').update(await readFile(new URL(name, import.meta.url))).digest('hex');
   }
   files['packages/ui/src/math/math.worker.ts'] = createHash('sha256')
@@ -479,6 +480,7 @@ export async function mathPaceSlowFlow(page: Page, info: TestInfo, scenario: Sce
     await page.addInitScript(installTransportObserver);
     await page.evaluate(installTransportObserver);
     await open?.();
+    await waitForStartupReady(page);
     await scenario.run(page, info, app);
     expect(await page.evaluate(() => Reflect.get(globalThis, Symbol.for('pcad.w22.observation-failed')) === true),
       'Payload observer failed; evidence refused').toBe(false);

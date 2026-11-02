@@ -10,9 +10,10 @@ import { beginReferenceRepair, cancelReferenceRepair } from '../solid/referenceR
 import { currentRepairSlots } from '../solid/referenceRepairContext.js';
 import { AssemblyPropertyPanel, AssemblyGearCouplingForm } from './AssemblyPropertyPanel.js';
 import type { JointFrame, MechanismGearCoupling } from '@pointercad/model';
+import type * as ImportedReactTypes from 'react';
 
 vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
+  const actual = await importOriginal<typeof ImportedReactTypes>();
   return { ...actual, useState: vi.fn(actual.useState) };
 });
 
@@ -35,7 +36,7 @@ beforeEach(() => {
   vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
 });
 afterEach(async () => {
-  const actual = await vi.importActual<typeof import('react')>('react');
+  const actual = await vi.importActual<typeof ImportedReactTypes>('react');
   vi.mocked(useState).mockImplementation(actual.useState);
   vi.restoreAllMocks(); resetTestStore();
 });
@@ -106,7 +107,7 @@ describe('EX12 actual property form handlers and immutable operations', () => {
     expect(f.document.mechanismCouplings).toBeUndefined();
     expect(useAppStore.getState().assemblyUndoStack?.past).toHaveLength(1);
     useAppStore.setState({ assemblyView: { ...f.view, sourceDocument: created } });
-    const actual = await vi.importActual<typeof import('react')>('react');
+    const actual = await vi.importActual<typeof ImportedReactTypes>('react');
     vi.mocked(useState).mockImplementation((initial?: unknown): [unknown, React.Dispatch<React.SetStateAction<unknown>>] => {
       const state = actual.useState(initial);
       return initial === '-2' ? ['-3', state[1]] : state;
@@ -206,7 +207,7 @@ describe('EX12 actual property form handlers and immutable operations', () => {
   });
   it('actual submit refuses zero source and leaves the valid document and Undo untouched', async () => {
     gearFixture();
-    const actual = await vi.importActual<typeof import('react')>('react');
+    const actual = await vi.importActual<typeof ImportedReactTypes>('react');
     vi.mocked(useState).mockImplementation((initial?: unknown): [unknown, React.Dispatch<React.SetStateAction<unknown>>] => {
       const state = actual.useState(initial);
       return initial === '-2' ? ['0', state[1]] : state;
@@ -231,7 +232,7 @@ describe('Assembly repair entry in the actual property panel', () => {
   it('renders original, current candidates and both affected mate sides together without committing', async () => {
     const session = beginReferenceRepair(currentRepairSlots(useAppStore.getState())[0].key);
     if (session === null) throw new Error('Current assembly repair session required');
-    const actual = await vi.importActual<typeof import('react')>('react');
+    const actual = await vi.importActual<typeof ImportedReactTypes>('react');
     let selectorReady = false, injected = 0;
     vi.mocked(useState).mockImplementation((initial?: unknown): [unknown, React.Dispatch<React.SetStateAction<unknown>>] => {
       const state = actual.useState(initial);

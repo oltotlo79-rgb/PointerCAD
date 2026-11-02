@@ -28,9 +28,9 @@ test.use({ viewport: { width: 1440, height: 900 } });
 // どの組に入る想定か: function-plot.spec.ts(24件、実測29.2分)と同じ1組目。この
 // ファイルはmath-input.spec.tsの57件のうち実測13.9分相当の13件を持ち、
 // 1組目の合計を function-plot.spec.ts と合わせて約43.1分(他2組と同程度)にする。
-// 根拠の実測: scratchpad/claude/agents/w95a-split-slow-specs/mi_times.txt
+// 根拠の実測: CIの各テストの秒数（旧57件のduration-balanced 3分割に使用）
 // (CI run 36346675432 の job-108697069540.log から抽出した各テストの秒数)と
-// plan_chunks2.py(実測秒数でのduration-balanced 3分割の計算)。
+// 実測秒数で3組の所要が均等になるよう分割した計算。
 test.describe.configure({ mode: 'parallel' });
 test('ADD-24 確率表の期待値・分散・条件付き確率の条件と保存再編集・Undo・F1を通す', async ({ page }, info) => {
   test.setTimeout(180_000);

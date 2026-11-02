@@ -3,7 +3,7 @@ import { appendSolid, recomputePart, type PartDocument, type PartRecomputeResult
 import { createInspectableNativeKernelForNodeTests, initializeNativeKernelForNodeTests }
   from '../../../model/src/testing/createNativeKernelBridge.node.js';
 import { appendEx18DirectEdit, buildEx18DirectSeed, directFaceReference, directPlanarFace,
-  withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.js';
+  withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
 import { consumedIds, partErrorMessage } from './solidHistoryState.js';
 import { summarizeSolid } from './solidSummary.js';
 import { buildTreeSections } from './treeSummary.js';

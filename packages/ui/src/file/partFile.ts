@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { awaitThumbnailCapture, reportThumbnailCaptureReason, type ThumbnailCapture, type ThumbnailCaptureResult } from './thumbnail.js';
 import { captureDocumentIdentity, compareDocumentIdentity } from '../store/documentRequest.js';
 /**
@@ -19,12 +20,15 @@ import { captureDocumentIdentity, compareDocumentIdentity } from '../store/docum
 import {
   DEFAULT_AUTO_SAVE_IDENTITY,
   readPcadFile,
-  serializeDocument,
   type SaveDocumentEncoder,
   type PcadAttachments,
-  type ReadPcadFileErrorCode,
 } from '@pointercad/io';
 import { createEmptyPartDocument, type PartDocument } from '@pointercad/model';
+
+import { openErrorMessageKey } from './documentReadError.js';
+import { hasUnsavedChanges } from './partDocumentDirty.js';
+export { openErrorMessageKey } from './documentReadError.js';
+export { hasUnsavedChanges } from './partDocumentDirty.js';
 
 import { t, type MessageKey } from '../i18n/t.js';
 import { createPartLineageId, createSecureUuid, prepareDocumentSession, SecurePartIdentityError,
@@ -33,7 +37,7 @@ import { currentPcadAttachments } from '../store/attachKernel.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { activeDocument } from '../store/documentKind.js';
 import { activeHasUnsavedChanges, applyPickedAssembly, newAssembly, saveAssembly } from './assemblyFile.js';
-import { beginOpenRequest, mayOpenAfterRead, mayReportOpenFailure } from './documentOpenGuard.js';
+import { beginOpenRequest, finishOpenRequest, mayOpenAfterRead, mayReportOpenFailure, readForOpen } from './documentOpenGuard.js';
 import { withPcadExtension, type PickedFile } from './fileGateway.js';
 import { recordRecentFile, type RecentFilesStorage } from './recentFiles.js';
 import { saveFailureMessageKey } from './saveFailure.js';
@@ -89,55 +93,10 @@ export interface PartFileDeps {
   readonly onAttachmentsLoaded?: (attachments: PcadAttachments) => void;
 }
 
-/**
- * 中身が同じかを比べるときに使う保存時刻。
- *
- * `serializeDocument` は保存時刻も一緒に書き出すので、同じ値を渡して**時刻の違いを
- * 消してから**比べる。そうしないと「開いた直後なのに保存していない変更がある」に見える。
- */
-const COMPARISON_SAVED_AT = '1970-01-01T00:00:00.000Z';
-
 /** 名前と理由をつなぐ区切り。文字そのものは言葉に依らないのでここに置く。 */
 const TITLE_SEPARATOR = ' - ';
 /** 保存していない変更があることを表す印。 */
 const UNSAVED_MARK = '*';
-
-/**
- * `.pcad` を読めなかった理由と、利用者へ見せる文言の対応(NFR-UX-5)。
- *
- * `packages/io` は理由ごとに日本語の文も持っているが、画面へ出す文言は ja.json に
- * まとめる決まりなので(NFR-MA-5)、ここで対応づけ直す。`Record` で全部の理由を
- * 書かせているので、`packages/io` が理由を増やしたら型検査で気づける。
- */
-const OPEN_ERROR_KEYS: Readonly<Record<ReadPcadFileErrorCode, MessageKey>> = {
-  // ZIP として開けない。中身を見る手前で壊れている。
-  notZip: 'file.error.corrupted',
-  // ZIP ではあるが、部品の中身が入っていない。
-  missingDocument: 'file.error.missingDocument',
-  // 中身が JSON として読めない。
-  invalidJson: 'file.error.corrupted',
-  // PointerCAD の封筒になっていない(他のアプリのファイル)。
-  notPcad: 'file.error.wrongKind',
-  // PointerCAD のファイルだが、部品ではない(アセンブリ・図面)。
-  unsupportedKind: 'file.error.wrongKind',
-  unsupportedOldVersion: 'file.error.tooOld',
-  unsupportedNewVersion: 'file.error.tooNew',
-  // 版の記録が食い違う・欄が足りない・型が違うのは、いずれも中身の壊れ。
-  versionMismatch: 'file.error.corrupted',
-  missingField: 'file.error.corrupted',
-  invalidField: 'file.error.corrupted',
-};
-
-/**
- * 読めなかった理由を利用者へ見せる文言のキーへ直す(P6 タスク33)。
- *
- * ひな形(`.pcadt`)も同じ封筒を読む(`file/templateFile.ts`)ので、上の表を**写さずに**
- * 使えるようにここへ 1 つだけ口を開けてある。表そのものは外へ出さない(理由と文言の
- * 対応を書き換える場所を 1 か所に閉じるため)。
- */
-export function openErrorMessageKey(code: ReadPcadFileErrorCode): MessageKey {
-  return OPEN_ERROR_KEYS[code];
-}
 
 // ---------------------------------------------------------------------------
 // .pcad のバイト列から部品を起こす
@@ -159,14 +118,13 @@ export type ReadPartDocumentOutcome =
 /**
  * `.pcad` のバイト列から部品を起こす(FR-801)。
  *
- * 「開く」(`openPart`)と自動保存の復元(`attachAutoSave.ts`)の両方が同じ経路を通る。
- * 読めなかった理由の言い換えを 2 か所に持つと、片方だけ直したときに同じファイルへ
- * 違う断り方をすることになるので、ここ 1 つにまとめる。
+ * 同期読取が必要な呼出し元のための純粋なAPI。通常の「開く」と自動保存復元は
+ * 読込Workerを使い、読めなかった理由の言い換えは同じ `openErrorMessageKey` を使う。
  */
 export function readPartDocument(bytes: Uint8Array): ReadPartDocumentOutcome {
   const result = readPcadFile(bytes);
   if (!result.ok) {
-    return { ok: false, messageKey: OPEN_ERROR_KEYS[result.error.code] };
+    return { ok: false, messageKey: openErrorMessageKey(result.error.code) };
   }
   return { ok: true, document: result.document, attachments: result.attachments };
 }
@@ -201,56 +159,6 @@ export function windowTitle(fileName: string | null, unsaved: boolean): string {
 // ---------------------------------------------------------------------------
 // 保存していない変更があるか
 // ---------------------------------------------------------------------------
-
-/**
- * 直前の判定を 1 つだけ覚えておく。
- *
- * 判定は文書を丸ごと文字列にして比べるので、式を 1 文字打つたびに全部を書き出すと
- * もったいない(NFR-PF-1)。文書は作り直しでしか変わらない(不変)ので、
- * 同じ 2 つを渡されたら前と同じ答えでよい。
- */
-let cachedDocument: PartDocument | null = null;
-let cachedSaved: PartDocument | null = null;
-let cachedResult = false;
-
-/** 中身を比べるための文字列。保存時刻の違いは消してある。 */
-function contentOf(document: PartDocument): string {
-  // Issuance is retained across Undo and persisted by the real save path. It is
-  // allocator metadata, not an authored edit; compare every other saved field.
-  const { patternSlotHighWater: issuance, ...content } = document;
-  void issuance;
-  return serializeDocument(content, { savedAt: COMPARISON_SAVED_AT });
-}
-
-/** 何もかいていない、起動直後のままの部品か。 */
-function isUntouched(document: PartDocument): boolean {
-  return contentOf(document) === contentOf({ ...createEmptyPartDocument(), id: document.id });
-}
-
-/**
- * 保存していない変更があるか。
- *
- * 参照が同じかではなく**中身**で比べる。文書は書き換えるたびに作り直されるので、
- * 参照で比べると「1 文字打って消した」だけで変更ありになってしまう。
- * 一度も保存していないとき(`savedDocument` が null)は、起動直後のままの空の部品を
- * 「変更なし」として扱う。まだ何もしていない状態で確認を出さないため(NFR-UX-3)。
- */
-export function hasUnsavedChanges(
-  document: PartDocument,
-  savedDocument: PartDocument | null,
-): boolean {
-  if (document === cachedDocument && savedDocument === cachedSaved) {
-    return cachedResult;
-  }
-  const result =
-    savedDocument === null
-      ? !isUntouched(document)
-      : document !== savedDocument && contentOf(document) !== contentOf(savedDocument);
-  cachedDocument = document;
-  cachedSaved = savedDocument;
-  cachedResult = result;
-  return result;
-}
 
 // ---------------------------------------------------------------------------
 // 既定の口(画面から呼ぶときのもの)
@@ -362,11 +270,12 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   // 確認に答えた時点の文書を控える。ファイルを選ぶ窓や読込の間に編集・取り消しをしたら、
   // 開く前に改めて確認する(docs/review-2026-09-28-codex.md R02)。
   const request = beginOpenRequest();
+  try {
   let picked: PickedFile | null;
   try {
     picked = await useAppStore.getState().fileGateway.openPcad('all');
   } catch {
-    useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
+    if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: 'file.openFailed', failed: true });
     return;
   }
   if (picked === null) {
@@ -388,9 +297,10 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     }
     return;
   }
-  const result = readPartDocument(picked.bytes);
+  const result = await readForOpen(request, 'part', picked.bytes);
+  if (result === null) return;
   if (!result.ok) {
-    useAppStore.getState().setFileMessage({ key: result.messageKey, failed: true });
+    if (mayReportOpenFailure(request)) useAppStore.getState().setFileMessage({ key: openErrorMessageKey(result.error.code), failed: true });
     return;
   }
   const checkpoint = await readTutorialCheckpoint(
@@ -414,7 +324,7 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
     preparedSession = prepareDocumentSession();
     loaded = loadedPartAttachments(result.document, result.attachments,
       { shapes: store.importedShapes, meshes: store.importedMeshes, canvases: store.canvases },
-      kind => `${kind}-asset-${createSecureUuid()}`);
+      kind => createDocumentElementId(`${kind}-asset-`, createSecureUuid));
   } catch (error) {
     if (!(error instanceof SecurePartIdentityError)) throw error;
     if (mayReportOpenFailure(request)) store.setFileMessage({ key: 'file.openFailed', failed: true });
@@ -447,6 +357,7 @@ export async function openPart(deps: PartFileDeps): Promise<void> {
   }
   // 開けたものだけを履歴へ残す(FR-807)。断ったファイルを勧め直さないため。
   recordRecentFile(picked.name, { storage: deps.recentFilesStorage });
+  } finally { finishOpenRequest(request); }
 }
 
 /**

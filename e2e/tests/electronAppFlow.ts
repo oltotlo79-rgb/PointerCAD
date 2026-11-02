@@ -31,7 +31,7 @@ const ELECTRON_PROFILE_ROOT = join(root, 'scratchpad', 'temp', 'e');
 // the full path to 263 when userData lived under Playwright's per-test output directory
 // (nested under this project's diagnostic tool's per-run folder plus the test's own long
 // Japanese title) -- Node had already created the shorter LOCK/LOG files alongside it, so
-// only the longer names failed (scratchpad/claude/agents/w8d-p13-5-electron/progress.md,
+// only the longer names failed (R12, electron-flows.spec.ts, observed on
 // 2026-09-24 07:35). Walking a real profile from this fix's own verification run found an
 // even deeper entry: "\Code Cache\electron-preload\<64-hex>-<64-hex>.cache" reaches 164
 // characters, rounded up to DEEPEST_CHROMIUM_INTERNAL_PATH below, so USER_DATA_PATH_BUDGET

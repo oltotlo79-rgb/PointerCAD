@@ -1,3 +1,5 @@
+import { sha256Hex } from '../sha256.js';
+import { isRecord } from '../valueGuards.js';
 import type { DrawingSource, DrawingSheetFlatReference } from '@pointercad/drawing';
 import { sheetFlatReferenceIssue } from '../sheetMetal/flatSheetReference.js';
 
@@ -37,9 +39,6 @@ export function emptyDrawingSourceLibrary(): DrawingSourceLibrary {
   return { sources: [] };
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function isUnknownArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value);
@@ -69,15 +68,10 @@ export function canonicalDrawingSourceText(value: unknown): string {
   return 'null';
 }
 
-function hexText(bytes: Uint8Array): string {
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
 /** 抱き込む文書の内容だけからSHA-256を作る。形やメッシュは入力に含めない(§0.3)。 */
 export async function drawingSourceContentHash(document: DrawingSourceDocument): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalDrawingSourceText(document));
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return hexText(new Uint8Array(digest));
+  return sha256Hex(bytes);
 }
 
 /** 参照文書の変更に加え、同じ参照名で差し替わった部品・原本の変更も検出する。 */
@@ -97,7 +91,7 @@ export async function drawingSourceInputHash(input: DrawingSourceInput): Promise
         })),
       assemblies: [...(input.library?.assemblies ?? [])].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0) };
   const text = canonicalDrawingSourceText({ document: input.document, dependencies, ...(flat === undefined ? {} : { flatSheet: flat }) });
-  return hexText(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))));
+  return sha256Hex(new TextEncoder().encode(text));
 }
 
 /** 文書の型と参照種別を照合し、保存にも再解決にも同じ原本一式を渡す。 */

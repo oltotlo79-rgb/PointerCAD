@@ -240,11 +240,16 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
 });
 
 describe('アセンブリのツールバー(P7 タスク45)', () => {
-  it('「組む」には配置・置換・固定の5項目と、ボルト締結・締結の解除の2項目、すみ肉溶接の1項目を出す', () => {
+  it('「組む」には配置・置換・固定の5項目と、ボルト締結・締結の解除の2項目、直線・円弧のすみ肉溶接の2項目を出す', () => {
     expect(ASSEMBLY_MENU_ITEMS.map((item) => item.id)).toEqual([
       'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
-      'boltedJoint', 'releaseFastening', 'filletWeld',
+      'boltedJoint', 'releaseFastening', 'filletWeld', 'circularFilletWeld',
     ]);
+    expect(ASSEMBLY_MENU_ITEMS[7].labelKey).toBe('assembly.filletWeld.tool');
+    expect(ASSEMBLY_MENU_ITEMS[8].labelKey).toBe('assembly.circularFilletWeld.title');
+    expect(ASSEMBLY_MENU_ITEMS[8].tooltipKey).toBe('assembly.circularFilletWeld.pickPlane');
+    expect(t(ASSEMBLY_MENU_ITEMS[8].labelKey)).toBe('円弧のすみ肉溶接');
+    expect(t(ASSEMBLY_MENU_ITEMS[8].tooltipKey)).toBe('接合する板の平らな面を選んでください。');
   });
 
   it('「合わせる」は合致6種とジョイント4種の10項目である', () => {
@@ -265,7 +270,7 @@ describe('アセンブリのツールバー(P7 タスク45)', () => {
     }
   });
 
-  it('一覧18項目のidは重複しない', () => {
+  it('一覧19項目のidは重複しない', () => {
     const ids = [...ASSEMBLY_MENU_ITEMS, ...MATE_MENU_ITEMS].map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -1051,7 +1056,7 @@ describe('explicit source refresh row item keeps the canonical toolbar', () => {
       expect(markup).toContain(t(busy ? 'assembly.refresh.busy' : 'assembly.refresh.sharedSource'));
       expect(ASSEMBLY_MENU_ITEMS.map(item => item.id)).toEqual([
         'placePart', 'placeStandardPart', 'placeSubAssembly', 'replacePart', 'toggleFixed',
-        'boltedJoint', 'releaseFastening', 'filletWeld',
+        'boltedJoint', 'releaseFastening', 'filletWeld', 'circularFilletWeld',
       ]);
     } finally { snapshot.mockRestore(); }
     // SSR markup proves focusable semantics and actual visible text; keyboard/hover

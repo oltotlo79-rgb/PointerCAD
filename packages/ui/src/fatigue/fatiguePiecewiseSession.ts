@@ -9,6 +9,9 @@ import { analyzePiecewiseDraft, createPiecewiseDraft, editPiecewiseDraft, piecew
 import { createFatigueSession, currentFatigueResult, editFatigueSession, fatigueEntryIsSaved, fatigueSavedEntry,
   fatigueStressHistories, restoreFatigueSession, restoreTensorFatigueSession, type FatigueEdit, type FatigueSavedEntry,
   type FatigueSavedEntryCheck, type FatigueSession } from './fatigueSession.js';
+import { createDetailDraft, editDetailDraft, type FatigueDetailEdit } from './fatigueDetailDraft.js';
+import { currentDetailResult, detailEntryIsSaved, detailSavedEntry, restoreDetailFatigueSession,
+  sessionDetailDraft } from './fatigueDetailSession.js';
 
 /**
  * The piecewise (multi-slope) S-N mode of the fatigue panel, connected to the existing session. Dependency direction:
@@ -21,7 +24,8 @@ import { createFatigueSession, currentFatigueResult, editFatigueSession, fatigue
  * clears it (editFatigueSession), a result is shown only while the current draft builds exactly the analyzed input,
  * and it is never saved or restored.
  */
-export type FatigueAnyEdit = FatigueEdit | { readonly kind: 'piecewise'; readonly edit: FatiguePiecewiseEdit };
+export type FatigueAnyEdit = FatigueEdit | { readonly kind: 'piecewise'; readonly edit: FatiguePiecewiseEdit }
+  | { readonly kind: 'detail'; readonly edit: FatigueDetailEdit };
 
 /** The piecewise draft of the session, or the empty one before the mode is first chosen. */
 export function sessionPiecewiseDraft(session: FatigueSession): FatiguePiecewiseDraft {
@@ -42,8 +46,21 @@ export function editFatigueSessionWithPiecewise(session: FatigueSession, edit: F
     if (after === before && session.draft.piecewise !== undefined) return session;
     return editFatigueSession(session, { kind: 'piecewise-draft', draft: after });
   }
+  if (edit.kind === 'detail') {
+    // A force list belongs to an existing history; any other refused edit changes nothing.
+    const change = edit.edit;
+    if (change.kind === 'force' && !session.draft.histories.some(row => row.key === change.key)) return session;
+    return editFatigueSession(session, { kind: 'detail-draft', draft: editDetailDraft(sessionDetailDraft(session), change) });
+  }
   if (edit.kind === 'input-mode' && edit.value === 'piecewise' && session.draft.piecewise === undefined) {
     return editFatigueSession(editFatigueSession(session, { kind: 'piecewise-draft', draft: createPiecewiseDraft() }), edit);
+  }
+  if (edit.kind === 'input-mode' && edit.value === 'detail') {
+    // The joint mode uses the piecewise calibration and its own joint draft; both start empty the first time.
+    let next = session;
+    if (next.draft.piecewise === undefined) next = editFatigueSession(next, { kind: 'piecewise-draft', draft: createPiecewiseDraft() });
+    if (next.draft.detail === undefined) next = editFatigueSession(next, { kind: 'detail-draft', draft: createDetailDraft() });
+    return editFatigueSession(next, edit);
   }
   return editFatigueSession(session, edit);
 }
@@ -78,6 +95,8 @@ function samePiecewiseProblem(left: FatigueSavedPiecewiseProblem, right: Fatigue
  * the current draft and parameters build exactly the analyzed input. */
 export function currentFatigueResultWithPiecewise(session: FatigueSession, parameters: readonly Parameter[]):
   FatigueResult | FatigueCorrectedResult | FatiguePiecewiseResult | null {
+  // A joint result is shown through its piecewise analysis of the converted nominal stresses (fatigueDetailSession.ts).
+  if (session.draft.inputMode === 'detail') return currentDetailResult(session, parameters)?.analysis ?? null;
   if (session.draft.inputMode !== 'piecewise') return currentFatigueResult(session, parameters);
   const analyzed = session.piecewiseAnalyzed;
   if (analyzed === null || analyzed === undefined) return null;
@@ -90,6 +109,7 @@ export function currentFatigueResultWithPiecewise(session: FatigueSession, param
 export function fatigueSavedEntryWithPiecewise(session: FatigueSession, parameters: readonly Parameter[], documentId: string):
   FatigueSavedEntryCheck {
   if (session.draft.inputMode === 'solid-proportional') return fatigueSolidSavedEntry(session, parameters, documentId);
+  if (session.draft.inputMode === 'detail') return detailSavedEntry(session, parameters, documentId);
   if (session.draft.inputMode !== 'piecewise') return fatigueSavedEntry(session, parameters, documentId);
   const checked = piecewiseSessionProblem(session, parameters);
   if (!checked.ok) return checked;
@@ -100,6 +120,7 @@ export function fatigueSavedEntryWithPiecewise(session: FatigueSession, paramete
 export function fatigueEntryIsSavedWithPiecewise(session: FatigueSession, parameters: readonly Parameter[],
   saved: FatigueSavedEntry | null): boolean {
   if (saved?.kind === 'fatigue-solid-proportional') return solidFatigueEntryIsSaved(session, parameters, saved.definition);
+  if (saved?.kind === 'fatigue-detail') return detailEntryIsSaved(session, parameters, saved.definition);
   if (saved?.kind !== 'fatigue-piecewise') return fatigueEntryIsSaved(session, parameters, saved);
   if (session.draft.inputMode !== 'piecewise') return false;
   const current = piecewiseSessionProblem(session, parameters);
@@ -129,5 +150,6 @@ export function restoreSavedFatigueEntry(ownerId: string, saved: FatigueSavedEnt
     case 'fatigue': return restoreFatigueSession(ownerId, saved.definition);
     case 'fatigue-proportional-tensor': return restoreTensorFatigueSession(ownerId, saved.definition);
     case 'fatigue-piecewise': return restorePiecewiseFatigueSession(ownerId, saved.definition);
+    case 'fatigue-detail': return restoreDetailFatigueSession(ownerId, saved.definition);
   }
 }

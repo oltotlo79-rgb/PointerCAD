@@ -6,6 +6,7 @@
  */
 
 import { expressionValueFromNumber } from '@pointercad/expression';
+import { nextSerialValue } from '../serialValue.js';
 
 import { DEFAULT_WORK_PLANE_ID, type WorkPlaneId } from './planeMath.js';
 import type {
@@ -67,30 +68,18 @@ export function nameSerial(name: string, label: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** `usedValues` の中で `label` から始まるものの連番の最大値。無ければ 0。 */
-function maxSerial(usedValues: Iterable<string>, label: string): number {
-  let max = 0;
-  for (const value of usedValues) {
-    const serial = nameSerial(value, label);
-    if (serial > max) {
-      max = serial;
-    }
-  }
-  return max;
-}
-
 /**
  * 同じ種類の既存の名前の最大連番 + 1 の名前を作る(§2.3、§0.a-0.19)。
  * 「点1」「点2」から「点1」を消しても、残る「点2」の次は「点3」になり重複しない。
  * 全部消せば「点1」に戻るが、そのとき重複する相手はいない。
  */
 export function nextSerialName(usedNames: Iterable<string>, label: string): string {
-  return `${label}${String(maxSerial(usedNames, label) + 1)}`;
+  return nextSerialValue(usedNames, label, nameSerial);
 }
 
 /** 同じ接頭辞の既存 id の最大連番 + 1 の id を作る(名前と同じ方式、§2.3)。 */
 export function nextSerialId(usedIds: Iterable<string>, prefix: string): string {
-  return `${prefix}${String(maxSerial(usedIds, prefix) + 1)}`;
+  return nextSerialValue(usedIds, prefix, nameSerial);
 }
 
 /** 種類ごとに、既存の名前の最大連番 + 1 の名前を作る(「点1」「線分2」…、§0.a-0.19)。 */

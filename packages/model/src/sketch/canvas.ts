@@ -21,6 +21,7 @@
  */
 
 import type { SketchCanvas } from '../part/types.js';
+import { integerSerial, nextSerialValue } from '../serialValue.js';
 
 /** 下絵として受け付ける画像の形式(§0.a-0.45)。ブラウザが必ず読める 2 つに絞る。 */
 export type CanvasImageFormat = 'png' | 'jpeg';
@@ -211,17 +212,7 @@ const CANVAS_ID_PREFIX = 'canvas-';
 
 /** 次の下絵の id を作る(`canvas-<n>`)。既存の同じ形の id の最大連番 + 1 を採る。 */
 export function nextCanvasId(canvases: readonly SketchCanvas[]): string {
-  let max = 0;
-  for (const canvas of canvases) {
-    if (!canvas.id.startsWith(CANVAS_ID_PREFIX)) {
-      continue;
-    }
-    const serial = Number(canvas.id.slice(CANVAS_ID_PREFIX.length));
-    if (Number.isInteger(serial) && serial > max) {
-      max = serial;
-    }
-  }
-  return `${CANVAS_ID_PREFIX}${String(max + 1)}`;
+  return nextSerialValue(canvases.map((canvas) => canvas.id), CANVAS_ID_PREFIX, integerSerial);
 }
 
 /** 下絵を 1 つ消す。見つからなければ元の配列を同一参照のまま返す。 */

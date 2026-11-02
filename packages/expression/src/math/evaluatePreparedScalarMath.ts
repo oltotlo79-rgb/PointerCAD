@@ -39,7 +39,7 @@ function containsIntegral(expression: MathNode): boolean {
 export function evaluatePreparedScalarMath(expression: MathNode, original: MathNode, context: PreparedScalarMathContext): MathEvaluation {
   const stop = context.shouldStop(); if (stop !== undefined) return { status: 'stopped', reason: stop };
   const { backend, angleUnit } = context;
-  const numerical = resolveNumericalRoots(expression, original, context);
+  const numerical = resolveNumericalRoots(expression, original, context, evaluatePreparedScalarMath);
   if (numerical.evaluation !== undefined) return numerical.evaluation;
   expression = numerical.expression;
   const evaluated = evaluatePreparedMath(backend.box(encodeMathInRadians(expression, backend.operationsById, angleUnit)),

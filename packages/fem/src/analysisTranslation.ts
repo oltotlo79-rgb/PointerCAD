@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 import type { AnalysisMaterialCapacity, BeamAnalysisDocument, BeamFrame, Vector3, Vector6 } from './analysisModel.js';
 import { beamFrame, readBeamAnalysis, scale, serializeBeamAnalysis } from './analysisValidation.js';
 
@@ -59,6 +60,5 @@ export function translateBeamAnalysis(value: unknown): { readonly document: Beam
 }
 export async function beamInputSha256(value: unknown): Promise<string> {
   const bytes=new TextEncoder().encode(serializeBeamAnalysis(value));
-  const hash=await crypto.subtle.digest('SHA-256',bytes);
-  return Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
+  return sha256Hex(bytes);
 }

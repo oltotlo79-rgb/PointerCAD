@@ -1,3 +1,4 @@
+import { isRecord } from './valueGuards.js';
 /**
  * Uniaxial elasto-plastic member: plan, strict validation, native step schedule and an independent reference.
  *
@@ -55,9 +56,6 @@ export interface PlasticBarReferenceSample extends PlasticBarSample {
 
 function fail(detail: string): never {
   throw new Error(`plastic-bar: ${detail}`);
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 function record(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);

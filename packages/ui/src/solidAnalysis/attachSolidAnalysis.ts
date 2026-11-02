@@ -17,6 +17,7 @@ import { solidModalEffectiveShared } from './solidModalShared.js';
 import { analyzeCadSolidBuckling, cadSolidBucklingFailureCode } from './cadSolidBuckling.js';
 import { invalidateSolidBuckling, solidBucklingModeCount } from './solidBucklingState.js';
 import { solidBucklingEffectiveReference } from './solidBucklingSaved.js';
+import { createSolidSupport, solidBoundaryFailure } from './solidBoundaryDraft.js';
 
 /** The same part with the same geometry. Saving the analysis inputs (or any other non-shape field such as appearance)
  * replaces the document object without touching a shape field (`affectsShape`), so it must neither invalidate a result
@@ -77,10 +78,15 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
   };
   const settings = (saved: SolidCadSavedInput): CadSolidSettings | CadSolidPressureSettings => {
     const current = context(saved.bodyFeatureId);
+    const supportReferences = saved.supports === undefined ? [] : references(current.body, saved.supports.map(row => row.face));
     const boundary = { boundary: 'closed' as const, linearDeflection: saved.linearDeflectionMm,
       angularDeflection: saved.angularDeflectionRad };
-    const common = { material: { id: 'material', youngMPa: saved.youngMPa, poisson: saved.poisson },
+    const common = { material: { id: 'material', youngMPa: saved.youngMPa, poisson: saved.poisson,
+      ...(saved.capacity === undefined ? {} : { capacity: saved.capacity }) },
       fixedFaces: references(current.body, saved.fixedFaces), loadedFaces: references(current.body, saved.loadedFaces),
+      ...(saved.supports === undefined ? {} : { supports: saved.supports.map((row, index) => ({ ...row,
+        face: supportReferences[index] })) }),
+      ...(saved.gravity === undefined ? {} : { gravity: saved.gravity }),
       numericBudgetBytes: 256 * 1024 * 1024,
       geometry: current.body.faces.every(face => face.surfaceKind === 'plane') ? { kind: 'planar' as const, boundary }
         : { kind: 'curved' as const, options: { boundary, nodeToleranceMm: 1e-7,
@@ -92,14 +98,14 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
   const failure = (error: unknown): void => {
     const session = store.getState().solidAnalysisSession;
     if (session) store.setState({ solidAnalysisSession: { ...session, status: 'failed', result: null,
-      error: error instanceof Error ? error.message : t('solidAnalysis.failed') } });
+      error: error instanceof Error ? solidBoundaryFailure(error.message) : t('solidAnalysis.failed') } });
   };
   const validate = (): void => {
     const state = store.getState(), session = state.solidAnalysisSession;
     if (!session || session.ownerId !== state.activeDocumentId) throw new Error(t('solidAnalysis.changed'));
     settings(solidSavedInput(session, state.document.id, state.document.parameters));
   };
-  const captureFaces = (role: 'fixed' | 'loaded'): void => {
+  const captureFaces = (role: 'fixed' | 'loaded' | 'support'): void => {
     try {
       const state = store.getState(), session = state.solidAnalysisSession, selected = selection;
       if (!session || !selected || selected.ids !== state.selection || !sameGeometryDocument(selected.document, state.document)
@@ -117,9 +123,14 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
         return solidCadFaceKey(reference);
       });
       if (new Set(keys).size !== keys.length) throw new Error(t('solidAnalysis.reselect'));
+      const supports = session.supports ?? [];
+      if ((role === 'support' && keys.some(key => session.fixedFaces.includes(key) || supports.some(row => row.face === key)))
+        || (role === 'fixed' && keys.some(key => supports.some(row => row.face === key))))
+        throw new Error(t('solidAnalysis.supportDuplicate'));
       cancel(); cancelModal(); cancelBuckling();
       store.setState({ solidAnalysisSession: { ...session, bodyFeatureId: first.bodyFeatureId,
-        ...(role === 'fixed' ? { fixedFaces: keys } : { loadedFaces: keys }), revision: session.revision + 1,
+        ...(role === 'fixed' ? { fixedFaces: keys } : role === 'loaded' ? { loadedFaces: keys }
+          : { supports: [...supports, ...keys.map(createSolidSupport)] }), revision: session.revision + 1,
         result: null, error: null, status: 'editing' }, solidModal: invalidateSolidModal(store.getState().solidModal),
         solidBuckling: invalidateSolidBuckling(store.getState().solidBuckling) });
     } catch (error) { failure(error); }
@@ -150,7 +161,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
         const next = store.getState().solidAnalysisSession;
         if (next) store.setState({ solidAnalysisSession: { ...next, status: outcome.kind === 'result' ? 'complete'
           : outcome.kind === 'cancelled' ? 'cancelled' : 'failed', result: outcome.kind === 'result' ? outcome : null,
-        error: outcome.kind === 'failed' ? outcome.message : null } });
+        error: outcome.kind === 'failed' ? solidBoundaryFailure(outcome.message) : null } });
       }).catch((error: unknown) => { if (current()) { active = null; failure(error); } });
     } catch (error) { failure(error); }
   };
@@ -261,6 +272,15 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
       && state.isComputing === previous.isComputing && state.bodies === previous.bodies;
     if (!geometryKept || state.documentVersion !== previous.documentVersion) {
       cancel(); cancelModal(); cancelBuckling(); selection = null;
+      if (state.documentVersion !== previous.documentVersion) {
+        // A history step restores the definitions belonging to that document, including independent modal/buckling inputs.
+        // openSolidAnalysis changes neither the document nor documentVersion, so this subscription does not recurse here.
+        state.openSolidAnalysis();
+        const restored = store.getState().solidAnalysisSession;
+        if (restored) store.setState({ solidAnalysisSession: { ...restored, revision: session.revision + 1,
+          error: geometryKept ? restored.error : t('solidAnalysis.changed') } });
+        return;
+      }
       // Undo/Redo always advance documentVersion (documentSlice: drafts are discarded across a history step), so the run,
       // result and pending selection are still dropped. Only when nothing above changed (a non-shape step such as the
       // input save itself) is it not reported as a shape or input change.

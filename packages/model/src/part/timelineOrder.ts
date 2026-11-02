@@ -53,7 +53,7 @@ import type {
   SketchFeature,
 } from '../sketch/types.js';
 import { consumedTargetsOf } from './createPartDocument.js';
-import { referencedSketchIds } from './solidSketchReferences.js';
+import { referencedSketchIds, sketchProfileFeatureIds } from './solidSketchReferences.js';
 import type {
   PartDocument,
   ReferenceAxisDefinition,
@@ -152,9 +152,10 @@ interface DependencyContext {
   readonly sketchOfElement: ReadonlyMap<string, string>;
   /** スケッチ 1 本ぶんの依存の覚え書き(同じスケッチを何度も歩かないため)。 */
   readonly sketchCache: Map<string, readonly string[]>;
+  readonly preciseProfiles: boolean;
 }
 
-function createContext(document: PartDocument): DependencyContext {
+function createContext(document: PartDocument, preciseProfiles = false): DependencyContext {
   const sketchOfElement = new Map<string, string>();
   for (const sketch of document.sketches) {
     for (const feature of sketch.features) {
@@ -171,6 +172,7 @@ function createContext(document: PartDocument): DependencyContext {
     sketches: document.sketches,
     sketchOfElement,
     sketchCache: new Map(),
+    preciseProfiles,
   };
 }
 
@@ -217,7 +219,7 @@ function axisSpecDependencies(context: DependencyContext, spec: AxisSpec): reado
     case 'world':
       return [];
     case 'line':
-      return sketchDependencies(context, spec.line.sketchId);
+      return sketchDependencies(context, spec.line.sketchId, spec.line.lineFeatureId);
     case 'reference':
       return referenceDependency(context, spec.referenceFeatureId);
   }
@@ -229,7 +231,7 @@ function pointReferenceDependencies(
 ): readonly string[] {
   switch (reference.kind) {
     case 'functionPoint': return [...(reference.parent.kind==='surface'?solidDependency(context,reference.parent.featureId)
-      :sketchDependencies(context,reference.parent.sketchId)),...(reference.direction?.sourcePointId
+      :sketchDependencies(context,reference.parent.sketchId,reference.parent.featureId)),...(reference.direction?.sourcePointId
       ?pointReferenceDependencies(context,{kind:'point',pointId:reference.direction.sourcePointId}):[])];
     case 'origin':
       return [];
@@ -244,11 +246,11 @@ function pointReferenceDependencies(
         return asReference;
       }
       const sketchId = sketchIdOfElement(context, reference.pointId);
-      return sketchId === null ? [] : sketchDependencies(context, sketchId);
+      return sketchId === null ? [] : sketchDependencies(context, sketchId, reference.pointId);
     }
     case 'vertex': {
       const sketchId = sketchIdOfElement(context, reference.featureId);
-      return sketchId === null ? [] : sketchDependencies(context, sketchId);
+      return sketchId === null ? [] : sketchDependencies(context, sketchId, reference.featureId);
     }
     case 'subShape':
       return subShapeDependencies(context, reference.ref);
@@ -355,9 +357,9 @@ function sketchFeatureDependencies(
     case 'copy':
       return copyPlacementDependencies(context, feature.placement);
     case 'projectedCurve':
-      return subShapeDependencies(context, feature.source);
+      return [...(context.preciseProfiles ? [feature.id] : []), ...subShapeDependencies(context, feature.source)];
     case 'planeSection':
-      return solidDependency(context, feature.targetFeatureId);
+      return [...(context.preciseProfiles ? [feature.id] : []), ...solidDependency(context, feature.targetFeatureId)];
   }
 }
 
@@ -371,23 +373,26 @@ function sketchFeatureDependencies(
  * 拘束(`SketchDocument.constraints`、FR-313)は見ない。`ConstraintTarget` が指せるのは
  * 同じスケッチの点・端点・曲線だけで、帯の中のものを指す欄を持たないため。
  */
-function sketchDependencies(context: DependencyContext, sketchId: string): readonly string[] {
-  const remembered = context.sketchCache.get(sketchId);
+function sketchDependencies(context: DependencyContext, sketchId: string, rootId?: string): readonly string[] {
+  const key = JSON.stringify([sketchId, context.preciseProfiles ? rootId : null]);
+  const remembered = context.sketchCache.get(key);
   if (remembered !== undefined) {
     return remembered;
   }
-  context.sketchCache.set(sketchId, []);
+  context.sketchCache.set(key, []);
   const sketch = context.sketches.find((candidate) => candidate.id === sketchId);
   if (sketch === undefined) {
     return [];
   }
   const found: string[] = [];
+  const selected = context.preciseProfiles && rootId !== undefined ? sketchProfileFeatureIds(sketch, rootId) : null;
   for (const feature of sketch.features) {
+    if (selected !== null && !selected.has(feature.id)) continue;
     found.push(...workPlaneDependencies(context, feature.planeId));
     found.push(...sketchFeatureDependencies(context, feature));
   }
   const unique = dedupe(found);
-  context.sketchCache.set(sketchId, unique);
+  context.sketchCache.set(key, unique);
   return unique;
 }
 
@@ -409,8 +414,13 @@ function solidDependencies(
   }
   // スケッチの一覧を渡すのは、拡大縮小の中心と点集合パターンの点(`PointReference`)が
   // 「どのスケッチか」を持たず、id で探さないと数えられないためである(タスク46)。
-  for (const sketchId of referencedSketchIds(feature, context.sketches)) {
-    found.push(...sketchDependencies(context, sketchId));
+  if (context.preciseProfiles && feature.kind === 'revolve') {
+    // Recompute needs only the profile; the axis closure is added below.
+    found.push(...sketchDependencies(context, feature.profile.sketchId, feature.profile.faceFeatureId));
+  } else {
+    for (const sketchId of referencedSketchIds(feature, context.sketches)) {
+      found.push(...sketchDependencies(context, sketchId, feature.kind === 'extrude' ? feature.profile.faceFeatureId : undefined));
+    }
   }
   switch (feature.kind) {
     case 'sew':
@@ -727,7 +737,20 @@ export function historyDependencies(
   document: PartDocument,
   options: { readonly includeSelf?: boolean } = {},
 ): ReadonlyMap<string, readonly string[]> {
-  const context = createContext(document);
+  return collectHistoryDependencies(document, options, false);
+}
+
+/** Internal recomputation graph; timeline ordering keeps its existing whole-sketch contract. */
+export function recomputeHistoryDependencies(document: PartDocument): ReadonlyMap<string, readonly string[]> {
+  return collectHistoryDependencies(document, { includeSelf: true }, true);
+}
+
+function collectHistoryDependencies(
+  document: PartDocument,
+  options: { readonly includeSelf?: boolean },
+  preciseProfiles: boolean,
+): ReadonlyMap<string, readonly string[]> {
+  const context = createContext(document, preciseProfiles);
   const graph = new Map<string, readonly string[]>();
   for (const feature of document.references) {
     const ids = referenceDependencies(context, feature);
@@ -871,7 +894,7 @@ type ReorderPlanOutcome = { readonly ok: true; readonly plan: ReorderPlan | null
 
 /**
  * `historyDependencies` の帯の依存グラフへ、呼出し側が持ってきた追加の辺を合わせる
- * (GR-07。計画書 `scratchpad/claude/plans/geomref-plan.md` §4(d)、図形の測定値を使う係数の
+ * (GR-07。図形の測定値を使う係数の
  * 順序規則 Q7=O1「測る形は、その値を使う形より履歴の前」)。
  *
  * `measure/mathGeometryDependencies.ts` の `mathGeometryHistoryEdges(document)` がこの形

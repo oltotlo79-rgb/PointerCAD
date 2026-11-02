@@ -44,7 +44,10 @@ describe('a refused impact review keeps everything the user entered and starts n
 
     useAppStore.getState().reviewBeam();
     const refused = requireBeamSession();
-    expect([refused.status, refused.reviewed, refused.result, refused.errorKey]).toEqual(['editing', null, null, 'beam.error.model']);
+    expect(refused.status).toBe('editing');
+    expect(refused.reviewed).toBeNull();
+    expect(refused.result).toBeNull();
+    expect(refused.errorKey).toBe('beam.error.model');
     // Source names the solver's refusal (impact-step); with task167 the saved-input reader names it (impact-history).
     expect(refused.diagnostic).toMatch(/impact-(?:step|history)/u);
     // Every value the user typed stays exactly as typed: the impact draft, the plane row and the member.

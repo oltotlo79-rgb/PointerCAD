@@ -1,3 +1,10 @@
+import { translateBeamFrictionContact } from './frictionContactTranslation.js';
+import { readSolidContactAnalysisInput, decodeSolidContactResult, type SolidContactInput, type SolidContactResult } from './solidContactBinding.js';
+import { readFrictionSolveOptions } from './frictionContactRuntime.js';
+import { frictionContactResultMatches, type FrictionContactResult, type FrictionSolveOptions } from './frictionContactResults.js';
+import { frictionContactInputSha256 } from './frictionContactBinding.js';
+import { translateBeamWeldSpanContact, beamWeldSpanContactInputSha256 } from './beamWeldSpanContact.js';
+import { isBeamWeldSpanContactResult, beamWeldSpanContactResultMatches, type BeamWeldSpanContactResult } from './beamWeldSpanContactBinding.js';
 import { readNativeBoltPreloadWireInput, prepareNativeBoltPreloadJob, nativeBoltPreloadOwnedMatches, type NativeBoltPreloadOwnedResult } from './nativeBoltPreloadBinding.js';
 import { FEM_PROTOCOL, isBeamProof, isIdentity, isReply, sameIdentity, type BeamProofResult,
   type FemFailure, type FemIdentity, type FemPhase, type FemRequest, type FemResult } from './protocol.js';
@@ -72,12 +79,68 @@ interface Active {
 }
 export interface FemOptions { readonly signal?: AbortSignal; readonly onPhase?: (phase: FemPhase) => void }
 
+/** A client-owned one-shot reservation; no caller-supplied generation can authorize dispatch. */
+export interface FemSolidContactPreparation {
+  readonly signal: AbortSignal;
+  readonly cancellation: () => 'abort' | 'superseded' | 'disposed' | null;
+  readonly analyzeSolidContact: (value: unknown) => Promise<FemCompletion<SolidContactResult>>;
+  readonly release: () => void;
+}
+
 /** One interpreter per request. Termination remains effective during native WASM. */
 export class FemClient {
   private generation = 0;
   private active: Active | null = null;
   private disposed = false;
+  private preparation: { cancel(reason: 'abort' | 'superseded' | 'disposed'): void } | null = null;
   constructor(private readonly createWorker: () => FemWorkerPort) {}
+
+  /** Reserve ownership before CAD hashing; later solvers and invalid requests cancel this reservation too. */
+  beginSolidContactPreparation(options: FemOptions = {}): FemSolidContactPreparation {
+    this.cancel('superseded');
+    const generation = ++this.generation, controller = new AbortController();
+    let reason: 'abort' | 'superseded' | 'disposed' | null = null, dispatched = false;
+    const owner = { cancel: (next: 'abort' | 'superseded' | 'disposed'): void => {
+      if (reason === null) { reason = next; controller.abort(); }
+    } };
+    this.preparation = owner;
+    const abort = (): void => owner.cancel('abort');
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (this.disposed) owner.cancel('disposed');
+    else if (options.signal?.aborted) abort();
+    const executeOptions = { ...options, signal: controller.signal };
+    return Object.freeze({ signal: controller.signal, cancellation: () => reason,
+      analyzeSolidContact: (value: unknown): Promise<FemCompletion<SolidContactResult>> => {
+        let input: SolidContactInput;
+        try { input = readSolidContactAnalysisInput(value); }
+        catch (error) { return Promise.reject(error instanceof Error ? error : new Error('Invalid solid contact input', { cause: error })); }
+        const identity = { documentId: input.source.documentId, revision: input.source.revision,
+          generation, requestId: `fem-${generation}` };
+        if (!isIdentity(identity)) return Promise.reject(new Error('Invalid FEM document identity'));
+        if (reason !== null) return Promise.resolve({ kind: 'cancelled', identity, reason });
+        if (dispatched) return Promise.reject(new Error('Solid contact preparation was already dispatched'));
+        dispatched = true;
+        return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-contact', identity, input }, executeOptions,
+          async result => result.kind === 'solid-contact-analysis' ? decodeSolidContactResult(result, input) : null);
+      },
+      release: (): void => {
+        options.signal?.removeEventListener('abort', abort);
+        if (this.preparation === owner) this.preparation = null;
+        owner.cancel('abort');
+      },
+    });
+  }
+
+  /** Fixed-facet solid contact, using the existing one-shot cancellation owner. */
+  analyzeSolidContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<SolidContactResult>> {
+    let input: SolidContactInput;
+    try { input = readSolidContactAnalysisInput(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid solid contact input', { cause: error })); }
+    const identity = this.nextIdentity(input.source.documentId, input.source.revision);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-solid-contact', identity, input }, options,
+      async result => result.kind === 'solid-contact-analysis' ? decodeSolidContactResult(result, input) : null);
+  }
 
   /** Native small-strain J2 tet4 history. Uses the same one-shot owner as every other mode. */
   analyzeSolidPlastic(value: unknown, options: FemOptions = {}): Promise<FemCompletion<SolidPlasticResult>> {
@@ -343,6 +406,37 @@ export class FemClient {
         return hash !== null && beamWeldContactResultMatches(result, input, hash) ? result : null;
       });
   }
+  /** Own input and solver settings before digest or Worker dispatch; retain execute's cancellation and deadlines. */
+  analyzeFrictionContact(value: unknown, solverOptions: FrictionSolveOptions, options: FemOptions = {}): Promise<FemCompletion<FrictionContactResult>> {
+    let input: ReturnType<typeof translateBeamFrictionContact>['input'], owned: FrictionSolveOptions;
+    try { input = translateBeamFrictionContact(value).input; owned = readFrictionSolveOptions(solverOptions); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid friction-contact input', { cause: error })); }
+    const identity = this.nextIdentity(input.geometry.source.documentId, input.geometry.revision);
+    const runOptions: FemOptions = { signal: options.signal, onPhase: options.onPhase };
+    const expectedHash = frictionContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-friction-contact', identity, input, solverOptions: owned }, runOptions,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && frictionContactResultMatches(result, input, hash, owned) ? result : null;
+      });
+  }
+  /** Dedicated span input and identity are owned synchronously; acceptance remains inside execute's lifetime. */
+  analyzeWeldSpanContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<BeamWeldSpanContactResult>> {
+    let prepared: ReturnType<typeof translateBeamWeldSpanContact>;
+    try { prepared = translateBeamWeldSpanContact(value); }
+    catch (error) { this.cancel('superseded'); return Promise.reject(error instanceof Error
+      ? error : new Error('Invalid weld-span-contact input', { cause: error })); }
+    const input = prepared.input;
+    const identity = this.nextIdentity(input.contact.geometry.source.documentId, input.contact.geometry.revision);
+    const expectedHash = beamWeldSpanContactInputSha256(input).catch(() => null);
+    return this.execute({ protocol: FEM_PROTOCOL, kind: 'analyze-beam-weld-span-contact', identity, input }, options,
+      async result => {
+        const hash = await expectedHash;
+        return hash !== null && isBeamWeldSpanContactResult(result)
+          && await beamWeldSpanContactResultMatches(result, input, hash) ? result : null;
+      });
+  }
   /** 専用frame入力を先に所有し、既存executeの取消・期限・4値identity照合を共有する。 */
   analyzeFrameBoltContact(value: unknown, options: FemOptions = {}): Promise<FemCompletion<FrameBoltContactResult>> {
     let prepared: ReturnType<typeof readFrameBoltContact>;
@@ -484,8 +578,12 @@ export class FemClient {
     });
   }
   private cancel(reason: 'superseded' | 'disposed'): void {
+    const preparation = this.preparation;
+    this.preparation = null;
     const active = this.active;
+    // Settle the Worker with the public reason before aborting preparation's signal.
     if (active !== null) active.cancel(reason);
+    preparation?.cancel(reason);
   }
   dispose(): void { this.disposed = true; this.cancel('disposed'); }
 }

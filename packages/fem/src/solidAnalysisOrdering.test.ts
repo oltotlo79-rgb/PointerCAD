@@ -33,6 +33,12 @@ function pythonChecks(source: string): void {
   expect(result).toEqual({ checks: 'passed' });
 }
 beforeAll(async () => {
+  const wrapper = verified('solidAnalysis.py');
+  const reviewedSource = readFileSync(new URL('./solidAnalysis.py', import.meta.url));
+  expect(createHash('sha256').update(wrapper).digest('hex'))
+    .toBe(createHash('sha256').update(reviewedSource).digest('hex'));
+  expect(SOLID_ASSETS).toEqual([{ file: 'solidAnalysis.py', bytes: wrapper.byteLength,
+    sha256: createHash('sha256').update(wrapper).digest('hex') }]);
   globalThis.fetch = () => { deniedRequests++; return Promise.reject(new Error('offline-request-denied')); };
   for (const name of ['package.json', 'pyodide.mjs', 'pyodide.asm.js', 'pyodide.asm.wasm', 'python_stdlib.zip',
     'pyodide-lock.json', 'numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl', wheel]) verified(name);
@@ -43,9 +49,6 @@ beforeAll(async () => {
     packages: ['numpy'], fullStdLib: false, stdout: () => undefined, stderr: () => undefined });
   if (!isRuntime(loaded)) throw new Error('Invalid packaged runtime');
   runtime = loaded;
-  const wrapper = verified('solidAnalysis.py');
-  expect(SOLID_ASSETS).toEqual([{ file: 'solidAnalysis.py', bytes: wrapper.byteLength,
-    sha256: createHash('sha256').update(wrapper).digest('hex') }]);
   runtime.FS.mkdirTree('/pcad_fem');
   runtime.FS.writeFile('/pcad_fem/solid_analysis.py', wrapper);
   await runtime.loadPackage(join(assets, wheel).split(sep).join('/'), { checkIntegrity: true });
@@ -174,4 +177,119 @@ json.dumps({'checks':'passed'})
     expect(result.reservedNumericBytes).toBeLessThanOrEqual(input.numericBudgetBytes);
     expect(deniedRequests).toBe(0);
   }, FUNCTIONAL_TEST_TIMEOUT_MS);
+  it('preserves a nonzero prescribed displacement in the shipped native calculation', async () => {
+    // One tetrahedron with nu=0: k=E L/6, sigma=E u/L, energy=k u^2/2.
+    const length = 2, young = 120000, displacement = 0.2;
+    const input: SolidAnalysisInput = { schema: 'pointercad-solid-tet4/1',
+      source: { documentId: 'prescribed-closed-form', revision: 1, meshKey: 'one-tet' }, units: 'N-mm-MPa',
+      numericBudgetBytes: 128 * 1024 * 1024,
+      nodes: [[0, length, 0], [0, 0, length], [0, 0, 0], [length, 0, 0]],
+      elements: [{ nodes: [2, 3, 0, 1], materialId: 'm' }], materials: [{ id: 'm', youngMPa: young, poisson: 0 }],
+      constraints: [{ node: 0, fixed: [true, true, true] }, { node: 1, fixed: [true, true, true] },
+        { node: 2, fixed: [true, true, true] },
+        { node: 3, fixed: [true, true, true], prescribedMm: [displacement, 0, 0] }],
+      nodalLoads: [], surfaceLoads: [] };
+    const before = structuredClone(input);
+    const result = await analyzeSolid(runtime, input, { wrapper: verified('solidAnalysis.py'),
+      wheelLocation: join(assets, wheel).split(sep).join('/') }, () => undefined);
+    const force = young * length * displacement / 6;
+    expect(input).toEqual(before);
+    expect(result.displacementMm).toEqual([[0, 0, 0], [0, 0, 0], [0, 0, 0], [displacement, 0, 0]]);
+    expect(result.reactionN[2][0]).toBeCloseTo(-force, 8);
+    expect(result.reactionN[3][0]).toBeCloseTo(force, 8);
+    expect(result.elements[0].stressMPa[0]).toBeCloseTo(young * displacement / length, 8);
+    expect(result.strainEnergyNmm).toBeCloseTo(force * displacement / 2, 9);
+    expect(solidResultMatches(result, input, await solidInputSha256(input))).toBe(true);
+    expect(deniedRequests).toBe(0);
+  }, FUNCTIONAL_TEST_TIMEOUT_MS);
+  it.each([false, true] as const)('native two-tet affine axial patch rotated=%s', async rotated => {
+    // Independent affine patch: volumes 1/6 and 1/3 mm^3, sigma_xx=E*.03=6 MPa.
+    // Assembled actions [-1,2,-1,-1,1] N; external work .03*(2+1)=.09 N mm.
+    // These are analytical expectations, never a hand-authored native reply.
+    const base: SolidAnalysisInput = { schema: 'pointercad-solid-tet4/1',
+      source: { documentId: 'native-two-tet-patch', revision: 1, meshKey: 'two-tet-x' }, units: 'N-mm-MPa',
+      numericBudgetBytes: 128 * 1024 * 1024,
+      nodes: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 1]],
+      elements: [{ nodes: [0, 1, 2, 3], materialId: 'm' }, { nodes: [1, 2, 3, 4], materialId: 'm' }],
+      materials: [{ id: 'm', youngMPa: 200, poisson: 0 }],
+      constraints: [{ node: 0, fixed: [true, true, true] }, { node: 1, fixed: [false, true, true] },
+        { node: 2, fixed: [true, true, true] }, { node: 3, fixed: [true, true, true] },
+        { node: 4, fixed: [false, true, true] }],
+      nodalLoads: [{ node: 1, forceN: [2, 0, 0] }, { node: 4, forceN: [1, 0, 0] }], surfaceLoads: [] };
+    // Proper common 90-degree rotation about z: (x,y,z) -> (-y,x,z).
+    const world = ([x, y, z]: readonly [number, number, number]): readonly [number, number, number] =>
+      rotated ? [-y, x, z] : [x, y, z];
+    const input: SolidAnalysisInput = rotated ? { ...base,
+      source: { ...base.source, meshKey: 'two-tet-rotated-y' },
+      nodes: base.nodes.map(world),
+      constraints: base.constraints.map(row => ({ ...row, fixed: [row.fixed[1], row.fixed[0], row.fixed[2]] })),
+      nodalLoads: base.nodalLoads.map(row => ({ ...row, forceN: world(row.forceN) })) } : base;
+    const before = structuredClone(input), digest = await solidInputSha256(input);
+    const result = await analyzeSolid(runtime, input, { wrapper: verified('solidAnalysis.py'),
+      wheelLocation: join(assets, wheel).split(sep).join('/') }, () => undefined);
+    // Match the existing one-tet digits13 displacement/energy and digits12 force/stress bounds.
+    // The unit-length patch gives the same absolute displacement/strain error scale.
+    const displacementToleranceMm = 5e-14, strainTolerance = 5e-14;
+    const forceToleranceN = 5e-13, stressToleranceMPa = 5e-13, energyToleranceNmm = 5e-14;
+    const near = (actual: number, expected: number, tolerance: number): void => {
+      expect(Number.isFinite(actual)).toBe(true);
+      expect(Math.abs(actual - expected)).toBeLessThan(tolerance);
+    };
+    expect(input).toEqual(before);
+    expect(await solidInputSha256(input)).toBe(digest);
+    expect(result.source).toEqual(before.source);
+    expect(result.inputSha256).toBe(digest);
+    expect(solidResultMatches(result, input, digest)).toBe(true);
+    expect(solidResultMatches(result, { ...input, source: { ...input.source, revision: 2 } }, digest)).toBe(false);
+    expect(result.displacementMm).toHaveLength(5);
+    expect(result.reactionN).toHaveLength(5);
+    const expectedDisplacements = [[0, 0, 0], [.03, 0, 0], [0, 0, 0], [0, 0, 0], [.03, 0, 0]] as const;
+    const expectedReactions = [[-1, 0, 0], [0, 0, 0], [-1, 0, 0], [-1, 0, 0], [0, 0, 0]] as const;
+    expectedDisplacements.map(world).forEach((v, node) => v.forEach((value, axis) =>
+      near(result.displacementMm[node][axis], value, displacementToleranceMm)));
+    expectedReactions.map(world).forEach((v, node) => v.forEach((value, axis) =>
+      near(result.reactionN[node][axis], value, forceToleranceN)));
+    expect(result.elements).toHaveLength(2);
+    for (const element of result.elements) {
+      const expectedStrain = rotated ? [0, .03, 0, 0, 0, 0] : [.03, 0, 0, 0, 0, 0];
+      const expectedStress = rotated ? [0, 6, 0, 0, 0, 0] : [6, 0, 0, 0, 0, 0];
+      element.strain.forEach((value, axis) => near(value, expectedStrain[axis], strainTolerance));
+      element.stressMPa.forEach((value, axis) => near(value, expectedStress[axis], stressToleranceMPa));
+    }
+    near(result.strainEnergyNmm, .045, energyToleranceNmm);
+    expect(result.maximumRelativeEquilibriumResidual).toBeLessThanOrEqual(1e-8);
+    const expectedActions = [
+      [[-1, 0, 0], [1, 0, 0], [0, 0, 0], [0, 0, 0]],
+      [[1, 0, 0], [-1, 0, 0], [-1, 0, 0], [1, 0, 0]],
+    ] as const;
+    const assembled = input.nodes.map(() => [0, 0, 0]);
+    expect(result.nativeElementForcesN).toHaveLength(2);
+    expectedActions.forEach((vectors, element) => {
+      const expected = vectors.flatMap(world), actual = result.nativeElementForcesN[element];
+      expect(actual).toHaveLength(12);
+      expected.forEach((value, local) => {
+        near(actual[local], value, forceToleranceN);
+        assembled[input.elements[element].nodes[Math.floor(local / 3)]][local % 3] += actual[local];
+      });
+    });
+    // Independent free-DOF residual from the actual native element actions, not the zero reaction placeholders.
+    const freeAxis = rotated ? 1 : 0;
+    near(assembled[1][freeAxis], 2, forceToleranceN);
+    near(assembled[4][freeAxis], 1, forceToleranceN);
+    const total = [0, 0, 0], moment = [0, 0, 0];
+    for (let node = 0; node < input.nodes.length; node++) {
+      const applied = input.nodalLoads.find(row => row.node === node)?.forceN ?? [0, 0, 0];
+      const force = result.reactionN[node].map((value, axis) => value + applied[axis]);
+      const [x, y, z] = input.nodes[node];
+      force.forEach((value, axis) => { total[axis] += value; });
+      moment[0] += y * force[2] - z * force[1];
+      moment[1] += z * force[0] - x * force[2];
+      moment[2] += x * force[1] - y * force[0];
+    }
+    total.forEach(value => near(value, 0, forceToleranceN));
+    moment.forEach(value => near(value, 0, forceToleranceN)); // Unit-length moment arms, N mm.
+    expect(result.reservedNumericBytes).toBeLessThanOrEqual(input.numericBudgetBytes);
+    expect(deniedRequests).toBe(0);
+  }, FUNCTIONAL_TEST_TIMEOUT_MS);
+
 });

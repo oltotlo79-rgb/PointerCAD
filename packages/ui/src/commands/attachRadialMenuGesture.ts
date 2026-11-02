@@ -15,6 +15,8 @@ export interface RadialMenuAttachmentOptions {
   readonly scale?: () => number;
   /** In 3D, the camera owns right drags; open only after a stationary right release. */
   readonly clickOnly?: boolean;
+  /** Drawing navigation consumes ancestor capture events; observe a click before that ancestor. */
+  readonly observeDrawingDown?: boolean;
   readonly allowSelectionModifiers?: () => boolean;
 }
 
@@ -29,6 +31,7 @@ export function attachRadialMenuGesture(
   const surfaceEvents: GlobalEventHandlers = surface;
   const captureOptions = { capture: true };
   const wheelOptions = { capture: true, passive: false };
+  const observeDrawingDown = options.clickOnly === true && options.observeDrawingDown === true;
   let active: { readonly gesture: RadialMenuGesture; readonly owner: object; readonly start: ScreenPoint;
     readonly holding: 'right' | 'left' | 'native' | null; readonly moved: boolean; readonly clicked?: RadialMenuSlot | null;
     readonly nativeTarget?: EventTarget | null } | null = null;
@@ -92,6 +95,11 @@ export function attachRadialMenuGesture(
       ...(options.clickSlot === undefined ? {} : { clicked: options.clickSlot({ x: event.clientX, y: event.clientY }) }) };
     surface.setPointerCapture(event.pointerId);
     options.show(gesture);
+  };
+  const viewDown = (event: PointerEvent): void => {
+    // Cancel or handle the previous gesture before creating this click's pending state.
+    nextDown(event);
+    if (observeDrawingDown && event.composedPath().includes(surface)) down(event);
   };
   const move = (event: PointerEvent): void => {
     if (pending !== null && event.pointerId === pending.gesture.pointerId) {
@@ -201,9 +209,9 @@ export function attachRadialMenuGesture(
     options.show(active.gesture, active.holding === null, true);
   };
 
-  surfaceEvents.addEventListener('pointerdown', down, captureOptions);
+  if (!observeDrawingDown) surfaceEvents.addEventListener('pointerdown', down, captureOptions);
   surfaceEvents.addEventListener('contextmenu', context);
-  view.addEventListener('pointerdown', nextDown, captureOptions);
+  view.addEventListener('pointerdown', viewDown, captureOptions);
   view.addEventListener('pointermove', move, captureOptions);
   view.addEventListener('pointerup', up, captureOptions);
   view.addEventListener('pointercancel', cancelled, captureOptions);
@@ -214,9 +222,9 @@ export function attachRadialMenuGesture(
   view.addEventListener('resize', cancel);
   return { cancel, choose, fit, detach: () => {
     cancel();
-    surfaceEvents.removeEventListener('pointerdown', down, captureOptions);
+    if (!observeDrawingDown) surfaceEvents.removeEventListener('pointerdown', down, captureOptions);
     surfaceEvents.removeEventListener('contextmenu', context);
-    view.removeEventListener('pointerdown', nextDown, captureOptions);
+    view.removeEventListener('pointerdown', viewDown, captureOptions);
     view.removeEventListener('pointermove', move, captureOptions);
     view.removeEventListener('pointerup', up, captureOptions);
     view.removeEventListener('pointercancel', cancelled, captureOptions);

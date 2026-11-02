@@ -10,7 +10,7 @@ import { currentConnected1000Part as currentPart, legacyConnected1000Part as leg
   from '../../../io/src/pcad/connected1000Persistence.testSupport.js';
 import { orbitFrom, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { recomputeRetention } from './dragSketch.retentionSupport.js';
+import { recomputeRetention } from './dragSketch.retentionSupport.testSupport.js';
 import * as dragSolver from './dragSketch.js';
 import { createSketchDragSession } from './sketchDragSession.js';
 import { createSketchInteractionIndicators } from './sketchInteractionIndicators.js';

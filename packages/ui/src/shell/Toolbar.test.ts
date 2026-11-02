@@ -131,3 +131,25 @@ describe('図面のnative拒否とキーボード用可視理由', () => {
     } finally { detach(); }
   });
 });
+
+describe('direct analysis menu', () => {
+  it.each(['part', 'assembly'] as const)('shows exactly one named entry in %s without opening a calculation', kind => {
+    if (kind === 'assembly') useAppStore.getState().openAssembly(createAssemblyDocument('Assembly'));
+    vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
+    const before = useAppStore.getState(), html = renderToStaticMarkup(createElement(Toolbar));
+    expect(html.split(`aria-label="${t('toolbar.analysis.groupLabel')}"`)).toHaveLength(2);
+    expect(html).toContain(`title="${t('toolbar.analysis.tooltip')}"`);
+    expect(html).toContain(`aria-label="${t('toolbar.look.groupLabel')}"`);
+    expect(useAppStore.getState()).toBe(before);
+    expect(before.strengthSession).toBeNull();
+  });
+
+  it('does not add an analysis entry to the drawing toolbar', () => {
+    useAppStore.getState().openDrawing(createDrawingDocument('Drawing', {
+      sourceRef: 'part', sourceKind: 'part', fileName: 'part.pcad', path: '', contentHash: '', importedAt: '',
+    }));
+    vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
+    const html = renderToStaticMarkup(createElement(DrawingToolbar));
+    expect(html).not.toContain(`aria-label="${t('toolbar.analysis.groupLabel')}"`);
+  });
+});

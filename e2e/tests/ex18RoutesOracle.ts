@@ -5,7 +5,7 @@ import { readDocumentBundle, readPcadFile, type ReadPcadFileResult } from '../..
 import type { PartDocument } from '../../packages/model/src/part/types.js';
 import type { ResolvedPart } from '../../packages/model/src/part/resolvePart.js';
 import { recomputePart } from '../../packages/model/src/part/recomputePart.js';
-import { compareEx18Shape, type Ex18ShapeExpectation } from '../../packages/model/src/part/ex18ShapeOracle.js';
+import { compareEx18Shape, type Ex18ShapeExpectation } from '../../packages/model/src/part/ex18ShapeOracle.testSupport.js';
 import { createInspectableNativeKernelForNodeTests } from '../../packages/model/src/testing/createNativeKernelBridge.node.js';
 
 export const EX18_A6: Ex18ShapeExpectation = {

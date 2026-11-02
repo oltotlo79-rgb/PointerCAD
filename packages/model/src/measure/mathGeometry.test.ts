@@ -2,9 +2,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi, SUB_SHAPE_MATCH_THRESHOLD } from '@pointercad/kernel';
 import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { createDirectKernelBridge, resolveSubShapeReference, selectMateTargetGeometry, SUB_SHAPE_AMBIGUITY_MARGIN, type KernelBridge, type MeasureOutcome, type SolidBody,
+import { createDirectKernelBridge, resolveSubShapeReference, SUB_SHAPE_AMBIGUITY_MARGIN, type KernelBridge, type MeasureOutcome, type SolidBody,
   type SolidEdgeEntry, type SolidFaceEntry, type SolidVertexEntry } from '../kernelBridge.js';
-import { scoreSubShapeMatch } from '../kernelBridge/subShapeMatching.js';
+import { scoreSubShapeMatch, selectMateTargetGeometry } from '../kernelBridge/subShapeMatching.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { resolvePlaneSpec } from '../geometry/planeSpec.js';
 import { createSubShapeCache } from '../part/subShapeCache.js';

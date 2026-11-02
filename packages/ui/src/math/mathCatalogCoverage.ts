@@ -1,6 +1,6 @@
 /**
  * 計画 `docs/plans/追加-数学入力.md` §1（分野別の網羅表、L134〜L165の32行・256記号。幾何9件〔L165〕を除く）と、
- * 公開目録（`mathPaletteExamples.ts` の `MATH_INPUT_PALETTE`）の機械照合（MC-04、`scratchpad/claude/plans/math-add-coverage.md` §7.2）。
+ * 公開目録（`mathPaletteExamples.ts` の `MATH_INPUT_PALETTE`）の機械照合（MC-04、`mathCatalogCoverage.test.ts`）。
  *
  * 各記号は次のどちらか一方だけを持つ。
  * - `catalogIds`（{@link MathCoverageAccepted}）: 公開目録（`MATH_INPUT_PALETTE`）の項目ID。1個以上。
@@ -9,7 +9,7 @@
  *   MC-19c・MC-12・MC-20 等）・設計上パレット化しない理由のいずれかを明記する（空文字列は不可）。
  *   後続タスクが目録へ項目を追加したら、対応する `reason` を `catalogIds` へ書き換えるだけで済む。
  *
- * 幾何9記号（L165）は図形参照（CAD参照）として `scratchpad/claude/plans/geomref-plan.md`（w1d の計画）を参照先にする。
+ * 幾何9記号（L165）は図形参照（CAD参照）として `packages/model/src/measure/mathGeometry.ts` の評価へ対応する。
  *
  * このファイルは対応表を保持し、計画ファイルとの整合を検査する純粋関数（`node:fs` 等の入出力は行わない。
  * 実ファイルの読み取りは `mathCatalogCoverage.test.ts` が行い、文字列として渡す）を提供するだけで、
@@ -49,7 +49,7 @@ export interface MathCoverageRow {
 
 /**
  * 計画 §1（L134〜L165）の32行・256記号（幾何9件を除く）の対応表。
- * 生成の経緯: `scratchpad/claude/agents/w2b-math-coverage/symbols.json`（計画§1を265記号へ分けた機械集計）を
+ * 生成の経緯: 計画§1を265記号へ分けた機械集計を
  * 基に、`packages/ui/src/math/mathPaletteExamples.ts` が公開する現在の目録ID（`MATH_INPUT_PALETTE`）と
  * `packages/ui/src/math/mathPalette{Basic,Calculus,SetsLogic}.ts` の演算参照（`requiredOperations`）を実ファイルから
  * 読み直して照合した（2026-09-24 09時台時点）。目録IDを持たない記号は、後続タスク名または設計上の理由を記す。

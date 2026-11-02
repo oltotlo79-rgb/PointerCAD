@@ -26,11 +26,11 @@ export type PresentationFailureReason =
   | 'ambiguousCoordinate'
   | 'invalidReference'
   | 'overlappingDriver';
-export type PresentationFailure = {
+export interface PresentationFailure {
   readonly ok: false;
   readonly reason: PresentationFailureReason;
   readonly stepId?: string;
-};
+}
 export type PresentationResult<T> = { readonly ok: true; readonly value: T } | PresentationFailure;
 
 /** 区間外を0/1へ挟み、区間内だけ線形に進める。無効値は黙って補わない。 */

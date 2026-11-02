@@ -14,7 +14,7 @@ import { orbitFrom, resetTestStore, resultFor } from '../store/testing/createTes
 import { useAppStore } from '../store/useAppStore.js';
 import * as dragSolver from './dragSketch.js';
 import { commitDrag, type SketchDrag } from './dragSketch.js';
-import { recomputeRetention } from './dragSketch.retentionSupport.js';
+import { recomputeRetention } from './dragSketch.retentionSupport.testSupport.js';
 import { createSketchDragSession } from './sketchDragSession.js';
 import { createSketchInteractionIndicators } from './sketchInteractionIndicators.js';
 

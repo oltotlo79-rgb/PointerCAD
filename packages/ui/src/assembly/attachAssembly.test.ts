@@ -148,6 +148,17 @@ function fakeBridge() {
     dispose: () => undefined,
   };
   return { bridge, keys, recomputeSolids, releasePart, checkShapeAvailability,
+    issueCancelledReplyKeepingActualOwner(partId: string, generation: number) {
+      const previous = active.get(partId);
+      if (previous === undefined) throw new Error('Prior actual owner required');
+      const reply: SolidBody[] = [];
+      const displayOwner: Owner = { ...previous, dispatchId: `fixture-cancelled-${++dispatch}`, generation };
+      issued.set(reply, displayOwner);
+      // Match kernelApi: cancelled computation does not assign part.owner.
+      expect(active.get(partId)).toBe(previous);
+      expect(displayOwner).not.toBe(previous);
+      return { bodies: reply, failures: [], cacheHits: 0, cancelled: true };
+    },
     aliasFixtureBodies(source: readonly SolidBody[], replacement: readonly SolidBody[]) {
       const owner = issued.get(source); if (owner === undefined) throw new Error('Fixture source owner missing');
       issued.set(replacement, owner);
@@ -1735,5 +1746,129 @@ describe('EX-12 W05 initial mate checkpoints own their document and publication'
       expect(published).toEqual([replacement]);
       expect(useAppStore.getState().assemblyView?.sourceDocument).toBe(replacement);
     } finally { unsubscribe(); detach(); }
+  });
+});
+
+
+describe('cancel-reopen exact Part ownership boundaries', () => {
+  it.each(['unsent', 'issued-empty', 'late-cleanup', 'issued-cancelled-prior-owner'] as const)('same ref success then cancellation then reopen: %s', async mode => {
+    const f = await fixture(), fake = fakeBridge();
+    const actual = fake.recomputeSolids.getMockImplementation();
+    if (actual === undefined) throw new Error('Issued fixture implementation');
+    const dispositions: { status: string; owner: string }[] = [];
+    const actualReturn = fake.bridge.releasePartClaim?.bind(fake.bridge);
+    if (actualReturn === undefined) throw new Error('Exact claim return');
+    vi.spyOn(fake.bridge, 'releasePartClaim').mockImplementation(async claim => {
+      const outcome = await actualReturn(claim); dispositions.push({ status: outcome.status, owner: claim.owner.dispatchId }); return outcome;
+    });
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge);
+    let allowReturn = mode !== 'late-cleanup';
+    let finish: (() => void) | undefined;
+    try {
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      expect(fake.recomputeSolids).toHaveBeenCalledTimes(2);
+      const prior = useAppStore.getState().assemblyView;
+      expect(prior?.meshOwnership?.sources.size).toBe(2);
+      fake.recomputeSolids.mockImplementationOnce(async (steps, options) => {
+        if (mode === 'unsent') {
+          // Reservation cancellation before RPC: no issued reply/owner exists for this array.
+          useAppStore.getState().cancelRecompute();
+          return { bodies: [], failures: [], cacheHits: 0, cancelled: true };
+        }
+        if (mode === 'issued-cancelled-prior-owner') {
+          const cancelled = fake.issueCancelledReplyKeepingActualOwner(options?.partId ?? 'fixture', options?.generation ?? 0);
+          useAppStore.getState().cancelRecompute(); return cancelled;
+        }
+        const issued = await actual(steps, options);
+        const empty: SolidBody[] = [];
+        fake.aliasFixtureBodies(issued.bodies, empty);
+        const cancelled = { ...issued, bodies: empty, cancelled: true };
+        if (mode !== 'late-cleanup') {
+          useAppStore.getState().cancelRecompute(); return cancelled;
+        }
+        return new Promise(resolve => { finish = () => { resolve(cancelled); }; });
+      });
+      fake.releasePart.mockImplementation(() => allowReturn ? Promise.resolve() : Promise.reject(new Error('retained exact cleanup')));
+      useAppStore.getState().openAssembly(f.document, f.library);
+      if (mode === 'late-cleanup') {
+        await vi.waitFor(() => expect(finish).toBeDefined());
+        useAppStore.getState().cancelRecompute();
+        expect(useAppStore.getState().assemblyView).toBeNull();
+        if (finish === undefined) throw new Error('Late issued reply');
+        finish();
+      }
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('cancelled');
+      expect(useAppStore.getState().assembly).toBe(f.document);
+      expect(useAppStore.getState().assemblyView).toBeNull();
+      if (mode === 'late-cleanup') {
+        useAppStore.getState().applyAssembly({ ...f.document, name: 'return still refused' });
+        await settle();
+        expect(useAppStore.getState().lastOutcome).toBe('failed');
+        expect(fake.recomputeSolids).toHaveBeenCalledTimes(3);
+        expect(useAppStore.getState().assemblyView).toBeNull();
+        allowReturn = true;
+      }
+      const resumed = { ...f.document, name: 'same ref resumed' };
+      useAppStore.getState().applyAssembly(resumed);
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      expect(useAppStore.getState().assembly).toBe(resumed);
+      expect(useAppStore.getState().assemblyView?.sourceDocument).toBe(resumed);
+      expect(useAppStore.getState().assemblyView?.meshOwnership?.sources.size).toBe(2);
+      expect(fake.recomputeSolids).toHaveBeenCalledTimes(5);
+      const returned = dispositions.filter(item => item.status === 'released').map(item => item.owner);
+      expect(returned.length).toBeGreaterThan(0);
+      expect(new Set(returned).size).toBe(returned.length);
+    } finally { allowReturn = true; finish?.(); detach(); }
+  });
+});
+
+describe('cancel-reopen cancelled reply predecessor safety', () => {
+  it('refuses both old claims when another current owner has replaced the Part', async () => {
+    const f = await fixture(), fake = fakeBridge();
+    const actual = fake.recomputeSolids.getMockImplementation();
+    const release = fake.bridge.releasePartClaim?.bind(fake.bridge);
+    const capture = fake.bridge.capturePartReleaseClaim?.bind(fake.bridge);
+    if (actual === undefined || release === undefined || capture === undefined) throw new Error('Exact fixture ownership required');
+    let otherClaim: ReturnType<typeof capture> = null;
+    const dispositions: string[] = [];
+    vi.spyOn(fake.bridge, 'releasePartClaim').mockImplementation(async claim => {
+      const result = await release(claim); dispositions.push(result.status); return result;
+    });
+    useAppStore.getState().openAssembly(f.document, f.library);
+    const detach = attachAssembly(fake.bridge);
+    try {
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('success');
+      fake.recomputeSolids.mockImplementationOnce(async (steps, options) => {
+        const cancelled = fake.issueCancelledReplyKeepingActualOwner(options?.partId ?? 'fixture', options?.generation ?? 0);
+        const other = await actual(steps, options);
+        otherClaim = capture(other.bodies);
+        expect(otherClaim).not.toBeNull();
+        useAppStore.getState().cancelRecompute();
+        return cancelled;
+      });
+      useAppStore.getState().openAssembly(f.document, f.library);
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('cancelled');
+      const resumed = { ...f.document, name: 'different current owner must remain held' };
+      useAppStore.getState().applyAssembly(resumed);
+      await settle();
+      expect(useAppStore.getState().lastOutcome).toBe('failed');
+      expect(useAppStore.getState().assemblyView).toBeNull();
+      expect(useAppStore.getState().assembly).toBe(resumed);
+      expect(fake.recomputeSolids).toHaveBeenCalledTimes(3);
+      expect(dispositions.filter(status => status === 'stale-owner').length).toBeGreaterThanOrEqual(2);
+      if (otherClaim === null) throw new Error('Issued current owner required');
+      expect(fake.releasePart.mock.calls.filter(call => call[0] === otherClaim?.owner.partId)).toHaveLength(0);
+      expect(await release(otherClaim)).toEqual({ status: 'released' });
+      otherClaim = null;
+    } finally {
+      if (otherClaim !== null) await release(otherClaim);
+      detach();
+    }
   });
 });

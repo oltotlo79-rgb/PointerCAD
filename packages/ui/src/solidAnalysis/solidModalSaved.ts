@@ -5,6 +5,7 @@ import { t } from '../i18n/t.js';
 import type { SolidAnalysisSession } from './solidAnalysisSession.js';
 import { sameSolidModalShared, solidModalEffectiveShared, solidModalSharedOf, type SolidModalSharedInput } from './solidModalShared.js';
 import { solidModalRequestValues, type SolidModalRunState } from './solidModalState.js';
+import { createSolidBoundaryDraft } from './solidBoundaryDraft.js';
 
 /**
  * Successor of continuation-r1 solidModalSaved.ts (9ad00037). Review finding r1 (v103-root-modal-reopen-review-r1.md):
@@ -39,9 +40,11 @@ export function withSolidModalSaved(session: SolidAnalysisSession, modal: SolidM
   const nextModal = { ...modal, densityText: String(saved.densityKgM3), modeCountText: String(saved.modeCount) };
   const own = solidModalSharedOf(saved);
   if (staticSaved !== undefined) {
-    return { session, modal: nextModal, shared: sameSolidModalShared(own, solidModalSharedOf(staticSaved)) ? null : own };
+    return { session, modal: nextModal, shared: staticSaved.supports === undefined
+      && sameSolidModalShared(own, solidModalSharedOf(staticSaved)) ? null : own };
   }
-  return { modal: nextModal, shared: null, session: { ...session, bodyFeatureId: saved.bodyFeatureId, fixedFaces: [...saved.fixedFaces],
+  return { modal: nextModal, shared: null, session: { ...session, ...createSolidBoundaryDraft(), boundaryFocused: null,
+    bodyFeatureId: saved.bodyFeatureId, fixedFaces: [...saved.fixedFaces],
     values: { ...session.values, young: String(saved.youngMPa), poisson: String(saved.poisson),
       linear: String(saved.linearDeflectionMm), angular: String(saved.angularDeflectionRad),
       chord: String(saved.maximumChordDeviationMm), volume: String(saved.maximumVolumeDeviationMm3) } } };

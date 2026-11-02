@@ -47,6 +47,7 @@ import { createParameterTutorialSession } from '../tutorial/tutorialProgress.js'
 import { restoreAutoSave } from './attachAutoSave.js';
 import type { FileGateway, PickedFile } from './fileGateway.js';
 import { newPart, openPart, savePart, type PartFileDeps } from './partFile.js';
+import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
 
 const deps: PartFileDeps = {
   captureThumbnail: () => null,
@@ -296,4 +297,13 @@ describe('組立・図面を開く、新規、復元、冷再開も新しい履�
     returned.undo();
     expect(useAppStore.getState().document).toBe(part);
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

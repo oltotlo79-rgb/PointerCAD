@@ -59,6 +59,8 @@ import type {
 } from './buildSolidGeometry.js';
 import { buildCutPreviewPositions } from './buildCutPreview.js';
 import type { SubShapeEmphasis, SubShapeHighlightBatch, SubShapeHighlightBundle } from './buildSubShapeGeometry.js';
+import { createSolidSubShapeResources, SUB_SHAPE_EMPHASES, type SubShapeOverlay,
+  type SubShapeFaceMesh, type SubShapeLines, type SubShapePoints } from './solidLayerResources.js';
 import { cssColor, DEFAULT_THEME_COLORS, type ThemeColors } from './themeColors.js';
 import { createViewportLifetime, createViewportConstructionOwner, type ViewportLifetime } from './viewportLifetime.js';
 
@@ -535,19 +537,6 @@ function borrowedGeometryRelease(geometry: THREE.BufferGeometry): () => void {
   };
 }
 
-const SUB_SHAPE_EMPHASES: readonly SubShapeEmphasis[] = ['hovered', 'selected'];
-
-type SubShapeFaceMesh = THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
-type SubShapeLines = THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
-type SubShapePoints = THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
-
-/** 部分形状 1 強調度(ホバー or 選択)ぶんの重ね描き 3 本(§0.a-0.7)。 */
-interface SubShapeOverlay {
-  readonly group: THREE.Group;
-  readonly faces: SubShapeFaceMesh;
-  readonly edges: SubShapeLines;
-  readonly vertices: SubShapePoints;
-}
 
 /**
  * 部分形状の重ね描き 3 本を 1 色ぶん作る。面は半透明のメッシュ、辺・頂点は
@@ -703,93 +692,9 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     hovered: createSubShapeOverlay(DEFAULT_THEME_COLORS.hovered, undefined, construction),
     selected: createSubShapeOverlay(DEFAULT_THEME_COLORS.selected, undefined, construction),
   };
-  const subShapeBodyOverlays: Readonly<Record<SubShapeEmphasis, Map<string, SubShapeOverlay>>> = {
-    hovered: new Map(), selected: new Map(),
-  };
-  let pendingUpdateCleanup: ViewportLifetime[] = [];
-  function retryUpdateCleanup(): void {
-    for (const owner of pendingUpdateCleanup) owner.dispose();
-    pendingUpdateCleanup = pendingUpdateCleanup.filter(owner => owner.pendingCount !== 0);
-    if (pendingUpdateCleanup.length !== 0) throw new Error('Solid overlay cleanup is pending');
-  }
-  function prepareSubShapeOverlays(emphasis: SubShapeEmphasis, batches: readonly SubShapeHighlightBatch[],
-    candidate: ReturnType<typeof createViewportConstructionOwner>): { publish(): void; retire(): void } {
-    const active = subShapeBodyOverlays[emphasis];
-    const keys = new Set(batches.map((batch) => batch.featureId));
-    const additions = new Map<string, SubShapeOverlay>();
-    for (const batch of batches) {
-      const existing = active.get(batch.featureId);
-      if (existing !== undefined) { applySubShapeOverlay(existing, batch); continue; }
-      if (additions.has(batch.featureId)) continue;
-      const overlay = createSubShapeOverlay(0, subShapeOverlays[emphasis], candidate);
-      applySubShapeOverlay(overlay, batch);
-      additions.set(batch.featureId, overlay);
-    }
-    const removed = [...active].filter(([key]) => !keys.has(key));
-    return { publish(): void {
-    // Retirement waits until both publications succeed; rollback still owns all old assets.
-    for (const [key, overlay] of additions) { active.set(key, overlay); group.add(overlay.group); }
-    for (const [key, overlay] of removed) {
-      group.remove(overlay.group);
-      active.delete(key);
-    }
-    }, retire(): void {
-    for (const [, overlay] of removed) {
-      const retired = createViewportLifetime();
-      for (const geometry of [overlay.faces.geometry, overlay.edges.geometry, overlay.vertices.geometry]) {
-        retired.register('retired overlay geometry', borrowedGeometryRelease(geometry));
-      }
-      retired.dispose();
-      if (retired.pendingCount !== 0) pendingUpdateCleanup.push(retired);
-    }
-    } };
-  }
-  function checkpointSubShapeOverlays(): ViewportLifetime {
-    const overlays = SUB_SHAPE_EMPHASES.flatMap(emphasis => [...subShapeBodyOverlays[emphasis].values()]);
-    const groups = overlays.map(overlay => ({ object: overlay.group,
-      position: overlay.group.position.clone(), matrix: overlay.group.matrix.clone(),
-      world: overlay.group.matrixWorld.clone(), worldDirty: overlay.group.matrixWorldNeedsUpdate }));
-    const objects = overlays.flatMap(overlay => [overlay.faces, overlay.edges, overlay.vertices]);
-    const visibility = objects.map(object => ({ object, visible: object.visible }));
-    const geometries = objects.map(object => {
-      const geometry = object.geometry;
-      const attributes = { ...geometry.attributes }, index = geometry.index;
-      const values = [...Object.values(attributes), ...(index === null ? [] : [index])]
-        .filter((value): value is THREE.BufferAttribute => value instanceof THREE.BufferAttribute)
-        .map(value => ({ value, array: value.array, version: value.version }));
-      return { geometry, attributes, index, values, box: geometry.boundingBox,
-        boxValue: geometry.boundingBox?.clone(), sphere: geometry.boundingSphere,
-        sphereValue: geometry.boundingSphere?.clone() };
-    });
-    const previousChildren = [...group.children];
-    const previousMaps = SUB_SHAPE_EMPHASES.map(emphasis => ({ active: subShapeBodyOverlays[emphasis],
-      entries: [...subShapeBodyOverlays[emphasis]] }));
-    const recovery = createViewportLifetime();
-    recovery.register('restore overlay membership', () => {
-      // Restore actual membership without reentering failed add/remove event callbacks.
-      for (const child of group.children) if (!previousChildren.includes(child) && child.parent === group) child.parent = null;
-      group.children.splice(0, group.children.length, ...previousChildren);
-      for (const child of previousChildren) child.parent = group;
-      for (const state of previousMaps) {
-        Map.prototype.clear.call(state.active);
-        for (const [key, overlay] of state.entries) Map.prototype.set.call(state.active, key, overlay);
-      }
-    });
-    for (const state of groups) recovery.register('restore overlay transform', () => {
-        state.object.position.copy(state.position); state.object.matrix.copy(state.matrix);
-        state.object.matrixWorld.copy(state.world); state.object.matrixWorldNeedsUpdate = state.worldDirty;
-    });
-    for (const state of visibility) recovery.register('restore overlay visibility', () => { state.object.visible = state.visible; });
-    for (const state of geometries) recovery.register('restore overlay geometry', () => {
-        state.geometry.attributes = state.attributes; state.geometry.index = state.index;
-        for (const value of state.values) { value.value.array = value.array; value.value.version = value.version; }
-        if (state.box !== null && state.boxValue !== undefined) state.box.copy(state.boxValue);
-        if (state.sphere !== null && state.sphereValue !== undefined) state.sphere.copy(state.sphereValue);
-        state.geometry.boundingBox = state.box; state.geometry.boundingSphere = state.sphere;
-    });
-    return recovery;
-  }
-  let lastSubShapeBundle: SubShapeHighlightBundle | null = null;
+  const subShapeResources = createSolidSubShapeResources(group, subShapeOverlays,
+    createSubShapeOverlay, applySubShapeOverlay, borrowedGeometryRelease);
+  const subShapeBodyOverlays = subShapeResources.bodyOverlays;
 
   /**
    * ねじの簡略表示の印(§0.a-0.15)。全ボディぶんを 1 本の `LineSegments` にまとめる
@@ -1392,27 +1297,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
 
     updateSubShapes(bundle): void {
       if (cleanup !== null) return;
-      retryUpdateCleanup();
-      if (bundle === lastSubShapeBundle) {
-        return;
-      }
-      const candidate = createViewportConstructionOwner();
-      const restore = checkpointSubShapeOverlays();
-      let hovered: ReturnType<typeof prepareSubShapeOverlays>, selected: ReturnType<typeof prepareSubShapeOverlays>;
-      try {
-        hovered = prepareSubShapeOverlays('hovered', bundle.hovered.batches, candidate);
-        selected = prepareSubShapeOverlays('selected', bundle.selected.batches, candidate);
-        hovered.publish(); selected.publish();
-      } catch (error) {
-        restore.dispose();
-        if (restore.pendingCount !== 0) pendingUpdateCleanup.push(restore);
-        const failure = candidate.fail(error);
-        if (failure.cleanup.pendingCount !== 0) pendingUpdateCleanup.push(failure.cleanup);
-        throw failure;
-      }
-      candidate.handoff();
-      lastSubShapeBundle = bundle;
-      hovered.retire(); selected.retire();
+      subShapeResources.update(bundle);
     },
 
     updateThreadMarks(marks): void {
@@ -1582,7 +1467,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
     },
 
     meshBufferBytes(): number {
-      if (pendingUpdateCleanup.length !== 0) throw new Error('Solid overlay retained backing is unknown');
+      if (subShapeResources.pendingCleanup.length !== 0) throw new Error('Solid overlay retained backing is unknown');
       let bytes = 0;
       for (const draw of draws) {
         bytes += geometryAttributeBytes(draw.mesh.geometry) + geometryAttributeBytes(draw.edges.geometry);
@@ -1603,7 +1488,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
         pickTargets.length = 0;
         idByObject.clear();
         cleanup.register('detach solid objects', () => { group.clear(); });
-        for (const owner of pendingUpdateCleanup) cleanup.register('failed overlay construction', () => {
+        for (const owner of subShapeResources.pendingCleanup) cleanup.register('failed overlay construction', () => {
           owner.dispose();
           if (owner.pendingCount !== 0) throw new Error(owner.errors.join('; '));
         });
@@ -1630,10 +1515,9 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       cleanup.dispose();
       if (cleanup.pendingCount !== 0) throw new Error(cleanup.errors.join('; '));
       draws.length = 0;
-      pendingUpdateCleanup = [];
+      subShapeResources.clear();
       threadMarkDraws.length = 0;
       printOpenEdgeDraws.clear();
-      for (const emphasis of SUB_SHAPE_EMPHASES) subShapeBodyOverlays[emphasis].clear();
       // 平面は材質が捨てられた後には誰も読まない。入れ物だけ空にしておく。
       sectionPlanes.length = 0;
       printability = null;
@@ -1641,7 +1525,6 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       lastSectionHandle = null;
       lastCutPreview = null;
       lastBundle = null;
-      lastSubShapeBundle = null;
       lastThreadMarks = null;
       lastSphereGridPositions = null;
       environment = null;

@@ -18,7 +18,7 @@ import {
   replaceSketch,
   type PartDocument,
 } from '@pointercad/model';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -30,6 +30,7 @@ import {
   type UnloadEvent,
   type UnloadTarget,
 } from './unsavedChangesGuard.js';
+import type * as ImportedPcadReadWorkerTypes from './pcadReadWorker.js';
 
 type Listener = (event: UnloadEvent) => void;
 
@@ -166,4 +167,13 @@ describe('頁を離れる前の未保存の確認(P12-24)', () => {
     expect(count()).toBe(0);
     expect(leave().prompted).toBe(false);
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('./pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

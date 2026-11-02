@@ -4,7 +4,7 @@ import { absoluteCoordinate, appendSolid, createEmptyPartDocument, nextSolidId, 
   recomputePart, replaceSolid, resolveSubShapeReference, type SubShapeRef, type PartDocument, type PartRecomputeResult,
   type SolidBody } from '@pointercad/model';
 import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
-import { buildEx18DirectSeed, withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.js';
+import { buildEx18DirectSeed, withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
 import { applyNumericTransition } from '../sketch/commitToStore.js';
 import { commitNumericInput, reduceNumericInput } from '../sketch/numericInput.js';
 import { attachPartRecompute } from '../store/attachKernel.js';

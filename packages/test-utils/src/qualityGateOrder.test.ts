@@ -11,12 +11,32 @@ function readRootFile(path: string): string {
   return readFileSync(new URL(path, rootUrl), 'utf8');
 }
 
+/** Only the accepted frozen 120 s and current 300 s windows, with their matching whole-test limits. */
+function expectHostInterferenceWindow(source: string, specs: readonly string[]): void {
+  const window = /^const INTERFERENCE_FOLLOW_MS = (120_000|300_000);$/mu.exec(source)?.[1];
+  expect(window, 'accepted finite interference window').toBeDefined();
+  if (window === '120_000') {
+    for (const spec of specs) {
+      expect(spec).toContain('const HOST_1000_TEST_TIMEOUT_MS = 900_000');
+      expect(spec).toContain('test.setTimeout(HOST_1000_TEST_TIMEOUT_MS + 5 * (120_000 - 60_000))');
+      expect(spec).not.toContain('test.setTimeout(ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS)');
+    }
+  } else if (window === '300_000') {
+    expect(source).toContain('export const ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS = 600_000 + INTERFERENCE_RUNS * INTERFERENCE_FOLLOW_MS');
+    for (const spec of specs) {
+      expect(spec).toMatch(/import \{[^}]*\bASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS\b[^}]*\} from '\.\/assembly1000HostFlow\.js'/u);
+      expect(spec).toContain('test.setTimeout(ASSEMBLY_1000_FUNCTIONAL_TIMEOUT_MS)');
+      expect(spec).not.toMatch(/test\.setTimeout\(HOST_1000_TEST_TIMEOUT_MS \+/u);
+    }
+  }
+}
+
 describe('品質ゲートのテスト実行順', () => {
   it('数学を先行し、失敗なら後続を止め、成功時も数学を二重実行しない', () => {
     const packageJson = JSON.parse(readRootFile('package.json')) as RootPackageJson;
 
     expect(packageJson.scripts?.test).toBe(
-      'pnpm --filter @pointercad/expression run test && pnpm --recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test',
+      'pnpm --filter @pointercad/expression run test && pnpm --filter @pointercad/fem run test && pnpm --recursive --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test',
     );
   });
 
@@ -260,15 +280,57 @@ describe('1000部品の参考4観測と安全・機能条件の境界', () => {
     expect(source).toContain("attachHostObservation(info, 'assembly-1000-observations.json'");
     expect(source).toContain("await writeFile(path, JSON.stringify(value, null, 2), { flag: 'wx' })");
     expect(source).toContain("await info.attach(name, { path, contentType: 'application/json' })");
-    for (const token of ['const INTERFERENCE_RUNS = 5', 'const INTERFERENCE_FOLLOW_MS = 60_000',
+    for (const token of ['const INTERFERENCE_RUNS = 5',
       'const HOST_CANCEL_TARGET_MS = 200', "judge('cancel', () => reportDuration(cancelMs, HOST_CANCEL_TARGET_MS,",
-      "'異なる1,000定義の組立の干渉（全経路）', 'interference'", 'expectSavedFile(new Uint8Array(savedBytes), shown)',
+      "HOST_INTERFERENCE_TARGET_MS, '異なる1,000定義の組立の干渉（全経路）')", 'expectSavedFile(new Uint8Array(savedBytes), shown)',
       'await expectLoaded(page,', 'driveTwoGroups(page, initial)', 'HOST_TOTAL - driven.size',
       'RING_VOLUME_MM3.toFixed(3)', "expect(runs.some((run) => run.progressSeen)", 'expect(errors).toEqual([])',
       "expect(judgements,"]) expect(source).toContain(token);
-    for (const spec of ['assembly-1000-host.spec.ts', 'electron-assembly-1000-host.spec.ts']) {
-      expect(readRootFile(`e2e/tests/${spec}`)).toContain('const HOST_1000_TEST_TIMEOUT_MS = 900_000');
+    expect(source).toContain('for (let run = 0; run < INTERFERENCE_RUNS; run += 1)');
+    expect(source).toContain("judge('interference completion', () => requireCompletedInterferenceRuns(runs, INTERFERENCE_RUNS))");
+    expect(source).toContain("timeout: INTERFERENCE_FOLLOW_MS, message: 'interference result painted'");
+    expect(source).toContain("await page.locator('.pcad-interference__close').click()");
+    expect(source).toContain("completed: false, progressSeen, rows: [], summary: '', error: null");
+    expect(source).toContain('if (measured.completed)');
+    const specs = ['assembly-1000-host.spec.ts', 'electron-assembly-1000-host.spec.ts']
+      .map((spec) => readRootFile(`e2e/tests/${spec}`));
+    expectHostInterferenceWindow(source, specs);
+    // Reject the original stale window, an unapproved extension and mismatched per-spec limits.
+    expect(() => expectHostInterferenceWindow(source.replace(/INTERFERENCE_FOLLOW_MS = [0-9_]+/u,
+      'INTERFERENCE_FOLLOW_MS = 60_000'), specs)).toThrow();
+    expect(() => expectHostInterferenceWindow(source.replace(/INTERFERENCE_FOLLOW_MS = [0-9_]+/u,
+      'INTERFERENCE_FOLLOW_MS = 600_000'), specs)).toThrow();
+    for (let index = 0; index < specs.length; index += 1) {
+      expect(() => expectHostInterferenceWindow(source, specs.map((spec, i) => i === index
+        ? spec.replace(/test\.setTimeout\([^)]*\)/gu, 'test.setTimeout(900_000)') : spec))).toThrow();
     }
     expect(readRootFile('e2e/tests/recompute.ts')).toContain('export const KERNEL_TIMEOUT_MS = RECOMPUTE_TIMEOUT_MS');
+  });
+});
+
+describe('曲面返信の複合窓の参考値と機能上限の境界', () => {
+  it('転用100msの必須判定を再導入せず、取消・有限待機・全機能を保持する', () => {
+    const source = readRootFile('packages/expression/src/math/functionSurfaceReplyResponse.test.ts');
+    expect(source).toContain("import { observeDuration } from '../../../test-utils/src/releasePerformance.js'");
+    expect(source).toContain('const LONG_TASK_REFERENCE_MS = 100');
+    expect(source).toContain('observeDuration(record?.blockedMs ?? Number.NaN, LONG_TASK_REFERENCE_MS,');
+    expect(source).toContain('observeDuration(record?.longestGapMs ?? Number.NaN, LONG_TASK_REFERENCE_MS,');
+    expect(source).toContain('observeDuration(receivingGapMs, LONG_TASK_REFERENCE_MS,');
+    expect(source).toContain('observeDuration(wholeGapMs, LONG_TASK_REFERENCE_MS,');
+    const hardTiming = /expect\s*\([^;]*?(?:blockedMs|longestGapMs|receivingGapMs|wholeGapMs)[^;]*?\)\s*\.toBeLessThan(?:OrEqual)?\s*\(/u;
+    expect(source).not.toMatch(hardTiming);
+    expect('expect(record?.longestGapMs ?? Infinity).toBeLessThanOrEqual(100);').toMatch(hardTiming);
+    for (const kept of ['const CANCEL_DELIVERY_LIMIT_MS = 1_000', 'const RUN_LIMIT_MS = 60_000',
+      'await client.evaluate(input, 30_000, abort.signal)',
+      'expect(record?.cancelDeliveryMs ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(CANCEL_DELIVERY_LIMIT_MS)',
+      "expect(record?.status).toBe('cancelled')", "expect(completion.status).toBe('cancelled')",
+      "status: 'rejected', reason: 'budget'", "status: 'rejected', reason: 'overlap'",
+      "status: 'rejected', reason: 'coverage'", 'work: 3_997_696', 'coveredCells: 16_384',
+      'client.dispose(); await port.close()', 'Number.isFinite(record.totalMs)',
+      'expect(record.totalMs).toBeGreaterThanOrEqual(0)',
+      "expect((await stale.evaluate(input, 30_000)).status).toBe('worker-error')"]) expect(source).toContain(kept);
+    const requirements = readRootFile('docs/requirements.md');
+    expect(requirements).toContain('曲面返信のNode Worker準備・通信・OS待ち・受信検査を含む複合窓');
+    expect(requirements).toContain('100msは全実測と達否を保持する参考値');
   });
 });

@@ -2,6 +2,7 @@ import { applyPlacementToPoint, modeledThreadGroupPickAt, resolveJointOccurrence
 import { boltedJointHoleSlotActive, type BoltedJointPickTarget, type BoltedJointThreadGroupTarget } from '../assembly/boltedJointDraft.js';
 import { beginComponentDrag, cancelComponentDrag, currentComponentDrag, finishComponentDrag, moveComponentDrag } from '../assembly/dragComponentActions.js';
 import { filletWeldPickKind } from '../assembly/filletWeldDraft.js';
+import { circularFilletWeldPickKind } from '../assembly/circularFilletWeldDraft.js';
 import { nestedBoltedJointHoleSlotActive } from '../assembly/nestedBoltedJointDisplay.js';
 import type { NestedBoltedJointPick } from '../assembly/nestedBoltedJointDraft.js';
 import { nestedWeldPickKind } from '../assembly/nestedWeldDraft.js';
@@ -131,6 +132,7 @@ export function pickAssemblyMateTarget(
  * それ以外は選ぶ種類の設定(部品のままなら面)。
  */
 function subShapePickKind(state: ReturnType<typeof useAppStore.getState>): Exclude<SelectionKind, 'body'> {
+  if (state.assemblyCircularWeldDraft !== null) return circularFilletWeldPickKind(state.assemblyCircularWeldDraft) === 'edge' ? 'edge' : 'face';
   // 入れ子の葉を1つでも選んだ溶接は、選んだものが入れ子の下書きにある(平らな picks は空)ので、そちらの数で決める。
   if (state.assemblyNestedWeldDraft !== null) return nestedWeldPickKind(state.assemblyNestedWeldDraft);
   if (state.assemblyFilletWeldDraft !== null) return filletWeldPickKind(state.assemblyFilletWeldDraft);
@@ -146,7 +148,7 @@ function awaitMateRefresh(waiting: Promise<boolean>, target: WeakRef<{ readonly 
 /** Assemblyの入力をpart用listenerから分離する。視点操作は先に登録されたcameraが所有する。 */
 export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: AssemblyPickScene, dragInput?: AssemblyDragInput): AssemblyInteraction {
   let detached = false;
-  let pendingMate: { readonly valid: () => boolean; readonly finish: (ready: boolean) => void;
+  let pendingMate: { readonly pointerId: number; readonly valid: () => boolean; readonly finish: (ready: boolean) => void;
     readonly bodyPoint: readonly [number, number] | null } | null = null;
   const cancelMate = (): void => { const previous = pendingMate; pendingMate = null; previous?.finish(false); };
   let captured: number | null = null;
@@ -184,9 +186,16 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     if (state.assembly === null || state.assemblyView === null || state.assemblyPlacement !== null || state.isComputing) return null;
     const at = pointer(event);
     if (observation !== undefined) observation.canvasPoint = at;
+    if (state.assemblyCircularWeldDraft !== null) {
+      const targetKind = circularFilletWeldPickKind(state.assemblyCircularWeldDraft);
+      if (targetKind === null) return null;
+      const kind = targetKind === 'edge' ? 'edge' : 'face';
+      return state.displaySettings.selectionFilter[kind]
+        ? pickJointOccurrenceTarget(state.assembly, state.assemblyView, scene, at, kind) : null;
+    }
     // 合致・ボルト締結・溶接の打ちかけでは、部品ではなく面(溶接は面と辺)を選ぶ。
     if (state.selectionKind === 'body' && state.assemblyMateDraft === null && state.assemblyBoltedJointDraft === null
-      && state.assemblyFilletWeldDraft === null) {
+      && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null) {
       try {
         return observation?.componentPick === undefined ? scene.pickComponent(at[0], at[1])
           : scene.pickComponent(at[0], at[1], observation.componentPick);
@@ -204,13 +213,13 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const holeSlot = state.assemblyNestedBoltDraft !== null ? nestedBoltedJointHoleSlotActive(state.assemblyNestedBoltDraft)
       : state.assemblyBoltedJointDraft !== null && boltedJointHoleSlotActive(state.assemblyBoltedJointDraft);
     // 入れ子の締結の打ちかけの間は、根の葉も根からの経路で選び、同じ入れ子の下書きへ渡す(平らな下書きへ混ぜない)。
-    const nestedBolt = state.assemblyNestedBoltDraft !== null && state.assemblyFilletWeldDraft === null;
+    const nestedBolt = state.assemblyNestedBoltDraft !== null && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null;
     const flat = nestedBolt ? null : pickAssemblyMateTarget(state.assembly, state.assemblyView, scene, at, kind, observation, holeSlot);
-    if (flat !== null || kind === 'vertex' || (state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null)) return flat;
+    if (flat !== null || kind === 'vertex' || (state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null)) return flat;
     // 入れ子の葉の部品は、締結・溶接の打ちかけの間だけ根からの経路で選ぶ(普通の合致・ドラッグの平らな対象へは流さない)。
     // Split modeled walls cannot first become a unique face reference. Validate
     // the occurrence and current group before the ordinary face-only fallback.
-    if (kind === 'face' && holeSlot && state.assemblyFilletWeldDraft === null) {
+    if (kind === 'face' && holeSlot && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null) {
       const hit = scene.pickAssemblyFace(at[0], at[1]);
       const source = state.assemblyView.source;
       if (hit !== null && hit.occurrencePath !== undefined && source !== undefined
@@ -299,7 +308,8 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       const resolved = state.assembly === null || state.assemblyView === null ? null
         : resolveJointOccurrencePick(state.assembly, state.assemblyLibrary, state.assemblyView, target);
       // 溶接・締結の打ちかけでは、それぞれの入れ子の下書きへ足す(順に合わない時は断り、文書と履歴は変えない)。
-      const accepted = resolved !== null && resolved.ok && (state.assemblyFilletWeldDraft !== null
+      const accepted = resolved !== null && resolved.ok && (state.assemblyCircularWeldDraft !== null
+        ? state.pickCircularWeldTarget({ path: target.path, reference: target.ref }) : state.assemblyFilletWeldDraft !== null
         ? state.pickNestedFilletWeldTarget(target)
         : state.assemblyBoltedJointDraft !== null && state.pickNestedBoltedJointTarget(target));
       if (observation !== undefined) {
@@ -324,7 +334,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       reportInput(observation);
     } else {
       if (state.assemblyMateDraft === null && state.assemblyBoltedJointDraft === null
-        && state.assemblyFilletWeldDraft === null) state.setSelection([]);
+        && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null) state.setSelection([]);
       reportInput(observation);
     }
   };
@@ -336,7 +346,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       eventTimeMs: event.timeStamp, clientPoint: [event.clientX, event.clientY], button: event.button, altKey: event.altKey,
       draftBefore: before.assemblyMateDraft?.targets.length ?? null,
       ...(before.selectionKind === 'body' && before.assemblyMateDraft === null
-        && before.assemblyBoltedJointDraft === null && before.assemblyFilletWeldDraft === null
+        && before.assemblyBoltedJointDraft === null && before.assemblyFilletWeldDraft === null && before.assemblyCircularWeldDraft === null
         ? { componentPick: {} } : {}),
     };
     event.stopImmediatePropagation();
@@ -349,7 +359,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     canvas.focus({ preventScroll: true });
     const state = useAppStore.getState();
     const bodySelection = state.selectionKind === 'body' && state.assemblyMateDraft === null
-      && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null;
+      && state.assemblyBoltedJointDraft === null && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null;
     // 部品の選択も同じ公開形状の所有証明が戻るまで保留し、失効した表示で空選択にしない。
     if (dragInput?.prepareMateInput !== undefined && state.assemblyView !== null
       && state.assemblyPlacement === null && !state.isComputing
@@ -368,6 +378,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
           && view?.resolved === state.assemblyView?.resolved && current.assemblyMateDraft === state.assemblyMateDraft
           && current.assemblyBoltedJointDraft === state.assemblyBoltedJointDraft
           && current.assemblyFilletWeldDraft === state.assemblyFilletWeldDraft
+          && current.assemblyCircularWeldDraft === state.assemblyCircularWeldDraft
           && current.assemblyNestedWeldDraft === state.assemblyNestedWeldDraft
           && current.assemblyPlacement === state.assemblyPlacement && current.selectionKind === state.selectionKind
           && current.selection === state.selection && current.displaySettings.selectionFilter === state.displaySettings.selectionFilter
@@ -385,7 +396,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       }
       if (waiting !== null) {
         let finished = false;
-        const input = { valid, bodyPoint: bodySelection ? pointer(event) : null, finish: (ready: boolean): void => {
+        const input = { valid, pointerId: event.pointerId, bodyPoint: bodySelection ? pointer(event) : null, finish: (ready: boolean): void => {
           if (finished) return;
           finished = true;
           if (observation !== undefined) observation.waiting = false;
@@ -411,7 +422,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
   };
   const onPointerMove = (event: PointerEvent): void => {
     const waitingPoint = pendingMate?.bodyPoint;
-    if (waitingPoint !== undefined && waitingPoint !== null) {
+    if (pendingMate?.pointerId === event.pointerId && waitingPoint !== undefined && waitingPoint !== null) {
       const at = pointer(event);
       // 待っている間に別の場所へ動いた入力を、元の部品の選択として採用しない。
       if (at[0] !== waitingPoint[0] || at[1] !== waitingPoint[1]) cancelMate();
@@ -460,7 +471,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     else finishComponentDrag(point);
   };
   const onPointerCancel = (event: PointerEvent): void => {
-    cancelMate();
+    if (pendingMate?.pointerId === event.pointerId) cancelMate();
     if (useAppStore.getState().assembly !== null) event.stopImmediatePropagation();
     if (captured !== null && event.pointerId === captured) cancelDrag();
   };
@@ -480,6 +491,12 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       event.preventDefault(); event.stopImmediatePropagation();
       if (event.key === 'Escape') state.cancelBoltedJoint();
       else state.commitBoltedJoint();
+      return;
+    }
+    if (state.assemblyCircularWeldDraft !== null && (event.key === 'Escape' || event.key === 'Enter')) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (event.key === 'Escape') state.cancelCircularWeld();
+      else if (state.assemblyCircularWeldPreview?.ok) state.commitCircularWeld(state.assemblyCircularWeldDraft, state.assemblyCircularWeldPreview);
       return;
     }
     // 溶接の打ちかけも同じ: Esc はやめる、Enter は予告が溶接できる時だけ文書を変える(`commitFilletWeld` が判定する)。

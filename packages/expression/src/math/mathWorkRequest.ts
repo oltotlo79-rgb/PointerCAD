@@ -1,6 +1,7 @@
 /** Validate and detach requests before they wait in the math queue or cross into its Worker. */
 import { MATH_INPUT_LIMITS, MathInputProblem, validateMathSource, validateMathDecimal, hasMathControlCharacters, type StoredMathExpression } from './mathInputContract.js';
 import { decodeStoredMathStructure } from './decodeStoredMath.js';
+import { isRecord } from './mathRecord.js';
 import { decodeCoefficientExpression, type MathCoefficientValue } from './mathCoefficientExpression.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { decodeMathVariableScope, assertMathVariableScope, type MathVariableScope } from './mathVariableScope.js';
@@ -41,9 +42,6 @@ export function createMathWorkEnvelope(serial:number,request:MathWorkRequest):Ma
   return decodeMathWorkEnvelope({kind:'evaluate-math',serial,request});
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 function record(value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
   if (!isRecord(value)) throw new MathInputProblem('syntax', '数式の依頼形式が不正です。');
   const keys = Object.keys(value);

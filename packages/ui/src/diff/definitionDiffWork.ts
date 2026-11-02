@@ -1,3 +1,4 @@
+import { sha256Hex } from '../sha256.js';
 import {
   attachmentsDigestOf, compareAssemblyDocuments, compareDocuments, compareDrawingDocuments, drawingSourceContentHash,
   drawingSourceInputHash, partLibraryOfBundle, type AssemblyLibraryDigest, type DocumentDefinitionComparison,
@@ -16,8 +17,7 @@ function read(bytes: Uint8Array) {
   return file;
 }
 async function textDigest(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  return sha256Hex(crypto.subtle, new TextEncoder().encode(text));
 }
 /** 組立が抱き込む部品・サブ組立は内容ハッシュ、添付は部品ごとのダイジェストを1つにまとめた値で比べる。 */
 async function libraryDigestOf(library: PartLibrary): Promise<AssemblyLibraryDigest> {

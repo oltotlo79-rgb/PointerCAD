@@ -20,7 +20,7 @@ import {
 } from '../solid/printCheckCommands.js';
 import { printabilityMatchesDisplayMeshes } from '../solid/printabilityColors.js';
 import type { AppState } from './appState.js';
-import { pendingFieldVariables } from '../shell/propertyFieldUnits.js';
+import { pendingFieldVariables } from '../shell/pendingFieldVariables.js';
 
 /**
  * 3D プリント向けの点検の要約と結果(FR-815、P6 §0.51・§0.53・§2.16、タスク42・43・46)。

@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 /**
  * 「見た目」の区画の配線のうち、下絵(FR-332、P6 タスク39)の読み込み。
  *
@@ -69,7 +70,7 @@ export async function addCanvasFromFile(): Promise<void> {
   // 3D スケッチ(作図面なし、FR-330)のときは基準の XY へ貼る(貼る面が要るため)。
   const plane = isFreeWorkPlaneId(latest.workPlaneId) ? DEFAULT_WORK_PLANE_ID : latest.workPlaneId;
   const canvas = newSketchCanvas(latest.document.canvases, plane, picked.fileName, image,
-    `canvas-image-${globalThis.crypto.randomUUID()}`);
+    createDocumentElementId('canvas-image-'));
   const pixelSize = { width: image.width, height: image.height };
   image.close?.();
   latest.addCanvas(canvas, picked.bytes);

@@ -1,3 +1,4 @@
+import { sha256Hex } from './sha256.js';
 /** Versioned planar PLC contracts, millimetres, one material domain.
  * This is a mesh, not a material assignment or a structural-analysis result. */
 import { exactTetrahedronOrientation, validatePlcTopology, type PlcShell } from './plcTopology.js';
@@ -19,6 +20,11 @@ export interface TetraMeshingControls {
   readonly grading: number;
   /** Zero to three actual move/swap optimization passes, only while the target is unmet. */
   readonly maximumOptimizationPasses: number;
+  /** One to boundaryNodes owned local restrictions, in mm; absent keeps the native default field. */
+  readonly localSizeConstraints?: readonly {
+    readonly positionMm: readonly [number, number, number];
+    readonly targetSizeMm: number;
+  }[];
   readonly quality: {
     readonly minimumMeanRatio: number;
     readonly maximumEdgeRatio: number;
@@ -69,8 +75,10 @@ function keys(value: Record<string, unknown>, names: readonly string[]): boolean
 function text(value: unknown): value is string { return typeof value === 'string' && value.length > 0 && value.length <= 1024; }
 /** Validate and own every native control; arbitrary native keyword/strategy injection is refused. */
 export function readTetraMeshingControls(value: unknown): TetraMeshingControls {
-  requireMesh(record(value) && keys(value, ['targetSizeMm', 'grading', 'maximumOptimizationPasses', 'quality']),
-    'meshing controls schema');
+  requireMesh(record(value), 'meshing controls schema');
+  const local = Object.hasOwn(value, 'localSizeConstraints');
+  requireMesh(keys(value, ['targetSizeMm', 'grading', 'maximumOptimizationPasses', 'quality',
+    ...(local ? ['localSizeConstraints'] : [])]), 'meshing controls schema');
   const { targetSizeMm, grading, maximumOptimizationPasses, quality } = value;
   requireMesh(typeof targetSizeMm === 'number' && Number.isFinite(targetSizeMm) && targetSizeMm > 0 && targetSizeMm <= 1e9
     && typeof grading === 'number' && Number.isFinite(grading) && grading > 0 && grading <= 1
@@ -82,7 +90,31 @@ export function readTetraMeshingControls(value: unknown): TetraMeshingControls {
     && minimumMeanRatio >= 0 && minimumMeanRatio <= 1
     && typeof maximumEdgeRatio === 'number' && Number.isFinite(maximumEdgeRatio) && maximumEdgeRatio >= 1,
   'meshing quality limits');
-  return { targetSizeMm, grading, maximumOptimizationPasses, quality: { minimumMeanRatio, maximumEdgeRatio } };
+  let localSizeConstraints: TetraMeshingControls['localSizeConstraints'];
+  if (local) {
+    const entries = value.localSizeConstraints;
+    // Reuse the PLC boundary-point budget; this is an input-size cap, not a mesh quality claim.
+    requireMesh(Array.isArray(entries) && entries.length > 0 && entries.length <= TETRA_LIMITS.boundaryNodes
+      && Reflect.ownKeys(entries).length === entries.length + 1, 'bounded local size constraints');
+    const seen = new Set<string>();
+    localSizeConstraints = Array.from(entries, (entry: unknown, index) => {
+      requireMesh(Object.hasOwn(entries, index) && record(entry)
+        && Reflect.ownKeys(entry).length === 2 && keys(entry, ['positionMm', 'targetSizeMm']), 'local size constraint schema');
+      const position = entry.positionMm, size = entry.targetSizeMm;
+      requireMesh(Array.isArray(position) && position.length === 3 && Reflect.ownKeys(position).length === 4
+        && [0, 1, 2].every(axis => Object.hasOwn(position, axis)
+          && typeof position[axis] === 'number' && Number.isFinite(position[axis])), 'finite local size position');
+      requireMesh(typeof size === 'number' && Number.isFinite(size) && size > 0 && size <= 1e9,
+        'bounded local target size');
+      const coordinates = numbers(position, 3);
+      const positionMm: [number, number, number] = [coordinates[0], coordinates[1], coordinates[2]];
+      const identity = JSON.stringify(positionMm);
+      requireMesh(!seen.has(identity), 'duplicate local size position'); seen.add(identity);
+      return { positionMm, targetSizeMm: size };
+    });
+  }
+  return { targetSizeMm, grading, maximumOptimizationPasses, quality: { minimumMeanRatio, maximumEdgeRatio },
+    ...(localSizeConstraints === undefined ? {} : { localSizeConstraints }) };
 }
 function numbers(value: unknown, maximum: number, integer = false): number[] {
   requireMesh(Array.isArray(value) && value.length > 0 && value.length <= maximum, 'bounded dense array required');
@@ -223,8 +255,7 @@ export function readTetraMeshInput(value: unknown): TetraMeshInput {
 }
 export async function tetraMeshInputSha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(readTetraMeshInput(value)));
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest), n => n.toString(16).padStart(2, '0')).join('');
+  return await sha256Hex(bytes);
 }
 
 /** Native output is a positive tetrahedral chain with exactly the supplied

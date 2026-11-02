@@ -2,7 +2,7 @@ import { Children, isValidElement, type ReactNode } from 'react';
 import { createBeamSession } from './beamSession.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { beamJointContactInputSha256, decodeBeamJointContact, beamJointInitialStrainInputSha256, decodeBeamJointInitialStrain,
-  recoverJointWeldThroatStress, recoverInitialStrainWeldThroatStress } from '@pointercad/fem';
+  type recoverJointWeldThroatStress, type recoverInitialStrainWeldThroatStress } from '@pointercad/fem';
 import { initialStrainTestInput, initialStrainTestRaw } from '../../../fem/src/beamJointInitialStrain.testSupport.js';
 import { prepareWeldStressRequest } from './BeamWeldThroatStressResults.js';
 import { BeamJointInitialStrainResults } from './BeamJointInitialStrain.js';

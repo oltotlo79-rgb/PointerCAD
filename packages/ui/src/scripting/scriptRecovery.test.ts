@@ -7,6 +7,7 @@ import { attachPartRecompute } from '../store/attachKernel.js';
 import { createFakeRecompute, resetTestStore, resultFor, tick } from '../store/testing/createTestStore.js';
 import { loadAutoSavePrompt, restoreAutoSave, startAutoSave } from '../file/attachAutoSave.js';
 import { runScript } from './scriptActions.js';
+import type * as ImportedPcadReadWorkerTypes from '../file/pcadReadWorker.js';
 
 describe('自動作図の成功だけを通常の控えへ保存して復元する', () => {
   it('構成・式・立体を控えから復元し、失敗した次の処理では控えを失わない', async () => {
@@ -55,4 +56,13 @@ describe('自動作図の成功だけを通常の控えへ保存して復元す�
       expect(await storage.listRecords()).toEqual([record]);
     } finally { detach(); detachKernel(); useAppStore.getState().cancelScript(); }
   });
+});
+
+// Explicit headless read boundary: retain the real IO readers and all existing expectations.
+vi.mock('../file/pcadReadWorker.js', async importOriginal => {
+  const actual = await importOriginal<typeof ImportedPcadReadWorkerTypes>();
+  const io = await import('@pointercad/io');
+  return { ...actual, readPcadInWorker: async (kind: 'part' | 'assembly' | 'drawing', bytes: Uint8Array) =>
+    kind === 'part' ? io.readPcadFile(bytes) : kind === 'assembly'
+      ? io.readDocumentBundle(bytes, 'assembly') : io.readDrawingBundle(bytes) };
 });

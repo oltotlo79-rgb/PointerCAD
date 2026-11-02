@@ -60,3 +60,18 @@ packages/help-content/docs/ja/math-symbols.md text eol=lf
 
 # Preserve every pinned runtime asset, generated inventory and upstream notice verbatim.
 /packages/fem/runtime/** -text
+
+# These source programs have canonical LF bytes fixed by beamWeldSpanAssets.ts.
+/packages/fem/src/beamContact.py text eol=lf
+/packages/fem/src/beamWeldSpan.py text eol=lf
+/packages/fem/src/beamWeldSpanContact.py text eol=lf
+
+# Preserve the exact captured native input/result bytes used by their SHA-256 oracles.
+/packages/fem/src/fixtures/friction-native/input.json -text
+/packages/fem/src/fixtures/friction-native/newton-raw.json -text
+/packages/fem/src/fixtures/friction-native/nsgs-raw.json -text
+/packages/fem/src/nativeBoltPreload.input.fixture.json -text
+/packages/fem/src/nativeBoltPreload.result.fixture.json -text
+
+# The shipped linear-solid program must match its reviewed source bytes on both OS.
+/packages/fem/src/solidAnalysis.py text eol=lf

@@ -1,6 +1,6 @@
 /**
  * Turn the current viewport/tree selection into the math-geometry quantities it could define
- * (design doc §4(a) の「測る量」欄; scratchpad/claude/plans/geomref-plan.md).
+ * (quantities validated by packages/model/src/measure/mathGeometry.ts).
  *
  * Never offer a quantity the model would refuse: every filter here mirrors a rule enforced by
  * `packages/model/src/measure/mathGeometry.ts`'s `evaluate()` (NFR-UX-5 — a shown option must work).

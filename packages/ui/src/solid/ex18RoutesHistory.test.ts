@@ -10,14 +10,14 @@ import { buildEx18SketchBracket, buildEx18SewnBracket, buildEx18ExpressionBracke
   buildEx18RevolvedFlange, buildEx18RuledFlange, buildEx18ExpressionFlange,
   buildEx18ExtrudedOblique, buildEx18SewnOblique, buildEx18ExpressionOblique,
   editEx18SketchHoleDiameter, editEx18SewnDiameter, editEx18ExpressionDiameter, moveEx18ExpressionHole,
-  editEx18RevolvedFlangeRadius, editEx18FlangeBore, editEx18ObliqueDepth, routeExpression } from '../../../model/src/part/ex18RouteBuilders.js';
-import { appendEx18DirectEdit, directFaceReference, directPlanarFace, importEx18DirectSeed } from '../../../model/src/part/ex18RouteBuildersDirect.js';
+  editEx18RevolvedFlangeRadius, editEx18FlangeBore, editEx18ObliqueDepth, routeExpression } from '../../../model/src/part/ex18RouteBuilders.testSupport.js';
+import { appendEx18DirectEdit, directFaceReference, directPlanarFace, importEx18DirectSeed } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
 import { buildEx18ContextAssembly, buildEx18ContextPart, buildEx18ContextSource, contextPlacement,
-  ex18ContextSourceFace } from '../../../model/src/assembly/ex18ContextRouteBuilders.js';
+  ex18ContextSourceFace } from '../../../model/src/assembly/ex18ContextRouteBuilders.testSupport.js';
 import { EX18_ORACLE_EXPECTATIONS, EX18_ORACLE_A_DIAMETER_EIGHT, EX18_ORACLE_B_RADIUS_FOUR,
   EX18_ORACLE_C_DEPTH_TWELVE, EX18_ORACLE_A_HOLE_X_TWELVE, EX18_ORACLE_B_CONTEXT_MOVED,
-  EX18_ORACLE_C_CONTEXT_MOVED } from '../../../model/src/part/ex18RouteFixtures.js';
-import { compareEx18Shape, type Ex18ShapeExpectation } from '../../../model/src/part/ex18ShapeOracle.js';
+  EX18_ORACLE_C_CONTEXT_MOVED } from '../../../model/src/part/ex18RouteFixtures.testSupport.js';
+import { compareEx18Shape, type Ex18ShapeExpectation } from '../../../model/src/part/ex18ShapeOracle.testSupport.js';
 import { attachPartRecompute } from '../store/attachKernel.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';

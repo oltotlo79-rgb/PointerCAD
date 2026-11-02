@@ -1,3 +1,4 @@
+import { crossVec3 as cross } from '@pointercad/model/vec3';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamImpactInput, BeamImpactSample } from './beamImpactModel.js';
 import { translateBeamImpact } from './beamImpactTranslation.js';
@@ -43,7 +44,6 @@ function vector(value: unknown): value is Vector3 {
   return dense(value) && value.length === 3 && value.every(item => typeof item === 'number' && Number.isFinite(item));
 }
 const fail = (message: string): never => { throw new Error(`impact-interior: ${message}`); };
-const cross = (a: Vector3, b: Vector3): Vector3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 /** Rigid-body modes of a two-node element at its own positions: 3 translations and 3 small rotations about the start.
  * Any valid element stiffness maps them to zero force, so a block for other geometry or a corrupted block is refused. */

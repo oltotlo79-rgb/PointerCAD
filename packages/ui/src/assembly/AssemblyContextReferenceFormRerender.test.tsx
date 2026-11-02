@@ -11,10 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { AssemblyContextReferenceForm } from './AssemblyContextReferenceForm.js';
+import type * as ImportedReactTypes from 'react';
 
 // 既存の AssemblyPropertyPanel.test.ts と同じく、本物の useState を包んで描き直しを再現する。
 vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
+  const actual = await importOriginal<typeof ImportedReactTypes>();
   return { ...actual, useState: vi.fn(actual.useState) };
 });
 
@@ -73,7 +74,7 @@ interface ProbeProps {
  * form は setter に値だけを渡す(関数の更新は使わない)。
  */
 async function rerenderingState(): Promise<{ readonly beginRender: () => void }> {
-  const actual = await vi.importActual<typeof import('react')>('react');
+  const actual = await vi.importActual<typeof ImportedReactTypes>('react');
   const values: unknown[] = [];
   let slot = 0;
   vi.mocked(useState).mockImplementation((initial?: unknown): [unknown, React.Dispatch<React.SetStateAction<unknown>>] => {
@@ -123,7 +124,7 @@ beforeEach(() => {
   vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
 });
 afterEach(async () => {
-  const actual = await vi.importActual<typeof import('react')>('react');
+  const actual = await vi.importActual<typeof ImportedReactTypes>('react');
   vi.mocked(useState).mockImplementation(actual.useState);
   vi.restoreAllMocks();
   resetTestStore();

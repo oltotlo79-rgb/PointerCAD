@@ -164,6 +164,8 @@ function readDefinition(value: unknown, ownerId: string): StandardBeamDefinition
       throw new InputIssue('unsupported-analysis', '$', 'Use the explicit contact preparation for schema 5');
     case 'pointercad-standard-beam/6':
       throw new InputIssue('unsupported-analysis', '$', 'Use the explicit impact preparation for schema 6');
+    case 'pointercad-standard-beam/7':
+      throw new InputIssue('unsupported-analysis', '$', 'Use the frictional contact CAD adapter for schema 7, never the static route');
     default:
       return unroutedDefinition(definition);
   }

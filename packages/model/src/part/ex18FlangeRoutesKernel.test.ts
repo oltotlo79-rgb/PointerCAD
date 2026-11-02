@@ -8,9 +8,9 @@ import type { CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js'
 import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
 import { createDirectKernelBridge, type KernelBridge } from '../kernelBridge.js';
 import { buildEx18ExpressionFlange, buildEx18RevolvedFlange, buildEx18RuledFlange,
-  editEx18FlangeBore, editEx18RevolvedFlangeRadius, type Ex18BCRoute } from './ex18RouteBuilders.js';
-import { EX18_ORACLE_B_RADIUS_FOUR, EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.js';
-import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation, type Ex18ShapeMeasurement } from './ex18ShapeOracle.js';
+  editEx18FlangeBore, editEx18RevolvedFlangeRadius, type Ex18BCRoute } from './ex18RouteBuilders.testSupport.js';
+import { EX18_ORACLE_B_RADIUS_FOUR, EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.testSupport.js';
+import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation, type Ex18ShapeMeasurement } from './ex18ShapeOracle.testSupport.js';
 import { recomputePart } from './recomputePart.js';
 import type { ResolvedPart } from './resolvePart.js';
 import type { PartDocument } from './types.js';

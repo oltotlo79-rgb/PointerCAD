@@ -12,6 +12,10 @@ import { createEmptyPartDocument } from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { beginDocumentRequest } from './documentRequest.js';
+import { captureDocumentIdentity, compareDocumentIdentity } from './documentRequest.js';
+import { beginDocumentRequest as beginDocumentRequestCore, captureDocumentIdentity as captureDocumentIdentityCore,
+  compareDocumentIdentity as compareDocumentIdentityCore } from './documentRequestCore.js';
+
 import { resetTestStore } from './testing/createTestStore.js';
 import { useAppStore } from './useAppStore.js';
 
@@ -188,5 +192,46 @@ describe('待ちをはさむ文書操作の見張り', () => {
     expect(REFERENCE_COMPARISON.test(versionOnly)).toBe(false);
     expect(REFERENCE_COMPARISON.test('current.document !== before.document')).toBe(true);
     expect(DOCUMENT_MUTATION.test('before.openAssembly(result.bundle.document, library)')).toBe(true);
+  });
+});
+
+describe('状態readerと共有channelの境界', () => {
+  it('wrapperとcoreの同じchannelが両方向に先行依頼を失効させる', () => {
+    const first = beginDocumentRequest('test.core.shared');
+    const second = beginDocumentRequestCore('test.core.shared', useAppStore.getState);
+    expect(first.status()).toBe('superseded');
+    expect(second.status()).toBe('current');
+    const third = beginDocumentRequest('test.core.shared');
+    expect(second.status()).toBe('superseded');
+    second.accept();
+    expect(second.status()).toBe('superseded');
+    expect(third.status()).toBe('current');
+  });
+
+  it('accept時と待機後に指定storeだけを読み、別storeの控えを受け入れない', async () => {
+    const singleton = useAppStore.getState();
+    let local = { ...singleton, activeDocumentId: 'local-opening', document: { ...singleton.document, name: 'local' } };
+    const request = beginDocumentRequestCore('test.core.local', () => local);
+    expect(request.status()).toBe('current');
+    const foreign = beginDocumentRequestCore('test.core.foreign', () => local, singleton);
+    expect(foreign.status()).toBe('switched');
+    local = { ...local, document: { ...local.document, name: 'edited local' } };
+    expect(request.status()).toBe('changed');
+    request.accept();
+    expect(request.status()).toBe('current');
+    const afterAccept = local;
+    renamePart('singleton-only edit');
+    await Promise.resolve();
+    expect(request.status()).toBe('current');
+    expect(local).toBe(afterAccept);
+    local = { ...local, activeDocumentId: 'next-local-opening' };
+    await Promise.resolve();
+    expect(request.status()).toBe('switched');
+    expect(useAppStore.getState().document.name).toBe('singleton-only edit');
+  });
+
+  it('旧公開のidentity関数は同じleafの実体を再exportする', () => {
+    expect(captureDocumentIdentity).toBe(captureDocumentIdentityCore);
+    expect(compareDocumentIdentity).toBe(compareDocumentIdentityCore);
   });
 });

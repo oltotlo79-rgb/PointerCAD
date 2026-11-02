@@ -7,7 +7,8 @@ import { waitForStartupHealth } from './startupHealth.js';
 export async function canvasStateFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
   await page.setViewportSize({ width: 1152, height: 720 });
   await waitForStartupHealth(page, info);
-  const bytes = await samplePng(page, 'rgb(255, 0, 0)', 128);
+  // Keep A distinguishable from the axes at the saved opacity of 0.25 as well.
+  const bytes = await samplePng(page, 'rgb(255, 64, 0)', 128);
   await addImage(page, 'A.png', bytes); await expectImage(page, 'A');
   const row = canvasRow(page, 'A.png'), opacity = row.getByRole('textbox', { name: '濃さ A.png', exact: true });
   const scale = row.getByRole('button', { name: 'A.png の寸法を合わせる', exact: true });
@@ -81,9 +82,10 @@ export async function canvasStateFlow(page: Page, info: TestInfo, app?: Electron
   const retryBounds = await retry.boundingBox(); expect(retryBounds).not.toBeNull();
   if (retryBounds === null) throw new Error('Missing retry control');
   expect(retryBounds.x).toBeGreaterThanOrEqual(0); expect(retryBounds.x + retryBounds.width).toBeLessThanOrEqual(1152);
+  const retryBackground = await page.locator('canvas.pcad-viewport__canvas').screenshot();
   await retry.focus(); await retry.press('Enter');
   await expect(row.getByRole('status')).toHaveText('使用可能'); await expect(scale).toBeEnabled();
-  await expect(row).toContainText('128 × 64 px'); await expectImage(page, 'A');
+  await expect(row).toContainText('128 × 64 px'); await expectImage(page, 'A', retryBackground);
   await scale.focus(); await scale.press('Enter');
   await expect(page.locator('.pcad-canvas-scale')).toContainText('1 点目を押してください');
   await page.locator('.pcad-canvas-scale').getByRole('button', { name: 'やめる', exact: true }).click();

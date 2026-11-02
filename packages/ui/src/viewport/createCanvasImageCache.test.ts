@@ -140,7 +140,7 @@ it.each(['before disposal', 'after disposal'] as const)(
   'returns every decoded image exactly once across 100 cache lifetimes completing %s', async completion => {
     openPart('A', bytesA);
     const images: ReturnType<typeof image>[] = [];
-    type PendingLifetime = { h: ReturnType<typeof harness>; decoded: ReturnType<typeof image> };
+    interface PendingLifetime { h: ReturnType<typeof harness>; decoded: ReturnType<typeof image> }
     let previous: PendingLifetime | null = null;
     async function settleDisposed(entry: PendingLifetime): Promise<void> {
       const state = useAppStore.getState();

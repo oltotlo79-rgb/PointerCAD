@@ -34,8 +34,8 @@ test.use({ viewport: { width: 1440, height: 900 } });
 // どの組に入る想定か: 3組目(単独)。math-input.spec.ts(57件)のうち実測43.2分相当の
 // 22件を持ち、a-math-input.spec.ts(1組目)・math-input.spec.ts(2組目、約43.1分)と
 // 合わせて3組がほぼ均等になる。
-// 根拠の実測: scratchpad/claude/agents/w95a-split-slow-specs/mi_times.txt と
-// plan_chunks2.py(w95a)。
+// 根拠の実測: CI run 36346675432 の job-108697069540.log（各テストの秒数）と
+// 実測秒数で所要を均等化するduration-balanced 3分割の計算。
 test.describe.configure({ mode: 'parallel' });
 test('ADD-24 一様・指数・ポアソン分布の条件と保存再編集・Undo・F1を通す', async ({ page }, info) => {
   test.setTimeout(180_000);

@@ -1,5 +1,5 @@
 import {
-  solveDrivenJoint, solveDrivenJointSteps, type JointCoordinate, type SolveDrivenJointOutcome,
+  type solveDrivenJoint, solveDrivenJointSteps, type JointCoordinate, type SolveDrivenJointOutcome,
   type RigidWorkBudget, type RigidWorkPoint,
 } from '@pointercad/model';
 import { currentJointSliderValue, jointSliderBounds, jointSliderReference } from '../assembly/jointSlider.js';

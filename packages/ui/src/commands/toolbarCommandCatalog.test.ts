@@ -5,7 +5,14 @@ import { COMMAND_DEFINITIONS, commandDefinition } from './commandDefinitions.js'
 
 describe('toolbar command catalog', () => {
   it('部品・組立・板金・図面の操作を登録し、保存の別入口を二重に割り当てない', () => {
-    const originalGroups = TOOLBAR_COMMAND_CATALOG.filter(entry => !['sheetMetal', 'script', 'drawing', 'view', 'plane', 'reference', 'snap', 'assemblyUtility'].includes(entry.group));
+    const expandedGroups = TOOLBAR_COMMAND_CATALOG.filter(entry => !['sheetMetal', 'script', 'drawing', 'view', 'plane', 'reference', 'snap', 'assemblyUtility', 'analysis'].includes(entry.group));
+    // The ninth assembly item is circular weld; keep all pre-existing count partitions below.
+    expect(expandedGroups.filter(entry => entry.sourceId === 'circularFilletWeld')).toEqual([{
+      id: 'toolbar.assembly.circularFilletWeld', group: 'assembly', sourceId: 'circularFilletWeld',
+      labelKey: 'assembly.circularFilletWeld.title', tooltipKey: 'assembly.circularFilletWeld.pickPlane',
+      documentKinds: ['assembly'], helpTopic: 'assembly-place',
+    }]);
+    const originalGroups = expandedGroups.filter(entry => entry.id !== 'toolbar.assembly.circularFilletWeld');
     // GR-30 が「見た目」へ「図形の測定値」を1行足したので 109 → 110(Q1=A4)。
     // R16 adds exactly one shared save-point command; drawing aliases it.
     // 追加要件6 が「組む」へ「ボルトで締結」「締結を外す」の2項目を足したので 111 → 113。
@@ -44,6 +51,11 @@ describe('toolbar command catalog', () => {
     expect(toolbarCommandId('solidCombine', 'subtract')).toBe('toolbar.solidCombine.subtract');
   });
 
+  it('固定するは組み立ての固定操作の説明を開く', () => {
+    expect(commandDefinition(toolbarCommandId('assembly', 'toggleFixed'))?.helpTopic).toBe('assembly');
+    expect(findHelpTopic('assembly')).toBeDefined();
+  });
+
   it.each([
     ['annotation', 'surface-finish'], ['note', 'drawing-note'], ['refreshSource', 'drawing'],
     ['centerMark', 'drawing-views'], ['hidden', 'drawing-views'], ['centers', 'drawing-views'],
@@ -70,4 +82,19 @@ it('保存点は部品・組立・図面で同じcommand IDと説明を使い、
   expect(TOOLBAR_COMMAND_CATALOG.filter(entry => entry.id === id)).toHaveLength(1);
   expect(commandDefinition(id)?.documentKinds).toEqual(['part', 'assembly', 'drawing']);
   expect(commandDefinition(id)?.helpTopic).toBe('save-and-open');
+});
+
+it('registers seven analysis entries separately while preserving the original command partitions', () => {
+  const entries = TOOLBAR_COMMAND_CATALOG.filter(entry => entry.group === 'analysis');
+  expect(entries.map(entry => [entry.sourceId, entry.documentKinds])).toEqual([
+    ['beam', ['assembly']], ['plasticBar', ['part', 'assembly']], ['fatigue', ['part', 'assembly']],
+    ['fatigueStrain', ['part', 'assembly']], ['fatigueLocalCycle', ['part', 'assembly']],
+    ['solidAnalysis', ['part']], ['solidPlastic', ['part']],
+  ]);
+  for (const entry of entries) {
+    expect(entry.id).toBe(`toolbar.analysis.${entry.sourceId}`);
+    expect(commandDefinition(entry.id)).toMatchObject({ labelKey: entry.labelKey, documentKinds: entry.documentKinds, helpTopic: 'strength' });
+    expect(findHelpTopic(entry.helpTopic)?.path).toBe('docs/ja/strength.md');
+  }
+  expect(commandDefinition('toolbar.look.strength')?.helpTopic).toBe('strength');
 });

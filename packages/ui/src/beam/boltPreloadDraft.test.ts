@@ -30,6 +30,42 @@ function fixture() {
   return { ...f, saved, state, snapshot, session: restoreBoltPreloadDraft(saved) };
 }
 describe('explicit saved bolt UI draft, pure preparation', () => {
+  it('normalizes fullwidth numeric input only at confirmation and preserves source and ordered loads', () => {
+    const f = savedBoltFixture();
+    let session = restoreBoltPreloadDraft(f.saved);
+    session = editBoltPreloadDraft(session, { kind: 'number', field: 'preloadN', text: '４０００' });
+    session = editBoltPreloadDraft(session, { kind: 'number', field: 'threadCompliance', text: '＋２．０e－９' });
+    session = editBoltPreloadDraft(session, { kind: 'loads', valuesN: ['０', '１．２５e＋３', '５０００', '０'] });
+    expect(session.values.preloadN).toBe('４０００');
+    expect(session.values.threadCompliance).toBe('＋２．０e－９');
+    expect(session.loadsN).toEqual(['０', '１．２５e＋３', '５０００', '０']);
+    const saved = boltPreloadDraftSavedInput(confirmBoltPreloadDraft(session, true));
+    expect(saved.input.declaration.preloadN.value).toBe(4000);
+    expect(saved.input.declaration.threadCompliance.value).toBe(2e-9);
+    expect(saved.input.declaration.preloadN.source).toEqual(f.saved.input.declaration.preloadN.source);
+    expect(saved.input.declaration.externalLoadsN).toEqual([0, 1250, 5000, 0]);
+    expect(saved.cadDefinition.contact.loadFactors).toEqual([0, 0, 1250, 5000, 0]);
+    expect(saved.revision).toBe(f.saved.revision + 3);
+  });
+  it('keeps invalid, negative, nonfinite, expression and unit inputs rejected after normalization', () => {
+    const session = restoreBoltPreloadDraft(savedBoltFixture().saved);
+    for (const text of ['', '＋', '１e－', '１ｅ３', 'NaN', 'Infinity', '１e３０９', '－１', '４０００N', '１＋２', '１／２', '０x１０']) {
+      const edited = editBoltPreloadDraft(session, { kind: 'number', field: 'preloadN', text });
+      expect(edited.values.preloadN).toBe(text);
+      expect(() => confirmBoltPreloadDraft(edited, true)).toThrow();
+    }
+    for (const text of ['－１', 'NaN', '１e３０９', '２×３', '１N']) {
+      expect(() => boltPreloadDraftSavedInput(editBoltPreloadDraft(session, { kind: 'loads', valuesN: ['０', text] }))).toThrow();
+    }
+  });
+  it('invalidates prior review on a fullwidth edit and preserves stale-source rejection', async () => {
+    const f = fixture(); let current = confirmBoltPreloadDraft(f.session, true);
+    current = await reviewBoltPreloadDraft(current, f.snapshot, () => ({ state: f.state, session: current }));
+    const changed = editBoltPreloadDraft(current, { kind: 'number', field: 'preloadN', text: '４０００' });
+    expect(changed).toMatchObject({ revision: current.revision + 1, confirmed: false, reviewed: null, result: null });
+    expect(() => reviewedBoltPreloadWire(changed, f.state)).toThrow();
+    expect(() => reviewedBoltPreloadWire(current, { ...f.state, documentVersion: f.state.documentVersion + 1 })).toThrow();
+  });
   it('restores unchanged saved values and SI units without defaults or physics', () => {
     const f = savedBoltFixture(), session = restoreBoltPreloadDraft(f.saved);
     expect(boltPreloadDraftSavedInput(session)).toEqual(f.saved);

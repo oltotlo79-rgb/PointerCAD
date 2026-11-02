@@ -1,11 +1,11 @@
 import { exactExpressionValueFromNumber } from '@pointercad/expression';
 import type { Parameter } from '@pointercad/model';
 import type { CadJointInitialStrain } from '@pointercad/model/beam-analysis';
-import type { BeamJointInitialStrainResult } from '@pointercad/fem';
+import type { BeamWeldSpanContactResult, BeamJointInitialStrainResult, FrictionContactResult } from '@pointercad/fem';
 import { readBeamAnalysisInputs, type BeamAnalysisResult, type BeamModalResult, type PropertySource,
   type StandardBeamDefinition, type StandardBeamBucklingDefinition, type StandardBeamTransientDefinition,
-  type StandardBeamContactDefinition, type StandardBeamContactInput, type StandardBeamImpactDefinition,
-  type CadAxialBolt, type CadWeldLayer,
+  type StandardBeamContactDefinition, type StandardBeamContactInput, type StandardBeamImpactDefinition, type StandardBeamFrictionDefinition,
+  type CadAxialBolt, type CadWeldLayer, type CadWeldSpanInputs,
   type BeamTransientHistory, type StandardBeamFibreOutline, type Vector3 } from '@pointercad/model/beam-analysis';
 import { MAX_BEAM_CONTACTS, MAX_CONTACT_LOAD_FACTORS, type BeamBucklingResult, type BeamContactAnalysisResult, type BeamBoltContactResult, type BeamWeldContactResult, type BeamJointContactResult,
   type BeamTransientResult, type BucklingRestraints, type FemPhase, type TransientAxialResponse,
@@ -61,7 +61,11 @@ export interface ContactDraft {
   readonly loadFactors: readonly string[];
 }
 export type ContactValueField = 'normalX' | 'normalY' | 'normalZ' | 'gap';
-export type BeamAnalysisType = 'static' | 'modal' | 'buckling' | 'transient' | 'contact' | 'impact';
+export interface FrictionLoadDraft { readonly id: string; readonly nodeId: string; readonly force: readonly [string, string, string]; readonly moment: readonly [string, string, string] }
+export interface FrictionDraft { readonly coefficients: Readonly<Record<string, string>>; readonly solver: 'newton' | 'nsgs'; readonly iterationLimit: string; readonly steps: readonly { readonly loads: readonly FrictionLoadDraft[] }[] }
+/** Owned, immutable restored inputs; reused only while the editable geometry and source still match. */
+interface FrictionRestoreBaseline { readonly definition: StandardBeamFrictionDefinition; readonly geometryKey: string; readonly openedSource: BeamDefinition['source'] }
+export type BeamAnalysisType = 'static' | 'modal' | 'buckling' | 'transient' | 'contact' | 'impact' | 'friction';
 export const TRANSIENT_DRAFT_MAXIMUM_SAMPLES = 256;
 export interface BeamSession {
   readonly ownerId: string;
@@ -80,16 +84,20 @@ export interface BeamSession {
   /** View-only choice of the displayed transient sample index and original node index; never saved. */
   readonly transientView: { readonly sample: number; readonly node: number };
   readonly contact: ContactDraft;
+  readonly friction: FrictionDraft;
+  readonly frictionRestoreBaseline?: FrictionRestoreBaseline;
   /** Editable impact text (velocities m/s, stiffness N/m, history s); its fixed planes are the node-plane contact rows. */
   readonly impact: ImpactDraft;
   readonly axialBolts: readonly CadAxialBolt[];
   readonly weldLayers: readonly CadWeldLayer[];
+  /** Explicit /2 association and its original source; never a fabricated legacy endpoint. */
+  readonly weldSpanLayers: CadWeldSpanInputs | null;
   readonly initialStrain: CadJointInitialStrain | null;
   /** View-only choice of the displayed contact load state; never saved. */
   readonly contactView: { readonly state: number };
   readonly result: BeamAnalysisResult | BeamModalResult | BeamBucklingResult | BeamTransientResult
-    | BeamContactAnalysisResult | BeamBoltContactResult | BeamWeldContactResult | BeamJointContactResult | BeamJointInitialStrainResult
-    | BeamImpactResult | null;
+    | BeamContactAnalysisResult | BeamBoltContactResult | BeamWeldContactResult | BeamJointContactResult | BeamJointInitialStrainResult | BeamWeldSpanContactResult
+    | BeamImpactResult | FrictionContactResult | null;
   readonly bucklingEdges: BucklingEdges;
   /** Derived from the accepted transient result and its exact input; shown only while it matches the result. */
   readonly transientAxial: TransientAxialResponse | null;
@@ -100,8 +108,18 @@ export interface BeamSession {
   readonly diagnostic: string | null;
 }
 export type BeamEdit =
+  | { readonly kind: 'friction-coefficient'; readonly contactId: string; readonly source: string }
+  | { readonly kind: 'friction-solver'; readonly value: 'newton' | 'nsgs' }
+  | { readonly kind: 'friction-iteration-limit'; readonly source: string }
+  | { readonly kind: 'friction-step-add' }
+  | { readonly kind: 'friction-step-remove'; readonly index: number }
+  | { readonly kind: 'friction-load-value'; readonly step: number; readonly load: number; readonly field: 'force' | 'moment'; readonly axis: 0 | 1 | 2; readonly source: string }
+  | { readonly kind: 'friction-load-add'; readonly id: string; readonly nodeId: string }
+  | { readonly kind: 'friction-load-remove'; readonly index: number }
+  | { readonly kind: 'friction-load-node'; readonly index: number; readonly nodeId: string }
   | { readonly kind: 'initial-strain'; readonly value: CadJointInitialStrain | null }
   | { readonly kind: 'weld-layers'; readonly welds: readonly CadWeldLayer[] }
+  | { readonly kind: 'weld-span-layers'; readonly value: CadWeldSpanInputs | null }
   | { readonly kind: 'axial-bolts'; readonly bolts: readonly CadAxialBolt[] }
   | { readonly kind: 'analysis-type'; readonly value: BeamAnalysisType }
   | { readonly kind: 'transient-damping'; readonly value: TransientDraft['damping'] }
@@ -135,6 +153,7 @@ export type BeamEdit =
 
 const emptySource = (): PropertySource => ({ kind: 'user-supplied', reference: '', condition: '' });
 const freeRestraints = (): BucklingRestraints => [false, false, false, false, false, false];
+const copyRestraints = (value: BucklingRestraints): BucklingRestraints => [value[0], value[1], value[2], value[3], value[4], value[5]];
 // No time step, duration or load history is invented; only the required time-0 row and one output per step.
 const emptyTransient = (): TransientDraft => ({ damping: 'none', massCoefficientPerS: '0', stiffnessCoefficientS: '0',
   timeStep: '', stepCount: '', outputEvery: '1',
@@ -148,6 +167,20 @@ const zeroFields = new Set<BeamFieldName>([
   'endFx', 'endFy', 'endFz', 'endMx', 'endMy', 'endMz',
 ]);
 
+function frictionGeometryKey(members: readonly BeamMemberDraft[], segmentsPerMember: number): string {
+  return JSON.stringify({ segmentsPerMember, members: members.map(member => ({ id: member.id, occurrence: member.occurrence,
+    values: member.values, startNodeId: member.startNodeId, endNodeId: member.endNodeId, fixedStart: member.fixedStart,
+    fixedEnd: member.fixedEnd, startRestraints: member.startRestraints, endRestraints: member.endRestraints,
+    material: member.material, section: member.section, frame: member.frame })) });
+}
+function freezeOwned<T>(value: T): T {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) freezeOwned(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 function emptyValues(): Record<BeamFieldName, string> {
   return Object.fromEntries(names.map(name => [name, zeroFields.has(name) ? '0' : ''])) as Record<BeamFieldName, string>;
 }
@@ -155,7 +188,7 @@ function emptyValues(): Record<BeamFieldName, string> {
 export function createBeamSession(ownerId: string, analysisId: string): BeamSession {
   return { ownerId, analysisId, revision: 0, nextMember: 1, analysisType: 'static', modeCount: 6, segmentsPerMember: 8,
     members: [], focusedField: null, transient: emptyTransient(), transientView: { sample: 0, node: 0 },
-    contact: emptyContact(), contactView: { state: 0 }, impact: emptyImpactDraft(), axialBolts: [], weldLayers: [], initialStrain: null,
+    contact: emptyContact(), friction: { coefficients: {}, solver: 'newton', iterationLimit: '64', steps: [] }, contactView: { state: 0 }, impact: emptyImpactDraft(), axialBolts: [], weldLayers: [], weldSpanLayers: null, initialStrain: null,
     reviewed: null, status: 'editing', phase: null, result: null, bucklingEdges: [], transientAxial: null, impactMembers: null, errorKey: null, diagnostic: null };
 }
 
@@ -185,7 +218,7 @@ export function beamContactNodes(session: BeamSession): readonly BeamContactNode
  * new 'contact-*' edit joins it and editContact stops compiling until it is handled. */
 type ContactEdit = Exclude<Extract<BeamEdit, { readonly kind: `contact-${string}` }>, { readonly kind: 'contact-view' }>;
 /** The per-member edits, applied to the member with that id. */
-type MemberEdit = Extract<BeamEdit, { readonly id: string }>;
+type MemberEdit = Exclude<Extract<BeamEdit, { readonly id: string }>, { readonly kind: 'friction-load-add' }>;
 
 function editContact(session: BeamSession, next: BeamSession, edit: ContactEdit): BeamSession {
   const draft = session.contact;
@@ -200,8 +233,13 @@ function editContact(session: BeamSession, next: BeamSession, edit: ContactEdit)
       return { ...next, focusedField: `contact:contact-${number}:normalX`, contact: { ...draft, nextContact: number + 1,
         rows: [...draft.rows, { id: `contact-${number}`, kind: 'node-plane', nodeIdA: '', nodeIdB: '', normal: ['', '', ''], gap: '' }] } };
     }
-    case 'contact-remove':
-      return { ...next, contact: { ...draft, rows: draft.rows.filter((_, index) => index !== edit.index) } };
+    case 'contact-remove': {
+      const removed = draft.rows[edit.index];
+      if (removed === undefined) return session;
+      return { ...next, contact: { ...draft, rows: draft.rows.filter((_, index) => index !== edit.index) },
+        friction: { ...session.friction, coefficients: Object.fromEntries(Object.entries(session.friction.coefficients)
+          .filter(([id]) => id !== removed.id)) } };
+    }
     case 'contact-kind':
       return rows(row => ({ ...row, kind: edit.value, nodeIdB: edit.value === 'node-plane' ? '' : row.nodeIdB }), edit.index);
     case 'contact-node':
@@ -226,18 +264,59 @@ function editContact(session: BeamSession, next: BeamSession, edit: ContactEdit)
   }
 }
 
+function initialFriction(session: BeamSession): FrictionDraft {
+  const loads: FrictionLoadDraft[] = session.members.flatMap(member => (['start', 'end'] as const).map((end): FrictionLoadDraft => ({
+    id: `${member.id}-${end}-load`, nodeId: end === 'start' ? member.startNodeId : member.endNodeId,
+    force: [member.values[`${end}Fx`], member.values[`${end}Fy`], member.values[`${end}Fz`]],
+    moment: [member.values[`${end}Mx`], member.values[`${end}My`], member.values[`${end}Mz`]],
+  })));
+  return { ...session.friction, steps: [{ loads }] };
+}
+type FrictionEdit = Extract<BeamEdit, { readonly kind: `friction-${string}` }>;
+function editFriction(session: BeamSession, next: BeamSession, edit: FrictionEdit): BeamSession {
+  const draft = session.friction;
+  switch (edit.kind) {
+    case 'friction-coefficient': return { ...next, friction: { ...draft, coefficients: { ...draft.coefficients, [edit.contactId]: edit.source } } };
+    case 'friction-solver': return { ...next, friction: { ...draft, solver: edit.value } };
+    case 'friction-iteration-limit': return { ...next, friction: { ...draft, iterationLimit: edit.source } };
+    case 'friction-step-add': return draft.steps.length === 0 || draft.steps.length >= 32 ? session : { ...next,
+      friction: { ...draft, steps: [...draft.steps, { loads: draft.steps[draft.steps.length - 1].loads.map((load): FrictionLoadDraft => ({ ...load, force: [load.force[0], load.force[1], load.force[2]], moment: [load.moment[0], load.moment[1], load.moment[2]] })) }] } };
+    case 'friction-step-remove': return draft.steps.length <= 1 || edit.index < 0 || edit.index >= draft.steps.length ? session : { ...next,
+      friction: { ...draft, steps: draft.steps.filter((_, index) => index !== edit.index) } };
+    case 'friction-load-value': return { ...next, friction: { ...draft, steps: draft.steps.map((step, si) => si !== edit.step ? step : {
+      loads: step.loads.map((load, li): FrictionLoadDraft => li !== edit.load ? load : { ...load,
+        [edit.field]: [edit.axis === 0 ? edit.source : load[edit.field][0], edit.axis === 1 ? edit.source : load[edit.field][1],
+          edit.axis === 2 ? edit.source : load[edit.field][2]] }) }) } };
+    case 'friction-load-add': return draft.steps.length === 0 || draft.steps[0].loads.some(load => load.id === edit.id) ? session : { ...next,
+      friction: { ...draft, steps: draft.steps.map(step => ({ loads: [...step.loads,
+        { id: edit.id, nodeId: edit.nodeId, force: ['0', '0', '0'], moment: ['0', '0', '0'] }] })) } };
+    case 'friction-load-remove': return { ...next, friction: { ...draft, steps: draft.steps.map(step => ({ loads: step.loads.filter((_, index) => index !== edit.index) })) } };
+    case 'friction-load-node': return { ...next, friction: { ...draft, steps: draft.steps.map(step => ({ loads: step.loads.map((load, index) => index === edit.index ? { ...load, nodeId: edit.nodeId } : load) })) } };
+  }
+}
+
 export function editBeamSession(session: BeamSession, edit: BeamEdit): BeamSession {
   if (edit.kind === 'focus') return { ...session, focusedField: edit.field };
   if (edit.kind === 'transient-view') return { ...session, transientView: { sample: edit.sample, node: edit.node } };
   if (edit.kind === 'contact-view') return { ...session, contactView: { state: edit.state } };
-  const next = { ...invalidateBeamSession(session), revision: session.revision + 1 };
+  const next = { ...invalidateBeamSession(session), revision: session.revision + 1,
+    weldSpanLayers: session.weldSpanLayers === null ? null
+      : { ...session.weldSpanLayers, analysisRevision: session.revision + 1 } };
   if (edit.kind === 'initial-strain') return { ...next, initialStrain: edit.value };
   if (edit.kind === 'axial-bolts') return { ...next, axialBolts: edit.bolts,
     initialStrain: session.initialStrain === null ? null : { ...session.initialStrain,
       shortenings: edit.bolts.map(bolt => session.initialStrain?.shortenings.find(row => row.boltId === bolt.id)
         ?? { boltId: bolt.id, shorteningMm: NaN, source: emptySource() }) } };
   if (edit.kind === 'weld-layers') return { ...next, weldLayers: edit.welds };
-  if (edit.kind === 'analysis-type') return { ...next, analysisType: edit.value };
+  if (edit.kind === 'weld-span-layers') return { ...next, weldSpanLayers: edit.value === null ? null
+    : { ...edit.value, analysisRevision: next.revision } };
+  if (edit.kind === 'analysis-type') return { ...next, analysisType: edit.value,
+    friction: edit.value === 'friction' && session.friction.steps.length === 0 ? initialFriction(session) : session.friction };
+  switch (edit.kind) {
+    case 'friction-coefficient': case 'friction-solver': case 'friction-iteration-limit': case 'friction-step-add':
+    case 'friction-step-remove': case 'friction-load-value': case 'friction-load-add': case 'friction-load-remove': case 'friction-load-node':
+      return editFriction(session, next, edit);
+  }
   if (edit.kind === 'modal-settings') return { ...next, modeCount: edit.modeCount, segmentsPerMember: edit.segmentsPerMember };
   if (edit.kind === 'impact-value') return { ...next, impact: { ...session.impact, [edit.field]: edit.source } };
   if (edit.kind === 'impact-velocity') {
@@ -327,11 +406,11 @@ export function editBeamSession(session: BeamSession, edit: BeamEdit): BeamSessi
 }
 
 export type BeamDefinition = StandardBeamDefinition | StandardBeamBucklingDefinition | StandardBeamTransientDefinition
-  | StandardBeamContactDefinition | StandardBeamImpactDefinition;
+  | StandardBeamContactDefinition | StandardBeamImpactDefinition | StandardBeamFrictionDefinition;
 /** Schemas 3 to 6 carry explicit six-DOF supports; 3 to 5 also carry reference loads and 6 (impact) carries no load.
  * Schemas 1 and 2 carry fixed clamps and loads instead. */
 const savedLoads = (definition: BeamDefinition) => 'referenceLoads' in definition ? definition.referenceLoads
-  : 'loads' in definition ? definition.loads : [];
+  : 'loads' in definition ? definition.loads : definition.schema === 'pointercad-standard-beam/7' ? definition.stepLoads[0] : [];
 const savedSupports = (definition: BeamDefinition) => 'supports' in definition ? definition.supports : [];
 const savedClamps = (definition: BeamDefinition) => 'constraints' in definition ? definition.constraints : [];
 type TransientDraftCheck = { readonly ok: true; readonly history: BeamTransientHistory }
@@ -377,7 +456,7 @@ type ContactDraftCheck = { readonly ok: true; readonly contacts: readonly Standa
 /** Parses the contact text with the shared beam expression rules. A node that is no longer one of the selected
  * members' nodes (member removed or reconnected) is refused here, never dropped; the model and the solver input
  * then check directions, ranges, orientation and duplicates. Gaps stay in mm. */
-function contactInputs(draft: ContactDraft, nodeIds: ReadonlySet<string>, parameters: readonly Parameter[]): ContactDraftCheck {
+function contactInputs(draft: ContactDraft, nodeIds: ReadonlySet<string>, parameters: readonly Parameter[], withFactors = true): ContactDraftCheck {
   if (draft.rows.length === 0) return { ok: false, key: 'beam.error.contacts', field: 'contact:add', diagnostic: null };
   const read = (name: ContactFieldName, key: string, source: string): number | ContactDraftCheck => {
     const parsed = readContactField(name, key, source, parameters);
@@ -407,12 +486,55 @@ function contactInputs(draft: ContactDraft, nodeIds: ReadonlySet<string>, parame
       : { kind: 'node-pair', id: row.id, nodeIdA: row.nodeIdA, nodeIdB: row.nodeIdB, normal: direction, gapMm });
   }
   const loadFactors: number[] = [];
-  for (const [index, source] of draft.loadFactors.entries()) {
+  for (const [index, source] of (withFactors ? draft.loadFactors : []).entries()) {
     const factor = read('loadFactor', `contact:factor:${index}`, source);
     if (typeof factor !== 'number') return factor;
     loadFactors.push(factor);
   }
   return { ok: true, contacts, loadFactors };
+}
+
+type FrictionCheck = { readonly ok: true; readonly friction: StandardBeamFrictionDefinition['friction']; readonly stepLoads: StandardBeamFrictionDefinition['stepLoads']; readonly solverOptions: StandardBeamFrictionDefinition['solverOptions'] }
+  | { readonly ok: false; readonly field: string; readonly diagnostic: string | null };
+function frictionInputs(draft: FrictionDraft, contacts: readonly StandardBeamContactInput[], nodes: ReadonlySet<string>, parameters: readonly Parameter[]): FrictionCheck {
+  const fail = (field: string, diagnostic: string | null = null): FrictionCheck => ({ ok: false, field, diagnostic });
+  if (Object.keys(draft.coefficients).some(id => !contacts.some(contact => contact.id === id))) return fail('friction:coefficients');
+  const friction: Record<string, number> = {};
+  for (const contact of contacts) {
+    const field = `friction:coefficient:${contact.id}`;
+    const value = readContactField('loadFactor', field, draft.coefficients[contact.id] ?? '', parameters);
+    if (value.value === null || value.error !== null || value.value.value < 0) return fail(field, value.error?.message ?? null);
+    friction[contact.id] = value.value.value;
+  }
+  const iteration = readTransientField('stepCount', 'friction:iterationLimit', draft.iterationLimit, parameters);
+  if (iteration.value === null || iteration.error !== null || !Number.isSafeInteger(iteration.value.value) || iteration.value.value <= 0) return fail('friction:iterationLimit', iteration.error?.message ?? null);
+  if (draft.solver !== 'newton' && draft.solver !== 'nsgs') return fail('friction:solver');
+  if (draft.steps.length < 1 || draft.steps.length > 32) return fail('friction:steps');
+  const fields = { force: ['startFx', 'startFy', 'startFz'], moment: ['startMx', 'startMy', 'startMz'] } as const;
+  const stepLoads: { id: string; kind: 'nodal'; nodeId: string; force: [number, number, number]; moment: [number, number, number] }[][] = [];
+  for (const [stepIndex, step] of draft.steps.entries()) {
+    if (step.loads.length === 0) return fail(`friction:step:${stepIndex}`);
+    const rows: typeof stepLoads[number] = [];
+    for (const [loadIndex, load] of step.loads.entries()) {
+      const field = `friction:step:${stepIndex}:load:${loadIndex}`;
+      if (!load.id || !nodes.has(load.nodeId) || rows.some(row => row.id === load.id)) return fail(field);
+      const vectors: [number, number, number][] = [];
+      for (const name of ['force', 'moment'] as const) {
+        const vector: [number, number, number] = [0, 0, 0];
+        for (const axis of [0, 1, 2] as const) {
+          const parsed = readBeamField(fields[name][axis], load[name][axis], parameters);
+          if (parsed.value === null || parsed.error !== null) return fail(`${field}:${name}:${axis}`, parsed.error?.message ?? null);
+          vector[axis] = parsed.value.value;
+        }
+        vectors.push(vector);
+      }
+      rows.push({ id: load.id, kind: 'nodal', nodeId: load.nodeId, force: vectors[0], moment: vectors[1] });
+    }
+    if (stepIndex > 0 && (rows.length !== stepLoads[0].length || rows.some((row, i) => row.id !== stepLoads[0][i].id || row.nodeId !== stepLoads[0][i].nodeId))) return fail(`friction:step:${stepIndex}`);
+    stepLoads.push(rows);
+  }
+  if (!stepLoads.some(step => step.some(load => [...load.force, ...load.moment].some(value => value !== 0)))) return fail('friction:steps');
+  return { ok: true, friction, stepLoads, solverOptions: { solver: draft.solver, iterationLimit: iteration.value.value } };
 }
 
 type ImpactSavedSettings = Omit<StandardBeamImpactDefinition['impact'], 'segmentsPerMember'>;
@@ -457,8 +579,17 @@ export function beamDefinition(session: BeamSession, source: BeamSourceSnapshot,
     ({ ok: false, key, field, diagnostic });
   if (session.members.length === 0) return fail('beam.error.selection');
   // Changing analysis mode must not silently discard an active physical connection.
-  if ((session.axialBolts.length > 0 || session.weldLayers.length > 0 || session.initialStrain !== null)
+  if ((session.axialBolts.length > 0 || session.weldLayers.length > 0 || session.weldSpanLayers !== null || session.initialStrain !== null)
     && session.analysisType !== 'contact') return fail('beam.error.model');
+  const span = session.weldSpanLayers;
+  if (span !== null && (session.weldLayers.length > 0 || session.axialBolts.length > 0 || session.initialStrain !== null)) {
+    return fail('beam.error.model', null, 'weld-span-mixed: legacy weld, bolt and initial strain combinations are unsupported');
+  }
+  if (span !== null && (span.analysisId !== session.analysisId || span.analysisRevision !== session.revision
+    || span.source.documentId !== source.source.documentId || span.source.documentRevision !== source.source.documentRevision
+    || span.source.geometryRevision !== source.source.geometryRevision)) {
+    return fail('beam.error.model', null, 'weld-span-stale: current source and analysis identity required');
+  }
   const materials: StandardBeamDefinition['materials'][number][] = [];
   const sections: StandardBeamDefinition['sections'][number][] = [];
   const members: StandardBeamDefinition['members'][number][] = [];
@@ -505,9 +636,13 @@ export function beamDefinition(session: BeamSession, source: BeamSourceSnapshot,
   }
   const history = session.analysisType === 'transient' ? transientHistory(session.transient, parameters) : null;
   if (history !== null && !history.ok) return fail('beam.error.inputs', history.field, history.diagnostic);
-  const contact = session.analysisType === 'contact' ? contactInputs(session.contact,
-    new Set(members.flatMap(member => [member.startNodeId, member.endNodeId])), parameters) : null;
+  const nodeIds = new Set(members.flatMap(member => [member.startNodeId, member.endNodeId]));
+  const contact = session.analysisType === 'contact' || session.analysisType === 'friction' ? contactInputs(session.contact,
+    nodeIds, parameters, session.analysisType === 'contact') : null;
   if (contact !== null && !contact.ok) return fail(contact.key, contact.field, contact.diagnostic);
+  const friction = session.analysisType === 'friction' && contact !== null && contact.ok
+    ? frictionInputs(session.friction, contact.contacts, nodeIds, parameters) : null;
+  if (friction !== null && !friction.ok) return fail('beam.error.inputs', friction.field, friction.diagnostic);
   const impact = session.analysisType === 'impact' ? impactInputs(session,
     new Set(members.flatMap(member => [member.startNodeId, member.endNodeId])), parameters) : null;
   if (impact !== null && !impact.ok) return fail(impact.key, impact.field, impact.diagnostic);
@@ -519,6 +654,10 @@ export function beamDefinition(session: BeamSession, source: BeamSourceSnapshot,
     .map(([nodeId, load], index) => ({ id: `load-${index}`, kind: 'nodal' as const, nodeId, ...load }));
   const explicitSupports = [...supports].filter(([, restrained]) => restrained.some(Boolean))
     .map(([nodeId, restrained]) => ({ nodeId, restrained }));
+  const baseline = session.frictionRestoreBaseline;
+  const original = session.analysisType === 'friction' && baseline !== undefined
+    && baseline.geometryKey === frictionGeometryKey(session.members, session.segmentsPerMember)
+    && JSON.stringify(baseline.openedSource) === JSON.stringify(source.source) ? baseline.definition : null;
   // An impact starts from rest with no external load; entered member loads are refused, never silently dropped.
   if (impact !== null && nodalLoads.length > 0) return fail('beam.error.model', null, 'impact: no external load is applied');
   const definition: BeamDefinition = impact !== null ? {
@@ -529,6 +668,11 @@ export function beamDefinition(session: BeamSession, source: BeamSourceSnapshot,
     ...common, schema: 'pointercad-standard-beam/4',
     transient: { segmentsPerMember: session.segmentsPerMember, history: history.history },
     supports: explicitSupports, referenceLoads: nodalLoads,
+  } : friction !== null && friction.ok && contact !== null && contact.ok ? {
+    ...common, ...(original === null ? {} : { members: original.members, materials: original.materials, sections: original.sections }),
+    schema: 'pointercad-standard-beam/7',
+    contact: { segmentsPerMember: session.segmentsPerMember, contacts: contact.contacts }, supports: original?.supports ?? explicitSupports,
+    friction: friction.friction, stepLoads: friction.stepLoads, solverOptions: friction.solverOptions,
   } : contact !== null ? {
     ...common, schema: 'pointercad-standard-beam/5',
     ...(session.initialStrain === null ? {} : { initialStrain: session.initialStrain }),
@@ -538,6 +682,7 @@ export function beamDefinition(session: BeamSession, source: BeamSourceSnapshot,
     ...(session.weldLayers.length === 0 ? {} : { weldLayers: {
       schema: 'pointercad-cad-weld-layers/1' as const, source: source.source, analysisId: session.analysisId,
       analysisRevision: session.revision, welds: session.weldLayers } }),
+    ...(span === null ? {} : { weldLayers: span }),
     contact: { segmentsPerMember: session.segmentsPerMember, contacts: contact.contacts, loadFactors: contact.loadFactors },
     supports: explicitSupports, referenceLoads: nodalLoads,
   } : session.analysisType === 'buckling' ? {
@@ -558,7 +703,19 @@ export function beamDefinition(session: BeamSession, source: BeamSourceSnapshot,
 }
 
 /** Restores inputs without results or trust in the saved geometry generation. Shared node loads are not duplicated. */
-export function restoreBeamSession(ownerId: string, definition: BeamDefinition, occurrences: readonly BeamOccurrence[]): BeamSession {
+export function restoreBeamSession(ownerId: string, definition: BeamDefinition, occurrences: readonly BeamOccurrence[], openedSource: BeamDefinition['source'] = definition.source): BeamSession {
+  if (definition.schema === 'pointercad-standard-beam/7') {
+    const checked = readBeamAnalysisInputs({ schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'standard-members', definition }] }, definition.source.documentId);
+    if (!checked.ok) throw new Error(`friction-input: ${checked.issue.code}: ${checked.issue.path}`);
+  }
+  if (definition.schema === 'pointercad-standard-beam/5' && definition.weldLayers?.schema === 'pointercad-cad-weld-layers/2') {
+    const checked = readBeamAnalysisInputs({ schema: 'pointercad-beam-inputs/1', analyses: [
+      { kind: 'standard-members', definition }] }, definition.source.documentId);
+    if (!checked.ok) throw new Error(`weld-span-input: ${checked.issue.code}: ${checked.issue.path}`);
+    if (definition.axialBolts !== undefined || definition.initialStrain !== undefined) {
+      throw new Error('weld-span-mixed: bolt and initial strain combinations are unsupported');
+    }
+  }
   const source = createBeamSession(ownerId, definition.id);
   // Saved numbers become the shortest exact plain decimal: the same double on reading back, and never exponent text,
   // which the expression grammar has no syntax for (String(1e-7) is '1e-7'). No 12-digit rounding either.
@@ -588,20 +745,25 @@ export function restoreBeamSession(ownerId: string, definition: BeamDefinition, 
         values[`${end}M${axis}`] = exact(nodeLoads.reduce((sum, load) => sum + load.moment[index], 0));
       }
     }
-    members.push({ id: member.id, occurrence: { path: member.occurrencePath, partKey: member.expectedPartKey, label }, values,
+    const startRestraints = savedSupports(definition).find(row => row.nodeId === member.startNodeId)?.restrained ?? freeRestraints();
+    const endRestraints = savedSupports(definition).find(row => row.nodeId === member.endNodeId)?.restrained ?? freeRestraints();
+    members.push({ id: member.id, occurrence: { path: definition.schema === 'pointercad-standard-beam/7'
+      ? [...member.occurrencePath] : member.occurrencePath, partKey: member.expectedPartKey, label }, values,
       startNodeId: member.startNodeId, endNodeId: member.endNodeId,
       fixedStart: savedClamps(definition).some(row => row.nodeId === member.startNodeId),
       fixedEnd: savedClamps(definition).some(row => row.nodeId === member.endNodeId),
-      startRestraints: savedSupports(definition).find(row => row.nodeId === member.startNodeId)?.restrained ?? freeRestraints(),
-      endRestraints: savedSupports(definition).find(row => row.nodeId === member.endNodeId)?.restrained ?? freeRestraints(),
+      startRestraints: definition.schema === 'pointercad-standard-beam/7' ? copyRestraints(startRestraints) : startRestraints,
+      endRestraints: definition.schema === 'pointercad-standard-beam/7' ? copyRestraints(endRestraints) : endRestraints,
       confirmed: false,
-      material: material.source, section: section.source, frame: member.sectionFrame.source });
+      material: definition.schema === 'pointercad-standard-beam/7' ? structuredClone(material.source) : material.source,
+      section: definition.schema === 'pointercad-standard-beam/7' ? structuredClone(section.source) : section.source,
+      frame: definition.schema === 'pointercad-standard-beam/7' ? structuredClone(member.sectionFrame.source) : member.sectionFrame.source });
   }
   let nextMember = 1;
   while (members.some(member => member.id === `beam-member-${nextMember}`)) nextMember += 1;
   const settings = definition.schema === 'pointercad-standard-beam/3' ? definition.buckling
     : definition.schema === 'pointercad-standard-beam/4' ? { modeCount: 6, segmentsPerMember: definition.transient.segmentsPerMember }
-    : definition.schema === 'pointercad-standard-beam/5' ? { modeCount: 6, segmentsPerMember: definition.contact.segmentsPerMember }
+    : definition.schema === 'pointercad-standard-beam/5' || definition.schema === 'pointercad-standard-beam/7' ? { modeCount: 6, segmentsPerMember: definition.contact.segmentsPerMember }
     : definition.schema === 'pointercad-standard-beam/6' ? { modeCount: 6, segmentsPerMember: definition.impact.segmentsPerMember }
     : definition.modal;
   // The previous formatter (expressionValueFromNumber) rounded to 12 significant digits, so 1/3 came back as a
@@ -615,7 +777,7 @@ export function restoreBeamSession(ownerId: string, definition: BeamDefinition, 
     samples: definition.transient.history.loadFactor.map(row => ({ time: exact(row.timeS), factor: exact(row.factor) })),
   } : source.transient;
   // Saved contacts come back with their ids, nodes, exact directions and gaps in mm; nothing is re-derived from CAD.
-  const contactRows: ContactRowDraft[] = definition.schema === 'pointercad-standard-beam/5'
+  const contactRows: ContactRowDraft[] = definition.schema === 'pointercad-standard-beam/5' || definition.schema === 'pointercad-standard-beam/7'
     ? definition.contact.contacts.map(row => ({ id: row.id, kind: row.kind,
       nodeIdA: row.kind === 'node-plane' ? row.nodeId : row.nodeIdA, nodeIdB: row.kind === 'node-plane' ? '' : row.nodeIdB,
       normal: [exact(row.normal[0]), exact(row.normal[1]), exact(row.normal[2])], gap: exact(row.gapMm) }))
@@ -627,7 +789,14 @@ export function restoreBeamSession(ownerId: string, definition: BeamDefinition, 
   while (contactRows.some(row => row.id === `contact-${nextContact}`)) nextContact += 1;
   const contact: ContactDraft = definition.schema === 'pointercad-standard-beam/5'
     ? { nextContact, rows: contactRows, loadFactors: definition.contact.loadFactors.map(exact) }
-    : definition.schema === 'pointercad-standard-beam/6' ? { ...source.contact, nextContact, rows: contactRows } : source.contact;
+    : definition.schema === 'pointercad-standard-beam/6' || definition.schema === 'pointercad-standard-beam/7' ? { ...source.contact, nextContact, rows: contactRows } : source.contact;
+  const friction: FrictionDraft = definition.schema === 'pointercad-standard-beam/7' ? {
+    coefficients: Object.fromEntries(Object.entries(definition.friction).map(([id, value]) => [id, exact(value)])),
+    solver: definition.solverOptions.solver, iterationLimit: String(definition.solverOptions.iterationLimit),
+    steps: definition.stepLoads.map(loads => ({ loads: loads.map(load => ({ id: load.id, nodeId: load.nodeId,
+      force: [exact(load.force[0]), exact(load.force[1]), exact(load.force[2])],
+      moment: [exact(load.moment[0]), exact(load.moment[1]), exact(load.moment[2])] })) })),
+  } : source.friction;
   const impact: ImpactDraft = definition.schema === 'pointercad-standard-beam/6' ? {
     velocities: definition.impact.initialVelocities.map((row): ImpactVelocityRowDraft => ({ nodeId: row.nodeId,
       velocity: [exact(row.velocityMPerS[0]), exact(row.velocityMPerS[1]), exact(row.velocityMPerS[2])] })),
@@ -645,11 +814,20 @@ export function restoreBeamSession(ownerId: string, definition: BeamDefinition, 
         return member === undefined ? [] : [[member.id, text] as const];
       })) }),
   } : source.impact;
-  return { ...source, revision: definition.revision, nextMember, members, transient, contact, impact,
+  const restoredSegments = settings?.segmentsPerMember ?? 8;
+  const frictionRestoreBaseline: FrictionRestoreBaseline | undefined = definition.schema === 'pointercad-standard-beam/7'
+    // Reopening creates a new geometry-generation token. Bind editable inputs to that current opening,
+    // while the saved definition and its original IDs remain owned data, never restored results.
+    ? freezeOwned({ definition: structuredClone(definition), geometryKey: frictionGeometryKey(members, restoredSegments),
+      openedSource: structuredClone(openedSource) }) : undefined;
+  return { ...source, revision: definition.revision, nextMember, members, transient, contact, friction, impact,
+    ...(frictionRestoreBaseline === undefined ? {} : { frictionRestoreBaseline }),
     axialBolts: definition.schema === 'pointercad-standard-beam/5' ? definition.axialBolts?.bolts ?? [] : [],
-    weldLayers: definition.schema === 'pointercad-standard-beam/5' ? definition.weldLayers?.welds ?? [] : [],
+    weldLayers: definition.schema === 'pointercad-standard-beam/5' && definition.weldLayers?.schema !== 'pointercad-cad-weld-layers/2' ? definition.weldLayers?.welds ?? [] : [],
+    weldSpanLayers: definition.schema === 'pointercad-standard-beam/5'
+      && definition.weldLayers?.schema === 'pointercad-cad-weld-layers/2' ? definition.weldLayers : null,
     initialStrain: definition.schema === 'pointercad-standard-beam/5' ? definition.initialStrain ?? null : null,
-    analysisType: definition.schema === 'pointercad-standard-beam/6' ? 'impact'
+    analysisType: definition.schema === 'pointercad-standard-beam/7' ? 'friction' : definition.schema === 'pointercad-standard-beam/6' ? 'impact'
       : definition.schema === 'pointercad-standard-beam/5' ? 'contact'
       : definition.schema === 'pointercad-standard-beam/4' ? 'transient'
       : definition.schema === 'pointercad-standard-beam/3' ? 'buckling' : definition.modal === undefined ? 'static' : 'modal',

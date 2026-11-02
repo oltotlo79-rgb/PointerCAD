@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { createDefaultPartFileDeps, type PartFileDeps } from '../file/partFile.js';
 import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -49,7 +50,7 @@ export async function closeDrawingWithConfirmation(
         if (await drawingSourceInputHash(source) !== current.drawing?.source.contentHash) return false;
         loaded = loadedPartAttachments(source.document, source.attachments ?? emptyEmbeddedPartAttachments(),
           { shapes: current.importedShapes, meshes: current.importedMeshes, canvases: current.canvases },
-          kind => `${kind}-asset-${crypto.randomUUID()}`);
+          kind => createDocumentElementId(`${kind}-asset-`));
         // A reference rewrite changes the source that the saved drawing proved. Ask for a clean reopen.
         if (loaded.document !== source.document) return false;
       } catch { return false; }

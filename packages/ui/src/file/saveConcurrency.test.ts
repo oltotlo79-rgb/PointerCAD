@@ -1,5 +1,5 @@
-import { createEmptyPartDocument } from '@pointercad/model';
-import { encodeSaveDocument, readPcadFile, type AutoSaver } from '@pointercad/io';
+import { createAssemblyDocument, createEmptyPartDocument } from '@pointercad/model';
+import { encodeSaveDocument, readArchive, readDocumentBundle, readPcadFile, type AutoSaver } from '@pointercad/io';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -269,4 +269,54 @@ describe('ブラウザの保存先も古い非同期完了で戻さない（レ�
     await gateway.savePcad('B.pcad', Uint8Array.of(2), false);
     expect(written).toEqual(['A.pcad', 'B.pcad']);
   });
+});
+
+describe('the save snapshot and its deferred viewport image keep the same document owner', () => {
+  for (const kind of ['part', 'assembly'] as const) {
+    it.each(['success', 'edit', 'cancel', 'switch', 'reject'] as const)(`${kind}: %s while image ownership is pending`, async change => {
+      const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='), char => char.charCodeAt(0));
+      if (kind === 'assembly') useAppStore.getState().openAssembly(createAssemblyDocument('original'));
+      else useAppStore.getState().applyDocument({ ...useAppStore.getState().document, name: 'original' });
+      const writes: Uint8Array[] = [];
+      const write = vi.fn((_name: string, bytes: Uint8Array) => { writes.push(bytes); return Promise.resolve(`saved.${kind === 'part' ? 'pcad' : 'pcada'}`); });
+      const encode = vi.fn(encodeSaveDocument), thumbnail = deferred<Uint8Array | null>();
+      useAppStore.setState({ fileGateway: { openPcad: () => Promise.resolve(null), hasSaveTarget: () => false, savePcad: write } });
+      const before = useAppStore.getState();
+      const pending = savePart({ ...deps, captureThumbnail: () => thumbnail.promise, encodeSave: encode }, false);
+      await vi.waitFor(() => { expect(useAppStore.getState().documentSaveOperation?.stage).toBe('preparing'); });
+      expect(encode).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled();
+      if (change === 'edit') {
+        if (kind === 'part') useAppStore.getState().applyDocument({ ...before.document, name: 'edited' });
+        else if (before.assembly !== null) useAppStore.getState().applyAssembly({ ...before.assembly, name: 'edited' });
+      }
+      if (change === 'cancel') useAppStore.getState().documentSaveOperation?.cancel?.();
+      if (change === 'switch') useAppStore.setState({ activeDocumentId: crypto.randomUUID(), document: { ...before.document, name: 'new session' } });
+      if (change === 'cancel' || change === 'switch') {
+        // The queue must finish before the stalled producer. Its eventual bytes cannot write a file.
+        await pending;
+        expect(encode).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled();
+        thumbnail.resolve(png); await Promise.resolve();
+        expect(write).not.toHaveBeenCalled();
+        return;
+      }
+      if (change === 'reject') thumbnail.reject(new Error('native ownership refresh refused'));
+      else thumbnail.resolve(png);
+      await pending;
+      expect(encode).toHaveBeenCalledTimes(1); expect(write).toHaveBeenCalledTimes(1);
+      const archive = readArchive(writes[0], { shouldExtract: () => true });
+      if (!archive.ok) throw new Error('actual saved ZIP missing');
+      expect(archive.entries.get('thumbnail.png')).toEqual(change === 'success' ? png : undefined);
+      if (kind === 'part') {
+        const loaded = readPcadFile(writes[0]);
+        if (!loaded.ok) throw new Error('actual saved part invalid');
+        expect(loaded.document).toEqual(before.document);
+        expect(useAppStore.getState().document.name).toBe(change === 'edit' ? 'edited' : 'original');
+      } else {
+        const loaded = await readDocumentBundle(writes[0], 'assembly');
+        if (!loaded.ok || loaded.bundle.kind !== 'assembly') throw new Error('actual saved assembly invalid');
+        expect(loaded.bundle.document).toEqual(before.assembly);
+        expect(useAppStore.getState().assembly?.name).toBe(change === 'edit' ? 'edited' : 'original');
+      }
+    });
+  }
 });

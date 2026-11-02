@@ -19,6 +19,8 @@ import { FILE_ACTIONS } from '../shell/menus/fileToolbarDescriptors.js';
 import { runFileAction, runFileMenuAction } from '../shell/menus/fileToolbarActions.js';
 import { LOOK_MENU_ITEMS, PROJECTION_MENU_ITEMS } from '../shell/menus/lookMenuItems.js';
 import { chooseLookTool, lookToolbarReadiness } from '../shell/menus/lookToolbarActions.js';
+import { ANALYSIS_MENU_ITEMS } from '../shell/menus/analysisMenuItems.js';
+import { runAnalysisTool } from '../shell/menus/analysisToolbarActions.js';
 import { activateEditTool, activateShapeTool, activateTool } from '../shell/menus/sketchToolActions.js';
 import { TOOLS } from '../shell/menus/sketchToolDescriptors.js';
 import { CONSTRAINT_MENU_ITEMS, EDIT_MENU_ITEMS, SHAPE_MENU_ITEMS } from '../shell/menus/sketchMenuItems.js';
@@ -113,6 +115,10 @@ export function executeToolbarCommand(id: string): ToolbarCommandExecutionResult
       if (item === undefined) return unavailable;
       const readiness = lookToolbarReadiness(state, item.id);
       return chooseLookTool(item.id) ? ready : readiness;
+    }
+    case 'analysis': {
+      const item = ANALYSIS_MENU_ITEMS.find(entry => entry.id === source);
+      return item === undefined ? unavailable : runAnalysisTool(item.id);
     }
     case 'assembly': {
       const item = ASSEMBLY_MENU_ITEMS.find(entry => entry.id === source);

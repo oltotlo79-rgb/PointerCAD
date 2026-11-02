@@ -1,3 +1,4 @@
+import { isRecord } from '../valueGuards.js';
 /** FR-334/436: all function formats require a finite, explicit XYZ clipping box in mm. */
 import type { Vec3 } from '../sketch/vec3.js';
 
@@ -14,9 +15,6 @@ export type FunctionPlotBoundsResult =
   | { readonly ok: true; readonly bounds: FunctionPlotBounds }
   | { readonly ok: false; readonly issues: readonly FunctionPlotBoundsIssue[] };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * The private constructor prevents callers from treating an unchecked DTO as a validated box.

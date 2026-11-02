@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { attachCameraControls } from '../viewport/attachCameraControls.js';
+import { attachDrawingNavigation, INITIAL_DRAWING_NAVIGATION } from '../drawing/drawingNavigation.js';
 import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
 import { attachRadialMenuGesture, type RadialMenuAttachmentOptions } from './attachRadialMenuGesture.js';
 import type { RadialMenuGesture } from './radialMenuGesture.js';
@@ -35,6 +36,131 @@ function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeCli
     block: () => { blocked = true; }, changeDocument: () => { owner = {}; },
     close: () => { menu.detach(); camera.detach(); } };
 }
+
+// Node has no DOM tree. Keep the actual navigation and gesture listeners, and dispatch
+// capture in window -> parent -> SVG order, respecting stopImmediatePropagation.
+function drawingFixture() {
+  const view = new EventTarget(), captured = new Set<number>();
+  const show = vi.fn(), choose = vi.fn(), focus = vi.fn(), changes = vi.fn();
+  const surfaceCapture = vi.fn();
+  let owner: object = {}, blocked = false, transform = INITIAL_DRAWING_NAVIGATION;
+  class Surface extends EventTarget {
+    readonly ownerDocument = { defaultView: view };
+    readonly isConnected = true;
+    getBoundingClientRect() { return { left: 0, top: 0, width: 800, height: 600 }; }
+    setPointerCapture = surfaceCapture;
+    hasPointerCapture(): boolean { return false; }
+    releasePointerCapture = vi.fn();
+    focus = vi.fn();
+  }
+  vi.stubGlobal('SVGElement', Surface);
+  const surface = new Surface();
+  if (!(surface instanceof SVGElement)) throw new Error('drawing surface fixture');
+  const parent = Object.assign(new EventTarget(), {
+    setPointerCapture: (id: number) => { captured.add(id); },
+    hasPointerCapture: (id: number) => captured.has(id),
+    releasePointerCapture: (id: number) => {
+      captured.delete(id);
+      send('lostpointercapture', { pointerId: id, buttons: 0 }, 'parent');
+    },
+  });
+  // Register navigation first: registration order on the parent cannot rescue a child listener.
+  const navigation = attachDrawingNavigation(parent, { view, focus,
+    readSettings: () => DEFAULT_CAMERA_CONTROLS, canStart: () => true,
+    sheetBounds: () => ({ left: 0, top: 0 }), getTransform: () => transform,
+    setTransform: next => { transform = next; changes(next); },
+  });
+  const menu = attachRadialMenuGesture(surface, { owner: () => owner, blocked: () => blocked,
+    show, choose, clickOnly: true, observeDrawingDown: true });
+  const afterNavigation = vi.fn();
+  parent.addEventListener('pointerdown', afterNavigation, true);
+  parent.addEventListener('pointerup', afterNavigation, true);
+  const childDown = vi.fn(); surface.addEventListener('pointerdown', childDown, true);
+  class CaptureEvent extends Event {
+    stopped = false;
+    constructor(type: string, private readonly path: readonly EventTarget[]) {
+      super(type, { cancelable: true });
+    }
+    override composedPath(): EventTarget[] { return [...this.path]; }
+    override stopImmediatePropagation(): void { this.stopped = true; super.stopImmediatePropagation(); }
+  }
+  function send(type: string, props: { pointerId?: number; buttons?: number; button?: number; clientX?: number; clientY?: number } = {},
+    target: 'surface' | 'parent' | 'outside' = 'surface'): CaptureEvent {
+    const pointerId = props.pointerId ?? 1;
+    const recipient = target === 'outside' ? view : target === 'parent' || (type !== 'pointerdown' && captured.has(pointerId))
+      ? parent : surface;
+    const path = recipient === surface ? [surface, parent, view] : recipient === parent ? [parent, view] : [view];
+    const event = Object.assign(new CaptureEvent(type, path), {
+      pointerId, pointerType: 'mouse', button: 2, buttons: 2, clientX: 400, clientY: 300,
+      altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...props,
+    });
+    view.dispatchEvent(event);
+    if (!event.stopped && recipient !== view) parent.dispatchEvent(event);
+    if (!event.stopped && recipient === surface) surface.dispatchEvent(event);
+    return event;
+  }
+  return { view, surface, surfaceCapture, parent, navigation, menu, show, choose, focus, changes, captured, afterNavigation, childDown, send,
+    get: () => transform, block: () => { blocked = true; }, changeDocument: () => { owner = {}; },
+    close: () => { menu.detach(); navigation.detach(); vi.unstubAllGlobals(); } };
+}
+
+describe('drawing ancestor capture and radial click observation', () => {
+  it('observes down and captured up before navigation consumes them, and opens exactly once', () => {
+    const f = drawingFixture();
+    try {
+      expect(f.send('pointerdown').defaultPrevented).toBe(true);
+      expect(f.captured.has(1)).toBe(true); expect(f.navigation.isDragging()).toBe(true);
+      expect(f.focus).toHaveBeenCalledOnce(); expect(f.childDown).not.toHaveBeenCalled();
+      expect(f.afterNavigation).not.toHaveBeenCalled(); expect(f.show).not.toHaveBeenCalled();
+      expect(f.surfaceCapture).not.toHaveBeenCalled();
+      expect(f.send('pointerup', { buttons: 0 }).defaultPrevented).toBe(true);
+      expect(f.show).toHaveBeenCalledOnce(); expect(f.show).toHaveBeenLastCalledWith(expect.objectContaining({ pointerId: 1 }), true);
+      expect(f.captured.size).toBe(0); expect(f.navigation.isDragging()).toBe(false);
+      expect(f.afterNavigation).not.toHaveBeenCalled(); expect(f.get()).toEqual(INITIAL_DRAWING_NAVIGATION);
+      f.send('pointerup', { buttons: 0 });
+      expect(f.show).toHaveBeenCalledOnce(); expect(f.choose).not.toHaveBeenCalled();
+      f.menu.choose(0); f.menu.choose(0);
+      expect(f.choose.mock.calls).toEqual([[0]]);
+    } finally { f.close(); }
+  });
+  it('keeps right-drag pan and release, without opening or selecting a menu', () => {
+    const f = drawingFixture();
+    try {
+      f.send('pointerdown'); f.send('pointermove', { clientX: 437, clientY: 324 });
+      expect(f.get()).toEqual({ x: 37, y: 24, scale: 1 });
+      f.send('pointerup', { clientX: 437, clientY: 324, buttons: 0 });
+      expect(f.captured.size).toBe(0); expect(f.navigation.isDragging()).toBe(false);
+      expect(f.changes).toHaveBeenCalledOnce(); expect(f.show).not.toHaveBeenCalled(); expect(f.choose).not.toHaveBeenCalled();
+    } finally { f.close(); }
+  });
+  it.each(['cancel', 'owner', 'blocked', 'blur', 'detach'] as const)('cancels a pending drawing click on %s', reason => {
+    const f = drawingFixture();
+    try {
+      f.send('pointerdown');
+      if (reason === 'cancel') f.send('pointercancel', { buttons: 0 });
+      if (reason === 'owner') f.changeDocument();
+      if (reason === 'blocked') f.block();
+      if (reason === 'blur') f.view.dispatchEvent(new Event('blur'));
+      if (reason === 'detach') f.menu.detach();
+      f.send('pointerup', { buttons: 0 });
+      expect(f.show).not.toHaveBeenCalled(); expect(f.choose).not.toHaveBeenCalled(); expect(f.captured.size).toBe(0);
+      if (reason === 'detach') {
+        f.send('pointerdown'); f.send('pointerup', { buttons: 0 });
+        expect(f.show).not.toHaveBeenCalled(); expect(f.choose).not.toHaveBeenCalled();
+      }
+    } finally { f.close(); }
+  });
+  it('ignores outside starts and does not finish the pending click with another pointer', () => {
+    const f = drawingFixture();
+    try {
+      f.send('pointerdown', {}, 'outside'); f.send('pointerup', { buttons: 0 }, 'outside');
+      expect(f.show).not.toHaveBeenCalled();
+      f.send('pointerdown'); f.send('pointerup', { pointerId: 2, buttons: 0 });
+      expect(f.show).not.toHaveBeenCalled(); expect(f.captured.has(1)).toBe(true);
+      f.send('pointerup', { buttons: 0 }); expect(f.show).toHaveBeenCalledOnce();
+    } finally { f.close(); }
+  });
+});
 
 describe('右ボタンで道具を選ぶ間の入力所有権', () => {
   it.each(['choose', 'cancel', 'owner', 'buttons'] as const)('開いたボタンの通常クリックを捕捉せず、%sを一度だけ処理する', action => {

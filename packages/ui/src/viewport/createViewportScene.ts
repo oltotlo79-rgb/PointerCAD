@@ -81,10 +81,10 @@ import {
 } from './solidMeshAdmission.js';
 import type { AssemblyMateFaceHit as TypeAssemblyMateFaceHit } from './createAssemblyLayer.js';
 import {
-  applySceneThemeColors, attributeArrays, attributeBytes, composeMeshReservation, createAssemblyOwnerCapture,
+  applySceneThemeColors, assemblyOwnerStaleReason, attributeArrays, attributeBytes, composeMeshReservation, createAssemblyOwnerCapture,
   createSceneConstruction, createSceneLayers, createSectionClipping, isAssemblyOwnerCurrent, liveDisplayCopies,
   registerSceneLayerCleanup, returnUnpublishedReservations, updateBasisGuideLayers, updateLabelScreenScale,
-  type AssemblyOwner,
+  type AssemblyOwner, type AssemblyOwnerStaleReason,
 } from './viewportSceneResources.js';
 import {
   configureViewportCamera, createViewportCameras, fullyFramedIds, logicalQuadPanes, placeKeyLight, projectToScreen,
@@ -178,6 +178,12 @@ export interface AssemblyFacePickObservation {
 
 /** 部品pickが実際に通った判定だけを書く。未実行の判定は未設定のまま。 */
 export interface AssemblyComponentPickObservation {
+  /** 押した時点の表示の持ち主の有無・失効・部品数(判定の前に読む。BUG.VIEW-PICK-NULL の観測)。 */
+  ownerPresent?: boolean;
+  displayInvalidated?: boolean;
+  partCount?: number;
+  /** 持ち主を断った時だけ、最初に外れた比較の名前。 */
+  ownerStaleReason?: AssemblyOwnerStaleReason | 'no-owner';
   ownerAccepted?: boolean;
   cameraReady?: boolean;
   hitComponentId?: string | null;
@@ -558,6 +564,24 @@ function sameSphereGridSpec(a: SphereGridSpec | null, b: SphereGridSpec | null):
   );
 }
 
+/** 押した時点の表示の持ち主の有無・失効・部品数を、持ち主の判定の前に観測へ写す(BUG.VIEW-PICK-NULL)。 */
+function observePickOwnerState(observation: AssemblyFacePickObservation | AssemblyComponentPickObservation | undefined,
+  owner: AssemblyOwner | null, displayInvalidated: boolean, bundle: AssemblyGeometryBundle): void {
+  if (observation === undefined) return;
+  observation.ownerPresent = owner !== null;
+  observation.displayInvalidated = displayInvalidated;
+  observation.partCount = bundle.parts.length;
+}
+
+/** 部品pickの 1 回の持ち主の判定を観測へ写し、受け入れたかを返す(断った時だけ最初に外れた理由を書く)。 */
+function observeComponentOwnerVerdict(observation: AssemblyComponentPickObservation | undefined,
+  refusal: AssemblyOwnerStaleReason | 'no-owner' | null): boolean {
+  const ownerAccepted = refusal === null;
+  if (observation !== undefined) observation.ownerAccepted = ownerAccepted;
+  if (observation !== undefined && refusal !== null) observation.ownerStaleReason = refusal;
+  return ownerAccepted;
+}
+
 export function createViewportScene(canvas: HTMLCanvasElement, options: ViewportSceneOptions = {}): ViewportScene {
   const uiBackings = options.uiBackings ?? assemblyUiBackings;
   const construction = createSceneConstruction();
@@ -720,12 +744,21 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     refreshEnvironment();
   }
 
-  function ensureCurrentAssemblyOwner(): boolean {
-    if (disposed) return false;
-    if (assemblyOwner === null) return assemblyBundle.parts.length === 0;
-    if (assemblyOwnerCurrent(assemblyOwner)) return true;
+  /**
+   * 表示の持ち主を 1 回だけ判定する。受け入れたら null、断ったら最初に外れた理由(古い持ち主はここで消す)。
+   * 判定の回数・順・副作用は観測の有無で変えない(理由は同じ 1 回の判定から返す)。
+   */
+  function verifyCurrentAssemblyOwner(): AssemblyOwnerStaleReason | 'no-owner' | null {
+    if (disposed) return 'disposed';
+    if (assemblyOwner === null) return assemblyBundle.parts.length === 0 ? null : 'no-owner';
+    const staleReason = assemblyOwnerStaleReason(assemblyOwner, disposed, options);
+    if (staleReason === null) return null;
     clearAssemblyDisplay();
-    return false;
+    return staleReason;
+  }
+
+  function ensureCurrentAssemblyOwner(): boolean {
+    return verifyCurrentAssemblyOwner() === null;
   }
 
   function rebuildAssembly(bundle: AssemblyGeometryBundle): void {
@@ -1336,8 +1369,9 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
 
     pickComponent(screenX, screenY, observation): string | null {
       try {
-        const ownerAccepted = ensureCurrentAssemblyOwner();
-        if (observation !== undefined) observation.ownerAccepted = ownerAccepted;
+        observePickOwnerState(observation, assemblyOwner, assemblyDisplayInvalidated, assemblyBundle);
+        // One owner verdict per pick, observed or not; the recorded reason is that verdict's own result.
+        const ownerAccepted = observeComponentOwnerVerdict(observation, verifyCurrentAssemblyOwner());
         if (!ownerAccepted) return null;
         const cameraReady = prepareCameraRay(screenX, screenY);
         if (observation !== undefined) observation.cameraReady = cameraReady;
@@ -1352,11 +1386,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
     },
 
     pickAssemblyFace(screenX, screenY, observation) {
-      if (observation !== undefined) {
-        observation.ownerPresent = assemblyOwner !== null;
-        observation.displayInvalidated = assemblyDisplayInvalidated;
-        observation.partCount = assemblyBundle.parts.length;
-      }
+      observePickOwnerState(observation, assemblyOwner, assemblyDisplayInvalidated, assemblyBundle);
       const ownerAccepted = ensureCurrentAssemblyOwner();
       if (observation !== undefined) observation.ownerAccepted = ownerAccepted;
       if (!ownerAccepted) return null;

@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bucklingUiFixture } from '../beam/beamBuckling.testSupport.js';
+import { openAssemblyWithStrength } from '../store/testing/openAssemblyWithStrength.testSupport.js';
 import { beamDisplayNumber } from '../beam/BeamResults.js';
 import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -65,13 +65,6 @@ function session(): FatigueSession {
   const value = useAppStore.getState().fatigueSession;
   if (value === null) throw new Error('No fatigue session');
   return value;
-}
-function openAssemblyWithStrength(): void {
-  const fixture = bucklingUiFixture();
-  const assembly = fixture.state.assembly;
-  if (assembly === null) throw new Error('Fixture without assembly');
-  useAppStore.getState().openAssembly(assembly, fixture.state.assemblyLibrary);
-  useAppStore.setState({ strengthSession: fixture.state.strengthSession });
 }
 function enter(edits: readonly FatigueAnyEdit[]): void {
   for (const edit of edits) useAppStore.getState().editFatigue(edit);

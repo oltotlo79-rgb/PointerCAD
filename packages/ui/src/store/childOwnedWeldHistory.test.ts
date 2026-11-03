@@ -5,7 +5,7 @@ import {
   type AssemblyDocument, type PartLibrary,
 } from '@pointercad/model';
 import { readPcadaFile, writePcadaFile } from '@pointercad/io';
-import { childOwnedWeldFixture, WELDED_CHILD_REF } from '../../../model/src/analysis/cadWeldLayerChildOwned.testSupport.js';
+import { childOwnedWeldFixture, WELDED_CHILD_REF } from '@pointercad/model/testing/ui-fixtures';
 import { resetTestStore } from './testing/createTestStore.js';
 import { useAppStore } from './useAppStore.js';
 

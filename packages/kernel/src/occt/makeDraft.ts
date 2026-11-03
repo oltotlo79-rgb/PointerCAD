@@ -1,3 +1,4 @@
+import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
 import type {
   OpenCascadeInstance,
   TopoDS_Face,
@@ -84,22 +85,7 @@ export interface DraftInput {
 }
 
 /** -0 を +0 へ揃える(subShapes.ts と同じ理由)。 */
-function normalizeZero(value: number): number {
-  return value === 0 ? 0 : value;
-}
 
-/** 長さ 1 へ揃える。長さが取れない(0・非数)ときは null。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const length = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [
-    normalizeZero(value[0] / length),
-    normalizeZero(value[1] / length),
-    normalizeZero(value[2] / length),
-  ];
-}
 
 /**
  * 指紋 1 つから平らな面 1 枚を選び直す。

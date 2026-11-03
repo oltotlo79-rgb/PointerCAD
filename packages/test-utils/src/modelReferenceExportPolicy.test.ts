@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as ts from 'typescript';
@@ -157,4 +158,83 @@ it('keeps the ambiguity-aware resolver public and ignores comments and example s
     /* export * from './internal.js'; */
     export const example = "export { rematchSubShapeRef } from './internal.js';";`;
   expect(fixture(source)).toEqual({ names: ['example', 'resolveSubShapeReference'], forbidden: [] });
+});
+
+const p10PythonAssets = ["cas_equation_systems_test.py", "cas_equations_test.py", "cas_fourier_series_test.py", "cas_integrals_test.py", "cas_probability_test.py", "cas_region_integrals_test.py", "cas_transforms_test.py"] as const;
+const p10FixedAssetConsumers = ["packages/ui/src/math/mathEquationResult.test.ts", "packages/ui/src/math/mathEquationSystemResult.test.ts", "packages/ui/src/math/mathFourierSeriesResult.test.ts", "packages/ui/src/math/mathIndefiniteIntegralResult.test.ts", "packages/ui/src/math/mathPaletteExamples.test.ts", "packages/ui/src/math/mathTransformResult.test.ts", "packages/ui/src/math/prepareDocumentMathIntegrals.test.ts"] as const;
+
+/** Inspect literal file URLs only; dynamic fixtures and document/font oracles are separate boundaries. */
+function privatePackageFileUrls(path: string, source: string): string[] {
+  const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+  const owner = /^packages\/([^/]+)\//u.exec(path)?.[1];
+  const found: string[] = [];
+  function visit(node: ts.Node): void {
+    if (ts.isNewExpression(node) && node.expression.getText(tree) === 'URL') {
+      const value = node.arguments?.[0];
+      if (value !== undefined && ts.isStringLiteralLike(value) && value.text.startsWith('.')) {
+        const target = canonical(resolve(root, dirname(path), value.text));
+        const targetPackage = /\/packages\/([^/]+)\/src\//u.exec(target)?.[1];
+        if (targetPackage !== undefined && targetPackage !== owner) found.push(value.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  return found;
+}
+
+it('P10の固定Python検査資産は明示exportから同じ実ファイルへ解決する', () => {
+  const expression = resolve(root, 'packages/expression');
+  const manifest: unknown = JSON.parse(readFileSync(resolve(expression, 'package.json'), 'utf8'));
+  if (!record(manifest) || !record(manifest.exports)) throw new Error('Missing expression exports');
+  expect(Object.keys(manifest.exports).filter(key => key.includes('*'))).toEqual([]);
+  expect(Object.keys(manifest.exports).filter(key => key.startsWith('./testing-assets/')).sort())
+    .toEqual(p10PythonAssets.map(name => './testing-assets/' + name).sort());
+  const fromUi = createRequire(resolve(root, 'packages/ui/src/testing/publicAssetUrl.testSupport.ts'));
+  expect(manifest.exports['./package.json']).toBe('./package.json');
+  expect(fromUi.resolve('@pointercad/expression/package.json')).toBe(resolve(expression, 'package.json'));
+  for (const name of p10PythonAssets) {
+    expect(manifest.exports['./testing-assets/' + name]).toBe('./src/math/exactRuntime/' + name);
+    const expected = resolve(expression, 'src/math/exactRuntime', name);
+    const actual = fromUi.resolve('@pointercad/expression/testing-assets/' + name);
+    expect(actual).toBe(expected);
+    expect(readFileSync(actual)).toEqual(readFileSync(expected));
+  }
+  expect(() => fromUi.resolve('@pointercad/expression/src/math/exactRuntime/cas_equations_test.py')).toThrow();
+  expect(() => fromUi.resolve('@pointercad/expression/testing-assets/not-published.py')).toThrow();
+  for (const path of p10FixedAssetConsumers) {
+    expect(privatePackageFileUrls(path, readFileSync(resolve(root, path), 'utf8')), path).toEqual([]);
+  }
+});
+
+it('P10のfile URL反例は私有srcだけを拒否し正規assetと同層の読取を残す', () => {
+  const owner = 'packages/ui/src/math/example.test.ts';
+  expect(privatePackageFileUrls(owner, "new URL('../../../expression/src/math/exactRuntime/cas_equations_test.py', import.meta.url)"))
+    .toEqual(['../../../expression/src/math/exactRuntime/cas_equations_test.py']);
+  expect(privatePackageFileUrls(owner, "new URL('../../../model/src/private.json', import.meta.url)"))
+    .toEqual(['../../../model/src/private.json']);
+  for (const source of ["publicAssetUrl('@pointercad/expression/testing-assets/cas_equations_test.py')",
+    "new URL('./localExactMathEngine.ts', import.meta.url)",
+    "new URL('../../../help-content/docs/ja/assembly.md', import.meta.url)",
+    "// new URL('../../../expression/src/private.py', import.meta.url)",
+    "const example = \"new URL('../../../expression/src/private.py', import.meta.url)\";"]) {
+    expect(privatePackageFileUrls(owner, source)).toEqual([]);
+  }
+});
+
+it('P10の動的STEP資産は元ShapeのA/B/Cだけを同じ実ファイルへ解決する', () => {
+  const manifest: unknown = JSON.parse(readFileSync(resolve(modelDirectory, 'package.json'), 'utf8'));
+  if (!record(manifest) || !record(manifest.exports)) throw new Error('Missing model exports');
+  const names = ['direct-seed-A.step', 'direct-seed-B.step', 'direct-seed-C.step'];
+  expect(Object.keys(manifest.exports).filter(key => key.startsWith('./testing-assets/')).sort())
+    .toEqual(names.map(name => './testing-assets/' + name));
+  const fromUi = createRequire(resolve(root, 'packages/ui/src/testing/publicAssetUrl.testSupport.ts'));
+  for (const name of names) {
+    expect(manifest.exports['./testing-assets/' + name]).toBe('./src/part/fixtures/ex18/' + name);
+    const expected = resolve(modelDirectory, 'src/part/fixtures/ex18', name);
+    const actual = fromUi.resolve('@pointercad/model/testing-assets/' + name);
+    expect(actual).toBe(expected); expect(readFileSync(actual)).toEqual(readFileSync(expected));
+  }
+  expect(() => fromUi.resolve('@pointercad/model/testing-assets/direct-seed-D.step')).toThrow();
+  expect(() => fromUi.resolve('@pointercad/model/src/part/fixtures/ex18/direct-seed-A.step')).toThrow();
 });

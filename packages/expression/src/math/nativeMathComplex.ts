@@ -6,7 +6,7 @@ import { entireComplexOperation, principalComplexOperation } from './nativeCompl
 import { MathInputProblem } from './mathInputContract.js';
 const N = numberJson;
 type Pair = readonly [EngineMathJson, EngineMathJson];
-const op = (head: string, ...args: EngineMathJson[]): EngineMathJson => {
+const createOperationNode = (head: string, ...args: EngineMathJson[]): EngineMathJson => {
   const values = args.map(jsonRational);
   if (head === 'Multiply' && values.some(value => value?.numerator === 0n)
     && args.every(value => jsonDecimal(value)?.isFinite() === true)) return N(0);
@@ -43,30 +43,30 @@ const isComplex = (value: EngineMathJson): boolean => value === 'ImaginaryUnit' 
 function multiply([a, b]: Pair, [c, d]: Pair): Pair {
   // Multiplication by a real scalar does not manufacture 0*f into the other
   // component. Such terms would hide an exact pi quotient until numeric time.
-  if (jsonRational(b)?.numerator === 0n) return [op('Multiply', a, c), op('Multiply', a, d)];
-  if (jsonRational(d)?.numerator === 0n) return [op('Multiply', a, c), op('Multiply', b, c)];
-  return [op('Subtract', op('Multiply', a, c), op('Multiply', b, d)),
-    op('Add', op('Multiply', a, d), op('Multiply', b, c))];
+  if (jsonRational(b)?.numerator === 0n) return [createOperationNode('Multiply', a, c), createOperationNode('Multiply', a, d)];
+  if (jsonRational(d)?.numerator === 0n) return [createOperationNode('Multiply', a, c), createOperationNode('Multiply', b, c)];
+  return [createOperationNode('Subtract', createOperationNode('Multiply', a, c), createOperationNode('Multiply', b, d)),
+    createOperationNode('Add', createOperationNode('Multiply', a, d), createOperationNode('Multiply', b, c))];
 }
 export function complexOperation(head: string, args: readonly EngineMathJson[], numeric: boolean,
   reduce: (value: EngineMathJson) => EngineMathJson): EngineMathJson | null {
   const [first] = args;
   if (head === 'Sqrt') {
     const value = jsonRational(first);
-    if (value !== null && value.numerator < 0n) return op('Complex', N(0), op('Sqrt', op('Negate', first)));
+    if (value !== null && value.numerator < 0n) return createOperationNode('Complex', N(0), createOperationNode('Sqrt', createOperationNode('Negate', first)));
   }
   const pair = complexParts(first);
   if (head === 'Complex') return jsonRational(args[1])?.numerator === 0n ? args[0] : null;
   if (pair === null) return null;
   const [a, b] = pair;
   if (head === 'Ln' && jsonRational(b)?.numerator === 0n && jsonDecimal(a)?.lt(0)) {
-    return op('Complex', op('Ln', op('Negate', a)), 'Pi');
+    return createOperationNode('Complex', createOperationNode('Ln', createOperationNode('Negate', a)), 'Pi');
   }
   const rationalPower = head === 'Power' ? jsonRational(args[1]) : null;
   if (rationalPower?.denominator === 2n && rationalPower.numerator >= -31n && rationalPower.numerator <= 31n) {
-    const root = op('Sqrt', first);
+    const root = createOperationNode('Sqrt', first);
     // A numerator of exactly 1 is a plain square root; Power(Sqrt(x), 1) would show a redundant ^1.
-    return rationalPower.numerator === 1n ? root : op('Power', root, N(rationalPower.numerator));
+    return rationalPower.numerator === 1n ? root : createOperationNode('Power', root, N(rationalPower.numerator));
   }
   if (isComplex(first)) {
     const entire = entireComplexOperation(head, pair);
@@ -77,11 +77,11 @@ export function complexOperation(head: string, args: readonly EngineMathJson[], 
   const integerPower = exponent !== null && exponent.denominator === 1n && exponent.numerator >= -32n && exponent.numerator <= 32n;
   const real = jsonDecimal(a), isReal = jsonRational(b)?.numerator === 0n;
   if (isReal && real !== null && real.abs().gt(1) && (head === 'Arcsin' || head === 'Arccos')) {
-    const positive = real.gt(0), magnitude = positive ? a : op('Negate', a);
-    if (head === 'Arccos') return op('Complex', positive ? N(0) : 'Pi',
-      positive ? op('Arcosh', magnitude) : op('Negate', op('Arcosh', magnitude)));
-    const sine = op('Complex', op('Divide', positive ? 'Pi' : op('Negate', 'Pi'), N(2)),
-      positive ? op('Negate', op('Arcosh', magnitude)) : op('Arcosh', magnitude));
+    const positive = real.gt(0), magnitude = positive ? a : createOperationNode('Negate', a);
+    if (head === 'Arccos') return createOperationNode('Complex', positive ? N(0) : 'Pi',
+      positive ? createOperationNode('Arcosh', magnitude) : createOperationNode('Negate', createOperationNode('Arcosh', magnitude)));
+    const sine = createOperationNode('Complex', createOperationNode('Divide', positive ? 'Pi' : createOperationNode('Negate', 'Pi'), N(2)),
+      positive ? createOperationNode('Negate', createOperationNode('Arcosh', magnitude)) : createOperationNode('Arcosh', magnitude));
     return sine;
   }
   const outsideReal = real !== null && isReal && (
@@ -98,7 +98,7 @@ export function complexOperation(head: string, args: readonly EngineMathJson[], 
   }
   if (head === 'Re') return a;
   if (head === 'Im') return b;
-  if (head === 'Conjugate') return op('Complex', a, op('Negate', b));
+  if (head === 'Conjugate') return createOperationNode('Complex', a, createOperationNode('Negate', b));
   if (head === 'Arg' && isReal && real !== null && !real.isZero()) return real.lt(0) ? 'Pi' : N(0);
   if (head === 'Arg' && numeric) {
     const real = jsonDecimal(a), imaginary = jsonDecimal(b);
@@ -106,27 +106,27 @@ export function complexOperation(head: string, args: readonly EngineMathJson[], 
       : N(ExpressionDecimal.atan2(imaginary, real).toString());
   }
   if (!args.some(isComplex)) return null;
-  if (head === 'Abs') return op('Sqrt', op('Add', op('Square', a), op('Square', b)));
-  if (head === 'Negate') return op('Complex', op('Negate', a), op('Negate', b));
+  if (head === 'Abs') return createOperationNode('Sqrt', createOperationNode('Add', createOperationNode('Square', a), createOperationNode('Square', b)));
+  if (head === 'Negate') return createOperationNode('Complex', createOperationNode('Negate', a), createOperationNode('Negate', b));
   if (head === 'Add' || head === 'Subtract') {
     const parts: Pair[] = [];
     for (const value of args) { const p = complexParts(value); if (p === null) return null; parts.push(p); }
-    return op('Complex', op(head, ...parts.map(pair => pair[0])), op(head, ...parts.map(pair => pair[1])));
+    return createOperationNode('Complex', createOperationNode(head, ...parts.map(pair => pair[0])), createOperationNode(head, ...parts.map(pair => pair[1])));
   }
   if (head === 'Multiply') {
     const parts: Pair[] = [];
     for (const value of args) { const p = complexParts(value); if (p === null) return null; parts.push(p); }
     const [real, imaginary] = parts.reduce(multiply, [N(1), N(0)]);
-    return op('Complex', real, imaginary);
+    return createOperationNode('Complex', real, imaginary);
   }
   if (head === 'Divide') {
     const other = complexParts(args[1]); if (other === null) return null;
-    const [c, d] = other, denominator = op('Add', op('Square', c), op('Square', d));
+    const [c, d] = other, denominator = createOperationNode('Add', createOperationNode('Square', c), createOperationNode('Square', d));
     if (jsonRational(c)?.numerator === 0n && jsonRational(d)?.numerator === 0n) {
       throw new MathInputProblem('domain', '複素数でも0で割ることはできません。');
     }
-    return op('Complex', op('Divide', op('Add', op('Multiply', a, c), op('Multiply', b, d)), denominator),
-      op('Divide', op('Subtract', op('Multiply', b, c), op('Multiply', a, d)), denominator));
+    return createOperationNode('Complex', createOperationNode('Divide', createOperationNode('Add', createOperationNode('Multiply', a, c), createOperationNode('Multiply', b, d)), denominator),
+      createOperationNode('Divide', createOperationNode('Subtract', createOperationNode('Multiply', b, c), createOperationNode('Multiply', a, d)), denominator));
   }
   if (head === 'Square' || head === 'Power') {
     const exponent = head === 'Square' ? 2n : jsonRational(args[1])?.denominator === 1n ? jsonRational(args[1])?.numerator : undefined;
@@ -135,12 +135,12 @@ export function complexOperation(head: string, args: readonly EngineMathJson[], 
     let result: Pair = [N(1), N(0)];
     for (let i = 0n; i < (exponent < 0n ? -exponent : exponent); i++) {
       // Reduce every product before the next multiplication; do not expand an exponential expression tree.
-      const next = complexParts(reduce(op('Complex', ...multiply(result, [a, b]))));
+      const next = complexParts(reduce(createOperationNode('Complex', ...multiply(result, [a, b]))));
       if (next === null) return null;
       result = next;
     }
-    const value = op('Complex', ...result);
-    return exponent < 0n ? op('Divide', N(1), value) : value;
+    const value = createOperationNode('Complex', ...result);
+    return exponent < 0n ? createOperationNode('Divide', N(1), value) : value;
   }
   return null;
 }

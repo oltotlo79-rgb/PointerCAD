@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { collectFemRuntimeAssets, readFemDistributionGaps } from '../../../../scripts/vite/femRuntimeAssets.mjs';
+import { assertFemApplicationBuildInputs, collectFemRuntimeAssets, readFemDistributionGaps } from '../../../../scripts/vite/femRuntimeAssets.mjs';
 import { describe, expect, it } from 'vitest';
 import {
   assembleSbomDocument, assertSbomMatchesReleaseManifest, assertSbomPublishable, buildSbom,
@@ -43,6 +43,42 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
     const changed = new Map(distribution.assets);
     changed.set('fem/assets/beamAnalysis.py', Buffer.from('changed'));
     expect(() => femComponentsFromDistribution({ ...distribution, assets: changed })).toThrow('distributed bytes differ');
+  });
+
+  it('有限変形の計算部 solidFiniteMaterial.py・solidFiniteEquilibrium.py は、配布元 manifest の固定値どおりの FEM 配布ファイルとして載る', () => {
+    const distribution = collectFemRuntimeAssets(join(root, 'packages/fem/runtime'));
+    const components = femComponentsFromDistribution(distribution);
+    const runtimeManifest = JSON.parse(readFileSync(join(root, 'packages/fem/runtime/manifest.json'), 'utf8')) as {
+      files: Record<string, { sha256: string; bytes: number }>;
+    };
+    for (const file of ['solidFiniteMaterial.py', 'solidFiniteEquilibrium.py']) {
+      const source = readFileSync(join(root, 'packages/fem/src', file));
+      const digest = createHash('sha256').update(source).digest('hex');
+      expect(runtimeManifest.files['assets/' + file], file).toEqual({ bytes: source.byteLength, sha256: digest });
+      const matches = components.filter((item) => item.name === 'FEM file: assets/' + file);
+      expect(matches, file).toHaveLength(1);
+      expect(matches[0].hashes, file).toEqual([{ alg: 'SHA-256', content: digest }]);
+      const facts = (matches[0].properties ?? []).map((entry) => `${entry.name}=${entry.value}`);
+      expect(facts, file).toEqual(expect.arrayContaining([
+        'pointercad:licenseStatus=see-related-components',
+        `pointercad:femRuntimePath=packages/fem/runtime/assets/${file}`,
+        `pointercad:distributedFile=fem/assets/${file}|${digest}`,
+      ]));
+      const changed = new Map(distribution.assets);
+      changed.set('fem/assets/' + file, Buffer.from('changed'));
+      expect(() => femComponentsFromDistribution({ ...distribution, assets: changed }), file).toThrow('distributed bytes differ');
+    }
+  });
+
+  it('FEM の応用ソース書庫に記録した build 入力3件は、現在の package.json・pnpm-lock.yaml・pnpm-workspace.yaml と一致し、違えば止まる', () => {
+    const distribution = collectFemRuntimeAssets(join(root, 'packages/fem/runtime'));
+    const inputs = new Map(['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'].map((name) => [name, readFileSync(join(root, name))] as const));
+    expect(() => assertFemApplicationBuildInputs(distribution, inputs)).not.toThrow();
+    const workspace = inputs.get('pnpm-workspace.yaml');
+    if (!workspace) throw new Error('pnpm-workspace.yaml absent');
+    const stale = new Map(inputs);
+    stale.set('pnpm-workspace.yaml', Buffer.concat([workspace, Buffer.from('# changed\n')]));
+    expect(() => assertFemApplicationBuildInputs(distribution, stale)).toThrow('does not match build input: pnpm-workspace.yaml');
   });
 
 

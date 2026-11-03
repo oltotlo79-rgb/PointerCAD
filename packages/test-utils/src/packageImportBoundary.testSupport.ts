@@ -80,3 +80,45 @@ export function productFiles(root: string, directory: string,
     return entry.isFile() && acceptFile(path) ? [path] : [];
   }).sort();
 }
+
+/** Nonliteral dynamic imports cannot be proven to stay within the e2e layer. */
+export function unresolvedDynamicImports(path: string, source: string): number {
+  let count = 0;
+  visitSource(path, source, value => {
+    if (value.type === 'ImportExpression' && stringLiteral(value.source) === undefined) count++;
+  });
+  return count;
+}
+
+/** Report whether each parsed module reference is explicitly type-only. */
+export function moduleReferences(path: string, source: string): { specifier: string; typeOnly: boolean }[] {
+  const result: { specifier: string; typeOnly: boolean }[] = [];
+  visitSource(path, source, value => {
+    const isImportType = value.type === 'TSImportType';
+    const sourceNode: unknown = isImportType ? value.argument
+      : ['ImportDeclaration', 'ExportNamedDeclaration', 'ExportAllDeclaration', 'ImportExpression'].includes(String(value.type))
+        ? value.source : undefined;
+    const specifier = stringLiteral(sourceNode);
+    const individualTypes = (value.type === 'ImportDeclaration' || value.type === 'ExportNamedDeclaration')
+      && Array.isArray(value.specifiers) && value.specifiers.length > 0
+      && value.specifiers.every(item => record(item) && (value.type === 'ImportDeclaration'
+        ? item.importKind === 'type' : item.exportKind === 'type'));
+    if (specifier !== undefined) result.push({ specifier, typeOnly: isImportType
+      || value.importKind === 'type' || value.exportKind === 'type' || individualTypes });
+  });
+  return result;
+}
+
+/** Capture exact source expressions of nonliteral dynamic imports. */
+export function dynamicImportExpressions(path: string, source: string): string[] {
+  const result: string[] = [];
+  visitSource(path, source, value => {
+    if (value.type !== 'ImportExpression' || stringLiteral(value.source) !== undefined) return;
+    if (!record(value.source) || !Array.isArray(value.source.range) || value.source.range.length !== 2
+      || typeof value.source.range[0] !== 'number' || typeof value.source.range[1] !== 'number') {
+      throw new Error(`Missing dynamic import expression range: ${path}`);
+    }
+    result.push(source.slice(value.source.range[0], value.source.range[1]));
+  });
+  return result;
+}

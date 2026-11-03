@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { resolveAssembly, buildStandardPartFromSource } from '@pointercad/model';
-import { nestedWeldFixture } from '../../../model/src/analysis/cadWeldLayerNested.testSupport.js';
+import { nestedWeldFixture } from '@pointercad/model/testing/ui-fixtures';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { beamUiFixture } from './beam.testSupport.js';
 import type { BeamSourceSnapshot } from './beamSource.js';

@@ -11,7 +11,7 @@ import type { SolidVector3 } from './solidAnalysisModel.js';
 import { isSolidAnalysisResult } from './solidAnalysisResults.js';
 import { translateSolidAnalysis } from './solidAnalysisTranslation.js';
 import { analyzeSolid, isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 
 describe('W12 optional native reactions', () => {
   it('preserves absent reactions and owns and validates supplied nodal reactions', () => {

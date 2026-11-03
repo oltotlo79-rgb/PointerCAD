@@ -1943,7 +1943,7 @@ describe('staged extrusion preview is display-only for picking (EX-14)', () => {
 describe('solid analysis field overlay ownership', () => {
   const field: SolidFieldMesh = { quantity: 'xx', deformationScale: 0,
     positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0], triangleElements: [0, 1], elementValues: [-40, 100],
-    legend: { minimumMPa: -40, maximumMPa: 100, constant: false } };
+    legend: { minimum: -40, maximum: 100, constant: false } };
   /** Runtime check of the overlay mesh, its geometry and its material (a bare instanceof Mesh is Mesh<any, any, any>). */
   const isOverlayMesh = (object: THREE.Object3D): object is THREE.Mesh => object instanceof THREE.Mesh
     && object.name.startsWith('solid-analysis-field:') && object.geometry instanceof THREE.BufferGeometry
@@ -2096,10 +2096,11 @@ describe('部品pickの実分岐を観測する', () => {
       if (reason === 'owner') controlled.replace({ ...fixture.state, requestedGeneration: fixture.state.requestedGeneration + 1 });
       const before = controlled.read();
       const hit = controlled.viewport.pickComponent(reason === 'empty' ? 0 : 320, reason === 'empty' ? 0 : 240, observation);
-      if (reason === 'owner') expect(observation).toEqual({ ownerAccepted: false });
-      if (reason === 'camera') expect(observation).toEqual({ ownerAccepted: true, cameraReady: false });
-      if (reason === 'empty') expect(observation).toEqual({ ownerAccepted: true, cameraReady: true, hitComponentId: null });
-      if (reason === 'hit') expect(observation).toEqual({ ownerAccepted: true, cameraReady: true, hitComponentId: 'component-1' });
+      const owned = { ownerPresent: true, displayInvalidated: false, partCount: fixture.bundle.parts.length };
+      if (reason === 'owner') expect(observation).toEqual({ ...owned, ownerAccepted: false, ownerStaleReason: 'requestedGeneration' });
+      if (reason === 'camera') expect(observation).toEqual({ ...owned, ownerAccepted: true, cameraReady: false });
+      if (reason === 'empty') expect(observation).toEqual({ ...owned, ownerAccepted: true, cameraReady: true, hitComponentId: null });
+      if (reason === 'hit') expect(observation).toEqual({ ...owned, ownerAccepted: true, cameraReady: true, hitComponentId: 'component-1' });
       expect(hit).toBe(reason === 'hit' ? 'component-1' : null);
       expect(controlled.read().assembly).toBe(before.assembly);
       expect(controlled.read().document).toBe(before.document);
@@ -2121,8 +2122,73 @@ describe('部品pickの実分岐を観測する', () => {
       const spy = vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects').mockImplementation(() => { throw failure; });
       restore = () => { spy.mockRestore(); };
       expect(() => controlled.viewport.pickComponent(320, 240, observation)).toThrow(failure);
-      expect(observation).toEqual({ ownerAccepted: true, cameraReady: true, failed: true });
+      expect(observation).toEqual({ ownerPresent: true, displayInvalidated: false, partCount: fixture.bundle.parts.length,
+        ownerAccepted: true, cameraReady: true, failed: true });
     } finally { restore(); controlled.viewport.dispose(); }
+  });
+
+  // BUG.VIEW-PICK-NULL の観測: 古い持ち主を断った比較の名前を残し、通さない・書き換えない。
+  it.each(['requestedGeneration', 'completedGeneration', 'documentVersion', 'cancelRequestCount'] as const)(
+    '%sが進んだ持ち主は断り、その名前を理由に残す', field => {
+      const controlled = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement);
+      const fixture = assemblyFixture(controlled.read(), worldAssemblyFace());
+      controlled.replace(fixture.state);
+      const observation: AssemblyComponentPickObservation = {};
+      try {
+        controlled.viewport.setAssembly(fixture.bundle);
+        controlled.viewport.render({ ...HOME_ORBIT, target: [0.25, 0.25, 0], distance: 20 }, 'perspective', 'shadedWithEdges', false, 100);
+        controlled.replace({ ...fixture.state, [field]: fixture.state[field] + 1 });
+        expect(controlled.viewport.pickComponent(320, 240, observation)).toBeNull();
+        expect(observation).toEqual({ ownerPresent: true, displayInvalidated: false, partCount: fixture.bundle.parts.length,
+          ownerAccepted: false, ownerStaleReason: field });
+      } finally { controlled.viewport.dispose(); }
+    });
+
+  it('断って消した表示は次の押下で空の表示として受け、当たらない理由を失効と部品数0で残す', () => {
+    const controlled = controlledViewport({ width: 640, height: 480 } as HTMLCanvasElement);
+    const fixture = assemblyFixture(controlled.read(), worldAssemblyFace());
+    controlled.replace(fixture.state);
+    try {
+      controlled.viewport.setAssembly(fixture.bundle);
+      controlled.viewport.render({ ...HOME_ORBIT, target: [0.25, 0.25, 0], distance: 20 }, 'perspective', 'shadedWithEdges', false, 100);
+      controlled.replace({ ...fixture.state, documentVersion: fixture.state.documentVersion + 1 });
+      expect(controlled.viewport.pickComponent(320, 240, {})).toBeNull();
+      const next: AssemblyComponentPickObservation = {};
+      expect(controlled.viewport.pickComponent(320, 240, next)).toBeNull();
+      expect(next).toEqual({ ownerPresent: false, displayInvalidated: true, partCount: 0, ownerAccepted: true,
+        cameraReady: true, hitComponentId: null });
+    } finally { controlled.viewport.dispose(); }
+  });
+
+  // 観測の有無で持ち主の判定の回数と副作用を変えない(理由は同じ1回の判定から記録する)。
+  it.each(['current', 'stale'] as const)('%sの持ち主は観測の有無で状態の読み出し回数と拾いの結果が同じ', kind => {
+    const run = (observe: boolean) => {
+      let current = stateWithBodies(useAppStore.getState(), []), reads = 0;
+      const viewport = createViewportScene({ width: 640, height: 480 } as HTMLCanvasElement,
+        { readSolidMeshState: () => { reads += 1; return current; } });
+      viewport.resize(640, 480);
+      const fixture = assemblyFixture(current, worldAssemblyFace());
+      current = fixture.state;
+      const observation: AssemblyComponentPickObservation = {};
+      try {
+        viewport.setAssembly(fixture.bundle);
+        viewport.render({ ...HOME_ORBIT, target: [0.25, 0.25, 0], distance: 20 }, 'perspective', 'shadedWithEdges', false, 100);
+        if (kind === 'stale') current = { ...fixture.state, documentVersion: fixture.state.documentVersion + 1 };
+        const start = reads;
+        const hit = viewport.pickComponent(320, 240, observe ? observation : undefined);
+        const pickReads = reads - start;
+        const nextStart = reads;
+        const nextHit = viewport.pickComponent(320, 240, observe ? {} : undefined);
+        return { result: { hit, pickReads, nextHit, nextReads: reads - nextStart }, observation };
+      } finally { viewport.dispose(); }
+    };
+    const plain = run(false), observed = run(true);
+    expect(plain.result.pickReads).toBeGreaterThan(0);
+    expect(observed.result).toEqual(plain.result);
+    expect(plain.result.hit).toBe(kind === 'current' ? 'component-1' : null);
+    expect(plain.observation).toEqual({});
+    expect(observed.observation.ownerAccepted).toBe(kind === 'current');
+    expect(observed.observation.ownerStaleReason).toBe(kind === 'stale' ? 'documentVersion' : undefined);
   });
 });
 

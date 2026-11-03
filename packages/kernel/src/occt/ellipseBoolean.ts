@@ -85,8 +85,8 @@ export function conditionEllipseBoolean(oc: OpenCascadeInstance, inputs: readonl
       return owned.keep(builder.ModifiedShape(source));
     };
     const mappedList = (source: TopoDS_Shape, generated: boolean): TopTools_ListOfShape => {
-      const local = createAllocations();
-      const result = new oc.TopTools_ListOfShape_1();
+      const local = createAllocations(), resultOwner = createAllocations();
+      const result = resultOwner.keep(new oc.TopTools_ListOfShape_1());
       try {
         const movedItem = movedSource(source);
         const native = local.keep(generated ? maker.Generated(movedItem) : maker.Modified(movedItem));
@@ -102,8 +102,10 @@ export function conditionEllipseBoolean(oc: OpenCascadeInstance, inputs: readonl
           const final = local.keep(restore.ModifiedShape(movedItem));
           local.keep(result.Append_1(final));
         }
+        // Transfer the result only after its temporary dependencies release successfully.
+        local.release();
         return result;
-      } catch (error) { result.delete(); throw error; }
+      } catch (error) { resultOwner.release(); throw error; }
       finally { local.release(); }
     };
     return { shape, history: {

@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -19,8 +20,7 @@ let backend: MathExecutionBackend;
 let nativeResults: readonly unknown[];
 const script = fileURLToPath(new URL('./exactRuntime/cas_step_ranges_test.py', import.meta.url));
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'degree', coefficients: [],
-    identity: { documentId: 'range', documentVersion: 3, editorId: 'coordinate-X', inputRevision: 7 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'degree', identity: { documentId: 'range', documentVersion: 3, editorId: 'coordinate-X', inputRevision: 7 } });
 }
 function runNative(args: readonly string[], input?: string): string {
   const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {

@@ -10,7 +10,7 @@ import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 import {
   connected1000Original, connected1000PointId,
-} from '../../../model/src/sketch/constraints/connected1000Fixture.testSupport.js';
+} from '@pointercad/model/testing/connected-fixtures';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { readPcadFile, writePcadFile } from './pcadFile.js';
 import { PCAD_SCHEMA_VERSION } from './schema.js';

@@ -4,7 +4,7 @@ import { join, sep } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 import { readShellAnalysisInput, type ShellAnalysisInput } from './shellAnalysisModel.js';
 

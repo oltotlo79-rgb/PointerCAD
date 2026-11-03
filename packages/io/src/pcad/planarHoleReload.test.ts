@@ -3,9 +3,9 @@ import { createKernelApi } from '@pointercad/kernel';
 import { absoluteCoordinate, appendSolid, createDirectKernelBridge, createEmptyPartDocument,
   createSubShapeReference, recomputePart, replaceSolid, type HoleFeature, type PartDocument,
   type PrimitiveFeature, type TransformFeature } from '@pointercad/model';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import type { CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { readPcadFile, writePcadFile } from './pcadFile.js';
 

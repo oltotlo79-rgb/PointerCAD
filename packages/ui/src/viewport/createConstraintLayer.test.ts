@@ -2,7 +2,7 @@ import { createEmptySketchDocument } from '@pointercad/model';
 import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { connected1000Sketch } from '../../../model/src/sketch/constraints/connected1000Fixture.testSupport.js';
+import { connected1000Sketch } from '@pointercad/model/testing/connected-fixtures';
 import { constraintMarkAt, constraintMarksOf, type ConstraintMark } from '../sketch/constraintPicking.js';
 import { summarizeConstraints } from '../sketch/constraintSummary.js';
 import { createConstraintLayer, quadPixelsFor } from './createConstraintLayer.js';

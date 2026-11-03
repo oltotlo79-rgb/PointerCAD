@@ -6,7 +6,7 @@ import {
 import { unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 
-import { steelBendInputState } from '../../../model/src/assembly/standard/steelBend.js';
+import { steelBendInputState } from '@pointercad/model';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { isRecord } from './guards.js';
 import { readPcadFile, writePcadFile } from './pcadFile.js';

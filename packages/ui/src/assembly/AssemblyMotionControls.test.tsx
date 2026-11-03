@@ -1,6 +1,6 @@
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type React from 'react';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import {
   addComponent, createAssemblyDocument, createComponentFor, resolveAssembly,
   type JointFrame,
@@ -31,8 +31,7 @@ function publishJoint(): void {
 }
 
 function markup(component: () => React.JSX.Element | null): string {
-  const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-  try { return renderToStaticMarkup(createElement(component)); } finally { snapshot.mockRestore(); }
+  return renderCurrentStore(component);
 }
 
 beforeEach(resetTestStore);

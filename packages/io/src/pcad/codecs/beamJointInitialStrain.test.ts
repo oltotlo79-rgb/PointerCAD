@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { cadJointContactFixture } from '../../../../model/src/analysis/cadJointContact.testSupport.js';
+import { cadJointContactFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from '../assemblyJson.js';
 
 describe('stress-free shortening in the real assembly codec', () => {

@@ -145,10 +145,10 @@ function observeAllocations(oc: OpenCascadeInstance) {
     };
   });
   const Properties = oc.GProp_GProps_1;
-  vi.spyOn(oc, 'GProp_GProps_1').mockImplementation(function () { return track(new Properties()); });
+  vi.spyOn(oc, 'GProp_GProps_1').mockImplementation(function () { return new Properties(); });
   const Analyzer = oc.BRepCheck_Analyzer;
   vi.spyOn(oc, 'BRepCheck_Analyzer').mockImplementation(function (...args: ConstructorParameters<typeof Analyzer>) {
-    return timed('validate', () => track(new Analyzer(...args)));
+    return timed('validate', () => new Analyzer(...args));
   });
   const mapShapes = oc.TopExp.MapShapes_2.bind(oc.TopExp);
   vi.spyOn(oc.TopExp, 'MapShapes_2').mockImplementation((...args) => timed('map', () => mapShapes(...args)));
@@ -418,6 +418,26 @@ describe('非破壊の共通体積', () => {
 describe('共通体積の分類・例外安全・所有・性能', () => {
   let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
   beforeAll(async () => { oc = await loadOcctForNode(); });
+
+  it('観測対象の測定・検証所有物をconstructorとkeepで二重に記録しない', () => {
+    const input = allocationModule.createAllocations();
+    const box = input.keep(makeBox(oc, BIG));
+    const observed = observeAllocations(oc);
+    const owned = allocationModule.createAllocations();
+    try {
+      const properties = owned.keep(new oc.GProp_GProps_1());
+      const analyzer = owned.keep(new oc.BRepCheck_Analyzer(box.shape, true, false));
+      expect(observed.entries.filter(entry => entry.item === properties)).toHaveLength(1);
+      expect(observed.entries.filter(entry => entry.item === analyzer)).toHaveLength(1);
+      owned.release();
+      expectReleased(observed, 'measure and validation ownership');
+    } finally {
+      owned.release();
+      vi.restoreAllMocks();
+      input.release();
+    }
+  });
+
 
   it('GlueShiftは省略時の呼出順を変えず、指定時だけ非破壊設定後Build前に指定する', () => {
     const { keep, release } = allocationModule.createAllocations();

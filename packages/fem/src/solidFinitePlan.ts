@@ -1,4 +1,4 @@
-import { isRecord } from './protocol.js';
+import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 
 /**
  * Typed TS reader of the internal finite-strain J2 equilibrium plan of solidFiniteEquilibrium.py (EX-09 W34; internal,
@@ -7,8 +7,8 @@ import { isRecord } from './protocol.js';
  *   4..2000 nodes of 3 finite coordinates, 1..5000 tet4 elements of 4 distinct valid node indices whose
  *   6 V = det(x1 - x0, x2 - x0, x3 - x0) is finite and > 1e-12 x (longest edge)^3, every node used, 1..200 steps,
  *   steps x (nodes + elements) <= 20000 recorded states, per-DOF histories of exactly `steps` finite values with a DOF
- *   either prescribed or loaded once, at least one prescribed and one free DOF, and referenceForceN (positive) unless a
- *   nodal force is nonzero (then the largest |force| is the native force scale).
+ *   prescribed and/or loaded, once per list, at least one prescribed and one free DOF, and referenceForceN (positive) unless a
+ *   free-DOF nodal force is nonzero (then its largest |force| is the native force scale).
  * Units N-mm-MPa; time t = step number, time 0 is the undeformed unloaded state; nodal forces are dead loads in the
  * global axes. This is separate from the small-strain path (solidPlastic.ts, MAXIMUM_STRAIN 0.05), which is unchanged.
  */
@@ -50,9 +50,7 @@ export interface SolidFinitePlan {
 const PLAN_FIELDS = ['schema', 'units', 'nodes', 'elements', 'material', 'steps', 'prescribedMm', 'forcesN'] as const;
 const MATERIAL_FIELDS = ['youngMPa', 'poisson', 'yieldStressMPa', 'hardeningModulusMPa'] as const;
 
-function fail(detail: string): never {
-  throw new Error(`finite-equilibrium-plan: ${detail}`);
-}
+const fail: (message: string) => never = createPrefixedError('finite-equilibrium-plan');
 /** Exactly the required own string keys plus the listed optional ones; no symbol, inherited or extra field. */
 function fields(value: unknown, required: readonly string[], optional: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);
@@ -64,10 +62,7 @@ function fields(value: unknown, required: readonly string[], optional: readonly 
   }
   return row;
 }
-function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(`${path} must be a finite number`);
-  return value === 0 ? 0 : value;
-}
+const finite = createFiniteReader(fail);
 function integer(value: unknown, path: string, low: number, high: number): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < low || value > high) {
     fail(`${path} must be an integer from ${String(low)} to ${String(high)}`);
@@ -103,7 +98,7 @@ function readMaterial(value: unknown): SolidFiniteMaterial {
 }
 
 interface History { readonly node: number; readonly dof: SolidFiniteDof; readonly values: readonly number[] }
-/** One DOF history list; `used` holds node * 3 + direction of every DOF already prescribed or loaded. */
+/** One DOF history list; `used` holds node * 3 + direction of every DOF already in this list. */
 function readHistories(value: unknown, name: 'prescribedMm' | 'forcesN', unit: 'valuesMm' | 'valuesN', nodeCount: number,
   steps: number, used: Set<number>): readonly History[] {
   return array(value, name, 0, nodeCount * 3).map((item, index) => {
@@ -113,7 +108,7 @@ function readHistories(value: unknown, name: 'prescribedMm' | 'forcesN', unit: '
     const dof = SOLID_FINITE_DOFS.find(candidate => candidate === entry.dof);
     if (dof === undefined) fail(`${path}.dof must be x, y or z`);
     const key = node * 3 + SOLID_FINITE_DOFS.indexOf(dof);
-    if (used.has(key)) fail(`${path} repeats node ${String(node)} direction ${dof} (a DOF is either prescribed or loaded)`);
+    if (used.has(key)) fail(`${path} repeats node ${String(node)} direction ${dof} (a DOF appears at most once per list)`);
     used.add(key);
     const values = Object.freeze(array(entry[unit], `${path}.${unit}`, steps, steps)
       .map((number, k) => finite(number, `${path}.${unit}[${String(k)}]`)));
@@ -159,10 +154,10 @@ export function readSolidFinitePlan(value: unknown): SolidFinitePlan {
   const prescribedMm: readonly SolidFinitePrescribed[] = Object.freeze(readHistories(row.prescribedMm, 'prescribedMm', 'valuesMm',
     nodes.length, steps, dofs).map(({ node, dof, values }) => Object.freeze({ node, dof, valuesMm: values })));
   const forcesN: readonly SolidFiniteLoad[] = Object.freeze(readHistories(row.forcesN, 'forcesN', 'valuesN',
-    nodes.length, steps, dofs).map(({ node, dof, values }) => Object.freeze({ node, dof, valuesN: values })));
+    nodes.length, steps, new Set<number>()).map(({ node, dof, values }) => Object.freeze({ node, dof, valuesN: values })));
   if (prescribedMm.length === 0) fail('at least one displacement must be prescribed');
   if (prescribedMm.length >= nodes.length * 3) fail('at least one degree of freedom must stay free');
-  const largestLoad = forcesN.reduce((largest, load) => load.valuesN.reduce((m, v) => Math.max(m, Math.abs(v)), largest), 0);
+  const largestLoad = forcesN.filter(load => !dofs.has(load.node * 3 + SOLID_FINITE_DOFS.indexOf(load.dof))).reduce((largest, load) => load.valuesN.reduce((m, v) => Math.max(m, Math.abs(v)), largest), 0);
   const plan: SolidFinitePlan = { schema: SOLID_FINITE_PLAN_SCHEMA, units: SOLID_FINITE_UNITS, nodes, elements, material, steps,
     prescribedMm, forcesN };
   if (Object.hasOwn(row, 'referenceForceN')) {
@@ -170,6 +165,6 @@ export function readSolidFinitePlan(value: unknown): SolidFinitePlan {
     if (!(referenceForceN > 0)) fail('referenceForceN must be positive');
     return Object.freeze({ ...plan, referenceForceN });
   }
-  if (!(largestLoad > 0)) fail('a history without nodal forces needs referenceForceN (native NRSolver force scale of the free DOFs)');
+  if (!(largestLoad > 0)) fail('a history without free-DOF nodal forces needs referenceForceN (native NRSolver force scale of the free DOFs)');
   return Object.freeze(plan);
 }

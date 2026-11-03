@@ -1,3 +1,5 @@
+import { crossVec3 as fbCross } from '@pointercad/model/vec3';
+import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamContactInput, BeamContactNumericResult } from './contactModel.js';
@@ -47,9 +49,7 @@ export interface BeamBoltContactResult {
   readonly contact: BeamContactNumericResult;
   readonly states: readonly { readonly loadFactor: number; readonly bolts: readonly AxialBoltForce[] }[];
 }
-function record(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
+
 function fields(v: unknown, names: readonly string[]): Record<string, unknown> {
   if (!record(v) || Reflect.ownKeys(v).length !== names.length || names.some(key => !Object.hasOwn(v, key))) {
     throw new Error('bolt-shape: missing or unsupported fields');
@@ -251,7 +251,6 @@ function fbVector(v: unknown): Vector3 {
   if (!dense(v) || v.length !== 3 || !v.every(x => typeof x === 'number' && Number.isFinite(x) && Math.abs(x) <= 1e30)) throw new Error('frame-vector');
   return [Number(v[0]), Number(v[1]), Number(v[2])];
 }
-function fbCross(a: Vector3, b: Vector3): Vector3 { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
 /** Constitutive verification, not a solver: no unknown displacements are solved here. */
 export function frameBoltEndActions(plan: FrameBoltContactPlan, uA: Vector3, rA: Vector3, uB: Vector3, rB: Vector3): FrameBoltActions {
   const m = plan.contact.members[plan.bolt.member - 1], s = plan.contact.sections[m.section - 1], mat = plan.contact.materials[m.material - 1], L = m.frame.lengthM;

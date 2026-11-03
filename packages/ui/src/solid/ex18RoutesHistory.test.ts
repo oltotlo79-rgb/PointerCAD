@@ -1,3 +1,4 @@
+import { publicAssetUrl } from '../testing/publicAssetUrl.testSupport.js';
 /** W08 real Zustand history. W07 owns numeric-input failure/cancellation atomicity. */
 import { readFileSync } from 'node:fs';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -5,19 +6,19 @@ import { commitContextReference, contentHashOf, contextPointResolverFromBodies, 
   resolveSubShapeReference, type PartDocument, type ResolvedPart, type KernelBridge } from '@pointercad/model';
 import { emptyPcadAttachments, readPcadFile, writePcadFile, writeDocumentBundle, readDocumentBundle } from '@pointercad/io';
 import { createAssemblyDocumentBundle, partLibraryOfBundle, type PartLibrary } from '@pointercad/model';
-import { createInspectableNativeKernelForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { createInspectableNativeKernelForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { buildEx18SketchBracket, buildEx18SewnBracket, buildEx18ExpressionBracket,
   buildEx18RevolvedFlange, buildEx18RuledFlange, buildEx18ExpressionFlange,
   buildEx18ExtrudedOblique, buildEx18SewnOblique, buildEx18ExpressionOblique,
   editEx18SketchHoleDiameter, editEx18SewnDiameter, editEx18ExpressionDiameter, moveEx18ExpressionHole,
-  editEx18RevolvedFlangeRadius, editEx18FlangeBore, editEx18ObliqueDepth, routeExpression } from '../../../model/src/part/ex18RouteBuilders.testSupport.js';
-import { appendEx18DirectEdit, directFaceReference, directPlanarFace, importEx18DirectSeed } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
+  editEx18RevolvedFlangeRadius, editEx18FlangeBore, editEx18ObliqueDepth, routeExpression } from '@pointercad/model/testing/ui-fixtures';
+import { appendEx18DirectEdit, directFaceReference, directPlanarFace, importEx18DirectSeed } from '@pointercad/model/testing/ex18-fixtures';
 import { buildEx18ContextAssembly, buildEx18ContextPart, buildEx18ContextSource, contextPlacement,
-  ex18ContextSourceFace } from '../../../model/src/assembly/ex18ContextRouteBuilders.testSupport.js';
+  ex18ContextSourceFace } from '@pointercad/model/testing/ex18-fixtures';
 import { EX18_ORACLE_EXPECTATIONS, EX18_ORACLE_A_DIAMETER_EIGHT, EX18_ORACLE_B_RADIUS_FOUR,
   EX18_ORACLE_C_DEPTH_TWELVE, EX18_ORACLE_A_HOLE_X_TWELVE, EX18_ORACLE_B_CONTEXT_MOVED,
-  EX18_ORACLE_C_CONTEXT_MOVED } from '../../../model/src/part/ex18RouteFixtures.testSupport.js';
-import { compareEx18Shape, type Ex18ShapeExpectation } from '../../../model/src/part/ex18ShapeOracle.testSupport.js';
+  EX18_ORACLE_C_CONTEXT_MOVED } from '@pointercad/model/testing/ex18-fixtures';
+import { compareEx18Shape, type Ex18ShapeExpectation } from '@pointercad/model/testing/ex18-fixtures';
 import { attachPartRecompute } from '../store/attachKernel.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -52,7 +53,7 @@ async function author(shape: Shape, route: Exclude<Route, 'direct STEP'>, bridge
 async function builtRoute(shape: Shape, route: Route, native: Native) {
   if (route === 'direct STEP') {
     const seed = await importEx18DirectSeed(native.bridge, `direct-seed-${shape}.step`,
-      readFileSync(new URL(`../../../model/src/part/fixtures/ex18/direct-seed-${shape}.step`, import.meta.url)));
+      readFileSync(publicAssetUrl(`@pointercad/model/testing-assets/direct-seed-${shape}.step`)));
     const initial = await recomputePart(seed.part, native.bridge, { importedShapes: seed.importedShapes });
     expect(initial.errors).toEqual([]);
     const [body] = initial.bodies;

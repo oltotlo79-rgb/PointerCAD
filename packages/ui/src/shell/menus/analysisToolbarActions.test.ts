@@ -1,9 +1,9 @@
 import { createAssemblyDocument, createDrawingDocument } from '@pointercad/model';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTestStore } from '../../store/testing/createTestStore.js';
 import { useAppStore } from '../../store/useAppStore.js';
 import { restoreBoltPreloadDraft } from '../../beam/boltPreloadDraft.js';
-import { savedBoltFixture } from '../../../../model/src/analysis/cadNativeBoltPreloadInput.testSupport.js';
+import { savedBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { ANALYSIS_MENU_ITEMS, analysisMenuItemsFor } from './analysisMenuItems.js';
 import { analysisToolbarReadiness, openAnalysisTool, runAnalysisTool } from './analysisToolbarActions.js';
 
@@ -12,12 +12,17 @@ function resetAnalysisTestStore(): void {
   const current = useAppStore.getState();
   if (current.solidAnalysisSession !== null) current.closeSolidAnalysis();
   if (current.solidPlasticSession !== null) current.closeSolidPlastic();
+  if (current.solidFiniteSession !== null) current.closeSolidFinite();
+  if (current.shellAnalysisSession !== null) current.closeShellAnalysis();
+  useAppStore.setState({ solidPlasticRunner: null, solidFiniteRunner: null });
   resetTestStore();
 }
 beforeEach(() => {
   resetAnalysisTestStore();
   expect(useAppStore.getState().solidAnalysisSession).toBeNull();
   expect(useAppStore.getState().solidPlasticSession).toBeNull();
+  expect(useAppStore.getState().solidFiniteSession).toBeNull();
+  expect(useAppStore.getState().shellAnalysisSession).toBeNull();
 });
 afterEach(resetAnalysisTestStore);
 const state = () => useAppStore.getState();
@@ -32,12 +37,15 @@ const entries = [
   { id: 'fatigueLocalCycle', field: 'fatigueLocalCycleSession', kinds: ['part', 'assembly'] },
   { id: 'solidAnalysis', field: 'solidAnalysisSession', kinds: ['part'] },
   { id: 'solidPlastic', field: 'solidPlasticSession', kinds: ['part'] },
+  { id: 'solidFinite', field: 'solidFiniteSession', kinds: ['part'] },
+  { id: 'shellAnalysis', field: 'shellAnalysisSession', kinds: ['part'] },
 ] as const;
 
-it('exposes seven unique entries: six for a part, five for an assembly, none for a drawing', () => {
+it('exposes nine unique entries: eight for a part, five for an assembly, none for a drawing', () => {
   expect(ANALYSIS_MENU_ITEMS.map(item => item.id)).toEqual(entries.map(item => item.id));
   expect(analysisMenuItemsFor('part').map(item => item.id)).toEqual([
-    'plasticBar', 'fatigue', 'fatigueStrain', 'fatigueLocalCycle', 'solidAnalysis', 'solidPlastic',
+    'plasticBar', 'fatigue', 'fatigueStrain', 'fatigueLocalCycle', 'solidAnalysis', 'solidPlastic', 'solidFinite',
+    'shellAnalysis',
   ]);
   expect(analysisMenuItemsFor('assembly').map(item => item.id)).toEqual([
     'beam', 'plasticBar', 'fatigue', 'fatigueStrain', 'fatigueLocalCycle',
@@ -91,7 +99,7 @@ it('refuses part-only and assembly-only entries before opening the parent', () =
   expect(state()).toBe(part);
   state().openAssembly(createAssemblyDocument('Assembly'));
   const assembly = state();
-  for (const id of ['solidAnalysis', 'solidPlastic'] as const) {
+  for (const id of ['solidAnalysis', 'solidPlastic', 'solidFinite', 'shellAnalysis'] as const) {
     expect(runAnalysisTool(id)).toEqual({ ready: false, reasonKey: 'command.unavailable.document' });
     expect(state()).toBe(assembly);
   }
@@ -139,4 +147,29 @@ it('refuses an existing bolt preload input without treating it as an ordinary be
   expect(current.boltPreloadDraft).toBe(draft);
   expect(JSON.stringify(draft)).toBe(before);
   expect(state().strengthSession).toBeNull();
+});
+
+it('explicit small/finite switching cancels the previous run and keeps the two documents unchanged', () => {
+  const smallCancel = vi.fn(), finiteCancel = vi.fn();
+  useAppStore.setState({ solidPlasticRunner: { run: vi.fn(), cancel: smallCancel, captureFaces: vi.fn(), validate: vi.fn() },
+    solidFiniteRunner: { run: vi.fn(), cancel: finiteCancel, captureFaces: vi.fn(), validate: vi.fn() } });
+  expect(runAnalysisTool('solidPlastic')).toEqual(ready);
+  const document = state().document, history = state().undoStack;
+  smallCancel.mockClear();
+  expect(runAnalysisTool('solidFinite')).toEqual(ready);
+  expect(smallCancel).toHaveBeenCalledTimes(1);
+  expect(state().solidPlasticSession).toBeNull(); expect(state().solidFiniteSession).not.toBeNull();
+  finiteCancel.mockClear();
+  expect(runAnalysisTool('solidPlastic')).toEqual(ready);
+  expect(finiteCancel).toHaveBeenCalledTimes(1);
+  expect(state().solidFiniteSession).toBeNull(); expect(state().solidPlasticSession).not.toBeNull();
+  expect(state().document).toBe(document); expect(state().undoStack).toBe(history);
+});
+
+it('does not supersede a newer tool opened synchronously by cancellation', () => {
+  expect(runAnalysisTool('solidPlastic')).toEqual(ready);
+  useAppStore.setState({ solidPlasticRunner: { run: vi.fn(), validate: vi.fn(), captureFaces: vi.fn(),
+    cancel: () => state().openPlasticBar() } });
+  expect(runAnalysisTool('solidFinite')).toEqual({ ready: false, reasonKey: 'toolbar.analysis.closeCurrent' });
+  expect(state().plasticBarSession).not.toBeNull(); expect(state().solidFiniteSession).toBeNull();
 });

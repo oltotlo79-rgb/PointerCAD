@@ -1,3 +1,5 @@
+import { isFiniteNumber, isRecord } from './valueGuards.js';
+
 /** Input contract only. Passing validation does not prove native support,
  * adequate restraints, mesh quality, convergence or structural safety. */
 export const SHELL_ANALYSIS_SCHEMA = 'pointercad-shell-tri3/1';
@@ -35,7 +37,7 @@ export interface ShellAnalysisInput {
 
 function refuse(path: string): never { throw new Error(`shell-input: ${path}`); }
 function record(value: unknown, fields: readonly string[], path: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return refuse(path);
+  if (!isRecord(value)) return refuse(path);
   const row: Record<string, unknown> = Object.fromEntries(Object.entries(value));
   if (Object.keys(row).length !== fields.length || fields.some(key => !Object.hasOwn(row, key))) return refuse(path);
   return row;
@@ -46,7 +48,7 @@ function array(value: unknown, minimum: number, path: string): unknown[] {
   return Array.from(value);
 }
 function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return refuse(path);
+  if (!isFiniteNumber(value)) return refuse(path);
   return value;
 }
 function positive(value: unknown, path: string): number {

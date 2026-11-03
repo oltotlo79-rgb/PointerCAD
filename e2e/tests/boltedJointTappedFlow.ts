@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { statSync } from 'node:fs';
+import { watch } from './runtimeErrors.js';
 import { expect, test as baseTest, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import {
   chooseToolMenuItem, installAssemblyFileGateway, openToolMenu, resetAssemblyFileGateway, toolMenuPanel,
@@ -54,20 +55,6 @@ const REASON = {
   washerOnTappedSide: 'ねじ穴の側には座金を置けません。',
   nominalMismatch: '指定した呼びがねじ穴の呼びと違います。',
 } as const;
-
-interface Watch {
-  readonly errors: string[];
-  readonly dialogs: string[];
-}
-
-function watch(page: Page): Watch {
-  const errors: string[] = [];
-  const dialogs: string[] = [];
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('dialog', (dialog) => { dialogs.push(dialog.message()); void dialog.dismiss(); });
-  return { errors, dialogs };
-}
 
 function propertyField(page: Page, label: string): Locator {
   return propertyPanel(page).locator('.pcad-field')

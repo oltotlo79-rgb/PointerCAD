@@ -3,8 +3,8 @@ import {
   buildStandardPartFromSource, createAssemblyDocument, EMPTY_PART_LIBRARY, MAX_SUB_ASSEMBLY_DEPTH, resolveAssembly,
   type AssemblyComponent, type AssemblyDocument, type PartLibrary,
 } from '@pointercad/model';
-import { childOwnedWeldFixture, WELDED_CHILD_REF } from '../../../model/src/analysis/cadWeldLayerChildOwned.testSupport.js';
-import { testPlacement } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { childOwnedWeldFixture, WELDED_CHILD_REF } from '@pointercad/model/testing/ui-fixtures';
+import { testPlacement } from '@pointercad/model/testing/analysis-fixtures';
 import { childWeldDefinitionTarget, commitChildWeldDefinitionEdit, definitionPlacementCount } from './childWeldDefinitionEdit.js';
 import { createFilletWeldEditDraft } from './filletWeldDraft.js';
 

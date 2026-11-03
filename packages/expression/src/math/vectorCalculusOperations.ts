@@ -43,12 +43,12 @@ export function expandFunctionVectorCalculus(source: MathNode, inputs: readonly 
   const spend = (depth = 0): void => {
     if (++work > 4096 || depth > 64) throw new MathInputProblem('budget', 'ベクトル解析の式が複雑すぎます。式を分けてください。');
   };
-  const op = (operation: string, ...operands: MathNode[]): MathNode => {
+  const makeOperation = (operation: string, ...operands: MathNode[]): MathNode => {
     spend(); return { kind: 'operation', operation, operands };
   };
-  const diff = (body: MathNode, ...variables: MathNode[]): MathNode => op('differentiate', body, ...variables);
-  const list = (values: readonly MathNode[]): MathNode => op('list', ...values);
-  const sum = (values: readonly MathNode[]): MathNode => values.length === 1 ? values[0] : op('add', ...values);
+  const diff = (body: MathNode, ...variables: MathNode[]): MathNode => makeOperation('differentiate', body, ...variables);
+  const list = (values: readonly MathNode[]): MathNode => makeOperation('list', ...values);
+  const sum = (values: readonly MathNode[]): MathNode => values.length === 1 ? values[0] : makeOperation('add', ...values);
   const scalar = (value: MathNode): MathNode => {
     if (value.kind === 'operation' && ['list', 'matrix', 'set', 'interval'].includes(value.operation)) {
       throw new MathInputProblem('domain', 'このベクトル解析の式には数値になる成分を指定してください。');
@@ -98,19 +98,19 @@ export function expandFunctionVectorCalculus(source: MathNode, inputs: readonly 
     if (node.operation === 'divergence') return sum(components.map((component, i) => diff(component, variables[i])));
     return list([0, 1, 2].map(i => {
       const j = (i + 1) % 3, k = (i + 2) % 3;
-      return op('subtract', diff(components[k], variables[j]), diff(components[j], variables[k]));
+      return makeOperation('subtract', diff(components[k], variables[j]), diff(components[j], variables[k]));
     }));
   }
   function curvilinear(operation: string, body: MathNode, variables: readonly MathNode[], system: 1 | 2): MathNode {
     const one: MathNode = { kind: 'number', decimal: '1' }, zero: MathNode = { kind: 'number', decimal: '0' };
     const [radius, theta] = variables;
-    const mul = (...values: MathNode[]): MathNode => op('multiply', ...values);
-    const div = (a: MathNode, b: MathNode): MathNode => op('divide', a, b);
+    const mul = (...values: MathNode[]): MathNode => makeOperation('multiply', ...values);
+    const div = (a: MathNode, b: MathNode): MathNode => makeOperation('divide', a, b);
     // acos(-1) is a half turn in the saved angle convention. This supplies the
     // radians-per-angle factor without changing the caller's angle semantics.
-    const halfTurn = op('arccos', { kind: 'number', decimal: '-1' });
+    const halfTurn = makeOperation('arccos', { kind: 'number', decimal: '-1' });
     const angle = div({ kind: 'constant', name: 'pi' }, halfTurn);
-    const scales = [one, mul(radius, angle), system === 1 ? one : mul(radius, angle, op('sin', theta))];
+    const scales = [one, mul(radius, angle), system === 1 ? one : mul(radius, angle, makeOperation('sin', theta))];
     const area = (i: number): MathNode => mul(scales[(i + 1) % 3], scales[(i + 2) % 3]);
     const volume = mul(...scales);
     const gradient = (value: MathNode): MathNode[] => variables.map((variable, i) => div(diff(value, variable), scales[i]));
@@ -120,8 +120,8 @@ export function expandFunctionVectorCalculus(source: MathNode, inputs: readonly 
     // log imposes the open chart even for a constant or a selected zero result.
     // Differentiate each guard with respect to an independent coordinate: its
     // value is zero, avoiding an artificial 1/r overflow near a regular point.
-    const chart = [diff(op('natural-log', radius), theta)];
-    if (system === 2) chart.push(diff(op('natural-log', mul(theta, op('subtract', halfTurn, theta))), radius));
+    const chart = [diff(makeOperation('natural-log', radius), theta)];
+    if (system === 2) chart.push(diff(makeOperation('natural-log', mul(theta, makeOperation('subtract', halfTurn, theta))), radius));
     const protect = (value: MathNode): MathNode => sum([value, ...chart.map(guard => mul(zero, guard))]);
     if (operation === 'gradient') return list(gradient(scalar(body)).map(protect));
     if (operation === 'laplacian') return protect(divergence(gradient(scalar(body))));
@@ -132,7 +132,7 @@ export function expandFunctionVectorCalculus(source: MathNode, inputs: readonly 
     if (operation === 'divergence') return protect(divergence(components));
     return list([0, 1, 2].map(i => {
       const j = (i + 1) % 3, k = (i + 2) % 3;
-      return protect(div(op('subtract', diff(mul(scales[k], components[k]), variables[j]),
+      return protect(div(makeOperation('subtract', diff(mul(scales[k], components[k]), variables[j]),
         diff(mul(scales[j], components[j]), variables[k])), area(i)));
     }));
   }

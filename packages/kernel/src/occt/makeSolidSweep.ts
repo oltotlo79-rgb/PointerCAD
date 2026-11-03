@@ -1,3 +1,4 @@
+import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
 import type {
   OpenCascadeInstance,
   TopoDS_Face,
@@ -117,15 +118,6 @@ export interface ExtrudeShapeOptions {
   readonly target?: TopoDS_Shape | null;
 }
 
-/** 向きを長さ 1 に揃える。長さが 0 のときや数でないときは null を返す。 */
-function normalizeDirection(vector: Vec3Tuple): Vec3Tuple | null {
-  const [x, y, z] = vector;
-  const length = Math.hypot(x, y, z);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [x / length, y / length, z / length];
-}
 
 /** 3 つとも実数か(NaN と無限大を弾く)。 */
 function isFinitePoint(point: Vec3Tuple): boolean {

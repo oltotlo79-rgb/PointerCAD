@@ -529,7 +529,7 @@ describe('外観の変更(FR-1106、要件§4.12)', () => {
 
 
 import { beforeAll } from 'vitest';
-import { initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { applyNumericTransition } from '../sketch/commitToStore.js';
 import { documentSha, historyFormula, nativeHistoryHarness, shapeSha } from '../solid/holeThreadHistory.testSupport.js';
 

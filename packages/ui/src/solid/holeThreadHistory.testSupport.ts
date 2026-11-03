@@ -6,7 +6,7 @@ import {
   recomputePart, replaceSketch, type PartDocument, type PartRecomputeOptions,
   type PartRecomputeResult, type SolidBody,
 } from '@pointercad/model';
-import { createNativeKernelBridgeForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { createNativeKernelBridgeForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { expect, vi } from 'vitest';
 import { applyNumericTransition } from '../sketch/commitToStore.js';
 import { createNumericInput, type SolidInputCommit } from '../sketch/numericInput.js';

@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  addVec3, cleanZeroVec3, crossVec3, distanceVec3, dotVec3, isSamePoint, lerpVec3,
+  addVec3, isFiniteVec3, cleanZeroVec3, crossVec3, distanceVec3, dotVec3, isSamePoint, lerpVec3,
   lengthVec3, mirrorVec3, normalizeVec3, ORIGIN, rotateAboutAxis, rotateDirection,
   scaleVec3, SKETCH_TOLERANCE_MM, subVec3,
 } from './vec3.js';
 
 describe('ベクトルの計算', () => {
+  it('checks finite components without coercion', () => {
+    expect(isFiniteVec3([0, -0, Number.MAX_VALUE])).toBe(true);
+    expect(isFiniteVec3([1, Number.NaN, 3])).toBe(false);
+    expect(isFiniteVec3([1, 2, Number.POSITIVE_INFINITY])).toBe(false);
+  });
+
   it('足し算・引き算・定数倍', () => {
     expect(addVec3([1, 2, 3], [4, 5, 6])).toEqual([5, 7, 9]);
     expect(subVec3([4, 5, 6], [1, 2, 3])).toEqual([3, 3, 3]);

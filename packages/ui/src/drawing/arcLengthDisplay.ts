@@ -1,10 +1,8 @@
+import { dotVec3 as dot, subVec3 as subtract, crossVec3 as cross } from '@pointercad/model/vec3';
 import { createProjectedArcLengthDimensionGeometry, drawingViewBasis, type ProjectedArcLengthDimensionGeometry, type DrawingDocument, type Point2, type Vector3 } from '@pointercad/drawing';
 import { resolvedDimensionView, type DimensionResolveContext, type ResolvedDimensionTarget, type ResolvedDrawingDimension } from '@pointercad/model';
 
 type ArcTarget = Extract<ResolvedDimensionTarget, { readonly kind: 'circle' | 'arc' }>;
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const subtract = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross = (a: Vector3, b: Vector3): Vector3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit = (a: Vector3): Vector3 => { const length = Math.hypot(...a); return [a[0] / length, a[1] / length, a[2] / length]; };
 
 /** 両端と弧長から大弧/小弧を、線重心から半円の向きを復元する。 */

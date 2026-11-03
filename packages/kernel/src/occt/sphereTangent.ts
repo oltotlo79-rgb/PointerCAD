@@ -1,3 +1,4 @@
+import { lengthVec as magnitude, subVec as subtract, dotVec as dot } from './sketchCorner.js';
 /**
  * 球への外接直線(FR-430、計画書 P5 §2.9.3、タスク23)。
  *
@@ -68,21 +69,10 @@ function isFiniteVector(value: Vec3Tuple): boolean {
   return Number.isFinite(value[0]) && Number.isFinite(value[1]) && Number.isFinite(value[2]);
 }
 
-function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
 function scale(value: Vec3Tuple, factor: number): Vec3Tuple {
   return [value[0] * factor, value[1] * factor, value[2] * factor];
 }
 
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function magnitude(value: Vec3Tuple): number {
-  return Math.hypot(value[0], value[1], value[2]);
-}
 
 /** base + direction × distance。頂点と接触円の中心を同じ式で作るための小さな道具。 */
 function addScaled(base: Vec3Tuple, direction: Vec3Tuple, distance: number): Vec3Tuple {

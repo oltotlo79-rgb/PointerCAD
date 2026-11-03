@@ -223,9 +223,9 @@ export function planCircularFilletWeld(context: JointOccurrenceCommandContext, r
         || !samePose(composePlacement(motion, historical), current.occurrence.worldPlacement)) return refuse('association-damaged');
     }
   }
-  const epoch = canonicalTextOf({ draftEpoch: captured.draftEpoch, intervals: captured.intervals,
+  const draftIdentity = canonicalTextOf({ draftEpoch: captured.draftEpoch, intervals: captured.intervals,
     section: captured.section, materialId: captured.materialId });
-  const currentBeads = captured.intervals.map(row => ({ ...row, beadSourceKey: `draft:${epoch}:${row.beadId}` }));
+  const currentBeads = captured.intervals.map(row => ({ ...row, beadSourceKey: `draft:${draftIdentity}:${row.beadId}` }));
   const definition = { kind: 'circular-weld-path', evidence, intervals: currentBeads };
   const path = createCircularWeldPath(definition, evidence, currentBeads);
   if (path === null) return refuse('invalid-request');

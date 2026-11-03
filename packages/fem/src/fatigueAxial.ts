@@ -1,3 +1,5 @@
+import { fatigueFailure } from './fatigueFailure.js';
+import { isRecord as record, isFiniteNumber as finiteNumber } from './valueGuards.js';
 import { MAX_FATIGUE_HISTORY_POINTS, MAX_FATIGUE_REPEATS, MAX_FATIGUE_STRESS_MPA, type FatigueSequence,
   type FatigueStressHistory } from './fatigueModel.js';
 import { transientAxialMatches, type TransientAxialResponse } from './transientAxial.js';
@@ -47,9 +49,8 @@ export type AxialFatigueHistory =
   | { readonly ok: true; readonly history: FatigueStressHistory; readonly provenance: AxialFatigueProvenance }
   | AxialFatigueError;
 
-const fail = (code: AxialFatigueErrorCode, path: string): AxialFatigueError => ({ ok: false, code, path });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const fail: (code: AxialFatigueErrorCode, path: string) => AxialFatigueError = fatigueFailure;
+
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
 /** Holes are refused (every/map skip them), as in every other runtime reader of this package. */
@@ -75,7 +76,7 @@ function readSelection(value: unknown): AxialFatigueSelection | AxialFatigueErro
   return { memberId: value.memberId, historyId: value.historyId, sequence, repeats, reference: value.reference };
 }
 
-const finiteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 const numbers = (value: unknown): value is number[] => dense(value) && value.every(finiteNumber);
 const extreme = (value: unknown): boolean => record(value) && ['sample', 'timeS', 'strain', 'stressPa'].every(key => finiteNumber(value[key]));
 /** Structural guard of a stored or transferred measure (no cast): every field transientAxialMatches reads. */

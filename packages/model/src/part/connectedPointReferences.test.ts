@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, resolveSubShapeReference, type KernelBridge, type SolidBody } from '../kernelBridge.js';
 import { createSubShapeReference } from '../kernelBridge/createSubShapeReference.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';

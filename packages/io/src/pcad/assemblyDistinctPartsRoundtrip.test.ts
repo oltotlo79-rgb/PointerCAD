@@ -31,7 +31,7 @@ import {
 } from '@pointercad/model';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import {
   boxPart, buildHostAssembly, DISTINCT_PART_COUNT as COUNT, ev, HOST_SHAPE_KINDS, HOST_SLIDER_GROUPS, HOST_TOTAL,
   hostComponentName, hostJointId, hostPositionOf, hostShapeOf, hostStoredRotationOf, placementOf, positionOf, rotationOf,

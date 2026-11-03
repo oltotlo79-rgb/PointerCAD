@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -31,8 +32,7 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 const script = fileURLToPath(new URL('./exactRuntime/cas_integrals_test.py', import.meta.url));
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'degree', coefficients: [],
-    identity: { documentId: 'integral', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'degree', identity: { documentId: 'integral', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 function native(args: readonly string[], input?: string): string {
   const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {

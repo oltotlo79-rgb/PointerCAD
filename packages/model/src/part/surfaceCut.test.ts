@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { evaluateExpression, expressionValueFromNumber as number } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge } from '../kernelBridge.js';
 import { absoluteCoordinate } from '../sketch/createSketchDocument.js';
 import type { SketchArcFeature, SketchEllipseFeature, SketchLineFeature } from '../sketch/types.js';

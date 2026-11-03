@@ -1,5 +1,6 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
+import { zDegrees } from './jointAngles.testSupport.js';
 import { appendSolid, createEmptyPartDocument } from '../../part/createPartDocument.js';
 import type { PrimitiveFeature } from '../../part/types.js';
 import { absoluteCoordinate } from '../../sketch/createSketchDocument.js';
@@ -69,12 +70,6 @@ async function fixture(change: (document: AssemblyDocument) => AssemblyDocument 
 const gear = (overrides: Partial<CrossLevelGearCoupling> = {}): CrossLevelGearCoupling =>
   ({ id: 'g1', parentJointId: 'drive', child: { path: ['A'], jointId: 'child-turn' }, ratio: -2, phaseDeg: 0, ...overrides });
 
-/** Degrees of a pure z rotation [0, 0, sin(phi/2), cos(phi/2)]; x and y must stay 0. */
-function zDegrees(rotation: Quaternion | undefined): number {
-  const [x, y, z, w] = rotation ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
-  expect(Math.abs(x) + Math.abs(y)).toBeLessThan(1e-9);
-  return 2 * Math.atan2(z, w) * 180 / Math.PI;
-}
 const at = (placements: ReadonlyMap<string, RigidPlacement>, id: string): readonly number[] =>
   placements.get(id)?.position ?? [Number.NaN, Number.NaN, Number.NaN];
 

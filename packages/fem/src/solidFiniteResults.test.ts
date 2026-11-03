@@ -64,8 +64,30 @@ function variant(change: (value: NativeFixture) => void): NativeFixture {
 const pythonText = (value: unknown): string => JSON.stringify(value).replaceAll(',', ', ').replaceAll(':', ': ');
 
 describe('finite equilibrium result decoder', () => {
+  it.each([-1, 1])('keeps fixed external forces of sign %s without masking a free imbalance or the next step', async sign => {
+    const base = input(), value = translateSolidFinite({ ...base, plan: { ...base.plan,
+      forcesN: [...base.plan.forcesN, { node: 0, dof: 'x', valuesN: [sign * 1e30, 0] }] } }).input;
+    const hash = await solidFiniteInputSha256(value), raw = native();
+    raw.records[0].externalN[0][0] = sign * 1e30;
+    const result = await decodeSolidFinite(raw, value, hash);
+    expect(result.records.map(record => record.forceScaleN)).toEqual([100, 200]);
+    expect(result.records[0].internalN).toEqual(native().records[0].internalN);
+    expect(result.records[0].externalN[0][0]).toBe(sign * 1e30);
+    for (const step of [0, 1]) {
+      const bad = structuredClone(raw);
+      bad.records[step].internalN[1][1] = 0.01;
+      // Forge the old huge denominator and a deceptively small reported ratio.
+      bad.records[step].forceScaleN = 1e30;
+      bad.records[step].freeResidualRatio = 0.01 / 1e30;
+      await expect(decodeSolidFinite(bad, value, hash)).rejects.toThrow('free-DOF residual or force scale differs');
+    }
+  });
   it('decodes a complete reply bound to the copied input and its digest, keeping native F/S and spatial stresses apart', async () => {
     const value = input(), hash = await solidFiniteInputSha256(value);
+    const signed = native();
+    signed.records[0].internalN[0][2] = -0;
+    const signedResult = await decodeSolidFinite(signed, value, hash);
+    expect(Object.is(signedResult.records[0].internalN[0][2], -0)).toBe(true);
     const result = await decodeSolidFinite(JSON.parse(pythonText(native())), value, hash);
     expect(result.input).toEqual(value);
     expect(result.inputSha256).toBe(hash);

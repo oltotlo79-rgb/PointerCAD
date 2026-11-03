@@ -29,6 +29,9 @@ function savedEntries(documentId: string): readonly BeamAnalysisInput[] {
     { kind: 'solid-plastic-cad', definition: { ...common, schema: 'pointercad-solid-plastic-cad-input/1', id: 'solid-plastic-cad',
       loadedFaces: ['top'], tractionMPa: [0, 0, -2], yieldStressMPa: 250, hardeningModulusMPa: 2000,
       materialReference: 'Manufactured history test, no material capacity claim', loadFactor: [0, 1, 0], stepsPerSegment: 4 } },
+    { kind: 'solid-finite-cad', definition: { ...common, schema: 'pointercad-solid-finite-cad-input/1', id: 'solid-finite-cad',
+      loadedFaces: ['top'], tractionMPa: [0, 0, -2], yieldStressMPa: 250, hardeningModulusMPa: 2000,
+      materialReference: 'Manufactured finite history test', forceFactors: [0.5, 1, -1], prescribedDisplacementFactors: [0, 1, -1] } },
     { kind: 'solid-modal-cad', definition: { ...common, schema: 'pointercad-solid-modal-cad-input/1', id: 'solid-modal-cad', densityKgM3: 7850, modeCount: 2 } },
     { kind: 'solid-buckling-cad', definition: { schema: 'pointercad-solid-buckling-cad-input/1', id: 'solid-buckling-cad',
       source: { documentId }, modeCount: 2, reference } },
@@ -41,7 +44,8 @@ function installPart(): void {
   // Controlled geometry-validation dependency only. History and all edit/save
   // actions below are the actual store; no native or UI result is fabricated.
   useAppStore.setState({ solidAnalysisRunner: { run: vi.fn(), cancel: vi.fn(), validate: vi.fn(), captureFaces: vi.fn() },
-    solidPlasticRunner: { run: vi.fn(), cancel: vi.fn(), validate: vi.fn(), captureFaces: vi.fn() } });
+    solidPlasticRunner: { run: vi.fn(), cancel: vi.fn(), validate: vi.fn(), captureFaces: vi.fn() },
+    solidFiniteRunner: { run: vi.fn(), cancel: vi.fn(), validate: vi.fn(), captureFaces: vi.fn() } });
 }
 const solidCases = [
   { kind: 'solid-cad', open: () => useAppStore.getState().openSolidAnalysis(),
@@ -53,6 +57,11 @@ const solidCases = [
     edit: () => useAppStore.getState().editSolidPlastic('hardening', '3000'),
     view: () => useAppStore.getState().focusSolidPlastic('hardening'),
     save: () => useAppStore.getState().saveSolidPlastic(), cancel: () => useAppStore.getState().cancelSolidPlastic(),
+    patch: { hardeningModulusMPa: 3000 } },
+  { kind: 'solid-finite-cad', open: () => useAppStore.getState().openSolidFinite(),
+    edit: () => useAppStore.getState().editSolidFinite({ kind: 'field', field: 'hardening', value: '3000' }),
+    view: () => useAppStore.getState().focusSolidFinite('hardening'),
+    save: () => useAppStore.getState().saveSolidFinite(), cancel: () => useAppStore.getState().cancelSolidFinite(),
     patch: { hardeningModulusMPa: 3000 } },
   { kind: 'solid-modal-cad', open: () => useAppStore.getState().openSolidAnalysis(),
     edit: () => useAppStore.getState().editSolidModalInput('modeCount', '4'),
@@ -68,10 +77,10 @@ const solidCases = [
 
 beforeEach(() => {
   resetTestStore();
-  useAppStore.setState({ solidAnalysisSession: null, solidPlasticSession: null, solidAnalysisRunner: null, solidPlasticRunner: null,
+  useAppStore.setState({ solidAnalysisSession: null, solidPlasticSession: null, solidFiniteSession: null, solidAnalysisRunner: null, solidPlasticRunner: null, solidFiniteRunner: null,
     solidModal: initialSolidModalState(), solidBuckling: initialSolidBucklingState() });
 });
-afterEach(() => { useAppStore.getState().closeSolidAnalysis(); useAppStore.getState().closeSolidPlastic(); resetTestStore(); });
+afterEach(() => { useAppStore.getState().closeSolidAnalysis(); useAppStore.getState().closeSolidPlastic(); useAppStore.getState().closeSolidFinite(); resetTestStore(); });
 
 describe('real analysis input history, independent saved values and complete document identity', () => {
   it.each(solidCases)('$kind: draft/display/cancel are zero history; commit is one and Undo/Redo restore every input and ID', row => {

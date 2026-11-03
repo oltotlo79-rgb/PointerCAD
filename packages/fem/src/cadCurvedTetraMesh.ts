@@ -23,7 +23,7 @@
  */
 import { analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryOptions,
   type AnalysisBoundarySource, type SolidBody } from '@pointercad/model';
-import type { FemClient, FemOptions } from './client.js';
+import { FemClient, type FemOptions } from './client.js';
 import { diagnoseTetraMeshQuality, readTetraMeshQualityLimits, type TetraMeshQuality, type TetraMeshQualityLimits } from './tetraMeshQuality.js';
 import { claimCadMeshRequest, isCurrentCadMeshRequest, releaseCadMeshRequest } from './cadMeshRequestOwner.js';
 import { bindCadBoundaryIdentity, type CadAnalysisBoundaryIdentity, type CadSavedBoundarySelection,
@@ -243,13 +243,22 @@ function refusalOf(error: unknown): { readonly code: string; readonly message: s
 export async function meshCadCurvedBoundary(client: Pick<FemClient, 'meshTetrahedra'>, kernel: AnalysisBoundarySource,
   readCurrent: () => CadTetraContext, options: CurvedCadTetraOptions, femOptions: FemOptions = {},
   requestedQuality?: TetraMeshQualityLimits, requestedMeshing?: TetraMeshingControls): Promise<CurvedCadTetraOutcome> {
+  const preparation = client instanceof FemClient ? client.beginTetraMeshPreparation(femOptions) : undefined;
+  const earlyCancellation = preparation?.cancellation();
+  if (earlyCancellation !== undefined && earlyCancellation !== null) {
+    preparation?.release();
+    return { kind: 'cancelled', reason: earlyCancellation };
+  }
   const owner = claimCadMeshRequest(client);
   const abort = (): void => owner.abort();
   femOptions.signal?.addEventListener('abort', abort, { once: true });
   if (femOptions.signal?.aborted) owner.abort();
-  const cancelled = (): CurvedCadTetraOutcome | null => !isCurrentCadMeshRequest(client, owner)
-    ? { kind: 'cancelled', reason: 'superseded' }
-    : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : null;
+  const cancelled = (): CurvedCadTetraOutcome | null => {
+    const reason = preparation?.cancellation();
+    if (reason !== undefined && reason !== null) return { kind: 'cancelled', reason };
+    return !isCurrentCadMeshRequest(client, owner) ? { kind: 'cancelled', reason: 'superseded' }
+      : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : null;
+  };
   const checkpoint = (): void => { if (cancelled() !== null) throw new CurvedRouteCancelled('cancelled'); };
   try {
     // Capture both policies before the first await; caller mutation cannot retarget this request.
@@ -281,7 +290,7 @@ export async function meshCadCurvedBoundary(client: Pick<FemClient, 'meshTetrahe
       return { kind: 'failed', code: 'stale', message: 'CAD revision changed while obtaining its boundary' };
     }
     const prepared = prepareCurvedCadTetraMesh(boundary.boundary, current, options, checkpoint, meshing);
-    const completion = await client.meshTetrahedra(prepared.input, { ...femOptions, signal: owner.signal });
+    const completion = await (preparation ?? client).meshTetrahedra(prepared.input, { ...femOptions, signal: owner.signal });
     const afterNative = cancelled();
     if (afterNative !== null) return afterNative;
     if (completion.kind === 'cancelled') return { kind: 'cancelled', reason: completion.reason };
@@ -320,5 +329,6 @@ export async function meshCadCurvedBoundary(client: Pick<FemClient, 'meshTetrahe
   } finally {
     femOptions.signal?.removeEventListener('abort', abort);
     releaseCadMeshRequest(client, owner);
+    preparation?.release();
   }
 }

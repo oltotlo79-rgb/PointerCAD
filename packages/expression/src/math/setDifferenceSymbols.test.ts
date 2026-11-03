@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -54,8 +55,7 @@ const examples = [
 ] as const;
 
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'set-difference-symbols', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'set-difference-symbols', documentVersion: 1, editorId: 'X', inputRevision: 1 } });
 }
 const backend = createMathBackend();
 const engine = sharedExactEngine(exactRuntimeBatch(script, 60_000));

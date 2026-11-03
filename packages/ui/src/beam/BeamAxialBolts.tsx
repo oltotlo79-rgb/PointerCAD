@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { partKeyOf } from '@pointercad/model';
 import type { CadAxialBolt } from '@pointercad/model/beam-analysis';
 import type { BeamBoltContactResult } from '@pointercad/fem';
@@ -45,7 +46,7 @@ export function BeamAxialBoltDefinitions({ session }: { readonly session: BeamSe
       <button type="button" onClick={() => edit(session.axialBolts.filter(row => row.id !== bolt.id))} title={t('beam.guide.axialBoltRemove')}>{t('beam.axialBoltRemove')}</button>
     </fieldset>)}
     <button type="button" disabled={session.axialBolts.length >= 64} onClick={() => edit([...session.axialBolts, {
-      id: crypto.randomUUID(), boltComponentId: '', expectedPartKey: '', expectedMaterialId: null,
+      id: createDocumentElementId(), boltComponentId: '', expectedPartKey: '', expectedMaterialId: null,
       first: { memberId: '', nodeId: '' }, second: { memberId: '', nodeId: '' }, youngMPa: NaN, effectiveAreaMm2: NaN,
       propertySource: { kind: 'user-supplied', reference: '', condition: '' }, idealization: 'bilateral-uniform-axial-elastic',
     }])} title={t('beam.guide.axialBoltAdd')}>{t('beam.axialBoltAdd')}</button>

@@ -3,7 +3,7 @@ import type { DatumDefinition, Dimension, DrawingDocument, GdtFeature, GdtFrameS
 import { expressionValueFromNumber as number } from '../../packages/expression/src/index.js';
 import { readPcaddFile, writePcaddFile } from '../../packages/io/src/index.js';
 import { createKernelApi } from '../../packages/kernel/src/worker/kernelApi.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { absoluteCoordinate, appendFeature, appendSolid, createDirectKernelBridge, createDrawingDocument, createEmptyPartDocument,
   createPointFeature, createPrimitiveFeature, DEFAULT_FACE_COLOR, DEFAULT_WORK_PLANE_ID, drawingSourceInputHash, IDENTITY_PLACEMENT,
   recomputePart, resolveDrawingGdt, resolveDrawingWelds, type PartDocument, type SketchDocument, type SketchFaceFeature,

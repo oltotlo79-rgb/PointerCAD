@@ -10,19 +10,19 @@ import { jsonDecimal, numberJson as N } from './nativeMathNumber.js';
 type Pair = readonly [EngineMathJson, EngineMathJson];
 type Complex = readonly [Decimal, Decimal];
 const HEADS = new Set(['Sqrt', 'Ln', 'Log', 'Power', 'Arcsin', 'Arccos', 'Arctan', 'Arsinh', 'Arcosh', 'Artanh']);
-const op = (head: string, ...args: EngineMathJson[]): EngineMathJson => [head, ...args];
+const createOperationNode = (head: string, ...args: EngineMathJson[]): EngineMathJson => [head, ...args];
 
 /** Entire functions are expanded before rounding, retaining e^(i*pi) exactly. */
 export function entireComplexOperation(head: string, [a, b]: Pair): EngineMathJson | null {
   switch (head) {
-    case 'Exp': return op('Complex', op('Multiply', op('Exp', a), op('Cos', b)), op('Multiply', op('Exp', a), op('Sin', b)));
-    case 'Sin': return op('Complex', op('Multiply', op('Sin', a), op('Cosh', b)), op('Multiply', op('Cos', a), op('Sinh', b)));
-    case 'Cos': return op('Complex', op('Multiply', op('Cos', a), op('Cosh', b)), op('Negate', op('Multiply', op('Sin', a), op('Sinh', b))));
-    case 'Sinh': return op('Complex', op('Multiply', op('Sinh', a), op('Cos', b)), op('Multiply', op('Cosh', a), op('Sin', b)));
-    case 'Cosh': return op('Complex', op('Multiply', op('Cosh', a), op('Cos', b)), op('Multiply', op('Sinh', a), op('Sin', b)));
-    case 'Tan': case 'Cot': return op('Divide', op(head === 'Tan' ? 'Sin' : 'Cos', op('Complex', a, b)), op(head === 'Tan' ? 'Cos' : 'Sin', op('Complex', a, b)));
-    case 'Sec': case 'Csc': return op('Divide', N(1), op(head === 'Sec' ? 'Cos' : 'Sin', op('Complex', a, b)));
-    case 'Tanh': return op('Divide', op('Sinh', op('Complex', a, b)), op('Cosh', op('Complex', a, b)));
+    case 'Exp': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Exp', a), createOperationNode('Cos', b)), createOperationNode('Multiply', createOperationNode('Exp', a), createOperationNode('Sin', b)));
+    case 'Sin': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Sin', a), createOperationNode('Cosh', b)), createOperationNode('Multiply', createOperationNode('Cos', a), createOperationNode('Sinh', b)));
+    case 'Cos': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Cos', a), createOperationNode('Cosh', b)), createOperationNode('Negate', createOperationNode('Multiply', createOperationNode('Sin', a), createOperationNode('Sinh', b))));
+    case 'Sinh': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Sinh', a), createOperationNode('Cos', b)), createOperationNode('Multiply', createOperationNode('Cosh', a), createOperationNode('Sin', b)));
+    case 'Cosh': return createOperationNode('Complex', createOperationNode('Multiply', createOperationNode('Cosh', a), createOperationNode('Cos', b)), createOperationNode('Multiply', createOperationNode('Sinh', a), createOperationNode('Sin', b)));
+    case 'Tan': case 'Cot': return createOperationNode('Divide', createOperationNode(head === 'Tan' ? 'Sin' : 'Cos', createOperationNode('Complex', a, b)), createOperationNode(head === 'Tan' ? 'Cos' : 'Sin', createOperationNode('Complex', a, b)));
+    case 'Sec': case 'Csc': return createOperationNode('Divide', N(1), createOperationNode(head === 'Sec' ? 'Cos' : 'Sin', createOperationNode('Complex', a, b)));
+    case 'Tanh': return createOperationNode('Divide', createOperationNode('Sinh', createOperationNode('Complex', a, b)), createOperationNode('Cosh', createOperationNode('Complex', a, b)));
     default: return null;
   }
 }
@@ -126,5 +126,5 @@ export function principalComplexOperation(head: string, pair: Pair, other?: Pair
     default: return null;
   }
   if (result.some(value => !value.isFinite())) throw new MathInputProblem('domain', '有限の複素数の結果を求められません。');
-  return op('Complex', ...result.map(value => N(value.toSignificantDigits(40).toString())));
+  return createOperationNode('Complex', ...result.map(value => N(value.toSignificantDigits(40).toString())));
 }

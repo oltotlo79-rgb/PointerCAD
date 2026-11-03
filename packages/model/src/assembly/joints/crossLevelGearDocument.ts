@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import { jointOccurrencePath } from '../jointOccurrence.js';
 import { assemblyExpressionContext, MAX_SUB_ASSEMBLY_DEPTH } from '../resolveAssembly.js';
@@ -32,7 +33,6 @@ export interface CrossLevelGearDocumentFailure {
   readonly code: CrossLevelGearDocumentFailureCode;
 }
 
-const finite = (value: number): boolean => typeof value === 'number' && Number.isFinite(value);
 const failure = (couplingId: string, code: CrossLevelGearDocumentFailureCode): CrossLevelGearDocumentFailure => ({ couplingId, code });
 
 /** Evaluates the authored expressions of the active definitions; a bad expression is a refusal, never a stale number. */

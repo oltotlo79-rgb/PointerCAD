@@ -1,21 +1,16 @@
-import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
+import { placement } from './boltedPlacement.testSupport.js';
 
 import { addComponent, createComponentFor } from '../assemblyEdit.js';
 import { buildBom, bomPartName } from '../bom.js';
 import { createAssemblyDocument } from '../createAssemblyDocument.js';
-import type { AssemblyDocument, Placement } from '../types.js';
+import type { AssemblyDocument } from '../types.js';
 import type { Vec3 } from '../../sketch/vec3.js';
 import { applyBoltedJoint } from './applyBoltedJoint.js';
 import { planBoltedJoint } from './planBoltedJoint.js';
 import type { BoltedJointRequest, FasteningHoleSpec } from './types.js';
 
 const REVISIONS = new Map([['plateA', 'rev-a'], ['plateB', 'rev-b']]);
-
-function placement(position: Vec3): Placement {
-  return { position: [expressionValueFromNumber(position[0]), expressionValueFromNumber(position[1]),
-    expressionValueFromNumber(position[2])], rotation: [0, 0, 0, 1] };
-}
 
 function plates(): AssemblyDocument {
   let document = createAssemblyDocument('組立1');

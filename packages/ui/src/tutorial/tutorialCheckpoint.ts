@@ -1,3 +1,4 @@
+import { isRecord as record } from '../valueGuards.js';
 import { sha256Hex } from '../sha256.js';
 import { contentHashOf, drawingSourceInputHash, type DrawingSourceInput, type PartDocument } from '@pointercad/model';
 import type { DrawingDocument } from '@pointercad/drawing';
@@ -75,8 +76,6 @@ export type TutorialCheckpointResult =
 
 const refusal = (reason: TutorialCheckpointFailure): { readonly ok: false; readonly reason: TutorialCheckpointFailure } =>
   ({ ok: false, reason });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 const keysAre = (value: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []): boolean =>
   required.every(key => Object.hasOwn(value, key))
   && Object.keys(value).every(key => required.includes(key) || optional.includes(key));

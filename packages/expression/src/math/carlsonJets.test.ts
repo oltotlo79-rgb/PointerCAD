@@ -1,15 +1,15 @@
+import { exactDoubleDecimal } from './exactDoubleDecimal.testSupport.js';
 import Decimal from 'decimal.js';
 import { describe, expect, it } from 'vitest';
 import { carlsonRFJet, carlsonRJJet } from './carlsonJets.js';
 import { CARLSON_JET_REFERENCES } from './carlsonJetReferences.js';
-import { exactDouble, exactDoubleInterval } from './exactDoubleInterval.js';
+import { exactDoubleInterval } from './exactDoubleInterval.js';
 import { constant, variable, point, sum, scale, squareRoot, reciprocal, sq, div, ONE, ZERO,
   UnprovedEllipticRange, type Jet, type Range } from './ellipticJetArithmetic.js';
 
 const D=Decimal.clone({precision:110});
 const exact=(value:number)=>{
-  const result=exactDouble(value);if(result===null)throw new Error('Finite endpoint required');
-  return new D(result.numerator.toString()).div(result.denominator.toString());
+  return exactDoubleDecimal(value, D, 'Finite endpoint required');
 };
 function range(source:string):Range {
   const digits=source.replace('.',''),places=source.includes('.')?source.length-source.indexOf('.')-1:0;

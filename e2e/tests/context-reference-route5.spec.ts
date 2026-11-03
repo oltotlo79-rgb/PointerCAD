@@ -1,3 +1,4 @@
+import { normalizePoint as unit } from './normalizePoint.testSupport.js';
 import { expressionValueFromNumber } from '../../packages/expression/src/index.js';
 import { readDocumentBundle, readPcadFile, writeDocumentBundle, writePcadFile } from '../../packages/io/src/index.js';
 import {
@@ -134,7 +135,6 @@ const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
 const sub = (a: WorldPoint, b: WorldPoint): WorldPoint => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: WorldPoint, b: WorldPoint): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a: WorldPoint, b: WorldPoint): WorldPoint => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const unit = (a: WorldPoint): WorldPoint => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; };
 const EYE: WorldPoint = [HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
   HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH), HOME_DISTANCE * Math.sin(HOME_ELEVATION)];
 const CZ = unit(EYE), CX = unit(cross([0, 0, 1], CZ)), CY = cross(CZ, CX);

@@ -1,3 +1,4 @@
+import { subVec3 as subtract, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
 import { InputIssue, SOLID_CONTACT_LIMITS, solidCadFaceKey, type SolidContactNormal, type Vector3 } from '@pointercad/model/beam-analysis';
 import type { CadAnalysisBoundaryIdentity } from './cadTetraMesh.js';
 import type { SolidContactPlan, SolidContactPlanFace, SolidContactPlanPair } from './solidContactModel.js';
@@ -51,10 +52,7 @@ interface TrianglePairProjection {
 }
 
 const copy = (v: Vector3): Vector3 => [v[0], v[1], v[2]];
-const subtract = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const divide = (v: Vector3, scale: number): Vector3 => [v[0] / scale, v[1] / scale, v[2] / scale];
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vector3, b: Vector3): Vector3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const clamp = (value: number): number => Math.max(0, Math.min(1, value));
 const EDGES: readonly (readonly [number, number])[] = [[0, 1], [1, 2], [2, 0]];
 

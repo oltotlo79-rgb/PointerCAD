@@ -1,4 +1,4 @@
-import { isRecord } from './protocol.js';
+import { isRecord } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import { readSolidFinitePlan, type SolidFinitePlan } from './solidFinitePlan.js';
 
@@ -6,7 +6,7 @@ import { readSolidFinitePlan, type SolidFinitePlan } from './solidFinitePlan.js'
  * Input envelope of the internal finite-strain J2 equilibrium (EX-09 W34): the same document binding as
  * solidPlasticTranslation.ts (a request belongs to the document revision it was configured in; a later revision makes it
  * stale) around a validated, deep-frozen copy of the plan that solidFiniteEquilibrium.read_plan accepts. Its schema is
- * distinct from the small-strain 'pointercad-solid-plastic/1'. No protocol kind, dispatch, export or UI exists for it yet.
+ * distinct from the small-strain 'pointercad-solid-plastic/1'. The Worker transports this unchanged input; CAD persistence and UI remain unimplemented.
  */
 export const SOLID_FINITE_INPUT_SCHEMA = 'pointercad-finite-j2-equilibrium-input/1';
 export interface SolidFiniteSource {

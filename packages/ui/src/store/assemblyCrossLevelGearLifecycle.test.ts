@@ -1,3 +1,4 @@
+import { zDegrees } from './testing/zDegrees.testSupport.js';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +8,7 @@ import {
   absoluteCoordinate, appendSolid, createAssemblyDocument, createEmptyPartDocument, crossLevelGearTreeFailure, embedPart,
   EMPTY_PART_LIBRARY, jointFramePairFromTargets, resolveAssembly, resolveMateTarget, type AssemblyComponent, type AssemblyDocument,
   type ComponentSource, type CrossLevelGearCouplingDefinition, type Joint, type JointOccurrenceInputs, type PartLibrary,
-  type Placement, type PrimitiveFeature, type Quaternion,
+  type Placement, type PrimitiveFeature,
 } from '@pointercad/model';
 import { AssemblyCrossLevelGearRepairs } from '../assembly/AssemblyCrossLevelGearRepairs.js';
 import { deleteAssemblyComponents } from '../assembly/placeComponentActions.js';
@@ -80,11 +81,6 @@ function publishView(): void {
     diagnosis: null, mateTargetErrors: new Map(), mateTargets: new Map(), jointFrames: frames } });
 }
 
-function zDegrees(rotation: Quaternion | undefined): number {
-  const [x, y, z, w] = rotation ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
-  expect(Math.abs(x) + Math.abs(y)).toBeLessThan(1e-9);
-  return 2 * Math.atan2(z, w) * 180 / Math.PI;
-}
 /** Both saved relations hold on the shown poses for the parent angle theta (one shared sign s). */
 function expectGroupShown(theta: number): void {
   const state = store();

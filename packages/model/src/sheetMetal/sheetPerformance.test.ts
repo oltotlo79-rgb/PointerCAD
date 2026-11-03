@@ -2,7 +2,7 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import { exactExpressionValueFromNumber as n } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type AssemblyKernelBridge } from '../kernelBridge.js';
 import { recomputePart, type PartRecomputeResult } from '../part/recomputePart.js';
 import { resolvePart } from '../part/resolvePart.js';

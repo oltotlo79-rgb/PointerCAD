@@ -34,6 +34,7 @@ import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -76,19 +77,6 @@ describe('穴あけ(FR-405、FR-504)', () => {
 
   function facesOf(shape: Parameters<typeof collectSubShapes>[1]): readonly SolidFaceInfo[] {
     return subShapesOf(shape).faces;
-  }
-
-  /** 面の素性をそのまま指紋にする(UI が選んだ直後と同じ状態)。 */
-  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return {
-      kind: 'face',
-      index: info.index,
-      surfaceKind: info.surfaceKind,
-      area: info.area,
-      position: info.centroid,
-      axis: info.axis,
-      radius: info.radius,
-    };
   }
 
   /** 軸が axis に最も近い平面の面を 1 枚選ぶ(上の面・下の面を実名で指すため)。 */
@@ -1529,11 +1517,6 @@ describe('円筒の側面の穴(EX05)', () => {
     const mesh = tessellate(oc, shape);
     const lines = extractEdges(oc, shape);
     return collectSubShapes(oc, shape, mesh.faceRanges, lines.edgeRanges).faces;
-  }
-
-  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return { kind: 'face', index: info.index, surfaceKind: info.surfaceKind, area: info.area,
-      position: info.centroid, axis: info.axis, radius: info.radius };
   }
 
   /** 半径が radius の円筒の面を 1 枚選ぶ(管の外面と内面を半径で見分ける)。 */

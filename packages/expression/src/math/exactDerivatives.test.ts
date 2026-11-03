@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -39,8 +40,8 @@ let backend: MathExecutionBackend;
 let results: readonly unknown[];
 const script = fileURLToPath(new URL('./exactRuntime/cas_derivatives_test.py', import.meta.url));
 function request(example: typeof examples[number]): MathWorkRequest {
-  return { source: example.source, notation: 'text', angleUnit: 'unit' in example ? example.unit : 'degree', coefficients: [],
-    identity: { documentId: 'derivative', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(example.source, { notation: 'text', angleUnit: 'unit' in example ? example.unit : 'degree',
+    identity: { documentId: 'derivative', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 function native(args: readonly string[], input?: string): string {
   const result = spawnExactRuntime(['-B', '-X', 'utf8', script, ...args], {

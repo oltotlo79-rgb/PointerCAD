@@ -74,6 +74,7 @@ describe('principal stresses of the reference, through the public conversion (cl
   it('never defaults a missing or undefined component to zero', () => {
     const missing = { unit: 'MPa', components: 'cauchy-tensor-shear-xx-yy-zz-yz-xz-xy', xx: 100, yy: 0, zz: 0, yz: 0, xz: 0 };
     expect(refusal(input([history(missing, [0, 1])]))).toEqual(['fatigue-tensor-shape', 'histories[0].reference']);
+    expect(Object.keys(analyzeProportionalTensorFatigue(input([history(missing, [0, 1])])))).toEqual(['ok', 'code', 'path']);
     expect(refusal(input([history(reference([100, 0, 0, 0, 0, 0], { xy: undefined }), [0, 1])])))
       .toEqual(['fatigue-tensor-number', 'histories[0].reference.xy']);
   });

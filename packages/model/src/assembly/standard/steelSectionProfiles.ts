@@ -1,3 +1,4 @@
+import { crossVec2 as cross } from '../../sketch/vec2.js';
 /** Nominal rolled-section profiles, not measured manufacturing tolerances. */
 export type SteelProfilePoint = readonly [number, number];
 export type SteelProfileSegment =
@@ -129,7 +130,6 @@ const beams: Readonly<Record<string, readonly [number, number, number, number, n
   'H 912×302×18×34': [912, 302, 18, 34, 18],
   'H 918×303×19×37': [918, 303, 19, 37, 18],
 };
-const cross = (a: SteelProfilePoint, b: SteelProfilePoint): number => a[0] * b[1] - a[1] * b[0];
 const distance = (a: SteelProfilePoint, b: SteelProfilePoint): number => Math.hypot(b[0] - a[0], b[1] - a[1]);
 
 /** Replace selected polygon corners with tangent circular arcs; signed sweep retains concavity. */

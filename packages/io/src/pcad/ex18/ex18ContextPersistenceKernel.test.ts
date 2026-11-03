@@ -3,11 +3,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { attachmentsDigestOf, commitContextReference, contentHashOf, contextPointResolverFromBodies,
   createAssemblyDocumentBundle, createUndoStack, partLibraryOfBundle, pushUndo, redo,
   resolveSubShapeReference, undo, type AssemblyDocument, type PartLibrary } from '@pointercad/model';
-import { loadOcctForNode } from '../../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { buildEx18ContextAssembly, buildEx18ContextPart, buildEx18ContextSource, contextPlacement,
-  ex18ContextSourceFace } from '../../../../model/src/assembly/ex18ContextRouteBuilders.testSupport.js';
+  ex18ContextSourceFace } from '@pointercad/model/testing/ex18-fixtures';
 import { EX18_ORACLE_A_HOLE_X_TWELVE, EX18_ORACLE_B_CONTEXT_MOVED,
-  EX18_ORACLE_C_CONTEXT_MOVED } from '../../../../model/src/part/ex18RouteFixtures.testSupport.js';
+  EX18_ORACLE_C_CONTEXT_MOVED } from '@pointercad/model/testing/ex18-fixtures';
 import { readDocumentBundle, writeDocumentBundle } from '../pcadFile.js';
 import { EX18_ORACLE_EXPECTATIONS, W08_TIMEOUT, W08_SAVED_AT, w08Session, w08Compute, w08Expect } from './ex18PersistenceSupport.testSupport.js';
 

@@ -21,7 +21,7 @@
  */
 
 import type { RigidTransform } from '../part/resolvePart.js';
-import { addVec3, cleanZeroVec3, ORIGIN, type Vec3 } from '../sketch/vec3.js';
+import { addVec3, cleanZeroVec3, crossVec3, dotVec3 as dot, ORIGIN, type Vec3 } from '../sketch/vec3.js';
 
 /**
  * 向きを表す四元数 `(qx, qy, qz, qw)`。**長さ 1・`w >= 0`** に揃えたものだけを持ち回る
@@ -160,8 +160,7 @@ export function quaternionFromAxisAngle(axis: Vec3, angleRadians: number): Quate
 export function quaternionFromBasis(x: Vec3, y: Vec3, z: Vec3, tolerance: number): Quaternion | null {
   const all = [...x, ...y, ...z];
   if (!all.every((value) => Number.isFinite(value))) return null;
-  const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  const cross: Vec3 = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]];
+  const cross: Vec3 = crossVec3(x, y);
   if (Math.abs(dot(x, x) - 1) > tolerance || Math.abs(dot(y, y) - 1) > tolerance || Math.abs(dot(z, z) - 1) > tolerance
     || Math.abs(dot(x, y)) > tolerance || Math.abs(dot(y, z)) > tolerance || Math.abs(dot(z, x)) > tolerance
     || dot(cross, z) < 1 - tolerance) return null;

@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { isFiniteInterval } from './mathInterval.js';
 import { intervalUnion, unionFlatMap, unionMap, unionReciprocal, type IntervalUnion } from './mathIntervalUnion.js';
 
 describe('区間の統合で端点・不連続・独立した範囲を保持する', () => {
+  it('validates finite ordered endpoints, including equal and signed zero boundaries', () => {
+    expect(isFiniteInterval({ lower: -0, upper: 0 })).toBe(true);
+    expect(isFiniteInterval({ lower: 2, upper: 2 })).toBe(true);
+    expect(isFiniteInterval({ lower: 3, upper: 2 })).toBe(false);
+    expect(isFiniteInterval({ lower: NaN, upper: 2 })).toBe(false);
+    expect(isFiniteInterval({ lower: 0, upper: Infinity })).toBe(false);
+  });
   it.each([
     { ranges: [], continuous: true },
     { ranges: [], continuous: false },

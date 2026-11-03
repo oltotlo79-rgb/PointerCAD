@@ -1,10 +1,11 @@
+import { createPrefixedError } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import { solidArray, solidNumber, solidRecord, solidTetGeometry, solidVector } from './solidAnalysisTranslation.js';
 import type { SolidModalApplicability, SolidModalInput, SolidModalMaterial, SolidModalPlan } from './solidModalModel.js';
 
 /** Identical to solidModal.py MAX_NODES / MAX_ELEMENTS / MAX_MODES / MAX_DENSITY_T_PER_MM3 (1e5 kg/m^3). */
 export const SOLID_MODAL_LIMITS = { nodes: 600, elements: 3000, modes: 20, densityTPerMm3: 1e-7 } as const;
-function fail(message: string): never { throw new Error(`solid-modal-input: ${message}`); }
+const fail: (message: string) => never = createPrefixedError('solid-modal-input');
 function text(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 256) fail('invalid identity');
   return value;

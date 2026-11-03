@@ -17,7 +17,7 @@ import { CANDIDATE_MATH_BY_ID, decodeFunctionImplicitWorkReply, decodeMathWorkRe
   isSurfacePointContinuation } from '@pointercad/expression/math/contracts';
 import type { MathWorkRequest } from '@pointercad/expression/math/client';
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge } from '../kernelBridge.js';
 import { FUNCTION_DEFINITION_FORMAT, type FunctionDefinition, type FunctionFormula } from '../functionGeometry/functionDefinitionTypes.js';
 import { readFunctionPointChoice, type FunctionPointReference } from '../functionGeometry/functionPointReference.js';

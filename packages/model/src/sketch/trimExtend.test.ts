@@ -1,5 +1,6 @@
 import { expressionValueFromNumber as num } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
+import { expectVec3CloseTo as expectCloseTo } from '../testing/vec3Assertions.testSupport.js';
 
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.js';
 import { curveEnd, curveStart } from './intersectionMath.js';
@@ -74,12 +75,6 @@ function segmentOf(document: SketchDocument, featureId: string): ResolvedSegment
     throw new Error(`線分が見つかりません: ${featureId}`);
   }
   return found;
-}
-
-function expectCloseTo(actual: Vec3, expected: Vec3, digits = 9): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
 }
 
 /** 直交する 2 本の線分。(0,0)-(20,0) を (10,-5)-(10,5) が x=10 で横切る。 */

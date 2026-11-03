@@ -1,3 +1,5 @@
+import { lengthVec3 as norm, dotVec3 as dot } from '@pointercad/model/vec3';
+import { unitMeasureVector as unit } from '../solid/measurementVector.js';
 /**
  * 測定の結果の表示層(計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク31、
  * §0.a-0.29/0.30、§2.10)。
@@ -141,19 +143,8 @@ function scaleFrom(origin: Vec3, direction: Vec3, length: number): Vec3 {
   ];
 }
 
-function norm(a: Vec3): number {
-  return Math.hypot(a[0], a[1], a[2]);
-}
 
-/** 長さ 1 に揃える。長さが 0 のときは null(向きが決まらない)。 */
-function unit(a: Vec3): Vec3 | null {
-  const length = norm(a);
-  return length === 0 ? null : [a[0] / length, a[1] / length, a[2] / length];
-}
 
-function dot(a: Vec3, b: Vec3): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
 
 /**
  * 弧を描くための平面の基底と開き。

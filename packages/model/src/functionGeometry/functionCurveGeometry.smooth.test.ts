@@ -3,10 +3,10 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import { createFunctionMathSource, createMathBackend } from '@pointercad/expression/math/worker';
 import { booleanOp, createAllocations, createKernelApi, isValidShape, makeBox, makeExtrudeSolid, makePlanarFace, makeSplineEdge,
   measureArea } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { borrowHandle } from '../../../kernel/src/occt/borrowHandle.js';
-import { smoothFunctionCurve } from '../../../expression/src/math/smoothFunctionCurve.js';
-import type { FunctionCurveSample } from '../../../expression/src/math/adaptiveFunctionCurve.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { borrowHandle } from '@pointercad/kernel/testing/borrow-handle';
+import { smoothFunctionCurve } from '@pointercad/expression/testing/geometry';
+import type { FunctionCurveSample } from '@pointercad/expression/testing/geometry';
 import { createDirectKernelBridge, toCurveSpec, fromCurveSpec } from '../kernelBridge.js';
 import { keyCurveList } from '../part/cacheKey.js';
 import { sheetBezierSpans } from '../sheetMetal/bezierSpans.js';

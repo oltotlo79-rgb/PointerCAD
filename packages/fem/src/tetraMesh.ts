@@ -1,3 +1,5 @@
+import { subVec3 as sub, crossVec3 as cross, dotVec3 as dot } from '@pointercad/model/vec3';
+import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 /** Versioned planar PLC contracts, millimetres, one material domain.
  * This is a mesh, not a material assignment or a structural-analysis result. */
@@ -66,9 +68,7 @@ interface Plane { readonly point: V3; readonly normal: V3 }
 function requireMesh(condition: boolean, reason: string): asserts condition {
   if (!condition) throw new Error(`tetra-mesh: ${reason}`);
 }
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+
 function keys(value: Record<string, unknown>, names: readonly string[]): boolean {
   return Object.keys(value).length === names.length && names.every(name => Object.hasOwn(value, name));
 }
@@ -128,9 +128,6 @@ function numbers(value: unknown, maximum: number, integer = false): number[] {
   return result;
 }
 const point = (xyz: readonly number[], i: number): V3 => [xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]];
-const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const dot = (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const faceKey = (a: number, b: number, c: number): string => [a, b, c].sort((x, y) => x - y).join(',');
 const sameNumbers = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && a.every((n, i) => n === b[i]);
 function sum(values: readonly number[]): number {

@@ -3,7 +3,7 @@ import type { BeamAnalysisDocument, BeamAnalysisResult, Vector3 } from './analys
 import { readBeamAnalysis, serializeBeamAnalysis } from './analysisValidation.js';
 import { beamInputSha256, translateBeamAnalysis } from './analysisTranslation.js';
 import { beamResultMatches, decodeBeamAnalysis } from './analysisResults.js';
-import { findStrengthMaterial, STRENGTH_SOURCES } from '../../model/src/measure/strengthMaterials.js';
+import { findStrengthMaterial, STRENGTH_SOURCES } from '@pointercad/model';
 
 const evidence={kind:'user-supplied',reference:'Independent analytic test constants; no material grade inference',condition:'Linear isotropic test material at a fixed reference condition'} as const;
 export function cantilever(options:{readonly mode?:'axial'|'y'|'z'|'torsion';readonly rotated?:boolean;

@@ -1,5 +1,5 @@
 import { beforeAll, describe, it } from 'vitest';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { runMachiningRoundtrip } from './cylindricalMachiningRoundtrip.testSupport.js';
 
 beforeAll(async () => { await loadOcctForNode(); }, 180_000);

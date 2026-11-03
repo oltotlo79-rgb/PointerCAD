@@ -26,16 +26,16 @@ export class MeshHostRetention {
   private owners = new Map<string, Owner>();
   private pending = new Map<string, number>();
   private nextId = 0;
-  private epoch = 0;
-  private readonly epochChanges: { readonly epoch: number; readonly reason: string;
+  private hostGeneration = 0;
+  private readonly generationChanges: { readonly epoch: number; readonly reason: string;
     readonly backingId: number | null; readonly lastObservedBackingBytes: number | null;
     readonly activeOwnersAtMutation: number | null }[] = [];
   private diagnosticDropped = 0;
   private diagnosticFailures = 0;
   /** Primitive cached metadata only: no observe, WeakRef dereference, prune or reservation. */
-  diagnosticEpoch(): number { return this.epoch; }
+  diagnosticEpoch(): number { return this.hostGeneration; }
   readDiagnostics() {
-    return Object.freeze({ epoch: this.epoch, changes: Object.freeze(this.epochChanges.slice()),
+    return Object.freeze({ epoch: this.hostGeneration, changes: Object.freeze(this.generationChanges.slice()),
       dropped: this.diagnosticDropped, failures: this.diagnosticFailures,
       entries: this.entries.size, owners: this.owners.size, pendingRequests: this.pending.size,
       refusedReplies: this.refusedReplies.size,
@@ -45,11 +45,11 @@ export class MeshHostRetention {
   private waiting = 0;
   private changed(reason: string, backingId: number | null = null,
     lastObservedBackingBytes: number | null = null, activeOwnersAtMutation: number | null = null): void {
-    if (!Number.isSafeInteger(this.epoch + 1)) this.unknown = 'epoch-overflow';
-    else this.epoch += 1;
+    if (!Number.isSafeInteger(this.hostGeneration + 1)) this.unknown = 'epoch-overflow';
+    else this.hostGeneration += 1;
     try {
-      if (this.epochChanges.length === 128) { this.epochChanges.shift(); this.diagnosticDropped += 1; }
-      this.epochChanges.push(Object.freeze({ epoch: this.epoch, reason, backingId, lastObservedBackingBytes, activeOwnersAtMutation }));
+      if (this.generationChanges.length === 128) { this.generationChanges.shift(); this.diagnosticDropped += 1; }
+      this.generationChanges.push(Object.freeze({ epoch: this.hostGeneration, reason, backingId, lastObservedBackingBytes, activeOwnersAtMutation }));
     } catch { this.diagnosticFailures += 1; }
     for (const notify of this.changes) queueMicrotask(notify);
   }
@@ -221,11 +221,11 @@ export class MeshHostRetention {
     catch { return true; }
   }
   /** Identity evidence for this registered main ledger only; never global/provider evidence alone. */
-  inspectBackings(expectedEpoch: number, buffers: readonly ArrayBufferLike[]): HostBackingMembership {
+  inspectBackings(expectedGeneration: number, buffers: readonly ArrayBufferLike[]): HostBackingMembership {
     const reading = this.observe();
     const unknown = (reason: string): HostBackingMembership => ({ status: 'unknown', reason });
     if (reading.status !== 'known') return unknown(reading.reason);
-    if (reading.epoch !== expectedEpoch || reading.pendingCloneBytes !== 0) return unknown('host-epoch-changed');
+    if (reading.epoch !== expectedGeneration || reading.pendingCloneBytes !== 0) return unknown('host-epoch-changed');
     if (buffers.length > this.maximumEntries) return unknown('unsupported-input-backing');
     const validated: ArrayBuffer[] = [];
     for (const buffer of buffers) {
@@ -243,8 +243,8 @@ export class MeshHostRetention {
     }
     if (![inputBackingBytes, additionalBackingBytes].every(Number.isSafeInteger)) return unknown('overflow');
     const after = this.observe();
-    if (after.status !== 'known' || after.epoch !== expectedEpoch || after.pendingCloneBytes !== 0) return unknown('host-epoch-changed');
-    return { status: 'known', epoch: expectedEpoch, inputBackingBytes, additionalBackingBytes,
+    if (after.status !== 'known' || after.epoch !== expectedGeneration || after.pendingCloneBytes !== 0) return unknown('host-epoch-changed');
+    return { status: 'known', epoch: expectedGeneration, inputBackingBytes, additionalBackingBytes,
       sameSourceBackings: Object.freeze(intersection), coverage: 'registered-main-realm-backing-only' };
   }
   observe(): HostRetentionReading {
@@ -272,7 +272,7 @@ export class MeshHostRetention {
       this.unknown = 'overflow'; return this.observe();
     }
     if (this.unknown !== null) return this.observe();
-    return { status: 'known', epoch: this.epoch, retainedBackingBytes: retained, revokedRetainedBackingBytes: revoked,
+    return { status: 'known', epoch: this.hostGeneration, retainedBackingBytes: retained, revokedRetainedBackingBytes: revoked,
       pendingCloneBytes: pending, limitBytes: this.limitBytes, fits: retained + pending <= this.limitBytes,
       coverage: 'registered-main-realm-backing-only' };
   }

@@ -1,18 +1,18 @@
 import { expressionValueFromNumber as number } from '@pointercad/expression';
-import type { SubShapeRef } from '../../../model/src/geometry/subShapeRef.js';
-import type { SolidBody, SolidEdgeEntry } from '../../../model/src/kernelBridge/solidContracts.js';
-import { appendSolid, createEmptyPartDocument } from '../../../model/src/part/createPartDocument.js';
-import type { PrimitiveFeature } from '../../../model/src/part/types.js';
-import { absoluteCoordinate } from '../../../model/src/sketch/createSketchDocument.js';
-import type { Vec3 } from '../../../model/src/sketch/vec3.js';
-import { createAssemblyDocument } from '../../../model/src/assembly/createAssemblyDocument.js';
-import { resolveJointOccurrence, type JointOccurrenceInputs } from '../../../model/src/assembly/jointOccurrence.js';
-import { embedPart, EMPTY_PART_LIBRARY } from '../../../model/src/assembly/partLibrary.js';
-import { resolveAssembly } from '../../../model/src/assembly/resolveAssembly.js';
-import type { AssemblyComponent, AssemblyDocument } from '../../../model/src/assembly/types.js';
-import { resolveCircularWeldSelection, type CircularWeldSelectionContext } from '../../../model/src/assembly/welding/circularWeldSelection.js';
-import { type CircularWeldContactRequest } from '../../../model/src/assembly/welding/circularWeldContact.js';
-import { weldTestBox, weldTestPlacement } from '../../../model/src/assembly/welding/filletWeld.testSupport.js';
+import type { SubShapeRef } from '@pointercad/model';
+import type { SolidBody, SolidEdgeEntry } from '@pointercad/model';
+import { appendSolid, createEmptyPartDocument } from '@pointercad/model';
+import type { PrimitiveFeature } from '@pointercad/model';
+import { absoluteCoordinate } from '@pointercad/model';
+import type { Vec3 } from '@pointercad/model';
+import { createAssemblyDocument } from '@pointercad/model';
+import { resolveJointOccurrence, type JointOccurrenceInputs } from '@pointercad/model';
+import { embedPart, EMPTY_PART_LIBRARY } from '@pointercad/model';
+import { resolveAssembly } from '@pointercad/model';
+import type { AssemblyComponent, AssemblyDocument } from '@pointercad/model';
+import { resolveCircularWeldSelection, type CircularWeldSelectionContext } from '@pointercad/model';
+import { type CircularWeldContactRequest } from '@pointercad/model/testing/ui-fixtures';
+import { weldTestBox, weldTestPlacement } from '@pointercad/model/testing/ui-fixtures';
 
 function circle(index: number, radius: number, z = 0, center: Vec3 = [0, 0, z]): SolidEdgeEntry {
   return { index, curveKind: 'circle', length: 2 * Math.PI * radius, midpoint: center,
@@ -75,9 +75,9 @@ async function physicalFixture(deep = false) {
   return { context, request, plane, cylinder, bodies, planeKey: second.partRef, cylinderKey: first.partRef, evidence };
 }
 
-import type { JointOccurrenceCommandContext } from '../../../model/src/assembly/jointOccurrenceSelection.js';
-import { buildStandardPartFromSource } from '../../../model/src/assembly/standard/buildStandardPart.js';
-import { type CircularFilletWeldRequest } from '../../../model/src/assembly/welding/planCircularFilletWeld.js';
+import type { JointOccurrenceCommandContext } from '@pointercad/model';
+import { buildStandardPartFromSource } from '@pointercad/model';
+import { type CircularFilletWeldRequest } from '@pointercad/model';
 
 export async function circularWeldFixture(deep = false) {
   const f = await physicalFixture(deep);

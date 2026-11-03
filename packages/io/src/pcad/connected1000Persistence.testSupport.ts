@@ -1,7 +1,7 @@
 import { createEmptyPartDocument, replaceSketch, type ConstraintTarget, type CoordinateInput,
   type PartDocument, type SketchConstraint, type SketchFeature } from '@pointercad/model';
 import { connected1000PointId, connected1000Sketch }
-  from '../../../model/src/sketch/constraints/connected1000Fixture.testSupport.js';
+  from '@pointercad/model/testing/connected-fixtures';
 
 // EX-13 W12/W13 fixture construction only. No test registration, solver,
 // residual, file IO or scratchpad dependency; both layers use identical input.

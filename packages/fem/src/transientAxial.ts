@@ -1,3 +1,4 @@
+import { isFiniteNumber } from './valueGuards.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamTransientInput, BeamTransientResult } from './transientModel.js';
 import { transientResultMatches } from './transientResults.js';
@@ -42,7 +43,7 @@ export interface TransientAxialResponse {
 type MemberGeometry = Pick<TransientMemberAxial, 'memberId' | 'startNodeId' | 'endNodeId' | 'lengthM' | 'axis' | 'youngPa'>;
 
 function finite(value: number, label: string): number {
-  if (!Number.isFinite(value)) throw new Error(`transient-axial: non-finite ${label}`);
+  if (!isFiniteNumber(value)) throw new Error(`transient-axial: non-finite ${label}`);
   return value;
 }
 

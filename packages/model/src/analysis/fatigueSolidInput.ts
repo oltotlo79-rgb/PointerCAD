@@ -1,4 +1,4 @@
-import { InputIssue, revision, text } from './analysisValidation.js';
+import { fatigueInputFailure as fail, revision, text } from './analysisValidation.js';
 import { FATIGUE_SAVED_ID, FATIGUE_SAVED_LIMITS, denseFatigueList, exactFatigueFields, fatigueLabel,
   finiteFatigueNumber, readFatigueSavedCurve, type FatigueSavedCurve } from './fatigueInput.js';
 
@@ -20,7 +20,6 @@ export interface FatigueSolidSavedInput {
   readonly curve: FatigueSavedCurve;
 }
 
-function fail(path: string, message: string): never { throw new InputIssue('fatigue', path, message); }
 function exact(value: unknown, keys: readonly string[], path: string): Record<string, unknown> {
   const row = exactFatigueFields(value, keys, path);
   if (Reflect.ownKeys(row).length !== keys.length) fail(path, 'Unexpected own fields');

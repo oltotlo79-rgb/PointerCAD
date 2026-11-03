@@ -12,8 +12,8 @@ const kinds = ['fillet', 'squareButt', 'vButt', 'bevelButt', 'uButt', 'jButt', '
 const modes = ['arrow', 'opposite', 'both', 'center'] as const;
 const contours = ['none', 'flush', 'convex', 'concave'] as const;
 const finishes = ['none', 'grind', 'machine', 'chip', 'polish'] as const;
-const expr = (source: string) => ({ source, value: 0, display: source });
-const lengthValue = (source: string, unit: WeldLengthValue['unit']): WeldLengthValue => ({ expression: expr(source), unit });
+const makeExpression = (source: string) => ({ source, value: 0, display: source });
+const lengthValue = (source: string, unit: WeldLengthValue['unit']): WeldLengthValue => ({ expression: makeExpression(source), unit });
 const initial = (source: string, side: WeldSideSpec['side'] = 'arrow'): WeldSideSpec => ({ kind: side === 'center' ? 'spot' : 'fillet', side,
   size: { kind: side === 'center' ? 'diameter' : 'leg', value: lengthValue(source, 'mm') }, contour: 'none', finish: 'none' });
 const number = (source: string): number => source.trim() === '' ? NaN : Number(source);
@@ -50,11 +50,11 @@ function WeldSideEditor({ value, defaultSource, onChange }: { readonly value: We
           value: lengthValue(event.target.value, unit) } })} /></label>
     {value.kind === 'spot' ? null : inputLength('length')}
     <label title={t('drawing.weld.count.controlHint')}>{t('drawing.weld.count')}<input value={value.count?.source ?? ''} onChange={(event) => onChange({ ...value,
-      count: event.target.value.trim() === '' ? undefined : expr(event.target.value) })} /></label>
+      count: event.target.value.trim() === '' ? undefined : makeExpression(event.target.value) })} /></label>
     {inputLength('pitch')}
     {groove ? <>{inputLength('rootGap')}{inputLength('grooveDepth')}{value.kind === 'squareButt' ? null : <label>{t('drawing.weld.grooveAngle')}
       <input title={t('drawing.controlHint.weldAngle')} value={value.grooveAngle?.source ?? ''} onChange={(event) => onChange({ ...value,
-        grooveAngle: event.target.value.trim() === '' ? undefined : expr(event.target.value) })} /></label>}</> : null}
+        grooveAngle: event.target.value.trim() === '' ? undefined : makeExpression(event.target.value) })} /></label>}</> : null}
     {value.side === 'center' ? null : <>
       <label title={t('drawing.weld.contour.controlHint')}>{t('drawing.weld.contour')}<select aria-label={t('drawing.weld.contour')} value={value.contour} onChange={(event) => {
         const contour = contours.find((entry) => entry === event.target.value); if (contour !== undefined) onChange({ ...value, contour, finish: contour === 'none' ? 'none' : value.finish });

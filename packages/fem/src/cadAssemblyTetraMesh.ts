@@ -1,6 +1,6 @@
 import { createSubShapeReference, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryOptions,
   type AnalysisBoundarySource, type ResolvedAssembly } from '@pointercad/model';
-import type { FemClient, FemOptions } from './client.js';
+import { FemClient, type FemOptions } from './client.js';
 import { prepareCadTetraMesh, type CadTetraContext } from './cadTetraMesh.js';
 import { prepareCurvedCadTetraMesh, type CurvedCadTetraOptions } from './cadCurvedTetraMesh.js';
 import { meshAssemblyTetrahedra, type AssemblyTetraBudget, type AssemblyTetraContext,
@@ -77,14 +77,23 @@ function prepare(part: CadAssemblyTetraPart, boundary: AnalysisBoundary): Assemb
 export async function meshCadAssemblyTetrahedra(client: Pick<FemClient, 'meshTetrahedra'>,
   kernel: AnalysisBoundarySource, readCurrent: () => CadAssemblyTetraContext | null,
   requestedBudget: AssemblyTetraBudget, options: FemOptions = {}): Promise<CadAssemblyTetraOutcome> {
+  const preparation = client instanceof FemClient ? client.beginAssemblyTetraMeshPreparation(options) : undefined;
+  const earlyCancellation = preparation?.cancellation();
+  if (earlyCancellation !== undefined && earlyCancellation !== null) {
+    preparation?.release();
+    return { kind: 'cancelled', reason: earlyCancellation };
+  }
   const owner = claimCadMeshRequest(client);
   const abort = (): void => owner.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) owner.abort();
   let handedOff = false;
-  const cancelled = (): CadAssemblyTetraOutcome | undefined => !isCurrentCadMeshRequest(client, owner)
-    ? { kind: 'cancelled', reason: 'superseded' }
-    : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : undefined;
+  const cancelled = (): CadAssemblyTetraOutcome | undefined => {
+    const reason = preparation?.cancellation();
+    if (reason !== undefined && reason !== null) return { kind: 'cancelled', reason };
+    return !handedOff && !isCurrentCadMeshRequest(client, owner) ? { kind: 'cancelled', reason: 'superseded' }
+      : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : undefined;
+  };
   try {
     const early = cancelled();
     if (early) return early;
@@ -183,7 +192,9 @@ export async function meshCadAssemblyTetrahedra(client: Pick<FemClient, 'meshTet
     // No await or user callback between release and the existing route's synchronous ownership claim.
     releaseCadMeshRequest(client, owner);
     handedOff = true;
-    const outcome = await meshAssemblyTetrahedra(client, readPrepared, assemblyBudget, options);
+    const outcome = await meshAssemblyTetrahedra(client, readPrepared, assemblyBudget, options, preparation);
+    const afterNative = cancelled();
+    if (afterNative) return afterNative;
     if (outcome.kind !== 'result') return outcome;
     const current = currentContext();
     for (const [key, value] of outcome.result.parts) {
@@ -194,14 +205,17 @@ export async function meshCadAssemblyTetrahedra(client: Pick<FemClient, 'meshTet
       if (!Number.isFinite(difference) || !(difference <= maximum))
         throw new CadAssemblyRefusal('cad-volume', 'Assembly part tetra volume exceeds its CAD error budget');
     }
+    const beforePublication = cancelled();
+    if (beforePublication) return beforePublication;
     return { ...outcome, cadPreparationNumericBytes: preparationBytes,
       totalReservedNumericBytes: preparationBytes + outcome.result.reservation.numericBytes };
   } catch (error) {
-    return (!handedOff ? cancelled() : undefined) ?? { kind: 'failed',
+    return cancelled() ?? { kind: 'failed',
       code: error instanceof CadAssemblyRefusal ? error.code : 'input',
       message: error instanceof Error ? error.message : 'Invalid CAD assembly meshing input' };
   } finally {
     options.signal?.removeEventListener('abort', abort);
     releaseCadMeshRequest(client, owner);
+    preparation?.release();
   }
 }

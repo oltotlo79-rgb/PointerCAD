@@ -28,7 +28,7 @@ import {
   EX18_BRACKET_WIDE,
   expectEx18Bracket,
   type Ex18BracketExpectation,
-} from '../../../../model/src/part/ex18RouteFixtures.testSupport.js';
+} from '@pointercad/model/testing/ex18-fixtures';
 import { readPcadFile, writePcadFile } from '../pcadFile.js';
 import {
   DEFAULT_FACE_COLOR,
@@ -67,7 +67,7 @@ import {
   type SolidFaceEntry,
   type SubShapeRef,
 } from '@pointercad/model';
-import { loadOcctForNode } from '../../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 
 const OCCT_TIMEOUT_MS = 180_000;
 const SAVED_AT = '2026-10-16T00:00:00.000Z';

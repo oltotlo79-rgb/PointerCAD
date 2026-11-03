@@ -1,3 +1,5 @@
+import { lengthVec3 as norm, dotVec3 as dot, subVec3 as subtract } from '@pointercad/model/vec3';
+import { unitMeasureVector as unit } from './measurementVector.js';
 /**
  * 測定の判定と、カーネルを呼ばずに測れるものの計算(FR-1102、NFR-UX-1、NFR-UX-5、
  * 計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク30、§0.a-0.29/0.30、§2.10.2)。
@@ -438,13 +440,7 @@ function resolveTarget<B extends SubShapeBody>(
  */
 const PARALLEL_TOLERANCE = 1e-6;
 
-function subtract(a: Vec3, b: Vec3): Vec3 {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
 
-function dot(a: Vec3, b: Vec3): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
 
 function crossLength(a: Vec3, b: Vec3): number {
   return Math.hypot(
@@ -454,15 +450,7 @@ function crossLength(a: Vec3, b: Vec3): number {
   );
 }
 
-function norm(a: Vec3): number {
-  return Math.hypot(a[0], a[1], a[2]);
-}
 
-/** 長さ 1 に揃える。長さが 0 のときは null(向きが決まらない)。 */
-function unit(a: Vec3): Vec3 | null {
-  const length = norm(a);
-  return length === 0 ? null : [a[0] / length, a[1] / length, a[2] / length];
-}
 
 /**
  * 2 つの向きのなす角(度、0〜90)。裏表を区別しないので、逆向きどうしは 0 度になる

@@ -146,7 +146,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
   /** 依頼ごとに 1 つ増える世代番号。1 から始まる。 */
   let generation = useAppStore.getState().requestedGeneration;
   /** 段階計算の所有の通し番号。手放すたびに 1 つ進み、戻らない(取消の判定)。 */
-  let stagedEpoch = 0;
+  let stagedGeneration = 0;
   /** 意味の違う入力ごとに 1 つ振る番号。確定はこの番号の入力にだけ効く。 */
   let inputRevision = 0;
   /** いまの段階計算(1 つだけ)。 */
@@ -275,7 +275,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
 
   /** その段階計算を、いまも自分が持っているか(通し番号と所有の欄の両方)。 */
   function ownedBy(job: StagedJob): boolean {
-    return !detached && staged === job && stagedEpoch === job.epoch
+    return !detached && staged === job && stagedGeneration === job.epoch
       && isStagedSolidOwnershipCurrent(useAppStore.getState(), job.ownership);
   }
 
@@ -295,7 +295,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
     const job = staged;
     if (job === null) return;
     staged = null;
-    stagedEpoch += 1;
+    stagedGeneration += 1;
     releaseScope(job.held);
     job.held = null;
   }
@@ -411,7 +411,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
     job.held = null;
     if (staged === job) {
       staged = null;
-      stagedEpoch += 1;
+      stagedGeneration += 1;
     }
     job.onAdopted?.(job.state);
     return true;
@@ -436,7 +436,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
       const placed = prepareDocumentEdit(state, request.candidate, false);
       const document = documentWithIssuanceLedger(state, placed.document, false);
       const placement = document === placed.document ? placed : { ...placed, document };
-      const job: StagedJob = { epoch: stagedEpoch, ownership, waiting: true, held: null, onAdopted: null,
+      const job: StagedJob = { epoch: stagedGeneration, ownership, waiting: true, held: null, onAdopted: null,
         state: Object.freeze({ ownership, fingerprint: request.fingerprint, finalFeatureId: request.finalFeatureId,
           placement, displayed: documentUpTo(placement.document, placement.timelineIndex), status: 'pending',
           result: null, accounting: null, wholeGeneration: null, errors: [], errorMessage: null, failure: null,
@@ -462,7 +462,7 @@ export function attachPartRecompute(recompute: PartRecomputer): () => void {
       // 手放した後に残っている控え(古くなった確定の頼みを含む)も消す。次の入力の窓へ持ち越さない。
       if (useAppStore.getState().stagedSolid !== null) useAppStore.getState().publishStagedSolid(null);
     },
-    owns: (candidate) => !detached && staged !== null && staged.state === candidate && staged.epoch === stagedEpoch,
+    owns: (candidate) => !detached && staged !== null && staged.state === candidate && staged.epoch === stagedGeneration,
   };
 
   /**

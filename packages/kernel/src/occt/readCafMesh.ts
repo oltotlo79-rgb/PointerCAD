@@ -221,6 +221,7 @@ function writeFaceMesh(
   indices: Uint32Array,
   triangleOffset: number,
 ): void {
+  const temporary = createAllocations();
   const { keep, release } = createAllocations();
   try {
     const triangulation = source.handle.get();
@@ -228,40 +229,38 @@ function writeFaceMesh(
     const transformation = identity ? null : keep(source.location.Transformation());
 
     for (let index = 1; index <= source.nodeCount; index += 1) {
-      const node = triangulation.Node(index);
-      const base = (nodeOffset + index - 1) * 3;
-      if (transformation === null) {
-        positions[base] = node.X();
-        positions[base + 1] = node.Y();
-        positions[base + 2] = node.Z();
-        node.delete();
-      } else {
-        const moved = node.Transformed(transformation);
-        positions[base] = moved.X();
-        positions[base + 1] = moved.Y();
-        positions[base + 2] = moved.Z();
-        node.delete();
-        moved.delete();
-      }
+      try {
+        const node = temporary.keep(triangulation.Node(index));
+        const base = (nodeOffset + index - 1) * 3;
+        if (transformation === null) {
+          positions[base] = node.X();
+          positions[base + 1] = node.Y();
+          positions[base + 2] = node.Z();
+        } else {
+          const moved = temporary.keep(node.Transformed(transformation));
+          positions[base] = moved.X();
+          positions[base + 1] = moved.Y();
+          positions[base + 2] = moved.Z();
+        }
+      } finally { temporary.release(); }
     }
 
     if (source.hasNormals) {
       for (let index = 1; index <= source.nodeCount; index += 1) {
-        const direction = triangulation.Normal_1(index);
-        const base = (nodeOffset + index - 1) * 3;
-        if (transformation === null) {
-          normals[base] = direction.X();
-          normals[base + 1] = direction.Y();
-          normals[base + 2] = direction.Z();
-          direction.delete();
-        } else {
-          const moved = direction.Transformed(transformation);
-          normals[base] = moved.X();
-          normals[base + 1] = moved.Y();
-          normals[base + 2] = moved.Z();
-          direction.delete();
-          moved.delete();
-        }
+        try {
+          const direction = temporary.keep(triangulation.Normal_1(index));
+          const base = (nodeOffset + index - 1) * 3;
+          if (transformation === null) {
+            normals[base] = direction.X();
+            normals[base + 1] = direction.Y();
+            normals[base + 2] = direction.Z();
+          } else {
+            const moved = temporary.keep(direction.Transformed(transformation));
+            normals[base] = moved.X();
+            normals[base + 1] = moved.Y();
+            normals[base + 2] = moved.Z();
+          }
+        } finally { temporary.release(); }
       }
     }
 
@@ -272,16 +271,17 @@ function writeFaceMesh(
     // (rules/06 10.13 の ③。忘れると読み込みのたびに溜まって目に見えて遅くなる)。
     const triangles = keep(triangulation.Triangles());
     for (let index = 1; index <= source.triangleCount; index += 1) {
-      const triangle = triangles.Value(index);
-      const base = (triangleOffset + index - 1) * 3;
-      // OCCT の配列は 1 始まり、three.js の頂点番号は 0 始まりなので 1 を引く。
-      const a = nodeOffset + triangle.Value(1) - 1;
-      const b = nodeOffset + triangle.Value(2) - 1;
-      const c = nodeOffset + triangle.Value(3) - 1;
-      indices[base] = reversed ? b : a;
-      indices[base + 1] = reversed ? a : b;
-      indices[base + 2] = c;
-      triangle.delete();
+      try {
+        const triangle = temporary.keep(triangles.Value(index));
+        const base = (triangleOffset + index - 1) * 3;
+        // OCCT の配列は 1 始まり、three.js の頂点番号は 0 始まりなので 1 を引く。
+        const a = nodeOffset + triangle.Value(1) - 1;
+        const b = nodeOffset + triangle.Value(2) - 1;
+        const c = nodeOffset + triangle.Value(3) - 1;
+        indices[base] = reversed ? b : a;
+        indices[base + 1] = reversed ? a : b;
+        indices[base + 2] = c;
+      } finally { temporary.release(); }
     }
   } finally {
     release();

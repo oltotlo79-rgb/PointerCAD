@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -47,8 +48,7 @@ const examples = [
 let backend: MathExecutionBackend;
 let results: readonly unknown[];
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'limit-bounds', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'limit-bounds', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 const context = () => ({ operationsById: backend.operationsById, coefficientIds: new Set<string>(), declaredIds: new Set<string>() });
 beforeAll(() => {

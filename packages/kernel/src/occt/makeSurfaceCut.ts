@@ -1,3 +1,4 @@
+import { dotVec as dot, subVec as subtract, crossVec as cross } from './sketchCorner.js';
 import type {
   BRepAlgoAPI_BuilderAlgo, Message_ProgressRange, OpenCascadeInstance, TopoDS_Shape,
 } from 'opencascade.js/dist/opencascade.full.js';
@@ -74,13 +75,8 @@ function fail(code: SurfaceCutReason): never { throw new SurfaceCutError(code); 
 function finite(values: readonly number[]): void {
   if (!values.every(Number.isFinite)) fail('non-finite-input');
 }
-function dot(a: Vec3Tuple, b: Vec3Tuple): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
-function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
 function offset(p: Vec3Tuple, n: Vec3Tuple, d: number): Vec3Tuple {
   return [p[0] + n[0] * d, p[1] + n[1] * d, p[2] + n[2] * d];
-}
-function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 function unit(n: Vec3Tuple): Vec3Tuple {
   finite(n);
@@ -360,6 +356,7 @@ function noSplitReason(oc: OpenCascadeInstance, target: TopoDS_Shape, blade: Top
  */
 export function makeSurfaceCut(oc: OpenCascadeInstance, target: TopoDS_Shape, input: SurfaceCutInput): SurfaceCutResult {
   const work = createAllocations(), output = createAllocations();
+  let releasingWork = false;
   try {
     if (input.kind === 'plane') { finite(input.origin); unit(input.normal); }
     if (input.kind === 'extrusion') validateProfile(input, oc.Precision.Confusion());
@@ -412,11 +409,15 @@ export function makeSurfaceCut(oc: OpenCascadeInstance, target: TopoDS_Shape, in
     }
     const relativeVolumeError = Math.abs(pieces.reduce((sum, p) => sum + p.volume, 0) - originalVolume) / originalVolume;
     if (!Number.isFinite(relativeVolumeError) || relativeVolumeError > VOLUME_RELATIVE_TOLERANCE) fail('volume-mismatch');
+    // Do not transfer output until its temporary dependencies have released successfully.
+    releasingWork = true;
+    work.release();
+    releasingWork = false;
     return { pieces, originalVolume, originalSolidCount: originals.length, fragmentCount: fragments.length,
       relativeVolumeError, delete: output.release };
   } catch (error) {
     output.release();
-    if (error instanceof SurfaceCutError) throw error;
+    if (releasingWork || error instanceof SurfaceCutError) throw error;
     throw new SurfaceCutError('boolean-failed', { cause: error });
   } finally { work.release(); }
 }

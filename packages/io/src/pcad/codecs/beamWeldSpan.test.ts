@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { cadWeldLayerFixture } from '../../../../model/src/analysis/cadWeldLayer.testSupport.js';
+import { cadWeldLayerFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from '../assemblyJson.js';
 
 describe('explicit weld span through the actual PCAD assembly codec', () => {

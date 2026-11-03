@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUndoStack } from '@pointercad/model';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { savedBoltFixture } from '../../../model/src/analysis/cadNativeBoltPreloadInput.testSupport.js';
+import { savedBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
 import type { FemWorkerPort } from '@pointercad/fem';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';

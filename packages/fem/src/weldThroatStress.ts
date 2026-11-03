@@ -1,3 +1,4 @@
+import { dotVec3 as dot, crossVec3 as cross, subVec3 as sub } from '@pointercad/model/vec3';
 import { beamJointContactInputSha256, translateBeamJointContact, type BeamJointContactInput, type BeamJointContactResult } from './beamJointContact.js';
 import { beamJointContactResultMatches } from './beamJointContactBinding.js';
 import { beamJointInitialStrainInputSha256, translateBeamJointInitialStrain, type BeamJointInitialStrainInput, type BeamJointInitialStrainResult } from './beamJointInitialStrain.js';
@@ -7,11 +8,6 @@ import { beamWeldContactInputSha256, translateBeamWeldContact,
   type BeamWeldContactInput, type BeamWeldContactResult, type BeamWeldContactPlan, type WeldLayerGeometry, type WeldLayerWrench } from './beamWeldContact.js';
 import { beamWeldContactResultMatches } from './beamWeldContactBinding.js';
 
-function dot(a: Vector3, b: Vector3): number { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
-function cross(a: Vector3, b: Vector3): Vector3 {
-  return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
-}
-function sub(a: Vector3, b: Vector3): Vector3 { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; }
 function finite(v: Vector3): boolean { return v.length === 3 && v.every(Number.isFinite); }
 
 /** 既存の矩形弾性層の合力から局所応力を回復する。許容応力や安全判定は補わない。 */

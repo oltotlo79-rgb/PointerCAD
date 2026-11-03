@@ -962,7 +962,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
   const host = realmMeshHost;
   if (!Number.isSafeInteger(nextMeshProvider + 1)) throw new RangeError('Mesh provider ID overflow');
   const providerId = ++nextMeshProvider;
-  let connectionEpoch = 0;
+  let connectionGeneration = 0;
   const ownerCoverageReasons = new Set<string>();
   const ownerCoverageReason = (): string | null => ownerCoverageReasons.values().next().value ?? null;
   const logicalDisplayOwners = new Map<string, MeshLedgerOwner>();
@@ -973,7 +973,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
   let nextDispatch = 0;
   function dispatch(partId: string, generation: number, kind: 'display' | 'hidden', steps: readonly ResolvedSolidStep[]): MeshLedgerOwner {
     if (!Number.isSafeInteger(nextDispatch + 1)) throw new RangeError('Mesh dispatch ID overflow');
-    const owner: MeshLedgerOwner = Object.freeze({ dispatchId: `mesh-${providerId}-${connectionEpoch}-${++nextDispatch}`, partId, generation, kind,
+    const owner: MeshLedgerOwner = Object.freeze({ dispatchId: `mesh-${providerId}-${connectionGeneration}-${++nextDispatch}`, partId, generation, kind,
       steps: Object.freeze(steps.map(step => Object.freeze({ id: step.featureId, key: step.key }))) });
     issued.add(owner); return owner;
   }
@@ -1069,7 +1069,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
     })));
     const after = host.observe();
     let workerRetainedBackingBytes = 0;
-    const workerEpochs: { providerId: number; connectionEpoch: number; cache: number; owners: number }[] = [];
+    const workerGenerations: { providerId: number; connectionEpoch: number; cache: number; owners: number }[] = [];
     for (const confirmation of confirmations) {
       const current = realmMeshProviders.get(confirmation.id);
       if (current !== confirmation.provider) return refused('worker-connection-changed');
@@ -1089,7 +1089,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
         || value.reading.cacheActiveBytes + value.reading.cacheRetiredBytes > value.reading.retainedBackingBytes)
         return refused('invalid-worker-snapshot');
       workerRetainedBackingBytes += value.reading.retainedBackingBytes;
-      workerEpochs.push({ providerId: confirmation.id, connectionEpoch: current.connectionEpoch, ...value.epoch });
+      workerGenerations.push({ providerId: confirmation.id, connectionEpoch: current.connectionEpoch, ...value.epoch });
     }
     if (providers.length !== realmMeshProviders.size) return refused('worker-provider-changed');
     if (after.status !== 'known') return refused(after.reason);
@@ -1097,9 +1097,9 @@ function createBridgeMeshLedger(sameRealm: boolean) {
     const admittedBoundBytes = workerRetainedBackingBytes + after.retainedBackingBytes;
     if (!Number.isSafeInteger(admittedBoundBytes)) return refused('overflow');
     if (admittedBoundBytes > MESH_LEDGER_LIMIT_BYTES) return refused('budget-exceeded');
-    if (workerEpochs.length === 0) return refused('worker-epoch-missing');
+    if (workerGenerations.length === 0) return refused('worker-epoch-missing');
     const receipt: CurrentMeshLedgerReceipt = Object.freeze({ status: 'known', observationId: input.observationId, hostEpoch: after.epoch,
-      workerEpochs: Object.freeze(workerEpochs.map(epoch => Object.freeze(epoch))),
+      workerEpochs: Object.freeze(workerGenerations.map(capturedGeneration => Object.freeze(capturedGeneration))),
       owners: input.owners, limitBytes: MESH_LEDGER_LIMIT_BYTES,
       workerRetainedBackingBytes,
       hostRetainedBackingBytes: after.retainedBackingBytes, pendingCloneReservedBytes: 0,
@@ -1108,7 +1108,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
     receipts.add(receipt); return receipt;
   }
   function current(receipt: CurrentMeshLedgerReceipt): boolean {
-    const beforeObservationHostEpoch = host.diagnosticEpoch();
+    const beforeObservationHostGeneration = host.diagnosticEpoch();
     const reading = host.observe(); // The original single observation; diagnostics never add one.
     const issuedKnown = receipts.has(receipt) && receipt.status === 'known';
     const reason = !issuedKnown ? 'unissued-or-unknown-receipt'
@@ -1116,10 +1116,10 @@ function createBridgeMeshLedger(sameRealm: boolean) {
       : receipt.hostEpoch !== reading.epoch ? 'host-epoch-changed'
       : reading.pendingCloneBytes !== 0 ? 'pending-reply'
       : receipt.workerEpochs.length !== realmMeshProviders.size ? 'worker-provider-count-changed'
-      : !receipt.workerEpochs.every(epoch => realmMeshProviders.get(epoch.providerId)?.connectionEpoch === epoch.connectionEpoch)
+      : !receipt.workerEpochs.every(capturedGeneration => realmMeshProviders.get(capturedGeneration.providerId)?.connectionEpoch === capturedGeneration.connectionEpoch)
         ? 'worker-connection-changed' : null;
     recordMeshLedgerValidation({ providerId, reason,
-      issuedHostEpoch: issuedKnown ? receipt.hostEpoch : null, beforeObservationHostEpoch,
+      issuedHostEpoch: issuedKnown ? receipt.hostEpoch : null, beforeObservationHostEpoch: beforeObservationHostGeneration,
       observedHostEpoch: reading.status === 'known' ? reading.epoch : null,
       pendingCloneBytes: reading.pendingCloneBytes,
       issuedProviderCount: issuedKnown ? receipt.workerEpochs.length : null, actualProviderCount: realmMeshProviders.size });
@@ -1137,10 +1137,10 @@ function createBridgeMeshLedger(sameRealm: boolean) {
       || fresh.workerRetainedBackingBytes !== receipt.workerRetainedBackingBytes
       || fresh.hostRetainedBackingBytes !== receipt.hostRetainedBackingBytes
       || fresh.workerEpochs.length !== receipt.workerEpochs.length
-      || fresh.workerEpochs.some((epoch, index) => {
+      || fresh.workerEpochs.some((capturedGeneration, index) => {
         const old = receipt.workerEpochs[index];
-        return old === undefined || old.providerId !== epoch.providerId || old.connectionEpoch !== epoch.connectionEpoch
-          || old.cache !== epoch.cache || old.owners !== epoch.owners;
+        return old === undefined || old.providerId !== capturedGeneration.providerId || old.connectionEpoch !== capturedGeneration.connectionEpoch
+          || old.cache !== capturedGeneration.cache || old.owners !== capturedGeneration.owners;
       })) return unknown('global-epoch-changed');
     const membership = host.inspectBackings(receipt.hostEpoch, buffers);
     if (membership.status !== 'known') return unknown(membership.reason);
@@ -1154,11 +1154,11 @@ function createBridgeMeshLedger(sameRealm: boolean) {
     host.advanceEpoch();
     for (const owner of logicalDisplayOwners.values()) host.revokeOwner(owner.dispatchId);
     logicalDisplayOwners.clear();
-    connectionEpoch += 1;
+    connectionGeneration += 1;
     ownerCoverageReasons.clear();
-    if (!Number.isSafeInteger(connectionEpoch)) { host.markCoverageUnknown('connection-epoch-overflow'); return; }
+    if (!Number.isSafeInteger(connectionGeneration)) { host.markCoverageUnknown('connection-epoch-overflow'); return; }
     if (query === null) realmMeshProviders.delete(providerId);
-    else realmMeshProviders.set(providerId, { connectionEpoch, query, issued, ownerCoverageReason });
+    else realmMeshProviders.set(providerId, { connectionEpoch: connectionGeneration, query, issued, ownerCoverageReason });
   }
   /** Short-circuit refusal metadata: no observation or inspection of an unissued receipt. */
   function refuse(reason: string): false {
@@ -1174,7 +1174,7 @@ function createBridgeMeshLedger(sameRealm: boolean) {
       host.revokeOwner(owner.dispatchId);
       if (logicalDisplayOwners.get(owner.partId) === owner) logicalDisplayOwners.delete(owner.partId);
     },
-    connectionEpoch: () => connectionEpoch,
+    connectionEpoch: () => connectionGeneration,
     markOwnerCoverageUnknown: (reason: string) => { ownerCoverageReasons.add(reason); host.advanceEpoch(); },
     clearOwnerCoverageReason: (reason: string) => { if (ownerCoverageReasons.delete(reason)) host.advanceEpoch(); },
     current, inspectSourceMeshBackings,
@@ -1193,7 +1193,7 @@ export function createMainPhaseObserver(readUi?: () => RuntimeUiContext) {
   let lastSeq = 0, dropped = 0, clockDiscontinuities = 0, missingContexts = 0;
   let previous: { epochMs: number; monoMs: number } | null = null;
   const contexts = new Map<string, RuntimeUiContext | null>();
-  function record(phase: MainRuntimePhase, epoch: number, owner: MeshLedgerOwner | null): void {
+  function record(phase: MainRuntimePhase, capturedGeneration: number, owner: MeshLedgerOwner | null): void {
     let ui: RuntimeUiContext | null = null;
     if (owner !== null) {
       if (phase === 'dispatch') {
@@ -1225,7 +1225,7 @@ export function createMainPhaseObserver(readUi?: () => RuntimeUiContext) {
       } else clockDiscontinuities += 1;
     } catch { clockDiscontinuities += 1; }
     if (!Number.isSafeInteger(lastSeq + 1)) { dropped += 1; return; }
-    records.push(Object.freeze({ seq: ++lastSeq, phase, connectionEpoch: epoch,
+    records.push(Object.freeze({ seq: ++lastSeq, phase, connectionEpoch: capturedGeneration,
       dispatchId: owner?.dispatchId ?? null, partId: owner?.partId ?? null,
       generation: owner?.generation ?? null, kind: owner?.kind ?? null, ui, epochMs, monoMs }));
     const recorded = records.at(-1);
@@ -1246,16 +1246,16 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
   try { if (typeof window !== 'undefined') window.pcadMeshLedgerDiagnostics = readMeshLedgerDiagnostics; }
   catch { meshLedgerValidationFailures += 1; }
   const phases = createMainPhaseObserver(readUi);
-  const phaseEpochs = new WeakMap<MeshLedgerOwner, number>();
-  const connectionEpochs = new WeakMap<KernelConnection, number>();
+  const phaseGenerations = new WeakMap<MeshLedgerOwner, number>();
+  const connectionGenerations = new WeakMap<KernelConnection, number>();
   let phaseCapture: { readonly nonce: string; readonly active: KernelConnection; readonly epoch: number } | null = null;
   const observe = (phase: MainRuntimePhase, owner: MeshLedgerOwner, active: KernelConnection): void =>
-    phases.record(phase, phaseEpochs.get(owner) ?? connectionEpochs.get(active) ?? 0, owner);
+    phases.record(phase, phaseGenerations.get(owner) ?? connectionGenerations.get(active) ?? 0, owner);
   const partClaims = new WeakSet<PartReleaseClaim>();
   // Actual RPCs remain pending until their own continuation settles.
   const inFlightParts = new Map<MeshLedgerOwner, KernelConnection>();
   const displayConnections = new WeakMap<MeshLedgerOwner, number>();
-  let closedThroughEpoch = 0;
+  let closedThroughGeneration = 0;
   const hiddenCleanup = new Map<string, { readonly owner: MeshLedgerOwner; readonly active: KernelConnection }>();
   const failedHiddenCleanup = new Set<string>();
   const returnedHiddenOwners = new WeakSet<MeshLedgerOwner>();
@@ -1281,7 +1281,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     });
   }
   attachCurrentWorker();
-  connectionEpochs.set(connection, ledger.connectionEpoch());
+  connectionGenerations.set(connection, ledger.connectionEpoch());
   async function acknowledgeReceived(owner: MeshLedgerOwner, active: KernelConnection): Promise<void> {
     if (active.closed) { ledger.host.revokeOwner(owner.dispatchId); return; }
     const reason = `receiver-acknowledgement:${owner.dispatchId}`;
@@ -1304,7 +1304,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
   }
   function retireTerminatedOwnerMetadata(active: KernelConnection): void {
     if (!active.terminationReturned) return;
-    closedThroughEpoch = Math.max(closedThroughEpoch, ledger.connectionEpoch());
+    closedThroughGeneration = Math.max(closedThroughGeneration, ledger.connectionEpoch());
     for (const [owner, held] of inFlightParts) if (held === active) inFlightParts.delete(owner);
     // Worker.terminate returned after transport/proxy cleanup. This is a logical worker
     // lifetime receipt only; native/physical collection and main-thread weak buffers remain unobserved.
@@ -1325,11 +1325,11 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
   }
 
   function closeObservedConnection(active: KernelConnection): void {
-    const epoch = connectionEpochs.get(active) ?? ledger.connectionEpoch();
-    phases.record('connection-close-request', epoch, null);
+    const capturedGeneration = connectionGenerations.get(active) ?? ledger.connectionEpoch();
+    phases.record('connection-close-request', capturedGeneration, null);
     try { closeKernelConnection(active); }
-    catch (error) { phases.record('connection-close-failed', epoch, null); throw error; }
-    phases.record('connection-closed', epoch, null);
+    catch (error) { phases.record('connection-close-failed', capturedGeneration, null); throw error; }
+    phases.record('connection-closed', capturedGeneration, null);
   }
   /**
    * 壊れた Worker を締めて作り直す(§2.9、§0.a-0.19)。形状キャッシュは Worker の中にあるので
@@ -1343,15 +1343,15 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     health.reset();
     connection = createKernelConnection(() => { phases.record('connection-interrupted', ledger.connectionEpoch(), null); health.markBroken(); ledger.host.advanceEpoch(); }, counts, results, () => ledger.host.advanceEpoch());
     attachCurrentWorker();
-    connectionEpochs.set(connection, ledger.connectionEpoch());
+    connectionGenerations.set(connection, ledger.connectionEpoch());
   }
 
   return {
     readRuntimePhases(): Promise<RuntimePhaseObservation> {
-      const active = connection, epoch = ledger.connectionEpoch();
+      const active = connection, capturedGeneration = ledger.connectionEpoch();
       const initial = phases.snapshot();
       const observation = (worker: RuntimePhaseObservation['worker'], reason: string | null): RuntimePhaseObservation => ({
-        status: reason === null ? 'observed' : 'unknown', reason, connectionEpoch: epoch,
+        status: reason === null ? 'observed' : 'unknown', reason, connectionEpoch: capturedGeneration,
         main: phases.snapshot(), worker,
         coverage: 'runSolidRecompute-call-plus-admission-preclone-and-main-lifetime',
         transport: 'preclone-to-resolved-main-reply-envelope',
@@ -1395,10 +1395,10 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
             && Number.isSafeInteger(record.generation) && record.generation >= 0
             && (record.kind === 'display' || record.kind === 'hidden')
             && current.records.some(main => main.phase === 'dispatch'
-            && main.connectionEpoch === epoch && main.dispatchId === record.dispatchId && main.partId === record.partId
+            && main.connectionEpoch === capturedGeneration && main.dispatchId === record.dispatchId && main.partId === record.partId
             && main.generation === record.generation && main.kind === record.kind)))
             return observation(worker, 'unmatched-worker-owner');
-          if (disposed || connection !== active || active.closed || active.interruption !== null || ledger.connectionEpoch() !== epoch)
+          if (disposed || connection !== active || active.closed || active.interruption !== null || ledger.connectionEpoch() !== capturedGeneration)
             return observation(worker, 'connection-changed');
           if (current.lastSeq !== initial.lastSeq) return observation(worker, 'main-changed-during-read');
           if (pendingReplyCleanup.size > 0) return observation(worker, 'receiver-ack-unsettled');
@@ -1490,14 +1490,14 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
     capturePartReleaseClaim(bodies) {
       const owner = ledger.owner(bodies);
       if (owner === null || owner.kind !== 'display' || !ledger.issued.has(owner)) return null;
-      const epoch = displayConnections.get(owner);
-      if (epoch === undefined) return null;
-      const claim: PartReleaseClaim = Object.freeze({ owner, connectionEpoch: epoch });
+      const capturedGeneration = displayConnections.get(owner);
+      if (capturedGeneration === undefined) return null;
+      const claim: PartReleaseClaim = Object.freeze({ owner, connectionEpoch: capturedGeneration });
       partClaims.add(claim); return claim;
     },
     async releasePartClaim(claim): Promise<PartReleaseDisposition> {
       if (!partClaims.has(claim) || claim.owner.kind !== 'display') return { status: 'unavailable', reason: 'unissued-claim' };
-      if (claim.connectionEpoch <= closedThroughEpoch) { ledger.retire(claim.owner); return { status: 'closed' }; }
+      if (claim.connectionEpoch <= closedThroughGeneration) { ledger.retire(claim.owner); return { status: 'closed' }; }
       const active = connection;
       if (disposed || claim.connectionEpoch !== ledger.connectionEpoch() || active.closed || active.interruption !== null)
         return { status: 'unavailable', reason: 'transport-unavailable' };
@@ -1711,7 +1711,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       let request: SolidRecomputeRequest = toSolidRecomputeRequest(steps, options);
       const owner = ledger.dispatch(request.partId ?? 'part:current', request.generation ?? 0, 'display', steps);
       displayConnections.set(owner, ledger.connectionEpoch());
-      phaseEpochs.set(owner, ledger.connectionEpoch());
+      phaseGenerations.set(owner, ledger.connectionEpoch());
       const reservation = await ledger.reserve(owner, request.localMesh?.maximumLiveMeshBytes ?? MESH_LEDGER_LIMIT_BYTES,
         options.shouldCancel ?? (() => false), () => connection === active && !active.closed && active.interruption === null);
       if (reservation.status === 'stopped' && active.interruption === 'workerBroken')
@@ -1867,7 +1867,7 @@ export function createKernelBridge(readUi?: () => RuntimeUiContext): MonitoredKe
       if (uncertified) ledger.markOwnerCoverageUnknown('uncertified-hidden-read');
       const context: ReferenceMeshLeaseOptions = lease ?? { partId: 'reference:legacy', generation: 0, maximumLiveMeshBytes: MESH_LEDGER_LIMIT_BYTES };
       const owner = ledger.dispatch(context.partId, context.generation, 'hidden', selected);
-      phaseEpochs.set(owner, ledger.connectionEpoch());
+      phaseGenerations.set(owner, ledger.connectionEpoch());
       const reservation = await ledger.reserve(owner, context.maximumLiveMeshBytes,
         context.shouldCancel ?? (() => false), () => connection === active && !active.closed && active.interruption === null);
       if (reservation.status !== 'reserved') {

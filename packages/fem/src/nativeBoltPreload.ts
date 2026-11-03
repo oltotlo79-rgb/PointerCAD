@@ -1,3 +1,4 @@
+import { subVec3 as sub } from '@pointercad/model/vec3';
 import { isRecord } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import type { PropertySource, Vector3 } from './analysisModel.js';
@@ -55,7 +56,6 @@ function text(v: unknown, limit: number): string {
 }
 function vec(v: unknown, limit = 1e30): Vector3 { const a = list(v, 3); return [num(a[0], -limit, limit), num(a[1], -limit, limit), num(a[2], -limit, limit)]; }
 function dot(a: readonly number[], b: readonly number[]): number { return a.reduce((s, x, i) => s + x * b[i], 0); }
-function sub(a: Vector3, b: Vector3): Vector3 { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
 function near(actual: unknown, expected: number, scale = Math.abs(expected)): number {
   const value = num(actual); if (Math.abs(value - expected) > 1e-9 * Math.abs(expected) + 64 * Number.EPSILON * Math.abs(scale)) fail(); return value;
 }

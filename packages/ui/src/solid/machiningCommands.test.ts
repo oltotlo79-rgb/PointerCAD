@@ -1259,7 +1259,7 @@ describe('円筒の側面のねじ穴を作る(EX05)', () => {
 import { beforeAll } from 'vitest';
 import { t } from '../i18n/t.js';
 import { applySolidCommit } from '../sketch/commitToStore.js';
-import { initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { nativeHistoryHarness } from './holeThreadHistory.testSupport.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';

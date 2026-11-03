@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { SegmentSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { expectPointClose } from './pointAssertions.testSupport.js';
 import { createAllocations } from './allocations.js';
 import { readLegacyOcctFixture, legacyOcctFixtures } from './legacyOcctFixtureLoader.js';
 import { makeSketchChamfer } from './makeSketchChamfer2d.js';
@@ -19,12 +20,6 @@ function segment(from: Vec3Tuple, to: Vec3Tuple): SegmentSpec {
 
 function distance(a: Vec3Tuple, b: Vec3Tuple): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
-
-function expectPointClose(actual: Vec3Tuple, expected: Vec3Tuple, digits: number): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
 }
 
 function vertexPoint(vertex: TopoDS_Vertex): Vec3Tuple {

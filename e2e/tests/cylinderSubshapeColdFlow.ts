@@ -15,7 +15,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { expressionValueFromNumber } from '../../packages/expression/src/index.js';
 import { readPcadFile } from '../../packages/io/src/index.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createKernelApi } from '../../packages/kernel/src/worker/kernelApi.js';
 import { createDirectKernelBridge } from '../../packages/model/src/kernelBridge.js';
 import { resolvePart } from '../../packages/model/src/part/resolvePart.js';

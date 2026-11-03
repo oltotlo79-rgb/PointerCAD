@@ -1,12 +1,12 @@
 import type { OpenCascadeInstance, TopoDS_Face } from 'opencascade.js/dist/opencascade.full.js';
 import type { PlanarFaceBasis, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
+import { unitDirectionCleanZero } from './normalizeDirection.js';
 
 function unit(value: Vec3Tuple): Vec3Tuple {
-  const length = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(length) || length <= 0) throw new Error('平面の座標軸を読み取れません。');
-  const clean = (n: number) => n === 0 ? 0 : n;
-  return [clean(value[0] / length), clean(value[1] / length), clean(value[2] / length)];
+  const direction = unitDirectionCleanZero(value);
+  if (direction === null) throw new Error('平面の座標軸を読み取れません。');
+  return direction;
 }
 
 /** adaptorは面のLocationを適用済み。INTERNAL/EXTERNALには外向きを定義せず、省略する。 */

@@ -4,7 +4,7 @@ import { readFileSync, writeSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { countTetraMeshVolumes } from './assemblyTetraMesh.js';
 import { boundCurvedPlc, type CurvedSurface } from './curvedPlcBound.js';
 import { analyzeSolid, isLoader, isRuntime, meshTetrahedra, type PyodideRuntime } from './runtime.js';
@@ -345,9 +345,11 @@ describe('real offline solid mesh convergence (unconverged is reported, never re
       // This fixed global mesh was measured to be insufficient. Keep it as a counterexample:
       // the mandatory local series below must satisfy the same original accuracy limits.
       if (continuation) expect(change?.status, 'fixed global mesh must report its insufficient accuracy').toBe('未収束');
+      if (level === 3 && shape !== 'perforated-plate') {
+        expect(change?.status, 'beam and cylinder must satisfy the original 1%/1%/5% convergence limits').toBe('収束');
+      }
       expect(deniedRequests).toBe(0);
-      // Numerical thresholds are fixed above. A successful reporting test does NOT
-      // claim all three geometries converged; the final printed status is authoritative.
+      // The local perforated-plate series has its own final convergence assertion below.
     };
     it.each(levels)(`${shape}: refinement %i`, runLevel, FUNCTIONAL_TEST_TIMEOUT_MS);
     if (shape === 'perforated-plate') {

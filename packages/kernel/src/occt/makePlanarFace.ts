@@ -1,10 +1,11 @@
-import type { OpenCascadeInstance, TopoDS_Face } from 'opencascade.js/dist/opencascade.full.js';
+import type { OpenCascadeInstance, TopoDS_Face, TopoDS_Edge } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { CurveSpec, ExtrudeStepSpec, TessellationOptions } from '../types.js';
-import { discretizeEdge, makeCurveEdge, type OcctEdgeHandle } from './makeSketchEdges.js';
+import { discretizeEdge, makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
 import type { NativeProfileCurve, NativeProfileLine } from './subShapeOrigins.js';
 import type { MeshCoordinateFrame } from './meshCoordinateFrame.js';
+import { createAllocations } from './allocations.js';
 
 /** OCCT の面と、そのために確保した領域の解放手続き。 */
 export interface OcctFaceHandle {
@@ -66,22 +67,19 @@ export function makePlanarFace(
     throw new Error('面を作るには曲線が 1 本以上必要です。');
   }
 
-  const edges: OcctEdgeHandle[] = [];
-  const sharedVertices: { delete(): void }[] = [];
-  const wireMaker = new oc.BRepBuilderAPI_MakeWire_1();
+  const owned = createAllocations();
+  const sharedVertices = createAllocations();
+  const edgeOwner = createAllocations();
+  // Keep borrowed profile edges/vertices alive through the returned face handle.
+  // Main release order is face -> maker -> wire -> wire maker -> edges -> shared vertices.
+  owned.keep({ delete: sharedVertices.release });
+  owned.keep({ delete: edgeOwner.release });
+  const edges: TopoDS_Edge[] = [];
   const boundary: number[] = [];
   const nativeProfileLines: NativeProfileLine[] = [];
   const nativeProfileCurves: NativeProfileCurve[] = [];
-
-  const deleteParts = (): void => {
-    wireMaker.delete();
-    for (const handle of edges) {
-      handle.delete();
-    }
-    for (let index = sharedVertices.length - 1; index >= 0; index -= 1) sharedVertices[index].delete();
-  };
-
   try {
+    const wireMaker = owned.keep(new oc.BRepBuilderAPI_MakeWire_1());
     // Shared native vertices keep the four source edges as members of MakeFace.
     // The ordinary edge constructor may let MakeWire replace three of them.
     const fourLines = profileOrigin !== undefined && 'lineFeatureIds' in profileOrigin && curves.length === 4
@@ -95,23 +93,19 @@ export function makePlanarFace(
     if (fourLines && profileOrigin !== undefined && 'lineFeatureIds' in profileOrigin) {
       const points = curves.map((curve) => {
         if (curve.kind !== 'segment') throw new Error('線分の輪郭が必要です。');
-        const point = new oc.gp_Pnt_3(...curve.from);
-        sharedVertices.push(point);
+        const point = sharedVertices.keep(new oc.gp_Pnt_3(...curve.from));
         return point;
       });
       const vertices = points.map((point) => {
-        const maker = new oc.BRepBuilderAPI_MakeVertex(point);
-        sharedVertices.push(maker);
-        const vertex = maker.Vertex();
-        sharedVertices.push(vertex);
+        const maker = sharedVertices.keep(new oc.BRepBuilderAPI_MakeVertex(point));
+        const vertex = sharedVertices.keep(maker.Vertex());
         return vertex;
       });
       for (let index = 0; index < 4; index += 1) {
-        const maker = new oc.BRepBuilderAPI_MakeEdge_2(vertices[index], vertices[(index + 1) % 4]);
-        if (!maker.IsDone()) { maker.delete(); throw new Error('線分の稜線を作れませんでした。'); }
-        const edge = maker.Edge();
-        const handle: OcctEdgeHandle = { edge, delete() { edge.delete(); maker.delete(); } };
-        edges.push(handle);
+        const maker = edgeOwner.keep(new oc.BRepBuilderAPI_MakeEdge_2(vertices[index], vertices[(index + 1) % 4]));
+        if (!maker.IsDone()) { throw new Error('線分の稜線を作れませんでした。'); }
+        const edge = edgeOwner.keep(maker.Edge());
+        edges.push(edge);
         wireMaker.Add_1(edge);
         appendSegments(boundary, discretizeEdge(oc, edge, options, frame));
         nativeProfileLines.push({ edge, anchor: { sketchId: profileOrigin.sketchId,
@@ -125,14 +119,14 @@ export function makePlanarFace(
       && curves.every(curve => curve.kind === 'segment' || (curve.kind === 'spline'
         && !curve.closed && curve.degree === undefined && curve.knots === undefined))) {
       for (let index = 0; index < curves.length; index++) {
-        const handle = makeCurveEdge(oc, curves[index]);
-        edges.push(handle);
+        const handle = edgeOwner.keep(makeCurveEdge(oc, curves[index]));
+        edges.push(handle.edge);
         wireMaker.Add_1(handle.edge);
         // MakeWire may replace a coincident vertex in a copied edge. Edge() is
         // the actual last inserted edge, not an ordinal/nearest-geometry guess.
         if (!wireMaker.IsDone()) throw new Error('Saved profile edges are disconnected');
         const inserted = wireMaker.Edge();
-        sharedVertices.push(inserted);
+        sharedVertices.keep(inserted);
         nativeProfileCurves.push({ edge: inserted, anchor: {
           sketchId: profileOrigin.sketchId, faceFeatureId: profileOrigin.faceFeatureId,
           curveFeatureId: profileOrigin.curveFeatureIds[index], role: 'whole-curve',
@@ -141,62 +135,47 @@ export function makePlanarFace(
       }
     } else {
       for (const curve of continuousCurvePieces(curves)) {
-        const handle = makeCurveEdge(oc, curve);
-        edges.push(handle);
+        const handle = edgeOwner.keep(makeCurveEdge(oc, curve));
+        edges.push(handle.edge);
         wireMaker.Add_1(handle.edge);
         appendSegments(boundary, discretizeEdge(oc, handle.edge, options, frame));
       }
     }
+
+
+    if (!wireMaker.IsDone()) {
+      throw new Error('選んだ線・円弧がつながっていないため、輪郭を作れませんでした。');
+    }
+
+    const wire = owned.keep(wireMaker.Wire());
+
+    if (!wire.Closed_1()) {
+      throw new Error('輪郭が閉じていないため、面を張れませんでした。');
+    }
+
+    // 第2引数 true は「平面だけを許す」。非平面のループはここで失敗し、FR-312(Could)へ回る。
+    const faceMaker = owned.keep(new oc.BRepBuilderAPI_MakeFace_15(wire, true));
+
+    if (!faceMaker.IsDone()) {
+      throw new Error('輪郭が同じ平面に乗っていないため、面を張れませんでした。');
+    }
+
+    const face = owned.keep(faceMaker.Face());
+
+    if (!oc.BRepAlgo.IsValid_1(face)) {
+      throw new Error('輪郭が自分自身と交わっているため、面を張れませんでした。');
+    }
+
+    return {
+      face,
+      boundaryPositions: new Float32Array(boundary),
+      boundaryEdgeCount: edges.length,
+      ...(nativeProfileLines.length === 4 ? { nativeProfileLines } : {}),
+      ...(nativeProfileCurves.length === curves.length ? { nativeProfileCurves } : {}),
+      delete: owned.release,
+    };
   } catch (error) {
-    deleteParts();
+    owned.release();
     throw error;
   }
-
-  if (!wireMaker.IsDone()) {
-    deleteParts();
-    throw new Error('選んだ線・円弧がつながっていないため、輪郭を作れませんでした。');
-  }
-
-  const wire = wireMaker.Wire();
-  const deleteWire = (): void => {
-    wire.delete();
-    deleteParts();
-  };
-
-  if (!wire.Closed_1()) {
-    deleteWire();
-    throw new Error('輪郭が閉じていないため、面を張れませんでした。');
-  }
-
-  // 第2引数 true は「平面だけを許す」。非平面のループはここで失敗し、FR-312(Could)へ回る。
-  const faceMaker = new oc.BRepBuilderAPI_MakeFace_15(wire, true);
-  const deleteMaker = (): void => {
-    faceMaker.delete();
-    deleteWire();
-  };
-
-  if (!faceMaker.IsDone()) {
-    deleteMaker();
-    throw new Error('輪郭が同じ平面に乗っていないため、面を張れませんでした。');
-  }
-
-  const face = faceMaker.Face();
-  const deleteAll = (): void => {
-    face.delete();
-    deleteMaker();
-  };
-
-  if (!oc.BRepAlgo.IsValid_1(face)) {
-    deleteAll();
-    throw new Error('輪郭が自分自身と交わっているため、面を張れませんでした。');
-  }
-
-  return {
-    face,
-    boundaryPositions: new Float32Array(boundary),
-    boundaryEdgeCount: edges.length,
-    ...(nativeProfileLines.length === 4 ? { nativeProfileLines } : {}),
-    ...(nativeProfileCurves.length === curves.length ? { nativeProfileCurves } : {}),
-    delete: deleteAll,
-  };
 }

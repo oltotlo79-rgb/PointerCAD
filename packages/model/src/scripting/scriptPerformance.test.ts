@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { createKernelApi } from '@pointercad/kernel';
 import { expectWithinBudget } from '@pointercad/test-utils';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge } from '../kernelBridge.js';
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
 import { executeScriptVm } from './runtimeAdapter.js';

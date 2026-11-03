@@ -71,17 +71,17 @@ export function validateDiscreteDomains(expression: MathNode, context: DiscreteD
     budget -= 1;
     if (budget < 0 || depth > 64) throw new MathInputProblem('budget', '整数条件を確認する式が複雑すぎます。');
     if (node.kind === 'operation') {
-      const op = node.operation;
-      if (context.deferSequenceBodies && SEQUENCE_IDS.has(op)) {
+      const operationName = node.operation;
+      if (context.deferSequenceBodies && SEQUENCE_IDS.has(operationName)) {
         sequenceFunction(node);
         node.operands.slice(1).forEach((operand, index) => visit(operand, `${path}.${index + 1}`, local, depth + 1));
         return;
       }
       node.operands.forEach((operand, index) => {
-        if (op === 'factorial') requireInteger(operand, op, `${path}.${index}`, local, 0n, 10_000n);
-        if (op === 'double-factorial') requireInteger(operand, op, `${path}.${index}`, local, -1n, 10_000n);
-        if (op === 'binomial' || op === 'permutations') requireInteger(operand, op, `${path}.${index}`, local, 0n, 10_000n);
-        if (op === 'gcd' || op === 'lcm') requireInteger(operand, op, `${path}.${index}`, local);
+        if (operationName === 'factorial') requireInteger(operand, operationName, `${path}.${index}`, local, 0n, 10_000n);
+        if (operationName === 'double-factorial') requireInteger(operand, operationName, `${path}.${index}`, local, -1n, 10_000n);
+        if (operationName === 'binomial' || operationName === 'permutations') requireInteger(operand, operationName, `${path}.${index}`, local, 0n, 10_000n);
+        if (operationName === 'gcd' || operationName === 'lcm') requireInteger(operand, operationName, `${path}.${index}`, local);
         // Root degrees are checked with the radicand by validateRootDomains.
         // The legacy real-root contract permits negative and noninteger degrees for positive values.
         visit(operand, `${path}.${index}`, local, depth + 1);

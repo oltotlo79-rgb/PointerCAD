@@ -1,15 +1,15 @@
 import { exactExpressionValueFromNumber as n } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createAllocations } from '../../../kernel/src/occt/allocations.js';
-import { buildBooleanShape } from '../../../kernel/src/occt/buildBooleanShape.js';
-import { makeSheetMetalBase } from '../../../kernel/src/occt/makeSheetMetalBase.js';
-import { makeSheetMetalBendBand } from '../../../kernel/src/occt/makeSheetMetalBend.js';
-import type { SheetMetalBodyInput } from '../../../kernel/src/occt/makeSheetMetalBody.js';
-import { makeSheetMetalCurvedPanel } from '../../../kernel/src/occt/makeSheetMetalCurvedPanel.js';
-import { countSheetMetalSolids } from '../../../kernel/src/occt/sheetMetalJoin.js';
+import { createAllocations } from '@pointercad/kernel';
+import { buildBooleanShape } from '@pointercad/kernel/testing/build-boolean-shape';
+import { makeSheetMetalBase } from '@pointercad/kernel/testing/make-sheet-metal-base';
+import { makeSheetMetalBendBand } from '@pointercad/kernel/testing/make-sheet-metal-bend';
+import type { SheetMetalBodyInput } from '@pointercad/kernel/testing/make-sheet-metal-body';
+import { makeSheetMetalCurvedPanel } from '@pointercad/kernel/testing/make-sheet-metal-curved-panel';
+import { countSheetMetalSolids } from '@pointercad/kernel/testing/sheet-metal-join';
 
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type AssemblyKernelBridge } from '../kernelBridge.js';
 import type { ResolvedCurve, ResolvedSegment } from '../sketch/types.js';
 import type { Vec3 } from '../sketch/vec3.js';

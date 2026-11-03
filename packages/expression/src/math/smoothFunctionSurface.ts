@@ -1,3 +1,4 @@
+import { addVec3 as add, subtractVec3 as subtract, scaleVec3 as scale, lengthVec3 as length } from './floatVec3.js';
 /**
  * A C1 tensor-product bicubic B-spline for an explicit/parametric function surface, certified against its certified
  * triangle mesh over the complete control net.
@@ -96,10 +97,6 @@ const KNOT_GAP = 64 * Number.EPSILON;
 
 type Vector = readonly [number, number, number];
 type Planar = readonly [number, number];
-const add = (a: Vector, b: Vector): Vector => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const subtract = (a: Vector, b: Vector): Vector => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const scale = (a: Vector, factor: number): Vector => [a[0] * factor, a[1] * factor, a[2] * factor];
-const length = (a: Vector): number => Math.hypot(a[0], a[1], a[2]);
 const finite = (a: readonly number[]): boolean => a.every(Number.isFinite);
 
 /** Nonuniform three-point derivative at index `node` of values on `knots` (end nodes use the same parabola). */

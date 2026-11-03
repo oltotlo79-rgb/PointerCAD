@@ -1,3 +1,4 @@
+import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 import type { Vector3 } from './analysisModel.js';
 import {
   BEAM_IMPACT_SCOPE, type BeamImpactContactPeak, type BeamImpactContactSample, type BeamImpactInput,
@@ -6,9 +7,7 @@ import {
 import { decodeImpactInterior } from './beamImpactInterior.js';
 import { translateBeamImpact } from './beamImpactTranslation.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function denseArray(value: unknown): value is unknown[] {
   if (!Array.isArray(value) || Reflect.ownKeys(value).length !== value.length + 1) return false;
   for (let index = 0; index < value.length; index += 1) {
@@ -16,9 +15,7 @@ function denseArray(value: unknown): value is unknown[] {
   }
   return true;
 }
-function finite(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
+
 function nonnegative(value: unknown): value is number {
   return finite(value) && value >= 0;
 }

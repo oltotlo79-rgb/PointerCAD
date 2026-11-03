@@ -1,3 +1,4 @@
+import { openAssemblyWithStrength } from '../store/testing/openAssemblyWithStrength.testSupport.js';
 import { readBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -44,14 +45,6 @@ function store(): FatigueLocalCycleSession {
   if (value === null) throw new Error('No local-cycle session');
   return value;
 }
-function openAssemblyWithStrength(): void {
-  const fixture = bucklingUiFixture();
-  const assembly = fixture.state.assembly;
-  if (assembly === null) throw new Error('Fixture without assembly');
-  useAppStore.getState().openAssembly(assembly, fixture.state.assemblyLibrary);
-  useAppStore.setState({ strengthSession: fixture.state.strengthSession });
-}
-
 describe('local-cycle draft', () => {
   it('starts with no correction, no derivation and no value, and refuses to run', () => {
     const empty = createFatigueLocalCycleSession('owner');

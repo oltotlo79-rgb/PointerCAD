@@ -1,3 +1,4 @@
+import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { CurveSpec, Vec3Tuple } from '../types.js';
@@ -116,21 +117,6 @@ export interface RibInput {
   readonly extendToBody?: boolean;
 }
 
-/**
- * 向きを長さ 1 に揃える。長さが 0 のときや数でないときは null を返す。
- *
- * `makeSolidSweep.ts` に同じ 8 行の関数があるが、あちらは輸出していない
- * (このタスクでは `makeSolidSweep.ts` を変えない決め)。輸出の整理をする
- * タスク42 で共通の置き場へ寄せることを統括へ提案する。
- */
-function normalizeDirection(vector: Vec3Tuple): Vec3Tuple | null {
-  const [x, y, z] = vector;
-  const length = Math.hypot(x, y, z);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [x / length, y / length, z / length];
-}
 
 /**
  * ワイヤの長さ(mm)。`BRepGProp.LinearProperties` は稜線の長さの合計を返す。

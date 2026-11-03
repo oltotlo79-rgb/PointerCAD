@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEmptyPartDocument, createUndoStack, resolveConstrainedAssembly, buildStandardPartFromSource } from '@pointercad/model';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import type { FemWorkerPort } from '@pointercad/fem';
-import { cadWeldSpanFixture } from '../../../model/src/analysis/cadWeldSpanLayer.testSupport.js';
+import { cadWeldSpanFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { captureMeshBodyLayout } from '../store/recomputeSlice.js';

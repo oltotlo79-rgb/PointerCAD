@@ -367,7 +367,8 @@ function toSurfaceInput(shape: SurfaceShapePlan): SurfaceInput {
         angle: shape.angle,
       };
     case 'planar':
-      return { kind: 'planar', profile: shape.profile.map((curve) => toCurveSpec(curve)) };
+      return { kind: 'planar', profile: shape.profile.map((curve) => toCurveSpec(curve)),
+        ...(shape.profileOrigins === undefined ? {} : { profileOrigins: shape.profileOrigins }) };
     case 'loft':
       return {
         kind: 'loft',

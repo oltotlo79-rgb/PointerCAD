@@ -538,6 +538,40 @@ function borrowedGeometryRelease(geometry: THREE.BufferGeometry): () => void {
 }
 
 
+/** Retain each retired draw and its individual release operations until cleanup succeeds. */
+function createSolidDrawRetirement(group: THREE.Group, draws: BodyDraw[]) {
+  let retiringDraw: BodyDraw | null = null;
+  const releases = new WeakMap<THREE.BufferGeometry, () => void>();
+  function geometryRelease(geometry: THREE.BufferGeometry): () => void {
+    let release = releases.get(geometry);
+    if (release === undefined) {
+      release = borrowedGeometryRelease(geometry);
+      releases.set(geometry, release);
+    }
+    return release;
+  }
+  function resize(count: number, createDraw: () => BodyDraw): void {
+    while (draws.length > count || retiringDraw !== null) {
+      const draw = draws[draws.length - 1];
+      if (draw === undefined) throw new Error('Retiring solid draw is missing');
+      retiringDraw = draw;
+      group.remove(draw.mesh);
+      group.remove(draw.edges);
+      geometryRelease(draw.mesh.geometry)();
+      geometryRelease(draw.edges.geometry)();
+      draw.positions = null;
+      draw.normals = null;
+      draw.uv = null;
+      draw.indices = null;
+      draw.edgePositions = null;
+      draws.pop();
+      retiringDraw = null;
+    }
+    while (draws.length < count) draws.push(createDraw());
+  }
+  return { resize, geometryRelease, get pending(): boolean { return retiringDraw !== null; } };
+}
+
 /**
  * 部分形状の重ね描き 3 本を 1 色ぶん作る。面は半透明のメッシュ、辺・頂点は
  * `depthTest: false`(裏側も見える、§0.a-0.27)。renderOrder は面が立体の面の直後、
@@ -917,6 +951,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
   }
 
   const draws: BodyDraw[] = [];
+  const drawRetirement = createSolidDrawRetirement(group, draws);
   /** 当たり判定にかける面。`draws` と同じ順に並ぶ。 */
   const pickTargets: THREE.Object3D[] = [];
   /** 当たった面 → ボディの id。userData は型が any になるので Map で持つ。 */
@@ -947,27 +982,6 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
       mesh,
       edges,
     };
-  }
-
-  function disposeDraw(draw: BodyDraw): void {
-    group.remove(draw.mesh);
-    group.remove(draw.edges);
-    disposeBorrowedGeometry(draw.mesh.geometry);
-    disposeBorrowedGeometry(draw.edges.geometry);
-    draw.positions = null;
-    draw.normals = null;
-    draw.uv = null;
-    draw.indices = null;
-    draw.edgePositions = null;
-  }
-
-  /** BodyDraw の個数だけを合わせる。余分な形は pick 表を作り直す前に解放する。 */
-  function resizeDraws(count: number): void {
-    while (draws.length > count) {
-      const draw = draws.pop();
-      if (draw !== undefined) disposeDraw(draw);
-    }
-    while (draws.length < count) draws.push(createDraw());
   }
 
   /** ボディ 1 つぶんの形を反映する。前回と同じ並びなら何もしない。 */
@@ -1241,7 +1255,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
 
   /** 部品の数をボディの数に合わせ、形と外観を流し込む。 */
   function syncDraws(entries: readonly SolidDrawEntry[]): void {
-    resizeDraws(entries.length);
+    drawRetirement.resize(entries.length, createDraw);
     rebuildPickTargets(entries);
     collectMaterials(entries);
     appearanceDirty = false;
@@ -1288,9 +1302,9 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
         appearanceDirty = true;
       }
       // 並びも外観も前回のままなら、表示スタイルの入切だけで済ませる(毎コマの作り直しをしない)。
-      if (bundle !== lastBundle || appearanceDirty) {
-        lastBundle = bundle;
+      if (bundle !== lastBundle || appearanceDirty || drawRetirement.pending) {
         syncDraws(bundle.entries);
+        lastBundle = bundle;
       }
       applyStyle(bundle.entries, displayStyle);
     },
@@ -1508,7 +1522,7 @@ export function createSolidLayer(patterns?: PatternTextureSource): SolidLayer {
         for (const draw of [threadMarkLines, sphereGridLines, cutPreviewFace, cutPreviewArrow,
           sectionHandleFace, sectionHandleArrow]) { geometries.add(draw.geometry); materials.add(draw.material); }
         materials.add(printOpenEdgeMaterial);
-        for (const geometry of geometries) cleanup.register('solid geometry', borrowedGeometryRelease(geometry));
+        for (const geometry of geometries) cleanup.register('solid geometry', drawRetirement.geometryRelease(geometry));
         cleanup.register('appearance materials and textures', () => { materialStore.dispose(); });
         for (const material of materials) cleanup.register('solid material', () => { material.dispose(); });
       }

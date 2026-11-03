@@ -1,3 +1,5 @@
+import { fatigueFailure } from './fatigueFailure.js';
+import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
  * Proportional ELASTIC stress-tensor loading on the existing scalar stress-life path (one finite F2 increment, not the
  * whole multiaxial fatigue feature). Opt-in by its own schema; no existing scalar input is reinterpreted.
@@ -68,9 +70,8 @@ export type FatigueTensorAnalysis =
 /** [xx, yy, zz, yz, xz, xy]; every component is present (no defaulting). */
 type Tensor = readonly [number, number, number, number, number, number];
 
-const fail = (code: FatigueTensorErrorCode, path: string): FatigueTensorError => ({ ok: false, code, path });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const fail: (code: FatigueTensorErrorCode, path: string) => FatigueTensorError = fatigueFailure;
+
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const dense = (value: unknown): value is unknown[] => {
@@ -78,7 +79,7 @@ const dense = (value: unknown): value is unknown[] => {
   for (let index = 0; index < value.length; index += 1) if (!Object.hasOwn(value, index)) return false;
   return true;
 };
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 
 /** von Mises of a symmetric tensor; exact for a uniaxial tensor (sqrt of an exact square). */
 function vonMises([xx, yy, zz, yz, xz, xy]: Tensor): number {

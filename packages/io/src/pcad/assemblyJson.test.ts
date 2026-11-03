@@ -1,5 +1,5 @@
 import { withBeamAnalysisInputs, type BeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import {
   ASSEMBLY_SCHEMA_VERSION,
   createAssemblyDocument, createStandardPartSource, buildStandardPartFromSource,
@@ -15,7 +15,7 @@ import {
   type SubShapeRef,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
-import { buildStandardPartFromSourceWithReason } from '../../../model/src/assembly/standard/buildStandardPart.js';
+import { buildStandardPartFromSourceWithReason } from '@pointercad/model/testing/io-operations';
 
 import {
   readAssemblyDocument,

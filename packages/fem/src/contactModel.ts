@@ -1,4 +1,4 @@
-import { isRecord } from './valueGuards.js';
+import { isRecord, isFiniteNumber as finite } from './valueGuards.js';
 import type { AnalysisSource, BeamAnalysisDocument, BeamNodalLoad, Vector3 } from './analysisModel.js';
 import type { BucklingRestraints } from './bucklingModel.js';
 
@@ -42,7 +42,7 @@ export type ContactValidation =
   | { readonly ok: true; readonly contacts: readonly BeamContactDefinition[]; readonly loadFactors: readonly number[] }
   | { readonly ok: false; readonly code: ContactValidationCode; readonly index: number };
 
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 
 /**
  * Normalizes each normal (a nonzero finite vector) and refuses everything beamContact.py validate_contacts refuses,

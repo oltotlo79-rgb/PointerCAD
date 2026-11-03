@@ -649,7 +649,7 @@ export function attachAssembly(
     }
     const uiInputs = uiBuffers.filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
     gate(request, 'ui-backing-admitted', null, uiInputs.length);
-    const uiEpoch = assemblyUiBackings.epoch();
+    const uiGeneration = assemblyUiBackings.epoch();
     const inspection = receipt === undefined ? undefined : await bridge.inspectSourceMeshBackings?.(receipt, uiInputs);
     if (obsolete(request)) return;
     gate(request, 'inspection', inspection?.status ?? 'unavailable');
@@ -663,7 +663,7 @@ export function attachAssembly(
     if (inspection.status !== 'known') { gate(request, 'inspection-unknown', inspection.reason); throw new Error(t('assembly.recomputeFailed')); }
     if (bridge.currentSourceMeshBackingInspection?.(inspection, receipt) !== true) refuse(request, 'inspection-stale', t('assembly.recomputeFailed'));
     gate(request, 'inspection-current');
-    if (assemblyUiBackings.epoch() !== uiEpoch) refuse(request, 'ui-epoch-changed', t('assembly.recomputeFailed'));
+    if (assemblyUiBackings.epoch() !== uiGeneration) refuse(request, 'ui-epoch-changed', t('assembly.recomputeFailed'));
     if (publication.assembly !== request.document) refuse(request, 'document-changed', t('assembly.recomputeFailed'));
     if (publication.assemblyLibrary !== request.library) refuse(request, 'library-changed', t('assembly.recomputeFailed'));
     if (publication.activeDocumentId !== request.documentId) refuse(request, 'document-id-changed', t('assembly.recomputeFailed'));
@@ -675,7 +675,7 @@ export function attachAssembly(
     const makeOwnership = (
       nextReceipt: Extract<NonNullable<typeof receipt>, { status: 'known' }>,
       nextInspection: Extract<NonNullable<typeof inspection>, { status: 'known' }>,
-      inputs: readonly ArrayBuffer[], epoch: number,
+      inputs: readonly ArrayBuffer[], capturedGeneration: number,
     ): AssemblyMeshOwnership => {
       let pendingRefresh: Promise<AssemblyMeshOwnership | null> | null = null;
       const owned: AssemblyMeshOwnership = {
@@ -684,7 +684,7 @@ export function attachAssembly(
         outcome: lastOutcome, timelineIndex: publication.timelineIndex, bodies, sources, receipt: nextReceipt,
         backingInspection: nextInspection,
         backingInspectionCurrent: () => bridge.currentSourceMeshBackingInspection?.(nextInspection, nextReceipt) === true,
-        uiSnapshot: Object.freeze({ epoch, buffers: Object.freeze(inputs.map(buffer =>
+        uiSnapshot: Object.freeze({ epoch: capturedGeneration, buffers: Object.freeze(inputs.map(buffer =>
           Object.freeze({ buffer: new WeakRef(buffer), bytes: buffer.byteLength }))) }),
         receiptCurrent: () => bridge.currentMeshLedgerReceipt?.(nextReceipt) === true,
         publicationCurrent: () => {
@@ -714,12 +714,12 @@ export function attachAssembly(
             const liveBuffers = assemblyUiBackings.buffers();
             if (!assemblyUiBackings.known() || liveBuffers.some(buffer => !(buffer instanceof ArrayBuffer))) return null;
             const freshInputs = liveBuffers.filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
-            const freshEpoch = assemblyUiBackings.epoch();
+            const freshGeneration = assemblyUiBackings.epoch();
             const freshInspection = await bridge.inspectSourceMeshBackings?.(freshReceipt, freshInputs);
-            if (!current() || assemblyUiBackings.epoch() !== freshEpoch || freshInspection?.status !== 'known'
+            if (!current() || assemblyUiBackings.epoch() !== freshGeneration || freshInspection?.status !== 'known'
               || bridge.currentMeshLedgerReceipt?.(freshReceipt) !== true
               || bridge.currentSourceMeshBackingInspection?.(freshInspection, freshReceipt) !== true) return null;
-            const fresh = makeOwnership(freshReceipt, freshInspection, freshInputs, freshEpoch);
+            const fresh = makeOwnership(freshReceipt, freshInspection, freshInputs, freshGeneration);
             // No await between the final exact-publication check and this owner-only publication.
             if (!current()) return null;
             useAppStore.setState({ assemblyView: { ...initialView, meshOwnership: fresh } });
@@ -732,7 +732,7 @@ export function attachAssembly(
       };
       return owned;
     };
-    const meshOwnership = makeOwnership(receipt, inspection, uiInputs, uiEpoch);
+    const meshOwnership = makeOwnership(receipt, inspection, uiInputs, uiGeneration);
     // Observers can synchronously replace the owner, including at the admission gate.
     if (obsolete(request)) return;
     lastGoodPlacements = nextGoodPlacements;

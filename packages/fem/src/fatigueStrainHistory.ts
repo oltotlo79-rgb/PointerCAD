@@ -1,3 +1,5 @@
+import { fatigueFailure } from './fatigueFailure.js';
+import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
  * Strain-history slice of the low-cycle fatigue work: uniaxial local TOTAL strain histories are counted with the
  * existing rainflow core of fatigue.ts, each counted cycle gets its life from the strain-life curve of
@@ -97,9 +99,8 @@ export interface StrainHistoryResult {
 }
 export type StrainHistoryAnalysis = { readonly ok: true; readonly result: StrainHistoryResult } | StrainHistoryError;
 
-const fail = (code: StrainHistoryErrorCode, path: string): StrainHistoryError => ({ ok: false, code, path });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const fail: (code: StrainHistoryErrorCode, path: string) => StrainHistoryError = fatigueFailure;
+
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 /** Holes are refused (map/every skip them), the same rule as the stress-history reader. */
@@ -110,7 +111,7 @@ const dense = (value: unknown): value is unknown[] => {
 };
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 
 function readSource(value: unknown, path: string): FatigueSource | StrainHistoryError {
   if (!record(value) || !exactKeys(value, ['kind', 'reference', 'condition'])) return fail('strain-history-shape', path);

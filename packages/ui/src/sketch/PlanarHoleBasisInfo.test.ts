@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { appendSolid, createEmptyPartDocument, type HoleFeature, type ImportedSolidFeature, type KernelBridge, type SolidBody } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { ReferenceMeshScope } from '../../../model/src/part/readReferenceBodies.js';
+import { ReferenceMeshScope } from '@pointercad/model/testing/ui-fixtures';
 import { bodyFor, resetTestStore } from '../store/testing/createTestStore.js';
 import { captureMeshBodyLayout } from '../store/recomputeSlice.js';
 import { useAppStore } from '../store/useAppStore.js';

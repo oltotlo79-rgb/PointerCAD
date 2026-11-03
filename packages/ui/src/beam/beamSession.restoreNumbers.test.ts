@@ -2,8 +2,8 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import { readBeamAnalysisInputs, withBeamAnalysisInputs, type StandardBeamDefinition,
   type StandardBeamTransientDefinition } from '@pointercad/model/beam-analysis';
 import { describe, expect, it } from 'vitest';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
-import { bucklingCadFixture } from '../../../model/src/analysis/beamBuckling.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
+import { bucklingCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readBeamField, readTransientField, type BeamFieldName } from './beamFields.js';
 import { restoreBeamSession } from './beamSession.js';
 

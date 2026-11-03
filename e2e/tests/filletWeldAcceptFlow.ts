@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { readFile } from 'node:fs/promises';
+import { watch } from './runtimeErrors.js';
 import { expect, test as baseTest, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { readDocumentBundle, writeAssemblyDocument } from '../../packages/io/src/index.js';
 import {
@@ -34,20 +35,6 @@ import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 
 const SAVED_AT = '2026-10-24T00:00:00.000Z';
 const OVERRUN = 'すみ肉溶接: ビードが当たりの辺からはみ出します。始点か長さを短くしてください。';
-
-interface Watch {
-  readonly errors: string[];
-  readonly dialogs: string[];
-}
-
-function watch(page: Page): Watch {
-  const errors: string[] = [];
-  const dialogs: string[] = [];
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('dialog', (dialog) => { dialogs.push(dialog.message()); void dialog.dismiss(); });
-  return { errors, dialogs };
-}
 
 interface SavedAssembly {
   readonly document: AssemblyDocument;
@@ -185,10 +172,64 @@ async function expectEditFieldsAreSaved(page: Page, document: AssemblyDocument):
 }
 
 /** 2 本目のビードの斜面をビューで押して選び、溶接の道具で「直す」窓を開く(filletWeldFlow.ts と同じ操作)。 */
-async function openEditOnSecondBead(page: Page): Promise<void> {
+async function openEditOnSecondBead(page: Page, info: TestInfo, step: string, saved: AssemblyDocument): Promise<void> {
+  const expectedBead = savedBeads(saved)[1];
+  if (expectedBead === undefined) throw new Error('保存した第2ビードがありません。');
   await goHome(page);
-  await clickWorldPointChecked(page, PICK.secondBeadSlope);
-  await expect(componentRows(page).nth(3)).toHaveAttribute('aria-pressed', 'true');
+  // 取消後は前の選択が残る。古い aria-pressed や古い hit を今回の押下成功に数えない。
+  // 不変な観測snapshotの参照だけを保持し、製品の入力・所有者・文書は変更しない。
+  const previousInput = await page.evaluateHandle(() => {
+    const read: unknown = Reflect.get(window, 'pcadViewportAssemblyOwner');
+    if (typeof read !== 'function') throw new Error('表示の所有観測がありません。');
+    const value: unknown = read();
+    if (value === null || typeof value !== 'object') throw new Error('表示の所有観測が無効です。');
+    const inputs: unknown = Reflect.get(value, 'mateInputs');
+    if (!Array.isArray(inputs)) throw new Error('入力の観測がありません。');
+    const last: unknown = inputs.at(-1);
+    return last;
+  });
+  try {
+    // 元の公開UI操作を1回だけ行う。pollは観測だけで再クリックしない。
+    await clickWorldPointChecked(page, PICK.secondBeadSlope);
+    const readPick = () => page.evaluate(previous => {
+      const field = (value: unknown, key: string): unknown => value !== null && typeof value === 'object'
+        ? Reflect.get(value, key) : undefined;
+      const read: unknown = Reflect.get(window, 'pcadViewportAssemblyOwner');
+      const owner: unknown = typeof read === 'function' ? read() : null;
+      const inputs = field(owner, 'mateInputs');
+      const input: unknown = Array.isArray(inputs) ? inputs.at(-1) : undefined;
+      const fresh = input !== undefined && input !== previous;
+      const readiness = field(input, 'readiness');
+      const ready = field(readiness, 'ready'), refresh = field(readiness, 'refresh');
+      const deferred = field(input, 'deferred');
+      return {
+        terminal: fresh && field(input, 'waiting') !== true,
+        readinessAccepted: (ready === 'ready' && refresh === null && deferred === undefined)
+          || ((ready === 'refresh-started' || ready === 'refresh-pending') && refresh === 'applied' && deferred === 'applied'),
+        input,
+        // ownerは読取り時点、input内の判定は押下時点。両者を同時刻の記録とは扱わない。
+        owner,
+      };
+    }, previousInput);
+    let observation = await readPick();
+    try {
+      await expect.poll(async () => {
+        observation = await readPick();
+        return observation.terminal;
+      }, '今回の第2ビード押下が終端する').toBe(true);
+    } finally {
+      await info.attach(`second-bead-pick-${step}`, {
+        body: JSON.stringify({ expectedComponentId: expectedBead.component.id, ...observation }),
+        contentType: 'application/json',
+      });
+    }
+    // null hit、所有拒否、取消、古い選択は全てここで拒否する。期待idは保存文書から独立に得る。
+    expect(observation).toMatchObject({ terminal: true, readinessAccepted: true, input: {
+      inputGate: 'accepted', componentPick: { ownerPresent: true, displayInvalidated: false,
+        ownerAccepted: true, cameraReady: true, hitComponentId: expectedBead.component.id },
+    } });
+    await expect(componentRows(page).nth(3)).toHaveAttribute('aria-pressed', 'true');
+  } finally { await previousInput.dispose(); }
   await chooseToolMenuItem(page, '組む', TITLE);
   await expect(weldDialog(page, EDIT_TITLE)).toBeVisible();
 }
@@ -228,7 +269,11 @@ export function registerFilletWeldAcceptTests(
             const value: unknown = read();
             if (value === null || typeof value !== 'object') return { available: false };
             const inputs: unknown = Reflect.get(value, 'mateInputs');
-            return { available: true, mateInputs: Array.isArray(inputs)
+            // 所有者の世代・文書の識別番号・更新中・準備を断った理由は名前と数だけ(文書や座標は口が返さない)。
+            const scalars = Object.fromEntries(Object.entries(value).filter(([key, entry]) => key !== 'mateInputs'
+              && (entry === null || ['string', 'number', 'boolean'].includes(typeof entry))));
+            const ownership: unknown = Reflect.get(value, 'ownership');
+            return { available: true, owner: scalars, ownership, mateInputs: Array.isArray(inputs)
               ? inputs.slice(-2).filter(value => value !== null && typeof value === 'object' && 'componentPick' in value) : [] };
           });
           await info.attach('viewport-pick-last-inputs', {
@@ -277,7 +322,7 @@ export function registerFilletWeldAcceptTests(
       expect(await shownIds(page)).toEqual(ids(welded.document));
 
       // 4) ビードを選んで「溶接を消す」: ビードだけが消え、2 つの角材の組と配置は残る。1 回の元に戻すで溶接の全バイト。
-      await openEditOnSecondBead(page);
+      await openEditOnSecondBead(page, info, 'remove-after-redo', welded.document);
       const token = await beginRecompute(page);
       await field(page, 'fillet-weld-remove', EDIT_TITLE).click();
       await expect(weldDialog(page, EDIT_TITLE)).toHaveCount(0);
@@ -315,7 +360,7 @@ export function registerFilletWeldAcceptTests(
       await expect(componentRows(page)).toHaveCount(5);
       expect(await shownIds(page)).toEqual(ids(welded.document));
       expect((await saveAndRead(page, info, 'reopened', app)).bytes).toBe(welded.bytes);
-      await openEditOnSecondBead(page);
+      await openEditOnSecondBead(page, info, 'reopened', welded.document);
       await expectEditFieldsAreSaved(page, welded.document);
       await expectReady(page, '35.75', '858', EDIT_TITLE);
 
@@ -327,14 +372,14 @@ export function registerFilletWeldAcceptTests(
       expect((await saveAndRead(page, info, 'edit-cancelled', app)).bytes).toBe(welded.bytes);
 
       // 3) はみ出す直しは断り、Enter でも直さない。Esc でやめても文書は 1 バイトも同じ。
-      await openEditOnSecondBead(page);
+      await openEditOnSecondBead(page, info, 'after-edit-cancel-save', welded.document);
       await field(page, 'fillet-weld-lengths', EDIT_TITLE).fill('10, 18.5, 20');
       await expectOverrunRefused(page, EDIT_TITLE);
       await expect(componentRows(page)).toHaveCount(5);
       expect((await saveAndRead(page, info, 'edit-refused', app)).bytes).toBe(welded.bytes);
 
       // 4) 3 本目を 9 に直して確定する。予告の値は保存した実モデルの値に一致し、ビードは古い id を使わない。
-      await openEditOnSecondBead(page);
+      await openEditOnSecondBead(page, info, 'after-edit-refuse-save', welded.document);
       await field(page, 'fillet-weld-lengths', EDIT_TITLE).fill('10, 18.5, 9');
       await expectReady(page, '37.5', '900', EDIT_TITLE);
       const shown = await readWeldPlan(page, EDIT_TITLE);

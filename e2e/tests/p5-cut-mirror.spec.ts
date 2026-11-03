@@ -1,5 +1,8 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { disableFilePickers } from './filePickers.js';
+import { openToolMenu, toolMenuPanel } from './toolMenus.js';
 
 import {
   beginRecompute,
@@ -36,61 +39,12 @@ const QUARTER_VOLUME = BOX_SIZE_MM * BOX_SIZE_MM * 5;
 /** ja.json の propertyPanel.unitCubicMillimeter。 */
 const VOLUME_UNIT = 'mm³';
 
-/** コンソールのエラーとページの例外を集める。最後に 0 件であることを確かめる。 */
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
-/**
- * File System Access API を無いことにしてから頁を開く。
- * ヘッドレスでは窓を出せないので、ダウンロードとファイル選択の代替経路へ落とす。
- */
-async function disableFilePickers(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
-      Object.defineProperty(globalThis, name, {
-        configurable: true,
-        writable: true,
-        value: undefined,
-      });
-    }
-  });
-}
-
 /** 保存していない変更の確認(画面の中の日本語の3択。w91a)に「保存せずに続ける」で答える(「新規」で出る)。 */
 async function acceptConfirms(page: Page): Promise<void> {
   // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
   await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
     await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });
-}
-
-/** ツールバーの畳んだ一覧(「作る」「合わせる」「加工」)の引き金。 */
-function toolMenuTrigger(page: Page, menu: string): Locator {
-  return page
-    .locator('.pcad-toolbar')
-    .getByRole('button', { name: new RegExp(`^${menu}`) })
-    .first();
-}
-
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-
-async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) {
-    await toolMenuTrigger(page, menu).click();
-  }
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
 }
 
 /** 開いた一覧の中の道具。 */

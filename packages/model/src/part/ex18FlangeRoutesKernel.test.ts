@@ -3,9 +3,9 @@ import { stdout } from 'node:process';
 import { createKernelApi } from '@pointercad/kernel';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import type { CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import { createDirectKernelBridge, type KernelBridge } from '../kernelBridge.js';
 import { buildEx18ExpressionFlange, buildEx18RevolvedFlange, buildEx18RuledFlange,
   editEx18FlangeBore, editEx18RevolvedFlangeRadius, type Ex18BCRoute } from './ex18RouteBuilders.testSupport.js';

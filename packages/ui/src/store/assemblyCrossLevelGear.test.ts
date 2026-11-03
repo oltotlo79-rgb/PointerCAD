@@ -1,10 +1,11 @@
+import { zDegrees } from './testing/zDegrees.testSupport.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
   absoluteCoordinate, appendSolid, createAssemblyDocument, createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY,
   jointFramePairFromTargets, resolveAssembly, resolveMateTarget, type AssemblyComponent, type AssemblyDocument,
   type ComponentSource, type CrossLevelGearCouplingDefinition, type Joint, type JointOccurrenceInputs, type PartLibrary,
-  type Placement, type PrimitiveFeature, type Quaternion,
+  type Placement, type PrimitiveFeature,
 } from '@pointercad/model';
 import { currentOccurrenceDrive, jointValueKey } from './assemblyOccurrenceDriveSlice.js';
 import { resetTestStore } from './testing/createTestStore.js';
@@ -75,11 +76,6 @@ function publishView(): void {
     diagnosis: null, mateTargetErrors: new Map(), mateTargets: new Map(), jointFrames: frames } });
 }
 
-function zDegrees(rotation: Quaternion | undefined): number {
-  const [x, y, z, w] = rotation ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
-  expect(Math.abs(x) + Math.abs(y)).toBeLessThan(1e-9);
-  return 2 * Math.atan2(z, w) * 180 / Math.PI;
-}
 /** The shown pair against the relation, read from the poses (parent motion and the child placement drive). */
 function expectShown(parentAngle: number, childAngle: number): void {
   const state = useAppStore.getState();

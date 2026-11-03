@@ -3,6 +3,11 @@ export type Vec3 = readonly [number, number, number];
 
 export const ORIGIN: Vec3 = [0, 0, 0];
 
+/** Finite components only; no length, range or coercion checks. */
+export function isFiniteVec3(vector: Vec3): boolean {
+  return vector.every(Number.isFinite);
+}
+
 export function addVec3(a: Vec3, b: Vec3): Vec3 {
   return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }

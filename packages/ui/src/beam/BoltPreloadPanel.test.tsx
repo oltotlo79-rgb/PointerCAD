@@ -1,5 +1,5 @@
 import { t } from '../i18n/t.js';
-import { testPlacement } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { testPlacement } from '@pointercad/model/testing/analysis-fixtures';
 import React, { Children, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BoltPreloadPanel, BoltPreloadAssociation } from './BoltPreloadPanel.js';
@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUndoStack, resolveAssembly, buildStandardPartFromSource } from '@pointercad/model';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import type { FemWorkerPort } from '@pointercad/fem';
-import { savedBoltFixture } from '../../../model/src/analysis/cadNativeBoltPreloadInput.testSupport.js';
-import { prepareNativeBoltPreload } from '../../../fem/src/nativeBoltPreload.js';
+import { savedBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
+import { prepareNativeBoltPreload } from '@pointercad/fem/testing/ui-fixtures';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { beamUiFixture } from './beam.testSupport.js';

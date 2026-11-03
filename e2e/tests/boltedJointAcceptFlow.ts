@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { readFile } from 'node:fs/promises';
+import { watch } from './runtimeErrors.js';
 import { expect, test as baseTest, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { readDocumentBundle, writeAssemblyDocument } from '../../packages/io/src/index.js';
 import {
@@ -36,20 +37,6 @@ import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 
 const SAVED_AT = '2026-10-24T00:00:00.000Z';
 const EDIT_TITLE = 'ボルトの締結を直す';
-
-interface Watch {
-  readonly errors: string[];
-  readonly dialogs: string[];
-}
-
-function watch(page: Page): Watch {
-  const errors: string[] = [];
-  const dialogs: string[] = [];
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('dialog', (dialog) => { dialogs.push(dialog.message()); void dialog.dismiss(); });
-  return { errors, dialogs };
-}
 
 interface SavedAssembly {
   readonly document: AssemblyDocument;

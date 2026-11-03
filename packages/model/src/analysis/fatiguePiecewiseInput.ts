@@ -1,4 +1,4 @@
-import { InputIssue, text } from './analysisValidation.js';
+import { fatigueInputFailure as fail, InputIssue, text } from './analysisValidation.js';
 import { FATIGUE_SAVED_ID, FATIGUE_SAVED_LIMITS, denseFatigueList, exactFatigueFields, fatigueLabel, finiteFatigueNumber,
   readFatigueSavedHistory, readFatigueSavedSource, type FatigueSavedHistory, type FatigueSavedSource } from './fatigueInput.js';
 
@@ -52,9 +52,6 @@ export interface FatiguePiecewiseSavedInput {
   readonly input: FatigueSavedPiecewiseProblem;
 }
 
-function fail(path: string, message: string): never {
-  throw new InputIssue('fatigue', path, message);
-}
 function bounded(value: unknown, path: string, [minimum, maximum]: readonly [number, number]): number {
   const number = finiteFatigueNumber(value, path);
   if (number < minimum || number > maximum) fail(path, `Expected a value from ${minimum} to ${maximum}`);

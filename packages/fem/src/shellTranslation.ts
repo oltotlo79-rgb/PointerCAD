@@ -1,3 +1,4 @@
+import { lengthVec3 as norm, scaleVec3 as scaled, subVec3 as sub, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
 import { readShellAnalysisInput, type ShellAnalysisInput, type ShellFixed6, type ShellVector3 } from './shellAnalysisModel.js';
 
 /**
@@ -120,13 +121,6 @@ export interface ShellAnalysisResult {
 }
 
 function refuse(code: string, reason: string): never { throw new Error(`${code}: ${reason}`); }
-function sub(a: ShellVector3, b: ShellVector3): ShellVector3 { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
-function dot(a: ShellVector3, b: ShellVector3): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
-function cross(a: ShellVector3, b: ShellVector3): ShellVector3 {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-function norm(a: ShellVector3): number { return Math.hypot(a[0], a[1], a[2]); }
-function scaled(a: ShellVector3, factor: number): ShellVector3 { return [a[0] * factor, a[1] * factor, a[2] * factor]; }
 function finite(value: number, code: string, what: string): number {
   return Number.isFinite(value) ? value : refuse(code, `${what} is not a finite number`);
 }

@@ -1,5 +1,6 @@
 import { expressionValueFromNumber as num, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
+import { expectVec3CloseTo as expectCloseTo } from '../testing/vec3Assertions.testSupport.js';
 
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from './createSketchDocument.js';
@@ -63,13 +64,6 @@ function polygonArea(points: readonly Vec3[]): number {
 /** 式が 0/0 や 1/0 を返した場合の値。評価器を通さず手で組み立てる。 */
 function brokenNumber(source: string, value: number): ExpressionValue {
   return { source, value, display: source };
-}
-
-/** 三成分をそれぞれ許容誤差つきで見る。sin・cos は厳密な 0 や 1 にならないため。 */
-function expectCloseTo(actual: Vec3, expected: Vec3, digits = 9): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
 }
 
 const POINT_A: SketchFeature = {

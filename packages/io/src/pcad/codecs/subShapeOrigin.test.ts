@@ -290,3 +290,62 @@ describe('open surface source identity', () => {
     expect(readSubShapeOrigin({ ...origin, identity: { ...origin.identity, profile } }, 'origin').ok).toBe(false);
   });
 });
+
+describe('planar sheet source identities (closed straight-line profile)', () => {
+  const face = { version: 1, shapeKind: 'face', identity: { kind: 'planar-surface-face', featureId: 'sheet',
+    profile: { sketchId: 'sketch', lineFeatureIds: ['line-a', 'line-b', 'line-c', 'line-d'] } } } as const;
+  const edge = { version: 1, shapeKind: 'edge', identity: { kind: 'planar-surface-edge', featureId: 'sheet',
+    profile: { sketchId: 'sketch', lineFeatureId: 'line-c', role: 'whole-line' } } } as const;
+  const vertex = { version: 1, shapeKind: 'vertex', identity: { kind: 'planar-surface-vertex', featureId: 'sheet',
+    profile: { sketchId: 'sketch', lineFeatureIds: ['line-b', 'line-c'] } } } as const;
+
+  it('roundtrips the face, edge and vertex meaning through save and read unchanged', () => {
+    for (const origin of [face, edge, vertex]) {
+      const saved = JSON.stringify(serializeSubShapeOrigin(origin));
+      expect(readSubShapeOrigin(JSON.parse(saved) as unknown, 'origin')).toEqual({ ok: true, value: origin });
+      expect(isSubShapeOrigin(JSON.parse(saved) as unknown)).toBe(true);
+    }
+  });
+  it.each([
+    { sketchId: 'sketch', lineFeatureIds: ['line-b', 'line-a', 'line-c'] },
+    { sketchId: 'sketch', lineFeatureIds: ['line-a', 'line-a', 'line-c'] },
+    { sketchId: 'sketch', lineFeatureIds: ['line-a', 'line-b'] },
+    { sketchId: 'sketch', lineFeatureIds: ['line-a', '', 'line-c'] },
+    { sketchId: 'sketch', faceFeatureId: 'invented', lineFeatureIds: ['line-a', 'line-b', 'line-c'] },
+    { lineFeatureIds: ['line-a', 'line-b', 'line-c'] },
+  ])('rejects a malformed, unsorted, duplicated or fabricated face line set %j', profile => {
+    expect(readSubShapeOrigin({ ...face, identity: { ...face.identity, profile } }, 'origin').ok).toBe(false);
+  });
+  it('rejects more than 32 face lines and accepts exactly 32', () => {
+    const ids = Array.from({ length: 33 }, (_, at) => `line-${String(at).padStart(2, '0')}`);
+    const withIds = (lineFeatureIds: readonly string[]): unknown =>
+      ({ ...face, identity: { ...face.identity, profile: { sketchId: 'sketch', lineFeatureIds } } });
+    expect(readSubShapeOrigin(withIds(ids), 'origin').ok).toBe(false);
+    expect(readSubShapeOrigin(withIds(ids.slice(0, 32)), 'origin').ok).toBe(true);
+  });
+  it.each([
+    { sketchId: 'sketch', lineFeatureIds: ['line-c', 'line-b'] },
+    { sketchId: 'sketch', lineFeatureIds: ['line-b', 'line-b'] },
+    { sketchId: 'sketch', lineFeatureIds: ['line-b', 'line-c', 'line-d'] },
+    { sketchId: 'sketch', lineFeatureIds: ['line-b'] },
+  ])('rejects a vertex that is not one unordered pair of distinct lines %j', profile => {
+    expect(readSubShapeOrigin({ ...vertex, identity: { ...vertex.identity, profile } }, 'origin').ok).toBe(false);
+  });
+  it.each([
+    { sketchId: 'sketch', lineFeatureId: 'line-c', role: 'whole-curve' },
+    { sketchId: 'sketch', lineFeatureId: 'line-c', role: 'whole-line', faceFeatureId: 'invented' },
+    { sketchId: 'sketch', lineFeatureIds: ['line-b', 'line-c'] },
+  ])('rejects a malformed or fabricated edge anchor %j', profile => {
+    expect(readSubShapeOrigin({ ...edge, identity: { ...edge.identity, profile } }, 'origin').ok).toBe(false);
+  });
+  it('does not read the planar kinds under another shape kind or as an old kind', () => {
+    expect(readSubShapeOrigin({ ...face, shapeKind: 'edge' }, 'origin').ok).toBe(false);
+    expect(readSubShapeOrigin({ ...edge, shapeKind: 'vertex' }, 'origin').ok).toBe(false);
+    expect(readSubShapeOrigin({ ...vertex, shapeKind: 'face' }, 'origin').ok).toBe(false);
+    expect(readSubShapeOrigin({ ...edge, shapeKind: 'face', identity: { ...edge.identity, kind: 'surface-side' } }, 'origin'))
+      .toEqual({ ok: true, value: { version: 1, shapeKind: 'face', identity: { kind: 'surface-side', featureId: 'sheet',
+        profile: edge.identity.profile } } });
+    expect(readSubShapeOrigin({ ...face, identity: { ...face.identity, kind: 'extrude-cap', end: 'start' } }, 'origin').ok).toBe(false);
+    expect(() => serializeSubShapeOrigin({ ...face, identity: { ...face.identity, featureId: '' } })).toThrow(RangeError);
+  });
+});

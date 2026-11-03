@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { cadAxialBoltFixture } from '../../../../model/src/analysis/cadAxialBolt.testSupport.js';
+import { cadAxialBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from '../assemblyJson.js';
 
 describe('explicit axial bolt inputs in the real PCAD assembly codec', () => {

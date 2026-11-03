@@ -1,3 +1,5 @@
+import { fatigueFailure } from './fatigueFailure.js';
+import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 import { FATIGUE_PIECEWISE_INPUT_SCHEMA, analyzeFatiguePiecewise, validateFatiguePiecewiseInput, type FatiguePiecewiseCurve,
   type FatiguePiecewiseError, type FatiguePiecewiseErrorCode, type FatiguePiecewiseInput, type FatiguePiecewiseResult } from './fatiguePiecewise.js';
 import { MAX_FATIGUE_HISTORIES, MAX_FATIGUE_HISTORY_POINTS, type FatigueSequence, type FatigueSource,
@@ -137,9 +139,8 @@ const DETAIL_STRESSES: readonly FatigueDetailStress[] = ['weld-fillet-throat-nom
 const QUANTITIES: readonly FatigueDetailQuantity[] = ['weld-group-concentric-shear-force', 'bolt-total-axial-force',
   'joint-external-axial-force', 'detail-stress'];
 
-const fail = (code: FatigueDetailErrorCode, path: string): FatigueDetailError => ({ ok: false, code, path });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const fail: (code: FatigueDetailErrorCode, path: string) => FatigueDetailError = fatigueFailure;
+
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const dense = (value: unknown): value is unknown[] => {
@@ -149,7 +150,7 @@ const dense = (value: unknown): value is unknown[] => {
 };
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 const isError = (value: object): value is FatigueDetailError => 'ok' in value;
 const detailStress = (value: unknown): value is FatigueDetailStress => DETAIL_STRESSES.some(item => item === value);
 const quantity = (value: unknown): value is FatigueDetailQuantity => QUANTITIES.some(item => item === value);

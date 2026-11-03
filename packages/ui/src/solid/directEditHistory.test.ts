@@ -3,8 +3,8 @@ import { expressionValueFromNumber as ev } from '@pointercad/expression';
 import { absoluteCoordinate, appendSolid, createEmptyPartDocument, nextSolidId, nextSolidName,
   recomputePart, replaceSolid, resolveSubShapeReference, type SubShapeRef, type PartDocument, type PartRecomputeResult,
   type SolidBody } from '@pointercad/model';
-import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
-import { buildEx18DirectSeed, withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
+import { buildEx18DirectSeed, withEx18UnselectedBody } from '@pointercad/model/testing/ui-fixtures';
 import { applyNumericTransition } from '../sketch/commitToStore.js';
 import { commitNumericInput, reduceNumericInput } from '../sketch/numericInput.js';
 import { attachPartRecompute } from '../store/attachKernel.js';

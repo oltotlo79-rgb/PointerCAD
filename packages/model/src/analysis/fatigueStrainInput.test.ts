@@ -41,6 +41,11 @@ function issue(value: unknown): readonly [string, string] {
 }
 
 describe('saved strain-life fatigue input', () => {
+  it('retains the sign of a zero strain in the saved reader', () => {
+    const read = readFatigueStrainSavedInput(withHistory({ strain: [-0, 0.01] }), 'definition');
+    expect(Object.is(read.input.histories[0].strain[0], -0)).toBe(true);
+  });
+
   it('preserves the input exactly with fresh nested ownership and no calculated results', () => {
     const value = saved(), checked = readFatigueStrainSavedInput(value, 'definition');
     expect(checked).toEqual(value);

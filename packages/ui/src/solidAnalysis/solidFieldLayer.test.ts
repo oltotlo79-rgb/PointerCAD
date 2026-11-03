@@ -6,7 +6,7 @@ import type { SolidFieldMesh } from './solidFieldView.js';
 /** Two triangles: triangle 0 owned by element 0 (-40 MPa), triangle 1 by element 1 (100 MPa). */
 const FIELD: SolidFieldMesh = { quantity: 'xx', deformationScale: 0,
   positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0], triangleElements: [0, 1], elementValues: [-40, 100],
-  legend: { minimumMPa: -40, maximumMPa: 100, constant: false } };
+  legend: { minimum: -40, maximum: 100, constant: false } };
 
 /** Runtime check of the mesh, geometry and material classes (a bare instanceof Mesh is Mesh<any, any, any>). */
 function isFieldMesh(object: THREE.Object3D | undefined): object is THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> {
@@ -21,6 +21,25 @@ function meshOf(layer: ReturnType<typeof createSolidFieldLayer>): THREE.Mesh<THR
 }
 
 describe('solid field layer (owned overlay)', () => {
+  it('colours engineering strain by the same element indices and returns the old overlay on result clear', () => {
+    const layer = createSolidFieldLayer();
+    layer.set({ ...FIELD, quantity: 'strainXy', elementValues: [-0.006, 0.012],
+      legend: { minimum: -0.006, maximum: 0.012, constant: false } });
+    const mesh = meshOf(layer), geometry = vi.spyOn(mesh.geometry, 'dispose');
+    const colors = mesh.geometry.getAttribute('color');
+    for (const [triangle, fraction] of [0, 1].entries()) {
+      const color = solidFieldColor(fraction);
+      for (let corner = 0; corner < 3; corner += 1) {
+        const at = triangle * 3 + corner;
+        expect([colors.getX(at), colors.getY(at), colors.getZ(at)]).toEqual([color.r, color.g, color.b].map(Math.fround));
+      }
+    }
+    layer.set(null);
+    expect(layer.triangleCount()).toBe(0);
+    expect(geometry).toHaveBeenCalledTimes(1);
+    layer.dispose();
+  });
+
   it('colours every corner of a triangle with its owning element only (flat, no interpolation)', () => {
     const layer = createSolidFieldLayer();
     layer.set(FIELD);

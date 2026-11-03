@@ -8,8 +8,8 @@ import { textFeature } from './sketch/textFeature.js';
 import { WORK_PLANES } from './sketch/planeMath.js';
 import { createFontStore, outlineCurves } from '@pointercad/drawing';
 import { createAllocations, bsplineDataForSpline, measureArea, measureVolume } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
-import { makeCurveEdge } from '../../kernel/src/occt/makeSketchEdges.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { makeCurveEdge } from '@pointercad/kernel';
 
 const root = new URL('../../../', import.meta.url);
 if (!existsSync(new URL('pnpm-workspace.yaml', root))) throw new Error('字体検査のリポジトリ起点が違います。');

@@ -1,3 +1,4 @@
+import { openAssemblyWithStrength } from '../store/testing/openAssemblyWithStrength.testSupport.js';
 import { readBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { bucklingUiFixture } from '../beam/beamBuckling.testSupport.js';
@@ -35,13 +36,6 @@ function session(): FatigueStrainSession {
   const value = useAppStore.getState().fatigueStrainSession;
   if (value === null) throw new Error('No strain-life session');
   return value;
-}
-function openAssemblyWithStrength(): void {
-  const fixture = bucklingUiFixture();
-  const assembly = fixture.state.assembly;
-  if (assembly === null) throw new Error('Fixture without assembly');
-  useAppStore.getState().openAssembly(assembly, fixture.state.assemblyLibrary);
-  useAppStore.setState({ strengthSession: fixture.state.strengthSession });
 }
 function savedNow() {
   const state = useAppStore.getState();

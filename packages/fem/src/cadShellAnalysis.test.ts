@@ -7,13 +7,19 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSubShapeReference, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryMesh,
   type AnalysisBoundarySource, type FaceSurfaceKind, type SolidBody, type SubShapeOrigin, type SubShapeRef } from '@pointercad/model';
 import { createShellCadSavedInput, solidCadFaceKey, type ShellCadSavedInput } from '@pointercad/model/beam-analysis';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
-import { analyzeCadShell, CadShellAnalysisRefusal, decodeCadShellAnalysis, distributeShellEdgeLoad, prepareCadShellAnalysis,
-  type CadShellAnalysisResult, type CadShellPrepared, type CadShellSettings } from './cadShellAnalysis.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
+import { analyzeCadShell, CadShellAnalysisRefusal, decodeCadShellAnalysis, distributeShellEdgeLoad, femShellNativeRunner,
+  prepareCadShellAnalysis, type CadShellAnalysisResult, type CadShellPrepared, type CadShellSettings } from './cadShellAnalysis.js';
 import type { CadShellSurfaceOptions } from './cadShellSurfaceMesh.js';
 import type { CadTetraContext } from './cadTetraMesh.js';
+import { FemClient, type FemWorkerPort } from './client.js';
+import { FEM_PROTOCOL, isRequest, type FemIdentity, type FemRequest } from './protocol.js';
 import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
-import type { ShellVector3 } from './shellAnalysisModel.js';
+import type { ShellAnalysisInput, ShellVector3 } from './shellAnalysisModel.js';
+import { SHELL_ASSETS } from './shellAssets.js';
+import { shellNativeResponseBound, type ShellNativeWireResult } from './shellBinding.js';
+import { isRecord } from './valueGuards.js';
+import { analyzeShellNative } from './shellRuntime.js';
 import type { ShellAnalysisPlan, ShellNodal6, ShellTensor6 } from './shellTranslation.js';
 
 // CAD sheet -> explicit midsurface -> unchanged W08 TR_SHELL02 path -> results keyed by the CAD faces.
@@ -48,6 +54,17 @@ run_shell_analysis()
   if (typeof encoded !== 'string') throw new Error('No native shell result');
   const raw: unknown = JSON.parse(encoded);
   return raw;
+}
+/** The exact JSON text of the fixed wrapper for a plan (for the response-length bound). */
+function runNativeText(plan: ShellAnalysisPlan): string {
+  if (runtime === undefined) throw new Error('No packaged Pyodide runtime');
+  runtime.FS.writeFile('/pcad_fem/shell-input.json', JSON.stringify(plan));
+  const encoded = runtime.runPython(`
+from shellAnalysis import run_shell_analysis
+run_shell_analysis()
+`);
+  if (typeof encoded !== 'string') throw new Error('No native shell result');
+  return encoded;
 }
 beforeAll(async () => {
   for (const name of ['package.json', 'pyodide.mjs', 'pyodide.asm.js', 'pyodide.asm.wasm', 'python_stdlib.zip',
@@ -408,6 +425,173 @@ describe('CAD sheet -> explicit midsurface -> native TR_SHELL02 -> results keyed
     expect(await analyzeCadShell(kernelOf(sheet, idle), () => context, settings, () => Promise.reject(new Error('not run')),
       controller.signal)).toEqual({ kind: 'cancelled' });
     expect(idle).toHaveLength(0);
+  });
+});
+
+interface TestPort extends FemWorkerPort { terminations: number; readonly requests: FemRequest[] }
+type Reply = (data: unknown) => void;
+type WorkerScript = (request: FemRequest, reply: Reply, port: TestPort) => Promise<void>;
+/** Transport double for a FEM Worker: every message is structured-cloned in both directions and `script` plays the
+ * Worker. Not a browser Worker; offlineBrowser asset loading and the mock client lifecycle are in shellRuntime.test.ts. */
+function shellPort(script: WorkerScript): TestPort {
+  const port: TestPort = { terminations: 0, requests: [], onmessage: null, onerror: null, onmessageerror: null,
+    terminate() { this.terminations += 1; },
+    postMessage(request) {
+      const copy = structuredClone(request);
+      port.requests.push(copy);
+      const reply: Reply = data => { port.onmessage?.(new MessageEvent<unknown>('message', { data: structuredClone(data) })); };
+      void script(copy, reply, port);
+    } };
+  return port;
+}
+const shellWrapper = new Uint8Array(readFileSync(new URL('./shellAnalysis.py', import.meta.url)));
+const resultMessage = (identity: FemIdentity, result: unknown): unknown => ({ protocol: FEM_PROTOCOL, kind: 'result', identity, result });
+type ResultChange = (identity: FemIdentity, result: ShellNativeWireResult) => unknown;
+interface NativeWorkerOptions {
+  /** The full input the Worker actually solves (default: the admitted request input). */
+  readonly answer?: (input: ShellAnalysisInput) => ShellAnalysisInput;
+  /** Builds the result message (default: the worker.ts result message). */
+  readonly change?: ResultChange;
+}
+/** worker.ts for one request without the browser asset loader: the production admission (isRequest), the production
+ * analyzeShellNative (which fingerprints the full input it solved) on this file's packaged Pyodide/OOFEM, and the
+ * worker.ts reply shapes. The options only exist for the negative cases. */
+function nativeWorker({ answer = input => input, change = resultMessage }: NativeWorkerOptions = {}): WorkerScript {
+  return async (request, reply) => {
+    if (!isRequest(request) || request.kind !== 'analyze-shell-tr-shell02') throw new Error('Worker admission refused the request');
+    if (runtime === undefined) throw new Error('No packaged Pyodide runtime');
+    const result = await analyzeShellNative(runtime, answer(request.input), { wrapper: shellWrapper,
+      wheelLocation: join(assets, wheel).split(sep).join('/') },
+    phase => reply({ protocol: FEM_PROTOCOL, kind: 'phase', identity: request.identity, phase }));
+    reply(change(request.identity, result));
+  };
+}
+function rawWith(result: ShellNativeWireResult, patch: Record<string, unknown>): ShellNativeWireResult {
+  if (!isRecord(result.raw)) throw new Error('raw native answer is not an object');
+  return { ...result, raw: { ...result.raw, ...patch } };
+}
+function plateRun(): { sheet: Sheet; context: CadTetraContext; settings: CadShellSettings } {
+  const sheet = singlePlate(), context = contextOf(sheet);
+  return { sheet, context, settings: bendingSettings(context.body, savedFor(context, [0]), SINGLE) };
+}
+/** One CAD shell run through FemClient -> port -> femShellNativeRunner; the client is disposed afterwards. */
+async function throughWorker(script: WorkerScript, signal?: AbortSignal):
+  Promise<{ outcome: Awaited<ReturnType<typeof analyzeCadShell>>; ports: TestPort[] }> {
+  const { sheet, context, settings } = plateRun(), ports: TestPort[] = [];
+  const client = new FemClient(() => { const port = shellPort(script); ports.push(port); return port; });
+  try {
+    return { outcome: await analyzeCadShell(kernelOf(sheet), () => context, settings, femShellNativeRunner(client), signal), ports };
+  } finally { client.dispose(); }
+}
+
+// Execution link for plans W08/W60/W68: the CAD runner boundary goes through the real FemClient request, Worker admission
+// and runtime module. Numerical expectations are W08's independent Kirchhoff values (top/bottom = +/-6m/t^2), never
+// values observed from this path. The transport is a test double: this is not evidence of a browser or app run.
+describe('CadShellNativeRunner through FemClient, the Worker request and analyzeShellNative', () => {
+  it('pins shellAnalysis.py identically in shellAssets.ts, the runtime manifest, the shipped asset and the source', () => {
+    expect(SHELL_ASSETS).toEqual([{ file: 'shellAnalysis.py', bytes: shellWrapper.length,
+      sha256: createHash('sha256').update(shellWrapper).digest('hex') }]);
+    expect(verified('shellAnalysis.py')).toEqual(shellWrapper);
+  });
+
+  it('W08 pure bending: one Worker request, raw answer decoded once, top/bottom = +/-6m/t^2 within 1e-3', async () => {
+    const { sheet, context, settings } = plateRun(), phases: string[] = [], ports: TestPort[] = [];
+    const client = new FemClient(() => { const port = shellPort(nativeWorker()); ports.push(port); return port; });
+    try {
+      const outcome = await analyzeCadShell(kernelOf(sheet), () => context, settings,
+        femShellNativeRunner(client, phase => { phases.push(phase); }));
+      if (outcome.kind !== 'result') throw new Error(outcome.kind === 'failed' ? outcome.message : 'cancelled');
+      expect(ports).toHaveLength(1);
+      expect(ports[0].requests).toHaveLength(1);
+      expect(ports[0].terminations).toBe(1);
+      expect(ports[0].onmessage).toBeNull();
+      const request = ports[0].requests[0];
+      if (request?.kind !== 'analyze-shell-tr-shell02') throw new Error('Missing shell Worker request');
+      expect(request.identity).toMatchObject({ documentId: 'part', revision: 3 });
+      expect(request.input).toEqual(outcome.prepared.input);
+      expect(phases).toEqual(['loading-packages', 'solving']);
+      expect(denied).toBe(0);
+      expectFaceBinding(sheet, context, outcome.result);
+      const surface = 6 * M / T ** 2;
+      for (const element of outcome.result.elements) for (const point of element.points) {
+        expect(record('workerBendingTop', relative(tensorPairs(point.topMPa, [surface, 0, 0, 0, 0, 0]), surface))).toBeLessThanOrEqual(TOLERANCE);
+        expect(record('workerBendingBottom', relative(tensorPairs(point.bottomMPa, [-surface, 0, 0, 0, 0, 0]), surface))).toBeLessThanOrEqual(TOLERANCE);
+      }
+      const direct = await solved(sheet, context, settings);
+      expect(JSON.stringify(outcome.result)).toBe(JSON.stringify(direct.result));
+      const text = runNativeText(outcome.prepared.plan), bound = shellNativeResponseBound(outcome.prepared.input);
+      expect(text.length).toBeLessThanOrEqual(bound);
+      measured.workerResponseCharacters = text.length;
+      measured.workerResponseBound = bound;
+    } finally { client.dispose(); }
+  });
+
+  // The Worker fingerprints the full input it actually solved; the client compares that with its own fingerprint of the
+  // input it sent. Same source (document, revision, meshKey) and the same node/element counts in every row below.
+  const doubled = (v: ShellVector3): ShellVector3 => [2 * v[0], 2 * v[1], 2 * v[2]];
+  const binding: [string, NativeWorkerOptions, string][] = [
+    ['accepts the exact same full input (control)', { answer: input => structuredClone(input) }, 'result'],
+    ['refuses the answer to the same source and counts with only the material changed',
+      { answer: input => ({ ...input, materials: input.materials.map(m => ({ ...m, youngMPa: 2 * m.youngMPa })) }) }, 'invalid-protocol'],
+    ['refuses the answer to the same source and counts with only the loads changed',
+      { answer: input => ({ ...input, nodalLoads: input.nodalLoads.map(load => ({ ...load, momentNmm: doubled(load.momentNmm) })) }) },
+      'invalid-protocol'],
+    ['refuses an answer for an older revision', { change: (identity, result) => resultMessage({ ...identity, revision: identity.revision - 1 }, result) },
+      'invalid-protocol'],
+    ['refuses a numerically broken answer at the single decode', { change: (identity, result) =>
+      resultMessage(identity, rawWith(result, { freeResidualRelative: 1 })) }, 'cad-shell'],
+  ];
+  it.each(binding)('%s and releases the one Worker', async (_, options, expected) => {
+    const { outcome, ports } = await throughWorker(nativeWorker(options));
+    if (expected === 'result') expect(outcome.kind).toBe('result');
+    else expect(outcome).toMatchObject({ kind: 'failed', code: expected });
+    if (outcome.kind === 'failed' && expected === 'cad-shell') expect(outcome.message).toContain('free residual');
+    expect(ports.map(port => port.terminations)).toEqual([1]);
+  });
+
+  it('keeps cancellation a cancellation: run-signal abort and client supersession both end as cancelled, never failed', async () => {
+    let delivered: (value: { request: FemRequest; reply: Reply; port: TestPort }) => void = () => undefined;
+    const posted = new Promise<{ request: FemRequest; reply: Reply; port: TestPort }>(resolve => { delivered = resolve; });
+    const controller = new AbortController();
+    const pending = throughWorker((request, reply, port) => { delivered({ request, reply, port }); return Promise.resolve(); },
+      controller.signal);
+    const late = await posted;
+    controller.abort();
+    const { outcome, ports } = await pending;
+    expect(outcome).toEqual({ kind: 'cancelled' });
+    expect(ports.map(port => port.terminations)).toEqual([1]);
+    expect(late.port.onmessage).toBeNull();
+    await nativeWorker()(late.request, late.reply, late.port);
+    expect(late.port.requests).toHaveLength(1);
+
+    const { sheet, context, settings } = plateRun(), used: TestPort[] = [];
+    let waiting: () => void = () => undefined;
+    const started = new Promise<void>(resolve => { waiting = resolve; });
+    const client = new FemClient(() => { const port = shellPort(() => { waiting(); return Promise.resolve(); }); used.push(port); return port; });
+    try {
+      const first = analyzeCadShell(kernelOf(sheet), () => context, settings, femShellNativeRunner(client));
+      await started;
+      const prepared = prepareCadShellAnalysis(await boundaryOf(sheet, context), context, settings);
+      const newer = client.analyzeShell(prepared.input);
+      expect(await first).toEqual({ kind: 'cancelled' });
+      client.dispose();
+      await expect(newer).resolves.toMatchObject({ kind: 'cancelled', reason: 'disposed' });
+      expect(used.map(port => port.terminations)).toEqual([1, 1]);
+    } finally { client.dispose(); }
+  });
+
+  it('reports a Worker failure as a coded failure and keeps the first of duplicate native answers', async () => {
+    const failure = await throughWorker((request, reply) => {
+      reply({ protocol: FEM_PROTOCOL, kind: 'failure', identity: request.identity,
+        failure: { code: 'solver-failed', message: 'shell-native: inconsistent native model' } });
+      return Promise.resolve();
+    });
+    expect(failure.outcome).toMatchObject({ kind: 'failed', code: 'solver-failed' });
+    const { sheet, context } = plateRun();
+    const twice = await throughWorker((request, reply, port) => nativeWorker()(request, data => { reply(data); reply(data); }, port));
+    if (twice.outcome.kind !== 'result') throw new Error('Duplicate answers must keep the first accepted result');
+    expectFaceBinding(sheet, context, twice.outcome.result);
+    expect([failure, twice].flatMap(run => run.ports.map(port => port.terminations))).toEqual([1, 1]);
   });
 });
 

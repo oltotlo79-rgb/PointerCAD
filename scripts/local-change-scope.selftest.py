@@ -801,6 +801,7 @@ class ScopeHookTests(unittest.TestCase):
         before = len(fixture.calls())
         output = self.light_check('-ComparisonBase', self.base)
         self.assertEqual(fixture.calls()[before:], [*self.browser_preparation(), 'run typecheck', 'run lint',
+                                                    '--filter @pointercad/ui exec vitest run src/i18n/i18n.test.ts --maxWorkers=1', '--filter @pointercad/help-content exec vitest run src/topics.test.ts --maxWorkers=1',
                                                     'run test', 'run build', self.STARTUP_E2E], output[-4000:])
         self.assertTrue(light.exists(), 'The widened light check records its own light receipt')
         self.assertFalse(full_receipt.exists(), 'A widened light check never issues or keeps a B3 receipt')
@@ -821,8 +822,8 @@ class ScopeHookTests(unittest.TestCase):
         fixture.write('eslint.config.js', 'export default [];\n')
         fixture.git('add', '.')
         output = self.light_check('-ComparisonBase', self.base)
-        expected = [*self.browser_preparation(), 'run typecheck', 'run lint', 'run test', 'run build',
-                    self.STARTUP_E2E]
+        expected = [*self.browser_preparation(), 'run typecheck', 'run lint',
+                    '--filter @pointercad/ui exec vitest run src/i18n/i18n.test.ts --maxWorkers=1', '--filter @pointercad/help-content exec vitest run src/topics.test.ts --maxWorkers=1', 'run test', 'run build', self.STARTUP_E2E]
         self.assertEqual(fixture.calls(), expected, output[-4000:])
         light = fixture.root / '.git/local-light-receipt.json'
         self.assertTrue(light.is_file(), output[-4000:])

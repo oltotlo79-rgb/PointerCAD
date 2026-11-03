@@ -60,7 +60,7 @@ describe('FEM application source versus explicit build inputs', () => {
 });
 
 describe('fixed local FEM distribution proposal', () => {
-  it('ships the exact 33 pinned runtime asset files and preserves unresolved publication conditions', () => {
+  it('ships the exact 36 pinned runtime asset files and preserves unresolved publication conditions', () => {
     const distribution = collectFemRuntimeAssets(join(root, 'packages/fem/runtime'));
     expect([...distribution.assets.keys()].filter(name => name.startsWith('fem/assets/')).sort()).toEqual([
       'fem/assets/beamAnalysis.py',
@@ -87,12 +87,15 @@ describe('fixed local FEM distribution proposal', () => {
       'fem/assets/pyodide.asm.wasm',
       'fem/assets/pyodide.mjs',
       'fem/assets/python_stdlib.zip',
+      'fem/assets/shellAnalysis.py',
       'fem/assets/solidAnalysis.py',
       'fem/assets/solidBuckling.py',
       'fem/assets/solidContact.py',
       'fem/assets/solidContactDriver.py',
       'fem/assets/solidContactFriction.py',
       'fem/assets/solidContactSolver.py',
+      'fem/assets/solidFiniteEquilibrium.py',
+      'fem/assets/solidFiniteMaterial.py',
       'fem/assets/solidModal.py',
       'fem/assets/solidPlasticAnalysis.py',
       'fem/assets/test_2.py',
@@ -109,6 +112,9 @@ describe('fixed local FEM distribution proposal', () => {
       ['solidContactDriver.py', 'solidContactDriver.py'],
       ['solidContactFriction.py', 'solidContactFriction.py'],
       ['solidContactSolver.py', 'solidContactSolver.py'],
+      ['solidFiniteEquilibrium.py', 'solidFiniteEquilibrium.py'],
+      ['solidFiniteMaterial.py', 'solidFiniteMaterial.py'],
+      ['shellAnalysis.py', 'shellAnalysis.py'],
     ] as const) {
       const bytes = distribution.assets.get('fem/assets/' + asset);
       if (bytes === undefined) throw new Error('Missing span runtime asset: ' + asset);

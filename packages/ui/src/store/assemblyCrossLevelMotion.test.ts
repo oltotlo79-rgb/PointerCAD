@@ -1,3 +1,4 @@
+import { zDegrees } from './testing/zDegrees.testSupport.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { afterEach, vi } from 'vitest';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
@@ -5,7 +6,7 @@ import {
   absoluteCoordinate, appendSolid, createAssemblyDocument, createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY,
   jointFramePairFromTargets, resolveAssembly, resolveMateTarget, type Vec3, type WorkPlane, type AssemblyComponent, type AssemblyDocument,
   type ComponentSource, type CrossLevelGearCouplingDefinition, type Joint, type JointOccurrenceInputs, type PartLibrary,
-  type Placement, type PresentationStep, type PrimitiveFeature, type Quaternion, type RigidPlacement,
+  type Placement, type PresentationStep, type PrimitiveFeature, type RigidPlacement,
 } from '@pointercad/model';
 import { crossLevelDragRefusal, currentOccurrenceDrive } from './assemblyOccurrenceDriveSlice.js';
 import { attachAssemblyInteraction } from '../viewport/attachAssemblyInteraction.js';
@@ -77,11 +78,6 @@ function publishView(): void {
     diagnosis: null, mateTargetErrors: new Map(), mateTargets: new Map(), jointFrames: frames } });
 }
 
-function zDegrees(rotation: Quaternion | undefined): number {
-  const [x, y, z, w] = rotation ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
-  expect(Math.abs(x) + Math.abs(y)).toBeLessThan(1e-9);
-  return 2 * Math.atan2(z, w) * 180 / Math.PI;
-}
 /** drive's angle on the shown poses (A relative to the hub), and the relation on A's child, up to one shared sign. */
 function expectRelationShown(): number {
   const state = store();

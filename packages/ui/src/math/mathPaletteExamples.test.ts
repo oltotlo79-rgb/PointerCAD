@@ -1,3 +1,4 @@
+import { publicAssetUrl } from '../testing/publicAssetUrl.testSupport.js';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -82,7 +83,7 @@ beforeAll(async () => {
     // Keep every real calculation and the existing 30-second subprocess bound.
     for (let first = 0; first < batchCount; first++) {
       const batch = queue.filter((_, index) => index % batchCount === first);
-      const script = fileURLToPath(new URL('../../../expression/src/math/exactRuntime/cas_probability_test.py', import.meta.url));
+      const script = fileURLToPath(publicAssetUrl('@pointercad/expression/testing-assets/cas_probability_test.py'));
       const batchStarted = performance.now();
       const result = spawnSync('python', ['-B', '-X', 'utf8', script, '--batch'], {
         input: JSON.stringify(batch.map(({ expression, angleUnit }) => ({ expression, angleUnit }))),

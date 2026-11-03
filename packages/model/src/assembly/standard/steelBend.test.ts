@@ -3,8 +3,8 @@ import { stdout } from 'node:process';
 import { createKernelApi } from '@pointercad/kernel';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { loadOcctForNode } from '../../../../kernel/src/occt/loadOcct.node.js';
-import type { SolidEdgeInfo, Vec3Tuple } from '../../../../kernel/src/types.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import type { SolidEdgeInfo, Vec3Tuple } from '@pointercad/kernel';
 import type { SolidBody } from '../../kernelBridge/solidContracts.js';
 import { createDirectKernelBridge } from '../../kernelBridge.js';
 import { recomputePart } from '../../part/recomputePart.js';

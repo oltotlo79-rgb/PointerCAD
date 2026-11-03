@@ -32,11 +32,11 @@ function expectHostInterferenceWindow(source: string, specs: readonly string[]):
 }
 
 describe('品質ゲートのテスト実行順', () => {
-  it('数学を先行し、失敗なら後続を止め、成功時も数学を二重実行しない', () => {
+  it('共通検査・数学・FEMを順に先行し、失敗なら後続を止め、各packageを二重実行しない', () => {
     const packageJson = JSON.parse(readRootFile('package.json')) as RootPackageJson;
 
     expect(packageJson.scripts?.test).toBe(
-      'pnpm --filter @pointercad/expression run test && pnpm --filter @pointercad/fem run test && pnpm --recursive --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test',
+      'pnpm --filter @pointercad/test-utils run test && pnpm --filter @pointercad/expression run test && pnpm --filter @pointercad/fem run test && pnpm --recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test',
     );
   });
 

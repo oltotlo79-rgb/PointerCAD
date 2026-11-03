@@ -1,3 +1,5 @@
+import { fatigueFailure } from './fatigueFailure.js';
+import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 import { countRainflow, curveStressMpa, firstNonzeroMean, onceReversals, periodicReversals, recurrenceCycles, spectrumLife } from './fatigue.js';
 import { FATIGUE_REFERENCE_CYCLE_LIMITS, FATIGUE_REFERENCE_STRESS_LIMITS_MPA, FATIGUE_SLOPE_LIMITS, MAX_FATIGUE_HISTORIES,
   readHistory, type FatigueCycle, type FatigueErrorCode, type FatigueHistoryResult, type FatigueLife, type FatigueMeanStressAssumption,
@@ -68,9 +70,8 @@ export interface FatiguePiecewiseResult {
 }
 export type FatiguePiecewiseAnalysis = { readonly ok: true; readonly result: FatiguePiecewiseResult } | FatiguePiecewiseError;
 
-const fail = (code: FatiguePiecewiseErrorCode, path: string): FatiguePiecewiseError => ({ ok: false, code, path });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const fail: (code: FatiguePiecewiseErrorCode, path: string) => FatiguePiecewiseError = fatigueFailure;
+
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const dense = (value: unknown): value is unknown[] => {
@@ -80,7 +81,7 @@ const dense = (value: unknown): value is unknown[] => {
 };
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 
 function readSource(value: unknown, path: string): FatigueSource | FatiguePiecewiseError {
   if (!record(value) || !exactKeys(value, ['kind', 'reference', 'condition'])) return fail('fatigue-shape', path);

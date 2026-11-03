@@ -10,6 +10,66 @@
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
     },
+    "./testing/occt-node": {
+      "types": "./dist/testing/occt-node.testSupport.d.ts",
+      "default": "./src/testing/occt-node.testSupport.ts"
+    },
+    "./testing/native-shape-inspection": {
+      "types": "./dist/testing/native-shape-inspection.testSupport.d.ts",
+      "default": "./src/testing/native-shape-inspection.testSupport.ts"
+    },
+    "./testing/recompute-solids": {
+      "types": "./dist/testing/recompute-solids.testSupport.d.ts",
+      "default": "./src/testing/recompute-solids.testSupport.ts"
+    },
+    "./testing/shape-cache": {
+      "types": "./dist/testing/shape-cache.testSupport.d.ts",
+      "default": "./src/testing/shape-cache.testSupport.ts"
+    },
+    "./testing/borrow-handle": {
+      "types": "./dist/testing/borrow-handle.testSupport.d.ts",
+      "default": "./src/testing/borrow-handle.testSupport.ts"
+    },
+    "./testing/intersection-volume": {
+      "types": "./dist/occt/intersectionVolume.d.ts",
+      "default": "./src/occt/intersectionVolume.ts"
+    },
+    "./testing/export-mesh": {
+      "types": "./dist/occt/exportMesh.d.ts",
+      "default": "./src/occt/exportMesh.ts"
+    },
+    "./testing/edit-solid-face": {
+      "types": "./dist/testing/edit-solid-face.testSupport.d.ts",
+      "default": "./src/testing/edit-solid-face.testSupport.ts"
+    },
+    "./testing/build-boolean-shape": {
+      "types": "./dist/testing/build-boolean-shape.testSupport.d.ts",
+      "default": "./src/testing/build-boolean-shape.testSupport.ts"
+    },
+    "./testing/make-sheet-metal-bend": {
+      "types": "./dist/testing/make-sheet-metal-bend.testSupport.d.ts",
+      "default": "./src/testing/make-sheet-metal-bend.testSupport.ts"
+    },
+    "./testing/make-sheet-metal-body": {
+      "types": "./dist/testing/make-sheet-metal-body.testSupport.d.ts",
+      "default": "./src/testing/make-sheet-metal-body.testSupport.ts"
+    },
+    "./testing/make-sheet-metal-curved-panel": {
+      "types": "./dist/testing/make-sheet-metal-curved-panel.testSupport.d.ts",
+      "default": "./src/testing/make-sheet-metal-curved-panel.testSupport.ts"
+    },
+    "./testing/sheet-metal-join": {
+      "types": "./dist/testing/sheet-metal-join.testSupport.d.ts",
+      "default": "./src/testing/sheet-metal-join.testSupport.ts"
+    },
+    "./testing/make-sheet-metal-base": {
+      "types": "./dist/testing/make-sheet-metal-base.testSupport.d.ts",
+      "default": "./src/testing/make-sheet-metal-base.testSupport.ts"
+    },
+    "./testing/hole-placement-oracle-fixture": {
+      "types": "./dist/testing/hole-placement-oracle-fixture.testSupport.d.ts",
+      "default": "./src/testing/hole-placement-oracle-fixture.testSupport.ts"
+    },
     "./desktop-occt-transport": {
       "types": "./dist/occt/desktopOcctTransportContract.d.ts",
       "default": "./src/occt/desktopOcctTransportContract.ts"

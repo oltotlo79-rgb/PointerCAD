@@ -1,3 +1,4 @@
+import { crossVec2 as cross } from '../../sketch/vec2.js';
 /** Internal finite plane/full-cylinder admission. No saved schema, solver or bead generation. */
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import { resolveSubShapeReference } from '../../kernelBridge/referenceResolution.js';
@@ -22,7 +23,6 @@ export interface CircularWeldContactRequest {
 type P = readonly [number, number];
 type Boundary = { readonly line: readonly [P, P] } | { readonly center: P; readonly radius: number; readonly range: readonly [number, number] };
 const TAU = 2 * Math.PI;
-const cross = (a: P, b: P): number => a[0] * b[1] - a[1] * b[0];
 const dot = (a: P, b: P): number => a[0] * b[0] + a[1] * b[1];
 const sub = (a: P, b: P): P => [a[0] - b[0], a[1] - b[1]];
 const at = (a: P, b: P, t: number): P => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];

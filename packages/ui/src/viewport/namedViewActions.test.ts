@@ -1,6 +1,5 @@
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { createAssemblyDocument } from '@pointercad/model';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -79,10 +78,7 @@ describe('名前付き視点の文書操作とUndo(FR-113)', () => {
     state().undo(); expect(state().assembly?.namedViews).toHaveLength(4);
   });
 
-  const markup = (): string => {
-    const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-    try { return renderToStaticMarkup(createElement(NamedViewsMenu)); } finally { snapshot.mockRestore(); }
-  };
+  const markup = (): string => renderCurrentStore(NamedViewsMenu);
   const button = (html: string, action: string): string => {
     const tag = html.match(new RegExp('<button\\b[^>]*data-command-id="toolbar\\.namedView\\.' + action + '"[^>]*>', 'u'))?.[0];
     if (tag === undefined) throw new Error('Actual named-view control missing: ' + action);

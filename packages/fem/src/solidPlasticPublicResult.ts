@@ -1,3 +1,4 @@
+import { isRecord as record } from './valueGuards.js';
 import { translateSolidPlastic, type SolidPlasticInput } from './solidPlasticTranslation.js';
 import { readSolidPlasticNative, SOLID_PLASTIC_METHOD, SOLID_PLASTIC_RESULT_SCHEMA, SOLID_PLASTIC_SCOPE,
   type SolidPlasticNative } from './solidPlasticResults.js';
@@ -15,9 +16,7 @@ export interface SolidPlasticResult extends SolidPlasticNative {
 function digest(value: unknown): value is string {
   return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 }
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 
 export function decodeSolidPlastic(raw: unknown, value: SolidPlasticInput, hash: string): SolidPlasticResult {
   if (!digest(hash)) throw new Error('Invalid solid-plastic input digest');

@@ -1,5 +1,4 @@
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import { appearanceFromPreset, appendSolid, assignBodyAppearance } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PropertyPanel } from './PropertyPanel.js';
@@ -11,11 +10,7 @@ beforeEach(resetTestStore);
 afterEach(() => { vi.restoreAllMocks(); resetTestStore(); });
 
 function render(): string {
-  // Read the selected document in this server-rendered test, as the browser hook does.
-  const snapshot = vi.spyOn(React, 'useSyncExternalStore')
-    .mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-  try { return renderToStaticMarkup(createElement(PropertyPanel)); }
-  finally { snapshot.mockRestore(); }
+  return renderCurrentStore(PropertyPanel);
 }
 
 describe('外観の部品を分離した後も質量特性の材料選択を表示する', () => {

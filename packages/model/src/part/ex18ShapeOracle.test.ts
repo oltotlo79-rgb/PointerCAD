@@ -2,12 +2,12 @@
 import { stdout } from 'node:process';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { createAllocations, type Allocations } from '../../../kernel/src/occt/allocations.js';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { placeShape } from '../../../kernel/src/occt/placeBodies.js';
-import '../../../kernel/src/occt/solidMesh.js';
-import type { measureVolume } from '../../../kernel/src/occt/solidMesh.js';
-import { faceAt } from '../../../kernel/src/occt/subShapes.js';
+import { createAllocations, type Allocations } from '@pointercad/kernel';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { placeShape } from '@pointercad/kernel';
+import '@pointercad/kernel';
+import type { measureVolume } from '@pointercad/kernel';
+import { faceAt } from '@pointercad/kernel';
 import { EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.testSupport.js';
 import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation, type Ex18ShapeMeasurement } from './ex18ShapeOracle.testSupport.js';
 

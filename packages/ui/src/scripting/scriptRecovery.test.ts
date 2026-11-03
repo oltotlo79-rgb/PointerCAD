@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { encodeSaveDocument, createAutoSaver, createMemoryAutoSaveStorage, readDocumentBundle, type AutoSaver } from '@pointercad/io';
 import { createEmptyPartDocument } from '@pointercad/model';
-import { applyScriptCommands } from '../../../model/src/scripting/scriptCommands.js';
+import { applyScriptCommands } from '@pointercad/model/testing/io-operations';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachPartRecompute } from '../store/attachKernel.js';
 import { createFakeRecompute, resetTestStore, resultFor, tick } from '../store/testing/createTestStore.js';

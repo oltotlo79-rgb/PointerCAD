@@ -292,8 +292,16 @@ export function readStep(
     try {
       const format = keep(new oc.TCollection_ExtendedString_2(STEP_STORAGE_FORMAT, false));
       // 文書そのものは控えへ積まない(Handle が持ち主になる。xcafDocument.ts の注釈 2)。
-      const doc = new oc.TDocStd_Document(format);
-      const handle = keep(new oc.Handle_TDocStd_Document_2(doc));
+      const xcafDocument = new oc.TDocStd_Document(format);
+      let nativeHandle: InstanceType<typeof oc.Handle_TDocStd_Document_2>;
+      try { nativeHandle = new oc.Handle_TDocStd_Document_2(xcafDocument); }
+      catch (error) {
+        const documentOwner = createAllocations();
+        documentOwner.keep(xcafDocument);
+        documentOwner.release();
+        throw error;
+      }
+      const handle = keep(nativeHandle);
 
       const reader = keep(new oc.STEPCAFControl_Reader_1());
       reader.SetColorMode(withColors);
@@ -306,7 +314,7 @@ export function readStep(
 
       const unitNames = readStepUnitNames(oc, reader, keep);
 
-      const main = keep(doc.Main());
+      const main = keep(xcafDocument.Main());
       // `.get()` の戻りは借り物なので控えへ積まない。積むのは Handle だけ。
       const shapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
       const colorTool = keep(oc.XCAFDoc_DocumentTool.ColorTool(main)).get();

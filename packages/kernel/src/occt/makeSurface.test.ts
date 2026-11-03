@@ -14,6 +14,7 @@ import { buildSolidBodyMesh, hasSolid, measureArea, measureVolume } from './soli
 import type { SubShapeTables } from './subShapes.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { solidFaceQuery } from './solidFaceQuery.testSupport.js';
 
 /**
  * 曲面(面だけの形、FR-428)の検査。計画書 P5 タスク41 の検証表。
@@ -197,15 +198,7 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
 
   /** 一覧の面 1 枚から、文書が保存するのと同じ形の指紋を作る。 */
   function faceQuery(face: SolidFaceInfo): SubShapeQuery {
-    return {
-      kind: 'face',
-      index: face.index,
-      surfaceKind: face.surfaceKind,
-      area: face.area,
-      position: face.centroid,
-      axis: face.axis,
-      radius: face.radius,
-    };
+    return solidFaceQuery(face);
   }
 
   /**

@@ -1,4 +1,4 @@
-import { InputIssue, text } from './analysisValidation.js';
+import { fatigueInputFailure as fail, InputIssue, text } from './analysisValidation.js';
 import { FATIGUE_SAVED_ID, FATIGUE_SAVED_LIMITS, denseFatigueList, exactFatigueFields, fatigueLabel,
   finiteFatigueNumber, type FatigueSavedHistory, type FatigueSavedSource } from './fatigueInput.js';
 import { readFatiguePiecewiseSavedProblem, type FatigueSavedPiecewiseCurve } from './fatiguePiecewiseInput.js';
@@ -50,9 +50,6 @@ export interface FatigueDetailSavedInput {
   readonly input: FatigueSavedDetailProblem;
 }
 
-function fail(path: string, message: string): never {
-  throw new InputIssue('fatigue', path, message);
-}
 /** Inspect descriptors before any shared reader reads a property. Never invoke an input accessor. */
 function checkData(value: unknown, path: string, ancestors = new Set<object>()): void {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;

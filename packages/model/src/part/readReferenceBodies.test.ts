@@ -1,12 +1,12 @@
-import { createAllocations } from '../../../kernel/src/occt/allocations.js';
-import { writeBrepBytes } from '../../../kernel/src/occt/brepBytes.js';
+import { createAllocations } from '@pointercad/kernel';
+import { writeBrepBytes } from '@pointercad/kernel';
 import { createSubShapeReference } from '../kernelBridge/createSubShapeReference.js';
 import type { HoleFeature, ThreadHoleFeature } from './types.js';
 import * as Comlink from 'comlink';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi, createShapeCache, type CachedSolid } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, createKernelBridge, type KernelBridge, type SolidBody, type CurrentMeshLedgerReceipt } from '../kernelBridge.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { absoluteCoordinate, appendFeature } from '../sketch/createSketchDocument.js';

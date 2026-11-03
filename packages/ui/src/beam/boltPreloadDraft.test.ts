@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { savedBoltFixture } from '../../../model/src/analysis/cadNativeBoltPreloadInput.testSupport.js';
-import { prepareNativeBoltPreload } from '../../../fem/src/nativeBoltPreload.js';
-import { decodeNativeBoltPreloadOwned, NATIVE_BOLT_KIND } from '../../../fem/src/nativeBoltPreloadBinding.js';
-import nativeInputBytes from '../../../fem/src/nativeBoltPreload.input.fixture.json?raw';
-import nativeResult from '../../../fem/src/nativeBoltPreload.result.fixture.json';
+import { savedBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
+import { prepareNativeBoltPreload } from '@pointercad/fem/testing/ui-fixtures';
+import { decodeNativeBoltPreloadOwned, NATIVE_BOLT_KIND } from '@pointercad/fem/testing/ui-fixtures';
+import nativeInputBytes from '@pointercad/fem/testing-assets/nativeBoltPreload.input.fixture.json?raw';
+import nativeResult from '@pointercad/fem/testing-assets/nativeBoltPreload.result.fixture.json';
 import { beamUiFixture } from './beam.testSupport.js';
 import { captureBeamSource } from './beamSource.js';
 import { boltPreloadDraftSavedInput, confirmBoltPreloadDraft, editBoltPreloadDraft, invalidateBoltPreloadDraft,

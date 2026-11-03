@@ -88,7 +88,7 @@ class Reader(unittest.TestCase):
     def test_inconsistent_degrees_of_freedom_are_refused(self):
         fixed = [{'node': n, 'dof': d, 'valuesMm': [0.0, 0.0, 0.0]} for n, d in FIXED]
         cases = [plan(prescribedMm=fixed + [fixed[0]]),                                        # repeated
-                 plan(forcesN=[{'node': 0, 'dof': 'x', 'valuesN': [1.0, 1.0, 1.0]}]),          # load on prescribed
+                 plan(forcesN=[{'node': 0, 'dof': 'x', 'valuesN': [1.0, 1.0, 1.0]}]),          # fixed-only load without reference
                  plan(forcesN=[{'node': 1, 'dof': 'x', 'valuesN': [1.0, 1.0]}]),               # history length
                  plan(prescribedMm=[{'node': n, 'dof': d, 'valuesMm': [0.0] * 3} for n in range(5) for d in 'xyz'],
                       forcesN=[], referenceForceN=1.0),                                         # no free DOF
@@ -104,6 +104,28 @@ class Reader(unittest.TestCase):
                 fe.read_plan(value)
         accepted = fe.read_plan(plan(forcesN=[], referenceForceN=25000.0))
         self.assertEqual((accepted['referenceForceN'], accepted['loads']), (25000.0, {}))
+
+
+    def test_fixed_loads_keep_separate_history_records_and_free_reference(self):
+        base = plan()
+        fixed_load = {'node': 0, 'dof': 'x', 'valuesN': [1e30, -1e30, 0.0]}
+        value = plan(forcesN=base['forcesN'] + [fixed_load])
+        parsed = fe.read_plan(value)
+        self.assertEqual(parsed['referenceForceN'], 2500.0)
+        self.assertEqual(parsed['prescribed'][(0, 0)], [0.0] * 3)
+        self.assertEqual(parsed['loads'][(0, 0)], [1e30, -1e30, 0.0])
+        deck, functions = fe.plan_deck(parsed, '/pcad_fem/fixed')
+        self.assertIn('BoundaryCondition 1 loadTimeFunction 1 dofs 1 1 values 1 1.0 set 2', deck)
+        self.assertIn('NodalLoad 8 loadTimeFunction 8 dofs 1 1 Components 1 1.0 set 2', deck)
+        self.assertEqual(functions[(0, 0)], 8)
+        for name, duplicate in [('forcesN', fixed_load), ('prescribedMm', base['prescribedMm'][0])]:
+            bad = copy.deepcopy(value)
+            bad[name].append(duplicate)
+            with self.assertRaisesRegex(ValueError, 'repeats node'):
+                fe.read_plan(bad)
+        with self.assertRaisesRegex(ValueError, 'without free-DOF nodal forces'):
+            fe.read_plan(plan(forcesN=[fixed_load]))
+        self.assertEqual(fe.read_plan(plan(forcesN=[fixed_load], referenceForceN=7))['referenceForceN'], 7)
 
 
 class ForceBalance(unittest.TestCase):
@@ -131,6 +153,22 @@ class ForceBalance(unittest.TestCase):
                 fe.free_force_balance(internal, external, prescribed, 0.0, 'step 1')
         with self.assertRaises(ValueError):
             fe.free_force_balance([[0.0] * 3], [[0.0] * 3], prescribed, -1.0, 'step 1')
+
+
+    def test_huge_fixed_external_load_never_hides_free_residual_or_poisons_history(self):
+        fixed = {(0, a): [0.0] for a in range(3)}
+        internal = [[-3.0, 0.0, 0.0], [3.0, 0.0, 0.0]]
+        for sign in (-1, 1):
+            external = [[sign * 1e30, 0.0, 0.0], [3.0, 0.0, 0.0]]
+            self.assertEqual(fe.free_force_balance(internal, external, fixed, 0.0, 'balanced'), (0.0, 3.0, 3.0))
+            external[1][1] = 0.01
+            residual, reference, scale = fe.free_force_balance(internal, external, fixed, 0.0, 'bad free force')
+            self.assertEqual((reference, scale), (3.0, 3.0))
+            self.assertEqual(residual, 0.01 / 3.0)
+            self.assertGreater(residual, fe.FREE_RESIDUAL_BOUND)
+            residual, reference, scale = fe.free_force_balance([[0.0] * 3, [0.01, 0.0, 0.0]],
+                [[sign * 1e30, 0.0, 0.0], [0.0] * 3], fixed, reference, 'unloaded later step')
+            self.assertEqual((residual, reference, scale), (0.01 / 3.0, 3.0, 3.0))
 
 
 class Kinematics(unittest.TestCase):
@@ -310,7 +348,7 @@ class Transaction(unittest.TestCase):
         self.assertEqual(len(run.records), 2)
 
 
-CASES = 12
+CASES = 14
 suite = unittest.TestSuite()
 for case in (Reader, ForceBalance, Kinematics, Lifetime, Transaction):
     suite.addTests(unittest.defaultTestLoader.loadTestsFromTestCase(case))

@@ -689,7 +689,7 @@ if ($null -ne $perfModeShellCommand) {
             New-Item -ItemType Directory -Path $folder -Force | Out-Null
         }
         $utf8 = [Text.UTF8Encoding]::new($false)
-        $rootTest = 'pnpm --filter @pointercad/expression run test && pnpm --recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test'
+        $rootTest = 'pnpm --filter @pointercad/test-utils run test && pnpm --filter @pointercad/expression run test && pnpm --filter @pointercad/fem run test && pnpm --recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test'
         [IO.File]::WriteAllText((Join-Path $fixture 'package.json'), (@{ scripts = [ordered]@{
             typecheck = 'fixture'; lint = 'fixture'; test = $rootTest; build = 'fixture'; 'test:e2e' = 'fixture' } } | ConvertTo-Json -Depth 3), $utf8)
         [IO.File]::WriteAllText((Join-Path $fixture 'pnpm-lock.yaml'), "lockfileVersion: fixture`n", $utf8)
@@ -758,27 +758,67 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
         $integrationFailed = Invoke-StageFixture @('-Level', 'Push', '-UnitPackage', 'ui', '-UnitTests', 'integration/example.test.ts')
         Assert-True ($integrationFailed.Code -ne 0) 'Integration failure cannot become diagnostic success'
         Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        # Normal all-unit branch: the same fixture pnpm records the fast i18n check and failure stop.
+        $i18nCall = '--filter @pointercad/ui exec vitest run src/i18n/i18n.test.ts --maxWorkers=1'
+        $helpCall = '--filter @pointercad/help-content exec vitest run src/topics.test.ts --maxWorkers=1'
+        $fixturePackagePath = Join-Path $fixture 'package.json'
+        $fixturePackageBefore = [IO.File]::ReadAllText($fixturePackagePath, $utf8)
+        try {
+            $noE2EPackage = $fixturePackageBefore | ConvertFrom-Json
+            $noE2EPackage.scripts.PSObject.Properties.Remove('test:e2e')
+            [IO.File]::WriteAllText($fixturePackagePath, ($noE2EPackage | ConvertTo-Json -Depth 3), $utf8)
+            $normalUnit = Invoke-StageFixture @('-Level', 'Push')
+            Assert-True ($normalUnit.Code -eq 0 -and ($normalUnit.Calls -join '|') -ceq "run typecheck|run lint|$i18nCall|$helpCall|run test|run build") 'Normal full-unit run checks i18n and help with one worker and retains full test and build'
+            $env:PCAD_STAGE_FAIL = $i18nCall
+            $failedI18n = Invoke-StageFixture @('-Level', 'Push')
+            Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+            Assert-True ($failedI18n.Code -ne 0 -and ($failedI18n.Calls -join '|') -ceq "run typecheck|run lint|$i18nCall") 'i18n failure prevents full test and build'
+            $env:PCAD_STAGE_FAIL = $helpCall
+            $failedHelp = Invoke-StageFixture @('-Level', 'Push')
+            Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+            Assert-True ($failedHelp.Code -ne 0 -and ($failedHelp.Calls -join '|') -ceq "run typecheck|run lint|$i18nCall|$helpCall") 'Help failure stops before full unit and build'
+            $staticUnit = Invoke-StageFixture @('-Level', 'Push', '-StaticOnly')
+            Assert-True ($staticUnit.Code -eq 0 -and ($staticUnit.Calls -join '|') -ceq 'run typecheck|run lint') 'StaticOnly skips the i18n precheck'
+        } finally {
+            Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+            [IO.File]::WriteAllText($fixturePackagePath, $fixturePackageBefore, $utf8)
+        }
         $env:CI = 'true'
-        $restCall = '--recursive --filter !@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test'
+        $utilitiesCall = '--filter @pointercad/test-utils run test'
+        $expressionCall = '--filter @pointercad/expression run test'
+        $femCall = '--filter @pointercad/fem run test'
+        $restCall = '--recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem --reverse --workspace-concurrency=1 --if-present run test'
         $env:PCAD_STAGE_FAIL = 'run lint'
         $failedFront = Invoke-StageFixture @('-CIStage', 'Front', '-StageEvidence', $evidence)
         Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
         Assert-True ($failedFront.Code -ne 0 -and -not (Test-Path -LiteralPath $evidence)) '段の途中で失敗したら記録を作らない'
         Assert-True (($failedFront.Calls -join '|') -ceq 'run typecheck|run lint') '失敗した段は後の命令へ進まない'
 
+        $env:PCAD_STAGE_FAIL = $utilitiesCall
+        $failedUtilities = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        Assert-True ($failedUtilities.Code -ne 0 -and -not (Test-Path -LiteralPath $evidence)) 'test-utils failure must not write success evidence'
+        Assert-True (($failedUtilities.Calls -join '|') -ceq $utilitiesCall) 'test-utils failure must stop before expression and fem'
+
+        $env:PCAD_STAGE_FAIL = $femCall
+        $failedFem = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
+        Remove-Item Env:PCAD_STAGE_FAIL -ErrorAction SilentlyContinue
+        Assert-True ($failedFem.Code -ne 0 -and -not (Test-Path -LiteralPath $evidence)) 'FEM単体の失敗で段の成功記録を作らない'
+        Assert-True (($failedFem.Calls -join '|') -ceq "$utilitiesCall|$expressionCall|$femCall") 'FEM単体が失敗したら先行分の成功記録を作らない'
+
         $front = Invoke-StageFixture @('-CIStage', 'Front', '-StageEvidence', $evidence)
         Assert-True ($front.Code -eq 0) '前段(自己試験・型・lint・単体の残り・ビルド)が成功する'
-        Assert-True (($front.Calls -join '|') -ceq ("run typecheck|run lint|$restCall|run build")) "前段は型・lint・単体の残り・ビルドだけを呼び、画面検査を呼ばない: $($front.Calls -join ' | ')"
+        Assert-True (($front.Calls -join '|') -ceq ("run typecheck|run lint|$restCall|run build")) "前段は型・lint・残りの再帰単体・ビルドだけを順に呼ぶ: $($front.Calls -join ' | ')"
         Assert-True ($front.Output.Contains('=== (0) 品質ゲート自身の自己試験 ===')) '前段は品質ゲートの自己試験を行う'
         $unitLead = Invoke-StageFixture @('-CIStage', 'UnitLead', '-StageEvidence', $evidence)
-        Assert-True ($unitLead.Code -eq 0 -and ($unitLead.Calls -join '|') -ceq '--filter @pointercad/expression run test') "単体の先行分は先行の包の単体だけを呼ぶ: $($unitLead.Calls -join ' | ')"
+        Assert-True ($unitLead.Code -eq 0 -and ($unitLead.Calls -join '|') -ceq "$utilitiesCall|$expressionCall|$femCall") "単体の先行分は3包を順に呼ぶ: $($unitLead.Calls -join ' | ')"
         Assert-True (-not $unitLead.Output.Contains('品質ゲート自身の自己試験')) '単体の先行分は自己試験を繰り返さない'
         foreach ($shard in 1..3) {
             $e2e = Invoke-StageFixture @('-CIStage', 'E2E', '-E2EShard', "$shard/3", '-StageEvidence', $evidence)
             Assert-True ($e2e.Code -eq 0 -and ($e2e.Calls -join '|') -ceq "$browserCall|--filter @pointercad/desktop exec install-electron|run test:e2e --shard=$shard/3") "画面検査の組 $shard/3 は準備と画面検査だけを呼ぶ: $($e2e.Calls -join ' | ')"
         }
-        $unitCalls = @('--filter @pointercad/expression run test', $restCall)
-        Assert-True (('pnpm ' + $unitCalls[0] + ' && pnpm ' + $unitCalls[1]) -ceq $rootTest) '単体の先行分と残りをつなぐとルートのtestと一致する(単体の欠落が無い)'
+        $unitCalls = @($utilitiesCall, $expressionCall, $femCall, $restCall)
+        Assert-True ((($unitCalls | ForEach-Object { 'pnpm ' + $_ }) -join ' && ') -ceq $rootTest) '単体の先行分と残りをつなぐとルートのtestと一致する(単体の欠落が無い)'
         $written = @(Get-ChildItem -LiteralPath $evidence -File | ForEach-Object { $_.Name } | Sort-Object)
         $osPrefix = $env:RUNNER_OS.ToLowerInvariant()
         Assert-True (($written -join ',') -ceq (@("$osPrefix-e2e-1of3.json", "$osPrefix-e2e-2of3.json", "$osPrefix-e2e-3of3.json", "$osPrefix-front.json", "$osPrefix-unit-lead.json") -join ',')) "5段の記録がそろう: $($written -join ',')"

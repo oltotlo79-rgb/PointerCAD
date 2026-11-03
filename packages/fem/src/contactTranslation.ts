@@ -1,3 +1,4 @@
+import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import { translateBeamBuckling, type OofemBucklingPlan } from './bucklingTranslation.js';
 import { contactPlanContacts, validateBeamContacts, type BeamContactDefinition, type BeamContactInput,
@@ -18,9 +19,7 @@ export interface OofemContactPlan {
   readonly loadFactors: readonly number[];
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function fields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!record(value) || Object.keys(value).length !== names.length || names.some(name => !(name in value))) {
     throw new Error(`contact-shape: ${path}`);

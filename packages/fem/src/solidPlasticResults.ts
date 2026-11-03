@@ -1,4 +1,4 @@
-import { isRecord } from './valueGuards.js';
+import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 /**
  * STATUS: PROVISIONAL (unexecuted; native support unproven until Root runs proof-r2). Strict reader of the
  * solidPlasticAnalysis.py encoding. It validates shape and consistency only; it is not exported from the package
@@ -31,9 +31,7 @@ export interface SolidPlasticNative {
   readonly yielded: boolean;
 }
 
-function fail(detail: string): never {
-  throw new Error(`solid-plastic-result: ${detail}`);
-}
+const fail: (message: string) => never = createPrefixedError('solid-plastic-result');
 function exact(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);
   const row = value;
@@ -42,10 +40,7 @@ function exact(value: unknown, names: readonly string[], path: string): Record<s
   }
   return row;
 }
-function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(`${path} must be a finite number`);
-  return value === 0 ? 0 : value;
-}
+const finite = createFiniteReader(fail);
 function dense(value: unknown, length: number, path: string): readonly unknown[] {
   if (!Array.isArray(value) || value.length !== length) fail(`${path} must have exactly ${length} entries`);
   for (let index = 0; index < length; index += 1) {

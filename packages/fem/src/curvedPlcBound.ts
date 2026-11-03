@@ -1,4 +1,4 @@
-import { crossVec3 as cross, dotVec3 as dot, subVec3 as sub } from '@pointercad/model/vec3';
+import { crossVec3 as cross, dotVec3 as dot, subVec3 as sub, addVec3 as add } from '@pointercad/model/vec3';
 /**
  * Versioned curved PLC route evidence (AUTHOR-ONLY, UNEXECUTED; GO-21 successor of curvedPlcBound.ts 9d417253, which is
  * kept as the failed original). Product path packages/fem/src/curvedPlcBound.ts.
@@ -66,7 +66,6 @@ export class CurvedPlcRefusal extends Error {
   constructor(readonly code: CurvedPlcRefusalCode, message: string) { super(message); }
 }
 
-const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const scale = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
 const norm = (a: V3): number => Math.hypot(a[0], a[1], a[2]);
 const finite3 = (a: V3): boolean => a.length === 3 && Number.isFinite(a[0]) && Number.isFinite(a[1]) && Number.isFinite(a[2]);

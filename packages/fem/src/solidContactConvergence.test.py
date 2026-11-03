@@ -221,8 +221,21 @@ def run_native_history():
                              'nativeEquationCount': record['nativeEquationCount'], 'physical': physical,
                              'strictComplementarityQualified': record['strictComplementarityQualified'],
                              'matrixType': record['requestedNativeMatrixType']})
+        verification_input = {
+            'geometry': {key: plan[key] for key in ('nodes', 'elements', 'bodies')},
+            'boundary': {
+                'prescribed': [{'node': node, 'axis': axis, 'values': values}
+                               for (node, axis), values in plan['prescribed'].items()],
+                'loads': [{'node': node, 'axis': axis, 'values': values}
+                          for (node, axis), values in plan['loads'].items()],
+                'contacts': plan['contacts'], 'steps': plan['steps'], 'maxIterations': plan['maxIterations'],
+            },
+            'material': {key: plan[key] for key in ('youngMPa', 'poisson')},
+            'units': 'N-mm-MPa', 'source': 'solidContactConvergence.test.py:native_shear_bar_plan',
+        }
         return {'success': True, 'states': observed, 'acceptedStepCount': run.history.step,
-                'contactElementCount': len(run.native_elements), 'callbacks': run.counters}
+                'contactElementCount': len(run.native_elements), 'callbacks': run.counters,
+                'verificationInput': verification_input}
     finally:
         run.close()
 

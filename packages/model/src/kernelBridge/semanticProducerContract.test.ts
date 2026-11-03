@@ -1,7 +1,7 @@
 import { createKernelApi } from '@pointercad/kernel';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge } from '../kernelBridge.js';
 import { appendSolid, createEmptyPartDocument, replaceSketch, DEFAULT_PRIMITIVE_AXIS } from '../part/createPartDocument.js';
 import { resolvePart } from '../part/resolvePart.js';

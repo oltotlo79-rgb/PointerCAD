@@ -1,3 +1,4 @@
+import { dotVec3 as dot, subVec3 as subtract } from '../sketch/vec3.js';
 import type { DrawingDocument, GdtFeature, GdtShapeTarget, Vector3 } from '@pointercad/drawing';
 import { resolveSubShapeReference, type SolidBody, type SolidEdgeEntry, type SolidFaceEntry } from '../kernelBridge.js';
 import { createSubShapeReference } from '../kernelBridge/createSubShapeReference.js';
@@ -5,8 +6,6 @@ import type { DimensionResolveContext } from './dimensionTarget.js';
 import { resolveGdtFeature } from './gdt.js';
 
 const EPSILON_MM = 1e-7;
-const subtract = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /** 無限平面への一致だけでは、別の場所にある同一平面の面を選んでしまう。実三角形内も確認する。 */
 function faceContainsPoint(face: SolidFaceEntry, body: SolidBody, point: Vector3): boolean {

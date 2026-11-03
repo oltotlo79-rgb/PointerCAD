@@ -1,3 +1,4 @@
+import { dotPoint2 as dot } from '../point2Math.js';
 import type { Point2 } from '../types.js';
 
 export interface HatchSegment { readonly from: Point2; readonly to: Point2 }
@@ -17,7 +18,6 @@ const MAX_HATCH_EDGE_CHECKS = 10_000_000;
 export type HatchAreaResult = { readonly ok: true; readonly segments: readonly HatchSegment[] }
   | { readonly ok: false; readonly reason: 'invalid' | 'budget' };
 
-function dot(point: Point2, axis: Point2): number { return point[0] * axis[0] + point[1] * axis[1]; }
 
 /** 平行線と全輪郭の交点を半開区間で数え、頂点を二重計上せず偶奇で中を選ぶ。 */
 export function hatchArea(input: HatchAreaInput): readonly HatchSegment[] {

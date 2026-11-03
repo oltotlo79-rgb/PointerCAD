@@ -1,8 +1,6 @@
 /** Node-only cut oracle. Reads an owned BRep copy; never exported by the browser barrel. */
-import { createAllocations } from '../../../kernel/src/occt/allocations.js';
-import { readBrepBytes } from '../../../kernel/src/occt/brepBytes.js';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { isValidShape } from '../../../kernel/src/occt/solidMesh.js';
+import { createAllocations, readBrepBytes, isValidShape } from '@pointercad/kernel/testing/native-shape-inspection';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 
 export async function inspectNativeCutShape(bytes: Uint8Array, points: readonly (readonly [number, number, number])[]) {
   const oc = await loadOcctForNode();

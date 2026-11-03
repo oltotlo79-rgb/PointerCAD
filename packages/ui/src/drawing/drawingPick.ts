@@ -1,3 +1,4 @@
+import { dotVec3 as dot } from '@pointercad/model/vec3';
 import { createSubShapeReference, drawingDimensionContext } from '@pointercad/model';
 import { drawingRegionContainsPoint, drawingViewBasis, type DimensionTarget, type DrawingDocument, type Point2, type Vector3 } from '@pointercad/drawing';
 import { applyPlacementToPoint, drawingTargetFromProjection, resolveDimensionTarget, resolvedDimensionView, unfoldDrawingPick, drawingSectionRetainsPoint,
@@ -72,7 +73,6 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
     const hit = unfoldDrawingPick(point, projected.viewId, document, context); if (hit === null) continue;
     const frame = source.viewFrames?.get(projected.viewId), center = frame?.modelCenter ?? source.center;
     const scale = view.scale ?? document.sheet.scale;
-    const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     let nearest: DimensionTarget | null = null, depth = Infinity;
     const originCoordinate = (axis: number): number => center[axis]
       + (hit[0] - view.position[0]) / scale * basis.x[axis] + (hit[1] - view.position[1]) / scale * basis.y[axis];

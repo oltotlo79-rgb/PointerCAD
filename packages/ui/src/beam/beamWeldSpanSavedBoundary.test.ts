@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUndoStack } from '@pointercad/model';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { cadWeldLayerFixture } from '../../../model/src/analysis/cadWeldLayer.testSupport.js';
+import { cadWeldLayerFixture } from '@pointercad/model/testing/analysis-fixtures';
 import type { FemWorkerPort } from '@pointercad/fem';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachBeamAnalysis, type BeamAttachment } from './attachBeamAnalysis.js';
 import { beamUiFixture, requireBeamSession } from './beam.testSupport.js';
 import { createBeamSession, restoreBeamSession } from './beamSession.js';
-import { cadWeldSpanFixture } from '../../../model/src/analysis/cadWeldSpanLayer.testSupport.js';
+import { cadWeldSpanFixture } from '@pointercad/model/testing/analysis-fixtures';
 
 class Port implements FemWorkerPort {
   onmessage: FemWorkerPort['onmessage'] = null;

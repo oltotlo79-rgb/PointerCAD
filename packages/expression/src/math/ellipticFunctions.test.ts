@@ -1,6 +1,8 @@
+import { specialMathTestRequest } from './mathRequest.testSupport.js';
 import Decimal from 'decimal.js';
 import { beforeAll,describe,expect,it,vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
+import { evaluateMathInput } from './mathEvaluation.testSupport.js';
 import { executeMathWorkRequest,type MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
@@ -16,12 +18,11 @@ let backend:MathExecutionBackend;
 beforeAll(()=>{backend=createMathBackend();});
 const names={K:'elliptick',E:'elliptice',F:'ellipticf',Einc:'ellipticeinc',Pi:'ellipticpi',Piinc:'ellipticpiinc'} as const;
 function request(source:string,angleUnit:'degree'|'radian'='radian') {
-  return {source,angleUnit,notation:'text' as const,coefficients:[],
-    identity:{documentId:'elliptic-functions',documentVersion:1,editorId:'coordinate',inputRevision:1}};
+  return specialMathTestRequest(source, angleUnit, 'elliptic-functions');
 }
 function evaluate(source:string,angleUnit:'degree'|'radian'='radian') {
-  const input=request(source,angleUnit),raw=executeMathWorkRequest({kind:'evaluate-math',serial:1,request:input},backend);
-  return decodeMathWorkReply(raw,input,{operationsById:CANDIDATE_MATH_BY_ID,coefficientIds:new Set(),declaredIds:new Set()}).result;
+  const input=request(source,angleUnit);
+  return evaluateMathInput(input, backend);
 }
 describe('楕円積分の六つの入力を原式・角度・40桁表示へ接続する',()=>{
   it('元の条件の確認は対称積分の値を重複計算せず、途中の極も拒否する',()=>{

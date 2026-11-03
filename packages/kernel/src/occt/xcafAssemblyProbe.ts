@@ -85,18 +85,18 @@ export function writeAssemblyProbe(
   const { keep, release } = allocations;
   try {
     const format = keep(new oc.TCollection_ExtendedString_2('BinXCAF', false));
-    const doc = new oc.TDocStd_Document(format);
+    const xcafDocument = new oc.TDocStd_Document(format);
     // Handle の構築に失敗した場合だけ、移譲前の本体を自分で解放する。
     const handle = (() => {
       try {
-        return new oc.Handle_TDocStd_Document_2(doc);
+        return new oc.Handle_TDocStd_Document_2(xcafDocument);
       } catch (error) {
-        doc.delete();
+        xcafDocument.delete();
         throw error;
       }
     })();
     keep(handle);
-    const main = keep(doc.Main());
+    const main = keep(xcafDocument.Main());
     const shapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
     const root = keep(shapeTool.NewShape());
     nameLabel(oc, root, 'Root', keep);
@@ -228,12 +228,12 @@ export function readAssemblyProbe(
   const { keep, release } = allocations;
   try {
     const format = keep(new oc.TCollection_ExtendedString_2('BinXCAF', false));
-    const doc = new oc.TDocStd_Document(format);
+    const xcafDocument = new oc.TDocStd_Document(format);
     const handle = (() => {
       try {
-        return new oc.Handle_TDocStd_Document_2(doc);
+        return new oc.Handle_TDocStd_Document_2(xcafDocument);
       } catch (error) {
-        doc.delete();
+        xcafDocument.delete();
         throw error;
       }
     })();
@@ -250,7 +250,7 @@ export function readAssemblyProbe(
     if (!ok) {
       throw new Error('Assembly probe: STEPCAFControl_Reader.Perform_2 returned false');
     }
-    const main = keep(doc.Main());
+    const main = keep(xcafDocument.Main());
     const shapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
     const free = keep(new oc.TDF_LabelSequence_1());
     shapeTool.GetFreeShapes(free);

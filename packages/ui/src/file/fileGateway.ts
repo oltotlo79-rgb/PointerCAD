@@ -1,3 +1,4 @@
+import { isObject } from '../valueGuards.js';
 /**
  * ファイルの読み書きの口(計画書 docs/plans/P2-ソリッド基礎.md タスク23、§2.10、§0.a-0.10。
  * 種類つきの出し入れは docs/plans/P6-入出力.md §2.2、§0.a-0.4、タスク4)。
@@ -326,10 +327,6 @@ type ReadableFile = BrowserReadableFile;
 /** 名前つきの中身(`<input type="file">` が渡してくるファイル)。 */
 interface NamedReadableFile extends ReadableFile {
   readonly name: string;
-}
-
-function isObject(value: unknown): value is object {
-  return typeof value === 'object' && value !== null;
 }
 
 /**

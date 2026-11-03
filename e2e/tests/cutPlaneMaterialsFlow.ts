@@ -1,5 +1,11 @@
 /// <reference lib="dom" />
+import { normalizePoint } from './normalizePoint.testSupport.js';
+/* ホーム視点の写し(p5-primitive-pick.spec.ts と同じ数値・同じ組み立て。この検査も視点を動かさない)。 */
+import { clickWorldPoint } from './homeViewProjection.js';
 import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { disableFilePickers } from './filePickers.js';
+import { openToolMenu, toolMenuPanel } from './toolMenus.js';
 import { readPcadFile } from '../../packages/io/src/index.js';
 import { machiningOracleMath } from './machiningSurfaceOracle.js';
 import { createMathBackend, executeFunctionCurveWorkRequest } from '../../packages/expression/src/math/publicWorker.js';
@@ -70,53 +76,10 @@ declare global {
   }
 }
 
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
-async function disableFilePickers(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
-      Object.defineProperty(globalThis, name, {
-        configurable: true,
-        writable: true,
-        value: undefined,
-      });
-    }
-  });
-}
-
 function sketchTool(page: Page, label: string): Locator {
   return page
     .getByRole('group', { name: 'スケッチ' })
     .getByRole('button', { name: label, exact: true });
-}
-
-function toolMenuTrigger(page: Page, menu: string): Locator {
-  return page
-    .locator('.pcad-toolbar')
-    .getByRole('button', { name: new RegExp(`^${menu}`) })
-    .first();
-}
-
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-
-async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) {
-    await toolMenuTrigger(page, menu).click();
-  }
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
 }
 
 function menuTool(page: Page, menu: string, label: string): Locator {
@@ -295,13 +258,8 @@ async function undoCut(page: Page, rows: readonly string[], references: readonly
   await expectVolume(page, '箱1', BOX_VOLUME, token);
 }
 
-/* ホーム視点の写し(p5-primitive-pick.spec.ts と同じ数値・同じ組み立て。この検査も視点を動かさない)。 */
-type WorldPoint = readonly [number, number, number];
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
 
+type WorldPoint = readonly [number, number, number];
 function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
   return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 }
@@ -312,39 +270,6 @@ function dotPoints(a: WorldPoint, b: WorldPoint): number {
 
 function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
   return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
-function normalizePoint(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
-}
-
-const CAMERA_EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-const CAMERA_Z = normalizePoint(CAMERA_EYE);
-const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
-
-function worldToCanvas(world: WorldPoint, widthPixels: number, heightPixels: number): readonly [number, number] {
-  const view = subtractPoints(world, CAMERA_EYE);
-  const depth = -dotPoints(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
-  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
-  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
-}
-
-async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
-  const canvas = page.locator('canvas.pcad-viewport__canvas');
-  const box = await canvas.boundingBox();
-  if (box === null) {
-    throw new Error('ビューポートの canvas の位置と大きさが取れませんでした。');
-  }
-  const [x, y] = worldToCanvas(world, box.width, box.height);
-  await page.mouse.click(box.x + x, box.y + y);
 }
 
 /* 予告の読み取りと、予告の面からの体積(EX-04 W2)。 */

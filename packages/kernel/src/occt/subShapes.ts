@@ -1,3 +1,4 @@
+import { crossVec, dotVec as dot } from './sketchCorner.js';
 import { readNativePlanarBasis } from './planarFaceBasis.js';
 import type {
   OpenCascadeInstance,
@@ -221,9 +222,7 @@ function readCircleBasis(oc: OpenCascadeInstance, edge: TopoDS_Edge, circle: gp_
   const { keep } = allocations;
   const position = keep(circle.Position()), x = keep(position.XDirection()), y = keep(position.YDirection()), z = keep(position.Direction());
   const xAxis: Vec3Tuple = [x.X(), x.Y(), x.Z()], yAxis: Vec3Tuple = [y.X(), y.Y(), y.Z()], normal: Vec3Tuple = [z.X(), z.Y(), z.Z()];
-  const dot = (a: Vec3Tuple, b: Vec3Tuple): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  const cross: Vec3Tuple = [xAxis[1] * yAxis[2] - xAxis[2] * yAxis[1],
-    xAxis[2] * yAxis[0] - xAxis[0] * yAxis[2], xAxis[0] * yAxis[1] - xAxis[1] * yAxis[0]];
+  const cross = crossVec(xAxis, yAxis);
   if (![...xAxis, ...yAxis, ...normal].every(Number.isFinite)
     || [xAxis, yAxis, normal].some(axis => Math.abs(Math.hypot(...axis) - 1) > 1e-9)
     || Math.abs(dot(xAxis, yAxis)) > 1e-9 || Math.abs(dot(xAxis, normal)) > 1e-9 || Math.abs(dot(yAxis, normal)) > 1e-9
@@ -575,25 +574,59 @@ function findSubShapeAt(
     return null;
   }
 
-  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
+  const inputs = createAllocations();
+  const returned = createAllocations();
   try {
-    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
-    const subShapeCount = subShapes.Size();
-    let found = 0;
-    for (let position = 1; position <= subShapeCount; position += 1) {
-      const subShape = subShapes.FindKey(position);
-      if (matches(subShape)) {
-        if (found === index) {
-          // 見つかったものだけは解放せずに返す(解放は呼び出し側の責任)。
-          return subShape;
+    let selected: TopoDS_Shape | null = null;
+    try {
+      const subShapes = inputs.keep(new oc.TopTools_IndexedMapOfShape_1());
+      oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+      const subShapeCount = subShapes.Size();
+      let found = 0;
+      for (let position = 1; position <= subShapeCount; position += 1) {
+        const candidate = createAllocations();
+        let transferred = false;
+        try {
+          const subShape = candidate.keep(subShapes.FindKey(position));
+          if (matches(subShape)) {
+            if (found === index) {
+              selected = returned.keep(subShape);
+              transferred = true;
+              break;
+            }
+            found += 1;
+          }
+        } finally {
+          if (!transferred) candidate.release();
         }
-        found += 1;
       }
-      subShape.delete();
+    } finally {
+      inputs.release();
     }
-    return null;
-  } finally {
-    subShapes.delete();
+    // The caller receives ownership only after the native map was released.
+    return selected;
+  } catch (error) {
+    returned.release();
+    throw error;
+  }
+}
+
+/** A typed copy is transferred only if its source wrapper was released successfully. */
+function castFoundShape<T extends TopoDS_Shape>(found: TopoDS_Shape, cast: (shape: TopoDS_Shape) => T): T {
+  const inputs = createAllocations();
+  const returned = createAllocations();
+  inputs.keep(found);
+  try {
+    let result: T;
+    try {
+      result = returned.keep(cast(found));
+    } finally {
+      inputs.release();
+    }
+    return result;
+  } catch (error) {
+    returned.release();
+    throw error;
   }
 }
 
@@ -608,11 +641,7 @@ export function faceAt(
   if (found === null) {
     return null;
   }
-  try {
-    return oc.TopoDS.Face_1(found);
-  } finally {
-    found.delete();
-  }
+  return castFoundShape(found, shape => oc.TopoDS.Face_1(shape));
 }
 
 /** 通し番号から辺の実体を取り出す。範囲の外なら null。呼び出し側が delete() する。 */
@@ -626,11 +655,7 @@ export function edgeAt(
   if (found === null) {
     return null;
   }
-  try {
-    return oc.TopoDS.Edge_1(found);
-  } finally {
-    found.delete();
-  }
+  return castFoundShape(found, shape => oc.TopoDS.Edge_1(shape));
 }
 
 /** 通し番号から頂点の実体を取り出す。範囲の外なら null。呼び出し側が delete() する。 */
@@ -649,11 +674,7 @@ export function vertexAt(
   if (found === null) {
     return null;
   }
-  try {
-    return oc.TopoDS.Vertex_1(found);
-  } finally {
-    found.delete();
-  }
+  return castFoundShape(found, shape => oc.TopoDS.Vertex_1(shape));
 }
 
 /**

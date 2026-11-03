@@ -1,3 +1,4 @@
+import { specialMathTestRequest } from './mathRequest.testSupport.js';
 import * as specialKinds from './specialFunctionKinds.js';
 import { airyFunction } from './airyFunctions.js';
 import { besselKind } from './besselFunctions.js';
@@ -6,6 +7,7 @@ import { zetaOrder, zetaDerivativeOrder } from './zetaFunctions.js';
 import Decimal from 'decimal.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
+import { evaluateMathInput } from './mathEvaluation.testSupport.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
@@ -17,12 +19,11 @@ const D = Decimal.clone({ precision: 300, rounding: Decimal.ROUND_HALF_EVEN });
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 function request(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
-  return { source, angleUnit, notation: 'text' as const, coefficients: [],
-    identity: { documentId: 'bessel-functions', documentVersion: 1, editorId: 'coordinate', inputRevision: 1 } };
+  return specialMathTestRequest(source, angleUnit, 'bessel-functions');
 }
 function evaluate(source: string, angleUnit: 'degree' | 'radian' = 'degree') {
-  const input = request(source, angleUnit), raw = executeMathWorkRequest({ kind: 'evaluate-math', serial: 1, request: input }, backend);
-  return decodeMathWorkReply(raw, input, { operationsById: CANDIDATE_MATH_BY_ID, coefficientIds: new Set(), declaredIds: new Set() }).result;
+  const input = request(source, angleUnit);
+  return evaluateMathInput(input, backend);
 }
 function value(source: string): number {
   const result = evaluate(source).evaluation;

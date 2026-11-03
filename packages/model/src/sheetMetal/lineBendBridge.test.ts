@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { exactExpressionValueFromNumber as n } from '@pointercad/expression';
 import { absoluteCoordinate, appendSolid, createEmptyPartDocument, createSheetBaseFeature, createSheetFlangeFeature,
   recomputePart, replaceSketch, resolvePart, sheetBoundaryEdges } from '../index.js';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type AssemblyKernelBridge } from '../kernelBridge.js';
 import type { ResolvedSolidStep } from '../part/resolvePart.js';
 import type { ResolvedCurve, ResolvedSegment } from '../sketch/types.js';

@@ -1,5 +1,8 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { fillFields, popover, popoverInputs } from './popoverFields.js';
+import { worldToCanvas, type WorldPoint } from './homeViewProjection.js';
 
 /**
  * P4b(スケッチの仕上げ)完了済み機能のうち、**直交・極トラッキング**(FR-110、NFR-UX-7)を
@@ -16,48 +19,16 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * ここへ書き写す。**ヘッドレスで実行する。**
  */
 
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
 function sketchTool(page: Page, label: string): Locator {
   return page.getByRole('group', { name: 'スケッチ' }).getByRole('button', { name: label, exact: true });
-}
-
-function popover(page: Page): Locator {
-  return page.locator('.pcad-popover');
 }
 
 function popoverTitle(page: Page): Locator {
   return page.locator('.pcad-popover__title');
 }
 
-function popoverInputs(page: Page): Locator {
-  return page.locator('.pcad-popover input.pcad-field__input');
-}
-
 function statusText(page: Page): Locator {
   return page.locator('.pcad-statusbar__text');
-}
-
-async function fillFields(page: Page, sources: readonly (string | null)[]): Promise<void> {
-  await expect(popover(page)).toBeVisible();
-  const inputs = popoverInputs(page);
-  for (const [index, source] of sources.entries()) {
-    if (source === null) {
-      continue;
-    }
-    await inputs.nth(index).fill(source);
-  }
 }
 
 async function commitPopover(page: Page): Promise<void> {
@@ -120,53 +91,6 @@ async function setSnapEnabled(page: Page, enabled: boolean): Promise<void> {
 /* -------------------------------------------------------------------------- *
  * ワールド座標 → 画面の画素(sketch-extended.spec.ts の写し。視点を動かさないので成り立つ)
  * -------------------------------------------------------------------------- */
-
-type WorldPoint = readonly [number, number, number];
-
-// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
-
-function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
-function dotPoints(a: WorldPoint, b: WorldPoint): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
-function normalizePoint(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
-}
-
-const CAMERA_EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-const CAMERA_Z = normalizePoint(CAMERA_EYE);
-const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
-
-function worldToCanvas(
-  world: WorldPoint,
-  widthPixels: number,
-  heightPixels: number,
-): readonly [number, number] {
-  const view = subtractPoints(world, CAMERA_EYE);
-  const depth = -dotPoints(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
-  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
-  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
-}
 
 /** ビューポート上の、ワールド座標の点が見えている場所へポインタを動かす(クリックしない)。 */
 async function moveToWorldPoint(page: Page, world: WorldPoint): Promise<void> {

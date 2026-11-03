@@ -25,7 +25,7 @@
  */
 
 import type { SolidBody, SolidEdgeEntry, SolidFaceEntry } from '../../kernelBridge.js';
-import { crossVec3, dotVec3, lengthVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
+import { isFiniteVec3 as finite, crossVec3, dotVec3, lengthVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import { applyPlacementToDirection, applyPlacementToPoint, type RigidPlacement } from '../placementMath.js';
 import { inversePlacement } from '../rigidGroups.js';
 import {
@@ -73,9 +73,6 @@ interface LocalRectangle {
   readonly width: number;
 }
 
-function finite(vector: Vec3): boolean {
-  return vector.every((value) => Number.isFinite(value));
-}
 
 function refuse(code: WeldContactCode, reason: WeldContactReason, coveredRatio: number | null = null): WeldContactResult {
   return { code, reason, coveredRatio };

@@ -75,3 +75,10 @@ describe('機能ごとに分けたストア(P6 タスク52)', () => {
     expect(offenders, 'スライスをまたぐ読み書きは get() 経由にする').toEqual([]);
   });
 });
+
+it('registers the finite formulation with real actions and an empty owned session', () => {
+  const slice = STORE_SLICE_CREATORS.solidFiniteSlice(useAppStore.setState, useAppStore.getState, useAppStore);
+  expect(slice.solidFiniteSession).toBeNull(); expect(slice.solidFiniteRunner).toBeNull();
+  for (const name of ['openSolidFinite','closeSolidFinite','editSolidFinite','saveSolidFinite','cancelSolidFinite'] as const)
+    expect(typeof slice[name]).toBe('function');
+});

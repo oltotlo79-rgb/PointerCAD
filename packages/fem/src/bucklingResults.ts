@@ -1,10 +1,9 @@
+import { isRecord as record } from './valueGuards.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamBucklingInput, BeamBucklingResult } from './bucklingModel.js';
 import { translateBeamBuckling } from './bucklingTranslation.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function positive(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }

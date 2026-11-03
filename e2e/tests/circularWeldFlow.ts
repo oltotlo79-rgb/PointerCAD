@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { expect, test as baseTest, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { readDocumentBundle } from '../../packages/io/src/index.js';
 import { createKernelApi } from '../../packages/kernel/src/worker/kernelApi.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, recomputePart, buildStandardPartFromSource, readCircularFilletWeldSource,
   type AssemblyDocument } from '../../packages/model/src/index.js';
 import { chooseToolMenuItem, installAssemblyFileGateway, openToolMenu, readAssemblyStats, resetAssemblyFileGateway, toolMenuPanel } from './assemblyTestSupport.js';

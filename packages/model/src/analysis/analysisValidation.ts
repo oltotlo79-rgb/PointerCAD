@@ -1,3 +1,5 @@
+import { dotVec3 as dot, crossVec3 as cross, scaleVec3 as scale, subVec3 as subtract } from '../sketch/vec3.js';
+import { isFiniteNumber, isRecord as record } from '../valueGuards.js';
 import type {
   AnalysisCheck, AnalysisMaterialCapacity, AnalysisSource, BeamAnalysisDocument, BeamCadAssociation, BeamClamp, BeamFrame, BeamMaterial,
   BeamMember, BeamModalSettings, BeamNodalLoad, BeamNode, BeamSection, PropertySource, Vector3,
@@ -5,9 +7,6 @@ import type {
 import { findStrengthMaterial, STRENGTH_SOURCES } from '../measure/strengthMaterials.js';
 import { checkStrengthMaterialCondition } from '../measure/strengthMaterialTypes.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 export function fields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!record(value) || Object.keys(value).length !== names.length || names.some(key => !(key in value))) {
     throw new InputIssue('shape', path, 'Unsupported or missing field');
@@ -19,6 +18,10 @@ export class InputIssue extends Error {
     super(message);
   }
 }
+/** Preserve the caller's fixed issue code and the original path and detail. */
+export function createInputIssueFail(code: string): (path: string, message: string) => never {
+  return (path, message) => { throw new InputIssue(code, path, message); };
+}
 export function text(value: unknown, path: string, limit = 256): string {
   if (typeof value !== 'string' || value.trim() !== value || value.length === 0 || value.length > limit
     || [...value].some(c => c.charCodeAt(0) < 32)) {
@@ -27,7 +30,7 @@ export function text(value: unknown, path: string, limit = 256): string {
   return value;
 }
 export function number(value: unknown, path: string, positive = false): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 1e30
+  if (!isFiniteNumber(value) || Math.abs(value) > 1e30
     || (positive && value <= 0)) {
     throw new InputIssue('number', path, 'Expected a finite supported numeric value');
   }
@@ -78,12 +81,7 @@ function readCadAssociation(value: unknown, path: string): BeamCadAssociation {
     shearCenterModel: row.shearCenterModel,
   };
 }
-export const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-export const cross = (a: Vector3, b: Vector3): Vector3 => [
-  a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0],
-];
-export const scale = (a: Vector3, value: number): Vector3 => [a[0] * value, a[1] * value, a[2] * value];
-export const subtract = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+export { dot, cross, scale, subtract };
 export function beamFrame(a: Vector3, b: Vector3, hint: Vector3, lengthScale: number): BeamFrame {
   const delta = subtract(b, a);
   const length = Math.hypot(...delta);
@@ -377,4 +375,8 @@ export function serializeBeamAnalysis(value: unknown): string {
   const checked = readBeamAnalysis(value);
   if (!checked.ok) throw new Error(`${checked.issue.code}: ${checked.issue.path}: ${checked.issue.message}`);
   return JSON.stringify(checked.document);
+}
+
+export function fatigueInputFailure(path: string, message: string): never {
+  throw new InputIssue('fatigue', path, message);
 }

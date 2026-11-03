@@ -1,3 +1,4 @@
+import { replaceAttachment } from './analysisAttachment.testSupport.js';
 import { buildStandardPartFromSource, createStandardPartSource, steelProducts, steelProductOptions, type CutFeature } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
@@ -7,7 +8,7 @@ import {
   type BeamAnalysisDocument, type BeamAnalysisInputs,
   type FatigueSavedInput,
 } from '@pointercad/model/beam-analysis';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { isRecord } from './guards.js';
@@ -33,11 +34,6 @@ function manualInputs(ownerId: string): BeamAnalysisInputs {
   return { schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'manual', document }] };
 }
 
-function replaceAttachment(serialized: string, value: unknown): string {
-  const envelope: unknown = JSON.parse(serialized);
-  if (!isRecord(envelope) || !isRecord(envelope.document)) throw new Error('Expected a document envelope');
-  return JSON.stringify({ ...envelope, document: { ...envelope.document, beamAnalysisInputs: value } });
-}
 
 describe('versioned beam inputs in part and assembly persistence', () => {
   it('keeps old documents without the optional attachment compatible and absent on write', () => {

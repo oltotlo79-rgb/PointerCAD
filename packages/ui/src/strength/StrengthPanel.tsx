@@ -15,6 +15,7 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
   const edit = useAppStore(state => state.editStrength);
   const openSolidAnalysis = useAppStore(state => state.openSolidAnalysis);
   const openSolidPlastic = useAppStore(state => state.openSolidPlastic);
+  const openSolidFinite = useAppStore(state => state.openSolidFinite);
   const openBeam = useAppStore(state => state.openBeam);
   const openPlasticBar = useAppStore(state => state.openPlasticBar);
   const openFatigue = useAppStore(state => state.openFatigue);
@@ -44,6 +45,8 @@ export function StrengthPanel({ session }: { readonly session: StrengthSession }
       onClick={openSolidAnalysis} title={t('solidAnalysis.openHelp')}>{t('solidAnalysis.open')}</button> : null}
     {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-plastic-open"
       onClick={openSolidPlastic} title={t('solidPlastic.openHelp')}>{t('solidPlastic.open')}</button> : null}
+    {assembly === null ? <button type="button" className="pcad-button" data-testid="solid-finite-open"
+      onClick={openSolidFinite} title={t('solidFinite.openHelp')}>{t('solidFinite.open')}</button> : null}
     <StrengthOptions session={session} edit={edit} />
     <StrengthMaterialFields session={session} parameters={parameters} edit={edit} />
     {strengthCalculationFields(session.calculation).filter(([name]) => name !== 'tensileArea').map(([name, quantity, allowZero]) =>

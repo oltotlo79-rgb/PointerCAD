@@ -275,11 +275,44 @@ function holePlacement(value: unknown, path: string): Checked<HolePlacementRole>
   if (!placement.ok) return placement;
   return placement.value.kind === 'circular' ? { ok: true, value: placement.value } : fieldProblem(path, 'type');
 }
+/** A planar sheet's saved source-line set: ascending code-unit order, no duplicates, bounded count. */
+function ascendingLineIds(value: unknown, path: string, minimum: number, maximum: number): Checked<readonly string[]> {
+  const ids = list(value, path, minimum, (item, at) => id({ value: item }, 'value', at));
+  if (!ids.ok) return ids;
+  return ids.value.length <= maximum && ids.value.every((item, at) => at === 0 || ids.value[at - 1] < item)
+    ? ids : fieldProblem(path, 'type');
+}
+/** `{ sketchId, lineFeatureIds }` of a planar sheet face (3..32 lines) or vertex (exactly 2 lines). */
+function planarLineSet(value: unknown, path: string, minimum: number, maximum: number):
+  Checked<{ readonly sketchId: string; readonly lineFeatureIds: readonly string[] }> {
+  const checked = checkRecord(value, path);
+  if (!checked.ok) return checked;
+  const fields = exact(checked.value, path, ['sketchId', 'lineFeatureIds']);
+  if (!fields.ok) return fields;
+  const sketchId = id(checked.value, 'sketchId', path);
+  if (!sketchId.ok) return sketchId;
+  const ids = ascendingLineIds(checked.value['lineFeatureIds'], joinPath(path, 'lineFeatureIds'), minimum, maximum);
+  return ids.ok ? { ok: true, value: { sketchId: sketchId.value, lineFeatureIds: ids.value } } : ids;
+}
+/** `{ sketchId, lineFeatureId, role: 'whole-line' }` without any face feature ID. */
+function openLineAnchor(value: unknown, path: string):
+  Checked<{ readonly sketchId: string; readonly lineFeatureId: string; readonly role: 'whole-line' }> {
+  const profile = checkRecord(value, path);
+  if (!profile.ok) return profile;
+  const profileFields = exact(profile.value, path, ['sketchId', 'lineFeatureId', 'role']);
+  if (!profileFields.ok) return profileFields;
+  const sketchId = id(profile.value, 'sketchId', path);
+  if (!sketchId.ok) return sketchId;
+  const lineFeatureId = id(profile.value, 'lineFeatureId', path);
+  if (!lineFeatureId.ok) return lineFeatureId;
+  const role = readLiteral(profile.value, 'role', path, ['whole-line']);
+  return role.ok ? { ok: true, value: { sketchId: sketchId.value, lineFeatureId: lineFeatureId.value, role: role.value } } : role;
+}
 function face(value: unknown, path: string): Checked<Face> {
   const checked = checkRecord(value, path);
   if (!checked.ok) return checked;
   const record = checked.value, kind = readLiteral(record, 'kind', path,
-    ['box-face', 'cylinder-face', 'sphere-face', 'cone-face', 'torus-face', 'surface-side', 'extrude-side', 'extrude-cap', 'extrude-curve-side', 'extrude-curve-cap', 'blend-face', 'merged-face', 'hole-face']);
+    ['box-face', 'cylinder-face', 'sphere-face', 'cone-face', 'torus-face', 'surface-side', 'planar-surface-face', 'extrude-side', 'extrude-cap', 'extrude-curve-side', 'extrude-curve-cap', 'blend-face', 'merged-face', 'hole-face']);
   if (!kind.ok) return kind;
   const featureId = id(record, 'featureId', path);
   if (!featureId.ok) return featureId;
@@ -399,6 +432,17 @@ function face(value: unknown, path: string): Checked<Face> {
       return role.ok ? { ok: true, value: { kind: 'surface-side', featureId: featureId.value,
         profile: { sketchId: sketchId.value, lineFeatureId: lineFeatureId.value, role: role.value } } } : role;
     }
+    case 'planar-surface-face': {
+      const fields = exact(record, path, ['kind', 'featureId', 'profile']);
+      if (!fields.ok) return fields;
+      const location = joinPath(path, 'profile'), profile = planarLineSet(record['profile'], location, 3, 32);
+      if (!profile.ok) return profile;
+      const [first, second, third, ...rest] = profile.value.lineFeatureIds;
+      return first === undefined || second === undefined || third === undefined
+        ? fieldProblem(joinPath(location, 'lineFeatureIds'), 'type')
+        : { ok: true, value: { kind: 'planar-surface-face', featureId: featureId.value,
+          profile: { sketchId: profile.value.sketchId, lineFeatureIds: [first, second, third, ...rest] } } };
+    }
     case 'extrude-side': {
       const fields = exact(record, path, ['kind', 'featureId', 'profile']);
       if (!fields.ok) return fields;
@@ -438,7 +482,7 @@ function edge(value: unknown, path: string): Checked<Edge> {
   const checked = checkRecord(value, path);
   if (!checked.ok) return checked;
   const record = checked.value, kind = readLiteral(record, 'kind', path,
-    ['box-edge', 'cylinder-edge', 'face-intersection-edge', 'merged-edge']);
+    ['box-edge', 'cylinder-edge', 'planar-surface-edge', 'face-intersection-edge', 'merged-edge']);
   if (!kind.ok) return kind;
   const featureId = id(record, 'featureId', path);
   if (!featureId.ok) return featureId;
@@ -454,6 +498,13 @@ function edge(value: unknown, path: string): Checked<Edge> {
       if (!fields.ok) return fields;
       const role = readLiteral(record, 'role', path, CYLINDER_EDGE_ROLES);
       return role.ok ? { ok: true, value: { kind: 'cylinder-edge', featureId: featureId.value, role: role.value } } : role;
+    }
+    case 'planar-surface-edge': {
+      const fields = exact(record, path, ['kind', 'featureId', 'profile']);
+      if (!fields.ok) return fields;
+      const profile = openLineAnchor(record['profile'], joinPath(path, 'profile'));
+      return profile.ok ? { ok: true, value: { kind: 'planar-surface-edge', featureId: featureId.value,
+        profile: profile.value } } : profile;
     }
     case 'face-intersection-edge': {
       const fields = exact(record, path, ['kind', 'featureId', 'faces']);
@@ -479,7 +530,7 @@ function vertex(value: unknown, path: string): Checked<Vertex> {
   const checked = checkRecord(value, path);
   if (!checked.ok) return checked;
   const record = checked.value, kind = readLiteral(record, 'kind', path,
-    ['box-vertex', 'cylinder-vertex', 'face-intersection-vertex', 'merged-vertex']);
+    ['box-vertex', 'cylinder-vertex', 'planar-surface-vertex', 'face-intersection-vertex', 'merged-vertex']);
   if (!kind.ok) return kind;
   const featureId = id(record, 'featureId', path);
   if (!featureId.ok) return featureId;
@@ -495,6 +546,17 @@ function vertex(value: unknown, path: string): Checked<Vertex> {
       if (!fields.ok) return fields;
       const role = readLiteral(record, 'role', path, CYLINDER_VERTEX_ROLES);
       return role.ok ? { ok: true, value: { kind: 'cylinder-vertex', featureId: featureId.value, role: role.value } } : role;
+    }
+    case 'planar-surface-vertex': {
+      const fields = exact(record, path, ['kind', 'featureId', 'profile']);
+      if (!fields.ok) return fields;
+      const location = joinPath(path, 'profile'), profile = planarLineSet(record['profile'], location, 2, 2);
+      if (!profile.ok) return profile;
+      const [low, high] = profile.value.lineFeatureIds;
+      return low === undefined || high === undefined
+        ? fieldProblem(joinPath(location, 'lineFeatureIds'), 'type')
+        : { ok: true, value: { kind: 'planar-surface-vertex', featureId: featureId.value,
+          profile: { sketchId: profile.value.sketchId, lineFeatureIds: [low, high] } } };
     }
     case 'face-intersection-vertex': {
       const fields = exact(record, path, ['kind', 'featureId', 'faces']);

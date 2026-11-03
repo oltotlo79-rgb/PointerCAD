@@ -1,11 +1,17 @@
+import { crossVec as cross, dotVec, subVec as subtract } from './sketchCorner.js';
 /** Numerical whole-triangle distance enclosure for finite positive-weight spline charts.
  * C0/periodic charts are partitioned into same-parameter native Bezier pieces before applying C1 bounds.
  * This is separate from OCCT's requested meshing deflection. The native mesh supplies the trimmed topology;
  * this module bounds distance to the underlying chart, not a zero-tolerance proof of a trimmed subset.
  */
 import type { BRepAdaptor_Surface, Geom_BezierSurface, OpenCascadeInstance, TopoDS_Face } from 'opencascade.js/dist/opencascade.full.js';
-import type { Allocations } from './allocations.js';
+import { createAllocations, type Allocations, type OcctDeletable } from './allocations.js';
 import { borrowHandle } from './borrowHandle.js';
+
+function withTemporary<T extends OcctDeletable, R>(make: () => T, use: (value: T) => R): R {
+  const { keep, release } = createAllocations();
+  try { return use(keep(make())); } finally { release(); }
+}
 
 type V3 = readonly [number, number, number];
 type V2 = readonly [number, number];
@@ -169,8 +175,6 @@ export function reduceAffineFreeformFans(grid: FreeformPatchGrid, triangles: rea
     }
   });
   const removed = new Set<number>(), replacements: (readonly [number, number, number])[] = [];
-  const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-  const subtract = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   // Conservative floating-point filter; uncertainty means keep the old fan, not weld UVs.
   // The coordinate sums include subtraction roundoff as well as the two products and sum.
   const side = (a: V2, b: V2, c: V2): number => {
@@ -253,7 +257,7 @@ export function reduceAffineFreeformFans(grid: FreeformPatchGrid, triangles: rea
       const normalLength = Math.hypot(...normal);
       if (!(normalLength > 0) || !Number.isFinite(normalLength)) { valid = false; break; }
       const normalUnit: V3 = [normal[0] / normalLength, normal[1] / normalLength, normal[2] / normalLength];
-      const dot = normalUnit[0] * referenceUnit[0] + normalUnit[1] * referenceUnit[1] + normalUnit[2] * referenceUnit[2];
+      const dot = dotVec(normalUnit, referenceUnit);
       const sine = Math.hypot(...cross(normalUnit, referenceUnit));
       const angle = Math.atan2(sine, dot);
       if (!Number.isFinite(dot) || !Number.isFinite(sine) || !Number.isFinite(angle) || angle > angularDeflection) {
@@ -419,19 +423,17 @@ function extrusionCoefficients(oc: OpenCascadeInstance, adaptor: BRepAdaptor_Sur
   if (!Number.isFinite(first) || !Number.isFinite(last) || !(last > first)) throw new Error('freeform-bound: extrusion V interval');
   const direction = owned.keep(local.Direction()), poles: V3[] = [], weights: number[] = [];
   for (let i = 1; i <= count; i += 1) {
-    const base = curve.Pole(i);
-    try {
+    withTemporary(() => curve.Pole(i), base => {
       for (const v of [first, last]) {
         checkpoint();
-        const point = new oc.gp_Pnt_3(finite(base.X() + v * direction.X()),
-          finite(base.Y() + v * direction.Y()), finite(base.Z() + v * direction.Z()));
-        try {
+        withTemporary(() => new oc.gp_Pnt_3(finite(base.X() + v * direction.X()),
+          finite(base.Y() + v * direction.Y()), finite(base.Z() + v * direction.Z())), point => {
           point.Transform(transform);
           poles.push([finite(point.X()), finite(point.Y()), finite(point.Z())]);
-        } finally { point.delete(); }
+        });
         weights.push(curve.Weight(i));
       }
-    } finally { base.delete(); }
+    });
   }
   return { u: { degree, knots }, v: { degree: 1, knots: [first, first, last, last] }, poles, weights };
 }
@@ -445,8 +447,8 @@ export function readNativeFreeformBound(oc: OpenCascadeInstance, face: TopoDS_Fa
   const nativePoint = (uv: V2): V3 => {
     checkpoint();
     if (!Number.isFinite(uv[0]) || !Number.isFinite(uv[1])) throw new Error('freeform-bound: nonfinite UV');
-    const point = adaptor.Value(uv[0], uv[1]);
-    try { return [finite(point.X()), finite(point.Y()), finite(point.Z())]; } finally { point.delete(); }
+    return withTemporary(() => adaptor.Value(uv[0], uv[1]), (point): V3 =>
+      [finite(point.X()), finite(point.Y()), finite(point.Z())]);
   };
   const finish = (surfaceKind: NativeFreeformBound['kind'], coefficients: FreeformCoefficients): NativeFreeformBound => {
     const derivatives = boundFreeformDerivatives(coefficients, checkpoint);
@@ -500,8 +502,7 @@ export function readNativeFreeformBound(oc: OpenCascadeInstance, face: TopoDS_Fa
     const poles: V3[] = [], weights: number[] = [];
     for (let i = 1; i <= patch.NbUPoles(); i += 1) for (let j = 1; j <= patch.NbVPoles(); j += 1) {
       checkpoint();
-      const p = patch.Pole(i, j);
-      try { poles.push([p.X(), p.Y(), p.Z()]); } finally { p.delete(); }
+      withTemporary(() => patch.Pole(i, j), p => { poles.push([p.X(), p.Y(), p.Z()]); });
       weights.push(patch.Weight(i, j));
     }
     return { u: clamped(up, u[0], u[1]), v: clamped(vp, v[0], v[1]), poles, weights };
@@ -525,8 +526,7 @@ export function readNativeFreeformBound(oc: OpenCascadeInstance, face: TopoDS_Fa
         const poles: V3[] = [], weights: number[] = [];
         for (let i = 1; i <= rows; i += 1) for (let j = 1; j <= columns; j += 1) {
           checkpoint();
-          const p = specific.Pole(i, j);
-          try { poles.push([p.X(), p.Y(), p.Z()]); } finally { p.delete(); }
+          withTemporary(() => specific.Pole(i, j), p => { poles.push([p.X(), p.Y(), p.Z()]); });
           weights.push(specific.Weight(i, j));
         }
         return finish('bspline', { u: { degree: Number(specific.UDegree()), knots: uk },
@@ -547,11 +547,10 @@ export function readNativeFreeformBound(oc: OpenCascadeInstance, face: TopoDS_Fa
     const coefficients: FreeformCoefficients[] = [];
     for (let i = 1; i <= rows; i += 1) for (let j = 1; j <= columns; j += 1) {
       checkpoint();
-      const patch = split.Patch(i, j);
-      try {
+      withTemporary(() => split.Patch(i, j), patch => {
         if (patch.IsNull()) throw new Error('freeform-bound: missing Bezier patch');
         coefficients.push(patchCoefficients(borrowHandle(patch), [u[i - 1], u[i]], [v[j - 1], v[j]]));
-      } finally { patch.delete(); }
+      });
     }
     return finishGrid('bspline', u, v, coefficients);
   }
@@ -579,25 +578,23 @@ export function readNativeFreeformBound(oc: OpenCascadeInstance, face: TopoDS_Fa
       const coefficients: FreeformCoefficients[] = [];
       for (let k = 1; k <= count; k += 1) {
         checkpoint();
-        const handle = split.Arc(k);
-        try {
+        withTemporary(() => split.Arc(k), handle => {
           if (handle.IsNull()) throw new Error('freeform-bound: missing extrusion Bezier arc');
           const arc = borrowHandle(handle), poles: V3[] = [], weights: number[] = [];
           for (let i = 1; i <= arc.NbPoles(); i += 1) {
-            const base = arc.Pole(i);
-            try {
+            withTemporary(() => arc.Pole(i), base => {
               for (const end of v) {
                 checkpoint();
-                const p = new oc.gp_Pnt_3(finite(base.X() + end * direction.X()),
-                  finite(base.Y() + end * direction.Y()), finite(base.Z() + end * direction.Z()));
-                try { p.Transform(transform); poles.push([finite(p.X()), finite(p.Y()), finite(p.Z())]); }
-                finally { p.delete(); }
+                withTemporary(() => new oc.gp_Pnt_3(finite(base.X() + end * direction.X()),
+                  finite(base.Y() + end * direction.Y()), finite(base.Z() + end * direction.Z())), p => {
+                  p.Transform(transform); poles.push([finite(p.X()), finite(p.Y()), finite(p.Z())]);
+                });
                 weights.push(arc.Weight(i));
               }
-            } finally { base.delete(); }
+            });
           }
           coefficients.push({ u: clamped(Number(arc.Degree()), u[k - 1], u[k]), v: clamped(1, v[0], v[1]), poles, weights });
-        } finally { handle.delete(); }
+        });
       }
       return finishGrid('extrusion', u, v, coefficients);
     }

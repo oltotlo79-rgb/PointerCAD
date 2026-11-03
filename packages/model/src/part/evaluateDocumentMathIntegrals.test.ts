@@ -6,8 +6,8 @@ import { createFunctionMathSource, createMathBackend, executeExactMathWorkReques
 import { createFunctionCurveEvaluator } from '@pointercad/expression/math/geometry';
 import { decodeMathWorkReply } from '@pointercad/expression/math/contracts';
 import type { MathWorkRequest } from '@pointercad/expression/math/client';
-import { exactRuntimeBatch, sharedExactEngine } from '../../../expression/src/math/exactRuntimeTestSupport.js';
-import { sameMathMeaning } from '../../../expression/src/math/mathNotationConversion.js';
+import { exactRuntimeBatch, sharedExactEngine } from '@pointercad/expression/testing/exact-runtime';
+import { sameMathMeaning } from '@pointercad/expression/testing/geometry';
 import { evaluateMathGeometry } from '../measure/mathGeometry.js';
 import { DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryCoefficientId } from '../measure/mathGeometryIdentity.js';
 import type { MathGeometryDefinition, MathGeometryOutcome } from '../measure/mathGeometryTypes.js';

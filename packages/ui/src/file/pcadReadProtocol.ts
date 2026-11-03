@@ -1,3 +1,4 @@
+import { isObject as record } from '../valueGuards.js';
 import type { ReadDocumentBundleResult, ReadPcadFileErrorCode, ReadPcadFileResult, ReadPcaddFileResult } from '@pointercad/io';
 
 /** UI内の読込操作だけの識別子。保存形式のkindは増やさない。 */
@@ -16,9 +17,6 @@ export type PcadReadReply = {
   [K in PcadReadKind]: { readonly id: string; readonly kind: K; readonly result: PcadReadResults[K] }
 }[PcadReadKind] | { readonly id: string; readonly kind: 'failure'; readonly message: string };
 
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 function readKind(value: unknown): value is PcadReadKind {
   return value === 'part' || value === 'assembly' || value === 'drawing';
 }

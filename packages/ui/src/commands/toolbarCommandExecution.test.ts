@@ -12,6 +12,8 @@ function resetAnalysisTestStore(): void {
   const current = useAppStore.getState();
   if (current.solidAnalysisSession !== null) current.closeSolidAnalysis();
   if (current.solidPlasticSession !== null) current.closeSolidPlastic();
+  if (current.solidFiniteSession !== null) current.closeSolidFinite();
+  if (current.shellAnalysisSession !== null) current.closeShellAnalysis();
   resetTestStore();
 }
 beforeEach(() => {
@@ -126,7 +128,8 @@ describe('analysis commands use the existing panels and refusal channel', () => 
   const panels = [
     ['beam', 'beamSession'], ['plasticBar', 'plasticBarSession'], ['fatigue', 'fatigueSession'],
     ['fatigueStrain', 'fatigueStrainSession'], ['fatigueLocalCycle', 'fatigueLocalCycleSession'],
-    ['solidAnalysis', 'solidAnalysisSession'], ['solidPlastic', 'solidPlasticSession'],
+    ['solidAnalysis', 'solidAnalysisSession'], ['solidPlastic', 'solidPlasticSession'], ['solidFinite', 'solidFiniteSession'],
+    ['shellAnalysis', 'shellAnalysisSession'],
   ] as const;
   it.each(panels)('%s opens its actual session through the command registry', (id, field) => {
     if (id === 'beam') state().openAssembly(createAssemblyDocument('Assembly'));

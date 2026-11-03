@@ -1,3 +1,4 @@
+import { dotVec as dot, crossVec as cross, subVec as subtract } from './sketchCorner.js';
 import type {
   OpenCascadeInstance,
   TopTools_IndexedMapOfShape,
@@ -118,18 +119,6 @@ interface HingeFrame {
   readonly length: number;
   readonly width: number;
   readonly height: number;
-}
-
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
-function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 }
 
 function addScaled(a: Vec3Tuple, b: Vec3Tuple, scale: number): Vec3Tuple {

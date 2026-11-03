@@ -12,7 +12,7 @@ import type { BoxEdgeRole, BoxFaceRole, BoxVertexRole, CylinderEdgeRole, Cylinde
 export class HoleOriginMapError extends Error {}
 
 type Kind = ShapeAddress['kind'];
-type Maps = Readonly<Record<Kind, TopTools_IndexedMapOfShape>>;
+export type Maps = Readonly<Record<ShapeAddress['kind'], TopTools_IndexedMapOfShape>>;
 const faceRoles: readonly BoxFaceRole[] = ['bottom', 'top', 'front', 'back', 'left', 'right'];
 const edgeRoles: readonly BoxEdgeRole[] = [
   'bottom-front', 'bottom-back', 'bottom-left', 'bottom-right',
@@ -34,7 +34,8 @@ function kindOf(oc: OpenCascadeInstance, shape: TopoDS_Shape): Kind | null {
   return null;
 }
 
-function mapShape(oc: OpenCascadeInstance, shape: TopoDS_Shape, owned: Allocations, maximumNativeMembers?: number): Maps {
+/** Current-address maps shared by every producer (planarSurfaceOrigins.ts too), so addresses use one convention. */
+export function mapShape(oc: OpenCascadeInstance, shape: TopoDS_Shape, owned: Allocations, maximumNativeMembers?: number): Maps {
   const maps: Record<Kind, TopTools_IndexedMapOfShape> = {
     face: owned.keep(new oc.TopTools_IndexedMapOfShape_1()),
     edge: owned.keep(new oc.TopTools_IndexedMapOfShape_1()),
@@ -51,7 +52,7 @@ function mapShape(oc: OpenCascadeInstance, shape: TopoDS_Shape, owned: Allocatio
   return maps;
 }
 
-function address(maps: Maps, shape: TopoDS_Shape, kind: Kind): ShapeAddress | null {
+export function address(maps: Maps, shape: TopoDS_Shape, kind: ShapeAddress['kind']): ShapeAddress | null {
   if (shape.IsNull()) return null;
   const index = maps[kind].FindIndex(shape);
   return index > 0 ? { kind, index: index - 1 } : null;

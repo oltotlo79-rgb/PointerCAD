@@ -14,7 +14,7 @@ import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRe
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expression/math/contracts';
 import type { MathWorkRequest } from '@pointercad/expression/math/client';
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { FUNCTION_DEFINITION_FORMAT } from '../functionGeometry/functionDefinitionTypes.js';
 import type { FunctionRecomputeContext } from '../functionGeometry/recomputeFunctionCurves.js';
 import { createDirectKernelBridge } from '../kernelBridge.js';

@@ -1,8 +1,7 @@
+import { isRecord as record } from './valueGuards.js';
 import { decodeBeamWeldContact, type BeamWeldContactInput, type BeamWeldContactResult } from './beamWeldContact.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 /** Preliminary protocol discrimination only; the owning client performs complete input-bound decoding. */
 export function isBeamWeldContactResult(value: unknown): value is BeamWeldContactResult {
   return record(value) && value.kind === 'oofem-beam-weld-layer-contact'

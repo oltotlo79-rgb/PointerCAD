@@ -1,3 +1,4 @@
+import { openAssemblyWithStrength } from '../store/testing/openAssemblyWithStrength.testSupport.js';
 import { validateProportionalTensorFatigueInput, type FatigueTensorComponent } from '@pointercad/fem';
 import { readBeamAnalysisInputs, readFatigueTensorSavedProblem } from '@pointercad/model/beam-analysis';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -27,15 +28,6 @@ function session(): FatigueSession {
   if (value === null) throw new Error('No fatigue session');
   return value;
 }
-function openAssemblyWithStrength(): void {
-  const fixture = bucklingUiFixture();
-  const assembly = fixture.state.assembly;
-  if (assembly === null) throw new Error('Fixture without assembly');
-  // The real action creates the Undo stack that applyAssembly needs.
-  useAppStore.getState().openAssembly(assembly, fixture.state.assemblyLibrary);
-  useAppStore.setState({ strengthSession: fixture.state.strengthSession });
-}
-
 describe('proportional tensor fatigue inputs in the document (version 4)', () => {
   it('saves through Undo, never stores a result, reopens the exact doubles without a result, and recalculates the same', async () => {
     openAssemblyWithStrength();

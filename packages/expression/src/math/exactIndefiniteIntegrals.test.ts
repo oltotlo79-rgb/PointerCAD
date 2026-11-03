@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -34,8 +35,7 @@ function textRequest(source: string, angleUnit: 'degree' | 'radian' = 'radian',
     identity: { documentId: 'indefinite', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
 }
 function latexRequest(source: string): MathWorkRequest {
-  return { source, notation: 'latex', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'indefinite', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'latex', angleUnit: 'radian', identity: { documentId: 'indefinite', documentVersion: 1, editorId: 'X', inputRevision: 1 } });
 }
 const COEFFICIENT = { id: 'coefficient-a', label: 'a', decimal: '2' };
 const context = (request: MathWorkRequest) => ({ operationsById: backend.operationsById,

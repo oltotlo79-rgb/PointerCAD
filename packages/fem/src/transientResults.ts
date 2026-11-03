@@ -1,10 +1,9 @@
+import { isRecord as record } from './valueGuards.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamTransientInput, BeamTransientResult, TransientNodeResponse, TransientSample } from './transientModel.js';
 import { transientLoadFactor, transientOutputSteps, translateBeamTransient } from './transientTranslation.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function denseArray(value: unknown): value is unknown[] {
   if (!Array.isArray(value) || Reflect.ownKeys(value).length !== value.length + 1) return false;
   for (let index = 0; index < value.length; index += 1) {

@@ -1,3 +1,4 @@
+import { parseFailure as fail } from './codedFailure.js';
 import { readOptionalBeamAnalysisInputs, serializeBeamAnalysisInputs } from './codecs/beamAnalysis.js';
 import { readComponentSource } from './codecs/componentSource.js';
 import { findSteelProduct, steelLength } from '@pointercad/model';
@@ -65,7 +66,7 @@ import {
   type Checked,
   checkRecord,
   fieldProblem,
-  type FieldProblem,
+  fieldFailure as failField,
   isRecord,
   readLiteral,
   readNumber,
@@ -434,17 +435,6 @@ export type ParseDocumentResult =
   | { readonly ok: false; readonly error: ParseError };
 
 const NOT_PCAD_MESSAGE = 'PointerCAD の部品ファイルではないようです。';
-
-function fail(code: ParseErrorCode, message: string): ParseDocumentResult {
-  return { ok: false, error: { code, message } };
-}
-
-/** 欄の不備を、場所を添えた日本語にする。 */
-function failField(problem: FieldProblem): ParseDocumentResult {
-  return problem.reason === 'missing'
-    ? fail('missingField', `ファイルの中身が壊れています(${problem.path} が見つかりません)。`)
-    : fail('invalidField', `ファイルの中身が壊れています(${problem.path} の形が違います)。`);
-}
 
 function parseJsonText(text: string): Checked<unknown> {
   try {

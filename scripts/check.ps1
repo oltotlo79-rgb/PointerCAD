@@ -615,7 +615,11 @@ try {
                 Invoke-Check "(1/$totalChecks) pnpm run typecheck" pnpm @("run", "typecheck")
                 Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
                 if ($null -ne $localScope) { Invoke-LocalPackageChecks -Packages @($localScope.packages) }
-                else { Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test") }
+                else {
+                    Invoke-Check "(3/$totalChecks) i18n precheck" pnpm @('--filter', '@pointercad/ui', 'exec', 'vitest', 'run', 'src/i18n/i18n.test.ts', '--maxWorkers=1')
+                    Invoke-Check "(3/$totalChecks) help precheck" pnpm @('--filter', '@pointercad/help-content', 'exec', 'vitest', 'run', 'src/topics.test.ts', '--maxWorkers=1')
+                    Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
+                }
                 Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             }
             finally {
@@ -735,7 +739,9 @@ try {
         }
         elseif ($CIStage -eq 'UnitLead') {
             Write-Host "[CIの段] 単体の先行分だけを行います(ルートのtestの前半。後半は前段が行います)。" -ForegroundColor Cyan
-            Invoke-Check "(3/$totalChecks) 単体の先行分: $($ciStageUnitSplit.leadCommand)" pnpm @($ciStageUnitSplit.lead)
+            foreach ($unitCommand in $ciStageUnitSplit.leadCommands) {
+                Invoke-Check "(3/$totalChecks) 単体の先行分: $($unitCommand.command)" pnpm @($unitCommand.args)
+            }
             $ciStageSteps.Add('unit-lead')
         }
         elseif ($CIStage -eq 'Front') {
@@ -744,7 +750,9 @@ try {
             $ciStageSteps.Add('typecheck')
             Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
             $ciStageSteps.Add('lint')
-            Invoke-Check "(3/$totalChecks) 単体の残り: $($ciStageUnitSplit.restCommand)" pnpm @($ciStageUnitSplit.rest)
+            foreach ($unitCommand in $ciStageUnitSplit.restCommands) {
+                Invoke-Check "(3/$totalChecks) 単体の残り: $($unitCommand.command)" pnpm @($unitCommand.args)
+            }
             $ciStageSteps.Add('unit-rest')
             Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             $ciStageSteps.Add('build')
@@ -754,7 +762,11 @@ try {
             Invoke-Check "(2/$totalChecks) pnpm run lint" pnpm @("run", "lint")
             if (-not $StaticOnly) {
                 if ($null -ne $localScope) { Invoke-LocalPackageChecks -Packages @($localScope.packages) }
-                else { Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test") }
+                else {
+                    Invoke-Check "(3/$totalChecks) i18n precheck" pnpm @('--filter', '@pointercad/ui', 'exec', 'vitest', 'run', 'src/i18n/i18n.test.ts', '--maxWorkers=1')
+                    Invoke-Check "(3/$totalChecks) help precheck" pnpm @('--filter', '@pointercad/help-content', 'exec', 'vitest', 'run', 'src/topics.test.ts', '--maxWorkers=1')
+                    Invoke-Check "(3/$totalChecks) pnpm run test" pnpm @("run", "test")
+                }
                 Invoke-Check "(4/$totalChecks) pnpm run build" pnpm @("run", "build")
             }
         }

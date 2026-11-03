@@ -1,5 +1,5 @@
 import { absoluteCoordinate, createEmptyPartDocument, replaceSketch, createSheetBaseFeature, createSheetFlangeFeature, resolvePart, sheetBoundaryEdges, recomputePart } from '@pointercad/model';
-import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { t } from '../i18n/t.js';
 import { bodyFor, createFakeRecompute, resetTestStore, resultFor } from '../store/testing/createTestStore.js';

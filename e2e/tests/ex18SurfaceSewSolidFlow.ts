@@ -4,7 +4,7 @@ import { expect, type ElectronApplication, type Page, type TestInfo } from '@pla
 import { expressionValueFromNumber as number } from '../../packages/expression/src/index.js';
 import { readPcadFile, writePcadFile } from '../../packages/io/src/index.js';
 import { createKernelApi } from '../../packages/kernel/src/worker/kernelApi.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import {
   absoluteCoordinate, appendFeature, appendSolid, createDirectKernelBridge, createEmptyPartDocument,
   createPointFeature, createSubShapeReference, DEFAULT_WORK_PLANE_ID, nextFeatureId, nextFeatureName, recomputePart,

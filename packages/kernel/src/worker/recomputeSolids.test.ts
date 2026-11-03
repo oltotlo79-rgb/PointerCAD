@@ -12,6 +12,7 @@ import { makeSpring } from '../occt/makeSpring.js';
 import { buildSolidBodyMesh } from '../occt/solidMesh.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
+import { solidFaceQuery as faceQuery } from '../occt/solidFaceQuery.testSupport.js';
 import type {
   AppearanceQuery,
   CurveSpec,
@@ -187,18 +188,6 @@ describe('履歴の再計算(recomputeSolids)', () => {
     const mesh = tessellate(oc, shape);
     const lines = extractEdges(oc, shape);
     return collectSubShapes(oc, shape, mesh.faceRanges, lines.edgeRanges);
-  }
-
-  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return {
-      kind: 'face',
-      index: info.index,
-      surfaceKind: info.surfaceKind,
-      area: info.area,
-      position: info.centroid,
-      axis: info.axis,
-      radius: info.radius,
-    };
   }
 
   describe('failed direct-edit visibility', () => {

@@ -21,6 +21,31 @@ type ValidatedPreview = { readonly draft: FunctionPlotDraft; readonly document: 
   { readonly kind: 'curve'; readonly feature: SketchFunctionCurveFeature; readonly curves: readonly ResolvedSpline[] }
   | { readonly kind: 'surface'; readonly feature: FunctionSurfaceFeature; readonly body: SolidBody });
 
+/** Wait for an already-running document recompute without taking or cancelling its mesh reservation. */
+function waitForPreviewRecompute(signal: AbortSignal, isCurrent: () => boolean): Promise<'ready' | 'failed' | 'cancelled'> | null {
+  const initial = useAppStore.getState();
+  if (!signal.aborted && isCurrent() && !initial.isComputing && initial.requestedGeneration === initial.completedGeneration) return null;
+  return new Promise(resolve => {
+    let settled = false;
+    let unsubscribe: () => void = () => undefined;
+    const finish = (status: 'ready' | 'failed' | 'cancelled'): void => {
+      if (settled) return;
+      settled = true; unsubscribe(); signal.removeEventListener('abort', onAbort); resolve(status);
+    };
+    const onAbort = (): void => { finish('cancelled'); };
+    const check = (): void => {
+      if (signal.aborted || !isCurrent()) { finish('cancelled'); return; }
+      const state = useAppStore.getState();
+      if (state.isComputing || state.requestedGeneration !== state.completedGeneration) return;
+      if (state.lastOutcome === 'failed' || state.lastOutcome === 'cancelled') { finish('failed'); return; }
+      finish('ready');
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    unsubscribe = useAppStore.subscribe(check);
+    check();
+  });
+}
+
 export function FunctionPlotDialog({ featureId, onClose }: {
   readonly featureId?: string; readonly onClose: () => void;
 }): React.JSX.Element {
@@ -63,6 +88,12 @@ export function FunctionPlotDialog({ featureId, onClose }: {
       // resolve instead of the whole document looking like a syntax error. The "計算中" busy state above
       // already covers this wait; a still-pending measurement surfaces as evaluateFunctionPlotDraft's own
       // one-message failure (`math geometry pending`) rather than a per-field parser error.
+      const pending = waitForPreviewRecompute(abort.signal, current);
+      if (pending !== null) {
+        const ready = await pending;
+        if (!current() || ready === 'cancelled') return;
+        if (ready === 'failed') { setIssues(new Map([['form', t('functionPlot.previewFailed')]])); return; }
+      }
       const geometry = await waitForMathEditorGeometry(prepared, abort.signal, current, () => undefined);
       if (!current()) return;
       const result = await evaluateFunctionPlotDraft(prepared, owner.documentVersion, draft, client, abort.signal, current, geometry);

@@ -1,10 +1,9 @@
+import { isRecord as record } from './valueGuards.js';
 import type { SolidBucklingInput, SolidBucklingResult } from './solidBucklingModel.js';
 import { decodeSolidBuckling, SOLID_BUCKLING_METHOD } from './solidBucklingResults.js';
 import { SOLID_BUCKLING_MAX_MODES } from './solidBucklingTranslation.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function bound(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1e-8;
 }

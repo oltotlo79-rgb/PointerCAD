@@ -2,8 +2,8 @@ import {
   buildStandardPartFromSource, EMPTY_PART_LIBRARY, resolveAssembly, type AssemblyComponent, type AssemblyDocument, type PartLibrary,
 } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { childOwnedWeldFixture } from '../../../model/src/analysis/cadWeldLayerChildOwned.testSupport.js';
-import { testComponent, testPlacement } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { childOwnedWeldFixture } from '@pointercad/model/testing/ui-fixtures';
+import { testComponent, testPlacement } from '@pointercad/model/testing/analysis-fixtures';
 import { beamUiFixture } from '../beam/beam.testSupport.js';
 import { chooseAssemblyBuild } from '../shell/menus/assemblyToolActions.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';

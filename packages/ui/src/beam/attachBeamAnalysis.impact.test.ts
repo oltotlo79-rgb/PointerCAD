@@ -191,7 +191,8 @@ describe('impact analysis in the owned product lifecycle (protocol fixtures)', (
     port.onmessage?.(resultEvent(request, await impactResultFor(other)));
     await vi.waitFor(() => expect(requireBeamSession().status).toBe('failed'));
     const session = requireBeamSession();
-    expect([session.errorKey, session.result]).toEqual(['beam.error.runtime', null]);
+    expect(session.errorKey).toBe('beam.error.runtime');
+    expect(session.result).toBeNull();
     expect(session.diagnostic).toContain('invalid-protocol');
     expect(port.terminated).toBe(1);
   });

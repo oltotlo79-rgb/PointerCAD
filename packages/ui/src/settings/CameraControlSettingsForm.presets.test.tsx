@@ -1,6 +1,5 @@
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
@@ -11,9 +10,7 @@ beforeEach(resetTestStore);
 afterEach(resetTestStore);
 // Same static rendering as CameraControlSettingsForm.test.tsx (node environment, actual store snapshot).
 function renderForm(): string {
-  const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-  try { return renderToStaticMarkup(createElement(CameraControlSettingsForm)); }
-  finally { snapshot.mockRestore(); }
+  return renderCurrentStore(CameraControlSettingsForm);
 }
 
 describe('camera settings presets and named binding rows', () => {

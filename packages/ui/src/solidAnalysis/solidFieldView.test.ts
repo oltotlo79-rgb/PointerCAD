@@ -1,6 +1,6 @@
 import type { CadSolidOutcome } from '@pointercad/fem';
 import { describe, expect, it } from 'vitest';
-import { buildSolidFieldMesh, solidFieldFraction, solidFieldLegend, solidFieldValue, vonMisesMPa } from './solidFieldView.js';
+import { buildSolidFieldMesh, SOLID_FIELD_QUANTITIES, SOLID_STRAIN_QUANTITIES, solidFieldUnit, solidFieldFraction, solidFieldLegend, solidFieldValue, vonMisesMPa } from './solidFieldView.js';
 
 type SolidResult = Extract<CadSolidOutcome, { kind: 'result' }>;
 type Vector6 = readonly [number, number, number, number, number, number];
@@ -31,6 +31,49 @@ function outcome(stresses: readonly Vector6[], displacement: readonly Vector3[] 
 }
 
 describe('solid field view (display only)', () => {
+  it('copies all six engineering strains without stress substitution or a shear factor of two', () => {
+    // Independent typed row. Exact transfer is stricter than W64's <=1e-6 known-element agreement.
+    const strain: Vector6 = [0.001, -0.002, 0.003, -0.004, 0.005, -0.006];
+    const base = outcome([[100, 20, -30, 40, 50, -60], [-40, 0, 0, 0, 0, 20]]);
+    const one = { ...base, prepared: { ...base.prepared, input: { ...base.prepared.input,
+      elements: base.prepared.input.elements.slice(0, 1) } }, result: { ...base.result,
+      elements: [{ ...base.result.elements[0], strain }] } };
+    SOLID_STRAIN_QUANTITIES.forEach((quantity, index) => {
+      const field = buildSolidFieldMesh(one, quantity, 0);
+      expect(field?.elementValues).toEqual([strain[index]]);
+      expect(field?.triangleElements).toEqual([0, 0, 0, 0]);
+      expect(field?.legend).toEqual({ minimum: strain[index], maximum: strain[index], constant: true });
+      expect(solidFieldUnit(quantity)).toBe('dimensionless');
+      if (index >= 3) {
+        expect(field?.elementValues[0]).not.toBe(strain[index] / 2);
+        expect(field?.elementValues[0]).not.toBe(strain[index] * 2);
+      }
+    });
+    for (const quantity of SOLID_FIELD_QUANTITIES) {
+      expect(buildSolidFieldMesh(one, quantity, 0)?.elementValues).toEqual([solidFieldValue(base.result.elements[0].stressMPa, quantity)]);
+      expect(solidFieldUnit(quantity)).toBe('MPa');
+    }
+  });
+
+  it('keeps distinct element strains in the original order and rejects non-finite or stale results', () => {
+    const base = outcome([[1, 0, 0, 0, 0, 0], [2, 0, 0, 0, 0, 0]]);
+    const strains: readonly Vector6[] = [[0, 0, 0, -0.004, 0, 0], [0, 0, 0, 0.008, 0, 0]];
+    const result = { ...base, result: { ...base.result,
+      elements: base.result.elements.map((element, index) => ({ ...element, strain: strains[index] })) } };
+    const field = buildSolidFieldMesh(result, 'strainYz', 1);
+    expect(field?.elementValues).toEqual([-0.004, 0.008]);
+    expect(field?.triangleElements).toEqual(buildSolidFieldMesh(base, 'xx', 1)?.triangleElements);
+    for (const invalid of [NaN, Infinity, -Infinity]) {
+      const bad: Vector6 = [0, 0, 0, invalid, 0, 0];
+      expect(buildSolidFieldMesh({ ...result, result: { ...result.result,
+        elements: [{ ...result.result.elements[0], strain: bad }, result.result.elements[1]] } }, 'strainYz', 1)).toBeNull();
+    }
+    for (const source of [{ ...base.result.source, revision: 2 }, { ...base.result.source, meshKey: 'other' },
+      { ...base.result.source, documentId: 'other' }]) {
+      expect(buildSolidFieldMesh({ ...result, result: { ...result.result, source } }, 'strainYz', 1)).toBeNull();
+    }
+  });
+
   it('computes independently known von Mises and component values', () => {
     // Uniaxial 100 MPa: von Mises 100. Pure shear xy 10: sqrt(3)*10. Biaxial +50/-50: sqrt(7500).
     expect(vonMisesMPa([100, 0, 0, 0, 0, 0])).toBeCloseTo(100, 12);
@@ -74,7 +117,7 @@ describe('solid field view (display only)', () => {
     expect(field.triangleElements.filter(element => element === 1)).toHaveLength(3);
     expect(field.elementValues).toEqual([100, -40]);
     expect(field.positions).toHaveLength(6 * 9);
-    expect(field.legend).toEqual({ minimumMPa: -40, maximumMPa: 100, constant: false });
+    expect(field.legend).toEqual({ minimum: -40, maximum: 100, constant: false });
   });
 
   it('deforms positions by exactly scale times the node displacement', () => {
@@ -95,8 +138,8 @@ describe('solid field view (display only)', () => {
   });
 
   it('gives finite ordered bounds for zero, constant and negative components and refuses non-finite or mismatched data', () => {
-    expect(solidFieldLegend([0, 0])).toEqual({ minimumMPa: 0, maximumMPa: 0, constant: true });
-    expect(solidFieldLegend([-5, -2, -9])).toEqual({ minimumMPa: -9, maximumMPa: -2, constant: false });
+    expect(solidFieldLegend([0, 0])).toEqual({ minimum: 0, maximum: 0, constant: true });
+    expect(solidFieldLegend([-5, -2, -9])).toEqual({ minimum: -9, maximum: -2, constant: false });
     expect(solidFieldLegend([])).toBeNull();
     expect(solidFieldLegend([1, Number.NaN])).toBeNull();
     expect(buildSolidFieldMesh(outcome([[1, 0, 0, 0, 0, 0]]), 'xx', 1)).toBeNull(); // one stress for two elements

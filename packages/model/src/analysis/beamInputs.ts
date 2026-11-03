@@ -22,9 +22,11 @@ import { readFatigueStrainSavedConfiguration, type FatigueStrainSavedConfigurati
 import { readFatigueLocalCycleSavedInput, type FatigueLocalCycleSavedInput } from './fatigueLocalCycleInput.js';
 import { readSolidCadSavedInput, type SolidCadSavedInput } from './solidCadInput.js';
 import { readSolidPlasticCadSavedInput, type SolidPlasticCadSavedInput } from './solidPlasticCadInput.js';
+import { readSolidFiniteCadSavedInput, type SolidFiniteCadSavedInput } from './solidFiniteCadInput.js';
 import { readSolidModalCadSavedInput, type SolidModalCadSavedInput } from './solidModalCadInput.js';
 import { readSolidBucklingCadSavedInput, type SolidBucklingCadSavedInput } from './solidBucklingCadInput.js';
 import { readShellCadInput, type ShellCadSavedInput } from './shellCadInput.js';
+import { readShellCadAnalysisInput, type ShellCadAnalysisInput } from './shellCadAnalysisInput.js';
 import { readStandardBeamImpactSettings, type StandardBeamImpactSettings } from './beamImpactInput.js';
 
 export type { StandardBeamFibreOutline, StandardBeamFibreSection, StandardBeamImpactPlane, StandardBeamImpactSettings,
@@ -174,10 +176,12 @@ export type BeamAnalysisInput =
   | { readonly kind: 'fatigue-local-cycle'; readonly definition: FatigueLocalCycleSavedInput }
   | { readonly kind: 'solid-cad'; readonly definition: SolidCadSavedInput }
   | { readonly kind: 'solid-plastic-cad'; readonly definition: SolidPlasticCadSavedInput }
+  | { readonly kind: 'solid-finite-cad'; readonly definition: SolidFiniteCadSavedInput }
   /** Saved free-vibration input (at most one per document); never a mode, a shape or a display choice. */
   | { readonly kind: 'solid-modal-cad'; readonly definition: SolidModalCadSavedInput }
   /** Saved thin-sheet shell idealization (at most one per document): midsurface faces, thickness, offset; never a mesh. */
   | { readonly kind: 'shell-cad'; readonly definition: ShellCadSavedInput }
+  | { readonly kind: 'shell-cad-analysis'; readonly definition: ShellCadAnalysisInput }
   /** Saved linear prestress buckling input (at most one per document): count and static reference; never a factor. */
   | { readonly kind: 'solid-buckling-cad'; readonly definition: SolidBucklingCadSavedInput };
 
@@ -635,6 +639,9 @@ function readInput(value: unknown, path: string): BeamAnalysisInput {
   if (row.kind === 'solid-cad') {
     return { kind: 'solid-cad', definition: readSolidCadSavedInput(row.definition, `${path}.definition`) };
   }
+  if (row.kind === 'solid-finite-cad') {
+    return { kind: 'solid-finite-cad', definition: readSolidFiniteCadSavedInput(row.definition, `${path}.definition`) };
+  }
   if (row.kind === 'solid-plastic-cad') {
     return { kind: 'solid-plastic-cad', definition: readSolidPlasticCadSavedInput(row.definition, `${path}.definition`) };
   }
@@ -643,6 +650,9 @@ function readInput(value: unknown, path: string): BeamAnalysisInput {
   }
   if (row.kind === 'solid-buckling-cad') {
     return { kind: 'solid-buckling-cad', definition: readSolidBucklingCadSavedInput(row.definition, `${path}.definition`) };
+  }
+  if (row.kind === 'shell-cad-analysis') {
+    return { kind: 'shell-cad-analysis', definition: readShellCadAnalysisInput(row.definition, `${path}.definition`) };
   }
   if (row.kind === 'shell-cad') {
     return { kind: 'shell-cad', definition: readShellCadInput(row.definition, `${path}.definition`) };
@@ -700,6 +710,9 @@ export function readBeamAnalysisInputs(value: unknown, ownerId: string): BeamInp
     if (analyses.filter(input => input.kind === 'solid-cad').length > 1) {
       throw new InputIssue('duplicate-id', 'analyses', 'At most one solid CAD configuration per document');
     }
+    if (analyses.filter(input => input.kind === 'solid-finite-cad').length > 1) {
+      throw new InputIssue('duplicate-id', 'analyses', 'At most one finite solid configuration per document');
+    }
     if (analyses.filter(input => input.kind === 'solid-plastic-cad').length > 1) {
       throw new InputIssue('duplicate-id', 'analyses', 'At most one solid plasticity configuration per document');
     }
@@ -708,6 +721,9 @@ export function readBeamAnalysisInputs(value: unknown, ownerId: string): BeamInp
     }
     if (analyses.filter(input => input.kind === 'solid-buckling-cad').length > 1) {
       throw new InputIssue('duplicate-id', 'analyses', 'At most one solid buckling configuration per document');
+    }
+    if (analyses.filter(input => input.kind === 'shell-cad-analysis').length > 1) {
+      throw new InputIssue('duplicate-id', 'analyses', 'At most one shell CAD analysis per document');
     }
     if (analyses.filter(input => input.kind === 'shell-cad').length > 1) {
       throw new InputIssue('duplicate-id', 'analyses', 'At most one shell CAD configuration per document');

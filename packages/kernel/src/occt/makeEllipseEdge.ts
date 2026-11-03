@@ -2,6 +2,7 @@ import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.j
 
 import type { Vec3Tuple } from '../types.js';
 import type { OcctEdgeHandle } from './makeSketchEdges.js';
+import { createAllocations } from './allocations.js';
 
 /**
  * 楕円・楕円弧の位置と大きさ(FR-318)。
@@ -65,39 +66,26 @@ export function makeEllipseEdge(oc: OpenCascadeInstance, spec: EllipseSpec): Occ
     );
   }
 
-  const center = new oc.gp_Pnt_3(spec.center[0], spec.center[1], spec.center[2]);
-  const normal = new oc.gp_Dir_4(spec.normal[0], spec.normal[1], spec.normal[2]);
-  const majorAxis = new oc.gp_Dir_4(spec.majorAxis[0], spec.majorAxis[1], spec.majorAxis[2]);
-  const axis = new oc.gp_Ax2_2(center, normal, majorAxis);
-  const elips = new oc.gp_Elips_2(axis, spec.majorRadius, spec.minorRadius);
-
-  // TypeScript の絞り込みは条件式そのものに掛かるため、真偽値へ一度受けずに
-  // 三項演算子の条件へ直接書く(受けると startAngle/endAngle が number | undefined のまま残る)。
-  const maker =
-    spec.startAngle !== undefined && spec.endAngle !== undefined
+  const owned = createAllocations();
+  const { keep, release } = owned;
+  try {
+    const center = keep(new oc.gp_Pnt_3(spec.center[0], spec.center[1], spec.center[2]));
+    const normal = keep(new oc.gp_Dir_4(spec.normal[0], spec.normal[1], spec.normal[2]));
+    const majorAxis = keep(new oc.gp_Dir_4(spec.majorAxis[0], spec.majorAxis[1], spec.majorAxis[2]));
+    const axis = keep(new oc.gp_Ax2_2(center, normal, majorAxis));
+    const elips = keep(new oc.gp_Elips_2(axis, spec.majorRadius, spec.minorRadius));
+    const maker = keep(spec.startAngle !== undefined && spec.endAngle !== undefined
       ? new oc.BRepBuilderAPI_MakeEdge_13(elips, Math.min(spec.startAngle, spec.endAngle), Math.max(spec.startAngle, spec.endAngle))
-      : new oc.BRepBuilderAPI_MakeEdge_12(elips);
-
-  const cleanup = (): void => {
-    maker.delete();
-    elips.delete();
-    axis.delete();
-    majorAxis.delete();
-    normal.delete();
-    center.delete();
-  };
-
-  if (!maker.IsDone()) {
-    cleanup();
-    throw new Error('楕円の稜線を作れませんでした。半径か角度を確かめてください。');
+      : new oc.BRepBuilderAPI_MakeEdge_12(elips));
+    if (!maker.IsDone()) {
+      throw new Error('楕円の稜線を作れませんでした。半径か角度を確かめてください。');
+    }
+    // Edge and all construction wrappers stay owned until the returned handle is released.
+    const edge = keep(maker.Edge());
+    if (spec.startAngle !== undefined && spec.endAngle !== undefined && spec.endAngle < spec.startAngle) edge.Reverse();
+    return { edge, delete: release };
+  } catch (error) {
+    release();
+    throw error;
   }
-  const edge = maker.Edge();
-  if (spec.startAngle !== undefined && spec.endAngle !== undefined && spec.endAngle < spec.startAngle) edge.Reverse();
-  return {
-    edge,
-    delete(): void {
-      edge.delete();
-      cleanup();
-    },
-  };
 }

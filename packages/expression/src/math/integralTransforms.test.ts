@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -45,8 +46,7 @@ function native(args: readonly string[], input?: string): string {
   return result.stdout;
 }
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'degree', coefficients: [],
-    identity: { documentId: 'transforms', documentVersion: 2, editorId: 'X', inputRevision: 3 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'degree', identity: { documentId: 'transforms', documentVersion: 2, editorId: 'X', inputRevision: 3 } });
 }
 beforeAll(() => {
   backend = createMathBackend();

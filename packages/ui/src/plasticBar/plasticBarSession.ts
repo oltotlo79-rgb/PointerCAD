@@ -2,19 +2,27 @@ import { PLASTIC_BAR_INPUT_SCHEMA, PLASTIC_BAR_LIMITS, PLASTIC_BAR_PLAN_SCHEMA, 
   type PlasticBarInput, type PlasticBarResult } from '@pointercad/fem';
 import { exactExpressionValueFromNumber } from '@pointercad/expression';
 import type { Parameter } from '@pointercad/model';
-import { PLASTIC_BAR_SAVED_ID, PLASTIC_BAR_SAVED_SCHEMA, plasticBarSiValues,
+import { PLASTIC_BAR_SAVED_ID, PLASTIC_BAR_SAVED_SCHEMA, plasticBarSiValues, sameAnalysisPropertyEvidence,
   type BeamAnalysisInputs, type PlasticBarSavedInput } from '@pointercad/model/beam-analysis';
 import type { MessageKey } from '../i18n/t.js';
 import { readPlasticBarField, type PlasticBarFieldName } from '../beam/beamFields.js';
 
 /** Scalar inputs; every material value starts empty so that nothing is assumed for a steel grade. */
 export type PlasticBarScalarField = Exclude<PlasticBarFieldName, 'knot'>;
+type HardeningEvidence = NonNullable<PlasticBarSavedInput['hardeningEvidence']>;
+type RestoredMaterial = Pick<PlasticBarSavedInput,
+  'youngModulusMPa' | 'poisson' | 'yieldStressMPa' | 'hardeningModulusMPa'> & {
+  readonly reference: string;
+  readonly evidence: HardeningEvidence;
+};
 export interface PlasticBarDraft {
   readonly values: Readonly<Record<PlasticBarScalarField, string>>;
   /** End displacements after the fixed first knot 0 (mm), in order. */
   readonly knots: readonly string[];
   /** The user's own statement of where the material values come from (required). */
   readonly reference: string;
+  /** Loaded evidence is bound to these exact material values, never inferred from a grade or free-text reference. */
+  readonly restoredMaterial?: RestoredMaterial | null;
 }
 export type PlasticBarStatus = 'editing' | 'running' | 'complete' | 'failed' | 'cancelled';
 export interface PlasticBarSession {
@@ -67,6 +75,10 @@ export function editPlasticBarSession(session: PlasticBarSession, edit: PlasticB
     }
     next = { ...draft, knots: draft.knots.filter((_, index) => index !== edit.index) };
   }
+  // Changing material expression text also invalidates evidence: later parameter edits must not revive a citation.
+  if ((edit.kind === 'reference' && edit.source !== draft.reference)
+    || (edit.kind === 'value' && ['young', 'poisson', 'yieldStress', 'hardening'].includes(edit.field)
+      && edit.source !== draft.values[edit.field])) next = { ...next, restoredMaterial: null };
   return { ...session, draft: next, revision: session.revision + 1, status: 'editing', phase: null, result: null,
     errorKey: null, diagnostic: null };
 }
@@ -74,7 +86,7 @@ export function editPlasticBarSession(session: PlasticBarSession, edit: PlasticB
 export type PlasticBarDraftCheck = { readonly ok: true; readonly input: PlasticBarInput }
   | { readonly ok: false; readonly key: MessageKey; readonly field: string | null; readonly diagnostic: string | null };
 
-type DraftNumbers = Omit<PlasticBarSavedInput, 'schema' | 'id' | 'source' | 'units' | 'materialSource'>;
+type DraftNumbers = Omit<PlasticBarSavedInput, 'schema' | 'id' | 'source' | 'units' | 'materialSource' | 'hardeningEvidence'>;
 type DraftNumbersCheck = { readonly ok: true; readonly numbers: DraftNumbers }
   | { readonly ok: false; readonly key: MessageKey; readonly field: string | null; readonly diagnostic: string | null };
 
@@ -131,8 +143,14 @@ export function plasticBarSavedInput(session: PlasticBarSession, parameters: rea
   if (!runnable.ok) return runnable;
   const draft = draftNumbers(session, parameters);
   if (!draft.ok) return draft;
+  const material = session.draft.restoredMaterial;
+  const evidence = material != null && material.reference === session.draft.reference
+    && material.youngModulusMPa === draft.numbers.youngModulusMPa && material.poisson === draft.numbers.poisson
+    && material.yieldStressMPa === draft.numbers.yieldStressMPa
+    && material.hardeningModulusMPa === draft.numbers.hardeningModulusMPa ? material.evidence : undefined;
   return { ok: true, saved: { schema: PLASTIC_BAR_SAVED_SCHEMA, id: PLASTIC_BAR_SAVED_ID, source: { documentId },
-    units: 'N-mm', ...draft.numbers, materialSource: { kind: 'user-supplied', reference: session.draft.reference } } };
+    units: 'N-mm', ...draft.numbers, materialSource: { kind: 'user-supplied', reference: session.draft.reference },
+    ...(evidence === undefined ? {} : { hardeningEvidence: structuredClone(evidence) }) } };
 }
 
 /** Restores a saved configuration into the panel. Values are written with the exact (non-exponent) number form, so
@@ -143,7 +161,12 @@ export function restorePlasticBarSession(ownerId: string, saved: PlasticBarSaved
     values: { length: exact(saved.lengthMm), area: exact(saved.areaMm2), young: exact(saved.youngModulusMPa),
       poisson: exact(saved.poisson), yieldStress: exact(saved.yieldStressMPa), hardening: exact(saved.hardeningModulusMPa),
       stepsPerSegment: exact(saved.stepsPerSegment) },
-    knots: saved.endDisplacementMm.slice(1).map(exact), reference: saved.materialSource.reference } };
+    knots: saved.endDisplacementMm.slice(1).map(exact), reference: saved.materialSource.reference,
+    ...(saved.hardeningEvidence === undefined ? {} : { restoredMaterial: {
+      youngModulusMPa: saved.youngModulusMPa, poisson: saved.poisson, yieldStressMPa: saved.yieldStressMPa,
+      hardeningModulusMPa: saved.hardeningModulusMPa, reference: saved.materialSource.reference,
+      evidence: structuredClone(saved.hardeningEvidence),
+    } }) } };
 }
 
 /** The saved configuration of a document, or null (old documents and documents without one). The attachment was
@@ -166,6 +189,7 @@ export function samePlasticBarSavedInput(left: PlasticBarSavedInput, right: Plas
     && left.yieldStressMPa === right.yieldStressMPa && left.hardeningModulusMPa === right.hardeningModulusMPa
     && left.materialSource.kind === right.materialSource.kind
     && left.materialSource.reference === right.materialSource.reference
+    && sameAnalysisPropertyEvidence(left.hardeningEvidence, right.hardeningEvidence)
     && left.stepsPerSegment === right.stepsPerSegment
     && left.endDisplacementMm.length === right.endDisplacementMm.length
     && left.endDisplacementMm.every((knot, index) => knot === right.endDisplacementMm[index]);

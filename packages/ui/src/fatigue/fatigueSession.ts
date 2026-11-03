@@ -8,7 +8,7 @@ import { axialFatigueHistory, FATIGUE_GOODMAN_SCHEMA, FATIGUE_INPUT_SCHEMA, MAX_
   type FatigueTensorConversion, type FatigueTensorErrorCode } from '@pointercad/fem';
 import { exactExpressionValueFromNumber } from '@pointercad/expression';
 import type { Parameter } from '@pointercad/model';
-import { FATIGUE_SAVED_GOODMAN_SCHEMA, FATIGUE_SAVED_ID, FATIGUE_SAVED_SCHEMA, type BeamAnalysisInputs, type FatigueSavedAxialSource,
+import { sameAnalysisPropertyEvidence, FATIGUE_SAVED_GOODMAN_SCHEMA, FATIGUE_SAVED_ID, FATIGUE_SAVED_SCHEMA, type BeamAnalysisInputs, type FatigueSavedAxialSource,
   type FatigueSavedInput, FATIGUE_SAVED_TENSOR_SCHEMA, type FatigueSavedTensorProblem,
   type FatigueTensorSavedInput } from '@pointercad/model/beam-analysis';
 import type { FatiguePiecewiseResult } from '@pointercad/fem';
@@ -126,6 +126,9 @@ export interface FatigueDraft {
 }
 export interface FatigueSession {
   readonly ownerId: string;
+  /** Evidence is tied to the restored authored curve, never inferred from a material name. */
+  readonly curveEvidence?: { readonly curve: FatigueInput['curve'];
+    readonly evidence: NonNullable<FatigueSavedInput['curveEvidence']> } | null;
   /** Increases on every input edit. */
   readonly revision: number;
   readonly draft: FatigueDraft;
@@ -304,13 +307,18 @@ export function editFatigueSession(session: FatigueSession, edit: FatigueEdit): 
   }
   const draft = nextDraft(session.draft, edit);
   if (draft === null) return session;
+  const curveChanged = (edit.kind === 'value' && session.draft.values[edit.field] !== edit.source)
+    || (edit.kind === 'stress-definition' && session.draft.stressDefinition !== edit.value)
+    || (edit.kind === 'mean-assumption' && session.draft.meanStressAssumption !== edit.value)
+    || (edit.kind === 'cutoff-mode' && session.draft.cutoffMode !== edit.value)
+    || (edit.kind === 'curve-source' && session.draft.curveSource[edit.field] !== edit.source);
   const added = draft.histories.length - 1;
   // The joint mode's force quantities keep their N lists in their own field (never the MPa stress list).
   const forceField = draft.inputMode === 'detail' && draft.detail !== undefined && draft.detail.quantity !== ''
     && draft.detail.quantity !== 'detail-stress';
   const focusedField = edit.kind !== 'history-add' ? session.focusedField
     : draft.inputMode === 'proportional-tensor' ? `tensor:${added}:xx` : forceField ? `history:${added}:force` : `history:${added}:stress`;
-  return { ...session, draft, focusedField, revision: session.revision + 1, analyzed: null, piecewiseAnalyzed: null, solidAnalyzed: null,
+  return { ...session, ...(curveChanged ? { curveEvidence: null } : {}), draft, focusedField, revision: session.revision + 1, analyzed: null, piecewiseAnalyzed: null, solidAnalyzed: null,
     detailAnalyzed: null, errorKey: null, diagnostic: null };
 }
 
@@ -637,6 +645,13 @@ export function currentFatigueResult(session: FatigueSession, parameters: readon
 
 export type FatigueSavedCheck = { readonly ok: true; readonly saved: FatigueSavedInput }
   | { readonly ok: false; readonly key: MessageKey; readonly field: string | null; readonly diagnostic: string | null };
+function sameEvidenceCurve(left: FatigueInput['curve'], right: FatigueInput['curve']): boolean {
+  return left.unit === right.unit && left.stressDefinition === right.stressDefinition
+    && left.meanStressAssumption === right.meanStressAssumption && left.referenceStressMpa === right.referenceStressMpa
+    && left.referenceCycles === right.referenceCycles && left.slope === right.slope && left.cutoffStressMpa === right.cutoffStressMpa
+    && left.source.kind === right.source.kind && left.source.reference === right.source.reference
+    && left.source.condition === right.source.condition;
+}
 /** The configuration to save in the document `documentId`. Only a complete, valid input is saved (never a result). */
 export function fatigueSavedInput(session: FatigueSession, parameters: readonly Parameter[], documentId: string): FatigueSavedCheck {
   // Versions 1 to 3 hold one-direction stress histories only; a tensor draft is saved by fatigueSavedEntry as version 4.
@@ -645,7 +660,10 @@ export function fatigueSavedInput(session: FatigueSession, parameters: readonly 
   if (!checked.ok) return checked;
   const correction = fatigueCorrection(session, parameters);
   if (!correction.ok) return correction;
-  const base = { id: FATIGUE_SAVED_ID, source: { documentId }, input: checked.input, axial: axialSources(session.draft) };
+  const retained = session.curveEvidence;
+  const base = { id: FATIGUE_SAVED_ID, source: { documentId }, input: checked.input, axial: axialSources(session.draft),
+    ...(retained != null && sameEvidenceCurve(retained.curve, checked.input.curve)
+      ? { curveEvidence: structuredClone(retained.evidence) } : {}) };
   return correction.correction === null ? { ok: true, saved: { ...base, id: FATIGUE_SAVED_ID, schema: FATIGUE_SAVED_SCHEMA } }
     : { ok: true, saved: { ...base, id: FATIGUE_SAVED_ID, schema: FATIGUE_SAVED_GOODMAN_SCHEMA, correction: correction.correction } };
 }
@@ -717,7 +735,9 @@ export function restoreFatigueSession(ownerId: string, saved: FatigueSavedInput)
   const imported = new Map(saved.axial.map(source => [source.historyId, source.provenance]));
   let next = histories.length + 1;
   while (histories.some(history => history.id === `history-${next}`)) next += 1;
-  return { ...createFatigueSession(ownerId), draft: {
+  return { ...createFatigueSession(ownerId),
+    ...(saved.curveEvidence === undefined ? {} : { curveEvidence: { curve: structuredClone(curve), evidence: structuredClone(saved.curveEvidence) } }),
+    draft: {
     correction: saved.schema === FATIGUE_SAVED_GOODMAN_SCHEMA ? { mode: 'goodman', elasticSymmetricYield: true,
       values: { ultimateTensileStrengthMpa: exact(saved.correction.ultimateTensileStrengthMpa),
         yieldStrengthMpa: exact(saved.correction.yieldStrengthMpa), minimumCycles: exact(saved.correction.minimumCycles) },
@@ -748,7 +768,9 @@ export function fatigueDraftIsSaved(session: FatigueSession, parameters: readonl
   if (saved === null || session.draft.inputMode !== 'stress') return false;
   const current = fatigueInput(session, parameters);
   const correction = fatigueCorrection(session, parameters);
+  const rebuilt = fatigueSavedInput(session, parameters, saved.source.documentId);
   return current.ok && correction.ok && sameFatigueInput(current.input, saved.input)
+    && rebuilt.ok && sameAnalysisPropertyEvidence(rebuilt.saved.curveEvidence, saved.curveEvidence)
     && sameFatigueCorrection(correction.correction, saved.schema === FATIGUE_SAVED_GOODMAN_SCHEMA ? saved.correction : null)
     && sameAxialSources(axialSources(session.draft), saved.axial);
 }

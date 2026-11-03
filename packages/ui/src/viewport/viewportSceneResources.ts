@@ -409,22 +409,47 @@ export interface AssemblyOwner {
   readonly admission: AssemblyMeshAdmission | null;
 }
 
+/** 持ち主が古いと判定した最初の比較の名前(診断用。値や文書は持たない)。 */
+export type AssemblyOwnerStaleReason = 'disposed' | 'mesh-layout' | 'no-state' | 'no-reader' | 'admission'
+  | 'activeDocumentId' | 'assembly' | 'assemblyView' | 'drawing' | 'cancelRequestCount' | 'recomputeCancelled'
+  | 'requestedGeneration' | 'completedGeneration' | 'lastOutcome' | 'documentVersion' | 'assemblyLibrary'
+  | 'view-source' | 'part-bodies';
+
+/**
+ * 持ち主が古い理由。いまのままなら null。判定の順と内容は isAssemblyOwnerCurrent と同じ
+ * (isAssemblyOwnerCurrent はこの関数が null を返すことと同値)。
+ */
+export function assemblyOwnerStaleReason(owner: AssemblyOwner, disposed: boolean,
+  options: ViewportSceneOptions): AssemblyOwnerStaleReason | null {
+  if (disposed) return 'disposed';
+  if (owner.meshes.some(mesh => !meshLayoutsUnchanged(mesh, mesh.bodies))) return 'mesh-layout';
+  const before = owner.state;
+  if (before === null) return options.readSolidMeshState === undefined ? null : 'no-state';
+  const now = options.readSolidMeshState?.();
+  if (owner.admission !== null && (now === undefined || !currentAssemblyMeshAdmission(owner.admission, now))) return 'admission';
+  if (now === undefined) return 'no-reader';
+  if (now.activeDocumentId !== before.activeDocumentId) return 'activeDocumentId';
+  if (now.assembly !== before.assembly) return 'assembly';
+  if (now.assemblyView !== before.assemblyView) return 'assemblyView';
+  if (now.drawing !== before.drawing) return 'drawing';
+  if (now.cancelRequestCount !== before.cancelRequestCount) return 'cancelRequestCount';
+  if (now.recomputeCancelled !== before.recomputeCancelled) return 'recomputeCancelled';
+  // attachAssembly owns these shared counters only while the active document is an assembly.
+  if (before.assembly !== null) {
+    if (now.requestedGeneration !== before.requestedGeneration) return 'requestedGeneration';
+    if (now.completedGeneration !== before.completedGeneration) return 'completedGeneration';
+    if (now.lastOutcome !== before.lastOutcome) return 'lastOutcome';
+    if (now.documentVersion !== before.documentVersion) return 'documentVersion';
+    if (now.assemblyLibrary !== before.assemblyLibrary) return 'assemblyLibrary';
+  }
+  if (owner.bundle.parts.length === 0) return null;
+  if (now.assemblyView?.sourceDocument !== now.assembly) return 'view-source';
+  return owner.bundle.parts.every(part => now.assemblyView?.bodies.get(part.partKey) === part.bodies) ? null : 'part-bodies';
+}
+
 /** 持ち主がいまの文書・表示・計算の世代のままか。破棄した Scene の持ち主は常に古い。 */
 export function isAssemblyOwnerCurrent(owner: AssemblyOwner, disposed: boolean, options: ViewportSceneOptions): boolean {
-  if (disposed || owner.meshes.some(mesh => !meshLayoutsUnchanged(mesh, mesh.bodies))) return false;
-  const before = owner.state;
-  if (before === null) return options.readSolidMeshState === undefined;
-  const now = options.readSolidMeshState?.();
-  if (owner.admission !== null && (now === undefined || !currentAssemblyMeshAdmission(owner.admission, now))) return false;
-  if (now === undefined || now.activeDocumentId !== before.activeDocumentId || now.assembly !== before.assembly
-    || now.assemblyView !== before.assemblyView || now.drawing !== before.drawing
-    || now.cancelRequestCount !== before.cancelRequestCount || now.recomputeCancelled !== before.recomputeCancelled) return false;
-  // attachAssembly owns these shared counters only while the active document is an assembly.
-  if (before.assembly !== null && (now.requestedGeneration !== before.requestedGeneration
-    || now.completedGeneration !== before.completedGeneration || now.lastOutcome !== before.lastOutcome
-    || now.documentVersion !== before.documentVersion || now.assemblyLibrary !== before.assemblyLibrary)) return false;
-  return owner.bundle.parts.length === 0 || (now.assemblyView?.sourceDocument === now.assembly
-    && owner.bundle.parts.every(part => now.assemblyView?.bodies.get(part.partKey) === part.bodies));
+  return assemblyOwnerStaleReason(owner, disposed, options) === null;
 }
 
 /** 一式ごとに持ち主を 1 つだけ作る(同じ一式を渡し直したときは、いまのままなら同じ持ち主)。 */

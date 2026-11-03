@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { beamWeldSpanContactInputSha256, decodeBeamWeldSpanContact, recoverBeamWeldSpanStress,
   type BeamWeldSpanContactInput, type BeamWeldSpanStressResult } from '@pointercad/fem';
-import { modalFixture } from '../../../fem/src/modal.testSupport.js';
+import { modalFixture } from '@pointercad/fem/testing/ui-fixtures';
 import { t } from '../i18n/t.js';
 import { WeldSpanResultTable } from './BeamWeldSpanResults.js';
 import { currentWeldSpanStress, startWeldSpanStressRecovery, WeldSpanStressTable, WeldSpanStressView } from './BeamWeldSpanStressResults.js';

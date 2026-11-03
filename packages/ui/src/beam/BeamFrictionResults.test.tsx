@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { BeamFrictionContactInput, FrictionContactResult } from '@pointercad/fem';
-import { modalFixture } from '../../../fem/src/modal.testSupport.js';
+import { modalFixture } from '@pointercad/fem/testing/ui-fixtures';
 import { t } from '../i18n/t.js';
 import { BeamFrictionResults } from './BeamFrictionResults.js';
 

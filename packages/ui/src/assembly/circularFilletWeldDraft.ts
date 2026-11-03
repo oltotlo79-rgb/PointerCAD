@@ -43,31 +43,31 @@ function numbers(source: string): readonly number[] | null {
   const rows = source.split(/[,、]/u).map(number);
   return rows.every((v): v is number => v !== null) ? rows : null;
 }
-export function createCircularFilletWeldDraft(document: AssemblyDocument, weldId: string, draftEpoch: string): CircularFilletWeldDraft {
+export function createCircularFilletWeldDraft(document: AssemblyDocument, weldId: string, draftGeneration: string): CircularFilletWeldDraft {
   return freezeDraft({ documentId: document.id, sourceDocument: document, documentStamp: JSON.stringify(document),
-    operation: 'create', weldId, draftEpoch, picks: [], mode: 'continuous', start: '0', lengths: '', gaps: '',
+    operation: 'create', weldId, draftEpoch: draftGeneration, picks: [], mode: 'continuous', start: '0', lengths: '', gaps: '',
     radialLeg: '', normalLeg: '', radialDirection: null, normalDirection: null, materialId: '', beadIds: [], savedSources: [] });
 }
 /** Only an actual change consumes a fresh caller-issued epoch. */
-export function editCircularFilletWeldDraft(draft: CircularFilletWeldDraft, fields: CircularDraftFields, nextEpoch: string): CircularFilletWeldDraft | null {
+export function editCircularFilletWeldDraft(draft: CircularFilletWeldDraft, fields: CircularDraftFields, nextGeneration: string): CircularFilletWeldDraft | null {
   const next = { ...draft, ...fields };
   if (Object.entries(fields).every(([key, value]) => Reflect.get(draft, key) === value)) return draft;
-  if (!nextEpoch.trim() || nextEpoch === draft.draftEpoch) return null;
-  return freezeDraft({ ...next, draftEpoch: nextEpoch });
+  if (!nextGeneration.trim() || nextGeneration === draft.draftEpoch) return null;
+  return freezeDraft({ ...next, draftEpoch: nextGeneration });
 }
 export function circularFilletWeldPickKind(draft: CircularFilletWeldDraft): 'plane' | 'edge' | 'cylinder' | null {
   return (['plane', 'edge', 'cylinder'] as const)[draft.picks.length] ?? null;
 }
-export function appendCircularFilletWeldPick(draft: CircularFilletWeldDraft, pick: CircularDraftPick, nextEpoch: string): CircularFilletWeldDraft | null {
+export function appendCircularFilletWeldPick(draft: CircularFilletWeldDraft, pick: CircularDraftPick, nextGeneration: string): CircularFilletWeldDraft | null {
   const kind = circularFilletWeldPickKind(draft), f = pick.reference.fingerprint;
-  if (kind === null || !pick.path.length || !nextEpoch.trim() || nextEpoch === draft.draftEpoch
+  if (kind === null || !pick.path.length || !nextGeneration.trim() || nextGeneration === draft.draftEpoch
     || (kind === 'edge' ? f.kind !== 'edge' || f.curveKind !== 'circle' : f.kind !== 'face' || f.surfaceKind !== kind)) return null;
   if (kind === 'cylinder' && draft.picks[0] !== undefined && same(draft.picks[0].path, pick.path)) return null;
-  return freezeDraft({ ...draft, picks: [...draft.picks, structuredClone(pick)], draftEpoch: nextEpoch });
+  return freezeDraft({ ...draft, picks: [...draft.picks, structuredClone(pick)], draftEpoch: nextGeneration });
 }
 
 /** Restores all original beads and provenance for editing; picks are deliberately empty. */
-export function restoreCircularFilletWeldDraft(document: AssemblyDocument, weldId: string, draftEpoch: string): CircularFilletWeldDraft | null {
+export function restoreCircularFilletWeldDraft(document: AssemblyDocument, weldId: string, draftGeneration: string): CircularFilletWeldDraft | null {
   if (document.components.some(component => component.source.kind === 'standardPart'
     && component.source.options.weldCircular !== undefined && readCircularFilletWeldSource(component.source) === null)) return null;
   const rows = document.components.flatMap(component => {
@@ -76,7 +76,7 @@ export function restoreCircularFilletWeldDraft(document: AssemblyDocument, weldI
     return saved?.options.weldId === weldId ? [{ component, saved, source: structuredClone(component.source) }] : [];
   });
   const first = rows[0];
-  if (!first || !draftEpoch.trim()) return null;
+  if (!first || !draftGeneration.trim()) return null;
   const path = first.saved.options.path, intervals = path.intervals, e = path.evidence;
   if (rows.length !== intervals.length || rows.length > 64 || new Set(rows.map(r => r.saved.options.beadId)).size !== rows.length
     || rows.some(r => JSON.stringify(r.saved.options.path) !== JSON.stringify(path)
@@ -89,7 +89,7 @@ export function restoreCircularFilletWeldDraft(document: AssemblyDocument, weldI
   const start = e.orientation * (intervals[0].fromParameter - base) * e.radiusMm;
   const lengths = intervals.map(i => e.orientation * (i.toParameter - i.fromParameter) * e.radiusMm);
   const gaps = intervals.slice(1).map((i, index) => e.orientation * (i.fromParameter - intervals[index].toParameter) * e.radiusMm);
-  return freezeDraft({ ...createCircularFilletWeldDraft(document, weldId, draftEpoch), operation: 'replace',
+  return freezeDraft({ ...createCircularFilletWeldDraft(document, weldId, draftGeneration), operation: 'replace',
     mode: intervals.length === 1 ? 'continuous' : 'intermittent', start: text(start), lengths: lengths.map(text).join(', '),
     gaps: gaps.map(text).join(', '), radialLeg: text(first.saved.section.radialLegMm), normalLeg: text(first.saved.section.normalLegMm),
     radialDirection: first.saved.section.radialDirection, normalDirection: first.saved.section.normalDirection,

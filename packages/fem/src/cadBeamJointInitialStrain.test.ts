@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cadJointContactFixture } from '../../model/src/analysis/cadJointContact.testSupport.js';
+import { cadJointContactFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { prepareCadBeamJointInitialStrain } from './cadBeamJointInitialStrain.js';
 import { prepareCadBeamJointContact } from './cadBeamJointContact.js';
 import { prepareCadBeamBoltContact } from './cadBeamBoltContact.js';

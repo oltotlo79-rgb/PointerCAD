@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { SegmentSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { expectPointClose } from './pointAssertions.testSupport.js';
 import { createAllocations } from './allocations.js';
 import { readLegacyOcctFixture, legacyOcctFixtures } from './legacyOcctFixtureLoader.js';
 import {
@@ -26,13 +27,6 @@ const XY_PLANE: SketchFilletPlaneSpec = {
 
 function segment(from: Vec3Tuple, to: Vec3Tuple): SegmentSpec {
   return { kind: 'segment', from, to };
-}
-
-/** 座標がほぼ一致すること。digits は toBeCloseTo と同じ「小数第 n 位まで」。 */
-function expectPointClose(actual: Vec3Tuple, expected: Vec3Tuple, digits: number): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
 }
 
 /** 返ってきた円弧の、指定した角度の位置。model の arcPointAt と同じ式。 */

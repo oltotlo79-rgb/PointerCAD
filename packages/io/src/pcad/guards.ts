@@ -26,6 +26,16 @@ export interface FieldProblem {
   readonly reason: FieldReason;
 }
 
+/** 部品とアセンブリの欄の不備を、同じコードと場所つきの日本語にする。 */
+export function fieldFailure(problem: FieldProblem): {
+  readonly ok: false;
+  readonly error: { readonly code: 'missingField' | 'invalidField'; readonly message: string };
+} {
+  return problem.reason === 'missing'
+    ? { ok: false, error: { code: 'missingField', message: `ファイルの中身が壊れています(${problem.path} が見つかりません)。` } }
+    : { ok: false, error: { code: 'invalidField', message: `ファイルの中身が壊れています(${problem.path} の形が違います)。` } };
+}
+
 /** 検査の結果。成功なら絞り込めた値、失敗なら場所つきの理由。 */
 export type Checked<T> =
   | { readonly ok: true; readonly value: T }
@@ -44,6 +54,11 @@ export function indexPath(parentPath: string, index: number): string {
 /** 失敗を作る。どの `Checked<T>` としても返せる。 */
 export function fieldProblem(path: string, reason: FieldReason): Checked<never> {
   return { ok: false, problem: { path, reason } };
+}
+
+/** A finite primitive number; no coercion and no range restriction. */
+export function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 /** JSON のオブジェクト(配列でも null でもないもの)か。 */
@@ -100,7 +115,7 @@ export function readNumber(
   if (!found.ok) {
     return found;
   }
-  if (typeof found.value !== 'number' || !Number.isFinite(found.value)) {
+  if (!isFiniteNumber(found.value)) {
     return fieldProblem(joinPath(parentPath, key), 'type');
   }
   return { ok: true, value: found.value };
@@ -288,7 +303,7 @@ export function readOptionalNumber(
   if (found.value === null) {
     return { ok: true, value: null };
   }
-  if (typeof found.value !== 'number' || !Number.isFinite(found.value)) {
+  if (!isFiniteNumber(found.value)) {
     return fieldProblem(joinPath(parentPath, key), 'type');
   }
   return { ok: true, value: found.value };

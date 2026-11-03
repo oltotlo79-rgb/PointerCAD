@@ -1,7 +1,7 @@
 import { createFunctionMathSource, createMathBackend, executeFunctionCurveWorkRequest,
   executeMathWorkRequest } from '@pointercad/expression/math/worker';
 import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expression/math/contracts';
-import { createInspectableNativeKernelForNodeTests, createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { createInspectableNativeKernelForNodeTests, createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { parseDocument, readPcadFile, serializeDocument, writePcadFile } from '@pointercad/io';
 import {

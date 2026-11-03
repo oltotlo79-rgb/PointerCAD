@@ -186,6 +186,51 @@ it('preserves real open-profile identity across kernel/model/drawing without a c
   expect('faceFeatureId' in kernelSurface.identity.profile).toBe(false);
 });
 
+const planarCanonicals = [
+  { version: 1, shapeKind: 'face', identity: { kind: 'planar-surface-face', featureId: 'sheet',
+    profile: { sketchId: 'sketch', lineFeatureIds: ['line-a', 'line-b', 'line-c', 'line-d'] } } },
+  { version: 1, shapeKind: 'edge', identity: { kind: 'planar-surface-edge', featureId: 'sheet',
+    profile: { sketchId: 'sketch', lineFeatureId: 'line-b', role: 'whole-line' } } },
+  { version: 1, shapeKind: 'vertex', identity: { kind: 'planar-surface-vertex', featureId: 'sheet',
+    profile: { sketchId: 'sketch', lineFeatureIds: ['line-a', 'line-b'] } } },
+] as const satisfies readonly KernelOrigin[];
+const modelPlanar: readonly ModelOrigin[] = planarCanonicals;
+const drawingPlanar: readonly DrawingOrigin[] = modelPlanar;
+const kernelPlanar: readonly KernelOrigin[] = drawingPlanar;
+it('keeps the planar sheet face/edge/vertex identities closed across all three DTO owners', () => {
+  expect(kernelPlanar).toEqual(planarCanonicals);
+  expect(JSON.parse(JSON.stringify(drawingPlanar))).toEqual(modelPlanar);
+  expect(planarCanonicals.map(origin => 'faceFeatureId' in origin.identity.profile)).toEqual([false, false, false]);
+});
+
+it('binds a saved planar sheet vertex by meaning after renumbering and refuses other or deleted lines', () => {
+  const vertexOrigin: ModelOrigin = planarCanonicals[2];
+  const saved: SubShapeRef = { bodyFeatureId: 'sheet', index: 1, origin: vertexOrigin,
+    fingerprint: { kind: 'vertex', position: [40, 0, 0] } };
+  // DTO-only boundary fixture; the actual OCCT sheet and its bindings are checked by planarSurfaceOrigins.test.ts.
+  const current: SolidBody = { featureId: 'sheet', mesh: {
+    positions: new Float32Array([0, 0, 0, 40, 30, 0]), normals: new Float32Array(),
+    indices: new Uint32Array(), edgePositions: new Float32Array(), triangleCount: 0,
+  }, volume: 0, isValid: true, edges: [], faces: [], threadMarks: [],
+    vertices: [{ index: 0, position: [0, 30, 0] }, { index: 3, position: [40, 0, 0] }],
+    origins: { version: 1, state: 'tracked', bindings: [
+      { origin: vertexOrigin, state: 'unique', current: { kind: 'vertex', index: 3 } },
+    ] } };
+  const match = resolveSubShapeReference(current, saved);
+  expect(match.status).toBe('matched');
+  if (match.status !== 'matched') throw new Error('Saved planar vertex was not matched by meaning');
+  expect(match.match.basis).toBe('semantic');
+  expect(match.match.reference).toMatchObject({ index: 3, origin: vertexOrigin });
+  const otherLines: ModelOrigin = { version: 1, shapeKind: 'vertex', identity: { kind: 'planar-surface-vertex',
+    featureId: 'sheet', profile: { sketchId: 'sketch', lineFeatureIds: ['line-a', 'line-x'] } } };
+  expect(resolveSubShapeReference(current, { ...saved, origin: otherLines }).status).toBe('missing');
+  const deleted: SolidBody = { ...current, origins: { version: 1, state: 'tracked', bindings: [
+    { origin: vertexOrigin, state: 'missing', reason: 'deleted' },
+  ] } };
+  expect(resolveSubShapeReference(deleted, saved).status).toBe('missing');
+  expect(resolveSubShapeReference({ ...current, origins: undefined }, saved).status).toBe('missing');
+});
+
 const grooveCanonical = { version: 1, shapeKind: 'face', identity: { kind: 'hole-face', featureId: 'thread-producer',
   center: { sketchId: 'sketch-1', producer: { kind: 'point', featureId: 'center' } },
   placement: { kind: 'linear', step: 2 }, stage: 'thread', role: 'groove',

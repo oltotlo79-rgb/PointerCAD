@@ -1,8 +1,7 @@
+import { isRecord as record } from './valueGuards.js';
 import { decodeBeamJointInitialStrain, type BeamJointInitialStrainInput, type BeamJointInitialStrainResult } from './beamJointInitialStrain.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 /** Preliminary protocol discrimination only; the owning client performs complete input-bound decoding. */
 export function isBeamJointInitialStrainResult(value: unknown): value is BeamJointInitialStrainResult {
   return record(value) && value.kind === 'oofem-beam-joint-initial-strain'

@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { partKeyOf } from '@pointercad/model';
 import { readCadNativeBoltPreloadSavedInput, type CadNativeBoltPreloadSavedInput, type StandardBeamContactDefinition, type PropertySource } from '@pointercad/model/beam-analysis';
 import { prepareCadNativeBoltPreload } from '@pointercad/fem';
@@ -336,7 +337,7 @@ export const createBeamSlice: StateCreator<AppState, [], [], BeamSlice> = (set, 
       ? beamOccurrences(state.assembly, state.assemblyView.resolved) : [];
     set({ beamSession: saved?.kind === 'standard-members'
       ? restoreBeamSession(state.activeDocumentId, saved.definition, occurrences, captureBeamSource(state)?.source)
-      : createBeamSession(state.activeDocumentId, crypto.randomUUID()) });
+      : createBeamSession(state.activeDocumentId, createDocumentElementId()) });
   },
   closeBeam: () => {
     get().beamRunner?.cancel();

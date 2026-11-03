@@ -1,3 +1,4 @@
+import { parseFailure as fail } from './codedFailure.js';
 import { readComponentSource } from './codecs/componentSource.js';
 import { readJointOccurrenceConnections, serializeJointOccurrenceConnections } from './codecs/jointOccurrenceConnections.js';
 import { readBoltedJointRecords, serializeBoltedJointRecords } from './codecs/boltedJointRecords.js';
@@ -77,13 +78,13 @@ import {
   serializeRevolveAxis,
   serializeSubShapeRef,
   type ParseError,
-  type ParseErrorCode,
 } from './documentJson.js';
 import {
   checkRecord,
   fieldProblem,
   indexPath,
   isRecord,
+  isFiniteNumber,
   isUnknownArray,
   joinPath,
   readArray,
@@ -97,7 +98,7 @@ import {
   readValue,
   type Checked,
   type ExpressionValueJson,
-  type FieldProblem,
+  fieldFailure as failField,
 } from './guards.js';
 import {
   PCAD_APP_NAME,
@@ -457,10 +458,6 @@ function readRotation(
 }
 
 /** 有限の数か。`Number.isFinite` は `NaN` も `Infinity` も偽にする。 */
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
 /** 位置の 3 数(式のまま)。長さ 3 でなければ断る。 */
 function readPosition(
   source: Record<string, unknown>,
@@ -1312,17 +1309,6 @@ export type ReadAssemblyDocumentResult =
  * 断る理由は「これはアセンブリではない」であるため)。
  */
 const NOT_ASSEMBLY_MESSAGE = 'PointerCAD のアセンブリファイルではないようです。';
-
-function fail(code: ParseErrorCode, message: string): ReadAssemblyDocumentResult {
-  return { ok: false, error: { code, message } };
-}
-
-/** 欄の不備を、場所を添えた日本語にする(`documentJson.ts` の `failField` と同じ文言)。 */
-function failField(problem: FieldProblem): ReadAssemblyDocumentResult {
-  return problem.reason === 'missing'
-    ? fail('missingField', `ファイルの中身が壊れています(${problem.path} が見つかりません)。`)
-    : fail('invalidField', `ファイルの中身が壊れています(${problem.path} の形が違います)。`);
-}
 
 function parseJsonText(text: string): Checked<unknown> {
   try {

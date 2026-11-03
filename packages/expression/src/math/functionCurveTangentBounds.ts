@@ -14,7 +14,7 @@
  * end encloses the exact real result. No relative padding is used. A failed proof is never a proof of singularity:
  * it is counted as unresolved.
  */
-import { intervalAdd, intervalDivide, intervalMultiply, intervalSubtract, type IntervalValue, type MathInterval } from './mathInterval.js';
+import { isFiniteInterval, intervalAdd, intervalDivide, intervalMultiply, intervalSubtract, type IntervalValue, type MathInterval } from './mathInterval.js';
 
 /** Finite enclosure of each coordinate's derivative over a span. */
 export type FunctionCurveDerivativeEnclosure = readonly [MathInterval, MathInterval, MathInterval];
@@ -65,7 +65,7 @@ function unwrap(value: IntervalValue): MathInterval | null {
   return value.status === 'range' && Number.isFinite(value.interval.lower) && Number.isFinite(value.interval.upper) ? value.interval : null;
 }
 function finite(range: MathInterval | null): range is MathInterval {
-  return range !== null && Number.isFinite(range.lower) && Number.isFinite(range.upper) && range.lower <= range.upper;
+  return range !== null && isFiniteInterval(range);
 }
 
 /** Keep a derivative enclosure only when all three coordinates are finite intervals. */

@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
+import { compareVerification } from './verificationComparison.testSupport.js';
+import { modalInput } from './verificationCases.testSupport.js';
 import { SOLID_MODAL_ASSETS } from './assets.js';
 import { analyzeSolidModal, isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 import type { SolidModalInput, SolidModalResult } from './solidModalModel.js';
@@ -93,7 +95,10 @@ describe('solid modal on the actual packaged OOFEM runtime', () => {
     expect(SOLID_MODAL_ASSETS).toEqual([{ file: 'solidModal.py', bytes: bytes.byteLength, sha256: sha256(bytes) }]);
   });
   it('reproduces the closed-form supported spectrum and halves it for four times the density', async () => {
-    const light = await solve(supported());
+    const modalCaseInput = supported();
+    const light = await solve(modalCaseInput);
+    expect(compareVerification('modal-supported-tet-first-v1', { caseId: 'modal-supported-tet-first-v1',
+      input: modalInput(modalCaseInput), value: light.modes[0].eigenvaluePerSecondSquared }).passed).toBe(true);
     closedForm(RHO).forEach((lambda, index) => {
       expect(Math.abs(light.modes[index].eigenvaluePerSecondSquared - lambda) / lambda).toBeLessThanOrEqual(1e-9);
     });

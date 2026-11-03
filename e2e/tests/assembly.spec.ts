@@ -15,14 +15,8 @@ import {
   twoBoxAssemblyFile,
 } from './assemblyTestSupport.js';
 import { beginRecompute, waitForRecompute, waitForRecomputeOutcome } from './recompute.js';
+import { disableFilePickers } from './filePickers.js';
 
-async function disableFilePickers(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
-      Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: undefined });
-    }
-  });
-}
 
 function fileAction(page: Page, name: string): Locator {
   return page.getByRole('group', { name: 'ファイル' }).getByRole('button', { name, exact: true });
@@ -295,7 +289,26 @@ test.describe('P7 アセンブリの配置と基本操作', () => {
     const distinctStartedAt = await page.evaluate(() => performance.now());
     const distinctToken = await beginRecompute(page);
     await fileAction(page, '開く').click();
-    await waitForRecompute(page, distinctToken);
+    try {
+      await waitForRecompute(page, distinctToken);
+    } catch (error: unknown) {
+      try {
+        const diagnostics = await page.evaluate(() => {
+          const read = (name: string): unknown => {
+            const value: unknown = Reflect.get(window, name);
+            return typeof value === 'function' ? (value as () => unknown)() : null;
+          };
+          return { gates: read('pcadAssemblyRecomputeGates'), timings: read('pcadAssemblyLoadTimings') };
+        });
+        await testInfo.attach('assembly-recompute-failure-diagnostics', {
+          body: JSON.stringify({ diagnostics, browserErrors: errors }, null, 2),
+          contentType: 'application/json',
+        });
+      } catch (diagnosticError: unknown) {
+        console.warn('assembly failure diagnostics unavailable', diagnosticError);
+      }
+      throw error;
+    }
     await expect(componentRows(page)).toHaveCount(50);
     await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders)
       .toBeGreaterThan(beforeDistinctRender.completedRenders);

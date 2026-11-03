@@ -11,6 +11,8 @@ import { pendingFieldVariables } from '../shell/pendingFieldVariables.js';
 import { createBeamSlice } from './beamSlice.js';
 import { createSolidAnalysisSlice } from './solidAnalysisSlice.js';
 import { createSolidPlasticSlice } from './solidPlasticSlice.js';
+import { createSolidFiniteSlice } from './solidFiniteSlice.js';
+import { createShellAnalysisSlice } from './shellAnalysisSlice.js';
 import { createPlasticBarSlice } from './plasticBarSlice.js';
 import { createFatigueSlice } from './fatigueSlice.js';
 import { createFatigueStrainSlice } from './fatigueStrainSlice.js';
@@ -56,6 +58,8 @@ export type { DrawingSlice } from './drawingSlice.js';
 export const STORE_SLICE_CREATORS = {
   solidAnalysisSlice: createSolidAnalysisSlice,
   solidPlasticSlice: createSolidPlasticSlice,
+  solidFiniteSlice: createSolidFiniteSlice,
+  shellAnalysisSlice: createShellAnalysisSlice,
   beamSlice: createBeamSlice,
   plasticBarSlice: createPlasticBarSlice,
   fatigueSlice: createFatigueSlice,
@@ -85,6 +89,8 @@ export const useAppStore = create<AppState>()((...args) => ({
   ...createInitialDocumentState(),
   ...STORE_SLICE_CREATORS.solidAnalysisSlice(...args),
   ...STORE_SLICE_CREATORS.solidPlasticSlice(...args),
+  ...STORE_SLICE_CREATORS.solidFiniteSlice(...args),
+  ...STORE_SLICE_CREATORS.shellAnalysisSlice(...args),
   ...STORE_SLICE_CREATORS.beamSlice(...args),
   ...STORE_SLICE_CREATORS.plasticBarSlice(...args),
   ...STORE_SLICE_CREATORS.fatigueSlice(...args),

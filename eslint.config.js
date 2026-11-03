@@ -283,6 +283,29 @@ const canonicalRecordPredicateRule = {
   },
 };
 
+/** @type {import('eslint').Rule.RuleModule} */
+const beamResultAssertionRule = {
+  meta: { type: 'problem', schema: [], messages: { result: 'Assert the beam result separately to avoid deep array type expansion.' } },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (node.callee.type !== 'Identifier' || node.callee.name !== 'expect') return;
+        const first = node.arguments[0];
+        if (first?.type !== 'ArrayExpression') return;
+        for (const element of first.elements) {
+          const value = element?.type === 'ChainExpression' ? element.expression : element;
+          if (value?.type !== 'MemberExpression') continue;
+          const key = value.property;
+          if ((!value.computed && key.type === 'Identifier' && key.name === 'result') ||
+              (value.computed && key.type === 'Literal' && key.value === 'result')) {
+            context.report({ node: value, messageId: 'result' });
+          }
+        }
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -741,6 +764,11 @@ export default tseslint.config(
     ignores: ['packages/model/src/valueGuards.ts', '**/*.test.{ts,tsx}', '**/*.testSupport.{ts,tsx}'],
     plugins: { 'record-guard': { rules: { canonical: canonicalRecordPredicateRule } } },
     rules: { 'record-guard/canonical': 'error' },
+  },
+  {
+    files: ['packages/ui/src/beam/**/*.test.ts'],
+    plugins: { 'beam-assertion': { rules: { 'separate-result': beamResultAssertionRule } } },
+    rules: { 'beam-assertion/separate-result': 'error' },
   },
   {
     // P01: 配布されない作業資料へのコメント依存を再混入させない。

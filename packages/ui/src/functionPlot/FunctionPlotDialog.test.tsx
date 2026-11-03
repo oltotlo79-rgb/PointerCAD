@@ -86,8 +86,54 @@ beforeEach(() => {
   harness.pending = [];
   harness.dispose.mockClear();
   resetTestStore();
+  // resetTestStore preserves generation counters; this SSR fixture has no recompute worker.
+  useAppStore.setState({ isComputing: false, requestedGeneration: 0, completedGeneration: 0, lastOutcome: 'idle' });
 });
 afterEach(() => { resetTestStore(); });
+
+describe('plot preview waits for the current document recompute', () => {
+  it('starts once the existing recompute succeeds, without losing the submitted intent', async () => {
+    useAppStore.setState({ isComputing: true, requestedGeneration: 1, completedGeneration: 0 });
+    submit(render('plot'));
+    await tick(); expect(harness.pending).toHaveLength(0);
+    useAppStore.setState({ isComputing: false, completedGeneration: 1, lastOutcome: 'success' });
+    await tick(); expect(harness.pending).toHaveLength(1);
+    harness.pending[0].reject(new Error('end test')); await tick();
+  });
+  it.each(['failed', 'cancelled'] as const)('does not start preview after recompute %s', async outcome => {
+    useAppStore.setState({ isComputing: true, requestedGeneration: 1, completedGeneration: 0 });
+    submit(render('plot')); await tick();
+    useAppStore.setState({ isComputing: false, completedGeneration: 1, lastOutcome: outcome });
+    await tick(); expect(harness.pending).toHaveLength(0);
+    expect(render('plot').some(element => element.props.role === 'alert')).toBe(true);
+    expect(harness.dispose).toHaveBeenCalledTimes(1);
+  });
+  it('stops a waiting preview when the user cancels it', async () => {
+    useAppStore.setState({ isComputing: true, requestedGeneration: 1, completedGeneration: 0 });
+    submit(render('plot')); await tick();
+    const stop = one(render('plot'), element => element.type === 'button' && element.key === 'stop');
+    (stop.props.onClick as (event: { preventDefault: () => void }) => void)({ preventDefault: () => undefined });
+    await tick();
+    useAppStore.setState({ isComputing: false, completedGeneration: 1, lastOutcome: 'success' });
+    await tick(); expect(harness.pending).toHaveLength(0);
+    expect(harness.dispose).toHaveBeenCalledTimes(1);
+  });
+  it('does not dispatch a waiting preview after an input edit or document generation change', async () => {
+    useAppStore.setState({ isComputing: true, requestedGeneration: 1, completedGeneration: 0 });
+    let nodes = render('plot'); submit(nodes); await tick();
+    nodes = render('plot');
+    const field = nodes.find(element => element.type === 'input' && typeof element.props.onChange === 'function');
+    if (field === undefined) throw new Error('Missing editable input');
+    (field.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: '7' } });
+    await tick();
+    useAppStore.setState({ isComputing: false, completedGeneration: 1, lastOutcome: 'success' });
+    await tick(); expect(harness.pending).toHaveLength(0);
+    useAppStore.setState({ isComputing: true, requestedGeneration: 2, completedGeneration: 1 });
+    nodes = render('plot'); submit(nodes); await tick();
+    useAppStore.setState({ documentVersion: useAppStore.getState().documentVersion + 1 });
+    await tick(); expect(harness.pending).toHaveLength(0);
+  });
+});
 
 describe.each(['plot', 'section'] as const)('%s Stop activation and asynchronous ownership', kind => {
   it('cancels the default action before abort and permits only the next explicit submit', async () => {

@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
@@ -17,8 +18,7 @@ import { exactDouble } from './exactDoubleInterval.js';
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'numerical-roots', documentVersion: 2, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'numerical-roots', documentVersion: 2, editorId: 'X', inputRevision: 1 } });
 }
 function calculate(source: string, changes: Partial<MathWorkRequest> = {}) {
   const input = { ...request(source), ...changes }, raw = executeMathWorkRequest(createMathWorkEnvelope(1, input), backend);

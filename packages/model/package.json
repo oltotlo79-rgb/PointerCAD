@@ -6,6 +6,10 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./testing-assets/direct-seed-A.step": "./src/part/fixtures/ex18/direct-seed-A.step",
+    "./testing-assets/direct-seed-B.step": "./src/part/fixtures/ex18/direct-seed-B.step",
+    "./testing-assets/direct-seed-C.step": "./src/part/fixtures/ex18/direct-seed-C.step",
+    "./testing/ui-fixtures": {"types": "./dist/testing/uiFixtures.testSupport.d.ts", "default": "./src/testing/uiFixtures.testSupport.ts"},
     "./desktop-occt-transport": {
       "types": "./dist/desktopOcctTransport.d.ts",
       "default": "./src/desktopOcctTransport.ts"
@@ -25,6 +29,30 @@
     "./beam-analysis": {
       "types": "./dist/analysis/index.d.ts",
       "default": "./src/analysis/index.ts"
+    },
+    "./testing/analysis-fixtures": {
+      "types": "./dist/testing/analysisFixtures.testSupport.d.ts",
+      "default": "./src/testing/analysisFixtures.testSupport.ts"
+    },
+    "./testing/connected-fixtures": {
+      "types": "./dist/testing/connected_fixtures.testSupport.d.ts",
+      "default": "./src/testing/connected_fixtures.testSupport.ts"
+    },
+    "./testing/weld-fixtures": {
+      "types": "./dist/testing/weld_fixtures.testSupport.d.ts",
+      "default": "./src/testing/weld_fixtures.testSupport.ts"
+    },
+    "./testing/ex18-fixtures": {
+      "types": "./dist/testing/ex18_fixtures.testSupport.d.ts",
+      "default": "./src/testing/ex18_fixtures.testSupport.ts"
+    },
+    "./testing/io-operations": {
+      "types": "./dist/testing/io_operations.testSupport.d.ts",
+      "default": "./src/testing/io_operations.testSupport.ts"
+    },
+    "./testing/native-kernel": {
+      "types": "./dist/testing/nativeKernel.testSupport.d.ts",
+      "default": "./src/testing/nativeKernel.testSupport.ts"
     },
     "./document-identity": {
       "types": "./dist/documentIdentity.d.ts",

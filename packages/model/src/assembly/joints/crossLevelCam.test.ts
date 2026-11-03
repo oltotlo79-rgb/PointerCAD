@@ -1,6 +1,8 @@
+import { placement } from '../fastening/boltedPlacement.testSupport.js';
 import { stdout } from 'node:process';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
+import { zDegrees } from './jointAngles.testSupport.js';
 import { appendSolid, createEmptyPartDocument } from '../../part/createPartDocument.js';
 import type { PrimitiveFeature } from '../../part/types.js';
 import { absoluteCoordinate } from '../../sketch/createSketchDocument.js';
@@ -11,7 +13,7 @@ import { resolveMateTarget } from '../constraints/mateTargets.js';
 import { createAssemblyDocument } from '../createAssemblyDocument.js';
 import type { JointOccurrenceInputs, JointOccurrenceView } from '../jointOccurrence.js';
 import { embedPart, EMPTY_PART_LIBRARY } from '../partLibrary.js';
-import type { Quaternion, RigidPlacement } from '../placementMath.js';
+import type { RigidPlacement } from '../placementMath.js';
 import { resolveAssembly } from '../resolveAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, ComponentSource, Joint, Placement } from '../types.js';
 import { crossLevelCamFailure, crossLevelCamTranslation, solveCrossLevelCamDrive, solveCrossLevelCamDriveSteps,
@@ -34,9 +36,6 @@ import { expectBoundedDrivePreparation, expectDriveCancellation, expectDrivePlac
  * parent joint). The child: fixed `base`, `follower` on the slider `push` along the origin z axes (follower = a, at
  * most 25), so its z position in the child equals the slider translation, and a part `knob` on the revolute `twist`.
  */
-function placement(x: number, y: number, z: number): Placement {
-  return { position: [expressionValueFromNumber(x), expressionValueFromNumber(y), expressionValueFromNumber(z)], rotation: [0, 0, 0, 1] };
-}
 function component(id: string, source: ComponentSource, at: Placement, fixed = false): AssemblyComponent {
   return { id, name: id, source, placement: at, fixed, visible: true, suppressed: false };
 }
@@ -54,15 +53,15 @@ async function fixture() {
     { importedAt: '2026-01-01T00:00:00.000Z' });
   const part = { kind: 'part', partRef: embedded.partRef } as const;
   const child: AssemblyDocument = { ...createAssemblyDocument('cam child'),
-    components: [component('base', part, placement(0, 0, 0), true), component('follower', part, placement(0, 0, 0)),
-      component('knob', part, placement(0, 0, 0))],
+    components: [component('base', part, placement([0, 0, 0]), true), component('follower', part, placement([0, 0, 0])),
+      component('knob', part, placement([0, 0, 0]))],
     joints: [joint('push', 'slider', 'follower', 'base'), joint('twist', 'revolute', 'knob', 'base')] };
   const subAssemblies = new Map([['child', child]]);
   const library = { ...embedded.library, assemblies: subAssemblies };
   const document: AssemblyDocument = { ...createAssemblyDocument('parent'), components: [
-    component('ground', part, placement(10, 20, 0), true),
-    component('A', { kind: 'subAssembly', assemblyRef: 'child' }, placement(10, 20, 0)),
-    component('rod', part, placement(10, 20, 0)),
+    component('ground', part, placement([10, 20, 0]), true),
+    component('A', { kind: 'subAssembly', assemblyRef: 'child' }, placement([10, 20, 0])),
+    component('rod', part, placement([10, 20, 0])),
   ], joints: [joint('cam', 'revolute', 'A', 'ground'), joint('lift', 'slider', 'rod', 'ground')] };
   const inputs: JointOccurrenceInputs = { document, library, subAssemblies };
   const view: JointOccurrenceView = { source: inputs, resolved: resolveAssembly(document, { library, subAssemblies }) };
@@ -78,11 +77,6 @@ async function fixture() {
 const CAM: CrossLevelCamCoupling = { id: 'k1', camJointId: 'cam', child: { path: ['A'], jointId: 'push' },
   discRadiusMm: 20, eccentricityMm: 5, rollerRadiusMm: 4, phaseDeg: 0, direction: 1, offsetMm: -10 };
 
-function zDegrees(rotation: Quaternion | undefined): number {
-  const [x, y, z, w] = rotation ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
-  expect(Math.abs(x) + Math.abs(y)).toBeLessThan(1e-9);
-  return 2 * Math.atan2(z, w) * 180 / Math.PI;
-}
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 const drive = (f: Fixture, side: 'cam' | 'follower', value: number, cams: readonly CrossLevelCamCoupling[] = [CAM]) =>
   solveCrossLevelCamDrive({ inputs: f.inputs, view: f.view, cams, couplingId: 'k1', drive: { side, value }, parent: f.parent });

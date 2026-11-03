@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CONNECTED_1000_FIXTURE_SHA256, CONNECTED_1000_POINT_COUNT, connected1000FixtureText, connected1000Original,
   connected1000PointId, connected1000Sketch,
-} from '../../../model/src/sketch/constraints/connected1000Fixture.testSupport.js';
+} from '@pointercad/model/testing/ui-fixtures';
 import { constraintContextOfStore } from '../sketch/constraintActions.js';
 import { orbitFrom, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';

@@ -2,7 +2,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { loadOcctForNode } from '../../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge } from '../../kernelBridge.js';
 import { replaceSketch } from '../../part/createPartDocument.js';
 import { recomputePart } from '../../part/recomputePart.js';

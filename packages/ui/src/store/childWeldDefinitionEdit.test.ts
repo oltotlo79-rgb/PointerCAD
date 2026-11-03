@@ -4,8 +4,8 @@ import {
   weldPlacementFingerprint, weldSegmentsOf, type AssemblyComponent, type AssemblyDocument, type PartLibrary,
 } from '@pointercad/model';
 import { readPcadaFile, writePcadaFile } from '@pointercad/io';
-import { childOwnedWeldFixture, WELDED_CHILD_REF } from '../../../model/src/analysis/cadWeldLayerChildOwned.testSupport.js';
-import { testComponent, testPlacement } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { childOwnedWeldFixture, WELDED_CHILD_REF } from '@pointercad/model/testing/ui-fixtures';
+import { testComponent, testPlacement } from '@pointercad/model/testing/analysis-fixtures';
 import { beamUiFixture } from '../beam/beam.testSupport.js';
 import { resetTestStore } from './testing/createTestStore.js';
 import { useAppStore } from './useAppStore.js';

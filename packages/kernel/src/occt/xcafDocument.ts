@@ -246,17 +246,17 @@ export function createXcafDocumentBuilder(
   try {
     const format = keep(new oc.TCollection_ExtendedString_2(STORAGE_FORMAT, false));
     // 文書そのものは控えへ積まない。Handle が唯一の持ち主になる(冒頭の注釈 2)。
-    const doc = new oc.TDocStd_Document(format);
+    const xcafDocument = new oc.TDocStd_Document(format);
     const handle = (() => {
       try {
-        return keep(new oc.Handle_TDocStd_Document_2(doc));
+        return keep(new oc.Handle_TDocStd_Document_2(xcafDocument));
       } catch (error) {
         // Handle の生成前に失敗したときだけ、まだ唯一の持ち主である文書をここで返す。
-        doc.delete();
+        xcafDocument.delete();
         throw error;
       }
     })();
-    const main = keep(doc.Main());
+    const main = keep(xcafDocument.Main());
     // `.get()` は借り物。builder のメソッドからだけ使い、delete/keep しない。
     const shapeTool: XCAFDoc_ShapeTool = keep(oc.XCAFDoc_DocumentTool.ShapeTool(main)).get();
     const colorTool: XCAFDoc_ColorTool = keep(oc.XCAFDoc_DocumentTool.ColorTool(main)).get();

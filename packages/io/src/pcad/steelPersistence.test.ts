@@ -6,11 +6,11 @@ import {
 } from '@pointercad/model';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import {
   buildStandardPartFromSourceWithReason, standardPartRejection, type StandardPartRejectionCode,
-} from '../../../model/src/assembly/standard/buildStandardPart.js';
-import { CHANNEL_TABLE, EQUAL_ANGLE_TABLE, H_BEAM_TABLE } from '../../../model/src/assembly/standard/sections.js';
+} from '@pointercad/model/testing/io-operations';
+import { CHANNEL_TABLE, EQUAL_ANGLE_TABLE, H_BEAM_TABLE } from '@pointercad/model';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { readPcadFile, readPcadaFile, writePcadFile, writePcadaFile } from './pcadFile.js';

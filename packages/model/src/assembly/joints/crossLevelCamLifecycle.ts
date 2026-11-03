@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
 import type { ResolveMateTargetOptions } from '../constraints/mateTargets.js';
 import { drainRigidSteps, UNLIMITED_RIGID_WORK, type RigidWorkBudget, type RigidWorkPoint } from '../constraints/solveRigid.js';
@@ -43,7 +44,6 @@ export interface CrossLevelCamDocumentFailure {
   readonly code: CrossLevelCamDocumentFailureCode;
 }
 
-const finite = (value: number): boolean => typeof value === 'number' && Number.isFinite(value);
 const failure = (couplingId: string, code: CrossLevelCamDocumentFailureCode): CrossLevelCamDocumentFailure => ({ couplingId, code });
 
 type Evaluated = { readonly ok: true; readonly cam: CrossLevelCamCoupling } | { readonly ok: false; readonly failure: CrossLevelCamDocumentFailure };

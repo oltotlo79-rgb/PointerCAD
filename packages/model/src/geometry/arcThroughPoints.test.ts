@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { expectVec3CloseTo } from '../testing/vec3Assertions.testSupport.js';
 
 import { crossVec3, distanceVec3, lengthVec3, type Vec3 } from '../sketch/vec3.js';
 import { arcThroughPoints, type ArcThroughPointsResult } from './arcThroughPoints.js';
@@ -24,12 +25,6 @@ function angleOfIndependently(arc: ArcThroughPointsResult, point: Vec3): number 
   const alongX = relative[0] * arc.xAxis[0] + relative[1] * arc.xAxis[1] + relative[2] * arc.xAxis[2];
   const alongY = relative[0] * yAxis[0] + relative[1] * yAxis[1] + relative[2] * yAxis[2];
   return Math.atan2(alongY, alongX);
-}
-
-function expectVec3CloseTo(actual: Vec3, expected: Vec3, digits = 9): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
 }
 
 describe('arcThroughPoints(3 点の円弧、P4 タスク36、FR-330)', () => {

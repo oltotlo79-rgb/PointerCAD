@@ -1,3 +1,4 @@
+import { isRecord as record } from './valueGuards.js';
 import type { SolidVector3 } from './solidAnalysisModel.js';
 import type { SolidBucklingInput, SolidBucklingMode, SolidBucklingResult } from './solidBucklingModel.js';
 import { translateSolidBuckling } from './solidBucklingTranslation.js';
@@ -5,9 +6,7 @@ import { translateSolidBuckling } from './solidBucklingTranslation.js';
 export const SOLID_BUCKLING_METHOD = 'oofem-ltrspace-initial-stress-eigh/1';
 const ERROR_BOUND = 1e-8;
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function exactFields(value: Record<string, unknown>, names: readonly string[]): boolean {
   return Reflect.ownKeys(value).length === names.length && names.every(name => Object.hasOwn(value, name));
 }

@@ -42,6 +42,7 @@ export { readSolidPlasticCadSavedInput, SOLID_PLASTIC_CAD_LIMITS, SOLID_PLASTIC_
   type SolidPlasticCadSavedInput } from './solidPlasticCadInput.js';
 export { createShellCadSavedInput, readShellCadInput, SHELL_CAD_LIMITS, SHELL_CAD_SCHEMA, type ShellCadSavedInput,
   type ShellCadSavedInputRequest } from './shellCadInput.js';
+export { readShellCadAnalysisInput, SHELL_CAD_ANALYSIS_SCHEMA, type ShellCadAnalysisInput } from './shellCadAnalysisInput.js';
 
 export { readCadWeldLayerInputs, type CadWeldLayerInputs, type CadWeldLayer } from './weldLayerInput.js';
 export { readCadWeldSpanInputs, readSavedCadWeldInputs, type CadWeldSpanInputs, type CadWeldSpanLayer, type CadWeldSpanSide, type SavedCadWeldInputs } from './weldSpanInput.js';
@@ -52,3 +53,5 @@ export type { BoltPreloadDeclaration, CadNativeBoltPreloadInput, CadNativeBoltPr
 export { readCadNativeBoltPreloadInput } from './cadNativeBoltPreloadInput.js';
 export { readCadNativeBoltPreloadSavedInput } from './beamInputs.js';
 export * from './solidContactInput.js';
+
+export { readSolidFiniteCadSavedInput, SOLID_FINITE_CAD_SCHEMA, type SolidFiniteCadSavedInput } from './solidFiniteCadInput.js';

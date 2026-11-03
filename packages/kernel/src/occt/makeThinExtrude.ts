@@ -1,3 +1,5 @@
+import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
+import { crossVec as cross } from './sketchCorner.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { CurveSpec, TessellationOptions, Vec3Tuple } from '../types.js';
@@ -91,15 +93,6 @@ const NO_THICKNESS_MESSAGE = '薄い板に厚みが出ませんでした。厚�
 /** 厚みを付けた結果が立体にならなかったとき。 */
 const NOT_SOLID_MESSAGE = '薄い板を作れませんでした。厚みを小さくしてください。';
 
-/** 向きを長さ 1 に揃える。長さが 0 のときや数でないときは null を返す。 */
-function normalizeDirection(vector: Vec3Tuple): Vec3Tuple | null {
-  const [x, y, z] = vector;
-  const length = Math.hypot(x, y, z);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [x / length, y / length, z / length];
-}
 
 /**
  * 壁の 2 つの境界を作るオフセットの距離(mm)。並びは「片方」「もう片方」で、
@@ -116,14 +109,6 @@ function boundaryDistances(side: ThinExtrudeSide, thickness: number): readonly [
 }
 
 /** 外積(a × b)。輪郭の平面の中で厚みを付ける向きを出すのに使う。 */
-function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-}
-
 /**
  * 線分 1 本だけの輪郭を、平面の中で距離ぶん平行移動した線分を作る。
  *

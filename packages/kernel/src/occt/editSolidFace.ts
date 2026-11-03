@@ -1,3 +1,5 @@
+import { dotVec as dot, distanceVec as distance } from './sketchCorner.js';
+import { LINEAR_TOLERANCE_MM, nearlyEqual } from './nearlyEqual.js';
 import type {
   OpenCascadeInstance,
   TopoDS_Face,
@@ -44,12 +46,6 @@ export const MIN_FACE_OFFSET_MM = 1e-6;
 /** 直角・平行の判定の許容(内積・外積の大きさ)。平面・円柱の軸は gp_Dir で長さ 1。 */
 const ANGULAR_TOLERANCE = 1e-9;
 
-/** 長さの許容(mm)。重心の一致に使う。 */
-const LINEAR_TOLERANCE_MM = 1e-6;
-
-/** 面積・体積の相対許容。解析的な平面と円柱だけなので、積分の誤差はこれより十分小さい。 */
-const RELATIVE_TOLERANCE = 1e-7;
-
 export const FACE_OFFSET_DISTANCE_MESSAGE = '面を動かす距離は 0 でない数で指定してください。';
 export const FACE_OFFSET_MISSING_FACE_MESSAGE =
   '動かす面が見つかりません。形が変わったため、面を選び直してください。';
@@ -80,20 +76,8 @@ interface FaceSignature {
   readonly radius: number | null;
 }
 
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
 function crossLength(a: Vec3Tuple, b: Vec3Tuple): number {
   return Math.hypot(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]);
-}
-
-function distance(a: Vec3Tuple, b: Vec3Tuple): number {
-  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
-
-function nearlyEqual(a: number, b: number, scale: number): boolean {
-  return Math.abs(a - b) <= Math.max(LINEAR_TOLERANCE_MM, Math.abs(scale) * RELATIVE_TOLERANCE);
 }
 
 /** 面 1 枚の素性を読む。平面の法線は面の向き(REVERSED)を見て材料の外へ向ける(makeDraft.ts と同じ規則)。 */
@@ -271,10 +255,10 @@ export function editSolidFace(
 
   const owned = createAllocations();
   let combined: BooleanResult | undefined;
-  const releaseAll = (): void => {
-    owned.release();
-    combined?.delete();
-  };
+  const cleanup = createAllocations();
+  cleanup.keep({ delete: () => combined?.delete() });
+  cleanup.keep({ delete: owned.release });
+  const releaseAll = cleanup.release;
   try {
     // 面だけの複製では、後続処理が共有する辺・下地の幾何への更新を防ぎ切れない。
     // 借用した target 全体を幾何ごと複製し、以降の処理を複製側に閉じる。

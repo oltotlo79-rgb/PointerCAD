@@ -8,7 +8,7 @@ import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 import type { SolidAnalysisInput, SolidVector3 } from './solidAnalysisModel.js';
 import { solidInputSha256, solidTetGeometry, translateSolidAnalysis } from './solidAnalysisTranslation.js';
 import { decodeSolidAnalysis } from './solidAnalysisResults.js';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 
 const assets = fileURLToPath(new URL('../runtime/assets/', import.meta.url));
 const manifest: unknown = JSON.parse(readFileSync(new URL('../runtime/manifest.json', import.meta.url), 'utf8'));

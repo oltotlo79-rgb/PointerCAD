@@ -2,7 +2,7 @@ import { exactExpressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { loadOcctForNode } from '../../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type SolidBody } from '../../kernelBridge.js';
 import { appendSolid, nextSolidId, nextSolidName } from '../../part/createPartDocument.js';
 import { recomputePart } from '../../part/recomputePart.js';

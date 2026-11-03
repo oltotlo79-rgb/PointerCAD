@@ -1,3 +1,4 @@
+import { addVec3 as add, subtractVec3 as subtract, scaleVec3 as scale, lengthVec3 as length } from './floatVec3.js';
 /**
  * Turn certified chord samples into a C1 cubic B-spline in the function parameter, with a proved distance bound.
  *
@@ -50,10 +51,6 @@ const TANGENT_LADDER = [1, 0.75, 0.5, 0.25, 0] as const;
 const ROUNDING = 1e-12;
 
 type Vector = readonly [number, number, number];
-const add = (a: Vector, b: Vector): Vector => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const subtract = (a: Vector, b: Vector): Vector => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const scale = (a: Vector, factor: number): Vector => [a[0] * factor, a[1] * factor, a[2] * factor];
-const length = (a: Vector): number => Math.hypot(a[0], a[1], a[2]);
 
 /** Distance from a point to the closed segment from start to end (a point when they coincide). */
 function segmentDistance(point: Vector, start: Vector, end: Vector): number {

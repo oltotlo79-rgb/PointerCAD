@@ -3,6 +3,7 @@
  * The caller must obtain current evidence and the COMPLETE bead group independently.
  * Current SolidEdgeEntry.circleBasis supplies native parameters; circularWeldSelection resolves world evidence.
  */
+import { hasExactOwnKeys as record, isFiniteNumber as finite } from '../../valueGuards.js';
 import { addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import { WELD_DIRECTION_TOLERANCE, WELD_LENGTH_TOLERANCE_MM } from './types.js';
 
@@ -66,12 +67,7 @@ export interface CircularWeldPath {
   readonly beadFrameAt: (beadId: string, parameter: number) => CircularWeldPathFrame | null;
 }
 
-function record(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
-}
 function text(value: unknown): value is string { return typeof value === 'string' && value.trim().length > 0; }
-function finite(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value); }
 function vector(value: unknown): Vec3 | null {
   if (!Array.isArray(value) || value.length !== 3 || !finite(value[0]) || !finite(value[1]) || !finite(value[2])) return null;
   return Object.freeze([value[0], value[1], value[2]]);

@@ -1,3 +1,4 @@
+import { publicAssetUrl } from '../testing/publicAssetUrl.testSupport.js';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -21,7 +22,7 @@ beforeAll(() => {
     if (reply.expression === null) throw new Error('式を読めません');
     return { expression: reply.expression, angleUnit: 'degree' };
   });
-  const script = fileURLToPath(new URL('../../../expression/src/math/exactRuntime/cas_equation_systems_test.py', import.meta.url));
+  const script = fileURLToPath(publicAssetUrl('@pointercad/expression/testing-assets/cas_equation_systems_test.py'));
   const output = spawnSync('python', ['-B', '-X', 'utf8', script, '--batch'], {
     input: JSON.stringify(payloads), encoding: 'utf8', timeout: 30_000, maxBuffer: 1_000_000,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONNOUSERSITE: '1' },

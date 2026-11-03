@@ -5,13 +5,13 @@ import { stdout } from 'node:process';
 import { createKernelApi } from '@pointercad/kernel';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { createAllocations } from '../../../kernel/src/occt/allocations.js';
-import { writeBrepBytes } from '../../../kernel/src/occt/brepBytes.js';
+import { createAllocations } from '@pointercad/kernel';
+import { writeBrepBytes } from '@pointercad/kernel';
 import { FACE_OFFSET_ADJACENT_MESSAGE, FACE_OFFSET_COLLISION_MESSAGE,
-  FACE_OFFSET_INVALID_BODY_MESSAGE, FACE_OFFSET_MISSING_FACE_MESSAGE } from '../../../kernel/src/occt/editSolidFace.js';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import type { CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
+  FACE_OFFSET_INVALID_BODY_MESSAGE, FACE_OFFSET_MISSING_FACE_MESSAGE } from '@pointercad/kernel/testing/edit-solid-face';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { createDirectKernelBridge, type SolidBody, type SolidFaceEntry } from '../kernelBridge.js';
 import { appendEx18DirectEdit, buildEx18DirectSeed, directFaceReference, directImportedBrep,

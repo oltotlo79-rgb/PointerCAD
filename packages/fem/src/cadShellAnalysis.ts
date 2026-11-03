@@ -1,3 +1,4 @@
+import { lengthVec3 as norm, scaleVec3 as scaled, subVec3 as sub, addVec3 as add, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
 import { createSubShapeReference, isSameSubShape, requestAnalysisBoundary, resolveCurrentOrigin, type AnalysisBoundary,
   type AnalysisBoundarySource, type SolidBody, type SubShapeRef } from '@pointercad/model';
 import { readShellCadInput, solidCadFaceKey, type ShellCadSavedInput } from '@pointercad/model/beam-analysis';
@@ -6,6 +7,9 @@ import type { CadTetraContext } from './cadTetraMesh.js';
 import { SHELL_ANALYSIS_SCHEMA, type ShellAnalysisInput, type ShellFixed6, type ShellVector3 } from './shellAnalysisModel.js';
 import { decodeShellAnalysis, translateShellAnalysis, type ShellAnalysisPlan, type ShellAnalysisResult, type ShellNodal6,
   type ShellTensor6 } from './shellTranslation.js';
+import { shellPlanSha256 } from './shellBinding.js';
+import type { FemClient, FemOptions } from './client.js';
+import type { FemPhase } from './protocol.js';
 
 /**
  * Idealization of an explicit thin CAD sheet and the binding of the native shell answer back to its CAD faces.
@@ -133,14 +137,6 @@ export interface CadShellAnalysisResult {
   readonly shell: ShellAnalysisResult;
 }
 
-function sub(a: ShellVector3, b: ShellVector3): ShellVector3 { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
-function add(a: ShellVector3, b: ShellVector3): ShellVector3 { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
-function dot(a: ShellVector3, b: ShellVector3): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
-function cross(a: ShellVector3, b: ShellVector3): ShellVector3 {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-function norm(a: ShellVector3): number { return Math.hypot(a[0], a[1], a[2]); }
-function scaled(a: ShellVector3, factor: number): ShellVector3 { return [a[0] * factor, a[1] * factor, a[2] * factor]; }
 function finiteVector(value: unknown, what: string): ShellVector3 {
   if (!Array.isArray(value) || value.length !== 3) return refuse('invalid-settings', `${what} needs three finite components`);
   const items: unknown[] = Array.from(value);
@@ -458,6 +454,37 @@ export function decodeCadShellAnalysis(prepared: CadShellPrepared, raw: unknown)
 
 /** Runs the fixed native wrapper shellAnalysis.py for a plan and returns its raw JSON answer. */
 export type CadShellNativeRunner = (plan: ShellAnalysisPlan, signal: AbortSignal) => Promise<unknown>;
+
+/** A FEM client run that ended with a FemFailure (`code` is its FemFailure code) or an answer for another plan. */
+export class CadShellRunFailure extends Error {
+  override readonly name = 'CadShellRunFailure';
+  constructor(readonly code: string, reason: string) { super(`${code}: ${reason}`); }
+}
+/** A FEM client run that was cancelled (abort, superseded by a newer client request, or client disposed). It is not
+ * a computation failure: analyzeCadShell reports it as { kind: 'cancelled' }. */
+export class CadShellRunCancelled extends Error {
+  override readonly name = 'CadShellRunCancelled';
+  constructor(readonly reason: 'abort' | 'superseded' | 'disposed') { super(`the native shell run was cancelled (${reason})`); }
+}
+
+/** The FEM Worker path as a CadShellNativeRunner: each run is one FemClient.analyzeShell request (its own one-shot
+ * Worker, abort through the run signal, supersession by any newer client request, deadlines). The plan's own input
+ * is sent; the client binds the reply to its own fingerprint of that input, and the runner checks it once more
+ * against this plan. The raw native answer is returned undecoded, so analyzeCadShell decodes it exactly once. */
+export function femShellNativeRunner(client: Pick<FemClient, 'analyzeShell'>,
+  onPhase?: (phase: FemPhase) => void): CadShellNativeRunner {
+  return async (plan, signal) => {
+    const expected = await shellPlanSha256(plan);
+    const options: FemOptions = onPhase === undefined ? { signal } : { signal, onPhase };
+    const completion = await client.analyzeShell(plan.input, options);
+    if (completion.kind === 'cancelled') throw new CadShellRunCancelled(completion.reason);
+    if (completion.kind === 'failed') throw new CadShellRunFailure(completion.failure.code, completion.failure.message);
+    if (completion.result.planSha256 !== expected) {
+      throw new CadShellRunFailure('invalid-protocol', 'the native shell answer belongs to another plan');
+    }
+    return completion.result.raw;
+  };
+}
 export type CadShellOutcome =
   | { readonly kind: 'result'; readonly result: CadShellAnalysisResult; readonly prepared: CadShellPrepared }
   | { readonly kind: 'failed'; readonly code: string; readonly message: string }
@@ -494,7 +521,7 @@ export async function analyzeCadShell(kernel: AnalysisBoundarySource, readCurren
     }
     return { kind: 'result', result: decodeCadShellAnalysis(prepared, raw), prepared };
   } catch (error) {
-    if (owner.signal.aborted) return { kind: 'cancelled' };
+    if (owner.signal.aborted || error instanceof CadShellRunCancelled) return { kind: 'cancelled' };
     const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'cad-shell';
     return { kind: 'failed', code, message: error instanceof Error ? error.message : 'CAD shell analysis failed' };
   } finally {

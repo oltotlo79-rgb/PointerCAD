@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { writeBrepBytes } from '../../../kernel/src/occt/brepBytes.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
-import { solidMeshBuffers, type CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { writeBrepBytes } from '@pointercad/kernel';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
+import { solidMeshBuffers, type CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
 import { createDirectKernelBridge, type SolidBody } from '../kernelBridge.js';
 import { createSubShapeReference } from '../kernelBridge/createSubShapeReference.js';
 import { resolveSubShapeReference } from '../kernelBridge/referenceResolution.js';

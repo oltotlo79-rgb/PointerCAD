@@ -22,7 +22,7 @@ import { evaluateExpression, type ExpressionValue } from '@pointercad/expression
 import { createKernelApi, type KernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type KernelBridge } from '../kernelBridge.js';
 import { absoluteCoordinate } from '../sketch/createSketchDocument.js';
 import { createOffsetCache } from '../sketch/offsetMath.js';
@@ -289,7 +289,7 @@ describe('読み込んだ形のベースボディ(FR-802、P6 §2.8)を実カー
 describe('EX18 W05 fixed ASCII STEP seeds before any direct edit', () => {
   it.each(['A', 'B', 'C'] as const)('%s contains the independent pre-edit dimensions', async shape => {
     const { readFileSync } = await import('node:fs');
-    const { readBrepBytes } = await import('../../../kernel/src/occt/brepBytes.js');
+    const { readBrepBytes } = await import('@pointercad/kernel');
     const { measureEx18Shape, compareEx18Shape } = await import('./ex18ShapeOracle.testSupport.js');
     const { EX18_ORACLE_DIRECT_SEEDS, EX18_ORACLE_EXPECTATIONS } = await import('./ex18RouteFixtures.testSupport.js');
     const bytes = readFileSync(new URL(`./fixtures/ex18/direct-seed-${shape}.step`, import.meta.url));

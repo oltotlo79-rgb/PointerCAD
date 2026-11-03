@@ -1,3 +1,5 @@
+import { isFiniteNumber } from './valueGuards.js';
+
 import type { Vector3 } from './analysisModel.js';
 import { translateBeamFrictionContact, type BeamFrictionContactInput } from './frictionContactTranslation.js';
 
@@ -72,7 +74,7 @@ function array(value: unknown, size: number): unknown[] {
   return value;
 }
 function finite(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('friction-result: finite number');
+  if (!isFiniteNumber(value)) throw new Error('friction-result: finite number');
   return value;
 }
 function integer(value: unknown, min: number): number {

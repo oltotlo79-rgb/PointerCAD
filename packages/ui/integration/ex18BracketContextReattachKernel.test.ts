@@ -8,22 +8,22 @@
  */
 
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
-import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../model/src/testing/createNativeKernelBridge.node.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { subShapeElementId, subShapeRefOf } from '../src/solid/subShapeSelection.js';
-import { type KernelBridge, type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
-import { resolveSubShapeReference } from '../../model/src/kernelBridge/referenceResolution.js';
-import { appendReference, appendSolid, createEmptyPartDocument, replaceSketch } from '../../model/src/part/createPartDocument.js';
-import { recomputePart } from '../../model/src/part/recomputePart.js';
-import type { HoleFeature, PartDocument, PrimitiveFeature, ReferencePointFeature, SubShapeRef } from '../../model/src/part/types.js';
-import { absoluteCoordinate, appendFeature, createPointFeature } from '../../model/src/sketch/createSketchDocument.js';
-import type { Vec3 } from '../../model/src/sketch/vec3.js';
-import { addComponent, createComponentFor } from '../../model/src/assembly/assemblyEdit.js';
-import { commitContextReference, contextPointResolverFromBodies, type ContextReferenceLink } from '../../model/src/assembly/contextReference.js';
-import { createAssemblyDocument } from '../../model/src/assembly/createAssemblyDocument.js';
-import { embedPart, type PartLibrary, replacePartDocument } from '../../model/src/assembly/partLibrary.js';
-import type { AssemblyComponent, AssemblyDocument, Placement } from '../../model/src/assembly/types.js';
+import { type KernelBridge, type SolidBody, type SolidFaceEntry } from '@pointercad/model';
+import { resolveSubShapeReference } from '@pointercad/model';
+import { appendReference, appendSolid, createEmptyPartDocument, replaceSketch } from '@pointercad/model';
+import { recomputePart } from '@pointercad/model';
+import type { HoleFeature, PartDocument, PrimitiveFeature, ReferencePointFeature, SubShapeRef } from '@pointercad/model';
+import { absoluteCoordinate, appendFeature, createPointFeature } from '@pointercad/model';
+import type { Vec3 } from '@pointercad/model';
+import { addComponent, createComponentFor } from '@pointercad/model';
+import { commitContextReference, contextPointResolverFromBodies, type ContextReferenceLink } from '@pointercad/model';
+import { createAssemblyDocument } from '@pointercad/model';
+import { embedPart, type PartLibrary, replacePartDocument } from '@pointercad/model';
+import type { AssemblyComponent, AssemblyDocument, Placement } from '@pointercad/model';
 
 const OCCT_TIMEOUT_MS = 180_000;
 let bridge: KernelBridge;

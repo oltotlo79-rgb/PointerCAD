@@ -1,7 +1,7 @@
 import { exactExpressionValueFromNumber as n } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type AssemblyKernelBridge } from '../kernelBridge.js';
 import { availableSheetBoundaryEdges } from './availableBoundaryEdges.js';
 import { resolveSheetFlatOutline } from './flatOutline.js';

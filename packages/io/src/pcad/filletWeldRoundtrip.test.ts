@@ -1,21 +1,16 @@
-import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   addComponent, applyFilletWeld, buildStandardPartFromSource, createAssemblyDocument, createComponentFor,
   filletWeldSegmentOptions, planFilletWeld, planFilletWeldEdit, weldSegmentsOf,
-  type AssemblyDocument, type FilletWeldEditRequest, type FilletWeldRequest, type Placement, type SolidBody, type SolidEdgeEntry,
+  type AssemblyDocument, type FilletWeldEditRequest, type FilletWeldRequest, type SolidBody, type SolidEdgeEntry,
   type Vec3, type WeldBodyLookup,
 } from '@pointercad/model';
+import { placement } from '@pointercad/model/testing/weld-fixtures';
 import { describe, expect, it } from 'vitest';
 
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { PCAD_SCHEMA_VERSION } from './schema.js';
 
 const REVISIONS: ReadonlyMap<string, string> = new Map([['standing', 'rev-s'], ['base', 'rev-b']]);
-
-function placement(position: Vec3): Placement {
-  return { position: [expressionValueFromNumber(position[0]), expressionValueFromNumber(position[1]),
-    expressionValueFromNumber(position[2])], rotation: [0, 0, 0, 1] };
-}
 
 /** 当たりの判定に使う、平らな面 1 枚(四角形)とその 4 辺だけのボディ(部品座標)。 */
 function planeBody(corners: readonly [Vec3, Vec3, Vec3, Vec3], normal: Vec3): SolidBody {

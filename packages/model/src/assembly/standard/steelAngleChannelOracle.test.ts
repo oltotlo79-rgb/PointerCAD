@@ -18,6 +18,40 @@ const relative = (actual: number, expected: number): number => Math.abs(actual -
 // The worker audit separately compares the original on-disk bytes before and after additions.
 const sourceHash = (text: string): string => createHash('sha256')
   .update(text.replaceAll(String.fromCharCode(13, 10), String.fromCharCode(10)), 'utf8').digest('hex');
+// P15 only extracts the ordered 2D determinant. Require its complete source and exact
+// import, then undo that one extraction before the unchanged historical source oracle.
+// As with sourceHash, Git LF/CRLF is the only permitted encoding difference.
+function restoreProfileCross(text: string, helper: string): string {
+  const lf = String.fromCharCode(10);
+  const normalized = text.replaceAll(String.fromCharCode(13, 10), lf);
+  const normalizedHelper = helper.replaceAll(String.fromCharCode(13, 10), lf);
+  const importLine = "import { crossVec2 as cross } from '../../sketch/vec2.js';" + lf;
+  const expectedHelper = [
+    '/** Oriented two-dimensional determinant, in the input coordinate order. */',
+    'export function crossVec2(a: readonly [number, number], b: readonly [number, number]): number {',
+    '  return a[0] * b[1] - a[1] * b[0];',
+    '}', '',
+  ].join(lf);
+  const anchor = 'const distance = (a: SteelProfilePoint, b: SteelProfilePoint): number => Math.hypot(b[0] - a[0], b[1] - a[1]);' + lf;
+  if (normalizedHelper !== expectedHelper || !normalized.startsWith(importLine)
+    || normalized.split(importLine).length !== 2 || normalized.split(anchor).length !== 2) {
+    throw new Error('Profile determinant extraction differs from the admitted exact source');
+  }
+  const originalCross = 'const cross = (a: SteelProfilePoint, b: SteelProfilePoint): number => a[0] * b[1] - a[1] * b[0];' + lf;
+  return normalized.slice(importLine.length).replace(anchor, originalCross + anchor);
+}
+
+function frozenProfileHash(text: string, helper: string): string {
+  const restored = restoreProfileCross(text, helper);
+  const original = restored.split(String.fromCharCode(10)).filter(line =>
+    !line.startsWith('  // JISF G 3192 原案 表8;')
+    && !line.startsWith('  // W7 JISF G 3192 原案 表15;')
+    && !H_BEAM_PROFILE_ADDITIONS.some(row => line.startsWith(`  '${row.size}':`))
+    && !ANGLE_ADDITION_ORACLE.some(row => line.startsWith(`  '${row.size}':`))).join(String.fromCharCode(10));
+  return sourceHash(original);
+}
+
+
 function tangent(segment: SteelProfileSegment, end: boolean): readonly [number, number] {
   if (segment.kind === 'line') {
     const dx = segment.to[0] - segment.from[0], dy = segment.to[1] - segment.from[1];
@@ -71,16 +105,49 @@ describe('W6d independent angle and channel additions', () => {
 
   it('retains all W6c channel profile and generator bytes while appending angle rows', () => {
     const text = readFileSync(new URL('./steelSectionProfiles.ts', import.meta.url), 'utf8');
-    const original = text.split(String.fromCharCode(10)).filter(line =>
-      !line.startsWith('  // JISF G 3192 原案 表8;')
-      && !line.startsWith('  // W7 JISF G 3192 原案 表15;')
-      && !H_BEAM_PROFILE_ADDITIONS.some(row => line.startsWith(`  '${row.size}':`))
-      && !ANGLE_ADDITION_ORACLE.some(row => line.startsWith(`  '${row.size}':`))).join(String.fromCharCode(10));
-    expect(sourceHash(original))
+    const helper = readFileSync(new URL('../../sketch/vec2.ts', import.meta.url), 'utf8');
+    expect(frozenProfileHash(text, helper))
       .toBe('9bc0e9f3e842118d67da94b7d5a4661eb602e7753ec479980124e10951557c9f');
     expect(CHANNEL_ADDITION_CATALOG_ORACLE.map(row => [row.key, row.exactAreaMm2.value]))
       .toEqual(CHANNEL_ADDITION_ORACLE.map(row => [row.key, row.exactAreaMm2.value]));
   });
+
+  it('rejects altered, duplicate or displaced imports before restoring the historical source', () => {
+    const text = readFileSync(new URL('./steelSectionProfiles.ts', import.meta.url), 'utf8');
+    const helper = readFileSync(new URL('../../sketch/vec2.ts', import.meta.url), 'utf8');
+    const importLine = "import { crossVec2 as cross } from '../../sketch/vec2.js';";
+    for (const changed of [
+      text.replace('../../sketch/vec2.js', '../../sketch/vec3.js'),
+      importLine + String.fromCharCode(10) + text,
+      '// displaced import' + String.fromCharCode(10) + text,
+    ]) {
+      expect(changed).not.toBe(text);
+      expect(() => frozenProfileHash(changed, helper)).toThrow('Profile determinant extraction');
+    }
+  });
+
+  it('rejects reordered arithmetic, signed-zero changes and any extra helper bytes', () => {
+    const text = readFileSync(new URL('./steelSectionProfiles.ts', import.meta.url), 'utf8');
+    const helper = readFileSync(new URL('../../sketch/vec2.ts', import.meta.url), 'utf8');
+    for (const changed of [
+      helper.replace('a[0] * b[1] - a[1] * b[0]', '-a[1] * b[0] + a[0] * b[1]'),
+      helper.replace('a[0] * b[1] - a[1] * b[0]', 'a[0] * b[1] - a[1] * b[0] + 0'),
+      helper + '// extra helper bytes',
+    ]) {
+      expect(changed).not.toBe(helper);
+      expect(() => frozenProfileHash(text, changed)).toThrow('Profile determinant extraction');
+    }
+  });
+
+  it('retains the historical full-source rejection of unrelated generator changes', () => {
+    const text = readFileSync(new URL('./steelSectionProfiles.ts', import.meta.url), 'utf8');
+    const helper = readFileSync(new URL('../../sketch/vec2.ts', import.meta.url), 'utf8');
+    const changed = text.replace('Math.atan2(cross(u, v)', 'Math.atan2(cross(v, u)');
+    expect(changed).not.toBe(text);
+    expect(frozenProfileHash(changed, helper))
+      .not.toBe('9bc0e9f3e842118d67da94b7d5a4661eb602e7753ec479980124e10951557c9f');
+  });
+
 
   it('keeps the new fixture independent of every module dependency', () => {
     const text = readFileSync(new URL('./steelAngleChannelOracle.fixture.ts', import.meta.url), 'utf8');

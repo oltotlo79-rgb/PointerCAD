@@ -1,4 +1,6 @@
-/** Worker-side connection from persistent definitions/current ranges to the shared curve sampler. */
+/** Test-only synchronous sampler adapter for the functionCurveKernel CAD oracle.
+ * Production recomputation uses sampleFunctionCurveGeometry and its math Worker client.
+ */
 import {
   createFunctionCurveEvaluator,
   sampleFunctionCurve,

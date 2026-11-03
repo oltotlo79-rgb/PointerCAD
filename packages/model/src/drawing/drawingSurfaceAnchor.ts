@@ -1,3 +1,4 @@
+import { dotVec3 as dot } from '../sketch/vec3.js';
 import { drawingViewBasis, type ClipRegion, type DrawingView, type Point2, type Vector3 } from '@pointercad/drawing';
 import { drawingModelPointToPaper, type DimensionResolveContext } from './dimensionTarget.js';
 import type { ConstructedDrawingView } from './viewConstruction.js';
@@ -5,7 +6,6 @@ import type { ConstructedDrawingView } from './viewConstruction.js';
 type Polygon = readonly Vector3[];
 type Distance = (point: Vector3) => number;
 const EPS = 1e-9;
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a: Point2, b: Point2, c: Point2): number => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 const mean = (points: Polygon): Vector3 => {
   const coordinate = (axis: number): number => points.reduce((sum, point) => sum + point[axis], 0) / points.length;

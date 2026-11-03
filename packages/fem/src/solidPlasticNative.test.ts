@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
+import { compareVerification } from './verificationComparison.testSupport.js';
+import { plasticInput } from './verificationCases.testSupport.js';
 import { SOLID_PLASTIC_ASSETS } from './assets.js';
 import { analyzeSolidPlastic, isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 import type { SolidPlasticPlan } from './solidPlastic.js';
@@ -171,7 +173,10 @@ describe('solid J2 plasticity on the actual packaged OOFEM runtime', () => {
     // Hand values (plasticBarNative.proof.md) guard the oracle itself.
     near(expected[0].stress, 252.47524752475246, SIGMA0); near(expected[0].plastic, 1.2376237623762376e-3, SIGMA0 / E);
     near(expected[2].stress, -257.3767277717871, SIGMA0); near(expected[2].plastic, -1.2131163611410645e-3, SIGMA0 / E);
-    const result = await solve(input());
+    const plasticCaseInput = input();
+    const result = await solve(plasticCaseInput);
+    expect(compareVerification('solid-plastic-first-load-v1', { caseId: 'solid-plastic-first-load-v1',
+      input: plasticInput(plasticCaseInput), value: result.records[0].elements[0].stressMPa[0] }).passed).toBe(true);
     expect(result.yielded).toBe(true);
     expectUniaxial(result, expected);
     const [peak, unloaded] = result.records.map(record => record.elements[0]);

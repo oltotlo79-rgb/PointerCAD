@@ -1,9 +1,10 @@
+import { subVec3 as subtract, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
 import type { Vector3 } from '@pointercad/model/beam-analysis';
 import type { CadSolidContactBodySource, CadSolidContactPrepared } from './cadSolidContact.js';
 import { projectContactPoint } from './solidContactSearch.js';
 import { isTetraMeshResult, tetraMeshInputSha256, type TetraMeshResult } from './tetraMesh.js';
 import { sha256Hex } from './sha256.js';
-import { isRecord } from './valueGuards.js';
+import { createPrefixedError, isRecord } from './valueGuards.js';
 
 export const SOLID_CONTACT_WIRE_SCHEMA = 'pointercad-solid-contact/1';
 export interface SolidContactMeshSource { readonly bodyFeatureId: string; readonly mesh: TetraMeshResult }
@@ -125,7 +126,7 @@ export interface SolidContactFailureDiagnostics {
   readonly rawTruncated: boolean;
 }
 
-function fail(reason: string): never { throw new Error(`solid-contact: ${reason}`); }
+const fail: (message: string) => never = createPrefixedError('solid-contact');
 function plainJson(value: unknown, ancestors = new Set<object>(), depth = 0): void {
   if (depth > 64) fail('JSON data nesting exceeds the contact contract');
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
@@ -205,10 +206,6 @@ function histories(value: unknown, nodeCount: number, steps: number, used: Set<s
     return { node, axis, values: array(row.values, steps, steps).map(number) };
   });
 }
-const subtract = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vector3, b: Vector3): Vector3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-
 function meshPayload(mesh: TetraMeshResult): object {
   return { coordinates: mesh.coordinates, tetrahedra: mesh.tetrahedra,
     boundaryTriangles: mesh.boundaryTriangles, boundaryTags: mesh.boundaryTags };

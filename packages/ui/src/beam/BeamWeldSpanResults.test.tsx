@@ -5,8 +5,8 @@ import { createEmptyPartDocument, createUndoStack, resolveConstrainedAssembly, b
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import { beamWeldSpanContactInputSha256, beamWeldSpanContactResultMatches, decodeBeamWeldSpanContact,
   type BeamWeldSpanContactInput } from '@pointercad/fem';
-import { modalFixture } from '../../../fem/src/modal.testSupport.js';
-import { cadWeldSpanFixture } from '../../../model/src/analysis/cadWeldSpanLayer.testSupport.js';
+import { modalFixture } from '@pointercad/fem/testing/ui-fixtures';
+import { cadWeldSpanFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { captureMeshBodyLayout } from '../store/recomputeSlice.js';

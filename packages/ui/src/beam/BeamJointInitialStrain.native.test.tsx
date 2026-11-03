@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beamJointInitialStrainInputSha256, decodeBeamJointInitialStrain, translateBeamJointInitialStrain,
   type BeamJointInitialStrainInput } from '@pointercad/fem';
-import { TEST_EVIDENCE } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { TEST_EVIDENCE } from '@pointercad/model/testing/analysis-fixtures';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { t } from '../i18n/t.js';
 import { BeamJointInitialStrainResults } from './BeamJointInitialStrain.js';

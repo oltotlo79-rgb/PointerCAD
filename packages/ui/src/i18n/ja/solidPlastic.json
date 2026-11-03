@@ -1,6 +1,6 @@
 {
-  "solidPlastic.title": "立体の弾塑性解析",
-  "solidPlastic.open": "現在の立体を弾塑性解析",
+  "solidPlastic.title": "小変形の弾塑性解析",
+  "solidPlastic.open": "小変形の弾塑性",
   "solidPlastic.assumptions": "選んだ一つの立体を、均質な等方材料として静的に解析します。降伏後は線形の等方硬化(ミーゼス)に従います。ひずみが小さい範囲(0.05まで)に限り、大変形・接触・部品間の結合・損傷・移動硬化は含みません。",
   "solidPlastic.selectionHelp": "画面で同じ立体の面を選び、固定面と荷重面をそれぞれ登録してください。固定面の三方向の変位をゼロにします。面荷重は全体座標のX・Y・Z方向の基準値で、荷重の履歴の倍率を掛けて加えます。",
   "solidPlastic.body": "対象の立体",

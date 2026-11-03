@@ -24,6 +24,10 @@ export const ANALYSIS_MENU_ITEMS = [
     documentKinds: ['part'], isOpen: state => state.solidAnalysisSession !== null, open: state => state.openSolidAnalysis() },
   { id: 'solidPlastic', labelKey: 'solidPlastic.open', tooltipKey: 'solidPlastic.openHelp', Icon: MeasureIcon,
     documentKinds: ['part'], isOpen: state => state.solidPlasticSession !== null, open: state => state.openSolidPlastic() },
+  { id: 'solidFinite', labelKey: 'solidFinite.open', tooltipKey: 'solidFinite.openHelp', Icon: MeasureIcon,
+    documentKinds: ['part'], isOpen: state => state.solidFiniteSession !== null, open: state => state.openSolidFinite() },
+  { id: 'shellAnalysis', labelKey: 'shellAnalysis.open', tooltipKey: 'shellAnalysis.openHelp', Icon: MeasureIcon,
+    documentKinds: ['part'], isOpen: state => state.shellAnalysisSession !== null, open: state => state.openShellAnalysis() },
 ] as const satisfies readonly AnalysisDescriptor[];
 
 export type AnalysisToolId = (typeof ANALYSIS_MENU_ITEMS)[number]['id'];

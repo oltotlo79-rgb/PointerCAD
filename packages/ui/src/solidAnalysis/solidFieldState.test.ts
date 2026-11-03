@@ -28,6 +28,20 @@ function complete(): SolidAnalysisSession {
 }
 
 describe('solid field state (display only)', () => {
+  it('replaces cached strain values with a new result and draws nothing after invalidation', () => {
+    const done = complete();
+    const first = { ...done, fieldView: { quantity: 'strainXy' as const, deformationScale: 1 } };
+    expect(solidAnalysisFieldOf(first)?.elementValues).toEqual([0]);
+    if (done.result === null) throw new Error('Missing result');
+    const second = { ...first, result: { ...done.result, result: { ...done.result.result,
+      elements: [{ ...done.result.result.elements[0], strain: [0, 0, 0, 0, 0, 0.012] as const }] } } };
+    expect(solidAnalysisFieldOf(second)?.elementValues).toEqual([0.012]);
+    for (const status of ['editing', 'running', 'failed', 'cancelled'] as const) {
+      expect(solidAnalysisFieldOf({ ...second, status })).toBeNull();
+    }
+    expect(solidAnalysisFieldOf({ ...second, result: null })).toBeNull();
+  });
+
   it('starts from the default view choice, which is not part of the saved input', () => {
     expect(createSolidAnalysisSession('owner').fieldView).toEqual(DEFAULT_SOLID_FIELD_VIEW);
   });

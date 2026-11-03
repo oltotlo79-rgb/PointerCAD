@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../../valueGuards.js';
 import type { MateResidualTargetPair } from '../constraints/mateResiduals.js';
 import { solveDrivenJointSteps, type SolveDrivenJointOutcome, type SolveMatesOptions } from '../constraints/solveMates.js';
 import { drainRigidSteps, UNLIMITED_RIGID_WORK, type RigidWorkBudget, type RigidWorkPoint } from '../constraints/solveRigid.js';
@@ -59,7 +60,6 @@ export type CrossLevelCamDriveOutcome = {
 /** mm; the slider drive tolerance with solver slack. */
 export const CROSS_LEVEL_CAM_TOLERANCE_MM = 1e-6;
 
-const finite = (value: number): boolean => typeof value === 'number' && Number.isFinite(value);
 const failure = (couplingId: string, code: CrossLevelCamFailureCode): CrossLevelCamFailure => ({ ok: false, couplingId, code });
 
 function* singleSteps(document: AssemblyDocument, jointId: string, kind: 'revolute' | 'slider', work: JointDriveWork):

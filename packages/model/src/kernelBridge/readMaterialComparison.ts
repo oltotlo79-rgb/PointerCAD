@@ -1,6 +1,6 @@
+import { isRecord as record } from '../valueGuards.js';
 import type { MaterialComparisonResult, MaterialDifferenceRegion } from './materialComparisonContracts.js';
 
-const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const nonnegative = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const invalid = (): MaterialComparisonResult => ({ kind: 'failed', message: '形の比較結果を確認できませんでした。再度お試しください。' });
 

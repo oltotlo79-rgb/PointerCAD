@@ -173,9 +173,13 @@ export async function drawingDeleteElementsFlow(page: Page, info: TestInfo, app?
   expect(await save('restored-final')).toEqual(original);
   const restoredPath = info.outputPath('restored-final.pcadd');
   if (app !== undefined) await openTarget(app, restoredPath);
+  if (app === undefined) await expect(page).not.toHaveTitle(/restored-final\.pcadd/);
   const restoredChooser = app === undefined ? page.waitForEvent('filechooser') : undefined;
   await page.getByRole('button', { name: '開く', exact: true }).click();
-  if (restoredChooser !== undefined) await (await restoredChooser).setFiles(restoredPath);
+  if (restoredChooser !== undefined) {
+    await (await restoredChooser).setFiles(restoredPath);
+    await expect(page).toHaveTitle(/restored-final\.pcadd/);
+  }
   await waitForDrawingReady(page);
   expect(await save('reopened-final')).toEqual(original);
   await page.screenshot({ path: info.outputPath('drawing-delete-restored.png') });

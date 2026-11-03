@@ -1613,6 +1613,41 @@ function bodyEdgesAfter(
 }
 
 describe('createSolidLayer borrowed arrays (G3a A1)', () => {
+  it('finishes a failed retirement before restoring the previously published bundle', () => {
+    const entry = literalDrawEntry('restore');
+    const bundle = literalBundle([entry]);
+    const layer = createSolidLayer();
+    layer.update(bundle, 'shadedWithEdges');
+    const mesh = bodyMeshesOf(layer.group)[0], edge = bodyEdgesAfter(layer.group, mesh);
+    let attempts = 0;
+    edge.geometry.addEventListener('dispose', () => { attempts += 1; if (attempts === 1) throw new Error('edge release'); });
+    expect(() => { layer.update(literalBundle([]), 'shadedWithEdges'); }).toThrow('edge release');
+    expect(() => { layer.update(bundle, 'shadedWithEdges'); }).not.toThrow();
+    expect(attempts).toBe(2);
+    expect(bodyMeshesOf(layer.group)[0].geometry.getAttribute('position').array).toBe(entry.positions);
+    layer.dispose();
+  });
+
+  it('retries a failed empty update without losing the retired draw or releasing another layer', () => {
+    const entry = literalDrawEntry('retry');
+    const layer = createSolidLayer(), other = createSolidLayer();
+    layer.update(literalBundle([entry]), 'shadedWithEdges');
+    other.update(literalBundle([entry]), 'shadedWithEdges');
+    const mesh = bodyMeshesOf(layer.group)[0], edge = bodyEdgesAfter(layer.group, mesh);
+    const otherMesh = bodyMeshesOf(other.group)[0];
+    let meshReleases = 0, edgeAttempts = 0;
+    mesh.geometry.addEventListener('dispose', () => { meshReleases += 1; });
+    edge.geometry.addEventListener('dispose', () => { edgeAttempts += 1; if (edgeAttempts === 1) throw new Error('edge release'); });
+    const empty = literalBundle([]);
+    expect(() => { layer.update(empty, 'shadedWithEdges'); }).toThrow('edge release');
+    expect(otherMesh.geometry.getAttribute('position').array).toBe(entry.positions);
+    expect(() => { layer.update(empty, 'shadedWithEdges'); }).not.toThrow();
+    expect(meshReleases).toBe(1); expect(edgeAttempts).toBe(2);
+    expect(Object.keys(mesh.geometry.attributes)).toEqual([]);
+    expect(Object.keys(edge.geometry.attributes)).toEqual([]);
+    expect(otherMesh.geometry.getAttribute('position').array).toBe(entry.positions);
+    layer.dispose(); other.dispose();
+  });
   it('keeps A/B bytes immutable through same-length A→B→A, including another body and layer sharing A', () => {
     const a = literalDrawEntry('first');
     const b = literalDrawEntry('first', 'b');

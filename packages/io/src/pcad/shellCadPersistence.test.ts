@@ -1,9 +1,10 @@
+import { replaceAttachment } from './analysisAttachment.testSupport.js';
 import { describe, expect, it } from 'vitest';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { createEmptyPartDocument } from '@pointercad/model';
 import { readBeamAnalysisInputs, withBeamAnalysisInputs, type ShellCadSavedInput,
   type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { isRecord } from './guards.js';
@@ -33,10 +34,6 @@ function envelopeOf(text: string): Record<string, unknown> & { document: Record<
 /** The attachment as saved in the document.json entry of an actual .pcad archive. */
 function archivedInputs(bytes: Uint8Array): unknown {
   return envelopeOf(strFromU8(unzipSync(bytes)[PCAD_DOCUMENT_ENTRY])).document.beamAnalysisInputs;
-}
-function replaceAttachment(text: string, value: unknown): string {
-  const envelope = envelopeOf(text);
-  return JSON.stringify({ ...envelope, document: { ...envelope.document, beamAnalysisInputs: value } });
 }
 /** The same archive with its document.json attachment replaced; the reader must refuse a bad one. */
 function injected(bytes: Uint8Array, value: unknown): Uint8Array {

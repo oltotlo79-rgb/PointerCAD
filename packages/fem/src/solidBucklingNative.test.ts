@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { SOLID_BUCKLING_ASSETS } from './assets.js';
 import { analyzeSolidBuckling, isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 import type { SolidBucklingInput, SolidBucklingResult } from './solidBucklingModel.js';

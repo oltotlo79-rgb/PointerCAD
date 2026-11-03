@@ -1,7 +1,14 @@
+import { volumeNumber } from './workPlaneCaptureSupport.js';
+/* ホーム視点の写し(solid.spec.ts の P3 節と同じ数値・同じ組み立て。この検査も視点を動かさない)。 */
+import { clickWorldPoint } from './homeViewProjection.js';
 import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { disableFilePickers } from './filePickers.js';
+import { openToolMenu } from './toolMenus.js';
+import { fillFields, popover, popoverInputs } from './popoverFields.js';
 
 import { beginRecompute, waitForRecompute } from './recompute.js';
 
@@ -39,19 +46,6 @@ const END_FACE_AREA = 30 * 10;
 /** 穴の中心(x = 10)。端面を x = 12 まで削ると穴(x = 7〜13)に当たる。 */
 const HOLE_CENTER: readonly [string, string, string] = ['10', '15', '0'];
 
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
 async function acceptConfirms(page: Page): Promise<readonly string[]> {
   const messages: string[] = [];
   await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
@@ -59,18 +53,6 @@ async function acceptConfirms(page: Page): Promise<readonly string[]> {
     await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });
   return messages;
-}
-
-async function disableFilePickers(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
-      Object.defineProperty(globalThis, name, {
-        configurable: true,
-        writable: true,
-        value: undefined,
-      });
-    }
-  });
 }
 
 function sketchTool(page: Page, label: string): Locator {
@@ -85,24 +67,6 @@ function solidTool(page: Page, label: string): Locator {
     .getByRole('button', { name: label, exact: true });
 }
 
-function toolMenuTrigger(page: Page, menu: string): Locator {
-  return page
-    .locator('.pcad-toolbar')
-    .getByRole('button', { name: new RegExp(`^${menu}`) })
-    .first();
-}
-
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-
-async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) {
-    await toolMenuTrigger(page, menu).click();
-  }
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
-}
-
 function machiningTool(page: Page, label: string): Locator {
   return page
     .getByRole('group', { name: '加工' })
@@ -115,16 +79,8 @@ function fileAction(page: Page, label: string): Locator {
     .getByRole('button', { name: label, exact: true });
 }
 
-function popover(page: Page): Locator {
-  return page.locator('.pcad-popover');
-}
-
 function popoverTitle(page: Page): Locator {
   return page.locator('.pcad-popover__title');
-}
-
-function popoverInputs(page: Page): Locator {
-  return page.locator('.pcad-popover input.pcad-field__input');
 }
 
 function featureTree(page: Page): Locator {
@@ -174,17 +130,6 @@ function propertyField(page: Page, label: string): Locator {
     .locator('.pcad-field')
     .filter({ has: page.locator('.pcad-field__label', { hasText: new RegExp(`^${label}$`) }) })
     .locator('input.pcad-field__input');
-}
-
-async function fillFields(page: Page, sources: readonly (string | null)[]): Promise<void> {
-  await expect(popover(page)).toBeVisible();
-  const inputs = popoverInputs(page);
-  for (const [index, source] of sources.entries()) {
-    if (source === null) {
-      continue;
-    }
-    await inputs.nth(index).fill(source);
-  }
 }
 
 async function commitPopover(page: Page): Promise<void> {
@@ -238,58 +183,6 @@ async function extrudeFace(page: Page, faceName: string, distance: string | null
   await expect(popover(page)).toHaveCount(0);
 }
 
-/* ホーム視点の写し(solid.spec.ts の P3 節と同じ数値・同じ組み立て。この検査も視点を動かさない)。 */
-type WorldPoint = readonly [number, number, number];
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
-
-function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
-function dotPoints(a: WorldPoint, b: WorldPoint): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
-function normalizePoint(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
-}
-
-const CAMERA_EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-const CAMERA_Z = normalizePoint(CAMERA_EYE);
-const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
-
-function worldToCanvas(world: WorldPoint, widthPixels: number, heightPixels: number): readonly [number, number] {
-  const view = subtractPoints(world, CAMERA_EYE);
-  const depth = -dotPoints(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
-  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
-  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
-}
-
-async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
-  const canvas = page.locator('canvas.pcad-viewport__canvas');
-  const box = await canvas.boundingBox();
-  if (box === null) {
-    throw new Error('ビューポートの canvas の位置と大きさが取れませんでした。');
-  }
-  const [x, y] = worldToCanvas(world, box.width, box.height);
-  await page.mouse.click(box.x + x, box.y + y);
-}
-
 async function selectBodiesOnly(page: Page): Promise<void> {
   const status = page.locator('.pcad-statusbar');
   for (const [name, enabled] of [['頂点', false], ['辺', false], ['面', false], ['立体', true]] as const) {
@@ -300,13 +193,6 @@ async function selectBodiesOnly(page: Page): Promise<void> {
   await expect(selectionKindLabel(page)).toHaveText('選ぶもの 立体');
 }
 
-async function volumeNumber(page: Page): Promise<number> {
-  const cell = propertyValue(page, '体積');
-  if ((await cell.count()) === 0) {
-    return Number.NaN;
-  }
-  return Number.parseFloat(await cell.innerText());
-}
 
 async function expectVolume(page: Page, expected: number, toleranceMm3 = 0.01): Promise<void> {
   await expect

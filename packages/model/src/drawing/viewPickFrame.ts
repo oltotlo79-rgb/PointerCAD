@@ -1,8 +1,8 @@
+import { dotVec3 as dot } from '../sketch/vec3.js';
 import { drawingRegionContainsPoint, drawingViewBasis, type DrawingDocument, type Point2, type Vector3 } from '@pointercad/drawing';
 import { resolvedDimensionView, type DimensionResolveContext } from './dimensionTarget.js';
 import type { ConstructedDrawingView } from './viewConstruction.js';
 
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /** 紙面のクリックを省略前の位置へ戻す。空白の隙間と切り抜き外は選択できない。 */
 export function unfoldDrawingPick(point: Point2, id: string, document: DrawingDocument, context: DimensionResolveContext): Point2 | null {

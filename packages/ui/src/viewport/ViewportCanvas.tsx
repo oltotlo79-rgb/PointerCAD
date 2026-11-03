@@ -29,7 +29,7 @@ import { resolveCutPlane } from '../solid/cutCommands.js';
 import { cutPlanePreviewOf } from '../solid/cutPlanePreview.js';
 import { LENGTH_UNIT_LABEL_KEYS } from '../settings/settings.js';
 import { printabilityMatchesDisplayMeshes } from '../solid/printabilityColors.js';
-import { solidAnalysisLayersOf } from '../solidAnalysis/solidModalViewport.js';
+import { solidAnalysisLayersChanged, solidAnalysisLayersOf } from '../solidAnalysis/solidModalViewport.js';
 import { subShapeBodiesOf } from '../solid/subShapeSelection.js';
 import { constrainedFeatureIdsOfStore } from '../sketch/constraintActions.js';
 import { constraintMarksOf } from '../sketch/constraintPicking.js';
@@ -97,7 +97,7 @@ declare global {
     pcadViewportMeshObservation?: () => ViewportMeshObservationSnapshot;
     /** 検査専用。scene へ渡した最後の切断の予告(EX-04 W2 の画面検査が予告の面を読む)。 */
     pcadViewportCutPreview?: () => CutPreview | null;
-    pcadViewportRetiredCleanups?: () => { readonly pendingCount: number; readonly ownerCount: number;
+    pcadViewportRetiredCleanups?: () => { readonly pendingCount: number; readonly ownerCount: number; readonly admittedOwnerCount: number;
       readonly waitingCount: number; readonly scheduled: boolean; readonly sharedGpuPoolReservedBytes: number;
       readonly owners: readonly PendingViewportReading[] };
   }
@@ -110,10 +110,12 @@ const retiredViewports = createViewportCleanupQueue((retry, delayMs) => {
   const timer = globalThis.setTimeout(retry, delayMs);
   return () => { globalThis.clearTimeout(timer); };
 });
-const readRetiredViewports = () => ({ pendingCount: retiredViewports.pendingCount,
-  ownerCount: retiredViewports.ownerCount, waitingCount: retiredViewports.waitingCount,
-  scheduled: retiredViewports.scheduled, sharedGpuPoolReservedBytes: LOCAL_DISPLAY_GPU_MESH_BUDGET.reservedBytes(),
-  owners: retiredViewports.snapshot() });
+const readRetiredViewports = () => {
+  const owners = retiredViewports.snapshot();
+  return { pendingCount: retiredViewports.pendingCount, ownerCount: owners.length,
+    admittedOwnerCount: retiredViewports.ownerCount, waitingCount: retiredViewports.waitingCount,
+    scheduled: retiredViewports.scheduled, sharedGpuPoolReservedBytes: LOCAL_DISPLAY_GPU_MESH_BUDGET.reservedBytes(), owners };
+};
 
 /**
  * 検査専用の口 `window.pcadViewportCutPreview`(EX-04 W2)を出している、生きているビューポートの読み取り。
@@ -617,6 +619,62 @@ function assemblyBundleOf(
   });
 }
 
+/** 合致入力の観測の記録。部品の拾いでは判定・保留・内部idと、押下の時点の準備の判定(名前だけ)を持つ。 */
+type MateInputRecord = Readonly<Partial<AssemblyMateInputObservation>> & {
+  readonly readiness?: Readonly<{ ready: string; refresh: string | null }>;
+};
+
+/**
+ * 押下の時点の準備の判定(BUG.VIEW-PICK-NULL の観測)。prepareMateInput が置き、同じ押下の最初の観測だけが入力へ結ぶ。
+ * refresh は取り直しの結果の入れ物で、決着すると outcome に名前が入る。
+ */
+interface PreparedMateReadiness {
+  readonly ready: string;
+  readonly refresh: { readonly outcome: string | null } | null;
+}
+
+/**
+ * 表示の持ち主の診断(公開の口が呼ばれた時だけ読む。毎フレームは観測しない)。文書・本体は弱い識別番号だけにし、
+ * 値を保持しない。識別番号はこの関数を呼んだ 1 回の表示の初期化の間だけ通じる。
+ */
+function createAssemblyOwnerDiagnostics(): (state: ReturnType<typeof useAppStore.getState>) => Readonly<Record<string, unknown>> {
+  // Diagnostic metadata only. Weak identity tags never retain documents or bodies.
+  const ownerIdentities = new WeakMap<object, number>();
+  let nextOwnerIdentity = 0;
+  const identityOf = (value: object | null): number | null => {
+    if (value === null) return null;
+    const previous = ownerIdentities.get(value);
+    if (previous !== undefined) return previous;
+    const identity = ++nextOwnerIdentity;
+    ownerIdentities.set(value, identity);
+    return identity;
+  };
+  const readOwnerCheck = (read: () => boolean): { readonly value: boolean | null; readonly error: string | null } => {
+    try { return { value: read(), error: null }; }
+    catch (error) { return { value: null, error: String(error) }; }
+  };
+  return (state) => {
+    const view = state.assemblyView, owner = view?.meshOwnership;
+    return { isComputing: state.isComputing, activeDocumentId: state.activeDocumentId,
+      documentVersion: state.documentVersion, requestedGeneration: state.requestedGeneration,
+      completedGeneration: state.completedGeneration, cancelRequestCount: state.cancelRequestCount,
+      recomputeCancelled: state.recomputeCancelled, lastOutcome: state.lastOutcome, timelineIndex: state.timelineIndex,
+      assemblyIdentity: identityOf(state.assembly), drawingIdentity: identityOf(state.drawing),
+      assemblyLibraryIdentity: identityOf(state.assemblyLibrary), assemblyViewIdentity: identityOf(view),
+      sourceDocumentIdentity: identityOf(view?.sourceDocument ?? null),
+      sourceBodiesIdentity: identityOf(view?.bodies ?? null), ownershipIdentity: identityOf(owner ?? null),
+      ownership: owner === undefined ? null : {
+        documentIdentity: identityOf(owner.document), libraryIdentity: identityOf(owner.library),
+        activeDocumentId: owner.activeDocumentId, documentVersion: owner.documentVersion,
+        generation: owner.generation, outcome: owner.outcome, timelineIndex: owner.timelineIndex,
+        cancelRequestCount: owner.cancelRequestCount, bodiesIdentity: identityOf(owner.bodies),
+        receiptStatus: owner.receipt.status, backingInspectionStatus: owner.backingInspection.status,
+        publicationCurrent: readOwnerCheck(() => owner.publicationCurrent()), receiptCurrent: readOwnerCheck(() => owner.receiptCurrent()),
+        backingInspectionCurrent: readOwnerCheck(() => owner.backingInspectionCurrent()),
+      } };
+  };
+}
+
 /**
  * 3D ビューポート(FR-101、FR-102、FR-104、FR-105、FR-106、FR-108、FR-310)。
  *
@@ -715,45 +773,65 @@ export function ViewportCanvas(): React.JSX.Element {
             throw new Error('Viewport resources remain pending');
           }
         });
-    let thumbnailPublicationEpoch = 0;
+    let thumbnailPublicationGeneration = 0;
     const pendingAssemblyRefresh = new WeakMap<AssemblyMeshOwnership, Promise<boolean>>();
     const refusedAssemblyRefresh = new WeakSet<AssemblyMeshOwnership>();
+    // BUG.VIEW-PICK-NULL の観測: 最後に表示の準備を断った理由と、最後の所有の取り直しの結果(名前だけ)。
+    let assemblyReadyRefusal: string | null = null;
+    let assemblyRefreshOutcome: string | null = null;
+    // 入力ごとの判定: assemblyReady の1回の呼出しの断りと、その取り直しの結果を、同じ押下の最初の観測へ結ぶ。
+    let readyCallRefusal: string | null = null;
+    const refuseReady = (reason: string): false => { assemblyReadyRefusal = reason; readyCallRefusal = reason; return false; };
+    const refreshOutcomeCells = new WeakMap<Promise<boolean>, { outcome: string | null }>();
     function assemblyReady(): boolean {
+      readyCallRefusal = null;
       const state = useAppStore.getState(), owner = state.assemblyView?.meshOwnership;
       if (activeAssemblyDocument(state) === null || owner === undefined) return true;
       const bundle = assemblyBundleOf(state);
       try {
         if (currentAssemblyMeshAdmission({ bundle, ownership: owner, state }, state)) return true;
-        if (!currentAssemblyMeshPublication(owner, state) || owner.receipt.status !== 'known'
-          || owner.backingInspection.status !== 'known' || owner.refreshOwnership === undefined
-          || refusedAssemblyRefresh.has(owner) || pendingAssemblyRefresh.has(owner)) return false;
-      } catch { refusedAssemblyRefresh.add(owner); return false; }
+        if (!currentAssemblyMeshPublication(owner, state)) return refuseReady('publication-stale');
+        if (owner.receipt.status !== 'known') return refuseReady('receipt-unknown');
+        if (owner.backingInspection.status !== 'known') return refuseReady('backing-unknown');
+        if (owner.refreshOwnership === undefined) return refuseReady('no-refresh');
+        if (refusedAssemblyRefresh.has(owner)) return refuseReady('refresh-spent');
+        if (pendingAssemblyRefresh.has(owner)) return refuseReady('refresh-pending');
+      } catch { refusedAssemblyRefresh.add(owner); return refuseReady('threw'); }
       const refresh = owner.refreshOwnership;
-      if (refresh === undefined) return false;
+      if (refresh === undefined) return refuseReady('no-refresh');
+      const cell: { outcome: string | null } = { outcome: null };
+      const settleRefresh = (outcome: string): void => { assemblyRefreshOutcome = outcome; cell.outcome = outcome; };
       const pending = Promise.resolve().then(() => {
         if (!alive || !currentAssemblyMeshPublication(owner, useAppStore.getState())) return null;
         return refresh(owner);
       }).then(fresh => {
-        if (!alive || fresh === null || fresh === owner) return false;
+        if (!alive || fresh === null || fresh === owner) {
+          settleRefresh(!alive ? 'dead' : fresh === null ? 'none' : 'same-owner');
+          return false;
+        }
         const current = useAppStore.getState();
         if (current.assemblyView?.meshOwnership !== fresh || fresh.document !== owner.document
           || fresh.library !== owner.library || fresh.activeDocumentId !== owner.activeDocumentId
           || fresh.documentVersion !== owner.documentVersion || fresh.generation !== owner.generation
           || fresh.cancelRequestCount !== owner.cancelRequestCount || fresh.timelineIndex !== owner.timelineIndex
           || fresh.outcome !== owner.outcome || fresh.bodies !== owner.bodies || fresh.sources !== owner.sources
-          || !currentAssemblyMeshPublication(fresh, current)) return false;
+          || !currentAssemblyMeshPublication(fresh, current)) { settleRefresh('fresh-mismatch'); return false; }
         const freshBundle = assemblyBundleOf(current);
-        if (!currentAssemblyMeshAdmission({ bundle: freshBundle, ownership: fresh, state: current }, current)) return false;
+        if (!currentAssemblyMeshAdmission({ bundle: freshBundle, ownership: fresh, state: current }, current)) {
+          settleRefresh('fresh-admission'); return false;
+        }
         scene.setAssembly(freshBundle);
         requestDraw();
+        settleRefresh('applied');
         return true;
-      }).catch(() => false) // Fail closed; never reoffer the rejected owner.
+      }).catch(() => { settleRefresh('threw'); return false; }) // Fail closed; never reoffer the rejected owner.
         .finally(() => {
           refusedAssemblyRefresh.add(owner);
           if (pendingAssemblyRefresh.get(owner) === pending) pendingAssemblyRefresh.delete(owner);
         });
       pendingAssemblyRefresh.set(owner, pending);
-      return false;
+      refreshOutcomeCells.set(pending, cell);
+      return refuseReady('refresh-started');
     }
     const listeners = drawListenersRef.current;
     let completedRenders = 0;
@@ -791,34 +869,31 @@ export function ViewportCanvas(): React.JSX.Element {
     const readCutPreview = (): CutPreview | null => alive ? lastCutPreview : null;
     lifetime.register('cut preview observation', attachCutPreviewReader(readCutPreview));
     // Diagnostic metadata only. Weak identity tags never retain documents or bodies.
-    const ownerIdentities = new WeakMap<object, number>();
-    let nextOwnerIdentity = 0;
-    const identityOf = (value: object | null): number | null => {
-      if (value === null) return null;
-      const previous = ownerIdentities.get(value);
-      if (previous !== undefined) return previous;
-      const identity = ++nextOwnerIdentity;
-      ownerIdentities.set(value, identity);
-      return identity;
-    };
-    const readOwnerCheck = (read: () => boolean): { readonly value: boolean | null; readonly error: string | null } => {
-      try { return { value: read(), error: null }; }
-      catch (error) { return { value: null, error: String(error) }; }
-    };
+    const describeAssemblyOwner = createAssemblyOwnerDiagnostics();
     // Same publication lifetime as the existing owner getter; no per-frame observation.
-    const mateInputs: Readonly<Partial<AssemblyMateInputObservation>>[] = [];
-    let inputDocumentEpoch = 0;
+    const mateInputs: MateInputRecord[] = [];
+    // 押下の時点の準備の判定。prepareMateInput が置き、同じ押下の最初の観測だけが入力へ結ぶ。
+    // 明示の型を変数と WeakMap で共有する(初期値 null の直後の typeof は null へ絞られ、NonNullable が never になるため)。
+    let preparedInput: PreparedMateReadiness | null = null;
+    const inputReadiness = new WeakMap<AssemblyMateInputObservation, PreparedMateReadiness>();
+    let inputDocumentGeneration = 0;
     const inputSnapshots = new WeakMap<AssemblyMateInputObservation, {
-      readonly epoch: number; readonly snapshot: Readonly<Partial<AssemblyMateInputObservation>>;
+      readonly epoch: number; readonly snapshot: MateInputRecord;
     }>();
     const observeMateInput = (input: AssemblyMateInputObservation): void => {
       if (!alive) return;
       const previous = inputSnapshots.get(input);
-      if (previous !== undefined && previous.epoch !== inputDocumentEpoch) return;
+      if (previous !== undefined && previous.epoch !== inputDocumentGeneration) return;
+      if (previous === undefined && preparedInput !== null) {
+        inputReadiness.set(input, preparedInput); preparedInput = null;
+      }
+      const readiness = inputReadiness.get(input);
       // 部品の記録は判定・保留・内部idだけ。座標、文書、例外の文言は保持しない。
-      const snapshot: Readonly<Partial<AssemblyMateInputObservation>> = input.componentPick !== undefined
-        ? Object.freeze({ inputGate: input.inputGate, deferred: input.deferred, waiting: input.waiting,
-          componentPick: Object.freeze({ ...input.componentPick }) })
+      const snapshot: MateInputRecord = input.componentPick !== undefined
+        ? Object.freeze({ inputGate: input.inputGate, deferred: input.deferred, deferredReason: input.deferredReason,
+          waiting: input.waiting, componentPick: Object.freeze({ ...input.componentPick }),
+          readiness: readiness === undefined ? undefined : Object.freeze({ ready: readiness.ready,
+            refresh: readiness.refresh === null ? null : readiness.refresh.outcome ?? 'unsettled' }) })
         : Object.freeze({ ...input, clientPoint: Object.freeze([...input.clientPoint] as const),
           ...(input.canvasPoint === undefined ? {} : { canvasPoint: Object.freeze([...input.canvasPoint] as const) }),
           ...(input.scene === undefined ? {} : { scene: Object.freeze({ ...input.scene }) }),
@@ -831,29 +906,12 @@ export function ViewportCanvas(): React.JSX.Element {
         mateInputs.push(snapshot);
         if (mateInputs.length > 2) mateInputs.shift();
       }
-      inputSnapshots.set(input, { epoch: inputDocumentEpoch, snapshot });
+      inputSnapshots.set(input, { epoch: inputDocumentGeneration, snapshot });
     };
-    const readAssemblyOwner = (): Readonly<Record<string, unknown>> | null => {
-      if (!alive) return null;
-      const state = useAppStore.getState(), view = state.assemblyView, owner = view?.meshOwnership;
-      return { viewportOwnerId, mateInputs: [...mateInputs], activeDocumentId: state.activeDocumentId,
-        documentVersion: state.documentVersion, requestedGeneration: state.requestedGeneration,
-        completedGeneration: state.completedGeneration, cancelRequestCount: state.cancelRequestCount,
-        recomputeCancelled: state.recomputeCancelled, lastOutcome: state.lastOutcome, timelineIndex: state.timelineIndex,
-        assemblyIdentity: identityOf(state.assembly), drawingIdentity: identityOf(state.drawing),
-        assemblyLibraryIdentity: identityOf(state.assemblyLibrary), assemblyViewIdentity: identityOf(view),
-        sourceDocumentIdentity: identityOf(view?.sourceDocument ?? null),
-        sourceBodiesIdentity: identityOf(view?.bodies ?? null), ownershipIdentity: identityOf(owner ?? null),
-        ownership: owner === undefined ? null : {
-          documentIdentity: identityOf(owner.document), libraryIdentity: identityOf(owner.library),
-          activeDocumentId: owner.activeDocumentId, documentVersion: owner.documentVersion,
-          generation: owner.generation, outcome: owner.outcome, timelineIndex: owner.timelineIndex,
-          cancelRequestCount: owner.cancelRequestCount, bodiesIdentity: identityOf(owner.bodies),
-          receiptStatus: owner.receipt.status, backingInspectionStatus: owner.backingInspection.status,
-          publicationCurrent: readOwnerCheck(() => owner.publicationCurrent()), receiptCurrent: readOwnerCheck(() => owner.receiptCurrent()),
-          backingInspectionCurrent: readOwnerCheck(() => owner.backingInspectionCurrent()),
-        } };
-    };
+    const readAssemblyOwner = (): Readonly<Record<string, unknown>> | null => alive ? {
+      viewportOwnerId, mateInputs: [...mateInputs], assemblyReadyRefusal, assemblyRefreshOutcome,
+      ...describeAssemblyOwner(useAppStore.getState()),
+    } : null;
     lifetime.register('assembly ownership observation', () => {
       mateInputs.length = 0;
       if (window.pcadViewportAssemblyOwner === readAssemblyOwner) delete window.pcadViewportAssemblyOwner;
@@ -1007,10 +1065,10 @@ export function ViewportCanvas(): React.JSX.Element {
       if (assemblyReady()) return capture();
       const pending = owner === undefined ? undefined : pendingAssemblyRefresh.get(owner);
       if (pending === undefined) { thumbnailReasons.record('consumer:admission'); return null; }
-      const epoch = thumbnailPublicationEpoch;
+      const capturedGeneration = thumbnailPublicationGeneration;
       thumbnailReasons.record('consumer:admission-wait');
       return pending.then(ready => {
-        if (!alive || !ready || epoch !== thumbnailPublicationEpoch) {
+        if (!alive || !ready || capturedGeneration !== thumbnailPublicationGeneration) {
           thumbnailReasons.record('consumer:admission-obsolete'); return null;
         }
         const state = useAppStore.getState(), fresh = state.assemblyView?.meshOwnership;
@@ -1092,8 +1150,15 @@ export function ViewportCanvas(): React.JSX.Element {
       viewDirection: () => viewDirection(controls.getOrbit()),
       prepareMateInput: () => {
         const owner = useAppStore.getState().assemblyView?.meshOwnership;
-        if (assemblyReady()) return null;
-        return (owner === undefined ? undefined : pendingAssemblyRefresh.get(owner)) ?? Promise.resolve(false);
+        const ready = assemblyReady();
+        const waiting = ready ? null
+          : (owner === undefined ? undefined : pendingAssemblyRefresh.get(owner)) ?? Promise.resolve(false);
+        const prepared: PreparedMateReadiness = { ready: ready ? 'ready' : readyCallRefusal ?? 'unknown',
+          refresh: waiting === null ? null : refreshOutcomeCells.get(waiting) ?? { outcome: 'not-offered' } };
+        preparedInput = prepared;
+        // 結ばれずに残った判定を、後の別の押下へ渡さない。
+        void Promise.resolve().then(() => { if (preparedInput === prepared) preparedInput = null; });
+        return waiting;
       },
       observeMateInput,
     });
@@ -1194,7 +1259,7 @@ export function ViewportCanvas(): React.JSX.Element {
       if (!alive) return;
       if (next.activeDocumentId !== previous.activeDocumentId || next.assembly !== previous.assembly
         || next.document !== previous.document) {
-        inputDocumentEpoch += 1;
+        inputDocumentGeneration += 1;
         mateInputs.length = 0;
       }
       // Remember invalidation even if a document/cancel/generation changes and returns
@@ -1206,7 +1271,7 @@ export function ViewportCanvas(): React.JSX.Element {
         || next.assemblyView?.resolved !== previous.assemblyView?.resolved
         || next.assemblyView?.appearances !== previous.assemblyView?.appearances
         || next.documentSaveOperation !== previous.documentSaveOperation && next.documentSaveOperation?.stage === 'cancelled') {
-        thumbnailPublicationEpoch++;
+        thumbnailPublicationGeneration++;
       }
       syncRepairPreview(next);
       // スケッチの形と、カーネルが返した面(FR-105、FR-310)。
@@ -1314,9 +1379,7 @@ export function ViewportCanvas(): React.JSX.Element {
         scene.setSectionView(sectionViewRenderOf(next.sectionView));
       }
       // 立体解析の場。失敗・取消・古い結果・文書の差し替えでは結果が消えるので、場も消える。
-      if (next.solidAnalysisSession !== previous.solidAnalysisSession || next.solidModal !== previous.solidModal
-        || next.solidBuckling !== previous.solidBuckling
-        || next.document !== previous.document || next.completedGeneration !== previous.completedGeneration) {
+      if (solidAnalysisLayersChanged(next, previous)) {
         const layers = solidAnalysisLayersOf(next);
         scene.setAnalysisField(layers.field); scene.setAnalysisMode(layers.mode);
         requestDraw();

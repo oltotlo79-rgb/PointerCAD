@@ -33,6 +33,8 @@ export interface AssemblyMateInputObservation {
   readonly altKey: boolean;
   readonly draftBefore: number | null;
   deferred?: 'applied' | 'discarded' | 'refused';
+  /** 保留を捨てた・断った時だけ: 最初に外れた比較の名前、または取り消した操作(BUG.VIEW-PICK-NULL の観測)。 */
+  deferredReason?: string;
   waiting?: boolean;
   componentPick?: AssemblyComponentPickObservation;
   /** 入れ子の葉の部品を接合で選んだ時の結果(解けない理由、または model の口が無いための断り)。 */
@@ -145,12 +147,50 @@ function awaitMateRefresh(waiting: Promise<boolean>, target: WeakRef<{ readonly 
   void waiting.then(ready => target.deref()?.finish(ready), () => target.deref()?.finish(false));
 }
 
+/** 入力の観測へ押した後の下書きの数と問題を書き、診断の受け手へ渡す(観測しない入力では何もしない)。 */
+function reportMateInput(observation: AssemblyMateInputObservation | undefined, dragInput: AssemblyDragInput | undefined): void {
+  if (observation === undefined) return;
+  const draft = useAppStore.getState().assemblyMateDraft;
+  observation.draftAfter = draft?.targets.length ?? null;
+  observation.issue = draft?.issue?.slice(0, 256) ?? null;
+  // A diagnostic consumer must not interrupt or retry the actual input action.
+  try { dragInput?.observeMateInput?.(observation); } catch { /* Diagnostic only. */ }
+}
+
+type MateInputState = ReturnType<typeof useAppStore.getState>;
+
+/**
+ * 保留した入力を採用してよいかの比較のうち、文書・計算の世代・表示の元(BUG.VIEW-PICK-NULL)。
+ * 最初に外れた比較の名前を返し、全て同じなら null。順と内容は従来の valid の前半と同じ。
+ */
+function staleMateDocumentField(state: MateInputState, current: MateInputState): string | null {
+  const view = current.assemblyView;
+  const checks: readonly (readonly [string, () => boolean])[] = [
+    ['assembly', () => current.assembly === state.assembly], ['document', () => current.document === state.document],
+    ['activeDocumentId', () => current.activeDocumentId === state.activeDocumentId],
+    ['assemblyLibrary', () => current.assemblyLibrary === state.assemblyLibrary],
+    ['documentVersion', () => current.documentVersion === state.documentVersion],
+    ['requestedGeneration', () => current.requestedGeneration === state.requestedGeneration],
+    ['completedGeneration', () => current.completedGeneration === state.completedGeneration],
+    ['cancelRequestCount', () => current.cancelRequestCount === state.cancelRequestCount],
+    ['recomputeCancelled', () => current.recomputeCancelled === state.recomputeCancelled],
+    ['lastOutcome', () => current.lastOutcome === state.lastOutcome],
+    ['timelineIndex', () => current.timelineIndex === state.timelineIndex],
+    ['isComputing', () => current.isComputing === state.isComputing],
+    ['view.sourceDocument', () => view?.sourceDocument === state.assemblyView?.sourceDocument],
+    ['view.bodies', () => view?.bodies === state.assemblyView?.bodies],
+    ['view.resolved', () => view?.resolved === state.assemblyView?.resolved],
+  ];
+  return checks.find(([, same]) => !same())?.[0] ?? null;
+}
+
 /** Assemblyの入力をpart用listenerから分離する。視点操作は先に登録されたcameraが所有する。 */
 export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: AssemblyPickScene, dragInput?: AssemblyDragInput): AssemblyInteraction {
   let detached = false;
-  let pendingMate: { readonly pointerId: number; readonly valid: () => boolean; readonly finish: (ready: boolean) => void;
+  let pendingMate: { readonly pointerId: number; readonly stale: () => string | null;
+    readonly finish: (ready: boolean, cause?: string) => void;
     readonly bodyPoint: readonly [number, number] | null } | null = null;
-  const cancelMate = (): void => { const previous = pendingMate; pendingMate = null; previous?.finish(false); };
+  const cancelMate = (cause = 'cancelled'): void => { const previous = pendingMate; pendingMate = null; previous?.finish(false, cause); };
   let captured: number | null = null;
   let frame: number | null = null;
   let pending: Vec3 | null = null;
@@ -200,7 +240,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
         return observation?.componentPick === undefined ? scene.pickComponent(at[0], at[1])
           : scene.pickComponent(at[0], at[1], observation.componentPick);
       } catch (error) {
-        reportInput(observation);
+        reportMateInput(observation, dragInput);
         throw error;
       }
     }
@@ -244,14 +284,6 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     if (nested === null || (nested.path.length <= 1 && !nestedBolt)) return null;
     return nested;
   };
-  const reportInput = (observation: AssemblyMateInputObservation | undefined): void => {
-    if (observation === undefined) return;
-    const draft = useAppStore.getState().assemblyMateDraft;
-    observation.draftAfter = draft?.targets.length ?? null;
-    observation.issue = draft?.issue?.slice(0, 256) ?? null;
-    // A diagnostic consumer must not interrupt or retry the actual input action.
-    try { dragInput?.observeMateInput?.(observation); } catch { /* Diagnostic only. */ }
-  };
   // W1: 溶接の道具を開いて何も選んでいない時だけ、子の定義が持つビードの面の当たりを、その正確な経路で返す。
   // 経路が表示の配置と一意に一致し、見えていて、子の定義のビードと確かめられた時だけ。それ以外は今の経路のまま。
   const idleWeldChildBeadPath = (event: PointerEvent): readonly string[] | null => {
@@ -279,13 +311,13 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       // 確定はしない。定義の範囲と影響する配置の数を窓で確かめてから commitChildFilletWeldEdit が確定する。
       const accepted = useAppStore.getState().beginChildFilletWeldEdit(childBead);
       if (observation !== undefined) observation.addAccepted = accepted;
-      reportInput(observation);
+      reportMateInput(observation, dragInput);
       return;
     }
     const target = pick(event, observation);
     const state = useAppStore.getState();
     if (typeof target === 'string') {
-      reportInput(observation);
+      reportMateInput(observation, dragInput);
       if (event.shiftKey) state.toggleSelection(target);
       else {
         state.setSelection([target]);
@@ -319,27 +351,27 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
           : accepted ? undefined : state.assemblyFilletWeldDraft !== null ? 'nested-weld-order' : 'nested-bolt-order';
         if (issue !== undefined) observation.jointOccurrenceIssue = issue;
       }
-      reportInput(observation);
+      reportMateInput(observation, dragInput);
     } else if (target !== null && 'path' in target) {
       // 入れ子の葉の実らせんの壁の組(締結の穴の枠だけ)。入れ子の締結の下書きへ足し、合致・溶接へは渡さない。
       const accepted = state.assemblyBoltedJointDraft !== null && state.pickNestedBoltedJointTarget(target);
       if (observation !== undefined) observation.addAccepted = accepted;
-      reportInput(observation);
+      reportMateInput(observation, dragInput);
     } else if (target !== null) {
       // 実らせんの組は締結の穴の枠だけのもの。合致・溶接へは渡さない。
       const accepted = state.assemblyBoltedJointDraft !== null ? state.pickBoltedJointFace(target)
         : target.kind === 'modeledThreadGroup' ? false
           : state.assemblyFilletWeldDraft !== null ? state.pickFilletWeldTarget(target) : addMateTarget(target);
       if (observation !== undefined) observation.addAccepted = accepted;
-      reportInput(observation);
+      reportMateInput(observation, dragInput);
     } else {
       if (state.assemblyMateDraft === null && state.assemblyBoltedJointDraft === null
         && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null) state.setSelection([]);
-      reportInput(observation);
+      reportMateInput(observation, dragInput);
     }
   };
   const onPointerDown = (event: PointerEvent): void => {
-    cancelMate();
+    cancelMate('next-input');
     const before = useAppStore.getState();
     if (before.assembly === null) return;
     const observation: AssemblyMateInputObservation | undefined = dragInput?.observeMateInput === undefined ? undefined : {
@@ -352,7 +384,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     event.stopImmediatePropagation();
     if (event.button !== 0 || event.altKey) {
       if (observation !== undefined) observation.inputGate = 'button-or-alt';
-      reportInput(observation);
+      reportMateInput(observation, dragInput);
       return;
     }
     event.preventDefault();
@@ -365,46 +397,52 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       && state.assemblyPlacement === null && !state.isComputing
       && (bodySelection || state.displaySettings.selectionFilter[subShapePickKind(state)])) {
       const rect = canvas.getBoundingClientRect();
-      const valid = (): boolean => {
-        const current = useAppStore.getState(), view = current.assemblyView;
+      // 保留した入力を採用してよいか。外れた時は最初に外れた比較の名前を返す(順と内容は従来の valid と同じ)。
+      const stale = (): string | null => {
+        const current = useAppStore.getState();
         const now = canvas.getBoundingClientRect();
-        return !detached && current.assembly === state.assembly && current.document === state.document
-          && current.activeDocumentId === state.activeDocumentId && current.assemblyLibrary === state.assemblyLibrary
-          && current.documentVersion === state.documentVersion && current.requestedGeneration === state.requestedGeneration
-          && current.completedGeneration === state.completedGeneration && current.cancelRequestCount === state.cancelRequestCount
-          && current.recomputeCancelled === state.recomputeCancelled && current.lastOutcome === state.lastOutcome
-          && current.timelineIndex === state.timelineIndex && current.isComputing === state.isComputing
-          && view?.sourceDocument === state.assemblyView?.sourceDocument && view?.bodies === state.assemblyView?.bodies
-          && view?.resolved === state.assemblyView?.resolved && current.assemblyMateDraft === state.assemblyMateDraft
-          && current.assemblyBoltedJointDraft === state.assemblyBoltedJointDraft
-          && current.assemblyFilletWeldDraft === state.assemblyFilletWeldDraft
-          && current.assemblyCircularWeldDraft === state.assemblyCircularWeldDraft
-          && current.assemblyNestedWeldDraft === state.assemblyNestedWeldDraft
-          && current.assemblyPlacement === state.assemblyPlacement && current.selectionKind === state.selectionKind
-          && current.selection === state.selection && current.displaySettings.selectionFilter === state.displaySettings.selectionFilter
-          && current.assemblyDragOverlay === state.assemblyDragOverlay
-          && current.assemblyMotionPlacements === state.assemblyMotionPlacements
-          && current.assemblyOccurrenceDrives === state.assemblyOccurrenceDrives
-          && current.assemblyMotionSourceDocument === state.assemblyMotionSourceDocument
-          && current.projection === state.projection && current.quadCamera === state.quadCamera
-          && now.left === rect.left && now.top === rect.top && now.width === rect.width && now.height === rect.height;
+        if (detached) return 'detached';
+        const documentField = staleMateDocumentField(state, current);
+        if (documentField !== null) return documentField;
+        const checks: readonly (readonly [string, () => boolean])[] = [
+          ['assemblyMateDraft', () => current.assemblyMateDraft === state.assemblyMateDraft],
+          ['assemblyBoltedJointDraft', () => current.assemblyBoltedJointDraft === state.assemblyBoltedJointDraft],
+          ['assemblyFilletWeldDraft', () => current.assemblyFilletWeldDraft === state.assemblyFilletWeldDraft],
+          ['assemblyCircularWeldDraft', () => current.assemblyCircularWeldDraft === state.assemblyCircularWeldDraft],
+          ['assemblyNestedWeldDraft', () => current.assemblyNestedWeldDraft === state.assemblyNestedWeldDraft],
+          ['assemblyPlacement', () => current.assemblyPlacement === state.assemblyPlacement],
+          ['selectionKind', () => current.selectionKind === state.selectionKind],
+          ['selection', () => current.selection === state.selection],
+          ['selectionFilter', () => current.displaySettings.selectionFilter === state.displaySettings.selectionFilter],
+          ['assemblyDragOverlay', () => current.assemblyDragOverlay === state.assemblyDragOverlay],
+          ['assemblyMotionPlacements', () => current.assemblyMotionPlacements === state.assemblyMotionPlacements],
+          ['assemblyOccurrenceDrives', () => current.assemblyOccurrenceDrives === state.assemblyOccurrenceDrives],
+          ['assemblyMotionSourceDocument', () => current.assemblyMotionSourceDocument === state.assemblyMotionSourceDocument],
+          ['projection', () => current.projection === state.projection], ['quadCamera', () => current.quadCamera === state.quadCamera],
+          ['canvasRect', () => now.left === rect.left && now.top === rect.top && now.width === rect.width && now.height === rect.height],
+        ];
+        return checks.find(([, same]) => !same())?.[0] ?? null;
       };
       let waiting: Promise<boolean> | null;
       try { waiting = dragInput.prepareMateInput(); } catch {
-        if (observation !== undefined) observation.deferred = 'refused';
-        reportInput(observation); return;
+        if (observation !== undefined) { observation.deferred = 'refused'; observation.deferredReason = 'prepare-threw'; }
+        reportMateInput(observation, dragInput); return;
       }
       if (waiting !== null) {
         let finished = false;
-        const input = { valid, pointerId: event.pointerId, bodyPoint: bodySelection ? pointer(event) : null, finish: (ready: boolean): void => {
+        const input = { stale, pointerId: event.pointerId, bodyPoint: bodySelection ? pointer(event) : null, finish: (ready: boolean, cause?: string): void => {
           if (finished) return;
           finished = true;
           if (observation !== undefined) observation.waiting = false;
           const owned = pendingMate === input;
           if (owned) pendingMate = null;
-          if (!owned || !ready || !valid()) {
-            if (observation !== undefined) observation.deferred = !owned || ready ? 'discarded' : 'refused';
-            reportInput(observation); return;
+          const staleField = !owned || !ready ? null : stale();
+          if (!owned || !ready || staleField !== null) {
+            if (observation !== undefined) {
+              observation.deferred = !owned || ready ? 'discarded' : 'refused';
+              observation.deferredReason = !owned ? cause ?? 'superseded' : !ready ? 'not-ready' : staleField ?? 'unknown';
+            }
+            reportMateInput(observation, dragInput); return;
           }
           if (observation !== undefined) observation.deferred = 'applied';
           // 解放済みの pointerdown を再生してドラッグを始めない。保留した部品入力は選択だけを行う。
@@ -412,7 +450,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
         } };
         pendingMate = input;
         if (observation !== undefined) observation.waiting = true;
-        reportInput(observation);
+        reportMateInput(observation, dragInput);
         // Cancellation drops the strong event/state references even if refresh never settles.
         awaitMateRefresh(waiting, new WeakRef(input));
         return;
@@ -425,7 +463,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     if (pendingMate?.pointerId === event.pointerId && waitingPoint !== undefined && waitingPoint !== null) {
       const at = pointer(event);
       // 待っている間に別の場所へ動いた入力を、元の部品の選択として採用しない。
-      if (at[0] !== waitingPoint[0] || at[1] !== waitingPoint[1]) cancelMate();
+      if (at[0] !== waitingPoint[0] || at[1] !== waitingPoint[1]) cancelMate('moved');
     }
     const state = useAppStore.getState();
     if (state.assembly === null) return;
@@ -471,14 +509,14 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     else finishComponentDrag(point);
   };
   const onPointerCancel = (event: PointerEvent): void => {
-    if (pendingMate?.pointerId === event.pointerId) cancelMate();
+    if (pendingMate?.pointerId === event.pointerId) cancelMate('pointercancel');
     if (useAppStore.getState().assembly !== null) event.stopImmediatePropagation();
     if (captured !== null && event.pointerId === captured) cancelDrag();
   };
   const onKeyDown = (event: KeyboardEvent): void => {
     const state = useAppStore.getState();
     if (state.assembly === null || isCompositionKey(event)) return;
-    if (event.key === 'Escape') cancelMate();
+    if (event.key === 'Escape') cancelMate('escape');
     if (event.key === 'Escape' && captured !== null) {
       event.preventDefault(); event.stopImmediatePropagation(); cancelDrag(); return;
     }
@@ -523,13 +561,14 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
   canvas.addEventListener('lostpointercapture', onPointerCancel);
   canvas.addEventListener('keydown', onKeyDown);
   const unsubscribe = useAppStore.subscribe((state) => {
-    if (pendingMate !== null && !pendingMate.valid()) cancelMate();
+    const staleField = pendingMate?.stale() ?? null;
+    if (pendingMate !== null && staleField !== null) cancelMate(`store:${staleField}`);
     if (captured !== null && (state.assemblyDrag === null || !currentComponentDrag(state.assemblyDrag))) cancelDrag();
   });
   return { cancelDrag, detach: () => {
     if (detached) return;
     detached = true;
-    cancelMate();
+    cancelMate('detached');
     const actions = [
       () => canvas.removeEventListener('pointerdown', onPointerDown),
       () => canvas.removeEventListener('pointermove', onPointerMove),

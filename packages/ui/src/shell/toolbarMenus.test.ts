@@ -1,3 +1,4 @@
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import { cancelPartSourceConfirmAfterUnmount, mountPartSourceConfirmDialog, partSourceConfirmDialogElement } from './AppShell.js';
 import { AssemblyPartRefreshItem } from './AssemblyTree.js';
 import { embedPart } from '@pointercad/model';
@@ -14,7 +15,7 @@ import { embedPart } from '@pointercad/model';
 import { addComponent, createAssemblyDocument, createComponentFor, createEmptyPartDocument, diagnoseMates, EMPTY_PART_LIBRARY,
   resolveAssembly, resolveMateTarget, resolvePart, solveMates, SKETCH_CONSTRAINT_KINDS, type Mate, type MateResidualTargetPair } from '@pointercad/model';
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { createElement, type ComponentType } from 'react';
+import { createElement } from 'react';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
@@ -71,11 +72,7 @@ describe('畳んだ一覧の中身(FR-904、NFR-UX-7)', () => {
     for (const expected of ['対象を先に選んでも', 'Enter', 'Esc', 'Tab', 'ずらす距離', '負の値', '値の編集', '向きの反転', '削除', '未確定', '両立を確認できません', '矛盾']) expect(help).toContain(expected);
     for (const item of ASSEMBLY_MATE_TOOLS) expect(help).toContain(t(item.labelKey));
   });
-  const renderCurrent = (component: ComponentType) => {
-    // SSRにはlive storeのsnapshotを供給する。描画本体・対象解決・solverは実物を使う。
-    const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-    try { return renderToStaticMarkup(createElement(component)); } finally { snapshot.mockRestore(); }
-  };
+  const renderCurrent = (component: Parameters<typeof renderCurrentStore>[0]) => renderCurrentStore(component);
 
   it('実ツールバーは合わせるを1つのmenu triggerに畳み、6道具へ説明と図柄を接続する', () => {
     resetTestStore();

@@ -1,3 +1,5 @@
+import { fatigueFailure } from './fatigueFailure.js';
+import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
  * Mean-stress corrected strain-life for ONE documented constant-amplitude LOCAL cycle (a finite slice; history pairing
  * of stresses with rainflow cycles is a separate, later task). The user gives the local strain extrema and the local
@@ -84,14 +86,13 @@ export interface LocalCycleResult {
 }
 export type LocalCycleAnalysis = { readonly ok: true; readonly result: LocalCycleResult } | LocalCycleError;
 
-const fail = (code: LocalCycleErrorCode, path: string): LocalCycleError => ({ ok: false, code, path });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const fail: (code: LocalCycleErrorCode, path: string) => LocalCycleError = fatigueFailure;
+
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 
 function readSource(value: unknown, path: string): FatigueSource | LocalCycleError {
   if (!record(value) || !exactKeys(value, ['kind', 'reference', 'condition'])) return fail('local-cycle-shape', path);

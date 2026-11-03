@@ -1,11 +1,8 @@
+import { isPlainRecord as record } from './valueGuards.js';
 import { decodeBeamWeldSpanContact, translateBeamWeldSpanContact,
   type BeamWeldSpanContactInput } from './beamWeldSpanContact.js';
 
 export type BeamWeldSpanContactResult = Awaited<ReturnType<typeof decodeBeamWeldSpanContact>>;
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
-}
 /** Preliminary discrimination only; never read a top-level accessor. */
 export function isBeamWeldSpanContactResult(value: unknown): value is BeamWeldSpanContactResult {
   try {

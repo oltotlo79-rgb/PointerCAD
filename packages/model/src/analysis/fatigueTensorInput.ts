@@ -1,4 +1,4 @@
-import { InputIssue, text } from './analysisValidation.js';
+import { fatigueInputFailure as fail, InputIssue, text } from './analysisValidation.js';
 import { FATIGUE_SAVED_ID, FATIGUE_SAVED_LIMITS, denseFatigueList, exactFatigueFields, fatigueLabel, finiteFatigueNumber,
   readFatigueSavedCurve, readFatigueSavedSource, type FatigueSavedCurve, type FatigueSavedSource } from './fatigueInput.js';
 
@@ -48,9 +48,6 @@ export interface FatigueTensorSavedInput {
   readonly input: FatigueSavedTensorProblem;
 }
 
-function fail(path: string, message: string): never {
-  throw new InputIssue('fatigue', path, message);
-}
 
 function readComponent(row: Record<string, unknown>, key: 'xx' | 'yy' | 'zz' | 'yz' | 'xz' | 'xy', path: string): number {
   const value = finiteFatigueNumber(row[key], `${path}.${key}`);

@@ -1,3 +1,4 @@
+import { isFiniteNumber, isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import type { Vector3 } from './analysisModel.js';
 import type { BucklingRestraints } from './bucklingModel.js';
@@ -26,9 +27,7 @@ export interface ImpactRefinementEntry {
 
 const unrestrained: BucklingRestraints = [false, false, false, false, false, false];
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 /** Exact own fields only: an inherited property never satisfies a required field. */
 function fields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!record(value) || Object.keys(value).length !== names.length || names.some(name => !Object.hasOwn(value, name))) {
@@ -54,7 +53,7 @@ function list(value: unknown, path: string, minimum: number, maximum: number): u
   return value;
 }
 function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`impact-number: ${path}`);
+  if (!isFiniteNumber(value)) throw new Error(`impact-number: ${path}`);
   return value === 0 ? 0 : value;
 }
 function vector(value: unknown, path: string): Vector3 {

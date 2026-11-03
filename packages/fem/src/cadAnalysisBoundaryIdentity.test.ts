@@ -2,10 +2,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { absoluteCoordinate, appendSolid, createAssemblyDocument, createDirectKernelBridge, createEmptyPartDocument,
   embedPart, EMPTY_PART_LIBRARY, requestAnalysisBoundary, resolveAssembly, resolvePart,
   type AnalysisBoundary, type PartDocument, type PrimitiveFeature, type RigidPlacement } from '@pointercad/model';
-import { readSolidCadSavedInput, solidCadFaceKey } from '../../model/src/analysis/solidCadInput.js';
-import { applyPlacementToPoint } from '../../model/src/assembly/placementMath.js';
-import { createKernelApi } from '../../kernel/src/index.js';
-import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
+import { readSolidCadSavedInput, solidCadFaceKey } from '@pointercad/model/beam-analysis';
+import { applyPlacementToPoint } from '@pointercad/model';
+import { createKernelApi } from '@pointercad/kernel';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { prepareCadTetraMesh, type CadTetraContext, type CadSavedBoundarySelection } from './cadTetraMesh.js';
 import { CurvedRouteRefusal, prepareCurvedCadTetraMesh } from './cadCurvedTetraMesh.js';
 

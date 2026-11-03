@@ -1,28 +1,28 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
-import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../model/src/testing/createNativeKernelBridge.node.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { readPcadFile, writePcadFile } from '../../io/src/pcad/pcadFile.js';
+import { readPcadFile, writePcadFile } from '@pointercad/io';
 import {
   commitBoltedJointDraft, createBoltedJointDraft, previewBoltedJointDraft, type BoltedJointThreadGroupTarget,
 } from '../src/assembly/boltedJointDraft.js';
 import type { AssemblyView } from '../src/store/assemblySlice.js';
-import { type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
-import { createSubShapeReference } from '../../model/src/kernelBridge/createSubShapeReference.js';
-import { resolveSubShapeReference } from '../../model/src/kernelBridge/referenceResolution.js';
-import { appendSolid, createEmptyPartDocument, replaceSketch } from '../../model/src/part/createPartDocument.js';
-import { recomputePart } from '../../model/src/part/recomputePart.js';
-import type { HoleFeature, PartDocument, PrimitiveFeature, SubShapeRef, ThreadHoleFeature } from '../../model/src/part/types.js';
-import { absoluteCoordinate, appendFeature, createPointFeature } from '../../model/src/sketch/createSketchDocument.js';
-import { threadMinorDiameter } from '../../model/src/thread/metricThread.js';
-import { addComponent, createComponentFor } from '../../model/src/assembly/assemblyEdit.js';
-import { createAssemblyDocument } from '../../model/src/assembly/createAssemblyDocument.js';
-import { emptyEmbeddedPartAttachments, type PartLibrary } from '../../model/src/assembly/partLibrary.js';
-import { partKeyOf, resolveAssembly } from '../../model/src/assembly/resolveAssembly.js';
+import { type SolidBody, type SolidFaceEntry } from '@pointercad/model';
+import { createSubShapeReference } from '@pointercad/model';
+import { resolveSubShapeReference } from '@pointercad/model';
+import { appendSolid, createEmptyPartDocument, replaceSketch } from '@pointercad/model';
+import { recomputePart } from '@pointercad/model';
+import type { HoleFeature, PartDocument, PrimitiveFeature, SubShapeRef, ThreadHoleFeature } from '@pointercad/model';
+import { absoluteCoordinate, appendFeature, createPointFeature } from '@pointercad/model';
+import { threadMinorDiameter } from '@pointercad/model';
+import { addComponent, createComponentFor } from '@pointercad/model';
+import { createAssemblyDocument } from '@pointercad/model';
+import { emptyEmbeddedPartAttachments, type PartLibrary } from '@pointercad/model';
+import { partKeyOf, resolveAssembly } from '@pointercad/model';
 import {
   bindHoleSelection, faceResolverFromBodies, type FasteningGeometryContext, holeFeatureForSelection,
   modeledThreadGroupPickAt, modeledThreadResolverFromBodies,
-} from '../../model/src/assembly/fastening/bindHoleSelection.js';
+} from '@pointercad/model';
 
 /*
  * 実カーネル(OCCT)で、40×30×10 の板(上の面 z=10)に、離れた同径 φ6 の貫通穴を 2 つあける

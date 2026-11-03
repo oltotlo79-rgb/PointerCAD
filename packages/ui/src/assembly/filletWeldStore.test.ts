@@ -1,8 +1,8 @@
-import { expressionValueFromNumber } from '@pointercad/expression';
+import { placement } from './weldPlacement.testSupport.js';
 import {
   addComponent, applyFilletWeld, createAssemblyDocument, createComponentFor, createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY,
   planFilletWeld, planFilletWeldEdit, weldSegmentsOf, WORK_PLANES,
-  type AssemblyDocument, type FilletWeldRequest, type MateTarget, type Placement, type SubShapeRef, type Vec3, type WeldBodyLookup,
+  type AssemblyDocument, type FilletWeldRequest, type MateTarget, type SubShapeRef, type Vec3, type WeldBodyLookup,
   type SolidBody,
 } from '@pointercad/model';
 import { writeAssemblyDocument } from '@pointercad/io';
@@ -17,11 +17,6 @@ import { planeBody, TEE_PLANE_BODIES } from './filletWeldBodies.testSupport.js';
 beforeEach(resetTestStore);
 
 const REVISIONS: ReadonlyMap<string, string> = new Map([['standing', 'rev-s'], ['base', 'rev-b']]);
-
-function placement(position: Vec3): Placement {
-  return { position: [expressionValueFromNumber(position[0]), expressionValueFromNumber(position[1]),
-    expressionValueFromNumber(position[2])], rotation: [0, 0, 0, 1] };
-}
 
 function tee(): AssemblyDocument {
   let document = createAssemblyDocument('溶接');

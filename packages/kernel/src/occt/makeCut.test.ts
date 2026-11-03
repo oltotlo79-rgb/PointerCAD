@@ -3,7 +3,7 @@ import { expectWithinBudget } from '@pointercad/test-utils';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { PrimitiveShapeSpec, SolidFaceInfo, SubShapeQuery, Vec3Tuple } from '../types.js';
+import type { PrimitiveShapeSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { booleanOp, NOTHING_INSIDE_MESSAGE, NOTHING_REMOVED_MESSAGE } from './booleanOp.js';
 import { writeBrepBytes } from './brepBytes.js';
@@ -18,6 +18,8 @@ import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
+import { unit } from './pointAssertions.testSupport.js';
 
 /**
  * 平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)の検査。
@@ -36,12 +38,6 @@ function expectRelative(actual: number, expected: number, tolerance: number): vo
   expect(Math.abs(actual - expected) / Math.abs(expected)).toBeLessThan(tolerance);
 }
 
-/** 長さ 1 へ揃える(検査の中で法線を作るときに使う)。 */
-function unit(value: Vec3Tuple): Vec3Tuple {
-  const length = Math.hypot(value[0], value[1], value[2]);
-  return [value[0] / length, value[1] / length, value[2] / length];
-}
-
 /** 3 点を通る平面の法線(§2.9b.1 の規則。p1→p2 と p1→p3 の外積、右ねじ)。 */
 function normalOfThreePoints(p1: Vec3Tuple, p2: Vec3Tuple, p3: Vec3Tuple): Vec3Tuple {
   const a: Vec3Tuple = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
@@ -51,19 +47,6 @@ function normalOfThreePoints(p1: Vec3Tuple, p2: Vec3Tuple, p3: Vec3Tuple): Vec3T
     a[2] * b[0] - a[0] * b[2],
     a[0] * b[1] - a[1] * b[0],
   ]);
-}
-
-/** 面 1 枚の素性を、文書が保存する指紋の形へ写す(model がやることと同じ)。 */
-function faceQuery(face: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-  return {
-    kind: 'face',
-    index: face.index,
-    surfaceKind: face.surfaceKind,
-    area: face.area,
-    position: face.centroid,
-    axis: face.axis,
-    radius: face.radius,
-  };
 }
 
 describe('平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)', () => {

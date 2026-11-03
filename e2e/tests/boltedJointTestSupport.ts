@@ -1,4 +1,5 @@
 /// <reference lib="dom" />
+import { normalizePoint as unit } from './normalizePoint.testSupport.js';
 import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { chooseToolMenuItem, openToolMenu, readAssemblyStats, toolMenuPanel, type AssemblyBrowserStats } from './assemblyTestSupport.js';
 import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
@@ -59,13 +60,7 @@ export async function selectComponent(page: Page, index: number): Promise<void> 
   await expect(row).toHaveAttribute('aria-pressed', 'true');
 }
 
-export async function disableFilePickers(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
-      Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: undefined });
-    }
-  });
-}
+export { disableFilePickers } from './filePickers.js';
 
 /**
  * 部品の画面で穴付きの板を作り、製品の「保存」(ファイル選択の口を消してあるのでダウンロード)で落とした
@@ -140,10 +135,6 @@ function sub(a: WorldPoint, b: WorldPoint): WorldPoint { return [a[0] - b[0], a[
 function dot(a: WorldPoint, b: WorldPoint): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 function cross(a: WorldPoint, b: WorldPoint): WorldPoint {
   return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-function unit(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
 }
 const EYE: WorldPoint = [
   HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),

@@ -1,3 +1,4 @@
+import { isRecord as record } from './valueGuards.js';
 import { decodeContactNumericResult, type BeamContactInput, type BeamContactResult } from './contactModel.js';
 import { translateBeamContact } from './contactTranslation.js';
 
@@ -6,9 +7,7 @@ export interface BeamContactAnalysisResult extends BeamContactResult {
   readonly nodeIds: readonly string[];
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 
 /** Worker JSON -> bound result. Identities, counts and factors come from the plan; the numeric decoder recomputes
  * penetration, tension and complementarity; supported (restrained) components must be exactly zero. */

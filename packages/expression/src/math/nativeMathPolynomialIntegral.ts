@@ -3,7 +3,7 @@ import { MathInputProblem } from './mathInputContract.js';
 import type { EngineMathJson } from './encodeMathJson.js';
 import { jsonRational, numberJson } from './nativeMathNumber.js';
 const N = numberJson;
-const op = (head: string, ...args: EngineMathJson[]): EngineMathJson => [head, ...args];
+const createOperationNode = (head: string, ...args: EngineMathJson[]): EngineMathJson => [head, ...args];
 export function polynomialIntegral(input: EngineMathJson): EngineMathJson | null {
   if (!Array.isArray(input) || input[0] !== 'Integrate' || input.length !== 3) return null;
   const [, body, range] = input;
@@ -15,7 +15,7 @@ export function polynomialIntegral(input: EngineMathJson): EngineMathJson | null
     const result: EngineMathJson[] = Array.from({ length: a.length + b.length - 1 }, () => N(0));
     for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) {
       if (--remaining < 0) throw new MathInputProblem('budget', '多項式の積分が複雑すぎます。');
-      result[i + j] = op('Add', result[i + j], op('Multiply', a[i], b[j]));
+      result[i + j] = createOperationNode('Add', result[i + j], createOperationNode('Multiply', a[i], b[j]));
     }
     return result;
   }
@@ -26,7 +26,7 @@ export function polynomialIntegral(input: EngineMathJson): EngineMathJson | null
     const [head, a, b] = value;
     if (!['Add', 'Subtract', 'Negate', 'Multiply', 'Divide', 'Power', 'Square'].includes(head)) return null;
     const first = coefficients(a, depth + 1); if (first === null) return null;
-    if (head === 'Negate') return first.map(value => op('Negate', value));
+    if (head === 'Negate') return first.map(value => createOperationNode('Negate', value));
     if (head === 'Power' || head === 'Square') {
       const power = head === 'Square' ? { numerator: 2n, denominator: 1n } : jsonRational(b);
       if (power === null || power.denominator !== 1n || power.numerator < 0n || power.numerator > 32n) return null;
@@ -40,13 +40,13 @@ export function polynomialIntegral(input: EngineMathJson): EngineMathJson | null
       if (head === 'Multiply') { const product = multiply(result, next); if (product === null) return null; result = product; }
       else if (head === 'Divide') {
         if (next.length !== 1 || jsonRational(next[0])?.numerator === 0n) return null;
-        result = result.map(value => op('Divide', value, next[0]));
-      } else result = Array.from({ length: Math.max(result.length, next.length) }, (_, i) => op(head, result[i] ?? N(0), next[i] ?? N(0)));
+        result = result.map(value => createOperationNode('Divide', value, next[0]));
+      } else result = Array.from({ length: Math.max(result.length, next.length) }, (_, i) => createOperationNode(head, result[i] ?? N(0), next[i] ?? N(0)));
     }
     return result;
   }
   const terms = coefficients(body, 0);
   if (terms === null) return null;
-  return terms.reduce<EngineMathJson>((sum, coefficient, i) => op('Add', sum, op('Multiply', coefficient,
-    op('Divide', op('Subtract', op('Power', upper, N(i + 1)), op('Power', lower, N(i + 1))), N(i + 1)))), N(0));
+  return terms.reduce<EngineMathJson>((sum, coefficient, i) => createOperationNode('Add', sum, createOperationNode('Multiply', coefficient,
+    createOperationNode('Divide', createOperationNode('Subtract', createOperationNode('Power', upper, N(i + 1)), createOperationNode('Power', lower, N(i + 1))), N(i + 1)))), N(0));
 }

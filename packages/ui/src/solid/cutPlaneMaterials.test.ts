@@ -49,7 +49,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createNativeKernelBridgeForNodeTests,
   initializeNativeKernelForNodeTests,
-} from '../../../model/src/testing/createNativeKernelBridge.node.js';
+} from '@pointercad/model/testing/native-kernel';
 import { applyNumericTransition } from '../sketch/commitToStore.js';
 import {
   applyNumericInputKey,

@@ -13,7 +13,7 @@
 
 import { findDensityMaterial } from '../../appearance/densityMaterials.js';
 import type { SolidBody } from '../../kernelBridge.js';
-import { addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
+import { isFiniteVec3 as finite, addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import { findComponent } from '../assemblyEdit.js';
 import { applyPlacementToDirection, applyPlacementToPoint, rotateVector } from '../placementMath.js';
 import type { AssemblyComponent, AssemblyDocument } from '../types.js';
@@ -54,9 +54,6 @@ function reject(code: FilletWeldRejection['code'], detail: FilletWeldRejection['
   return { code, detail };
 }
 
-function finite(vector: Vec3): boolean {
-  return vector.every((value) => Number.isFinite(value));
-}
 
 function unitRejection(name: string, vector: Vec3): FilletWeldRejection | null {
   if (!finite(vector) || lengthVec3(vector) <= WELD_LENGTH_TOLERANCE_MM) return reject('invalidVector', { name });

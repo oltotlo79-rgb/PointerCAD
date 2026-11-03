@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { absoluteCoordinate, appendSolid, DEFAULT_PRIMITIVE_AXIS, recomputePart, type SolidBody } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { attachPartRecompute } from '../store/attachKernel.js';
 import { executeCommand } from './commandRegistry.js';
 import { toolbarCommandId } from './toolbarCommandCatalog.js';

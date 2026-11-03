@@ -8,19 +8,19 @@
  */
 
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
-import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../model/src/testing/createNativeKernelBridge.node.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { readPcadFile, writePcadFile } from '../../io/src/pcad/pcadFile.js';
+import { readPcadFile, writePcadFile } from '@pointercad/io';
 import { subShapeElementId, subShapeRefOf } from '../src/solid/subShapeSelection.js';
-import { type KernelBridge, type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
-import { absoluteCoordinate, appendFeature, createPointFeature, DEFAULT_FACE_COLOR } from '../../model/src/sketch/createSketchDocument.js';
-import { DEFAULT_WORK_PLANE_ID } from '../../model/src/sketch/planeMath.js';
-import type { SketchDocument, SketchFaceFeature } from '../../model/src/sketch/types.js';
-import type { Vec3 } from '../../model/src/sketch/vec3.js';
-import { appendSolid, createEmptyPartDocument, replaceSketch } from '../../model/src/part/createPartDocument.js';
-import { recomputePart } from '../../model/src/part/recomputePart.js';
-import type { HoleFeature, SewFeature, SubShapeRef } from '../../model/src/part/types.js';
+import { type KernelBridge, type SolidBody, type SolidFaceEntry } from '@pointercad/model';
+import { absoluteCoordinate, appendFeature, createPointFeature, DEFAULT_FACE_COLOR } from '@pointercad/model';
+import { DEFAULT_WORK_PLANE_ID } from '@pointercad/model';
+import type { SketchDocument, SketchFaceFeature } from '@pointercad/model';
+import type { Vec3 } from '@pointercad/model';
+import { appendSolid, createEmptyPartDocument, replaceSketch } from '@pointercad/model';
+import { recomputePart } from '@pointercad/model';
+import type { HoleFeature, SewFeature, SubShapeRef } from '@pointercad/model';
 
 const OCCT_TIMEOUT_MS = 180_000;
 let bridge: KernelBridge;

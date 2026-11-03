@@ -1,3 +1,4 @@
+import { dotVec3 as dot, subVec3 as subtract } from '../sketch/vec3.js';
 import type { DrawingDocument, GdtFeature, GdtShapeTarget, Point2, Vector3 } from '@pointercad/drawing';
 import { applyPlacementToDirection, applyPlacementToPoint } from '../assembly/placementMath.js';
 import { resolveSubShapeReference, type SolidEdgeEntry, type SolidFaceEntry } from '../kernelBridge.js';
@@ -46,8 +47,6 @@ function unit(value: Vector3): Vector3 | null {
   const length = Math.hypot(...value);
   return Number.isFinite(length) && length > 1e-12 ? [value[0] / length, value[1] / length, value[2] / length] : null;
 }
-const subtract = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /** 軸は解析曲面/円の軸、中心平面は実際に離れた平行二面から解く。紙面の線から推測しない。 */
 export function resolveGdtFeature(feature: GdtFeature, document: DrawingDocument, context: DimensionResolveContext): ResolvedGdtFeature | null {

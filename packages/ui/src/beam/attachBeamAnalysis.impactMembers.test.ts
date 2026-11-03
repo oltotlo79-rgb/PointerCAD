@@ -184,7 +184,8 @@ describe('impact member-mean resultants in the session lifecycle', () => {
     if (reason === 'cancel') useAppStore.getState().cancelBeam();
     if (reason === 'run-again') useAppStore.getState().runBeam();
     const session = requireBeamSession();
-    expect([session.result, session.impactMembers]).toEqual([null, null]);
+    expect(session.result).toBeNull();
+    expect(session.impactMembers).toBeNull();
   });
 
   it.each(['cancel', 'edit-plane-gap', 'close'] as const)('a late completion after %s publishes no derived set', async reason => {

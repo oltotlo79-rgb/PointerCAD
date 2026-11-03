@@ -75,3 +75,4 @@ packages/help-content/docs/ja/math-symbols.md text eol=lf
 
 # The shipped linear-solid program must match its reviewed source bytes on both OS.
 /packages/fem/src/solidAnalysis.py text eol=lf
+/packages/fem/src/shellAnalysis.py text eol=lf

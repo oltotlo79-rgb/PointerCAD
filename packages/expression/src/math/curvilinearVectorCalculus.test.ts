@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -71,8 +72,7 @@ function source(example: Example, at: boolean): string {
   return example.component === undefined ? input : `component(${input},${String(example.component)})`;
 }
 function request(source: string, angleUnit: 'degree' | 'radian' = 'radian'): MathWorkRequest {
-  return { source, notation: 'text', angleUnit, coefficients: [],
-    identity: { documentId: 'curvilinear', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: angleUnit, identity: { documentId: 'curvilinear', documentVersion: 1, editorId: 'X', inputRevision: 1 } });
 }
 function exampleRequest(example: Example): MathWorkRequest {
   return { ...request(source(example, true), example.angleUnit), presentationNotation: 'latex' };

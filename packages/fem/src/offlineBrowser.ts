@@ -1,3 +1,7 @@
+import { SOLID_FINITE_ASSETS } from './solidFiniteAssets.js';
+import { analyzeSolidFinite } from './solidFiniteRuntime.js';
+import { translateSolidFinite, type SolidFiniteInput } from './solidFiniteTranslation.js';
+import { SOLID_FINITE_KIND, type SolidFiniteWireResult } from './solidFiniteBinding.js';
 import { sha256Hex } from './sha256.js';
 import { SOLID_CONTACT_ASSETS } from './solidContactAssets.js';
 import { analyzeSolidContact } from './solidContactRuntime.js';
@@ -49,6 +53,11 @@ import type { SolidPlasticInput } from './solidPlasticTranslation.js';
 import type { SolidPlasticResult } from './solidPlasticPublicResult.js';
 import type { SolidModalInput, SolidModalResult } from './solidModalModel.js';
 import type { SolidBucklingInput, SolidBucklingResult } from './solidBucklingModel.js';
+import { SHELL_ASSETS } from './shellAssets.js';
+import { analyzeShellNative } from './shellRuntime.js';
+import { SHELL_NATIVE_KIND, type ShellNativeWireResult } from './shellBinding.js';
+import { translateShellAnalysis } from './shellTranslation.js';
+import type { ShellAnalysisInput } from './shellAnalysisModel.js';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -69,7 +78,7 @@ export async function analyzeInBrowser(document:BeamAnalysisDocument,onPhase:(ph
 async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysisDocument, buckling?:BeamBucklingInput,
   transient?:BeamTransientInput, plasticBar?:PlasticBarInput, contact?:BeamContactInput, tetra?:TetraMeshInput,
   solid?:SolidAnalysisInput, solidPlastic?:SolidPlasticInput, boltContact?:BeamBoltContactInput, weldContact?:BeamWeldContactInput,
-  jointContact?:BeamJointContactInput, initialStrain?:BeamJointInitialStrainInput, impact?:BeamImpactInput, solidModal?:SolidModalInput, solidBuckling?:SolidBucklingInput, nativeBolt?:PreparedNativeBoltPreloadJob, frameBoltContact?:FrameBoltContactInput, spanContact?:BeamWeldSpanContactInput, frictionJob?:{ readonly input:BeamFrictionContactInput; readonly options:FrictionSolveOptions }, solidContact?:SolidContactInput):Promise<FemResult | FrictionContactResult>{
+  jointContact?:BeamJointContactInput, initialStrain?:BeamJointInitialStrainInput, impact?:BeamImpactInput, solidModal?:SolidModalInput, solidBuckling?:SolidBucklingInput, nativeBolt?:PreparedNativeBoltPreloadJob, frameBoltContact?:FrameBoltContactInput, spanContact?:BeamWeldSpanContactInput, frictionJob?:{ readonly input:BeamFrictionContactInput; readonly options:FrictionSolveOptions }, solidContact?:SolidContactInput, solidFinite?:SolidFiniteInput, shell?:ShellAnalysisInput):Promise<FemResult | FrictionContactResult>{
   const base = new URL('./assets/', self.location.href);
   const localApp = base.protocol === 'app:' && base.host === 'pointercad';
   const web = (base.protocol === 'http:' || base.protocol === 'https:') && base.origin === self.location.origin;
@@ -86,7 +95,10 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
   // be reached while establishing integrity either.
   // Mesh-only native assets do not change the beam/bar asset requirements.
   // Impact needs only the pinned runtime, the extracted beamAnalysis.py (FEM_ASSETS) and beamImpact.py.
-  const pins = solidContact !== undefined ? [...FEM_ASSETS, ...SOLID_CONTACT_ASSETS]
+  // Shell needs only the pinned runtime/OOFEM wheel (FEM_ASSETS) and the fixed shellAnalysis.py.
+  const pins = shell !== undefined ? [...FEM_ASSETS, ...SHELL_ASSETS]
+    : solidFinite !== undefined ? [...FEM_ASSETS, ...SOLID_FINITE_ASSETS]
+    : solidContact !== undefined ? [...FEM_ASSETS, ...SOLID_CONTACT_ASSETS]
     : frictionJob !== undefined ? [...FEM_ASSETS, ...FRICTION_CONTACT_ASSETS]
     : spanContact !== undefined ? [...FEM_ASSETS.filter(pin => pin.file !== 'beamContact.py'), ...WELD_SPAN_CONTACT_ASSETS]
     : nativeBolt !== undefined ? [...FEM_ASSETS, ...BOLT_CONTACT_ASSETS, ...WELD_CONTACT_ASSETS, ...JOINT_CONTACT_ASSETS, ...JOINT_INITIAL_STRAIN_ASSETS]
@@ -151,7 +163,13 @@ async function runInBrowser(onPhase:(phase:FemPhase)=>void,document?:BeamAnalysi
     // plasticBarAnalysis.py must be a pinned FEM_ASSETS entry (generated assets.ts); until then asset() reports
     // asset-missing instead of running unverified code.
     // beamContact.py is a pinned FEM_ASSETS entry; a missing or changed file stops before any code runs.
-    const result = solidContact !== undefined
+    const result: FemResult = shell !== undefined
+      ? await analyzeShellNative(runtime, shell, { wrapper: new Uint8Array(asset('shellAnalysis.py')), wheelLocation }, onPhase)
+      : solidFinite !== undefined
+      ? { kind: SOLID_FINITE_KIND, result: await analyzeSolidFinite(runtime, solidFinite, {
+        material: new Uint8Array(asset('solidFiniteMaterial.py')),
+        equilibrium: new Uint8Array(asset('solidFiniteEquilibrium.py')), wheelLocation }, onPhase) }
+      : solidContact !== undefined
       ? await analyzeSolidContact(runtime, solidContact, { normal: new Uint8Array(asset('solidContact.py')),
         friction: new Uint8Array(asset('solidContactFriction.py')), solver: new Uint8Array(asset('solidContactSolver.py')),
         driver: new Uint8Array(asset('solidContactDriver.py')), wheelLocation }, onPhase)
@@ -361,5 +379,23 @@ export async function analyzeFrictionContactInBrowser(value: unknown, options: F
   const ownedOptions = readFrictionSolveOptions(options);
   const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { input, options: ownedOptions });
   if (result.kind !== 'pointercad-internal-friction-contact-candidate') throw new Error('Unexpected friction-contact result');
+  return result;
+}
+
+/** Own a validated plan before any asset read. The one-shot Worker disposes the claimed runtime on every outcome. */
+export async function analyzeSolidFiniteInBrowser(value: unknown,
+  onPhase: (phase: FemPhase) => void): Promise<SolidFiniteWireResult> {
+  const input = translateSolidFinite(value).input;
+  const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, input);
+  if (result.kind !== SOLID_FINITE_KIND) throw new Error('Unexpected finite-equilibrium result');
+  return result;
+}
+
+/** Own a validated shell input before any origin, asset or interpreter access. The Worker returns the raw native
+ * answer bound to its plan digest; it is decoded once by the consumer (decodeCadShellAnalysis), never here. */
+export async function analyzeShellInBrowser(value: unknown, onPhase: (phase: FemPhase) => void): Promise<ShellNativeWireResult> {
+  const input = translateShellAnalysis(value).input;
+  const result = await runInBrowser(onPhase, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, input);
+  if (result.kind !== SHELL_NATIVE_KIND) throw new Error('Unexpected shell result');
   return result;
 }

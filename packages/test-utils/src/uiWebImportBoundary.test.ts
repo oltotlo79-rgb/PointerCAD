@@ -7,7 +7,7 @@ import { moduleSpecifiers, productFiles, testOnlyFile } from './packageImportBou
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const productSources = ['packages/ui/src', 'apps/web/src', 'apps/web/service-worker'];
 const exactMathOwner = 'packages/ui/src/math/localExactMathEngine.ts';
-// These are the existing fixed local programs, not an exemption for arbitrary raw imports.
+// Historical private references: all 45 must now be rejected, including in their original owner.
 const exactMathPrograms = [
   '../../../expression/src/math/exactRuntime/cas_mappings.py?raw',
   '../../../expression/src/math/exactRuntime/cas_limit_bounds.py?raw',
@@ -65,7 +65,6 @@ function forbiddenSpecifiers(path: string, source: string): string[] {
   return moduleSpecifiers(path, source).filter(specifier => {
     const pathname = specifier.split(/[?#]/u)[0] ?? '';
     if (testOnlyFile.test(pathname)) return true;
-    if (path === exactMathOwner && exactMathPrograms.includes(specifier)) return false;
     if (!specifier.startsWith('./') && !specifier.startsWith('../')) return false;
     const target = posix.normalize(posix.join(posix.dirname(path), pathname));
     return /^scripts(?:\/|$)/u.test(target)
@@ -123,15 +122,31 @@ describe('UI and Web use product package entries instead of private source and b
     });
   }
 
-  it('allows exactly the existing owner and Python program list, with no raw source bypass', () => {
+  it('uses exactly the public Python asset entries and rejects every old relative exception', () => {
     const source = readFileSync(resolve(root, exactMathOwner), 'utf8');
+    const publicPrograms = exactMathPrograms.map(name => name.replace('../../../expression/src/math/exactRuntime/',
+      '@pointercad/expression/math/exact-runtime/'));
     expect(moduleSpecifiers(exactMathOwner, source).filter(name => name.endsWith('.py?raw')).sort())
-      .toEqual([...exactMathPrograms].sort());
+      .toEqual([...publicPrograms].sort());
+    const manifest: unknown = JSON.parse(readFileSync(resolve(root, 'packages/expression/package.json'), 'utf8'));
+    if (manifest === null || typeof manifest !== 'object' || !('exports' in manifest)
+      || manifest.exports === null || typeof manifest.exports !== 'object' || Array.isArray(manifest.exports)) {
+      throw new Error('Expression public exports are missing');
+    }
+    const exported = manifest.exports;
+    expect(Object.keys(exported).filter(key => key.startsWith('./math/exact-runtime/')).sort())
+      .toEqual(publicPrograms.map(name => '.' + name.slice('@pointercad/expression'.length, -4)).sort());
+    for (const name of publicPrograms) {
+      const key = '.' + name.slice('@pointercad/expression'.length, -4);
+      const target: unknown = Reflect.get(exported, key);
+      expect(target).toBe('./src/math/exactRuntime/' + key.slice('./math/exact-runtime/'.length));
+      expect(forbiddenSpecifiers(exactMathOwner, `import code from '${name}';`)).toEqual([]);
+    }
     expect(new Set(exactMathPrograms).size).toBe(exactMathPrograms.length);
     for (const name of exactMathPrograms) {
       const target = posix.join(posix.dirname(exactMathOwner), name.slice(0, -4));
       expect(existsSync(resolve(root, target))).toBe(true);
-      expect(forbiddenSpecifiers(exactMathOwner, `import code from '${name}';`)).toEqual([]);
+      expect(forbiddenSpecifiers(exactMathOwner, `import code from '${name}';`)).toEqual([name]);
       expect(forbiddenSpecifiers('packages/ui/src/math/another.ts', `import code from '${name}';`)).toEqual([name]);
     }
     for (const name of ['../../../expression/src/math/exactRuntime/new.py?raw',

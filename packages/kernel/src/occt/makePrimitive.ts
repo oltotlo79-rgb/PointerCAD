@@ -1,3 +1,4 @@
+import { unitDirection as toUnit } from './normalizeDirection.js';
 /**
  * 基本形状(球・箱・円柱・円錐・トーラス、FR-429、計画書 P5 §2.7.2、タスク13)。
  *
@@ -125,14 +126,6 @@ function isFiniteTuple(value: Vec3Tuple): boolean {
   return Number.isFinite(value[0]) && Number.isFinite(value[1]) && Number.isFinite(value[2]);
 }
 
-/** 長さ 1 へ揃える。長さが取れない(0・非数)ときは null(makeSpring.ts の toUnit と同じ考え)。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const size = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(size) || size <= 0) {
-    return null;
-  }
-  return [value[0] / size, value[1] / size, value[2] / size];
-}
 
 /** 0 より大きい有限の数でなければ、欄の名前を添えて断る。 */
 function requirePositive(value: number, fieldName: string): void {

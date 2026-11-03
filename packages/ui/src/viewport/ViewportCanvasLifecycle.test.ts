@@ -224,6 +224,23 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); resetTestStore(); });
 
 describe('ViewportCanvas effect の所有と破棄', () => {
+  it('reports retired and admitted viewport owners separately through failure and retry', () => {
+    vi.useFakeTimers();
+    const active = mount();
+    const read = window.pcadViewportRetiredCleanups;
+    expect(read?.()).toMatchObject({ pendingCount: 0, ownerCount: 0, admittedOwnerCount: 1, waitingCount: 0, owners: [] });
+    let fail = true;
+    active.scene.dispose.mockImplementation(() => { if (fail) throw new Error('scene release failure'); });
+    active.cleanup();
+    expect(read?.()).toMatchObject({ pendingCount: 1, ownerCount: 1, admittedOwnerCount: 1 });
+    expect(read?.().owners).toHaveLength(1);
+    fail = false;
+    vi.advanceTimersByTime(250);
+    expect(read?.()).toMatchObject({ pendingCount: 0, ownerCount: 0, admittedOwnerCount: 0, owners: [] });
+    const next = mount();
+    expect(window.pcadViewportRetiredCleanups?.()).toMatchObject({ ownerCount: 0, admittedOwnerCount: 1 });
+    next.cleanup();
+  });
   it('interference progress-only updates do not request a frame for an unchanged display', async () => {
     const current = mount();
     try {
@@ -1116,17 +1133,52 @@ function observedPickInputs(): readonly unknown[] {
 }
 
 describe('部品pick観測の保留・上限・破棄', () => {
+  it.each(['apply', 'move'] as const)('以前の第2ビード選択を新しい保留クリックの成功に数えない: %s', async outcome => {
+    const f = deferredBeadBodyViewport();
+    try {
+      // 編集の取消・保存後と同じ境界: 前回の選択は残るが、受領の更新はまだ終わっていない。
+      useAppStore.setState({ selection: ['component-4'] });
+      const before = useAppStore.getState();
+      f.send();
+      expect(useAppStore.getState().selection).toEqual(['component-4']);
+      expect(f.scene.pickComponent).not.toHaveBeenCalled();
+      expect(observedPickInputs()).toEqual([expect.objectContaining({ waiting: true, componentPick: {} })]);
+      if (outcome === 'move') f.send('pointermove', { clientX: 31 });
+      else f.send('pointerup');
+      await Promise.resolve();
+      expect(f.source.refresh).toHaveBeenCalledExactlyOnceWith(f.source.owner);
+      f.source.publish(); await finishOwnershipMicrotasks();
+      // 行の選択だけなら両方が同じ。今回のhitと保留の採否を別に検証しなければ取り違える。
+      expect(useAppStore.getState().selection).toEqual(['component-4']);
+      if (outcome === 'move') {
+        expect(f.scene.pickComponent).not.toHaveBeenCalled();
+        expect(observedPickInputs()).toEqual([expect.objectContaining({ waiting: false,
+          deferred: 'discarded', deferredReason: 'moved', componentPick: {} })]);
+      } else {
+        expect(f.scene.pickComponent).toHaveBeenCalledExactlyOnceWith(30.75, 11, expect.any(Object));
+        expect(f.scene.pickComponent).toHaveReturnedWith('component-4');
+        expect(observedPickInputs()).toEqual([expect.objectContaining({ waiting: false,
+          inputGate: 'accepted', deferred: 'applied', readiness: { ready: 'refresh-pending', refresh: 'applied' } })]);
+      }
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+      expect(useAppStore.getState().assemblyDrag).toBeNull();
+    } finally { f.close(); }
+  });
+
   it('同じ保留入力を更新し2回分として数えず、bodyには座標や文書を記録しない', async () => {
     const f = deferredBeadBodyViewport();
     try {
       const before = useAppStore.getState();
       f.send(); f.send('pointerup');
-      expect(observedPickInputs()).toEqual([{ inputGate: undefined, deferred: undefined, waiting: true, componentPick: {} }]);
+      expect(observedPickInputs()).toEqual([{ inputGate: undefined, deferred: undefined, waiting: true, componentPick: {},
+        readiness: { ready: 'refresh-pending', refresh: 'unsettled' } }]);
       expect(f.scene.pickComponent).not.toHaveBeenCalled();
       await Promise.resolve();
       expect(f.source.refresh).toHaveBeenCalledExactlyOnceWith(f.source.owner);
       f.source.publish(); await finishOwnershipMicrotasks();
-      expect(observedPickInputs()).toEqual([{ inputGate: 'accepted', deferred: 'applied', waiting: false, componentPick: {} }]);
+      expect(observedPickInputs()).toEqual([{ inputGate: 'accepted', deferred: 'applied', waiting: false, componentPick: {},
+        readiness: { ready: 'refresh-pending', refresh: 'applied' } }]);
       expect(useAppStore.getState().selection).toEqual(['component-4']);
       expect(useAppStore.getState().assembly).toBe(before.assembly);
       expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
@@ -1142,7 +1194,8 @@ describe('部品pick観測の保留・上限・破棄', () => {
       f.send(); f.send('pointerup'); f.send(); f.send('pointerup'); f.send(); f.send('pointerup');
       expect(observedPickInputs()).toHaveLength(2);
       const record = observedPickInputs()[0];
-      expect(record).toEqual({ inputGate: 'accepted', deferred: undefined, waiting: undefined, componentPick: {} });
+      expect(record).toEqual({ inputGate: 'accepted', deferred: undefined, waiting: undefined, componentPick: {},
+        readiness: { ready: 'ready', refresh: null } });
       const calls = f.scene.pickComponent.mock.calls.length;
       observedPickInputs(); observedPickInputs();
       expect(f.scene.pickComponent).toHaveBeenCalledTimes(calls);
@@ -1178,7 +1231,10 @@ describe('部品pickの未実行と失効を混同しない', () => {
       else f.source.settle(null);
       await finishOwnershipMicrotasks();
       expect(observedPickInputs()).toEqual([{ inputGate: undefined,
-        deferred: reason === 'target' ? 'discarded' : 'refused', waiting: false, componentPick: {} }]);
+        deferred: reason === 'target' ? 'discarded' : 'refused',
+        deferredReason: reason === 'target' ? 'store:selectionKind' : 'not-ready', waiting: false, componentPick: {},
+        readiness: { ready: 'refresh-pending',
+          refresh: reason === 'target' ? 'unsettled' : reason === 'reject' ? 'threw' : 'none' } }]);
       expect(f.scene.pickComponent).not.toHaveBeenCalled();
       expect(useAppStore.getState().assembly).toBe(before.assembly);
       expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);

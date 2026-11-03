@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SOLID_CONTACT_ID, SOLID_CONTACT_SCHEMA, solidCadFaceKey, type SolidContactNormal,
   type SolidContactSavedInput, type Vector3 } from '@pointercad/model/beam-analysis';
 import type { SubShapeRef } from '@pointercad/model';
-import { InputIssue } from '../../model/src/analysis/analysisValidation.js';
+import { InputIssue } from '@pointercad/model/beam-analysis';
 import { buildSolidContactPlan, type SolidContactPlan } from './solidContactModel.js';
 import { projectContactPoint, searchContactFacets, type SolidContactSearchMesh } from './solidContactSearch.js';
 

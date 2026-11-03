@@ -13,6 +13,8 @@ import { attachFatigueStrain } from '../fatigueStrain/attachFatigueStrain.js';
 import { attachFatigueLocalCycle } from '../fatigueLocalCycle/attachFatigueLocalCycle.js';
 import { attachSolidAnalysis } from '../solidAnalysis/attachSolidAnalysis.js';
 import { attachSolidPlastic } from '../solidPlastic/attachSolidPlastic.js';
+import { attachSolidFinite } from '../solidFinite/attachSolidFinite.js';
+import { attachShellAnalysis } from '../shellAnalysis/attachShellAnalysis.js';
 import { attachAssembly } from '../assembly/attachAssembly.js';
 import { attachAssemblyInterference } from '../assembly/attachAssemblyInterference.js';
 import { attachDrawing } from '../drawing/attachDrawing.js';
@@ -204,6 +206,8 @@ export function PointerCadApp(): React.JSX.Element {
     }
     const solidAnalysis = attachSolidAnalysis(bridge);
     const solidPlastic = attachSolidPlastic(bridge);
+    const solidFinite = attachSolidFinite(bridge);
+    const shellAnalysis = attachShellAnalysis(bridge);
     const beam = attachBeamAnalysis();
     const plasticBar = attachPlasticBar();
     const detachFatigue = attachFatigue();
@@ -261,6 +265,8 @@ export function PointerCadApp(): React.JSX.Element {
           options.onResolved?.(resolved);
           solidAnalysis.captureResolved(document, options.generation ?? 0, resolved);
           solidPlastic.captureResolved(document, options.generation ?? 0, resolved);
+          solidFinite.captureResolved(document, options.generation ?? 0, resolved);
+          shellAnalysis.captureResolved(document, options.generation ?? 0, resolved);
         } }),
     );
     /*
@@ -320,6 +326,8 @@ export function PointerCadApp(): React.JSX.Element {
     return () => {
       solidAnalysis.dispose();
       solidPlastic.dispose();
+      solidFinite.dispose();
+      shellAnalysis.dispose();
       beam.dispose();
       plasticBar.dispose();
       detachFatigue();

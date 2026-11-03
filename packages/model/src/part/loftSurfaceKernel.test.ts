@@ -1,7 +1,7 @@
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type KernelBridge } from '../kernelBridge.js';
 import { absoluteCoordinate, appendFeature } from '../sketch/createSketchDocument.js';
 import { FREE_WORK_PLANE_ID } from '../sketch/planeMath.js';

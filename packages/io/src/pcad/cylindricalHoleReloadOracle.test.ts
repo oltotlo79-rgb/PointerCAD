@@ -9,12 +9,12 @@ import {
 } from '@pointercad/model';
 import {
   CYLINDER_ORACLE_PLACEMENTS, cylinderPlacementOracle, holeOraclePlus, holeOracleTimes, type HoleOracleMatrix,
-} from '../../../kernel/src/occt/holePlacementOracle.testSupport.js';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { resolveHoleFrame } from '../../../kernel/src/occt/makeHole.js';
-import { isValidShape } from '../../../kernel/src/occt/solidMesh.js';
-import type { CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
+} from '@pointercad/kernel/testing/hole-placement-oracle-fixture';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { resolveHoleFrame } from '@pointercad/kernel';
+import { isValidShape } from '@pointercad/kernel';
+import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { readPcadFile, writePcadFile } from './pcadFile.js';
 

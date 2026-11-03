@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../../valueGuards.js';
 import type { MateResidualTargetPair } from '../constraints/mateResiduals.js';
 import { solveDrivenJointSteps, type SolveDrivenJointOutcome, type SolveMatesOptions } from '../constraints/solveMates.js';
 import { drainRigidSteps, UNLIMITED_RIGID_WORK, type RigidWorkBudget, type RigidWorkPoint } from '../constraints/solveRigid.js';
@@ -99,7 +100,6 @@ export type CrossLevelGearDriveOutcome = {
 /** Degrees; the same order as the drive tolerance of an angle driver (1e-9 degree rows) with solver slack. */
 export const CROSS_LEVEL_GEAR_TOLERANCE_DEG = 1e-6;
 
-const finite = (value: number): boolean => typeof value === 'number' && Number.isFinite(value);
 const failure = (couplingId: string, code: CrossLevelGearFailureCode): CrossLevelGearFailure => ({ ok: false, couplingId, code });
 
 function* revoluteSteps(document: AssemblyDocument, jointId: string, work: JointDriveWork):

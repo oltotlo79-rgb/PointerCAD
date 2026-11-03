@@ -1,6 +1,6 @@
 import { isSameSubShape, QUATERNION_TOLERANCE, type ResolvedAssembly, type ResolvedPart, type RigidPlacement,
   type SubShapeRef } from '@pointercad/model';
-import type { FemClient, FemOptions } from './client.js';
+import { FemClient, type FemOptions, type FemAssemblyTetraMeshPreparation } from './client.js';
 import type { CadTetraRegion } from './cadTetraMesh.js';
 import { claimCadMeshRequest, isCurrentCadMeshRequest, releaseCadMeshRequest } from './cadMeshRequestOwner.js';
 import { readTetraMeshInput, TETRA_LIMITS, tetraMeshInputSha256, tetraMeshResultMatches,
@@ -265,13 +265,31 @@ export function selectAssemblyTetraBoundary(result: AssemblyTetraMesh, component
 /** Flat resolved assemblies only. Nested assemblies must be resolved to an explicit occurrence table upstream;
  * they are refused here, never silently omitted. No coordinates are transformed or duplicated per occurrence. */
 export async function meshAssemblyTetrahedra(client: Client, readCurrent: () => AssemblyTetraContext | null,
-  requestedBudget: AssemblyTetraBudget, options: FemOptions = {}): Promise<AssemblyTetraOutcome> {
+  requestedBudget: AssemblyTetraBudget, options: FemOptions = {},
+  parentPreparation?: FemAssemblyTetraMeshPreparation): Promise<AssemblyTetraOutcome> {
+  if (parentPreparation !== undefined && (!(client instanceof FemClient)
+    || !client.ownsAssemblyTetraMeshPreparation(parentPreparation))) {
+    return { kind: 'failed', code: 'input', message: 'Assembly parent must be issued by this FEM client' };
+  }
+  // CAD preparation passes its explicit parent capability; only the creator releases it.
+  const ownPreparation = parentPreparation === undefined && client instanceof FemClient
+    ? client.beginAssemblyTetraMeshPreparation(options) : undefined;
+  const preparation = parentPreparation ?? ownPreparation;
+  const earlyCancellation = preparation?.cancellation();
+  if (earlyCancellation !== undefined && earlyCancellation !== null) {
+    ownPreparation?.release();
+    return { kind: 'cancelled', reason: earlyCancellation };
+  }
   const owner = claimCadMeshRequest(client);
   const abort = (): void => owner.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) owner.abort();
-  const cancelled = (): AssemblyTetraOutcome | undefined => !isCurrentCadMeshRequest(client, owner)
-    ? { kind: 'cancelled', reason: 'superseded' } : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : undefined;
+  const cancelled = (): AssemblyTetraOutcome | undefined => {
+    const reason = preparation?.cancellation();
+    if (reason !== undefined && reason !== null) return { kind: 'cancelled', reason };
+    return !isCurrentCadMeshRequest(client, owner) ? { kind: 'cancelled', reason: 'superseded' }
+      : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : undefined;
+  };
   try {
     const initialCancellation = cancelled();
     if (initialCancellation) return initialCancellation;
@@ -365,7 +383,7 @@ export async function meshAssemblyTetrahedra(client: Client, readCurrent: () => 
       const before = cancelled();
       if (before) return before;
       if (!stillCurrent(key)) throw new Refusal('stale', 'Assembly source or placement changed');
-      const completion = await client.meshTetrahedra(entry.input, { signal: owner.signal, onPhase: options.onPhase });
+      const completion = await (preparation ?? client).meshTetrahedra(entry.input, { signal: owner.signal, onPhase: options.onPhase });
       const after = cancelled();
       if (after) return after;
       if (!stillCurrent(key)) throw new Refusal('stale', 'Assembly source or placement changed');
@@ -391,6 +409,8 @@ export async function meshAssemblyTetrahedra(client: Client, readCurrent: () => 
     const finalCancellation = cancelled();
     if (finalCancellation) return finalCancellation;
     if (!stillCurrent()) throw new Refusal('stale', 'Assembly changed before publication');
+    const afterCurrentRead = cancelled();
+    if (afterCurrentRead) return afterCurrentRead;
     const result: AssemblyTetraMesh = { parts: results,
       occurrences: hasRegions ? occurrences.map(value => ({ ...value, placement: placementCopy(value.placement) })) : occurrences,
       reservation: fullReservation, physicsValidated: false };
@@ -418,5 +438,6 @@ export async function meshAssemblyTetrahedra(client: Client, readCurrent: () => 
   } finally {
     options.signal?.removeEventListener('abort', abort);
     releaseCadMeshRequest(client, owner);
+    ownPreparation?.release();
   }
 }

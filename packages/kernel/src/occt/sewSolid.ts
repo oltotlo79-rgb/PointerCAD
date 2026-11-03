@@ -6,9 +6,9 @@ import type {
 } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { SewStepSpec, TessellationOptions } from '../types.js';
-import { createAllocations } from './allocations.js';
+import { createAllocations, type Allocations } from './allocations.js';
 import type { OcctShapeHandle } from './makeBox.js';
-import { makePlanarFace, type OcctFaceHandle } from './makePlanarFace.js';
+import { makePlanarFace } from './makePlanarFace.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { countSolidShapes } from './solidTopology.js';
 import { validateToleranceMm } from './tolerances.js';
@@ -139,38 +139,25 @@ export function sewSolidFaces(oc: OpenCascadeInstance, input: SewFacesInput): Se
  * 列挙の各値(TopAbs_SHELL 等)が空の型 `{}` になっており、列挙を引数に取る Init は
  * 強制変換なしでは型検査を通らないため(tessellate.ts・solidMesh.ts と同じ理由)。
  */
-function findShells(oc: OpenCascadeInstance, shape: TopoDS_Shape): readonly TopoDS_Shell[] {
+function findShells(oc: OpenCascadeInstance, shape: TopoDS_Shape, keep: Allocations['keep']): readonly TopoDS_Shell[] {
   const shellType = oc.TopAbs_ShapeEnum.TopAbs_SHELL;
-  if (shape.ShapeType() === shellType) {
-    return [oc.TopoDS.Shell_1(shape)];
-  }
+  if (shape.ShapeType() === shellType) return [keep(oc.TopoDS.Shell_1(shape))];
 
-  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
-  const shells: TopoDS_Shell[] = [];
+  const mapOwner = createAllocations();
   try {
-    // 第 3・第 4 引数は「向きと位置を親からたどって積み上げる」指定。
+    const subShapes = mapOwner.keep(new oc.TopTools_IndexedMapOfShape_1());
+    const shells: TopoDS_Shell[] = [];
     oc.TopExp.MapShapes_2(shape, subShapes, true, true);
     const subShapeCount = Number(subShapes.Size());
     for (let subShapeIndex = 1; subShapeIndex <= subShapeCount; subShapeIndex += 1) {
-      const subShape = subShapes.FindKey(subShapeIndex);
+      const keyOwner = createAllocations();
       try {
-        if (subShape.ShapeType() === shellType) {
-          shells.push(oc.TopoDS.Shell_1(subShape));
-        }
-      } finally {
-        // FindKey が返す wrapper は複製。Shell_1 の wrapper とは別にここで解放する。
-        subShape.delete();
-      }
+        const subShape = keyOwner.keep(subShapes.FindKey(subShapeIndex));
+        if (subShape.ShapeType() === shellType) shells.push(keep(oc.TopoDS.Shell_1(subShape)));
+      } finally { keyOwner.release(); }
     }
     return shells;
-  } catch (error) {
-    for (let shellIndex = shells.length - 1; shellIndex >= 0; shellIndex -= 1) {
-      shells[shellIndex].delete();
-    }
-    throw error;
-  } finally {
-    subShapes.delete();
-  }
+  } finally { mapOwner.release(); }
 }
 
 /**
@@ -198,115 +185,34 @@ export function sewSolid(
   }
   const tolerance = validateToleranceMm(spec.tolerance);
 
-  const faces: OcctFaceHandle[] = [];
-  const deleteFaces = (): void => {
-    for (let index = faces.length - 1; index >= 0; index -= 1) {
-      faces[index].delete();
-    }
-  };
-
+  const { keep, release } = createAllocations();
   try {
-    for (const profile of spec.profiles) {
-      // 閉じていない輪郭・自己交差・非平面は makePlanarFace が理由つきで断る(P1 タスク14)。
-      faces.push(makePlanarFace(oc, profile, options));
+    const faces = spec.profiles.map(profile => keep(makePlanarFace(oc, profile, options)));
+    const sewing = keep(new oc.BRepBuilderAPI_Sewing(tolerance, true, true, true, false));
+    for (const handle of faces) sewing.Add(handle.face);
+    const progressOwner = createAllocations();
+    try { sewing.Perform(progressOwner.keep(new oc.Message_ProgressRange_1())); }
+    finally { progressOwner.release(); }
+
+    const freeEdgeCount = Number(sewing.NbFreeEdges());
+    if (freeEdgeCount !== 0) throw new Error(`面のつながりに隙間があるため、立体にできませんでした。隙間は ${freeEdgeCount} 本です。`);
+    const sewed = keep(sewing.SewedShape());
+    const shells = findShells(oc, sewed, keep);
+    if (shells.length === 0) throw new Error('面をつなげませんでした。面が重なっていないか確かめてください。');
+    if (shells.length > 1) throw new Error('面が 2 つ以上の閉じた殻に分かれています。面を選び直してください。');
+    const solidMaker = keep(new oc.BRepBuilderAPI_MakeSolid_3(shells[0]));
+    if (!solidMaker.IsDone()) throw new Error('つないだ面から立体を作れませんでした。');
+    const solid = keep(solidMaker.Solid());
+    const rawVolume = measureVolume(oc, solid);
+    const reversed = rawVolume < 0 ? keep(solid.Reversed()) : null;
+    const shape = reversed ?? solid;
+    const volume = reversed === null ? rawVolume : measureVolume(oc, shape);
+    if (!(volume >= MINIMUM_VOLUME) || !hasSolid(oc, shape) || !isValidShape(oc, shape)) {
+      throw new Error('面が閉じた立体になっていません。足りない面を足してください。');
     }
+    return { shape, delete: release };
   } catch (error) {
-    deleteFaces();
+    release();
     throw error;
   }
-
-  // 第 2〜第 5 引数は OCCT の既定の組み合わせ。縫合・解析・切り分けを行い、
-  // 非多様体の殻は許さない(§0.a-0.7 のとおり P3 以降)。
-  const sewing = new oc.BRepBuilderAPI_Sewing(tolerance, true, true, true, false);
-  const deleteSewing = (): void => {
-    sewing.delete();
-    deleteFaces();
-  };
-
-  for (const handle of faces) {
-    sewing.Add(handle.face);
-  }
-
-  const progress = new oc.Message_ProgressRange_1();
-  try {
-    sewing.Perform(progress);
-  } catch (error) {
-    deleteSewing();
-    throw error;
-  } finally {
-    progress.delete();
-  }
-
-  // 個数を返すメソッドの戻り型 Graphic3d_ZLayerId は型定義に無いので、整数へ直してから使う。
-  const freeEdgeCount = Number(sewing.NbFreeEdges());
-  if (freeEdgeCount !== 0) {
-    deleteSewing();
-    throw new Error(
-      `面のつながりに隙間があるため、立体にできませんでした。隙間は ${freeEdgeCount} 本です。`,
-    );
-  }
-
-  const sewed = sewing.SewedShape();
-  const deleteSewed = (): void => {
-    sewed.delete();
-    deleteSewing();
-  };
-
-  const shells = findShells(oc, sewed);
-  if (shells.length === 0) {
-    deleteSewed();
-    throw new Error('面をつなげませんでした。面が重なっていないか確かめてください。');
-  }
-  if (shells.length > 1) {
-    for (let shellIndex = shells.length - 1; shellIndex >= 0; shellIndex -= 1) {
-      shells[shellIndex].delete();
-    }
-    deleteSewed();
-    throw new Error('面が 2 つ以上の閉じた殻に分かれています。面を選び直してください。');
-  }
-  const shell = shells[0];
-  const deleteShell = (): void => {
-    shell.delete();
-    deleteSewed();
-  };
-
-  const solidMaker = new oc.BRepBuilderAPI_MakeSolid_3(shell);
-  const deleteMaker = (): void => {
-    solidMaker.delete();
-    deleteShell();
-  };
-
-  // 成否は IsDone() だけで見る。Error() の戻り値は空の型の列挙なので比較しない。
-  if (!solidMaker.IsDone()) {
-    deleteMaker();
-    throw new Error('つないだ面から立体を作れませんでした。');
-  }
-
-  // Solid() が返す形は maker の中の実体を指すので、maker と一緒に生かしておく。
-  const solid = solidMaker.Solid();
-  const deleteSolid = (): void => {
-    solid.delete();
-    deleteMaker();
-  };
-
-  const rawVolume = measureVolume(oc, solid);
-  // 反転した形も元の立体と実体を共有するので、両方を生かしたまま持ち回る。
-  const reversed = rawVolume < 0 ? solid.Reversed() : null;
-  const shape = reversed ?? solid;
-  const deleteAll = (): void => {
-    if (reversed !== null) {
-      reversed.delete();
-    }
-    deleteSolid();
-  };
-
-  const volume = reversed === null ? rawVolume : measureVolume(oc, shape);
-  // 開いた殻でも体積は出る(箱の 5 面で 4800 mm³。2026-09-03 実測)ので、
-  // 閉じているかは hasSolid と isValidShape で別に確かめる。
-  if (!(volume >= MINIMUM_VOLUME) || !hasSolid(oc, shape) || !isValidShape(oc, shape)) {
-    deleteAll();
-    throw new Error('面が閉じた立体になっていません。足りない面を足してください。');
-  }
-
-  return { shape, delete: deleteAll };
 }

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import type { FemClient } from './client.js';
 import type { BeamBucklingInput, BeamBucklingResult } from './bucklingModel.js';
+import { compareVerification } from './verificationComparison.testSupport.js';
+import { bucklingInput } from './verificationCases.testSupport.js';
+import { bucklingInputSha256 } from './bucklingTranslation.js';
+import { bucklingResultMatches } from './bucklingResults.js';
 import { bucklingFixture, eulerReference } from './buckling.testSupport.js';
 
 /** Root supplies the existing owned real-OOFEM Worker client and persists every
@@ -22,7 +26,13 @@ export async function runBucklingNativeChecks(client: FemClient,
     const expected = eulerReference({ pinned });
     let priorError = Number.POSITIVE_INFINITY;
     for (const segments of [8, 16, 32]) {
-      const result = await solve(`${pinned ? 'pinned-pinned' : 'fixed-free'}-${segments}`, bucklingFixture({ pinned, segments }));
+      const input = bucklingFixture({ pinned, segments });
+      const result = await solve(`${pinned ? 'pinned-pinned' : 'fixed-free'}-${segments}`, input);
+      if (!pinned && segments === 16) {
+        assert(bucklingResultMatches(result, input, await bucklingInputSha256(input)));
+        assert(compareVerification('buckling-fixed-free-first-v1', { caseId: 'buckling-fixed-free-first-v1',
+          input: bucklingInput(input), value: result.modes[0].loadFactor }).passed);
+      }
       const error = Math.max(...result.modes.map((mode, index) => Math.abs(mode.loadFactor / expected[index] - 1)));
       // Euler limit, independently justified by P_E/(kGA) <7e-8. Allowing
       // continuum discrepancy is based on that bound, never an observed fit.

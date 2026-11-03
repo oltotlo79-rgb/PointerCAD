@@ -5,8 +5,10 @@ import { join, sep } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
+import { compareVerification } from './verificationComparison.testSupport.js';
+import { verificationData } from './verificationInput.testSupport.js';
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Expected native record');
@@ -102,6 +104,22 @@ print('contact-stderr-retained', file=sys.stderr, flush=True)
     expect(result.acceptedStepCount).toBe(5);
     expect(result.contactElementCount).toBe(2);
     if (!Array.isArray(result.states) || result.states.length !== 5) throw new Error('Missing five native states');
+    const actualInput = record(result.verificationInput);
+    if (typeof actualInput.units !== 'string') throw new Error('Missing native contact units');
+    const comparisonInput = { geometry: verificationData(actualInput.geometry), boundary: verificationData(actualInput.boundary),
+      material: verificationData(actualInput.material), units: actualInput.units, source: verificationData(actualInput.source) };
+    const firstState = record(result.states[0]);
+    if (!Array.isArray(firstState.actualDisplacementMm) || firstState.actualDisplacementMm.length !== 4) throw new Error('Missing first contact displacements');
+    const caseId = 'contact-first-stick-v1';
+    for (const value of firstState.actualDisplacementMm) {
+      const comparison = compareVerification(caseId, { caseId, input: comparisonInput, value: numeric(value) });
+      expect(comparison.passed).toBe(true);
+      expect(comparison.error).toBeLessThanOrEqual(1e-6);
+    }
+    const sampleValue = numeric(firstState.actualDisplacementMm[0]);
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, units: 'incorrect' }, value: sampleValue })).toThrow();
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, source: 'incorrect' }, value: sampleValue })).toThrow();
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, geometry: null }, value: sampleValue })).toThrow();
     const expectedDisplacements = [.1 / 2210000, .7 / 210000, 1 / 210000, 1 / 210000, 1.7 / 210000];
     const expectedForces = [2000000 * expectedDisplacements[0], .3, 0, 0, .3];
     const expectedDissipation = [0, .3 * (expectedDisplacements[1] - .3 / 2000000), 0, 0,

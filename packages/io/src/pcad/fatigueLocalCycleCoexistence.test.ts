@@ -1,10 +1,10 @@
+import { replaceAttachment as withAttachment } from './analysisAttachment.testSupport.js';
 import { describe, expect, it } from 'vitest';
 import { createEmptyPartDocument } from '@pointercad/model';
 import { readBeamAnalysisInputs, withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
-import { isRecord } from './guards.js';
 
 /* The saved local cycle beside the inputs that already exist in documents: the legacy stress-life `fatigue` input
  * (version 3 with its Goodman correction) and the zero-mean strain histories. All values are synthetic and written out
@@ -67,11 +67,6 @@ function ownerFile(owner: Owner) {
   };
   const edit = (value: unknown): void => { withBeamAnalysisInputs(owner === 'part' ? part : assembly, value); };
   return { id, write, open, read, rewrite, edit };
-}
-function withAttachment(serialized: string, value: unknown): string {
-  const envelope: unknown = JSON.parse(serialized);
-  if (!isRecord(envelope) || !isRecord(envelope.document)) throw new Error('Expected a document envelope');
-  return JSON.stringify({ ...envelope, document: { ...envelope.document, beamAnalysisInputs: value } });
 }
 
 describe('local-cycle input beside existing fatigue inputs in cold part and assembly files', () => {

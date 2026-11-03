@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test } from './browserLifecycle.testSupport.js';
 import { PLANAR_OPERATIONS } from './planarMachiningOracle.js';
 import { buildPlanarCreate, buildPlanarTwoFixture, buildPlanarMissingReference,
   planarTitle, reopenPlanarUi } from './planarMachiningFlow.js';

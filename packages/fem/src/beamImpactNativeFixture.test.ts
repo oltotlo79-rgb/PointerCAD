@@ -8,6 +8,8 @@ import type { BeamImpactInput } from './beamImpactModel.js';
 import { beamImpactResultMatches } from './beamImpactBinding.js';
 import { decodeBeamImpact } from './beamImpactResults.js';
 import { impactInputSha256, translateBeamImpact } from './beamImpactTranslation.js';
+import { compareVerification } from './verificationComparison.testSupport.js';
+import { verificationData } from './verificationInput.testSupport.js';
 
 // Exact bytes exported by the pinned deployed Pyodide/OOFEM run, not a synthetic rawResult helper.
 const fixtureBytes = readFileSync(new URL('./fixtures/beamImpactNativeFixture.json', import.meta.url));
@@ -245,6 +247,21 @@ describe('current native nonzero axial contact (independent midpoint oracle)', (
     const reply = record(JSON.parse(stdout.trim().split('\n').at(-1) ?? ''));
     const hash = await impactInputSha256(prepared.input);
     const result = decodeBeamImpact(reply.raw, prepared.input, hash);
+    expect(beamImpactResultMatches(result, prepared.input, hash)).toBe(true);
+    const actualInput = prepared.input;
+    const comparisonInput = {
+      geometry: verificationData({ nodes: actualInput.geometry.nodes, members: actualInput.geometry.members, sections: actualInput.geometry.sections }),
+      boundary: verificationData({ supports: actualInput.supports, initialVelocities: actualInput.initialVelocities,
+        contacts: actualInput.contacts, contactStiffnessNPerM: actualInput.contactStiffnessNPerM, history: actualInput.history }),
+      material: verificationData(actualInput.geometry.materials), units: 'N-m-s', source: verificationData(actualInput.geometry.source),
+    };
+    const caseId = 'impact-axial-energy-v1';
+    expect(beamImpactResultMatches(result, prepared.input, '0'.repeat(64))).toBe(false);
+    const initialEnergy = result.samples[0]?.energyJ;
+    if (initialEnergy === undefined) throw new Error('Missing initial energy');
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, units: 'incorrect' }, value: initialEnergy })).toThrow();
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, source: 'incorrect' }, value: initialEnergy })).toThrow();
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, geometry: null }, value: initialEnergy })).toThrow();
     const peak = result.contactPeaks[0];
     expect(peak.intervalForceN).toBeGreaterThan(0);
     expect(peak.totalImpulseNs).toBeGreaterThan(0);
@@ -264,6 +281,9 @@ describe('current native nonzero axial contact (independent midpoint oracle)', (
     expect(result.samples).toHaveLength(31);
     let expectedImpulse = 0, expectedPeak = 0, expectedPeakStep = 0;
     for (const sample of result.samples) {
+      const comparison = compareVerification(caseId, { caseId, input: comparisonInput, value: sample.energyJ });
+      expect(comparison.passed).toBe(true);
+      expect(comparison.error).toBeLessThanOrEqual(1e-10);
       const n = sample.step, u = scaleU * Math.sin(n * theta), v = speed * Math.cos(n * theta);
       expect(u).toBeGreaterThanOrEqual(0);
       const tip = sample.nodes.find(node => node.nodeId === 'native-2');

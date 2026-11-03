@@ -1,5 +1,4 @@
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import { writePcadFile } from '@pointercad/io';
 import { applyParameters, createEmptyPartDocument, type PartDocument } from '@pointercad/model';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,9 +27,7 @@ beforeEach(() => {
 });
 
 function markup(): string {
-  // Server rendering normally reads the initial snapshot, not the current fixture.
-  const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-  try { return renderToStaticMarkup(createElement(ParameterPanel)); } finally { snapshot.mockRestore(); }
+  return renderCurrentStore(ParameterPanel);
 }
 
 describe('parameter panel headless markup', () => {

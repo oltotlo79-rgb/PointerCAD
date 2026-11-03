@@ -1,4 +1,4 @@
-import { isRecord } from './valueGuards.js';
+import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 /**
  * Uniaxial elasto-plastic member: plan, strict validation, native step schedule and an independent reference.
  *
@@ -54,9 +54,7 @@ export interface PlasticBarReferenceSample extends PlasticBarSample {
   readonly yieldStressPa: number;
 }
 
-function fail(detail: string): never {
-  throw new Error(`plastic-bar: ${detail}`);
-}
+const fail: (message: string) => never = createPrefixedError('plastic-bar');
 function record(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);
   const row = value;
@@ -66,10 +64,7 @@ function record(value: unknown, names: readonly string[], path: string): Record<
   }
   return row;
 }
-function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(`${path} must be a finite number`);
-  return value === 0 ? 0 : value;
-}
+const finite = createFiniteReader(fail);
 function positive(value: unknown, path: string): number {
   const number = finite(value, path);
   if (!(number > 0)) fail(`${path} must be positive`);

@@ -22,7 +22,7 @@ import {
 
 
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge } from '../kernelBridge.js';
 import { addSketch, createEmptyPartDocument, createSketchFor } from '../part/createPartDocument.js';
 import { collectExpressionOwners, collectExpressionSources } from '../part/reevaluatePart.js';

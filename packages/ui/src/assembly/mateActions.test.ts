@@ -2,9 +2,8 @@ import { addComponent, createAssemblyDocument, createAssemblyDocumentBundle, cre
   createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY, resolveAssembly, resolvePart, type AssemblyDocument } from '@pointercad/model';
 import { readDocumentBundle, writeDocumentBundle } from '@pointercad/io';
 import { readFileSync } from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import { MatePopover } from './MatePopover.js';
 import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
@@ -39,10 +38,7 @@ beforeEach(() => {
 afterEach(() => { detachView(); });
 
 describe('合致の共通action', () => {
-  const popover = () => {
-    const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-    try { return renderToStaticMarkup(createElement(MatePopover)); } finally { snapshot.mockRestore(); }
-  };
+  const popover = () => renderCurrentStore(MatePopover);
 
   it('面2つのpopoverにoffset欄があり、式を確定・保存・再読込しても配置を書き戻さない', async () => {
     const document = openAssembly();

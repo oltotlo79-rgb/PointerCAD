@@ -65,15 +65,15 @@ export function buildTrimIntervalInventory(faceIndex: number, wires: readonly B0
       if (id.faceIndex !== faceIndex || id.wireIndex !== wireIndex || id.segmentIndex !== segmentIndex || segment.trim.edgeIndex !== segmentIndex
         || !Number.isSafeInteger(id.edgeIndex) || id.edgeIndex < 0 || typeof segment.forward !== 'boolean'
         || id.forward !== segment.forward) throw new Error('b08-adapter: occurrence tuple differs from its actual wire position');
-      const nodes = segment.localNodes, params = segment.trim.parameters;
-      if (nodes.length < 2 || nodes.length !== params.length) throw new Error('b08-adapter: polygon nodes and parameters differ');
+      const nodes = segment.localNodes, edgeParameters = segment.trim.parameters;
+      if (nodes.length < 2 || nodes.length !== edgeParameters.length) throw new Error('b08-adapter: polygon nodes and parameters differ');
       if (!Number.isFinite(id.first) || !Number.isFinite(id.last) || !(id.first < id.last)
-        || params[0] !== id.first || params[params.length - 1] !== id.last) {
+        || edgeParameters[0] !== id.first || edgeParameters[edgeParameters.length - 1] !== id.last) {
         throw new Error('b08-adapter: polygon parameters do not span the native edge use');
       }
-      for (let k = 0; k < params.length; k += 1) {
-        if (!Object.hasOwn(params, k) || !Object.hasOwn(nodes, k) || !Number.isFinite(params[k])
-          || !Number.isSafeInteger(nodes[k]) || nodes[k] < 0 || (k > 0 && !(params[k - 1] < params[k]))) {
+      for (let k = 0; k < edgeParameters.length; k += 1) {
+        if (!Object.hasOwn(edgeParameters, k) || !Object.hasOwn(nodes, k) || !Number.isFinite(edgeParameters[k])
+          || !Number.isSafeInteger(nodes[k]) || nodes[k] < 0 || (k > 0 && !(edgeParameters[k - 1] < edgeParameters[k]))) {
           throw new Error('b08-adapter: invalid native polygon storage order');
         }
       }
@@ -83,7 +83,7 @@ export function buildTrimIntervalInventory(faceIndex: number, wires: readonly B0
         const tuple = `${id.faceIndex}:${id.wireIndex}:${id.segmentIndex}:${id.edgeIndex}`;
         // Match boundAnalyticWireRibbons: keep native interval identity, orient only the emitted traversal.
         const from = segment.forward ? k : k + 1, to = segment.forward ? k + 1 : k;
-        rows.push({ key: `${tuple}#${k}`, occurrence: id, interval: k, from: nodes[from], to: nodes[to], start: params[from], end: params[to], seam: uses === 2 });
+        rows.push({ key: `${tuple}#${k}`, occurrence: id, interval: k, from: nodes[from], to: nodes[to], start: edgeParameters[from], end: edgeParameters[to], seam: uses === 2 });
       }
     });
   });

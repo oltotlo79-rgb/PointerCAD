@@ -15,7 +15,7 @@ import {
   type PartLibrary, type Placement, type PrimitiveFeature, type SubShapeRef,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
-import { BASE_BOX, STANDING_BOX, teeRequest, weldTestPlacement } from '../../../model/src/assembly/welding/filletWeld.testSupport.js';
+import { BASE_BOX, STANDING_BOX, teeRequest, weldTestPlacement } from '@pointercad/model/testing/weld-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { readDocumentBundle, writeDocumentBundle } from './pcadFile.js';
 

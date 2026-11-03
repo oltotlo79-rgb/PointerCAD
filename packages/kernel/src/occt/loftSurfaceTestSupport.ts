@@ -1,6 +1,6 @@
 import type { BRepAdaptor_Surface, OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, SubShapeQuery, ThruSectionsStepSpec, Vec3Tuple } from '../types.js';
-import type { Allocations } from './allocations.js';
+import { createAllocations, type Allocations } from './allocations.js';
 import { extractEdges } from './extractEdges.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
@@ -57,9 +57,11 @@ export function sectionNormalAngles(oc: OpenCascadeInstance, shape: TopoDS_Shape
     for (const z of [20, 60]) {
       let lo = first, hi = last;
       for (let iteration = 0; iteration < 45; iteration += 1) {
-        const v = (lo + hi) / 2, p = surface.Value(u, v);
-        try { if ((p.Z() < z) === (end.Z() > start.Z())) lo = v; else hi = v; }
-        finally { p.delete(); }
+        const v = (lo + hi) / 2, pointOwner = createAllocations();
+        try {
+          const p = pointOwner.keep(surface.Value(u, v));
+          if ((p.Z() < z) === (end.Z() > start.Z())) lo = v; else hi = v;
+        } finally { pointOwner.release(); }
       }
       const v = (lo + hi) / 2, delta = (last - first) * 1e-6;
       const a = normalAt(oc, surface, u, v - delta, keep), b = normalAt(oc, surface, u, v + delta, keep);

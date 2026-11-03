@@ -1,5 +1,10 @@
 /// <reference lib="dom" />
+import { volumeNumber } from './workPlaneCaptureSupport.js';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { openToolMenu } from './toolMenus.js';
+import { fillFields, popover, popoverInputs } from './popoverFields.js';
+import { clickWorldPoint } from './homeViewProjection.js';
 
 /**
  * P4「スケッチ拡張」の完了条件のうち、**任意の作業平面・基準ジオメトリ・3D スケッチ**を
@@ -20,20 +25,6 @@ const KERNEL_TIMEOUT_MS = 60_000;
  * 補助関数
  * ========================================================================== */
 
-/** コンソールのエラーとページの例外を集める。最後に 0 件であることを確かめる。 */
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
 /** ツールバーの「スケッチ」区画の道具(平置きの 6 つ)。 */
 function sketchTool(page: Page, label: string): Locator {
   return page
@@ -48,45 +39,8 @@ function solidTool(page: Page, label: string): Locator {
     .getByRole('button', { name: label, exact: true });
 }
 
-/**
- * ツールバーの畳んだ一覧(「作る」「合わせる」「加工」)を開く(P5 タスク51、§0.a-0.51)。
- *
- * ソリッドと加工の図柄ボタンは、この一覧の中へ移った(ツールバーを 1440 画素で 1 段に
- * 保つため)。**検査の中身は 1 つも変えていない**: 押せる/押せない、ツールチップの
- * 「名前: 理由」、押した結果はそのままで、道具に届くまでに一覧を開く手順が 1 つ増えただけ。
- *
- * 畳んだボタンの読み上げ名は、最後に使った道具があると「加工: 穴」のように後ろが付くので
- * 頭の一致で引く。開いた一覧そのものは、区画と同じ名前(「作る」など)の group になる。
- */
-function toolMenuTrigger(page: Page, menu: string): Locator {
-  return page
-    .locator('.pcad-toolbar')
-    .getByRole('button', { name: new RegExp(`^${menu}`) })
-    .first();
-}
-
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-
-async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) {
-    await toolMenuTrigger(page, menu).click();
-  }
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
-}
-
-/** その場数値入力のポップアップ。 */
-function popover(page: Page): Locator {
-  return page.locator('.pcad-popover');
-}
-
 function popoverTitle(page: Page): Locator {
   return page.locator('.pcad-popover__title');
-}
-
-function popoverInputs(page: Page): Locator {
-  return page.locator('.pcad-popover input.pcad-field__input');
 }
 
 /** 左のモデルブラウザ。 */
@@ -148,18 +102,6 @@ function propertyValue(page: Page, key: string): Locator {
 /** プロパティの式の欄(並び順で引く)。円弧なら 0〜2 が中心。 */
 function propertyInputs(page: Page): Locator {
   return propertyPanel(page).locator('input.pcad-field__input');
-}
-
-/** ポップアップの欄を埋める。null を渡した欄は既定値のままにする。 */
-async function fillFields(page: Page, sources: readonly (string | null)[]): Promise<void> {
-  await expect(popover(page)).toBeVisible();
-  const inputs = popoverInputs(page);
-  for (const [index, source] of sources.entries()) {
-    if (source === null) {
-      continue;
-    }
-    await inputs.nth(index).fill(source);
-  }
 }
 
 /** Enter で決定する。欄を持たない段は「決定」を押す。 */
@@ -269,13 +211,6 @@ async function extrudeFace(page: Page, faceName: string, distance: string): Prom
 }
 
 /** プロパティに出ている体積を数で読む。まだ出ていなければ NaN。 */
-async function volumeNumber(page: Page): Promise<number> {
-  const cell = propertyValue(page, '体積');
-  if ((await cell.count()) === 0) {
-    return Number.NaN;
-  }
-  return Number.parseFloat(await cell.innerText());
-}
 
 /** 体積が期待値どおりであることを、許容差(mm³)つきで確かめる。 */
 async function expectVolume(page: Page, expected: number, toleranceMm3 = 0.01): Promise<void> {
@@ -285,68 +220,6 @@ async function expectVolume(page: Page, expected: number, toleranceMm3 = 0.01): 
       message: `体積が ${String(expected)} mm³ ± ${String(toleranceMm3)} になること`,
     })
     .toBeLessThanOrEqual(toleranceMm3);
-}
-
-/* ========================================================================== *
- * ワールド座標 → 画面の画素(solid.spec.ts の写し。視点を動かさないので成り立つ)
- * ========================================================================== */
-
-type WorldPoint = readonly [number, number, number];
-
-// 既定(ホーム)の視点の方位角は −45°(利用者の指示 2026-09-06)。カメラは (+X, −Y, +Z) にあり、前・上・右の 3 面が見える。
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
-
-function subtractPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
-
-function dotPoints(a: WorldPoint, b: WorldPoint): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function crossPoints(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
-function normalizePoint(a: WorldPoint): WorldPoint {
-  const length = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / length, a[1] / length, a[2] / length];
-}
-
-const CAMERA_EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-const CAMERA_Z = normalizePoint(CAMERA_EYE);
-const CAMERA_X = normalizePoint(crossPoints([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = crossPoints(CAMERA_Z, CAMERA_X);
-
-function worldToCanvas(
-  world: WorldPoint,
-  widthPixels: number,
-  heightPixels: number,
-): readonly [number, number] {
-  const view = subtractPoints(world, CAMERA_EYE);
-  const depth = -dotPoints(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
-  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
-  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
-}
-
-/** ビューポートの上で、ワールド座標の点が見えている場所を押す(FR-106)。 */
-async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {
-  const canvas = page.locator('canvas.pcad-viewport__canvas');
-  const box = await canvas.boundingBox();
-  if (box === null) {
-    throw new Error('ビューポートの canvas の位置と大きさが取れませんでした。');
-  }
-  const [x, y] = worldToCanvas(world, box.width, box.height);
-  await page.mouse.click(box.x + x, box.y + y);
 }
 
 /* ========================================================================== *

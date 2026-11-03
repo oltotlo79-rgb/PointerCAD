@@ -1,3 +1,4 @@
+import { isRecord as recordOf } from './mathRecord.js';
 import { mappingFunction } from './mathMappings.js';
 import { numericalRootFunction } from './numericalRootResult.js';
 import { equationSystemFunction } from './equationSystems.js';
@@ -26,9 +27,7 @@ function derivativeVariableReason(name: string): string {
     + 'd/dx・∂/∂x は新しい変数を作りません。指定した位置での微分の値は derivativeat(式,変数,位置,回数) で求めます。';
 }
 
-function recordOf(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function isSequence(value: unknown): value is readonly unknown[] { return Array.isArray(value); }
 function sequenceOf(value: unknown): readonly unknown[] | null {
   if (isSequence(value)) return value;

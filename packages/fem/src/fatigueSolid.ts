@@ -1,3 +1,4 @@
+import { fatigueFailure } from './fatigueFailure.js';
 import type { SolidAnalysisInput, SolidSource } from './solidAnalysisModel.js';
 import { solidResultMatches } from './solidAnalysisResults.js';
 import { solidArray, solidInputSha256, solidNumber, solidRecord, translateSolidAnalysis } from './solidAnalysisTranslation.js';
@@ -63,7 +64,7 @@ export type SolidFatigueAdaptation =
     readonly provenance: SolidFatigueProvenance; readonly conversions: readonly FatigueTensorConversion[] }
   | SolidFatigueError | FatigueTensorError | FatigueError;
 
-const fail = (code: SolidFatigueError['code'], path: string): SolidFatigueError => ({ ok: false, code, path });
+const fail: (code: SolidFatigueError['code'], path: string) => SolidFatigueError = fatigueFailure;
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
 

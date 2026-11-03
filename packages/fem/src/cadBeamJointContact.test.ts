@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cadJointContactFixture } from '../../model/src/analysis/cadJointContact.testSupport.js';
+import { cadJointContactFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { prepareCadBeamJointContact } from './cadBeamJointContact.js';
 
 describe('simultaneous current CAD shank and weld ownership', () => {

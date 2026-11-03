@@ -1,10 +1,11 @@
+import { replaceAttachment } from './analysisAttachment.testSupport.js';
 import { createEmptyPartDocument } from '@pointercad/model';
 import {
   readBeamAnalysisInputs, withBeamAnalysisInputs,
   type StandardBeamContactDefinition, type StandardBeamFrictionDefinition, type StandardBeamImpactDefinition,
 } from '@pointercad/model/beam-analysis';
 import { describe, expect, it } from 'vitest';
-import { bucklingCadFixture } from '../../../model/src/analysis/beamBuckling.testSupport.js';
+import { bucklingCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { isRecord } from './guards.js';
@@ -38,11 +39,6 @@ function reopen(text: string) {
   return read.document;
 }
 
-function replaceAttachment(serialized: string, value: unknown): string {
-  const envelope: unknown = JSON.parse(serialized);
-  if (!isRecord(envelope) || !isRecord(envelope.document)) throw new Error('Expected a document envelope');
-  return JSON.stringify({ ...envelope, document: { ...envelope.document, beamAnalysisInputs: value } });
-}
 
 describe('frictional contact inputs (schema 7) through the actual assembly file codec', () => {
   it.each([

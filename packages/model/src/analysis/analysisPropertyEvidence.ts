@@ -1,3 +1,4 @@
+import { isFiniteNumber, isRecord as record } from '../valueGuards.js';
 import { findStrengthMaterial } from '../measure/strengthMaterials.js';
 import { InputIssue, text } from './analysisValidation.js';
 
@@ -41,9 +42,6 @@ export type AnalysisPropertyEvidenceStatus =
 function fail(code: string, path: string, detail: string): never {
   throw new InputIssue(`property-evidence-${code}`, path, detail);
 }
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 function exact(value: unknown, keys: readonly string[], path: string): Record<string, unknown> {
   if (!record(value) || Reflect.ownKeys(value).length !== keys.length || keys.some(key => {
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -52,7 +50,7 @@ function exact(value: unknown, keys: readonly string[], path: string): Record<st
   return value;
 }
 function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail('number', path, 'Expected a finite evidence value');
+  if (!isFiniteNumber(value)) fail('number', path, 'Expected a finite evidence value');
   return value;
 }
 function range(value: unknown, unit: string, path: string): AnalysisPropertyRange {
@@ -155,4 +153,28 @@ export function fatiguePropertySeries(value: { readonly referenceStressMpa: numb
 export function rayleighPropertySeries(value: { readonly massCoefficientPerS: number; readonly stiffnessCoefficientS: number }): AnalysisPropertySeries {
   return { kind: 'rayleigh', values: { massCoefficientPerS: { value: value.massCoefficientPerS, unit: '1/s' },
     stiffnessCoefficientS: { value: value.stiffnessCoefficientS, unit: 's' } }, conditions: { law: 'C=alpha*M+beta*K' } };
+}
+
+function sameEntries<T>(left: Readonly<Record<string, T>>, right: Readonly<Record<string, T>>,
+  same: (a: T, b: T) => boolean): boolean {
+  return Object.keys(left).length === Object.keys(right).length && Object.entries(left).every(([key, value]) => {
+    const other = right[key];
+    return Object.hasOwn(right, key) && other !== undefined && same(value, other);
+  });
+}
+function sameRange(left: AnalysisPropertyRange, right: AnalysisPropertyRange): boolean {
+  return left.lower === right.lower && left.upper === right.upper && left.unit === right.unit;
+}
+/** Equality of already validated evidence, including absence in legacy files. Record key order is immaterial.
+ * This does not validate or certify evidence; readAnalysisPropertyEvidence remains the strict reader. */
+export function sameAnalysisPropertyEvidence(left: AnalysisPropertyEvidence | undefined, right: AnalysisPropertyEvidence | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return left.property === right.property && left.sourceId === right.sourceId && left.sourceKind === right.sourceKind
+    && left.citation === right.citation && left.materialConditionId === right.materialConditionId
+    && left.heatTreatment === right.heatTreatment && left.temperatureC === right.temperatureC
+    && sameRange(left.temperatureRange, right.temperatureRange)
+    && sameEntries(left.units, right.units, (a, b) => a === b)
+    && left.testConditions.description === right.testConditions.description
+    && sameEntries(left.testConditions.parameters, right.testConditions.parameters, (a, b) => a === b)
+    && sameEntries(left.validRange, right.validRange, sameRange);
 }

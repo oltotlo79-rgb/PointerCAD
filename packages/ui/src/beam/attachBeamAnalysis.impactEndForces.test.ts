@@ -252,6 +252,7 @@ describe('sampled element end forces in the public impact lifecycle', () => {
     port.onmessage?.(resultEvent(request, await guidedReply(input, 1e-4, true)));
     await vi.waitFor(() => expect(requireBeamSession().status).toBe('complete'));
     useAppStore.getState().editBeam({ kind: 'impact-velocity', nodeId: fixture.member.endNodeId, axis: 2, source: '-3' });
-    expect([requireBeamSession().result, requireBeamSession().impactMembers]).toEqual([null, null]);
+    expect(requireBeamSession().result).toBeNull();
+    expect(requireBeamSession().impactMembers).toBeNull();
   });
 });

@@ -30,6 +30,8 @@ import fatigueStrain from './ja/fatigueStrain.json';
 import fatigueLocalCycle from './ja/fatigueLocalCycle.json';
 import solidAnalysis from './ja/solidAnalysis.json';
 import solidPlastic from './ja/solidPlastic.json';
+import solidFinite from './ja/solidFinite.json';
+import shellAnalysis from './ja/shellAnalysis.json';
 import script from './ja/script.json';
 import math from './ja/math.json';
 import mathGeometry from './ja/mathGeometry.json';
@@ -77,6 +79,8 @@ export const ja = {
   ...fatigueLocalCycle,
   ...solidAnalysis,
   ...solidPlastic,
+  ...solidFinite,
+  ...shellAnalysis,
   ...script,
   ...math,
   ...mathGeometry,
@@ -117,5 +121,7 @@ export const JA_PARTS: readonly (readonly [string, Readonly<Record<string, strin
   ['fatigueLocalCycle', fatigueLocalCycle],
   ['solidAnalysis', solidAnalysis],
   ['solidPlastic', solidPlastic],
+  ['solidFinite', solidFinite],
+  ['shellAnalysis', shellAnalysis],
   ['commands', commands],
 ];

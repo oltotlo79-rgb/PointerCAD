@@ -5,6 +5,7 @@ import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
+import { solidFaceQuery as faceQuery } from '../occt/solidFaceQuery.testSupport.js';
 import type { StepWriteEntry } from '../occt/writeStep.js';
 import { writeStep } from '../occt/writeStep.js';
 import { writeStepAssembly } from '../occt/xcafAssembly.js';
@@ -122,18 +123,6 @@ describe('決定性検査(recomputeSolids と writeStep、§0.62)', () => {
     const mesh = tessellate(oc, shape);
     const lines = extractEdges(oc, shape);
     return collectSubShapes(oc, shape, mesh.faceRanges, lines.edgeRanges);
-  }
-
-  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return {
-      kind: 'face',
-      index: info.index,
-      surfaceKind: info.surfaceKind,
-      area: info.area,
-      position: info.centroid,
-      axis: info.axis,
-      radius: info.radius,
-    };
   }
 
   function edgeQuery(info: SolidEdgeInfo): Extract<SubShapeQuery, { kind: 'edge' }> {

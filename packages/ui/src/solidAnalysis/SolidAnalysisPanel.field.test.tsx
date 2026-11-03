@@ -77,17 +77,45 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); useAppStore.setState({ solidAnalysisSession: null, solidAnalysisRunner: null }); resetTestStore(); });
 
 describe('solid analysis field view panel (Node, not browser acceptance)', () => {
+  it('selects all six actual engineering strains and changes the visible and accessible legend units', () => {
+    complete(MIXED);
+    const session = useAppStore.getState().solidAnalysisSession;
+    if (session?.result === null || session === null) throw new Error('Missing result');
+    const result = session.result;
+    const strains: readonly Vector6[] = [[0.001, -0.002, 0.003, -0.004, 0.005, -0.006],
+      [-0.007, 0.008, -0.009, 0.010, -0.011, 0.012]];
+    useAppStore.setState({ solidAnalysisSession: { ...session, result: { ...result, result: { ...result.result,
+      elements: result.result.elements.map((element, index) => ({ ...element, strain: strains[index] })) } } } });
+    const choices = ['strainXx', 'strainYy', 'strainZz', 'strainYz', 'strainXz', 'strainXy'] as const;
+    for (const [index, quantity] of choices.entries()) {
+      row('solid-field-quantity')?.onChange?.({ target: { value: quantity } });
+      expect(useAppStore.getState().solidAnalysisSession?.fieldView.quantity).toBe(quantity);
+      const values = strains.map(strain => strain[index]), low = Math.min(...values), high = Math.max(...values);
+      expect(solidAnalysisFieldOf(useAppStore.getState().solidAnalysisSession)?.elementValues).toEqual(values);
+      expect(row('solid-field-legend')?.['aria-label']).toBe(t('solidAnalysis.legendDimensionless'));
+      expect(row('solid-field-ramp')?.['aria-label']).toBe(`${t('solidAnalysis.legendRampDimensionless')} ${low} 無次元 - ${high} 無次元`);
+      expect(markup()).toContain(`${low} 無次元`);
+      expect(markup()).toContain(`${high} 無次元`);
+    }
+    for (const key of ['solidAnalysis.fieldStrainXx', 'solidAnalysis.fieldStrainYy', 'solidAnalysis.fieldStrainZz',
+      'solidAnalysis.fieldStrainYz', 'solidAnalysis.fieldStrainXz', 'solidAnalysis.fieldStrainXy'] as const) expect(markup()).toContain(t(key));
+    expect(markup()).toContain(t('solidAnalysis.linearFieldElementNote'));
+    row('solid-field-quantity')?.onChange?.({ target: { value: 'xx' } });
+    expect(row('solid-field-legend')?.['aria-label']).toBe(t('solidAnalysis.legend'));
+    expect(row('solid-field-ramp')?.['aria-label']).toBe(`${t('solidAnalysis.legendRamp')} -40 MPa - 100 MPa`);
+  });
+
   it('shows the empty state and no field controls before a result exists', () => {
     expect(row('solid-field-empty')).toBeDefined();
     expect(row('solid-field-view')).toBeUndefined();
-    expect(markup()).toContain(t('solidAnalysis.fieldEmpty'));
+    expect(markup()).toContain(t('solidAnalysis.linearFieldEmpty'));
   });
 
   it('shows a labelled quantity selector and signed MPa bounds that follow the selected component', () => {
     complete(MIXED);
     expect(row('solid-field-empty')).toBeUndefined();
     const text = markup();
-    for (const key of ['solidAnalysis.fieldView', 'solidAnalysis.fieldQuantity', 'solidAnalysis.deformationScale',
+    for (const key of ['solidAnalysis.linearFieldView', 'solidAnalysis.fieldQuantity', 'solidAnalysis.deformationScale',
       'solidAnalysis.legendMinimum', 'solidAnalysis.legendMaximum', 'solidAnalysis.fieldVonMises',
       'solidAnalysis.fieldXy'] as const) expect(text).toContain(t(key));
     // Default von Mises: element 0 = 100, element 1 = hypot(40/sqrt2, 0, 40/sqrt2, sqrt3*20) = sqrt(2800).

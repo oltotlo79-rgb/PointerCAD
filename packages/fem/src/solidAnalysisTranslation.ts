@@ -1,10 +1,12 @@
+import { createPrefixedError } from './valueGuards.js';
+import { subVec3 as sub, crossVec3 as cross, dotVec3 as dot } from '@pointercad/model/vec3';
 import { sha256Hex } from './sha256.js';
 import type { SolidAnalysisInput, SolidAnalysisPlan, SolidMaterial, SolidVector3, SolidVector6 } from './solidAnalysisModel.js';
 import { readOptionalMaterialCapacity } from '@pointercad/model/beam-analysis';
 
 /** Same node/element capacity as the existing tet4 mesh contract. */
 export const SOLID_LIMITS = { nodes: 10000, elements: 50000, materials: 50000, loads: 200000 } as const;
-function fail(message: string): never { throw new Error(`solid-input: ${message}`); }
+const fail: (message: string) => never = createPrefixedError('solid-input');
 export function solidRecord(value: unknown, fields: readonly string[]): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) fail('expected object');
   const row = value as Record<string, unknown>;
@@ -35,11 +37,6 @@ function index(value: unknown, count: number): number {
   if (!Number.isSafeInteger(result) || result < 0 || result >= count) fail('invalid node index');
   return result;
 }
-function sub(a: SolidVector3, b: SolidVector3): SolidVector3 { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
-function cross(a: SolidVector3, b: SolidVector3): SolidVector3 {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-function dot(a: SolidVector3, b: SolidVector3): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 /** Inverse of the physical Jacobian, without a centroid or sampled approximation. */
 export function solidTetGeometry(points: readonly SolidVector3[]): { volumeMm3: number; gradients: readonly SolidVector3[] } {
   if (points.length !== 4) fail('tet4 requires four points');

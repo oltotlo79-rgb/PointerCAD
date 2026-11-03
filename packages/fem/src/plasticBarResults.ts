@@ -1,4 +1,4 @@
-import { isRecord } from './valueGuards.js';
+import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 import { comparePlasticBar, plasticBarReference, plasticBarSchedule, PLASTIC_BAR_LIMITS, PLASTIC_BAR_RESULT_SCHEMA,
   type PlasticBarPlan, type PlasticBarSample } from './plasticBar.js';
 import { translatePlasticBar, type PlasticBarInput, type PlasticBarSource } from './plasticBarTranslation.js';
@@ -45,9 +45,7 @@ export interface PlasticBarResult {
   readonly referenceDeviation: PlasticBarDeviation;
 }
 
-function fail(detail: string): never {
-  throw new Error(`plastic-bar-result: ${detail}`);
-}
+const fail: (message: string) => never = createPrefixedError('plastic-bar-result');
 function exactFields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);
   const row = value;
@@ -63,10 +61,7 @@ function denseArray(value: unknown): value is unknown[] {
   }
   return true;
 }
-function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(`${path} must be a finite number`);
-  return value;
-}
+const finite = createFiniteReader(fail, 'preserve');
 const sampleFields = ['step', 'targetDisplacementM', 'endDisplacementM', 'strain', 'stressPa', 'plasticStrain',
   'axialForceN'] as const;
 const rawFields = ['schema', 'method', 'scope', 'structuralCertification', 'samples', 'yielded',

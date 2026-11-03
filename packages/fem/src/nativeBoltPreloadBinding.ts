@@ -1,3 +1,4 @@
+import { isRecord as record } from './valueGuards.js';
 import { decodeNativeBoltPreload, prepareNativeBoltPreload, type NativeBoltPreloadResult, type PreparedNativeBoltPreload } from './nativeBoltPreload.js';
 
 export const NATIVE_BOLT_KIND = 'native-bolt-preload-stages' as const;
@@ -6,7 +7,7 @@ export interface NativeBoltPreloadWireInput { readonly source: { readonly docume
 export interface PreparedNativeBoltPreloadJob { readonly source: NativeBoltPreloadWireInput['source']; readonly prepared: PreparedNativeBoltPreload }
 export interface NativeBoltPreloadOwnedResult extends NativeBoltPreloadResult { readonly kind: typeof NATIVE_BOLT_KIND; readonly source: NativeBoltPreloadWireInput['source'] }
 const numericKeys = ['schema','method','nativeContactSolver','structuralCertification','lockedShorteningM','lockAfterState','boltComplianceMPerN','memberComplianceMPerN','contact','states','planSha256'] as const;
-function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value); }
+
 function fields(value: unknown, keys: readonly string[]): Record<string, unknown> {
   if (!record(value) || Reflect.ownKeys(value).length !== keys.length || keys.some(k=>!Object.hasOwn(value,k))) throw Error('native-preload-wire-shape');
   return value;

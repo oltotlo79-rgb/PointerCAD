@@ -1,3 +1,5 @@
+import { SolidResultExport } from './SolidResultExport.js';
+import { SolidElementProbe } from './SolidElementProbe.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { summarizeSolidYield, type SolidYieldSummary } from '@pointercad/fem';
 import { t, type MessageKey } from '../i18n/t.js';
@@ -7,7 +9,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { solidExpressionField, solidFieldsFor, type SolidAnalysisSession } from './solidAnalysisSession.js';
 import { solidFieldCssColor } from './solidFieldLayer.js';
 import { solidAnalysisFieldOf } from './solidFieldState.js';
-import { SOLID_FIELD_QUANTITIES, type SolidFieldQuantity } from './solidFieldView.js';
+import { solidFieldUnit, SOLID_LINEAR_FIELD_QUANTITIES, type SolidLinearFieldQuantity } from './solidFieldView.js';
 import { SolidModalSection } from './SolidModalSection.js';
 import { SolidBucklingSection } from './SolidBucklingSection.js';
 import { SolidAnalysisMaterialFields } from './SolidAnalysisMaterialFields.js';
@@ -15,9 +17,12 @@ import { SolidBoundaryFields } from './SolidBoundaryFields.js';
 import { solidBoundarySaved } from './solidBoundaryDraft.js';
 
 const QUANTITY_LABELS = { vonMises: 'solidAnalysis.fieldVonMises', xx: 'solidAnalysis.fieldXx', yy: 'solidAnalysis.fieldYy',
-  zz: 'solidAnalysis.fieldZz', yz: 'solidAnalysis.fieldYz', xz: 'solidAnalysis.fieldXz', xy: 'solidAnalysis.fieldXy' } as const;
-function isQuantity(value: string): value is SolidFieldQuantity {
-  return SOLID_FIELD_QUANTITIES.some(quantity => quantity === value);
+  zz: 'solidAnalysis.fieldZz', yz: 'solidAnalysis.fieldYz', xz: 'solidAnalysis.fieldXz', xy: 'solidAnalysis.fieldXy',
+  strainXx: 'solidAnalysis.fieldStrainXx', strainYy: 'solidAnalysis.fieldStrainYy', strainZz: 'solidAnalysis.fieldStrainZz',
+  strainYz: 'solidAnalysis.fieldStrainYz', strainXz: 'solidAnalysis.fieldStrainXz', strainXy: 'solidAnalysis.fieldStrainXy',
+} as const satisfies Readonly<Record<SolidLinearFieldQuantity, MessageKey>>;
+function isQuantity(value: string): value is SolidLinearFieldQuantity {
+  return SOLID_LINEAR_FIELD_QUANTITIES.some(quantity => quantity === value);
 }
 function validScale(text: string): boolean {
   return text.trim() !== '' && Number.isFinite(Number(text)) && Number(text) >= 0;
@@ -43,6 +48,8 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
   const scaleText = scaleDraft !== null && scaleDraft.view === session.fieldView ? scaleDraft.text
     : String(session.fieldView.deformationScale);
   const field = solidAnalysisFieldOf(session);
+  const dimensionless = solidFieldUnit(session.fieldView.quantity) === 'dimensionless';
+  const fieldUnit = dimensionless ? t('solidAnalysis.dimensionless') : 'MPa';
   const composing = useRef(false);
   const result = session.result;
   let boundaryValid = true;
@@ -102,15 +109,17 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
         <dt>{t('solidAnalysis.residual')}</dt><dd>{result.result.maximumRelativeEquilibriumResidual}</dd>
       </dl>
       <p>{t('solidAnalysis.resultLimit')}</p>
+      <SolidResultExport session={session} />
+      <SolidElementProbe session={session} ownerId={activeOwner} documentId={documentId} />
       {session.status === 'complete' && session.ownerId === activeOwner && result.prepared.input.source.documentId === documentId
         ? <SolidYieldResults input={result.prepared.input} result={result.result}
           owner={JSON.stringify([session.ownerId, session.revision, activeOwner])} /> : null}
       <fieldset data-testid="solid-field-view">
-        <legend>{t('solidAnalysis.fieldView')}</legend>
+        <legend>{t('solidAnalysis.linearFieldView')}</legend>
         <label>{t('solidAnalysis.fieldQuantity')}
           <select data-testid="solid-field-quantity" value={session.fieldView.quantity}
-            onChange={event => { if (isQuantity(event.target.value)) setFieldView({ quantity: event.target.value }); }} title={t('solidAnalysis.guide.fieldQuantity')}>
-            {SOLID_FIELD_QUANTITIES.map(quantity => <option key={quantity} value={quantity}>{t(QUANTITY_LABELS[quantity])}</option>)}
+            onChange={event => { if (isQuantity(event.target.value)) setFieldView({ quantity: event.target.value }); }} title={t('solidAnalysis.guide.linearFieldQuantity')}>
+            {SOLID_LINEAR_FIELD_QUANTITIES.map(quantity => <option key={quantity} value={quantity}>{t(QUANTITY_LABELS[quantity])}</option>)}
           </select></label>
         <label>{t('solidAnalysis.deformationScale')}
           <input type="number" min="0" step="any" inputMode="decimal" data-testid="solid-field-scale" value={scaleText}
@@ -122,11 +131,11 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
             }} title={t('solidAnalysis.guide.deformationScale')} /></label>
         {validScale(scaleText) ? null : <p role="alert">{t('solidAnalysis.deformationScaleInvalid')}</p>}
         {field === null ? <p role="alert" data-testid="solid-field-unavailable">{t('solidAnalysis.fieldUnavailable')}</p>
-          : <dl aria-label={t('solidAnalysis.legend')} data-testid="solid-field-legend">
-            <dt>{t('solidAnalysis.legendMinimum')}</dt><dd>{`${field.legend.minimumMPa} MPa`}</dd>
-            <dt>{t('solidAnalysis.legendMaximum')}</dt><dd>{`${field.legend.maximumMPa} MPa`}</dd>
+          : <dl aria-label={t(dimensionless ? 'solidAnalysis.legendDimensionless' : 'solidAnalysis.legend')} data-testid="solid-field-legend">
+            <dt>{t('solidAnalysis.legendMinimum')}</dt><dd>{`${field.legend.minimum} ${fieldUnit}`}</dd>
+            <dt>{t('solidAnalysis.legendMaximum')}</dt><dd>{`${field.legend.maximum} ${fieldUnit}`}</dd>
             <dd data-testid="solid-field-ramp" role="img"
-              aria-label={`${t('solidAnalysis.legendRamp')} ${field.legend.minimumMPa} MPa - ${field.legend.maximumMPa} MPa`}>
+              aria-label={`${t(dimensionless ? 'solidAnalysis.legendRampDimensionless' : 'solidAnalysis.legendRamp')} ${field.legend.minimum} ${fieldUnit} - ${field.legend.maximum} ${fieldUnit}`}>
               <span aria-hidden="true" data-testid="solid-field-ramp-low" style={{ display: 'inline-block', width: '1em', height: '1em',
                 backgroundColor: solidFieldCssColor(field.legend.constant ? 0.5 : 0) }} />
               <span aria-hidden="true" style={{ display: 'inline-block', width: '6em', height: '1em',
@@ -136,10 +145,10 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
             </dd>
             {field.legend.constant ? <dd>{t('solidAnalysis.legendConstant')}</dd> : null}
           </dl>}
-        <p>{t('solidAnalysis.fieldElementNote')}</p>
+        <p>{t('solidAnalysis.linearFieldElementNote')}</p>
       </fieldset>
     </section>}
-    {result === null ? <p data-testid="solid-field-empty">{t('solidAnalysis.fieldEmpty')}</p> : null}
+    {result === null ? <p data-testid="solid-field-empty">{t('solidAnalysis.linearFieldEmpty')}</p> : null}
     {result === null ? null : <button type="button" className="pcad-button" data-testid="solid-fatigue-open"
       onClick={openSolidFatigue} title={t('solidAnalysis.guide.fatigueOpen')}>{t('fatigue.inputModeSolid')}</button>}
     <SolidModalSection />

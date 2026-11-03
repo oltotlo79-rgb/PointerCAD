@@ -1,3 +1,4 @@
+import { isRecord } from '../valueGuards.js';
 export const CAMERA_ACTIONS = ['orbit', 'pan', 'zoom'] as const;
 export type CameraAction = typeof CAMERA_ACTIONS[number];
 export interface CameraBinding {
@@ -42,9 +43,6 @@ const PRESET_BINDINGS: Readonly<Record<CameraControlPreset, Pick<CameraControlSe
 export function withCameraControlPreset(settings: CameraControlSettings, preset: CameraControlPreset): CameraControlSettings {
   const bindings = PRESET_BINDINGS[preset];
   return { ...settings, orbit: [...bindings.orbit], pan: [...bindings.pan], zoom: [...bindings.zoom] };
-}
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 export function isCameraBinding(value: unknown): value is CameraBinding {
   return isRecord(value) && typeof value.input === 'string' && ['left', 'middle', 'right', 'wheel'].includes(value.input)

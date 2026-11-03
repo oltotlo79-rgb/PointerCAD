@@ -1,3 +1,4 @@
+import { analyzeSolidFiniteInBrowser } from './offlineBrowser.js';
 import { analyzeFrictionContactInBrowser, analyzeWeldSpanContactInBrowser } from './offlineBrowser.js';
 import { analyzeNativeBoltPreloadInBrowser } from './offlineBrowser.js';
 import { analyzeSolidContactInBrowser } from './offlineBrowser.js';
@@ -11,6 +12,7 @@ import { analyzeSolidModalInBrowser } from './offlineBrowser.js';
 import { analyzeSolidBucklingInBrowser } from './offlineBrowser.js';
 import { analyzeImpactInBrowser } from './offlineBrowser.js';
 import { analyzeFrameBoltContactInBrowser } from './offlineBrowser.js';
+import { analyzeShellInBrowser } from './offlineBrowser.js';
 
 declare const self: DedicatedWorkerGlobalScope;
 let used = false;
@@ -26,7 +28,8 @@ self.onmessage = (event: MessageEvent<unknown>): void => {
     phase = next;
     send({ protocol: FEM_PROTOCOL, kind: 'phase', identity: request.identity, phase });
   };
-  const work = request.kind === 'analyze-beam-friction-contact' ? analyzeFrictionContactInBrowser(request.input, request.solverOptions, notify)
+  const work = request.kind === 'analyze-solid-finite-j2' ? analyzeSolidFiniteInBrowser(request.input, notify)
+    : request.kind === 'analyze-beam-friction-contact' ? analyzeFrictionContactInBrowser(request.input, request.solverOptions, notify)
     : request.kind === 'analyze-solid-contact' ? analyzeSolidContactInBrowser(request.input, notify)
     : request.kind === 'analyze-native-bolt-preload' ? analyzeNativeBoltPreloadInBrowser(request.input, notify)
     : request.kind === 'qualify-oofem-beam' ? qualifyInBrowser(notify)
@@ -34,6 +37,7 @@ self.onmessage = (event: MessageEvent<unknown>): void => {
     : request.kind === 'analyze-solid-buckling-tet4' ? analyzeSolidBucklingInBrowser(request.input, notify)
     : request.kind === 'analyze-solid-modal-tet4' ? analyzeSolidModalInBrowser(request.input, notify)
     : request.kind === 'analyze-solid-tet4' ? analyzeSolidInBrowser(request.input, notify)
+    : request.kind === 'analyze-shell-tr-shell02' ? analyzeShellInBrowser(request.input, notify)
     : request.kind === 'mesh-cad-convex-tetra' ? meshTetrahedraInBrowser(request.input, notify)
     : request.kind === 'analyze-beam-buckling-3d' ? analyzeBucklingInBrowser(request.input, notify)
     : request.kind === 'analyze-beam-transient-3d' ? analyzeTransientInBrowser(request.input, notify)

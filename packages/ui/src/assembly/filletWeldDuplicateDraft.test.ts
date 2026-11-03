@@ -1,7 +1,7 @@
-import { expressionValueFromNumber } from '@pointercad/expression';
+import { placement } from './weldPlacement.testSupport.js';
 import {
   addComponent, createAssemblyDocument, createComponentFor, weldSegmentsOf,
-  type AssemblyDocument, type MateSubShapeGeometry, type MateTarget, type Placement, type SubShapeRef, type Vec3,
+  type AssemblyDocument, type MateSubShapeGeometry, type MateTarget, type SubShapeRef,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
@@ -14,11 +14,6 @@ import {
 } from './filletWeldDraft.js';
 
 const REVISIONS: ReadonlyMap<string, string> = new Map([['standing', 'rev-s'], ['base', 'rev-b']]);
-
-function placement(position: Vec3): Placement {
-  return { position: [expressionValueFromNumber(position[0]), expressionValueFromNumber(position[1]),
-    expressionValueFromNumber(position[2])], rotation: [0, 0, 0, 1] };
-}
 
 /** The same tee as filletWeldDraft.test.ts: standing plate at (0,26,10) on the base top z=10. */
 function tee(): AssemblyDocument {

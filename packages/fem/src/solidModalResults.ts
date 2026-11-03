@@ -1,3 +1,4 @@
+import { createPrefixedError } from './valueGuards.js';
 import type { SolidMaterial, SolidVector3 } from './solidAnalysisModel.js';
 import { solidArray, solidNumber, solidRecord, solidStrainStress, solidTetGeometry, solidVector } from './solidAnalysisTranslation.js';
 import type { SolidModalInput, SolidModalMode, SolidModalResult } from './solidModalModel.js';
@@ -8,7 +9,7 @@ const NATIVE_FIELDS = ['schema', 'source', 'massMatrix', 'units', 'modes', 'tota
   'maximumMassOrthogonalityError', 'maximumRigidMotionResidual', 'maximumElementMassError', 'reservedNumericBytes'];
 const MODE_FIELDS = ['number', 'eigenvaluePerSecondSquared', 'frequencyHz', 'normalizedResidual', 'massNormalizedShapePerSqrtT'];
 const tolerance = 1e-8;
-function fail(message: string): never { throw new Error(`solid-modal-result: ${message}`); }
+const fail: (message: string) => never = createPrefixedError('solid-modal-result');
 function bounded(value: unknown, maximum: number, label: string): number {
   const result = solidNumber(value);
   if (!(result >= 0 && result <= maximum)) fail(label);

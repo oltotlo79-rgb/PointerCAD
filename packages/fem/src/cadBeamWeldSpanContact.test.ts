@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cadWeldSpanFixture } from '../../model/src/analysis/cadWeldSpanLayer.testSupport.js';
+import { cadWeldSpanFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { prepareCadBeamWeldSpanContact } from './cadBeamWeldSpanContact.js';
 import { translateBeamWeldSpanContact } from './beamWeldSpanContact.js';
 

@@ -7,7 +7,7 @@ import {
 import React, { isValidElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BASE_BOX, STANDING_BOX, weldTestPlacement } from '../../../model/src/assembly/welding/filletWeld.testSupport.js';
+import { BASE_BOX, STANDING_BOX, weldTestPlacement } from '@pointercad/model/testing/weld-fixtures';
 import { t } from '../i18n/t.js';
 import { chooseAssemblyBuild } from '../shell/menus/assemblyToolActions.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';

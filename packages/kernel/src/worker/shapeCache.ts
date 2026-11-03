@@ -1,3 +1,4 @@
+import { createAllocations } from '../occt/allocations.js';
 import type { OcctShapeHandle } from '../occt/makeBox.js';
 import type { MeshJsFinalAccounting, ShapeCacheDiagnostics } from '../types.js';
 
@@ -133,6 +134,9 @@ export interface ShapeCache<T extends ShapeCacheEntry = OcctShapeHandle> {
   /**
    * 覚える。同じ鍵の旧形は delete() する。確保中なら最後の release まで旧形の解放を待つ。
    * 容量を超えた分は未確保のものから古い順に追い出す。
+   * 呼出し時に entry の所有を引き取る。旧形の解放・trim が例外でも呼出し側へ戻さない。
+   * 例外後も現行・貸出し中・解放失敗の隔離のいずれかで保持するか、既に1回解放している。
+   * 呼出し側は catch で entry を delete しない。同じ鍵の借用した形の再登録は所有を増やさない。
    */
   set(key: string, entry: T): void;
   /** 持っているかだけを見る。順番は変えない。 */
@@ -174,6 +178,13 @@ export interface ShapeCache<T extends ShapeCacheEntry = OcctShapeHandle> {
  */
 export const SHAPE_CACHE_CAPACITY = 256;
 
+// Ownership remains in cache state until the existing disposal boundary.
+function releaseCacheEntry(entry: ShapeCacheEntry): void {
+  const { keep, release } = createAllocations();
+  keep(entry);
+  release();
+}
+
 /**
  * 形のキャッシュを作る。OCCT には触れないので、預けるものの型は呼び出し側が決める。
  * 既定は makeBox 等が返す OcctShapeHandle({ shape, delete() })。
@@ -199,8 +210,8 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
   // Opaque native delete may have partially succeeded. Never invoke it a second time.
   const failedEntries = new Map<T, unknown>();
   const failedReleases = new Map<AcquireToken, { readonly entries: ReadonlySet<T>; readonly error: unknown }>();
-  let ownershipEpoch = 0;
-  const changed = (): void => { ownershipEpoch = Number.isSafeInteger(ownershipEpoch + 1) ? ownershipEpoch + 1 : Number.NaN; };
+  let ownershipGeneration = 0;
+  const changed = (): void => { ownershipGeneration = Number.isSafeInteger(ownershipGeneration + 1) ? ownershipGeneration + 1 : Number.NaN; };
   let retiredCount = 0;
   let evictions = 0;
   let released = 0;
@@ -208,7 +219,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
 
   function disposeEntry(entry: T): void {
     if (failedEntries.has(entry)) throw failedEntries.get(entry);
-    try { entry.delete(); released += 1; }
+    try { releaseCacheEntry(entry); released += 1; }
     catch (error) { failedEntries.set(entry, error); changed(); throw error; }
   }
 
@@ -297,7 +308,7 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
       if (meshBuffersOf === undefined) throw new Error("Failed release backing collector unavailable");
       return uniqueMeshBackingBuffers([...failed.entries].flatMap(entry => [...meshBuffersOf(entry)]));
     },
-    meshOwnershipEpoch: () => Number.isSafeInteger(ownershipEpoch) ? ownershipEpoch : null,
+    meshOwnershipEpoch: () => Number.isSafeInteger(ownershipGeneration) ? ownershipGeneration : null,
     acquire(keys): AcquireToken {
       changed();
       const unique = new Set(keys);
@@ -360,15 +371,11 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
       changed();
       const existing = entries.get(key);
       // 同じものを入れ直したときに解放してしまうと、使用中の形を壊すことになる。
-      if (existing !== undefined && existing !== entry) {
-        if (references.has(key)) {
-          const old = retired.get(key) ?? [];
-          old.push(existing);
-          retired.set(key, old);
-          retiredCount += 1;
-        } else {
-          disposeEntry(existing);
-        }
+      if (existing !== undefined && existing !== entry && references.has(key)) {
+        const old = retired.get(key) ?? [];
+        old.push(existing);
+        retired.set(key, old);
+        retiredCount += 1;
       }
       // 以前貸した形を再び現行に戻した場合も、同じ実体を二重解放しない。
       const old = retired.get(key);
@@ -378,7 +385,12 @@ export function createShapeCache<T extends ShapeCacheEntry = OcctShapeHandle>(
         if (remaining.length === 0) retired.delete(key);
         else retired.set(key, remaining);
       }
+      // Transfer before the first destructor can throw. The new owner remains
+      // in entries even when the old owner moves to failedEntries quarantine.
       touch(key, entry);
+      if (existing !== undefined && existing !== entry && !references.has(key)) {
+        disposeEntry(existing);
+      }
       trim();
     },
 

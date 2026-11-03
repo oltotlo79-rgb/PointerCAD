@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test } from './browserLifecycle.testSupport.js';
 import { directEditOperationsFlow } from './directEditOperationsFlow.js';
 
 for (const tool of ['holeTranslate', 'faceRotate'] as const) {

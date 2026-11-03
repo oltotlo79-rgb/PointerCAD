@@ -9,7 +9,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import { appendSolid, createEmptyPartDocument, findSolid, FREE_WORK_PLANE_ID, replaceSolid,
   type HoleFeature, type SketchFeature, type ThreadHoleFeature } from '@pointercad/model';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { historyFormula, nativeHistoryHarness, shapeSha } from '../solid/holeThreadHistory.testSupport.js';
 import { summarizeSolid } from '../solid/solidSummary.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';

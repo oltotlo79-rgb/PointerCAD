@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { savedBoltFixture } from '../../../../model/src/analysis/cadNativeBoltPreloadInput.testSupport.js';
+import { savedBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from '../assemblyJson.js';
 import { readOptionalBeamAnalysisInputs, serializeBeamAnalysisInputs } from './beamAnalysis.js';
 

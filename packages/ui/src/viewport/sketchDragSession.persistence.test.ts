@@ -5,9 +5,9 @@ import { createEmptyPartDocument,
   type PartDocument, type ResolvedSketch, type Vec3 } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { connected1000Original, connected1000PointId }
-  from '../../../model/src/sketch/constraints/connected1000Fixture.testSupport.js';
+  from '@pointercad/model/testing/connected-fixtures';
 import { currentConnected1000Part as currentPart, legacyConnected1000Part as legacyPart }
-  from '../../../io/src/pcad/connected1000Persistence.testSupport.js';
+  from '@pointercad/io/testing/ui-fixtures';
 import { orbitFrom, resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { recomputeRetention } from './dragSketch.retentionSupport.testSupport.js';

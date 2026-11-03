@@ -1,5 +1,5 @@
 /** directed second-order jets in the two Legendre parameters (m,n). */
-import { intervalAdd, intervalMultiply, intervalDivide, intervalSquare, intervalSqrt,
+import { isZero, intervalAdd, intervalMultiply, intervalDivide, intervalSquare, intervalSqrt,
   type MathInterval, type IntervalValue } from './mathInterval.js';
 
 export type Range = MathInterval;
@@ -11,7 +11,7 @@ export interface Jet {
 export class UnprovedEllipticRange extends Error {}
 export const point=(value:number):Range=>({lower:value,upper:value});
 export const ZERO=point(0), ONE=point(1);
-export const isZero=(value:Range):boolean=>value.lower===0&&value.upper===0;
+export { isZero };
 function unpack(value:IntervalValue):Range {
   if(value.status!=='range'||!Number.isFinite(value.interval.lower)||!Number.isFinite(value.interval.upper))throw new UnprovedEllipticRange();
   return value.interval;

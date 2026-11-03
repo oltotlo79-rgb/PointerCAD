@@ -5,14 +5,14 @@ import { solidFiniteInputSha256, translateSolidFinite, type SolidFiniteInput } f
 
 /**
  * Runtime entry of the internal finite-strain J2 equilibrium (EX-09 W33 law + W34 entry) over an existing
- * PyodideRuntime. Not dispatched by the Worker, protocol or UI yet. Only the two fixed developer files (the W33
+ * PyodideRuntime. Dispatched by the one-shot Worker; no CAD/UI integration. Only the two fixed developer files (the W33
  * solidFiniteMaterial.py and W34 solidFiniteEquilibrium.py bytes, under the module names that the entry imports) and the
  * fixed call below execute; the plan is written as a JSON data file and no caller content is placed in Python source.
  *
  * Ownership: the entry keeps every native analysis in solidFiniteMaterial._NATIVE_LIFETIME until the interpreter ends
  * (the binding exposes no native destruction; this code never clears that list or forces a collection). One runtime
  * therefore hosts at most ONE call of this function: the first call that passes input validation claims the runtime,
- * whether it then succeeds or fails, and every later call on the same runtime is refused before touching it. The future
+ * whether it then succeeds or fails, and every later call on the same runtime is refused before touching it. The
  * Worker owns the interpreter lifetime and must dispose the runtime (terminate the Worker) after the call. A result must
  * report exactly one retained native analysis, i.e. no earlier native analysis lived in this interpreter.
  * Errors of the runtime, the Python entry and the phase callback propagate as the original objects.

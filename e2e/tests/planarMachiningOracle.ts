@@ -10,7 +10,7 @@ import { toSolidStepRequest } from '../../packages/model/src/kernelBridge/solidR
 import { createInspectableNativeKernelForNodeTests } from '../../packages/model/src/testing/createNativeKernelBridge.node.js';
 import { writePcadFile } from '../../packages/io/src/index.js';
 import { createAllocations } from '../../packages/kernel/src/occt/allocations.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { readBrepBytes, writeBrepBytes } from '../../packages/kernel/src/occt/brepBytes.js';
 import { collectSubShapes } from '../../packages/kernel/src/occt/subShapes.js';
 import { tessellate } from '../../packages/kernel/src/occt/tessellate.js';

@@ -402,7 +402,7 @@ function resolveSpringLengthFields(
  * ばねを 1 つ作る(FR-414、§0.a-0.29〜0.36)。対象ボディを持たず、消費もしない
  * 「作る」フィーチャー(§0.a-0.36)。始点の参照先が無ければ `noOriginPoint` で断る。
  *
- * `params.length` / `pitch` / `turns` は 3 つとも渡すが、`derived` が指す 1 つは
+ * `parameters.length` / `pitch` / `turns` は 3 つとも渡すが、`derived` が指す 1 つは
  * `resolveSpringLengthFields` が他の 2 つから自動生成した式で必ず上書きする。
  *
  * `variables` はパラメータ表(FR-207)の変数表(任意引数、P4b タスク22a で追加。呼び出し側の
@@ -410,7 +410,7 @@ function resolveSpringLengthFields(
  */
 export function commitSpring(
   document: PartDocument,
-  params: {
+  parameters: {
     readonly origin: SketchPointRef;
     readonly axis: RevolveAxis;
     readonly tiltAngle: ExpressionValue;
@@ -426,14 +426,14 @@ export function commitSpring(
   variables?: ReadonlyMap<string, number>,
   options: Omit<EvaluateOptions, 'variables'> = {},
 ): SolidCommandOutcome {
-  if (!pointRefExists(document, params.origin)) {
+  if (!pointRefExists(document, parameters.origin)) {
     return { ok: false, reasonKey: 'springError.noOriginPoint' };
   }
   const { length, pitch, turns } = resolveSpringLengthFields(
-    params.derived,
-    params.length,
-    params.pitch,
-    params.turns,
+    parameters.derived,
+    parameters.length,
+    parameters.pitch,
+    parameters.turns,
     variables,
     options,
   );
@@ -443,17 +443,17 @@ export function commitSpring(
     name: nextSolidName(document, 'spring'),
     suppressed: false,
     kind: 'spring',
-    origin: params.origin,
-    axis: params.axis,
-    tiltAngle: params.tiltAngle,
-    tiltAzimuth: params.tiltAzimuth,
+    origin: parameters.origin,
+    axis: parameters.axis,
+    tiltAngle: parameters.tiltAngle,
+    tiltAzimuth: parameters.tiltAzimuth,
     length,
     pitch,
     turns,
-    derived: params.derived,
-    coilDiameter: params.coilDiameter,
-    wireDiameter: params.wireDiameter,
-    handedness: params.handedness,
+    derived: parameters.derived,
+    coilDiameter: parameters.coilDiameter,
+    wireDiameter: parameters.wireDiameter,
+    handedness: parameters.handedness,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
@@ -468,7 +468,7 @@ export function commitSpring(
  */
 export function commitExtrude(
   document: PartDocument,
-  params: {
+  parameters: {
     readonly profile: SketchFaceRef;
     readonly distance: ExpressionValue;
     readonly reversed: boolean;
@@ -483,7 +483,7 @@ export function commitExtrude(
     readonly thicknessSide?: ThicknessSide;
   },
 ): SolidCommandOutcome {
-  if (!faceRefExists(document, params.profile)) {
+  if (!faceRefExists(document, parameters.profile)) {
     return { ok: false, reasonKey: 'solidError.noFace' };
   }
   const id = nextSolidId(document, 'extrude');
@@ -492,15 +492,15 @@ export function commitExtrude(
     name: nextSolidName(document, 'extrude'),
     suppressed: false,
     kind: 'extrude',
-    profile: params.profile,
-    distance: params.distance,
-    reversed: params.reversed,
-    symmetric: params.symmetric,
-    ...(params.end === undefined ? {} : { end: params.end }),
-    ...(params.taperAngle === undefined ? {} : { taperAngle: params.taperAngle }),
-    ...(params.taperOutward === undefined ? {} : { taperOutward: params.taperOutward }),
-    ...(params.thickness === undefined ? {} : { thickness: params.thickness }),
-    ...(params.thicknessSide === undefined ? {} : { thicknessSide: params.thicknessSide }),
+    profile: parameters.profile,
+    distance: parameters.distance,
+    reversed: parameters.reversed,
+    symmetric: parameters.symmetric,
+    ...(parameters.end === undefined ? {} : { end: parameters.end }),
+    ...(parameters.taperAngle === undefined ? {} : { taperAngle: parameters.taperAngle }),
+    ...(parameters.taperOutward === undefined ? {} : { taperOutward: parameters.taperOutward }),
+    ...(parameters.thickness === undefined ? {} : { thickness: parameters.thickness }),
+    ...(parameters.thicknessSide === undefined ? {} : { thicknessSide: parameters.thicknessSide }),
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
@@ -552,14 +552,14 @@ function thicknessSideOf(
 /** 回転を 1 つ作る(FR-402)。面の参照先が無ければ noFace で断る。 */
 export function commitRevolve(
   document: PartDocument,
-  params: {
+  parameters: {
     readonly profile: SketchFaceRef;
     readonly axis: RevolveAxis;
     readonly angle: ExpressionValue;
     readonly reversed: boolean;
   },
 ): SolidCommandOutcome {
-  if (!faceRefExists(document, params.profile)) {
+  if (!faceRefExists(document, parameters.profile)) {
     return { ok: false, reasonKey: 'solidError.noFace' };
   }
   const id = nextSolidId(document, 'revolve');
@@ -568,10 +568,10 @@ export function commitRevolve(
     name: nextSolidName(document, 'revolve'),
     suppressed: false,
     kind: 'revolve',
-    profile: params.profile,
-    axis: params.axis,
-    angle: params.angle,
-    reversed: params.reversed,
+    profile: parameters.profile,
+    axis: parameters.axis,
+    angle: parameters.angle,
+    reversed: parameters.reversed,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
@@ -620,9 +620,9 @@ function selectedSewFaces(
 /** 縫合を 1 つ作る(FR-403)。旧スケッチ面と既存の面の入力を混在させない。 */
 export function commitSew(
   document: PartDocument,
-  params: SewFacesInput & { readonly tolerance: ExpressionValue },
+  parameters: SewFacesInput & { readonly tolerance: ExpressionValue },
 ): SolidCommandOutcome {
-  const reasonKey = sewFacesError(document, params);
+  const reasonKey = sewFacesError(document, parameters);
   if (reasonKey !== null) return { ok: false, reasonKey };
   const id = nextSolidId(document, 'sew');
   const feature: SewFeature = {
@@ -630,9 +630,9 @@ export function commitSew(
     name: nextSolidName(document, 'sew'),
     suppressed: false,
     kind: 'sew',
-    faces: params.faces,
-    ...(params.surfaceFaces === undefined ? {} : { surfaceFaces: params.surfaceFaces }),
-    tolerance: params.tolerance,
+    faces: parameters.faces,
+    ...(parameters.surfaceFaces === undefined ? {} : { surfaceFaces: parameters.surfaceFaces }),
+    tolerance: parameters.tolerance,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }
@@ -643,28 +643,28 @@ export function commitSew(
  */
 export function commitBoolean(
   document: PartDocument,
-  params: {
+  parameters: {
     readonly operation: BooleanOperation;
     readonly targetFeatureId: string;
     readonly toolFeatureId: string;
   },
 ): SolidCommandOutcome {
-  if (params.targetFeatureId === params.toolFeatureId) {
+  if (parameters.targetFeatureId === parameters.toolFeatureId) {
     return { ok: false, reasonKey: 'solidError.sameBody' };
   }
   const live = new Set(liveBodyIds(document));
-  if (!live.has(params.targetFeatureId) || !live.has(params.toolFeatureId)) {
+  if (!live.has(parameters.targetFeatureId) || !live.has(parameters.toolFeatureId)) {
     return { ok: false, reasonKey: 'solidError.noBody' };
   }
-  const id = nextSolidId(document, params.operation);
+  const id = nextSolidId(document, parameters.operation);
   const feature: BooleanFeature = {
     id,
-    name: nextSolidName(document, params.operation),
+    name: nextSolidName(document, parameters.operation),
     suppressed: false,
     kind: 'boolean',
-    operation: params.operation,
-    targetFeatureId: params.targetFeatureId,
-    toolFeatureId: params.toolFeatureId,
+    operation: parameters.operation,
+    targetFeatureId: parameters.targetFeatureId,
+    toolFeatureId: parameters.toolFeatureId,
   };
   return { ok: true, document: appendSolid(document, feature), featureId: id };
 }

@@ -21,6 +21,7 @@ import { countSolidShapes } from './solidTopology.js';
 import type { SubShapeTables } from './subShapes.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
 
 /**
  * 平らな面の移動(EX-18 の限られた一段)の実カーネルの検査。
@@ -54,11 +55,6 @@ describe('平らな面の移動(EX-18、平面・隣が直角の段)', () => {
     const surface = tessellate(oc, shape);
     const lines = extractEdges(oc, shape);
     return collectSubShapes(oc, shape, surface.faceRanges, lines.edgeRanges);
-  }
-
-  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return { kind: 'face', index: info.index, surfaceKind: info.surfaceKind, area: info.area,
-      position: info.centroid, axis: info.axis, radius: info.radius };
   }
 
   function near(a: Vec3Tuple, b: Vec3Tuple, tolerance = 1e-6): boolean {

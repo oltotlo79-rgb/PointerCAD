@@ -76,6 +76,10 @@ export interface HoleThreadGrooveOrigin {
 export type FaceOrigin =
   | { readonly kind: 'surface-side'; readonly featureId: string; readonly profile: {
       readonly sketchId: string; readonly lineFeatureId: string; readonly role: 'whole-line' } }
+  /** Planar sheet filled from a closed straight-line profile only (no arcs/curves). The saved source line IDs
+   * are the profile's set in ascending code-unit order without duplicates; never an index, coordinate or area. */
+  | { readonly kind: 'planar-surface-face'; readonly featureId: string; readonly profile: {
+      readonly sketchId: string; readonly lineFeatureIds: readonly [string, string, string, ...string[]] } }
   | HoleFaceOrigin
   | HoleThreadGrooveOrigin
   | { readonly kind: 'box-face'; readonly featureId: string; readonly role: BoxFaceRole }
@@ -96,11 +100,17 @@ export type FaceOrigin =
 export type EdgeOrigin =
   | { readonly kind: 'box-edge'; readonly featureId: string; readonly role: BoxEdgeRole }
   | { readonly kind: 'cylinder-edge'; readonly featureId: string; readonly role: CylinderEdgeRole }
+  /** One whole source line of a planar sheet's closed straight-line profile. */
+  | { readonly kind: 'planar-surface-edge'; readonly featureId: string; readonly profile: {
+      readonly sketchId: string; readonly lineFeatureId: string; readonly role: 'whole-line' } }
   | { readonly kind: 'face-intersection-edge'; readonly featureId: string; readonly faces: readonly [FaceOrigin, FaceOrigin] }
   | { readonly kind: 'merged-edge'; readonly featureId: string; readonly sources: readonly [EdgeOrigin, EdgeOrigin, ...EdgeOrigin[]] };
 export type VertexOrigin =
   | { readonly kind: 'box-vertex'; readonly featureId: string; readonly role: BoxVertexRole }
   | { readonly kind: 'cylinder-vertex'; readonly featureId: string; readonly role: CylinderVertexRole }
+  /** The two distinct source lines meeting at a planar sheet's native shared vertex, ascending code-unit order. */
+  | { readonly kind: 'planar-surface-vertex'; readonly featureId: string; readonly profile: {
+      readonly sketchId: string; readonly lineFeatureIds: readonly [string, string] } }
   | { readonly kind: 'face-intersection-vertex'; readonly featureId: string; readonly faces: readonly [FaceOrigin, FaceOrigin, FaceOrigin] }
   | { readonly kind: 'merged-vertex'; readonly featureId: string; readonly sources: readonly [VertexOrigin, VertexOrigin, ...VertexOrigin[]] };
 export type SubShapeOrigin =

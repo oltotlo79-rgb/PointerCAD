@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import type { CadWeldSpanLayer, CadWeldSpanSide } from '@pointercad/model/beam-analysis';
 import { t, type MessageKey } from '../i18n/t.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -45,7 +46,7 @@ export function BeamWeldSpanDefinitions({ session }: { readonly session: BeamSes
         <label>{t('beam.weldBead')}<select data-span-field="bead" value={weld.beadComponentId}
           title={t('beam.guide.weldBead')} onChange={event => {
             if (state.assembly === null) return;
-            const selected = selectWeldGroup(state.assembly, rows, weld.id, event.target.value, () => crypto.randomUUID());
+            const selected = selectWeldGroup(state.assembly, rows, weld.id, event.target.value, () => createDocumentElementId());
             if (selected !== null) edit(selected);
           }}><option value="" />{beads.map(bead => <option key={bead.id} value={bead.id}
             disabled={state.assembly !== null && selectWeldGroup(state.assembly, rows, weld.id, bead.id, () => 'capacity-probe') === null}>
@@ -102,7 +103,7 @@ export function BeamWeldSpanDefinitions({ session }: { readonly session: BeamSes
       title={t(reason ?? (rows.length >= 64 ? 'beam.weldSpanLimit' : 'beam.guide.weldSpanAdd'))} onClick={() => {
         if (reason !== null || rows.length >= 64) return;
         edit([...rows, {
-        id: crypto.randomUUID(), beadComponentId: '', expectedPartKey: '', expectedPlacementKey: '', expectedMaterialId: '',
+        id: createDocumentElementId(), beadComponentId: '', expectedPartKey: '', expectedPlacementKey: '', expectedMaterialId: '',
         first: { kind: 'member-span', memberId: '' }, second: { kind: 'member-span', memberId: '' },
         youngMPa: NaN, poisson: NaN, effectiveThroatMm: NaN, complianceLengthMm: NaN,
         propertySource: { kind: 'user-supplied', reference: '', condition: '' }, idealization: 'rectangular-effective-elastic-throat',

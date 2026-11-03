@@ -13,6 +13,12 @@ const plan = (overrides: Partial<Record<string, unknown>> = {}): unknown => ({ s
   lengthM: 1, areaM2: 1e-4, material, endDisplacementM: [0, 2.5e-3, 0, -2.5e-3, 0], stepsPerSegment: 1, ...overrides });
 
 describe('uniaxial J2 plasticity with linear isotropic hardening (hand-derived return mapping)', () => {
+  it('normalizes a negative-zero displacement to positive zero', () => {
+    const read = readPlasticBarPlan(plan({ endDisplacementM: [-0, 0.001] }));
+    expect(Object.is(read.endDisplacementM[0], -0)).toBe(false);
+    expect(Object.is(read.endDisplacementM[0], 0)).toBe(true);
+  });
+
   it('load past yield, elastic unload, reverse yield on the hardened surface, elastic reload', () => {
     const samples = plasticBarReference(readPlasticBarPlan(plan()));
     expect(samples.map(s => s.step)).toEqual([1, 2, 3, 4]);

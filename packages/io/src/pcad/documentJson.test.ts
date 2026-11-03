@@ -2,7 +2,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import type { CutFeature } from '@pointercad/model';
 import { buildStandardPartFromSource, createStandardPartSource, steelProducts, steelProductOptions } from '@pointercad/model';
 import { addComponent, createAssemblyDocument, createComponentFor, resolveAssembly } from '@pointercad/model';
-import { buildStandardPartFromSourceWithReason } from '../../../model/src/assembly/standard/buildStandardPart.js';
+import { buildStandardPartFromSourceWithReason } from '@pointercad/model/testing/io-operations';
 import { allocatePatternPointSlots } from '@pointercad/model';
 import { absoluteCoordinate, appendFeature, appendSolid, createDefaultConfigurations, createPointFeature, replaceSketch,
   type CoordinateInput, type SketchLineFeature } from '@pointercad/model';

@@ -1,9 +1,8 @@
+import { isRecord as record } from './valueGuards.js';
 import { BEAM_IMPACT_SCOPE, type BeamImpactInput, type BeamImpactResult } from './beamImpactModel.js';
 import { decodeBeamImpact } from './beamImpactResults.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 /** Preliminary protocol discrimination only; the owning client performs complete input-bound decoding. */
 export function isBeamImpactResult(value: unknown): value is BeamImpactResult {
   return record(value) && value.kind === 'oofem-beam-impact-3d'

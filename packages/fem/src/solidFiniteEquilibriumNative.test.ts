@@ -5,7 +5,7 @@ import { dirname, join, sep } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 
 /*
@@ -19,7 +19,7 @@ import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
  *   uniaxial dead load on a 2-tet patch: nominal stress P11 = tau11 / lambda, tau11 = E (ln lambda - p) with the 1D
  *     return of linear isotropic hardening, lateral stretch mu = exp(-nu tau11 / E - p / 2) (W33 oracle), solved for
  *     lambda by bisection; consistent nodal forces f_a = sum_e V_e P grad N_a from the element shape gradients.
- * The free-DOF residual |external - internal| / max(load, reaction, internal force) must be <= 1e-8 at every accepted
+ * The free-DOF residual |external - internal| / max(free load, constrained internal action, internal force) must be <= 1e-8 at every accepted
  * step (W34), and load-increment refinement must change the results by <= 1% (W34); inverted elements, non-finite input
  * and a failed solve must be refused with nothing committed. Units N-mm-MPa.
  */
@@ -214,7 +214,7 @@ function refine(nominal: readonly number[], parts: number): number[] {
 }
 
 describe('finite-strain J2 equilibrium entry: host Python cases', () => {
-  it('executes the 12 plan-reader, inverted/collapsed/non-finite, deck, force-balance, kinematics and lifetime cases', () => {
+  it('executes the 14 plan-reader, inverted/collapsed/non-finite, deck, force-balance, kinematics and lifetime cases', () => {
     const script = fileURLToPath(pythonCasesUrl);
     const result = spawnSync('python', ['-B', '-X', 'utf8', script, '-v'], { cwd: dirname(script), encoding: 'utf8', timeout: 120_000,
       maxBuffer: 2_000_000, windowsHide: true,
@@ -223,9 +223,9 @@ describe('finite-strain J2 equilibrium entry: host Python cases', () => {
     console.info(detail);
     expect(result.error, detail).toBeUndefined();
     expect(result.status, detail).toBe(0);
-    expect(result.stderr, detail).toMatch(/(?:^|\r?\n)Ran 12 tests in [\d.]+s(?:\r?\n|$)/u);
-    expect([...result.stderr.matchAll(/ \.\.\. ok\r?$/gmu)], detail).toHaveLength(12);
-    expect(result.stdout.trim(), detail).toBe('solid-finite-equilibrium: 12 host cases passed');
+    expect(result.stderr, detail).toMatch(/(?:^|\r?\n)Ran 14 tests in [\d.]+s(?:\r?\n|$)/u);
+    expect([...result.stderr.matchAll(/ \.\.\. ok\r?$/gmu)], detail).toHaveLength(14);
+    expect(result.stdout.trim(), detail).toBe('solid-finite-equilibrium: 14 host cases passed');
   }, 125_000);
 });
 
@@ -266,6 +266,48 @@ describe('finite-strain J2 equilibrium through the native OOFEM element and solv
       });
     });
     expect(records[6].elements[0].alpha).toBeGreaterThan(records[5].elements[0].alpha);  // reverse yielding
+    // Same native patch and full loading/unloading history; only loads at the
+    // prescribed boundary DOFs change. Keep all retained analyses (7 in total).
+    for (const sign of [1, -1]) {
+      const fixedLoads = plan.prescribedMm.map(({ node, dof }) => ({ node, dof,
+        valuesN: stretches.map((_, k) => sign * (node + 1) * (DOF.indexOf(dof) + 1) * (k + 1) * 1000) }));
+      const loaded = runPlan({ ...plan, forcesN: fixedLoads }, `/pcad_fem/fe-fixed-${String(sign)}`);
+      expect(loaded.refused).toEqual([]); expect(loaded.records).toHaveLength(stretches.length);
+      expect(loaded.retained).toBeLessThanOrEqual(8);
+      loaded.records.forEach((record, k) => {
+        const f = fs[k], t = 2 * G * (Math.log(stretches[k]) - expected[k].p), stressScale = SY + H * expected[k].alpha;
+        const tau = mm(mm(R, [t,0,0,0,-t/2,0,0,0,-t/2]), mt(R));
+        const exactInternal = consistentForces(nodes, elements, mm(tau, mt(inv3(f))));
+        // Scale by structural internal forces, never by the added fixed load.
+        const forceScale = maxAbs(exactInternal.flat());
+        expect(record.residual).toBeLessThanOrEqual(1e-8);
+        for (let node = 0; node < nodes.length; node++) for (let axis = 0; axis < 3; axis++) {
+          const external = node < 4 ? sign * (node + 1) * (axis + 1) * (k + 1) * 1000 : 0;
+          expect(record.external[node][axis]).toBe(external);
+          expect(Math.abs(record.displacement[node][axis] - records[k].displacement[node][axis])).toBeLessThanOrEqual(1e-9 * L);
+          const exactU = apply(f, nodes[node])[axis] - nodes[node][axis];
+          expect(Math.abs(record.displacement[node][axis] - exactU)).toBeLessThanOrEqual(1e-9 * L);
+          const reaction = record.internal[node][axis] - record.external[node][axis];
+          const expectedReaction = exactInternal[node][axis] - external;
+          expect(Math.abs(reaction - expectedReaction) / forceScale).toBeLessThanOrEqual(1e-8);
+          expect(Math.abs((reaction - records[k].internal[node][axis]) + external) / forceScale).toBeLessThanOrEqual(1e-8);
+        }
+        record.elements.forEach((element, e) => {
+          expect(maxAbs(element.tau.map((v, n) => v - tau[n])) / stressScale).toBeLessThanOrEqual(1e-8);
+          expect(maxAbs(element.tau.map((v, n) => v - records[k].elements[e].tau[n])) / stressScale).toBeLessThanOrEqual(1e-8);
+          expect(Math.abs(element.alpha - expected[k].alpha)).toBeLessThanOrEqual(1e-10);
+          expect(Math.abs(element.alpha - records[k].elements[e].alpha)).toBeLessThanOrEqual(1e-10);
+          expect(element.plastic).toBe(records[k].elements[e].plastic);
+          expect(Math.abs(element.J - 1)).toBeLessThanOrEqual(1e-10);
+          expect(maxAbs(element.F9.map((v, n) => v - f[OOFEM9[n]]))).toBeLessThanOrEqual(1e-10);
+        });
+        for (let axis = 0; axis < 3; axis++) {
+          const totalExternal = record.external.reduce((sum, row) => sum + row[axis], 0);
+          const totalReaction = record.internal.slice(0, 4).reduce((sum, row, node) => sum + row[axis] - record.external[node][axis], 0);
+          expect(Math.abs(totalExternal + totalReaction) / forceScale).toBeLessThanOrEqual(1e-8);
+        }
+      });
+    }
     expect(denied).toBe(0);
   }, FUNCTIONAL_TEST_TIMEOUT_MS);
 

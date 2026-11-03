@@ -1,3 +1,4 @@
+import { mathTestRequest } from './mathRequest.testSupport.js';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
@@ -28,8 +29,7 @@ function native(args: readonly string[], input?: string): string {
   return result.stdout;
 }
 function request(source: string): MathWorkRequest {
-  return { source, notation: 'text', angleUnit: 'radian', coefficients: [],
-    identity: { documentId: 'series', documentVersion: 1, editorId: 'X', inputRevision: 1 } };
+  return mathTestRequest(source, { notation: 'text', angleUnit: 'radian', identity: { documentId: 'series', documentVersion: 1, editorId: 'X', inputRevision: 1 } });
 }
 const engine = { evaluate(expression: MathNode, angleUnit: 'degree' | 'radian'): Promise<unknown> {
   const values: unknown = JSON.parse(native(['--batch'], JSON.stringify([{ expression, angleUnit }])));

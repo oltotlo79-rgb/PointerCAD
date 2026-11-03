@@ -20,6 +20,7 @@ import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, collectSubShapes, faceAt } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
 
 /**
  * 抜き勾配(FR-417、FR-504、NFR-RE-1)の検査。計画書 P5 タスク34 の検証表。
@@ -110,19 +111,6 @@ describe('抜き勾配(FR-417、FR-504、NFR-RE-1)', () => {
       delete: () => {
         handle.delete();
       },
-    };
-  }
-
-  /** 一覧の面 1 枚から、文書が保存するのと同じ形の指紋を作る。 */
-  function faceQuery(face: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return {
-      kind: 'face',
-      index: face.index,
-      surfaceKind: face.surfaceKind,
-      area: face.area,
-      position: face.centroid,
-      axis: face.axis,
-      radius: face.radius,
     };
   }
 

@@ -20,27 +20,27 @@
  */
 
 import { evaluateExpression, type ExpressionValue } from '@pointercad/expression';
-import { createNativeKernelBridgeWithIoForNodeTests, initializeNativeKernelForNodeTests, type NativeKernelIoForNodeTests } from '../../model/src/testing/createNativeKernelBridge.node.js';
+import { createNativeKernelBridgeWithIoForNodeTests, initializeNativeKernelForNodeTests, type NativeKernelIoForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { readPcadFile, writePcadFile } from '../../io/src/pcad/pcadFile.js';
+import { readPcadFile, writePcadFile } from '@pointercad/io';
 import { subShapeElementId, subShapeRefOf } from '../src/solid/subShapeSelection.js';
-import { createUndoStack, pushUndo, redo, undo } from '../../model/src/history/undoStack.js';
-import { type KernelBridge, type SolidBody, type SolidFaceEntry } from '../../model/src/kernelBridge.js';
-import { absoluteCoordinate, appendFeature, createPointFeature, DEFAULT_FACE_COLOR } from '../../model/src/sketch/createSketchDocument.js';
-import { createOffsetCache } from '../../model/src/sketch/offsetMath.js';
-import { DEFAULT_WORK_PLANE_ID } from '../../model/src/sketch/planeMath.js';
-import { createProjectionCache } from '../../model/src/sketch/projectionMath.js';
-import type { CoordinateInput, SketchDocument, SketchFaceFeature } from '../../model/src/sketch/types.js';
-import type { Vec3 } from '../../model/src/sketch/vec3.js';
-import { appendSolid, createEmptyPartDocument, replaceSketch, replaceSolid } from '../../model/src/part/createPartDocument.js';
-import { createFaceOffsetFeature } from '../../model/src/part/directFaceEdit.js';
-import { recomputePart } from '../../model/src/part/recomputePart.js';
-import { resolvePart, type ImportedShapeBytes } from '../../model/src/part/resolvePart.js';
-import { createSubShapeCache } from '../../model/src/part/subShapeCache.js';
+import { createUndoStack, pushUndo, redo, undo } from '@pointercad/model';
+import { type KernelBridge, type SolidBody, type SolidFaceEntry } from '@pointercad/model';
+import { absoluteCoordinate, appendFeature, createPointFeature, DEFAULT_FACE_COLOR } from '@pointercad/model';
+import { createOffsetCache } from '@pointercad/model';
+import { DEFAULT_WORK_PLANE_ID } from '@pointercad/model';
+import { createProjectionCache } from '@pointercad/model';
+import type { CoordinateInput, SketchDocument, SketchFaceFeature } from '@pointercad/model';
+import type { Vec3 } from '@pointercad/model';
+import { appendSolid, createEmptyPartDocument, replaceSketch, replaceSolid } from '@pointercad/model';
+import { createFaceOffsetFeature } from '@pointercad/model';
+import { recomputePart } from '@pointercad/model';
+import { resolvePart, type ImportedShapeBytes } from '@pointercad/model';
+import { createSubShapeCache } from '@pointercad/model';
 import type {
   ExtrudeFeature, HoleFeature, ImportedSolidFeature, PartDocument, PrimitiveFeature, SubShapeRef,
-} from '../../model/src/part/types.js';
+} from '@pointercad/model';
 
 const OCCT_TIMEOUT_MS = 180_000;
 const SAVED_AT = '2026-10-16T00:00:00.000Z';

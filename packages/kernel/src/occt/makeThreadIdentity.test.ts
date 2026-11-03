@@ -11,6 +11,7 @@ import { isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -33,11 +34,6 @@ describe('ねじ穴の下穴の壁に、穴と同じ由来を付ける(hole-iden
     const mesh = tessellate(oc, shape);
     const lines = extractEdges(oc, shape);
     return collectSubShapes(oc, shape, mesh.faceRanges, lines.edgeRanges);
-  }
-
-  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return { kind: 'face', index: info.index, surfaceKind: info.surfaceKind, area: info.area,
-      position: info.centroid, axis: info.axis, radius: info.radius };
   }
 
   /** 40×30×10 の板(上の面 z=10)。makeThread.test.ts の「target-only history」と同じ実 Box 起点。 */

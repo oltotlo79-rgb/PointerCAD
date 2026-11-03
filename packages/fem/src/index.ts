@@ -50,7 +50,7 @@ export { FATIGUE_GOODMAN_SCHEMA, FATIGUE_CORRECTED_RESULT_SCHEMA, GOODMAN_MINIMU
   type FatigueCorrectionErrorCode, type FatigueCorrectionValidation, type FatigueCorrectedAnalysis,
   type FatigueCorrectedHistoryResult, type FatigueCorrectedResult } from './fatigueModel.js';
 export { AXIAL_FATIGUE_MEASURE, PASCALS_PER_MEGAPASCAL, axialFatigueHistory, type AxialFatigueError,
-  type AxialFatigueErrorCode, type AxialFatigueHistory, type AxialFatigueProvenance, type AxialFatigueSelection
+  type AxialFatigueErrorCode, type AxialFatigueHistory, type AxialFatigueProvenance
 } from './fatigueAxial.js';
 export { SOLID_FATIGUE_MEASURE, readSolidFatigueSelection, solidFatigueInput, type SolidFatigueSelection,
   type SolidFatigueProvenance, type SolidFatigueTensorInput, type SolidFatigueError, type SolidFatigueAdaptation } from './fatigueSolid.js';
@@ -67,6 +67,10 @@ export { STRAIN_STRESS_HISTORY_INPUT_SCHEMA, STRAIN_STRESS_HISTORY_RESULT_SCHEMA
 export { LOCAL_CYCLE_INPUT_SCHEMA, LOCAL_CYCLE_MAX_ABS_STRAIN, LOCAL_CYCLE_RESULT_SCHEMA, analyzeLocalCycle, swtParameterAt, validateLocalCycleInput, type LocalCycle, type LocalCycleAnalysis, type LocalCycleCorrection, type LocalCycleError, type LocalCycleErrorCode, type LocalCycleInput, type LocalCycleResult, type LocalCycleValidation } from './fatigueLocalCycle.js';
 export { CAD_SHELL_SURFACE_SCHEMA, CadShellSurfaceRefusal, prepareCadShellSurfaceMesh, requestCadShellSurfaceMesh,
   type CadShellSurfaceOptions, type CadShellSurfaceMesh, type CadShellSurfaceOutcome } from './cadShellSurfaceMesh.js';
+// Thin-sheet analysis of the part screen (packages/ui/src/shellAnalysis): CAD settings -> FEM Worker -> CAD-bound result.
+export { analyzeCadShell, femShellNativeRunner, type CadShellAnalysisResult, type CadShellSettings } from './cadShellAnalysis.js';
+export { resolveSavedCadShellSettings } from './cadShellSavedAnalysis.js';
+export { SHELL_LIMITS } from './shellTranslation.js';
 export { diagnoseTetraMeshQuality, readTetraMeshQualityLimits, type TetraMeshQualityLimits,
   type TetraMeshQuality, type TetrahedronQuality } from './tetraMeshQuality.js';
 export { meshAssemblyTetrahedra, selectAssemblyTetraBoundary, type AssemblyTetraPart, type AssemblyTetraContext, type AssemblyTetraBudget,
@@ -76,6 +80,7 @@ export { meshCadAssemblyTetrahedra, type CadAssemblyTetraPart, type CadAssemblyT
 export type { SolidAnalysisInput, SolidAnalysisPlan, SolidAnalysisResult, SolidSource, SolidMaterial,
   SolidTet4, SolidVector3, SolidVector6, SolidElementResult } from './solidAnalysisModel.js';
 export { SOLID_LIMITS, translateSolidAnalysis, solidInputSha256 } from './solidAnalysisTranslation.js';
+export { solidResultReportRows } from './solidResultReport.js';
 export { decodeSolidAnalysis, SOLID_METHOD } from './solidAnalysisResults.js';
 export type { SolidModalInput, SolidModalMaterial, SolidModalPlan, SolidModalMode, SolidModalResult,
   SolidModalApplicability } from './solidModalModel.js';
@@ -163,3 +168,12 @@ export { summarizeSolidYield, type SolidYieldSummary } from './solidYieldSummary
 
 export { prepareCadBeamFrictionContact } from './cadBeamFrictionContact.js';
 export * from './staticCapacity.js';
+
+// Internal finite-strain solver transport only; no CAD persistence, UI or certification claim.
+export { SOLID_FINITE_INPUT_SCHEMA, translateSolidFinite, solidFiniteInputSha256,
+  type SolidFiniteInput, type SolidFiniteSource } from './solidFiniteTranslation.js';
+export { SOLID_FINITE_KIND, type SolidFiniteWireResult } from './solidFiniteBinding.js';
+export type { SolidFiniteResult, SolidFiniteStepRecord, SolidFiniteElementRecord } from './solidFiniteResults.js';
+
+export { cadSolidFiniteInput, analyzeCadSolidFinite, type CadSolidFiniteSettings, type CadSolidFiniteOutcome } from './cadSolidFinite.js';
+export type { FemSolidFinitePreparation } from './client.js';

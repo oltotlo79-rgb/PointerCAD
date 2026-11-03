@@ -1,7 +1,7 @@
-import { expressionValueFromNumber } from '@pointercad/expression';
+import { placement } from './weldPlacement.testSupport.js';
 import {
   addComponent, applyFilletWeld, createAssemblyDocument, createComponentFor, planFilletWeld, weldSegmentsOf,
-  type AssemblyDocument, type FilletWeldRequest, type Placement, type Vec3,
+  type AssemblyDocument, type FilletWeldRequest, type Vec3,
 } from '@pointercad/model';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -14,11 +14,6 @@ import { isOccurrenceWeld } from './nestedWeldDraft.js';
 beforeEach(resetTestStore);
 
 const REVISIONS: ReadonlyMap<string, string> = new Map([['standing', 'rev-s'], ['base', 'rev-b']]);
-
-function placement(position: Vec3): Placement {
-  return { position: [expressionValueFromNumber(position[0]), expressionValueFromNumber(position[1]),
-    expressionValueFromNumber(position[2])], rotation: [0, 0, 0, 1] };
-}
 
 function face(componentId: string, partRef: string, centroid: Vec3, normal: Vec3): FilletWeldRequest['first'] {
   return { componentId, sourceKey: `part:${partRef}@${REVISIONS.get(partRef) ?? ''}`, centroid, normal,

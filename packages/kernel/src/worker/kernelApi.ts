@@ -776,8 +776,8 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
     bodies: readonly SolidBodyMesh[] }>();
   const pendingHiddenDispatches = new Set<string>();
   const pendingReplies = new Map<string, { readonly owner: CurrentMeshOwner; readonly bodies: readonly SolidBodyMesh[] }>();
-  let ownerEpoch = 0, activeAccountingRequests = 0;
-  const changedOwner = (): void => { ownerEpoch = Number.isSafeInteger(ownerEpoch + 1) ? ownerEpoch + 1 : Number.NaN; };
+  let ownerGeneration = 0, activeAccountingRequests = 0;
+  const changedOwner = (): void => { ownerGeneration = Number.isSafeInteger(ownerGeneration + 1) ? ownerGeneration + 1 : Number.NaN; };
   function* hiddenMeshBuffers(): Generator<ArrayBufferLike> {
     for (const lease of hiddenLeases.values()) for (const body of lease.bodies) yield* solidMeshBuffers(body);
   }
@@ -838,8 +838,8 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
   function partOwnership(owner: CurrentMeshOwner): PartOwnershipObservation {
     if (owner.kind !== 'display' || owner.dispatchId.length === 0) return { status: 'unavailable', reason: 'invalid-display-owner' };
     if (activeAccountingRequests !== 0) return { status: 'unavailable', reason: 'active-request' };
-    const cacheEpoch = cache.meshOwnershipEpoch?.();
-    if (cacheEpoch === undefined || cacheEpoch === null || !Number.isSafeInteger(ownerEpoch)) return { status: 'unavailable', reason: 'epoch-unavailable' };
+    const cacheGeneration = cache.meshOwnershipEpoch?.();
+    if (cacheGeneration === undefined || cacheGeneration === null || !Number.isSafeInteger(ownerGeneration)) return { status: 'unavailable', reason: 'epoch-unavailable' };
     const part = parts.get(owner.partId);
     if (part === undefined) {
       const failures = cleanupFailures();
@@ -847,7 +847,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       return failures === 0 ? { status: 'absent' } : { status: 'unavailable', reason: 'native-cleanup-failed' };
     }
     if (part.owner === undefined || !sameCurrentMeshOwner(part.owner, owner)) return { status: 'stale-owner' };
-    return { status: 'current', owner: capturedCurrentMeshOwner(part.owner), epoch: { cache: cacheEpoch, owners: ownerEpoch } };
+    return { status: 'current', owner: capturedCurrentMeshOwner(part.owner), epoch: { cache: cacheGeneration, owners: ownerGeneration } };
   }
   function releaseActualPart(partId: string): void {
     const part = parts.get(partId);
@@ -876,10 +876,10 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
     readRuntimePhaseCapture: (nonce, acknowledge) => Promise.resolve(phases.readCapture(nonce, acknowledge)),
     endRuntimePhaseCapture: nonce => { phases.endCapture(nonce); return Promise.resolve(); },
     readPartOwnership(owner) { return Promise.resolve(partOwnership(owner)); },
-    releaseOwnedPart(owner, expectedEpoch) {
+    releaseOwnedPart(owner, expectedGeneration) {
       const current = partOwnership(owner);
       if (current.status !== 'current') return Promise.resolve(current);
-      if (current.epoch.cache !== expectedEpoch.cache || current.epoch.owners !== expectedEpoch.owners)
+      if (current.epoch.cache !== expectedGeneration.cache || current.epoch.owners !== expectedGeneration.owners)
         return Promise.resolve({ status: 'unavailable', reason: 'epoch-changed' });
       // No asynchronous boundary between exact owner/epoch validation and the actual cache return.
       try { releaseActualPart(owner.partId); return Promise.resolve({ status: 'released' }); }
@@ -888,7 +888,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
     readCurrentMeshAccounting(query): Promise<CurrentMeshObservation> {
       const refuse = (reason: string): Promise<CurrentMeshObservation> => Promise.resolve({
         status: 'unknown', observationId: query.observationId, reason });
-      const cacheEpoch = cache.meshOwnershipEpoch?.();
+      const cacheGeneration = cache.meshOwnershipEpoch?.();
       if (query.observationId.length === 0 || !Number.isSafeInteger(query.limitBytes)
       || query.limitBytes <= 0 || query.limitBytes > 512 * 1024 * 1024) return refuse('invalid-query');
       if (activeAccountingRequests !== 0 || pendingHiddenDispatches.size !== 0) return refuse('active-request');
@@ -896,9 +896,9 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       if (cleanupCount === null) return refuse('cleanup-metadata-unavailable');
       if (cleanupCount > 0) return refuse('native-cleanup-failed');
       if (pendingReplies.size !== 0) return refuse('unacknowledged-reply');
-      if (cacheEpoch === undefined || cacheEpoch === null || !Number.isSafeInteger(ownerEpoch)) return refuse('epoch-unavailable');
-      if (query.expectedEpoch !== undefined && (query.expectedEpoch.cache !== cacheEpoch
-        || query.expectedEpoch.owners !== ownerEpoch)) return refuse('epoch-changed');
+      if (cacheGeneration === undefined || cacheGeneration === null || !Number.isSafeInteger(ownerGeneration)) return refuse('epoch-unavailable');
+      if (query.expectedEpoch !== undefined && (query.expectedEpoch.cache !== cacheGeneration
+        || query.expectedEpoch.owners !== ownerGeneration)) return refuse('epoch-changed');
       const recordLimit = Math.floor(query.limitBytes / MESH_ACCOUNTING_RECORD_BYTES);
       if (parts.size + hiddenLeases.size > recordLimit || query.expectedOwners.length > recordLimit) return refuse('metadata-capacity');
       const owners: CurrentMeshOwner[] = [];
@@ -912,9 +912,9 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
       const reading = finalMeshJsAccounting(cache.meshBufferSnapshot?.() ?? { status: 'unknown', reason: 'callback-missing' },
         displayMeshBuffers(), [], query.limitBytes, hiddenMeshBuffers());
       if (reading.status !== 'known') return refuse(reading.reason);
-      if (cache.meshOwnershipEpoch?.() !== cacheEpoch) return refuse('epoch-changed');
+      if (cache.meshOwnershipEpoch?.() !== cacheGeneration) return refuse('epoch-changed');
       return Promise.resolve({ status: 'known', observationId: query.observationId,
-        epoch: { cache: cacheEpoch, owners: ownerEpoch }, owners, reading,
+        epoch: { cache: cacheGeneration, owners: ownerGeneration }, owners, reading,
         hiddenBackingBytes: meshBackingBytes(hiddenMeshBuffers()), coverage: 'current-solid-worker-backings' });
     },
     acknowledgeMeshReply(owner) {
@@ -1281,7 +1281,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
               kind: request.kind,
               boundary: request.boundary,
             });
-            if (outcome.ok) sections.push({ bodyId, occurrenceId: input.occurrenceId, referenceShape: placed, result: outcome });
+            if (outcome.ok) sections.push({ bodyId, occurrenceId: input.occurrenceId, referenceShape: placed, result: placements.keep(outcome) });
             else failures.push({ viewId: request.view.id, bodyId, message: outcome.message });
           }
           if (await cancelToken?.() === true) {
@@ -1334,7 +1334,6 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
                 cancelled: false,
               };
         } finally {
-          for (const section of sections) section.result.delete();
           placements.release();
         }
       });
@@ -1345,8 +1344,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
         const oc = await loadOcct();
         // 選び直した面・辺・頂点は「新しく作られた形」なので、測り終えたら手放す。
         // ボディそのもの(subShape が null)はキャッシュの持ち物なので手放さない。
-        const picked: TopoDS_Shape[] = [];
-        const placed: ReturnType<typeof placeShape>[] = [];
+        const owned = createAllocations();
         const shapes: TopoDS_Shape[] = [];
 
         try {
@@ -1361,14 +1359,14 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
               if (subShape === null) {
                 return { kind: 'failed', message: MISSING_SUB_SHAPE_MESSAGE };
               }
-              picked.push(subShape);
+              owned.keep(subShape);
               source = subShape;
             }
             if (target.placement === undefined) {
               shapes.push(source);
             } else {
               const moved = placeShape(oc, source, target.placement);
-              placed.push(moved);
+              owned.keep(moved);
               shapes.push(moved.shape);
             }
           }
@@ -1409,8 +1407,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
             };
           }
         } finally {
-          for (let index = placed.length - 1; index >= 0; index -= 1) placed[index]?.delete();
-          for (let index = picked.length - 1; index >= 0; index -= 1) picked[index]?.delete();
+          owned.release();
         }
       });
     },

@@ -4,10 +4,10 @@ import { appendSolid, createEmptyPartDocument, createPrimitiveFeature, createHol
   createDirectKernelBridge, createSubShapeReference, resolveSubShapeReference, recomputePart, resolvePart,
   absoluteCoordinate, type SubShapeRef } from '@pointercad/model';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
-import { solidMeshBuffers, type CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
-import { buildEx18DirectSeed, directFaceReference, directPlanarFace, directImportedBrep } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
+import { solidMeshBuffers, type CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import { buildEx18DirectSeed, directFaceReference, directPlanarFace, directImportedBrep } from '@pointercad/model/testing/ex18-fixtures';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { emptyPcadAttachments, readPcadFile, writePcadFile } from './pcadFile.js';
 import { readSolidFeature, serializeSolidFeature } from './codecs/solid.js';

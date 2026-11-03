@@ -456,16 +456,10 @@ function createThruSectionsSolid(
         sectionWireFromFace(oc, target.shape, target.mesh, section.query, keep),
       );
     }
-    const handle = makeThruSections(oc, spec, options, faceWires);
+    const handle = keep(makeThruSections(oc, spec, options, faceWires));
     return {
       shape: handle.shape,
-      delete(): void {
-        try {
-          handle.delete();
-        } finally {
-          release();
-        }
-      },
+      delete: release,
     };
   } catch (error) {
     release();
@@ -1555,6 +1549,8 @@ export async function recomputeSolids(
           throw error;
         }
       }
+      // set consumes ownership even if replacement disposal or trim throws.
+      // The outer failure handler must not infer ownership from get()/has().
       cache.set(step.key, entry);
       sheetBodies.remember(step.step, step.key);
       primitives.remember(step.step, step.key);

@@ -2,7 +2,7 @@ import type { NativePlanarBasis } from '../kernelBridge/solidContracts.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import { resolveHoleCenters, type ResolvedPartSketch } from '../part/resolvePart.js';
 import type { PartDocument } from '../part/types.js';
-import { crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
+import { isFiniteVec3 as finite, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../sketch/vec3.js';
 
 export interface HoleSchedulePlane {
   readonly planarBasis?: NativePlanarBasis;
@@ -36,7 +36,6 @@ export type HoleScheduleResult =
   | { readonly ok: false; readonly reason: 'invalidFrame' | 'missingFace' | 'missingCenter' | 'invalidValue' | 'conflictingDepth'; readonly featureId?: string };
 
 const POSITION_TOLERANCE_MM = 1e-7;
-const finite = (vector: Vec3): boolean => vector.every(Number.isFinite);
 const positive = (value: number): boolean => Number.isFinite(value) && value > 0;
 
 export function isValidHoleScheduleFrame(frame: HoleScheduleFrame): boolean {

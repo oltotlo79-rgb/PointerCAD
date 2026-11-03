@@ -60,3 +60,30 @@ Dependabotの**通常更新は実行中だが失敗中**。10/1のsecurity job `
 2026-09-10 20:31 JST、`oltotlo79-rgb/PointerCAD`へGitHub APIでvulnerability-alertsとautomated-security-fixesを有効化（各204）。再照会でalerts有効204、repositoryのdependabot_security_updates=enabled、未解決アラート一覧200/0件を確認した。監視開始直後の照会であり、依存全体に脆弱性が存在しないという判定ではない。設定ファイルはmainへ反映後にスケジュール動作も確認する。
 
 設定項目の根拠: [GitHub公式Dependabot設定](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference)、[リポジトリのセキュリティ修正API](https://docs.github.com/en/rest/repos/repos#enable-automated-security-fixes)。
+
+## 2026-11-02の依存更新（7件）とminimatchの判定
+
+2026-11-02 05:13〜05:33 JSTにregistry.npmjs.orgとGitHub Advisory APIを認証なしで照会し（原票は作業担当の記録に保存）、次の7件を候補にした。候補の版は、照会の時点でGHSAの該当が0件だった。
+
+| 依存 | 旧版 → 候補 | lockの経路 | 指定 |
+|---|---|---|---|
+| electron | 44.1.0 → 44.9.1 | apps/desktopの直接依存 | catalog |
+| vitest / @vitest/mocker | 4.1.11 → 4.1.12 | 開発道具（vitest 4.1.12がmockerを同じ版で固定） | catalog |
+| undici 7系 | 7.29.1 → 7.30.1 | @electron/get 5.1.0のoptional依存 | `@electron/get@5.1.0>undici` |
+| undici 6系 | 6.28.1 → 6.29.1 | node-gyp 12.4.0 | `node-gyp@12.4.0>undici`（新設） |
+| fast-uri | 3.1.8 → 3.1.9 | ajv 8.20.0 | `ajv@8.20.0>fast-uri` |
+| source-map-js | 1.2.1 → 1.2.2 | postcss 8.5.26 | `postcss@8.5.26>source-map-js`（新設） |
+| zod | 4.5.4 → 4.6.6 | eslint-plugin-react-hooks 7.1.1 | `eslint-plugin-react-hooks@7.1.1>zod`（新設） |
+
+- 対象のバイト: 変更前は`pnpm-workspace.yaml` 45ff4843…（1,966 B）と`pnpm-lock.yaml` cde5ed4f…（131,546 B）。候補は`pnpm-workspace.yaml` fe465146…（2,094 B）と`pnpm-lock.yaml` 927537b7…（131,663 B。pnpm 11.25.0でlockだけを解決し終了0）。統括の伝達では07:20:47に作業ツリーへ採用した。07:31 JSTに、作業ツリーの2ファイルがこの候補のSHAと一致し、lockに旧版7件とvitest 4.1.11が残っていないことを読み取りで確かめた。
+- **未了の境界**: この記録の時点で、このlockによる`pnpm install --frozen-lockfile`、型・lint・単体・build・E2E、Electron 44.9.1の回帰（上の「Electron / Node」の行）、配布作成、両OSのCIはまだ実行していない。導入済み・配布済み・Dependabot alertの解消とは扱わない。alertのstateはdefault branchへの反映後にAPIで再GETする。
+- 配布SBOMとの関係: 6件（vitest/mocker・undici 2系統・fast-uri・source-map-js・zod）は開発・build・配布作成の道具の依存で、`docs/standards/licenses/runtime-notices.json`の配布npm部品11件に含まれない。ElectronはDesktopの実行環境として同梱されるが、現行の`scripts/release/sbom.mjs`はElectron本体を部品として集めていない（版はDesktop候補の`electronVersion`に記録される）。これは今回の更新の前からの範囲で、今回新たに外したものではない。
+- FEMの応用ソース書庫の索引（`packages/fem/runtime/evidence/application-source-index.json`）は`pnpm-lock.yaml` cde5ed4f…と`pnpm-workspace.yaml` 45ff4843…を記録している。`collectSbomComponents`とFEMのbuildはこの記録と現在のファイルの一致を確かめ（`assertFemApplicationBuildInputs`）、不一致なら止まる。採用したlock・yamlに合わせて書庫・索引・manifestの固定値を作り直すまで、SBOMの生成とbuildは通らない見込み（未実行）。
+
+### minimatch GHSA-g3hv-75wg-m249（到達しないので対象外、期限付き）
+
+- 範囲は< 11.0.1、修正版は11.0.1だけ。lockのminimatchは3.1.5・5.1.9・9.0.9・10.2.6の4系列で、候補のlock 927537b7…でも同じ4版（07:31に読み取りで確認）。
+- 根拠: 悪用には`optimizationLevel >= 2`でfirstPhasePreProcessを通ることが要る（GHSA本文）。3.1.5と5.1.9にはその処理がない。9.0.9と10.2.6は既定値が1で、2以上の時だけ通る。lock cde5ed4f…上の呼び出し元9つ（eslint 10.9.1、@eslint/config-array 0.23.5、typescript-estree 8.69.0、app-builder-lib 26.15.3、@electron/universal 2.0.3、@electron/asar 3.4.1、dir-compare 4.2.0、filelist 1.0.6、glob 7.2.3）は、どれも`optimizationLevel`を渡さない。patternは開発者の設定と配布の設定から来る。既定を2にするglob v9以降はlockにない。
+- 判定: 到達しないので対象外とする。依存が安全だという判定ではない。同じ系列の親の更新に修正を含むものはなく、11を求めるのはメジャー更新のglob 14だけなので、patch更新では解消しない。
+- 判定対象: lock cde5ed4f…と、minimatchの現物4ファイル（3.1.5 746849f2…、5.1.9 1339bca8…、9.0.9 a958a415…、10.2.6 d224f71f…。原票`minimatch-callers-20261102-053123.json`）。呼び出し元の版は927537b7…ではまだ照合し直していない。担当: 作業担当（Opus 5.5）が調べ、採否は統括が決める。
+- 再確認の期限: 2026-12-02と、次のどれかが起きた時のうち早い方。lockのminimatchか呼び出し元の版が変わった時、glob v9以降が入った時、GHSA-g3hvに10.x以前の修正版が載った時。リリースの判定の時には必ず再確認する。

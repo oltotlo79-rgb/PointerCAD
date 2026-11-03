@@ -1,11 +1,11 @@
+import { replaceAttachment } from './analysisAttachment.testSupport.js';
 import { describe, expect, it } from 'vitest';
 import { createEmptyPartDocument, createUndoStack, pushUndo, redo, undo } from '@pointercad/model';
 import { readBeamAnalysisInputs, withBeamAnalysisInputs, type BeamAnalysisInputs, type SolidBucklingCadSavedInput,
   type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
-import { isRecord } from './guards.js';
 
 const WRITE_OPTIONS = { savedAt: '2026-10-19T00:00:00.000Z' };
 
@@ -16,11 +16,6 @@ function staticInput(ownerId: string): SolidCadSavedInput {
 }
 function buckling(ownerId: string, modeCount = 3, reference: SolidCadSavedInput = staticInput(ownerId)): SolidBucklingCadSavedInput {
   return { schema: 'pointercad-solid-buckling-cad-input/1', id: 'solid-buckling-cad', source: { documentId: ownerId }, modeCount, reference };
-}
-function replaceAttachment(serialized: string, value: unknown): string {
-  const envelope: unknown = JSON.parse(serialized);
-  if (!isRecord(envelope) || !isRecord(envelope.document)) throw new Error('Expected a document envelope');
-  return JSON.stringify({ ...envelope, document: { ...envelope.document, beamAnalysisInputs: value } });
 }
 
 describe('solid buckling input in actual .pcad persistence', () => {

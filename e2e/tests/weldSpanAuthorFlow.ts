@@ -252,9 +252,15 @@ function checkPhysics(states: readonly SpanState[]): void {
   }));
 }
 
-async function run(page: Page, beadCount: number): Promise<readonly SpanState[]> {
+/** Refresh the physical identity before checking whether the authored rows are blocked. */
+export async function reviewWeldSpanInput(page: Page): Promise<void> {
   await panel(page).getByTestId('beam-review').click();
+  await expect(panel(page).getByTestId('beam-weld-span-blocked')).toHaveCount(0);
   await expect(panel(page).getByTestId('beam-run')).toBeEnabled();
+}
+
+async function run(page: Page, beadCount: number): Promise<readonly SpanState[]> {
+  await reviewWeldSpanInput(page);
   await panel(page).getByTestId('beam-run').click();
   await expect.poll(async () => panel(page).getByTestId('beam-status').getAttribute('data-status'),
     { timeout: RESULT_TIMEOUT_MS }).toMatch(/^(complete|failed|cancelled)$/u);
@@ -281,6 +287,13 @@ async function savedInputs(path: string): Promise<CadWeldSpanInputs> {
   expect(analysis.definition.contact.loadFactors).toEqual([1, 0, -1]);
   return analysis.definition.weldLayers;
 }
+
+// Reused unchanged by analysisConnectionsPersistenceFlow.ts (same fixture, controls and independent oracles).
+export {
+  author as authorWeldSpan, confirmMembers as confirmWeldSpanMembers, field as weldSpanField, fixture as weldSpanFixture,
+  openPanel as openWeldSpanPanel, panel as weldSpanPanel, rows as weldSpanRows, run as runWeldSpan,
+  savedInputs as savedWeldSpanInputs,
+};
 
 export async function weldSpanAuthorFlow(page: Page, info: TestInfo, mode: WeldSpanAuthorCase,
   app?: ElectronApplication): Promise<void> {

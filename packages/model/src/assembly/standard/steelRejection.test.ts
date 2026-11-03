@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import type { StandardPartSource } from '../resolveAssembly.js';
@@ -8,21 +7,14 @@ import {
 } from './buildStandardPart.js';
 import {
   LEGACY_STEEL_GENERATOR_REVISION, STEEL_CATALOG_REVISION, STEEL_GENERATOR_REVISION,
-  STEEL_MATERIAL_GRADES, STEEL_PRODUCTS, steelProductOptions, type SteelMaterialGrade,
-  type SteelProduct, type SteelSectionCatalog,
+  STEEL_MATERIAL_GRADES, STEEL_PRODUCTS, steelProductOptions,
 } from './steelCatalog.js';
 import { STEEL_SECTION_CATALOGS, steelGradeRule } from './steelGradeRules.js';
-import { CHANNEL_TABLE, EQUAL_ANGLE_TABLE, H_BEAM_TABLE } from './sections.js';
 import { STEEL_STANDARDS } from './steelStandards.js';
 import { STANDARD_CATALOG_REVISION, STANDARD_PART_GENERATOR_REVISION } from './types.js';
 import { STEEL_GOLDEN } from './steelGolden.fixture.js';
+import { MATRIX, SIZES, TAMPERED, matrixSource, sourceOf } from './steelRejection.testSupport.js';
 
-const SAVED_FIELDS = ['steelProduct', 'materialGrade', 'materialStandard', 'productStandard', 'condition', 'evidence'] as const;
-const SIZES = [...new Set([...STEEL_PRODUCTS, ...EQUAL_ANGLE_TABLE, ...CHANNEL_TABLE, ...H_BEAM_TABLE]
-  .map((row) => row.size)), 'size-not-existing'];
-const MATRIX = STEEL_MATERIAL_GRADES.flatMap((grade) => STEEL_SECTION_CATALOGS.flatMap((catalog) =>
-  SIZES.map((size) => ({ grade, catalog, size }))));
-const TAMPERED = STEEL_PRODUCTS.flatMap((row) => SAVED_FIELDS.map((field) => ({ row, field })));
 const ORIGINAL_SOURCES: readonly StandardPartSource[] = STEEL_GOLDEN.map(({ source }) => source)
   .filter((source) => source.catalogRevision === STEEL_CATALOG_REVISION);
 const DENIED = [
@@ -37,20 +29,6 @@ const DENIED = [
   ['SGP', 'channel', 'section-outside-scope'],
   ['SGP', 'hBeam', 'section-outside-scope'],
 ] as const;
-
-function sourceOf(row: SteelProduct): StandardPartSource {
-  return createStandardPartSource(row.catalog, row.size, steelProductOptions(row));
-}
-
-function matrixSource(grade: SteelMaterialGrade, catalog: SteelSectionCatalog, size: string): StandardPartSource {
-  const row = STEEL_PRODUCTS.find((candidate) => candidate.materialGrade === grade
-    && candidate.catalog === catalog && candidate.size === size);
-  if (row !== undefined) return sourceOf(row);
-  const representative = STEEL_PRODUCTS.find((candidate) => candidate.materialGrade === grade);
-  if (representative === undefined) throw new Error('Missing grade representative');
-  return createStandardPartSource(catalog, size, { ...steelProductOptions(representative),
-    steelProduct: `${grade}:${catalog}:${size}` });
-}
 
 function expectJapaneseBasis(rejection: StandardPartRejection): void {
   expect(rejection.message).toMatch(/[ぁ-んァ-ン一-龠]/);
@@ -224,31 +202,5 @@ describe('reasoned generation preserves legacy entry points', () => {
     expect(steel.catalogRevision).toBe(STEEL_CATALOG_REVISION);
   });
 
-  it('keeps every reason code, UI template and Japanese fallback in agreement', () => {
-    const messages = JSON.parse(readFileSync(new URL('../../../../ui/src/i18n/ja/assembly.json', import.meta.url), 'utf8')) as Record<string, unknown>;
-    const sources = [
-      ...MATRIX.map(({ grade, catalog, size }) => matrixSource(grade, catalog, size)),
-      ...TAMPERED.map(({ row: candidate, field }) => {
-        const source = sourceOf(candidate);
-        return { ...source, options: { ...source.options, [field]: 'tampered' } };
-      }),
-      { ...steel, catalogRevision: STANDARD_CATALOG_REVISION },
-      { ...steel, catalogRevision: 'future' }, { ...steel, generatorRevision: 'future' },
-      { ...steel, catalog: 'hexBolt' as const }, { ...steel, options: { ...steel.options, length: '0' } },
-      createStandardPartSource('hexBolt', 'size-not-existing'),
-    ];
-    const codes = new Set<string>();
-    for (const source of sources) {
-      const rejection = buildStandardPartFromSourceWithReason(source).rejection;
-      if (rejection === null) continue;
-      codes.add(rejection.code);
-      const template = messages[rejection.messageKey];
-      if (typeof template !== 'string') throw new Error(`Missing UI template: ${rejection.messageKey}`);
-      let message: string = template;
-      for (const [key, value] of Object.entries(rejection.parameters)) message = message.split(`{${key}}`).join(value);
-      expect(message).toBe(rejection.message);
-      expect(message).not.toMatch(/\{[^}]+\}/);
-    }
-    expect(codes.size).toBe(11);
-  });
+
 });

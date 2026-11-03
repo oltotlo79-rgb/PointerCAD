@@ -10,7 +10,7 @@ import type { SolidBody } from '../../packages/model/src/kernelBridge/solidContr
 import { createInspectableNativeKernelForNodeTests } from '../../packages/model/src/testing/createNativeKernelBridge.node.js';
 import { toSolidStepRequest } from '../../packages/model/src/kernelBridge/solidRequests.js';
 import { readBrepBytes } from '../../packages/kernel/src/occt/brepBytes.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { resolveHoleFrame } from '../../packages/kernel/src/occt/makeHole.js';
 import { collectSubShapes } from '../../packages/kernel/src/occt/subShapes.js';
 import { tessellate } from '../../packages/kernel/src/occt/tessellate.js';

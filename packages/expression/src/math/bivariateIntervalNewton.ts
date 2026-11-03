@@ -1,5 +1,5 @@
 /** A two-variable fixed-point enclosure. Samples choose the preconditioner, never prove a root. */
-import {intervalAdd,intervalSubtract,intervalMultiply,
+import {isZero,isFiniteInterval,intervalAdd,intervalSubtract,intervalMultiply,
   type MathInterval,type IntervalValue} from './mathInterval.js';
 
 export type ParameterBox=readonly [MathInterval,MathInterval];
@@ -15,7 +15,6 @@ export interface BivariateNewtonResult {
 
 const ONE:MathInterval={lower:1,upper:1},ZERO:MathInterval={lower:0,upper:0};
 const exact=(value:number):MathInterval=>({lower:value,upper:value});
-const isZero=(value:MathInterval)=>value.lower===0&&value.upper===0;
 function unpack(value:IntervalValue):MathInterval|null{return value.status==='range'?value.interval:null;}
 function add(a:MathInterval,b:MathInterval):MathInterval|null {
   return isZero(a)?b:isZero(b)?a:unpack(intervalAdd(a,b));
@@ -30,7 +29,7 @@ function dot(a:readonly [MathInterval,MathInterval],b:readonly [MathInterval,Mat
   const first=multiply(a[0],b[0]),second=multiply(a[1],b[1]);
   return first===null||second===null?null:add(first,second);
 }
-const finite=(value:MathInterval)=>Number.isFinite(value.lower)&&Number.isFinite(value.upper)&&value.lower<=value.upper;
+const finite=isFiniteInterval;
 export const parameterBoxContains=(outer:ParameterBox,inner:ParameterBox):boolean=>
   outer.every((range,index)=>range.lower<=inner[index].lower&&range.upper>=inner[index].upper);
 export function intersectParameterBoxes(a:ParameterBox,b:ParameterBox):ParameterBox|null {

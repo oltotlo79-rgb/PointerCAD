@@ -1,4 +1,5 @@
-import { fields, InputIssue, text } from './analysisValidation.js';
+import { createFiniteReader } from '../valueGuards.js';
+import { createInputIssueFail, fields, InputIssue, text } from './analysisValidation.js';
 import type { FatigueSavedSource } from './fatigueInput.js';
 
 /**
@@ -103,9 +104,7 @@ const LIMITS = {
   maximumRepeats: 1e9, maximumAbsStressMpa: 1e4,
 } as const;
 
-function fail(path: string, message: string): never {
-  throw new InputIssue('fatigue-strain', path, message);
-}
+const fail: (path: string, message: string) => never = createInputIssueFail('fatigue-strain');
 function exact(value: unknown, keys: readonly string[], path: string): Record<string, unknown> {
   // fields() checks the count and presence; own keys only (an inherited name is not a saved field).
   const row = fields(value, keys, path);
@@ -125,10 +124,7 @@ function label(value: unknown, path: string, maximum: number): string {
   }
   return value;
 }
-function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(path, 'Expected a finite number');
-  return value;
-}
+const finite = createFiniteReader(fail);
 /** Finite, of the required sign (a zero of either sign is refused), then within limits: the solver's order. */
 function signed(value: unknown, path: string, sign: 1 | -1, [minimum, maximum]: readonly [number, number]): number {
   const number = finite(value, path);

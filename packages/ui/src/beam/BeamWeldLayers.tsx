@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import type { CadWeldLayer } from '@pointercad/model/beam-analysis';
 import type { BeamWeldContactResult } from '@pointercad/fem';
 import { t } from '../i18n/t.js';
@@ -24,7 +25,7 @@ export function BeamWeldLayerDefinitions({ session }: { readonly session: BeamSe
       <legend>{weld.id}</legend>
       <label>{t('beam.weldBead')}<select value={weld.beadComponentId} onChange={event => {
         if (state.assembly === null) return;
-        const rows = selectWeldGroup(state.assembly, session.weldLayers, weld.id, event.target.value, () => crypto.randomUUID());
+        const rows = selectWeldGroup(state.assembly, session.weldLayers, weld.id, event.target.value, () => createDocumentElementId());
         if (rows !== null) edit(rows);
       }} title={t('beam.guide.weldBead')}><option value="" />{beads.map(c => <option key={c.id} value={c.id}
         disabled={state.assembly !== null && selectWeldGroup(state.assembly, session.weldLayers, weld.id, c.id, () => 'capacity-probe') === null}>
@@ -52,7 +53,7 @@ export function BeamWeldLayerDefinitions({ session }: { readonly session: BeamSe
       }} title={t('beam.guide.weldRemove')}>{t('beam.axialBoltRemove')}</button>
     </fieldset>)}
     <button type="button" disabled={session.weldLayers.length >= 64}
-      onClick={() => edit([...session.weldLayers, { id: crypto.randomUUID(), beadComponentId: '', expectedPartKey: '',
+      onClick={() => edit([...session.weldLayers, { id: createDocumentElementId(), beadComponentId: '', expectedPartKey: '',
         expectedPlacementKey: '', expectedMaterialId: '', first: { memberId: '', nodeId: '' }, second: { memberId: '', nodeId: '' },
         youngMPa: NaN, poisson: NaN, effectiveThroatMm: NaN, complianceLengthMm: NaN,
         propertySource: { kind: 'user-supplied', reference: '', condition: '' }, idealization: 'rectangular-effective-elastic-throat' }])} title={t('beam.guide.weldAdd')}>

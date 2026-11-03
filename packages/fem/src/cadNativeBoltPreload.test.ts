@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createStandardPartSource } from '../../model/src/assembly/standard/buildStandardPart.js';
-import { partKeyOf } from '../../model/src/assembly/resolveAssembly.js';
-import { beamCadFixture, testComponent, testMember, testPlacement, TEST_EVIDENCE } from '../../model/src/analysis/beamInputs.testSupport.js';
+import { createStandardPartSource } from '@pointercad/model';
+import { partKeyOf } from '@pointercad/model';
+import { beamCadFixture, testComponent, testMember, testPlacement, TEST_EVIDENCE } from '@pointercad/model/testing/analysis-fixtures';
 import type { AssemblyComponent } from '@pointercad/model';
 import type { StandardBeamContactDefinition } from '@pointercad/model/beam-analysis';
 import { prepareCadNativeBoltPreload, type CadNativeBoltPreloadInput } from './cadNativeBoltPreload.js';

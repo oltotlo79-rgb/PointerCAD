@@ -1,3 +1,5 @@
+import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
+import { crossVec, dotVec } from './sketchCorner.js';
 /**
  * 剛体変換と、形をまとめるコンパウンド(計画書 P3 §2.7、タスク9)。
  *
@@ -82,22 +84,7 @@ function normalizeZero(value: number): number {
   return value === 0 ? 0 : value;
 }
 
-function length(value: Vec3Tuple): number {
-  return Math.hypot(value[0], value[1], value[2]);
-}
 
-/** 長さ 1 へ揃える。長さが取れない(0・非数)ときは null。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const size = length(value);
-  if (!Number.isFinite(size) || size <= 0) {
-    return null;
-  }
-  return [
-    normalizeZero(value[0] / size),
-    normalizeZero(value[1] / size),
-    normalizeZero(value[2] / size),
-  ];
-}
 
 /**
  * 変換の値を確かめる。回転角が 0 のときは軸を見ない(平行移動だけなので軸が要らない)。
@@ -188,12 +175,8 @@ function rotate(spec: RigidTransformSpec, value: Vec3Tuple): Vec3Tuple {
   }
   const cos = Math.cos(spec.rotationAngle);
   const sin = Math.sin(spec.rotationAngle);
-  const dot = axis[0] * value[0] + axis[1] * value[1] + axis[2] * value[2];
-  const cross: Vec3Tuple = [
-    axis[1] * value[2] - axis[2] * value[1],
-    axis[2] * value[0] - axis[0] * value[2],
-    axis[0] * value[1] - axis[1] * value[0],
-  ];
+  const dot = dotVec(axis, value);
+  const cross: Vec3Tuple = crossVec(axis, value);
   return [
     value[0] * cos + cross[0] * sin + axis[0] * dot * (1 - cos),
     value[1] * cos + cross[1] * sin + axis[1] * dot * (1 - cos),

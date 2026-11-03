@@ -1,11 +1,13 @@
+import { replaceAttachment as replaceAttachmentWithMessage } from './analysisAttachment.testSupport.js';
 import { describe, expect, it } from 'vitest';
 import { createEmptyPartDocument } from '@pointercad/model';
 import { readBeamAnalysisInputs, type BeamAnalysisInput } from '@pointercad/model/beam-analysis';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
-import { savedBoltFixture } from '../../../model/src/analysis/cadNativeBoltPreloadInput.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
+import { savedBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { isRecord } from './guards.js';
+import { shellAnalysisInput } from './shellAnalysisPersistence.testSupport.js';
 
 const OPTIONS = { savedAt: '2026-10-27T00:00:00.000Z' };
 type Owner = 'part' | 'assembly';
@@ -104,12 +106,18 @@ const cases: Readonly<Record<BeamAnalysisInput['kind'], PersistenceCase>> = {
     fixedFaces: ['fixed-origin'], loadedFaces: ['loaded-origin'], youngMPa: 200000, poisson: 0.3,
     yieldStressMPa: 250, hardeningModulusMPa: 2000, materialReference: 'Independent test constants; not a grade specification',
     tractionMPa: [0, 0, -2], loadFactor: [0, 1, 0, -1, 0], stepsPerSegment: 4, ...mesh } }) },
+  'solid-finite-cad': { owners: ['part'], make: documentId => ({ kind: 'solid-finite-cad', definition: {
+    schema: 'pointercad-solid-finite-cad-input/1', id: 'solid-finite-cad', source: { documentId }, bodyFeatureId: 'box',
+    fixedFaces: ['fixed-origin'], loadedFaces: ['loaded-origin'], youngMPa: 200000, poisson: 0.3,
+    yieldStressMPa: 250, hardeningModulusMPa: 2000, materialReference: 'Independent test constants; not a grade specification',
+    tractionMPa: [0, 0, -2], forceFactors: [1, 0, -1], prescribedDisplacementFactors: [0, 1, -1], ...mesh } }) },
   'solid-modal-cad': { owners: ['part'], make: documentId => ({ kind: 'solid-modal-cad', definition: {
     schema: 'pointercad-solid-modal-cad-input/1', id: 'solid-modal-cad', source: { documentId }, bodyFeatureId: 'box',
     fixedFaces: ['fixed-origin'], youngMPa: 205000, poisson: 0.3, densityKgM3: 7850, modeCount: 6, ...mesh } }) },
   'solid-buckling-cad': { owners: ['part'], make: documentId => ({ kind: 'solid-buckling-cad', definition: {
     schema: 'pointercad-solid-buckling-cad-input/1', id: 'solid-buckling-cad', source: { documentId }, modeCount: 3,
     reference: solid(documentId) } }) },
+  'shell-cad-analysis': { owners: ['part'], make: documentId => ({ kind: 'shell-cad-analysis', definition: shellAnalysisInput(documentId) }) },
   'shell-cad': { owners: ['part'], make: documentId => ({ kind: 'shell-cad', definition: {
     schema: 'pointercad-shell-cad-input/1', id: 'shell-cad', source: { documentId }, bodyFeatureId: 'sheet',
     midsurfaceFaces: ['midsurface-origin'], thicknessMm: 2, offsetMm: -0.5 } }) },
@@ -149,9 +157,7 @@ function boundary(owner: Owner) {
   };
 }
 function replaceAttachment(text: string, value: unknown): string {
-  const envelope: unknown = JSON.parse(text);
-  if (!isRecord(envelope) || !isRecord(envelope.document)) throw new Error('Expected actual PCAD envelope');
-  return JSON.stringify({ ...envelope, document: { ...envelope.document, beamAnalysisInputs: value } });
+  return replaceAttachmentWithMessage(text, value, 'Expected actual PCAD envelope');
 }
 function payload(row: unknown): Record<string, unknown> {
   if (!isRecord(row)) throw new Error('Expected independent input row');

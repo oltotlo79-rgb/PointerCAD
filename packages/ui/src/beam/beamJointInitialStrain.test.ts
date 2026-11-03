@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUndoStack, createEmptyPartDocument, partKeyOf, resolveConstrainedAssembly, buildStandardPartFromSource } from '@pointercad/model';
 import type { FemWorkerPort } from '@pointercad/fem';
-import { cadJointContactFixture } from '../../../model/src/analysis/cadJointContact.testSupport.js';
+import { cadJointContactFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { captureMeshBodyLayout } from '../store/recomputeSlice.js';

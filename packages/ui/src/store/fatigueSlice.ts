@@ -35,14 +35,14 @@ export interface FatigueSlice {
  * document's analysis-input attachment (the assembly when one is open, otherwise the part), through the existing Undo
  * history. A result is never stored or restored, and is shown only for the exact input that produced it. */
 export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = (set, get) => {
-  let solidRunEpoch = 0;
+  let solidRunGeneration = 0;
   return ({
   fatigueSession: null,
   fatigueAxialSource: null,
   editFatigueSolidElement: value => {
     const state = get(), session = state.fatigueSession;
     if (session === null || session.ownerId !== state.activeDocumentId) return;
-    solidRunEpoch += 1;
+    solidRunGeneration += 1;
     const solid = state.solidAnalysisSession;
     if (/^[1-9][0-9]*$/u.test(value) && solid?.status === 'complete' && solid.result !== null
       && solidFatigueSourceIsCurrent(solid.result, state)) {
@@ -56,7 +56,7 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
     const state = get(), solid = state.solidAnalysisSession;
     if (state.strengthSession === null || solid?.status !== 'complete' || solid.result === null
       || !solidFatigueSourceIsCurrent(solid.result, state) || solid.ownerId !== state.activeDocumentId) return;
-    solidRunEpoch += 1;
+    solidRunGeneration += 1;
     const saved = savedFatigueEntry(state.document);
     const session = saved?.kind === 'fatigue-solid-proportional'
       ? restoreSavedFatigueEntry(state.activeDocumentId, saved, state.document.id) : createFatigueSession(state.activeDocumentId);
@@ -66,7 +66,7 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
     const state = get(), session = state.fatigueSession, solid = state.solidAnalysisSession;
     if (session === null || solid?.status !== 'complete' || solid.result === null
       || !solidFatigueSourceIsCurrent(solid.result, state) || session.ownerId !== state.activeDocumentId) return;
-    solidRunEpoch += 1;
+    solidRunGeneration += 1;
     set({ fatigueSession: selectFatigueSolidElement(session, solid.result, elementIndex, state.document.id) });
   },
   importFatigueAxial: () => {
@@ -87,21 +87,21 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
     set({ fatigueSession: checked.session });
   },
   openFatigue: () => {
-    solidRunEpoch += 1;
+    solidRunGeneration += 1;
     const state = get();
     if (state.strengthSession === null) return;
     const saved = savedFatigueEntry(state.assembly ?? state.document);
     set({ fatigueSession: saved === null ? createFatigueSession(state.activeDocumentId)
       : restoreSavedFatigueEntry(state.activeDocumentId, saved, state.document.id) });
   },
-  closeFatigue: () => { solidRunEpoch += 1; set({ fatigueSession: null }); },
+  closeFatigue: () => { solidRunGeneration += 1; set({ fatigueSession: null }); },
   editFatigue: edit => {
-    if (edit.kind !== 'focus') solidRunEpoch += 1;
+    if (edit.kind !== 'focus') solidRunGeneration += 1;
     const session = get().fatigueSession;
     if (session !== null) set({ fatigueSession: editFatigueSessionWithPiecewise(session, edit) });
   },
   runFatigue: (): void | Promise<void> => {
-    const epoch = ++solidRunEpoch;
+    const capturedGeneration = ++solidRunGeneration;
     const state = get(), session = state.fatigueSession;
     if (session === null || session.ownerId !== state.activeDocumentId) return;
     if (session.draft.inputMode === 'solid-proportional') {
@@ -122,7 +122,7 @@ export const createFatigueSlice: StateCreator<AppState, [], [], FatigueSlice> = 
       set({ fatigueSession: { ...session, analyzed: null, solidAnalyzed: null, errorKey: null, diagnostic: null } });
       const current = (): boolean => {
         const next = get(), nextSession = next.fatigueSession;
-        return request.isCurrent() && epoch === solidRunEpoch && nextSession !== null && nextSession.ownerId === session.ownerId
+        return request.isCurrent() && capturedGeneration === solidRunGeneration && nextSession !== null && nextSession.ownerId === session.ownerId
           && nextSession.revision === session.revision && next.activeDocumentId === state.activeDocumentId
           && next.document === state.document && next.documentVersion === state.documentVersion
           && next.completedGeneration === state.completedGeneration && next.fileGateway === state.fileGateway

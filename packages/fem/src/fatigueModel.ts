@@ -1,3 +1,5 @@
+import { fatigueFailure } from './fatigueFailure.js';
+import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
  * First fatigue slice of the steel-beam workflow (not the whole fatigue feature): uniaxial scalar stress histories,
  * rainflow cycle counting and Miner linear cumulative damage against ONE user-supplied single-slope S-N relation.
@@ -74,9 +76,8 @@ export type FatigueErrorCode = 'fatigue-shape' | 'fatigue-schema' | 'fatigue-id'
 export interface FatigueError { readonly ok: false; readonly code: FatigueErrorCode; readonly path: string }
 export type FatigueValidation = { readonly ok: true; readonly input: FatigueInput } | FatigueError;
 
-const fail = (code: FatigueErrorCode, path: string): FatigueError => ({ ok: false, code, path });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const fail: (code: FatigueErrorCode, path: string) => FatigueError = fatigueFailure;
+
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 /** Unknown runtime data: holes are refused (map/every skip them), the same rule as the contact and transient readers. */
@@ -87,7 +88,7 @@ const dense = (value: unknown): value is unknown[] => {
 };
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 
 function readSource(value: unknown, path: string): FatigueSource | FatigueError {
   if (!record(value) || !exactKeys(value, ['kind', 'reference', 'condition'])) return fail('fatigue-shape', path);

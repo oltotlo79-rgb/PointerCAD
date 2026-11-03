@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { writePcadFile, type PcadAttachments } from '../../packages/io/src/index.js';
 import { createEmptyPartDocument, type PartDocument } from '../../packages/model/src/index.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { writeBrepBytes } from '../../packages/kernel/src/occt/brepBytes.js';
 import { readRecomputeStats } from './recompute.js';
 import { readPart } from './canvasAssetLifetimeFlow.js';

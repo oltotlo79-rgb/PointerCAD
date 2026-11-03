@@ -12,7 +12,7 @@ import { beginSteelBendPlacement, buildSteelBendChoice, DEFAULT_STEEL_BEND_SOURC
 import { SteelBendFields } from './SteelBendFields.js';
 import { recomputePart, type PartDocument } from '@pointercad/model';
 import { afterAll, beforeAll, vi } from 'vitest';
-import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { createNativeKernelBridgeForNodeTests, initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { buildSteelBendEdit, commitSteelBendEdit, readSteelBendEditInput,
   selectedSteelBendEditTarget, type SteelBendSources } from './steelBendPicker.js';
 

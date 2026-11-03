@@ -1,3 +1,4 @@
+import { distanceVec as distance } from './sketchCorner.js';
 /**
  * スプラインの辺(FR-317、計画書 P4 §2.3、タスク8)。
  *
@@ -103,9 +104,6 @@ function isFiniteVec3(point: Vec3Tuple): boolean {
   return Number.isFinite(point[0]) && Number.isFinite(point[1]) && Number.isFinite(point[2]);
 }
 
-function distance(a: Vec3Tuple, b: Vec3Tuple): number {
-  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
 
 /**
  * B スプラインの基底関数の値(NURBS Book のアルゴリズム A2.2)。

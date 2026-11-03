@@ -1,3 +1,5 @@
+import { translateSolidFinite, type SolidFiniteInput } from './solidFiniteTranslation.js';
+import { isSolidFiniteWireResult, type SolidFiniteWireResult } from './solidFiniteBinding.js';
 import { isRecord } from './valueGuards.js';
 import { isSolidContactInput, isSolidContactResult, isSolidContactFailureDiagnostics,
   type SolidContactInput, type SolidContactResult, type SolidContactFailureDiagnostics } from './solidContactBinding.js';
@@ -49,6 +51,9 @@ import { isSolidModalResult } from './solidModalPublicResult.js';
 import type { SolidBucklingInput, SolidBucklingResult } from './solidBucklingModel.js';
 import { translateSolidBuckling } from './solidBucklingTranslation.js';
 import { isSolidBucklingResult } from './solidBucklingPublicResult.js';
+import type { ShellAnalysisInput } from './shellAnalysisModel.js';
+import { translateShellAnalysis } from './shellTranslation.js';
+import { isShellNativeWireResult, type ShellNativeWireResult } from './shellBinding.js';
 /** Isolated runtime and linear analysis; neither certifies a CAD structure. */
 export const FEM_PROTOCOL = 'pointercad-fem/1';
 export const FEM_RUNTIME_VERSION = '0.29.3';
@@ -66,6 +71,11 @@ export interface QualificationRequest {
   readonly identity: FemIdentity;
 }
 export type FemRequest = QualificationRequest | {
+  readonly protocol: typeof FEM_PROTOCOL;
+  readonly kind: 'analyze-solid-finite-j2';
+  readonly identity: FemIdentity;
+  readonly input: SolidFiniteInput;
+} | {
   readonly protocol: typeof FEM_PROTOCOL;
   readonly kind: 'analyze-solid-contact';
   readonly identity: FemIdentity;
@@ -138,6 +148,11 @@ export type FemRequest = QualificationRequest | {
   readonly input: SolidAnalysisInput;
 } | {
   readonly protocol: typeof FEM_PROTOCOL;
+  readonly kind: 'analyze-shell-tr-shell02';
+  readonly identity: FemIdentity;
+  readonly input: ShellAnalysisInput;
+} | {
+  readonly protocol: typeof FEM_PROTOCOL;
   readonly kind: 'mesh-cad-convex-tetra';
   readonly identity: FemIdentity;
   readonly input: TetraMeshInput;
@@ -186,8 +201,9 @@ export interface FemFailure {
   readonly message: string;
   readonly contactDiagnostics?: SolidContactFailureDiagnostics;
 }
-export type FemResult = SolidContactResult | FrictionContactResult | BeamProofResult | BeamAnalysisResult | BeamModalResult | BeamBucklingResult
-  | BeamTransientResult | PlasticBarResult | BeamContactAnalysisResult | FrameBoltContactResult | BeamBoltContactResult | BeamWeldContactResult | BeamWeldSpanContactResult | BeamJointContactResult | BeamJointInitialStrainResult | BeamImpactResult | TetraMeshResult | SolidAnalysisResult | SolidPlasticResult | SolidModalResult | SolidBucklingResult | NativeBoltPreloadOwnedResult;
+export type FemResult = SolidFiniteWireResult | SolidContactResult | FrictionContactResult | BeamProofResult | BeamAnalysisResult | BeamModalResult | BeamBucklingResult
+  | BeamTransientResult | PlasticBarResult | BeamContactAnalysisResult | FrameBoltContactResult | BeamBoltContactResult | BeamWeldContactResult | BeamWeldSpanContactResult | BeamJointContactResult | BeamJointInitialStrainResult | BeamImpactResult | TetraMeshResult | SolidAnalysisResult | SolidPlasticResult | SolidModalResult | SolidBucklingResult | NativeBoltPreloadOwnedResult
+  | ShellNativeWireResult;
 export type FemReply =
   | { readonly protocol: typeof FEM_PROTOCOL; readonly kind: 'phase'; readonly identity: FemIdentity; readonly phase: FemPhase }
   | { readonly protocol: typeof FEM_PROTOCOL; readonly kind: 'result'; readonly identity: FemIdentity; readonly result: FemResult }
@@ -252,6 +268,13 @@ export function isRequest(value: unknown): value is FemRequest {
     }
   }
   if (!isRecord(value) || value.protocol !== FEM_PROTOCOL || !isIdentity(value.identity)) return false;
+  if (value.kind === 'analyze-solid-finite-j2') {
+    if (Reflect.ownKeys(value).length !== 4 || Reflect.ownKeys(value.identity).length !== 4) return false;
+    try {
+      const input = translateSolidFinite(value.input).input;
+      return input.source.documentId === value.identity.documentId && input.source.revision === value.identity.revision;
+    } catch { return false; }
+  }
   if (value.kind === 'analyze-native-bolt-preload') {
     if (Reflect.ownKeys(value).length !== 4 || Reflect.ownKeys(value.identity).length !== 4 || !isNativeBoltPreloadWireInput(value.input)) return false;
     // Wire admission only: the Worker asynchronously validates the unknown numeric plan before assets.
@@ -283,6 +306,13 @@ export function isRequest(value: unknown): value is FemRequest {
     if (Object.keys(value).length !== 4) return false;
     try {
       const input = translateSolidAnalysis(value.input).input;
+      return input.source.documentId === value.identity.documentId && input.source.revision === value.identity.revision;
+    } catch { return false; }
+  }
+  if (value.kind === 'analyze-shell-tr-shell02') {
+    if (Reflect.ownKeys(value).length !== 4 || Reflect.ownKeys(value.identity).length !== 4) return false;
+    try {
+      const input = translateShellAnalysis(value.input).input;
       return input.source.documentId === value.identity.documentId && input.source.revision === value.identity.revision;
     } catch { return false; }
   }
@@ -408,7 +438,7 @@ const failures: readonly string[] = ['asset-missing', 'asset-corrupt', 'offline-
 export function isReply(value: unknown): value is FemReply {
   if (!isRecord(value) || value.protocol !== FEM_PROTOCOL || !isIdentity(value.identity)) return false;
   if (value.kind === 'phase') return typeof value.phase === 'string' && phases.includes(value.phase);
-  if (value.kind === 'result') return isSolidContactResult(value.result) || isBeamProof(value.result) || isBeamAnalysisResult(value.result) || isBeamModalResult(value.result) || isBeamBucklingResult(value.result)
+  if (value.kind === 'result') return isSolidFiniteWireResult(value.result) || isSolidContactResult(value.result) || isBeamProof(value.result) || isBeamAnalysisResult(value.result) || isBeamModalResult(value.result) || isBeamBucklingResult(value.result)
     || isBeamTransientResult(value.result) || isPlasticBarResult(value.result) || isBeamContactResult(value.result)
     || isFrameBoltContactResult(value.result)
     || isBeamBoltContactResult(value.result)
@@ -418,7 +448,8 @@ export function isReply(value: unknown): value is FemReply {
     || isBeamJointInitialStrainResult(value.result)
     || isNativeBoltPreloadOwnedResult(value.result)
     || isBeamImpactResult(value.result)
-    || isTetraMeshResult(value.result) || isSolidAnalysisResult(value.result) || isSolidPlasticResult(value.result) || isSolidModalResult(value.result) || isSolidBucklingResult(value.result);
+    || isTetraMeshResult(value.result) || isSolidAnalysisResult(value.result) || isSolidPlasticResult(value.result) || isSolidModalResult(value.result) || isSolidBucklingResult(value.result)
+    || isShellNativeWireResult(value.result);
   return value.kind === 'failure' && isRecord(value.failure) && typeof value.failure.code === 'string'
     && failures.includes(value.failure.code) && boundedText(value.failure.message, 4096)
     && (!Object.hasOwn(value.failure, 'contactDiagnostics') || isSolidContactFailureDiagnostics(value.failure.contactDiagnostics));

@@ -5,6 +5,7 @@ import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute
 import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
 import { clickWorldPoint, commitPopover, fillFields, popover, popoverTitle,
   selectionKindLabel, sketchTool, type WorldPoint } from './solidCaptureSupport.js';
+import { solidResultCsvFlow } from './solidResultCsvFlow.js';
 
 const AXES = ['x', 'y', 'z'] as const;
 const LABELS = ['指定変位 X (mm)', '指定変位 Y (mm)', '指定変位 Z (mm)'] as const;
@@ -110,6 +111,8 @@ export async function solidBoundaryAuthoringFlow(page: Page, info: TestInfo, app
   expect(Number.parseFloat(total.split(',')[2])).toBeCloseTo(-0.918216, 6);
   expect(Number.parseFloat(reaction.split(',')[2])).toBeCloseTo(0.918216, 4);
   await expect(panel.locator(':scope > [role="alert"]')).toHaveCount(0);
+  // The same native result leaves through the panel's CSV button and the real save path; the bytes are checked.
+  await solidResultCsvFlow(page, result, info, app);
 
   // Removing two directions must invalidate the old result and report the actual rigid-body failure.
   await panel.getByTestId('solid-support-remove-2').click();

@@ -9,6 +9,8 @@ import { FatigueStrainPanel } from '../fatigueStrain/FatigueStrainPanel.js';
 import { FatigueLocalCyclePanel } from '../fatigueLocalCycle/FatigueLocalCyclePanel.js';
 import { SolidAnalysisPanel } from '../solidAnalysis/SolidAnalysisPanel.js';
 import { SolidPlasticPanel } from '../solidPlastic/SolidPlasticPanel.js';
+import { SolidFinitePanel } from '../solidFinite/SolidFinitePanel.js';
+import { ShellAnalysisPanel } from '../shellAnalysis/ShellAnalysisPanel.js';
 
 /** 部品・アセンブリのどちらから開いても同じ右欄を使う。入力の更新はこの区画内に留める。 */
 export function StrengthPropertyPanel(): React.JSX.Element | null {
@@ -21,11 +23,14 @@ export function StrengthPropertyPanel(): React.JSX.Element | null {
   const fatigueLocalCycle = useAppStore(state => state.fatigueLocalCycleSession);
   const solid = useAppStore(state => state.solidAnalysisSession);
   const solidPlastic = useAppStore(state => state.solidPlasticSession);
+  const solidFinite = useAppStore(state => state.solidFiniteSession);
+  const shell = useAppStore(state => state.shellAnalysisSession);
   if (session === null) return null;
   return <section className="pcad-panel pcad-panel--right">
     <h2 className="pcad-panel__title">{t('propertyPanel.title')}</h2>
     <BoltPreloadPanel />
-    {preload ? null : solid !== null && fatigue !== null ? <FatiguePanel session={fatigue} /> : solid !== null ? <SolidAnalysisPanel session={solid} /> : solidPlastic !== null ? <SolidPlasticPanel session={solidPlastic} />
+    {preload ? null : solid !== null && fatigue !== null ? <FatiguePanel session={fatigue} /> : solid !== null ? <SolidAnalysisPanel session={solid} /> : solidPlastic !== null ? <SolidPlasticPanel session={solidPlastic} /> : solidFinite !== null ? <SolidFinitePanel session={solidFinite} />
+      : shell !== null ? <ShellAnalysisPanel session={shell} />
       : beam !== null ? <BeamPanel session={beam} />
       : plasticBar !== null ? <PlasticBarPanel session={plasticBar} />
         : fatigueLocalCycle !== null ? <FatigueLocalCyclePanel session={fatigueLocalCycle} /> : fatigueStrain !== null ? <FatigueStrainPanel session={fatigueStrain} /> : fatigue !== null ? <FatiguePanel session={fatigue} /> : <StrengthPanel session={session} />}

@@ -1,10 +1,10 @@
 /** Node-only native geometry fixture owned by model; never exported by its browser barrel. */
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge } from '../kernelBridge.js';
-import { writeBrepBytes } from '../../../kernel/src/occt/brepBytes.js';
-import { solidMeshBuffers, type CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
+import { writeBrepBytes } from '@pointercad/kernel/testing/native-shape-inspection';
+import { solidMeshBuffers, type CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import { measureEx18Shape, type Ex18ShapeMeasurement } from '../part/ex18ShapeOracle.testSupport.js';
 
 export function createNativeKernelBridgeForNodeTests() {

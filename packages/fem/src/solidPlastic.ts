@@ -1,4 +1,4 @@
-import { isRecord } from './valueGuards.js';
+import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 /**
  * PROVISIONAL (unexecuted; native support unproven until Root runs proof-r2): small-strain J2 plasticity of tet4
  * solids through OOFEM ltrspace + MisesMat htype 0 + StaticStructural. This module is the plan contract and its strict
@@ -53,9 +53,7 @@ export interface SolidPlasticPlan {
   readonly stepsPerSegment: number;
 }
 
-function fail(detail: string): never {
-  throw new Error(`solid-plastic: ${detail}`);
-}
+const fail: (message: string) => never = createPrefixedError('solid-plastic');
 function record(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);
   const row = value;
@@ -64,10 +62,7 @@ function record(value: unknown, names: readonly string[], path: string): Record<
   }
   return row;
 }
-function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(`${path} must be a finite number`);
-  return value === 0 ? 0 : value;
-}
+const finite = createFiniteReader(fail);
 function positive(value: unknown, path: string): number {
   const number = finite(value, path);
   if (!(number > 0)) fail(`${path} must be positive`);

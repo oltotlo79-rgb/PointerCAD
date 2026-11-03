@@ -8,6 +8,8 @@
 import type { BeamSlice } from './beamSlice.js';
 import type { SolidAnalysisSlice } from './solidAnalysisSlice.js';
 import type { SolidPlasticSlice } from './solidPlasticSlice.js';
+import type { SolidFiniteSlice } from './solidFiniteSlice.js';
+import type { ShellAnalysisSlice } from './shellAnalysisSlice.js';
 import type { PlasticBarSlice } from './plasticBarSlice.js';
 import type { FatigueSlice } from './fatigueSlice.js';
 import type { FatigueStrainSlice } from './fatigueStrainSlice.js';
@@ -48,4 +50,4 @@ export interface AppState
     FileSlice,
     AssemblySlice,
     DrawingSlice,
-    HelpSlice, SheetMetalSlice, ScriptSlice, FunctionPlotSlice, BeamSlice, PlasticBarSlice, FatigueSlice, FatigueStrainSlice, FatigueLocalCycleSlice, AssemblyOccurrenceDriveSlice, SolidAnalysisSlice, SolidPlasticSlice {}
+    HelpSlice, SheetMetalSlice, ScriptSlice, FunctionPlotSlice, BeamSlice, PlasticBarSlice, FatigueSlice, FatigueStrainSlice, FatigueLocalCycleSlice, AssemblyOccurrenceDriveSlice, SolidAnalysisSlice, SolidPlasticSlice, SolidFiniteSlice, ShellAnalysisSlice {}

@@ -1,3 +1,4 @@
+import { isRecord as record } from '../valueGuards.js';
 import { SCRIPT_API_VERSION, SCRIPT_LIMITS, type ScriptProgram } from './scriptTypes.js';
 import { isScriptModuleName, sha256ScriptSource, validateScriptProgram } from './scriptModules.js';
 import { scriptUtf8Bytes } from './scriptBytes.js';
@@ -13,7 +14,6 @@ export interface ScriptFile {
 }
 export type ScriptFileRead = { readonly ok: true; readonly file: ScriptFile }
   | { readonly ok: false; readonly reason: 'bytes' | 'format' | 'version' | 'name' | 'program' };
-function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 function keys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   return Object.keys(value).length === expected.length && expected.every(key => Object.hasOwn(value, key));
 }

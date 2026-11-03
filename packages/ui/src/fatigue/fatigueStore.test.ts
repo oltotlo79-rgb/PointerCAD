@@ -1,3 +1,4 @@
+import { openAssemblyWithStrength } from '../store/testing/openAssemblyWithStrength.testSupport.js';
 import { readBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { bucklingUiFixture } from '../beam/beamBuckling.testSupport.js';
@@ -16,15 +17,6 @@ function session(): FatigueSession {
   if (value === null) throw new Error('No fatigue session');
   return value;
 }
-function openAssemblyWithStrength(): void {
-  const fixture = bucklingUiFixture();
-  const assembly = fixture.state.assembly;
-  if (assembly === null) throw new Error('Fixture without assembly');
-  // The real action creates the Undo stack that applyAssembly needs.
-  useAppStore.getState().openAssembly(assembly, fixture.state.assemblyLibrary);
-  useAppStore.setState({ strengthSession: fixture.state.strengthSession });
-}
-
 describe('fatigue inputs in the document', () => {
   it('saves into the open assembly through Undo, keeps other inputs, never stores a result, and reopens without one', async () => {
     openAssemblyWithStrength();

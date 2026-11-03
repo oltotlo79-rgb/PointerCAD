@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { beamWeldContactInputSha256, decodeBeamWeldContact, translateBeamWeldContact, type BeamWeldContactInput } from '@pointercad/fem';
-import { TEST_EVIDENCE } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { TEST_EVIDENCE } from '@pointercad/model/testing/analysis-fixtures';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { BeamWeldLayerResults } from './BeamWeldLayers.js';
 import { beamDisplayNumber } from './BeamResults.js';

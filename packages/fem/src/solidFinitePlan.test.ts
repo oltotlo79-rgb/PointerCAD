@@ -56,6 +56,8 @@ const accepted: [string, Value][] = [
   ['200 steps', disjoint(1, 200)],
   ['negative coordinates', displacementPlan([[-5, -5, -5], [5, -5, -5], [-5, 5, -5], [-5, -5, 5]])],
   ['poisson 0 and hardening 0', material({ poisson: 0, hardeningModulusMPa: 0 })],
+  ['prescribed and loaded DOF, with free load scale', loads({ node: 1, dof: 'x', valuesN: [1, 2] }, { node: 0, dof: 'y', valuesN: [1e30, -1e30] })],
+  ['fixed-load-only history with explicit reference', replace(displacementPlan(), { forcesN: [{ node: 0, dof: 'x', valuesN: [100, -100] }] })],
 ];
 const refused: [string, Value][] = [
   ['an unknown plan field', replace(plan(), { extra: 1 })],
@@ -89,12 +91,12 @@ const refused: [string, Value][] = [
   ['a history one value short', replace(plan(3), { prescribedMm: [...fixed(FIXED_2TET, 3).slice(1), { node: 0, dof: 'x', valuesMm: [0, 0] }] })],
   ['a history one value long', loads({ node: 1, dof: 'x', valuesN: [1, 2, 3] })],
   ['a DOF prescribed twice', replace(plan(), { prescribedMm: [...fixed(FIXED_2TET, 2), { node: 0, dof: 'x', valuesMm: [0, 0] }] })],
-  ['a DOF prescribed and loaded', loads({ node: 1, dof: 'x', valuesN: [1, 1] }, { node: 0, dof: 'y', valuesN: [1, 1] })],
   ['a DOF loaded twice', loads({ node: 4, dof: 'x', valuesN: [1, 1] })],
   ['an unknown DOF name', loads({ node: 1, dof: 'w', valuesN: [1, 1] })],
   ['an extra history field', loads({ node: 1, dof: 'x', valuesN: [1, 1], unit: 'N' })],
   ['no prescribed displacement', replace(plan(), { prescribedMm: [] })],
   ['every DOF prescribed', replace(displacementPlan(), { prescribedMm: [0, 1, 2, 3].flatMap(node => fixed([[node, 'x'], [node, 'y'], [node, 'z']], 2)) })],
+  ['fixed-load-only history without explicit reference', loads({ node: 0, dof: 'x', valuesN: [1e30, -1e30] }, { node: 0, dof: 'y', valuesN: [-1e30, 1e30] })],
   ['a displacement history without force or reference', without(displacementPlan(), 'referenceForceN')],
   ['only zero forces and no reference', plan(2, [0, 0])],
   ['a zero referenceForceN', replace(displacementPlan(), { referenceForceN: 0 })],
@@ -148,6 +150,7 @@ describe('finite equilibrium plan reader', () => {
     expect(verdicts.slice(0, accepted.length).every(row => row.ok)).toBe(true);
     expect(verdicts.slice(accepted.length).every(row => !row.ok && /^finite-equilibrium: /u.test(row.message ?? ''))).toBe(true);
     expect(verdicts[0].referenceForceN).toBe(200);   // largest |force| of the 2-tet history is the native force scale
+    expect(verdicts[9].referenceForceN).toBe(2);     // fixed +/-1e30 N must not set the free-DOF Newton scale
     expect(verdicts[2].referenceForceN).toBe(7);     // an explicit reference is kept even with nodal forces
   }, 125_000);
   it('refuses values that JSON cannot carry before any Python sees them', () => {

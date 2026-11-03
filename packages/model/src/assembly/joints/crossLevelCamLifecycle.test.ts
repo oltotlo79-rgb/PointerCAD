@@ -1,3 +1,4 @@
+import { placement } from '../fastening/boltedPlacement.testSupport.js';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 import { appendSolid, createEmptyPartDocument } from '../../part/createPartDocument.js';
@@ -25,9 +26,6 @@ import type { CrossLevelGearCouplingDefinition } from './crossLevelGearDocument.
  * origin z axes, so the follower's z in the child is the translation) and `knob` on the revolute `twist`. Fixture
  * times are historical fixture data.
  */
-function placement(x: number, y: number, z: number): Placement {
-  return { position: [expressionValueFromNumber(x), expressionValueFromNumber(y), expressionValueFromNumber(z)], rotation: [0, 0, 0, 1] };
-}
 function component(id: string, source: ComponentSource, at: Placement, fixed = false): AssemblyComponent {
   return { id, name: id, source, placement: at, fixed, visible: true, suppressed: false };
 }
@@ -54,17 +52,17 @@ async function fixture(cams: readonly CrossLevelCamCouplingDefinition[], extra: 
     { importedAt: '2026-01-01T00:00:00.000Z' });
   const part = { kind: 'part', partRef: embedded.partRef } as const;
   const child: AssemblyDocument = { ...createAssemblyDocument('cam child'),
-    components: [component('base', part, placement(0, 0, 0), true), component('follower', part, placement(0, 0, 0)),
-      component('knob', part, placement(0, 0, 0))],
+    components: [component('base', part, placement([0, 0, 0]), true), component('follower', part, placement([0, 0, 0])),
+      component('knob', part, placement([0, 0, 0]))],
     joints: [joint('push', 'slider', 'follower', 'base'), joint('twist', 'revolute', 'knob', 'base')] };
   const subAssemblies = new Map([['child', child]]);
   const library = { ...embedded.library, assemblies: subAssemblies };
   const document: AssemblyDocument = { ...createAssemblyDocument('parent'),
     parameters: [{ name: 'camPhase', value: num(30), unit: 'none', description: '' }],
-    components: [component('ground', part, placement(10, 20, 0), true),
-      component('A', { kind: 'subAssembly', assemblyRef: 'child' }, placement(10, 20, 0)),
-      component('B', { kind: 'subAssembly', assemblyRef: 'child' }, placement(10, 20, 0)),
-      component('rod', part, placement(10, 20, 0))],
+    components: [component('ground', part, placement([10, 20, 0]), true),
+      component('A', { kind: 'subAssembly', assemblyRef: 'child' }, placement([10, 20, 0])),
+      component('B', { kind: 'subAssembly', assemblyRef: 'child' }, placement([10, 20, 0])),
+      component('rod', part, placement([10, 20, 0]))],
     joints: [joint('cam', 'revolute', 'A', 'ground'), joint('spin', 'revolute', 'B', 'ground'), joint('lift', 'slider', 'rod', 'ground')],
     crossLevelCamCouplings: cams, ...extra };
   const inputs: JointOccurrenceInputs = { document, library, subAssemblies };

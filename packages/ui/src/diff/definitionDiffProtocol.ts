@@ -1,3 +1,4 @@
+import { isObject as record } from '../valueGuards.js';
 import type { DocumentDefinitionComparison, DocumentDefinitionChange, DocumentRelationship, DefinitionDifference } from '@pointercad/model';
 
 export const DEFINITION_DIFF_MAX_FILE_BYTES = 32 * 1024 * 1024;
@@ -11,7 +12,6 @@ export type DefinitionDiffReply = { readonly kind: 'inspected'; readonly name: s
   | { readonly kind: 'compared'; readonly result: DocumentDefinitionComparison }
   | { readonly kind: 'failed'; readonly message: string };
 
-function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null; }
 export function isDefinitionDiffRequest(value: unknown): value is DefinitionDiffRequest {
   if (!record(value)) return false;
   const bytes = (entry: unknown): boolean => entry instanceof Uint8Array && entry.byteLength <= DEFINITION_DIFF_MAX_FILE_BYTES;

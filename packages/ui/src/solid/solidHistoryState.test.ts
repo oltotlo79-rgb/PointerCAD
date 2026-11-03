@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { appendSolid, recomputePart, type PartDocument, type PartRecomputeResult } from '@pointercad/model';
 import { createInspectableNativeKernelForNodeTests, initializeNativeKernelForNodeTests }
-  from '../../../model/src/testing/createNativeKernelBridge.node.js';
+  from '@pointercad/model/testing/native-kernel';
 import { appendEx18DirectEdit, buildEx18DirectSeed, directFaceReference, directPlanarFace,
-  withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
+  withEx18UnselectedBody } from '@pointercad/model/testing/ui-fixtures';
 import { consumedIds, partErrorMessage } from './solidHistoryState.js';
 import { summarizeSolid } from './solidSummary.js';
 import { buildTreeSections } from './treeSummary.js';

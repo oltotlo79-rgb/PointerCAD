@@ -16,8 +16,8 @@ Acceptance of each step (a converged equilibrium, not merely the end of the nati
     the step (Load::computeComponentArrayAt, load.C:89; Function::evaluate VM_Total, function.C:59-60) and must equal
     the plan value; the native internal forces are the element InternalForcesVector of the solved trial state,
     assembled per node;
-  * free-DOF residual |external - internal| over the actual force scale max(accepted load/reaction reference, all
-    current internal forces, all current external forces) must be <= FREE_RESIDUAL_BOUND 1e-8 (method of
+  * free-DOF residual |external - internal| over the actual force scale max(accepted free-load/constrained-action reference, all
+    current internal forces, current free-DOF external forces) must be <= FREE_RESIDUAL_BOUND 1e-8 (method of
     solidPlasticAnalysis.check_free_force_balance, here with the native external force and the native internal force
     of the finite element); NRSolver keeps rtolf 1e-10 and maxiter 50. StaticStructural only warns when the iteration
     limit is reached (staticstructural.C:353-357), so this check is what refuses a non-converged step;
@@ -143,15 +143,15 @@ def read_plan(value):
             if entry['dof'] not in DOFS:
                 _fail(f'{name}[{index}].dof must be x, y or z')
             key = (node, DOFS.index(entry['dof']))
-            if key in prescribed or key in loads:
-                _fail(f'{name}[{index}] repeats node {node} direction {entry["dof"]} (a DOF is either prescribed or loaded)')
+            if key in target:
+                _fail(f'{name}[{index}] repeats node {node} direction {entry["dof"]} (a DOF appears at most once per list)')
             values = _array(entry[unit], f'{name}[{index}].{unit}', steps, steps)
             target[key] = [_finite(v, f'{name}[{index}].{unit}[{k}]') for k, v in enumerate(values)]
     if not prescribed:
         _fail('at least one displacement must be prescribed')
     if len(prescribed) >= len(nodes) * 3:
         _fail('at least one degree of freedom must stay free')
-    largest_load = max((abs(v) for values in loads.values() for v in values), default=0.0)
+    largest_load = max((abs(v) for key, values in loads.items() if key not in prescribed for v in values), default=0.0)
     if 'referenceForceN' in row:
         reference = _finite(row['referenceForceN'], 'referenceForceN')
         if not reference > 0:
@@ -159,7 +159,7 @@ def read_plan(value):
     elif largest_load > 0:
         reference = largest_load
     else:
-        _fail('a history without nodal forces needs referenceForceN (native NRSolver force scale of the free DOFs)')
+        _fail('a history without free-DOF nodal forces needs referenceForceN (native NRSolver force scale of the free DOFs)')
     return {'nodes': nodes, 'elements': elements, 'material': {k: row['material'][k] for k in
             ('youngMPa', 'poisson', 'yieldStressMPa', 'hardeningModulusMPa')}, 'parameters': material,
             'steps': steps, 'prescribed': prescribed, 'loads': loads, 'referenceForceN': reference}
@@ -256,11 +256,12 @@ def _require_finite(values, what):
 
 
 def free_force_balance(internal, external, prescribed, accepted_reference, where):
-    """Free-DOF |external - internal| over the actual load/reaction scale; returns (residual, reference, scale).
+    """Free-DOF |external - internal| over the structural force scale; returns (residual, reference, scale).
 
     internal and external are per-node 3-vectors (N). The scale is max(accepted reference, every current internal force
-    including reactions, every current external force); the new reference (only after acceptance) is
-    max(accepted reference, every current external force, every current reaction).
+    including constrained internal actions, every free-DOF external force); the new reference (only after acceptance) is
+    max(accepted reference, every free-DOF external force, every constrained internal action).
+    Fixed external loads change reactions (internal - external), not the free equations or their scale.
     """
     if len(internal) != len(external) or any(len(row) != 3 for row in internal + external):
         _fail('force arrays must contain matching three-vectors')
@@ -270,12 +271,12 @@ def free_force_balance(internal, external, prescribed, accepted_reference, where
     if accepted_reference < 0:
         _fail('accepted force reference must not be negative')
     scale = max([1e-300, accepted_reference] + [abs(v) for row in internal for v in row]
-                + [abs(v) for row in external for v in row])
+                + [abs(v) for n, row in enumerate(external) for a, v in enumerate(row) if (n, a) not in prescribed])
     ratios = [abs(external[n][a] - internal[n][a]) / scale for n in range(len(internal)) for a in range(3)
               if (n, a) not in prescribed]
     _require_finite([scale] + ratios, f'free-DOF residual at {where}')
     residual = max(ratios, default=0.0)
-    reference = max([accepted_reference] + [abs(v) for row in external for v in row]
+    reference = max([accepted_reference] + [abs(v) for n, row in enumerate(external) for a, v in enumerate(row) if (n, a) not in prescribed]
                     + [abs(internal[n][a]) for n in range(len(internal)) for a in range(3) if (n, a) in prescribed])
     return residual, reference, scale
 

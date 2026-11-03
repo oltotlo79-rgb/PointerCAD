@@ -1,3 +1,4 @@
+import { solidFiniteFieldOf } from '../solidFinite/solidFiniteFieldState.js';
 import type { SolidSource } from '@pointercad/fem';
 import type { AppState } from '../store/appState.js';
 import { solidAnalysisFieldOf } from './solidFieldState.js';
@@ -6,7 +7,7 @@ import { solidModalPreview } from './solidModalState.js';
 import type { SolidModeDrawing } from './solidModeLayer.js';
 import { solidBucklingPreview } from './solidBucklingState.js';
 
-type LayerState = Pick<AppState, 'solidAnalysisSession' | 'solidModal' | 'solidBuckling' | 'document' | 'completedGeneration'>;
+type LayerState = Pick<AppState, 'solidAnalysisSession' | 'solidFiniteSession' | 'solidModal' | 'solidBuckling' | 'document' | 'completedGeneration' | 'activeDocumentId' | 'assembly' | 'drawing'>;
 
 /**
  * Identity the shown modal result must still match: the current document and completed recompute generation (the
@@ -33,5 +34,18 @@ export function solidAnalysisLayersOf(state: LayerState): { readonly field: Soli
   if (buckling !== null && buckling.kind === 'preview') return { field: null, mode: buckling };
   const preview = solidModalPreview(state.solidModal, solidModalCurrentSource(state));
   const mode = preview !== null && preview.kind === 'preview' ? preview : null;
-  return { field: mode === null ? solidAnalysisFieldOf(state.solidAnalysisSession) : null, mode };
+  const finite = state.solidFiniteSession;
+  const field = finite === null ? solidAnalysisFieldOf(state.solidAnalysisSession)
+    : finite.ownerId === state.activeDocumentId && state.assembly === null && state.drawing === null
+      && finite.result?.input.source.documentId === state.document.id
+      && finite.result.input.source.revision === state.completedGeneration ? solidFiniteFieldOf(finite) : null;
+  return { field: mode === null ? field : null, mode };
+}
+
+/** The live viewport and its tests share this exact subscription decision. */
+export function solidAnalysisLayersChanged(next: LayerState, previous: LayerState): boolean {
+  return next.solidAnalysisSession !== previous.solidAnalysisSession || next.solidFiniteSession !== previous.solidFiniteSession
+    || next.solidModal !== previous.solidModal || next.solidBuckling !== previous.solidBuckling
+    || next.document !== previous.document || next.completedGeneration !== previous.completedGeneration
+    || next.activeDocumentId !== previous.activeDocumentId || next.assembly !== previous.assembly || next.drawing !== previous.drawing;
 }

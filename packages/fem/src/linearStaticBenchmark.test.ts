@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { cantilever } from './analysisCases.testSupport.js';
 import { axialElongationM, BAR, barForceN, BEAM, cantileverTipDeflectionM, cantileverTipDeflectionWithoutShearM,
   loadPackagedRuntime, relative, tensionBar, uniaxialDisplacementMm, verifiedAsset, wheelLocation } from './linearStaticBenchmark.testSupport.js';
 import { analyzeBeam, analyzeSolid, type PyodideRuntime } from './runtime.js';
+import { compareVerification } from './verificationComparison.testSupport.js';
+import { linearInput } from './verificationCases.testSupport.js';
+import { beamInputSha256 } from './analysisTranslation.js';
+import { beamResultMatches } from './analysisResults.js';
 import { solidResultMatches } from './solidAnalysisResults.js';
 import { solidInputSha256 } from './solidAnalysisTranslation.js';
 
@@ -28,12 +32,17 @@ describe('W14 independent linear-static oracles on the packaged offline OOFEM', 
     expect(bending.sections[0]).toMatchObject({ area: BEAM.areaM2, iz: BEAM.izM4, shearFactor: BEAM.shearFactor });
     expect(bending.loads[0]).toMatchObject({ nodeId: 'tip', force: [0, BEAM.forceN, 0] });
     const tip = async (document: ReturnType<typeof cantilever>): Promise<readonly number[]> => {
-      const found = (await analyzeBeam(runtime, document, programs, () => undefined)).nodes.find(node => node.nodeId === 'tip');
+      const result = await analyzeBeam(runtime, document, programs, () => undefined);
+      expect(beamResultMatches(result, document, await beamInputSha256(document))).toBe(true);
+      const stale = { ...document, revision: document.revision + 1 };
+      expect(beamResultMatches(result, stale, await beamInputSha256(stale))).toBe(false);
+      const found = result.nodes.find(node => node.nodeId === 'tip');
       if (found === undefined) throw new Error('Missing tip node result');
       return found.displacementM;
     };
     const expected = cantileverTipDeflectionM(BEAM.forceN), bent = await tip(bending);
     expect(relative(bent[1], expected), 'tip deflection vs PL^3/(3EI)+PL/(kGA)').toBeLessThanOrEqual(1e-3);
+    expect(compareVerification('linear-cantilever-tip-y-v1', { caseId: 'linear-cantilever-tip-y-v1', input: linearInput(bending), value: bent[1] }).passed).toBe(true);
     // Negative oracle 1: the shear-free formula is off by PL/(kGA) / total = 3.9e-3 and must not pass the same limit.
     expect(relative(bent[1], cantileverTipDeflectionWithoutShearM(BEAM.forceN))).toBeGreaterThan(1e-3);
     // Negative oracle 2: reversing the load reverses the deflection; the unreversed expectation must fail.

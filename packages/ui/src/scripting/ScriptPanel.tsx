@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { useRef, useState } from 'react';
 import { SCRIPT_ICONS, SCRIPT_LIMITS, isScriptModuleName } from '@pointercad/model/scripting';
 import { t } from '../i18n/t.js';
@@ -47,7 +48,7 @@ export function ScriptPanel(): React.JSX.Element {
     </select></label>
     <label>{t('script.example')}<select title={t('script.control.example')} aria-label={t('script.example')} value="" onChange={event => {
       const example = SCRIPT_EXAMPLES.find(item => item.id === event.target.value); if (example === undefined) return;
-      update({ name: t(example.label), source: example.source, modules: [], scriptId: crypto.randomUUID() }); setActiveFile('user-script.js');
+      update({ name: t(example.label), source: example.source, modules: [], scriptId: createDocumentElementId() }); setActiveFile('user-script.js');
     }}><option value="">{t('script.example')}</option>{SCRIPT_EXAMPLES.map(example => <option key={example.id} value={example.id}>{t(example.label)}</option>)}</select></label>
     <label>{t('script.source')}<select title={t('script.control.sourceFile')} aria-label={t('script.modules')} value={fileName} onChange={event => setActiveFile(event.target.value)}>
       <option value="user-script.js">user-script.js</option>{draft.modules.map(item => <option key={item.name}>{item.name}</option>)}

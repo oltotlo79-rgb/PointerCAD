@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { evaluateExpression } from '@pointercad/expression';
 import type { AssemblyDocument, Joint } from '../types.js';
 import { assemblyExpressionContext } from '../resolveAssembly.js';
@@ -49,7 +50,6 @@ export interface MechanismCouplingRow extends RigidResidualRow {
   readonly jointAId: string;
   readonly jointBId: string;
 }
-const finite = (value: number): boolean => typeof value === 'number' && Number.isFinite(value);
 const ANGLE_EPSILON_DEG = 1e-9;
 const refusal = (couplingId: string, reason: MechanismCouplingFailureReason): MechanismCouplingFailure =>
   ({ ok: false, couplingId, reason });

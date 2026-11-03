@@ -1,5 +1,7 @@
+import { isFiniteNumber } from './valueGuards.js';
+
 import { sha256Hex } from './sha256.js';
-import { addVec3 as add, scaleVec3 as scale, crossVec3 as cross } from '@pointercad/model/vec3';
+import { addVec3 as add, scaleVec3 as scale, crossVec3 as cross, dotVec3 as dot } from '@pointercad/model/vec3';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamContactInput, BeamContactNumericResult } from './contactModel.js';
 import { translateBeamContact, type OofemContactPlan } from './contactTranslation.js';
@@ -64,7 +66,7 @@ function dense(value: unknown): value is unknown[] {
     && Array.from({ length: value.length }, (_, i) => Object.hasOwn(value, i)).every(Boolean);
 }
 function finite(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || Math.abs(value) > 1e30) throw new Error('weld-number');
+  if (!isFiniteNumber(value) || Math.abs(value) > 1e30) throw new Error('weld-number');
   return value;
 }
 function positive(value: unknown): number {
@@ -77,7 +79,6 @@ function vector(value: unknown): Vector3 {
   return [finite(value[0]), finite(value[1]), finite(value[2])];
 }
 function sub(a: Vector3, b: Vector3): Vector3 { return add(a, scale(b, -1)); }
-function dot(a: Vector3, b: Vector3): number { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
 function geometry(row: Record<string, unknown>): WeldLayerGeometry {
   if (typeof row.id !== 'string' || row.id.length < 1 || row.id.length > 64) throw new Error('weld-id');
   const centerM = vector(row.centerM), normal = vector(row.normal), along = vector(row.along);

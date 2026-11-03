@@ -1,12 +1,9 @@
+import { isRecord as record, isFiniteNumber as numeric } from './valueGuards.js';
 import type { BeamAnalysisDocument, BeamModalResult, BeamModeShape, Vector3 } from './analysisModel.js';
 import { translateBeamModal, type OofemModalPlan } from './modalTranslation.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-function numeric(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
+
+
 function vector(value: unknown): value is Vector3 {
   return Array.isArray(value) && value.length === 3 && value.every(numeric);
 }

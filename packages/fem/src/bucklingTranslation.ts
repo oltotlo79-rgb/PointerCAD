@@ -1,3 +1,4 @@
+import { isRecord as record } from './valueGuards.js';
 import { sha256Hex } from './sha256.js';
 import type { BeamNodalLoad, Vector3, Vector6 } from './analysisModel.js';
 import type { BeamBucklingInput, BucklingRestraints } from './bucklingModel.js';
@@ -12,9 +13,7 @@ const free: BucklingRestraints = [false, false, false, false, false, false];
 // The model's public beam-analysis subpath exports readBeamAnalysis, not its
 // internal fields/list/load readers. Keep the new request envelope validation
 // here; geometry still uses the existing public, strict decoder unchanged.
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function fields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!record(value) || Object.keys(value).length !== names.length || names.some(name => !(name in value))) {
     throw new Error(`buckling-shape: ${path}`);

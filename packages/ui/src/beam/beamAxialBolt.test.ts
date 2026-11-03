@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createUndoStack, partKeyOf, resolveConstrainedAssembly, buildStandardPartFromSource } from '@pointercad/model';
 import type { FemWorkerPort } from '@pointercad/fem';
-import { cadAxialBoltFixture } from '../../../model/src/analysis/cadAxialBolt.testSupport.js';
+import { cadAxialBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { beamUiFixture, requireBeamSession } from './beam.testSupport.js';

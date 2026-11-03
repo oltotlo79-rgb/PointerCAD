@@ -9,6 +9,7 @@
 import type { BRepAdaptor_Curve, OpenCascadeInstance, TopoDS_Edge } from 'opencascade.js/dist/opencascade.full.js';
 import type { Vec3Tuple } from '../types.js';
 import { borrowHandle } from './borrowHandle.js';
+import { createAllocations } from './allocations.js';
 
 export interface FunctionCurveSplineSpec {
   /** Strictly increasing function parameters; the curve is parameterized by them. */
@@ -89,8 +90,8 @@ export function makeFunctionCurveSplineEdge(oc: OpenCascadeInstance, spline: Fun
   const poles = keep(new oc.TColgp_Array1OfPnt_2(1, 2 * count));
   for (let index = 0; index < 2 * count; index++) {
     if (index % 128 === 0 && isCancelled()) return null;
-    const point = new oc.gp_Pnt_3(...spline.poles[index]);
-    try { poles.SetValue(index + 1, point); } finally { point.delete(); }
+    const { keep: keepPoint, release } = createAllocations();
+    try { poles.SetValue(index + 1, keepPoint(new oc.gp_Pnt_3(...spline.poles[index]))); } finally { release(); }
   }
   const knots = keep(new oc.TColStd_Array1OfReal_2(1, count));
   const multiplicities = keep(new oc.TColStd_Array1OfInteger_2(1, count));
@@ -136,8 +137,11 @@ export function readFunctionCurveSplineEdge(oc: OpenCascadeInstance, adaptor: BR
     knots.push(spline.Knot(index));
   }
   for (let index = 1; index <= 2 * count; index++) {
-    const point = spline.Pole(index);
-    try { poles.push([point.X(), point.Y(), point.Z()]); } finally { point.delete(); }
+    const { keep: keepPoint, release } = createAllocations();
+    try {
+      const point = keepPoint(spline.Pole(index));
+      poles.push([point.X(), point.Y(), point.Z()]);
+    } finally { release(); }
   }
   if (!(first >= knots[0] && last <= knots[count - 1] && first < last)) throw new Error('関数の滑らかな曲線の切断範囲を読み取れませんでした。');
   // Bezier form of span j: junction J_j, poles[2j+1], poles[2j+2], junction J_{j+1}.

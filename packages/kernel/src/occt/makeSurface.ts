@@ -1,5 +1,7 @@
+import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
 import type { FaceOrigin, CurrentOriginIndex } from '../subShapeOrigin.js';
 import { surfacePrismSubShapeOrigins, type NativeSurfaceLine } from './subShapeOrigins.js';
+import { makeTrackedPlanarFace, planarSurfaceAnchorRefusal, planarSurfaceSubShapeOrigins } from './planarSurfaceOrigins.js';
 /**
  * 曲面(面だけの形、FR-428)。計画書 P5 §0.a-0.45、タスク41。
  *
@@ -169,8 +171,15 @@ export type SurfaceInput =
       readonly axisDirection: Vec3Tuple;
       readonly angle: number;
     }
-  /** 閉じた輪郭から張った平らな面 1 枚。 */
-  | { readonly kind: 'planar'; readonly profile: readonly CurveSpec[] }
+  /**
+   * 閉じた輪郭から張った平らな面 1 枚。`profileOrigins` は輪郭の各線の保存された持ち主(線分だけの輪郭のとき
+   * だけ model が付ける)。あれば面・辺・頂点に追跡できる名前を付ける(`planarSurfaceOrigins.ts`)。
+   */
+  | {
+      readonly kind: 'planar';
+      readonly profile: readonly CurveSpec[];
+      readonly profileOrigins?: readonly Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][];
+    }
   /** 輪郭どうしをつないだ面(ロフトの面版)。ふたを張らないので殻のまま残る。 */
   | {
       readonly kind: 'loft';
@@ -201,15 +210,6 @@ export interface SurfaceResult extends OcctShapeHandle {
   readonly area: number;
 }
 
-/** 向きを長さ 1 に揃える。長さが 0 のときや数でないときは null(`makeSolidSweep.ts` と同じ)。 */
-function normalizeDirection(vector: Vec3Tuple): Vec3Tuple | null {
-  const [x, y, z] = vector;
-  const length = Math.hypot(x, y, z);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [x / length, y / length, z / length];
-}
 
 /** 3 つとも実数か(NaN と無限大を弾く)。 */
 function isFinitePoint(point: Vec3Tuple): boolean {
@@ -289,6 +289,37 @@ function extrudeProfile(
     semantic.origins = surfacePrismSubShapeOrigins(oc, maker, wire, shape, lines, semantic.featureId);
   }
   return shape;
+}
+
+/**
+ * 閉じた輪郭から平らな面を 1 枚張る(§0.a-0.45 の `planar`)。
+ *
+ * 保存された線の持ち主(`profileOrigins`)が付いていて、線分だけの閉じた輪郭(3〜32 本)のときだけ、
+ * 線ごとに実際にワイヤへ入った辺を控えて面・辺・頂点へ名前を付ける(`planarSurfaceOrigins.ts`)。
+ * 持ち主の無い輪郭、円・円弧・曲線を含む輪郭は従来どおり `makePlanarFace` で張り、名前を付けない
+ * (同じ追跡性を装わない)。閉じていない・自己交差・非平面の断りの文言はどちらの道でも同じ。
+ */
+function planarProfile(
+  oc: OpenCascadeInstance,
+  keep: Allocations['keep'],
+  input: Extract<SurfaceInput, { kind: 'planar' }>,
+  options: TessellationOptions,
+  semantic?: { readonly featureId: string; origins?: CurrentOriginIndex },
+): TopoDS_Shape {
+  const anchors = input.profileOrigins;
+  if (semantic !== undefined && anchors !== undefined) {
+    const refusal = planarSurfaceAnchorRefusal(input.profile, anchors, semantic.featureId);
+    if (refusal === null) {
+      const tracked = makeTrackedPlanarFace(oc, keep, input.profile);
+      semantic.origins = planarSurfaceSubShapeOrigins(oc, tracked.face, tracked.insertedEdges, anchors,
+        semantic.featureId);
+      return tracked.face;
+    }
+    semantic.origins = { version: 1, state: 'untracked', reason: refusal };
+  }
+  // 閉じていない・自己交差・非平面は makePlanarFace が理由つきで断り、
+  // その文言がそのまま呼び出し側へ伝わる(`makeSolidSweep.ts` と同じ)。
+  return keep(makePlanarFace(oc, input.profile, options)).face;
 }
 
 /**
@@ -446,9 +477,7 @@ function buildSurfaceShape(
     case 'revolve':
       return revolveProfile(oc, keep, input);
     case 'planar':
-      // 閉じていない・自己交差・非平面は makePlanarFace が理由つきで断り、
-      // その文言がそのまま呼び出し側へ伝わる(`makeSolidSweep.ts` と同じ)。
-      return keep(makePlanarFace(oc, input.profile, options)).face;
+      return planarProfile(oc, keep, input, options);
     case 'loft':
       return loftProfiles(oc, keep, input);
     case 'face':
@@ -485,6 +514,7 @@ export function makeSurface(
     const semantic: { readonly featureId: string; origins?: CurrentOriginIndex } | undefined =
       featureId === undefined ? undefined : { featureId };
     const shape = input.kind === 'extrude' ? extrudeProfile(oc, keep, input, semantic)
+      : input.kind === 'planar' ? planarProfile(oc, keep, input, options, semantic)
       : buildSurfaceShape(oc, keep, input, target, tables, options);
 
     // ここが「体積 0 は失敗」の裏返しにあたる 2 つの検査(§0.a-0.45)。

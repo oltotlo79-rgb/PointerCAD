@@ -1,3 +1,4 @@
+import { isRecord } from './mathRecord.js';
 /** A truncated expansion is not a scalar approximation or a proved numerical error bound. */
 import { MathInputProblem, type MathNode } from './mathInputContract.js';
 import { rationalOfExpression } from './exactRational.js';
@@ -49,8 +50,8 @@ const SCALARS = new Set(['add', 'subtract', 'multiply', 'divide', 'negate', 'pow
   'arsinh', 'arcosh', 'artanh', 'real-part', 'imaginary-part', 'conjugate']);
 function invalid(): never { throw new MathInputProblem('syntax', '級数の展開結果の形式が不正です。'); }
 function record(value: unknown, keys: readonly string[]): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return invalid();
-  const raw = value as Record<string, unknown>, descriptors = Object.getOwnPropertyDescriptors(raw);
+  if (!isRecord(value)) return invalid();
+  const raw = value, descriptors = Object.getOwnPropertyDescriptors(raw);
   const prototype: unknown = Object.getPrototypeOf(raw);
   if (prototype !== Object.prototype && prototype !== null || Reflect.ownKeys(raw).length !== keys.length
     || keys.some(key => !Object.hasOwn(descriptors, key) || !Object.hasOwn(descriptors[key], 'value'))) invalid();

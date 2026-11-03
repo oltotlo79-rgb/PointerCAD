@@ -1,3 +1,4 @@
+import { placement } from './boltedPlacement.testSupport.js';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 
@@ -27,9 +28,6 @@ import type { BoltedJointRecord } from './boltedJointEdit.js';
  * - suppressing the cam joint suspends k1 and keeps the record.
  */
 
-function placement(x: number, y: number, z: number): Placement {
-  return { position: [expressionValueFromNumber(x), expressionValueFromNumber(y), expressionValueFromNumber(z)], rotation: [0, 0, 0, 1] };
-}
 function component(id: string, source: ComponentSource, at: Placement, extra: Partial<AssemblyComponent> = {}): AssemblyComponent {
   return { id, name: id, source, placement: at, fixed: false, visible: true, suppressed: false, ...extra };
 }
@@ -66,16 +64,16 @@ async function fixture() {
   const bolt: ComponentSource = { kind: 'standardPart', catalog: 'hexBolt', size: 'M8',
     options: { length: '40', dimensionSeries: 'main', threadSeries: 'coarse' }, catalogRevision: 'fixture', generatorRevision: 'fixture' };
   const child: AssemblyDocument = { ...createAssemblyDocument('cam child'),
-    components: [component('base', part, placement(0, 0, 0), { fixed: true }), component('follower', part, placement(0, 0, 0))],
+    components: [component('base', part, placement([0, 0, 0]), { fixed: true }), component('follower', part, placement([0, 0, 0]))],
     joints: [joint('push', 'slider', 'follower', 'base')] };
   const subAssemblies = new Map([['child', child]]);
   const document: AssemblyDocument = { ...createAssemblyDocument('cam and bolt'),
-    components: [component('ground', part, placement(10, 20, 0), { fixed: true }),
-      component('A', { kind: 'subAssembly', assemblyRef: 'child' }, placement(10, 20, 0)),
-      component('rod', part, placement(10, 20, 0)),
-      component('plateA', part, placement(100, 0, 0), { rigidGroupId: 'rigid-1' }),
-      component('plateB', part, placement(100, 0, 10), { rigidGroupId: 'rigid-1' }),
-      component('bolt', bolt, placement(100, 0, -4), { rigidGroupId: 'rigid-1' })],
+    components: [component('ground', part, placement([10, 20, 0]), { fixed: true }),
+      component('A', { kind: 'subAssembly', assemblyRef: 'child' }, placement([10, 20, 0])),
+      component('rod', part, placement([10, 20, 0])),
+      component('plateA', part, placement([100, 0, 0]), { rigidGroupId: 'rigid-1' }),
+      component('plateB', part, placement([100, 0, 10]), { rigidGroupId: 'rigid-1' }),
+      component('bolt', bolt, placement([100, 0, -4]), { rigidGroupId: 'rigid-1' })],
     joints: [joint('cam', 'revolute', 'A', 'ground'), joint('lift', 'slider', 'rod', 'ground')],
     crossLevelCamCouplings: [CAM], boltedJoints: [RECORD] };
   return { document, subAssemblies };

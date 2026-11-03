@@ -1,3 +1,4 @@
+import { createDocumentElementId } from '@pointercad/model/document-identity';
 import { useId, useState } from 'react';
 import { MATH_DECLARATION_LIMITS, MATH_INPUT_LIMITS, type MathDeclaration, type MathDeclaredType } from '@pointercad/expression/math/contracts';
 import type { MathEditorController } from './MathEditorController.js';
@@ -24,7 +25,7 @@ export function MathDeclarationEditor(props: {
       setProblem(t('math.declaration.invalid')); return;
     }
     const supplied = data.get('value-source'), valueSource = typeof supplied === 'string' ? supplied.trim() : '';
-    const declaration = { id: existing?.id ?? `symbol:${crypto.randomUUID()}`, label, meaning, type,
+    const declaration = { id: existing?.id ?? createDocumentElementId('symbol:'), label, meaning, type,
       ...(valueSource === '' ? {} : { valueSource }) };
     if (change(existing === undefined ? [...props.declarations, declaration]
       : props.declarations.map(value => value.id === existing.id ? declaration : value)) && existing === undefined) form.reset();

@@ -1,3 +1,4 @@
+import { serializeCsvReport } from '../file/csvReport.js';
 import { buildSteelStockList, STEEL_EVIDENCE, type AssemblyDocument, type PartLibrary, type SteelEvidence,
   type SteelStockList, type SteelSectionCatalog } from '@pointercad/model';
 
@@ -57,17 +58,6 @@ export function steelStockIssueText(issue: SteelStockList['issues'][number]): st
   return t(ISSUE_LABELS[issue.reason]);
 }
 
-/** Quoting controls field boundaries, while the visible prefix controls spreadsheet interpretation.
- * Follow parameterCsv's text: convention, including whitespace/control and width variants.
- * CSV is an output report; it is not an import format or a lossless CAD document.
- */
-function cell(value: string | number): string {
-  let text = String(value);
-  if (typeof value === 'string' && (/^[=+@'\-\p{White_Space}\p{Cc}\p{Cf}]/u.test(text)
-    || /^[＝＋－＠−]/u.test(text) || text.startsWith('text:'))) text = `text:${text}`;
-  return /[",\r\n]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
 /** An unprinted edition stays explicit; it is never inferred from a date or file name. */
 function edition(evidence: SteelEvidence): string {
   return evidence.edition ?? t('assembly.steel.csv.editionNotPrinted');
@@ -115,7 +105,7 @@ export function serializeSteelStockCsv(stock: SteelStockList): Uint8Array {
     rows.push([t('assembly.steel.csv.omitted'), '', '', '', '', '', '', '', '', '',
       JSON.stringify(issue.occurrencePath), steelStockIssueText(issue), issue.assemblyRef ?? '', '', ...NO_PROVENANCE, ...NO_STANDARD_EDITION]);
   }
-  return new TextEncoder().encode(String.fromCharCode(0xfeff) + rows.map(row => row.map(cell).join(',')).join('\r\n') + '\r\n');
+  return serializeCsvReport(rows);
 }
 
 interface SteelStockCsvAttempt {

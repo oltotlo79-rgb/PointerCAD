@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { statSync } from 'node:fs';
+import { watch } from './runtimeErrors.js';
 import { expect, test as baseTest, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { chooseToolMenuItem, installAssemblyFileGateway, resetAssemblyFileGateway } from './assemblyTestSupport.js';
 import {
@@ -17,21 +18,6 @@ import { openSaveFlowFile, saveFlowFile } from './saveResponsivenessFlow.js';
  * 2 つ目は反対向きの最小回転で裏返り、上面どうしが接して穴の軸が一致する位置 (40, 0, 20) へ動く。
  * 締め付け 20mm・本体規格 M8 ナット mMax 6.8・突き出し 0 → 26.8 以上の推奨長さの最小 40 を提案する。
  */
-
-interface Watch {
-  readonly errors: string[];
-  readonly dialogs: string[];
-}
-
-function watch(page: Page): Watch {
-  const errors: string[] = [];
-  const dialogs: string[] = [];
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-  page.on('pageerror', (error) => errors.push(error.message));
-  // 確認の窓が出たら記録して閉じる(出ないはずなので、最後に空であることを確かめる)。
-  page.on('dialog', (dialog) => { dialogs.push(dialog.message()); void dialog.dismiss(); });
-  return { errors, dialogs };
-}
 
 /** 画面の操作だけで、穴付きの板 2 枚を置いた組立を用意してホーム視点にする(受入の検査 boltedJointAcceptFlow.ts も使う)。 */
 export async function holedPlateAssembly(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {

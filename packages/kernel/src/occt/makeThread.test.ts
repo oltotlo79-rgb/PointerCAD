@@ -31,6 +31,7 @@ import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
 
 type Occt = Awaited<ReturnType<typeof loadOcctForNode>>;
 
@@ -66,18 +67,6 @@ describe('ねじ穴(FR-406、FR-504)', () => {
 
   function facesOf(shape: Parameters<typeof collectSubShapes>[1]): readonly SolidFaceInfo[] {
     return tablesOf(shape).faces;
-  }
-
-  function faceQuery(info: SolidFaceInfo): Extract<SubShapeQuery, { kind: 'face' }> {
-    return {
-      kind: 'face',
-      index: info.index,
-      surfaceKind: info.surfaceKind,
-      area: info.area,
-      position: info.centroid,
-      axis: info.axis,
-      radius: info.radius,
-    };
   }
 
   function topFaceOf(faces: readonly SolidFaceInfo[]): SolidFaceInfo {

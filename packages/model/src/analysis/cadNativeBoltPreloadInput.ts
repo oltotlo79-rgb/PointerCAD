@@ -1,6 +1,7 @@
+import { isRecord as record } from '../valueGuards.js';
 import type { AnalysisSource, PropertySource } from './analysisModel.js';
 import type { StandardBeamContactDefinition } from './beamInputs.js';
-import { InputIssue, number, propertySource, readAnalysisSource, revision, text } from './analysisValidation.js';
+import { createInputIssueFail, number, propertySource, readAnalysisSource, revision, text } from './analysisValidation.js';
 
 interface SourcedNumber { readonly value: number; readonly source: PropertySource }
 export interface BoltPreloadDeclaration {
@@ -40,8 +41,7 @@ export interface CadNativeBoltPreloadSavedInput {
   readonly cadDefinition: StandardBeamContactDefinition;
   readonly input: CadNativeBoltPreloadInput;
 }
-function fail(path: string, detail: string): never { throw new InputIssue('native-bolt-saved', path, detail); }
-function record(v: unknown): v is Record<string, unknown> { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+const fail: (path: string, message: string) => never = createInputIssueFail('native-bolt-saved');
 /** Inspect descriptors before reading: no accessors, hidden/symbol keys, sparse arrays,
  * prototypes or non-JSON values can be silently normalized away. */
 function json(v: unknown, path: string, depth = 0): void {

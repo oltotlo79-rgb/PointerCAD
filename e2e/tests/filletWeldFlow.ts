@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { statSync } from 'node:fs';
+import { watch } from './runtimeErrors.js';
 import { readFile } from 'node:fs/promises';
 import { expect, test as baseTest, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { readDocumentBundle } from '../../packages/io/src/index.js';
@@ -77,20 +78,6 @@ export function weldDialog(page: Page, title = TITLE): Locator {
 
 export function field(page: Page, testId: string, title = TITLE): Locator {
   return weldDialog(page, title).getByTestId(testId);
-}
-
-interface Watch {
-  readonly errors: string[];
-  readonly dialogs: string[];
-}
-
-function watch(page: Page): Watch {
-  const errors: string[] = [];
-  const dialogs: string[] = [];
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-  page.on('pageerror', (error) => errors.push(error.message));
-  page.on('dialog', (dialog) => { dialogs.push(dialog.message()); void dialog.dismiss(); });
-  return { errors, dialogs };
 }
 
 /** 部品の画面で角材を作り、製品の「保存」で落とした .pcad のバイト列を返す(`createHoledPlatePartFile` と同じ手順)。 */

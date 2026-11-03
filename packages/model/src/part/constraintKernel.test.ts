@@ -17,7 +17,7 @@ import { evaluateExpression, type ExpressionValue } from '@pointercad/expression
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type KernelBridge } from '../kernelBridge.js';
 import { absoluteCoordinate, DEFAULT_FACE_COLOR } from '../sketch/createSketchDocument.js';
 import type { ConstraintTarget, SketchConstraint } from '../sketch/constraints/types.js';

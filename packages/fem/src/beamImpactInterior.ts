@@ -1,3 +1,4 @@
+import { createPrefixedError, isRecord as record } from './valueGuards.js';
 import { crossVec3 as cross } from '@pointercad/model/vec3';
 import type { Vector3 } from './analysisModel.js';
 import type { BeamImpactInput, BeamImpactSample } from './beamImpactModel.js';
@@ -29,9 +30,7 @@ export interface BeamImpactInterior {
   readonly mesh: readonly (readonly BeamImpactMeshNode[])[];
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 function dense(value: unknown): value is unknown[] {
   if (!Array.isArray(value) || Reflect.ownKeys(value).length !== value.length + 1) return false;
   for (let index = 0; index < value.length; index += 1) if (!Object.hasOwn(value, index)) return false;
@@ -43,7 +42,7 @@ function exactKeys(value: Record<string, unknown>, names: readonly string[]): bo
 function vector(value: unknown): value is Vector3 {
   return dense(value) && value.length === 3 && value.every(item => typeof item === 'number' && Number.isFinite(item));
 }
-const fail = (message: string): never => { throw new Error(`impact-interior: ${message}`); };
+const fail: (message: string) => never = createPrefixedError('impact-interior');
 
 /** Rigid-body modes of a two-node element at its own positions: 3 translations and 3 small rotations about the start.
  * Any valid element stiffness maps them to zero force, so a block for other geometry or a corrupted block is refused. */

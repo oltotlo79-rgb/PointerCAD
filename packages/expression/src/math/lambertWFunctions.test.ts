@@ -1,6 +1,8 @@
+import { specialMathTestRequest } from './mathRequest.testSupport.js';
 import Decimal from 'decimal.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
+import { evaluateMathInput } from './mathEvaluation.testSupport.js';
 import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
@@ -11,12 +13,11 @@ const D=Decimal.clone({precision:260,rounding:Decimal.ROUND_HALF_EVEN});
 let backend:MathExecutionBackend;
 beforeAll(()=>{backend=createMathBackend();});
 function request(source:string,angleUnit:'degree'|'radian'='radian') {
-  return {source,angleUnit,notation:'text' as const,coefficients:[],
-    identity:{documentId:'lambert-functions',documentVersion:1,editorId:'coordinate',inputRevision:1}};
+  return specialMathTestRequest(source, angleUnit, 'lambert-functions');
 }
 function evaluate(source:string,angleUnit:'degree'|'radian'='radian') {
-  const input=request(source,angleUnit),raw=executeMathWorkRequest({kind:'evaluate-math',serial:1,request:input},backend);
-  return decodeMathWorkReply(raw,input,{operationsById:CANDIDATE_MATH_BY_ID,coefficientIds:new Set(),declaredIds:new Set()}).result;
+  const input=request(source,angleUnit);
+  return evaluateMathInput(input, backend);
 }
 function value(source:string,angleUnit:'degree'|'radian'='radian'):number {
   const result=evaluate(source,angleUnit).evaluation;

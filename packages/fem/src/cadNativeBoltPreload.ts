@@ -1,3 +1,4 @@
+import { isRecord as record } from './valueGuards.js';
 import type { AssemblyDocument, StandardBeamAdapterContext } from '@pointercad/model';
 import { readBeamAnalysisInputs, type AnalysisSource } from '@pointercad/model/beam-analysis';
 import { prepareCadBeamBoltContact } from './cadBeamBoltContact.js';
@@ -7,9 +8,7 @@ export type { CadNativeBoltPreloadInput } from '@pointercad/model/beam-analysis'
 import { prepareNativeBoltPreload } from './nativeBoltPreload.js';
 import type { NativeBoltPreloadWireInput } from './nativeBoltPreloadBinding.js';
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+
 /** Do not invoke getters, inherit keys, silently strip metadata or accept sparse arrays. */
 function json(value: unknown, depth = 0): void {
   if (depth > 64) throw new Error('cad-preload-json-depth');

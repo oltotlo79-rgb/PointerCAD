@@ -2,7 +2,7 @@ import type { Dimension, DrawingDocument, DrawingView, GdtShapeTarget } from '..
 import { expressionValueFromNumber as number } from '../../packages/expression/src/index.js';
 import { writePcaddFile } from '../../packages/io/src/index.js';
 import { createKernelApi } from '../../packages/kernel/src/worker/kernelApi.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { absoluteCoordinate, appendSolid, createDirectKernelBridge, createDrawingDocument, createEmptyPartDocument,
   createPrimitiveFeature, drawingSourceInputHash, IDENTITY_PLACEMENT, recomputePart, resolveDimensionTarget } from '../../packages/model/src/index.js';
 

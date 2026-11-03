@@ -1,3 +1,5 @@
+import { fatigueFailure } from './fatigueFailure.js';
+import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 /**
  * Strain-life core of the low-cycle fatigue work (a bounded first slice, not the whole feature): ONE constant-amplitude
  * local total strain amplitude -> cycles to failure. Separate from the stress-life rainflow/Miner/Goodman API of
@@ -111,14 +113,13 @@ export interface StrainLifeResult {
 }
 export type StrainLifeAnalysis = { readonly ok: true; readonly result: StrainLifeResult } | StrainLifeError;
 
-const fail = (code: StrainLifeErrorCode, path: string): StrainLifeError => ({ ok: false, code, path });
-const record = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+const fail: (code: StrainLifeErrorCode, path: string) => StrainLifeError = fatigueFailure;
+
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= maximum;
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 const failed = (value: number | StrainLifeError): value is StrainLifeError => typeof value !== 'number';
 
 function readSource(value: unknown, path: string): FatigueSource | StrainLifeError {

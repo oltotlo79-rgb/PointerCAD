@@ -13,6 +13,7 @@ import type { OcctDeletable } from './allocations.js';
 import { createAllocations } from './allocations.js';
 import { R22_CASES, r22Bounds, r22Primitive, r22Translation, r22Volume } from './geometryAcceptanceFixtures.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { expectTuple } from './pointAssertions.testSupport.js';
 import { makeBox } from './makeBox.js';
 import { makePrimitive } from './makePrimitive.js';
 import { isValidShape, measureArea, measureVolume } from './solidMesh.js';
@@ -51,12 +52,6 @@ function corners(oc: OpenCascadeInstance, shape: TopoDS_Shape): { low: Vec3Tuple
   } finally {
     box.delete();
   }
-}
-
-function expectTuple(actual: Vec3Tuple, expected: Vec3Tuple, digits = 9): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
 }
 
 function transform(overrides: Partial<RigidTransformSpec>): RigidTransformSpec {

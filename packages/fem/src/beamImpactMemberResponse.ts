@@ -1,3 +1,4 @@
+import { isFiniteNumber } from './valueGuards.js';
 import { dotVec3 as dot } from '@pointercad/model/vec3';
 import type { Vector3 } from './analysisModel.js';
 import { beamFrame } from './analysisValidation.js';
@@ -71,7 +72,7 @@ type MemberProperties = Omit<ImpactMemberResponse, 'startSolverNode' | 'endSolve
   | 'axialForceN' | 'meanTorqueNm' | 'meanMomentYNm' | 'meanMomentZNm'>;
 
 function finite(value: number, label: string): number {
-  if (!Number.isFinite(value)) throw new Error(`impact-member: non-finite ${label}`);
+  if (!isFiniteNumber(value)) throw new Error(`impact-member: non-finite ${label}`);
   return value;
 }
 const difference = (a: Vector3, b: Vector3): Vector3 => [b[0] - a[0], b[1] - a[1], b[2] - a[2]];

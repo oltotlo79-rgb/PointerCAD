@@ -1,8 +1,8 @@
+import { dotVec3 as dot } from '../sketch/vec3.js';
 import type { Vector3 } from '@pointercad/drawing';
 
 interface Line { readonly from: Vector3; readonly to: Vector3 }
 const delta = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const positive = (direction: Vector3): 1 | -1 => (direction.find((value) => Math.abs(value) > 1e-12) ?? 1) < 0 ? -1 : 1;
 
 /** 辺の内部へ向かう半直線を使い、OCCTの辺の格納順で45°が135°へ変わるのを防ぐ。 */

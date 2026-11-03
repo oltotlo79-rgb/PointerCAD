@@ -62,9 +62,9 @@ export function createCircularWeldActions(set: (patch: Partial<AppState>) => voi
       const state = get(), document = state.assembly;
       if (document === null || busy(state)) return false;
       const weldId = selectedCircularWeldId(document, state.selection);
-      const epoch = crypto.randomUUID();
-      const draft = weldId === null ? createCircularFilletWeldDraft(document, createDocumentElementId(), epoch)
-        : restoreCircularFilletWeldDraft(document, weldId, epoch);
+      const capturedGeneration = crypto.randomUUID();
+      const draft = weldId === null ? createCircularFilletWeldDraft(document, createDocumentElementId(), capturedGeneration)
+        : restoreCircularFilletWeldDraft(document, weldId, capturedGeneration);
       if (draft === null) return false;
       set({ assemblyCircularWeldDraft: draft, assemblyCircularWeldPreview: null, assemblyDragNotice: null,
         assemblyFilletWeldDraft: null, assemblyFilletWeldPreview: null, assemblyNestedWeldDraft: null, assemblyNestedWeldPreview: null,

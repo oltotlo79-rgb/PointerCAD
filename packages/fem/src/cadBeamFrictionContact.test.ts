@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { StandardBeamAdapterContext } from '@pointercad/model';
 import type { StandardBeamFrictionDefinition } from '@pointercad/model/beam-analysis';
-import { bucklingCadFixture } from '../../model/src/analysis/beamBuckling.testSupport.js';
+import { bucklingCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { prepareCadBeamFrictionContact } from './cadBeamFrictionContact.js';
 import { translateBeamFrictionContact } from './frictionContactTranslation.js';
 

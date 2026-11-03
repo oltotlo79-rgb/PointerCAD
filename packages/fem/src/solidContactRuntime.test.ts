@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { FUNCTIONAL_TEST_TIMEOUT_MS } from '../../test-utils/src/releasePerformance.js';
+import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { analyzeSolidContact, SolidContactRuntimeError, type SolidContactPrograms } from './solidContactRuntime.js';
 import { SOLID_CONTACT_ASSETS } from './solidContactAssets.js';
 import { contactFixture, independentHash } from './solidContactBinding.testSupport.js';

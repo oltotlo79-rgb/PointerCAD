@@ -44,8 +44,8 @@ import {
   createNativeKernelBridgeForNodeTests,
   createInspectableNativeKernelForNodeTests,
   initializeNativeKernelForNodeTests,
-} from '../../../model/src/testing/createNativeKernelBridge.node.js';
-import { inspectNativeCutShape } from '../../../model/src/testing/inspectNativeCutShape.node.js';
+} from '@pointercad/model/testing/native-kernel';
+import { inspectNativeCutShape } from '@pointercad/model/testing/native-kernel';
 import { applySolidCommit } from '../sketch/commitToStore.js';
 import { chooseNumericInput, createNumericInput, toggleNumericInput, type SolidInputCommit } from '../sketch/numericInput.js';
 import { attachPartRecompute } from '../store/attachKernel.js';

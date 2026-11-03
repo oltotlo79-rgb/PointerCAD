@@ -237,7 +237,7 @@ function isPlaneFace(ref: SubShapeRef): boolean {
 }
 
 /** 数式の原文を保ったまま、確定に渡された評価値と対応する加工だけを検査する。 */
-function holeInputError(params: {
+function holeInputError(parameters: {
   readonly depth: HoleDepth;
   readonly tiltAngle: ExpressionValue;
   readonly tiltAzimuth: ExpressionValue;
@@ -246,19 +246,19 @@ function holeInputError(params: {
   /** 明示した選択平面の面内座標。元の長さの式を保持する。 */
   readonly planar?: { readonly x: ExpressionValue; readonly y: ExpressionValue };
 }, size: ExpressionValue): MessageKey | null {
-  if (params.cylindrical !== undefined && (params.tiltAngle.value !== 0 || params.tiltAzimuth.value !== 0)) {
+  if (parameters.cylindrical !== undefined && (parameters.tiltAngle.value !== 0 || parameters.tiltAzimuth.value !== 0)) {
     return 'numericInput.error.cylinderHoleTilt';
   }
-  if (params.planar !== undefined && (params.cylindrical !== undefined
-    || [params.planar.x, params.planar.y].some(value => value.source.trim() === ''))) {
+  if (parameters.planar !== undefined && (parameters.cylindrical !== undefined
+    || [parameters.planar.x, parameters.planar.y].some(value => value.source.trim() === ''))) {
     return 'numericInput.error.planarHoleInput';
   }
-  const values = [size, params.tiltAngle, params.tiltAzimuth,
-    ...(params.planar === undefined ? [] : [params.planar.x, params.planar.y]),
-    ...(params.depth.kind === 'blind' ? [params.depth.depth] : []),
-    ...(params.cylindrical === undefined ? [] : [params.cylindrical.height, params.cylindrical.angle]),
-    ...(params.entry?.kind === 'counterbore' ? [params.entry.diameter, params.entry.depth] : []),
-    ...(params.entry?.kind === 'countersink' ? [params.entry.diameter, params.entry.angle] : []),
+  const values = [size, parameters.tiltAngle, parameters.tiltAzimuth,
+    ...(parameters.planar === undefined ? [] : [parameters.planar.x, parameters.planar.y]),
+    ...(parameters.depth.kind === 'blind' ? [parameters.depth.depth] : []),
+    ...(parameters.cylindrical === undefined ? [] : [parameters.cylindrical.height, parameters.cylindrical.angle]),
+    ...(parameters.entry?.kind === 'counterbore' ? [parameters.entry.diameter, parameters.entry.depth] : []),
+    ...(parameters.entry?.kind === 'countersink' ? [parameters.entry.diameter, parameters.entry.angle] : []),
   ];
   return values.every(value => Number.isFinite(value.value)) ? null : 'numericInput.error.holeNonfiniteValue';
 }
@@ -386,7 +386,7 @@ function selectedPatternSource(
  */
 export function commitHole(
   context: MachiningContext,
-  params: {
+  parameters: {
     readonly diameter: ExpressionValue;
     readonly depth: HoleDepth;
     readonly tiltAngle: ExpressionValue;
@@ -410,15 +410,15 @@ export function commitHole(
     return { ok: false, reasonKey: face.reasonKey };
   }
   const centers = selectedCenterPoints(context.document, context.selection);
-  if (params.planar !== undefined) {
-    if (params.cylindrical !== undefined || centers.length !== 0
+  if (parameters.planar !== undefined) {
+    if (parameters.cylindrical !== undefined || centers.length !== 0
       || selectedSubShapeRefs(context.bodies, context.selection, 'face').length !== 1) {
       return { ok: false, reasonKey: 'numericInput.error.planarHoleConflict' };
     }
     if (!isPlaneFace(face.ref) || planarBasisForReference(context.bodies, face.ref) === null) {
       return { ok: false, reasonKey: 'numericInput.error.planarHoleBasis' };
     }
-  } else if (params.cylindrical !== undefined) {
+  } else if (parameters.cylindrical !== undefined) {
     // 黙って平面の穴にしない。円筒の面でない・点も選んでいる・皿もみとの組み合わせは断る。
     if (!isCylinderFace(face.ref)) {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleNotCylinder' };
@@ -426,7 +426,7 @@ export function commitHole(
     if (centers.length !== 0) {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleWithPoints' };
     }
-    if (params.entry?.kind === 'countersink') {
+    if (parameters.entry?.kind === 'countersink') {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleEntry' };
     }
   } else if (centers.length === 0) {
@@ -434,16 +434,16 @@ export function commitHole(
   } else if (!isPlaneFace(face.ref)) {
     return { ok: false, reasonKey: 'numericInput.error.holeUnsupportedSurface' };
   }
-  const inputError = holeInputError(params, params.diameter);
+  const inputError = holeInputError(parameters, parameters.diameter);
   if (inputError !== null) {
     return { ok: false, reasonKey: inputError };
   }
   const cylindrical: HoleFeature['cylindrical'] =
-    params.cylindrical === undefined
+    parameters.cylindrical === undefined
       ? undefined
       : {
           kind: 'cylinder-face',
-          locations: [{ height: params.cylindrical.height, angle: params.cylindrical.angle }],
+          locations: [{ height: parameters.cylindrical.height, angle: parameters.cylindrical.angle }],
         };
   const id = nextSolidId(context.document, 'hole');
   const feature: HoleFeature = {
@@ -454,13 +454,13 @@ export function commitHole(
     targetFeatureId: face.targetFeatureId,
     face: face.ref,
     centers,
-    diameter: params.diameter,
-    depth: params.depth,
-    ...(params.entry === undefined ? {} : { entry: params.entry }),
-    tiltAngle: params.tiltAngle,
-    tiltAzimuth: params.tiltAzimuth,
+    diameter: parameters.diameter,
+    depth: parameters.depth,
+    ...(parameters.entry === undefined ? {} : { entry: parameters.entry }),
+    tiltAngle: parameters.tiltAngle,
+    tiltAzimuth: parameters.tiltAzimuth,
     ...(cylindrical === undefined ? {} : { cylindrical }),
-    ...(params.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [params.planar] } }),
+    ...(parameters.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [parameters.planar] } }),
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -508,7 +508,7 @@ function holeEntryFromCommit(
  */
 export function commitThreadHole(
   context: MachiningContext,
-  params: {
+  parameters: {
     readonly designation: string;
     readonly series: ThreadSeries;
     readonly depth: HoleDepth;
@@ -528,15 +528,15 @@ export function commitThreadHole(
     return { ok: false, reasonKey: face.reasonKey };
   }
   const centers = selectedCenterPoints(context.document, context.selection);
-  if (params.planar !== undefined) {
-    if (params.cylindrical !== undefined || centers.length !== 0
+  if (parameters.planar !== undefined) {
+    if (parameters.cylindrical !== undefined || centers.length !== 0
       || selectedSubShapeRefs(context.bodies, context.selection, 'face').length !== 1) {
       return { ok: false, reasonKey: 'numericInput.error.planarHoleConflict' };
     }
     if (!isPlaneFace(face.ref) || planarBasisForReference(context.bodies, face.ref) === null) {
       return { ok: false, reasonKey: 'numericInput.error.planarHoleBasis' };
     }
-  } else if (params.cylindrical !== undefined) {
+  } else if (parameters.cylindrical !== undefined) {
     // 穴と同じ断り(EX05)。円筒の面でない・点も選んでいるときは、黙って平面のねじ穴にしない。
     if (!isCylinderFace(face.ref)) {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleNotCylinder' };
@@ -544,7 +544,7 @@ export function commitThreadHole(
     if (centers.length !== 0) {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleWithPoints' };
     }
-    if (params.entry?.kind === 'countersink') {
+    if (parameters.entry?.kind === 'countersink') {
       return { ok: false, reasonKey: 'machiningError.cylinderHoleEntry' };
     }
   } else if (centers.length === 0) {
@@ -552,7 +552,7 @@ export function commitThreadHole(
   } else if (!isPlaneFace(face.ref)) {
     return { ok: false, reasonKey: 'numericInput.error.holeUnsupportedSurface' };
   }
-  const inputError = holeInputError(params, params.threadLength);
+  const inputError = holeInputError(parameters, parameters.threadLength);
   if (inputError !== null) {
     return { ok: false, reasonKey: inputError };
   }
@@ -563,15 +563,15 @@ export function commitThreadHole(
   if (fallback === undefined) {
     throw new Error('DEFAULT_THREAD_DESIGNATION が METRIC_THREADS の表にありません。');
   }
-  const size = findMetricThread(params.designation) ?? fallback;
-  const pitch = metricThreadPitch(size, params.series);
+  const size = findMetricThread(parameters.designation) ?? fallback;
+  const pitch = metricThreadPitch(size, parameters.series);
   const drillDiameter = threadMinorDiameter(size.diameter, pitch);
   const cylindrical: ThreadHoleFeature['cylindrical'] =
-    params.cylindrical === undefined
+    parameters.cylindrical === undefined
       ? undefined
       : {
           kind: 'cylinder-face',
-          locations: [{ height: params.cylindrical.height, angle: params.cylindrical.angle }],
+          locations: [{ height: parameters.cylindrical.height, angle: parameters.cylindrical.angle }],
         };
   const id = nextSolidId(context.document, 'threadHole');
   const feature: ThreadHoleFeature = {
@@ -583,17 +583,17 @@ export function commitThreadHole(
     face: face.ref,
     centers,
     designation: size.designation,
-    series: params.series,
+    series: parameters.series,
     pitch: expressionValueFromNumber(pitch),
     drillDiameter: exactExpressionValueFromNumber(drillDiameter),
-    depth: params.depth,
-    threadLength: params.threadLength,
-    representation: params.representation,
-    ...(params.entry === undefined ? {} : { entry: params.entry }),
-    tiltAngle: params.tiltAngle,
-    tiltAzimuth: params.tiltAzimuth,
+    depth: parameters.depth,
+    threadLength: parameters.threadLength,
+    representation: parameters.representation,
+    ...(parameters.entry === undefined ? {} : { entry: parameters.entry }),
+    tiltAngle: parameters.tiltAngle,
+    tiltAzimuth: parameters.tiltAzimuth,
     ...(cylindrical === undefined ? {} : { cylindrical }),
-    ...(params.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [params.planar] } }),
+    ...(parameters.planar === undefined ? {} : { planar: { kind: 'plane-face', locations: [parameters.planar] } }),
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -605,7 +605,7 @@ export function commitThreadHole(
  */
 export function commitFillet(
   context: MachiningContext,
-  params: {
+  parameters: {
     readonly radius: ExpressionValue;
     /**
      * 可変半径(FR-426、P5 タスク50 で R 面取りの段へ畳んだ)の終わり側の半径。
@@ -630,8 +630,8 @@ export function commitFillet(
     kind: 'fillet',
     targetFeatureId: target,
     targets,
-    radius: params.radius,
-    ...(params.radiusEnd === undefined ? {} : { radiusEnd: params.radiusEnd }),
+    radius: parameters.radius,
+    ...(parameters.radiusEnd === undefined ? {} : { radiusEnd: parameters.radiusEnd }),
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }
@@ -643,7 +643,7 @@ export function commitFillet(
  */
 export function commitChamfer(
   context: MachiningContext,
-  params: { readonly size: ChamferSize },
+  parameters: { readonly size: ChamferSize },
 ): SolidCommandOutcome {
   const targets = gatherFilletTargets(context);
   if (targets.length === 0) {
@@ -661,7 +661,7 @@ export function commitChamfer(
     kind: 'chamfer',
     targetFeatureId: target,
     targets,
-    size: params.size,
+    size: parameters.size,
     swapReferenceFace: false,
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
@@ -702,17 +702,17 @@ function invalidPatternPlacementReasonKey(placement: PatternPlacement): MessageK
  */
 export function commitPattern(
   context: MachiningContext,
-  params: { readonly placement: PatternPlacement },
+  parameters: { readonly placement: PatternPlacement },
 ): SolidCommandOutcome {
   const source = selectedPatternSource(context.document, context.selection);
   if (!source.ok) {
     return { ok: false, reasonKey: source.reasonKey };
   }
-  const invalidPlacementReasonKey = invalidPatternPlacementReasonKey(params.placement);
+  const invalidPlacementReasonKey = invalidPatternPlacementReasonKey(parameters.placement);
   if (invalidPlacementReasonKey !== null) {
     return { ok: false, reasonKey: invalidPlacementReasonKey };
   }
-  const labelKey = params.placement.kind === 'linear' ? 'linearPattern' : 'circularPattern';
+  const labelKey = parameters.placement.kind === 'linear' ? 'linearPattern' : 'circularPattern';
   const id = nextSolidId(context.document, labelKey);
   const feature: PatternFeature = {
     id,
@@ -720,7 +720,7 @@ export function commitPattern(
     suppressed: false,
     kind: 'pattern',
     sourceFeatureId: source.sourceFeatureId,
-    placement: params.placement,
+    placement: parameters.placement,
   };
   return { ok: true, document: appendSolid(context.document, feature), featureId: id };
 }

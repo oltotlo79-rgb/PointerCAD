@@ -329,7 +329,12 @@ export type SurfaceShapePlan =
       /** 回転角(ラジアン)。 */
       readonly angle: number;
     }
-  | { readonly kind: 'planar'; readonly profile: readonly ResolvedCurve[] }
+  | {
+      readonly kind: 'planar';
+      readonly profile: readonly ResolvedCurve[];
+      /** Saved owners of a closed straight-line profile, one per curve in order; absent for any other profile. */
+      readonly profileOrigins?: readonly Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][];
+    }
   | {
       readonly kind: 'loft';
       readonly sections: readonly (readonly ResolvedCurve[])[];
@@ -4138,7 +4143,13 @@ function resolveSurfaceShape(
           error: partError(featureId, 'missingProfile', SURFACE_MISSING_PROFILE_MESSAGE),
         };
       }
-      return { ok: true, value: { shape: { kind: 'planar', profile }, targetKey: null } };
+      // Same saved-line owner rule as the open-profile extrusion (non-construction line features only);
+      // circles, arcs and splines get no anchors and stay untracked in the kernel.
+      const profileOrigins = surfaceLineOrigins(
+        context.sketchDocuments.find(sketch => sketch.id === operation.profile.sketchId),
+        operation.profile.curveIds, profile);
+      return { ok: true, value: { shape: { kind: 'planar', profile,
+        ...(profileOrigins === undefined ? {} : { profileOrigins }) }, targetKey: null } };
     }
     case 'loft': {
       if (operation.sections.length < MIN_THRU_SECTIONS) {
@@ -5022,7 +5033,8 @@ export function resolvePart(document: PartDocument, options: ResolvePartOptions 
       ? sheetShapeKey(plan) : cacheKeyFor(keyMaterialFor(plan));
     const originSourceIds = plan.kind === 'extrude' ? (plan.profileOrigin === undefined ? undefined
       : 'lineFeatureIds' in plan.profileOrigin ? plan.profileOrigin.lineFeatureIds : plan.profileOrigin.curveFeatureIds)
-      : plan.kind === 'surface' && plan.shape.kind === 'extrude' && plan.shape.profileOrigins !== undefined
+      : plan.kind === 'surface' && (plan.shape.kind === 'extrude' || plan.shape.kind === 'planar')
+        && plan.shape.profileOrigins !== undefined
         ? plan.shape.profileOrigins.flatMap(anchor => [anchor.sketchId, anchor.lineFeatureId])
       : plan.kind === 'primitive' && (plan.shape.kind === 'box' || plan.shape.kind === 'cylinder') ? []
       : plan.kind === 'boolean' && (semanticKeys.has(plan.targetKey) || semanticKeys.has(plan.toolKey)) ? []

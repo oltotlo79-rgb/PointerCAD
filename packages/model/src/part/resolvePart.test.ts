@@ -9,10 +9,10 @@ import { stdout } from 'node:process';
 import { createKernelApi } from '@pointercad/kernel';
 import { beforeAll, describe, expect, expectTypeOf, it } from 'vitest';
 
-import { createAllocations } from '../../../kernel/src/occt/allocations.js';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
-import type { CachedSolid } from '../../../kernel/src/worker/recomputeSolids.js';
-import { createShapeCache } from '../../../kernel/src/worker/shapeCache.js';
+import { createAllocations } from '@pointercad/kernel';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import { createDirectKernelBridge } from '../kernelBridge.js';
 import { recomputePart } from './recomputePart.js';
 import {
@@ -6547,6 +6547,53 @@ describe('曲面(FR-428、P5 タスク46)', () => {
     );
     expect(plan.shape.kind).toBe('planar');
     expect(plan.targetKey).toBeNull();
+  });
+
+  /** 40 × 30 の長方形を 4 本の保存線で描き、平らに張る面の文書を作る(`extraLines` 本の線を先に足して ID をずらせる)。 */
+  function planarRectangleDocument(extraLines = 0, constructionAt?: number): {
+    readonly document: PartDocument; readonly sketchId: string; readonly ids: readonly string[];
+  } {
+    const fixture = curveFixture();
+    let sketch = fixture.document.sketches.find(item => item.id === fixture.sketchId);
+    if (sketch === undefined) throw new Error('テストの前提が壊れている: スケッチが無い');
+    for (let index = 0; index < extraLines; index++) sketch = addLine(sketch, [100, index, 0], [110, index, 0]).sketch;
+    const ids: string[] = [];
+    for (const [from, to] of [
+      [[0, 0, 0], [40, 0, 0]], [[40, 0, 0], [40, 30, 0]], [[40, 30, 0], [0, 30, 0]], [[0, 30, 0], [0, 0, 0]],
+    ] as const) {
+      const added = addLine(sketch, from, to);
+      sketch = added.sketch;
+      ids.push(added.id);
+    }
+    const marked: SketchDocument = constructionAt === undefined ? sketch : { ...sketch,
+      features: sketch.features.map(feature => feature.id === ids[constructionAt] && feature.kind === 'line'
+        ? { ...feature, construction: true } : feature) };
+    const document = withSolids(replaceSketch(fixture.document, marked), extrudeFeature('extrude-1', fixture.faceA),
+      surfaceFeature('surface-1', { kind: 'planar', profile: { sketchId: fixture.sketchId, curveIds: ids } }));
+    return { document, sketchId: fixture.sketchId, ids };
+  }
+
+  it('平らに張る面は保存線の持ち主を線の順に運び、作図線を含む輪郭には付けない', () => {
+    const { document, sketchId, ids } = planarRectangleDocument();
+    const result = resolvePart(document);
+    expect(result.errors).toEqual([]);
+    const plan = surfacePlan(result.steps[1]);
+    if (plan.shape.kind !== 'planar') throw new Error('テストの前提が壊れている: 平らな面でない');
+    expect(plan.shape.profile).toHaveLength(4);
+    expect(plan.shape.profileOrigins).toEqual(ids.map(lineFeatureId => ({ sketchId, lineFeatureId, role: 'whole-line' })));
+    const construction = surfacePlan(resolvePart(planarRectangleDocument(0, 2).document).steps[1]);
+    if (construction.shape.kind !== 'planar') throw new Error('テストの前提が壊れている: 平らな面でない');
+    expect(construction.shape.profileOrigins).toBeUndefined();
+  });
+
+  it('同じ形でも保存線の ID が違えば平らに張る面の段の鍵は別になる', () => {
+    const first = resolvePart(planarRectangleDocument().document).steps[1];
+    const again = resolvePart(planarRectangleDocument().document).steps[1];
+    const shifted = planarRectangleDocument(1);
+    const other = resolvePart(shifted.document).steps[1];
+    expect(again.key).toBe(first.key);
+    expect(shifted.ids).not.toEqual(planarRectangleDocument().ids);
+    expect(other.key).not.toBe(first.key);
   });
 
   it('ロフト面は断面が 2 つ以上要る', () => {

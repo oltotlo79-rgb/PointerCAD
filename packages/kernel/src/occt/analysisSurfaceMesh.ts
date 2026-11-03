@@ -427,11 +427,13 @@ function readFaceTriangulation(triangulationHandle: Handle_Poly_Triangulation,
         localPoints[3 * i + 1] = node.Y();
         localPoints[3 * i + 2] = node.Z();
       } else {
-        const moved = node.Transformed(transformation);
-        localPoints[3 * i] = moved.X();
-        localPoints[3 * i + 1] = moved.Y();
-        localPoints[3 * i + 2] = moved.Z();
-        moved.delete();
+        const temporary = createAllocations();
+        try {
+          const moved = temporary.keep(node.Transformed(transformation));
+          localPoints[3 * i] = moved.X();
+          localPoints[3 * i + 1] = moved.Y();
+          localPoints[3 * i + 2] = moved.Z();
+        } finally { temporary.release(); }
       }
     } finally {
       node.delete();

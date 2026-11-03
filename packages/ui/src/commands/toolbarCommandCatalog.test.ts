@@ -84,12 +84,12 @@ it('保存点は部品・組立・図面で同じcommand IDと説明を使い、
   expect(commandDefinition(id)?.helpTopic).toBe('save-and-open');
 });
 
-it('registers seven analysis entries separately while preserving the original command partitions', () => {
+it('registers nine analysis entries separately while preserving the original command partitions', () => {
   const entries = TOOLBAR_COMMAND_CATALOG.filter(entry => entry.group === 'analysis');
   expect(entries.map(entry => [entry.sourceId, entry.documentKinds])).toEqual([
     ['beam', ['assembly']], ['plasticBar', ['part', 'assembly']], ['fatigue', ['part', 'assembly']],
     ['fatigueStrain', ['part', 'assembly']], ['fatigueLocalCycle', ['part', 'assembly']],
-    ['solidAnalysis', ['part']], ['solidPlastic', ['part']],
+    ['solidAnalysis', ['part']], ['solidPlastic', ['part']], ['solidFinite', ['part']], ['shellAnalysis', ['part']],
   ]);
   for (const entry of entries) {
     expect(entry.id).toBe(`toolbar.analysis.${entry.sourceId}`);

@@ -1,3 +1,4 @@
+import { isObject } from '../valueGuards.js';
 /**
  * 下絵の画像を選ぶ・描ける形へ復号する口(計画書 docs/plans/P6-入出力.md §0.a-0.45、
  * §0.a-0.46、§2.14、タスク39)。
@@ -90,10 +91,6 @@ export interface DecodedCanvasImage {
 // ---------------------------------------------------------------------------
 // 相手を 1 段ずつ絞る(`as` を使わない。`fileGateway.ts` と同じ流儀)
 // ---------------------------------------------------------------------------
-
-function isObject(value: unknown): value is object {
-  return typeof value === 'object' && value !== null;
-}
 
 /** ファイル選択に使う `<input type="file">`。書き込むだけの欄は確かめない。 */
 interface FilePickerInput {

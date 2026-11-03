@@ -7,7 +7,7 @@ import { ellipticPartialRanges } from './ellipticPartials.js';
 import type { ScalarTape } from './scalarMathTape.js';
 import type { IntervalUnion } from './mathIntervalUnion.js';
 import { createScalarConditionIntervalSampler, createScalarIntervalEvaluation, scalarIntervalTape, withScalarIntervalTapes } from './scalarMathIntervals.js';
-import { intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, intervalSqrt, intervalSquare,
+import { isZero, intervalAdd, intervalSubtract, intervalMultiply, intervalDivide, intervalSqrt, intervalSquare,
   type MathInterval, type IntervalValue } from './mathInterval.js';
 import { trigonometricInterval } from './trigonometricIntervals.js';
 import { hyperbolicRange } from './hyperbolicIntervals.js';
@@ -30,7 +30,7 @@ const DEGREE: MathInterval = { lower: 0.01745329251994329, upper: 0.017453292519
 const UNKNOWN: Jet = { first: null, second: null };
 const CONSTANT: Jet = { first: ZERO, second: ZERO };
 function unpack(value: IntervalValue): Range { return value.status === 'range' ? value.interval : null; }
-function zero(value: Range): boolean { return value !== null && value.lower === 0 && value.upper === 0; }
+function zero(value: Range): boolean { return value !== null && isZero(value); }
 function add(a: Range, b: Range): Range {
   if (a === null || b === null) return null;
   return zero(a) ? b : zero(b) ? a : unpack(intervalAdd(a, b));

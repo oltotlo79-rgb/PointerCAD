@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { analyzeFatigue, analyzeFatigueWithMeanStressCorrection, rainflowCycles } from './fatigue.js';
 import { MAX_FATIGUE_HISTORY_POINTS, MAX_FATIGUE_STRESS_MPA, validateFatigueInput, type FatigueCycle, type FatigueResult } from './fatigueModel.js';
 import { validateFatigueMeanStressCorrection, type FatigueCorrectedResult } from './fatigueModel.js';
+import { compareVerification } from './verificationComparison.testSupport.js';
+import { verificationData } from './verificationInput.testSupport.js';
 
 /* Every expected value below is derived by hand from the stated procedure (three-point stack rainflow, closed-loop
  * counting from the first largest value for periodic histories, Miner's sum with N = Nref (Sref / S) ** m). They are
@@ -60,7 +62,17 @@ describe('Miner damage against an explicit single-slope relation', () => {
   const expected = 1000 / 2e6 + 10 / 2.5e5;
 
   it('sums two amplitude blocks to the hand-computed damage and life', () => {
-    const result = analyzed(input(blocks));
+    const actualInput = input(blocks);
+    const result = analyzed(actualInput);
+    const caseId = 'fatigue-miner-two-blocks-v1';
+    const comparisonInput = { geometry: null, boundary: verificationData({ histories: actualInput.histories }),
+      material: verificationData({ curve: actualInput.curve }), units: 'MPa', source: 'fatigue.test.ts:two-block-miner' };
+    const comparison = compareVerification(caseId, { caseId, input: comparisonInput, value: result.damage });
+    expect(comparison.passed).toBe(true);
+    expect(comparison.error).toBeLessThanOrEqual(1e-12);
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, units: 'incorrect' }, value: result.damage })).toThrow();
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, source: 'incorrect' }, value: result.damage })).toThrow();
+    expect(() => compareVerification(caseId, { caseId, input: { ...comparisonInput, material: null }, value: result.damage })).toThrow();
     near(result.histories[0]?.damage ?? Number.NaN, 5e-4);
     near(result.histories[1]?.damage ?? Number.NaN, 4e-5);
     near(result.damage, expected);

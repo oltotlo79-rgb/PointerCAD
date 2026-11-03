@@ -3,9 +3,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextSolidId, nextSolidName, recomputePart, resolvePart,
   type PartDocument, type PartRecomputeResult } from '@pointercad/model';
 import { createInspectableNativeKernelForNodeTests, initializeNativeKernelForNodeTests }
-  from '../../../model/src/testing/createNativeKernelBridge.node.js';
-import { buildEx18DirectSeed, withEx18UnselectedBody } from '../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
-import { compareEx18Shape } from '../../../model/src/part/ex18ShapeOracle.testSupport.js';
+  from '@pointercad/model/testing/native-kernel';
+import { buildEx18DirectSeed, withEx18UnselectedBody } from '@pointercad/model/testing/ui-fixtures';
+import { compareEx18Shape } from '@pointercad/model/testing/ex18-fixtures';
 import { applyNumericTransition, applySolidCommit } from '../sketch/commitToStore.js';
 import { commitNumericInput, createNumericInput, reduceNumericInput } from '../sketch/numericInput.js';
 import { attachPartRecompute } from '../store/attachKernel.js';

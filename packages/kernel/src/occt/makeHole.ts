@@ -1,3 +1,5 @@
+import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
+import { dotVec as dot, crossVec as cross } from './sketchCorner.js';
 /**
  * 穴あけ(FR-405、計画書 P3 §2.4、タスク6)と、入口の形(ざぐり・皿もみ。FR-422、
  * 計画書 P5 §0.a-0.39、タスク40)。
@@ -220,30 +222,6 @@ function normalizeZero(value: number): number {
   return value === 0 ? 0 : value;
 }
 
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-}
-
-/** 長さ 1 へ揃える。長さが取れない(0・非数)ときは null。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const length = Math.hypot(value[0], value[1], value[2]);
-  if (!Number.isFinite(length) || length <= 0) {
-    return null;
-  }
-  return [
-    normalizeZero(value[0] / length),
-    normalizeZero(value[1] / length),
-    normalizeZero(value[2] / length),
-  ];
-}
 
 /**
  * 面の平面から、外向きの法線 n・第 1 軸 x・第 2 軸 y と、平面上の 1 点を読む。

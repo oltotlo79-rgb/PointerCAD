@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { expressionValueFromNumber } from '../../packages/expression/src/index.js';
 import { parseDocument, serializeDocument } from '../../packages/io/src/pcad/documentJson.js';
-import { loadOcctForNode } from '../../packages/kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import type { SubShapeQuery } from '../../packages/kernel/src/types.js';
 import { createKernelApi } from '../../packages/kernel/src/worker/kernelApi.js';
 import type { SubShapeRef } from '../../packages/model/src/geometry/subShapeRef.js';

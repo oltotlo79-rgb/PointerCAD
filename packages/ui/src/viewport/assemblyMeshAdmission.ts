@@ -205,7 +205,7 @@ export class AssemblyUiBackingLedger {
 
   epoch(): number { return this.revision; }
   known(): boolean { return this.unregistered.size === 0; }
-  allocatedAfter(buffer: ArrayBufferLike, epoch: number): boolean { return (this.allocatedAt.get(buffer) ?? -1) > epoch; }
+  allocatedAfter(buffer: ArrayBufferLike, capturedGeneration: number): boolean { return (this.allocatedAt.get(buffer) ?? -1) > capturedGeneration; }
 
   retainUnregistered(buffer: ArrayBufferLike): void { this.unregistered.add(buffer); this.revision += 1; }
 

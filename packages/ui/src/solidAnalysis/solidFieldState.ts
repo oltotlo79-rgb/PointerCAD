@@ -1,15 +1,15 @@
 import type { SolidAnalysisSession } from './solidAnalysisSession.js';
-import { buildSolidFieldMesh, type SolidFieldMesh, type SolidFieldQuantity } from './solidFieldView.js';
+import { buildSolidFieldMesh, type SolidFieldMesh, type SolidLinearFieldQuantity } from './solidFieldView.js';
 
 /** Display choice of the field view; part of the session only, never saved with the analysis input. */
 export interface SolidFieldViewChoice {
-  readonly quantity: SolidFieldQuantity;
+  readonly quantity: SolidLinearFieldQuantity;
   /** Deformation magnification, finite and >= 0 (0 shows the undeformed mesh). */
   readonly deformationScale: number;
 }
 export const DEFAULT_SOLID_FIELD_VIEW: SolidFieldViewChoice = { quantity: 'vonMises', deformationScale: 1 };
 
-const cache = new WeakMap<object, { readonly quantity: SolidFieldQuantity; readonly scale: number; readonly mesh: SolidFieldMesh | null }>();
+const cache = new WeakMap<object, { readonly quantity: SolidLinearFieldQuantity; readonly scale: number; readonly mesh: SolidFieldMesh | null }>();
 
 /**
  * The field to draw, only from a completed current result of the session. Failed, cancelled, running, editing and

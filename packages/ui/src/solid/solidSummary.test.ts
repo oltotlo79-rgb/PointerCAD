@@ -2955,7 +2955,7 @@ describe('円筒の側面のねじ穴のプロパティ(EX05)', () => {
 
 import { beforeAll, beforeEach } from 'vitest';
 import { replaceSolid } from '@pointercad/model';
-import { initializeNativeKernelForNodeTests } from '../../../model/src/testing/createNativeKernelBridge.node.js';
+import { initializeNativeKernelForNodeTests } from '@pointercad/model/testing/native-kernel';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { documentSha, historyFormula, holeWallCount, nativeHistoryHarness, shapeSha } from './holeThreadHistory.testSupport.js';

@@ -1,7 +1,8 @@
+import { dotVec as dot } from './sketchCorner.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { Vec3Tuple } from '../types.js';
-import { createAllocations } from './allocations.js';
+import { createAllocations, type Allocations } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { makeCut } from './makeCut.js';
 import { makePlanarFace } from './makePlanarFace.js';
@@ -44,10 +45,6 @@ export type SectionShapeOutcome =
   | { readonly ok: false; readonly message: string };
 
 const PLANE_TOLERANCE = 1e-7;
-
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
 
 function onCuttingPlane(
   point: Vec3Tuple,
@@ -109,6 +106,26 @@ function collectCutFaces(
   }
 }
 
+/** Release each native result once, including replacement-cleanup failures. */
+function ownSectionCut(cut: ReturnType<typeof makeCut>, owned: Allocations): ReturnType<typeof makeCut> {
+  const lifetime = createAllocations();
+  lifetime.keep(cut);
+  return owned.keep({ shape: cut.shape, delete: lifetime.release });
+}
+
+/** A result cannot be transferred when cleanup of its construction inputs failed. */
+function finishSectionCut(cut: ReturnType<typeof makeCut>, inputs: Allocations): ReturnType<typeof makeCut> {
+  const result = createAllocations();
+  result.keep(cut);
+  try {
+    inputs.release();
+    return cut;
+  } catch (error) {
+    result.release();
+    throw error;
+  }
+}
+
 /**
  * 交線を先に確かめ、半空間で切った形と切り口を返す。交線だけを断面図の線画にはしない。
  * 入力 shape は借用し、成功結果だけが新しい shape を所有する。
@@ -117,24 +134,25 @@ export function makeSectionShape(
   oc: OpenCascadeInstance,
   spec: SectionShapeSpec,
 ): SectionShapeOutcome {
-  let cut: ReturnType<typeof makeCut> | null = null;
+  const allocations = createAllocations();
+  let cut: ReturnType<typeof makeCut>;
   try {
     const basis = planeBasisOf(spec.plane);
     let cuttingPlanes = [basis];
     if (spec.kind === 'stepped') {
       const stepped = steppedSection(oc, spec, basis);
-      cut = stepped.cut; cuttingPlanes = stepped.planes;
+      cut = ownSectionCut(stepped.cut, allocations); cuttingPlanes = stepped.planes;
     } else {
       const section = makeSection(oc, { target: spec.target, plane: spec.plane });
       if (section.curves.length === 0) return { ok: false, message: NO_SECTION_AT_POSITION_MESSAGE };
-      cut = makeCut(oc, spec.target, {
+      cut = ownSectionCut(makeCut(oc, spec.target, {
         origin: basis.origin,
         normal: basis.normal,
         keepPositive: spec.keepSide === 'positive',
-      });
+      }), allocations);
     }
     if (spec.kind === 'half' || spec.kind === 'local') {
-      const replaced = restrictSection(oc, spec, basis);
+      const replaced = ownSectionCut(restrictSection(oc, spec, basis), allocations);
       cut.delete();
       cut = replaced;
     }
@@ -142,7 +160,7 @@ export function makeSectionShape(
     const cutFaces = cuttingPlanes.flatMap((plane) => collectCutFaces(oc, retained, plane, spec.projectionPlane ?? basis))
       .filter((face, index, all) => all.findIndex((candidate) => candidate.index === face.index) === index);
     if (cutFaces.length === 0) {
-      cut.delete();
+      allocations.release();
       return { ok: false, message: NO_SECTION_AT_POSITION_MESSAGE };
     }
     const owned = cut;
@@ -152,10 +170,10 @@ export function makeSectionShape(
       volume: measureVolume(oc, owned.shape),
       cutFaces,
       cutCurves: cutFaces.flatMap((face) => face.curves),
-      delete: () => owned.delete(),
+      delete: allocations.release,
     };
   } catch {
-    cut?.delete();
+    allocations.release();
     return { ok: false, message: NO_SECTION_AT_POSITION_MESSAGE };
   }
 }
@@ -201,7 +219,7 @@ function steppedSection(
         du * basis.normal[2] - depth * basis.axisU[2],
       ] });
     });
-    return { cut: booleanOp(oc, 'subtract', spec.target, tool), planes };
+    return { cut: finishSectionCut(booleanOp(oc, 'subtract', spec.target, tool), allocations), planes };
   } finally { allocations.release(); }
 }
 
@@ -246,6 +264,6 @@ function restrictSection(
       const prism = keep(maker.Shape());
       limited = keep(booleanOp(oc, 'intersect', removed.shape, prism)).shape;
     }
-    return booleanOp(oc, 'subtract', spec.target, limited);
+    return finishSectionCut(booleanOp(oc, 'subtract', spec.target, limited), allocations);
   } finally { allocations.release(); }
 }

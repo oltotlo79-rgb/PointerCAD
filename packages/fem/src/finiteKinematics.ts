@@ -1,3 +1,4 @@
+import { createPrefixedError } from './valueGuards.js';
 import type { SolidVector3, SolidVector6 } from './solidAnalysisModel.js';
 import { solidTetGeometry } from './solidAnalysisTranslation.js';
 
@@ -20,7 +21,7 @@ import { solidTetGeometry } from './solidAnalysisTranslation.js';
 export type Matrix3 = readonly [SolidVector3, SolidVector3, SolidVector3];
 export type OofemVoigt9 = readonly [number, number, number, number, number, number, number, number, number];
 
-function fail(message: string): never { throw new Error(`finite-kinematics: ${message}`); }
+const fail: (message: string) => never = createPrefixedError('finite-kinematics');
 function finiteMatrix(m: Matrix3, what: string): Matrix3 {
   if (!m.every(row => row.every(Number.isFinite))) fail(`non-finite ${what}`);
   return m;

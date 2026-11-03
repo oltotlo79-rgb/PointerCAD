@@ -170,6 +170,7 @@ describe('the same force on a wrong area or definition is refused', () => {
     const wrong = input(m20Bolt({ kind: 'nominal-shank-area', nominalDiameterMm: 20 }),
       forceLoading('B1', 'bolt-total-axial-force', [forceHistory([120_000, 135_000], { repeats: 1000 })]), F1_TENSILE_AREA());
     expect(analyzeFatigueDetail(wrong)).toEqual({ ok: false, code: 'fatigue-detail-stress-mismatch', path: 'curve.detailStress' });
+    expect(Object.keys(analyzeFatigueDetail(wrong))).toEqual(['ok', 'code', 'path']);
   });
   it('refuses a fillet weld leg area against a throat-area calibration', () => {
     const wrong = input(lapWeld({ kind: 'fillet-leg-area', legMm: 7.07, effectiveLengthMm: 100, lines: 2 }),

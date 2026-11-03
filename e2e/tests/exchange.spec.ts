@@ -1,7 +1,11 @@
 /// <reference lib="dom" />
+import { volumeNumber } from './workPlaneCaptureSupport.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
+import { disableFilePickers } from './filePickers.js';
+import { openToolMenu, toolMenuPanel } from './toolMenus.js';
 
 import { KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 
@@ -42,36 +46,6 @@ const MM_PER_INCH = 25.4;
  * 補助関数(p5-primitive-pick.spec.ts / p4b-parameters.spec.ts と同じ作り)
  * ========================================================================== */
 
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
-
-/**
- * File System Access API を無いことにしてから頁を開く(§0.a-0.10)。
- * ヘッドレスでは OS の窓を操作できないので、**ダウンロードとファイル選択の代替経路**へ落とす。
- * こうすると書き出しは `download` の知らせ、読み込みは `filechooser` の知らせで捕まえられる。
- */
-async function disableFilePickers(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    for (const name of ['showOpenFilePicker', 'showSaveFilePicker']) {
-      Object.defineProperty(globalThis, name, {
-        configurable: true,
-        writable: true,
-        value: undefined,
-      });
-    }
-  });
-}
-
 /**
  * Windows の CI で、頁を開く最初の接続そのものが `net::ERR_NO_BUFFER_SPACE`(OS の通信の資源の一時的な不足)で
  * 断られることがある(CI run 36506536360 の job 109209112057。(c) の `page.goto('/')` が 552ms で失敗し、同じ job の
@@ -108,24 +82,6 @@ function sketchTool(page: Page, label: string): Locator {
   return page
     .getByRole('group', { name: 'スケッチ' })
     .getByRole('button', { name: label, exact: true });
-}
-
-function toolMenuTrigger(page: Page, menu: string): Locator {
-  return page
-    .locator('.pcad-toolbar')
-    .getByRole('button', { name: new RegExp(`^${menu}`) })
-    .first();
-}
-
-function toolMenuPanel(page: Page, menu: string): Locator {
-  return page.locator('.pcad-toolbar').getByRole('group', { name: menu, exact: true });
-}
-
-async function openToolMenu(page: Page, menu: string): Promise<void> {
-  if ((await toolMenuPanel(page, menu).count()) === 0) {
-    await toolMenuTrigger(page, menu).click();
-  }
-  await expect(toolMenuPanel(page, menu)).toBeVisible();
 }
 
 function menuTool(page: Page, menu: string, label: string): Locator {
@@ -251,13 +207,6 @@ function sectionPropertyValue(page: Page, section: string, key: string): Locator
 }
 
 /** プロパティに出ている体積を数で読む。まだ出ていなければ NaN。 */
-async function volumeNumber(page: Page): Promise<number> {
-  const cell = propertyValue(page, '体積');
-  if ((await cell.count()) === 0) {
-    return Number.NaN;
-  }
-  return Number.parseFloat(await cell.innerText());
-}
 
 /** 体積が期待どおりになるまで待つ(相対の許容差で比べる)。 */
 async function expectVolumeNear(

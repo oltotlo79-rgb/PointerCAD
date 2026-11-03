@@ -6,7 +6,7 @@ import { rational, rationalOfExpression } from './exactRational.js';
 import { resolveTypedMathProduct } from './mathProductTypes.js';
 
 const number = (value: bigint | number): MathNode => ({ kind: 'number', decimal: String(value) });
-const op = (operation: string, ...operands: MathNode[]): MathNode => ({ kind: 'operation', operation, operands });
+const createOperationNode = (operation: string, ...operands: MathNode[]): MathNode => ({ kind: 'operation', operation, operands });
 
 function measure(source: MathNode): { nodes: number; depth: number } {
   const pending = [{ node: source, depth: 0 }]; let nodes = 0, deepest = 0;
@@ -47,11 +47,11 @@ export function lowerLegendrePolynomial(source: MathNode): MathNode | null {
       (1n << BigInt(n)) * factorial[k] * factorial[n - k] * factorial[n - 2 * k]);
     if (coefficient === null) throw new MathInputProblem('budget', 'Legendre多項式の係数が桁数の上限を超えました。');
     const value = coefficient.denominator === 1n ? number(coefficient.numerator)
-      : op('divide', number(coefficient.numerator), number(coefficient.denominator));
+      : createOperationNode('divide', number(coefficient.numerator), number(coefficient.denominator));
     const power = n - 2 * k;
-    terms.push(power === 0 ? value : op('multiply', value, power === 1 ? argument : op('power', argument, number(power))));
+    terms.push(power === 0 ? value : createOperationNode('multiply', value, power === 1 ? argument : createOperationNode('power', argument, number(power))));
   }
   // P_0 is 1 only for a valid scalar argument; retain its original domain in the VM.
-  return n === 0 ? op('add', number(1), op('multiply', number(0), argument))
-    : terms.length === 1 ? terms[0] : op('add', ...terms);
+  return n === 0 ? createOperationNode('add', number(1), createOperationNode('multiply', number(0), argument))
+    : terms.length === 1 ? terms[0] : createOperationNode('add', ...terms);
 }

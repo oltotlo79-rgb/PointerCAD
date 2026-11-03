@@ -27,7 +27,7 @@ import {
   type PartDocument,
   type PartRecomputeOptions,
 } from '@pointercad/model';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { parseDocument, serializeDocument } from './documentJson.js';
 
 let backend: MathExecutionBackend, bridge: ReturnType<typeof createDirectKernelBridge> | undefined;

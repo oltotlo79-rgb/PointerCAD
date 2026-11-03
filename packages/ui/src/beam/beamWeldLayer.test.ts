@@ -1,11 +1,11 @@
-import { cadJointContactFixture } from '../../../model/src/analysis/cadJointContact.testSupport.js';
+import { cadJointContactFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { prepareCombinedWeldStressInput } from './BeamWeldThroatStressResults.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import React, { Children, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createUndoStack, createEmptyPartDocument, partKeyOf, resolveConstrainedAssembly, buildStandardPartFromSource } from '@pointercad/model';
 import type { FemWorkerPort } from '@pointercad/fem';
-import { cadWeldLayerFixture } from '../../../model/src/analysis/cadWeldLayer.testSupport.js';
+import { cadWeldLayerFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { captureMeshBodyLayout } from '../store/recomputeSlice.js';

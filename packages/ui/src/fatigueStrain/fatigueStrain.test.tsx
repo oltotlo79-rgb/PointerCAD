@@ -1,3 +1,4 @@
+import { openAssemblyWithStrength } from '../store/testing/openAssemblyWithStrength.testSupport.js';
 import { readBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -56,15 +57,6 @@ function store(): FatigueStrainSession {
   if (value === null) throw new Error('No strain-life session');
   return value;
 }
-function openAssemblyWithStrength(): void {
-  const fixture = bucklingUiFixture();
-  const assembly = fixture.state.assembly;
-  if (assembly === null) throw new Error('Fixture without assembly');
-  // The real action creates the Undo stack that applyAssembly needs.
-  useAppStore.getState().openAssembly(assembly, fixture.state.assemblyLibrary);
-  useAppStore.setState({ strengthSession: fixture.state.strengthSession });
-}
-
 describe('strain-life draft', () => {
   it('starts with no value, no assumption and one empty history, and refuses to run', () => {
     const empty = createFatigueStrainSession('owner');

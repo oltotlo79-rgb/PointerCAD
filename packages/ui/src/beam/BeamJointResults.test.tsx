@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { decodeBeamJointContact } from '@pointercad/fem';
-import { jointTestInput, jointTestRaw } from '../../../fem/src/beamJointContact.testSupport.js';
+import { jointTestInput, jointTestRaw } from '@pointercad/fem/testing/ui-fixtures';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { t } from '../i18n/t.js';
 import { BeamJointResults } from './BeamJointResults.js';

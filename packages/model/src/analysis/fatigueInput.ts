@@ -1,4 +1,5 @@
-import { fields, InputIssue, text } from './analysisValidation.js';
+import { createFiniteReader } from '../valueGuards.js';
+import { fatigueInputFailure as fail, fields, InputIssue, text } from './analysisValidation.js';
 import { analysisPropertyEvidenceKeys, fatiguePropertySeries, readOptionalAnalysisPropertyEvidence,
   type AnalysisPropertyEvidence } from './analysisPropertyEvidence.js';
 
@@ -100,9 +101,6 @@ export type FatigueSavedInput = FatigueSavedBase & (
 const LIMITS = { maximumStressMpa: 1e4, maximumPoints: 100_000, maximumHistories: 64, maximumRepeats: 1e9,
   slope: [1, 20], referenceStressMpa: [1, 1e4], referenceCycles: [1, 1e12], maximumCutoffMpa: 2e4 } as const;
 
-function fail(path: string, message: string): never {
-  throw new InputIssue('fatigue', path, message);
-}
 function exact(value: unknown, keys: readonly string[], path: string): Record<string, unknown> {
   // fields() checks the count and presence; own keys only (an inherited name is not a saved field).
   const row = fields(value, keys, path);
@@ -122,10 +120,7 @@ function label(value: unknown, path: string, maximum: number): string {
   }
   return value;
 }
-function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(path, 'Expected a finite number');
-  return value;
-}
+const finite = createFiniteReader(fail);
 function bounded(value: unknown, path: string, [minimum, maximum]: readonly [number, number]): number {
   const number = finite(value, path);
   if (number < minimum || number > maximum) fail(path, `Expected a value from ${minimum} to ${maximum}`);

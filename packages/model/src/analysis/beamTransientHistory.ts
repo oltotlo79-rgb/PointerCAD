@@ -1,3 +1,4 @@
+import { isFiniteNumber, isRecord as record } from '../valueGuards.js';
 import { InputIssue } from './analysisValidation.js';
 import { analysisPropertyEvidenceKeys, rayleighPropertySeries, readOptionalAnalysisPropertyEvidence,
   type AnalysisPropertyEvidence } from './analysisPropertyEvidence.js';
@@ -34,9 +35,6 @@ export const TRANSIENT_MAXIMUM_LOAD_SAMPLES = 256;
 function fail(code: string, path: string, detail: string): never {
   throw new InputIssue(code, path, `${code}: ${detail}`);
 }
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 function fields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!record(value) || Object.keys(value).length !== names.length || names.some(name => !(name in value))) {
     fail('transient-shape', path, path);
@@ -51,7 +49,7 @@ function dense(value: readonly unknown[]): boolean {
   return true;
 }
 function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail('transient-number', path, path);
+  if (!isFiniteNumber(value)) fail('transient-number', path, path);
   return value === 0 ? 0 : value;
 }
 

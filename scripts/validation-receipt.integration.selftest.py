@@ -330,7 +330,7 @@ process.exitCode = process.env.PCAD_PRODUCT_EXIT === '7' ? 7 : 0;
         self.write('a.txt', 'changed after check'); self.git('add', 'a.txt')
         self.git('commit', '-qm', 'changed source')
         self.assertFalse(proof.exists())
-        self.assertEqual(self.calls()[len(before):], ['run typecheck', 'run lint', 'run test', 'run build'])
+        self.assertEqual(self.calls()[len(before):], ['run typecheck', 'run lint', '--filter @pointercad/ui exec vitest run src/i18n/i18n.test.ts --maxWorkers=1', '--filter @pointercad/help-content exec vitest run src/topics.test.ts --maxWorkers=1', 'run test', 'run build'])
 
     def test_real_hooks_share_a_checked_merge_without_repeating_the_full_check(self):
         self.full_check()

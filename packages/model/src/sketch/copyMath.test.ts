@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { expectVec3CloseTo as expectCloseTo } from '../testing/vec3Assertions.testSupport.js';
 
 import {
   checkCopyCount,
@@ -16,14 +17,7 @@ import {
   type SketchTransform,
 } from './copyMath.js';
 import type { ResolvedArc, ResolvedCurve, ResolvedEllipse, ResolvedPoint } from './types.js';
-import { ORIGIN, type Vec3 } from './vec3.js';
-
-/** 三成分をそれぞれ許容誤差つきで見る(sin・cos が厳密な 0 や 1 にならないため)。 */
-function expectCloseTo(actual: Vec3, expected: Vec3, digits = 9): void {
-  expect(actual[0]).toBeCloseTo(expected[0], digits);
-  expect(actual[1]).toBeCloseTo(expected[1], digits);
-  expect(actual[2]).toBeCloseTo(expected[2], digits);
-}
+import { ORIGIN } from './vec3.js';
 
 /** XY 平面(法線 +Z)の上の円弧。中心 (5,0,0)・半径 5・0°→90°。 */
 const ARC: ResolvedArc = {

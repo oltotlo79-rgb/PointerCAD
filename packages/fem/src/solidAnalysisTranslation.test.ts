@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SolidAnalysisInput } from './solidAnalysisModel.js';
 import { solidStrainStress, solidTetGeometry, translateSolidAnalysis } from './solidAnalysisTranslation.js';
 import { solidInputSha256 } from './solidAnalysisTranslation.js';
-import { findStrengthMaterial, STRENGTH_SOURCES } from '../../model/src/measure/strengthMaterials.js';
+import { findStrengthMaterial, STRENGTH_SOURCES } from '@pointercad/model';
 
 describe('W12 prescribed translations, gravity and rigid modes', () => {
   it('owns prescribed vectors, defaults omitted nodes to zero, and hashes the new values', async () => {

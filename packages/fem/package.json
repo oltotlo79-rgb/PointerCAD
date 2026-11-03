@@ -6,13 +6,16 @@
   "main": "./src/index.ts",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./testing/ui-fixtures": {"types": "./dist/testing/uiFixtures.testSupport.d.ts", "default": "./src/testing/uiFixtures.testSupport.ts"},
+    "./testing-assets/nativeBoltPreload.input.fixture.json": "./src/nativeBoltPreload.input.fixture.json",
+    "./testing-assets/nativeBoltPreload.result.fixture.json": "./src/nativeBoltPreload.result.fixture.json",
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
     }
   },
   "scripts": { "test": "vitest run" },
-  "devDependencies": { "@pointercad/test-utils": "workspace:*", "vitest": "catalog:" },
+  "devDependencies": { "@pointercad/kernel": "workspace:*", "@pointercad/test-utils": "workspace:*", "vitest": "catalog:" },
   "dependencies": {
     "@pointercad/model": "workspace:*"
   }

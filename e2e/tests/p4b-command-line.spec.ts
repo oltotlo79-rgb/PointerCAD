@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { collectErrors } from './runtimeErrors.js';
 
 /**
  * P4b(スケッチの仕上げ)完了済み機能のうち、**コマンドライン入力**(FR-208)を
@@ -11,19 +12,6 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * 補助関数は既存の E2E(`sketch-extended.spec.ts`)と同じ作りで、共有ファイルを作らずここへ
  * 書き写す。選択子は role / aria / class で引く。**ヘッドレスで実行する。**
  */
-
-function collectErrors(page: Page): readonly string[] {
-  const errors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => {
-    errors.push(error.message);
-  });
-  return errors;
-}
 
 async function acceptConfirms(page: Page): Promise<void> {
   // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。

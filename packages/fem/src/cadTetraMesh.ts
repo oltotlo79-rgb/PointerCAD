@@ -1,6 +1,6 @@
 import { analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary, type AnalysisBoundaryOptions,
   type AnalysisBoundarySource, type SolidBody, type SubShapeRef } from '@pointercad/model';
-import type { FemClient, FemOptions } from './client.js';
+import { FemClient, type FemOptions } from './client.js';
 import { readSolidCadSavedInput, solidCadFaceKey, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { diagnoseTetraMeshQuality, readTetraMeshQualityLimits, type TetraMeshQuality, type TetraMeshQualityLimits } from './tetraMeshQuality.js';
 import { claimCadMeshRequest, isCurrentCadMeshRequest, releaseCadMeshRequest } from './cadMeshRequestOwner.js';
@@ -169,13 +169,25 @@ export function prepareCadTetraMesh(boundary: AnalysisBoundary, context: CadTetr
 export async function meshCadBoundary(client: Pick<FemClient, 'meshTetrahedra'>, kernel: AnalysisBoundarySource,
   readCurrent: () => CadTetraContext, boundaryOptions: AnalysisBoundaryOptions, options: FemOptions = {},
   requestedQuality?: TetraMeshQualityLimits, requestedMeshing?: TetraMeshingControls): Promise<CadTetraOutcome> {
+  // A type-narrowed real client still reserves its generation before the first await.
+  // An existing finite lease is already owned; mesh-only injected implementations have
+  // no cross-solver ownership contract and retain the existing local request guard.
+  const preparation = client instanceof FemClient ? client.beginTetraMeshPreparation(options) : undefined;
+  const earlyCancellation = preparation?.cancellation();
+  if (earlyCancellation !== undefined && earlyCancellation !== null) {
+    preparation?.release();
+    return { kind: 'cancelled', reason: earlyCancellation };
+  }
   const owner = claimCadMeshRequest(client);
   const abort = (): void => owner.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) owner.abort();
-  const cancelled = (): CadTetraOutcome | null => !isCurrentCadMeshRequest(client, owner)
-    ? { kind: 'cancelled', reason: 'superseded' }
-    : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : null;
+  const cancelled = (): CadTetraOutcome | null => {
+    const reason = preparation?.cancellation();
+    if (reason !== undefined && reason !== null) return { kind: 'cancelled', reason };
+    return !isCurrentCadMeshRequest(client, owner) ? { kind: 'cancelled', reason: 'superseded' }
+      : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : null;
+  };
   try {
     // Capture both policies before the first await; caller mutation cannot retarget this request.
     const meshing = requestedMeshing === undefined ? undefined : readTetraMeshingControls(requestedMeshing);
@@ -201,7 +213,7 @@ export async function meshCadBoundary(client: Pick<FemClient, 'meshTetrahedra'>,
       return { kind: 'failed', code: 'stale', message: 'CAD revision changed while obtaining its boundary' };
     }
     const prepared = prepareCadTetraMesh(boundary.boundary, current, meshing);
-    const completion = await client.meshTetrahedra(prepared.input, { ...options, signal: owner.signal });
+    const completion = await (preparation ?? client).meshTetrahedra(prepared.input, { ...options, signal: owner.signal });
     const afterNative = cancelled();
     if (afterNative !== null) return afterNative;
     if (completion.kind === 'cancelled') return { kind: 'cancelled', reason: completion.reason };
@@ -231,5 +243,6 @@ export async function meshCadBoundary(client: Pick<FemClient, 'meshTetrahedra'>,
   finally {
     options.signal?.removeEventListener('abort', abort);
     releaseCadMeshRequest(client, owner);
+    preparation?.release();
   }
 }

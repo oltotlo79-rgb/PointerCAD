@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { withBeamAnalysisInputs, type StandardBeamImpactDefinition } from '@pointercad/model/beam-analysis';
-import { bucklingCadFixture } from '../../../../model/src/analysis/beamBuckling.testSupport.js';
+import { bucklingCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from '../assemblyJson.js';
 import { PCAD_SCHEMA_VERSION } from '../schema.js';
 

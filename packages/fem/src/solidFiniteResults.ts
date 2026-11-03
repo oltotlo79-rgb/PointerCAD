@@ -1,4 +1,4 @@
-import { isRecord } from './protocol.js';
+import { createPrefixedError, createFiniteReader, isRecord } from './valueGuards.js';
 import {
   SOLID_FINITE_DOFS, SOLID_FINITE_FREE_RESIDUAL_BOUND, SOLID_FINITE_METHOD, SOLID_FINITE_RESULT_SCHEMA,
   SOLID_FINITE_RUNTIME_ANALYSIS_LIMIT, SOLID_FINITE_SCOPE, SOLID_FINITE_UNITS, type SolidFinitePlan,
@@ -73,9 +73,7 @@ const OOFEM9 = [0, 4, 8, 5, 2, 1, 7, 6, 3];
 /** OOFEM 6-component order [11, 22, 33, 23, 13, 12] (solidFiniteMaterial.VOIGT6). */
 const VOIGT6: readonly (readonly [number, number])[] = [[0, 0], [1, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
 
-function fail(detail: string): never {
-  throw new Error(`finite-equilibrium-result: ${detail}`);
-}
+const fail: (message: string) => never = createPrefixedError('finite-equilibrium-result');
 function exactFields(value: unknown, names: readonly string[], path: string): Record<string, unknown> {
   if (!isRecord(value)) fail(`${path} must be an object`);
   const row = value;
@@ -85,10 +83,7 @@ function exactFields(value: unknown, names: readonly string[], path: string): Re
   }
   return row;
 }
-function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(`${path} must be a finite number`);
-  return value;
-}
+const finite = createFiniteReader(fail, 'preserve');
 function vector(value: unknown, size: number, path: string): Matrix {
   if (!Array.isArray(value) || value.length !== size) fail(`${path} must have ${String(size)} entries`);
   const items: unknown[] = value;
@@ -169,12 +164,13 @@ function freeForceBalance(internal: readonly Matrix[], external: readonly Matrix
   accepted: number): Balance {
   let scale = Math.max(1e-300, accepted), residual = 0, reference = accepted;
   internal.forEach((row, node) => row.forEach((value, axis) => {
-    scale = Math.max(scale, Math.abs(value), Math.abs(external[node][axis]));
+    scale = Math.max(scale, Math.abs(value), prescribed.has(node * 3 + axis) ? 0 : Math.abs(external[node][axis]));
   }));
   internal.forEach((row, node) => row.forEach((value, axis) => {
     const key = node * 3 + axis;
     if (!prescribed.has(key)) residual = Math.max(residual, Math.abs(external[node][axis] - value) / scale);
-    reference = Math.max(reference, Math.abs(external[node][axis]), prescribed.has(key) ? Math.abs(value) : 0);
+    // Fixed external forces affect reactions only; they must never mask a free residual.
+    reference = Math.max(reference, prescribed.has(key) ? Math.abs(value) : Math.abs(external[node][axis]));
   }));
   return { residual, scale, reference };
 }
@@ -275,3 +271,6 @@ export function solidFiniteResultMatches(result: SolidFiniteResult, value: unkno
     return false;
   }
 }
+
+/** Reuse the unchanged native record checks at the synchronous wire boundary. */
+export { readNative as readSolidFiniteNative };

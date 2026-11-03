@@ -1,3 +1,4 @@
+import { isFiniteNumber as finite } from '../../valueGuards.js';
 import { crossVec3, dotVec3, lengthVec3, subVec3 } from '../../sketch/vec3.js';
 import type { Joint } from '../types.js';
 import type { RigidPlacement } from '../placementMath.js';
@@ -63,7 +64,6 @@ export interface PreparedCamFollower {
   readonly maximumPressureAngleDeg: number;
 }
 
-const finite = (value: number): boolean => typeof value === 'number' && Number.isFinite(value);
 const DEG = Math.PI / 180;
 /** Relative tolerance of the in-line check (perpendicular and intersecting axes at the reference pose). */
 const IN_LINE_TOLERANCE = 1e-9;

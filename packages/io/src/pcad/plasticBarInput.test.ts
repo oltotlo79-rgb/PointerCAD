@@ -1,10 +1,10 @@
+import { replaceAttachment } from './analysisAttachment.testSupport.js';
 import { createEmptyPartDocument } from '@pointercad/model';
 import { withBeamAnalysisInputs, type BeamAnalysisInputs, type PlasticBarSavedInput } from '@pointercad/model/beam-analysis';
 import { describe, expect, it } from 'vitest';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
-import { isRecord } from './guards.js';
 
 const WRITE_OPTIONS = { savedAt: '2026-10-12T00:00:00.000Z' };
 
@@ -17,11 +17,6 @@ function saved(documentId: string, change: Partial<Record<keyof PlasticBarSavedI
 }
 function attachment(...definitions: readonly Record<string, unknown>[]): unknown {
   return { schema: 'pointercad-beam-inputs/1', analyses: definitions.map(definition => ({ kind: 'plastic-bar', definition })) };
-}
-function replaceAttachment(serialized: string, value: unknown): string {
-  const envelope: unknown = JSON.parse(serialized);
-  if (!isRecord(envelope) || !isRecord(envelope.document)) throw new Error('Expected a document envelope');
-  return JSON.stringify({ ...envelope, document: { ...envelope.document, beamAnalysisInputs: value } });
 }
 
 describe('saved plastic-bar configuration in part and assembly files', () => {

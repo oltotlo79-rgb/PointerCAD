@@ -1,5 +1,7 @@
+import { placement } from '../fastening/boltedPlacement.testSupport.js';
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
+import { zDegrees } from './jointAngles.testSupport.js';
 import { appendSolid, createEmptyPartDocument } from '../../part/createPartDocument.js';
 import type { PrimitiveFeature } from '../../part/types.js';
 import { absoluteCoordinate } from '../../sketch/createSketchDocument.js';
@@ -10,7 +12,6 @@ import { resolveMateTarget } from '../constraints/mateTargets.js';
 import { createAssemblyDocument } from '../createAssemblyDocument.js';
 import type { JointOccurrenceInputs, JointOccurrenceView } from '../jointOccurrence.js';
 import { embedPart, EMPTY_PART_LIBRARY } from '../partLibrary.js';
-import type { Quaternion } from '../placementMath.js';
 import { resolveAssembly } from '../resolveAssembly.js';
 import type { AssemblyComponent, AssemblyDocument, ComponentSource, Joint, Placement } from '../types.js';
 import { solveCrossLevelGearDrive, solveCrossLevelGearDriveSteps, type CrossLevelGearCoupling } from './crossLevelGear.js';
@@ -27,9 +28,6 @@ import type { RigidPlacement } from '../placementMath.js';
  * [-90, 20] degrees. g1: drive -> A/child-turn, ratio -2, phase 0. g2: drive -> B/child-turn, ratio 0.5, phase 15.
  * Angles are read from the quaternions with one shared sign s (all joints are moving = a, fixed = b, +z axes).
  */
-function placement(x: number, y: number, z: number): Placement {
-  return { position: [expressionValueFromNumber(x), expressionValueFromNumber(y), expressionValueFromNumber(z)], rotation: [0, 0, 0, 1] };
-}
 function component(id: string, source: ComponentSource, at: Placement, fixed = false): AssemblyComponent {
   return { id, name: id, source, placement: at, fixed, visible: true, suppressed: false };
 }
@@ -48,14 +46,14 @@ async function fixture() {
     { importedAt: '2026-01-01T00:00:00.000Z' });
   const part = { kind: 'part', partRef: embedded.partRef } as const;
   const child = (name: string, limits?: readonly [ExpressionValue | null, ExpressionValue | null]): AssemblyDocument => ({
-    ...createAssemblyDocument(name), components: [component('base', part, placement(0, 0, 0), true), component('arm', part, placement(0, 0, 0))],
+    ...createAssemblyDocument(name), components: [component('base', part, placement([0, 0, 0]), true), component('arm', part, placement([0, 0, 0]))],
     joints: [joint('child-turn', 'revolute', 'arm', 'base', limits)] });
   const subAssemblies = new Map([['childA', child('childA')], ['childB', child('childB', [degrees(-90), degrees(20)])]]);
   const library = { ...embedded.library, assemblies: subAssemblies };
   const document: AssemblyDocument = { ...createAssemblyDocument('parent'), components: [
-    component('ground', part, placement(10, 20, 0), true),
-    component('A', { kind: 'subAssembly', assemblyRef: 'childA' }, placement(10, 20, 0)),
-    component('B', { kind: 'subAssembly', assemblyRef: 'childB' }, placement(10, 20, 10)),
+    component('ground', part, placement([10, 20, 0]), true),
+    component('A', { kind: 'subAssembly', assemblyRef: 'childA' }, placement([10, 20, 0])),
+    component('B', { kind: 'subAssembly', assemblyRef: 'childB' }, placement([10, 20, 10])),
   ], joints: [joint('drive', 'revolute', 'A', 'ground'), joint('lift', 'slider', 'B', 'ground')] };
   const inputs: JointOccurrenceInputs = { document, library, subAssemblies };
   const view: JointOccurrenceView = { source: inputs, resolved: resolveAssembly(document, { library, subAssemblies }) };
@@ -70,12 +68,6 @@ async function fixture() {
 
 const G1: CrossLevelGearCoupling = { id: 'g1', parentJointId: 'drive', child: { path: ['A'], jointId: 'child-turn' }, ratio: -2, phaseDeg: 0 };
 const G2: CrossLevelGearCoupling = { id: 'g2', parentJointId: 'drive', child: { path: ['B'], jointId: 'child-turn' }, ratio: 0.5, phaseDeg: 15 };
-
-function zDegrees(rotation: Quaternion | undefined): number {
-  const [x, y, z, w] = rotation ?? [Number.NaN, Number.NaN, Number.NaN, Number.NaN];
-  expect(Math.abs(x) + Math.abs(y)).toBeLessThan(1e-9);
-  return 2 * Math.atan2(z, w) * 180 / Math.PI;
-}
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 const drive = (f: Fixture, couplingId: string, side: 'parent' | 'child', value: number) =>

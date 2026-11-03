@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { bucklingCadFixture } from '../../model/src/analysis/beamBuckling.testSupport.js';
-import { partKeyOf } from '../../model/src/assembly/resolveAssembly.js';
+import { bucklingCadFixture } from '@pointercad/model/testing/analysis-fixtures';
+import { partKeyOf } from '@pointercad/model';
 import { standardMembersToBeamBuckling } from './cadBuckling.js';
 import { bucklingInputSha256, translateBeamBuckling } from './bucklingTranslation.js';
 

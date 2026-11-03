@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { emptyPcadAttachments, FIXED_ENTRY_MTIME, PCAD_TEMPLATE_KIND, writePcadFile,
   zipPcadEntries, type PcadZipEntries } from '@pointercad/io';
-import * as archiveReader from '../../../io/src/pcad/readArchive.js';
+import * as archiveReader from '@pointercad/io/testing/read-archive';
 import { createEmptyPartDocument } from '@pointercad/model';
 import { describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../store/useAppStore.js';

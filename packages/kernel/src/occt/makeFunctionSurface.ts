@@ -17,11 +17,18 @@ export function makeFunctionSurface(oc: OpenCascadeInstance, input: FunctionSurf
   isCancelled: () => boolean = () => false): FunctionSurfaceGeometryResult {
   const result = makeUnclassifiedFunctionSurface(oc, input, isCancelled);
   if (result.status !== 'shape') return result;
+  const releaseResult = (): void => {
+    const owner = createAllocations();
+    owner.keep(result);
+    owner.release();
+  };
+  let cancelled: boolean;
   try {
     if (!isValidShape(oc, result.shape)) throw new Error('範囲で切り取った関数の形が正しくありません。');
-    if (isCancelled()) { result.delete(); return { status: 'cancelled' }; }
-    return result;
-  } catch (error) { result.delete(); throw error; }
+    cancelled = isCancelled();
+  } catch (error) { releaseResult(); throw error; }
+  if (cancelled) { releaseResult(); return { status: 'cancelled' }; }
+  return result;
 }
 
 /** Internal construction stage. Its result MUST pass classifyFunctionSurface before use as a body.

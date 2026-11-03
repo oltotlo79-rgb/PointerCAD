@@ -1,3 +1,4 @@
+import { createAllocations } from './allocations.js';
 import { countSolidShapes } from './solidTopology.js';
 import { shapeBodyKind, measureClosedBodyVolume } from './shapeBodyKind.js';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
@@ -38,13 +39,14 @@ import { computeVolumeProperties } from './volumeProperties.js';
  * 閉じていない形では 0 に近い値や負の値が出るので、呼び出し側が妥当性も見る。
  */
 export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape, knownPlanar = false): number {
-  const properties = new oc.GProp_GProps_1();
+  const { keep, release } = createAllocations();
   try {
+    const properties = keep(new oc.GProp_GProps_1());
     // この口はMassだけを返す。重心/慣性のcallerは従来の完全測定を使う。
     computeVolumeProperties(oc, shape, properties, knownPlanar, true);
     return properties.Mass();
   } finally {
-    properties.delete();
+    release();
   }
 }
 
@@ -61,12 +63,13 @@ export function measureVolume(oc: OpenCascadeInstance, shape: TopoDS_Shape, know
  * 「shell の段だけ体積 0 を通して面積 > 0 を確かめる」の材料)。
  */
 export function measureArea(oc: OpenCascadeInstance, shape: TopoDS_Shape): number {
-  const properties = new oc.GProp_GProps_1();
+  const { keep, release } = createAllocations();
   try {
+    const properties = keep(new oc.GProp_GProps_1());
     oc.BRepGProp.SurfaceProperties_1(shape, properties, false, false);
     return properties.Mass();
   } finally {
-    properties.delete();
+    release();
   }
 }
 
@@ -77,11 +80,12 @@ export function measureArea(oc: OpenCascadeInstance, shape: TopoDS_Shape): numbe
  * (IsValid_1(S) は部分形状を指定する版なので使わない)。
  */
 export function isValidShape(oc: OpenCascadeInstance, shape: TopoDS_Shape): boolean {
-  const analyzer = new oc.BRepCheck_Analyzer(shape, true, false);
+  const { keep, release } = createAllocations();
   try {
+    const analyzer = keep(new oc.BRepCheck_Analyzer(shape, true, false));
     return analyzer.IsValid_2();
   } finally {
-    analyzer.delete();
+    release();
   }
 }
 

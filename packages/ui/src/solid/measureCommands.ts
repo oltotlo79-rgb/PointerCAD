@@ -1,3 +1,4 @@
+import { subVec3 as subtract } from '@pointercad/model/vec3';
 /**
  * 「測る」の道具の組み立て(計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク32、
  * §2.10、§0.a-0.29〜0.32、§0.a-0.68、§0.a-0.69)。
@@ -244,9 +245,6 @@ export function formatMoments(moments: readonly [number, number, number]): strin
  * 画面へ出す 1 件を組み立てる(§2.10.3)
  * ------------------------------------------------------------------------- */
 
-function subtract(a: Vec3, b: Vec3): Vec3 {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
 
 function norm(a: Vec3): number {
   return Math.hypot(a[0], a[1], a[2]);

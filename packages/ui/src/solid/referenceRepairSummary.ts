@@ -5,6 +5,8 @@ const originLabels: Readonly<Record<NonNullable<SubShapeRef['origin']>['identity
   'box-face': 'propertyPanel.repair.boxFace', 'box-edge': 'propertyPanel.repair.boxEdge', 'box-vertex': 'propertyPanel.repair.boxVertex',
   'cylinder-face': 'propertyPanel.repair.cylinderFace', 'cylinder-edge': 'propertyPanel.repair.cylinderEdge', 'cylinder-vertex': 'propertyPanel.repair.cylinderVertex',
   'surface-side': 'propertyPanel.repair.surfaceSide',
+  'planar-surface-face': 'propertyPanel.repair.planarSurfaceFace', 'planar-surface-edge': 'propertyPanel.repair.planarSurfaceEdge',
+  'planar-surface-vertex': 'propertyPanel.repair.planarSurfaceVertex',
   'extrude-side': 'propertyPanel.repair.extrudeSide', 'extrude-cap': 'propertyPanel.repair.extrudeCap',
   'extrude-curve-side': 'propertyPanel.repair.extrudeSide', 'extrude-curve-cap': 'propertyPanel.repair.extrudeCap',
   'blend-face': 'propertyPanel.repair.blendFace', 'merged-face': 'propertyPanel.repair.mergedFace',
@@ -33,7 +35,10 @@ export function summarizeRepairReference(reference: SubShapeRef): string {
   const position = fp.position.map(displayNumber).join(', ');
   const size = fp.kind === 'face' ? t('propertyPanel.repair.area').replace('{value}', displayNumber(fp.area))
     : fp.kind === 'edge' ? t('propertyPanel.repair.length').replace('{value}', displayNumber(fp.length)) : '';
-  const source = origin?.kind === 'extrude-side' || origin?.kind === 'surface-side' ? ` / ${origin.profile.sketchId} / ${origin.profile.lineFeatureId}`
+  const source = origin?.kind === 'extrude-side' || origin?.kind === 'surface-side' || origin?.kind === 'planar-surface-edge'
+    ? ` / ${origin.profile.sketchId} / ${origin.profile.lineFeatureId}`
+    : origin?.kind === 'planar-surface-face' || origin?.kind === 'planar-surface-vertex'
+      ? ` / ${origin.profile.sketchId} / ${origin.profile.lineFeatureIds.join(t('display.listSeparator'))}`
     : origin?.kind === 'extrude-curve-side' ? ` / ${origin.profile.sketchId} / ${origin.profile.curveFeatureId}` : '';
   return `${meaning}${source} / ${reference.bodyFeatureId} / ${kind} ${reference.index} / (${position}) mm${size.length === 0 ? '' : ` / ${size}`}`;
 }

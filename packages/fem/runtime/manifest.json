@@ -7,6 +7,14 @@
   "oofemSourceCommit": "214b161ed3acb471f2d0104b004c37fd73bafaa2",
   "abi": "cp313-cp313-pyodide_2025_0_wasm32",
   "files": {
+    "assets/solidFiniteMaterial.py": {
+      "bytes": 32179,
+      "sha256": "4cb9f7f2370e2ba01fa4b2aaae6fa39f2bd32d124cbaf648e73e59e3477fa837"
+    },
+    "assets/solidFiniteEquilibrium.py": {
+      "bytes": 28972,
+      "sha256": "46a6d2289d1f2c0cf090cb1b31b558b656f4bf797f91d5135e1ea0a99a625db4"
+    },
     "assets/beamFrictionContact.py": {
       "bytes": 39720,
       "sha256": "d21581ea5eb16b2cb587000c19db91479cc8cbba5d2314cfcc9d0abe0190d803"
@@ -392,12 +400,12 @@
       "sha256": "9eee0266fb68942775cebe7e34cf35b24455926539cd4f46e6d1808146aa66fd"
     },
     "sources/pointercad-beam-application-source.zip": {
-      "sha256": "23e9cf95f2051f4f38cd22fa2e18da687ea943aa53a3185a06e1cfbf8d3a9bbd",
-      "bytes": 13878136
+      "sha256": "178de7b414193ed61d0f7db2214913748dd314cd010bb037f2307bc11fb35d68",
+      "bytes": 14174354
     },
     "evidence/application-source-index.json": {
-      "sha256": "2e9c6857ce1c9f99f20b9c6dbbb7eb365fb619f67c48ec699ce7b2ef1ec56eb6",
-      "bytes": 984630
+      "sha256": "e2b0f4d34b8b97ac64e1bfdc06bf2ea4b8f021379cdd712c9e761d52de3d1e92",
+      "bytes": 1027120
     },
     "sources/native-rebuild/oofem-051-timer.patch": {
       "bytes": 8668,
@@ -538,6 +546,10 @@
     "assets/solidBuckling.py": {
       "sha256": "eef26fdb7f4cb7303371b448d0dcf7ab1b3c5039007ab8980b5867a473ea1290",
       "bytes": 18036
+    },
+    "assets/shellAnalysis.py": {
+      "sha256": "4319a6b5943d1144637329f9911b15e3074d190e9beb86976654c9b4717018cf",
+      "bytes": 20375
     },
     "sources/051-oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz": {
       "bytes": 13510673,

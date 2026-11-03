@@ -1,5 +1,4 @@
-import React, { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderCurrentStore } from '../store/testing/renderCurrentStore.testSupport.js';
 import type { PrintabilityReport } from '@pointercad/model';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
@@ -17,9 +16,7 @@ function reportOf(thickness = 0.8, angle = 45, cancelled = false): PrintabilityR
 }
 
 function render(): string {
-  const snapshot = vi.spyOn(React, 'useSyncExternalStore').mockImplementation((_subscribe, getSnapshot) => getSnapshot());
-  try { return renderToStaticMarkup(createElement(PrintCheckSection)); }
-  finally { snapshot.mockRestore(); }
+  return renderCurrentStore(PrintCheckSection);
 }
 
 beforeEach(() => {

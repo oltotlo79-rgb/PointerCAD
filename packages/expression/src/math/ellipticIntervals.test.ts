@@ -1,15 +1,14 @@
+import { exactDoubleDecimal } from './exactDoubleDecimal.testSupport.js';
 import Decimal from 'decimal.js';
 import { describe,expect,it } from 'vitest';
 import { ellipticRanges,ellipticSample } from './ellipticIntervals.js';
-import { exactDouble } from './exactDoubleInterval.js';
 import { ELLIPTIC_PLOT_REFERENCES } from './ellipticPlotReferences.js';
 import type { MathInterval } from './mathInterval.js';
 
 const D=Decimal.clone({precision:110});
 const point=(x:number)=>({lower:x,upper:x});
 function exact(x:number):Decimal {
-  const q=exactDouble(x);if(q===null)throw new Error('Nonfinite interval');
-  return new D(q.numerator.toString()).div(q.denominator.toString());
+  return exactDoubleDecimal(x, D, 'Nonfinite interval');
 }
 function contains(range:MathInterval|null,reference:string,narrow=true):void {
   expect(range).not.toBeNull();if(range===null)throw new Error('Unproved enclosure');

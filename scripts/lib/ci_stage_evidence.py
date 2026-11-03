@@ -7,7 +7,7 @@ CI は1つの OS の検査を、前段(自己試験・型・lint・単体の残�
 
 検査の命令そのものは scripts/check.ps1 だけが実行する(rules/03 §7.2 の単一正本)。ここは記録と照合と、
 ルートの package.json の test を先行分と残りへ分ける読み取り(unit-split)だけを行う。分け方は test の
-「A && B」をそのまま2つにするだけで、2つをつなぐと元の test と文字列で一致することを確かめる。
+個別の命令列と最後の再帰命令を分け、順につなぐと元の test と文字列で一致することを確かめる。
 
 使い方:
   ci_stage_evidence.py unit-split --root <根>
@@ -51,7 +51,7 @@ class EvidenceError(Exception):
 
 
 def unit_split(root: Path) -> dict:
-    """ルートの test「pnpm --filter X run test && pnpm --recursive --filter !X ... run test」を2つに分ける。"""
+    """個別包の単体を順に実行し、その包だけを除く再帰単体で終わる test を分ける。"""
     try:
         package = json.loads((root / 'package.json').read_text(encoding='utf-8'))
         script = package['scripts']['test']
@@ -60,29 +60,33 @@ def unit_split(root: Path) -> dict:
     if not isinstance(script, str):
         raise EvidenceError('ルートの test が文字列ではありません')
     parts = script.split(' && ')
-    if len(parts) != 2:
-        raise EvidenceError('ルートの test が「先行分 && 残り」の2つの形ではないため、分けずに止めます')
-    lead, rest = (part.split(' ') for part in parts)
-    for token in lead + rest:
+    if len(parts) < 2:
+        raise EvidenceError('ルートの test に先行分と残りがありません')
+    commands = [part.split(' ') for part in parts]
+    for token in itertools.chain.from_iterable(commands):
         if not TOKEN.fullmatch(token):
             raise EvidenceError(f'ルートの test に分けられない文字があります: {token!r}')
-    if len(lead) != 5 or lead[0] != 'pnpm' or lead[1] != '--filter' or lead[3:] != ['run', 'test'] \
-            or not PACKAGE.fullmatch(lead[2]):
-        raise EvidenceError('ルートの test の先行分が「pnpm --filter <1つの包> run test」ではありません')
-    package_name = lead[2]
-    if rest[0] != 'pnpm' or rest[-2:] != ['run', 'test'] or '--recursive' not in rest:
-        raise EvidenceError('ルートの test の残りが「pnpm --recursive ... run test」ではありません')
-    filters = [index for index, token in enumerate(rest) if token == '--filter' or token.startswith('--filter=')]
-    # 残りは先行分の包だけを除いた全部でなければならない(別の絞込みがあれば検査が欠ける)。
-    if len(filters) != 1 or rest[filters[0]] != '--filter' or filters[0] + 1 >= len(rest) \
-            or rest[filters[0] + 1] != '!' + package_name:
-        raise EvidenceError('ルートの test の残りが、先行分の包だけを除く1つの絞込みになっていません')
-    if 'run' in rest[:-2] or 'test' in rest[:-2]:
-        raise EvidenceError('ルートの test の残りに余分な命令があります')
-    if ' '.join(lead) + ' && ' + ' '.join(rest) != script:
-        raise EvidenceError('分けた2つをつないでもルートの test と一致しません')
-    return {'package': package_name, 'lead': lead[1:], 'rest': rest[1:],
-            'leadCommand': ' '.join(lead), 'restCommand': ' '.join(rest)}
+    packages = []
+    for command in commands[:-1]:
+        if len(command) != 5 or command[:2] != ['pnpm', '--filter'] or command[3:] != ['run', 'test'] \
+                or not PACKAGE.fullmatch(command[2]):
+            raise EvidenceError('ルートの test の個別分が「pnpm --filter <1つの包> run test」ではありません')
+        packages.append(command[2])
+    if len(set(packages)) != len(packages):
+        raise EvidenceError('ルートの test の個別分に同じ包が重複しています')
+    # 任意の shell/オプションを解釈しない。個別分だけを同じ順で除く既存の再帰命令に限定する。
+    expected_rest = ['pnpm', '--recursive']
+    for package_name in packages:
+        expected_rest += ['--filter', '!' + package_name]
+    expected_rest += ['--reverse', '--workspace-concurrency=1', '--if-present', 'run', 'test']
+    if commands[-1] != expected_rest:
+        raise EvidenceError('ルートの test の残りが、個別分の包だけを除く既定の再帰単体ではありません')
+    if ' && '.join(' '.join(command) for command in commands) != script:
+        raise EvidenceError('分けた命令をつないでもルートの test と一致しません')
+    return {'package': packages[0], 'lead': commands[0][1:],
+            'leadCommands': [{'args': command[1:], 'command': ' '.join(command)} for command in commands[:-1]],
+            'restCommands': [{'args': commands[-1][1:], 'command': parts[-1]}],
+            'leadCommand': ' && '.join(parts[:-1]), 'restCommand': parts[-1]}
 
 
 def expected_steps(stage: str, root: Path) -> list[str]:
@@ -254,6 +258,76 @@ def verify(root: Path, directory: Path, env: Mapping[str, str] | None = None) ->
 
 # ---- 自己試験(check.selftest.ps1 から実行する。scratchpad の既存の中身は使わない) ----
 
+def _unit_split_selftest(base: Path) -> list[str]:
+    """Pure parser fixtures: no Git, command execution or evidence publication."""
+    failures = []
+    lead = 'pnpm --filter @pointercad/expression run test'
+    fem = 'pnpm --filter @pointercad/fem run test'
+    utilities = 'pnpm --filter @pointercad/test-utils run test'
+    tail = ' --reverse --workspace-concurrency=1 --if-present run test'
+    old_rest = 'pnpm --recursive --filter !@pointercad/expression' + tail
+    rest = 'pnpm --recursive --filter !@pointercad/expression --filter !@pointercad/fem' + tail
+    legacy = lead + ' && ' + old_rest
+    current = lead + ' && ' + fem + ' && ' + rest
+    new_rest = 'pnpm --recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem' + tail
+    new_current = utilities + ' && ' + lead + ' && ' + fem + ' && ' + new_rest
+    scripts = [
+        ('test-utils, expression, FEM then recursive', new_current, [new_rest]),
+        ('missing test-utils exclusion', new_current.replace(' --filter !@pointercad/test-utils', ''), None),
+        ('omitted test-utils command', lead + ' && ' + fem + ' && ' + new_rest, None),
+        ('duplicate test-utils command', utilities + ' && ' + new_current, None),
+        ('legacy two commands', legacy, [old_rest]),
+        ('current expression, FEM, recursive', current, [rest]),
+        ('missing FEM exclusion', current.replace(' --filter !@pointercad/fem', ''), None),
+        ('omitted FEM command', lead + ' && ' + rest, None),
+        ('extra exclusion', current.replace(' --reverse', ' --filter !@pointercad/kernel --reverse'), None),
+        ('duplicate individual package', current.replace(fem, lead), None),
+        ('duplicate exclusion', current.replace(' --reverse', ' --filter !@pointercad/fem --reverse'), None),
+        ('positive final filter', current.replace('!@pointercad/fem', '@pointercad/fem'), None),
+        ('different final filter', current.replace('!@pointercad/fem', '!@pointercad/kernel'), None),
+        ('filter equals', current.replace('--filter !@pointercad/fem', '--filter=!@pointercad/fem'), None),
+        ('reordered exclusion', current.replace('!@pointercad/expression --filter !@pointercad/fem', '!@pointercad/fem --filter !@pointercad/expression'), None),
+        ('arbitrary extra command', current + ' && pnpm run extra', None),
+        ('shell semicolon', current + '; echo passed', None),
+        ('shell substitution', current.replace(fem, 'pnpm --filter $(echo fem) run test'), None),
+        ('shell pipe', current.replace(' && ', ' | ', 1), None),
+        ('quoted option', current.replace('--reverse', '"--reverse"'), None),
+        ('extra whitespace', current.replace('pnpm --filter', 'pnpm  --filter', 1), None),
+        ('extra recursive option', current.replace('--reverse', '--parallel --reverse'), None),
+        ('wrong concurrency', current.replace('--workspace-concurrency=1', '--workspace-concurrency=2'), None),
+        ('missing recursive', current.replace('--recursive ', ''), None),
+        ('missing final command', lead + ' && ' + fem, None),
+        ('empty command', lead + ' &&  && ' + rest, None),
+    ]
+    for index, (label, script, expected_rest) in enumerate(scripts):
+        folder = base / f'unit-split-{index}'
+        folder.mkdir()
+        (folder / 'package.json').write_text(json.dumps({'scripts': {'test': script}}), encoding='utf-8')
+        try:
+            result = unit_split(folder)
+            if expected_rest is None:
+                raise AssertionError('invalid command accepted')
+            assert result['restCommands'] == [{'args': command.split(' ')[1:], 'command': command} for command in expected_rest]
+            actual = ['pnpm ' + ' '.join(row['args']) for row in result['leadCommands'] + result['restCommands']]
+            assert len({row['args'][1] for row in result['leadCommands']}) == len(result['leadCommands'])
+            if script == new_current:
+                assert [row['args'][1] for row in result['leadCommands']] == ['@pointercad/test-utils', '@pointercad/expression', '@pointercad/fem']
+                assert result['restCommands'][0]['args'].count('!@pointercad/test-utils') == 1
+                assert result['restCommands'][0]['args'].count('!@pointercad/expression') == 1
+                assert result['restCommands'][0]['args'].count('!@pointercad/fem') == 1
+            assert ' && '.join(actual) == script
+            assert result['leadCommand'] + ' && ' + result['restCommand'] == script
+        except EvidenceError as error:
+            if expected_rest is not None:
+                failures.append(f'{label}: {error}')
+                continue
+        except AssertionError as error:
+            failures.append(f'{label}: {error}')
+            continue
+        print(f'[OK] unit-split: {label}')
+    return failures
+
+
 def _selftest() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from task_workspace import configure_project_temp
@@ -281,10 +355,13 @@ def _selftest() -> int:
         print(f'[OK] {label}')
         return value
 
-    test_script = ('pnpm --filter @pointercad/expression run test && pnpm --recursive --filter '
-                   '!@pointercad/expression --reverse --workspace-concurrency=1 --if-present run test')
+    test_script = ('pnpm --filter @pointercad/test-utils run test && pnpm --filter @pointercad/expression run test && '
+                   'pnpm --filter @pointercad/fem run test && '
+                   'pnpm --recursive --filter !@pointercad/test-utils --filter !@pointercad/expression --filter !@pointercad/fem '
+                   '--reverse --workspace-concurrency=1 --if-present run test')
     with tempfile.TemporaryDirectory(prefix='pointercad-ci-stage-') as temporary:
         base = Path(temporary)
+        failures.extend(_unit_split_selftest(base))
         root = base / 'repository'
         (root / 'apps/desktop').mkdir(parents=True)
         (root / 'package.json').write_text(json.dumps({'scripts': {'test': test_script}}), encoding='utf-8')
@@ -307,7 +384,7 @@ def _selftest() -> int:
 
         split = expect_ok('ルートの test を先行分と残りへ分け、つなぐと元と一致する', lambda: unit_split(root))
         if split is not None and (split['leadCommand'] + ' && ' + split['restCommand'] != test_script
-                                  or split['lead'] != ['--filter', '@pointercad/expression', 'run', 'test']):
+                                  or split['lead'] != ['--filter', '@pointercad/test-utils', 'run', 'test']):
             failures.append('分けた結果が元の test と一致しません')
         for label, script in [
             ('3つ以上に分かれる test', test_script + ' && pnpm run extra'),

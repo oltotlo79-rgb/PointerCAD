@@ -1,9 +1,8 @@
 import type { DatumDefinition, DatumReference, DrawingElementStyle, DrawingSubShapeRef, GdtFeature, GdtFrameSegment,
   GdtShapeTarget, GdtToleranceValue, GeometricToleranceFrame, WeldSymbol } from '@pointercad/model';
-import { isRecord, isUnknownArray } from './guards.js';
+import { isFiniteNumber as finite, isRecord, isUnknownArray } from './guards.js';
 
 interface Checks { readonly target: (value: unknown) => boolean; readonly style: (value: unknown) => boolean }
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const text = (value: unknown, max = 256): value is string => typeof value === 'string' && value.length <= max;
 const literal = (value: unknown, allowed: readonly string[]): boolean => typeof value === 'string' && allowed.includes(value);
 const point = (value: unknown): boolean => isUnknownArray(value) && value.length === 2 && value.every(finite);
@@ -94,14 +93,14 @@ export function cleanGdtFrame(value: GeometricToleranceFrame, cleaners: Cleaners
     height: value.height, layerId: value.layerId, ...(value.style === undefined ? {} : { style: cleaners.style(value.style) }) };
 }
 export function cleanWeldSymbol(value: WeldSymbol, cleaners: Cleaners, cleanTarget: (target: WeldSymbol['target']) => WeldSymbol['target']): WeldSymbol {
-  const expr = (value: NonNullable<WeldSymbol['sides'][number]['count']>) => ({ source: value.source, value: value.value, display: value.display });
+  const expression = (value: NonNullable<WeldSymbol['sides'][number]['count']>) => ({ source: value.source, value: value.value, display: value.display });
   return { id: value.id, system: value.system, target: cleanTarget(value.target), sides: value.sides.map((side) => ({ kind: side.kind, side: side.side,
     contour: side.contour, finish: side.finish,
     ...(side.size === undefined ? {} : { size: { kind: side.size.kind, value: cleanLength(side.size.value) } }),
     ...(side.length === undefined ? {} : { length: cleanLength(side.length) }), ...(side.pitch === undefined ? {} : { pitch: cleanLength(side.pitch) }),
-    ...(side.rootGap === undefined ? {} : { rootGap: cleanLength(side.rootGap) }), ...(side.count === undefined ? {} : { count: expr(side.count) }),
+    ...(side.rootGap === undefined ? {} : { rootGap: cleanLength(side.rootGap) }), ...(side.count === undefined ? {} : { count: expression(side.count) }),
     ...(side.grooveDepth === undefined ? {} : { grooveDepth: cleanLength(side.grooveDepth) }),
-    ...(side.grooveAngle === undefined ? {} : { grooveAngle: expr(side.grooveAngle) }),
+    ...(side.grooveAngle === undefined ? {} : { grooveAngle: expression(side.grooveAngle) }),
   })), allAround: value.allAround, fieldWeld: value.fieldWeld, tail: value.tail, position: [...value.position], height: value.height, layerId: value.layerId,
   ...(value.closedTail === undefined ? {} : { closedTail: value.closedTail }),
   ...(value.arrowBendOffset === undefined ? {} : { arrowBendOffset: [...value.arrowBendOffset] }),

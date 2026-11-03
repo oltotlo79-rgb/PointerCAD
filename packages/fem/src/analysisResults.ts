@@ -1,9 +1,10 @@
+import { isRecord as record, isFiniteNumber as numeric } from './valueGuards.js';
 import type { BeamAnalysisDocument, BeamAnalysisResult, BeamElementResult, BeamFrame, BeamNodeResult, Vector3, Vector6 } from './analysisModel.js';
 import { cross, subtract } from './analysisValidation.js';
 import { translateBeamAnalysis } from './analysisTranslation.js';
 
-function record(v: unknown): v is Record<string,unknown> { return v!==null&&typeof v==='object'&&!Array.isArray(v); }
-function numeric(v: unknown): v is number { return typeof v==='number'&&Number.isFinite(v); }
+
+
 function numbers(v: unknown, count: number): v is number[] { return Array.isArray(v)&&v.length===count&&v.every(numeric); }
 function vec3(v: unknown): v is Vector3 { return numbers(v,3); }
 function vec6(v: unknown): v is Vector6 { return numbers(v,6); }

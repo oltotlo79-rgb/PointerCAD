@@ -81,7 +81,7 @@ export function createViewportRepairPreview(
   }
 
   function repairPreviewProof(scope: WeakRef<ReferenceRepairPreviewBorrow['scope']>, receipt: RepairPreviewReceipt,
-    inspection: RepairPreviewInspection, input: WeakSet<ArrayBufferLike>, epoch: number): () => boolean {
+    inspection: RepairPreviewInspection, input: WeakSet<ArrayBufferLike>, capturedGeneration: number): () => boolean {
     return () => {
       if (receipt.status !== 'known' || inspection.status !== 'known'
         || scope.deref()?.currentInspection(inspection, receipt) !== true || !uiBackings.known()) return false;
@@ -91,7 +91,7 @@ export function createViewportRepairPreview(
       }
       let total = receipt.admittedBoundBytes + uiBackings.pending();
       for (const buffer of uiBackings.buffers()) {
-        if (!(buffer instanceof ArrayBuffer) || !input.has(buffer) && !uiBackings.allocatedAfter(buffer, epoch)) return false;
+        if (!(buffer instanceof ArrayBuffer) || !input.has(buffer) && !uiBackings.allocatedAfter(buffer, capturedGeneration)) return false;
         try { new Uint8Array(buffer); } catch { return false; }
         if (!source.has(buffer)) total += buffer.byteLength;
       }
@@ -156,12 +156,12 @@ export function createViewportRepairPreview(
       || receipt.limitBytes <= 0 || receipt.limitBytes > 512 * 1024 * 1024
       || receipt.admittedBoundBytes !== receipt.workerRetainedBackingBytes + receipt.hostRetainedBackingBytes + receipt.pendingCloneReservedBytes
       || receipt.coverage !== 'registered-solid-mesh-backings-only' || !borrowed.scope.currentReceipt(receipt)) return recordReferenceRepairRejection('scene-budget:3');
-    const buffers = uiBackings.buffers(), epoch = uiBackings.epoch();
+    const buffers = uiBackings.buffers(), capturedGeneration = uiBackings.epoch();
     const inspection = await borrowed.scope.inspectBackings(receipt, buffers);
     const latest = options.readSolidMeshState?.();
     if (latest === undefined || borrowReferenceRepairPreview(descriptor, latest)?.scope !== borrowed.scope
       || disposed || requestedRepairPreview !== descriptor || inspection.status !== 'known'
-      || inspection.coverage !== 'registered-main-solid-backings-only' || uiBackings.epoch() !== epoch
+      || inspection.coverage !== 'registered-main-solid-backings-only' || uiBackings.epoch() !== capturedGeneration
       || !uiBackings.known() || !borrowed.scope.currentInspection(inspection, receipt)) return recordReferenceRepairRejection('scene-budget:4');
     const input = new WeakSet<ArrayBufferLike>(buffers);
     const sourceBackings = new Set<ArrayBufferLike>();
@@ -172,7 +172,7 @@ export function createViewportRepairPreview(
         sourceBackings.add(buffer);
       }
     }
-    const current = repairPreviewProof(new WeakRef(borrowed.scope), receipt, inspection, input, epoch);
+    const current = repairPreviewProof(new WeakRef(borrowed.scope), receipt, inspection, input, capturedGeneration);
     const baseline = receipt.admittedBoundBytes;
     const union = baseline + buffers.filter(buffer => !sourceBackings.has(buffer)).reduce((sum, buffer) => sum + buffer.byteLength, 0)
       + uiBackings.pending();

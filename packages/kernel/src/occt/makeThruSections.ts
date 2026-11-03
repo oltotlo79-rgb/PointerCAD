@@ -1,3 +1,5 @@
+import { unitDirection as toUnit } from './normalizeDirection.js';
+import { lengthVec as magnitude, subVec as subtract, dotVec as dot } from './sketchCorner.js';
 /**
  * 面と面をつなぐ立体(罫線面、FR-430)とロフト(FR-410)。計画書 P5 §2.9、タスク24。
  *
@@ -198,26 +200,7 @@ export const MISSING_SECTION_FACE_MESSAGE =
 export const UNUSABLE_SECTION_FACE_MESSAGE =
   'つなぐ面は平らな面か、縁が 1 本につながる面にしてください。';
 
-function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-}
 
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function magnitude(value: Vec3Tuple): number {
-  return Math.hypot(value[0], value[1], value[2]);
-}
-
-/** 長さが取れない(0・非数)ときは null。他の make*.ts の toUnit と同じ考え。 */
-function toUnit(value: Vec3Tuple): Vec3Tuple | null {
-  const size = magnitude(value);
-  if (!Number.isFinite(size) || size <= 0) {
-    return null;
-  }
-  return [value[0] / size, value[1] / size, value[2] / size];
-}
 
 /** 球面上の 2 つの向きの間を、球面に沿って補間する(球冠の輪を作るのに使う)。 */
 function slerp(from: Vec3Tuple, to: Vec3Tuple, ratio: number): Vec3Tuple {
@@ -461,19 +444,32 @@ function findShell(oc: OpenCascadeInstance, shape: TopoDS_Shape): TopoDS_Shell |
   if (shape.ShapeType() === shellType) {
     return oc.TopoDS.Shell_1(shape);
   }
-  const subShapes = new oc.TopTools_IndexedMapOfShape_1();
+  const inputs = createAllocations();
+  const returned = createAllocations();
   try {
-    oc.TopExp.MapShapes_2(shape, subShapes, true, true);
-    const count = Number(subShapes.Size());
-    for (let index = 1; index <= count; index += 1) {
-      const subShape = subShapes.FindKey(index);
-      if (subShape.ShapeType() === shellType) {
-        return oc.TopoDS.Shell_1(subShape);
+    let selected: TopoDS_Shell | null = null;
+    try {
+      const subShapes = inputs.keep(new oc.TopTools_IndexedMapOfShape_1());
+      oc.TopExp.MapShapes_2(shape, subShapes, true, true);
+      const count = Number(subShapes.Size());
+      for (let index = 1; index <= count; index += 1) {
+        const candidate = createAllocations();
+        try {
+          const subShape = candidate.keep(subShapes.FindKey(index));
+          if (subShape.ShapeType() === shellType) {
+            selected = returned.keep(oc.TopoDS.Shell_1(subShape));
+            break;
+          }
+        } finally { candidate.release(); }
       }
+    } finally {
+      inputs.release();
     }
-    return null;
-  } finally {
-    subShapes.delete();
+    // No return is pending while either the source wrapper or its map is released.
+    return selected;
+  } catch (error) {
+    returned.release();
+    throw error;
   }
 }
 

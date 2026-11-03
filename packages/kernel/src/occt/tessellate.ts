@@ -236,50 +236,54 @@ function appendPlacedNodes(
   nodeCount: number,
   positions: Triples,
 ): void {
+  const temporary = createAllocations();
   switch (placement.kind) {
     case 'keep':
       for (let i = 1; i <= nodeCount; i += 1) {
-        const node = triangulation.Node(i);
-        const x = node.X(), y = node.Y(), z = node.Z();
-        node.delete();
-        positions.push(x, y, z);
+        try {
+          const node = temporary.keep(triangulation.Node(i));
+          const x = node.X(), y = node.Y(), z = node.Z();
+          positions.push(x, y, z);
+        } finally { temporary.release(); }
       }
       return;
     case 'translate': {
       const { tx, ty, tz } = placement;
       for (let i = 1; i <= nodeCount; i += 1) {
-        const node = triangulation.Node(i);
-        const x = node.X() + tx, y = node.Y() + ty, z = node.Z() + tz;
-        node.delete();
-        positions.push(x, y, z);
+        try {
+          const node = temporary.keep(triangulation.Node(i));
+          const x = node.X() + tx, y = node.Y() + ty, z = node.Z() + tz;
+          positions.push(x, y, z);
+        } finally { temporary.release(); }
       }
       return;
     }
     case 'rigid': {
       const { a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34 } = placement;
       for (let i = 1; i <= nodeCount; i += 1) {
-        const node = triangulation.Node(i);
-        const x = node.X();
-        const y = node.Y();
-        const z = node.Z();
-        node.delete();
-        positions.push(
-          a11 * x + a12 * y + a13 * z + a14,
-          a21 * x + a22 * y + a23 * z + a24,
-          a31 * x + a32 * y + a33 * z + a34,
-        );
+        try {
+          const node = temporary.keep(triangulation.Node(i));
+          const x = node.X();
+          const y = node.Y();
+          const z = node.Z();
+          positions.push(
+            a11 * x + a12 * y + a13 * z + a14,
+            a21 * x + a22 * y + a23 * z + a24,
+            a31 * x + a32 * y + a33 * z + a34,
+          );
+        } finally { temporary.release(); }
       }
       return;
     }
     case 'occt': {
       const { transformation } = placement;
       for (let i = 1; i <= nodeCount; i += 1) {
-        const node = triangulation.Node(i);
-        const moved = node.Transformed(transformation);
-        const x = moved.X(), y = moved.Y(), z = moved.Z();
-        node.delete();
-        moved.delete();
-        positions.push(x, y, z);
+        try {
+          const node = temporary.keep(triangulation.Node(i));
+          const moved = temporary.keep(node.Transformed(transformation));
+          const x = moved.X(), y = moved.Y(), z = moved.Z();
+          positions.push(x, y, z);
+        } finally { temporary.release(); }
       }
       return;
     }
@@ -298,41 +302,44 @@ function appendPlacedNormals(
   nodeNormals: TColgp_Array1OfDir,
   normals: Triples,
 ): void {
+  const temporary = createAllocations();
   const lower = nodeNormals.Lower();
   const upper = nodeNormals.Upper();
   switch (placement.kind) {
     case 'keep':
     case 'translate':
       for (let i = lower; i <= upper; i += 1) {
-        const direction = nodeNormals.Value(i);
-        normals.push(direction.X(), direction.Y(), direction.Z());
-        direction.delete();
+        try {
+          const direction = temporary.keep(nodeNormals.Value(i));
+          normals.push(direction.X(), direction.Y(), direction.Z());
+        } finally { temporary.release(); }
       }
       return;
     case 'rigid': {
       const { a11, a12, a13, a21, a22, a23, a31, a32, a33 } = placement;
       for (let i = lower; i <= upper; i += 1) {
-        const direction = nodeNormals.Value(i);
-        const x = direction.X();
-        const y = direction.Y();
-        const z = direction.Z();
-        direction.delete();
-        const nx = a11 * x + a12 * y + a13 * z;
-        const ny = a21 * x + a22 * y + a23 * z;
-        const nz = a31 * x + a32 * y + a33 * z;
-        const modulus = Math.sqrt(nx * nx + ny * ny + nz * nz);
-        normals.push(nx / modulus, ny / modulus, nz / modulus);
+        try {
+          const direction = temporary.keep(nodeNormals.Value(i));
+          const x = direction.X();
+          const y = direction.Y();
+          const z = direction.Z();
+          const nx = a11 * x + a12 * y + a13 * z;
+          const ny = a21 * x + a22 * y + a23 * z;
+          const nz = a31 * x + a32 * y + a33 * z;
+          const modulus = Math.sqrt(nx * nx + ny * ny + nz * nz);
+          normals.push(nx / modulus, ny / modulus, nz / modulus);
+        } finally { temporary.release(); }
       }
       return;
     }
     case 'occt': {
       const { transformation } = placement;
       for (let i = lower; i <= upper; i += 1) {
-        const direction = nodeNormals.Value(i);
-        const moved = direction.Transformed(transformation);
-        normals.push(moved.X(), moved.Y(), moved.Z());
-        direction.delete();
-        moved.delete();
+        try {
+          const direction = temporary.keep(nodeNormals.Value(i));
+          const moved = temporary.keep(direction.Transformed(transformation));
+          normals.push(moved.X(), moved.Y(), moved.Z());
+        } finally { temporary.release(); }
       }
       return;
     }
@@ -357,6 +364,7 @@ function appendFaceMesh(
   admission?: TessellationAdmission,
   nextFaceCount = 0,
 ): void {
+  const temporary = createAllocations();
   const { keep, release } = createAllocations();
 
   try {
@@ -384,16 +392,17 @@ function appendFaceMesh(
     const reversed = face.Orientation_1() !== oc.TopAbs_Orientation.TopAbs_FORWARD;
     const triangles = keep(triangulation.Triangles());
     for (let i = 1; i <= triangleCount; i += 1) {
-      const triangle = triangles.Value(i);
-      const a = nodeOffset + triangle.Value(1) - 1;
-      const b = nodeOffset + triangle.Value(2) - 1;
-      const c = nodeOffset + triangle.Value(3) - 1;
-      if (reversed) {
-        indices.push(b, a, c);
-      } else {
-        indices.push(a, b, c);
-      }
-      triangle.delete();
+      try {
+        const triangle = temporary.keep(triangles.Value(i));
+        const a = nodeOffset + triangle.Value(1) - 1;
+        const b = nodeOffset + triangle.Value(2) - 1;
+        const c = nodeOffset + triangle.Value(3) - 1;
+        if (reversed) {
+          indices.push(b, a, c);
+        } else {
+          indices.push(a, b, c);
+        }
+      } finally { temporary.release(); }
     }
   } finally {
     release();

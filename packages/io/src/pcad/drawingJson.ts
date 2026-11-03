@@ -1,3 +1,4 @@
+import { parseFailure as failure } from './codedFailure.js';
 /** 図面文書と `.pcadd` の `document.json` の相互変換(P8 タスク3)。 */
 
 import type {
@@ -19,7 +20,7 @@ import type {
 import { drawingNumberIssue, drawingSheetExpressionMatches } from '@pointercad/model';
 import { isSubShapeOrigin, serializeSubShapeOrigin } from './codecs/subShapeOrigin.js';
 import { cleanDrawingFlatReference, isDrawingFlatReference } from './drawingFlatJson.js';
-import { isRecord, isUnknownArray } from './guards.js';
+import { isFiniteNumber, isRecord, isUnknownArray } from './guards.js';
 import { cleanDrawingConstruction, isDrawingConstruction } from './drawingConstructionJson.js';
 import { cleanDatum, cleanGdtFrame, cleanWeldSymbol, isDatumDefinition, isGdtFrame, isWeldSymbol } from './gdtJson.js';
 import { hasOnlyFiniteJsonNumbers, preserveDrawingJsonFields } from './drawingJsonCompatibility.js';
@@ -331,10 +332,6 @@ function hasString(record: Record<string, unknown>, key: string): boolean {
   return typeof record[key] === 'string';
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
 function hasNumber(record: Record<string, unknown>, key: string): boolean {
   return isFiniteNumber(record[key]);
 }
@@ -638,10 +635,6 @@ function isDrawingDocument(value: unknown): value is DrawingDocument {
     && isUnknownArray(value['weldSymbols']) && value['weldSymbols'].length <= 10000 && value['weldSymbols'].every((symbol) => isWeldSymbol(symbol, { target: isDimensionTarget, style: isStyle }))
     && isUnknownArray(value['layers']) && value['layers'].every(isLayer)
     && isUnknownArray(value['parameters']) && value['parameters'].every(isParameter);
-}
-
-function failure(code: ParseError['code'], message: string): ParseDrawingResult {
-  return { ok: false, error: { code, message } };
 }
 
 function readCurrentEnvelope(raw: Record<string, unknown>): ParseDrawingResult {

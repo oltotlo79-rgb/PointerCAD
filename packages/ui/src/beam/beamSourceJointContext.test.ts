@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildStandardPartFromSource, resolveConstrainedAssembly } from '@pointercad/model';
-import { cadAxialBoltFixture } from '../../../model/src/analysis/cadAxialBolt.testSupport.js';
+import { cadAxialBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { nestedJointCommandContext } from '../assembly/nestedWeldDraft.js';
 import { beamUiFixture } from './beam.testSupport.js';

@@ -189,27 +189,31 @@ export function readStl(
       }
 
       const positions = new Float32Array(nodeCount * 3);
+      const nodeOwner = createAllocations();
       for (let index = 1; index <= nodeCount; index += 1) {
-        const node = triangulation.Node(index);
-        const base = (index - 1) * 3;
-        positions[base] = node.X();
-        positions[base + 1] = node.Y();
-        positions[base + 2] = node.Z();
-        node.delete();
+        try {
+          const node = nodeOwner.keep(triangulation.Node(index));
+          const base = (index - 1) * 3;
+          positions[base] = node.X();
+          positions[base + 1] = node.Y();
+          positions[base + 2] = node.Z();
+        } finally { nodeOwner.release(); }
       }
 
       const indices = new Uint32Array(triangleCount * 3);
       // `Triangles()` は `const T&` を返すので embind の複製。使い終わったら解放が要る
       // (rules/06 10.13 の ③。忘れると読み込みのたびに溜まって目に見えて遅くなる)。
       const triangles = keep(triangulation.Triangles());
+      const triangleOwner = createAllocations();
       for (let index = 1; index <= triangleCount; index += 1) {
-        const triangle = triangles.Value(index);
-        const base = (index - 1) * 3;
-        // OCCT の配列は 1 始まり、three.js の頂点番号は 0 始まりなので 1 を引く。
-        indices[base] = triangle.Value(1) - 1;
-        indices[base + 1] = triangle.Value(2) - 1;
-        indices[base + 2] = triangle.Value(3) - 1;
-        triangle.delete();
+        try {
+          const triangle = triangleOwner.keep(triangles.Value(index));
+          const base = (index - 1) * 3;
+          // OCCT の配列は 1 始まり、three.js の頂点番号は 0 始まりなので 1 を引く。
+          indices[base] = triangle.Value(1) - 1;
+          indices[base + 1] = triangle.Value(2) - 1;
+          indices[base + 2] = triangle.Value(3) - 1;
+        } finally { triangleOwner.release(); }
       }
 
       return {

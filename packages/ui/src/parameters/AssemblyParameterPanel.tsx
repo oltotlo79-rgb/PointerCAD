@@ -126,16 +126,16 @@ export function AssemblyParameterPanel(): React.JSX.Element | null {
     setDraft(null);
     switch (field) {
       case 'name':
-        settle(commitAssemblyParameterEdit(document, (doc) => commitRenameAssemblyParameter(doc, row.name, pending.text.trim()), documentVersion), rejected);
+        settle(commitAssemblyParameterEdit(document, (assemblyDocument) => commitRenameAssemblyParameter(assemblyDocument, row.name, pending.text.trim()), documentVersion), rejected);
         return;
       case 'source':
         // 式は文字列のまま入れる。読めない式・循環も断らずに残し、理由を行に出す(部品の表と同じ)。
-        settle(commitAssemblyParameterEdit(document, (doc) => commitReplaceAssemblyParameter(doc, row.name, {
+        settle(commitAssemblyParameterEdit(document, (assemblyDocument) => commitReplaceAssemblyParameter(assemblyDocument, row.name, {
           value: { source: assemblyParameterSource(row.unit, pending.text, lengthUnit), value: row.value, display: String(row.value) },
         }), documentVersion), rejected);
         return;
       case 'description':
-        settle(commitAssemblyParameterEdit(document, (doc) => commitReplaceAssemblyParameter(doc, row.name, { description: pending.text }), documentVersion), rejected);
+        settle(commitAssemblyParameterEdit(document, (assemblyDocument) => commitReplaceAssemblyParameter(assemblyDocument, row.name, { description: pending.text }), documentVersion), rejected);
         return;
     }
   };
@@ -185,15 +185,15 @@ export function AssemblyParameterPanel(): React.JSX.Element | null {
           <span className="pcad-parameter__actions">
             <button type="button" className="pcad-button pcad-parameter__action" title={t('parameterPanel.moveUpTooltip')}
               aria-label={`${t('parameterPanel.moveUpTooltip')} ${row.name}`} disabled={index === 0}
-              onClick={() => { settle(commitAssemblyParameterEdit(document, (doc) => commitReorderAssemblyParameters(doc, index, index - 1), documentVersion), rowRejection(row)); }}>
+              onClick={() => { settle(commitAssemblyParameterEdit(document, (assemblyDocument) => commitReorderAssemblyParameters(assemblyDocument, index, index - 1), documentVersion), rowRejection(row)); }}>
               {t('parameterPanel.moveUpMark')}</button>
             <button type="button" className="pcad-button pcad-parameter__action" title={t('parameterPanel.moveDownTooltip')}
               aria-label={`${t('parameterPanel.moveDownTooltip')} ${row.name}`} disabled={index === rows.length - 1}
-              onClick={() => { settle(commitAssemblyParameterEdit(document, (doc) => commitReorderAssemblyParameters(doc, index, index + 1), documentVersion), rowRejection(row)); }}>
+              onClick={() => { settle(commitAssemblyParameterEdit(document, (assemblyDocument) => commitReorderAssemblyParameters(assemblyDocument, index, index + 1), documentVersion), rowRejection(row)); }}>
               {t('parameterPanel.moveDownMark')}</button>
             <button type="button" className="pcad-button pcad-parameter__action" title={t('parameterPanel.removeTooltip')}
               aria-label={`${t('parameterPanel.removeTooltip')} ${row.name}`}
-              onClick={() => { settle(commitAssemblyParameterEdit(document, (doc) => commitRemoveAssemblyParameter(doc, row.name), documentVersion), rowRejection(row)); }}>
+              onClick={() => { settle(commitAssemblyParameterEdit(document, (assemblyDocument) => commitRemoveAssemblyParameter(assemblyDocument, row.name), documentVersion), rowRejection(row)); }}>
               {t('parameterPanel.removeMark')}</button>
           </span>
         </div>
@@ -205,7 +205,7 @@ export function AssemblyParameterPanel(): React.JSX.Element | null {
           <div className="pcad-segmented pcad-choice__options" role="group" aria-label={`${t('parameterPanel.unitLabel')} ${row.name}`}>
             {PARAMETER_UNITS.map((unit) => (
               <button key={unit} type="button" className="pcad-button" title={t('controlGuide.parameter.unit')} aria-pressed={row.unit === unit}
-                onClick={() => { settle(commitAssemblyParameterEdit(document, (doc) => commitReplaceAssemblyParameter(doc, row.name, { unit }), documentVersion), rowRejection(row)); }}>
+                onClick={() => { settle(commitAssemblyParameterEdit(document, (assemblyDocument) => commitReplaceAssemblyParameter(assemblyDocument, row.name, { unit }), documentVersion), rowRejection(row)); }}>
                 {t(UNIT_KEYS[unit])}</button>
             ))}
           </div>
@@ -230,7 +230,7 @@ export function AssemblyParameterPanel(): React.JSX.Element | null {
           aria-label={t('parameterPanel.addTooltip')}
           onClick={() => {
             const next = assemblyParameterDraftFor(document);
-            settle(commitAssemblyParameterEdit(document, (doc) => commitAddAssemblyParameter(doc, next), documentVersion),
+            settle(commitAssemblyParameterEdit(document, (assemblyDocument) => commitAddAssemblyParameter(assemblyDocument, next), documentVersion),
               { name: next.name, field: 'name', text: next.name });
           }}>{t('parameterPanel.addMark')}</button>
       </div>

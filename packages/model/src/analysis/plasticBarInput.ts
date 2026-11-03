@@ -1,4 +1,5 @@
-import { fields, InputIssue, text } from './analysisValidation.js';
+import { isFiniteNumber } from '../valueGuards.js';
+import { createInputIssueFail, fields, InputIssue, text } from './analysisValidation.js';
 import { analysisPropertyEvidenceKeys, hardeningPropertySeries, readOptionalAnalysisPropertyEvidence,
   type AnalysisPropertyEvidence } from './analysisPropertyEvidence.js';
 
@@ -53,11 +54,9 @@ export function plasticBarSiValues(value: Omit<PlasticBarSavedInput, 'schema' | 
 const LIMITS = { maximumKnots: 64, maximumStepsPerSegment: 200, maximumSteps: 2000, maximumStrain: 0.05,
   maximumLengthM: 500, maximumAreaM2: 1 } as const;
 
-function fail(path: string, message: string): never {
-  throw new InputIssue('plastic-bar', path, message);
-}
+const fail: (path: string, message: string) => never = createInputIssueFail('plastic-bar');
 function finite(value: unknown, path: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) fail(path, 'Expected a finite number');
+  if (!isFiniteNumber(value)) fail(path, 'Expected a finite number');
   return value === 0 ? 0 : value;
 }
 

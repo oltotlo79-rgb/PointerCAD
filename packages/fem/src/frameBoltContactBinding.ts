@@ -1,11 +1,8 @@
+import { isPlainRecord as record } from './valueGuards.js';
 import { decodeFrameBoltContact, type FrameBoltContactInput } from './beamBoltContact.js';
 
 export type FrameBoltContactResult = ReturnType<typeof decodeFrameBoltContact>;
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
-}
 
 /** 参照する前にdata descriptorだけを認め、getterを評価しない。 */
 function data(value: unknown, depth = 0): boolean {

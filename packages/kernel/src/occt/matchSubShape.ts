@@ -1,3 +1,4 @@
+import { distanceVec as distance, dotVec } from './sketchCorner.js';
 /**
  * 部分形状(面・辺・頂点)の指紋の採点と選び直し(計画書 P3 §2.2、§0.a-0.4、タスク5)。
  *
@@ -169,10 +170,6 @@ export interface MatchScoreParts {
   readonly total: number;
 }
 
-/** 2 点の距離(mm)。 */
-function distance(a: Vec3Tuple, b: Vec3Tuple): number {
-  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
 
 /**
  * 軸の点。両方に軸があれば `max(0, 内積)`、片方でも無ければ 0.5(§2.2.3)。
@@ -193,7 +190,7 @@ export function scoreAxis(a: Vec3Tuple | null, b: Vec3Tuple | null): number {
   if (first === null || second === null) {
     return 0.5;
   }
-  const dot = first[0] * second[0] + first[1] * second[1] + first[2] * second[2];
+  const dot = dotVec(first, second);
   if (!Number.isFinite(dot)) {
     return 0.5;
   }

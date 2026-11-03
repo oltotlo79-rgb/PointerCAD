@@ -1,3 +1,4 @@
+import { subVec3 as subtract, dotVec3 as dot } from '@pointercad/model/vec3';
 import { InputIssue, SOLID_CONTACT_LIMITS, type Vector3 } from '@pointercad/model/beam-analysis';
 import { determinant3, multiply3, transpose3, type Matrix3 } from './finiteKinematics.js';
 import type { SolidContactPlan, SolidContactPlanFace } from './solidContactModel.js';
@@ -46,9 +47,6 @@ type Triangle = readonly [Vector3, Vector3, Vector3];
 const FRAME_TOLERANCE = 1e-12;
 const GEOMETRY_RELATIVE_TOLERANCE = 1e-12;
 const copy = (value: Vector3): Vector3 => [value[0], value[1], value[2]];
-const subtract = (a: Vector3, b: Vector3): Vector3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const dot = (a: Vector3, b: Vector3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-
 function refuse(code: string, path: string, reason: string): never { throw new InputIssue(code, path, reason); }
 function finite(value: number, path: string): number {
   if (!Number.isFinite(value)) refuse('contact-history-numeric', path, 'Expected a finite contact-history value');

@@ -22,11 +22,11 @@ import type { AnalysisBoundaryReply, AnalysisBoundaryRequest } from './geometry/
 import type { SolidRecomputeRequest, SolidRecomputeResult } from '@pointercad/kernel';
 import { exactExpressionValueFromNumber, expressionValueFromNumber } from '@pointercad/expression';
 import * as Comlink from 'comlink';
-import { loadOcctForNode } from '../../kernel/src/occt/loadOcct.node.js';
-import { createShapeCache, type AcquiringShapeCache } from '../../kernel/src/worker/shapeCache.js';
-import type { CachedSolid } from '../../kernel/src/worker/recomputeSolids.js';
-import * as interferenceCommon from '../../kernel/src/occt/intersectionVolume.js';
-import * as interferenceMesh from '../../kernel/src/occt/exportMesh.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import { createShapeCache, type AcquiringShapeCache } from '@pointercad/kernel/testing/shape-cache';
+import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import * as interferenceCommon from '@pointercad/kernel/testing/intersection-volume';
+import * as interferenceMesh from '@pointercad/kernel/testing/export-mesh';
 
 import {
   createKernelBridge,

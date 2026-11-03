@@ -3,7 +3,7 @@ import { expressionValueFromNumber as number } from '@pointercad/expression';
 import { createMathBackend, createFunctionMathSource, executeMathWorkRequest, executeFunctionCurveWorkRequest, type MathExecutionBackend } from '@pointercad/expression/math/worker';
 import { decodeMathWorkReply, CANDIDATE_MATH_BY_ID } from '@pointercad/expression/math/contracts';
 import { createKernelApi } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, type AssemblyKernelBridge } from '../kernelBridge.js';
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
 import { recomputePart } from '../part/recomputePart.js';

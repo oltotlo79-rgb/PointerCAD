@@ -49,6 +49,8 @@ function withSample(index: number, change: Readonly<Record<string, unknown>>): R
 describe('strict plastic-bar result reader (used before any comparison)', () => {
   it('accepts the protocol-shaped fixture and reports zero reference deviation', () => {
     const read = readPlasticBarNative(rawFrom(rawSamples(plan())), plan());
+    const negativeZero = readPlasticBarNative(withSample(1, { targetDisplacementM: -0 }), plan());
+    expect(Object.is(negativeZero.samples[1].targetDisplacementM, -0)).toBe(true);
     expect(read.samples).toHaveLength(4);
     expect(read.yielded).toBe(true);
     expect(read.referenceDeviation).toEqual({ stress: 0, plasticStrain: 0, force: 0, displacement: 0, strain: 0 });
@@ -83,6 +85,7 @@ describe('strict plastic-bar result reader (used before any comparison)', () => 
     ];
     for (const [label, value, message] of cases) {
       expect(() => readPlasticBarNative(value, plan()), label).toThrow(message);
+      expect(() => readPlasticBarNative(value, plan()), label).toThrow(/^plastic-bar-result: /u);
     }
   });
 

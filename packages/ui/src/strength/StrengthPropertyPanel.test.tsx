@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readDocumentBundle, writePcadaFile } from '@pointercad/io';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { savedBoltFixture } from '../../../model/src/analysis/cadNativeBoltPreloadInput.testSupport.js';
+import { savedBoltFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachBeamAnalysis, type BeamAttachment } from '../beam/attachBeamAnalysis.js';

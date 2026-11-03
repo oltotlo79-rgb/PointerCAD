@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { standardMembersToBeamAnalysis } from '@pointercad/model';
 import { withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { beamCadFixture } from '../../../../model/src/analysis/beamInputs.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from '../assemblyJson.js';
 
 describe('modal CAD input persistence and fresh geometry regeneration', () => {

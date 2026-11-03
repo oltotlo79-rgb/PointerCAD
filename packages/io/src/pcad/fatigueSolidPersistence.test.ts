@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyPartDocument, createUndoStack, pushUndo, redo, undo } from '@pointercad/model';
 import { fatigueSolidInputMatches, withBeamAnalysisInputs } from '@pointercad/model/beam-analysis';
-import { beamCadFixture } from '../../../model/src/analysis/beamInputs.testSupport.js';
+import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { isRecord } from './guards.js';

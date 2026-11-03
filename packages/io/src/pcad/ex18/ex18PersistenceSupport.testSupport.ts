@@ -5,20 +5,20 @@ import { createKernelApi } from '@pointercad/kernel';
 import { createDirectKernelBridge, recomputePart, replaceSolid, resolveSubShapeReference,
   type ImportedShapeBytes, type KernelBridge, type PartDocument, type ResolvedPart } from '@pointercad/model';
 import { expect } from 'vitest';
-import { loadOcctForNode } from '../../../../kernel/src/occt/loadOcct.node.js';
-import type { CachedSolid } from '../../../../kernel/src/worker/recomputeSolids.js';
-import { createShapeCache } from '../../../../kernel/src/worker/shapeCache.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
+import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
+import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import { buildEx18SketchBracket, buildEx18SewnBracket, buildEx18ExpressionBracket,
   buildEx18RevolvedFlange, buildEx18RuledFlange, buildEx18ExpressionFlange,
   buildEx18ExtrudedOblique, buildEx18SewnOblique, buildEx18ExpressionOblique,
   editEx18SketchHoleDiameter, editEx18SewnDiameter, editEx18ExpressionDiameter,
   editEx18RevolvedFlangeRadius, editEx18FlangeBore, editEx18ObliqueDepth,
-  routeExpression } from '../../../../model/src/part/ex18RouteBuilders.testSupport.js';
+  routeExpression } from '@pointercad/model/testing/ex18-fixtures';
 import { importEx18DirectSeed, directPlanarFace, directFaceReference, appendEx18DirectEdit,
-  type Ex18DirectShape } from '../../../../model/src/part/ex18RouteBuildersDirect.testSupport.js';
+  type Ex18DirectShape } from '@pointercad/model/testing/ex18-fixtures';
 import { EX18_ORACLE_EXPECTATIONS, EX18_ORACLE_A_DIAMETER_EIGHT,
-  EX18_ORACLE_B_RADIUS_FOUR, EX18_ORACLE_C_DEPTH_TWELVE } from '../../../../model/src/part/ex18RouteFixtures.testSupport.js';
-import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation } from '../../../../model/src/part/ex18ShapeOracle.testSupport.js';
+  EX18_ORACLE_B_RADIUS_FOUR, EX18_ORACLE_C_DEPTH_TWELVE } from '@pointercad/model/testing/ex18-fixtures';
+import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation } from '@pointercad/model/testing/ex18-fixtures';
 
 export const W08_TIMEOUT = 180_000;
 export const W08_SAVED_AT = '2026-10-26T00:00:00.000Z';
@@ -34,7 +34,12 @@ export function w08Session() {
 }
 
 export async function w08Compute(part: PartDocument, finalId: string, session: ReturnType<typeof w08Session>,
-  shapes: ImportedShapeBytes = new Map()) {
+  shapes: ImportedShapeBytes = new Map()): Promise<{
+    readonly result: Awaited<ReturnType<typeof recomputePart>>;
+    readonly body: Awaited<ReturnType<typeof recomputePart>>['bodies'][number];
+    readonly key: ResolvedPart['steps'][number]['key'];
+    readonly measured: ReturnType<typeof measureEx18Shape>;
+  }> {
   let resolved: ResolvedPart | undefined;
   const result = await recomputePart(part, session.bridge, { importedShapes: shapes,
     onResolved: next => { resolved = next; } });

@@ -1,3 +1,4 @@
+import { dotVec as dot, subVec as subtract } from './sketchCorner.js';
 import type { OpenCascadeInstance, TopoDS_Face, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { Vec3Tuple } from '../types.js';
@@ -42,14 +43,6 @@ interface PlateGeometry {
   readonly caps: readonly PlaneSignature[];
   readonly filledVolume: number;
   readonly volume: number;
-}
-
-function dot(a: Vec3Tuple, b: Vec3Tuple): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-function subtract(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 }
 
 function addScaled(a: Vec3Tuple, b: Vec3Tuple, scale = 1): Vec3Tuple {

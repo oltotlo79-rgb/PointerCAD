@@ -5,8 +5,8 @@
  * including degree-one, two-pole Bezier/BSpline representations proven to cover their full segment.
  * Other surfaces/curves remain explicitly unsupported, never silently approximated by a mesh.
  */
-import { createAllocations, type Allocations } from '../../../kernel/src/occt/allocations.js';
-import { isValidShape, measureVolume } from '../../../kernel/src/occt/solidMesh.js';
+import { createAllocations, type Allocations } from '@pointercad/kernel';
+import { isValidShape, measureVolume } from '@pointercad/kernel';
 
 type Occt = Parameters<typeof measureVolume>[0];
 type Shape = Parameters<typeof measureVolume>[1];

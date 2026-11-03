@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import { createKernelApi, SUB_SHAPE_MATCH_THRESHOLD } from '@pointercad/kernel';
-import { loadOcctForNode } from '../../../kernel/src/occt/loadOcct.node.js';
+import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { createDirectKernelBridge, resolveSubShapeReference, SUB_SHAPE_AMBIGUITY_MARGIN, type KernelBridge, type MeasureOutcome, type SolidBody,
   type SolidEdgeEntry, type SolidFaceEntry, type SolidVertexEntry } from '../kernelBridge.js';
 import { scoreSubShapeMatch, selectMateTargetGeometry } from '../kernelBridge/subShapeMatching.js';

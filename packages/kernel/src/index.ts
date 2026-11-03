@@ -1,7 +1,7 @@
 export type { BoxParameters, MeshData, TessellationOptions } from './types.js';
-export type { SheetBaseStepSpec, SheetFlangeStepSpec, SheetBodyStepSpec } from './types.js';
+export type { SheetBaseStepSpec } from './types.js';
 export type { SheetMetalBaseInput } from './occt/makeSheetMetalBase.js';
-export type { SheetMetalBendFrame, SheetMetalBendStripInput } from './occt/makeSheetMetalBend.js';
+export type { SheetMetalBendFrame } from './occt/makeSheetMetalBend.js';
 export type { SheetMetalFlangeInput } from './occt/makeSheetMetalFlange.js';
 export type { SheetMetalProfileFlangeInput } from './occt/makeSheetMetalProfileFlange.js';
 export type {
@@ -21,13 +21,9 @@ export type {
 } from './types.js';
 // 輪郭のオフセット(FR-321、P4 タスク15)。Worker 越しの依頼と結果。
 export type {
-  OffsetContour,
   OffsetJoinType,
-  SketchOffsetFailure,
   SketchOffsetItem,
   SketchOffsetOutcome,
-  SketchOffsetRequest,
-  SketchOffsetResult,
 } from './types.js';
 // 投影・交差(FR-325、P4 タスク25・26)。Worker 越しの依頼と結果、作図面と 2 次元の曲線。
 export type {
@@ -36,33 +32,22 @@ export type {
   PlanePolyline,
   PlaneSegment,
   SketchPlaneFrame,
-  SketchProjectionFailure,
   SketchProjectionItem,
   SketchProjectionOutcome,
-  SketchProjectionRequest,
-  SketchProjectionResult,
   SketchSectionItem,
-  SketchSectionRequest,
   Vec2Tuple,
 } from './types.js';
 export { makeProjection, orderPlaneCurves, planeBasisOf, projectPointToPlane } from './occt/makeProjection.js';
 export { makeSection } from './occt/makeSection.js';
-export { functionCurvePolylines, type FunctionCurveSketchResult } from './occt/functionCurvePolylines.js';
+export { functionCurvePolylines } from './occt/functionCurvePolylines.js';
 export {
   hiddenLineView,
   hiddenLineViewForBodies,
   NO_DRAWABLE_SOLID_MESSAGE,
-  type HiddenLineBodiesSpec,
-  type HiddenLineSource,
-  type HiddenLineViewOutcome,
-  type HiddenLineViewSpec,
 } from './occt/makeHiddenLineViews.js';
 export {
   makeSectionShape,
   NO_SECTION_AT_POSITION_MESSAGE,
-  type CutFaceInfo,
-  type SectionShapeOutcome,
-  type SectionShapeSpec,
 } from './occt/makeSectionShape.js';
 export { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './occt/pickSubShape.js';
 // ソリッド(立体)の依頼と結果(FR-401〜404)。Comlink 越しに渡せる素の値だけで書いてある。
@@ -87,7 +72,7 @@ export { DEFAULT_ANGULAR_DEFLECTION, DEFAULT_LINEAR_DEFLECTION } from './types.j
 export type { AppearanceMatch, AppearanceQuery } from './types.js';
 // 基本形状(FR-429、P5 §2.7、タスク13・14)。段の依頼の型と 5 種の作り手。
 // model 側(resolvePart.ts、タスク16)が PrimitiveStepSpec を組み立てて段に乗せる。
-export type { PrimitiveShapeSpec, PrimitiveStepSpec } from './types.js';
+export type { PrimitiveStepSpec } from './types.js';
 // 基準点を「立体の頂点」にする追補(FR-429、§0.a-0.18、タスク14b)。頂点の選び直しは
 // P3 の指紋の採点(matchVertex)をそのまま使い、対象は消費しない。
 export {
@@ -99,7 +84,6 @@ export {
   resolvePrimitiveOrigin,
   MISSING_PRIMITIVE_VERTEX_MESSAGE,
   PRIMITIVE_ORIGIN_NOT_VERTEX_MESSAGE,
-  type AxesFrame,
 } from './occt/makePrimitive.js';
 // 罫線面(FR-430)とロフト(FR-410、P5 §2.9、タスク23・24)。段の依頼の型と作り手、
 // 球への外接直線の純関数(OCCT を使わないので model / 検査からそのまま呼べる)。
@@ -128,8 +112,6 @@ export type {
   DraftStepSpec,
   EmbossStepSpec,
   ExtrudeEndSpec,
-  FaceOffsetStepSpec,
-  FilletRadiusSpec,
   HoleEntrySpec,
   MirrorStepSpec,
   RibStepSpec,
@@ -139,7 +121,6 @@ export type {
   SurfaceStepSpec,
   SweepStepSpec,
   ThinExtrudeSide,
-  ThinExtrudeSpec,
   ThreadShaftStepSpec,
   TransformStepSpec,
 } from './types.js';
@@ -148,21 +129,17 @@ export { makeDraft, draftStatusName, type DraftInput } from './occt/makeDraft.js
 export {
   editSolidFace,
   MIN_FACE_OFFSET_MM,
-  type FaceOffsetInput,
-  type FaceOffsetResult,
 } from './occt/editSolidFace.js';
-export { moveSolidHole, type HoleMoveResult } from './occt/moveSolidHole.js';
+export { moveSolidHole } from './occt/moveSolidHole.js';
 export { makeEmboss, type EmbossInput } from './occt/makeEmboss.js';
 export { makeRib, type RibInput } from './occt/makeRib.js';
-export { makeShell, type ShellInput } from './occt/makeShell.js';
-export { makeSurface, isShellShape, type SurfaceResult } from './occt/makeSurface.js';
+export { makeShell } from './occt/makeShell.js';
+export { makeSurface, isShellShape } from './occt/makeSurface.js';
 export { makeSweep, type SweepInput } from './occt/makeSweep.js';
-export { makeThinExtrude, type ThinExtrudeInput } from './occt/makeThinExtrude.js';
+export { makeThinExtrude } from './occt/makeThinExtrude.js';
 export { makeThreadShaft, type ThreadShaftInput } from './occt/makeThread.js';
 export {
   makeVariableFillet,
-  type VariableFilletInput,
-  type VariableFilletTarget,
 } from './occt/makeVariableFillet.js';
 export {
   makeMirrorTransform,
@@ -208,7 +185,6 @@ export {
   bsplineDataForSpline,
   makeSplineEdge,
   splineDegree,
-  type BSplineData,
   type SplineSpec,
 } from './occt/makeSplineEdge.js';
 // スケッチの角の丸め・面取り(FR-323、タスク19)。**OCCT を呼ばない純関数**なので、
@@ -216,21 +192,21 @@ export {
 // OCCT の ChFi2d を使わないと決めた理由は makeSketchFillet2d.ts の冒頭にある。
 export {
   makeSketchFillet,
-  type SketchFilletPlaneSpec,
   type SketchFilletResult,
   type SketchFilletSpec,
 } from './occt/makeSketchFillet2d.js';
 export {
   makeSketchChamfer,
-  type SketchChamferResult,
-  type SketchChamferSpec,
 } from './occt/makeSketchChamfer2d.js';
 export { tessellate, type FaceTriangleRange, type SurfaceMesh } from './occt/tessellate.js';
 export {
-  ANALYSIS_NODE_EDGE, ANALYSIS_NODE_FACE, ANALYSIS_NODE_VERTEX, AnalysisBoundaryError, analysisMeshBuffers, auditBoundary,
-  buildAnalysisSurfaceMesh, type AnalysisBoundaryErrorCode, type AnalysisBoundaryMode, type AnalysisEdgeChain,
-  type AnalysisFaceSummary, type AnalysisMeshMetrics, type AnalysisSurfaceMesh, type AnalysisSurfaceMeshOptions,
-  type AnalysisSurfaceMeshRequest, type AnalysisSurfaceMeshResult,
+  ANALYSIS_NODE_EDGE,
+  ANALYSIS_NODE_FACE,
+  ANALYSIS_NODE_VERTEX,
+  AnalysisBoundaryError,
+  analysisMeshBuffers,
+  auditBoundary,
+  buildAnalysisSurfaceMesh,
 } from './occt/analysisSurfaceMesh.js';
 export { extractEdges, type EdgeLines, type EdgeSegmentRange } from './occt/extractEdges.js';
 export {
@@ -254,7 +230,6 @@ export {
   DISTANCE_FAILED_MESSAGE,
   MASS_PROPERTIES_FAILED_MESSAGE,
   type ShapeDistance,
-  type ShapeVolumeProperties,
 } from './occt/measureShape.js';
 export { makeExtrudeSolid, makeRevolveSolid } from './occt/makeSolidSweep.js';
 export { sewSolid } from './occt/sewSolid.js';
@@ -297,8 +272,6 @@ export {
   scoreVertex,
   type MatchScoreParts,
   type SubShapeMatch,
-  type ScoredSubShape,
-  type SubShapeCandidateResolution,
 } from './occt/matchSubShape.js';
 // 穴・ねじ穴(FR-405、FR-406、タスク6・9)。
 export { makeHole, makeHoleTools, resolveHoleFrame, type HoleFrame } from './occt/makeHole.js';
@@ -314,17 +287,16 @@ export {
   helixStartFrame,
   makeHelixEdge,
   makeHelixWire,
-  type HelixAxisFrame,
   type HelixSpec,
 } from './occt/makeHelix.js';
 // ばね(FR-414、タスク9b)。
 export { makeSpring, makeSpringProfile } from './occt/makeSpring.js';
-export { makeFunctionCurve, type FunctionCurveGeometrySpec, type FunctionCurveGeometryResult } from './occt/makeFunctionCurve.js';
-export { makeFunctionSurface, type FunctionSurfaceGeometryResult } from './occt/makeFunctionSurface.js';
+export { makeFunctionCurve } from './occt/makeFunctionCurve.js';
+export { makeFunctionSurface } from './occt/makeFunctionSurface.js';
 export { makeFunctionSurfaceBodies } from './occt/makeFunctionSurfaceBodies.js';
-export type { FunctionSurfaceBodies, FunctionSurfaceBody } from './occt/classifyFunctionSurface.js';
+export type { FunctionSurfaceBodies } from './occt/classifyFunctionSurface.js';
 export { MAX_FUNCTION_SURFACE_FACES, MAX_FUNCTION_SURFACE_VERTICES, type FunctionSurfaceGeometrySpec, type FunctionSurfaceInput } from './occt/functionSurfaceGeometrySpec.js';
-export { clipFunctionShape, FUNCTION_CLIP_BOUND_TOLERANCE, type FunctionClipBox, type FunctionClipResult } from './occt/clipFunctionShape.js';
+export { clipFunctionShape, FUNCTION_CLIP_BOUND_TOLERANCE, type FunctionClipBox } from './occt/clipFunctionShape.js';
 // 剛体変換(パターン、FR-411、FR-412、タスク9)。
 export {
   IDENTITY_TRANSFORM,
@@ -340,7 +312,6 @@ export {
   createShapeCache,
   SHAPE_CACHE_CAPACITY,
   type ShapeCache,
-  type ShapeCacheEntry,
   type ShapeCacheStats,
 } from './worker/shapeCache.js';
 export {
@@ -351,31 +322,23 @@ export {
   type SolidProgressCallback,
   type SolidRecomputeDeps,
 } from './worker/recomputeSolids.js';
-export { createKernelApi, type KernelApi, type ManagedKernelApi, type InterferenceKernelApi, type MaterialComparisonKernelApi } from './worker/kernelApi.js';
+export { createKernelApi, type KernelApi, type ManagedKernelApi, type MaterialComparisonKernelApi } from './worker/kernelApi.js';
 export type { AnalysisBoundaryKernelApi } from './worker/kernelApi.js';
 export { createRuntimePhaseJournal, type RuntimePhaseJournalSnapshot } from './worker/runtimePhaseJournal.js';
 export type { MaterialComparisonRequest } from './worker/compareCachedMaterials.js';
 export type { MaterialComparisonOutcome } from './worker/compareMaterialBodies.js';
 export type {
-  DrawingKernelCancelToken,
-  DrawingBodyInstance,
-  DrawingKernelFailure,
-  DrawingKernelProgress,
-  DrawingKernelProgressCallback,
-  HiddenLineCurve,
-  HiddenLineMode,
-  HiddenLineProvenance,
   HiddenLineRequest,
   HiddenLineResult,
-  HiddenLineViewRequest,
-  HiddenLineViewResult,
   SectionRequest,
   SectionResult,
 } from './types.js';
 export type {
-  InterferenceComponentSpec, InterferenceFailureCode, InterferenceInputCode, InterferenceMesh,
-  InterferencePair, InterferencePairFailure, InterferencePairId, InterferenceProgress,
-  InterferenceReport, InterferenceRequest, InterferenceResult, InterferenceRootFailure, InterferenceSkip,
+  InterferenceComponentSpec,
+  InterferencePair,
+  InterferenceProgress,
+  InterferenceRequest,
+  InterferenceResult,
 } from './types.js';
 export { createKernelWorker } from './client/createKernelWorker.js';
 // ---------------------------------------------------------------------------
@@ -391,15 +354,10 @@ export { createKernelWorker } from './client/createKernelWorker.js';
 export {
   withVirtualFile,
   withVirtualFileInput,
-  type VirtualFileOutput,
 } from './occt/virtualFile.js';
 // XCAF の文書(§2.5、タスク7)。STEP / OBJ / glTF が共用する、名前と色を持てる入れ物。
 export {
   buildXcafDocument,
-  type RgbTuple,
-  type XcafDocument,
-  type XcafDocumentOptions,
-  type XcafShapeEntry,
 } from './occt/xcafDocument.js';
 // 面ごとの色(§2.5.1、タスク7b+13b)。STEP(`writeStep.ts`)と OBJ / glTF(`writeCafMesh.ts`)
 // の両方が使う表と、その検査・断りの文言。
@@ -407,15 +365,11 @@ export {
   applyFaceColors,
   checkExportColor,
   faceColorNotFoundMessage,
-  type FaceColorMap,
 } from './occt/xcafFaceColors.js';
 // STEP の書き出し(§2.3、タスク7)と読み込み(§2.3・§2.9、タスク8)。
 export {
   writeStep,
   writeXcafStepDocument,
-  type StepWriteEntry,
-  type StepWriteOptions,
-  type StepWriteResult,
 } from './occt/writeStep.js';
 export {
   writeStepAssembly,
@@ -425,27 +379,18 @@ export {
   ASSEMBLY_EMPTY_NODE_MESSAGE,
   ASSEMBLY_MISSING_DEFINITION_MESSAGE,
   ASSEMBLY_NO_SHAPE_MESSAGE,
-  type XcafAssemblyDefinition,
-  type XcafAssemblySpec,
-  type XcafAssemblyWriteOptions,
 } from './occt/xcafAssembly.js';
 export {
   readStep,
   STEP_NO_SHAPE_MESSAGE,
   STEP_NO_SOLID_MESSAGE,
   STEP_READ_FAILED_MESSAGE,
-  type StepFileLengthUnit,
-  type StepReadBody,
-  type StepReadOptions,
-  type StepReadResult,
 } from './occt/readStep.js';
 export {
   readStepAssembly,
   placementFromStepLocation,
   STEP_ASSEMBLY_COMPONENT_MESSAGE,
   STEP_ASSEMBLY_CYCLE_MESSAGE,
-  type StepAssemblyDefinition,
-  type StepAssemblyReadResult,
 } from './occt/readStepAssembly.js';
 // B-rep ↔ バイト列(§0.a-0.9・§0.a-0.10、タスク9)。読み込んだ形を `.pcad` へ抱き込む。
 export {
@@ -462,7 +407,6 @@ export {
   EXPORT_COPY_FAILED_MESSAGE,
   EXPORT_DEFLECTION_MESSAGE,
   type ExportMesh,
-  type ExportMeshOptions,
 } from './occt/exportMesh.js';
 // 入出力で 2 つ以上のファイルが共用するもの(タスク16 で 1 か所へ寄せた)。
 // 断りの文言・三角形の束の型・法線と体積の計算は**ここが正本**で、`readStl.ts` /
@@ -485,19 +429,12 @@ export {
   DEGENERATE_CROSS_LENGTH_MM2,
   forEachExportTriangle,
   writeStl,
-  type ExportTriangle,
-  type StlWriteOptions,
-  type StlWriteResult,
 } from './occt/writeStl.js';
 // OBJ / glTF(.glb)の書き出し(§2.4・§2.5、タスク13)。立体ごとの色つき、これも純関数。
 export {
   writeCafMesh,
   DEFAULT_BODY_COLOR,
   MESH_NO_FACE_RANGES_MESSAGE,
-  type CafMeshBody,
-  type CafMeshFile,
-  type CafMeshWriteOptions,
-  type CafMeshWriteResult,
 } from './occt/writeCafMesh.js';
 // STL の読み込み(§2.8、タスク17)。断りの文言は共有の置き場の中継(上の注釈)。
 export {
@@ -506,7 +443,6 @@ export {
   STL_NO_FACE_MESSAGE,
   STL_READ_FAILED_MESSAGE,
   stlTooLargeMessage,
-  type StlReadOptions,
 } from './occt/readStl.js';
 // OBJ / glTF の読み込み(§2.8、タスク18)。glTF は m から mm へ直して返す。
 export {
@@ -515,15 +451,10 @@ export {
   CAF_MESH_NO_SHAPE_MESSAGE,
   CAF_MESH_READ_FAILED_MESSAGE,
   cafMeshTooLargeMessage,
-  type CafMeshFormat,
-  type CafMeshReadOptions,
 } from './occt/readCafMesh.js';
 // Worker 越しの書き出し・読み込みの依頼と結果(タスク10・16)。**口は 1 本ずつ**で、
 // 形式は依頼の中の `format` で判別する(§0.a-0.2)。
 export type {
-  ShapeExportBrepBody,
-  ShapeExportAssembly,
-  ShapeExportAssemblyDefinition,
   ShapeExportFile,
   ShapeExportItem,
   ShapeExportMeshBody,
@@ -531,11 +462,8 @@ export type {
   ShapeExportRequest,
   ShapeExportResult,
   ShapeImportBody,
-  ShapeImportAssembly,
-  ShapeImportAssemblyDefinition,
   ShapeImportRequest,
   ShapeImportResult,
-  ShapeAssemblyNode,
 } from './types.js';
 // 読み込んだ形のベースボディの段(FR-802、§2.8、タスク10)。model 側(タスク20)が
 // `shapeRef` を鍵にしてこの段を組み立てる。
@@ -559,21 +487,15 @@ export {
   PRINTABILITY_MIN_THICKNESS_MESSAGE,
   PRINTABILITY_NO_TRIANGLE_MESSAGE,
   PRINTABILITY_OVERHANG_ANGLE_MESSAGE,
-  type PrintabilityCancelToken,
-  type PrintabilityHooks,
-  type PrintabilityOptions,
-  type PrintabilityPhase,
   type PrintabilityProgress,
-  type PrintabilityProgressCallback,
   type PrintabilityResult,
-  type PrintabilitySummary,
 } from './occt/inspectPrintability.js';
 // 配置つきの立体の組み立てと境界箱(FR-601、FR-615、P7 §2.4、タスク8)。
 //
 // 配置の型(`PlacementSpec` / `QuaternionTuple`)は段の依頼と同じく `types.ts` が正本で、
 // 形を置く手続きと境界箱は `occt/placeBodies.ts` が正本。**四元数 → gp_Trsf の橋は
 // `makePlacementTransform` 1 か所だけ**なので、輸出もそこからの 1 経路だけにする。
-export type { PlacementSpec, QuaternionTuple } from './types.js';
+export type { PlacementSpec } from './types.js';
 export {
   IDENTITY_PLACEMENT,
   boundingBoxOf,
@@ -582,18 +504,18 @@ export {
   makePlacementTransform,
   placeShape,
   transformedBoundingBox,
-  type BoundingBoxRange,
-  type OcctBoxHandle,
 } from './occt/placeBodies.js';
-export type { SubShapeOrigin, CurrentOriginIndex, OriginBinding, OriginLookup, ShapeAddress,
-  ProfileLineAnchor, ProfileRegionAnchor } from './subShapeOrigin.js';
+export type {
+  SubShapeOrigin,
+  CurrentOriginIndex,
+} from './subShapeOrigin.js';
 
-export type { PointProducerAnchor, PointPlacementSourceAnchor, CopyPointPlacementRole, HoleCenterAnchor, HolePlacementRole, HoleFaceOrigin } from './subShapeOrigin.js';
+export type { PointProducerAnchor } from './subShapeOrigin.js';
 
 export {
-  makeSurfaceCut, SurfaceCutError,
-  type SurfaceCutInput, type SurfaceCutReason, type SurfaceCutPiece, type SurfaceCutResult,
+  makeSurfaceCut,
+  SurfaceCutError,
 } from './occt/makeSurfaceCut.js';
-export { rotateSolidFace, type FaceRotationResult } from './occt/rotateSolidFace.js';
+export { rotateSolidFace } from './occt/rotateSolidFace.js';
 
-export type { HoleTranslateStepSpec, FaceRotateStepSpec } from './types.js';
+export type { HoleTranslateStepSpec } from './types.js';

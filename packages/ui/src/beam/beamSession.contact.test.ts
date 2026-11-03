@@ -70,8 +70,10 @@ describe('explicit CAD contact form and saved inputs', () => {
     const checked = beamDefinition(fixture.session, fixture.source, []);
     if (!checked.ok || checked.definition.schema !== 'pointercad-standard-beam/5') throw new Error('Expected valid schema5 form');
     const restored = restoreBeamSession(fixture.session.ownerId, checked.definition, [fixture.occurrence]);
-    expect([restored.analysisType, restored.segmentsPerMember, restored.result, restored.reviewed])
-      .toEqual(['contact', 4, null, null]);
+    expect(restored.analysisType).toBe('contact');
+    expect(restored.segmentsPerMember).toBe(4);
+    expect(restored.result).toBeNull();
+    expect(restored.reviewed).toBeNull();
     expect(restored.members[0].confirmed).toBe(false);
     expect(restored.members[0].startRestraints).toEqual([true, true, true, true, true, true]);
     expect(restored.contact).toEqual({ nextContact: 2, loadFactors: ['1', '-1'], rows: [{ id: 'contact-1', kind: 'node-plane',
@@ -123,8 +125,10 @@ describe('explicit CAD contact form and saved inputs', () => {
     expect(viewed.contactView).toEqual({ state: 1 });
     expect([viewed.revision, viewed.reviewed, viewed.status]).toEqual([reviewed.revision, fixture.source, 'complete']);
     const edited = editBeamSession(viewed, { kind: 'contact-value', index: 0, field: 'gap', source: '0.25' });
-    expect([edited.revision, edited.reviewed, edited.result, edited.contactView])
-      .toEqual([reviewed.revision + 1, null, null, { state: 0 }]);
+    expect(edited.revision).toBe(reviewed.revision + 1);
+    expect(edited.reviewed).toBeNull();
+    expect(edited.result).toBeNull();
+    expect(edited.contactView).toEqual({ state: 0 });
     let cancelled = 0;
     useAppStore.setState({ beamSession: reviewed, beamRunner: { run: () => undefined, cancel: () => { cancelled += 1; } } });
     useAppStore.getState().editBeam({ kind: 'contact-view', state: 1 });

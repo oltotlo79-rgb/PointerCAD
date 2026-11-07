@@ -18,7 +18,7 @@ import type { KernelMemoryUsage, SolidRecomputeResult } from '../types.js';
  * `getHeapMax()` が返す値(4GiB から 1 ページ 64KiB を引いた値)と同じにしてある。
  * 同梱物を差し替えて値が変われば `kernelMemory.test.ts` が落ちる。
  */
-export const OCCT_HEAP_LIMIT_BYTES = 4_294_901_760;
+const OCCT_HEAP_LIMIT_BYTES = 4_294_901_760;
 
 /**
  * 計算部の実体から、確保済みのバイト数を読む。`OpenCascadeInstance` の型は `HEAPU8` を

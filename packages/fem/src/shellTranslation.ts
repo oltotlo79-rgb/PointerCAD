@@ -12,9 +12,9 @@ import { readShellAnalysisInput, type ShellAnalysisInput, type ShellFixed6, type
  *   sigma_top = N/t + 6M/t^2, sigma_bottom = N/t - 6M/t^2, tau_rep = 1.5 Q/t.
  * tau_rep is the parabolic maximum at the midsurface of a homogeneous section (zero at both faces).
  */
-export const SHELL_PLAN_SCHEMA = 'pointercad-shell-tri3-plan/1';
+ const SHELL_PLAN_SCHEMA = 'pointercad-shell-tri3-plan/1';
 export const SHELL_NATIVE_SCHEMA = 'pointercad-shell-tri3-native/1';
-export const SHELL_RESULT_SCHEMA = 'pointercad-shell-tri3-result/1';
+ const SHELL_RESULT_SCHEMA = 'pointercad-shell-tri3-result/1';
 /** The only element this path calls: the existing native OOFEM element, named exactly. */
 export const SHELL_NATIVE_ELEMENT = { record: 'tr_shell02', className: 'TR_SHELL02', crossSection: 'SimpleCrossSection',
   integrationPoints: 4 } as const;
@@ -24,7 +24,7 @@ export const SHELL_LIMITS = { nodes: 20000, elements: 40000 } as const;
 export type ShellTensor6 = readonly [number, number, number, number, number, number];
 /** Global Fx, Fy, Fz [N] then Mx, My, Mz [N mm]; for displacements ux, uy, uz [mm] then rx, ry, rz [rad]. */
 export type ShellNodal6 = readonly [number, number, number, number, number, number];
-export interface ShellFrame { readonly e1: ShellVector3; readonly e2: ShellVector3; readonly e3: ShellVector3; readonly areaMm2: number }
+ interface ShellFrame { readonly e1: ShellVector3; readonly e2: ShellVector3; readonly e3: ShellVector3; readonly areaMm2: number }
 
 export interface ShellAnalysisPlan {
   readonly schema: typeof SHELL_PLAN_SCHEMA;
@@ -37,14 +37,14 @@ export interface ShellAnalysisPlan {
   readonly normals: readonly ShellVector3[];
 }
 
-export interface ShellSurfaceStress {
+ interface ShellSurfaceStress {
   /** N/t + 6M/t^2 on the side e3 points to [MPa], global tensor components. */
   readonly topMPa: ShellTensor6;
   /** N/t - 6M/t^2 on the opposite side [MPa]. */
   readonly bottomMPa: ShellTensor6;
 }
 
-export interface ShellTransverseShear {
+ interface ShellTransverseShear {
   /** DKT is shear rigid: its native Q is identically zero, so Q comes from the native moments. */
   readonly source: 'moment-gradient-equilibrium';
   /** Qx = dMxx/dx + dMxy/dy, Qy = dMxy/dx + dMyy/dy in the element axes e1, e2 [N/mm]. */
@@ -56,7 +56,7 @@ export interface ShellTransverseShear {
   readonly fitResidualNmmPerMm: number;
 }
 
-export interface ShellPointResult {
+ interface ShellPointResult {
   readonly xyzMm: ShellVector3;
   /** Native membrane part of IST_ShellForceTensor: plane-stress stress N/t [MPa] (not thickness-multiplied natively). */
   readonly membraneStressMPa: ShellTensor6;
@@ -68,7 +68,7 @@ export interface ShellPointResult {
   readonly surface: ShellSurfaceStress;
 }
 
-export interface ShellElementResult {
+interface ShellElementResult {
   readonly nativeClass: typeof SHELL_NATIVE_ELEMENT.className;
   readonly thicknessMm: number;
   readonly frame: ShellFrame;
@@ -77,7 +77,7 @@ export interface ShellElementResult {
   readonly transverseShear: ShellTransverseShear;
 }
 
-export interface ShellRecoveredNode {
+ interface ShellRecoveredNode {
   readonly node: number;
   readonly xyzMm: ShellVector3;
   readonly contributingElements: readonly number[];
@@ -88,11 +88,11 @@ export interface ShellRecoveredNode {
   readonly surface: ShellSurfaceStress;
 }
 
-export interface ShellRecoveredShear extends Omit<ShellTransverseShear, 'source'> {
+ interface ShellRecoveredShear extends Omit<ShellTransverseShear, 'source'> {
   readonly source: 'nodal-average-moment-gradient';
 }
 
-export type ShellPlanarRecovery = {
+ type ShellPlanarRecovery = {
   readonly status: 'available';
   readonly source: 'area-weighted-element-centroid';
   readonly scope: 'coplanar-uniform-section';

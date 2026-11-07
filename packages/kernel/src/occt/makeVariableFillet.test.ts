@@ -7,13 +7,14 @@ import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import { makeFillet } from './makeFillet.js';
-import type { VariableFilletInput } from './makeVariableFillet.js';
 import { makeVariableFillet } from './makeVariableFillet.js';
 import { distanceBetween } from './measureShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
+
+type VariableFilletInput = Parameters<typeof makeVariableFillet>[3];
 
 /**
  * 半径の変わる R 面取り(FR-426、FR-504、NFR-RE-1)の検査。計画書 P5 タスク53 の検証表。

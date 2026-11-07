@@ -7,10 +7,15 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FatigueLocalCyclePanel } from './FatigueLocalCyclePanel.js';
 import { attachFatigueLocalCycle } from './attachFatigueLocalCycle.js';
-import { FATIGUE_LOCAL_CYCLE_NUMBER_FIELDS, createFatigueLocalCycleSession, currentFatigueLocalCycleResult,
+import { createFatigueLocalCycleSession, currentFatigueLocalCycleResult,
   editFatigueLocalCycleSession, fatigueLocalCycleDraftIsSaved, fatigueLocalCycleSaved, restoreFatigueLocalCycleSession,
   runFatigueLocalCycleSession, savedFatigueLocalCycleInput, type FatigueLocalCycleEdit,
   type FatigueLocalCycleSession } from './fatigueLocalCycleSession.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const FATIGUE_LOCAL_CYCLE_NUMBER_FIELDS = ['elasticModulusMpa', 'fatigueStrengthCoefficientMpa', 'fatigueStrengthExponent',
+  'fatigueDuctilityCoefficient', 'fatigueDuctilityExponent', 'minimumCycles', 'maximumCycles', 'strainMax', 'strainMin',
+  'stressMax', 'stressMin'] as const;
 
 /* Regressions completing task007: the panel's per-field refusal marks, the correction choice without an implicit value,
  * result invalidation by every physical edit and by a real owner change or reopen, and the actual part store

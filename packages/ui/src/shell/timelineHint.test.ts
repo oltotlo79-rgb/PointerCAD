@@ -4,11 +4,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { shouldShowTimelineHint, TIMELINE_HINT_MIN_SOLIDS } from './timelineHint.js';
+import { shouldShowTimelineHint } from './timelineHint.js';
 
 describe('つまみの初回の案内', () => {
   it('段数が初めて 2 に届いた瞬間だけ出す', () => {
-    expect(TIMELINE_HINT_MIN_SOLIDS).toBe(2);
+    // 境目はちょうど 2 段: 1 段に届いただけでは出さず、1 → 2 で出す。
+    expect(shouldShowTimelineHint(0, 1, false)).toBe(false);
     expect(shouldShowTimelineHint(1, 2, false)).toBe(true);
     // 開いた文書がいきなり 3 段でも、0 → 3 は「初めて 2 に届いた」に当たる。
     expect(shouldShowTimelineHint(0, 3, false)).toBe(true);

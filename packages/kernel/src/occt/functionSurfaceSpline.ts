@@ -3,10 +3,9 @@
  * analytic surfaces. The math Worker supplies distinct knots per direction and (2*nu) x (2*nv) poles (row-major in u);
  * multiplicities are implied (4 at the ends, 2 inside), so OCCT holds exactly the certified C1 patches.
  */
-import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
+import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import type { Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
-import { borrowHandle } from './borrowHandle.js';
 import { clipFunctionShape, type FunctionClipBox } from './clipFunctionShape.js';
 import type { FunctionSurfaceGeometryResult } from './makeFunctionSurface.js';
 
@@ -103,23 +102,4 @@ export function makeFunctionSurfaceSpline(oc: OpenCascadeInstance, value: unknow
     if (clipped.status !== 'shape') { owner.release(); return clipped; }
     return { status: 'shape', shape: clipped.shape, count: clipped.count, delete: () => owner.release() };
   } catch (error) { owner.release(); throw error; }
-}
-
-/** Read the native B-spline surface of a face (for tests and audits): degree, knots, multiplicities and C1. */
-export function readFunctionSurfaceSpline(oc: OpenCascadeInstance, face: TopoDS_Shape) {
-  const owner = createAllocations();
-  try {
-    const adaptor = owner.keep(new oc.BRepAdaptor_Surface_2(owner.keep(oc.TopoDS.Face_1(face)), true));
-    if (adaptor.GetType() !== oc.GeomAbs_SurfaceType.GeomAbs_BSplineSurface) return null;
-    const surface = borrowHandle(owner.keep(adaptor.BSpline()));
-    const read = (count: number, knot: (index: number) => number, multiplicity: (index: number) => number) =>
-      Array.from({ length: count }, (_, index) => ({ knot: knot(index + 1), multiplicity: multiplicity(index + 1) }));
-    return {
-      uDegree: Number(surface.UDegree()), vDegree: Number(surface.VDegree()),
-      rational: surface.IsURational() || surface.IsVRational(),
-      c1: surface.IsCNu(1) && surface.IsCNv(1), c2: surface.IsCNu(2) && surface.IsCNv(2),
-      u: read(Number(surface.NbUKnots()), index => surface.UKnot(index), index => Number(surface.UMultiplicity(index))),
-      v: read(Number(surface.NbVKnots()), index => surface.VKnot(index), index => Number(surface.VMultiplicity(index))),
-    };
-  } finally { owner.release(); }
 }

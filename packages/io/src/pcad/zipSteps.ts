@@ -14,7 +14,7 @@ import { Deflate, deflateSync, strToU8, type ZipOptions } from 'fflate';
 import { finishZipCrc32, startZipCrc32, updateZipCrc32, zipCrc32 } from './zipCrc32.js';
 
 /** この大きさを超える項目は区切って圧縮する。1 区切りの大きさも同じ。 */
-export const ZIP_STEP_BYTES = 1024 * 1024;
+const ZIP_STEP_BYTES = 1024 * 1024;
 
 /** `zipPcadEntries` と同じ形の 1 項目(中身と圧縮の指定)。 */
 export type ZipStepEntry = readonly [bytes: Uint8Array, options: ZipOptions];

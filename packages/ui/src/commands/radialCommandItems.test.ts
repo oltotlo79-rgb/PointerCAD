@@ -1,8 +1,15 @@
 import { findHelpTopic } from '@pointercad/help-content';
 import { describe, expect, it } from 'vitest';
-import { commandDefinition } from './commandDefinitions.js';
-import { radialCommandAt, radialCommandIds, radialCommandDescription } from './radialCommandItems.js';
+import { commandDefinition, type CommandId, type CommandDocumentKind } from './commandDefinitions.js';
+import { radialCommandIds, radialCommandDescription } from './radialCommandItems.js';
 import { t } from '../i18n/t.js';
+import type { RadialMenuSlot } from './radialMenuGeometry.js';
+
+function radialCommandAt(kind: CommandDocumentKind, slot: RadialMenuSlot, connectPoints = false,
+  faceFromPoints = false, pointAtReference = false): CommandId | null {
+  const id = radialCommandIds(kind, connectPoints, faceFromPoints, pointAtReference)[slot], definition = commandDefinition(id);
+  return definition?.documentKinds.includes(kind) === true ? id : null;
+}
 
 describe('放射メニューは画面の8道具を既存の操作入口へつなぐ', () => {
   it('点の選択時だけ線分を共通の2点接続へ切り替え、ほかの7項目を保つ', () => {

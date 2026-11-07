@@ -94,13 +94,13 @@ interface StlHeader {
   readonly triangleCount: number;
 }
 
-/** バイト列が `solid` で始まるか。 */
-function startsWithSolid(bytes: Uint8Array): boolean {
-  if (bytes.length < ASCII_SOLID_BYTES.length) {
+/** バイト列が指定の並びで始まるか(STL の `solid` の判定と、model の画像の署名の判定 `canvas.ts` が共用する)。 */
+export function startsWithBytes(bytes: Uint8Array, signature: readonly number[]): boolean {
+  if (bytes.length < signature.length) {
     return false;
   }
-  for (let index = 0; index < ASCII_SOLID_BYTES.length; index += 1) {
-    if (bytes[index] !== ASCII_SOLID_BYTES[index]) {
+  for (let index = 0; index < signature.length; index += 1) {
+    if (bytes[index] !== signature[index]) {
       return false;
     }
   }
@@ -130,7 +130,7 @@ function inspectHeader(bytes: Uint8Array): StlHeader {
   const triangleCount = view.getUint32(BINARY_TRIANGLE_COUNT_OFFSET, true);
   const sizedAsBinary =
     BINARY_HEADER_LENGTH + BINARY_TRIANGLE_LENGTH * triangleCount === bytes.length;
-  const binary = sizedAsBinary || !startsWithSolid(bytes);
+  const binary = sizedAsBinary || !startsWithBytes(bytes, ASCII_SOLID_BYTES);
   if (binary) {
     if (triangleCount > MESH_MAX_TRIANGLE_COUNT) {
       throw new Error(meshTooLargeMessage(triangleCount));

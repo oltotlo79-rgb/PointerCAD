@@ -1,6 +1,6 @@
 import { lengthVec3 as norm, scaleVec3 as scaled, subVec3 as sub, addVec3 as add, dotVec3 as dot, crossVec3 as cross } from '@pointercad/model/vec3';
 import { createSubShapeReference, isSameSubShape, requestAnalysisBoundary, resolveCurrentOrigin, type AnalysisBoundary,
-  type AnalysisBoundarySource, type SolidBody, type SubShapeRef } from '@pointercad/model';
+  type AnalysisBoundarySource, type FaceSurfaceKind, type SolidBody, type SubShapeRef } from '@pointercad/model';
 import { readShellCadInput, solidCadFaceKey, type ShellCadSavedInput } from '@pointercad/model/beam-analysis';
 import { prepareCadShellSurfaceMesh, type CadShellSurfaceMesh, type CadShellSurfaceOptions } from './cadShellSurfaceMesh.js';
 import type { CadTetraContext } from './cadTetraMesh.js';
@@ -19,27 +19,30 @@ import type { FemPhase } from './protocol.js';
  * translateShellAnalysis (unchanged W08 path, TR_SHELL02) -> native run supplied by the caller -> decodeShellAnalysis
  * -> every element, integration point and node result keyed by the solidCadFaceKey of its CAD face.
  *
- * Nothing is inferred: a face of a solid is never turned into a midsurface, a non-planar face is refused (this
- * package binds planar faces only), a saved face without a unique current counterpart is refused, and a face of the
- * sheet without an explicit midsurface entry is refused rather than given a thickness or dropped.
+ * Nothing is inferred: a face of a solid is never turned into a midsurface, a saved face without a unique current
+ * counterpart is refused, and a face of the sheet without an explicit midsurface entry is refused rather than given a
+ * thickness or dropped. A curved explicit face (cylinder, cone, sphere, torus, other) is bound as it is: its current
+ * native analysis triangles become the shell elements unchanged (no flattening, no derived midsurface), each element
+ * with its own native-winding normal; such a face has no single normal. A face declared planar whose triangles are not
+ * one plane is refused, not flattened. Planar nodal averaging stays unavailable for curved or folded sheets.
  *
  * Offset: offsetMm is the signed distance along the face's oriented normal (its native triangle winding, the top
  * side of the shell) from the referenced face to the midsurface. The midsurface nodes are placed explicitly at
  * reference point + offsetMm * normal and the native element gets offsetMm 0 (TR_SHELL02 has no eccentricity, and
  * translateShellAnalysis refuses a nonzero element offset). The shift is recorded in the result. A nonzero offset is
- * accepted only when every face has the same oriented normal (one plane direction): the offset of a folded sheet is
- * not a node shift and is refused. Supports and edge loads act on the midsurface; no eccentric transfer moment is
- * added for an offset reference.
+ * accepted only when every face is planar with the same oriented normal (one plane direction): the offset surface of
+ * a folded sheet or of a curved face is not a node shift and is refused. Supports and edge loads act on the
+ * midsurface; no eccentric transfer moment is added for an offset reference.
  */
-export const CAD_SHELL_RESULT_SCHEMA = 'pointercad-cad-shell-result/1';
+ const CAD_SHELL_RESULT_SCHEMA = 'pointercad-cad-shell-result/1';
 
-export interface CadShellMaterial { readonly id: string; readonly youngMPa: number; readonly poisson: number }
+ interface CadShellMaterial { readonly id: string; readonly youngMPa: number; readonly poisson: number }
 /** Global ux, uy, uz, rx, ry, rz prescribed zero at every node of a CAD edge, or at the node of a CAD vertex. */
-export type CadShellSupport =
+ type CadShellSupport =
   | { readonly kind: 'edge'; readonly edge: SubShapeRef; readonly fixed: ShellFixed6 }
   | { readonly kind: 'vertex'; readonly vertex: SubShapeRef; readonly fixed: ShellFixed6 };
 /** Uniform line loads per unit length of a CAD edge, global axes, applied on the midsurface. */
-export interface CadShellEdgeLoad {
+ interface CadShellEdgeLoad {
   readonly edge: SubShapeRef;
   readonly forceNPerMm: ShellVector3;
   readonly momentNmmPerMm: ShellVector3;
@@ -53,7 +56,7 @@ export interface CadShellSettings {
   readonly surface: CadShellSurfaceOptions;
 }
 
-export type CadShellRefusalCode = 'midsurface-solid-face' | 'midsurface-nonplanar' | 'midsurface-unresolved'
+ type CadShellRefusalCode = 'midsurface-solid-face' | 'midsurface-nonplanar' | 'midsurface-unresolved'
   | 'midsurface-incomplete' | 'midsurface-offset-fold' | 'support-unresolved' | 'load-unresolved' | 'edge-load-fold'
   | 'edge-load-drilling' | 'invalid-settings' | 'result-binding';
 export class CadShellAnalysisRefusal extends Error {
@@ -62,23 +65,26 @@ export class CadShellAnalysisRefusal extends Error {
 }
 function refuse(code: CadShellRefusalCode, reason: string): never { throw new CadShellAnalysisRefusal(code, reason); }
 
-export interface CadShellFaceBinding {
+ interface CadShellFaceBinding {
   readonly faceKey: string;
   /** Revision-local face address; never persisted. */
   readonly faceIndex: number;
   readonly reference: SubShapeRef;
   readonly triangles: readonly number[];
   readonly nodes: readonly number[];
-  /** Oriented unit normal of the planar face (native winding): the top side of its elements. */
-  readonly normal: ShellVector3;
+  /** Surface kind of the current CAD face. */
+  readonly surfaceKind: FaceSurfaceKind;
+  /** Oriented unit normal of a planar face (native winding): the top side of its elements. Null for a curved face, which
+   * has no single normal: the top side of each of its elements is that element's own triangle normal (mesh.normals). */
+  readonly normal: ShellVector3 | null;
   readonly areaMm2: number;
 }
-export interface CadShellMidsurface {
+ interface CadShellMidsurface {
   readonly offsetMm: number;
   /** Midsurface point = referenced CAD face point + shiftMm (zero for offsetMm 0). */
   readonly shiftMm: ShellVector3;
 }
-export interface CadShellPrepared {
+interface CadShellPrepared {
   readonly saved: ShellCadSavedInput;
   readonly source: CadShellSurfaceMesh['source'];
   readonly mesh: CadShellSurfaceMesh;
@@ -92,7 +98,7 @@ export interface CadShellPrepared {
   readonly input: ShellAnalysisInput;
   readonly plan: ShellAnalysisPlan;
 }
-export interface CadShellPointResult {
+ interface CadShellPointResult {
   /** Native integration point on the midsurface [mm]. */
   readonly xyzMm: ShellVector3;
   /** The same point on the referenced CAD face: xyzMm - shiftMm. */
@@ -101,7 +107,7 @@ export interface CadShellPointResult {
   readonly topMPa: ShellTensor6;
   readonly bottomMPa: ShellTensor6;
 }
-export interface CadShellElementResult {
+ interface CadShellElementResult {
   readonly element: number;
   readonly faceKey: string;
   readonly nodes: readonly [number, number, number];
@@ -110,7 +116,7 @@ export interface CadShellElementResult {
   /** Global ux, uy, uz [mm], rx, ry, rz [rad] of the three element nodes. */
   readonly displacement: readonly [ShellNodal6, ShellNodal6, ShellNodal6];
 }
-export interface CadShellNodeResult {
+ interface CadShellNodeResult {
   readonly node: number;
   readonly xyzMm: ShellVector3;
   readonly referenceXyzMm: ShellVector3;
@@ -118,7 +124,7 @@ export interface CadShellNodeResult {
   readonly faceKeys: readonly string[];
   readonly displacement: ShellNodal6;
 }
-export interface CadShellFaceResult {
+ interface CadShellFaceResult {
   readonly faceKey: string;
   readonly reference: SubShapeRef;
   readonly elements: readonly number[];
@@ -219,7 +225,8 @@ function currentFaceKeys(body: SolidBody): Map<string, number> {
 }
 
 /** The checks that never meet a mesh: the saved idealization must name every face of one current explicit CAD
- * sheet, each planar. Returns the current face address of each saved key, in the saved order. */
+ * sheet; a curved face is accepted only at offset 0. Returns the current face address of each saved key, in the saved
+ * order. */
 function explicitMidsurface(saved: ShellCadSavedInput, context: CadTetraContext): readonly number[] {
   const { body } = context;
   if (saved.source.documentId !== context.documentId || saved.bodyFeatureId !== body.featureId) {
@@ -243,9 +250,11 @@ function explicitMidsurface(saved: ShellCadSavedInput, context: CadTetraContext)
         + '(deleted, split, merged or untracked); its midsurface is not looked up by index or geometry');
     }
     const face = body.faces.find(entry => entry.index === index);
-    if (face === undefined || face.surfaceKind !== 'plane') {
-      return refuse('midsurface-nonplanar', `saved midsurface face ${position} is a ${face?.surfaceKind ?? 'missing'} face; `
-        + 'only planar CAD faces are bound to shell elements here, a curved midsurface is not flattened or approximated');
+    if (face === undefined) return refuse('midsurface-unresolved', `saved midsurface face ${position} has no current face`);
+    if (face.surfaceKind !== 'plane' && saved.offsetMm !== 0) {
+      return refuse('midsurface-offset-fold', `offsetMm ${saved.offsetMm} on saved midsurface face ${position}, a `
+        + `${face.surfaceKind} face: the offset surface of a curved face is not a shift of its nodes, so no midsurface is `
+        + 'constructed; a curved face is bound only as the midsurface itself (offset 0)');
     }
     return index;
   });
@@ -287,17 +296,23 @@ export function prepareCadShellAnalysis(boundary: AnalysisBoundary, context: Cad
     if (region === undefined || solidCadFaceKey(region.reference) !== faceKey || keys.get(faceKey) !== faceIndex) {
       return refuse('midsurface-unresolved', `saved midsurface face ${position} does not match the analysis surface region of the current face`);
     }
-    const triangles = [...region.triangleIndices];
-    const normal = normalOf(triangles[0]), origin = point(triangleNodes(triangles[0])[0]);
+    const triangles = [...region.triangleIndices], reference = structuredClone(region.reference);
     const nodes = [...new Set(triangles.flatMap(triangleNodes))].sort((a, b) => a - b);
-    // Mesh evidence: one oriented plane. A face whose triangles fold or curve is refused, not flattened.
+    const areaMm2 = triangles.reduce((sum, t) => sum + mesh.areasMm2[t], 0);
+    const surfaceKind = context.body.faces.find(entry => entry.index === faceIndex)?.surfaceKind;
+    if (surfaceKind === undefined) return refuse('midsurface-unresolved', `saved midsurface face ${position} has no current face`);
+    const bound = (normal: ShellVector3 | null): CadShellFaceBinding =>
+      ({ faceKey, faceIndex, reference, triangles, nodes, surfaceKind, normal, areaMm2 });
+    // A curved face: its native triangles are the elements as they are, each with its own normal; no face normal is made.
+    if (surfaceKind !== 'plane') return bound(null);
+    const normal = normalOf(triangles[0]), origin = point(triangleNodes(triangles[0])[0]);
+    // Mesh evidence of a face declared planar: one oriented plane. Triangles that fold or curve are refused, not flattened.
     if (triangles.some(t => norm(sub(normalOf(t), normal)) > 1e-9)
       || nodes.some(node => Math.abs(dot(sub(point(node), origin), normal)) > lengthTolerance)) {
       return refuse('midsurface-nonplanar', `the analysis surface of saved midsurface face ${position} is not one plane `
         + '(triangle normals or node offsets disagree); it is not flattened');
     }
-    const areaMm2 = triangles.reduce((sum, t) => sum + mesh.areasMm2[t], 0);
-    return { faceKey, faceIndex, reference: structuredClone(region.reference), triangles, nodes, normal, areaMm2 };
+    return bound(normal);
   });
   const bindingOf = new Map(faces.map((face, index) => [face.faceIndex, index]));
   const elementFaces = Array.from({ length: triangleCount }, (_, t) => {
@@ -307,7 +322,11 @@ export function prepareCadShellAnalysis(boundary: AnalysisBoundary, context: Cad
   let shiftMm: ShellVector3 = [0, 0, 0];
   if (saved.offsetMm !== 0) {
     const normal = faces[0].normal;
-    if (faces.some(face => norm(sub(face.normal, normal)) > 1e-9)) {
+    if (normal === null || faces.some(face => face.normal === null)) {
+      refuse('midsurface-offset-fold', `offsetMm ${saved.offsetMm} on a curved face: its offset surface is not a shift of `
+        + 'its nodes, so no midsurface is constructed');
+    }
+    if (faces.some(face => face.normal === null || norm(sub(face.normal, normal)) > 1e-9)) {
       refuse('midsurface-offset-fold', `offsetMm ${saved.offsetMm} on faces with different oriented normals: the offset `
         + 'surface of a folded or reversed sheet is not a shift of its nodes, so no midsurface is constructed');
     }
@@ -453,16 +472,16 @@ export function decodeCadShellAnalysis(prepared: CadShellPrepared, raw: unknown)
 }
 
 /** Runs the fixed native wrapper shellAnalysis.py for a plan and returns its raw JSON answer. */
-export type CadShellNativeRunner = (plan: ShellAnalysisPlan, signal: AbortSignal) => Promise<unknown>;
+ type CadShellNativeRunner = (plan: ShellAnalysisPlan, signal: AbortSignal) => Promise<unknown>;
 
 /** A FEM client run that ended with a FemFailure (`code` is its FemFailure code) or an answer for another plan. */
-export class CadShellRunFailure extends Error {
+ class CadShellRunFailure extends Error {
   override readonly name = 'CadShellRunFailure';
   constructor(readonly code: string, reason: string) { super(`${code}: ${reason}`); }
 }
 /** A FEM client run that was cancelled (abort, superseded by a newer client request, or client disposed). It is not
  * a computation failure: analyzeCadShell reports it as { kind: 'cancelled' }. */
-export class CadShellRunCancelled extends Error {
+ class CadShellRunCancelled extends Error {
   override readonly name = 'CadShellRunCancelled';
   constructor(readonly reason: 'abort' | 'superseded' | 'disposed') { super(`the native shell run was cancelled (${reason})`); }
 }
@@ -485,7 +504,7 @@ export function femShellNativeRunner(client: Pick<FemClient, 'analyzeShell'>,
     return completion.result.raw;
   };
 }
-export type CadShellOutcome =
+ type CadShellOutcome =
   | { readonly kind: 'result'; readonly result: CadShellAnalysisResult; readonly prepared: CadShellPrepared }
   | { readonly kind: 'failed'; readonly code: string; readonly message: string }
   | { readonly kind: 'cancelled' };
@@ -502,10 +521,17 @@ export async function analyzeCadShell(kernel: AnalysisBoundarySource, readCurren
     // Capture the request before the first await; later caller mutation cannot retarget it.
     const settings = structuredClone(requested);
     const initial = readCurrent();
+    if (settings.surface.nativeQuality !== undefined && settings.surface.nativeQuality !== 'cylindrical-rectangle') {
+      refuse('invalid-settings', '円筒シェルの品質分割の指定を確かめてください。');
+    }
     explicitMidsurface(readShellCadInput(settings.saved), initial);
     if (owner.signal.aborted) return { kind: 'cancelled' };
     const outcome = await requestAnalysisBoundary(kernel, initial.steps, initial.body, { boundary: 'open',
-      linearDeflection: settings.surface.linearDeflection, angularDeflection: settings.surface.angularDeflection });
+      linearDeflection: settings.surface.linearDeflection, angularDeflection: settings.surface.angularDeflection,
+      ...(settings.surface.nativeQuality === 'cylindrical-rectangle'
+        ? { shellQuality: { kind: 'cylindrical-rectangle' as const, maximumNodes: settings.surface.maximumNodes,
+          maximumTriangles: settings.surface.maximumTriangles, minimumTriangleAreaMm2: settings.surface.minimumTriangleAreaMm2,
+          minimumAngleDeg: settings.surface.minimumAngleDeg, maximumAspectRatio: settings.surface.maximumAspectRatio } } : {}) });
     if (owner.signal.aborted) return { kind: 'cancelled' };
     if (outcome.kind === 'failed') return { kind: 'failed', code: outcome.code, message: outcome.message };
     const current = readCurrent();

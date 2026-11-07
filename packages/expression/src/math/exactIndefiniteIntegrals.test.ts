@@ -11,7 +11,7 @@ import { mathScalarExpression, mathScalarValue } from './mathScalarExpression.js
 import { compileFunctionScalar } from './compileFunctionScalar.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { createScalarSampler } from './scalarMathTape.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import type { MathNode, StoredMathExpression } from './mathInputContract.js';
 
 /**

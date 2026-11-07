@@ -28,7 +28,7 @@ export interface StandardBeamAdapterContext {
 }
 
 /** Active CAD leaf occurrences omitted from the beam idealization, grouped by catalog kind. */
-export interface ExcludedBeamParts {
+ interface ExcludedBeamParts {
   readonly kind: StandardCatalogId | 'part';
   readonly count: number;
   /** Sum in kg, or null if any current body volume/material in this group is unavailable. Never a nominal estimate. */
@@ -36,7 +36,7 @@ export interface ExcludedBeamParts {
 }
 
 /** Derived accounting only: neither field is added to the saved/solver analysis document. */
-export type StandardBeamAnalysisCheck = (Extract<AnalysisCheck, { readonly ok: true }> & {
+ type StandardBeamAnalysisCheck = (Extract<AnalysisCheck, { readonly ok: true }> & {
   readonly totalMassKg: number;
   readonly excludedParts: readonly ExcludedBeamParts[];
 }) | Extract<AnalysisCheck, { readonly ok: false }>;

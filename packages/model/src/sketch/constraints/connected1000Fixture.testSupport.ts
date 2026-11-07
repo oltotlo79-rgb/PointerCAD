@@ -31,16 +31,12 @@ export const CONNECTED_1000_RECIPE = {
   rise: 6,
 } as const;
 
-/** SHA-256 of `JSON.stringify(CONNECTED_1000_RECIPE)`. */
-export const CONNECTED_1000_RECIPE_SHA256 = '670827ced5b7324914cf6348322d3d8fcdefde420ed9785db07dfbd36edcc98f';
 /** SHA-256 of the canonical text of the 1998-constraint fixture. */
 export const CONNECTED_1000_FIXTURE_SHA256 = '986c08073de44395806f73783ab670f872201d3a5be366ce63ca66a6925f9864';
-/** SHA-256 of the canonical text of the pure 1997-distance system (the fixture without its orientation). */
-export const CONNECTED_1000_PURE_FIXTURE_SHA256 = '839b6ea89ae6e1d39dc95ff8cee704896fed9d63f686fcbe14ef11511d99327d';
 
 export const CONNECTED_1000_POINT_COUNT = CONNECTED_1000_RECIPE.points;
 /** The vertical distance that removes the rotation; the pure system is the fixture without it. */
-export const CONNECTED_1000_ORIENTATION_ID = 'anchor-rise';
+const CONNECTED_1000_ORIENTATION_ID = 'anchor-rise';
 
 export function connected1000PointId(index: number): string {
   return `${CONNECTED_1000_RECIPE.idPrefix}${index}`;
@@ -87,26 +83,4 @@ export function connected1000Sketch(base: SketchDocument, oriented = true): Sket
 /** The canonical text that the fixture SHA-256 is taken of. */
 export function connected1000FixtureText(features: readonly SketchFeature[], constraints: readonly SketchConstraint[]): string {
   return JSON.stringify({ features, constraints });
-}
-
-/** Number of connected components of the points under the point-to-point constraints (union-find). */
-export function connected1000Components(features: readonly SketchFeature[], constraints: readonly SketchConstraint[]): number {
-  const parent = new Map(features.map(feature => [feature.id, feature.id]));
-  const root = (id: string): string => {
-    let current = id;
-    for (;;) {
-      const next = parent.get(current);
-      if (next === undefined) throw new Error(`Constraint refers to a point outside the fixture: ${id}`);
-      if (next === current) return current;
-      const grand = parent.get(next) ?? next;
-      parent.set(current, grand);
-      current = grand;
-    }
-  };
-  for (const constraint of constraints) {
-    if ((constraint.kind !== 'distance' && constraint.kind !== 'verticalDistance')
-      || constraint.a.kind !== 'point' || constraint.b.kind !== 'point') throw new Error('Unexpected fixture constraint');
-    parent.set(root(constraint.a.pointId), root(constraint.b.pointId));
-  }
-  return new Set(features.map(feature => root(feature.id))).size;
 }

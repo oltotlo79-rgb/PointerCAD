@@ -13,16 +13,16 @@ const WALL_CLEARANCE_MM = 1e-7;
 const SIGNATURE_TOLERANCE = 1e-9;
 const VOLUME_RELATIVE_TOLERANCE = 1e-9;
 
-export const HOLE_MOVE_DELTA_MESSAGE = '穴の移動量は、穴の軸に直角な 0 でない有限のベクトルで指定してください。';
-export const HOLE_MOVE_MISSING_FACE_MESSAGE = '選んだ面は元の立体に属していません。穴の面を選び直してください。';
-export const HOLE_MOVE_NOT_HOLE_MESSAGE = '動かせるのは、内側が円筒になっている穴の面だけです。';
-export const HOLE_MOVE_PARTIAL_MESSAGE = '全周がつながった一定径の貫通穴だけ動かせます。';
-export const HOLE_MOVE_PLATE_MESSAGE = 'この操作は、六つの平面と一つの円筒面からなる長方形の穴あき板だけに対応しています。';
-export const HOLE_MOVE_COLLISION_MESSAGE = '穴を動かすと板の外周に届くため動かせません。移動量を見直してください。';
-export const HOLE_MOVE_FAILED_MESSAGE = '穴を動かせませんでした。元の立体と移動量を見直してください。';
+const HOLE_MOVE_DELTA_MESSAGE = '穴の移動量は、穴の軸に直角な 0 でない有限のベクトルで指定してください。';
+const HOLE_MOVE_MISSING_FACE_MESSAGE = '選んだ面は元の立体に属していません。穴の面を選び直してください。';
+const HOLE_MOVE_NOT_HOLE_MESSAGE = '動かせるのは、内側が円筒になっている穴の面だけです。';
+const HOLE_MOVE_PARTIAL_MESSAGE = '全周がつながった一定径の貫通穴だけ動かせます。';
+const HOLE_MOVE_PLATE_MESSAGE = 'この操作は、六つの平面と一つの円筒面からなる長方形の穴あき板だけに対応しています。';
+const HOLE_MOVE_COLLISION_MESSAGE = '穴を動かすと板の外周に届くため動かせません。移動量を見直してください。';
+const HOLE_MOVE_FAILED_MESSAGE = '穴を動かせませんでした。元の立体と移動量を見直してください。';
 
 /** Shape and its builders remain owned by this handle until delete(), as for editSolidFace. */
-export type HoleMoveResult = BooleanResult;
+ type HoleMoveResult = BooleanResult;
 
 interface PlaneSignature {
   readonly centroid: Vec3Tuple;

@@ -4,6 +4,7 @@
   },
   "hooks": {
     "PreToolUse": [
+      {"matcher": "Bash|PowerShell|Edit|Write|MultiEdit", "hooks": [{"type": "command", "command": "python", "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/workers_pause_guard.py"], "timeout": 5}]},
       {
         "matcher": "Bash|PowerShell",
         "hooks": [
@@ -87,6 +88,7 @@
       {
         "matcher": "Agent",
         "hooks": [
+          {"type": "command", "command": "python", "args": ["-B", "-X", "utf8", "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate_launch_guard.py"], "timeout": 5},
           {
             "type": "command",
             "command": "python",

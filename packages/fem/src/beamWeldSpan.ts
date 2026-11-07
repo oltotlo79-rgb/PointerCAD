@@ -4,14 +4,14 @@ import type { OofemContactPlan } from './contactTranslation.js';
 import type { WeldLayerGeometry } from './beamWeldContact.js';
 
 /** Internal SI kernel. No saved schema, native solver, initial strain or public index registration. */
-export type WeldSpanMesh = Pick<OofemContactPlan, 'nodes' | 'members' | 'materials' | 'sections' | 'originalNodeCount'>;
+ type WeldSpanMesh = Pick<OofemContactPlan, 'nodes' | 'members' | 'materials' | 'sections' | 'originalNodeCount'>;
 export type WeldSpanSide = { readonly kind: 'span'; readonly memberId: string }
   | { readonly kind: 'section'; readonly node: number };
 export interface WeldSpanPatch extends WeldLayerGeometry {
   readonly first: WeldSpanSide;
   readonly second: WeldSpanSide;
 }
-export interface WeldSpanPlan { readonly mesh: WeldSpanMesh; readonly patches: readonly WeldSpanPatch[] }
+interface WeldSpanPlan { readonly mesh: WeldSpanMesh; readonly patches: readonly WeldSpanPatch[] }
 type Matrix = number[][];
 type Element = WeldSpanMesh['members'][number];
 const dot = (a: readonly number[], b: readonly number[]): number => a.reduce((v, x, i) => v + x*b[i], 0);

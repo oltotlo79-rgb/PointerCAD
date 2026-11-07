@@ -7,14 +7,14 @@ import { JOINT_CONTACT_ASSETS } from './beamJointAssets.js';
 import { JOINT_INITIAL_STRAIN_ASSETS } from './beamJointInitialStrainAssets.js';
 import { prepareNativeBoltPreload, decodeNativeBoltPreload, type NativeBoltPreloadResult } from './nativeBoltPreload.js';
 
-export interface NativeBoltPrograms {
+interface NativeBoltPrograms {
   readonly contactWrapper: Uint8Array; readonly boltWrapper: Uint8Array; readonly weldWrapper: Uint8Array;
   readonly jointWrapper: Uint8Array; readonly initialStrainWrapper: Uint8Array;
   readonly wheelBytes: Uint8Array;
   /** Internal location served by the existing verified offline asset loader, never request data. */
   readonly wheelLocation: string;
 }
-export interface VerifiedNativeBoltPrograms { readonly wheelLocation: string }
+ interface VerifiedNativeBoltPrograms { readonly wheelLocation: string }
 const verifiedPrograms = new WeakMap<VerifiedNativeBoltPrograms, NativeBoltPrograms>();
 const files = [
   ['contactWrapper', 'beamContact.py', 'beam_contact.py'], ['boltWrapper', 'beamBoltContact.py', 'beam_bolt_contact.py'],

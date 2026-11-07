@@ -64,12 +64,12 @@ export interface CutMaterials {
   readonly workPlaneIds: readonly string[];
 }
 
-export type CutMaterialsOutcome =
+ type CutMaterialsOutcome =
   | { readonly ok: true; readonly materials: CutMaterials }
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
 /** 座標や軸の位置から置いた補助の点。文書は点を積んだ後のもの。 */
-export type PlacedCutPoint =
+ type PlacedCutPoint =
   | { readonly ok: true; readonly document: PartDocument; readonly point: PointReference }
   | { readonly ok: false; readonly reasonKey: MessageKey };
 

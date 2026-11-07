@@ -5,10 +5,12 @@ import * as classification from './classifyFunctionSurface.js';
 import * as documents from './xcafDocument.js';
 import * as transforms from './transformShape.js';
 import { makeFunctionSurfaceBodies } from './makeFunctionSurfaceBodies.js';
-import { writeStepAssembly, type XcafAssemblySpec } from './xcafAssembly.js';
+import { writeStepAssembly } from './xcafAssembly.js';
 import { makeBox } from './makeBox.js';
 import { isValidShape, measureArea, measureVolume } from './solidMesh.js';
 import type { FunctionSurfaceGeometrySpec } from './functionSurfaceGeometrySpec.js';
+
+type XcafAssemblySpec = Parameters<typeof writeStepAssembly>[1];
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 beforeAll(async () => { oc = await loadOcctForNode(); });

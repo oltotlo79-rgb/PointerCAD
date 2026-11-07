@@ -12,7 +12,7 @@ export interface PlanarBasisGuide extends CylinderBasisGuide {
   readonly yDrawing: MeasurementState;
 }
 
-export interface PlanarBasisLabels {
+ interface PlanarBasisLabels {
   readonly origin: string;
   readonly x: string;
   readonly y: string;

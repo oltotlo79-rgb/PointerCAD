@@ -42,7 +42,7 @@ import {
 import { useAppStore } from '../store/useAppStore.js';
 
 /** さかのぼれる履歴の件数(§0.a-0.11)。**保存しない**ので、閉じると消える。 */
-export const COMMAND_HISTORY_LIMIT = 20;
+const COMMAND_HISTORY_LIMIT = 20;
 
 /** 候補として同時に見せる件数の上限(§0.a-0.11)。 */
 export const COMMAND_SUGGESTION_LIMIT = 5;

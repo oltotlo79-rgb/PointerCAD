@@ -61,13 +61,13 @@ export interface RestorePrompt {
 }
 
 /**
- * 保存していない変更を失う操作の前の確認で選ばれた答え(w91a)。デスクトップ版の窓を閉じる前の
+ * 保存していない変更を失う操作の前の確認で選ばれた答え(NFR-UX-3)。デスクトップ版の窓を閉じる前の
  * 確認(`unsavedChangesGuard.ts` の `CloseChoice`)と同じ 3 つにそろえる。
  */
 export type DiscardChoice = 'save' | 'discard' | 'cancel';
 
 /**
- * 画面の中に出している確認(w91a)。ブラウザー標準の `confirm` はデスクトップ版で英語の
+ * 画面の中に出している確認(NFR-UX-3)。ブラウザー標準の `confirm` はデスクトップ版で英語の
  * OK/Cancel になり、日本語の画面から浮くので使わない(lint が拒否する)。
  */
 export interface DiscardConfirmRequest {
@@ -147,7 +147,7 @@ export interface FileSlice {
   /** 起動時の復元の案内(§0.a-0.12)。出すものが無ければ null。 */
   readonly restorePrompt: RestorePrompt | null;
   /**
-   * 答えを待っている確認(w91a)。無ければ null。**文書を作り直しても消さない**(確認を出した
+   * 答えを待っている確認(NFR-UX-3)。無ければ null。**文書を作り直しても消さない**(確認を出した
    * 手続きが答えを待っているため)。確認は 1 つずつで、新しい確認が来たら前の確認は「戻る」で終える。
    */
   readonly discardConfirm: DiscardConfirmRequest | null;
@@ -169,7 +169,7 @@ export interface FileSlice {
   readonly setAutoSaver: (saver: AutoSaver | null) => void;
   /** 復元の案内を出す・閉じる。 */
   readonly setRestorePrompt: (prompt: RestorePrompt | null) => void;
-  /** 画面の中の確認を出し、選ばれた答えを返す(w91a)。前の確認が残っていれば「戻る」で終える。 */
+  /** 画面の中の確認を出し、選ばれた答えを返す(NFR-UX-3)。前の確認が残っていれば「戻る」で終える。 */
   readonly requestDiscardConfirm: (messageKey: MessageKey) => Promise<DiscardChoice>;
   /** 出している確認に答えて閉じる。確認が無ければ何もしない。 */
   readonly answerDiscardConfirm: (choice: DiscardChoice) => void;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Vector3, Vector6 } from './analysisModel.js';
-import { beamSpanShape, prepareWeldSpan, type WeldSpanPlan } from './beamWeldSpan.js';
+import { beamSpanShape, prepareWeldSpan } from './beamWeldSpan.js';
+
+type WeldSpanPlan = Parameters<typeof prepareWeldSpan>[0];
 
 function fixture(): WeldSpanPlan {
   return { mesh: { originalNodeCount: 4,

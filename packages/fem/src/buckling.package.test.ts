@@ -43,7 +43,10 @@ const runtimePrefix = 'packages/fem/runtime/';
 const pinnedProgramSources = new Map(WELD_SPAN_CONTACT_ASSETS.map(asset => [
   'packages/fem/src/' + (asset.file === 'beamWeldSpanBase.py' ? 'beamContact.py' : asset.file), asset,
 ] as const));
-const lfSourcePaths = [...indexedSources, ...pinnedProgramSources.keys()];
+// Python programs retain pinned bytes via -text; TypeScript sources use text eol=lf.
+const sourcePaths = [...indexedSources, ...pinnedProgramSources.keys()];
+const pythonSourcePaths = sourcePaths.filter(name => name.endsWith('.py'));
+const lfSourcePaths = sourcePaths.filter(name => !name.endsWith('.py'));
 const pinnedRawSources = new Map([
   ['packages/fem/src/fixtures/friction-native/input.json', '54738dd57ca9580d096cbc35aa0d70debaf2a526795d496ce9055b07b72a1432'],
   ['packages/fem/src/fixtures/friction-native/newton-raw.json', '89cb51b614ae667c0ac349f2595661acc3a0ed4e754197c95d7fd5dd8ac2a003'],
@@ -96,7 +99,7 @@ function gitByteRoundTrip(autocrlf: 'false' | 'true' | 'input', omit?: 'lf' | 'r
       runtimePrefix + 'assets/beamAnalysis.py', runtimePrefix + 'manifest.json',
       runtimePrefix + 'evidence/application-source-index.json', 'LICENSE',
       'vendor/opencascade/opencascade.js-b5ff984-closed-0839d9bcc8ac4677/LICENSE', ...pinnedRawSources.keys()];
-    const originals = new Map([...lfSourcePaths, ...rawPaths].map(name => [name, readFileSync(join(root, name))]));
+    const originals = new Map([...sourcePaths, ...rawPaths].map(name => [name, readFileSync(join(root, name))]));
     const longestCheckoutPath = Math.max(...[...originals.keys()].map(name => join(fixture, name).length));
     expect(longestCheckoutPath).toBeGreaterThan(260);
     for (const name of ['.gitattributes', runtimePrefix + '.gitattributes']) {
@@ -138,7 +141,7 @@ function gitByteRoundTrip(autocrlf: 'false' | 'true' | 'input', omit?: 'lf' | 'r
         }
       }
     }
-    const paths = [...new Set([...lfSourcePaths, ...rawPaths, ...runtimePaths()])];
+    const paths = [...new Set([...sourcePaths, ...rawPaths, ...runtimePaths()])];
     const attributes = git(['check-attr', '-z', '--stdin', 'text', 'eol'], paths.join('\0') + '\0')
       .toString('utf8').split('\0');
     const attrs = new Map<string, Record<string, string>>();
@@ -147,7 +150,7 @@ function gitByteRoundTrip(autocrlf: 'false' | 'true' | 'input', omit?: 'lf' | 'r
       attrs.set(name, { ...attrs.get(name), [attribute]: value });
     }
     return { savedDifferences, checkoutDifferences, attrs, rawPaths,
-      measured: { autocrlf, sourceFiles: lfSourcePaths.length, rawFiles: rawPaths.length, longestCheckoutPath,
+      measured: { autocrlf, sourceFiles: sourcePaths.length, rawFiles: rawPaths.length, longestCheckoutPath,
         inputBytes: [...originals.values()].reduce((sum, data) => sum + data.length, 0),
         runtimeAttributePaths: runtimePaths().length, durationMs: Math.round(performance.now() - started) } };
   } finally {
@@ -239,6 +242,8 @@ describe('buckling public package and shipped source contract', () => {
     expect(result.savedDifferences).toEqual([]);
     expect(result.checkoutDifferences).toEqual([]);
     for (const name of lfSourcePaths) expect(result.attrs.get(name), name).toEqual({ text: 'set', eol: 'lf' });
+    // Later exact -text rules override text but retain the earlier eol attribute.
+    for (const name of pythonSourcePaths) expect(result.attrs.get(name), name).toEqual({ text: 'unset', eol: 'lf' });
     for (const name of new Set([...runtimePaths(), ...result.rawPaths])) {
       expect(result.attrs.get(name)?.text, name).toBe('unset');
     }
@@ -257,6 +262,8 @@ describe('buckling public package and shipped source contract', () => {
       expect(differences).toEqual(expect.arrayContaining(convertibleRawPaths));
       // Two captured JSON originals have no line endings: bytes cannot change, but the attribute contract must fail.
       for (const name of pinnedRawSources.keys()) expect(result.attrs.get(name)?.text, name).not.toBe('unset');
+      // The negative fixture also removes the later Python raw-byte overrides.
+      for (const name of pythonSourcePaths) expect(result.attrs.get(name)?.text, name).not.toBe('unset');
       expect(differences).toContain(runtimePrefix + 'assets/beamAnalysis.py');
       expect(differences).toContain(runtimePrefix + 'evidence/application-source-index.json');
       expect(differences.some(name => name.startsWith(runtimePrefix + 'notices/'))).toBe(true);

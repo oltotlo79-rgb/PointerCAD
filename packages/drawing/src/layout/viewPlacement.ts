@@ -1,5 +1,4 @@
 import type { DrawingView, Point2 } from '../types.js';
-import { formatDrawingScale } from '../paper/titleBlock.js';
 
 export const VIEW_ALIGNMENT_TOLERANCE_MM = 2;
 
@@ -35,13 +34,4 @@ export function moveView(
 ): DrawingView {
   const moved: Point2 = [view.position[0] + delta[0], view.position[1] + delta[1]];
   return { ...view, position: snapToAligned(moved, guides, align) };
-}
-
-export function effectiveViewScale(viewScale: number | null, sheetScale: number): number {
-  return viewScale ?? sheetScale;
-}
-
-export function viewTitle(name: string, viewScale: number | null, sheetScale: number): string {
-  const scale = effectiveViewScale(viewScale, sheetScale);
-  return scale === sheetScale ? name : `${name} (${formatDrawingScale(scale)})`;
 }

@@ -53,3 +53,29 @@ describe('planar sheet origins (closed straight-line profile)', () => {
     expect(isSubShapeOrigin(withProfile(face, { sketchId: ' ', lineFeatureIds: lines }))).toBe(false);
   });
 });
+
+
+describe('saved open arc surface identities', () => {
+  const profile = { sketchId: 'sketch', curveFeatureId: 'arc', role: 'whole-curve' };
+  const face = { version: 1, shapeKind: 'face', identity: { kind: 'surface-curve-side', featureId: 'sheet', profile } };
+  const edge = { version: 1, shapeKind: 'edge', identity: {
+    kind: 'surface-curve-edge', featureId: 'sheet', profile, role: 'section-start' } };
+  it('accepts exactly the new saved face and four boundary roles', () => {
+    expect(isSubShapeOrigin(face)).toBe(true);
+    for (const role of ['section-start', 'section-end', 'swept-start', 'swept-end']) {
+      expect(isSubShapeOrigin({ ...edge, identity: { ...edge.identity, role } })).toBe(true);
+    }
+  });
+  it('retains strict role, kind and saved-source validation without fabricated closed regions', () => {
+    for (const identity of [
+      { ...edge.identity, role: 'seam' }, { ...edge.identity, extra: true },
+      { ...edge.identity, profile: { ...profile, faceFeatureId: 'invented' } },
+      { ...edge.identity, profile: { ...profile, curveFeatureId: '' } },
+      { ...edge.identity, profile: { ...profile, role: 'whole-line' } },
+      { ...edge.identity, profile: { sketchId: 'sketch', lineFeatureId: 'arc', role: 'whole-line' } },
+    ]) expect(isSubShapeOrigin({ ...edge, identity })).toBe(false);
+    expect(isSubShapeOrigin({ ...edge, shapeKind: 'face' })).toBe(false);
+    expect(isSubShapeOrigin({ ...face, shapeKind: 'edge' })).toBe(false);
+    expect(isSubShapeOrigin({ ...face, identity: { ...face.identity, index: 0 } })).toBe(false);
+  });
+});

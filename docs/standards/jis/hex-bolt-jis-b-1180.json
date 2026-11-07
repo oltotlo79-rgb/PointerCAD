@@ -50,7 +50,8 @@
   "notes": [
     "本体規格(ISO 4014 対応)の値。JIS 附属書JA(旧JIS)は二面幅が違う(M10=17, M12=19, M14=22, M22=32)。取り違えに注意。",
     "M14・M18・M22 は第2選択で、ミスミの表(第1選択のみ)に無い。fasteners.eu の ISO 4014 表 1 件だけを根拠にしているため要確認。",
-    "呼び長さの一覧はミスミの表の行見出しから写した。150 より長い呼び長さの有無は確認していない。"
+    "呼び長さの一覧はミスミの表の行見出しから写した。150 より長い呼び長さの有無は確認していない。",
+    "実行時カタログ packages/model/src/assembly/standard/fasteners.ts の六角ボルトの表 HEX_BOLT_TABLE に付けていた出典 HEX_BOLT_SOURCE の値(製品のどこからも読まれていなかったので、値を変えずにここへ移した): standard「JIS B 1180」、edition「2014」、title「六角ボルト」、scope「本体規格と附属書JAの2寸法系、並目・細目ねじ」、verified=false、sourceUrls: https://jp.misumi-ec.com/tech-info/categories/machine_design/md05/a0041.html http://www.fasteners.eu/standards/ISO/4014/ https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1180:2014 https://www.yura-sansyo.co.jp/handbook/handbookV8-1-59.pdf https://www.asahi55.co.jp/oyakudati/hexagon_bolt"
   ],
   "rows": [
     {

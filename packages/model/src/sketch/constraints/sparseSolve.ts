@@ -1,7 +1,7 @@
 import type { LinearizedRow } from './solve.js';
 
 /** Linear accuracy only; nonlinear convergence still uses the original residuals in solve.ts. */
-export const SPARSE_LINEAR_RELATIVE_TOLERANCE = 1e-12;
+const SPARSE_LINEAR_RELATIVE_TOLERANCE = 1e-12;
 
 export interface SparseLinearOutcome {
   /** Only a strict or explicitly representation-bounded linear step is usable. */

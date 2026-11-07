@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { SubShapeRef } from '../../geometry/subShapeRef.js';
 import type { MateSubShapeGeometry } from '../../kernelBridge.js';
-import { bindFilletWeldSelection, type FilletWeldPicks, type WeldGeometryResolver } from './bindWeldSelection.js';
+import { bindFilletWeldSelection, type WeldGeometryResolver } from './bindWeldSelection.js';
 import { plainTee, TEE_BODIES, teeRequest, WELD_TEST_REVISIONS } from './filletWeld.testSupport.js';
 import { planFilletWeld } from './planFilletWeld.js';
+
+type FilletWeldPicks = Parameters<typeof bindFilletWeldSelection>[1];
 
 /** 選んだ時の指紋(わざと古い値)。位置・向きの正本にしないことを確かめる。 */
 function staleRef(index: number, kind: 'face' | 'edge'): SubShapeRef {

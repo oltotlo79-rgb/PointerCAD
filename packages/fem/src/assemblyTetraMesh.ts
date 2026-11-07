@@ -9,7 +9,7 @@ import { diagnoseTetraMeshQuality, readTetraMeshQualityLimits,
   type TetraMeshQuality, type TetraMeshQualityLimits } from './tetraMeshQuality.js';
 import { exactTetrahedronOrientation } from './plcTopology.js';
 
-export interface TetraMeshVolumeCounts {
+ interface TetraMeshVolumeCounts {
   readonly total: number;
   readonly positive: number;
   readonly inverted: number;

@@ -1,7 +1,7 @@
 import type { ResolvedSketch } from '@pointercad/model';
 
 /** 検査専用。物理画面やOS compositorでなくscene.renderの正常終了を記録する。 */
-export type SketchTimingStatus = 'queued' | 'solving' | 'adopted' | 'drawn' | 'coalesced'
+ type SketchTimingStatus = 'queued' | 'solving' | 'adopted' | 'drawn' | 'coalesced'
   | 'superseded' | 'cancelled' | 'invalid-clock' | 'unobserved';
 export interface SketchTimingContext {
   readonly canvas: object;

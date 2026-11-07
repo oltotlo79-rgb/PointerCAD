@@ -1,12 +1,25 @@
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import type { Protocol } from 'electron';
+import { describe, expect, it, vi } from 'vitest';
 import { assertFemApplicationBuildInputs, assertFemDistributionPublishable, buildFemRuntimeAssets, collectFemRuntimeAssets, joinStoredParts,
   nativeRebuildEvidenceGaps, readFemDistributionGaps } from '../../../../scripts/vite/femRuntimeAssets.mjs';
+import { APP_ORIGIN, handleAppScheme } from './appProtocol.js';
+
+// Only the Electron app:// resolution below uses these; the rest of this file never touches Electron.
+const electron = vi.hoisted(() => ({
+  handle: vi.fn<Protocol['handle']>(),
+  fetch: vi.fn<(url: string) => Promise<Response>>(),
+}));
+vi.mock('electron', () => ({
+  protocol: { handle: electron.handle, registerSchemesAsPrivileged: vi.fn() },
+  net: { fetch: electron.fetch },
+}));
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const pin = (bytes: Buffer) => ({ bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') });
@@ -18,13 +31,21 @@ function fixture() {
   return { files, manifest };
 }
 
-function applicationFixture() {
+function applicationFixture(variant: 'normal' | 'missing' | 'extra' | 'tampered' = 'normal') {
   const { files, manifest } = fixture();
   const inputs = new Map(Object.entries({"package.json": "{\"name\":\"external-build-fixture\"}\n", "pnpm-lock.yaml": "vite: 8.2.4\n", "pnpm-workspace.yaml": "catalog:\n  vite: 8.2.4\n"}).map(([name, text]) => [name, Buffer.from(text)]));
-  const archive = Buffer.from('UEsDBBQAAAAIAAAAIQB7yaAsJAAAACIAAAAMAAAAcGFja2FnZS5qc29uq1bKS8xNVbJSSq0oSS3KS8zRTSrNzEnRTcusKCktSlWq5QIAUEsDBBQAAAAIAAAAIQBqiAsMDgAAAAwAAAAOAAAAcG5wbS1sb2NrLnlhbWwryyxJtVKw0DPSM+ECAFBLAwQUAAAACAAAACEA51oihBkAAAAXAAAAEwAAAHBucG0td29ya3NwYWNlLnlhbWxLTixJzMlPt+JSUCjLLEm1UrDQM9Iz4QIAUEsBAhQAFAAAAAgAAAAhAHvJoCwkAAAAIgAAAAwAAAAAAAAAAAAAAIABAAAAAHBhY2thZ2UuanNvblBLAQIUABQAAAAIAAAAIQBqiAsMDgAAAAwAAAAOAAAAAAAAAAAAAACAAU4AAABwbnBtLWxvY2sueWFtbFBLAQIUABQAAAAIAAAAIQDnWiKEGQAAABcAAAATAAAAAAAAAAAAAACAAYgAAABwbnBtLXdvcmtzcGFjZS55YW1sUEsFBgAAAAADAAMAtwAAANIAAAAAAA==', 'base64');
+  const { zipSync } = createRequire(new URL('../../../../packages/io/package.json', import.meta.url))('fflate') as {
+    zipSync: (files: Record<string, Uint8Array>) => Uint8Array;
+  };
+  const reference = new Map([...inputs, ['src/sample.ts', Buffer.from('export const x = 1;\n')]]);
+  const members = new Map(reference);
+  if (variant === 'missing') members.delete('src/sample.ts');
+  if (variant === 'extra') members.set('src/extra.ts', Buffer.from('extra\n'));
+  if (variant === 'tampered') members.set('src/sample.ts', Buffer.from('export const x = 2;\n'));
+  const archive = Buffer.from(zipSync(Object.fromEntries(members)));
   const applicationSource = { archive: 'sources/application.zip', index: 'evidence/application.json' };
   const index = Buffer.from(JSON.stringify({ archiveSha256: pin(archive).sha256,
-    files: Object.fromEntries([...inputs].map(([name, bytes]) => [name, pin(bytes)])) }));
+    files: Object.fromEntries([...reference].map(([name, bytes]) => [name, pin(bytes)])) }));
   files.set(applicationSource.archive, archive); files.set(applicationSource.index, index);
   manifest.files[applicationSource.archive] = pin(archive); manifest.files[applicationSource.index] = pin(index);
   return { distribution: buildFemRuntimeAssets({ ...manifest, applicationSource }, files), inputs };
@@ -34,6 +55,10 @@ describe('FEM application source versus explicit build inputs', () => {
   it('accepts an independent build with matching archived inputs, without consulting the live checkout', () => {
     const { distribution, inputs } = applicationFixture();
     expect(() => assertFemApplicationBuildInputs(distribution, inputs)).not.toThrow();
+  });
+  it.each(['missing', 'extra', 'tampered'] as const)('rejects %s non-build archive members with coherent outer pins', variant => {
+    const { distribution, inputs } = applicationFixture(variant);
+    expect(() => assertFemApplicationBuildInputs(distribution, inputs)).toThrow('FEM application archive member');
   });
   it('accepts equivalent LF, CRLF and mixed checkout line endings', () => {
     const { distribution, inputs } = applicationFixture();
@@ -409,5 +434,57 @@ describe('oversized source material stored in the repository as pinned parts', (
     }));
     expect(joined.byteLength).toBe(original.bytes);
     expect(sha(joined)).toBe(original.sha256);
+  });
+});
+
+describe('Electron app:// resolution of every shipped FEM runtime asset (EX-09 delivery)', () => {
+  const folder = join(root, 'packages/fem/runtime');
+  interface Pins { readonly [name: string]: { readonly bytes: number; readonly sha256: string } }
+  const manifest = (): { format: string; unresolved: string[]; components: unknown[]; files: Pins } =>
+    JSON.parse(readFileSync(join(folder, 'manifest.json'), 'utf8')) as { format: string; unresolved: string[]; components: unknown[]; files: Pins };
+
+  it('serves all 36 manifest assets from the emitted renderer files with the pinned SHA-256 and 404 for an unlisted name', async () => {
+    const files = manifest().files, { assets } = collectFemRuntimeAssets(folder);
+    // A renderer root that is never written: the mocked net.fetch maps its file URLs back to the emitted bytes.
+    const rendererRoot = join(root, 'apps', 'desktop', 'renderer-root-not-written');
+    electron.handle.mockClear();
+    electron.fetch.mockImplementation((url: string) => {
+      const emitted = assets.get(fileURLToPath(url).slice(rendererRoot.length + 1).split(sep).join('/'));
+      return Promise.resolve(emitted === undefined ? new Response(null, { status: 404 }) : new Response(new Uint8Array(emitted)));
+    });
+    handleAppScheme(rendererRoot);
+    const handler = electron.handle.mock.calls[0]?.[1];
+    if (handler === undefined) throw new Error('The app:// handler was not registered');
+    const names = Object.keys(files).filter(name => name.startsWith('assets/')).sort();
+    const missing: string[] = [], mismatched: string[] = [];
+    for (const name of names) {
+      const response = await handler(new Request(`${APP_ORIGIN}/fem/${name}`));
+      if (!response.ok) { missing.push(name); continue; }
+      const bytes = Buffer.from(await response.arrayBuffer()), expected = files[name];
+      if (expected === undefined || bytes.byteLength !== expected.bytes || pin(bytes).sha256 !== expected.sha256) mismatched.push(name);
+    }
+    expect({ assets: names.length, missing, mismatched }).toEqual({ assets: 36, missing: [], mismatched: [] });
+    const extra = [...assets.keys()].filter(name => name.startsWith('fem/assets/') && !(name.slice('fem/'.length) in files));
+    expect(extra).toEqual([]);
+    expect((await handler(new Request(`${APP_ORIGIN}/fem/assets/unlisted-native.whl`))).status).toBe(404);
+  });
+
+  it.each(['tampered', 'missing', 'extra'] as const)('refuses a real %s runtime asset before emitting a FEM file', reason => {
+    const source = manifest(), files = new Map<string, Buffer>(), pins: Record<string, { bytes: number; sha256: string }> = {};
+    // Real runtime assets and their component notices; source archives are covered by the stored-part tests above.
+    for (const [name, value] of Object.entries(source.files)) {
+      if (!name.startsWith('assets/') && !name.startsWith('notices/')) continue;
+      files.set(name, readFileSync(join(folder, name))); pins[name] = { bytes: value.bytes, sha256: value.sha256 };
+    }
+    const subset = { format: source.format, unresolved: source.unresolved, components: source.components, files: pins };
+    expect(buildFemRuntimeAssets(subset, files).assets.has('fem/assets/pyodide.asm.wasm')).toBe(true);
+    if (reason === 'tampered') {
+      const wasm = Buffer.from(files.get('assets/pyodide.asm.wasm') ?? Buffer.alloc(0));
+      wasm[wasm.byteLength >> 1] ^= 1;
+      files.set('assets/pyodide.asm.wasm', wasm);
+    } else if (reason === 'missing') files.delete('assets/oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl');
+    else files.set('assets/unlisted-native.whl', Buffer.from('extra'));
+    expect(() => buildFemRuntimeAssets(subset, files)).toThrow(reason === 'tampered'
+      ? 'FEM distribution input changed: assets/pyodide.asm.wasm' : 'FEM distribution inventory changed');
   });
 });

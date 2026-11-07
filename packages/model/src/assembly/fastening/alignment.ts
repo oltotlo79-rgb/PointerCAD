@@ -6,12 +6,12 @@
  * その後、動かす穴の合わせ面上の軸の点を基準の点へ平行移動する(隙間 0)。
  */
 
-import { applyPlacementToDirection, applyPlacementToPoint, composePlacement,
+import { applyPlacementToDirection, applyPlacementToPoint,
   normalizeQuaternion, type Quaternion, type RigidPlacement } from '../placementMath.js';
 import { rigidGroupMemberIds } from '../rigidGroups.js';
 import type { AssemblyDocument } from '../types.js';
 import { crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
-import { rigidPlacementOf, type WorldHole } from './frames.js';
+import type { WorldHole } from './frames.js';
 
 /** `u` に垂直な長さ 1 の軸。`u` と最も直交に近い座標軸との外積で決める(決定的)。 */
 export function perpendicularAxis(u: Vec3): Vec3 {
@@ -89,10 +89,4 @@ export function planAlignment(
     into: applyPlacementToDirection(delta, movable.into),
   };
   return { movedComponentIds: rigidGroupMemberIds(document, movable.component.id), delta, moved, anchor };
-}
-
-/** 変位を部品の保存形の配置へ掛ける(新しい配置 = 変位 ∘ いまの配置)。 */
-export function movedPlacement(delta: RigidPlacement, document: AssemblyDocument, componentId: string): RigidPlacement | null {
-  const component = document.components.find((candidate) => candidate.id === componentId);
-  return component === undefined ? null : composePlacement(delta, rigidPlacementOf(component.placement));
 }

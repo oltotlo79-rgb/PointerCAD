@@ -21,6 +21,8 @@ scratchpad/claude/instructions/w28c-ops12b-hook-refine.md, OPS-12b):
       "./" is resolved relative to the repo root.
   (c) a future timestamp in the heading (line 1), a "state at (HH:MM)" note, or a
       "supervisor at HH:MM" note -- evidence the instruction's clock or measurement was off.
+      A time directly preceded by a YYYY-MM-DD date earlier than today is never future
+      (rules/06 §10.469); today's date and bare times keep the 180-minute window.
   (d) the referenced instruction file does not exist at all under
       scratchpad/claude/instructions/ -- e.g. the orchestrator's own Write of it was denied by
       record_time_guard.py's future-timestamp check, yet the Agent launch went ahead anyway with
@@ -54,6 +56,14 @@ packages/fem/src/worker.ts, every test file that directly imports that worker no
 each run, not a fixed list) must be named by its real path in the acceptance ("合格条件") text. Gate 20261029-233928 failed
 because frameBoltClient.test.ts, which imports the real worker, was missing from the focused RUN of a worker change.
 The check only prevents that omission before launch; it never runs the tests and never certifies any result.
+
+2026-11-07 cl-v103-tooling-enforcement-1107 widens check 9 (rules/06 §10.458): when the "③" paragraph allows changing an
+existing product .ts/.tsx under packages/<pkg>/src/ (not a test file; a folder entry means every product .ts/.tsx directly
+inside it, and a folder or glob with more than 30 such files is only a warning), every *.test.ts / *.test.tsx in the same
+package's src that imports that file through a relative specifier (found on each run -- rg if it is on PATH, else a pure-Python
+scan, as in check 1) must be named by its real path in the text from the "## 2" heading to the end, unless that text names a
+full run ("<pkg> の単体を全件" / "packages/<pkg> の全検査"). Gate 20261107-010320 failed because ViewportCanvasLifecycle.test.ts,
+which imports changed viewport product files, was never run. The shared worker keeps its own check above.
 
 Everything the check needs lives in this one file (no import of anything under scratchpad/, which
 is gitignored and absent from CI and from any hermetic checkout -- rules/06 §10.336). Only
@@ -102,6 +112,9 @@ BARE_NAME_EXTENSION_PATTERN = r"\.[A-Za-z][A-Za-z0-9]{0,9}$"
 BARE_TIME_PATTERN = r"(?<!\d)(\d{2}):(\d{2})(?!\d)"
 STATE_PAREN_PATTERN = r"投入時の状態[（(]\s*(\d{2}):(\d{2})\s*[）)]"
 SUPERVISOR_NI_PATTERN = r"統括が[ \t]*(\d{2}):(\d{2})[ \t]*に"
+# rules/06 §10.469: 時刻の直前(同じ行。間は空白〔全角の空白を含む〕か「の」が1〜3字、または
+# ISO の T)にある年月日。行の時刻より前の部分の末尾にだけ一致させる。
+DATE_PREFIX_PATTERN = r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?:T|[\sの]{1,3})$"
 ANNOTATION_WINDOW = 100
 
 _ROOT_CACHE = None
@@ -231,23 +244,42 @@ def _is_future(hour: int, minute: int, now: datetime) -> bool:
     return 0 < ahead <= 180
 
 
+def _dated_before_today(line: str, time_start: int, now: datetime) -> bool:
+    """rules/06 §10.469: 時刻の直前に年月日(DATE_PREFIX_PATTERN)があり、その日付が now の
+    日付より前なら True(過去の日付の時刻は未来と扱わない。共通の決まりの1行目
+    「統括が 2026-10-05 13:53 に作成」が毎日 10:53〜13:53 の起動を止めた)。今日・先の日付、
+    年月日の無い時刻、あり得ない日付は False で、従来どおり _is_future の180分の窓で判定する。"""
+    match = re.search(DATE_PREFIX_PATTERN, line[:time_start])
+    if match is None:
+        return False
+    try:
+        stamp_day = datetime(int(match.group(1)), int(match.group(2)), int(match.group(3))).date()
+    except ValueError:
+        return False
+    return stamp_day < now.date()
+
+
 def future_time_findings(text: str, now: datetime) -> list[tuple[int, str]]:
     """(c) 見出し(1行目)の裸の HH:MM、「投入時の状態(HH:MM)」、「統括が HH:MM に」を集め、
     今の分より先のものを (行番号, "HH:MM") で返す(日をまたぐ表記は180分先までを未来と
     みなし、前夜の時刻を誤って未来と扱わない。record_time_guard.py の同種の判定とは
-    独立にこの場で同じ考え方だけを再実装したもので、そちらへは依存しない)。"""
+    独立にこの場で同じ考え方だけを再実装したもので、そちらへは依存しない)。
+    3種とも、時刻の直前に今日より前の年月日があれば未来と扱わない(rules/06 §10.469、
+    _dated_before_today)。"""
     lines = text.splitlines()
     found: list[tuple[int, str]] = []
     if lines:
         for match in re.finditer(BARE_TIME_PATTERN, lines[0]):
             hour, minute = int(match.group(1)), int(match.group(2))
-            if _is_future(hour, minute, now):
+            if _is_future(hour, minute, now) and not _dated_before_today(lines[0], match.start(1), now):
                 found.append((1, match.group()))
     for line_number, line in enumerate(lines, start=1):
         for pattern in (STATE_PAREN_PATTERN, SUPERVISOR_NI_PATTERN):
             for match in re.finditer(pattern, line):
                 hour, minute = int(match.group(1)), int(match.group(2))
                 if not _is_future(hour, minute, now):
+                    continue
+                if _dated_before_today(line, match.start(1), now):
                     continue
                 stamp = f"{match.group(1)}:{match.group(2)}"
                 if (line_number, stamp) not in found:
@@ -1558,6 +1590,8 @@ WORKER_CONSUMER_SECONDS = 1.0
 WORKER_TEST_NAME_PATTERN = r"\.(?:test|spec)\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$"
 WORKER_IMPORT_PATTERN = r"(?<![\w$.])(?:import[ \t\r\n]*\([ \t\r\n]*|from[ \t\r\n]*|import[ \t\r\n]*)(['\"])([^'\"\r\n]+)\1"
 WORKER_SPECIFIER_SUFFIXES = ("", ".js", ".ts")
+_IMPORT_MATCHER = re.compile(WORKER_IMPORT_PATTERN)
+_IMPORT_KEYWORDS = ("import", "from")
 WORKER_READ_ONLY_PATTERN = (
     r"読(?:取|み取|む)|参照(?:のみ|だけ)|read[ _\-]?only|(?:変更|編集|修正)(?:禁止|しない|不可)|変えない|触らない"
     r"|候補外|対象外|範囲外|禁止")
@@ -1569,6 +1603,29 @@ WORKER_CONSUMER_MESSAGE = (
     "合格条件の検査の対象に実パスで無い: {missing}(今の消費先 全 {total} 本: {consumers}){note}。合格条件にこれらの実パスを書き、"
     "同じ RUN で流す(試験を③へ入れる必要は無い。読取の既存試験でよい)。この検査は起動の前の列挙漏れを防ぐだけで、"
     "実行の結果を合格と認定しない(全体検査 20261029-233928 の frameBoltClient.test.ts:173)")
+
+
+def _import_specifiers(text: str) -> list[str]:
+    """re.finditer(WORKER_IMPORT_PATTERN, text) の指定子(group 2)と同じ物を同じ順で返す(rules/06 §10.464)。
+    この型の一致は必ず 'import' か 'from' の位置で始まる(前の否定の先読みは幅 0)ので、その位置だけで match を試し、前の一致の
+    終わりより前の位置は飛ばす。全ての位置を試す finditer と結果は同じで、本文の大半を正規表現で読まずに済む。"""
+    positions: list[int] = []
+    for keyword in _IMPORT_KEYWORDS:
+        start = text.find(keyword)
+        while start != -1:
+            positions.append(start)
+            start = text.find(keyword, start + 1)
+    positions.sort()
+    found: list[str] = []
+    end = 0
+    for position in positions:
+        if position < end:
+            continue
+        match = _IMPORT_MATCHER.match(text, position)
+        if match is not None:
+            found.append(match.group(2))
+            end = match.end()
+    return found
 
 
 def _clean_relative(path: str) -> str | None:
@@ -1751,6 +1808,343 @@ def worker_consumer_findings(root: Path, display: str, lines: list[str], scope_t
     return errors, warnings
 
 
+# --- 検査9 の拡張: 製品ファイルの直接の検査(2026-11-07 cl-v103-tooling-enforcement-1107、rules/06 §10.458) ---
+# delivery 20261107-010320 の gate は、Codex 期に変わった viewport の製品 7 ファイルを直接 import する
+# packages/ui/src/viewport/ViewportCanvasLifecycle.test.ts を担当も統括も流さないまま控えへ入れ、ui の単体の段で 3 件落ちた(約 2 時間の損失)。
+# 上の共通 worker の検査(packages/fem/src/worker.ts だけ)を、③の製品の .ts/.tsx 全般へ広げる。
+#   対象 = ③の経路の語(検査 1・7・9 と同じ _path_entry_spans。読取専用・変更禁止などとされた語は検査 9 と同じ _worker_read_only で除く)
+#          のうち packages/<pkg>/src/ の中の、実在する製品の .ts/.tsx(*.test.*・*.spec.*・*.testSupport.*・*.d.ts でない物)。
+#          ファイルの語はそのファイル、フォルダーの語(末尾 / か拡張子の無い語)はそのフォルダー直下の製品 .ts/.tsx 全て、glob は当たる製品
+#          ファイル全て。フォルダー・glob の対象が PRODUCT_FOLDER_LIMIT(30)本を超える時は、走査が重くなるので確かめずに警告にする。
+#          共通 worker(WORKER_CONSUMER_TARGETS)は上の検査 9 が合格条件で確かめるので、ここでは数えない(同じ外れを二重に出さない)。
+#   検査ファイル = 同じパッケージの src の中の *.test.ts・*.test.tsx のうち、import 文・`import(…)`・export … from の相対の指定子を解決すると
+#          対象(拡張子なし・.js・.jsx・.ts・.tsx・.mjs。index.ts はそのフォルダーでも)になるもの。候補の絞込みは検査 1 と同じ作法
+#          (PATH に rg があれば rg、無ければ純 Python の走査)。毎回その場で探す。
+#          2026-11-07 追補 2(rules/06 §10.464): 写しで --check が 4.1 秒(根 0.4 秒)かかり、gate のフックの自己試験の 10 秒を負荷の下で
+#          超えた。走査は 1 回の --check で 1 回だけ(③の製品ファイル・パッケージが複数でも、全パッケージの src と全ての名前をまとめて
+#          rg 1 回、無ければ純 Python で同じ範囲を並列に 1 回読む)にし、本文は 1 回だけ読む。import の指定子は 'import'・'from' の
+#          位置だけで照合する(_import_specifiers。判定は従来と同じ: 候補はそのパッケージの名前を含むファイルだけ)。
+#   列挙 = 「## 2」以降の本文(番号 2 の見出しから文書の終わりまで。無ければ合格条件の文)の実パス(検査 9 と同じ _listed_paths)。
+#          本文に「<pkg> の単体を全件」「packages/<pkg> の全検査」(直後に「流さない」などの否定が無い物)があれば、そのパッケージは通す。
+#          「packages/<pkg>/src/<フォルダー> の全検査」は、そのフォルダーの中の検査ファイルだけを列挙したとみなす(外の物は別に要る)。
+#   外れ = 列挙に無い検査ファイルがある(試験を③へ入れることは求めない)。走査が枠を超えた時は警告だけ。
+# この検査は起動の前の列挙漏れを防ぐだけで、試験を実行せず、その結果を合格と認定しない。
+
+PRODUCT_CONSUMER_SECONDS = 1.5
+PRODUCT_FOLDER_LIMIT = 30
+PRODUCT_PACKAGE_PATTERN = r"^packages/([A-Za-z0-9_.\-]+)/src(?:/|$)"
+PRODUCT_SOURCE_PATTERN = r"\.(?:ts|tsx)$"
+PRODUCT_EXCLUDE_PATTERN = r"\.(?:test|spec)\.[A-Za-z]+$|\.testSupport\.[A-Za-z]+$|\.d\.ts$"
+PRODUCT_TEST_NAME_PATTERN = r"\.test\.(?:ts|tsx)$"
+PRODUCT_SPECIFIER_SUFFIXES = ("", ".js", ".jsx", ".ts", ".tsx", ".mjs")
+PRODUCT_FULL_RUN_TEMPLATES = (
+    r"(?<![A-Za-z0-9_\-/]){pkg}[ \t]*の[ \t]*単体を全件",
+    r"packages/{pkg}[ \t]*の[ \t]*(?:単体を全件|全検査)",
+)
+PRODUCT_FULL_RUN_NEGATION = r"^[^。\n]{0,20}?(?:流さない|しない|不要|省く|除く|外す)"
+# フォルダーの全件「packages/<pkg>/src/<フォルダー> の全検査」は、そのフォルダーの中(下の階層を含む)の検査ファイルを列挙したとみなす
+# (フォルダーの外の検査ファイルは別に要る)。packages/<pkg>・packages/<pkg>/src はパッケージの全件。
+PRODUCT_FOLDER_RUN_PATTERN = (
+    r"(?<![A-Za-z0-9_@.\-/])((?:\./)?packages/[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)*)/?[ \t]*の[ \t]*(?:単体を全件|全検査)")
+PRODUCT_CONSUMER_MESSAGE = (
+    "{display} 行{line}: 製品ファイルの直接の検査: ③が {target} の変更を許すのに、それを相対 import する同じパッケージの検査 {count} 本が"
+    "「## 2」以降の本文に実パスで無い: {missing}(今の検査ファイル 全 {total} 本){note}。実パスを書いて同じ RUN で流すか、全件を流すなら"
+    "「{pkg} の単体を全件」と書く(rules/06 §10.458。gate 20261107-010320 の ViewportCanvasLifecycle.test.ts)。この検査は起動の前の"
+    "列挙漏れを防ぐだけで、試験を実行せず結果を合格と認定しない")
+
+
+def _is_product_source(relative: str) -> bool:
+    name = relative.rsplit("/", 1)[-1]
+    return (re.match(PRODUCT_PACKAGE_PATTERN, relative) is not None and re.search(PRODUCT_SOURCE_PATTERN, name) is not None
+            and re.search(PRODUCT_EXCLUDE_PATTERN, name) is None)
+
+
+def _folder_products(root: Path, folder: str) -> list[str]:
+    """フォルダー直下の製品 .ts/.tsx(根からの相対・昇順)。"""
+    import os
+    try:
+        with os.scandir(root / folder) as entries:
+            names = sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False))
+    except OSError:
+        return []
+    return [f"{folder}/{name}" for name in names if _is_product_source(f"{folder}/{name}")]
+
+
+def _glob_products(root: Path, pattern: str) -> list[str]:
+    """glob の語に当たる製品 .ts/.tsx(根からの相対・昇順)。glob の手前のフォルダーから、** があれば下まで、無ければ直下だけを見る。"""
+    import os
+    folder = _glob_folder(pattern)
+    if folder is None:
+        return []
+    deep = "**" in pattern
+    found: list[str] = []
+    stack = [folder]
+    while stack:
+        current = stack.pop()
+        try:
+            with os.scandir(root / current) as entries:
+                items = sorted(entries, key=lambda item: item.name)
+        except OSError:
+            continue
+        for item in items:
+            relative = f"{current}/{item.name}"
+            if item.is_dir(follow_symlinks=False):
+                if deep and item.name not in SCAN_SKIP_DIRS:
+                    stack.append(relative)
+            elif _is_product_source(relative) and _entry_covers(pattern, relative):
+                found.append(relative)
+    return sorted(found)
+
+
+def product_targets(root: Path, display: str, lines: list[str], scope_text: str) -> tuple[dict, list[str]]:
+    """③が変更を許す製品ファイル {パス: (パッケージ, ③の文の中の位置)} と、警告の一覧。"""
+    block = _scope_block(lines)
+    targets: dict[str, tuple[str, int]] = {}
+    warnings: list[str] = []
+    if block is None or not scope_text.strip():
+        return targets, warnings
+    text = scope_text.replace("\\", "/")
+    workers = {worker for worker, _source in WORKER_CONSUMER_TARGETS}
+    for entry, _token, start, end, _bare in _path_entry_spans(text):
+        body = _clean_relative(entry.rstrip("/"))
+        if body is None:
+            continue
+        package = re.match(PRODUCT_PACKAGE_PATTERN, body)
+        if package is None or _worker_read_only(text, start, end):
+            continue
+        if "*" in body or "?" in body:
+            found, kind = _glob_products(root, body), "glob"
+        elif entry.endswith("/") or "." not in body.rsplit("/", 1)[-1]:
+            found, kind = (_folder_products(root, body) if (root / body).is_dir() else []), "フォルダー"
+        else:
+            found, kind = ([body] if _is_product_source(body) and (root / body).is_file() else []), "ファイル"
+        found = [path for path in found if path not in workers]
+        if kind != "ファイル" and len(found) > PRODUCT_FOLDER_LIMIT:
+            line = block[0] + scope_text.count("\n", 0, start) + 1
+            warnings.append(
+                f"{display} 行{line}: 製品ファイルの直接の検査: ③の{kind} {entry} は直下の製品 .ts/.tsx が {len(found)} 本"
+                f"({PRODUCT_FOLDER_LIMIT} 本超)で走査が重くなるので確かめていない。変える製品ファイルを実パスで③に書けば確かめる")
+            continue
+        for path in found:
+            targets.setdefault(path, (package.group(1), start))
+    return targets, warnings
+
+
+def _product_wanted(targets: list[str]) -> tuple[dict[str, str], list[str]]:
+    """({import の解決先: 対象}, 候補の絞込みの名前)。拡張子なし・各拡張子、index はそのフォルダーでも。"""
+    import posixpath
+    wanted: dict[str, str] = {}
+    needles: list[str] = []
+    for target in targets:
+        stem = target.rsplit(".", 1)[0]
+        for suffix in PRODUCT_SPECIFIER_SUFFIXES:
+            wanted[stem + suffix] = target
+        needle = posixpath.basename(stem)
+        if needle == "index":
+            folder = posixpath.dirname(stem)
+            wanted[folder] = target
+            needle = posixpath.basename(folder)
+        if needle not in needles:
+            needles.append(needle)
+    return wanted, needles
+
+
+def _product_candidate_texts(root: Path, source_dirs: list[str], needles: list[str], deadline: float,
+                             invocation) -> tuple[dict[str, str], bool]:
+    """source_dirs の中の *.test.ts・*.test.tsx のうち needles のどれかを含むファイルの {根からの相対: 本文} と、枠の中で終えたか。
+    PATH に rg があれば全フォルダー・全ての名前をまとめた rg 1 回で絞って候補だけ並列に読み、無い・失敗した時は純 Python で同じ範囲の
+    検査ファイルを並列に 1 回読んで名前を含む物だけ残す(どちらも本文は 1 回だけ読む)。"""
+    import os
+    import subprocess
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    if time.monotonic() > deadline:
+        return {}, False
+    chosen = _rg_invocation() if invocation == "auto" else invocation
+    paths: list[str] | None = None
+    filter_needles = False
+    if chosen is not None:
+        try:
+            command, extra_env = chosen
+            env = dict(os.environ)
+            env.update(extra_env)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return {}, False
+            skip_globs = [f"--glob=!**/{name}/**" for name in sorted(SCAN_SKIP_DIRS)]
+            patterns = [part for needle in needles for part in ("-e", needle)]
+            result = subprocess.run(
+                [*command, "--files-with-matches", "--fixed-strings", "--null", "--no-messages", "--no-ignore",
+                 "--hidden", *skip_globs, "--glob=*.test.ts", "--glob=*.test.tsx", *patterns, "--", *source_dirs],
+                cwd=str(root), env=env, capture_output=True, timeout=max(remaining, 0.1))
+            if result.returncode not in (0, 1):
+                raise RuntimeError(f"rg の終了コード {result.returncode}")
+            names = set()
+            for raw in result.stdout.split(b"\0"):
+                if raw:
+                    name = raw.decode("utf-8", errors="replace").replace("\\", "/")
+                    while name.startswith("./"):
+                        name = name[2:]
+                    names.add(name)
+            paths = sorted(names)
+        except Exception:
+            paths = None
+    if paths is None:
+        filter_needles = True
+        paths = []
+        for source_dir in source_dirs:
+            stack = [source_dir]
+            while stack:
+                current = stack.pop()
+                try:
+                    with os.scandir(root / current) as entries:
+                        items = list(entries)
+                except OSError:
+                    continue
+                for item in items:
+                    relative = f"{current}/{item.name}"
+                    try:
+                        if item.is_dir(follow_symlinks=False):
+                            if item.name not in SCAN_SKIP_DIRS:
+                                stack.append(relative)
+                            continue
+                        if (not item.is_file(follow_symlinks=False) or not re.search(PRODUCT_TEST_NAME_PATTERN, item.name)
+                                or item.stat().st_size > SCAN_MAX_FILE_BYTES):
+                            continue
+                    except OSError:
+                        continue
+                    paths.append(relative)
+    encoded = [needle.encode("utf-8") for needle in needles]
+
+    def read(relative: str):
+        try:
+            with open(root / relative, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            return relative, None
+        if filter_needles and not any(needle in data for needle in encoded):
+            return relative, None
+        return relative, data.decode("utf-8", errors="replace")
+
+    texts: dict[str, str] = {}
+    complete = True
+    with ThreadPoolExecutor(max_workers=SCAN_WORKERS) as pool:
+        for offset in range(0, len(paths), 128):
+            if time.monotonic() > deadline:
+                complete = False
+                break
+            for relative, text in pool.map(read, paths[offset:offset + 128]):
+                if text is not None:
+                    texts[relative] = text
+    return texts, complete
+
+
+def _consumers_from_texts(texts: dict[str, str], source_dir: str, wanted: dict[str, str], targets: list[str],
+                          needles: list[str]) -> dict[str, list[str]]:
+    """{対象: [それを相対 import する source_dir の中の検査ファイル(昇順)]}。そのパッケージの名前を含むファイルだけ見る(従来の候補と同じ)。"""
+    import posixpath
+    consumers: dict[str, list[str]] = {target: [] for target in targets}
+    prefix = source_dir.rstrip("/") + "/"
+    for relative, text in texts.items():
+        if (not relative.startswith(prefix) or not re.search(PRODUCT_TEST_NAME_PATTERN, relative)
+                or not any(needle in text for needle in needles)):
+            continue
+        folder = posixpath.dirname(relative)
+        for specifier in _import_specifiers(text):
+            if not specifier.startswith(("./", "../")):
+                continue
+            target = wanted.get(_clean_relative(posixpath.join(folder, specifier)) or "")
+            if target is not None and relative not in consumers[target]:
+                consumers[target].append(relative)
+    return {target: sorted(paths) for target, paths in consumers.items()}
+
+
+def product_consumers(root: Path, source_dir: str, targets: list[str], deadline: float,
+                      invocation="auto") -> tuple[dict, bool]:
+    """{対象: [それを相対 import する source_dir の中の検査ファイル(昇順)]} と、枠の中で探し終えたか。"""
+    wanted, needles = _product_wanted(targets)
+    texts, complete = _product_candidate_texts(root, [source_dir], needles, deadline, invocation)
+    return _consumers_from_texts(texts, source_dir, wanted, targets, needles), complete
+
+
+def _body_from_section_two(lines: list[str]) -> tuple[str, bool]:
+    """「## 2」(番号 2 の見出し)から文書の終わりまでの文と、その見出しがあったか。無ければ合格条件の文。"""
+    for index, _level, title in _headings(lines):
+        if re.match(ACCEPT_NUMBER_PATTERN, title):
+            return "\n".join(lines[index:]), True
+    return "\n".join(_acceptance_blocks(lines)), False
+
+
+def _full_run_named(body: str, package: str) -> bool:
+    plain = body.replace("\\", "/")
+    for template in PRODUCT_FULL_RUN_TEMPLATES:
+        for match in re.finditer(template.format(pkg=re.escape(package)), plain):
+            if re.match(PRODUCT_FULL_RUN_NEGATION, plain[match.end():]) is None:
+                return True
+    return False
+
+
+def _full_run_folders(body: str) -> list[str]:
+    """本文の「packages/<pkg>/src/<フォルダー> の全検査」「… の単体を全件」のフォルダー(根からの相対。否定の付いた物は除く)。"""
+    plain = body.replace("\\", "/")
+    folders: list[str] = []
+    for match in re.finditer(PRODUCT_FOLDER_RUN_PATTERN, plain):
+        folder = _clean_relative(match.group(1))
+        if folder is None or "." in folder.rsplit("/", 1)[-1]:
+            continue
+        if re.match(PRODUCT_FULL_RUN_NEGATION, plain[match.end():]) is None and folder not in folders:
+            folders.append(folder)
+    return folders
+
+
+def product_consumer_findings(root: Path, display: str, lines: list[str], scope_text: str, seconds: float,
+                              invocation="auto") -> tuple[list[str], list[str]]:
+    import time
+    errors: list[str] = []
+    targets, warnings = product_targets(root, display, lines, scope_text)
+    if not targets:
+        return errors, warnings
+    block = _scope_block(lines)
+    deadline = time.monotonic() + seconds
+    body, has_section = _body_from_section_two(lines)
+    listed = _listed_paths(body)
+    folders = _full_run_folders(body)
+    by_package: dict[str, list[str]] = {}
+    for path, (package, _start) in targets.items():
+        by_package.setdefault(package, []).append(path)
+    plans = []
+    for package, paths in by_package.items():
+        if _full_run_named(body, package) or {f"packages/{package}", f"packages/{package}/src"} & set(folders):
+            continue
+        wanted, needles = _product_wanted(paths)
+        plans.append((package, f"packages/{package}/src", paths, wanted, needles))
+    texts: dict[str, str] = {}
+    complete = True
+    if plans:
+        # 走査は 1 回の --check で 1 回だけ(全パッケージの src と全ての名前をまとめる。rules/06 §10.464)。
+        all_needles = list(dict.fromkeys(needle for plan in plans for needle in plan[4]))
+        texts, complete = _product_candidate_texts(root, [plan[1] for plan in plans], all_needles, deadline, invocation)
+    for package, source_dir, paths, wanted, needles in plans:
+        consumers = _consumers_from_texts(texts, source_dir, wanted, paths, needles)
+        if not complete:
+            warnings.append(
+                f"{display}: 製品ファイルの直接の検査: {source_dir} の走査が {seconds:g} 秒の枠を超えたため一部未確認"
+                "(--check なら長い枠で走査する)")
+            continue
+        for path in paths:
+            tests = consumers.get(path, [])
+            missing = [test for test in tests if test not in listed
+                       and not any(test.startswith(folder + "/") for folder in folders)]
+            if not missing:
+                continue
+            line = block[0] + scope_text.count("\n", 0, targets[path][1]) + 1
+            errors.append(PRODUCT_CONSUMER_MESSAGE.format(
+                display=display, line=line, target=path, count=len(missing), missing="、".join(missing),
+                total=len(tests), pkg=package,
+                note="" if has_section else "。「## 2」の見出しが無いので合格条件の文で探した"))
+    return errors, warnings
+
+
 DOCS_PHASE_REASON = '利用者の指示 2026-11-01 19:2x: 取扱説明書は最後'
 DOCS_PHASE_MARKER = 'scratchpad/claude/root-runtime/docs-phase-open.json'
 
@@ -1832,6 +2226,12 @@ def check_instruction_report(root: Path, display_path: str, text: str, now: date
         ("共通 worker の消費先", lambda: worker_consumer_findings(
             root, display_path, lines, scope_text,
             max(WORKER_CONSUMER_SECONDS, scan_seconds - (time.monotonic() - checks_started)))),
+        # 検査 1・8 の試験が渡す明示の rg の差し替え(呼出しの記録つき)はこの検査に効かせず、PATH の rg か純 Python で走査する
+        # (None は純 Python のまま)。検査 8 の rg の呼出し回数の試験を変えないため。
+        ("製品ファイルの直接の検査", lambda: product_consumer_findings(
+            root, display_path, lines, scope_text,
+            max(PRODUCT_CONSUMER_SECONDS, scan_seconds - (time.monotonic() - checks_started)),
+            invocation if invocation in ("auto", None) else "auto")),
     )
     for name, step in steps:
         try:

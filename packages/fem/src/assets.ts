@@ -60,8 +60,8 @@ export const FEM_ASSETS = [
   },
   {
     "file": "plasticBarAnalysis.py",
-    "bytes": 11818,
-    "sha256": "4476efc3d2ead7db8420ca55b3547ba25c3cbc8a725802704e4b53217a3436fd"
+    "bytes": 14692,
+    "sha256": "0179b40813f1d432c5e85734aa4f357e89af99f081eb88a7dd0a89decef016a3"
   },
   {
     "file": "beamContact.py",

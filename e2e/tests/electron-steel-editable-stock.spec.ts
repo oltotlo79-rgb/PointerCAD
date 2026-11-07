@@ -1,6 +1,7 @@
 import { expect, test as base, type ElectronApplication, type Page } from '@playwright/test';
 import { launchDesktop } from './electronAppFlow.js';
 import { registerSteelEditableStockTests, registerSteelUiAcceptanceTests } from './steelEditableStockFlow.js';
+import { registerSteelStockCsvTests } from './steelStockCsvFlow.js';
 
 const applications = new WeakMap<Page, ElectronApplication>();
 const restarts = new WeakMap<Page, () => Promise<{ page: Page; app: ElectronApplication }>>();
@@ -34,3 +35,5 @@ registerSteelUiAcceptanceTests(test, page => applications.get(page), async page 
   if (restart === undefined) throw new Error('鋼材検査のElectron再起動がありません');
   return restart();
 });
+
+registerSteelStockCsvTests(test, page => applications.get(page));

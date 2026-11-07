@@ -599,7 +599,7 @@ export function ParameterPanel(): React.JSX.Element {
           onClick={() => {
             /*
              * 名前欄が打ちかけのまま(Enter 未確定)だと、窓の showModal が焦点を奪って
-             * blur を起こし、改名の途中で文書が差し替わって窓がすぐ閉じる(w104a)。
+             * blur を起こし、改名の途中で文書が差し替わって窓がすぐ閉じる(焦点移動の再現検証)。
              * 窓を開く前に名前の下書きを確定させ、改名が終わってから開く。
              */
              const openWith = (name: string, afterRename: boolean): void => {

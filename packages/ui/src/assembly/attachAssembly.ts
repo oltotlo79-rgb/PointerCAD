@@ -3,9 +3,9 @@ import {
   appearanceOf, buildStandardPartFromSource, diagnoseMatesSteps, jointFramePairFromTargets,
   KERNEL_BROKEN_MESSAGE, partKeyOf,
   resolveAssembly, resolveConstrainedAssembly,
-  resolveMateTarget, createSubShapeReferenceResolver, solveMatesSteps, runCooperative,
+  createBodyMateTargetResolver, solveMatesSteps, runCooperative,
   type AssemblyDocument, type AssemblyKernelBridge, type ComponentSource, type EmbeddedPartAttachments, type PartDocument, type PartLibrary, type SolveMatesOutcome,
-  type JointFramePair, type MateDiagnosis, type MateResidualTargetPair, type MateTarget,
+  type JointFramePair, type MateDiagnosis, type MateResidualTargetPair,
   type PartRecomputeResult, type CooperativeResult, type CooperativeRun, type CooperativeSchedule, type RigidWorkBudget, type RigidWorkPoint,
   type ResolveAssemblyOptions, type ResolvedAssembly, type ResolvedPart, type RigidPlacement, type SolidBody,
 } from '@pointercad/model';
@@ -47,7 +47,7 @@ export function readAssemblyRecomputeGates() {
  * the previous document, part recompute loop and its kernel/availability round trips, resolve, constraints,
  * publication). Bounded; never a gate, an acceptance or a native/GPU reading.
  */
-export interface AssemblyLoadTiming {
+ interface AssemblyLoadTiming {
   readonly seq: number;
   readonly attachment: number;
   readonly documentId: string;
@@ -74,7 +74,7 @@ const assemblyLoadTimings: AssemblyLoadTiming[] = [];
 let assemblyLoadTimingSequence = 0;
 /** The recompute still running, so a reader sees how far a long one got (a copy; never the live draft). */
 let inFlightLoadTiming: { readonly draft: AssemblyLoadTimingDraft; readonly startedAt: number } | null = null;
-export function readAssemblyLoadTimings() {
+ function readAssemblyLoadTimings() {
   const running = inFlightLoadTiming;
   return Object.freeze({ timings: Object.freeze(assemblyLoadTimings.slice()),
     inFlight: running === null ? null : Object.freeze({ ...running.draft, elapsedMs: performance.now() - running.startedAt }),
@@ -268,7 +268,7 @@ export function retainSuccessfulPlacements(
 }
 
 /** Same units as joint drive. Scheduling is replaceable for checkpoint tests; the model solve is always real. */
-export interface AssemblyConstraintExecution extends CooperativeSchedule {
+interface AssemblyConstraintExecution extends CooperativeSchedule {
   readonly budget: RigidWorkBudget;
   /** Counted work, not a percentage; monotone across the whole initial solve, diagnosis and child occurrences. */
   readonly onProgress?: (done: number) => void;
@@ -559,14 +559,7 @@ export function attachAssembly(
     const jointTargetErrors = new Map<string, readonly string[]>();
     const targets = new Map<string, MateResidualTargetPair>();
     const jointFrames = new Map<string, JointFramePair>();
-    const resolveReference = createSubShapeReferenceResolver();
-    const resolveTarget = (target: MateTarget) => resolveMateTarget(target, resolved, {
-      subShape: (partKey, reference) => {
-        const body = bodies.get(partKey)?.find((item) => item.featureId === reference.bodyFeatureId);
-        const resolution = body === undefined ? null : resolveReference(body, reference);
-        return resolution?.status === 'matched' ? resolution.match.geometry : null;
-      },
-    });
+    const resolveTarget = createBodyMateTargetResolver(resolved, bodies);
     const activeMates = request.document.mates.filter((mate) => !mate.suppressed);
     for (const mate of activeMates) {
       const errors: string[] = [];

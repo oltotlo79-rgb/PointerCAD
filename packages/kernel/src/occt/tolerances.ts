@@ -6,14 +6,8 @@
  */
 export const GEOMETRIC_CONFUSION_MM = 1e-7;
 
-/** 面の縫合で隙間を修復する幅の既定値(mm)。model の既定値 0.01 mm と同じ。 */
-export const DEFAULT_SEWING_REPAIR_TOLERANCE_MM = 0.01;
-
 /** 文書の尺度で縫合の修復幅として受け付ける上限(mm)。 */
-export const MAXIMUM_SEWING_REPAIR_TOLERANCE_MM = 1;
-
-/** `BRepOffsetAPI_ThruSections` が近似曲面を作るときの `pres3d` 偏差(mm)。 */
-export const THRU_SECTIONS_APPROXIMATION_TOLERANCE_MM = 1e-6;
+const MAXIMUM_SEWING_REPAIR_TOLERANCE_MM = 1;
 
 /**
  * 表示メッシュの偏差は幾何公差や修復幅ではない。

@@ -9,13 +9,14 @@ import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import { makePrimitive } from './makePrimitive.js';
 import { resolveFaceReference, scoreFace, SUB_SHAPE_MATCH_THRESHOLD } from './matchSubShape.js';
-import type { ShellInput } from './makeShell.js';
 import { makeShell } from './makeShell.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type { SubShapeTables } from './subShapes.js';
 import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
+
+type ShellInput = Parameters<typeof makeShell>[3];
 
 /**
  * くり抜き(シェル、FR-418、FR-504、NFR-RE-1)の検査。計画書 P5 タスク53 の検証表。

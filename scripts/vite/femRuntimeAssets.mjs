@@ -120,7 +120,29 @@ export function assertFemApplicationBuildInputs(distribution, buildInputs) {
   const archive = readPinned(application.archive), index = JSON.parse(readPinned(application.index).toString('utf8'));
   if (index.archiveSha256 !== hash(archive) || !record(index.files)) throw new Error('FEM application archive/index differ');
   const { unzipSync } = createRequire(new URL('../../packages/io/package.json', import.meta.url))('fflate');
-  const contents = unzipSync(archive, { filter: file => APPLICATION_BUILD_INPUTS.includes(file.name) && file.originalSize <= 1024 * 1024 });
+  // Exact member coverage and per-member bytes are required even for non-build files.
+  // Bound each decompression by the reviewed index before reading it.
+  const seen = new Set();
+  const contents = unzipSync(archive, { filter: file => {
+    const entry = index.files[file.name];
+    if (!safePath(file.name) || seen.has(file.name) || !record(entry)
+      || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0 || entry.bytes !== file.originalSize
+      || typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(entry.sha256)) {
+      throw new Error('FEM application archive member invalid or extra: ' + file.name);
+    }
+    seen.add(file.name);
+    return true;
+  } });
+  const expectedNames = Object.keys(index.files);
+  if (expectedNames.length !== seen.size || expectedNames.some(name => !seen.has(name))) {
+    throw new Error('FEM application archive member missing');
+  }
+  for (const name of expectedNames) {
+    const entry = index.files[name], bytes = contents[name];
+    if (!(bytes instanceof Uint8Array) || bytes.byteLength !== entry.bytes || hash(bytes) !== entry.sha256) {
+      throw new Error('FEM application archive member differs: ' + name);
+    }
+  }
   for (const name of APPLICATION_BUILD_INPUTS) {
     const pin = index.files[name], bytes = contents[name];
     if (!record(pin) || !(bytes instanceof Uint8Array) || bytes.byteLength !== pin.bytes || hash(bytes) !== pin.sha256) {

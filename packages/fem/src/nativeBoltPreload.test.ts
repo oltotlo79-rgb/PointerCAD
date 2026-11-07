@@ -3,8 +3,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { decodeNativeBoltPreload, prepareNativeBoltPreload, type NativeBoltPreloadPlan, type NativeBoltPreloadResult, type PreparedNativeBoltPreload } from './nativeBoltPreload.js';
-import { analyzeNativeBoltPreload, verifyNativeBoltPrograms, type NativeBoltPrograms } from './nativeBoltPreloadRuntime.js';
+import { analyzeNativeBoltPreload, verifyNativeBoltPrograms } from './nativeBoltPreloadRuntime.js';
 import type { PyodideRuntime } from './runtime.js';
+
+type NativeBoltPrograms = Parameters<typeof verifyNativeBoltPrograms>[0];
+
 const read=(relative:string):string=>readFileSync(fileURLToPath(new URL(relative,import.meta.url)),'utf8');
 const inputBytes=read('./nativeBoltPreload.input.fixture.json');
 const actualResultBytes=read('./nativeBoltPreload.result.fixture.json');

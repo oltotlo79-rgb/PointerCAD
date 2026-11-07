@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { resolvePart } from '../../part/resolvePart.js';
 import type { Vec3 } from '../../sketch/vec3.js';
 import { applyPlacementToPoint } from '../placementMath.js';
-import { buildCircularFilletWeldGeometry, rebuildCircularFilletWeldPart, type CircularFilletWeldGeometry, type CircularFilletWeldSection } from './circularFilletWeldGeometry.js';
+import { buildCircularFilletWeldGeometry, rebuildCircularFilletWeldPart, type CircularFilletWeldSection } from './circularFilletWeldGeometry.js';
 import type { CircularWeldPathDefinition, CircularWeldPathEvidence } from './curvedWeldPath.js';
+
+type CircularFilletWeldGeometry = NonNullable<ReturnType<typeof buildCircularFilletWeldGeometry>>;
 
 function evidence(): CircularWeldPathEvidence {
   return { kind: 'circle-edge', source: { documentId: 'assembly', ownerId: 'leaf', occurrencePath: ['child', 'leaf'],

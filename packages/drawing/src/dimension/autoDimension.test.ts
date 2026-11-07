@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { autoDimension, type AutoDimensionCircle, type AutoDimensionInput, type AutoDimensionPoint } from './autoDimension.js';
+import { autoDimension, type AutoDimensionCircle, type AutoDimensionPoint } from './autoDimension.js';
 import type { Dimension } from './types.js';
+
+type AutoDimensionInput = Parameters<typeof autoDimension>[0];
 
 function point(id: string, x: number, y: number, scale = 1): AutoDimensionPoint {
   const modelPoint = [x, y, 0] as const, paperPoint = [100 + x * scale, 100 + y * scale] as const;

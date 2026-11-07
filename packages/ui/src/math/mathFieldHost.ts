@@ -19,7 +19,7 @@ export interface StructuredMathField extends HTMLElement {
   insert(value: string, options: { insertionMode: 'replaceSelection'; selectionMode: 'placeholder'; format: 'latex' }): boolean;
 }
 
-export interface MathFieldHostOptions {
+interface MathFieldHostOptions {
   readonly label: string;
   readonly describedBy: string;
   readonly initialSource: string;
@@ -177,11 +177,11 @@ export function attachMathField(
 }
 
 /** Elements that the browser's Tab order can include. Each candidate is still checked by reachableByTab. */
-export const SEQUENTIAL_FOCUS_SELECTOR = 'a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex], [contenteditable="true"]';
+const SEQUENTIAL_FOCUS_SELECTOR = 'a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex], [contenteditable="true"]';
 /** Node.DOCUMENT_POSITION_FOLLOWING, written as a value so this module does not need the DOM globals. */
 const DOCUMENT_POSITION_FOLLOWING = 4;
 /** The parts of the dialog that focusAdjacentControl reads. Every DOM element provides them. */
-export interface FocusScope {
+interface FocusScope {
   contains(other: Node | null): boolean;
   querySelectorAll(selectors: string): Iterable<HTMLElement>;
 }

@@ -49,7 +49,7 @@ export interface StepAssemblyDefinition {
 }
 
 /** 読み込んだ XCAF アセンブリ。 */
-export interface StepAssemblyReadResult {
+interface StepAssemblyReadResult {
   readonly name: string | null;
   readonly definitions: readonly StepAssemblyDefinition[];
   readonly children: readonly ShapeAssemblyNode[];

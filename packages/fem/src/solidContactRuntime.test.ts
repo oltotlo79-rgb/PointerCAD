@@ -4,11 +4,13 @@ import { join, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
-import { analyzeSolidContact, SolidContactRuntimeError, type SolidContactPrograms } from './solidContactRuntime.js';
+import { analyzeSolidContact, SolidContactRuntimeError } from './solidContactRuntime.js';
 import { SOLID_CONTACT_ASSETS } from './solidContactAssets.js';
 import { contactFixture, independentHash } from './solidContactBinding.testSupport.js';
 import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 import { isRecord } from './valueGuards.js';
+
+type SolidContactPrograms = Parameters<typeof analyzeSolidContact>[2];
 
 const assets = fileURLToPath(new URL('../runtime/assets/', import.meta.url));
 const wheel = 'oofem-3.0-cp313-cp313-pyodide_2025_0_wasm32.whl';

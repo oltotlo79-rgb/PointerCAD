@@ -10,10 +10,11 @@ import type { CafMeshFormat } from './readCafMesh.js';
 import { CAF_MESH_NO_SHAPE_MESSAGE, readCafMesh } from './readCafMesh.js';
 import { faceAt } from './subShapes.js';
 import { makeCompound } from './transformShape.js';
-import type { CafMeshBody } from './writeCafMesh.js';
 import { DEFAULT_BODY_COLOR, MESH_NO_FACE_RANGES_MESSAGE, writeCafMesh } from './writeCafMesh.js';
 import { forEachExportTriangle, writeStl } from './writeStl.js';
 import type { RgbTuple } from './xcafDocument.js';
+
+type CafMeshBody = Parameters<typeof writeCafMesh>[0][number];
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 

@@ -1325,13 +1325,13 @@ function readMeshJsAccounting(
     } else {
       // Retained display arrays outside the cache are part of the live peak, not cache fields.
       const live = liveBackingBytes(cache, retainedMeshBuffers);
-      const liveTotal = live === undefined ? counts.totalBytes
+      const totalLiveBytes = live === undefined ? counts.totalBytes
         : live.status === 'known' ? live.bytes : Number.NaN;
-      const currentBytes = liveTotal + retainedReplyBytes;
+      const currentBytes = totalLiveBytes + retainedReplyBytes;
       if (live?.status === 'unknown') {
         meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
           reason: live.reason };
-      } else if (liveTotal < counts.totalBytes) {
+      } else if (totalLiveBytes < counts.totalBytes) {
         meshJsAccounting = { status: 'unknown', limitBytes: localBudget.maximumLiveMeshBytes,
           reason: 'invalid-byte-count' };
       } else if (!Number.isSafeInteger(currentBytes)) {

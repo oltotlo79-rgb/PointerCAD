@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 import { CANDIDATE_MATH_OPERATIONS } from './mathOperations.js';
 import { parseMathText } from './mathTextSyntax.js';
 import type { MathExecutionBackend, MathExecutionReply } from './mathWorkExecution.js';

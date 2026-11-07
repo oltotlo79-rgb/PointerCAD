@@ -1,4 +1,4 @@
-import { meshCadBoundary, meshCadCurvedBoundary, prepareCadSolidAnalysis, type CadSolidPressureSettings, type CadSolidSettings,
+import { cadSolidSourceKey, meshCadBoundary, meshCadCurvedBoundary, prepareCadSolidAnalysis, type CadSolidPressureSettings, type CadSolidSettings,
   type CadTetraContext, type FemClient, type FemOptions, type SolidBucklingInput, type SolidBucklingResult } from '@pointercad/fem';
 import type { AnalysisBoundarySource } from '@pointercad/model';
 import { t } from '../i18n/t.js';
@@ -63,14 +63,6 @@ export function cadSolidBucklingFailureCode(message: string): CadSolidBucklingFa
   return 'cad-solid-buckling';
 }
 
-function sourceKey(context: CadTetraContext): string {
-  need(context.body.isValid && context.body.bodyKind === 'solid', 'A current valid solid is required');
-  const steps = context.steps.filter(step => step.featureId === context.body.featureId);
-  need(steps.length === 1 && steps[0].key.length > 0, 'A unique current body key is required');
-  return JSON.stringify({ documentId: context.documentId, revision: context.revision, step: steps[0],
-    volume: context.body.volume, faces: context.body.faces, origins: context.body.origins });
-}
-
 const owners = new WeakMap<object, AbortController>();
 /** Same ownership, supersede, cancellation and stale-source rules as analyzeCadSolid (the static source key). */
 export async function analyzeCadSolidBuckling(client: Pick<FemClient, 'meshTetrahedra' | 'analyzeSolidBuckling'>,
@@ -88,10 +80,10 @@ export async function analyzeCadSolidBuckling(client: Pick<FemClient, 'meshTetra
     const { modeCount, ...settings } = structuredClone(requested);
     supportedBoundary(settings.gravity !== undefined,
       settings.supports?.some(row => row.prescribedMm?.some(value => value !== 0) === true) === true);
-    const signature = sourceKey(readCurrent());
+    const signature = cadSolidSourceKey(readCurrent());
     const current = (): CadTetraContext => {
       const value = readCurrent();
-      need(sourceKey(value) === signature, 'CAD source changed during analysis');
+      need(cadSolidSourceKey(value) === signature, 'CAD source changed during analysis');
       return value;
     };
     const early = cancellation();

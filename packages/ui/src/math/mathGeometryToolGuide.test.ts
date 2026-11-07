@@ -21,7 +21,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { t } from '../i18n/t.js';
-import { describeStatus, guideKeyFor, machiningGuideText, type StatusInput } from '../shell/statusText.js';
+import { describeStatus, guideKeyFor, machiningGuideText } from '../shell/statusText.js';
 import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { attachPartRecompute } from '../store/attachKernel.js';
 import {
@@ -40,8 +40,10 @@ import {
   MATH_GEOMETRY_TOOL_GUIDE_KEYS,
   mathGeometryToolGuide,
   mathGeometryToolGuideText,
-  type MathGeometryToolGuideStage,
 } from './mathGeometryToolGuide.js';
+
+type StatusInput = Parameters<typeof describeStatus>[0];
+type MathGeometryToolGuideStage = NonNullable<ReturnType<typeof mathGeometryToolGuide>>['stage'];
 
 /* ---------------------------------------------------------------------------
  * 形の材料(立体 2 つ。どちらも体積を測れる立体で、直線の辺を 2 本ずつ持つ)

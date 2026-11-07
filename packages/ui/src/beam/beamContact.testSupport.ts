@@ -28,7 +28,7 @@ export function contactUiFixture() {
 
 /** One returned load state of the protocol fixture: the end node's translation, and the contact's state, reaction
  * and gap as stated by the test (not a numerical oracle). */
-export interface ContactStateFixture {
+interface ContactStateFixture {
   readonly end: Vector3;
   readonly state: 'open' | 'closed';
   readonly reactionN: number;

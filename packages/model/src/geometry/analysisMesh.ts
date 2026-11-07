@@ -24,6 +24,24 @@ import type { SubShapeRef } from './subShapeRef.js';
 
 export type AnalysisBoundaryMode = 'closed' | 'open';
 
+ interface AnalysisShellQuality {
+  readonly kind: 'cylindrical-rectangle';
+  readonly maximumNodes: number;
+  readonly maximumTriangles: number;
+  readonly minimumTriangleAreaMm2: number;
+  readonly minimumAngleDeg: number;
+  readonly maximumAspectRatio: number;
+}
+ interface AnalysisShellQualityEvidence {
+  readonly schema: 'pointercad-cylindrical-shell-quality/1';
+  readonly circumferentialSegments: number;
+  readonly axialSegments: number;
+  readonly maximumNodeResidualMm: number;
+  readonly maximumChordDeviationMm: number;
+  readonly maximumNormalDeviationRad: number;
+}
+
+
 /** Structural mirror of the kernel `AnalysisSurfaceMesh` (fields this side reads). Units are mm. */
 export interface AnalysisBoundaryMesh {
   readonly units: 'mm';
@@ -63,6 +81,8 @@ export interface AnalysisBoundaryMesh {
   };
   readonly mesher: { readonly done: boolean; readonly status: number };
   readonly deflection: { readonly linear: number; readonly angular: number };
+  /** Scoped native cylindrical remesh approximation evidence; distinct from same-copy freeform evidence. */
+  readonly shellQuality?: AnalysisShellQualityEvidence;
   /** Native same-copy evidence; never inferred from the mesher's requested deflection. */
   readonly freeform?: { readonly schema: 'pointercad-freeform-distance/1'; readonly faces: readonly {
     readonly faceIndex: number;
@@ -91,6 +111,7 @@ export interface AnalysisBoundaryRequest {
   /** Explicit FEM opt-in (kernel native solid-material validation); omitted for generic boundaries. */
   readonly materialValidation?: 'native-solid';
   readonly freeformRefinement?: AnalysisFreeformRefinement;
+  readonly shellQuality?: AnalysisShellQuality;
 }
 
 export type AnalysisBoundaryReply =
@@ -110,6 +131,7 @@ export interface AnalysisBoundaryOptions {
   /** Only volume (FEM) callers set this; it requires boundary 'closed'. */
   readonly materialValidation?: 'native-solid';
   readonly freeformRefinement?: AnalysisFreeformRefinement;
+  readonly shellQuality?: AnalysisShellQuality;
 }
 
 function validRefinement(value: AnalysisFreeformRefinement): boolean {
@@ -135,19 +157,34 @@ export interface AnalysisBoundary {
   readonly regions: readonly AnalysisRegion[];
 }
 
-export type AnalysisBoundaryFailureCode =
-  | 'invalid-options' | 'invalid-body' | 'unsupported-body' | 'missing-body' | 'ambiguous-body'
-  | 'kernel-failed' | 'invalid-reply' | 'stale';
-
 export type AnalysisBoundaryOutcome =
   | { readonly kind: 'ready'; readonly boundary: AnalysisBoundary }
-  /** `code` is an `AnalysisBoundaryFailureCode` from this side or the kernel's refusal code passed through as is. */
+  /** `code` is one of this side's codes ('invalid-options', 'invalid-body', 'unsupported-body', 'missing-body',
+   * 'ambiguous-body', 'kernel-failed', 'invalid-reply') or the kernel's refusal code passed through as is. */
   | { readonly kind: 'failed'; readonly code: string; readonly message: string; readonly faceIndex: number | null };
 
 const failed = (code: string, message: string, faceIndex: number | null = null): AnalysisBoundaryOutcome =>
   ({ kind: 'failed', code, message, faceIndex });
 
 const positiveFinite = (value: number): boolean => Number.isFinite(value) && value > 0;
+
+ function validShellQuality(value: unknown): value is AnalysisShellQuality {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)
+    || Reflect.ownKeys(value).map(String).sort().join(',') !== 'kind,maximumAspectRatio,maximumNodes,maximumTriangles,minimumAngleDeg,minimumTriangleAreaMm2'
+    || !('kind' in value) || value.kind !== 'cylindrical-rectangle'
+    || !('maximumNodes' in value) || typeof value.maximumNodes !== 'number'
+    || !('maximumTriangles' in value) || typeof value.maximumTriangles !== 'number'
+    || !('minimumTriangleAreaMm2' in value) || typeof value.minimumTriangleAreaMm2 !== 'number'
+    || !('minimumAngleDeg' in value) || typeof value.minimumAngleDeg !== 'number'
+    || !('maximumAspectRatio' in value) || typeof value.maximumAspectRatio !== 'number') return false;
+  return Number.isSafeInteger(value.maximumNodes) && value.maximumNodes >= 4
+    && Number.isSafeInteger(value.maximumTriangles) && value.maximumTriangles >= 2
+    && Number.isFinite(value.minimumTriangleAreaMm2) && value.minimumTriangleAreaMm2 >= 0
+    && Number.isFinite(value.minimumAngleDeg) && value.minimumAngleDeg >= 0 && value.minimumAngleDeg <= 60
+    && Number.isFinite(value.maximumAspectRatio) && value.maximumAspectRatio >= 1;
+}
+
+
 
 /** Structural provenance only. The volume consumer independently verifies topology, orientation and containment. */
 function validShells(shells: unknown, triangleCount: number): boolean {
@@ -265,6 +302,8 @@ export async function requestAnalysisBoundary(source: AnalysisBoundarySource,
     || (options.boundary !== 'closed' && options.boundary !== 'open')
     || (options.materialValidation !== undefined
       && (options.materialValidation !== 'native-solid' || options.boundary !== 'closed'))
+    || (options.shellQuality !== undefined && (options.boundary !== 'open' || options.materialValidation !== undefined
+      || options.freeformRefinement !== undefined || !validShellQuality(options.shellQuality)))
     || (options.freeformRefinement !== undefined
       && (options.materialValidation !== 'native-solid' || options.boundary !== 'closed'
         || !validRefinement(options.freeformRefinement)))) {
@@ -282,7 +321,8 @@ export async function requestAnalysisBoundary(source: AnalysisBoundarySource,
   const request: AnalysisBoundaryRequest = { bodyKey: key.key, boundary: options.boundary,
     linearDeflection: options.linearDeflection, angularDeflection: options.angularDeflection,
     ...(options.materialValidation === undefined ? {} : { materialValidation: options.materialValidation }),
-    ...(options.freeformRefinement === undefined ? {} : { freeformRefinement: { ...options.freeformRefinement } }) };
+    ...(options.freeformRefinement === undefined ? {} : { freeformRefinement: { ...options.freeformRefinement } }),
+    ...(options.shellQuality === undefined ? {} : { shellQuality: { ...options.shellQuality } }) };
   let reply: AnalysisBoundaryReply;
   try {
     reply = await source.buildAnalysisSurfaceMesh(request);
@@ -293,6 +333,18 @@ export async function requestAnalysisBoundary(source: AnalysisBoundarySource,
   if (reply.kind === 'failed') return failed(reply.code, reply.message, reply.faceIndex);
   if (reply.mesh.freeform !== undefined && options.materialValidation !== 'native-solid') {
     return failed('invalid-reply', '自由曲面の距離検査には同じ形の材料領域の確認が必要です。');
+  }
+  const quality = request.shellQuality, evidence = reply.mesh.shellQuality;
+  if ((quality === undefined) !== (evidence === undefined)) return failed('invalid-reply', '円筒シェルの品質要求と応答が一致しません。');
+  if (quality !== undefined && (evidence === undefined || evidence.schema !== 'pointercad-cylindrical-shell-quality/1'
+    || !Number.isSafeInteger(evidence.circumferentialSegments) || evidence.circumferentialSegments < 1
+    || !Number.isSafeInteger(evidence.axialSegments) || evidence.axialSegments < 1
+    || ![evidence.maximumNodeResidualMm, evidence.maximumChordDeviationMm, evidence.maximumNormalDeviationRad].every(value => Number.isFinite(value) && value >= 0)
+    || evidence.maximumChordDeviationMm > request.linearDeflection || evidence.maximumNormalDeviationRad > request.angularDeflection
+    || reply.mesh.nodeCount > quality.maximumNodes || reply.mesh.triangleCount > quality.maximumTriangles
+    || reply.mesh.nodeCount !== (evidence.circumferentialSegments + 1) * (evidence.axialSegments + 1)
+    || reply.mesh.triangleCount !== 2 * evidence.circumferentialSegments * evidence.axialSegments)) {
+    return failed('invalid-reply', '円筒シェルの品質分割の根拠と容量を確認できません。');
   }
   const reason = invalidReply(reply.mesh, body, options.boundary);
   if (reason !== null) return failed('invalid-reply', `解析用の境界の応答が現在のボディと合いません(${reason})。再計算してからやり直してください。`);

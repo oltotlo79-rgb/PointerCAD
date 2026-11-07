@@ -15,7 +15,7 @@ export interface BeamFrictionContactInput {
   readonly stepLoads: readonly (readonly BeamNodalLoad[])[];
 }
 
-export interface FrictionContactTranslation {
+ interface FrictionContactTranslation {
   readonly input: BeamFrictionContactInput;
   /** Native assembly geometry; node.load is the first step only. Use loads for solve_friction_steps. */
   readonly plan: OofemContactPlan;

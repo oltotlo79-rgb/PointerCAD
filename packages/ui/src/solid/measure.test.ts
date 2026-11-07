@@ -4,24 +4,53 @@ import { t } from '../i18n/t.js';
 
 import {
   formatMeasure,
-  measurableKinds,
   measureKindLabel,
-  measureKindLabelKey,
   measureKindUnit,
   measurementProvenanceLabel,
   measureLocally,
   measureReadiness,
   measureRejectionMessageKey,
-  needsKernel,
   MEASURE_FAILED_MESSAGE_KEY,
-  MEASURE_KIND_LABEL_KEYS,
-  MEASURE_KIND_ORDER,
   type LocalMeasureResult,
   type MeasureBody,
   type MeasureKind,
-  type MeasureRejectionReason,
 } from './measure.js';
-import type { SolidEdgeEntry, SolidFaceEntry, SolidVertexEntry } from './subShapeSelection.js';
+import type { SolidEdgeEntry, SolidFaceEntry, SolidVertexEntry, SubShapeBody } from './subShapeSelection.js';
+
+type MeasureRejectionReason = Parameters<typeof measureRejectionMessageKey>[0];
+
+/**
+ * 種類の並び(一覧・プロパティ欄で使う既定の順)。
+ *
+ * **選んだものから決まる `kinds` の並びはこの順ではない。** 組み合わせごとに「利用者が
+ * まず知りたいもの」を先頭に置く(向かい合う面なら距離、隣り合う面なら角度)ので、
+ * `measureReadiness` は組み合わせの規則どおりの順で返す。この定数は種類を網羅して
+ * 数え上げるとき(見出しの一覧、検査)に使う。
+ */
+const MEASURE_KIND_ORDER: readonly MeasureKind[] = [
+  'pointDistance',
+  'pointFaceDistance',
+  'faceDistance',
+  'edgeDistance',
+  'bodyDistance',
+  'faceAngle',
+  'edgeAngle',
+  'edgeLength',
+  'faceArea',
+  'bodyVolume',
+  'massProperties',
+];
+
+/**
+ * いま選んでいるもので測れる種類の一覧(プロパティ欄の切り替えに使う)。
+ * `constraintCommands.ts` の `applicableConstraintKinds` と同じ役目。
+ */
+function measurableKinds(
+  selection: readonly string[],
+  bodies: readonly SubShapeBody[],
+): readonly MeasureKind[] {
+  return measureReadiness(selection, bodies).kinds;
+}
 
 /*
   検査に使う立体は 40×30×10 の板(角を原点に置く)。期待値はすべて手で出す。
@@ -359,7 +388,6 @@ describe('測れないときは理由を出す(NFR-UX-5)', () => {
   it('立体 2 つの最短距離は一覧から出せない(カーネルの役目)', () => {
     const readiness = measureReadiness(['extrude-1', 'hole-1'], BODIES);
     expect(measureLocally('bodyDistance', readiness.targets, BODIES)).toBeNull();
-    expect(needsKernel('bodyDistance')).toBe(true);
   });
 
   it('断りの理由はすべて日本語の文言を持つ(NFR-MA-5)', () => {
@@ -498,24 +526,9 @@ describe('カーネルを呼ばずに測る(§2.10.2)', () => {
   });
 });
 
-describe('カーネルが要る種類の切り分け(§0.a-0.30)', () => {
-  it('最短距離(辺どうし・立体どうし)と質量特性だけがカーネルを要る', () => {
-    const withKernel = MEASURE_KIND_ORDER.filter((kind) => needsKernel(kind));
-    expect(withKernel).toEqual(['edgeDistance', 'bodyDistance', 'massProperties']);
-  });
-
-  it('一覧から出せる種類はカーネルを呼ばずに値が出る', () => {
-    expect(needsKernel('pointDistance')).toBe(false);
-    expect(needsKernel('faceArea')).toBe(false);
-    expect(needsKernel('bodyVolume')).toBe(false);
-  });
-});
-
 describe('見出しと単位(NFR-MA-5)', () => {
   it('すべての種類に日本語の見出しがある', () => {
-    expect(MEASURE_KIND_ORDER).toHaveLength(Object.keys(MEASURE_KIND_LABEL_KEYS).length);
     for (const kind of MEASURE_KIND_ORDER) {
-      expect(measureKindLabelKey(kind)).toBe(MEASURE_KIND_LABEL_KEYS[kind]);
       expect(measureKindLabel(kind).length, kind).toBeGreaterThan(0);
     }
   });

@@ -78,7 +78,12 @@ export interface DocumentAutoSaveStorage extends AutoSaveStorage {
   listRecords(): Promise<readonly AutoSaveRecord[]>;
 }
 
-function recordIdentity(record: AutoSaveRecord): AutoSaveIdentity {
+/**
+ * 控えの1件が指す文書・窓の識別子。3欄(kind・documentId・sessionId)がそろわない旧控えは
+ * 既定の部品の控え(`DEFAULT_AUTO_SAVE_IDENTITY`)を指す。保管庫の鍵と、ui の復元・破棄が
+ * 同じ控えを指すよう、判断はここ 1 か所に置く(以前は ui に同じ本体の写しがあった。P12 で解消)。
+ */
+export function autoSaveRecordIdentity(record: AutoSaveRecord): AutoSaveIdentity {
   if (record.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined) {
     return { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId };
   }
@@ -88,7 +93,7 @@ function recordIdentity(record: AutoSaveRecord): AutoSaveIdentity {
 function sortedRecords(records: readonly AutoSaveRecord[]): readonly AutoSaveRecord[] {
   return [...records].sort((left, right) =>
     right.savedAt.localeCompare(left.savedAt) ||
-    autoSaveRecordKey(recordIdentity(left)).localeCompare(autoSaveRecordKey(recordIdentity(right))),
+    autoSaveRecordKey(autoSaveRecordIdentity(left)).localeCompare(autoSaveRecordKey(autoSaveRecordIdentity(right))),
   );
 }
 
@@ -116,7 +121,7 @@ export function createMemoryAutoSaveStorage(): DocumentAutoSaveStorage {
     read: (identity) => Promise.resolve(stored.get(autoSaveRecordKey(identity)) ?? null),
     write: (record) => {
       if (!isAutoSaveRecord(record)) return Promise.reject(new AutoSaveStorageError('error'));
-      stored.set(autoSaveRecordKey(recordIdentity(record)), record);
+      stored.set(autoSaveRecordKey(autoSaveRecordIdentity(record)), record);
       return Promise.resolve();
     },
     clear: (identity) => {
@@ -338,7 +343,7 @@ export function createIndexedDbAutoSaveStorage(
     },
     async write(record) {
       if (!isAutoSaveRecord(record)) throw new AutoSaveStorageError('error');
-      const key = autoSaveRecordKey(recordIdentity(record));
+      const key = autoSaveRecordKey(autoSaveRecordIdentity(record));
       await withObjectStore(dbName, storeName, 'readwrite', (store) => {
         // 旧控えの置換と新しい控えの保存も、同じtransactionでまとめて確定する。
         if (key === autoSaveRecordKey()) store.delete(LEGACY_RECORD_KEY);
@@ -358,7 +363,7 @@ export function createIndexedDbAutoSaveStorage(
       const records = new Map<string, AutoSaveRecord>();
       for (const value of values) {
         if (!isAutoSaveRecord(value)) continue;
-        const key = autoSaveRecordKey(recordIdentity(value));
+        const key = autoSaveRecordKey(autoSaveRecordIdentity(value));
         const previous = records.get(key);
         if (previous === undefined || value.savedAt > previous.savedAt) records.set(key, value);
       }

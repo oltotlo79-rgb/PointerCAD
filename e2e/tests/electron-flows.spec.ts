@@ -30,7 +30,7 @@ test('実Electronで新規の箱・図面・保存再開・復元・出力・F1�
     await page.locator('.pcad-popover input.pcad-field__input').first().press('Enter');
     await waitForRecompute(page, created);
     if (await page.locator('.pcad-popover').count()) await page.locator('.pcad-popover input').first().press('Escape');
-    // 保存していない箱があるまま「新規」を押すと、画面の中の日本語の3択が出る(w91a。ブラウザー標準の
+    // 保存していない箱があるまま「新規」を押すと、画面の中の日本語の3択が出る(NFR-UX-3。ブラウザー標準の
     // confirm はデスクトップ版で英語の OK/Cancel になっていた)。「戻る」で箱はそのまま残る。
     await page.getByRole('button', { name: '新規', exact: true }).click();
     const discardConfirm = page.getByRole('alertdialog', { name: '保存していない変更があります' });

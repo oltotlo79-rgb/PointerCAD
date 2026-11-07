@@ -10,8 +10,9 @@ import {
   OcctStreamingUnavailableError,
   verifyOcctStreamingResponse,
   verifyOcctDirectResponse,
-  type OcctWasmExpectation,
 } from './compiledOcctModule.js';
+
+type OcctWasmExpectation = Parameters<typeof verifyOcctStreamingResponse>[1];
 
 // Native WASM, exporting answer() = 42. The compile and instantiate paths below are real.
 const wasm = new Uint8Array([

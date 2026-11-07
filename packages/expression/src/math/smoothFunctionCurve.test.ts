@@ -3,10 +3,12 @@ import { intervalUnion, unionMap } from './mathIntervalUnion.js';
 import { trigonometricInterval } from './trigonometricIntervals.js';
 import { sampleFunctionCurve, type FunctionCurveEvaluator, type FunctionCurveSample } from './adaptiveFunctionCurve.js';
 import { attachSmoothFunctionCurve, cubicChordDeviation, FUNCTION_CURVE_SPLINE_POLE_LIMIT, junctionDiscrepancy, smoothFunctionCurve,
-  type FunctionCurveSpline, type SmoothSamplingControl } from './smoothFunctionCurve.js';
+  type FunctionCurveSpline } from './smoothFunctionCurve.js';
 import type { FunctionCurveSamplingResult } from './adaptiveFunctionCurve.js';
 import { MathInputProblem } from './mathInputContract.js';
 import { MathDeadlineExceeded } from './mathWorkExecution.js';
+
+type SmoothSamplingControl = Parameters<typeof attachSmoothFunctionCurve>[3];
 
 type Point = readonly [number, number, number];
 

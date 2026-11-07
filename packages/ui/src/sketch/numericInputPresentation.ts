@@ -76,7 +76,7 @@ export function roundToSignificantDigits(value: number, digits: number): number 
 const FRACTIONAL_INCH_STEP_TOLERANCE = 1e-6;
 
 /**
- * 1/64 インチの刻みで**ちょうど**表せる長さ(内部 mm)だけ、分数インチの表記を返す(FR-814、w91a)。
+ * 1/64 インチの刻みで**ちょうど**表せる長さ(内部 mm)だけ、分数インチの表記を返す(FR-814)。
  *
  * 刻みへ丸めた分数を出すと元と違う長さを示してしまう(`10`mm は `25/64"` = 9.921875mm)ので、
  * 割り切れない長さには出さない(null)。整数のインチ(`1"`)も小数の `1 in` と同じなので出さない。

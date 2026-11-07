@@ -37,7 +37,7 @@ export const COVERED_RATIO = 0.99;
 export const UNCOVERED_RATIO = 0.01;
 
 /** 組立の座標での足元の長方形: `corner + along·[0, length] + across·[0, width]`(along・across は直交する単位)。 */
-export interface WeldFootprint {
+interface WeldFootprint {
   readonly corner: Vec3;
   readonly along: Vec3;
   readonly across: Vec3;

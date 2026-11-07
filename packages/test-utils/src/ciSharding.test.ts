@@ -14,6 +14,7 @@ interface ListedSuite {
 const root = new URL('../../../', import.meta.url);
 const prerequisiteProjects = new Set(['viewport-performance', 'startup-firefox', 'startup-electron']);
 const execFileAsync = promisify(execFile);
+const LIST_TIMEOUT_MS = 45_000;
 
 function listFailure(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
@@ -34,7 +35,7 @@ async function listCases(shard?: number): Promise<Map<string, string>> {
   const cli = createRequire(new URL('package.json', root)).resolve('@playwright/test/cli');
   const { stdout, stderr } = await execFileAsync(process.execPath, [cli, 'test', '--config=e2e/playwright.config.ts',
     '--list', '--reporter=json', ...(shard === undefined ? [] : [`--shard=${shard}/3`])], {
-    cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, timeout: 45_000, maxBuffer: 8_000_000,
+    cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, timeout: LIST_TIMEOUT_MS, maxBuffer: 8_000_000,
   });
   if (stderr.trim() !== '') throw new Error(`Playwright列挙 stderr (${shard ?? 'whole'}): ${stderr}`);
   const report = JSON.parse(stdout) as ListedSuite;
@@ -88,7 +89,7 @@ describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
       if (!prerequisiteProjects.has(project)) expect(counts.get(key), key).toBe(1);
     }
     console.log('[CI分割] 全操作の選択と前提検査を照合', { total: whole.size, partitions: 3 });
-  });
+  }, LIST_TIMEOUT_MS * 2 + 10_000);
 
   it('両OSの前段・単体の先行分・画面検査3組を同時に流し、欠落・中止・失敗を既存の合格名へ変えない', () => {
     const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');

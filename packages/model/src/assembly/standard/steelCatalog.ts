@@ -31,7 +31,7 @@ export const STEEL_EVIDENCE = {
   ssHBeamDraft: {
     title: '日本鉄鋼連盟 JIS G 3192 改正原案 H形鋼', edition: null,
     url: 'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai_0400JISG3192_20240724.pdf',
-    locator: 'JISF G 3192 原案 2024-07-24 表15 PDF p21–22; scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json。最終規格票・供給長さは未確認',
+    locator: 'JISF G 3192 原案 2024-07-24 表15 PDF p21–22; 転記 g3192-tables.json。最終規格票・供給長さは未確認',
     sha256: 'ca399bdfe4d84de29e04449d7356de9e45b83405b291c6dc8bf9ea7c5c772baa',
     fetchedDate: '2026-10-25',
   },
@@ -475,7 +475,7 @@ export const STEEL_PRODUCTS: readonly SteelProduct[] = [
     ['500A', 508.0, 7.9, 'T4-24', true],
   ] as const).flatMap(([size, diameter, thickness, sourceRow, missingBlack]) => {
     const note = `JISF G 3452 2025-12-17原案 表4 PDF p10（印刷p6）${sourceRow}。`
-      + '転記: scratchpad/claude/agents/cl-v103-ex03-g3452-source/g3452-tables.json。'
+      + '転記: g3452-tables.json。'
       + '表 4 の単位質量はソケットを含まない参考値。めっき・ねじの分は含まない。'
       + (Number.parseInt(size, 10) <= 300 ? '300A以下はねじ付又はプレンエンド。' : '350A以上はプレンエンド。')
       + '管端・ソケット・ねじ・めっき厚さは形状に反映しない。5500 mmは従来の製造元資料による。最終規格票・供給は未確認。';

@@ -5,12 +5,11 @@ import {decodeCurvePointWorkRequest,saveCurvePointInput,type CurvePointWorkReque
 import {createCurvePointWorkEnvelope} from './curvePointWorkEnvelope.js';
 import {executeCurvePointWorkRequest} from './curvePointWorkExecution.js';
 import {decodeCurvePointWorkReply} from './curvePointWorkReply.js';
-import {CurvePointWorkerClient,CurvePointContinuationWorkerClient} from './curvePointWorkerClient.js';
 import {decodeCurvePointContinuationWorkRequest,decodeCurvePointContinuationWorkReply} from './curvePointContinuationWork.js';
 import {executeCurvePointContinuationWork} from './curvePointContinuationWorkExecution.js';
 import type {CalculationWorkerPort} from './boundedCalculationClient.js';
 import type {MathExecutionBackend} from './mathWorkExecution.js';
-import {PointCalculationWorkerClient} from './pointCalculationWorkerClient.js';
+import {PointCalculationWorkerClient,PointContinuationWorkerClient} from './pointCalculationWorkerClient.js';
 import {decodePointContinuationRequest} from './pointCalculationContract.js';
 import {executeFunctionPointWorkRequest} from './functionPointWorkExecution.js';
 import {decodeFunctionPointWorkRequest} from './functionPointWorkRequest.js';
@@ -89,7 +88,7 @@ describe('曲線上の点の独立した計算通信',()=>{
     }
   });
   it('中止した計算の遅い返信が次の入力の候補を上書きしない',async()=>{
-    const ports:Port[]=[],client=new CurvePointWorkerClient({createWorker:()=>{const port=new Port();ports.push(port);return port;}});
+    const ports:Port[]=[],client=new PointCalculationWorkerClient({createWorker:()=>{const port=new Port();ports.push(port);return port;}});
     try {
       const input=request(),abort=new AbortController(),old=client.evaluate(input,5000,abort.signal),stale=ports[0].onmessage;
       const oldReply=executeCurvePointWorkRequest(ports[0].input,backend);abort.abort();expect((await old).status).toBe('cancelled');
@@ -114,7 +113,7 @@ describe('曲線上の点の独立した計算通信',()=>{
     const input=request(),initial=decodeCurvePointWorkReply(evaluate(input),input);if(initial.result.status!=='ready') throw new Error(JSON.stringify(initial));
     const work={identity:input.identity,previous:saveCurvePointInput(input),
       current:saveCurvePointInput({...input,known:[{axis:'X',value:4}]}),anchor:initial.result.candidates[1].location};
-    const port=new Port(value=>executeCurvePointContinuationWork(value,backend)),client=new CurvePointContinuationWorkerClient({createWorker:()=>port});
+    const port=new Port(value=>executeCurvePointContinuationWork(value,backend)),client=new PointContinuationWorkerClient({createWorker:()=>port});
     try {
       const pending=client.evaluate(work,5000);const reply=executeCurvePointContinuationWork(port.input,backend);
       expect(decodeCurvePointContinuationWorkReply(reply,work).result).toMatchObject({status:'ready',candidate:{point:[4,2,0]}});

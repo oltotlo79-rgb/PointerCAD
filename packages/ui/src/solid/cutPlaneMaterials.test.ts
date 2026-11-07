@@ -78,7 +78,7 @@ import {
   type CutKeep,
 } from './cutCommands.js';
 import { collectCutMaterials, cutPlaneMaterialRejection } from './cutPlaneMaterials.js';
-import { cutPlanePreviewOf, type CutPlanePreview } from './cutPlanePreview.js';
+import { cutPlanePreviewOf } from './cutPlanePreview.js';
 import {
   subShapeElementId,
   subShapeBodiesOf,
@@ -86,6 +86,8 @@ import {
   type SolidFaceEntry,
   type SubShapeBody,
 } from './subShapeSelection.js';
+
+type CutPlanePreview = NonNullable<ReturnType<typeof cutPlanePreviewOf>>;
 
 /* ------------------------------------------------------------------ *
  * ひな型

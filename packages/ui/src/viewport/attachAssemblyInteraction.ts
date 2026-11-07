@@ -21,7 +21,7 @@ import { jointOccurrenceInputsOf, pickJointOccurrenceTarget, resolveJointOccurre
 
 export interface AssemblyInteraction { readonly detach: () => void; readonly cancelDrag: () => void; }
 type AssemblyPickScene = Pick<ViewportScene, 'pickAssemblyFace' | 'pickComponent' | 'worldToScreen'>
-  & Partial<Pick<ViewportScene, 'screenToPlanePoint'>>;
+  & Partial<Pick<ViewportScene, 'screenToPlanePoint' | 'assemblyDisplayInvalidated'>>;
 type AssemblyInputCanvas = Pick<HTMLCanvasElement, 'addEventListener' | 'removeEventListener' | 'focus'>
   & Partial<Pick<HTMLCanvasElement, 'setPointerCapture' | 'releasePointerCapture'>>
   & { readonly getBoundingClientRect: () => Pick<DOMRect, 'left' | 'top'> & Partial<Pick<DOMRect, 'width' | 'height'>> };
@@ -184,12 +184,78 @@ function staleMateDocumentField(state: MateInputState, current: MateInputState):
   return checks.find(([, same]) => !same())?.[0] ?? null;
 }
 
+type CanvasRect = ReturnType<AssemblyInputCanvas['getBoundingClientRect']>;
+
+/**
+ * 保留した入力を採用してよいかの比較のうち、下書き・選択・表示・画面上の位置(staleMateDocumentField の後に見る)。
+ * 最初に外れた比較の名前を返し、全て同じなら null。順と内容は従来の valid の後半と同じ。
+ */
+function staleMateInputField(state: MateInputState, current: MateInputState, rect: CanvasRect, now: CanvasRect): string | null {
+  const checks: readonly (readonly [string, () => boolean])[] = [
+    ['assemblyMateDraft', () => current.assemblyMateDraft === state.assemblyMateDraft],
+    ['assemblyBoltedJointDraft', () => current.assemblyBoltedJointDraft === state.assemblyBoltedJointDraft],
+    ['assemblyFilletWeldDraft', () => current.assemblyFilletWeldDraft === state.assemblyFilletWeldDraft],
+    ['assemblyCircularWeldDraft', () => current.assemblyCircularWeldDraft === state.assemblyCircularWeldDraft],
+    ['assemblyNestedWeldDraft', () => current.assemblyNestedWeldDraft === state.assemblyNestedWeldDraft],
+    ['assemblyPlacement', () => current.assemblyPlacement === state.assemblyPlacement],
+    ['selectionKind', () => current.selectionKind === state.selectionKind],
+    ['selection', () => current.selection === state.selection],
+    ['selectionFilter', () => current.displaySettings.selectionFilter === state.displaySettings.selectionFilter],
+    ['assemblyDragOverlay', () => current.assemblyDragOverlay === state.assemblyDragOverlay],
+    ['assemblyMotionPlacements', () => current.assemblyMotionPlacements === state.assemblyMotionPlacements],
+    ['assemblyOccurrenceDrives', () => current.assemblyOccurrenceDrives === state.assemblyOccurrenceDrives],
+    ['assemblyMotionSourceDocument', () => current.assemblyMotionSourceDocument === state.assemblyMotionSourceDocument],
+    ['projection', () => current.projection === state.projection], ['quadCamera', () => current.quadCamera === state.quadCamera],
+    ['canvasRect', () => now.left === rect.left && now.top === rect.top && now.width === rect.width && now.height === rect.height],
+  ];
+  return checks.find(([, same]) => !same())?.[0] ?? null;
+}
+
+/**
+ * 表示の所有の取り直しを待っている押下。released は同じ pointer の pointerup を受けた印。capture はこの押下だけが
+ * 一時に持つ pointer capture で、'held' の間はキャンバスの外で離した・取り消した pointer も届く('released' は離した時に
+ * 返した後)。latest は押したまま動いた最新の pointermove。採用の時、押したままで capture を持つ押下だけが元の押下点から
+ * ドラッグを始め、latest を最初の移動として渡す。
+ */
+interface PendingMateInput {
+  readonly pointerId: number;
+  readonly stale: () => string | null;
+  readonly finish: (ready: boolean, cause?: string) => void;
+  readonly bodyPoint: readonly [number, number] | null;
+  released: boolean;
+  capture: 'none' | 'held' | 'released';
+  latest: PointerEvent | null;
+}
+
+/**
+ * 押下の間だけの一時の capture を取る。取る口と返す口の両方がある時だけ取る(返す手段の無い capture は取らない)。
+ * 口が片方でも無い・例外の時は 'none'(押したままの移動を保留せず、採用してもドラッグしない。選択だけ)。
+ */
+/**
+ * 部品の押下がドラッグになりうる組立か。固定・抑制・非表示の部品は beginComponentDrag が断るので、それ以外の部品が
+ * 1 つも無ければ、保留した押下は一時の capture を取らず、押したままの移動も保たない(移動した押下は 'moved' で終え、
+ * 更新の後に採用しない。ViewportCanvasLifecycle.test.ts の「move で失効した入力」・「解放後のドラッグ」の契約)。
+ */
+function dragCapableAssembly(state: MateInputState): boolean {
+  return state.assembly?.components.some(component => !component.fixed && !component.suppressed && component.visible) === true;
+}
+
+function holdPendingCapture(canvas: AssemblyInputCanvas, pointerId: number): PendingMateInput['capture'] {
+  if (canvas.setPointerCapture === undefined || canvas.releasePointerCapture === undefined || !Number.isInteger(pointerId)) return 'none';
+  try { canvas.setPointerCapture(pointerId); return 'held'; } catch { return 'none'; }
+}
+
+/** 一時の capture を返す。先に印を変えるので、同期に届く lostpointercapture はこの押下も次の入力も取り消さない。 */
+function releasePendingCapture(canvas: AssemblyInputCanvas, input: PendingMateInput): void {
+  if (input.capture !== 'held') return;
+  input.capture = 'released';
+  try { canvas.releasePointerCapture?.(input.pointerId); } catch { /* 押下は終わっている。この押下からドラッグは始めない。 */ }
+}
+
 /** Assemblyの入力をpart用listenerから分離する。視点操作は先に登録されたcameraが所有する。 */
 export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: AssemblyPickScene, dragInput?: AssemblyDragInput): AssemblyInteraction {
   let detached = false;
-  let pendingMate: { readonly pointerId: number; readonly stale: () => string | null;
-    readonly finish: (ready: boolean, cause?: string) => void;
-    readonly bodyPoint: readonly [number, number] | null } | null = null;
+  let pendingMate: PendingMateInput | null = null;
   const cancelMate = (cause = 'cancelled'): void => { const previous = pendingMate; pendingMate = null; previous?.finish(false, cause); };
   let captured: number | null = null;
   let frame: number | null = null;
@@ -215,6 +281,22 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     if (drag === null || scene.screenToPlanePoint === undefined) return null;
     const at = pointer(event);
     try { return scene.screenToPlanePoint(at[0], at[1], drag.plane); } catch { return null; }
+  };
+  // 押したままの移動を次の描画の1回にまとめる(保留から採用したドラッグの最初の移動も同じ道を通る)。
+  const queueDragMove = (event: PointerEvent): void => {
+    if (event.altKey || (event.buttons & 1) === 0) { cancelDrag(); return; }
+    pending = dragPoint(event);
+    if (pending === null) { cancelDrag(); return; }
+    if (frame === null) {
+      try {
+        frame = requestFrame(() => {
+          frame = null;
+          const point = pending;
+          pending = null;
+          if (!detached && captured !== null && point !== null) moveComponentDrag(point);
+        });
+      } catch { releaseInput(); cancelComponentDrag('failed'); }
+    }
   };
   const pick = (event: PointerEvent, observation?: AssemblyMateInputObservation): BoltedJointPickTarget | NestedBoltedJointPick | string | null => {
     const state = useAppStore.getState();
@@ -305,7 +387,8 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const target = childWeldDefinitionTarget(state.assembly, state.assemblyLibrary, hit.occurrencePath);
     return 'refusal' in target ? null : target.path;
   };
-  const applyPointerDown = (event: PointerEvent, observation?: AssemblyMateInputObservation, allowDrag = true): void => {
+  // adopted: 採用する保留の押下。ドラッグを始める時、その一時の capture をこのドラッグへ引き継ぐ。
+  const applyPointerDown = (event: PointerEvent, observation?: AssemblyMateInputObservation, allowDrag = true, adopted?: PendingMateInput): void => {
     const childBead = idleWeldChildBeadPath(event);
     if (childBead !== null) {
       // 確定はしない。定義の範囲と影響する配置の数を窓で確かめてから commitChildFilletWeldEdit が確定する。
@@ -331,6 +414,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
           const grab = plane === null ? null : scene.screenToPlanePoint(at[0], at[1], plane);
           if (plane === null || grab === null || !beginComponentDrag(target, plane, grab)) return;
           captured = event.pointerId;
+          // 保留の一時の capture はここでこのドラッグの物になる('none' に移す)。以後はドラッグの releaseInput だけが返すので、
+          // 下の setPointerCapture が例外を出しても、返すのは catch の releaseInput の1回だけ。
+          if (adopted !== undefined) adopted.capture = 'none';
           canvas.setPointerCapture?.(captured);
         } catch { releaseInput(); cancelComponentDrag('failed'); }
       }
@@ -365,7 +451,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       if (observation !== undefined) observation.addAccepted = accepted;
       reportMateInput(observation, dragInput);
     } else {
-      if (state.assemblyMateDraft === null && state.assemblyBoltedJointDraft === null
+      // 失効で片付けたままの表示(BUG.VIEW-PICK-NULL)の拾いの null は「何も無い所を押した」証拠ではない。
+      // 古い表示の部品を選ばず、選択も空にしない(押下を断る。作り直しは表示の持ち主の取り直しが行う)。
+      if (scene.assemblyDisplayInvalidated?.() !== true && state.assemblyMateDraft === null && state.assemblyBoltedJointDraft === null
         && state.assemblyFilletWeldDraft === null && state.assemblyCircularWeldDraft === null) state.setSelection([]);
       reportMateInput(observation, dragInput);
     }
@@ -402,26 +490,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
         const current = useAppStore.getState();
         const now = canvas.getBoundingClientRect();
         if (detached) return 'detached';
-        const documentField = staleMateDocumentField(state, current);
-        if (documentField !== null) return documentField;
-        const checks: readonly (readonly [string, () => boolean])[] = [
-          ['assemblyMateDraft', () => current.assemblyMateDraft === state.assemblyMateDraft],
-          ['assemblyBoltedJointDraft', () => current.assemblyBoltedJointDraft === state.assemblyBoltedJointDraft],
-          ['assemblyFilletWeldDraft', () => current.assemblyFilletWeldDraft === state.assemblyFilletWeldDraft],
-          ['assemblyCircularWeldDraft', () => current.assemblyCircularWeldDraft === state.assemblyCircularWeldDraft],
-          ['assemblyNestedWeldDraft', () => current.assemblyNestedWeldDraft === state.assemblyNestedWeldDraft],
-          ['assemblyPlacement', () => current.assemblyPlacement === state.assemblyPlacement],
-          ['selectionKind', () => current.selectionKind === state.selectionKind],
-          ['selection', () => current.selection === state.selection],
-          ['selectionFilter', () => current.displaySettings.selectionFilter === state.displaySettings.selectionFilter],
-          ['assemblyDragOverlay', () => current.assemblyDragOverlay === state.assemblyDragOverlay],
-          ['assemblyMotionPlacements', () => current.assemblyMotionPlacements === state.assemblyMotionPlacements],
-          ['assemblyOccurrenceDrives', () => current.assemblyOccurrenceDrives === state.assemblyOccurrenceDrives],
-          ['assemblyMotionSourceDocument', () => current.assemblyMotionSourceDocument === state.assemblyMotionSourceDocument],
-          ['projection', () => current.projection === state.projection], ['quadCamera', () => current.quadCamera === state.quadCamera],
-          ['canvasRect', () => now.left === rect.left && now.top === rect.top && now.width === rect.width && now.height === rect.height],
-        ];
-        return checks.find(([, same]) => !same())?.[0] ?? null;
+        return staleMateDocumentField(state, current) ?? staleMateInputField(state, current, rect, now);
       };
       let waiting: Promise<boolean> | null;
       try { waiting = dragInput.prepareMateInput(); } catch {
@@ -430,7 +499,11 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
       }
       if (waiting !== null) {
         let finished = false;
-        const input = { stale, pointerId: event.pointerId, bodyPoint: bodySelection ? pointer(event) : null, finish: (ready: boolean, cause?: string): void => {
+        // 部品をドラッグできる押下だけ、待つ間の一時の capture を取る(キャンバスの外で離した・取り消した pointer も受ける)。
+        const holdable = bodySelection && !event.shiftKey && captured === null && scene.screenToPlanePoint !== undefined && dragCapableAssembly(state);
+        const input: PendingMateInput = { stale, pointerId: event.pointerId, bodyPoint: bodySelection ? pointer(event) : null,
+          released: false, capture: holdable ? holdPendingCapture(canvas, event.pointerId) : 'none', latest: null,
+          finish: (ready: boolean, cause?: string): void => {
           if (finished) return;
           finished = true;
           if (observation !== undefined) observation.waiting = false;
@@ -438,6 +511,7 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
           if (owned) pendingMate = null;
           const staleField = !owned || !ready ? null : stale();
           if (!owned || !ready || staleField !== null) {
+            releasePendingCapture(canvas, input);
             if (observation !== undefined) {
               observation.deferred = !owned || ready ? 'discarded' : 'refused';
               observation.deferredReason = !owned ? cause ?? 'superseded' : !ready ? 'not-ready' : staleField ?? 'unknown';
@@ -445,8 +519,17 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
             reportMateInput(observation, dragInput); return;
           }
           if (observation !== undefined) observation.deferred = 'applied';
-          // 解放済みの pointerdown を再生してドラッグを始めない。保留した部品入力は選択だけを行う。
-          applyPointerDown(event, observation, !bodySelection);
+          // 解放済み(同じ pointer の pointerup 後)・一時の capture が無い部品入力は選択だけを行い、後からドラッグを始めない。
+          // 押したままなら元の押下点から部品のドラッグを始め、待つ間に動いた最新の位置を最初の移動として渡す。
+          try {
+            applyPointerDown(event, observation, !bodySelection || (!input.released && input.capture === 'held'), input);
+          } finally {
+            // ドラッグへ引き継がなかった時は、採用の途中で例外が出た時も一時の capture を返す(返す時の例外は握るので元の例外は隠さない)。
+            // 引き継いだ capture は applyPointerDown が 'none' に移した物なので、ここでは返さない(ドラッグの releaseInput だけが返す)。
+            releasePendingCapture(canvas, input);
+          }
+          // 引き継いだ後に最初の移動を渡す(その移動でドラッグが取り消されても、capture を返すのは releaseInput の1回だけ)。
+          if (captured === input.pointerId && input.latest !== null) queueDragMove(input.latest);
         } };
         pendingMate = input;
         if (observation !== undefined) observation.waiting = true;
@@ -462,27 +545,19 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     const waitingPoint = pendingMate?.bodyPoint;
     if (pendingMate?.pointerId === event.pointerId && waitingPoint !== undefined && waitingPoint !== null) {
       const at = pointer(event);
-      // 待っている間に別の場所へ動いた入力を、元の部品の選択として採用しない。
-      if (at[0] !== waitingPoint[0] || at[1] !== waitingPoint[1]) cancelMate('moved');
+      const moved = at[0] !== waitingPoint[0] || at[1] !== waitingPoint[1];
+      // 一時の capture を持つ押下で、左ボタンが離れた・Alt が付いた移動は、座標が押下点と同じでもその保留を終える
+      // (古い押下から後でドラッグを始めない。capture は finish が返す)。押したまま(alt なし)の移動は最新の位置を保留し、
+      // 採用の時にドラッグへ渡す。capture の無い押下が待っている間に別の場所へ動いた時は、元の部品の選択として採用しない。
+      if (pendingMate.capture === 'held' && ((event.buttons & 1) === 0 || event.altKey)) cancelMate(moved ? 'moved' : 'button-or-alt');
+      else if (pendingMate.capture === 'held') { if (moved || pendingMate.latest !== null) pendingMate.latest = event; }
+      else if (moved) cancelMate('moved');
     }
     const state = useAppStore.getState();
     if (state.assembly === null) return;
     event.stopImmediatePropagation();
     if (captured !== null) {
-      if (event.pointerId !== captured) return;
-      if (event.altKey || (event.buttons & 1) === 0) { cancelDrag(); return; }
-      pending = dragPoint(event);
-      if (pending === null) { cancelDrag(); return; }
-      if (frame === null) {
-        try {
-          frame = requestFrame(() => {
-            frame = null;
-            const point = pending;
-            pending = null;
-            if (!detached && captured !== null && point !== null) moveComponentDrag(point);
-          });
-        } catch { releaseInput(); cancelComponentDrag('failed'); }
-      }
+      if (event.pointerId === captured) queueDragMove(event);
       return;
     }
     if (event.altKey || event.buttons !== 0) return;
@@ -502,6 +577,12 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
   };
   const onPointerEnd = (event: PointerEvent): void => {
     if (useAppStore.getState().assembly !== null) event.stopImmediatePropagation();
+    // 保留中の押下の解放: 押したまま動いた操作は、離した後にドラッグも選択もしない('moved')。動かずに離した押下は
+    // 採用しても選択だけにし(後からドラッグを始めない)、一時の capture を返す。
+    if (pendingMate?.pointerId === event.pointerId) {
+      if (pendingMate.latest !== null) cancelMate('moved');
+      else { pendingMate.released = true; releasePendingCapture(canvas, pendingMate); }
+    }
     if (captured === null || event.pointerId !== captured || event.button !== 0) return;
     const point = dragPoint(event);
     if (!releaseInput()) { cancelComponentDrag('failed'); return; }
@@ -509,7 +590,9 @@ export function attachAssemblyInteraction(canvas: AssemblyInputCanvas, scene: As
     else finishComponentDrag(point);
   };
   const onPointerCancel = (event: PointerEvent): void => {
-    if (pendingMate?.pointerId === event.pointerId) cancelMate('pointercancel');
+    // 離した時に返した一時の capture の lostpointercapture は、その押下も次の入力も取り消さない。
+    if (pendingMate?.pointerId === event.pointerId
+      && !(event.type === 'lostpointercapture' && pendingMate.capture === 'released')) cancelMate('pointercancel');
     if (useAppStore.getState().assembly !== null) event.stopImmediatePropagation();
     if (captured !== null && event.pointerId === captured) cancelDrag();
   };

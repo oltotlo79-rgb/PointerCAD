@@ -24,7 +24,7 @@ export interface CircularFilletWeldSection {
   readonly normalDirection: 1 | -1;
 }
 
-export interface CircularFilletWeldGeometry {
+interface CircularFilletWeldGeometry {
   readonly part: PartDocument;
   /** Already world placement. Never compose the occurrence placement a second time. */
   readonly placement: RigidPlacement;

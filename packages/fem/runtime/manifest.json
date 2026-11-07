@@ -48,8 +48,8 @@
       "sha256": "81f7cf8ee62633854d610a040efe15d3f9e80cfc78fbc32426860419b8712924"
     },
     "assets/plasticBarAnalysis.py": {
-      "bytes": 11818,
-      "sha256": "4476efc3d2ead7db8420ca55b3547ba25c3cbc8a725802704e4b53217a3436fd"
+      "bytes": 14692,
+      "sha256": "0179b40813f1d432c5e85734aa4f357e89af99f081eb88a7dd0a89decef016a3"
     },
     "assets/pyodide-lock.json": {
       "bytes": 120010,
@@ -400,12 +400,12 @@
       "sha256": "9eee0266fb68942775cebe7e34cf35b24455926539cd4f46e6d1808146aa66fd"
     },
     "sources/pointercad-beam-application-source.zip": {
-      "sha256": "178de7b414193ed61d0f7db2214913748dd314cd010bb037f2307bc11fb35d68",
-      "bytes": 14174354
+      "sha256": "4e455a1d922e737fa2a3c215f37cb35e935a8f0991ee17e1dbfec817a4b2ee91",
+      "bytes": 14366583
     },
     "evidence/application-source-index.json": {
-      "sha256": "e2b0f4d34b8b97ac64e1bfdc06bf2ea4b8f021379cdd712c9e761d52de3d1e92",
-      "bytes": 1027120
+      "sha256": "06ded5b42206eaa48af4f893f45bd54f68a464f0add90cd5564671996f2d5e61",
+      "bytes": 1033045
     },
     "sources/native-rebuild/oofem-051-timer.patch": {
       "bytes": 8668,

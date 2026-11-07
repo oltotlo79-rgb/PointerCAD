@@ -5,7 +5,7 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { PlasticBarPanel } from './PlasticBarPanel.js';
-import { BENCHMARK_EDITS, benchmarkResult } from './plasticBar.testSupport.js';
+import { BENCHMARK_EDITS, PLATEAU_EDITS, benchmarkResult } from './plasticBar.testSupport.js';
 import { createPlasticBarSession, editPlasticBarSession, plasticBarInput, type PlasticBarSession } from './plasticBarSession.js';
 
 beforeEach(() => {
@@ -14,9 +14,9 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); resetTestStore(); });
 
-async function completed(): Promise<PlasticBarSession> {
+async function completed(edits = BENCHMARK_EDITS): Promise<PlasticBarSession> {
   let session = createPlasticBarSession('plastic-bar-panel');
-  for (const edit of BENCHMARK_EDITS) session = editPlasticBarSession(session, edit);
+  for (const edit of edits) session = editPlasticBarSession(session, edit);
   const checked = plasticBarInput(session, []);
   if (!checked.ok) throw new Error(`Benchmark input rejected: ${checked.key}`);
   return { ...session, status: 'complete', result: await benchmarkResult(checked.input) };
@@ -44,6 +44,22 @@ describe('PlasticBarPanel', () => {
     expect((html.match(/data-plastic-bar-step="/gu) ?? []).length).toBe(4);
     expect(render({ ...session, revision: session.revision + 1 })).not.toContain('data-testid="plastic-bar-results"');
     expect(render({ ...session, ownerId: 'another-document' })).not.toContain('data-testid="plastic-bar-results"');
+  });
+
+  it('offers the optional yield plateau in the material inputs, empty by default and with its help', () => {
+    const html = render(createPlasticBarSession('plastic-bar-panel'));
+    expect(html).toContain('data-plastic-bar-field="plateau"');
+    expect(html).toContain(t('plasticBar.plateau'));
+    expect(html).toContain('data-testid="plastic-bar-plateau-help"');
+    expect(html).toContain(t('plasticBar.plateauHelp'));
+  });
+
+  it('shows a plateau result like any other, and a plateau edit removes it', async () => {
+    const session = await completed(PLATEAU_EDITS);
+    expect(render(session)).toContain('data-testid="plastic-bar-results"');
+    const edited = editPlasticBarSession(session, { kind: 'value', field: 'plateau', source: '' });
+    expect(edited.result).toBeNull();
+    expect(render(edited)).not.toContain('data-testid="plastic-bar-results"');
   });
 
   it('an input edit removes the result before anything is rendered', async () => {

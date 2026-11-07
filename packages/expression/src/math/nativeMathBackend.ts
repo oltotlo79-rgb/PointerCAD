@@ -54,7 +54,7 @@ const headEntry = (head: string, entry: NumericHeadEntry): readonly [string, Num
  * dedicated numeric routine below MUST appear in exactly one of `NUMERIC_HEAD_ALLOWANCE`'s entries
  * (checked exhaustively by `nativeMathBackend.test.ts`), so a head added only to a dispatch table
  * and never classified here (like Airy was) fails a test instead of shipping unnoticed. */
-// 2026-09-28 (w87a): measured cold(このファイルでの初回)/warm(以降19回)のmax/中央値を
+// 2026-09-28 (計算時間の実測): measured cold(このファイルでの初回)/warm(以降19回)のmax/中央値を
 // packages/expression/src/math/__benchmarkEdgeHeads.bench.test.ts で計測し(統括の指示、推測で決めない)、
 // 手元の最大が200msの1/4(50ms)を超えるか、手元を3〜5倍(CIのWindowsの遅さの見積もり、job-108697069543の
 // 個別ファイルの所要から)しても200msに近づかないかで判定した。計測時の負荷: 他の複数の担当が並行して

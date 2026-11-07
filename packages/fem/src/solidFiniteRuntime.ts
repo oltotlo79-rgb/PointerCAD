@@ -38,9 +38,9 @@ run_finite_equilibrium(oofem, plan)
  * allows at most 20000 node and element states and 200 steps (each below 300 characters of step metadata), so a
  * complete reply stays below 20000 x 1400 + 200 x 300 + fixed metadata < 28,500,000 characters.
  */
-export const SOLID_FINITE_RESPONSE_LIMIT = 28_500_000;
+const SOLID_FINITE_RESPONSE_LIMIT = 28_500_000;
 
-export interface SolidFinitePrograms {
+ interface SolidFinitePrograms {
   /** Fixed W33 solidFiniteMaterial.py bytes. */
   readonly material: Uint8Array;
   /** Fixed W34 solidFiniteEquilibrium.py bytes. */

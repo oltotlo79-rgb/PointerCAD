@@ -1,6 +1,6 @@
 /** 折曲げ形状と展開条件の鍵を分け、K変更でB-repを再生成しない。 */
 import { hash64, keyCurveList, keyNumber } from '../part/cacheKey.js';
-import type { SheetSolidPlan, ResolvedSheetBody, SheetFlangeGeometryInput, SheetBodyBendGeometry } from './resolveSheetGeometry.js';
+import type { SheetSolidPlan, SheetFlangeGeometryInput, SheetBodyBendGeometry } from './resolveSheetGeometry.js';
 
 function flangeKey(input: SheetFlangeGeometryInput): readonly unknown[] {
   const common = [input.kind, input.frame.origin.map(keyNumber), input.frame.xAxis.map(keyNumber),
@@ -28,11 +28,4 @@ export function sheetShapeKey(plan: SheetSolidPlan): string {
     case 'sheetFlange':
       return hash64(JSON.stringify(['sheetFlange', plan.targetKey, plan.flanges.map(flangeKey)]));
   }
-}
-
-/** 保存しない導出キー。元形状・K・固定面・明示継ぎ目のいずれも展開を更新する。 */
-export function sheetFlatKey(shapeKey: string, body: ResolvedSheetBody, fixedPanelId: string, seams: readonly string[]): string {
-  return hash64(JSON.stringify(['sheetFlat', shapeKey, fixedPanelId, [...seams].sort(), body.bends.map((bend) => [
-    bend.id, keyNumber(bend.kFactor), keyNumber(bend.allowance),
-  ])]));
 }

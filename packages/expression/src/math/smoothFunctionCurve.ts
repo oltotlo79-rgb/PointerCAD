@@ -240,7 +240,7 @@ export function smoothFunctionCurve(components: readonly (readonly FunctionCurve
 
 type StopReason = 'cancelled' | 'deadline' | undefined;
 export type SmoothSamplingResult = FunctionCurveSamplingResult & { readonly smooth?: SmoothFunctionCurve };
-export interface SmoothSamplingControl {
+interface SmoothSamplingControl {
   /** The request's original paced geometry clock, including a backend block's deadline. */
   readonly stop: () => StopReason;
   /** The definition's interval derivative; smooth results then carry a tangent certificate. */

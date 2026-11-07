@@ -13,15 +13,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  MAX_RECENT_FILES,
   fileNameOf,
   loadRecentFiles,
   pushRecentFile,
   recordRecentFile,
   saveRecentFiles,
-  type RecentFile,
   type RecentFilesStorage,
 } from './recentFiles.js';
+
+type RecentFile = ReturnType<typeof loadRecentFiles>[number];
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const MAX_RECENT_FILES = 10;
 
 /** 記憶上の偽の置き場。書かれた生の文字列をそのまま覗ける。 */
 interface FakeStorage {

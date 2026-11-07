@@ -36,10 +36,10 @@ export const CLOSED_CURVE_UNPROVED = '曲線の始点と終点が一致するこ
   + '値が近いだけでは閉じているとみなしません。始点と終点の座標が厳密な値になる範囲（例 cos(t)・sin(t) なら t を 0〜360 度または 0〜2π）で指定してください。';
 export const CLOSED_SURFACE_OPEN = '曲面の媒介変数の長方形で、向かい合う辺が一致せず、1点にもつぶれないため、閉じた曲面の積分（∯）として計算できません。'
   + '閉じていない曲面には surfaceintegral・fluxintegral を使ってください。';
-export const CLOSED_SURFACE_UNPROVED = '曲面の媒介変数の長方形で、向かい合う辺が一致すること、または1点につぶれることを厳密に確かめられないため、'
+const CLOSED_SURFACE_UNPROVED = '曲面の媒介変数の長方形で、向かい合う辺が一致すること、または1点につぶれることを厳密に確かめられないため、'
   + '閉じた曲面の積分（∯）として計算しません。値が近いだけでは閉じているとみなしません。辺の座標が厳密な値になる範囲（例 球なら 0〜180 度と 0〜360 度）で指定してください。';
-export const CLOSED_INTEGRAL_FINITE = '閉じた曲線・曲面の積分（∮・∯）には、有限の下限と上限を指定してください。';
-export const CLOSED_INTEGRAL_UNDEFINED = '曲線または曲面の座標が媒介変数の範囲の端で定まらないため、閉じていることを確かめられません。';
+const CLOSED_INTEGRAL_FINITE = '閉じた曲線・曲面の積分（∮・∯）には、有限の下限と上限を指定してください。';
+const CLOSED_INTEGRAL_UNDEFINED = '曲線または曲面の座標が媒介変数の範囲の端で定まらないため、閉じていることを確かめられません。';
 
 /** The existing operation each closed operation becomes once its closure is proved. */
 export const CLOSED_INTEGRAL_BASES: ReadonlyMap<string, string> = new Map([

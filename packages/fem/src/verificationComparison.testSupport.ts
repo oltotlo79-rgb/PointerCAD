@@ -7,13 +7,13 @@ export interface VerificationInput {
   readonly units: string;
   readonly source: VerificationValue;
 }
-export interface VerificationObservation {
+ interface VerificationObservation {
   readonly caseId: string;
   readonly input: VerificationInput;
   readonly value: number;
 }
 export type VerificationKind = 'linear-static' | 'buckling' | 'modal' | 'plastic-solid' | 'contact' | 'impact' | 'fatigue';
-export interface VerificationCase {
+ interface VerificationCase {
   readonly id: string;
   readonly kind: VerificationKind;
   readonly input: VerificationInput;

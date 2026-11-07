@@ -182,7 +182,7 @@ describe('independent 31-row steel catalog oracle', () => {
     }
   });
 
-  it.each(['steelCatalogOracle.fixture.ts', 'steelS45cOracle.fixture.ts'])(
+  it.each(['steelCatalogOracle.fixture.ts', 'steelS45cOracle.testSupport.ts'])(
     '%s statically rejects every module import/re-export/require in the standalone fixture', (name) => {
     const text = readFileSync(new URL(`./${name}`, import.meta.url), 'utf8');
     const file = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);

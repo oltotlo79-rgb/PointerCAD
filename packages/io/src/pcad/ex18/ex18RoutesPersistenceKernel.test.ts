@@ -3,8 +3,15 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createUndoStack, pushUndo, undo, redo, contentHashOf, replaceSolid, PART_SCHEMA_VERSION, type PartDocument } from '@pointercad/model';
 import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { emptyPcadAttachments, readPcadFile, writePcadFile } from '../pcadFile.js';
-import { W08_CASES, W08_TIMEOUT, W08_SAVED_AT, W08_CHANGED, W08_DIRECT_CHANGED,
+import { W08_CHANGED, W08_DIRECT_CHANGED,
   EX18_ORACLE_EXPECTATIONS, w08Build, w08Session, w08Compute, w08Expect } from './ex18PersistenceSupport.testSupport.js';
+
+/** W08 の保存の検査の保存時刻と時間の上限(ex18ContextPersistenceKernel.test.ts と同じ値)。 */
+const W08_SAVED_AT = '2026-10-26T00:00:00.000Z';
+const W08_TIMEOUT = 180_000;
+
+const W08_CASES = (['A', 'B', 'C'] as const).flatMap(shape =>
+  (['sketch', 'surface/wire', 'expression', 'direct STEP'] as const).map(route => ({ shape, route })));
 
 beforeAll(loadOcctForNode, W08_TIMEOUT);
 

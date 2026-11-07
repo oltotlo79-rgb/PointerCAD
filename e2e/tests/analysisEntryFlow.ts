@@ -42,7 +42,12 @@ export async function analysisEntryFlow(page: Page, entry: typeof analysisEntrie
     await expect(page.getByTestId(entry.panel)).toHaveCount(0);
     await openToolMenu(page, menuName);
     const menu = toolMenuPanel(page, menuName);
-    await expect(menu.getByRole('button')).toHaveCount(entry.kind === 'part' ? 6 : 5);
+    await expect(menu.getByRole('button')).toHaveCount(entry.kind === 'part' ? 8 : 5);
+    for (const id of ['solidFinite', 'shellAnalysis'] as const) {
+      const extra = menu.getByRole('button', { name: uiMessage(id, `${id}.open`), exact: true });
+      await expect(extra).toHaveCount(entry.kind === 'part' ? 1 : 0);
+      if (entry.kind === 'part') await expect(extra).toHaveAttribute('data-command-id', `toolbar.analysis.${id}`);
+    }
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0); await expect(trigger).toBeFocused();
 

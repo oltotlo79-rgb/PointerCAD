@@ -158,7 +158,7 @@ function collectPinnedPoints(
  * `SolveOptions`(反復の上限・許容量・減衰の初期値)をそのまま広げた形にしてあるので、
  * 拘束だけを解く既存の呼び出しは何も変えずに通る。
  */
-export interface ConstrainedSolveOptions extends SolveOptions {
+interface ConstrainedSolveOptions extends SolveOptions {
   /**
    * 引っぱっている点の目標(点の鍵 → 作図面上の (u, v))。押している間だけ渡す。
    * 鍵は `ResolvedPoint.id` / `vertexKey` の規約(`line-1:end` など)。

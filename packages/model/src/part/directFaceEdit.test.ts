@@ -6,19 +6,32 @@ import type { SubShapeRef } from '../geometry/subShapeRef.js';
 import {
   checkFaceOffset,
   createFaceOffsetFeature,
-  FACE_OFFSET_DISTANCE_MESSAGE,
   FACE_OFFSET_KIND,
-  FACE_OFFSET_NOT_FACE_MESSAGE,
-  FACE_OFFSET_NOT_PLANAR_MESSAGE,
-  FACE_OFFSET_OTHER_BODY_MESSAGE,
-  faceOffsetKeyMaterial,
-  faceOffsetKeyText,
   faceOffsetPlan,
   reevaluateFaceOffset,
   withFaceOffsetDistance,
   withFaceOffsetFace,
-  type FaceOffsetFeature,
+  type FaceOffsetFeature, type FaceOffsetKeyMaterial, type FaceOffsetPlan,
 } from './directFaceEdit.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const FACE_OFFSET_DISTANCE_MESSAGE = '面を動かす距離は 0 でない数で指定してください。';
+const FACE_OFFSET_NOT_FACE_MESSAGE = '動かせるのは立体の面だけです。平らな面を選び直してください。';
+const FACE_OFFSET_NOT_PLANAR_MESSAGE = '動かせるのは平らな面だけです。';
+const FACE_OFFSET_OTHER_BODY_MESSAGE = '動かす面は、編集するもとの立体の面にしてください。';
+
+/** 鍵の材料。指紋の鍵文字列への直し方は呼び出し側(solidPlanKeyMaterial)の既存の関数を渡す。 */
+function faceOffsetKeyMaterial(
+  plan: FaceOffsetPlan,
+  fingerprintKeyText: (reference: SubShapeRef) => string,
+): FaceOffsetKeyMaterial {
+  return { kind: FACE_OFFSET_KIND, targetKey: plan.targetKey, face: fingerprintKeyText(plan.face), offset: plan.offset };
+}
+
+/** 鍵の文字列。数の書き方は cacheKey の keyNumber を渡す(同じ数なら同じ文字列)。 */
+function faceOffsetKeyText(material: FaceOffsetKeyMaterial, keyNumber: (value: number) => string): string {
+  return `faceOffset{targetKey=${material.targetKey};face=${material.face};offset=${keyNumber(material.offset)}}`;
+}
 
 /** 式を評価した値。評価できない式は検査の前提が崩れているので落とす。 */
 function expression(source: string): ExpressionValue {

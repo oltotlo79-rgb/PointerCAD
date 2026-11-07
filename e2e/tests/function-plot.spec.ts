@@ -21,7 +21,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 // math-input.spec.tsと同じ理由(CIの3分割はrequireFile単位で1塊のtestGroupを
 // 作るため、直列のままだと24件がまとめて同じ組へ入る)。各テストは`page`を
 // 個別に開くだけで共有状態が無いため、parallelモードでテストごとに別groupへ
-// 分け、shardの境界を任意の位置で切れるようにする(w95a)。
+// 分け、shardの境界を任意の位置で切れるようにする(検査の分割方針)。
 test.describe.configure({ mode: 'parallel' });
 
 test('ADD-23 勾配とヘッセ行列の成分を曲線と曲面に使い、保存再開・ラプラシアンへ編集・Undo・F1を通す', async ({ page }, info) => {

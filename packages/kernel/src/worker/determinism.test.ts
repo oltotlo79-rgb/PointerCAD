@@ -6,7 +6,6 @@ import { makeExtrudeSolid } from '../occt/makeSolidSweep.js';
 import { collectSubShapes } from '../occt/subShapes.js';
 import { tessellate } from '../occt/tessellate.js';
 import { solidFaceQuery as faceQuery } from '../occt/solidFaceQuery.testSupport.js';
-import type { StepWriteEntry } from '../occt/writeStep.js';
 import { writeStep } from '../occt/writeStep.js';
 import { writeStepAssembly } from '../occt/xcafAssembly.js';
 import type {
@@ -25,6 +24,8 @@ import type {
 import { recomputeSolids, type CachedSolid } from './recomputeSolids.js';
 import { createShapeCache, type ShapeCache } from './shapeCache.js';
 import { stepBytesForComparison } from './stepBytesForComparison.testSupport.js';
+
+type StepWriteEntry = Parameters<typeof writeStep>[1][number];
 
 /**
  * 決定性検査(`rules/03-品質ゲート.md` §7.1 が P6 に予定していたもの、

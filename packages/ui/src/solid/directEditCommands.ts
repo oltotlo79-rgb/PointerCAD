@@ -10,7 +10,7 @@ import type { MachiningContext } from './machiningCommands.js';
 import type { SolidCommandOutcome } from './solidCommands.js';
 import { parseSubShapeId, subShapeRefOf } from './subShapeSelection.js';
 
-export type DirectEditToolId = 'holeTranslate' | 'faceRotate';
+type DirectEditToolId = 'holeTranslate' | 'faceRotate';
 export const DEFAULT_HOLE_TRANSLATION_MM = 1;
 export const DEFAULT_FACE_ROTATION_DEGREES = 5;
 

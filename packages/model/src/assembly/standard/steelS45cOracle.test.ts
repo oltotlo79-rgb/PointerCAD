@@ -8,7 +8,7 @@ import {
 import { s45cProductRule, steelGradeRule } from './steelGradeRules.js';
 import {
   S45C_BRIGHT_ORACLE, S45C_HOT_SAVED_OPTIONS, S45C_ORACLE_SOURCES, S45C_REJECTED_SECTIONS, S45C_STRENGTH_REFERENCE_ORACLE,
-} from './steelS45cOracle.fixture.js';
+} from './steelS45cOracle.testSupport.js';
 import { STEEL_STANDARDS } from './steelStandards.js';
 
 const TREATMENTS = ['N', 'A', 'QT', 'Q', 'T', 'normalized', 'annealed', 'quenched-tempered',

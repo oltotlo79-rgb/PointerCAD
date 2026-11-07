@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 import type { MathNode } from './mathInputContract.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import type { MathExecutionReply } from './mathWorkExecution.js';
@@ -45,7 +45,7 @@ const examples = [
   { source: 'element(1,setminus(set(1,2,3),set(2)))', kind: 'boolean', expected: boolean(true) },
   { source: 'element(2,setminus(set(1,2,3),set(2)))', kind: 'boolean', expected: boolean(false) },
   { source: 'complement(set(2),set(1,2,3))', kind: 'set', expected: operation('set', number(1), number(3)) },
-  // probe_setminus.py (w14b-mc12-cardinality): before the fix this summed to the
+  // probe_setminus.py (集合差記号の再現検証): before the fix this summed to the
   // wrong value 3 ("1 in {1,k} minus {k}" was always true). The whole indexed
   // family is decoded once with a symbolic index (see cas_input.py's binder), so
   // the same unevaluated guard that protects a single set-minus also keeps this

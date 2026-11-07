@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { fieldFailure, type FieldProblem } from './guards.js';
+import { fieldFailure } from './guards.js';
+
+type FieldProblem = Parameters<typeof fieldFailure>[0];
 
 describe('persisted part and assembly field failures', () => {
   it('retains the missing-field code and exact nested path message', () => {

@@ -5,9 +5,12 @@ import { createHash } from 'node:crypto';
 import { createMathBackend } from './createMathBackend.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { createFunctionImplicitEvaluator } from './functionImplicitEvaluation.js';
-import { buildImplicitGrid, type ImplicitGridOptions, type ImplicitGridResult } from './implicitGrid.js';
+import { buildImplicitGrid } from './implicitGrid.js';
 import { meshImplicitTetrahedra, type ImplicitMesh } from './implicitTetrahedra.js';
 import type { MathExecutionBackend } from './mathWorkExecution.js';
+
+type ImplicitGridOptions = Parameters<typeof buildImplicitGrid>[1];
+type ImplicitGridResult = ReturnType<typeof buildImplicitGrid>;
 
 let backend: MathExecutionBackend;
 beforeAll(()=>{ backend=createMathBackend(); });

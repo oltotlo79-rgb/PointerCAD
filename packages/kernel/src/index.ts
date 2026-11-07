@@ -1,4 +1,4 @@
-export type { BoxParameters, MeshData, TessellationOptions } from './types.js';
+export type { BoxParameters, TessellationOptions } from './types.js';
 export type { SheetBaseStepSpec } from './types.js';
 export type { SheetMetalBaseInput } from './occt/makeSheetMetalBase.js';
 export type { SheetMetalBendFrame } from './occt/makeSheetMetalBend.js';
@@ -439,6 +439,7 @@ export {
 // STL の読み込み(§2.8、タスク17)。断りの文言は共有の置き場の中継(上の注釈)。
 export {
   readStl,
+  startsWithBytes,
   STL_MAX_TRIANGLE_COUNT,
   STL_NO_FACE_MESSAGE,
   STL_READ_FAILED_MESSAGE,

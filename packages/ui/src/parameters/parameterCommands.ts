@@ -132,7 +132,7 @@ function referencedMessage(count: number): string {
 }
 
 /** 断りに並べる参照元の名前の数。これを超えたぶんは「ほか N 件」にまとめる。 */
-export const REFERENCED_NAME_LIMIT = 3;
+const REFERENCED_NAME_LIMIT = 3;
 
 /**
  * 削除を断る文(**参照元のフィーチャー名つき**、P4b タスク22b)。

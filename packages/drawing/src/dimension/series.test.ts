@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { THIRD_ANGLE_DIRECTIONS } from '../layout/thirdAngle.js';
-import { dimensionSeries, drawingViewBasis, type DimensionSeriesInput, type DimensionSeriesPoint } from './series.js';
+import { dimensionSeries, drawingViewBasis, type DimensionSeriesInput } from './series.js';
+
+type DimensionSeriesPoint = Parameters<typeof dimensionSeries>[0]['points'][number];
+
 const points: readonly DimensionSeriesPoint[] = [0, 20, 50, 90].map((value, index) => ({
   id: `p${index}`, modelPoint: [value, 0, 0], paperPoint: [value, 0],
 }));

@@ -130,7 +130,7 @@ export const MATH_PALETTE_SETS_LOGIC_EXAMPLES: readonly MathPaletteExample[] = [
   // Declaration-only acceptance: source, dependent variables and conditions survive without a fabricated solution.
   { id: 'partial-equations', selection: String.raw`[\operatorname{diff}(u,t)=\operatorname{diff}(u,x,x)]`,
     slots: ['[x,t]', '[u]', '[[u,[0,t],3]]'], expected: 'unevaluated', exact: true },
-  // MC-02d (MC-23): set relations, confirmed by cx-mc23-setrelations (setRelations.test.ts).
+  // MC-02d (MC-23): set relations, confirmed by setRelations.test.ts.
   { id: 'not-element', selection: '3', slots: [String.raw`\operatorname{set}(1,2)`], expected: 'boolean', exact: true },
   { id: 'subset', selection: String.raw`\operatorname{set}(1)`, slots: [String.raw`\operatorname{set}(1,2)`], expected: 'boolean', exact: true },
   { id: 'subset-equal', selection: String.raw`\operatorname{set}(2,1)`, slots: [String.raw`\operatorname{set}(1,2)`], expected: 'boolean', exact: true },
@@ -138,14 +138,14 @@ export const MATH_PALETTE_SETS_LOGIC_EXAMPLES: readonly MathPaletteExample[] = [
   { id: 'superset-equal', selection: String.raw`\operatorname{set}(1)`, slots: [String.raw`\operatorname{set}(1)`], expected: 'boolean', exact: true },
   { id: 'complement', selection: String.raw`\operatorname{set}(2)`, slots: [String.raw`\operatorname{set}(1,2,3)`], expected: 'set', exact: true },
   { id: 'cartesian-product', selection: String.raw`\operatorname{set}(1,2)`, slots: [String.raw`\operatorname{set}(3)`], expected: 'set', exact: true },
-  // MC-02d (MC-24): explicit absolute tolerance, confirmed by cx-mc24-logic (logicExtended.test.ts).
+  // MC-02d (MC-24): explicit absolute tolerance, confirmed by logicExtended.test.ts.
   { id: 'approximately-equal', selection: '0.3', slots: ['0.2', '0.1'], expected: 'boolean', exact: true },
   // MC-02d (MC-12): finite set cardinality, confirmed by cardinality.test.ts.
   { id: 'cardinality', selection: String.raw`\{1,2,3\}`, slots: [], expected: 3, exact: true },
   // MC-02d (MC-04 gap): boolean literal constants.
   { id: 'true', selection: '', slots: [], expected: 'boolean' },
   { id: 'false', selection: '', slots: [], expected: 'boolean' },
-  // MC-02e (MC-24): finite quantifiers, confirmed by cx-mc24-logic (logicExtended.test.ts) and
+  // MC-02e (MC-24): finite quantifiers, confirmed by logicExtended.test.ts and
   // math-input.md's own worked examples (forall(x,{1,2,3},x>0)=true, exists(x,{0,1,3},x^2==4)=false).
   { id: 'for-all', selection: '', slots: ['x', String.raw`\{1,2,3\}`, 'x>0'], expected: 'boolean', exact: true },
   { id: 'exists', selection: '', slots: ['x', String.raw`\{0,1,3\}`, 'x^2=4'], expected: 'boolean', exact: true },

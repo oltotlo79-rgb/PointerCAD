@@ -22,7 +22,8 @@
   "notes": [
     "JIS は m に基準寸法を与えず最大・最小だけを規定する。形を作るときは mMax を使うか、統括が決める。",
     "本体規格(ISO 4032 対応)の値。附属書JA(旧JIS)の1種ナットとは高さ・二面幅が違う(M10=17 など)。",
-    "M18・M22・M24 は由良産商の抜粋 1 件だけを根拠にしている。要確認。"
+    "M18・M22・M24 は由良産商の抜粋 1 件だけを根拠にしている。要確認。",
+    "実行時カタログ packages/model/src/assembly/standard/fasteners.ts の六角ナットの表 HEX_NUT_TABLE に付けていた出典 HEX_NUT_SOURCE の値(製品のどこからも読まれていなかったので、値を変えずにここへ移した): standard「JIS B 1181」、edition「2014」、title「六角ナット」、scope「本体規格スタイル1と附属書JA 1種、並目・細目ねじ」、verified=false、sourceUrls: https://www.yura-sansyo.co.jp/handbook/handbookV8-3-42.pdf https://jp.misumi-ec.com/tech-info/categories/machine_design/md05/a0042.html https://www.khkgears.co.jp/gear_technology/gear_reference/KHK494_2.html https://www.linex.co.jp/products/jis/parts05/"
   ],
   "rows": [
     {

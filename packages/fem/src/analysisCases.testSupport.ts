@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import type { BeamAnalysisDocument, BeamAnalysisResult, Vector3 } from './analysisModel.js';
+import type { BeamAnalysisDocument, Vector3 } from './analysisModel.js';
 import { readBeamAnalysis, serializeBeamAnalysis } from './analysisValidation.js';
 import { beamInputSha256, translateBeamAnalysis } from './analysisTranslation.js';
-import { beamResultMatches, decodeBeamAnalysis } from './analysisResults.js';
+import { decodeBeamAnalysis } from './analysisResults.js';
 import { findStrengthMaterial, STRENGTH_SOURCES } from '@pointercad/model';
 
 const evidence={kind:'user-supplied',reference:'Independent analytic test constants; no material grade inference',condition:'Linear isotropic test material at a fixed reference condition'} as const;
@@ -158,41 +158,4 @@ async function analysisCapacityChecks(checks: string[]): Promise<void> {
     checks.push(`inclusive SS400 boundary and exclusive next band in both beam units: ${thicknessMm} mm`);
   }
   assert.equal(Object.hasOwn(translateBeamAnalysis(cantilever()).plan.materials[0], 'capacity'), false);
-}
-function close(actual:number,expected:number,unit:'m'|'rad'|'N'|'Nm'):void{
-  const absolute=unit==='m'||unit==='rad'?1e-12:1e-7;
-  assert(Math.abs(actual-expected)<=absolute+1e-8*Math.abs(expected),`${unit}: ${actual} != ${expected}`);
-}
-/** Elementary force balance/beam-energy formula, independent of translator and OOFEM element matrices. */
-export async function assertCantilever(result:BeamAnalysisResult,document:BeamAnalysisDocument,
-  options:{readonly mode?:'axial'|'y'|'z'|'torsion';readonly rotated?:boolean;readonly forceMultiplier?:number}={}):Promise<void>{
-  const mode=options.mode??'y',P=4000*(options.forceMultiplier??1),T=200*(options.forceMultiplier??1);
-  const L=2,E=208e9,G=80e9,A=0.003,Iy=2e-6,Iz=5e-6,J=3e-6,k=5/6;
-  const x:Vector3=options.rotated?[0,1,0]:[1,0,0],y:Vector3=options.rotated?[0,0,1]:[0,1,0],z:Vector3=options.rotated?[1,0,0]:[0,0,1];
-  let displacement:Vector3=[0,0,0],rotation:Vector3=[0,0,0],reaction:Vector3=[0,0,0],moment:Vector3=[0,0,0];
-  const mul=(v:Vector3,n:number):Vector3=>[v[0]*n,v[1]*n,v[2]*n];
-  if(mode==='axial'){displacement=mul(x,P*L/(E*A));reaction=mul(x,-P);}
-  else if(mode==='torsion'){rotation=mul(x,T*L/(G*J));moment=mul(x,-T);}
-  else if(mode==='y'){displacement=mul(y,P*L**3/(3*E*Iz)+P*L/(k*G*A));rotation=mul(z,P*L**2/(2*E*Iz));reaction=mul(y,-P);moment=mul(z,-P*L);}
-  else {displacement=mul(z,P*L**3/(3*E*Iy)+P*L/(k*G*A));rotation=mul(y,-P*L**2/(2*E*Iy));reaction=mul(z,-P);moment=mul(y,P*L);}
-  const tip=result.nodes.find(n=>n.nodeId==='tip'),base=result.nodes.find(n=>n.nodeId==='base');
-  assert(tip&&base);
-  for(let i=0;i<3;i++){
-    close(tip.displacementM[i],displacement[i],'m');close(tip.rotationRad[i],rotation[i],'rad');
-    close(base.reactionN[i],reaction[i],'N');close(base.reactionNm[i],moment[i],'Nm');
-    close(result.balance.forceN[i],0,'N');close(result.balance.momentNm[i],0,'Nm');
-  }
-  assert.equal(result.elements.length,document.members.length);
-  for(const member of document.members){
-    const found=result.elements.find(e=>e.memberId===member.id);assert(found);
-    assert.deepEqual(found.nodeIds,[member.startNodeId,member.endNodeId]);
-    assert.equal(found.componentId,member.componentId);assert.deepEqual(found.occurrencePath,member.occurrencePath);
-  }
-  const hash=await beamInputSha256(document);
-  assert(beamResultMatches(result,document,hash));
-  assert(!beamResultMatches({...result,source:{...result.source,geometryRevision:'stale'}},document,hash));
-  assert(!beamResultMatches({...result,inputSha256:'0'.repeat(64)},document,hash));
-  assert(!beamResultMatches({...result,elements:result.elements.map(e=>({...e,nodeIds:['wrong','tip']}))},document,hash));
-  assert(!beamResultMatches({...result,nodes:result.nodes.map(n=>({...n,displacementM:[NaN,0,0]}))},document,hash));
-  assert(!beamResultMatches({...result,nodes:result.nodes.map(n=>({...n,reactionN:[0,0,0],reactionNm:[0,0,0]}))},document,hash));
 }

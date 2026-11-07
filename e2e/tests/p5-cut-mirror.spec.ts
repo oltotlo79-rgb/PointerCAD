@@ -39,9 +39,9 @@ const QUARTER_VOLUME = BOX_SIZE_MM * BOX_SIZE_MM * 5;
 /** ja.json の propertyPanel.unitCubicMillimeter。 */
 const VOLUME_UNIT = 'mm³';
 
-/** 保存していない変更の確認(画面の中の日本語の3択。w91a)に「保存せずに続ける」で答える(「新規」で出る)。 */
+/** 保存していない変更の確認（画面内の日本語3択、NFR-UX-3）に「保存せずに続ける」で答える(「新規」で出る)。 */
 async function acceptConfirms(page: Page): Promise<void> {
-  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  // 画面の中の確認(NFR-UX-3。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
   await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
     await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });

@@ -2,7 +2,7 @@ import { dotVec3 as dot, crossVec3 as cross } from '../sketch/vec3.js';
 /** P10-15/16。平面の剛体展開と共有する接線座標へ写す。 */
 export type SheetPoint3 = readonly [number, number, number];
 export type SheetPoint2 = readonly [number, number];
-export interface CylindricalBendFrame {
+interface CylindricalBendFrame {
   /** 曲げ開始接線の円筒軸上の点。 */
   readonly center: SheetPoint3;
   readonly axis: SheetPoint3;

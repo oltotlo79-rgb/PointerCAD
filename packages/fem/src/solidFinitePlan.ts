@@ -23,11 +23,11 @@ export const SOLID_FINITE_FREE_RESIDUAL_BOUND = 1e-8;
 export const SOLID_FINITE_RUNTIME_ANALYSIS_LIMIT = 8;
 export const SOLID_FINITE_LIMITS = { nodes: 2000, elements: 5000, steps: 200, recordedStates: 20000 } as const;
 /** MINIMUM_RELATIVE_VOLUME: a tetrahedron with 6 V <= this x (longest edge)^3 is collapsed or inverted. */
-export const SOLID_FINITE_MINIMUM_RELATIVE_VOLUME = 1e-12;
+ const SOLID_FINITE_MINIMUM_RELATIVE_VOLUME = 1e-12;
 export const SOLID_FINITE_DOFS = ['x', 'y', 'z'] as const;
-export type SolidFiniteDof = typeof SOLID_FINITE_DOFS[number];
+ type SolidFiniteDof = typeof SOLID_FINITE_DOFS[number];
 
-export interface SolidFiniteMaterial {
+ interface SolidFiniteMaterial {
   readonly youngMPa: number;
   readonly poisson: number;
   readonly yieldStressMPa: number;
@@ -78,7 +78,7 @@ function array(value: unknown, path: string, low: number, high: number): readonl
 }
 
 /** 6 x signed volume det(b - a, c - a, d - a), the same expression and order as solidFiniteEquilibrium.signed_volume6. */
-export function signedVolume6(a: readonly number[], b: readonly number[], c: readonly number[], d: readonly number[]): number {
+ function signedVolume6(a: readonly number[], b: readonly number[], c: readonly number[], d: readonly number[]): number {
   const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
   const w = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];

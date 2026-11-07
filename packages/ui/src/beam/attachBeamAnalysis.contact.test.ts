@@ -4,8 +4,10 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachBeamAnalysis, type BeamAttachment } from './attachBeamAnalysis.js';
 import { requireBeamSession } from './beam.testSupport.js';
-import { contactResultFor, contactUiFixture, type ContactStateFixture } from './beamContact.testSupport.js';
+import { contactResultFor, contactUiFixture } from './beamContact.testSupport.js';
 import { editBeamSession } from './beamSession.js';
+
+type ContactStateFixture = Parameters<typeof contactResultFor>[1][number];
 
 class Port implements FemWorkerPort {
   onmessage: FemWorkerPort['onmessage'] = null;

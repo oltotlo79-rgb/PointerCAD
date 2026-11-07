@@ -8,7 +8,7 @@ import type { AppState } from '../store/appState.js';
 import type { SolidAnalysisRunner } from '../store/solidAnalysisSlice.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { hasCurrentConnectionGeometry } from '../sketch/connectionSelection.js';
-import { parseSubShapeId } from '../solid/subShapeSelection.js';
+import { parseSubShapeId, type SubShapeId } from '../solid/subShapeSelection.js';
 import { t } from '../i18n/t.js';
 import { solidSavedInput } from './solidAnalysisSession.js';
 import { analyzeCadSolidModal, type CadSolidModalSettings } from './cadSolidModal.js';
@@ -24,6 +24,16 @@ import { createSolidSupport, solidBoundaryFailure } from './solidBoundaryDraft.j
  * nor cancel a run. A different part or any shape change (solids, sketches, parameters, ...) still does. */
 function sameGeometryDocument(left: PartDocument, right: PartDocument): boolean {
   return left === right || (left.id === right.id && !affectsShape(left, right));
+}
+
+/** Stable face keys of the selected faces of one body, in selection order; a face without a persistent origin means
+ * the shape changed since the selection. */
+function selectedFaceKeys(body: SolidBody, ids: readonly (SubShapeId | null)[]): string[] {
+  return ids.map(id => {
+    const reference = id ? createSubShapeReference(body, 'face', id.index) : null;
+    if (!reference?.origin) throw new Error(t('solidAnalysis.changed'));
+    return solidCadFaceKey(reference);
+  });
 }
 
 /** A resolved step is captured from the real recompute callback, never recomputed with different caches. */
@@ -97,7 +107,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
   };
   const failure = (error: unknown): void => {
     const session = store.getState().solidAnalysisSession;
-    if (session) store.setState({ solidAnalysisSession: { ...session, status: 'failed', result: null,
+    if (session) store.setState({ solidAnalysisSession: { ...session, status: 'failed', stage: null, result: null,
       error: error instanceof Error ? solidBoundaryFailure(error.message) : t('solidAnalysis.failed') } });
   };
   const validate = (): void => {
@@ -117,11 +127,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
       if (!first || first.kind !== 'face' || ids.some(id => !id || id.kind !== 'face' || id.bodyFeatureId !== first.bodyFeatureId)
         || (session.bodyFeatureId !== null && session.bodyFeatureId !== first.bodyFeatureId)) throw new Error(t('solidAnalysis.selectBody'));
       const body = context(first.bodyFeatureId).body;
-      const keys = ids.map(id => {
-        const reference = id ? createSubShapeReference(body, 'face', id.index) : null;
-        if (!reference?.origin) throw new Error(t('solidAnalysis.changed'));
-        return solidCadFaceKey(reference);
-      });
+      const keys = selectedFaceKeys(body, ids);
       if (new Set(keys).size !== keys.length) throw new Error(t('solidAnalysis.reselect'));
       const supports = session.supports ?? [];
       if ((role === 'support' && keys.some(key => session.fixedFaces.includes(key) || supports.some(row => row.face === key)))
@@ -131,7 +137,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
       store.setState({ solidAnalysisSession: { ...session, bodyFeatureId: first.bodyFeatureId,
         ...(role === 'fixed' ? { fixedFaces: keys } : role === 'loaded' ? { loadedFaces: keys }
           : { supports: [...supports, ...keys.map(createSolidSupport)] }), revision: session.revision + 1,
-        result: null, error: null, status: 'editing' }, solidModal: invalidateSolidModal(store.getState().solidModal),
+        result: null, error: null, stage: null, status: 'editing' }, solidModal: invalidateSolidModal(store.getState().solidModal),
         solidBuckling: invalidateSolidBuckling(store.getState().solidBuckling) });
     } catch (error) { failure(error); }
   };
@@ -144,7 +150,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
       const saved = solidSavedInput(session, state.document.id, state.document.parameters), input = settings(saved);
       const controller = new AbortController(), document = state.document, generation = state.completedGeneration;
       active = controller;
-      store.setState({ solidAnalysisSession: { ...session, status: 'running', result: null, error: null } });
+      store.setState({ solidAnalysisSession: { ...session, status: 'running', stage: null, result: null, error: null } });
       const current = (): boolean => {
         const next = store.getState();
         return !disposed && active === controller && !controller.signal.aborted && next.strengthSession !== null
@@ -155,12 +161,16 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
       void analyzeCadSolid(client, kernel, () => {
         if (!current()) throw new Error(t('solidAnalysis.changed'));
         return context(saved.bodyFeatureId);
-      }, input, { signal: controller.signal }).then(outcome => {
+      }, input, { signal: controller.signal, onStage: stage => {
+        if (!current()) return;
+        const next = store.getState().solidAnalysisSession;
+        if (next?.status === 'running') store.setState({ solidAnalysisSession: { ...next, stage } });
+      } }).then(outcome => {
         if (!current()) return;
         active = null;
         const next = store.getState().solidAnalysisSession;
         if (next) store.setState({ solidAnalysisSession: { ...next, status: outcome.kind === 'result' ? 'complete'
-          : outcome.kind === 'cancelled' ? 'cancelled' : 'failed', result: outcome.kind === 'result' ? outcome : null,
+          : outcome.kind === 'cancelled' ? 'cancelled' : 'failed', stage: null, result: outcome.kind === 'result' ? outcome : null,
         error: outcome.kind === 'failed' ? solidBoundaryFailure(outcome.message) : null } });
       }).catch((error: unknown) => { if (current()) { active = null; failure(error); } });
     } catch (error) { failure(error); }
@@ -284,7 +294,7 @@ export function attachSolidAnalysis(kernel: AnalysisBoundarySource, store: Store
       // Undo/Redo always advance documentVersion (documentSlice: drafts are discarded across a history step), so the run,
       // result and pending selection are still dropped. Only when nothing above changed (a non-shape step such as the
       // input save itself) is it not reported as a shape or input change.
-      store.setState({ solidAnalysisSession: { ...session, status: 'editing', result: null,
+      store.setState({ solidAnalysisSession: { ...session, status: 'editing', stage: null, result: null,
         error: geometryKept ? session.error : t('solidAnalysis.changed') }, solidModal: invalidateSolidModal(state.solidModal),
         solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
     }

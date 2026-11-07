@@ -78,7 +78,7 @@ export interface StoredTemplate {
  * 一覧を作るたびに全部のバイト列を運ぶと、ひな形が 10 個あるだけで数 MB を持ち回ることに
  * なる。開くと決めたときにだけ `get` で中身を取りに行く。
  */
-export type StoredTemplateSummary = Omit<StoredTemplate, 'bytes'>;
+type StoredTemplateSummary = Omit<StoredTemplate, 'bytes'>;
 
 /**
  * ひな形の置き場(§0.a-0.36)。**口は 4 つだけ**にして、どこに置くか(ブラウザの中か、
@@ -103,7 +103,7 @@ export interface TemplateStorage {
  * §0.a-0.36)ので、際限なく溜まらないよう**古いものから落ちる**ようにする。
  * 最近使ったファイル(`MAX_RECENT_FILES`)と同じ考え方で、同じ 10 件にそろえてある。
  */
-export const MAX_STORED_TEMPLATES = 10;
+const MAX_STORED_TEMPLATES = 10;
 
 /** ひな形のファイルの拡張子。表の正本は `fileGateway.ts` の `FILE_KIND_SPECS` 1 か所だけ。 */
 const TEMPLATE_EXTENSION = extensionsOf('pcadt')[0];

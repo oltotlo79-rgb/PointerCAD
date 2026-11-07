@@ -89,7 +89,7 @@ import {
  */
 
 /** 書き出す立体 1 つぶん。 */
-export interface CafMeshBody {
+interface CafMeshBody {
   /** 三角形の網(`buildExportMesh` の戻り。単位は mm)。 */
   readonly mesh: ExportMesh;
   /** 立体の名前。`null` か空文字なら形式ごとの通し名(`body_1` など)になる。 */

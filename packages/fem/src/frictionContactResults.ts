@@ -5,12 +5,12 @@ import { translateBeamFrictionContact, type BeamFrictionContactInput } from './f
 
 type Solver = 'newton' | 'nsgs';
 export interface FrictionSolveOptions { readonly solver: Solver; readonly iterationLimit: number }
-export interface FrictionNodeResult {
+ interface FrictionNodeResult {
   readonly number: number;
   readonly displacementM: Vector3;
   readonly rotationRad: Vector3;
 }
-export interface FrictionContactState {
+ interface FrictionContactState {
   readonly id: string;
   readonly state: 'open' | 'closed' | 'stick' | 'slip';
   readonly frictionCoefficient: number;
@@ -22,7 +22,7 @@ export interface FrictionContactState {
   readonly slipPathLengthM: number;
   readonly dissipatedWorkJ: number;
 }
-export interface FrictionStepResult {
+ interface FrictionStepResult {
   readonly step: number;
   readonly iterations: number;
   readonly nodes: readonly FrictionNodeResult[];

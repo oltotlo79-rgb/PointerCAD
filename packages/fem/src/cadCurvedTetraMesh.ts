@@ -242,7 +242,7 @@ function refusalOf(error: unknown): { readonly code: string; readonly message: s
  * Optional tetra quality is checked only after the current CAD geometric contract passes; no implicit refinement. */
 export async function meshCadCurvedBoundary(client: Pick<FemClient, 'meshTetrahedra'>, kernel: AnalysisBoundarySource,
   readCurrent: () => CadTetraContext, options: CurvedCadTetraOptions, femOptions: FemOptions = {},
-  requestedQuality?: TetraMeshQualityLimits, requestedMeshing?: TetraMeshingControls): Promise<CurvedCadTetraOutcome> {
+  requestedQuality?: TetraMeshQualityLimits, requestedMeshing?: TetraMeshingControls, onMeshing?: () => void): Promise<CurvedCadTetraOutcome> {
   const preparation = client instanceof FemClient ? client.beginTetraMeshPreparation(femOptions) : undefined;
   const earlyCancellation = preparation?.cancellation();
   if (earlyCancellation !== undefined && earlyCancellation !== null) {
@@ -290,6 +290,8 @@ export async function meshCadCurvedBoundary(client: Pick<FemClient, 'meshTetrahe
       return { kind: 'failed', code: 'stale', message: 'CAD revision changed while obtaining its boundary' };
     }
     const prepared = prepareCurvedCadTetraMesh(boundary.boundary, current, options, checkpoint, meshing);
+    // CAD boundary preparation is complete; the next call starts actual native meshing.
+    onMeshing?.();
     const completion = await (preparation ?? client).meshTetrahedra(prepared.input, { ...femOptions, signal: owner.signal });
     const afterNative = cancelled();
     if (afterNative !== null) return afterNative;

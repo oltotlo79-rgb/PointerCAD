@@ -188,22 +188,6 @@ export interface PcadToolDefaults {
   readonly circleRadius: string;
 }
 
-/**
- * 道具の既定値の欄の名前(5 つ)。読み手はこの一覧の欄だけを読み、書き手はこの順に書く
- * (**同じ中身から同じバイト列**の約束。`pcadFile.ts` 冒頭)。
- *
- * `keyof PcadToolDefaults` を要素の型にしてあるので、**欄を足して一覧に書き忘れると
- * 読み手が黙って落とす**のではなく、この一覧を使う側(`documentJson.ts`)が全欄を
- * 読めなくなる形で気づける。上の注記のとおり、正本は model 側にある。
- */
-export const PCAD_TOOL_DEFAULT_KEYS: readonly (keyof PcadToolDefaults)[] = [
-  'extrudeDistance',
-  'holeDiameter',
-  'filletRadius',
-  'chamferDistance',
-  'circleRadius',
-];
-
 /** `document.json` の中身(封筒)。ここに書いたものだけを保存し、それ以外は保存しない。 */
 export interface PcadEnvelope {
   /** 書式の版。部品文書の `schemaVersion` と同じ値。 */

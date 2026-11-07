@@ -18,7 +18,6 @@ import {
   subShapeBodiesOf,
   subShapeRefOf,
   subShapeFrameOrigin,
-  SUB_SHAPE_SEPARATOR,
   type SelectionKind,
   type SubShapeBody,
 } from './subShapeSelection.js';
@@ -113,7 +112,8 @@ describe('部分形状の要素 id の規約(FR-106、§0.a-0.8)', () => {
     expect(subShapeElementId('extrude-1', 'face', 12)).toBe('extrude-1#face:12');
     expect(subShapeElementId('fillet-1', 'edge', 5)).toBe('fillet-1#edge:5');
     expect(subShapeElementId('hole-2', 'vertex', 3)).toBe('hole-2#vertex:3');
-    expect(SUB_SHAPE_SEPARATOR).toBe('#');
+    // 立体の id と種類・番号を分けるのは 1 つの「#」。
+    expect(subShapeElementId('a', 'face', 0).split('#')).toEqual(['a', 'face:0']);
   });
 
   it('作った id をそのまま読み戻せる', () => {

@@ -207,7 +207,7 @@ describe('GR-19b: measurement panel wiring', () => {
   });
 
   /**
-   * GR-19d (w15a's e2e finding): the row's properties list must carry a class of its own, on top of
+   * GR-19d (screen reproduction): the row's properties list must carry a class of its own, on top of
    * the shared `.pcad-properties`, so `appShell.css` can size its heading column without touching the
    * other panels that reuse `.pcad-properties` (`mathGeometryPanelListLayout.test.ts` checks the CSS
    * rule itself). Every heading text must still be in the markup as its own `<dt>` — the bug was a
@@ -224,7 +224,7 @@ describe('GR-19b: measurement panel wiring', () => {
     }
   });
 
-  /** GR-19d (w15a's e2e finding): the quantity-to-add field needs its own class so appShell.css can give it the same left/right margin as its siblings, without changing `.pcad-parameters__fields`, which `ParameterPanel` also uses. */
+  /** GR-19d (screen reproduction): the quantity-to-add field needs its own class so appShell.css can give it the same left/right margin as its siblings, without changing `.pcad-parameters__fields`, which `ParameterPanel` also uses. */
   it('GR-19d: gives the quantity-to-add field its own class for the panel\'s left/right margin', () => {
     install();
     const markup = render();

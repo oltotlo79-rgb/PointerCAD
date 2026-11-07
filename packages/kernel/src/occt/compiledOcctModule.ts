@@ -9,7 +9,7 @@ export interface VerifiedOcctResponse {
   readonly byteLength: number;
 }
 
-export interface OcctWasmExpectation {
+interface OcctWasmExpectation {
   readonly url: string;
   readonly sha256: string;
   readonly byteLength: number;

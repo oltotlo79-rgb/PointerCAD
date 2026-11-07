@@ -12,7 +12,6 @@ import { createMathBackend, executeMathWorkRequest, type MathExecutionBackend } 
 
 import {
   mathGeometryParameterDraft,
-  type MathGeometryParameterDraftInput,
   type MathGeometryValueUnit,
 } from './mathGeometryParameterCreation.js';
 import { DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryCoefficientId } from './mathGeometryIdentity.js';
@@ -21,6 +20,8 @@ import { createEmptyPartDocument } from '../part/createPartDocument.js';
 import { evaluateDocumentMath, type DocumentMathContext } from '../part/evaluateDocumentMath.js';
 import type { PartDocument } from '../part/types.js';
 import type { Parameter, ParameterUnit } from '../parameters/types.js';
+
+type MathGeometryParameterDraftInput = Parameters<typeof mathGeometryParameterDraft>[2];
 
 const DOCUMENT_ID = createEmptyPartDocument().id;
 const NOT_FOUND_MESSAGE = '指定した図形の測定値が見つかりません。';

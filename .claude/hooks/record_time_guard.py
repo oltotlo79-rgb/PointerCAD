@@ -26,10 +26,14 @@ ALLOWANCE = timedelta(minutes=0)
 
 def kind(path: Path, root: Path = ROOT) -> str | None:
     relative = path.resolve().relative_to(root).as_posix()
-    if relative == "docs/報告記録.md":
+    if relative in ("docs/報告記録.md", "docs/報告記録2.md"):
         return "report"
     if re.fullmatch(r"scratchpad/claude/agents/[^/]+/progress\.md", relative):
         return "progress"
+    # rules/06 §10.461 (2): 統括が orchestrator-message.md に実時刻より先の時刻を書き、担当の progress.md に写って
+    # フックが担当を止めた。統括の連絡(orchestrator-message*.md)も年月日付きの時刻を全行で検査する。
+    if re.fullmatch(r"scratchpad/claude/agents/[^/]+/orchestrator-message[^/]*\.md", relative):
+        return "message"
     if relative in (
         "scratchpad/claude/agents/registry.md",
         "scratchpad/claude/plans/orchestrator-queue.md",
@@ -49,8 +53,9 @@ def candidates(root: Path = ROOT) -> list[Path]:
     # 自己試験が一時の根で候補を探せるようにし、本物のscratchpad/claude/agents/へ
     # 使い捨ての先の時刻ファイルを置いて他の担当のPostToolUse走査を誤って止める
     # ことを避ける(record_time_guard.selftest.pyのtest_post_block参照)。
-    paths = [root / "docs/報告記録.md", root / "rules/06-過去の失敗と対策.md"]
+    paths = [root / "docs/報告記録.md", root / "docs/報告記録2.md", root / "rules/06-過去の失敗と対策.md"]
     paths.extend((root / "scratchpad/claude/agents").glob("*/progress.md"))
+    paths.extend((root / "scratchpad/claude/agents").glob("*/orchestrator-message*.md"))  # rules/06 §10.461 (2)
     paths.extend((root / "scratchpad/claude/instructions").glob("*.md"))
     paths.extend((root / "scratchpad/claude/deliveries").glob("*/MANIFEST.txt"))
     paths.extend(

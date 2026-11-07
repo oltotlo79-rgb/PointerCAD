@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { BeamImpactSample } from '@pointercad/fem';
-import { IMPACT_LINEARIZATION_WARNING_ROTATION_RAD, impactRotationBeyondLinearization, maximumImpactRotationRad }
+import { impactRotationBeyondLinearization, maximumImpactRotationRad }
   from './beamImpactDraft.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const IMPACT_LINEARIZATION_WARNING_ROTATION_RAD = 0.1;
 
 /*
  * The linearisation warning of the impact result (task175, successor of task174). 0.1 rad is a chosen warning threshold

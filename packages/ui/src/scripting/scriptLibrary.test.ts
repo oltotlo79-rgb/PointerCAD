@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createScriptFile } from '@pointercad/model/scripting';
-import { readScriptLibrary, writeScriptLibrary, type ScriptLibraryStorage } from './scriptLibrary.js';
+import { readScriptLibrary, writeScriptLibrary } from './scriptLibrary.js';
 import { fileFromDraft } from './scriptDraft.js';
+
+type ScriptLibraryStorage = NonNullable<Parameters<typeof readScriptLibrary>[0]>;
 
 async function fixture() {
   const result = await createScriptFile({ scriptId: 'tool', name: '自動作図', icon: 'gear', source: "console.log('hello');", modules: [], seed: 42, timeMs: 1800000000000 });

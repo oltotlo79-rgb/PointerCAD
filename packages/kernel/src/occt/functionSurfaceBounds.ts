@@ -7,12 +7,12 @@ import { createAllocations, type Allocations } from './allocations.js';
 import { borrowHandle } from './borrowHandle.js';
 import { isValidShape } from './solidMesh.js';
 
-export interface CubicKnotDirection {
+interface CubicKnotDirection {
   readonly knots: readonly number[];
   readonly multiplicities: readonly number[];
 }
 
-export interface CubicSurfaceCoefficients {
+interface CubicSurfaceCoefficients {
   readonly u: CubicKnotDirection;
   readonly v: CubicKnotDirection;
   /** Row-major in U, as in the native B-spline pole array. */

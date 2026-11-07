@@ -117,6 +117,22 @@ async function grabPoint(page: Page, name: string, world: readonly [number, numb
   await expect(row).toHaveClass(/pcad-tree__row--hovered/u);
   return point;
 }
+/**
+ * Diagnostic only (CI G09, wheel rotation 0 after the refused drag): the viewport's existing input observation
+ * (ViewportCanvas readAssemblyOwner: the last two pointerdowns with gate, deferral and readiness) and the visible
+ * refusal text, attached when the 12 degree drag did not turn the wheel. It reads only; the failure is rethrown.
+ */
+async function attachDragInputObservation(page: Page, info: TestInfo): Promise<void> {
+  const owner = await page.evaluate(() => {
+    const read: unknown = Reflect.get(window, 'pcadViewportAssemblyOwner');
+    const value: unknown = typeof read === 'function' ? read() : null;
+    const field = (key: string): unknown => value !== null && typeof value === 'object' ? Reflect.get(value, key) : undefined;
+    return { mateInputs: field('mateInputs') ?? null, assemblyReadyRefusal: field('assemblyReadyRefusal') ?? null,
+      assemblyRefreshOutcome: field('assemblyRefreshOutcome') ?? null };
+  });
+  const repairs = await page.getByRole('region', { name: REPAIRS, exact: true }).allInnerTexts();
+  await info.attach('coupled-drag-12-input', { body: JSON.stringify({ owner, repairs }, null, 2), contentType: 'application/json' });
+}
 async function dragTo(page: Page, from: readonly [number, number], to: readonly [number, number, number]): Promise<void> {
   const end = await homeViewPagePoint(page, to);
   await page.mouse.move(...from);
@@ -156,8 +172,13 @@ export async function assemblyCoupledDragFlow(page: Page, info: TestInfo, app: E
   // 2. Pull it to 12 degrees (the leaf turns -24, inside the limit): the wheel turns and the coupled arm follows, as
   //    motion only.
   await dragTo(page, await grabPoint(page, 'handle', [HANDLE[0], HANDLE[1], HANDLE[2]]), onHandlePlane(onCircle(12)));
-  await expect.poll(async () => Math.abs(zDegrees(byName(await readAssemblyStats(page)).get('wheel')?.displayed?.rotation)))
-    .toBeGreaterThan(6);
+  try {
+    await expect.poll(async () => Math.abs(zDegrees(byName(await readAssemblyStats(page)).get('wheel')?.displayed?.rotation)))
+      .toBeGreaterThan(6);
+  } catch (error) {
+    await attachDragInputObservation(page, info).catch(() => undefined);
+    throw error;
+  }
   const shown = byName(await readAssemblyStats(page));
   const t = zDegrees(shown.get('wheel')?.displayed?.rotation);
   expect(Math.abs(t - 12)).toBeLessThan(1);

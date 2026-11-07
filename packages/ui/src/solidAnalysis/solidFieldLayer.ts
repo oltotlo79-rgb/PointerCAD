@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { solidFieldFraction, type SolidFieldMesh } from './solidFieldView.js';
+import { solidFieldFraction, solidFieldOverlayCounts, type SolidFieldMesh } from './solidFieldView.js';
 
 /** Legend colour ramp (blue low -> red high), shared by the viewport layer and the panel legend. */
 export const SOLID_FIELD_LOW_COLOR = 0x2b5cd8;
@@ -30,6 +30,8 @@ export interface SolidFieldLayer {
   set(field: SolidFieldMesh | null): void;
   /** Number of drawn triangles (0 when nothing is shown). */
   triangleCount(): number;
+  /** Drawn triangles, their distinct owning elements and distinct analysed nodes (null without node indices). */
+  overlayCounts(): ReturnType<typeof solidFieldOverlayCounts>;
   dispose(): void;
 }
 
@@ -38,8 +40,10 @@ export function createSolidFieldLayer(): SolidFieldLayer {
   group.name = 'solid-analysis-field';
   const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, ...SOLID_FIELD_POLYGON_OFFSET });
   let mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null = null;
+  let counts: ReturnType<typeof solidFieldOverlayCounts> | null = null;
   let disposed = false;
   const clear = (): void => {
+    counts = null;
     if (mesh === null) return;
     group.remove(mesh);
     mesh.geometry.dispose();
@@ -65,8 +69,10 @@ export function createSolidFieldLayer(): SolidFieldLayer {
       mesh = new THREE.Mesh(geometry, material);
       mesh.name = `solid-analysis-field:${field.quantity}`;
       group.add(mesh);
+      counts = solidFieldOverlayCounts(field);
     },
     triangleCount: () => mesh === null ? 0 : mesh.geometry.getAttribute('position').count / 3,
+    overlayCounts: () => counts ?? { triangles: 0, elements: 0, nodes: 0 },
     dispose() {
       if (disposed) return;
       disposed = true;

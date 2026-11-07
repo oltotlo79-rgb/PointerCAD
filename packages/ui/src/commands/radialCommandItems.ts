@@ -1,7 +1,6 @@
-import { commandDefinition, type CommandDocumentKind, type CommandId } from './commandDefinitions.js';
+import { type CommandDocumentKind, type CommandId } from './commandDefinitions.js';
 import { toolbarCommand } from './toolbarCommandCatalog.js';
 import { t } from '../i18n/t.js';
-import type { RadialMenuSlot } from './radialMenuGeometry.js';
 
 type EightCommands = readonly [CommandId, CommandId, CommandId, CommandId, CommandId, CommandId, CommandId, CommandId];
 
@@ -44,10 +43,4 @@ export function radialCommandDescription(id: CommandId): string {
   if (id === 'history.undo') return t('radial.undoHint');
   if (id === 'drawing.cancelTool') return t('radial.cancelDrawingHint');
   return t('radial.unavailable');
-}
-
-export function radialCommandAt(kind: CommandDocumentKind, slot: RadialMenuSlot, connectPoints = false,
-  faceFromPoints = false, pointAtReference = false): CommandId | null {
-  const id = radialCommandIds(kind, connectPoints, faceFromPoints, pointAtReference)[slot], definition = commandDefinition(id);
-  return definition?.documentKinds.includes(kind) === true ? id : null;
 }

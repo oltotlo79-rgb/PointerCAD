@@ -23,7 +23,7 @@ import { activePartDocument } from '../store/documentKind.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { parameterUsageSites } from './parameterSearch.js';
 
-export type ParameterCsvInputRecord = ParameterCsvRecord;
+type ParameterCsvInputRecord = ParameterCsvRecord;
 
 export interface ParameterCsvIssue {
   readonly recordNumber: number;

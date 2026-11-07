@@ -19,7 +19,6 @@ import type {
 import { subShapeElementId } from '../solid/subShapeSelection.js';
 import {
   mathGeometrySelection,
-  MATH_GEOMETRY_SELECTION_LIMIT,
   type MathGeometryCandidateReason,
 } from './mathGeometrySelection.js';
 
@@ -490,7 +489,9 @@ describe('3 点を選んだときの候補(GR-22、Q8=G1)', () => {
   });
 
   it('MATH_GEOMETRY_SELECTION_LIMIT は 3 のまま(4 つ以上は選びすぎ)', () => {
-    expect(MATH_GEOMETRY_SELECTION_LIMIT).toBe(3);
+    // 3 つまでは選びすぎにしない(4 つは「4 つ以上選ぶと選びすぎ」が確かめる)。
+    const sketch = emptySketch({ points: [point('p1'), point('p2'), point('p3')] });
+    expect(mathGeometrySelection(['p1', 'p2', 'p3'], SKETCH_ID, sketch, []).reason).not.toBe('tooMany');
   });
 });
 

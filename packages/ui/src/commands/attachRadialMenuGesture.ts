@@ -2,7 +2,7 @@ import { beginRadialMenuGesture, finishRadialMenuGesture, moveRadialMenuGesture,
 import { placeRadialMenu, type RadialMenuSlot, type ScreenBounds, type ScreenPoint } from './radialMenuGeometry.js';
 import { exceedsRightDragThreshold, isPlainRightPointer } from '../viewport/rightPointerGesture.js';
 
-export interface RadialMenuAttachmentOptions {
+interface RadialMenuAttachmentOptions {
   /** Reference identity of the current document; an edit or switch cancels a held gesture. */
   readonly owner: () => object;
   readonly blocked: () => boolean;

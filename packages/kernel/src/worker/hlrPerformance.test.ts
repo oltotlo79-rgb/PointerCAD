@@ -1,9 +1,11 @@
 import { expectWithinBudget } from '@pointercad/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { CurveSpec, HiddenLineMode, HiddenLineViewRequest, SolidStepRequest } from '../types.js';
+import type { CurveSpec, HiddenLineMode, SolidStepRequest, HiddenLineRequest } from '../types.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import { createKernelApi, type ManagedKernelApi } from './kernelApi.js';
+
+type HiddenLineViewRequest = HiddenLineRequest['views'][number];
 
 const square: readonly CurveSpec[] = [
   { kind: 'segment', from: [0, 0, 0], to: [20, 0, 0] },

@@ -188,3 +188,20 @@ describe('CAD shell analysis geometry preparation', () => {
     expect(await requestCadShellSurfaceMesh(source, context, supplied)).toMatchObject({ kind: 'failed', code: 'poor-quality' });
   });
 });
+
+
+it('forwards captured cylinder quality limits through the shell surface public request', async () => {
+  const initial = context(), current: CadTetraContext = { ...initial,
+    body: { ...initial.body, faces: [{ ...initial.body.faces[0], surfaceKind: 'cylinder', radius: 17 }] } };
+  type Request = Parameters<AnalysisBoundarySource['buildAnalysisSurfaceMesh']>[0];
+  const captured: Request[] = [];
+  const source = { buildAnalysisSurfaceMesh: (request: Request) => {
+    captured.push(request);
+    return Promise.resolve({ kind: 'failed' as const, bodyKey: request.bodyKey, code: 'probe-stop', message: 'observed', faceIndex: null });
+  } };
+  const outcome = await requestCadShellSurfaceMesh(source, () => current, { ...options, nativeQuality: 'cylindrical-rectangle' });
+  expect(outcome).toMatchObject({ kind: 'failed', code: 'probe-stop' });
+  expect(captured[0].shellQuality).toEqual({ kind: 'cylindrical-rectangle', maximumNodes: options.maximumNodes,
+    maximumTriangles: options.maximumTriangles, minimumTriangleAreaMm2: options.minimumTriangleAreaMm2,
+    minimumAngleDeg: options.minimumAngleDeg, maximumAspectRatio: options.maximumAspectRatio });
+});

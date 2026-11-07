@@ -1,4 +1,4 @@
-import { bucklingInputSha256, bucklingResultMatches, type FemWorkerPort } from '@pointercad/fem';
+import { bucklingInputSha256, bucklingResultMatches, type FemWorkerPort, translateBeamBuckling, type BeamBucklingResult, type BeamBucklingInput } from '@pointercad/fem';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
@@ -6,7 +6,23 @@ import type { AssemblyMeshOwnership } from '../viewport/assemblyMeshAdmission.js
 import { attachBeamAnalysis, type BeamAttachment } from './attachBeamAnalysis.js';
 import { beamUiFixture, requireBeamSession } from './beam.testSupport.js';
 import { captureBeamSource } from './beamSource.js';
-import { bucklingResultFixture } from './beamBuckling.testSupport.js';
+
+/** UI lifecycle fixture only; public client numerical acceptance is tested in FEM. */
+function bucklingResultFixture(input: BeamBucklingInput): BeamBucklingResult {
+  const { plan } = translateBeamBuckling(input);
+  return {
+    kind: 'oofem-beam-buckling-3d', method: 'oofem-axial-geometric-stiffness-flexural-eigh/1',
+    scope: 'linear-elastic-axial-prestress-flexural-buckling', analysisId: input.geometry.id,
+    analysisRevision: input.geometry.revision, source: input.geometry.source, inputSha256: 'b'.repeat(64),
+    normalizationLengthM: plan.normalizationLengthM, meshNodes: plan.nodes.length, meshElements: plan.members.length,
+    freeDofs: plan.nodes.reduce((sum, node) => sum + node.restrained.filter(value => !value).length, 0),
+    referenceEquilibriumResidual: 0, maximumStiffnessOrthogonalityError: 0, structuralCertification: false,
+    modes: Array.from({ length: plan.modeCount }, (_, index) => ({ number: index + 1, loadFactor: 10 * (index + 1),
+      normalizedResidual: 0, nodes: plan.nodes.map(node => ({ solverNode: node.number,
+        nodeId: node.number <= plan.originalNodeCount ? node.id : null, positionM: node.positionM,
+        translation: [node.restrained[0] ? 0 : 1, 0, 0] as const, rotation: [0, 0, 0] as const })) })),
+  };
+}
 
 class Port implements FemWorkerPort {
   onmessage: FemWorkerPort['onmessage'] = null;

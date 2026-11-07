@@ -54,7 +54,7 @@ import { continuingParameterSession, parameterCheckpointInput, parameterCheckpoi
  * 手続きが外の世界へ触れる口(検査では偽物を差し込む)。
  *
  * `confirmDiscard` を約束(Promise)で受けるのは、画面の中の確認へ答えるまで待つため。
- * 既定は画面の中の日本語の 3 択(`confirmInApp`、w91a)。
+ * 既定は画面の中の日本語の 3 択(`confirmInApp`、NFR-UX-3)。
  */
 export interface PartFileDeps {
   /** headless検査用の明示注入口。製品の既定はストアが持つ同一配信元Worker。 */
@@ -165,7 +165,7 @@ export function windowTitle(fileName: string | null, unsaved: boolean): string {
 // ---------------------------------------------------------------------------
 
 /**
- * 画面の中の確認(AppShell の `DiscardConfirmDialog`)で聞く(w91a)。ブラウザー標準の `confirm` は
+ * 画面の中の確認(AppShell の `DiscardConfirmDialog`)で聞く(NFR-UX-3)。ブラウザー標準の `confirm` は
  * デスクトップ版で英語の OK/Cancel になるので使わない(lint が拒否する)。答えは窓を閉じる前の
  * 確認と同じ 3 つで、「保存して続ける」は保存できたときだけ進める(取消・失敗なら変更を残して止まる)。
  */

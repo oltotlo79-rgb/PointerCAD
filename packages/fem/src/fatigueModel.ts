@@ -13,12 +13,14 @@ import { isRecord as record, isFiniteNumber as finite } from './valueGuards.js';
 export const FATIGUE_INPUT_SCHEMA = 'pointercad-fatigue/1';
 export const FATIGUE_RESULT_SCHEMA = 'pointercad-fatigue-result/1';
 /** 1e4 MPa is far above any structural steel strength, and with the curve bounds below every damage term stays
- * finite: ((2e4 / 1) ** 20) * 1e9 repeats * 1e5 cycles / 1 < 1e110, far below Number.MAX_VALUE. */
+ * finite: ((2e4 / 1) ** 32) * 1e9 repeats * 1e5 cycles / 1 < 1e152, far below Number.MAX_VALUE. */
 export const MAX_FATIGUE_STRESS_MPA = 1e4;
 export const MAX_FATIGUE_HISTORY_POINTS = 100_000;
 export const MAX_FATIGUE_HISTORIES = 64;
 export const MAX_FATIGUE_REPEATS = 1e9;
-export const FATIGUE_SLOPE_LIMITS = { minimum: 1, maximum: 20 } as const;
+/** An input bound, not a material constant: it admits S-N exponents 1/A up to about 31 computed from printed
+ * constants (e.g. reversed torsion of quenched and tempered S45C) and keeps the damage bound above finite. */
+export const FATIGUE_SLOPE_LIMITS = { minimum: 1, maximum: 32 } as const;
 export const FATIGUE_REFERENCE_STRESS_LIMITS_MPA = { minimum: 1, maximum: MAX_FATIGUE_STRESS_MPA } as const;
 export const FATIGUE_REFERENCE_CYCLE_LIMITS = { minimum: 1, maximum: 1e12 } as const;
 /** fully-reversed-only: a counted cycle is fully reversed when |mean| <= this x the largest |stress| of its history. */

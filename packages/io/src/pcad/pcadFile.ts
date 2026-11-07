@@ -466,6 +466,23 @@ export function decodeImportedMeshBytes(bytes: Uint8Array): ImportedMeshBytes | 
   return { positions, normals, indices };
 }
 
+/** Archive owns this entire output buffer; public entry parsers retain borrowed semantics. */
+function decodeOwnedArchiveMesh(bytes: Uint8Array): ImportedMeshBytes | null {
+  const header = inspectImportedMeshBytes(bytes);
+  if (header === null || !isMeshAllocationWithinLimit(header.vertexCount, header.triangleCount)) return null;
+  const little = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+  if (!little || !(bytes.buffer instanceof ArrayBuffer) || bytes.byteOffset !== 0
+    || bytes.byteLength !== bytes.buffer.byteLength) return decodeImportedMeshBytes(bytes);
+  const count = header.vertexCount * 3, indexCount = header.triangleCount * 3;
+  const positions = new Float32Array(bytes.buffer, MESH_HEADER_BYTES, count);
+  const normals = new Float32Array(bytes.buffer, MESH_HEADER_BYTES + count * 4, count);
+  const indices = new Uint32Array(bytes.buffer, MESH_HEADER_BYTES + count * 8, indexCount);
+  for (const value of positions) if (!Number.isFinite(value)) return null;
+  for (const value of normals) if (!Number.isFinite(value)) return null;
+  for (const value of indices) if (value >= header.vertexCount) return null;
+  return { positions, normals, indices };
+}
+
 interface ImportedMeshHeader {
   readonly view: DataView;
   readonly vertexCount: number;
@@ -690,6 +707,7 @@ function isPcadaArchiveEntry(name: string): boolean {
 function collectAttachments(
   entries: ReadonlyMap<string, Uint8Array>,
   meshAllocationLimit = IO_LIMITS.meshAllocationBytes,
+  ownedArchive = false,
 ): {
   readonly attachments: PcadAttachments;
   readonly brokenMeshEntry: string | null;
@@ -725,7 +743,7 @@ function collectAttachments(
         tooLargeMeshEntry ??= name;
         break;
       }
-      const mesh = decodeImportedMeshBytes(bytes);
+      const mesh = ownedArchive ? decodeOwnedArchiveMesh(bytes) : decodeImportedMeshBytes(bytes);
       if (mesh === null) {
         brokenMeshEntry ??= name;
         break;
@@ -793,7 +811,7 @@ export function readPcadFile(bytes: Uint8Array, options: ReadPcadFileOptions = {
   if (!archive.ok) {
     return fail('notZip', archiveFailureMessage(archive.error));
   }
-  return readPcadEntries(archive.entries);
+  return readPcadEntriesInternal(archive.entries, true);
 }
 
 /**
@@ -815,6 +833,10 @@ function archiveFailureMessage(error: ArchiveReadError): string {
  * limits with readArchive before calling. The envelope kind is preserved.
  */
 export function readPcadEntries(entries: ReadonlyMap<string, Uint8Array>): ReadPcadFileResult {
+  return readPcadEntriesInternal(entries, false);
+}
+
+function readPcadEntriesInternal(entries: ReadonlyMap<string, Uint8Array>, ownedArchive: boolean): ReadPcadFileResult {
   const documentEntry = findEntry(entries, PCAD_DOCUMENT_ENTRY);
   if (documentEntry === null) {
     return fail('missingDocument', MISSING_DOCUMENT_MESSAGE);
@@ -828,7 +850,7 @@ export function readPcadEntries(entries: ReadonlyMap<string, Uint8Array>): ReadP
     // 中身の理由(版が古い・種別が違う・欄が壊れている等)はそのまま通す。
     return { ok: false, error: parsed.error };
   }
-  const collected = collectAttachments(entries);
+  const collected = collectAttachments(entries, IO_LIMITS.meshAllocationBytes, ownedArchive);
   if (collected.tooLargeMeshEntry !== null) {
     return fail('invalidField', ARCHIVE_TOO_LARGE_MESSAGE);
   }

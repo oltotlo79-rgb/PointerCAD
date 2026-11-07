@@ -243,3 +243,73 @@ describe('malformed input (typed refusals, never a thrown error)', () => {
     expect(checked.ok ? ['accepted', ''] : [checked.code, checked.path]).toEqual([code, path]);
   });
 });
+
+/* One published SS400 series (the only real-material numbers in this file; everything above is manufactured):
+ * Saeki, Sugisawa, Yamaguchi, Mochizuki, Wada, J. Struct. Constr. Eng. (Trans. AIJ) No. 472, pp. 139-147 (1995),
+ * eq. (9) on p. 144: SS400 (comparison steel), axial strain control, R = -1, strain rate 0.1 %/s,
+ *   eps_t = 35 Nf^-0.47 + 0.74 Nf^-0.11
+ * with eps_t the TOTAL STRAIN RANGE in PERCENT and Nf the CYCLES to failure (load down to 75 % of its maximum, p. 141).
+ * Converted here, not printed: amplitude eps_a = eps_t / 200, cycles N -> reversals 2N, so
+ *   eps_f' = 0.175 * 2^0.47, c = -0.47 and sigma_f' / E = 0.0037 * 2^0.11, b = -0.11.
+ * The paper prints neither E nor sigma_f' (only their ratio) and no test temperature. With zero mean stress only the
+ * ratio enters the life, so E below is a scale factor chosen far from any steel modulus (1e4 and 1e6 MPa), never a
+ * material value; nothing here is a verified or guaranteed property. The calibration interval is the life of the
+ * printed relation at the printed tested ranges 2.0 % and 0.3 % (Table 2), formula-derived, not test lives.
+ * Expected lives: owner oracle48.py, which solves the printed relation in cycles directly (floats and 50-digit
+ * Decimal, max relative difference 1.8e-15), independent of this solver. */
+describe('published SS400 strain-life series (Saeki et al. 1995, eq. (9)), converted to the solver convention', () => {
+  const series = { kind: 'user-supplied',
+    reference: 'Saeki, Sugisawa, Yamaguchi, Mochizuki, Wada, J. Struct. Constr. Eng. AIJ No.472 (1995) 139-147, eq.(9)',
+    condition: 'SS400 (delivery form and heat treatment not stated), axial total-strain control, R=-1, 0.1 %/s, '
+      + 'smooth d=10 mm; test temperature not stated; E and sigma_f\' not printed (ratio only)' } as const;
+  const ratio = 0.0037 * 2 ** 0.11, ductility = 0.175 * 2 ** 0.47;
+  const calibration = { minimumCycles: 674.455474912976, maximumCycles: 217447.85693462685 };
+  const ss400 = (scaleMpa: number, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: 'ss400-saeki-1995-eq9', stressUnit: 'MPa', elasticModulusMpa: scaleMpa,
+    fatigueStrengthCoefficientMpa: scaleMpa * ratio, fatigueStrengthExponent: -0.11,
+    fatigueDuctilityCoefficient: ductility, fatigueDuctilityExponent: -0.47, calibration, source: series, ...overrides });
+  const at = (amplitude: number, mat: Record<string, unknown> = ss400(1e6)): Record<string, unknown> =>
+    input(loading(amplitude, 0, { source: series }), mat);
+  /** [printed tested range %, amplitude, cycles from oracle48.py] */
+  const known: [number, number, number][] = [
+    [1.5, 0.0075, 1390.5233741512593], [1.0, 0.005, 4076.511382674379], [0.5, 0.0025, 32749.869458548637]];
+
+  it.each(known)('range %s %% (amplitude %s) gives %s cycles, as the printed relation solved in cycles', (_range, amplitude, cycles) => {
+    const result = life(at(amplitude));
+    near(result.cyclesToFailure, cycles, 1e-6);
+    expect(result.reversalsToFailure).toBe(2 * result.cyclesToFailure);
+    // The two fitted parts are the printed terms halved for the amplitude, evaluated at Nf in cycles.
+    near(result.curvePlasticStrainAmplitude, 35 / 200 * cycles ** -0.47, 1e-6);
+    near(result.curveElasticStrainAmplitude, 0.74 / 200 * cycles ** -0.11, 1e-6);
+  });
+  it('does not depend on the unprinted E at zero mean stress (two non-material scales give the same life)', () => {
+    const low = life(at(0.005, ss400(1e4))), high = life(at(0.005, ss400(1e6)));
+    near(low.cyclesToFailure, high.cyclesToFailure, 1e-10);
+    near(low.cyclesToFailure, 4076.511382674379, 1e-6);
+  });
+  it('rejects the cycles/reversals mix-up: the printed per-cycle coefficients used as per-reversal halve every life', () => {
+    const unconverted = ss400(1e6, { fatigueStrengthCoefficientMpa: 1e6 * 0.0037, fatigueDuctilityCoefficient: 0.175 });
+    for (const [, amplitude, cycles] of known) {
+      const wrong = life(at(amplitude, unconverted)).cyclesToFailure;
+      near(wrong / cycles, 0.5, 1e-6);
+      expect(Math.abs(life(at(amplitude)).cyclesToFailure - wrong)).toBeGreaterThan(0.49 * cycles);
+    }
+  });
+  it('rejects the range/amplitude mix-up: a 0.5 % range entered as amplitude 0.005 is the life of a 1.0 % range', () => {
+    const asRange = life(at(0.005)).cyclesToFailure;
+    near(asRange, 4076.511382674379, 1e-6);
+    expect(asRange / 32749.869458548637).toBeLessThan(0.13);
+  });
+  it('refuses the printed percent-of-range coefficient and a percent amplitude instead of reading them as strain', () => {
+    expect(refusal(at(0.005, ss400(1e6, { fatigueDuctilityCoefficient: 35 }))))
+      .toEqual(['strain-life-bound', 'material.fatigueDuctilityCoefficient']);
+    expect(refusal(at(0.5))).toEqual(['strain-life-shorter-than-calibration', 'loading.strainAmplitude']);
+  });
+  it('refuses lives outside the printed tested ranges (no extrapolation) and keeps the citation', () => {
+    expect(refusal(at(0.015))).toEqual(['strain-life-shorter-than-calibration', 'loading.strainAmplitude']);
+    expect(refusal(at(0.001))).toEqual(['strain-life-longer-than-calibration', 'loading.strainAmplitude']);
+    const result = life(at(0.0025));
+    expect([result.materialId, result.codeCompliance, result.structuralCertification])
+      .toEqual(['ss400-saeki-1995-eq9', false, false]);
+  });
+});

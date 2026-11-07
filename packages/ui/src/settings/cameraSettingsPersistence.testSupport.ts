@@ -9,7 +9,7 @@ import type { CameraBinding, CameraControlPreset, CameraControlSettings } from '
 import type { SettingsStorage } from './settings.js';
 
 export const SAVED_AT = '2026-10-26T00:00:00.000Z';
-export const SETTINGS_KEY = 'pointercad.settings';
+const SETTINGS_KEY = 'pointercad.settings';
 
 export function settingsStorage(initial: string | null = null) {
   const records = new Map<string, string>(initial === null ? [] : [[SETTINGS_KEY, initial]]);

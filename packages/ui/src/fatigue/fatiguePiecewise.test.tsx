@@ -6,9 +6,14 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FatiguePanel } from './FatiguePanel.js';
-import { BASE_EDITS, GOODMAN_OPTION_SCOPE_FRAGMENT, relative, SINGLE_SLOPE_SCOPE_FRAGMENT } from './fatigue.testSupport.js';
+import { BASE_EDITS, relative } from './fatigue.testSupport.js';
 import { currentFatigueResultWithPiecewise, fatigueEntryIsSavedWithPiecewise, type FatigueAnyEdit } from './fatiguePiecewiseSession.js';
 import { savedFatigueEntry, type FatigueSession } from './fatigueSession.js';
+
+/** Exact test-only forbidden scope fragments; independent of translated full messages. */
+const SINGLE_SLOPE_SCOPE_FRAGMENT = '傾きが1つ';
+
+const GOODMAN_OPTION_SCOPE_FRAGMENT = 'Goodman 補正を選べます';
 
 // renderToStaticMarkup reads zustand's server snapshot, which is the store's INITIAL state (zustand 5 useStore passes
 // selector(api.getInitialState()) as getServerSnapshot). Without this, the panel's own saved entry and parameters

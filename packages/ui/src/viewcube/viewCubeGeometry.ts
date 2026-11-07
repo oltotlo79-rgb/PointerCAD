@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { REGION_THRESHOLD, type ViewCubeRegion } from './viewCubeMath.js';
 
 /** A small, flat bevel: 44 triangles for the complete cube, without lights or shadows. */
-export const VIEW_CUBE_BEVEL = 0.12;
+const VIEW_CUBE_BEVEL = 0.12;
 export const ATLAS_COLUMNS = 4;
 export const ATLAS_ROWS = 2;
 

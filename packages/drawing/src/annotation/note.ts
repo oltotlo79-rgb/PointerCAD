@@ -4,7 +4,7 @@ import { blackDot, createArrowTriangle, type ArrowTriangle } from '../dimension/
 import type { DimensionLineSegment } from '../dimension/geometry.js';
 import type { SymbolText } from './symbols.js';
 
-export interface NoteInput {
+interface NoteInput {
   readonly text: string;
   /** 先頭行の墨の左下。複数行はこの位置から下へ並べる。 */
   readonly position: Point2;

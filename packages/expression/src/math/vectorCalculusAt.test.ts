@@ -7,7 +7,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'component(gradientat(x^2*y,[x,y],[2,3]),1)', value: 12 },

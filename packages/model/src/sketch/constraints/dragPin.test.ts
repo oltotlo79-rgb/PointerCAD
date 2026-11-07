@@ -7,10 +7,11 @@ import type { CoordinateInput, ResolvedSketch, SketchDocument, SketchFeature } f
 import { distanceVec3, type Vec3 } from '../vec3.js';
 import {
   resolveConstrainedSketch,
-  type ConstrainedSketch,
-  type ConstrainedSolveOptions,
+  type ConstrainedSketch, type createConstrainedSketchJob,
 } from './solveSketch.js';
 import type { ConstraintTarget, SketchConstraint } from './types.js';
+
+type ConstrainedSolveOptions = NonNullable<Parameters<typeof createConstrainedSketchJob>[2]>;
 
 /**
  * 引っぱりの口(FR-313「要素を動かすと条件を保ったまま追従」、

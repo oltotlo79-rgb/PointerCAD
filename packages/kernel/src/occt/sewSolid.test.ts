@@ -4,16 +4,17 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { CurveSpec, SewStepSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makePlanarFace } from './makePlanarFace.js';
-import { sewSolid } from './sewSolid.js';
+import { sewSolid, type sewSolidFaces } from './sewSolid.js';
 import { buildSolidBodyMesh, hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import type * as SewSolidSupportModule from './sewSolidFaces.testSupport.js';
 import type * as SewSolidModule from './sewSolid.js';
 import type * as VitestModule from 'vitest';
 import type * as ProcessModule from 'node:process';
-import type { SewFacesResult } from './sewSolid.js';
 import type { CachedSolid } from '../worker/recomputeSolids.js';
 import type { SolidStepRequest } from '../types.js';
 import type { SewFacesStepSpec } from '../types.js';
+
+type SewFacesResult = ReturnType<typeof sewSolidFaces>;
 
 /** 4 頂点を順に結んだ閉ループを作る。最後の点から最初の点へも 1 本引く。 */
 function loop(points: readonly Vec3Tuple[]): readonly CurveSpec[] {

@@ -38,7 +38,6 @@ import {
   commitShapeEdit,
   shapeEditReadiness,
   shapeEditToolOf,
-  type ShapeEditToolId,
 } from './shapeEditCommands.js';
 import { solidToolReadiness } from './solidCommands.js';
 import {
@@ -47,6 +46,8 @@ import {
   type SolidVertexEntry,
   type SubShapeBody,
 } from './subShapeSelection.js';
+
+type ShapeEditToolId = Parameters<typeof shapeEditReadiness>[1];
 
 /* ------------------------------------------------------------------ *
  * ひな型

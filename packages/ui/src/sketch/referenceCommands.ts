@@ -276,7 +276,7 @@ export interface ReferenceDraft {
 
 export const EMPTY_REFERENCE_DRAFT: ReferenceDraft = { points: [], choices: {} };
 
-export interface ReferenceCommitContext {
+interface ReferenceCommitContext {
   readonly document: PartDocument;
   /** いまの作図面。オフセットと傾けのもとになる(FR-328)。 */
   readonly planeId: WorkPlaneId;
@@ -286,7 +286,7 @@ export interface ReferenceCommitContext {
   readonly draft: ReferenceDraft;
 }
 
-export interface ReferenceCommitOutcome {
+interface ReferenceCommitOutcome {
   readonly document: PartDocument;
   readonly draft: ReferenceDraft;
   /** 作れなかった理由(NFR-UX-5)。作れた・まだ途中のときは null。 */

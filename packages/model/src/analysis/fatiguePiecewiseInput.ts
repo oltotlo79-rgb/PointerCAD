@@ -16,7 +16,7 @@ export const FATIGUE_SAVED_PIECEWISE_SCHEMA = 'pointercad-fatigue-saved/5';
 export const FATIGUE_SAVED_PIECEWISE_INPUT_SCHEMA = 'pointercad-fatigue-piecewise/1';
 /** MAX_FATIGUE_PIECEWISE_SEGMENTS and FATIGUE_PIECEWISE_CONTINUITY_TOLERANCE of the core. */
 export const FATIGUE_SAVED_PIECEWISE_LIMITS = { maximumSegments: 8, continuityTolerance: 1e-9,
-  stressMpa: [1, 1e4], cycles: [1, 1e12], slope: [1, 20] } as const;
+  stressMpa: [1, 1e4], cycles: [1, 1e12], slope: [1, 32] } as const;
 
 export interface FatigueSavedPiecewiseSegment {
   readonly fromStressMpa: number;

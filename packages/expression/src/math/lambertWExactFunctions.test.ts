@@ -6,7 +6,7 @@ import type { MathExecutionBackend } from './mathWorkExecution.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { LAMBERT_W_DERIVATIVES } from './lambertWDerivativeReferences.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend:MathExecutionBackend;
 beforeAll(()=>{backend=createMathBackend();});

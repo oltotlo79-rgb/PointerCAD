@@ -5,11 +5,11 @@ import type { CadAnalysisBoundaryIdentity, CadBoundaryFaceIdentity } from './cad
 /** Each index belongs to that body's oriented boundary mesh, not to volume elements or another body's mesh.
  * The caller must supply the current W05 identity and the corresponding triangle count in one coordinate frame.
  * Repeated occurrences of the same body need a future occurrence-aware identity; ambiguous keys are refused. */
-export interface SolidContactMeshBoundary {
+interface SolidContactMeshBoundary {
   readonly boundaryIdentity: CadAnalysisBoundaryIdentity;
   readonly triangleCount: number;
 }
-export interface SolidContactMeshContext {
+interface SolidContactMeshContext {
   readonly documentId: string;
   readonly boundaries: readonly SolidContactMeshBoundary[];
   /** Assembly constraints are deliberately outside the physical contact definition. Never inspected. */

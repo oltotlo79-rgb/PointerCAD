@@ -139,7 +139,7 @@ export const STEEL_STANDARDS = {
   },
 } as const satisfies Readonly<Record<string, SteelStandard>>;
 
-export type SteelStandardId = keyof typeof STEEL_STANDARDS;
+type SteelStandardId = keyof typeof STEEL_STANDARDS;
 
 export interface SteelStandardReference {
   readonly standardId: SteelStandardId;

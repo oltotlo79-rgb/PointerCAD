@@ -13,7 +13,7 @@ import { createCurvePointWorkEnvelope } from './curvePointWorkEnvelope.js';
 import { decodeCurvePointWorkReply } from './curvePointWorkReply.js';
 import { saveCurvePointInput, type CurvePointWorkRequest } from './curvePointWorkRequest.js';
 import { createCurvePointContinuationWorkEnvelope, decodeCurvePointContinuationWorkReply } from './curvePointContinuationWork.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 import type { MathNode } from './mathInputContract.js';
 
 let backend: MathExecutionBackend;

@@ -25,9 +25,3 @@ export function searchMathPalette(query: string, entries: readonly MathPaletteIt
     return terms.every(term => content.includes(term));
   });
 }
-
-export function mathPaletteAvailability(entry: MathPaletteItem, verifiedOperations: ReadonlySet<string>,
-  passedAcceptanceIds: ReadonlySet<string>): boolean {
-  return entry.acceptanceIds.length > 0 && entry.acceptanceIds.every(id => passedAcceptanceIds.has(id))
-    && entry.requiredOperations.every(id => verifiedOperations.has(id));
-}

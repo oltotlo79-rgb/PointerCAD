@@ -11,7 +11,7 @@ import { executeMathWorkRequest, type MathExecutionBackend, type MathExecutionRe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 
 interface Example {
   readonly operation: 'gradient' | 'divergence' | 'curl' | 'laplacian';

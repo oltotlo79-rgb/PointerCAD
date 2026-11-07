@@ -23,7 +23,7 @@ import type { ProjectionSource, ResolvedCurve } from './types.js';
 import type { Vec3 } from './vec3.js';
 
 /** 鍵の材料(FR-325)。 */
-export interface ProjectionKeyMaterial {
+interface ProjectionKeyMaterial {
   /** もとの立体の段の鍵(`ResolvedSolidStep.key`)。上流の変化はここに現れる。 */
   readonly bodyKey: string;
   /** 立体の何を使うか(面・辺の指紋、または立体そのもの)。 */

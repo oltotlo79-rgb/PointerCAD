@@ -8,9 +8,9 @@ import { solidExpressionField } from '../solidAnalysis/solidAnalysisSession.js';
 import { createSolidBoundaryDraft, solidBoundarySaved, type SolidBoundaryDraft,
   type SolidBoundaryAxis, type SolidGravityField } from '../solidAnalysis/solidBoundaryDraft.js';
 
-export const SOLID_FINITE_FIELDS = ['young', 'poisson', 'yield', 'hardening', 'tx', 'ty', 'tz', 'linear', 'angular',
-  'chord', 'volume', 'forceFactors', 'prescribedFactors', 'referenceForce', 'reference'] as const;
-export type SolidFiniteField = typeof SOLID_FINITE_FIELDS[number];
+export type SolidFiniteField =
+  | 'young' | 'poisson' | 'yield' | 'hardening' | 'tx' | 'ty' | 'tz' | 'linear'
+  | 'angular' | 'chord' | 'volume' | 'forceFactors' | 'prescribedFactors' | 'referenceForce' | 'reference';
 export interface SolidFiniteSession extends SolidBoundaryDraft {
   readonly fieldView: SolidFiniteFieldChoice;
   readonly ownerId: string;

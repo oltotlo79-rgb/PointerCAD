@@ -1,4 +1,3 @@
-import type { Point2 } from '../types.js';
 import { drawingSymbol, type SymbolGeometry } from '../annotation/symbols.js';
 import { createPaperFrame } from './frame.js';
 import type { PaperSize, PaperSizeId } from './paperSize.js';
@@ -26,18 +25,6 @@ export const DEFAULT_TITLE_BLOCK_FIELDS: readonly TitleBlockFieldDefinition[] = 
   { key: 'company', label: '会社名' },
   { key: 'mass', label: '質量' },
 ];
-
-export interface TitleBlockLine {
-  readonly from: Point2;
-  readonly to: Point2;
-}
-
-export interface TitleBlockArc {
-  readonly center: Point2;
-  readonly radius: number;
-  readonly startAngle: number;
-  readonly endAngle: number;
-}
 
 export interface TitleBlockCell {
   readonly field: TitleBlockFieldDefinition;

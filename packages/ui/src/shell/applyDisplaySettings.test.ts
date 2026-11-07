@@ -10,7 +10,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_DISPLAY_SETTINGS } from '../settings/settings.js';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { applyDisplaySettings, attachDisplaySettings, type ThemeRootElement } from './applyDisplaySettings.js';
+import { applyDisplaySettings, attachDisplaySettings } from './applyDisplaySettings.js';
+
+type ThemeRootElement = Parameters<typeof attachDisplaySettings>[0];
 
 /** 呼ばれた `--pcad-scale` の値を覚える、検査用の最小限のルート要素。 */
 function createFakeRoot(): ThemeRootElement & { properties: Map<string, string> } {

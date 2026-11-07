@@ -10,8 +10,10 @@ import { readPlasticBarField, type PlasticBarFieldName } from '../beam/beamField
 /** Scalar inputs; every material value starts empty so that nothing is assumed for a steel grade. */
 export type PlasticBarScalarField = Exclude<PlasticBarFieldName, 'knot'>;
 type HardeningEvidence = NonNullable<PlasticBarSavedInput['hardeningEvidence']>;
+/** The material values the restored evidence is bound to. plateauPlasticStrain is present only when the saved
+ * configuration had a plateau; absence and presence are both part of the binding (no plateau = linear law). */
 type RestoredMaterial = Pick<PlasticBarSavedInput,
-  'youngModulusMPa' | 'poisson' | 'yieldStressMPa' | 'hardeningModulusMPa'> & {
+  'youngModulusMPa' | 'poisson' | 'yieldStressMPa' | 'hardeningModulusMPa' | 'plateauPlasticStrain'> & {
   readonly reference: string;
   readonly evidence: HardeningEvidence;
 };
@@ -47,13 +49,15 @@ export type PlasticBarEdit =
 
 /** The first knot 0 is fixed, so at most maximumKnots - 1 rows are editable. */
 export const PLASTIC_BAR_DRAFT_MAXIMUM_KNOTS = PLASTIC_BAR_LIMITS.maximumKnots - 1;
+/** The required scalar fields. The optional 'plateau' is read separately: empty means no plateau (the original law). */
 export const PLASTIC_BAR_SCALAR_FIELDS: readonly PlasticBarScalarField[] = ['length', 'area', 'young', 'poisson',
   'yieldStress', 'hardening', 'stepsPerSegment'];
+const MATERIAL_FIELDS: readonly PlasticBarScalarField[] = ['young', 'poisson', 'yieldStress', 'hardening', 'plateau'];
 
 export function createPlasticBarSession(ownerId: string): PlasticBarSession {
   return { ownerId, revision: 0, focusedField: null, status: 'editing', phase: null, result: null, errorKey: null,
     diagnostic: null, draft: { values: { length: '', area: '', young: '', poisson: '', yieldStress: '', hardening: '',
-      stepsPerSegment: '10' }, knots: [''], reference: '' } };
+      plateau: '', stepsPerSegment: '10' }, knots: [''], reference: '' } };
 }
 
 /** Any input edit invalidates the result and moves to a new revision; focus is view-only. */
@@ -77,7 +81,7 @@ export function editPlasticBarSession(session: PlasticBarSession, edit: PlasticB
   }
   // Changing material expression text also invalidates evidence: later parameter edits must not revive a citation.
   if ((edit.kind === 'reference' && edit.source !== draft.reference)
-    || (edit.kind === 'value' && ['young', 'poisson', 'yieldStress', 'hardening'].includes(edit.field)
+    || (edit.kind === 'value' && MATERIAL_FIELDS.includes(edit.field)
       && edit.source !== draft.values[edit.field])) next = { ...next, restoredMaterial: null };
   return { ...session, draft: next, revision: session.revision + 1, status: 'editing', phase: null, result: null,
     errorKey: null, diagnostic: null };
@@ -105,10 +109,18 @@ function draftNumbers(session: PlasticBarSession, parameters: readonly Parameter
     if (read.value === null) return { ok: false, key: 'plasticBar.error.field', field: key, diagnostic: read.error?.message ?? null };
     knots.push(read.value.value);
   }
+  // Optional plateau (dimensionless plastic strain, % allowed): empty keeps the original law and adds no field.
+  let plateau: number | undefined;
+  if (session.draft.values.plateau.trim() !== '') {
+    const read = readPlasticBarField('plateau', 'plateau', session.draft.values.plateau, parameters);
+    if (read.value === null) return { ok: false, key: 'plasticBar.error.field', field: 'plateau', diagnostic: read.error?.message ?? null };
+    plateau = read.value.value;
+  }
   if (session.draft.reference.trim() === '') return { ok: false, key: 'plasticBar.error.source', field: 'reference', diagnostic: null };
   const value = (name: PlasticBarScalarField): number => numbers.get(name) ?? Number.NaN;
   return { ok: true, numbers: { lengthMm: value('length'), areaMm2: value('area'), youngModulusMPa: value('young'),
     poisson: value('poisson'), yieldStressMPa: value('yieldStress'), hardeningModulusMPa: value('hardening'),
+    ...(plateau === undefined ? {} : { plateauPlasticStrain: plateau }),
     endDisplacementMm: knots, stepsPerSegment: value('stepsPerSegment') } };
 }
 
@@ -123,7 +135,9 @@ export function plasticBarInput(session: PlasticBarSession, parameters: readonly
       source: { documentId: session.ownerId, revision: session.revision },
       plan: { schema: PLASTIC_BAR_PLAN_SCHEMA, lengthM: si.lengthM, areaM2: si.areaM2,
         material: { youngPa: si.youngPa, poisson: si.poisson, yieldStressPa: si.yieldStressPa,
-          hardeningModulusPa: si.hardeningModulusPa, source: { kind: 'user-supplied', reference: session.draft.reference } },
+          hardeningModulusPa: si.hardeningModulusPa,
+          ...(si.plateauPlasticStrain === undefined ? {} : { plateauPlasticStrain: si.plateauPlasticStrain }),
+          source: { kind: 'user-supplied', reference: session.draft.reference } },
         endDisplacementM: [...si.endDisplacementM], stepsPerSegment: si.stepsPerSegment } });
     return { ok: true, input };
   } catch (error) {
@@ -144,7 +158,12 @@ export function plasticBarSavedInput(session: PlasticBarSession, parameters: rea
   const draft = draftNumbers(session, parameters);
   if (!draft.ok) return draft;
   const material = session.draft.restoredMaterial;
-  const evidence = material != null && material.reference === session.draft.reference
+  // Evidence is kept only for exactly the restored material values, compared as numbers so that a draft replaced
+  // without the edit reducer is checked too. The plateau is part of the series (hardeningPropertySeries: no plateau =
+  // linear-isotropic, a plateau = plateau-linear-isotropic with plateauPlasticStrain), so adding, removing or changing
+  // it drops the evidence; linear evidence is never moved onto a plateau, and the strict reader refuses that pair.
+  const evidence = material != null && material.plateauPlasticStrain === draft.numbers.plateauPlasticStrain
+    && material.reference === session.draft.reference
     && material.youngModulusMPa === draft.numbers.youngModulusMPa && material.poisson === draft.numbers.poisson
     && material.yieldStressMPa === draft.numbers.yieldStressMPa
     && material.hardeningModulusMPa === draft.numbers.hardeningModulusMPa ? material.evidence : undefined;
@@ -160,12 +179,15 @@ export function restorePlasticBarSession(ownerId: string, saved: PlasticBarSaved
   return { ...createPlasticBarSession(ownerId), draft: {
     values: { length: exact(saved.lengthMm), area: exact(saved.areaMm2), young: exact(saved.youngModulusMPa),
       poisson: exact(saved.poisson), yieldStress: exact(saved.yieldStressMPa), hardening: exact(saved.hardeningModulusMPa),
+      // The saved fraction itself (no x100), so it evaluates back to the same double; absent stays empty.
+      plateau: saved.plateauPlasticStrain === undefined ? '' : exact(saved.plateauPlasticStrain),
       stepsPerSegment: exact(saved.stepsPerSegment) },
     knots: saved.endDisplacementMm.slice(1).map(exact), reference: saved.materialSource.reference,
     ...(saved.hardeningEvidence === undefined ? {} : { restoredMaterial: {
       youngModulusMPa: saved.youngModulusMPa, poisson: saved.poisson, yieldStressMPa: saved.yieldStressMPa,
-      hardeningModulusMPa: saved.hardeningModulusMPa, reference: saved.materialSource.reference,
-      evidence: structuredClone(saved.hardeningEvidence),
+      hardeningModulusMPa: saved.hardeningModulusMPa,
+      ...(saved.plateauPlasticStrain === undefined ? {} : { plateauPlasticStrain: saved.plateauPlasticStrain }),
+      reference: saved.materialSource.reference, evidence: structuredClone(saved.hardeningEvidence),
     } }) } };
 }
 
@@ -187,6 +209,7 @@ export function samePlasticBarSavedInput(left: PlasticBarSavedInput, right: Plas
     && left.units === right.units && left.lengthMm === right.lengthMm && left.areaMm2 === right.areaMm2
     && left.youngModulusMPa === right.youngModulusMPa && left.poisson === right.poisson
     && left.yieldStressMPa === right.yieldStressMPa && left.hardeningModulusMPa === right.hardeningModulusMPa
+    && left.plateauPlasticStrain === right.plateauPlasticStrain
     && left.materialSource.kind === right.materialSource.kind
     && left.materialSource.reference === right.materialSource.reference
     && sameAnalysisPropertyEvidence(left.hardeningEvidence, right.hardeningEvidence)

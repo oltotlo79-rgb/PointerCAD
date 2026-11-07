@@ -7,9 +7,11 @@ import { plainTee, TEE_BODIES, teeRequest, WELD_TEST_REVISIONS } from '../assemb
 import { planFilletWeld, planFilletWeldEdit, weldSegmentsOf } from '../assembly/welding/planFilletWeld.js';
 import type { FilletWeldRequest } from '../assembly/welding/types.js';
 import { createDrawingDocument } from './createDrawingDocument.js';
-import { linkedWeldIssues, linkedWeldOf, linkedWeldSymbolValues, resolveLinkedWeld, type LinkedWeldResolution } from './linkedWeld.js';
+import { linkedWeldIssues, linkedWeldOf, linkedWeldSymbolValues, resolveLinkedWeld } from './linkedWeld.js';
 import { embedDrawingSource } from './sourceLibrary.js';
 import type { ResolvedWeldSymbol } from './welding.js';
+
+type LinkedWeldResolution = ReturnType<typeof resolveLinkedWeld>;
 
 /** The tee of filletWeld.testSupport.ts: contact edge 0..100, stations measured from the weld line origin. */
 function welded(overrides: Partial<FilletWeldRequest> = {}): AssemblyDocument {

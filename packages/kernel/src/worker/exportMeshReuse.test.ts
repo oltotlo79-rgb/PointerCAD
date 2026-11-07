@@ -4,7 +4,10 @@ import { TESSELLATION_ADMISSION_MESSAGE } from '../occt/tessellate.js';
 import { writeStl } from '../occt/writeStl.js';
 import { writeCafMesh } from '../occt/writeCafMesh.js';
 import { buildRequestExportMeshes } from './exportMeshReuse.js';
-import { EXPORT_JS_BYTE_LIMIT, ExportWorkBudget, ExportWorkLimitError } from './exportWorkLimits.js';
+import { ExportWorkBudget, ExportWorkLimitError } from './exportWorkLimits.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const EXPORT_JS_BYTE_LIMIT = 512 * 1024 * 1024;
 
 function triangle(x = 0): ExportMesh {
   return {

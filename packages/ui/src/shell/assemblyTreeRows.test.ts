@@ -26,13 +26,25 @@ import { describe, expect, it } from 'vitest';
 import { MESSAGE_KEYS } from '../i18n/t.js';
 import {
   assemblyRowKey,
-  assemblyTreeRowCount,
   assemblyTreeRows,
   ASSEMBLY_BADGE_LABEL_KEYS,
   ASSEMBLY_BADGE_TOOLTIP_KEYS,
-  type AssemblyTreeDiagnosis,
-  type AssemblyTreeSection,
+  type AssemblyTreeSection, type AssemblyTreeRow,
 } from './assemblyTreeRows.js';
+
+type AssemblyTreeDiagnosis = NonNullable<Parameters<typeof assemblyTreeRows>[1]>;
+
+/**
+ * 木に出る行の数。**束の見出しも 1 行として数える**(見出しは畳むために押せる行なので、
+ * 「木に何行あるか」を数えるときに外すと画面と食い違う)。
+ */
+function assemblyTreeRowCount(sections: readonly AssemblyTreeSection[]): number {
+  const countRows = (rows: readonly AssemblyTreeRow[]): number => rows.reduce(
+    (total, row) => total + 1 + countRows(row.children ?? []),
+    0,
+  );
+  return sections.reduce((total, section) => total + 1 + countRows(section.rows), 0);
+}
 
 /** 部品を `count` 個置いた文書(本番と同じ道筋: 作る → 足す)。 */
 function assemblyWith(count: number): AssemblyDocument {

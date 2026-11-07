@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { requireCompletedInterferenceRuns, type InterferenceCompletion } from './interferenceCompletion.js';
+import { requireCompletedInterferenceRuns } from './interferenceCompletion.js';
+
+type InterferenceCompletion = Parameters<typeof requireCompletedInterferenceRuns>[0][number];
 
 const complete = (): InterferenceCompletion[] => Array.from({ length: 5 }, () => ({ completed: true, error: null }));
 

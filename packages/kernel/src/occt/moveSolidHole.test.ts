@@ -9,20 +9,35 @@ import type { Allocations } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { writeBrepBytes } from './brepBytes.js';
 import {
-  auditDirectEdit, boundaryBox, observeDirectEditOwnership as observeOwnership, drillBoundaryHole, throwNativeDirectionError,
+  auditDirectEdit, boundaryBox, observeDirectEditOwnership as observeOwnership, throwNativeDirectionError,
 } from './directEditBoundary.testSupport.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import {
-  HOLE_MOVE_DELTA_MESSAGE, HOLE_MOVE_FAILED_MESSAGE, HOLE_MOVE_MISSING_FACE_MESSAGE,
-  HOLE_MOVE_NOT_HOLE_MESSAGE, HOLE_MOVE_PARTIAL_MESSAGE, HOLE_MOVE_PLATE_MESSAGE,
-  HOLE_MOVE_COLLISION_MESSAGE, moveSolidHole,
+  moveSolidHole,
 } from './moveSolidHole.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
 import { countSolidShapes } from './solidTopology.js';
 import { collectSubShapes, faceAt } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 import { IDENTITY_TRANSFORM, transformShape } from './transformShape.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const HOLE_MOVE_COLLISION_MESSAGE = '穴を動かすと板の外周に届くため動かせません。移動量を見直してください。';
+const HOLE_MOVE_DELTA_MESSAGE = '穴の移動量は、穴の軸に直角な 0 でない有限のベクトルで指定してください。';
+const HOLE_MOVE_FAILED_MESSAGE = '穴を動かせませんでした。元の立体と移動量を見直してください。';
+const HOLE_MOVE_MISSING_FACE_MESSAGE = '選んだ面は元の立体に属していません。穴の面を選び直してください。';
+const HOLE_MOVE_NOT_HOLE_MESSAGE = '動かせるのは、内側が円筒になっている穴の面だけです。';
+const HOLE_MOVE_PARTIAL_MESSAGE = '全周がつながった一定径の貫通穴だけ動かせます。';
+const HOLE_MOVE_PLATE_MESSAGE = 'この操作は、六つの平面と一つの円筒面からなる長方形の穴あき板だけに対応しています。';
+
+function drillBoundaryHole(oc: OpenCascadeInstance, owned: Allocations, source: TopoDS_Shape,
+  origin: Vec3Tuple = [10, 15, -1], radius = 3, depth = 10): TopoDS_Shape {
+  const { keep } = owned;
+  const axes = keep(new oc.gp_Ax2_3(keep(new oc.gp_Pnt_3(...origin)), keep(new oc.gp_Dir_4(0, 0, 1))));
+  const tool = keep(keep(new oc.BRepPrimAPI_MakeCylinder_3(axes, radius, depth)).Shape());
+  return keep(booleanOp(oc, 'subtract', source, tool)).shape;
+}
 
 const EXPECTED_VOLUME = 40 * 30 * 8 - Math.PI * 3 ** 2 * 8;
 const ROTATION = Math.PI / 5;

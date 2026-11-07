@@ -18,7 +18,7 @@ export interface CircularFilletWeldDraft {
 }
 export type CircularDraftFields = Partial<Pick<CircularFilletWeldDraft, 'mode' | 'start' | 'lengths' | 'gaps' | 'radialLeg'
   | 'normalLeg' | 'radialDirection' | 'normalDirection' | 'materialId'>>;
-export type CircularDraftIssue = 'stale' | 'picks' | 'dimension' | 'segments' | 'material' | 'preview-changed';
+ type CircularDraftIssue = 'stale' | 'picks' | 'dimension' | 'segments' | 'material' | 'preview-changed';
 export type CircularDraftPreview = { readonly ok: true; readonly draft: CircularFilletWeldDraft; readonly context: JointOccurrenceCommandContext;
   readonly request: CircularFilletWeldRequest; readonly plan: CircularFilletWeldPlan }
   | { readonly ok: false; readonly reason: CircularDraftIssue | CircularFilletWeldFailure };

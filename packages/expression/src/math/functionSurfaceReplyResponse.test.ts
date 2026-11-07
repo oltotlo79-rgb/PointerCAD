@@ -35,7 +35,10 @@ import { createFunctionMathSource } from './functionMathSource.js';
 import { decodeFunctionSurfaceWorkRequest, type FunctionSurfaceWorkRequest } from './functionSurfaceWorkRequest.js';
 import { FunctionSurfaceWorkerClient } from './functionSurfaceWorkerClient.js';
 import type { CalculationWorkerPort } from './boundedCalculationClient.js';
-import { certifySplineAgainstMesh, certifySplineAgainstMeshSteps, FUNCTION_SURFACE_SPLINE_PAIR_LIMIT, type SurfaceMeshEvidence } from './smoothFunctionSurface.js';
+import { certifySplineAgainstMesh, certifySplineAgainstMeshSteps, type SurfaceMeshEvidence } from './smoothFunctionSurface.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const FUNCTION_SURFACE_SPLINE_PAIR_LIMIT = 4_000_000;
 
 const LONG_TASK_REFERENCE_MS = 100;
 const CANCEL_DELIVERY_LIMIT_MS = 1_000;

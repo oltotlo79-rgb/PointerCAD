@@ -6,8 +6,15 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { BASE_EDITS, edited } from './fatigue.testSupport.js';
 import { savedFatigueEntry } from './fatigueSession.js';
-import { currentSolidFatigueResult } from './fatigueSolidSession.js';
-import { analyticalSolid, installSolid } from './fatigueSolid.testSupport.js';
+import { currentSolidFatigueResult, type FatigueSolidSource } from './fatigueSolidSession.js';
+import { analyticalSolid, solidDraft } from './fatigueSolid.testSupport.js';
+import { createSolidAnalysisSession } from '../solidAnalysis/solidAnalysisSession.js';
+
+function installSolid(source: FatigueSolidSource): void {
+  const state = useAppStore.getState();
+  useAppStore.setState({ solidAnalysisSession: { ...createSolidAnalysisSession(state.activeDocumentId),
+    status: 'complete', result: source }, fatigueSession: solidDraft(source, state.activeDocumentId) });
+}
 
 beforeEach(() => { resetTestStore(); useAppStore.getState().toggleStrength(); });
 afterEach(resetTestStore);

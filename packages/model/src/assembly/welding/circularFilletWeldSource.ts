@@ -25,7 +25,7 @@ export interface CircularWeldSavedParent {
   readonly bodyKey: string;
   readonly reference: SubShapeRef;
 }
-export interface CircularFilletWeldSavedOptions {
+interface CircularFilletWeldSavedOptions {
   readonly weldId: string;
   readonly beadId: string;
   readonly path: CircularWeldPathDefinition;
@@ -33,7 +33,7 @@ export interface CircularFilletWeldSavedOptions {
   readonly normalDirection: 1 | -1;
   readonly parents: readonly [CircularWeldSavedParent, CircularWeldSavedParent];
 }
-export interface CircularFilletWeldSavedSource {
+ interface CircularFilletWeldSavedSource {
   readonly options: CircularFilletWeldSavedOptions;
   readonly section: CircularFilletWeldSection;
 }

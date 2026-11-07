@@ -728,7 +728,7 @@ test.describe('P8 図面の実操作', () => {
     expect(download.suggestedFilename()).toBe('社内A3標準.pcadt');
     const path = await download.path(); if (path === null) throw new Error('ひな形の保存先がありません');
     await chooseDrawingMenu(page, 'ファイル', '部品へ戻る');
-    // 保存していない図面を閉じる前の確認(画面の中の日本語の3択。w91a)。
+    // 保存していない図面を閉じる前の確認（画面内の日本語3択、NFR-UX-3）。
     await page.getByRole('alertdialog', { name: '保存していない変更があります' })
       .getByRole('button', { name: '保存せずに続ける', exact: true }).click();
     await expect(page.locator('canvas.pcad-viewport__canvas')).toHaveCount(1);
@@ -1046,7 +1046,7 @@ test.describe('P8 図面の出力と文字注記', () => {
   test('部品へ戻る際の破棄を断ると図面とUndoが残り、同意した時だけ閉じる（R03）', async ({ page }) => {
     await drawingFromBox(page); await addNote(page);
     const text = page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]');
-    // 閉じる前の確認は画面の中の日本語の3択(w91a。デスクトップ版で英語の OK/Cancel にならない)。
+    // 閉じる前の確認は画面の中の日本語の3択(NFR-UX-3。デスクトップ版で英語の OK/Cancel にならない)。
     const discardConfirm = page.getByRole('alertdialog', { name: '保存していない変更があります' });
     await chooseDrawingMenu(page, 'ファイル', '部品へ戻る');
     await expect(discardConfirm).toContainText('保存していない変更は失われます。続けますか。');

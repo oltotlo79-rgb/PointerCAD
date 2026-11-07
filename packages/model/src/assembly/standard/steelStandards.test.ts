@@ -7,8 +7,10 @@ import {
   findSteelProduct, STEEL_PRODUCTS, steelProductFromSource, steelProductOptions,
 } from './steelCatalog.js';
 import { SGP_ADDITION_SAVED_OPTIONS, SGP_TABLE4_PDF_SHA256, SS400_EXPANSION_SAVED_OPTIONS } from './steelCatalogOracle.fixture.js';
-import { S45C_HOT_SAVED_OPTIONS } from './steelS45cOracle.fixture.js';
-import { STEEL_STANDARDS, type SteelStandard, type SteelStandardId } from './steelStandards.js';
+import { S45C_HOT_SAVED_OPTIONS } from './steelS45cOracle.testSupport.js';
+import { STEEL_STANDARDS, type SteelStandard, type SteelStandardReference } from './steelStandards.js';
+
+type SteelStandardId = SteelStandardReference['standardId'];
 
 // Independent transcription of the EX-03 evidence inventory (2026-10-24).
 // The G 3192 2020 draft is historical evidence, not evidence for G 3123.

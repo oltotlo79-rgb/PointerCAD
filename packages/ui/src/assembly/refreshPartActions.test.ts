@@ -12,7 +12,9 @@ import type { PartSourceConfirmRequest } from '../store/fileSlice.js';
 import type { PickedTypedFile } from '../file/fileGateway.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
-import { hasPartLineageId, sharedPartOccurrenceCount, refreshPartReadiness, startRefreshPartSource, type RefreshPartDeps } from './replaceActions.js';
+import { hasPartLineageId, sharedPartOccurrenceCount, refreshPartReadiness, startRefreshPartSource } from './replaceActions.js';
+
+type RefreshPartDeps = NonNullable<Parameters<typeof startRefreshPartSource>[1]>;
 
 beforeEach(resetTestStore);
 

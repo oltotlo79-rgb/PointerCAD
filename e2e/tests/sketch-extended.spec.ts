@@ -990,7 +990,7 @@ test.describe('P4 スケッチ拡張(作図面の上の図形と編集)', () => 
     );
     // 直前(3)の式の書き換えで保存していない変更があるので、「開く」は先に画面の中の確認を
     // 出す。`addLocatorHandler` は生の `waitForEvent` の待ちの間は働かないため、明示的に答える
-    // (w105a、`discardDialogSupport.ts` の doc comment)。
+    // (確認窓の操作検証、`discardDialogSupport.ts` の doc comment)。
     const legacyChooserPromise = page.waitForEvent('filechooser');
     await fileAction(page, '開く').click();
     await answerDiscardConfirm(page);

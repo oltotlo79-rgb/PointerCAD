@@ -4,6 +4,7 @@
  *
  * @pointercad/kernel の型はこの入口と kernelBridge/ 内の変換処理で使い、外へは model の型で返す
  * (P0 §0.11、rules/04-設計の規律.md の依存方向)。Workerの接続と実行はこの入口が所有し、変換処理は通信しない。
+ * 例外はkernelBridge/splineMath.tsからimportを持たない純数値subpathへの委譲だけで、Worker/OCCTの入口は増やさない。
  */
 
 import {
@@ -130,7 +131,6 @@ export type {
   ExportColor,
   ExportFaceRange,
   ShapeExportBody,
-  ShapeExportFormat,
   ShapeExportOptions,
   ExportedFile,
   ExportedMeshBody,
@@ -277,7 +277,7 @@ function toFailureMessage(error: unknown): string {
  * 書き出しの 3 択(`EXPORT_MESH_QUALITY`)にこの対は無い(`normal` は角度が 0.2 で、
  * 書き出しの精度のために画面より細かい)ので、別に 1 つ置いてある。
  */
-export const DISPLAY_MESH_QUALITY: ExportMeshQuality = {
+const DISPLAY_MESH_QUALITY: ExportMeshQuality = {
   deviationMm: DEFAULT_LINEAR_DEFLECTION,
   angularDeflectionRad: DEFAULT_ANGULAR_DEFLECTION,
 };

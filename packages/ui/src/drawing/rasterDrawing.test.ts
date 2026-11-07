@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DRAWING_JPEG_QUALITY, drawingRasterSize, rasterDrawing } from './rasterDrawing.js';
+import { drawingRasterSize, rasterDrawing } from './rasterDrawing.js';
 
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="297mm"/>';
 describe('図面画像の実寸・解像度・失敗時の解放(P8-47)', () => {
@@ -38,7 +38,7 @@ describe('図面画像の実寸・解像度・失敗時の解放(P8-47)', () => 
   });
   it('JPEGは品質0.92を渡す', async () => {
     expect((await rasterDrawing(svg, 420, 297, 'jpg')).ok).toBe(true);
-    expect(DRAWING_JPEG_QUALITY).toBe(0.92); expect(toBlob.mock.calls[0].slice(1)).toEqual(['image/jpeg', 0.92]);
+    expect(toBlob).toHaveBeenCalledTimes(1); expect(toBlob.mock.calls[0].slice(1)).toEqual(['image/jpeg', 0.92]);
   });
   it('成功後はBlob URLと大きいCanvasを解放する', async () => {
     await rasterDrawing(svg, 420, 297, 'png'); expect(revokeObjectUrl).toHaveBeenCalledWith('blob:drawing');

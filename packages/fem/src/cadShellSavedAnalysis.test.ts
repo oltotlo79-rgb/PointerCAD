@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { SolidBody } from '@pointercad/model';
+import type { AnalysisBoundarySource, SolidBody } from '@pointercad/model';
 import { resolveSavedCadShellSettings } from './cadShellSavedAnalysis.js';
+import { analyzeCadShell } from './cadShellAnalysis.js';
 import type { CadTetraContext } from './cadTetraMesh.js';
 
 const face = { version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'sheet', role: 'top' } } as const;
@@ -68,4 +69,39 @@ describe('saved CAD shell input binding', () => {
     expect(() => resolveSavedCadShellSettings(context(), { ...saved, result: {} })).toThrow(/invalid-settings/u);
     expect(() => resolveSavedCadShellSettings(context(), saved.geometry)).toThrow(/invalid-settings/u);
   });
+});
+
+
+it('opts the production saved-cylinder resolver into native quality and forwards it without mutating saved data', async () => {
+  const base = context(), current: CadTetraContext = { ...base,
+    body: { ...base.body, faces: [{ ...base.body.faces[0], surfaceKind: 'cylinder', radius: 17 }] } };
+  const before = JSON.stringify(saved);
+  const settings = resolveSavedCadShellSettings(current, saved);
+  expect(settings.surface.nativeQuality).toBe('cylindrical-rectangle');
+  expect(settings.surface).not.toBe(saved.surface);
+  type Source = AnalysisBoundarySource;
+  type Request = Parameters<Source['buildAnalysisSurfaceMesh']>[0];
+  const captured: Request[] = [];
+  const native: Source = { buildAnalysisSurfaceMesh: request => {
+    captured.push(request);
+    // This checks production wiring only, not native recognition: no synthetic native evidence is returned.
+    return Promise.resolve({ kind: 'failed', bodyKey: request.bodyKey, code: 'probe-stop', message: 'observed', faceIndex: null });
+  } };
+  let solverCalled = false;
+  const outcome = await analyzeCadShell(native, () => current, settings, () => {
+    solverCalled = true;
+    return Promise.reject(new Error('Unexpected solve'));
+  });
+  expect(outcome).toMatchObject({ kind: 'failed', code: 'probe-stop' });
+  expect(solverCalled).toBe(false);
+  expect(captured).toHaveLength(1);
+  expect(captured[0].shellQuality).toEqual({ kind: 'cylindrical-rectangle', maximumNodes: saved.surface.maximumNodes,
+    maximumTriangles: saved.surface.maximumTriangles, minimumTriangleAreaMm2: saved.surface.minimumTriangleAreaMm2,
+    minimumAngleDeg: saved.surface.minimumAngleDeg, maximumAspectRatio: saved.surface.maximumAspectRatio });
+  expect(JSON.stringify(saved)).toBe(before);
+  expect(Object.hasOwn(saved.surface, 'nativeQuality')).toBe(false);
+  expect(resolveSavedCadShellSettings(base, saved).surface.nativeQuality).toBeUndefined();
+  const multiple: CadTetraContext = { ...current, body: { ...current.body,
+    faces: [current.body.faces[0], { ...current.body.faces[0], index: 1 }] } };
+  expect(resolveSavedCadShellSettings(multiple, saved).surface.nativeQuality).toBeUndefined();
 });

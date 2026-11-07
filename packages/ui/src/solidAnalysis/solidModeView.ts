@@ -8,7 +8,7 @@
 export type SolidModeVector = readonly [number, number, number];
 
 /** Which document, revision and analysed mesh the result was computed for. */
-export interface SolidModeSource {
+interface SolidModeSource {
   readonly documentId: string;
   readonly revision: number;
   readonly meshKey: string;

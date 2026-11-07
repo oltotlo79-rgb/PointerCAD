@@ -109,7 +109,7 @@ export type WorldPoint = readonly [number, number, number];
  * ビューポートの上で、ワールド座標の点が見えている場所を押す。既定(ホーム)視点・1440×900専用。
  *
  * 押し出し等の直後は再計算が終わるまで面・辺の位置が定まらないため、クリックの前に
- * `waitForSettledRecompute` で落ち着くのを待つ(w99a: 待たずに3Dで選ぶ台本が同じ所で
+ * `waitForSettledRecompute` で落ち着くのを待つ(再計算の待機確認: 待たずに3Dで選ぶ台本が同じ所で
  * 落ちていた)。各台本が個別に置く `waitForRecompute` はここでは消さない。
  */
 export async function clickWorldPoint(page: Page, world: WorldPoint): Promise<void> {

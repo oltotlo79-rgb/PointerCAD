@@ -273,10 +273,12 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
       try {
         const finish = await startReadOpen(page, path, app);
         await command.focus();
-        await expect.poll(() => page.evaluate(() => window.pcadReadObservation?.spans.length)).toBe(attempt + 1);
-        const span = await page.evaluate(index => window.pcadReadObservation?.spans[index], attempt);
-        if (span === undefined) throw new Error('Actual Worker start missing');
-        row.readId = span.id;
+        // Observe the actual Worker ID on the next browser frame instead of polling from Node.
+        const spanHandle = await page.waitForFunction(index => window.pcadReadObservation?.spans[index]?.id ?? false, attempt);
+        const readId: unknown = await spanHandle.jsonValue();
+        await spanHandle.dispose();
+        if (typeof readId !== 'string') throw new Error('Actual Worker start missing');
+        row.readId = readId;
         let typed = 0;
         for (; typed < policy.maximumInputsPerRead; typed += 1) {
           const state = await page.evaluate(index => ({ span: window.pcadReadObservation?.spans[index],

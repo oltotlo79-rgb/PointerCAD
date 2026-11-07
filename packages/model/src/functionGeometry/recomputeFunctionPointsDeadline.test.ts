@@ -15,9 +15,12 @@ import {createPointFeature} from '../sketch/createSketchDocument.js';
 import {FREE_WORK_PLANE_ID} from '../sketch/planeMath.js';
 import type {SketchFunctionCurveFeature} from '../sketch/types.js';
 import {FUNCTION_DEFINITION_FORMAT} from './functionDefinitionTypes.js';
-import {POINT_DEADLINE_MESSAGE,recomputeFunctionPoints} from './recomputeFunctionPoints.js';
+import {recomputeFunctionPoints} from './recomputeFunctionPoints.js';
 import type {FunctionRecomputeContext} from './recomputeFunctionCurves.js';
 import {readFunctionPointChoice,type FunctionPointReference} from './functionPointReference.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const POINT_DEADLINE_MESSAGE = '関数上の点の計算が時間内に終わりませんでした。もう一度計算してください。';
 
 let backend:MathExecutionBackend;beforeAll(()=>{backend=createMathBackend();});
 /** A point on the circle X^2+Y^2=r^2 chosen at X=0 on the positive Y branch. */

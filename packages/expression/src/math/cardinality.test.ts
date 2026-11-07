@@ -1,9 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { INFINITE_CARDINALITY_MESSAGE } from './absoluteValueCandidates.js';
 import { createMathBackend } from './createMathBackend.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 import { EXTENDED_OPERATION_DEFINITIONS } from './mathExtendedOperations.js';
 import { coordinateFromMath } from './mathInputContract.js';
 import type { MathDeclaration } from './mathDeclarations.js';
@@ -11,6 +10,10 @@ import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import type { MathExecutionReply } from './mathWorkExecution.js';
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const INFINITE_CARDINALITY_MESSAGE = '無限集合（区間・数の集合など）の要素数は数えられません。'
+  + '要素を並べた有限集合 {…} を指定してください。区間の長さを使う場合は、上端−下端を書いてください。';
 
 const runtime = new URL('./exactRuntime/', import.meta.url);
 const script = fileURLToPath(new URL('cas_cardinality_test.py', runtime));

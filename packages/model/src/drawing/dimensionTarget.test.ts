@@ -3,7 +3,7 @@ import type { Dimension, DimensionTarget, DrawingDocument, DrawingView, Vector3 
 import { createDrawingDocument } from './createDrawingDocument.js';
 import { drawingTargetFromProjection, resolveDimensionTarget, resolveDrawingAnnotationTarget, resolveDrawingDimensions, type DrawingDimensionInstance } from './dimensionTarget.js';
 import { IDENTITY_PLACEMENT } from '../assembly/placementMath.js';
-import * as bridge from '../kernelBridge.js';
+import * as referenceResolution from '../kernelBridge/referenceResolution.js';
 import type { SolidBody, SolidEdgeEntry } from '../kernelBridge.js';
 import { scoreSubShapeMatch } from '../kernelBridge/subShapeMatching.js';
 
@@ -176,7 +176,7 @@ describe('元の3D形状から解決する寸法(P8-25)', () => {
     expect(resolve(document([dimension(targets, { kind: 'angle', measurement: 'angle' })]), [instance(body([], { faces }))])[0].value).toBe(90);
   });
   it('同じ参照を持つ100寸法は1回の照合結果を共有する', () => {
-    const spy = vi.spyOn(bridge, 'resolveSubShapeReference');
+    const spy = vi.spyOn(referenceResolution, 'resolveSubShapeReference');
     try {
       const result = resolve(document(Array.from({ length: 100 }, (_, index) => dimension(undefined, { id: `dim-${index}` }))));
       expect(result.every((item) => item.value === 20)).toBe(true);

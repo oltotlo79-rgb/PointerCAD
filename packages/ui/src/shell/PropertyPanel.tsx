@@ -760,7 +760,7 @@ interface SolidFieldDraft {
   readonly source: string;
 }
 
-export interface CylindricalPropertySelection {
+ interface CylindricalPropertySelection {
   readonly featureId: string;
   readonly locationCount: number;
   readonly placementKind?: 'plane-face';

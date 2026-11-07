@@ -58,10 +58,10 @@ export interface FaceOffsetKeyMaterial {
   readonly offset: number;
 }
 
-export const FACE_OFFSET_NOT_FACE_MESSAGE = '動かせるのは立体の面だけです。平らな面を選び直してください。';
-export const FACE_OFFSET_OTHER_BODY_MESSAGE = '動かす面は、編集するもとの立体の面にしてください。';
-export const FACE_OFFSET_NOT_PLANAR_MESSAGE = '動かせるのは平らな面だけです。';
-export const FACE_OFFSET_DISTANCE_MESSAGE = '面を動かす距離は 0 でない数で指定してください。';
+const FACE_OFFSET_NOT_FACE_MESSAGE = '動かせるのは立体の面だけです。平らな面を選び直してください。';
+const FACE_OFFSET_OTHER_BODY_MESSAGE = '動かす面は、編集するもとの立体の面にしてください。';
+const FACE_OFFSET_NOT_PLANAR_MESSAGE = '動かせるのは平らな面だけです。';
+const FACE_OFFSET_DISTANCE_MESSAGE = '面を動かす距離は 0 でない数で指定してください。';
 
 /** 解決の前に model だけで確かめられる条件の結果。code は resolvePart の PartErrorCode の部分集合。 */
 export type FaceOffsetCheck =
@@ -100,19 +100,6 @@ export function checkFaceOffset(
 /** 段の計画を組む。対象の鍵は呼び出し側(resolvePart の resolveMachiningTarget)が引く。 */
 export function faceOffsetPlan(feature: FaceOffsetFeature, targetKey: string, offset: number): FaceOffsetPlan {
   return { kind: FACE_OFFSET_KIND, targetKey, face: feature.face, offset };
-}
-
-/** 鍵の材料。指紋の鍵文字列への直し方は呼び出し側(solidPlanKeyMaterial)の既存の関数を渡す。 */
-export function faceOffsetKeyMaterial(
-  plan: FaceOffsetPlan,
-  fingerprintKeyText: (reference: SubShapeRef) => string,
-): FaceOffsetKeyMaterial {
-  return { kind: FACE_OFFSET_KIND, targetKey: plan.targetKey, face: fingerprintKeyText(plan.face), offset: plan.offset };
-}
-
-/** 鍵の文字列。数の書き方は cacheKey の keyNumber を渡す(同じ数なら同じ文字列)。 */
-export function faceOffsetKeyText(material: FaceOffsetKeyMaterial, keyNumber: (value: number) => string): string {
-  return `faceOffset{targetKey=${material.targetKey};face=${material.face};offset=${keyNumber(material.offset)}}`;
 }
 
 /** 式の欄(距離)だけを写し直す。面の指紋と id はそのまま(reevaluatePart の他の種類と同じ)。 */

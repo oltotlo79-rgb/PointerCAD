@@ -374,7 +374,7 @@ export function qualifyGpuResidentSample(value: unknown, expected: GpuResidentEx
     evidence: gpuEvidenceSha256(expected.evidenceSha256) ? expected.evidenceSha256 : null, unknown: problems };
 }
 
-export interface MemoryWorkloadCapture {
+interface MemoryWorkloadCapture {
   readonly schema: 'pcad-memory-workload-v1';
   readonly runNonce: string;
   readonly rootIssuedNonce: true;

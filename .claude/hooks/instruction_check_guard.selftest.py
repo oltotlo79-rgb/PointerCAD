@@ -343,6 +343,71 @@ class HookLogicTests(unittest.TestCase):
         self.assertIsNone(guard.hook(payload, self.now, root=self.root))
 
 
+class DatedTimeTests(unittest.TestCase):
+    """rules/06 §10.469: 時刻の直前に年月日があり、その日付が今日より前なら先の時刻と扱わない。
+    今日の日付・裸の時刻は従来どおり180分の窓で判定する。nowは各試験の固定値。"""
+
+    COMMON_HEADER = "# 共通の決まり（統括が 2026-10-05 13:53 に作成）\n本文\n"
+
+    def test_past_dated_header_time_is_not_future(self):
+        # (i) 33日前の日付付きの 13:53 を 13:22 に検査しても外れ 0。
+        self.assertEqual(guard.future_time_findings(self.COMMON_HEADER, datetime(2026, 11, 7, 13, 22)), [])
+
+    def test_today_dated_header_time_30_minutes_ahead_is_future(self):
+        # (ii) 今日の日付の30分先は外れ 1。
+        content = "# 指示書（統括が 2026-11-07 09:30 に作成）\n本文\n"
+        self.assertEqual(guard.future_time_findings(content, datetime(2026, 11, 7, 9, 0)), [(1, "09:30")])
+
+    def test_bare_header_time_30_minutes_ahead_is_still_future(self):
+        # (iii) 裸の30分先は外れ 1(1行目の裸の時刻と「統括が HH:MM に」の重複は1件にまとまる)。
+        content = "# 指示書（統括が 09:30 に作成）\n本文\n"
+        self.assertEqual(guard.future_time_findings(content, datetime(2026, 11, 7, 9, 0)), [(1, "09:30")])
+
+    def test_each_separator_between_a_past_date_and_the_time_is_accepted(self):
+        now = datetime(2026, 11, 7, 9, 0)
+        for separator in (" ", "の", chr(0x3000), "T", " の "):
+            with self.subTest(separator=repr(separator)):
+                content = f"# 指示書（統括が 2026-11-06{separator}09:30 に作成）\n本文\n"
+                self.assertEqual(guard.future_time_findings(content, now), [])
+
+    def test_a_past_date_not_directly_before_the_time_does_not_excuse_it(self):
+        # 日付と時刻の間に他の語があれば前置きと見なさない(裸の時刻として従来どおり判定)。
+        content = "# 指示書（2026-11-06 の続き。統括が 09:30 に作成）\n本文\n"
+        self.assertEqual(guard.future_time_findings(content, datetime(2026, 11, 7, 9, 0)), [(1, "09:30")])
+
+    def test_a_later_date_keeps_the_old_window_judgment(self):
+        # 先の日付は従来どおり180分の窓で判定する(日またぎの5分先は外れ。緩めない)。
+        content = "# 指示書（統括が 2026-09-25 00:03 に作成）\n本文\n"
+        self.assertEqual(guard.future_time_findings(content, datetime(2026, 9, 24, 23, 58)), [(1, "00:03")])
+
+    def test_an_impossible_date_is_treated_as_a_bare_time(self):
+        content = "# 指示書（統括が 2026-13-40 09:30 に作成）\n本文\n"
+        self.assertEqual(guard.future_time_findings(content, datetime(2026, 11, 7, 9, 0)), [(1, "09:30")])
+
+    def test_state_paren_and_supervisor_ni_keep_their_judgment(self):
+        content = "見出し\n投入時の状態（09:45）: HEAD abc\n編集可（統括が 09:50 に取得した SHA-256）\n"
+        self.assertEqual(guard.future_time_findings(content, datetime(2026, 11, 7, 9, 0)),
+                         [(2, "09:45"), (3, "09:50")])
+
+    def test_hook_path_allows_a_launch_naming_the_common_rules_with_a_past_dated_header(self):
+        # (i) を hook() の経路で: 依頼文が v103-claude-common.md を名指しする形。
+        root, created_dirs = make_root()
+        self.addCleanup(cleanup_root, root, created_dirs)
+        write_instruction(root, "v103-claude-common.md", self.COMMON_HEADER)
+        write_instruction(root, "bare.md", "# 指示書（統括が 09:30 に作成）\n本文\n")
+
+        def payload(name: str) -> dict:
+            return {"hook_event_name": "PreToolUse", "tool_name": "Agent",
+                    "tool_input": {"prompt": f"`scratchpad/claude/instructions/{name}` を読む。",
+                                   "description": "t"}}
+
+        self.assertIsNone(guard.hook(payload("v103-claude-common.md"), datetime(2026, 11, 7, 13, 22), root=root))
+        # 同じ経路で裸の30分先は従来どおり拒否する(試験が空振りでないことの対照)。
+        denied = guard.hook(payload("bare.md"), datetime(2026, 11, 7, 9, 0), root=root)
+        self.assertIsNotNone(denied)
+        self.assertIn("時刻 09:30 が現在(09:00)より先", denied["hookSpecificOutput"]["permissionDecisionReason"])
+
+
 class SubprocessContractTests(unittest.TestCase):
     """実プロセス経由のstdin/stdout契約。実ROOTを使うので時刻に依存しない場合だけを扱う。"""
 
@@ -2323,6 +2388,143 @@ class WorkerConsumerTests(NewChecksBase):
         self.assertIn(self.FRAME, reason)
 
 
+class ProductConsumerTests(NewChecksBase):
+    """検査9 の拡張: ③の製品 .ts/.tsx を相対 import する同じパッケージの検査ファイル(rules/06 §10.458)。"""
+
+    MARK = "製品ファイルの直接の検査: ③が"
+    PRODUCT = "packages/ui/src/viewport/attachAssemblyInteraction.ts"
+    OWN = "packages/ui/src/viewport/attachAssemblyInteraction.test.ts"
+    LIFECYCLE = "packages/ui/src/viewport/ViewportCanvasLifecycle.test.ts"
+    FAR = "packages/ui/src/app/deep/far.test.tsx"
+    ALL = (FAR, LIFECYCLE, OWN)
+
+    def setUp(self):
+        super().setUp()
+        self.write(self.PRODUCT, "export const attach = 1;\n")
+        self.write(self.OWN, "import { attach } from './attachAssemblyInteraction.js';\n")
+        self.write(self.LIFECYCLE, "import {\n  attach,\n} from \"./attachAssemblyInteraction\";\n")
+        self.write(self.FAR, "const m = await import('../../viewport/attachAssemblyInteraction.js');\n")
+        # 囮: 似た名前・vi.mock だけ・別のパッケージ・検査でないファイル・URL の文字列は数えない。
+        self.write("packages/ui/src/viewport/attachAssemblyInteractionUtil.ts", "export const u = 1;\n")
+        self.write("packages/ui/src/viewport/attachAssemblyInteractionUtil.test.ts",
+                   "import { u } from './attachAssemblyInteractionUtil.js';\n")
+        self.write("packages/ui/src/viewport/mocked.test.ts", "vi.mock('./attachAssemblyInteraction.js');\n")
+        self.write("packages/ui/src/viewport/consumer.ts", "import { attach } from './attachAssemblyInteraction.js';\n")
+        self.write("packages/model/src/cross.test.ts",
+                   "import { attach } from '../../ui/src/viewport/attachAssemblyInteraction.js';\n")
+        self.write("packages/ui/src/viewport/url.test.ts", "new URL('https://x.invalid/viewport/attachAssemblyInteraction.js');\n")
+
+    def product_errors(self, text: str) -> list[str]:
+        return [message for message in self.errors(text) if self.MARK in message]
+
+    def missing(self, message: str) -> list[str]:
+        return message.split("実パスで無い: ", 1)[1].split("(今の検査ファイル", 1)[0].split("、")
+
+    def section_two(self, *items: str) -> str:
+        return "## 1. 目的\n\n背景だけ。\n\n## 2. 検査\n\n" + "".join(f"- {item}\n" for item in items)
+
+    # 正例: 直接 import する検査ファイルを全て「## 2」以降に実パスで書けば通る(試験は③に無くてよい)
+
+    def test_every_direct_test_named_after_section_two_passes(self):
+        bodies = (
+            self.section_two(f"{self.OWN}・ViewportCanvasLifecycle.test.ts と {self.FAR} を流す"),
+            self.section_two("`diag.py unit --package ui src/viewport/attachAssemblyInteraction.test.ts "
+                             "src/viewport/ViewportCanvasLifecycle.test.ts src/app/deep/far.test.tsx` を1回"),
+            "## 2. 段階\n\n実装する。\n\n## 3. 合格条件\n\n" + "".join(f"- {path}\n" for path in self.ALL),
+        )
+        for body in bodies:
+            with self.subTest(body=body):
+                self.assertEqual(self.product_errors(make_instruction(self.PRODUCT, body)), [])
+        read_only = f"{self.PRODUCT} は読取専用で、{self.OWN}"
+        self.assertEqual(self.product_errors(make_instruction(read_only, self.section_two(self.OWN))), [])
+
+    # 負例: 1 本でも抜ければ外れ(§1 の言及は数えない)。フックも起動を止める
+
+    def test_missing_direct_test_is_rejected_and_the_hook_denies(self):
+        body = f"## 1. 目的\n\n{self.LIFECYCLE} が落ちた。\n\n## 2. 検査\n\n- {self.OWN} を流す\n"
+        errors = self.product_errors(make_instruction(self.PRODUCT, body))
+        self.assertEqual(len(errors), 1, errors)
+        self.assertEqual(self.missing(errors[0]), [self.FAR, self.LIFECYCLE])
+        self.assertIn("x.md 行3:", errors[0])
+        self.assertIn("全 3 本", errors[0])
+        self.assertIn("ui の単体を全件", errors[0])
+        self.assertIn("§10.458", errors[0])
+        content = make_instruction(self.PRODUCT, body)
+        self.materialize(content)
+        self.write("scratchpad/claude/instructions/product.md", content)
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_input": {
+            "prompt": "`scratchpad/claude/instructions/product.md` を読む。", "description": "t"}}
+        result = guard.hook(payload, self.now, root=self.root)
+        self.assertIsNotNone(result)
+        reason = result["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn(self.MARK, reason)
+        self.assertIn(self.LIFECYCLE, reason)
+
+    # 全件指定: 「<pkg> の単体を全件」「packages/<pkg> の全検査」なら通る。否定・別のパッケージは数えない
+
+    def test_full_run_of_the_package_passes(self):
+        for phrase in ("ui の単体を全件流す", "packages/ui の全検査を1回", "packages/ui の単体を全件"):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(self.product_errors(make_instruction(self.PRODUCT, self.section_two(phrase))), [])
+        for phrase in ("ui の単体を全件は流さない", "model の単体を全件流す", "gui の単体を全件流す"):
+            with self.subTest(phrase=phrase):
+                errors = self.product_errors(make_instruction(self.PRODUCT, self.section_two(phrase)))
+                self.assertEqual([self.missing(message) for message in errors], [list(self.ALL)])
+        before_two = "## 1. 目的\n\nui の単体を全件流す。\n\n## 2. 検査\n\n- 何もしない\n"
+        self.assertEqual(len(self.product_errors(make_instruction(self.PRODUCT, before_two))), 1)
+        # フォルダーの全件は、そのフォルダーの中の検査ファイルだけを覆う(外の far.test.tsx は別に要る)。
+        folder_run = self.section_two("packages/ui/src/viewport の全検査を流す")
+        errors = self.product_errors(make_instruction(self.PRODUCT, folder_run))
+        self.assertEqual([self.missing(message) for message in errors], [[self.FAR]])
+        with_far = self.section_two("packages/ui/src/viewport/ の単体を全件", self.FAR)
+        self.assertEqual(self.product_errors(make_instruction(self.PRODUCT, with_far)), [])
+        negated = self.section_two("packages/ui/src/viewport の全検査は流さない", self.FAR)
+        self.assertEqual([self.missing(m) for m in self.product_errors(make_instruction(self.PRODUCT, negated))],
+                         [[self.LIFECYCLE, self.OWN]])
+
+    # フォルダー指定: フォルダー直下の製品 .ts/.tsx 全てが対象。30 本を超えたら警告だけ
+
+    def test_folder_scope_covers_direct_products_and_large_folders_only_warn(self):
+        folder = "packages/ui/src/solidAnalysis"
+        self.write(f"{folder}/solidFieldView.ts", "export const v = 1;\n")
+        self.write(f"{folder}/SolidElementProbe.tsx", "export const P = 1;\n")
+        self.write(f"{folder}/solidFixture.testSupport.ts", "export const f = 1;\n")
+        self.write(f"{folder}/nested/deepProduct.ts", "export const d = 1;\n")
+        self.write(f"{folder}/solidFieldView.test.ts", "import { v } from './solidFieldView.js';\n")
+        self.write(f"{folder}/SolidElementProbe.test.tsx", "import { P } from './SolidElementProbe';\n")
+        self.write(f"{folder}/fixtureUser.test.ts", "import { f } from './solidFixture.testSupport.js';\n")
+        self.write(f"{folder}/nested/deepProduct.test.ts", "import { d } from './deepProduct.js';\n")
+        scope = f"{folder}/ 以下の既存の .ts・.tsx"
+        errors = self.product_errors(make_instruction(scope, self.section_two(f"{folder}/solidFieldView.test.ts を流す")))
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn(f"{folder}/SolidElementProbe.tsx", errors[0])
+        self.assertEqual(self.missing(errors[0]), [f"{folder}/SolidElementProbe.test.tsx"])
+        listed = self.section_two(f"{folder}/solidFieldView.test.ts・SolidElementProbe.test.tsx を流す")
+        self.assertEqual(self.product_errors(make_instruction(scope, listed)), [])
+        for index in range(31):
+            self.write(f"packages/ui/src/big/p{index:02d}.ts", "export const x = 1;\n")
+        self.write("packages/ui/src/big/p00.test.ts", "import { x } from './p00.js';\n")
+        errors, warnings = self.report(make_instruction("packages/ui/src/big/ 以下", self.section_two("何も流さない")))
+        self.assertEqual([message for message in errors if self.MARK in message], [])
+        self.assertIn("31 本(30 本超)", self.joined(warnings))
+        # 同じ大きなフォルダーでも、ファイルを実パスで書けば上限に関係なく確かめる。
+        errors = self.product_errors(make_instruction("packages/ui/src/big/p00.ts", self.section_two("何も流さない")))
+        self.assertEqual([self.missing(message) for message in errors], [["packages/ui/src/big/p00.test.ts"]])
+
+    def test_consumers_ignore_decoys_and_rg_agrees_with_the_python_scan(self):
+        consumers, complete = guard.product_consumers(self.root, "packages/ui/src", [self.PRODUCT], time.monotonic() + 30, None)
+        self.assertTrue(complete)
+        self.assertEqual(consumers, {self.PRODUCT: sorted(self.ALL)})
+        invocation = guard._rg_invocation()
+        if invocation is not None:
+            via_rg, complete = guard.product_consumers(self.root, "packages/ui/src", [self.PRODUCT],
+                                                       time.monotonic() + 30, invocation)
+            self.assertTrue(complete)
+            self.assertEqual(via_rg, consumers)
+        none, complete = guard.product_consumers(self.root, "packages/ui/src", [self.PRODUCT], time.monotonic() - 1, None)
+        self.assertFalse(complete)
+
+
 class TextTransportTests(NewChecksBase):
     def test_lost_unicode_is_refused_before_scope_classification(self):
         for text in ("? " + "?" * 20 + "\n? git " + "?" * 8, "a\ufffdb"):
@@ -2429,6 +2631,63 @@ class DocsPhaseTests(NewChecksBase):
                     if not marker:
                         self.assertEqual(len(result.stderr.splitlines()), 1)
                         self.assertIn('取扱説明書は最後', result.stderr)
+
+
+
+class ProductScanOnceTests(NewChecksBase):
+    """rules/06 §10.464(追補 2): 検査 9 の拡張の走査は 1 回の --check で 1 回だけ。import の指定子の照合は従来の finditer と同じ。"""
+
+    def test_import_specifiers_match_finditer_exactly(self):
+        samples = [
+            "import { a } from './a.js';\nimport b from \"../b\";\nexport * from './c.ts';\n",
+            "const m = await import(\n  './dyn.js'\n);\nimport(\"./x\")\n",
+            "xfrom './no'; $from './no2'; .import('./no3'); from'./yes'; import'./yes2';\n",
+            "from './a'from './b' import('./c')import './d'\n",
+            "// import './commented'\n/* from \"./block\" */\nconst s = 'import from';\n",
+            "import { x } from './x.js';" * 50 + "\nfrom\n'./split'\n",
+            "", "importfrom './z'", "frimport './w'", "vi.mock('./m.js'); new URL('./u.js', import.meta.url);\n",
+        ]
+        for text in samples:
+            with self.subTest(text=text[:40]):
+                expected = [match.group(2) for match in re.finditer(guard.WORKER_IMPORT_PATTERN, text)]
+                self.assertEqual(guard._import_specifiers(text), expected)
+
+    def test_two_packages_and_several_products_are_scanned_once_with_the_same_result(self):
+        self.write("packages/ui/src/a/alpha.ts", "export const a = 1;\n")
+        self.write("packages/ui/src/a/beta.ts", "export const b = 1;\n")
+        self.write("packages/model/src/m/gamma.ts", "export const g = 1;\n")
+        self.write("packages/ui/src/a/alpha.test.ts", "import { a } from './alpha.js';\n")
+        self.write("packages/ui/src/z/beta.test.tsx", "import { b } from '../a/beta';\n")
+        self.write("packages/model/src/m/gamma.test.ts", "import { g } from './gamma.js';\n")
+        # model の検査が ui の名前だけを含んでも、model の対象の判定は変わらない(候補はそのパッケージの名前を含むファイルだけ)。
+        self.write("packages/model/src/m/other.test.ts", "// alpha beta\nimport { q } from './q.js';\n")
+        scope = "③ 編集してよいファイルは packages/ui/src/a/alpha.ts と packages/ui/src/a/beta.ts と packages/model/src/m/gamma.ts だけ。"
+        text = scope + "\n\n# 指示書 t\n\n## 2. 検査\n\n- 何も流さない\n"
+        calls = []
+        original = guard._product_candidate_texts
+
+        def counted(*args, **kwargs):
+            calls.append(args[1])
+            return original(*args, **kwargs)
+
+        guard._product_candidate_texts = counted
+        try:
+            errors = [message for message in self.errors(text) if "製品ファイルの直接の検査: ③が" in message]
+        finally:
+            guard._product_candidate_texts = original
+        self.assertEqual(len(calls), 1, calls)
+        self.assertEqual(sorted(calls[0]), ["packages/model/src", "packages/ui/src"])
+        missing = sorted(test for message in errors
+                         for test in message.split("実パスで無い: ", 1)[1].split("(今の検査ファイル", 1)[0].split("、"))
+        self.assertEqual(missing, ["packages/model/src/m/gamma.test.ts", "packages/ui/src/a/alpha.test.ts",
+                                   "packages/ui/src/z/beta.test.tsx"])
+        # 同じ結果を、従来どおりパッケージごとの product_consumers でも得る(関数の形は変えていない)。
+        deadline = time.monotonic() + 30
+        ui, complete = guard.product_consumers(self.root, "packages/ui/src",
+                                               ["packages/ui/src/a/alpha.ts", "packages/ui/src/a/beta.ts"], deadline, None)
+        self.assertTrue(complete)
+        self.assertEqual(ui, {"packages/ui/src/a/alpha.ts": ["packages/ui/src/a/alpha.test.ts"],
+                              "packages/ui/src/a/beta.ts": ["packages/ui/src/z/beta.test.tsx"]})
 
 
 if __name__ == "__main__":

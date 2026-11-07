@@ -47,7 +47,7 @@ describe('図面画面の5区画に入る内容', () => {
     expect(tools.map((tool) => tool.id)).toEqual(expect.arrayContaining(['section', 'detail', 'auxiliary', 'partial', 'broken', 'note', 'annotation', 'centerMark']));
     for (const tool of tools) expect(ja[tool.tooltipKey].length).toBeGreaterThan(8);
   });
-  it('▾のファイルの一覧は部品と同じ名前で、上の段の図柄のボタン(開く・保存)を重ねない(w65b §3-A)', () => {
+  it('▾のファイルの一覧は部品と同じ名前で、上の段の図柄のボタン(開く・保存)を重ねない', () => {
     const fileGroup = DRAWING_TOOL_GROUPS[0];
     expect(fileGroup.label).toBe('toolbar.file.title');
     expect(fileGroup.menuLabel).toBe('toolbar.fileMenu.groupLabel');

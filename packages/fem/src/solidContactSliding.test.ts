@@ -5,8 +5,10 @@ import type { SubShapeRef } from '@pointercad/model';
 import type { Matrix3 } from './finiteKinematics.js';
 import { buildSolidContactPlan, type SolidContactPlan } from './solidContactModel.js';
 import type { ContactFacetLocation, SolidContactSearchMesh } from './solidContactSearch.js';
-import { contactPointVirtualWork, updateContactGeometry,
-  type ContactGeometryUpdateOptions, type ContactMaterialPoint } from './solidContactUpdate.js';
+import { contactPointVirtualWork, updateContactGeometry } from './solidContactUpdate.js';
+
+type ContactGeometryUpdateOptions = Parameters<typeof updateContactGeometry>[3];
+type ContactMaterialPoint = Parameters<typeof updateContactGeometry>[0];
 
 type Triangle = readonly [Vector3, Vector3, Vector3];
 const IDENTITY: Matrix3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];

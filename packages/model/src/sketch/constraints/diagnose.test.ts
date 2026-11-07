@@ -16,14 +16,45 @@ import {
 } from './diagnose.js';
 import { buildResiduals, type ResidualRow } from './residuals.js';
 import {
-  CONNECTED_1000_FIXTURE_SHA256, CONNECTED_1000_ORIENTATION_ID, CONNECTED_1000_PURE_FIXTURE_SHA256, CONNECTED_1000_RECIPE,
-  CONNECTED_1000_RECIPE_SHA256, connected1000Components, connected1000Constraints, connected1000Features,
+  CONNECTED_1000_FIXTURE_SHA256, CONNECTED_1000_RECIPE,
+  connected1000Constraints, connected1000Features,
   connected1000FixtureText, connected1000Original, connected1000Sketch,
 } from './connected1000Fixture.testSupport.js';
 import { extraDimension, geometryOracleFactories, triangleFanOracle } from './independentGeometry.testSupport.js';
 import { matrixRank, solveLevenbergMarquardt } from './solve.js';
 import { sketchConstraints, type ConstraintTarget, type SketchConstraint } from './types.js';
 import { collectVariables, MAX_CONSTRAINT_VARIABLES, type VariableSet } from './variables.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const CONNECTED_1000_ORIENTATION_ID = 'anchor-rise';
+
+/** SHA-256 of `JSON.stringify(CONNECTED_1000_RECIPE)`. */
+const CONNECTED_1000_RECIPE_SHA256 = '670827ced5b7324914cf6348322d3d8fcdefde420ed9785db07dfbd36edcc98f';
+
+/** SHA-256 of the canonical text of the pure 1997-distance system (the fixture without its orientation). */
+const CONNECTED_1000_PURE_FIXTURE_SHA256 = '839b6ea89ae6e1d39dc95ff8cee704896fed9d63f686fcbe14ef11511d99327d';
+
+/** Number of connected components of the points under the point-to-point constraints (union-find). */
+function connected1000Components(features: readonly SketchFeature[], constraints: readonly SketchConstraint[]): number {
+  const parent = new Map(features.map(feature => [feature.id, feature.id]));
+  const root = (id: string): string => {
+    let current = id;
+    for (;;) {
+      const next = parent.get(current);
+      if (next === undefined) throw new Error(`Constraint refers to a point outside the fixture: ${id}`);
+      if (next === current) return current;
+      const grand = parent.get(next) ?? next;
+      parent.set(current, grand);
+      current = grand;
+    }
+  };
+  for (const constraint of constraints) {
+    if ((constraint.kind !== 'distance' && constraint.kind !== 'verticalDistance')
+      || constraint.a.kind !== 'point' || constraint.b.kind !== 'point') throw new Error('Unexpected fixture constraint');
+    parent.set(root(constraint.a.pointId), root(constraint.b.pointId));
+  }
+  return new Set(features.map(feature => root(feature.id))).size;
+}
 
 /**
  * タスク7 の検査。**期待値はすべて手で導ける形にしてある。**

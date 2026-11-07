@@ -40,7 +40,7 @@ export interface MathInsertChoice {
 export interface MathInsertGroup {
   readonly id:'axes'|'parameters'|'coefficients'|'constants';readonly label:string;readonly choices:readonly MathInsertChoice[];
 }
-export interface MathEditorSurfaceProps {
+interface MathEditorSurfaceProps {
   readonly input:MathEditorInput;readonly controller:MathEditorViewController;
   readonly createField:()=>StructuredMathField;readonly labels:MathEditorLabels;
   readonly groups:readonly MathInsertGroup[];readonly palette:readonly MathPaletteItem[];

@@ -293,7 +293,7 @@ export interface HoleKeyMaterial {
 }
 
 /** 面内X・Yの配置を区別する鍵の材料。 */
-export interface PlanarHoleKeyMaterial {
+ interface PlanarHoleKeyMaterial {
   readonly kind: 'plane-face';
   readonly locations: readonly { readonly x: number; readonly y: number }[];
 }

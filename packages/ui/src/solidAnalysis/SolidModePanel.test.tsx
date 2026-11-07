@@ -2,8 +2,10 @@ import { isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
-import { parseSolidModeAmplitude, SolidModePanel, type SolidModePanelProps } from './SolidModePanel.js';
+import { parseSolidModeAmplitude, SolidModePanel } from './SolidModePanel.js';
 import { projectSolidMode, type SolidModeDisplay, type SolidModeResult } from './solidModeView.js';
+
+type SolidModePanelProps = Parameters<typeof SolidModePanel>[0];
 
 const source = { documentId: 'doc-1', revision: 3, meshKey: 'mesh-a' };
 const result: SolidModeResult = {

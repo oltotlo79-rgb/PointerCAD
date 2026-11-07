@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { applyParameterCsvPreview, prepareParameterCsv, type ParameterCsvInputRecord } from './parameterCsvActions.js';
+import { applyParameterCsvPreview, prepareParameterCsv, type prepareParameterCsvForStore } from './parameterCsvActions.js';
+
+type ParameterCsvInputRecord = Parameters<typeof prepareParameterCsvForStore>[0][number];
 
 const parameter = (name: string, source: string): Parameter => ({
   name, value: { source, value: 0, display: '0' }, unit: 'mm', description: '',

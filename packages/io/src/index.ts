@@ -112,6 +112,7 @@ export {
 export {
   AUTO_SAVE_INTERVAL_MS,
   DEFAULT_AUTO_SAVE_IDENTITY,
+  autoSaveRecordIdentity,
   autoSaveRecordKey,
   type AutoSaveIdentity,
   type AutoSaveDocument,

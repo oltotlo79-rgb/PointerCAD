@@ -4,7 +4,7 @@ import type {
   NamedSavePoint, SavePointBlob, SavePointEntry, SavePointErrorCode, SavePointStorage,
 } from './namedSavePoints.js';
 
-export const MAX_NAMED_SAVE_POINTS = 100;
+const MAX_NAMED_SAVE_POINTS = 100;
 export const MAX_NAMED_SAVE_POINT_BYTES = 512 * 1024 * 1024;
 export const SAVE_POINT_CHUNK_BYTES = 1024 * 1024;
 const SHA = /^[0-9a-f]{64}$/;

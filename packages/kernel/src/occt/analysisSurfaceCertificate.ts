@@ -3,7 +3,7 @@
  *
  * These bounds cover an entire UV triangle, including a pole on its boundary. They do not certify that
  * those triangles cover the trimmed CAD face. A caller must separately prove the complete trim chain,
- * native-tolerance tube and orientation before emitting AnalysisSurfaceCertificate.
+ * native-tolerance tube and orientation before emitting any CAD approximation certificate.
  */
 import type {
   BRepBuilderAPI_Copy,
@@ -24,26 +24,6 @@ import { analyticChartAdmission } from './analyticChartAdmissionR2.js';
 import { validateAnalyticUvComplex } from './analyticUvComplex.js';
 export { validateAnalyticUvComplex } from './analyticUvComplex.js';
 import type { AnalysisSurfaceMesh } from './analysisSurfaceMesh.js';
-
-export type AnalyticSurfaceKind = 'plane' | 'cylinder' | 'cone' | 'sphere' | 'torus';
-
-export interface AnalysisSurfaceCertificate {
-  readonly schema: 'pointercad-analytic-cad-certificate/1';
-  readonly requestedDistanceMm: number;
-  readonly maximumDistanceMm: number;
-  readonly nativeToleranceMm: number;
-  readonly plcSignedVolumeMm3: number;
-  readonly cadSignedVolumeIntervalMm3: readonly [number, number];
-  readonly faces: readonly {
-    readonly faceIndex: number;
-    readonly kind: AnalyticSurfaceKind;
-    readonly triangles: readonly number[];
-    readonly maximumDistanceMm: number;
-    readonly sweptVolumeBoundMm3: number;
-    readonly nativeToleranceMm: number;
-  }[];
-  readonly refinementPasses: number;
-}
 
 export type AnalyticSurfaceParameters =
   | { readonly kind: 'plane'; readonly scale: number }
@@ -114,7 +94,7 @@ export interface AnalyticTrimChain {
   readonly nativeVertexToleranceMm: number;
 }
 
-export interface AnalyticWireChain {
+interface AnalyticWireChain {
   /** Complete wire in native traversal order, including the repeated closing LOCAL node. */
   readonly localNodes: readonly number[];
   readonly segments: readonly {

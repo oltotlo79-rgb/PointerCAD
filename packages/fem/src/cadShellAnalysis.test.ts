@@ -8,8 +8,8 @@ import { createSubShapeReference, requestAnalysisBoundary, type AnalysisBoundary
   type AnalysisBoundarySource, type FaceSurfaceKind, type SolidBody, type SubShapeOrigin, type SubShapeRef } from '@pointercad/model';
 import { createShellCadSavedInput, solidCadFaceKey, type ShellCadSavedInput } from '@pointercad/model/beam-analysis';
 import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
-import { analyzeCadShell, CadShellAnalysisRefusal, decodeCadShellAnalysis, distributeShellEdgeLoad, femShellNativeRunner,
-  prepareCadShellAnalysis, type CadShellAnalysisResult, type CadShellPrepared, type CadShellSettings } from './cadShellAnalysis.js';
+import { analyzeCadShell, bindCadShellResult, CadShellAnalysisRefusal, decodeCadShellAnalysis, distributeShellEdgeLoad,
+  femShellNativeRunner, prepareCadShellAnalysis, type CadShellAnalysisResult, type CadShellSettings } from './cadShellAnalysis.js';
 import type { CadShellSurfaceOptions } from './cadShellSurfaceMesh.js';
 import type { CadTetraContext } from './cadTetraMesh.js';
 import { FemClient, type FemWorkerPort } from './client.js';
@@ -20,7 +20,12 @@ import { SHELL_ASSETS } from './shellAssets.js';
 import { shellNativeResponseBound, type ShellNativeWireResult } from './shellBinding.js';
 import { isRecord } from './valueGuards.js';
 import { analyzeShellNative } from './shellRuntime.js';
-import type { ShellAnalysisPlan, ShellNodal6, ShellTensor6 } from './shellTranslation.js';
+import { SCORDELIS_LO, scordelisLoCase, type plateCase } from './shellBenchmark.testSupport.js';
+import { decodeShellAnalysis, translateShellAnalysis, type ShellAnalysisPlan, type ShellNodal6,
+  type ShellTensor6 } from './shellTranslation.js';
+
+type CadShellPrepared = Parameters<typeof bindCadShellResult>[0];
+type BenchmarkCase = ReturnType<typeof plateCase>;
 
 // CAD sheet -> explicit midsurface -> unchanged W08 TR_SHELL02 path -> results keyed by the CAD faces.
 // The sheets below are independent topology/geometry fixtures with semantic origins, not a claim of actual OCCT output;
@@ -247,6 +252,38 @@ function boxSolid(): Sheet {
   return { featureId: 'box', bodyKind: 'solid', points, triangles, triangleFaces: triangles.map((_, t) => Math.floor(t / 2)),
     faces: roles.map(role => ({ surfaceKind: 'plane' as const, origin: faceOrigin('box', role) })), edges: [], vertices: [] };
 }
+/** The W10 Scordelis-Lo quarter roof of the independent generator scordelisLoCase (shellBenchmark.testSupport.ts) as one
+ * explicit cylindrical CAD sheet face: its grid nodes and counter-clockwise triangles (normal away from the cylinder axis),
+ * the grid rows as CAD edges 0 (x = 0 symmetry), 1 (crown), 2 (x = L/2 diaphragm), 3 (free straight edge) and the
+ * corners as vertices. A synthetic CAD fixture with semantic origins, not OCCT output. */
+const ROOF_CELLS = 16;
+/** W10's acceptance for the Scordelis-Lo roof (shellBenchmark.test.ts LIMITS.shellDeflection), reused unchanged. */
+const W10_SHELL_DEFLECTION = 0.05;
+const ROOF_OPTIONS: CadShellSurfaceOptions = { ...OPTIONS, minimumTriangleAreaMm2: 0.1 };
+function roofSheet(featureId = 'roof-sheet', surfaceKind: FaceSurfaceKind = 'cylinder'): { sheet: Sheet; roof: BenchmarkCase } {
+  const roof = scordelisLoCase(ROOF_CELLS), { at } = roof.mesh, n = ROOF_CELLS;
+  const sheet: Sheet = { featureId, bodyKind: 'shell', points: roof.mesh.nodes, triangles: roof.mesh.triangles,
+    triangleFaces: roof.mesh.triangles.map(() => 0), faces: [{ surfaceKind, origin: faceOrigin(featureId, 'top') }],
+    edges: [{ origin: edgeOrigin(featureId, 'top-left'), nodes: range(0, n).map(j => at(0, j)) },
+      { origin: edgeOrigin(featureId, 'top-front'), nodes: range(0, n).map(i => at(i, 0)) },
+      { origin: edgeOrigin(featureId, 'top-right'), nodes: range(0, n).map(j => at(n, j)) },
+      { origin: edgeOrigin(featureId, 'top-back'), nodes: range(0, n).map(i => at(i, n)) }],
+    vertices: [{ origin: vertexOrigin(featureId, 'top-front-left'), node: at(0, 0) },
+      { origin: vertexOrigin(featureId, 'top-front-right'), node: at(n, 0) },
+      { origin: vertexOrigin(featureId, 'top-back-right'), node: at(n, n) },
+      { origin: vertexOrigin(featureId, 'top-back-left'), node: at(0, n) }] };
+  return { sheet, roof };
+}
+/** W10's restraint rows (scordelisLoCase) as CAD edge supports: x = 0 ux, ry, rz; crown uy, rx, rz; diaphragm uy, uz. */
+function roofSettings(body: SolidBody, offsetMm = 0): CadShellSettings {
+  const { thicknessMm, youngMPa, poisson } = SCORDELIS_LO;
+  return { saved: createShellCadSavedInput({ documentId: 'part', bodyFeatureId: body.featureId, faces: [ref(body, 'face', 0)],
+    thicknessMm, offsetMm }), material: { id: 'benchmark', youngMPa, poisson }, surface: ROOF_OPTIONS, edgeLoads: [],
+  supports: [{ kind: 'edge', edge: ref(body, 'edge', 0), fixed: [true, false, false, false, true, true] },
+    { kind: 'edge', edge: ref(body, 'edge', 1), fixed: [false, true, false, true, false, true] },
+    { kind: 'edge', edge: ref(body, 'edge', 2), fixed: [false, true, true, false, false, false] }] };
+}
+const unit = (v: ShellVector3): ShellVector3 => [v[0] / norm(v), v[1] / norm(v), v[2] / norm(v)];
 function savedFor(context: CadTetraContext, faces: readonly number[], offsetMm = 0): ShellCadSavedInput {
   return createShellCadSavedInput({ documentId: context.documentId, bodyFeatureId: context.body.featureId,
     faces: faces.map(index => ref(context.body, 'face', index)), thicknessMm: T, offsetMm });
@@ -425,6 +462,110 @@ describe('CAD sheet -> explicit midsurface -> native TR_SHELL02 -> results keyed
     expect(await analyzeCadShell(kernelOf(sheet, idle), () => context, settings, () => Promise.reject(new Error('not run')),
       controller.signal)).toEqual({ kind: 'cancelled' });
     expect(idle).toHaveLength(0);
+  });
+});
+
+// A curved explicit midsurface at offset 0 is bound as it is: the current native triangles are the elements, each with its
+// own normal. Expected values come from the independent W10 generator, analytic chord normals and W10's published
+// reference, never from this path's output. Synthetic CAD fixture: not evidence of an actual OCCT cylinder.
+describe('explicit curved CAD midsurface at offset 0: the native surface mesh is the shell plan', () => {
+  it('passes the cylindrical sheet unchanged: W10 nodes, triangles, winding and restraints, one face key, per-element normals', async () => {
+    const { sheet, roof } = roofSheet(), context = contextOf(sheet), body = context.body;
+    const settings = roofSettings(body), boundary = await boundaryOf(sheet, context), before = snapshot(boundary, context, settings);
+    const prepared = prepareCadShellAnalysis(boundary, context, settings);
+    expect(snapshot(boundary, context, settings)).toBe(before);
+    const reference = translateShellAnalysis(roof.input).input;
+    expect({ ...prepared.input, source: null, nodalLoads: [] }).toEqual({ ...reference, source: null, nodalLoads: [] });
+    expect(prepared.input.nodes).toEqual(roof.mesh.nodes);
+    expect(prepared.referenceNodes).toEqual(roof.mesh.nodes);
+    expect(prepared.input.elements.map(element => element.nodes)).toEqual(roof.mesh.triangles);
+    expect(prepared.input.elements.every(element => element.thicknessMm === SCORDELIS_LO.thicknessMm && element.offsetMm === 0)).toBe(true);
+    expect(prepared.input.nodalLoads).toEqual([]);
+    expect(prepared.midsurface).toEqual({ offsetMm: 0, shiftMm: [0, 0, 0] });
+    expect(prepared.faces).toHaveLength(1);
+    expect(prepared.faces[0]).toMatchObject({ faceKey: solidCadFaceKey(ref(body, 'face', 0)), faceIndex: 0, surfaceKind: 'cylinder',
+      normal: null, triangles: roof.mesh.triangles.map((_, t) => t), nodes: roof.mesh.nodes.map((_, node) => node) });
+    expect(prepared.elementFaces).toEqual(roof.mesh.triangles.map(() => 0));
+    // Each cell row j is a flat chord strip of the cylinder: its outward normal is (0, sin phi, cos phi) at the strip middle.
+    const step = SCORDELIS_LO.halfAngleRad / ROOF_CELLS, p = roof.mesh.nodes;
+    roof.mesh.triangles.forEach(([a, b, c], t) => {
+      const phi = (Math.floor(Math.floor(t / 2) / ROOF_CELLS) + 0.5) * step, chord: ShellVector3 = [0, Math.sin(phi), Math.cos(phi)];
+      const actual: ShellVector3 = [prepared.mesh.normals[3 * t], prepared.mesh.normals[3 * t + 1], prepared.mesh.normals[3 * t + 2]];
+      expect(relative(actual.map((v, i): [number, number] => [v, chord[i]]), 1)).toBeLessThanOrEqual(1e-12);
+      const winding = unit(cross(sub(p[b], p[a]), sub(p[c], p[a])));
+      expect(relative(actual.map((v, i): [number, number] => [v, winding[i]]), 1)).toBeLessThanOrEqual(1e-12);
+    });
+  });
+
+  it('W10 self weight on the bound cylinder: free-edge midpoint uz within the W10 5% of -0.3024, raw element values kept', async () => {
+    const { sheet, roof } = roofSheet(), context = contextOf(sheet);
+    const prepared = prepareCadShellAnalysis(await boundaryOf(sheet, context), context, roofSettings(context.body));
+    // The CAD path has no surface load: W10's own lumped self-weight rows are substituted; nothing else changes.
+    const loaded = translateShellAnalysis({ ...prepared.input, nodalLoads: roof.input.nodalLoads });
+    const result = bindCadShellResult({ ...prepared, input: loaded.input, plan: loaded.plan },
+      decodeShellAnalysis(runNative(loaded.plan), loaded.plan));
+    expect(denied).toBe(0);
+    expectFaceBinding(sheet, context, result);
+    const uzMm = result.nodes[roof.probe].displacement[2];
+    measured.roofUzMm = uzMm;
+    expect(record('roofUzRelative', Math.abs(uzMm - SCORDELIS_LO.referenceUzMm) / Math.abs(SCORDELIS_LO.referenceUzMm)))
+      .toBeLessThanOrEqual(W10_SHELL_DEFLECTION);
+    // Curved: the planar nodal averaging stays unavailable; the native integration-point values are kept per element.
+    expect(result.shell.recovery).toMatchObject({ status: 'unavailable', code: 'nonplanar' });
+    for (const element of result.elements) for (const point of element.points) {
+      expect([...point.topMPa, ...point.bottomMPa].every(Number.isFinite)).toBe(true);
+      expect(point.referenceXyzMm).toEqual(point.xyzMm);
+    }
+  });
+
+  it('refuses a curved face at a nonzero offset before any boundary request, a vanished face and a cylinder declared planar', async () => {
+    const { sheet } = roofSheet(), context = contextOf(sheet), boundary = await boundaryOf(sheet, context), calls: unknown[] = [];
+    for (const offsetMm of [0.1, -0.1]) {
+      const settings = roofSettings(context.body, offsetMm), before = snapshot(boundary, context, settings);
+      const refused = refusal(() => prepareCadShellAnalysis(boundary, context, settings));
+      expect(refused.code).toBe('midsurface-offset-fold');
+      expect(refused.message).toContain('a cylinder face: the offset surface of a curved face is not a shift of its nodes');
+      expect(snapshot(boundary, context, settings)).toBe(before);
+      expect(await analyzeCadShell(kernelOf(sheet, calls), () => context, settings, () => Promise.reject(new Error('not run'))))
+        .toMatchObject({ kind: 'failed', code: 'midsurface-offset-fold' });
+    }
+    expect(calls).toHaveLength(0);
+    const good = roofSettings(context.body);
+    const gone: CadShellSettings = { ...good, saved: { ...good.saved, midsurfaceFaces: [solidCadFaceKey({ ...ref(context.body, 'face', 0),
+      origin: faceOrigin('roof-sheet', 'bottom') })] } };
+    expect(refusal(() => prepareCadShellAnalysis(boundary, context, gone)).code).toBe('midsurface-unresolved');
+    const declared = roofSheet('roof-sheet', 'plane').sheet, planar = contextOf(declared);
+    const fakeBoundary = await boundaryOf(declared, planar);
+    const fake = refusal(() => prepareCadShellAnalysis(fakeBoundary, planar, roofSettings(planar.body)));
+    expect(fake.code).toBe('midsurface-nonplanar');
+    expect(fake.message).toContain('is not one plane');
+  });
+
+  it('keeps the CAD revision check and loads a free curved edge with the normal of each adjacent element', async () => {
+    const { sheet, roof } = roofSheet(), context = contextOf(sheet), body = context.body, n = ROOF_CELLS, p = roof.mesh.nodes;
+    const settings: CadShellSettings = { ...roofSettings(body),
+      edgeLoads: [{ edge: ref(body, 'edge', 3), forceNPerMm: [0, 0, -1], momentNmmPerMm: [0, 0, 0] }] };
+    const prepared = prepareCadShellAnalysis(await boundaryOf(sheet, context), context, settings);
+    const chain = range(0, n).map(i => roof.mesh.at(i, n));
+    const normals = chain.slice(1).map((node, k): ShellVector3 => {
+      const owners = roof.mesh.triangles.filter(triangle => triangle.includes(chain[k]) && triangle.includes(node));
+      expect(owners).toHaveLength(1);
+      const [a, b, c] = owners[0];
+      return unit(cross(sub(p[b], p[a]), sub(p[c], p[a])));
+    });
+    // Not the first triangle's normal (crown strip): the free-edge strip is 37.5 degrees away from it.
+    const [a0, b0, c0] = roof.mesh.triangles[0], first = unit(cross(sub(p[b0], p[a0]), sub(p[c0], p[a0])));
+    expect(normals[0]).not.toEqual(first);
+    const rows = distributeShellEdgeLoad(chain.map(node => p[node]), normals, [0, 0, -1], [0, 0, 0]);
+    expect(prepared.input.nodalLoads.map(load => load.node)).toEqual(chain);
+    expect(relative(prepared.input.nodalLoads.flatMap((load, k) => [...load.forceN, ...load.momentNmm]
+      .map((v, i): [number, number] => [v, rows[k][i]])), Math.max(...rows.flat().map(Math.abs)))).toBeLessThanOrEqual(1e-12);
+    let current = context;
+    const stale = await analyzeCadShell(kernelOf(sheet), () => current, settings, () => {
+      current = { ...context, revision: 4 };
+      return Promise.resolve({});
+    });
+    expect(stale).toMatchObject({ kind: 'failed', code: 'stale' });
   });
 });
 
@@ -612,13 +753,13 @@ describe('no inferred midsurface: refusals with reasons, input unchanged', () =>
   });
 
   it.each([
-    ['a cylindrical CAD face', 'midsurface-nonplanar', 'is a cylinder face',
+    ['a cylindrical CAD face at a nonzero offset', 1, 'midsurface-offset-fold', 'on saved midsurface face 0, a cylinder face',
       (sheet: Sheet): Sheet => ({ ...sheet, faces: [{ ...sheet.faces[0], surfaceKind: 'cylinder' }] })],
-    ['a plane face whose triangles are not coplanar', 'midsurface-nonplanar', 'is not one plane',
+    ['a plane face whose triangles are not coplanar', 0, 'midsurface-nonplanar', 'is not one plane',
       (sheet: Sheet): Sheet => ({ ...sheet, points: sheet.points.map((point, node): ShellVector3 => node === 7 ? [point[0], point[1], 0.5] : point) })],
-  ] as const)('refuses %s without flattening it', async (_label, code, reason, change) => {
+  ] as const)('refuses %s without flattening it', async (_label, offsetMm, code, reason, change) => {
     const sheet = change(singlePlate()), context = contextOf(sheet);
-    const settings = bendingSettings(context.body, savedFor(context, [0]), SINGLE), boundary = await boundaryOf(sheet, context);
+    const settings = bendingSettings(context.body, savedFor(context, [0], offsetMm), SINGLE), boundary = await boundaryOf(sheet, context);
     const before = snapshot(boundary, context, settings);
     const refused = refusal(() => prepareCadShellAnalysis(boundary, context, settings));
     expect(refused.code).toBe(code);
@@ -664,8 +805,11 @@ describe('no inferred midsurface: refusals with reasons, input unchanged', () =>
       surface: OPTIONS, supports: [clamp], edgeLoads: [{ edge: ref(body, 'edge', 2), forceNPerMm: [0, 0, 1], momentNmmPerMm: [0, 0, 0] }] };
     const accepted = prepareCadShellAnalysis(boundary, context, base);
     expect(accepted.faces[0].normal).toEqual([0, 0, 1]);
-    expect(accepted.faces[1].normal[0]).toBeCloseTo(-Math.sin(Math.PI / 6), 12);
-    expect(accepted.faces[1].normal[2]).toBeCloseTo(Math.cos(Math.PI / 6), 12);
+    const folded = accepted.faces[1].normal;
+    if (folded === null) throw new Error('a planar face keeps its oriented normal');
+    expect(folded[0]).toBeCloseTo(-Math.sin(Math.PI / 6), 12);
+    expect(folded[2]).toBeCloseTo(Math.cos(Math.PI / 6), 12);
+    expect(accepted.faces.map(face => face.surfaceKind)).toEqual(['plane', 'plane']);
     expect(accepted.input.constraints.map(row => row.node)).toEqual(range(0, PLATE.ny).map(j => j * (PLATE.nx + 1)));
     for (const [settings, code] of [[{ ...base, saved: savedFor(context, [0, 1], 1) }, 'midsurface-offset-fold'],
       [{ ...base, edgeLoads: [{ edge: ref(body, 'edge', 6), forceNPerMm: [0, 0, 1], momentNmmPerMm: [0, 0, 0] }] }, 'edge-load-fold']] as const) {
@@ -740,4 +884,29 @@ describe('work-equivalent CAD edge loads (pure)', () => {
     expect(() => distributeShellEdgeLoad([points[0], points[0]], [up], [1, 0, 0], [0, 0, 0])).toThrow('invalid-settings');
     expect(() => distributeShellEdgeLoad(points, [up, up], [Number.NaN, 0, 0], [0, 0, 0])).toThrow('invalid-settings');
   });
+});
+
+
+it('forwards all captured cylindrical quality controls in the public analysis request before any solve', async () => {
+  const sheet = singlePlate();
+  const context = contextOf(sheet, body => ({ ...body,
+    faces: [{ ...body.faces[0], surfaceKind: 'cylinder', radius: 17 }] }));
+  const initialSettings = bendingSettings(context.body, savedFor(context, [0]), SINGLE);
+  const settings: CadShellSettings = { ...initialSettings, surface: { ...initialSettings.surface, nativeQuality: 'cylindrical-rectangle' } };
+  type Request = Parameters<AnalysisBoundarySource['buildAnalysisSurfaceMesh']>[0];
+  const captured: Request[] = [];
+  const source: AnalysisBoundarySource = { buildAnalysisSurfaceMesh: request => {
+    captured.push(request);
+    return Promise.resolve({ kind: 'failed', bodyKey: request.bodyKey, code: 'probe-stop', message: 'observed', faceIndex: null });
+  } };
+  let solverCalled = false;
+  const outcome = await analyzeCadShell(source, () => context, settings, () => {
+    solverCalled = true;
+    return Promise.reject(new Error('Unexpected solve'));
+  });
+  expect(outcome).toMatchObject({ kind: 'failed', code: 'probe-stop' });
+  expect(solverCalled).toBe(false);
+  expect(captured[0].shellQuality).toEqual({ kind: 'cylindrical-rectangle', maximumNodes: settings.surface.maximumNodes,
+    maximumTriangles: settings.surface.maximumTriangles, minimumTriangleAreaMm2: settings.surface.minimumTriangleAreaMm2,
+    minimumAngleDeg: settings.surface.minimumAngleDeg, maximumAspectRatio: settings.surface.maximumAspectRatio });
 });

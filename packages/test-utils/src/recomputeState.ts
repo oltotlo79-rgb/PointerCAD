@@ -1,5 +1,5 @@
 /** Only a completed current generation may end an E2E recomputation wait. */
-export interface RecomputeState {
+interface RecomputeState {
   readonly isComputing: boolean;
   readonly requestedGeneration: number;
   readonly completedGeneration: number;

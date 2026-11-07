@@ -55,13 +55,13 @@ import type {
  * 返っている面の通し番号で、面ごとの色を組むのに要る(`faceColorsFor`。照合をここで
  * やり直さない、§2.5.1)。
  */
-export interface PartExchangeSnapshot {
+interface PartExchangeSnapshot {
   readonly document: PartDocument;
   readonly appearanceMatches: readonly AppearanceMatchEntry[];
 }
 
 /** `createPartExchanger` に渡すもの。覚え書きは再計算・測定と同じものを持ち回る(NFR-PF-2)。 */
-export interface PartExchangerDeps extends CachedResolveDeps {
+interface PartExchangerDeps extends CachedResolveDeps {
   /** 今の文書と外観の照合を読む(ストアの値をそのまま返す)。 */
   readonly snapshot: () => PartExchangeSnapshot;
   /** 形を書き出す口(`KernelBridge.exportShapes`)。 */

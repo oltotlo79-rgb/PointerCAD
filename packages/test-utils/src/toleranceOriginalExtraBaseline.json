@@ -80,6 +80,9 @@
   "packages/fem/src/solidModalResults.ts": {
     "Math.abs(dot(motion, action.mass)) <= tolerance * norm": 1
   },
+  "packages/fem/src/plasticBar.ts": {
+    "Math.abs(trial) > plasticBarYieldStressPa(plan.material, kappa)": 1
+  },
   "packages/fem/src/solidPlasticResults.ts": {
     "Math.abs(v) > SOLID_PLASTIC_LIMITS.maximumStrain": 1
   },
@@ -148,10 +151,6 @@
   "packages/kernel/src/occt/makeSolidSweep.ts": {
     "Math.abs(measureVolume(oc, subShape)) < MIN_SOLID_VOLUME": 1,
     "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME": 3
-  },
-  "packages/kernel/src/occt/makeSplineEdge.ts": {
-    "Math.abs(work[row][column]) > Math.abs(work[pivot][column])": 1,
-    "Math.abs(work[pivot][column]) < MIN_PIVOT": 1
   },
   "packages/kernel/src/occt/makeSpring.ts": {
     "Math.abs(measureVolume(oc, shape)) < MIN_SOLID_VOLUME_MM3": 1
@@ -348,10 +347,6 @@
   "packages/model/src/sketch/shiftCoordinate.ts": {
     "Math.abs(coefficient) < AXIS_EPSILON": 1
   },
-  "packages/model/src/sketch/splineMath.ts": {
-    "Math.abs(work[row][column]) > Math.abs(work[pivot][column])": 1,
-    "Math.abs(work[pivot][column]) < MIN_PIVOT": 1
-  },
   "packages/ui/src/drawing/drawingPick.ts": {
     "Math.abs(sweep) >= turn - 1e-9": 1
   },
@@ -364,5 +359,9 @@
   },
   "packages/ui/src/viewport/buildSubShapeGeometry.ts": {
     "Math.abs(value) <= FLOAT32_MAX": 1
+  },
+  "packages/kernel/src/math/splineInterpolation.ts": {
+    "Math.abs(work[row][column]) > Math.abs(work[pivot][column])": 1,
+    "Math.abs(work[pivot][column]) < MIN_PIVOT": 1
   }
 }

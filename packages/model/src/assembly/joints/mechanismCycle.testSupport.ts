@@ -190,11 +190,3 @@ export function createMechanismCycleFixture(phaseErrorDeg = 0) {
   ];
   return { assembly, frames, placements, edges, cams };
 }
-
-export function oracleLinkErrors(placements: ReadonlyMap<string, RigidPlacement>) {
-  const link = requireCyclePlacement(placements, 'link');
-  const a = requireCyclePlacement(placements, 'followerA'), c = requireCyclePlacement(placements, 'followerC');
-  return { pinAMm: oracleDistance(oraclePoint(link, [0, 0, 0]), a.position),
-    pinCMm: oracleDistance(oraclePoint(link, [0, 60, 0]), c.position),
-    lengthMm: Math.abs(oracleDistance(a.position, c.position) - 60) };
-}

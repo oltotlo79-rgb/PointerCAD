@@ -281,7 +281,7 @@ export type HoleEntryPlan =
   | { readonly kind: 'countersink'; readonly diameter: number; readonly angle: number };
 
 /** 面内X・Yをmmへ解決した配置。面の再照合と世界座標への変換はkernelが行う。 */
-export interface PlanarHolePlan {
+ interface PlanarHolePlan {
   readonly kind: 'plane-face';
   readonly locations: readonly { readonly x: number; readonly y: number }[];
 }
@@ -316,6 +316,7 @@ export type SurfaceShapePlan =
   | {
       readonly kind: 'extrude';
       readonly profile: readonly ResolvedCurve[];
+      readonly curveProfileOrigin?: Extract<FaceOrigin, { readonly kind: 'surface-curve-side' }>['profile'];
       readonly profileOrigins?: readonly Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][];
       /** 掃く向き(単位ベクトル)。反転を適用した後の向き。 */
       readonly direction: Vec3;
@@ -4029,6 +4030,20 @@ type SurfaceShapeOutcome =
  * 選び直しはカーネルが行う(罫線面の `solidFace` とまったく同じ扱い、§2.2)。
  * **どの作り方でも対象を消費しない**ので `consumed` を見ない(§0.a-0.45)。
  */
+/** A single saved open arc is named independently of straight-line and closed-region producers. */
+function surfaceArcOrigin(sketch: SketchDocument | undefined, ids: readonly string[],
+  curves: readonly ResolvedCurve[]): Extract<SurfaceShapePlan, { kind: 'extrude' }>['curveProfileOrigin'] {
+  if (sketch === undefined || ids.length !== 1 || curves.length !== 1) return undefined;
+  const saved = sketch.features.filter(feature => feature.id === ids[0]), curve = curves[0];
+  if (saved.length !== 1 || saved[0].kind !== 'arc' || saved[0].construction
+    || curve.kind !== 'arc' || curve.featureId !== ids[0]
+    || !Number.isFinite(curve.startAngle) || !Number.isFinite(curve.endAngle)
+    || curve.startAngle < 0 || curve.endAngle < 0
+    || curve.startAngle >= 2 * Math.PI || curve.endAngle >= 2 * Math.PI
+    || curve.startAngle === curve.endAngle) return undefined;
+  return { sketchId: sketch.id, curveFeatureId: ids[0], role: 'whole-curve' };
+}
+
 /** Open profiles have saved line owners, never a fabricated closed-face owner. */
 function surfaceLineOrigins(sketch: SketchDocument | undefined, ids: readonly string[],
   curves: readonly ResolvedCurve[]): Extract<SurfaceShapePlan, { kind: 'extrude' }>['profileOrigins'] {
@@ -4076,6 +4091,9 @@ function resolveSurfaceShape(
           error: partError(featureId, 'invalidValue', positiveFieldMessage('掃く長さ')),
         };
       }
+      const curveProfileOrigin = surfaceArcOrigin(
+        context.sketchDocuments.find(sketch => sketch.id === operation.profile.sketchId),
+        operation.profile.curveIds, profile);
       const profileOrigins = surfaceLineOrigins(
         context.sketchDocuments.find(sketch => sketch.id === operation.profile.sketchId),
         operation.profile.curveIds, profile);
@@ -4086,6 +4104,7 @@ function resolveSurfaceShape(
             kind: 'extrude',
             profile,
             ...(profileOrigins === undefined ? {} : { profileOrigins }),
+            ...(curveProfileOrigin === undefined ? {} : { curveProfileOrigin }),
             direction: operation.reversed ? negateVec3(normal) : cleanZeroVec3(normal),
             distance,
           },

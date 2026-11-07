@@ -3,9 +3,17 @@ import { describe, expect, it } from 'vitest';
 import type { ResolvedFace } from '../sketch/types.js';
 import { sheetBoundaryEdges } from './panelGeometry.js';
 import { availableSheetBoundaryEdges } from './availableBoundaryEdges.js';
-import { resolveRectangularFlange, resolveSheetBase } from './resolveSheetGeometry.js';
-import { sheetFlatKey, sheetShapeKey } from './shapeKey.js';
+import { resolveRectangularFlange, resolveSheetBase, type ResolvedSheetBody } from './resolveSheetGeometry.js';
+import { sheetShapeKey } from './shapeKey.js';
 import type { SheetBaseFeature, SheetFlangeFeature } from './types.js';
+import { hash64, keyNumber } from '../part/cacheKey.js';
+
+/** 保存しない導出キー。元形状・K・固定面・明示継ぎ目のいずれも展開を更新する。 */
+function sheetFlatKey(shapeKey: string, body: ResolvedSheetBody, fixedPanelId: string, seams: readonly string[]): string {
+  return hash64(JSON.stringify(['sheetFlat', shapeKey, fixedPanelId, [...seams].sort(), body.bends.map((bend) => [
+    bend.id, keyNumber(bend.kFactor), keyNumber(bend.allowance),
+  ])]));
+}
 
 const base: SheetBaseFeature = { id: 'base', name: '基板', suppressed: false, kind: 'sheetBase',
   profile: { sketchId: 'sketch', faceFeatureId: 'outer' }, holes: [], reversed: false,

@@ -149,7 +149,7 @@ declare global {
 }
 
 /**
- * 保存していない変更の確認(画面の中の日本語の3択。w91a)に「保存せずに続ける」で答え、
+ * 保存していない変更の確認（画面内の日本語3択）に「保存せずに続ける」で答え、
  * 聞かれた文言を控える(NFR-UX-3)。
  *
  * 「新規」「開く」の後の次の操作・確かめの前に答えるよう、**押す前に**用意しておく。
@@ -158,7 +158,7 @@ declare global {
  */
 async function acceptConfirms(page: Page): Promise<readonly string[]> {
   const messages: string[] = [];
-  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  // 画面の中の確認(NFR-UX-3。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
   await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
     messages.push(await dialog.locator('p').innerText());
     await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();

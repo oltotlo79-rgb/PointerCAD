@@ -320,6 +320,12 @@ export interface ViewportScene {
   pickComponent(screenX: number, screenY: number, observation?: AssemblyComponentPickObservation): string | null;
   pickAssemblyFace(screenX: number, screenY: number, observation?: AssemblyFacePickObservation): TypeAssemblyMateFaceHit | null;
   /**
+   * 部品の表示を、持ち主の失効(store に出ない台帳の受領の失効を含む)で片付けたまま、まだ作り直していないか
+   * (BUG.VIEW-PICK-NULL)。真の間の拾いの null は、片付いた空の層に当てただけで「何も無い所」の証拠にならない。
+   * 印を読むだけで、持ち主の判定も状態の読み出しもしない。
+   */
+  assemblyDisplayInvalidated(): boolean;
+  /**
    * 画面座標のところにある面。当たった三角形の番号を、そのボディの面ごとの範囲表で
    * 面の通し番号へ直して返す(`pickSubShape.ts` の `faceIndexOfTriangle`)。当たらなければ
    * null(FR-106)。
@@ -1273,7 +1279,7 @@ export function createViewportScene(canvas: HTMLCanvasElement, options: Viewport
       rebuildSolidBundle({ ...solidInputs(), bodies: nextBodies });
     },
 
-    setAssembly: rebuildAssembly,
+    setAssembly: rebuildAssembly, assemblyDisplayInvalidated: () => assemblyDisplayInvalidated,
     setReferenceRepairPreview: repairPreviews.setReferenceRepairPreview,
 
     setInterference(result, selectedKey): void {

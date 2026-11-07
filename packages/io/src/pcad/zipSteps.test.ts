@@ -13,7 +13,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIXED_ENTRY_MTIME, readPcadFile, writePcadFile, zipPcadEntries, zipPcadEntriesAsync } from './pcadFile.js';
 import { readArchive } from './readArchive.js';
 import { finishZipCrc32, startZipCrc32, updateZipCrc32, zipCrc32 } from './zipCrc32.js';
-import { hasSteppedZipEntry, ZIP_STEP_BYTES, zipEntriesSteps, zipEntriesSync, type ZipStepEntry } from './zipSteps.js';
+import { hasSteppedZipEntry, zipEntriesSteps, zipEntriesSync, type ZipStepEntry } from './zipSteps.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const ZIP_STEP_BYTES = 1024 * 1024;
 
 function entry(bytes: Uint8Array, level: 0 | 6): ZipStepEntry {
   return [bytes, { level, mtime: FIXED_ENTRY_MTIME }];

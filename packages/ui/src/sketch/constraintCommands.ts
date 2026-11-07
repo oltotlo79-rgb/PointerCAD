@@ -87,33 +87,6 @@ export const CONSTRAINT_KIND_LABEL_KEYS: Readonly<Record<SketchConstraintKind, M
   diameter: 'constraint.kind.diameter',
 };
 
-/**
- * 一覧に並べる順(ツールバーの並び。タスク13)。幾何拘束と固定の 12 種 → 寸法拘束 6 種の順で、
- * 幾何は「点を合わせる」→「向きをそろえる」→「大きさをそろえる」の並びにする。
- * model の `SKETCH_CONSTRAINT_KINDS` と同じ並びだが、あちらは保存形の網羅表で、
- * こちらは画面の並びなので別に持つ(画面の都合で並べ替えても保存形は動かない)。
- */
-export const CONSTRAINT_KIND_ORDER: readonly SketchConstraintKind[] = [
-  'coincident',
-  'midpoint',
-  'pointOnCurve',
-  'horizontal',
-  'vertical',
-  'parallel',
-  'perpendicular',
-  'tangent',
-  'concentric',
-  'equal',
-  'symmetric',
-  'fix',
-  'horizontalDistance',
-  'verticalDistance',
-  'distance',
-  'angle',
-  'radius',
-  'diameter',
-];
-
 /** 種類の見出しの鍵。ツールバーの一覧(タスク13)もこれを引く。 */
 export function constraintKindLabelKey(kind: SketchConstraintKind): MessageKey {
   return CONSTRAINT_KIND_LABEL_KEYS[kind];
@@ -893,20 +866,6 @@ export function constraintReadiness(
   return { ready: true, reason: null, message: null, targets, defaultValue: measured };
 }
 
-/**
- * いま選んでいる要素に付けられる拘束の一覧(ツールバーの活性に使う)。
- * 18 種を順に下見して、付けられるものだけを `CONSTRAINT_KIND_ORDER` の順で返す。
- */
-export function applicableConstraintKinds(
-  document: SketchDocument,
-  elementIds: readonly string[],
-  context: ConstraintContext = constraintContextOf(document),
-): readonly SketchConstraintKind[] {
-  return CONSTRAINT_KIND_ORDER.filter(
-    (kind) => constraintReadiness(document, elementIds, kind, context).ready,
-  );
-}
-
 /* ---------------------------------------------------------------------------
  * 拘束を付ける
  * ------------------------------------------------------------------------- */
@@ -1184,11 +1143,6 @@ export function commitSetConstraintValue(
       constraints.map((constraint) => (constraint.id === constraintId ? replaced : constraint)),
     ),
   };
-}
-
-/** いま付いている拘束の数(帯・一覧の見出しに出す)。 */
-export function constraintCountOf(document: SketchDocument): number {
-  return sketchConstraints(document).length;
 }
 
 /** その要素を指している拘束の id(要素を消すときの後始末に使う。タスク13)。 */

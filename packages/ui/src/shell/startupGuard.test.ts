@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { installStartupGuard, STARTUP_GUARD_RETRY_KEY, type StartupGuardHost, type StartupGuardResult } from './startupGuard.js';
+import { installStartupGuard, STARTUP_GUARD_RETRY_KEY, type StartupGuardResult } from './startupGuard.js';
 import { RETRY_KEY } from './startupRecovery.js';
+
+type StartupGuardHost = Parameters<typeof installStartupGuard>[0];
 
 function fixture(options: { stage?: string; stored?: string; denyStorage?: boolean; ignoreWrites?: boolean } = {}) {
   const page = new EventTarget();

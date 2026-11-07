@@ -3,8 +3,35 @@ import { describe, expect, it } from 'vitest';
 import type { ResidualRow } from './residuals.js';
 import { analyzeSparseRows } from './sparseRank.js';
 import { RANK_RELATIVE_TOLERANCE } from './solve.js';
-import { auditExactSum, sparseAuditRank } from './sparseAudit.testSupport.js';
+import { auditExactSum } from './sparseAudit.testSupport.js';
 import { stdout } from 'node:process';
+
+ interface SparseAuditRankFixture {
+  readonly rows: readonly ResidualRow[];
+  readonly columnCount: number;
+  readonly rank: number;
+  readonly closures: readonly { readonly rowIndex: number; readonly weights: readonly number[] }[];
+}
+
+/** Difference chains have exactly two translations; each root pin removes one. */
+function sparseAuditRank(deficiency: 0 | 1 | 2): SparseAuditRankFixture {
+  const count = 1000, rows: ResidualRow[] = [], closures: { rowIndex: number; weights: number[] }[] = [];
+  const append = (entries: readonly (readonly [number, number])[], value: number): void => {
+    rows.push({ constraintId: `audit-${rows.length}`, gradient: new Map(entries), value });
+  };
+  for (let axis = 0; axis < 2; axis += 1) {
+    const weights: number[] = [];
+    for (let point = 0; point < count - 1; point += 1) {
+      const scale = 2 ** ((point % 9) - 4);
+      weights.push(1 / scale);
+      append([[2 * point + axis, scale], [2 * (point + 1) + axis, -scale]], scale);
+    }
+    closures.push({ rowIndex: rows.length, weights });
+    append([[axis, 1], [2 * (count - 1) + axis, -1]], count - 1);
+  }
+  for (let axis = 0; axis < 2 - deficiency; axis += 1) append([[axis, 1]], 0);
+  return { rows, columnCount: 2 * count, rank: 2 * count - deficiency, closures };
+}
 
 function row(entries: readonly (readonly [number, number])[], value = 0): ResidualRow {
   return { constraintId: 'row', gradient: new Map(entries), value };

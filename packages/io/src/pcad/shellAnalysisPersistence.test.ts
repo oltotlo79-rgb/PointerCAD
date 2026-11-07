@@ -7,7 +7,12 @@ import { replaceAttachment } from './analysisAttachment.testSupport.js';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { beamCadFixture } from '@pointercad/model/testing/analysis-fixtures';
 import { readAssemblyDocument, writeAssemblyDocument } from './assemblyJson.js';
-import { face, edge, vertex, shellAnalysisInput as input } from './shellAnalysisPersistence.testSupport.js';
+import { shellAnalysisInput as input } from './shellAnalysisPersistence.testSupport.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const face = '{"bodyFeatureId":"sheet","origin":{"identity":{"featureId":"sheet","kind":"box-face","role":"top"},"shapeKind":"face","version":1}}';
+const vertex = { version: 1, shapeKind: 'vertex', identity: { kind: 'box-vertex', featureId: 'sheet', role: 'top-front-left' } };
+const edge = { version: 1, shapeKind: 'edge', identity: { kind: 'box-edge', featureId: 'sheet', role: 'top-front' } };
 
 const attachment = (value: unknown) => ({ schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'shell-cad-analysis', definition: value }] });
 

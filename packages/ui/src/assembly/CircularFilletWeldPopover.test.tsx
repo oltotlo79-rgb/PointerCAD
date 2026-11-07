@@ -5,7 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { t } from '../i18n/t.js';
 import { createCircularFilletWeldDraft, type CircularDraftPick, type CircularDraftPreview, type CircularFilletWeldDraft } from './circularFilletWeldDraft.js';
-import { CircularFilletWeldPopover, type CircularFilletWeldPopoverProps } from './CircularFilletWeldPopover.js';
+import { CircularFilletWeldPopover } from './CircularFilletWeldPopover.js';
+
+type CircularFilletWeldPopoverProps = Parameters<typeof CircularFilletWeldPopover>[0];
 
 interface KeyInput {
   readonly key: string;

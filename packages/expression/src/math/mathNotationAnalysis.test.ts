@@ -5,7 +5,7 @@ import { createMathBackend } from './createMathBackend.js';
 import { decodeMathJson } from './decodeMathJson.js';
 import { decodeStoredMath } from './decodeStoredMath.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { formatMathText } from './formatMathText.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { MATH_INPUT_FORMAT, MathInputProblem, type MathAxis, type MathNode, type MathParameter,

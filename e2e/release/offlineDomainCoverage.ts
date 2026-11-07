@@ -7,7 +7,7 @@ import { chooseSheet, rectangleFace, tree, volume } from '../tests/sheetUiFlow.j
 import type { serveOfflineCandidate } from './offlineCandidateServer.js';
 
 /*
- * P12-22① (w33c-p12-22-offline-candidate): `offlineCandidate.spec.ts` の切断後の操作に、
+ * P12-22①（通信なしの配布候補の操作確認）: `offlineCandidate.spec.ts` の切断後の操作に、
  * 棚卸しで抜けが見つかった5領域(数学の厳密な計算・自動作図・組立・図面・板金)を
  * 小さな1操作ずつ足す。診断用の口(pcadSetFileGateway 等)はこの配布候補に無いため
  * (同specの冒頭で `toEqual([])` で確認済み)、ここでは実際のUI操作・実ファイル選択

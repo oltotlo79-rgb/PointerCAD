@@ -66,7 +66,7 @@ export function createFaceRotateFeature(input: Omit<FaceRotateFeature, 'kind' | 
   return { ...input, kind: 'faceRotate', suppressed: false };
 }
 
-export type DirectEditPlanOutcome =
+ type DirectEditPlanOutcome =
   | { readonly ok: true; readonly plan: HoleTranslatePlan | FaceRotatePlan }
   | { readonly ok: false; readonly message: string };
 

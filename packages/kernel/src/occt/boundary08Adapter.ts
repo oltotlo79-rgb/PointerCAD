@@ -9,7 +9,7 @@
  * Output is a partial obligation result only; it never sets geometricallyClosed/material/topology/certificate flags.
  */
 
-export interface B08Occurrence {
+interface B08Occurrence {
   readonly faceIndex: number; readonly wireIndex: number; readonly segmentIndex: number; readonly edgeIndex: number;
   readonly firstVertex: number; readonly lastVertex: number; readonly first: number; readonly last: number;
   readonly forward: boolean; readonly faceForward: boolean;

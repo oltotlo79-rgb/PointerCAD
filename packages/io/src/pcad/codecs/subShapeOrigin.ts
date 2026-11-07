@@ -6,6 +6,29 @@ import { checkRecord, fieldProblem, indexPath, isUnknownArray, joinPath, readLit
 type Face = Extract<SubShapeOrigin, { readonly shapeKind: 'face' }>['identity'];
 type Edge = Extract<SubShapeOrigin, { readonly shapeKind: 'edge' }>['identity'];
 type Vertex = Extract<SubShapeOrigin, { readonly shapeKind: 'vertex' }>['identity'];
+// Closed lookup objects also fail typecheck when a supported family is added without codec coverage.
+const FACE_KINDS = {
+  'box-face': true, 'cylinder-face': true, 'sphere-face': true, 'cone-face': true, 'torus-face': true,
+  'surface-side': true, 'surface-curve-side': true, 'planar-surface-face': true,
+  'extrude-side': true, 'extrude-cap': true, 'extrude-curve-side': true, 'extrude-curve-cap': true,
+  'blend-face': true, 'merged-face': true, 'hole-face': true,
+} satisfies Readonly<Record<Face['kind'], true>>;
+const EDGE_KINDS = {
+  'box-edge': true, 'cylinder-edge': true, 'surface-curve-edge': true,
+  'planar-surface-edge': true, 'face-intersection-edge': true, 'merged-edge': true,
+} satisfies Readonly<Record<Edge['kind'], true>>;
+function readFaceKind(record: Record<string, unknown>, path: string): Checked<Face['kind']> {
+  const kind = readString(record, 'kind', path);
+  if (!kind.ok) return kind;
+  const known = (value: string): value is Face['kind'] => Object.hasOwn(FACE_KINDS, value);
+  return known(kind.value) ? { ok: true, value: kind.value } : fieldProblem(joinPath(path, 'kind'), 'type');
+}
+function readEdgeKind(record: Record<string, unknown>, path: string): Checked<Edge['kind']> {
+  const kind = readString(record, 'kind', path);
+  if (!kind.ok) return kind;
+  const known = (value: string): value is Edge['kind'] => Object.hasOwn(EDGE_KINDS, value);
+  return known(kind.value) ? { ok: true, value: kind.value } : fieldProblem(joinPath(path, 'kind'), 'type');
+}
 const FACE_ROLES = ['bottom', 'top', 'front', 'back', 'left', 'right'] as const;
 const EDGE_ROLES = ['bottom-front', 'bottom-back', 'bottom-left', 'bottom-right',
   'top-front', 'top-back', 'top-left', 'top-right', 'front-left', 'front-right',
@@ -308,11 +331,22 @@ function openLineAnchor(value: unknown, path: string):
   const role = readLiteral(profile.value, 'role', path, ['whole-line']);
   return role.ok ? { ok: true, value: { sketchId: sketchId.value, lineFeatureId: lineFeatureId.value, role: role.value } } : role;
 }
+function openCurveAnchor(value: unknown, path: string): Checked<Extract<Face, { kind: 'surface-curve-side' }>['profile']> {
+  const profile = checkRecord(value, path);
+  if (!profile.ok) return profile;
+  const fields = exact(profile.value, path, ['sketchId', 'curveFeatureId', 'role']);
+  if (!fields.ok) return fields;
+  const sketchId = id(profile.value, 'sketchId', path);
+  if (!sketchId.ok) return sketchId;
+  const curveFeatureId = id(profile.value, 'curveFeatureId', path);
+  if (!curveFeatureId.ok) return curveFeatureId;
+  const role = readLiteral(profile.value, 'role', path, ['whole-curve']);
+  return role.ok ? { ok: true, value: { sketchId: sketchId.value, curveFeatureId: curveFeatureId.value, role: role.value } } : role;
+}
 function face(value: unknown, path: string): Checked<Face> {
   const checked = checkRecord(value, path);
   if (!checked.ok) return checked;
-  const record = checked.value, kind = readLiteral(record, 'kind', path,
-    ['box-face', 'cylinder-face', 'sphere-face', 'cone-face', 'torus-face', 'surface-side', 'planar-surface-face', 'extrude-side', 'extrude-cap', 'extrude-curve-side', 'extrude-curve-cap', 'blend-face', 'merged-face', 'hole-face']);
+  const record = checked.value, kind = readFaceKind(record, path);
   if (!kind.ok) return kind;
   const featureId = id(record, 'featureId', path);
   if (!featureId.ok) return featureId;
@@ -416,6 +450,13 @@ function face(value: unknown, path: string): Checked<Face> {
         profile: { sketchId: sketchId.value, faceFeatureId: faceFeatureId.value,
           curveFeatureIds: [first, second, third, ...rest] } } };
     }
+    case 'surface-curve-side': {
+      const fields = exact(record, path, ['kind', 'featureId', 'profile']);
+      if (!fields.ok) return fields;
+      const profile = openCurveAnchor(record['profile'], joinPath(path, 'profile'));
+      return profile.ok ? { ok: true, value: { kind: 'surface-curve-side', featureId: featureId.value,
+        profile: profile.value } } : profile;
+    }
     case 'surface-side': {
       const fields = exact(record, path, ['kind', 'featureId', 'profile']);
       if (!fields.ok) return fields;
@@ -481,8 +522,7 @@ function face(value: unknown, path: string): Checked<Face> {
 function edge(value: unknown, path: string): Checked<Edge> {
   const checked = checkRecord(value, path);
   if (!checked.ok) return checked;
-  const record = checked.value, kind = readLiteral(record, 'kind', path,
-    ['box-edge', 'cylinder-edge', 'planar-surface-edge', 'face-intersection-edge', 'merged-edge']);
+  const record = checked.value, kind = readEdgeKind(record, path);
   if (!kind.ok) return kind;
   const featureId = id(record, 'featureId', path);
   if (!featureId.ok) return featureId;
@@ -498,6 +538,15 @@ function edge(value: unknown, path: string): Checked<Edge> {
       if (!fields.ok) return fields;
       const role = readLiteral(record, 'role', path, CYLINDER_EDGE_ROLES);
       return role.ok ? { ok: true, value: { kind: 'cylinder-edge', featureId: featureId.value, role: role.value } } : role;
+    }
+    case 'surface-curve-edge': {
+      const fields = exact(record, path, ['kind', 'featureId', 'profile', 'role']);
+      if (!fields.ok) return fields;
+      const profile = openCurveAnchor(record['profile'], joinPath(path, 'profile'));
+      if (!profile.ok) return profile;
+      const role = readLiteral(record, 'role', path, ['section-start', 'section-end', 'swept-start', 'swept-end']);
+      return role.ok ? { ok: true, value: { kind: 'surface-curve-edge', featureId: featureId.value,
+        profile: profile.value, role: role.value } } : role;
     }
     case 'planar-surface-edge': {
       const fields = exact(record, path, ['kind', 'featureId', 'profile']);

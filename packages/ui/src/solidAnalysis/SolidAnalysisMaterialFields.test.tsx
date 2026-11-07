@@ -4,7 +4,8 @@ import type { AnalysisMaterialCapacity } from '@pointercad/model/beam-analysis';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SolidAnalysisMaterialFields } from './SolidAnalysisMaterialFields.js';
-import type { SolidAnalysisMaterialFieldsProps } from './SolidAnalysisMaterialFields.js';
+
+type SolidAnalysisMaterialFieldsProps = Parameters<typeof SolidAnalysisMaterialFields>[0];
 
 vi.mock('react', async importOriginal => {
   const actual = await importOriginal<typeof ReactTypes>();

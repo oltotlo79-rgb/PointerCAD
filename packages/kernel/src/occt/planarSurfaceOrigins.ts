@@ -24,7 +24,7 @@ import { makeCurveEdge } from './makeSketchEdges.js';
 import { address, mapShape } from './subShapeOrigins.js';
 
 /** The saved owner of one profile line (the same closed DTO the open-profile surface already uses). */
-export type PlanarSurfaceLineAnchor = Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'];
+type PlanarSurfaceLineAnchor = Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'];
 
 const MINIMUM_LINES = 3;
 const MAXIMUM_LINES = 32;
@@ -66,7 +66,7 @@ export function planarSurfaceAnchorRefusal(profile: readonly CurveSpec[],
 }
 
 /** The planar sheet built from exactly one native edge per source line, in the given order. */
-export interface TrackedPlanarFace {
+ interface TrackedPlanarFace {
   readonly face: TopoDS_Shape;
   /** `insertedEdges[i]` is the edge MakeWire actually inserted for `profile[i]` (never a geometric guess). */
   readonly insertedEdges: readonly TopoDS_Edge[];

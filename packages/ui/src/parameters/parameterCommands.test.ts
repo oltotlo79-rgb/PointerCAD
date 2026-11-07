@@ -11,7 +11,7 @@ import {
   commitReplaceParameter,
   parameterDraftFor,
   parameterRowsOf,
-  REFERENCED_NAME_LIMIT,
+  referencedByMessage,
   referencingFeatureNames,
   type ParameterCommandOutcome,
 } from './parameterCommands.js';
@@ -323,7 +323,9 @@ describe('commitRemoveParameter', () => {
     expect(outcome.message).toBe(
       'この名前は 押し出し1、穴1、面取り1、ほか 2 件 から使われています。先にそちらを直してください。',
     );
-    expect(REFERENCED_NAME_LIMIT).toBe(3);
+    // ちょうど 3 件なら「ほか」を付けずに全部並べる(まとめるのは 3 件を超えたとき)。
+    expect(referencedByMessage(['押し出し1', '穴1', '面取り1'], 3))
+      .toBe('この名前は 押し出し1、穴1、面取り1 から使われています。先にそちらを直してください。');
   });
 
   it('参照元がパラメータ表の中だけなら、従来どおり件数で断る', () => {

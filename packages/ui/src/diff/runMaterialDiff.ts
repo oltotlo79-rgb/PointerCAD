@@ -5,7 +5,7 @@ import { createMaterialDiffSession, type MaterialDiffSession } from './materialD
 import { t } from '../i18n/t.js';
 
 export type MaterialDiffPhase = 'before' | 'after' | 'compare';
-export const MATERIAL_DIFF_TIMEOUT_MS = 180_000;
+const MATERIAL_DIFF_TIMEOUT_MS = 180_000;
 const limits = { ...IO_LIMITS, archiveCompressedBytes: DEFINITION_DIFF_MAX_FILE_BYTES,
   archiveEntryExpandedBytes: 32 * 1024 * 1024, archiveTotalExpandedBytes: 64 * 1024 * 1024 };
 function read(bytes: Uint8Array) {

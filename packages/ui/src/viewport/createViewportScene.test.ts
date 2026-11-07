@@ -5,7 +5,7 @@ import { repairFixture } from '../solid/referenceRepairFixture.js';
 import { currentRepairSlots } from '../solid/referenceRepairContext.js';
 import { beginReferenceRepair, hoverReferenceRepair, cancelReferenceRepair } from '../solid/referenceRepair.js';
 import { currentReferenceRepairPreview } from '../solid/referenceRepairPreview.js';
-import { appearanceFromPreset, createAssemblyDocument, DEFAULT_APPEARANCE, DEFAULT_COMPONENT_PLACEMENT,
+import { appearanceFromPreset, createAssemblyDocument, createEmptyPartDocument, DEFAULT_APPEARANCE, DEFAULT_COMPONENT_PLACEMENT,
   IDENTITY_PLACEMENT, WORK_PLANES, type SolidBody } from '@pointercad/model';
 import type { DrawingDocument } from '@pointercad/drawing';
 import type { Camera, Scene } from 'three';
@@ -18,7 +18,9 @@ import { HOME_ORBIT } from './cameraMath.js';
 import * as thumbnail from '../file/thumbnail.js';
 import type { AppearanceInput } from './buildSolidGeometry.js';
 import { createViewportScene as createScene, ViewportSceneInitializationFailure, type ViewportSceneOptions } from './createViewportScene.js';
-import { AssemblyUiBackingLedger, type AssemblyMeshOwnership } from './assemblyMeshAdmission.js';
+import { assemblyUiBackings, AssemblyUiBackingLedger, currentAssemblyMeshAdmission, type AssemblyMeshOwnership,
+  type AssemblySourceMeshOwner } from './assemblyMeshAdmission.js';
+import { attachAssemblyInteraction, type AssemblyMateInputObservation } from './attachAssemblyInteraction.js';
 import { createQuadCameraState } from './quadCamera.js';
 import { DEFAULT_THEME_COLORS } from './themeColors.js';
 import type { AppState } from '../store/appState.js';
@@ -2189,6 +2191,125 @@ describe('部品pickの実分岐を観測する', () => {
     expect(plain.observation).toEqual({});
     expect(observed.observation.ownerAccepted).toBe(kind === 'current');
     expect(observed.observation.ownerStaleReason).toBe(kind === 'stale' ? 'documentVersion' : undefined);
+  });
+});
+
+/**
+ * BUG.VIEW-PICK-NULL(RUN 20261025-004124 の「溶接を直す」3) の押下)の再現。描いた後に store は同じまま、
+ * 台帳の受領だけが失効する(host epoch は GC が網の写しを回収した時や計算部への依頼で進み、store には出ない)。
+ * hover の拾いが持ち主を断って表示を片付け、次の押下の拾いは片付いた空の表示に当たらず null を返す。
+ */
+describe('BUG.VIEW-PICK-NULL: 台帳の受領だけが失効した表示での押下', () => {
+  function ledgerOwnedAssembly() {
+    resetTestStore();
+    const part = createEmptyPartDocument();
+    const body = worldAssemblyFace();
+    const partBodies: readonly SolidBody[] = [body];
+    const bodies = new Map([['part-1', partBodies]]);
+    const assembly: AssemblyDocument = { ...createAssemblyDocument('ledger-owned pick'), components: [{ id: 'component-1',
+      name: 'part', source: { kind: 'part', partRef: 'part-1' }, placement: DEFAULT_COMPONENT_PLACEMENT,
+      fixed: true, visible: true, suppressed: false }] };
+    const placements = new Map([['component-1', IDENTITY_PLACEMENT]]), partKeys = new Map([['component-1', 'part-1']]);
+    const result = { ...resultFor(part), bodies: partBodies, generation: 7 };
+    const displayOwner = { dispatchId: 'display-7', partId: 'part-1', generation: 7, kind: 'display' as const,
+      steps: [{ id: body.featureId, key: 'key-7' }] };
+    const source: AssemblySourceMeshOwner = { document: part, attachments: undefined, result, bodies: partBodies,
+      layouts: partBodies.map(captureMeshBodyLayout), displayOwner, hiddenOwners: [], current: () => true };
+    const receipt: AssemblyMeshOwnership['receipt'] = { status: 'known', observationId: 'view-pick-null', hostEpoch: 2,
+      workerEpochs: [{ providerId: 1, connectionEpoch: 1, cache: 2, owners: 2 }], owners: [displayOwner],
+      limitBytes: 1000000, workerRetainedBackingBytes: 100, hostRetainedBackingBytes: 100, pendingCloneReservedBytes: 0,
+      admittedBoundBytes: 200, coverage: 'registered-solid-mesh-backings-only',
+      unobserved: ['native', 'gpu', 'wasm', 'mesh-metadata', 'other-providers'] };
+    const backingInspection: AssemblyMeshOwnership['backingInspection'] = { status: 'known', hostEpoch: 2,
+      inputBackingBytes: 0, additionalBackingBytes: 0, sameSourceBackings: [], coverage: 'registered-main-solid-backings-only',
+      unobserved: ['native', 'gpu', 'wasm', 'mesh-metadata', 'other-providers'] };
+    const before = useAppStore.getState();
+    /** 台帳の受領が今か。host epoch が進むと偽になり、store の欄は何も変わらない。 */
+    const ledger = { current: true };
+    const ownershipWith = (current: () => boolean): AssemblyMeshOwnership => ({ document: assembly,
+      library: before.assemblyLibrary, activeDocumentId: assembly.id, documentVersion: before.documentVersion,
+      generation: 7, outcome: 'success', timelineIndex: before.timelineIndex, cancelRequestCount: before.cancelRequestCount,
+      bodies, sources: new Map([['part-1', source]]), receipt, backingInspection,
+      backingInspectionCurrent: current, receiptCurrent: current, publicationCurrent: () => true,
+      uiSnapshot: { epoch: assemblyUiBackings.epoch(), buffers: assemblyUiBackings.buffers()
+        .filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer)
+        .map(buffer => ({ buffer: new WeakRef(buffer), bytes: buffer.byteLength })) } });
+    useAppStore.setState({ assembly, drawing: null, activeDocumentId: assembly.id, requestedGeneration: 7,
+      completedGeneration: 7, lastOutcome: 'success', recomputeCancelled: false, isComputing: false,
+      selectionKind: 'body', selection: [], assemblyView: { sourceDocument: assembly, bodies, appearances: new Map(),
+        diagnosis: null, mateTargetErrors: new Map(), meshOwnership: ownershipWith(() => ledger.current),
+        resolved: { parts: new Map(), placements, partKeys, errors: [] } } });
+    const bundle = () => buildAssemblyGeometry({ sourceDocument: assembly, components: assembly.components, bodies,
+      placements, partKeys, hoveredComponentId: null, selectedComponentIds: [] });
+    const viewport = createViewportScene(mockRendererCanvas(640, 480), { readSolidMeshState: () => useAppStore.getState() });
+    viewport.resize(640, 480);
+    viewport.setAssembly(bundle());
+    viewport.render({ ...HOME_ORBIT, target: [0.25, 0.25, 0], distance: 20 }, 'perspective', 'shadedWithEdges', false, 100);
+    // EventTarget で実 listener を動かす(ブラウザは起動しない)。押す点は描いた部品の上。
+    const canvas = Object.assign(new EventTarget(), { focus: vi.fn(), getBoundingClientRect: () => ({ left: 0, top: 0 }) });
+    const send = (type: string): void => {
+      canvas.dispatchEvent(Object.assign(new Event(type, { bubbles: true, cancelable: true }), { button: 0,
+        buttons: type === 'pointerdown' ? 1 : 0, altKey: false, shiftKey: false, clientX: 320, clientY: 240, pointerId: 1 }));
+    };
+    /** ViewportCanvas の取り直しと同じ順: 受領が今の新しい所有を公開し、同じ形で表示を作り直す。 */
+    const publishFreshOwnership = (): void => {
+      const view = useAppStore.getState().assemblyView;
+      if (view === null) throw new Error('fixture view missing');
+      useAppStore.setState({ assemblyView: { ...view, meshOwnership: ownershipWith(() => true) } });
+      viewport.setAssembly(bundle());
+    };
+    const observed: AssemblyMateInputObservation[] = [];
+    const observeMateInput = (input: AssemblyMateInputObservation): void => {
+      observed.push({ ...input, ...(input.componentPick === undefined ? {} : { componentPick: { ...input.componentPick } }) });
+    };
+    return { viewport, canvas, send, ledger, bundle, publishFreshOwnership, observed, observeMateInput };
+  }
+
+  it.each(['hover-then-press', 'press-only'] as const)('%s: 失効した表示の拾いの null で選択を空にしない(選びもしない)', order => {
+    const f = ledgerOwnedAssembly();
+    const interaction = attachAssemblyInteraction(f.canvas, f.viewport, { viewDirection: () => [0, 0, 1],
+      observeMateInput: f.observeMateInput });
+    try {
+      expect(f.viewport.pickComponent(320, 240)).toBe('component-1');
+      useAppStore.setState({ selection: ['component-1'] });
+      const before = useAppStore.getState();
+      f.ledger.current = false;
+      if (order === 'hover-then-press') f.send('pointermove');
+      f.send('pointerdown'); f.send('pointerup');
+      // 2026-10-25 の失敗と同じ形: hover の後は片付いた空の表示を受けて当たらず、押下だけなら持ち主を台帳で断る。
+      expect(f.observed.at(-1)?.componentPick).toEqual(order === 'hover-then-press'
+        ? { ownerPresent: false, displayInvalidated: true, partCount: 0, ownerAccepted: true, cameraReady: true, hitComponentId: null }
+        : { ownerPresent: true, displayInvalidated: false, partCount: 1, ownerAccepted: false, ownerStaleReason: 'admission' });
+      expect(useAppStore.getState().selection).toEqual(['component-1']);
+      expect(useAppStore.getState().assembly).toBe(before.assembly);
+      expect(useAppStore.getState().assemblyUndoStack).toBe(before.assemblyUndoStack);
+    } finally { interaction.detach(); f.viewport.dispose(); resetTestStore(); }
+  });
+
+  it('今の配線: 準備の判定が受領の失効で押下を保留し、取り直して作り直した表示で拾って選ぶ', async () => {
+    const f = ledgerOwnedAssembly();
+    const settles: ((ready: boolean) => void)[] = [];
+    const interaction = attachAssemblyInteraction(f.canvas, f.viewport, { viewDirection: () => [0, 0, 1],
+      // ViewportCanvas の assemblyReady と同じ判定: 今の所有の受領が今なら即時、そうでなければ取り直しを待つ。
+      prepareMateInput: () => {
+        const state = useAppStore.getState(), ownership = state.assemblyView?.meshOwnership;
+        if (ownership === undefined || currentAssemblyMeshAdmission({ bundle: f.bundle(), ownership, state }, state)) return null;
+        return new Promise<boolean>(resolve => { settles.push(resolve); });
+      },
+      observeMateInput: f.observeMateInput });
+    try {
+      f.ledger.current = false;
+      f.send('pointermove');
+      f.send('pointerdown'); f.send('pointerup');
+      expect(settles).toHaveLength(1);
+      expect(useAppStore.getState().selection).toEqual([]);
+      f.publishFreshOwnership();
+      for (const settle of settles.splice(0)) settle(true);
+      await Promise.resolve(); await Promise.resolve();
+      expect(f.observed.at(-1)).toMatchObject({ deferred: 'applied', inputGate: 'accepted', componentPick: {
+        ownerPresent: true, displayInvalidated: false, ownerAccepted: true, cameraReady: true, hitComponentId: 'component-1' } });
+      expect(useAppStore.getState().selection).toEqual(['component-1']);
+    } finally { interaction.detach(); f.viewport.dispose(); resetTestStore(); }
   });
 });
 

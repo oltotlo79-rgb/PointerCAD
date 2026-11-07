@@ -1,4 +1,6 @@
-import { distanceVec as distance } from './sketchCorner.js';
+import { interpolateOpen, interpolateClosed, controlPointData,
+  explicitCubicData as numericExplicitCubicData, splineDegree as numericSplineDegree,
+  hasDuplicateSplinePoint as numericHasDuplicateSplinePoint } from '../math/splineInterpolation.js';
 /**
  * スプラインの辺(FR-317、計画書 P4 §2.3、タスク8)。
  *
@@ -6,7 +8,7 @@ import { distanceVec as distance } from './sketchCorner.js';
  * 2 とおりを、開いた曲線と閉じた曲線の両方について作る。
  *
  * **カーネルへ渡すのは `Geom_BSplineCurve_1`(極・節点・多重度・次数)だけで、
- * 通過点方式の補間そのものは、この場で自前に解く。** 理由を残す。
+ * 通過点方式の補間そのものは、importを持たない純数値subpathで自前に解く。** 理由を残す。
  *
  * 1. 計画書 §0.a-0.17 が第一候補にした `GeomAPI_PointsToBSpline_2` は、引数に
  *    連続性の列挙 `GeomAbs_Shape` を取る。opencascade.js の型定義では列挙の各値が
@@ -36,16 +38,6 @@ import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.j
 import type { Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import type { OcctEdgeHandle } from './makeSketchEdges.js';
-
-/** スプラインの次数の上限。3 次までにするのは、これ以上を上げても見た目が良くならず、
- *  点数が増えたときに曲線が波打つため(高次の 1 スパンより、3 次の多スパンのほうが素直)。 */
-const MAX_DEGREE = 3;
-
-/** 通過点方式で、連続する 2 点がこの距離(mm)より近ければ「同じ位置」とみなす。 */
-const MIN_SPAN_LENGTH = 1e-9;
-
-/** 連立一次方程式でこの大きさ未満の主成分しか残らなければ、解けないと判断する。 */
-const MIN_PIVOT = 1e-14;
 
 const TOO_FEW_OPEN_MESSAGE = 'スプラインには点が 2 個以上必要です。';
 const TOO_FEW_CLOSED_MESSAGE = '閉じたスプラインには点が 3 個以上必要です。';
@@ -97,276 +89,11 @@ export interface BSplineData {
  * 点が 2 個なら 1 次(直線)、3 個なら 2 次、4 個以上なら 3 次になる。
  */
 export function splineDegree(pointCount: number): number {
-  return Math.min(pointCount - 1, MAX_DEGREE);
+  return numericSplineDegree(pointCount);
 }
 
 function isFiniteVec3(point: Vec3Tuple): boolean {
   return Number.isFinite(point[0]) && Number.isFinite(point[1]) && Number.isFinite(point[2]);
-}
-
-
-/**
- * B スプラインの基底関数の値(NURBS Book のアルゴリズム A2.2)。
- * `span` は `knots[span] <= u < knots[span + 1]` を満たす添字。
- * 戻り値の `j` 番目は、極 `span - degree + j` に掛かる重み。
- *
- * 割り算の分母 `right[r + 1] + left[j - r]` は隣り合う節点の差の和なので、
- * 節点が単調で `span` が正しければ 0 にならない(この関数の呼び出しはすべて内部)。
- */
-function basisValues(
-  span: number,
-  parameter: number,
-  degree: number,
-  knots: readonly number[],
-): number[] {
-  const values = new Array<number>(degree + 1).fill(0);
-  const left = new Array<number>(degree + 1).fill(0);
-  const right = new Array<number>(degree + 1).fill(0);
-  values[0] = 1;
-  for (let step = 1; step <= degree; step += 1) {
-    left[step] = parameter - knots[span + 1 - step];
-    right[step] = knots[span + step] - parameter;
-    let saved = 0;
-    for (let index = 0; index < step; index += 1) {
-      const share = values[index] / (right[index + 1] + left[step - index]);
-      values[index] = saved + right[index + 1] * share;
-      saved = left[step - index] * share;
-    }
-    values[step] = saved;
-  }
-  return values;
-}
-
-/**
- * 連立一次方程式 `matrix · X = rows` を解く(部分ピボット付きのガウス・ジョルダン消去)。
- * 右辺は x・y・z の 3 列をまとめて解く。解けなければ `null`。
- *
- * 計算量は点の数の 3 乗に比例する。スプラインの点は多くても数十個なので実用上は問題にならない。
- */
-function solveLinearSystem(
-  matrix: readonly (readonly number[])[],
-  rows: readonly Vec3Tuple[],
-): Vec3Tuple[] | null {
-  const size = matrix.length;
-  const width = size + 3;
-  const work: number[][] = matrix.map((row, index) => [...row, ...rows[index]]);
-
-  for (let column = 0; column < size; column += 1) {
-    let pivot = column;
-    for (let row = column + 1; row < size; row += 1) {
-      if (Math.abs(work[row][column]) > Math.abs(work[pivot][column])) {
-        pivot = row;
-      }
-    }
-    if (Math.abs(work[pivot][column]) < MIN_PIVOT) {
-      return null;
-    }
-    if (pivot !== column) {
-      const swapped = work[pivot];
-      work[pivot] = work[column];
-      work[column] = swapped;
-    }
-    const head = work[column][column];
-    for (let index = column; index < width; index += 1) {
-      work[column][index] /= head;
-    }
-    for (let row = 0; row < size; row += 1) {
-      if (row === column) {
-        continue;
-      }
-      const factor = work[row][column];
-      if (factor === 0) {
-        continue;
-      }
-      for (let index = column; index < width; index += 1) {
-        work[row][index] -= factor * work[column][index];
-      }
-    }
-  }
-
-  return work.map((row) => [row[size], row[size + 1], row[size + 2]]);
-}
-
-/** 同じ値が続く節点の並びを、値と重なり回数へ畳む。 */
-function compressKnots(fullKnots: readonly number[]): {
-  knots: number[];
-  multiplicities: number[];
-} {
-  const knots: number[] = [];
-  const multiplicities: number[] = [];
-  for (const value of fullKnots) {
-    const last = knots.length - 1;
-    if (last >= 0 && Math.abs(knots[last] - value) < 1e-12) {
-      multiplicities[last] += 1;
-    } else {
-      knots.push(value);
-      multiplicities.push(1);
-    }
-  }
-  return { knots, multiplicities };
-}
-
-/** 点列の弦の長さを先頭から積み上げた並び(通過点方式のパラメータの素)。 */
-function chordLengths(points: readonly Vec3Tuple[]): number[] {
-  const lengths = [0];
-  let total = 0;
-  for (let index = 1; index < points.length; index += 1) {
-    total += distance(points[index], points[index - 1]);
-    lengths.push(total);
-  }
-  return lengths;
-}
-
-/**
- * `knots[span] <= parameter < knots[span + 1]` を満たす添字を二分探索で探す
- * (NURBS Book のアルゴリズム A2.1)。`lastPole` は極の添字の最大値。
- */
-function findSpan(
-  knots: readonly number[],
-  degree: number,
-  lastPole: number,
-  parameter: number,
-): number {
-  if (parameter >= knots[lastPole + 1]) {
-    return lastPole;
-  }
-  if (parameter <= knots[degree]) {
-    return degree;
-  }
-  let low = degree;
-  let high = lastPole + 1;
-  let middle = Math.floor((low + high) / 2);
-  while (parameter < knots[middle] || parameter >= knots[middle + 1]) {
-    if (parameter < knots[middle]) {
-      high = middle;
-    } else {
-      low = middle;
-    }
-    middle = Math.floor((low + high) / 2);
-  }
-  return middle;
-}
-
-/**
- * 開いた通過点補間(NURBS Book のアルゴリズム A9.1)。
- *
- * 1. 各点のパラメータを弦の長さの割合で決める(等間隔ではなく、離れた点の間を長く取る)。
- * 2. 節点をパラメータの移動平均で決める。こうすると係数行列が必ず対角優位になる。
- * 3. 「点 k での曲線の値 = 点 k」を並べた連立一次方程式を解いて極を得る。
- */
-function interpolateOpen(points: readonly Vec3Tuple[], degree: number): BSplineData | null {
-  const count = points.length;
-  const last = count - 1;
-  const chords = chordLengths(points);
-  const total = chords[last];
-  const parameters = chords.map((value) => value / total);
-  parameters[last] = 1;
-
-  const fullKnots = new Array<number>(count + degree + 1).fill(0);
-  for (let index = last + 1; index < fullKnots.length; index += 1) {
-    fullKnots[index] = 1;
-  }
-  for (let start = 1; start <= last - degree; start += 1) {
-    let sum = 0;
-    for (let index = start; index <= start + degree - 1; index += 1) {
-      sum += parameters[index];
-    }
-    fullKnots[start + degree] = sum / degree;
-  }
-
-  const matrix: number[][] = [];
-  for (let row = 0; row < count; row += 1) {
-    const coefficients = new Array<number>(count).fill(0);
-    const span = findSpan(fullKnots, degree, last, parameters[row]);
-    const values = basisValues(span, parameters[row], degree, fullKnots);
-    for (let offset = 0; offset <= degree; offset += 1) {
-      coefficients[span - degree + offset] = values[offset];
-    }
-    matrix.push(coefficients);
-  }
-
-  const poles = solveLinearSystem(matrix, points);
-  if (poles === null) {
-    return null;
-  }
-  const { knots, multiplicities } = compressKnots(fullKnots);
-  return { poles, knots, multiplicities, degree, periodic: false };
-}
-
-/**
- * 閉じた通過点補間(周期 B スプライン)。
- *
- * 閉じた曲線は極も節点も輪になっているので、開いた場合の「両端を固定する」やり方は使えない。
- * 代わりに節点を 1 周ぶん(最後の点から最初の点へ戻る弦を含む)並べ、
- * その前後へ 1 周ぶんずらした写しを足した並びで基底を求める。
- * 極は `次数` 個ぶん重なって現れるので、係数を同じ列へ足し込む。
- *
- * **極の添字の起点は「節点の並びの先頭 + 0」である。** OCCT の周期曲線は
- * 基底の添字 i に極 i を対応させる(2026-09-04 に Node 上で実測して確かめた。
- * 起点を `次数` ぶんずらすと、曲線の形は同じでも通る点の順が回ってしまう)。
- */
-function interpolateClosed(points: readonly Vec3Tuple[], degree: number): BSplineData | null {
-  const count = points.length;
-  const chords = chordLengths(points);
-  const period = chords[count - 1] + distance(points[0], points[count - 1]);
-  // 1 周ぶんの節点(先頭 0 から、1 周して period まで)。
-  const knots = [...chords, period];
-
-  // 前後へ 1 周ずらした写しを足した並び。基底の計算にだけ使う。
-  const fullKnots = new Array<number>(count + 1 + 2 * degree).fill(0);
-  for (let index = 0; index <= count; index += 1) {
-    fullKnots[index + degree] = knots[index];
-  }
-  for (let step = 1; step <= degree; step += 1) {
-    fullKnots[degree - step] = knots[count - step] - period;
-    fullKnots[count + degree + step] = knots[step] + period;
-  }
-
-  const matrix: number[][] = [];
-  for (let row = 0; row < count; row += 1) {
-    const coefficients = new Array<number>(count).fill(0);
-    const span = degree + row;
-    const values = basisValues(span, knots[row], degree, fullKnots);
-    for (let offset = 0; offset <= degree; offset += 1) {
-      const pole = (((span - degree + offset) % count) + count) % count;
-      coefficients[pole] += values[offset];
-    }
-    matrix.push(coefficients);
-  }
-
-  const poles = solveLinearSystem(matrix, points);
-  if (poles === null) {
-    return null;
-  }
-  return {
-    poles,
-    knots,
-    multiplicities: knots.map(() => 1),
-    degree,
-    periodic: true,
-  };
-}
-
-/** 制御点方式(与えた点をそのまま極にする)の節点と多重度。 */
-function controlPointData(points: readonly Vec3Tuple[], degree: number, closed: boolean): BSplineData {
-  const count = points.length;
-  if (closed) {
-    // 周期曲線は「節点の重なりがすべて 1、節点の数 = 極の数 + 1」。
-    const knots: number[] = [];
-    for (let index = 0; index <= count; index += 1) {
-      knots.push(index);
-    }
-    return { poles: [...points], knots, multiplicities: knots.map(() => 1), degree, periodic: true };
-  }
-  // 端を固定する曲線は「両端の重なりが 次数 + 1、内側は 1、重なりの合計 = 極の数 + 次数 + 1」。
-  const interior = count - degree - 1;
-  const knots: number[] = [];
-  const multiplicities: number[] = [];
-  for (let index = 0; index <= interior + 1; index += 1) {
-    knots.push(index);
-    multiplicities.push(index === 0 || index === interior + 1 ? degree + 1 : 1);
-  }
-  return { poles: [...points], knots, multiplicities, degree, periodic: false };
 }
 
 /**
@@ -384,13 +111,7 @@ function explicitCubicData(spec: SplineSpec): BSplineData {
       throw new Error('滑らかな関数曲線の節点は増加する有限の実数にしてください。');
     }
   }
-  return {
-    poles: [...spec.points],
-    knots: [...knots],
-    multiplicities: knots.map((_, index) => (index === 0 || index === knots.length - 1 ? 4 : 2)),
-    degree: 3,
-    periodic: false,
-  };
+  return numericExplicitCubicData(spec.points, knots);
 }
 
 /**
@@ -423,12 +144,7 @@ export function bsplineDataForSpline(spec: SplineSpec): BSplineData {
 
   // 通過点方式は弦の長さでパラメータを決めるので、重なった点があると割り算が壊れる。
   // 制御点方式では重なっていても構わないため、この検査は通過点方式だけに掛ける。
-  for (let index = 1; index < points.length; index += 1) {
-    if (distance(points[index], points[index - 1]) < MIN_SPAN_LENGTH) {
-      throw new Error(DUPLICATE_POINT_MESSAGE);
-    }
-  }
-  if (closed && distance(points[0], points[points.length - 1]) < MIN_SPAN_LENGTH) {
+  if (numericHasDuplicateSplinePoint(points, closed)) {
     throw new Error(DUPLICATE_POINT_MESSAGE);
   }
 

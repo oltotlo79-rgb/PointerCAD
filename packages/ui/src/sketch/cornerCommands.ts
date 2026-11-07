@@ -411,33 +411,6 @@ function valueOf(field: ExpressionValue | undefined, fallback: number): number {
   return field?.value ?? fallback;
 }
 
-/**
- * 面の境界(`SketchFaceFeature.boundary`)が、いま丸める 2 本を使っているか。
- *
- * 使っていれば、丸めたあとの輪郭は「短くなった 2 本 + 足した曲線」になるので、
- * 確定時に面の境界も同じ文書の中で更新する。
- * 要素 id の `featureId#n` は、面の境界では `index` に分かれて入るので突き合わせる。
- */
-export function facesUseCorner(
-  document: SketchDocument,
-  selection: readonly string[],
-): boolean {
-  const wanted = selection.map((elementId) => {
-    const [featureId, index] = elementId.split('#');
-    return { featureId, index: index === undefined ? undefined : Number(index) };
-  });
-  const uses = (reference: SketchElementRef): boolean =>
-    wanted.some(
-      (target) =>
-        target.featureId === reference.featureId &&
-        // 面が全周(index 省略)を指しているなら、その図形のどの辺でも当てはまる。
-        (reference.index === undefined || target.index === undefined || reference.index === target.index),
-    );
-  return document.features.some(
-    (feature) => feature.kind === 'face' && feature.boundary.some(uses),
-  );
-}
-
 /** 移動した曲線の終点を、既存の「直前の点」の新しい基準にしない。 */
 function usesPreviousPoint(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;

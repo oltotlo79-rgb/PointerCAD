@@ -50,7 +50,7 @@ export type ModeledThreadResolution =
  * 今の番地の面に kernel が付けた穴の壁の由来(makeHole.ts の bore/wall)。番地を主張する binding が
  * ちょうど 1 つで unique の時だけ `hole`。保存の指紋や径から作らない。
  */
-export type HoleWallOrigin =
+type HoleWallOrigin =
   | { readonly status: 'hole'; readonly origin: HoleFaceOrigin }
   | { readonly status: 'untracked' | 'unnamed' | 'ambiguous' | 'notHoleWall' };
 
@@ -133,7 +133,7 @@ export function modeledThreadWallAt(origins: CurrentOriginIndex | undefined, fac
 }
 
 /** 実らせんの壁の小片の鎖が今の形で閉じている証拠。軸方向の範囲は選んだ面の axisOrigin からの距離。 */
-export interface ModeledThreadEvidence {
+interface ModeledThreadEvidence {
   readonly origin: HoleFaceOrigin;
   readonly radius: number;
   readonly axis: Vec3;

@@ -29,16 +29,18 @@ import {
   mountPrintSheetIn,
   printImageSize,
   printViewport,
-  PRINT_SHEET_CLASS,
-  type PrintDeps,
-  type PrintSheet,
 } from './printView.js';
 import {
   fillCanvasBackground,
   PRINT_BACKGROUND,
   THUMBNAIL_BACKGROUND,
-  type BackgroundFillTarget,
 } from './thumbnail.js';
+
+type PrintDeps = Parameters<typeof printViewport>[1];
+type PrintSheet = Parameters<typeof buildPrintSheet>[0];
+type BackgroundFillTarget = Parameters<typeof fillCanvasBackground>[0];
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const PRINT_SHEET_CLASS = 'pcad-print-sheet';
 
 // ---------------------------------------------------------------------------
 // 偽の 2D の下地(canvas の無い環境で、塗られた色を記録する)

@@ -17,7 +17,7 @@ import { errorFunctionDecimal } from './errorFunctionNumeric.js';
 import { MathInputProblem } from './mathInputContract.js';
 import { exact } from './statisticsData.js';
 import { ERROR_FUNCTION_REFERENCES } from './errorFunctionReferences.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

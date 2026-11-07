@@ -112,7 +112,7 @@ function isJoinType(value: unknown): value is GeomAbs_JoinType {
 }
 
 /** くり抜き 1 段の依頼(計画書 §2.12)。 */
-export interface ShellInput {
+interface ShellInput {
   /**
    * 開ける面の指紋。**0 枚でもよい**(そのときは外から見た形が変わらない、
    * 中だけが空の立体になる)。同じ面を 2 度指しても 1 度だけ数える。

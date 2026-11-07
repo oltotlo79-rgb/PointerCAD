@@ -27,14 +27,14 @@ export const ASSEMBLY_MISSING_DEFINITION_MESSAGE = '配置が参照する部品�
 export const ASSEMBLY_EMPTY_DEFINITION_MESSAGE = '形を持たない部品定義は書き出せません。';
 export const ASSEMBLY_EMPTY_NODE_MESSAGE = '空のサブアセンブリは書き出せません。';
 /** OCCT の形を持つ、製品内の部品定義 1 つ。 */
-export interface XcafAssemblyDefinition {
+interface XcafAssemblyDefinition {
   readonly id: string;
   readonly name: string | null;
   readonly bodies: readonly XcafShapeEntry[];
 }
 
 /** XCAF 文書へ渡すアセンブリ全体。 */
-export interface XcafAssemblySpec {
+interface XcafAssemblySpec {
   readonly name: string | null;
   readonly definitions: readonly XcafAssemblyDefinition[];
   readonly children: readonly ShapeAssemblyNode[];

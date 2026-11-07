@@ -2,10 +2,12 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { createFunctionSurfaceEvaluator } from './functionSurfaceEvaluation.js';
-import { sampleFunctionSurface, type FunctionSurfaceOptions, type FunctionSurfaceSamplingResult } from './adaptiveFunctionSurface.js';
+import { sampleFunctionSurface, type FunctionSurfaceSamplingResult } from './adaptiveFunctionSurface.js';
 import type { FunctionPoint } from './functionGeometryBounds.js';
 import type { SurfaceParameter } from './surfaceParameterGrid.js';
 import type { MathExecutionBackend } from './mathWorkExecution.js';
+
+type FunctionSurfaceOptions = Parameters<typeof sampleFunctionSurface>[1];
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

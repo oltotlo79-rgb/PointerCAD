@@ -36,25 +36,25 @@ const INVALID_RESULT_MESSAGE =
   '組み合わせた立体の形が正しくありませんでした。位置や形を見直してください。';
 
 /** 差で何も削れなかったとき(EX04。`requireRemoval` を立てた差だけが断る)。 */
-export const NOTHING_REMOVED_MESSAGE =
+const NOTHING_REMOVED_MESSAGE =
   '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
 
 /**
  * 輪郭の内側を残す積で、輪郭が立体に届かず内側に何も残らなかったとき
  * (EX-04 W3。`requireRemoval` を立てた積だけが断る)。
  */
-export const NOTHING_INSIDE_MESSAGE =
+const NOTHING_INSIDE_MESSAGE =
   '切る輪郭が立体に届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
 
 /**
  * 輪郭の内側を残す積で、立体がまるごと輪郭の中にあり何も削れなかったとき
  * (EX-04 W3。`requireRemoval` を立てた積だけが断る)。
  */
-export const NOTHING_OUTSIDE_MESSAGE =
+const NOTHING_OUTSIDE_MESSAGE =
   '切る輪郭が立体をまるごと囲んでいて、何も削れませんでした。輪郭の位置や大きさを見直してください。';
 
 /** ブーリアンの任意の条件。省略すると従来どおり(何も削れない差・積も成立させる)。 */
-export interface BooleanOptions {
+interface BooleanOptions {
   /**
    * true なら、閉じた輪郭の切断として実際に立体を切り分けることを求める(EX04、EX-04 W3)。
    * - 差(輪郭の外側を残す): 対象と相手の共通部分に立体が無いとき `NOTHING_REMOVED_MESSAGE` で断る。

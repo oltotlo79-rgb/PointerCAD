@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Vector3, Vector6 } from './analysisModel.js';
 import { modalFixture } from './modal.testSupport.js';
-import { prepareWeldSpan, type WeldSpanPlan } from './beamWeldSpan.js';
+import { prepareWeldSpan } from './beamWeldSpan.js';
 import { beamWeldSpanContactInputSha256, decodeBeamWeldSpanContact,
   type BeamWeldSpanContactInput } from './beamWeldSpanContact.js';
 import { recoverBeamWeldSpanStress } from './beamWeldSpanStress.js';
+
+type WeldSpanPlan = Parameters<typeof prepareWeldSpan>[0];
+
 // Fixtures below are the unchanged independent fractions/geometry from beamWeldSpanContact.test.ts and beamWeldSpan.test.ts.
 function input(segments = 1): BeamWeldSpanContactInput {
   const base = modalFixture({ free: true, modes: 1, segments });

@@ -8,7 +8,7 @@ import { projectContactPoint, searchContactFacets, type ContactFacetLocation,
 /** Internal material-point state, not a saved document or a solved native result.
  * conditionKey belongs to the caller and pins the law, quadrature area and other
  * non-geometric conditions. Changing them requires a separate history transfer. */
-export interface ContactMaterialPoint {
+interface ContactMaterialPoint {
   readonly materialPointId: string;
   readonly contactId: string;
   readonly conditionKey: string;
@@ -20,14 +20,14 @@ export interface ContactMaterialPoint {
   readonly areaMm2: number;
   readonly accumulatedDissipationNmm: number;
 }
-export interface ContactGeometryUpdateOptions {
+interface ContactGeometryUpdateOptions {
   readonly searchDistanceMm: number;
   readonly representativeLengthMm: number;
   /** Actual incremental frame rotation, including in-plane spin. Normals alone do not determine it. */
   readonly incrementalRotation: Matrix3;
   readonly conditionKey: string;
 }
-export interface ContactMaterialPointUpdate {
+ interface ContactMaterialPointUpdate {
   readonly point: ContactMaterialPoint;
   /** Objective tangential displacement relative to the advected OLD master material point. */
   readonly relativeIncrementMm: Vector3;
@@ -35,7 +35,7 @@ export interface ContactMaterialPointUpdate {
   readonly signedSeparationMm: number;
   readonly declaredInitialGapMm: number;
 }
-export interface ContactVirtualWork {
+ interface ContactVirtualWork {
   readonly nodalForcesN: readonly [Vector3, Vector3, Vector3];
   readonly pointDisplacementMm: Vector3;
   readonly resultantForceN: Vector3;

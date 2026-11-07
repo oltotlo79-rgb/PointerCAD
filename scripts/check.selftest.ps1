@@ -998,6 +998,10 @@ if (process.env.PCAD_STAGE_FAIL && process.env.PCAD_STAGE_FAIL === args) process
 
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/record_time_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) '記録時刻のフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/gate_launch_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) 'gate の間の担当の起動を拒否するフックを自己試験する'
+& python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/workers_pause_guard.selftest.py')
+Assert-True ($LASTEXITCODE -eq 0) '統括の印の間の担当のシェル・編集を拒否するフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/opus_concurrency_guard.selftest.py')
 Assert-True ($LASTEXITCODE -eq 0) 'Opus 同時実行のフックを自己試験する'
 & python -B -X utf8 (Join-Path $PSScriptRoot '../.claude/hooks/subagent_background_guard.selftest.py')

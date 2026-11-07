@@ -179,7 +179,7 @@ describe('bug 1: usage counting must match parameterUsageCounts (skip the active
       message: 'この測定値は幅Bで使われています。先にそちらを直してください。' });
   });
 
-  it('the panel row shows one usage, not two, and names only the real usage (w15a\'s e2e expectation)', () => {
+  it('the panel row shows one usage, not two, and names only the real usage (the e2e expectation)', () => {
     const document = documentWithMirroredUsage();
     installDocument(document);
     const row = mathGeometryRows(useAppStore.getState())[0];

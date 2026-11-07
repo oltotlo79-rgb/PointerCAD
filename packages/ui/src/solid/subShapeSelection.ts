@@ -44,7 +44,7 @@ export type { SubShapeKind };
 export type SelectionKind = SubShapeKind | 'body';
 
 /** 部分形状の要素 id の区切り。スケッチの点列(`point-1#3`)と同じ記号を使う。 */
-export const SUB_SHAPE_SEPARATOR = '#';
+const SUB_SHAPE_SEPARATOR = '#';
 
 /** 種類と番号の区切り。`face:12` の `:`。 */
 const INDEX_SEPARATOR = ':';

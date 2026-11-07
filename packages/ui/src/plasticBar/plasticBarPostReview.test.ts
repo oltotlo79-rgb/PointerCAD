@@ -124,6 +124,34 @@ describe('plastic-bar results stay bound to the parameters they were computed wi
     expect(ports[1]?.terminated).toBe(0);
     expect(session().status).toBe('running');
   });
+
+  it('a dimensionless parameter used as the plateau binds the result: same value keeps it, another value removes it', async () => {
+    useAppStore.setState({ strengthSession: bucklingUiFixture().state.strengthSession, assembly: null });
+    const added = commitAddParameter(useAppStore.getState().document,
+      { name: 'kp', value: expressionValueFromNumber(0.01), unit: 'none', description: '' });
+    if (!added.ok) throw new Error(added.message);
+    useAppStore.getState().applyDocument(added.document);
+    const ports: Port[] = [];
+    attachment = attachPlasticBar(useAppStore, () => { const port = new Port(); ports.push(port); return port; });
+    useAppStore.getState().openPlasticBar();
+    for (const edit of BENCHMARK_EDITS) useAppStore.getState().editPlasticBar(edit);
+    useAppStore.getState().editPlasticBar({ kind: 'value', field: 'plateau', source: 'kp' });
+    useAppStore.getState().runPlasticBar();
+    await vi.waitFor(() => expect(ports[0]?.request).toBeTruthy());
+    const port = ports[0], request = port.request;
+    if (request?.kind !== 'analyze-plastic-bar-1d') throw new Error(`Expected a plastic-bar request, got ${session().errorKey}`);
+    expect(request.input.plan.material.plateauPlasticStrain).toBe(0.01);
+    message(port, { protocol: 'pointercad-fem/1', kind: 'result', identity: request.identity, result: await benchmarkResult(request.input) });
+    await vi.waitFor(() => expect(session().status).toBe('complete'));
+    const result = session().result;
+    applyParameter('kp', 0.01);
+    expect(session().result).toBe(result);
+    applyParameter('kp', 0.02);
+    expect(session().result).toBeNull();
+    expect(plasticBarResultIsCurrent(session())).toBe(false);
+    expect(session().errorKey).toBe('beam.error.changed');
+    expect(session().draft.values.plateau).toBe('kp');
+  });
 });
 
 describe('saved status compares values, not key insertion order', () => {

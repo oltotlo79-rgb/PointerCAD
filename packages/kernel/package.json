@@ -70,6 +70,14 @@
       "types": "./dist/testing/hole-placement-oracle-fixture.testSupport.d.ts",
       "default": "./src/testing/hole-placement-oracle-fixture.testSupport.ts"
     },
+    "./math/spline-interpolation": {
+      "types": "./dist/math/splineInterpolation.d.ts",
+      "default": "./src/math/splineInterpolation.ts"
+    },
+    "./math/vector-arithmetic": {
+      "types": "./dist/math/vectorArithmetic.d.ts",
+      "default": "./src/math/vectorArithmetic.ts"
+    },
     "./desktop-occt-transport": {
       "types": "./dist/occt/desktopOcctTransportContract.d.ts",
       "default": "./src/occt/desktopOcctTransportContract.ts"

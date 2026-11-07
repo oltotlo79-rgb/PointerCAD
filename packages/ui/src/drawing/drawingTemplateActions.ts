@@ -9,7 +9,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { t } from '../i18n/t.js';
 import { createDrawingFromCurrentPart } from './createDrawingCommands.js';
 
-export interface DrawingSheetDraft {
+interface DrawingSheetDraft {
   readonly scale: string;
   readonly scaleOptions: string;
   readonly textHeight: string;

@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { DrawingView, Point2 } from '@pointercad/drawing';
-import type { DrawingProjectionCurve } from './resolveDrawing.js';
-import { projectionCenterMarks } from './projectionCenterMarks.js';
+import type { DrawingProjectionCurve, ResolvedDrawingCurve } from './resolveDrawing.js';
+import { projectionCenterMarkGroups } from './projectionCenterMarks.js';
+
+/** 元の辺・輪郭の識別を使い、用紙に投影した円と円柱の側線から中心線を作る。 */
+function projectionCenterMarks(view: DrawingView, visible: readonly DrawingProjectionCurve[], toPaper: (point: Point2) => Point2, scale: number,
+  cylinderFaceIds: ReadonlySet<string> = new Set()): readonly ResolvedDrawingCurve[] {
+  return projectionCenterMarkGroups(view, visible, toPaper, scale, cylinderFaceIds)
+    .flatMap((mark) => mark.lines.map((line) => ({ kind: 'segment' as const, ...line })));
+}
 
 const view: DrawingView = { id: 'front', name: '正面', kind: 'front', direction: [0, 0, 1], xDir: [1, 0, 0], position: [100, 100],
   showCenterLines: true, showHidden: true, scale: null, layerId: 'layer-1' };

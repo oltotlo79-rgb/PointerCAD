@@ -9,16 +9,12 @@ import type { Allocations } from './allocations.js';
 import { booleanOp } from './booleanOp.js';
 import { writeBrepBytes } from './brepBytes.js';
 import {
-  auditDirectEdit, boundaryBox, observeDirectEditOwnership as observeOwnership, reverseCurveBox, throwNativeDirectionError,
+  auditDirectEdit, boundaryBox, observeDirectEditOwnership as observeOwnership, throwNativeDirectionError,
 } from './directEditBoundary.testSupport.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import {
-  FACE_ROTATION_ANGLE_MESSAGE, FACE_ROTATION_COLLISION_MESSAGE, FACE_ROTATION_CURVED_EDGE_MESSAGE,
-  FACE_ROTATION_EDGE_NOT_ON_FACE_MESSAGE, FACE_ROTATION_FOREIGN_EDGE_MESSAGE, FACE_ROTATION_FOREIGN_FACE_MESSAGE,
-  FACE_ROTATION_INVALID_BODY_MESSAGE, FACE_ROTATION_NOT_PLANAR_MESSAGE, FACE_ROTATION_BOX_MESSAGE,
-  FACE_ROTATION_FAILED_MESSAGE,
-  rotateSolidFace, type FaceRotationResult,
+  rotateSolidFace,
 } from './rotateSolidFace.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
 import * as solidMeshModule from './solidMesh.js';
@@ -26,6 +22,31 @@ import { countSolidShapes } from './solidTopology.js';
 import { collectSubShapes, edgeAt, faceAt, type SubShapeTables } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 import { IDENTITY_TRANSFORM, transformShape } from './transformShape.js';
+
+type FaceRotationResult = ReturnType<typeof rotateSolidFace>;
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const FACE_ROTATION_ANGLE_MESSAGE = '面を回す角度は、0 度でなく、絶対値が 90 度より小さい値にしてください。';
+const FACE_ROTATION_BOX_MESSAGE = 'この操作は、六つの平面からなる直方体の面だけに対応しています。';
+const FACE_ROTATION_COLLISION_MESSAGE = '面を回すと反対側の面に届くため回せません。角度を小さくしてください。';
+const FACE_ROTATION_CURVED_EDGE_MESSAGE = '回転の軸にできるのは直線の辺だけです。';
+const FACE_ROTATION_EDGE_NOT_ON_FACE_MESSAGE = '回転の軸には、回す面の縁にある辺を選んでください。';
+const FACE_ROTATION_FAILED_MESSAGE = '面を回せませんでした。面・辺・角度を見直してください。';
+const FACE_ROTATION_FOREIGN_EDGE_MESSAGE = '選んだ辺は対象の立体に属していません。回転の軸にする辺を選び直してください。';
+const FACE_ROTATION_FOREIGN_FACE_MESSAGE = '選んだ面は対象の立体に属していません。回す面を選び直してください。';
+const FACE_ROTATION_INVALID_BODY_MESSAGE = '元の立体の形が正しくないため、面を回せません。元の立体を直してください。';
+const FACE_ROTATION_NOT_PLANAR_MESSAGE = '回せるのは平らな面だけです。';
+
+/** An actual reversed parameterization: the polygon's first edge is constructed from +X to -X. */
+function reverseCurveBox(oc: OpenCascadeInstance, owned: Allocations): TopoDS_Shape {
+  const { keep } = owned;
+  const polygon = keep(new oc.BRepBuilderAPI_MakePolygon_1());
+  for (const point of [[40, 0, 0], [0, 0, 0], [0, 30, 0], [40, 30, 0]] as const) {
+    polygon.Add_1(keep(new oc.gp_Pnt_3(point[0], point[1], point[2])));
+  }
+  polygon.Close();
+  const face = keep(keep(new oc.BRepBuilderAPI_MakeFace_15(keep(polygon.Wire()), true)).Face());
+  return keep(keep(new oc.BRepPrimAPI_MakePrism_1(face, keep(new oc.gp_Vec_4(0, 0, 8)), true, true)).Shape());
+}
 
 /**
  * EX-18 W16 R1: the W16 box (0<=x<=40, 0<=y<=30, 0<=z<=8, MakeBox_2(40, 30, 8)) with one planar face

@@ -91,4 +91,41 @@ describe('optional S-N evidence without a saved schema change', () => {
       expect(checked.input.curve.source).not.toHaveProperty('evidence');
       if (checked.schema === FATIGUE_SAVED_GOODMAN_SCHEMA) expect(checked.correction).toEqual(value.correction);
     });
+
+  it.each(['pointercad-fatigue-saved/1', 'pointercad-fatigue-saved/2', FATIGUE_SAVED_GOODMAN_SCHEMA])(
+    'keeps a peer-reviewed classification and its citation through the %s save round trip', schema => {
+      const value = saved();
+      const base = { id: value.id, source: value.source, input: value.input, schema };
+      const versioned = schema === 'pointercad-fatigue-saved/1' ? base : { ...base, axial: value.axial,
+        ...(schema === FATIGUE_SAVED_GOODMAN_SCHEMA ? { correction: value.correction } : {}) };
+      const citation = 'Synthetic peer-reviewed citation fixture, table 9, row 3; not acquired material data';
+      const authored = { ...curveEvidence, sourceKind: 'peer-reviewed-measurement', citation } as const;
+      const checked = readFatigueSavedInput({ ...versioned, curveEvidence: authored }, 'fatigue');
+      expect(checked.curveEvidence).toEqual(authored);
+      const reopened = readFatigueSavedInput(JSON.parse(JSON.stringify(checked)), 'fatigue');
+      expect(reopened).toEqual(checked);
+      expect(reopened.curveEvidence?.sourceKind).toBe('peer-reviewed-measurement');
+      expect(reopened.curveEvidence?.citation).toBe(citation);
+      expect(reopened.input).toEqual(readFatigueSavedInput(versioned, 'fatigue').input);
+      expect(reopened.input.curve.source).toEqual(value.input.curve.source);
+      const definition: unknown = JSON.parse(JSON.stringify(checked));
+      const attached = readBeamAnalysisInputs({ schema: 'pointercad-beam-inputs/1', analyses: [
+        { kind: 'fatigue', definition },
+      ] }, 'owner');
+      expect(attached.ok).toBe(true);
+      if (!attached.ok) throw new Error(attached.issue.message);
+      expect(JSON.stringify(attached.value)).toContain('"sourceKind":"peer-reviewed-measurement"');
+      expect(JSON.stringify(attached.value)).toContain(JSON.stringify(citation));
+    });
+
+  it('refuses an unsupported classification in a saved curve instead of dropping the evidence', () => {
+    const value = saved();
+    const checked = readBeamAnalysisInputs({ schema: 'pointercad-beam-inputs/1', analyses: [
+      { kind: 'fatigue', definition: { ...value, curveEvidence: { ...curveEvidence, sourceKind: 'peer-reviewed' } } },
+    ] }, 'owner');
+    expect(checked.ok).toBe(false);
+    if (checked.ok) throw new Error('Expected a source classification refusal');
+    expect(checked.issue.code).toBe('property-evidence-source-kind');
+    expect(checked.issue.path).toContain('curveEvidence.sourceKind');
+  });
 });

@@ -116,7 +116,7 @@ const SHARED_GUARD = /\b(?:beginDocumentRequest|compareDocumentIdentity|beginOpe
  * 共通の判定(`beginDocumentRequest`)を使わずに、待ちをはさんで文書を差し替える
  * ファイルの一覧。**1 件ずつ読んで、待ちの後に文書・組立・図面の参照で照合している
  * (または待ちの後に差し替えない)ことを確かめたもの**だけを理由とともに載せる
- * (2026-09-28 w83a の点検)。新しいファイルを足すときは共通の判定を使うこと。
+ * (2026-09-28の文書差替え点検)。新しいファイルを足すときは共通の判定を使うこと。
  */
 const REVIEWED_WITHOUT_SHARED_GUARD: Readonly<Record<string, string>> = {
   'assembly/placeComponentActions.ts': '要求ID・activeDocumentId・assembly の参照で照合',

@@ -18,7 +18,7 @@ export interface CadTetraRegion {
   readonly triangleIndices: readonly number[];
 }
 type BoundaryVector = readonly [number, number, number];
-export interface CadBoundaryNormal {
+interface CadBoundaryNormal {
   readonly triangleIndex: number;
   readonly point: BoundaryVector;
   readonly normal: BoundaryVector;
@@ -168,7 +168,7 @@ export function prepareCadTetraMesh(boundary: AnalysisBoundary, context: CadTetr
  */
 export async function meshCadBoundary(client: Pick<FemClient, 'meshTetrahedra'>, kernel: AnalysisBoundarySource,
   readCurrent: () => CadTetraContext, boundaryOptions: AnalysisBoundaryOptions, options: FemOptions = {},
-  requestedQuality?: TetraMeshQualityLimits, requestedMeshing?: TetraMeshingControls): Promise<CadTetraOutcome> {
+  requestedQuality?: TetraMeshQualityLimits, requestedMeshing?: TetraMeshingControls, onMeshing?: () => void): Promise<CadTetraOutcome> {
   // A type-narrowed real client still reserves its generation before the first await.
   // An existing finite lease is already owned; mesh-only injected implementations have
   // no cross-solver ownership contract and retain the existing local request guard.
@@ -213,6 +213,8 @@ export async function meshCadBoundary(client: Pick<FemClient, 'meshTetrahedra'>,
       return { kind: 'failed', code: 'stale', message: 'CAD revision changed while obtaining its boundary' };
     }
     const prepared = prepareCadTetraMesh(boundary.boundary, current, meshing);
+    // CAD boundary preparation is complete; the next call starts actual native meshing.
+    onMeshing?.();
     const completion = await (preparation ?? client).meshTetrahedra(prepared.input, { ...options, signal: owner.signal });
     const afterNative = cancelled();
     if (afterNative !== null) return afterNative;

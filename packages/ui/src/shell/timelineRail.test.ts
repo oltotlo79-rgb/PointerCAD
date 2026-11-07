@@ -29,10 +29,20 @@ import {
   isTimelineAtEnd,
   resolveTimelineIndex,
   timelineIndexForClick,
-  timelineRollback,
   timelineStopsById,
-  timelineStopTooltipKey,
+  timelineStopTooltipKey, rollbackOf, type TimelineRollback,
 } from './timelineRail.js';
+
+/**
+ * 途中まで戻しているときの位置(NFR-UX-7)。末尾にいるなら null。
+ * 戻したままだと「作ったはずのものが消えた」と見えるので、帯に常に出す材料にする。
+ */
+function timelineRollback(
+  part: PartDocument,
+  index: number | null,
+): TimelineRollback | null {
+  return rollbackOf(historySize(part), index);
+}
 
 const ev = expressionValueFromNumber;
 

@@ -112,7 +112,7 @@ export const DEFAULT_EXTRUDE_DISTANCE: ExpressionValue = expressionValueFromNumb
 /** 回転角度の既定値(§0.a-0.9)。 */
 export const DEFAULT_REVOLVE_ANGLE: ExpressionValue = expressionValueFromNumber(360);
 /** 回転軸の既定値。world の Z 軸(§0.a-0.9)。 */
-export const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
+const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 /**
  * 押し出しの側面の傾き・薄板の厚みの既定値(FR-401、FR-416。P5 タスク50 で押し出しの段へ
  * 畳んだぶん)。model の定数を式へ直したもので、同じ数を 2 か所に書かない。
@@ -146,7 +146,7 @@ export const DEFAULT_SPRING_TURNS: ExpressionValue = expressionValueFromNumber(
   DEFAULT_SPRING_TURNS_COUNT,
 );
 /** ばねの軸の既定値。world の Z 軸(§0.a-0.29)。 */
-export const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
+const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 /** ばねの巻き方向の既定値(§0.a-0.33)。 */
 export const DEFAULT_SPRING_HANDEDNESS: SpringHandedness = 'right';
 /** 全長・ピッチ・巻数のうち計算で求める欄の既定値(§0.a-0.30)。 */

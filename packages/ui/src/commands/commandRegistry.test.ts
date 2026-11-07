@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { executeCommand, type CommandActions, type CommandEnvironment, type CommandRuntimeState } from './commandRegistry.js';
+import { executeCommand, type CommandRuntimeState } from './commandRegistry.js';
+
+type CommandEnvironment = NonNullable<Parameters<typeof executeCommand>[1]>;
+type CommandActions = NonNullable<Parameters<typeof executeCommand>[1]>['actions'];
 
 function environment(overrides: Partial<CommandRuntimeState> = {}): {
   readonly value: CommandEnvironment;

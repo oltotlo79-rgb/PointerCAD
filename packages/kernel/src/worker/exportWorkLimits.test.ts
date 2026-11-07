@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { checkedExportAdd, checkedExportMultiply, ExportWorkBudget, ExportWorkLimitError,
-  EXPORT_JS_BYTE_LIMIT, EXPORT_TRIANGLE_LIMIT, exportSerializationReserve } from './exportWorkLimits.js';
+  EXPORT_TRIANGLE_LIMIT, exportSerializationReserve } from './exportWorkLimits.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const EXPORT_JS_BYTE_LIMIT = 512 * 1024 * 1024;
 
 describe('export request admission', () => {
   it('accepts exactly one million triangles, but rejects one more across bodies without mutating totals', () => {

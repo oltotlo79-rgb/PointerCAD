@@ -1,13 +1,8 @@
 import {
   DEFAULT_DRAWING_LAYERS,
   DEFAULT_PAPER_SIZE_ID,
-  type Annotation,
-  type Balloon,
-  type Dimension,
   type DrawingDocument,
-  type DrawingLayer,
   type DrawingSource,
-  type DrawingTable,
   type DrawingView,
 } from '@pointercad/drawing';
 
@@ -79,33 +74,4 @@ export function nextDrawingLayerId(document: DrawingDocument): string {
 /** 以下は Undo/Redo が差分を持てるよう、元の配列を書き換えない追加操作。 */
 export function appendDrawingView(document: DrawingDocument, view: DrawingView): DrawingDocument {
   return { ...document, views: [...document.views, view] };
-}
-
-export function appendDrawingDimension(
-  document: DrawingDocument,
-  dimension: Dimension,
-): DrawingDocument {
-  return { ...document, dimensions: [...document.dimensions, dimension] };
-}
-
-export function appendDrawingAnnotation(
-  document: DrawingDocument,
-  annotation: Annotation,
-): DrawingDocument {
-  return { ...document, annotations: [...document.annotations, annotation] };
-}
-
-export function appendDrawingTable(document: DrawingDocument, table: DrawingTable): DrawingDocument {
-  return { ...document, tables: [...document.tables, table] };
-}
-
-export function appendDrawingBalloon(
-  document: DrawingDocument,
-  balloon: Balloon,
-): DrawingDocument {
-  return { ...document, balloons: [...document.balloons, balloon] };
-}
-
-export function appendDrawingLayer(document: DrawingDocument, layer: DrawingLayer): DrawingDocument {
-  return { ...document, layers: [...document.layers, layer] };
 }

@@ -18,14 +18,13 @@
  */
 
 import {
-  DEFAULT_AUTO_SAVE_IDENTITY,
+  autoSaveRecordIdentity,
   createAutoSaver,
   createIndexedDbAutoSaveStorage,
   type AutoSaveDocument,
   type SaveDocumentEncoder,
   type SaveDocumentInput,
   type AutoSaveRecord,
-  type AutoSaveIdentity,
   type AutoSaverOptions,
   type AutoSaver,
   type AutoSaveStorage,
@@ -438,17 +437,10 @@ function showRecoveryReadFailure(record: AutoSaveRecord, code: Parameters<typeof
     unrecoverable: true, reasonKey: openErrorMessageKey(code) });
 }
 
-function identityOfRecord(record: AutoSaveRecord): AutoSaveIdentity {
-  if (record.kind !== undefined && record.documentId !== undefined && record.sessionId !== undefined) {
-    return { kind: record.kind, documentId: record.documentId, sessionId: record.sessionId };
-  }
-  return DEFAULT_AUTO_SAVE_IDENTITY;
-}
-
 function recoveryRecordOf(saver: AutoSaver): Promise<AutoSaveRecord | null> {
   const state = useAppStore.getState();
   const record = state.restorePrompt === null ? null : state.recoveryRecord;
-  return saver.readLatest(record === null ? undefined : identityOfRecord(record));
+  return saver.readLatest(record === null ? undefined : autoSaveRecordIdentity(record));
 }
 
 /** 案内の「破棄する」。控えを消して案内を閉じる。 */
@@ -457,7 +449,7 @@ export async function discardAutoSave(saver: AutoSaver): Promise<void> {
   const request = beginDocumentRequest('restore');
   const record = await recoveryRecordOf(saver);
   if (!request.isCurrent()) return;
-  await saver.discard(record === null ? undefined : identityOfRecord(record));
+  await saver.discard(record === null ? undefined : autoSaveRecordIdentity(record));
   if (!request.isCurrent()) return;
   useAppStore.getState().setRestorePrompt(null);
   useAppStore.setState({ recoveryRecord: null });

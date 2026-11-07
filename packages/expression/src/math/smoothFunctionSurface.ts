@@ -67,11 +67,11 @@ export type SmoothSurfaceOutcome = (
   /** 'affine': every grid cell is planar up to rounding, so the certified planar triangles are already exact. */
   | { readonly status: 'declined'; readonly reason: 'coverage' | 'budget' | 'samples' | 'bound' | 'affine' }
   | { readonly status: 'stopped' }) & { readonly used: SmoothSurfaceUsage };
-export interface SmoothSurfaceSource {
+interface SmoothSurfaceSource {
   readonly point: (parameters: SurfaceParameter) => FunctionPoint | null;
   readonly enclosure: (lower: SurfaceParameter, upper: SurfaceParameter) => FunctionPointRanges;
 }
-export interface SmoothSurfaceOptions {
+interface SmoothSurfaceOptions {
   readonly minimum: FunctionPoint;
   readonly maximum: FunctionPoint;
   readonly tolerance: number;
@@ -88,7 +88,7 @@ export interface SmoothSurfaceOptions {
 /** Shared with the triangle route's vertex ceiling. */
 export const FUNCTION_SURFACE_SPLINE_POLE_LIMIT = 200_000;
 /** Triangle/cell overlaps examined by one certificate. */
-export const FUNCTION_SURFACE_SPLINE_PAIR_LIMIT = 4_000_000;
+const FUNCTION_SURFACE_SPLINE_PAIR_LIMIT = 4_000_000;
 const ROUNDING = 1e-12;
 /** Relative tolerance of the per-cell coverage area sum (exact clips, computed in cell-local coordinates). */
 const AREA_TOLERANCE = 1e-9;

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { KNOWN_EXCEPTIONS, NO_IMAGE_NEEDED, checkChapterImagePolicy } from '../../../../scripts/manual/chapterImagePolicy.mjs';
 
-// w148a (2026-09-29): the public manual once had 30 of 110 chapters with zero images even though the
+// FR-910 (2026-09-29): the public manual once had 30 of 110 chapters with zero images even though the
 // release check passed (rules/06 §10.148-era gap: it only compared an already-referenced image against
 // the capture registry, never asked whether a chapter needing an image had one at all). These tests are
 // the machine record of the fix: today's real chapters must satisfy the policy, and a chapter with its

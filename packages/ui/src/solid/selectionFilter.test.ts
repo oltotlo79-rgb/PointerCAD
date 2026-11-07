@@ -14,16 +14,24 @@ import { t } from '../i18n/t.js';
 import {
   ALL_SELECTABLE,
   filterPickCandidates,
-  isAllSelectable,
   isNoneSelectable,
-  isSelectableKind,
   isSelectionFilter,
   SELECTION_FILTER_KINDS,
   SELECTION_KIND_LABEL_KEYS,
   toggleSelectionFilter,
-  type PickCandidate,
   type SelectionFilter,
 } from './selectionFilter.js';
+import type { SelectionKind } from './subShapeSelection.js';
+
+/**
+ * 当たり判定の候補 1 件。**要素 id と種類だけ**を見る(位置や距離は絞り込みに要らない)。
+ * `pickSubShape.ts` の `SubShapePickResult` は `kind` と `elementId` を持つので、
+ * そのまま `filterPickCandidates` へ渡せる。
+ */
+interface PickCandidate {
+  readonly elementId: string;
+  readonly kind: SelectionKind;
+}
 
 /** 4 種を 1 件ずつ持つ候補の一覧(絞り込みの結果を種類ごとに数えられる)。 */
 const CANDIDATES: readonly PickCandidate[] = [
@@ -53,7 +61,6 @@ describe('selectionFilter の並びと札', () => {
 
   it('既定は全部入(P4b までと同じ振る舞い)', () => {
     expect(ALL_SELECTABLE).toEqual({ vertex: true, edge: true, face: true, body: true });
-    expect(isAllSelectable(ALL_SELECTABLE)).toBe(true);
     expect(isNoneSelectable(ALL_SELECTABLE)).toBe(false);
   });
 
@@ -150,13 +157,7 @@ describe('filterPickCandidates', () => {
   });
 });
 
-describe('isSelectableKind / toggleSelectionFilter', () => {
-  it('種類ごとに入切を引ける', () => {
-    const filter = onlyKind('edge');
-    expect(isSelectableKind(filter, 'edge')).toBe(true);
-    expect(isSelectableKind(filter, 'face')).toBe(false);
-  });
-
+describe('toggleSelectionFilter', () => {
   it('ひっくり返すのは指した 1 種類だけ(他の 3 つは変わらない)', () => {
     const next = toggleSelectionFilter(ALL_SELECTABLE, 'vertex');
     expect(next).toEqual({ vertex: false, edge: true, face: true, body: true });

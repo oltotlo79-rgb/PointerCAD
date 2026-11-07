@@ -6,7 +6,7 @@ import { dimensionNumberText } from '../dimension/numberText.js';
 import type { SymbolGeometry, SymbolText } from './symbols.js';
 
 export type SurfaceFinishProcess = 'basic' | 'removal' | 'noRemoval';
-export interface SurfaceFinishInput {
+interface SurfaceFinishInput {
   readonly process: SurfaceFinishProcess;
   readonly parameter: 'Ra' | 'Rz';
   readonly value: number;

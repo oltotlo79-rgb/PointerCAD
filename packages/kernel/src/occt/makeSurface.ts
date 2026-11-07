@@ -1,6 +1,7 @@
 import { unitDirectionCaptured as normalizeDirection } from './normalizeDirection.js';
 import type { FaceOrigin, CurrentOriginIndex } from '../subShapeOrigin.js';
 import { surfacePrismSubShapeOrigins, type NativeSurfaceLine } from './subShapeOrigins.js';
+import { surfaceArcAnchorValid, surfaceArcPrismOrigins } from './surfaceArcOrigins.js';
 import { makeTrackedPlanarFace, planarSurfaceAnchorRefusal, planarSurfaceSubShapeOrigins } from './planarSurfaceOrigins.js';
 /**
  * 曲面(面だけの形、FR-428)。計画書 P5 §0.a-0.45、タスク41。
@@ -54,6 +55,7 @@ import { makeTrackedPlanarFace, planarSurfaceAnchorRefusal, planarSurfaceSubShap
 import type {
   OpenCascadeInstance,
   TopoDS_Shape,
+  TopoDS_Edge,
   TopoDS_Wire,
 } from 'opencascade.js/dist/opencascade.full.js';
 
@@ -66,7 +68,7 @@ import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './pickSubShape.js';
 import { measureArea } from './solidMesh.js';
-import { OPEN_FACES_NOT_SUPPORTED, shapeBodyKind } from './shapeBodyKind.js';
+import { shapeBodyKind } from './shapeBodyKind.js';
 import type { SubShapeTables } from './subShapes.js';
 
 /** つなぐには断面が 2 つ要る(`makeThruSections.ts` と同じ決め)。 */
@@ -125,17 +127,6 @@ const OFFSET_DISTANCE_MESSAGE = '面をずらす距離は 0 以外の数にし�
 const OFFSET_FAILED_MESSAGE = '面をずらせませんでした。距離を小さくしてください。';
 
 /**
- * 面だけの形(`bodyKind === 'shell'`)には掛けられない加工の断り(FR-504、NFR-RE-1)。
- *
- * **この文言を実際に使うのはタスク42。** フィレット(`makeFillet.ts`)・面取り
- * (`makeChamfer.ts`)・穴(`makeHole.ts`)などの加工は、中身の詰まった立体があって
- * はじめて意味を持つ。曲面の段(この `makeSurface.ts`)が `bodyKind: 'shell'` の
- * ボディを作れるようになったので、加工の段はその形を受け取ったら**掛ける前に断る**
- * 必要がある。判定は `isShellShape`、文言はこれを使う(同じ文言を各所へ散らさない)。
- */
-export const SHELL_NOT_SUPPORTED_MESSAGE = OPEN_FACES_NOT_SUPPORTED;
-
-/**
  * 面だけの形か(= `SolidBodyMesh.bodyKind` が `'shell'` になるか)。
  *
  * 判定は表示と共通のshapeBodyKindで行い、開面と立体が混在する形も加工前に断る。
@@ -159,6 +150,7 @@ export type SurfaceInput =
   | {
       readonly kind: 'extrude';
       readonly profile: readonly CurveSpec[];
+      readonly curveProfileOrigin?: Extract<FaceOrigin, { readonly kind: 'surface-curve-side' }>['profile'];
       readonly profileOrigins?: readonly Extract<FaceOrigin, { readonly kind: 'surface-side' }>['profile'][];
       readonly direction: Vec3Tuple;
       readonly distance: number;
@@ -229,6 +221,7 @@ function makeProfileWire(
   keep: Allocations['keep'],
   lines?: NativeSurfaceLine[],
   anchors?: Extract<SurfaceInput, { kind: 'extrude' }>['profileOrigins'],
+  arcEdges?: TopoDS_Edge[],
 ): TopoDS_Wire {
   if (curves.length === 0) {
     throw new Error(NO_CURVE_MESSAGE);
@@ -240,6 +233,7 @@ function makeProfileWire(
     if (lines !== undefined && anchors !== undefined && wireMaker.IsDone()) {
       lines.push({ edge: keep(wireMaker.Edge()), anchor: anchors[index] });
     }
+    if (arcEdges !== undefined && wireMaker.IsDone()) arcEdges.push(keep(wireMaker.Edge()));
     index += 1;
   }
   if (!wireMaker.IsDone()) {
@@ -271,7 +265,11 @@ function extrudeProfile(
   const lines: NativeSurfaceLine[] = [];
   const anchors = semantic !== undefined && input.profileOrigins?.length === input.profile.length
     && input.profile.every(curve => curve.kind === 'segment') ? input.profileOrigins : undefined;
-  const wire = makeProfileWire(oc, input.profile, keep, anchors === undefined ? undefined : lines, anchors);
+  const arcEdges: TopoDS_Edge[] = [];
+  const arcOrigin = semantic !== undefined && surfaceArcAnchorValid(input.profile, input.curveProfileOrigin)
+    ? input.curveProfileOrigin : undefined;
+  const wire = makeProfileWire(oc, input.profile, keep, anchors === undefined ? undefined : lines, anchors,
+    arcOrigin === undefined ? undefined : arcEdges);
   const vector = keep(
     new oc.gp_Vec_4(
       direction[0] * input.distance,
@@ -287,6 +285,12 @@ function extrudeProfile(
   const shape = keep(maker.Shape());
   if (semantic !== undefined && anchors !== undefined) {
     semantic.origins = surfacePrismSubShapeOrigins(oc, maker, wire, shape, lines, semantic.featureId);
+  }
+  if (semantic !== undefined && input.curveProfileOrigin !== undefined) {
+    const arc = input.profile[0];
+    semantic.origins = arcOrigin !== undefined && arcEdges.length === 1 && arc.kind === 'arc'
+      ? surfaceArcPrismOrigins(oc, maker, wire, shape, arcEdges[0], arc, arcOrigin, semantic.featureId)
+      : { version: 1, state: 'untracked', reason: 'unsupported-profile-piece' };
   }
   return shape;
 }

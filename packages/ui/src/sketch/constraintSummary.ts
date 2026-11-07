@@ -46,7 +46,7 @@ export type ConstraintState = 'ok' | 'conflicting' | 'redundant' | 'dangling';
  * (一致・固定・距離の端など)は画面上で少し上へずらして描くため
  * (`constraintPicking.ts` の `MARK_POINT_LIFT_PIXELS`)。
  */
-export interface ConstraintAnchor {
+interface ConstraintAnchor {
   readonly position: Vec3;
   /** その場所にスケッチの点(端点・中心・点フィーチャー)があるか。 */
   readonly onPoint: boolean;

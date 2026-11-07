@@ -40,7 +40,7 @@ export interface CommandRuntimeState {
   readonly pointAtReferenceReason?: MessageKey | null;
 }
 
-export interface CommandActions {
+interface CommandActions {
   readonly toolbarCommand?: (id: string) => ToolbarCommandExecutionResult;
   readonly connectPoints?: () => ToolbarCommandExecutionResult;
   readonly faceFromPoints?: () => ToolbarCommandExecutionResult;
@@ -63,7 +63,7 @@ export interface CommandActions {
   readonly clearMeasurement: () => void;
 }
 
-export interface CommandEnvironment {
+interface CommandEnvironment {
   readonly state: () => CommandRuntimeState;
   readonly actions: CommandActions;
 }

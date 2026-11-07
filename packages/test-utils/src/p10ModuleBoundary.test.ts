@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import { posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { moduleReferences, productFiles, dynamicImportExpressions } from './packageImportBoundary.testSupport.js';
+import { moduleAnalysis, productFiles } from './packageImportBoundary.testSupport.js';
+
+type ModuleAnalysis = ReturnType<typeof moduleAnalysis>;
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const directories = ['packages/ui/src', 'packages/ui/integration', 'packages/help-content/src',
@@ -19,10 +21,16 @@ const dynamicBaseline = [
     sha256: 'a1b7ccd36da222d22ca1fabe3b70b13a70a82dfd98a96b7ac29794ef57d1682b',
     expression: "new URL('../../../eslint.functionSizeBaseline.js', import.meta.url).href",
     reason: 'Loads the fixed root ESLint function-size baseline.' },
+  { consumer: 'packages/test-utils/src/complexityPolicy.test.ts',
+    sha256: '82e749bb4b9f24731c50edb9bb0d89308651e617a5739c937dcfe1cdf74ec8a6',
+    expression: "new URL('../../../eslint.complexityBaseline.js', import.meta.url).href",
+    reason: 'Loads only the fixed root parameter-count and nesting-depth baseline.' },
 ] as const;
-function dynamicFindings(consumer: string, text: string): { expression: string; approved: boolean }[] {
+// The parsed expressions are passed in when the caller already analysed the same text, so each file is parsed once.
+function dynamicFindings(consumer: string, text: string,
+  expressions: readonly string[] = moduleAnalysis(consumer, text).dynamicExpressions): { expression: string; approved: boolean }[] {
+  if (expressions.length === 0) return [];
   const hash = createHash('sha256').update(text.replaceAll('\r\n', '\n'), 'utf8').digest('hex');
-  const expressions = /\bimport\s*\(/u.test(text) ? dynamicImportExpressions(consumer, text) : [];
   const seen = new Set<string>();
   return expressions.map(expression => {
     const match = dynamicBaseline.some(item => item.consumer === consumer && item.sha256 === hash
@@ -34,12 +42,13 @@ function dynamicFindings(consumer: string, text: string): { expression: string; 
 }
 
 
-function violations(consumer: string, text: string): Violation[] {
+function violations(consumer: string, text: string, analysis?: ModuleAnalysis): Violation[] {
   const owner = /^packages\/(ui|help-content|model|test-utils)\//u.exec(consumer)?.[1];
   if (owner === undefined) return [];
-  const unknown: Violation[] = dynamicFindings(consumer, text).filter(item => !item.approved)
+  const { references, dynamicExpressions } = analysis ?? moduleAnalysis(consumer, text);
+  const unknown: Violation[] = dynamicFindings(consumer, text, dynamicExpressions).filter(item => !item.approved)
     .map(item => ({ consumer, specifier: item.expression, typeOnly: false, reason: 'unresolved-dynamic-import' }));
-  return unknown.concat(moduleReferences(consumer, text).flatMap(({ specifier, typeOnly }) => {
+  return unknown.concat(references.flatMap(({ specifier, typeOnly }) => {
     const path = (specifier.split(/[?#]/u, 1)[0] ?? '').replaceAll('\\', '/');
     const relative = path.startsWith('./') || path.startsWith('../');
     const target = relative ? posix.normalize(posix.join(posix.dirname(consumer), path)) : path;
@@ -75,12 +84,22 @@ describe('P10 source module boundaries', () => {
       expect(files.length, directory).toBeGreaterThan(0);
       for (const path of files) {
         const text = readFileSync(resolve(root, path), 'utf8');
-        failures.push(...violations(path, text));
-        for (const item of dynamicFindings(path, text)) if (item.approved) approvedDynamic.push(path);
+        const analysis = moduleAnalysis(path, text);
+        failures.push(...violations(path, text, analysis));
+        for (const item of dynamicFindings(path, text, analysis.dynamicExpressions)) if (item.approved) approvedDynamic.push(path);
       }
     }
     expect(approvedDynamic.sort()).toEqual(dynamicBaseline.map(item => item.consumer).sort());
     expect(failures).toEqual([]);
+  });
+  it.each(dynamicBaseline)('binds the dynamic import allowance to exact bytes and consumer: $consumer', item => {
+    const original = readFileSync(resolve(root, item.consumer), 'utf8').replaceAll('\r\n', '\n');
+    expect(dynamicFindings(item.consumer, original).map(finding => finding.approved)).toEqual([true]);
+    expect(dynamicFindings(item.consumer, original.replaceAll('\n', '\r\n')).map(finding => finding.approved)).toEqual([true]);
+    expect(dynamicFindings(item.consumer, original + '\n').every(finding => !finding.approved)).toBe(true);
+    expect(dynamicFindings(item.consumer + '.other.ts', original).every(finding => !finding.approved)).toBe(true);
+    expect(dynamicFindings(item.consumer, original, ['otherUrl']).map(finding => finding.approved)).toEqual([false]);
+    expect(dynamicFindings(item.consumer, original, [item.expression, item.expression]).map(finding => finding.approved)).toEqual([true, false]);
   });
   it('rejects private paths and forbidden directions across static, type, export and dynamic forms', () => {
     for (const form of forms) {
@@ -102,6 +121,7 @@ describe('P10 source module boundaries', () => {
     expect(violations('packages/model/src/future.ts', "// import x from '@pointercad/ui';\nconst text = '@pointercad/ui';")).toEqual([]);
     expect(violations('e2e/tests/future.ts', forms[0]('@pointercad/kernel'))).toEqual([]);
     expect(violations('packages/ui/src/future.ts', "const load = () => import('../../' + name);")).toHaveLength(1);
+    expect(violations('packages/ui/src/future.ts', "const load = () => import/* split */(name);")).toHaveLength(1);
     const item = dynamicBaseline[0];
     const original = readFileSync(resolve(root, item.consumer), 'utf8');
     const lf = original.replaceAll('\r\n', '\n');

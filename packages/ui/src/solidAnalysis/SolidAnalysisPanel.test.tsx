@@ -16,9 +16,12 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { solidYieldEvidenceLabel, solidYieldBasisLabel, SolidYieldSummaryView, startSolidYieldSummary, currentSolidYieldSummary, SolidAnalysisPanel } from './SolidAnalysisPanel.js';
 import { StrengthPropertyPanel } from '../strength/StrengthPropertyPanel.js';
-import { SolidAnalysisMaterialFields, type SolidAnalysisMaterialFieldsProps } from './SolidAnalysisMaterialFields.js';
+import { SolidAnalysisMaterialFields } from './SolidAnalysisMaterialFields.js';
 import { t } from '../i18n/t.js';
 import { createSolidSupport } from './solidBoundaryDraft.js';
+
+type SolidAnalysisMaterialFieldsProps = Parameters<typeof SolidAnalysisMaterialFields>[0];
+
 vi.mock('react', async importOriginal => {
   const actual = await importOriginal<typeof ReactTypes>();
   return { ...actual, useState: vi.fn(actual.useState), useEffect: vi.fn(actual.useEffect), useRef: vi.fn(actual.useRef) };
@@ -341,6 +344,9 @@ describe('reachable source-bound solid yield display', () => {
       const full = renderToStaticMarkup(<StrengthPropertyPanel />);
       for (const key of ['solidAnalysis.displacement', 'solidAnalysis.reaction', 'solidAnalysis.energy'] as const) expect(full).toContain(t(key));
       expect(full).toContain(t('solidAnalysis.yieldPending'));
+      expect(full).toContain('data-solid-nodes="9"');
+      expect(full).toContain('data-solid-dof-total="27"');
+      expect(full).toContain('data-solid-node-limit="10000"');
       const published: NonNullable<Parameters<typeof currentSolidYieldSummary>[0]>[] = [];
       startSolidYieldSummary(viewRequest, value => published.push(value));
       await vi.waitFor(() => expect(published).toHaveLength(1));
@@ -351,6 +357,7 @@ describe('reachable source-bound solid yield display', () => {
       }
       useAppStore.getState().editSolidAnalysis('tz', '3');
       expect(useAppStore.getState().solidAnalysisSession?.result).toBeNull();
+      expect(renderToStaticMarkup(<StrengthPropertyPanel />)).not.toContain('data-solid-dof-total=');
     } finally { rig.attachment.dispose(); }
   });
   it('drops completion after cleanup and shows a rejection as recheck rather than zero', async () => {
@@ -381,4 +388,18 @@ it('uses exhaustive Japanese evidence and basis labels while preserving source I
   expect(solidYieldEvidenceLabel('standard-draft')).toBe('規格の原案');
   expect(solidYieldBasisLabel('minimum')).toBe('最小値');
   expect(solidYieldBasisLabel('reference')).toBe('参考値');
+});
+
+describe('transient solid pipeline stage display', () => {
+  it.each([
+    ['preparing', '形状の準備'], ['meshing', 'メッシュの作成'], ['solving', '変形と応力の計算'],
+  ] as const)('shows the actual %s stage in the existing status row', (stage, label) => {
+    const session = { ...createSolidAnalysisSession('progress-owner'), status: 'running' as const, stage };
+    const html = renderToStaticMarkup(<SolidAnalysisPanel session={session} />);
+    expect(html).toContain('data-testid="solid-analysis-progress"');
+    expect(html).toContain(`data-stage="${stage}"`); expect(html).toContain(label);
+    expect(html.match(/role="status"/gu)).toHaveLength(1);
+    const complete = renderToStaticMarkup(<SolidAnalysisPanel session={{ ...session, status: 'complete' }} />);
+    expect(complete).not.toContain('solid-analysis-progress');
+  });
 });

@@ -9,12 +9,14 @@ import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import { createDirectKernelBridge, type KernelBridge } from '../kernelBridge.js';
 import { buildEx18ExpressionBracket, buildEx18SewnBracket, buildEx18SketchBracket,
   editEx18ExpressionDiameter, editEx18SewnDiameter, editEx18SketchHoleDiameter,
-  moveEx18ExpressionHole, type Ex18BuiltRoute } from './ex18RouteBuilders.testSupport.js';
+  moveEx18ExpressionHole } from './ex18RouteBuilders.testSupport.js';
 import { EX18_ORACLE_A_DIAMETER_EIGHT, EX18_ORACLE_A_HOLE_X_TWELVE, EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.testSupport.js';
 import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation, type Ex18ShapeMeasurement } from './ex18ShapeOracle.testSupport.js';
 import { recomputePart } from './recomputePart.js';
 import type { ResolvedPart } from './resolvePart.js';
 import type { PartDocument } from './types.js';
+
+type Ex18BuiltRoute = Parameters<typeof editEx18SewnDiameter>[0];
 
 const TIMEOUT_MS = 180_000;
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;

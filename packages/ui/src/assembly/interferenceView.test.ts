@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { AssemblyInterferencePair, AssemblyInterferenceReport } from '@pointercad/model';
 import {
-  formatInterferenceVolume, interferencePairKey, interferenceRows, selectedInterferencePair,
+  formatInterferenceVolume, interferencePairKey, interferenceRows,
 } from './interferenceView.js';
+
+function selectedInterferencePair(
+  report: Pick<AssemblyInterferenceReport, 'pairs'> | null,
+  key: string | null,
+): AssemblyInterferencePair | null {
+  if (report === null || key === null) return null;
+  return report.pairs.find((pair) =>
+    interferencePairKey(pair.aComponentId, pair.bComponentId) === key) ?? null;
+}
 
 function pair(a: string, b: string, volume: number): AssemblyInterferencePair {
   return {

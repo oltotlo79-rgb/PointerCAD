@@ -35,7 +35,7 @@ export interface ContextReferenceLink {
   readonly source: SubShapeRef;
 }
 
-export interface ContextReferenceContext {
+interface ContextReferenceContext {
   readonly document: AssemblyDocument;
   /** 置いた部品の今の部品文書。 */
   readonly partDocument: (component: AssemblyComponent) => PartDocument | null;

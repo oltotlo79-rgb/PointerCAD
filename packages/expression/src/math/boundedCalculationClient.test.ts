@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BoundedCalculationClient, CALCULATION_REPLY_SLICE_MS, type CalculationWorkerPort, type CalculationRequest } from './boundedCalculationClient.js';
+import { BoundedCalculationClient, type CalculationWorkerPort, type CalculationRequest } from './boundedCalculationClient.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const CALCULATION_REPLY_SLICE_MS = 8;
 
 const request: CalculationRequest = { identity: { documentId: 'part', documentVersion: 1, editorId: 'input', inputRevision: 1 } };
 afterEach(() => vi.useRealTimers());

@@ -343,7 +343,7 @@ export function toElementRef(elementId: string): SketchElementRef {
   };
 }
 
-export interface CommitContext {
+interface CommitContext {
   readonly document: SketchDocument;
   /** 作るフィーチャーの作図面。極座標の角度と円弧の向きの基準になる。 */
   readonly planeId: WorkPlaneId;

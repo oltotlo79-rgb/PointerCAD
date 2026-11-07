@@ -19,7 +19,6 @@ import { solidTetGeometry } from './solidAnalysisTranslation.js';
 
 /** Row-major 3x3 matrix: m[i][j] is row i, column j. */
 export type Matrix3 = readonly [SolidVector3, SolidVector3, SolidVector3];
-export type OofemVoigt9 = readonly [number, number, number, number, number, number, number, number, number];
 
 const fail: (message: string) => never = createPrefixedError('finite-kinematics');
 function finiteMatrix(m: Matrix3, what: string): Matrix3 {
@@ -93,11 +92,6 @@ export function stVenantKirchhoffStress(strain: SolidVector6, youngMPa: number, 
     mu * strain[3], mu * strain[4], mu * strain[5]];
 }
 
-/** W = S : E / 2 per reference volume (N mm / mm^3); engineering shear makes the off-diagonal products S_ij * 2E_ij. */
-export function strainEnergyDensity(strain: SolidVector6, stress: SolidVector6): number {
-  return strain.reduce((sum, value, index) => sum + value * stress[index], 0) / 2;
-}
-
 /** P = F S. */
 export function firstPiolaStress(f: Matrix3, secondPiola: SolidVector6): Matrix3 {
   return multiply3(finiteMatrix(f, 'deformation gradient'), stressMatrix(secondPiola));
@@ -116,9 +110,4 @@ export function stVenantKirchhoffFirstPiolaDerivative(f: Matrix3, df: Matrix3, y
   const stressIncrement = stVenantKirchhoffStress(greenLagrangeDerivative(f, df), youngMPa, poisson);
   const a = multiply3(df, stressMatrix(stress)), b = multiply3(f, stressMatrix(stressIncrement));
   return build((i, j) => a[i][j] + b[i][j]);
-}
-
-/** OOFEM unsymmetric Voigt 9-form [11, 22, 33, 23, 13, 12, 32, 31, 21] (floatmatrixf.h to_voigt_form_33). */
-export function toOofemVoigt9(m: Matrix3): OofemVoigt9 {
-  return [m[0][0], m[1][1], m[2][2], m[1][2], m[0][2], m[0][1], m[2][1], m[2][0], m[1][0]];
 }

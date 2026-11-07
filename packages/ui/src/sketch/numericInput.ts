@@ -139,8 +139,8 @@ export { rangeErrorFor, effectiveSource, fieldExpression, fillDefaults, evaluate
 
 export { twoPointArcCenterOffset, twoPointArcRadiusRejection } from './twoPointArcInput.js';
 import type { SplineDraft } from './splineInputDraft.js';
-export { EMPTY_SPLINE_DRAFT, appendSplinePoint, removeLastSplinePoint, checkSplineDraft,
-  type SplineDraft, type SplineDraftOutcome, type SplineDraftCheck } from './splineInputDraft.js';
+export { EMPTY_SPLINE_DRAFT, appendSplinePoint, checkSplineDraft,
+  type SplineDraft, type SplineDraftCheck } from './splineInputDraft.js';
 
 /**
  * 欄が受け付ける値の範囲(NFR-UX-5)。
@@ -285,7 +285,7 @@ export type RevolveAxisChoice = 'x' | 'y' | 'z' | 'line';
  * axis は回転・円形パターン・ばねの軸で共用する(いずれも「回転軸」の性質を持つ)。
  * patternDirection は直線パターン専用(向きであって回転軸ではないので別のキーにする)。
  */
-export type NumericChoiceKey =
+type NumericChoiceKey =
   | 'extrudeOperation'
   | 'extrudeTarget'
   | 'sweepGuide'
@@ -1195,7 +1195,7 @@ const CUT_PLANE_FIELDS: readonly NumericFieldDefinition[] = [
 /* ---- P4 タスク11: 新しい図形の欄(FR-314〜318、FR-326、FR-327) ---- */
 
 /** 正多角形の既定の辺数(FR-315。六角形が最もよく使われる)。 */
-export const DEFAULT_POLYGON_SIDES = 6;
+const DEFAULT_POLYGON_SIDES = 6;
 
 /**
  * 格子状の点列の行・列の向き(度、FR-327)。統括の指示で、格子の段は「間隔と個数」だけを
@@ -3368,13 +3368,6 @@ export interface EditInputCommit {
    */
   readonly coordinate?: CoordinateInput;
 }
-
-/** ポップアップが返しうる確定結果のすべて。 */
-export type AnyNumericInputCommit =
-  | NumericInputCommit
-  | SolidInputCommit
-  | ReferenceInputCommit
-  | EditInputCommit;
 
 /**
  * 「決め方」の段(splineShape)の確定を下書きへ写す(FR-317)。

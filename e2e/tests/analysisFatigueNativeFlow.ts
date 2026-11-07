@@ -227,7 +227,8 @@ export async function analysisFatigueNativeFlow(page: Page, info: TestInfo, app?
     await expect.poll(() => workers.started(), { timeout: KERNEL_TIMEOUT_MS }).toBe(1);
     expect(workers.closed()).toBe(0);
     const running = solid.locator(':scope > [role="status"]');
-    await expect(running).toHaveText('境界・内部メッシュを作成し、応力を計算しています。');
+    await expect(running).toHaveAttribute('data-stage', 'meshing');
+    await expect(running).toHaveText('メッシュの作成');
     await input(solid, 'ヤング率 E (MPa)').fill(CANCEL_E);
     await expect(running).toHaveCount(0);
     await expectFemQuiet(workers);

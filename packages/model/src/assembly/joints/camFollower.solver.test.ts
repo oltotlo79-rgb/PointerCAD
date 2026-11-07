@@ -7,7 +7,7 @@ import type { AssemblyComponent, AssemblyDocument, Joint, MechanismCamCoupling }
 import { jointValue } from './driveJoint.js';
 import type { JointFrame, JointFramePair } from './jointFrames.js';
 import { prepareJointResiduals } from './jointResiduals.js';
-import { createCamCycleFixture } from './mechanismCycleFixture.js';
+import { createCamCycleFixture } from './mechanismCycle.testSupport.js';
 
 const R = 20, E = 5, ROLLER = 4;
 const camFrame: JointFrame = { origin: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };

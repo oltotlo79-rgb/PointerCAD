@@ -37,7 +37,7 @@ import { resolveCutPlaneOf } from './cutPlaneMaterials.js';
 import type { SubShapeBody } from './subShapeSelection.js';
 
 /** 予告を組み立てる材料(ストアから読むもの)。 */
-export interface CutPlanePreviewSource {
+ interface CutPlanePreviewSource {
   /** 開いているその場入力。切断の段でなければ予告は出ない。 */
   readonly numericInput: NumericInputState | null;
   readonly document: PartDocument;
@@ -50,7 +50,7 @@ export interface CutPlanePreviewSource {
 }
 
 /** 予告の面。`createSolidLayer.ts` の `CutPreview` と同じ形(描き方は変えない)。 */
-export interface CutPlanePreview {
+interface CutPlanePreview {
   readonly plane: ResolvedPlane;
   /** 四角の対角の長さ(= 対象のボディの境界箱の対角長、§0.a-0.61)。 */
   readonly diagonal: number;

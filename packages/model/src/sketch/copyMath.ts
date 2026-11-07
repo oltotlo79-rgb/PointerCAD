@@ -77,7 +77,7 @@ export const MAX_COPY_COUNT = 100;
  * (`part/resolvePart.ts`)と同じ欄立て。`mirror` は平面に対する鏡映で、剛体ではない
  * (向きが裏返る)ので種類を分ける。
  */
-export type SketchTransform =
+type SketchTransform =
   | {
       readonly kind: 'rigid';
       readonly translation: Vec3;
@@ -93,7 +93,7 @@ export type SketchTransform =
     };
 
 /** 複製のもとを引くための、解決済みの要素の索引(`resolveSketch` が育てているもの)。 */
-export interface CopySourceLookup {
+interface CopySourceLookup {
   readonly curveByFeature: ReadonlyMap<string, ResolvedCurve>;
   readonly curvesByFeature: ReadonlyMap<string, readonly ResolvedCurve[]>;
   readonly pointsByFeature: ReadonlyMap<string, readonly ResolvedPoint[]>;

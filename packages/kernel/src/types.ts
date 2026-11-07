@@ -40,21 +40,6 @@ import type { FunctionSurfaceInput as TypeFunctionSurfaceInput } from './occt/fu
 import type { IntersectionVolumeFailure as TypeIntersectionVolumeFailure } from './occt/intersectionVolume.js';
 
 
-/** 表示用の三角形メッシュ。内部単位は mm(NFR-RE-3)。 */
-export interface MeshData {
-  /** 頂点座標。x, y, z の順に 3 個ずつ並ぶ。 */
-  readonly positions: Float32Array;
-  /** 頂点法線。positions と同じ長さ。 */
-  readonly normals: Float32Array;
-  /** 三角形の頂点番号。3 個ずつ並ぶ。 */
-  readonly indices: Uint32Array;
-  /** 稜線の線分列。線分1本あたり 6 個(始点 xyz + 終点 xyz)。 */
-  readonly edgePositions: Float32Array;
-  readonly triangleCount: number;
-  readonly faceCount: number;
-  readonly edgeCount: number;
-}
-
 /** 箱の寸法(mm)。 */
 export interface BoxParameters {
   readonly dx: number;
@@ -154,7 +139,7 @@ export interface SketchTessellationRequest {
   readonly faces: readonly PlanarFaceRequest[];
 }
 
-/** 面 1 枚分の表示用データ。MeshData と同じ並び方をする。 */
+/** 面 1 枚分の表示用データ。座標・法線・頂点番号は SolidBodyMesh と同じ並び方をする。 */
 export interface FaceMeshData {
   readonly id: string;
   /** 頂点座標。x, y, z の順に 3 個ずつ並ぶ。 */
@@ -244,7 +229,7 @@ export type { PlaneArc, PlaneCurve, PlanePolyline, PlaneSegment, SketchPlaneFram
 /** 図面用の隠線処理。精密は円弧を保ち、近似は表示速度を優先する(FR-702)。 */
 export type HiddenLineMode = 'precise' | 'poly';
 
-export interface HiddenLineViewRequest {
+interface HiddenLineViewRequest {
   readonly id: string;
   readonly origin: Vec3Tuple;
   readonly normal: Vec3Tuple;
@@ -693,7 +678,7 @@ export interface SolidRecomputeRequest {
  */
 export type SolidBodyKind = 'solid' | 'shell' | 'mesh' | 'mixed';
 
-/** ボディ 1 つ分の表示用データ。MeshData と同じ並び方をする。 */
+/** ボディ 1 つ分の表示用の三角形メッシュ。内部単位は mm(NFR-RE-3)。 */
 export interface SolidBodyMesh {
   readonly id: string;
   /** Present only when both positions and edgePositions are local to this same origin. */
@@ -1152,7 +1137,7 @@ export interface CylindricalHoleLocation {
 }
 
 /** 面内原点はPlane.Location、XはPlane.XAxis、Yは外向き法線×X。符号付きmm。中心点・円筒配置とは排他的。 */
-export interface PlanarHoleSpec {
+ interface PlanarHoleSpec {
   readonly kind: 'plane-face';
   readonly locations: readonly { readonly x: number; readonly y: number }[];
 }
@@ -1492,7 +1477,7 @@ export interface HoleTranslateStepSpec {
 }
 
 /** 箱の支持平面を所属直線辺まわりに回す。角度はrad。対象を消費する。 */
-export interface FaceRotateStepSpec {
+ interface FaceRotateStepSpec {
   readonly kind: 'faceRotate';
   readonly targetKey: string;
   readonly face: SubShapeQuery;

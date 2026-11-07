@@ -7,8 +7,13 @@ import { bucklingFixture } from './buckling.testSupport.js';
 import { PLASTIC_BAR_PLAN_SCHEMA, PLASTIC_BAR_RESULT_SCHEMA, plasticBarReference, type PlasticBarPlan } from './plasticBar.js';
 import { PLASTIC_BAR_INPUT_SCHEMA, plasticBarInputSha256, translatePlasticBar,
   type PlasticBarInput } from './plasticBarTranslation.js';
-import { decodePlasticBar, isPlasticBarResult, PLASTIC_BAR_METHOD, PLASTIC_BAR_SCOPE, plasticBarResultMatches,
-  readPlasticBarNative } from './plasticBarResults.js';
+import { decodePlasticBar, isPlasticBarResult, plasticBarResultMatches, readPlasticBarNative } from './plasticBarResults.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const PLASTIC_BAR_METHOD = 'oofem-misesmat-htype0-truss1d-staticstructural/1';
+const PLASTIC_BAR_PLATEAU_METHOD = 'oofem-misesmat-htype1-truss1d-staticstructural/1';
+const PLASTIC_BAR_PLATEAU_SCOPE = 'uniaxial-small-strain-j2-plateau-then-linear-isotropic-hardening-displacement-control';
+const PLASTIC_BAR_SCOPE = 'uniaxial-small-strain-j2-linear-isotropic-hardening-displacement-control';
 
 /** Benchmark constants stated for this test only (not a steel grade): E 200 GPa, sigma0 250 MPa, H 2 GPa. */
 function plan(knots: readonly number[] = [0, 2.5e-3, 0, -2.5e-3, 0], stepsPerSegment = 1): PlasticBarPlan {
@@ -263,5 +268,51 @@ describe('native order of the fixed plastic-bar runner (regression for the plast
   it('reads the equilibrated end force', () => {
     expect(code).toContain('fem.CharType.LastEquilibratedInternalForcesVector');
     expect(code).not.toMatch(/CharType\.InternalForcesVector/u);
+  });
+  it('emits the same method and scope strings as the TS reader for both laws, htype 1 only for a plateau', () => {
+    for (const text of [PLASTIC_BAR_METHOD, PLASTIC_BAR_SCOPE, PLASTIC_BAR_PLATEAU_METHOD, PLASTIC_BAR_PLATEAU_SCOPE]) {
+      expect(source).toContain(`'${text}'`);
+    }
+    // Keywords of the shipped MisesMat (misesmat.h:51-53) in the record syntax of tests/sm/Mises02.in.
+    expect(source).toContain('htype 1 h_eps 3 ');
+    expect(source).toContain('h(eps) 3 ');
+    expect(source).toContain('if table is None:');
+    // Same table statements as plasticBarHardeningTable: kmax above kp and the strain variation, finite table only.
+    expect(source).toContain('kmax = kp + 2 * max(kp, total_variation)');
+    expect(source).toContain("_fail('the plateau hardening table must be finite (material.hardeningModulusPa is too large)')");
+  });
+});
+
+describe('plateau plan: native method binding (htype 1) and stale-law rejection', () => {
+  const plateauPlan: PlasticBarPlan = { ...plan([0, 5e-3, 2e-2, 1.9e-2, -5e-3, 0]),
+    material: { ...plan().material, plateauPlasticStrain: 0.01 } };
+  function plateauRaw(method: string = PLASTIC_BAR_PLATEAU_METHOD,
+    scope: string = PLASTIC_BAR_PLATEAU_SCOPE): Record<string, unknown> {
+    return { ...rawFrom(rawSamples(plateauPlan), plateauPlan), method, scope };
+  }
+
+  it('accepts only the htype 1 strings for a plateau plan and only the htype 0 strings without it', async () => {
+    expect(readPlasticBarNative(plateauRaw(), plateauPlan).yielded).toBe(true);
+    expect(() => readPlasticBarNative(plateauRaw(PLASTIC_BAR_METHOD, PLASTIC_BAR_SCOPE), plateauPlan))
+      .toThrow('unexpected method');
+    expect(() => readPlasticBarNative(plateauRaw(PLASTIC_BAR_PLATEAU_METHOD, PLASTIC_BAR_SCOPE), plateauPlan))
+      .toThrow('unexpected scope');
+    expect(() => readPlasticBarNative({ ...rawFrom(rawSamples(plan())), method: PLASTIC_BAR_PLATEAU_METHOD,
+      scope: PLASTIC_BAR_PLATEAU_SCOPE }, plan())).toThrow('unexpected method');
+    const barInput = input(5, plateauPlan);
+    const hash = await plasticBarInputSha256(barInput);
+    const decoded = decodePlasticBar(plateauRaw(), barInput, hash);
+    expect([decoded.method, decoded.scope]).toEqual([PLASTIC_BAR_PLATEAU_METHOD, PLASTIC_BAR_PLATEAU_SCOPE]);
+    expect(plasticBarResultMatches(decoded, barInput, hash)).toBe(true);
+    // The same samples bound to the plan without the plateau are a different input and are rejected.
+    const legacyInput = input(5, { ...plateauPlan, material: plan().material });
+    expect(plasticBarResultMatches(decoded, legacyInput, await plasticBarInputSha256(legacyInput))).toBe(false);
+    expect(isPlasticBarResult({ ...decoded, scope: PLASTIC_BAR_SCOPE })).toBe(false);
+  });
+
+  it('keeps the input digest of a plan without the field unchanged by the optional field support', async () => {
+    const legacy = input();
+    expect(JSON.stringify(translatePlasticBar(legacy).input)).toBe(JSON.stringify(legacy));
+    expect(await plasticBarInputSha256(legacy)).not.toBe(await plasticBarInputSha256(input(3, plateauPlan)));
   });
 });

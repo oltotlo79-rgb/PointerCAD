@@ -68,12 +68,6 @@ export function cancelExtrusion(): void {
   useAppStore.getState().partStager?.cancel();
 }
 
-/** いまの段階計算のうち、その入力の鍵のもの。所有が変わった古い計算は返さない。 */
-export function stagedExtrusionFor(state: ReturnType<typeof useAppStore.getState>, inputKey: string): StagedSolidState | null {
-  const staged = currentStagedSolid(state);
-  return staged !== null && staged.fingerprint === inputKey ? staged : null;
-}
-
 /** 採用できなかった理由ごとの、利用者が次にすることを含む文言(i18n の solid.json)。 */
 const FAILURE_MESSAGE_KEYS: Readonly<Record<StagedSolidFailure, MessageKey>> = {
   failed: 'solidError.extrudeFailed',

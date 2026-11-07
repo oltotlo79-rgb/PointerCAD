@@ -54,14 +54,14 @@ describe('W7 independent H beam table 15 oracle', () => {
       .toEqual(['H 100×100×6×8', 'H 125×125×6.5×9', 'H 175×175×7.5×11', 'H 250×250×9×14']);
   });
 
-  it('retains every pre-W7 sections.ts byte, including all seven H rows and five warning rows', () => {
+  it('retains pre-W7 sections.ts content after source relocation, including all seven H rows and five warning rows', () => {
     const text = readFileSync(new URL('./sections.ts', import.meta.url), 'utf8');
     const lines = text.split(String.fromCharCode(10));
     const added = lines.filter(line => H_BEAM_ADDITION_ORACLE.some(row =>
       line.startsWith(`  { key: 'JIS-G-3192:2024:${row.size}',`)));
     expect(added).toHaveLength(46);
     const original = lines.filter(line => !added.includes(line)).join(String.fromCharCode(10));
-    expect(sourceHash(original)).toBe('069d0bf20815a51567eda5b6c0ce39b50da67d0d8ff86456ea3e2ca35891d6a5');
+    expect(sourceHash(original)).toBe('181e670b83167652610bd66466ea80de8b9095dfe2da93bb03ce8813db902612');
     expect(H_BEAM_TABLE.filter(row => !row.verified).map(row => row.size)).toEqual(['H 175×175×7.5×11']);
   });
 

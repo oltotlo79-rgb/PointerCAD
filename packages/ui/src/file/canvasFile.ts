@@ -54,7 +54,7 @@ export interface PickedCanvasImage {
  * 拡張子ではなく MIME 型で書くのは、`.PNG` のような大文字や、拡張子の無いファイルも
  * 選べるようにするため(中身の判定は `detectImageFormat` がバイト列で行う)。
  */
-export const CANVAS_IMAGE_ACCEPT = 'image/png,image/jpeg';
+const CANVAS_IMAGE_ACCEPT = 'image/png,image/jpeg';
 
 /** 形式ごとの MIME 型。復号器へ「何のバイト列か」を伝えるためだけに使う。 */
 const CANVAS_IMAGE_MIME_TYPES: Readonly<Record<CanvasImageFormat, string>> = {
@@ -300,13 +300,13 @@ export async function decodeCanvasImage(
  * 100mm は起動時の方眼(1 目盛 10mm)にちょうど収まる大きさで、**この後に 2 点の
  * 寸法合わせ(§2.14)で本当の寸法へ合わせる**ことが前提の出発点である。
  */
-export const DEFAULT_CANVAS_WIDTH_MM = 100;
+const DEFAULT_CANVAS_WIDTH_MM = 100;
 
 /**
  * 貼ったばかりの下絵の不透明度(0〜1)。**なぞるための薄い紙**なので、線を引いたときに
  * 下絵と線が見分けられる濃さにする(§2.14 の表の 0.5 と同じ値)。
  */
-export const DEFAULT_CANVAS_OPACITY = 0.5;
+const DEFAULT_CANVAS_OPACITY = 0.5;
 
 /**
  * 読み込んだ画像から下絵 1 枚(文書の `SketchCanvas`)を作る(FR-332、§0.a-0.45)。

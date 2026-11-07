@@ -139,10 +139,10 @@ export const FILE_MENU_ITEMS: readonly ToolMenuItem<FileMenuActionId>[] = [
  * 兄弟の `key` に種類の接頭辞を付けるのは `rules/06` 10.9 の対策でもある——ひな形の名前が
  * たまたま `'print'` でも、行の id は `'template:print'` になって決まった操作と食い違う。
  */
-export const STORED_TEMPLATE_MENU_PREFIX = 'template:';
+const STORED_TEMPLATE_MENU_PREFIX = 'template:';
 
 /** 最近使ったファイルの行の id の接頭辞(FR-807)。理由は上と同じ。 */
-export const RECENT_FILE_MENU_PREFIX = 'recentFile:';
+const RECENT_FILE_MENU_PREFIX = 'recentFile:';
 
 /** 保存したひな形の行の id。 */
 export type StoredTemplateMenuId = `${typeof STORED_TEMPLATE_MENU_PREFIX}${string}`;

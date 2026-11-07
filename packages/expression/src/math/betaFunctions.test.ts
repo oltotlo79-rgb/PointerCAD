@@ -9,7 +9,7 @@ import { CANDIDATE_MATH_BY_ID } from './mathOperations.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
 import { BETA_FUNCTION_REFERENCES } from './betaFunctionReferences.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

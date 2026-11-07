@@ -7,14 +7,14 @@ export const SOLID_BOUNDARY_AXES = ['x', 'y', 'z'] as const;
 export type SolidBoundaryAxis = typeof SOLID_BOUNDARY_AXES[number];
 export type SolidGravityField = SolidBoundaryAxis | 'density';
 export const SOLID_BOUNDARY_INDEX: Readonly<Record<SolidBoundaryAxis, 0 | 1 | 2>> = { x: 0, y: 1, z: 2 };
-export interface SolidSupportDraft {
+ interface SolidSupportDraft {
   readonly face: string;
   readonly fixed: readonly [boolean, boolean, boolean];
   readonly displacement: readonly [string, string, string];
   /** Preserve the distinction between omitted zero values and explicitly authored displacements. */
   readonly prescribed: boolean;
 }
-export interface SolidGravityDraft {
+ interface SolidGravityDraft {
   readonly enabled: boolean;
   readonly acceleration: readonly [string, string, string];
   readonly density: string;

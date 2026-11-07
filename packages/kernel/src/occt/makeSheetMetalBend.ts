@@ -6,7 +6,7 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { hasSolid, isValidShape } from './solidMesh.js';
 
-export interface SheetMetalLBendInput {
+interface SheetMetalLBendInput {
   readonly thickness: number; readonly radius: number; readonly width: number;
   /** 接線からの直線長mm。外寸・展開長とは別。 */
   readonly firstLength: number; readonly secondLength: number;

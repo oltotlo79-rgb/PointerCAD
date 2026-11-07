@@ -76,7 +76,7 @@ describe('W6d independent angle and channel additions', () => {
     expect([...EQUAL_ANGLE_TABLE, ...CHANNEL_TABLE, ...H_BEAM_TABLE]).toHaveLength(109);
   });
 
-  it('retains every pre-existing sections.ts byte including all five warning notes', () => {
+  it('retains pre-existing sections.ts content after source relocation including all five warning notes', () => {
     const text = readFileSync(new URL('./sections.ts', import.meta.url), 'utf8');
     const lines = text.split(String.fromCharCode(10));
     const hBeamLines = lines.filter(line => H_BEAM_ADDITION_ORACLE.some(row =>
@@ -87,13 +87,13 @@ describe('W6d independent angle and channel additions', () => {
       line.startsWith(`  { key: 'JIS-G-3192:2024:${row.size}',`)));
     expect(added).toHaveLength(22);
     const original = lines.filter(line => !added.includes(line)).join(String.fromCharCode(10));
-    expect(sourceHash(original)).toBe('9b48419b198b6d002382cc166d713a0e24ead329dd4cf6ca764d3480882ac22c');
+    expect(sourceHash(original)).toBe('6f3aaa7dac50b89a8a0592bc7ffe1c5c7105b5519ed62b05ffff42e110dbca56');
   });
 
   it.each([
     ['steelCatalogOracle.fixture.ts', 'd891a8cc6918188b576e7a967062e84830b5e9c75e38fc56a435ddfb92b3cfce'],
-    ['steelS45cOracle.fixture.ts', '51d3342fd50345c4e7a97f42c07cbfb301202d4b642b077b4cd5443cd834276d'],
-    ['steelGolden.fixture.ts', 'bb738d3bcc4f7571816aa3f406f8968c16b16540af388350ad23086c64e77cca'],
+    ['steelS45cOracle.testSupport.ts', '51d3342fd50345c4e7a97f42c07cbfb301202d4b642b077b4cd5443cd834276d'],
+    ['steelGolden.testSupport.ts', 'bb738d3bcc4f7571816aa3f406f8968c16b16540af388350ad23086c64e77cca'],
   ])('%s retains the frozen W1/W4b/W5 bytes', (name, sha256) => {
     const text = readFileSync(new URL('./' + name, import.meta.url), 'utf8');
     // W8b adds a separate SGP table after all frozen W1/W4b/W5 bytes.

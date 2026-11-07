@@ -27,10 +27,11 @@ import {
   patternAlphaDrawCommands,
   patternCacheKey,
   patternDrawCommands,
-  type PatternDrawCommand,
   patternRepeatFor,
-  type PatternRenderingContext2D,
 } from './patternTexture.js';
+
+type PatternDrawCommand = Parameters<typeof drawPattern>[1][number];
+type PatternRenderingContext2D = Parameters<typeof drawPattern>[0];
 
 /** 呼ばれた命令をそのまま記録するだけの、偽の描画道具。 */
 function createFakeContext(): PatternRenderingContext2D & { readonly calls: string[] } {

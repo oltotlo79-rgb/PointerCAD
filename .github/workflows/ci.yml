@@ -101,6 +101,24 @@ jobs:
           COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
         run: corepack enable
 
+      # Native FEM unit tests invoke python with PYTHONNOUSERSITE=1; isolate their dependency.
+      # 2.2.5 is the existing pinned FEM runtime NumPy source version.
+      - name: Prepare Python for native FEM tests
+        shell: pwsh
+        run: |
+          python -c "import sys; assert (3,10) <= sys.version_info[:2] <= (3,13), sys.version"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $venv = Join-Path $env:RUNNER_TEMP pointercad-python
+          python -m venv $venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bin = if ($IsWindows) { Join-Path $venv Scripts } else { Join-Path $venv bin }
+          $python = Join-Path $bin python
+          & $python -m pip install numpy==2.2.5
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $python -c "import numpy; assert numpy.__version__ == '2.2.5'"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: 単体の先行分 (scripts/check.ps1)
         shell: pwsh
         run: ./scripts/check.ps1 -Install -CIStage UnitLead -StageEvidence '${{ runner.temp }}/pointercad-ci-stage'

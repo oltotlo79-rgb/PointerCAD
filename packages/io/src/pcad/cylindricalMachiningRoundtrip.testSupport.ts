@@ -11,17 +11,17 @@ import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import { parseDocument, serializeDocument } from './documentJson.js';
 import { readPcadFile, writePcadFile } from './pcadFile.js';
 
-export type Vector = readonly [number, number, number];
+ type Vector = readonly [number, number, number];
 type Matrix = readonly [Vector, Vector, Vector];
-export type Machining = 'blind' | 'through' | 'counterbore' | 'simplified' | 'modeled';
-export type Transformation = 'rigid' | 'mirrorXY' | 'mirrorYZ' | 'scalePlain' | 'scaleThread';
-export const SAVED_AT = '2026-10-25T00:00:00.000Z';
-export const LOCATIONS2 = [{ height: 13, angle: 37 }, { height: 27, angle: -53 }] as const;
+ type Machining = 'blind' | 'through' | 'counterbore' | 'simplified' | 'modeled';
+ type Transformation = 'rigid' | 'mirrorXY' | 'mirrorYZ' | 'scalePlain' | 'scaleThread';
+const SAVED_AT = '2026-10-25T00:00:00.000Z';
+ const LOCATIONS2 = [{ height: 13, angle: 37 }, { height: 27, angle: -53 }] as const;
 export const numeric = (value: number) => ({ source: String(value), display: String(value), value });
 const POSITION = 1e-6, DIRECTION = 1e-9, VOLUME_RELATIVE = 1e-5;
-export const add = (a: Vector, b: Vector): Vector => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-export const subtract = (a: Vector, b: Vector): Vector => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-export const times = (a: Vector, s: number): Vector => [a[0] * s, a[1] * s, a[2] * s];
+ const add = (a: Vector, b: Vector): Vector => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+ const subtract = (a: Vector, b: Vector): Vector => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+ const times = (a: Vector, s: number): Vector => [a[0] * s, a[1] * s, a[2] * s];
 const dot = (a: Vector, b: Vector): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a: Vector, b: Vector): Vector => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const unit = (v: Vector): Vector => times(v, 1 / Math.hypot(...v));
@@ -32,14 +32,14 @@ const cy = Math.cos(radians(30)), sy = Math.sin(radians(30));
 const cz = Math.cos(radians(50)), sz = Math.sin(radians(50));
 const RIGID: Matrix = [[cz * cy, -sz, cz * sy], [sz * cy, cz, sz * sy], [-sy, 0, cy]];
 
-export interface OracleFrame {
+ interface OracleFrame {
   readonly location: Vector;
   readonly x: Vector;
   readonly z: Vector;
   readonly radius: number;
   readonly height: number;
 }
-export interface OraclePlacement { readonly entry: Vector; readonly drill: Vector; readonly radial: Vector }
+ interface OraclePlacement { readonly entry: Vector; readonly drill: Vector; readonly radial: Vector }
 export function expectedPlacements(frame: OracleFrame, locations: readonly { height: number; angle: number }[] = LOCATIONS2): readonly OraclePlacement[] {
   const y = cross(frame.z, frame.x);
   return locations.map(({ height, angle }) => {
@@ -123,7 +123,7 @@ export function expectPlane(body: SolidBody, p: OraclePlacement, depth: number, 
     expect(distance(subtract(plane.centroid, times(p.drill, depth)), p.entry)).toBeLessThan(POSITION);
   }
 }
-export function expectBore(body: SolidBody, radius: number, p: OraclePlacement): void {
+ function expectBore(body: SolidBody, radius: number, p: OraclePlacement): void {
   const matches = body.faces.filter((f) => {
     if (f.surfaceKind !== 'cylinder' || f.radius === null || Math.abs(f.radius - radius) >= DIRECTION || f.axis === null || f.axisOrigin == null) return false;
     const offset = subtract(p.entry, f.axisOrigin);

@@ -17,6 +17,13 @@ Native order (integration-r1 correction of plastic1, see NATIVE-ASSUMPTIONS-NOTE
 - The end axial force is LastEquilibratedInternalForcesVector (structuralelement.C:926-930), which integrates the
   equilibrated stresses without recomputing the material state; plastic1 used InternalForcesVector.
 
+Optional yield plateau (explicit plan field material.plateauPlasticStrain = kp > 0, mirrored from plasticBar.ts): the
+deck then uses MisesMat htype 1 (user-defined piecewise-linear hardening, misesmat.C:76-86, 193-220, 379-445; record
+syntax of the upstream test tests/sm/Mises02.in) with the exact table of plasticBarHardeningTable:
+h_eps = [0, kp, kmax], h(eps) = [sig0, sig0, sig0 + H (kmax - kp)], kmax = kp + 2 * max(kp, total strain variation),
+which is strictly above kp and above every reachable kappa; a non-finite table (huge H) is refused when the plan is read.
+Without the field the htype 0 deck and the result strings are unchanged.
+
 Not modeled: bending, damage (omega_crit stays 0), softening, kinematic hardening, large strain. The density field
 'd 1.0' is required by the record syntax and does not enter a static analysis.
 """
@@ -29,6 +36,10 @@ RESULT_SCHEMA = 'pointercad-oofem-plastic-bar-result/1'
 DECK = '/pcad_fem/plastic-bar.in'
 OUT = '/pcad_fem/plastic-bar.out'
 MAXIMUM_KNOTS, MAXIMUM_STEPS_PER_SEGMENT, MAXIMUM_STEPS, MAXIMUM_STRAIN = 64, 200, 2000, 0.05
+METHODS = {False: ('oofem-misesmat-htype0-truss1d-staticstructural/1',
+                   'uniaxial-small-strain-j2-linear-isotropic-hardening-displacement-control'),
+           True: ('oofem-misesmat-htype1-truss1d-staticstructural/1',
+                  'uniaxial-small-strain-j2-plateau-then-linear-isotropic-hardening-displacement-control')}
 
 
 def _fail(detail):
@@ -67,7 +78,10 @@ def read_plastic_bar_plan(value):
     area = _positive(row['areaM2'], 'areaM2')
     if area > 1:
         _fail('areaM2 exceeds 1 m2')
-    m = _record(row['material'], ['youngPa', 'poisson', 'yieldStressPa', 'hardeningModulusPa', 'source'], 'material')
+    material_fields = ['youngPa', 'poisson', 'yieldStressPa', 'hardeningModulusPa', 'source']
+    plateau_given = isinstance(row['material'], dict) and 'plateauPlasticStrain' in row['material']
+    m = _record(row['material'], material_fields + ['plateauPlasticStrain'] if plateau_given else material_fields,
+                'material')
     young = _positive(m['youngPa'], 'material.youngPa')
     poisson = _finite(m['poisson'], 'material.poisson')
     if poisson < 0 or poisson >= 0.5:
@@ -78,6 +92,11 @@ def read_plastic_bar_plan(value):
     hardening = _finite(m['hardeningModulusPa'], 'material.hardeningModulusPa')
     if hardening < 0:
         _fail('material.hardeningModulusPa must not be negative (softening is not supported)')
+    plateau = None
+    if plateau_given:
+        plateau = _positive(m['plateauPlasticStrain'], 'material.plateauPlasticStrain')
+        if plateau > MAXIMUM_STRAIN:
+            _fail(f'material.plateauPlasticStrain must not exceed {MAXIMUM_STRAIN} (small-strain formulation)')
     source = _record(m['source'], ['kind', 'reference'], 'material.source')
     if source['kind'] != 'user-supplied':
         _fail('material.source.kind must be user-supplied')
@@ -99,8 +118,29 @@ def read_plastic_bar_plan(value):
         _fail(f'stepsPerSegment must be an integer from 1 to {MAXIMUM_STEPS_PER_SEGMENT}')
     if steps * (len(knots) - 1) > MAXIMUM_STEPS:
         _fail(f'at most {MAXIMUM_STEPS} steps are allowed')
-    return {'lengthM': length, 'areaM2': area, 'youngPa': young, 'poisson': poisson, 'yieldStressPa': sig0,
-            'hardeningModulusPa': hardening, 'endDisplacementM': knots, 'stepsPerSegment': steps}
+    plan = {'lengthM': length, 'areaM2': area, 'youngPa': young, 'poisson': poisson, 'yieldStressPa': sig0,
+            'hardeningModulusPa': hardening, 'plateauPlasticStrain': plateau, 'endDisplacementM': knots,
+            'stepsPerSegment': steps}
+    if plateau is not None:
+        hardening_table(plan)  # a plateau plan must give a finite native table (same check as readPlasticBarPlan)
+    return plan
+
+
+def hardening_table(plan):
+    """Mirror of plasticBarHardeningTable (plasticBar.ts): None without a plateau, else the exact htype 1 table."""
+    kp = plan['plateauPlasticStrain']
+    if kp is None:
+        return None
+    knots, variation = plan['endDisplacementM'], 0.0
+    for index in range(1, len(knots)):
+        variation += abs(knots[index] - knots[index - 1])
+    total_variation = variation / plan['lengthM']
+    kmax = kp + 2 * max(kp, total_variation)
+    sig0, hardening = plan['yieldStressPa'], plan['hardeningModulusPa']
+    last = sig0 + hardening * (kmax - kp)
+    if not (math.isfinite(kmax) and math.isfinite(last)):
+        _fail('the plateau hardening table must be finite (material.hardeningModulusPa is too large)')
+    return [0.0, kp, kmax], [sig0, sig0, last]
 
 
 def _number(value):
@@ -113,9 +153,19 @@ def plastic_bar_deck(plan):
     nsteps = s * (len(knots) - 1)
     times = ' '.join(_number(float(index * s)) for index in range(len(knots)))
     values = ' '.join(_number(u) for u in knots)
+    table = hardening_table(plan)
+    head = (f'MisesMat 1 d 1.0 tAlpha 0.0 E {_number(plan["youngPa"])} n {_number(plan["poisson"])} ')
+    if table is None:
+        title = 'PointerCAD uniaxial elasto-plastic member (MisesMat, linear isotropic hardening)'
+        material = head + f'sig0 {_number(plan["yieldStressPa"])} H {_number(plan["hardeningModulusPa"])}'
+    else:
+        title = 'PointerCAD uniaxial elasto-plastic member (MisesMat htype 1, yield plateau then linear isotropic hardening)'
+        eps, sig = table
+        material = (head + f'htype 1 h_eps 3 {" ".join(_number(v) for v in eps)} '
+                    f'h(eps) 3 {" ".join(_number(v) for v in sig)}')
     return '\n'.join([
         OUT,
-        'PointerCAD uniaxial elasto-plastic member (MisesMat, linear isotropic hardening)',
+        title,
         f'StaticStructural nsteps {nsteps} rtolf 1e-10 maxiter 50 nmodules 0',
         'domain 1dtruss',
         'OutputManager',
@@ -124,8 +174,7 @@ def plastic_bar_deck(plan):
         f'node 2 coords 3 {_number(plan["lengthM"])} 0.0 0.0',
         'truss1d 1 nodes 2 1 2',
         f'SimpleCS 1 area {_number(plan["areaM2"])} material 1 set 1',
-        f'MisesMat 1 d 1.0 tAlpha 0.0 E {_number(plan["youngPa"])} n {_number(plan["poisson"])} '
-        f'sig0 {_number(plan["yieldStressPa"])} H {_number(plan["hardeningModulusPa"])}',
+        material,
         'BoundaryCondition 1 loadTimeFunction 1 dofs 1 1 values 1 0.0 set 2',
         'BoundaryCondition 2 loadTimeFunction 2 dofs 1 1 values 1 1.0 set 3',
         'ConstantFunction 1 f(t) 1.0',
@@ -200,10 +249,11 @@ def run_plastic_bar():
         area, sig0 = plan['areaM2'], plan['yieldStressPa']
         # Equilibrium of the single uniform element: end internal force = stress * area.
         mismatch = max(abs(s['axialForceN'] - s['stressPa'] * area) for s in samples) / (sig0 * area)
+        method, scope = METHODS[plan['plateauPlasticStrain'] is not None]
         return json.dumps({
             'schema': RESULT_SCHEMA,
-            'method': 'oofem-misesmat-htype0-truss1d-staticstructural/1',
-            'scope': 'uniaxial-small-strain-j2-linear-isotropic-hardening-displacement-control',
+            'method': method,
+            'scope': scope,
             'structuralCertification': False,
             'samples': samples,
             'yielded': any(s['plasticStrain'] != 0 for s in samples),

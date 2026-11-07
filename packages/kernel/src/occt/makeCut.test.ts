@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PrimitiveShapeSpec, Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
-import { booleanOp, NOTHING_INSIDE_MESSAGE, NOTHING_REMOVED_MESSAGE } from './booleanOp.js';
+import { booleanOp } from './booleanOp.js';
 import { writeBrepBytes } from './brepBytes.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
@@ -20,6 +20,10 @@ import { boundingDiagonal, collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
 import { unit } from './pointAssertions.testSupport.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const NOTHING_INSIDE_MESSAGE = '切る輪郭が立体に届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
+const NOTHING_REMOVED_MESSAGE = '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
 
 /**
  * 平面による切断(FR-432、FR-424、FR-504、NFR-RE-1)の検査。

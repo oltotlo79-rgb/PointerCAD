@@ -45,8 +45,9 @@ import {
   springGuideText,
   summarizeFailures,
   trackGuideText,
-  type StatusInput,
 } from './statusText.js';
+
+type StatusInput = Parameters<typeof describeStatus>[0];
 
 describe('合致の状態文', () => {
   const diagnose = (kind: Mate['kind'], value: number, options: SolveMatesOptions = {}, fixed = false, duplicate = false) => {

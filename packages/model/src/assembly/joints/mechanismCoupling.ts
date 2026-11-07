@@ -4,7 +4,7 @@ import type { AssemblyDocument, Joint } from '../types.js';
 import { assemblyExpressionContext } from '../resolveAssembly.js';
 import type { RigidPlacement } from '../placementMath.js';
 import {
-  drainRigidSteps, solveRigidSteps, UNLIMITED_RIGID_WORK, type RigidResidualRow, type RigidSolveInput, type RigidSolveOutcome,
+  solveRigidSteps, type RigidResidualRow, type RigidSolveInput, type RigidSolveOutcome,
   type RigidWorkBudget, type RigidWorkPoint,
 } from '../constraints/solveRigid.js';
 import type { MateVariableSet } from '../constraints/mateVariables.js';
@@ -224,14 +224,8 @@ export interface MechanismGroupSolve {
   readonly actual?: number;
 }
 
-/** Existing rigid solver with permanent coupled rows and optional existing driver.
+/** Existing rigid solver with permanent coupled rows and optional existing driver, run in cooperative rigid steps.
  * All branch references belong to accepted state, never evaluation closures. */
-export function solveMechanismGroup(input: RigidSolveInput<ReadonlyMap<string, RigidPlacement>>,
-  variableSet: MateVariableSet, prepared: PreparedMechanismCouplings, drive?: PreparedJointDrive): MechanismGroupSolve {
-  return drainRigidSteps(solveMechanismGroupSteps(input, variableSet, prepared, drive, UNLIMITED_RIGID_WORK));
-}
-
-/** solveMechanismGroup through cooperative rigid steps: the same rows, accepted references and arithmetic. */
 export function* solveMechanismGroupSteps(input: RigidSolveInput<ReadonlyMap<string, RigidPlacement>>,
   variableSet: MateVariableSet, prepared: PreparedMechanismCouplings, drive: PreparedJointDrive | undefined,
   budget: RigidWorkBudget): Generator<RigidWorkPoint, MechanismGroupSolve, void> {

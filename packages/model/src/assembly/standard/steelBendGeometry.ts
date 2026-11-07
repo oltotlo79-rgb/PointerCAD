@@ -21,7 +21,7 @@ export interface SteelBendDimensions {
   /** Inside/outside dimensions end at the intersection of the extended straight edges. */
   readonly legDimension: 'tangent' | 'inside' | 'outside';
 }
-export interface SteelBendSection {
+interface SteelBendSection {
   readonly loops: readonly (readonly SteelProfileSegment[])[];
   readonly areaMm2: number;
   readonly centroid: SteelProfilePoint;

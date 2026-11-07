@@ -71,6 +71,14 @@ describe('saved plastic-bar configuration in part and assembly files', () => {
       ['fractional steps', attachment(saved(part.id, { stepsPerSegment: 1.5 }))],
       ['too many steps', attachment(saved(part.id, { stepsPerSegment: 200, endDisplacementMm: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1] }))],
       ['two configurations', attachment(saved(part.id), saved(part.id))],
+      // Optional yield plateau (a plastic strain fraction): only 0 < kp <= 0.05, never next to linear-law evidence.
+      ['zero plateau', attachment(saved(part.id, { plateauPlasticStrain: 0 }))],
+      ['negative plateau', attachment(saved(part.id, { plateauPlasticStrain: -0.01 }))],
+      ['plateau above 0.05', attachment(saved(part.id, { plateauPlasticStrain: 0.0500001 }))],
+      ['plateau as percent text', attachment(saved(part.id, { plateauPlasticStrain: '1%' }))],
+      ['null plateau', attachment(saved(part.id, { plateauPlasticStrain: null }))],
+      ['plateau with hardening evidence', attachment({ ...saved(part.id, { plateauPlasticStrain: 0.01 }),
+        hardeningEvidence: { property: 'hardening' } })],
     ];
     for (const [label, value] of cases) {
       expect(parseDocument(replaceAttachment(text, value)).ok, label).toBe(false);
@@ -89,5 +97,20 @@ describe('saved plastic-bar configuration in part and assembly files', () => {
     expect(plain.document.beamAnalysisInputs).toBeUndefined();
     const inputs: BeamAnalysisInputs | undefined = boundary.beamAnalysisInputs;
     expect(inputs?.analyses).toHaveLength(1);
+  });
+
+  it('round-trips an optional yield plateau exactly and leaves the text of a configuration without it unchanged', () => {
+    const part = createEmptyPartDocument();
+    for (const plateauPlasticStrain of [0.01, 0.05, 1 / 300]) {
+      const definition = saved(part.id, { plateauPlasticStrain });
+      const text = serializeDocument(withBeamAnalysisInputs(part, attachment(definition)), WRITE_OPTIONS);
+      const reopened = parseDocument(text);
+      if (!reopened.ok) throw new Error(reopened.error.message);
+      expect(reopened.document.beamAnalysisInputs).toEqual(attachment(definition));
+      expect(serializeDocument(reopened.document, WRITE_OPTIONS)).toBe(text);
+    }
+    // Without the field the written text has no plateau key at all (the original saved form).
+    const legacy = serializeDocument(withBeamAnalysisInputs(part, attachment(saved(part.id))), WRITE_OPTIONS);
+    expect(legacy).not.toContain('plateauPlasticStrain');
   });
 });

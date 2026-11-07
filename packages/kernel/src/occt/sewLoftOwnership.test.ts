@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { CurveSpec, ThruSectionSpec, Vec3Tuple } from '../types.js';
 import * as allocations from './allocations.js';
 import { loadOcctForNode } from './loadOcct.node.js';
-import { sectionNormalAngles, splineLoft, splineSection } from './loftSurfaceTestSupport.js';
+import { sectionNormalAngles, splineLoft, splineSection } from './loftSurface.testSupport.js';
 import { makeThruSections } from './makeThruSections.js';
 import { sewSolid } from './sewSolid.js';
 import { measureVolume } from './solidMesh.js';

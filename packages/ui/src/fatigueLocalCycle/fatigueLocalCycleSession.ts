@@ -12,7 +12,7 @@ import { fatigueStrainNumber } from '../fatigueStrain/fatigueStrainSession.js';
  */
 export type FatigueLocalCycleCorrection = '' | 'morrow' | 'swt';
 export type FatigueLocalCycleDerivation = '' | 'measured' | 'elastic-plastic-analysis';
-export const FATIGUE_LOCAL_CYCLE_NUMBER_FIELDS = ['elasticModulusMpa', 'fatigueStrengthCoefficientMpa', 'fatigueStrengthExponent',
+const FATIGUE_LOCAL_CYCLE_NUMBER_FIELDS = ['elasticModulusMpa', 'fatigueStrengthCoefficientMpa', 'fatigueStrengthExponent',
   'fatigueDuctilityCoefficient', 'fatigueDuctilityExponent', 'minimumCycles', 'maximumCycles', 'strainMax', 'strainMin',
   'stressMax', 'stressMin'] as const;
 export type FatigueLocalCycleNumberField = typeof FATIGUE_LOCAL_CYCLE_NUMBER_FIELDS[number];

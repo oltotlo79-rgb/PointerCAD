@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { unfoldCylindricalPoint, type CylindricalBendFrame } from './cylinderUnfold.js';
+import { unfoldCylindricalPoint } from './cylinderUnfold.js';
+
+type CylindricalBendFrame = Parameters<typeof unfoldCylindricalPoint>[1];
+
 const frame: CylindricalBendFrame = { center: [0, 0, 0], axis: [1, 0, 0], startRadius: [0, 1, 0], innerRadius: 3, thickness: 2, kFactor: 0.4, angleRadians: Math.PI / 2 };
 describe('円筒曲げの中立面への写像', () => {
   it('内外面の同じ角位置が同じBAと軸距離になる', () => {

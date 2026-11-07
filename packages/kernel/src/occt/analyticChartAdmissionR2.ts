@@ -20,7 +20,7 @@ import type {
 import { buildTrimIntervalInventory, nativePrimitiveForInjectivity, sharedTake, type B08WireChain } from './boundary08Adapter.js';
 
 /** Exactly the chart members used here; the real AnalyticFaceChart is assignable without any cast. */
-export type AdmissionChart = Pick<AnalyticFaceChart, 'faceIndex' | 'surface' | 'uvNodes' | 'localTriangles' | 'uPeriod' | 'vPeriod'>
+type AdmissionChart = Pick<AnalyticFaceChart, 'faceIndex' | 'surface' | 'uvNodes' | 'localTriangles' | 'uPeriod' | 'vPeriod'>
   & { readonly geometry: Pick<AnalyticSurfaceGeometry, 'coneSemiAngle'> };
 /** The real AnalyticWireChain is structurally assignable to B08WireChain (identity/trim/localNodes subset). */
 type AnalyticWireChain = B08WireChain;

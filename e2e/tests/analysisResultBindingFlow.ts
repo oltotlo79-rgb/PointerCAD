@@ -3,6 +3,7 @@ import { openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 import { clickWorldPoint, commitPopover, fillFields, popover, popoverTitle,
   selectionKindLabel, sketchTool } from './solidCaptureSupport.js';
+import { uiMessage } from './uiMessages.js';
 
 /*
  * W72 (EX-09 WP-postprocess-verification): the real static solid analysis result is bound to the conditions it was
@@ -32,15 +33,15 @@ const TOTAL_FORCE_Z = LOADED_AREA_MM2 * TRACTION_Z;
 const FEM_ASSET_ROUTE = '**/fem/assets/**';
 const FEM_ASSET = /\/fem\/assets\/[^/]+$/u;
 
-export interface FemWorkers { readonly started: () => number; readonly closed: () => number }
+export interface FemWorkers { readonly started: () => number; readonly closed: () => number; readonly lastClosedAt: () => number | null }
 
 export function trackFemWorkers(page: Page): FemWorkers {
-  let started = 0, closed = 0;
+  let started = 0, closed = 0, lastClosedAt: number | null = null;
   page.on('worker', worker => {
     if (!FEM_WORKER.test(worker.url())) return;
-    started += 1; worker.once('close', () => { closed += 1; });
+    started += 1; worker.once('close', () => { closed += 1; lastClosedAt = performance.now(); });
   });
-  return { started: () => started, closed: () => closed };
+  return { started: () => started, closed: () => closed, lastClosedAt: () => lastClosedAt };
 }
 
 export interface AssetHold {
@@ -124,7 +125,9 @@ async function runToResult(panel: Locator): Promise<{ readonly displacement: str
   return { displacement: await resultValue(result, '最大変位量'), force };
 }
 
-export async function analysisResultBindingFlow(page: Page, info: TestInfo, desktop: boolean, desktopHold?: () => Promise<AssetHold>): Promise<void> {
+export async function analysisResultBindingFlow(page: Page, info: TestInfo, desktop: boolean, desktopHold?: () => Promise<AssetHold>,
+  stopObservation?: (elapsedMs: number) => void,
+  dofObservation?: (counts: { nodes: number; nodeLimit: number; total: number; fixed: number; free: number }) => void): Promise<void> {
   const errors: string[] = [];
   const observations: string[] = [];
   page.on('pageerror', error => { errors.push(error.message); observations.push(`pageerror: ${error.message}`); });
@@ -181,11 +184,24 @@ export async function analysisResultBindingFlow(page: Page, info: TestInfo, desk
       expect(workers.closed()).toBe(0);
       // The panel's own running line only (yield, export and support rows have their own status elements).
       const running = panel.locator(':scope > [role="status"]');
-      await expect(running).toHaveText('境界・内部メッシュを作成し、応力を計算しています。');
+      await expect(running).toHaveAttribute('data-stage', 'meshing');
       await expect(panel.getByTestId('solid-results')).toHaveCount(0);
-      await textbox(panel, 'ヤング率 E (MPa)').fill('105000');
-      await expect(running).toHaveCount(0);
-      await expectFemQuiet(workers);
+      if (stopObservation === undefined) {
+        await textbox(panel, 'ヤング率 E (MPa)').fill('105000');
+        await expect(running).toHaveCount(0);
+        await expectFemQuiet(workers);
+      } else {
+        const startedAt = performance.now();
+        await panel.getByRole('button', { name: '計算を中止', exact: true }).click();
+        await expectFemQuiet(workers);
+        const closedAt = workers.lastClosedAt();
+        if (closedAt === null || closedAt < startedAt) throw new Error('Missing worker close timestamp after stop');
+        const elapsedMs = closedAt - startedAt;
+        stopObservation(elapsedMs);
+        expect(elapsedMs).toBeLessThanOrEqual(1000);
+        await expect(running).toHaveCount(0);
+        await textbox(panel, 'ヤング率 E (MPa)').fill('105000');
+      }
       // Still held: the run was cancelled, it did not complete.
       expect(await hold.holding()).toBe(true);
       await expectNoResult(panel);
@@ -199,6 +215,16 @@ export async function analysisResultBindingFlow(page: Page, info: TestInfo, desk
 
     // Positive: the result of the current conditions (E = 105000 MPa) is shown with the oracle force.
     const half = await runToResult(panel);
+    if (dofObservation !== undefined) {
+      const raw = await panel.getByTestId('solid-results').evaluate(element => [
+        element.getAttribute('data-solid-nodes'), element.getAttribute('data-solid-node-limit'), element.getAttribute('data-solid-dof-total'),
+        element.getAttribute('data-solid-dof-fixed'), element.getAttribute('data-solid-dof-free'),
+      ]);
+      if (raw.some(value => value === null || !/^(0|[1-9]\d*)$/u.test(value))) throw new Error('Missing current tet4 DOF counts');
+      const [nodes, nodeLimit, total, fixed, free] = raw.map(Number);
+      if (nodes < 1 || nodes > nodeLimit || total !== nodes * 3 || fixed + free !== total) throw new Error('Invalid current tet4 DOF counts');
+      dofObservation({ nodes, nodeLimit, total, fixed, free });
+    }
     await expectFemQuiet(workers);
     const probe = panel.getByTestId('solid-element-probe');
     const elementNumber = probe.getByRole('spinbutton', { name: '要素番号（1から）', exact: true });
@@ -213,6 +239,19 @@ export async function analysisResultBindingFlow(page: Page, info: TestInfo, desk
     await elementNumber.fill('1');
     await expect(probe.getByRole('listitem')).toHaveCount(4);
     expect(await probe.getByRole('listitem').allTextContents()).toEqual(actualNodeValues);
+    // W64 (EX-09): the probe states its coordinate system, equivalent strain and element energy with the message-table
+    // texts, and every shown result warning is one of the three message-table conditions.
+    const message = (key: string): string => uiMessage('solidAnalysis', `solidAnalysis.${key}`);
+    await expect(probe.locator('[data-coordinates="global-XYZ-undeformed"]')).toHaveText(message('probeCoordinates'));
+    await expect(probe).toContainText(`${message('probeEquivalentStrain')}: `);
+    await expect(probe).toContainText(`${message('probeEnergy')}: `);
+    await expect(probe).toContainText(` ${message('unitEnergy')}`);
+    const warningItems = panel.getByTestId('solid-result-warnings').getByRole('listitem');
+    const warnings = await warningItems.allTextContents();
+    const known = ['warningSingular', 'warningNotConverged', 'warningAveraging'].map(name => message(name));
+    expect(warnings.every(text => known.includes(text)), JSON.stringify(warnings)).toBe(true);
+    info.annotations.push({ type: 'w64-result-warnings', description: JSON.stringify({ warnings,
+      residual: await resultValue(panel.getByTestId('solid-results'), '相対つり合い残差') }) });
 
     // Positive: display-only settings keep the same physical result (same displayed values, legend still drawn).
     await panel.getByTestId('solid-field-quantity').selectOption('xx');
@@ -224,6 +263,7 @@ export async function analysisResultBindingFlow(page: Page, info: TestInfo, desk
     expect(await resultValue(shown, '荷重合力 X, Y, Z')).toBe(half.force);
     await expect(probe.getByRole('listitem')).toHaveCount(4);
     expect(await probe.getByRole('listitem').allTextContents()).toEqual(actualNodeValues);
+    expect(await warningItems.allTextContents()).toEqual(warnings);
 
     // Negative: material edit. The old result is gone at once and stays gone after every worker has closed.
     await textbox(panel, 'ヤング率 E (MPa)').fill('210000');

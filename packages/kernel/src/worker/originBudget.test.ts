@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 import type { SolidBodyMesh } from '../types.js';
-import { OriginCacheBudget, ORIGIN_BODY_MAX_ROWS, originBytes,
+import { OriginCacheBudget, originBytes,
   withinBodyOriginBudget, withinReplyOriginBudget } from './originBudget.js';
 import { createShapeCache } from './shapeCache.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const ORIGIN_BODY_MAX_ROWS = 100_000;
 
 const one: CurrentOriginIndex = { version: 1, state: 'tracked', bindings: [{
   origin: { version: 1, shapeKind: 'face', identity: {

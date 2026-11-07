@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { boundFreeformDerivatives, freeformTriangleDistance, partitionedFreeformTriangleDistance, reduceAffineFreeformFans,
-  type FreeformCoefficients, type FreeformPatchGrid } from './analysisFreeformBound.js';
+import { boundFreeformDerivatives, freeformTriangleDistance, partitionedFreeformTriangleDistance, reduceAffineFreeformFans } from './analysisFreeformBound.js';
+
+type FreeformCoefficients = Parameters<typeof boundFreeformDerivatives>[0];
+type FreeformPatchGrid = Parameters<typeof reduceAffineFreeformFans>[0];
 
 const checkpoint = (): void => undefined;
 type UV = readonly [number, number];

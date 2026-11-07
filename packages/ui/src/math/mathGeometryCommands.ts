@@ -31,7 +31,7 @@ export type MathGeometryCommandResult = { readonly ok: true }
 type Refusal = Extract<MathGeometryCommandResult, { readonly ok: false }>;
 
 /** Call synchronous commands with the latest state and the document that owns the row/candidate. */
-export type MathGeometryCommandState = Pick<AppState, 'document' | 'assembly' | 'drawing' | 'applyDocument'>;
+type MathGeometryCommandState = Pick<AppState, 'document' | 'assembly' | 'drawing' | 'applyDocument'>;
 
 function ownerRefusal(state: MathGeometryCommandState, owner: PartDocument): Refusal | null {
   if (activePartDocument(state) === null) {

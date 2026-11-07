@@ -57,6 +57,7 @@ import { shellNativeWireMatches, shellPlanSha256, type ShellNativeWireResult } f
 import { analyzeFatigue } from './fatigue.js';
 import { readFatigueSnCurve, type FatigueResult } from './fatigueModel.js';
 import { readSolidFatigueSelection, solidFatigueInput, type SolidFatigueAdaptation } from './fatigueSolid.js';
+import { FEM_RUNTIME_LIMITS } from './runtime.js';
 
 export interface FemWorkerPort {
   postMessage(message: FemRequest): void;
@@ -84,7 +85,7 @@ interface Active {
 export interface FemOptions { readonly signal?: AbortSignal; readonly onPhase?: (phase: FemPhase) => void }
 
 /** A client-owned one-shot reservation; no caller-supplied generation can authorize dispatch. */
-export interface FemSolidContactPreparation {
+ interface FemSolidContactPreparation {
   readonly signal: AbortSignal;
   readonly cancellation: () => 'abort' | 'superseded' | 'disposed' | null;
   readonly analyzeSolidContact: (value: unknown) => Promise<FemCompletion<SolidContactResult>>;
@@ -101,7 +102,7 @@ export interface FemSolidFinitePreparation {
 }
 
 /** Mesh-only projection of the existing client-owned CAD reservation. */
-export type FemTetraMeshPreparation = Pick<FemSolidFinitePreparation,
+ type FemTetraMeshPreparation = Pick<FemSolidFinitePreparation,
   'signal' | 'cancellation' | 'meshTetrahedra' | 'release'>;
 
 /** Same capability surface, but sequential meshes belong to one assembly invocation. */
@@ -111,7 +112,8 @@ export type FemAssemblyTetraMeshPreparation = FemTetraMeshPreparation & {
 };
 const assemblyMeshPreparationClients = new WeakMap<FemAssemblyTetraMeshPreparation, FemClient>();
 
-/** One interpreter per request. Termination remains effective during native WASM. */
+/** One interpreter per request. Termination remains effective during native WASM. The single active slot holds at most
+ * FEM_RUNTIME_LIMITS.workersPerClient Worker: every new request settles and terminates the previous one first. */
 export class FemClient {
   private generation = 0;
   private active: Active | null = null;
@@ -745,7 +747,8 @@ export class FemClient {
       const fail = (code: FemFailure['code'], message: string): void => finish({ kind: 'failed', identity,
         failure: { code, message: message.slice(0, 4096) || 'FEM runtime failed' } });
       const abort = (): void => finish({ kind: 'cancelled', identity, reason: 'abort' });
-      const totalTimer = setTimeout(() => fail('deadline', 'FEM initialization/analysis exceeded 180000 ms'), 180_000);
+      const { totalDeadlineMs, solveDeadlineMs } = FEM_RUNTIME_LIMITS;
+      const totalTimer = setTimeout(() => fail('deadline', `FEM initialization/analysis exceeded ${String(totalDeadlineMs)} ms`), totalDeadlineMs);
       this.active = { identity, worker, cancel: reason=>finish({kind:'cancelled',identity,reason}) };
       worker.onmessage = event => {
         if (finished || this.active?.identity !== identity) return;
@@ -756,7 +759,7 @@ export class FemClient {
         if (event.data.kind === 'phase') {
           if (event.data.phase === 'solving' && !solving) {
             solving = true;
-            solvingTimer = setTimeout(() => fail('deadline', 'FEM solve exceeded 60000 ms'), 60_000);
+            solvingTimer = setTimeout(() => fail('deadline', `FEM solve exceeded ${String(solveDeadlineMs)} ms`), solveDeadlineMs);
           }
           try { options.onPhase?.(event.data.phase); }
           catch (error) { fail('worker-failed', error instanceof Error ? error.message : 'FEM phase observer failed'); }

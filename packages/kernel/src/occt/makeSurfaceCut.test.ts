@@ -10,9 +10,11 @@ import { buildBooleanShape } from './buildBooleanShape.js';
 import { makePrimitive } from './makePrimitive.js';
 import { makeSurface } from './makeSurface.js';
 import { makeFunctionSurfaceSpline } from './functionSurfaceSpline.js';
-import { makeSurfaceCut, SurfaceCutError, type SurfaceCutInput, type SurfaceCutReason, type SurfaceCutResult } from './makeSurfaceCut.js';
+import { makeSurfaceCut, SurfaceCutError, type SurfaceCutInput, type SurfaceCutReason } from './makeSurfaceCut.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
 import { IDENTITY_TRANSFORM, makeCompound, transformShape } from './transformShape.js';
+
+type SurfaceCutResult = ReturnType<typeof makeSurfaceCut>;
 
 let oc: OpenCascadeInstance;
 beforeAll(async () => { oc = await loadOcctForNode(); }, 180_000);

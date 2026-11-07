@@ -743,6 +743,17 @@ function recomputeKeys(request: SolidRecomputeRequest): Set<string> {
  */
 const MESH_ACCOUNTING_RECORD_BYTES = 4096;
 
+function analysisBoundaryOptions(request: AnalysisSurfaceMeshRequest, shellQuality: AnalysisSurfaceMeshRequest['shellQuality'],
+  exportTriangleLimit: number): Parameters<typeof buildAnalysisSurfaceMesh>[2] {
+  return {
+    linearDeflection: request.linearDeflection, angularDeflection: request.angularDeflection,
+    boundary: request.boundary, maximumTriangles: shellQuality === undefined ? exportTriangleLimit : Math.min(exportTriangleLimit, shellQuality.maximumTriangles),
+    ...(request.materialValidation === undefined ? {} : { materialValidation: request.materialValidation }),
+    ...(request.freeformRefinement === undefined ? {} : { freeformRefinement: request.freeformRefinement }),
+    ...(shellQuality === undefined ? {} : { shellQuality }),
+  };
+}
+
 /**
  * OCCT の読み込み手続きを受け取って、寿命管理を含む KernelApi を組み立てる。
  * ブラウザでは loadOcctForBrowser、Node のテストでは loadOcctForNode を渡す。
@@ -1635,10 +1646,11 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
 
     async buildAnalysisSurfaceMesh(request): Promise<AnalysisSurfaceMeshResult> {
       const bodyKey = request.bodyKey;
-      // Explicit FEM material request only: the existing finite request budget (same triangle limit, existing
+      const shellQuality = request.shellQuality === undefined ? undefined : { ...request.shellQuality };
+      // Explicit FEM material or shell-quality request only: the existing finite request budget (same triangle limit, existing
       // deadline) starts on arrival and is checked in-worker; no function crosses the cloned request. Native calls
       // stay synchronous, so the deadline is observed between them, not inside them.
-      const materialWork = request.materialValidation === 'native-solid'
+      const materialWork = request.materialValidation === 'native-solid' || shellQuality !== undefined
         ? new ExportWorkBudget(() => performance.now(), exportTriangleLimit) : undefined;
       return withAcquiredKeys([bodyKey], async () => {
         const oc = await loadOcct();
@@ -1647,12 +1659,7 @@ export function createKernelApi(loadInstance: () => Promise<OpenCascadeInstance>
           return { kind: 'failed', bodyKey, code: 'missing-body', message: MISSING_BODY_MESSAGE, faceIndex: null };
         }
         try {
-          const mesh = buildAnalysisSurfaceMesh(oc, cached.shape, {
-            linearDeflection: request.linearDeflection, angularDeflection: request.angularDeflection,
-            boundary: request.boundary, maximumTriangles: exportTriangleLimit,
-            ...(request.materialValidation === undefined ? {} : { materialValidation: request.materialValidation }),
-            ...(request.freeformRefinement === undefined ? {} : { freeformRefinement: request.freeformRefinement }),
-          }, materialWork === undefined ? undefined : () => { materialWork.checkDeadline(); });
+          const mesh = buildAnalysisSurfaceMesh(oc, cached.shape, analysisBoundaryOptions(request, shellQuality, exportTriangleLimit), materialWork === undefined ? undefined : () => { materialWork.checkDeadline(); });
           // Face addresses must be the cached body's addresses (the display faces the origin table refers to).
           if (mesh.faces.length !== cached.mesh.faceCount) {
             return { kind: 'failed', bodyKey, code: 'face-table-mismatch',

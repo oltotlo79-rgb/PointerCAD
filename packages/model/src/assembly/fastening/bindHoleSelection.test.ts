@@ -15,9 +15,12 @@ import { createAssemblyDocument } from '../createAssemblyDocument.js';
 import {
   bindHoleSelection, faceResolverFromBodies, type FaceResolution, type FasteningGeometryContext, type FasteningHolePick,
   holeFeatureForSelection, holeWallOriginAt,
-  type HoleWallOrigin, modeledThreadEvidence, type ModeledThreadEvidence, modeledThreadGroupPickAt,
+  modeledThreadEvidence, modeledThreadGroupPickAt,
   modeledThreadResolverFromBodies, modeledThreadWallAt,
 } from './bindHoleSelection.js';
+
+type HoleWallOrigin = ReturnType<typeof holeWallOriginAt>;
+type ModeledThreadEvidence = NonNullable<ReturnType<typeof modeledThreadEvidence>>;
 
 function reference(index: number): SubShapeRef {
   return { bodyFeatureId: 'hole', index, fingerprint: { kind: 'face', surfaceKind: 'plane',

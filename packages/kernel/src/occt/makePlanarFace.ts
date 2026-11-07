@@ -12,7 +12,7 @@ export interface OcctFaceHandle {
   readonly face: TopoDS_Face;
   /**
    * 面の外周の稜線。線分1本あたり 6 個(始点 xyz + 終点 xyz)並ぶ。
-   * MeshData.edgePositions と同じ並びなので、面の縁を稜線と同じ描き方で出せる(FR-105)。
+   * SolidBodyMesh.edgePositions と同じ並びなので、面の縁を稜線と同じ描き方で出せる(FR-105)。
    */
   readonly boundaryPositions: Float32Array;
   /** 外周を作っている曲線の本数(線分・円弧を合わせた数)。 */

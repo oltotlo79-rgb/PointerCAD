@@ -28,6 +28,7 @@ it.each<AnalysisPropertyKind>(['hardening', 'sn', 'rayleigh', 'rate-law'])('comp
 
 const differences: readonly Partial<AnalysisPropertyEvidence>[] = [
   { property: 'sn' }, { sourceId: 'another-source' }, { sourceKind: 'manufacturer-reference' },
+  { sourceKind: 'peer-reviewed-measurement' },
   { citation: 'another citation' }, { materialConditionId: 'another-condition' }, { heatTreatment: 'another-treatment' },
   { temperatureC: 21 }, { temperatureRange: { lower: 11, upper: 30, unit: 'degC' } },
   { temperatureRange: { lower: 10, upper: 31, unit: 'degC' } },

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { StandardPartSource } from '../resolveAssembly.js';
 import {
   buildStandardPart, buildStandardPartFromSource, buildStandardPartFromSourceWithReason,
-  createStandardPartSource, standardPartRejection, type StandardPartRejection,
+  createStandardPartSource, standardPartRejection,
 } from './buildStandardPart.js';
 import {
   LEGACY_STEEL_GENERATOR_REVISION, STEEL_CATALOG_REVISION, STEEL_GENERATOR_REVISION,
@@ -12,8 +12,10 @@ import {
 import { STEEL_SECTION_CATALOGS, steelGradeRule } from './steelGradeRules.js';
 import { STEEL_STANDARDS } from './steelStandards.js';
 import { STANDARD_CATALOG_REVISION, STANDARD_PART_GENERATOR_REVISION } from './types.js';
-import { STEEL_GOLDEN } from './steelGolden.fixture.js';
+import { STEEL_GOLDEN } from './steelGolden.testSupport.js';
 import { MATRIX, SIZES, TAMPERED, matrixSource, sourceOf } from './steelRejection.testSupport.js';
+
+type StandardPartRejection = NonNullable<ReturnType<typeof standardPartRejection>>;
 
 const ORIGINAL_SOURCES: readonly StandardPartSource[] = STEEL_GOLDEN.map(({ source }) => source)
   .filter((source) => source.catalogRevision === STEEL_CATALOG_REVISION);

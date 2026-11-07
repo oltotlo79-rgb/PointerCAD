@@ -8,7 +8,7 @@ import type { CoordinateInput, ResolvedSegment, ResolvedSketch, SketchDocument, 
 import { distanceVec3, lerpVec3, SKETCH_TOLERANCE_MM, type Vec3 } from './vec3.js';
 
 export type SplitLineFailure = 'missingLine' | 'constrainedLine' | 'invalidReferences';
-export type SplitLineOutcome =
+type SplitLineOutcome =
   | { readonly ok: true; readonly document: SketchDocument; readonly pointIds: readonly string[]; readonly splitCount: number }
   | { readonly ok: false; readonly reason: SplitLineFailure };
 

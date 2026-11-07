@@ -3,9 +3,14 @@ import type { SolidVector3, SolidVector6 } from './solidAnalysisModel.js';
 import { solidStrainStress, solidTetGeometry } from './solidAnalysisTranslation.js';
 import {
   cauchyStress, deformationJacobian, firstPiolaStress, greenLagrangeDerivative, greenLagrangeStrain, multiply3,
-  stVenantKirchhoffFirstPiolaDerivative, stVenantKirchhoffStress, strainEnergyDensity, tetDeformationGradient,
-  toOofemVoigt9, transpose3, type Matrix3,
+  stVenantKirchhoffFirstPiolaDerivative, stVenantKirchhoffStress, tetDeformationGradient,
+  transpose3, type Matrix3,
 } from './finiteKinematics.js';
+
+/** W = S : E / 2 per reference volume (N mm / mm^3); engineering shear makes the off-diagonal products S_ij * 2E_ij. */
+function strainEnergyDensity(strain: SolidVector6, stress: SolidVector6): number {
+  return strain.reduce((sum, value, index) => sum + value * stress[index], 0) / 2;
+}
 
 /*
  * Independent expectations: closed forms of Holzapfel, Nonlinear Solid Mechanics (2000) (C = F^T F, E = (C - I)/2,
@@ -114,10 +119,6 @@ describe('finite kinematics of tet4 (EX-09 W32 candidate)', () => {
     const numericP = difference(p(shifted(1)), p(shifted(-1))).map(v => v / (2 * h));
     const analyticP = flat(stVenantKirchhoffFirstPiolaDerivative(F0, direction, E, NU));
     expect(maxAbs(difference(numericP, analyticP)) / maxAbs(analyticP)).toBeLessThanOrEqual(1e-5);
-  });
-
-  it('uses the OOFEM 9-form order [11, 22, 33, 23, 13, 12, 32, 31, 21]', () => {
-    expect(toOofemVoigt9([[11, 12, 13], [21, 22, 23], [31, 32, 33]])).toEqual([11, 22, 33, 23, 13, 12, 32, 31, 21]);
   });
 
   it('refuses inverted or collapsed elements, non-finite input and wrong arity instead of returning a strain', () => {

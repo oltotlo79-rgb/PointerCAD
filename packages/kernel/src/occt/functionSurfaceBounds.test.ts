@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { Vec3Tuple } from '../types.js';
 import {
   certifyCubicSurfaceInterior,
-  type CubicKnotDirection,
-  type CubicSurfaceCoefficients,
   type SurfaceParameterCell,
 } from './functionSurfaceBounds.js';
+
+type CubicSurfaceCoefficients = Parameters<typeof certifyCubicSurfaceInterior>[0];
+type CubicKnotDirection = Parameters<typeof certifyCubicSurfaceInterior>[0]['u'];
 
 const direction = (knots: readonly number[]): CubicKnotDirection => ({
   knots, multiplicities: knots.map((_, index) => index === 0 || index === knots.length - 1 ? 4 : 2),

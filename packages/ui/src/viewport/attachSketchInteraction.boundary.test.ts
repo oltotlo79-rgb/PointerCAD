@@ -316,7 +316,7 @@ describe('selection filters at the actual pointer boundary', () => {
   });
 });
 
-// Recorded with the implementation before the split (RUN 20261005-160350-cl-v103-r30-face-unit).
+// Recorded with the implementation before the split (2026-10-05 16:03:50 before-split recording).
 const SELECTION_TRACE: readonly string[] = [
   'hover: hoveredElementId',
   'shift-pick: pickAnchor',

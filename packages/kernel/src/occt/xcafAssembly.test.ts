@@ -13,10 +13,11 @@ import {
   ASSEMBLY_MISSING_DEFINITION_MESSAGE,
   ASSEMBLY_NO_SHAPE_MESSAGE,
   writeStepAssembly,
-  type XcafAssemblyDefinition,
-  type XcafAssemblySpec,
 } from './xcafAssembly.js';
 import { decodeStepAssemblyOccurrenceName } from './stepAssemblyMetadata.js';
+
+type XcafAssemblySpec = Parameters<typeof writeStepAssembly>[1];
+type XcafAssemblyDefinition = Parameters<typeof writeStepAssembly>[1]['definitions'][number];
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 

@@ -7,9 +7,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/release-performance';
 import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 import type { ShellAnalysisInput } from './shellAnalysisModel.js';
-import { plateCase, SCORDELIS_LO, scordelisLoCase, triangleArea, type BenchmarkCase, type PlateSpec,
-  type PlateSupport } from './shellBenchmark.testSupport.js';
+import { plateCase, SCORDELIS_LO, scordelisLoCase, triangleArea } from './shellBenchmark.testSupport.js';
 import { decodeShellAnalysis, translateShellAnalysis, type ShellAnalysisResult } from './shellTranslation.js';
+
+type PlateSpec = Parameters<typeof plateCase>[0];
+type BenchmarkCase = ReturnType<typeof plateCase>;
+type PlateSupport = Parameters<typeof plateCase>[0]['support'];
 
 // Benchmarks of the unchanged W08 path (translateShellAnalysis -> shellAnalysis.py, the bundled OOFEM TR_SHELL02 =
 // DKT plate + Allman membrane -> decodeShellAnalysis) against published thin-plate and curved-shell solutions.

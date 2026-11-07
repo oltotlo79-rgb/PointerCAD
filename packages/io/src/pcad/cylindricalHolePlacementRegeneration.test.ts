@@ -198,8 +198,7 @@ describe('EX-05.PERSIST: plain holes after rotation about two axes and translati
 import { removeSolid, resolveMachiningTarget, type ThreadHoleFeature } from '@pointercad/model';
 import {
   expectedPlacements, expectPlane, expectVolume, machining as persistedMachining, numeric,
-  onlyBody as persistedBody, primitive, regenerateFresh, removal, reopenBoth, SAVED_AT,
-  sideReference as persistedSide,
+  onlyBody as persistedBody, primitive, regenerateFresh, removal, reopenBoth, sideReference as persistedSide,
 } from './cylindricalMachiningRoundtrip.testSupport.js';
 
 describe('EX-05.PERSIST: target identity, missing sources and invalid faces', () => {
@@ -269,6 +268,9 @@ describe('EX-05.PERSIST: target identity, missing sources and invalid faces', ()
 
 import { stdout } from 'node:process';
 import { addSketch, appendFeature, createEmptySketchDocument, createPointFeature } from '@pointercad/model';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SAVED_AT = '2026-10-25T00:00:00.000Z';
 
 describe('EX-05.PERSIST: legacy planar holes without cylindrical placement', () => {
   it.each(['blind', 'simplified'] as const)('%s keeps the omitted field and regenerates through both codecs', async (kind) => {

@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writePcadFile } from '@pointercad/io';
 import { createEmptyPartDocument, type PartRecomputeResult, type MaterialComparisonResult } from '@pointercad/model';
-import { runMaterialDiff, MATERIAL_DIFF_TIMEOUT_MS, type MaterialDiffPhase } from './runMaterialDiff.js';
+import { runMaterialDiff, type MaterialDiffPhase } from './runMaterialDiff.js';
 import type { MaterialDiffSession } from './materialDiffSession.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const MATERIAL_DIFF_TIMEOUT_MS = 180_000;
 
 const part = createEmptyPartDocument(), bytes = writePcadFile(part);
 const computed = (): PartRecomputeResult => ({ generation: 1, sketches: [], bodies: [], errors: [], cacheHits: 0, cancelled: false });

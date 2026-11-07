@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { projectSolidMode, solidModeBoundaryTriangles, type SolidModeResult, type SolidModeSource } from './solidModeView.js';
+import { projectSolidMode, solidModeBoundaryTriangles, type SolidModeResult, type sameSolidModeSource } from './solidModeView.js';
+
+type SolidModeSource = Parameters<typeof sameSolidModeSource>[0];
 
 const source: SolidModeSource = { documentId: 'doc-1', revision: 7, meshKey: 'mesh-a' };
 

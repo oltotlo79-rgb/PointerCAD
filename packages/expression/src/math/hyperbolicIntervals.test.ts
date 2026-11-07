@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { hyperbolicRange, type HyperbolicOperation } from './hyperbolicIntervals.js';
+import { hyperbolicRange } from './hyperbolicIntervals.js';
 import { createMathBackend } from './createMathBackend.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { compileFunctionScalar } from './compileFunctionScalar.js';
@@ -9,6 +9,8 @@ import { createScalarDirectionalJet } from './scalarCurveCurvature.js';
 import { createFunctionCurveEvaluator } from './functionCurveEvaluation.js';
 import { sampleFunctionCurve } from './adaptiveFunctionCurve.js';
 import type { MathExecutionBackend } from './mathWorkExecution.js';
+
+type HyperbolicOperation = Parameters<typeof hyperbolicRange>[0];
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

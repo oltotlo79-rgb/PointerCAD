@@ -52,7 +52,7 @@ export class SewFacesError extends Error {
   }
 }
 
-export interface SewFacesResult extends OcctShapeHandle {
+interface SewFacesResult extends OcctShapeHandle {
   readonly volume: number;
   readonly freeEdgeCount: 0;
 }

@@ -27,10 +27,11 @@ import {
   mathGeometryRows,
   mathGeometryTargetsSummary,
   MATH_GEOMETRY_REASON_KEYS,
-  type MathGeometryRowsState,
 } from './mathGeometryRows.js';
 import { mathGeometryToolGuide, mathGeometryToolGuideText } from './mathGeometryToolGuide.js';
 import { createParameterFromMathGeometryCommand } from './mathGeometryParameterCommands.js';
+
+type MathGeometryRowsState = Parameters<typeof mathGeometryRows>[0];
 
 // Enter through the store before its settings dependencies, as the app does.
 const DISPLAY_SETTINGS = useAppStore.getInitialState().displaySettings;

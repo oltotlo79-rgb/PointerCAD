@@ -1,9 +1,11 @@
 import Decimal from 'decimal.js';
 import { describe,expect,it } from 'vitest';
 import { decimalRational,type ExactRational } from './exactRational.js';
-import { ellipticValue,type EllipticBounds,type EllipticKind } from './ellipticNumeric.js';
+import { ellipticValue,type EllipticKind } from './ellipticNumeric.js';
 import { ELLIPTIC_REFERENCES } from './ellipticReferences.js';
 import { MathInputProblem } from './mathInputContract.js';
+
+type EllipticBounds = ReturnType<typeof ellipticValue>;
 
 const D=Decimal.clone({precision:310,rounding:Decimal.ROUND_HALF_EVEN});
 const proceed=()=>undefined;

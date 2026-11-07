@@ -20,7 +20,7 @@ export const DRAWING_DIMENSION_KINDS = [
 /**
  * 図面の上の段に図柄のボタンとして常に並ぶファイル操作。部品の「新規・開く・保存」と同じく
  * ▾の一覧(「ファイルのほかの操作」)には重ねない。一覧の名前を部品と同じにしたので、
- * 一覧の中身も「図柄のボタンのほかの操作」にそろえる(w91a、説明書の点検 w65b §3-A)。
+ * 一覧の中身も「図柄のボタンのほかの操作」にそろえる。
  */
 export const DRAWING_FILE_BUTTON_ACTIONS = ['open', 'save'] as const;
 

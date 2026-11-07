@@ -1,7 +1,7 @@
 import { SolidResultExport } from './SolidResultExport.js';
 import { SolidElementProbe } from './SolidElementProbe.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { summarizeSolidYield, type SolidYieldSummary } from '@pointercad/fem';
+import { SOLID_LIMITS, summarizeSolidYield, type SolidYieldSummary, type CadSolidStage } from '@pointercad/fem';
 import { t, type MessageKey } from '../i18n/t.js';
 import type { AnalysisMaterialCapacity } from '@pointercad/model/beam-analysis';
 import { ExpressionField } from '../sketch/ExpressionField.js';
@@ -9,12 +9,17 @@ import { useAppStore } from '../store/useAppStore.js';
 import { solidExpressionField, solidFieldsFor, type SolidAnalysisSession } from './solidAnalysisSession.js';
 import { solidFieldCssColor } from './solidFieldLayer.js';
 import { solidAnalysisFieldOf } from './solidFieldState.js';
-import { solidFieldUnit, SOLID_LINEAR_FIELD_QUANTITIES, type SolidLinearFieldQuantity } from './solidFieldView.js';
+import { solidFieldUnit, SOLID_LINEAR_FIELD_QUANTITIES, SOLID_RESULT_WARNING_KEYS, solidResultWarningsOf,
+  type SolidLinearFieldQuantity } from './solidFieldView.js';
 import { SolidModalSection } from './SolidModalSection.js';
 import { SolidBucklingSection } from './SolidBucklingSection.js';
 import { SolidAnalysisMaterialFields } from './SolidAnalysisMaterialFields.js';
 import { SolidBoundaryFields } from './SolidBoundaryFields.js';
 import { solidBoundarySaved } from './solidBoundaryDraft.js';
+
+const STAGE_LABELS: Readonly<Record<CadSolidStage, MessageKey>> = {
+  preparing: 'solidAnalysis.stage.preparing', meshing: 'solidAnalysis.stage.meshing', solving: 'solidAnalysis.stage.solving',
+};
 
 const QUANTITY_LABELS = { vonMises: 'solidAnalysis.fieldVonMises', xx: 'solidAnalysis.fieldXx', yy: 'solidAnalysis.fieldYy',
   zz: 'solidAnalysis.fieldZz', yz: 'solidAnalysis.fieldYz', xz: 'solidAnalysis.fieldXz', xy: 'solidAnalysis.fieldXy',
@@ -52,6 +57,12 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
   const fieldUnit = dimensionless ? t('solidAnalysis.dimensionless') : 'MPa';
   const composing = useRef(false);
   const result = session.result;
+  // This count comes from the validated tet4 input; native success checks fixed/free numbering is bijective.
+  const dofInput = session.status === 'complete' && session.ownerId === activeOwner
+    && result?.prepared.input.source.documentId === documentId && result.prepared.input.schema === 'pointercad-solid-tet4/1'
+    ? result.prepared.input : null;
+  const dofNodes = dofInput?.nodes.length;
+  const fixedDof = dofInput?.constraints.reduce((sum, item) => sum + item.fixed.filter(Boolean).length, 0);
   let boundaryValid = true;
   try { solidBoundarySaved(session, parameters); } catch { boundaryValid = false; }
   const maximumDisplacement = result?.result.displacementMm.reduce((maximum, vector) => Math.max(maximum, Math.hypot(...vector)), 0);
@@ -60,6 +71,7 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
     return Math.max(maximum, Math.hypot((x - y) / Math.SQRT2, (y - z) / Math.SQRT2,
       (z - x) / Math.SQRT2, Math.sqrt(3) * xy, Math.sqrt(3) * yz, Math.sqrt(3) * xz));
   }, 0);
+  const warnings = result === null ? null : solidResultWarningsOf(result);
   const reaction = result?.result.reactionN.reduce((sum, vector) => [sum[0] + vector[0], sum[1] + vector[1], sum[2] + vector[2]], [0, 0, 0]);
   return <form className="pcad-panel__body pcad-strength" aria-label={t('solidAnalysis.title')} data-testid="solid-analysis-panel"
     onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
@@ -90,14 +102,17 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
       focused={session.focused === name} onFocus={() => focus(name)} onChange={value => edit(name, value)} />)}
     <p>{t('solidAnalysis.accuracyHelp')}</p>
     {session.error === null ? null : <p role="alert">{session.error}</p>}
-    {session.status === 'running' ? <p role="status">{t('solidAnalysis.running')}</p> : null}
+    {session.status === 'running' ? <p role="status" data-testid="solid-analysis-progress" data-stage={session.stage ?? undefined}>
+      {t(session.stage == null ? 'solidAnalysis.running' : STAGE_LABELS[session.stage])}</p> : null}
     <button type="button" className="pcad-button pcad-button--primary" data-testid="solid-run" onClick={() => { if (!composing.current && session.materialInputValid !== false && boundaryValid) runner?.run(); }}
       disabled={runner === null || session.status === 'running' || session.materialInputValid === false || !boundaryValid} title={t('solidAnalysis.guide.run')}>{t('solidAnalysis.run')}</button>
     <button type="button" className="pcad-button" onClick={cancel} disabled={session.status !== 'running'} title={t('solidAnalysis.guide.cancel')}>{t('solidAnalysis.cancel')}</button>
     <button type="button" className="pcad-button" data-testid="solid-save" onClick={() => { if (session.materialInputValid !== false && boundaryValid) save(); }}
       disabled={session.materialInputValid === false || !boundaryValid} title={t('solidAnalysis.guide.save')}>{t('solidAnalysis.save')}</button>
     <button type="button" className="pcad-button" onClick={close} title={t('solidAnalysis.guide.close')}>{t('solidAnalysis.close')}</button>
-    {result === null ? null : <section aria-label={t('solidAnalysis.results')} data-testid="solid-results">
+    {result === null ? null : <section aria-label={t('solidAnalysis.results')} data-testid="solid-results"
+      data-solid-nodes={dofNodes} data-solid-node-limit={dofInput === null ? undefined : SOLID_LIMITS.nodes} data-solid-dof-total={dofNodes === undefined ? undefined : dofNodes * 3}
+      data-solid-dof-fixed={fixedDof} data-solid-dof-free={dofNodes === undefined || fixedDof === undefined ? undefined : dofNodes * 3 - fixedDof}>
       <h4>{t('solidAnalysis.results')}</h4>
       <dl>
         <dt>{t('solidAnalysis.displacement')}</dt><dd>{maximumDisplacement} mm</dd>
@@ -109,6 +124,9 @@ export function SolidAnalysisPanel({ session }: { readonly session: SolidAnalysi
         <dt>{t('solidAnalysis.residual')}</dt><dd>{result.result.maximumRelativeEquilibriumResidual}</dd>
       </dl>
       <p>{t('solidAnalysis.resultLimit')}</p>
+      {warnings === null || warnings.warnings.length === 0 ? null
+        : <ul aria-label={t('solidAnalysis.warningsTitle')} data-testid="solid-result-warnings">
+          {warnings.warnings.map(kind => <li key={kind} data-warning={kind}>{t(SOLID_RESULT_WARNING_KEYS[kind])}</li>)}</ul>}
       <SolidResultExport session={session} />
       <SolidElementProbe session={session} ownerId={activeOwner} documentId={documentId} />
       {session.status === 'complete' && session.ownerId === activeOwner && result.prepared.input.source.documentId === documentId

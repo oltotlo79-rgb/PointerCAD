@@ -2,7 +2,7 @@ import { evaluateExpression } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { canonicalPartDocumentText } from '../partLibrary.js';
-import { STEEL_GOLDEN } from './steelGolden.fixture.js';
+import { STEEL_GOLDEN } from './steelGolden.testSupport.js';
 
 import { resolveSketch } from '../../sketch/resolveSketch.js';
 import { STEEL_PRODUCTS, steelProductOptions } from './steelCatalog.js';

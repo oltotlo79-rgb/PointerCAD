@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { prepareCadSolidAnalysis } from './cadSolidAnalysis.js';
 import { add, buildPressureCase, cross, cylinderPressureGeometry, dot, fieldAt, IDENTITY, independentResultants, matVec,
-  nodalResultants, norm, placeIntegrals, planarPressureGeometry, pressureSettings, relativeError, rotationAbout, scale,
-  skew, sphereCapPressureGeometry, sub, ZERO_MAT, type LinearField, type Placement, type PressureGeometry,
-  type Vec } from './pressureWork.testSupport.js';
+  nodalResultants, norm, placeIntegrals, planarPressureGeometry, pressureSettings, rotationAbout, scale,
+  skew, sphereCapPressureGeometry, ZERO_MAT } from './pressureWork.testSupport.js';
+
+type LinearField = Parameters<typeof fieldAt>[0];
+type Placement = Parameters<typeof placeIntegrals>[1];
+type PressureGeometry = ReturnType<typeof planarPressureGeometry>;
+type Vec = Parameters<typeof add>[0];
+
+const sub = (a: Vec, b: Vec): Vec => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+
+/** Relative error; a (near-)zero expectation is divided by the representative magnitude instead and says so. */
+function relativeError(actual: Vec | number, expected: Vec | number, representative: number):
+  { readonly error: number; readonly denominator: 'expected' | 'representative' } {
+  const a: Vec = typeof actual === 'number' ? [actual, 0, 0] : actual, e: Vec = typeof expected === 'number' ? [expected, 0, 0] : expected;
+  const size = norm(e), zero = size < 1e-9 * representative;
+  return { error: norm(sub(a, e)) / (zero ? representative : size), denominator: zero ? 'representative' : 'expected' };
+}
 
 // W13: dead signed pressure (positive pushes into the material) -> public tet4 nodal loads, compared with exact surface
 // integrals that never read the product conversion. The triangulated face is the oracle at 1e-6; the smooth CAD surface

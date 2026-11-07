@@ -1,11 +1,39 @@
 // Exact existing e2e-to-product references. Review each reason before expanding this baseline.
 export const e2eImportBaseline = [
   {
+    "consumer": "e2e/tests/analysisResourcesFixture.ts",
+    "specifier": "../../packages/io/src/index.js",
+    "target": "packages/io/src/index.js",
+    "count": 1,
+    "reason": "Real PCAD assembly file writer."
+  },
+  {
+    "consumer": "e2e/tests/analysisResourcesFixture.ts",
+    "specifier": "../../packages/model/src/index.js",
+    "target": "packages/model/src/index.js",
+    "count": 1,
+    "reason": "Real assembly document and bundle construction."
+  },
+  {
+    "consumer": "e2e/tests/analysisResourcesFixture.ts",
+    "specifier": "../../packages/model/src/analysis/beamInputs.testSupport.js",
+    "target": "packages/model/src/analysis/beamInputs.testSupport.js",
+    "count": 1,
+    "reason": "Existing catalog flat-bar source and placement fixture."
+  },
+  {
     "consumer": "e2e/tests/analysisPlasticPersistenceFlow.ts",
     "specifier": "../../packages/io/src/index.js",
     "target": "packages/io/src/index.js",
     "count": 1,
     "reason": "Read the saved real PCAD file to check plastic input persistence after reopening."
+  },
+  {
+    "consumer": "e2e/tests/plasticBarPlateauFlow.ts",
+    "specifier": "../../packages/io/src/index.js",
+    "target": "packages/io/src/index.js",
+    "count": 1,
+    "reason": "Read the real saved PCAD file to check the persisted plastic bar yield plateau strain (plateauPlasticStrain 0.01) after the UI flow."
   },
   {
     "consumer": "e2e/tests/analysisFatigueNativeFlow.ts",
@@ -279,6 +307,27 @@ export const e2eImportBaseline = [
     "target": "packages/fem/src/protocol.js",
     "count": 1,
     "reason": "Existing e2e dependency on packages/fem/src/protocol.js; retained as a specific migration baseline."
+  },
+  {
+    "consumer": "e2e/tests/beam-buckling-native.spec.ts",
+    "specifier": "../../packages/fem/src/transientBenchmark.testSupport.js",
+    "target": "packages/fem/src/transientBenchmark.testSupport.js",
+    "count": 1,
+    "reason": "The real Worker bounded cost and accuracy benchmark uses exactly this existing FEM test helper; timing adds no release threshold."
+  },
+  {
+    "consumer": "e2e/tests/beam-buckling-native.spec.ts",
+    "specifier": "../../packages/fem/src/transientDampingNative.testSupport.js",
+    "target": "packages/fem/src/transientDampingNative.testSupport.js",
+    "count": 1,
+    "reason": "Real Worker transient regression uses this existing FEM test support through its exact E2E consumer."
+  },
+  {
+    "consumer": "e2e/tests/beam-buckling-native.spec.ts",
+    "specifier": "../../packages/fem/src/transientNative.testSupport.js",
+    "target": "packages/fem/src/transientNative.testSupport.js",
+    "count": 1,
+    "reason": "Real Worker transient regression uses this existing FEM test support through its exact E2E consumer."
   },
   {
     "consumer": "e2e/tests/boltedJointAcceptFlow.ts",

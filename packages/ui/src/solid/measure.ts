@@ -80,28 +80,6 @@ export type MeasureKind =
   | 'massProperties';
 
 /**
- * 種類の並び(一覧・プロパティ欄で使う既定の順)。
- *
- * **選んだものから決まる `kinds` の並びはこの順ではない。** 組み合わせごとに「利用者が
- * まず知りたいもの」を先頭に置く(向かい合う面なら距離、隣り合う面なら角度)ので、
- * `measureReadiness` は組み合わせの規則どおりの順で返す。この定数は種類を網羅して
- * 数え上げるとき(見出しの一覧、検査)に使う。
- */
-export const MEASURE_KIND_ORDER: readonly MeasureKind[] = [
-  'pointDistance',
-  'pointFaceDistance',
-  'faceDistance',
-  'edgeDistance',
-  'bodyDistance',
-  'faceAngle',
-  'edgeAngle',
-  'edgeLength',
-  'faceArea',
-  'bodyVolume',
-  'massProperties',
-];
-
-/**
  * 種類ごとの見出しの鍵(ja.json)。**文言は 1 か所だけ**にし、一覧・プロパティ欄・帯が
  * すべてここを引く(NFR-MA-5)。網羅する `Record` なので、種類を足したらここが型検査で落ちる。
  */
@@ -118,11 +96,6 @@ export const MEASURE_KIND_LABEL_KEYS: Readonly<Record<MeasureKind, MessageKey>> 
   bodyVolume: 'measure.kind.bodyVolume',
   massProperties: 'measure.kind.massProperties',
 };
-
-/** 種類の見出しの鍵。 */
-export function measureKindLabelKey(kind: MeasureKind): MessageKey {
-  return MEASURE_KIND_LABEL_KEYS[kind];
-}
 
 /** 種類の見出し(日本語)。 */
 export function measureKindLabel(kind: MeasureKind): string {
@@ -205,27 +178,12 @@ function displayMeasureValue(value: number, measured: MeasureUnit, unit: LengthU
   }
 }
 
-/**
- * その種類を測るのにカーネル(Worker)が要るか(§0.a-0.30)。
- *
- * - 辺と辺の最短距離: 線分どうしの最短距離は端点の扱いが要るのでカーネルに任せる。
- * - 立体 2 つの最短距離(§0.a-0.69): 面と面の総当たりになるので形そのものへ聞く。
- * - 質量特性: 重心と慣性モーメントは一覧に入っていない。
- *
- * **偽でも `measureLocally` が null を返すことがある。** 平面でない面の距離(円筒面など)は
- * 一覧の重心と軸だけでは求まらないためで、呼ぶ側は「`measureLocally` が null ならカーネルへ」
- * を判定の正とする。この関数は「そもそも一覧から出せない種類」を先に分けるためのもの。
- */
-export function needsKernel(kind: MeasureKind): boolean {
-  return kind === 'edgeDistance' || kind === 'bodyDistance' || kind === 'massProperties';
-}
-
 /* ---------------------------------------------------------------------------
  * 断りの理由
  * ------------------------------------------------------------------------- */
 
 /** 測れない理由。文言は `ja.json`(NFR-MA-5)、対応は `REJECTION_MESSAGE_KEYS` の 1 か所。 */
-export type MeasureRejectionReason =
+type MeasureRejectionReason =
   /** 何も選んでいない。 */
   | 'nothingSelected'
   /** 3 つ以上選んでいる(測れるのは 2 つまで)。 */
@@ -593,17 +551,6 @@ export function measureReadiness(
   }
   const kinds = kindsForPair(resolved[0], resolved[1]);
   return kinds.length === 0 ? notReady('unsupportedPair') : ready(kinds, targets);
-}
-
-/**
- * いま選んでいるもので測れる種類の一覧(プロパティ欄の切り替えに使う)。
- * `constraintCommands.ts` の `applicableConstraintKinds` と同じ役目。
- */
-export function measurableKinds(
-  selection: readonly string[],
-  bodies: readonly SubShapeBody[],
-): readonly MeasureKind[] {
-  return measureReadiness(selection, bodies).kinds;
 }
 
 /* ---------------------------------------------------------------------------

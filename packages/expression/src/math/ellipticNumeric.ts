@@ -13,7 +13,7 @@ import { BESSEL_FIXED_SCALE as S, FIXED_ZERO, FIXED_ONE, fixedRational, fixedAdd
   fixedMultiply, fixedTimesRational, fixedNegate, type BesselFixedRange as Range } from './besselFixedRange.js';
 
 export type EllipticKind='K'|'E'|'F'|'Einc'|'Pi'|'Piinc';
-export interface EllipticBounds { readonly lower:ExactRational;readonly upper:ExactRational;readonly decimal:string }
+interface EllipticBounds { readonly lower:ExactRational;readonly upper:ExactRational;readonly decimal:string }
 const abs=(value:bigint)=>value<0n?-value:value;
 function validate(value:ExactRational):void {
   if(value.denominator<=0n||abs(value.numerator).toString(2).length>8192||value.denominator.toString(2).length>8192) {

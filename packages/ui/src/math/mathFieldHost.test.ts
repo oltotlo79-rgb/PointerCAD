@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { attachMathField, type MathFieldHostOptions, type StructuredMathField } from './mathFieldHost.js';
+import { attachMathField, type StructuredMathField } from './mathFieldHost.js';
+
+type MathFieldHostOptions = Parameters<typeof attachMathField>[2];
 
 class BrowserEventTarget extends EventTarget {
   override removeEventListener(type: string, callback: EventListenerOrEventListenerObject | null,

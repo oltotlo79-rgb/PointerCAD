@@ -73,7 +73,7 @@
   "fatigue.error.field": "入力の値を確かめてください。",
   "fatigue.error.shape": "入力の形が正しくありません。",
   "fatigue.error.number": "数値として読めない値があります。",
-  "fatigue.error.bound": "値が扱える範囲の外です(応力は ±10000 MPa まで、基準の応力は 1〜10000 MPa、基準の繰り返し数は 1〜1e12、傾きは 1〜20)。",
+  "fatigue.error.bound": "値が扱える範囲の外です(応力は ±10000 MPa まで、基準の応力は 1〜10000 MPa、基準の繰り返し数は 1〜1e12、傾きは 1〜32)。",
   "fatigue.error.historyLength": "応力の記録は 1〜100000 個の値にしてください(記録は 64 個まで)。",
   "fatigue.error.stressEntry": "応力の値として読めないものがあります。数字だけを入れてください(単位は MPa)。",
   "fatigue.error.point": "{point} 番目の値を確かめてください。",

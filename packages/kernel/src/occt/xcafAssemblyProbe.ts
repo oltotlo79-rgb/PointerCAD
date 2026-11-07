@@ -45,7 +45,7 @@ export interface ProbeDefinition {
   readonly measurement: ProbeMeasurement;
 }
 
-export interface ProbeOccurrence {
+interface ProbeOccurrence {
   readonly id: string;
   /** null は root の直下。名前は識別子に使わない。 */
   readonly parent: string | null;
@@ -60,7 +60,7 @@ export interface ProbeOccurrence {
   readonly measurement: ProbeMeasurement | null;
 }
 
-export interface AssemblyProbeReadResult {
+interface AssemblyProbeReadResult {
   readonly roots: readonly string[];
   readonly definitions: readonly ProbeDefinition[];
   readonly occurrences: readonly ProbeOccurrence[];

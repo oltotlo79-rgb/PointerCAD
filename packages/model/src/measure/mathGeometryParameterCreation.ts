@@ -21,7 +21,7 @@ import type { MathGeometryOutcome } from './mathGeometryTypes.js';
 export type MathGeometryValueUnit = Extract<MathGeometryOutcome, { readonly kind: 'real' }>['unit'];
 
 /** What the caller supplies for the new coefficient (GR-31 builds `name` and `description` from the UI's messages). */
-export interface MathGeometryParameterDraftInput {
+interface MathGeometryParameterDraftInput {
   /** The coefficient's name, e.g. "<測定値の名前>の値" (`mathGeometry.createParameter.nameSuffix`). Not checked here. */
   readonly name: string;
   /** The definition's current measured value (GR-14). Kept for display only; the recomputation decides the value. */

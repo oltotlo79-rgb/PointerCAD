@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CurveSpec, HiddenLineViewRequest, SolidStepRequest } from '../types.js';
+import type { CurveSpec, SolidStepRequest, HiddenLineRequest } from '../types.js';
 import { loadOcctForNode } from '../occt/loadOcct.node.js';
 import { createKernelApi } from './kernelApi.js';
+
+type HiddenLineViewRequest = HiddenLineRequest['views'][number];
 
 const square: readonly CurveSpec[] = [
   { kind: 'segment', from: [0, 0, 0], to: [20, 0, 0] },

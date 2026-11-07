@@ -14,9 +14,10 @@ import { cantileverPulse, transientHistory } from './transient.testSupport.js';
  * equilibrium and energy measures <= 1e-8 (the same gates as production, unchanged). Recorded per case: the
  * measured solving-phase and total milliseconds, the work product and both measures.
  *
- * Decision rule, fixed before execution: if the slowest solving phase is <= 30 s (half of the 60 s solve
- * deadline), 4e8 is retained; otherwise Root replaces it in both languages by floor(4e8 x 30 s / slowest)
- * and reruns. Accepted step counts, sample counts, mesh size and tolerances are never reduced to pass.
+ * Decision data, fixed before execution: the final 'decision' record saves the slowest solving phase, the 30 s
+ * observation reference (half of the 60 s solve deadline) and floor(4e8 x min(1, 30 s / slowest)). These
+ * measured values are saved for Root to judge; 30 s is not a release condition and by itself never lowers the
+ * bound or triggers a rerun. Accepted step counts, sample counts, mesh size and tolerances are never reduced to pass.
  */
 export const TRANSIENT_BENCHMARK_HEADROOM_MS = 30_000;
 

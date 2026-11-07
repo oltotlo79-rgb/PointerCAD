@@ -1,20 +1,6 @@
 import type {
-  ChannelRow, EqualAngleRow, HBeamRow, StandardTableSource,
+  ChannelRow, EqualAngleRow, HBeamRow,
 } from './types.js';
-
-export const STRUCTURAL_SECTION_SOURCE = {
-  standard: 'JIS G 3192',
-  edition: '2024 (dimension values checked against the JISF 2020 amendment draft)',
-  title: '熱間圧延形鋼の形状・寸法・質量及びその許容差',
-  scope: '等辺山形鋼26種・溝形鋼8種・H形鋼広幅系列7種',
-  sourceUrls: [
-    'https://www.jisf.or.jp/business/standard/jis/documents/docs_kouzai004_jis02G3192_20201202.pdf',
-    'https://ranoblog.org/angle-yamagata-steel-%E2%85%BC-standard-size-cross-section-weight/',
-    'https://ranoblog.org/channel-steel-material-c-standard-size-cross-sectional-area-weight-jis-g-3192/',
-    'https://hayamihyou.net/h-beam/',
-  ],
-  verified: false,
-} as const satisfies StandardTableSource;
 
 export const EQUAL_ANGLE_TABLE = [
   { key: 'JIS-G-3192:2024:L 25\u00d725\u00d73', size: 'L 25\u00d725\u00d73', a: 25, b: 25, thickness: 3, innerRadius: 4, tipRadius: 2, areaCm2: 1.427, massKgPerM: 1.12, verified: true, note: '' },

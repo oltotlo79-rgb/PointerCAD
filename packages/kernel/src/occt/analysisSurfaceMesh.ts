@@ -32,8 +32,10 @@
  *
  * ## What this does not claim
  *
- * The triangles come from `BRepMesh_IncrementalMesh` at the requested deflections. The result reports observed
- * quality metrics only. It is not quality-controlled, not a converged FEM mesh and not a remeshed curved shell.
+ * Without shellQuality, triangles come from `BRepMesh_IncrementalMesh` at the requested deflections and report
+ * observed quality only. Explicit shellQuality supports one native-certified cylindrical rectangle and records
+ * chord/normal approximation bounds; its planar triangles do not lie entirely on the curved CAD surface.
+ * Neither path is a converged FEM result or a general curved-shell mesher.
  * Volume meshing and solver integration are outside this module.
  */
 import type {
@@ -55,6 +57,7 @@ import { readNativeFreeformBound, freeformTriangleDistance, partitionedFreeformT
   reduceAffineFreeformFans, type FreeformFaceDistance } from './analysisFreeformBound.js';
 import { borrowHandle } from './borrowHandle.js';
 import { measureVolume } from './solidMesh.js';
+import { buildCylindricalShellQuality, CylindricalShellRefusal, validCylindricalShellQuality, type CylindricalShellQuality, type CylindricalShellEvidence } from './analysisShellQuality.js';
 
 export type AnalysisBoundaryMode = 'closed' | 'open';
 
@@ -81,6 +84,7 @@ export interface AnalysisSurfaceMeshOptions {
    */
   readonly materialValidation?: 'native-solid';
   readonly freeformRefinement?: AnalysisFreeformRefinement;
+  readonly shellQuality?: CylindricalShellQuality;
 }
 
 /** Topological origin of a node. */
@@ -151,6 +155,8 @@ export interface AnalysisSurfaceMesh {
   readonly metrics: AnalysisMeshMetrics;
   readonly mesher: { readonly done: boolean; readonly status: number };
   readonly deflection: { readonly linear: number; readonly angular: number };
+  /** Scoped native cylindrical remesh approximation evidence; distinct from same-copy freeform evidence. */
+  readonly shellQuality?: CylindricalShellEvidence;
   /** Same-copy native chart evidence, emitted only by the material-validation path; not display deflection. */
   readonly freeform?: { readonly schema: 'pointercad-freeform-distance/1'; readonly faces: readonly FreeformFaceDistance[] };
 }
@@ -160,7 +166,7 @@ export type AnalysisBoundaryErrorCode =
   | 'missing-edge-polygon' | 'missing-edge-parameters' | 'unknown-subshape' | 'inconsistent-subdivision'
   | 'node-conflict' | 'collapsed-triangle' | 'nonfinite' | 'zero-area' | 'duplicate-triangle'
   | 'orientation-conflict' | 'nonmanifold' | 'open-boundary' | 'inward-orientation' | 'limit' | 'empty'
-  | 'material-invalid';
+  | 'material-invalid' | 'unsupported-shell-quality';
 
 /** Worker request: the cached body is named by its shape-cache key, like measure/export (`ResolvedSolidStep.key`). */
 export interface AnalysisSurfaceMeshRequest {
@@ -171,6 +177,7 @@ export interface AnalysisSurfaceMeshRequest {
   /** Clonable FEM opt-in; the worker supplies the checkpoint itself (functions never cross the request). */
   readonly materialValidation?: 'native-solid';
   readonly freeformRefinement?: AnalysisFreeformRefinement;
+  readonly shellQuality?: CylindricalShellQuality;
 }
 
 export type AnalysisSurfaceMeshResult =
@@ -246,6 +253,11 @@ function checkedOptions(options: AnalysisSurfaceMeshOptions): void {
   }
   if (!Number.isSafeInteger(options.maximumTriangles) || options.maximumTriangles <= 0) {
     refuse('invalid-options', '解析用の境界の三角形の上限は正の整数にしてください。');
+  }
+  const shell = options.shellQuality;
+  if (shell !== undefined && (options.boundary !== 'open' || options.materialValidation !== undefined
+    || options.freeformRefinement !== undefined || !validCylindricalShellQuality(shell))) {
+    refuse('invalid-options', '円筒シェルの品質条件と開いた面の要求を確かめてください。');
   }
   const refinement = options.freeformRefinement;
   if (refinement !== undefined && (options.materialValidation !== 'native-solid' || options.boundary !== 'closed'
@@ -571,6 +583,22 @@ function voidFaceAddresses(oc: OpenCascadeInstance, shape: TopoDS_Shape, origina
 export function buildAnalysisSurfaceMesh(oc: OpenCascadeInstance, shape: TopoDS_Shape,
   options: AnalysisSurfaceMeshOptions, materialCheckpoint?: () => void): AnalysisSurfaceMesh {
   checkedOptions(options);
+  if (options.shellQuality !== undefined) {
+    if (materialCheckpoint === undefined) refuse('invalid-options', '品質分割には既存の要求期限の確認が必要です。');
+    const checkpoint = convertedCheckpoint(materialCheckpoint);
+    const base = buildAnalysisSurfaceMeshInternal(oc, shape, options, undefined, checkpoint);
+    try {
+      const mesh = buildCylindricalShellQuality(oc, shape, base, options, options.shellQuality, checkpoint);
+      checkpoint();
+      const audited = auditBoundaryWithShells(mesh.coordinates, mesh.triangles, 'open');
+      checkpoint();
+      return { ...base, ...mesh,
+        metrics: { ...audited.metrics, maxBoundNodeOffsetMm: mesh.shellQuality.maximumNodeResidualMm } };
+    } catch (error) {
+      if (error instanceof CylindricalShellRefusal) throw new AnalysisBoundaryError(error.code, error.message);
+      throw error;
+    }
+  }
   const refinement = options.freeformRefinement;
   if (refinement === undefined) return buildAnalysisSurfaceMeshInternal(oc, shape, options, undefined, materialCheckpoint);
   if (materialCheckpoint === undefined) refuse('invalid-options', '再分割には同じ要求の時間と取消しの確認が必要です。');
@@ -689,7 +717,7 @@ function buildAnalysisSurfaceMeshInternal(oc: OpenCascadeInstance, shape: TopoDS
     edgeImages.forEach((image, address) => { originalEdgeOf.set(image.copyIndex, address); });
     const voidFaces = voidFaceAddresses(oc, shape, originalFaces, owned, options.boundary);
 
-    const nodes = new NodeTable(options.freeformRefinement?.maximumNodes);
+    const nodes = new NodeTable(options.shellQuality?.maximumNodes ?? options.freeformRefinement?.maximumNodes);
     const vertexNodes = new Map<number, number>();
     const edgeRecords = new Map<number, EdgeRecord>();
     const triangles: number[] = [];

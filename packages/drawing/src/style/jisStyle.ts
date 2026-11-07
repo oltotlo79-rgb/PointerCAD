@@ -12,15 +12,8 @@ export const LINE_DASH_PATTERNS = {
   zigzag: [] as readonly number[],
 } satisfies Readonly<Record<DrawingLineType, readonly number[]>>;
 
-/** 出典候補: JIS Z 8313。文字高さの系列(mm)は原典未照合のため要確認。 */
-export const TEXT_HEIGHTS_MM = [2.5, 3.5, 5, 7, 10, 14, 20] as const;
-export const DEFAULT_DIMENSION_TEXT_HEIGHT_MM = 3.5;
-export const DEFAULT_ANNOTATION_TEXT_HEIGHT_MM = 3.5;
-export const DEFAULT_DRAWING_NUMBER_HEIGHT_MM = 7;
-
 /** 出典候補: JIS Z 8317 / JIS B 0001。原典未照合のため要確認。 */
 export const ARROW_LENGTH_MM = 3.5;
-export const ARROW_INCLUDED_ANGLE_DEGREES = 15;
 export const ARROW_WIDTH_MM = 2 * ARROW_LENGTH_MM * Math.tan(Math.PI / 24);
 
 /** 寸法線周りの慣用値。原典未照合のため要確認。 */

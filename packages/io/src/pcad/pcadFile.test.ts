@@ -69,6 +69,27 @@ import {
 const SAVED_AT = '2026-09-03T01:23:45.678Z';
 
 describe('validated archive entries parser', () => {
+  it('borrows public entries independently and transfers private archive mesh views once', () => {
+    const bytes = writePcadFile(importedDocument(), { savedAt: SAVED_AT, attachments: importedAttachments() });
+    const archive = readArchive(bytes, { shouldExtract: () => true });
+    if (!archive.ok) throw new Error('archive');
+    const source = archive.entries.get('meshes/mesh-1.bin');
+    if (source === undefined) throw new Error('mesh input');
+    const borrowed = expectOk(readPcadEntries(archive.entries)).attachments.meshes.get('mesh-1');
+    const owned = expectOk(readPcadFile(bytes)).attachments.meshes.get('mesh-1');
+    if (borrowed === undefined || owned === undefined) throw new Error('mesh');
+    expect(borrowed.positions.buffer).not.toBe(source.buffer);
+    expect(owned.positions.buffer).toBe(owned.normals.buffer);
+    expect(owned.positions.buffer).toBe(owned.indices.buffer);
+    const backing = owned.positions.buffer;
+    if (!(backing instanceof ArrayBuffer)) throw new Error('expected transferable buffer');
+    const transfer = [backing];
+    const moved = structuredClone(owned, { transfer });
+    expect(moved).toEqual(borrowed);
+    const unaligned = new Uint8Array(source.byteLength + 1); unaligned.set(source, 1);
+    expect(decodeImportedMeshBytes(unaligned.subarray(1))).toEqual(borrowed);
+  });
+
   it('preserves all metadata, attachments and template kind without another ZIP read', () => {
     for (const kind of [PCAD_DOCUMENT_KIND, PCAD_TEMPLATE_KIND] as const) {
       const bytes = writePcadFile({ ...importedDocument(), canvases: canvasDocument().canvases }, {

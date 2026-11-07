@@ -99,7 +99,7 @@ export type FatigueSavedInput = FatigueSavedBase & (
 /** Same bounds as fatigueModel.ts of @pointercad/fem; fatigueSession.test.ts in the UI package compares the verdicts of
  * both readers on the same cases, so a drift of either copy is reported. */
 const LIMITS = { maximumStressMpa: 1e4, maximumPoints: 100_000, maximumHistories: 64, maximumRepeats: 1e9,
-  slope: [1, 20], referenceStressMpa: [1, 1e4], referenceCycles: [1, 1e12], maximumCutoffMpa: 2e4 } as const;
+  slope: [1, 32], referenceStressMpa: [1, 1e4], referenceCycles: [1, 1e12], maximumCutoffMpa: 2e4 } as const;
 
 function exact(value: unknown, keys: readonly string[], path: string): Record<string, unknown> {
   // fields() checks the count and presence; own keys only (an inherited name is not a saved field).

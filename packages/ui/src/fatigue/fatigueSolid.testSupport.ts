@@ -1,6 +1,4 @@
 import { decodeSolidAnalysis, solidInputSha256, type SolidAnalysisInput } from '@pointercad/fem';
-import { createSolidAnalysisSession } from '../solidAnalysis/solidAnalysisSession.js';
-import { useAppStore } from '../store/useAppStore.js';
 import { BASE_EDITS, edited } from './fatigue.testSupport.js';
 import { editFatigueSession } from './fatigueSession.js';
 import { selectFatigueSolidElement, type FatigueSolidSource } from './fatigueSolidSession.js';
@@ -30,10 +28,4 @@ export async function analyticalSolid(ownerId: string, revision = 0): Promise<Fa
 export function solidDraft(source: FatigueSolidSource, ownerId = source.result.source.documentId) {
   const session = edited(BASE_EDITS, ownerId);
   return selectFatigueSolidElement(editFatigueSession(session, { kind: 'history-stress', index: 0, source: '0, 1, 0, -1' }), source, 0, source.result.source.documentId);
-}
-
-export function installSolid(source: FatigueSolidSource): void {
-  const state = useAppStore.getState();
-  useAppStore.setState({ solidAnalysisSession: { ...createSolidAnalysisSession(state.activeDocumentId),
-    status: 'complete', result: source }, fatigueSession: solidDraft(source, state.activeDocumentId) });
 }

@@ -1,7 +1,7 @@
 import type { CurrentOriginIndex } from '../subShapeOrigin.js';
 import type { SolidBodyMesh } from '../types.js';
 
-export const ORIGIN_BODY_MAX_ROWS = 100_000;
+const ORIGIN_BODY_MAX_ROWS = 100_000;
 export const ORIGIN_BODY_MAX_LINKS = 400_000;
 export const ORIGIN_BODY_MAX_BYTES = 8 * 1024 * 1024;
 export const ORIGIN_REPLY_MAX_BYTES = 32 * 1024 * 1024;

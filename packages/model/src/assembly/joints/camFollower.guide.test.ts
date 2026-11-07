@@ -9,7 +9,7 @@ import { applyPlacementToDirection, applyPlacementToPoint, composePlacement, IDE
 import type { AssemblyComponent, AssemblyDocument, Joint, MechanismCamCoupling } from '../types.js';
 import type { JointFrame, JointFramePair } from './jointFrames.js';
 import { camFollowerRows, prepareCamFollowers, type CamFollowerCoupling } from './camFollower.js';
-import { CYCLE_TRANSFORM, createCamCycleFixture, oracleCamErrors, oraclePoseError, requireCyclePlacement } from './mechanismCycleFixture.js';
+import { CYCLE_TRANSFORM, createCamCycleFixture, oracleCamErrors, oraclePoseError, requireCyclePlacement } from './mechanismCycle.testSupport.js';
 
 const R = 20, E = 5, ROLLER = 4;
 const camFrame: JointFrame = { origin: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };

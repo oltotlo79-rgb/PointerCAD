@@ -77,7 +77,7 @@ import {
  * 一覧そのものの正本は model の `EXPORT_FORMATS`(こちらは並べ替えた写しではなく、
  * 画面が「STEP → STL → 3MF → OBJ → glTF」の順で見せるという決めだけを持つ)。
  */
-export const EXPORT_FORMAT_ORDER: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
+const EXPORT_FORMAT_ORDER: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
 
 /**
  * 書き出しのパネルで選べる形式(FR-803、FR-813、§0.a-0.34、タスク53)。
@@ -300,22 +300,6 @@ export function exportRefusalKey(
 }
 
 /**
- * 書き出せたときに添える警告(効かない指定・弾いた立体)。断りではないので 0 件のこともある。
- *
- * **model が言っている警告をそのまま文言のキーへ直す。** 利用者へ実際に出すのは
- * `runExport` が `visibleExportWarnings` で絞ったほうで、ここはその手前の素の一覧である
- * (「model は何と言っているか」を検査で押さえるための口。絞り込みを混ぜると、
- * どちらを見ているのか分からなくなる)。
- */
-export function exportWarningKeys(
-  bodies: readonly SolidBody[],
-  request: ExportRequest,
-): readonly MessageKey[] {
-  const outcome = selectExportBodies(bodies, request);
-  return outcome.ok ? outcome.selection.warnings.map(exportNoticeMessageKey) : [];
-}
-
-/**
  * 「面積が 0 の三角形を n 枚除きました。」の 1 行(§2.4、タスク16 の `droppedTriangleCount`)。
  *
  * **文言そのものは `ja.json` の 1 件**で、ここは数を埋めるだけにする(NFR-MA-5)。
@@ -337,7 +321,7 @@ export function droppedTriangleNotice(template: string, droppedTriangleCount: nu
  *
  * 名前が空・拡張子だけのときは `model`(カーネル側の既定と同じ)にする。
  */
-export const DEFAULT_EXPORT_BASE_NAME = 'model';
+const DEFAULT_EXPORT_BASE_NAME = 'model';
 
 /** ファイル名から拡張子を落とす。拡張子が無ければそのまま。 */
 export function exportBaseNameOf(fileName: string | null): string {
@@ -851,10 +835,10 @@ export type ImportOutcome =
   | { readonly ok: false; readonly cancelled: true };
 
 /** 取り込んだ形が 1 つも無いとき(§2.8 の表。文言の正本は下の層だが、3MF は空で返る)。 */
-export const NO_SHAPE_MESSAGE = 'このファイルには形が入っていません。';
+const NO_SHAPE_MESSAGE = 'このファイルには形が入っていません。';
 
 /** DXF を立体の読み込みの経路へ流したとき(呼び分けの取り違えを黙って通さない)。 */
-export const DXF_IS_NOT_A_BODY_MESSAGE = 'DXF は図形として取り込みます。';
+const DXF_IS_NOT_A_BODY_MESSAGE = 'DXF は図形として取り込みます。';
 
 /** UTF-8 のバイト列を文字へ直す。読めなければ null。 */
 function decodeText(bytes: Uint8Array): string | null {

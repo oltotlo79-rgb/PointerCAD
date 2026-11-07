@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import type { CurveSpec, Vec3Tuple } from '../types.js';
 import { loadOcctForNode } from './loadOcct.node.js';
-import { faceTables } from './loftSurfaceTestSupport.js';
+import { faceTables } from './loftSurface.testSupport.js';
 import { makeSweep, type SweepInput } from './makeSweep.js';
 import { isValidShape, measureVolume } from './solidMesh.js';
 import { tessellate } from './tessellate.js';

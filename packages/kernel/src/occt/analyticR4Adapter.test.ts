@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { assertDisjointTrimCorridors, type TrimChord } from './analyticTrimCorridorsR4.js';
-import { buildTrimIntervalInventory, sharedTake, nativePrimitiveForInjectivity, type B08Occurrence, type B08WireChain } from './boundary08Adapter.js';
+import { buildTrimIntervalInventory, sharedTake, nativePrimitiveForInjectivity, type B08WireChain } from './boundary08Adapter.js';
+
+type B08Occurrence = ReturnType<typeof buildTrimIntervalInventory>['rows'][number]['occurrence'];
 
 // AUTHOR-ONLY, UNEXECUTED. Root executes. Hand-derived expectations; no production oracle.
 const tick = (): void => undefined;

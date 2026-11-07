@@ -34,7 +34,7 @@ interface WeldScope {
   readonly solved: ResolvedAssembly;
 }
 
-export interface PreparedCadWeldSpanLayer extends Omit<PreparedCadWeldLayer, 'nodeIdA' | 'nodeIdB'> {
+ interface PreparedCadWeldSpanLayer extends Omit<PreparedCadWeldLayer, 'nodeIdA' | 'nodeIdB'> {
   readonly first: CadWeldSpanSide; readonly second: CadWeldSpanSide;
 }
 

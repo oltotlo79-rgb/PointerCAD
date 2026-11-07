@@ -74,5 +74,30 @@ packages/help-content/docs/ja/math-symbols.md text eol=lf
 /packages/fem/src/nativeBoltPreload.result.fixture.json -text
 
 # The shipped linear-solid program must match its reviewed source bytes on both OS.
-/packages/fem/src/solidAnalysis.py text eol=lf
-/packages/fem/src/shellAnalysis.py text eol=lf
+
+# Preserve source bytes identical to pinned FEM runtime assets on every checkout.
+/packages/fem/src/beamAnalysis.py -text
+/packages/fem/src/beamBoltContact.py -text
+/packages/fem/src/beamContact.py -text
+/packages/fem/src/beamFrictionContact.py -text
+/packages/fem/src/beamFrictionRuntime.py -text
+/packages/fem/src/beamImpact.py -text
+/packages/fem/src/beamJointContact.py -text
+/packages/fem/src/beamJointInitialStrain.py -text
+/packages/fem/src/beamProof.py -text
+/packages/fem/src/beamWeldContact.py -text
+/packages/fem/src/beamWeldSpan.py -text
+/packages/fem/src/beamWeldSpanContact.py -text
+/packages/fem/src/netgenMesher.py -text
+/packages/fem/src/plasticBarAnalysis.py -text
+/packages/fem/src/shellAnalysis.py -text
+/packages/fem/src/solidAnalysis.py -text
+/packages/fem/src/solidBuckling.py -text
+/packages/fem/src/solidContact.py -text
+/packages/fem/src/solidContactDriver.py -text
+/packages/fem/src/solidContactFriction.py -text
+/packages/fem/src/solidContactSolver.py -text
+/packages/fem/src/solidFiniteEquilibrium.py -text
+/packages/fem/src/solidFiniteMaterial.py -text
+/packages/fem/src/solidModal.py -text
+/packages/fem/src/solidPlasticAnalysis.py -text

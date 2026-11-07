@@ -43,9 +43,10 @@ import {
   exportBodiesFor,
   toExchangeExportOutcome,
   toExchangeImportedBody,
-  type PartExchangeSnapshot,
-  type PartExchangerDeps,
 } from './partExchanger.js';
+
+type PartExchangeSnapshot = Parameters<typeof exportBodiesFor>[0];
+type PartExchangerDeps = Parameters<typeof createPartExchanger>[0];
 
 /* ---------------------------------------------------------------------------
  * 見本

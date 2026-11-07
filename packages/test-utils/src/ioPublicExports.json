@@ -139,6 +139,7 @@
   "XML_INVALID_NUMBER_MESSAGE",
   "admitThreeMf",
   "arcToBulge",
+  "autoSaveRecordIdentity",
   "autoSaveRecordKey",
   "bulgeToArc",
   "canRoundTrip",

@@ -174,7 +174,7 @@ export interface BeamContactResult extends BeamContactNumericResult {
 export const CONTACT_RESULT_TOLERANCE = 1e-9;
 
 /** What the request fixed, so the decoder never trusts the worker for identities or counts. */
-export interface ContactResultExpectation {
+interface ContactResultExpectation {
   readonly contacts: readonly ContactPlanContact[];
   readonly loadFactors: readonly number[];
   /** Solver node numbers of the original (CAD) nodes in plan order: the returned node rows must be exactly these. */

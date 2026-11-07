@@ -11,7 +11,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { commandDefinition } from '../../commands/commandDefinitions.js';
 import { toolbarCommand, toolbarCommandId } from '../../commands/toolbarCommandCatalog.js';
-import { runToolbarCommand } from '../../commands/toolbarCommandExecution.js';
 import { toolCommandHelpTopic } from '../../commands/toolCommandHelp.js';
 import { t } from '../../i18n/t.js';
 import { keepsSelectionKind } from '../../solid/subShapeSelection.js';
@@ -21,6 +20,12 @@ import { isLookTool } from '../../viewport/attachSketchInteraction.js';
 import { guideKeyFor } from '../statusText.js';
 import { LOOK_MENU_ITEMS } from './lookMenuItems.js';
 import { chooseLookTool, lookToolbarReadiness } from './lookToolbarActions.js';
+import { executeToolbarCommand } from '../../commands/toolbarCommandExecution.js';
+
+/** Boolean compatibility for callers that only need to know whether an action started. */
+function runToolbarCommand(id: string): boolean {
+  return executeToolbarCommand(id).ready;
+}
 
 beforeEach(resetTestStore);
 

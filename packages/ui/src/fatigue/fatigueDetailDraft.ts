@@ -55,12 +55,12 @@ export type FatigueDetailEdit =
 export type FatigueDetailCheck = { readonly ok: true; readonly input: FatigueDetailInput }
   | { readonly ok: false; readonly key: MessageKey; readonly field: string | null; readonly diagnostic: string | null };
 type Refusal = Extract<FatigueDetailCheck, { readonly ok: false }>;
-export type FatigueDetailAnalysisCheck = { readonly ok: true; readonly input: FatigueDetailInput; readonly result: FatigueDetailResult }
+ type FatigueDetailAnalysisCheck = { readonly ok: true; readonly input: FatigueDetailInput; readonly result: FatigueDetailResult }
   | Refusal;
 
 /** The joint id of a new input. */
-export const FATIGUE_DETAIL_JOINT_ID = 'joint';
-export const FATIGUE_DETAIL_FORCE_QUANTITIES: readonly FatigueDetailQuantity[] = ['weld-group-concentric-shear-force',
+ const FATIGUE_DETAIL_JOINT_ID = 'joint';
+ const FATIGUE_DETAIL_FORCE_QUANTITIES: readonly FatigueDetailQuantity[] = ['weld-group-concentric-shear-force',
   'bolt-total-axial-force', 'joint-external-axial-force'];
 export const isForceQuantity = (value: FatigueDetailDraft['quantity']): boolean =>
   FATIGUE_DETAIL_FORCE_QUANTITIES.some(item => item === value);
@@ -93,7 +93,7 @@ export function detailForce(draft: FatigueDetailDraft, key: string): string {
 }
 
 /** Every refusal of the joint core has its own message; the shared codes keep their existing messages. */
-export const DETAIL_ERROR_KEYS: Readonly<Record<FatigueDetailErrorCode, MessageKey>> = { ...PIECEWISE_ERROR_KEYS,
+ const DETAIL_ERROR_KEYS: Readonly<Record<FatigueDetailErrorCode, MessageKey>> = { ...PIECEWISE_ERROR_KEYS,
   'fatigue-detail-schema': 'fatigue.error.shape', 'fatigue-detail-binding': 'fatigue.error.shape',
   'fatigue-detail-kind': 'fatigue.error.detailKind', 'fatigue-detail-method': 'fatigue.error.detailKind',
   'fatigue-detail-load-path': 'fatigue.error.detailLoadPath', 'fatigue-detail-geometry': 'fatigue.error.detailGeometry',
@@ -106,7 +106,7 @@ const GEOMETRY_FIELDS: Readonly<Record<string, FatigueDetailNumberField>> = {
   nominalDiameterMm: 'boltDiameter', pitchMm: 'boltPitch',
 };
 /** The panel field of a joint core refusal path, and the 1-based list position when the path names one. */
-export function detailErrorField(path: string, kind: FatigueDetailDraft['kind']): { readonly field: string | null; readonly point: number | null } {
+ function detailErrorField(path: string, kind: FatigueDetailDraft['kind']): { readonly field: string | null; readonly point: number | null } {
   const force = /^loading\.histories\[(\d+)\]\.forceN(?:\[(\d+)\])?/u.exec(path);
   if (force !== null) return { field: `history:${force[1]}:force`, point: force[2] === undefined ? null : Number(force[2]) + 1 };
   if (path.startsWith('loading.histories')) return fatigueErrorField(path.slice('loading.'.length));

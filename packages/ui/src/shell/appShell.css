@@ -2469,6 +2469,11 @@ button.pcad-tree__row:focus-visible {
   background: linear-gradient(180deg, var(--pcad-viewport-top) 0%, var(--pcad-viewport-bottom) 100%);
 }
 
+/* The circular weld form can overlap a side panel; keep its controls clickable. */
+.pcad-viewport:has(.pcad-popover--circular-weld) {
+  z-index: 2;
+}
+
 .pcad-viewport__canvas {
   position: absolute;
   z-index: 0;

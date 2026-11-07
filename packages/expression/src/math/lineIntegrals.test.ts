@@ -7,7 +7,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'lineintegral(1,[x,y],[3*t,4*t],t,0,1)', value: 5 },

@@ -5,7 +5,9 @@ import type { Vec3 } from '../../sketch/vec3.js';
 import type { RigidPlacement } from '../placementMath.js';
 import { weldTestBox } from './filletWeld.testSupport.js';
 import { WELD_LENGTH_TOLERANCE_MM } from './types.js';
-import { footprintContact, type WeldFootprint } from './weldContact.js';
+import { footprintContact } from './weldContact.js';
+
+type WeldFootprint = Parameters<typeof footprintContact>[2];
 
 const IDENTITY: RigidPlacement = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
 

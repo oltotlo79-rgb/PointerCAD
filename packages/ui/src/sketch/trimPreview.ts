@@ -15,9 +15,11 @@
  *
  * 実際に切る・伸ばすのは model の `trimCurve` / `extendCurve`(タスク17)で、ここは
  * **同じ手順を同じ順で辿って区間だけを取り出す**。区切りの集め方(交点の 0〜1 の位置、
- * 端ちょうどの落とし方、輪になった曲線での 0 への寄せ方)も、伸ばす向きの試し方
- * (`probeSegment` / `probeArc` / `probeLength` に当たるもの)も、model の
- * `packages/model/src/sketch/trimExtend.ts` の写しである。
+ * 端ちょうどの落とし方、輪になった曲線での 0 への寄せ方)は model の `cutRatios` を
+ * そのまま呼ぶ(P12 で写しを解消)。押した場所に近い 1 本の選び方(`nearestCurveIndex`)と、
+ * 線分を伸ばす向きの試し方(`probeSegment` / `probeLength`)も model の関数をそのまま呼ぶ
+ * (P12 で写しを解消)。円弧を伸ばす向きの試し方(`probeArc`)と、最初にぶつかる相手の
+ * 探し方(`firstHit`)は、model の `packages/model/src/sketch/trimExtend.ts` の写しである。
  *
  * **なぜ写しているのか**: 予告はマウスが動くたびに出し直すので、文書を作り替えて
  * 解き直す(`trimCurve` は中で `resolveSketch` を 1〜3 回呼ぶ)経路を毎回通せない
@@ -33,13 +35,14 @@ import {
   curveParameterNear,
   curvePointAt,
   curveStart,
+  cutRatios,
   distanceVec3,
   hasConnectedSegmentEnd,
   isFullCircle,
-  lengthVec3,
-  normalizeVec3,
+  nearestCurveIndex,
+  probeLength,
+  probeSegment,
   SKETCH_TOLERANCE_MM,
-  subVec3,
   type ResolvedArc,
   type ResolvedCurve,
   type ResolvedSegment,
@@ -90,8 +93,8 @@ function refuse(reason: TrimErrorKey): EditPreviewOutcome {
  * 指した要素 id と押した場所から、対象になる曲線 1 本を選ぶ。
  *
  * 矩形・正多角形・長穴は 1 フィーチャーが複数の曲線を生む(§0.a-0.8)ので、
- * **押した場所にいちばん近い 1 本**を選ぶ。model の `prepareTarget` が
- * `nearestCurveIndex` で選ぶのと同じ決め方にしてある(選ぶ 1 本が食い違うと、
+ * **押した場所にいちばん近い 1 本**を選ぶ。model の `prepareTarget` と同じ
+ * `nearestCurveIndex` をそのまま呼ぶ(選ぶ 1 本が食い違うと、
  * 赤く見えている辺と実際に切れる辺がずれる)。
  */
 export function targetCurveAt(
@@ -117,21 +120,6 @@ export function targetCurveAt(
   return null;
 }
 
-/** 並んだ曲線のうち、指した点にいちばん近い 1 本の位置(model の `nearestCurveIndex` の写し)。 */
-function nearestCurveIndex(curves: readonly ResolvedCurve[], point: Vec3): number {
-  let best = 0;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < curves.length; index += 1) {
-    const curve = curves[index];
-    const distance = distanceVec3(point, curvePointAt(curve, curveParameterNear(curve, point)));
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = index;
-    }
-  }
-  return best;
-}
-
 /**
  * 切る・伸ばすことができる種類か。model の `targetOf` と同じで、線分と円弧だけを扱う
  * (楕円・スプライン・オフセットの結果は交点は取れるが、切る側にはまだできない。
@@ -151,7 +139,9 @@ function allCurves(resolved: ResolvedSketch): readonly ResolvedCurve[] {
 }
 
 /**
- * 対象の曲線を切る位置(0〜1)を集める(model の `cutRatios` の写し)。
+ * 対象の曲線を切る位置(0〜1)を集める。**計算は model の `cutRatios` をそのまま呼ぶ**
+ * (以前はここに同じ本体の写しがあった。P12 で 1 か所へ寄せた)。実際のトリムと同じ
+ * 区切りを使うので、赤く見えていた区間と違う所が消えることは無い。
  *
  * 自分と同じフィーチャーの曲線は相手にしない。開いた曲線では端ちょうど(0 と 1)の
  * 交点は区間を分けないので落とし、輪になった曲線(全周の円)では端が曲線の途中なので
@@ -162,26 +152,7 @@ export function cutRatiosOf(
   resolved: ResolvedSketch,
   closed: boolean,
 ): readonly number[] {
-  const ratios: number[] = [];
-  for (const other of allCurves(resolved)) {
-    if (other.featureId === target.featureId) {
-      continue;
-    }
-    for (const found of curveIntersections(target, other)) {
-      let ratio = found.onFirst;
-      if (closed) {
-        if (ratio >= 1 - RATIO_EPSILON) {
-          ratio = 0;
-        }
-      } else if (ratio <= RATIO_EPSILON || ratio >= 1 - RATIO_EPSILON) {
-        continue;
-      }
-      if (ratios.every((known) => Math.abs(known - ratio) > RATIO_EPSILON)) {
-        ratios.push(ratio);
-      }
-    }
-  }
-  return ratios.sort((a, b) => a - b);
+  return cutRatios(target, resolved, closed);
 }
 
 /** 消える区間 1 つ(0〜1 のものさしの上。輪のときは終わりが 1 を超えることがある)。 */
@@ -302,46 +273,6 @@ function nearestEnd(curve: ResolvedCurve, point: Vec3): 'start' | 'end' {
   return distanceVec3(point, curveStart(curve)) <= distanceVec3(point, curveEnd(curve))
     ? 'start'
     : 'end';
-}
-
-/** 伸ばす向きを試す長さ(mm)。model の `probeLength` の写し。 */
-function probeLength(resolved: ResolvedSketch, from: Vec3): number {
-  let far = 1;
-  for (const curve of allCurves(resolved)) {
-    far = Math.max(far, distanceVec3(from, curveStart(curve)), distanceVec3(from, curveEnd(curve)));
-    if (curve.kind === 'arc') {
-      far = Math.max(far, distanceVec3(from, curve.center) + curve.radius);
-    }
-  }
-  for (const point of resolved.points) {
-    far = Math.max(far, distanceVec3(from, point.position));
-  }
-  return far * 2 + 1;
-}
-
-/** 線分を、指定した端の外側へ伸ばした「試しの線分」(model の `probeSegment` の写し)。 */
-function probeSegment(
-  segment: ResolvedSegment,
-  end: 'start' | 'end',
-  length: number,
-): ResolvedSegment | null {
-  const tip = end === 'start' ? segment.from : segment.to;
-  const other = end === 'start' ? segment.to : segment.from;
-  const along = subVec3(tip, other);
-  if (lengthVec3(along) <= SKETCH_TOLERANCE_MM) {
-    return null;
-  }
-  const direction = normalizeVec3(along);
-  return {
-    kind: 'segment',
-    featureId: segment.featureId,
-    from: tip,
-    to: [
-      tip[0] + direction[0] * length,
-      tip[1] + direction[1] * length,
-      tip[2] + direction[2] * length,
-    ],
-  };
 }
 
 /** 円弧を、指定した端の先へ「残りの周ぶん」伸ばした試しの円弧(model の `probeArc` の写し)。 */

@@ -5,7 +5,9 @@ import type { OutlinedText } from '@pointercad/drawing';
 import { drawingFont } from '../drawing/drawingFont.js';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { applySketchText, commitSketchText, type SketchTextInput } from './textCommands.js';
+import { applySketchText, commitSketchText } from './textCommands.js';
+
+type SketchTextInput = Parameters<typeof applySketchText>[0];
 
 vi.mock('../drawing/drawingFont.js', () => ({ drawingFont: { load: vi.fn(), outline: vi.fn() } }));
 const state = () => useAppStore.getState();

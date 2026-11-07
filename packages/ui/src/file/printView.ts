@@ -79,10 +79,10 @@ export function printImageSize(
 // ---------------------------------------------------------------------------
 
 /** 紙面の外枠の class 名。`appShell.css` の `@media print` と揃える。 */
-export const PRINT_SHEET_CLASS = 'pcad-print-sheet';
+const PRINT_SHEET_CLASS = 'pcad-print-sheet';
 
 /** 印刷する 1 枚ぶんの中身。 */
-export interface PrintSheet {
+interface PrintSheet {
   /** 印刷する絵(PNG の data URL)。 */
   readonly imageDataUrl: string;
   /** 見出しに出す部品の名前。 */
@@ -173,7 +173,7 @@ export interface PrintRequest {
 }
 
 /** 印刷に要るもの。どれも差し替えられるので、検査は DOM もプリンタも無しで済む。 */
-export interface PrintDeps {
+interface PrintDeps {
   /** 印刷する 1 コマを PNG の data URL で作る。作れなければ null。 */
   readonly capture: () => string | null;
   /** デスクトップ版の印刷の口。無ければ null(Web の道筋を使う)。 */

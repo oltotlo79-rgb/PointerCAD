@@ -1,4 +1,4 @@
-import { isFiniteNumber } from '../valueGuards.js';
+import { isFiniteNumber, isRecord } from '../valueGuards.js';
 import { createInputIssueFail, fields, InputIssue, text } from './analysisValidation.js';
 import { analysisPropertyEvidenceKeys, hardeningPropertySeries, readOptionalAnalysisPropertyEvidence,
   type AnalysisPropertyEvidence } from './analysisPropertyEvidence.js';
@@ -25,6 +25,14 @@ export interface PlasticBarSavedInput {
   readonly poisson: number;
   readonly yieldStressMPa: number;
   readonly hardeningModulusMPa: number;
+  /**
+   * Optional length of the yield plateau as cumulative (equivalent) plastic strain kp, a dimensionless fraction with
+   * 0 < kp <= 0.05; hardening with hardeningModulusMPa starts after it. It is not the total strain at which hardening
+   * starts. Absent = linear isotropic hardening from first yield (the original law); the key is then not written, so
+   * configurations without a plateau keep their exact saved form. Supplied hardening evidence must match the
+   * selected law, including the cumulative plastic strain when a plateau is present.
+   */
+  readonly plateauPlasticStrain?: number;
   readonly hardeningEvidence?: AnalysisPropertyEvidence;
   readonly materialSource: { readonly kind: 'user-supplied'; readonly reference: string };
   /** Complete piecewise-linear end-displacement knots; the first is 0 (undeformed). */
@@ -40,6 +48,8 @@ export interface PlasticBarSiValues {
   readonly poisson: number;
   readonly yieldStressPa: number;
   readonly hardeningModulusPa: number;
+  /** Dimensionless, passed through unchanged (no unit factor); present only when the saved value has it. */
+  readonly plateauPlasticStrain?: number;
   readonly endDisplacementM: readonly number[];
   readonly stepsPerSegment: number;
 }
@@ -47,6 +57,7 @@ export function plasticBarSiValues(value: Omit<PlasticBarSavedInput, 'schema' | 
   return { lengthM: value.lengthMm / 1000, areaM2: value.areaMm2 / 1_000_000, youngPa: value.youngModulusMPa * 1_000_000,
     poisson: value.poisson, yieldStressPa: value.yieldStressMPa * 1_000_000,
     hardeningModulusPa: value.hardeningModulusMPa * 1_000_000,
+    ...(value.plateauPlasticStrain === undefined ? {} : { plateauPlasticStrain: value.plateauPlasticStrain }),
     endDisplacementM: value.endDisplacementMm.map(knot => knot / 1000), stepsPerSegment: value.stepsPerSegment };
 }
 
@@ -68,6 +79,7 @@ function finite(value: unknown, path: string): number {
 export function readPlasticBarSavedInput(value: unknown, path: string): PlasticBarSavedInput {
   const row = fields(value, ['schema', 'id', 'source', 'units', 'lengthMm', 'areaMm2', 'youngModulusMPa', 'poisson',
     'yieldStressMPa', 'hardeningModulusMPa', 'materialSource', 'endDisplacementMm', 'stepsPerSegment',
+    ...(isRecord(value) && Object.hasOwn(value, 'plateauPlasticStrain') ? ['plateauPlasticStrain'] : []),
     ...analysisPropertyEvidenceKeys(value, 'hardeningEvidence')], path);
   if (row.schema !== PLASTIC_BAR_SAVED_SCHEMA || row.units !== 'N-mm') {
     throw new InputIssue('unsupported-model', path, 'Expected plastic-bar input schema 1 in N-mm units');
@@ -97,6 +109,8 @@ export function readPlasticBarSavedInput(value: unknown, path: string): PlasticB
     youngModulusMPa: finite(row.youngModulusMPa, `${path}.youngModulusMPa`), poisson: finite(row.poisson, `${path}.poisson`),
     yieldStressMPa: finite(row.yieldStressMPa, `${path}.yieldStressMPa`),
     hardeningModulusMPa: finite(row.hardeningModulusMPa, `${path}.hardeningModulusMPa`),
+    ...(Object.hasOwn(row, 'plateauPlasticStrain')
+      ? { plateauPlasticStrain: finite(row.plateauPlasticStrain, `${path}.plateauPlasticStrain`) } : {}),
     materialSource: { kind: 'user-supplied', reference },
     endDisplacementMm: knots.map((knot: unknown, index: number) => finite(knot, `${path}.endDisplacementMm[${index}]`)),
     stepsPerSegment: steps };
@@ -114,6 +128,13 @@ export function readPlasticBarSavedInput(value: unknown, path: string): PlasticB
   if (si.yieldStressPa >= si.youngPa) fail(`${path}.yieldStressMPa`, 'Yield stress must be below the Young modulus');
   if (!Number.isFinite(si.hardeningModulusPa) || si.hardeningModulusPa < 0) {
     fail(`${path}.hardeningModulusMPa`, 'Hardening modulus must be finite and not negative (softening is not supported)');
+  }
+  if (si.plateauPlasticStrain !== undefined) {
+    // Same comparisons as readPlasticBarPlan: 0 is rejected (omit the field for no plateau), then the small-strain bound.
+    positive(si.plateauPlasticStrain, 'plateauPlasticStrain');
+    if (si.plateauPlasticStrain > LIMITS.maximumStrain) {
+      fail(`${path}.plateauPlasticStrain`, 'Plateau plastic strain must not exceed 0.05 (small strain)');
+    }
   }
   if (si.endDisplacementM.some(knot => !Number.isFinite(knot))) fail(`${path}.endDisplacementMm`, 'Expected finite knots');
   if (si.endDisplacementM[0] !== 0) fail(`${path}.endDisplacementMm[0]`, 'The first knot must be 0');

@@ -17,7 +17,7 @@ export interface AutoDimensionCircle extends AutoDimensionPoint {
   readonly radius: number;
   readonly full: boolean;
 }
-export interface AutoDimensionInput {
+interface AutoDimensionInput {
   readonly viewId: string;
   readonly direction: Vector3;
   readonly xDir: Vector3;

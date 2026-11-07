@@ -5,9 +5,11 @@ import { buildStandardPart, buildStandardPartFromSource, standardPartNominalVolu
 import { resolvePart } from '../../part/resolvePart.js';
 import { applyPlacementToPoint } from '../placementMath.js';
 import { buildCircularFilletWeldGeometry } from './circularFilletWeldGeometry.js';
-import { createCircularFilletWeldSource, readCircularFilletWeldSource, type CircularFilletWeldSavedOptions, type CircularWeldSavedParent } from './circularFilletWeldSource.js';
+import { createCircularFilletWeldSource, readCircularFilletWeldSource, type CircularWeldSavedParent } from './circularFilletWeldSource.js';
 import { createCircularWeldPath, readCircularWeldPathSnapshot } from './curvedWeldPath.js';
 import { buildFilletWeldPart, createFilletWeldSource, filletWeldSegmentOptions } from './filletWeldPart.js';
+
+type CircularFilletWeldSavedOptions = NonNullable<ReturnType<typeof readCircularFilletWeldSource>>['options'];
 
 function payload(): CircularFilletWeldSavedOptions {
   const base = { documentId: 'assembly-1', ownerId: 'cylinder', occurrencePath: ['child', 'cylinder'], sourceKey: 'part:c@3',

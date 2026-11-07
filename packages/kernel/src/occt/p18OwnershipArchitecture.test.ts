@@ -9,7 +9,7 @@ const paths = [
   'occt/makeSketchEdges.ts', 'occt/sewSolid.ts', 'occt/analysisFreeformBound.ts',
   'occt/makePlanarFace.ts', 'occt/makeEllipseEdge.ts', 'occt/makeFunctionSurfaceBodies.ts',
   'occt/solidMesh.ts', 'occt/functionCurveSpline.ts', 'occt/makeBox.ts', 'occt/solidTopology.ts',
-  'occt/xcafAssembly.ts', 'occt/loftSurfaceTestSupport.ts', 'worker/shapeCache.ts', 'worker/sheetBodyReuse.ts',
+  'occt/xcafAssembly.ts', 'occt/loftSurface.testSupport.ts', 'worker/shapeCache.ts', 'worker/sheetBodyReuse.ts',
 ] as const;
 
 function directManualNativeDeletes(source: string): string[] {

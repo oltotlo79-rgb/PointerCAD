@@ -112,8 +112,8 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   selectionFilter: ALL_SELECTABLE,
   inferConstraints: true,
 };
-export const MIN_UI_SCALE = 90;
-export const MAX_UI_SCALE = 150;
+const MIN_UI_SCALE = 90;
+const MAX_UI_SCALE = 150;
 
 /** `localStorage` に持つ唯一のキー。値は `DisplaySettings` の JSON。 */
 const STORAGE_KEY = 'pointercad.settings';

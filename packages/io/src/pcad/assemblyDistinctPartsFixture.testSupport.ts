@@ -14,13 +14,11 @@ import {
   type RigidPlacement, type SolidBody, type Vec3,
 } from '@pointercad/model';
 
-export const DISTINCT_PART_COUNT = 1000;
+const DISTINCT_PART_COUNT = 1000;
 export const ev = (value: number) => ({ source: String(value), display: String(value), value });
 
 /** Box i: sizes (i + 1, 2 + i / 10, 3 + i % 7); placement i: position (i, 2i, -i), rotation about z by i mrad. */
 export function sizesOf(index: number): readonly [number, number, number] { return [index + 1, 2 + index / 10, 3 + (index % 7)]; }
-/** Fixture zero convention: only +0. JSON cannot carry -0, so z is 0 - index (+0 for index 0), never -index. */
-export function positionOf(index: number): readonly [number, number, number] { return [index, 2 * index, 0 - index]; }
 export function rotationOf(index: number): readonly [number, number, number, number] {
   const half = index / 2000;
   return [0, 0, Math.sin(half), Math.cos(half)];
@@ -34,26 +32,18 @@ export function storedRotationOf(index: number): readonly [number, number, numbe
   return [0, 0, rotation[2] * factor, rotation[3] * factor];
 }
 
-export function boxPart(index: number): PartDocument {
-  const [x, y, z] = sizesOf(index);
-  const box: PrimitiveFeature = { id: 'box-1', name: `box ${String(index)}`, kind: 'primitive', suppressed: false,
-    origin: { kind: 'coordinate', value: absoluteCoordinate(0, 0, 0) }, axis: { kind: 'world', axis: 'z' },
-    shape: { kind: 'box', sizeX: ev(x), sizeY: ev(y), sizeZ: ev(z) } };
-  return appendSolid({ ...createEmptyPartDocument(), id: `definition-${String(index)}`, name: `definition ${String(index)}` }, box);
-}
-
 export function placementOf(position: readonly [number, number, number], rotation: readonly [number, number, number, number]) {
   return { position: [ev(position[0]), ev(position[1]), ev(position[2])], rotation: [...rotation] } as const;
 }
 
 // ---- host assembly: 1000 distinct real shapes --------------------------------------------------------------------
 
-export type HostShape =
+ type HostShape =
   | { readonly kind: 'box'; readonly sizeX: number; readonly sizeY: number; readonly sizeZ: number }
   | { readonly kind: 'cylinder'; readonly radius: number; readonly height: number }
   | { readonly kind: 'holedBox'; readonly sizeX: number; readonly sizeY: number; readonly sizeZ: number;
       readonly holeRadius: number };
-export type HostShapeKind = HostShape['kind'];
+ type HostShapeKind = HostShape['kind'];
 export const HOST_SHAPE_KINDS: readonly HostShapeKind[] = ['box', 'cylinder', 'holedBox'];
 
 /** Kind by i % 3 on the shared sizes: cylinder r = sy / 2, h = sx; hole radius min(sx, sy) / 4 (wall >= hole radius). */
@@ -66,7 +56,7 @@ export function hostShapeOf(index: number): HostShape {
 }
 
 /** Id of the one body each host definition yields (the boolean consumes its box and tool, kernel §0.a-0.5). */
-export function hostBodyFeatureIdOf(index: number): string {
+ function hostBodyFeatureIdOf(index: number): string {
   const kind = hostShapeOf(index).kind;
   return kind === 'box' ? 'box-1' : kind === 'cylinder' ? 'cylinder-1' : 'cut-1';
 }
@@ -80,7 +70,7 @@ function primitive(id: string, z: number, shape: PrimitiveFeature['shape']): Pri
  * Definition i of the host. Primitive conventions (kernel makePrimitive.test.ts): a box is centred on its origin, a
  * cylinder stands on its origin along +z. The hole tool starts 1 mm below the box and ends 1 mm above it (through).
  */
-export function hostPartOf(index: number): PartDocument {
+ function hostPartOf(index: number): PartDocument {
   const shape = hostShapeOf(index);
   const empty: PartDocument = { ...createEmptyPartDocument(), id: `definition-${String(index)}`, name: `definition ${String(index)}` };
   if (shape.kind === 'cylinder') {
@@ -95,7 +85,7 @@ export function hostPartOf(index: number): PartDocument {
 }
 
 /** Closed-form shape in part coordinates: face count, volume and XYZ range. */
-export interface ShapeOracle {
+ interface ShapeOracle {
   readonly faces: number;
   readonly volume: number;
   readonly min: Vec3;
@@ -124,7 +114,7 @@ export function shapeOracleOf(shape: HostShape): ShapeOracle {
 
 export const HOST_TOTAL = DISTINCT_PART_COUNT;
 export const HOST_GROUPS = 120;
-export const HOST_SLIDER_GROUPS: readonly number[] = [0, 1];
+const HOST_SLIDER_GROUPS: readonly number[] = [0, 1];
 export const HOST_SAVED_AT = '2026-10-25T00:00:00.000Z';
 const GROUPED = 2 * HOST_GROUPS;
 
@@ -133,7 +123,7 @@ export function hostComponentName(index: number): string {
   if (index >= GROUPED) return `stock-${String(index - GROUPED)}`;
   return `${index % 2 === 0 ? 'anchor' : 'member'}-${String(Math.floor(index / 2))}`;
 }
-export function hostFixedOf(index: number): boolean { return index >= GROUPED || index % 2 === 0; }
+ function hostFixedOf(index: number): boolean { return index >= GROUPED || index % 2 === 0; }
 export function hostJointId(group: number): string { return `host-joint-${String(group)}`; }
 /** A member shares its anchor's written placement, so every joint holds at rest. */
 function placementBase(index: number): number { return index < GROUPED ? index - (index % 2) : index; }
@@ -143,14 +133,14 @@ export function hostPositionOf(index: number): Vec3 {
   return [200 * (k % 40), 2000 + 200 * Math.floor(k / 40), 0];
 }
 /** Written angle about z in radians (the shared rotationOf table: i mrad). */
-export function hostAngleOf(index: number): number { return placementBase(index) / 1000; }
-export function hostRotationOf(index: number): readonly [number, number, number, number] { return rotationOf(placementBase(index)); }
+ function hostAngleOf(index: number): number { return placementBase(index) / 1000; }
+ function hostRotationOf(index: number): readonly [number, number, number, number] { return rotationOf(placementBase(index)); }
 export function hostStoredRotationOf(index: number): readonly [number, number, number, number] {
   return storedRotationOf(placementBase(index));
 }
 
 /** Closed-form world XYZ range of component i at its written placement (rotation about z only). */
-export function hostWorldRangeOracle(index: number): { readonly min: Vec3; readonly max: Vec3 } {
+ function hostWorldRangeOracle(index: number): { readonly min: Vec3; readonly max: Vec3 } {
   const [px, py, pz] = hostPositionOf(index), shape = hostShapeOf(index), angle = hostAngleOf(index);
   if (shape.kind === 'cylinder') {
     const { radius: r, height: h } = shape;
@@ -161,7 +151,7 @@ export function hostWorldRangeOracle(index: number): { readonly min: Vec3; reado
   return { min: [px - hx, py - hy, pz - hz], max: [px + hx, py + hy, pz + hz] };
 }
 
-export interface HostAssemblyFixture {
+interface HostAssemblyFixture {
   readonly document: AssemblyDocument;
   readonly library: PartLibrary;
   /** Part reference of definition i, which component i uses. */
@@ -193,16 +183,6 @@ export async function buildHostAssembly(): Promise<HostAssemblyFixture> {
   document = { ...document, joints,
     components: document.components.map((component, index) => ({ ...component, fixed: hostFixedOf(index) })) };
   return { document, library, refs };
-}
-
-/** Negative fixture: the same assembly whose library lost definition `index` (the component still points at it). */
-export function withoutDefinition(fixture: HostAssemblyFixture, index: number): HostAssemblyFixture {
-  const ref = fixture.refs[index];
-  const parts = new Map(fixture.library.parts), attachments = new Map(fixture.library.attachments);
-  parts.delete(ref);
-  attachments.delete(ref);
-  return { ...fixture, library: { ...fixture.library, partFiles: fixture.library.partFiles.filter((file) => file.ref !== ref),
-    parts, attachments } };
 }
 
 // ---- checks shared by the io kernel test and the host flow --------------------------------------------------------
@@ -277,7 +257,7 @@ export function hostDefinitionProblems(document: AssemblyDocument, library: Part
 }
 
 /** Part-coordinate geometry of one generated body, read from its exact B-rep (vertices, straight and circular edges). */
-export interface PartGeometry {
+ interface PartGeometry {
   readonly faces: number;
   readonly volume: number;
   readonly points: readonly Vec3[];
@@ -288,7 +268,7 @@ export interface PartGeometry {
  * Mesh vertices need not reach a circle's extremes, so the range comes from B-rep data: vertices, line end points
  * and full circles (centre, axis, radius). Any other edge (arc, ellipse, free curve) is refused, never approximated.
  */
-export function partGeometryOf(body: SolidBody): PartGeometry | string {
+ function partGeometryOf(body: SolidBody): PartGeometry | string {
   const points: Vec3[] = body.vertices.map((vertex) => vertex.position);
   const circles: { center: Vec3; axis: Vec3; radius: number }[] = [];
   for (const edge of body.edges) {
@@ -316,7 +296,7 @@ function rotate(rotation: readonly number[], p: Vec3): Vec3 {
 const IDENTITY: RigidPlacement = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
 
 /** Exact XYZ range of the geometry at a placement: points moved, each circle widened by r sqrt(1 - a_k^2) per axis. */
-export function rangeOf(geometry: PartGeometry, placement: RigidPlacement = IDENTITY): { readonly min: Vec3; readonly max: Vec3 } {
+ function rangeOf(geometry: PartGeometry, placement: RigidPlacement = IDENTITY): { readonly min: Vec3; readonly max: Vec3 } {
   const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
   const include = (centre: Vec3, half: Vec3): void => {
     for (let axis = 0; axis < 3; axis += 1) {
@@ -339,12 +319,12 @@ export function rangeOf(geometry: PartGeometry, placement: RigidPlacement = IDEN
 }
 
 /** Geometric signature of a generated shape: face count, volume and part-coordinate XYZ range. */
-export function geometrySignature(geometry: PartGeometry): string {
+ function geometrySignature(geometry: PartGeometry): string {
   return oracleSignature({ faces: geometry.faces, volume: geometry.volume, ...rangeOf(geometry) });
 }
 
 /** Component i at `placement` with generated geometry against its closed-form values. */
-export function hostShapeProblems(index: number, geometry: PartGeometry, placement: RigidPlacement): string[] {
+ function hostShapeProblems(index: number, geometry: PartGeometry, placement: RigidPlacement): string[] {
   const name = hostComponentName(index), oracle = hostShapeOracle(index), world = hostWorldRangeOracle(index);
   const problems: string[] = [];
   if (geometry.faces !== oracle.faces) problems.push(`${name}: ${String(geometry.faces)} faces, expected ${String(oracle.faces)}`);
@@ -360,7 +340,7 @@ export function hostShapeProblems(index: number, geometry: PartGeometry, placeme
   return problems;
 }
 
-export interface HostAssemblyEvidence {
+ interface HostAssemblyEvidence {
   readonly definitionIds: ReadonlySet<string>;
   readonly generatedShapes: number;
   readonly signatures: ReadonlySet<string>;

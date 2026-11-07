@@ -14,7 +14,7 @@ import { createScalarIntervalSampler } from './scalarMathIntervals.js';
 import { createScalarDirectionalJet } from './scalarCurveCurvature.js';
 import { lowerLegendrePolynomial } from './legendrePolynomial.js';
 import type { MathNode } from './mathInputContract.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

@@ -21,7 +21,8 @@
     "dk・k は由良産商とオノウエの 2 件が完全に一致した。",
     "ただしこれは JIS B 1111 の附属書(市販の「なべ小ねじ」)の値で、本体規格(ISO 7045 対応)の値とは違う。本体規格の値は照合できていない。どちらを採るかは統括が決める。要確認。",
     "十字穴の番号はオノウエの表の記載による(M3 のトラス小ねじだけ 1 番と注記がある)。",
-    "呼び長さの一覧は得られなかった。"
+    "呼び長さの一覧は得られなかった。",
+    "実行時カタログ packages/model/src/assembly/standard/fasteners.ts のなべ小ねじの表 PAN_HEAD_SCREW_TABLE に付けていた出典 PAN_HEAD_SCREW_SOURCE の値(製品のどこからも読まれていなかったので、値を変えずにここへ移した): standard「JIS B 1111」、edition「2017」、title「十字穴付きなべ小ねじ」、scope「附属書寸法のM3〜M8、並目・細目ねじ」、verified=false、sourceUrls: https://www.yura-sansyo.co.jp/handbook/handbookV8-6.pdf https://www.onoue1950.co.jp/products/koneji/jujikoneji/1667/ https://webdesk.jsa.or.jp/books/W11M0090/index/?bunsyo_id=JIS+B+1111:2017"
   ],
   "rows": [
     {

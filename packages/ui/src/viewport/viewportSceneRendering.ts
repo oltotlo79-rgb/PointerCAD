@@ -31,7 +31,7 @@ const KEY_LIGHT_ELEVATION_OFFSET = 0.5;
 const KEY_LIGHT_MAX_ELEVATION = 1.2;
 
 /** 1 つの Scene が持つカメラ 2 台。描画のたびに作らず、投影の切替でどちらかを使う。 */
-export interface ViewportCameras {
+ interface ViewportCameras {
   readonly perspective: THREE.PerspectiveCamera;
   readonly orthographic: THREE.OrthographicCamera;
 }

@@ -259,10 +259,10 @@ describe('UI 文字列リソース(NFR-MA-5)', () => {
 });
 
 /**
- * 製品のコードからも説明書(`{{ui:鍵}}`)からも引かれていない文言の鍵(w91a で見つけた時点の残り)。
+ * 製品のコードからも説明書(`{{ui:鍵}}`)からも引かれていない文言の鍵(未使用として確認した時点の残り)。
  * **ここへ足さない。** 新しく使われなくなった鍵は表から消す。ここにある鍵を使い始めたか消したら、
  * この一覧からも消す(一覧は減るだけ)。見た目に出ない文言は、翻訳や点検の手間だけを増やし、
- * 説明書の照合で「画面に無い文言」として紛れる(未使用の `exchange.dwgType` の点検、w65b §3-A)。
+ * 説明書の照合で「画面に無い文言」として紛れる(未使用の `exchange.dwgType` の点検)。
  */
 const KNOWN_UNUSED_MESSAGE_KEYS: readonly string[] = [
   'commandLine.error.toolNotHere',
@@ -340,7 +340,7 @@ function usedMessageKeys(): { readonly literals: ReadonlySet<string>; readonly p
 }
 
 /**
- * モデルブラウザの「⋮」一覧(部品・アセンブリの木)の項目の、名前と説明(title)の抜けを探す(w91a)。
+ * モデルブラウザの「⋮」一覧(部品・アセンブリの木)の項目の、名前と説明(title)の抜けを探す。
  * 説明を「押せないときだけ」付ける書き方(`title={cond ? undefined : …}`)も抜けとして数える。
  */
 function menuItemsWithoutDescription(file: string, text: string): string[] {

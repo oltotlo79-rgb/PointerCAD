@@ -184,7 +184,7 @@ const WATCHED = ['document', 'undoStack', 'documentVersion', 'selection', 'conne
   'activeTool', 'selectionKind'] as const satisfies readonly (keyof AppState)[];
 
 /*
- * 分ける前の実装で記録した更新の順(RUN 20261005-173510-cl-v103-w18-tree-unit、
+ * 分ける前の実装で記録した更新の順(2026-10-05 17:35:10の分割前記録、
  * FeatureTree.tsx の SHA-256 72af838552febf85187b680b0c2e42307593f4b5266f0bcf9c9fa31a34630e77)。
  */
 const TRACE_SELECTION: readonly string[] = [

@@ -50,7 +50,7 @@ export interface MathGeometryCandidates {
  * Selecting more than this becomes `'tooMany'`. Selecting exactly this many offers the 3-point
  * angle (∠ABC, GR-22) only when all three resolve to points; any other triple stays `'unsupportedPair'`.
  */
-export const MATH_GEOMETRY_SELECTION_LIMIT = 3;
+const MATH_GEOMETRY_SELECTION_LIMIT = 3;
 
 const NO_CANDIDATES: readonly MathGeometryQuantity[] = [];
 

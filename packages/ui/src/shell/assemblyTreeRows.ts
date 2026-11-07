@@ -98,7 +98,7 @@ export interface AssemblyTreeSection {
  * 同じ)。**まだ解いていないときは省ける**——省くと、文書だけから分かること
  * (固定・非表示・抑制・指し先の無い合致)だけが印になる。
  */
-export interface AssemblyTreeDiagnosis {
+interface AssemblyTreeDiagnosis {
   /**
    * インスタンスの id → 部品の鍵。**中身を引けたインスタンスだけ**が入る
    * (`ResolvedAssembly.partKeys`)。抑制した部品も入らない。
@@ -320,18 +320,6 @@ export function assemblyTreeRows(
       rows: stepRows,
     },
   ];
-}
-
-/**
- * 木に出る行の数。**束の見出しも 1 行として数える**(見出しは畳むために押せる行なので、
- * 「木に何行あるか」を数えるときに外すと画面と食い違う)。
- */
-export function assemblyTreeRowCount(sections: readonly AssemblyTreeSection[]): number {
-  const countRows = (rows: readonly AssemblyTreeRow[]): number => rows.reduce(
-    (total, row) => total + 1 + countRows(row.children ?? []),
-    0,
-  );
-  return sections.reduce((total, section) => total + 1 + countRows(section.rows), 0);
 }
 
 function componentRowsOf(

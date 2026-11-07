@@ -30,7 +30,10 @@ import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import type { FileGateway } from './fileGateway.js';
 import type { PartFileDeps } from './partFile.js';
-import { attachUnsavedChangesGuard, hasUnsavedWork, type CloseChoice, type CloseRequestTarget } from './unsavedChangesGuard.js';
+import { attachUnsavedChangesGuard, hasUnsavedWork, type CloseRequestTarget } from './unsavedChangesGuard.js';
+
+/** 本体の窓で選ばれた答え。 */
+type CloseChoice = 'save' | 'discard' | 'cancel';
 
 // 保存の符号化は製品ではWorkerで行う。Workerの無い単体の環境では、同じ符号化を直接行う口を差す。
 beforeEach(() => { resetTestStore(); useAppStore.setState({ saveDocumentEncoder: encodeSaveDocument, documentSaveOperation: null }); });

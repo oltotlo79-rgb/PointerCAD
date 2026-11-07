@@ -10,14 +10,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { MAX_CANVAS_IMAGE_BYTES } from '@pointercad/model';
 
 import {
-  CANVAS_IMAGE_ACCEPT,
-  DEFAULT_CANVAS_OPACITY,
-  DEFAULT_CANVAS_WIDTH_MM,
   canvasImageMimeType,
   decodeCanvasImage,
   newSketchCanvas,
   pickCanvasImage,
 } from './canvasFile.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const DEFAULT_CANVAS_OPACITY = 0.5;
+const DEFAULT_CANVAS_WIDTH_MM = 100;
+const CANVAS_IMAGE_ACCEPT = 'image/png,image/jpeg';
 
 /** `Uint8Array` を `ArrayBuffer` へ(偽のファイルが返す中身)。 */
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

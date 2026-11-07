@@ -15,7 +15,7 @@ import { expressionValueFromNumber } from '@pointercad/expression';
 import { useAppStore } from '../store/useAppStore.js';
 import { resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { createFakeRecompute } from '../store/testing/createTestStore.js';
-import { attachAssembly, readAssemblyRecomputeGates, type AssemblyConstraintExecution } from './attachAssembly.js';
+import { attachAssembly, readAssemblyRecomputeGates } from './attachAssembly.js';
 import { buildAssemblyGeometry } from '../viewport/createAssemblyLayer.js';
 import { captureAssemblyMeshAdmission, currentAssemblyMeshAdmission } from '../viewport/assemblyMeshAdmission.js';
 import { addMateTarget, commitMateDraft, startMate, updateMateSource } from './mateActions.js';
@@ -24,6 +24,8 @@ import { assemblyMateStatus } from '../shell/statusText.js';
 import { beginComponentDrag, finishComponentDrag, moveComponentDrag } from './dragComponentActions.js';
 import { componentDragPlane } from '../viewport/dragComponent.js';
 import { resolveCurrentMateTarget } from './mateCommands.js';
+
+type AssemblyConstraintExecution = NonNullable<Parameters<typeof attachAssembly>[3]>;
 
 beforeEach(resetTestStore);
 

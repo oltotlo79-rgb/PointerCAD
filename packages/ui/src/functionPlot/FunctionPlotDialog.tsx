@@ -186,7 +186,7 @@ export function FunctionPlotDialog({ featureId, onClose }: {
             const axis = event.target.value; if (axis === 'X' || axis === 'Y' || axis === 'Z') change({ ...draft, ...(surface ? { dependent: axis } : { independent: axis }) });
           }}>{FUNCTION_AXES.map(axis => <option key={axis}>{axis}</option>)}</select></label> : null}
           {/*
-            式の欄の名前は画面に見えている「Y =」そのもの(w91a)。見た目と読み上げ名が違うと、説明書も
+            式の欄の名前は画面に見えている「Y =」そのもの。見た目と読み上げ名が違うと、説明書も
             音声での操作も 1 つの名前で欄を指せない。何の式かは囲みの見出し「関数の式」が伝える。
           */}
           {activeFunctionOutputs(draft).map(axis => <div key={axis} className="pcad-function-equation"

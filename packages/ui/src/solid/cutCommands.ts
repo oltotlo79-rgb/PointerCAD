@@ -103,7 +103,7 @@ const READY: SolidToolReadiness = { ready: true, reasonKey: null };
 const THREE_POINTS = 3;
 
 /** 傾き角・方位角の既定(度)。§2.15 の段の表の「0 / 0」。 */
-export const DEFAULT_CUT_TILT: ExpressionValue = expressionValueFromNumber(0);
+ const DEFAULT_CUT_TILT: ExpressionValue = expressionValueFromNumber(0);
 export const DEFAULT_CUT_AZIMUTH: ExpressionValue = expressionValueFromNumber(0);
 
 /** 基準の 3 面・作業平面の既定のずらし量(0 = その平面そのもの)。 */
@@ -128,11 +128,11 @@ const COLLINEAR_AREA_EPSILON = 1e-9;
  * - `workPlane` … モデルブラウザで選んだ作業平面そのもの。
  * - `pointAndEdgeContaining` … 辺と点の両方を含む面(既存の `pointAndEdge` は辺に垂直な面)。
  */
-export const WORK_PLANE_CUT_KIND = 'workPlane';
-export const EDGE_CONTAINING_CUT_KIND = 'pointAndEdgeContaining';
+ const WORK_PLANE_CUT_KIND = 'workPlane';
+ const EDGE_CONTAINING_CUT_KIND = 'pointAndEdgeContaining';
 
 /** 決め方の値が「軸に垂直な面」なら、その軸。 */
-export function cutAxisOf(planeKind: string | undefined): CutAxis | null {
+ function cutAxisOf(planeKind: string | undefined): CutAxis | null {
   switch (planeKind) {
     case 'axisX':
       return 'x';
@@ -695,7 +695,7 @@ function targetCorners(context: CutContext, targetFeatureId: string): Vec3[] | n
  * `inside` = 輪郭の内側(積)。平面の切断と同じ入口のつまみで選ぶ: 「反対側を残す」で内側、
  * 「反対側も残す(2 つに分ける)」で両方(`commitCutInput`)。
  */
-export type ProfileCutKeep = 'outside' | 'inside';
+ type ProfileCutKeep = 'outside' | 'inside';
 
 /** 残す側のブーリアンの演算。外側 = 差、内側 = 積(`BooleanFeature.pairedWith` の注釈)。 */
 function profileCutOperation(keep: ProfileCutKeep): 'subtract' | 'intersect' {
@@ -993,7 +993,7 @@ export function commitCutInput(
 }
 
 /** 確定する平面の切断の中身(切る面・残す側・2 つに分けるか)と、補助の点を積んだ後の文脈。 */
-export type PreparedCutPlane =
+ type PreparedCutPlane =
   | {
       readonly ok: true;
       /** 座標の式の点・軸の位置を補助の基準点として積んだ後の文書を持つ文脈(積む点が無ければ元のまま)。 */

@@ -60,7 +60,7 @@ export function releaseOwnedMeshCopies(input: SaveDocumentInput): number {
   return released;
 }
 
-export interface OwnedSaveEncoding {
+ interface OwnedSaveEncoding {
   readonly bytes: Uint8Array;
   /** 圧縮の前に手放した三角形の写しの容量。 */
   readonly releasedMeshBytes: number;

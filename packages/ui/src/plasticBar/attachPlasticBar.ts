@@ -18,6 +18,8 @@ function samePlan(left: PlasticBarPlan, right: PlasticBarPlan): boolean {
     && left.material.youngPa === right.material.youngPa && left.material.poisson === right.material.poisson
     && left.material.yieldStressPa === right.material.yieldStressPa
     && left.material.hardeningModulusPa === right.material.hardeningModulusPa
+    // Optional plateau: absent on both sides compares equal; a parameter edit that changes only kp invalidates.
+    && left.material.plateauPlasticStrain === right.material.plateauPlasticStrain
     && left.material.source.reference === right.material.source.reference
     && left.endDisplacementM.length === right.endDisplacementM.length
     && left.endDisplacementM.every((knot, index) => knot === right.endDisplacementM[index]);

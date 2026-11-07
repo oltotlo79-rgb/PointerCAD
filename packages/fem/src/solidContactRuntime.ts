@@ -6,7 +6,7 @@ import { decodeSolidContactResult, readSolidContactFailureDiagnostics, verifySol
 import { sha256Hex } from './sha256.js';
 import { isRecord } from './valueGuards.js';
 
-export interface SolidContactPrograms {
+interface SolidContactPrograms {
   readonly normal: Uint8Array;
   readonly friction: Uint8Array;
   readonly solver: Uint8Array;

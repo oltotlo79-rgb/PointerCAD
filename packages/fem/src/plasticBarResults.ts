@@ -3,8 +3,18 @@ import { comparePlasticBar, plasticBarReference, plasticBarSchedule, PLASTIC_BAR
   type PlasticBarPlan, type PlasticBarSample } from './plasticBar.js';
 import { translatePlasticBar, type PlasticBarInput, type PlasticBarSource } from './plasticBarTranslation.js';
 
-export const PLASTIC_BAR_METHOD = 'oofem-misesmat-htype0-truss1d-staticstructural/1';
-export const PLASTIC_BAR_SCOPE = 'uniaxial-small-strain-j2-linear-isotropic-hardening-displacement-control';
+const PLASTIC_BAR_METHOD = 'oofem-misesmat-htype0-truss1d-staticstructural/1';
+const PLASTIC_BAR_SCOPE = 'uniaxial-small-strain-j2-linear-isotropic-hardening-displacement-control';
+/** Strings of a plan with material.plateauPlasticStrain (MisesMat htype 1 table); a plan without it keeps the above. */
+const PLASTIC_BAR_PLATEAU_METHOD = 'oofem-misesmat-htype1-truss1d-staticstructural/1';
+const PLASTIC_BAR_PLATEAU_SCOPE = 'uniaxial-small-strain-j2-plateau-then-linear-isotropic-hardening-displacement-control';
+ type PlasticBarMethod = typeof PLASTIC_BAR_METHOD | typeof PLASTIC_BAR_PLATEAU_METHOD;
+ type PlasticBarScope = typeof PLASTIC_BAR_SCOPE | typeof PLASTIC_BAR_PLATEAU_SCOPE;
+/** The only method and scope a native result of this plan may carry. */
+ function plasticBarMethodFor(plan: PlasticBarPlan): { readonly method: PlasticBarMethod; readonly scope: PlasticBarScope } {
+  return plan.material.plateauPlasticStrain === undefined ? { method: PLASTIC_BAR_METHOD, scope: PLASTIC_BAR_SCOPE }
+    : { method: PLASTIC_BAR_PLATEAU_METHOD, scope: PLASTIC_BAR_PLATEAU_SCOPE };
+}
 /**
  * Bounds stated in plasticBarNative.proof.md (plastic1) before any native execution and enforced here unchanged:
  * one uniform element evaluates the same closed-form 1D return as the reference, so only Newton convergence
@@ -33,8 +43,8 @@ export interface PlasticBarDeviation {
 }
 export interface PlasticBarResult {
   readonly kind: 'oofem-plastic-bar-1d';
-  readonly method: typeof PLASTIC_BAR_METHOD;
-  readonly scope: typeof PLASTIC_BAR_SCOPE;
+  readonly method: PlasticBarMethod;
+  readonly scope: PlasticBarScope;
   readonly structuralCertification: false;
   readonly source: PlasticBarSource;
   readonly inputSha256: string;
@@ -79,8 +89,9 @@ export function readPlasticBarNative(raw: unknown, plan: PlasticBarPlan): {
 } {
   const row = exactFields(raw, rawFields, 'result');
   if (row.schema !== PLASTIC_BAR_RESULT_SCHEMA) fail('unsupported result schema');
-  if (row.method !== PLASTIC_BAR_METHOD) fail('unexpected method');
-  if (row.scope !== PLASTIC_BAR_SCOPE) fail('unexpected scope');
+  const expected = plasticBarMethodFor(plan);
+  if (row.method !== expected.method) fail('unexpected method');
+  if (row.scope !== expected.scope) fail('unexpected scope');
   if (row.structuralCertification !== false) fail('structuralCertification must be false');
   const schedule = plasticBarSchedule(plan);
   if (!denseArray(row.samples) || row.samples.length === 0) fail('samples must be a non-empty dense array');
@@ -127,14 +138,16 @@ export function decodePlasticBar(raw: unknown, input: PlasticBarInput, inputSha2
   if (!/^[0-9a-f]{64}$/u.test(inputSha256)) fail('input digest must be 64 lowercase hexadecimal characters');
   const prepared = translatePlasticBar(input);
   const read = readPlasticBarNative(raw, prepared.plan);
-  return { kind: 'oofem-plastic-bar-1d', method: PLASTIC_BAR_METHOD, scope: PLASTIC_BAR_SCOPE,
+  return { kind: 'oofem-plastic-bar-1d', ...plasticBarMethodFor(prepared.plan),
     structuralCertification: false, source: prepared.input.source, inputSha256, ...read };
 }
 
 /** Shape check used by the protocol; association with an input is plasticBarResultMatches. */
 export function isPlasticBarResult(value: unknown): value is PlasticBarResult {
-  if (!isRecord(value) || value.kind !== 'oofem-plastic-bar-1d' || value.method !== PLASTIC_BAR_METHOD
-    || value.scope !== PLASTIC_BAR_SCOPE || value.structuralCertification !== false
+  // Only the two consistent pairs; plasticBarResultMatches then binds the pair to the input's plan.
+  const pair = isRecord(value) && ((value.method === PLASTIC_BAR_METHOD && value.scope === PLASTIC_BAR_SCOPE)
+    || (value.method === PLASTIC_BAR_PLATEAU_METHOD && value.scope === PLASTIC_BAR_PLATEAU_SCOPE));
+  if (!isRecord(value) || value.kind !== 'oofem-plastic-bar-1d' || !pair || value.structuralCertification !== false
     || !isRecord(value.source) || typeof value.source.documentId !== 'string'
     || typeof value.source.revision !== 'number' || !Number.isSafeInteger(value.source.revision)
     || typeof value.inputSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(value.inputSha256)

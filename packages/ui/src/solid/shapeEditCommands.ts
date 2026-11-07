@@ -108,7 +108,7 @@ import {
  * 道具の id は `SolidToolId`(`numericInput.ts` が正本)の部分集合で、立体のミラーだけは
  * スケッチの鏡像複写(FR-324)と id がぶつかるため `mirrorSolid` になっている。
  */
-export type ShapeEditToolId =
+type ShapeEditToolId =
   | 'draft'
   | 'faceOffset'
   | 'holeTranslate'

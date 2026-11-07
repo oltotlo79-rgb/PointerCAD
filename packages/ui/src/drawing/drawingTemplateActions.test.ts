@@ -5,7 +5,9 @@ import { activeHasUnsavedChanges } from '../file/assemblyFile.js';
 import { PcadSaveWorkerError } from '../file/pcadSaveWorker.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { commitDrawingSheet, createDrawingFromTemplateFile, parseDrawingSheetDraft, saveCurrentDrawingTemplate, type DrawingSheetDraft } from './drawingTemplateActions.js';
+import { commitDrawingSheet, createDrawingFromTemplateFile, parseDrawingSheetDraft, saveCurrentDrawingTemplate } from './drawingTemplateActions.js';
+
+type DrawingSheetDraft = Parameters<typeof parseDrawingSheetDraft>[1];
 
 const expressionDraft: DrawingSheetDraft = { scale: '1/2', scaleOptions: '1/2, 1, root(8, 3)', textHeight: '7/2',
   fields: [{ key: 'title', label: '図名', widthWeight: 1, widthExpression: '1+1' }] };

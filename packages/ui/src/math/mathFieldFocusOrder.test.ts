@@ -6,7 +6,11 @@
  * 実際のブラウザーと MathLive での移動先は e2e/tests/math-keyboard.spec.ts で文字入力の欄の Tab と照合する。
  */
 import { describe, expect, it } from 'vitest';
-import { focusAdjacentControl, SEQUENTIAL_FOCUS_SELECTOR, type FocusScope } from './mathFieldHost.js';
+import { focusAdjacentControl } from './mathFieldHost.js';
+
+type FocusScope = Parameters<typeof focusAdjacentControl>[0];
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SEQUENTIAL_FOCUS_SELECTOR = 'a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex], [contenteditable="true"]';
 
 type Tag = 'button' | 'select' | 'input' | 'summary' | 'details' | 'div' | 'p' | 'math-field';
 interface Part { readonly id: string; readonly tag: Tag; readonly children?: readonly Part[] }

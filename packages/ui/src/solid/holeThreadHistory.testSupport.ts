@@ -54,7 +54,7 @@ function fixture(surface: HistorySurface, outside: boolean): PartDocument {
       : { kind: 'cylinder', radius: value(20), height: value(40) } });
 }
 
-export function historyCommit(operation: HistoryOperation, surface: HistorySurface): SolidInputCommit {
+ function historyCommit(operation: HistoryOperation, surface: HistorySurface): SolidInputCommit {
   return { kind: 'solid', tool: operation === 'thread' ? 'threadHole' : 'hole',
     step: operation === 'thread' ? 'threadSize' : 'holeSize',
     values: { diameter: historyFormula('2*3', 6), depth: historyFormula('2*4', 8),
@@ -66,7 +66,7 @@ export function historyCommit(operation: HistoryOperation, surface: HistorySurfa
     threadDesignation: 'M6', threadSeries: 'coarse' };
 }
 
-export interface HeldNativeRequest {
+ interface HeldNativeRequest {
   readonly document: PartDocument;
   readonly options: PartRecomputeOptions;
   readonly result: Promise<PartRecomputeResult>;

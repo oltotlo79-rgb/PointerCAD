@@ -13,24 +13,27 @@ const FUNCTION_TYPES = new Set(['FunctionDeclaration', 'FunctionExpression', 'Ar
 // Parents for which ESLint reports a function at the parent's start (ast-utils getFunctionHeadLoc).
 const HEAD_PARENTS = new Set(['Property', 'MethodDefinition', 'PropertyDefinition', 'TSPropertySignature',
   'TSMethodSignature']);
+// Type-only containers (P06 parameter reports on function types) never enclose a runtime function, so adding
+// them leaves every function-size identity unchanged.
 const KEYED = new Set(['Property', 'MethodDefinition', 'PropertyDefinition', 'TSAbstractMethodDefinition',
-  'TSAbstractPropertyDefinition']);
-const NAMED = new Set([...FUNCTION_TYPES, 'ClassDeclaration', 'ClassExpression']);
+  'TSAbstractPropertyDefinition', 'TSPropertySignature']);
+const NAMED = new Set([...FUNCTION_TYPES, 'ClassDeclaration', 'ClassExpression', 'TSDeclareFunction',
+  'TSTypeAliasDeclaration', 'TSInterfaceDeclaration']);
 const NAME_KEYS = new Map([['VariableDeclarator', 'id'], ['AssignmentExpression', 'left'], ['JSXAttribute', 'name']]);
 
-interface AstNode {
+export interface AstNode {
   readonly type: string;
   readonly range: readonly [number, number];
   readonly [key: string]: unknown;
 }
 
-interface FunctionSite {
+export interface FunctionSite {
   readonly node: AstNode;
   readonly ancestors: readonly AstNode[];
 }
 
 /** One function over the cap, named by its enclosing declarations, not by its line number. */
-export interface MeasuredFunction {
+ interface MeasuredFunction {
   readonly id: string;
   readonly lines: number;
   /** Index just after the opening brace of a block body, for growth regressions on real sources. */
@@ -44,7 +47,7 @@ export interface BaselineRow {
   readonly functions: readonly BaselineEntry[];
 }
 
-export interface BaselineDrift {
+ interface BaselineDrift {
   readonly grown: readonly string[];
   readonly stale: readonly string[];
   readonly unlisted: readonly string[];
@@ -54,16 +57,17 @@ export interface BaselineDrift {
   readonly withinCap: readonly string[];
 }
 
-function isNode(value: unknown): value is AstNode {
+export function isNode(value: unknown): value is AstNode {
   return value !== null && typeof value === 'object' && 'type' in value && typeof value.type === 'string' &&
     'range' in value && Array.isArray(value.range);
 }
 
-function collectFunctions(root: AstNode, keys: SourceCode.VisitorKeys): FunctionSite[] {
+/** Every node of the given types with its ancestors, in source order. */
+export function collectSites(root: AstNode, keys: SourceCode.VisitorKeys, types: ReadonlySet<string>): FunctionSite[] {
   const sites: FunctionSite[] = [];
   const stack: AstNode[] = [];
   const visit = (node: AstNode): void => {
-    if (FUNCTION_TYPES.has(node.type)) sites.push({ node, ancestors: [...stack] });
+    if (types.has(node.type)) sites.push({ node, ancestors: [...stack] });
     stack.push(node);
     for (const key of keys[node.type] ?? []) {
       const child = node[key];
@@ -110,7 +114,7 @@ function label(node: AstNode, parent: AstNode | undefined, source: string): stri
 }
 
 /** Stable identity: the names of the enclosing declarations joined by `::` (no line numbers). */
-function identity(site: FunctionSite, source: string): string {
+export function identity(site: FunctionSite, source: string): string {
   const chain = [...site.ancestors, site.node];
   const parts = chain.map((node, index) => label(node, chain[index - 1], source))
     .filter((part): part is string => part !== undefined && part !== '');
@@ -132,7 +136,7 @@ function arrowStart(tokens: readonly AST.Token[], bodyStart: number): number {
 }
 
 /** The index ESLint reports for this function (same rule as ast-utils getFunctionHeadLoc). */
-function headStart(site: FunctionSite, tokens: readonly AST.Token[]): number {
+export function headStart(site: FunctionSite, tokens: readonly AST.Token[]): number {
   const parent = site.ancestors.at(-1);
   if (parent && HEAD_PARENTS.has(parent.type)) return parent.range[0];
   if (site.node.type === 'ArrowFunctionExpression') {
@@ -162,7 +166,7 @@ export function measureFunctions(linter: Linter, parser: Linter.Parser, filename
   if (!isNode(ast)) throw new Error(`${filename}: no program`);
   const tokens = sourceCode.ast.tokens;
   const byHead = new Map<number, FunctionSite[]>();
-  for (const site of collectFunctions(ast, sourceCode.visitorKeys)) {
+  for (const site of collectSites(ast, sourceCode.visitorKeys, FUNCTION_TYPES)) {
     const start = headStart(site, tokens);
     byHead.set(start, [...(byHead.get(start) ?? []), site]);
   }

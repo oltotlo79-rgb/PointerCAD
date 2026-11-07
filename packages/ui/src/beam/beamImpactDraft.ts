@@ -170,7 +170,7 @@ function minimumGapMm(result: BeamImpactResult, nodeId: string): number | null {
  * value. A rotation at or below it only means the linearisation is not obviously violated; yield, rupture, strain-rate
  * and contact adequacy are not assessed by this method in either case.
  */
-export const IMPACT_LINEARIZATION_WARNING_ROTATION_RAD = 0.1;
+const IMPACT_LINEARIZATION_WARNING_ROTATION_RAD = 0.1;
 
 /** Largest sampled nodal rotation (length of the rotation vector, rad); Infinity when a sample is not finite. */
 export function maximumImpactRotationRad(samples: readonly BeamImpactSample[]): number {

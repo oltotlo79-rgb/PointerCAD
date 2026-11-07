@@ -1,6 +1,6 @@
 import { isReservedChord, type AssignedChord } from './shortcutAssignments.js';
 
-export interface AssignmentKeyEvent {
+interface AssignmentKeyEvent {
   readonly key: string;
   readonly ctrlKey: boolean;
   readonly metaKey: boolean;

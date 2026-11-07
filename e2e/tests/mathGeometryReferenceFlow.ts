@@ -181,7 +181,7 @@ async function expectQuantityLabelInset(page: Page): Promise<void> {
  * panel's fixed, scrollable frame (`.pcad-panel__body`) photographed black under the status bar. If the
  * section still does not fit inside that frame at 1440 x 1100, it is photographed in two pieces instead:
  * from the section's own heading first, then the frame scrolled down for the second piece (2026-09-25
- * coordinator decision, GR-24/GR-24e). This runs the same way in Electron too (the removed w37a branch
+ * coordinator decision, GR-24/GR-24e). This runs the same way in Electron too (the removed old branch
  * used to skip photographing there); only the photograph itself (`captureManualDetail`, sourced from the
  * Web project) is skipped for Electron, while the resize/scroll/fit-in-view behaviour is still checked.
  */

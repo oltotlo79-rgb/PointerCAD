@@ -6,14 +6,118 @@ import { resolveSketch } from '../resolveSketch.js';
 import type { SketchDocument, SketchFeature } from '../types.js';
 import { buildResiduals } from './residuals.js';
 import { solveLinearSystem, type LinearizedRow } from './solve.js';
-import { prepareSparseNormalSystem, SPARSE_LINEAR_RELATIVE_TOLERANCE } from './sparseSolve.js';
+import { prepareSparseNormalSystem } from './sparseSolve.js';
 import type { SketchConstraint } from './types.js';
 import { collectVariables } from './variables.js';
 import { requiredPoint, triangleFanOracle } from './independentGeometry.testSupport.js';
 import { vi } from 'vitest';
-import { auditExactSum, auditRoundingRadius, auditSparseResidual, sparseAuditStar, type SparseAuditFixture } from './sparseAudit.testSupport.js';
+import { auditExactSum } from './sparseAudit.testSupport.js';
 import type { SparseLinearOutcome } from './sparseSolve.js';
 import { stdout } from 'node:process';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SPARSE_LINEAR_RELATIVE_TOLERANCE = 1e-12;
+
+/** Half the larger adjacent spacing, obtained from neighbors, not the solver's exponent formula. */
+function auditRoundingRadius(value: number): number {
+  const magnitude = Math.abs(value);
+  if (!Number.isFinite(magnitude) || magnitude === 0) throw new Error('Audit requires nonzero normal coordinates');
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, magnitude);
+  const bits = view.getBigUint64(0);
+  view.setBigUint64(0, bits + 1n);
+  const above = view.getFloat64(0);
+  view.setBigUint64(0, bits - 1n);
+  const below = view.getFloat64(0);
+  const radius = Math.max(above - magnitude, magnitude - below) / 2;
+  if (!Number.isFinite(radius) || radius === 0) throw new Error('Audit radius outside bounded normal range');
+  return radius;
+}
+
+interface SparseAuditFixture {
+  readonly name: string;
+  readonly damping: number;
+  readonly rows: readonly LinearizedRow[];
+  readonly rhs: readonly number[];
+  readonly expected: readonly number[];
+}
+
+/** Two 1000-node stars; each axis is coupled to its root by an exact +/-g row. */
+function sparseAuditStar(nonunit: boolean, damping: number): SparseAuditFixture {
+  const count = 1000, weight = 0.01, gradients = nonunit ? [0.6, 0.8] : [1, 1];
+  const pinValues = [-weight * 40, -weight * 30];
+  // Preparation rounds -g*f once. Each root has one nonzero observation,
+  // so these are the actual stored RHS doubles, independently known in advance.
+  const rhs = Array.from({ length: 2 * count }, (_, i) => i < 2 ? -weight * pinValues[i] : 0);
+  const rows: LinearizedRow[] = [];
+  for (let point = 1; point < count; point += 1) {
+    for (let axis = 0; axis < 2; axis += 1) {
+      rows.push({ value: 0, gradient: new Map([[axis, -gradients[axis]], [2 * point + axis, gradients[axis]]]) });
+    }
+  }
+  for (let axis = 0; axis < 2; axis += 1) rows.push({ value: pinValues[axis], gradient: new Map([[axis, weight]]) });
+  // Eliminate the identical leaves. Multiplying through by g²+lambda gives
+  // determinant = w²*g²+w²*lambda+1000*lambda*g²+lambda², without cancellation.
+  // This is a closed two-equation solution, not a call to a numerical solver.
+  const roots = gradients.map((g, axis) => {
+    const numerator = auditExactSum([[rhs[axis], g, g], [rhs[axis], damping]]);
+    const determinant = auditExactSum([[weight, weight, g, g], [weight, weight, damping],
+      [count, damping, g, g], [damping, damping]]);
+    return numerator / determinant;
+  });
+  const leaves = gradients.map((g, axis) => roots[axis] * (g * g / (g * g + damping)));
+  const expected = Array.from({ length: 2 * count }, (_, i) => i < 2 ? roots[i] : leaves[i % 2]);
+  return { name: `${nonunit ? 'nonunit' : 'unit'} lambda=${damping}`, damping, rows, rhs, expected };
+}
+
+ interface SparseAuditResidual {
+  readonly coordinateError: number;
+  readonly rawInfinity: number;
+  readonly rawRelative: number;
+  readonly representationBound: number;
+  readonly representationExcess: number;
+  readonly componentwise: number;
+  readonly residuals: readonly number[];
+  readonly envelopes: readonly number[];
+  readonly componentErrors: readonly number[];
+}
+
+/** Expand ORIGINAL J^T J entries as exact products, without paired-dot or production helpers. */
+function auditSparseResidual(fixture: SparseAuditFixture, candidate: ArrayLike<number>): SparseAuditResidual {
+  const { damping, rows, rhs, expected } = fixture, n = expected.length;
+  if (candidate.length !== n) throw new Error('Audit dimension mismatch');
+  const residualTerms = Array.from({ length: n }, (_, i) => [[rhs[i]], [-damping, candidate[i]]]);
+  const diagonalTerms = Array.from({ length: n }, () => [[damping]]);
+  const radii = Array.from(candidate, auditRoundingRadius);
+  const envelopeTerms = radii.map(radius => [[damping, radius]]);
+  const absoluteTerms = Array.from({ length: n }, (_, i) => [[damping, Math.abs(candidate[i])]]);
+  for (const row of rows) {
+    for (const [i, gi] of row.gradient) {
+      diagonalTerms[i].push([gi, gi]);
+      for (const [j, gj] of row.gradient) {
+        residualTerms[i].push([-gi, gj, candidate[j]]);
+        envelopeTerms[i].push([Math.abs(gi), Math.abs(gj), radii[j]]);
+        absoluteTerms[i].push([Math.abs(gi), Math.abs(gj), Math.abs(candidate[j])]);
+      }
+    }
+  }
+  const residuals = residualTerms.map(auditExactSum), envelopes = envelopeTerms.map(auditExactSum);
+  const diagonals = diagonalTerms.map(auditExactSum), absolutes = absoluteTerms.map(auditExactSum);
+  const componentErrors = residuals.map((value, i) => Math.abs(value) / (Math.abs(rhs[i]) + absolutes[i]));
+  let coordinateError = 0, rawInfinity = 0, rawNorm = 0, rhsNorm = 0, boundNorm = 0, excessNorm = 0;
+  for (let i = 0; i < n; i += 1) {
+    const rootDiagonal = Math.sqrt(diagonals[i]), residual = Math.abs(residuals[i]);
+    coordinateError = Math.max(coordinateError, Math.abs(candidate[i] - expected[i]));
+    rawInfinity = Math.max(rawInfinity, residual);
+    rawNorm = Math.max(rawNorm, residual / rootDiagonal);
+    rhsNorm = Math.max(rhsNorm, Math.abs(rhs[i]) / rootDiagonal);
+    boundNorm = Math.max(boundNorm, envelopes[i] / rootDiagonal);
+    excessNorm = Math.max(excessNorm, Math.max(0, residual - envelopes[i]) / rootDiagonal);
+  }
+  return { coordinateError, rawInfinity, rawRelative: rawNorm / rhsNorm,
+    representationBound: boundNorm / rhsNorm, representationExcess: excessNorm / rhsNorm,
+    componentwise: Math.max(...componentErrors), residuals, envelopes, componentErrors };
+}
 
 function row(value: number, entries: readonly (readonly [number, number])[]): LinearizedRow {
   return { value, gradient: new Map(entries) };

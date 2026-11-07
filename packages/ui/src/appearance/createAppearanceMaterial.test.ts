@@ -25,14 +25,16 @@ import { describe, expect, it } from 'vitest';
 import {
   anyNeedsEnvironment,
   createAppearanceMaterialStore,
-  GLASS_IOR,
-  GLASS_THICKNESS,
   needsEnvironment,
-  PATTERN_ALPHA_TEST,
   themedAppearance,
   type PatternTextureSource,
 } from './createAppearanceMaterial.js';
 import type { PatternCreateOptions, PatternKind } from './patternTexture.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const GLASS_IOR = 1.5;
+const GLASS_THICKNESS = 2;
+const PATTERN_ALPHA_TEST = 0.5;
 
 /**
  * `createSolidLayer.ts` の現行の面の材質(2026-09-05 実測)。既定の外観がこれと

@@ -90,9 +90,17 @@ export function unresolvedDynamicImports(path: string, source: string): number {
   return count;
 }
 
-/** Report whether each parsed module reference is explicitly type-only. */
-export function moduleReferences(path: string, source: string): { specifier: string; typeOnly: boolean }[] {
-  const result: { specifier: string; typeOnly: boolean }[] = [];
+interface ModuleAnalysis {
+  /** Each parsed module reference and whether it is explicitly type-only. */
+  references: { specifier: string; typeOnly: boolean }[];
+  /** Exact source expressions of nonliteral dynamic imports. */
+  dynamicExpressions: string[];
+}
+
+/** One parse of a source file for both its module references and its nonliteral dynamic imports. */
+export function moduleAnalysis(path: string, source: string): ModuleAnalysis {
+  const references: ModuleAnalysis['references'] = [];
+  const dynamicExpressions: string[] = [];
   visitSource(path, source, value => {
     const isImportType = value.type === 'TSImportType';
     const sourceNode: unknown = isImportType ? value.argument
@@ -103,22 +111,14 @@ export function moduleReferences(path: string, source: string): { specifier: str
       && Array.isArray(value.specifiers) && value.specifiers.length > 0
       && value.specifiers.every(item => record(item) && (value.type === 'ImportDeclaration'
         ? item.importKind === 'type' : item.exportKind === 'type'));
-    if (specifier !== undefined) result.push({ specifier, typeOnly: isImportType
+    if (specifier !== undefined) references.push({ specifier, typeOnly: isImportType
       || value.importKind === 'type' || value.exportKind === 'type' || individualTypes });
-  });
-  return result;
-}
-
-/** Capture exact source expressions of nonliteral dynamic imports. */
-export function dynamicImportExpressions(path: string, source: string): string[] {
-  const result: string[] = [];
-  visitSource(path, source, value => {
-    if (value.type !== 'ImportExpression' || stringLiteral(value.source) !== undefined) return;
+    if (value.type !== 'ImportExpression' || specifier !== undefined) return;
     if (!record(value.source) || !Array.isArray(value.source.range) || value.source.range.length !== 2
       || typeof value.source.range[0] !== 'number' || typeof value.source.range[1] !== 'number') {
       throw new Error(`Missing dynamic import expression range: ${path}`);
     }
-    result.push(source.slice(value.source.range[0], value.source.range[1]));
+    dynamicExpressions.push(source.slice(value.source.range[0], value.source.range[1]));
   });
-  return result;
+  return { references, dynamicExpressions };
 }

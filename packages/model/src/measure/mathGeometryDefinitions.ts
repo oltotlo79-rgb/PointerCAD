@@ -20,7 +20,7 @@ import {
 import type { MathGeometryDefinition, MathGeometryQuantity, MathGeometryTolerance } from './mathGeometryTypes.js';
 
 /** What a new definition needs. `tolerance` defaults to `DEFAULT_MATH_GEOMETRY_TOLERANCE` (Q5=T1) when omitted. */
-export interface MathGeometryDefinitionInput {
+interface MathGeometryDefinitionInput {
   readonly name: string;
   readonly quantity: MathGeometryQuantity;
   readonly tolerance?: MathGeometryTolerance;

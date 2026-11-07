@@ -13,13 +13,9 @@ import type { OcctDeletable } from './allocations.js';
 import * as allocationModule from './allocations.js';
 import {
   booleanOp,
-  NOTHING_INSIDE_MESSAGE,
-  NOTHING_OUTSIDE_MESSAGE,
-  NOTHING_REMOVED_MESSAGE,
-  type BooleanOptions,
 } from './booleanOp.js';
 import { writeBrepBytes } from './brepBytes.js';
-import { R22_NEAR_CONTACT, R22_THIN_SOLIDS } from './geometryAcceptanceFixtures.js';
+import { R22_THIN_SOLIDS } from './geometryAcceptanceFixtures.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeBox } from './makeBox.js';
 import { makePrimitive } from './makePrimitive.js';
@@ -27,6 +23,21 @@ import { makeExtrudeSolid } from './makeSolidSweep.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { countSolidShapes } from './solidTopology.js';
 import { distanceBetween } from './measureShape.js';
+
+type BooleanOptions = NonNullable<Parameters<typeof booleanOp>[6]>;
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const NOTHING_INSIDE_MESSAGE = '切る輪郭が立体に届かず、輪郭の内側に何も残りませんでした。輪郭の位置や大きさを見直してください。';
+const NOTHING_OUTSIDE_MESSAGE = '切る輪郭が立体をまるごと囲んでいて、何も削れませんでした。輪郭の位置や大きさを見直してください。';
+const NOTHING_REMOVED_MESSAGE = '切る輪郭が立体に届かず、何も削れませんでした。輪郭の位置や大きさを見直してください。';
+
+/** R22 の近接の入力(tolerances.test.ts と同じ値。もとは geometryAcceptanceFixtures.ts の検査用の値)。 */
+const R22_NEAR_CONTACT = {
+  overlapMm: 1e-4,
+  intersectionVolumeMm3: 0.04,
+  subtractVolumeMm3: 7999.96,
+  unionVolumeMm3: 15999.96,
+} as const;
 
 // Independent whole-parameter oracle for this 30-degree, a=4, b=2 fixture.
 // Intervals enclose knot insertion itself: no unbounded native conversion error.

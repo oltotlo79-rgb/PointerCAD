@@ -1,8 +1,10 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMathBackend } from './createMathBackend.js';
-import { evaluateExactMathResult, type ExactMathEvaluationContext } from './evaluateExactMathResult.js';
+import { evaluateExactMathResult } from './evaluateExactMathResult.js';
 import { mathScalarValue } from './mathScalarExpression.js';
 import { type MathNode, type MathEvaluation } from './mathInputContract.js';
+
+type ExactMathEvaluationContext = Parameters<typeof evaluateExactMathResult>[2];
 
 const n = (decimal: string): MathNode => ({ kind: 'number', decimal });
 const op = (operation: string, ...operands: readonly MathNode[]): MathNode => ({ kind: 'operation', operation, operands });

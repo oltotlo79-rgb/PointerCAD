@@ -13,6 +13,8 @@ export interface CadShellSurfaceOptions {
   readonly minimumTriangleAreaMm2: number;
   readonly minimumAngleDeg: number;
   readonly maximumAspectRatio: number;
+  /** Runtime-only explicit FEM producer; absent preserves the generic native boundary path. */
+  readonly nativeQuality?: 'cylindrical-rectangle';
 }
 
 export interface CadShellSurfaceMesh {
@@ -53,7 +55,8 @@ export class CadShellSurfaceRefusal extends Error {
 
 function refuse(code: string, message: string): never { throw new CadShellSurfaceRefusal(code, message); }
 function checkedOptions(options: CadShellSurfaceOptions): void {
-  if (!Number.isFinite(options.linearDeflection) || options.linearDeflection <= 0
+  if ((options.nativeQuality !== undefined && options.nativeQuality !== 'cylindrical-rectangle')
+    || !Number.isFinite(options.linearDeflection) || options.linearDeflection <= 0
     || !Number.isFinite(options.angularDeflection) || options.angularDeflection <= 0
     || !Number.isSafeInteger(options.maximumNodes) || options.maximumNodes < 3
     || !Number.isSafeInteger(options.maximumTriangles) || options.maximumTriangles < 1
@@ -216,7 +219,11 @@ export async function requestCadShellSurfaceMesh(kernel: AnalysisBoundarySource,
     const documentId = initial.documentId, revision = initial.revision;
     if (!initial.body.isValid || initial.body.bodyKind !== 'shell') refuse('unsupported-body', 'An explicit CAD shell is required');
     const outcome = await requestAnalysisBoundary(kernel, initial.steps, initial.body,
-      { boundary: 'open', linearDeflection: limits.linearDeflection, angularDeflection: limits.angularDeflection });
+      { boundary: 'open', linearDeflection: limits.linearDeflection, angularDeflection: limits.angularDeflection,
+        ...(limits.nativeQuality === 'cylindrical-rectangle'
+          ? { shellQuality: { kind: 'cylindrical-rectangle' as const, maximumNodes: limits.maximumNodes,
+          maximumTriangles: limits.maximumTriangles, minimumTriangleAreaMm2: limits.minimumTriangleAreaMm2,
+          minimumAngleDeg: limits.minimumAngleDeg, maximumAspectRatio: limits.maximumAspectRatio } } : {}) });
     if (signal?.aborted) return { kind: 'cancelled' };
     if (outcome.kind === 'failed') return outcome;
     const current = readCurrent();

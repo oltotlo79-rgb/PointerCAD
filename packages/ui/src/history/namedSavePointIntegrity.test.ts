@@ -3,10 +3,13 @@ import { readArchive, writePcadFile } from '@pointercad/io';
 import { createEmptyPartDocument } from '@pointercad/model';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  MAX_NAMED_SAVE_POINT_BYTES, MAX_NAMED_SAVE_POINTS, SAVE_POINT_CHUNK_BYTES,
+  MAX_NAMED_SAVE_POINT_BYTES, SAVE_POINT_CHUNK_BYTES,
   archiveOf, checkedUsage, isNamedSavePoint, isSavePointBlob, sha256, verifySavePointState,
 } from './namedSavePointIntegrity.js';
 import type { NamedSavePoint, SavePointBlob, SavePointState, SavePointStorage } from './namedSavePoints.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const MAX_NAMED_SAVE_POINTS = 100;
 
 const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 const id = (index: number): string => `point:00000000-0000-0000-0000-${index.toString(16).padStart(12, '0')}`;

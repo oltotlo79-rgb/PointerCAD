@@ -112,17 +112,6 @@ export function timelineStopsById(
 }
 
 /**
- * 途中まで戻しているときの位置(NFR-UX-7)。末尾にいるなら null。
- * 戻したままだと「作ったはずのものが消えた」と見えるので、帯に常に出す材料にする。
- */
-export function timelineRollback(
-  part: PartDocument,
-  index: number | null,
-): TimelineRollback | null {
-  return rollbackOf(historySize(part), index);
-}
-
-/**
  * `timelineRollback` の、段の数だけを見る版。
  * ステータスバーは部品文書そのものを購読すると打つたびに描き直しになるので、
  * 数 2 つ(段の総数とつまみの位置)だけを取り出してこちらを呼ぶ。

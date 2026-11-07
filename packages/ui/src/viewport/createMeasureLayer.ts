@@ -1,4 +1,4 @@
-import { lengthVec3 as norm, dotVec3 as dot } from '@pointercad/model/vec3';
+import { addScaled as scaleFrom, lengthVec3 as norm, dotVec3 as dot } from '@pointercad/model/vec3';
 import { unitMeasureVector as unit } from '../solid/measurementVector.js';
 /**
  * 測定の結果の表示層(計画書 docs/plans/P5-高度なソリッド・外観と測定.md タスク31、
@@ -134,17 +134,6 @@ const FLOATS_PER_SEGMENT = 6;
 /* ---------------------------------------------------------------------------
  * 座標の組み立て(純関数。three.js の入れ物には触らない)
  * ------------------------------------------------------------------------- */
-
-function scaleFrom(origin: Vec3, direction: Vec3, length: number): Vec3 {
-  return [
-    origin[0] + direction[0] * length,
-    origin[1] + direction[1] * length,
-    origin[2] + direction[2] * length,
-  ];
-}
-
-
-
 
 /**
  * 弧を描くための平面の基底と開き。

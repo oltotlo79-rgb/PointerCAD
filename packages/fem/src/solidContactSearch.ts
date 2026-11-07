@@ -3,7 +3,7 @@ import { InputIssue, SOLID_CONTACT_LIMITS, solidCadFaceKey, type SolidContactNor
 import type { CadAnalysisBoundaryIdentity } from './cadTetraMesh.js';
 import type { SolidContactPlan, SolidContactPlanFace, SolidContactPlanPair } from './solidContactModel.js';
 
-export interface ContactPointProjection {
+ interface ContactPointProjection {
   readonly pointMm: Vector3;
   readonly barycentric: Vector3;
   readonly distanceMm: number;

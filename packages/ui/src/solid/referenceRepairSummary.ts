@@ -5,6 +5,7 @@ const originLabels: Readonly<Record<NonNullable<SubShapeRef['origin']>['identity
   'box-face': 'propertyPanel.repair.boxFace', 'box-edge': 'propertyPanel.repair.boxEdge', 'box-vertex': 'propertyPanel.repair.boxVertex',
   'cylinder-face': 'propertyPanel.repair.cylinderFace', 'cylinder-edge': 'propertyPanel.repair.cylinderEdge', 'cylinder-vertex': 'propertyPanel.repair.cylinderVertex',
   'surface-side': 'propertyPanel.repair.surfaceSide',
+  'surface-curve-side': 'propertyPanel.repair.surfaceSide', 'surface-curve-edge': 'propertyPanel.repair.edge',
   'planar-surface-face': 'propertyPanel.repair.planarSurfaceFace', 'planar-surface-edge': 'propertyPanel.repair.planarSurfaceEdge',
   'planar-surface-vertex': 'propertyPanel.repair.planarSurfaceVertex',
   'extrude-side': 'propertyPanel.repair.extrudeSide', 'extrude-cap': 'propertyPanel.repair.extrudeCap',
@@ -17,6 +18,8 @@ const originLabels: Readonly<Record<NonNullable<SubShapeRef['origin']>['identity
   'face-intersection-edge': 'propertyPanel.repair.intersectionEdge', 'face-intersection-vertex': 'propertyPanel.repair.intersectionVertex',
 };
 const roleLabels: Readonly<Record<string, MessageKey>> = {
+  'section-start': 'propertyPanel.repair.arcSectionStart', 'section-end': 'propertyPanel.repair.arcSectionEnd',
+  'swept-start': 'propertyPanel.repair.arcSweptStart', 'swept-end': 'propertyPanel.repair.arcSweptEnd',
   surface: 'propertyPanel.repair.surface',
   top: 'propertyPanel.repair.top', bottom: 'propertyPanel.repair.bottom', front: 'propertyPanel.repair.front', back: 'propertyPanel.repair.back',
   left: 'propertyPanel.repair.left', right: 'propertyPanel.repair.right', start: 'propertyPanel.repair.start', end: 'propertyPanel.repair.end',
@@ -26,7 +29,8 @@ const roleLabels: Readonly<Record<string, MessageKey>> = {
 export function summarizeRepairReference(reference: SubShapeRef): string {
   const fp = reference.fingerprint, origin = reference.origin?.identity;
   const kind = t(fp.kind === 'face' ? 'propertyPanel.repair.face' : fp.kind === 'edge' ? 'propertyPanel.repair.edge' : 'propertyPanel.repair.vertex');
-  const role = origin?.kind === 'hole-face' && origin.role === 'entry-cap' ? t('propertyPanel.holeEntry')
+  const role = origin?.kind === 'surface-curve-edge' ? t(roleLabels[origin.role])
+    : origin?.kind === 'hole-face' && origin.role === 'entry-cap' ? t('propertyPanel.holeEntry')
     : origin !== undefined && 'role' in origin ? origin.role.split('-').map(part => {
     const key = roleLabels[part]; return key === undefined ? part : t(key);
   }).join(t('display.listSeparator')) : origin !== undefined && 'end' in origin ? t(roleLabels[origin.end]) : '';
@@ -39,6 +43,6 @@ export function summarizeRepairReference(reference: SubShapeRef): string {
     ? ` / ${origin.profile.sketchId} / ${origin.profile.lineFeatureId}`
     : origin?.kind === 'planar-surface-face' || origin?.kind === 'planar-surface-vertex'
       ? ` / ${origin.profile.sketchId} / ${origin.profile.lineFeatureIds.join(t('display.listSeparator'))}`
-    : origin?.kind === 'extrude-curve-side' ? ` / ${origin.profile.sketchId} / ${origin.profile.curveFeatureId}` : '';
+    : origin?.kind === 'extrude-curve-side' || origin?.kind === 'surface-curve-side' || origin?.kind === 'surface-curve-edge' ? ` / ${origin.profile.sketchId} / ${origin.profile.curveFeatureId}` : '';
   return `${meaning}${source} / ${reference.bodyFeatureId} / ${kind} ${reference.index} / (${position}) mm${size.length === 0 ? '' : ` / ${size}`}`;
 }

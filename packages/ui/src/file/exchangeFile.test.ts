@@ -14,7 +14,7 @@ import {
   type SketchToDxfInput,
   type SolidBody,
   type SolidBodyKind,
-  type WorkPlane,
+  type WorkPlane, selectExportBodies, type ExportRequest,
 } from '@pointercad/model';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -22,21 +22,16 @@ import type { PickedFile, PickedTypedFile, FileGateway } from './fileGateway.js'
 import type { ExportSaveControl } from './saveExportFile.js';
 import {
   appendImportedBodies,
-  DEFAULT_EXPORT_BASE_NAME,
-  DXF_IS_NOT_A_BODY_MESSAGE,
   droppedTriangleNotice,
   dxfExportRefusal,
   exportBaseNameOf,
   exportNoticeMessageKey,
   exportPanelShape,
   exportRefusalKey,
-  exportWarningKeys,
-  EXPORT_FORMAT_ORDER,
   EXPORT_PANEL_FORMAT_ORDER,
   IMPORT_FILE_KINDS,
   importedSourceFormatOf,
   kernelExportFormatOf,
-  NO_SHAPE_MESSAGE,
   prepareExport,
   consumePreparedExport,
   runExport,
@@ -54,6 +49,29 @@ import {
   type ExchangeImportOutcome,
   type ExchangeKernel,
 } from './exchangeFile.js';
+import type { MessageKey } from '../i18n/t.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const DEFAULT_EXPORT_BASE_NAME = 'model';
+const DXF_IS_NOT_A_BODY_MESSAGE = 'DXF は図形として取り込みます。';
+const EXPORT_FORMAT_ORDER: readonly ExportFormat[] = ['step', 'stl', '3mf', 'obj', 'glb'];
+const NO_SHAPE_MESSAGE = 'このファイルには形が入っていません。';
+
+/**
+ * 書き出せたときに添える警告(効かない指定・弾いた立体)。断りではないので 0 件のこともある。
+ *
+ * **model が言っている警告をそのまま文言のキーへ直す。** 利用者へ実際に出すのは
+ * `runExport` が `visibleExportWarnings` で絞ったほうで、ここはその手前の素の一覧である
+ * (「model は何と言っているか」を検査で押さえるための口。絞り込みを混ぜると、
+ * どちらを見ているのか分からなくなる)。
+ */
+function exportWarningKeys(
+  bodies: readonly SolidBody[],
+  request: ExportRequest,
+): readonly MessageKey[] {
+  const outcome = selectExportBodies(bodies, request);
+  return outcome.ok ? outcome.selection.warnings.map(exportNoticeMessageKey) : [];
+}
 
 // ---------------------------------------------------------------------------
 // 見本

@@ -4,9 +4,10 @@ import { describe, expect, it } from 'vitest';
 import {
   findTriangleOverlaps,
   trianglesIntersect,
-  type Triangle3,
-  type TriangleMeshData,
 } from './overlapGrid.js';
+
+type Triangle3 = Parameters<typeof trianglesIntersect>[0];
+type TriangleMeshData = Parameters<typeof findTriangleOverlaps>[0];
 
 const XY: Triangle3 = [[0, 0, 0], [4, 0, 0], [0, 4, 0]];
 

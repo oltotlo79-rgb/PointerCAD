@@ -2,7 +2,7 @@ import type { InterferenceProgress } from '../types.js';
 
 /** Delivery budget, not a speed acceptance target: one tenth of the existing 1s cancellation-display bound.
  * Checked at the existing 64-pair boundary; native/callback/scheduling time is not bounded by this helper. */
-export const INTERFERENCE_CANDIDATE_DELIVERY_MS = 100;
+const INTERFERENCE_CANDIDATE_DELIVERY_MS = 100;
 const MAX_SUPPRESSED_BOUNDARIES = 15;
 
 /** Only the caller's combined message path uses this gate. It never replaces an actual cancellation callback.

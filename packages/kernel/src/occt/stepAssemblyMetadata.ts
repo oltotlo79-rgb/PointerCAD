@@ -1,5 +1,5 @@
 /** OCCT の STEP writer が失った配置名を復元できないときの断り。 */
-export const ASSEMBLY_METADATA_WRITE_MESSAGE =
+const ASSEMBLY_METADATA_WRITE_MESSAGE =
   'アセンブリの部品名を STEP ファイルへ書き込めませんでした。';
 
 const OCCURRENCE_NAME_PREFIX = '__POINTERCAD_OCCURRENCE_';

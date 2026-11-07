@@ -20,10 +20,6 @@ export function isPatternPointSlot(
   return 'slotId' in point && 'reference' in point;
 }
 
-export function patternPointReference(point: PointReference | PatternPointSlot): PointReference {
-  return isPatternPointSlot(point) ? point.reference : point;
-}
-
 function slotSerial(slotId: string): number {
   const match = /^slot-([1-9][0-9]*)$/.exec(slotId);
   const serial = match === null ? NaN : Number(match[1]);

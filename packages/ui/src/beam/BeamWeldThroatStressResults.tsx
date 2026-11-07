@@ -17,7 +17,7 @@ export function prepareWeldStressInput(session: BeamSession): BeamWeldContactInp
   const prepared = prepareBeamAnalysis(source, draft.definition);
   return prepared.ok && prepared.kind === 'weld-contact' ? prepared.input : null;
 }
-export type PreparedWeldStressInput =
+ type PreparedWeldStressInput =
   | { readonly kind: 'weld-contact'; readonly input: BeamWeldContactInput }
   | { readonly kind: 'joint-contact'; readonly input: BeamJointContactInput }
   | { readonly kind: 'joint-initial-strain'; readonly input: BeamJointInitialStrainInput };
@@ -33,7 +33,7 @@ export function prepareCombinedWeldStressInput(session: BeamSession): PreparedWe
     || prepared.kind === 'joint-initial-strain') ? prepared : null;
 }
 
-export type WeldStressRequest = (
+ type WeldStressRequest = (
   | { readonly kind?: 'weld-contact'; readonly input: BeamWeldContactInput | null; readonly result: BeamWeldContactResult }
   | { readonly kind: 'joint-contact'; readonly input: BeamJointContactInput | null; readonly result: BeamJointContactResult }
   | { readonly kind: 'joint-initial-strain'; readonly input: BeamJointInitialStrainInput | null; readonly result: BeamJointInitialStrainResult }

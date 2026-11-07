@@ -355,6 +355,7 @@ function toSurfaceInput(shape: SurfaceShapePlan): SurfaceInput {
         kind: 'extrude',
         profile: shape.profile.map((curve) => toCurveSpec(curve)),
         ...(shape.profileOrigins === undefined ? {} : { profileOrigins: shape.profileOrigins }),
+        ...(shape.curveProfileOrigin === undefined ? {} : { curveProfileOrigin: shape.curveProfileOrigin }),
         direction: shape.direction,
         distance: shape.distance,
       };

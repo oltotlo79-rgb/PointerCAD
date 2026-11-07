@@ -18,19 +18,19 @@ export const SHELL_LOAD_COMPONENTS = ['fx', 'fy', 'fz', 'mx', 'my', 'mz'] as con
 export type ShellLoadComponent = typeof SHELL_LOAD_COMPONENTS[number];
 export const SHELL_DOFS = ['ux', 'uy', 'uz', 'rx', 'ry', 'rz'] as const;
 export type ShellDof = typeof SHELL_DOFS[number];
-export type ShellFixedDraft = readonly [boolean, boolean, boolean, boolean, boolean, boolean];
+ type ShellFixedDraft = readonly [boolean, boolean, boolean, boolean, boolean, boolean];
 type SupportOrigin = ShellCadAnalysisInput['supports'][number]['origin'];
 type EdgeOrigin = ShellCadAnalysisInput['edgeLoads'][number]['origin'];
 export type ShellMaterialSourceKind = ShellCadAnalysisInput['material']['source']['kind'];
 export const SHELL_MATERIAL_SOURCE_KINDS: readonly ShellMaterialSourceKind[] = ['user-supplied', 'measured', 'published'];
 
-export interface ShellSupportDraft {
+ interface ShellSupportDraft {
   readonly key: string;
   readonly kind: 'edge' | 'vertex';
   readonly origin: SupportOrigin;
   readonly fixed: ShellFixedDraft;
 }
-export interface ShellEdgeLoadDraft {
+ interface ShellEdgeLoadDraft {
   readonly key: string;
   readonly origin: EdgeOrigin;
   readonly values: Readonly<Record<ShellLoadComponent, string>>;
@@ -198,7 +198,7 @@ export function shellNumberText(value: number | null | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : t('shellAnalysis.notFinite');
 }
 
-export interface ShellResultSummary {
+ interface ShellResultSummary {
   readonly nodes: number;
   readonly elements: number;
   readonly maximumDisplacementMm: number;

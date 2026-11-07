@@ -11,7 +11,6 @@ import {
   nearestCurveEnd,
   parseElementId,
   trimCurve,
-  type TrimOutcome,
 } from './trimExtend.js';
 import type {
   ResolvedSegment,
@@ -21,6 +20,8 @@ import type {
   SketchLineFeature,
 } from './types.js';
 import type { Vec3 } from './vec3.js';
+
+type TrimOutcome = ReturnType<typeof explodeCompoundFeature>;
 
 function documentOf(...features: SketchFeature[]): SketchDocument {
   return { id: 'sketch-1', name: 'スケッチ1', features };

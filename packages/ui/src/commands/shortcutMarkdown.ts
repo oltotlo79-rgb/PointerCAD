@@ -2,7 +2,7 @@ import { t } from '../i18n/t.js';
 import { currentShortcutList } from './commandDefinitions.js';
 import { EMPTY_SHORTCUT_ASSIGNMENTS, effectiveBindings, type ShortcutAssignments } from './shortcutAssignments.js';
 
-export const SHORTCUT_TABLE_MARKER = '<!-- pointercad:current-shortcuts -->';
+const SHORTCUT_TABLE_MARKER = '<!-- pointercad:current-shortcuts -->';
 
 export function currentShortcutMarkdown(assignments: ShortcutAssignments = EMPTY_SHORTCUT_ASSIGNMENTS): string {
   const rows = currentShortcutList(definition => effectiveBindings(definition, assignments)).map((entry) =>

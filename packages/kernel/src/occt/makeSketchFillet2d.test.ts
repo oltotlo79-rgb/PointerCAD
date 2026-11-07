@@ -8,9 +8,10 @@ import { createAllocations } from './allocations.js';
 import { readLegacyOcctFixture, legacyOcctFixtures } from './legacyOcctFixtureLoader.js';
 import {
   makeSketchFillet,
-  type SketchFilletPlaneSpec,
   type SketchFilletResult,
 } from './makeSketchFillet2d.js';
+
+type SketchFilletPlaneSpec = Parameters<typeof makeSketchFillet>[0]['plane'];
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 

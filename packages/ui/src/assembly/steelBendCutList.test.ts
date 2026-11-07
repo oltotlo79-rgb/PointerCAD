@@ -9,9 +9,11 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { commitPlaceComponent } from './placeComponentActions.js';
-import { refreshPartReadiness, startRefreshPartSource, type RefreshPartDeps } from './replaceActions.js';
+import { refreshPartReadiness, startRefreshPartSource } from './replaceActions.js';
 import { beginSteelBendPlacement, buildSteelBendChoice, DEFAULT_STEEL_BEND_SOURCES } from './steelBendPicker.js';
 import { exportSteelStockCsv, serializeSteelStockCsv } from './steelStockCsvExport.js';
+
+type RefreshPartDeps = NonNullable<Parameters<typeof startRefreshPartSource>[1]>;
 
 /** Public EX08 path: picker bend -> actual library placement -> the actual cut-list CSV command -> saved bundle reopen.
  * The developed length is the already proved centroid-path closed form 100 + 200 + (30 + 50/2) * pi/2 of FB 50x6 bent

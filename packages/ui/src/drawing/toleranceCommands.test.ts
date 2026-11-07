@@ -3,7 +3,9 @@ import { createDrawingDocument, resolveDrawingDimensions } from '@pointercad/mod
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createInitialDocumentState } from '../store/initialDocumentState.js';
 import { useAppStore } from '../store/useAppStore.js';
-import { applyDrawingTolerance, type DrawingDimensionPresentation } from './toleranceCommands.js';
+import { applyDrawingTolerance } from './toleranceCommands.js';
+
+type DrawingDimensionPresentation = NonNullable<Parameters<typeof applyDrawingTolerance>[2]>;
 
 const initial: DrawingDocument = { ...createDrawingDocument('図面', { sourceRef: 's', sourceKind: 'part', fileName: '', path: '', contentHash: '', importedAt: '' }),
   views: [{ id: 'v', name: '正面', kind: 'front', position: [0, 0], scale: null, direction: [0, 1, 0], xDir: [1, 0, 0],

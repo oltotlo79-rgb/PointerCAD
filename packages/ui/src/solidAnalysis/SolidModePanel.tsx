@@ -8,7 +8,7 @@ export function parseSolidModeAmplitude(text: string): number | null {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-export interface SolidModePanelProps {
+interface SolidModePanelProps {
   /** The completed modal result, or null when there is none. */
   readonly result: SolidModeResult | null;
   /** True when the last modal solve failed: no mode is offered, nothing is shown as a success. */

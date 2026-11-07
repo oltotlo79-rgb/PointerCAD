@@ -37,13 +37,6 @@ export interface AssemblyMateDraft {
   readonly maxSource: string;
 }
 
-export interface MateFacePick {
-  readonly componentId: string;
-  readonly partKey: string;
-  readonly bodyFeatureId: string;
-  readonly faceIndex: number;
-}
-
 export type MateCommandOutcome =
   | { readonly ok: true; readonly document: AssemblyDocument; readonly mate: Mate }
   | { readonly ok: false; readonly reason: 'targets' | 'sameComponent' | 'kind' | 'value' | 'stale'; readonly error?: ExpressionError; readonly message?: string };

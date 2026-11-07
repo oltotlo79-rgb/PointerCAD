@@ -734,7 +734,7 @@ export type StandardPartRejectionCode = SteelGradeRejectionCode | 'size-not-in-c
   | 'generation-unavailable';
 
 /** Diagnostic data is derived, never added to the six saved steel options or the part key. */
-export interface StandardPartRejection {
+interface StandardPartRejection {
   readonly code: StandardPartRejectionCode;
   readonly messageKey: `assembly.steel.rejection.${StandardPartRejectionCode}`;
   readonly parameters: Readonly<Record<string, string>>;

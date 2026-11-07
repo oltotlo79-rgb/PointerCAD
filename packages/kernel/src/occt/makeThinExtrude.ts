@@ -55,7 +55,7 @@ export type ThinExtrudeSide =
   | 'both';
 
 /** 薄板押し出し 1 段の依頼(計画書 §2.12)。 */
-export interface ThinExtrudeInput {
+interface ThinExtrudeInput {
   /** 輪郭。閉じていても開いていてもよい。並んだ順につながっていること。 */
   readonly profile: readonly CurveSpec[];
   /** 押し出す向き(輪郭の平面の法線)。 */

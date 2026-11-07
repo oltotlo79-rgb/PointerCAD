@@ -14,7 +14,7 @@ import {
   type PartDocument,
   type SketchDocument,
   type SketchFaceRef,
-  type SketchPointRef,
+  type SketchPointRef, type RevolveAxis,
 } from '@pointercad/model';
 import { describe, expect, it } from 'vitest';
 
@@ -31,9 +31,7 @@ import {
   commitSpring,
   DEFAULT_EXTRUDE_DISTANCE,
   DEFAULT_REVOLVE_ANGLE,
-  DEFAULT_REVOLVE_AXIS,
   DEFAULT_SEW_TOLERANCE,
-  DEFAULT_SPRING_AXIS,
   DEFAULT_SPRING_COIL_DIAMETER,
   DEFAULT_SPRING_DERIVED,
   DEFAULT_SPRING_HANDEDNESS,
@@ -48,6 +46,10 @@ import {
   solidToolReadiness,
 } from './solidCommands.js';
 import { subShapeElementId, subShapeRefOf, type SolidFaceEntry, type SubShapeBody } from './subShapeSelection.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const DEFAULT_REVOLVE_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
+const DEFAULT_SPRING_AXIS: RevolveAxis = { kind: 'world', axis: 'z' };
 
 const SKETCH_ID = 'sketch-1';
 

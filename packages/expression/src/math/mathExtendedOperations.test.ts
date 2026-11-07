@@ -6,7 +6,7 @@ import { decodeMathJson } from './decodeMathJson.js';
 import { decodeStoredMath } from './decodeStoredMath.js';
 import { decodeExactMathResult } from './exactMathResult.js';
 import { executeExactMathWorkRequest, type ExactMathEngine } from './exactMathWorkExecution.js';
-import { spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { spawnExactRuntime } from './exactRuntime.testSupport.js';
 import { formatMathText } from './formatMathText.js';
 import { MATH_INPUT_FORMAT, MathInputProblem, type MathNode, type StoredMathExpression } from './mathInputContract.js';
 import { decodeMathExpressionStorage } from './mathExpressionStorage.js';

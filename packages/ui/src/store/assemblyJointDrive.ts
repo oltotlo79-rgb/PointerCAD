@@ -73,7 +73,7 @@ export interface AssemblyDriveResult {
   readonly update: Partial<AssemblySlice & AssemblyOccurrenceDriveSlice>;
 }
 
-export interface PreparedJointDriveRequest {
+ interface PreparedJointDriveRequest {
   readonly document: NonNullable<AppState['assembly']>;
   readonly view: NonNullable<AppState['assemblyView']>;
   readonly steps: Generator<RigidWorkPoint, AssemblyDriveResult, void>;

@@ -1,8 +1,46 @@
 import { describe, expect, it } from 'vitest';
-import type { SolidVector3 } from './solidAnalysisModel.js';
+import type { SolidVector3, SolidVector6 } from './solidAnalysisModel.js';
 import { decodeSolidBuckling } from './solidBucklingResults.js';
 import { solidBucklingInputSha256, translateSolidBuckling } from './solidBucklingTranslation.js';
-import { singleTetBenchmark, singleTetLoadFactors, tet4Gradients, tet4InitialStress } from './solidBuckling.testSupport.js';
+import { singleTetBenchmark, singleTetLoadFactors } from './solidBuckling.testSupport.js';
+
+/** Independent closed-form references for the solid prestress-buckling contract.
+ * Nothing here imports the product translation, decoder or native wrapper.
+ *
+ * Linear-shape tetrahedron N_a(x) = a_a + g_a . x (constant gradients g_a), constant
+ * Cauchy stress S. The initial-stress (geometric) stiffness of the updated-Lagrange
+ * linearization (Bathe, Finite Element Procedures, 2nd ed., eq. 6.79 "K_NL";
+ * Zienkiewicz & Taylor, Vol. 2, ch. 10) integrates
+ *   Kg[3a+i][3b+j] = V * (g_a^T S g_b) * delta_ij,
+ * exactly, because every factor is constant over the element. */
+function tet4Gradients(points: readonly SolidVector3[]): { volume: number; gradients: SolidVector3[] } {
+  const [p0, p1, p2, p3] = points;
+  const e = [p1, p2, p3].map(p => [p[0] - p0[0], p[1] - p0[1], p[2] - p0[2]]);
+  // Jacobian J has rows e1, e2, e3; gradients of N1..N3 are the columns of J^{-1}.
+  const det = e[0][0] * (e[1][1] * e[2][2] - e[1][2] * e[2][1]) - e[0][1] * (e[1][0] * e[2][2] - e[1][2] * e[2][0])
+    + e[0][2] * (e[1][0] * e[2][1] - e[1][1] * e[2][0]);
+  const inverse = (r: number, c: number): number => {
+    const rows = [0, 1, 2].filter(i => i !== c), cols = [0, 1, 2].filter(j => j !== r);
+    const minor = e[rows[0]][cols[0]] * e[rows[1]][cols[1]] - e[rows[0]][cols[1]] * e[rows[1]][cols[0]];
+    return ((r + c) % 2 === 0 ? 1 : -1) * minor / det;
+  };
+  const g: SolidVector3[] = [0, 1, 2].map(node => [inverse(0, node), inverse(1, node), inverse(2, node)]);
+  const g0: SolidVector3 = [-(g[0][0] + g[1][0] + g[2][0]), -(g[0][1] + g[1][1] + g[2][1]), -(g[0][2] + g[1][2] + g[2][2])];
+  return { volume: det / 6, gradients: [g0, ...g] };
+}
+
+/** Voigt stress order xx, yy, zz, yz, xz, xy (same order as SolidElementResult.stressMPa). */
+function tet4InitialStress(points: readonly SolidVector3[], stress: SolidVector6): number[][] {
+  const { volume, gradients } = tet4Gradients(points);
+  const s = [[stress[0], stress[5], stress[4]], [stress[5], stress[1], stress[3]], [stress[4], stress[3], stress[2]]];
+  const matrix = Array.from({ length: 12 }, () => new Array<number>(12).fill(0));
+  for (let a = 0; a < 4; a += 1) for (let b = 0; b < 4; b += 1) {
+    let scalar = 0;
+    for (let i = 0; i < 3; i += 1) for (let j = 0; j < 3; j += 1) scalar += gradients[a][i] * s[i][j] * gradients[b][j];
+    for (let i = 0; i < 3; i += 1) matrix[3 * a + i][3 * b + i] = volume * scalar;
+  }
+  return matrix;
+}
 
 const multiply = (matrix: readonly (readonly number[])[], vector: readonly number[]): number[] =>
   matrix.map(row => row.reduce((sum, value, index) => sum + value * vector[index], 0));

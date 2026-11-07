@@ -24,7 +24,7 @@ const MATH_GEOMETRY_TOOL: MathGeometryToolId = 'mathGeometry';
  * 測れる量がある段(`ready`)と形の計算中(`computing`)を足したもの。
  * 理由コードが増えたら(GR-22 等)、下の表の網羅の型検査が文の足し忘れを落とす。
  */
-export type MathGeometryToolGuideStage = MathGeometryCandidateReason | 'ready' | 'computing';
+type MathGeometryToolGuideStage = MathGeometryCandidateReason | 'ready' | 'computing';
 
 /** 段ごとの文の鍵(網羅の表。同じ判断を画面側に書かない)。 */
 export const MATH_GEOMETRY_TOOL_GUIDE_KEYS = {

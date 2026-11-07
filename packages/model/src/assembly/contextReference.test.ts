@@ -10,13 +10,15 @@ import type { PartDocument, ReferencePointFeature } from '../part/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
 import { addComponent, createComponentFor } from './assemblyEdit.js';
 import {
-  applyContextReference, commitContextReference, type ContextReferenceContext, type ContextReferenceLink,
+  applyContextReference, commitContextReference, type ContextReferenceLink,
   contextPointResolverFromBodies, contextReferencesHaveCycle,
 } from './contextReference.js';
 import { createAssemblyDocument } from './createAssemblyDocument.js';
 import { embedPart, type PartLibrary } from './partLibrary.js';
 import type { AssemblyComponent, AssemblyDocument, Placement } from './types.js';
 import type { EmbeddedPartAttachments } from './partLibrary.js';
+
+type ContextReferenceContext = Parameters<typeof applyContextReference>[0];
 
 const HALF = Math.SQRT1_2;
 

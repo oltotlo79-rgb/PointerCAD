@@ -7,7 +7,7 @@ import { executeMathWorkRequest, type MathExecutionBackend } from './mathWorkExe
 import { createMathWorkEnvelope, type MathWorkRequest } from './mathWorkRequest.js';
 import { decodeMathWorkReply } from './mathWorkReply.js';
 import { sameMathMeaning } from './mathNotationConversion.js';
-import { sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 const examples = [
   { source: 'surfaceintegral(1,[x,y,z],[2*u,3*v,0],[u,v],[0,0],[1,1])', value: 6 },

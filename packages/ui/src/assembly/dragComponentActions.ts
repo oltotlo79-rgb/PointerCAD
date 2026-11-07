@@ -1,6 +1,6 @@
 /** P7-18: only a completed release writes component placements to one document. */
 import { exactExpressionValueFromNumber } from '@pointercad/expression';
-import { moveComponent, normalizeQuaternion, prepareMateDrag, solveMateDrag,
+import { moveComponent, normalizeQuaternion, prepareMateDrag, solveMateDrag, validDragPlacement,
   type AssemblyDocument, type RigidPlacement, type PreparedMateDrag, type MateDragOptions,
   type MateDragOutcome, type PartLibrary, type Vec3, type WorkPlane, type MateResidualTargetPair } from '@pointercad/model';
 import { componentDragTarget, finiteComponentDragVector } from '../viewport/dragComponent.js';
@@ -112,7 +112,7 @@ function confinedPlacements(drag: AssemblyDragState, placements: ReadonlyMap<str
   const movable = new Set(drag.prepared.variableSet.movableComponentIds);
   for (const [id, original] of drag.prepared.initial) {
     const placement = placements.get(id);
-    if (placement === undefined || !validPlacement(placement)) return false;
+    if (placement === undefined || !validDragPlacement(placement)) return false;
     if (!movable.has(id) && (!placement.position.every((n, axis) => n === original.position[axis])
       || !placement.rotation.every((n, axis) => n === original.rotation[axis]))) return false;
   }
@@ -204,12 +204,6 @@ export function componentDragPlacements(state: ReturnType<typeof useAppStore.get
     ? overlay.placements : state.assemblyView?.resolved.placements;
 }
 
-function validPlacement(placement: RigidPlacement): boolean {
-  if (!finiteComponentDragVector(placement.position, 3) || !finiteComponentDragVector(placement.rotation, 4)) return false;
-  const norm = Math.hypot(...placement.rotation);
-  return Number.isFinite(norm) && norm > 1e-12;
-}
-
 /** Compare with the displayed start, preserving untouched stored expressions and fields. */
 export function componentDragDocument(document: AssemblyDocument,
   initial: ReadonlyMap<string, RigidPlacement>, placements: ReadonlyMap<string, RigidPlacement>): AssemblyDocument | null {
@@ -217,7 +211,7 @@ export function componentDragDocument(document: AssemblyDocument,
   for (const component of document.components) {
     if (component.suppressed) continue;
     const before = initial.get(component.id), after = placements.get(component.id);
-    if (before === undefined || after === undefined || !validPlacement(before) || !validPlacement(after)) return null;
+    if (before === undefined || after === undefined || !validDragPlacement(before) || !validDragPlacement(after)) return null;
     const rotation = normalizeQuaternion(after.rotation), originalRotation = normalizeQuaternion(before.rotation);
     const sameRotation = rotation.every((value, axis) => value === originalRotation[axis]);
     const samePosition = after.position.every((value, axis) => value === before.position[axis]);

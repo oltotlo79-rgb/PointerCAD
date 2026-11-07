@@ -4,9 +4,12 @@ import { bucklingUiFixture } from '../beam/beamBuckling.testSupport.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { attachPlasticBar } from './attachPlasticBar.js';
-import { BENCHMARK_EDITS, BENCHMARK_REFERENCE, benchmarkResult } from './plasticBar.testSupport.js';
+import { BENCHMARK_EDITS, PLATEAU_EDITS, benchmarkResult } from './plasticBar.testSupport.js';
 import { createPlasticBarSession, plasticBarResultIsCurrent, type PlasticBarEdit,
   type PlasticBarSession } from './plasticBarSession.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const BENCHMARK_REFERENCE = 'Test benchmark constants, not a material specification';
 
 class Port implements FemWorkerPort {
   onmessage: FemWorkerPort['onmessage'] = null;
@@ -126,6 +129,42 @@ describe('plastic-bar attachment, conversion and stale/cancelled responses', () 
     useAppStore.getState().runPlasticBar();
     const second = attachment?.statistics();
     expect(second?.live).toBe(1);
+    useAppStore.setState({ activeDocumentId: 'another-document' });
+    expect(useAppStore.getState().plasticBarSession).toBeNull();
+    expect(attachment?.statistics().live).toBe(0);
+  });
+
+  it('starts with an empty plateau and sends no plateau key for it (the original law)', async () => {
+    expect(createPlasticBarSession('document').draft.values.plateau).toBe('');
+    const { input } = await dispatched();
+    expect(Object.hasOwn(input.plan.material, 'plateauPlasticStrain')).toBe(false);
+  });
+
+  it('sends a 1% plateau as 0.01 in the plan, shows only its plateau result, and a plateau edit or document switch drops it', async () => {
+    const ports = opened(PLATEAU_EDITS);
+    useAppStore.getState().runPlasticBar();
+    await vi.waitFor(() => expect(ports[0]?.request).toBeTruthy());
+    const port = ports[0], request = port.request;
+    if (request?.kind !== 'analyze-plastic-bar-1d') throw new Error(`Expected a plastic-bar request, got ${session().errorKey}`);
+    expect(request.input.plan.material).toEqual({ youngPa: 200e9, poisson: 0.3, yieldStressPa: 250e6, hardeningModulusPa: 2e9,
+      plateauPlasticStrain: 0.01, source: { kind: 'user-supplied', reference: REFERENCE } });
+    const result = await resultFor(request.input);
+    expect(result.method).toBe('oofem-misesmat-htype1-truss1d-staticstructural/1');
+    message(port, { protocol: 'pointercad-fem/1', kind: 'result', identity: request.identity, result });
+    await vi.waitFor(() => expect(session().status).toBe('complete'));
+    expect(plasticBarResultIsCurrent(session())).toBe(true);
+    // Hand-derived plateau response (plasticBar.testSupport PLATEAU_STEPS): the stress stays at sigma0 = 250 MPa.
+    expect(session().result?.samples.map(sample => sample.stressPa)).toEqual([250e6, -250e6, -250e6, 250e6]);
+    const revision = session().revision;
+    useAppStore.getState().editPlasticBar({ kind: 'value', field: 'plateau', source: '2%' });
+    expect(session().result).toBeNull();
+    expect(session().status).toBe('editing');
+    expect(session().revision).toBe(revision + 1);
+    useAppStore.getState().runPlasticBar();
+    await vi.waitFor(() => expect(ports[1]?.request).toBeTruthy());
+    const second = ports[1]?.request;
+    if (second?.kind !== 'analyze-plastic-bar-1d') throw new Error('Expected a second plastic-bar request');
+    expect(second.input.plan.material.plateauPlasticStrain).toBe(0.02);
     useAppStore.setState({ activeDocumentId: 'another-document' });
     expect(useAppStore.getState().plasticBarSession).toBeNull();
     expect(attachment?.statistics().live).toBe(0);

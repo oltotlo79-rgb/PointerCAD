@@ -1,4 +1,4 @@
-export interface WindowPoint { readonly left: number; readonly top: number }
+interface WindowPoint { readonly left: number; readonly top: number }
 export interface WindowBounds extends WindowPoint { readonly width: number; readonly height: number }
 export interface WindowPlacement {
   readonly translation: WindowPoint;

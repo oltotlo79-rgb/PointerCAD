@@ -50,6 +50,14 @@ export function readResidentFrames(frames: readonly RawFrame[], rootPid: number,
         visited.add(current.pid);
         const parent = frame.processes.find(candidate => candidate.pid === current.parentPid);
         if (parent === undefined) { issues.push(`PID ${row.pid}: outside recorded root ancestry`); break; }
+        // Native creation ticks are in one clock domain per frame (Windows ticks or Linux start ticks).
+        // A child older than its apparent parent points at a recycled PID, not this owner's child.
+        if (!/^\d+$/u.test(current.created) || !/^\d+$/u.test(parent.created)) {
+          issues.push(`PID ${current.pid}: unknown creation ordering`); break;
+        }
+        if (BigInt(current.created) < BigInt(parent.created)) {
+          issues.push(`PID ${current.pid}: older than recorded parent ${parent.pid}`); break;
+        }
         current = parent;
       }
     }

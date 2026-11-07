@@ -170,7 +170,7 @@ describe('自動保存まわりの状態(FR-805、計画書 タスク24)', () =>
   });
 });
 
-describe('保存していない変更の確認を画面の中の日本語の3択で聞く(w91a)', () => {
+describe('保存していない変更の確認を画面の中の日本語の3択で聞く', () => {
   it('答えるまで待ち、答えたら閉じる。新しい確認は前の確認を「戻る」で終える', async () => {
     const first = useAppStore.getState().requestDiscardConfirm('file.discardConfirm');
     expect(useAppStore.getState().discardConfirm?.messageKey).toBe('file.discardConfirm');

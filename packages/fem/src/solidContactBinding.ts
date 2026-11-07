@@ -7,7 +7,7 @@ import { sha256Hex } from './sha256.js';
 import { createPrefixedError, isRecord } from './valueGuards.js';
 
 export const SOLID_CONTACT_WIRE_SCHEMA = 'pointercad-solid-contact/1';
-export interface SolidContactMeshSource { readonly bodyFeatureId: string; readonly mesh: TetraMeshResult }
+ interface SolidContactMeshSource { readonly bodyFeatureId: string; readonly mesh: TetraMeshResult }
 export interface SolidContactHistory {
   readonly node: number;
   readonly axis: 0 | 1 | 2;
@@ -32,7 +32,7 @@ export interface SolidContactSolveSettings {
   readonly source: string;
   readonly patches: readonly SolidContactPatchChoice[];
 }
-export interface SolidContactPatch extends SolidContactPatchChoice {
+ interface SolidContactPatch extends SolidContactPatchChoice {
   readonly id: string;
   readonly masterBody: string;
   readonly slaveBody: string;
@@ -45,7 +45,7 @@ export interface SolidContactPatch extends SolidContactPatchChoice {
   readonly mu: number | null;
   readonly sourceId: string | null;
 }
-export interface SolidContactSource {
+ interface SolidContactSource {
   readonly documentId: string;
   readonly revision: number;
   readonly bodies: readonly CadSolidContactBodySource[];
@@ -70,8 +70,8 @@ export interface SolidContactInput {
   readonly solveSource: string;
   readonly patches: readonly SolidContactPatch[];
 }
-export type SolidContactStatus = 'open' | 'stick' | 'slip' | 'frictionless';
-export interface SolidContactPointResult {
+ type SolidContactStatus = 'open' | 'stick' | 'slip' | 'frictionless';
+ interface SolidContactPointResult {
   readonly point: number;
   readonly status: SolidContactStatus;
   readonly gapMm: number;
@@ -88,8 +88,8 @@ export interface SolidContactPointResult {
   readonly forceGapNmm: number;
   readonly dimensionlessForceGap: number;
 }
-export interface SolidContactCallbacks { readonly tangent: number; readonly residual: number; readonly evaluations: number }
-export interface SolidContactStepResult {
+ interface SolidContactCallbacks { readonly tangent: number; readonly residual: number; readonly evaluations: number }
+ interface SolidContactStepResult {
   readonly step: number;
   readonly displacementMm: readonly Vector3[];
   readonly internalForcesN: readonly Vector3[];
@@ -359,7 +359,7 @@ export async function verifySolidContactInput(value: unknown): Promise<SolidCont
   }
   return input;
 }
-export async function solidContactInputSha256(input: SolidContactInput): Promise<string> {
+ async function solidContactInputSha256(input: SolidContactInput): Promise<string> {
   return sha256Hex(new TextEncoder().encode(JSON.stringify(readSolidContactAnalysisInput(input))));
 }
 
@@ -416,7 +416,7 @@ function readPoint(value: unknown): SolidContactPointResult {
   return result;
 }
 /** Strict structural decoder also used at the Worker protocol boundary. */
-export function readSolidContactResult(value: unknown): SolidContactResult {
+ function readSolidContactResult(value: unknown): SolidContactResult {
   const row = record(value, ['kind', 'schema', 'units', 'source', 'inputSha256', 'preparationSha256', 'iterationLimit',
     'nativeIterationCount', 'strictComplementarityQualified', 'steps']);
   if (row.kind !== 'solid-contact-analysis' || row.schema !== SOLID_CONTACT_WIRE_SCHEMA || row.units !== 'N-mm-MPa'

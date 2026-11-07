@@ -61,7 +61,7 @@ const STATUS_KEYS = {
   notEvaluated: 'mathGeometry.status.notEvaluated',
 } as const satisfies Record<Exclude<CurrentMathGeometry['status'], 'current'>, MessageKey>;
 
-export type MathGeometryRowsState = MathGeometryToolGuideState & {
+type MathGeometryRowsState = MathGeometryToolGuideState & {
   readonly displaySettings: Pick<AppState['displaySettings'], 'lengthUnit'>;
 };
 

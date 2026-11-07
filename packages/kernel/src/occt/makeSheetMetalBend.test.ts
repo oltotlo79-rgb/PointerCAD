@@ -1,8 +1,10 @@
 import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { loadOcctForNode } from './loadOcct.node.js';
-import { makeSheetMetalLBend, type SheetMetalLBendInput } from './makeSheetMetalBend.js';
+import { makeSheetMetalLBend } from './makeSheetMetalBend.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
+
+type SheetMetalLBendInput = Parameters<typeof makeSheetMetalLBend>[1];
 
 const input: SheetMetalLBendInput = { thickness: 2, radius: 3, width: 20, firstLength: 50, secondLength: 30, angle: 90 };
 let oc: OpenCascadeInstance;

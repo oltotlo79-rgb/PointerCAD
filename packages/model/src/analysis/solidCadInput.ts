@@ -17,9 +17,9 @@ export function solidCadFaceKey(reference: SubShapeRef): string {
     });
 }
 /** Schema 1 is the original global surface traction and stays byte-for-byte readable. */
-export const SOLID_CAD_TRACTION_SCHEMA = 'pointercad-solid-cad-input/1';
+const SOLID_CAD_TRACTION_SCHEMA = 'pointercad-solid-cad-input/1';
 /** Schema 2 is only the signed normal pressure (positive pushes inward). It never carries a traction vector. */
-export const SOLID_CAD_PRESSURE_SCHEMA = 'pointercad-solid-cad-input/2';
+const SOLID_CAD_PRESSURE_SCHEMA = 'pointercad-solid-cad-input/2';
 interface SolidCadSavedInputCommon {
   readonly id: 'solid-cad';
   readonly source: { readonly documentId: string };

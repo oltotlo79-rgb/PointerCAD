@@ -6,7 +6,7 @@ type V3 = readonly [number, number, number];
 export const FIELD_NODES: readonly V3[] = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [2 / 3, 2 / 3, 2 / 3]];
 const TETS = [[0, 1, 2, 3], [4, 1, 3, 2]] as const;
 export const FIELD_DISPLACEMENTS: readonly V3[] = [[0, 0, 0], [0.01, 0, 0], [0, -0.02, 0], [0, 0, 0.03], [0.004, 0.005, 0.006]];
-export const FIELD_SIGMA = [[100, 5, -4, 5, -20, 3, -4, 3, 10], [-40, 0, 0, 0, 0, 20, 0, 20, 0]] as const;
+ const FIELD_SIGMA = [[100, 5, -4, 5, -20, 3, -4, 3, 10], [-40, 0, 0, 0, 0, 20, 0, 20, 0]] as const;
 
 function point(sigma: readonly number[]): SolidFiniteElementRecord {
   // Synthetic display matrices, not a converged solver oracle. Distinct tau and sigma catch the wrong tensor choice.

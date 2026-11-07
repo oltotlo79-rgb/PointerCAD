@@ -27,17 +27,45 @@ import {
   type JointFramePair,
   type Mate,
   type RigidPlacement,
-  type SolidBody,
+  type SolidBody, createEmptyPartDocument, appendSolid, absoluteCoordinate, type PrimitiveFeature, type PartDocument,
 } from '@pointercad/model';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { loadOcctForNode } from '@pointercad/kernel/testing/occt-node';
 import {
-  boxPart, buildHostAssembly, DISTINCT_PART_COUNT as COUNT, ev, HOST_SHAPE_KINDS, HOST_SLIDER_GROUPS, HOST_TOTAL,
-  hostComponentName, hostJointId, hostPositionOf, hostShapeOf, hostStoredRotationOf, placementOf, positionOf, rotationOf,
-  sizesOf, storedRotationOf, verifyHostAssembly, withoutDefinition, type HostAssemblyFixture,
+  buildHostAssembly, ev, HOST_SHAPE_KINDS, HOST_TOTAL,
+  hostComponentName, hostJointId, hostPositionOf, hostShapeOf, hostStoredRotationOf, placementOf, rotationOf,
+  sizesOf, storedRotationOf, verifyHostAssembly,
 } from './assemblyDistinctPartsFixture.testSupport.js';
 import { readDocumentBundle, writeDocumentBundle } from './pcadFile.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const COUNT = 1000;
+
+type HostAssemblyFixture = Awaited<ReturnType<typeof buildHostAssembly>>;
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const HOST_SLIDER_GROUPS: readonly number[] = [0, 1];
+
+/** Fixture zero convention: only +0. JSON cannot carry -0, so z is 0 - index (+0 for index 0), never -index. */
+function positionOf(index: number): readonly [number, number, number] { return [index, 2 * index, 0 - index]; }
+
+function boxPart(index: number): PartDocument {
+  const [x, y, z] = sizesOf(index);
+  const box: PrimitiveFeature = { id: 'box-1', name: `box ${String(index)}`, kind: 'primitive', suppressed: false,
+    origin: { kind: 'coordinate', value: absoluteCoordinate(0, 0, 0) }, axis: { kind: 'world', axis: 'z' },
+    shape: { kind: 'box', sizeX: ev(x), sizeY: ev(y), sizeZ: ev(z) } };
+  return appendSolid({ ...createEmptyPartDocument(), id: `definition-${String(index)}`, name: `definition ${String(index)}` }, box);
+}
+
+/** Negative fixture: the same assembly whose library lost definition `index` (the component still points at it). */
+function withoutDefinition(fixture: HostAssemblyFixture, index: number): HostAssemblyFixture {
+  const ref = fixture.refs[index];
+  const parts = new Map(fixture.library.parts), attachments = new Map(fixture.library.attachments);
+  parts.delete(ref);
+  attachments.delete(ref);
+  return { ...fixture, library: { ...fixture.library, partFiles: fixture.library.partFiles.filter((file) => file.ref !== ref),
+    parts, attachments } };
+}
 
 const SAVED_AT = '2026-10-18T00:00:00.000Z';
 

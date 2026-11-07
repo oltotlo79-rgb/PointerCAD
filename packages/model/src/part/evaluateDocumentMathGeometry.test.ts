@@ -9,7 +9,7 @@ import { CANDIDATE_MATH_BY_ID, decodeMathWorkReply } from '@pointercad/expressio
 import type { MathWorkRequest } from '@pointercad/expression/math/client';
 
 import { createEmptyPartDocument } from './createPartDocument.js';
-import { evaluateDocumentMath, evaluatedDocumentMathValue, type DocumentMathContext, type DocumentMathResult } from './evaluateDocumentMath.js';
+import { evaluateDocumentMath, evaluatedDocumentMathValue, type DocumentMathContext } from './evaluateDocumentMath.js';
 import type { PartDocument } from './types.js';
 import { absoluteCoordinate, createPointFeature } from '../sketch/createSketchDocument.js';
 import { analyzeParameters } from '../parameters/parameterTable.js';
@@ -20,6 +20,8 @@ import { mathGeometryBooleanMessage, mathGeometryOperationMessage, mathGeometryO
   mathGeometryPendingMessage, mathGeometryReferenceMismatchMessage, mathGeometryUnresolvedMessage,
 } from '../measure/mathGeometryCoefficients.js';
 import type { MathGeometryDefinition, MathGeometryOutcome } from '../measure/mathGeometryTypes.js';
+
+type DocumentMathResult = Awaited<ReturnType<typeof evaluateDocumentMath>>;
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });
@@ -268,7 +270,7 @@ describe('値が使えないときは理由付きで失敗し、古い値や別�
   });
 
   /**
-   * GR-19d (w15a's e2e finding): a plain, legacy-style formula that names a *blocked* coefficient
+   * GR-19d (screen reproduction): a plain, legacy-style formula that names a *blocked* coefficient
    * (`P`, here circular through the measured geometry) got the generic `決まっていない名前です`
    * (unknown name, `packages/expression/src/errors.ts`, code `unknownVariable`) instead of `P`'s own
    * reason, because `P` never entered the `variables`/`exactVariables` maps the legacy evaluator reads.

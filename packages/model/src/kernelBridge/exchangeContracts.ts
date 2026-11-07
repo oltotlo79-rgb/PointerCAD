@@ -48,7 +48,7 @@ export interface ShapeExportBody {
  * 書き出しの形式(幾何カーネルの言葉)。**3MF だけ `'mesh'`** で、三角形までを受け取って
  * ZIP と XML は `packages/io` が組む(§0.a-0.19。io は幾何カーネルを呼べない)。
  */
-export type ShapeExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
+type ShapeExportFormat = 'step' | 'stl' | 'obj' | 'gltf' | 'mesh';
 
 /** 書き出しの依頼(model の言葉)。 */
 export interface ShapeExportOptions {

@@ -140,7 +140,7 @@ export function crossLevelCamOfChild(document: AssemblyDocument | null, path: re
 }
 
 /** Every edit keeps saved cross-level gears and then cams readable (cams are checked against the kept gears). */
-export function pruneCrossLevelCouplings(document: AssemblyDocument, assemblies: ReadonlyMap<string, AssemblyDocument>):
+ function pruneCrossLevelCouplings(document: AssemblyDocument, assemblies: ReadonlyMap<string, AssemblyDocument>):
   { readonly document: AssemblyDocument; readonly repairs: readonly (CrossLevelGearRepair | CrossLevelCamRepair)[] } {
   const gears = pruneCrossLevelGears(document, assemblies);
   const cams = pruneCrossLevelCams(gears.document, assemblies);
@@ -198,7 +198,7 @@ const active = (document: AssemblyDocument): boolean => (document.crossLevelGear
  * publish with the motion, or a refusal (then nothing may be published). A document without active cross-level
  * relations, or a motion that turns none of their joints, passes unchanged.
  */
-export type CrossLevelMotionResult =
+ type CrossLevelMotionResult =
   { readonly ok: true; readonly drives: ReadonlyMap<string, AssemblyOccurrenceDrive>; readonly values: ReadonlyMap<string, number> }
   | { readonly ok: false; readonly notice: AssemblyCrossLevelGearNotice };
 

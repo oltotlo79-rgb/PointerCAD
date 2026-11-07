@@ -21,7 +21,7 @@ export interface CalculationWorkerPort {
   postMessage(value:unknown):void;
   terminate():void;
 }
-export type CalculationCompletion<Result> =
+type CalculationCompletion<Result> =
   | { readonly status: 'result'; readonly identity: MathRequestIdentity; readonly result: Result }
   | { readonly status: 'cancelled' | 'deadline' | 'worker-error' | 'queue-full' | 'disposed'; readonly identity: MathRequestIdentity };
 
@@ -34,7 +34,7 @@ export interface CalculationReplyStart<Result> {
  * Longest synchronous slice of a resumable reply decode before the client yields to the event loop. Well inside the
  * 100 ms bound for one blocked task (docs/requirements.md §5.2) and close to one 60 fps frame.
  */
-export const CALCULATION_REPLY_SLICE_MS = 8;
+const CALCULATION_REPLY_SLICE_MS = 8;
 
 interface PendingWork<Request extends CalculationRequest, Result> {
   readonly serial: number;

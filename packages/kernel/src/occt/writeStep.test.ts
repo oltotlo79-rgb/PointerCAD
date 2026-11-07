@@ -8,9 +8,10 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makePrimitive } from './makePrimitive.js';
 import { readStep } from './readStep.js';
 import { measureVolume } from './solidMesh.js';
-import type { StepWriteEntry } from './writeStep.js';
 import { writeStep } from './writeStep.js';
 import type { RgbTuple } from './xcafDocument.js';
+
+type StepWriteEntry = Parameters<typeof writeStep>[1][number];
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 

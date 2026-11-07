@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { attachCameraControls } from '../viewport/attachCameraControls.js';
 import { attachDrawingNavigation, INITIAL_DRAWING_NAVIGATION } from '../drawing/drawingNavigation.js';
 import { DEFAULT_CAMERA_CONTROLS, type CameraControlSettings } from '../settings/cameraControlSettings.js';
-import { attachRadialMenuGesture, type RadialMenuAttachmentOptions } from './attachRadialMenuGesture.js';
+import { attachRadialMenuGesture } from './attachRadialMenuGesture.js';
 import type { RadialMenuGesture } from './radialMenuGesture.js';
+
+type RadialMenuAttachmentOptions = Parameters<typeof attachRadialMenuGesture>[1];
 
 function fixture(clickSlot?: RadialMenuAttachmentOptions['clickSlot'], nativeClickTarget?: RadialMenuAttachmentOptions['nativeClickTarget'],
   clickOnly = false, cameraFirst = false, selectionModifiers = false, cameraSettings = DEFAULT_CAMERA_CONTROLS) {

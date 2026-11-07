@@ -10,7 +10,7 @@ export interface ManualChapter extends HelpTopic { readonly volumeId: string; re
 /** Ordering only: chapter titles and sources remain in the single help catalog. */
 export const MANUAL_VOLUMES: readonly ManualVolume[] = [
   /*
-   * 初めての利用者が読む順(w91a、説明書の点検 w65b §3-A)。先に公開するデスクトップ版の導入、Web版の開き方、
+   * 初めての利用者が読む順（FR-910）。先に公開するデスクトップ版の導入、Web版の開き方、
    * 起動しないときの確認の直後に「初めての作図」を置き、画面の操作・保存へ続ける。通信なしの準備と
    * データの扱いは、使い始めた後に読む章として巻の後ろへ回す。
    */

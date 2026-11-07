@@ -1,4 +1,4 @@
-export interface InterferenceCompletion {
+interface InterferenceCompletion {
   readonly completed: boolean;
   readonly error: string | null;
 }

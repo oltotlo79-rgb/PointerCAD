@@ -21,7 +21,7 @@ interface GuardElement {
   setAttribute(name: string, value: string): void;
 }
 
-export interface StartupGuardHost {
+interface StartupGuardHost {
   /** The window: receives `beforeunload`, `pagehide` and `pageshow`. */
   readonly page: GuardTarget;
   /** The document: receives `DOMContentLoaded` after every deferred script (the entry too). */

@@ -69,6 +69,18 @@ const live: ReturnType<typeof install>[] = [];
 beforeEach(() => { resetTestStore(); useAppStore.setState({ solidAnalysisSession: null, solidAnalysisRunner: null }); });
 afterEach(() => { for (const value of live.splice(0)) value.attachment.dispose(); resetTestStore(); });
 
+describe('transient stage failures', () => {
+  it('clears a failed mesh stage without creating a structural worker', async () => {
+    const rig = install(); live.push(rig); useAppStore.getState().solidAnalysisRunner?.run();
+    await vi.waitFor(() => expect(rig.ports[0]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBe('meshing');
+    rig.ports[0].worker.onerror?.(new ErrorEvent('error', { message: 'mesh worker refused' }));
+    await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.status).toBe('failed'));
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBeNull();
+    expect(rig.ports).toHaveLength(1); expect(rig.attachment.statistics().live).toBe(0);
+  });
+});
+
 function enterBoundary(rig: ReturnType<typeof install>, kind: 'supports' | 'gravity' | 'both'): void {
   const state = useAppStore.getState();
   if (kind !== 'gravity') {
@@ -184,11 +196,22 @@ describe('actual UI attachment and public client, analytic Worker replies (not n
   it('connects current CAD faces through both public requests to accepted stress, force and reaction', async () => {
     const rig = install(); live.push(rig);
     useAppStore.getState().solidAnalysisRunner?.run();
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBe('preparing');
     await vi.waitFor(() => expect(rig.ports[0]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBe('meshing');
+    expect(currentDefinition()).not.toHaveProperty('stage');
+    const meshRequest = rig.ports[0].request();
+    if (!meshRequest) throw new Error('Missing mesh request');
+    rig.ports[0].worker.onmessage?.(new MessageEvent<unknown>('message', { data: {
+      protocol: meshRequest.protocol, kind: 'phase', identity: meshRequest.identity, phase: 'solving',
+    } }));
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBe('meshing');
     await rig.ports[0].reply();
     await vi.waitFor(() => expect(rig.ports[1]?.request()?.kind).toBe('analyze-solid-tet4'));
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBe('solving');
     await rig.ports[1].reply();
     await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.status).toBe('complete'));
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBeNull();
     const result = useAppStore.getState().solidAnalysisSession?.result;
     expect(result?.prepared.loadedAreaMm2).toBe(6); expect(result?.prepared.totalForceN).toEqual([0, 0, 12]);
     expect(result?.result.elements.every(element => Math.abs(element.stressMPa[2] - 2) < 1e-10)).toBe(true);
@@ -216,6 +239,7 @@ describe('actual UI attachment and public client, analytic Worker replies (not n
     await rig.ports[0].reply();
     await Promise.resolve();
     expect(useAppStore.getState().solidAnalysisSession?.result ?? null).toBeNull();
+    expect(useAppStore.getState().solidAnalysisSession?.stage ?? null).toBeNull();
     expect(rig.ports).toHaveLength(1); expect(rig.attachment.statistics().live).toBe(0);
   });
   it('terminates an in-flight solid request and keeps an older completion out of the next run', async () => {
@@ -228,8 +252,10 @@ describe('actual UI attachment and public client, analytic Worker replies (not n
     await vi.waitFor(() => expect(rig.ports[2]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
     await rig.ports[1].reply();
     expect(useAppStore.getState().solidAnalysisSession?.status).toBe('running');
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBe('meshing');
     expect(useAppStore.getState().solidAnalysisSession?.result).toBeNull();
     useAppStore.getState().cancelSolidAnalysis();
+    expect(useAppStore.getState().solidAnalysisSession?.stage).toBeNull();
     expect(rig.attachment.statistics()).toEqual({ created: 3, terminated: 3, live: 0 });
   });
   it('revalidates restored semantic origins and rejects missing selections or stale resolved keys', () => {

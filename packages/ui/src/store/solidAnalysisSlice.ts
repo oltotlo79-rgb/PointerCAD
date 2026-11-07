@@ -92,7 +92,7 @@ function boundarySession(state: AppState): SolidAnalysisSession | null {
 function boundaryEdit(state: AppState, session: SolidAnalysisSession, change: Partial<SolidAnalysisSession>) {
   state.solidAnalysisRunner?.cancel(); state.solidAnalysisRunner?.cancelModal?.(); state.solidAnalysisRunner?.cancelBuckling?.();
   return { solidAnalysisSession: { ...session, ...change, revision: session.revision + 1,
-    status: 'editing' as const, result: null, error: null }, solidModal: invalidateSolidModal(state.solidModal),
+    status: 'editing' as const, stage: null, result: null, error: null }, solidModal: invalidateSolidModal(state.solidModal),
   solidBuckling: invalidateSolidBuckling(state.solidBuckling) };
 }
 function zeroEmptySurfaceDraft(session: SolidAnalysisSession): SolidAnalysisSession['values'] {
@@ -140,7 +140,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
     if (!session) return;
     state.solidAnalysisRunner?.cancel(); state.solidAnalysisRunner?.cancelModal?.(); state.solidAnalysisRunner?.cancelBuckling?.();
     set({ solidAnalysisSession: { ...session, revision: session.revision + 1, values: { ...session.values, [field]: source },
-      result: null, error: null, status: 'editing' }, solidModal: invalidateSolidModal(state.solidModal),
+      result: null, error: null, stage: null, status: 'editing' }, solidModal: invalidateSolidModal(state.solidModal),
       solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
   },
   setSolidAnalysisLoadMode: mode => {
@@ -148,7 +148,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
     if (!session || session.loadMode === mode) return;
     state.solidAnalysisRunner?.cancel(); state.solidAnalysisRunner?.cancelModal?.(); state.solidAnalysisRunner?.cancelBuckling?.();
     set({ solidAnalysisSession: { ...session, revision: session.revision + 1, loadMode: mode, focused: null,
-      result: null, error: null, status: 'editing' }, solidModal: invalidateSolidModal(state.solidModal),
+      result: null, error: null, stage: null, status: 'editing' }, solidModal: invalidateSolidModal(state.solidModal),
       solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
   },
   setSolidAnalysisMaterial: (capacity, valid) => {
@@ -162,7 +162,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
     // Do not retain the previous material behind a null/invalid draft. Saving revalidates authored capacity.
     set({ solidAnalysisSession: { ...remaining, ...(next === null ? {} : { capacity: next }),
       materialInputValid: valid, revision: session.revision + 1, result: null,
-      error: valid ? null : t('solidAnalysis.material.stale'), status: 'editing' },
+      error: valid ? null : t('solidAnalysis.material.stale'), stage: null, status: 'editing' },
       solidModal: invalidateSolidModal(state.solidModal), solidBuckling: invalidateSolidBuckling(state.solidBuckling) });
   },
   setSolidAnalysisFieldView: change => {
@@ -237,7 +237,7 @@ export const createSolidAnalysisSlice: StateCreator<AppState, [], [], SolidAnaly
   cancelSolidAnalysis: () => {
     get().solidAnalysisRunner?.cancel();
     const session = get().solidAnalysisSession;
-    if (session) set({ solidAnalysisSession: { ...session, result: null, status: 'cancelled' } });
+    if (session) set({ solidAnalysisSession: { ...session, result: null, stage: null, status: 'cancelled' } });
   },
   saveSolidAnalysis: () => {
     const state = get(), session = state.solidAnalysisSession;

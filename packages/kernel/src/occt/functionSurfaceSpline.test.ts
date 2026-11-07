@@ -1,14 +1,33 @@
-import type { TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
+import type { TopoDS_Shape, OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.js';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Vec3Tuple } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { borrowHandle } from './borrowHandle.js';
 import { makeCompound } from './transformShape.js';
 import { FUNCTION_CLIP_BOUND_TOLERANCE, verifyFunctionShapeBounds, type FunctionClipBox } from './clipFunctionShape.js';
-import { checkedFunctionSurfaceSpline, readFunctionSurfaceSpline, type FunctionSurfaceSplineSpec } from './functionSurfaceSpline.js';
+import { checkedFunctionSurfaceSpline, type FunctionSurfaceSplineSpec } from './functionSurfaceSpline.js';
 import { loadOcctForNode } from './loadOcct.node.js';
 import { makeFunctionSurfaceBodies } from './makeFunctionSurfaceBodies.js';
 import { isValidShape } from './solidMesh.js';
+
+/** Read the native B-spline surface of a face (for tests and audits): degree, knots, multiplicities and C1. */
+function readFunctionSurfaceSpline(oc: OpenCascadeInstance, face: TopoDS_Shape) {
+  const owner = createAllocations();
+  try {
+    const adaptor = owner.keep(new oc.BRepAdaptor_Surface_2(owner.keep(oc.TopoDS.Face_1(face)), true));
+    if (adaptor.GetType() !== oc.GeomAbs_SurfaceType.GeomAbs_BSplineSurface) return null;
+    const surface = borrowHandle(owner.keep(adaptor.BSpline()));
+    const read = (count: number, knot: (index: number) => number, multiplicity: (index: number) => number) =>
+      Array.from({ length: count }, (_, index) => ({ knot: knot(index + 1), multiplicity: multiplicity(index + 1) }));
+    return {
+      uDegree: Number(surface.UDegree()), vDegree: Number(surface.VDegree()),
+      rational: surface.IsURational() || surface.IsVRational(),
+      c1: surface.IsCNu(1) && surface.IsCNv(1), c2: surface.IsCNu(2) && surface.IsCNv(2),
+      u: read(Number(surface.NbUKnots()), index => surface.UKnot(index), index => Number(surface.UMultiplicity(index))),
+      v: read(Number(surface.NbVKnots()), index => surface.VKnot(index), index => Number(surface.VMultiplicity(index))),
+    };
+  } finally { owner.release(); }
+}
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 beforeAll(async () => { oc = await loadOcctForNode(); }, 180_000);

@@ -20,12 +20,8 @@ import { EX18_ORACLE_EXPECTATIONS, EX18_ORACLE_A_DIAMETER_EIGHT,
   EX18_ORACLE_B_RADIUS_FOUR, EX18_ORACLE_C_DEPTH_TWELVE } from '@pointercad/model/testing/ex18-fixtures';
 import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation } from '@pointercad/model/testing/ex18-fixtures';
 
-export const W08_TIMEOUT = 180_000;
-export const W08_SAVED_AT = '2026-10-26T00:00:00.000Z';
-export type W08Shape = Ex18DirectShape;
-export type W08Route = 'sketch' | 'surface/wire' | 'expression' | 'direct STEP';
-export const W08_CASES = (['A', 'B', 'C'] as const).flatMap(shape =>
-  (['sketch', 'surface/wire', 'expression', 'direct STEP'] as const).map(route => ({ shape, route })));
+ type W08Shape = Ex18DirectShape;
+ type W08Route = 'sketch' | 'surface/wire' | 'expression' | 'direct STEP';
 
 export function w08Session() {
   const cache = createShapeCache<CachedSolid>(128);

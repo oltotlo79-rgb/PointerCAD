@@ -23,7 +23,7 @@ import { solidFiniteInputSha256, translateSolidFinite, type SolidFiniteInput } f
  * Internal scope only (structuralCertification false); no product, protocol or certification claim.
  */
 type Matrix = readonly number[];
-export interface SolidFiniteNativeState {
+ interface SolidFiniteNativeState {
   readonly F9: Matrix;
   readonly S6: Matrix;
 }

@@ -7,10 +7,15 @@
  * (「1+2+」の後ろで補完した場合)をそのまま使う。実際の画面は e2e/tests/math-keyboard.spec.ts で確かめる。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { attachMathField, type MathFieldHostOptions, type StructuredMathField } from './mathFieldHost.js';
+import { attachMathField, type StructuredMathField } from './mathFieldHost.js';
 import {
-  enterFirstArgument, followCommandCompletion, keepSuggestionListInDialog, SUGGESTION_LIST_ID, type CompletedField,
+  enterFirstArgument, followCommandCompletion, keepSuggestionListInDialog,
 } from './mathCommandCompletion.js';
+
+type CompletedField = Parameters<typeof enterFirstArgument>[0];
+type MathFieldHostOptions = Parameters<typeof attachMathField>[2];
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SUGGESTION_LIST_ID = 'mathlive-suggestion-popover';
 
 interface Atom { readonly depth: number; readonly latex: string }
 type Ranges = readonly (readonly [number, number])[];

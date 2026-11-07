@@ -53,7 +53,7 @@ export type PatternKind = 'none' | 'expandedMetal' | 'checkerPlate' | 'woodGrain
  * そのまま渡せる(構造的に上位互換のため、`as` は不要)。Node の検査では、この形だけを
  * 満たす偽の道具を渡して呼ばれた命令を記録する。
  */
-export interface PatternRenderingContext2D {
+interface PatternRenderingContext2D {
   fillStyle: string | CanvasGradient | CanvasPattern;
   strokeStyle: string | CanvasGradient | CanvasPattern;
   lineWidth: number;
@@ -75,7 +75,7 @@ export interface PatternRenderingContext2D {
 }
 
 /** Canvas 2D の描画命令を、呼び出しではなくデータとして表したもの(Node で検査できる)。 */
-export type PatternDrawCommand =
+type PatternDrawCommand =
   | { readonly op: 'fillStyle'; readonly value: string }
   | { readonly op: 'strokeStyle'; readonly value: string }
   | { readonly op: 'lineWidth'; readonly value: number }

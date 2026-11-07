@@ -197,7 +197,7 @@ export function applyOriginPick(document: PartDocument, pick: OriginPick): Origi
  * ストアが持っている値のうち、原点の再設定に要るものだけ。ストア(`AppState`)はこの形を
  * そのまま満たすので、呼び出し側は詰め替えずに `useAppStore.getState()` を渡せる。
  */
-export type OriginCommandState = Omit<OriginPickInput, 'elementId'>;
+type OriginCommandState = Omit<OriginPickInput, 'elementId'>;
 
 /**
  * 要素 id 1 つから、原点を移した文書と帯の一言までを一息に作る(FR-331)。

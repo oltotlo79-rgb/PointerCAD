@@ -4,7 +4,7 @@ import type { OpenCascadeInstance } from 'opencascade.js/dist/opencascade.full.j
 import type { CurveSpec, ThruSectionSpec } from '../types.js';
 import { createAllocations } from './allocations.js';
 import { loadOcctForNode } from './loadOcct.node.js';
-import { faceTables, onlyFaceQuery, sectionNormalAngles, splineLoft, splineSection } from './loftSurfaceTestSupport.js';
+import { faceTables, onlyFaceQuery, sectionNormalAngles, splineLoft, splineSection } from './loftSurface.testSupport.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeThruSections, sectionWireFromFace } from './makeThruSections.js';
 import { isValidShape, measureArea, measureVolume } from './solidMesh.js';

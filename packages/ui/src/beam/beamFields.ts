@@ -7,7 +7,8 @@ import type { NumericField, NumericFieldResult } from '../sketch/numericInput.js
 export type BeamFieldName = 'young' | 'shear' | 'density' | 'area' | 'iy' | 'iz' | 'torsion' | 'shearFactor'
   | 'cx' | 'cy' | 'principalAngle' | 'startFx' | 'startFy' | 'startFz' | 'startMx' | 'startMy' | 'startMz'
   | 'endFx' | 'endFy' | 'endFz' | 'endMx' | 'endMy' | 'endMz';
-type Quantity = 'stress' | 'density' | 'area' | 'inertia' | 'scalar' | 'length' | 'angle' | 'force' | 'moment' | 'time' | 'inverseTime';
+type Quantity = 'stress' | 'density' | 'area' | 'inertia' | 'scalar' | 'length' | 'angle' | 'force' | 'moment' | 'time' | 'inverseTime'
+  | 'strain';
 interface FieldDefinition {
   readonly label: MessageKey;
   readonly unit: string;
@@ -38,6 +39,8 @@ const suffixes: Readonly<Record<Quantity, readonly (readonly [string, string])[]
   // Seconds are the stored unit; 'ms' is checked before 's'.
   time: [['ms', '0.001'], ['s', '1']],
   inverseTime: [['1/s', '1'], ['/s', '1']],
+  // Dimensionless strain is stored as a fraction; a trailing % is the factor 0.01 (1% = 0.01).
+  strain: [['%', '0.01']],
 };
 
 function canonical(source: string, quantity: Quantity): string {
@@ -157,10 +160,11 @@ export function contactExpressionField(name: ContactFieldName, key: string, sour
 }
 
 /** Elasto-plastic bar fields: the same expression, parameter and unit rules, kept out of BEAM_FIELDS. Stresses are
- * MPa (GPa/kPa/Pa suffixes accepted), lengths and end displacements mm, area mm². Integers and the plan's own
- * ranges are checked by readPlasticBarPlan. */
-export type PlasticBarFieldName = 'length' | 'area' | 'young' | 'poisson' | 'yieldStress' | 'hardening' | 'knot'
-  | 'stepsPerSegment';
+ * MPa (GPa/kPa/Pa suffixes accepted), lengths and end displacements mm, area mm². The optional plateau is a
+ * dimensionless plastic strain (a trailing % is x0.01); an empty plateau is valid and means "no plateau". Integers and
+ * the plan's own ranges are checked by readPlasticBarPlan. */
+export type PlasticBarFieldName = 'length' | 'area' | 'young' | 'poisson' | 'yieldStress' | 'hardening' | 'plateau'
+  | 'knot' | 'stepsPerSegment';
 export const PLASTIC_BAR_FIELDS: Readonly<Record<PlasticBarFieldName, FieldDefinition>> = {
   length: field('plasticBar.length', 'mm', 'length', true),
   area: field('plasticBar.area', 'mm²', 'area', true),
@@ -168,12 +172,15 @@ export const PLASTIC_BAR_FIELDS: Readonly<Record<PlasticBarFieldName, FieldDefin
   poisson: field('plasticBar.poisson', '—', 'scalar'),
   yieldStress: field('plasticBar.yieldStress', 'MPa', 'stress', true),
   hardening: field('plasticBar.hardening', 'MPa', 'stress'),
+  plateau: field('plasticBar.plateau', '—', 'strain'),
   knot: field('plasticBar.knot', 'mm', 'length'),
   stepsPerSegment: field('plasticBar.stepsPerSegment', '—', 'scalar', true),
 };
 
 export function readPlasticBarField(name: PlasticBarFieldName, key: string, source: string,
   parameters: readonly Parameter[]): NumericFieldResult {
+  // Only the optional plateau may be empty: no value and no error (the caller keeps the original linear law).
+  if (name === 'plateau' && source.trim() === '') return { key, value: null, error: null };
   return readQuantity(key, PLASTIC_BAR_FIELDS[name], source, parameters);
 }
 

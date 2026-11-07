@@ -18,8 +18,9 @@ import {
   DXF_NOT_PLANAR_MESSAGE,
   ellipseParameterToAzimuth,
   sketchToDxf,
-  type SketchToDxfResult,
 } from './sketchToDxf.js';
+
+type SketchToDxfResult = ReturnType<typeof sketchToDxf>;
 
 const BASE = { layer: '0', color: null };
 

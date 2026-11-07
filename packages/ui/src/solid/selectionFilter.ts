@@ -59,26 +59,6 @@ export const ALL_SELECTABLE: SelectionFilter = {
   body: true,
 };
 
-/**
- * 当たり判定の候補 1 件。**要素 id と種類だけ**を見る(位置や距離は絞り込みに要らない)。
- * `pickSubShape.ts` の `SubShapePickResult` は `kind` と `elementId` を持つので、
- * そのまま `filterPickCandidates` へ渡せる。
- */
-export interface PickCandidate {
-  readonly elementId: string;
-  readonly kind: SelectionKind;
-}
-
-/** その種類が選べるか(FR-112)。 */
-export function isSelectableKind(filter: SelectionFilter, kind: SelectionKind): boolean {
-  return filter[kind];
-}
-
-/** 4 つとも入か(= P4b までとまったく同じ振る舞い)。 */
-export function isAllSelectable(filter: SelectionFilter): boolean {
-  return SELECTION_FILTER_KINDS.every((kind) => filter[kind]);
-}
-
 /** 4 つとも切か(何も選べない。ステータスバーで理由を出す、NFR-UX-5)。 */
 export function isNoneSelectable(filter: SelectionFilter): boolean {
   return SELECTION_FILTER_KINDS.every((kind) => !filter[kind]);

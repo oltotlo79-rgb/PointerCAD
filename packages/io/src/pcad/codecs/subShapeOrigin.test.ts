@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { SubShapeOrigin } from '@pointercad/model';
 import { isSubShapeOrigin, readSubShapeOrigin, serializeSubShapeOrigin } from './subShapeOrigin.js';
 
+const arcSurfaceCanonicals = [
+  { version: 1, shapeKind: 'face', identity: { kind: 'surface-curve-side', featureId: 'sheet',
+    profile: { sketchId: 'sketch', curveFeatureId: 'arc', role: 'whole-curve' } } },
+  ...(['section-start', 'section-end', 'swept-start', 'swept-end'] as const).map(role => ({
+    version: 1 as const, shapeKind: 'edge' as const, identity: { kind: 'surface-curve-edge' as const,
+      featureId: 'sheet', profile: { sketchId: 'sketch', curveFeatureId: 'arc', role: 'whole-curve' as const }, role } })),
+] as const satisfies readonly SubShapeOrigin[];
+
 const top: SubShapeOrigin = { version: 1, shapeKind: 'face',
   identity: { kind: 'box-face', featureId: 'box-1', role: 'top' } };
 const left: SubShapeOrigin = { version: 1, shapeKind: 'face',
@@ -42,6 +50,7 @@ describe('origin-v1 JSON value', () => {
         sources: [{ kind: 'box-vertex', featureId: 'box-1', role: 'top-front-left' },
           { kind: 'box-vertex', featureId: 'box-1', role: 'top-front-right' }] } },
       ...cylinderOrigins,
+      ...arcSurfaceCanonicals,
       { version: 1, shapeKind: 'face', identity: { kind: 'merged-face', featureId: 'union-2',
         sources: [top.identity, { kind: 'cylinder-face', featureId: 'cylinder-1', role: 'side' }] } },
     ];
@@ -348,4 +357,22 @@ describe('planar sheet source identities (closed straight-line profile)', () => 
     expect(readSubShapeOrigin({ ...face, identity: { ...face.identity, kind: 'extrude-cap', end: 'start' } }, 'origin').ok).toBe(false);
     expect(() => serializeSubShapeOrigin({ ...face, identity: { ...face.identity, featureId: '' } })).toThrow(RangeError);
   });
+});
+
+
+it('refuses malformed open-arc identities while retaining exact role and source fields', () => {
+  const face = arcSurfaceCanonicals[0], edge = arcSurfaceCanonicals[1];
+  const bad: readonly unknown[] = [
+    { ...face, identity: { ...face.identity, kind: 'unknown-face' } },
+    { ...edge, identity: { ...edge.identity, role: 'seam' } },
+    { ...edge, identity: { ...edge.identity, extra: true } },
+    { ...edge, identity: { ...edge.identity, profile: { ...edge.identity.profile, faceFeatureId: 'invented' } } },
+    { ...edge, identity: { ...edge.identity, profile: { ...edge.identity.profile, curveFeatureId: '' } } },
+    { ...edge, identity: { ...edge.identity, profile: { ...edge.identity.profile, role: 'whole-line' } } },
+    { ...face, shapeKind: 'edge' }, { ...edge, shapeKind: 'face' },
+  ];
+  for (const value of bad) {
+    expect(readSubShapeOrigin(value, 'origin').ok).toBe(false);
+    expect(isSubShapeOrigin(value)).toBe(false);
+  }
 });

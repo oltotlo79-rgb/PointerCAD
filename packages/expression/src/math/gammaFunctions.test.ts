@@ -10,7 +10,7 @@ import { sameMathMeaning } from './mathNotationConversion.js';
 import { GAMMA_FUNCTION_REFERENCES } from './gammaFunctionReferences.js';
 import { POLYGAMMA_REFERENCES } from './polygammaReferences.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine, spawnExactRuntime } from './exactRuntime.testSupport.js';
 
 let backend: MathExecutionBackend;
 beforeAll(() => { backend = createMathBackend(); });

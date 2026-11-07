@@ -52,7 +52,8 @@ function requireFields(value: unknown, names: readonly string[], message: string
     && Reflect.ownKeys(value).length === names.length && names.every(name => Object.hasOwn(value, name)), message);
 }
 interface MergedSupport { node: number; fixed: [boolean, boolean, boolean]; prescribedMm?: [number, number, number] }
-function sourceKey(context: CadTetraContext): string {
+/** Static CAD source identity, also used by the ui buckling adapter to refuse the same stale source. */
+export function cadSolidSourceKey(context: CadTetraContext): string {
   requireInput(context.body.isValid && context.body.bodyKind === 'solid', 'A current valid solid is required');
   const steps = context.steps.filter(step => step.featureId === context.body.featureId);
   requireInput(steps.length === 1 && steps[0].key.length > 0, 'A unique current body key is required');
@@ -64,7 +65,7 @@ function sourceKey(context: CadTetraContext): string {
 export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMeshResult,
   regions: readonly CadTetraRegion[], labelFaces: readonly number[],
   settings: CadSolidSettings | CadSolidPressureSettings): CadSolidPrepared {
-  sourceKey(context);
+  cadSolidSourceKey(context);
   const pressure = 'pressureMPa' in settings;
   requireInput('pressureMPa' in settings ? Number.isFinite(settings.pressureMPa) && !('tractionMPa' in settings)
     : 'tractionMPa' in settings, 'Supply either a finite signed pressure or a global traction');
@@ -182,12 +183,21 @@ export function prepareCadSolidAnalysis(context: CadTetraContext, mesh: TetraMes
   return { input: translated.input, loadedAreaMm2: area, totalForceN };
 }
 
+/** Whole CAD pipeline stages; Worker loading/solving phases remain separate. */
+export type CadSolidStage = 'preparing' | 'meshing' | 'solving';
+export interface CadSolidOptions extends FemOptions {
+  /** Stage starts at the actual boundary below; null ends this invocation on every terminal path.
+   * Preparing includes the CAD boundary; meshing includes mesh validation/input assembly; solving includes result validation.
+   * Consumers must retain their request ownership when handling a late terminal notification. */
+  readonly onStage?: (stage: CadSolidStage | null) => void;
+}
+
 const owners = new WeakMap<object, AbortController>();
 /** Actual CAD -> owned Netgen -> strict tet4 input -> actual public OOFEM client. */
 export async function analyzeCadSolid(client: Pick<FemClient, 'meshTetrahedra' | 'analyzeSolid'>,
   kernel: AnalysisBoundarySource, readCurrent: () => CadTetraContext,
   requested: CadSolidSettings | CadSolidPressureSettings,
-  options: FemOptions = {}): Promise<CadSolidOutcome> {
+  options: CadSolidOptions = {}): Promise<CadSolidOutcome> {
   owners.get(client)?.abort();
   const owner = new AbortController();
   owners.set(client, owner);
@@ -197,23 +207,26 @@ export async function analyzeCadSolid(client: Pick<FemClient, 'meshTetrahedra' |
   const cancellation = (): CadSolidOutcome | null => owners.get(client) !== owner
     ? { kind: 'cancelled', reason: 'superseded' } : owner.signal.aborted ? { kind: 'cancelled', reason: 'abort' } : null;
   try {
-    const settings = structuredClone(requested), initial = readCurrent(), signature = sourceKey(initial);
+    const settings = structuredClone(requested), initial = readCurrent(), signature = cadSolidSourceKey(initial);
     const current = (): CadTetraContext => {
       const value = readCurrent();
-      requireInput(sourceKey(value) === signature, 'CAD source changed during analysis');
+      requireInput(cadSolidSourceKey(value) === signature, 'CAD source changed during analysis');
       return value;
     };
     const early = cancellation();
     if (early) return early;
+    options.onStage?.('preparing');
+    const meshing = (): void => { if (cancellation() === null) options.onStage?.('meshing'); };
     const mesh = settings.geometry.kind === 'planar'
-      ? await meshCadBoundary(client, kernel, current, settings.geometry.boundary, { ...options, signal: owner.signal }, undefined, settings.meshing)
+      ? await meshCadBoundary(client, kernel, current, settings.geometry.boundary, { ...options, signal: owner.signal }, undefined, settings.meshing, meshing)
         .then(outcome => outcome.kind !== 'result' ? outcome : { ...outcome,
           labelFaces: Array.from({ length: outcome.mesh.input.tagCount }, (_, index) => index) })
-      : await meshCadCurvedBoundary(client, kernel, current, settings.geometry.options, { ...options, signal: owner.signal }, undefined, settings.meshing);
+      : await meshCadCurvedBoundary(client, kernel, current, settings.geometry.options, { ...options, signal: owner.signal }, undefined, settings.meshing, meshing);
     const afterMesh = cancellation();
     if (afterMesh) return afterMesh;
     if (mesh.kind !== 'result') return mesh;
     const prepared = prepareCadSolidAnalysis(current(), mesh.mesh, mesh.regions, mesh.labelFaces, settings);
+    options.onStage?.('solving');
     const completion = await client.analyzeSolid(prepared.input, { ...options, signal: owner.signal });
     const afterSolve = cancellation();
     if (afterSolve) return afterSolve;
@@ -226,5 +239,6 @@ export async function analyzeCadSolid(client: Pick<FemClient, 'meshTetrahedra' |
   } finally {
     options.signal?.removeEventListener('abort', abort);
     if (owners.get(client) === owner) owners.delete(client);
+    options.onStage?.(null);
   }
 }

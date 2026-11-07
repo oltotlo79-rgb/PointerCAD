@@ -18,9 +18,11 @@ import { documentSha, shapeSha } from './holeThreadHistory.testSupport.js';
 import { summarizeSolid, setSolidField } from './solidSummary.js';
 import { currentRepairSlots } from './referenceRepairContext.js';
 import { beginReferenceRepair, cancelReferenceRepair, commitReferenceRepair } from './referenceRepair.js';
-import type { DirectEditToolId } from './directEditCommands.js';
 import { consumedIds } from './solidHistoryState.js';
 import { createBrowserFileGateway } from '../file/fileGateway.js';
+import type { directEditRejection } from './directEditCommands.js';
+
+type DirectEditToolId = Parameters<typeof directEditRejection>[1];
 
 const TIMEOUT = 180_000;
 beforeAll(initializeNativeKernelForNodeTests, TIMEOUT);

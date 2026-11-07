@@ -13,11 +13,13 @@ import {
   transformDirection,
   transformPoint,
   translateTransform,
-  type CopySourceLookup,
-  type SketchTransform,
+  type resolveCopyFeature,
 } from './copyMath.js';
 import type { ResolvedArc, ResolvedCurve, ResolvedEllipse, ResolvedPoint } from './types.js';
 import { ORIGIN } from './vec3.js';
+
+type CopySourceLookup = Parameters<typeof resolveCopyFeature>[3];
+type SketchTransform = Parameters<typeof transformPoint>[0];
 
 /** XY 平面(法線 +Z)の上の円弧。中心 (5,0,0)・半径 5・0°→90°。 */
 const ARC: ResolvedArc = {

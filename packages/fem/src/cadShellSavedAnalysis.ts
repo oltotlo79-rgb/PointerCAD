@@ -46,5 +46,7 @@ export function resolveSavedCadShellSettings(context: CadTetraContext, value: un
   const edgeLoads = saved.edgeLoads.map(load => ({ edge: uniqueReference(body, load.origin, 'load-unresolved'),
     forceNPerMm: load.forceNPerMm, momentNmmPerMm: load.momentNmmPerMm }));
   return { saved: saved.geometry, material: { id: saved.material.id, youngMPa: saved.material.youngMPa,
-    poisson: saved.material.poisson }, supports, edgeLoads, surface: saved.surface };
+    poisson: saved.material.poisson }, supports, edgeLoads,
+    surface: body.faces.length === 1 && body.faces[0].surfaceKind === 'cylinder'
+      ? { ...saved.surface, nativeQuality: 'cylindrical-rectangle' } : saved.surface };
 }

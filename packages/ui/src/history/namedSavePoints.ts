@@ -7,7 +7,7 @@ import {
   sha256, verifySavePointState,
 } from './namedSavePointIntegrity.js';
 export {
-  MAX_NAMED_SAVE_POINTS, MAX_NAMED_SAVE_POINT_BYTES, SAVE_POINT_CHUNK_BYTES, SavePointError,
+  MAX_NAMED_SAVE_POINT_BYTES, SAVE_POINT_CHUNK_BYTES, SavePointError,
   isNamedSavePoint, isSavePointBlob, checkedUsage, sha256, verifySavePointState,
 } from './namedSavePointIntegrity.js';
 const COPY_SLICE_MS = 8;

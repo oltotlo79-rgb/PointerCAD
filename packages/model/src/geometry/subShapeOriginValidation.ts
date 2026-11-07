@@ -79,7 +79,12 @@ function identity(value: unknown, shape: string, depth: number): boolean {
   if (depth > 16 || !object(value)) return false;
   const list = (items: unknown, child: string, minimum: number): boolean => Array.isArray(items) && dense(items) && items.length >= minimum
     && items.length <= 64 && items.every(item => identity(item, child, depth + 1));
+  const surfaceCurveProfile = (candidate: unknown): boolean =>
+    record(candidate, ['sketchId', 'curveFeatureId', 'role']) && text(candidate.sketchId)
+      && text(candidate.curveFeatureId) && candidate.role === 'whole-curve';
   if (shape === 'face') switch (value.kind) {
+    case 'surface-curve-side': return record(value, ['kind', 'featureId', 'profile']) && text(value.featureId)
+      && surfaceCurveProfile(value.profile);
     case 'box-face': return record(value, ['kind', 'featureId', 'role']) && text(value.featureId)
       && ['bottom', 'top', 'front', 'back', 'left', 'right'].includes(String(value.role));
     case 'cylinder-face': case 'cone-face': return record(value, ['kind', 'featureId', 'role']) && text(value.featureId)
@@ -104,6 +109,9 @@ function identity(value: unknown, shape: string, depth: number): boolean {
     default: return false;
   }
   if (shape === 'edge') switch (value.kind) {
+    case 'surface-curve-edge': return record(value, ['kind', 'featureId', 'profile', 'role']) && text(value.featureId)
+      && surfaceCurveProfile(value.profile)
+      && ['section-start', 'section-end', 'swept-start', 'swept-end'].includes(String(value.role));
     case 'cylinder-edge': return record(value, ['kind', 'featureId', 'role']) && text(value.featureId) && ['start-ring', 'end-ring', 'seam'].includes(String(value.role));
     case 'planar-surface-edge': return record(value, ['kind', 'featureId', 'profile']) && text(value.featureId)
       && planarProfile(value.profile, 'edge');

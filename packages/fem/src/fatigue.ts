@@ -147,9 +147,12 @@ export function analyzeFatigue(value: unknown): FatigueAnalysis {
       const recurringRefused = recurring === cycles ? -1 : firstNonzeroMean(history, recurring);
       if (recurringRefused >= 0) return { ok: false, code: 'fatigue-mean', path: `histories[${at}].recurrenceCycles[${recurringRefused}]` };
     }
-    let damage = 0;
+    let damage = 0, compensation = 0;
     for (const cycle of cycles) {
-      damage += cycleDamage(curve, cycle);
+      const increment = cycleDamage(curve, cycle) - compensation;
+      const next = damage + increment;
+      compensation = (next - damage) - increment;
+      damage = next;
       if (damaging(curve, curveStressMpa(curve, cycle))) anyDamaging = true;
     }
     damage *= history.repeats;
@@ -158,8 +161,12 @@ export function analyzeFatigue(value: unknown): FatigueAnalysis {
     if (recurring !== cycles) {
       // A 'once' history has repeats 1.
       recurringDamage = 0;
+      let recurringCompensation = 0;
       for (const cycle of recurring) {
-        recurringDamage += cycleDamage(curve, cycle);
+        const increment = cycleDamage(curve, cycle) - recurringCompensation;
+        const next = recurringDamage + increment;
+        recurringCompensation = (next - recurringDamage) - increment;
+        recurringDamage = next;
         if (damaging(curve, curveStressMpa(curve, cycle))) anyRecurrenceDamaging = true;
       }
       if (!Number.isFinite(recurringDamage)) return { ok: false, code: 'fatigue-overflow', path: `histories[${at}]` };

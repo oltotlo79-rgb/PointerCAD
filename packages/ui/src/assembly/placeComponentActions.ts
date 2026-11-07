@@ -17,7 +17,7 @@ import { useAppStore } from '../store/useAppStore.js';
 import { duplicateComponent as duplicateComponentDocument, placePart, placementFromSources, removeComponents,
   type PlacementInputOutcome } from './placeComponent.js';
 
-export interface PlaceComponentDeps {
+interface PlaceComponentDeps {
   readonly choose: (gateway: FileGateway) => Promise<PickedTypedFile | null>;
   readonly read: (bytes: Uint8Array) => Promise<ReadDocumentBundleResult>;
   readonly embed: (

@@ -38,7 +38,7 @@ export interface DocumentMathContext {
    */
   readonly blocked?: ReadonlyMap<string, string>;
 }
-export type DocumentMathResult =
+type DocumentMathResult =
   | { readonly ok: true; readonly document: PartDocument; readonly analysis: ParameterAnalysis }
   | { readonly ok: false; readonly cancelled: boolean; readonly failures: readonly ReevaluationFailure[];
       /** Transient recomputation only. Invalid owners MUST be excluded; never publish this as an edit. */

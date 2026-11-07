@@ -7,8 +7,8 @@
  *
  * **すべて純関数で、OCCT にも three にも触れない**(Node の Vitest だけで検査できる)。
  * kernel の `RigidTransformSpec` へは model 側の `RigidTransform`(`part/resolvePart.ts`)
- * を経由して渡す。model は `kernelBridge.ts` 以外から `@pointercad/kernel` を輸入しない
- * 約束(rules/04-設計の規律.md の依存方向)なので、ここは model の型だけを使う。
+ * を経由して渡す。共有する有限判定だけは `vec3.ts` と `kernelBridge/vectorMath.ts` の限定入口を
+ * 経由する。型と純粋な算術だけを使い、kernel の index や OCCT は読み込まない。
  *
  * **四元数の規約**(§2.4): `q = (x, y, z, w)`、`w = cos(θ/2)`、`(x, y, z) = 軸 × sin(θ/2)`。
  * `q` と `−q` は同じ回転なので、**`w >= 0` へ符号を揃える**(§0.54 の決定性。同じ文書を
@@ -21,7 +21,7 @@
  */
 
 import type { RigidTransform } from '../part/resolvePart.js';
-import { addVec3, cleanZeroVec3, crossVec3, dotVec3 as dot, ORIGIN, type Vec3 } from '../sketch/vec3.js';
+import { addVec3, cleanZeroVec3, crossVec3, dotVec3 as dot, isFiniteQuaternion, ORIGIN, type Vec3 } from '../sketch/vec3.js';
 
 /**
  * 向きを表す四元数 `(qx, qy, qz, qw)`。**長さ 1・`w >= 0`** に揃えたものだけを持ち回る
@@ -75,15 +75,6 @@ function cleanZeroQuaternion(rotation: Quaternion): Quaternion {
     rotation[2] === 0 ? 0 : rotation[2],
     rotation[3] === 0 ? 0 : rotation[3],
   ];
-}
-
-function isFiniteQuaternion(rotation: Quaternion): boolean {
-  return (
-    Number.isFinite(rotation[0]) &&
-    Number.isFinite(rotation[1]) &&
-    Number.isFinite(rotation[2]) &&
-    Number.isFinite(rotation[3])
-  );
 }
 
 /**

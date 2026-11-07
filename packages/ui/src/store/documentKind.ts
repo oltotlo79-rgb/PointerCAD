@@ -105,29 +105,3 @@ export function activeAssemblyDocument(state: DocumentKindState): AssemblyDocume
 export function activeDrawingDocument(state: DocumentKindState): DrawingDocument | null {
   return activeDocumentKind(state) === 'drawing' ? state.drawing : null;
 }
-
-/**
- * 文書の種類ごとの節・行の `key` に付ける接頭辞(`rules/06` 10.9)。
- *
- * P7 は部品の節とアセンブリの節を**同じ親**(プロパティ区画の `.pcad-panel__body`、
- * 木の一覧)に並べる段が来る。そのとき id をそのまま `key` にすると、部品のフィーチャーの
- * id とアセンブリの部品の id が偶然一致した瞬間に兄弟の鍵が重なり、古い節が消えずに
- * 残る(10.9 で外観の節が起こした事故とまったく同じ)。**節を足す前に付け方を決めておく。**
- *
- * `PropertyPanel.tsx` の既にある接頭辞(`appearance:` / `primitive:` / `ruled:` / `cut:` /
- * `sphereGrid:` / `measure:` / `mass:`)とも重ならない語を選んである。
- */
-const DOCUMENT_KIND_KEY_PREFIXES: Readonly<Record<DocumentKind, string>> = {
-  part: 'part:',
-  assembly: 'assembly:',
-  drawing: 'drawing:',
-  empty: 'empty:',
-};
-
-/**
- * 文書の種類つきの `key`。**種類が違えば必ず食い違う**ことが満たすべき性質で、
- * それを `documentKind.test.ts` が固定する。
- */
-export function documentSectionKey(kind: DocumentKind, id: string): string {
-  return `${DOCUMENT_KIND_KEY_PREFIXES[kind]}${id}`;
-}

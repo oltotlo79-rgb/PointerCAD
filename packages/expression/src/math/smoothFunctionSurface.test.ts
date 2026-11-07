@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { intervalUnion } from './mathIntervalUnion.js';
-import { certifySplineAgainstMesh, certifySplineAgainstMeshSteps, completeSteps, smoothFunctionSurface, type FunctionSurfaceSpline, type SmoothSurfaceOptions, type SmoothSurfaceSource,
-  type SurfaceMeshEvidence } from './smoothFunctionSurface.js';
+import { certifySplineAgainstMesh, certifySplineAgainstMeshSteps, completeSteps, smoothFunctionSurface, type FunctionSurfaceSpline, type SurfaceMeshEvidence } from './smoothFunctionSurface.js';
 import type { SurfaceLeaf } from './surfaceParameterGrid.js';
+
+type SmoothSurfaceOptions = Parameters<typeof smoothFunctionSurface>[2];
+type SmoothSurfaceSource = Parameters<typeof smoothFunctionSurface>[0];
 
 type Point = readonly [number, number, number];
 type Surface = (u: number, v: number) => Point;

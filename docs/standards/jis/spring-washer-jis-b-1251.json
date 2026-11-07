@@ -21,7 +21,8 @@
   "notes": [
     "内径 d・幅 b・厚さ t は 2 件の資料が完全に一致した(確認済み)。",
     "外径 D(最大)は由良産商の抜粋 1 件のみ。要確認。ばね座金は切れ目があって開くので D は d+2b にはならない。",
-    "2号のばね座金の断面は b×t の長方形で、切れ目を開いた自由高さ Ho は別に規定される(この表には入れていない)。"
+    "2号のばね座金の断面は b×t の長方形で、切れ目を開いた自由高さ Ho は別に規定される(この表には入れていない)。",
+    "実行時カタログ packages/model/src/assembly/standard/fasteners.ts のばね座金の表 SPRING_WASHER_TABLE に付けていた出典 SPRING_WASHER_SOURCE の値(製品のどこからも読まれていなかったので、値を変えずにここへ移した): standard「JIS B 1251」、edition「2018」、title「ばね座金」、scope「2号（一般用）」、verified=true、sourceUrls: https://www.yura-sansyo.co.jp/handbook/handbookV8-5-20.pdf https://hayamihyou.net/washer/"
   ],
   "rows": [
     {

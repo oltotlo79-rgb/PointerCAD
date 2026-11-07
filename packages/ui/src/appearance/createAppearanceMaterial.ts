@@ -59,13 +59,13 @@ export function themedAppearance(spec: AppearanceSpec, solidColor: number): Appe
 }
 
 /** ガラスの屈折率(§2.5.3、§0.a-0.10)。three.js の既定も 1.5 だが、意図として明示する。 */
-export const GLASS_IOR = 1.5;
+const GLASS_IOR = 1.5;
 
 /** ガラスの厚み(mm 相当、§2.5.3、§0.a-0.10)。three.js の既定は 0 なので必ず入れる。 */
-export const GLASS_THICKNESS = 2;
+const GLASS_THICKNESS = 2;
 
 /** 柄の抜き(エキスパンドメタルの穴)のしきい値(§0.a-0.8)。 */
-export const PATTERN_ALPHA_TEST = 0.5;
+const PATTERN_ALPHA_TEST = 0.5;
 
 /**
  * 環境マップ(映り込み)が要ると見なす境目(§0.a-0.9「鏡・ガラスを 1 つも使わない文書では

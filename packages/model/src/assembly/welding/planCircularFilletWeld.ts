@@ -32,7 +32,7 @@ export interface CircularFilletWeldRequest {
 }
 export type CircularFilletWeldFailure = JointOccurrenceCommandFailure | 'invalid-request' | 'material-unavailable'
   | 'contact-rejected' | 'weld-exists' | 'association-damaged';
-export interface PlannedCircularBead { readonly source: StandardPartSource; readonly placement: Placement; readonly materialId: string }
+ interface PlannedCircularBead { readonly source: StandardPartSource; readonly placement: Placement; readonly materialId: string }
 export interface CircularFilletWeldPlan {
   readonly request: CircularFilletWeldRequest;
   readonly beads: readonly PlannedCircularBead[];
@@ -45,7 +45,7 @@ export interface CircularFilletWeldPlan {
   readonly view: JointOccurrenceView;
   readonly resolved: JointOccurrenceView['resolved'];
 }
-export type CircularFilletWeldPreview = { readonly ok: true; readonly plan: CircularFilletWeldPlan }
+ type CircularFilletWeldPreview = { readonly ok: true; readonly plan: CircularFilletWeldPlan }
   | { readonly ok: false; readonly reason: CircularFilletWeldFailure };
 
 function owned<T>(value: T): T {

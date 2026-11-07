@@ -4,7 +4,7 @@ import type { MathParameter } from '@pointercad/expression/math/contracts';
 import { FUNCTION_PLOT_AXES, FunctionPlotBounds, type FunctionPlotInterval } from './functionPlotBounds.js';
 import type { FunctionDefinition, FunctionInputRange } from './functionDefinitionTypes.js';
 
-export interface FunctionRangeContext {
+interface FunctionRangeContext {
   readonly isCurrent: () => boolean;
   /** The shared scalar evaluator must re-evaluate the source, never return its persisted cache. */
   readonly evaluate: (value: ExpressionValue, field: string) => Promise<

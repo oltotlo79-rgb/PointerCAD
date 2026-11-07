@@ -56,7 +56,7 @@ export type AxisShift =
 export type ShiftAxes = readonly [AxisShift, AxisShift, AxisShift];
 
 /** 1 点の指定を平行移動するのに要るもの。 */
-export interface CoordinateShift {
+interface CoordinateShift {
   readonly axes: ShiftAxes;
   /**
    * 原点を基準にした極座標(角度と距離)を書き換えるときの角度の基準になる作図面。

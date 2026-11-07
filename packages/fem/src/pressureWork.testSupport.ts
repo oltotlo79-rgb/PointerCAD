@@ -8,11 +8,10 @@ import { decodeTetraMesh, readTetraMeshInput, tetraMeshInputSha256, TETRA_MESH_S
 
 /** Independent W13 pressure oracle: synthetic convex boundaries, closed-form surface integrals and helpers.
  * Nothing here calls the pressure conversion under test; expected values never come from the product. */
-export type Vec = readonly [number, number, number];
-export type Mat = readonly [Vec, Vec, Vec];
+type Vec = readonly [number, number, number];
+ type Mat = readonly [Vec, Vec, Vec];
 export const ZERO_MAT: Mat = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
 export const IDENTITY: Mat = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-export const sub = (a: Vec, b: Vec): Vec => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 export const add = (a: Vec, b: Vec): Vec => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 export const scale = (s: number, a: Vec): Vec => [s * a[0], s * a[1], s * a[2]];
 export const dot = (a: Vec, b: Vec): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -37,13 +36,13 @@ export function rotationAbout(axis: Vec, degrees: number): Mat {
   return [[c + x * x * v, x * y * v - z * s, x * z * v + y * s], [y * x * v + z * s, c + y * y * v, y * z * v - x * s],
     [z * x * v - y * s, z * y * v + x * s, c + z * z * v]];
 }
-export interface Placement { readonly name: string; readonly rotation: Mat; readonly translation: Vec }
+interface Placement { readonly name: string; readonly rotation: Mat; readonly translation: Vec }
 /** Linear displacement field u(x) = gradient x + offset (rigid translation, rigid rotation or first-order stretch). */
-export interface LinearField { readonly name: string; readonly gradient: Mat; readonly offset: Vec }
+interface LinearField { readonly name: string; readonly gradient: Mat; readonly offset: Vec }
 export const fieldAt = (field: LinearField, x: Vec): Vec => add(matVec(field.gradient, x), field.offset);
 
 /** Strictly increasing, deliberately non-uniform angles; the first is 0 and an open span ends exactly at span. */
-export function nonuniformAngles(count: number, span: number, amplitude: number, frequency: number,
+ function nonuniformAngles(count: number, span: number, amplitude: number, frequency: number,
   phase: number, closed: boolean): number[] {
   return Array.from({ length: closed ? count : count + 1 }, (_, k) => !closed && k === count ? span
     : span * k / count + (k === 0 ? 0 : amplitude * (span / count) * Math.sin(frequency * k + phase)));
@@ -51,8 +50,8 @@ export function nonuniformAngles(count: number, span: number, amplitude: number,
 
 /** Surface integrals of the loaded face in its own (unplaced) frame:
  * vectorArea S = integral n dA, fluxTensor T_ij = integral n_i x_j dA, area = integral dA (when closed form). */
-export interface FaceIntegrals { readonly area: number | null; readonly vectorArea: Vec; readonly fluxTensor: Mat }
-export interface PressureSolid {
+ interface FaceIntegrals { readonly area: number | null; readonly vectorArea: Vec; readonly fluxTensor: Mat }
+ interface PressureSolid {
   readonly name: string;
   readonly points: readonly Vec[];
   readonly triangles: readonly (readonly [number, number, number])[];
@@ -65,7 +64,7 @@ export interface PressureSolid {
   /** Circumferential steps of a curved face (empty for the plane). */
   readonly circumferentialSteps: readonly number[];
 }
-export interface PressureGeometry {
+interface PressureGeometry {
   readonly solid: PressureSolid;
   /** Exact integrals of the triangulated (flat-faceted) loaded face that the mesh actually carries. */
   readonly triangulated: FaceIntegrals;
@@ -190,7 +189,7 @@ export function placeIntegrals(face: FaceIntegrals, placement: Placement): FaceI
   return { area: face.area, vectorArea, fluxTensor: matAdd(matMul(matMul(placement.rotation, face.fluxTensor),
     transpose(placement.rotation)), outer(vectorArea, placement.translation)) };
 }
-export interface PressureResultants { readonly force: Vec; readonly moment: Vec; readonly work: readonly number[] }
+ interface PressureResultants { readonly force: Vec; readonly moment: Vec; readonly work: readonly number[] }
 /** Dead pressure p on outward n: force -p S, moment about the origin -p integral x cross n dA, work -p integral n.u dA. */
 export function independentResultants(face: FaceIntegrals, pressureMPa: number, fields: readonly LinearField[]): PressureResultants {
   const T = face.fluxTensor;
@@ -211,18 +210,11 @@ export function nodalResultants(input: SolidAnalysisInput, fields: readonly Line
   });
   return { force, moment, work };
 }
-/** Relative error; a (near-)zero expectation is divided by the representative magnitude instead and says so. */
-export function relativeError(actual: Vec | number, expected: Vec | number, representative: number):
-  { readonly error: number; readonly denominator: 'expected' | 'representative' } {
-  const a: Vec = typeof actual === 'number' ? [actual, 0, 0] : actual, e: Vec = typeof expected === 'number' ? [expected, 0, 0] : expected;
-  const size = norm(e), zero = size < 1e-9 * representative;
-  return { error: norm(sub(a, e)) / (zero ? representative : size), denominator: zero ? 'representative' : 'expected' };
-}
 
 const ROLES = ['top', 'bottom', 'front', 'right', 'back', 'left'] as const;
 const faceOrigin = (role: typeof ROLES[number]): SubShapeOrigin =>
   ({ version: 1, shapeKind: 'face', identity: { kind: 'box-face', featureId: 'solid', role } });
-export interface PressureCase {
+ interface PressureCase {
   readonly context: CadTetraContext;
   readonly mesh: TetraMeshResult;
   readonly regions: readonly CadTetraRegion[];

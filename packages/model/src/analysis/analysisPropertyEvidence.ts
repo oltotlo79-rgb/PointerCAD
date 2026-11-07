@@ -3,6 +3,12 @@ import { findStrengthMaterial } from '../measure/strengthMaterials.js';
 import { InputIssue, text } from './analysisValidation.js';
 
 export type AnalysisPropertyKind = 'hardening' | 'sn' | 'rayleigh' | 'rate-law';
+/** Classification of the cited document only. It never states physical validity, certification or that the
+ * series applies to another material condition; a peer-reviewed measurement is still bound to its own row. */
+export type AnalysisPropertySourceKind = 'standard-draft' | 'manufacturer-reference' | 'user-provided'
+  | 'peer-reviewed-measurement';
+const SOURCE_KINDS: readonly AnalysisPropertySourceKind[] = ['standard-draft', 'manufacturer-reference', 'user-provided',
+  'peer-reviewed-measurement'];
 export interface AnalysisPropertyRange {
   readonly lower: number;
   readonly upper: number;
@@ -15,7 +21,7 @@ export interface AnalysisPropertyRange {
 export interface AnalysisPropertyEvidence {
   readonly property: AnalysisPropertyKind;
   readonly sourceId: string;
-  readonly sourceKind: 'standard-draft' | 'manufacturer-reference' | 'user-provided';
+  readonly sourceKind: AnalysisPropertySourceKind;
   readonly citation: string;
   readonly materialConditionId: string;
   /** Exact condition vocabulary of the selected strength-material row; no treatment is inferred from a grade. */
@@ -84,10 +90,8 @@ export function readAnalysisPropertyEvidence(value: unknown, series: AnalysisPro
     fail('series-mismatch', `${path}.property`, 'Evidence must describe the selected property series');
   }
   const sourceId = text(row.sourceId, `${path}.sourceId`);
-  const sourceKind = row.sourceKind;
-  if (sourceKind !== 'standard-draft' && sourceKind !== 'manufacturer-reference' && sourceKind !== 'user-provided') {
-    fail('source-kind', `${path}.sourceKind`, 'Expected an explicit supported source classification');
-  }
+  const sourceKind = SOURCE_KINDS.find(kind => kind === row.sourceKind);
+  if (sourceKind === undefined) fail('source-kind', `${path}.sourceKind`, 'Expected an explicit supported source classification');
   const citation = text(row.citation, `${path}.citation`, 2048);
   const materialConditionId = text(row.materialConditionId, `${path}.materialConditionId`);
   const heatTreatment = text(row.heatTreatment, `${path}.heatTreatment`, 1024);
@@ -138,9 +142,12 @@ export function analysisPropertyEvidenceStatus(evidence: unknown, series: Analys
     : { status: 'verified', evidence: readAnalysisPropertyEvidence(evidence, series) };
 }
 
-export function hardeningPropertySeries(value: { readonly yieldStressMPa: number; readonly hardeningModulusMPa: number }): AnalysisPropertySeries {
+export function hardeningPropertySeries(value: { readonly yieldStressMPa: number; readonly hardeningModulusMPa: number;
+  readonly plateauPlasticStrain?: number }): AnalysisPropertySeries {
   return { kind: 'hardening', values: { yieldStressMPa: { value: value.yieldStressMPa, unit: 'MPa' },
-    hardeningModulusMPa: { value: value.hardeningModulusMPa, unit: 'MPa' } }, conditions: { law: 'linear-isotropic' } };
+    hardeningModulusMPa: { value: value.hardeningModulusMPa, unit: 'MPa' },
+    ...(value.plateauPlasticStrain === undefined ? {} : { plateauPlasticStrain: { value: value.plateauPlasticStrain, unit: '1' } }) },
+  conditions: { law: value.plateauPlasticStrain === undefined ? 'linear-isotropic' : 'plateau-linear-isotropic' } };
 }
 export function fatiguePropertySeries(value: { readonly referenceStressMpa: number; readonly referenceCycles: number;
   readonly slope: number; readonly cutoffStressMpa: number | null; readonly stressDefinition: string;

@@ -1,6 +1,8 @@
 // P10-5/14: 接線境界からの剛体展開。
 import { describe, expect, it } from 'vitest';
-import { flattenSheetPanelGraph, transformPanelPoint, type SheetPanelConnection, type SheetPanelGraph } from './panelGraph.js';
+import { flattenSheetPanelGraph, transformPanelPoint, type SheetPanelConnection } from './panelGraph.js';
+
+type SheetPanelGraph = Parameters<typeof flattenSheetPanelGraph>[0];
 
 const first: SheetPanelConnection = { id: 'bend-1', first: { panelId: 'base', from: [20, 10], to: [0, 10] },
   second: { panelId: 'flange', from: [0, 0], to: [20, 0] }, allowance: 5 };

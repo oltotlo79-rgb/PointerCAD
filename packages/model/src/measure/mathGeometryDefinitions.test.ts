@@ -11,7 +11,6 @@ import {
   setMathGeometryAngleUnit,
   setMathGeometryTolerance,
   validateMathGeometryTolerance,
-  type MathGeometryDefinitionInput,
 } from './mathGeometryDefinitions.js';
 import { DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryCoefficientId } from './mathGeometryIdentity.js';
 import type { MathGeometryBody, MathGeometryCurve, MathGeometryDefinition, MathGeometryQuantity,
@@ -21,6 +20,8 @@ import type { Configuration } from '../part/configurations.js';
 import type { PartDocument } from '../part/types.js';
 import type { UnresolvedMathProblem } from '../part/unresolvedMathProblems.js';
 import type { Parameter } from '../parameters/types.js';
+
+type MathGeometryDefinitionInput = Parameters<typeof addMathGeometryDefinition>[1];
 
 // ---------------------------------------------------------------------------
 // Fixture builders (same style as ./mathGeometryIdentity.test.ts): hand-built MathNode trees, no math

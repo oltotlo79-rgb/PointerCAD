@@ -12,8 +12,15 @@ import type { JointFrame, JointFramePair } from './jointFrames.js';
 import { buildJointResidualReport, prepareJointResiduals } from './jointResiduals.js';
 import { advanceMechanismReferences, evaluateMechanismCouplings, mechanismCouplingRows, prepareMechanismCouplings,
   type GearRatioCoupling } from './mechanismCoupling.js';
-import { createMechanismCycleFixture, oracleAffineCycle, oracleAngle, oracleCamErrors, oracleLinkErrors,
-  oraclePoseError, requireCyclePlacement } from './mechanismCycleFixture.js';
+import { createMechanismCycleFixture, oracleAffineCycle, oracleAngle, oracleCamErrors, oraclePoseError, requireCyclePlacement, oraclePoint, oracleDistance } from './mechanismCycle.testSupport.js';
+
+function oracleLinkErrors(placements: ReadonlyMap<string, RigidPlacement>) {
+  const link = requireCyclePlacement(placements, 'link');
+  const a = requireCyclePlacement(placements, 'followerA'), c = requireCyclePlacement(placements, 'followerC');
+  return { pinAMm: oracleDistance(oraclePoint(link, [0, 0, 0]), a.position),
+    pinCMm: oracleDistance(oraclePoint(link, [0, 60, 0]), c.position),
+    lengthMm: Math.abs(oracleDistance(a.position, c.position) - 60) };
+}
 
 const frame: JointFrame = { origin: [0, 0, 0], x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
 const coupling = (patch: Partial<GearRatioCoupling> = {}): GearRatioCoupling => ({ id: 'gear-ab', kind: 'gear',

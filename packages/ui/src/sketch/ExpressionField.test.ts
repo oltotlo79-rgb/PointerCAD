@@ -41,7 +41,7 @@ describe('数値欄の原式と単位表示', () => {
     expect(clicked).toContain('class="pcad-field__unit">mm</span>'); expect(clicked).toContain('= 2 in');
   });
 
-  it('分数インチで打った長さは、欄の下に小数と分数インチを並べて出す(FR-814、w91a)', () => {
+  it('分数インチで打った長さは、欄の下に小数と分数インチを並べて出す(FR-814)', () => {
     const typed = reduceNumericInput(createNumericInput('circle', 'circleRadius', 'absolute'),
       { type: 'edit', index: 0, source: '3/8"' });
     const markup = render(typed);

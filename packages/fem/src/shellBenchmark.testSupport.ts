@@ -11,7 +11,7 @@ type Triangle = [number, number, number];
 type Flags = [boolean, boolean, boolean, boolean, boolean, boolean];
 const UX = 0, UY = 1, UZ = 2, RX = 3, RY = 4, RZ = 5;
 
-export interface BenchmarkMesh {
+ interface BenchmarkMesh {
   readonly cells: number;
   readonly nodes: readonly ShellVector3[];
   readonly triangles: readonly Triangle[];
@@ -19,7 +19,7 @@ export interface BenchmarkMesh {
   readonly at: (i: number, j: number) => number;
 }
 
-export interface BenchmarkCase {
+interface BenchmarkCase {
   readonly input: ShellAnalysisInput;
   readonly mesh: BenchmarkMesh;
   /** The node whose displacement is compared with the published value. */
@@ -29,7 +29,7 @@ export interface BenchmarkCase {
 /** cells x cells grid, node (i, j) at place(i, j); each cell is split along alternating diagonals ("union jack"):
  * along (i, j)-(i+1, j+1) when i + j is even, otherwise along (i+1, j)-(i, j+1). With an even number of cells the
  * pattern is symmetric about both centre lines and both diagonals of the grid. */
-export function unionJackMesh(cells: number, place: (i: number, j: number) => ShellVector3): BenchmarkMesh {
+ function unionJackMesh(cells: number, place: (i: number, j: number) => ShellVector3): BenchmarkMesh {
   if (!Number.isSafeInteger(cells) || cells < 1) throw new Error('shell-benchmark: cells must be a positive integer');
   const at = (i: number, j: number): number => j * (cells + 1) + i;
   const nodes: ShellVector3[] = [];
@@ -87,9 +87,9 @@ function gridFlags(mesh: BenchmarkMesh, rule: (i: number, j: number, fixed: Flag
   return flags;
 }
 
-export type PlateSupport = 'simply-supported' | 'clamped';
+type PlateSupport = 'simply-supported' | 'clamped';
 
-export interface PlateSpec {
+interface PlateSpec {
   readonly support: PlateSupport;
   /** 'quarter': the corner quarter [0, a/2]^2 with symmetry rows on x = a/2 and y = a/2; 'full': [0, a]^2. */
   readonly region: 'quarter' | 'full';

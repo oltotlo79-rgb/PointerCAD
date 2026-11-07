@@ -15,7 +15,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { FileGateway, PickedTypedFile } from './fileGateway.js';
 import {
   createMemoryTemplateStorage,
-  MAX_STORED_TEMPLATES,
   newFromTemplate,
   readTemplateBytes,
   saveTemplate,
@@ -24,9 +23,12 @@ import {
   templateIdsToDrop,
   withTemplateExtension,
   type StoredTemplate,
-  type StoredTemplateSummary,
   type TemplateDeps,
 } from './templateFile.js';
+
+type StoredTemplateSummary = Parameters<typeof sortTemplates>[0][number];
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const MAX_STORED_TEMPLATES = 10;
 
 /** 検査で使う固定の時刻(保存のたびに値が変わらないようにする)。 */
 const NOW = '2026-09-06T12:00:00.000Z';

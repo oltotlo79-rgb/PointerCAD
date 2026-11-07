@@ -46,6 +46,7 @@ import { lengthVec as magnitude, subVec as subtract, dotVec as dot } from './ske
  */
 
 import type { Vec3Tuple } from '../types.js';
+import { addScaled } from '../math/vectorArithmetic.js';
 
 /**
  * 位置の許容誤差(mm)。円の中心が軸の上に乗っているか、方位が決まるか、の判定に使う
@@ -71,16 +72,6 @@ function isFiniteVector(value: Vec3Tuple): boolean {
 
 function scale(value: Vec3Tuple, factor: number): Vec3Tuple {
   return [value[0] * factor, value[1] * factor, value[2] * factor];
-}
-
-
-/** base + direction × distance。頂点と接触円の中心を同じ式で作るための小さな道具。 */
-function addScaled(base: Vec3Tuple, direction: Vec3Tuple, distance: number): Vec3Tuple {
-  return [
-    base[0] + direction[0] * distance,
-    base[1] + direction[1] * distance,
-    base[2] + direction[2] * distance,
-  ];
 }
 
 /** 長さが取れない(0・非数)ときは null。他の make*.ts の toUnit と同じ考え。 */

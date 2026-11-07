@@ -69,7 +69,7 @@ export {
   layoutDimensionTolerance, resolveDimensionTolerance,
 } from './dimension/tolerance.js';
 export {
-  dimensionSeries, drawingViewBasis,
+  dimensionSeries, drawingViewBasis, normalizedDrawingDirection,
   type DimensionSeriesInput, type DimensionSeriesResult,
   type DrawingViewBasis,
 } from './dimension/series.js';

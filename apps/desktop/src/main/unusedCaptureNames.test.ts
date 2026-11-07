@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { KNOWN_UNUSED_CAPTURE_NAMES, checkUnusedCaptureNames } from '../../../../scripts/manual/unusedCaptureNames.mjs';
 
-// w148a (2026-09-29): report-only guard for scripted captures (`captureManualDetail(` in
+// FR-910 (2026-09-29): report-only guard for scripted captures (`captureManualDetail(` in
 // e2e/tests/*Flow.ts) whose name no chapter image references. Decision recorded in
 // scripts/manual/unusedCaptureNames.mjs: report, do not fail the release check.
 

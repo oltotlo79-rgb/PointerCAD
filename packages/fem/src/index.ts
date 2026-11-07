@@ -91,8 +91,8 @@ export type { SolidBucklingInput, SolidBucklingPlan, SolidBucklingMode, SolidBuc
 export { SOLID_BUCKLING_MAX_MODES, translateSolidBuckling, solidBucklingInputSha256 } from './solidBucklingTranslation.js';
 export { decodeSolidBuckling, SOLID_BUCKLING_METHOD } from './solidBucklingResults.js';
 export { isSolidBucklingResult, solidBucklingResultMatches } from './solidBucklingPublicResult.js';
-export { analyzeCadSolid, prepareCadSolidAnalysis, type CadSolidSettings, type CadSolidPressureSettings,
-  type CadSolidPrepared, type CadSolidOutcome } from './cadSolidAnalysis.js';
+export { analyzeCadSolid, cadSolidSourceKey, prepareCadSolidAnalysis, type CadSolidSettings, type CadSolidPressureSettings,
+  type CadSolidPrepared, type CadSolidOutcome, type CadSolidStage, type CadSolidOptions } from './cadSolidAnalysis.js';
 export { analyzeCadSolidPlastic, cadSolidPlasticInput, type CadSolidPlasticSettings,
   type CadSolidPlasticOutcome } from './cadSolidPlastic.js';
 export { SOLID_PLASTIC_PLAN_SCHEMA, SOLID_PLASTIC_LIMITS, readSolidPlasticPlan,

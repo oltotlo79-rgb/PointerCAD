@@ -28,6 +28,36 @@ import type { SolidBucklingInput, SolidBucklingResult } from './solidBucklingMod
 import { solidBucklingInputSha256, translateSolidBuckling } from './solidBucklingTranslation.js';
 import { decodeSolidBuckling } from './solidBucklingResults.js';
 
+/** The single place for the FEM host limits shared by FemClient and these fixed runtime adapters. The values are the
+ * existing bounds gathered here unchanged (Web and Electron run the same client, Worker and adapters):
+ * - workersPerClient: one owned Worker per FemClient; a newer request terminates the older Worker before creating its
+ *   own, so two Workers of one client are never alive together.
+ * - totalDeadlineMs: initialization plus analysis, from Worker creation; solveDeadlineMs: the native solve, from the
+ *   first 'solving' phase. Reaching either terminates the Worker with a 'deadline' failure that names the bound.
+ * - responseCharacters: the largest native JSON text accepted per mode, checked before JSON.parse so an oversized
+ *   reply is refused with its size and bound before an object is materialized. */
+export const FEM_RUNTIME_LIMITS = Object.freeze({
+  workersPerClient: 1,
+  totalDeadlineMs: 180_000,
+  solveDeadlineMs: 60_000,
+  responseCharacters: Object.freeze({
+    solidPlastic: 16_000_000, solid: 24_000_000, solidModal: 2_000_000, solidBuckling: 10_000_000,
+    tetraMesh: 4_000_000, beamProof: 8192, beam: 2_000_000, beamModal: 2_000_000, beamBuckling: 2_000_000,
+    beamTransient: 12_000_000, plasticBar: 2_000_000, beamContact: 2_000_000,
+  }),
+});
+type FemResponseKind = keyof typeof FEM_RUNTIME_LIMITS.responseCharacters;
+
+/** Returns the native reply only when it is text within the mode's bound; otherwise refuses it before JSON.parse. */
+export function boundedFemResponse(encoded: unknown, kind: FemResponseKind, message: string): string {
+  const limit = FEM_RUNTIME_LIMITS.responseCharacters[kind];
+  if (typeof encoded !== 'string') throw new Error(`${message}: the native reply is not text`);
+  if (encoded.length > limit) {
+    throw new Error(`${message}: ${String(encoded.length)} characters exceed the ${String(limit)}-character ${kind} limit`);
+  }
+  return encoded;
+}
+
 export interface PyodideRuntime {
   readonly version: string;
   readonly FS: { mkdirTree(path: string): void; writeFile(path: string, value: string | Uint8Array): void };
@@ -62,8 +92,7 @@ from solid_plastic_analysis import run_solid_plastic
 run_solid_plastic()
 `);
   // At most 20000 recorded node/element states; each has at most 18 finite doubles plus fixed metadata.
-  if (typeof encoded !== 'string' || encoded.length > 16_000_000) throw new Error('Invalid bounded solid-plastic response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'solidPlastic', 'Invalid bounded solid-plastic response'));
   return decodeSolidPlastic(raw, prepared.input, hash);
 }
 
@@ -87,8 +116,7 @@ run_solid_analysis()
 `);
   // 50000 x 12 native actions + 10000 x 3 displacements, <= 25 characters
   // per finite double plus delimiters and fixed metadata, bounded below 24MB.
-  if (typeof encoded !== 'string' || encoded.length > 24_000_000) throw new Error('Invalid bounded solid response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'solid', 'Invalid bounded solid response'));
   return decodeSolidAnalysis(raw, prepared.input, hash);
 }
 
@@ -111,8 +139,7 @@ from solid_modal import run_solid_modal
 run_solid_modal()
 `);
   // At most 20 modes x 600 nodes x 3 finite doubles (<= 25 characters each) plus fixed metadata: below 2 MB.
-  if (typeof encoded !== 'string' || encoded.length > 2_000_000) throw new Error('Invalid bounded solid modal response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'solidModal', 'Invalid bounded solid modal response'));
   return decodeSolidModal(raw, prepared.input, hash);
 }
 
@@ -135,8 +162,7 @@ from solid_buckling import run_solid_buckling
 run_solid_buckling()
 `);
   // At most 12 modes x 10000 nodes x 3 finite doubles (<= 25 characters each) plus fixed metadata: below 10 MB.
-  if (typeof encoded !== 'string' || encoded.length > 10_000_000) throw new Error('Invalid bounded solid buckling response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'solidBuckling', 'Invalid bounded solid buckling response'));
   return decodeSolidBuckling(raw, prepared.input, hash);
 }
 
@@ -158,8 +184,7 @@ sys.path.insert(0, '/pcad_fem')
 from netgen_mesher import run_tetra_mesh
 run_tetra_mesh()
 `);
-  if (typeof encoded !== 'string' || encoded.length > 4_000_000) throw new Error('Invalid bounded Netgen mesh response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'tetraMesh', 'Invalid bounded Netgen mesh response'));
   return decodeTetraMesh(raw, input, hash);
 }
 export function isLoader(value: unknown): value is PyodideLoader {
@@ -187,8 +212,7 @@ sys.path.insert(0, '/pcad_fem')
 from beam_proof import run_beam_proof
 run_beam_proof()
 `);
-  if (typeof encoded !== 'string' || encoded.length > 8192) throw new Error('Invalid FEM numerical response');
-  const result: unknown = JSON.parse(encoded);
+  const result: unknown = JSON.parse(boundedFemResponse(encoded, 'beamProof', 'Invalid FEM numerical response'));
   if (!isBeamProof(result)) throw new Error('FEM runtime identity or upstream displacement assertion failed');
   return result;
 }
@@ -212,8 +236,7 @@ sys.path.insert(0, '/pcad_fem')
 from beam_analysis import run_beam_analysis
 run_beam_analysis()
 `);
-  if(typeof encoded!=='string'||encoded.length>2_000_000) throw new Error('Invalid bounded OOFEM analysis response');
-  const decoded:unknown=JSON.parse(encoded);
+  const decoded:unknown=JSON.parse(boundedFemResponse(encoded,'beam','Invalid bounded OOFEM analysis response'));
   return decodeBeamAnalysis(decoded,prepared.document,inputSha256);
 }
 
@@ -234,8 +257,7 @@ sys.path.insert(0, '/pcad_fem')
 from beam_analysis import run_beam_modal
 run_beam_modal()
 `);
-  if (typeof encoded !== 'string' || encoded.length > 2_000_000) throw new Error('Invalid bounded modal response');
-  const decoded: unknown = JSON.parse(encoded);
+  const decoded: unknown = JSON.parse(boundedFemResponse(encoded, 'beamModal', 'Invalid bounded modal response'));
   return decodeBeamModal(decoded, prepared.document, inputSha256);
 }
 
@@ -257,8 +279,7 @@ sys.path.insert(0, '/pcad_fem')
 from beam_analysis import run_beam_buckling
 run_beam_buckling()
 `);
-  if (typeof encoded !== 'string' || encoded.length > 2_000_000) throw new Error('Invalid bounded buckling response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'beamBuckling', 'Invalid bounded buckling response'));
   return decodeBeamBuckling(raw, prepared.input, hash);
 }
 
@@ -282,8 +303,7 @@ sys.path.insert(0, '/pcad_fem')
 from beam_analysis import run_beam_transient
 run_beam_transient()
 `);
-  if (typeof encoded !== 'string' || encoded.length > 12_000_000) throw new Error('Invalid bounded transient response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'beamTransient', 'Invalid bounded transient response'));
   return decodeBeamTransient(raw, prepared.input, hash);
 }
 
@@ -307,8 +327,7 @@ sys.path.insert(0, '/pcad_fem')
 from plastic_bar_analysis import run_plastic_bar
 run_plastic_bar()
 `);
-  if (typeof encoded !== 'string' || encoded.length > 2_000_000) throw new Error('Invalid bounded plastic-bar response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'plasticBar', 'Invalid bounded plastic-bar response'));
   return decodePlasticBar(raw, prepared.input, hash);
 }
 
@@ -332,7 +351,6 @@ sys.path.insert(0, '/pcad_fem')
 from beam_contact import run_beam_contact
 run_beam_contact()
 `);
-  if (typeof encoded !== 'string' || encoded.length > 2_000_000) throw new Error('Invalid bounded contact response');
-  const raw: unknown = JSON.parse(encoded);
+  const raw: unknown = JSON.parse(boundedFemResponse(encoded, 'beamContact', 'Invalid bounded contact response'));
   return decodeBeamContact(raw, prepared.input, hash);
 }

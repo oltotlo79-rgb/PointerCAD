@@ -66,7 +66,7 @@ export function sheetBody(featureId: string, bodyKind: 'shell' | 'solid' = 'shel
       ...vertexOrigins.map((origin, index) => ({ origin, state: 'unique' as const, current: { kind: 'vertex' as const, index } }))] } };
 }
 
-export function sheetBoundary(): AnalysisBoundaryMesh {
+ function sheetBoundary(): AnalysisBoundaryMesh {
   const vertexSet = new Set(vertexNodes), edgeSet = new Set(edgeNodes.flat());
   return { units: 'mm', boundary: 'open', coordinates: Float64Array.from(points.flat()),
     nodeKinds: Uint8Array.from(points.map((_, node) => vertexSet.has(node) ? 0 : edgeSet.has(node) ? 1 : 2)),

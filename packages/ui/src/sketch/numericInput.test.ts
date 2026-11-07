@@ -48,7 +48,6 @@ import {
   createNumericInput,
   DEFAULT_GRID_COLUMN_AZIMUTH_DEGREES,
   DEFAULT_GRID_ROW_AZIMUTH_DEGREES,
-  DEFAULT_POLYGON_SIDES,
   DEFAULT_SKETCH_CHAMFER_DISTANCE_MM,
   DEFAULT_SKETCH_FILLET_RADIUS_MM,
   defaultModeForStep,
@@ -81,7 +80,6 @@ import {
   rangeErrorFor,
   reduceNumericInput,
   REFERENCE_TOOL_STEPS,
-  removeLastSplinePoint,
   SHAPE_TOOL_STEPS,
   SOLID_TOOL_STEPS,
   splineFinishStateFrom,
@@ -101,8 +99,12 @@ import {
   type SolidToolId,
   type NumericInputTransition,
   type SplineDraft,
-  type SplineDraftOutcome,
 } from './numericInput.js';
+
+type SplineDraftOutcome = ReturnType<typeof appendSplinePoint>;
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const DEFAULT_POLYGON_SIDES = 6;
 
 /** 判別共用体を検査で絞り込む。強制変換(as)を使わずに中身へ触るための小道具。 */
 function expectCommitted(
@@ -1778,15 +1780,12 @@ describe('P4 スプライン(FR-317、統括の決定 §0.a-0.17)', () => {
     expect(EMPTY_SPLINE_DRAFT.closed).toBe(false);
   });
 
-  it('点を置くと下書きが伸び、取り消すと 1 つ戻る(元の下書きは書き換えない)', () => {
+  it('点を置くと下書きが伸びる(元の下書きは書き換えない)', () => {
     const one = expectDraft(appendSplinePoint(EMPTY_SPLINE_DRAFT, splinePoint('1')));
     const two = expectDraft(appendSplinePoint(one, splinePoint('2')));
     expect(one.points).toHaveLength(1);
     expect(two.points).toHaveLength(2);
     expect(EMPTY_SPLINE_DRAFT.points).toHaveLength(0);
-    expect(removeLastSplinePoint(two).points).toHaveLength(1);
-    // 点が無ければ同じ下書きをそのまま返す。
-    expect(removeLastSplinePoint(EMPTY_SPLINE_DRAFT)).toBe(EMPTY_SPLINE_DRAFT);
   });
 
   it('点は 100 個まで。超える 1 個は断って下書きを変えない(§0.a-0.17)', () => {

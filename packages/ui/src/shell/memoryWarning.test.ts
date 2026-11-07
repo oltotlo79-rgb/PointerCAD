@@ -37,10 +37,13 @@ import {
   describeStatus,
   isKernelMemoryNearLimit,
   kernelMemoryWarningText,
-  MEMORY_WARNING_RATIO,
-  type StatusInput,
-  type StatusLine,
 } from './statusText.js';
+
+type StatusLine = ReturnType<typeof describeStatus>;
+type StatusInput = Parameters<typeof describeStatus>[0];
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const MEMORY_WARNING_RATIO = 0.75;
 
 /** 同梱の計算部の上限(kernel の `OCCT_HEAP_LIMIT_BYTES`。4GiB から 64KiB を引いた値)。 */
 const LIMIT = 4_294_901_760;
@@ -141,7 +144,8 @@ afterEach(() => {
 
 describe('上限の前後(模擬の量)', () => {
   it('割合の定数は 1 か所で 4 分の 3。ちょうどでは出さず、1 ページ超えたら出す', () => {
-    expect(MEMORY_WARNING_RATIO).toBe(0.75);
+    // 半分ではまだ出さない(4 分の 3 の境目は次の行から確かめる)。
+    expect(isKernelMemoryNearLimit(memory(LIMIT / 2))).toBe(false);
     expect(isKernelMemoryNearLimit(memory(LIMIT * MEMORY_WARNING_RATIO))).toBe(false);
     expect(isKernelMemoryNearLimit(memory(JUST_OVER - PAGE))).toBe(false);
     expect(isKernelMemoryNearLimit(memory(JUST_OVER))).toBe(true);

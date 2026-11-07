@@ -17,7 +17,7 @@ export {
 export { functionCurveRequest } from './functionGeometry/functionCurveRequest.js';
 export { createFunctionSurface, type FunctionSurfaceFeature } from './functionGeometry/functionSurfaceFeature.js';
 export { functionSurfaceRequest } from './functionGeometry/functionSurfaceRequest.js';
-export { allocatePatternPointSlots, patternPointReference, isPatternPointSlot, patternSlotHighWater, retainPatternSlotHighWater, readPatternSlotHighWater } from './part/patternPointSlots.js';
+export { allocatePatternPointSlots, isPatternPointSlot, patternSlotHighWater, retainPatternSlotHighWater, readPatternSlotHighWater } from './part/patternPointSlots.js';
 export type { PatternPointSlot } from './part/patternPointSlots.js';
 export type { FunctionRequestContext } from './functionGeometry/functionRequestInputs.js';
 export { mapFunctionDefinition } from './functionGeometry/mapFunctionDefinition.js';
@@ -303,7 +303,8 @@ export type { TensileAreaMethod, TensileAreaOutcome } from './measure/tensileStr
 export { hasConnectedSegmentEnd } from './sketch/connectedSegment.js';
 export type { SplitLineFailure } from './sketch/splitLineIntersections.js';
 export {
-  explodeCompoundFeature, extendCurve, nearestCurveEnd, parseElementId, trimCurve,
+  cutRatios, explodeCompoundFeature, extendCurve, nearestCurveEnd, nearestCurveIndex, parseElementId,
+  probeLength, probeSegment, trimCurve,
 } from './sketch/trimExtend.js';
 export type {
   SketchCornerErrorKey,
@@ -424,11 +425,6 @@ export type {
 } from '@pointercad/drawing';
 export {
   DRAWING_SCHEMA_VERSION,
-  appendDrawingAnnotation,
-  appendDrawingBalloon,
-  appendDrawingDimension,
-  appendDrawingLayer,
-  appendDrawingTable,
   appendDrawingView,
   createDrawingDocument,
   nextDrawingAnnotationId,
@@ -490,7 +486,6 @@ export type {
   ResolvedDrawingView,
 } from './drawing/resolveDrawing.js';
 export {
-  clearDrawingProjectionCache,
   createDrawingResolveKernel,
   resolveDrawing,
 } from './drawing/resolveDrawing.js';
@@ -651,7 +646,7 @@ export {
 } from './measure/mathGeometryFunctionOperations.js';
 export type { MathGeometryRenameReason } from './part/renameDocumentMathGeometry.js';
 export { renameDocumentMathGeometry } from './part/renameDocumentMathGeometry.js';
-export { resolveConstrainedAssembly } from './assembly/resolveConstrainedAssembly.js';
+export { createBodyMateTargetResolver, resolveConstrainedAssembly } from './assembly/resolveConstrainedAssembly.js';
 export { drawingSourceCenter } from './drawing/sourceCenter.js';
 /**
  * 部品文書の全式の評価し直し(FR-207、FR-502、P4b タスク3)。
@@ -733,9 +728,15 @@ export type {
   PrintabilitySummary,
 } from './kernelBridge.js';
 export {
-  DEFAULT_MIN_THICKNESS_MM, DEFAULT_OVERHANG_ANGLE_DEG, DISPLAY_MESH_QUALITY,
+  DEFAULT_MIN_THICKNESS_MM, DEFAULT_OVERHANG_ANGLE_DEG,
   readPrintabilityFlag,
 } from './kernelBridge.js';
+/**
+ * 読み込んだ三角形の頂点法線と体積(P6 タスク17・19)。式の正本は kernel の
+ * `occt/exchangeShared.ts` の 1 か所で、io(3MF の読み込み)は kernel を輸入できないので、
+ * model が同じ関数をそのまま出し直す(`kernelBridge/meshMath.ts`)。
+ */
+export { computeVertexNormals, computeVolume } from './kernelBridge/meshMath.js';
 export {
   formatLength, formatMass, GRAM_PER_CM3_TO_GRAM_PER_MM3, inertiaWithDensity, massFromVolume,
 } from './measure/massProperties.js';
@@ -1186,18 +1187,17 @@ export {
 export {
   findHexBolt, findHexNut, findPanHeadScrew, findPlainWasher, findSocketHeadCapScrew,
   findSpringWasher,
-  HEX_BOLT_NOMINAL_LENGTHS, HEX_BOLT_SOURCE, HEX_BOLT_TABLE, HEX_NUT_SOURCE, HEX_NUT_TABLE,
-  PAN_HEAD_SCREW_SOURCE, PAN_HEAD_SCREW_TABLE, PLAIN_WASHER_SOURCE, PLAIN_WASHER_TABLE,
-  SOCKET_HEAD_CAP_SCREW_SOURCE,
-  SOCKET_HEAD_CAP_SCREW_TABLE, SPRING_WASHER_SOURCE, SPRING_WASHER_TABLE,
+  HEX_BOLT_NOMINAL_LENGTHS, HEX_BOLT_TABLE, HEX_NUT_TABLE,
+  PAN_HEAD_SCREW_TABLE, PLAIN_WASHER_TABLE,
+  SOCKET_HEAD_CAP_SCREW_TABLE, SPRING_WASHER_TABLE,
 } from './assembly/standard/fasteners.js';
 export {
   bearingBoreFromDesignation, bearingSizes, DEEP_GROOVE_BALL_BEARINGS,
-  DEEP_GROOVE_BALL_BEARING_SOURCE, findDeepGrooveBallBearing,
+  findDeepGrooveBallBearing,
 } from './assembly/standard/bearings.js';
 export {
   CHANNEL_TABLE, EQUAL_ANGLE_TABLE, findChannel, findEqualAngle, findHBeam, H_BEAM_TABLE,
-  sectionMassFromArea, STRUCTURAL_SECTION_SOURCE,
+  sectionMassFromArea,
 } from './assembly/standard/sections.js';
 export {
   buildStandardPart, buildStandardPartFromSource, changeStandardSize, createStandardPartSource,
@@ -1290,6 +1290,7 @@ export * from './assembly/constraints/mateResiduals.js';
 export * from './assembly/constraints/solveRigid.js';
 export { runCooperative, type CooperativeResult, type CooperativeRun, type CooperativeSchedule } from './assembly/constraints/cooperativeRigid.js';
 export * from './assembly/constraints/solveMates.js';
+export { finiteDragVector, validDragPlacement } from './assembly/constraints/mateDrag.js';
 
 export * from './assembly/joints/jointFrames.js';
 export * from './assembly/joints/jointResiduals.js';

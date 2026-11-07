@@ -61,8 +61,8 @@ export interface ContactDraft {
   readonly loadFactors: readonly string[];
 }
 export type ContactValueField = 'normalX' | 'normalY' | 'normalZ' | 'gap';
-export interface FrictionLoadDraft { readonly id: string; readonly nodeId: string; readonly force: readonly [string, string, string]; readonly moment: readonly [string, string, string] }
-export interface FrictionDraft { readonly coefficients: Readonly<Record<string, string>>; readonly solver: 'newton' | 'nsgs'; readonly iterationLimit: string; readonly steps: readonly { readonly loads: readonly FrictionLoadDraft[] }[] }
+ interface FrictionLoadDraft { readonly id: string; readonly nodeId: string; readonly force: readonly [string, string, string]; readonly moment: readonly [string, string, string] }
+ interface FrictionDraft { readonly coefficients: Readonly<Record<string, string>>; readonly solver: 'newton' | 'nsgs'; readonly iterationLimit: string; readonly steps: readonly { readonly loads: readonly FrictionLoadDraft[] }[] }
 /** Owned, immutable restored inputs; reused only while the editable geometry and source still match. */
 interface FrictionRestoreBaseline { readonly definition: StandardBeamFrictionDefinition; readonly geometryKey: string; readonly openedSource: BeamDefinition['source'] }
 export type BeamAnalysisType = 'static' | 'modal' | 'buckling' | 'transient' | 'contact' | 'impact' | 'friction';

@@ -21,7 +21,7 @@ export type ExpressionValueJson = ExtrudeFeature['distance'];
 export type FieldReason = 'missing' | 'type';
 
 /** どの欄が読めなかったか。`path` は `document.solids[0].distance.source` のような場所。 */
-export interface FieldProblem {
+interface FieldProblem {
   readonly path: string;
   readonly reason: FieldReason;
 }

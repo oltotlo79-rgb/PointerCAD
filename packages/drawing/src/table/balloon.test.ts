@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { balloon, type BalloonInput } from './balloon.js';
+import { balloon } from './balloon.js';
+
+type BalloonInput = Parameters<typeof balloon>[0];
 
 const input = (): BalloonInput => ({ itemNumber: 7, bomNumbers: new Set([7, 12]), position: [20, 0], target: [0, 0], targetKind: 'edge' });
 describe('部品表と一致する風船（P8-55）', () => {

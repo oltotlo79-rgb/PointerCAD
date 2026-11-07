@@ -10,8 +10,10 @@ import { planeBody, TEE_PLANE_BODIES } from './filletWeldBodies.testSupport.js';
 import {
   appendFilletWeldPick, commitFilletWeldDraft, createFilletWeldDraft, createFilletWeldEditDraft, filletWeldPickKind,
   filletWeldSegments, previewFilletWeldDraft, selectedWeldId,
-  type AssemblyFilletWeldDraft, type FilletWeldDraftContext,
+  type AssemblyFilletWeldDraft,
 } from './filletWeldDraft.js';
+
+type FilletWeldDraftContext = Parameters<typeof previewFilletWeldDraft>[0];
 
 const REVISIONS: ReadonlyMap<string, string> = new Map([['standing', 'rev-s'], ['base', 'rev-b']]);
 

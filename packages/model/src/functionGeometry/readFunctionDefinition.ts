@@ -9,7 +9,7 @@ export interface FunctionExpressionScope {
   readonly axes: readonly FunctionPlotAxis[];
   readonly parameters: readonly MathParameter[];
 }
-export interface FunctionDefinitionReader {
+interface FunctionDefinitionReader {
   /** Decode source/units/structure. A saved numeric cache is not authority for later recomputation. */
   readonly scalar: (input: unknown, field: string) => ExpressionValue;
   /** The Worker reader also reparses visible source and proves AST equivalence in this closed scope. */

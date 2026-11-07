@@ -396,3 +396,40 @@ describe('independent current-face supports', () => {
       { ...settings(), supports: [] })).toThrow(/dense/u);
   });
 });
+
+describe('actual CAD pipeline stages', () => {
+  it('separates mesh Worker phases from whole-pipeline stages and ends after a solver refusal', async () => {
+    const events: string[] = [], phases: string[] = [];
+    const native = nativeFixture();
+    const client: Pick<FemClient, 'meshTetrahedra' | 'analyzeSolid'> = {
+      meshTetrahedra: (input, options) => {
+        events.push('native-mesh'); options?.onPhase?.('solving');
+        return native.meshTetrahedra(input, options);
+      },
+      analyzeSolid: (_input, options) => {
+        events.push('native-solid'); options?.onPhase?.('loading-runtime');
+        return Promise.resolve({ kind: 'failed', identity: { documentId: 'part', revision: 7,
+          generation: 1, requestId: 'solid' }, failure: { code: 'solver-failed', message: 'preserved refusal' } });
+      },
+    };
+    const outcome = await analyzeCadSolid(client, kernel(() => events.push('cad-boundary')), context, settings(), {
+      onStage: stage => events.push(stage ?? 'ended'), onPhase: phase => phases.push(phase),
+    });
+    expect(outcome).toMatchObject({ kind: 'failed', code: 'solver-failed' });
+    expect(events).toEqual(['preparing', 'cad-boundary', 'meshing', 'native-mesh', 'solving', 'native-solid', 'ended']);
+    expect(phases).toEqual(['solving', 'loading-runtime']);
+  });
+  it('ends a failed mesh without reporting or dispatching structural solving', async () => {
+    const events: string[] = [];
+    let solves = 0;
+    const client: Pick<FemClient, 'meshTetrahedra' | 'analyzeSolid'> = {
+      meshTetrahedra: () => Promise.resolve({ kind: 'failed', identity: { documentId: 'part', revision: 7,
+        generation: 1, requestId: 'mesh' }, failure: { code: 'solver-failed', message: 'mesh refused' } }),
+      analyzeSolid: () => { solves++; throw new Error('Must not solve a failed mesh'); },
+    };
+    expect(await analyzeCadSolid(client, kernel(), context, settings(), {
+      onStage: stage => events.push(stage ?? 'ended'),
+    })).toMatchObject({ kind: 'failed' });
+    expect(events).toEqual(['preparing', 'meshing', 'ended']); expect(solves).toBe(0);
+  });
+});

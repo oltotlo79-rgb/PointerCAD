@@ -25,10 +25,11 @@ import {
   createConstrainedSketchJob,
   resolveConstrainedSketch,
   type ConstrainedSketch,
-  type ConstrainedSolveOptions,
 } from './solveSketch.js';
 import type { ConstraintTarget, SketchConstraint } from './types.js';
 import { MAX_CONSTRAINT_VARIABLES } from './variables.js';
+
+type ConstrainedSolveOptions = NonNullable<Parameters<typeof createConstrainedSketchJob>[2]>;
 
 /**
  * タスク8 の検査。**3 段の解決(① 拘束を無視した解決 → ② 連立を解く → ③ 解を差し込んで

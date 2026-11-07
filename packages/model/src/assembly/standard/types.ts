@@ -28,17 +28,6 @@ export interface StandardDimensionRow {
   readonly note: string;
 }
 
-/** 寸法表に付ける出典。数値と同じ場所から輸出し、UI に複製しない。 */
-export interface StandardTableSource {
-  readonly standard: string;
-  readonly edition: string;
-  readonly title: string;
-  readonly scope: string;
-  readonly sourceUrls: readonly string[];
-  /** 全行が確認済みのときだけ true。 */
-  readonly verified: boolean;
-}
-
 /** 六角ボルト・ナットの寸法系列。利用者の選択を options に保存する。 */
 export type FastenerDimensionSeries = 'annexJA' | 'main';
 
@@ -136,5 +125,3 @@ export interface HBeamRow extends StandardDimensionRow {
   readonly areaCm2: number;
   readonly massKgPerM: number;
 }
-
-export type SectionRow = EqualAngleRow | ChannelRow | HBeamRow;

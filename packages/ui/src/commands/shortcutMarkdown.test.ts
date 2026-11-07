@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { COMMAND_DEFINITIONS } from './commandDefinitions.js';
-import { currentShortcutMarkdown, resolveShortcutTable, SHORTCUT_TABLE_MARKER } from './shortcutMarkdown.js';
+import { currentShortcutMarkdown, resolveShortcutTable } from './shortcutMarkdown.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SHORTCUT_TABLE_MARKER = '<!-- pointercad:current-shortcuts -->';
 
 describe('shortcut Markdown', () => {
   it('renders every registered binding from the command source of truth', () => {

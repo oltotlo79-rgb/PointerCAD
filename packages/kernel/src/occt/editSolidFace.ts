@@ -46,10 +46,10 @@ export const MIN_FACE_OFFSET_MM = 1e-6;
 /** 直角・平行の判定の許容(内積・外積の大きさ)。平面・円柱の軸は gp_Dir で長さ 1。 */
 const ANGULAR_TOLERANCE = 1e-9;
 
-export const FACE_OFFSET_DISTANCE_MESSAGE = '面を動かす距離は 0 でない数で指定してください。';
+const FACE_OFFSET_DISTANCE_MESSAGE = '面を動かす距離は 0 でない数で指定してください。';
 export const FACE_OFFSET_MISSING_FACE_MESSAGE =
   '動かす面が見つかりません。形が変わったため、面を選び直してください。';
-export const FACE_OFFSET_NOT_PLANAR_MESSAGE = '動かせるのは平らな面だけです。';
+const FACE_OFFSET_NOT_PLANAR_MESSAGE = '動かせるのは平らな面だけです。';
 export const FACE_OFFSET_INVALID_BODY_MESSAGE =
   '元の立体の形が正しくないため、面を動かせません。元の立体を直してください。';
 export const FACE_OFFSET_ADJACENT_MESSAGE =

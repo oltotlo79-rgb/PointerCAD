@@ -31,7 +31,7 @@ export interface FilletWeldPick {
 /** 置いた部品のいまの形で参照を選び直す口。見つからない・曖昧なら `null`。 */
 export type WeldGeometryResolver = (component: AssemblyComponent, reference: SubShapeRef) => MateSubShapeGeometry | null;
 
-export interface FilletWeldPicks {
+interface FilletWeldPicks {
   readonly first: FilletWeldPick;
   readonly edge: FilletWeldPick;
   readonly second: FilletWeldPick;

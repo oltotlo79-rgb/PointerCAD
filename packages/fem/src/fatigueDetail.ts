@@ -30,10 +30,10 @@ import { MAX_FATIGUE_HISTORIES, MAX_FATIGUE_HISTORY_POINTS, type FatigueSequence
  *   https://crafter.fastenal.com/static-assets/pdfs/Mechanical_Properties_of_Metric_Fasteners.pdf (page 2).
  */
 export const FATIGUE_DETAIL_INPUT_SCHEMA = 'pointercad-fatigue-detail/1';
-export const FATIGUE_DETAIL_RESULT_SCHEMA = 'pointercad-fatigue-detail-result/1';
+ const FATIGUE_DETAIL_RESULT_SCHEMA = 'pointercad-fatigue-detail-result/1';
 /** Joint forces are N; with the smallest areas below, every stress beyond the core's 1e4 MPa bound is refused there. */
-export const MAX_FATIGUE_DETAIL_FORCE_N = 1e9;
-export const FATIGUE_DETAIL_GEOMETRY_LIMITS = {
+ const MAX_FATIGUE_DETAIL_FORCE_N = 1e9;
+ const FATIGUE_DETAIL_GEOMETRY_LIMITS = {
   weldSizeMm: { minimum: 0, maximum: 100 },
   weldLengthMm: { minimum: 0, maximum: 10_000 },
   weldLines: { minimum: 1, maximum: 64 },
@@ -45,42 +45,39 @@ export const FATIGUE_DETAIL_GEOMETRY_LIMITS = {
  * ISO metric basic profile with H = (sqrt(3) / 2) P: d2 = d - (3/4) H and d3 = d - (17/12) H, so the stress diameter
  * (d2 + d3) / 2 = d - (13/12) H = d - (13 sqrt(3) / 24) P = d - 0.938194... P.
  */
-export const ISO_METRIC_STRESS_DIAMETER_PITCH_FACTOR = (13 * Math.sqrt(3)) / 24;
+ const ISO_METRIC_STRESS_DIAMETER_PITCH_FACTOR = (13 * Math.sqrt(3)) / 24;
 
-export type FatigueDetailKind = 'weld' | 'bolt';
-export type FatigueDetailMethod = 'fillet-weld-nominal-shear/1' | 'bolt-axial-nominal/1';
-export type FatigueDetailWeldLoadPath = 'concentric-in-plane-shear';
-export type FatigueDetailGeometryKind = 'fillet-throat-area' | 'fillet-leg-area' | 'iso-metric-thread-tensile-stress-area'
-  | 'nominal-shank-area';
+ type FatigueDetailKind = 'weld' | 'bolt';
+ type FatigueDetailWeldLoadPath = 'concentric-in-plane-shear';
 /** Which nominal stress a joint produces and a calibration was derived for. */
 export type FatigueDetailStress = 'weld-fillet-throat-nominal-shear' | 'weld-fillet-leg-nominal-shear'
   | 'bolt-axial-normal-tensile-stress-area' | 'bolt-axial-normal-nominal-shank-area';
 export type FatigueDetailQuantity = 'weld-group-concentric-shear-force' | 'bolt-total-axial-force' | 'joint-external-axial-force'
   | 'detail-stress';
 
-export type FatigueDetailWeldGeometry =
+ type FatigueDetailWeldGeometry =
   | { readonly kind: 'fillet-throat-area'; readonly throatMm: number; readonly effectiveLengthMm: number; readonly lines: number }
   | { readonly kind: 'fillet-leg-area'; readonly legMm: number; readonly effectiveLengthMm: number; readonly lines: number };
-export type FatigueDetailBoltGeometry =
+ type FatigueDetailBoltGeometry =
   | { readonly kind: 'iso-metric-thread-tensile-stress-area'; readonly nominalDiameterMm: number; readonly pitchMm: number }
   | { readonly kind: 'nominal-shank-area'; readonly nominalDiameterMm: number };
-export interface FatigueDetailWeld {
+ interface FatigueDetailWeld {
   readonly id: string;
   readonly kind: 'weld';
   readonly method: 'fillet-weld-nominal-shear/1';
   readonly loadPath: FatigueDetailWeldLoadPath;
   readonly geometry: FatigueDetailWeldGeometry;
 }
-export interface FatigueDetailBolt {
+ interface FatigueDetailBolt {
   readonly id: string;
   readonly kind: 'bolt';
   readonly method: 'bolt-axial-nominal/1';
   readonly geometry: FatigueDetailBoltGeometry;
 }
-export type FatigueDetailJoint = FatigueDetailWeld | FatigueDetailBolt;
+ type FatigueDetailJoint = FatigueDetailWeld | FatigueDetailBolt;
 
 /** One chronological joint force history (N), with the same sequence/repeats/source rules as a stress history. */
-export interface FatigueDetailForceHistory {
+ interface FatigueDetailForceHistory {
   readonly id: string;
   readonly unit: 'N';
   readonly forceN: readonly number[];
@@ -88,12 +85,12 @@ export interface FatigueDetailForceHistory {
   readonly repeats: number;
   readonly source: FatigueSource;
 }
-export type FatigueDetailLoading =
+ type FatigueDetailLoading =
   | { readonly detailId: string; readonly location: string; readonly quantity: 'weld-group-concentric-shear-force' | 'bolt-total-axial-force';
     readonly histories: readonly FatigueDetailForceHistory[] }
   | { readonly detailId: string; readonly location: string; readonly quantity: 'detail-stress'; readonly stress: FatigueDetailStress;
     readonly histories: readonly FatigueStressHistory[] };
-export interface FatigueDetailCurve {
+ interface FatigueDetailCurve {
   readonly detailStress: FatigueDetailStress;
   readonly calibration: FatiguePiecewiseCurve;
 }
@@ -108,15 +105,15 @@ export type FatigueDetailErrorCode = FatiguePiecewiseErrorCode | 'fatigue-detail
   | 'fatigue-detail-method' | 'fatigue-detail-load-path' | 'fatigue-detail-geometry' | 'fatigue-detail-quantity'
   | 'fatigue-detail-load-distribution' | 'fatigue-detail-bolt-compression' | 'fatigue-detail-stress'
   | 'fatigue-detail-stress-mismatch' | 'fatigue-detail-binding' | 'fatigue-detail-location';
-export interface FatigueDetailError { readonly ok: false; readonly code: FatigueDetailErrorCode; readonly path: string }
-export interface FatigueDetailChecked {
+ interface FatigueDetailError { readonly ok: false; readonly code: FatigueDetailErrorCode; readonly path: string }
+ interface FatigueDetailChecked {
   readonly input: FatigueDetailInput;
   readonly areaMm2: number;
   readonly detailStress: FatigueDetailStress;
   /** The nominal stress histories (MPa) in the joint's stress definition, as read by the unchanged strict reader. */
   readonly stressInput: FatiguePiecewiseInput;
 }
-export type FatigueDetailValidation = ({ readonly ok: true } & FatigueDetailChecked) | FatigueDetailError;
+ type FatigueDetailValidation = ({ readonly ok: true } & FatigueDetailChecked) | FatigueDetailError;
 export interface FatigueDetailResult {
   readonly schema: typeof FATIGUE_DETAIL_RESULT_SCHEMA;
   readonly method: 'detail-nominal-stress/1+rainflow-three-point-stack/1+miner-linear-piecewise/1';
@@ -132,7 +129,7 @@ export interface FatigueDetailResult {
   readonly stressHistories: readonly FatigueStressHistory[];
   readonly analysis: FatiguePiecewiseResult;
 }
-export type FatigueDetailAnalysis = { readonly ok: true; readonly result: FatigueDetailResult } | FatigueDetailError;
+ type FatigueDetailAnalysis = { readonly ok: true; readonly result: FatigueDetailResult } | FatigueDetailError;
 
 const DETAIL_STRESSES: readonly FatigueDetailStress[] = ['weld-fillet-throat-nominal-shear', 'weld-fillet-leg-nominal-shear',
   'bolt-axial-normal-tensile-stress-area', 'bolt-axial-normal-nominal-shank-area'];
@@ -227,7 +224,7 @@ function readDetail(value: unknown): FatigueDetailJoint | FatigueDetailError {
 }
 
 /** The nominal stress definition a validated joint produces. */
-export function fatigueDetailStressDefinition(detail: FatigueDetailJoint): FatigueDetailStress {
+ function fatigueDetailStressDefinition(detail: FatigueDetailJoint): FatigueDetailStress {
   switch (detail.geometry.kind) {
     case 'fillet-throat-area': return 'weld-fillet-throat-nominal-shear';
     case 'fillet-leg-area': return 'weld-fillet-leg-nominal-shear';

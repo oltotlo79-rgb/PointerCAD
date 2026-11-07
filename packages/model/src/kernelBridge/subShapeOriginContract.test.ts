@@ -242,3 +242,19 @@ it('keeps the modeled thread groove producer (center and placement) closed acros
   expect(kernelGroove).toEqual(grooveCanonical);
   expect(JSON.parse(JSON.stringify(drawingGroove))).toEqual(modelGroove);
 });
+
+const arcSurfaceCanonicals = [
+  { version: 1, shapeKind: 'face', identity: { kind: 'surface-curve-side', featureId: 'sheet',
+    profile: { sketchId: 'sketch', curveFeatureId: 'arc', role: 'whole-curve' } } },
+  ...(['section-start', 'section-end', 'swept-start', 'swept-end'] as const).map(role => ({
+    version: 1 as const, shapeKind: 'edge' as const, identity: { kind: 'surface-curve-edge' as const,
+      featureId: 'sheet', profile: { sketchId: 'sketch', curveFeatureId: 'arc', role: 'whole-curve' as const }, role } })),
+] as const satisfies readonly KernelOrigin[];
+
+const modelArcSurfaces: readonly ModelOrigin[] = arcSurfaceCanonicals;
+const drawingArcSurfaces: readonly DrawingOrigin[] = modelArcSurfaces;
+const kernelArcSurfaces: readonly KernelOrigin[] = drawingArcSurfaces;
+it('keeps saved arc face and four boundary identities closed across all three mirrors', () => {
+  expect(kernelArcSurfaces).toEqual(arcSurfaceCanonicals);
+  expect(kernelArcSurfaces).toHaveLength(5);
+});

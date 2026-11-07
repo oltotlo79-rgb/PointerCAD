@@ -20,6 +20,7 @@
  * (kernel / io が組み立てて返す文)と同じ扱いにそろえてある。
  */
 
+import { startsWithBytes } from '@pointercad/kernel';
 import type { SketchCanvas } from '../part/types.js';
 import { integerSerial, nextSerialValue } from '../serialValue.js';
 
@@ -66,19 +67,6 @@ const PNG_SIGNATURE: readonly number[] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x
  */
 const JPEG_SIGNATURE: readonly number[] = [0xff, 0xd8, 0xff];
 
-/** バイト列が指定の並びで始まるか。 */
-function startsWith(bytes: Uint8Array, signature: readonly number[]): boolean {
-  if (bytes.length < signature.length) {
-    return false;
-  }
-  for (let index = 0; index < signature.length; index += 1) {
-    if (bytes[index] !== signature[index]) {
-      return false;
-    }
-  }
-  return true;
-}
-
 /**
  * バイト列の先頭から画像の形式を見分ける(§0.a-0.45)。PNG でも JPEG でもなければ `null`。
  *
@@ -87,10 +75,10 @@ function startsWith(bytes: Uint8Array, signature: readonly number[]): boolean {
  * (`packages/io` の `isTemplateKind` が拡張子ではなく封筒の種別を見るのと同じ考え方)。
  */
 export function detectImageFormat(bytes: Uint8Array): CanvasImageFormat | null {
-  if (startsWith(bytes, PNG_SIGNATURE)) {
+  if (startsWithBytes(bytes, PNG_SIGNATURE)) {
     return 'png';
   }
-  if (startsWith(bytes, JPEG_SIGNATURE)) {
+  if (startsWithBytes(bytes, JPEG_SIGNATURE)) {
     return 'jpeg';
   }
   return null;

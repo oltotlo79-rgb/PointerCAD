@@ -30,7 +30,6 @@ import {
   bindAnalyticNativeChain,
   bindAnalyticInteriorCells,
   type AnalyticFaceChart,
-  type AnalyticWireChain,
   type AnalyticConnectorTrace,
   trimChordDeviationBound,
   validateAnalyticUvComplex,
@@ -55,6 +54,8 @@ import { makePrimitive } from './makePrimitive.js';
 import { makeCompound, transformShape } from './transformShape.js';
 import { readNativeFreeformBound, freeformTriangleDistance, partitionedFreeformTriangleDistance } from './analysisFreeformBound.js';
 import { measureVolume } from './solidMesh.js';
+
+type AnalyticWireChain = Parameters<typeof boundAnalyticWireRibbons>[1][number];
 
 /*
  * Expected values and tolerances are fixed from the geometry before any execution (authored UNEXECUTED):

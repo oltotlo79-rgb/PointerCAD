@@ -7,10 +7,14 @@ import { t } from '../i18n/t.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { FatiguePanel } from './FatiguePanel.js';
-import { BASE_EDITS, BASE_DAMAGE, relative } from './fatigue.testSupport.js';
+import { BASE_EDITS, relative } from './fatigue.testSupport.js';
 import { currentDetailResult } from './fatigueDetailSession.js';
 import { currentFatigueResultWithPiecewise, fatigueEntryIsSavedWithPiecewise, type FatigueAnyEdit } from './fatiguePiecewiseSession.js';
 import { savedFatigueEntry, type FatigueSession } from './fatigueSession.js';
+
+/** Hand-derived for BASE_EDITS: rainflow of 0,200,0 gives two half cycles of range 200 (mean 100); each adds
+ * 0.5 * (200 / 100)^3 / 2e6 = 2e-6, so D = 4e-6 and the input can be applied 1 / D = 250000 times. */
+const BASE_DAMAGE = 4e-6;
 
 // Same established pattern as fatiguePiecewise.test.tsx: render the current store (not zustand's server snapshot).
 beforeEach(() => {

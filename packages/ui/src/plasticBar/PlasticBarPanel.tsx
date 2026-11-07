@@ -59,8 +59,9 @@ export function PlasticBarPanel({ session }: { readonly session: PlasticBarSessi
       <legend>{t('plasticBar.material')}</legend>
       <p>{t('plasticBar.materialHelp')}</p>
       <div className="pcad-beam__numbers">
-        {scalar('young')}{scalar('poisson')}{scalar('yieldStress')}{scalar('hardening')}
+        {scalar('young')}{scalar('poisson')}{scalar('yieldStress')}{scalar('hardening')}{scalar('plateau')}
       </div>
+      <p data-testid="plastic-bar-plateau-help">{t('plasticBar.plateauHelp')}</p>
       <label>{t('plasticBar.source')}
         <input type="text" data-testid="plastic-bar-source" maxLength={500} value={session.draft.reference}
           aria-describedby="plastic-bar-source-help"

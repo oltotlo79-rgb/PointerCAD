@@ -57,7 +57,7 @@ import { isShellNativeWireResult, type ShellNativeWireResult } from './shellBind
 /** Isolated runtime and linear analysis; neither certifies a CAD structure. */
 export const FEM_PROTOCOL = 'pointercad-fem/1';
 export const FEM_RUNTIME_VERSION = '0.29.3';
-export const OOFEM_DISTRIBUTION_VERSION = '3.1.dev5+g214b161ed';
+const OOFEM_DISTRIBUTION_VERSION = '3.1.dev5+g214b161ed';
 export type FemPhase = 'loading-assets' | 'loading-runtime' | 'loading-packages' | 'solving';
 export interface FemIdentity {
   readonly documentId: string;

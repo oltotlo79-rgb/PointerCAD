@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { gpuPostTraceDelivery, gpuOwnedStopReceipt, gpuPostTraceWaitBudget, consumeGpuPostTrace, memoryWorkloadCapture, type MemoryWorkloadCapture, gpuMemoryIsMeasured, parseDrmClientMemory, processMemoryTotals, processMemoryWithinBudget, combinedSampledMemoryBound, summarizeProcessMemory, qualifyGpuResidentSample,
+import { gpuPostTraceDelivery, gpuOwnedStopReceipt, gpuPostTraceWaitBudget, consumeGpuPostTrace, memoryWorkloadCapture, gpuMemoryIsMeasured, parseDrmClientMemory, processMemoryTotals, processMemoryWithinBudget, combinedSampledMemoryBound, summarizeProcessMemory, qualifyGpuResidentSample,
   type MemoryPhase, type ProcessMemoryFrame, type ProcessMemorySample } from './processMemorySamples.js';
+
+type MemoryWorkloadCapture = Parameters<typeof consumeGpuPostTrace>[0];
 
 const process: ProcessMemorySample = { pid: 12, parentPid: 1, created: '100', name: 'renderer',
   workingSetBytes: 100, privateBytes: 80, error: null };

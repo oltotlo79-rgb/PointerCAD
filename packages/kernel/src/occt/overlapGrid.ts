@@ -7,10 +7,10 @@
  */
 
 export type TrianglePoint = readonly [number, number, number];
-export type Triangle3 = readonly [TrianglePoint, TrianglePoint, TrianglePoint];
+type Triangle3 = readonly [TrianglePoint, TrianglePoint, TrianglePoint];
 
 /** 法線は交差判定に使わないため、位置と添字だけを受け取る。 */
-export interface TriangleMeshData {
+interface TriangleMeshData {
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
 }

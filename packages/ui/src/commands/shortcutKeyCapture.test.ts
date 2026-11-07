@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { captureShortcutKey, type AssignmentKeyEvent } from './shortcutKeyCapture.js';
+import { captureShortcutKey } from './shortcutKeyCapture.js';
+
+type AssignmentKeyEvent = Parameters<typeof captureShortcutKey>[0];
 
 const key = (key: string, extra: Partial<AssignmentKeyEvent> = {}): AssignmentKeyEvent => ({
   key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, repeat: false,

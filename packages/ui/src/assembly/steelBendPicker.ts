@@ -21,7 +21,7 @@ export const DEFAULT_STEEL_BEND_SOURCES: SteelBendSources = {
   radius: '100', angleDegrees: '90', directionDegrees: '0', firstLeg: '200', secondLeg: '200',
   radiusConvention: 'inside', legDimension: 'tangent',
 };
-export type SteelBendPickerResult = SteelBendResult | { readonly ok: false; readonly reason: 'invalidExpression' };
+ type SteelBendPickerResult = SteelBendResult | { readonly ok: false; readonly reason: 'invalidExpression' };
 
 /** Creates a new sourced stock item; it never relabels an existing purchased part. */
 export function buildSteelBendChoice(product: SteelProduct, sources: SteelBendSources): SteelBendPickerResult {
@@ -50,9 +50,9 @@ function buildFromSources(product: SteelProduct, sources: SteelBendSources,
   return createSteelBend(source, dimensions);
 }
 
-export type SteelBendEditFailure = 'missing' | 'modified' | 'unsupported' | 'unavailable' | 'failed';
+ type SteelBendEditFailure = 'missing' | 'modified' | 'unsupported' | 'unavailable' | 'failed';
 export type SteelBendEditResult = SteelBendPickerResult | { readonly ok: false; readonly reason: SteelBendEditFailure };
-export type SteelBendEditInput =
+ type SteelBendEditInput =
   | { readonly ok: true; readonly sources: SteelBendSources; readonly product: SteelProduct }
   | { readonly ok: false; readonly reason: 'missing' | 'modified' | 'unsupported' };
 

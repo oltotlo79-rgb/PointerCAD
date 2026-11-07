@@ -44,7 +44,7 @@ describe('nativeMathDeadlineKindの分類漏れを防ぐ網羅の検査', () => 
       expect(nativeMathDeadlineKind(head), head).toBe('distribution');
     }
   });
-  it('現状light(200msのまま)の頭を一覧できる(実測(w87a 2026-09-28)で判断済み)', () => {
+  it('現状light(200msのまま)の頭を一覧できる(実測(2026-09-28)で判断済み)', () => {
     const light = [...NUMERIC_HEAD_ALLOWANCE].filter(([, entry]) => entry.kind === 'light').map(([head]) => head).sort();
     // NormalQuantile/PoissonQuantileは実測でcold/warmの最大が50msを超え(52.069ms/86.100ms)、
     // CIのWindowsの遅さを5倍と見積もっても200msに近づくためdistributionへ変更済み。

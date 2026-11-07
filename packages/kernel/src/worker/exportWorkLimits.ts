@@ -1,6 +1,6 @@
 /** Bounds for one export request. Native/WASM allocation during a synchronous call has its own owner. */
 export const EXPORT_TRIANGLE_LIMIT = 1_000_000;
-export const EXPORT_JS_BYTE_LIMIT = 512 * 1024 * 1024;
+const EXPORT_JS_BYTE_LIMIT = 512 * 1024 * 1024;
 export const EXPORT_DEADLINE_MS = 25_000;
 
 export class ExportWorkLimitError extends Error {

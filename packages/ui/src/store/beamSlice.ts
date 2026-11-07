@@ -18,7 +18,7 @@ export interface BeamRunner {
   cancel(): void;
 }
 export interface BoltPreloadRunner { run(draft: BoltPreloadDraft): void; cancel(): void }
-export type BoltPreloadStatus = 'editing' | 'reviewing' | 'running' | 'complete' | 'cancelled' | 'failed';
+ type BoltPreloadStatus = 'editing' | 'reviewing' | 'running' | 'complete' | 'cancelled' | 'failed';
 
 export interface BeamSlice {
   readonly boltPreloadOwner: AppState['strengthSession'];
@@ -59,7 +59,7 @@ export interface BeamSlice {
 export const BOLT_AUTHOR_NUMBERS = ["young0", "shear0", "density0", "area0", "iy0", "iz0", "torsion0", "factor0", "young1", "shear1", "density1", "area1", "iy1", "iz1", "torsion1", "factor1", "boltYoung", "boltArea", "preloadN", "threadCompliance", "headCompliance", "bearingCompliance", "memberCompliance"] as const;
 export const BOLT_AUTHOR_EVIDENCE = ["material0", "section0", "material1", "section1", "modelSource", "shankSource", "shorteningSource", "preloadN", "threadCompliance", "headCompliance", "bearingCompliance", "memberCompliance", "loadSource"] as const;
 export type BoltAuthorNumber = typeof BOLT_AUTHOR_NUMBERS[number];
-export type BoltAuthorEvidence = typeof BOLT_AUTHOR_EVIDENCE[number];
+ type BoltAuthorEvidence = typeof BOLT_AUTHOR_EVIDENCE[number];
 function emptyBoltAuthorNumbers(): Record<BoltAuthorNumber, string> { return { young0: '', shear0: '', density0: '', area0: '', iy0: '', iz0: '', torsion0: '', factor0: '', young1: '', shear1: '', density1: '', area1: '', iy1: '', iz1: '', torsion1: '', factor1: '', boltYoung: '', boltArea: '', preloadN: '', threadCompliance: '', headCompliance: '', bearingCompliance: '', memberCompliance: '' }; }
 function emptyBoltAuthorEvidence(): Record<BoltAuthorEvidence, PropertySource> { return { material0: { kind: 'user-supplied', reference: '', condition: '' }, section0: { kind: 'user-supplied', reference: '', condition: '' }, material1: { kind: 'user-supplied', reference: '', condition: '' }, section1: { kind: 'user-supplied', reference: '', condition: '' }, modelSource: { kind: 'user-supplied', reference: '', condition: '' }, shankSource: { kind: 'user-supplied', reference: '', condition: '' }, shorteningSource: { kind: 'user-supplied', reference: '', condition: '' }, preloadN: { kind: 'user-supplied', reference: '', condition: '' }, threadCompliance: { kind: 'user-supplied', reference: '', condition: '' }, headCompliance: { kind: 'user-supplied', reference: '', condition: '' }, bearingCompliance: { kind: 'user-supplied', reference: '', condition: '' }, memberCompliance: { kind: 'user-supplied', reference: '', condition: '' }, loadSource: { kind: 'user-supplied', reference: '', condition: '' } }; }
 
@@ -78,7 +78,7 @@ export interface BoltAuthorForm {
   readonly geometryConfirmed: boolean;
   readonly proposal: CadNativeBoltPreloadSavedInput | null;
 }
-export type BoltAuthorEdit = { readonly kind: 'number'; readonly field: BoltAuthorNumber; readonly text: string }
+ type BoltAuthorEdit = { readonly kind: 'number'; readonly field: BoltAuthorNumber; readonly text: string }
   | { readonly kind: 'evidence'; readonly field: BoltAuthorEvidence; readonly value: PropertySource }
   | { readonly kind: 'member'; readonly index: 0 | 1; readonly path: string }
   | { readonly kind: 'bolt'; readonly id: string } | { readonly kind: 'contact'; readonly id: string }

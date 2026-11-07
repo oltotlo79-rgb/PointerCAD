@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { recomputeTerminalOutcome, type RecomputeState } from './recomputeState.js';
+import { recomputeTerminalOutcome } from './recomputeState.js';
+
+type RecomputeState = NonNullable<Parameters<typeof recomputeTerminalOutcome>[0]>;
 
 const finished: RecomputeState = { isComputing: false, requestedGeneration: 8, completedGeneration: 8, lastOutcome: 'success' };
 describe('再計算の最新世代の失敗を待機中と取り違えない', () => {

@@ -50,16 +50,8 @@ const EXCEPTIONS: readonly { readonly path: string; readonly rule: Rule; readonl
     reason: 'Node test helper used by UI test; its legacy name is retained.' },
   { path: 'packages/test-utils/src/performanceSequencer.ts', rule: 'vitest',
     reason: 'Published only as @pointercad/test-utils/performance-sequencer for the vitest configs (package.json exports).' },
-  { path: 'packages/expression/src/math/exactRuntimeTestSupport.ts', rule: 'vitest',
-    reason: 'Existing exact-runtime test harness imported only by tests (named in eslint.config.js); renaming it is outside E03.' },
   { path: 'packages/model/src/testing/createNativeKernelBridge.node.ts', rule: 'test-module-import',
     reason: 'Node-test entry under testing/ (*ForNodeTests, imported only by kernel tests) that reuses the ex18 shape oracle.' },
-  { path: 'packages/model/src/assembly/joints/mechanismCycleFixture.ts', rule: 'test-only-name',
-    reason: 'Existing mechanism oracle fixture imported only by joint tests; renaming it is outside E03.' },
-  { path: 'packages/model/src/assembly/standard/steelGolden.fixture.ts', rule: 'test-only-name',
-    reason: 'Frozen golden fixture whose bytes are SHA-pinned by steelAngleChannelOracle.test.ts.' },
-  { path: 'packages/model/src/assembly/standard/steelS45cOracle.fixture.ts', rule: 'test-only-name',
-    reason: 'Independent transcription whose bytes are SHA-pinned by steelAngleChannelOracle.test.ts.' },
 ];
 
 const productNamed = (path: string): boolean => productTypeScript(path) && !/\.d\.[cm]?ts$/u.test(path)
@@ -132,6 +124,14 @@ describe('検査専用の名前の方針（E03）', () => {
       for (const rule of ruleViolations(path, readFileSync(resolve(root, path), 'utf8'))) found.push(`${path} ${rule}`);
     }
     const allowed = EXCEPTIONS.map(row => `${row.path} ${row.rule}`);
+    for (const path of [
+      'packages/expression/src/math/exactRuntimeTestSupport.ts',
+      'packages/kernel/src/occt/loftSurfaceTestSupport.ts',
+      'packages/model/src/assembly/joints/mechanismCycleFixture.ts',
+      'packages/model/src/assembly/standard/steelGolden.fixture.ts',
+      'packages/model/src/assembly/standard/steelS45cOracle.fixture.ts',
+    ]) expect(existsSync(resolve(root, path)), path).toBe(false);
+
     expect(found.filter(row => !allowed.includes(row))).toEqual([]);
     // A stale exception (file renamed, fixed or removed) must be deleted, not kept as a silent allowance.
     expect(allowed.filter(row => !found.includes(row))).toEqual([]);

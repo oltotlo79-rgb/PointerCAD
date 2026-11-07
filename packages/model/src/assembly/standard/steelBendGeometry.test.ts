@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { STEEL_PRODUCTS } from './steelCatalog.js';
-import { planSteelBend, steelBendSection, type SteelBendDimensions, type SteelBendSection } from './steelBendGeometry.js';
+import { planSteelBend, steelBendSection, type SteelBendDimensions } from './steelBendGeometry.js';
+
+type SteelBendSection = Parameters<typeof planSteelBend>[0];
 
 // W05: independent input boundaries. In particular, a rectangle's enclosing radius
 // is not its projected half width; the conservative native sweep criterion uses both.

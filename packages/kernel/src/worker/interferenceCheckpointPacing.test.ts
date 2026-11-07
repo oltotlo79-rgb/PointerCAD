@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createInterferenceCheckpointPacing, INTERFERENCE_CANDIDATE_DELIVERY_MS } from './interferenceCheckpointPacing.js';
+import { createInterferenceCheckpointPacing } from './interferenceCheckpointPacing.js';
 
 describe('candidate-only checkpoint delivery policy (pure; no native execution)', () => {
   it('delivers the first candidate and the exact 100ms boundary', () => {
     let now = 0; const p = createInterferenceCheckpointPacing(() => now);
-    expect(INTERFERENCE_CANDIDATE_DELIVERY_MS).toBe(100);
     expect(p.shouldDeliver('candidates')).toBe(true);
     now = 99; expect(p.shouldDeliver('candidates')).toBe(false);
     now = 100; expect(p.shouldDeliver('candidates')).toBe(true);
+    // The next 100ms interval starts at that delivery (100), so 199 is still inside it.
+    now = 199; expect(p.shouldDeliver('candidates')).toBe(false);
   });
   it('does not postpone delivery by the duration of a slow callback', async () => {
     let now = 10; const p = createInterferenceCheckpointPacing(() => now);

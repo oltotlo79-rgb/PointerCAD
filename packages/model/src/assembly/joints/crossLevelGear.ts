@@ -158,11 +158,6 @@ export function* crossLevelGearFailureSteps(inputs: JointOccurrenceInputs, view:
   return null;
 }
 
-/** The cross-level couplings that move with `parentJointId` (in the given order). */
-export function crossLevelGearGroup(couplings: readonly CrossLevelGearCoupling[], parentJointId: string): readonly CrossLevelGearCoupling[] {
-  return couplings.filter(c => c.parentJointId === parentJointId);
-}
-
 /**
  * Drives one cross-level gear from either side, with every other coupling of the same parent joint: the parent joint
  * first (to the requested angle, or to the angle the inverse relation of the driven coupling gives for a requested

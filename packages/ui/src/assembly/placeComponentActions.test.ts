@@ -17,7 +17,6 @@ import { saveAssembly } from '../file/assemblyFile.js';
 import type { FileGateway } from '../file/fileGateway.js';
 import { resetTestStore } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
-import type { PlaceComponentDeps } from './placeComponentActions.js';
 import {
   cancelPlaceComponent,
   commitPlaceComponent,
@@ -29,6 +28,8 @@ import {
   updatePlaceComponentSource,
 } from './placeComponentActions.js';
 import { placementFromSources } from './placeComponent.js';
+
+type PlaceComponentDeps = NonNullable<Parameters<typeof startPlaceComponent>[0]>;
 
 const attachments = emptyEmbeddedPartAttachments();
 

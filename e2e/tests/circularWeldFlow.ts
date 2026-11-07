@@ -164,7 +164,14 @@ export function registerCircularWeldTests(test: typeof baseTest, appForPage: (pa
       await expect(field(page, 'total')).toHaveText(`${uiMessage('assembly', 'assembly.filletWeld.totalLength')} 15.708`);
       await expect(field(page, 'volume')).toHaveText(`${uiMessage('assembly', 'assembly.circularFilletWeld.nominalVolume')} 103.673`);
       await expect(field(page, 'commit')).toBeEnabled();
-      const token = await beginRecompute(page); await field(page, 'commit').click();
+      const commit = field(page, 'commit');
+      await commit.scrollIntoViewIfNeeded();
+      await expect.poll(() => commit.evaluate(button => {
+        const rect = button.getBoundingClientRect();
+        const hit = button.ownerDocument.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return hit === button || (hit !== null && button.contains(hit));
+      })).toBe(true);
+      const token = await beginRecompute(page); await commit.click();
       await expect(dialog(page)).toHaveCount(0); await waitForRecompute(page, token);
       await expect(componentRows(page)).toHaveCount(3); const welded = await resolvedPoses(page);
       await history(page, '元に戻す'); await expect(componentRows(page)).toHaveCount(2); expect(await resolvedPoses(page)).toEqual(before);

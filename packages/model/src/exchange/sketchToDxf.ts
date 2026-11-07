@@ -106,7 +106,7 @@ export interface SketchToDxfInput {
 }
 
 /** `sketchToDxf` の結果。断りは日本語 1 文で返す(NFR-UX-5)。 */
-export type SketchToDxfResult =
+type SketchToDxfResult =
   | { readonly ok: true; readonly entities: readonly SketchDxfEntity[] }
   | { readonly ok: false; readonly reason: string };
 

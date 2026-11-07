@@ -78,13 +78,6 @@ export function r22Bounds(shape: R22Shape, scale: number, operation: R22Operatio
   };
 }
 
-export const R22_NEAR_CONTACT = {
-  overlapMm: 1e-4,
-  intersectionVolumeMm3: 0.04,
-  subtractVolumeMm3: 7999.96,
-  unionVolumeMm3: 15999.96,
-} as const;
-
 export const R22_THIN_SOLIDS = [
   { name: 'thin slab', size: [20, 20, 0.001], volumeMm3: 0.4 },
   { name: 'short edge', size: [0.0001, 2, 3], volumeMm3: 0.0006 },

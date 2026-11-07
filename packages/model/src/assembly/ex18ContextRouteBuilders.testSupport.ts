@@ -15,8 +15,8 @@ import { createAssemblyDocument } from './createAssemblyDocument.js';
 import { embedPart, type PartLibrary } from './partLibrary.js';
 import type { Placement } from './types.js';
 
-export type Ex18ContextShape = 'A' | 'B' | 'C';
-export const EX18_CONTEXT_POINT_ID = 'context-point-P';
+type Ex18ContextShape = 'A' | 'B' | 'C';
+const EX18_CONTEXT_POINT_ID = 'context-point-P';
 
 export function contextPlacement(position: Vec3, rotation: Placement['rotation'] = [0, 0, 0, 1]): Placement {
   return { position: [value(position[0]), value(position[1]), value(position[2])], rotation };

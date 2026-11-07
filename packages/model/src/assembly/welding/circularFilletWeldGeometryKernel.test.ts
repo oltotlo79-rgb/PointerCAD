@@ -10,7 +10,7 @@ import { resolvePart } from '../../part/resolvePart.js';
 import type { PartDocument } from '../../part/types.js';
 import type { Vec3 } from '../../sketch/vec3.js';
 import { applyPlacementToDirection, applyPlacementToPoint, composePlacement, placementToRigidTransform, type RigidPlacement } from '../placementMath.js';
-import { buildCircularFilletWeldGeometry, type CircularFilletWeldGeometry, type CircularFilletWeldSection } from './circularFilletWeldGeometry.js';
+import { buildCircularFilletWeldGeometry, type CircularFilletWeldSection } from './circularFilletWeldGeometry.js';
 import type { CircularWeldPathDefinition, CircularWeldPathEvidence } from './curvedWeldPath.js';
 
 import { addComponent, createComponentFor } from '../assemblyEdit.js';
@@ -18,6 +18,8 @@ import { createAssemblyDocument } from '../createAssemblyDocument.js';
 import { resolveAssembly, type StandardPartSource } from '../resolveAssembly.js';
 import { buildStandardPartFromSource } from '../standard/buildStandardPart.js';
 import { readCircularFilletWeldSource } from './circularFilletWeldSource.js';
+
+type CircularFilletWeldGeometry = NonNullable<ReturnType<typeof buildCircularFilletWeldGeometry>>;
 
 // Ownership and precision follow filletWeldKernel.test.ts: beforeAll 180s,
 // releasePart in finally, relative native volume 1e-8 (line270), world digits4.

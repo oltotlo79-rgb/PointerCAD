@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createAnalyticCellBudget, type AnalyticPlcFaceBinding } from './analysisSurfaceCertificate.js';
-import { analyticChartAdmission, type AdmissionChart, type NativeEdgeRecord } from './analyticChartAdmissionR2.js';
+import { analyticChartAdmission, type NativeEdgeRecord } from './analyticChartAdmissionR2.js';
 import type { B08WireChain } from './boundary08Adapter.js';
+
+type AdmissionChart = Parameters<typeof analyticChartAdmission>[0];
 
 // Root-only projection beside the actual admission modules. No native or test execution by this author.
 const tick = (): void => undefined;

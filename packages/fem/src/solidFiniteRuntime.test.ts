@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { PyodideRuntime } from './runtime.js';
 import { SOLID_FINITE_PLAN_SCHEMA } from './solidFinitePlan.js';
-import { analyzeSolidFinite, SOLID_FINITE_RESPONSE_LIMIT, solidFiniteRuntimeClaimed } from './solidFiniteRuntime.js';
+import { analyzeSolidFinite, solidFiniteRuntimeClaimed } from './solidFiniteRuntime.js';
 import { SOLID_FINITE_INPUT_SCHEMA, solidFiniteInputSha256, translateSolidFinite, type SolidFiniteInput } from './solidFiniteTranslation.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SOLID_FINITE_RESPONSE_LIMIT = 28_500_000;
 
 /*
  * Fake-runtime contract of the finite equilibrium entry: I/O, JSON-only data, fixed Python, response bound, error identity

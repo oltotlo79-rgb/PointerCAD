@@ -5,7 +5,10 @@ import {
 } from '@pointercad/io';
 import { withCameraControlPreset, type CameraControlPreset } from './cameraControlSettings.js';
 import { DEFAULT_DISPLAY_SETTINGS, loadSettings, saveSettings } from './settings.js';
-import { CUSTOM_CAMERA, documentFixtures, EXPECTED_PRESETS, SAVED_AT, SETTINGS_KEY, settingsStorage } from './cameraSettingsPersistence.testSupport.js';
+import { CUSTOM_CAMERA, documentFixtures, EXPECTED_PRESETS, SAVED_AT, settingsStorage } from './cameraSettingsPersistence.testSupport.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SETTINGS_KEY = 'pointercad.settings';
 
 const fixtures = [
   { name: 'legacy without camera', camera: undefined, expected: EXPECTED_PRESETS.pointercad },

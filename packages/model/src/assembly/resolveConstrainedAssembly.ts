@@ -2,7 +2,7 @@ import { RigidWorkSequence } from './constraints/cooperativeRigid.js';
 import { drainRigidSteps, UNLIMITED_RIGID_WORK, type RigidWorkBudget, type RigidWorkPoint } from './constraints/solveRigid.js';
 import { createSubShapeReferenceResolver, type SolidBody } from '../kernelBridge.js';
 import { jointFramePairFromTargets, type JointFramePair } from './joints/jointFrames.js';
-import { resolveMateTarget } from './constraints/mateTargets.js';
+import { resolveMateTarget, type MateTargetOutcome } from './constraints/mateTargets.js';
 import type { MateResidualTargetPair } from './constraints/mateResiduals.js';
 import { diagnoseMatesSteps, solveMatesSteps } from './constraints/solveMates.js';
 import { resolveAssembly, type ResolveAssemblyOptions, type ResolvedAssembly, type ResolvedSubAssembly } from './resolveAssembly.js';
@@ -25,6 +25,23 @@ export function resolveConstrainedAssembly(document: AssemblyDocument,
   return budget === undefined ? drainRigidSteps(steps) : steps;
 }
 
+/**
+ * Mate/joint target resolution against the recomputed part bodies, with one sub-shape reference cache per call.
+ * Shared by the constrained solve below and the ui assembly recompute (`attachAssembly.ts`). `resolved` is read
+ * when the resolver is created; both callers resolve every target before they replace their placements.
+ */
+export function createBodyMateTargetResolver(resolved: ResolvedAssembly,
+  bodies: ReadonlyMap<string, readonly SolidBody[]>): (target: MateTarget) => MateTargetOutcome {
+  const resolveReference = createSubShapeReferenceResolver();
+  return (target: MateTarget) => resolveMateTarget(target, resolved, {
+    subShape: (key, ref) => {
+      const body = bodies.get(key)?.find((item) => item.featureId === ref.bodyFeatureId);
+      const resolution = body === undefined ? null : resolveReference(body, ref);
+      return resolution?.status === 'matched' ? resolution.match.geometry : null;
+    },
+  });
+}
+
 function* resolveConstrainedAssemblySteps(document: AssemblyDocument,
   bodies: ReadonlyMap<string, readonly SolidBody[]>, options: ResolveAssemblyOptions,
   budget: RigidWorkBudget): Generator<RigidWorkPoint, ConstrainedAssemblyResult, void> {
@@ -34,14 +51,7 @@ function* resolveConstrainedAssemblySteps(document: AssemblyDocument,
   if (resolved.errors.length > 0) return { ok: false, reason: 'source', messages: resolved.errors.map((error) => error.message) };
   const targets = new Map<string, MateResidualTargetPair>();
   const jointFrames = new Map<string, JointFramePair>();
-  const resolveReference = createSubShapeReferenceResolver();
-  const resolveTarget = (target: MateTarget) => resolveMateTarget(target, resolved, {
-    subShape: (key, ref) => {
-      const body = bodies.get(key)?.find((item) => item.featureId === ref.bodyFeatureId);
-      const resolution = body === undefined ? null : resolveReference(body, ref);
-      return resolution?.status === 'matched' ? resolution.match.geometry : null;
-    },
-  });
+  const resolveTarget = createBodyMateTargetResolver(resolved, bodies);
   const messages: string[] = [];
   for (const mate of document.mates.filter((item) => !item.suppressed)) {
     const a = resolveTarget(mate.a), b = resolveTarget(mate.b);

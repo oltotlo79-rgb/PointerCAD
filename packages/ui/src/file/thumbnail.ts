@@ -53,7 +53,7 @@ export const PRINT_BACKGROUND: CanvasBackground = { top: '#ffffff', bottom: '#ff
  * **検査から偽物を渡して塗られた色を確かめられるようにする**ため
  * (`packages/ui/src/file/fileGateway.ts` が偽の `globalThis` を受けるのと同じ考え方)。
  */
-export interface BackgroundFillTarget {
+interface BackgroundFillTarget {
   fillStyle: string | CanvasGradient | CanvasPattern;
   createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient;
   fillRect(x: number, y: number, width: number, height: number): void;

@@ -20,7 +20,7 @@ export interface PreparedNativeBoltPreload {
   readonly plan: NativeBoltPreloadPlan; readonly encoded: string; readonly inputSha256: string;
   readonly cb: number; readonly cm: number; readonly normal: Vector3; readonly momentLengthM: number;
 }
-export interface NativeBoltPreloadState {
+ interface NativeBoltPreloadState {
   readonly stage: 'tightening' | 'external'; readonly externalLoadN: number; readonly boltId: string;
   readonly extensionM: number; readonly elasticExtensionM: number; readonly boltTensionN: number;
   readonly memberCompressionN: number; readonly gapM: number; readonly boltEnergyJ: number; readonly memberEnergyJ: number;

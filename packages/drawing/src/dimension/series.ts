@@ -10,22 +10,23 @@ export interface DrawingViewBasis {
   readonly normal: Vector3;
 }
 function dot(a: Vector3, b: Vector3): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
-function unit(value: Vector3): Vector3 | null {
+/** 方向を長さ1にする。長さが0・非有限ならnull。model の寸法計測もこの関数を使う。 */
+export function normalizedDrawingDirection(value: Vector3): Vector3 | null {
   const length = Math.hypot(...value);
   return length > 0 && Number.isFinite(length) ? [value[0] / length, value[1] / length, value[2] / length] : null;
 }
 /** 投影と同じ右手系。normalは見る向きなので紙面YはX×normalになる。 */
 export function drawingViewBasis(view: ViewDirection): DrawingViewBasis | null {
-  const normal = unit(view.normal);
+  const normal = normalizedDrawingDirection(view.normal);
   if (normal === null || !view.xDir.every(Number.isFinite)) return null;
   const projection = dot(view.xDir, normal);
-  const x = unit([view.xDir[0] - projection * normal[0], view.xDir[1] - projection * normal[1], view.xDir[2] - projection * normal[2]]);
+  const x = normalizedDrawingDirection([view.xDir[0] - projection * normal[0], view.xDir[1] - projection * normal[1], view.xDir[2] - projection * normal[2]]);
   if (x === null) return null;
-  const y = unit([x[1] * normal[2] - x[2] * normal[1], x[2] * normal[0] - x[0] * normal[2], x[0] * normal[1] - x[1] * normal[0]]);
+  const y = normalizedDrawingDirection([x[1] * normal[2] - x[2] * normal[1], x[2] * normal[0] - x[0] * normal[2], x[0] * normal[1] - x[1] * normal[0]]);
   return y === null ? null : { x, y, normal };
 }
 
-export interface DimensionSeriesPoint {
+interface DimensionSeriesPoint {
   readonly id: string;
   readonly modelPoint: Vector3;
   /** 配置・縮尺適用後の紙上位置。寸法値として使わない。 */

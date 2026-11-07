@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { contactPivotLimit, contactPlanContacts, decodeContactNumericResult, validateBeamContacts,
-  type BeamContactDefinition, type ContactResultExpectation } from './contactModel.js';
+  type BeamContactDefinition } from './contactModel.js';
+
+type ContactResultExpectation = Parameters<typeof decodeContactNumericResult>[1];
 
 type V = readonly [number, number, number];
 const positions = new Map<string, V>([['n1', [1, 0, 0]], ['n2', [2, 0, 0]], ['n3', [3, 0, 0]], ['c1', [2, 0, 0]]]);

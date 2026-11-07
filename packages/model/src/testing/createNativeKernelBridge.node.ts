@@ -26,7 +26,7 @@ export async function initializeNativeKernelForNodeTests(): Promise<void> {
 }
 
 /** Node tests can observe borrowed ownership without importing kernel or OCCT types into UI. */
-export interface NativeShapeInspection {
+ interface NativeShapeInspection {
   readonly owner: { delete(): void };
   readonly handle: { delete(): void };
   readonly readBrepBytes: () => Uint8Array;

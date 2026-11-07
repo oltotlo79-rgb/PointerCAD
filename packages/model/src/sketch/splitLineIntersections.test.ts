@@ -2,9 +2,11 @@ import { expressionValueFromNumber as num } from '@pointercad/expression';
 import { describe, expect, it } from 'vitest';
 import { absoluteCoordinate as xyz, replaceFeature } from './createSketchDocument.js';
 import { resolveSketch } from './resolveSketch.js';
-import { splitLineIntersections, type SplitLineOutcome } from './splitLineIntersections.js';
+import { splitLineIntersections } from './splitLineIntersections.js';
 import type { SketchDocument, SketchFeature, SketchLineFeature } from './types.js';
 import type { Vec3 } from './vec3.js';
+
+type SplitLineOutcome = ReturnType<typeof splitLineIntersections>;
 
 function line(id: string, from: Vec3, to: Vec3): SketchLineFeature {
   return { id, name: id, kind: 'line', planeId: 'xy', from: xyz(...from), to: xyz(...to), construction: false };

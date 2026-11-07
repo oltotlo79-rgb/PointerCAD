@@ -6,6 +6,7 @@ import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 import { FUNCTION_SIZE_BASELINE, FUNCTION_SIZE_CAP } from './eslint.functionSizeBaseline.js';
+import { DEPTH_BASELINE, DEPTH_CAP, PARAMS_BASELINE, PARAMS_CAP } from './eslint.complexityBaseline.js';
 
 /**
  * 検査専用のパッケージだけは層の外側に置く。
@@ -137,7 +138,7 @@ const mathFieldDirectCallGuard = {
   message: 'math-fieldへの直接の.press()/.focus()はMathLiveの焦点処理と競合します（rules/06 §10.329）。mathEditorReady.tsのfocusFieldと画面から読んだ値を使ってください。',
 };
 
-/** ブラウザー標準の窓(w91a)。製品のコードでは使わない。 */
+/** ブラウザー標準の窓。製品のコードでは使わない。 */
 const browserDialogNames = ['confirm', 'alert', 'prompt'];
 const browserDialogMessage = 'ブラウザー標準の confirm・alert・prompt はデスクトップ版で英語の OK/Cancel になります。画面の中の日本語の確認（useAppStore の requestDiscardConfirm と AppShell の DiscardConfirmDialog）か、帯の知らせ（setFileMessage）を使ってください（w91a）。';
 
@@ -340,7 +341,7 @@ export default tseslint.config(
     // flat configは同じfilesパターンのno-restricted-syntaxを上書きするため、上の
     // '**/*.test.{ts,tsx}' の2件をここにも複製してから3件目を足す(2026-09-24 OPS-09)。
     // packages/ui 等にも同名のspawnSync('python',…)を使う既存検査があるが、
-    // exactRuntimeTestSupport.tsはexpressionパッケージのexportsに公開しておらず
+    // exactRuntime.testSupport.tsはexpressionパッケージのexportsに公開しておらず
     // 他パッケージから使えないため、対象をexpressionだけに絞る(統括2026-09-24 08:0xの指示)。
     files: ['packages/expression/src/**/*.test.ts'],
     rules: {
@@ -352,7 +353,7 @@ export default tseslint.config(
         message: '固定面・角度等の独立したOCCTケースはit.eachの行へ展開し、1件の5秒枠へ複数の再計算を詰め込まないでください（rules/06 §10.71）。',
       }, {
         selector: "CallExpression[callee.name='spawnSync'][arguments.0.value='python']",
-        message: '計算部は exactRuntimeTestSupport.ts の spawnExactRuntime で起動する（rules/06 §10.323）。',
+        message: '計算部は exactRuntime.testSupport.ts の spawnExactRuntime で起動する（rules/06 §10.323）。',
       }],
     },
   },
@@ -371,6 +372,12 @@ export default tseslint.config(
     files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
     ignores: ['**/*.test.{ts,tsx}', '**/*.testSupport.{ts,tsx}', '**/*.spec.{ts,tsx}'],
     rules: { 'max-lines-per-function': ['error', { max: FUNCTION_SIZE_CAP, skipBlankLines: true, skipComments: true }] },
+  },
+  {
+    // P06: 製品の関数の引数と入れ子の上限（E09と同じ適用範囲）。既存の超過は末尾の表でファイルごとに固定する。
+    files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.testSupport.{ts,tsx}', '**/*.spec.{ts,tsx}'],
+    rules: { 'max-params': ['error', { max: PARAMS_CAP }], 'max-depth': ['error', { max: DEPTH_CAP }] },
   },
   {
     files: ['packages/io/src/pcad/documentJson.ts', 'packages/io/src/pcad/codecs/**/*.ts'],
@@ -504,7 +511,7 @@ export default tseslint.config(
     },
   },
   {
-    // 製品のコードからブラウザー標準の確認・通知・入力の窓を出さない(w91a)。デスクトップ版では
+    // 製品のコードからブラウザー標準の確認・通知・入力の窓を出さない。デスクトップ版では
     // 英語の OK/Cancel になり、日本語の画面から浮く。確認は画面の中の日本語の3択
     // (AppShell.tsx の DiscardConfirmDialog、ストアの requestDiscardConfirm)を使う。
     // no-restricted-syntax は同じファイルの他の塊が上書きするため、別の規則で拒否する。
@@ -636,6 +643,16 @@ export default tseslint.config(
     files: [file],
     rules: { 'max-lines-per-function': ['error', {
       max: Math.max(...functions.map(([, lines]) => lines)), skipBlankLines: true, skipComments: true }] },
+  })),
+  // P06: 上限を超える既存の関数を持つファイルは、そのファイルで最大の実測値まで（上限より緩めるのは表の行だけ）。
+  // 同じファイルの小さい関数の増加は complexityPolicy.test.ts が関数ごとの値で拒否する。
+  ...PARAMS_BASELINE.map(/** @returns {import('typescript-eslint').FlatConfig.Config} */ ({ file, functions }) => ({
+    files: [file],
+    rules: { 'max-params': ['error', { max: Math.max(...functions.map(([, count]) => count)) }] },
+  })),
+  ...DEPTH_BASELINE.map(/** @returns {import('typescript-eslint').FlatConfig.Config} */ ({ file, functions }) => ({
+    files: [file],
+    rules: { 'max-depth': ['error', { max: Math.max(...functions.map(([, depth]) => depth)) }] },
   })),
   {
     files: ['packages/ui/src/solid/solidReferenceNames.ts'],

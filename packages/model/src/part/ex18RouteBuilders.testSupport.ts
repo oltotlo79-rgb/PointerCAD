@@ -12,7 +12,7 @@ import { appendSolid, createEmptyPartDocument, replaceSketch, replaceSolid } fro
 import { recomputePart } from './recomputePart.js';
 import type { BooleanFeature, ExtrudeFeature, HoleFeature, PartDocument, PrimitiveFeature, RevolveFeature, RuledFeature, SewFeature } from './types.js';
 
-export interface Ex18BuiltRoute {
+interface Ex18BuiltRoute {
   readonly part: PartDocument;
   readonly centerId: string;
   readonly finalId: string;
@@ -154,7 +154,7 @@ export function moveEx18ExpressionHole(route: Ex18BuiltRoute): PartDocument {
   return replaceSketch(route.part, moved);
 }
 
-export interface Ex18BCRoute {
+interface Ex18BCRoute {
   readonly part: PartDocument;
   readonly finalId: string;
 }

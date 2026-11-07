@@ -65,7 +65,6 @@ import {
   PCAD_DOCUMENT_KIND,
   PCAD_SCHEMA_VERSION,
   PCAD_TEMPLATE_KIND,
-  PCAD_TOOL_DEFAULT_KEYS,
   SCHEMA_MIGRATIONS,
   type PcadToolDefaults,
 } from './schema.js';
@@ -6173,17 +6172,6 @@ describe('ひな形の封筒の任意の欄(FR-814、§2.10)', () => {
     chamferDistance: '0.5',
     circleRadius: '12',
   };
-
-  it('道具の既定値の欄はちょうど 5 つ(§2.10)', () => {
-    expect(PCAD_TOOL_DEFAULT_KEYS).toEqual([
-      'extrudeDistance',
-      'holeDiameter',
-      'filletRadius',
-      'chamferDistance',
-      'circleRadius',
-    ]);
-    expect(PCAD_TOOL_DEFAULT_KEYS).toHaveLength(5);
-  });
 
   it('渡さなければ封筒に欄が出ない(部品の .pcad は 1 バイトも変わらない)', () => {
     const text = serializeDocument(createEmptyPartDocument(), { savedAt: SAVED_AT });

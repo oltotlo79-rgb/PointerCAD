@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { expect, test } from '@playwright/test';
 import { summarizeProcessMemory } from '../../packages/test-utils/src/processMemorySamples.js';
 import { windowsSampler, linuxSampler, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type Sampler } from './processResourceSampler.js';
+import { readResidentFrames } from './readResidentSampler.js';
 
 /** Bound for each owned stop; an owned process still open after this is a failure, not ignored. */
 const OWNED_STOP_MS = 10_000;
@@ -119,3 +120,19 @@ test(`process sampler keeps the 100ms cadence through repeated discoveries (incl
   expect(summary.problems).toEqual([]);
 });
 }
+
+test('read resident frames reject reused ancestry, duplicates, disappearance and unrelated PIDs', () => {
+  const row = (pid: number, parentPid: number, created: string) => ({ pid, parentPid, created, name: 'owned',
+    workingSetBytes: 10, privateBytes: 8, cpuMilliseconds: 0, error: null });
+  const root = row(10, 1, '200'), child = row(11, 10, '210'), grandchild = row(12, 11, '220');
+  const frame = (at: number, processes: typeof root[]) => ({ atEpochMs: at, readStartedAtEpochMs: at,
+    discoveredAtEpochMs: at, rootCreated: '200', discoveryError: null, processes });
+  const valid = frame(1000, [root, child, grandchild]);
+  expect(readResidentFrames([valid], 10, 0).samples[0]?.workingSet).toBe(30);
+  expect(readResidentFrames([frame(1000, [root, child, child])], 10, 0).errors.join(' ')).toContain('invalid process identity');
+  expect(readResidentFrames([valid, frame(1100, [root, { ...child, created: '211' }, grandchild])], 10, 0).errors.join(' ')).toContain('reused');
+  expect(readResidentFrames([valid, frame(1100, [root, child])], 10, 0).errors.join(' ')).toContain('disappeared');
+  expect(readResidentFrames([frame(1000, [root, child, row(30, 2, '250')])], 10, 0).errors.join(' ')).toContain('outside recorded root ancestry');
+  expect(readResidentFrames([frame(1000, [root, row(11, 10, '199')])], 10, 0).errors.join(' ')).toContain('older than recorded parent');
+  expect(readResidentFrames([frame(1000, [root, row(11, 10, 'unknown')])], 10, 0).errors.join(' ')).toContain('unknown creation ordering');
+});

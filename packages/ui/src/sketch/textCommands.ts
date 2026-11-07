@@ -5,7 +5,7 @@ import { t } from '../i18n/t.js';
 import { drawingFont } from '../drawing/drawingFont.js';
 import { useAppStore } from '../store/useAppStore.js';
 
-export interface SketchTextInput {
+interface SketchTextInput {
   readonly text: string;
   readonly heightSource: string;
   readonly angleSource: string;

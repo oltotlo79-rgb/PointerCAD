@@ -74,6 +74,8 @@ export interface HoleThreadGrooveOrigin {
   readonly role: 'groove';
 }
 export type FaceOrigin =
+  | { readonly kind: 'surface-curve-side'; readonly featureId: string; readonly profile: {
+      readonly sketchId: string; readonly curveFeatureId: string; readonly role: 'whole-curve' } }
   | { readonly kind: 'surface-side'; readonly featureId: string; readonly profile: {
       readonly sketchId: string; readonly lineFeatureId: string; readonly role: 'whole-line' } }
   /** Planar sheet filled from a closed straight-line profile only (no arcs/curves). The saved source line IDs
@@ -98,6 +100,9 @@ export type FaceOrigin =
   | { readonly kind: 'blend-face'; readonly featureId: string; readonly operation: 'fillet' | 'chamfer'; readonly source: EdgeOrigin }
   | { readonly kind: 'merged-face'; readonly featureId: string; readonly sources: readonly [FaceOrigin, FaceOrigin, ...FaceOrigin[]] };
 export type EdgeOrigin =
+  | { readonly kind: 'surface-curve-edge'; readonly featureId: string; readonly profile: {
+      readonly sketchId: string; readonly curveFeatureId: string; readonly role: 'whole-curve' };
+      readonly role: 'section-start' | 'section-end' | 'swept-start' | 'swept-end' }
   | { readonly kind: 'box-edge'; readonly featureId: string; readonly role: BoxEdgeRole }
   | { readonly kind: 'cylinder-edge'; readonly featureId: string; readonly role: CylinderEdgeRole }
   /** One whole source line of a planar sheet's closed straight-line profile. */

@@ -21,8 +21,7 @@ export async function closePopoverIfOpen(page: Page): Promise<void> {
  * G3-d(測定・点検: select-subshape・measure・mass-properties・print-check)と
  * G7-a(履歴とビュー: timeline・selection・section-view)の撮影の流れで共通に使う補助。
  *
- * `solidCaptureSupport.ts`(w37b の未コミット分、編集禁止)は面・辺の3Dクリックに
- * Shift 修飾を持たないため、2点選ぶ測定(2026-09-28 追加)にはここへ書き写した版を使う。
+ * 2点選ぶ測定(2026-09-28 追加)には、Shift 修飾に対応した面・辺の3Dクリック処理をここへ置く。
  * 写した式・視点は `solidCaptureSupport.ts` および `e2e/tests/primitives.spec.ts` の
  * ワールド→画面変換(ホーム視点・1440×900専用)と同じ。
  */
@@ -95,7 +94,7 @@ export type WorldPoint = readonly [number, number, number];
  * ビューポートの上で、ワールド座標の点が見えている場所を押す。既定(ホーム)視点・1440×900専用。
  *
  * 押し出し等の直後は再計算が終わるまで面・辺の位置が定まらないため、クリックの前に
- * `waitForSettledRecompute` で落ち着くのを待つ(w99a: 待たずに3Dで選ぶ台本が同じ所で
+ * `waitForSettledRecompute` で落ち着くのを待つ(再計算の待機確認: 待たずに3Dで選ぶ台本が同じ所で
  * 落ちていた)。各台本が個別に置く `waitForRecompute` はここでは消さない。
  */
 export async function clickWorldPoint(page: Page, world: WorldPoint, shift = false): Promise<void> {

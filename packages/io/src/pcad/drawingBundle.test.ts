@@ -246,20 +246,20 @@ describe('図面の束の保存・読込で結合のための往復をしない(
     const bytes = await writeDrawingBundle(input.document, { source: input.source, savedAt });
     const entries = unzipSync(bytes);
     const sizes = Object.entries(entries);
-    const drawingTotal = sizes.filter(([name]) => !name.startsWith('source/source-1/'))
+    const drawingBytes = sizes.filter(([name]) => !name.startsWith('source/source-1/'))
       .reduce((sum, [, value]) => sum + value.length, 0);
-    const sourceTotal = sizes.filter(([name]) => name.startsWith('source/source-1'))
+    const sourceBytes = sizes.filter(([name]) => name.startsWith('source/source-1'))
       .reduce((sum, [, value]) => sum + value.length, 0);
     const exact: ArchiveReadLimits = {
       archiveCompressedBytes: bytes.length,
       archiveEntryCount: sizes.length,
       archiveEntryExpandedBytes: Math.max(...sizes.map(([, value]) => value.length)),
-      archiveTotalExpandedBytes: Math.max(drawingTotal, sourceTotal),
+      archiveTotalExpandedBytes: Math.max(drawingBytes, sourceBytes),
     };
     expect(Object.keys(entries)).toContain('source/source-1.json');
     // 展開後の参照元は圧縮後の図面より大きい。読み手は参照元を ZIP に作り直さないので、
     // 圧縮後の大きさの上限は元のファイルにだけ効き、保存できた図面を開けないことはない。
-    expect(sourceTotal).toBeGreaterThan(bytes.length);
+    expect(sourceBytes).toBeGreaterThan(bytes.length);
     expect(await writeDrawingBundle(input.document, { source: input.source, savedAt }, exact)).toEqual(bytes);
     expect(await readDrawingBundle(bytes, { limits: exact })).toMatchObject({ ok: true, source: input.source });
     for (const key of Object.keys(exact) as (keyof ArchiveReadLimits)[]) {

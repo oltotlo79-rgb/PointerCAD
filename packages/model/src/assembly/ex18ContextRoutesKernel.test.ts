@@ -18,10 +18,14 @@ import type { PartDocument } from '../part/types.js';
 import type { Vec3 } from '../sketch/vec3.js';
 import { commitContextReference, contextPointResolverFromBodies, type ContextReferenceCommit } from './contextReference.js';
 import { buildEx18ContextAssembly, buildEx18ContextPart, buildEx18ContextSource, contextPlacement,
-  EX18_CONTEXT_POINT_ID, ex18ContextSourceFace, type Ex18ContextShape } from './ex18ContextRouteBuilders.testSupport.js';
+  ex18ContextSourceFace } from './ex18ContextRouteBuilders.testSupport.js';
 import { embedPart, type PartLibrary } from './partLibrary.js';
 import { applyPlacementToPoint } from './placementMath.js';
 import type { AssemblyDocument, Placement } from './types.js';
+
+type Ex18ContextShape = Parameters<typeof buildEx18ContextPart>[0];
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const EX18_CONTEXT_POINT_ID = 'context-point-P';
 
 const TIMEOUT_MS = 180_000;
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;

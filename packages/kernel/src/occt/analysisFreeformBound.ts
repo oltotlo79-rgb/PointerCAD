@@ -24,7 +24,7 @@ export interface FreeformDirection {
   /** Full clamped knot vector, including multiplicities. */
   readonly knots: readonly number[];
 }
-export interface FreeformCoefficients {
+interface FreeformCoefficients {
   readonly u: FreeformDirection;
   readonly v: FreeformDirection;
   /** U-major rows, then V. Positive rational weights; all-one weights give a polynomial. */
@@ -145,7 +145,7 @@ export function freeformTriangleDistance(bound: FreeformDerivativeBound, uv: rea
   return finite(nodeOffsetMm + (bound.uu * du * du + 2 * bound.uv * du * dv + bound.vv * dv * dv) / 8);
 }
 /** Tensor patch grid on ORIGINAL native parameters. Periodic copies use integer period shifts only. */
-export interface FreeformPatchGrid {
+interface FreeformPatchGrid {
   readonly u: readonly number[];
   readonly v: readonly number[];
   readonly uPeriodic: boolean;

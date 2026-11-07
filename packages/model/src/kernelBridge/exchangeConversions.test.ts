@@ -15,10 +15,11 @@ import { toShapeExportOutcome, toShapeExportRequest } from './exchangeConversion
 import type {
   ExportColor,
   ShapeExportBody,
-  ShapeExportFormat,
   ShapeExportOptions,
   ShapeExportOutcome,
 } from './exchangeContracts.js';
+
+type ShapeExportFormat = ShapeExportOptions['format'];
 
 const BODY_COLOR: ExportColor = [1, 0, 0];
 const FACE_COLOR: ExportColor = [0, 0, 1];

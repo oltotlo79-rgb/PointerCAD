@@ -1,5 +1,5 @@
 import {
-  dimensionSeries, drawingViewBasis, fitTolerance, formatDimension, movePointAcrossBreak, resolveDimensionTolerance,
+  dimensionSeries, drawingViewBasis, fitTolerance, formatDimension, movePointAcrossBreak, normalizedDrawingDirection, resolveDimensionTolerance,
   type Dimension, type DimensionSeriesResult, type DimensionTarget, type DimensionTolerance, type DrawingDocument, type DrawingView, type DrawingViewBasis, type Point2, type Vector3,
 } from '@pointercad/drawing';
 import { evaluateExpression } from '@pointercad/expression';
@@ -113,12 +113,8 @@ export function drawingDimensionPaperEnds(targets: readonly ResolvedDimensionTar
 }
 
 const GEOMETRY_TOLERANCE = 1e-7;
-function unit(vector: Vector3): Vector3 | null {
-  const length = Math.hypot(...vector);
-  return length > 0 && Number.isFinite(length) ? [vector[0] / length, vector[1] / length, vector[2] / length] : null;
-}
 function parallel(a: Vector3, b: Vector3): boolean {
-  const first = unit(a), second = unit(b);
+  const first = normalizedDrawingDirection(a), second = normalizedDrawingDirection(b);
   return first !== null && second !== null && 1 - Math.abs(dotVec3(first, second)) <= GEOMETRY_TOLERANCE;
 }
 
@@ -223,7 +219,7 @@ function measurementEnds(targets: readonly ResolvedDimensionTarget[]): readonly 
   return first === null || second === null ? null : [first, second];
 }
 function directionOf(target: ResolvedDimensionTarget): Vector3 | null {
-  return target.kind === 'line' ? unit(subVec3(target.to, target.from)) : target.kind === 'plane' ? unit(target.normal) : null;
+  return target.kind === 'line' ? normalizedDrawingDirection(subVec3(target.to, target.from)) : target.kind === 'plane' ? normalizedDrawingDirection(target.normal) : null;
 }
 function measure(dimension: Dimension, targets: readonly ResolvedDimensionTarget[], basis: DrawingViewBasis): number | null {
   const first = targets[0];
@@ -240,7 +236,7 @@ function measure(dimension: Dimension, targets: readonly ResolvedDimensionTarget
     if (first.kind === 'line' && targets[1].kind === 'line') {
       const rays = dimensionAngleDirections(first, targets[1]);
       if (rays === null) return null;
-      const a = unit(rays.first), b = unit(rays.second);
+      const a = normalizedDrawingDirection(rays.first), b = normalizedDrawingDirection(rays.second);
       return a === null || b === null ? null : Math.acos(Math.max(-1, Math.min(1, dotVec3(a, b)))) * 180 / Math.PI;
     }
     const a = directionOf(first), b = directionOf(targets[1]);
@@ -257,11 +253,11 @@ function measure(dimension: Dimension, targets: readonly ResolvedDimensionTarget
   if (targets.length === 2) {
     const second = targets[1];
     if (first.kind === 'plane' && second.kind === 'plane' && parallel(first.normal, second.normal)) {
-      const normal = unit(first.normal);
+      const normal = normalizedDrawingDirection(first.normal);
       return normal === null ? null : Math.abs(dotVec3(subVec3(second.point, first.point), normal));
     }
     if (first.kind === 'line' && second.kind === 'line' && parallel(subVec3(first.to, first.from), subVec3(second.to, second.from))) {
-      const direction = unit(subVec3(first.to, first.from));
+      const direction = normalizedDrawingDirection(subVec3(first.to, first.from));
       if (direction === null) return null;
       const offset = subVec3(second.from, first.from);
       const along = dotVec3(offset, direction);

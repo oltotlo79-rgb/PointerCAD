@@ -8,7 +8,7 @@ export interface SolidMaterialDraft {
   readonly thickness: string;
 }
 export type SolidMaterialIssue = 'material' | 'thickness' | 'outside' | 'source';
-export type SolidMaterialSelection = { readonly ok: false; readonly issue: SolidMaterialIssue }
+ type SolidMaterialSelection = { readonly ok: false; readonly issue: SolidMaterialIssue }
   | { readonly ok: true; readonly capacity: AnalysisMaterialCapacity | null; readonly preset: StrengthMaterialPreset | null; readonly source: StrengthSource | null };
 
 /** Yield evidence only. Never fills the independent elastic-analysis inputs. */

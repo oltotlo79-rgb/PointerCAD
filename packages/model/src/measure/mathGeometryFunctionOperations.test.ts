@@ -25,7 +25,7 @@ import { createFunctionSurface, type FunctionSurfaceFeature } from '../functionG
 import { recomputeFunctionCurves, type FunctionRecomputeContext } from '../functionGeometry/recomputeFunctionCurves.js';
 import { recomputeFunctionPoints } from '../functionGeometry/recomputeFunctionPoints.js';
 import { recomputeFunctionSurfaces } from '../functionGeometry/recomputeFunctionSurfaces.js';
-import { IMPLICIT_EQUATION_EQUALS_MESSAGE, resolveFunctionInputs } from '../functionGeometry/resolveFunctionInputs.js';
+import { resolveFunctionInputs } from '../functionGeometry/resolveFunctionInputs.js';
 import type { Parameter } from '../parameters/types.js';
 import { createEmptyPartDocument } from '../part/createPartDocument.js';
 import { evaluateDocumentMath, type DocumentMathContext } from '../part/evaluateDocumentMath.js';
@@ -40,6 +40,9 @@ import { checkGeometryDerivedFunctionOperations, functionFormulaExpressions, mat
 } from './mathGeometryFunctionOperations.js';
 import { DEFAULT_MATH_GEOMETRY_TOLERANCE, mathGeometryCoefficientId } from './mathGeometryIdentity.js';
 import type { MathGeometryDefinition, MathGeometryOutcome } from './mathGeometryTypes.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const IMPLICIT_EQUATION_EQUALS_MESSAGE = '陰関数は「=」を含む式を計算できません。F=0の左辺Fだけを入力してください。例: X^2+Y^2=1ではなく、X^2+Y^2-1と入力します。';
 
 const createBridge = () => createDirectKernelBridge(createKernelApi(loadOcctForNode));
 let backend: MathExecutionBackend, bridge: ReturnType<typeof createBridge>;

@@ -1,4 +1,4 @@
-import type { CadSolidOutcome } from '@pointercad/fem';
+import type { CadSolidOutcome, CadSolidStage } from '@pointercad/fem';
 import type { Parameter } from '@pointercad/model';
 import { readSolidCadSavedInput, type AnalysisMaterialCapacity, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { plasticBarExpressionField } from '../beam/beamFields.js';
@@ -26,6 +26,8 @@ export interface SolidAnalysisSession extends SolidBoundaryDraft {
   readonly values: Readonly<Record<SolidField, string>>;
   readonly focused: SolidField | null;
   readonly status: 'editing' | 'running' | 'complete' | 'failed' | 'cancelled';
+  /** Transient CAD stage, never saved; absent in legacy session fixtures. */
+  readonly stage?: CadSolidStage | null;
   readonly error: string | null;
   readonly result: Extract<CadSolidOutcome, { kind: 'result' }> | null;
   /** Field view display choice (quantity, deformation scale). Display only: never part of the saved input. */
@@ -45,7 +47,7 @@ export function createSolidAnalysisSession(ownerId: string, saved?: SolidCadSave
     ...(saved?.capacity === undefined ? {} : { capacity: readSolidCadSavedInput(saved).capacity }), bodyFeatureId: saved?.bodyFeatureId ?? null,
     fixedFaces: saved ? [...saved.fixedFaces] : [], loadedFaces: saved ? [...saved.loadedFaces] : [], focused: null,
     loadMode: saved?.schema === 'pointercad-solid-cad-input/2' ? 'pressure' : 'traction',
-    status: 'editing', error: null, result: null, fieldView: { ...DEFAULT_SOLID_FIELD_VIEW },
+    status: 'editing', stage: null, error: null, result: null, fieldView: { ...DEFAULT_SOLID_FIELD_VIEW },
     values: saved ? { young: String(saved.youngMPa), poisson: String(saved.poisson), ...load,
       linear: String(saved.linearDeflectionMm), angular: String(saved.angularDeflectionRad),
       chord: String(saved.maximumChordDeviationMm), volume: String(saved.maximumVolumeDeviationMm3) }

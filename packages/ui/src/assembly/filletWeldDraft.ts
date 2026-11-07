@@ -166,7 +166,7 @@ export function filletWeldSegments(
 }
 
 /** 予告と確定が読む、いまの文書・形・部品の版。 */
-export interface FilletWeldDraftContext {
+interface FilletWeldDraftContext {
   readonly document: AssemblyDocument;
   readonly resolve: WeldGeometryResolver;
   /** 当たりの判定(ビードの足元が実際の面に載るか)に使う、各部品のいまのボディ。 */

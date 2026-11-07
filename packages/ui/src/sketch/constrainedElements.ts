@@ -20,11 +20,12 @@
  * 既定色のままになる(見落としはあっても、誤って決まったと見せることはない)。
  */
 
-import type {
-  ConstraintDiagnosis,
-  SketchDocument,
-  SketchFeatureKind,
-  VariableSet,
+import {
+  featureIdOfPointKey,
+  type ConstraintDiagnosis,
+  type SketchDocument,
+  type SketchFeatureKind,
+  type VariableSet,
 } from '@pointercad/model';
 
 /** 1 つも決まっていないとき。作り直さずに使い回す(参照の同一性を保つ)。 */
@@ -60,27 +61,12 @@ function featureIdsWithFreeNumbers(variableSet: VariableSet): ReadonlySet<string
       free.add(variable.featureId);
       continue;
     }
-    // 点の鍵から要素の id を取り出す規約は model の 1 か所(`featureIdOfPointKey`)だが、
-    // 別名(`spline-1:start` → `spline-1#0`)は既に正本へ寄せてあるので、ここでは
-    // 変数が持っている鍵をそのまま使う。
-    free.add(featureIdOfKey(variable.pointKey));
+    // 点の鍵(`line-1:end` → `line-1`、`spline-1#3` → `spline-1`)から要素の id を取り出すのは
+    // model の `featureIdOfPointKey` の 1 か所だけ。別名(`spline-1:start` → `spline-1#0`)は
+    // 既に正本へ寄せてあるので、変数が持っている鍵の文字列をそのまま渡す。
+    free.add(featureIdOfPointKey(variable.pointKey));
   }
   return free;
-}
-
-/**
- * 点の鍵からフィーチャーの id(`line-1:end` → `line-1`、`spline-1#3` → `spline-1`)。
- * model の `featureIdOfPointKey` と同じ規約だが、model を呼ぶために鍵の形を
- * 組み立て直すより、ここで 3 行読むほうが依存が浅い。
- */
-function featureIdOfKey(pointKey: string): string {
-  const colon = pointKey.indexOf(':');
-  const hash = pointKey.indexOf('#');
-  if (colon < 0 && hash < 0) {
-    return pointKey;
-  }
-  const separator = colon < 0 ? hash : hash < 0 ? colon : Math.min(colon, hash);
-  return pointKey.slice(0, separator);
 }
 
 /**

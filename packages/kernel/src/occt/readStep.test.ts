@@ -10,8 +10,9 @@ import { STEP_NO_SOLID_MESSAGE, STEP_READ_FAILED_MESSAGE, readStep } from './rea
 import { isValidShape, measureVolume } from './solidMesh.js';
 import { boundingDiagonal, collectSubShapes, faceAt } from './subShapes.js';
 import { IDENTITY_TRANSFORM, makeCompound, transformShape } from './transformShape.js';
-import type { StepWriteEntry } from './writeStep.js';
 import { writeStep } from './writeStep.js';
+
+type StepWriteEntry = Parameters<typeof writeStep>[1][number];
 
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;
 

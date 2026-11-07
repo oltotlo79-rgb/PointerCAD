@@ -244,13 +244,13 @@ export function createGpuMeshBudget(limitBytes: number): GpuMeshBudget {
   const owners = new Map<symbol, number>();
   const environments = new Map<symbol, number>();
   let total = 0;
-  let environmentTotal = 0;
+  let environmentBytes = 0;
   return {
     limitBytes,
     reserve(owner, bytes): boolean {
       if (!byteCount(bytes)) return false;
       const next = total - (owners.get(owner) ?? 0) + bytes;
-      if (!byteCount(next) || !byteCount(next + environmentTotal) || next + environmentTotal > limitBytes) return false;
+      if (!byteCount(next) || !byteCount(next + environmentBytes) || next + environmentBytes > limitBytes) return false;
       owners.set(owner, bytes);
       total = next;
       return true;
@@ -264,19 +264,19 @@ export function createGpuMeshBudget(limitBytes: number): GpuMeshBudget {
     },
     reserveEnvironment(owner, bytes): boolean {
       if (!byteCount(bytes)) return false;
-      const next = environmentTotal - (environments.get(owner) ?? 0) + bytes;
+      const next = environmentBytes - (environments.get(owner) ?? 0) + bytes;
       if (!byteCount(next) || !byteCount(total + next) || total + next > limitBytes) return false;
       environments.set(owner, bytes);
-      environmentTotal = next;
+      environmentBytes = next;
       return true;
     },
     releaseEnvironment(owner): void {
-      environmentTotal -= environments.get(owner) ?? 0;
+      environmentBytes -= environments.get(owner) ?? 0;
       environments.delete(owner);
     },
     environmentReservedBytes(owner): number {
-      return owner === undefined ? environmentTotal : environments.get(owner) ?? 0;
+      return owner === undefined ? environmentBytes : environments.get(owner) ?? 0;
     },
-    totalReservedBytes(): number { return total + environmentTotal; },
+    totalReservedBytes(): number { return total + environmentBytes; },
   };
 }

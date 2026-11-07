@@ -8,12 +8,14 @@ import type { CachedSolid } from '@pointercad/kernel/testing/recompute-solids';
 import { createShapeCache } from '@pointercad/kernel/testing/shape-cache';
 import { createDirectKernelBridge, type KernelBridge } from '../kernelBridge.js';
 import { buildEx18ExpressionFlange, buildEx18RevolvedFlange, buildEx18RuledFlange,
-  editEx18FlangeBore, editEx18RevolvedFlangeRadius, type Ex18BCRoute } from './ex18RouteBuilders.testSupport.js';
+  editEx18FlangeBore, editEx18RevolvedFlangeRadius } from './ex18RouteBuilders.testSupport.js';
 import { EX18_ORACLE_B_RADIUS_FOUR, EX18_ORACLE_EXPECTATIONS } from './ex18RouteFixtures.testSupport.js';
 import { compareEx18Shape, measureEx18Shape, type Ex18ShapeExpectation, type Ex18ShapeMeasurement } from './ex18ShapeOracle.testSupport.js';
 import { recomputePart } from './recomputePart.js';
 import type { ResolvedPart } from './resolvePart.js';
 import type { PartDocument } from './types.js';
+
+type Ex18BCRoute = Parameters<typeof editEx18RevolvedFlangeRadius>[0];
 
 const TIMEOUT_MS = 180_000;
 let oc: Awaited<ReturnType<typeof loadOcctForNode>>;

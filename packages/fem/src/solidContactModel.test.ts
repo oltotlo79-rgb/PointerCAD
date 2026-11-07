@@ -3,8 +3,12 @@ import { solidCadFaceKey, SOLID_CONTACT_ID, SOLID_CONTACT_SCHEMA,
   type SolidContactPair, type SolidContactSavedInput, type Vector3 } from '@pointercad/model/beam-analysis';
 import type { SubShapeRef } from '@pointercad/model';
 import { InputIssue } from '@pointercad/model/beam-analysis';
-import { buildSolidContactPlan, type SolidContactMeshBoundary, type SolidContactMeshContext } from './solidContactModel.js';
-import type { CadBoundaryFaceIdentity, CadBoundaryNormal } from './cadTetraMesh.js';
+import { buildSolidContactPlan } from './solidContactModel.js';
+import type { CadBoundaryFaceIdentity, bindCadBoundaryIdentity } from './cadTetraMesh.js';
+
+type SolidContactMeshContext = Parameters<typeof buildSolidContactPlan>[1];
+type CadBoundaryNormal = ReturnType<typeof bindCadBoundaryIdentity>['faces'][number]['samples'][number];
+type SolidContactMeshBoundary = Parameters<typeof buildSolidContactPlan>[1]['boundaries'][number];
 
 function face(body: string, normals: readonly Vector3[]): CadBoundaryFaceIdentity {
   const reference: SubShapeRef = { bodyFeatureId: body, index: 0,

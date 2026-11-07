@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { readSolidCadSavedInput, solidCadFaceKey } from './solidCadInput.js';
-import { SOLID_CAD_PRESSURE_SCHEMA, SOLID_CAD_TRACTION_SCHEMA } from './solidCadInput.js';
 import { readBeamAnalysisInputs, withBeamAnalysisInputs } from './beamInputs.js';
 import type { SubShapeRef } from '../geometry/subShapeRef.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const SOLID_CAD_PRESSURE_SCHEMA = 'pointercad-solid-cad-input/2';
 
 function saved() {
   return { schema: 'pointercad-solid-cad-input/1', id: 'solid-cad', source: { documentId: 'part' }, bodyFeatureId: 'box',
@@ -11,8 +13,10 @@ function saved() {
 }
 describe('unchanged saved face identity contract', () => {
   it('retains both schema strings and byte-identical legacy traction without persisting normals', () => {
-    expect(SOLID_CAD_TRACTION_SCHEMA).toBe('pointercad-solid-cad-input/1');
-    expect(SOLID_CAD_PRESSURE_SCHEMA).toBe('pointercad-solid-cad-input/2');
+    expect(readSolidCadSavedInput(saved()).schema).toBe('pointercad-solid-cad-input/1');
+    const pressureRaw: Record<string, unknown> = { ...saved(), schema: 'pointercad-solid-cad-input/2', load: 'pressure', pressureMPa: 1.5 };
+    Reflect.deleteProperty(pressureRaw, 'tractionMPa');
+    expect(readSolidCadSavedInput(pressureRaw).schema).toBe('pointercad-solid-cad-input/2');
     const raw = saved(), bytes = new TextEncoder().encode(JSON.stringify(raw));
     expect(new TextEncoder().encode(JSON.stringify(readSolidCadSavedInput(raw)))).toEqual(bytes);
     expect(() => readSolidCadSavedInput({ ...raw, normals: [[0, 0, 1]] })).toThrow();

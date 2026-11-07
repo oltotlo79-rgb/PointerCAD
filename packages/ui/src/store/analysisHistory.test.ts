@@ -3,7 +3,7 @@ import { appendSolid, createEmptyPartDocument, type AnalysisBoundarySource, type
 import { withBeamAnalysisInputs, type BeamAnalysisInput, type SolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { serializeDocument } from '@pointercad/io';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BENCHMARK_EDITS, BENCHMARK_REFERENCE } from '../plasticBar/plasticBar.testSupport.js';
+import { BENCHMARK_EDITS } from '../plasticBar/plasticBar.testSupport.js';
 import { beamUiFixture } from '../beam/beam.testSupport.js';
 import { attachSolidAnalysis } from '../solidAnalysis/attachSolidAnalysis.js';
 import { boundaryMesh, context } from '../solidAnalysis/solidAnalysis.testSupport.js';
@@ -12,6 +12,9 @@ import { initialSolidBucklingState } from '../solidAnalysis/solidBucklingState.j
 import { subShapeElementId } from '../solid/subShapeSelection.js';
 import { extrudeFeature, resetTestStore, resultFor, tick } from './testing/createTestStore.js';
 import { useAppStore } from './useAppStore.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const BENCHMARK_REFERENCE = 'Test benchmark constants, not a material specification';
 
 const SAVED_AT = '2026-10-25T00:00:00.000Z';
 const digest = (document: PartDocument): string => createHash('sha256')

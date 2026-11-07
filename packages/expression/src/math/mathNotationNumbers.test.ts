@@ -6,7 +6,7 @@ import { decodeMathJson } from './decodeMathJson.js';
 import { decodeStoredMath } from './decodeStoredMath.js';
 import { rationalOfExpression } from './exactRational.js';
 import { executeExactMathWorkRequest } from './exactMathWorkExecution.js';
-import { exactRuntimeBatch, sharedExactEngine } from './exactRuntimeTestSupport.js';
+import { exactRuntimeBatch, sharedExactEngine } from './exactRuntime.testSupport.js';
 import { formatMathText } from './formatMathText.js';
 import { createFunctionMathSource } from './functionMathSource.js';
 import { MATH_INPUT_FORMAT, MathInputProblem, type MathAxis, type MathEvaluation, type MathNode, type MathParameter,

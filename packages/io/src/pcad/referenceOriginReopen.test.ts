@@ -170,3 +170,40 @@ describe('saved origin after cold document reopen', () => {
     expect(selected.ref).toEqual(saved);
   });
 });
+
+
+it('saves and cold-reopens both arc-surface kinds before resolving changed current addresses', () => {
+  const profile = { sketchId: 'sketch', curveFeatureId: 'arc', role: 'whole-curve' } as const;
+  const faceRef: SubShapeRef = { bodyFeatureId: 'sheet', index: 0,
+    fingerprint: { kind: 'face', surfaceKind: 'cylinder', area: 400, position: [0, 0, 25], axis: [1, 0, 0], radius: 25 },
+    origin: { version: 1, shapeKind: 'face', identity: { kind: 'surface-curve-side', featureId: 'sheet', profile } } };
+  const edgeRef: SubShapeRef = { bodyFeatureId: 'sheet', index: 1,
+    fingerprint: { kind: 'edge', curveKind: 'line', length: 25, position: [12.5, 0, 25], axis: [1, 0, 0], radius: null },
+    origin: { version: 1, shapeKind: 'edge', identity: { kind: 'surface-curve-edge', featureId: 'sheet', profile, role: 'swept-end' } } };
+  const document: PartDocument = { ...createEmptyPartDocument(), selectionSets: [{ id: 'arc-refs', name: 'Arc refs',
+    members: [{ kind: 'face', ref: faceRef }, { kind: 'edge', ref: edgeRef }] }] };
+  const bytes = writePcadFile(document, { savedAt: '2026-11-03T00:00:00.000Z' });
+  const opened = readPcadFile(bytes);
+  if (!opened.ok) throw new Error(opened.error.message);
+  expect(opened.document.selectionSets).toEqual(document.selectionSets);
+  if (faceRef.origin === undefined || edgeRef.origin === undefined) throw new Error('Saved arc origins missing');
+  // Address table is a revision-local fixture; it is never serialized into the .pcad document.
+  const body: SolidBody = { ...current('sheet', true), bodyKind: 'shell', volume: 0,
+    faces: [{ ...current('sheet', true).faces[0], surfaceKind: 'cylinder', radius: 25, axis: [1, 0, 0] }],
+    edges: [{ index: 23, curveKind: 'line', length: 25, midpoint: [12.5, 0, 25], start: [0, 0, 25],
+      end: [25, 0, 25], axis: [1, 0, 0], radius: null, segmentOffset: 0, segmentCount: 0 }],
+    origins: { version: 1, state: 'tracked', bindings: [
+      { origin: faceRef.origin, state: 'unique', current: { kind: 'face', index: 17 } },
+      { origin: edgeRef.origin, state: 'unique', current: { kind: 'edge', index: 23 } },
+    ] } };
+  for (const member of opened.document.selectionSets[0].members) {
+    if (member.kind !== 'face' && member.kind !== 'edge') throw new Error('Expected saved surface references');
+    const resolution = resolveSubShapeReference(body, member.ref);
+    if (resolution.status !== 'matched') throw new Error('Reopened arc identity did not resolve');
+    expect(resolution.match.basis).toBe('semantic');
+    expect(resolution.match.reference.index).toBe(member.kind === 'face' ? 17 : 23);
+    expect(resolution.match.reference.origin).toEqual(member.ref.origin);
+    expect(resolveSubShapeReference({ ...body, origins: { version: 1, state: 'untracked', reason: 'unsupported-producer' } }, member.ref).status)
+      .toBe('missing');
+  }
+});

@@ -362,8 +362,3 @@ function projectedCenter(center: Vector3, view: DrawingView): Point2 {
   if (basis === null) throw new Error('この向きでは図を作れません。');
   return [dotVec3(basis.x, center), dotVec3(basis.y, center)];
 }
-
-/** テスト・文書破棄時に、そのカーネルの投影記憶だけを捨てる。 */
-export function clearDrawingProjectionCache(kernel: DrawingResolveKernel): void {
-  projectionCaches.delete(kernel);
-}

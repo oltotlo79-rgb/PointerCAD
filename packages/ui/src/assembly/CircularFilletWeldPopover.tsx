@@ -6,7 +6,7 @@ import { DraggableWindowTitle } from '../sketch/DraggableWindowTitle.js';
 import { densityMaterialLabelKey } from '../solid/MeasurementSections.js';
 import type { CircularDraftFields, CircularDraftPreview, CircularFilletWeldDraft } from './circularFilletWeldDraft.js';
 
-export interface CircularFilletWeldPopoverProps {
+interface CircularFilletWeldPopoverProps {
   readonly draft: CircularFilletWeldDraft | null;
   readonly preview: CircularDraftPreview | null;
   readonly onChange: (patch: CircularDraftFields) => void;
@@ -89,7 +89,7 @@ export function CircularFilletWeldPopover({ draft, preview, onChange, onCommit, 
     if (cancelled.current) return;
     cancelled.current = true; onCancel();
   };
-  return <form className="pcad-popover pcad-popover--fillet-weld" role="dialog" aria-label={title}
+  return <form className="pcad-popover pcad-popover--fillet-weld pcad-popover--circular-weld" role="dialog" aria-label={title}
     onCompositionStart={() => { composing.current = true; compositionKey.current = true; setIme(true); }}
     onCompositionEnd={() => { composing.current = false; setIme(false); }}
     onPointerDownCapture={() => { compositionKey.current = false; }}

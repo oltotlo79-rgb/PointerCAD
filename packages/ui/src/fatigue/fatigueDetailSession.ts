@@ -26,7 +26,7 @@ function detailCommon(session: FatigueSession): FatiguePiecewiseCommon {
 }
 
 /** The validated joint input of the current draft. */
-export function detailSessionProblem(session: FatigueSession, parameters: readonly Parameter[]): FatigueDetailCheck {
+ function detailSessionProblem(session: FatigueSession, parameters: readonly Parameter[]): FatigueDetailCheck {
   return detailProblem(sessionDetailDraft(session), sessionCalibration(session), detailCommon(session), session.draft.histories, parameters);
 }
 

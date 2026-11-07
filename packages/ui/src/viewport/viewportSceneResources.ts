@@ -41,13 +41,13 @@ import { KEY_LIGHT_INTENSITY } from './viewportSceneRendering.js';
  */
 
 /** 構築中の台帳に残っている 1 件。完成した Scene へ渡すまで、失敗時はこれで返す。 */
-export interface PendingAcquisition {
+ interface PendingAcquisition {
   readonly label: string;
   readonly release: () => void;
 }
 
 /** 構築中だけ取得を台帳に載せる。返した物は台帳から外れ、引き渡し後はその場で返す。 */
-export type SceneAcquire = <T extends { dispose(): void }>(label: string, resource: T, dispose?: () => void) => T;
+ type SceneAcquire = <T extends { dispose(): void }>(label: string, resource: T, dispose?: () => void) => T;
 
 export function createSceneConstruction() {
   // Construction owns each actual acquisition until successful return or handoff.
@@ -367,7 +367,7 @@ export function returnUnpublishedReservations(
 }
 
 /** meshReservation の材料。読む順は元の meshReservation と同じ(配置の層 → 参照修復の予告)。 */
-export interface SceneReservationSources {
+ interface SceneReservationSources {
   readonly assembly: ReturnType<AssemblyLayer['meshReservation']>;
   readonly repair: ReturnType<ReturnType<typeof createViewportRepairPreview>['meshReservation']>;
   readonly uiBackings: AssemblyUiBackingLedger;

@@ -57,7 +57,7 @@ export interface SurfaceCutPiece {
   readonly solidCount: number;
 }
 
-export interface SurfaceCutResult {
+interface SurfaceCutResult {
   /** Exactly one union per side, ordered negative then positive. */
   readonly pieces: readonly SurfaceCutPiece[];
   readonly originalVolume: number;

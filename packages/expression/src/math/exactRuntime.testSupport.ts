@@ -2,29 +2,18 @@
  * 検査専用。製品のコードからは import しない。
  * 固定の計算部（CPython と同梱の SymPy wheel）を検査から起動する唯一の入口と、同じタイミングの
  * 実計算を1回の準備でまとめる共有エンジン。1回の起動は wheel から SymPy をコンパイルし直すため、
- * CPU で約5〜6秒かかる。1つの検査（it）の中の起動は既定で2回までとし、それを超える検査は
- * allowExactRuntimeLaunches で回数と理由を明記した場合だけ許す（rules/06 §10.323）。
+ * CPU で約5〜6秒かかる。1つの検査（it）の中の起動は2回までとし、超えた検査は理由を示して
+ * 失敗させる（rules/06 §10.323）。
  */
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding, type SpawnSyncReturns } from 'node:child_process';
 import { expect, TestRunner, type RunnerTestCase } from 'vitest';
 import type { ExactMathEngine } from './exactMathWorkExecution.js';
 import type { MathNode } from './mathInputContract.js';
 
-/** Launches one test may make without a stated reason. */
+/** Launches one test may make. */
 export const EXACT_RUNTIME_LAUNCHES_PER_TEST = 2;
 const GUIDANCE = '同じタイミングの計算は共有エンジンでまとめる。rules/06 §10.323';
 const launches = new WeakMap<RunnerTestCase, number>();
-const allowances = new WeakMap<RunnerTestCase, number>();
-
-/** Raises the running test's limit. Only for calculations that cannot share one prepared runtime. */
-export function allowExactRuntimeLaunches(limit: number, reason: string): void {
-  const test = TestRunner.getCurrentTest<RunnerTestCase | undefined>();
-  if (test === undefined) throw new Error('計算部の起動の上限は、検査（it）の中で指定してください。');
-  if (!Number.isInteger(limit) || limit <= EXACT_RUNTIME_LAUNCHES_PER_TEST || reason.trim().length === 0) {
-    throw new Error(`計算部の起動を${String(EXACT_RUNTIME_LAUNCHES_PER_TEST)}回より増やす検査は、回数と理由を指定してください。`);
-  }
-  allowances.set(test, limit);
-}
 
 /** `spawnSync('python', args, options)` for the exact runtime, counted per running test. */
 export function spawnExactRuntime(args: readonly string[], options: SpawnSyncOptionsWithStringEncoding): SpawnSyncReturns<string> {
@@ -32,7 +21,7 @@ export function spawnExactRuntime(args: readonly string[], options: SpawnSyncOpt
   if (test !== undefined) {
     const count = (launches.get(test) ?? 0) + 1;
     launches.set(test, count);
-    const limit = allowances.get(test) ?? EXACT_RUNTIME_LAUNCHES_PER_TEST;
+    const limit = EXACT_RUNTIME_LAUNCHES_PER_TEST;
     if (count === limit + 1) {
       // A thrown error could be absorbed by the calculation's own error handling
       // (an engine failure becomes an invalid reply); a soft assertion always fails the test.

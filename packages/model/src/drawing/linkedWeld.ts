@@ -45,7 +45,7 @@ export interface LinkedWeldData {
 
 export type LinkedWeldMissingReason = 'sourceNotEmbedded' | 'notAssembly' | 'weldMissing' | 'weldDamaged';
 
-export type LinkedWeldResolution =
+type LinkedWeldResolution =
   | { readonly kind: 'linked'; readonly data: LinkedWeldData }
   | { readonly kind: 'missing'; readonly reason: LinkedWeldMissingReason };
 

@@ -7,8 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bodyFor, extrudeFeature, resetTestStore, resultFor } from '../store/testing/createTestStore.js';
 import { useAppStore } from '../store/useAppStore.js';
 import { RadialCommandMenu } from './RadialCommandMenu.js';
-import type { RadialMenuAttachmentOptions } from './attachRadialMenuGesture.js';
 import type * as ImportedReactTypes from 'react';
+import type { attachRadialMenuGesture } from './attachRadialMenuGesture.js';
+
+type RadialMenuAttachmentOptions = Parameters<typeof attachRadialMenuGesture>[1];
 
 const effects: Array<() => void | (() => void)> = [];
 let onChoose: RadialMenuAttachmentOptions['choose'] | null = null;

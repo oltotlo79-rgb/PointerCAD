@@ -45,9 +45,10 @@ import {
   setPrimitiveField,
   setPrimitiveOriginCoordinate,
   type PrimitiveContext,
-  type PrimitiveToolId,
 } from './primitiveCommands.js';
 import { subShapeElementId, type SubShapeBody } from './subShapeSelection.js';
+
+type PrimitiveToolId = Parameters<typeof primitiveToolReadiness>[1];
 
 const PRIMITIVE_TOOLS: readonly PrimitiveToolId[] = ['sphere', 'box', 'cylinder', 'cone', 'torus'];
 

@@ -18,7 +18,7 @@ export interface FunctionSurfaceEvaluator {
   /** Affine interpolation bound for any triangle contained in the parameter rectangle. */
   readonly interpolationErrorBound?: (lower: SurfaceParameter, upper: SurfaceParameter) => number | null;
 }
-export interface FunctionSurfaceOptions {
+interface FunctionSurfaceOptions {
   readonly lower: SurfaceParameter;
   readonly upper: SurfaceParameter;
   readonly minimum: FunctionPoint;
@@ -50,7 +50,7 @@ export type FunctionSurfaceSampleLookup = (grid: SurfaceParameter) => Readonly<S
  * without any condition, cut, covered omission or periodic/pole topology (nothing excluded inside the rectangle
  * except cells proved outside the XYZ box). `parameter` is the exact grid-to-parameter map the vertices used.
  */
-export interface FunctionSurfaceLeafObserver {
+interface FunctionSurfaceLeafObserver {
   readonly leaves: (leaves: readonly SurfaceLeaf[], parameter: (index: number, axis: 0 | 1) => number,
     knownSample: FunctionSurfaceSampleLookup) => void;
 }

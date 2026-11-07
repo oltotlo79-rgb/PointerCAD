@@ -505,7 +505,7 @@ export interface CylindricalHoleLocationValue {
 }
 
 /** 面内X・Yの元式。現在の面の基準で毎回評価し、世界点は保存しない。 */
-export interface PlanarHolePlacement {
+ interface PlanarHolePlacement {
   readonly kind: 'plane-face';
   readonly locations: readonly { readonly x: ExpressionValue; readonly y: ExpressionValue }[];
 }

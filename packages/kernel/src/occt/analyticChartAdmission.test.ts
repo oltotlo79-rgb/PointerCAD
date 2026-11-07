@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { validateAnalyticUvComplex as originalUvComplex } from './analysisSurfaceCertificate.js';
 import { validateAnalyticUvComplex as leafUvComplex } from './analyticUvComplex.js';
 import { createAnalyticCellBudget, type AnalyticPlcFaceBinding } from './analysisSurfaceCertificate.js';
-import { analyticChartAdmission, bindPoleOccurrences, type AdmissionChart, type NativeEdgeRecord } from './analyticChartAdmission.js';
+import { analyticChartAdmission, bindPoleOccurrences, type NativeEdgeRecord } from './analyticChartAdmissionR2.js';
 import type { B08WireChain } from './boundary08Adapter.js';
+
+type AdmissionChart = Parameters<typeof analyticChartAdmission>[0];
 
 // AUTHOR-ONLY, UNEXECUTED. Root places this beside boundary-08 analysisSurfaceCertificate.ts (kernel selector).
 // Fully typed fixtures (no casts); expectations are hand-derived.

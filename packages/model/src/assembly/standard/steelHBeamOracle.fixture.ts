@@ -4,7 +4,7 @@
  * No application imports. Printed precision is retained as strings.
  * Flange classification is secondary reference for test selection, not a printed JIS category.
  */
-export const H_BEAM_TRANSCRIPT = 'scratchpad/claude/agents/cl-v103-ex03-g3192-source/g3192-tables.json';
+export const H_BEAM_TRANSCRIPT = 'g3192-tables.json';
 export const H_BEAM_PRINTED = [
   [100, 50, 5, 7, 8, '11.85', '9.30', '100×50', '細幅', 'T15-01', false, true, 21],
   [100, 100, 6, 8, 8, '21.59', '16.9', '100×100', '広幅', 'T15-02', false, false, 21],

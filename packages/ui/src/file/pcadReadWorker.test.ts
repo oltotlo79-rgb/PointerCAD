@@ -9,7 +9,7 @@ import { createAssemblyDocument, createAssemblyDocumentBundle, createDrawingDocu
 import { IO_LIMITS, readDocumentBundle, readDrawingBundle, readPcadFile, serializeDocument,
   writeDocumentBundle, writeDrawingBundle, writePcadFile } from '@pointercad/io';
 import { createPcadFileReader, type PcadReadWorkerPort } from './pcadReadWorker.js';
-import type { PcadReadRequest } from './pcadReadProtocol.js';
+import { isPcadReadReplyFor, type PcadReadRequest } from './pcadReadProtocol.js';
 import type * as ImportedIoTypes from '@pointercad/io';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
@@ -107,8 +107,18 @@ describe('actual read Worker entry and strict IO parity', () => {
       const bytes = await writeDocumentBundle(kind === 'part' ? createPartDocumentBundle(part, attachments) : bundle, { savedAt });
       const expected = kind === 'part' ? readPcadFile(bytes) : await readDocumentBundle(bytes, 'assembly');
       expect(expected.ok, JSON.stringify({ kind, expected })).toBe(true);
-      expect(await entry.send({ id: kind, kind, bytes })).toEqual({ id: kind, kind, result: expected });
-      expect(entry.returned.at(-1)?.length).toBe(5);
+      const reply = await entry.send({ id: kind, kind, bytes });
+      expect(reply).toEqual({ id: kind, kind, result: expected });
+      // Part reads own one archive output backing for all mesh views; assembly still copies each view.
+      expect(entry.returned.at(-1)?.length).toBe(kind === 'part' ? 3 : 5);
+      if (kind === 'part') {
+        if (!isPcadReadReplyFor(reply, 'part') || !reply.result.ok) throw new Error('Expected part reply');
+        const mesh = reply.result.attachments.meshes.get('mesh');
+        if (mesh === undefined) throw new Error('Expected mesh');
+        expect(mesh.positions.buffer).toBe(mesh.normals.buffer);
+        expect(mesh.positions.buffer).toBe(mesh.indices.buffer);
+        expect(mesh).toEqual(attachments.meshes.get('mesh'));
+      }
       expect(entry.returned.at(-1)?.every(buffer => buffer.byteLength === 0)).toBe(true);
     }
     for (const source of [{ sourceKind: 'part' as const, document: part, attachments },

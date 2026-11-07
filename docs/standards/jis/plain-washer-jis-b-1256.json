@@ -18,7 +18,8 @@
   },
   "notes": [
     "全行が由良産商の抜粋 1 件のみを根拠にしている。要確認。",
-    "2件目に当たった hayamihyou.net は「並形」として別の値を載せている(M6:外径12.5、M8:17、M10:21、M12:厚さ2.3、M16:厚さ3.2、M20:厚さ3.2、M24:外径44/厚さ4.5)。これは旧JIS(JIS B 1256-1963/1978 の並丸・みがき丸)の値とみられる。どちらを採るかは統括が決める。"
+    "2件目に当たった hayamihyou.net は「並形」として別の値を載せている(M6:外径12.5、M8:17、M10:21、M12:厚さ2.3、M16:厚さ3.2、M20:厚さ3.2、M24:外径44/厚さ4.5)。これは旧JIS(JIS B 1256-1963/1978 の並丸・みがき丸)の値とみられる。どちらを採るかは統括が決める。",
+    "実行時カタログ packages/model/src/assembly/standard/fasteners.ts の平座金の表 PLAIN_WASHER_TABLE に付けていた出典 PLAIN_WASHER_SOURCE の値(製品のどこからも読まれていなかったので、値を変えずにここへ移した): standard「JIS B 1256」、edition「2008」、title「平座金」、scope「並形・部品等級A（本体規格）」、verified=false、sourceUrls: https://www.yura-sansyo.co.jp/handbook/handbookV8-5-08.pdf https://hayamihyou.net/washer/"
   ],
   "rows": [
     {

@@ -7,10 +7,12 @@ import { executeFunctionSurfaceWorkRequest } from './functionSurfaceWorkExecutio
 import { beginFunctionSurfaceWorkReply, decodeFunctionSurfaceWorkReply } from './functionSurfaceWorkReply.js';
 import { certifySplineAgainstMesh, certifySplineAgainstMeshSteps, completeSteps, smoothFunctionSurface,
   type FunctionSurfaceSpline, type SurfaceMeshEvidence } from './smoothFunctionSurface.js';
-import { sampleFunctionSurface, type FunctionSurfaceLeafObserver } from './adaptiveFunctionSurface.js';
+import { sampleFunctionSurface } from './adaptiveFunctionSurface.js';
 import { createFunctionSurfaceEvaluator } from './functionSurfaceEvaluation.js';
 import { FunctionSurfaceWorkerClient } from './functionSurfaceWorkerClient.js';
 import type { CalculationWorkerPort } from './boundedCalculationClient.js';
+
+type FunctionSurfaceLeafObserver = NonNullable<Parameters<typeof sampleFunctionSurface>[2]>;
 
 let backend: MathExecutionBackend;
 beforeAll(()=>{backend=createMathBackend();});

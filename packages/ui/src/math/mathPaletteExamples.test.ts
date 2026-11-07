@@ -23,8 +23,7 @@ import {
 } from '@pointercad/expression/math/contracts';
 
 import {
-  MATH_PALETTE_DRAFT, MATH_PALETTE_HELP_TOPIC, mathPaletteAvailability,
-  type MathPaletteArgumentType, type MathPaletteCatalogItem, type MathPaletteExample,
+  MATH_PALETTE_DRAFT, MATH_PALETTE_HELP_TOPIC, type MathPaletteArgumentType, type MathPaletteCatalogItem, type MathPaletteExample,
 } from './mathPalette.js';
 import { MATH_PALETTE_BASIC } from './mathPaletteBasic.js';
 import { MATH_PALETTE_BASIC_EXAMPLES } from './mathPaletteBasicExamples.js';
@@ -33,6 +32,13 @@ import { MATH_PALETTE_CALCULUS_EXAMPLES } from './mathPaletteCalculusExamples.js
 import { MATH_PALETTE_SETS_LOGIC } from './mathPaletteSetsLogic.js';
 import { MATH_PALETTE_SETS_LOGIC_EXAMPLES } from './mathPaletteSetsLogicExamples.js';
 import { MATH_INPUT_PALETTE, MATH_PALETTE_EXAMPLES, mathPaletteExampleSource } from './mathPaletteExamples.js';
+import type { MathPaletteItem } from './mathPaletteGroups.js';
+
+function mathPaletteAvailability(entry: MathPaletteItem, verifiedOperations: ReadonlySet<string>,
+  passedAcceptanceIds: ReadonlySet<string>): boolean {
+  return entry.acceptanceIds.length > 0 && entry.acceptanceIds.every(id => passedAcceptanceIds.has(id))
+    && entry.requiredOperations.every(id => verifiedOperations.has(id));
+}
 
 /** Drafts with a calculation but without a public example. MC-19b published derivative and partial with plotting examples. */
 const DRAFT_EXECUTION_PROBES: readonly MathPaletteExample[] = [];

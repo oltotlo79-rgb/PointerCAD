@@ -14,7 +14,7 @@ import { collectErrors } from './runtimeErrors.js';
  */
 
 async function acceptConfirms(page: Page): Promise<void> {
-  // 画面の中の確認(w91a。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
+  // 画面の中の確認(NFR-UX-3。ブラウザー標準の confirm から置き換えた)は、次の操作・確かめの前に答える。
   await page.addLocatorHandler(page.getByRole('alertdialog', { name: '保存していない変更があります' }), async (dialog) => {
     await dialog.getByRole('button', { name: '保存せずに続ける', exact: true }).click();
   });

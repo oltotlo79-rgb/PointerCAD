@@ -33,11 +33,6 @@ export interface ToolbarCommandExecutionResult extends EditToolReadiness {
   readonly feedback?: 'handled';
 }
 
-/** Boolean compatibility for callers that only need to know whether an action started. */
-export function runToolbarCommand(id: string): boolean {
-  return executeToolbarCommand(id).ready;
-}
-
 /** Toolbar actions expose their refusal reason to the shared command entry point. */
 export function executeToolbarCommand(id: string): ToolbarCommandExecutionResult {
   const command = toolbarCommand(id), state = useAppStore.getState();

@@ -171,6 +171,20 @@ async function expectEditFieldsAreSaved(page: Page, document: AssemblyDocument):
   await expect(field(page, 'fillet-weld-material', EDIT_TITLE)).toHaveValue(first.component.materialId ?? '');
 }
 
+/**
+ * 観測だけ(判定には使わない。BUG.VIEW-PICK-NULL): 表示の所有の受領を失効させる台帳の host epoch の変化の理由
+ * (GC の回収 weak-backing-unreachable・計算部への依頼 owned-worker-dispatch-or-connection など)と、受領の判定の記録。
+ * 口が無い・読めない時は null(元の失敗を隠さない)。
+ */
+async function readMeshLedgerDiagnostics(page: Page): Promise<unknown> {
+  return page.evaluate(() => {
+    const read: unknown = Reflect.get(window, 'pcadMeshLedgerDiagnostics');
+    if (typeof read !== 'function') return null;
+    const value: unknown = read();
+    return value;
+  }).catch(() => null);
+}
+
 /** 2 本目のビードの斜面をビューで押して選び、溶接の道具で「直す」窓を開く(filletWeldFlow.ts と同じ操作)。 */
 async function openEditOnSecondBead(page: Page, info: TestInfo, step: string, saved: AssemblyDocument): Promise<void> {
   const expectedBead = savedBeads(saved)[1];
@@ -188,6 +202,7 @@ async function openEditOnSecondBead(page: Page, info: TestInfo, step: string, sa
     const last: unknown = inputs.at(-1);
     return last;
   });
+  let pickFailed = false;
   try {
     // 元の公開UI操作を1回だけ行う。pollは観測だけで再クリックしない。
     await clickWorldPointChecked(page, PICK.secondBeadSlope);
@@ -212,24 +227,36 @@ async function openEditOnSecondBead(page: Page, info: TestInfo, step: string, sa
       };
     }, previousInput);
     let observation = await readPick();
+    const attachObservation = async () => info.attach(`second-bead-pick-${step}`, {
+      body: JSON.stringify({ expectedComponentId: expectedBead.component.id, ...observation,
+        meshLedger: await readMeshLedgerDiagnostics(page) }),
+      contentType: 'application/json',
+    });
     try {
       await expect.poll(async () => {
         observation = await readPick();
         return observation.terminal;
       }, '今回の第2ビード押下が終端する').toBe(true);
-    } finally {
-      await info.attach(`second-bead-pick-${step}`, {
-        body: JSON.stringify({ expectedComponentId: expectedBead.component.id, ...observation }),
-        contentType: 'application/json',
-      });
+    } catch (error) {
+      // 診断の保存失敗で、選択できなかった元の失敗を隠さない。
+      await attachObservation().catch(() => undefined);
+      throw error;
     }
+    await attachObservation();
     // null hit、所有拒否、取消、古い選択は全てここで拒否する。期待idは保存文書から独立に得る。
     expect(observation).toMatchObject({ terminal: true, readinessAccepted: true, input: {
       inputGate: 'accepted', componentPick: { ownerPresent: true, displayInvalidated: false,
         ownerAccepted: true, cameraReady: true, hitComponentId: expectedBead.component.id },
     } });
     await expect(componentRows(page).nth(3)).toHaveAttribute('aria-pressed', 'true');
-  } finally { await previousInput.dispose(); }
+  } catch (error) {
+    pickFailed = true;
+    throw error;
+  } finally {
+    // ページが閉じた場合の後片付け失敗も、先に発生した失敗を上書きしない。
+    if (pickFailed) await previousInput.dispose().catch(() => undefined);
+    else await previousInput.dispose();
+  }
   await chooseToolMenuItem(page, '組む', TITLE);
   await expect(weldDialog(page, EDIT_TITLE)).toBeVisible();
 }
@@ -277,7 +304,8 @@ export function registerFilletWeldAcceptTests(
               ? inputs.slice(-2).filter(value => value !== null && typeof value === 'object' && 'componentPick' in value) : [] };
           });
           await info.attach('viewport-pick-last-inputs', {
-            body: JSON.stringify(observation), contentType: 'application/json',
+            body: JSON.stringify({ ...observation, meshLedger: await readMeshLedgerDiagnostics(page) }),
+            contentType: 'application/json',
           });
         }
       } finally { await resetAssemblyFileGateway(page); }

@@ -24,13 +24,13 @@ export interface CadSolidContactBodySource {
   /** Actual volume nodes, tetrahedra, boundary triangles and boundary tags. */
   readonly meshSha256: string;
 }
-export interface CadSolidContactBodyMap {
+ interface CadSolidContactBodyMap {
   readonly bodyFeatureId: string;
   readonly localToGlobalNodes: readonly number[];
   readonly tetrahedronOffset: number;
   readonly tetrahedronCount: number;
 }
-export interface CadSolidContactCandidate {
+ interface CadSolidContactCandidate {
   readonly geometry: SolidContactFacetCandidate;
   readonly masterGlobalNodes: readonly [number, number, number];
   readonly slaveGlobalNodes: readonly [number, number, number];
@@ -52,7 +52,7 @@ export interface CadSolidContactPrepared {
   /** Digest of this owned preparation's fixed-order payload, excluding this field. */
   readonly preparationSha256: string;
 }
-export interface CadSolidContactOptions {
+ interface CadSolidContactOptions {
   readonly searchDistanceMm: number;
   readonly signal?: AbortSignal;
 }

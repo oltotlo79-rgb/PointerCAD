@@ -19,7 +19,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createNumericInput, reduceNumericInput, type NumericInputState } from '../sketch/numericInput.js';
 import { attachPartRecompute, type PartRecomputer } from '../store/attachKernel.js';
-import { currentStagedSolid } from '../store/recomputeSlice.js';
+import { currentStagedSolid, type StagedSolidState } from '../store/recomputeSlice.js';
 import {
   bodyFor,
   documentWithPoint,
@@ -35,9 +35,14 @@ import {
   confirmExtrusion,
   type ExtrudeStageCandidate,
   stageExtrusion,
-  stagedExtrusionFor,
   stagedExtrusionMessageKey,
 } from './extrudePreview.js';
+
+/** いまの段階計算のうち、その入力の鍵のもの。所有が変わった古い計算は返さない。 */
+function stagedExtrusionFor(state: ReturnType<typeof useAppStore.getState>, inputKey: string): StagedSolidState | null {
+  const staged = currentStagedSolid(state);
+  return staged !== null && staged.fingerprint === inputKey ? staged : null;
+}
 
 interface ControlledCall {
   readonly document: PartDocument;

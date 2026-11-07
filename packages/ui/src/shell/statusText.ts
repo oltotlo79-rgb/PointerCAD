@@ -48,7 +48,7 @@ export const PROGRESS_DELAY_MS = 300;
  * **この値はここ 1 か所だけに置く**(判断は `isKernelMemoryNearLimit`)。4 分の 3 にしてあるのは、
  * 上限までの残り(約 1GB)があるうちに、保存と開き直しを済ませられるようにするため。
  */
-export const MEMORY_WARNING_RATIO = 0.75;
+const MEMORY_WARNING_RATIO = 0.75;
 
 /** バイトを GB(1024³ バイト)へ直す物差し。帯には小数 1 桁で出す。 */
 const BYTES_PER_GB = 1024 ** 3;
@@ -264,7 +264,7 @@ export interface StatusProgressView {
 }
 
 /** 帯に出すもの一式。`StatusBar.tsx` はこれを描くだけにする。 */
-export interface StatusLine {
+interface StatusLine {
   readonly kind: StatusLineKind;
   /** 帯に出す 1 文。頭の言葉まで既につないである。 */
   readonly text: string;
@@ -549,7 +549,7 @@ export function filletWeldStatus(
 }
 
 /** 帯に出す 1 文を選ぶのに要るもの。すべてストアから読める値。 */
-export interface StatusInput {
+interface StatusInput {
   readonly assemblyMateStatus?: { readonly text: string; readonly failed: boolean } | null;
   /** ボルト締結の打ちかけの 1 文(`boltedJointStatus`)。打ちかけでなければ null。 */
   readonly assemblyBoltedJointStatus?: { readonly text: string; readonly failed: boolean } | null;

@@ -13,7 +13,7 @@ const EVIDENCE = { 'supplier-excerpt': 'solidAnalysis.material.evidence.supplier
 const BASIS = { minimum: 'solidAnalysis.material.basis.minimum', reference: 'solidAnalysis.material.basis.reference' } as const satisfies Readonly<Record<AnalysisMaterialCapacity['basis'], string>>;
 const ISSUES = { material: 'solidAnalysis.material.issue.material', thickness: 'solidAnalysis.material.issue.thickness',
   outside: 'strength.error.thickness', source: 'solidAnalysis.material.issue.source' } as const satisfies Readonly<Record<SolidMaterialIssue, string>>;
-export interface SolidAnalysisMaterialFieldsProps {
+interface SolidAnalysisMaterialFieldsProps {
   readonly value: AnalysisMaterialCapacity | null;
   /** Changes for another document/opening, including null → null. */
   readonly selectionKey: string;

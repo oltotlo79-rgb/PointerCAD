@@ -13,10 +13,12 @@ import type { SolidFaceEntry } from '../solid/subShapeSelection.js';
 import {
   appearanceKeyText,
   buildFaceGroups,
-  MAX_GROUPS_PER_BODY,
   MAX_MATERIALS_PER_BODY,
   type FaceGroup,
 } from './buildFaceGroups.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const MAX_GROUPS_PER_BODY = 32;
 
 /** 面 1 枚。三角形の範囲だけを指定し、ほかの欄は当たり判定用なのでここでは使わない。 */
 function makeFace(index: number, triangleOffset: number, triangleCount: number): SolidFaceEntry {

@@ -9,10 +9,12 @@ import { describe, expect, it } from 'vitest';
 import { TEE_PLANE_BODIES } from '../assembly/filletWeldBodies.testSupport.js';
 import {
   appendFilletWeldPick, commitFilletWeldDraft, createFilletWeldDraft, previewFilletWeldDraft,
-  type AssemblyFilletWeldDraft, type FilletWeldDraftContext,
+  type AssemblyFilletWeldDraft,
 } from '../assembly/filletWeldDraft.js';
 import type { OutlineDrawingText } from './dimensionDisplay.js';
 import { displayDrawingWelds } from './weldDisplay.js';
+
+type FilletWeldDraftContext = Parameters<typeof previewFilletWeldDraft>[0];
 
 const REVISIONS: ReadonlyMap<string, string> = new Map([['standing', 'rev-s'], ['base', 'rev-b']]);
 const placement = (position: Vec3): Placement => ({ position: [expressionValueFromNumber(position[0]), expressionValueFromNumber(position[1]),

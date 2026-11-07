@@ -7,7 +7,7 @@ import { hasExactOwnKeys as record, isFiniteNumber as finite } from '../../value
 import { addVec3, crossVec3, dotVec3, lengthVec3, scaleVec3, subVec3, type Vec3 } from '../../sketch/vec3.js';
 import { WELD_DIRECTION_TOLERANCE, WELD_LENGTH_TOLERANCE_MM } from './types.js';
 
-export interface CircularWeldPathSource {
+ interface CircularWeldPathSource {
   readonly documentId: string;
   readonly ownerId: string;
   readonly occurrencePath: readonly string[];
@@ -47,7 +47,7 @@ export interface CircularWeldPathDefinition {
   readonly intervals: readonly CircularWeldBeadInterval[];
 }
 
-export interface CircularWeldPathFrame {
+ interface CircularWeldPathFrame {
   /** One shared world point for both sides. It is NOT a throat surface point. */
   readonly positionMm: Vec3;
   readonly radial: Vec3;

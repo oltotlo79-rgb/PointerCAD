@@ -8,10 +8,8 @@ import {
   editSolidFace,
   FACE_OFFSET_ADJACENT_MESSAGE,
   FACE_OFFSET_COLLISION_MESSAGE,
-  FACE_OFFSET_DISTANCE_MESSAGE,
   FACE_OFFSET_INVALID_BODY_MESSAGE,
   FACE_OFFSET_MISSING_FACE_MESSAGE,
-  FACE_OFFSET_NOT_PLANAR_MESSAGE,
 } from './editSolidFace.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
@@ -22,6 +20,10 @@ import type { SubShapeTables } from './subShapes.js';
 import { collectSubShapes } from './subShapes.js';
 import { tessellate } from './tessellate.js';
 import { solidFaceQuery as faceQuery } from './solidFaceQuery.testSupport.js';
+
+/** Pinned expected values: the same literals as the product constants, kept independent of them. */
+const FACE_OFFSET_DISTANCE_MESSAGE = '面を動かす距離は 0 でない数で指定してください。';
+const FACE_OFFSET_NOT_PLANAR_MESSAGE = '動かせるのは平らな面だけです。';
 
 /**
  * 平らな面の移動(EX-18 の限られた一段)の実カーネルの検査。

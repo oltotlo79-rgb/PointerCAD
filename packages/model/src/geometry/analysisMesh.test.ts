@@ -370,3 +370,22 @@ describe('explicit FEM material validation request (GO-18, UNEXECUTED)', () => {
     expect(refused).toEqual({ kind: 'failed', code: 'material-invalid', message: '形の材料領域を確認できませんでした。', faceIndex: null });
   });
 });
+
+
+it('captures and forwards explicit shell quality limits without fabricating native evidence', async () => {
+  const base = cylinderBody(), body: SolidBody = { ...base, bodyKind: 'shell', volume: 0, faces: [base.faces[0]] };
+  const quality = { kind: 'cylindrical-rectangle' as const, maximumNodes: 32, maximumTriangles: 32,
+    minimumTriangleAreaMm2: 0.01, minimumAngleDeg: 20, maximumAspectRatio: 4 };
+  const controls = { boundary: 'open' as const, linearDeflection: 0.05, angularDeflection: 0.2, shellQuality: quality };
+  const seen: AnalysisBoundaryRequest[] = [];
+  const pending = requestAnalysisBoundary(source(request => ({ kind: 'failed', bodyKey: request.bodyKey,
+    code: 'probe-stop', message: 'observed request', faceIndex: null }), seen), steps, body, controls);
+  quality.minimumAngleDeg = 40;
+  expect(await pending).toMatchObject({ kind: 'failed', code: 'probe-stop' });
+  expect(seen[0].shellQuality).toEqual({ ...quality, minimumAngleDeg: 20 });
+  expect(seen[0].shellQuality).not.toBe(quality);
+  // The old generic DTO is intentionally missing the requested producer evidence and must not be accepted.
+  const missing = await requestAnalysisBoundary(source(request => ({ kind: 'mesh', bodyKey: request.bodyKey,
+    mesh: meshOf([0, 0], 1) })), steps, body, controls);
+  expect(missing).toMatchObject({ kind: 'failed', code: 'invalid-reply' });
+});

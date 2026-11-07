@@ -9,7 +9,11 @@ import { buildEx18ContextAssembly, buildEx18ContextPart, buildEx18ContextSource,
 import { EX18_ORACLE_A_HOLE_X_TWELVE, EX18_ORACLE_B_CONTEXT_MOVED,
   EX18_ORACLE_C_CONTEXT_MOVED } from '@pointercad/model/testing/ex18-fixtures';
 import { readDocumentBundle, writeDocumentBundle } from '../pcadFile.js';
-import { EX18_ORACLE_EXPECTATIONS, W08_TIMEOUT, W08_SAVED_AT, w08Session, w08Compute, w08Expect } from './ex18PersistenceSupport.testSupport.js';
+import { EX18_ORACLE_EXPECTATIONS, w08Session, w08Compute, w08Expect } from './ex18PersistenceSupport.testSupport.js';
+
+/** W08 の保存の検査の保存時刻と時間の上限(ex18RoutesPersistenceKernel.test.ts と同じ値)。 */
+const W08_SAVED_AT = '2026-10-26T00:00:00.000Z';
+const W08_TIMEOUT = 180_000;
 
 beforeAll(loadOcctForNode, W08_TIMEOUT);
 const cases = [

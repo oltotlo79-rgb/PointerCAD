@@ -89,8 +89,22 @@ describe('evidence shape and applicability', () => {
     expect(() => readAnalysisPropertyEvidence(value, hardening)).toThrow(expect.objectContaining({ code: 'property-evidence-shape' }));
   });
 
-  it.each(['standard-draft', 'manufacturer-reference', 'user-provided'] as const)('retains the declared classification %s', sourceKind => {
-    expect(readAnalysisPropertyEvidence({ ...evidence(sn), sourceKind }, sn).sourceKind).toBe(sourceKind);
+  it.each(['standard-draft', 'manufacturer-reference', 'user-provided', 'peer-reviewed-measurement'] as const)(
+    'retains the declared classification %s', sourceKind => {
+      expect(readAnalysisPropertyEvidence({ ...evidence(sn), sourceKind }, sn).sourceKind).toBe(sourceKind);
+    });
+
+  it.each(['standard-certified', 'peer-reviewed', 'measurement', 'Peer-Reviewed-Measurement', 'peer-reviewed-measurement ',
+    '', null, 1])('still refuses the unsupported classification %j without mutation', sourceKind => {
+    failsWith({ ...evidence(sn), sourceKind }, sn, 'property-evidence-source-kind');
+  });
+
+  it('keeps the peer-reviewed classification bound to its stated condition, units and ranges', () => {
+    const value = { ...evidence(sn), sourceKind: 'peer-reviewed-measurement' };
+    expect(analysisPropertyEvidenceStatus(value, sn).status).toBe('verified');
+    failsWith({ ...value, heatTreatment: '焼入焼戻・適用寸法未指定の参考値' }, sn, 'property-evidence-condition-mismatch');
+    failsWith({ ...value, temperatureC: 30.0001 }, sn, 'property-evidence-outside-range');
+    failsWith({ ...value, units: { ...value.units, referenceCycles: 'reversal' } }, sn, 'property-evidence-unit-mismatch');
   });
 
   it('requires every quantity, finite ordered intervals and an explicit source', () => {
@@ -218,6 +232,62 @@ it('derives plastic-bar status without changing SI conversion or supplying a mis
   const checked = readPlasticBarSavedInput({ ...plastic(), hardeningEvidence: evidence(hardening) }, 'bar');
   expect(analysisPropertyEvidenceStatus(checked.hardeningEvidence, hardeningPropertySeries(checked)).status).toBe('verified');
   expect(plasticBarSiValues(checked)).toEqual(plasticBarSiValues(legacy));
+});
+
+describe('yield plateau evidence (synthetic fixture)', () => {
+  const series = hardeningPropertySeries({ yieldStressMPa: 250, hardeningModulusMPa: 2000, plateauPlasticStrain: 0.01 });
+  const plateauEvidence = { ...evidence(series), validRange: { ...evidence(series).validRange,
+    plateauPlasticStrain: { lower: 0.01, upper: 0.01, unit: '1' } } };
+
+  it('binds the explicit plateau law and dimensionless plastic strain and round-trips without mutation', () => {
+    expect(series).toEqual({ kind: 'hardening', values: { yieldStressMPa: { value: 250, unit: 'MPa' },
+      hardeningModulusMPa: { value: 2000, unit: 'MPa' }, plateauPlasticStrain: { value: 0.01, unit: '1' } },
+    conditions: { law: 'plateau-linear-isotropic' } });
+    const value = { ...plastic(), plateauPlasticStrain: 0.01, hardeningEvidence: plateauEvidence }, before = bytes(value);
+    const saved = readPlasticBarSavedInput(value, 'bar');
+    expect(saved).toEqual(value);
+    expect(readPlasticBarSavedInput(JSON.parse(JSON.stringify(saved)), 'bar')).toEqual(saved);
+    expect(bytes(value)).toEqual(before);
+  });
+
+  it('keeps the legacy law and an unreferenced plateau unchanged', () => {
+    expect(hardening).toEqual({ kind: 'hardening', values: { yieldStressMPa: { value: 250, unit: 'MPa' },
+      hardeningModulusMPa: { value: 2000, unit: 'MPa' } }, conditions: { law: 'linear-isotropic' } });
+    expect(readPlasticBarSavedInput(plastic(), 'bar')).toEqual(plastic());
+    const bare = { ...plastic(), plateauPlasticStrain: 0.01 };
+    expect(readPlasticBarSavedInput(bare, 'bar')).toEqual(bare);
+  });
+
+  it('rejects law interchange, a changed plateau, percent units and out-of-bounds input', () => {
+    const linearEvidence = evidence(hardening);
+    const lawOnly = (value: AnalysisPropertyEvidence, law: string): AnalysisPropertyEvidence => ({ ...value,
+      testConditions: { ...value.testConditions, parameters: { ...value.testConditions.parameters, law } } });
+    const badInputs = [
+      { value: { ...plastic(), plateauPlasticStrain: 0.01, hardeningEvidence: linearEvidence },
+        code: 'property-evidence-shape', path: 'bar.hardeningEvidence.units' },
+      { value: { ...plastic(), hardeningEvidence: plateauEvidence },
+        code: 'property-evidence-shape', path: 'bar.hardeningEvidence.units' },
+      { value: { ...plastic(), plateauPlasticStrain: 0.01, hardeningEvidence: lawOnly(plateauEvidence, 'linear-isotropic') },
+        code: 'property-evidence-test-condition-mismatch', path: 'bar.hardeningEvidence.testConditions.parameters.law' },
+      { value: { ...plastic(), hardeningEvidence: lawOnly(linearEvidence, 'plateau-linear-isotropic') },
+        code: 'property-evidence-test-condition-mismatch', path: 'bar.hardeningEvidence.testConditions.parameters.law' },
+      { value: { ...plastic(), plateauPlasticStrain: 0.02, hardeningEvidence: plateauEvidence },
+        code: 'property-evidence-outside-range', path: 'bar.hardeningEvidence.plateauPlasticStrain' },
+      { value: { ...plastic(), plateauPlasticStrain: 0.01, hardeningEvidence: { ...plateauEvidence,
+        units: { ...plateauEvidence.units, plateauPlasticStrain: '%' } } },
+        code: 'property-evidence-unit-mismatch', path: 'bar.hardeningEvidence.units.plateauPlasticStrain' },
+      { value: { ...plastic(), plateauPlasticStrain: 0, hardeningEvidence: plateauEvidence },
+        code: 'plastic-bar', path: 'bar.plateauPlasticStrain' },
+      { value: { ...plastic(), plateauPlasticStrain: 0.050001, hardeningEvidence: plateauEvidence },
+        code: 'plastic-bar', path: 'bar.plateauPlasticStrain' },
+    ];
+    for (const { value, code, path } of badInputs) {
+      const before = bytes(value);
+      expect(() => readPlasticBarSavedInput(value, 'bar')).toThrow(expect.objectContaining({ code, path }));
+      expect(bytes(value)).toEqual(before);
+    }
+    expect(readPlasticBarSavedInput({ ...plastic(), plateauPlasticStrain: 0.05 }, 'bar').plateauPlasticStrain).toBe(0.05);
+  });
 });
 
 describe('no material-name coefficient generation', () => {

@@ -14,7 +14,7 @@ import type { ImportedShapeBytes } from './resolvePart.js';
 import type { ExtrudeFeature, HoleFeature, ImportedSolidFeature, PartDocument, PrimitiveFeature, RevolveFeature } from './types.js';
 
 export type Ex18DirectShape = 'A' | 'B' | 'C';
-export interface Ex18DirectSeed {
+interface Ex18DirectSeed {
   readonly part: PartDocument;
   readonly targetId: string;
   readonly importedShapes?: ImportedShapeBytes;

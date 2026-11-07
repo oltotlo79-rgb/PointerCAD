@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { intervalUnion } from './mathIntervalUnion.js';
-import { sampleFunctionSurface, type FunctionSurfaceOptions, type FunctionSurfaceEvaluator } from './adaptiveFunctionSurface.js';
+import { sampleFunctionSurface, type FunctionSurfaceEvaluator } from './adaptiveFunctionSurface.js';
+
+type FunctionSurfaceOptions = Parameters<typeof sampleFunctionSurface>[1];
 
 const options: FunctionSurfaceOptions = { lower:[-1,-1], upper:[1,1], minimum:[-2,-2,-2], maximum:[2,2,2],
   tolerance:0.01,maximumSamples:10000,maximumCells:10000,maximumTriangles:10000,maximumDepth:8 };

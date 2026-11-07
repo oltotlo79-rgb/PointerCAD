@@ -3,10 +3,16 @@ import { analyzeFatigue, analyzeFatigueWithMeanStressCorrection, validateFatigue
 import type { Parameter } from '@pointercad/model';
 import { FATIGUE_SAVED_GOODMAN_SCHEMA, readFatigueSavedInput, readFatigueSavedProblem } from '@pointercad/model/beam-analysis';
 import { describe, expect, it } from 'vitest';
-import { BASE_DAMAGE, BASE_EDITS, BASE_LIFE, edited, relative } from './fatigue.testSupport.js';
+import { BASE_EDITS, edited, relative } from './fatigue.testSupport.js';
 import { createFatigueSession, currentFatigueResult, editFatigueSession, fatigueCorrection, fatigueDraftIsSaved,
   fatigueErrorField, fatigueInput, fatigueSavedInput, parseStressList, restoreFatigueSession,
   type FatigueEdit, type FatigueSession } from './fatigueSession.js';
+
+/** Hand-derived for BASE_EDITS: rainflow of 0,200,0 gives two half cycles of range 200 (mean 100); each adds
+ * 0.5 * (200 / 100)^3 / 2e6 = 2e-6, so D = 4e-6 and the input can be applied 1 / D = 250000 times. */
+const BASE_DAMAGE = 4e-6;
+
+const BASE_LIFE = 250000;
 
 /** Contract tolerance of the core tests, fixed before execution (floating sums of exact powers). */
 const TOLERANCE = 1e-12;
@@ -57,7 +63,7 @@ describe('fatigue draft', () => {
       [without('history-sequence'), 'fatigue.error.sequence', 'history:0:sequence'],
       [without('history-source', 'reference'), 'fatigue.error.source', 'history:0:reference'],
       [[...BASE_EDITS, { kind: 'history-stress', index: 0, source: '0, 2OO, 0' }], 'fatigue.error.stressEntry', 'history:0:stress'],
-      [[...BASE_EDITS, { kind: 'value', field: 'slope', source: '25' }], 'fatigue.error.bound', 'slope'],
+      [[...BASE_EDITS, { kind: 'value', field: 'slope', source: '33' }], 'fatigue.error.bound', 'slope'],
     ];
     for (const [edits, key, field] of cases) {
       const checked = fatigueInput(edited(edits), []);
@@ -160,6 +166,8 @@ describe('saved fatigue reader agrees with the core reader', () => {
     holes[1] = 1;
     const cases: readonly unknown[] = [base,
       curveCase({ slope: 1 }), curveCase({ slope: 20 }), curveCase({ slope: 0.999 }), curveCase({ slope: 20.000001 }),
+      curveCase({ slope: 24.096385542168672 }), curveCase({ slope: 30.674846625766875 }), curveCase({ slope: 32 }),
+      curveCase({ slope: 32.000001 }), curveCase({ slope: Number.POSITIVE_INFINITY }), curveCase({ slope: Number.NaN }),
       curveCase({ referenceStressMpa: 1 }), curveCase({ referenceStressMpa: 1e4 }), curveCase({ referenceStressMpa: 0.5 }),
       curveCase({ referenceCycles: 1e12 }), curveCase({ referenceCycles: 1e12 + 1 }), curveCase({ cutoffStressMpa: 0 }),
       curveCase({ cutoffStressMpa: 2e4 }), curveCase({ cutoffStressMpa: 20000.001 }), curveCase({ cutoffStressMpa: Number.NaN }),

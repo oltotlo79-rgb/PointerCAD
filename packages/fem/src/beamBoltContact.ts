@@ -143,27 +143,27 @@ export function decodeBeamBoltContact(raw: unknown, value: BeamBoltContactInput,
 
 
 /** Separate opt-in finite-length frame shank. No old axial or Worker input accepts this schema. */
-export interface FrameBoltSource { readonly kind: 'published' | 'measured' | 'user-supplied'; readonly reference: string; readonly condition: string }
-export interface FrameBoltQuantity { readonly role: string; readonly value: number; readonly source: FrameBoltSource }
-export interface FrameBoltLimits { readonly classId: string; readonly materialConditionId: string; readonly tensionPa: number; readonly shearPa: number; readonly bendingPa: number; readonly source: FrameBoltSource }
-export interface FrameBoltSection {
+ interface FrameBoltSource { readonly kind: 'published' | 'measured' | 'user-supplied'; readonly reference: string; readonly condition: string }
+ interface FrameBoltQuantity { readonly role: string; readonly value: number; readonly source: FrameBoltSource }
+ interface FrameBoltLimits { readonly classId: string; readonly materialConditionId: string; readonly tensionPa: number; readonly shearPa: number; readonly bendingPa: number; readonly source: FrameBoltSource }
+ interface FrameBoltSection {
   readonly materialConditionId: string; readonly tensileArea: FrameBoltQuantity; readonly shearArea: FrameBoltQuantity;
   readonly modulusY: FrameBoltQuantity; readonly modulusZ: FrameBoltQuantity;
   readonly fibreYM: FrameBoltQuantity; readonly fibreZM: FrameBoltQuantity; readonly limits: FrameBoltLimits | null;
 }
-export interface FrameBoltDeclaration {
+ interface FrameBoltDeclaration {
   readonly id: string; readonly memberId: string; readonly model: 'centroidal-frame-shank-explicit-end-coupling';
   readonly couplingSource: FrameBoltSource; readonly shorteningM: FrameBoltQuantity;
   readonly threadCompliance: FrameBoltQuantity; readonly headCompliance: FrameBoltQuantity; readonly bearingCompliance: FrameBoltQuantity;
   readonly section: FrameBoltSection;
 }
 export interface FrameBoltContactInput { readonly schema: 'pointercad-frame-bolt-contact/1'; readonly contact: BeamContactInput; readonly bolt: FrameBoltDeclaration }
-export interface FrameBoltContactPlan { readonly schema: 'pointercad-frame-bolt-contact/1'; readonly contact: OofemContactPlan; readonly bolt: FrameBoltDeclaration & { readonly member: number } }
-export type FrameBoltAssessment =
+ interface FrameBoltContactPlan { readonly schema: 'pointercad-frame-bolt-contact/1'; readonly contact: OofemContactPlan; readonly bolt: FrameBoltDeclaration & { readonly member: number } }
+ type FrameBoltAssessment =
   | { readonly status: 'unevaluated'; readonly stressPa: number; readonly ratio: null }
   | { readonly status: 'zero-demand'; readonly stressPa: 0; readonly ratio: null }
   | { readonly status: 'compared'; readonly stressPa: number; readonly ratio: number };
-export interface FrameBoltActions {
+ interface FrameBoltActions {
   readonly forceOnAN: Vector3; readonly forceOnBN: Vector3; readonly momentOnANm: Vector3; readonly momentOnBNm: Vector3;
   readonly axialForceN: number; readonly shearYN: number; readonly shearZN: number; readonly bendingYNm: number; readonly bendingZNm: number;
   readonly elasticEnergyJ: number; readonly transverseEnergyJ: number;

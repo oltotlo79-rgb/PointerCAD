@@ -30,13 +30,13 @@ function sourceEntryName(ref: string): string {
 function assertReopenable(entries: PcadZipEntries, ref: string, limits: ArchiveReadLimits): void {
   if (entries.size > limits.archiveEntryCount) throw new Error(ARCHIVE_TOO_LARGE_MESSAGE);
   const sourceEntry = sourceEntryName(ref), prefix = sourcePrefix(ref);
-  let drawingTotal = 0, sourceTotal = 0;
+  let drawingBytes = 0, sourceBytes = 0;
   for (const [name, [bytes]] of entries) {
     if (bytes.length > limits.archiveEntryExpandedBytes) throw new Error(ARCHIVE_TOO_LARGE_MESSAGE);
-    if (isPcaddArchiveEntry(name)) drawingTotal += bytes.length;
-    if (name === sourceEntry || name.startsWith(prefix)) sourceTotal += bytes.length;
+    if (isPcaddArchiveEntry(name)) drawingBytes += bytes.length;
+    if (name === sourceEntry || name.startsWith(prefix)) sourceBytes += bytes.length;
   }
-  if (drawingTotal > limits.archiveTotalExpandedBytes || sourceTotal > limits.archiveTotalExpandedBytes) {
+  if (drawingBytes > limits.archiveTotalExpandedBytes || sourceBytes > limits.archiveTotalExpandedBytes) {
     throw new Error(ARCHIVE_TOO_LARGE_MESSAGE);
   }
 }

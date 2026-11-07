@@ -8,7 +8,9 @@ import { FUNCTIONAL_TEST_TIMEOUT_MS } from '@pointercad/test-utils/testing/relea
 import { isLoader, isRuntime, type PyodideRuntime } from './runtime.js';
 import type { ShellAnalysisInput, ShellFixed6, ShellVector3 } from './shellAnalysisModel.js';
 import { decodeShellAnalysis, recoverPlanarShell, recoverShellTransverseShear, SHELL_NATIVE_ELEMENT, shellElementFrame, shellSurfaceStress,
-  shellTransverseShearStress, translateShellAnalysis, type ShellAnalysisResult, type ShellElementResult, type ShellTensor6 } from './shellTranslation.js';
+  shellTransverseShearStress, translateShellAnalysis, type ShellAnalysisResult, type ShellTensor6 } from './shellTranslation.js';
+
+type ShellElementResult = Parameters<typeof recoverPlanarShell>[1][number];
 
 // Patch tests of the native TR_SHELL02 path against thin-plate (Kirchhoff) solutions, N-mm-MPa-rad.
 // Top side = the side of the element normal e3 = (N2-N1) x (N3-N1). The meshes below are wound so that e3 = +Z.

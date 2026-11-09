@@ -3,8 +3,9 @@ import type { AssemblyDocumentBundle, DrawingDocument, DrawingTemplate, PartDocu
 import { IO_LIMITS } from '../limits.js';
 import { drawingBundleEntries } from './drawingBundle.js';
 import { drawingTemplateEntries } from './drawingTemplateFile.js';
-import { documentBundleEntries, pcadEntries, zipPcadEntriesAsync,
+import { documentBundleEntries, pcadEntries, PCAD_MESH_ENTRY_PREFIX, PCAD_MESH_ENTRY_SUFFIX, zipPcadEntriesAsync,
   type WriteDocumentBundleOptions, type WritePcadFileOptions, type WritePcaddFileOptions } from './pcadFile.js';
+import { hasSteppedZipEntry, zipEntriesWithOwnedBuffersAsync, type ZipStepEntry } from './zipSteps.js';
 import { ARCHIVE_TOO_LARGE_MESSAGE } from './readArchive.js';
 
 export type SaveDocumentInput =
@@ -26,6 +27,19 @@ export interface SaveEncodingControl {
 }
 export type SaveDocumentEncoder = (input: SaveDocumentInput, control?: SaveEncodingControl) => Promise<Uint8Array>;
 
+/** pcadEntriesがmeshごとに新規確保した全領域entryだけ。shape/画像/入力meshは借用のまま。 */
+function ownedPartMeshBuffers(input: SaveDocumentInput,
+  entries: ReadonlyMap<string, ZipStepEntry>): Set<ArrayBuffer> {
+  const owned = new Set<ArrayBuffer>();
+  if (input.kind !== 'part') return owned;
+  for (const ref of input.options.attachments?.meshes.keys() ?? []) {
+    const bytes = entries.get(`${PCAD_MESH_ENTRY_PREFIX}${ref}${PCAD_MESH_ENTRY_SUFFIX}`)?.[0];
+    if (bytes !== undefined && bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0
+      && bytes.byteLength > 0 && bytes.byteLength === bytes.buffer.byteLength) owned.add(bytes.buffer);
+  }
+  return owned;
+}
+
 /** この関数自身はスレッドを作らない。UIは必ず専用Workerから呼ぶ。 */
 export const encodeSaveDocument: SaveDocumentEncoder = async (input, control = {}) => {
   control.signal?.throwIfAborted();
@@ -38,7 +52,10 @@ export const encodeSaveDocument: SaveDocumentEncoder = async (input, control = {
   control.onEntriesBuilt?.();
   control.onProgress?.('compressing');
   // 大きい項目は区切って圧縮し、区切りごとに Worker の終了要求・取消を受け付ける(取消を1秒以内に)。
-  const bytes = await zipPcadEntriesAsync(entries, { signal: control.signal });
+  const ownedBuffers = ownedPartMeshBuffers(input, entries);
+  const bytes = ownedBuffers.size > 0 && hasSteppedZipEntry(entries)
+    ? await zipEntriesWithOwnedBuffersAsync(entries, ownedBuffers, { signal: control.signal })
+    : await zipPcadEntriesAsync(entries, { signal: control.signal });
   if (input.kind === 'drawing' && bytes.length > IO_LIMITS.archiveCompressedBytes) {
     throw new Error(ARCHIVE_TOO_LARGE_MESSAGE);
   }

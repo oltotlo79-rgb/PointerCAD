@@ -13,6 +13,7 @@ import { PCAD_PRINT_CHANNEL, registerPcadIpc } from './pcadDialogs.js';
 import { registerPortableCleanup } from './portableCleanup.js';
 import { startupFailureDocument } from './startupHtml.js';
 import { createOcctHttpTransport } from './occtHttpTransport.js';
+import { launchOcctTransportEphemeralPort, OCCT_TRANSPORT_TEST_PORT_ENV } from '../occtHttpPolicy.js';
 
 /**
  * このファイルの出力先 dist/main。
@@ -31,6 +32,8 @@ const preloadPath = join(currentDirectory, '..', 'preload', 'preload.cjs');
 
 /** 開発時は Vite の開発サーバーを読む。統括が起動して環境変数で渡す。 */
 const devServerUrl = app.isPackaged ? undefined : process.env['PCAD_DEV_SERVER_URL'];
+/** 製品は固定の送信先。未パッケージの画面検査だけ、OCCT の HTTP サーバー自身が OS の選ぶ番号を bind して持ち続ける。 */
+const occtTransportEphemeralPort = launchOcctTransportEphemeralPort(app.isPackaged, process.env[OCCT_TRANSPORT_TEST_PORT_ENV]);
 
 registerAppScheme();
 // The single-file portable removes this launch's %TEMP% extraction after a confirmed quit (v1.0.2). The helper and its
@@ -176,14 +179,29 @@ function registerPrintIpc(): void {
   );
 }
 
-void app.whenReady().then(() => {
+/**
+ * 画面検査の起動だけ: 主文書の前に準備して、サーバーが実際に持っている origin を CSP へ 1 回渡す。
+ * 準備の失敗・direct は固定の origin のまま進め、renderer の準備の要求が同じ結果で明示的に失敗する。
+ */
+async function ownedOcctTransportOrigin(transport: ReturnType<typeof createOcctHttpTransport>): Promise<string | undefined> {
+  try {
+    const reply = await transport.prepare();
+    return reply.kind === 'http' ? new URL(reply.url).origin : undefined;
+  } catch (error: unknown) {
+    console.error('OCCT transport preparation failed', error);
+    return undefined;
+  }
+}
+
+void app.whenReady().then(async () => {
   denyBrowserPermissions(session.defaultSession);
   session.defaultSession.on('will-download', (event) => { event.preventDefault(); });
   // 既定のメニューバー(File / Edit / View / Window)は使わないので消す。
   Menu.setApplicationMenu(null);
-  handleAppScheme(rendererRoot);
+  // Construction only (no listener, read or network); the product keeps the lazy order below.
+  const occtTransport = createOcctHttpTransport(rendererRoot, session.defaultSession, occtTransportEphemeralPort);
+  handleAppScheme(rendererRoot, occtTransportEphemeralPort ? await ownedOcctTransportOrigin(occtTransport) : undefined);
   // Register lazily: the first broker acquisition owns preparation and its timing.
-  const occtTransport = createOcctHttpTransport(rendererRoot, session.defaultSession);
   ipcMain.handle('pcad:prepareOcctTransport', (event: IpcMainInvokeEvent, ...args: unknown[]) => {
     if (!validateAppSender(event) || args.length !== 0) throw new Error('Invalid OCCT transport sender or arguments');
     return occtTransport.prepare();

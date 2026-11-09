@@ -4,7 +4,7 @@ import { platform } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect, test } from '@playwright/test';
 import { summarizeProcessMemory } from '../../packages/test-utils/src/processMemorySamples.js';
-import { windowsSampler, linuxSampler, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type Sampler } from './processResourceSampler.js';
+import { windowsSampler, linuxSampler, linuxFrame, rawFrame, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type LinuxProcSource, type ResourceProcessSample, type Sampler } from './processResourceSampler.js';
 import { readResidentFrames } from './readResidentSampler.js';
 
 /** Bound for each owned stop; an owned process still open after this is a failure, not ignored. */
@@ -105,6 +105,9 @@ test(`process sampler keeps the 100ms cadence through repeated discoveries (incl
       expect(Math.floor(timing.discoveryExecutionMs)).toBeLessThanOrEqual(frame.discoveredAtEpochMs - timing.discoveryWorkerEnteredAtEpochMs + 1);
       if (frameIndex === 0) expect(timing.outputOfPreviousFrame).toBeUndefined();
       else expect(timing.outputOfPreviousFrame?.atEpochMs).toBe(frames[frameIndex - 1]?.atEpochMs);
+      // The wait fields are recorded in every frame; rawFrame already rejected a missing or reversed time into failures.
+      expect(timing.loopStartedAtEpochMs).toBeDefined();
+      expect(timing.previousSleep === undefined).toBe(frameIndex === 0);
     }
     const rows = frame.processes.filter(sample => sample.pid === owned.pid);
     expect(rows).toHaveLength(1);
@@ -135,4 +138,107 @@ test('read resident frames reject reused ancestry, duplicates, disappearance and
   expect(readResidentFrames([frame(1000, [root, child, row(30, 2, '250')])], 10, 0).errors.join(' ')).toContain('outside recorded root ancestry');
   expect(readResidentFrames([frame(1000, [root, row(11, 10, '199')])], 10, 0).errors.join(' ')).toContain('older than recorded parent');
   expect(readResidentFrames([frame(1000, [root, row(11, 10, 'unknown')])], 10, 0).errors.join(' ')).toContain('unknown creation ordering');
+});
+
+// CI 42358862597: Linux frames read status/cmdline of every PID on the runner. Discovery still
+// covers every PID in every frame; only the selected rows are read in full, and a lost PID or a
+// slow read stays in the record as a failure.
+test('linux frame reads selected PIDs in full and keeps a lost PID and a slow read as failures', async () => {
+  let clock = 1_000;
+  const table = [{ pid: 10, parentPid: 1, created: '200', name: 'owned' }, { pid: 11, parentPid: 10, created: '210', name: 'owned' },
+    { pid: 30, parentPid: 2, created: '250', name: 'other' }, { pid: 12, parentPid: 11, created: '220', name: 'owned' }];
+  const read: number[] = [];
+  const actual = (pid: number): ResourceProcessSample => {
+    const entry = table.find(candidate => candidate.pid === pid);
+    if (entry === undefined) throw new Error(`unexpected full read of PID ${String(pid)}`);
+    return { ...entry, workingSetBytes: 10, privateBytes: 8, cpuMilliseconds: 0, error: null };
+  };
+  const source = (current: (pid: number) => ResourceProcessSample, readMs = 0): LinuxProcSource => ({
+    list: () => Promise.resolve(['self', ...table.map(entry => String(entry.pid))]),
+    ancestry: pid => Promise.resolve(table.find(entry => entry.pid === pid) ?? null),
+    process: pid => { read.push(pid); clock += readMs; return Promise.resolve(current(pid)); },
+    now: () => clock,
+  });
+  const options = { intervalMs: INTERVAL_MS, discoveryIntervalMs: DISCOVERY_INTERVAL_MS, requiredPhases: ['baseline' as const] };
+
+  // The unrelated PID 30 is discovered from stat only; it is never read in full or recorded.
+  const withoutRoot = await linuxFrame(10, false, clock, source(actual));
+  expect(withoutRoot.processes.map(sample => sample.pid)).toEqual([11, 12]);
+  expect(read).toEqual([11, 12]);
+  read.length = 0;
+  const withRoot = await linuxFrame(10, true, clock, source(actual));
+  expect(withRoot.processes.map(sample => sample.pid)).toEqual([10, 11, 12]);
+  expect(read).toEqual([10, 11, 12]);
+  expect(withRoot.discoveredAtEpochMs).toBe(withRoot.readStartedAtEpochMs);
+  expect(readResidentFrames([withRoot], 10, 0).errors).toEqual([]);
+
+  // Missing sample: a PID gone after discovery stays a failed row with unknown memory, not dropped or 0.
+  const lost = await linuxFrame(10, true, clock, source(pid => pid === 11
+    ? { pid, created: '', parentPid: 0, name: '', workingSetBytes: null, privateBytes: null, cpuMilliseconds: null, error: 'Error: ENOENT' }
+    : actual(pid)));
+  expect(lost.processes.map(sample => sample.pid)).toEqual([10, 11, 12]);
+  expect(lost.processes[1]).toMatchObject({ pid: 11, created: '210', parentPid: 10, workingSetBytes: null, privateBytes: null, cpuMilliseconds: null });
+  expect(lost.processes[1]?.error).toContain('after /proc discovery: Error: ENOENT');
+  expect(readResidentFrames([lost], 10, 0).errors.join(' ')).toContain('PID 11: missing or invalid memory');
+  expect(summarizeProcessMemory([{ ...lost, phase: 'baseline' }], options).complete).toBe(false);
+  // PID reuse after discovery is a failure too, under the discovered identity.
+  const reused = await linuxFrame(10, true, clock, source(pid => pid === 11 ? { ...actual(pid), created: '211' } : actual(pid)));
+  expect(reused.processes[1]).toMatchObject({ pid: 11, created: '210', workingSetBytes: null, privateBytes: null });
+  expect(reused.processes[1]?.error).toContain('after /proc discovery');
+
+  // Slow acquisition: the actual end time is recorded, not clamped, so the 2x100ms read limit still rejects it.
+  const slowStart = clock;
+  const slow = await linuxFrame(10, true, slowStart, source(actual, 101));
+  expect(slow.readStartedAtEpochMs).toBe(slowStart);
+  expect(slow.atEpochMs - slow.readStartedAtEpochMs).toBe(303);
+  expect(slow.atEpochMs - slow.readStartedAtEpochMs).toBeGreaterThan(INTERVAL_MS * 2);
+  expect(summarizeProcessMemory([{ ...withRoot, phase: 'baseline' }, { ...slow, phase: 'baseline' }], options).problems)
+    .toContain(`sample gap at ${String(slow.atEpochMs)}`);
+
+  // A failed /proc listing is not an empty tree; the sampler loop records it as discoveryError.
+  await expect(linuxFrame(10, true, clock, { ...source(actual), list: () => Promise.reject(new Error('EACCES /proc')) }))
+    .rejects.toThrow('EACCES /proc');
+});
+
+// CI 42358862597: the Windows gaps lay outside every measured acquisition stage. Each frame also records its
+// loop start and the Start-Sleep before it, so the gap from the previous frame splits into output, sleep,
+// wake-up to loop, and loop to read. Records written before these fields still parse; a missing, negative
+// or reversed time does not.
+test('windows frame timing separates the sleep from the loop and rejects missing, negative or reversed times', () => {
+  const stages = ['nativeInitializationMs', 'discoveryInitializationMs', 'discoveryWorkerEnteredAtEpochMs', 'discoveryExecutionMs',
+    'nativeHandleOpenMs', 'nativeCreationQueryMs', 'nativeHandleCloseMs', 'nativeCallMs', 'readElapsedMs', 'serializerInitializationMs',
+    'serializerReadyAtEpochMs', 'discoveryStartedAtEpochMs', 'discoveryAdoptedAtEpochMs', 'cimEnumerationMs', 'ancestryMs',
+    'identityBindingMs', 'adoptionMs', 'processSnapshotMs', 'propertyReadMs', 'nativeIdentityReadMs', 'nativeMetricsReadMs', 'processDisposalMs'];
+  const old = Object.fromEntries(stages.map(key => [key, 1]));
+  const frame = (windowsTiming: Record<string, unknown>) => ({ atEpochMs: 2_000, readStartedAtEpochMs: 1_990,
+    discoveredAtEpochMs: 1_500, rootCreated: '200', discoveryError: null, processes: [], windowsTiming });
+  // The previous frame ended at 1400; a 98ms sleep began at 1402 and ended at 1900; the loop began at 1985.
+  const output = { atEpochMs: 1_400, serializationMs: 0.5, writeMs: 0.5 };
+  const sleep = { requestedMs: 98, startedAtEpochMs: 1_402, endedAtEpochMs: 1_900 };
+  const later = { ...old, outputOfPreviousFrame: output, loopStartedAtEpochMs: 1_985 };
+
+  // A record written before the wait fields parses unchanged.
+  expect(rawFrame(frame(old)).windowsTiming).toEqual(old);
+  // The first frame has its loop start and no previous output or sleep.
+  expect(rawFrame(frame({ ...old, loopStartedAtEpochMs: 1_985 })).windowsTiming?.loopStartedAtEpochMs).toBe(1_985);
+  // A later frame keeps the actual values.
+  const timing = rawFrame(frame({ ...later, previousSleep: sleep })).windowsTiming;
+  expect(timing?.loopStartedAtEpochMs).toBe(1_985);
+  expect(timing?.previousSleep).toEqual(sleep);
+
+  const malformed: Record<string, unknown>[] = [
+    { ...old, outputOfPreviousFrame: output, previousSleep: sleep },
+    { ...old, loopStartedAtEpochMs: 1_985, previousSleep: sleep },
+    later,
+    { ...later, previousSleep: { requestedMs: 98, startedAtEpochMs: 1_402 } },
+    { ...old, loopStartedAtEpochMs: -1 },
+    { ...old, loopStartedAtEpochMs: '1985' },
+    { ...later, previousSleep: { ...sleep, requestedMs: -2 } },
+    { ...later, previousSleep: { ...sleep, startedAtEpochMs: -1_402 } },
+    { ...later, previousSleep: { ...sleep, endedAtEpochMs: 1_401 } },
+    { ...later, previousSleep: { ...sleep, startedAtEpochMs: 1_399 } },
+    { ...later, loopStartedAtEpochMs: 1_899, previousSleep: sleep },
+    { ...old, loopStartedAtEpochMs: 1_991 },
+  ];
+  for (const windowsTiming of malformed) expect(() => rawFrame(frame(windowsTiming))).toThrow('Malformed OS resource sample');
 });

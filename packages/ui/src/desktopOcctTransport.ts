@@ -1,6 +1,7 @@
 /** Pure Desktop transport boundary; importing this subpath does not load UI code. */
 export {
   DESKTOP_OCCT_TRANSPORT_ORIGIN,
+  desktopOcctTransportOrigin,
   desktopOcctTransportUrl,
   validateDesktopOcctTransportReply,
   type DesktopOcctIdentity,

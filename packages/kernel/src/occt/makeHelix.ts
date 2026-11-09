@@ -1,5 +1,5 @@
 import { unitDirectionCleanZero as toUnit } from './normalizeDirection.js';
-import { dotVec as dot } from './sketchCorner.js';
+import { crossVec, dotVec as dot } from './sketchCorner.js';
 /**
  * らせん(計画書 P3 §2.7b.3、タスク9)。
  *
@@ -62,11 +62,8 @@ function normalizeZero(value: number): number {
 
 
 function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [
-    normalizeZero(a[1] * b[2] - a[2] * b[1]),
-    normalizeZero(a[2] * b[0] - a[0] * b[2]),
-    normalizeZero(a[0] * b[1] - a[1] * b[0]),
-  ];
+  const value = crossVec(a, b);
+  return [normalizeZero(value[0]), normalizeZero(value[1]), normalizeZero(value[2])];
 }
 
 /**

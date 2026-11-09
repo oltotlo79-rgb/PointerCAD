@@ -164,6 +164,15 @@ export function registerCircularWeldTests(test: typeof baseTest, appForPage: (pa
       await expect(field(page, 'total')).toHaveText(`${uiMessage('assembly', 'assembly.filletWeld.totalLength')} 15.708`);
       await expect(field(page, 'volume')).toHaveText(`${uiMessage('assembly', 'assembly.circularFilletWeld.nominalVolume')} 103.673`);
       await expect(field(page, 'commit')).toBeEnabled();
+      const formBounds = await dialog(page).boundingBox();
+      if (formBounds === null) throw new Error('Missing circular weld form bounds');
+      for (const action of ['commit', 'reselect', 'cancel']) {
+        const actionBounds = await field(page, action).boundingBox();
+        if (actionBounds === null) throw new Error('Missing circular weld action bounds: ' + action);
+        expect(actionBounds.x, action + ': left edge inside form').toBeGreaterThanOrEqual(formBounds.x);
+        expect(actionBounds.x + actionBounds.width, action + ': right edge inside form')
+          .toBeLessThanOrEqual(formBounds.x + formBounds.width);
+      }
       const commit = field(page, 'commit');
       await commit.scrollIntoViewIfNeeded();
       await expect.poll(() => commit.evaluate(button => {

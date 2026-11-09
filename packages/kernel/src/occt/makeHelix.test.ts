@@ -113,6 +113,17 @@ describe('らせんの数値(OCCT を使わない純関数)', () => {
     expect(again?.xAxis).toEqual(frame.xAxis);
   });
 
+  it('軸座標系のゼロ成分は正のゼロに揃える', () => {
+    for (const direction of [[0, 0, 1], [-0, -1, 0], [1, -0, 0]] as const) {
+      const frame = helixAxisFrame(direction);
+      expect(frame).not.toBeNull();
+      if (frame === null) throw new Error('axis unexpectedly rejected');
+      for (const value of [...frame.xAxis, ...frame.yAxis, ...frame.zAxis]) {
+        if (value === 0) expect(Object.is(value, -0)).toBe(false);
+      }
+    }
+  });
+
   it('軸の向きが決まらなければ断る', () => {
     expect(helixAxisFrame([0, 0, 0])).toBeNull();
     expect(() => helixStartFrame(helix({ direction: [0, 0, 0] }))).toThrow(/らせんの軸の向き/);

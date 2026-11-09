@@ -133,7 +133,7 @@ export function CanvasSection(): React.JSX.Element {
               <p className="pcad-panel__note">{t('propertyPanel.canvasSizeNote')}</p>
               <CanvasOpacity canvas={canvas} />
               <p id={reasonId} className="pcad-field__message">{action.reason === null ? '' : t(action.reason)}</p>
-              <div className="pcad-appearance__actions">
+              <div className="pcad-appearance__actions pcad-appearance__actions--canvas">
                 <button
                   type="button"
                   className="pcad-button"

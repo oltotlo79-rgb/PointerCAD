@@ -34,6 +34,10 @@ interface WindowsTiming {
   readonly nativeMetricsReadMs: number;
   readonly processDisposalMs: number;
   readonly outputOfPreviousFrame?: { readonly atEpochMs: number; readonly serializationMs: number; readonly writeMs: number };
+  /** Actual start of this frame's loop iteration. Absent only in records written before the wait fields. */
+  readonly loopStartedAtEpochMs?: number;
+  /** The Start-Sleep between the previous frame's output and this loop start: requested length and actual bounds. */
+  readonly previousSleep?: { readonly requestedMs: number; readonly startedAtEpochMs: number; readonly endedAtEpochMs: number };
 }
 export type RawFrame = Omit<ProcessMemoryFrame, 'phase' | 'processes'> & { readonly processes: readonly ResourceProcessSample[]; readonly readStartedAtEpochMs: number; readonly windowsTiming?: WindowsTiming };
 export interface Sampler { readonly frames: RawFrame[]; readonly failures: string[]; stop(): Promise<void> }
@@ -55,7 +59,25 @@ function windowsTiming(value: unknown): value is WindowsTiming {
       Number.isFinite(value.processEnumerationMs) && value.processEnumerationMs >= 0)) &&
     (value.outputOfPreviousFrame === undefined || (isRecord(value.outputOfPreviousFrame) &&
       ['atEpochMs', 'serializationMs', 'writeMs'].every(key => isRecord(value.outputOfPreviousFrame) &&
-        typeof value.outputOfPreviousFrame[key] === 'number' && Number.isFinite(value.outputOfPreviousFrame[key]) && value.outputOfPreviousFrame[key] >= 0)));
+        typeof value.outputOfPreviousFrame[key] === 'number' && Number.isFinite(value.outputOfPreviousFrame[key]) && value.outputOfPreviousFrame[key] >= 0))) &&
+    waitTiming(value);
+}
+function actualTime(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+/**
+ * Records written before the wait fields have neither. Otherwise every frame has its loop start, a previous
+ * sleep exists exactly when the previous frame's output is reported, and the previous frame's end, the sleep
+ * and this loop start never run backwards. A missing, negative or reversed time is rejected, never read as no wait.
+ */
+function waitTiming(value: Record<string, unknown>): boolean {
+  const loop = value.loopStartedAtEpochMs, sleep = value.previousSleep, output = value.outputOfPreviousFrame;
+  if (loop === undefined) return sleep === undefined;
+  if (!actualTime(loop)) return false;
+  if (sleep === undefined) return output === undefined;
+  if (!isRecord(sleep) || !isRecord(output) || !actualTime(sleep.requestedMs) || !actualTime(sleep.startedAtEpochMs) ||
+      !actualTime(sleep.endedAtEpochMs) || !actualTime(output.atEpochMs)) return false;
+  return output.atEpochMs <= sleep.startedAtEpochMs && sleep.startedAtEpochMs <= sleep.endedAtEpochMs && sleep.endedAtEpochMs <= loop;
 }
 function processSample(value: unknown): value is ResourceProcessSample {
   return isRecord(value) && typeof value.pid === 'number' && typeof value.created === 'string' &&
@@ -65,12 +87,14 @@ function processSample(value: unknown): value is ResourceProcessSample {
     nullableNumber(value.workingSetBytes) && nullableNumber(value.privateBytes) && nullableNumber(value.cpuMilliseconds) &&
     (value.error === null || typeof value.error === 'string');
 }
-function rawFrame(value: unknown): RawFrame {
+export function rawFrame(value: unknown): RawFrame {
   if (!isRecord(value) || typeof value.atEpochMs !== 'number' || typeof value.discoveredAtEpochMs !== 'number' ||
       typeof value.readStartedAtEpochMs !== 'number' || !Number.isFinite(value.readStartedAtEpochMs) ||
       !Number.isFinite(value.atEpochMs) || value.readStartedAtEpochMs > value.atEpochMs ||
       !Array.isArray(value.processes) || !value.processes.every(processSample) ||
       (value.windowsTiming !== undefined && !windowsTiming(value.windowsTiming)) ||
+      (windowsTiming(value.windowsTiming) && value.windowsTiming.loopStartedAtEpochMs !== undefined &&
+        value.windowsTiming.loopStartedAtEpochMs > value.readStartedAtEpochMs) ||
       (value.discoveryError !== null && typeof value.discoveryError !== 'string') ||
       (value.rootCreated !== undefined && value.rootCreated !== null && typeof value.rootCreated !== 'string')) {
     throw new Error('Malformed OS resource sample');
@@ -364,6 +388,7 @@ $pending=Start-Discovery
 [void]$pending.handle.AsyncWaitHandle.WaitOne()
 $discoveryStartedAt=$pending.startedAt
 $previousOutput=$null
+$previousSleep=$null
 while($true){
   $loopStartedAt=[SamplerNative]::EpochMilliseconds()
   if($null -ne $pending -and $pending.handle.IsCompleted){
@@ -479,6 +504,8 @@ while($true){
     $timing.nativeCallMs=$nativeCallMs
     $timing.processDisposalMs=$processDisposalMs
     if($null -ne $previousOutput){$timing.outputOfPreviousFrame=$previousOutput}
+    $timing.loopStartedAtEpochMs=$loopStartedAt
+    if($null -ne $previousSleep){$timing.previousSleep=$previousSleep}
     $timing.readElapsedMs=$readClock.Elapsed.TotalMilliseconds
   }
   $frame=@{atEpochMs=[SamplerNative]::EpochMilliseconds();readStartedAtEpochMs=$readStartedAt;discoveredAtEpochMs=$discoveredAt;
@@ -495,7 +522,12 @@ while($true){
   [Console]::Out.WriteLine($serialized)
   $previousOutput=@{atEpochMs=$frame.atEpochMs;serializationMs=$serializationMs;writeMs=$outputClock.Elapsed.TotalMilliseconds}
   # The same deadline rule as linuxSampler: the read time is part of the 100ms period.
-  Start-Sleep -Milliseconds ([Math]::Max(1,${INTERVAL_MS}-([SamplerNative]::EpochMilliseconds()-$loopStartedAt)))
+  # One clock read gives the deadline and the recorded sleep start. The next frame reports the requested and
+  # the actual sleep, so a gap is placed in the sleep or between the wake-up and the loop by records, not inference.
+  $sleepStartedAt=[SamplerNative]::EpochMilliseconds()
+  $sleepRequestedMs=[Math]::Max(1,${INTERVAL_MS}-($sleepStartedAt-$loopStartedAt))
+  Start-Sleep -Milliseconds $sleepRequestedMs
+  $previousSleep=@{requestedMs=$sleepRequestedMs;startedAtEpochMs=$sleepStartedAt;endedAtEpochMs=[SamplerNative]::EpochMilliseconds()}
 }
 }finally{
   $discoveryShell.Dispose()
@@ -553,23 +585,69 @@ export async function linuxProcess(pid: number): Promise<ResourceProcessSample> 
   }
 }
 
+/** Ancestry fields from one /proc stat file. An exited or unreadable entry has no ancestry, as before. */
+export interface LinuxAncestry { readonly pid: number; readonly parentPid: number; readonly created: string; readonly name: string }
+async function linuxAncestry(pid: number): Promise<LinuxAncestry | null> {
+  try {
+    const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+    const end = stat.lastIndexOf(')');
+    const fields = stat.slice(end + 2).split(' ');
+    return { pid, parentPid: Number(fields[1]), created: fields[19] ?? '', name: stat.slice(stat.indexOf('(') + 1, end) };
+  } catch {
+    return null;
+  }
+}
+
+/** A selected PID keeps its discovered identity: an exit or PID reuse after discovery is a failed row, never dropped or 0. */
+export function linuxRowSinceDiscovery(entry: LinuxAncestry, sample: ResourceProcessSample): ResourceProcessSample {
+  if (sample.created === entry.created) return sample;
+  return { pid: entry.pid, created: entry.created, parentPid: entry.parentPid, name: entry.name,
+    workingSetBytes: null, privateBytes: null, cpuMilliseconds: null,
+    error: `PID exited or was reused after /proc discovery${sample.error === null ? '' : `: ${sample.error}`}` };
+}
+
+export interface LinuxProcSource {
+  readonly list: () => Promise<readonly string[]>;
+  readonly ancestry: (pid: number) => Promise<LinuxAncestry | null>;
+  readonly process: (pid: number) => Promise<ResourceProcessSample>;
+  readonly now: () => number;
+}
+const linuxProc: LinuxProcSource = { list: () => readdir('/proc'), ancestry: linuxAncestry, process: linuxProcess, now: () => Date.now() };
+
+/**
+ * One Linux frame. Discovery still runs in every frame over every /proc entry, but from its stat
+ * file only; status, cmdline and the identity recheck are read for the selected rows alone.
+ * Reading all four files of every PID on the machine made one frame take 201/265ms on the shared
+ * CI runner (run 42358862597), although only the root's descendants are recorded.
+ */
+export async function linuxFrame(rootPid: number, includeRoot: boolean, started: number, source: LinuxProcSource = linuxProc): Promise<RawFrame> {
+  const names = await source.list();
+  const discovered = (await Promise.all(names.filter(name => /^\d+$/.test(name)).map(name => source.ancestry(Number(name)))))
+    .filter((entry): entry is LinuxAncestry => entry !== null);
+  const ids = new Set([rootPid]);
+  let previousSize = 0;
+  while (previousSize !== ids.size) {
+    previousSize = ids.size;
+    for (const entry of discovered) if (ids.has(entry.parentPid)) ids.add(entry.pid);
+  }
+  const selected = discovered.filter(entry => ids.has(entry.pid) && (includeRoot || entry.pid !== rootPid));
+  const processes = await Promise.all(selected.map(async entry => linuxRowSinceDiscovery(entry, await source.process(entry.pid))));
+  return { atEpochMs: source.now(), readStartedAtEpochMs: started, discoveredAtEpochMs: started, processes, discoveryError: null };
+}
+
 export function linuxSampler(rootPid: number, includeRoot: boolean, observe: (frame: RawFrame) => Promise<void>): Sampler {
   const frames: RawFrame[] = [], failures: string[] = [];
   let stopping = false;
   const running = (async () => {
+    // The tick rate is read once per worker from a getconf child. Resolve it before the first frame,
+    // as the Windows sampler compiles its declarations before any sample: in run 42358862597 that spawn
+    // fell inside frame 0 of each new worker (201/265ms; later frames median 73/71ms). A failure is not
+    // dropped: every full row read awaits the same rejected promise and records it as the row error.
+    await clockTicks().catch(() => undefined);
     while (!stopping) {
       const started = Date.now();
       try {
-        const names = await readdir('/proc');
-        const all = await Promise.all(names.filter(name => /^\d+$/.test(name)).map(name => linuxProcess(Number(name))));
-        const ids = new Set([rootPid]);
-        let previousSize = 0;
-        while (previousSize !== ids.size) {
-          previousSize = ids.size;
-          for (const process of all) if (ids.has(process.parentPid)) ids.add(process.pid);
-        }
-        const frame = { atEpochMs: Date.now(), readStartedAtEpochMs: started, discoveredAtEpochMs: started,
-          processes: all.filter(process => ids.has(process.pid) && (includeRoot || process.pid !== rootPid)), discoveryError: null };
+        const frame = await linuxFrame(rootPid, includeRoot, started);
         frames.push(frame);
         await observe(frame);
       } catch (error: unknown) {

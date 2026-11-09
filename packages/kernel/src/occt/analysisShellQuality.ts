@@ -1,6 +1,7 @@
 import type { BRepAdaptor_Curve, OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 import type { AnalysisSurfaceMesh, AnalysisSurfaceMeshOptions } from './analysisSurfaceMesh.js';
 import { createAllocations } from './allocations.js';
+import { crossVec, dotVec } from './sketchCorner.js';
 import { mapShape } from './subShapeOrigins.js';
 import { GEOMETRIC_CONFUSION_MM } from './tolerances.js';
 
@@ -39,8 +40,8 @@ export class CylindricalShellRefusal extends Error {
 function fail(message: string): never { throw new CylindricalShellRefusal(message); }
 const distance = (a: Point, b: Point): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const difference = (a: Point, b: Point): Point => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross = (a: Point, b: Point): Point => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const dot = (a: Point, b: Point): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross: (a: Point, b: Point) => Point = crossVec;
+const dot: (a: Point, b: Point) => number = dotVec;
 
 /** Public request data is closed and bounded; unsupported geometry is never silently downgraded. */
 export function validCylindricalShellQuality(value: unknown): value is CylindricalShellQuality {

@@ -1,4 +1,4 @@
-import { dotVec as dot, subVec as subtract } from './sketchCorner.js';
+import { crossVec, dotVec as dot, subVec as subtract } from './sketchCorner.js';
 import type { OpenCascadeInstance, TopoDS_Face, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
 
 import type { Vec3Tuple } from '../types.js';
@@ -54,7 +54,7 @@ function separation(a: Vec3Tuple, b: Vec3Tuple): number {
 }
 
 function parallel(a: Vec3Tuple, b: Vec3Tuple): boolean {
-  return Math.hypot(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+  return Math.hypot(...crossVec(a, b))
     <= SIGNATURE_TOLERANCE;
 }
 

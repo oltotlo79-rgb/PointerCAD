@@ -1,4 +1,5 @@
 import type { CadSolidOutcome } from '@pointercad/fem';
+import { crossVec3, dotVec3 } from '@pointercad/model/vec3';
 import type { MessageKey } from '../i18n/t.js';
 
 /**
@@ -174,9 +175,8 @@ export interface SolidResultWarnings {
 }
 type Point = readonly [number, number, number];
 const minus = (left: Point, right: Point): Point => [left[0] - right[0], left[1] - right[1], left[2] - right[2]];
-const dot = (left: Point, right: Point): number => left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
-const cross = (left: Point, right: Point): Point => [left[1] * right[2] - left[2] * right[1],
-  left[2] * right[0] - left[0] * right[2], left[0] * right[1] - left[1] * right[0]];
+const dot: (left: Point, right: Point) => number = dotVec3;
+const cross: (left: Point, right: Point) => Point = crossVec3;
 
 /**
  * Evaluates the three warning conditions of one linear Tet4 result on the undeformed mesh (never the display scale).

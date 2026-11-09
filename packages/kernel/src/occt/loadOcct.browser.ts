@@ -100,6 +100,17 @@ async function fetchVerifiedDirectOcct(
   return verifyOcctDirectResponse(response, { ...identity, url: url.href }, signal, observe);
 }
 
+/**
+ * Automated-test builds only: main may own one launch-selected loopback port instead of the fixed one.
+ * Product builds return undefined, so the contract keeps the fixed origin. The exact path, SHA and length
+ * are still validated, main's CSP admits only that one origin, and the fetched bytes are verified.
+ */
+function launchSelectedTransportOrigin(reply: unknown): string | undefined {
+  if (import.meta.env.VITE_PCAD_E2E !== '1' || typeof reply !== 'object' || reply === null ||
+      !('url' in reply) || typeof reply.url !== 'string') return undefined;
+  return /^(http:\/\/127\.0\.0\.1:[1-9][0-9]{3,4})\/occt\/[a-f0-9]{64}\.wasm$/.exec(reply.url)?.[1];
+}
+
 function isDesktopOcctBridge(value: unknown): value is { prepareOcctTransport: () => unknown } {
   return typeof value === 'object' && value !== null &&
     'prepareOcctTransport' in value && typeof value.prepareOcctTransport === 'function';
@@ -122,7 +133,7 @@ async function fetchVerifiedDesktopOcct(
   const preparation: Promise<unknown> = Promise.resolve(bridge.prepareOcctTransport());
   const reply = await awaitDesktopPreparation(preparation, signal);
   signal?.throwIfAborted();
-  const transport = validateDesktopOcctTransportReply(reply, identity);
+  const transport = validateDesktopOcctTransportReply(reply, identity, launchSelectedTransportOrigin(reply));
   if (transport.kind === 'direct') {
     observe?.('transport-direct-port-unavailable');
     return fetchVerifiedDirectOcct(wasmUrl, signal, observe, true);

@@ -84,8 +84,8 @@ function abortCheck(control: ZipStepsControl): void {
  * ZIP を 1 項目ずつ・大きい項目は 1MiB ずつ作る手順。`yield` の位置が区切りで、
  * 同期の書き手は区切りで止まらずに進め、Worker は区切りごとに処理を返す。
  */
-export function* zipEntriesSteps(entries: ReadonlyMap<string, ZipStepEntry>,
-  control: ZipStepsControl = {}): Generator<void, Uint8Array, void> {
+function* buildZipSteps(entries: ReadonlyMap<string, ZipStepEntry>,
+  control: ZipStepsControl = {}, ownedBuffers: ReadonlySet<ArrayBuffer> = new Set()): Generator<void, Uint8Array, void> {
   const written: WrittenEntry[] = [];
   let offset = 0, centralLength = 0;
   for (const [fileName, [bytes, options]] of entries) {
@@ -114,6 +114,7 @@ export function* zipEntriesSteps(entries: ReadonlyMap<string, ZipStepEntry>,
     written.push({ name, utf8, compression, mtime: options.mtime, crc, size: bytes.length, data, dataLength, offset });
     offset += 30 + name.length + dataLength;
     centralLength += 46 + name.length;
+    releaseOwnedBuffer(bytes, compression, data, ownedBuffers);
     yield;
   }
   abortCheck(control);
@@ -133,6 +134,37 @@ export function* zipEntriesSteps(entries: ReadonlyMap<string, ZipStepEntry>,
   return output;
 }
 
+/** 全項目で1回だけ使う全領域の通常bufferだけを所有候補から選ぶ。共有viewは保守的に保持する。 */
+function uniqueOwnedBuffers(entries: ReadonlyMap<string, ZipStepEntry>,
+  ownedBuffers: ReadonlySet<ArrayBuffer>): Set<ArrayBuffer> {
+  const counts = new Map<ArrayBufferLike, number>();
+  for (const [, [bytes]] of entries) counts.set(bytes.buffer, (counts.get(bytes.buffer) ?? 0) + 1);
+  return new Set([...ownedBuffers].filter(buffer => counts.get(buffer) === 1));
+}
+
+/** CRC・size・offsetを記録済みのscratchだけを切り離す。native transferなしでは従来どおり保持する。 */
+function releaseOwnedBuffer(bytes: Uint8Array, compression: 0 | 8, data: readonly Uint8Array[],
+  ownedBuffers: ReadonlySet<ArrayBuffer>): void {
+  const buffer = bytes.buffer;
+  if (!(buffer instanceof ArrayBuffer) || !ownedBuffers.has(buffer) || compression === 0
+    || bytes.byteOffset !== 0 || bytes.byteLength === 0 || bytes.byteLength !== buffer.byteLength
+    || data.some(part => part.buffer === buffer)) return;
+  const transfer: unknown = Reflect.get(ArrayBuffer.prototype, 'transfer');
+  if (typeof transfer === 'function') Reflect.apply(transfer, buffer, [0]);
+}
+
+/** 借用entryの通常経路。元のbufferを消費せず、同じ入力を再利用できる。 */
+export function* zipEntriesSteps(entries: ReadonlyMap<string, ZipStepEntry>,
+  control: ZipStepsControl = {}): Generator<void, Uint8Array, void> {
+  return yield* buildZipSteps(entries, control);
+}
+
+/** package indexには公開しない。保存処理自身が生成したscratchだけを消費する内部経路。 */
+export function* zipEntriesWithOwnedBuffersSteps(entries: ReadonlyMap<string, ZipStepEntry>,
+  ownedBuffers: ReadonlySet<ArrayBuffer>, control: ZipStepsControl = {}): Generator<void, Uint8Array, void> {
+  return yield* buildZipSteps(entries, control, uniqueOwnedBuffers(entries, ownedBuffers));
+}
+
 /** 区切りで止まらずに最後まで作る(従来の同期の書き手用)。 */
 export function zipEntriesSync(entries: ReadonlyMap<string, ZipStepEntry>): Uint8Array {
   const steps = zipEntriesSteps(entries);
@@ -150,7 +182,17 @@ function nextTask(): Promise<void> {
 /** 区切りごとに処理を返し、取消を確かめながら作る(保存 Worker 用)。 */
 export async function zipEntriesAsync(entries: ReadonlyMap<string, ZipStepEntry>,
   control: ZipStepsControl = {}): Promise<Uint8Array> {
-  const steps = zipEntriesSteps(entries, control);
+  return await finishZipEntriesAsync(zipEntriesSteps(entries, control), control);
+}
+
+/** partの新規meshエントリー用。汎用ZIPの借用契約は変えない。 */
+export async function zipEntriesWithOwnedBuffersAsync(entries: ReadonlyMap<string, ZipStepEntry>,
+  ownedBuffers: ReadonlySet<ArrayBuffer>, control: ZipStepsControl = {}): Promise<Uint8Array> {
+  return await finishZipEntriesAsync(zipEntriesWithOwnedBuffersSteps(entries, ownedBuffers, control), control);
+}
+
+async function finishZipEntriesAsync(steps: Generator<void, Uint8Array, void>,
+  control: ZipStepsControl): Promise<Uint8Array> {
   for (;;) {
     const next = steps.next();
     if (next.done === true) return next.value;

@@ -7,6 +7,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 import { FUNCTION_SIZE_BASELINE, FUNCTION_SIZE_CAP } from './eslint.functionSizeBaseline.js';
 import { DEPTH_BASELINE, DEPTH_CAP, PARAMS_BASELINE, PARAMS_CAP } from './eslint.complexityBaseline.js';
+import { workerReferencesConfig } from './eslint.workerReferences.js';
 
 /**
  * 検査専用のパッケージだけは層の外側に置く。
@@ -53,6 +54,13 @@ const layerRules = [
       '**/ui/src/**', '**/ui/dist/**', '**/io/src/**', '**/io/dist/**',
       '**/help-content/src/**', '**/help-content/dist/**',
     ],
+    // 製品は model・expression・test-utils だけを参照する（CODE.CONSISTENCY P02）。検査だけ kernel を許す:
+    // 実 OCCT の検査（cadAnalysisBoundaryIdentity・curvedShellKernel）が devDependencies の kernel で形状を作るため。
+    productForbidden: [
+      '@pointercad/kernel', '@pointercad/kernel/**', '@pointercad/drawing', '@pointercad/drawing/**',
+      '**/kernel/src/**', '**/kernel/dist/**', '**/drawing/src/**', '**/drawing/dist/**',
+      'opencascade.js', 'opencascade.js/*',
+    ],
   },
   {
     files: ['packages/drawing/**/*.ts'],
@@ -62,6 +70,9 @@ const layerRules = [
     ],
   },
   { files: ['packages/io/**/*.ts'], forbidden: ['@pointercad/ui', '@pointercad/drawing'] },
+  // 検査専用の test-utils は全パッケージの devDependencies なので、他の @pointercad を実行時に参照しない（参照すると循環する）。
+  // 型だけの参照は p10ModuleBoundary.test.ts の方針（型だけの model の参照は許す）に合わせて許す（CODE.CONSISTENCY P02）。
+  { files: ['packages/test-utils/**/*.ts'], forbidden: ['@pointercad/*'], allowTypeImports: true },
   {
     files: ['packages/io/src/pcad/codecs/**/*.ts'],
     forbidden: ['@pointercad/ui', '@pointercad/drawing', '**/documentJson.js', '**/documentJson'],
@@ -170,6 +181,11 @@ const femUpperImportGuards = [{
   selector: ':matches(ImportExpression, TSImportType)[source.value=/(^@pointercad\\/(ui|io|help-content|web|desktop|apps)($|\\/)|(^|\\/)(ui|io|help-content)\\/(src|dist)\\/|(^|\\/)apps\\/)/]',
   message: 'FEMはmodelを使う計算層です。画面・アプリ・保存・ヘルプへの依存は型だけでも禁止です（rules/04）。',
 }];
+// FEMの製品だけ。検査は実OCCTの形状を作るためkernelを使う（layerRulesのproductForbiddenと同じ範囲）。
+const femProductImportGuards = [{
+  selector: ':matches(ImportExpression, TSImportType)[source.value=/(^@pointercad\\/(kernel|drawing)($|\\/)|(^|\\/)(kernel|drawing)\\/(src|dist)\\/|^opencascade\\.js($|\\/))/]',
+  message: 'FEMの製品はmodel・expression・test-utilsだけを参照します。カーネル・図面の処理は動的な読込みや型でも参照しないでください（rules/04）。',
+}];
 
 /** Node組込みへのliteral参照だけをnode:表記へ統一する。非literalやrequireは判定しない。 */
 /** @type {import('eslint').Rule.RuleModule} */
@@ -218,7 +234,11 @@ const relativeJavaScriptImportRule = {
   },
 };
 
-/** Vitestのnamed testだけを拒否し、別名でもitを読み込む形へ統一する。 */
+/**
+ * Vitestのnamed testだけを拒否し、別名でもitを読み込む形へ統一する。
+ * no-restricted-importsのpaths（importNames）では名前空間のimportとexport-fromまで拒否してしまうため、
+ * 層のno-restricted-importsを上書きしない別の規則名で持つ（moduleImportStylePolicy.test.tsが境界を守る）。
+ */
 /** @type {import('eslint').Rule.RuleModule} */
 const vitestItImportRule = {
   meta: {
@@ -284,6 +304,83 @@ const canonicalRecordPredicateRule = {
   },
 };
 
+/**
+ * 統一済みの名前の許可名簿（CODE.CONSISTENCY P02）。改名すると公開API・保存形式・i18nの鍵・data-testidが
+ * 変わる名前だけを、理由とともに置く。
+ */
+const UNIFIED_NAME_ALLOWLIST = new Map([
+  ['massTotal', '@pointercad/modelの公開型BomRowの欄（公開API。uiの部品表と図面の表が読む）'],
+]);
+
+const unifiedNamePatterns = [
+  { pattern: /colour/i, messageId: 'colour' },
+  { pattern: /^num[A-Z0-9]/, messageId: 'numPrefix' },
+  { pattern: /[a-z0-9]Total$/, messageId: 'totalSuffix' },
+];
+
+/**
+ * 名前を宣言する節の種類ごとに、その名前を持つ欄（paramsは全ての節で見る）。
+ * 欄の名前（key）は計算した鍵を除く。分割代入のPropertyはdeclaresNameが束ねる側（value）だけにする。
+ * @type {Readonly<Record<string, readonly string[]>>}
+ */
+const DECLARING_FIELDS = {
+  VariableDeclarator: ['id'], FunctionDeclaration: ['id'], FunctionExpression: ['id'], ClassDeclaration: ['id'],
+  ClassExpression: ['id'], TSDeclareFunction: ['id'], TSInterfaceDeclaration: ['id'], TSTypeAliasDeclaration: ['id'],
+  TSEnumDeclaration: ['id'], TSModuleDeclaration: ['id'], TSEnumMember: ['id'], TSTypeParameter: ['name'],
+  AssignmentPattern: ['left'], RestElement: ['argument'], ArrayPattern: ['elements'], CatchClause: ['param'],
+  TSParameterProperty: ['parameter'], ImportDefaultSpecifier: ['local'], ImportNamespaceSpecifier: ['local'],
+  Property: ['key'], PropertyDefinition: ['key'], MethodDefinition: ['key'], TSAbstractPropertyDefinition: ['key'],
+  TSAbstractMethodDefinition: ['key'], TSPropertySignature: ['key'], TSMethodSignature: ['key'],
+};
+
+/**
+ * 識別子が新しい名前を宣言する位置にあるか。参照・メンバーの読み取り・分割代入で読む欄の名前は含めない
+ * （外のAPIの名前を使う側を止めない）。
+ * @param {import('eslint').Rule.Node} node
+ * @returns {boolean}
+ */
+function declaresName(node) {
+  const parent = node.parent;
+  if (!parent) return false;
+  /** @param {string} field */
+  const holds = field => {
+    if (field === 'key' && Reflect.get(parent, 'computed') === true) return false;
+    const value = Reflect.get(parent, field);
+    return value === node || (Array.isArray(value) && value.includes(node));
+  };
+  if (holds('params')) return true;
+  if (parent.type === 'Property' && parent.parent.type === 'ObjectPattern') return parent.value === node;
+  if (parent.type === 'ImportSpecifier' || parent.type === 'ExportSpecifier') {
+    // 別名を付けた時だけ見る（外の名前をそのまま読む・公開する時は見ない）。
+    const [own, outer] = parent.type === 'ImportSpecifier' ? [parent.local, parent.imported] : [parent.exported, parent.local];
+    return own === node && !(outer.type === 'Identifier' && outer.name === node.name);
+  }
+  return (DECLARING_FIELDS[parent.type] ?? []).some(holds);
+}
+
+/** 統一済みの名前（色はcolor、件数はxxxCount、合計はtotalXxx）を新しく崩さない（CODE.CONSISTENCY P02）。 */
+/** @type {import('eslint').Rule.RuleModule} */
+const unifiedNameRule = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      colour: '色の綴りはcolorに統一しています。「{{name}}」はcolorで書いてください。',
+      numPrefix: '件数はxxxCountに統一しています。「{{name}}」は…Countの形にしてください。',
+      totalSuffix: '「{{name}}」のような…Totalの名前は作らず、件数はxxxCount、合計はtotalXxx（totalBytesなど）にしてください。',
+    },
+  },
+  create(context) {
+    return {
+      Identifier(node) {
+        if (UNIFIED_NAME_ALLOWLIST.has(node.name)) return;
+        const hit = unifiedNamePatterns.find(({ pattern }) => pattern.test(node.name));
+        if (hit && declaresName(node)) context.report({ node, messageId: hit.messageId, data: { name: node.name } });
+      },
+    };
+  },
+};
+
 /** @type {import('eslint').Rule.RuleModule} */
 const beamResultAssertionRule = {
   meta: { type: 'problem', schema: [], messages: { result: 'Assert the beam result separately to avoid deep array type expansion.' } },
@@ -330,6 +427,7 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  workerReferencesConfig,
   {
     files: ['**/*.test.{ts,tsx}'],
     rules: {
@@ -358,11 +456,12 @@ export default tseslint.config(
     },
   },
   ...[
-    { files: ['packages/model/**/*.ts'], guards: modelFemImportGuards },
-    { files: ['packages/fem/**/*.{ts,tsx}'], guards: femUpperImportGuards },
-  ].flatMap(/** @returns {import('typescript-eslint').FlatConfig.Config[]} */ ({ files, guards }) => [{
+    { files: ['packages/model/**/*.ts'], guards: modelFemImportGuards, productGuards: [] },
+    { files: ['packages/fem/**/*.{ts,tsx}'], guards: femUpperImportGuards, productGuards: femProductImportGuards },
+  ].flatMap(/** @returns {import('typescript-eslint').FlatConfig.Config[]} */ ({ files, guards, productGuards }) => [{
+    // 検査のファイルは次の塊が上書きするので、productGuardsは製品とtestSupportにだけ効く。
     files,
-    rules: { 'no-restricted-syntax': ['error', ...guards] },
+    rules: { 'no-restricted-syntax': ['error', ...guards, ...productGuards] },
   }, {
     files: files.map(file => file.replace('**/*.', '**/*.test.')),
     rules: { 'no-restricted-syntax': ['error', ...testSyntaxGuards, ...guards] },
@@ -696,8 +795,6 @@ export default tseslint.config(
     // 設定ファイル(*.config.ts)は projectService の対象外なので型情報なしのルールだけが効く。
     files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'],
     extends: [...tseslint.configs.recommendedTypeChecked],
-    rules: { '@typescript-eslint/consistent-type-definitions': ['error', 'interface'],
-      '@typescript-eslint/consistent-type-imports': 'error' },
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -705,6 +802,25 @@ export default tseslint.config(
       },
       globals: { ...globals.browser, ...globals.node },
     },
+  },
+  {
+    // CODE.CONSISTENCY P02: 型の書き方を製品と検査で揃える。型情報を使わない規則なので、srcの外の検査（ui/integration）と設定にも掛ける。
+    // オブジェクトの型はinterface。型だけのimportはimport typeにし、import()の型注釈も使わない（disallowTypeAnnotations）。
+    // fixStyleは自動修正の出力だけを決める。2026-11-07の数え上げで、型だけを読む文はimport typeが4,233文・inlineのtype修飾だけの文が60文、
+    // import typeの文の総数4,471がinlineのtype修飾を含む文4,194より多いのでseparate-type-imports。値と型を同じ文で読むinlineの書き方も規則は受け入れる。
+    files: ['packages/**/*.{ts,tsx}', 'apps/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/consistent-type-definitions': ['error', 'interface'],
+      '@typescript-eslint/consistent-type-imports': ['error', {
+        prefer: 'type-imports', disallowTypeAnnotations: true, fixStyle: 'separate-type-imports' }],
+    },
+  },
+  {
+    // CODE.CONSISTENCY P02: 統一済みの名前（色はcolor、件数はxxxCount、合計はtotalXxx）を製品と検査で崩さない。
+    // e2eは既存のundoTotal（e2e/tests/solid.spec.ts）を直すまで対象外。
+    files: ['packages/**/*.{ts,tsx}', 'apps/**/*.{ts,tsx}'],
+    plugins: { 'naming-style': { rules: { 'unified-names': unifiedNameRule } } },
+    rules: { 'naming-style/unified-names': 'error' },
   },
   {
     files: ['packages/ui/src/**/*.tsx', 'apps/*/src/**/*.tsx'],
@@ -718,17 +834,22 @@ export default tseslint.config(
     // 個別の層制約がない製品パッケージにもfixtureの禁止を適用する。
     { files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}'], forbidden: [] },
     ...layerRules,
-  ].flatMap(/** @returns {import('typescript-eslint').FlatConfig.Config[]} */ ({ files, forbidden }) => {
+  ].flatMap(/** @returns {import('typescript-eslint').FlatConfig.Config[]} */ ({ files, forbidden, productForbidden = [], allowTypeImports = false }) => {
     // Keep upper-layer guards even when a narrower model rule overrides this group; the rule schema requires unique group members.
     const restricted = files.every(file => file.startsWith('packages/model/'))
       ? [...new Set([...forbidden, '@pointercad/ui', '@pointercad/ui/**', '@pointercad/io', '@pointercad/io/**',
         '@pointercad/help-content', '@pointercad/help-content/**', '@pointercad/fem', '@pointercad/fem/**',
         '**/fem/src/**', '**/fem/dist/**', '**/ui/src/**', '**/ui/dist/**', '**/io/src/**', '**/io/dist/**',
         '**/help-content/src/**', '**/help-content/dist/**'])] : forbidden;
-    const patterns = restricted.length === 0 ? [] : [{
-      group: restricted,
+    /** @param {string[]} group */
+    const layerPatterns = group => group.length === 0 ? [] : [{
+      group,
       message: '依存方向 UI → model / FEM → model → kernel / expression / drawing に違反しています(rules/04-設計の規律.md)。',
+      ...(allowTypeImports ? { allowTypeImports } : {}),
     }];
+    const patterns = layerPatterns(restricted);
+    // productForbiddenは製品（次の検査を除く塊）にだけ足す。
+    const productPatterns = layerPatterns([...restricted, ...productForbidden]);
     // 混在する汎用groupはfixtureだけ。全patternがui/appsのgroupだけをfrontendとする。
     const frontend = files.every((file) => file.startsWith('packages/ui/') || file.startsWith('apps/'));
     return [{
@@ -740,7 +861,7 @@ export default tseslint.config(
       // flat configの上書きでも、元の層制約と製品専用の追加制約を同時に残す。
       rules: {
         'no-restricted-imports': ['error', {
-          patterns: [...patterns, referenceRepairFixtureImportGuard,
+          patterns: [...productPatterns, referenceRepairFixtureImportGuard,
             ...(frontend ? [frontendReferenceImportGuard] : [])],
         }],
       },

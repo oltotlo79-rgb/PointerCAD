@@ -9,7 +9,7 @@ import { expressionValueFromNumber } from '../../packages/expression/src/index.j
 import { createEmptyPartDocument, createPrimitiveFeature, type PrimitiveFeature } from '../../packages/model/src/index.js';
 import { writePcadFile } from '../../packages/io/src/index.js';
 import { parseOcctAssetManifest } from '../../packages/kernel/src/occt/occtAssetManifest.js';
-import { DESKTOP_OCCT_TRANSPORT_ORIGIN, desktopOcctTransportUrl, validateDesktopOcctTransportReply } from '../../packages/kernel/src/occt/desktopOcctTransportContract.js';
+import { DESKTOP_OCCT_TRANSPORT_ORIGIN, desktopOcctTransportOrigin, desktopOcctTransportUrl, validateDesktopOcctTransportReply } from '../../packages/kernel/src/occt/desktopOcctTransportContract.js';
 import { launchDesktop, openTarget } from './electronAppFlow.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 
@@ -18,10 +18,10 @@ const rendererRoot = fileURLToPath(new URL('../../apps/desktop/dist/renderer/', 
 // Node HTTP reads the actual owned listener's wire response without Chromium's
 // fetch/CORS filtering. Renderer protection and product routing remain unchanged.
 // No interception, replacement Response, asset mutation, redirects or test server.
-async function deniedRequest(url: string) {
+async function deniedRequest(url: string, transportOrigin: string) {
   try {
     const target = new URL(url);
-    if (target.origin !== DESKTOP_OCCT_TRANSPORT_ORIGIN || target.username !== ''
+    if (target.origin !== transportOrigin || target.username !== ''
       || target.password !== '' || target.hash !== '') throw new Error('Unexpected OCCT observation endpoint');
     return await new Promise<{
       requestedUrl: string; actualUrl: string; status: number; ok: boolean;
@@ -75,6 +75,19 @@ async function deniedRequest(url: string) {
   }
 }
 
+// Windows runners can deny the fixed product port (CI 42358862597: listen EACCES 127.0.0.1:49721).
+// This launch makes the product's own server bind port 0 and keep it; nothing here picks or releases a port.
+// The reply names that owned origin and must be exactly one canonical 127.0.0.1 port. A direct reply has no URL,
+// keeps the fixed expectation and fails below with the explicit direct-fallback message.
+function ownedTransportOrigin(reply: unknown): string {
+  if (typeof reply !== 'object' || reply === null || !('url' in reply) || typeof reply.url !== 'string') {
+    return DESKTOP_OCCT_TRANSPORT_ORIGIN;
+  }
+  const port = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{3,4})\/occt\/[a-f0-9]{64}\.wasm$/.exec(reply.url)?.[1];
+  if (port === undefined) throw new Error('OCCT reply is not one owned loopback origin');
+  return desktopOcctTransportOrigin(Number(port));
+}
+
 async function openAndCheckCube(page: Page, app: ElectronApplication, fixture: string): Promise<number> {
   await openTarget(app, fixture);
   const token = await beginRecompute(page);
@@ -95,16 +108,19 @@ export async function electronOcctTransportNegative(
 ): Promise<void> {
   const manifestBytes = await readFile(join(rendererRoot, 'occt/manifest.json'));
   const manifest = parseOcctAssetManifest(JSON.parse(manifestBytes.toString('utf8')));
-  const { app, directory } = await launchDesktop(playwright, info);
+  const { app, directory } = await launchDesktop(playwright, info, { occtTransportEphemeralPort: true });
   const child = app.process();
   const evidence: {
     scope: string; historical404Proven: false; manifestSha256: string; decodedSha256: string;
+    transportOrigin: string | null; listenerPortSource: string;
     pid: number | undefined; replies: Awaited<ReturnType<typeof deniedRequest>>[];
     geometryBefore: number | null; geometryAfter: number | null; pageErrors: string[];
     failure: string | null; cleanupError: string | null; exitCode: number | null; signalCode: string | null;
   } = { scope: 'Current owned Electron HTTP403 contract; NOT historical missing-manifest HTTP404 fallback',
     historical404Proven: false, manifestSha256: createHash('sha256').update(manifestBytes).digest('hex'),
-    decodedSha256: manifest.sha256, pid: child.pid, replies: [], geometryBefore: null, geometryAfter: null,
+    decodedSha256: manifest.sha256, transportOrigin: null,
+    listenerPortSource: 'Unpackaged test launch: the product OCCT HTTP server bound port 0 itself and kept it; packaged product keeps the fixed origin',
+    pid: child.pid, replies: [], geometryBefore: null, geometryAfter: null,
     pageErrors: [], failure: null, cleanupError: null, exitCode: null, signalCode: null };
   let failed = false, failure: unknown;
   try {
@@ -117,8 +133,11 @@ export async function electronOcctTransportNegative(
         || typeof bridge.prepareOcctTransport !== 'function') throw new Error('Desktop OCCT bridge missing');
       return bridge.prepareOcctTransport();
     });
-    const transport = validateDesktopOcctTransportReply(reply, manifest);
+    const transportOrigin = ownedTransportOrigin(reply);
+    const transport = validateDesktopOcctTransportReply(reply, manifest, transportOrigin);
     if (transport.kind !== 'http') throw new Error('Owned HTTP transport unavailable; direct fallback is not negative HTTP proof');
+    evidence.transportOrigin = transportOrigin;
+    expect(transport.url).toBe(desktopOcctTransportUrl(manifest.sha256, transportOrigin));
     const empty = createEmptyPartDocument();
     const cube: PrimitiveFeature = { ...createPrimitiveFeature(empty, 'box'), id: 'transport-cube', name: 'transport-cube',
       shape: { kind: 'box', sizeX: expressionValueFromNumber(20), sizeY: expressionValueFromNumber(20), sizeZ: expressionValueFromNumber(20) } };
@@ -129,8 +148,8 @@ export async function electronOcctTransportNegative(
     // Missing manifest is the historical target, but this current fixed server
     // denies it with403. A valid-shaped, nonexistent WASM digest is also denied.
     for (const url of [new URL('/occt/manifest.json', transport.url).href,
-      desktopOcctTransportUrl(wrongSha), `${transport.url}?unexpected=1`]) {
-      const actual = await deniedRequest(url);
+      desktopOcctTransportUrl(wrongSha, transportOrigin), `${transport.url}?unexpected=1`]) {
+      const actual = await deniedRequest(url, transportOrigin);
       evidence.replies.push(actual);
       expect(actual.error).toBeNull();
       expect(actual.status).toBe(403);

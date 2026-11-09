@@ -70,11 +70,16 @@ beforeEach(() => { resetTestStore(); useAppStore.setState({ solidAnalysisSession
 afterEach(() => { for (const value of live.splice(0)) value.attachment.dispose(); resetTestStore(); });
 
 describe('transient stage failures', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
   it('clears a failed mesh stage without creating a structural worker', async () => {
+    vi.stubGlobal('ErrorEvent', undefined);
     const rig = install(); live.push(rig); useAppStore.getState().solidAnalysisRunner?.run();
     await vi.waitFor(() => expect(rig.ports[0]?.request()?.kind).toBe('mesh-cad-convex-tetra'));
     expect(useAppStore.getState().solidAnalysisSession?.stage).toBe('meshing');
-    rig.ports[0].worker.onerror?.(new ErrorEvent('error', { message: 'mesh worker refused' }));
+    const error: ErrorEvent = Object.assign(new Event('error'), {
+      message: 'mesh worker refused', filename: '', lineno: 0, colno: 0, error: new Error('mesh worker refused'),
+    });
+    rig.ports[0].worker.onerror?.(error);
     await vi.waitFor(() => expect(useAppStore.getState().solidAnalysisSession?.status).toBe('failed'));
     expect(useAppStore.getState().solidAnalysisSession?.stage).toBeNull();
     expect(rig.ports).toHaveLength(1); expect(rig.attachment.statistics().live).toBe(0);

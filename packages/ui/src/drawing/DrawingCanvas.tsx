@@ -198,7 +198,7 @@ export function DrawingCanvas(): React.JSX.Element {
     return () => { dimensionSvgPreview.current?.restore(); dimensionSvgPreview.current = null; };
   }, [dimensionDragStart, drawing, previewDimension]);
   return <div className="pcad-drawing-viewport" data-testid="drawing-viewport" ref={viewport}
-    data-reference-repair-hover-status={repairProjection.status}
+    data-document-owner={repairDocumentId} data-reference-repair-hover-status={repairProjection.status}
     data-reference-repair-hover-reason={repairProjection.status === 'unavailable' ? repairProjection.reason : undefined}>
     <div className="pcad-drawing-sheet" aria-label={drawing?.name ?? t('drawing.mode')} aria-busy={busy}
       ref={container} tabIndex={0} style={{ transform: `translate(${navigation.x}px, ${navigation.y}px) scale(${navigation.scale})` }}

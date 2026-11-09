@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { compileVerifiedOcctResponse } from './compiledOcctModule.js';
 import { fetchVerifiedOcctForBroker, loadLegacyOcct, loadManifestOcct, loadOcctForBrowser, type OcctModuleOptions } from './loadOcct.browser.js';
 import type { OcctAssetManifest } from './occtAssetManifest.js';
-import { desktopOcctTransportUrl } from './desktopOcctTransportContract.js';
+import { desktopOcctTransportOrigin, desktopOcctTransportUrl } from './desktopOcctTransportContract.js';
 
 // Native WASM: answer() = 42.
 const wasm = new Uint8Array([
@@ -132,6 +132,43 @@ describe('browser OCCT loader paths', () => {
     fetchMock.mockResolvedValue(asset(changed, { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip' }, 200, url));
     await expect(fetchVerifiedOcctForBroker()).rejects.toThrow('SHA-256');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a launch-selected loopback origin only in automated-test builds', async () => {
+    const identity = { sha256: sha256(wasm), byteLength: wasm.byteLength };
+    const selected = desktopOcctTransportUrl(identity.sha256, desktopOcctTransportOrigin(50123));
+    vi.stubGlobal('location', new URL('app://pointercad/index.html'));
+    vi.stubGlobal('__PCAD_DESKTOP_OCCT_IDENTITY__', identity);
+    const prepare = vi.fn<() => Promise<unknown>>(() => Promise.resolve({ kind: 'http', url: selected, ...identity }));
+    vi.stubGlobal('window', { pointercadDesktop: { prepareOcctTransport: prepare } });
+    const fetchMock = vi.fn((input: string | URL) => {
+      expect(String(input)).toBe(selected);
+      return Promise.resolve(asset(wasm, { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip' }, 200, selected));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    // Product build: a non-fixed port is a foreign listener and is never contacted.
+    vi.stubEnv('VITE_PCAD_E2E', '0');
+    await expect(fetchVerifiedOcctForBroker()).rejects.toThrow('build identity');
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.stubEnv('VITE_PCAD_E2E', '1');
+    const verified = await fetchVerifiedOcctForBroker();
+    if (verified === undefined) throw new Error('missing launch-selected HTTP verification');
+    expect(result(await WebAssembly.instantiate(await compileVerifiedOcctResponse(verified)))).toBe(42);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Test builds still reject other hosts, short or privileged ports, queries and altered identities before fetch.
+    for (const url of [selected.replace('127.0.0.1', 'localhost'), `http://127.0.0.1:80/occt/${identity.sha256}.wasm`,
+      `${selected}?x=1`, selected.replace(identity.sha256, 'b'.repeat(64))]) {
+      prepare.mockResolvedValueOnce({ kind: 'http', url, ...identity });
+      await expect(fetchVerifiedOcctForBroker()).rejects.toThrow('build identity');
+    }
+    prepare.mockResolvedValueOnce({ kind: 'http', url: `http://127.0.0.1:1023/occt/${identity.sha256}.wasm`, ...identity });
+    await expect(fetchVerifiedOcctForBroker()).rejects.toThrow('origin is invalid');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // The same streamed SHA verification applies to the selected port.
+    const changed = wasm.slice(); changed[changed.length - 2] = 43;
+    fetchMock.mockResolvedValueOnce(asset(changed, { 'Content-Type': 'application/wasm', 'Content-Encoding': 'gzip' }, 200, selected));
+    await expect(fetchVerifiedOcctForBroker()).rejects.toThrow('SHA-256');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('cancels pending preparation promptly and never fetches after a late IPC response', async () => {

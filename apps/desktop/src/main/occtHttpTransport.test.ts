@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import { session } from 'electron';
 import { createOcctHttpTransport, readOcctHttpAsset, readSessionOcctCache } from './occtHttpTransport.js';
-import { desktopOcctTransportUrl } from '@pointercad/ui/desktop-occt-transport';
+import { desktopOcctTransportOrigin, desktopOcctTransportUrl } from '@pointercad/ui/desktop-occt-transport';
 import type * as ImportedNodeZlibTypes from 'node:zlib';
 import type * as ImportedNodeHttpTypes from 'node:http';
 
@@ -42,6 +42,8 @@ vi.mock('node:http', async importOriginal => {
 // Keep real TCP/HTTP, but reserve one OS-assigned port per test for ownership checks.
 // Capture the product's arguments before replacing only its physical destination.
 let testPort = 0;
+// The product's requested port: fixed 49721 unless a test asks the transport to bind port 0 itself.
+let requestedPort = 49721;
 let listenerError: NodeJS.ErrnoException | undefined;
 const listenRequests: { server: Server; options: ListenOptions; events: MockInstance<Server['emit']> }[] = [];
 const physicalListens: ListenOptions[] = [];
@@ -62,7 +64,7 @@ function isolateListener(server: Server): Server {
     }
     const requested = { port: options.port, host: options.host, signal: options.signal };
     listenRequests.push({ server, options: requested, events });
-    expect({ port: requested.port, host: requested.host }).toEqual({ port: 49721, host: '127.0.0.1' });
+    expect({ port: requested.port, host: requested.host }).toEqual({ port: requestedPort, host: '127.0.0.1' });
     expect(requested.signal).toBeInstanceOf(AbortSignal);
     if (listenerError !== undefined) {
       const error = listenerError;
@@ -146,7 +148,7 @@ afterEach(async () => {
   for (const server of listeners.splice(0)) await closeListener(server);
   for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true });
   const physical = physicalListens.splice(0);
-  ownedServers.splice(0); listenRequests.splice(0); testPort = 0; listenerError = undefined;
+  ownedServers.splice(0); listenRequests.splice(0); testPort = 0; requestedPort = 49721; listenerError = undefined;
   vi.restoreAllMocks();
   vi.clearAllMocks();
   expect(remaining).toEqual([]);
@@ -300,9 +302,102 @@ describe('fixed owned Desktop OCCT HTTP transport', () => {
     expect(testPort).toBe(port);
     expect(native.request).toHaveBeenCalledTimes(2);
   });
-  it('rejects the original EACCES without fallback, network use or cleanup errors', async () => {
+  it('a test launch binds port 0 in the owning server itself and uses that one owned origin for Host, cache and reply', async () => {
+    requests('hit');
+    requestedPort = 0;
+    const value = createOcctHttpTransport(await fixture(), session.defaultSession, true);
+    transports.push(value);
+    const reply = await value.prepare();
+    expect(listenRequests).toHaveLength(1);
+    expect(listenRequests[0]?.options).toMatchObject({ port: 0, host: '127.0.0.1' });
+    // No other socket chose the number: the server that bound port 0 is still listening on the replied port.
+    const address = listenRequests[0]?.server.address();
+    if (address === null || address === undefined || typeof address === 'string') throw new Error('Missing owned test address');
+    expect(listenRequests[0]?.server.listening).toBe(true);
+    expect(address.port).toBe(testPort);
+    const url = desktopOcctTransportUrl(asset.sha256, desktopOcctTransportOrigin(testPort));
+    expect(reply).toEqual({ kind: 'http', url, sha256: asset.sha256, byteLength: asset.byteLength });
+    expect(value.prepare()).toBe(value.prepare());
+    expect(native.request).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ url, cache: 'only-if-cached', redirect: 'error' }));
+    expect(native.fetch).not.toHaveBeenCalled();
+    const authority = `127.0.0.1:${String(testPort)}`;
+    const good = await raw(`/occt/${asset.sha256}.wasm`, authority);
+    expect(good.status).toBe(200); expect(good.body).toEqual(gzip);
+    const foreignPort = testPort === 49721 ? 49722 : 49721;
+    expect(foreignPort).not.toBe(testPort);
+    const foreignHost = `127.0.0.1:${String(foreignPort)}`;
+    for (const [path, host, requestOrigin] of [[`/occt/${asset.sha256}.wasm`, foreignHost, 'app://pointercad'],
+      [`/occt/${asset.sha256}.wasm`, `localhost:${String(testPort)}`, 'app://pointercad'],
+      [`/occt/${asset.sha256}.wasm`, `127.0.0.1:${String(testPort + 1)}`, 'app://pointercad'],
+      [`/occt/${asset.sha256}.wasm?x`, authority, 'app://pointercad'], ['/occt/manifest.json', authority, 'app://pointercad'],
+      [`/occt/${asset.sha256}.wasm`, authority, 'https://elsewhere']] as const) {
+      const denied = await raw(path, host, requestOrigin);
+      expect(denied.status).toBe(403);
+      expect(denied.headers['cache-control']).toBe('no-store'); expect(denied.body).toEqual(Buffer.alloc(0));
+    }
+    await value.close();
+    expect(ownedServers.every(server => !server.listening)).toBe(true);
+  });
+  it('a denied fixed port (EACCES) returns direct after the bundled check, without network use or cleanup errors', async () => {
+    // CI run 42358862597 (windows-latest): listen EACCES at 127.0.0.1:49721 rejected preparation,
+    // so every Desktop solid failed. Denied ownership is the same situation as an occupied port.
     const error = Object.assign(new Error('listen EACCES: permission denied 127.0.0.1:49721'), {
       code: 'EACCES', syscall: 'listen', address: '127.0.0.1', port: 49721,
+    });
+    listenerError = error;
+    vi.stubEnv('PCAD_OCCT_TRANSPORT_TRACE', '1');
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const value = transport(await fixture());
+    await expect(value.prepare()).resolves.toEqual({ kind: 'direct', reason: 'port-unavailable' });
+    const traces = info.mock.calls.flatMap(([message]: unknown[]) =>
+      typeof message === 'string' && message.startsWith('[pcad:occt-http-phases] ') ? [message] : []);
+    expect(traces).toHaveLength(1);
+    const trace: unknown = JSON.parse((traces[0] ?? '').slice('[pcad:occt-http-phases] '.length));
+    if (typeof trace !== 'object' || trace === null || !('events' in trace) || !Array.isArray(trace.events)) {
+      throw new Error('Missing OCCT transport trace');
+    }
+    const phases: unknown[] = trace.events.map((event: unknown) =>
+      typeof event === 'object' && event !== null && 'phase' in event ? event.phase : undefined);
+    // The bundled decoded asset is still verified before the direct reply.
+    expect(phases).toEqual(['prepare-start', 'manifest-start', 'manifest-validated', 'gzip-read', 'transport-verified',
+      'listener-start', 'listener-denied', 'decoded-inflated', 'decoded-verified', 'prepare-direct-port-unavailable',
+      'prepare-settled']);
+    expect(listenRequests).toHaveLength(1);
+    expect(ownedServers).toHaveLength(1);
+    expect(ownedServers.every(server => !server.listening && server.address() === null)).toBe(true);
+    const [server] = ownedServers;
+    if (server === undefined) throw new Error('Missing denied listener');
+    expect(listenRequests[0]?.events).toHaveBeenCalledWith('error', error);
+    const close = vi.spyOn(server, 'close');
+    await expect(value.close()).resolves.toBeUndefined();
+    await expect(closeListener(server)).resolves.toBeUndefined();
+    expect(close).not.toHaveBeenCalled();
+    expect(physicalListens).toEqual([]);
+    expect(native.request).not.toHaveBeenCalled(); expect(native.fetch).not.toHaveBeenCalled();
+  });
+  it.each(['same-length', 'oversized', 'truncated'] as const)(
+    'a denied fixed port still rejects a %s corrupt bundled asset instead of a direct reply', async mode => {
+    listenerError = Object.assign(new Error('listen EACCES: permission denied 127.0.0.1:49721'), {
+      code: 'EACCES', syscall: 'listen', address: '127.0.0.1', port: 49721,
+    });
+    const compressed = mode === 'same-length' ? gzipSync(Buffer.alloc(bytes.length, 120))
+      : mode === 'oversized' ? gzipSync(Buffer.alloc(bytes.length + 1)) : gzip.subarray(0, -3);
+    const value = transport(await fixture(false, compressed));
+    await expect(value.prepare()).rejects.toThrow();
+    expect(listenRequests[0]?.events).toHaveBeenCalledWith('error', listenerError);
+    expect(ownedServers.every(server => !server.listening && server.address() === null)).toBe(true);
+    const [server] = ownedServers;
+    if (server === undefined) throw new Error('Missing denied listener');
+    const close = vi.spyOn(server, 'close');
+    await expect(value.close()).resolves.toBeUndefined();
+    expect(close).not.toHaveBeenCalled();
+    expect(physicalListens).toEqual([]);
+    expect(native.request).not.toHaveBeenCalled(); expect(native.fetch).not.toHaveBeenCalled();
+  });
+  it.each(['EADDRNOTAVAIL', 'EIO'] as const)(
+    'rejects %s with the original error, without fallback, network use or cleanup errors', async code => {
+    const error = Object.assign(new Error(`listen ${code} 127.0.0.1:49721`), {
+      code, syscall: 'listen', address: '127.0.0.1', port: 49721,
     });
     listenerError = error;
     const value = transport(await fixture());

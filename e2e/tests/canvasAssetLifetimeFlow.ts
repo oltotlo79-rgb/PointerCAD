@@ -8,7 +8,7 @@ import { openToolMenu, toolMenuPanel } from './assemblyTestSupport.js';
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { waitForStartupHealth } from './startupHealth.js';
-import { waitForSettledRecompute } from './recompute.js';
+import { beginRecompute, waitForRecompute } from './recompute.js';
 
 export function canvasRow(page: Page, name: string) {
   return page.locator('.pcad-panel--right .pcad-boundary').filter({ has: page.getByText(name, { exact: true }) });
@@ -92,19 +92,22 @@ export async function save(page: Page, info: TestInfo, name: string, app?: Elect
 
 /** Webはfile chooser、Electronは実デスクトップの開く窓を通す(Electronでは info が要る)。 */
 export async function open(page: Page, name: string, bytes: Buffer, info?: TestInfo, app?: ElectronApplication): Promise<void> {
+  // The same image can already be visible before the selected file finishes reading.
+  // Require this open's new generation before edits can invalidate its document request.
+  const recompute = await beginRecompute(page);
   if (app !== undefined) {
     if (info === undefined) throw new Error('Electronで開くにはTestInfoが要る');
     const target = info.outputPath(name);
     await writeFile(target, bytes);
     await openTarget(app, target);
     await fileAction(page, '開く').click();
-    await waitForSettledRecompute(page);
+    await waitForRecompute(page, recompute);
     return;
   }
   const choosing = page.waitForEvent('filechooser');
   await fileAction(page, '開く').click();
   await (await choosing).setFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
-  await waitForSettledRecompute(page);
+  await waitForRecompute(page, recompute);
 }
 
 export function sha256(bytes: Uint8Array): string { return createHash('sha256').update(bytes).digest('hex'); }

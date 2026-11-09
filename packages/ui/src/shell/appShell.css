@@ -2795,6 +2795,11 @@ button.pcad-tree__row:focus-visible {
   z-index: 3;
 }
 
+/* Three translated weld actions must stay inside the narrow form. */
+.pcad-popover--circular-weld .pcad-popover__actions {
+  flex-wrap: wrap;
+}
+
 .pcad-tree__branch-toggle {
   display: inline-flex;
   flex: none;
@@ -3784,6 +3789,11 @@ button.pcad-tree__row:focus-visible {
   display: flex;
   gap: var(--pcad-space-1);
   padding: var(--pcad-space-1) var(--pcad-space-3) 0;
+}
+
+/* Canvas rows have four or five actions instead of the appearance pair. */
+.pcad-appearance__actions--canvas {
+  flex-wrap: wrap;
 }
 
 .pcad-appearance__actions .pcad-button {

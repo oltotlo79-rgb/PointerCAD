@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gunzip, gunzipSync } from 'node:zlib';
-import { DESKTOP_OCCT_TRANSPORT_ORIGIN, desktopOcctTransportUrl,
+import { DESKTOP_OCCT_TRANSPORT_ORIGIN, desktopOcctTransportOrigin, desktopOcctTransportUrl,
   type DesktopOcctTransportReply } from '@pointercad/ui/desktop-occt-transport';
 
 const TIMEOUT_MS = 25000;
@@ -146,12 +146,15 @@ function verifyBundledDecodedAsset(asset: OcctHttpAsset, mark: TransportMark, si
   });
 }
 
-export function serveOcctHttpAsset(asset: OcctHttpAsset, request: IncomingMessage, response: ServerResponse): void {
+export function serveOcctHttpAsset(
+  asset: OcctHttpAsset, request: IncomingMessage, response: ServerResponse, transportOrigin = DESKTOP_OCCT_TRANSPORT_ORIGIN,
+): void {
   const origin = request.headers.origin;
-  const expectedPath = new URL(desktopOcctTransportUrl(asset.sha256)).pathname;
+  const target = new URL(desktopOcctTransportUrl(asset.sha256, transportOrigin));
+  const expectedPath = target.pathname;
   const count = (name: string): number => request.rawHeaders.filter((_, index) =>
     index % 2 === 0 && request.rawHeaders[index]?.toLowerCase() === name).length;
-  if (request.method !== 'GET' || request.url !== expectedPath || request.headers.host !== endpoint.host
+  if (request.method !== 'GET' || request.url !== expectedPath || request.headers.host !== target.host
       || request.headers['transfer-encoding'] !== undefined
       || (request.headers['content-length'] !== undefined && request.headers['content-length'] !== '0')
       || count('host') !== 1 || count('origin') > 1 || (origin !== undefined && origin !== APP_ORIGIN)) {
@@ -238,7 +241,11 @@ function readObservedSessionOcctCache(
   });
 }
 
-export function createOcctHttpTransport(rendererRoot: string, targetSession: Session): {
+/**
+ * `ephemeralPort` is for unpackaged automated launches only (occtHttpPolicy.ts): this server binds port 0 itself
+ * and keeps it, so no other process chooses or reserves the number. The product passes false and owns the fixed port.
+ */
+export function createOcctHttpTransport(rendererRoot: string, targetSession: Session, ephemeralPort = false): {
   prepare: () => Promise<DesktopOcctTransportReply>; close: () => Promise<void>;
 } {
   let owned: Server | undefined;
@@ -252,9 +259,10 @@ export function createOcctHttpTransport(rendererRoot: string, targetSession: Ses
     if (closed) throw new Error('OCCT transport closed');
     // Binding is ownership only. No asset is served until both verifications succeed.
     let ready = false;
+    let transportOrigin = DESKTOP_OCCT_TRANSPORT_ORIGIN;
     const server = createServer((request, response) => {
       if (!ready || closed) { response.writeHead(503, { 'Cache-Control': 'no-store' }); response.end(); return; }
-      serveOcctHttpAsset(asset, request, response);
+      serveOcctHttpAsset(asset, request, response, transportOrigin);
     });
     server.requestTimeout = TIMEOUT_MS;
     server.headersTimeout = TIMEOUT_MS;
@@ -265,10 +273,14 @@ export function createOcctHttpTransport(rendererRoot: string, targetSession: Ses
       const timer = setTimeout(() => { listenerAbort.abort(); reject(new Error('OCCT listener timeout')); }, TIMEOUT_MS);
       server.once('error', error => {
         clearTimeout(timer);
-        if ('code' in error && error.code === 'EADDRINUSE') resolve(false);
+        // Both codes mean this process cannot own the fixed port. Windows can report
+        // a reserved or exclusively bound port as EACCES. Other listener errors still reject.
+        const code = 'code' in error ? error.code : undefined;
+        if (code === 'EACCES') mark('listener-denied');
+        if (code === 'EADDRINUSE' || code === 'EACCES') resolve(false);
         else reject(error);
       });
-      server.listen({ port: Number(endpoint.port), host: endpoint.hostname, signal: listenerAbort.signal },
+      server.listen({ port: ephemeralPort ? 0 : Number(endpoint.port), host: endpoint.hostname, signal: listenerAbort.signal },
         () => { clearTimeout(timer); resolve(true); });
     });
     if (!listening) {
@@ -281,7 +293,15 @@ export function createOcctHttpTransport(rendererRoot: string, targetSession: Ses
     owned = server;
     server.unref();
     if (closed) { await close(); throw new Error('OCCT transport closed'); }
-    const url = desktopOcctTransportUrl(asset.sha256);
+    if (ephemeralPort) {
+      // The number this server already owns; Host, cache, fill and the reply all use this one origin.
+      const address = server.address();
+      if (address === null || typeof address === 'string' || address.address !== endpoint.hostname) {
+        throw new Error('OCCT listener address mismatch');
+      }
+      transportOrigin = desktopOcctTransportOrigin(address.port);
+    }
+    const url = desktopOcctTransportUrl(asset.sha256, transportOrigin);
     const [, cache] = await Promise.all([
       verifyBundledDecodedAsset(asset, mark, preparationAbort.signal),
       readObservedSessionOcctCache(targetSession, url, asset, mark, preparationAbort.signal),

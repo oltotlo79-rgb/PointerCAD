@@ -345,15 +345,15 @@ const MATH_CATALOG_COVERAGE: readonly MathCoverageRow[] = [
     { symbol: '逆写像', catalogIds: ['mapping-inverse'] },
   ] },
   { line: 165, domain: '幾何', planNotation: '∠、平行∥、垂直⊥、合同≅、相似∼、弧、距離、面積、体積', symbols: [
-    { symbol: '∠', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
-    { symbol: '∥', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
-    { symbol: '⊥', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
-    { symbol: '≅', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
-    { symbol: '∼', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
-    { symbol: '弧', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
-    { symbol: '距離', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
-    { symbol: '面積', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
-    { symbol: '体積', reason: 'w1d の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '∠', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '∥', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '⊥', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '≅', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '∼', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '弧', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '距離', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '面積', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
+    { symbol: '体積', reason: '図形の測定値の計画（GR-09〜GR-11ほか）で扱う' },
   ] },
 ];
 
@@ -400,12 +400,12 @@ describe('計画§1の32行と公開目録の機械照合（MC-04）', () => {
     }
   });
 
-  it('幾何9記号(L165)は目録IDを持たず、w1dの計画を参照する理由を持つ', () => {
+  it('幾何9記号(L165)は目録IDを持たず、図形の測定値の計画(GR-09〜GR-11)を参照する理由を持つ', () => {
     const geometry = MATH_CATALOG_COVERAGE.find(row => row.line === MATH_CATALOG_COVERAGE_GEOMETRY_LINE);
     if (geometry === undefined) throw new Error('幾何(L165)の行がありません。');
     for (const entry of geometry.symbols) {
       expect(isMathCoverageAccepted(entry), entry.symbol).toBe(false);
-      if (!isMathCoverageAccepted(entry)) expect(entry.reason, entry.symbol).toContain('w1d');
+      if (!isMathCoverageAccepted(entry)) expect(entry.reason, entry.symbol).toContain('GR-09〜GR-11');
     }
   });
 

@@ -1,4 +1,4 @@
-import { dotVec as dot, distanceVec as distance } from './sketchCorner.js';
+import { crossVec, dotVec as dot, distanceVec as distance } from './sketchCorner.js';
 import { LINEAR_TOLERANCE_MM, nearlyEqual } from './nearlyEqual.js';
 import type {
   OpenCascadeInstance,
@@ -77,7 +77,7 @@ interface FaceSignature {
 }
 
 function crossLength(a: Vec3Tuple, b: Vec3Tuple): number {
-  return Math.hypot(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]);
+  return Math.hypot(...crossVec(a, b));
 }
 
 /** 面 1 枚の素性を読む。平面の法線は面の向き(REVERSED)を見て材料の外へ向ける(makeDraft.ts と同じ規則)。 */

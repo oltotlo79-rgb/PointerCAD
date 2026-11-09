@@ -16,8 +16,16 @@ import { waitForStartupHealth } from './startupHealth.js';
 interface SaveInputAudit { readonly latencies: number[]; readonly stages: string[] }
 /** 頁の中の時刻(performance.now)で、取消の Enter と「取り消しました」の表示を記録する。 */
 interface CancelTiming { pressed: number; displayed: number }
+interface SaveWriteTiming {
+  createWritableStart: number | null; createWritableEnd: number | null;
+  writeStart: number | null; writeEnd: number | null;
+  closeStart: number | null; closeEnd: number | null;
+}
+interface SaveClockCalibration { readonly nodeBefore: number; readonly nodeAfter: number; readonly pageNow: number }
 declare global {
-  interface Window { pcadSaveInputAudit?: SaveInputAudit; pcadCancelTiming?: CancelTiming }
+  interface Window {
+    pcadSaveInputAudit?: SaveInputAudit; pcadCancelTiming?: CancelTiming; pcadSaveWriteTiming?: SaveWriteTiming;
+  }
 }
 
 export async function openSaveFlowFile(page: Page, path: string, app?: ElectronApplication): Promise<void> {
@@ -331,12 +339,41 @@ function median(values: readonly number[]): number {
 }
 
 /** 実OPFSのファイルを、製品の File System Access API の保存の口(showSaveFilePicker)へ渡す。 */
-async function useOpfsSaveTarget(page: Page, fileName: string): Promise<void> {
-  await page.evaluate(async name => {
+async function useOpfsSaveTarget(page: Page, fileName: string): Promise<SaveClockCalibration> {
+  const nodeBefore = performance.now();
+  const pageNow = await page.evaluate(async name => {
     const directory = await navigator.storage.getDirectory();
     const handle = await directory.getFileHandle(name, { create: true });
-    Object.defineProperty(globalThis, 'showSaveFilePicker', { configurable: true, value: () => Promise.resolve(handle) });
+    const timing: SaveWriteTiming = { createWritableStart: null, createWritableEnd: null,
+      writeStart: null, writeEnd: null, closeStart: null, closeEnd: null };
+    window.pcadSaveWriteTiming = timing;
+    const target = {
+      name: handle.name,
+      getFile: () => handle.getFile(),
+      createWritable: async () => {
+        timing.createWritableStart = performance.now();
+        try {
+          const writable = await handle.createWritable();
+          return {
+            write: async (data: Parameters<typeof writable.write>[0]) => {
+              timing.writeStart = performance.now();
+              try { return await writable.write(data); }
+              finally { timing.writeEnd = performance.now(); }
+            },
+            close: async () => {
+              timing.closeStart = performance.now();
+              try { return await writable.close(); }
+              finally { timing.closeEnd = performance.now(); }
+            },
+            abort: (reason?: unknown) => writable.abort(reason),
+          };
+        } finally { timing.createWritableEnd = performance.now(); }
+      },
+    };
+    Object.defineProperty(globalThis, 'showSaveFilePicker', { configurable: true, value: () => Promise.resolve(target) });
+    return performance.now();
   }, fileName);
+  return { nodeBefore, nodeAfter: performance.now(), pageNow };
 }
 
 /** 製品が実OPFSへ書いたファイルを、照合のため検査側のディスクへ写す(読み出しは検査の操作)。 */
@@ -374,7 +411,7 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
   await openSaveFlowFile(page, fixturePath, app);
   const target = app !== undefined ? 'disk' : options.target ?? 'download';
   const opfsName = `save-performance-${String(mib)}-${String(repeat)}-${randomUUID()}.pcad`;
-  if (target === 'opfs') await useOpfsSaveTarget(page, opfsName);
+  const saveClockBefore = target === 'opfs' ? await useOpfsSaveTarget(page, opfsName) : null;
   const workers = trackSaveWorkers(page);
   await page.evaluate(() => {
     const audit: SaveInputAudit = { latencies: [], stages: [] }; window.pcadSaveInputAudit = audit;
@@ -432,6 +469,18 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     memorySamples = await sampler.stop();
     await releaseMeasurement();
     const memoryAfter = await readMemory();
+    const phaseReadStart = performance.now();
+    const savePhaseRead = target === 'opfs' ? await page.evaluate(() => ({
+      timing: window.pcadSaveWriteTiming ?? null, pageNow: performance.now(),
+    })) : null;
+    const phaseReadEnd = performance.now();
+    const savePhases = savePhaseRead === null || saveClockBefore === null ? null : {
+      // Page timestamps need these calibration bounds; Node sample times are stdout receipt times.
+      pageTiming: savePhaseRead.timing,
+      before: { nodeBefore: saveClockBefore.nodeBefore - clickedAt,
+        nodeAfter: saveClockBefore.nodeAfter - clickedAt, pageNow: saveClockBefore.pageNow },
+      after: { nodeBefore: phaseReadStart - clickedAt, nodeAfter: phaseReadEnd - clickedAt, pageNow: savePhaseRead.pageNow },
+    };
     if (target === 'opfs') await copyOpfsFile(page, opfsName, savedPath);
     const audit = await page.evaluate(() => window.pcadSaveInputAudit);
     if (audit === undefined) throw new Error('入力記録がありません');
@@ -460,7 +509,9 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
       environment: app !== undefined ? 'electron' : page.context().browser()?.browserType().name() ?? 'unknown', target,
       mib, repeat, rawBytes, triangleCount, savedBytes: (await readFile(savedPath)).byteLength,
       inputs: samples.length, p95, activeP95, activeInputs: activeSamples.length, samples, activeSamples,
-      saveMs: completedAt - clickedAt, releaseMs: releasedAt - clickedAt, workers, originalHash, savedHash: meshHashes(savedAttachment),
+      saveMs: completedAt - clickedAt, releaseMs: releasedAt - clickedAt,
+      workers: workers.map(worker => ({ ...worker, closedAfterClickMs: worker.closedAt === null ? null : worker.closedAt - clickedAt })),
+      savePhases, originalHash, savedHash: meshHashes(savedAttachment),
       memory: { method: sampler.method, intervalMs: SAMPLE_INTERVAL_MS, baseline, peak, released,
         extraPeak: { workingSetBytes: peak.workingSetBytes - baseline.workingSetBytes, privateBytes: peak.privateBytes - baseline.privateBytes },
         extraAfterRelease: { workingSetBytes: released.workingSetBytes - baseline.workingSetBytes, privateBytes: released.privateBytes - baseline.privateBytes },

@@ -19,7 +19,7 @@ import { openTarget } from './electronAppFlow.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { parseUsageCensus, parseUsageWindow, qualifyDocumentedGpuUsage } from './documentedGpuUsage.js';
 
-import { windowsSampler, linuxSampler, linuxProcess, INTERVAL_MS, DISCOVERY_INTERVAL_MS } from './processResourceSampler.js';
+import { windowsSampler, linuxSampler, linuxProcess, INTERVAL_MS, DISCOVERY_INTERVAL_MS, type RawFrame } from './processResourceSampler.js';
 const BUDGET_BYTES = 512 * 1024 * 1024;
 const SOURCE_PATHS = ['e2e/tests/memoryHighwaterFlow.ts', 'e2e/tests/processResourceSampler.ts', 'e2e/tests/memory-highwater.spec.ts',
   'e2e/tests/electron-memory-highwater.spec.ts', 'packages/test-utils/src/processMemorySamples.ts',
@@ -302,6 +302,52 @@ export async function readLinuxGpuMemory(frame: ProcessMemoryFrame): Promise<{
     readStartedAtEpochMs, readEndedAtEpochMs: Date.now() };
 }
 
+export type GpuReading = Awaited<ReturnType<typeof readLinuxGpuMemory>>;
+export interface SerialGpuReader {
+  readonly readings: GpuReading[];
+  readonly failures: string[];
+  /** Hands one CPU frame over without waiting for its GPU read; starts no second read while one is in flight. */
+  readonly observe: (frame: RawFrame) => Promise<void>;
+  /** Accepts no further frame and waits for the read in flight. */
+  readonly stop: () => Promise<void>;
+  readonly pending: () => number;
+}
+
+/**
+ * Linux GPU reads on their own serial chain, outside the 100ms CPU sample loop. linuxSampler adds the
+ * awaited observe time to the next frame interval: in run 42358862597 the awaited fdinfo read was 65-83%
+ * of the time of the CPU sample gaps over 2x100ms in all six Linux cases. One read at a time; a frame that
+ * arrives during a read starts no duplicate. A read whose start and end fall in different phases keeps
+ * actualBytes null, an unknown value is never 0, and a failed read is kept as a failure.
+ */
+export function serialGpuReader(read: (frame: ProcessMemoryFrame) => Promise<GpuReading>,
+  phaseAt: (atEpochMs: number) => MemoryPhase): SerialGpuReader {
+  const readings: GpuReading[] = [], failures: string[] = [];
+  let inFlight: Promise<void> | null = null;
+  let stopped = false;
+  const readOne = async (frame: RawFrame): Promise<void> => {
+    try {
+      const reading = await read({ ...frame, phase: phaseAt(Date.now()) });
+      const phase = phaseAt(reading.readStartedAtEpochMs);
+      const crossed = phase !== phaseAt(reading.readEndedAtEpochMs);
+      readings.push({ ...reading, sample: { ...reading.sample, phase,
+        actualBytes: crossed ? null : reading.sample.actualBytes,
+        unknown: [...reading.sample.unknown, ...(crossed ? ['GPU read crossed a phase boundary'] : [])] } });
+    } catch (error: unknown) { failures.push(`GPU read failed: ${String(error)}`); }
+  };
+  return {
+    readings, failures,
+    observe: frame => {
+      if (stopped || inFlight !== null) return Promise.resolve();
+      // The then callback runs after this assignment, even when read rejects synchronously.
+      inFlight = readOne(frame).then(() => { inFlight = null; });
+      return Promise.resolve();
+    },
+    stop: async () => { stopped = true; if (inFlight !== null) await inFlight; },
+    pending: () => (inFlight === null ? 0 : 1),
+  };
+}
+
 function phaseFor(atEpochMs: number, boundaries: readonly PhaseBoundary[]): MemoryPhase {
   return [...boundaries].reverse().find(boundary => boundary.atEpochMs <= atEpochMs)?.phase ?? 'baseline';
 }
@@ -461,16 +507,11 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
   // A locally generated nonce preserves CPU collection; it cannot qualify a Root-owned trace.
   const rootIssuedNonce = issuedNonce !== undefined && /^[a-zA-Z0-9_-]{16,128}$/u.test(issuedNonce);
   const boundaries: PhaseBoundary[] = [];
-  const gpuReadings: Awaited<ReturnType<typeof readLinuxGpuMemory>>[] = [];
+  // The 100ms CPU loop only hands each frame to the serial GPU reader; it never waits for the fdinfo read.
+  const gpuReader = serialGpuReader(readLinuxGpuMemory, atEpochMs => phaseFor(atEpochMs, boundaries));
+  const gpuReadings = gpuReader.readings;
   const sampler = platform() === 'win32' ? windowsSampler(rootPid, includeRoot) :
-    platform() === 'linux' ? linuxSampler(rootPid, includeRoot, async frame => {
-      const reading = await readLinuxGpuMemory({ ...frame, phase: phaseFor(Date.now(), boundaries) });
-      const phase = phaseFor(reading.readStartedAtEpochMs, boundaries);
-      const crossed = phase !== phaseFor(reading.readEndedAtEpochMs, boundaries);
-      gpuReadings.push({ ...reading, sample: { ...reading.sample, phase,
-        actualBytes: crossed ? null : reading.sample.actualBytes,
-        unknown: [...reading.sample.unknown, ...(crossed ? ['GPU read crossed a phase boundary'] : [])] } });
-    }) : null;
+    platform() === 'linux' ? linuxSampler(rootPid, includeRoot, gpuReader.observe) : null;
   if (sampler === null) throw new Error(`Unsupported process memory OS: ${platform()}`);
   const mark = (phase: MemoryPhase, observation: string): void => { boundaries.push({ atEpochMs: Date.now(), phase, observation }); };
   const displaySnapshots: { atEpochMs: number; phase: MemoryPhase; hostAttributeReserved: unknown;
@@ -616,6 +657,9 @@ export async function memoryHighwaterFlow(page: Page, info: TestInfo, kind: 'sol
     try { await actualPhases.end(); }
     catch (error: unknown) { actualPhases.problems.push(`Phase capture cleanup failed: ${String(error)}`); }
     await sampler.stop();
+    // No GPU read outlives the collection; a failed read fails the unchanged sampler-failure check and is saved.
+    await gpuReader.stop();
+    sampler.failures.push(...gpuReader.failures);
   }
   const frames: ProcessMemoryFrame[] = sampler.frames.map(frame => ({ ...frame, phase: phaseFor(frame.atEpochMs, boundaries) }));
   const summary = summarizeProcessMemory(frames, { intervalMs: INTERVAL_MS, discoveryIntervalMs: DISCOVERY_INTERVAL_MS,

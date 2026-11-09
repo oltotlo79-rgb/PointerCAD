@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 
-export const READ_OBSERVATION_COST = 'Includes native Worker wrapper, prefixed start/end BroadcastChannel messages, trusted keydown/input listeners, delegating command value accessor for reset observation and requestAnimationFrame callbacks. Electron observes the original app protocol net.fetch of the Worker asset. No wait, synthetic load, reply replacement or clock substitution. requestAnimationFrame is the paint opportunity marker, not a compositor presentation timestamp.';
+export const READ_OBSERVATION_COST = 'Includes native Worker wrapper, prefixed start/end BroadcastChannel messages, trusted keydown/input listeners, delegating command value accessor for reset observation and requestAnimationFrame callbacks. Electron observes the original app protocol net.fetch of the Worker asset. Timed collection adds optional asynchronous Node start/end notifications without awaiting them; receipt times do not define the measured active window. No wait, synthetic load, reply replacement or clock substitution. requestAnimationFrame is the paint opportunity marker, not a compositor presentation timestamp.';
 
 /** A real output file survives successful runs whose trace is discarded. */
 export async function writeReadEvidence(info: TestInfo, name: string, record: unknown): Promise<void> {
@@ -51,8 +51,18 @@ declare global { interface Window { pcadReadObservation?: ReadObservation } }
  * never use that mode to measure peak memory.
  * Electron reads the unchanged app-scheme asset with its real net.fetch API.
  */
-export async function observeRead(page: Page, integrity: boolean, app?: ElectronApplication) {
+export async function observeRead(page: Page, integrity: boolean, app?: ElectronApplication,
+  onSpan?: (event: { readonly phase: 'start' | 'end'; readonly id: string; readonly at: number }) => void) {
   const channel = `pcad-read-audit-${randomUUID()}`;
+  const notify = onSpan === undefined ? null : 'pcadReadSpan' + randomUUID().replaceAll('-', '');
+  if (notify !== null) await page.exposeFunction(notify, (value: unknown) => {
+    if (typeof value !== 'object' || value === null || !('phase' in value)
+      || (value.phase !== 'start' && value.phase !== 'end') || !('id' in value) || typeof value.id !== 'string'
+      || !('at' in value) || typeof value.at !== 'number' || !Number.isFinite(value.at)) {
+      throw new Error('Invalid actual read-span notification');
+    }
+    onSpan?.({ phase: value.phase, id: value.id, at: value.at });
+  });
   let routed = 0;
   const sourceAssets: { url: string; sha256: string; bytes: number }[] = [];
   const prefix = `
@@ -104,7 +114,7 @@ self.postMessage = (...args) => {
     routed += 1;
     await route.fulfill({ response, body: prefix + body });
   });
-  await page.evaluate(({ channel, integrity }) => {
+  await page.evaluate(({ channel, integrity, notify }) => {
     const observation: ReadObservation = { spans: [], inputs: [], resets: [], source: null, borrowed: null, orphan: null, workerUrls: [], sent: 0, replied: 0, terminated: 0 };
     window.pcadReadObservation = observation;
     let currentReadId: string | null = null;
@@ -152,6 +162,12 @@ self.postMessage = (...args) => {
       if (value.phase === 'end') {
         const span = observation.spans.find(span => span.id === value.id);
         if (span !== undefined) span.end = value.at;
+      }
+      // Notify without awaiting Node; original Worker execution and audited clocks are unchanged.
+      if (notify !== null && (value.phase === 'start' || value.phase === 'end')) {
+        const callback: unknown = Reflect.get(window, notify);
+        if (typeof callback !== 'function') throw new Error('Read-span notification binding missing');
+        void Reflect.apply(callback, window, [{ phase: value.phase, id: value.id, at: value.at }]);
       }
     };
     const NativeWorker = window.Worker;
@@ -218,7 +234,7 @@ self.postMessage = (...args) => {
         input.paintOrder = ++eventOrder;
       });
     }, true);
-  }, { channel, integrity });
+  }, { channel, integrity, notify });
   return { routed: () => routed, sourceAssets };
 }
 

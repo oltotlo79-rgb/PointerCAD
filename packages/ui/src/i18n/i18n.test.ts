@@ -367,7 +367,7 @@ function menuItemsWithoutDescription(file: string, text: string): string[] {
   return problems;
 }
 
-describe('モデルブラウザの「⋮」一覧の項目は名前と説明を持つ(w91a、FR-904)', () => {
+describe('モデルブラウザの「⋮」一覧の項目は名前と説明を持つ(FR-904)', () => {
   it.each(['shell/FeatureTree.tsx', 'shell/AssemblyTree.tsx', 'shell/PropertyPanel.tsx'])('%s', (file) => {
     const path = join(sourceRoot, file);
     expect(menuItemsWithoutDescription(path, readFileSync(path, 'utf8'))).toEqual([]);
@@ -383,7 +383,7 @@ describe('モデルブラウザの「⋮」一覧の項目は名前と説明を�
   });
 });
 
-describe('使われていない文言の鍵を残さない(w91a)', () => {
+describe('使われていない文言の鍵を残さない', () => {
   it('どの鍵も製品のコードか説明書から引かれている(見つけた時点の残りは一覧のとおりで、増やさない)', () => {
     const { literals, prefixes } = usedMessageKeys();
     const unused = MESSAGE_KEYS.filter((key) => !literals.has(key) && !prefixes.some((prefix) => key.startsWith(prefix)));

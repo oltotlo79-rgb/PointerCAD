@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { createHash } from 'node:crypto';
+import { EventEmitter, once } from 'node:events';
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { PerformanceObserver } from 'node:perf_hooks';
@@ -239,6 +240,8 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
   let memory: Awaited<ReturnType<typeof startReadResidentSampler>> | undefined;
   let observed: Awaited<ReturnType<typeof observeRead>> | undefined;
   let workers: ReturnType<typeof nativeReadWorkers> = [];
+  const notifications = new EventEmitter(), endedReads = new Set<string>();
+  const spanNotifications: { phase: 'start' | 'end'; id: string; at: number; receivedAt: number }[] = [];
   let offset: { lower: number; upper: number } | null = null;
   let completed = false, startedAt: number | null = null, releasedAt: number | null = null;
   let failure: string | null = null;
@@ -253,7 +256,11 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
     const path = 'path' in fixture ? fixture.path : info.outputPath(`timing-orphan-${mib}.pcad`);
     if ('bytes' in fixture) await writeFile(path, fixture.bytes);
     const command = page.locator('#pcad-command-line-input'); await command.fill('');
-    observed = await observeRead(page, false, app); workers = nativeReadWorkers(page);
+    observed = await observeRead(page, false, app, event => {
+      spanNotifications.push({ ...event, receivedAt: performance.timeOrigin + performance.now() });
+      if (event.phase === 'start') notifications.emit('start', event.id);
+      else endedReads.add(event.id);
+    }); workers = nativeReadWorkers(page);
     try {
       memory = await startReadResidentSampler(info, app?.process().pid ?? process.pid);
       await memory.waitAfter(-Infinity);
@@ -271,23 +278,30 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
         readId: null as string | null, inputStart, inputEnd: null as number | null };
       attempts.push(row);
       try {
-        const finish = await startReadOpen(page, path, app);
-        await command.focus();
-        // Observe the actual Worker ID on the next browser frame instead of polling from Node.
-        const spanHandle = await page.waitForFunction(index => window.pcadReadObservation?.spans[index]?.id ?? false, attempt);
-        const readId: unknown = await spanHandle.jsonValue();
-        await spanHandle.dispose();
+        // Subscribe before opening: receiving the notification never defines the measured active window.
+        const startAbort = new AbortController();
+        const remaining = Math.max(0, Math.floor(deadline - performance.now() - policy.reserveForEvidenceAndSaveMs));
+        const started = once(notifications, 'start', { signal: AbortSignal.any([startAbort.signal, AbortSignal.timeout(remaining)]) });
+        // A failed open can abort this pending event before it is awaited.
+        void started.catch(() => undefined);
+        let finish: () => Promise<void>;
+        let readId: unknown;
+        try {
+          finish = await startReadOpen(page, path, app);
+          await command.focus();
+          [readId] = await started;
+        } finally { startAbort.abort(); }
         if (typeof readId !== 'string') throw new Error('Actual Worker start missing');
         row.readId = readId;
         let typed = 0;
         for (; typed < policy.maximumInputsPerRead; typed += 1) {
-          const state = await page.evaluate(index => ({ span: window.pcadReadObservation?.spans[index],
-            count: window.pcadReadObservation?.inputs.length ?? 0 }), attempt);
-          if (state.span?.end !== null || performance.now() >= deadline - policy.reserveForEvidenceAndSaveMs) break;
+          // Late end notifications can schedule one extra key; the original Worker timestamps
+          // in readInputMetrics still reject every key that actually starts outside the window.
+          if (endedReads.has(readId) || performance.now() >= deadline - policy.reserveForEvidenceAndSaveMs) break;
           const start = performance.timeOrigin + performance.now();
           await page.keyboard.press('a');
           const end = performance.timeOrigin + performance.now();
-          roundTrips[state.count] = { start, end, ms: end - start, readId: row.readId };
+          roundTrips[inputStart + typed] = { start, end, ms: end - start, readId: row.readId };
         }
         // Each key's pre-reset value is observed in the actual input event, not after open.
         await finish(); await assertReadWorkerClosed(workers);
@@ -327,7 +341,7 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
     const extraReleased = { workingSet: median(after.map(sample => sample.workingSet)) - median(before.map(sample => sample.workingSet)),
       secondaryBytes: median(after.map(sample => sample.secondaryBytes)) - median(before.map(sample => sample.secondaryBytes)) };
     const memoryBudget = 512 * 1024 * 1024;
-    await writeReadEvidence(info, `read-${kind}-${mib}`, { policy, attempts, ...metrics, audit, roundTrips,
+    await writeReadEvidence(info, `read-${kind}-${mib}`, { policy, attempts, ...metrics, audit, roundTrips, spanNotifications,
       clockOffset: offset, workers, routed: observed.routed(), assets: observed.sourceAssets,
       inputCondition: metrics.incomplete.length ? 'incomplete-input-evidence'
         : metrics.p95 === null ? 'insufficient-valid-inputs' : metrics.p95 < 100 ? 'passed' : 'failed-latency',
@@ -385,7 +399,7 @@ export async function readResponsivenessFlow(page: Page, info: TestInfo, mib: 32
       const metrics = audit !== null && 'spans' in audit && offset !== null
         ? readInputMetrics(undefined, audit.inputs, roundTrips, offset, audit.spans, audit.resets) : null;
       await writeReadEvidence(info, `read-${kind}-${mib}-observation`, { status: completed ? 'passed-partial-measurements' : 'incomplete-or-failed',
-        policy, attempts, failure, audit, roundTrips, clockOffset: offset, decisions: metrics?.decisions ?? [],
+        policy, attempts, failure, audit, roundTrips, spanNotifications, clockOffset: offset, decisions: metrics?.decisions ?? [],
         activeInputs: metrics?.samples.length ?? null, p95: metrics?.p95 ?? null,
         inputCondition: metrics !== null && metrics.incomplete.length ? 'incomplete-input-evidence'
           : metrics?.p95 === null || metrics === null ? 'unmeasured-or-insufficient-inputs' : metrics.p95 < 100 ? 'passed' : 'failed-latency',

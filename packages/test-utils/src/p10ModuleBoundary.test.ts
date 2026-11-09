@@ -25,6 +25,10 @@ const dynamicBaseline = [
     sha256: '82e749bb4b9f24731c50edb9bb0d89308651e617a5739c937dcfe1cdf74ec8a6',
     expression: "new URL('../../../eslint.complexityBaseline.js', import.meta.url).href",
     reason: 'Loads only the fixed root parameter-count and nesting-depth baseline.' },
+  { consumer: 'packages/test-utils/src/workerReferencesPolicy.test.ts',
+    sha256: '4412da7b032b10e25bb3a3e56e33e3c6258eb0012d3b5b52f21010c97df68849',
+    expression: "new URL('../../../eslint.workerReferences.js', import.meta.url).href",
+    reason: 'Loads only the fixed root ESLint worker-reference allowlist.' },
 ] as const;
 // The parsed expressions are passed in when the caller already analysed the same text, so each file is parsed once.
 function dynamicFindings(consumer: string, text: string,

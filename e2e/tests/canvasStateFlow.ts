@@ -15,7 +15,7 @@ export async function canvasStateFlow(page: Page, info: TestInfo, app?: Electron
   await expect(row.getByRole('status')).toHaveText('使用可能');
   await expect(row).toContainText('128 × 64 px'); await expect(row).toContainText('100 × 50 mm');
   await expect(scale).toBeEnabled();
-  for (const name of ['A.png の表示を切り替える', 'A.png の寸法を合わせる', 'A.png を削除']) {
+  for (const name of ['A.png の表示を切り替える', 'A.png の寸法を合わせる', 'A.png の四隅を補正する', 'A.png を削除']) {
     const button = row.getByRole('button', { name, exact: true }); await button.scrollIntoViewIfNeeded();
     const rect = await button.boundingBox(); expect(rect).not.toBeNull();
     if (rect === null) throw new Error('Missing canvas control');

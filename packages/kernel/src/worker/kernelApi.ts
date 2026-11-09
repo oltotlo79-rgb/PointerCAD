@@ -330,14 +330,14 @@ function mergeExportMeshes(meshes: readonly ExportMesh[]): ExportMesh {
   if (meshes.length === 1 && only !== undefined) {
     return only;
   }
-  let vertexTotal = 0;
+  let vertexCount = 0;
   let triangleCount = 0;
   for (const mesh of meshes) {
-    vertexTotal += mesh.positions.length / 3;
+    vertexCount += mesh.positions.length / 3;
     triangleCount += mesh.triangleCount;
   }
-  const positions = new Float32Array(vertexTotal * 3);
-  const normals = new Float32Array(vertexTotal * 3);
+  const positions = new Float32Array(vertexCount * 3);
+  const normals = new Float32Array(vertexCount * 3);
   const indices = new Uint32Array(triangleCount * 3);
   let vertexOffset = 0;
   let indexOffset = 0;

@@ -5,6 +5,7 @@ import type { ArcSpec, CurveSpec, Vec3Tuple } from '../types.js';
 import { createAllocations, type Allocations } from './allocations.js';
 import { address, mapShape, type Maps } from './subShapeOrigins.js';
 import { GEOMETRIC_CONFUSION_MM } from './tolerances.js';
+import { crossVec as cross } from './sketchCorner.js';
 
 type Anchor = Extract<FaceOrigin, { kind: 'surface-curve-side' }>['profile'];
 const untracked = (): CurrentOriginIndex => ({ version: 1, state: 'untracked', reason: 'missing-native-map' });
@@ -35,9 +36,6 @@ function generated(oc: OpenCascadeInstance, list: TopTools_ListOfShape, maps: Ma
 function unit(point: Vec3Tuple): Vec3Tuple | null {
   const norm = Math.hypot(...point);
   return Number.isFinite(norm) && norm > 0 ? [point[0] / norm, point[1] / norm, point[2] / norm] : null;
-}
-function cross(a: Vec3Tuple, b: Vec3Tuple): Vec3Tuple {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
 /** Coordinates only verify source endpoint roles, never constitute the saved identity. */

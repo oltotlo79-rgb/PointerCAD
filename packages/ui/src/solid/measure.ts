@@ -1,4 +1,4 @@
-import { lengthVec3 as norm, dotVec3 as dot, subVec3 as subtract } from '@pointercad/model/vec3';
+import { crossVec3, lengthVec3 as norm, dotVec3 as dot, subVec3 as subtract } from '@pointercad/model/vec3';
 import { unitMeasureVector as unit } from './measurementVector.js';
 /**
  * 測定の判定と、カーネルを呼ばずに測れるものの計算(FR-1102、NFR-UX-1、NFR-UX-5、
@@ -401,11 +401,7 @@ const PARALLEL_TOLERANCE = 1e-6;
 
 
 function crossLength(a: Vec3, b: Vec3): number {
-  return Math.hypot(
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  );
+  return Math.hypot(...crossVec3(a, b));
 }
 
 

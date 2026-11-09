@@ -4167,7 +4167,7 @@ describe('表示が inch のときの数値欄(P6 タスク3b、§0.a-0.63)', ()
     expect(fieldValueText('mm', { value: 10, display: '10' }, 'mm')).toBe('10');
   });
 
-  it('1/64 インチでちょうど表せる長さだけ分数インチも添える(FR-814、w91a)', () => {
+  it('1/64 インチでちょうど表せる長さだけ分数インチも添える(FR-814)', () => {
     expect(fieldValueText('mm', { value: 9.525, display: '9.525' }, 'inch')).toBe('0.375 in (3/8")');
     expect(fieldValueText('mm', { value: 38.1, display: '38.1' }, 'inch')).toBe('1.5 in (1 1/2")');
     expect(fieldValueText('mm', { value: -12.7, display: '-12.7' }, 'inch')).toBe('-0.5 in (-1/2")');

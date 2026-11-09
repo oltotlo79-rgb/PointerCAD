@@ -120,4 +120,34 @@ describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
     expect(combined).toContain('pattern: ci-stage-*');
     expect(combined).toContain('./scripts/check.ps1 -CIStage Verify' + evidence);
   });
+
+  it('単体の先行分は両OSで対応するPythonからNumPy固定の仮想環境を用意する', () => {
+    const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
+    const unitLead = workflow.slice(workflow.indexOf('\n  unit-lead:'), workflow.indexOf('\n  e2e:'));
+    expect(unitLead).toContain('os: [windows-latest, ubuntu-latest]');
+    expect(unitLead).toContain('runs-on: ${{ matrix.os }}');
+    const setup = `      - name: Set up Python for native FEM tests
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'`;
+    const prepare = `      - name: Prepare Python for native FEM tests
+        shell: pwsh
+        run: |
+          python -c "import sys; assert (3,10) <= sys.version_info[:2] <= (3,13), sys.version"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $venv = Join-Path $env:RUNNER_TEMP pointercad-python
+          python -m venv $venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bin = if ($IsWindows) { Join-Path $venv Scripts } else { Join-Path $venv bin }
+          $python = Join-Path $bin python
+          & $python -m pip install numpy==2.2.5
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $python -c "import numpy; assert numpy.__version__ == '2.2.5'"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append`;
+    expect(unitLead).toContain(setup);
+    expect(unitLead).toContain(prepare);
+    expect(unitLead.indexOf(setup)).toBeLessThan(unitLead.indexOf(prepare));
+    expect(unitLead.indexOf(prepare)).toBeLessThan(unitLead.indexOf('単体の先行分 (scripts/check.ps1)'));
+  });
 });

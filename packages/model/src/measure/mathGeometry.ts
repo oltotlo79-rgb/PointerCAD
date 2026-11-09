@@ -3,7 +3,7 @@ import { resolveSubShapeReference, type KernelBridge, type MeasureTarget, type S
 import type { ResolvedPart } from '../part/resolvePart.js';
 import { readReferenceBodies } from '../part/readReferenceBodies.js';
 import type { ResolvedCurve } from '../sketch/types.js';
-import type { Vec3 } from '../sketch/vec3.js';
+import { crossVec3, dotVec3, type Vec3 } from '../sketch/vec3.js';
 import { compareMathGeometryCongruence, type MathGeometryComparisonShape } from './mathGeometryCongruence.js';
 import type { MathGeometryCurve, MathGeometryFace, MathGeometryOutcome, MathGeometryPoint, MathGeometryQuantity, MathGeometryRequest,
   MathGeometryShape } from './mathGeometryTypes.js';
@@ -206,8 +206,8 @@ function pointDirection(context: MathGeometryContext, vertex: Vec3, target: Math
 }
 /** atan2 retains precision near both parallel and perpendicular directions. */
 function angleComponents(a: Vec3, b: Vec3): { readonly sine: number; readonly cosine: number } {
-  const cross: Vec3 = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-  return { sine: magnitude(cross), cosine: a[0] * b[0] + a[1] * b[1] + a[2] * b[2] };
+  const cross: Vec3 = crossVec3(a, b);
+  return { sine: magnitude(cross), cosine: dotVec3(a, b) };
 }
 function unorientedAngle(context: MathGeometryContext, first: MathGeometryCurve | MathGeometryFace,
   second: MathGeometryCurve | MathGeometryFace, tolerance: number): number {

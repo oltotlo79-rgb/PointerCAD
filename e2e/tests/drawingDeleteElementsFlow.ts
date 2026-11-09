@@ -172,6 +172,8 @@ export async function drawingDeleteElementsFlow(page: Page, info: TestInfo, app?
   expect(await save('view-delete-blocked')).toEqual(original);
   expect(await save('restored-final')).toEqual(original);
   const restoredPath = info.outputPath('restored-final.pcadd');
+  const previousOwner = await page.getByTestId('drawing-viewport').getAttribute('data-document-owner');
+  if (previousOwner === null || previousOwner.length === 0) throw new Error('Missing drawing session owner');
   if (app !== undefined) await openTarget(app, restoredPath);
   if (app === undefined) await expect(page).not.toHaveTitle(/restored-final\.pcadd/);
   const restoredChooser = app === undefined ? page.waitForEvent('filechooser') : undefined;
@@ -180,6 +182,12 @@ export async function drawingDeleteElementsFlow(page: Page, info: TestInfo, app?
     await (await restoredChooser).setFiles(restoredPath);
     await expect(page).toHaveTitle(/restored-final\.pcadd/);
   }
+  // Reopening the same saved drawing keeps its ID and can leave the old sheet ready.
+  // openDrawing always creates a fresh session; only that owner can prove adoption.
+  await expect.poll(async () => {
+    const currentOwner = await page.getByTestId('drawing-viewport').getAttribute('data-document-owner');
+    return currentOwner !== null && currentOwner.length > 0 && currentOwner !== previousOwner;
+  }).toBe(true);
   await waitForDrawingReady(page);
   expect(await save('reopened-final')).toEqual(original);
   await page.screenshot({ path: info.outputPath('drawing-delete-restored.png') });

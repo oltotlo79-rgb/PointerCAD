@@ -6,11 +6,24 @@ import { analysisResultBindingFlow } from './analysisResultBindingFlow.js';
 import { readAssemblyStats } from './assemblyTestSupport.js';
 import { disableFilePickers } from './boltedJointTestSupport.js';
 import { holdElectronFemAsset } from './electronFemAssetHold.js';
-import { linuxSampler, windowsSampler } from './processResourceSampler.js';
+import { linuxSampler, windowsSampler, type RawFrame } from './processResourceSampler.js';
 import { openSaveFlowFile } from './saveResponsivenessFlow.js';
 import { readViewportRenderStats } from './viewportRenderStats.js';
 
 interface StageObservation { readonly atEpochMs: number; readonly stage: string | null; readonly result: boolean }
+
+/** Only complete physical samples qualify; missing measurements never become zero. */
+function isCompleteResourceFrame(frame: RawFrame): boolean {
+  return frame.discoveryError === null && frame.processes.length > 0
+    && frame.processes.every(process => process.error === null && process.workingSetBytes !== null);
+}
+
+function resourceIntervalPeak(frames: readonly RawFrame[], start: number | undefined, end: number | undefined): number | null {
+  if (start === undefined || end === undefined) return null;
+  const values = frames.filter(frame => frame.atEpochMs >= start && frame.atEpochMs <= end && isCompleteResourceFrame(frame))
+    .map(frame => frame.processes.reduce((total, process) => total + (process.workingSetBytes ?? 0), 0));
+  return values.length === 0 ? null : Math.max(...values);
+}
 
 /** Separate scenarios: 1000 CAD parts, then a new document with one real solid FEM analysis. */
 export async function analysisResourcesFlow(page: Page, info: TestInfo, app?: ElectronApplication): Promise<void> {
@@ -44,6 +57,11 @@ export async function analysisResourcesFlow(page: Page, info: TestInfo, app?: El
     mark('cad-fixture-start');
     await writeFile(file, await analysisResourcesAssemblyFile());
     const rendersBefore = (await readViewportRenderStats(page)).completedRenders;
+    // Native sampler initialization can outlast this short CAD scenario. Start its
+    // measurement only after a fresh complete OS frame from the current browser tree.
+    const samplingReadyAfter = Date.now();
+    await expect.poll(() => sampler.frames.some(frame => frame.atEpochMs >= samplingReadyAfter && isCompleteResourceFrame(frame)))
+      .toBe(true);
     mark('cad-open-start');
     await openSaveFlowFile(page, file, app);
     await expect.poll(async () => (await readAssemblyStats(page)).components.filter(row => row.resolved !== null && row.displayed !== null).length,
@@ -83,12 +101,7 @@ export async function analysisResourcesFlow(page: Page, info: TestInfo, app?: El
     const intervalPeak = (startName: string, endName: string): number | null => {
       const start = events.find(row => row.stage === startName)?.atEpochMs;
       const end = events.find(row => row.stage === endName)?.atEpochMs;
-      if (start === undefined || end === undefined) return null;
-      const values = sampler.frames.filter(frame => frame.atEpochMs >= start && frame.atEpochMs <= end)
-        .flatMap(frame => frame.discoveryError !== null || frame.processes.length === 0
-          || frame.processes.some(process => process.error !== null || process.workingSetBytes === null)
-          ? [] : [frame.processes.reduce((total, process) => total + (process.workingSetBytes ?? 0), 0)]);
-      return values.length === 0 ? null : Math.max(...values);
+      return resourceIntervalPeak(sampler.frames, start, end);
     };
     const sampledWorkingSet = { cad: intervalPeak('cad-open-start', 'cad-published'),
       singleSolid: intervalPeak('single-solid-analysis-start', 'single-solid-analysis-complete') };

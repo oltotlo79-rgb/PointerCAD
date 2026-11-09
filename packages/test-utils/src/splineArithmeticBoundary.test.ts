@@ -101,3 +101,69 @@ describe('bounded pure vector subpath', () => {
     }
   });
 });
+
+describe('surface arc cross product uses the existing kernel helper', () => {
+  it('imports crossVec as cross and does not redefine the same operation', () => {
+    const source = read('packages/kernel/src/occt/surfaceArcOrigins.ts');
+    const imported = source.statements.filter(ts.isImportDeclaration).some(node =>
+      node.moduleSpecifier.getText(source) === "'./sketchCorner.js'"
+      && node.importClause?.namedBindings !== undefined
+      && ts.isNamedImports(node.importClause.namedBindings)
+      && node.importClause.namedBindings.elements.some(element => element.propertyName?.text === 'crossVec'
+        && element.name.text === 'cross'));
+    expect(imported).toBe(true);
+    expect(source.statements.filter(ts.isFunctionDeclaration).map(node => node.name?.text)).not.toContain('cross');
+  });
+});
+
+describe('helix cross product reuses kernel arithmetic', () => {
+  it('uses crossVec while keeping the signed-zero normalization wrapper', () => {
+    const source = read('packages/kernel/src/occt/makeHelix.ts');
+    const imported = source.statements.filter(ts.isImportDeclaration).some(node =>
+      node.moduleSpecifier.getText(source) === "'./sketchCorner.js'"
+      && node.importClause?.namedBindings !== undefined
+      && ts.isNamedImports(node.importClause.namedBindings)
+      && node.importClause.namedBindings.elements.some(element => element.name.text === 'crossVec'));
+    expect(imported).toBe(true);
+    const cross = source.statements.filter(ts.isFunctionDeclaration).find(node => node.name?.text === 'cross');
+    expect(cross?.getText(source)).toContain('crossVec(a, b)');
+    expect(cross?.getText(source)).toContain('normalizeZero(value[0])');
+    expect(cross?.getText(source)).toContain('normalizeZero(value[1])');
+    expect(cross?.getText(source)).toContain('normalizeZero(value[2])');
+  });
+});
+
+describe('kernel native geometry uses shared vector arithmetic', () => {
+  it('uses crossVec without duplicating its arithmetic in the three consumers', () => {
+    for (const path of ['packages/kernel/src/occt/analysisShellQuality.ts',
+      'packages/kernel/src/occt/editSolidFace.ts', 'packages/kernel/src/occt/moveSolidHole.ts']) {
+      const code = read(path);
+      const importNode = code.statements.filter(ts.isImportDeclaration).find(node =>
+        node.moduleSpecifier.getText(code) === "'./sketchCorner.js'");
+      expect(importNode?.getText(code), path).toContain('crossVec');
+      expect(code.getText(), path).not.toContain('a[1] * b[2] - a[2] * b[1]');
+    }
+    expect(read('packages/kernel/src/occt/analysisShellQuality.ts').getText()).toContain('= dotVec;');
+  });
+});
+
+describe('model and UI use their shared three-dimensional vector operations', () => {
+  it('keeps the five shared operations connected to the model vector module', () => {
+    const entries = [
+      ['packages/ui/src/solidAnalysis/solidFieldView.ts', '@pointercad/model/vec3', ['crossVec3', 'dotVec3']],
+      ['packages/ui/src/solid/measure.ts', '@pointercad/model/vec3', ['crossVec3']],
+      ['packages/model/src/measure/mathGeometry.ts', '../sketch/vec3.js', ['crossVec3', 'dotVec3']],
+    ] as const;
+    for (const [path, specifier, names] of entries) {
+      const code = read(path);
+      const imported = code.statements.filter(ts.isImportDeclaration).find(node =>
+        ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text === specifier);
+      const bindings = imported?.importClause?.namedBindings;
+      expect(bindings !== undefined && ts.isNamedImports(bindings), path).toBe(true);
+      if (bindings === undefined || !ts.isNamedImports(bindings)) throw new Error(`missing vector imports: ${path}`);
+      for (const name of names) expect(bindings.elements.some(element => (element.propertyName ?? element.name).text === name), path).toBe(true);
+      expect(code.getText(), path).not.toContain('a[1] * b[2] - a[2] * b[1]');
+      expect(code.getText(), path).not.toContain('left[1] * right[2] - left[2] * right[1]');
+    }
+  });
+});

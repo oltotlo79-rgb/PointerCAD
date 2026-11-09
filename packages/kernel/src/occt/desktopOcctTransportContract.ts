@@ -10,16 +10,36 @@ export type DesktopOcctTransportReply =
   | { readonly kind: 'http'; readonly url: string; readonly sha256: string; readonly byteLength: number }
   | { readonly kind: 'direct'; readonly reason: 'port-unavailable' };
 
-export function desktopOcctTransportUrl(sha256: string): string {
+function isListenerPort(port: number): boolean {
+  return Number.isSafeInteger(port) && port >= 1024 && port <= 65535;
+}
+
+/**
+ * One launch-selected listener port for automated Desktop tests. Scheme and loopback host stay fixed;
+ * the product origin above is unchanged and remains the default everywhere.
+ */
+export function desktopOcctTransportOrigin(port: number): string {
+  if (!isListenerPort(port)) throw new Error('Desktop OCCT transport port is invalid.');
+  return `http://127.0.0.1:${String(port)}`;
+}
+
+/** Canonical decimal port only: no leading zero, path, credentials, other host or scheme. */
+function checkedTransportOrigin(origin: string): string {
+  const port = Number(/^http:\/\/127\.0\.0\.1:([1-9][0-9]{3,4})$/.exec(origin)?.[1]);
+  if (!isListenerPort(port)) throw new Error('Desktop OCCT transport origin is invalid.');
+  return origin;
+}
+
+export function desktopOcctTransportUrl(sha256: string, origin = DESKTOP_OCCT_TRANSPORT_ORIGIN): string {
   if (!/^[a-f0-9]{64}$/.test(sha256)) throw new Error('Desktop OCCT transport SHA-256 is invalid.');
-  return `${DESKTOP_OCCT_TRANSPORT_ORIGIN}/occt/${sha256}.wasm`;
+  return `${checkedTransportOrigin(origin)}/occt/${sha256}.wasm`;
 }
 
 /** An IPC response is untrusted even when it comes from the application's preload. */
 export function validateDesktopOcctTransportReply(
-  value: unknown, expected: DesktopOcctIdentity,
+  value: unknown, expected: DesktopOcctIdentity, origin = DESKTOP_OCCT_TRANSPORT_ORIGIN,
 ): DesktopOcctTransportReply {
-  const url = desktopOcctTransportUrl(expected.sha256);
+  const url = desktopOcctTransportUrl(expected.sha256, origin);
   if (!Number.isSafeInteger(expected.byteLength) || expected.byteLength <= 0 ||
       expected.byteLength > 64 * 1024 * 1024) throw new Error('Desktop OCCT transport byte length is invalid.');
   if (typeof value !== 'object' || value === null || !('kind' in value)) {

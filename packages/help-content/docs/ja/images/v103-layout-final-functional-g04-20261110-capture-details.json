@@ -1,0 +1,3258 @@
+{
+  "format": "pointercad-capture-provenance/1",
+  "releaseCertified": false,
+  "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+  "adoptedAt": "2026-11-10T03:02:59.947Z",
+  "scripts": {
+    "e2e/tests/originCaptureFlow.ts": "27f742f1234846c7738d8dbfe7976fb4a4657de4793b9306f9379b6ada4b412e",
+    "e2e/tests/p8-drawing.spec.ts": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+    "e2e/tests/patternCaptureFlow.ts": "4fb4f6d94f107a076fa2779072b4be892d55910157f7cd077d87712a823e2cbe",
+    "e2e/tests/primitiveCaptureFlow.ts": "282ef5b185bc5d3664a1a8ba008bb3245beffa1459cedfca92ea446f6e704371",
+    "e2e/tests/printCheckCaptureFlow.ts": "b2d8392d815b532748ef737ee4100525295884c46d662e38f6c6bae7e4af632e",
+    "e2e/tests/printSaveAsCaptureFlow.ts": "5d3bb3890385a4485e62b8ad1a3f9307bbd7b38cf127bc578dfc44b414de1862",
+    "e2e/tests/projectIntersectCaptureFlow.ts": "d94be42656643cdb684b524dbdf3e0456f9840b0792879c38857e7893eb65666",
+    "e2e/tests/radialMenuFlow.ts": "b09c74c2473ca18a68f3e0c915cf2afd6b449f6acbe3b2653a8f9908367d689d",
+    "e2e/tests/referenceGeometryCaptureFlow.ts": "bc607ae74e94c074bea87afa2f819d2befdc5e47e60bd2ead7beca380586db75",
+    "e2e/tests/replaceSubassemblyCaptureFlow.ts": "f4a059b69556ac7314294eb8e2d015da52efdb372d0b6dfdfae02dea3fdb4cfe",
+    "e2e/tests/saveAndOpenCaptureFlow.ts": "4ae57efa1095fbcd1e8493ff17e880f20cc41988696311516c2b9f873b844303",
+    "e2e/tests/scriptToolsFlow.ts": "620f608708feeaefb7113dba7e97faee67cd83fdc974117d3c79b27ce6e77324",
+    "e2e/tests/scriptsFlow.ts": "507b9a5ad8df2852fbae2544618a549761221ac13703bd11f0064564cf6e4bd4",
+    "e2e/tests/sectionViewCaptureFlow.ts": "dd117121c06b4daec894c6e38ccc5502544143c8d219e39c360381357a8a89f2",
+    "e2e/tests/selectSubshapeCaptureFlow.ts": "e2ede9160dbd8641c55d2e4c79ce4a85da33818ffcccabca2b669c297394eefc",
+    "e2e/tests/selectionCaptureFlow.ts": "9118037f06d1eb224052905696d3d2bbf53878e91dfef340e39a1a23d7477c1b"
+  },
+  "captures": [
+    {
+      "name": "advanced-drawing-section",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:34:31.125Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "断面・詳細・補助・部分・破断図を実形状から作り、編集とUndoと保存往復でも条件が残る(P8-68・71)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "advanced-drawing-section-fixture.json",
+          "sha256": "6be84c4f103cac2358bb88d8e89421c2df11382a149bed43f53909cd4b5132a9"
+        },
+        "screen": {
+          "filename": "advanced-drawing-section-screen.png",
+          "sha256": "eadf3478d6dace5fd79c31722b29861c888ef920e2a594898ed9296326adec36"
+        },
+        "detail": {
+          "filename": "advanced-drawing-section-detail.png",
+          "sha256": "81144ef4cacb31d5a8e3318ab2317bc75b015349d57d96ff8a02740fedf0b038"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "view": "section"
+      }
+    },
+    {
+      "name": "advanced-drawing-views",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:34:33.449Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "断面・詳細・補助・部分・破断図を実形状から作り、編集とUndoと保存往復でも条件が残る(P8-68・71)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "advanced-drawing-views-fixture.json",
+          "sha256": "8148b851ae39b4e6f24daf9256cb7b447311659a710b0569edc73c85201ac9df"
+        },
+        "screen": {
+          "filename": "advanced-drawing-views-screen.png",
+          "sha256": "28c03e1c16793e6bb817dc00b33a4559e3ce4ee21e6a3ea936334afd14e7e360"
+        },
+        "detail": {
+          "filename": "advanced-drawing-views-detail.png",
+          "sha256": "d0337f2a235a792cabef5592d9b11c00a9a13300893e80cf4b72f21cb265fc35"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "views": [
+          "断面A",
+          "詳細B",
+          "補助C",
+          "部分D",
+          "破断E"
+        ]
+      }
+    },
+    {
+      "name": "arc-and-coordinate-dimensions",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:35:01.038Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "実際の円周に弧長、2頂点に座標寸法を入れ、公差と保存往復でも実寸を保つ(P8-66・68)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "arc-and-coordinate-dimensions-fixture.json",
+          "sha256": "9aee604efd9737292538c7cc9ed97ea64b3ba4d20aeda3326315c524f8c4cea1"
+        },
+        "screen": {
+          "filename": "arc-and-coordinate-dimensions-screen.png",
+          "sha256": "99f8df0efabddfcf8932498f5a61984307bc55a37d0774f25d127ef2424d8462"
+        },
+        "detail": {
+          "filename": "arc-and-coordinate-dimensions-detail.png",
+          "sha256": "dca854ae7666ec5920e2ad6852ad102f83b179afe9cb9bba93d6f2b16c8068c7"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "arc-coordinate"
+      }
+    },
+    {
+      "name": "configuration-long",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:34:41.091Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "構成を切り替えるとパラメータと実体積が変わり、Undoと保存往復で残る(P8-62・63)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "configuration-long-fixture.json",
+          "sha256": "40b9fb1a31838a52b3f3b74b298d0f1361d68ef5e317ed12fcbd45e24fa8e970"
+        },
+        "screen": {
+          "filename": "configuration-long-screen.png",
+          "sha256": "4cf97b5866ccd32b204e77bf0f09d56f611d3e7a69a819760b32c30db14e583d"
+        },
+        "detail": {
+          "filename": "configuration-long-detail.png",
+          "sha256": "e62bf9971703281e8a4604bb4f4f5c69fcb0d6dbc9cf985493d1b0f8b5ef0341"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 6,
+          "completedGeneration": 6,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 23,
+          "lastCompletedAtMs": 4225.5
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 144.5,
+          "width": 279,
+          "height": 106
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "parameter": "長い"
+      }
+    },
+    {
+      "name": "drawing-bom-balloon",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:35:19.478Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "組図の部品表・風船が双方向に連動し、参照部品ごと保存して開き直せる(P8-55・59・64)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-bom-balloon-fixture.json",
+          "sha256": "e191aef162be38f8a684e7b619e87cb6c250d48d0eff2a13171e6b5ba58c42a8"
+        },
+        "screen": {
+          "filename": "drawing-bom-balloon-screen.png",
+          "sha256": "1cf4295100ac32b583f95e09434b4591ad68f8f705e51da7c731e1d0dd2f7463"
+        },
+        "detail": {
+          "filename": "drawing-bom-balloon-detail.png",
+          "sha256": "1efcbda56fe4e5674d34d907632ba1fe025017c02a604e7c8227f920a8b298af"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "bom-balloon"
+      }
+    },
+    {
+      "name": "drawing-dimensions",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:35:39.611Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "箱の三面図→寸法→公差・はめあい→Undo→自動寸法→実字体SVG",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-dimensions-fixture.json",
+          "sha256": "d356493d074154fdae451dfb2f8afc5658dca7011cdd0d8dfd7e8dcf6b4d8849"
+        },
+        "screen": {
+          "filename": "drawing-dimensions-screen.png",
+          "sha256": "f17ff9b7fa44dbea9d6f16cbec706412417cf7c45ea8c8a3c031eb5dfebda68c"
+        },
+        "detail": {
+          "filename": "drawing-dimensions-detail.png",
+          "sha256": "9b3c6387dd0814e380e0a6548eb314a9f2972c3d0ea53c707d3c3c73d99c754d"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "dimensions"
+      }
+    },
+    {
+      "name": "drawing-export-panel",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:15.849Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "注記を含む同じ図面をPDF・SVG・R12 DXFへ書き出す",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-export-panel-fixture.json",
+          "sha256": "f3776e08417ec92ab22e2e77255afdae49c28e5ff19346812d39d31cdcd4cf19"
+        },
+        "screen": {
+          "filename": "drawing-export-panel-screen.png",
+          "sha256": "fea4519c9cc08b7ccb1dc361b49d5e99eff0beeb32df42fc04c1a50036519022"
+        },
+        "detail": {
+          "filename": "drawing-export-panel-detail.png",
+          "sha256": "5c090b60a58b485065039b4c4f150bfcfc4b6eea327c939096ebb806be8e639b"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 1184,
+          "y": 16,
+          "width": 240,
+          "height": 208
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "format": "pdf"
+      }
+    },
+    {
+      "name": "drawing-hole-table",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:35:10.660Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "実際の貫通穴から穴表とA1の引出線を作り、基準点の変更とUndoが追従する(P8-56・57)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-hole-table-fixture.json",
+          "sha256": "0cff95c95ed1c335755e60da81da33dc1a8dd3dabef53aad83861f6a0641fef5"
+        },
+        "screen": {
+          "filename": "drawing-hole-table-screen.png",
+          "sha256": "2a2ed9e54b9f1e51697a36212492cbe895a4157d2a5612206a008d29db258b12"
+        },
+        "detail": {
+          "filename": "drawing-hole-table-detail.png",
+          "sha256": "bb3f2193cb93c6f467acafbce34f3211410f13b7e1838556b76dc953b36fa411"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "hole-table"
+      }
+    },
+    {
+      "name": "drawing-layer-settings",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:35:58.067Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "レイヤーを作成し、表示・出力・削除をUndoで戻せる(P8-68-layer)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-layer-settings-fixture.json",
+          "sha256": "81a6558a262948b39b8d87c236185d38b145c63c32f54cc4c3ca4f3353d8498f"
+        },
+        "screen": {
+          "filename": "drawing-layer-settings-screen.png",
+          "sha256": "2af8fbd4b038f031bcad3f9e1e88561f5631f106ea6235bd9cc76ce5f319e1f1"
+        },
+        "detail": {
+          "filename": "drawing-layer-settings-detail.png",
+          "sha256": "3f3b1d534404d762c1444bc43714de4cadaad5177ca8e05bc0a5bae3f05945a5"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 1169,
+          "y": 364.5,
+          "width": 263,
+          "height": 364.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "layer-settings"
+      }
+    },
+    {
+      "name": "drawing-note",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:03.899Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "複数行の文字注記を編集・移動してもUndo一回ずつで戻る",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-note-fixture.json",
+          "sha256": "19e6eab42cea951ba8e412769719b998e158415d34ddf345f7c7282335e486cc"
+        },
+        "screen": {
+          "filename": "drawing-note-screen.png",
+          "sha256": "b816dd3f4bc0824d2059f009693a46eeb18e15e810e345d4d582f21cc12cd1aa"
+        },
+        "detail": {
+          "filename": "drawing-note-detail.png",
+          "sha256": "ce526463a18c541a4d34234adebb62401ddcf51d789913a709b9b32101cec3b5"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "note"
+      }
+    },
+    {
+      "name": "drawing-surface-finish",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:35:44.984Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "図面の面を選び、その場の入力で表面性状を配置できる",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-surface-finish-fixture.json",
+          "sha256": "52140bec967c79c9d65e64813a5b0b4069d5a32055757ebae9ea63b71d9c287e"
+        },
+        "screen": {
+          "filename": "drawing-surface-finish-screen.png",
+          "sha256": "db0f35cb4029f7e6e30d3bc4128b2a8aab5ba13e2f123deba9a9a2cdbc936585"
+        },
+        "detail": {
+          "filename": "drawing-surface-finish-detail.png",
+          "sha256": "ed2670ab98d2769d67aeed544ce97b03be6b5ded5950453549e88ef266ae56fb"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "surface-finish"
+      }
+    },
+    {
+      "name": "drawing-template-view",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:35:32.893Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "用紙と表題欄をひな形へ保存し、空の図面から保存した視点で投影図を作る(P8-58〜60)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-template-view-fixture.json",
+          "sha256": "97d2daed50fe02be46911d355ce0035d1038ed71f9624d74435f0ec41ef54887"
+        },
+        "screen": {
+          "filename": "drawing-template-view-screen.png",
+          "sha256": "9ab23adcf03564c7b01da1fdb4bec09782f0e3728324a8ebd47d06af9e2e65d9"
+        },
+        "detail": {
+          "filename": "drawing-template-view-detail.png",
+          "sha256": "f581119d269f12baa4e976541351c8d5df5898dbef10ff370632090787b8d276"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 4,
+          "completedGeneration": 4,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 1161,
+          "y": 242.5,
+          "width": 279,
+          "height": 481
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "template-view"
+      }
+    },
+    {
+      "name": "drawing-tree-groups",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:35:51.336Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "図面ツリーの5つの束で選択・折りたたみ・対応表示ができる(P8-67)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "drawing-tree-groups-fixture.json",
+          "sha256": "5c683f24df27ef8639943b5db978f4745fd55caac6b4a2cbb8cad79060fb5058"
+        },
+        "screen": {
+          "filename": "drawing-tree-groups-screen.png",
+          "sha256": "6d9ea7883ac198d4add6e59b9a63c86dae60d421bd7b3f7a550f4abf7ca64445"
+        },
+        "detail": {
+          "filename": "drawing-tree-groups-detail.png",
+          "sha256": "e022ae8e3f002a3904abbe0badd560863f49110387ebf45499264c174bb12b86"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 0,
+          "y": 60.5,
+          "width": 240,
+          "height": 810.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "tree-groups"
+      }
+    },
+    {
+      "name": "origin-moved",
+      "selectedImage": "detail",
+      "script": "e2e/tests/originCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:34:01.526Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 原点を置き直す章の画面を撮る",
+        "script": "e2e/tests/originCaptureFlow.ts",
+        "scriptSha256": "27f742f1234846c7738d8dbfe7976fb4a4657de4793b9306f9379b6ada4b412e",
+        "fixture": {
+          "filename": "origin-moved-fixture.json",
+          "sha256": "eef0c49329b260f9e55008311f879f481511d3bbb779eeabfd935f3dd23b2b74"
+        },
+        "screen": {
+          "filename": "origin-moved-screen.png",
+          "sha256": "e535a3f53b0421a9f31dbb58f91247112c048e8c7f77cb9f792dbcea458b8588"
+        },
+        "detail": {
+          "filename": "origin-moved-detail.png",
+          "sha256": "cbce16898e4d9ab1f8af14dc3a82c3ecfea466abfa095e4a3e8148c790fcd7c2"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 10,
+          "completedGeneration": 10,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 55,
+          "lastCompletedAtMs": 12538.804999947548
+        },
+        "dialogBounds": {
+          "x": 627.578125,
+          "y": 876.25,
+          "width": 207.453125,
+          "height": 19.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "movedFrom": "点1"
+      }
+    },
+    {
+      "name": "origin-property",
+      "selectedImage": "detail",
+      "script": "e2e/tests/originCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:33:55.638Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 原点を置き直す章の画面を撮る",
+        "script": "e2e/tests/originCaptureFlow.ts",
+        "scriptSha256": "27f742f1234846c7738d8dbfe7976fb4a4657de4793b9306f9379b6ada4b412e",
+        "fixture": {
+          "filename": "origin-property-fixture.json",
+          "sha256": "2a65255dee629750bee2d87ab4a50cf95f7dbe2df66ca816c9db678e4a707ce8"
+        },
+        "screen": {
+          "filename": "origin-property-screen.png",
+          "sha256": "e755f81e7dfa6c2ea5be7f71d875dcd256cf810124830c95b3539d6db0c3ceac"
+        },
+        "detail": {
+          "filename": "origin-property-detail.png",
+          "sha256": "9ad6791563404b06c0c2c136e73ead78b21ea812bcaf8ee365a2b6df7375c222"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 9,
+          "completedGeneration": 9,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 52,
+          "lastCompletedAtMs": 6629.699999928474
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 491.171875,
+          "width": 279,
+          "height": 66.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "selected": "点1"
+      }
+    },
+    {
+      "name": "parallel-arranged",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:34:50.659Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "実頂点4つから寸法列4方式を記入し、基準変更・整列・Undo・累進の保存往復ができる(P8-66・68)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "parallel-arranged-fixture.json",
+          "sha256": "919ef181865d7e2519d146b85f4ce85b951bad6a5a490c9f937b1e1024bfe49c"
+        },
+        "screen": {
+          "filename": "parallel-arranged-screen.png",
+          "sha256": "de38391347b1f8f4ad164a1832458f3444ef06e079a6648fd4ae62e4750481ab"
+        },
+        "detail": {
+          "filename": "parallel-arranged-detail.png",
+          "sha256": "203a056e3997c0b1355c0c1dbe86b85a3905556986aeb0c8e533f251301e0ab4"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "parallel-arranged"
+      }
+    },
+    {
+      "name": "pattern-circular",
+      "selectedImage": "detail",
+      "script": "e2e/tests/patternCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:40.315Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 同じ加工を並べるの章の画面を撮る",
+        "script": "e2e/tests/patternCaptureFlow.ts",
+        "scriptSha256": "4fb4f6d94f107a076fa2779072b4be892d55910157f7cd077d87712a823e2cbe",
+        "fixture": {
+          "filename": "pattern-circular-fixture.json",
+          "sha256": "6708375342e75a66196f5f4cd1271b54a26cb32610dac29b9d7edd86bf9c9b89"
+        },
+        "screen": {
+          "filename": "pattern-circular-screen.png",
+          "sha256": "fa530a36d310e15f2cc84988b1df1eec0e97c6e68f4121d2b978a49143c26b28"
+        },
+        "detail": {
+          "filename": "pattern-circular-detail.png",
+          "sha256": "81c776f148bb89f782e25f4db600a41da1e7056daf88a76199e1ae1e869a37e1"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 9,
+          "completedGeneration": 9,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 56,
+          "lastCompletedAtMs": 8623.020000100136
+        },
+        "dialogBounds": {
+          "x": 825.296875,
+          "y": 456.203125,
+          "width": 260,
+          "height": 306.78125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "hole": "穴1"
+      }
+    },
+    {
+      "name": "pattern-linear",
+      "selectedImage": "detail",
+      "script": "e2e/tests/patternCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:39.352Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 同じ加工を並べるの章の画面を撮る",
+        "script": "e2e/tests/patternCaptureFlow.ts",
+        "scriptSha256": "4fb4f6d94f107a076fa2779072b4be892d55910157f7cd077d87712a823e2cbe",
+        "fixture": {
+          "filename": "pattern-linear-fixture.json",
+          "sha256": "7c960bf19e62205b27af09706eedfac3639d674379e252951016f70726b35833"
+        },
+        "screen": {
+          "filename": "pattern-linear-screen.png",
+          "sha256": "a5882f9bbf1d52b0bae78d3634117c81e1294e63015244b3927192688fa3a074"
+        },
+        "detail": {
+          "filename": "pattern-linear-detail.png",
+          "sha256": "9809d7cb1e91094e1de647d6563e8e9c2004e763721c34ebca13af7e1d4e230d"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 9,
+          "completedGeneration": 9,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 53,
+          "lastCompletedAtMs": 7624.775000095367
+        },
+        "dialogBounds": {
+          "x": 825.296875,
+          "y": 456.203125,
+          "width": 260,
+          "height": 306.78125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "hole": "穴1",
+        "spacing": "20",
+        "count": "3"
+      }
+    },
+    {
+      "name": "primitive-menu",
+      "selectedImage": "detail",
+      "script": "e2e/tests/primitiveCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:42.988Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-17 球・箱・円柱・円錐・トーラスを置くの章の画面を撮る",
+        "script": "e2e/tests/primitiveCaptureFlow.ts",
+        "scriptSha256": "282ef5b185bc5d3664a1a8ba008bb3245beffa1459cedfca92ea446f6e704371",
+        "fixture": {
+          "filename": "primitive-menu-fixture.json",
+          "sha256": "6f63714a9a037030c25eb3ba5da4e1d1a49b69deac3ca0764a331341a1738b32"
+        },
+        "screen": {
+          "filename": "primitive-menu-screen.png",
+          "sha256": "c2bade248b850e217898e9674f40fd50735ddd22b2df6a04c39f161d473be9a2"
+        },
+        "detail": {
+          "filename": "primitive-menu-detail.png",
+          "sha256": "3957331df9cef8e2250c2741524415316f5dbb8f934761543f967a648aec71ef"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 2,
+          "lastCompletedAtMs": 1182.4900000095367
+        },
+        "dialogBounds": {
+          "x": 500,
+          "y": 62.5,
+          "width": 126,
+          "height": 428
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "shapes": [
+          "球",
+          "箱",
+          "円柱",
+          "円錐",
+          "トーラス"
+        ]
+      }
+    },
+    {
+      "name": "primitive-properties",
+      "selectedImage": "detail",
+      "script": "e2e/tests/primitiveCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:44.970Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-17 球・箱・円柱・円錐・トーラスを置くの章の画面を撮る",
+        "script": "e2e/tests/primitiveCaptureFlow.ts",
+        "scriptSha256": "282ef5b185bc5d3664a1a8ba008bb3245beffa1459cedfca92ea446f6e704371",
+        "fixture": {
+          "filename": "primitive-properties-fixture.json",
+          "sha256": "69a83227e4146d4392f6a57d6fb4fe93667da810d6bdf9b65700a4dace26460c"
+        },
+        "screen": {
+          "filename": "primitive-properties-screen.png",
+          "sha256": "56ccc043642ad9a86f7ee682232e1a797a2bfa2ea0381f7846e26b59a4d9a3f1"
+        },
+        "detail": {
+          "filename": "primitive-properties-detail.png",
+          "sha256": "161755a90ef78eceeaa1b48dff218a7ac756a2805f878539218fabbc3d906217"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 3695.335000038147
+        },
+        "dialogBounds": {
+          "x": 1160,
+          "y": 68.5,
+          "width": 280,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "shape": "box",
+        "size": [
+          20,
+          20,
+          20
+        ]
+      }
+    },
+    {
+      "name": "print-check-result",
+      "selectedImage": "detail",
+      "script": "e2e/tests/printCheckCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:49.273Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 3D プリントの前に点検する章の画面を撮る",
+        "script": "e2e/tests/printCheckCaptureFlow.ts",
+        "scriptSha256": "b2d8392d815b532748ef737ee4100525295884c46d662e38f6c6bae7e4af632e",
+        "fixture": {
+          "filename": "print-check-result-fixture.json",
+          "sha256": "a0c475b2033461190e992785a40fab23a5bda5c3f53a764a2d2a350ca0e85f66"
+        },
+        "screen": {
+          "filename": "print-check-result-screen.png",
+          "sha256": "db9366f26d51f465215b642358a256198141870f94e721e29a19a0024e3bfdc4"
+        },
+        "detail": {
+          "filename": "print-check-result-detail.png",
+          "sha256": "b1da01a4a46eedb0cbca94944a6c7033c35001edc5efb0630494895866a7854f"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 9,
+          "lastCompletedAtMs": 3470.8249999284744
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 219.96875,
+          "width": 279,
+          "height": 567.28125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "body": "箱1",
+        "watertight": true
+      }
+    },
+    {
+      "name": "print-save-as-menu",
+      "selectedImage": "screen",
+      "script": "e2e/tests/printSaveAsCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:53.228Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-17 印刷する・別名で保存するの章の画面を撮る",
+        "script": "e2e/tests/printSaveAsCaptureFlow.ts",
+        "scriptSha256": "5d3bb3890385a4485e62b8ad1a3f9307bbd7b38cf127bc578dfc44b414de1862",
+        "fixture": {
+          "filename": "print-save-as-menu-fixture.json",
+          "sha256": "2e3e9f3bfbce576eb04a7fd30b4cbad090a7ef3396e08dbbe36de79539ef84b0"
+        },
+        "screen": {
+          "filename": "print-save-as-menu-screen.png",
+          "sha256": "a75e781b6f96adc8f8ac171a7835c29c570b323704049a79e46dff87a91d6ac4"
+        },
+        "detail": {
+          "filename": "print-save-as-menu-detail.png",
+          "sha256": "d73dcf3c0ac3dc5bfa4aff5b3afe15c5a21bc334b1438a1b42b14e347071fa3a"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 10,
+          "lastCompletedAtMs": 3052.1299999952316
+        },
+        "dialogBounds": {
+          "x": -29.734375,
+          "y": 62.5,
+          "width": 173.734375,
+          "height": 344
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "recentFiles": 1
+      }
+    },
+    {
+      "name": "print-save-as-status",
+      "selectedImage": "detail",
+      "script": "e2e/tests/printSaveAsCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:54.038Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-17 印刷する・別名で保存するの章の画面を撮る",
+        "script": "e2e/tests/printSaveAsCaptureFlow.ts",
+        "scriptSha256": "5d3bb3890385a4485e62b8ad1a3f9307bbd7b38cf127bc578dfc44b414de1862",
+        "fixture": {
+          "filename": "print-save-as-status-fixture.json",
+          "sha256": "c3ca369a27c22fe0707a413bd1a0325a6c521bdf84239d0ffc2b8c6fbefc16c5"
+        },
+        "screen": {
+          "filename": "print-save-as-status-screen.png",
+          "sha256": "3f04187f4c8092e3631c0604dcac7bf061fae5aa8d28f81e58f2f5aad11a012d"
+        },
+        "detail": {
+          "filename": "print-save-as-status-detail.png",
+          "sha256": "2548c0a49791325bcc6df1471ef92e103a07a526af912794c10aeb6b0da3831c"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 14,
+          "lastCompletedAtMs": 3955.9049999713898
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 871,
+          "width": 1440,
+          "height": 29
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "savedAs": true
+      }
+    },
+    {
+      "name": "progressive-dimensions",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:34:52.097Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "実頂点4つから寸法列4方式を記入し、基準変更・整列・Undo・累進の保存往復ができる(P8-66・68)",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "progressive-dimensions-fixture.json",
+          "sha256": "50d65ea4f4aea7f049050371ebc3cdd92e0befaceaa688c4dc28f3a63be3f3c3"
+        },
+        "screen": {
+          "filename": "progressive-dimensions-screen.png",
+          "sha256": "3efdaa83b42b594d5f573f068f7f1e611656032f7ed64c875b6ba77c21f80991"
+        },
+        "detail": {
+          "filename": "progressive-dimensions-detail.png",
+          "sha256": "b0ee0fc00fff2e86c7efc49843d797e53bcfe7e6fad65ab4595c0c38b40d8c2b"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "drawing",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": null,
+        "dialogBounds": {
+          "x": 266.59375,
+          "y": 158.984375,
+          "width": 866.796875,
+          "height": 613.53125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "progressive"
+      }
+    },
+    {
+      "name": "project-face-outline",
+      "selectedImage": "detail",
+      "script": "e2e/tests/projectIntersectCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:00.029Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 立体から線を取り込む(投影・断面)章の画面を撮る",
+        "script": "e2e/tests/projectIntersectCaptureFlow.ts",
+        "scriptSha256": "d94be42656643cdb684b524dbdf3e0456f9840b0792879c38857e7893eb65666",
+        "fixture": {
+          "filename": "project-face-outline-fixture.json",
+          "sha256": "1e68a3f04cbf74330333f3298449befe7dc7802b6d15120a102e28b7784b8bef"
+        },
+        "screen": {
+          "filename": "project-face-outline-screen.png",
+          "sha256": "89abbc0b0f724b690491ae1c3e7ab3d4ea278078c4ec1013f6082b5091ae8e48"
+        },
+        "detail": {
+          "filename": "project-face-outline-detail.png",
+          "sha256": "76bf0ac981f44eff68dfc32db9bad53f9affa326dc92ca7b561943571404a4cf"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 6,
+          "completedGeneration": 6,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 31,
+          "lastCompletedAtMs": 5084.1050000190735
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 68.5,
+          "width": 240,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "project"
+      }
+    },
+    {
+      "name": "radial-menu",
+      "selectedImage": "detail",
+      "script": "e2e/tests/radialMenuFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:11.027Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-9 右クリックで部品の8道具を選び、取消・実保存・Undo・F1を通す",
+        "script": "e2e/tests/radialMenuFlow.ts",
+        "scriptSha256": "b09c74c2473ca18a68f3e0c915cf2afd6b449f6acbe3b2653a8f9908367d689d",
+        "fixture": {
+          "filename": "radial-menu-fixture.json",
+          "sha256": "59e3124ecf2b5abf4c0a7630b1ac0c903a4552366b97c18ab4e223de516d0206"
+        },
+        "screen": {
+          "filename": "radial-menu-screen.png",
+          "sha256": "0b4bb6d6afabd1232394f9d9a49e06a2dc24089838b050c2dd11570ad764bb70"
+        },
+        "detail": {
+          "filename": "radial-menu-detail.png",
+          "sha256": "bae4d59a9f2014251add9a017015464c2cf2c57fd8bc83f606a93cf95ad5487f"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 15,
+          "lastCompletedAtMs": 2857.789999961853
+        },
+        "dialogBounds": {
+          "x": 548,
+          "y": 317.75,
+          "width": 304,
+          "height": 304
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "id": "part-uuid:f08438a5-ca5b-40a9-933a-94d1e6113a3b",
+        "name": "部品1",
+        "schemaVersion": 22,
+        "sketches": [
+          {
+            "id": "sketch-1",
+            "name": "スケッチ1",
+            "features": [
+              {
+                "id": "point-1",
+                "name": "点1",
+                "planeId": "xy",
+                "kind": "point",
+                "at": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "12",
+                    "value": 12,
+                    "display": "12"
+                  },
+                  "y": {
+                    "source": "34",
+                    "value": 34,
+                    "display": "34"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "activeSketchId": "sketch-1",
+        "references": [],
+        "solids": [],
+        "sheetUnfolds": [],
+        "parameters": [],
+        "appearance": {
+          "entries": []
+        },
+        "selectionSets": [],
+        "canvases": [],
+        "namedViews": [
+          {
+            "id": "namedView-front",
+            "name": "正面",
+            "position": [
+              0,
+              -200,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-top",
+            "name": "平面",
+            "position": [
+              0,
+              0,
+              200
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-right",
+            "name": "右側面",
+            "position": [
+              200,
+              0,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-isometric",
+            "name": "等角",
+            "position": [
+              115.47005383792516,
+              -115.47005383792516,
+              115.47005383792516
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "perspective",
+            "zoom": 1
+          }
+        ],
+        "configurations": [
+          {
+            "id": "configuration-1",
+            "name": "既定",
+            "values": {}
+          }
+        ],
+        "activeConfigurationId": "configuration-1"
+      }
+    },
+    {
+      "name": "reference-geometry-axis",
+      "selectedImage": "detail",
+      "script": "e2e/tests/referenceGeometryCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:27.503Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 基準の軸・点・座標系を作る章の画面を撮る",
+        "script": "e2e/tests/referenceGeometryCaptureFlow.ts",
+        "scriptSha256": "bc607ae74e94c074bea87afa2f819d2befdc5e47e60bd2ead7beca380586db75",
+        "fixture": {
+          "filename": "reference-geometry-axis-fixture.json",
+          "sha256": "6cba73b2391a3db862008c018653b3e545941cb09a790cc91f661485f645c59b"
+        },
+        "screen": {
+          "filename": "reference-geometry-axis-screen.png",
+          "sha256": "bf7deadde17e67163d88e902845ad2b8cac136568fc635cdf3227d17164a16e6"
+        },
+        "detail": {
+          "filename": "reference-geometry-axis-detail.png",
+          "sha256": "6256b863619abc383a28e41bb155dd83a75f2db9cbc9cd74e1b8bc4d53ff6da0"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 11,
+          "lastCompletedAtMs": 2398.264999985695
+        },
+        "dialogBounds": {
+          "x": 714,
+          "y": 484.5,
+          "width": 260,
+          "height": 303.171875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "kind": "axis",
+        "method": "twoPoints",
+        "first": [
+          0,
+          0,
+          0
+        ],
+        "second": [
+          0,
+          0,
+          50
+        ]
+      }
+    },
+    {
+      "name": "reference-geometry-tree",
+      "selectedImage": "detail",
+      "script": "e2e/tests/referenceGeometryCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:29.383Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 基準の軸・点・座標系を作る章の画面を撮る",
+        "script": "e2e/tests/referenceGeometryCaptureFlow.ts",
+        "scriptSha256": "bc607ae74e94c074bea87afa2f819d2befdc5e47e60bd2ead7beca380586db75",
+        "fixture": {
+          "filename": "reference-geometry-tree-fixture.json",
+          "sha256": "5921d335b7d82a3762147126752f31a84b01302bb7737b0931379123cb658f8e"
+        },
+        "screen": {
+          "filename": "reference-geometry-tree-screen.png",
+          "sha256": "190f80cddeeef905d23fef80354a64c5795f3df9c48f95ab2f179a8574309090"
+        },
+        "detail": {
+          "filename": "reference-geometry-tree-detail.png",
+          "sha256": "23a59f1851e6b22156df6d6c164ac31e033b7bd74cdb837ff45c1faa12aca303"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 4,
+          "completedGeneration": 4,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 29,
+          "lastCompletedAtMs": 4239.009999990463
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 228.5,
+          "width": 239,
+          "height": 182
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "axis": "基準軸1",
+        "point": "基準点",
+        "coordinateSystem": "座標系1"
+      }
+    },
+    {
+      "name": "replace-subassembly-placed",
+      "selectedImage": "detail",
+      "script": "e2e/tests/replaceSubassemblyCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:33.622Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 部品を差し替える・組を置く章の画面を撮る",
+        "script": "e2e/tests/replaceSubassemblyCaptureFlow.ts",
+        "scriptSha256": "f4a059b69556ac7314294eb8e2d015da52efdb372d0b6dfdfae02dea3fdb4cfe",
+        "fixture": {
+          "filename": "replace-subassembly-placed-fixture.json",
+          "sha256": "b3ff81b2a64c50f50c0b7b4f762dca1f8ab06dd08cc6cd0e1c3817b336475c71"
+        },
+        "screen": {
+          "filename": "replace-subassembly-placed-screen.png",
+          "sha256": "ca09ba49c7f506eea868c8c5d64fb1e797b462707fbcff9becf08acaeb2db1f8"
+        },
+        "detail": {
+          "filename": "replace-subassembly-placed-detail.png",
+          "sha256": "4fdf8227cdfa083d64c2e1af93e4286dc7be71fbb6b79c2b99ad4a2fad1f10e7"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "assembly",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 3313.579999923706
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 68.5,
+          "width": 240,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "placedSubAssembly": "部品セット.pcada"
+      }
+    },
+    {
+      "name": "save-and-open-buttons",
+      "selectedImage": "detail",
+      "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:36.465Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-17 保存する・開くの章の画面を撮る",
+        "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+        "scriptSha256": "4ae57efa1095fbcd1e8493ff17e880f20cc41988696311516c2b9f873b844303",
+        "fixture": {
+          "filename": "save-and-open-buttons-fixture.json",
+          "sha256": "36bdf0fecfe688324a0c73d324d58dfbb1536dbc0179342f448f17a48cbffefd"
+        },
+        "screen": {
+          "filename": "save-and-open-buttons-screen.png",
+          "sha256": "262f7d4e6202dce66a1e8ca452d3f08db7ff0a34785a3032000f94f1d1846b7e"
+        },
+        "detail": {
+          "filename": "save-and-open-buttons-detail.png",
+          "sha256": "d572be95e4d431b7206ba28ccfe495ca3efcc78dd940a62171871a5e045e8410"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 10,
+          "lastCompletedAtMs": 2052.75
+        },
+        "dialogBounds": {
+          "x": 26,
+          "y": 27.5,
+          "width": 154,
+          "height": 32
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "unsaved-point"
+      }
+    },
+    {
+      "name": "save-and-open-file-error",
+      "selectedImage": "detail",
+      "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:39.469Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-17 保存する・開くの章の画面を撮る",
+        "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+        "scriptSha256": "4ae57efa1095fbcd1e8493ff17e880f20cc41988696311516c2b9f873b844303",
+        "fixture": {
+          "filename": "save-and-open-file-error-fixture.json",
+          "sha256": "fe4a831b8012b203386812bf8627648fc44f8e826a3980cf050563296efae9eb"
+        },
+        "screen": {
+          "filename": "save-and-open-file-error-screen.png",
+          "sha256": "4823c60cec3b8f26870d95a7a9fd135ea8992f733245a8f8c0a2f97731efd470"
+        },
+        "detail": {
+          "filename": "save-and-open-file-error-detail.png",
+          "sha256": "86ee501b4fc2e9447b148e8b918fde52f3fce3315b5a5c4b66863bc84982503b"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 5,
+          "lastCompletedAtMs": 2128.344999909401
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 871,
+          "width": 1440,
+          "height": 29
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "attemptedFile": "save-and-open-broken.pcad"
+      }
+    },
+    {
+      "name": "save-and-open-restore",
+      "selectedImage": "detail",
+      "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:38.628Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-17 保存する・開くの章の画面を撮る",
+        "script": "e2e/tests/saveAndOpenCaptureFlow.ts",
+        "scriptSha256": "4ae57efa1095fbcd1e8493ff17e880f20cc41988696311516c2b9f873b844303",
+        "fixture": {
+          "filename": "save-and-open-restore-fixture.json",
+          "sha256": "a142e7537719690992158a9166e33b5c3513601d1e79d76740ac666175b3d9b5"
+        },
+        "screen": {
+          "filename": "save-and-open-restore-screen.png",
+          "sha256": "790e7e359c8782472e636281e53f077a95b0a53e9d8c48b44b012c5995ccc679"
+        },
+        "detail": {
+          "filename": "save-and-open-restore-detail.png",
+          "sha256": "48ccfaee01f05beafa6147bc0e4a9e5f87e218222584145ac6f03654e4391a75"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 3,
+          "lastCompletedAtMs": 996.4649999141693
+        },
+        "dialogBounds": {
+          "x": 610.265625,
+          "y": 392.75,
+          "width": 179.46875,
+          "height": 154
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "savedAt": "2026-09-24T04:00:00.000Z",
+        "documentName": "部品1"
+      }
+    },
+    {
+      "name": "script-error-line",
+      "selectedImage": "screen",
+      "script": "e2e/tests/scriptsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:51.482Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P11 自動作図の実Worker・保存・Undo・道具登録・隔離と中止",
+        "script": "e2e/tests/scriptsFlow.ts",
+        "scriptSha256": "507b9a5ad8df2852fbae2544618a549761221ac13703bd11f0064564cf6e4bd4",
+        "fixture": {
+          "filename": "script-error-line-fixture.json",
+          "sha256": "b5a786ebafbea774cc5c5798672e20069aa7a7d7d962d8b965660719e317737a"
+        },
+        "screen": {
+          "filename": "script-error-line-screen.png",
+          "sha256": "aaa238138a06db237a6fe6b13fe2e37fa3f7b4975bff884fd5fee507e733a978"
+        },
+        "detail": {
+          "filename": "script-error-line-detail.png",
+          "sha256": "b5f4d11e750b76b5dab19cb3677c9032fb7722b03ad0778f2cbedfcb0a03a762"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 3,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 16,
+          "lastCompletedAtMs": 3121.7949999570847
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 68.5,
+          "width": 279,
+          "height": 1083.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "id": "part-uuid:67b93943-93b3-4303-aad3-74fb750bee26",
+        "name": "部品1",
+        "schemaVersion": 22,
+        "sketches": [
+          {
+            "id": "sketch-1",
+            "name": "スケッチ1",
+            "features": []
+          }
+        ],
+        "activeSketchId": "sketch-1",
+        "references": [],
+        "solids": [
+          {
+            "id": "box-1",
+            "name": "箱1",
+            "suppressed": false,
+            "kind": "primitive",
+            "origin": {
+              "kind": "coordinate",
+              "value": {
+                "mode": "absolute",
+                "x": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                },
+                "y": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                },
+                "z": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                }
+              }
+            },
+            "axis": {
+              "kind": "world",
+              "axis": "z"
+            },
+            "shape": {
+              "kind": "box",
+              "sizeX": {
+                "source": "60",
+                "value": 60,
+                "display": "60"
+              },
+              "sizeY": {
+                "source": "40",
+                "value": 40,
+                "display": "40"
+              },
+              "sizeZ": {
+                "source": "板厚",
+                "value": 5,
+                "display": "5"
+              }
+            }
+          },
+          {
+            "id": "cylinder-1",
+            "name": "円柱1",
+            "suppressed": false,
+            "kind": "primitive",
+            "origin": {
+              "kind": "coordinate",
+              "value": {
+                "mode": "absolute",
+                "x": {
+                  "source": "10",
+                  "value": 10,
+                  "display": "10"
+                },
+                "y": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                },
+                "z": {
+                  "source": "-板厚/2",
+                  "value": -2.5,
+                  "display": "-2.5"
+                }
+              }
+            },
+            "axis": {
+              "kind": "world",
+              "axis": "z"
+            },
+            "shape": {
+              "kind": "cylinder",
+              "radius": {
+                "source": "(8)/2",
+                "value": 4,
+                "display": "4"
+              },
+              "height": {
+                "source": "板厚",
+                "value": 5,
+                "display": "5"
+              }
+            }
+          },
+          {
+            "id": "subtract-1",
+            "name": "穴1",
+            "suppressed": false,
+            "kind": "boolean",
+            "operation": "subtract",
+            "targetFeatureId": "box-1",
+            "toolFeatureId": "cylinder-1"
+          }
+        ],
+        "sheetUnfolds": [],
+        "parameters": [
+          {
+            "name": "板厚",
+            "value": {
+              "source": "5",
+              "value": 5,
+              "display": "5"
+            },
+            "unit": "mm",
+            "description": ""
+          }
+        ],
+        "appearance": {
+          "entries": []
+        },
+        "selectionSets": [],
+        "canvases": [],
+        "namedViews": [
+          {
+            "id": "namedView-front",
+            "name": "正面",
+            "position": [
+              0,
+              -200,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-top",
+            "name": "平面",
+            "position": [
+              0,
+              0,
+              200
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-right",
+            "name": "右側面",
+            "position": [
+              200,
+              0,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-isometric",
+            "name": "等角",
+            "position": [
+              115.47005383792516,
+              -115.47005383792516,
+              115.47005383792516
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "perspective",
+            "zoom": 1
+          }
+        ],
+        "configurations": [
+          {
+            "id": "configuration-1",
+            "name": "既定",
+            "values": {
+              "板厚": "5"
+            }
+          }
+        ],
+        "activeConfigurationId": "configuration-1"
+      }
+    },
+    {
+      "name": "script-module-created",
+      "selectedImage": "screen",
+      "script": "e2e/tests/scriptToolsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:38:20.310Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P11 自動作図の実Worker・20道具の登録編集削除・moduleの編集と行表示",
+        "script": "e2e/tests/scriptToolsFlow.ts",
+        "scriptSha256": "620f608708feeaefb7113dba7e97faee67cd83fdc974117d3c79b27ce6e77324",
+        "fixture": {
+          "filename": "script-module-created-fixture.json",
+          "sha256": "6df280d4591acb73937c8f276a336fda65b5c2d53cab9037e9a244b9fc38c9da"
+        },
+        "screen": {
+          "filename": "script-module-created-screen.png",
+          "sha256": "7cff17314bafaea96e30e9f91b60115a44a5dba3967a95c846b664de3da319ea"
+        },
+        "detail": {
+          "filename": "script-module-created-detail.png",
+          "sha256": "d24fd4486ef56e85ed96ec073db6c1f7d71ca238aebb66ff31e010efab68600b"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 22,
+          "lastCompletedAtMs": 4251.424999952316
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 68.5,
+          "width": 279,
+          "height": 2604.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "id": "part-uuid:bb45944c-a231-4b59-9b06-85682f9e6085",
+        "name": "部品1",
+        "schemaVersion": 22,
+        "sketches": [
+          {
+            "id": "sketch-1",
+            "name": "スケッチ1",
+            "features": []
+          }
+        ],
+        "activeSketchId": "sketch-1",
+        "references": [],
+        "solids": [
+          {
+            "id": "box-1",
+            "name": "箱1",
+            "suppressed": false,
+            "kind": "primitive",
+            "origin": {
+              "kind": "coordinate",
+              "value": {
+                "mode": "absolute",
+                "x": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                },
+                "y": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                },
+                "z": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                }
+              }
+            },
+            "axis": {
+              "kind": "world",
+              "axis": "z"
+            },
+            "shape": {
+              "kind": "box",
+              "sizeX": {
+                "source": "30",
+                "value": 30,
+                "display": "30"
+              },
+              "sizeY": {
+                "source": "20",
+                "value": 20,
+                "display": "20"
+              },
+              "sizeZ": {
+                "source": "5",
+                "value": 5,
+                "display": "5"
+              }
+            }
+          }
+        ],
+        "sheetUnfolds": [],
+        "parameters": [],
+        "appearance": {
+          "entries": []
+        },
+        "selectionSets": [],
+        "canvases": [],
+        "namedViews": [
+          {
+            "id": "namedView-front",
+            "name": "正面",
+            "position": [
+              0,
+              -200,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-top",
+            "name": "平面",
+            "position": [
+              0,
+              0,
+              200
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-right",
+            "name": "右側面",
+            "position": [
+              200,
+              0,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-isometric",
+            "name": "等角",
+            "position": [
+              115.47005383792516,
+              -115.47005383792516,
+              115.47005383792516
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "perspective",
+            "zoom": 1
+          }
+        ],
+        "configurations": [
+          {
+            "id": "configuration-1",
+            "name": "既定",
+            "values": {}
+          }
+        ],
+        "activeConfigurationId": "configuration-1"
+      }
+    },
+    {
+      "name": "script-plate-created",
+      "selectedImage": "screen",
+      "script": "e2e/tests/scriptsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:45.570Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P11 自動作図の実Worker・保存・Undo・道具登録・隔離と中止",
+        "script": "e2e/tests/scriptsFlow.ts",
+        "scriptSha256": "507b9a5ad8df2852fbae2544618a549761221ac13703bd11f0064564cf6e4bd4",
+        "fixture": {
+          "filename": "script-plate-created-fixture.json",
+          "sha256": "68a156698196d7aa109f4b4f725185ef70cf2c768cd63c707caf175bbcb31211"
+        },
+        "screen": {
+          "filename": "script-plate-created-screen.png",
+          "sha256": "2db0a352db6c29b3fdd1de663396b6cf3015cfbe511c304442e2f58ba4f8e7a2"
+        },
+        "detail": {
+          "filename": "script-plate-created-detail.png",
+          "sha256": "dbf7eef28a47a02a62cd9d7ed7fc1caad1f388ac817297bbdb12d551fd472193"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 3,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 20,
+          "lastCompletedAtMs": 5315.254999995232
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": -19.5,
+          "width": 279,
+          "height": 1285
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "id": "part-uuid:67f95f19-832e-4c6a-8ae4-2a4469d8d91b",
+        "name": "部品1",
+        "schemaVersion": 22,
+        "sketches": [
+          {
+            "id": "sketch-1",
+            "name": "スケッチ1",
+            "features": []
+          }
+        ],
+        "activeSketchId": "sketch-1",
+        "references": [],
+        "solids": [
+          {
+            "id": "box-1",
+            "name": "箱1",
+            "suppressed": false,
+            "kind": "primitive",
+            "origin": {
+              "kind": "coordinate",
+              "value": {
+                "mode": "absolute",
+                "x": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                },
+                "y": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                },
+                "z": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                }
+              }
+            },
+            "axis": {
+              "kind": "world",
+              "axis": "z"
+            },
+            "shape": {
+              "kind": "box",
+              "sizeX": {
+                "source": "60",
+                "value": 60,
+                "display": "60"
+              },
+              "sizeY": {
+                "source": "40",
+                "value": 40,
+                "display": "40"
+              },
+              "sizeZ": {
+                "source": "板厚",
+                "value": 5,
+                "display": "5"
+              }
+            }
+          },
+          {
+            "id": "cylinder-1",
+            "name": "円柱1",
+            "suppressed": false,
+            "kind": "primitive",
+            "origin": {
+              "kind": "coordinate",
+              "value": {
+                "mode": "absolute",
+                "x": {
+                  "source": "10",
+                  "value": 10,
+                  "display": "10"
+                },
+                "y": {
+                  "source": "0",
+                  "value": 0,
+                  "display": "0"
+                },
+                "z": {
+                  "source": "-板厚/2",
+                  "value": -2.5,
+                  "display": "-2.5"
+                }
+              }
+            },
+            "axis": {
+              "kind": "world",
+              "axis": "z"
+            },
+            "shape": {
+              "kind": "cylinder",
+              "radius": {
+                "source": "(8)/2",
+                "value": 4,
+                "display": "4"
+              },
+              "height": {
+                "source": "板厚",
+                "value": 5,
+                "display": "5"
+              }
+            }
+          },
+          {
+            "id": "subtract-1",
+            "name": "穴1",
+            "suppressed": false,
+            "kind": "boolean",
+            "operation": "subtract",
+            "targetFeatureId": "box-1",
+            "toolFeatureId": "cylinder-1"
+          }
+        ],
+        "sheetUnfolds": [],
+        "parameters": [
+          {
+            "name": "板厚",
+            "value": {
+              "source": "5",
+              "value": 5,
+              "display": "5"
+            },
+            "unit": "mm",
+            "description": ""
+          }
+        ],
+        "appearance": {
+          "entries": []
+        },
+        "selectionSets": [],
+        "canvases": [],
+        "namedViews": [
+          {
+            "id": "namedView-front",
+            "name": "正面",
+            "position": [
+              0,
+              -200,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-top",
+            "name": "平面",
+            "position": [
+              0,
+              0,
+              200
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              1,
+              0
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-right",
+            "name": "右側面",
+            "position": [
+              200,
+              0,
+              0
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "orthographic",
+            "zoom": 1
+          },
+          {
+            "id": "namedView-isometric",
+            "name": "等角",
+            "position": [
+              115.47005383792516,
+              -115.47005383792516,
+              115.47005383792516
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "up": [
+              0,
+              0,
+              1
+            ],
+            "projection": "perspective",
+            "zoom": 1
+          }
+        ],
+        "configurations": [
+          {
+            "id": "configuration-1",
+            "name": "既定",
+            "values": {
+              "板厚": "5"
+            }
+          }
+        ],
+        "activeConfigurationId": "configuration-1"
+      }
+    },
+    {
+      "name": "script-tool-menu",
+      "selectedImage": "screen",
+      "script": "e2e/tests/scriptsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:47.684Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P11 自動作図の実Worker・保存・Undo・道具登録・隔離と中止",
+        "script": "e2e/tests/scriptsFlow.ts",
+        "scriptSha256": "507b9a5ad8df2852fbae2544618a549761221ac13703bd11f0064564cf6e4bd4",
+        "fixture": {
+          "filename": "script-tool-menu-fixture.json",
+          "sha256": "72bf57ff4787ee946fd24c2c528dc3fb77767c4f4ee5e336ea7a9b1b2f7bb50d"
+        },
+        "screen": {
+          "filename": "script-tool-menu-screen.png",
+          "sha256": "8292315ab999e23c415900cbc76e68c005c5519b48c6dafd5b6deaa8659033e2"
+        },
+        "detail": {
+          "filename": "script-tool-menu-detail.png",
+          "sha256": "ee4cda268be00db58ed09571cb1e82a0135c05dd0520f5f2d05367b331673b9f"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 3,
+          "isComputing": false,
+          "requestedGeneration": 4,
+          "completedGeneration": 4,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 40,
+          "lastCompletedAtMs": 7223.65499997139
+        },
+        "dialogBounds": {
+          "x": 51,
+          "y": 62.5,
+          "width": 126,
+          "height": 64
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "requestedGeneration": 4
+      }
+    },
+    {
+      "name": "section-plane-outline",
+      "selectedImage": "detail",
+      "script": "e2e/tests/projectIntersectCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:37:01.993Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 立体から線を取り込む(投影・断面)章の画面を撮る",
+        "script": "e2e/tests/projectIntersectCaptureFlow.ts",
+        "scriptSha256": "d94be42656643cdb684b524dbdf3e0456f9840b0792879c38857e7893eb65666",
+        "fixture": {
+          "filename": "section-plane-outline-fixture.json",
+          "sha256": "f9d7906edceb2a22dbd28929ee4352c01cf47a11a10df3d0c0ee20534ce70c25"
+        },
+        "screen": {
+          "filename": "section-plane-outline-screen.png",
+          "sha256": "0fcd8afac45a000179b178918e696175f357c49d99926fff0cdf7f86f47674f6"
+        },
+        "detail": {
+          "filename": "section-plane-outline-detail.png",
+          "sha256": "f7291e57c8351b61d165b6d220e86805eab391139b3b04585c4ea840f80d4a94"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 9,
+          "completedGeneration": 9,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 48,
+          "lastCompletedAtMs": 7172.799999952316
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 68.5,
+          "width": 240,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "step": "section"
+      }
+    },
+    {
+      "name": "section-view-offset",
+      "selectedImage": "detail",
+      "script": "e2e/tests/sectionViewCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:38:24.617Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 切って中を見る章の画面を撮る",
+        "script": "e2e/tests/sectionViewCaptureFlow.ts",
+        "scriptSha256": "dd117121c06b4daec894c6e38ccc5502544143c8d219e39c360381357a8a89f2",
+        "fixture": {
+          "filename": "section-view-offset-fixture.json",
+          "sha256": "726536b52e6bfc5176d2f8e91cd9b88baf60aa711dbe7103dd76aa09110d1fd0"
+        },
+        "screen": {
+          "filename": "section-view-offset-screen.png",
+          "sha256": "bf4bce3c410ca1165bf414d2de1d9db0f6d0e36747197402051f340c371d94db"
+        },
+        "detail": {
+          "filename": "section-view-offset-detail.png",
+          "sha256": "e4b6003950f35efe5b88e96ad850ad9074bebbc201e6dccd7e89315c7c6b2623"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 8,
+          "lastCompletedAtMs": 3341.3349999189377
+        },
+        "dialogBounds": {
+          "x": 248,
+          "y": 76.5,
+          "width": 260,
+          "height": 146.890625
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "plane": "XY",
+        "offsetMm": 0
+      }
+    },
+    {
+      "name": "select-subshape-kind",
+      "selectedImage": "detail",
+      "script": "e2e/tests/selectSubshapeCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:38:29.071Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 面・辺・頂点を選ぶ章の画面を撮る",
+        "script": "e2e/tests/selectSubshapeCaptureFlow.ts",
+        "scriptSha256": "e2ede9160dbd8641c55d2e4c79ce4a85da33818ffcccabca2b669c297394eefc",
+        "fixture": {
+          "filename": "select-subshape-kind-fixture.json",
+          "sha256": "f69f6bc097f0a555ea9c9d10e958b32ccd1986f9ab15242fef6da3a1d3cb3565"
+        },
+        "screen": {
+          "filename": "select-subshape-kind-screen.png",
+          "sha256": "0b990f4390906dc7b23fcd87250351443cfe8e29891720f809173a994d60a321"
+        },
+        "detail": {
+          "filename": "select-subshape-kind-detail.png",
+          "sha256": "f156f6b26e5fdb8d911cbdb7d791a7d05c7faec9f8f4b8a9642c7f80571e4e24"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 10,
+          "lastCompletedAtMs": 3510.975000023842
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 871,
+          "width": 1440,
+          "height": 29
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "selectedKind": "面",
+        "clicked": "topFace"
+      }
+    },
+    {
+      "name": "selection-filter-off",
+      "selectedImage": "detail",
+      "script": "e2e/tests/selectionCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:38:34.184Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 選ぶものを絞る・選んだ組に名前を付ける章の画面を撮る",
+        "script": "e2e/tests/selectionCaptureFlow.ts",
+        "scriptSha256": "9118037f06d1eb224052905696d3d2bbf53878e91dfef340e39a1a23d7477c1b",
+        "fixture": {
+          "filename": "selection-filter-off-fixture.json",
+          "sha256": "ee5460aebb6d9b2ab0615b335f9ec312d6aa9469e3e816c98919f81d0ec91a58"
+        },
+        "screen": {
+          "filename": "selection-filter-off-screen.png",
+          "sha256": "d6d3416787909b23434abcb4601b52c4fa54c901d371c725a0c0dbde3440e2ff"
+        },
+        "detail": {
+          "filename": "selection-filter-off-detail.png",
+          "sha256": "1ced45f9745352f1fbae79aebce22be7f89c52dd638a41fa4f0d65684e511760"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 9,
+          "lastCompletedAtMs": 4292.705000042915
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 871,
+          "width": 1440,
+          "height": 29
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "off": "面"
+      }
+    },
+    {
+      "name": "selection-named-set",
+      "selectedImage": "detail",
+      "script": "e2e/tests/selectionCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:38:33.569Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 選ぶものを絞る・選んだ組に名前を付ける章の画面を撮る",
+        "script": "e2e/tests/selectionCaptureFlow.ts",
+        "scriptSha256": "9118037f06d1eb224052905696d3d2bbf53878e91dfef340e39a1a23d7477c1b",
+        "fixture": {
+          "filename": "selection-named-set-fixture.json",
+          "sha256": "6f4e80b4245d3356fb9dd12587c55e7fb16fd4f8e1ff77e62a8a4d26d26e323f"
+        },
+        "screen": {
+          "filename": "selection-named-set-screen.png",
+          "sha256": "f03181bcdeaa402ddd85090e362383101f2dce29886f2a830bf1cb929e97ed38"
+        },
+        "detail": {
+          "filename": "selection-named-set-detail.png",
+          "sha256": "de29df3fdce255aabbb24955a0a555f8c9c309f04b7208f783071bba6de43420"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 8,
+          "lastCompletedAtMs": 3559.6349999904633
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 371.96875,
+          "width": 279,
+          "height": 156.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "name": "外側",
+        "count": 1
+      }
+    },
+    {
+      "name": "sketch-text-outlines",
+      "selectedImage": "screen",
+      "script": "e2e/tests/p8-drawing.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:36:30.816Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P8 文字の輪郭を作図面へ置き、全ての辺をUndo一回で戻せる",
+        "script": "e2e/tests/p8-drawing.spec.ts",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
+        "fixture": {
+          "filename": "sketch-text-outlines-fixture.json",
+          "sha256": "19d74f3ae50d780c49efc0b68b594fbcbe7b098008172b81a3d9d8f64697e285"
+        },
+        "screen": {
+          "filename": "sketch-text-outlines-screen.png",
+          "sha256": "b84e49e978e539db2c727c297e54dba85194bc40240e0de2f802ef63a295fd33"
+        },
+        "detail": {
+          "filename": "sketch-text-outlines-detail.png",
+          "sha256": "d09ef4201d54c1f0b92d1ae4d1489a70459695e41aec14f6c35ed27b07c47616"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 4,
+          "completedGeneration": 4,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 12,
+          "lastCompletedAtMs": 2599.164999961853
+        },
+        "dialogBounds": {
+          "x": 0,
+          "y": 172.5,
+          "width": 239,
+          "height": 1326
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "text": "8日φ"
+      }
+    }
+  ]
+}

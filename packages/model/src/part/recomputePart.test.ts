@@ -11,6 +11,7 @@ import {
   type AppearanceFaceRequest,
   type KernelBridge,
   type MeasureOutcome,
+  type MeshLedgerOwner,
   type PartProgress,
   type SketchOffsetContour,
   type SketchOffsetResult,
@@ -1546,6 +1547,192 @@ describe('missingSubShape への詰め替え(加工するもとの面・辺が�
     expect(result.errors).toEqual([
       { featureId: 'extrude-1', code: 'kernelFailed', message: KERNEL_BROKEN_MESSAGE },
     ]);
+  });
+});
+
+/*
+ * 穴・ねじ穴・R/C面取り・くり抜きは対象のボディを消費するので、参照元(押し出し1)は表示ボディに残らない。
+ * 面・辺はkernelが指紋で選び直すため作図のaskedSubShapesにも入らない。それでも参照の修復が現在形状と
+ * 照合できるよう、同じ再計算のhidden読取りで参照元を返す(正常な加工で「参照元の現在形状を取得
+ * できません」と出た手戻りの回帰検査。種類ごとの選び方は recomputePart.ts の kernelReselectedReferences)。
+ *
+ * 返り値の契約(readReferenceBodies.ts の現物): 187行目が現在の失敗していない段の表示bodyを最初に置き、
+ * 192行目がhiddenで読んだ参照元を後ろへ足し、217行目が読めなかったidを除く。したがって referenceBodies は
+ * 「表示 machined ＋ hidden extrude-1」の 2 つで、hidden だけの配列ではない。
+ */
+describe('参照の修復が照合する加工の参照元(kernelが選び直す面・辺)', () => {
+  const face: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 3,
+    fingerprint: { kind: 'face', surfaceKind: 'plane', area: 1200, position: [20, 15, 10], axis: [0, 0, 1], radius: null },
+  };
+  const edge: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 0,
+    fingerprint: { kind: 'edge', curveKind: 'line', length: 40, position: [20, 0, 10], axis: [1, 0, 0], radius: null },
+  };
+  const otherEdge: SubShapeRef = {
+    bodyFeatureId: 'extrude-1',
+    index: 1,
+    fingerprint: { kind: 'edge', curveKind: 'line', length: 30, position: [40, 15, 10], axis: [0, 1, 0], radius: null },
+  };
+
+  type MachiningKind = 'hole' | 'threadHole' | 'fillet' | 'chamfer' | 'shell' | 'transform';
+
+  function machined(kind: MachiningKind, targets: readonly SubShapeRef[] = [edge]): PartDocument {
+    const { document } = oneExtrude();
+    const sketch = document.sketches[0];
+    const point = sketch.features.find((feature) => feature.kind === 'point');
+    if (point === undefined) {
+      throw new Error('テストの前提が壊れている: 中心にする点がありません');
+    }
+    const centers = [{ sketchId: sketch.id, pointFeatureId: point.id }];
+    const base = { id: 'machined', name: kind, suppressed: false, targetFeatureId: 'extrude-1' };
+    const feature: SolidFeature =
+      kind === 'hole'
+        ? { ...base, kind, face, centers, diameter: expr('6'), depth: { kind: 'through' },
+          tiltAngle: expr('0'), tiltAzimuth: expr('0') }
+        : kind === 'threadHole'
+          ? { ...base, kind, face, centers, designation: 'M6', series: 'coarse', pitch: expr('1'),
+            drillDiameter: expr('6-1.0825317547305482'), threadLength: expr('1'), representation: 'simplified',
+            depth: { kind: 'through' }, tiltAngle: expr('0'), tiltAzimuth: expr('0') }
+          : kind === 'fillet'
+            ? { ...base, kind, targets, radius: expr('1') }
+            : kind === 'chamfer'
+              ? { ...base, kind, targets, size: { kind: 'equal', distance: expr('2') }, swapReferenceFace: false }
+              : kind === 'shell'
+                ? { ...base, kind, openFaces: [face], thickness: expr('1'), outward: false }
+                : { ...base, kind, translation: [expr('5'), expr('0'), expr('0')], rotationAxis: null, rotationAngle: expr('0') };
+    return withSolids(document, feature);
+  }
+
+  /**
+   * hidden読取りの返り値の配列(同一性)にだけ所有者を発行し、解放を記録する偽の台帳の口。
+   * ReferenceMeshScope は 4 口(meshLedgerOwner・captureCurrentMeshLedger・currentMeshLedgerReceipt・
+   * releaseReferenceMeshLease)がそろうときだけ current になる(readReferenceBodies.ts の constructor)。
+   */
+  function ledgerKernel(reply: SolidRecomputeOutcome) {
+    const display = solidBody('machined');
+    const owner: MeshLedgerOwner = {
+      dispatchId: 'hidden-read-1', partId: 'part:current', generation: 5, kind: 'hidden',
+      steps: [{ id: 'extrude-1', key: 'extrude-1-step' }],
+    };
+    const readCachedBodies = vi.fn<NonNullable<KernelBridge['readCachedBodies']>>(() => Promise.resolve(reply));
+    const meshLedgerOwner = vi.fn<NonNullable<KernelBridge['meshLedgerOwner']>>((bodies) =>
+      bodies === reply.bodies ? owner : null);
+    const releaseReferenceMeshLease = vi.fn<NonNullable<KernelBridge['releaseReferenceMeshLease']>>(() =>
+      Promise.resolve({ released: true }));
+    const bridge = fakeBridge({
+      recomputeSolids: () => Promise.resolve({ ...EMPTY_SOLID_OUTCOME, bodies: [display] }),
+      readCachedBodies,
+      meshLedgerOwner,
+      releaseReferenceMeshLease,
+      captureCurrentMeshLedger: (input) =>
+        Promise.resolve({ status: 'unknown' as const, observationId: input.observationId, reason: 'recompute does not capture' }),
+      currentMeshLedgerReceipt: () => false,
+    });
+    return { bridge, display, owner, readCachedBodies, meshLedgerOwner, releaseReferenceMeshLease };
+  }
+
+  it.each(['hole', 'threadHole', 'fillet', 'chamfer', 'shell'] as const)(
+    '作図参照の無い%sでも、消費した参照元を同じ再計算のhidden読取りで1回だけ読み、表示bodyの後ろに返す',
+    async (kind) => {
+      const source = solidBody('extrude-1');
+      const reply: SolidRecomputeOutcome = { ...EMPTY_SOLID_OUTCOME, bodies: [source], cacheHits: 1 };
+      const kernel = ledgerKernel(reply);
+      const result = await recomputePart(machined(kind), kernel.bridge, { generation: 5 });
+      const scope = result.referenceMeshScope;
+      try {
+        expect(result.errors).toEqual([]);
+        expect(result.bodies).toHaveLength(1);
+        expect(result.bodies[0]).toBe(kernel.display);
+        expect(result.bodies).not.toContain(source);
+        expect(kernel.readCachedBodies.mock.calls.map((call) => call[1])).toEqual([['extrude-1']]);
+        // 表示(readReferenceBodies.ts:187)が先、hiddenの参照元(:192)が後。重複も欠落も無い。
+        expect(result.referenceBodies?.map((body) => body.featureId)).toEqual(['machined', 'extrude-1']);
+        expect(result.referenceBodies?.[0]).toBe(kernel.display);
+        expect(result.referenceBodies?.[1]).toBe(source);
+        // 所有者は読取りの返り値の配列にだけ発行され、表示bodyは hidden の控えとして登録されない。
+        expect(kernel.meshLedgerOwner).toHaveBeenCalledTimes(1);
+        expect(kernel.meshLedgerOwner.mock.calls[0][0]).toBe(reply.bodies);
+        if (scope === undefined) {
+          throw new Error('同じ再計算の hidden 読取りの Scope が結果に渡っていません');
+        }
+        expect(scope.current).toBe(true);
+        expect(scope.owners).toHaveLength(1);
+        expect(scope.owners[0]).toBe(kernel.owner);
+        expect(scope.referenceBodyCurrent(source)).toBe(true);
+        expect(scope.referenceBodyCurrent(kernel.display)).toBe(false);
+        expect(kernel.releaseReferenceMeshLease).not.toHaveBeenCalled();
+      } finally {
+        await scope?.close();
+      }
+      // 解放は結果の持ち主が閉じたときに 1 回だけ、発行された所有者に対して行う。
+      expect(kernel.releaseReferenceMeshLease).toHaveBeenCalledTimes(1);
+      expect(kernel.releaseReferenceMeshLease.mock.calls[0][0]).toBe(kernel.owner);
+      expect(scope?.owners).toEqual([]);
+      expect(scope?.referenceBodyCurrent(source)).toBe(false);
+    },
+  );
+
+  it('同じ参照元の辺を2本参照しても、hidden読取りは1回で、参照元は1つだけ返す', async () => {
+    const source = solidBody('extrude-1');
+    const reply: SolidRecomputeOutcome = { ...EMPTY_SOLID_OUTCOME, bodies: [source], cacheHits: 1 };
+    const kernel = ledgerKernel(reply);
+    const result = await recomputePart(machined('fillet', [edge, otherEdge]), kernel.bridge, { generation: 5 });
+    const scope = result.referenceMeshScope;
+    try {
+      expect(result.errors).toEqual([]);
+      expect(kernel.readCachedBodies.mock.calls.map((call) => call[1])).toEqual([['extrude-1']]);
+      expect(result.referenceBodies?.map((body) => body.featureId)).toEqual(['machined', 'extrude-1']);
+      expect(result.referenceBodies?.[0]).toBe(kernel.display);
+      expect(result.referenceBodies?.[1]).toBe(source);
+      expect(scope?.owners).toEqual([kernel.owner]);
+    } finally {
+      await scope?.close();
+    }
+    expect(kernel.releaseReferenceMeshLease).toHaveBeenCalledTimes(1);
+  });
+
+  it('参照元の読取りに失敗したら、参照元を作らず表示bodyだけを返し、発行された所有者は閉じるときに解放する', async () => {
+    const reply: SolidRecomputeOutcome = {
+      ...EMPTY_SOLID_OUTCOME,
+      bodies: [],
+      failures: [{ featureId: 'extrude-1', message: '形状キャッシュから読めませんでした。' }],
+    };
+    const kernel = ledgerKernel(reply);
+    const result = await recomputePart(machined('chamfer'), kernel.bridge, { generation: 5 });
+    const scope = result.referenceMeshScope;
+    try {
+      expect(result.errors).toEqual([]);
+      expect(kernel.readCachedBodies.mock.calls.map((call) => call[1])).toEqual([['extrude-1']]);
+      expect(result.referenceBodies).toHaveLength(1);
+      expect(result.referenceBodies?.[0]).toBe(kernel.display);
+      expect(kernel.meshLedgerOwner.mock.calls.map((call) => call[0])).toEqual([reply.bodies]);
+    } finally {
+      await scope?.close();
+    }
+    expect(kernel.meshLedgerOwner.mock.results).toEqual([{ type: 'return', value: kernel.owner }]);
+    expect(kernel.releaseReferenceMeshLease).toHaveBeenCalledTimes(1);
+    expect(kernel.releaseReferenceMeshLease.mock.calls[0][0]).toBe(kernel.owner);
+    expect(scope?.owners).toEqual([]);
+  });
+
+  it('面・辺を参照しない移動では、消費した参照元を読まない(全bodyを読まない)', async () => {
+    const kernel = ledgerKernel({ ...EMPTY_SOLID_OUTCOME, bodies: [solidBody('extrude-1')] });
+    const result = await recomputePart(machined('transform'), kernel.bridge, { generation: 5 });
+    const scope = result.referenceMeshScope;
+    try {
+      expect(result.errors).toEqual([]);
+      expect(kernel.readCachedBodies).not.toHaveBeenCalled();
+      expect(kernel.meshLedgerOwner).not.toHaveBeenCalled();
+      expect(result.referenceBodies).toHaveLength(1);
+      expect(result.referenceBodies?.[0]).toBe(kernel.display);
+      expect(scope?.owners).toEqual([]);
+    } finally {
+      await scope?.close();
+    }
+    expect(kernel.releaseReferenceMeshLease).not.toHaveBeenCalled();
   });
 });
 

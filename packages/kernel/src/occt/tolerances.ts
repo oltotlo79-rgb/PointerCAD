@@ -6,6 +6,9 @@
  */
 export const GEOMETRIC_CONFUSION_MM = 1e-7;
 
+/** 近似曲面と断面の接続で使う許容差(mm)。文書の縫合修復幅とは別の基準。 */
+export const APPROXIMATION_TOLERANCE_MM = 1e-6;
+
 /** 文書の尺度で縫合の修復幅として受け付ける上限(mm)。 */
 const MAXIMUM_SEWING_REPAIR_TOLERANCE_MM = 1;
 

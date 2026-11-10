@@ -36,14 +36,25 @@
 
 ### 断面の種類と呼び寸法
 
-| 断面形状 | 呼び寸法の書き方 | 例 | 選べる寸法 |
-|---|---|---|---|
-| {{ui:assembly.steel.flatBar}} | FB 幅×厚さ | FB 50×6(幅50 mm・厚さ6 mm) | SS400: 厚さ4.5〜36 mm、幅25〜200 mmの132組。S45C: みがき棒鋼3組と熱間圧延材116組 |
-| {{ui:assembly.steel.roundBar}} | φ径 | φ25 | SS400: φ5.5〜φ200の44径。S45C: みがき棒鋼3径(φ20・φ25・φ30)と熱間圧延材φ11〜φ200の36径 |
-| {{ui:assembly.steel.equalAngle}} | L 辺×辺×厚さ | L 50×50×6 | SS400: L 40×40×5〜L 250×250×35のうち17寸法 |
-| {{ui:assembly.steel.channel}} | [ 高さ×幅×ウェブの厚さ×フランジの厚さ | [ 100×50×5×7.5 | SS400: [ 75×40×5×7〜[ 380×100×13×20のうち11寸法 |
-| {{ui:assembly.steel.hBeam}} | H 高さ×幅×ウェブの厚さ×フランジの厚さ | H 200×100×5.5×8 | SS400: H 100×50×5×7〜H 918×303×19×37のうち49寸法 |
-| {{ui:assembly.steel.steelPipe}} | 呼び径(A) | 15A(外径21.7 mm・肉厚2.8 mm) | SGP: 6A〜500Aの24サイズ。それぞれ黒管と白管 |
+| 断面形状 | 呼び寸法の書き方 | 選べる寸法 |
+|---|---|---|
+| {{ui:assembly.steel.flatBar}} | FB 幅×厚さ | SS400: 厚さ4.5〜36 mm、幅25〜200 mmの132組。S45C: みがき棒鋼3組と熱間圧延材116組 |
+| {{ui:assembly.steel.roundBar}} | φ径 | SS400: φ5.5〜φ200の44径。S45C: みがき棒鋼3径(φ20・φ25・φ30)と熱間圧延材φ11〜φ200の36径 |
+| {{ui:assembly.steel.equalAngle}} | L 辺×辺×厚さ | SS400: L 40×40×5〜L 250×250×35のうち17寸法 |
+| {{ui:assembly.steel.channel}} | [ 高さ×幅×ウェブの厚さ×フランジの厚さ | SS400: [ 75×40×5×7〜[ 380×100×13×20のうち11寸法 |
+| {{ui:assembly.steel.hBeam}} | H 高さ×幅×ウェブの厚さ×フランジの厚さ | SS400: H 100×50×5×7〜H 918×303×19×37のうち49寸法 |
+| {{ui:assembly.steel.steelPipe}} | 呼び径(A) | SGP: 6A〜500Aの24サイズ。それぞれ黒管と白管 |
+
+呼び寸法の例は次のとおりです。
+
+| 断面形状 | 例 |
+|---|---|
+| {{ui:assembly.steel.flatBar}} | FB 50×6(幅50 mm・厚さ6 mm) |
+| {{ui:assembly.steel.roundBar}} | φ25 |
+| {{ui:assembly.steel.equalAngle}} | L 50×50×6 |
+| {{ui:assembly.steel.channel}} | [ 100×50×5×7.5 |
+| {{ui:assembly.steel.hBeam}} | H 200×100×5.5×8 |
+| {{ui:assembly.steel.steelPipe}} | 15A(外径21.7 mm・肉厚2.8 mm) |
 
 - 平鋼の呼び寸法は「FB 幅×厚さ」の順です。FB 50×6は幅50 mm・厚さ6 mmで、資料の表の「厚さ×幅」とは並びが逆です。
 - 平鋼は候補が100を超えるので、先に **{{ui:assembly.steel.selectThickness}}**、次に **{{ui:assembly.steel.selectWidth}}** を選びます。厚さを変えても、同じ幅と供給の条件があればそのまま残ります。S45Cで同じ幅にみがき棒鋼と熱間圧延材の両方があるときは、幅の後ろに条件名が付きます(例「50 mm / みがき棒鋼・加工方法と熱処理条件未指定」)。全部の寸法から選ぶときは **{{ui:assembly.steel.allSizes}}** を開きます。

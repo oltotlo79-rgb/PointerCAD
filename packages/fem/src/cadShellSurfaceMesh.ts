@@ -1,5 +1,6 @@
 import { analysisRegionTriangles, requestAnalysisBoundary, type AnalysisBoundary,
   type AnalysisBoundarySource } from '@pointercad/model';
+import { crossVec3, dotVec3 } from '@pointercad/model/vec3';
 import type { CadTetraContext, CadTetraRegion } from './cadTetraMesh.js';
 
 export const CAD_SHELL_SURFACE_SCHEMA = 'pointercad-cad-shell-surface/1';
@@ -133,7 +134,7 @@ export function prepareCadShellSurfaceMesh(boundary: AnalysisBoundary, context: 
       mesh.coordinates[3 * to + 2] - mesh.coordinates[3 * from + 2],
     ];
     const ab = vector(ids[0], ids[1]), ac = vector(ids[0], ids[2]);
-    const cross = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+    const cross = crossVec3(ab, ac);
     const twiceArea = Math.hypot(...cross), area = twiceArea / 2;
     if (!Number.isFinite(area) || area <= options.minimumTriangleAreaMm2 || twiceArea === 0) {
       refuse('degenerate-or-area', `Triangle ${t} does not meet the minimum area`);
@@ -142,7 +143,7 @@ export function prepareCadShellSurfaceMesh(boundary: AnalysisBoundary, context: 
     for (let side = 0; side < 3; side += 1) {
       const from = ids[side], to = ids[(side + 1) % 3], other = ids[(side + 2) % 3];
       const u = vector(from, to), v = vector(from, other);
-      const angle = Math.atan2(twiceArea, u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) * 180 / Math.PI;
+      const angle = Math.atan2(twiceArea, dotVec3(u, v)) * 180 / Math.PI;
       longest = Math.max(longest, Math.hypot(...u));
       smallestAngle = Math.min(smallestAngle, angle);
       const edgeKey = `${Math.min(from, to)}:${Math.max(from, to)}`;

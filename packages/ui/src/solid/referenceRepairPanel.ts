@@ -41,7 +41,7 @@ export function ReferenceRepairSection(): React.ReactElement | null {
       setSession(null); setSelected(null); setMessage('propertyPanel.repair.applied');
     } else setMessage(result === 'stale' ? 'propertyPanel.repair.stale' : result === 'unchanged' ? 'propertyPanel.repair.unchanged' : 'propertyPanel.repair.notUnique');
   }
-  return h('section', { className: 'pcad-section', 'data-testid': 'reference-repair' },
+  return h('section', { className: 'pcad-section pcad-reference-repair', 'data-testid': 'reference-repair' },
     h('h3', { className: 'pcad-section__title' }, t('propertyPanel.repair.title')),
     h('p', null, t('propertyPanel.repair.scope')),
     ready ? null : h('p', { role: 'status' }, t('propertyPanel.repair.pending')),

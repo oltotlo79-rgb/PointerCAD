@@ -1,13 +1,16 @@
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { assertFemApplicationBuildInputs, collectFemRuntimeAssets, readFemDistributionGaps } from '../../../../scripts/vite/femRuntimeAssets.mjs';
+import { assertFemApplicationBuildInputs, collectFemRuntimeAssets, readFemDistributionGaps, femDistributionObligationGaps } from '../../../../scripts/vite/femRuntimeAssets.mjs';
 import { describe, expect, it } from 'vitest';
 import {
   assembleSbomDocument, assertSbomMatchesReleaseManifest, assertSbomPublishable, buildSbom,
-  collectSbomComponents, femComponentsFromDistribution, deterministicUuid, findSbomGaps, matchSbomToReleaseManifest, verifyFontAssetParity,
+  collectSbomComponents, femComponentsFromDistribution, femDistributionGapsFromDistribution, deterministicUuid, findSbomGaps, matchSbomToReleaseManifest, verifyFontAssetParity,
+  DESKTOP_RENDERER_PREFIX, ELECTRON_EXECUTABLE_NOTICES, assertSbomMatchesDesktopPackage, electronComponentFromPackage,
+  matchSbomToDesktopPackage, sbomElectronComponent,
 } from '../../../../scripts/release/sbom.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -18,6 +21,12 @@ const exactMathManifest = JSON.parse(readFileSync(join(root, 'vendor/exact-math/
 const rootPackageVersion = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string }).version;
 type SbomComponent = ReturnType<typeof collectSbomComponents>['components'][number];
 const byName = (components: readonly SbomComponent[], name: string) => components.find((item) => item.name === name);
+/** The Electron package apps/desktop actually installed, resolved like assemble-desktop.mjs, with its own LICENSE bytes. */
+function installedElectron() {
+  const manifestPath = createRequire(join(root, 'apps/desktop/package.json')).resolve('electron/package.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name: string; version: string; license: string };
+  return { manifest, license: readFileSync(join(dirname(manifestPath), 'LICENSE')) };
+}
 
 describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () => {
   it('maps every FEM component and emitted part, retains uncertain licenses and rejects altered or absent bytes', () => {
@@ -413,20 +422,79 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
       .toThrow('FEM embedded component notice missing: pybind11');
   });
 
-  it('FEM retains the four unrelated distribution blockers after technical native proof', () => {
+  it('gates actual source, notices, delivery and replacement while reusing existing OOFEM proof', () => {
+    interface Pin { bytes: number; sha256: string; parts?: { file: string; bytes: number; sha256: string }[] }
+    interface Manifest { files: Record<string, Pin>; components: { name: string; version: string; notices: string[] }[];
+      oofemSourceCommit: string; unresolved: string[]; correspondingSourceComplete: boolean; nativeRebuildExecuted: boolean; legalClearance: boolean }
+    interface Row { name: string; version: string; profile: string; licenseStatus: string; notices: string[];
+      sources?: string[]; scripts?: string[]; modificationNotices?: string[];
+      delivery: { kind: string; index: string; instructions: string | null };
+      sourceAccess?: { kind: string; index: string };
+      replacement?: { route: string; instructions: string | null; applicationSource: string | null; evidence: string | null } }
+    interface Obligations { format: string; components: Row[] }
     const distribution = collectFemRuntimeAssets(join(root, 'packages/fem/runtime'));
-    const manifestBytes = distribution.assets.get('licenses/fem/manifest.json');
-    if (!manifestBytes) throw new Error('FEM manifest absent');
-    const manifest = JSON.parse(manifestBytes.toString('utf8')) as { unresolved: string[] };
-    const unresolved = [
-      '歴史的なビルド環境と静的に含まれる部品の対応付けは未完了です。',
-      'IML の指定ソースの出典・許諾根拠と NIST notice は保持済みです。製品全体の法的確認の完了は主張しません。',
-      'ソース提供・差替えの配布条件と製品の条項について法的確認が残っています。',
-      '列挙済みの OOFEM・Pyodide・Netgen の部品と保持資料は一覧へ対応付け済みですが、静的・コンパイラー実行時依存と NumPy 内包部品の完全な対応は未完了です。',
+    const bytes = distribution.assets.get('licenses/fem/manifest.json');
+    if (!bytes) throw new Error('Expected actual FEM manifest');
+    const manifest = JSON.parse(bytes.toString('utf8')) as Manifest;
+    const files = new Map<string, Buffer>();
+    for (const [name, pin] of Object.entries(manifest.files)) {
+      if (!pin.parts) throw new Error('Expected emitted source parts');
+      files.set(name, Buffer.concat(pin.parts.map(part => {
+        const value = distribution.assets.get(part.file);
+        if (!value) throw new Error('Expected actual emitted part');
+        return value;
+      })));
+    }
+    const obligationFile = 'evidence/distribution-obligations.json';
+    const obligationBytes = files.get(obligationFile);
+    if (!obligationBytes) throw new Error('Expected delivered obligation record');
+    const obligations = JSON.parse(obligationBytes.toString('utf8')) as Obligations;
+    // Test only the real OOFEM branch here. Netgen's unexecuted replacement remains independently open.
+    manifest.components = manifest.components.filter(item => item.name === 'oofem');
+    obligations.components = obligations.components.filter(item => item.name === 'oofem');
+    const initial = obligations.components[0];
+    if (!initial?.replacement) throw new Error('Expected actual OOFEM obligation');
+    // A tiny pinned document is a presence fixture, not a claim that a recipient run or legal review happened.
+    const instructions = 'evidence/unit-recipient-instructions.md';
+    const instructionBytes = Buffer.from('# Unit fixture: bundled source and relink instructions\n');
+    files.set(instructions, instructionBytes);
+    manifest.files[instructions] = { bytes: instructionBytes.byteLength, sha256: createHash('sha256').update(instructionBytes).digest('hex') };
+    initial.delivery.instructions = instructions;
+    initial.replacement.instructions = instructions;
+    const run = (edit: (row: Row, values: Map<string, Buffer>, changed: Manifest) => void) => {
+      const changed = structuredClone(manifest), record = structuredClone(obligations), values = new Map(files);
+      const row = record.components[0];
+      if (!row) throw new Error('Expected fixture row');
+      edit(row, values, changed);
+      const updated = Buffer.from(JSON.stringify(record));
+      values.set(obligationFile, updated);
+      changed.files[obligationFile] = { bytes: updated.byteLength, sha256: createHash('sha256').update(updated).digest('hex') };
+      return femDistributionObligationGaps(changed, values);
+    };
+    expect(run(() => {})).toEqual([]);
+    expect(run((_row, _values, changed) => {
+      changed.correspondingSourceComplete = false; changed.nativeRebuildExecuted = false; changed.legalClearance = false;
+      changed.unresolved.push('No product-wide legal warranty; no exact object link map.');
+    })).toEqual([]);
+    const controls: readonly [string, (row: Row, values: Map<string, Buffer>, changed: Manifest) => void, string][] = [
+      ['notice bytes', (row, values) => { const name = row.notices[0]; if (!name) throw new Error('Expected notice'); values.delete(name); }, 'notice missing or changed'],
+      ['notice mapping', row => { row.notices = []; }, 'required notice mapping differs'],
+      ['license terms', row => { row.licenseStatus = 'unknown'; }, 'applicable license terms are unknown'],
+      ['source bytes', (row, values) => { const name = row.sources?.[0]; if (!name) throw new Error('Expected source'); values.delete(name); }, 'covered source missing or changed'],
+      ['source inventory', row => { row.sources = []; }, 'required covered-source inventory differs'],
+      ['build scripts', row => { row.scripts = []; }, 'compilation/installation script is absent'],
+      ['change notices', row => { row.modificationNotices = []; }, 'modification notice is absent'],
+      ['delivery', row => { row.delivery.index = ''; }, 'recipient source/notice delivery location is absent'],
+      ['instructions', (row, values) => { if (!row.delivery.instructions) throw new Error('Expected instructions'); values.delete(row.delivery.instructions); }, 'recipient instructions missing or changed'],
+      ['source access', row => { delete row.sourceAccess; }, 'covered-source access location is absent'],
+      ['replacement route', row => { if (!row.replacement) throw new Error('Expected route'); row.replacement.route = 'hash-pinned-default-only'; }, 'usable replacement/relink route is absent'],
+      ['actual native proof', (row, values) => { if (!row.replacement?.evidence) throw new Error('Expected proof'); values.delete(row.replacement.evidence); }, 'native rebuild evidence is absent or not pinned'],
+      ['component version', row => { row.version = 'unknown'; }, 'license/version obligation mapping differs'],
     ];
-    expect(manifest.unresolved).toEqual(unresolved);
-    expect(readFemDistributionGaps(join(root, 'packages/fem/runtime'))).toEqual([...unresolved.map(item => 'FEM: ' + item),
-      'FEM: corresponding source closure is incomplete']);
+    for (const [name, edit, message] of controls) expect(run(edit).some(gap => gap.includes(message)), name).toBe(true);
+    const changedParts = new Map(distribution.assets);
+    changedParts.delete('licenses/fem/evidence/distribution-obligations.json');
+    expect(() => femDistributionGapsFromDistribution({ ...distribution, assets: changedParts })).toThrow('FEM SBOM distributed bytes differ');
   });
 
   it('直接・推移のnpm依存11件をCycloneDXのlibrary部品として集める', () => {
@@ -438,6 +506,72 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
       expect(component?.properties?.some((entry) => entry.name === 'pointercad:distributedFile' && entry.value.startsWith(`licenses/runtime/`)), name).toBe(true);
     }
     expect(components.filter((item) => item.type === 'library' && item.purl?.startsWith('pkg:npm/'))).toHaveLength(11);
+  });
+
+  it('デスクトップ版に入るElectronを、apps/desktopが実際に導入したpackageの版とMITの原文から1部品として記録する', () => {
+    const sbom = buildSbom(root);
+    // assemble-desktop.mjs が候補の electronVersion を読むのと同じ解決で導入済みの実物を読む(版を転記しない)。
+    const installed = installedElectron();
+    expect(installed.manifest.license).toBe('MIT');
+    const electron = sbom.components.filter((item) => item.name === 'electron');
+    expect(electron).toHaveLength(1);
+    expect(electron[0].type).toBe('library');
+    expect(electron[0].version).toBe(installed.manifest.version);
+    expect(electron[0].licenses).toEqual([{ license: { id: 'MIT' } }]);
+    const values = (name: string) => (electron[0].properties ?? []).filter((entry) => entry.name === name).map((entry) => entry.value);
+    expect(values('pointercad:installedPackageLicense')).toEqual([`electron/LICENSE|${createHash('sha256').update(installed.license).digest('hex')}`]);
+    expect(values('pointercad:desktopExecutableNotice')).toEqual([...ELECTRON_EXECUTABLE_NOTICES]);
+    // 実行ファイル横の原文は Web・renderer の照合対象(distributedFile)にしない。
+    expect(values('pointercad:distributedFile')).toEqual([]);
+    expect(sbomElectronComponent(sbom)).toEqual({ version: installed.manifest.version,
+      licenseFile: values('pointercad:installedPackageLicense')[0], executableNotices: [...ELECTRON_EXECUTABLE_NOTICES] });
+    expect(() => sbomElectronComponent({ ...sbom, components: sbom.components.filter((item) => item.name !== 'electron') }))
+      .toThrow('Missing SBOM Electron component');
+    expect(() => sbomElectronComponent({ ...sbom, components: [...sbom.components, electron[0]] })).toThrow('Ambiguous SBOM Electron component');
+  });
+
+  it('Electronの部品は、導入済みpackageのLICENSEの欠落・MIT以外の宣言・MITでない原文・壊れた版を拒否する', () => {
+    const installed = installedElectron();
+    expect(electronComponentFromPackage(installed.manifest, installed.license).version).toBe(installed.manifest.version);
+    expect(() => electronComponentFromPackage(installed.manifest, undefined)).toThrow('Installed Electron license file is missing: electron/LICENSE');
+    expect(() => electronComponentFromPackage(installed.manifest, new Uint8Array())).toThrow('Installed Electron license file is missing');
+    expect(() => electronComponentFromPackage({ ...installed.manifest, license: 'Apache-2.0' }, installed.license))
+      .toThrow('Installed Electron license differs from MIT: Apache-2.0');
+    expect(() => electronComponentFromPackage(installed.manifest, Buffer.from('All rights reserved.')))
+      .toThrow('Installed Electron license file is not the MIT text');
+    expect(() => electronComponentFromPackage({ ...installed.manifest, version: 'latest' }, installed.license)).toThrow('package identity is invalid');
+    expect(() => electronComponentFromPackage({ ...installed.manifest, name: 'electron-nightly' }, installed.license)).toThrow('package identity is invalid');
+  });
+
+  it('SBOMの配布原文を、desktop候補の同梱一覧(desktop-package.jsonのdist/renderer/)と直接照合し、欠落・改変を拒否する', () => {
+    const sbom = buildSbom(root);
+    const files: { path: string; bytes: number; sha256: string }[] = [];
+    for (const component of sbom.components) {
+      for (const entry of component.properties ?? []) {
+        if (entry.name !== 'pointercad:distributedFile') continue;
+        const [path, sha256] = entry.value.split('|');
+        files.push({ path: DESKTOP_RENDERER_PREFIX + path, bytes: 1, sha256 });
+      }
+    }
+    expect(files.length).toBeGreaterThan(50);
+    const okPackage = { files };
+    expect(matchSbomToDesktopPackage(sbom, okPackage)).toEqual({ checked: files.length, missing: [], mismatched: [] });
+    expect(assertSbomMatchesDesktopPackage(sbom, okPackage, 'win32').checked).toBe(files.length);
+    // Web の置き場(接頭辞なし)では desktop の照合を通さない。
+    const webShaped = { files: files.map((file) => ({ ...file, path: file.path.slice(DESKTOP_RENDERER_PREFIX.length) })) };
+    expect(matchSbomToDesktopPackage(sbom, webShaped).missing).toHaveLength(files.length);
+
+    const missingPackage = { files: files.slice(1) };
+    expect(matchSbomToDesktopPackage(sbom, missingPackage).missing).toHaveLength(1);
+    expect(() => assertSbomMatchesDesktopPackage(sbom, missingPackage, 'linux')).toThrow('Desktop package (linux) is missing SBOM files: ' + files[0].path);
+
+    const tamperedPackage = { files: [{ ...files[0], sha256: files[0].sha256.replace(/^./u, files[0].sha256[0] === 'a' ? 'b' : 'a') }, ...files.slice(1)] };
+    expect(matchSbomToDesktopPackage(sbom, tamperedPackage).mismatched).toHaveLength(1);
+    expect(() => assertSbomMatchesDesktopPackage(sbom, tamperedPackage, 'win32')).toThrow('Desktop package (win32) file hash differs from SBOM: ' + files[0].path);
+
+    expect(() => matchSbomToDesktopPackage(sbom, {})).toThrow('Invalid desktop package inventory');
+    expect(() => matchSbomToDesktopPackage(sbom, { files: [{ path: 'x', sha256: 'not-a-hash' }] })).toThrow('Invalid desktop package file entry');
+    expect(() => matchSbomToDesktopPackage({ components: null }, { files: [] })).toThrow('Invalid SBOM document');
   });
 
   it('OCCTのLGPL例外条項をopencascade.js部品の配布資産として記録する(P13-6c)', () => {
@@ -608,14 +742,15 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
     expect(gaps.unresolvedNotices).toEqual(readFemDistributionGaps(join(root, 'packages/fem/runtime')));
     expect(new Set(gaps.unresolvedNotices).size).toBe(gaps.unresolvedNotices.length);
     expect(gaps.unresolvedNotices).not.toContain('FEM: native rebuild and replacement remain unqualified');
-    expect(gaps.unresolvedNotices).toContain('FEM: corresponding source closure is incomplete');
+    expect(gaps.unresolvedNotices).not.toContain('FEM: corresponding source closure is incomplete');
     // SQLiteは原文と公式blessing全文を照合済み。liblzmaは別の標準条文を推測で割り当てず、同梱原文の名前付き許諾として未分類から外す。
     const fem = JSON.parse(readFileSync(join(root, 'packages/fem/runtime/manifest.json'), 'utf8')) as { components: { name: string }[] };
     // FEM の部品は oofem・numpy・Pyodide・netgen-mesher の4件で、どれにも推測で SPDX や名前付き許諾を割り当てない(numpy の原文一式の網羅は未証明)。
     expect(fem.components.map(item => item.name)).toEqual(['oofem', 'numpy', 'Pyodide', 'netgen-mesher']);
     expect(gaps.unclassifiedLicenses).toEqual(['FEM: oofem', 'FEM: numpy', 'FEM: Pyodide', 'FEM: netgen-mesher', 'FEM: pybind11', 'FEM: Netgen pybind11', 'FEM: Netgen zlib', 'FEM: Netgen concurrentqueue', 'FEM: Netgen gzstream']);
     expect(gaps.noLicenseInformation).toEqual([]);
-    expect(() => assertSbomPublishable(sbom)).toThrow('Unresolved SBOM notices');
+    if (gaps.unresolvedNotices.length > 0) expect(() => assertSbomPublishable(sbom)).toThrow('Unresolved SBOM notices');
+    else expect(() => assertSbomPublishable(sbom)).not.toThrow();
     const withGap = { ...sbom, metadata: { ...sbom.metadata, properties: [...sbom.metadata.properties, { name: 'pointercad:unresolvedNotice', value: 'missing@1.0.0' }] } };
     expect(() => assertSbomPublishable(withGap)).toThrow('Unresolved SBOM notices');
   });
@@ -681,8 +816,8 @@ describe('配布に含める依存・固定資産の一覧(SBOM)を作る', () =
 
     const sbom = buildSbom(root, { sourceCommit: '1'.repeat(40) });
     const fem = JSON.parse(readFileSync(join(root, 'packages/fem/runtime/manifest.json'), 'utf8')) as { components: unknown[]; files: Record<string, unknown> };
-    // Existing inventory plus the five explicitly retained Netgen dependency/header records.
-    expect(sbom.components).toHaveLength(87 + fem.components.length + Object.keys(fem.files).length + 2 + 1 + 5);
+    // Existing inventory plus the five explicitly retained Netgen dependency/header records and the desktop-only Electron runtime.
+    expect(sbom.components).toHaveLength(87 + fem.components.length + Object.keys(fem.files).length + 2 + 1 + 5 + 1);
     const valid = validate(sbom);
     expect(valid, JSON.stringify(validate.errors)).toBe(true);
 

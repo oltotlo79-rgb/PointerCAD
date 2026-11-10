@@ -9,7 +9,10 @@ export interface DrawingViewBasis {
   readonly y: Vector3;
   readonly normal: Vector3;
 }
-function dot(a: Vector3, b: Vector3): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+/** 3 成分の内積(成分の順に足す)。図面の層の唯一の定義で、自動寸法もここから読む。kernel・model への依存は作らない。 */
+export function dotVector3(a: Vector3, b: Vector3): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+/** 3 成分の外積 a×b(右手系)。図面の層の唯一の定義。 */
+export function crossVector3(a: Vector3, b: Vector3): Vector3 { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
 /** 方向を長さ1にする。長さが0・非有限ならnull。model の寸法計測もこの関数を使う。 */
 export function normalizedDrawingDirection(value: Vector3): Vector3 | null {
   const length = Math.hypot(...value);
@@ -19,10 +22,10 @@ export function normalizedDrawingDirection(value: Vector3): Vector3 | null {
 export function drawingViewBasis(view: ViewDirection): DrawingViewBasis | null {
   const normal = normalizedDrawingDirection(view.normal);
   if (normal === null || !view.xDir.every(Number.isFinite)) return null;
-  const projection = dot(view.xDir, normal);
+  const projection = dotVector3(view.xDir, normal);
   const x = normalizedDrawingDirection([view.xDir[0] - projection * normal[0], view.xDir[1] - projection * normal[1], view.xDir[2] - projection * normal[2]]);
   if (x === null) return null;
-  const y = normalizedDrawingDirection([x[1] * normal[2] - x[2] * normal[1], x[2] * normal[0] - x[0] * normal[2], x[0] * normal[1] - x[1] * normal[0]]);
+  const y = normalizedDrawingDirection(crossVector3(x, normal));
   return y === null ? null : { x, y, normal };
 }
 
@@ -91,7 +94,7 @@ export function dimensionSeries(input: DimensionSeriesInput): DimensionSeriesRes
   // 大きい原点でも小さい差を失いにくいよう、先に3D点どうしの差を取る。
   const rows = input.points.map((point): CoordinateDimensionRow => {
     const delta: Vector3 = [point.modelPoint[0] - base.modelPoint[0], point.modelPoint[1] - base.modelPoint[1], point.modelPoint[2] - base.modelPoint[2]];
-    return { pointId: point.id, x: dot(delta, basis.x), y: dot(delta, basis.y), position: point.paperPoint };
+    return { pointId: point.id, x: dotVector3(delta, basis.x), y: dotVector3(delta, basis.y), position: point.paperPoint };
   });
   if (rows.some((row) => !Number.isFinite(row.x) || !Number.isFinite(row.y))) return failure('input');
   if (input.kind === 'coordinate') return { ok: true, kind: 'coordinate', rows, basePointId: base.id };

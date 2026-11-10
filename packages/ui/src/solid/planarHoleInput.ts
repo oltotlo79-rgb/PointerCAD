@@ -1,3 +1,4 @@
+import { crossVec3, dotVec3 } from '@pointercad/model/vec3';
 import type { SolidFaceEntry, SubShapeRef } from '@pointercad/model';
 
 export type PlanarHoleBasis = NonNullable<SolidFaceEntry['planarBasis']>;
@@ -13,12 +14,8 @@ export function validPlanarHoleBasis(basis: PlanarHoleBasis | undefined): basis 
   const { origin, xAxis: u, yAxis: v, normal: n } = basis;
   if (![...origin, ...u, ...v, ...n].every(Number.isFinite)
     || [u, v, n].some(axis => Math.abs(Math.hypot(...axis) - 1) > 1e-9)) return false;
-  const cross = [
-    n[1] * u[2] - n[2] * u[1],
-    n[2] * u[0] - n[0] * u[2],
-    n[0] * u[1] - n[1] * u[0],
-  ];
-  return Math.abs(n[0] * u[0] + n[1] * u[1] + n[2] * u[2]) <= 1e-9
+  const cross = crossVec3(n, u);
+  return Math.abs(dotVec3(n, u)) <= 1e-9
     && cross.every((component, index) => Math.abs(component - v[index]) <= 1e-9);
 }
 

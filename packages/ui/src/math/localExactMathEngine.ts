@@ -75,7 +75,38 @@ function isRuntime(value: unknown): value is Runtime {
     && typeof value.globals.set === 'function' && typeof value.globals.delete === 'function'
     && typeof value.runPython === 'function';
 }
-async function initialize(notify: (phase: ExactMathEnginePhase) => void): Promise<Runtime> {
+type InitializationProfile = (stage: 'metadata' | 'sympy-import' | 'cas-evaluate-import',
+  boundary: 'start' | 'end', atMs: number) => void;
+
+/** Fixed initialization only: no expression or user-controlled Python reaches diagnostics. */
+export function initializeFixedMathPython(runtime: Pick<Runtime, 'runPython'>, profile?: InitializationProfile): void {
+  const metadata = `
+import sys
+import importlib.metadata as _pcad_metadata
+assert _pcad_metadata.version('sympy') == '1.14.0'
+assert _pcad_metadata.version('mpmath') == '1.3.0'
+sys.path.insert(0, '/pcad_exact')
+`;
+  const calculationImport = 'from cas_evaluate import calculate_exact_json as _pcad_calculate_exact\n';
+  if (profile === undefined) {
+    runtime.runPython(metadata + calculationImport);
+    return;
+  }
+  const report = (stage: Parameters<InitializationProfile>[0], boundary: Parameters<InitializationProfile>[1]): void => {
+    try { profile(stage, boundary, performance.now()); }
+    catch { /* Diagnostic recording must not turn valid preparation into a failure. */ }
+  };
+  const run = (stage: Parameters<InitializationProfile>[0], source: string): void => {
+    report(stage, 'start');
+    runtime.runPython(source);
+    report(stage, 'end');
+  };
+  run('metadata', metadata);
+  run('sympy-import', 'import sympy\n');
+  run('cas-evaluate-import', calculationImport);
+}
+
+async function initialize(notify: (phase: ExactMathEnginePhase) => void, profile?: InitializationProfile): Promise<Runtime> {
   notify('runtime-loading');
   // Production Workers are emitted in assets/ in both distributions. Development
   // serves the identical verified runtime at the configured application's base.
@@ -108,14 +139,7 @@ async function initialize(notify: (phase: ExactMathEnginePhase) => void): Promis
     runtime.FS.writeFile('/pcad_exact/' + name, source);
   }
   notify('symbolic-import');
-  runtime.runPython(`
-import sys
-import importlib.metadata as _pcad_metadata
-assert _pcad_metadata.version('sympy') == '1.14.0'
-assert _pcad_metadata.version('mpmath') == '1.3.0'
-sys.path.insert(0, '/pcad_exact')
-from cas_evaluate import calculate_exact_json as _pcad_calculate_exact
-`);
+  initializeFixedMathPython(runtime, profile);
   return runtime;
 }
 
@@ -124,6 +148,7 @@ from cas_evaluate import calculate_exact_json as _pcad_calculate_exact
 export function createLocalExactMathEngine(options: {
   readonly onPhase: (phase: ExactMathEnginePhase) => void;
   readonly retire: () => void;
+  readonly onInitializationProfile?: InitializationProfile;
 }): ExactMathEngine {
   let initialization: Promise<Runtime> | null = null;
   let busy = false, uses = 0;
@@ -135,7 +160,8 @@ export function createLocalExactMathEngine(options: {
     try {
       const payloads = inputs.map(input => JSON.stringify(input));
       if (payloads.reduce((size, payload) => size + payload.length, 0) > 1_048_576) throw new Error('Structured input exceeds its limit');
-      initialization ??= initialize(options.onPhase);
+      initialization ??= initialize(options.onPhase,
+        import.meta.env.VITE_PCAD_E2E === '1' ? options.onInitializationProfile : undefined);
       runtime = await initialization;
       options.onPhase('calculating');
       const results: unknown[] = [];

@@ -5,7 +5,7 @@
  * two points coincide, whether the points lie on one plane (`fitPlaneNormal` / `isPlanar`),
  * and whether a corner touches another edge. No separate tolerance is introduced here.
  */
-import { dotVec3, fitPlaneNormal, isPlanar, isSamePoint, planeAxesFor, SKETCH_TOLERANCE_MM, subVec3,
+import { crossVec2, dotVec3, fitPlaneNormal, isPlanar, isSamePoint, planeAxesFor, SKETCH_TOLERANCE_MM, subVec3,
   type Vec3 } from '@pointercad/model';
 
 export type FacePointOrderRefusal = 'samePoint' | 'collinear' | 'notPlanar' | 'selfIntersecting';
@@ -20,7 +20,7 @@ type Flat = readonly [number, number];
 export const MIN_FACE_CORNERS = 3;
 
 function cross(a: Flat, b: Flat, c: Flat): number {
-  return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  return crossVec2([b[0] - a[0], b[1] - a[1]], [c[0] - a[0], c[1] - a[1]]);
 }
 
 function pointSegmentDistance(point: Flat, from: Flat, to: Flat): number {

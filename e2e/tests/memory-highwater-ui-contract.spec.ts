@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect, test, type Page } from '@playwright/test';
-import { expectMemoryEmptyDocument, memorySolidDimensionField, serialGpuReader, type GpuReading } from './memoryHighwaterFlow.js';
+import { viewportCollectedCoverage, expectMemoryEmptyDocument, memorySolidDimensionField, serialGpuReader, type GpuReading } from './memoryHighwaterFlow.js';
 import { INTERVAL_MS, type RawFrame } from './processResourceSampler.js';
 
 async function emptyFixture(page: Page, kind: 'solid' | 'assembly'): Promise<void> {
@@ -148,4 +148,20 @@ test('a failed GPU read is kept as a failure, not dropped and not counted as 0',
   expect(reader.failures).toEqual(['GPU read failed: Error: fdinfo vanished']);
   expect(reader.readings).toEqual([]);
   expect(reader.pending()).toBe(0);
+});
+
+test('a drained viewport start remains valid after ring eviction, while real gaps and missing metadata fail', () => {
+  const row = (sequence: number, kind: string) => ({ sequence, kind, operationId: 'operation-1',
+    publicationId: 'publication-1', resourceOwnerId: 'resource-1', documentId: 'document-1', generation: 7, preview: false });
+  const drained = [row(1, 'build-start'), row(2, 'publish-start'), row(3, 'publish-complete'), row(4, 'build-complete')];
+  // A rolling snapshot now contains only terminal records; the earlier starts were drained.
+  const rolling = drained.slice(2);
+  expect(viewportCollectedCoverage(rolling).length).toBeGreaterThan(0);
+  expect(viewportCollectedCoverage(drained)).toEqual([]);
+  expect(viewportCollectedCoverage([drained[0], ...drained.slice(2)]).length).toBeGreaterThan(0);
+  expect(viewportCollectedCoverage([...drained, row(5, 'publish-complete')])).toContain('Viewport collected duplicate terminal');
+  expect(viewportCollectedCoverage(drained.map(record => record.sequence === 3 ? { ...record, documentId: null } : record)))
+    .toContain('Viewport collected owner metadata missing');
+  expect(viewportCollectedCoverage(drained.map(record => record.sequence === 3 ? { ...record, generation: 8 } : record)))
+    .toContain('Viewport collected owner conflict');
 });

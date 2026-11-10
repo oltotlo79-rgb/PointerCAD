@@ -5,6 +5,7 @@ import { loadOcctForNode } from './loadOcct.node.js';
 import { R22_THIN_SOLIDS } from './geometryAcceptanceFixtures.js';
 import {
   GEOMETRIC_CONFUSION_MM,
+  APPROXIMATION_TOLERANCE_MM,
   validateToleranceMm,
 } from './tolerances.js';
 
@@ -29,8 +30,11 @@ describe('用途別の許容誤差', () => {
     oc = await loadOcctForNode();
   });
 
-  it('幾何一致・縫合修復・近似曲面の値を別々に保つ', () => {
+  it('幾何一致と近似曲面の値を分け、文書の修復幅上限を守る', () => {
     expect(GEOMETRIC_CONFUSION_MM).toBe(1e-7);
+    expect(APPROXIMATION_TOLERANCE_MM).toBe(1e-6);
+    expect(APPROXIMATION_TOLERANCE_MM).not.toBe(GEOMETRIC_CONFUSION_MM);
+    expect(APPROXIMATION_TOLERANCE_MM).not.toBe(DEFAULT_SEWING_REPAIR_TOLERANCE_MM);
     expect(() => validateToleranceMm(1.000001)).toThrow('つなぎ目の許容量は 1 mm 以下にしてください。');
   });
 

@@ -35,6 +35,99 @@ function measured(value: number | null): value is number {
   return value !== null && Number.isFinite(value) && value >= 0;
 }
 
+/** A save sampler frame must account for every discovered PID; unknown is never zero.
+ * These short-lived read rows do not claim process creation identity. */
+export function processTreeMemoryTotals(input: unknown): {
+  readonly workingSetBytes: number | null; readonly privateBytes: number | null;
+  readonly processes: number; readonly expectedPids: readonly number[]; readonly observedPids: readonly number[];
+  readonly readings: readonly unknown[]; readonly complete: boolean; readonly problems: readonly string[];
+} {
+  const row = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {};
+  const problems: string[] = [];
+  const expected: unknown[] = Array.isArray(row.expectedPids) ? row.expectedPids : [];
+  const readings: unknown[] = Array.isArray(row.readings) ? row.readings : [];
+  const expectedPids: number[] = [];
+  for (const pid of expected) {
+    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0 || expectedPids.includes(pid)) problems.push('invalid/duplicate expected PID');
+    else expectedPids.push(pid);
+  }
+  if (expectedPids.length === 0) problems.push('process tree is empty');
+  if (row.discoveryError !== null) problems.push(`process discovery failed: ${typeof row.discoveryError === 'string' ? row.discoveryError : 'invalid-status (expected string or null)'}`);
+  const observedPids: number[] = [];
+  let workingSetBytes = 0, privateBytes = 0;
+  for (const reading of readings) {
+    const process = typeof reading === 'object' && reading !== null ? reading as Record<string, unknown> : {};
+    const pid = process.pid;
+    if (typeof pid !== 'number' || !expectedPids.includes(pid) || observedPids.includes(pid)) problems.push(`unexpected/duplicate PID: ${String(pid)}`);
+    else observedPids.push(pid);
+    if (process.error !== null) problems.push(`${String(pid)}: read failed: ${typeof process.error === 'string' ? process.error : 'invalid-status (expected string or null)'}`);
+    if (typeof process.workingSetBytes === 'number' && measured(process.workingSetBytes)) workingSetBytes += process.workingSetBytes;
+    else problems.push(`${String(pid)}: working set unknown`);
+    if (typeof process.privateBytes === 'number' && measured(process.privateBytes)) privateBytes += process.privateBytes;
+    else problems.push(`${String(pid)}: private memory unknown`);
+  }
+  for (const pid of expectedPids) if (!observedPids.includes(pid)) problems.push(`PID ${String(pid)}: reading missing`);
+  const complete = problems.length === 0;
+  return { workingSetBytes: complete ? workingSetBytes : null, privateBytes: complete ? privateBytes : null,
+    processes: expectedPids.length, expectedPids, observedPids, readings, complete, problems };
+}
+
+/** Parse actual /proc status fields without coercing absent/empty fields to zero. */
+export function linuxProcessMemoryReading(pid: number, status: string | null, error: string | null): {
+  readonly pid: number; readonly workingSetBytes: number | null; readonly privateBytes: number | null; readonly error: string | null;
+} {
+  const field = (key: string): number | null => {
+    const line = status?.split('\n').find(value => value.startsWith(`${key}:`));
+    const match = /^\w+:\s+(\d+) kB\s*$/u.exec(line ?? '');
+    return match === null ? null : Number(match[1]) * 1024;
+  };
+  return { pid, workingSetBytes: field('VmRSS'), privateBytes: field('RssAnon'), error };
+}
+
+export interface LinuxProcessStatReading {
+  readonly pid: number; readonly stat: string | null; readonly errorCode: string | null; readonly error: string | null;
+}
+
+/** Only an actual per-PID ENOENT/ESRCH read may disappear during /proc enumeration.
+ * A denied/unreadable row has unknown ancestry, so it invalidates the whole tree. */
+export function linuxProcessTreeDiscovery(root: number, readings: readonly LinuxProcessStatReading[], rootReadError: string | null = null): {
+  readonly expectedPids: readonly number[]; readonly discoveryError: string | null;
+  readonly errors: readonly string[]; readonly exitedPids: readonly number[]; readonly readings: readonly LinuxProcessStatReading[];
+} {
+  const errors: string[] = rootReadError === null ? [] : [rootReadError];
+  const exitedPids: number[] = [], parsedPids = new Set<number>(), kids = new Map<number, number[]>();
+  if (!Number.isInteger(root) || root <= 0) errors.push('invalid discovery root PID');
+  for (const row of readings) {
+    if (!Number.isInteger(row.pid) || row.pid <= 0 || parsedPids.has(row.pid) || exitedPids.includes(row.pid)) {
+      errors.push(`invalid/duplicate stat PID ${String(row.pid)}`); continue;
+    }
+    if (row.error !== null || row.errorCode !== null) {
+      if (row.stat === null && row.error !== null && (row.errorCode === 'ENOENT' || row.errorCode === 'ESRCH')) exitedPids.push(row.pid);
+      else errors.push(`/proc/${String(row.pid)}/stat: ${row.errorCode ?? 'unknown errno'}: ${row.error ?? 'missing error detail'}`);
+      continue;
+    }
+    const stat = row.stat ?? '', close = stat.lastIndexOf(') ');
+    const header = /^(\d+) \([\s\S]*\)$/u.exec(stat.slice(0, close + 1));
+    const fields = stat.slice(close + 2).trim().split(/\s+/u), parentText = fields[1] ?? '';
+    const parent = Number(parentText);
+    if (close < 0 || header === null || Number(header[1]) !== row.pid || fields.length < 20 ||
+      !/^[A-Za-z]$/u.test(fields[0] ?? '') || !/^\d+$/u.test(parentText) || !Number.isSafeInteger(parent) ||
+      !/^\d+$/u.test(fields[19] ?? '')) {
+      errors.push(`/proc/${String(row.pid)}/stat: invalid stat (PID/state/parent/starttime)`); continue;
+    }
+    parsedPids.add(row.pid);
+    const list = kids.get(parent) ?? []; list.push(row.pid); kids.set(parent, list);
+  }
+  if (!parsedPids.has(root)) errors.push(`discovery root PID ${String(root)} stat unavailable`);
+  const expectedPids: number[] = [], queue = [root], seen = new Set([root]);
+  while (queue.length > 0) {
+    for (const child of kids.get(queue.shift() ?? -1) ?? []) {
+      if (!seen.has(child)) { seen.add(child); expectedPids.push(child); queue.push(child); }
+    }
+  }
+  return { expectedPids, discoveryError: errors.length === 0 ? null : errors.join('; '), errors, exitedPids, readings };
+}
+
 /** 同じidentityの重複は一度だけ。矛盾/同じPIDの異なるidentityは集計を不明にする。 */
 export function processMemoryTotals(frame: ProcessMemoryFrame): MemoryTotals {
   const problems: string[] = [];
@@ -163,6 +256,201 @@ export function processMemoryWithinBudget(summary: ReturnType<typeof summarizePr
     [summary.workingSet, summary.privateMemory].every(metric =>
       metric.extraPeak !== null && metric.extraAfterRelease !== null &&
       metric.extraPeak < limitBytes && metric.extraAfterRelease < limitBytes);
+}
+
+/** Case-scoped CPU/UI acceptance shares the canonical memory summary/budget module. */
+export interface MemoryCaseConditions {
+  readonly summary: ReturnType<typeof summarizeProcessMemory>;
+  readonly budgetBytes: number;
+  readonly scenarioError: unknown;
+  readonly updates: number;
+  readonly failureRecovered: boolean;
+  readonly samplerFailures: readonly unknown[];
+  readonly operationEnvelopesComplete: boolean;
+  readonly sourceStable: boolean;
+}
+
+/** This case's existing CPU/UI/runtime-phase conditions only. R07 ownership
+ * lifetimes and physical GPU bytes are separate evidence, never inferred here. */
+export function memoryCaseAcceptance(conditions: MemoryCaseConditions): boolean {
+  return conditions.scenarioError === null && conditions.updates === 100
+    && conditions.failureRecovered && conditions.samplerFailures.length === 0
+    && conditions.summary.complete && processMemoryWithinBudget(conditions.summary, conditions.budgetBytes)
+    && conditions.operationEnvelopesComplete && conditions.sourceStable;
+}
+
+export interface ProcessObservationWindow {
+  readonly phase: MemoryPhase;
+  readonly startedAtEpochMs: number;
+  readonly endedAtEpochMs: number;
+}
+
+/** Explicit sampled evidence, separate from the unchanged strict historical summary. */
+export function summarizeSampledProcessMemory(frames: readonly (ProcessMemoryFrame & { readonly readStartedAtEpochMs: number })[], options: {
+  readonly intervalMs: number;
+  readonly discoveryIntervalMs: number;
+  readonly requiredPhases: readonly MemoryPhase[];
+  readonly rootPid: number;
+  readonly includeRoot: boolean;
+  readonly windows: readonly ProcessObservationWindow[];
+  readonly scope?: 'save-budget' | 'stress-observation';
+}) {
+  const strict = summarizeProcessMemory(frames, options);
+  const problems: string[] = [];
+  const excursions: { kind: 'gap' | 'read'; atEpochMs: number; elapsedMs: number }[] = [];
+  const identities = new Map<number, string>();
+  let rootCreated: string | undefined;
+  const validClock = (value: number): boolean => Number.isFinite(value) && value >= 0;
+  if (!Number.isSafeInteger(options.rootPid) || options.rootPid <= 0 || !Number.isFinite(options.intervalMs)
+    || options.intervalMs <= 0 || !Number.isFinite(options.discoveryIntervalMs) || options.discoveryIntervalMs <= 0) problems.push('invalid observation options');
+  if (options.windows.length === 0 || options.windows.some(window => !memoryPhase(window.phase)
+    || !validClock(window.startedAtEpochMs) || !validClock(window.endedAtEpochMs)
+    || window.startedAtEpochMs > window.endedAtEpochMs)) problems.push('operation windows invalid or missing');
+  for (const [index, frame] of frames.entries()) {
+    const prefix = `${frame.atEpochMs}: `;
+    const previous = frames[index - 1];
+    if (!memoryPhase(frame.phase) || !validClock(frame.atEpochMs) || !validClock(frame.readStartedAtEpochMs)
+      || !validClock(frame.discoveredAtEpochMs) || frame.discoveredAtEpochMs > frame.readStartedAtEpochMs
+      || frame.readStartedAtEpochMs > frame.atEpochMs || (previous !== undefined
+        && (frame.atEpochMs <= previous.atEpochMs || frame.readStartedAtEpochMs < previous.atEpochMs || frame.discoveredAtEpochMs < previous.discoveredAtEpochMs))) problems.push(prefix + 'invalid observation clock or phase');
+    if (frame.atEpochMs - frame.discoveredAtEpochMs > options.discoveryIntervalMs) problems.push(prefix + 'stale process discovery');
+    const gap = previous === undefined ? 0 : frame.atEpochMs - previous.atEpochMs;
+    const read = frame.atEpochMs - frame.readStartedAtEpochMs;
+    if (gap > options.intervalMs * 2) excursions.push({ kind: 'gap', atEpochMs: frame.atEpochMs, elapsedMs: gap });
+    if (read > options.intervalMs * 2) excursions.push({ kind: 'read', atEpochMs: frame.atEpochMs, elapsedMs: read });
+    problems.push(...processMemoryTotals(frame).problems.map(problem => prefix + problem));
+    if (typeof frame.rootCreated !== 'string' || !/^\d+$/u.test(frame.rootCreated)) problems.push(prefix + 'root creation identity missing');
+    else {
+      if (rootCreated !== undefined && rootCreated !== frame.rootCreated) problems.push(prefix + 'root PID reused');
+      rootCreated = frame.rootCreated;
+    }
+    const rows = new Map(frame.processes.map(row => [row.pid, row]));
+    if (rows.size !== frame.processes.length || rows.has(options.rootPid) !== options.includeRoot) problems.push(prefix + 'duplicate or unexpected root ownership');
+    for (const row of frame.processes) {
+      if (!Number.isSafeInteger(row.pid) || row.pid <= 0 || !Number.isSafeInteger(row.parentPid)
+        || row.parentPid < 0 || !/^\d+$/u.test(row.created) || row.name.length === 0) problems.push(prefix + 'invalid process identity');
+      if (!Number.isSafeInteger(row.workingSetBytes) || !Number.isSafeInteger(row.privateBytes)) problems.push(prefix + 'invalid memory counter');
+      const old = identities.get(row.pid);
+      if (old !== undefined && old !== row.created) problems.push(prefix + `PID reused: ${row.pid}`);
+      identities.set(row.pid, row.created);
+      if (row.pid === options.rootPid && row.created !== frame.rootCreated) problems.push(prefix + 'root identity mismatch');
+      let current = row;
+      const visited = new Set<number>();
+      while (current.pid !== options.rootPid) {
+        if (visited.has(current.pid)) { problems.push(prefix + 'ancestry cycle'); break; }
+        visited.add(current.pid);
+        const parentCreated = current.parentPid === options.rootPid ? frame.rootCreated : rows.get(current.parentPid)?.created;
+        if (typeof parentCreated !== 'string' || !/^\d+$/u.test(parentCreated) || !/^\d+$/u.test(current.created)
+          || BigInt(current.created) < BigInt(parentCreated)) { problems.push(prefix + 'incomplete or invalid ancestry'); break; }
+        if (current.parentPid === options.rootPid) break;
+        const parent = rows.get(current.parentPid);
+        if (parent === undefined) { problems.push(prefix + 'incomplete ancestry'); break; }
+        current = parent;
+      }
+    }
+  }
+  const contained = (window: ProcessObservationWindow) => frames.filter(frame =>
+    frame.readStartedAtEpochMs >= window.startedAtEpochMs && frame.atEpochMs <= window.endedAtEpochMs);
+  const requiredPhases = options.scope === 'stress-observation'
+    ? ['baseline', 'build', 'released'] as const : options.requiredPhases;
+  const phaseCoverage = requiredPhases.map(phase => ({ phase,
+    samples: options.windows.filter(window => window.phase === phase).flatMap(contained) }));
+  for (const coverage of phaseCoverage) if (coverage.samples.length === 0) problems.push(`contained phase unobserved: ${coverage.phase}`);
+  if (frames.length === 0) problems.push('no process observations');
+  const baselineFrames = options.windows.filter(window => window.phase === 'baseline').flatMap(contained);
+  const finalRelease = options.windows.filter(window => window.phase === 'released')
+    .reduce<ProcessObservationWindow | undefined>((last, window) => last === undefined || window.startedAtEpochMs > last.startedAtEpochMs ? window : last, undefined);
+  const releasedFrames = finalRelease === undefined ? [] : contained(finalRelease);
+  if (requiredPhases.includes('released') && (finalRelease === undefined || finalRelease.endedAtEpochMs < (frames.at(-1)?.atEpochMs ?? Infinity))) problems.push('final released observation missing');
+  const totals = frames.map(processMemoryTotals);
+  const highwater = (key: 'workingSetBytes' | 'privateBytes'): MemoryHighwater => {
+    const values = (rows: readonly ProcessMemoryFrame[]) => rows.flatMap(frame => {
+      const value = processMemoryTotals(frame)[key]; return value === null ? [] : [value];
+    });
+    const baseline = median(values([...new Set(baselineFrames)]));
+    const released = median(values(releasedFrames));
+    // Every raw observation contributes to peak, including a read crossing a phase boundary.
+    const known = totals.flatMap(total => total[key] === null ? [] : [total[key]]);
+    const peak = known.length === frames.length && known.length > 0 ? Math.max(...known) : null;
+    return { baseline, peak, released, extraPeak: baseline === null || peak === null ? null : peak - baseline,
+      extraAfterRelease: baseline === null || released === null ? null : released - baseline };
+  };
+  return { label: 'sampled extra process usage with cadence quality' as const,
+    scope: options.scope ?? 'save-budget',
+    observationValid: problems.length === 0, problems, strict,
+    cadence: { targetIntervalMs: options.intervalMs, excursionMs: options.intervalMs * 2,
+      status: excursions.length === 0 ? 'within-target' as const : 'degraded' as const, excursions },
+    phaseCoverage: phaseCoverage.map(coverage => ({ phase: coverage.phase, sampleEpochMs: coverage.samples.map(sample => sample.atEpochMs) })),
+    workingSet: highwater('workingSetBytes'), privateMemory: highwater('privateBytes') };
+}
+
+function sampledProcessMemoryWithinBudget(observation: ReturnType<typeof summarizeSampledProcessMemory>, limitBytes: number): boolean {
+  return Number.isFinite(limitBytes) && limitBytes > 0 && observation.observationValid
+    && [observation.workingSet, observation.privateMemory].every(metric => metric.extraPeak !== null
+      && metric.extraAfterRelease !== null && metric.extraPeak < limitBytes && metric.extraAfterRelease < limitBytes);
+}
+
+interface CancellationEvent {
+  readonly stream: string; readonly kind: string; readonly owner: string;
+  readonly atEpochMs: number; readonly generation: number | null; readonly documentId: string | null;
+  readonly hostDisplayCopyBytes?: number | null; readonly hostGpuAttributeBytes?: number | null;
+}
+
+/** A viewport re-admission of an empty bundle has a requested generation but is
+ * not a worker reply. Require the exact dispatch/connection and real cancel ack,
+ * a cancelled result still returns memory/accounting through the ordinary reply
+ * path. Validate that exact acknowledgement/reply chain; reject successful native
+ * completion, reversed/missing/duplicate replies and nonempty or unknown publication. */
+function cancelledGeometryUnpublished(evidence: {
+  readonly pressedAtEpochMs: number; readonly requestedGeneration: number;
+  readonly events: readonly CancellationEvent[];
+} | undefined): boolean {
+  if (evidence === undefined || !Number.isFinite(evidence.pressedAtEpochMs)
+    || !Number.isSafeInteger(evidence.requestedGeneration)) return false;
+  const { events, pressedAtEpochMs: cancelPressedAtMs, requestedGeneration } = evidence;
+  const requests = events.filter(event => event.stream === 'main' && event.kind === 'geometry-cancel-request'
+    && event.generation === requestedGeneration && event.atEpochMs >= cancelPressedAtMs);
+  const request = requests[0];
+  if (requests.length !== 1 || request === undefined || request.documentId === null) return false;
+  const dispatches = events.filter(event => event.stream === 'main' && event.kind === 'dispatch'
+    && event.owner === request.owner && event.generation === requestedGeneration
+    && event.documentId === request.documentId && event.atEpochMs <= request.atEpochMs);
+  const dispatch = dispatches[0];
+  if (dispatches.length !== 1 || dispatch === undefined) return false;
+  const worker = `worker:${request.owner.split(':')[0]}`;
+  const acknowledged = events.filter(event => event.stream === worker && event.kind === 'native-build-cancelled'
+    && event.owner === request.owner && event.generation === requestedGeneration && event.atEpochMs >= request.atEpochMs);
+  const cancelled = acknowledged[0];
+  if (acknowledged.length !== 1 || cancelled === undefined) return false;
+  const owned = events.filter(event => event.owner === request.owner && event.generation === requestedGeneration);
+  const preclones = owned.filter(event => event.kind === 'reply-preclone');
+  const received = owned.filter(event => event.kind === 'raw-received');
+  const adopted = owned.filter(event => event.kind === 'adopted');
+  const preclone = preclones[0], receipt = received[0], adoption = adopted[0];
+  if (preclones.length !== 1 || received.length !== 1 || adopted.length !== 1
+    || preclone === undefined || receipt === undefined || adoption === undefined
+    || preclone.stream !== worker || receipt.stream !== 'main' || adoption.stream !== 'main'
+    || receipt.documentId !== request.documentId || adoption.documentId !== request.documentId
+    || !Number.isFinite(preclone.atEpochMs) || !Number.isFinite(receipt.atEpochMs) || !Number.isFinite(adoption.atEpochMs)
+    || preclone.atEpochMs < cancelled.atEpochMs || receipt.atEpochMs < preclone.atEpochMs
+    || adoption.atEpochMs < receipt.atEpochMs) return false;
+  return !owned.some(event => event.kind === 'native-build-return' || event.kind === 'reply-rejected')
+    && !events.some(event => event.kind === 'publish-complete' && event.documentId === request.documentId
+      && event.generation === requestedGeneration && event.atEpochMs >= dispatch.atEpochMs
+      && (event.hostDisplayCopyBytes !== 0 || event.hostGpuAttributeBytes !== 0));
+}
+
+/** Explicit sampled scope; unchanged default/save scope retains the strict budget. */
+export function sampledMemoryCaseAcceptance(conditions: Omit<MemoryCaseConditions, 'summary'> & {
+  readonly observation: ReturnType<typeof summarizeSampledProcessMemory>;
+  readonly cancellationEvidence?: Parameters<typeof cancelledGeometryUnpublished>[0];
+}): boolean {
+  return conditions.scenarioError === null && conditions.updates === 100 && conditions.failureRecovered
+    && conditions.samplerFailures.length === 0 && conditions.operationEnvelopesComplete && conditions.sourceStable
+    && conditions.observation.observationValid
+    && (conditions.observation.scope === 'stress-observation'
+      ? cancelledGeometryUnpublished(conditions.cancellationEvidence)
+      : sampledProcessMemoryWithinBudget(conditions.observation, conditions.budgetBytes));
 }
 
 /**

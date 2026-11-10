@@ -1,9 +1,11 @@
 import { expect, type ElectronApplication, type Page, type TestInfo } from '@playwright/test';
 import { openTarget } from './electronAppFlow.js';
-import { beginRecompute, waitForRecompute } from './recompute.js';
+import { beginRecompute, waitForRecompute, type RecomputeWaitKind } from './recompute.js';
 
-/** Reopening must finish a generation after the file choice, not the empty startup document. */
-export async function reopenPart(page: Page, info: TestInfo, filename: string, app?: ElectronApplication): Promise<void> {
+/** Reopen may cold-start exact math in any document; finish its new generation, not the empty startup document. */
+export async function reopenPart(
+  page: Page, info: TestInfo, filename: string, app?: ElectronApplication, waitKind: RecomputeWaitKind = 'exact-math',
+): Promise<void> {
   // Never reload a page that is still loading its editor module. Firefox aborts the old page's
   // fetches when the reload starts; the startup retry (apps/web/src/startupRecovery.ts) then
   // reads that as a failed module load and calls location.reload() itself, which replaces this
@@ -23,5 +25,5 @@ export async function reopenPart(page: Page, info: TestInfo, filename: string, a
     const [chooser] = await Promise.all([page.waitForEvent('filechooser'), open.click()]);
     await chooser.setFiles(info.outputPath(filename));
   }
-  await waitForRecompute(page, before);
+  await waitForRecompute(page, before, waitKind);
 }

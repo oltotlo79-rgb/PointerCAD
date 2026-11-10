@@ -8,12 +8,13 @@ import { isTemplateKind, readPcadFile, type ImportedMeshBytes } from '../../pack
 import { pcadEntries, zipPcadEntries } from '../../packages/io/src/pcad/pcadFile.js';
 import { IO_LIMITS } from '../../packages/io/src/limits.js';
 import { appendSolid, createEmptyPartDocument, createPrimitiveFeature } from '../../packages/model/src/index.js';
+import { processTreeMemoryTotals, linuxProcessMemoryReading, linuxProcessTreeDiscovery, type LinuxProcessStatReading } from '../../packages/test-utils/src/processMemorySamples.js';
 import { diskFile, openTarget, saveTarget } from './electronAppFlow.js';
 import { fileAction } from './fileCaptureSupport.js';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 import { waitForStartupHealth } from './startupHealth.js';
 
-interface SaveInputAudit { readonly latencies: number[]; readonly stages: string[] }
+interface SaveInputAudit { readonly latencies: number[]; readonly stages: string[]; readonly timeStamps: number[] }
 /** 頁の中の時刻(performance.now)で、取消の Enter と「取り消しました」の表示を記録する。 */
 interface CancelTiming { pressed: number; displayed: number }
 interface SaveWriteTiming {
@@ -153,7 +154,7 @@ function trackSaveWorkers(page: Page): SaveWorkerEntry[] {
 }
 
 /** 端末の処理の木の使用メモリー(全PIDの合計)の1回分。時刻は検査側の performance.now。 */
-interface ProcessTreeSample { readonly at: number; readonly workingSetBytes: number; readonly privateBytes: number; readonly processes: number }
+interface ProcessTreeSample extends ReturnType<typeof processTreeMemoryTotals> { readonly at: number; readonly discovery?: ReturnType<typeof linuxProcessTreeDiscovery> }
 
 interface ProcessTreeSampler {
   /** 指定の時刻より後の記録が指定の件数そろうまで待つ(処理の起動に時間がかかっても、前後の件数をそろえる)。 */
@@ -173,14 +174,17 @@ async function startWindowsSampler(root: number, stopFile: string, scriptFile: s
   onSample: (sample: Omit<ProcessTreeSample, 'at'>) => void): Promise<{ readonly finished: Promise<number> }> {
   const script = [
     'param([int]$root, [string]$stop)',
-    "$ErrorActionPreference = 'SilentlyContinue'",
+    "$ErrorActionPreference = 'Stop'",
     'function Get-Tree {',
+    '  $script:discoveryError = $null',
     '  $kids = @{}',
+    '  try {',
     '  foreach ($p in (Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId)) {',
     '    $parent = [int]$p.ParentProcessId',
     '    if (-not $kids.ContainsKey($parent)) { $kids[$parent] = New-Object System.Collections.Generic.List[int] }',
     '    $kids[$parent].Add([int]$p.ProcessId)',
     '  }',
+    '  } catch { $script:discoveryError = $_.Exception.Message; return ,@() }',
     '  $seen = New-Object System.Collections.Generic.HashSet[int]',
     '  $queue = New-Object System.Collections.Generic.Queue[int]',
     '  $queue.Enqueue($root) | Out-Null',
@@ -200,9 +204,12 @@ async function startWindowsSampler(root: number, stopFile: string, scriptFile: s
     '$count = 0',
     'while (-not (Test-Path -LiteralPath $stop)) {',
     '  if ($count -gt 0 -and $count % 20 -eq 0) { $ids = Get-Tree }',
-    '  $ws = [long]0; $pv = [long]0; $n = 0',
-    '  if ($ids.Count -gt 0) { foreach ($p in @(Get-Process -Id $ids)) { $ws += $p.WorkingSet64; $pv += $p.PrivateMemorySize64; $n += 1 } }',
-    '  [Console]::Out.WriteLine("$ws $pv $n")',
+    '  $readings = @()',
+    '  foreach ($id in $ids) {',
+    '    try { $p = Get-Process -Id $id -ErrorAction Stop; $readings += @{ pid = [int]$id; workingSetBytes = $p.WorkingSet64; privateBytes = $p.PrivateMemorySize64; error = $null } }',
+    '    catch { $readings += @{ pid = [int]$id; workingSetBytes = $null; privateBytes = $null; error = $_.Exception.Message } }',
+    '  }',
+    '  [Console]::Out.WriteLine((@{ expectedPids = @($ids); readings = @($readings); discoveryError = $script:discoveryError } | ConvertTo-Json -Depth 5 -Compress))',
     '  [Console]::Out.Flush()',
     '  $count += 1',
     `  Start-Sleep -Milliseconds ${String(SAMPLE_INTERVAL_MS)}`,
@@ -217,8 +224,10 @@ async function startWindowsSampler(root: number, stopFile: string, scriptFile: s
     pending += text;
     const lines = pending.split(/\r?\n/u); pending = lines.pop() ?? '';
     for (const line of lines) {
-      const [ws, pv, n] = line.trim().split(' ').map(Number);
-      if (Number.isFinite(ws) && Number.isFinite(pv) && Number.isFinite(n)) onSample({ workingSetBytes: ws, privateBytes: pv, processes: n });
+      let raw: unknown;
+      try { raw = JSON.parse(line) as unknown; }
+      catch { raw = { expectedPids: [], readings: [], discoveryError: `invalid sampler frame: ${line}` }; }
+      onSample(processTreeMemoryTotals(raw));
     }
   });
   return { finished: new Promise(resolve => { child.on('close', code => { resolve(code ?? -1); }); }) };
@@ -226,40 +235,36 @@ async function startWindowsSampler(root: number, stopFile: string, scriptFile: s
 
 /** Linux: /proc から子孫の全プロセスの VmRSS と RssAnon を 100ms ごとに合計する。 */
 function startLinuxSampler(root: number, isStopped: () => boolean, onSample: (sample: Omit<ProcessTreeSample, 'at'>) => void): Promise<number> {
-  async function tree(): Promise<number[]> {
-    const kids = new Map<number, number[]>();
-    for (const name of await readdir('/proc')) {
+  const failure = (error: unknown): { readonly errorCode: string | null; readonly error: string } => ({
+    errorCode: error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : null,
+    error: error instanceof Error ? error.message : 'invalid-error status (expected Error)',
+  });
+  async function tree(): Promise<ReturnType<typeof linuxProcessTreeDiscovery>> {
+    const readings: LinuxProcessStatReading[] = [];
+    let names: string[];
+    try { names = await readdir('/proc'); }
+    catch (error) { const detail = failure(error); return linuxProcessTreeDiscovery(root, readings, `/proc: ${detail.errorCode ?? 'unknown errno'}: ${detail.error}`); }
+    for (const name of names) {
       if (!/^\d+$/u.test(name)) continue;
-      try {
-        const stat = await readFile(`/proc/${name}/stat`, 'utf8'), fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-        const parent = Number(fields[1]), list = kids.get(parent) ?? [];
-        list.push(Number(name)); kids.set(parent, list);
-      } catch { /* 走査の間に終わった処理は数えない */ }
+      const pid = Number(name);
+      try { readings.push({ pid, stat: await readFile(`/proc/${name}/stat`, 'utf8'), errorCode: null, error: null }); }
+      catch (error) { readings.push({ pid, stat: null, ...failure(error) }); }
     }
-    const found: number[] = [], queue = [root], seen = new Set([root]);
-    while (queue.length > 0) {
-      for (const child of kids.get(queue.shift() ?? -1) ?? []) {
-        if (!seen.has(child)) { seen.add(child); found.push(child); queue.push(child); }
-      }
-    }
-    return found;
+    return linuxProcessTreeDiscovery(root, readings);
   }
-  async function sample(ids: readonly number[]): Promise<Omit<ProcessTreeSample, 'at'>> {
-    let workingSetBytes = 0, privateBytes = 0, processes = 0;
-    for (const id of ids) {
-      try {
-        const status = await readFile(`/proc/${String(id)}/status`, 'utf8');
-        const field = (key: string): number => Number(/(\d+) kB/u.exec(status.split('\n').find(line => line.startsWith(`${key}:`)) ?? '')?.[1] ?? 0);
-        workingSetBytes += field('VmRSS') * 1024; privateBytes += field('RssAnon') * 1024; processes += 1;
-      } catch { /* 終わった処理は数えない */ }
+  async function sample(discovery: ReturnType<typeof linuxProcessTreeDiscovery>): Promise<Omit<ProcessTreeSample, 'at'>> {
+    const readings: ReturnType<typeof linuxProcessMemoryReading>[] = [];
+    for (const id of discovery.expectedPids) {
+      try { readings.push(linuxProcessMemoryReading(id, await readFile(`/proc/${String(id)}/status`, 'utf8'), null)); }
+      catch (error) { readings.push(linuxProcessMemoryReading(id, null, failure(error).error)); }
     }
-    return { workingSetBytes, privateBytes, processes };
+    return { ...processTreeMemoryTotals({ expectedPids: discovery.expectedPids, readings, discoveryError: discovery.discoveryError }), discovery };
   }
   return (async () => {
-    let ids = await tree(), count = 0;
+    let discovery = await tree(), count = 0;
     while (!isStopped()) {
-      if (count > 0 && count % 20 === 0) ids = await tree();
-      onSample(await sample(ids)); count += 1;
+      if (count > 0 && count % 20 === 0) discovery = await tree();
+      onSample(await sample(discovery)); count += 1;
       await new Promise(resolve => { setTimeout(resolve, SAMPLE_INTERVAL_MS); });
     }
     return 0;
@@ -291,7 +296,9 @@ async function startProcessTreeSampler(info: TestInfo): Promise<ProcessTreeSampl
     method, waitForSamples,
     stop: async () => {
       stopped = true; await writeFile(stopFile, 'stop');
-      const code = await finished;
+      let code: number;
+      try { code = await finished; }
+      finally { await writeFile(info.outputPath('save-process-memory-samples.json'), JSON.stringify({ method, samples }, null, 2)); }
       if (code !== 0) throw new Error(`使用メモリーの記録が異常終了しました: ${String(code)}`);
       return samples;
     },
@@ -414,11 +421,11 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
   const saveClockBefore = target === 'opfs' ? await useOpfsSaveTarget(page, opfsName) : null;
   const workers = trackSaveWorkers(page);
   await page.evaluate(() => {
-    const audit: SaveInputAudit = { latencies: [], stages: [] }; window.pcadSaveInputAudit = audit;
+    const audit: SaveInputAudit = { latencies: [], stages: [], timeStamps: [] }; window.pcadSaveInputAudit = audit;
     document.addEventListener('input', event => {
       if (!event.isTrusted || !(event.target instanceof HTMLInputElement) || event.target.id !== 'pcad-command-line-input') return;
       const stage = document.querySelector('[data-save-stage]')?.getAttribute('data-save-stage') ?? 'none';
-      audit.stages.push(stage);
+      audit.stages.push(stage); audit.timeStamps.push(event.timeStamp);
       requestAnimationFrame(() => { audit.latencies.push(performance.now() - event.timeStamp); });
     });
   });
@@ -449,9 +456,10 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     await viewport.hover(); await page.mouse.wheel(0, 40);
     await expect.poll(() => page.evaluate(() => window.pcadViewportRenderStats?.().completedRenders ?? 0)).toBeGreaterThan(rendered);
     const command = page.locator('#pcad-command-line-input'); await command.focus();
-    const roundTrips: number[] = [];
+    const roundTrips: number[] = [], inputStarts: number[] = [];
     for (let i = 0; i < 100; i++) {
-      const start = performance.now(); await page.keyboard.press('a'); roundTrips.push(performance.now() - start);
+      const start = performance.now(); inputStarts.push(start - clickedAt);
+      await page.keyboard.press('a'); roundTrips.push(performance.now() - start);
     }
     const memoryDuring = await readMemory();
     await expect(command).toHaveValue('a'.repeat(100));
@@ -501,26 +509,37 @@ export async function saveResponsivenessFlow(page: Page, info: TestInfo,
     const before = memorySamples.filter(sample => sample.at < clickedAt && sample.processes > 0);
     const during = memorySamples.filter(sample => sample.at >= clickedAt && sample.at <= releasedAt && sample.processes > 0);
     const after = memorySamples.filter(sample => sample.at > releasedAt && sample.processes > 0);
-    const baseline = { workingSetBytes: median(before.map(sample => sample.workingSetBytes)), privateBytes: median(before.map(sample => sample.privateBytes)) };
-    const peak = { workingSetBytes: Math.max(...during.map(sample => sample.workingSetBytes)), privateBytes: Math.max(...during.map(sample => sample.privateBytes)) };
-    const released = { workingSetBytes: median(after.map(sample => sample.workingSetBytes)), privateBytes: median(after.map(sample => sample.privateBytes)) };
+    const metric = (rows: readonly ProcessTreeSample[], key: 'workingSetBytes' | 'privateBytes', peak = false): number | null => {
+      const values: number[] = [];
+      for (const row of rows) { const value = row[key]; if (value === null) return null; values.push(value); }
+      return values.length === 0 ? null : peak ? Math.max(...values) : median(values);
+    };
+    const difference = (value: number | null, baseline: number | null): number | null => value === null || baseline === null ? null : value - baseline;
+    const baseline = { workingSetBytes: metric(before, 'workingSetBytes'), privateBytes: metric(before, 'privateBytes') };
+    const peak = { workingSetBytes: metric(during, 'workingSetBytes', true), privateBytes: metric(during, 'privateBytes', true) };
+    const released = { workingSetBytes: metric(after, 'workingSetBytes'), privateBytes: metric(after, 'privateBytes') };
     const extraMemoryBudgetBytes = 512 * 1024 * 1024;
     const record = {
       environment: app !== undefined ? 'electron' : page.context().browser()?.browserType().name() ?? 'unknown', target,
       mib, repeat, rawBytes, triangleCount, savedBytes: (await readFile(savedPath)).byteLength,
       inputs: samples.length, p95, activeP95, activeInputs: activeSamples.length, samples, activeSamples,
+      // Per input in input order: page stage, event time (page clock), page latency and Node key round trip.
+      // Each sample above is the larger of the two; no criterion reads these fields, they only separate the sources.
+      inputTimeline: audit.latencies.map((pageLatencyMs, i) => ({ stage: audit.stages[i], eventTimeStamp: audit.timeStamps[i] ?? null,
+        pageLatencyMs, nodeStartAfterClickMs: inputStarts[i] ?? null, roundTripMs: roundTrips[i] ?? null })),
       saveMs: completedAt - clickedAt, releaseMs: releasedAt - clickedAt,
       workers: workers.map(worker => ({ ...worker, closedAfterClickMs: worker.closedAt === null ? null : worker.closedAt - clickedAt })),
       savePhases, originalHash, savedHash: meshHashes(savedAttachment),
-      memory: { method: sampler.method, intervalMs: SAMPLE_INTERVAL_MS, baseline, peak, released,
-        extraPeak: { workingSetBytes: peak.workingSetBytes - baseline.workingSetBytes, privateBytes: peak.privateBytes - baseline.privateBytes },
-        extraAfterRelease: { workingSetBytes: released.workingSetBytes - baseline.workingSetBytes, privateBytes: released.privateBytes - baseline.privateBytes },
+      memory: { method: sampler.method, intervalMs: SAMPLE_INTERVAL_MS, complete: memorySamples.every(sample => sample.complete), baseline, peak, released,
+        extraPeak: { workingSetBytes: difference(peak.workingSetBytes, baseline.workingSetBytes), privateBytes: difference(peak.privateBytes, baseline.privateBytes) },
+        extraAfterRelease: { workingSetBytes: difference(released.workingSetBytes, baseline.workingSetBytes), privateBytes: difference(released.privateBytes, baseline.privateBytes) },
         counts: { before: before.length, during: during.length, after: after.length }, extraMemoryBudgetBytes,
         rendererJsHeap: { before: memoryBefore, during: memoryDuring, after: memoryAfter },
         samples: memorySamples.map(sample => ({ ...sample, at: sample.at - clickedAt })) },
     };
     await writeFile(info.outputPath(`save-${String(mib)}-${String(repeat)}.json`), JSON.stringify(record, null, 2));
     await info.attach(`save-${mib}-${repeat}`, { contentType: 'application/json', body: JSON.stringify(record, null, 2) });
+    expect(record.memory.complete, 'process-memory collection incomplete; inspect expected/observed PIDs and readings (not a product memory-budget exceedance)').toBe(true);
     expect(p95).toBeLessThan(100);
     expect(activeP95).toBeLessThan(100);
     expect(before.length).toBeGreaterThanOrEqual(3); expect(during.length).toBeGreaterThanOrEqual(3); expect(after.length).toBeGreaterThanOrEqual(3);

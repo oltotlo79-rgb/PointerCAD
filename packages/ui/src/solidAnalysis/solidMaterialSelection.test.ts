@@ -4,6 +4,27 @@ import { readSolidCadSavedInput } from '@pointercad/model/beam-analysis';
 import { selectSolidMaterial, solidMaterialCapacityMatches, solidMaterialDraftOf, solidMaterialSourceUrl } from './solidMaterialSelection.js';
 
 describe('solid material yield selection, independent catalogue values', () => {
+  it('binds a new choice to the actual source SHA/edition and refuses same-ID same-yield stale snapshots', () => {
+    const selected = selectSolidMaterial({ materialConditionId: 'ss400-plate-0-16', thickness: '16' });
+    if (!selected.ok || selected.capacity === null) throw new Error('Missing selected capacity');
+    const value = selected.capacity, current = STRENGTH_SOURCES['jisf-g3101-draft'];
+    expect(value.sourceSnapshot).toEqual(current);
+    expect(value.sourceSnapshot).not.toBe(current);
+    expect(solidMaterialCapacityMatches(value)).toBe(true);
+    for (const change of [{ sha256: '0'.repeat(64) }, { standardEdition: 'Historical edition fixture' },
+      { locator: 'Another source row fixture' }, { url: 'https://example.invalid/old-source' }]) {
+      const stale = { ...value, sourceSnapshot: { ...current, ...change } };
+      expect(stale.sourceId).toBe(value.sourceId); expect(stale.yieldMPa).toBe(value.yieldMPa);
+      expect(solidMaterialCapacityMatches(stale)).toBe(false);
+    }
+    const { sourceSnapshot, ...legacy } = value;
+    void sourceSnapshot;
+    expect(solidMaterialCapacityMatches(legacy)).toBe(false);
+    expect(legacy.sourceId).toBe(value.sourceId); expect(legacy.yieldMPa).toBe(value.yieldMPa);
+    expect(Object.hasOwn(legacy, 'sourceSnapshot')).toBe(false);
+    expect(value.sourceSnapshot).toEqual(current);
+  });
+
   it('keeps optional no-yield mode separate from an incomplete chosen material', () => {
     expect(selectSolidMaterial({ materialConditionId: '', thickness: '' })).toMatchObject({ ok: true, capacity: null });
     expect(selectSolidMaterial({ materialConditionId: 'ss400-plate-0-16', thickness: '' })).toEqual({ ok: false, issue: 'thickness' });
@@ -66,7 +87,7 @@ describe('solid material yield selection, independent catalogue values', () => {
       { ...value, thicknessMm: 17 }, { ...value, materialConditionId: 'missing' }]) expect(solidMaterialCapacityMatches(changed)).toBe(false);
     expect(solidMaterialDraftOf(null)).toEqual({ materialConditionId: '', thickness: '' });
     expect(solidMaterialDraftOf(value)).toEqual({ materialConditionId: 'ss400-plate-0-16', thickness: '16' });
-    expect(Object.keys(value).sort()).toEqual(['basis', 'condition', 'evidence', 'materialConditionId', 'sourceId', 'thicknessMm', 'yieldMPa']);
+    expect(Object.keys(value).sort()).toEqual(['basis', 'condition', 'evidence', 'materialConditionId', 'sourceId', 'sourceSnapshot', 'thicknessMm', 'yieldMPa']);
   });
   it('uses only catalogue HTTP(S) links', () => {
     for (const source of Object.values(STRENGTH_SOURCES)) expect(solidMaterialSourceUrl(source)).toBe(source.url);

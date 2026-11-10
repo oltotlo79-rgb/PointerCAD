@@ -1,6 +1,6 @@
 import { reportViewportRate } from '../../packages/test-utils/src/releasePerformance.js';
 /// <reference lib="dom" />
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from './recompute.js';
 import { addThirdBoxAssemblyFile, twoBoxAssemblyFile } from './assemblyTestSupport.js';
@@ -8,6 +8,7 @@ import { configurableBoxPartFile, dimensionSeriesPartFile, offsetHolePartFile } 
 import { drawingMessage } from './drawingMessages.js';
 import { expectDrawingStroke, waitForDrawingReady } from './drawingManufacturingFixture.js';
 import { observeDrawingPrint } from './observeDrawingPrint.js';
+import { FIREFOX_GRAPHICS_PREFS } from '../firefoxLaunch.js';
 import { startDrawingCpuProfile } from './drawingCpuProfile.js';
 import { captureManualDetail } from './captureManualDetail.js';
 
@@ -1092,34 +1093,52 @@ test.describe('P8 図面の出力と文字注記', () => {
     expect(errors).toEqual([]);
   });
 
-  test('図面の印刷ボタンが実寸の紙面を渡し、印刷後も図面とUndoを保つ', async ({ page, context }, testInfo) => {
-    await drawingFromBox(page); await addNote(page);
-    await observeDrawingPrint(page);
-    await chooseDrawingMenu(page, 'ファイル', '図面を印刷');
-    await expect.poll(() => page.locator('html').evaluate((element) => ({
-      status: element.dataset.printStatus, error: element.dataset.printError ?? null,
-    }))).toEqual({ status: 'ready', error: null });
-    await expect(page.locator('html')).toHaveAttribute('data-print-violations', '[]');
-    await expect(page.locator('html')).toHaveAttribute('data-print-svg', /8 日 φ/u);
-    await expect(page.locator('.pcad-drawing-print-sheet')).toHaveCount(0);
-    const output = await page.locator('html').evaluate((element) => ({ svg: element.dataset.printSvg ?? '', css: element.dataset.printCss ?? '' }));
-    expect(output.css).toContain('@page { size: A3 landscape; margin: 0; }');
-    expect(output.svg).toContain('width="420mm"'); expect(output.svg).not.toContain('<text');
-    const printed = await context.newPage();
+  test('図面の印刷ボタンが実寸の紙面を渡し、印刷後も図面とUndoを保つ', async ({ page, context, browserName, playwright, baseURL }, testInfo) => {
+    // Firefox opens its tab-modal print preview for window.print() unless print.always_print_silent is set
+    // (toolkit printUtils.js startPrintWindow), and Playwright cannot operate that dialog. The same real
+    // window.print() therefore runs in a Firefox that prints silently to its built-in PDF pseudo printer;
+    // these printer prefs keep any output on this run's path and away from a real system printer.
+    const firefoxPdf = testInfo.outputPath('drawing-firefox-print.pdf');
+    if (browserName === 'firefox') await mkdir(testInfo.outputDir, { recursive: true });
+    const printer = browserName !== 'firefox' ? null : await playwright.firefox.launch({ firefoxUserPrefs: { ...FIREFOX_GRAPHICS_PREFS,
+      'print.always_print_silent': true, print_printer: 'Mozilla Save to PDF',
+      'print.printer_Mozilla_Save_to_PDF.print_to_file': true, 'print.printer_Mozilla_Save_to_PDF.print_to_filename': firefoxPdf } });
     try {
-      await printed.evaluate(async ({ svg, css }) => {
-        const style = document.createElement('style'); style.textContent = css; document.head.append(style);
-        const sheet = document.createElement('section'); sheet.className = 'pcad-drawing-print-sheet';
-        const image = document.createElement('img');
-        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-        sheet.append(image); document.body.append(sheet); await image.decode();
-      }, output);
-      const bytes = await printed.pdf({ preferCSSPageSize: true, printBackground: true, path: testInfo.outputPath('drawing-browser-print.pdf') });
-      expect(bytes.length).toBeGreaterThan(1000);
-    } finally { await printed.close(); }
-    await expect(page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]')).toHaveCount(1);
-    await page.getByRole('button', { name: '元に戻す', exact: true }).click();
-    await expect(page.locator('.pcad-drawing-svg [aria-label="8 日 φ"]')).toHaveCount(0);
+      const target = printer === null ? page : await printer.newPage({ baseURL, viewport: page.viewportSize() });
+      await drawingFromBox(target); await addNote(target);
+      await observeDrawingPrint(target);
+      await chooseDrawingMenu(target, 'ファイル', '図面を印刷');
+      await expect.poll(() => target.locator('html').evaluate((element) => ({
+        status: element.dataset.printStatus, error: element.dataset.printError ?? null,
+      }))).toEqual({ status: 'ready', error: null });
+      await expect(target.locator('html')).toHaveAttribute('data-print-violations', '[]');
+      await expect(target.locator('html')).toHaveAttribute('data-print-svg', /8 日 φ/u);
+      await expect(target.locator('.pcad-drawing-print-sheet')).toHaveCount(0);
+      const output = await target.locator('html').evaluate((element) => ({ svg: element.dataset.printSvg ?? '', css: element.dataset.printCss ?? '' }));
+      expect(output.css).toContain('@page { size: A3 landscape; margin: 0; }');
+      expect(output.svg).toContain('width="420mm"'); expect(output.svg).not.toContain('<text');
+      // page.pdf() is Chromium-only; render the same printed bytes with the same print CSS. Firefox's silent
+      // print never sets the PDF output format (only its print dialog does: toolkit print.js), and on Windows
+      // nsDeviceContextSpecWin writes a PDF file only for that format, so Chromium renders Firefox's bytes too.
+      const renderer = printer === null ? null : await playwright.chromium.launch();
+      try {
+        const printed = renderer === null ? await context.newPage() : await renderer.newPage();
+        try {
+          await printed.evaluate(async ({ svg, css }) => {
+            const style = document.createElement('style'); style.textContent = css; document.head.append(style);
+            const sheet = document.createElement('section'); sheet.className = 'pcad-drawing-print-sheet';
+            const image = document.createElement('img');
+            image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+            sheet.append(image); document.body.append(sheet); await image.decode();
+          }, output);
+          const bytes = await printed.pdf({ preferCSSPageSize: true, printBackground: true, path: testInfo.outputPath('drawing-browser-print.pdf') });
+          expect(bytes.length).toBeGreaterThan(1000);
+        } finally { await printed.close(); }
+      } finally { await renderer?.close(); }
+      await expect(target.locator('.pcad-drawing-svg [aria-label="8 日 φ"]')).toHaveCount(1);
+      await target.getByRole('button', { name: '元に戻す', exact: true }).click();
+      await expect(target.locator('.pcad-drawing-svg [aria-label="8 日 φ"]')).toHaveCount(0);
+    } finally { await printer?.close(); }
   });
 
   test('A3の実画像を600dpi PNGと150dpi JPEGで保存し、白い背景で開ける', async ({ page }, testInfo) => {

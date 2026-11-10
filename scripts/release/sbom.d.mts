@@ -95,6 +95,7 @@ export function deterministicUuid(seed: string): string;
 export function verifyFontAssetParity(root: string): Map<string, string>;
 export function collectSbomComponents(root?: string): SbomComponents;
 export function femComponentsFromDistribution(distribution: FemDistributionAssets): SbomComponent[];
+export function femDistributionGapsFromDistribution(distribution: FemDistributionAssets): string[];
 export function assembleSbomDocument(collected: SbomComponentsInput, options: SbomAssembleOptions): SbomDocument;
 export function buildSbom(root?: string, options?: SbomBuildOptions): SbomDocument;
 // The four functions below validate a JSON-like document at runtime (a saved sbom.json or
@@ -104,3 +105,20 @@ export function findSbomGaps(sbom: unknown): SbomGapReport;
 export function assertSbomPublishable(sbom: unknown): void;
 export function matchSbomToReleaseManifest(sbom: unknown, releaseManifest: unknown): SbomManifestMatch;
 export function assertSbomMatchesReleaseManifest(sbom: unknown, releaseManifest: unknown): void;
+
+/** Desktop-only Electron runtime: installed apps/desktop package identity and its licence-file records. */
+export const ELECTRON_COMPONENT: 'electron';
+export const ELECTRON_EXECUTABLE_NOTICES: readonly ['LICENSE.electron.txt', 'LICENSES.chromium.html'];
+export interface SbomElectronRecord {
+  readonly version: string;
+  /** `electron/LICENSE|<sha256>` of the installed package's own LICENSE file. */
+  readonly licenseFile: string;
+  readonly executableNotices: readonly string[];
+}
+// `installed` is a parsed package.json and `licenseBytes` the LICENSE file, or undefined when it is absent.
+export function electronComponentFromPackage(installed: unknown, licenseBytes: Uint8Array | undefined): SbomComponent;
+export function sbomElectronComponent(sbom: unknown): SbomElectronRecord;
+/** Prefix of the renderer inside a desktop candidate's desktop-package.json `files` list. */
+export const DESKTOP_RENDERER_PREFIX: 'dist/renderer/';
+export function matchSbomToDesktopPackage(sbom: unknown, desktopPackage: unknown): SbomManifestMatch;
+export function assertSbomMatchesDesktopPackage(sbom: unknown, desktopPackage: unknown, label: string): SbomManifestMatch;

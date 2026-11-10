@@ -41,6 +41,9 @@ const exactEngine = createLocalExactMathEngine({
     if (diagnose) trace(`engine-${phase}`, { ...activeRequest });
     self.postMessage({ kind: 'math-phase', ...activeRequest, phase });
   },
+  ...(diagnose ? { onInitializationProfile: (stage: string, boundary: string, atMs: number) => {
+    trace(`engine-initialize-${stage}-${boundary}`, { ...activeRequest, initializationAtMs: atMs });
+  } } : {}),
   retire: () => { retire = true; },
 });
 async function runRequest(value: unknown, kind: unknown): Promise<void> {

@@ -1885,6 +1885,13 @@ export const e2eImportBaseline = [
   },
   {
     "consumer": "e2e/tests/recompute.ts",
+    "specifier": "../../packages/expression/src/math/publicClient.js",
+    "target": "packages/expression/src/math/publicClient.js",
+    "count": 1,
+    "reason": "Root-approved exact-math reopen wait reads EXACT_MATH_ENGINE_LIMITS.totalMs from the real public client source. Actual worker preparation progressed at 143272ms; the package alias is not resolvable from e2e. This single reference preserves the canonical math limit without copying it or changing the kernel default."
+  },
+  {
+    "consumer": "e2e/tests/recompute.ts",
     "specifier": "../../packages/test-utils/src/recomputeState.js",
     "target": "packages/test-utils/src/recomputeState.js",
     "count": 1,
@@ -2001,6 +2008,13 @@ export const e2eImportBaseline = [
     "target": "packages/model/src/index.js",
     "count": 1,
     "reason": "Existing e2e dependency on packages/model/src/index.js; retained as a specific migration baseline."
+  },
+  {
+    "consumer": "e2e/tests/saveResponsivenessFlow.ts",
+    "specifier": "../../packages/test-utils/src/processMemorySamples.js",
+    "target": "packages/test-utils/src/processMemorySamples.js",
+    "count": 1,
+    "reason": "R06 save sampler validates every discovered PID and retains missing reads as unknown before the existing memory-budget assertion."
   },
   {
     "consumer": "e2e/tests/script-performance.spec.ts",

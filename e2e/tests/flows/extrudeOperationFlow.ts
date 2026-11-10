@@ -8,6 +8,7 @@ import { beginRecompute, KERNEL_TIMEOUT_MS, waitForRecompute } from '../recomput
 import { openSaveFlowFile, saveFlowFile } from '../saveResponsivenessFlow.js';
 import { waitForStartupHealth } from '../startupHealth.js';
 import { readViewportRenderStats } from '../viewportRenderStats.js';
+import { captureManualDetail } from '../captureManualDetail.js';
 
 export type ExtrudeOperation = 'new' | 'join' | 'cut';
 const LABELS = { new: '新しい立体', join: '結合', cut: '切り抜き' } as const;
@@ -93,6 +94,62 @@ async function preview(page: Page, expectedCount: number): Promise<readonly stri
   return original;
 }
 
+/** Real title drag stays inside the clipped CAD viewport (draggableWindowLayout's 8px inset). */
+async function framePreviewForCapture(page: Page, operation: 'join' | 'cut'): Promise<void> {
+  const canvas = page.locator('canvas.pcad-viewport__canvas');
+  const panel = popover(page), title = panel.locator('.pcad-window-title').first();
+  const view = await canvas.boundingBox(), window = await panel.boundingBox(), heading = await title.boundingBox();
+  if (view === null || window === null || heading === null) throw new Error('Preview capture rectangles are missing');
+  // Keep the whole central/right two-thirds free for the model; Root judges actual image readability.
+  const protectedLeft = view.x + view.width / 3;
+  const target = { x: view.x + 8, y: view.y + 8 };
+  expect(target.x + window.width).toBeLessThanOrEqual(protectedLeft);
+  expect(target.y + window.height).toBeLessThanOrEqual(view.y + view.height - 8);
+  await expect(title).toHaveCSS('cursor', 'grab');
+  const grab = { x: heading.x + 16, y: heading.y + heading.height / 2 };
+  await page.mouse.move(grab.x, grab.y);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(grab.x + target.x - window.x, grab.y + target.y - window.y, { steps: 8 });
+  } finally { await page.mouse.up(); }
+  await expect(title).toHaveCSS('cursor', 'grab');
+  const previewBodies = await framedBodies(page);
+  expect(previewBodies.length).toBeGreaterThan(0);
+  // Existing camera-control flows use real wheel input. No camera/DOM state is injected.
+  await page.mouse.move(view.x + view.width / 2, view.y + view.height / 2);
+  for (let notch = 0; notch < 2; notch += 1) {
+    const rendered = await readViewportRenderStats(page);
+    await page.mouse.wheel(0, -300);
+    await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders)
+      .toBeGreaterThan(rendered.completedRenders);
+  }
+  if (operation === 'cut') {
+    // The actual cut opens at z=0: tilt the real view cube below the base to expose that cavity.
+    // cameraMath.orbit adds vertical pointer movement to elevation; an upward drag lowers the view.
+    const cube = page.locator('canvas.pcad-viewcube'), bounds = await cube.boundingBox();
+    if (bounds === null) throw new Error('View cube missing for the underside cut preview');
+    const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+    const rendered = await readViewportRenderStats(page);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    try {
+      await page.mouse.move(x, Math.max(1, y - 145), { steps: 8 });
+      await expect(cube).toHaveAttribute('data-interaction', 'dragging');
+    } finally { await page.mouse.up(); }
+    await expect.poll(async () => (await readViewportRenderStats(page)).completedRenders)
+      .toBeGreaterThan(rendered.completedRenders);
+  }
+  await expect.poll(async () => {
+    const currentView = await canvas.boundingBox(), currentWindow = await panel.boundingBox();
+    if (currentView === null || currentWindow === null) return false;
+    return currentWindow.x >= currentView.x && currentWindow.y >= currentView.y
+      && currentWindow.x + currentWindow.width <= currentView.x + currentView.width / 3
+      && currentWindow.y + currentWindow.height <= currentView.y + currentView.height;
+  }, 'The real preview window is inside the viewport and outside the central model display area').toBe(true);
+  await expect(panel.getByRole('status')).toHaveText(READY);
+  expect(await framedBodies(page), 'Framing must retain the actual preview bodies').toEqual(previewBodies);
+}
+
 /** Actual UI + OCCT, with preview bytes/history separated from one atomic commit. */
 export async function extrudeOperationFlow(page: Page, info: TestInfo, operation: ExtrudeOperation,
   app?: ElectronApplication): Promise<void> {
@@ -119,6 +176,15 @@ export async function extrudeOperationFlow(page: Page, info: TestInfo, operation
 
   await openExtrusion(page, operation);
   await preview(page, operation === 'new' ? 2 : 1);
+  if (operation !== 'new') await framePreviewForCapture(page, operation);
+  if (operation === 'join') {
+    await captureManualDetail(page, info, { name: 'solid-basics-join-preview', dialog: popover(page),
+      fixture: { operation, before }, script: new URL(import.meta.url) });
+  }
+  if (operation === 'cut') {
+    await captureManualDetail(page, info, { name: 'solid-basics-cut-preview', dialog: popover(page),
+      fixture: { operation, before }, script: new URL(import.meta.url) });
+  }
   await popoverInputs(page).first().press('Enter');
   await expect(popover(page)).toHaveCount(0, { timeout: KERNEL_TIMEOUT_MS });
   const result = operation === 'new' ? '押し出し2' : operation === 'join' ? '和1' : '差1';

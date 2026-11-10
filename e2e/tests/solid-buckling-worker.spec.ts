@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Page, type Request, type TestInfo } from '@playwright/test';
 import { FemClient, type FemWorkerPort } from '../../packages/fem/src/client.js';
 import { FEM_ASSETS, SOLID_BUCKLING_ASSETS } from '../../packages/fem/src/assets.js';
 import type { FemPhase, FemRequest } from '../../packages/fem/src/protocol.js';
@@ -97,33 +97,61 @@ async function browserWorkers(page: Page) {
   };
 }
 
-/** Observe the bytes actually delivered by the existing runtime asset requests; never replace or inject responses. */
+/** Observe completed response bytes; an aborted Worker's partial body is not a completed asset. */
 function observeAssets(page: Page) {
   const names = [...FEM_ASSETS, ...SOLID_BUCKLING_ASSETS].map(asset => asset.file);
   const responses: { url: string; status: number; bytes: number; sha256: string }[] = [];
   const errors: string[] = [], pending: Promise<void>[] = [];
-  page.on('response', response => {
-    const path = new URL(response.url()).pathname;
-    if (!path.endsWith('/fem/worker.js') && !names.some(name => path.endsWith('/fem/assets/' + name))) return;
-    pending.push(response.body().then(bytes => { responses.push({ url: response.url(), status: response.status(),
-      bytes: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') }); }, (error: unknown) => { errors.push(String(error)); }));
+  const requests: { url: string; outcome: 'pending' | 'finished' | 'failed'; failureText: string | null }[] = [];
+  const observed = new Map<Request, (typeof requests)[number]>();
+  const relevant = (request: Request): boolean => {
+    const path = new URL(request.url()).pathname;
+    return path.endsWith('/fem/worker.js') || names.some(name => path.endsWith('/fem/assets/' + name));
+  };
+  page.on('request', request => {
+    if (!relevant(request)) return;
+    const entry: (typeof requests)[number] = { url: request.url(), outcome: 'pending', failureText: null };
+    observed.set(request, entry);
+    requests.push(entry);
   });
-  return { responses, errors, pending };
+  page.on('requestfailed', request => {
+    const entry = observed.get(request);
+    if (entry === undefined) return;
+    entry.outcome = 'failed';
+    entry.failureText = request.failure()?.errorText ?? null;
+  });
+  // Playwright emits this only after the response body has downloaded. Reading
+  // at `response` (headers) leaves cancelled Worker downloads pending in cleanup.
+  page.on('requestfinished', request => {
+    if (!relevant(request)) return;
+    const entry = observed.get(request);
+    if (entry !== undefined) entry.outcome = 'finished';
+    pending.push((async () => {
+      const response = await request.response();
+      if (response === null) throw new Error(`Completed FEM asset response missing: ${request.url()}`);
+      const bytes = await response.body();
+      responses.push({ url: response.url(), status: response.status(), bytes: bytes.byteLength,
+        sha256: createHash('sha256').update(bytes).digest('hex') });
+    })().catch((error: unknown) => { errors.push(String(error)); }));
+  });
+  return { responses, errors, pending, requests };
 }
+
 async function attachJson(info: TestInfo, name: string, value: unknown): Promise<void> {
   const file = info.outputPath(name);
   await writeFile(file, JSON.stringify(value) + '\n', { encoding: 'utf8', flag: 'wx' });
   await info.attach(name, { path: file, contentType: 'application/json' });
 }
 async function finishEvidence(info: TestInfo, bridge: Awaited<ReturnType<typeof browserWorkers>>, client: FemClient,
-  assets: ReturnType<typeof observeAssets>, pageErrors: readonly string[]): Promise<void> {
+  assets: ReturnType<typeof observeAssets>, pageErrors: readonly string[], workerCloseCount?: () => number): Promise<void> {
   client.dispose();
   let cleanupError: string | null = null, live: number | null = null;
   try { await expect.poll(bridge.live).toBe(0); live = await bridge.live(); } catch (error) { cleanupError = String(error); }
   await Promise.all(assets.pending);
   await attachJson(info, 'buckling-actual-evidence.json', { rawReplies: bridge.raw, workerErrors: bridge.errors,
     pageErrors, assets: assets.responses, assetReadErrors: assets.errors,
-    expectedAssetPins: [...FEM_ASSETS, ...SOLID_BUCKLING_ASSETS], cleanup: { live, cleanupError } });
+    assetRequests: assets.requests,
+    expectedAssetPins: [...FEM_ASSETS, ...SOLID_BUCKLING_ASSETS], cleanup: { live, cleanupError, workerCloseEvents: workerCloseCount?.() ?? null } });
   if (cleanupError !== null) throw new Error(cleanupError);
 }
 
@@ -231,6 +259,6 @@ test.describe('solid prestress buckling on the actual browser Worker and package
     expect(bridge.errors).toEqual([]);
     expect(pageErrors).toEqual([]);
     client.dispose();
-    } finally { await finishEvidence(info, bridge, client, assets, pageErrors); }
+    } finally { await finishEvidence(info, bridge, client, assets, pageErrors, () => closed); }
   });
 });

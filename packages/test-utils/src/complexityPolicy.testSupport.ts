@@ -20,9 +20,9 @@ const DEPTH_SCOPES = new Set(['FunctionDeclaration', 'FunctionExpression', 'Arro
 export const MODULE_SCOPE = '<module>';
 
 /** [id, value] for parameters; [id, deepest, blocks over the cap] for depth. */
-export type ComplexityEntry = readonly [id: string, ...values: number[]];
+type ComplexityEntry = readonly [id: string, ...values: number[]];
 
-export interface ComplexityRow {
+interface ComplexityRow {
   readonly file: string;
   readonly functions: readonly ComplexityEntry[];
 }
@@ -38,7 +38,7 @@ export interface ComplexityRow {
   readonly malformed: readonly string[];
 }
 
-export interface MeasuredComplexity {
+interface MeasuredComplexity {
   readonly entries: readonly ComplexityEntry[];
   readonly ambiguous: readonly string[];
 }

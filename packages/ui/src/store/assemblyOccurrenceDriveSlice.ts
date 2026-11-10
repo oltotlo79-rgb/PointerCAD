@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import {
-  createSubShapeReferenceResolver, crossLevelCamTreeFailure, crossLevelGearTreeFailure, evaluateCrossLevelCamCouplings,
+  createBodyMateTargetOptions, crossLevelCamTreeFailure, crossLevelGearTreeFailure, evaluateCrossLevelCamCouplings,
   evaluateCrossLevelGearCouplings, movedCrossLevelParentJoints, pruneCrossLevelCams, pruneCrossLevelGears, solveCrossLevelCamDriveSteps,
   solveCrossLevelCamFollowSteps, solveCrossLevelGearDriveSteps, solveCrossLevelGearFollowSteps, solveSubAssemblyJointDriveSteps, type AssemblyDocument,
   type CrossLevelCamCoupling, type CrossLevelCamCouplingDefinition, type CrossLevelCamDocumentFailureCode, type CrossLevelCamRepair,
@@ -81,18 +81,11 @@ export function occurrenceDriveKey(path: readonly string[]): string {
 
 /**
  * Face/edge targets of the child's joints, re-selected on the view's current part bodies exactly like the top-level
- * targets (attachAssembly): the body of the part key with the saved feature id, matched by the shared resolver. A part
+ * targets (attachAssembly): delegated to model's `createBodyMateTargetOptions`, the one lookup both use. A part
  * without a current body, or a reference that no longer matches, gives null, so the drive stays refused.
  */
 export function occurrenceTargetOptions(bodies: AssemblyView['bodies']): ResolveMateTargetOptions {
-  const resolveReference = createSubShapeReferenceResolver();
-  return {
-    subShape: (partKey, reference) => {
-      const body = bodies.get(partKey)?.find((item) => item.featureId === reference.bodyFeatureId);
-      const resolution = body === undefined ? null : resolveReference(body, reference);
-      return resolution?.status === 'matched' ? resolution.match.geometry : null;
-    },
-  };
+  return createBodyMateTargetOptions(bodies);
 }
 
 /** The drive shown for `path`, only while it belongs to the current document and view. */

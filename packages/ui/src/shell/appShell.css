@@ -2134,6 +2134,41 @@ button.pcad-tree__row:focus-visible {
   background: var(--pcad-accent-soft-hover);
 }
 
+/*
+  参照の修復の節(solid/referenceRepairPanel.ts)。説明文と一覧を節の見出しと同じ左右の余白に収め、
+  参照ごとの行の押しボタンは狭い右欄でも文字を切らずに折り返す(押しボタンの既定は折り返さない)。
+*/
+.pcad-reference-repair > p,
+.pcad-reference-repair > ul {
+  margin-inline: var(--pcad-space-3);
+}
+
+.pcad-reference-repair li > .pcad-button {
+  height: auto;
+  min-height: 26px;
+  padding-block: 3px;
+  text-align: start;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/*
+  組立のジョイントの節に置く段をまたぐ連動の入力(AssemblyCrossLevelGearForm・AssemblyCrossLevelCamForm)。
+  見出しが長いので .pcad-field の見出しの固定幅(3.2em)へ押し込まず、見出しを 1 行目、欄と単位を 2 行目に置く
+  (sheetMetal.css・strength.css と同じ並べ方)。左右の余白も節の見出しにそろえる。
+*/
+.pcad-coupling-form {
+  padding: 0 var(--pcad-space-3);
+}
+
+.pcad-coupling-form .pcad-field {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.pcad-coupling-form .pcad-field > span:first-child {
+  grid-column: 1 / -1;
+}
+
 /* 長い慣性モーメントや関数式でも見出しを潰さず、値を残りの幅で折り返す。 */
 .pcad-properties {
   display: grid;

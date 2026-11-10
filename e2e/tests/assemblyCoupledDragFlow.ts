@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { captureManualDetail } from './captureManualDetail.js';
 import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { assemblyCoupledDragFile, DRAG_JOINTS, DRAG_TURN_LIMIT_DEG, DRAG_UNIT_ROTATION, DRAG_WRITTEN } from './assemblyCoupledDragFixture.js';
 import { readAssemblyStats, type AssemblyBrowserStats } from './assemblyTestSupport.js';
@@ -142,6 +143,7 @@ async function dragTo(page: Page, from: readonly [number, number], to: readonly 
 }
 
 export async function assemblyCoupledDragFlow(page: Page, info: TestInfo, app: ElectronApplication | undefined): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 900 });
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const source = info.outputPath('coupled-drag.pcada');
@@ -160,6 +162,10 @@ export async function assemblyCoupledDragFlow(page: Page, info: TestInfo, app: E
   await waitForRecompute(page, token);
   await expect(page.getByRole('form', { name: GEAR_FORM, exact: true })).toHaveCount(2);
   await homeView(page);
+  await captureManualDetail(page, info, {
+    name: 'assembly-cross-level-gear', dialog: form.first(),
+    fixture: { selectedChild: GEAR_TARGET, joints: DRAG_JOINTS }, script: new URL(import.meta.url),
+  });
 
   // 1. Pull the handle to 30 degrees: the leaf would have to turn -60, beyond its 40 degree limit. Refused whole: the
   //    reason is shown and nothing moved (no motion, no child drive, the document as written).

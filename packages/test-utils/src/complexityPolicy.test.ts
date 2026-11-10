@@ -3,8 +3,11 @@ import { fileURLToPath, URL } from 'node:url';
 import { ESLint, Linter } from 'eslint';
 import tseslint from 'typescript-eslint';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { compareComplexity, complexityConfig, DEPTH_RULE, measureDepth, measureParams, MODULE_SCOPE, PARAMS_RULE,
-  type ComplexityEntry, type ComplexityRow, type MeasuredComplexity } from './complexityPolicy.testSupport.js';
+import { compareComplexity, complexityConfig, DEPTH_RULE, measureDepth, measureParams, MODULE_SCOPE, PARAMS_RULE } from './complexityPolicy.testSupport.js';
+
+type ComplexityRow = Parameters<typeof compareComplexity>[0];
+type ComplexityEntry = ComplexityRow['functions'][number];
+type MeasuredComplexity = ReturnType<typeof measureParams>;
 
 // Code rule P06: product functions take at most PARAMS_CAP parameters and nest blocks at most DEPTH_CAP deep, in
 // the same scope as the E09 function-size rule. Each grandfathered function keeps its own measured value

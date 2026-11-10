@@ -121,8 +121,11 @@ describe('CIの3分割は全操作を保って別の実行機へ配る', () => {
     expect(combined).toContain('./scripts/check.ps1 -CIStage Verify' + evidence);
   });
 
-  it('単体の先行分は両OSで対応するPythonからNumPy固定の仮想環境を用意する', () => {
-    const workflow = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8');
+  it.each(['\n', '\r\n'])('単体の先行分は両OSで対応するPythonからNumPy固定の仮想環境を用意する（改行 %j）', lineEnding => {
+    const checkedOut = readFileSync(new URL('.github/workflows/ci.yml', root), 'utf8')
+      .replace(/\r\n/gu, '\n').replace(/\n/gu, lineEnding);
+    // Git may check this same workflow out with LF or CRLF; preserve all content and order.
+    const workflow = checkedOut.replace(/\r\n/gu, '\n');
     const unitLead = workflow.slice(workflow.indexOf('\n  unit-lead:'), workflow.indexOf('\n  e2e:'));
     expect(unitLead).toContain('os: [windows-latest, ubuntu-latest]');
     expect(unitLead).toContain('runs-on: ${{ matrix.os }}');

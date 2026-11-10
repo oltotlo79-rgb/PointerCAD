@@ -16,12 +16,14 @@
 
 import { expressionValueFromNumber, type ExpressionValue } from '@pointercad/expression';
 import {
+  addVec3,
   affectsShape,
   appendSolid,
   baseWorkPlane,
   crossVec3,
   DEFAULT_CUT_KEEP,
   DEFAULT_PRIMITIVE_AXIS,
+  dotVec3,
   lengthVec3,
   liveBodyIds,
   nextSolidId,
@@ -30,6 +32,7 @@ import {
   resolveSketch,
   isPlanar,
   SKETCH_TOLERANCE_MM,
+  scaleVec3,
   subShapeFromFingerprint,
   subVec3,
   type CutFeature,
@@ -425,27 +428,15 @@ export type ProfileCutGeometry =
   | { readonly ok: true; readonly normal: Vec3; readonly throughDistance: number }
   | { readonly ok: false; readonly reasonKey: MessageKey };
 
-function add3(a: Vec3, b: Vec3): Vec3 {
-  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-}
-
-function scale3(a: Vec3, factor: number): Vec3 {
-  return [a[0] * factor, a[1] * factor, a[2] * factor];
-}
-
-function dot3(a: Vec3, b: Vec3): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
 function unit3(a: Vec3): Vec3 | null {
   const length = lengthVec3(a);
-  return length > 0 && Number.isFinite(length) ? scale3(a, 1 / length) : null;
+  return length > 0 && Number.isFinite(length) ? scaleVec3(a, 1 / length) : null;
 }
 
 /** 円弧・楕円の角度 t の点(`ResolvedArc` / `ResolvedEllipse` の向きの約束どおり)。 */
 function conicPoint(center: Vec3, normal: Vec3, axis: Vec3, a: number, b: number, t: number): Vec3 {
   const second = crossVec3(normal, axis);
-  return add3(center, add3(scale3(axis, a * Math.cos(t)), scale3(second, b * Math.sin(t))));
+  return addVec3(center, addVec3(scaleVec3(axis, a * Math.cos(t)), scaleVec3(second, b * Math.sin(t))));
 }
 
 /**
@@ -486,7 +477,7 @@ function curveBounds(curve: ResolvedCurve): Vec3[] {
       const corners: Vec3[] = [];
       for (const dx of [-radius, radius]) {
         for (const dy of [-radius, radius]) {
-          for (const dz of [-radius, radius]) corners.push(add3(curve.center, [dx, dy, dz]));
+          for (const dz of [-radius, radius]) corners.push(addVec3(curve.center, [dx, dy, dz]));
         }
       }
       return corners;
@@ -581,7 +572,7 @@ export function profileCutGeometry(context: CutContext, targetFeatureId: string,
   const u = unit3(crossVec3(normal, helper));
   if (u === null) return { ok: false, reasonKey: 'cutError.profileNotPlanar' };
   const v = crossVec3(normal, u);
-  const flat = (point: Vec3): readonly [number, number] => [dot3(point, u), dot3(point, v)];
+  const flat = (point: Vec3): readonly [number, number] => [dotVec3(point, u), dotVec3(point, v)];
   const straight = face.curves.filter((curve) => curve.kind === 'segment');
   for (let i = 0; i < straight.length; i += 1) {
     for (let j = i + 2; j < straight.length; j += 1) {
@@ -597,7 +588,7 @@ export function profileCutGeometry(context: CutContext, targetFeatureId: string,
   if (corners === null) return { ok: false, reasonKey: 'shapeError.noTargetBody' };
   const bounds = face.curves.flatMap(curveBounds);
   const range = (points: readonly Vec3[], axis: Vec3): readonly [number, number] => {
-    const values = points.map((point) => dot3(point, axis));
+    const values = points.map((point) => dotVec3(point, axis));
     return [Math.min(...values), Math.max(...values)];
   };
   // 押す前に「届かない」と断るのは、対象と輪郭の両方の範囲が本当の形を必ず含むと証明できるときだけ

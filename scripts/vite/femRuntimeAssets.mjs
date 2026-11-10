@@ -74,16 +74,19 @@ export function buildFemRuntimeAssets(manifest, files) {
     + ': ' + component.notices.map(name => `<a href="./${name}">${escape(name.split('/').at(-1))}</a>`).join(' / ') + '</li>').join('\n');
   const sourceLinks = names.filter(name => !name.startsWith('assets/')).map(name => '<li>' + escape(name) + ': '
     + distribution[name].parts.map(part => `<a href="./${part.file.slice('licenses/fem/'.length)}">${escape(part.file.split('/').at(-1))}</a>`).join(' / ') + '</li>').join('\n');
+  const obligationGaps = femDistributionObligationGaps(manifest, files);
+  const currentGaps = obligationGaps.map(item => '<li>' + escape(item) + '</li>').join('\n');
   const unresolved = manifest.unresolved.map(item => '<li>' + escape(item) + '</li>').join('\n');
   assets.set('licenses/fem/index.html', Buffer.from('<!doctype html><html lang="ja"><meta charset="utf-8">'
     + '<title>はり解析の利用部品・許諾・ソース</title><h1>はり解析の利用部品・許諾・ソース</h1>'
     + '<p>使用する部品と原文を同梱しています。各部品の条件はその原文に従います。</p>'
-    + `<ul>${componentLinks}</ul><h2>確認が残る配布条件</h2><ul>${unresolved}</ul>`
+    + `<h2>満たしていない具体的な配布条件</h2><ul>${currentGaps}</ul>`
+    + `<ul>${componentLinks}</ul><h2>保持した履歴・技術上の限界</h2><ul>${unresolved}</ul>`
     + '<p>この一覧は法的な承認や、ネイティブ計算部の再構築が完了したことを示すものではありません。</p>'
     + `<h2>同梱資料とソース</h2><ul>${sourceLinks}</ul>`
     + '<p>大きなソース書庫は内容を変えずに分割しています。part-001から順にバイナリ連結すると元の書庫に戻ります。'
     + '順序・サイズ・SHA-256は<a href="./manifest.json">一覧</a>にあります。</p></html>'));
-  return { assets, unresolved: [...manifest.unresolved] };
+  return { assets, unresolved: obligationGaps, distributionDiagnostics: [...manifest.unresolved] };
 }
 
 const APPLICATION_BUILD_INPUTS = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'];
@@ -262,27 +265,168 @@ export function nativeRebuildEvidenceGaps(manifest, files) {
   return gaps;
 }
 
-/** Publication metadata is shared with the existing release guard; bundling verifies all bytes separately. */
+const OBLIGATIONS_FILE = 'evidence/distribution-obligations.json';
+const OBLIGATION_PROFILES = new Map([
+  ['oofem', 'lgpl-source-relink'], ['numpy', 'permissive-notices'],
+  ['Pyodide', 'mpl-covered-source'], ['netgen-mesher', 'lgpl-source-relink'],
+]);
+
+/** Concrete delivered obligations only; historical completeness/legal-warranty flags are diagnostic. */
+export function femDistributionObligationGaps(manifest, files) {
+  if (manifest.distributionObligations !== OBLIGATIONS_FILE) return ['FEM: concrete distribution obligations are absent or not pinned'];
+  const gaps = [], verified = new Map(), fail = text => gaps.push('FEM: ' + text);
+  const pinned = name => {
+    if (verified.has(name)) return verified.get(name);
+    const pin = safePath(name) ? manifest.files?.[name] : undefined, bytes = files.get(name);
+    const checked = record(pin) && Buffer.isBuffer(bytes) && bytes.byteLength === pin.bytes && hash(bytes) === pin.sha256 ? bytes : undefined;
+    verified.set(name, checked);
+    return checked;
+  };
+  const json = name => {
+    const bytes = pinned(name);
+    if (!bytes) return undefined;
+    try { return JSON.parse(bytes.toString('utf8')); } catch { return undefined; }
+  };
+  const obligations = json(OBLIGATIONS_FILE);
+  if (!record(obligations) || obligations.format !== 'pointercad-fem-distribution-obligations/1'
+    || !Array.isArray(obligations.components) || obligations.components.length !== manifest.components.length) {
+    return ['FEM: concrete distribution obligations are absent or not pinned'];
+  }
+  const requireFile = (name, where) => {
+    if (typeof name !== 'string' || !pinned(name) || pinned(name).byteLength === 0) {
+      fail(where + ' missing or changed: ' + String(name)); return false;
+    }
+    return true;
+  };
+  const requireList = (list, where) => {
+    if (!Array.isArray(list) || list.length === 0 || new Set(list).size !== list.length) { fail(where + ' is absent'); return; }
+    for (const name of list) requireFile(name, where);
+  };
+  const names = new Set();
+  for (const item of manifest.components) {
+    const rows = obligations.components.filter(row => record(row) && row.name === item.name);
+    if (rows.length !== 1 || names.has(item.name)) { fail('obligation component mapping differs: ' + item.name); continue; }
+    names.add(item.name);
+    const row = rows[0], where = item.name;
+    if (!OBLIGATION_PROFILES.has(item.name) || row.version !== item.version || row.profile !== OBLIGATION_PROFILES.get(item.name)) {
+      fail(where + ' license/version obligation mapping differs'); continue;
+    }
+    // Unknown applicable terms remain a concrete gap; an unclassified SPDX identifier is not one.
+    if (row.licenseStatus !== 'retained-original-terms') fail(where + ' applicable license terms are unknown');
+    if (!Array.isArray(row.notices) || JSON.stringify([...row.notices].sort()) !== JSON.stringify([...item.notices].sort())) {
+      fail(where + ' required notice mapping differs');
+    } else requireList(row.notices, where + ' notice');
+    if (!record(row.delivery) || row.delivery.kind !== 'bundled' || row.delivery.index !== 'licenses/fem/index.html') {
+      fail(where + ' recipient source/notice delivery location is absent');
+    }
+    requireFile(row.delivery?.instructions, where + ' recipient instructions');
+    if (row.profile !== 'permissive-notices') {
+      requireList(row.sources, where + ' covered source');
+      const required = where === 'oofem'
+        ? ['sources/upstream-source-materials.zip', `sources/051-oofem-${manifest.oofemSourceCommit}.tar.gz`, 'sources/pointercad-beam-application-source.zip']
+        : where === 'Pyodide' ? ['sources/upstream-source-materials.zip']
+          : Object.keys(manifest.files).filter(name => /^sources\/netgen-[a-f0-9]{40}\.tar\.gz$/u.test(name));
+      if (required.length === 0 || required.some(name => !row.sources?.includes(name))) fail(where + ' required covered-source inventory differs');
+      // Bundled, pinned source is actually emitted by buildFemRuntimeAssets, with reconstructable part links.
+      if (!record(row.sourceAccess) || row.sourceAccess.kind !== 'bundled'
+        || row.sourceAccess.index !== 'licenses/fem/index.html') fail(where + ' covered-source access location is absent');
+    }
+    if (row.profile !== 'lgpl-source-relink') continue;
+    requireList(row.scripts, where + ' compilation/installation script');
+    requireList(row.modificationNotices, where + ' modification notice');
+    if (where === 'oofem' && (!row.scripts?.includes('sources/native-rebuild/portable/rebuild-oofem-pyodide.sh')
+      || !row.modificationNotices?.includes('sources/native-rebuild/patch-provenance.json'))) fail('oofem required build script/modification inventory differs');
+    if (where === 'netgen-mesher' && (!row.scripts?.includes('sources/netgen-rebuild/rebuild-netgen-pyodide.sh')
+      || !row.scripts?.includes('sources/netgen-rebuild/replacement-plan.json')
+      || !row.modificationNotices?.includes('sources/netgen-rebuild/netgen-replacement-marker.patch'))) fail('netgen-mesher recipient build script/modification inventory differs');
+    const replacement = row.replacement;
+    if (!record(replacement) || replacement.route !== 'lgpl-2.1-section-6a-source-relink') {
+      fail(where + ' usable replacement/relink route is absent'); continue;
+    }
+    requireFile(replacement.instructions, where + ' replacement instructions');
+    requireFile(replacement.applicationSource, where + ' application source/relink material');
+    if (replacement.applicationSource !== 'sources/pointercad-beam-application-source.zip') fail(where + ' application source/relink material mapping differs');
+    if (where === 'oofem') {
+      if (replacement.evidence !== NATIVE_EVIDENCE) fail('oofem native replacement evidence path differs');
+      gaps.push(...nativeRebuildEvidenceGaps(manifest, files));
+    } else {
+      // Future actual Netgen evidence is independent of historical source-map false flags.
+      // Until its producer contract exists, this explicit missing evidence remains open.
+      const proof = json(replacement.evidence);
+      if (!record(proof) || proof.format !== 'pointercad-netgen-native-replacement-evidence/1') {
+        fail('netgen-mesher recipient replacement evidence is absent'); continue;
+      }
+      const wheel = Object.keys(manifest.files).find(name => /^assets\/netgen_mesher-[^/]+\.whl$/u.test(name));
+      const source = Object.keys(manifest.files).find(name => /^sources\/netgen-[a-f0-9]{40}\.tar\.gz$/u.test(name));
+      const cases = proof.replacement?.cases;
+      if (!wheel || !source || proof.shippedWheelSha256 !== manifest.files[wheel].sha256
+        || proof.sourceSha256 !== manifest.files[source].sha256 || proof.rebuild?.passed !== true
+        || !digest(proof.rebuild?.wheelSha256) || !digest(proof.rebuild?.receiptSha256)
+        || proof.rebuild.wheelSha256 === proof.shippedWheelSha256
+        || proof.replacement?.wheelSha256 !== proof.rebuild.wheelSha256 || !digest(proof.replacement?.receiptSha256) || !Array.isArray(cases)
+        || !['modified-accepted', 'original-refused', 'tampered-refused'].every(id => {
+          const matching = cases.filter(c => record(c) && c.id === id);
+          return matching.length === 1 && matching[0].passed === true;
+        })) {
+        fail('netgen-mesher recipient replacement evidence is not bound to actual source/build/loader cases');
+      }
+    }
+  }
+  return [...new Set(gaps)];
+}
+
+/** Read the same fixed obligations used by the bundler, without loading unrelated runtime assets. */
 export function readFemDistributionGaps(folder = join(projectRoot, 'packages/fem/runtime')) {
+  if (lstatSync(folder).isSymbolicLink()) throw new Error('FEM runtime root is a link');
   const manifest = JSON.parse(readFileSync(join(folder, 'manifest.json'), 'utf8'));
   if (!record(manifest) || manifest.format !== 'pointercad-fem-distribution/1'
-    || !Array.isArray(manifest.unresolved) || manifest.unresolved.length > 32
-    || manifest.unresolved.some(value => typeof value !== 'string' || value.length === 0 || value.length > 2048)) {
-    throw new Error('Invalid FEM publication metadata');
-  }
-  const gaps = manifest.unresolved.map(value => 'FEM: ' + value);
-  if (manifest.correspondingSourceComplete !== true) gaps.push('FEM: corresponding source closure is incomplete');
-  if (manifest.nativeRebuildExecuted !== true) gaps.push('FEM: native rebuild and replacement remain unqualified');
-  else {
-    const files = new Map();
-    for (const name of [NATIVE_EVIDENCE, NATIVE_PROVENANCE]) {
-      const path = join(folder, ...name.split('/'));
-      if (existsSync(path) && lstatSync(path).isFile()) files.set(name, readFileSync(path));
+    || !record(manifest.files) || !Array.isArray(manifest.components)) throw new Error('Invalid FEM publication metadata');
+  const root = realpathSync(folder), files = new Map();
+  const localFile = name => {
+    if (!safePath(name)) return undefined;
+    const path = join(root, ...name.split('/'));
+    if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile()) return undefined;
+    const resolved = relative(root, realpathSync(path));
+    return resolved === '..' || resolved.startsWith('..' + sep) || isAbsolute(resolved) ? undefined : path;
+  };
+  const read = name => {
+    if (!safePath(name) || !record(manifest.files[name])) return;
+    const path = localFile(name);
+    if (path && lstatSync(path).size === manifest.files[name].bytes) files.set(name, readFileSync(path));
+  };
+  read(OBLIGATIONS_FILE);
+  let obligations;
+  try { obligations = JSON.parse(files.get(OBLIGATIONS_FILE)?.toString('utf8') ?? 'null'); } catch { obligations = null; }
+  const wanted = new Set([NATIVE_EVIDENCE, NATIVE_PROVENANCE]);
+  for (const component of manifest.components) for (const name of component.notices ?? []) wanted.add(name);
+  for (const row of Array.isArray(obligations?.components) ? obligations.components : []) {
+    if (!record(row)) continue;
+    for (const key of ['notices', 'sources', 'scripts', 'modificationNotices']) {
+      if (Array.isArray(row[key])) for (const name of row[key]) wanted.add(name);
     }
-    gaps.push(...nativeRebuildEvidenceGaps(manifest, files));
+    for (const name of [row.delivery?.instructions, row.replacement?.instructions,
+      row.replacement?.applicationSource, row.replacement?.evidence]) if (typeof name === 'string') wanted.add(name);
   }
-  return gaps;
+  // Existing native evidence validator also binds the exact shipped inputs and patches.
+  for (const name of Object.keys(manifest.files)) if (/^assets\/(?:oofem|netgen_mesher)-.*\.whl$/u.test(name)
+    || /^sources\/(?:051-oofem-|026-pybind11-)/u.test(name) || /^sources\/native-rebuild\/.*\.(?:patch|diff)$/u.test(name)) wanted.add(name);
+  for (const name of wanted) {
+    const parts = manifest.storedParts?.[name];
+    if (Array.isArray(parts)) {
+      const chunks = [];
+      for (const part of parts) {
+        if (!safePath(part.file)) continue;
+        const path = localFile(part.file);
+        if (!path || lstatSync(path).size !== part.bytes) continue;
+        const bytes = readFileSync(path);
+        if (bytes.byteLength === part.bytes && hash(bytes) === part.sha256) chunks.push(bytes);
+      }
+      if (chunks.length === parts.length) files.set(name, Buffer.concat(chunks));
+    } else read(name);
+  }
+  return femDistributionObligationGaps(manifest, files);
 }
+
 
 /** Fixed repository directory only. Refuse links, extra bytes and a changed closure before bundling. */
 export function collectFemRuntimeAssets(folder = join(projectRoot, 'packages/fem/runtime')) {

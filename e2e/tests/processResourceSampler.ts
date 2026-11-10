@@ -391,6 +391,18 @@ $previousOutput=$null
 $previousSleep=$null
 while($true){
   $loopStartedAt=[SamplerNative]::EpochMilliseconds()
+  # The adopted set must stay inside the discovery age limit for the whole read. When it is within
+  # one period of that limit (a late discovery or a delayed loop), bind this frame to a running
+  # discovery instead of reading the old PID set: start one if none is running, then wait for it,
+  # bounded by the age limit. The wait lies between loopStartedAt and readStartedAt of this frame.
+  # A discovery that is still late leaves the frame stale, and it is rejected as before.
+  if($discoveredAt -gt 0 -and $loopStartedAt-$discoveredAt -ge ${DISCOVERY_INTERVAL_MS - INTERVAL_MS}){
+    if($null -eq $pending){
+      $pending=Start-Discovery
+      $discoveryStartedAt=$pending.startedAt
+    }
+    [void]$pending.handle.AsyncWaitHandle.WaitOne(${DISCOVERY_INTERVAL_MS})
+  }
   if($null -ne $pending -and $pending.handle.IsCompleted){
     $adoptionClock=[System.Diagnostics.Stopwatch]::StartNew()
     $completedStartedAt=$pending.startedAt
@@ -485,7 +497,9 @@ while($true){
   })
   $propertyReadMs=$propertyClock.Elapsed.TotalMilliseconds
   $disposalClock=[System.Diagnostics.Stopwatch]::StartNew()
-  foreach($p in $processes.Values){$p.Dispose()}
+  # GetProcesses owns every wrapper in the snapshot, including unselected PIDs.
+  # Dispose all of them; only the selected rows above are measured and retained.
+  foreach($p in $snapshot){$p.Dispose()}
   $processDisposalMs=$disposalClock.Elapsed.TotalMilliseconds
   $timing=if($null -ne $discoveryTiming){$discoveryTiming.Clone()}else{$null}
   if($null -ne $timing){
@@ -632,7 +646,7 @@ export async function linuxFrame(rootPid: number, includeRoot: boolean, started:
   }
   const selected = discovered.filter(entry => ids.has(entry.pid) && (includeRoot || entry.pid !== rootPid));
   const processes = await Promise.all(selected.map(async entry => linuxRowSinceDiscovery(entry, await source.process(entry.pid))));
-  return { atEpochMs: source.now(), readStartedAtEpochMs: started, discoveredAtEpochMs: started, processes, discoveryError: null };
+  return { atEpochMs: source.now(), readStartedAtEpochMs: started, discoveredAtEpochMs: started, rootCreated: discovered.find(entry => entry.pid === rootPid)?.created ?? null, processes, discoveryError: null };
 }
 
 export function linuxSampler(rootPid: number, includeRoot: boolean, observe: (frame: RawFrame) => Promise<void>): Sampler {

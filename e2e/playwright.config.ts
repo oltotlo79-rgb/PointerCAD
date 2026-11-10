@@ -11,6 +11,14 @@ const measurementMode = process.env.PCAD_DEDICATED_MEASUREMENT;
 if (measurementMode !== undefined && measurementMode !== 'w21' && measurementMode !== 'w22' && measurementMode !== 'ex12host') {
   throw new Error('Unknown dedicated measurement mode');
 }
+// Manual screenshots isolate cold mathematics preparation; ordinary CI keeps its two workers.
+const manualCapture = process.env.PCAD_MANUAL_CAPTURE;
+if (manualCapture !== undefined && manualCapture !== '1') {
+  throw new Error('Unknown manual capture mode');
+}
+if (manualCapture === '1' && (process.env.CI !== undefined || measurementMode !== undefined)) {
+  throw new Error('Manual capture cannot run in CI or dedicated measurement mode');
+}
 const selectedMeasurement = measurementMode === undefined ? null : MEASUREMENT_FILES[measurementMode];
 const requestedSpecs = process.argv.filter(value => value.endsWith('.spec.ts')).map(value => value.split(/[\\/]/u).at(-1));
 if (selectedMeasurement !== null && requestedSpecs.some(name => !selectedMeasurement.some(file => file === name))) {
@@ -79,6 +87,7 @@ export default defineConfig({
     },
     {
       name: 'functional',
+      ...(manualCapture === '1' ? { workers: 1 } : {}),
       testIgnore: [ELECTRON_TEST_FILE, FIREFOX_GRAPHICS_TEST, ...(selectedMeasurement === null ? dedicatedFiles.map(name => `**/${name}`) : [])],
       ...(selectedMeasurement === null ? {} : { testMatch: dedicatedMatch(false) }),
       grepInvert: VIEWPORT_PERFORMANCE_TEST,

@@ -106,6 +106,27 @@ export function unique<T extends { readonly id: string }>(rows: readonly T[], pa
   }
   return result;
 }
+/** Stored provenance is structural data, not confirmation against today's catalogue. */
+function readMaterialSourceSnapshot(value: unknown, path: string): NonNullable<AnalysisMaterialCapacity['sourceSnapshot']> {
+  const names = ['url', 'publisher', 'locator', 'checkedDate', 'standard', 'standardEdition', 'evidence', 'sha256'];
+  const row = fields(value, names, path);
+  if (Reflect.ownKeys(row).length !== names.length || names.some(name => !Object.hasOwn(row, name))) {
+    throw new InputIssue('shape', path, 'Unsupported source snapshot field');
+  }
+  const evidence = row.evidence;
+  if (evidence !== 'supplier-excerpt' && evidence !== 'manufacturer-reference'
+    && evidence !== 'measured-reference' && evidence !== 'standard-draft') {
+    throw new InputIssue('provenance', `${path}.evidence`, 'Unsupported source evidence kind');
+  }
+  const sha256 = text(row.sha256, `${path}.sha256`, 64);
+  if (!/^[0-9a-f]{64}$/u.test(sha256)) throw new InputIssue('provenance', `${path}.sha256`, 'Expected source SHA-256');
+  return { url: text(row.url, `${path}.url`, 2048), publisher: text(row.publisher, `${path}.publisher`, 1024),
+    locator: text(row.locator, `${path}.locator`, 8192), checkedDate: text(row.checkedDate, `${path}.checkedDate`),
+    standard: row.standard === null ? null : text(row.standard, `${path}.standard`, 1024),
+    standardEdition: row.standardEdition === null ? null : text(row.standardEdition, `${path}.standardEdition`, 2048),
+    evidence, sha256 };
+}
+
 /** Validate supplied evidence without inventing yield values, conditions or source classifications.
  * This is an input contract only; no safety factor or constitutive law is calculated here. */
 export function readAnalysisMaterialCapacity(value: unknown, path = 'capacity'): AnalysisMaterialCapacity {
@@ -114,7 +135,8 @@ export function readAnalysisMaterialCapacity(value: unknown, path = 'capacity'):
     || value.sourceId === null || value.sourceId === '')) {
     throw new InputIssue('material-capacity-source-missing', `${path}.sourceId`, 'An explicit yield source ID is required');
   }
-  const names = ['materialConditionId', 'condition', 'thicknessMm', 'yieldMPa', 'sourceId', 'evidence', 'basis'];
+  const names = ['materialConditionId', 'condition', 'thicknessMm', 'yieldMPa', 'sourceId', 'evidence', 'basis',
+    ...(record(value) && Object.hasOwn(value, 'sourceSnapshot') ? ['sourceSnapshot'] : [])];
   const row = fields(value, names, path);
   if (Reflect.ownKeys(row).length !== names.length || names.some(name => !Object.hasOwn(row, name))) {
     throw new InputIssue('shape', path, 'Unsupported capacity field');
@@ -140,7 +162,10 @@ export function readAnalysisMaterialCapacity(value: unknown, path = 'capacity'):
   if (yieldMPa !== Number(preset.yieldStress.mpa)) {
     throw new InputIssue('material-capacity-value-mismatch', `${path}.yieldMPa`, 'Yield in MPa must match the source row');
   }
+  const sourceSnapshot = Object.hasOwn(row, 'sourceSnapshot')
+    ? readMaterialSourceSnapshot(row.sourceSnapshot, `${path}.sourceSnapshot`) : undefined;
   return { materialConditionId, condition, thicknessMm, yieldMPa, sourceId,
+    ...(sourceSnapshot === undefined ? {} : { sourceSnapshot }),
     evidence: source.evidence, basis: preset.yieldStress.basis };
 }
 

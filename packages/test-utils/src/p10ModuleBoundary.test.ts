@@ -15,14 +15,14 @@ interface Violation { consumer: string; specifier: string; typeOnly: boolean; re
 // Exact source and AST expression only; any edit or new consumer requires review.
 const dynamicBaseline = [
   { consumer: 'packages/ui/src/math/localExactMathEngine.ts',
-    sha256: '72775041bc6fdb2cbead740140fa27bb6e0036621bf019f8b1a5a87ca99ebeb2',
+    sha256: 'ff2ea75ac30155819f7aa42410b67490d7f098d0ff6c765e1ca7d00a1928ff00',
     expression: 'moduleUrl', reason: 'Loads the shipped pyodide.mjs from the fixed runtime folder.' },
   { consumer: 'packages/test-utils/src/functionSizePolicy.test.ts',
-    sha256: 'a1b7ccd36da222d22ca1fabe3b70b13a70a82dfd98a96b7ac29794ef57d1682b',
+    sha256: 'fdd61741dd3dbe49260312b0524ab51ff47a9a93d10d9ca3d922ef57967f93ae',
     expression: "new URL('../../../eslint.functionSizeBaseline.js', import.meta.url).href",
     reason: 'Loads the fixed root ESLint function-size baseline.' },
   { consumer: 'packages/test-utils/src/complexityPolicy.test.ts',
-    sha256: '82e749bb4b9f24731c50edb9bb0d89308651e617a5739c937dcfe1cdf74ec8a6',
+    sha256: '7bae3516350179aa404f1d4519f2aad3e0fa0feb07797835640bdf6c7029d81b',
     expression: "new URL('../../../eslint.complexityBaseline.js', import.meta.url).href",
     reason: 'Loads only the fixed root parameter-count and nesting-depth baseline.' },
   { consumer: 'packages/test-utils/src/workerReferencesPolicy.test.ts',

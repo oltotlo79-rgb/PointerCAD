@@ -167,8 +167,11 @@ function isElectronProject(projectName: string): boolean {
  * Not a Git commit id (2026-09-24 coordinator decision): committing a newly captured screenshot and
  * its capture record changes HEAD, which would immediately mark every already captured image as
  * belonging to an "old" build again. `applicationInputDigest` fingerprints the app's own build inputs
- * instead and excludes the manual's own docs/images, so registering a new image never changes it.
- * Computed once per worker process; it hashes the whole Web input set, so it is not cheap.
+ * instead and excludes the manual's own docs/images. Only the two fixed FEM application source-copy
+ * contents and their manifest sha256/bytes pins use stable markers, so regenerating that copy
+ * after capture also keeps the identity stable. Names, existence, other fields and executable
+ * inputs remain checked; malformed or partial metadata is rejected. Full Web/distribution
+ * checks retain their complete hashes. Computed once per worker process; the inventory is large.
  */
 let cachedApplicationBuildId: Promise<string> | null = null;
 function resolveApplicationBuildId(): Promise<string> {

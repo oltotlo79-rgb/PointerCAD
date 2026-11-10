@@ -347,7 +347,7 @@
     "Fourth module and shipped header byte identities are now complete for the enumerated rows; complete static/compiler-runtime closure is not thereby certified.",
     "The bundled actual-link-stanzas.txt is historical r2; it is not relabelled as r4 compile/link evidence.",
     "mpi4py_pycapi.h has complete normalized correspondence to the mpi4py 4.0.0 reference and its BSD-3-Clause notice is retained. A unique original header version and compiled MPI runtime inclusion are not asserted.",
-    "No Netgen modified-source replacement/portable reconstruction demonstration is supplied.",
+    "A portable reconstruction and modified-source replacement recipe is retained in sources/netgen-rebuild/ (replacement-plan.json); it is unexecuted, so no Netgen replacement demonstration is claimed.",
     "Product distribution terms remain unresolved. The specified IML source attribution and NIST notice are retained in evidence/iml-source-correspondence.json; complete product legal clearance is not asserted."
   ],
   "moduleEvidence": {
@@ -572,5 +572,25 @@
         }
       }
     }
-  ]
+  ],
+  "replacementRecipe": {
+    "plan": {
+      "path": "sources/netgen-rebuild/replacement-plan.json",
+      "sha256": "dbdc827d1d65567bce6be2e767b259f45d31296d837f520514fe6d9a27260a6a"
+    },
+    "recipe": {
+      "path": "sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+      "sha256": "cb132ba39d961e250478bdb821f352d8a421a75980d547702af1ae2162551a09"
+    },
+    "markerPatch": {
+      "path": "sources/netgen-rebuild/netgen-replacement-marker.patch",
+      "sha256": "f50252df94ae725290a3436763f9e2e2f9529b5b6836d6d60f6c7ca5b0cfec6a"
+    },
+    "productLoaderSpec": {
+      "path": "sources/netgen-rebuild/fem-netgen-replacement.spec.ts",
+      "sha256": "95568112418183f62aa3629258b24984e90580c047f903435335ea7f5535a053"
+    },
+    "executed": false,
+    "basis": "Portable replay of the r4 packaging from the retained archives and recipe zip; executable by Root, not executed."
+  }
 }

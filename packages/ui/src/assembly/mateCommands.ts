@@ -1,6 +1,7 @@
 import { evaluateExpression, type ExpressionError, type ExpressionValue } from '@pointercad/expression';
 import {
   assemblyExpressionContext,
+  dotVec3,
   findComponent,
   resolveMateTarget,
   resolveSubShapeReference,
@@ -132,7 +133,7 @@ export function refreshMateDraft(document: AssemblyDocument, view: AssemblyView,
     ? [a.target.direction, b.target.direction] : [];
   const [na, nb] = normals;
   const flipped = kind === 'coincident' && !draft.alignmentChosen && na != null && nb != null
-    ? na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2] >= 0 : draft.flipped;
+    ? dotVec3(na, nb) >= 0 : draft.flipped;
   return { ...draft, kind, targetKinds, flipped, source: kind === draft.kind ? draft.source : defaultMateSource(kind) };
 }
 

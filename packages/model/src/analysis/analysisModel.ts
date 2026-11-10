@@ -1,3 +1,5 @@
+import type { StrengthSource } from '../measure/strengthMaterialTypes.js';
+
 /** Linear, small-displacement, isotropic 3D Timoshenko frames. No capacity claim. */
 export type Vector3 = readonly [number, number, number];
 export type Vector6 = readonly [number, number, number, number, number, number];
@@ -20,6 +22,8 @@ export interface AnalysisMaterialCapacity {
   readonly thicknessMm: number | null;
   readonly yieldMPa: number;
   readonly sourceId: string;
+  /** Absent legacy snapshots stay unqualified; readers never fill them from the current catalogue. */
+  readonly sourceSnapshot?: StrengthSource;
   readonly evidence: 'supplier-excerpt' | 'manufacturer-reference' | 'measured-reference' | 'standard-draft';
   readonly basis: 'minimum' | 'reference';
 }

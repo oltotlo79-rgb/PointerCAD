@@ -1,3 +1,4 @@
+import { STRENGTH_SOURCES } from '@pointercad/model';
 import React, { Children, isValidElement, useEffect, useRef, useState } from 'react';
 import type * as ReactTypes from 'react';
 import type { AnalysisMaterialCapacity } from '@pointercad/model/beam-analysis';
@@ -13,9 +14,9 @@ vi.mock('react', async importOriginal => {
 });
 
 const SS400: AnalysisMaterialCapacity = { materialConditionId: 'ss400-plate-0-16', condition: '圧延鋼板（熱処理の指定なし）',
-  thicknessMm: 16, yieldMPa: 245, sourceId: 'jisf-g3101-draft', evidence: 'standard-draft', basis: 'minimum' };
+  thicknessMm: 16, yieldMPa: 245, sourceId: 'jisf-g3101-draft', sourceSnapshot: { ...STRENGTH_SOURCES['jisf-g3101-draft'] }, evidence: 'standard-draft', basis: 'minimum' };
 const S45C: AnalysisMaterialCapacity = { materialConditionId: 's45c-quenched-tempered-reference', condition: '焼入焼戻・適用寸法未指定の参考値',
-  thicknessMm: 17, yieldMPa: 490, sourceId: 'tsubaki-s45c', evidence: 'manufacturer-reference', basis: 'reference' };
+  thicknessMm: 17, yieldMPa: 490, sourceId: 'tsubaki-s45c', sourceSnapshot: { ...STRENGTH_SOURCES['tsubaki-s45c'] }, evidence: 'manufacturer-reference', basis: 'reference' };
 interface FieldProps {
   readonly children?: React.ReactNode;
   readonly 'data-testid'?: string;
@@ -87,6 +88,37 @@ afterEach(async () => {
 });
 
 describe('solid material fields real React handlers (pure SSR)', () => {
+  it('keeps legacy source data unchanged on opening, marks it stale, and requires explicit current-source reselection', async () => {
+    const { sourceSnapshot, ...legacy } = SS400;
+    void sourceSnapshot;
+    const before = structuredClone(legacy);
+    const html = renderToStaticMarkup(<SolidAnalysisMaterialFields value={legacy} selectionKey="legacy" onChange={vi.fn()} />);
+    expect(html).toContain('role="alert"');
+    expect(html).not.toContain(STRENGTH_SOURCES['jisf-g3101-draft'].sha256);
+    const h = await harness(legacy); h.render();
+    expect(h.change).toHaveBeenLastCalledWith(null, false);
+    expect(h.valid()).toBe(false);
+    expect(h.field('solid-material-condition').value).toBe(legacy.materialConditionId);
+    expect(legacy).toEqual(before); expect(Object.hasOwn(legacy, 'sourceSnapshot')).toBe(false);
+    h.field('solid-material-condition').onChange?.({ target: { value: '' } });
+    expect(h.value()).toBeNull();
+    h.field('solid-material-condition').onChange?.({ target: { value: legacy.materialConditionId } });
+    expect(h.valid()).toBe(true);
+    expect(h.value()?.sourceSnapshot).toEqual(STRENGTH_SOURCES['jisf-g3101-draft']);
+    expect(legacy).toEqual(before);
+  });
+
+  it('displays the stored stale SHA rather than borrowing current metadata with the same source ID/value', async () => {
+    const stored = { ...SS400, sourceSnapshot: { ...STRENGTH_SOURCES['jisf-g3101-draft'], sha256: '0'.repeat(64) } };
+    const before = structuredClone(stored);
+    const html = renderToStaticMarkup(<SolidAnalysisMaterialFields value={stored} selectionKey="stale" onChange={vi.fn()} />);
+    expect(html).toContain('role="alert"'); expect(html).toContain('0'.repeat(64));
+    expect(html).not.toContain(STRENGTH_SOURCES['jisf-g3101-draft'].sha256);
+    const h = await harness(stored); h.render();
+    expect(h.change).toHaveBeenLastCalledWith(null, false);
+    expect(h.valid()).toBe(false); expect(stored).toEqual(before);
+  });
+
   it('clears the parent capacity atomically while keeping an invalid typed thickness visible', async () => {
     const h = await harness(); h.render(); h.change.mockClear();
     h.field('solid-material-thickness').onChange?.({ target: { value: '17' } });

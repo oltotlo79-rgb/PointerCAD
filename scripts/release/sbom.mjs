@@ -22,13 +22,14 @@
  */
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 import { collectRuntimeNotices } from '../vite/runtimeNotices.mjs';
 import { collectMathNotices } from '../vite/mathNotices.mjs';
 import { collectExactMathAssets } from '../vite/exactMathAssets.mjs';
-import { assertFemApplicationBuildInputs, collectFemRuntimeAssets } from '../vite/femRuntimeAssets.mjs';
+import { assertFemApplicationBuildInputs, collectFemRuntimeAssets, femDistributionObligationGaps } from '../vite/femRuntimeAssets.mjs';
 
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const EXACT_MATH_SOURCE_PART_BYTES = 16 * 1024 * 1024; // Mirrors scripts/vite/exactMathAssets.mjs; files above this are split for Pages.
@@ -397,7 +398,7 @@ function netgenEmbeddedComponents(manifest, readMetadata, facts) {
       || !Array.isArray(row.needed) || row.needed.some(name => !members.some(member => member.split('/').at(-1) === name)))
     || !Array.isArray(map.embeddedDependencies) || map.embeddedDependencies.length !== names.length
     || names.some(name => map.embeddedDependencies.filter(row => row.name === name).length !== 1)
-    || map.legalClearance !== false || map.sourceReplacementExecuted !== false) {
+    || typeof map.legalClearance !== 'boolean' || typeof map.sourceReplacementExecuted !== 'boolean') {
     throw new Error('FEM Netgen retained module/dependency evidence differs');
   }
   return map.embeddedDependencies.map(item => {
@@ -438,6 +439,25 @@ function netgenEmbeddedComponents(manifest, readMetadata, facts) {
   });
 }
 
+
+/** Recheck concrete FEM obligations against the actual emitted recipient bytes, not diagnostic history. */
+export function femDistributionGapsFromDistribution(distribution) {
+  const raw = distribution.assets.get('licenses/fem/manifest.json');
+  if (!raw) throw new Error('FEM SBOM distribution manifest absent');
+  const manifest = JSON.parse(raw.toString('utf8')), files = new Map();
+  for (const [name, pin] of Object.entries(manifest.files)) {
+    if (!Array.isArray(pin.parts) || pin.parts.length === 0) throw new Error('FEM SBOM file mapping missing: ' + name);
+    const chunks = pin.parts.map(part => {
+      const bytes = distribution.assets.get(part.file);
+      if (!bytes || bytes.byteLength !== part.bytes || sha256(bytes) !== part.sha256) throw new Error('FEM SBOM distributed bytes differ: ' + name);
+      return bytes;
+    });
+    const bytes = Buffer.concat(chunks);
+    if (bytes.byteLength !== pin.bytes || sha256(bytes) !== pin.sha256) throw new Error('FEM SBOM distributed bytes differ: ' + name);
+    files.set(name, bytes);
+  }
+  return femDistributionObligationGaps(manifest, files);
+}
 
 /** Map the existing verified FEM distribution, without inventing SPDX or native source qualification. */
 export function femComponentsFromDistribution(distribution) {
@@ -519,6 +539,55 @@ export function femComponentsFromDistribution(distribution) {
 }
 
 /**
+ * Electron (with the Chromium and Node.js it embeds) ships inside both desktop executables, but it is neither a Web
+ * asset nor part of the runtime-notices closure, so it gets its own component. The version is read from the package
+ * apps/desktop actually installed - the same `createRequire(apps/desktop/package.json)('electron/package.json')` that
+ * assemble-desktop.mjs records as each desktop candidate's `electronVersion` - and publicationManifest.mjs requires
+ * both candidates to carry exactly this version. The MIT id is recorded only when the installed package declares it
+ * and its own LICENSE file contains the MIT grant and disclaimer. electron-builder writes LICENSE.electron.txt (the
+ * Electron licence) and LICENSES.chromium.html (Chromium and its bundled parts) next to the executable from the
+ * Electron archive of the same version; those two names are recorded as `pointercad:desktopExecutableNotice` without
+ * a hash, because no repository record pins the archive's bytes. They are never `pointercad:distributedFile` facts,
+ * which are matched against the Web and desktop renderer inventories.
+ */
+export const ELECTRON_COMPONENT = 'electron';
+export const ELECTRON_EXECUTABLE_NOTICES = Object.freeze(['LICENSE.electron.txt', 'LICENSES.chromium.html']);
+const ELECTRON_LICENSE_FACT = 'pointercad:installedPackageLicense';
+const ELECTRON_NOTICE_FACT = 'pointercad:desktopExecutableNotice';
+const MIT_SENTENCES = ['Permission is hereby granted, free of charge, to any person obtaining a copy of this software',
+  'The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.',
+  'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND'];
+
+/** Pure half of the Electron component: the installed package.json and its LICENSE bytes (undefined when the file is absent). */
+export function electronComponentFromPackage(installed, licenseBytes) {
+  if (installed?.name !== ELECTRON_COMPONENT || typeof installed.version !== 'string' || !VERSION_PATTERN.test(installed.version)) {
+    throw new Error('Installed Electron package identity is invalid');
+  }
+  if (!(licenseBytes instanceof Uint8Array) || licenseBytes.byteLength === 0) {
+    throw new Error('Installed Electron license file is missing: electron/LICENSE');
+  }
+  if (installed.license !== 'MIT') throw new Error('Installed Electron license differs from MIT: ' + String(installed.license));
+  const text = Buffer.from(licenseBytes).toString('utf8').replace(/\s+/gu, ' ');
+  if (MIT_SENTENCES.some((sentence) => !text.includes(sentence))) {
+    throw new Error('Installed Electron license file is not the MIT text: electron/LICENSE');
+  }
+  const origin = repositoryUrl(installed.repository);
+  return {
+    type: 'library', name: ELECTRON_COMPONENT, version: installed.version, licenses: [{ license: { id: 'MIT' } }],
+    externalReferences: origin ? [{ type: 'vcs', url: origin }] : undefined,
+    properties: [property('pointercad:distributionScope', 'desktop'),
+      property(ELECTRON_LICENSE_FACT, `electron/LICENSE|${sha256(licenseBytes)}`),
+      ...ELECTRON_EXECUTABLE_NOTICES.map((name) => property(ELECTRON_NOTICE_FACT, name))],
+  };
+}
+
+function electronComponent(root) {
+  const manifestPath = createRequire(join(root, 'apps/desktop/package.json')).resolve('electron/package.json');
+  const licensePath = join(dirname(manifestPath), 'LICENSE');
+  return electronComponentFromPackage(readJson(manifestPath), existsSync(licensePath) ? readFileSync(licensePath) : undefined);
+}
+
+/**
  * Collect every component this SBOM tracks, reusing the existing per-system collectors for
  * hash/inventory verification. Never throws for a *documented* gap (an unresolved runtime
  * notice, or a component with no recorded SPDX id) - those are returned for the caller to
@@ -538,6 +607,7 @@ export function collectSbomComponents(root = repositoryRoot) {
     ...screenFontComponents(root),
     ...manualFontComponents(root),
     ...femComponentsFromDistribution(fem),
+    electronComponent(root),
   ];
   const seen = new Set();
   for (const component of components) {
@@ -545,7 +615,7 @@ export function collectSbomComponents(root = repositoryRoot) {
     if (seen.has(key)) throw new Error('Duplicate SBOM component: ' + key);
     seen.add(key);
   }
-  return { components, unresolvedNotices: unresolved };
+  return { components, unresolvedNotices: [...new Set([...unresolved, ...femDistributionGapsFromDistribution(fem)])] };
 }
 
 function validateComponent(component) {
@@ -616,7 +686,7 @@ export function findSbomGaps(sbom) {
   return { unresolvedNotices, unclassifiedLicenses, noLicenseInformation };
 }
 
-/** Hard-fails only on a genuine compliance gap (missing original text); unclassified SPDX ids are advisory. */
+/** Hard-fails on concrete notice/source/access/replacement gaps; historical warranty flags and unclassified SPDX ids are advisory. */
 export function assertSbomPublishable(sbom) {
   const gaps = findSbomGaps(sbom);
   if (gaps.unresolvedNotices.length > 0) throw new Error('Unresolved SBOM notices: ' + gaps.unresolvedNotices.join(', '));
@@ -640,6 +710,11 @@ export function matchSbomToReleaseManifest(sbom, releaseManifest) {
     if (typeof file.path !== 'string' || !HASH_PATTERN.test(file.sha256)) throw new Error('Invalid release manifest file entry');
     files.set(file.path, file.sha256);
   }
+  return matchDistributedFiles(sbom, files, '');
+}
+
+/** Every `pointercad:distributedFile` fact looked up at `prefix + path` in one path -> SHA-256 inventory. */
+function matchDistributedFiles(sbom, files, prefix) {
   const missing = [], mismatched = [];
   let checked = 0;
   for (const component of sbom.components) {
@@ -647,12 +722,66 @@ export function matchSbomToReleaseManifest(sbom, releaseManifest) {
       if (entry.name !== 'pointercad:distributedFile') continue;
       const [path, expected] = String(entry.value).split('|');
       checked += 1;
-      const actual = files.get(path);
+      const actual = files.get(prefix + path);
       if (actual === undefined) missing.push({ path, component: component.name });
       else if (actual !== expected) mismatched.push({ path, component: component.name, expected, actual });
     }
   }
   return { checked, missing, mismatched };
+}
+
+/** Where a desktop candidate's packaged inventory (desktop-package.json `files`) keeps the renderer. */
+export const DESKTOP_RENDERER_PREFIX = 'dist/renderer/';
+
+/**
+ * The desktop renderer is built with the same notice plugins as the Web edition (apps/desktop/vite.renderer.config.ts),
+ * so every `pointercad:distributedFile` fact must also be in a desktop candidate's packaged inventory - the
+ * desktop-package.json `files` list that verifyDesktopDistribution byte-checks against the staged and unpacked app -
+ * at `dist/renderer/<path>` with the same SHA-256. This compares the SBOM with that inventory directly instead of
+ * relying only on the shared build inputs. `missing[].path`/`mismatched[].path` are the SBOM paths (without the prefix).
+ */
+export function matchSbomToDesktopPackage(sbom, desktopPackage) {
+  if (typeof sbom !== 'object' || sbom === null || !Array.isArray(sbom.components)) throw new Error('Invalid SBOM document');
+  if (typeof desktopPackage !== 'object' || desktopPackage === null || !Array.isArray(desktopPackage.files)) {
+    throw new Error('Invalid desktop package inventory');
+  }
+  const files = new Map();
+  for (const file of desktopPackage.files) {
+    if (typeof file?.path !== 'string' || !HASH_PATTERN.test(file.sha256)) throw new Error('Invalid desktop package file entry');
+    files.set(file.path, file.sha256);
+  }
+  return matchDistributedFiles(sbom, files, DESKTOP_RENDERER_PREFIX);
+}
+
+/** Throwing counterpart of matchSbomToDesktopPackage; `label` names the candidate (for example its platform). */
+export function assertSbomMatchesDesktopPackage(sbom, desktopPackage, label) {
+  const result = matchSbomToDesktopPackage(sbom, desktopPackage);
+  const paths = (items) => items.map((item) => DESKTOP_RENDERER_PREFIX + item.path).join(', ');
+  if (result.missing.length > 0) throw new Error(`Desktop package (${label}) is missing SBOM files: ${paths(result.missing)}`);
+  if (result.mismatched.length > 0) throw new Error(`Desktop package (${label}) file hash differs from SBOM: ${paths(result.mismatched)}`);
+  return result;
+}
+
+/**
+ * The single Electron component of a saved SBOM with its licence-file records. Refuses a missing or duplicated
+ * component, an invalid version, a missing installed-package LICENSE record, and a missing executable notice name.
+ */
+export function sbomElectronComponent(sbom) {
+  if (typeof sbom !== 'object' || sbom === null || !Array.isArray(sbom.components)) throw new Error('Invalid SBOM document');
+  const found = sbom.components.filter((component) => component?.type === 'library' && component.name === ELECTRON_COMPONENT);
+  if (found.length !== 1) throw new Error((found.length === 0 ? 'Missing' : 'Ambiguous') + ' SBOM Electron component');
+  const [electron] = found;
+  if (typeof electron.version !== 'string' || !VERSION_PATTERN.test(electron.version)) throw new Error('Invalid SBOM Electron version');
+  const values = (name) => (Array.isArray(electron.properties) ? electron.properties : [])
+    .filter((entry) => entry?.name === name).map((entry) => String(entry.value));
+  const license = values(ELECTRON_LICENSE_FACT);
+  if (license.length !== 1 || !/^electron\/LICENSE\|[a-f0-9]{64}$/u.test(license[0])) {
+    throw new Error('SBOM Electron license file record missing: electron/LICENSE');
+  }
+  const notices = values(ELECTRON_NOTICE_FACT);
+  const absent = ELECTRON_EXECUTABLE_NOTICES.filter((name) => !notices.includes(name));
+  if (absent.length > 0) throw new Error('SBOM Electron executable notice record missing: ' + absent.join(', '));
+  return { version: electron.version, licenseFile: license[0], executableNotices: [...ELECTRON_EXECUTABLE_NOTICES] };
 }
 
 /** Throwing counterpart, for a future release-gate script; never silently passes on a missing or tampered file. */

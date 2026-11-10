@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gpuPostTraceDelivery, gpuOwnedStopReceipt, gpuPostTraceWaitBudget, consumeGpuPostTrace, memoryWorkloadCapture, gpuMemoryIsMeasured, parseDrmClientMemory, processMemoryTotals, processMemoryWithinBudget, combinedSampledMemoryBound, summarizeProcessMemory, qualifyGpuResidentSample,
+import { linuxProcessTreeDiscovery, processTreeMemoryTotals, linuxProcessMemoryReading, summarizeSampledProcessMemory, sampledMemoryCaseAcceptance, gpuPostTraceDelivery, gpuOwnedStopReceipt, gpuPostTraceWaitBudget, consumeGpuPostTrace, memoryWorkloadCapture, gpuMemoryIsMeasured, parseDrmClientMemory, processMemoryTotals, processMemoryWithinBudget, combinedSampledMemoryBound, summarizeProcessMemory, qualifyGpuResidentSample,
   type MemoryPhase, type ProcessMemoryFrame, type ProcessMemorySample } from './processMemorySamples.js';
 
 type MemoryWorkloadCapture = Parameters<typeof consumeGpuPostTrace>[0];
@@ -300,5 +300,168 @@ describe('same-RUN posttrace delivery boundary (synthetic structure, no OS quali
     expect(gpuPostTraceWaitBudget(180, 0, 180, 180)).toBeNull();
     expect(gpuPostTraceWaitBudget(100, 0, 0, 180)).toBeNull();
     expect(gpuPostTraceWaitBudget(100, 0, 180, Number.NaN)).toBeNull();
+  });
+});
+
+describe('explicit sampled observation validity and cadence', () => {
+  const withinBudget = (observation: ReturnType<typeof summarizeSampledProcessMemory>, budgetBytes: number): boolean =>
+    sampledMemoryCaseAcceptance({ observation, budgetBytes, scenarioError: null, updates: 100, failureRecovered: true,
+      samplerFailures: [], operationEnvelopesComplete: true, sourceStable: true });
+  const row: ProcessMemorySample = { pid: 10, parentPid: 1, created: '100', name: 'root', workingSetBytes: 100, privateBytes: 80, error: null };
+  const sample = (at: number, read: number, phase: MemoryPhase, extra = 0) => {
+    const processes: ProcessMemorySample[] = [{ ...row, workingSetBytes: 100 + extra, privateBytes: 80 + extra }];
+    const discoveryError: string | null = null;
+    return { atEpochMs: at, readStartedAtEpochMs: read, discoveredAtEpochMs: read, phase, rootCreated: '100', discoveryError, processes };
+  };
+  const settings = { intervalMs: 100, discoveryIntervalMs: 2_000, rootPid: 10, includeRoot: true,
+    requiredPhases: ['baseline', 'build', 'released'] as const, windows: [
+      { phase: 'baseline' as const, startedAtEpochMs: 990, endedAtEpochMs: 1_100 },
+      { phase: 'build' as const, startedAtEpochMs: 1_200, endedAtEpochMs: 1_600 },
+      { phase: 'released' as const, startedAtEpochMs: 1_600, endedAtEpochMs: 1_700 },
+    ] };
+  const samples = () => [sample(1_000, 995, 'baseline'), sample(1_500, 1_250, 'build', 200), sample(1_700, 1_690, 'released')];
+  it('keeps strict failure and exact excursions while delayed valid observations use the explicit path', () => {
+    const frames = samples();
+    const observed = summarizeSampledProcessMemory(frames, settings);
+    expect(observed.strict).toEqual(summarizeProcessMemory(frames, settings));
+    expect(observed.strict.complete).toBe(false);
+    expect(processMemoryWithinBudget(observed.strict, 512 * 1024 * 1024)).toBe(false);
+    expect(observed.observationValid).toBe(true);
+    expect(observed.cadence).toEqual({ targetIntervalMs: 100, excursionMs: 200, status: 'degraded',
+      excursions: [{ kind: 'gap', atEpochMs: 1_500, elapsedMs: 500 }, { kind: 'read', atEpochMs: 1_500, elapsedMs: 250 }] });
+    expect(withinBudget(observed, 512 * 1024 * 1024)).toBe(true);
+    expect(frames).toEqual(samples());
+  });
+  it.each(['counter', 'query', 'identity', 'ancestry', 'stale', 'clock', 'phase', 'window'] as const)(
+    'rejects invalid %s even on the explicit path', invalid => {
+      const frames = samples();
+      const build = frames[1];
+      if (build === undefined) throw new Error('Missing fixture');
+      if (invalid === 'counter') build.processes = [{ ...row, privateBytes: null }];
+      if (invalid === 'query') build.processes = [{ ...row, error: 'read failed' }];
+      if (invalid === 'identity') build.processes[0] = { ...row, created: '101' };
+      if (invalid === 'ancestry') build.processes = [{ ...row, pid: 11, parentPid: 999 }];
+      if (invalid === 'stale') build.discoveredAtEpochMs = 0;
+      if (invalid === 'clock') build.atEpochMs = NaN;
+      if (invalid === 'phase') frames.splice(1, 1);
+      const observed = summarizeSampledProcessMemory(frames, invalid === 'window' ? { ...settings, windows: [] }
+        : invalid === 'stale' ? { ...settings, discoveryIntervalMs: 1_000 } : settings);
+      expect(observed.observationValid).toBe(false);
+      expect(withinBudget(observed, 512 * 1024 * 1024)).toBe(false);
+    });
+  it('does not count a crossing read as a contained phase or discard its high bytes', () => {
+    const frames = samples();
+    frames[1] = sample(1_500, 1_050, 'build', 619_597_824);
+    const missingPhase = summarizeSampledProcessMemory(frames, settings);
+    expect(missingPhase.observationValid).toBe(false);
+    expect(missingPhase.problems).toContain('contained phase unobserved: build');
+    expect(missingPhase.workingSet.extraPeak).toBe(619_597_824);
+    // Another contained build observation establishes phase coverage, but cannot erase the crossing peak.
+    frames.splice(2, 0, sample(1_550, 1_510, 'build', 1));
+    const observed = summarizeSampledProcessMemory(frames, settings);
+    expect(observed.observationValid).toBe(true);
+    expect(observed.cadence.status).toBe('degraded');
+    expect(observed.workingSet.extraPeak).toBe(619_597_824);
+    expect(withinBudget(observed, 536_870_912)).toBe(false);
+  });
+  it.each([-1, 0, 1])('preserves the 512MiB boundary at offset %s', offset => {
+    const frames = samples(); frames[1] = sample(1_500, 1_250, 'build', 536_870_912 + offset);
+    expect(withinBudget(summarizeSampledProcessMemory(frames, settings), 536_870_912)).toBe(offset < 0);
+  });
+});
+
+
+describe('nullable sampled parent creation identity', () => {
+  it.each([null, '', 'invalid'])('keeps parent %s unknown without throwing', rootCreated => {
+    const sample = { ...frame(1_000, 'build'), readStartedAtEpochMs: 990, discoveredAtEpochMs: 990, rootCreated };
+    const settings = { ...options, rootPid: 1, includeRoot: false, windows: [
+      { phase: 'build' as const, startedAtEpochMs: 980, endedAtEpochMs: 1_010 }] };
+    expect(() => summarizeSampledProcessMemory([sample], settings)).not.toThrow();
+    expect(summarizeSampledProcessMemory([sample], settings).observationValid).toBe(false);
+  });
+});
+
+describe('save sampler full expected-PID reads', () => {
+  const first = { pid: 101, workingSetBytes: 100, privateBytes: 80, error: null };
+  const second = { pid: 202, workingSetBytes: 300, privateBytes: 200, error: null };
+  const total = (readings: readonly unknown[]) => processTreeMemoryTotals({ expectedPids: [101, 202], readings, discoveryError: null });
+  it('retains a missing second PID as unknown instead of accepting the first PID total', () => {
+    const result = total([first]);
+    expect(result.complete).toBe(false); expect(result.workingSetBytes).toBeNull(); expect(result.privateBytes).toBeNull();
+    expect(result.expectedPids).toEqual([101, 202]); expect(result.observedPids).toEqual([101]);
+    expect(result.readings).toEqual([first]); expect(result.problems).toContain('PID 202: reading missing');
+  });
+  it.each([undefined, null, '', -1, NaN, Infinity])('rejects an absent/empty/invalid Windows counter %s without Number coercion', workingSetBytes => {
+    expect(total([first, { ...second, workingSetBytes }]).complete).toBe(false);
+    expect(total([first, { ...second, workingSetBytes }]).workingSetBytes).toBeNull();
+  });
+  it('retains a real read failure for the expected PID without treating it as an exited success', () => {
+    const failed = linuxProcessMemoryReading(202, null, 'ENOENT: /proc/202/status');
+    const result = total([first, failed]);
+    expect(result.complete).toBe(false); expect(result.privateBytes).toBeNull(); expect(result.readings).toEqual([first, failed]);
+    expect(result.problems).toContain('202: read failed: ENOENT: /proc/202/status');
+  });
+  it.each(['Name: renderer\nVmRSS:\nRssAnon: 3 kB', 'Name: renderer\nVmRSS: 2 kB', 'VmRSS: 2 MB\nRssAnon: 3 kB'])('uses actual Linux status parsing and rejects missing/empty/wrong-unit fields', status => {
+    const result = total([first, linuxProcessMemoryReading(202, status, null)]);
+    expect(result.complete).toBe(false); expect(result.workingSetBytes).toBeNull(); expect(result.privateBytes).toBeNull();
+  });
+  it('accepts all expected Windows PID readings including measured zero', () => {
+    expect(total([first, second])).toMatchObject({ complete: true, workingSetBytes: 400, privateBytes: 280, processes: 2, problems: [] });
+    expect(total([first, { ...second, workingSetBytes: 0, privateBytes: 0 }]).complete).toBe(true);
+  });
+  it('accepts all expected Linux PID readings in bytes', () => {
+    const result = total([linuxProcessMemoryReading(101, 'VmRSS: 2 kB\nRssAnon: 1 kB\n', null),
+      linuxProcessMemoryReading(202, 'VmRSS: 3 kB\nRssAnon: 2 kB\n', null)]);
+    expect(result).toMatchObject({ complete: true, workingSetBytes: 5120, privateBytes: 3072, problems: [] });
+  });
+  it('rejects discovery failure, empty trees, duplicate/unexpected PID and missing error status', () => {
+    expect(processTreeMemoryTotals({ expectedPids: [101], readings: [first], discoveryError: 'CIM denied' }).complete).toBe(false);
+    expect(processTreeMemoryTotals({ expectedPids: [], readings: [], discoveryError: null }).complete).toBe(false);
+    expect(total([first, first, second]).complete).toBe(false);
+    expect(total([first, { ...second, pid: 303 }]).complete).toBe(false);
+    expect(total([first, { ...second, error: undefined }]).complete).toBe(false);
+  });
+});
+
+describe('Linux save sampler discovery reads', () => {
+  const stat = (pid: number, parent: number): string => `${String(pid)} (renderer (tab)) S ${String(parent)} ${Array.from({ length: 48 }, () => '0').join(' ')}`;
+  const readable = (pid: number, parent: number) => ({ pid, stat: stat(pid, parent), errorCode: null, error: null });
+  const root = readable(10, 1), first = readable(101, 10), second = readable(202, 10);
+  const total = (discovery: ReturnType<typeof linuxProcessTreeDiscovery>) => processTreeMemoryTotals({
+    expectedPids: discovery.expectedPids, discoveryError: discovery.discoveryError,
+    readings: discovery.expectedPids.map(pid => ({ pid, workingSetBytes: 100, privateBytes: 80, error: null })),
+  });
+  it.each(['EACCES', 'EIO'])('does not accept one low child total when the other stat read fails with %s', errorCode => {
+    const rejected = { pid: 202, stat: null, errorCode, error: `${errorCode}: read /proc/202/stat` };
+    const discovery = linuxProcessTreeDiscovery(10, [root, first, rejected]);
+    expect(discovery.expectedPids).toEqual([101]); expect(discovery.readings).toEqual([root, first, rejected]);
+    expect(discovery.discoveryError).toContain(`/proc/202/stat: ${errorCode}`);
+    expect(total(discovery)).toMatchObject({ complete: false, workingSetBytes: null, privateBytes: null });
+  });
+  it('discovers both readable children and descendant with a parenthesized actual stat command', () => {
+    const discovery = linuxProcessTreeDiscovery(10, [root, first, second, readable(303, 101)]);
+    expect(discovery.expectedPids).toEqual([101, 202, 303]); expect(discovery.errors).toEqual([]);
+    expect(total(discovery)).toMatchObject({ complete: true, workingSetBytes: 300, privateBytes: 240 });
+  });
+  it.each(['ENOENT', 'ESRCH'])('documents actual per-PID disappearance during enumeration (%s), retaining its error row', errorCode => {
+    const exited = { pid: 202, stat: null, errorCode, error: `${errorCode}: read /proc/202/stat` };
+    const discovery = linuxProcessTreeDiscovery(10, [root, first, exited]);
+    expect(discovery.exitedPids).toEqual([202]); expect(discovery.readings).toEqual([root, first, exited]);
+    expect(total(discovery)).toMatchObject({ complete: true, workingSetBytes: 100, privateBytes: 80 });
+  });
+  it.each(['', '202 (renderer) S nope', stat(999, 10), stat(202, 10).replace(' S ', ' ?? ')])('rejects an invalid/truncated/mismatched stat without dropping the row', invalid => {
+    const discovery = linuxProcessTreeDiscovery(10, [root, first, { ...second, stat: invalid }]);
+    expect(discovery.discoveryError).toContain('/proc/202/stat: invalid stat');
+    expect(total(discovery)).toMatchObject({ complete: false, workingSetBytes: null, privateBytes: null });
+  });
+  it('retains /proc readdir failure as a rejected discovery frame', () => {
+    const discovery = linuxProcessTreeDiscovery(10, [], '/proc: EACCES: scandir /proc');
+    expect(discovery.errors).toContain('/proc: EACCES: scandir /proc');
+    expect(total(discovery)).toMatchObject({ complete: false, workingSetBytes: null, privateBytes: null });
+  });
+  it('does not treat unknown errno or a missing root as a successful exit', () => {
+    const discovery = linuxProcessTreeDiscovery(10, [root, first, { pid: 202, stat: null, errorCode: null, error: 'read failed' }]);
+    expect(total(discovery).complete).toBe(false);
+    expect(total(linuxProcessTreeDiscovery(10, [first, second])).complete).toBe(false);
   });
 });

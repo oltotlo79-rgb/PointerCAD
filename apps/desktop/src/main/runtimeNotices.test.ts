@@ -67,13 +67,20 @@ describe('配布に入る実行用部品の版・許諾原文・未取得を保�
       readFileSync(new URL('../../../../docs/standards/licenses/runtime-opencascade.js-2.0.0-beta.b5ff984-lgpl-exception.txt', import.meta.url)),
     );
   });
-  it('既存の原文確認を保持し、FEMの未完了配布条件がある間は公開を拒否する', () => {
+  it('既存の原文確認を保持し、現在の具体的な配布条件に未完了がなければ公開を許可する', () => {
     const distribution = collectRuntimeNotices(root);
-    expect(distribution.unresolved).toEqual(readFemDistributionGaps(join(root, 'packages/fem/runtime')));
-    expect(distribution.unresolved).not.toContain('FEM: native rebuild and replacement remain unqualified');
-    expect(distribution.unresolved).toContain('FEM: corresponding source closure is incomplete');
-    expect(() => assertRuntimeNoticesPublishable(distribution)).toThrow('Unresolved runtime notices');
-    expect(() => assertRuntimeNoticesPublishable({ ...distribution, unresolved: ['@arnog/colors@0.7.0'] })).toThrow('Unresolved runtime notices');
+    expect(readFemDistributionGaps(join(root, 'packages/fem/runtime'))).toEqual([]);
+    expect(distribution.unresolved).toEqual([]);
+    expect(() => assertRuntimeNoticesPublishable(distribution)).not.toThrow();
+  });
+  it.each([
+    ['native rebuild', 'FEM: native rebuild evidence is absent or not pinned'],
+    ['corresponding source closure', 'FEM: oofem required covered-source inventory differs'],
+    ['other dependency', '@arnog/colors@0.7.0'],
+  ])('%s の未完了を明示した配布は公開を拒否する', (_condition, gap) => {
+    const distribution = collectRuntimeNotices(root);
+    expect(() => assertRuntimeNoticesPublishable({ ...distribution, unresolved: [gap] }))
+      .toThrow('Unresolved runtime notices: ' + gap);
   });
   it('保存前の写しでも元のプロジェクト内の実依存を検査し', () => {
     const folder = execFileSync('python', ['-B', '-X', 'utf8', join(root, 'scripts/lib/task_workspace.py'), 'runtime-notice-shadow'],

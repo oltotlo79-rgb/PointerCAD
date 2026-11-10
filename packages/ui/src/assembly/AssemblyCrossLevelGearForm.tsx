@@ -120,7 +120,7 @@ export function AssemblyCrossLevelGearForm(props: {
   const childValue = coupling === undefined ? undefined : currentOccurrenceDrive({ assembly: document, assemblyView: view,
     assemblyOccurrenceDrives: drives }, coupling.childPath)?.values.get(jointValueKey(coupling.childJointId, 'angle'));
   return (
-    <form aria-label={t('assembly.crossGear.title')} data-testid="assembly-cross-gear-form"
+    <form className="pcad-coupling-form" aria-label={t('assembly.crossGear.title')} data-testid="assembly-cross-gear-form"
       onSubmit={event => { event.preventDefault(); commit(); }}>
       <h4>{t('assembly.crossGear.title')}</h4>
       <p>{t('assembly.crossGear.equation').replace('{a}', joint.name)}</p>

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { expressionValueFromNumber } from '@pointercad/expression';
 import {
   absoluteCoordinate, appendSolid, createAssemblyDocument, createEmptyPartDocument, embedPart, EMPTY_PART_LIBRARY,
-  resolveAssembly, type AssemblyComponent, type AssemblyDocument, type ComponentSource, type JointOccurrenceInputs,
+  resolveAssembly, resolveSubShapeReference, type AssemblyComponent, type AssemblyDocument, type ComponentSource, type JointOccurrenceInputs,
   type Placement, type PrimitiveFeature, type Quaternion, type SolidBody, type SubShapeRef, type Vec3,
 } from '@pointercad/model';
 import { subShapeRefOf } from '../solid/subShapeSelection.js';
@@ -91,6 +91,61 @@ describe('face targets of flexible subassembly joints', () => {
     // No body for the part key, or no body of the saved feature: nothing is invented.
     expect(options.subShape?.('other-key', topFace())).toBeNull();
     expect(occurrenceTargetOptions(new Map([['part-key', [body('other-feature', 4)]]])).subShape?.('part-key', topFace())).toBeNull();
+  });
+
+  it('gives no target when the saved face vanished', () => {
+    const current = { ...body(FEATURE, 4), faces: [] };
+    const saved = topFace();
+    const resolution = resolveSubShapeReference(current, saved);
+    expect(resolution.status).toBe('missing');
+    expect(resolution.candidates).toHaveLength(0);
+    expect(occurrenceTargetOptions(new Map([['part-key', [current]]])).subShape?.('part-key', saved)).toBeNull();
+  });
+
+  it.each([false, true])('gives no target for two equal fallback faces (reverse=%s)', reverse => {
+    const current = body(FEATURE, 4);
+    const saved = topFace();
+    const top = current.faces.find(face => face.index === saved.index);
+    if (top === undefined) throw new Error('saved top-face fixture missing');
+    // A retained saved index has a real score advantage under the existing kernel
+    // contract. Merely appending a duplicate is not an ambiguous fallback fixture.
+    const retainedIndex = { ...current, faces: [top, { ...top, index: 6 }] };
+    expect(resolveSubShapeReference(retainedIndex, saved)).toMatchObject({ status: 'matched',
+      match: { reference: { index: saved.index } } });
+    expect(occurrenceTargetOptions(new Map([['part-key', [retainedIndex]]])).subShape?.('part-key', saved)?.kind).toBe('face');
+
+    const faces = [6, 7].map(index => ({ ...top, index }));
+    const twin = { ...current, faces: reverse ? [...faces].reverse() : faces };
+    // Preconditions are assertions, so a future fixture edit cannot silently
+    // restore the saved-index or semantic-origin path and invalidate this oracle.
+    expect(saved.origin).toBeUndefined();
+    expect(twin.faces.some(face => face.index === saved.index)).toBe(false);
+    expect(twin.faces).toHaveLength(2);
+    const fallback = resolveSubShapeReference(twin, saved);
+    expect(fallback.candidates).toHaveLength(2);
+    expect(new Set(fallback.candidates.map(candidate => candidate.reference.index))).toEqual(new Set([6, 7]));
+    expect(fallback.candidates[0]?.score).toBe(fallback.candidates[1]?.score);
+    expect(fallback.status).toBe('ambiguous');
+    expect(occurrenceTargetOptions(new Map([['part-key', [twin]]])).subShape?.('part-key', saved)).toBeNull();
+    // Same saved reference, one fallback candidate: a unique current face is usable.
+    const [uniqueFace] = faces;
+    if (uniqueFace === undefined) throw new Error('unique fallback-face fixture missing');
+    const unique = { ...twin, faces: [uniqueFace] };
+    expect(resolveSubShapeReference(unique, saved).status).toBe('matched');
+    expect(occurrenceTargetOptions(new Map([['part-key', [unique]]])).subShape?.('part-key', saved)?.kind).toBe('face');
+  });
+
+  it('keeps one reference cache per options object and resolves afresh for new options', () => {
+    const current = body(FEATURE, 4);
+    // One reference cache per options object: a repeated lookup reuses the match, a new options object resolves afresh.
+    const bodies = new Map([['part-key', [current]]]);
+    const options = occurrenceTargetOptions(bodies);
+    const first = options.subShape?.('part-key', topFace());
+    if (first?.kind !== 'face') throw new Error('face geometry');
+    expect(options.subShape?.('part-key', topFace())).toBe(first);
+    const fresh = occurrenceTargetOptions(bodies).subShape?.('part-key', topFace());
+    expect(fresh).not.toBe(first);
+    expect(fresh).toEqual(first);
   });
 
   it('solves a face-to-face child slider in one placement only instead of refusing it', async () => {

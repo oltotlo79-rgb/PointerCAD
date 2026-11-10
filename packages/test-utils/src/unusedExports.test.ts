@@ -250,6 +250,38 @@ describe('audit classification on virtual sources', () => {
     expect(result.unresolved).toEqual([{ path: 'packages/use/src/index.ts', line: 1, spec: './missing.js', kind: 'import' }]);
   });
 
+  it('keeps the exact shipped rebuild input out of execution but never hides a workspace import or sibling module', () => {
+    const shipped = 'packages/fem/runtime/sources/netgen-rebuild/fem-netgen-replacement.spec.ts';
+    const template = readFileSync(resolve(root, shipped), 'utf8');
+    expect(inspect([[shipped, template]]).unresolved).toEqual([]);
+    const consumer = 'packages/use/src/index.ts';
+    const spec = '../../fem/runtime/sources/netgen-rebuild/fem-netgen-replacement.spec.js';
+    expect(inspect([[shipped, template], [consumer, `import '${spec}';`]]).unresolved)
+      .toEqual([{ path: consumer, line: 1, spec, kind: 'import' }]);
+    const sibling = 'packages/fem/runtime/sources/netgen-rebuild/workspaceHelper.ts';
+    expect(inspect([[shipped, template], [sibling, "import './missing.js';"]]).unresolved)
+      .toEqual([{ path: sibling, line: 1, spec: './missing.js', kind: 'import' }]);
+  });
+
+  it('scans the same rebuild spec after staging it into its actual isolated-copy execution location', () => {
+    const shipped = 'packages/fem/runtime/sources/netgen-rebuild/fem-netgen-replacement.spec.ts';
+    const staged = 'e2e/tests/fem-netgen-replacement.spec.ts';
+    const template = readFileSync(resolve(root, shipped), 'utf8');
+    const result = inspect([[staged, template]]);
+    expect(result.unresolved.map(row => ({ path: row.path, spec: row.spec }))).toEqual([
+      { path: staged, spec: '../../packages/fem/src/assets.js' },
+      { path: staged, spec: '../../packages/fem/src/client.js' },
+      { path: staged, spec: '../../packages/fem/src/protocol.js' },
+      { path: staged, spec: '../../packages/fem/src/tetraMesh.js' },
+    ]);
+    expect(inspect([[staged, template],
+      ['packages/fem/src/assets.ts', 'export const NETGEN_ASSETS = [];'],
+      ['packages/fem/src/client.ts', 'export class FemClient {}'],
+      ['packages/fem/src/protocol.ts', 'export type FemRequest = unknown;'],
+      ['packages/fem/src/tetraMesh.ts', 'export const NETGEN_WHEEL = {};'],
+    ]).unresolved).toEqual([]);
+  });
+
   it('new URL assets resolve only when present, a directory base is not an import and a missing module stays unresolved', () => {
     // Specs copied from the P04 run of 2026-11-03 (reviewed-units-20261103-225117-306136/2-test-utils.log).
     const fit = 'packages/drawing/src/dimension/fitTable.test.ts', channel = 'packages/model/src/assembly/standard/steelChannelOracle.test.ts';
@@ -320,6 +352,16 @@ describe('audit classification on virtual sources', () => {
       moved: ['direct', 'forwarded', 'inline'].map(key), added: ['fresh', 'importOnly', 'mentioned', 'uncalled'].map(key), counted: 4 });
     // A called helper that the original baseline does not list as dead is still a new test-only export.
     expect(checkTestOnly(result.testOnly, { deadConfirmed: [], testOnly: [] }, new Set(routes.keys())).added).toEqual(names.map(key));
+  });
+
+  it('deducts the four original category moves exactly once and still counts a genuinely new helper', () => {
+    const fresh = 'packages/demo/src/fresh.ts#newHelper';
+    const rows = [...WIRED_ORIGINAL_HELPERS, fresh].map(key => ({ key,
+      path: key.slice(0, key.indexOf('#')), name: key.slice(key.indexOf('#') + 1),
+      kind: 'function', line: 1, typeOnly: false }));
+    const result = checkTestOnly(rows, { deadConfirmed: [...WIRED_ORIGINAL_HELPERS], testOnly: [] },
+      new Set(WIRED_ORIGINAL_HELPERS));
+    expect(result).toEqual({ moved: [...WIRED_ORIGINAL_HELPERS], added: [fresh], counted: 1 });
   });
 });
 

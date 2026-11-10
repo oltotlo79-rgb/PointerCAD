@@ -1,6 +1,7 @@
 import type { OpenCascadeInstance, TopoDS_Face } from 'opencascade.js/dist/opencascade.full.js';
 import type { SolidFaceInfo, Vec3Tuple } from '../types.js';
 import type { Allocations } from './allocations.js';
+import { dotVec } from './sketchCorner.js';
 
 const normalizedZero = (value: number): number => value === 0 ? 0 : value;
 
@@ -24,7 +25,7 @@ export function readCylinderDisplayBasis(oc: OpenCascadeInstance, face: TopoDS_F
   if (![...origin, ...axis, ...zeroDirection, firstV, lastV, firstU, lastU, radius].every(Number.isFinite)
     || !(lastU > firstU) || radius <= 0
     || Math.abs(zLength - 1) > 1e-9 || Math.abs(xLength - 1) > 1e-9 || !(lastV > firstV)
-    || Math.abs(axis[0] * zeroDirection[0] + axis[1] * zeroDirection[1] + axis[2] * zeroDirection[2]) > 1e-9) return undefined;
+    || Math.abs(dotVec(axis, zeroDirection)) > 1e-9) return undefined;
   // Same normalization as makeHole.readCylinderFrame; Orientation deliberately does not flip these axes.
   return { origin, axis: [normalizedZero(axis[0] / zLength), normalizedZero(axis[1] / zLength), normalizedZero(axis[2] / zLength)],
     zeroDirection: [normalizedZero(zeroDirection[0] / xLength), normalizedZero(zeroDirection[1] / xLength), normalizedZero(zeroDirection[2] / xLength)],

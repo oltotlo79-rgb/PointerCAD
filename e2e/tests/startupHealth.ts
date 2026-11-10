@@ -1,4 +1,4 @@
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Frame, type Page, type TestInfo } from '@playwright/test';
 
 const diagnostics=new WeakMap<Page,{errors:string[];consoleMessages:string[]}>();
 /** Install before navigation; caught renderer errors are console/context events, not pageerror. */
@@ -10,6 +10,12 @@ export async function installStartupDiagnostics(page:Page):Promise<void> {
     record.consoleMessages.push(message.text().slice(0,2000));});
   await page.addInitScript(()=>{
     const errors:string[]=[];Reflect.set(globalThis,'pcadStartupContextErrors',errors);
+    // Read-only evidence of the product's existing one-time initial-module retry
+    // (shell/startupRecovery.ts). Retain entry evidence after the product clears its key.
+    let retryAddress: string | null = null;
+    try { retryAddress = sessionStorage.getItem('pointercad.startup-retry.v1'); }
+    catch { /* Denied optional storage supplies no permission to recover an evaluation. */ }
+    Reflect.set(globalThis, 'pcadStartupRetryAddressAtEntry', retryAddress);
     const observed=new WeakSet<HTMLCanvasElement>();
     HTMLCanvasElement.prototype.getContext=new Proxy(HTMLCanvasElement.prototype.getContext,{
       apply(target,receiver,args){
@@ -30,18 +36,48 @@ export async function installStartupDiagnostics(page:Page):Promise<void> {
  * Shared by waitForStartupHealth and launchDesktop, so both wait for the same condition.
  */
 async function expectStartupReady(page: Page, errors: readonly string[]): Promise<void> {
-  await expect.poll(async () => {
-    if (errors.length > 0) return errors.join('\n');
-    return page.evaluate(() => {
-      const refusal = document.querySelector('.pcad-viewport [role="alert"]');
-      if (refusal !== null) return refusal.textContent;
-      const stats = window.pcadViewportRenderStats?.();
-      const canvas = document.querySelector('canvas.pcad-viewport__canvas');
-      return canvas !== null && stats !== undefined && stats.completedRenders > 0
-        && document.querySelector('canvas.pcad-viewcube') !== null ? 'ready' : 'waiting';
-    });
-  }, { message: '3D表示とビューキューブが起動すること', timeout: 15_000 }).toBe('ready');
-  await expect(page.locator('[data-startup-shell]'), '起動画面の終了後に操作する').toHaveCount(0);
+  const initialUrl = page.url();
+  const deadline = Date.now() + 15_000;
+  let mainNavigations = 0;
+  let unexpectedNavigation = false;
+  let recoveredInitialLoad = false;
+  const onNavigation = (frame: Frame): void => {
+    if (frame !== page.mainFrame()) return;
+    mainNavigations++;
+    if (frame.url() !== initialUrl) unexpectedNavigation = true;
+  };
+  page.on('framenavigated', onNavigation);
+  try {
+    await expect.poll(async () => {
+      if (errors.length > 0) return errors.join('\n');
+      if (unexpectedNavigation || mainNavigations > 1) throw new Error('Unexpected navigation during initial startup');
+      try {
+        return await page.evaluate(() => {
+          const refusal = document.querySelector('.pcad-viewport [role="alert"]');
+          if (refusal !== null) return refusal.textContent;
+          const stats = window.pcadViewportRenderStats?.();
+          const canvas = document.querySelector('canvas.pcad-viewport__canvas');
+          return canvas !== null && stats !== undefined && stats.completedRenders > 0
+            && document.querySelector('canvas.pcad-viewcube') !== null ? 'ready' : 'waiting';
+        });
+      } catch (error: unknown) {
+        // A destroyed context alone is not permission to ignore a failure. Only the
+        // product's same-address, first-load retry with persisted entry evidence qualifies.
+        if (!(error instanceof Error)
+          || !/^(?:page\.evaluate: )?Execution context was destroyed, most likely because of a navigation$/u.test(error.message)
+          || page.isClosed() || page.url() !== initialUrl || unexpectedNavigation
+          || mainNavigations > 1 || recoveredInitialLoad || Date.now() >= deadline) throw error;
+        const entry = await page.waitForFunction(address => location.href === address
+          && Reflect.get(globalThis, 'pcadStartupRetryAddressAtEntry') === address,
+        initialUrl, { timeout: Math.max(1, deadline - Date.now()) });
+        await entry.dispose();
+        if (page.url() !== initialUrl || unexpectedNavigation || mainNavigations !== 1) throw error;
+        recoveredInitialLoad = true;
+        return 'waiting';
+      }
+    }, { message: '3D表示とビューキューブが起動すること', timeout: 15_000 }).toBe('ready');
+    await expect(page.locator('[data-startup-shell]'), '起動画面の終了後に操作する').toHaveCount(0);
+  } finally { page.off('framenavigated', onNavigation); }
 }
 
 /** Wait until the startup screen has finished, without the extra health checks and menu gesture. */

@@ -1,5 +1,5 @@
 import { dotVec3 as dot } from '@pointercad/model/vec3';
-import { createSubShapeReference, drawingDimensionContext } from '@pointercad/model';
+import { createSubShapeReference, crossVec2, drawingDimensionContext } from '@pointercad/model';
 import { drawingRegionContainsPoint, drawingViewBasis, type DimensionTarget, type DrawingDocument, type Point2, type Vector3 } from '@pointercad/drawing';
 import { applyPlacementToPoint, drawingTargetFromProjection, resolveDimensionTarget, resolvedDimensionView, unfoldDrawingPick, drawingSectionRetainsPoint,
   type DrawingSourceResolution, type ResolvedDrawingCurve, type ResolvedDrawingView } from '@pointercad/model';
@@ -100,7 +100,7 @@ export function pickDrawingFace(document: DrawingDocument, source: DrawingSource
         for (let triangle = face.triangleOffset; triangle < face.triangleOffset + face.triangleCount; triangle++) {
           const a = vertices[mesh.indices[triangle * 3]], b = vertices[mesh.indices[triangle * 3 + 1]], c = vertices[mesh.indices[triangle * 3 + 2]];
           if (a === undefined || b === undefined || c === undefined) continue;
-          const cross = (x: Point2, y: Point2, z: Point2): number => (y[0] - x[0]) * (z[1] - x[1]) - (y[1] - x[1]) * (z[0] - x[0]);
+          const cross = (x: Point2, y: Point2, z: Point2): number => crossVec2([y[0] - x[0], y[1] - x[1]], [z[0] - x[0], z[1] - x[1]]);
           const area = cross(a.point, b.point, c.point);
           if (Math.abs(area) < 1e-10) continue;
           const u = cross(hit, b.point, c.point) / area, v = cross(hit, c.point, a.point) / area, w = 1 - u - v;

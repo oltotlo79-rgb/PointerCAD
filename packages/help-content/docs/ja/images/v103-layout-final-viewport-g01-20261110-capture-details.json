@@ -1,10 +1,10 @@
 {
   "format": "pointercad-capture-provenance/1",
   "releaseCertified": false,
-  "applicationBuildId": "e4045960e4c0c23ae2e231ae7145d140e1e421d97bb25811c5a85bddd1b6e563",
-  "adoptedAt": "2026-10-09T16:58:01.965Z",
+  "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+  "adoptedAt": "2026-11-10T03:03:16.577Z",
   "scripts": {
-    "e2e/tests/p8-drawing.spec.ts": "255615ab6f8c1a52882aa05d78177303fba294ba43213aad54e93c2018bf0e1e"
+    "e2e/tests/p8-drawing.spec.ts": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c"
   },
   "captures": [
     {
@@ -14,19 +14,19 @@
       "capture": {
         "format": "pointercad-manual-detail/1",
         "releaseCertified": false,
-        "capturedAt": "2026-10-09T16:15:02.799Z",
-        "applicationBuildId": "e4045960e4c0c23ae2e231ae7145d140e1e421d97bb25811c5a85bddd1b6e563",
+        "capturedAt": "2026-11-10T02:59:24.181Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
         "project": "viewport-performance",
         "sourceTest": "4分割の実描画性能・区画ごとの立体選択と1画面復帰(FR-113)",
         "script": "e2e/tests/p8-drawing.spec.ts",
-        "scriptSha256": "255615ab6f8c1a52882aa05d78177303fba294ba43213aad54e93c2018bf0e1e",
+        "scriptSha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c",
         "fixture": {
           "filename": "quad-four-views-fixture.json",
           "sha256": "7b10d585ed29d023fdb9968107aba179e629e428af4aaf987f641c9c4ccb291b"
         },
         "screen": {
           "filename": "quad-four-views-screen.png",
-          "sha256": "2df5c4645aa70c67eb25dad229ec30f160479c9b8d8746efd6a1630b1109dd8e"
+          "sha256": "34e2a16770ebbc0065fdb42b6af9984ad819d2f7dc82e99b5d41a4dc9a1d26ca"
         },
         "detail": {
           "filename": "quad-four-views-detail.png",
@@ -43,7 +43,7 @@
         },
         "viewportRender": {
           "completedRenders": 15,
-          "lastCompletedAtMs": 10280.034999966621
+          "lastCompletedAtMs": 3347.7999999523163
         },
         "dialogBounds": {
           "x": 240,

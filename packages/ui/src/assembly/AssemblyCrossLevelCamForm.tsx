@@ -97,7 +97,7 @@ export function AssemblyCrossLevelCamForm(props: {
         onChange={event => { const value = event.currentTarget.value; setSources(current => ({ ...current, [key]: value })); }} title={t(CAM_FIELD_GUIDES[key])} />
       <span>{unit}</span></label>);
   return (
-    <form aria-label={t('assembly.crossCam.title')} data-testid="assembly-cross-cam-form"
+    <form className="pcad-coupling-form" aria-label={t('assembly.crossCam.title')} data-testid="assembly-cross-cam-form"
       onSubmit={event => { event.preventDefault(); commit(); }}>
       <h4>{t('assembly.crossCam.title')}</h4>
       <p>{t('assembly.crossCam.law').replace('{a}', joint.name)}</p>

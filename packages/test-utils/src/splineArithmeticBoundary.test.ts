@@ -167,3 +167,40 @@ describe('model and UI use their shared three-dimensional vector operations', ()
     }
   });
 });
+
+describe('mate target body lookup has one owner', () => {
+  function declaration(source: ts.SourceFile, name: string): string {
+    return source.statements.filter(ts.isFunctionDeclaration).find(node => node.name?.text === name)?.getText(source) ?? '';
+  }
+  it('keeps the sub-shape lookup in model and lets the subassembly occurrence drive delegate to it', () => {
+    const model = read('packages/model/src/assembly/resolveConstrainedAssembly.ts');
+    const drive = read('packages/ui/src/store/assemblyOccurrenceDriveSlice.ts');
+    expect(declaration(model, 'createBodyMateTargetOptions')).toContain('createSubShapeReferenceResolver()');
+    expect(declaration(model, 'createBodyMateTargetResolver')).toContain('createBodyMateTargetOptions(bodies)');
+    expect(declaration(model, 'createBodyMateTargetResolver')).not.toContain('createSubShapeReferenceResolver');
+    expect(declaration(drive, 'occurrenceTargetOptions')).toContain('createBodyMateTargetOptions(bodies)');
+    expect(drive.getText()).not.toContain('createSubShapeReferenceResolver');
+    expect(drive.getText()).not.toContain('resolution.match.geometry');
+  });
+});
+
+describe('UI two-dimensional orientation uses the model determinant', () => {
+  const determinant = /\((\w+)\[0\] - (\w+)\[0\]\) \* \((\w+)\[1\] - \2\[1\]\) - \(\1\[1\] - \2\[1\]\) \* \(\3\[0\] - \2\[0\]\)/u;
+  it('imports crossVec2 from the model entry and does not repeat the three-point arithmetic', () => {
+    for (const path of ['packages/ui/src/sketch/facePointOrder.ts', 'packages/ui/src/drawing/drawingPick.ts']) {
+      const code = read(path);
+      const imported = code.statements.filter(ts.isImportDeclaration).some(node =>
+        ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text === '@pointercad/model'
+        && node.importClause?.namedBindings !== undefined
+        && ts.isNamedImports(node.importClause.namedBindings)
+        && node.importClause.namedBindings.elements.some(element => (element.propertyName ?? element.name).text === 'crossVec2'));
+      expect(imported, path).toBe(true);
+      expect(determinant.test(code.getText()), path).toBe(false);
+    }
+  });
+  it('recognizes the removed inline form under any names and accepts the shared call', () => {
+    expect(determinant.test('(b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])')).toBe(true);
+    expect(determinant.test('(y[0] - x[0]) * (z[1] - x[1]) - (y[1] - x[1]) * (z[0] - x[0])')).toBe(true);
+    expect(determinant.test('crossVec2([b[0] - a[0], b[1] - a[1]], [c[0] - a[0], c[1] - a[1]])')).toBe(false);
+  });
+});

@@ -24,11 +24,11 @@ export function selectSolidMaterial(draft: SolidMaterialDraft): SolidMaterialSel
   if (!checkStrengthMaterialCondition(preset, thickness).ok) return { ok: false, issue: 'outside' };
   const property = preset.yieldStress, source = STRENGTH_SOURCES[property.sourceId];
   const yieldMPa = Number(property.mpa);
-  if (source === undefined || solidMaterialSourceUrl(source) === null || !Number.isFinite(yieldMPa) || yieldMPa <= 0) {
+  if (source === undefined || solidMaterialSourceUrl(source) === null || !/^[0-9a-f]{64}$/u.test(source.sha256) || !Number.isFinite(yieldMPa) || yieldMPa <= 0) {
     return { ok: false, issue: 'source' };
   }
   return { ok: true, preset, source, capacity: { materialConditionId: preset.id, condition: preset.condition,
-    thicknessMm: thickness, yieldMPa, sourceId: property.sourceId, evidence: source.evidence, basis: property.basis } };
+    thicknessMm: thickness, yieldMPa, sourceId: property.sourceId, sourceSnapshot: { ...source }, evidence: source.evidence, basis: property.basis } };
 }
 
 export function solidMaterialDraftOf(value: AnalysisMaterialCapacity | null): SolidMaterialDraft {
@@ -39,9 +39,13 @@ export function solidMaterialDraftOf(value: AnalysisMaterialCapacity | null): So
 export function solidMaterialCapacityMatches(value: AnalysisMaterialCapacity | null): boolean {
   if (value === null) return false;
   const selection = selectSolidMaterial(solidMaterialDraftOf(value));
-  return selection.ok && selection.capacity !== null && value.condition === selection.capacity.condition && value.yieldMPa === selection.capacity.yieldMPa
+  if (!selection.ok || selection.capacity === null || selection.source === null || value.sourceSnapshot === undefined) return false;
+  const source = value.sourceSnapshot, current = selection.source;
+  const keys: readonly (keyof StrengthSource)[] = ['url', 'publisher', 'locator', 'checkedDate', 'standard', 'standardEdition', 'evidence', 'sha256'];
+  return value.condition === selection.capacity.condition && value.yieldMPa === selection.capacity.yieldMPa
     && value.sourceId === selection.capacity.sourceId && value.evidence === selection.capacity.evidence
-    && value.basis === selection.capacity.basis;
+    && value.basis === selection.capacity.basis && Reflect.ownKeys(source).length === keys.length
+    && keys.every(key => source[key] === current[key]);
 }
 
 export function solidMaterialSourceUrl(source: Pick<StrengthSource, 'url'>): string | null {

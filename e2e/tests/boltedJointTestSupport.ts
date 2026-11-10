@@ -1,5 +1,5 @@
 /// <reference lib="dom" />
-import { normalizePoint as unit } from './normalizePoint.testSupport.js';
+import { worldToCanvas } from './homeViewProjection.js';
 import { expect, type ElectronApplication, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { chooseToolMenuItem, openToolMenu, readAssemblyStats, toolMenuPanel, type AssemblyBrowserStats } from './assemblyTestSupport.js';
 import { beginRecompute, waitForRecompute, waitForSettledRecompute } from './recompute.js';
@@ -121,40 +121,16 @@ export async function placeQueuedPart(page: Page, sources: readonly string[]): P
 }
 
 // ---------------------------------------------------------------------------
-// ホーム視点の座標変換。値は `packages/ui/src/viewport/cameraMath.ts` の HOME_ORBIT と
-// VERTICAL_FIELD_OF_VIEW(spec から packages/ui を import しないため写す)。式は
-// `solidCaptureSupport.ts` の worldToCanvas と同じ。組立のビューも同じホーム視点を使う。
+// ホーム視点の座標変換は共通の `homeViewProjection.ts` の worldToCanvas を使い(P17)、ここではページ上の
+// canvas の位置だけを足す。組立のビューも同じホーム視点を使う。
 // ---------------------------------------------------------------------------
-
-const HOME_AZIMUTH = -Math.PI / 4;
-const HOME_ELEVATION = Math.atan(Math.SQRT1_2);
-const HOME_DISTANCE = 200;
-const VERTICAL_FIELD_OF_VIEW = (50 * Math.PI) / 180;
-
-function sub(a: WorldPoint, b: WorldPoint): WorldPoint { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
-function dot(a: WorldPoint, b: WorldPoint): number { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
-function cross(a: WorldPoint, b: WorldPoint): WorldPoint {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-const EYE: WorldPoint = [
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.cos(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.cos(HOME_ELEVATION) * Math.sin(HOME_AZIMUTH),
-  HOME_DISTANCE * Math.sin(HOME_ELEVATION),
-];
-const CAMERA_Z = unit(EYE);
-const CAMERA_X = unit(cross([0, 0, 1], CAMERA_Z));
-const CAMERA_Y = cross(CAMERA_Z, CAMERA_X);
 
 /** ワールド座標の点が見えているページ上の位置(ホーム視点)。 */
 export async function homeViewPagePoint(page: Page, world: WorldPoint): Promise<readonly [number, number]> {
   const box = await page.locator('canvas.pcad-viewport__canvas').boundingBox();
   if (box === null) throw new Error('ビューポートのcanvasの位置と大きさが取れませんでした。');
-  const view = sub(world, EYE);
-  const depth = -dot(view, CAMERA_Z);
-  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
-  const ndcX = (scale * dot(view, CAMERA_X)) / (depth * (box.width / box.height));
-  const ndcY = (scale * dot(view, CAMERA_Y)) / depth;
-  return [box.x + ((ndcX + 1) / 2) * box.width, box.y + ((1 - ndcY) / 2) * box.height];
+  const [x, y] = worldToCanvas(world, box.width, box.height);
+  return [box.x + x, box.y + y];
 }
 
 /**

@@ -1,0 +1,3455 @@
+{
+  "format": "pointercad-capture-provenance/1",
+  "releaseCertified": false,
+  "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+  "adoptedAt": "2026-11-10T03:02:40.643Z",
+  "scripts": {
+    "e2e/tests/appearanceColorCaptureFlow.ts": "8e755efc0606297abbbdcafa10590e564219ce4f6f50ef53fb0d5f95187ba20d",
+    "e2e/tests/appearanceGlassCaptureFlow.ts": "8373b573b955cee395cc9a9b81750757777c8721716e484d68965c67d8ff25b5",
+    "e2e/tests/appearancePatternCaptureFlow.ts": "d5b1088324f520009970d61fdf4294066ffa302b3349bd2c2699650278fd7175",
+    "e2e/tests/assemblyCoupledDragFlow.ts": "03d28d47bdb0826511507b9335c85ac0c2c0942780d9da3502b9c6585e31ffb7",
+    "e2e/tests/assemblyPlaceCaptureFlow.ts": "700f986d9ed0368e433a01aadcf443de6cee2097e8b06d3ddb91ece4887162cf",
+    "e2e/tests/autoSaveSettingsFlow.ts": "9bd088b704409cc9753a2ede645ec40f317dc8a023c3662e25818879ee541d11",
+    "e2e/tests/bomCaptureFlow.ts": "deeb7c4176e35ab6f3f57fff5fa41cd0385961886a83b08c320bdd024e4bd965",
+    "e2e/tests/camFlow.ts": "5a2f6632a948b4749c0cf2d43190e12693a26701a9b20394c9a5da557c9ea920",
+    "e2e/tests/canvasCaptureFlow.ts": "5b1909a3cac99860b67c2b82d572c087c95a8f3856c4bcaaf182c82885ff62dd",
+    "e2e/tests/commandLineCaptureFlow.ts": "1077ad0052ae2e00b33815f0101923101b74809a607e6874e4141ba0dcc0e505",
+    "e2e/tests/constraintsCaptureFlow.ts": "3a2c5e4ee5ca4f594204279f5c057c7510400e853901a0be9801c1e7d5eae822",
+    "e2e/tests/controlHintsFlow.ts": "a6a1b58405586b38f68fd3240e42f6203243535b2ccf14ca321a1c51e7edf3d2",
+    "e2e/tests/flows/extrudeOperationFlow.ts": "d269086e81caf981d2b588383866598f5334b3933de9ffe67f954ac9a8e6f428",
+    "e2e/tests/helpReaderFlow.ts": "6d8d63627f3e38cf506b4a74261cc1a8e5fc598566b03e19434f7cf9b6939226",
+    "e2e/tests/mathAiryFlow.ts": "2e03be863c4a48481fac328c570b5495dd07422bf0655a3173a4cfc19b7e2ee4",
+    "e2e/tests/mathBinomialFlow.ts": "4e9ba8ba20ae06771446b0faa598319e62966670d3dbb0b88e112095bf240349",
+    "e2e/tests/mathComplexErrorFunctionsFlow.ts": "cb5437d84ec194b3d08114039c2f613d478e5ad4cdebd95a48ebb441d57b6a46",
+    "e2e/tests/mathDeclaredRenameFlow.ts": "a277d56fe19e4a3a4b4f83343cd10ca08594c45ed872687c8ec31d67092b268e",
+    "e2e/tests/mathDeclaredValuesFlow.ts": "9750f679cc7774f190583c69f6b9ae8ffc2f69a607d7cb44f5e8657a0949b54d",
+    "e2e/tests/mathGammaBetaDistributionFlow.ts": "e8a7821d8097b3478e083e09253087e9bca31162281e1fb202809fa3c4f82013",
+    "e2e/tests/mathLimitsFlow.ts": "1e5c5e69ecbc275266d5da62eb7c6e511adbacfdea996adb30c77a156cf0711c",
+    "e2e/tests/mathProbabilityMomentsFlow.ts": "7bd6a6089826995446813c4715de2dfb09506e9cc52d544317a8e65b88163701",
+    "e2e/tests/mathSetBoundsFlow.ts": "17e0abf4279cfca07f697d3e32ed136fd4297d04597aa1d873e85ebaa992c3ec",
+    "e2e/tests/mathTensorFlow.ts": "369445b68e070b169ceea205a19b7efcf8a77e71429df54ac086dbc781cb1169",
+    "e2e/tests/mathUnresolvedProblemFlow.ts": "e70929c7030f939ed8e1aac23b2f652ea4420212403a2b6d610376c704aacd25",
+    "e2e/tests/solid-material-authoring.spec.ts": "5964c09de3a2d13c76128a69a4e0d1882cd726f1966ec85f99a11766e51873b8"
+  },
+  "captures": [
+    {
+      "name": "appearance-color-material",
+      "selectedImage": "detail",
+      "script": "e2e/tests/appearanceColorCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:00:27.411Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 色と材質を選ぶの章の画面を撮る",
+        "script": "e2e/tests/appearanceColorCaptureFlow.ts",
+        "scriptSha256": "8e755efc0606297abbbdcafa10590e564219ce4f6f50ef53fb0d5f95187ba20d",
+        "fixture": {
+          "filename": "appearance-color-material-fixture.json",
+          "sha256": "2573b647c5518641fb2cf5a5c3e0d9b5cefa193cbafe20d6ff76223d616e6995"
+        },
+        "screen": {
+          "filename": "appearance-color-material-screen.png",
+          "sha256": "a486ef433ee9c1230d3a38ac7d8942feb47741256401c4e75487a16260947231"
+        },
+        "detail": {
+          "filename": "appearance-color-material-detail.png",
+          "sha256": "7fcec2050e258d0af4a6f4506b0642cc6e2073ccaf0df9396e128eebd9e77fbd"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 8,
+          "lastCompletedAtMs": 3339.5
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 232.84375,
+          "width": 279,
+          "height": 424.734375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "shape": "箱1",
+        "material": "プラスチック"
+      }
+    },
+    {
+      "name": "appearance-glass-transmission",
+      "selectedImage": "detail",
+      "script": "e2e/tests/appearanceGlassCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:00:33.573Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 ガラス・鏡と映り込みの章の画面を撮る",
+        "script": "e2e/tests/appearanceGlassCaptureFlow.ts",
+        "scriptSha256": "8373b573b955cee395cc9a9b81750757777c8721716e484d68965c67d8ff25b5",
+        "fixture": {
+          "filename": "appearance-glass-transmission-fixture.json",
+          "sha256": "9a57ec5e94a62851fa34266b35d5a9ad0b1b8372f74e185aa5a904fafe700b1e"
+        },
+        "screen": {
+          "filename": "appearance-glass-transmission-screen.png",
+          "sha256": "9ded27f4a49fda0e8b66c7dc6b99428cbe5cd3d8f76766e058ed5bd2b414597d"
+        },
+        "detail": {
+          "filename": "appearance-glass-transmission-detail.png",
+          "sha256": "ea6725311e33b624abcfaa0de00b0414ffdfcfe1a331f1ecd6d9e2ce544a4e53"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 8,
+          "lastCompletedAtMs": 3527.1150000095367
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 148.84375,
+          "width": 279,
+          "height": 424.734375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "shape": "箱1",
+        "material": "ガラス"
+      }
+    },
+    {
+      "name": "appearance-pattern-checker",
+      "selectedImage": "detail",
+      "script": "e2e/tests/appearancePatternCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:00:39.444Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 柄を選ぶの章の画面を撮る",
+        "script": "e2e/tests/appearancePatternCaptureFlow.ts",
+        "scriptSha256": "d5b1088324f520009970d61fdf4294066ffa302b3349bd2c2699650278fd7175",
+        "fixture": {
+          "filename": "appearance-pattern-checker-fixture.json",
+          "sha256": "b2c870d6105cd8507fb88edc98eddcd87b98e7dbb4a781bb904f8f4818e85f7f"
+        },
+        "screen": {
+          "filename": "appearance-pattern-checker-screen.png",
+          "sha256": "55aa4de74638bd25c5919e05f6200393b04b3c535a7d8d307c1386ed179dff70"
+        },
+        "detail": {
+          "filename": "appearance-pattern-checker-detail.png",
+          "sha256": "d419510d1d79a710310283d4b063c46162163935c0cbba53cd8da466f4fc0085"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 8,
+          "lastCompletedAtMs": 3434.0099999904633
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 387.84375,
+          "width": 279,
+          "height": 483.125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "shape": "箱1",
+        "material": "縞鋼板",
+        "pattern": "縞鋼板"
+      }
+    },
+    {
+      "name": "assembly-cross-level-gear",
+      "selectedImage": "screen",
+      "script": "e2e/tests/assemblyCoupledDragFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:00:44.409Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "turns the coupled parent by a viewport drag as joint motion, keeps an ordinary drag one Undo step, and saves neither motion",
+        "script": "e2e/tests/assemblyCoupledDragFlow.ts",
+        "scriptSha256": "03d28d47bdb0826511507b9335c85ac0c2c0942780d9da3502b9c6585e31ffb7",
+        "fixture": {
+          "filename": "assembly-cross-level-gear-fixture.json",
+          "sha256": "bfd672e98bcf02510e5bb58a8eb03bb69bc3240a8e5cb9a986113781d7c904ef"
+        },
+        "screen": {
+          "filename": "assembly-cross-level-gear-screen.png",
+          "sha256": "0ea3fa04fe6d4bee7c2752f39021d7a6029359f358a276d8085adb89da78eee5"
+        },
+        "detail": {
+          "filename": "assembly-cross-level-gear-detail.png",
+          "sha256": "47263372a5031ba52c617204ba8e7bb43e196ca58abb3ad3427b8bdc4ffb73e9"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "assembly",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 12,
+          "lastCompletedAtMs": 4108.435000061989
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 219.40625,
+          "width": 279,
+          "height": 541.28125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "selectedChild": "unit : leaf-turn",
+        "joints": [
+          "gear-drive",
+          "handle-slide"
+        ]
+      }
+    },
+    {
+      "name": "assembly-place-dialog",
+      "selectedImage": "detail",
+      "script": "e2e/tests/assemblyPlaceCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:01:29.901Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 部品を配置する章の画面を撮る",
+        "script": "e2e/tests/assemblyPlaceCaptureFlow.ts",
+        "scriptSha256": "700f986d9ed0368e433a01aadcf443de6cee2097e8b06d3ddb91ece4887162cf",
+        "fixture": {
+          "filename": "assembly-place-dialog-fixture.json",
+          "sha256": "e9ff0ae336045f2edf7332e6ed130ba9b644591d6acddacabb6528e190fc899a"
+        },
+        "screen": {
+          "filename": "assembly-place-dialog-screen.png",
+          "sha256": "5bddaf5962bddf24723f61c3e3d6d74aed94aa0e7b6d4ae05be4ee4836b55b9c"
+        },
+        "detail": {
+          "filename": "assembly-place-dialog-detail.png",
+          "sha256": "766910a9d5383f43fae1029f113dc90e2d32da8c0e46b127ab6fad51679007c7"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "assembly",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 6,
+          "lastCompletedAtMs": 2112.929999947548
+        },
+        "dialogBounds": {
+          "x": 256,
+          "y": 84.5,
+          "width": 260,
+          "height": 279.671875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "part": "箱.pcad"
+      }
+    },
+    {
+      "name": "auto-save-interval",
+      "selectedImage": "detail",
+      "script": "e2e/tests/autoSaveSettingsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:01:36.394Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-8 自動保存の間隔を取消・変更し、実際の控えと保存・再起動・F1へ接続する",
+        "script": "e2e/tests/autoSaveSettingsFlow.ts",
+        "scriptSha256": "9bd088b704409cc9753a2ede645ec40f317dc8a023c3662e25818879ee541d11",
+        "fixture": {
+          "filename": "auto-save-interval-fixture.json",
+          "sha256": "b108b9503534ff7c7a990dc261e7807e8843d351985e641aa259c40a63aa34f2"
+        },
+        "screen": {
+          "filename": "auto-save-interval-screen.png",
+          "sha256": "2d5584f9cb027f71a9933ac3769a43aa2f343020cdc59536055a97ecfc0bb23b"
+        },
+        "detail": {
+          "filename": "auto-save-interval-detail.png",
+          "sha256": "6a51b4d26a557d9e1df6e801338ada633085a9cc91167e1a503a16c45c655632"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 10,
+          "lastCompletedAtMs": 4214
+        },
+        "dialogBounds": {
+          "x": 1171,
+          "y": 275.453125,
+          "width": 248,
+          "height": 242.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "before": {
+          "id": "part-uuid:2e417b6b-a625-4b35-bba6-93168bb5b23e",
+          "name": "部品1",
+          "schemaVersion": 22,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "box-1",
+              "name": "箱1",
+              "suppressed": false,
+              "kind": "primitive",
+              "origin": {
+                "kind": "coordinate",
+                "value": {
+                  "mode": "absolute",
+                  "x": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "y": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  },
+                  "z": {
+                    "source": "0",
+                    "value": 0,
+                    "display": "0"
+                  }
+                }
+              },
+              "axis": {
+                "kind": "world",
+                "axis": "z"
+              },
+              "shape": {
+                "kind": "box",
+                "sizeX": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeY": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                },
+                "sizeZ": {
+                  "source": "20",
+                  "value": 20,
+                  "display": "20"
+                }
+              }
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1"
+        },
+        "autoSaveMinutes": 1,
+        "originalGeneration": 2
+      }
+    },
+    {
+      "name": "bom-table",
+      "selectedImage": "detail",
+      "script": "e2e/tests/bomCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:01:45.045Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 部品表を確認する章の画面を撮る",
+        "script": "e2e/tests/bomCaptureFlow.ts",
+        "scriptSha256": "deeb7c4176e35ab6f3f57fff5fa41cd0385961886a83b08c320bdd024e4bd965",
+        "fixture": {
+          "filename": "bom-table-fixture.json",
+          "sha256": "df37a4c9b448b5dc95f1d0b9fb66e7ebef5964ea367fa1bd7e340f521b674c2e"
+        },
+        "screen": {
+          "filename": "bom-table-screen.png",
+          "sha256": "f73c1bed549c0aacef076b16e4f186b459e1a58fd1459da98fa8733dcdfe96a9"
+        },
+        "detail": {
+          "filename": "bom-table-detail.png",
+          "sha256": "25dfb20edad7bce2d23c59a2e34a4a18cf86c2e22d26721968297d18c8342b19"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "assembly",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 4,
+          "completedGeneration": 4,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 12,
+          "lastCompletedAtMs": 3802.8700000047684
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 372,
+          "width": 279,
+          "height": 244.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "componentCount": 2,
+        "quantity": 1
+      }
+    },
+    {
+      "name": "cam-step-handoff",
+      "selectedImage": "screen",
+      "script": "e2e/tests/camFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:01:49.706Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P11b 加工先へSTEP・STL・3MFを渡し、形を送信せず手順を開く",
+        "script": "e2e/tests/camFlow.ts",
+        "scriptSha256": "5a2f6632a948b4749c0cf2d43190e12693a26701a9b20394c9a5da557c9ea920",
+        "fixture": {
+          "filename": "cam-step-handoff-fixture.json",
+          "sha256": "f95e176733fd19a585a1eb3271d8d4b27d7f02302e217b1ffc6da3e7ab01a517"
+        },
+        "screen": {
+          "filename": "cam-step-handoff-screen.png",
+          "sha256": "a03470bb451c8b0485943b5bb9539f606ad876935ef10cae911a0b1eb67262e8"
+        },
+        "detail": {
+          "filename": "cam-step-handoff-detail.png",
+          "sha256": "e653695b972f094d9f79bf8493339699066200c5a064d7f165fdf09058e0e765"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 13,
+          "lastCompletedAtMs": 3747.0350000858307
+        },
+        "dialogBounds": {
+          "x": 1034,
+          "y": 82,
+          "width": 390,
+          "height": 225.1875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "format": "STEP"
+      }
+    },
+    {
+      "name": "cam-stl-handoff",
+      "selectedImage": "screen",
+      "script": "e2e/tests/camFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:01:50.791Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P11b 加工先へSTEP・STL・3MFを渡し、形を送信せず手順を開く",
+        "script": "e2e/tests/camFlow.ts",
+        "scriptSha256": "5a2f6632a948b4749c0cf2d43190e12693a26701a9b20394c9a5da557c9ea920",
+        "fixture": {
+          "filename": "cam-stl-handoff-fixture.json",
+          "sha256": "b7a524620bc70de40dab60da7b024122672719543148dcd58aaf7401b13c30da"
+        },
+        "screen": {
+          "filename": "cam-stl-handoff-screen.png",
+          "sha256": "471a9d9a4a70c4ce28684736e5175e0165a273501b440c95aeeacd50b5c6a9a9"
+        },
+        "detail": {
+          "filename": "cam-stl-handoff-detail.png",
+          "sha256": "059e5d0f6fa1000e1b1adf6cf1ec03f859be9d01f8ff400a1a11b89e7a1177df"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 2,
+          "completedGeneration": 2,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 16,
+          "lastCompletedAtMs": 4865.290000081062
+        },
+        "dialogBounds": {
+          "x": 1034,
+          "y": 82,
+          "width": 390,
+          "height": 244.3125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "format": "STL"
+      }
+    },
+    {
+      "name": "canvas-delete-save",
+      "selectedImage": "detail",
+      "script": "e2e/tests/canvasCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:02:36.393Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 下絵を敷く章の画面を撮る",
+        "script": "e2e/tests/canvasCaptureFlow.ts",
+        "scriptSha256": "5b1909a3cac99860b67c2b82d572c087c95a8f3856c4bcaaf182c82885ff62dd",
+        "fixture": {
+          "filename": "canvas-delete-save-fixture.json",
+          "sha256": "550cc88117c7cb8d916250713b9ecbbcb745342e19fc1bb9bf0fdff1edd44372"
+        },
+        "screen": {
+          "filename": "canvas-delete-save-screen.png",
+          "sha256": "350f53d7e5e2af96ff136a2c99b3099b5c05cbc39e69c4a3f02df20d2c94bd45"
+        },
+        "detail": {
+          "filename": "canvas-delete-save-detail.png",
+          "sha256": "69302020f403ec63fa408e398b2812409bfc4f7d602be09a818356317cef44cc"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 5,
+          "completedGeneration": 5,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 42,
+          "lastCompletedAtMs": 8208.804999947548
+        },
+        "dialogBounds": {
+          "x": 1160,
+          "y": 68.5,
+          "width": 280,
+          "height": 802.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "actions": [
+          "add B",
+          "delete B",
+          "save",
+          "reopen"
+        ],
+        "savedZipSha256": "2678e3ae4b29061ac9aba55e20b523409bc3d4264c0f6e26230f059e863af45c",
+        "attachmentCount": 0,
+        "fullProcessColdCertified": false
+      }
+    },
+    {
+      "name": "canvas-delete-undo",
+      "selectedImage": "detail",
+      "script": "e2e/tests/canvasCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:02:33.685Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 下絵を敷く章の画面を撮る",
+        "script": "e2e/tests/canvasCaptureFlow.ts",
+        "scriptSha256": "5b1909a3cac99860b67c2b82d572c087c95a8f3856c4bcaaf182c82885ff62dd",
+        "fixture": {
+          "filename": "canvas-delete-undo-fixture.json",
+          "sha256": "e3009e02ea310871ba4ed70efbe31fbfc2e1d818cce3337c73fcbe033b7df1ff"
+        },
+        "screen": {
+          "filename": "canvas-delete-undo-screen.png",
+          "sha256": "9cac84369d48f48cb77ad8b4bcc2ebb6f5c59763349af142134d60be6031803a"
+        },
+        "detail": {
+          "filename": "canvas-delete-undo-detail.png",
+          "sha256": "1f780f643b94ab0690867b887614187d8d7a2fe2bde5fb6917ac587371088059"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 28,
+          "lastCompletedAtMs": 5664.909999966621
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 476.5,
+          "width": 279,
+          "height": 325.375
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "actions": [
+          "add A",
+          "delete A",
+          "add B",
+          "Undo",
+          "Undo",
+          "save"
+        ],
+        "imageSha256": "245c28c077117171e0c037be3f4ed478b97591a71e45bea17cd7dedc8fd67d33",
+        "savedZipSha256": "73422f4047bf60919638ad0045a205fb37f8e6dc96133e644c7b3b61cedc3358"
+      }
+    },
+    {
+      "name": "canvas-placed",
+      "selectedImage": "detail",
+      "script": "e2e/tests/canvasCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:02:30.013Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 下絵を敷く章の画面を撮る",
+        "script": "e2e/tests/canvasCaptureFlow.ts",
+        "scriptSha256": "5b1909a3cac99860b67c2b82d572c087c95a8f3856c4bcaaf182c82885ff62dd",
+        "fixture": {
+          "filename": "canvas-placed-fixture.json",
+          "sha256": "6528d15def2b9b1cec9a013ca174c832b5dce1f94d97eac6293db30bd581378e"
+        },
+        "screen": {
+          "filename": "canvas-placed-screen.png",
+          "sha256": "a34df680b37a8d21c646967a1bb7686eb78a24d9dd923d0dba63019a11041e48"
+        },
+        "detail": {
+          "filename": "canvas-placed-detail.png",
+          "sha256": "7d2adbe1d45ba2f001c525e7b1b3c5358576539f6a1178ad9749b8cb5c2e8635"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 4,
+          "lastCompletedAtMs": 1906.1099998950958
+        },
+        "dialogBounds": {
+          "x": 248,
+          "y": 76.5,
+          "width": 260,
+          "height": 111.390625
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "plane": "xy",
+        "widthMm": 100,
+        "heightMm": 100
+      }
+    },
+    {
+      "name": "canvas-scale-length",
+      "selectedImage": "detail",
+      "script": "e2e/tests/canvasCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:02:30.670Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 下絵を敷く章の画面を撮る",
+        "script": "e2e/tests/canvasCaptureFlow.ts",
+        "scriptSha256": "5b1909a3cac99860b67c2b82d572c087c95a8f3856c4bcaaf182c82885ff62dd",
+        "fixture": {
+          "filename": "canvas-scale-length-fixture.json",
+          "sha256": "d5c3a3aa7f00f80bb3fe160103887ddad74712b985c43a769699b30fc2c93228"
+        },
+        "screen": {
+          "filename": "canvas-scale-length-screen.png",
+          "sha256": "f41435e6dc3f6d43c73e6344f552b9db78cfc2486b5663154e1d276d87b8cbc2"
+        },
+        "detail": {
+          "filename": "canvas-scale-length-detail.png",
+          "sha256": "1497b3b211f2cadb4bc01c0201a3ef1578ae715752a5b86f72ec25e645ed451a"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 2717.204999923706
+        },
+        "dialogBounds": {
+          "x": 248,
+          "y": 76.5,
+          "width": 260,
+          "height": 152.390625
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "points": [
+          [
+            -50,
+            0,
+            0
+          ],
+          [
+            50,
+            0,
+            0
+          ]
+        ],
+        "realLengthMm": 150
+      }
+    },
+    {
+      "name": "command-line-relative",
+      "selectedImage": "detail",
+      "script": "e2e/tests/commandLineCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:03:22.470Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 キーボードだけでかく(コマンドの欄)章の画面を撮る",
+        "script": "e2e/tests/commandLineCaptureFlow.ts",
+        "scriptSha256": "1077ad0052ae2e00b33815f0101923101b74809a607e6874e4141ba0dcc0e505",
+        "fixture": {
+          "filename": "command-line-relative-fixture.json",
+          "sha256": "909cd3ffcad209fdb99f292855583f2bf5e29817d311f6cea5ed87a4bc33f6d9"
+        },
+        "screen": {
+          "filename": "command-line-relative-screen.png",
+          "sha256": "a1a6ebcde573a1524cd7bc3b00f7405c0c428c8b75318d047f7a1d4554dce90c"
+        },
+        "detail": {
+          "filename": "command-line-relative-detail.png",
+          "sha256": "fa304933a0dd0554c7bf00f78ca98394c949b8b4c0c9b32c9ae0b5d0a48c1828"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 9,
+          "lastCompletedAtMs": 3156.4650000333786
+        },
+        "dialogBounds": {
+          "x": 77.78125,
+          "y": 876,
+          "width": 432.234375,
+          "height": 20
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "start": [
+          0,
+          0
+        ],
+        "typed": "@40,0"
+      }
+    },
+    {
+      "name": "constraints-list",
+      "selectedImage": "detail",
+      "script": "e2e/tests/constraintsCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:04:25.763Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 形を条件で決める(拘束)章の画面を撮る",
+        "script": "e2e/tests/constraintsCaptureFlow.ts",
+        "scriptSha256": "3a2c5e4ee5ca4f594204279f5c057c7510400e853901a0be9801c1e7d5eae822",
+        "fixture": {
+          "filename": "constraints-list-fixture.json",
+          "sha256": "72e174c9ca9fa9da4907eeb6270a31b6fbc0c7a56c5a59c9d31bc6613c431044"
+        },
+        "screen": {
+          "filename": "constraints-list-screen.png",
+          "sha256": "50365767d1b5571b65b71f10c9afa8370982297efd267044b386a4fd25a79a54"
+        },
+        "detail": {
+          "filename": "constraints-list-detail.png",
+          "sha256": "adf6e3a79fb0b20f261df3e94ccadb532162143fd09a1b89bdf07cc47904758e"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 5,
+          "completedGeneration": 5,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 36,
+          "lastCompletedAtMs": 4890.915000081062
+        },
+        "dialogBounds": {
+          "x": 1161,
+          "y": 961.78125,
+          "width": 279,
+          "height": 101.5
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "constraints": [
+          "平行1",
+          "距離1"
+        ],
+        "remaining": 6
+      }
+    },
+    {
+      "name": "constraints-value",
+      "selectedImage": "detail",
+      "script": "e2e/tests/constraintsCaptureFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:04:24.548Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12 形を条件で決める(拘束)章の画面を撮る",
+        "script": "e2e/tests/constraintsCaptureFlow.ts",
+        "scriptSha256": "3a2c5e4ee5ca4f594204279f5c057c7510400e853901a0be9801c1e7d5eae822",
+        "fixture": {
+          "filename": "constraints-value-fixture.json",
+          "sha256": "41c85456b1c68ce5d46bcd976244c5515868b315eb2a0a9daca5e931d933f4c9"
+        },
+        "screen": {
+          "filename": "constraints-value-screen.png",
+          "sha256": "faba65cf2a7fd18d1e7163eca637b969a7b1434d79a68a5d61194c7309046641"
+        },
+        "detail": {
+          "filename": "constraints-value-detail.png",
+          "sha256": "c48b06f504db9cda2f6eb2d32c402ce3a078659ab1bdbe525cbb9020cc98cf35"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 4,
+          "completedGeneration": 4,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 34,
+          "lastCompletedAtMs": 4201.7300000190735
+        },
+        "dialogBounds": {
+          "x": 714,
+          "y": 584.5,
+          "width": 200,
+          "height": 198.390625
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "target": "線分1",
+        "kind": "distance"
+      }
+    },
+    {
+      "name": "help-search-function-surface",
+      "selectedImage": "detail",
+      "script": "e2e/tests/helpReaderFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:04:17.760Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-2・3 全ての説明章と画像を開き、検索・F1後も入力と保存文書を保つ",
+        "script": "e2e/tests/helpReaderFlow.ts",
+        "scriptSha256": "6d8d63627f3e38cf506b4a74261cc1a8e5fc598566b03e19434f7cf9b6939226",
+        "fixture": {
+          "filename": "help-search-function-surface-fixture.json",
+          "sha256": "977bd1ab1effd27a3b84f2c202768603e00c32257880c1231a3869768adf2c99"
+        },
+        "screen": {
+          "filename": "help-search-function-surface-screen.png",
+          "sha256": "3ede23da92c754ddf2e0ea35e4a613580fae9d0f6339a1ac67132a913e749cc2"
+        },
+        "detail": {
+          "filename": "help-search-function-surface-detail.png",
+          "sha256": "6cf0dcf64d5a849430a6cfb86cb197379a8007373a2e5e93993959f962537456"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 121,
+          "lastCompletedAtMs": 30041.18500006199
+        },
+        "dialogBounds": {
+          "x": 159,
+          "y": 49,
+          "width": 1122,
+          "height": 802
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "document": {
+          "id": "part-uuid:d17991ea-920b-43e8-b448-f1238bf0d9c1",
+          "name": "部品1",
+          "schemaVersion": 22,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": []
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1"
+        },
+        "pendingCoordinate": "12/2",
+        "search": "XYZ 曲面",
+        "topic": "function-surface"
+      }
+    },
+    {
+      "name": "keyboard-numeric-input-hint",
+      "selectedImage": "detail",
+      "script": "e2e/tests/controlHintsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:03:37.402Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "P12-5 キー移動でも入力と同じ説明を読み、元の値・操作・拡大表示を保つ",
+        "script": "e2e/tests/controlHintsFlow.ts",
+        "scriptSha256": "a6a1b58405586b38f68fd3240e42f6203243535b2ccf14ca321a1c51e7edf3d2",
+        "fixture": {
+          "filename": "keyboard-numeric-input-hint-fixture.json",
+          "sha256": "a40d951477b3b751e12a53e27c6b972990b34971f4b376392171879a517b0685"
+        },
+        "screen": {
+          "filename": "keyboard-numeric-input-hint-screen.png",
+          "sha256": "270ead07eb63319c731cd8eaa91e9c4a68907b568d66ad32e51eb985b2884c0f"
+        },
+        "detail": {
+          "filename": "keyboard-numeric-input-hint-detail.png",
+          "sha256": "1702dc0831615907b5c6f893bfb1aab2154794d317ccd5ce3e1fdab204caffd0"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 29,
+          "lastCompletedAtMs": 4858.985000014305
+        },
+        "dialogBounds": {
+          "x": 722.59375,
+          "y": 609,
+          "width": 239.46875,
+          "height": 32
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "operation": "point",
+        "pendingCoordinate": "12/2",
+        "inputTitle": "原点から右方向の位置(式が使えます)"
+      }
+    },
+    {
+      "name": "math-airy",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathAiryFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:56:23.345Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-18 Airyの四種類と原点と入力条件と保存再編集・Undo・F1を通す",
+        "script": "e2e/tests/mathAiryFlow.ts",
+        "scriptSha256": "2e03be863c4a48481fac328c570b5495dd07422bf0655a3173a4cfc19b7e2ee4",
+        "fixture": {
+          "filename": "math-airy-fixture.json",
+          "sha256": "5cddc75ebdc076496cedc114e60400a7cc0880530f715627a16e69815967122b"
+        },
+        "screen": {
+          "filename": "math-airy-screen.png",
+          "sha256": "596713e3449c013ec22c7ce70da9a3345fb2cdd7f54ab097966c53e1d28877d4"
+        },
+        "detail": {
+          "filename": "math-airy-detail.png",
+          "sha256": "ae247cde40272f5ca361ce4e55ef5bd3f884c63fa82a83c35d2cc0e55bb0cabf"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 15720.069999933243
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 225.21875,
+          "width": 720,
+          "height": 649.546875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "source": "airyai(1)",
+        "expected": 0.13529241631288141,
+        "arguments": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "math-binomial-cumulative",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathBinomialFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:57:50.827Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-17 数学入力の実画面・係数追従・改名・Undo・保存再編集",
+        "script": "e2e/tests/mathBinomialFlow.ts",
+        "scriptSha256": "4e9ba8ba20ae06771446b0faa598319e62966670d3dbb0b88e112095bf240349",
+        "fixture": {
+          "filename": "math-binomial-cumulative-fixture.json",
+          "sha256": "afaa7128346a3783db1964ba4cbf1b51d12935bc9b1ff219aa662d95661392ac"
+        },
+        "screen": {
+          "filename": "math-binomial-cumulative-screen.png",
+          "sha256": "89b2aa52f1a6237e7a2ef177abfbafd330d5d306788afbc9ee37288ae419adb5"
+        },
+        "detail": {
+          "filename": "math-binomial-cumulative-detail.png",
+          "sha256": "5ca9d2ff3534c542061720f6c0f668b4e0d9ac11e98ea93e625af0a86ade15fc"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 6,
+          "lastCompletedAtMs": 2715.694999933243
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 107.46875,
+          "width": 720,
+          "height": 685.046875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "kind": "mathematics-input-example",
+        "parameter": "二項確率",
+        "source": "binomialcdf(4,1/2,5/2)",
+        "result": "= 0.6875"
+      }
+    },
+    {
+      "name": "math-complex-error-functions",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathComplexErrorFunctionsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:56:01.079Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-18 複素数の誤差関数と成分と入力条件と保存再編集・Undo・F1を通す",
+        "script": "e2e/tests/mathComplexErrorFunctionsFlow.ts",
+        "scriptSha256": "cb5437d84ec194b3d08114039c2f613d478e5ad4cdebd95a48ebb441d57b6a46",
+        "fixture": {
+          "filename": "math-complex-error-functions-fixture.json",
+          "sha256": "727fbfff70780e7ab9c8d2b9146cf2dbbe7bdfff57b35bbb2d5b49ae0125fc86"
+        },
+        "screen": {
+          "filename": "math-complex-error-functions-screen.png",
+          "sha256": "d0ef97b2aa07d9f06f1b822cb70c89d1b7b61307753af197b153c88e6d014da3"
+        },
+        "detail": {
+          "filename": "math-complex-error-functions-detail.png",
+          "sha256": "ba99e54d709c5f7edaeb8f279615ee134e6d3a731a89e3501da6a27efd65e921"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 15940.715000033379
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 225.21875,
+          "width": 720,
+          "height": 649.546875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "source": "im(erf(i))",
+        "expected": 1.6504257587975428,
+        "angleUnit": "degree"
+      }
+    },
+    {
+      "name": "math-declared-symbol-rename",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathDeclaredRenameFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:59:16.503Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-25 記号の改名で局所変数を変えず、予約名拒否・実保存再開・Undo・取消・F1を通す",
+        "script": "e2e/tests/mathDeclaredRenameFlow.ts",
+        "scriptSha256": "a277d56fe19e4a3a4b4f83343cd10ca08594c45ed872687c8ec31d67092b268e",
+        "fixture": {
+          "filename": "math-declared-symbol-rename-fixture.json",
+          "sha256": "9300dd700793e3ed28de8746c03f388f643a92285365df455a8a6d42d19249d8"
+        },
+        "screen": {
+          "filename": "math-declared-symbol-rename-screen.png",
+          "sha256": "b3d5f7941e60490bfb393fa034bd4b836142559ec99263b1f99b211e4ad2ba0d"
+        },
+        "detail": {
+          "filename": "math-declared-symbol-rename-detail.png",
+          "sha256": "88c1c468b7e6d435a6fdb9bb5356f279cb7f5fa327ab8fcddbd7406a055824d6"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 2890.0099999904633
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 70.21875,
+          "width": 720,
+          "height": 959.5625
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "before": "sum(a_1,a_1,1,3)+a_1",
+        "afterFreeSymbol": "b_2",
+        "unchangedBoundSymbol": "a_1"
+      }
+    },
+    {
+      "name": "math-declared-values",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathDeclaredValuesFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:59:25.677Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-25 記号の値の種類を確認し、実保存再開・値編集・座標追従・Undo・F1を通す",
+        "script": "e2e/tests/mathDeclaredValuesFlow.ts",
+        "scriptSha256": "9750f679cc7774f190583c69f6b9ae8ffc2f69a607d7cb44f5e8657a0949b54d",
+        "fixture": {
+          "filename": "math-declared-values-fixture.json",
+          "sha256": "70642feae956d3c6b02199a30f57348f947f8a8f7dabf8972b76c3190c5e55f3"
+        },
+        "screen": {
+          "filename": "math-declared-values-screen.png",
+          "sha256": "c523eb104970c78fa7c8fc2eb3fa46c59bcb3478fed1d83ff3016fd742b7734e"
+        },
+        "detail": {
+          "filename": "math-declared-values-detail.png",
+          "sha256": "bdf26d58e6430cd3e709291c49e1763023429984b798c3a7611607b27c94ea97"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 6,
+          "lastCompletedAtMs": 1599.0349999666214
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 62.71875,
+          "width": 720,
+          "height": 974.5625
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "source": "a_1*3",
+        "declaration": {
+          "label": "a_1",
+          "type": "rational",
+          "valueSource": "1/3"
+        },
+        "expected": 1
+      }
+    },
+    {
+      "name": "math-gamma-beta-distributions",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathGammaBetaDistributionFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:56:35.831Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-24 Gamma・Beta分布の密度・累積・分位点の条件と保存再編集・Undo・F1を通す",
+        "script": "e2e/tests/mathGammaBetaDistributionFlow.ts",
+        "scriptSha256": "e8a7821d8097b3478e083e09253087e9bca31162281e1fb202809fa3c4f82013",
+        "fixture": {
+          "filename": "math-gamma-beta-distributions-fixture.json",
+          "sha256": "25382b4a96deb7d045f61b8e4da2948f4245b8e3a74ab0db1e9f99da8f01dd1a"
+        },
+        "screen": {
+          "filename": "math-gamma-beta-distributions-screen.png",
+          "sha256": "9f009014723c1fe2ae50b3633f3c8d2f48322e8cfd0506a18178c8a11ca3defd"
+        },
+        "detail": {
+          "filename": "math-gamma-beta-distributions-detail.png",
+          "sha256": "67d27a9775db412903e678e27b07c5489aaea5997912e4fc78edbce4c5d0970e"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 6073.129999995232
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 225.21875,
+          "width": 720,
+          "height": 649.546875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "source": "6*betaquantile(2,2,1/2)",
+        "expected": 3,
+        "shapeA": 2,
+        "shapeB": 2,
+        "multiplier": 6,
+        "probability": "1/2"
+      }
+    },
+    {
+      "name": "math-limit-left",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathLimitsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:56:56.223Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-22 極限の左右・角度・不成立を区別し、表示切替・保存再編集・Undo・F1を通す",
+        "script": "e2e/tests/mathLimitsFlow.ts",
+        "scriptSha256": "1e5c5e69ecbc275266d5da62eb7c6e511adbacfdea996adb30c77a156cf0711c",
+        "fixture": {
+          "filename": "math-limit-left-fixture.json",
+          "sha256": "a4aef04a7801e7d3ddb0266779a72f52faa51edb5bf553d4bda46e294d4da066"
+        },
+        "screen": {
+          "filename": "math-limit-left-screen.png",
+          "sha256": "b226059ad539b4f517e4e51f459223be0563e9099a2cf525549925158c349f03"
+        },
+        "detail": {
+          "filename": "math-limit-left-detail.png",
+          "sha256": "26b1fc65c92c6a23c5297a742f0070432b78956c62e8cb38d46208f158178380"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 6,
+          "lastCompletedAtMs": 1558.170000076294
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 133.953125,
+          "width": 720,
+          "height": 632.078125
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "source": "limit(abs(t)/t,t,0,-1)",
+        "direction": -1,
+        "expected": -1
+      }
+    },
+    {
+      "name": "math-probability-moments",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathProbabilityMomentsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:55:34.903Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-24 確率表の期待値・分散・条件付き確率の条件と保存再編集・Undo・F1を通す",
+        "script": "e2e/tests/mathProbabilityMomentsFlow.ts",
+        "scriptSha256": "7bd6a6089826995446813c4715de2dfb09506e9cc52d544317a8e65b88163701",
+        "fixture": {
+          "filename": "math-probability-moments-fixture.json",
+          "sha256": "728cfcb4e7679fc6b82a790ea60735cd1a098b27923b5496df43ee8bd97b60f6"
+        },
+        "screen": {
+          "filename": "math-probability-moments-screen.png",
+          "sha256": "67928e7ca3206ef12391be31df9c94a675db10b4293ddbef6056a671fd9f166f"
+        },
+        "detail": {
+          "filename": "math-probability-moments-detail.png",
+          "sha256": "5f566e0fc0b712a911b32c81543278e1ae05f0272e3705bbf0b513b826f70a9c"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 5111.224999904633
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 225.21875,
+          "width": 720,
+          "height": 649.546875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "source": "expectation([0,4],[1/4,3/4])",
+        "expected": 3,
+        "values": [
+          0,
+          4
+        ],
+        "probabilities": [
+          "1/4",
+          "3/4"
+        ]
+      }
+    },
+    {
+      "name": "math-set-bounds",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathSetBoundsFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:58:45.626Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-22 集合の上下限と極値を区別し、保存再編集・座標追従・Undo・F1を通す",
+        "script": "e2e/tests/mathSetBoundsFlow.ts",
+        "scriptSha256": "17e0abf4279cfca07f697d3e32ed136fd4297d04597aa1d873e85ebaa992c3ec",
+        "fixture": {
+          "filename": "math-set-bounds-fixture.json",
+          "sha256": "f962e17c8ef5eb2dea33e3afa01ba8000457de221d443ee79db8718483b16d48"
+        },
+        "screen": {
+          "filename": "math-set-bounds-screen.png",
+          "sha256": "293bc1758ed12df9c5279b0b16ce7528e560c1527010ab8daf1ae5627a06c97b"
+        },
+        "detail": {
+          "filename": "math-set-bounds-detail.png",
+          "sha256": "accb0a26bc1c2983a8dee884ae8838464104b610bf09be8452176b6dde1fbf05"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 3,
+          "completedGeneration": 3,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 13762.674999952316
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 225.21875,
+          "width": 720,
+          "height": 649.546875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "source": "sup(interval(open(0),open(4)))",
+        "expected": 4,
+        "maximumExists": false,
+        "angleUnit": "degree"
+      }
+    },
+    {
+      "name": "math-tensor-component-picker",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathTensorFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:57:55.032Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-19 テンソルの添字指定・XYZ座標・保存再編集・Undo・F1を通す",
+        "script": "e2e/tests/mathTensorFlow.ts",
+        "scriptSha256": "369445b68e070b169ceea205a19b7efcf8a77e71429df54ac086dbc781cb1169",
+        "fixture": {
+          "filename": "math-tensor-component-picker-fixture.json",
+          "sha256": "fb4e8657b5f215163eed8ad6f1cec89185896bd15ec1b30940af456cdb3c171c"
+        },
+        "screen": {
+          "filename": "math-tensor-component-picker-screen.png",
+          "sha256": "ed1f4ddc3a794143e4d72b673bcd0a9eacfce7f861a29a949cf776227b5e0e76"
+        },
+        "detail": {
+          "filename": "math-tensor-component-picker-detail.png",
+          "sha256": "35a411773e4b983f99af7c5feded013d5d08069c8f2b5e21d06e6cb7008ae08e"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 3,
+          "lastCompletedAtMs": 1320.7400000095367
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 64.96875,
+          "width": 720,
+          "height": 770.046875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "kind": "mathematics-input-example",
+        "coordinate": "X",
+        "source": "tensorproduct([1,2],[3,4])",
+        "indices": [
+          "2",
+          "1"
+        ]
+      }
+    },
+    {
+      "name": "math-unresolved-problem",
+      "selectedImage": "detail",
+      "script": "e2e/tests/mathUnresolvedProblemFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T01:58:15.861Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "ADD-26 未解決の式と条件を保存再編集し、数値の拒否・取消・Undo・F1を通す",
+        "script": "e2e/tests/mathUnresolvedProblemFlow.ts",
+        "scriptSha256": "e70929c7030f939ed8e1aac23b2f652ea4420212403a2b6d610376c704aacd25",
+        "fixture": {
+          "filename": "math-unresolved-problem-fixture.json",
+          "sha256": "c34493d1ade9c02ebc364e8917ea03f84e82bf9338310d6b498c011ea1a20e37"
+        },
+        "screen": {
+          "filename": "math-unresolved-problem-screen.png",
+          "sha256": "b6adee2cc7e43376a255561ee8b1a697efc9f1f0a92e84830a3e554f4c7fd79f"
+        },
+        "detail": {
+          "filename": "math-unresolved-problem-detail.png",
+          "sha256": "5c681c80ca2ec72fae9e9803002b470650ff4ef208c810984118284ce9900233"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 6,
+          "lastCompletedAtMs": 1605.945000052452
+        },
+        "dialogBounds": {
+          "x": 360,
+          "y": 244.46875,
+          "width": 720,
+          "height": 611.046875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 1100,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "tall-exception"
+      },
+      "fixture": {
+        "source": "pde([diff(u,t)=diff(u,x,x)],[x,t],[u],[[u,[0,t],3]])",
+        "expectedStatus": "unresolved",
+        "numericValue": null
+      }
+    },
+    {
+      "name": "solid-basics-cut-preview",
+      "selectedImage": "screen",
+      "script": "e2e/tests/flows/extrudeOperationFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:05:10.138Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "Extrude cut: real preview cancel atomic Undo and saved geometry",
+        "script": "e2e/tests/flows/extrudeOperationFlow.ts",
+        "scriptSha256": "d269086e81caf981d2b588383866598f5334b3933de9ffe67f954ac9a8e6f428",
+        "fixture": {
+          "filename": "solid-basics-cut-preview-fixture.json",
+          "sha256": "a09ab798890804228ee8cfc31c813439aec8f41db0bd788c5c371ce66d88f494"
+        },
+        "screen": {
+          "filename": "solid-basics-cut-preview-screen.png",
+          "sha256": "5ab7697f86bf60d32229f95e6d55932ad3e35028cf8d633072161c66f1a3b41c"
+        },
+        "detail": {
+          "filename": "solid-basics-cut-preview-detail.png",
+          "sha256": "7401413f1b5f4d603b6086b195fe0c770dd644559487da96ac6f9636b6833199"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 15,
+          "completedGeneration": 15,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 116,
+          "lastCompletedAtMs": 12949.399999976158
+        },
+        "dialogBounds": {
+          "x": 248,
+          "y": 76.5,
+          "width": 260,
+          "height": 576.171875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "operation": "cut",
+        "before": {
+          "id": "part-uuid:9b6c56d4-66d3-4264-a68a-a8f0b2822168",
+          "name": "部品1",
+          "schemaVersion": 22,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": [
+                {
+                  "id": "line-1",
+                  "name": "線分1",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "y": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "z": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "20",
+                      "value": 20,
+                      "display": "20"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-2",
+                  "name": "線分2",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-1",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "20",
+                      "value": 20,
+                      "display": "20"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-3",
+                  "name": "線分3",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-2",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "-20",
+                      "value": -20,
+                      "display": "-20"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-4",
+                  "name": "線分4",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-3",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "-20",
+                      "value": -20,
+                      "display": "-20"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "face-1",
+                  "name": "面1",
+                  "planeId": "xy",
+                  "kind": "face",
+                  "boundary": [
+                    {
+                      "featureId": "line-1"
+                    },
+                    {
+                      "featureId": "line-2"
+                    },
+                    {
+                      "featureId": "line-3"
+                    },
+                    {
+                      "featureId": "line-4"
+                    }
+                  ],
+                  "color": "#7aa2f7"
+                },
+                {
+                  "id": "line-5",
+                  "name": "線分5",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "5",
+                      "value": 5,
+                      "display": "5"
+                    },
+                    "y": {
+                      "source": "5",
+                      "value": 5,
+                      "display": "5"
+                    },
+                    "z": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "10",
+                      "value": 10,
+                      "display": "10"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-6",
+                  "name": "線分6",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-5",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "10",
+                      "value": 10,
+                      "display": "10"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-7",
+                  "name": "線分7",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-6",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "-10",
+                      "value": -10,
+                      "display": "-10"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-8",
+                  "name": "線分8",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-7",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "-10",
+                      "value": -10,
+                      "display": "-10"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "face-2",
+                  "name": "面2",
+                  "planeId": "xy",
+                  "kind": "face",
+                  "boundary": [
+                    {
+                      "featureId": "line-5"
+                    },
+                    {
+                      "featureId": "line-6"
+                    },
+                    {
+                      "featureId": "line-7"
+                    },
+                    {
+                      "featureId": "line-8"
+                    }
+                  ],
+                  "color": "#7aa2f7"
+                }
+              ]
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "extrude-1",
+              "name": "押し出し1",
+              "suppressed": false,
+              "kind": "extrude",
+              "profile": {
+                "sketchId": "sketch-1",
+                "faceFeatureId": "face-1"
+              },
+              "distance": {
+                "source": "20",
+                "value": 20,
+                "display": "20"
+              },
+              "reversed": false,
+              "symmetric": false
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1"
+        }
+      }
+    },
+    {
+      "name": "solid-basics-join-preview",
+      "selectedImage": "screen",
+      "script": "e2e/tests/flows/extrudeOperationFlow.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:04:53.193Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "Extrude join: real preview cancel atomic Undo and saved geometry",
+        "script": "e2e/tests/flows/extrudeOperationFlow.ts",
+        "scriptSha256": "d269086e81caf981d2b588383866598f5334b3933de9ffe67f954ac9a8e6f428",
+        "fixture": {
+          "filename": "solid-basics-join-preview-fixture.json",
+          "sha256": "6597a6831fb79d9ede092266dcd3c8969fd190bfcfb2fbad62ccf58bcb471f61"
+        },
+        "screen": {
+          "filename": "solid-basics-join-preview-screen.png",
+          "sha256": "4df1ec0335f9e7b256bd1ddfd61e91ae1a8f8d09b1ecbabdcaeb583411222d63"
+        },
+        "detail": {
+          "filename": "solid-basics-join-preview-detail.png",
+          "sha256": "5877bb67470f937494157df7938a659a4a5be868cddf734154ad116d7dded0e6"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 1,
+          "isComputing": false,
+          "requestedGeneration": 15,
+          "completedGeneration": 15,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 110,
+          "lastCompletedAtMs": 12186.56500005722
+        },
+        "dialogBounds": {
+          "x": 248,
+          "y": 76.5,
+          "width": 260,
+          "height": 576.171875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "operation": "join",
+        "before": {
+          "id": "part-uuid:475d6e33-03db-4078-a672-a4c4df00f58d",
+          "name": "部品1",
+          "schemaVersion": 22,
+          "sketches": [
+            {
+              "id": "sketch-1",
+              "name": "スケッチ1",
+              "features": [
+                {
+                  "id": "line-1",
+                  "name": "線分1",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "y": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "z": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "20",
+                      "value": 20,
+                      "display": "20"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-2",
+                  "name": "線分2",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-1",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "20",
+                      "value": 20,
+                      "display": "20"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-3",
+                  "name": "線分3",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-2",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "-20",
+                      "value": -20,
+                      "display": "-20"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-4",
+                  "name": "線分4",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-3",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "-20",
+                      "value": -20,
+                      "display": "-20"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "face-1",
+                  "name": "面1",
+                  "planeId": "xy",
+                  "kind": "face",
+                  "boundary": [
+                    {
+                      "featureId": "line-1"
+                    },
+                    {
+                      "featureId": "line-2"
+                    },
+                    {
+                      "featureId": "line-3"
+                    },
+                    {
+                      "featureId": "line-4"
+                    }
+                  ],
+                  "color": "#7aa2f7"
+                },
+                {
+                  "id": "line-5",
+                  "name": "線分5",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "absolute",
+                    "x": {
+                      "source": "15",
+                      "value": 15,
+                      "display": "15"
+                    },
+                    "y": {
+                      "source": "5",
+                      "value": 5,
+                      "display": "5"
+                    },
+                    "z": {
+                      "source": "5",
+                      "value": 5,
+                      "display": "5"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "10",
+                      "value": 10,
+                      "display": "10"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-6",
+                  "name": "線分6",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-5",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "10",
+                      "value": 10,
+                      "display": "10"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-7",
+                  "name": "線分7",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-6",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "-10",
+                      "value": -10,
+                      "display": "-10"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "line-8",
+                  "name": "線分8",
+                  "planeId": "xy",
+                  "kind": "line",
+                  "from": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "vertex",
+                      "featureId": "line-7",
+                      "vertex": "end"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "to": {
+                    "mode": "relative",
+                    "base": {
+                      "kind": "previous"
+                    },
+                    "dx": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    },
+                    "dy": {
+                      "source": "-10",
+                      "value": -10,
+                      "display": "-10"
+                    },
+                    "dz": {
+                      "source": "0",
+                      "value": 0,
+                      "display": "0"
+                    }
+                  },
+                  "construction": false
+                },
+                {
+                  "id": "face-2",
+                  "name": "面2",
+                  "planeId": "xy",
+                  "kind": "face",
+                  "boundary": [
+                    {
+                      "featureId": "line-5"
+                    },
+                    {
+                      "featureId": "line-6"
+                    },
+                    {
+                      "featureId": "line-7"
+                    },
+                    {
+                      "featureId": "line-8"
+                    }
+                  ],
+                  "color": "#7aa2f7"
+                }
+              ]
+            }
+          ],
+          "activeSketchId": "sketch-1",
+          "references": [],
+          "solids": [
+            {
+              "id": "extrude-1",
+              "name": "押し出し1",
+              "suppressed": false,
+              "kind": "extrude",
+              "profile": {
+                "sketchId": "sketch-1",
+                "faceFeatureId": "face-1"
+              },
+              "distance": {
+                "source": "20",
+                "value": 20,
+                "display": "20"
+              },
+              "reversed": false,
+              "symmetric": false
+            }
+          ],
+          "sheetUnfolds": [],
+          "parameters": [],
+          "appearance": {
+            "entries": []
+          },
+          "selectionSets": [],
+          "canvases": [],
+          "namedViews": [
+            {
+              "id": "namedView-front",
+              "name": "正面",
+              "position": [
+                0,
+                -200,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-top",
+              "name": "平面",
+              "position": [
+                0,
+                0,
+                200
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                1,
+                0
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-right",
+              "name": "右側面",
+              "position": [
+                200,
+                0,
+                0
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "orthographic",
+              "zoom": 1
+            },
+            {
+              "id": "namedView-isometric",
+              "name": "等角",
+              "position": [
+                115.47005383792516,
+                -115.47005383792516,
+                115.47005383792516
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "up": [
+                0,
+                0,
+                1
+              ],
+              "projection": "perspective",
+              "zoom": 1
+            }
+          ],
+          "configurations": [
+            {
+              "id": "configuration-1",
+              "name": "既定",
+              "values": {}
+            }
+          ],
+          "activeConfigurationId": "configuration-1"
+        }
+      }
+    },
+    {
+      "name": "strength-material-source",
+      "selectedImage": "detail",
+      "script": "e2e/tests/solid-material-authoring.spec.ts",
+      "capture": {
+        "format": "pointercad-manual-detail/1",
+        "releaseCertified": false,
+        "capturedAt": "2026-11-10T02:05:29.589Z",
+        "applicationBuildId": "dfee888931611816d0710ee6c1f809240c1cf3e8e2ce3135e1f247680edd6242",
+        "project": "functional",
+        "sourceTest": "立体解析で材料と板厚の適用範囲を選び直す",
+        "script": "e2e/tests/solid-material-authoring.spec.ts",
+        "scriptSha256": "5964c09de3a2d13c76128a69a4e0d1882cd726f1966ec85f99a11766e51873b8",
+        "fixture": {
+          "filename": "strength-material-source-fixture.json",
+          "sha256": "7d5832fdf97411f1aa0046d74833eff92e3763543981a137c31e9187fc85c73e"
+        },
+        "screen": {
+          "filename": "strength-material-source-screen.png",
+          "sha256": "e8266e3a59be8033712e7c5bc1563b397cfa7db6d8c4a73da792cfe17f2ec3f9"
+        },
+        "detail": {
+          "filename": "strength-material-source-detail.png",
+          "sha256": "57571734cf078f0d52eabf42d564c3eb1d7363bde1da4b8578ae8f1baf643162"
+        },
+        "recompute": {
+          "pendingWaiters": 0,
+          "activeDocumentKind": "part",
+          "cacheHits": 0,
+          "isComputing": false,
+          "requestedGeneration": 1,
+          "completedGeneration": 1,
+          "lastOutcome": "success"
+        },
+        "viewportRender": {
+          "completedRenders": 7,
+          "lastCompletedAtMs": 2246.514999985695
+        },
+        "dialogBounds": {
+          "x": 1173,
+          "y": 287.203125,
+          "width": 255,
+          "height": 583.671875
+        },
+        "screenState": {
+          "width": 1440,
+          "height": 900,
+          "deviceScaleFactor": 1,
+          "fontStatus": "loaded",
+          "url": "http://127.0.0.1:4173/",
+          "theme": "dark",
+          "uiScale": "100"
+        },
+        "viewportClass": "standard"
+      },
+      "fixture": {
+        "material": "ss400-plate-0-16",
+        "thickness": "16"
+      }
+    }
+  ]
+}

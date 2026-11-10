@@ -51,7 +51,7 @@ export async function mathLimitBoundsFlow(page: Page, info: TestInfo, app?: Elec
   const point = saved.sketches[0].features.find(feature => feature.kind === 'point');
   if (point?.kind !== 'point' || point.at.mode !== 'absolute') throw new Error('保存した絶対座標の点がありません');
   expect(point.at.x.source).toBe(coordinate); expect(point.at.x.value).toBe(4);
-  await reopenPart(page, info, 'limit-bounds.pcad', app);
+  await reopenPart(page, info, 'limit-bounds.pcad', app, 'exact-math');
   await page.getByRole('tab', { name: 'パラメータ', exact: true }).click();
   await row.getByRole('button', { name: '数式で入力', exact: true }).click();
   await waitForMathEditorText(dialog); await expect(input).toHaveValue(source); await expectResult(result).toHaveText('= 4');

@@ -1,7 +1,7 @@
 import type { Point2, Vector3 } from '../types.js';
 import type { InkBounds } from '../render/types.js';
 import type { Dimension, DimensionTarget } from './types.js';
-import { drawingViewBasis } from './series.js';
+import { dotVector3, drawingViewBasis } from './series.js';
 import { formatDimension } from './format.js';
 import { createLinearDimensionGeometry } from './geometry.js';
 import { arrangeDimensions, type DimensionArrangementItem, type DimensionTextBox } from './placement.js';
@@ -52,7 +52,7 @@ export function autoDimension(input: AutoDimensionInput): AutoDimensionResult | 
     || input.circles.some((circle) => !Number.isFinite(circle.radius) || circle.radius <= 0)) return null;
   const component = (point: AutoDimensionPoint, axis: 0 | 1): number => {
     const vector = axis === 0 ? basis.x : basis.y;
-    return point.modelPoint[0] * vector[0] + point.modelPoint[1] * vector[1] + point.modelPoint[2] * vector[2];
+    return dotVector3(point.modelPoint, vector);
   };
   const sorted = (points: readonly AutoDimensionPoint[], axis: 0 | 1) => [...points].sort((a, b) =>
     component(a, axis) - component(b, axis) || a.id.localeCompare(b.id, 'en'));

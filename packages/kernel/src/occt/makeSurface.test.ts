@@ -1,10 +1,11 @@
 import { expectWithinBudget } from '@pointercad/test-utils';
 import type { OpenCascadeInstance, TopoDS_Shape } from 'opencascade.js/dist/opencascade.full.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { CurveSpec, SolidBodyKind, SolidFaceInfo, SubShapeQuery, Vec3Tuple } from '../types.js';
 import { extractEdges } from './extractEdges.js';
 import { loadOcctForNode } from './loadOcct.node.js';
+import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { makeBox } from './makeBox.js';
 import { makeCut } from './makeCut.js';
 import { makeExtrudeSolid } from './makeSolidSweep.js';
@@ -397,6 +398,22 @@ describe('曲面(FR-428、§0.a-0.45、タスク41)', () => {
   });
 
   describe('ロフトの面', () => {
+    it('実ロフトの面積を保ち、ThruSectionsに正本の許容差を渡す', () => {
+      const Original = oc.BRepOffsetAPI_ThruSections;
+      const observed: number[] = [];
+      const spy = vi.spyOn(oc, 'BRepOffsetAPI_ThruSections').mockImplementation(function (...args: ConstructorParameters<typeof Original>) {
+        observed.push(args[2]);
+        return new Original(...args);
+      });
+      try {
+        const handle = makeSurface(oc, { kind: 'loft', sections: [rectangle(40, 30, 0), rectangle(20, 15, 10)], ruled: true });
+        try { expect(handle.area).toBeCloseTo(LOFT_SIDE_AREA, 6); }
+        finally { handle.delete(); }
+        expect(observed.length).toBeGreaterThan(0);
+        for (const value of observed) expect(value).toBe(APPROXIMATION_TOLERANCE_MM);
+      } finally { spy.mockRestore(); }
+    });
+
     it('40 × 30 → 20 × 15(高さ 10)をつなぐと、側面 4 枚の殻になる', () => {
       const measured = measureSurface({
         kind: 'loft',

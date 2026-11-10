@@ -4,7 +4,9 @@ import { ESLint, Linter } from 'eslint';
 import tseslint from 'typescript-eslint';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { compareBaseline, FUNCTION_SIZE_OPTIONS, FUNCTION_SIZE_RULE, functionSizeConfig, measureFunctions,
-  type BaselineEntry, type BaselineRow } from './functionSizePolicy.testSupport.js';
+  type BaselineEntry } from './functionSizePolicy.testSupport.js';
+
+type BaselineRow = Parameters<typeof compareBaseline>[0];
 
 // Review E09: every product function is capped at 200 ESLint lines; each grandfathered function keeps its own
 // measured count (eslint.functionSizeBaseline.js), so a smaller one cannot grow behind the largest in its file.

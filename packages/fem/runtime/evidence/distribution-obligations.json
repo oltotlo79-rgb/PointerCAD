@@ -1,0 +1,165 @@
+{
+  "format": "pointercad-fem-distribution-obligations/1",
+  "components": [
+    {
+      "name": "oofem",
+      "version": "3.1.dev5+g214b161ed",
+      "profile": "lgpl-source-relink",
+      "licenseStatus": "retained-original-terms",
+      "licenseBasis": "Original component and vendored notice texts retained; no inferred SPDX classification or legal warranty",
+      "notices": [
+        "notices/20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331.txt",
+        "notices/83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb.txt",
+        "notices/dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551.txt",
+        "notices/bf488b13430c036ae911f018798f4a49a28165ee7f2f487371406f11c3659b7f.txt"
+      ],
+      "delivery": {
+        "kind": "bundled",
+        "index": "licenses/fem/index.html",
+        "instructions": "evidence/recipient-source-replacement.md"
+      },
+      "sources": [
+        "sources/upstream-source-materials.zip",
+        "sources/051-oofem-214b161ed3acb471f2d0104b004c37fd73bafaa2.tar.gz",
+        "sources/026-pybind11-d6ae0e163a6fb414c81c7f4a98291460e5a18bfe.tar.gz",
+        "sources/pointercad-beam-application-source.zip"
+      ],
+      "sourceAccess": {
+        "kind": "bundled",
+        "index": "licenses/fem/index.html"
+      },
+      "scripts": [
+        "sources/native-rebuild/portable/rebuild-oofem-pyodide.sh",
+        "sources/native-rebuild/portable/venv-requirements.txt",
+        "sources/native-rebuild/portable/wheelhouse-SHA256SUMS",
+        "sources/native-rebuild/cmake-config.txt",
+        "sources/native-rebuild/toolchain-record.txt",
+        "sources/native-rebuild/oofem-051-timer.patch",
+        "sources/native-rebuild/oofem-util.py.diff"
+      ],
+      "modificationNotices": [
+        "sources/native-rebuild/patch-provenance.json"
+      ],
+      "replacement": {
+        "route": "lgpl-2.1-section-6a-source-relink",
+        "instructions": "evidence/recipient-source-replacement.md",
+        "applicationSource": "sources/pointercad-beam-application-source.zip",
+        "evidence": "sources/native-rebuild/replacement-evidence.json"
+      }
+    },
+    {
+      "name": "numpy",
+      "version": "2.2.5",
+      "profile": "permissive-notices",
+      "licenseStatus": "retained-original-terms",
+      "licenseBasis": "Original component and vendored notice texts retained; no inferred SPDX classification or legal warranty",
+      "notices": [
+        "notices/01fb016849aa427edb1bbbbd55f91c26ca6cadb32a5b20e7f000655dd05b0760.txt",
+        "notices/05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6.txt",
+        "notices/0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156.txt",
+        "notices/103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f.txt",
+        "notices/3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98.txt",
+        "notices/43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1.txt",
+        "notices/469778be8f33d54e1bcaab28c281cc472916d2d273f835e55bc487d30503face.txt",
+        "notices/6f5828a57223d4cc7f8ea505a2623e7b978b242752c1515e355f46ba2cec1800.txt",
+        "notices/92b12e5a8bdcd0bbf49cf7d7bb061ce3ea2d64902ea9f3c03395e5c063ed30bf.txt",
+        "notices/9d4098846018319cd68e228ee6220361787f73bccbf00237a85e4fc9621b998f.txt",
+        "notices/a14cc25e10d40a3aa705b7de2fb764a6535d8ee9b2db4e1724900585457dfd55.txt",
+        "notices/a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056.txt",
+        "notices/d25e82e26acd42ca3ccc9993622631163425b869b9e16284226d534cff6470f2.txt",
+        "notices/e7d4f4fb20358f314210a892ae17351e04993813646f697ec387385ca2a36918.txt",
+        "notices/fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec.txt"
+      ],
+      "delivery": {
+        "kind": "bundled",
+        "index": "licenses/fem/index.html",
+        "instructions": "evidence/recipient-source-replacement.md"
+      }
+    },
+    {
+      "name": "Pyodide",
+      "version": "0.29.3 / CPython 3.13.2 / Emscripten 4.0.9",
+      "profile": "mpl-covered-source",
+      "licenseStatus": "retained-original-terms",
+      "licenseBasis": "Original component and vendored notice texts retained; no inferred SPDX classification or legal warranty",
+      "notices": [
+        "notices/122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534.txt",
+        "notices/1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d.txt",
+        "notices/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt",
+        "notices/2c9c2acb9743e6b007b91350475308aee44691d96aa20eacef8e199988c8c388.txt",
+        "notices/4919cfb14a73cd64fcef67b107613970cf1659a09aa675dba31314f373bc7204.txt",
+        "notices/539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b.txt",
+        "notices/56f7df65203d4858dac19cafe3a84a8c49abaff56b67d32d2d463d5fef6e440b.txt",
+        "notices/620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86.txt",
+        "notices/62f2c9c2c75d511170eb464ad5f83b78cc1f37eb2eb49c2846c9aa6c4557ee99.txt",
+        "notices/78b12c3a81360b357002334f0e70ea0e92eebf7a9b358805c03c48484945f3bb.txt",
+        "notices/845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243.txt",
+        "notices/899da9d991cb211a3642b84e82a9ae0b4b4e44546fd207e34d7d4ec2eb40f420.txt",
+        "notices/b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d.txt",
+        "notices/e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c.txt",
+        "notices/f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af.txt"
+      ],
+      "delivery": {
+        "kind": "bundled",
+        "index": "licenses/fem/index.html",
+        "instructions": "evidence/recipient-source-replacement.md"
+      },
+      "sources": [
+        "sources/upstream-source-materials.zip"
+      ],
+      "sourceAccess": {
+        "kind": "bundled",
+        "index": "licenses/fem/index.html"
+      }
+    },
+    {
+      "name": "netgen-mesher",
+      "version": "6.2.2606.post5.dev0",
+      "profile": "lgpl-source-relink",
+      "licenseStatus": "retained-original-terms",
+      "licenseBasis": "Original component and vendored notice texts retained; no inferred SPDX classification or legal warranty",
+      "notices": [
+        "notices/a190dc9c8043755d90f8b0a75fa66b9e42d4af4c980bf5ddc633f0124db3cee7.txt",
+        "notices/b1d90f091e62f5c1e59ea6db105348b20c6404c0c5ed20d91db5235b511ac288.txt",
+        "notices/915b533dea3bff17c3fca634928176a4d831c69ce99257809637beebc88596b6.txt"
+      ],
+      "delivery": {
+        "kind": "bundled",
+        "index": "licenses/fem/index.html",
+        "instructions": "evidence/recipient-source-replacement.md"
+      },
+      "sources": [
+        "sources/upstream-source-materials.zip",
+        "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "sources/netgen-654ed121-build-r4-recipe.zip"
+      ],
+      "sourceAccess": {
+        "kind": "bundled",
+        "index": "licenses/fem/index.html"
+      },
+      "scripts": [
+        "sources/netgen-654ed121-build-r4-recipe.zip",
+        "sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+        "sources/netgen-rebuild/replacement-plan.json"
+      ],
+      "modificationNotices": [
+        "evidence/netgen-build-source-map.json",
+        "sources/netgen-rebuild/netgen-replacement-marker.patch"
+      ],
+      "replacement": {
+        "route": "lgpl-2.1-section-6a-source-relink",
+        "instructions": "evidence/recipient-source-replacement.md",
+        "applicationSource": "sources/pointercad-beam-application-source.zip",
+        "evidence": "sources/netgen-rebuild/replacement-evidence.json"
+      }
+    }
+  ],
+  "diagnosticHistory": {
+    "source": "manifest.json unresolved and correspondingSourceComplete/legalClearance remain unchanged",
+    "meaning": "Historical whole-object/link-map/bit reproducibility and legal-warranty flags are not independent publication obligations"
+  },
+  "open": [
+    "Recipient instructions are provided by the separate documentation owner; missing/unpinned bytes reject until integrated",
+    "Netgen actual recipient replacement proof is not yet supplied; no historical source-map flag is relabelled as current success"
+  ]
+}

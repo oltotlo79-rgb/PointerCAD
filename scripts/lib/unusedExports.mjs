@@ -19,6 +19,9 @@ const leavesWorkspace = (from, spec) => {
   return target === '..' || target.startsWith('../');
 };
 const EXCLUDED = [/^packages\/fem\/runtime\/assets\//u, /(?:^|\/)dist\//u, /(?:^|\/)node_modules\//u, /\.d\.(?:ts|mts|cts)$/u];
+// Shipped rebuild input: stage_replacement.py copies these exact bytes to the isolated copy's e2e/tests.
+// It is not executable at this source location. A workspace import of it must still be unresolved.
+const SHIPPED_REBUILD_INPUTS = new Set(['packages/fem/runtime/sources/netgen-rebuild/fem-netgen-replacement.spec.ts']);
 // The audit listed `git ls-files -co --exclude-standard`; these are the .gitignore directory rules for the walked roots.
 const SKIP_DIRECTORIES = new Set(['dist', 'dist-types', 'out', 'build', '.vite', 'coverage', 'node_modules', '.git',
   'playwright-report', 'test-results', '__pycache__', 'shots', '.pnpm-store', 'scratchpad']);
@@ -35,7 +38,7 @@ const ENTRY_PATTERNS = [
 ];
 
 export function isInventorySource(name) {
-  return CODE.test(name) && !EXCLUDED.some(pattern => pattern.test(name));
+  return CODE.test(name) && !SHIPPED_REBUILD_INPUTS.has(name) && !EXCLUDED.some(pattern => pattern.test(name));
 }
 
 /** collect.mjs classify(): tool files are consumers only and never counted. */
@@ -400,7 +403,7 @@ export function inspectUnusedExports(rootDir, virtualFiles) {
     }
     return assets.get(name);
   };
-  const fileExists = name => all.has(name) || assetExists(name);
+  const fileExists = name => (!SHIPPED_REBUILD_INPUTS.has(name) && all.has(name)) || assetExists(name);
   const facts = names.filter(isInventorySource).map(name => collectExportFacts(name, read(name)));
   const byPath = new Map(facts.map(fact => [fact.path, fact]));
   const packages = readPackageExports(names, read);

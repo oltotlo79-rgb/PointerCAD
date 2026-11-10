@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { ESLint, Linter } from 'eslint';
 import tseslint from 'typescript-eslint';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const file = 'e2e/tests/assembly.spec.ts';
@@ -40,5 +40,123 @@ describe('E2Eの再計算待ちを共通の世代・結末・有限上限へ集�
       'const state = await readRecomputeStats(page); expect(state.requestedGeneration).toBe(2);',
       'await expect.poll(async () => page.locator(".row").count()).toBe(2);',
     ]) expect(lint(source), source).toEqual([]);
+  });
+});
+
+// The production wait executes unchanged; only the browser and Playwright assertion adapter are fake.
+const pollState = vi.hoisted(() => ({ timeouts: [] as number[], outcomes: [] as unknown[] }));
+vi.mock('@playwright/test', async () => {
+  const assertions = await import('vitest');
+  const assertion = (value: unknown, message?: string) => Object.assign(assertions.expect(value, message), {
+    toBeVisible: () => Promise.resolve(),
+  });
+  return { expect: Object.assign(assertion, {
+    poll: (read: () => Promise<unknown>, options: { timeout: number }) => {
+      pollState.timeouts.push(options.timeout);
+      return { not: { toBe: async (waiting: unknown): Promise<void> => {
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          const outcome = await read();
+          pollState.outcomes.push(outcome);
+          if (outcome !== waiting) return;
+        }
+        throw new Error('Fake polling exhausted the finite supplied observations');
+      } } };
+    },
+  }) };
+});
+
+vi.mock('../../../e2e/tests/electronAppFlow.js', () => ({ openTarget: () => Promise.resolve() }));
+
+interface WaitModule {
+  waitForRecompute(page: unknown, token: { requestedGeneration: number; startedAtMs: number }, kind?: 'kernel' | 'exact-math'): Promise<void>;
+  waitForRecomputeOutcome(page: unknown, token: { requestedGeneration: number; startedAtMs: number }, outcome: 'success' | 'failed' | 'cancelled', kind?: 'kernel' | 'exact-math'): Promise<void>;
+}
+interface WaitObservation {
+  requestedGeneration: number;
+  completedGeneration: number;
+  pendingWaiters: number;
+  lastOutcome: 'success' | 'failed';
+  isComputing: boolean;
+}
+function observedPage(observations: readonly WaitObservation[]) {
+  let reads = 0;
+  return {
+    reads: () => reads,
+    evaluate: () => {
+      const stats = observations[reads];
+      reads += 1;
+      if (stats === undefined) throw new Error('Unexpected observation after the terminal result');
+      return Promise.resolve({ stats, progress: '' });
+    },
+  };
+}
+
+// importActual loads the actual E2E module through Vite, without adding it to this package's TS rootDir.
+const waits = await vi.importActual<WaitModule>('../../../e2e/tests/recompute.ts');
+const reopening = await vi.importActual<{ reopenPart(page: unknown, info: unknown, filename: string): Promise<void> }>('../../../e2e/tests/reopenPart.ts');
+const math = await vi.importActual<{ EXACT_MATH_ENGINE_LIMITS: { readonly totalMs: number } }>('../../expression/src/math/publicClient.js');
+const release = await vi.importActual<{ RECOMPUTE_TIMEOUT_MS: number }>('./releasePerformance.js');
+
+describe('実待機関数の有限上限と終端の挙動', () => {
+  const done: WaitObservation = { requestedGeneration: 9, completedGeneration: 9, pendingWaiters: 0, lastOutcome: 'success', isComputing: false };
+  const token = () => ({ requestedGeneration: 8, startedAtMs: Date.now() });
+  beforeEach(() => { pollState.timeouts.length = 0; pollState.outcomes.length = 0; });
+  it('通常の待機はkernel正本の上限を使う', async () => {
+    await waits.waitForRecompute(observedPage([done]), token());
+    expect(pollState.timeouts).toEqual([release.RECOMPUTE_TIMEOUT_MS]);
+  });
+  it('任意の文書を開く共通入口が既定で数学正本を選び、新しい世代を待つ', async () => {
+    const chosen: string[] = [];
+    const values: unknown[] = [
+      { ...done, requestedGeneration: 8, completedGeneration: 8 },
+      { stats: { ...done, pendingWaiters: 1 }, progress: '' },
+      { stats: done, progress: '' },
+    ];
+    const open = { click: () => Promise.resolve() };
+    const page = {
+      waitForFunction: () => Promise.resolve(),
+      reload: () => Promise.resolve(),
+      getByRole: () => ({ getByRole: () => open }),
+      waitForEvent: () => Promise.resolve({ setFiles: (path: string) => { chosen.push(path); return Promise.resolve(); } }),
+      evaluate: () => {
+        const value = values.shift();
+        if (value === undefined) throw new Error('Unexpected read after reopening completed');
+        return Promise.resolve(value);
+      },
+    };
+    const filename = 'arbitrary-formula-document.pcad';
+    await reopening.reopenPart(page, { outputPath: (name: string) => `/fake/${name}` }, filename);
+    expect(chosen).toEqual([`/fake/${filename}`]);
+    expect(pollState.timeouts).toEqual([math.EXACT_MATH_ENGINE_LIMITS.totalMs]);
+    expect(pollState.outcomes).toEqual(['waiting', 'success']);
+    expect(values).toEqual([]);
+  });
+  it('数学区分は実クライアント正本の上限を使う', async () => {
+    await waits.waitForRecompute(observedPage([done]), token(), 'exact-math');
+    expect(pollState.timeouts).toEqual([math.EXACT_MATH_ENGINE_LIMITS.totalMs]);
+  });
+  it('前世代・未完の最新世代・pendingありを成功とせず最新完了まで待つ', async () => {
+    const page = observedPage([
+      { ...done, requestedGeneration: 8, completedGeneration: 8 },
+      { ...done, completedGeneration: 8 },
+      { ...done, pendingWaiters: 1 },
+      done,
+    ]);
+    await waits.waitForRecompute(page, token(), 'exact-math');
+    expect(pollState.outcomes).toEqual(['waiting', 'waiting', 'waiting', 'success']);
+    expect(page.reads()).toBe(4);
+  });
+  it('最新世代の失敗はpendingが残っていても次の観測を待たず通知する', async () => {
+    const page = observedPage([{ ...done, lastOutcome: 'failed', pendingWaiters: 1 }, done]);
+    await expect(waits.waitForRecompute(page, token(), 'exact-math')).rejects.toThrow('再計算待ち失敗');
+    expect(pollState.outcomes).toEqual(['failed']);
+    expect(page.reads()).toBe(1);
+  });
+  it('明示的な失敗期待も実Outcome関数で直ちに完了する', async () => {
+    const page = observedPage([{ ...done, lastOutcome: 'failed' }]);
+    await waits.waitForRecomputeOutcome(page, token(), 'failed', 'exact-math');
+    expect(pollState.outcomes).toEqual(['failed']);
+    expect(pollState.timeouts).toEqual([math.EXACT_MATH_ENGINE_LIMITS.totalMs]);
+    expect(page.reads()).toBe(1);
   });
 });

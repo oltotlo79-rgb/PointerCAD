@@ -32,6 +32,56 @@ function rejection(value: unknown): string {
 }
 
 describe('source-bound FE yield capacity', () => {
+  it.each(cases)('round-trips an explicitly selected source snapshot for %s without borrowing catalogue objects',
+    (id, yieldMPa, sourceId, thicknessMm, condition, evidence, basis) => {
+      const supplied = { materialConditionId: id, yieldMPa, sourceId, thicknessMm, condition, evidence, basis,
+        sourceSnapshot: { ...STRENGTH_SOURCES[sourceId] } };
+      const before = structuredClone(supplied), decoded = readAnalysisMaterialCapacity(supplied);
+      expect(decoded).toEqual(supplied);
+      expect(decoded.sourceSnapshot).not.toBe(supplied.sourceSnapshot);
+      expect(decoded.sourceSnapshot).not.toBe(STRENGTH_SOURCES[sourceId]);
+      const material = beamCadFixture().definition.materials[0];
+      expect(readBeamMaterials(JSON.parse(JSON.stringify([{ ...material, capacity: decoded }])))[0].capacity).toEqual(supplied);
+      const saved = readSolidCadSavedInput(JSON.parse(JSON.stringify({ ...solidSaved(), capacity: decoded })));
+      expect(saved.capacity).toEqual(supplied);
+      expect(supplied).toEqual(before);
+    });
+
+  it('reads, opens and re-saves a legacy document preserving its seven fields without adding a snapshot or deleting its block', () => {
+    const fixture = beamCadFixture(), original = capacity();
+    const attachment = { schema: 'pointercad-beam-inputs/1', analyses: [{ kind: 'standard-members',
+      definition: { ...fixture.definition, materials: fixture.definition.materials.map(material => ({ ...material, capacity: original })) } }] };
+    const document = withBeamAnalysisInputs(fixture.document, attachment), before = JSON.stringify(document);
+    const checked = readBeamAnalysisInputs(document.beamAnalysisInputs, document.id);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) throw new Error('Legacy input must remain readable');
+    const resaved = withBeamAnalysisInputs(document, JSON.parse(JSON.stringify(checked.value)));
+    expect(JSON.stringify(document)).toBe(before);
+    expect(resaved).toEqual(document);
+    expect(JSON.stringify(resaved)).not.toContain('sourceSnapshot');
+    expect(JSON.stringify(resaved)).toContain('jisf-g3101-draft');
+    expect(readAnalysisMaterialCapacity(original)).toEqual(original);
+    expect(Object.keys(readAnalysisMaterialCapacity(original))).toHaveLength(7);
+    expect(readSolidCadSavedInput(JSON.parse(JSON.stringify({ ...solidSaved(), capacity: original }))).capacity).toEqual(original);
+  });
+
+  it('retains a well-formed historical snapshot rather than silently updating its SHA during read/re-save', () => {
+    const historical = { ...capacity(), sourceSnapshot: { ...STRENGTH_SOURCES['jisf-g3101-draft'], sha256: '0'.repeat(64) } };
+    const read = readAnalysisMaterialCapacity(historical);
+    expect(read).toEqual(historical);
+    expect(readSolidCadSavedInput(JSON.parse(JSON.stringify({ ...solidSaved(), capacity: read }))).capacity).toEqual(historical);
+    expect(read.sourceSnapshot?.sha256).not.toBe(STRENGTH_SOURCES['jisf-g3101-draft'].sha256);
+  });
+
+  it.each([undefined, null, { ...STRENGTH_SOURCES['jisf-g3101-draft'], sha256: 'not-a-digest' },
+    { ...STRENGTH_SOURCES['jisf-g3101-draft'], sha256: 'A'.repeat(64) },
+    { ...STRENGTH_SOURCES['jisf-g3101-draft'], verified: true },
+    { ...STRENGTH_SOURCES['jisf-g3101-draft'], [Symbol('hidden')]: true },
+    Object.fromEntries(Object.entries(STRENGTH_SOURCES['jisf-g3101-draft']).filter(([key]) => key !== 'standardEdition')),
+  ])('refuses malformed explicitly present source snapshots without replacing them from the catalogue: %j', sourceSnapshot => {
+    expect(() => readAnalysisMaterialCapacity({ ...capacity(), sourceSnapshot })).toThrow(InputIssue);
+  });
+
   it.each(cases)('matches W01 values, source strings and conditions for %s', (id, mpa, sourceId, thicknessMm, condition, evidence, basis) => {
     const preset = findStrengthMaterial(id);
     expect(preset?.yieldStress.mpa).toBe(String(mpa));

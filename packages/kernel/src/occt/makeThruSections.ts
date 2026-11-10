@@ -114,6 +114,7 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
+import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { pickSubShape } from './pickSubShape.js';
 import { hasSolid, isValidShape, measureVolume } from './solidMesh.js';
 import { tangentConeThroughCircle, tangentPointOnSphere } from './sphereTangent.js';
@@ -125,8 +126,6 @@ const MINIMUM_SECTION_COUNT = 2;
 /** これ未満の体積(mm³)は「立体にならなかった」とみなす(他の make*.ts と同じ下限)。 */
 const MIN_SOLID_VOLUME_MM3 = 1e-9;
 
-/** 縫合のつなぎ目とみなす許容量(mm)。`ThruSections` の `pres3d` と同じ値に揃える。 */
-const SEWING_TOLERANCE = 1.0e-6;
 
 /** 幾何の判定に使う許容誤差。長さ 0 のベクトル・平面でない輪郭を見分けるのに使う。 */
 const TOLERANCE = 1e-9;
@@ -485,7 +484,7 @@ function sewToSolid(
   keep: Allocations['keep'],
 ): TopoDS_Shape {
   // 第 2〜第 5 引数は OCCT の既定の組み合わせ(sewSolid.ts と同じ)。
-  const sewing = keep(new oc.BRepBuilderAPI_Sewing(SEWING_TOLERANCE, true, true, true, false));
+  const sewing = keep(new oc.BRepBuilderAPI_Sewing(APPROXIMATION_TOLERANCE_MM, true, true, true, false));
   for (const part of parts) {
     sewing.Add(part);
   }
@@ -739,7 +738,7 @@ function makeGeneralSphereSolid(
 
   // 罫線の殻。輪郭の点と接点が同じ数・同じ並びなので、対応の付け直しは要らない
   // (`CheckCompatibility` を呼ぶと余計な分割が起きて遅くなる。2026-09-05 実測)。
-  const lateral = keep(new oc.BRepOffsetAPI_ThruSections(false, true, SEWING_TOLERANCE));
+  const lateral = keep(new oc.BRepOffsetAPI_ThruSections(false, true, APPROXIMATION_TOLERANCE_MM));
   // OCCT enables compatibility correction by default. The two polygons were
   // constructed point-for-point, so keep that correspondence explicitly.
   lateral.CheckCompatibility(false);
@@ -751,7 +750,7 @@ function makeGeneralSphereSolid(
   }
 
   // 球冠を張る殻。接点の列を球面に沿って帽の中心へ寄せた輪を挟み、頂点で閉じる。
-  const cap = keep(new oc.BRepOffsetAPI_ThruSections(false, false, SEWING_TOLERANCE));
+  const cap = keep(new oc.BRepOffsetAPI_ThruSections(false, false, APPROXIMATION_TOLERANCE_MM));
   // Keep OCCT's compatibility correction for the smooth cap: it contributes
   // to the fitted surface, unlike the point-for-point ruled lateral shell.
   cap.AddWire(tangentPolygon);
@@ -890,7 +889,7 @@ function makePlainThruSections(
   profiles: readonly SectionSource[],
   keep: Allocations['keep'],
 ): TopoDS_Shape {
-  const maker = keep(new oc.BRepOffsetAPI_ThruSections(spec.closed, spec.ruled, SEWING_TOLERANCE));
+  const maker = keep(new oc.BRepOffsetAPI_ThruSections(spec.closed, spec.ruled, APPROXIMATION_TOLERANCE_MM));
   // FR-435: 既存の罫線面/ロフトは変更せず、明示したロフトだけ近似を平滑化する。
   // これはロフト内部の指定であり、借りた断面の隣接面へのG1接続を保証しない。
   if (!spec.ruled && spec.smooth) maker.SetSmoothing(true);

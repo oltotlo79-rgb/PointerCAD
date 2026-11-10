@@ -42,7 +42,7 @@ export interface FunctionSite {
 
 export type BaselineEntry = readonly [id: string, lines: number];
 
-export interface BaselineRow {
+interface BaselineRow {
   readonly file: string;
   readonly functions: readonly BaselineEntry[];
 }

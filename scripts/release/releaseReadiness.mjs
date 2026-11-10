@@ -28,7 +28,9 @@ import process, { argv } from 'node:process';
 import { log } from 'node:console';
 import { fileURLToPath, URL } from 'node:url';
 import { verifyReleaseManifest } from './releaseManifest.mjs';
-import { assertSbomMatchesReleaseManifest, assertSbomPublishable, findSbomGaps, matchSbomToReleaseManifest } from './sbom.mjs';
+import { DESKTOP_RENDERER_PREFIX, ELECTRON_EXECUTABLE_NOTICES, assertSbomMatchesReleaseManifest, assertSbomPublishable, findSbomGaps,
+  matchSbomToDesktopPackage, matchSbomToReleaseManifest, sbomElectronComponent } from './sbom.mjs';
+import { ELECTRON_NOTICE_COPY_FOLDER, electronExecutableNoticeProblems } from './desktopInstallerResources.mjs';
 import { desktopPackagePlan } from './desktopPackageTargets.mjs';
 import { collectDesktopFiles, sourceFileHash, sourceText } from './desktopFileInventory.mjs';
 import { assertNativeControlDescriptions } from '../manual/control-inventory.mjs';
@@ -95,7 +97,7 @@ const CHECKS = Object.freeze([
   { id: 'asset-size', group: '資産', title: 'Web の各ファイルが 26,214,400 バイト以下' },
   { id: 'asset-count', group: '資産', title: 'Web のファイル数が 1,000 以下' },
   { id: 'sbom-notices', group: 'SBOM', title: '許諾の原文の欠けが無い' },
-  { id: 'sbom-manifest', group: 'SBOM', title: 'SBOM の配布ファイル・版・commit が公開一覧と一致する' },
+  { id: 'sbom-manifest', group: 'SBOM', title: 'SBOM の配布ファイル・版・commit が公開一覧と、Electron の版・同梱の原文がデスクトップの候補と一致する' },
   { id: 'release-manifest', group: '公開一覧', title: 'release-manifest.json が候補の記録と実物からの再計算と一致する' },
   { id: 'readme-links', group: 'README', title: 'pointercad:release-links の導線の種類・版・未公開の案内' },
   { id: 'w21-dedicated', group: 'W21', title: 'Original dedicated compile/restart measurements are accepted for these release inputs' },
@@ -548,7 +550,32 @@ function checkSbomNotices(sbom) {
   return { problems, summary: `部品 ${sbom.components.length}件・原文の欠け ${gaps.unresolvedNotices.length}件`,
     notes: gaps.unclassifiedLicenses.length > 0 ? [`SPDX 識別子が未分類の部品 ${gaps.unclassifiedLicenses.length}件（原文はある。参考）: ${gaps.unclassifiedLicenses.join('・')}`] : [] };
 }
-function checkSbomManifest(sbom, saved) {
+/**
+ * The desktop half of the SBOM check, per desktop candidate: the one Electron component's version equals the
+ * electronVersion its desktop-package.json was packaged with, every distributed file is in its packaged inventory at
+ * dist/renderer/<path> with the same SHA-256, and the byte copies of the notices next to its executable (kept by
+ * package-desktop.mjs's afterPack) are the original texts, LICENSE.electron.txt equal to the SBOM's electron/LICENSE.
+ * The copies are the bytes of the unpacked app the packages were made from; the packages themselves are not opened.
+ */
+function checkSbomDesktop(sbom, context) {
+  const problems = [], electron = sbomElectronComponent(sbom), licenseSha256 = electron.licenseFile.split('|')[1];
+  const receipts = context.receipts(), candidates = context.candidates();
+  candidates.forEach((candidate, index) => {
+    const label = platformLabel(receipts[index].platform);
+    const desktopPackage = parseJson(candidate.packageManifestBytes, `${label} の desktop-package.json`);
+    if (!record(desktopPackage)) throw new Error(`${label} の desktop-package.json の形が違う`);
+    if (desktopPackage.electronVersion !== electron.version) {
+      problems.push(`SBOM の Electron の版 ${electron.version} ／ ${label} の候補 ${String(desktopPackage.electronVersion)}`);
+    }
+    const match = matchSbomToDesktopPackage(sbom, desktopPackage);
+    problems.push(...match.missing.map(item => `${label} の同梱一覧に無い SBOM のファイル: ${DESKTOP_RENDERER_PREFIX}${item.path}（${item.component}）`),
+      ...match.mismatched.map(item => `${label} の同梱一覧と hash が違う SBOM のファイル: ${DESKTOP_RENDERER_PREFIX}${item.path}（${item.component}）`));
+    if (!Array.isArray(candidate.executableNotices)) problems.push(`${label} の実行ファイル横の原文の控え（${ELECTRON_NOTICE_COPY_FOLDER}/）が無い`);
+    else problems.push(...electronExecutableNoticeProblems(candidate.executableNotices, licenseSha256).map(problem => `${label} の実行ファイル横の原文: ${problem}`));
+  });
+  return { problems, summary: `Electron ${electron.version} と実行ファイル横の原文 ${ELECTRON_EXECUTABLE_NOTICES.length}件をデスクトップの候補 ${candidates.length}件と照合` };
+}
+function checkSbomManifest(sbom, saved, context) {
   const match = matchSbomToReleaseManifest(sbom, saved);
   const problems = [...match.missing.map(item => `公開一覧に無い SBOM のファイル: ${item.path}（${item.component}）`),
     ...match.mismatched.map(item => `SBOM と hash が違うファイル: ${item.path}（${item.component}）`)];
@@ -559,7 +586,12 @@ function checkSbomManifest(sbom, saved) {
     .find(property => property?.name === 'pointercad:sourceCommit')?.value;
   if (commit === undefined) problems.push('SBOM に commit の記録が無い');
   else if (commit !== saved.sourceCommit) problems.push(`SBOM の commit ${String(commit)} ／ 公開一覧 ${String(saved.sourceCommit)}`);
-  return { problems, summary: `配布ファイル ${match.checked}件を照合` };
+  let desktop = '';
+  try {
+    const result = checkSbomDesktop(sbom, context);
+    problems.push(...result.problems); desktop = `・${result.summary}`;
+  } catch (error) { problems.push(`デスクトップの候補と照合できない: ${messageOf(error)}`); }
+  return { problems, summary: `配布ファイル ${match.checked}件を照合${desktop}` };
 }
 async function checkReleaseManifest(context) {
   const { input, need } = context, saved = context.saved();
@@ -920,7 +952,7 @@ const CHECK_BODIES = Object.freeze({
   'asset-size': context => checkAssetSize(context.webFiles()),
   'asset-count': context => checkAssetCount(context.webFiles()),
   'sbom-notices': context => checkSbomNotices(context.sbom()),
-  'sbom-manifest': context => checkSbomManifest(context.sbom(), context.saved()),
+  'sbom-manifest': context => checkSbomManifest(context.sbom(), context.saved(), context),
   'release-manifest': context => checkReleaseManifest(context),
   'readme-links': context => checkReadme(context),
 });
@@ -1047,7 +1079,12 @@ async function readDesktopStage(root, stage) {
     if (!entry.isFile() || entry.isSymbolicLink()) throw new Error(`配布物の置き場に想定外の項目: ${entry.name}`);
     artifacts.push({ name: entry.name, ...await streamDigest(join(artifactsFolder, entry.name)) });
   }
-  return { receiptBytes: await readFile(receiptPath), packageManifestBytes, stagedFiles, artifacts };
+  // package-desktop.mjs's afterPack copied these from next to the executable; an unreadable copy stays null and fails the SBOM check.
+  const executableNotices = [];
+  for (const name of ELECTRON_EXECUTABLE_NOTICES) {
+    executableNotices.push({ name, bytes: await readCandidateFile(join(stage, ELECTRON_NOTICE_COPY_FOLDER), name).catch(() => null) });
+  }
+  return { receiptBytes: await readFile(receiptPath), packageManifestBytes, stagedFiles, artifacts, executableNotices };
 }
 async function manualSourceInputs(root, webFiles) {
   const manifest = parseJson(webFiles.find(file => file.path === 'manual/manifest.json')?.bytes, 'manual/manifest.json');

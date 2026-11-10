@@ -7,6 +7,10 @@
   "oofemSourceCommit": "214b161ed3acb471f2d0104b004c37fd73bafaa2",
   "abi": "cp313-cp313-pyodide_2025_0_wasm32",
   "files": {
+    "sources/netgen-rebuild/replacement-evidence.json": {
+      "bytes": 2042,
+      "sha256": "a66b9792d498b55d68b607b9346185d66ef28646cc6113cc6c2fa26fb01f6fec"
+    },
     "assets/solidFiniteMaterial.py": {
       "bytes": 32179,
       "sha256": "4cb9f7f2370e2ba01fa4b2aaae6fa39f2bd32d124cbaf648e73e59e3477fa837"
@@ -400,12 +404,12 @@
       "sha256": "9eee0266fb68942775cebe7e34cf35b24455926539cd4f46e6d1808146aa66fd"
     },
     "sources/pointercad-beam-application-source.zip": {
-      "sha256": "6643ab4d0d47e2f5c3d4170d8b4aa527130e95c2634746a98f2e46d67e34c942",
-      "bytes": 14410081
+      "sha256": "0a67145ca1065a8349aa90875c7e3b2139e5eedd24cfdcae2dce2ca564106f35",
+      "bytes": 14473107
     },
     "evidence/application-source-index.json": {
-      "sha256": "23fae2c1031aa20740fd5b96ff93e3e069b36d92d6b652916cff537ee055ef12",
-      "bytes": 1033986
+      "sha256": "2290e11b77aecf96f17fdd8cec16abf7c8a250c4e8990d0a6bc4ebd6021e915a",
+      "bytes": 1036705
     },
     "sources/native-rebuild/oofem-051-timer.patch": {
       "bytes": 8668,
@@ -588,8 +592,8 @@
       "bytes": 16262
     },
     "evidence/netgen-build-source-map.json": {
-      "bytes": 28610,
-      "sha256": "49f38e116d4865478b23429a7df11d744aa1108a1ecd6821f4158b11a9ef70a6"
+      "bytes": 29609,
+      "sha256": "ba05f66fed8a86e648020a3ebfef7f6f4c2f5e348583e6f9ec6b5edae6dfe5ce"
     },
     "notices/a016208434ebc6a342c52fae34e7f3045d6a325089963b82cbee5bf3c8ae93cf.txt": {
       "sha256": "a016208434ebc6a342c52fae34e7f3045d6a325089963b82cbee5bf3c8ae93cf",
@@ -638,6 +642,42 @@
     "assets/solidContactDriver.py": {
       "bytes": 15407,
       "sha256": "7d1acc882e3fc38efeeead53c1b2a61fbb9bcfff024cdec096f78bc6796b4575"
+    },
+    "evidence/distribution-obligations.json": {
+      "bytes": 8236,
+      "sha256": "c185ecbf3a94843a4ecc96df199ef80ec88db7825541c43976d01dcc63efdff6"
+    },
+    "evidence/recipient-source-replacement.md": {
+      "bytes": 31052,
+      "sha256": "0ef507e4a61f5e3f4a0b1d3f9bb557b8d9548755e929d1e25d1d1ae128a595ae"
+    },
+    "sources/netgen-rebuild/fem-netgen-replacement.spec.ts": {
+      "bytes": 10362,
+      "sha256": "95568112418183f62aa3629258b24984e90580c047f903435335ea7f5535a053"
+    },
+    "sources/netgen-rebuild/netgen-replacement-marker.patch": {
+      "bytes": 391,
+      "sha256": "f50252df94ae725290a3436763f9e2e2f9529b5b6836d6d60f6c7ca5b0cfec6a"
+    },
+    "sources/netgen-rebuild/netgen_rebuild_steps.py": {
+      "bytes": 16518,
+      "sha256": "52f93713eedecba9c9eb6b05f7b8e8fb567f2940a0a34052de34cc81f704ac5e"
+    },
+    "sources/netgen-rebuild/pins.json": {
+      "bytes": 5262,
+      "sha256": "1ddc3333a600e1e61bc85a46bd411da10c043d8c2be66a52ecc0e8035227548b"
+    },
+    "sources/netgen-rebuild/rebuild-netgen-pyodide.sh": {
+      "bytes": 14957,
+      "sha256": "cb132ba39d961e250478bdb821f352d8a421a75980d547702af1ae2162551a09"
+    },
+    "sources/netgen-rebuild/replacement-plan.json": {
+      "bytes": 21564,
+      "sha256": "dbdc827d1d65567bce6be2e767b259f45d31296d837f520514fe6d9a27260a6a"
+    },
+    "sources/netgen-rebuild/stage_replacement.py": {
+      "bytes": 9599,
+      "sha256": "1e4a74ca80e433bb77cd4603152869a9c2baeb0f41d42de0711fbfe7d0e0c53f"
     }
   },
   "components": [
@@ -742,5 +782,6 @@
         "sha256": "45e438cd0fe9623cf4dd9105b1b30ac9a2c119a1bfe73303dfa37e356b29854c"
       }
     ]
-  }
+  },
+  "distributionObligations": "evidence/distribution-obligations.json"
 }

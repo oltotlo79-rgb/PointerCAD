@@ -66,6 +66,7 @@ import type { OcctShapeHandle } from './makeBox.js';
 import { makePlanarFace } from './makePlanarFace.js';
 import { makeCurveEdge } from './makeSketchEdges.js';
 import { continuousCurvePieces } from './continuousCurvePieces.js';
+import { APPROXIMATION_TOLERANCE_MM } from './tolerances.js';
 import { MISSING_SUB_SHAPE_MESSAGE, pickSubShape } from './pickSubShape.js';
 import { measureArea } from './solidMesh.js';
 import { shapeBodyKind } from './shapeBodyKind.js';
@@ -77,8 +78,6 @@ const MINIMUM_SECTION_COUNT = 2;
 /** これ以下(mm²)の面積は「面ができなかった」とみなす。体積の下限(1e-9)と桁を揃える。 */
 const MIN_SURFACE_AREA_MM2 = 1e-9;
 
-/** ロフトの面のつなぎ目の許容量(mm)。`makeThruSections.ts` の `pres3d` と同じ値。 */
-const SECTION_TOLERANCE = 1.0e-6;
 
 /** 回転角の上限(ラジアン)。`makeSolidSweep.ts` と同じく、丸めの揺れぶんだけ余裕を持たせる。 */
 const MAX_REVOLVE_ANGLE = 2 * Math.PI + 1e-9;
@@ -375,7 +374,7 @@ function loftProfiles(
   if (input.sections.length < MINIMUM_SECTION_COUNT) {
     throw new Error(TOO_FEW_SECTIONS_MESSAGE);
   }
-  const maker = keep(new oc.BRepOffsetAPI_ThruSections(false, input.ruled, SECTION_TOLERANCE));
+  const maker = keep(new oc.BRepOffsetAPI_ThruSections(false, input.ruled, APPROXIMATION_TOLERANCE_MM));
   // 辺の数と向きを揃える(`makeThruSections.ts` と同じ。輪郭ごとに稜線の数が違ってもよい)。
   maker.CheckCompatibility(true);
   for (const section of input.sections) {

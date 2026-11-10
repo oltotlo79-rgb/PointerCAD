@@ -105,7 +105,13 @@ export interface PreReleaseInput {
   /** null when the part could not be read; readErrors gives the reason and the dependent checks fail. */
   readonly sourceCommit: string | null;
   readonly sourceInputs: ReleaseManifestInput['sourceInputs'] | null;
-  readonly candidates: readonly ReleaseCandidateInput[] | null;
+  /**
+   * executableNotices: the byte copies of LICENSE.electron.txt and LICENSES.chromium.html that package-desktop.mjs's
+   * afterPack kept in dist/<stage>/executable-notices/ (bytes null when unreadable). Absent: the SBOM check fails.
+   */
+  readonly candidates: readonly (ReleaseCandidateInput & {
+    readonly executableNotices?: readonly { readonly name: string; readonly bytes: Uint8Array | null }[];
+  })[] | null;
   readonly webFiles: readonly OfflineAssetInput[] | null;
   readonly releaseManifest: Uint8Array | null;
   readonly sbom: Uint8Array | null;

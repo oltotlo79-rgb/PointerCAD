@@ -2,7 +2,7 @@ import { RigidWorkSequence } from './constraints/cooperativeRigid.js';
 import { drainRigidSteps, UNLIMITED_RIGID_WORK, type RigidWorkBudget, type RigidWorkPoint } from './constraints/solveRigid.js';
 import { createSubShapeReferenceResolver, type SolidBody } from '../kernelBridge.js';
 import { jointFramePairFromTargets, type JointFramePair } from './joints/jointFrames.js';
-import { resolveMateTarget, type MateTargetOutcome } from './constraints/mateTargets.js';
+import { resolveMateTarget, type MateTargetOutcome, type ResolveMateTargetOptions } from './constraints/mateTargets.js';
 import type { MateResidualTargetPair } from './constraints/mateResiduals.js';
 import { diagnoseMatesSteps, solveMatesSteps } from './constraints/solveMates.js';
 import { resolveAssembly, type ResolveAssemblyOptions, type ResolvedAssembly, type ResolvedSubAssembly } from './resolveAssembly.js';
@@ -26,20 +26,31 @@ export function resolveConstrainedAssembly(document: AssemblyDocument,
 }
 
 /**
+ * Face/edge lookup of mate/joint targets on the recomputed part bodies: the body of the part key with the saved
+ * feature id, matched by the shared sub-shape resolver (one reference cache per call). Only a unique match gives
+ * geometry; a missing body or a reference that no longer matches gives null. Shared by the resolver below and the
+ * ui subassembly occurrence drives (`assemblyOccurrenceDriveSlice.ts`).
+ */
+export function createBodyMateTargetOptions(bodies: ReadonlyMap<string, readonly SolidBody[]>): ResolveMateTargetOptions {
+  const resolveReference = createSubShapeReferenceResolver();
+  return {
+    subShape: (key, ref) => {
+      const body = bodies.get(key)?.find((item) => item.featureId === ref.bodyFeatureId);
+      const resolution = body === undefined ? null : resolveReference(body, ref);
+      return resolution?.status === 'matched' ? resolution.match.geometry : null;
+    },
+  };
+}
+
+/**
  * Mate/joint target resolution against the recomputed part bodies, with one sub-shape reference cache per call.
  * Shared by the constrained solve below and the ui assembly recompute (`attachAssembly.ts`). `resolved` is read
  * when the resolver is created; both callers resolve every target before they replace their placements.
  */
 export function createBodyMateTargetResolver(resolved: ResolvedAssembly,
   bodies: ReadonlyMap<string, readonly SolidBody[]>): (target: MateTarget) => MateTargetOutcome {
-  const resolveReference = createSubShapeReferenceResolver();
-  return (target: MateTarget) => resolveMateTarget(target, resolved, {
-    subShape: (key, ref) => {
-      const body = bodies.get(key)?.find((item) => item.featureId === ref.bodyFeatureId);
-      const resolution = body === undefined ? null : resolveReference(body, ref);
-      return resolution?.status === 'matched' ? resolution.match.geometry : null;
-    },
-  });
+  const options = createBodyMateTargetOptions(bodies);
+  return (target: MateTarget) => resolveMateTarget(target, resolved, options);
 }
 
 function* resolveConstrainedAssemblySteps(document: AssemblyDocument,

@@ -1,3 +1,4 @@
+import { dotVec3 } from '../sketch/vec3.js';
 import type { DrawingDocument, GdtFeature, GdtShapeTarget } from '@pointercad/drawing';
 import { resolveDrawingDimensions, type DimensionResolveContext, type ResolvedDrawingDimension } from './dimensionTarget.js';
 import { resolveGdtFeature, type ResolvedGdtFeature } from './gdt.js';
@@ -10,7 +11,7 @@ function sameFeature(a: ResolvedGdtFeature, b: ResolvedGdtFeature): boolean {
     || a.kind !== b.kind || a.nominalSizeMm === null || b.nominalSizeMm === null || Math.abs(a.nominalSizeMm - b.nominalSizeMm) > 1e-7) return false;
   if (a.kind === 'medianPlane') return a.shapeKeys.length === b.shapeKeys.length && a.shapeKeys.every((key) => b.shapeKeys.includes(key));
   const u = a.direction, v = b.direction;
-  if (u === null || v === null || 1 - Math.abs(u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) > 1e-7) return false;
+  if (u === null || v === null || 1 - Math.abs(dotVec3(u, v)) > 1e-7) return false;
   const delta = a.point.map((value, index) => value - b.point[index]), along = delta.reduce((sum, value, index) => sum + value * u[index], 0);
   return Math.hypot(...delta.map((value, index) => value - along * u[index])) <= 1e-7;
 }

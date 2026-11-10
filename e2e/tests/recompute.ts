@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { RECOMPUTE_TIMEOUT_MS } from '../../packages/test-utils/src/releasePerformance.js';
 import { expect, type Page } from '@playwright/test';
+import { EXACT_MATH_ENGINE_LIMITS } from '../../packages/expression/src/math/publicClient.js';
 import { recomputeTerminalOutcome } from '../../packages/test-utils/src/recomputeState.js';
 import type { RecomputeStats } from '../../packages/ui/src/app/PointerCadApp.js';
 
@@ -13,6 +14,9 @@ import type { RecomputeStats } from '../../packages/ui/src/app/PointerCadApp.js'
 
 /** 初回読み込みを含む、画面検査の再計算待ちの上限。 */
 export const KERNEL_TIMEOUT_MS = RECOMPUTE_TIMEOUT_MS;
+
+/** Only exact-math document reopen uses the math engine preparation/calculation contract. */
+export type RecomputeWaitKind = 'kernel' | 'exact-math';
 
 /*
  * 検査専用の口 `pcadRecomputeStats` の形と結末の種類は、アプリの実物(PointerCadApp.tsx の
@@ -103,8 +107,10 @@ async function readSnapshot(page: Page): Promise<RecomputeSnapshot> {
  * `token` を省いた既存の呼び出しは、呼び出した時点の requestedGeneration を対象にする。
  * 失敗時はロードを含む待機時間・最後に見えた進捗・世代・結末を 1 つのメッセージへ出す。
  */
-export async function waitForRecompute(page: Page, token?: RecomputeToken): Promise<void> {
-  await waitForRecomputeOutcome(page, token, 'success');
+export async function waitForRecompute(
+  page: Page, token?: RecomputeToken, waitKind: RecomputeWaitKind = 'kernel',
+): Promise<void> {
+  await waitForRecomputeOutcome(page, token, 'success', waitKind);
 }
 
 /** 期待した失敗も、成功と同じ有限上限・世代・途中経過の確認で待つ。 */
@@ -112,7 +118,9 @@ export async function waitForRecomputeOutcome(
   page: Page,
   token: RecomputeToken | undefined,
   outcome: 'success' | 'failed' | 'cancelled',
+  waitKind: RecomputeWaitKind = 'kernel',
 ): Promise<void> {
+  const timeoutMs = waitKind === 'exact-math' ? EXACT_MATH_ENGINE_LIMITS.totalMs : KERNEL_TIMEOUT_MS;
   const current = token === undefined ? await readRecomputeStats(page) : null;
   const baseline = token?.requestedGeneration ?? (current?.requestedGeneration ?? 0) - 1;
   const startedAtMs = token?.startedAtMs ?? Date.now();
@@ -131,17 +139,19 @@ export async function waitForRecomputeOutcome(
             && last.stats.completedGeneration > baseline && last.stats.lastOutcome === 'cancelled') {
             return 'cancelled';
           }
-          return recomputeTerminalOutcome(last.stats, baseline);
+          const terminal = recomputeTerminalOutcome(last.stats, baseline);
+          // Pending kernel calls may still change the document after a successful generation.
+          return terminal === 'success' && last.stats?.pendingWaiters !== 0 ? 'waiting' : terminal;
         },
         {
-          timeout: KERNEL_TIMEOUT_MS,
+          timeout: timeoutMs,
           message: `操作後の最新世代の再計算が ${outcome} で完了すること`,
         },
       )
       .not.toBe('waiting');
     expect(last.stats?.lastOutcome, '最新世代の結末が期待と異なる場合は上限まで待たず知らせる').toBe(outcome);
     const elapsedMs = Date.now() - startedAtMs;
-    if (elapsedMs > 60_000) console.log(`[実測] 初回読み込みを含む再計算待ち: ${elapsedMs}ms / 上限${KERNEL_TIMEOUT_MS}ms`);
+    if (elapsedMs > 60_000) console.log(`[実測] 初回読み込みを含む再計算待ち: ${elapsedMs}ms / 上限${timeoutMs}ms`);
   } catch (error: unknown) {
     const stats = last.stats;
     const reason = error instanceof Error ? error.message : String(error);

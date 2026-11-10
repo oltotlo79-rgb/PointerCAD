@@ -735,3 +735,147 @@ it('同じwork requestを検出し、異なる版と委譲を許す', () => {
   expect(copiedWorkRequestCount(path, 'function request(source: string) { return mathTestRequest(source, options); }')).toBe(0);
   expect(copiedWorkRequestCount(path, '// ' + OLD_WORK_REQUEST.split('\n').join('\n// '))).toBe(0);
 });
+
+// P17: the original hand-written home-view page projection; the shared worldToCanvas delegation is allowed.
+const OLD_HOME_VIEW_PAGE_POINT = `export async function homeViewPagePoint(page: Page, world: WorldPoint): Promise<readonly [number, number]> {
+  const box = await page.locator('canvas.pcad-viewport__canvas').boundingBox();
+  if (box === null) throw new Error('ビューポートのcanvasの位置と大きさが取れませんでした。');
+  const view = sub(world, EYE);
+  const depth = -dot(view, CAMERA_Z);
+  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
+  const ndcX = (scale * dot(view, CAMERA_X)) / (depth * (box.width / box.height));
+  const ndcY = (scale * dot(view, CAMERA_Y)) / depth;
+  return [box.x + ((ndcX + 1) / 2) * box.width, box.y + ((1 - ndcY) / 2) * box.height];
+}`;
+function copiedHomeViewPagePointCount(path: string, source: string): number {
+  function fingerprints(file: ts.SourceFile): string[] {
+    const rows: string[] = [];
+    function visit(node: ts.Node): void {
+      if (ts.isFunctionDeclaration(node) && node.body && node.parameters.length === 2
+        && node.parameters.every(parameter => ts.isIdentifier(parameter.name))) {
+        const parameterNames = node.parameters.map(parameter => parameter.name.getText(file));
+        const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, node.body.getText(file));
+        const tokens: string[] = [];
+        for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+          const text = scanner.getTokenText(), index = token === ts.SyntaxKind.Identifier ? parameterNames.indexOf(text) : -1;
+          tokens.push(index < 0 ? text : `$parameter${index}`);
+        }
+        rows.push(JSON.stringify(tokens));
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(file); return rows;
+  }
+  const baseline = fingerprints(ts.createSourceFile('baseline.ts', OLD_HOME_VIEW_PAGE_POINT, ts.ScriptTarget.Latest, true));
+  if (baseline.length !== 1) throw new Error('Missing P17 home-view baseline');
+  return fingerprints(ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)).filter(value => value === baseline[0]).length;
+}
+
+it('P17のホーム視点の手書き射影をe2e補助へ再コピーせず、共通worldToCanvasへ委譲する', () => {
+  const files = productFiles(root, 'e2e/tests', path => /\.ts$/u.test(path));
+  expect(files.filter(path => copiedHomeViewPagePointCount(path, readFileSync(resolve(root, path), 'utf8')) > 0)).toEqual([]);
+  const support = 'e2e/tests/boltedJointTestSupport.ts';
+  expect(moduleSpecifiers(support, readFileSync(resolve(root, support), 'utf8'))).toContain('./homeViewProjection.js');
+});
+
+it('ホーム視点の手書き射影は同じ本体だけ検出し、委譲・別契約・コメントを許す', () => {
+  const path = 'e2e/tests/example.ts';
+  expect(copiedHomeViewPagePointCount(path, OLD_HOME_VIEW_PAGE_POINT)).toBe(1);
+  expect(copiedHomeViewPagePointCount(path, OLD_HOME_VIEW_PAGE_POINT
+    .replace('homeViewPagePoint(page: Page, world: WorldPoint)', 'pagePoint(target: Page, point: WorldPoint)')
+    .replace('await page.locator', 'await target.locator').replace('sub(world, EYE)', 'sub(point, EYE)'))).toBe(1);
+  expect(copiedHomeViewPagePointCount(path, '// ' + OLD_HOME_VIEW_PAGE_POINT.split('\n').join('\n// '))).toBe(0);
+  expect(copiedHomeViewPagePointCount(path, `const text = ${JSON.stringify(OLD_HOME_VIEW_PAGE_POINT)};`)).toBe(0);
+  expect(copiedHomeViewPagePointCount(path, OLD_HOME_VIEW_PAGE_POINT.replace('box.x + ', ''))).toBe(0);
+  expect(copiedHomeViewPagePointCount(path, `export async function homeViewPagePoint(page: Page, world: WorldPoint): Promise<readonly [number, number]> {
+  const box = await page.locator('canvas.pcad-viewport__canvas').boundingBox();
+  if (box === null) throw new Error('ビューポートのcanvasの位置と大きさが取れませんでした。');
+  const [x, y] = worldToCanvas(world, box.width, box.height);
+  return [box.x + x, box.y + y];
+}`)).toBe(0);
+});
+
+// P16 group 4: the home-view worldToCanvas body. The audit counted 14 copies but kept only 12 `where` rows, so the
+// 2 unsaved names are not listed here; the whole current e2e/tests tree is scanned for the same body instead.
+const HOME_VIEW_PROJECTION = 'e2e/tests/homeViewProjection.ts';
+const GROUP4_RECORDED_CONSUMERS = [
+  'e2e/tests/appearance.spec.ts', 'e2e/tests/faceOffsetFlow.ts', 'e2e/tests/measurementCaptureSupport.ts',
+  'e2e/tests/p4b-constraints.spec.ts', 'e2e/tests/p4b-timeline.spec.ts', 'e2e/tests/p4b-tracking.spec.ts',
+  'e2e/tests/p5-primitive-pick.spec.ts', 'e2e/tests/primitives.spec.ts', 'e2e/tests/sketch-extended.spec.ts',
+  'e2e/tests/sketchFinishCaptureSupport.ts', 'e2e/tests/solid.spec.ts', 'e2e/tests/solidCaptureSupport.ts',
+];
+// The recorded consumers' original body: 7 verbatim, the 4 capture supports with a one-line signature, solid.spec.ts with one comment.
+const OLD_HOME_VIEW_WORLD_TO_CANVAS = `function worldToCanvas(
+  world: WorldPoint,
+  widthPixels: number,
+  heightPixels: number,
+): readonly [number, number] {
+  const view = subtractPoints(world, CAMERA_EYE);
+  const depth = -dotPoints(view, CAMERA_Z);
+  const scale = 1 / Math.tan(VERTICAL_FIELD_OF_VIEW / 2);
+  const ndcX = (scale * dotPoints(view, CAMERA_X)) / (depth * (widthPixels / heightPixels));
+  const ndcY = (scale * dotPoints(view, CAMERA_Y)) / depth;
+  return [((ndcX + 1) / 2) * widthPixels, ((1 - ndcY) / 2) * heightPixels];
+}`;
+function homeViewProjectionRows(path: string, source: string): { readonly name: string; readonly tokens: string }[] {
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
+  const rows: { readonly name: string; readonly tokens: string }[] = [];
+  function visit(node: ts.Node): void {
+    if ((ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node))
+      && node.body && ts.isBlock(node.body) && node.parameters.length === 3
+      && node.parameters.every(parameter => ts.isIdentifier(parameter.name))) {
+      const nameNode = (ts.isArrowFunction(node) ? undefined : node.name)
+        ?? (ts.isVariableDeclaration(node.parent) ? node.parent.name : undefined);
+      const parameterNames = node.parameters.map(parameter => parameter.name.getText(file));
+      const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, node.body.getText(file));
+      const tokens: string[] = [];
+      for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+        const text = scanner.getTokenText(), index = token === ts.SyntaxKind.Identifier ? parameterNames.indexOf(text) : -1;
+        tokens.push(index < 0 ? text : `$parameter${index}`);
+      }
+      rows.push({ name: nameNode && ts.isIdentifier(nameNode) ? nameNode.text : '', tokens: JSON.stringify(tokens) });
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(file); return rows;
+}
+function copiedHomeViewProjectionCount(path: string, source: string, reference: string): number {
+  const baseline = homeViewProjectionRows(HOME_VIEW_PROJECTION, reference).filter(row => row.name === 'worldToCanvas');
+  const [canonical] = baseline;
+  if (baseline.length !== 1 || !canonical) throw new Error('Expected one canonical home-view worldToCanvas');
+  return homeViewProjectionRows(path, source).filter(row => row.tokens === canonical.tokens).length;
+}
+
+it('P16 group4のホーム視点worldToCanvasはe2e/tests全体で正規実装1か所だけに置き、保存済み12 consumerは委譲する', () => {
+  const reference = readFileSync(resolve(root, HOME_VIEW_PROJECTION), 'utf8');
+  const copies = productFiles(root, 'e2e/tests', path => /\.ts$/u.test(path))
+    .map(path => ({ path, count: copiedHomeViewProjectionCount(path, readFileSync(resolve(root, path), 'utf8'), reference) }))
+    .filter(row => row.count > 0);
+  expect(copies).toEqual([{ path: HOME_VIEW_PROJECTION, count: 1 }]);
+  expect(new Set(GROUP4_RECORDED_CONSUMERS).size).toBe(12);
+  const delegating = GROUP4_RECORDED_CONSUMERS.filter(path => existsSync(resolve(root, path))
+    && moduleSpecifiers(path, readFileSync(resolve(root, path), 'utf8')).includes('./homeViewProjection.js'));
+  expect(delegating).toEqual(GROUP4_RECORDED_CONSUMERS);
+});
+
+it('group4の再コピーは関数名・引数名・書式・コメントを変えても検出し、別契約・委譲・文字列・コメントを許す', () => {
+  const reference = readFileSync(resolve(root, HOME_VIEW_PROJECTION), 'utf8');
+  const count = (source: string): number => copiedHomeViewProjectionCount('e2e/tests/example.spec.ts', source, reference);
+  const old = OLD_HOME_VIEW_WORLD_TO_CANVAS;
+  expect(count(reference)).toBe(1);
+  expect(count(old)).toBe(1);
+  expect(count(old.replace('(\n  world: WorldPoint,\n  widthPixels: number,\n  heightPixels: number,\n)',
+    '(world: WorldPoint, widthPixels: number, heightPixels: number)'))).toBe(1);
+  expect(count(old.replace('  const depth', '  // カメラは自分の -Z を見るので、前にあるものの深さは正になる。\n  const depth'))).toBe(1);
+  const renamed = old.replace(/\bworldToCanvas\b/gu, 'projectHomePoint').replace(/\bworld\b/gu, 'point')
+    .replace(/\bwidthPixels\b/gu, 'w').replace(/\bheightPixels\b/gu, 'h');
+  expect(count(renamed)).toBe(1);
+  expect(count(`const toCanvas = ${renamed.replace('function projectHomePoint', 'function')};`)).toBe(1);
+  expect(count(`const toCanvas = (point: WorldPoint, w: number, h: number) => ${renamed.slice(renamed.indexOf('{'))};`)).toBe(1);
+  expect(count('// ' + old.split('\n').join('\n// '))).toBe(0);
+  expect(count(`const text = ${JSON.stringify(old)};`)).toBe(0);
+  expect(count(old.replace('((1 - ndcY) / 2) * heightPixels', '(1 - ndcY) * heightPixels / 2'))).toBe(0);
+  expect(count(old.replace('(depth * (widthPixels / heightPixels))', 'depth'))).toBe(0);
+  expect(count('function worldToCanvas(world: WorldPoint, w: number, h: number) { return sharedWorldToCanvas(world, w, h); }')).toBe(0);
+  expect(count(OLD_HOME_VIEW_PAGE_POINT)).toBe(0);
+});

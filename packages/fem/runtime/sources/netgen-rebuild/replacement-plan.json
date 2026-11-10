@@ -1,0 +1,454 @@
+{
+  "schema": "pointercad-netgen-replacement-plan/1",
+  "executed": false,
+  "sourceReplacementExecuted": false,
+  "legalClearance": false,
+  "scope": "Executable, unexecuted recipe for one modified-source rebuild (R5) from the retained sources and r4 packaging, whose wheel the product loader accepts only through rebuilt declarations in an isolated copy, while the retained shipped wheel and a same-size tampered wheel are refused (R7). The unmodified full rebuild is not required (notRequired). Not a legal clearance; does not change the shipped wheel.",
+  "files": {
+    "sources/netgen-rebuild/fem-netgen-replacement.spec.ts": {
+      "sha256": "95568112418183f62aa3629258b24984e90580c047f903435335ea7f5535a053"
+    },
+    "sources/netgen-rebuild/netgen-replacement-marker.patch": {
+      "sha256": "f50252df94ae725290a3436763f9e2e2f9529b5b6836d6d60f6c7ca5b0cfec6a"
+    },
+    "sources/netgen-rebuild/netgen_rebuild_steps.py": {
+      "sha256": "52f93713eedecba9c9eb6b05f7b8e8fb567f2940a0a34052de34cc81f704ac5e"
+    },
+    "sources/netgen-rebuild/pins.json": {
+      "sha256": "1ddc3333a600e1e61bc85a46bd411da10c043d8c2be66a52ecc0e8035227548b"
+    },
+    "sources/netgen-rebuild/rebuild-netgen-pyodide.sh": {
+      "sha256": "cb132ba39d961e250478bdb821f352d8a421a75980d547702af1ae2162551a09"
+    },
+    "sources/netgen-rebuild/stage_replacement.py": {
+      "sha256": "1e4a74ca80e433bb77cd4603152869a9c2baeb0f41d42de0711fbfe7d0e0c53f"
+    }
+  },
+  "inputs": {
+    "retainedInProduct": {
+      "sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz": "4ad944f59dea9d198d11e12485f6ac93f8226eb314d58dec98e7e790fc46feee",
+      "sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz": "e84c2929c340a59eef985dc31e309f290982de8617d9aeb7b77c123c4bb044a4",
+      "sources/zlib-v1.3.1.tar.gz": "17e88863f3600672ab49182f217281b6fc4d3c762bde361935e436a95214d05c",
+      "sources/netgen-sdk-zconf.h": "77304005ceb5f0d03ad4c37eb8386a10866e4ceeb204f7c3b6599834c7319541",
+      "sources/netgen-654ed121-build-r4-recipe.zip": "a5e6ff23a1c8f300b6955074701bc9229f5187d0fee0f09a20a165c044b2f761",
+      "assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl": "3f0d507e8daa11b5a26654d904c529d6c1338e9a3a4c7d7728152f3596954ba3"
+    },
+    "notInProduct": {
+      "<WHEELHOUSE>": "directory with the exact cmake 4.4.4 / ninja 1.13.2 Linux aarch64 wheels: ninja d775a5e43e9088f507a6250d57fcf5678eb31268c545feb5064ffeee33735622 ninja-1.13.2.data/scripts/ninja 9285b2ae95bc241bcb22e06d50d2290429e001bd7cb1d3fb95dde0f9127609d8; cmake b3029f586853e01ddf2824c1ff124a1c5284f8ae897994758e9c4eeb45903b58 cmake/data/bin/cmake 7cdd347255e8ca723a1adae40d9dafa101ebf3181dc1d8fe6d03d1ca47c21597. The OOFEM portable wheelhouse (native-rebuild/portable/acquisition-request.json) contains both.",
+      "<VENV>": "Python 3.13.2 venv with pyodide-build 0.31.1, scikit-build-core 0.11.6, packaging 26.3, pathspec 1.1.1 (the OOFEM portable replay venv, native-rebuild/portable/replay-environment.json, satisfies this).",
+      "<EMSDK>": "emsdk with Emscripten 4.0.9 (bbf1caa6e24f64fca9eb6a13a9e02d3f42123e77), LLVM 2f05451198e2f222ec66cec4892ada0509519290, populated upstream/emscripten/cache (sysroot) from Pyodide xbuildenv 0.29.3; copied, then EM_FROZEN_CACHE=1.",
+      "<XBUILDENV>": "Pyodide 0.29.3 cross-build environment directory passed to pyodide build --xbuildenv-path (one */xbuildenv/pyodide-root).",
+      "host": "Linux aarch64 with bash, git, sha256sum, setsid, ps, find, nice, nproc. The historical WSL env /home/yuya/pcad-oofem-rebuild-20261011-2136 (r4) provides all of these; its venv python was b3f693a8...."
+    }
+  },
+  "rootSteps": [
+    {
+      "id": "R3-refusal-controls",
+      "argv": [
+        [
+          "setsid",
+          "--wait",
+          "bash",
+          "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+          "--variant",
+          "original",
+          "--marker-patch",
+          "<ANY>",
+          "--netgen-tar",
+          "<PCAD>/packages/fem/runtime/sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+          "--pybind11-tar",
+          "<PCAD>/packages/fem/runtime/sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+          "--zlib-tar",
+          "<PCAD>/packages/fem/runtime/sources/zlib-v1.3.1.tar.gz",
+          "--zconf",
+          "<PCAD>/packages/fem/runtime/sources/netgen-sdk-zconf.h",
+          "--recipe-zip",
+          "<PCAD>/packages/fem/runtime/sources/netgen-654ed121-build-r4-recipe.zip",
+          "--venv",
+          "<VENV>",
+          "--emsdk-env",
+          "<EMSDK>/emsdk_env.sh",
+          "--xbuildenv",
+          "<XBUILDENV>",
+          "--em-cache",
+          "<EMSDK>/upstream/emscripten/cache",
+          "--wheelhouse",
+          "<WHEELHOUSE>",
+          "--reference-wheel",
+          "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+          "--jobs",
+          "4",
+          "--out",
+          "<NEW>/c1"
+        ],
+        [
+          "setsid",
+          "--wait",
+          "bash",
+          "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+          "--variant",
+          "modified",
+          "--netgen-tar",
+          "<PCAD>/packages/fem/runtime/sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+          "--pybind11-tar",
+          "<PCAD>/packages/fem/runtime/sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+          "--zlib-tar",
+          "<PCAD>/packages/fem/runtime/sources/zlib-v1.3.1.tar.gz",
+          "--zconf",
+          "<PCAD>/packages/fem/runtime/sources/netgen-sdk-zconf.h",
+          "--recipe-zip",
+          "<PCAD>/packages/fem/runtime/sources/netgen-654ed121-build-r4-recipe.zip",
+          "--venv",
+          "<VENV>",
+          "--emsdk-env",
+          "<EMSDK>/emsdk_env.sh",
+          "--xbuildenv",
+          "<XBUILDENV>",
+          "--em-cache",
+          "<EMSDK>/upstream/emscripten/cache",
+          "--wheelhouse",
+          "<WHEELHOUSE>",
+          "--reference-wheel",
+          "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+          "--jobs",
+          "4",
+          "--out",
+          "<NEW>/c2"
+        ],
+        [
+          "setsid",
+          "--wait",
+          "bash",
+          "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+          "--variant",
+          "original",
+          "--netgen-tar",
+          "<TAMPERED-COPY-OF-NETGEN-TAR>",
+          "--pybind11-tar",
+          "<PCAD>/packages/fem/runtime/sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+          "--zlib-tar",
+          "<PCAD>/packages/fem/runtime/sources/zlib-v1.3.1.tar.gz",
+          "--zconf",
+          "<PCAD>/packages/fem/runtime/sources/netgen-sdk-zconf.h",
+          "--recipe-zip",
+          "<PCAD>/packages/fem/runtime/sources/netgen-654ed121-build-r4-recipe.zip",
+          "--venv",
+          "<VENV>",
+          "--emsdk-env",
+          "<EMSDK>/emsdk_env.sh",
+          "--xbuildenv",
+          "<XBUILDENV>",
+          "--em-cache",
+          "<EMSDK>/upstream/emscripten/cache",
+          "--wheelhouse",
+          "<WHEELHOUSE>",
+          "--reference-wheel",
+          "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+          "--jobs",
+          "4",
+          "--stop-after",
+          "source",
+          "--out",
+          "<NEW>/c3"
+        ]
+      ],
+      "expect": "c1/c2 exit 64 before creating --out; c3 exits nonzero at 10-inputs (SHA mismatch) with no src/"
+    },
+    {
+      "id": "R5-build-modified",
+      "argv": [
+        "setsid",
+        "--wait",
+        "bash",
+        "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+        "--variant",
+        "modified",
+        "--marker-patch",
+        "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/netgen-replacement-marker.patch",
+        "--netgen-tar",
+        "<PCAD>/packages/fem/runtime/sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "--pybind11-tar",
+        "<PCAD>/packages/fem/runtime/sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+        "--zlib-tar",
+        "<PCAD>/packages/fem/runtime/sources/zlib-v1.3.1.tar.gz",
+        "--zconf",
+        "<PCAD>/packages/fem/runtime/sources/netgen-sdk-zconf.h",
+        "--recipe-zip",
+        "<PCAD>/packages/fem/runtime/sources/netgen-654ed121-build-r4-recipe.zip",
+        "--venv",
+        "<VENV>",
+        "--emsdk-env",
+        "<EMSDK>/emsdk_env.sh",
+        "--xbuildenv",
+        "<XBUILDENV>",
+        "--em-cache",
+        "<EMSDK>/upstream/emscripten/cache",
+        "--wheelhouse",
+        "<WHEELHOUSE>",
+        "--reference-wheel",
+        "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+        "--jobs",
+        "4",
+        "--out",
+        "<NEW>/r86-modified"
+      ],
+      "expect": "REBUILD OK modified; markerCounts sum 1 (pyngcore/pyngcore.so); wheel SHA differs from shipped",
+      "boundSeconds": 3600,
+      "sourcePreparationEvidence": {
+        "covers": [
+          "R1-source-original input/source inspection",
+          "R2-source-modified source and marker inspection"
+        ],
+        "logs": [
+          "10-inputs",
+          "20-extract",
+          "21-packaging",
+          "22-marker",
+          "23-snapshot"
+        ],
+        "basis": "One R5 modified build provides the same pinned input/source/packaging and marker logs; no duplicate source preparation or unmodified build is required. R3 three refusal inputs remain required."
+      }
+    },
+    {
+      "id": "R6-stage",
+      "argv": [
+        "python3",
+        "-I",
+        "-B",
+        "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/stage_replacement.py",
+        "--copy",
+        "<ISOLATED-COPY>",
+        "--modified-wheel",
+        "<NEW>/r86-modified/dist/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+        "--provenance",
+        "<NEW>/r86-modified/rebuild-provenance.json",
+        "--receipt",
+        "<NEW>/r86-stage-receipt.json"
+      ],
+      "expect": "5 rows (wheel, manifest wheel row, NETGEN_ASSETS row, new e2e spec, copy-only browserProjectCoverage allClassifications row); refuses the product tree"
+    },
+    {
+      "id": "R7-product-loader",
+      "precondition": [
+        "<ISOLATED-COPY> is an installed copy outside the product tree (node_modules present; r221 used PointerCAD/scratchpad/q1) on which R6 passed; e2e/playwright.config.ts there equals the product file.",
+        "<NODE> is the absolute node.exe (r221: C:\\Program Files\\nodejs\\node.exe); no bare command names."
+      ],
+      "entry": "Playwright CLI of the isolated copy, list phase then run phase, as the r221 OOFEM replacement (execute.py lines 85-95). project functional: no browserName override in the spec, so the default Desktop Chrome use applies; functional ignores only electron-*, firefox-graphics and the dedicated files; the firefox project's testMatch does not name this spec; --no-deps skips viewport-performance; grepInvert does not match the 3 titles.",
+      "notDiag": "scratchpad/claude/tools/diag.py is not used: its ROOT is the tree it lives in (diag.py:45) and Playwright runs with cwd=ROOT, so from the product it would test the product, not the copy; it also rejects --workers (find_disallowed_e2e_arg). 'chromium' is not a project name in e2e/playwright.config.ts.",
+      "classification": "browserProjectCoverage.json is read only by packages/test-utils/src/browserProjectCoverage.test.ts (unit), not by Playwright, package.json test:e2e or diag.py. R6 adds the copy-only row so that test also passes in the copy; the product file is unchanged.",
+      "phases": [
+        {
+          "phase": "list",
+          "argv": [
+            "<NODE>",
+            "<ISOLATED-COPY>/node_modules/@playwright/test/cli.js",
+            "test",
+            "--config",
+            "<ISOLATED-COPY>/e2e/playwright.config.ts",
+            "fem-netgen-replacement.spec.ts",
+            "--project=functional",
+            "--no-deps",
+            "--workers=1",
+            "--reporter=json",
+            "--list"
+          ],
+          "cwd": "<ISOLATED-COPY>",
+          "env": {
+            "PCAD_NETGEN_ORIGINAL_WHEEL": "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+            "TEMP": "<ISOLATED-COPY>/scratchpad/temp",
+            "TMP": "<ISOLATED-COPY>/scratchpad/temp",
+            "TMPDIR": "<ISOLATED-COPY>/scratchpad/temp",
+            "PLAYWRIGHT_BROWSERS_PATH": "<the Chromium browser cache of the isolated copy, as r221 used>",
+            "PLAYWRIGHT_JSON_OUTPUT_FILE": "<NEW>/r7-<phase>.json (fresh per phase)"
+          },
+          "expect": "exit 0; JSON report lists exactly these 3 (file, title) pairs under projectName functional",
+          "identities": [
+            [
+              "fem-netgen-replacement.spec.ts",
+              "作り直した宣言で、変えた Netgen wheel を実Workerが受け入れて 2×3×4 mm の箱を体積 24 mm³ で分割する"
+            ],
+            [
+              "fem-netgen-replacement.spec.ts",
+              "同じアプリで、元の Netgen wheel は長さか SHA-256 の違いで断る"
+            ],
+            [
+              "fem-netgen-replacement.spec.ts",
+              "同じアプリで、同じ長さで1バイトだけ変えた Netgen wheel は SHA-256 の違いで断る"
+            ]
+          ]
+        },
+        {
+          "phase": "run",
+          "argv": [
+            "<NODE>",
+            "<ISOLATED-COPY>/node_modules/@playwright/test/cli.js",
+            "test",
+            "--config",
+            "<ISOLATED-COPY>/e2e/playwright.config.ts",
+            "fem-netgen-replacement.spec.ts",
+            "--project=functional",
+            "--no-deps",
+            "--workers=1",
+            "--reporter=json"
+          ],
+          "cwd": "<ISOLATED-COPY>",
+          "env": {
+            "PCAD_NETGEN_ORIGINAL_WHEEL": "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+            "TEMP": "<ISOLATED-COPY>/scratchpad/temp",
+            "TMP": "<ISOLATED-COPY>/scratchpad/temp",
+            "TMPDIR": "<ISOLATED-COPY>/scratchpad/temp",
+            "PLAYWRIGHT_BROWSERS_PATH": "<the Chromium browser cache of the isolated copy, as r221 used>",
+            "PLAYWRIGHT_JSON_OUTPUT_FILE": "<NEW>/r7-<phase>.json (fresh per phase)"
+          },
+          "expect": "stats expected 3, unexpected 0, flaky 0, skipped 0; every test projectName functional and last result passed"
+        }
+      ],
+      "cases": [
+        "modified-accepted",
+        "original-refused",
+        "tampered-refused"
+      ],
+      "expect": "3 passed: modified wheel meshes the 2x3x4 mm box to volume 24 mm^3 (rel 1e-9); original wheel refused 'asset-corrupt: <wheel> (size)' (or SHA-256 if equal length); same-size one-byte change refused (SHA-256); refusals stop at phases ['loading-assets']"
+    }
+  ],
+  "afterPass": "Only after R5-R7 pass and Root keeps the receipts may a separate change record their SHA values and set sourceReplacementExecuted true; legalClearance stays false.",
+  "limits": [
+    "Recipe and spec are unexecuted; no wheel was built by this candidate.",
+    "The venv/emsdk/xbuildenv/wheelhouse are not retained in the product; their identities are checked by version and SHA, the Emscripten cache is used frozen.",
+    "Byte identity with the shipped wheel is reported, not asserted.",
+    "The isolated copy's source map, application-source index and SBOM are not updated by the stage.",
+    "The original wheel in R7 is the retained shipped wheel (assets/<wheel>); no unmodified rebuild is required."
+  ],
+  "notRequired": [
+    {
+      "id": "R1-source-original",
+      "argv": [
+        "setsid",
+        "--wait",
+        "bash",
+        "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+        "--variant",
+        "original",
+        "--netgen-tar",
+        "<PCAD>/packages/fem/runtime/sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "--pybind11-tar",
+        "<PCAD>/packages/fem/runtime/sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+        "--zlib-tar",
+        "<PCAD>/packages/fem/runtime/sources/zlib-v1.3.1.tar.gz",
+        "--zconf",
+        "<PCAD>/packages/fem/runtime/sources/netgen-sdk-zconf.h",
+        "--recipe-zip",
+        "<PCAD>/packages/fem/runtime/sources/netgen-654ed121-build-r4-recipe.zip",
+        "--venv",
+        "<VENV>",
+        "--emsdk-env",
+        "<EMSDK>/emsdk_env.sh",
+        "--xbuildenv",
+        "<XBUILDENV>",
+        "--em-cache",
+        "<EMSDK>/upstream/emscripten/cache",
+        "--wheelhouse",
+        "<WHEELHOUSE>",
+        "--reference-wheel",
+        "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+        "--jobs",
+        "4",
+        "--stop-after",
+        "source",
+        "--out",
+        "<NEW>/r86-original-source"
+      ],
+      "expect": "exit 0; logs/done.txt starts 'SOURCE OK original'; no compiler run",
+      "boundSeconds": 300,
+      "required": false,
+      "removedFromRequired": "Root decision 2026-11-09: R5 logs/10-inputs, 20-extract, 21-packaging, 22-marker and 23-snapshot provide the required source preparation evidence in the one modified build. This source-only command remains optional and unexecuted; it never copies compiler cache or runs tools/venv/toolchain/zlib/build steps."
+    },
+    {
+      "id": "R2-source-modified",
+      "argv": [
+        "setsid",
+        "--wait",
+        "bash",
+        "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+        "--variant",
+        "modified",
+        "--marker-patch",
+        "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/netgen-replacement-marker.patch",
+        "--netgen-tar",
+        "<PCAD>/packages/fem/runtime/sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "--pybind11-tar",
+        "<PCAD>/packages/fem/runtime/sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+        "--zlib-tar",
+        "<PCAD>/packages/fem/runtime/sources/zlib-v1.3.1.tar.gz",
+        "--zconf",
+        "<PCAD>/packages/fem/runtime/sources/netgen-sdk-zconf.h",
+        "--recipe-zip",
+        "<PCAD>/packages/fem/runtime/sources/netgen-654ed121-build-r4-recipe.zip",
+        "--venv",
+        "<VENV>",
+        "--emsdk-env",
+        "<EMSDK>/emsdk_env.sh",
+        "--xbuildenv",
+        "<XBUILDENV>",
+        "--em-cache",
+        "<EMSDK>/upstream/emscripten/cache",
+        "--wheelhouse",
+        "<WHEELHOUSE>",
+        "--reference-wheel",
+        "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+        "--jobs",
+        "4",
+        "--stop-after",
+        "source",
+        "--out",
+        "<NEW>/r86-modified-source"
+      ],
+      "expect": "exit 0; logs/22-marker.exit 0; 'SOURCE OK modified'",
+      "boundSeconds": 300,
+      "required": false,
+      "removedFromRequired": "Root decision 2026-11-09: R5 logs/10-inputs, 20-extract, 21-packaging, 22-marker and 23-snapshot provide the required source preparation evidence in the one modified build. This source-only command remains optional and unexecuted; it never copies compiler cache or runs tools/venv/toolchain/zlib/build steps."
+    },
+    {
+      "id": "R4-build-original",
+      "argv": [
+        "setsid",
+        "--wait",
+        "bash",
+        "<PCAD>/packages/fem/runtime/sources/netgen-rebuild/rebuild-netgen-pyodide.sh",
+        "--variant",
+        "original",
+        "--netgen-tar",
+        "<PCAD>/packages/fem/runtime/sources/netgen-654ed121e44cedc4db45f955d9ab6ddf8dd48806.tar.gz",
+        "--pybind11-tar",
+        "<PCAD>/packages/fem/runtime/sources/pybind11-98e50b702d9ab784ec918399aaa20adcfd1af9a9.tar.gz",
+        "--zlib-tar",
+        "<PCAD>/packages/fem/runtime/sources/zlib-v1.3.1.tar.gz",
+        "--zconf",
+        "<PCAD>/packages/fem/runtime/sources/netgen-sdk-zconf.h",
+        "--recipe-zip",
+        "<PCAD>/packages/fem/runtime/sources/netgen-654ed121-build-r4-recipe.zip",
+        "--venv",
+        "<VENV>",
+        "--emsdk-env",
+        "<EMSDK>/emsdk_env.sh",
+        "--xbuildenv",
+        "<XBUILDENV>",
+        "--em-cache",
+        "<EMSDK>/upstream/emscripten/cache",
+        "--wheelhouse",
+        "<WHEELHOUSE>",
+        "--reference-wheel",
+        "<PCAD>/packages/fem/runtime/assets/netgen_mesher-6.2.2606.post5.dev0-cp313-cp313-pyodide_2025_0_wasm32.whl",
+        "--jobs",
+        "4",
+        "--out",
+        "<NEW>/r86-original"
+      ],
+      "expect": "REBUILD OK original; 60-wheel.stdout markerCounts all 0; comparison reported (byte identity not asserted)",
+      "boundSeconds": 3600,
+      "basis": "r4 build lifecycle; build duration was not measured in the retained record",
+      "required": false,
+      "removedFromRequired": "Root decision rev87 (2026-11-09): the distribution conditions require neither historical bit identity nor an unmodified rebuild. The original wheel for R7 is the retained shipped wheel. This step stays recorded unexecuted (rev86 plan fd8bf4a9 rootSteps[3]); running it is optional and its result is not a pass condition."
+    }
+  ]
+}

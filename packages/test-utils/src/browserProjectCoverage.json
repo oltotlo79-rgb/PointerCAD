@@ -235,7 +235,7 @@
       "reason": "packaged-desktop.config.ts variant"
     }
   ],
-  "configSha256": "9483fc24803775479b6e8fd5a999b4aac584d71484d5d7c77adc84ab0c0d1153",
+  "configSha256": "8eda42ece147fbd338561ba489671a723dc7ef7482258ea902099c86e068f165",
   "sourceListSha256": "3286af1c0f162b55dcff6e9a88c25a9d8aed554c39824bb3e91e3312b33e1591",
   "allClassifications": [
     {
@@ -1331,6 +1331,12 @@
       "sha256": "5f08a418f289df8c39387e31c4a90007e6e808815d116a86f67fd5f179e31fb3"
     },
     {
+      "file": "home-view-page-point.spec.ts",
+      "category": "synthetic-helper-representative",
+      "reason": "synthetic canvas cases verify homeViewPagePoint delegates to the shared worldToCanvas and adds only the canvas page offset, and keep the missing-canvas error; Firefox-selected bolted-joint.spec.ts and weld-layer-browser.spec.ts use the same helper; individual synthetic cases are not Firefox results",
+      "sha256": "2a4730e62db0af3b3a2bfef6743232b111b13be0e0b60c500b762d226ecfc614"
+    },
+    {
       "file": "impact-browser.spec.ts",
       "category": "firefox-project",
       "reason": "Playwright --list selects a Firefox project",
@@ -1418,7 +1424,7 @@
       "file": "memory-highwater-ui-contract.spec.ts",
       "category": "synthetic-helper-representative",
       "reason": "synthetic DOM tests and browser-free serial GPU reader tests verify helper rejection paths; Firefox-selected memory-highwater.spec.ts uses the same helper; individual synthetic cases are not Firefox results",
-      "sha256": "5c82a9c1a87b2a0b8c9459bd8a278cd933dddefeb05b9f65d09b78e8e6c199c4"
+      "sha256": "62850eb18fd33921b0e30f0f7a2b6c1a0848c45acc093e8c808f2345db0d2606"
     },
     {
       "file": "memory-highwater.spec.ts",
@@ -1544,7 +1550,7 @@
       "file": "p8-drawing.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "4666c8db00fc19de82aa23ec2896dd880d3b718dd54fe4af4418dbaf0cfea394"
+      "sha256": "f72013bcbe63667bb369c3368453bee3f5e8c2284c5581755d84f5b3345cf81c"
     },
     {
       "file": "parameter-math-name-blur.spec.ts",
@@ -1616,7 +1622,7 @@
       "file": "process-resource-sampler.spec.ts",
       "category": "node-process-contract",
       "reason": "Node OS process sampler and resident-frame checks; no page/browser/context fixture",
-      "sha256": "f2e1af6127ad85373772b4763909692872aac1f1b6882dd95ae65f5823865dd3"
+      "sha256": "46d3d85c08ef276e1c380b37a1ff04cbc891c62f9c3f8c79c1983c0baa6f08a1"
     },
     {
       "file": "project-intersect.spec.ts",
@@ -1844,7 +1850,7 @@
       "file": "solid-buckling-worker.spec.ts",
       "category": "numerical-worker-representative",
       "reason": "same FemClient and real fem/worker.js bridge as Firefox-selected solid-finite-worker; this case checks distinct native numerical results, not Firefox success",
-      "sha256": "2e7e138d5db9f8d004247364abab6cd6289d03bb774c291ed4a3aca85a009547"
+      "sha256": "d8d271def6cb3f047dcb67f7e375c656fba0bd96c39454cd0fa1d9d4576aa327"
     },
     {
       "file": "solid-combine.spec.ts",
@@ -1874,7 +1880,7 @@
       "file": "solid-material-authoring.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "2f2d30c139d72bf0617a75f8b83f747395c57c6a8e686d894a99453ab55a5596"
+      "sha256": "5964c09de3a2d13c76128a69a4e0d1882cd726f1966ec85f99a11766e51873b8"
     },
     {
       "file": "solid-modal-worker.spec.ts",
@@ -2030,7 +2036,7 @@
       "file": "viewcube.spec.ts",
       "category": "firefox-project",
       "reason": "Firefox project added because Chromium-only sufficiency was not established; both browser contracts delegated to same-version CI.",
-      "sha256": "413db2855058be4ac459023bd6bb09fba3b115d8217a1a308fae16bef4a869a7"
+      "sha256": "e566fac7374d5bf311e89ca2d2fb0593de9eeeaae914d106a5fd7b69011d6230"
     },
     {
       "file": "viewport.spec.ts",

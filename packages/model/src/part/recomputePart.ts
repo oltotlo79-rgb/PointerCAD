@@ -58,6 +58,7 @@ import {
   type ResolvedPart,
   type ResolvedProjection,
   type ResolvePartOptions,
+  type SolidStepPlan,
 } from './resolvePart.js';
 import { applyParameters } from './reevaluatePart.js';
 import { evaluateDocumentMath, hasDocumentMath, type DocumentMathContext } from './evaluateDocumentMath.js';
@@ -750,6 +751,34 @@ function importedMeshBodies(resolved: ResolvedPart, captured: CapturedImportedMe
   return bodies;
 }
 
+/**
+ * 段がkernelへ指紋のまま渡し、kernelが現在形状で選び直す面・辺・頂点の参照。
+ * resolvePartがsubShapeで聞いた参照(押し出しの面まで・抜き勾配の中立面・ミラーの面・エンボスの面・平らな面の移動)は
+ * askedSubShapesに入るが、ここに挙げる参照の多くはどこにも入らない。対象を消費する段では参照元が表示bodyから消えるので、
+ * 平面穴の編集用の現在基準と参照の修復の照合用に、これらの参照元だけを同じ世代のhidden leaseで読む
+ * (表示bodyに残る参照元はreadReferenceBodiesが読み直さない。全bodyは読まない)。
+ * 段の種類を足したときは、戻り値の型によりここで選ばないと型検査が止まる(取りこぼしを残さない)。
+ */
+function kernelReselectedReferences(plan: SolidStepPlan): readonly SubShapeRef[] {
+  switch (plan.kind) {
+    case 'hole': case 'thread': case 'emboss': case 'threadShaft': case 'holeTranslate': case 'faceOffset':
+      return [plan.face];
+    case 'faceRotate': return [plan.face, plan.hinge];
+    case 'fillet': case 'chamfer': return plan.targets;
+    case 'draft': return [...plan.faces, plan.neutralFace];
+    case 'shell': return plan.openFaces;
+    case 'primitive': return plan.originQuery === null ? [] : [plan.originQuery];
+    case 'thruSections': return plan.sections.flatMap(section => section.kind === 'faceQuery' ? [section.query] : []);
+    case 'surface': return plan.shape.kind === 'face' || plan.shape.kind === 'offset' ? [plan.shape.face] : [];
+    // 縫合の既存の面は、縫合が取り込む(消費する)曲面の入力で、加工の参照元として照合するものではないので読まない。
+    case 'sew':
+    case 'extrude': case 'revolve': case 'boolean': case 'spring': case 'mirror': case 'transform': case 'scale':
+    case 'sweep': case 'rib': case 'cut': case 'surfaceCut': case 'importedSolid': case 'functionSurface':
+    case 'sheetBase': case 'sheetFlange': case 'sheetJoin': case 'sheetBody':
+      return [];
+  }
+}
+
 export async function recomputePart(
   document: PartDocument,
   bridge: KernelBridge,
@@ -1034,11 +1063,11 @@ async function buildShapes(
     const countBefore = settled.size;
     const changedSources = new Set<string>();
     const referenceBodies = await readReferenceBodies({ steps: resolved.steps, bodies: solid.outcome.bodies,
-      // 平面穴の面参照はkernelで解決するため、作図のaskedSubShapesには入らない。
-      // 編集用の現在基準も同じ世代のhidden leaseで読み、表示bodyへは混ぜない。
+      // kernelが指紋で選び直す面・辺・頂点(kernelReselectedReferences)は作図のaskedSubShapesに入らない。
+      // 消費された参照元は表示bodyに残らないので、平面穴の編集用の現在基準と参照の修復の照合用に、
+      // 同じ世代のhidden leaseでこれらの参照元だけを読み、表示bodyへは混ぜない。
       featureIds: [...askedSubShapes.values()].map(asked => asked.reference.bodyFeatureId).concat(
-        resolved.steps.flatMap(step => (step.plan.kind === 'hole' || step.plan.kind === 'thread')
-          && step.plan.planar !== undefined ? [step.plan.face.bodyFeatureId] : []),
+        resolved.steps.flatMap(({ plan }) => kernelReselectedReferences(plan).map(reference => reference.bodyFeatureId)),
       ),
       failedIds: new Set([...solid.outcome.failures.map(failure => failure.featureId),
         ...resolved.errors.map(error => error.featureId)]), bridge, reads: referenceReads, scope: options.referenceMeshScope, features: evaluated.solids,

@@ -10,7 +10,7 @@ import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { collectDesktopFiles } from './desktopFileInventory.mjs';
 import { desktopJson, sealDesktopBuilderDownloadConfig, verifyDesktopDistribution } from './desktopDistribution.mjs';
-import { prepareDesktopInstallerResources, writeDesktopUninstallFiles } from './desktopInstallerResources.mjs';
+import { keepElectronExecutableNotices, prepareDesktopInstallerResources, writeDesktopUninstallFiles } from './desktopInstallerResources.mjs';
 import { desktopPackagePlan, verifyDesktopPackageArtifacts } from './desktopPackageTargets.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..'), args = argv.slice(2);
@@ -51,7 +51,12 @@ const { getConfig } = builderRequire('app-builder-lib/out/util/config/config');
 const requestedConfig = { extends: join(root, 'apps/desktop/electron-builder.yml'), electronVersion: manifest.electronVersion,
   directories: { app, output: builderOutput, buildResources: resources },
   electronDownload: { cache: env.ELECTRON_CACHE, strictSSL: true, isVerifyChecksum: true },
-  afterPack: platform === 'win32' ? context => writeDesktopUninstallFiles(root, context.appOutDir, resources) : undefined };
+  // Both platforms: keep the notices next to the executable (LICENSE.electron.txt, LICENSES.chromium.html) in the candidate.
+  // Windows only: the NSIS uninstall list.
+  afterPack: async context => {
+    await keepElectronExecutableNotices(root, context.appOutDir, staged);
+    if (platform === 'win32') await writeDesktopUninstallFiles(root, context.appOutDir, resources);
+  } };
 const effectiveConfig = await getConfig(app, null, requestedConfig);
 const config = sealDesktopBuilderDownloadConfig(effectiveConfig, env.ELECTRON_CACHE);
 const artifacts = await build({ projectDir: app, publish: 'never',

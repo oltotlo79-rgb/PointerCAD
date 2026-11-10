@@ -4,7 +4,9 @@
  * The existing records keep their own formats and are not changed here:
  * - release-manifest.json (pointercad-release/1) already binds both desktop candidate.json files, web-build.json,
  *   offline-assets.json and the manual/PDF edition, and is re-derived from those records and bytes first.
- * - sbom.json (CycloneDX, P13-6) is bound by hash, version, commit and its distributed-file facts.
+ * - sbom.json (CycloneDX, P13-6) is bound by hash, version, commit and its distributed-file facts, which must be in
+ *   the Web files and in each desktop candidate's packaged renderer inventory; its Electron component must have the
+ *   electronVersion both desktop candidates were assembled with.
  * - capture-manifest.json (the capture registry of the manual images) is bound by hash.
  * On top of that this adds what P13-3 needs from the distributed bytes themselves: the size of every Web file and
  * desktop download against the publishing limits, the explicit gzip restoration of the OCCT kernel back to the very
@@ -15,7 +17,8 @@ import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { verifyReleaseManifest } from './releaseManifest.mjs';
-import { assertSbomMatchesReleaseManifest, assertSbomPublishable, matchSbomToReleaseManifest } from './sbom.mjs';
+import { assertSbomMatchesDesktopPackage, assertSbomMatchesReleaseManifest, assertSbomPublishable, matchSbomToReleaseManifest,
+  sbomElectronComponent } from './sbom.mjs';
 import { CAPTURE_IMAGE_FOLDER, CAPTURE_REGISTRY_FILE, CAPTURE_REGISTRY_FORMAT } from '../manual/captureRegistry.mjs';
 import { OFFLINE_MAX_FILE_BYTES, offlineAssetUrl } from '../vite/offlineProtocol.mjs';
 
@@ -239,6 +242,19 @@ export async function createPublicationManifest({ release, releaseManifestBytes,
   assertSbomPublishable(sbom);
   assertSbomMatchesReleaseManifest(sbom, releaseManifest);
   const sbomFiles = matchSbomToReleaseManifest(sbom, releaseManifest).checked;
+  // Desktop: package-desktop.mjs builds each installer with desktop-package.json's electronVersion (recorded by
+  // assemble-desktop.mjs from the installed apps/desktop electron package), so that is the Electron actually shipped.
+  // The packaged inventory was byte-checked against the staged files by verifyReleaseManifest above.
+  const electron = sbomElectronComponent(sbom);
+  for (const candidate of release.candidates) {
+    const packaged = parse(candidate.packageManifestBytes, 'desktop-package.json');
+    const label = String(packaged?.platform);
+    if (packaged?.electronVersion !== electron.version) {
+      throw new Error('SBOM Electron version differs from the ' + label + ' desktop candidate: '
+        + electron.version + ' != ' + String(packaged?.electronVersion));
+    }
+    assertSbomMatchesDesktopPackage(sbom, packaged, label);
+  }
 
   const registry = parse(captureRegistryBytes, CAPTURE_REGISTRY_FILE);
   if (!record(registry) || registry.format !== CAPTURE_REGISTRY_FORMAT) throw new Error('Invalid ' + CAPTURE_REGISTRY_FILE);

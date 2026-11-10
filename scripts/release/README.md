@@ -38,7 +38,7 @@ node scripts/release/build-release-manifest.mjs desktop-stage-windows desktop-st
 
 判定は`scripts/release/publicationManifest.mjs`の`createPublicationManifest`。既存の記録の形式は変えず、束ねる側だけを足した。1つでも外れたら何も書かずに止まる。
 
-- 束ねるもの: `release-manifest.json`（候補2つ・`web-build.json`・`offline-assets.json`・説明書の版をすでに束ねている。配布物から作り直して一致を確かめてから使う）、`sbom.json`（版・commit・原文の欠け・配布ファイルの照合）、撮影の登録簿`packages/help-content/docs/ja/images/capture-manifest.json`。それぞれのSHA-256を記録する。自分自身のhashは記録しない。
+- 束ねるもの: `release-manifest.json`（候補2つ・`web-build.json`・`offline-assets.json`・説明書の版をすでに束ねている。配布物から作り直して一致を確かめてから使う）、`sbom.json`（版・commit・原文の欠け・配布ファイルの照合。配布ファイルはWebの`web.files`に加え、Windows・Linuxの候補の同梱一覧`desktop-package.json`の`dist/renderer/<パス>`とも同じSHA-256であること。SBOMの`electron`部品の版が両候補の`desktop-package.json`の`electronVersion`〔`assemble-desktop.mjs`が導入済みの`electron`から記録し、`package-desktop.mjs`がそのElectronで梱包する版〕と一致し、`electron/LICENSE`の記録と実行ファイル横の`LICENSE.electron.txt`・`LICENSES.chromium.html`の記録があること）、撮影の登録簿`packages/help-content/docs/ja/images/capture-manifest.json`。それぞれのSHA-256を記録する。自分自身のhashは記録しない。
 - 大きさ: Webの全ファイルを区分（`occt`・`exact-math`・`script-vm`・`fonts`・`manual-pdf`・`manual`・`licenses`・`control`・`application`）ごとに数とバイト数で記録し、1ファイル26,214,400バイト以下・1,000ファイル以下（Pagesの管理画面からの直接アップロード。`docs/standards/cloudflare-pages.md`）と、配布物1つが2GiB未満（GitHub Releases）を確かめる。上限の値は公開前検査（`releaseReadiness.mjs`の`PAGES_MAX_FILE_BYTES`・`PAGES_MAX_FILES`）と同じであることを単体検査で固定している。
 - 復元: `occt/manifest.json`の片をWebの読込みと同じくgzipとして明示的に展開し、記録の大きさ・SHA-256、WebAssemblyの先頭と一致すること、Windows・Linuxの候補に入っている展開済みの核と同じであることを確かめる。途中で切れた片、解凍済みのまま置かれた片、2回圧縮した片、記録より大きく展開される片は、それぞれ理由を付けて拒否する。`_headers`が`/occt/`の片へ`Content-Encoding`を付ける設定（通信の途中で解凍され、読込み側で2回目の解凍になる）と、`application/octet-stream`で配らない設定も拒否する。
 - 計算部: 追加計算部（`exact-math/runtime/pyodide.asm.wasm`）と自動作図の実行部（`assets/quickjs-pcad-*.wasm`）がWebにあり、両OSの候補と同じ内容であること、字体のファイルがあること、全巻のHTMLとPDFがそろっていることを確かめ、SBOMから核・計算部・数式入力の版（`opencascade.js`・`Pyodide`・`sympy`・`mpmath`・`quickjs-pcad.wasm`・`mathlive`）を読んで記録する。
@@ -46,7 +46,7 @@ node scripts/release/build-release-manifest.mjs desktop-stage-windows desktop-st
 
 ## SBOM・ライセンス一覧の作成（P13-6）
 
-配布に入る直接・推移のnpm依存、数式字体・画面用字体、自動作図(QuickJS-ng)の実行部、追加計算部(Pyodide/SymPy/mpmath等)の固定資産を、既存の`scripts/vite/mathNotices.mjs`・`runtimeNotices.mjs`・`scriptRuntimeNotices.mjs`・`exactMathAssets.mjs`の検査結果から集め、1つのCycloneDX形式`sbom.json`にまとめる。生成やビルドは行わず、既存の記録を読むだけ。
+配布に入る直接・推移のnpm依存、数式字体・画面用字体、自動作図(QuickJS-ng)の実行部、追加計算部(Pyodide/SymPy/mpmath等)、はり解析の計算部(`packages/fem/runtime`)の固定資産を、既存の`scripts/vite/mathNotices.mjs`・`runtimeNotices.mjs`・`scriptRuntimeNotices.mjs`・`exactMathAssets.mjs`・`femRuntimeAssets.mjs`の検査結果から集め、デスクトップ版だけに入るElectron(`apps/desktop`が導入した`electron`の`package.json`の版・`MIT`の宣言と、その`LICENSE`の本文・SHA-256)を加えて、1つのCycloneDX形式`sbom.json`にまとめる。生成やビルドは行わず、既存の記録と導入済みのpackageを読むだけ。Electronの`LICENSE.electron.txt`・`LICENSES.chromium.html`はelectron-builderが同じ版のElectronの書庫から実行ファイルの横へ置くもので、リポジトリに固定したバイト列が無いため、名前だけを`pointercad:desktopExecutableNotice`として記録する(hashは記録せず、Web・rendererの照合対象`pointercad:distributedFile`にもしない)。
 
 ```powershell
 node scripts/release/build-sbom.mjs <new-output>
@@ -54,9 +54,11 @@ node scripts/release/build-sbom.mjs <new-output>
 
 出力は`dist/<new-output>/sbom.json`。標準出力には部品数・原文が全く無い件数(`unresolvedNotices`)・SPDX識別子が未分類の件数(`unclassifiedLicenses`)をJSONで表示する。
 
-- 形式はSPDXでなくCycloneDXを採用した(理由の全文は`scripts/release/sbom.mjs`冒頭のコメント)。既存の許諾記録がすでに`name`/`version`/`license`/`notice`/`hash`の平坦な組であり、CycloneDXの`components[]`はその形にそのまま対応する。同梱原文が標準条文と一致すると確認できた部品だけにSPDX識別子を記録し、確認できない部品(`liblzma from XZ 5.2.2`・`SQLite 3.39.0`の2件)にはSPDX識別子を推測で割り当てずに済む。
-- `findSbomGaps(sbom)`は「原文そのものが無い(`unresolvedNotices`。NOTICEの「原文未取得」に相当)」と「原文はあるがSPDX識別子が未分類(`unclassifiedLicenses`)」を区別して返す。前者だけを`assertSbomPublishable`が拒否する。
-- `matchSbomToReleaseManifest(sbom, releaseManifest)`は、`release-manifest.json`(P13-1)の`web.files`と、SBOMが記録した配布先パス・ハッシュ(`pointercad:distributedFile`)を照合する。対象は原文・小さな固定パスの資産だけで、Viteがビルド時にハッシュを付けるファイル名(字体等)や16MBを超えて分割される資産(`vendor/exact-math/sources/`の一部)は対象外(それぞれ理由をコード内コメントに明記)。`release-manifest.json`が無い状態でも、テストと同じ形の入力を渡せば照合できる。
+- 形式はSPDXでなくCycloneDXを採用した(理由の全文は`scripts/release/sbom.mjs`冒頭のコメント)。既存の許諾記録がすでに`name`/`version`/`license`/`notice`/`hash`の平坦な組であり、CycloneDXの`components[]`はその形にそのまま対応する。同梱原文が標準条文と一致すると確認できた部品だけにSPDX識別子を記録し、確認できない部品にはSPDX識別子を推測で割り当てずに済む。`SQLite 3.39.0`は同梱原文がSPDXの`blessing`の全文と(空白と箇条の書式を除いて)一致したため`blessing`、`liblzma from XZ 5.2.2`は同梱原文(XZ Utilsの公有宣言)がCC0-1.0にもUnlicenseにも当たらないため、その本文を名前付きの許諾(`pointercad:licenseStatus`=`named-non-spdx`)として記録する。はり解析の計算部の部品(`FEM: oofem`・`FEM: numpy`・`FEM: Pyodide`・`FEM: netgen-mesher`・`FEM: pybind11`・Netgenの内包部品4件)は未分類(`unclassified`)のまま。
+- `findSbomGaps(sbom)`は「原文そのものが無い、または配布条件の確認が残る(`unresolvedNotices`。現在ははり解析の計算部の`packages/fem/runtime/manifest.json`の`unresolved`4件と`FEM: corresponding source closure is incomplete`の5件)」と「原文はあるがSPDX識別子が未分類(`unclassifiedLicenses`)」を区別して返す。前者だけを`assertSbomPublishable`が拒否するため、この5件が残る間は`build-release-manifest.mjs --sbom`と公開前検査のSBOMの項目は不合格になる(緩めない)。
+- `matchSbomToReleaseManifest(sbom, releaseManifest)`は、`release-manifest.json`(P13-1)の`web.files`と、SBOMが記録した配布先パス・ハッシュ(`pointercad:distributedFile`)を照合する。`matchSbomToDesktopPackage(sbom, desktopPackage)`は同じ記録を、デスクトップ候補の同梱一覧(`desktop-package.json`の`files`)の`dist/renderer/<パス>`と照合する(rendererはWebと同じ原文のプラグインで作るため、同じパス・SHA-256で入っているはず)。対象は原文・小さな固定パスの資産だけで、Viteがビルド時にハッシュを付けるファイル名(字体等)や16MBを超えて分割される資産(`vendor/exact-math/sources/`の一部)は対象外(それぞれ理由をコード内コメントに明記)。`release-manifest.json`が無い状態でも、テストと同じ形の入力を渡せば照合できる。
+- `sbomElectronComponent(sbom)`はElectronの部品が1つだけあり、版・`electron/LICENSE`の記録・実行ファイル横の原文2件の名前がそろっていることを確かめる。
+- 実行ファイル横の原文2件(`LICENSE.electron.txt`・`LICENSES.chromium.html`): electron-builderはElectronの書庫の`LICENSE`を`LICENSE.electron.txt`へ名前を変えて置くが、名前の変更の失敗を無視する(app-builder-lib 26.15.3の`ElectronFramework.js`)。そこで`package-desktop.mjs`のafterPack(Windows・Linuxの両方。NSIS・ポータブル版・AppImageを作る前の展開済みの本体`appOutDir`に対して呼ばれる)が、`desktopInstallerResources.mjs`の`keepElectronExecutableNotices`で2件を実際のバイトから読み、無い・リンク・空・原文の印(`LICENSE.electron.txt`はElectronのMITの文、`LICENSES.chromium.html`はChromiumのCreditsの見出しとChromium・Node.js・V8の項目)が無い場合は梱包を止め、同じバイトを候補の`executable-notices/`へ写す(`builder/`はartifactへ保存しないため)。公開前検査のSBOMの項目はこの写しを読み、同じ原文の印と、`LICENSE.electron.txt`がSBOMの`electron/LICENSE`の記録と同じSHA-256であることを確かめる。確かめるのは配布物を作った展開済みの本体のバイトで、インストーラー・AppImageそのものを展開して中を確かめるのではない。
 
 ## 配布CI(P13-16)
 
@@ -65,7 +67,7 @@ node scripts/release/build-sbom.mjs <new-output>
 処理の流れ:
 
 1. `resolve`job: 入力commitの形式を確認し、その版を`checkout`した上で、通常CI(`ci.yml`)の集約check run「`checks (windows-latest)`」「`checks (ubuntu-latest)`」が両方とも成功していることを`gh api .../check-runs`で確認する。両方の成功が無ければ以降のjobを実行しない。
-2. `desktop`job(Windows/Ubuntuのrunnerでmatrix実行): `build-desktop-output.mjs` → `scripts/manual/generate.mjs` → `scripts/manual/generate-pdf.mjs` → `assemble-desktop.mjs` → `package-desktop.mjs`を順に呼び、Windows(NSIS・ポータブル)/Linux(AppImage)それぞれの候補一式(`app/`・`packaging/`・`artifacts/`・`candidate.json`)をartifactへ保存する。`artifacts/`には配布するファイル(Windowsは`-setup.exe`と`-portable.exe`、Linuxは`.AppImage`)だけを置き、electron-builderの展開済みの本体(`win-unpacked/`・`linux-unpacked/`)・設定の控え・変換したアイコンは`builder/`へ分ける(`builder/`はartifactへ保存しない)。
+2. `desktop`job(Windows/Ubuntuのrunnerでmatrix実行): `build-desktop-output.mjs` → `scripts/manual/generate.mjs` → `scripts/manual/generate-pdf.mjs` → `assemble-desktop.mjs` → `package-desktop.mjs`を順に呼び、Windows(NSIS・ポータブル)/Linux(AppImage)それぞれの候補一式(`app/`・`packaging/`・`artifacts/`・`executable-notices/`・`candidate.json`)をartifactへ保存する。`artifacts/`には配布するファイル(Windowsは`-setup.exe`と`-portable.exe`、Linuxは`.AppImage`)だけを置き、electron-builderの展開済みの本体(`win-unpacked/`・`linux-unpacked/`)・設定の控え・変換したアイコンは`builder/`へ分ける(`builder/`はartifactへ保存しない)。
 3. `web`job(Ubuntu runner): `build-web-offline.mjs` → `scripts/manual/generate.mjs` → `scripts/manual/generate-pdf.mjs` → `assemble-web-offline.mjs`を順に呼び、Web候補一式をartifactへ保存する。
 4. `combine`job(Ubuntu runner): 対象commitを`checkout`し直し、上記2種のDesktop候補とWeb候補をartifactから取得した上で、`build-sbom.mjs`でSBOMを作り、`build-release-manifest.mjs`で本節冒頭の`release-manifest.json`を組み立てる。別commitの成果物混入・組み立て後のバイト列の変化・古いartifactの再利用は、このスクリプトが呼ぶ`createReleaseManifest`(`releaseManifest.mjs`)自身がsourceCommitの一致・入力指紋の一致・`candidate.json`記録済みhashとの一致で厳密に拒否する(workflow側で検査を緩めることはできない)。結果の`release-manifest.json`と`sbom.json`を1つのartifactへまとめて保存する。
 
@@ -125,7 +127,7 @@ node scripts/release/releaseReadiness.mjs --mode pre-release --windows desktop-s
 | 公開用の版 | 版が`0.0.0`(模擬の版)でない | — |
 | 全巻 | 今の目録の全巻(現在7巻)のHTMLとPDFが、Web候補・Windows・Linuxの候補・公開一覧にある | — |
 | 資産の大きさ・数 | Web候補の各ファイルが26,214,400バイト以下、ファイル数が1,000以下(Cloudflare Pagesの直接アップロードの上限。`docs/standards/cloudflare-pages.md`) | `OFFLINE_MAX_FILE_BYTES` |
-| SBOM | 許諾の原文の欠けが無いこと、SBOMの配布ファイル・版・commitが公開一覧と一致すること。SPDX識別子の未分類は参考として出す | `findSbomGaps`・`assertSbomPublishable`・`matchSbomToReleaseManifest` |
+| SBOM | 許諾の原文の欠けが無いこと、SBOMの配布ファイル・版・commitが公開一覧と一致すること。両OSのデスクトップ候補ごとに、SBOMのElectronの版が`desktop-package.json`の`electronVersion`と一致し、SBOMの配布ファイルが同梱一覧の`dist/renderer/<パス>`に同じSHA-256であり、実行ファイル横の原文2件の写し(`executable-notices/`)が原文であること。SPDX識別子の未分類は参考として出す | `findSbomGaps`・`assertSbomPublishable`・`matchSbomToReleaseManifest`・`sbomElectronComponent`・`matchSbomToDesktopPackage`・`electronExecutableNoticeProblems` |
 | 公開一覧 | 保存済みの`release-manifest.json`が、候補の記録と実物から作り直した結果と一致する | `verifyReleaseManifest` |
 | README | `pointercad:release-links`区間の導線の種類・版・未公開の案内(下記) | `desktopPackagePlan` |
 

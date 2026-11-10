@@ -134,7 +134,12 @@ async function readBytesFrom(filePath: string): Promise<Uint8Array> {
     }
     const contents = await fileSystem.readFile(filePath);
     if (contents.byteLength > maximum || contents.byteLength !== metadata.size) throw new InputTooLargeError(`${READ_SIZE_CHANGED_REASON_MARKER} 読込中にファイルの大きさが変わりました。もう一度開いてください。`);
-    // Buffer は Node の内部で使い回す記憶を指すことがあるので、自前の記憶へ写してから渡す。
+    // readFile の専有領域は view のまま渡す。転送・detach はしない。
+    // pool の部分領域や共有領域は、前後のバイトを公開しない独立領域へ写す。
+    if (contents.buffer instanceof ArrayBuffer && contents.byteOffset === 0
+      && contents.byteLength === contents.buffer.byteLength) {
+      return new Uint8Array(contents.buffer);
+    }
     const bytes = new Uint8Array(contents.byteLength);
     bytes.set(contents);
     return bytes;

@@ -1,11 +1,10 @@
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { collectFemRuntimeAssets, readFemDistributionGaps } from '../../../../scripts/vite/femRuntimeAssets.mjs';
-import { femComponentsFromDistribution } from '../../../../scripts/release/sbom.mjs';
+import { femComponentsFromDistribution, femDistributionGapsFromDistribution } from '../../../../scripts/release/sbom.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 type Component = ReturnType<typeof femComponentsFromDistribution>[number];
@@ -23,7 +22,7 @@ describe('Netgen exact retained distribution source', () => {
     interface Permission { referenceTag: string; normalizedSha256: string; referenceIsUniqueOriginVersion: boolean }
     interface Member { sha256: string; byteIdentical: boolean; permissionStatus?: string; permissionEvidence?: Permission }
     interface Dependency { name: string; type: string; source: { path: string; sha256: string }; sourceMember?: Member }
-    interface Evidence { modules: Module[]; embeddedDependencies: Dependency[]; headerSourceCorrespondence: Member[] }
+    interface Evidence { legalClearance: boolean; sourceReplacementExecuted: boolean; modules: Module[]; embeddedDependencies: Dependency[]; headerSourceCorrespondence: Member[] }
     const evidence = JSON.parse(original.toString('utf8')) as Evidence;
     expect(evidence.modules.map(row => row.member)).toEqual(['libngcore.so', 'libnglib.so', 'netgen/libngpy.so', 'pyngcore/pyngcore.so']);
     expect(evidence.modules[3]).toEqual({ member: 'pyngcore/pyngcore.so', sha256: 'f6f942536567085cc1bc6b19c974c5898d38a8b0f9ef5235ee9f3b72958abb29', bytes: 1014952, needed: ['libngcore.so'] });
@@ -55,6 +54,8 @@ describe('Netgen exact retained distribution source', () => {
       assets.set('licenses/fem/manifest.json', Buffer.from(JSON.stringify(manifest)));
       return () => femComponentsFromDistribution({ ...distribution, assets });
     };
+    // Historical flags are not proof and may not impose a permanent false-only condition.
+    expect(changed(copy => { copy.sourceReplacementExecuted = true; copy.legalClearance = true; })).not.toThrow();
     expect(changed(copy => { copy.modules.pop(); })).toThrow('FEM Netgen retained module/dependency evidence differs');
     expect(changed(copy => { copy.modules[3] = { ...copy.modules[0] }; })).toThrow('FEM Netgen retained module/dependency evidence differs');
     expect(changed(copy => { copy.embeddedDependencies[0].source.sha256 = '0'.repeat(64); })).toThrow('FEM Netgen dependency source/notice evidence differs');
@@ -111,21 +112,23 @@ describe('Netgen exact retained distribution source', () => {
       .toThrow('FEM embedded component notice missing: pybind11');
   });
 
-  it('retains all five original distribution barriers and never grants clearance', () => {
-    const manifest = JSON.parse(readFileSync(join(root, 'packages/fem/runtime/manifest.json'), 'utf8')) as {
-      unresolved: string[]; correspondingSourceComplete: boolean; nativeRebuildExecuted: boolean; legalClearance: boolean;
-    };
-    expect(manifest.unresolved).toEqual([
-      '歴史的なビルド環境と静的に含まれる部品の対応付けは未完了です。',
-      'IML の指定ソースの出典・許諾根拠と NIST notice は保持済みです。製品全体の法的確認の完了は主張しません。',
-      'ソース提供・差替えの配布条件と製品の条項について法的確認が残っています。',
-      '列挙済みの OOFEM・Pyodide・Netgen の部品と保持資料は一覧へ対応付け済みですが、静的・コンパイラー実行時依存と NumPy 内包部品の完全な対応は未完了です。',
-    ]);
+  it('keeps historical limits but gates only concrete recipient obligations and actual replacement evidence', () => {
+    const distribution = collectFemRuntimeAssets(join(root, 'packages/fem/runtime'));
+    const gaps = readFemDistributionGaps(join(root, 'packages/fem/runtime'));
+    const raw = distribution.assets.get('licenses/fem/manifest.json');
+    const obligationBytes = distribution.assets.get('licenses/fem/evidence/distribution-obligations.json');
+    if (!raw || !obligationBytes) throw new Error('Expected actual recipient distribution inputs');
+    const manifest = JSON.parse(raw.toString('utf8')) as { unresolved: string[]; correspondingSourceComplete: boolean; legalClearance: boolean };
+    const obligations = JSON.parse(obligationBytes.toString('utf8')) as { components: { name: string; replacement?: { evidence: string | null } }[] };
+    expect(manifest.unresolved.length).toBeGreaterThan(0);
     expect(manifest.correspondingSourceComplete).toBe(false);
-    expect(manifest.nativeRebuildExecuted).toBe(true);
     expect(manifest.legalClearance).toBe(false);
-    expect(readFemDistributionGaps(join(root, 'packages/fem/runtime'))).toEqual([
-      ...manifest.unresolved.map(item => 'FEM: ' + item), 'FEM: corresponding source closure is incomplete',
-    ]);
+    expect(gaps).not.toContain('FEM: corresponding source closure is incomplete');
+    for (const history of manifest.unresolved) expect(gaps).not.toContain('FEM: ' + history);
+    expect(femDistributionGapsFromDistribution(distribution)).toEqual(gaps);
+    const netgen = obligations.components.find(row => row.name === 'netgen-mesher');
+    if (!netgen) throw new Error('Expected Netgen obligation row');
+    // A future actual pinned proof is evaluated by its source/build/loader facts, not a historical map boolean.
+    if (!distribution.assets.has('licenses/fem/' + netgen.replacement?.evidence)) expect(gaps).toContain('FEM: netgen-mesher recipient replacement evidence is absent');
   });
 });

@@ -145,6 +145,7 @@ export {
   lerpVec3, mirrorVec3, normalizeVec3, ORIGIN, rotateAboutAxis, rotateDirection, scaleVec3,
   SKETCH_TOLERANCE_MM, subVec3,
 } from './sketch/vec3.js';
+export { crossVec2 } from './sketch/vec2.js';
 export type { BaseWorkPlaneId, WorkPlane, WorkPlaneId } from './sketch/planeMath.js';
 export {
   baseWorkPlane, DEFAULT_WORK_PLANE_ID, degreesToRadians, directionInPlane, distanceToPlane,
@@ -646,7 +647,7 @@ export {
 } from './measure/mathGeometryFunctionOperations.js';
 export type { MathGeometryRenameReason } from './part/renameDocumentMathGeometry.js';
 export { renameDocumentMathGeometry } from './part/renameDocumentMathGeometry.js';
-export { createBodyMateTargetResolver, resolveConstrainedAssembly } from './assembly/resolveConstrainedAssembly.js';
+export { createBodyMateTargetOptions, createBodyMateTargetResolver, resolveConstrainedAssembly } from './assembly/resolveConstrainedAssembly.js';
 export { drawingSourceCenter } from './drawing/sourceCenter.js';
 /**
  * 部品文書の全式の評価し直し(FR-207、FR-502、P4b タスク3)。

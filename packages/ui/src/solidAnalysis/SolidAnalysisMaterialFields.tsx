@@ -1,4 +1,4 @@
-import { findStrengthMaterial, STRENGTH_MATERIALS, STRENGTH_SOURCES } from '@pointercad/model';
+import { findStrengthMaterial, STRENGTH_MATERIALS } from '@pointercad/model';
 import type { AnalysisMaterialCapacity } from '@pointercad/model/beam-analysis';
 import type { StrengthSource } from '@pointercad/model';
 import { useEffect, useRef, useState } from 'react';
@@ -6,6 +6,7 @@ import { isCompositionKey } from '../commands/compositionKey.js';
 import { t } from '../i18n/t.js';
 import { selectSolidMaterial, solidMaterialCapacityMatches, solidMaterialDraftOf, solidMaterialSourceUrl } from './solidMaterialSelection.js';
 import type { SolidMaterialDraft, SolidMaterialIssue } from './solidMaterialSelection.js';
+import './solidAnalysisMaterialFields.css';
 
 const EVIDENCE = { 'supplier-excerpt': 'solidAnalysis.material.evidence.supplier',
   'manufacturer-reference': 'solidAnalysis.material.evidence.manufacturer', 'measured-reference': 'solidAnalysis.material.evidence.measured',
@@ -51,11 +52,12 @@ function MaterialFields({ value, onChange, disabled = false }: SolidAnalysisMate
     notify(capacity, !composing.current && selected.ok);
   };
   const preset = findStrengthMaterial(draft.materialConditionId);
-  const source = preset === undefined ? undefined : STRENGTH_SOURCES[preset.yieldStress.sourceId];
+  // Stale saved evidence displays its own snapshot; legacy values never borrow current catalogue metadata.
+  const source = value?.sourceSnapshot;
   const url = source === undefined ? null : solidMaterialSourceUrl(source);
   const range = preset?.thicknessMm;
   const problem = !selection.ok ? t(ISSUES[selection.issue]) : !valid ? t('solidAnalysis.material.stale') : null;
-  return <fieldset disabled={disabled} data-testid="solid-material-fields"
+  return <fieldset className="pcad-solid-material" disabled={disabled} data-testid="solid-material-fields"
     onCompositionStart={() => { composing.current = true; setLocal({ ...current.current, base: null }); notify(null, false); }}
     onCompositionEnd={() => { composing.current = false; change(current.current); }}
     onKeyDown={event => {

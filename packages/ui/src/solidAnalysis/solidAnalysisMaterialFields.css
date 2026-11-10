@@ -1,0 +1,9 @@
+/*
+ * 立体の応力解析の材料欄。既定の右の区画（約 280px）の中に収める。
+ * fieldset の既定の最小幅（min-content）と折り返さない URL・SHA-256 が欄を区画の外へ押し広げていたので、
+ * 最小幅を外し、長い材料名・SHA-256・URL は隠さずにどこでも折り返す。
+ */
+.pcad-solid-material { box-sizing: border-box; min-width: 0; min-inline-size: 0; max-width: 100%; margin-inline: 0; overflow-wrap: anywhere; }
+.pcad-solid-material label { display: flex; flex-direction: column; gap: var(--pcad-space-1); min-width: 0; }
+.pcad-solid-material select, .pcad-solid-material input { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; }
+.pcad-solid-material section { min-width: 0; }

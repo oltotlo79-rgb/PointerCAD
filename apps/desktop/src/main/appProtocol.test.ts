@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Protocol } from 'electron';
+import { createServer, resolveConfig } from 'vite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APP_ORIGIN, handleAppScheme, registerAppScheme } from './appProtocol.js';
 import { startupFailureDocument } from './startupHtml.js';
@@ -20,6 +21,32 @@ vi.mock('electron', () => ({
 }));
 
 const root = join(process.cwd(), 'dist', 'renderer');
+
+// Exercise the real renderer CSP hook and Vite's HTML tag serialization without
+// requiring a prior application build. This is a transformed source-HTML fixture,
+// not the complete bundled renderer (which remains covered by build/E2E checks).
+let rendererPolicyFixture: Promise<string> | undefined;
+function rendererPolicyHtml(): Promise<string> {
+  rendererPolicyFixture ??= (async () => {
+    const desktopRoot = fileURLToPath(new URL('../../', import.meta.url));
+    const config = await resolveConfig({ root: desktopRoot,
+      configFile: fileURLToPath(new URL('../../vite.renderer.config.ts', import.meta.url)),
+      configLoader: 'runner', logLevel: 'silent' }, 'build', 'production', 'production');
+    const transformIndexHtml = config.plugins.find(plugin => plugin.name === 'pointercad-renderer-security-policy')?.transformIndexHtml;
+    if (transformIndexHtml === undefined) throw new Error('Renderer security-policy HTML transform missing');
+    const server = await createServer({ root: desktopRoot, configFile: false, envFile: false, logLevel: 'silent',
+      plugins: [{ name: 'actual-renderer-security-policy-fixture', transformIndexHtml }],
+      optimizeDeps: { noDiscovery: true, include: [] },
+      server: { middlewareMode: true, hmr: false, watch: null, preTransformRequests: false } });
+    try {
+      return await server.transformIndexHtml('/index.html', readFileSync(new URL('../../index.html', import.meta.url), 'utf8'));
+    } finally {
+      await server.close();
+    }
+  })();
+  return rendererPolicyFixture;
+}
+
 
 async function request(url: string): Promise<Response> {
   const handler = electron.handle.mock.calls[0]?.[1];
@@ -49,7 +76,8 @@ describe('画面の独自スキームで不正なURLを拒否する', () => {
   it('検査の起動で所有した1つのloopback originだけを主文書へ追加し、固定originを足さない', async () => {
     const owned = 'http://127.0.0.1:50123';
     vi.clearAllMocks();
-    electron.fetch.mockImplementation(() => Promise.resolve(new Response(readFileSync(join(root, 'index.html'), 'utf8'))));
+    const html = await rendererPolicyHtml();
+    electron.fetch.mockImplementation(() => Promise.resolve(new Response(html)));
     handleAppScheme(root, owned);
     const policy = (await request(APP_ORIGIN + '/index.html')).headers.get('Content-Security-Policy');
     expect(policy).toContain("connect-src 'self' " + owned);
@@ -58,8 +86,8 @@ describe('画面の独自スキームで不正なURLを拒否する', () => {
       expect((await request(APP_ORIGIN + path)).headers.get('Content-Security-Policy')).not.toContain(owned);
     }
   });
-  it('所有originは実生成HTMLのmetaとHTTP headerで一致し、既定HTMLはそのまま保持する', async () => {
-    const built = readFileSync(join(root, 'index.html'), 'utf8');
+  it('所有originは実CSP変換を適用したHTMLのmetaとHTTP headerで一致し、既定HTMLはそのまま保持する', async () => {
+    const built = await rendererPolicyHtml();
     const owned = 'http://127.0.0.1:50123';
     const tags = (html: string): string[] => html.match(/<meta\b[^>]*http-equiv="Content-Security-Policy"[^>]*>/giu) ?? [];
     const decoded = (tag: string): string => (tag.match(/content="([^"]*)"/u)?.[1] ?? '')
@@ -89,9 +117,9 @@ describe('画面の独自スキームで不正なURLを拒否する', () => {
     expect(tags(await (await request(APP_ORIGIN + '/index.html')).text())).toEqual(tags(built));
   });
   it('所有originのHTMLで複数meta・欠落・生成形式不一致を黙って通さない', async () => {
-    const built = readFileSync(join(root, 'index.html'), 'utf8');
+    const built = await rendererPolicyHtml();
     const meta = built.match(/<meta\b[^>]*http-equiv="Content-Security-Policy"[^>]*>/iu)?.[0];
-    if (meta === undefined) throw new Error('Missing actual built CSP meta');
+    if (meta === undefined) throw new Error('Missing transformed renderer CSP meta');
     for (const html of [built.replace(meta, meta + meta), built.replace(meta, ''),
       built.replace(meta, meta.replace('http-equiv=', 'HTTP-EQUIV='))]) {
       vi.clearAllMocks();

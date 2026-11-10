@@ -1,3 +1,4 @@
+import { dotVec3, subVec3 } from '@pointercad/model/vec3';
 import { isRecord, isFiniteNumber as finite } from './valueGuards.js';
 import type { AnalysisSource, BeamAnalysisDocument, BeamNodalLoad, Vector3 } from './analysisModel.js';
 import type { BucklingRestraints } from './bucklingModel.js';
@@ -69,8 +70,8 @@ export function validateBeamContacts(contacts: readonly BeamContactDefinition[],
       if (contact.nodeIdA === contact.nodeIdB) return fail('contact-self', index);
       const a = positionsM.get(contact.nodeIdA), b = positionsM.get(contact.nodeIdB);
       if (a === undefined || b === undefined) return fail('contact-node', index);
-      const d: Vector3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      if (Math.hypot(...d) > COINCIDENT_LENGTH_M && normal[0] * d[0] + normal[1] * d[1] + normal[2] * d[2] <= 0) {
+      const d: Vector3 = subVec3(b, a);
+      if (Math.hypot(...d) > COINCIDENT_LENGTH_M && dotVec3(normal, d) <= 0) {
         return fail('contact-orientation', index);
       }
     }
